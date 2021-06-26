@@ -1,0 +1,479 @@
+/*
+ *  Gweni
+ *  Copyright (c) 2011 Facepunch Studios
+ *  See license in Gweni.h
+ */
+
+#include <windows.h>
+
+#if !defined(_WIN32_WINNT) || (_WIN32_WINNT < _WIN32_WINNT_VISTA)
+#   error Unsupported platform
+#endif
+
+#include <gweni/platforms/utility.h>
+#include <gweni/platforms/platform.h>
+#include <gweni/platforms/input/windows.h>
+
+#include <windows.h>
+#include <ShlObj.h>
+#include <Shobjidl.h>
+
+#undef min
+#undef max
+
+namespace gweni
+{
+namespace platform
+{
+
+static const size_t FILESTRING_SIZE=256;
+static const size_t FILTERBUFFER_SIZE=512;
+
+String getExecutableDir()
+{
+#if defined(__APPLE__)
+
+    // OSX: Use process information.
+
+    const pid_t pid=getpid();
+    char pathbuf[PROC_PIDPATHINFO_MAXSIZE];
+    const int ret=proc_pidpath(pid, pathbuf, sizeof(pathbuf));
+    if(ret > 0)
+    {
+        return String(dirname(pathbuf)) + "/";
+    }
+
+    // fprintf(stderr, "PID %d: %s\n", pid, strerror(errno));
+    return "";
+
+#elif defined(WIN32)
+
+    // Windows: Use the module information.
+
+    char path[MAX_PATH]={'\0'};
+    HMODULE hModule=GetModuleHandle(NULL);
+    if(hModule != NULL)
+    {
+        GetModuleFileName(hModule, path, sizeof(path));
+
+        if(path)
+        {
+            // get directory name
+            char *dir=strrchr(path, '\\');
+            if(dir)
+                dir[1]='\0';
+        }
+    }
+    return String(path);
+
+#else
+
+    return String();
+
+#endif
+}
+
+void sleep(unsigned int ms)
+{
+    // Only MSVC different.
+#ifdef _MSC_VER
+    ::Sleep(ms);
+#else
+    ::sleep(ms);
+#endif
+}
+
+#ifdef WIN32
+
+static double GetPerformanceFrequency()
+{
+    static double Frequency=0.0f;
+
+    if(Frequency == 0.0f)
+    {
+        __int64 perfFreq;
+        QueryPerformanceFrequency((LARGE_INTEGER*)&perfFreq);
+        Frequency=1.0 / perfFreq;
+    }
+
+    return Frequency;
+}
+
+float getTimeInSeconds()
+{
+    static float currentTime=0.0f;
+    static __int64 iLastTime=0;
+    __int64 thistime;
+
+    QueryPerformanceCounter((LARGE_INTEGER*)&thistime);
+    double fSecondsDifference=(thistime - iLastTime)*GetPerformanceFrequency();
+
+    if(fSecondsDifference > 0.1)
+        fSecondsDifference=0.1;
+
+    currentTime+=fSecondsDifference;
+    iLastTime=thistime;
+    return currentTime;
+}
+
+#else
+
+float getTimeInSeconds()
+{
+    const float seconds=static_cast<float>(clock()) / CLOCKS_PER_SEC;
+    return seconds;
+}
+
+#endif
+static LPCTSTR iCursorConversion[]=
+{
+    IDC_ARROW,
+    IDC_IBEAM,
+    IDC_SIZENS,
+    IDC_SIZEWE,
+    IDC_SIZENWSE,
+    IDC_SIZENESW,
+    IDC_SIZEALL,
+    IDC_NO,
+    IDC_WAIT,
+    IDC_HAND
+};
+
+void setCursor(unsigned char iCursor)
+{
+    // Todo.. Properly.
+    SetCursor(LoadCursor(nullptr, iCursorConversion[iCursor]));
+}
+
+void getCursorPos(Point& po)
+{
+    POINT p;
+    GetCursorPos(&p);
+    po.x=p.x;
+    po.y=p.y;
+}
+
+// Default place log messages are sent to.
+void defaultLogListener(log::Level lvl, const char *message)
+{
+    OutputDebugString(message);
+}
+
+void getDesktopSize(int& w, int& h)
+{
+    w=GetSystemMetrics(SM_CXFULLSCREEN);
+    h=GetSystemMetrics(SM_CYFULLSCREEN);
+}
+
+String getClipboardText()
+{
+    if(!OpenClipboard(NULL))
+        return "";
+
+    HANDLE hData=GetClipboardData(CF_UNICODETEXT);
+
+    if(hData == NULL)
+    {
+        CloseClipboard();
+        return "";
+    }
+
+    std::wstring buffer(static_cast<wchar_t*>(GlobalLock(hData)));
+    const String str=utility::narrow(buffer);
+    GlobalUnlock(hData);
+    CloseClipboard();
+
+    return str;
+}
+
+bool setClipboardText(const String& str)
+{
+    if(!OpenClipboard(NULL))
+        return false;
+
+    EmptyClipboard();
+
+
+    // Create a buffer to hold the string
+    const std::wstring wstr(utility::widen(str));
+    const size_t dataSize=(wstr.length()+1)*sizeof(wchar_t);
+    HGLOBAL clipbuffer=GlobalAlloc(GMEM_DDESHARE, dataSize);
+
+    // Copy the string into the buffer
+    wchar_t* buffer=static_cast<wchar_t*>(GlobalLock(clipbuffer));
+    wcscpy_s(buffer, dataSize, wstr.c_str());
+    GlobalUnlock(clipbuffer);
+
+    // Place it on the clipboard
+    SetClipboardData(CF_UNICODETEXT, clipbuffer);
+    CloseClipboard();
+
+    return true;
+}
+
+bool fileOpen(const String& Name, const String& StartPath, const String& Extension,
+    String& filePathOut)
+{
+    char Filestring[FILESTRING_SIZE];
+    String returnstring;
+    char FilterBuffer[FILTERBUFFER_SIZE];
+    {
+        memset(FilterBuffer, 0, sizeof(FilterBuffer));
+        memcpy(FilterBuffer, Extension.c_str(),
+            std::min(Extension.length(), sizeof(FilterBuffer)));
+
+        for(int i=0; i < FILTERBUFFER_SIZE; i++)
+        {
+            if(FilterBuffer[i] == '|')
+                FilterBuffer[i]=0;
+        }
+    }
+    OPENFILENAMEA opf;
+    opf.hwndOwner=0;
+    opf.lpstrFilter=FilterBuffer;
+    opf.lpstrCustomFilter=0;
+    opf.nMaxCustFilter=0L;
+    opf.nFilterIndex=1L;
+    opf.lpstrFile=Filestring;
+    opf.lpstrFile[0]='\0';
+    opf.nMaxFile=FILESTRING_SIZE;
+    opf.lpstrFileTitle=0;
+    opf.nMaxFileTitle=50;
+    opf.lpstrInitialDir=StartPath.c_str();
+    opf.lpstrTitle=Name.c_str();
+    opf.nFileOffset=0;
+    opf.nFileExtension=0;
+    opf.lpstrDefExt="*.*";
+    opf.lpfnHook=nullptr;
+    opf.lCustData=0;
+    opf.Flags=(OFN_PATHMUSTEXIST|OFN_OVERWRITEPROMPT|OFN_NOCHANGEDIR)&~OFN_ALLOWMULTISELECT;
+    opf.lStructSize=sizeof(OPENFILENAME);
+
+    if(GetOpenFileNameA(&opf))
+    {
+        filePathOut=opf.lpstrFile;
+    }
+
+    return true;
+}
+
+bool folderOpen(const String& Name, const String& StartPath,
+    String& filePathOut)
+{
+    IFileDialog* pfd=nullptr;
+    bool bSuccess=false;
+
+    if(CoCreateInstance(CLSID_FileOpenDialog, nullptr, CLSCTX_INPROC_SERVER,
+        IID_PPV_ARGS(&pfd)) != S_OK)
+        return bSuccess;
+
+    DWORD dwOptions;
+
+    if(pfd->GetOptions(&dwOptions) != S_OK)
+    {
+        pfd->Release();
+        return bSuccess;
+    }
+
+    pfd->SetOptions(dwOptions|FOS_PICKFOLDERS);
+
+    //
+    // TODO: SetDefaultFolder -> StartPath
+    //
+
+    if(pfd->Show(nullptr) == S_OK)
+    {
+        IShellItem* psi;
+
+        if(pfd->GetResult(&psi) == S_OK)
+        {
+            WCHAR* strOut=nullptr;
+
+            if(psi->GetDisplayName(SIGDN_DESKTOPABSOLUTEPARSING, &strOut) != S_OK)
+                return bSuccess;
+
+            filePathOut=utility::narrow(strOut); // set result
+
+            CoTaskMemFree(strOut);
+            psi->Release();
+            bSuccess=true;
+        }
+    }
+
+    pfd->Release();
+    return bSuccess;
+}
+
+bool fileSave(const String& Name, const String& StartPath, const String& Extension,
+    String& filePathOut)
+{
+    char Filestring[FILESTRING_SIZE];
+    String returnstring;
+    char FilterBuffer[FILTERBUFFER_SIZE];
+    {
+        memset(FilterBuffer, 0, sizeof(FilterBuffer));
+        memcpy(FilterBuffer, Extension.c_str(),
+            std::min(Extension.size(), sizeof(FilterBuffer)));
+
+        for(int i=0; i < FILTERBUFFER_SIZE; i++)
+        {
+            if(FilterBuffer[i] == '|')
+                FilterBuffer[i]=0;
+        }
+    }
+    OPENFILENAMEA opf;
+    opf.hwndOwner=0;
+    opf.lpstrFilter=FilterBuffer;
+    opf.lpstrCustomFilter=0;
+    opf.nMaxCustFilter=0L;
+    opf.nFilterIndex=1L;
+    opf.lpstrFile=Filestring;
+    opf.lpstrFile[0]='\0';
+    opf.nMaxFile=FILESTRING_SIZE;
+    opf.lpstrFileTitle=0;
+    opf.nMaxFileTitle=50;
+    opf.lpstrInitialDir=StartPath.c_str();
+    opf.lpstrTitle=Name.c_str();
+    opf.nFileOffset=0;
+    opf.nFileExtension=0;
+    opf.lpstrDefExt="*.*";
+    opf.lpfnHook=nullptr;
+    opf.lCustData=0;
+    opf.Flags=(OFN_PATHMUSTEXIST|OFN_OVERWRITEPROMPT|OFN_NOCHANGEDIR) & ~OFN_ALLOWMULTISELECT;
+    opf.lStructSize=sizeof(OPENFILENAME);
+
+    if(GetSaveFileNameA(&opf))
+    {
+        filePathOut=opf.lpstrFile;
+    }
+
+    return true;
+}
+
+void* createPlatformWindow(int x, int y, int w, int h,
+    const String& strWindowTitle)
+{
+    CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+    WNDCLASSA wc;
+    ZeroMemory(&wc, sizeof(wc));
+    wc.style=CS_OWNDC|CS_DROPSHADOW;
+    wc.lpfnWndProc=DefWindowProc;
+    wc.hInstance=GetModuleHandle(nullptr);
+    wc.lpszClassName="GWENI_Window_Class";
+    wc.hCursor=LoadCursor(nullptr, IDC_ARROW);
+    RegisterClassA(&wc);
+    HWND hWindow=CreateWindowExA(WS_EX_APPWINDOW|WS_EX_ACCEPTFILES, wc.lpszClassName,
+        strWindowTitle.c_str(), WS_POPUP|WS_VISIBLE, x, y, w, h, nullptr, nullptr,
+        GetModuleHandle(nullptr), nullptr);
+    ShowWindow(hWindow, SW_SHOW);
+    SetForegroundWindow(hWindow);
+    SetFocus(hWindow);
+    // Curve the corners
+    {
+        HRGN rgn=CreateRoundRectRgn(0, 0, w+1, h+1, 4, 4);
+        SetWindowRgn(hWindow, rgn, false);
+    }
+    return (void*)hWindow;
+}
+
+void destroyPlatformWindow(void* ptr)
+{
+    DestroyWindow((HWND)ptr);
+    CoUninitialize();
+}
+
+bool messagePump(void* window)
+{
+    //g_input.initialize(window);
+    //MSG msg;
+
+    //while (PeekMessage(&msg, (HWND)window, 0, 0, PM_REMOVE))
+    //{
+    //    if (g_input.ProcessMessage(msg))
+    //        continue;
+
+    //    if (msg.message == WM_PAINT)
+    //        ptarget->Redraw();
+
+    //    TranslateMessage(&msg);
+    //    DispatchMessage(&msg);
+    //}
+
+    //// If the active window has changed then force a redraw of our canvas
+    //// since we might paint ourselves a different colour if we're inactive etc
+    //{
+    //    static HWND g_lastFocus = NULL;
+
+    //    if (GetActiveWindow() != g_lastFocus)
+    //    {
+    //        g_lastFocus = GetActiveWindow();
+    //        return true;
+    //    }
+    //}
+    //
+    return false;
+}
+
+void setBoundsPlatformWindow(void* ptr, int x, int y, int w, int h)
+{
+    SetWindowPos((HWND)ptr, HWND_NOTOPMOST, x, y, w, h,
+        SWP_NOOWNERZORDER|SWP_NOACTIVATE|SWP_NOCOPYBITS|SWP_NOSENDCHANGING);
+    // Curve the corners
+    {
+        HRGN rgn=CreateRoundRectRgn(0, 0, w+1, h+1, 4, 4);
+        SetWindowRgn((HWND)ptr, rgn, false);
+    }
+}
+
+void setWindowMaximized(void* ptr, bool bMax, Point& newPos,
+    Point& newSize)
+{
+    if(bMax)
+    {
+        ShowWindow((HWND)ptr, SW_SHOWMAXIMIZED);
+        RECT rect;
+        SystemParametersInfo(SPI_GETWORKAREA, 0, &rect, 0);    // size excluding
+                                                               // task bar
+        SetWindowPos((HWND)ptr, HWND_NOTOPMOST, rect.left, rect.top, rect.right-rect.left,
+            rect.bottom-rect.top,
+            SWP_NOOWNERZORDER|SWP_NOACTIVATE|SWP_NOCOPYBITS|SWP_NOSENDCHANGING);
+        // Remove the corner curves
+        {
+            SetWindowRgn((HWND)ptr, nullptr, false);
+        }
+    }
+    else
+    {
+        ShowWindow((HWND)ptr, SW_RESTORE);
+        // Curve the corners
+        {
+            RECT r;
+            GetWindowRect((HWND)ptr, &r);
+            HRGN rgn=CreateRoundRectRgn(0, 0, (r.right - r.left)+1, (r.bottom - r.top)+1, 4, 4);
+            SetWindowRgn((HWND)ptr, rgn, false);
+        }
+    }
+
+    RECT r;
+    GetWindowRect((HWND)ptr, &r);
+    newSize.x=r.right-r.left;
+    newSize.y=r.bottom-r.top;
+    newPos.x=r.left;
+    newPos.y=r.top;
+}
+
+void setWindowMinimized(void* ptr, bool bMinimized)
+{
+    if(bMinimized)
+        ShowWindow((HWND)ptr, SW_SHOWMINIMIZED);
+    else
+        ShowWindow((HWND)ptr, SW_RESTORE);
+}
+
+bool isFocussedPlatformWindow(void* ptr)
+{
+    return GetActiveWindow() == (HWND)ptr;
+}
+
+}//namespace gweni
+}//namespace platform

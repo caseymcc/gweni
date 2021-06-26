@@ -1,0 +1,8 @@
+/*
+ *  Gweni
+ *  Copyright (c) 2013-17 Billy Quith
+ *  See license in Gweni.h
+ */
+
+#define GWENI_VERSION ((@GWENI_VERSION_MAJOR@)*1000000 + (@GWENI_VERSION_MINOR@)*1000 + (@GWENI_VERSION_PATCH@))
+#define GWENI_VERSION_STR "@GWENI_VERSION_STR@"

@@ -1,0 +1,28 @@
+#ifndef _@target_name@_filesystem_h_
+#define _@target_name@_filesystem_h_
+
+#define @target_name@_BOOST_FILESYSTEM 0
+#define @target_name@_STD_FILESYSTEM 1
+#define @target_name@_EXPERIMENTAL_FILESYSTEM 2
+
+#if @target_name@_FILESYSTEM == @target_name@_STD_FILESYSTEM
+#include <filesystem>
+#elif @target_name@_FILESYSTEM == @target_name@_EXPERIMENTAL_FILESYSTEM
+#include <experimental/filesystem>
+#else
+#include <boost/filesystem>
+#endif
+
+namespace @target_name@
+{
+#if @target_name@_FILESYSTEM == @target_name@_STD_FILESYSTEM
+namespace fs=std::filesystem;
+#elif @target_name@_FILESYSTEM == @target_name@_EXPERIMENTAL_FILESYSTEM
+namespace fs=std::experimental::filesystem;
+#else
+namespace fs=boost::filesystem;
+#endif
+}//@target_name@
+
+#endif//_@target_name@_filesystem_h_
+
