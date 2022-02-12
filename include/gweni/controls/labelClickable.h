@@ -21,7 +21,8 @@ public:
 
     GWENI_CONTROL(LabelClickable, Button);
 
-    void render(skin::Base *skin) override;
+public:
+    //void render(skin::Base *skin) override;
     void updateColors() override;
 };
 

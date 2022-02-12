@@ -72,14 +72,14 @@ void RichLabel::splitLabel(const String &text, const Font &font,
     int iSpaceLeft=getWidth()-x;
     // Does the whole word fit in?
     {
-        Point StringSize=getSkin()->getRender()->measureText(font, text);
+        Point StringSize=getSkin()->getRenderer()->measureText(font, text);
 
         if(iSpaceLeft > StringSize.x)
             return createLabel(text, txt, x, y, lineheight, true);
     }
     // If the first word is bigger than the line, just give up.
     {
-        Point WordSize=getSkin()->getRender()->measureText(font, lst[0]);
+        Point WordSize=getSkin()->getRenderer()->measureText(font, lst[0]);
 
         if(WordSize.x >= iSpaceLeft)
         {
@@ -96,7 +96,7 @@ void RichLabel::splitLabel(const String &text, const Font &font,
 
     for(size_t i=0; i < lst.size(); i++)
     {
-        Point WordSize=getSkin()->getRender()->measureText(font, strNewString+lst[i]);
+        Point WordSize=getSkin()->getRenderer()->measureText(font, strNewString+lst[i]);
 
         if(WordSize.x > iSpaceLeft)
         {
@@ -127,7 +127,7 @@ void RichLabel::createLabel(const String &text, const DividedText &txt, int &x, 
     //
     // This string is too long for us, split it up.
     //
-    Point p=getSkin()->getRender()->measureText(*font, text);
+    Point p=getSkin()->getRenderer()->measureText(*font, text);
 
     if(lineheight == -1)
         lineheight=p.y;
@@ -144,7 +144,7 @@ void RichLabel::createLabel(const String &text, const DividedText &txt, int &x, 
     if(x+p.x >= getWidth())
         createNewline(x, y, lineheight);
 
-    Label *label=new Label(this);
+    Label *label=newChild<Label>();
     label->setText(x == 0?trimLeft<String>(text,
         " "):text);
     label->setTextColor(txt.color);

@@ -24,10 +24,13 @@ public:
         setMouseInputEnabled(false);
     }
 
+public:
     void render(skin::Base *skin) override
     {
 //        skin->drawMenuRightArrow(this, skin::Generate);
-        skin->drawControl(this);
+//        skin->drawControl(this);
+        if(getStateChange() != StateChange_Nothing)
+            m_skinControl->update(skin->getRenderer(), this);
     }
 
 };
@@ -50,7 +53,9 @@ MenuItem::~MenuItem()
 void MenuItem::render(skin::Base *skin)
 {
 //    skin->drawMenuItem(this, skin::Generate, isMenuOpen(), m_checkable?m_checked:false);
-    skin->drawControl(this);
+//    skin->drawControl(this);
+    if(getStateChange() != StateChange_Nothing)
+        m_skinControl->update(skin->getRenderer(), this);
 
     // HACK!
     if(m_accelerator)
@@ -69,12 +74,12 @@ Menu *MenuItem::getMenu()
 {
     if(!m_menu)
     {
-        m_menu=new Menu(getCanvas());
+        m_menu=getCanvas()->newChild<Menu>();
         m_menu->setHidden(true);
 
         if(!m_onStrip)
         {
-            m_submenuArrow=new RightArrow(this);
+            m_submenuArrow=newChild<RightArrow>();
             m_submenuArrow->setSize(15, 15);
         }
 
@@ -171,7 +176,7 @@ void MenuItem::setAccelerator(const String &strAccelerator)
     if(strAccelerator.empty())
         return;
 
-    m_accelerator=new Label(this);
+    m_accelerator=newChild<Label>();
     m_accelerator->dock(Position::Right);
     m_accelerator->setAlignment(Position::Right|Position::CenterV);
     m_accelerator->setText(strAccelerator);

@@ -10,7 +10,8 @@ class NumericDemo : public controls::Base
 {
 public:
     GWENI_CONTROL(NumericDemo, controls::Base);
-
+    
+public:
     void onButtonA(event::Info info);
 
 };

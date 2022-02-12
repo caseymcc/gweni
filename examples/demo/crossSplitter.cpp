@@ -6,63 +6,66 @@
 namespace gweni
 {
 
-CrossSplitterDemo::CrossSplitterDemo(controls::Base *parent, const String &name):
-    Base(parent)
+CrossSplitterDemo::CrossSplitterDemo(const String &name):
+    Base()
+{}
+
+void CrossSplitterDemo::init(const String &name)
 {
     dock(Position::Fill);
 
     m_splittersVisible=false;
     m_curZoom=0;
 
-    m_splitter=new controls::CrossSplitter(this);
+    m_splitter=newChild<controls::CrossSplitter>();
 
     m_splitter->setPos(0, 0);
     m_splitter->dock(Position::Fill);
     {
-        controls::Button *testButton=new controls::Button(m_splitter);
+        controls::Button *testButton=m_splitter->newChild<controls::Button>();
 
         testButton->setText("TOPLEFT");
         m_splitter->setPanel(0, testButton);
     }
     {
-        controls::Button *testButton=new controls::Button(m_splitter);
+        controls::Button *testButton=m_splitter->newChild<controls::Button>();
 
         testButton->setText("TOPRIGHT");
         m_splitter->setPanel(1, testButton);
     }
     {
-        controls::Button *testButton=new controls::Button(m_splitter);
+        controls::Button *testButton=m_splitter->newChild<controls::Button>();
 
         testButton->setText("BOTTOMRIGHT");
         m_splitter->setPanel(2, testButton);
     }
     {
-        controls::Button *testButton=new controls::Button(m_splitter);
+        controls::Button *testButton=m_splitter->newChild<controls::Button>();
 
         testButton->setText("BOTTOMLEFT");
         m_splitter->setPanel(3, testButton);
     }
 
     //Status bar to hold unit testing buttons
-    controls::StatusBar *status=new controls::StatusBar(this);
+    controls::StatusBar *status=newChild<controls::StatusBar>();
 
     status->dock(Position::Bottom);
     {
-        controls::Button *button=new controls::Button(status);
+        controls::Button *button=status->newChild<controls::Button>();
 
         button->setText("Zoom");
         button->onPressCaller.add(this, &CrossSplitterDemo::zoomTest);
         status->addControl(button, false);
     }
     {
-        controls::Button *button=new controls::Button(status);
+        controls::Button *button=status->newChild<controls::Button>();
 
         button->setText("UnZoom");
         button->onPressCaller.add(this, &CrossSplitterDemo::unZoomTest);
         status->addControl(button, false);
     }
     {
-        controls::Button *button=new controls::Button(status);
+        controls::Button *button=status->newChild<controls::Button>();
 
         button->setText("CenterPanels");
         button->onPressCaller.add(this, &CrossSplitterDemo::centerPanels);

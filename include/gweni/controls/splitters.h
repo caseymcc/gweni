@@ -29,6 +29,7 @@ class GWENI_EXPORT SplitterVertical: public controls::Base
         setScaling(false, 100);
     }
 
+public:
     void postLayout(skin::Base *skin) override
     {
         refreshContainers();
@@ -99,6 +100,7 @@ class GWENI_EXPORT SplitterHorizontal: public SplitterVertical
         m_splitter->setPos(100, 0);
     }
 
+public:
     void refreshContainers() override
     {
         const gweni::Rect &inner=getInnerBounds();

@@ -21,6 +21,7 @@ class GWENI_EXPORT VerticalScrollBar: public BaseScrollBar
 {
     GWENI_CONTROL(VerticalScrollBar, BaseScrollBar);
 
+public:
     void layout(skin::Base *skin) override;
 
     void onMouseClickLeft(int x, int y, bool down) override;

@@ -11,6 +11,7 @@ class TextBoxDemo : public controls::Base
 public:
     GWENI_CONTROL(TextBoxDemo, controls::Base);
 
+public:
     void onEdit(event::Info info);
 
     void onSubmit(event::Info info);

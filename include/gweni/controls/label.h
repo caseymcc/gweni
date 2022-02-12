@@ -20,9 +20,9 @@ namespace controls
 //
 class GWENI_EXPORT Label: public controls::Base
 {
-public:
     GWENI_CONTROL(Label, controls::Base);
 
+public:
     void preDelete(gweni::skin::Base *skin) override;
 
     virtual void setText(const String &str, bool doEvents=true);
@@ -32,8 +32,8 @@ public:
         return m_text->getText();
     }
 
-    void render(skin::Base *skin) override
-    {}
+//    void render(skin::Base *skin) override
+//    {}
 
     void postLayout(skin::Base *skin) override;
 

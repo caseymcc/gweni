@@ -22,7 +22,7 @@ GWENI_CONTROL_CONSTRUCTOR(WindowControl)
     m_modal=nullptr;
     m_deleteOnClose=false;
 
-    m_titleBar=new internal::Dragger(this);
+    m_titleBar=newChild<internal::Dragger>();
     m_titleBar->setHeight(24);
     m_titleBar->setPadding(Padding(0, 0, 0, 0));
     m_titleBar->setMargin(Margin(0, 0, 0, 4));
@@ -30,14 +30,14 @@ GWENI_CONTROL_CONSTRUCTOR(WindowControl)
     m_titleBar->setSizeFlags({SizeFlag::Expand, SizeFlag::Fixed});
     m_titleBar->dock(Position::Top);
 
-    m_title=new Label(m_titleBar);
+    m_title=m_titleBar->newChild<Label>();
     m_title->setAlignment(Position::Left|Position::CenterV);
     m_title->setText("Window");
     m_title->dock(Position::Fill);
     m_title->setPadding(Padding(8, 0, 0, 0));
     m_title->setTextColor(getSkin()->Colors.Window.TitleInactive);
 
-    m_closeButton=new WindowCloseButton(m_titleBar);
+    m_closeButton=m_titleBar->newChild<WindowCloseButton>();
     m_closeButton->setText("");
     m_closeButton->setSize(29, 24);
     m_closeButton->setSizeFlags({SizeFlag::Fixed, SizeFlag::Fixed});
@@ -49,7 +49,7 @@ GWENI_CONTROL_CONSTRUCTOR(WindowControl)
 
     // Create a blank content control, dock it to the top - Should this be a
     // ScrollControl?
-    m_innerPanel=new Base(this);
+    m_innerPanel=newChild<Base>();
     m_innerPanel->dock(Position::Fill);
 
     // hide the top resizer as we don't want it for window, we have a Dragger
@@ -74,7 +74,7 @@ void WindowControl::makeModal(bool drawBackground)
     if(m_modal)
         return;
 
-    m_modal=new internal::Modal(getCanvas());
+    m_modal=getCanvas()->newChild<internal::Modal>();
     setParent(m_modal);
     m_modal->setShouldDrawBackground(drawBackground);
 }
@@ -111,24 +111,24 @@ bool WindowControl::isOnTop()
     return false;
 }
 
-void WindowControl::render(skin::Base *skin)
-{
-    bool bIsFocussed=isOnTop();
-
-    if(bIsFocussed)
-        m_title->setTextColor(getSkin()->Colors.Window.TitleActive);
-    else
-        m_title->setTextColor(getSkin()->Colors.Window.TitleInactive);
-
-//    skin->drawWindow(this, skin::Generate, m_titleBar->bottom(), bIsFocussed);
-    skin->drawControl(this);
-}
+//void WindowControl::render(skin::Base *skin)
+//{
+//    bool bIsFocussed=isOnTop();
+//
+//    if(bIsFocussed)
+//        m_title->setTextColor(getSkin()->Colors.Window.TitleActive);
+//    else
+//        m_title->setTextColor(getSkin()->Colors.Window.TitleInactive);
+//
+////    skin->drawWindow(this, skin::Generate, m_titleBar->bottom(), bIsFocussed);
+//    skin->drawControl(this);
+//}
 
 void WindowControl::renderUnder(skin::Base *skin)
 {
-    ParentClass::renderUnder(skin);
-//    skin->drawShadow(this, skin::Generate);
-    skin->drawControl(this);
+//    ParentClass::renderUnder(skin);
+////    skin->drawShadow(this, skin::Generate);
+//    skin->drawControl(this);
 }
 
 void WindowControl::setTitle(gweni::String title)

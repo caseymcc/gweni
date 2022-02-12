@@ -25,6 +25,7 @@ public:
 
     GWENI_CONTROL(MenuItem, Button);
 
+public:
     virtual ~MenuItem();
 
     void render(skin::Base *skin) override;

@@ -25,8 +25,14 @@ GWENI_CONTROL_CONSTRUCTOR(ScrollBarBar)
 
 void ScrollBarBar::render(skin::Base *skin)
 {
+
 //    skin->drawScrollBarBar(this, skin::Generate, m_depressed, isHovered(), m_horizontal);
-    skin->drawControl(this);
+    if(getStateChange() != StateChange_Nothing)
+    {
+        if(m_skinControl)
+            m_skinControl->update(skin->getRenderer(), this);
+    }
+
     ParentClass::render(skin);
 }
 

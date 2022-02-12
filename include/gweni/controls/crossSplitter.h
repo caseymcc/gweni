@@ -16,12 +16,14 @@ namespace gweni
 {
 namespace controls
 {
+
 class GWENI_EXPORT CrossSplitter: public controls::Base
 {
 public:
 
     GWENI_CONTROL(CrossSplitter, controls::Base);
 
+public:
     void layout(skin::Base *skin) override;
 
     virtual float calculateValueVertical();
@@ -80,6 +82,7 @@ private:
 };
 
 
-}
-}
+}//namespace controls
+}//namespace gweni
+
 #endif//_gweni_controls_crosssplitter_h_

@@ -22,12 +22,7 @@ class ListBoxRow: public layout::TableRow
         setSelected(false);
     }
 
-    void render(skin::Base *skin) override
-    {
-//        skin->drawListBoxLine(this, skin::Generate, isSelected(), GetEven());
-        skin->drawControl(this);
-    }
-
+public:
     bool isSelected() const
     {
         return m_selected;
@@ -70,14 +65,14 @@ GWENI_CONTROL_CONSTRUCTOR(ListBox)
     setAutoHideBars(true);
     setMargin(Margin(1, 1, 1, 1));
     m_innerPanel->setPadding(Padding(2, 2, 2, 2));
-    m_table=new controls::layout::Table(this);
+    m_table=newChild<controls::layout::Table>();
     m_table->setColumnCount(1);
     m_multiSelect=false;
 }
 
 layout::TableRow *ListBox::addItem(const String &label, const String &name)
 {
-    ListBoxRow *row=new ListBoxRow(this);
+    ListBoxRow *row=newChild<ListBoxRow>();
     m_table->addRow(row);
     row->setCellText(0, label);
     row->setName(name);
@@ -89,12 +84,6 @@ void ListBox::RemoveItem(layout::TableRow *row)
 {
     m_selectedRows.erase(std::find(m_selectedRows.begin(), m_selectedRows.end(), row));
     m_table->remove(row);
-}
-
-void ListBox::render(skin::Base *skin)
-{
-//    skin->drawListBox(this, skin::Generate);
-    skin->drawControl(this);
 }
 
 void ListBox::layout(skin::Base *skin)

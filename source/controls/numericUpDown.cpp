@@ -20,15 +20,15 @@ namespace controls
 GWENI_CONTROL_CONSTRUCTOR(NumericUpDown)
 {
     setSize(100, 20);
-    controls::Base *splitter=new controls::Base(this);
+    controls::Base *splitter=newChild<controls::Base>();
     splitter->dock(Position::Right);
     splitter->setWidth(13);
-    NumericUpDownButton_Up *buttonUp=new NumericUpDownButton_Up(splitter);
+    NumericUpDownButton_Up *buttonUp=splitter->newChild<NumericUpDownButton_Up>();
     buttonUp->onPressCaller.add(this, &NumericUpDown::onButtonUp);
     buttonUp->setTabable(false);
     buttonUp->dock(Position::Top);
     buttonUp->setHeight(10);
-    NumericUpDownButton_Down *buttonDown=new NumericUpDownButton_Down(splitter);
+    NumericUpDownButton_Down *buttonDown=splitter->newChild<NumericUpDownButton_Down>();
     buttonDown->onPressCaller.add(this, &NumericUpDown::onButtonDown);
     buttonDown->setTabable(false);
     buttonDown->dock(Position::Fill);

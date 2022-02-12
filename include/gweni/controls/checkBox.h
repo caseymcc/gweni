@@ -24,7 +24,8 @@ public:
 
     GWENI_CONTROL(CheckBox, Button);
 
-    void render(skin::Base *skin) override;
+public:
+    //void render(skin::Base *skin) override;
     void onPress(event::Info) override;
 
     virtual void setChecked(bool checked);
@@ -59,21 +60,23 @@ private:
 class GWENI_EXPORT CheckBoxWithLabel: public Base
 {
 public:
-
     GWENI_CONTROL_INLINE(CheckBoxWithLabel, Base)
     {
         setSize(200, 19);
-        m_checkbox=new CheckBox(this);
+
+        m_checkbox=newChild<CheckBox>();
         m_checkbox->dock(Position::Left);
         m_checkbox->setMargin(Margin(0, 2, 2, 2));
         m_checkbox->setTabable(false);
-        m_label=new LabelClickable(this);
+        
+        m_label=newChild<LabelClickable>();
         m_label->dock(Position::Fill);
         m_label->onPressCaller.add(m_checkbox, &CheckBox::onPress);
         m_label->setTabable(false);
         setTabable(false);
     }
 
+public:
     virtual CheckBox *checkBox()
     {
         return m_checkbox;

@@ -28,6 +28,7 @@ public:
 
     GWENI_CONTROL(ResizableControl, Base);
 
+public:
     virtual void setClampMovement(bool shouldClamp)
     {
         m_clampMovement=shouldClamp;

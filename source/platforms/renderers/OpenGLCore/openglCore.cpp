@@ -16,6 +16,7 @@
 #include <gweni/platforms/windowProvider.h>
 #include <gweni/platforms/commonPlatform.h>
 #include <gweni/utility.h>
+#include <gweni/primitiveIds.h>
 
 #if defined(_WIN32)
 #   define WIN32_LEAN_AND_MEAN
@@ -33,6 +34,7 @@
 #include <algorithm>
 #include <fstream>
 #include <cassert>
+#include <limits>
 
  ////#define STBI_ASSERT(x)  // comment in for no asserts
  //#define STB_IMAGE_IMPLEMENTATION
@@ -219,14 +221,14 @@ bool OpenGLCore::ensureFont(const Font &font)
     return loadFont(font) == Font::Status::Loaded;
 }
 
-Texture::Status OpenGLCore::loadTexture(const Texture &texture)
+Texture::Status OpenGLCore::loadTexture(Texture &texture)
 {
     freeTexture(texture);
-    m_lastTexture=nullptr;
+    m_lastTexture=std::numeric_limits<size_t>::max();
 
     const String filename=getResourcePaths().getPath(ResourcePaths::Type::Texture, texture.name);
 
-    GLTextureData texData;
+    GLTextureData &texData=*getFreeTextureData();
 
     imglib::load(texData, filename.c_str());
 
@@ -246,7 +248,10 @@ Texture::Status OpenGLCore::loadTexture(const Texture &texture)
 
     // Create the opengl texture
     glGenTextures(1, &texData.m_textureId);
-    setTexture(texData.m_textureId);
+
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, texData.m_textureId);
+
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 
@@ -280,52 +285,92 @@ Texture::Status OpenGLCore::loadTexture(const Texture &texture)
     m_textureSizes[texData.m_textureId].x=texData.width;
     m_textureSizes[texData.m_textureId].y=texData.height;
 
-    m_lastTexture=&(*m_textures.insert(std::make_pair(texture, std::move(texData))).first);
+//    m_lastTexture=&(*m_textures.insert(std::make_pair(texture, std::move(texData))).first);
+    setTexture(texData.m_textureId);
+    m_lastTexture=texData.m_index;
+    texture.dataIndex=texData.m_index;
     return Texture::Status::Loaded;
 }
 
 void OpenGLCore::freeTexture(const gweni::Texture &texture)
 {
-    if(m_lastTexture != nullptr && m_lastTexture->first == texture)
-        m_lastTexture=nullptr;
+//    if(m_lastTexture != nullptr && m_lastTexture->first == texture)
+//        m_lastTexture=nullptr;
+    if((m_lastTexture != std::numeric_limits<size_t>::max()) && (m_lastTexture == texture.dataIndex))
+        m_lastTexture=std::numeric_limits<size_t>::max();
 
-    m_textures.erase(texture); // calls GLTextureData destructor
+    if((texture.dataIndex != std::numeric_limits<size_t>::max()) && (m_textureData[texture.dataIndex]))
+    {
+        m_freeTextureData.push_back(texture.dataIndex);
+        delete m_textureData[texture.dataIndex];
+        m_textureData[texture.dataIndex]=nullptr;
+    }
+    m_textures.erase(texture);
+//    m_textures.erase(texture); // calls GLTextureData destructor
+}
+
+GLTextureData *OpenGLCore::getFreeTextureData()
+{
+    GLTextureData *textureData;
+
+    if(!m_freeTextureData.empty())
+    {
+        size_t index=m_freeTextureData.back();
+        m_freeTextureData.pop_back();
+        textureData=m_textureData[index];
+    }
+    else
+    {
+        textureData=new GLTextureData();
+        textureData->m_index=m_textureData.size();
+        m_textureData.resize(m_textureData.size()+1);
+        m_textureData.back()=textureData;
+    }
+    return textureData;
 }
 
 TextureData OpenGLCore::getTextureData(const Texture &texture) const
 {
-    if(m_lastTexture != nullptr && m_lastTexture->first == texture)
-        return m_lastTexture->second;
-
-    auto it=m_textures.find(texture);
-    if(it != m_textures.cend())
-    {
-        return it->second;
-    }
-    // Texture not loaded :(
-    return TextureData();
+//    if(m_lastTexture != nullptr && m_lastTexture->first == texture)
+//        return m_lastTexture->second;
+//
+//    auto it=m_textures.find(texture);
+//    if(it != m_textures.cend())
+//    {
+//        return it->second;
+//    }
+//    // Texture not loaded :(
+//    return TextureData();
+    return *m_textureData[texture.dataIndex];
 }
 
 bool OpenGLCore::ensureTexture(const gweni::Texture &texture)
 {
-    if(m_lastTexture != nullptr)
+//    if(m_lastTexture != nullptr)
+    if(m_lastTexture != std::numeric_limits<size_t>::max())
     {
-        if(m_lastTexture->first == texture)
+        if(m_lastTexture == texture.dataIndex)
             return true;
     }
 
     // Was it loaded before?
-    auto it=m_textures.find(texture);
-    if(it != m_textures.end())
+//    auto it=m_textures.find(texture);
+//    if(it != m_textures.end())
+//    {
+//        m_lastTexture=&(*it);
+//        return true;
+//    }
+    if(texture.dataIndex != std::numeric_limits<size_t>::max())
     {
-        m_lastTexture=&(*it);
+        m_lastTexture=texture.dataIndex;
         return true;
     }
 
     // No, try load to it
 
     // LoadTexture sets m_lastTexture, if exist
-    return loadTexture(texture) == Texture::Status::Loaded;
+//    return loadTexture(texture) == Texture::Status::Loaded;
+    return false;
 }
 
 //-------------------------------------------------------------------------------
@@ -335,13 +380,18 @@ OpenGLCore::OpenGLCore(ResourcePaths &paths, const Rect &viewRect)
     , m_context(nullptr)
     , m_viewRect(viewRect)
     , m_currentTexture(0)
-    , m_indexes(minIndexSize)
-    , m_vertexes(minVertexSize)
+//    , m_indexes(minIndexSize)
+//    , m_vertexes(minVertexSize)
     , m_clipping(false)
-    , m_clippingBoxes(minClippingSize)
+//    , m_clippingBoxes(minClippingSize)
     , m_lastFont(nullptr)
-    , m_lastTexture(nullptr)
-{}
+    , m_lastTexture(std::numeric_limits<size_t>::max())
+{
+    m_indexes.reserve(minIndexSize);
+    m_vertexes.reserve(minVertexSize);
+
+    m_clippingBoxes.reserve(minClippingSize);
+}
 
 OpenGLCore::~OpenGLCore()
 {}
@@ -395,20 +445,21 @@ void OpenGLCore::init()
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m_indexBuffer);
 
     glBindBuffer(GL_ARRAY_BUFFER, m_vertexBuffer);
-    glEnableVertexAttribArray(0); // Attrib '0' is render type
-    glVertexAttribIPointer(0, 1, GL_UNSIGNED_BYTE, sizeof(Vertex), (GLvoid*)(offsetof(Vertex, type)));
-    glEnableVertexAttribArray(1); // Attrib '1' is vertex pos
-    glVertexAttribIPointer(1, 3, GL_UNSIGNED_SHORT, sizeof(Vertex), (GLvoid*)(offsetof(Vertex, x)));
-    glEnableVertexAttribArray(2); // Attrib '2' is texture coord or packeted color
-    glVertexAttribIPointer(2, 2, GL_UNSIGNED_SHORT, sizeof(Vertex), (GLvoid*)(offsetof(Vertex, tx)));
+    size_t attrib=0;
+    glEnableVertexAttribArray(attrib); // Attrib '0' is render type
+    glVertexAttribIPointer(attrib++, 1, GL_UNSIGNED_SHORT, sizeof(Vertex), (GLvoid*)(offsetof(Vertex, style)));
+    glEnableVertexAttribArray(attrib); // Attrib '1' is vertex pos
+    glVertexAttribIPointer(attrib++, 3, GL_UNSIGNED_SHORT, sizeof(Vertex), (GLvoid*)(offsetof(Vertex, x)));
+    glEnableVertexAttribArray(attrib); // Attrib '2' is texture coord or packeted color
+    glVertexAttribIPointer(attrib++, 2, GL_UNSIGNED_SHORT, sizeof(Vertex), (GLvoid*)(offsetof(Vertex, tx)));
 
-    glBindBuffer(GL_ARRAY_BUFFER, m_clipBuffer);
-    glEnableVertexAttribArray(3); // Attrib '3' is show
-    glVertexAttribIPointer(3, 1, GL_UNSIGNED_BYTE, sizeof(Box), (GLvoid*)(offsetof(Box, state)));
-    glVertexAttribDivisor(3, 6);
-    glEnableVertexAttribArray(4); // Attrib '4' is clipping
-    glVertexAttribIPointer(4, 4, GL_UNSIGNED_SHORT, sizeof(Box), (GLvoid*)(offsetof(Box, x0)));
-    glVertexAttribDivisor(4, 6);
+//    glBindBuffer(GL_ARRAY_BUFFER, m_clipBuffer);
+//    glEnableVertexAttribArray(2); // Attrib '3' is show
+//    glVertexAttribIPointer(2, 1, GL_UNSIGNED_SHORT, sizeof(Box), (GLvoid*)(offsetof(Box, state)));
+//    glVertexAttribDivisor(2, 1);
+//    glEnableVertexAttribArray(3); // Attrib '4' is clipping
+//    glVertexAttribIPointer(3, 4, GL_UNSIGNED_SHORT, sizeof(Box), (GLvoid*)(offsetof(Box, x0)));
+//    glVertexAttribDivisor(3, 1);
 
     glBindVertexArray(0);
 
@@ -443,16 +494,16 @@ void OpenGLCore::init()
 //layout (location = 1) in vec2 inTexCoords;
 //layout (location = 2) in vec4 inColor;
 
-layout (location = 0) in uint type;
+layout (location = 0) in uint style;
 layout (location = 1) in uvec3 inPosition;
 layout (location = 2) in uvec2 inTexCoords;
-layout (location = 3) in uint inState;
-layout (location = 4) in ivec4 inClippingBox;
+//layout (location = 2) in uint inState;
+//layout (location = 3) in ivec4 inClippingBox;
 
 out vec2 TexCoords;
 out vec4 VertexColor;
 flat out uint ShaderType;
-out vec4 clippingBox;
+//out vec4 clippingBox;
 
 uniform mat4 projection;
 uniform uvec2 textureSize;
@@ -460,16 +511,16 @@ uniform uvec2 textureSize;
 void main()
 {
 //    ShaderType = int(inPosition.z);
-    ShaderType = type;
-    clippingBox = vec4(inClippingBox);
+    ShaderType = style;
+//    clippingBox = vec4(inClippingBox);
 
     TexCoords = vec2(inTexCoords)/vec2(textureSize);
-    VertexColor.x = float((inTexCoords.x >> 8) & 0xffu);
-    VertexColor.y = float(inTexCoords.x & 0xffu);
-    VertexColor.z = float((inTexCoords.y >> 8) & 0xffu);
-    VertexColor.w = float(inTexCoords.y & 0xffu);
+    VertexColor.x = float((inTexCoords.x >> 8) & 0xffu)/255.0;
+    VertexColor.y = float(inTexCoords.x & 0xffu)/255.0;
+    VertexColor.z = float((inTexCoords.y >> 8) & 0xffu)/255.0;
+    VertexColor.w = float(inTexCoords.y & 0xffu)/255.0;
 
-    if(inState == 0u)//item has been hidden, move all coords to 0.0f
+    if(style == 0u)//item has been hidden, move all coords to 0.0f
         gl_Position = vec4(0.0f, 0.0f, 0.0f, 1.0f);
     else
         gl_Position = projection * vec4(float(inPosition.x), float(inPosition.y), float(inPosition.z), 1.0f);
@@ -483,29 +534,37 @@ out vec4 FragColor;
 in vec2 TexCoords;
 in vec4 VertexColor;
 flat in uint ShaderType;
-in vec4 clippingBox;
+//in vec4 clippingBox;
 
 uniform sampler2D texture1;
 void main()
 {
     //check if frag should be clipped
-    if(gl_FragCoord.x < clippingBox.x)
-        discard;
-    else if(gl_FragCoord.y < clippingBox.y)
-        discard;
-    else if(gl_FragCoord.x > clippingBox.z)
-        discard;
-    else if(gl_FragCoord.y > clippingBox.w)
-        discard;
+//    if(gl_FragCoord.x < clippingBox.x)
+//        discard;
+//    else if(gl_FragCoord.y < clippingBox.y)
+//        discard;
+//    else if(gl_FragCoord.x > clippingBox.z)
+//        discard;
+//    else if(gl_FragCoord.y > clippingBox.w)
+//        discard;
 
-    if (ShaderType == 0u)
+    if(ShaderType == 0u)
+        FragColor = vec4(0.0, 0.0, 0.0, 0.0);
+    else if(ShaderType == 1u)
         FragColor = VertexColor;
-    else if (ShaderType == 1u)
-        FragColor = texture(texture1, TexCoords);// * VertexColor;
+//        FragColor = vec4(1.0, 0.0, 0.0, 1.0);
     else if (ShaderType == 2u)
+    {
+        FragColor = texture(texture1, TexCoords);// * VertexColor;
+        FragColor.a=1.0f;
+//        FragColor = vec4(0.0, 1.0, 0.0, 1.0);
+    }
+    else if (ShaderType == 3u)
     {
         float color = texture(texture1, TexCoords).r;
         FragColor = vec4(VertexColor.rgb, color);
+//        FragColor = vec4(0.0, 0.0, 1.0, 1.0);
     }
 })";
 
@@ -528,6 +587,7 @@ out vec2 texCoord;
 out vec4 color;
 out float shift;
 out float gamma;
+flat out int draw;
 
 void main()
 {
@@ -535,7 +595,17 @@ void main()
     color=vertColor;
     shift=vertShift;
     gamma=vertGamma;
-    gl_Position = projection * vec4(float(vertPosition.x), float(vertPosition.y), float(vertPosition.z), 1.0f);
+
+    if(vertPosition.z < 0.0f)
+    {
+        draw=0;
+        gl_Position = vec4(0.0f, 0.0f, 0.0f, 1.0f);
+    }
+    else
+    {
+        draw=1;
+        gl_Position = projection * vec4(float(vertPosition.x), float(vertPosition.y), float(vertPosition.z)+shift, 1.0f);
+    }
 //    gl_Position = projection * vec4(float(vertPosition.x), float(vertPosition.y), 1000.0f, 1.0f);
 }
     )";
@@ -543,17 +613,23 @@ void main()
     auto textFragSource=R"(
 #version 330 core
 
+out vec4 FragColor;
+
 in vec2 texCoord;
 in vec4 color;
 in float shift;
 in float gamma;
+flat in int draw;
 
 uniform sampler2D texture1;
 void main()
 {
     float a = texture2D(texture1, texCoord).r;
 
-    gl_FragColor = color * pow( a, 1.0/gamma );
+    if(draw != 0)
+        FragColor = color * pow( a, 1.0/gamma );
+    else
+        discard;
 }
     )";
 
@@ -609,6 +685,7 @@ void OpenGLCore::flush()
         glBindVertexArray(m_vertexArray);
 
         glDrawElements(GL_TRIANGLES, m_indexes.size(), (GLenum)GL_UNSIGNED_SHORT, 0);
+
         glBindVertexArray(0);
     }
 
@@ -637,6 +714,7 @@ void OpenGLCore::flush()
         glBindVertexArray(m_textVertexArray);
 
         glDrawElements(GL_TRIANGLES, m_textIndexes.size(), (GLenum)GL_UNSIGNED_SHORT, 0);
+
         glBindVertexArray(0);
     }
 
@@ -711,41 +789,41 @@ void OpenGLCore::flush()
 //    glFlush();
 }
 
-void OpenGLCore::setVertex(Vertex &vertex, int x, int y, float u, float v)
+void OpenGLCore::setVertex(Vertex &vertex, uint8_t type, int x, int y, int z, float u, float v)
 {
-    vertex.type=m_activeProgram;
+    vertex.style=type;
 
     vertex.x=x;
 //    vertex.y=m_viewRect.h - y;
     vertex.y=y;
-    vertex.z=m_zIndex;// m_activeProgram;
+    vertex.z=z;// m_activeProgram;
 
-    if(m_activeProgram == 1)
+//    if(m_activeProgram == 1)
     {
         vertex.tx=u;
         vertex.ty=v;
     }
-    else
-    {
-        vertex.tx=(m_color.r<<8)&m_color.g;
-        vertex.ty=(m_color.b<<8)&m_color.a;
-//        vertex.color=glm::vec4(
-//            m_color.r / 255.0f,
-//            m_color.g / 255.0f,
-//            m_color.b / 255.0f,
-//            m_color.a / 255.0f
-//        );
-    }
+//    else
+//    {
+//        vertex.tx=(m_color.r<<8)&m_color.g;
+//        vertex.ty=(m_color.b<<8)&m_color.a;
+////        vertex.color=glm::vec4(
+////            m_color.r / 255.0f,
+////            m_color.g / 255.0f,
+////            m_color.b / 255.0f,
+////            m_color.a / 255.0f
+////        );
+//    }
 }
 
 void OpenGLCore::addVert(int x, int y, float u, float v)
 {
     // OpenGL origin is bottom-left. Gweni origin is top-left.
 
-    Vertex vertex;
-
-    setVertex(vertex, x, y, u, v);
-    m_vertexes.emplace_back(vertex);
+//    Vertex vertex;
+//
+//    setVertex(vertex, x, y, u, v);
+//    m_vertexes.emplace_back(vertex);
 }
 
 void OpenGLCore::setTexture(unsigned int texture)
@@ -775,7 +853,7 @@ void OpenGLCore::setTexture(unsigned int texture)
     m_currentTextureSize.y=textureSize.y;
 }
 
-void OpenGLCore::drawFilledRect(size_t primitiveId, gweni::Rect rect)
+void OpenGLCore::drawFilledRect(size_t primitiveId, gweni::Rect rect, int zIndex)
 {
     m_activeProgram=0;
     m_zIndex++;
@@ -790,7 +868,7 @@ void OpenGLCore::drawFilledRect(size_t primitiveId, gweni::Rect rect)
 
     Box &box=m_clippingBoxes[primitiveId];
 
-    box.state=1;
+//    box.state=1;
     if(m_clipping)
     {
         gweni::Rect rect=clipRegion();
@@ -821,11 +899,11 @@ void OpenGLCore::drawFilledRect(size_t primitiveId, gweni::Rect rect)
     if(m_vertexes.size() < vertexIndex+4)
         m_vertexes.resize(vertexIndex+4);
 
-    setVertex(m_vertexes[vertexIndex++], rect.x, rect.y);
-    setVertex(m_vertexes[vertexIndex++], rect.x+rect.w, rect.y);
-    setVertex(m_vertexes[vertexIndex++], rect.x, rect.y+rect.h);
+    setVertex(m_vertexes[vertexIndex++], 1, rect.x, rect.y, zIndex, m_color.rg, m_color.ba);
+    setVertex(m_vertexes[vertexIndex++], 1, rect.x+rect.w, rect.y, zIndex, m_color.rg, m_color.ba);
+    setVertex(m_vertexes[vertexIndex++], 1, rect.x, rect.y+rect.h, zIndex, m_color.rg, m_color.ba);
 //    setVertex(m_vertexes[vertexIndex++], rect.x+rect.w, rect.y);
-    setVertex(m_vertexes[vertexIndex++], rect.x+rect.w, rect.y+rect.h);
+    setVertex(m_vertexes[vertexIndex++], 1, rect.x+rect.w, rect.y+rect.h, zIndex, m_color.rg, m_color.ba);
 //    setVertex(m_vertexes[vertexIndex++], rect.x, rect.y+rect.h);
 
 //    addVert(rect.x, rect.y);
@@ -862,25 +940,35 @@ void OpenGLCore::endClip()
 //    glDisable(GL_SCISSOR_TEST);
 }
 
-void OpenGLCore::generatePrimitive(size_t primitiveId)
+void OpenGLCore::generatePrimitive(size_t &primitiveId)
 {
+    primitiveId=getPrimitiveId(nullptr);
 
+    //resize indexes/vertexes to covert the primitive
+    size_t index=primitiveId*6;
+    size_t vertexIndex=primitiveId*4;
+
+    if(m_indexes.size() < index + 6)
+        m_indexes.resize(index+6);
+
+    if(m_vertexes.size() < vertexIndex+4)
+        m_vertexes.resize(vertexIndex+4);
 }
 
-void OpenGLCore::removePrimitive(size_t primitiveId)
+void OpenGLCore::releasePrimitive(size_t primitiveId)
 {
-
+    releasePrimitiveId(primitiveId);
 }
 
-void OpenGLCore::drawTexturedRect(const gweni::Texture &texture, size_t primitiveId, gweni::Rect rect,
+void OpenGLCore::drawTexturedRect(const gweni::Texture &texture, size_t primitiveId, gweni::Rect rect, int zIndex,
     float u1, float v1, float u2, float v2)
 {
     if(!ensureTexture(texture))
-        return drawMissingImage(primitiveId, rect);
+        return drawMissingImage(primitiveId, rect, zIndex);
 
-    m_zIndex++;
+//    m_zIndex++;
 
-    GLTextureData &texData=m_lastTexture->second;
+    GLTextureData &texData=*m_textureData[m_lastTexture];
 
     translate(rect);
 
@@ -900,7 +988,7 @@ void OpenGLCore::drawTexturedRect(const gweni::Texture &texture, size_t primitiv
 
     Box &box=m_clippingBoxes[primitiveId];
 
-    box.state=1;
+//    box.state=2;
     if(m_clipping)
     {
         gweni::Rect rect=clipRegion();
@@ -931,11 +1019,11 @@ void OpenGLCore::drawTexturedRect(const gweni::Texture &texture, size_t primitiv
     if(m_vertexes.size() < vertexIndex+4)
         m_vertexes.resize(vertexIndex+4);
 
-    setVertex(m_vertexes[vertexIndex++], rect.x, rect.y, u1, v1);
-    setVertex(m_vertexes[vertexIndex++], rect.x + rect.w, rect.y, u2, v1);
-    setVertex(m_vertexes[vertexIndex++], rect.x, rect.y + rect.h, u1, v2);
+    setVertex(m_vertexes[vertexIndex++], 2, rect.x, rect.y, zIndex, u1, v1);
+    setVertex(m_vertexes[vertexIndex++], 2, rect.x + rect.w, rect.y, zIndex, u2, v1);
+    setVertex(m_vertexes[vertexIndex++], 2, rect.x, rect.y + rect.h, zIndex, u1, v2);
 //    setVertex(m_vertexes[vertexIndex++], rect.x + rect.w, rect.y, u2, v1);
-    setVertex(m_vertexes[vertexIndex++], rect.x + rect.w, rect.y + rect.h, u2, v2);
+    setVertex(m_vertexes[vertexIndex++], 2, rect.x + rect.w, rect.y + rect.h, zIndex, u2, v2);
 //    setVertex(m_vertexes[vertexIndex++], rect.x, rect.y + rect.h, u1, v2);
 
 //    addVert(rect.x, rect.y, u1, v1);
@@ -946,24 +1034,45 @@ void OpenGLCore::drawTexturedRect(const gweni::Texture &texture, size_t primitiv
 //    addVert(rect.x, rect.y + rect.h, u1, v2);
 }
 
-void OpenGLCore::showPrimitive(size_t primitiveId)
+void OpenGLCore::showPrimitive(int style, size_t primitiveId)
 {
-    if(m_clippingBoxes.size() < primitiveId+1)
-        m_clippingBoxes.resize(primitiveId+1);
+//    if(m_clippingBoxes.size() < primitiveId+1)
+//        m_clippingBoxes.resize(primitiveId+1);
+//
+//    Box &box=m_clippingBoxes[primitiveId];
+//
+//    box.state=style;
+    
+    size_t vertexIndex=primitiveId*4;
 
-    Box &box=m_clippingBoxes[primitiveId];
+    if(m_vertexes.size() < vertexIndex+4)
+    {
+        assert(false);
+    }
 
-    box.state=1;
+    for(size_t i=0; i<4; ++i)
+        m_vertexes[vertexIndex+i].style=style;
 }
 
 void OpenGLCore::hidePrimitive(size_t primitiveId)
 {
-    if(m_clippingBoxes.size() < primitiveId+1)
-        m_clippingBoxes.resize(primitiveId+1);
+//    if(m_clippingBoxes.size() < primitiveId+1)
+//        m_clippingBoxes.resize(primitiveId+1);
+//
+//    Box &box=m_clippingBoxes[primitiveId];
+//
+//    box.state=0;
+    
+    size_t vertexIndex=primitiveId*4;
 
-    Box &box=m_clippingBoxes[primitiveId];
+    if(m_vertexes.size() < vertexIndex+4)
+    {
+        assert(false);
+    }
 
-    box.state=0;
+    for(size_t i=0; i<4; ++i)
+        m_vertexes[vertexIndex+i].style=0;
+
 }
 
 gweni::Color OpenGLCore::pixelColor(const gweni::Texture &texture, unsigned int x, unsigned int y,
@@ -972,7 +1081,7 @@ gweni::Color OpenGLCore::pixelColor(const gweni::Texture &texture, unsigned int 
     if(!ensureTexture(texture))
         return col_default;
 
-    GLTextureData &texData=m_lastTexture->second;
+    GLTextureData &texData=*m_textureData[m_lastTexture];
 
     static const unsigned int iPixelSize=sizeof(unsigned char) * 4;
 
@@ -993,7 +1102,25 @@ gweni::Color OpenGLCore::pixelColor(const gweni::Texture &texture, unsigned int 
     return gweni::Color(pPixel[0], pPixel[1], pPixel[2], pPixel[3]);
 }
 
-void OpenGLCore::renderText(size_t textId, const gweni::Font &font, gweni::Point pos,
+void OpenGLCore::generateTextPrimitive(size_t &primitiveId)
+{
+    primitiveId=getTextId(nullptr);
+
+    if(m_textPrimitiveIds.size() < primitiveId+1)
+    {
+        m_textPrimitiveIds.resize(primitiveId+1);
+        m_textStrings.resize(primitiveId+1);
+        m_textPosition.resize(primitiveId+1);
+    }
+}
+
+void OpenGLCore::releaseTextPrimitive(size_t primitiveId)
+{
+    hideText(primitiveId);
+    releaseTextId(primitiveId);
+}
+
+void OpenGLCore::renderText(size_t textId, const gweni::Font &font, gweni::Point pos, int zIndex,
     const gweni::String &text)
 {
 //    return;
@@ -1017,6 +1144,8 @@ void OpenGLCore::renderText(size_t textId, const gweni::Font &font, gweni::Point
         {
             //move verts
             gweni::Point delta=pos-m_textPosition[textId];
+            float zDelta=1.0f/textPrimitiveIds.size();
+            float zOffset=0.0f;
 
             for(size_t i=0; i<textPrimitiveIds.size(); ++i)
             {
@@ -1026,15 +1155,20 @@ void OpenGLCore::renderText(size_t textId, const gweni::Font &font, gweni::Point
                 {
                     m_textVertexes[vertIndex+j].x=m_textVertexes[vertIndex+j].x+delta.x;
                     m_textVertexes[vertIndex+j].y=m_textVertexes[vertIndex+j].y+delta.y;
-                    m_textVertexes[vertIndex+j].z=m_zIndex;
+                    m_textVertexes[vertIndex+j].z=zIndex;
+                    m_textVertexes[vertIndex+j].shift=zOffset;
                 }
-                m_zIndex++;
+//                m_zIndex++;
+                zOffset+=zDelta;
             }
             m_textPosition[textId]=pos;
         }
 //        m_zIndex++;
         return; //string hasn't changed
     }
+
+    if(text == "CollapsibleList")
+        textId=textId;
 
     m_textStrings[textId]=text;
     m_textPosition[textId]=pos;
@@ -1090,6 +1224,9 @@ void OpenGLCore::renderText(size_t textId, const gweni::Font &font, gweni::Point
 
     size_t indexPos=0;
     size_t vertexPos=0;
+    float zDelta=1.0f/primitiveCount;
+    float zOffset=0.0f;
+
     for(size_t i=0; i<primitiveCount; ++i)
     {
         size_t index=textPrimitiveIds[i]*6;
@@ -1106,20 +1243,26 @@ void OpenGLCore::renderText(size_t textId, const gweni::Font &font, gweni::Point
         m_textVertexes[vertIndex].x=pos.x+vertexBuffer[vertexPos].x;
 //        m_textVertexes[vertIndex].y=pos.y+(textFont->height+vertexBuffer[vertexPos++].y);
         m_textVertexes[vertIndex].y=pos.y-vertexBuffer[vertexPos++].y;
-        m_textVertexes[vertIndex++].z=m_zIndex;
+        m_textVertexes[vertIndex].shift=zOffset;
+        m_textVertexes[vertIndex++].z=zIndex;
         m_textVertexes[vertIndex]=vertexBuffer[vertexPos];
         m_textVertexes[vertIndex].x=pos.x+vertexBuffer[vertexPos].x;
         m_textVertexes[vertIndex].y=pos.y-vertexBuffer[vertexPos++].y;
-        m_textVertexes[vertIndex++].z=m_zIndex;
+        m_textVertexes[vertIndex].shift=zOffset;
+        m_textVertexes[vertIndex++].z=zIndex;
         m_textVertexes[vertIndex]=vertexBuffer[vertexPos];
         m_textVertexes[vertIndex].x=pos.x+vertexBuffer[vertexPos].x;
         m_textVertexes[vertIndex].y=pos.y-vertexBuffer[vertexPos++].y;
-        m_textVertexes[vertIndex++].z=m_zIndex;
+        m_textVertexes[vertIndex].shift=zOffset;
+        m_textVertexes[vertIndex++].z=zIndex;
         m_textVertexes[vertIndex]=vertexBuffer[vertexPos];
         m_textVertexes[vertIndex].x=pos.x+vertexBuffer[vertexPos].x;
         m_textVertexes[vertIndex].y=pos.y-vertexBuffer[vertexPos++].y;
-        m_textVertexes[vertIndex++].z=m_zIndex;
-        m_zIndex++;
+        m_textVertexes[vertIndex].shift=zOffset;
+        m_textVertexes[vertIndex++].z=zIndex;
+        
+        zOffset+=zDelta;
+//        m_zIndex++;
     }
 //    m_zIndex++;
 //    //cant use, need to move vertexes to main vertex buffer
@@ -1162,6 +1305,36 @@ void OpenGLCore::renderText(size_t textId, const gweni::Font &font, gweni::Point
     //        addVert(rect.x + rect.w, rect.y + rect.h, q.s1, q.t1);
     //        addVert(rect.x, rect.y + rect.h, q.s0, q.t1);
     //    }
+}
+
+void OpenGLCore::showText(size_t textId)
+{
+    std::vector<size_t> &textPrimitiveIds=m_textPrimitiveIds[textId];
+
+    for(size_t i=0; i<textPrimitiveIds.size(); ++i)
+    {
+        size_t vertIndex=textPrimitiveIds[i]*4;
+
+        for(size_t j=0; j<4; ++j)
+        {
+            m_textVertexes[vertIndex+j].z=abs(m_textVertexes[vertIndex+j].z);
+        }
+    }
+}
+
+void OpenGLCore::hideText(size_t textId)
+{
+    std::vector<size_t> &textPrimitiveIds=m_textPrimitiveIds[textId];
+
+    for(size_t i=0; i<textPrimitiveIds.size(); ++i)
+    {
+        size_t vertIndex=textPrimitiveIds[i]*4;
+
+        for(size_t j=0; j<4; ++j)
+        {
+            m_textVertexes[vertIndex+j].z=-abs(m_textVertexes[vertIndex+j].z);
+        }
+    }
 }
 
 gweni::Point OpenGLCore::measureText(const gweni::Font &font, const gweni::String &text)

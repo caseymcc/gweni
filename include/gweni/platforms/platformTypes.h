@@ -21,6 +21,10 @@
 #include <string>
 #include <list>
 #include <memory>
+#include <limits>
+
+#include <glm/glm.hpp>
+#include <glm/gtc/type_ptr.hpp>
 
 namespace gweni
 {
@@ -117,6 +121,16 @@ struct GWENI_EXPORT Rect
         x{o.x}, y{o.y}, w{sz.x}, h{sz.y}
     {}
 
+    Rect(const glm::ivec4 &that):
+        x{that.x}, y{that.y}, w{that.z}, h{that.w}
+    {}
+
+    Rect operator=(const glm::ivec4 &that)
+    {
+        std::copy(glm::value_ptr(that), glm::value_ptr(that)+4, v);
+        return *this;
+    }
+
     int left() const { return x; }
     int right() const { return x + w; }
     int top() const { return y; }
@@ -138,6 +152,52 @@ struct GWENI_EXPORT Rect
     union
     {
         struct { int x, y, w, h; };
+        int v[4];
+    };
+};
+
+struct GWENI_EXPORT BoundingBox
+{
+    BoundingBox(int left_=0, int top_=0, int right_=0, int bottom_=0)
+        : top(top_)
+        , bottom(bottom_)
+        , left(left_)
+        , right(right_)
+    {}
+
+    BoundingBox(const glm::ivec4 &that)
+        : top(that.x)
+        , bottom(that.y)
+        , left(that.z)
+        , right(that.w)
+    {}
+
+    BoundingBox operator=(const glm::ivec4 &that)
+    {
+        std::copy(glm::value_ptr(that), glm::value_ptr(that)+4, v);
+        return *this;
+    }
+
+    BoundingBox operator+(const BoundingBox &margin) const
+    {
+        BoundingBox m;
+
+        m.top=top + margin.top;
+        m.bottom=bottom + margin.bottom;
+        m.left=left + margin.left;
+        m.right=right + margin.right;
+
+        return m;
+    }
+
+    int x() { return left; }
+    int y() { return top; }
+    int width() { return right-left; }
+    int height() { return bottom-top; }
+
+    union
+    {
+        struct { int left, top, right, bottom; };
         int v[4];
     };
 };
@@ -230,6 +290,7 @@ struct GWENI_EXPORT Color
     union
     {
         uint32_t rgba;
+        struct { uint16_t rg, ba; };
         struct { unsigned char r, g, b, a; };
     };
 };
@@ -283,6 +344,8 @@ struct Font
     bool bold;
 };
 
+GWENI_EXPORT const Font &getDefaultFont();
+
 struct Texture
 {
     typedef std::list<Texture *> List;
@@ -298,7 +361,8 @@ struct Texture
     };
 
     Texture()
-        : readable(false)
+        : readable(false),
+        dataIndex(std::numeric_limits<size_t>::max())
     {}
 
     Texture(const Texture &)=default;
@@ -309,6 +373,7 @@ struct Texture
 
     String  name;
     bool readable;
+    size_t dataIndex;
 };
 
 struct TextureData
@@ -363,7 +428,7 @@ public:
     virtual gweni::Font::Status loadFont(const gweni::Font &font)=0;
     virtual void freeFont(const gweni::Font &font)=0;
 
-    virtual gweni::Texture::Status loadTexture(const gweni::Texture &texture)=0;
+    virtual gweni::Texture::Status loadTexture(gweni::Texture &texture)=0;
     virtual void freeTexture(const gweni::Texture &texture)=0;
     virtual gweni::TextureData getTextureData(const gweni::Texture &texture) const=0;
 

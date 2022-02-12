@@ -11,6 +11,7 @@ class PropertiesDemo : public controls::Base
 public:
     GWENI_CONTROL(PropertiesDemo, controls::Base);
 
+public:
     void onFirstNameChanged(event::Info info);
 };
 

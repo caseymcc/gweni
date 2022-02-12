@@ -23,6 +23,7 @@ public:
 
     GWENI_CONTROL(SplitterBar, internal::Dragger);
 
+public:
     void layout(skin::Base *skin) override;
 };
 

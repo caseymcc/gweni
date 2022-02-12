@@ -44,6 +44,57 @@ enum State
     Remove
 };
 
+class GWENI_EXPORT Control
+{
+public:
+    Control()
+    {}
+
+    virtual ~Control()
+    {}
+
+    virtual std::string getTypeName()=0;
+    virtual size_t requiredPrimitives()=0;
+
+    virtual void generate(renderer::Base *baseRenderer, controls::Base *control)
+    {
+        generatePrimitives(baseRenderer, requiredPrimitives());
+    };
+
+    virtual void remove(renderer::Base *baseRenderer, controls::Base *control)
+    {
+        releasePrimitives(baseRenderer);
+    };
+
+    virtual void update(renderer::Base *render, controls::Base *control)=0;
+
+    const std::vector<size_t> &getPrimitives()
+    {
+        return m_primitives;
+    }
+
+protected:
+    void generatePrimitives(renderer::Base *baseRenderer, size_t count)
+    {
+        m_primitives.resize(count);
+
+        for(size_t i=0; i<count; ++i)
+        {
+            baseRenderer->generatePrimitive(m_primitives[i]);
+        }
+    }
+    void releasePrimitives(renderer::Base *baseRenderer)
+    {
+        for(size_t i=0; i<m_primitives.size(); ++i)
+        {
+            baseRenderer->releasePrimitive(m_primitives[i]);
+        }
+    }
+
+    std::vector<size_t> m_primitives;
+};
+
+
 class GWENI_EXPORT Base
 {
 public:
@@ -65,6 +116,8 @@ public:
         if(fnt && m_render)
             m_render->getLoader().freeFont(*fnt);
     }
+
+    virtual std::unique_ptr<Control> getControlRenderer(std::string typeName)=0;
 
     virtual void drawControl(controls::Base *controls)=0;
 
@@ -154,16 +207,16 @@ public:
         m_render=renderer;
     }
 
-    virtual gweni::renderer::Base *getRender()
+    virtual gweni::renderer::Base *getRenderer()
     {
         return m_render;
     }
 
-    virtual void drawArrowDown(size_t *primitiveIds, gweni::Rect rect);
-    virtual void drawArrowUp(size_t *primitiveIds, gweni::Rect rect);
-    virtual void drawArrowLeft(size_t *primitiveIds, gweni::Rect rect);
-    virtual void drawArrowRight(size_t *primitiveIds, gweni::Rect rect);
-    virtual void drawCheck(size_t *primitiveIds, gweni::Rect rect);
+//    virtual void drawArrowDown(size_t *primitiveIds, gweni::Rect rect);
+//    virtual void drawArrowUp(size_t *primitiveIds, gweni::Rect rect);
+//    virtual void drawArrowLeft(size_t *primitiveIds, gweni::Rect rect);
+//    virtual void drawArrowRight(size_t *primitiveIds, gweni::Rect rect);
+//    virtual void drawCheck(size_t *primitiveIds, gweni::Rect rect);
 
 
     struct

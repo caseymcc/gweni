@@ -21,19 +21,13 @@ GWENI_CONTROL_CONSTRUCTOR(SliderBar)
     restrictToParent(true);
 }
 
-void SliderBar::render(skin::Base *skin)
-{
-//    skin->drawSlideButton(this, skin::Generate, isDepressed(), isHorizontal());
-    skin->drawControl(this);
-}
-
 }//namespace internal
 
 
 GWENI_CONTROL_CONSTRUCTOR(Slider)
 {
     setBounds(gweni::Rect(0, 0, 32, 128));
-    m_sliderBar=new internal::SliderBar(this);
+    m_sliderBar=newChild<internal::SliderBar>();
     m_sliderBar->onDragged.add(this, &Slider::onMoved);
     m_min=0.0f;
     m_max=1.0f;
@@ -105,7 +99,9 @@ void Slider::renderFocus(gweni::skin::Base *skin)
         return;
 
 //    skin->drawKeyboardHighlight(this, skin::Generate, getRenderBounds(), 0);
-    skin->drawControl(this);
+//    skin->drawControl(this);
+    if(getStateChange() != StateChange_Nothing)
+        m_skinControl->update(skin->getRenderer(), this);
 }
 
 }//namespace controls

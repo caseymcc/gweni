@@ -25,6 +25,7 @@ public:
 
     GWENI_CONTROL(ScrollBarBar, internal::Dragger);
 
+public:
     void render(skin::Base *skin) override;
     void layout(skin::Base *skin) override;
 

@@ -4,11 +4,11 @@
 namespace gweni
 {
 
-MenuStripDemo::MenuStripDemo(controls::Base *parent, const String &name):
-    Base(parent)
+MenuStripDemo::MenuStripDemo(const String &name):
+    Base()
 {
     dock(Position::Fill);
-    controls::MenuStrip *menu=new controls::MenuStrip(this);
+    controls::MenuStrip *menu=newChild<controls::MenuStrip>();
     {
         controls::MenuItem *root=menu->addItem("File");
         root->getMenu()->addItem("New", "test16.png", "Ctrl + N")->setAction(this, &MenuStripDemo::menuItemSelect);

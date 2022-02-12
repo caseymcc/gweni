@@ -23,7 +23,9 @@ namespace controls
 class GWENI_EXPORT RadioButton: public CheckBox
 {
     GWENI_CONTROL(RadioButton, CheckBox);
-    void render(skin::Base *skin) override;
+
+public:
+    //void render(skin::Base *skin) override;
 
 private:
 
@@ -43,12 +45,13 @@ public:
     GWENI_CONTROL_INLINE(LabeledRadioButton, Base)
     {
         //                setSize(200, 19);
-        m_radioButton=new RadioButton(this);
+        m_radioButton=newChild<RadioButton>();
         m_radioButton->dock(Position::Left);
         m_radioButton->setMargin(Margin(0, 2, 2, 2));
         m_radioButton->setTabable(false);
         m_radioButton->setKeyboardInputEnabled(false);
-        m_label=new LabelClickable(this);
+        
+        m_label=newChild<LabelClickable>();
         m_label->setAlignment(Position::CenterV | Position::Left);
         m_label->setText("Radio Button");
         m_label->dock(Position::Fill);
@@ -57,6 +60,7 @@ public:
         m_label->setKeyboardInputEnabled(false);
     }
 
+public:
     void renderFocus(gweni::skin::Base *skin) override
     {
         if(gweni::KeyboardFocus != this)
@@ -66,7 +70,9 @@ public:
             return;
 
 //        skin->drawKeyboardHighlight(this, skin::Generate, getRenderBounds(), 0);
-        skin->drawControl(this);
+        //skin->drawControl(this);
+        if(getStateChange() != StateChange_Nothing)
+            m_skinControl->update(skin->getRenderer(), this);
     }
 
     virtual RadioButton *getRadioButton()

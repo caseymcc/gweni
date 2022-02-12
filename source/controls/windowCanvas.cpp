@@ -46,12 +46,12 @@ WindowCanvas::WindowCanvas(int x, int y, int w, int h, skin::Base *skin,
 
     m_osWindow=platform::createPlatformWindow(x, y, w, h, strWindowTitle);
     m_windowPos=Point(x, y);
-    skin->getRender()->initializeContext(this);
-    skin->getRender()->init();
+    skin->getRenderer()->initializeContext(this);
+    skin->getRenderer()->init();
     m_skinChange=skin;
     setSize(w, h);
 
-    m_titleBar=new internal::Dragger(this);
+    m_titleBar=newChild<internal::Dragger>();
     m_titleBar->setHeight(24);
     m_titleBar->setPadding(Padding(0, 0, 0, 0));
     m_titleBar->setMargin(Margin(0, 0, 0, 0));
@@ -61,7 +61,7 @@ WindowCanvas::WindowCanvas(int x, int y, int w, int h, skin::Base *skin,
     m_titleBar->onDragStart.add(this, &ThisClass::dragger_start);
     m_titleBar->onDoubleClickLeft.add(this, &ThisClass::onTitleDoubleClicked);
 
-    m_title=new Label(m_titleBar);
+    m_title=m_titleBar->newChild<Label>();
     m_title->setAlignment(Position::Left|Position::CenterV);
     m_title->setText(strWindowTitle);
     m_title->dock(Position::Fill);
@@ -70,7 +70,7 @@ WindowCanvas::WindowCanvas(int x, int y, int w, int h, skin::Base *skin,
 
     // CLOSE
     {
-        m_close=new WindowCloseButton(m_titleBar, "Close");
+        m_close=m_titleBar->newChild<WindowCloseButton>("Close");
         m_close->dock(Position::Right);
         m_close->setMargin(Margin(0, 0, 4, 0));
         m_close->onPressCaller.add(this, &WindowCanvas::closeButtonPressed);
@@ -79,7 +79,7 @@ WindowCanvas::WindowCanvas(int x, int y, int w, int h, skin::Base *skin,
     }
     // MAXIMIZE
     {
-        m_maximize=new WindowMaximizeButton(m_titleBar, "Maximize");
+        m_maximize=m_titleBar->newChild<WindowMaximizeButton>("Maximize");
         m_maximize->dock(Position::Right);
         m_maximize->onPressCaller.add(this, &WindowCanvas::maximizeButtonPressed);
         m_maximize->setTabable(false);
@@ -87,7 +87,7 @@ WindowCanvas::WindowCanvas(int x, int y, int w, int h, skin::Base *skin,
     }
     // MINIMiZE
     {
-        m_minimize=new WindowMinimizeButton(m_titleBar, "Minimize");
+        m_minimize=m_titleBar->newChild<WindowMinimizeButton>("Minimize");
         m_minimize->dock(Position::Right);
         m_minimize->onPressCaller.add(this, &WindowCanvas::minimizeButtonPressed);
         m_minimize->setTabable(false);
@@ -95,7 +95,7 @@ WindowCanvas::WindowCanvas(int x, int y, int w, int h, skin::Base *skin,
     }
     // Bottom Right Corner Sizer
     {
-        m_sizer=new internal::Dragger(this);
+        m_sizer=newChild<internal::Dragger>();
         m_sizer->setSize(16, 16);
         m_sizer->setDoMove(false);
         m_sizer->onDragged.add(this, &WindowCanvas::sizer_moved);
@@ -146,7 +146,7 @@ void WindowCanvas::renderCanvas()
     }
 
     m_needsRedraw=false;
-    renderer::Base *render=m_skin->getRender();
+    renderer::Base *render=m_skin->getRenderer();
 
     if(render->beginContext(this))
     {
@@ -159,7 +159,7 @@ void WindowCanvas::renderCanvas()
         if(m_drawBackground)
         {
             render->setDrawColor(m_backgroundColor);
-            render->drawFilledRect(m_primitiveIds[0], getRenderBounds());
+            render->drawFilledRect(m_primitiveIds[0], getRenderBounds(), getZIndex());
         }
 
         doRender(m_skin);
@@ -172,24 +172,24 @@ void WindowCanvas::renderCanvas()
     render->presentContext(this);
 }
 
-void WindowCanvas::render(skin::Base *skin)
-{
-    bool bIsFocussed=isOnTop();
-
-    if(bIsFocussed)
-        m_title->setTextColor(getSkin()->Colors.Window.TitleActive);
-    else
-        m_title->setTextColor(getSkin()->Colors.Window.TitleInactive);
-
-//    skin->drawWindow(this, skin::Generate, m_titleBar->bottom(), bIsFocussed);
-    skin->drawControl(this);
-}
+//void WindowCanvas::render(skin::Base *skin)
+//{
+//    bool bIsFocussed=isOnTop();
+//
+//    if(bIsFocussed)
+//        m_title->setTextColor(getSkin()->Colors.Window.TitleActive);
+//    else
+//        m_title->setTextColor(getSkin()->Colors.Window.TitleInactive);
+//
+////    skin->drawWindow(this, skin::Generate, m_titleBar->bottom(), bIsFocussed);
+//    skin->drawControl(this);
+//}
 
 void WindowCanvas::destroyWindow()
 {
     if(m_osWindow)
     {
-        getSkin()->getRender()->shutdownContext(this);
+        getSkin()->getRenderer()->shutdownContext(this);
         platform::destroyPlatformWindow(m_osWindow);
         m_osWindow=nullptr;
     }
@@ -267,7 +267,7 @@ void WindowCanvas::sizer_moved(event::Info)
     w=clamp(w, 100, 9999);
     h=clamp(h, 100, 9999);
     platform::setBoundsPlatformWindow(m_osWindow, m_windowPos.x, m_windowPos.y, w, h);
-    getSkin()->getRender()->resizedContext(this, w, h);
+    getSkin()->getRenderer()->resizedContext(this, w, h);
     this->setSize(w, h);
     ParentClass::doThink();
     renderCanvas();
@@ -289,7 +289,7 @@ void WindowCanvas::setMaximize(bool b)
     platform::setWindowMaximized(m_osWindow, m_isMaximized, pos, size);
     setSize(size.x, size.y);
     m_windowPos=pos;
-    getSkin()->getRender()->resizedContext(this, size.x, size.y);
+    getSkin()->getRenderer()->resizedContext(this, size.x, size.y);
     ParentClass::doThink();
     renderCanvas();
 }

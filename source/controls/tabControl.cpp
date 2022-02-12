@@ -46,13 +46,6 @@ public:
 
     GWENI_CONTROL_INLINE(TabControlInner, Base)
     {}
-
-    void render(skin::Base *skin) override
-    {
-//        skin->drawTabControl(this, skin::Generate);
-        skin->drawControl(this);
-    }
-
 };
 
 
@@ -60,18 +53,20 @@ GWENI_CONTROL_CONSTRUCTOR(TabControl)
 {
     m_scrollOffset=0;
     m_currentButton=nullptr;
-    m_tabStrip=new TabStrip(this);
+    m_tabStrip=newChild<TabStrip>();
     m_tabStrip->setTabPosition(Position::Top);
     // Make this some special control?
-    m_scroll[0]=new internal::ScrollBarButton(this);
+    m_scroll[0]=newChild<internal::ScrollBarButton>();
     m_scroll[0]->setDirectionLeft();
     m_scroll[0]->onPressCaller.add(this, &TabControl::onScrollPressLeft);
     m_scroll[0]->setSize(14, 14);
-    m_scroll[1]=new internal::ScrollBarButton(this);
+
+    m_scroll[1]=newChild<internal::ScrollBarButton>();
     m_scroll[1]->setDirectionRight();
     m_scroll[1]->onPressCaller.add(this, &TabControl::onScrollPressRight);
     m_scroll[1]->setSize(14, 14);
-    m_innerPanel=new TabControlInner(this);
+
+    m_innerPanel=newChild<TabControlInner>();
     m_innerPanel->dock(Position::Fill);
     m_innerPanel->sendToBack();
     setTabable(false);
@@ -80,11 +75,11 @@ GWENI_CONTROL_CONSTRUCTOR(TabControl)
 TabButton *TabControl::addPage(String text, controls::Base *page)
 {
     if(!page)
-        page=new Base(this);
+        page=newChild<Base>();
     else
         page->setParent(this);
 
-    TabButton *button=new TabButton(m_tabStrip);
+    TabButton *button=m_tabStrip->newChild<TabButton>();
     button->setText(text);
     button->setPage(page);
     button->setTabable(false);

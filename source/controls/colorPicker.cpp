@@ -31,24 +31,32 @@ void ColorPicker::createColorControl(gweni::String name, int y)
 {
     const int colorSize=10;
 
-    GroupBox *colorGroup=new GroupBox(this);
+//    GroupBox *colorGroup=new GroupBox(this);
+    GroupBox *colorGroup=newChild<GroupBox>();
+
     colorGroup->setPos(10, y);
     colorGroup->setText(name);
     colorGroup->setSize(160, gc_pickChannelHeight);
     colorGroup->setName(name+"groupbox");
 
-    internal::ColorDisplay *disp=new internal::ColorDisplay(colorGroup);
+//    internal::ColorDisplay *disp=new internal::ColorDisplay(colorGroup);
+    internal::ColorDisplay *disp=colorGroup->newChild<internal::ColorDisplay>();
+
     disp->setName(name);
     disp->setBounds(0, 0, colorSize, colorSize);
 
-    TextBoxNumeric *numeric=new TextBoxNumeric(colorGroup);
+//    TextBoxNumeric *numeric=new TextBoxNumeric(colorGroup);
+    TextBoxNumeric *numeric=colorGroup->newChild<TextBoxNumeric>();
+
     numeric->setName(name+"Box");
     numeric->setPos(105, 0);
     numeric->setSize(26, 16);
     numeric->setSelectAllOnFocus(true);
     numeric->onTextChangedCaller.add(this, &ColorPicker::onNumericTyped);
 
-    HorizontalSlider *slider=new HorizontalSlider(colorGroup);
+//    HorizontalSlider *slider=new HorizontalSlider(colorGroup);
+    HorizontalSlider *slider=colorGroup->newChild<HorizontalSlider>();
+
     slider->setPos(colorSize+5, 0);
     slider->setRange(0, 255);
     slider->setSize(80, std::max(colorSize, 15));
@@ -98,13 +106,17 @@ void ColorPicker::createControls()
     createColorControl("Blue", startY+gc_pickChannelHeight*2);
     createColorControl("Alpha", startY+gc_pickChannelHeight*3);
 
-    GroupBox *finalGroup=new GroupBox(this);
+//    GroupBox *finalGroup=new GroupBox(this);
+    GroupBox *finalGroup=newChild<GroupBox>();
+
     finalGroup->setPos(180, 40);
     finalGroup->setSize(60, 60);
     finalGroup->setText("Result");
     finalGroup->setName("ResultGroupBox");
 
-    internal::ColorDisplay *disp=new internal::ColorDisplay(finalGroup);
+//    internal::ColorDisplay *disp=new internal::ColorDisplay(finalGroup);
+    internal::ColorDisplay *disp=finalGroup->newChild<internal::ColorDisplay>();
+
     disp->setName("Result");
     disp->setBounds(0, 10, 32, 32);
     disp->setDrawCheckers(true);

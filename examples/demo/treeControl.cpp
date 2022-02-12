@@ -4,11 +4,11 @@
 namespace gweni
 {
 
-TreeControlDemo::TreeControlDemo(controls::Base *parent, const String &name):
-    Base(parent)
+TreeControlDemo::TreeControlDemo(const String &name):
+    Base()
 {
     {
-        controls::TreeControl *ctrl=new controls::TreeControl(this);
+        controls::TreeControl *ctrl=newChild<controls::TreeControl>();
         ctrl->addNode("Node One");
         controls::TreeNode *pNode=ctrl->addNode("Node Two");
         pNode->addNode("Node Two Inside");
@@ -21,7 +21,7 @@ TreeControlDemo::TreeControlDemo(controls::Base *parent, const String &name):
         ctrl->expandAll();
     }
     {
-        controls::TreeControl *ctrl=new controls::TreeControl(this);
+        controls::TreeControl *ctrl=newChild<controls::TreeControl>();
         ctrl->allowMultiSelect(true);
         ctrl->addNode("Node One");
         controls::TreeNode *pNode=ctrl->addNode("Node Two");

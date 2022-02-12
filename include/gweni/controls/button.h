@@ -23,7 +23,9 @@ public:
 
     GWENI_CONTROL(Button, Label);
 
+public:
     void render(skin::Base *skin) override;
+
     void onMouseClickLeft(int x, int y, bool down) override;
     void onMouseClickRight(int x, int y, bool down) override;
     void onMouseDoubleClickLeft(int x, int y) override;

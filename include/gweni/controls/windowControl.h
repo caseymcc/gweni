@@ -33,8 +33,9 @@ public:
 
     GWENI_CONTROL(WindowControl, ResizableControl);
 
+public:
     virtual ~WindowControl();
-    void render(skin::Base *skin) override;
+    //void render(skin::Base *skin) override;
     void renderUnder(skin::Base *skin) override;
 
     virtual void setTitle(String title);

@@ -30,12 +30,13 @@ public:
         setHeight(17);
     }
 
-    virtual String getPropertyValue()=0;
+public:
+    virtual String getPropertyValue() { return 0; }
 
     virtual void setPropertyValue(const String &v,
-        bool fireChangeEvents=false)=0;
+    bool fireChangeEvents=false) {}
 
-    virtual bool isEditing()=0;
+    virtual bool isEditing() { return false; }
 
     virtual void doChanged()
     {

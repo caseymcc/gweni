@@ -24,7 +24,7 @@ public:
 
     GWENI_CONTROL_INLINE(ComboBox, property::Base)
     {
-        m_comboBox=new gweni::controls::ComboBox(this);
+        m_comboBox=newChild<gweni::controls::ComboBox>();
         m_comboBox->dock(Position::Fill);
         m_comboBox->onSelection.add(this, &ParentClass::onPropertyValueChanged);
         m_comboBox->setTabable(true);
@@ -33,6 +33,7 @@ public:
         setHeight(18);
     }
 
+public:
     String getPropertyValue() override
     {
         gweni::controls::Label *control=m_comboBox->getSelectedItem();

@@ -22,7 +22,7 @@ namespace gweni
 namespace controls
 {
 
-Canvas::Canvas(skin::Base *skin): ParentClass(nullptr), m_anyDelete(false)
+Canvas::Canvas(skin::Base *skin): ParentClass(), m_anyDelete(false)
 {
     enlargePrimitiveIds(this, m_primitiveIds, 1);
 
@@ -40,10 +40,17 @@ Canvas::~Canvas()
     releaseChildren();
 }
 
+void Canvas::updateCanvas()
+{
+    int zIndex=1;
+
+    updateRecursive(zIndex);
+}
+
 void Canvas::renderCanvas()
 {
     doThink();
-    renderer::Base *render=m_skin->getRender();
+    renderer::Base *render=m_skin->getRenderer();
     render->begin();
     recurseLayout(m_skin);
     render->setClipRegion(getBounds());
@@ -53,7 +60,7 @@ void Canvas::renderCanvas()
     if(m_drawBackground)
     {
         render->setDrawColor(m_backgroundColor);
-        render->drawFilledRect(m_primitiveIds[0], getRenderBounds());
+        render->drawFilledRect(m_primitiveIds[0], getRenderBounds(), getZIndex());
     }
 
     doRender(m_skin);
@@ -106,8 +113,8 @@ void Canvas::setScale(float f)
 
     m_scale=f;
 
-    if(m_skin && m_skin->getRender())
-        m_skin->getRender()->setScale(m_scale);
+    if(m_skin && m_skin->getRenderer())
+        m_skin->getRenderer()->setScale(m_scale);
 
     onScaleChanged();
     redraw();

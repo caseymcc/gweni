@@ -2,6 +2,7 @@
 #define _gweni_json_h_
 
 #include <rapidjson/document.h>
+#include <rapidjson/error/en.h>
 #include <iostream>
 #include <cstdint>
 
@@ -113,6 +114,33 @@ std::vector<_Type> getVector(const Value &value, std::string name)
     }
 
     return retValues;
+}
+
+struct OffsetInfo
+{
+    size_t line;
+    size_t pos;
+};
+
+inline OffsetInfo getOffsetInfo(std::vector<char> &buffer, size_t offset)
+{
+    size_t line;
+    size_t pos;
+    size_t linePos;
+    
+    line=1;
+    offset=std::min(offset, buffer.size());
+    for(size_t i=0; i<offset; ++i)
+    {
+        if(buffer[i] == '\n')
+        {
+            line++;
+            linePos=i+1;
+        }
+    }
+    pos=(offset-linePos)+1;
+
+    return {line, pos};
 }
 
 }//namespace json

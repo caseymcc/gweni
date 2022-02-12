@@ -31,12 +31,7 @@ public:
         m_drawCheckers=true;
     }
 
-    void render(gweni::skin::Base *skin) override
-    {
-        //skin->drawColorDisplay(this, skin::Generate, m_color);
-        skin->drawControl(this);
-    }
-
+public:
     virtual void setColor(gweni::Color color) { m_color=color; }
     virtual gweni::Color getColor() { return m_color; }
 
@@ -61,6 +56,7 @@ public:
 
     GWENI_CONTROL(ColorPicker, Base);
 
+public:
     virtual void setAlphaVisible(bool visible);
 
     virtual void        setColor(gweni::Color color);

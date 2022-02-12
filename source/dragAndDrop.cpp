@@ -237,13 +237,13 @@ void renderOverlay(gweni::controls::Canvas * /*canvas*/, skin::Base *skin)
     if(!CurrentPackage->drawcontrol)
         return;
 
-    gweni::Point pntOld=skin->getRender()->getRenderOffset();
-    skin->getRender()->addRenderOffset(gweni::Rect(m_mouseX-SourceControl->getX()-
+    gweni::Point pntOld=skin->getRenderer()->getRenderOffset();
+    skin->getRenderer()->addRenderOffset(gweni::Rect(m_mouseX-SourceControl->getX()-
         CurrentPackage->holdoffset.x, m_mouseY-
         SourceControl->getY()-CurrentPackage->holdoffset.y,
         0, 0));
     CurrentPackage->drawcontrol->doRender(skin);
-    skin->getRender()->setRenderOffset(pntOld);
+    skin->getRenderer()->setRenderOffset(pntOld);
 }
 
 }//namespace draganddrop

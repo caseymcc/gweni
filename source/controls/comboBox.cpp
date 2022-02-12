@@ -26,17 +26,7 @@ public:
         setSize(15, 15);
     }
 
-    void render(skin::Base *skin) override
-    {
-//        if(!m_comboBox->shouldDrawBackground())
-//            return skin->drawComboDownArrow(this, skin::Generate, false, false, false, m_comboBox->isDisabled());
-//
-//        skin->drawComboDownArrow(this, skin::Generate, m_comboBox->isHovered(),
-//            m_comboBox->isDepressed(),
-//            m_comboBox->isMenuOpen(), m_comboBox->isDisabled());
-        skin->drawControl(this);
-    }
-
+public:
     void setComboBox(ComboBox *p)
     {
         m_comboBox=p;
@@ -52,12 +42,16 @@ GWENI_CONTROL_CONSTRUCTOR(ComboBox)
 {
     setSize(100, 20);
 
-    m_menu=new Menu(this);
+//    m_menu=new Menu(this);
+    m_menu=newChild<Menu>();
+
     m_menu->setHidden(true);
     m_menu->setDisableIconMargin(true);
     m_menu->setTabable(false);
 
-    DownArrow *arrow=new DownArrow(this);
+//    DownArrow *arrow=new DownArrow(this);
+    DownArrow *arrow=newChild<DownArrow>();
+
     arrow->setComboBox(this);
 
     m_button=arrow;
@@ -89,7 +83,9 @@ void ComboBox::render(skin::Base *skin)
         return;
 
 //    skin->drawComboBox(this, skin::Generate, isDepressed(), isMenuOpen());
-    skin->drawControl(this);
+    //skin->drawControl(this);
+    if(getStateChange() != StateChange_Nothing)
+        m_skinControl->update(skin->getRenderer(), this);
 }
 
 void ComboBox::layout(skin::Base *skin)

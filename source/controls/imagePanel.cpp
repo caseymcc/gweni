@@ -26,7 +26,7 @@ GWENI_CONTROL_CONSTRUCTOR(ImagePanel)
 
 ImagePanel::~ImagePanel()
 {
-    getSkin()->getRender()->getLoader().freeTexture(m_texture);
+    getSkin()->getRenderer()->getLoader().freeTexture(m_texture);
 
     releasePrimitiveId(m_primitiveId);
 }
@@ -42,7 +42,7 @@ void ImagePanel::setUV(float u1, float v1, float u2, float v2)
 void ImagePanel::setImage(const String &imageName)
 {
     m_texture.name=imageName;
-    IResourceLoader &loader=getSkin()->getRender()->getLoader();
+    IResourceLoader &loader=getSkin()->getRenderer()->getLoader();
     Texture::Status m_status=loader.loadTexture(m_texture);
     switch(m_status)
     {
@@ -80,7 +80,7 @@ const String &ImagePanel::getImageName()
 
 void ImagePanel::render(skin::Base *skin)
 {
-    renderer::Base *render=skin->getRender();
+    renderer::Base *render=skin->getRenderer();
 
     render->setDrawColor(m_drawColor);
 

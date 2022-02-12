@@ -42,6 +42,7 @@ struct GLTextureData: public gweni::TextureData
     ~GLTextureData();
 
     unsigned int m_textureId;
+    unsigned int m_index;
     //                deleted_unique_ptr<unsigned char> m_ReadData;
     std::vector<unsigned char> m_readData;
 };
@@ -119,27 +120,33 @@ public:
     void end() override;
 
     void setDrawColor(gweni::Color color) override;
-    void drawFilledRect(size_t primitiveId, gweni::Rect rect) override;
+    void drawFilledRect(size_t primitiveId, gweni::Rect rect, int zIndex) override;
 
     void startClip() override;
     void endClip() override;
 
-    void generatePrimitive(size_t primitiveId) override;
-    void removePrimitive(size_t primitiveId) override;
+    void generatePrimitive(size_t &primitiveId) override;
+    void releasePrimitive(size_t primitiveId) override;
 
-    void drawTexturedRect(const gweni::Texture &texture, size_t primitiveId, gweni::Rect targetRect, float u1=0.0f,
+    void drawTexturedRect(const gweni::Texture &texture, size_t primitiveId, gweni::Rect targetRect, int zIndex, float u1=0.0f,
         float v1=0.0f, float u2=1.0f, float v2=1.0f) override;
 
-    void showPrimitive(size_t primitiveId) override;
+    void showPrimitive(int style, size_t primitiveId) override;
     void hidePrimitive(size_t primitiveId) override;
 
     gweni::Color pixelColor(const gweni::Texture &texture,
         unsigned int x, unsigned int y,
         const gweni::Color &col_default) override;
 
+    void generateTextPrimitive(size_t &primitiveId) override;
+    void releaseTextPrimitive(size_t primitiveId) override;
+
     void renderText(size_t textId, const gweni::Font &font,
-        gweni::Point pos,
+        gweni::Point pos, int zIndex,
         const gweni::String &text) override;
+
+    void showText(size_t textId) override;
+    void hideText(size_t textId) override;
 
     gweni::Point measureText(const gweni::Font &font, const gweni::String &text) override;
 
@@ -148,19 +155,24 @@ public:
     void freeFont(const gweni::Font &font) override;
     bool ensureFont(const gweni::Font &font) override;
 
-    Texture::Status loadTexture(const gweni::Texture &texture) override;
+    Texture::Status loadTexture(gweni::Texture &texture) override;
     void freeTexture(const gweni::Texture &texture) override;
     TextureData getTextureData(const gweni::Texture &texture) const override;
     bool ensureTexture(const gweni::Texture &texture) override;
+    GLTextureData *getFreeTextureData();
 
 protected:// Resourses
 
 
 
     std::unordered_map<Font, GLFontData> m_fonts;
-    std::unordered_map<Texture, GLTextureData> m_textures;
+    std::vector<GLTextureData *> m_textureData;
+    std::vector<size_t> m_freeTextureData;
+    std::unordered_map<Texture, size_t> m_textures;
+    
     std::pair<const Font, GLFontData> *m_lastFont;
-    std::pair<const Texture, GLTextureData> *m_lastTexture;
+//    std::pair<const Texture, GLTextureData> *m_lastTexture;
+    size_t m_lastTexture;
 public:
 
     bool initializeContext(gweni::WindowProvider *window) override;
@@ -190,7 +202,7 @@ private:
         */
     struct Vertex
     {
-        uint8_t type;
+        uint16_t style;
         uint16_t x, y, z;
         uint16_t tx, ty; //used for color if not texture
 //        glm::vec3 pos;
@@ -200,12 +212,12 @@ private:
 
     struct Box
     {
-        uint8_t state;
+//        uint16_t state;
         uint16_t x0, y0;
         uint16_t x1, y1;
     };
 
-    void setVertex(Vertex &vertex, int x, int y, float u=0.0f, float v=0.0f);
+    void setVertex(Vertex &vertex, uint8_t type, int x, int y, int z, float u=0.0f, float v=0.0f);
     void addVert(int x, int y, float u=0.0f, float v=0.0f);
     void setTexture(unsigned int texture);
 

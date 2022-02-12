@@ -11,6 +11,7 @@ class ComboBoxDemo : public controls::Base
 public:
     GWENI_CONTROL(ComboBoxDemo, controls::Base);
 
+public:
     void onComboSelect(event::Info info);
 };
 

@@ -21,7 +21,8 @@ class GWENI_EXPORT MenuStrip: public Menu
 {
     GWENI_CONTROL(MenuStrip, Menu);
 
-    void render(skin::Base *skin) override;
+public:
+    //void render(skin::Base *skin) override;
     void renderUnder(skin::Base * /*skin*/) override {}
 
     void layout(skin::Base *skin) override;

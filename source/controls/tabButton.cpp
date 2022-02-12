@@ -41,11 +41,6 @@ void TabButton::layout(skin::Base *skin)
     ParentClass::layout(skin);
 }
 
-void TabButton::render(skin::Base *skin)
-{
-//    skin->drawTabButton(this, skin::Generate, isActive(), m_control->getTabStrip()->getDock());
-    skin->drawControl(this);
-}
 
 void TabButton::setTabControl(TabControl *ctrl)
 {

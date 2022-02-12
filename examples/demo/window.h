@@ -11,6 +11,7 @@ class WindowDemo:public controls::Base
 public:
     GWENI_CONTROL(WindowDemo, controls::Base);
 
+public:
     void openWindow(event::Info info);
 
     void openModalWindow(event::Info info);

@@ -12,8 +12,8 @@
 #endif
 #include <gweni/Gweni.h>
 #include <gweni/platforms/platform.h>
-#include <gweni/skins/simple.h>
-#include <gweni/skins/texturedSkin.h>
+#include <gweni/skins/simple/simple.h>
+#include <gweni/skins/textured/texturedSkin.h>
 #include <gweni/platforms/input/glfw3.h>
 #include <gweni/controls/canvas.h>
 #include <iostream>
@@ -66,20 +66,23 @@ int main(int argc, char *argv[])
     glfwWindowHint(GLFW_OPENGL_DEBUG_CONTEXT, GL_TRUE);
 
     // Create a new window
-    GLFWwindow* window = glfwCreateWindow(screenSize.x, screenSize.y,
-                                          "Gweni OpenGL Core Profile Sample", NULL, NULL);
-    if (!window)
+    GLFWwindow *window=glfwCreateWindow(screenSize.x, screenSize.y,
+        "Gweni OpenGL Core Profile Sample", NULL, NULL);
+    
+    if(!window)
     {
         glfwTerminate();
         return EXIT_FAILURE;
     }
 
     glfwMakeContextCurrent(window);
+//    glfwSwapInterval(0); //removes fps limiter
     glewExperimental = GL_TRUE;
     GLuint error;
-    if ((error = glewInit()) != GLEW_OK)
+
+    if((error = glewInit()) != GLEW_OK)
     {
-        std::cout << "Glew init error: " << glewGetErrorString(error) << std::endl;
+        std::cout<<"Glew init error: "<<glewGetErrorString(error)<<std::endl;
         glfwTerminate();
         return EXIT_FAILURE;
     }
@@ -97,10 +100,11 @@ int main(int argc, char *argv[])
     renderer->init();
 
     // Create a Gweni skin
-    gweni::skin::TexturedSkin *skin = new gweni::skin::TexturedSkin(renderer);
+    gweni::skin::textured::TexturedSkin *skin = new gweni::skin::textured::TexturedSkin(renderer);
 
 //    skin->init("DefaultSkin.png");
-    skin->setDefaultFont("OpenSans.ttf", 11);
+    skin->init("resources/DefaultSkin.json");
+    skin->setDefaultFont("resources/OpenSans.ttf", 11);
 
     // Create a Canvas (it's root, on which all other Gweni panels are created)
     gweni::controls::Canvas* canvas = new gweni::controls::Canvas(skin);
@@ -108,7 +112,15 @@ int main(int argc, char *argv[])
     canvas->setDrawBackground(true);
     canvas->setBackgroundColor(gweni::Color(150, 170, 170, 255));
 
-    gweni::controls::Base *demo=new gweni::Demo(canvas);
+//#define SINGLE_CONTROL
+
+#ifndef SINGLE_CONTROL
+    gweni::controls::Base *demo=canvas->newChild<gweni::Demo>();
+#else//SINGLE_CONTROL
+    gweni::controls::Button *button=canvas->newChild<gweni::controls::Button>();
+
+    button->setText("ButtonTest");
+#endif//SINGLE_CONTROL
 
     g_glfwInput.initialize(canvas);
 
@@ -120,6 +132,7 @@ int main(int argc, char *argv[])
     // Begin the main game loop
     while (!glfwWindowShouldClose(window))
     {
+        canvas->updateCanvas();
         glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
         canvas->renderCanvas();
         glfwSwapBuffers(window);
@@ -129,7 +142,12 @@ int main(int argc, char *argv[])
         gweni::platform::sleep(0);
     }
 
+#ifndef SINGLE_CONTROL
     delete demo;
+#else//SINGLE_CONTROL
+    delete button;
+#endif//SINGLE_CONTROL
+    
     delete canvas;
     delete skin;
     delete renderer;

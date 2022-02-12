@@ -5,14 +5,14 @@
 namespace gweni
 {
 
-ColorPickerDemo::ColorPickerDemo(gweni::controls::Base *parent, const gweni::String &name):
-    Base(parent)
+ColorPickerDemo::ColorPickerDemo(const gweni::String &name):
+    Base()
 {
-    controls::ColorPicker *control=new controls::ColorPicker(this);
+    controls::ColorPicker *control=newChild<controls::ColorPicker>();
 
     control->setBounds(0, 10, 250, 150);
 
-    controls::HSVColorPicker *hsvCtrl=new controls::HSVColorPicker(this);
+    controls::HSVColorPicker *hsvCtrl=newChild<controls::HSVColorPicker>();
 
     hsvCtrl->setBounds(260, 10, 250, 150);
 }

@@ -5,38 +5,38 @@
 namespace gweni
 {
 
-ButtonDemo::ButtonDemo(gweni::controls::Base *parent, const gweni::String &name):
-    Base(parent)
+ButtonDemo::ButtonDemo(const gweni::String &name):
+    Base()
 {
 //    setText(name);
 
     // Normal button
-    controls::Button *buttonA=new controls::Button(this);
+    controls::Button *buttonA=newChild<controls::Button>();
     buttonA->setText("Event Tester");
     buttonA->onPressCaller.add(this, &ButtonDemo::onButtonA);
     {
-        controls::Button *buttonA=new controls::Button(this);
+        controls::Button *buttonA=newChild<controls::Button>();
         buttonA->setBounds(200, 30, 300, 200);
         buttonA->setText("Event Tester");
         buttonA->onPressCaller.add(this, &ButtonDemo::onButtonA);
     }
     // Unicode test
-    controls::Button *buttonB=new controls::Button(this);
+    controls::Button *buttonB=newChild<controls::Button>();
     buttonB->setText("Text");
     align::placeBelow(buttonB, buttonA, 10);
     // Image with text
-    controls::Button *buttonC=new controls::Button(this);
+    controls::Button *buttonC=newChild<controls::Button>();
     buttonC->setText("Image Button");
     buttonC->setImage("test16.png");
     align::placeBelow(buttonC, buttonB, 10);
     // Just image
-    controls::Button *buttonD=new controls::Button(this);
+    controls::Button *buttonD=newChild<controls::Button>();
     buttonD->setText("");
     buttonD->setImage("test16.png");
     buttonD->setSize(20, 20);
     align::placeBelow(buttonD, buttonC, 10);
     // Toggle button
-    controls::Button *buttonE=new controls::Button(this);
+    controls::Button *buttonE=newChild<controls::Button>();
     buttonE->setText("Toggle Me");
     buttonE->setIsToggle(true);
     buttonE->onToggleCaller.add(this, &ButtonDemo::onToggle);
@@ -44,12 +44,12 @@ ButtonDemo::ButtonDemo(gweni::controls::Base *parent, const gweni::String &name)
     buttonE->onToggleOffCaller.add(this, &ButtonDemo::onToggleOff);
     align::placeBelow(buttonE, buttonD, 10);
     // Disabled Button
-    controls::Button *buttonF=new controls::Button(this);
+    controls::Button *buttonF=newChild<controls::Button>();
     buttonF->setText("Disabled :D");
     buttonF->setDisabled(true);
     align::placeBelow(buttonF, buttonE, 10);
     // Tooltip Button
-    controls::Button *buttonG=new controls::Button(this);
+    controls::Button *buttonG=newChild<controls::Button>();
     buttonG->setText("With Tooltip");
     buttonG->setToolTipText("This is a tooltip!");
     align::placeBelow(buttonG, buttonF, 10);

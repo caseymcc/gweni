@@ -30,20 +30,20 @@ Base::~Base()
         getCTT()->shutDown();
 }
 
-void Base::drawLinedRect(size_t *primitiveIds, gweni::Rect rect)
+void Base::drawLinedRect(size_t *primitiveIds, gweni::Rect rect, int zIndex)
 {
-    drawFilledRect(primitiveIds[0], gweni::Rect(rect.x, rect.y, rect.w, 1));
-    drawFilledRect(primitiveIds[1], gweni::Rect(rect.x, rect.y+rect.h-1, rect.w, 1));
-    drawFilledRect(primitiveIds[2], gweni::Rect(rect.x, rect.y, 1, rect.h));
-    drawFilledRect(primitiveIds[3], gweni::Rect(rect.x+rect.w-1, rect.y, 1, rect.h));
+    drawFilledRect(primitiveIds[0], gweni::Rect(rect.x, rect.y, rect.w, 1), zIndex);
+    drawFilledRect(primitiveIds[1], gweni::Rect(rect.x, rect.y+rect.h-1, rect.w, 1), zIndex);
+    drawFilledRect(primitiveIds[2], gweni::Rect(rect.x, rect.y, 1, rect.h), zIndex);
+    drawFilledRect(primitiveIds[3], gweni::Rect(rect.x+rect.w-1, rect.y, 1, rect.h), zIndex);
 }
 
-void Base::drawPixel(size_t *primitiveIds, int x, int y)
+void Base::drawPixel(size_t *primitiveIds, int x, int y, int zIndex)
 {
-    drawFilledRect(primitiveIds[0], gweni::Rect(x, y, 1, 1));
+    drawFilledRect(primitiveIds[0], gweni::Rect(x, y, 1, 1), zIndex);
 }
 
-void Base::drawShavedCornerRect(size_t *primitiveIds, gweni::Rect rect, bool bSlight)
+void Base::drawShavedCornerRect(size_t *primitiveIds, gweni::Rect rect, int zIndex, bool bSlight)
 {
     // Draw INSIDE the w/h.
     rect.w-=1;
@@ -51,21 +51,21 @@ void Base::drawShavedCornerRect(size_t *primitiveIds, gweni::Rect rect, bool bSl
 
     if(bSlight)
     {
-        drawFilledRect(primitiveIds[0], gweni::Rect(rect.x+1, rect.y, rect.w-1, 1));
-        drawFilledRect(primitiveIds[1], gweni::Rect(rect.x+1, rect.y+rect.h, rect.w-1, 1));
-        drawFilledRect(primitiveIds[2], gweni::Rect(rect.x, rect.y+1, 1, rect.h-1));
-        drawFilledRect(primitiveIds[3], gweni::Rect(rect.x+rect.w, rect.y+1, 1, rect.h-1));
+        drawFilledRect(primitiveIds[0], gweni::Rect(rect.x+1, rect.y, rect.w-1, 1), zIndex);
+        drawFilledRect(primitiveIds[1], gweni::Rect(rect.x+1, rect.y+rect.h, rect.w-1, 1), zIndex);
+        drawFilledRect(primitiveIds[2], gweni::Rect(rect.x, rect.y+1, 1, rect.h-1), zIndex);
+        drawFilledRect(primitiveIds[3], gweni::Rect(rect.x+rect.w, rect.y+1, 1, rect.h-1), zIndex);
     }
     else
     {
-        drawPixel(&primitiveIds[0], rect.x+1, rect.y+1);
-        drawPixel(&primitiveIds[1], rect.x+rect.w-1, rect.y+1);
-        drawPixel(&primitiveIds[2], rect.x+1, rect.y+rect.h-1);
-        drawPixel(&primitiveIds[3], rect.x+rect.w-1, rect.y+rect.h-1);
-        drawFilledRect(primitiveIds[4], gweni::Rect(rect.x+2, rect.y, rect.w-3, 1));
-        drawFilledRect(primitiveIds[5], gweni::Rect(rect.x+2, rect.y+rect.h, rect.w-3, 1));
-        drawFilledRect(primitiveIds[6], gweni::Rect(rect.x, rect.y+2, 1, rect.h-3));
-        drawFilledRect(primitiveIds[7], gweni::Rect(rect.x+rect.w, rect.y+2, 1, rect.h-3));
+        drawPixel(&primitiveIds[0], rect.x+1, rect.y+1, zIndex);
+        drawPixel(&primitiveIds[1], rect.x+rect.w-1, rect.y+1, zIndex);
+        drawPixel(&primitiveIds[2], rect.x+1, rect.y+rect.h-1, zIndex);
+        drawPixel(&primitiveIds[3], rect.x+rect.w-1, rect.y+rect.h-1, zIndex);
+        drawFilledRect(primitiveIds[4], gweni::Rect(rect.x+2, rect.y, rect.w-3, 1), zIndex);
+        drawFilledRect(primitiveIds[5], gweni::Rect(rect.x+2, rect.y+rect.h, rect.w-3, 1), zIndex);
+        drawFilledRect(primitiveIds[6], gweni::Rect(rect.x, rect.y+2, 1, rect.h-3), zIndex);
+        drawFilledRect(primitiveIds[7], gweni::Rect(rect.x+rect.w, rect.y+2, 1, rect.h-3), zIndex);
     }
 }
 
@@ -129,16 +129,16 @@ bool Base::clipRegionVisible()
     return true;
 }
 
-void Base::drawMissingImage(size_t primitiveId,gweni::Rect targetRect)
+void Base::drawMissingImage(size_t primitiveId, gweni::Rect targetRect, int zIndex)
 {
     setDrawColor(colors::Red);
-    drawFilledRect(primitiveId, targetRect);
+    drawFilledRect(primitiveId, targetRect, zIndex);
 }
 
 ///  If they haven't defined these font functions in their renderer code
 ///  we just draw some rects where the letters would be to give them an
 ///  idea.
-void Base::renderText(size_t textId, const gweni::Font &font, gweni::Point pos, const gweni::String &text)
+void Base::renderText(size_t textId, const gweni::Font &font, gweni::Point pos, int zIndex, const gweni::String &text)
 {
 //    const float fSize=font.size  *scale();
 //

@@ -90,8 +90,6 @@ bool loadJpeg(ImageWrapper image, const char *filename)
 
 bool saveJpeg(ImageWrapper image, const char *filename)
 {
-    int y;
-
     FILE *file=fopen(filename, "wb");
     
     if(!file)

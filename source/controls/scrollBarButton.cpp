@@ -40,12 +40,6 @@ void ScrollBarButton::setDirectionRight()
     m_direction=Position::Right;
 }
 
-void ScrollBarButton::render(skin::Base *skin)
-{
-//    skin->drawScrollButton(this, skin::Generate, m_direction, m_depressed, isHovered(), isDisabled());
-    skin->drawControl(this);
-}
-
 }//namespace internal
 }//namespace controls
 }//namespace gweni

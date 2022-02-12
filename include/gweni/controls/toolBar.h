@@ -25,6 +25,7 @@ class ToolBarButton: public gweni::controls::Button
         dock(Position::Left);
     }
 
+public:
     bool shouldDrawBackground() override
     {
         return isHovered();
@@ -41,11 +42,7 @@ class ToolBarStrip: public Base
         setPadding(Padding(2, 2, 2, 2));
     }
 
-    void render(skin::Base *skin) override
-    {
-        skin->drawMenuStrip(this, skin::Generate);
-    }
-
+public:
     virtual ToolBarButton *add(const String &text, const String &icon)
     {
         ToolBarButton *button=new ToolBarButton(this);

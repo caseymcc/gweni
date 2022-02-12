@@ -5,17 +5,17 @@
 namespace gweni
 {
 
-TabControlDemo::TabControlDemo(controls::Base *parent, const String &name):
-    Base(parent)
+TabControlDemo::TabControlDemo(const String &name):
+    Base()
 {
     {
-        m_dockControlLeft=new controls::TabControl(this);
+        m_dockControlLeft=newChild<controls::TabControl>();
         m_dockControlLeft->setBounds(10, 10, 200, 200);
         {
             controls::TabButton *button=m_dockControlLeft->addPage("Controls");
             Base *page=button->getPage();
             {
-                controls::RadioButtonController *pRadio=new controls::RadioButtonController(page);
+                controls::RadioButtonController *pRadio=page->newChild<controls::RadioButtonController>();
                 pRadio->setBounds(10, 10, 100, 100);
                 pRadio->addOption("Top")->select();
                 pRadio->addOption("Bottom");
@@ -29,7 +29,7 @@ TabControlDemo::TabControlDemo(controls::Base *parent, const String &name):
         m_dockControlLeft->addPage("Blue");
     }
     {
-        controls::TabControl *pDragMe=new controls::TabControl(this);
+        controls::TabControl *pDragMe=newChild<controls::TabControl>();
         pDragMe->setBounds(220, 10, 200, 200);
         pDragMe->addPage("You");
         pDragMe->addPage("Can");

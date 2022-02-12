@@ -38,6 +38,7 @@ public:
         setAlignment(Position::CenterV|Position::Left);
     }
 
+public:
     void setField(controls::Base *field)
     {
         field->setParent(this);

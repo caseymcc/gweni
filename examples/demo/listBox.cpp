@@ -4,11 +4,11 @@
 namespace gweni
 {
 
-ListBoxDemo::ListBoxDemo(controls::Base *parent, const String &name):
-    Base(parent)
+ListBoxDemo::ListBoxDemo(const String &name):
+    Base()
 {
     {
-        controls::ListBox *ctrl=new controls::ListBox(this);
+        controls::ListBox *ctrl=newChild<controls::ListBox>();
         ctrl->setBounds(10, 10, 100, 200);
         ctrl->addItem("First");
         ctrl->addItem("Blue");
@@ -29,7 +29,7 @@ ListBoxDemo::ListBoxDemo(controls::Base *parent, const String &name):
         ctrl->onRowSelectedCaller.add(this, &ListBoxDemo::rowSelected);
     }
     {
-        controls::ListBox *ctrl=new controls::ListBox(this);
+        controls::ListBox *ctrl=newChild<controls::ListBox>();
         ctrl->setBounds(120, 10, 200, 200);
         ctrl->setColumnCount(3);
         ctrl->setAllowMultiSelect(true);

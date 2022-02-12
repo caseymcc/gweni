@@ -4,10 +4,10 @@
 namespace gweni
 {
 
-NumericDemo::NumericDemo(controls::Base *parent, const String &name):
-    Base(parent)
+NumericDemo::NumericDemo(const String &name):
+    Base()
 {
-    controls::NumericUpDown *control=new controls::NumericUpDown(this);
+    controls::NumericUpDown *control=newChild<controls::NumericUpDown>();
 
     control->setBounds(10, 10, 50, 20);
     control->setIntValue(50);

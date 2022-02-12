@@ -27,7 +27,8 @@ public:
 
     GWENI_CONTROL(CollapsibleCategory, controls::Base);
 
-    void render(skin::Base *skin) override;
+public:
+    //void render(skin::Base *skin) override;
 
     virtual void setText(const String &text);
 
@@ -57,6 +58,7 @@ public:
 protected:
     void calculateSize(skin::Base *skin, Dim dim) override;
 
+    void onToggleHeaderButton(event::Info info);
     virtual void onSelection(event::Info info);
 
     controls::Button *m_button;

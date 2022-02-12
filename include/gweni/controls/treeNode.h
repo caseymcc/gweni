@@ -26,6 +26,7 @@ public:
 
     GWENI_CONTROL(TreeNode, Base);
 
+public:
     virtual TreeNode *addNode(const String &label);
 
     virtual void            setText(const String &text);
@@ -39,7 +40,7 @@ public:
 
     virtual Button *GetButton();
 
-    void render(skin::Base *skin) override;
+    //void render(skin::Base *skin) override;
     void layout(skin::Base *skin) override;
     void postLayout(skin::Base *skin) override;
 

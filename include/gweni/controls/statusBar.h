@@ -28,18 +28,12 @@ public:
         setAlignment(Position::Left|Position::CenterV);
     }
 
+public:
     virtual void addControl(controls::Base *ctrl, bool right)
     {
         ctrl->setParent(this);
         ctrl->dock(right?Position::Right:Position::Left);
     }
-
-    void render(skin::Base *skin) override
-    {
-//        skin->drawStatusBar(this, skin::Generate);
-        skin->drawControl(this);
-    }
-
 };
 
 

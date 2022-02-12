@@ -20,11 +20,6 @@ GWENI_CONTROL_CONSTRUCTOR(RadioButton)
     setTabable(false);
 }
 
-void RadioButton::render(skin::Base *skin)
-{
-//    skin->drawRadioButton(this, skin::Generate, isChecked(), isDepressed());
-    skin->drawControl(this);
-}
 
 }//namespace controls
 }//namespace gweni

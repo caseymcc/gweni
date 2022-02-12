@@ -29,25 +29,30 @@ GWENI_CONTROL_CONSTRUCTOR(Button)
     m_toggleStatus=false;
     setKeyboardInputEnabled(false);
     setTabable(false);
+
+//    setText(getTypeName());
 }
+
 
 void Button::render(skin::Base *skin)
 {
-//    if(!shouldDrawBackground())
-//        return;
+    Base::render(skin);
 
-    bool drawDepressed=isDepressed() && isHovered();
-
-    if(isToggle())
-        drawDepressed=drawDepressed || getToggleState();
-
-    const bool drawHovered=isHovered() && shouldDrawHover();
-
-//    if(getStateChange() == StateChange_Created)
-//        skin->drawButton(this, skin::Generate, drawDepressed, drawHovered, isDisabled());
+//    if(getStateChange() & StateChange_Created)
+//    {
+//        if(m_skinControl)
+//        {
+//            const std::vector<size_t> &primitives=m_skinControl->getPrimitives();
 //
-//    skin->drawButton(this, skin::Update, drawDepressed, drawHovered, isDisabled());
-    skin->drawControl(this);
+//            if(!primitives.empty())
+//            {
+//                std::string name=getTypeName();
+//                
+//                name+=" "+std::to_string(primitives[0]);
+//                setText(name);
+//            }
+//        }
+//    }
 }
 
 void Button::onMouseClickLeft(int /*x*/, int /*y*/, bool down)
@@ -134,7 +139,7 @@ void Button::setImage(const String &name, bool center)
     }
 
     if(!m_image)
-        m_image=new ImagePanel(this);
+        m_image=newChild<ImagePanel>();
 
     m_image->setImage(name);
     m_image->sizeToContents();

@@ -23,7 +23,8 @@ public:
 
     GWENI_CONTROL(ProgressBar, Label);
 
-    void render(skin::Base *skin) override;
+public:
+    //void render(skin::Base *skin) override;
 
     virtual void setVertical()
     {

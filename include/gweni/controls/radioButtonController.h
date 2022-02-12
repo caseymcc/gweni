@@ -23,6 +23,7 @@ public:
 
     GWENI_CONTROL(RadioButtonController, Base);
 
+public:
     void render(skin::Base * /*skin*/) override
     {}
 

@@ -68,11 +68,6 @@ void Dragger::onMouseMoved(int x, int y, int deltaX, int deltaY)
     onDragged.call(this, info);
 }
 
-void Dragger::render(skin::Base *skin)
-{
-    // skin->drawButton(this,false,false, false);
-}
-
 void Dragger::onMouseDoubleClickLeft(int x, int y)
 {
     if(m_disabled)

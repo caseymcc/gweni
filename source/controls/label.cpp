@@ -17,8 +17,9 @@ namespace controls
 GWENI_CONTROL_CONSTRUCTOR(Label)
 {
     m_createdFont=nullptr;
-    m_text=new internal::Text(this);
-    m_text->setFont(getSkin()->getDefaultFont());
+    m_text=newChild<internal::Text>();
+//    m_text->setFont(getSkin()->getDefaultFont());
+    m_text->setFont(getDefaultFont());
     setMouseInputEnabled(false);
     setBounds(0, 0, 100, 10);
     setAlignment(Position::Left | Position::CenterV);
@@ -60,8 +61,8 @@ void Label::setText(const String &str, bool doEvents)
     if(m_text->getText() == str)
         return;
 
-    m_text->setString(str);
-    redraw();
+    m_text->setText(str);
+//    redraw();
 
     if(doEvents)
         onTextChanged();

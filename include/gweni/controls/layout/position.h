@@ -27,6 +27,7 @@ public:
         setPosition(Position::Left | Position::Top);
     }
 
+public:
     void postLayout(skin::Base *skin) override
     {
         for(auto &&child : getChildren())

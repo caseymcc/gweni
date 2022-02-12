@@ -21,12 +21,6 @@ GWENI_CONTROL_CONSTRUCTOR(MenuStrip)
     m_innerPanel->setPadding(Padding(5, 0, 0, 0));
 }
 
-void MenuStrip::render(skin::Base *skin)
-{
-//    skin->drawMenuStrip(this, skin::Generate);
-    skin->drawControl(this);
-}
-
 void MenuStrip::layout(skin::Base * /*skin*/)
 {
     // TODO: We don't want to do vertical sizing the same as Menu, do nothing

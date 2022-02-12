@@ -41,7 +41,8 @@ void DockBase::setupChildDock(Position pos)
 {
     if(!m_dockedTabControl)
     {
-        m_dockedTabControl=new DockedTabControl(this);
+        m_dockedTabControl=newChild<DockedTabControl>();
+
         m_dockedTabControl->onLoseTabCaller.add(this, &DockBase::onTabRemoved);
         m_dockedTabControl->setTabStripPosition(Position::Bottom);
         m_dockedTabControl->setShowTitleBar(true);
@@ -59,7 +60,7 @@ void DockBase::setupChildDock(Position pos)
     if(pos == Position::Bottom)
         sizeDirection=Position::Top;
 
-    internal::Resizer *sizer=new internal::Resizer(this);
+    internal::Resizer *sizer=newChild<internal::Resizer>();
     sizer->dock(sizeDirection);
     sizer->setResizeDirection(sizeDirection);
     sizer->setSize(2, 2);
@@ -95,7 +96,7 @@ DockBase *DockBase::getChildDock(Position pos)
 
     if(!(*dock))
     {
-        (*dock)=new DockBase(this);
+        (*dock)=newChild<DockBase>();
         (*dock)->setupChildDock(pos);
     }
     else
@@ -364,17 +365,17 @@ void DockBase::renderOver(skin::Base *skin)
     if(!m_drawHover)
         return;
 
-    gweni::renderer::Base *render=skin->getRender();
+    gweni::renderer::Base *render=skin->getRenderer();
     render->setDrawColor(gweni::Color(255, 100, 255, 20));
-    render->drawFilledRect(m_primitiveIds[0], getRenderBounds());
+    render->drawFilledRect(m_primitiveIds[0], getRenderBounds(), getZIndex());
 
     if(m_hoverRect.w == 0)
         return;
 
     render->setDrawColor(gweni::Color(255, 100, 255, 100));
-    render->drawFilledRect(m_primitiveIds[1], m_hoverRect);
+    render->drawFilledRect(m_primitiveIds[1], m_hoverRect, getZIndex());
     render->setDrawColor(gweni::Color(255, 100, 255, 200));
-    render->drawLinedRect(&m_primitiveIds[2], m_hoverRect);
+    render->drawLinedRect(&m_primitiveIds[2], m_hoverRect, getZIndex());
 }
 
 }//namespace controls

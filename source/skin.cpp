@@ -11,6 +11,7 @@ namespace gweni
 {
 namespace skin
 {
+
 // Here we're drawing a few symbols such as the directional arrows and
 // the checkBox check
 // 
@@ -82,15 +83,15 @@ namespace skin
 //    if(primitiveIds.size() < 2)
 //        enlargePrimitiveIds(control, primitiveIds, 2);
 //
-//    getRender()->setDrawColor(Colors.Tree.Lines);
+//    getRenderer()->setDrawColor(Colors.Tree.Lines);
 //
 //    if(!isRoot)
-//        getRender()->drawFilledRect(primitiveIds[0], gweni::Rect(8, halfWay, 16-9, 1));
+//        getRenderer()->drawFilledRect(primitiveIds[0], gweni::Rect(8, halfWay, 16-9, 1));
 //
 //    if(!open)
 //        return;
 //
-//    getRender()->drawFilledRect(primitiveIds[1], gweni::Rect(14+7, labelHeight+1, 1, lastBranch+halfWay-
+//    getRenderer()->drawFilledRect(primitiveIds[1], gweni::Rect(14+7, labelHeight+1, 1, lastBranch+halfWay-
 //        labelHeight));
 //}
 //

@@ -23,6 +23,7 @@ class Demo: public controls::DockBase
 public:
     GWENI_CONTROL(Demo, controls::DockBase);
 
+public:
     void printText(const String &str);
 
     void render(skin::Base *skin);

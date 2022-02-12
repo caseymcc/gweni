@@ -26,10 +26,11 @@ public:
 
     GWENI_CONTROL(Dragger, controls::Base);
 
+public:
     void onMouseMoved(int x, int y, int deltaX, int deltaY) override;
 
     void onMouseClickLeft(int x, int y, bool down) override;
-    void render(skin::Base *skin) override;
+    //void render(skin::Base *skin) override;
 
     virtual void setTarget(controls::Base *base)
     {

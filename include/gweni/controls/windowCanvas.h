@@ -25,9 +25,9 @@ namespace controls
 class GWENI_EXPORT WindowCanvas: public Canvas, public WindowProvider
 {
 public:
-
     GWENI_CLASS(WindowCanvas, controls::Canvas);
 
+public:
     WindowCanvas(int x, int y, int w, int h, gweni::skin::Base *renderer,
         const gweni::String &strWindowTitle="");
     ~WindowCanvas();
@@ -46,7 +46,7 @@ public:
 
     skin::Base *getSkin(void) override;
 
-    void render(skin::Base *skin) override;
+    //void render(skin::Base *skin) override;
 
     void setPos(int x, int y) override;
     bool isOnTop() override;

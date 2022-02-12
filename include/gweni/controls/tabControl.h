@@ -27,6 +27,7 @@ class GWENI_EXPORT TabControl: public Base
 {
     GWENI_CONTROL(TabControl, Base);
 
+public:
     virtual TabButton *addPage(const String text, controls::Base *page=nullptr);
 
     virtual void addPage(TabButton *button);

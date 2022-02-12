@@ -21,14 +21,17 @@ class GWENI_EXPORT ScrollBarButton: public controls::Button
 {
 public:
 
-    GWENI_CONTROL(ScrollBarButton, controls::Button);
+    GWENI_CONTROL(ScrollBarButton, Button);
 
-    void render(skin::Base *skin) override;
+public:
+    //void render(skin::Base *skin) override;
 
     void setDirectionUp();
     void setDirectionDown();
     void setDirectionLeft();
     void setDirectionRight();
+
+    Position getDirection() { return m_direction; }
 
 protected:
 

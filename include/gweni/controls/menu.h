@@ -25,7 +25,8 @@ public:
 
     GWENI_CONTROL(Menu, ScrollControl);
 
-    void render(skin::Base *skin) override;
+public:
+    //void render(skin::Base *skin) override;
     void renderUnder(skin::Base *skin) override;
 
     void layout(skin::Base *skin) override;
@@ -94,7 +95,8 @@ public:
         setHeight(1);
     }
 
-    void render(gweni::skin::Base *skin) override;
+public:
+    //void render(gweni::skin::Base *skin) override;
 };
 
 

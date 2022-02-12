@@ -32,6 +32,7 @@ class File: public property::Text
         m_fileExtension="*.*";
     }
 
+public:
     File *setExtension(const gweni::String &string)
     {
         m_fileExtension=string;

@@ -23,7 +23,7 @@ public:
 
     GWENI_CONTROL_INLINE(CheckBox, property::Base)
     {
-        m_checkbox=new gweni::controls::CheckBox(this);
+        m_checkbox=newChild<gweni::controls::CheckBox>();
         m_checkbox->setShouldDrawBackground(false);
         m_checkbox->onCheckChanged.add(this, &ParentClass::onPropertyValueChanged);
         m_checkbox->setTabable(true);
@@ -32,6 +32,7 @@ public:
         setHeight(18);
     }
 
+public:
     String getPropertyValue() override
     {
         return m_checkbox->isChecked()?"1":"0";

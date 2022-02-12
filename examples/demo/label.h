@@ -11,6 +11,7 @@ class LabelDemo: public controls::Base
 public:
     GWENI_CONTROL(LabelDemo, controls::Base);
 
+public:
     Font m_font;
 };
 

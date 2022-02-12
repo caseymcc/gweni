@@ -22,13 +22,6 @@ class GWENI_EXPORT NumericUpDownButton_Up: public Button
     {
         setSize(7, 7);
     }
-
-    void render(skin::Base *skin) override
-    {
-//        skin->drawNumericUpDownButton(this, skin::Generate, isDepressed(), true);
-        skin->drawControl(this);
-    }
-
 };
 
 
@@ -38,13 +31,6 @@ class GWENI_EXPORT NumericUpDownButton_Down: public Button
     {
         setSize(7, 7);
     }
-
-    void render(skin::Base *skin) override
-    {
-//        skin->drawNumericUpDownButton(this, skin::Generate, isDepressed(), false);
-        skin->drawControl(this);
-    }
-
 };
 
 
@@ -54,6 +40,7 @@ public:
 
     GWENI_CONTROL(NumericUpDown, TextBoxNumeric);
 
+public:
     virtual void setMin(int i);
     virtual void setMax(int i);
     virtual void setIntValue(int i);

@@ -22,12 +22,6 @@ GWENI_CONTROL_CONSTRUCTOR(CheckBox)
 }
 
 
-void CheckBox::render(skin::Base *skin)
-{
-//    skin->drawCheckBox(this, skin::Generate, m_checked, isDepressed());
-    skin->drawControl(this);
-}
-
 void CheckBox::onPress(event::Info)
 {
     if(isDisabled())

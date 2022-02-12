@@ -28,6 +28,7 @@ public:
 
     GWENI_CONTROL(ScrollControl, Base);
 
+public:
     void layout(skin::Base *skin) override;
     void render(skin::Base *skin) override;
 

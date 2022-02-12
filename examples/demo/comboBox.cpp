@@ -4,11 +4,11 @@
 namespace gweni
 {
 
-ComboBoxDemo::ComboBoxDemo(controls::Base *parent, const String &name):
-    Base(parent)
+ComboBoxDemo::ComboBoxDemo(const String &name):
+    Base()
 {
     {
-        controls::ComboBox *combo=new controls::ComboBox(this);
+        controls::ComboBox *combo=newChild<controls::ComboBox>();
 
         combo->setPos(50, 50);
         combo->setWidth(200);
@@ -21,14 +21,14 @@ ComboBoxDemo::ComboBoxDemo(controls::Base *parent, const String &name):
     }
     {
         // Empty..
-        controls::ComboBox *combo=new controls::ComboBox(this);
+        controls::ComboBox *combo=newChild<controls::ComboBox>();
 
         combo->setPos(50, 80);
         combo->setWidth(200);
     }
     {
         // Empty..
-        controls::ComboBox *combo=new controls::ComboBox(this);
+        controls::ComboBox *combo=newChild<controls::ComboBox>();
 
         combo->setPos(50, 110);
         combo->setWidth(200);

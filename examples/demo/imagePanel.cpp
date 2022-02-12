@@ -4,19 +4,19 @@
 namespace gweni
 {
 
-ImagePanelDemo::ImagePanelDemo(controls::Base *parent, const String &name):
-    Base(parent)
+ImagePanelDemo::ImagePanelDemo(const String &name):
+    Base()
 {
     // Normal
     {
-        controls::ImagePanel *img=new controls::ImagePanel(this);
+        controls::ImagePanel *img=newChild<controls::ImagePanel>();
 
         img->setImage("gwen.png");
         img->setBounds(10, 10, 100, 100);
     }
     // Missing
     {
-        controls::ImagePanel *img=new controls::ImagePanel(this);
+        controls::ImagePanel *img=newChild<controls::ImagePanel>();
 
         img->setImage("missingimage.png");
         img->setBounds(120, 10, 100, 100);

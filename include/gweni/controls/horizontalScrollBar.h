@@ -26,6 +26,7 @@ public:
 
     GWENI_CONTROL(HorizontalScrollBar, BaseScrollBar);
 
+public:
     void layout(skin::Base *skin) override;
 
     void onMouseClickLeft(int x, int y, bool down) override;

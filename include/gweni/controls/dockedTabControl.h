@@ -21,6 +21,7 @@ public:
 
     GWENI_CONTROL(DockedTabControl, TabControl);
 
+public:
     void setShowTitleBar(bool bShow)
     {
         m_titleBar->setHidden(!bShow);

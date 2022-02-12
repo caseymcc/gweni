@@ -6,11 +6,11 @@
 namespace gweni
 {
 
-SliderDemo::SliderDemo(controls::Base *parent, const String &name):
-    Base(parent)
+SliderDemo::SliderDemo(const String &name):
+    Base()
 {
     {
-        controls::HorizontalSlider *slider=new controls::HorizontalSlider(this);
+        controls::HorizontalSlider *slider=newChild<controls::HorizontalSlider>();
         slider->setPos(10, 10);
         slider->setSize(150, 20);
         slider->setRange(0, 100);
@@ -18,7 +18,7 @@ SliderDemo::SliderDemo(controls::Base *parent, const String &name):
         slider->onValueChanged.add(this, &SliderDemo::sliderMoved);
     }
     {
-        controls::HorizontalSlider *slider=new controls::HorizontalSlider(this);
+        controls::HorizontalSlider *slider=newChild<controls::HorizontalSlider>();
         slider->setPos(10, 40);
         slider->setSize(150, 20);
         slider->setRange(0, 100);
@@ -28,7 +28,7 @@ SliderDemo::SliderDemo(controls::Base *parent, const String &name):
         slider->onValueChanged.add(this, &SliderDemo::sliderMoved);
     }
     {
-        controls::VerticalSlider *slider=new controls::VerticalSlider(this);
+        controls::VerticalSlider *slider=newChild<controls::VerticalSlider>();
         slider->setPos(160, 10);
         slider->setSize(20, 200);
         slider->setRange(0, 100);
@@ -36,7 +36,7 @@ SliderDemo::SliderDemo(controls::Base *parent, const String &name):
         slider->onValueChanged.add(this, &SliderDemo::sliderMoved);
     }
     {
-        controls::VerticalSlider *slider=new controls::VerticalSlider(this);
+        controls::VerticalSlider *slider=newChild<controls::VerticalSlider>();
         slider->setPos(190, 10);
         slider->setSize(20, 200);
         slider->setRange(0, 100);

@@ -36,7 +36,7 @@ public:
         m_browseName="Find Folder";
     }
 
-
+public:
     void setFolder(const String &value)
     {
         m_textBox->setText(value);

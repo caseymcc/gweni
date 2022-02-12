@@ -11,6 +11,7 @@ class StatusBarDemo : public controls::Base
 public:
     GWENI_CONTROL(StatusBarDemo, controls::Base);
 
+public:
     void layout(skin::Base *skin);
 };
 

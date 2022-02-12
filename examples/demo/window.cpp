@@ -5,17 +5,17 @@
 namespace gweni
 {
 
-WindowDemo::WindowDemo(controls::Base *parent, const String &name):
-    Base(parent)
+WindowDemo::WindowDemo(const String &name):
+    Base()
 {
     {
-        controls::Button *button=new controls::Button(this);
+        controls::Button *button=newChild<controls::Button>();
         button->setText("Normal Window");
         button->onPressCaller.add(this, &ThisClass::openWindow);
         button->setPos(0, 0);
     }
     {
-        controls::Button *button=new controls::Button(this);
+        controls::Button *button=newChild<controls::Button>();
         button->setText("Modal Window");
         button->onPressCaller.add(this, &ThisClass::openModalWindow);
         button->setPos(0, 32);
@@ -25,7 +25,7 @@ WindowDemo::WindowDemo(controls::Base *parent, const String &name):
 
 void WindowDemo::openWindow(event::Info info)
 {
-    controls::WindowControl *window=new controls::WindowControl(getCanvas());
+    controls::WindowControl *window=getCanvas()->newChild<controls::WindowControl>();
     window->setTitle(format("Window %i", m_windowCount));
     window->setSize(200 + rand() % 100, 200 + rand() % 100);
     window->setPos(rand() % 700, rand() % 400);
@@ -35,7 +35,7 @@ void WindowDemo::openWindow(event::Info info)
 
 void WindowDemo::openModalWindow(event::Info info)
 {
-    controls::WindowControl *window=new controls::WindowControl(getCanvas());
+    controls::WindowControl *window=getCanvas()->newChild<controls::WindowControl>();
     window->setTitle(format("Window %i", m_windowCount));
     window->setSize(200 + rand() % 100, 200 + rand() % 100);
     window->makeModal(true);

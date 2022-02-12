@@ -24,32 +24,32 @@ GWENI_CONTROL_CONSTRUCTOR(HSVColorPicker)
     setSize(256, 64);
     //    enableCacheToTexture();   // TODO - fix texture caching.
 
-    m_lerpBox=new controls::ColorLerpBox(this);
+    m_lerpBox=newChild<controls::ColorLerpBox>();
     m_lerpBox->onSelectionChanged.add(this, &HSVColorPicker::colorBoxChanged);
     m_lerpBox->dock(Position::Left);
 
-    m_colorSlider=new controls::ColorSlider(this);
+    m_colorSlider=newChild<controls::ColorSlider>();
     m_colorSlider->setPos(m_lerpBox->getWidth()+15, 5);
     m_colorSlider->onSelectionChanged.add(this, &HSVColorPicker::colorSliderChanged);
     m_colorSlider->dock(Position::Left);
 
-    m_after=new internal::ColorDisplay(this);
+    m_after=newChild<internal::ColorDisplay>();
     m_after->setSize(48, 24);
     m_after->setPos(m_colorSlider->getX()+m_colorSlider->getWidth()+15, 5);
 
-    m_before=new internal::ColorDisplay(this);
+    m_before=newChild<internal::ColorDisplay>();
     m_before->setSize(48, 24);
     m_before->setPos(m_after->getX(), 28);
 
     int x=m_before->getX();
     int y=m_before->getY()+30;
     {
-        Label *label=new Label(this);
+        Label *label=newChild<Label>();
         label->setText("R:");
         label->sizeToContents();
         label->setPos(x, y);
 
-        TextBoxNumeric *numeric=new TextBoxNumeric(this);
+        TextBoxNumeric *numeric=newChild<TextBoxNumeric>();
         numeric->setName("RedBox");
         numeric->setPos(x+15, y-1);
         numeric->setSize(26, 16);
@@ -58,12 +58,12 @@ GWENI_CONTROL_CONSTRUCTOR(HSVColorPicker)
     }
     y+=20;
     {
-        Label *label=new Label(this);
+        Label *label=newChild<Label>();
         label->setText("G:");
         label->sizeToContents();
         label->setPos(x, y);
 
-        TextBoxNumeric *numeric=new TextBoxNumeric(this);
+        TextBoxNumeric *numeric=newChild<TextBoxNumeric>();
         numeric->setName("GreenBox");
         numeric->setPos(x+15, y-1);
         numeric->setSize(26, 16);
@@ -72,12 +72,12 @@ GWENI_CONTROL_CONSTRUCTOR(HSVColorPicker)
     }
     y+=20;
     {
-        Label *label=new Label(this);
+        Label *label=newChild<Label>();
         label->setText("B:");
         label->sizeToContents();
         label->setPos(x, y);
 
-        TextBoxNumeric *numeric=new TextBoxNumeric(this);
+        TextBoxNumeric *numeric=newChild<TextBoxNumeric>();
         numeric->setName("BlueBox");
         numeric->setPos(x+15, y-1);
         numeric->setSize(26, 16);

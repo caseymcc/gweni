@@ -4,29 +4,29 @@
 namespace gweni
 {
 
-PageControlDemo::PageControlDemo(controls::Base *parent, const String &name):
-    Base(parent)
+PageControlDemo::PageControlDemo(const String &name):
+    Base()
 {
-    controls::PageControl *control=new controls::PageControl(this);
+    controls::PageControl *control=newChild<controls::PageControl>();
     control->setSize(500, 300);
     control->setPageCount(5);
     control->onPageChanged.add(this, &ThisClass::OnPageChanged);
     control->onFinish.add(this, &ThisClass::OnFinish);
     // Page 0
     {
-        controls::Button *button=new controls::Button(control->getPage(0));
+        controls::Button *button=control->getPage(0)->newChild<controls::Button>();
         button->dock(Position::Fill);
         button->setText("This button is fill docked on page 0");
     }
     // Page 1
     {
-        controls::Button *button=new controls::Button(control->getPage(1));
+        controls::Button *button=control->getPage(1)->newChild<controls::Button>();
         button->dock(Position::Top);
         button->setText("This button is top docked on page 1");
     }
     // Page 2
     {
-        controls::Button *button=new controls::Button(control->getPage(2));
+        controls::Button *button=control->getPage(2)->newChild<controls::Button>();
         button->setSize(400, 1000);
         button->setPos(50, 50);
         button->setText("This button is long to test scrolling (page 2)");

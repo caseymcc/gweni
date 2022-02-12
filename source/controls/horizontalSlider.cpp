@@ -41,11 +41,5 @@ void HorizontalSlider::layout(skin::Base * /*skin*/)
     m_sliderBar->setSize(15, getHeight());
 }
 
-void HorizontalSlider::render(skin::Base *skin)
-{
-//    skin->drawSlider(this, skin::Generate, true, m_clampToNotches?m_numNotches:0, m_sliderBar->getWidth());
-    skin->drawControl(this);
-}
-
 }//namespace controls
 }//namespace gweni

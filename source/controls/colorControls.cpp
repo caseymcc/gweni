@@ -187,23 +187,23 @@ void ColorLerpBox::render(gweni::skin::Base *skin)
     {
         for(int y=0; y < getHeight(); y++)
         {
-            skin->getRender()->setDrawColor(getColorAtPos(x, y));
-            skin->getRender()->drawPixel(&m_primitiveIds[primitiveIndex], x, y);
+            skin->getRenderer()->setDrawColor(getColorAtPos(x, y));
+            skin->getRenderer()->drawPixel(&m_primitiveIds[primitiveIndex], x, y, getZIndex());
             primitiveIndex++;
         }
     }
 
-    skin->getRender()->setDrawColor(gweni::Color(0, 0, 0, 255));
-    skin->getRender()->drawLinedRect(&m_primitiveIds[primitiveIndex], getRenderBounds());
+    skin->getRenderer()->setDrawColor(gweni::Color(0, 0, 0, 255));
+    skin->getRenderer()->drawLinedRect(&m_primitiveIds[primitiveIndex], getRenderBounds(), getZIndex());
     gweni::Color selected=getSelectedColor();
 
     if((selected.r+selected.g+selected.b)/3 < 170)
-        skin->getRender()->setDrawColor(gweni::Color(255, 255, 255, 255));
+        skin->getRenderer()->setDrawColor(gweni::Color(255, 255, 255, 255));
     else
-        skin->getRender()->setDrawColor(gweni::Color(0, 0, 0, 255));
+        skin->getRenderer()->setDrawColor(gweni::Color(0, 0, 0, 255));
 
     gweni::Rect testRect=gweni::Rect(cursorPos.x-3, cursorPos.y-3, 6, 6);
-    skin->getRender()->drawShavedCornerRect(&m_primitiveIds[primitiveIndex+4], testRect);
+    skin->getRenderer()->drawShavedCornerRect(&m_primitiveIds[primitiveIndex+4], testRect, getZIndex());
 }
 
 GWENI_CONTROL_CONSTRUCTOR(ColorSlider)
@@ -227,20 +227,20 @@ void ColorSlider::render(gweni::skin::Base *skin)
     for(int y=0; y < getHeight(); y++)
     {
         const float yPercent=static_cast<float>(y) / getHeight();
-        skin->getRender()->setDrawColor(HSVToColor(yPercent*360, 1, 1));
-        skin->getRender()->drawFilledRect(m_primitiveIds[primitiveIndex], gweni::Rect(5, y, getWidth()-10, 1));
+        skin->getRenderer()->setDrawColor(HSVToColor(yPercent*360, 1, 1));
+        skin->getRenderer()->drawFilledRect(m_primitiveIds[primitiveIndex], gweni::Rect(5, y, getWidth()-10, 1), getZIndex());
         primitiveIndex++;
     }
 
     int drawHeight=m_selectedDist-3;
     // Draw our selectors
-    skin->getRender()->setDrawColor(gweni::Color(0, 0, 0, 255));
-    skin->getRender()->drawFilledRect(m_primitiveIds[primitiveIndex], gweni::Rect(0, drawHeight+2, getWidth(), 1));
-    skin->getRender()->drawFilledRect(m_primitiveIds[primitiveIndex+1], gweni::Rect(0, drawHeight, 5, 5));
-    skin->getRender()->drawFilledRect(m_primitiveIds[primitiveIndex+2], gweni::Rect(getWidth()-5, drawHeight, 5, 5));
-    skin->getRender()->setDrawColor(gweni::Color(255, 255, 255, 255));
-    skin->getRender()->drawFilledRect(m_primitiveIds[primitiveIndex+3], gweni::Rect(1, drawHeight+1, 3, 3));
-    skin->getRender()->drawFilledRect(m_primitiveIds[primitiveIndex+4], gweni::Rect(getWidth()-4, drawHeight+1, 3, 3));
+    skin->getRenderer()->setDrawColor(gweni::Color(0, 0, 0, 255));
+    skin->getRenderer()->drawFilledRect(m_primitiveIds[primitiveIndex], gweni::Rect(0, drawHeight+2, getWidth(), 1), getZIndex());
+    skin->getRenderer()->drawFilledRect(m_primitiveIds[primitiveIndex+1], gweni::Rect(0, drawHeight, 5, 5), getZIndex());
+    skin->getRenderer()->drawFilledRect(m_primitiveIds[primitiveIndex+2], gweni::Rect(getWidth()-5, drawHeight, 5, 5), getZIndex());
+    skin->getRenderer()->setDrawColor(gweni::Color(255, 255, 255, 255));
+    skin->getRenderer()->drawFilledRect(m_primitiveIds[primitiveIndex+3], gweni::Rect(1, drawHeight+1, 3, 3), getZIndex());
+    skin->getRenderer()->drawFilledRect(m_primitiveIds[primitiveIndex+4], gweni::Rect(getWidth()-4, drawHeight+1, 3, 3), getZIndex());
 }
 
 void ColorSlider::onMouseClickLeft(int x, int y, bool down)

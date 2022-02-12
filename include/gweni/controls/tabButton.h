@@ -20,9 +20,10 @@ class TabControl;
 class GWENI_EXPORT TabButton: public Button
 {
 public:
-
     GWENI_CONTROL(TabButton, Button);
-    void render(skin::Base *skin) override;
+
+public:
+//    void render(skin::Base *skin) override;
     void layout(skin::Base *skin) override;
 
     void setPage(Base *page)
@@ -35,7 +36,7 @@ public:
         return m_page;
     }
 
-    void        setTabControl(TabControl *ctrl);
+    void setTabControl(TabControl *ctrl);
     TabControl *getTabControl()
     {
         return m_control;
@@ -71,7 +72,6 @@ public:
     }
 
 private:
-
     Base *m_page;
     TabControl *m_control;
 

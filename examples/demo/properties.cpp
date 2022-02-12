@@ -8,11 +8,11 @@
 namespace gweni
 {
 
-PropertiesDemo::PropertiesDemo(controls::Base *parent, const String &name):
-    Base(parent)
+PropertiesDemo::PropertiesDemo(const String &name):
+    Base()
 {
     {
-        controls::Properties *props=new controls::Properties(this);
+        controls::Properties *props=newChild<controls::Properties>();
         props->setBounds(10, 10, 150, 300);
         {
             {
@@ -24,7 +24,7 @@ PropertiesDemo::PropertiesDemo(controls::Base *parent, const String &name):
         }
     }
     {
-        controls::PropertyTree *ptree=new controls::PropertyTree(this);
+        controls::PropertyTree *ptree=newChild<controls::PropertyTree>();
         ptree->setBounds(200, 10, 200, 200);
         {
             controls::Properties *props=ptree->add("Item One");
@@ -35,13 +35,13 @@ PropertiesDemo::PropertiesDemo(controls::Base *parent, const String &name):
         {
             controls::Properties *props=ptree->add("Item Two");
             props->add("More Items");
-            props->add("CheckBox", new controls::property::CheckBox(props), "1");
+            props->add("CheckBox", props->newChild<controls::property::CheckBox>(), "1");
             props->add("To Fill");
-            props->add("ColorSelector", new controls::property::ColorSelector(props), "255 0 0");
+            props->add("ColorSelector", props->newChild<controls::property::ColorSelector>(), "255 0 0");
             props->add("Out Here");
             // Combo Box Test
             {
-                controls::property::ComboBox *combo=new controls::property::ComboBox(props);
+                controls::property::ComboBox *combo=props->newChild<controls::property::ComboBox>();
                 combo->getComboBox()->addItem("Option One", "one");
                 combo->getComboBox()->addItem("Number Two", "two");
                 combo->getComboBox()->addItem("Door Three", "three");

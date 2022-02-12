@@ -33,11 +33,11 @@ set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${GWENI_SOURCE_DIR}/cmake/Modules/")
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 
 # output directory
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${GWENI_SOURCE_DIR}/bin) # exe
-set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${GWENI_SOURCE_DIR}/bin) # .dylib
-set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${GWENI_SOURCE_DIR}/lib) # .a
-make_directory(${CMAKE_RUNTIME_OUTPUT_DIRECTORY})
-make_directory(${CMAKE_LIBRARY_OUTPUT_DIRECTORY})
+#set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${GWENI_SOURCE_DIR}/bin) # exe
+#set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${GWENI_SOURCE_DIR}/bin) # .dylib
+#set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${GWENI_SOURCE_DIR}/lib) # .a
+#make_directory(${CMAKE_RUNTIME_OUTPUT_DIRECTORY})
+#make_directory(${CMAKE_LIBRARY_OUTPUT_DIRECTORY})
 
 # configure projects
 include(${GWENI_SOURCE_DIR}/cmake/Config.cmake)
@@ -235,15 +235,18 @@ set(GWENI_DIALOG_SOURCES
     source/controls/Dialog/query.cpp
 )
 
-set(GWENI_SKIN_SOURCES
-    # skins
-    include/gweni/skins/simple.h
-    include/gweni/skins/texturedControls.h
-    source/skins/texturedControls.cpp
-    include/gweni/skins/texturedPrimitives.h
-    source/skins/texturedPrimitives.cpp
-    include/gweni/skins/texturedSkin.h
-    source/skins/texturedSkin.cpp
+set(GWENI_SKIN_SIMPLE_SOURCES
+    #simple skin
+    include/gweni/skins/simple/simple.h
+)
+set(GWENI_SKIN_TEXTURED_SOURCES
+    #textured skin
+    include/gweni/skins/textured/texturedControls.h
+    source/skins/textured/texturedControls.cpp
+    include/gweni/skins/textured/texturedPrimitives.h
+    source/skins/textured/texturedPrimitives.cpp
+    include/gweni/skins/textured/texturedSkin.h
+    source/skins/textured/texturedSkin.cpp
 )
 
 set(GWENI_PLATFORM_SOURCES
@@ -256,6 +259,7 @@ set(GWENI_PLATFORM_SOURCES
     include/gweni/platforms/inputEvent.h
     include/gweni/platforms/platform.h
     include/gweni/platforms/platformTypes.h
+    source/platforms/platformTypes.cpp
     include/gweni/platforms/windowProvider.h
     #source/platforms/nullPlatform.cpp
     #source/platforms/windowsPlatform.cpp
@@ -276,24 +280,21 @@ set(GWENI_RENDER_SOURCES
 )
 
 if(GWENI_RENDER_SDL2)
-set(GWENI_RENDER_HEADERS
-    include/gweni/platforms/renderers/sdl2.h
-)
-set(GWENI_RENDER_SOURCES
-    source/platforms/renderers/OpenGL/sdl2.cpp
-)
+    set(GWENI_RENDER_SOURCES
+        include/gweni/platforms/renderers/sdl2.h
+        source/platforms/renderers/OpenGL/sdl2.cpp
+    )
 endif()
 
 if(GWENI_RENDER_OPENGL)
-    set(GWENI_RENDER_HEADERS
-        include/gweni/platforms/renderers/opengl.h
-    )
     set(GWENI_RENDER_SOURCES
+        include/gweni/platforms/renderers/opengl.h
         source/platforms/renderers/OpenGL/opengl.cpp
     )
 endif()
 
 set(GWENI_ADDITIONAL_LIBRARIES "")
+set(GWENI_COMPILE_DEFINITIONS "")
 
 hunter_add_package(RapidJSON)
 find_package(RapidJSON CONFIG REQUIRED)
@@ -306,10 +307,8 @@ if(GWENI_RENDER_OPENGL_CORE)
     hunter_add_package(freetype)
     find_package(freetype CONFIG REQUIRED)
 
-    set(GWENI_RENDER_HEADERS
-        include/gweni/platforms/renderers/openglCore.h
-    )
     set(GWENI_RENDER_SOURCES
+        include/gweni/platforms/renderers/openglCore.h
         source/platforms/renderers/OpenGLCore/openglCore.cpp
     )
     set(GWENI_ADDITIONAL_LIBRARIES ${GWENI_ADDITIONAL_LIBRARIES}
@@ -318,7 +317,49 @@ if(GWENI_RENDER_OPENGL_CORE)
         freetype-gl
         imglib
     )
+
+    set(GWENI_COMPILE_DEFINITIONS ${GWENI_COMPILE_DEFINITIONS}
+        GLM_HAS_TEMPLATE_ALIASES
+    )
 endif()
+
+set(GWENI_STD_FILESYSTEM 1)
+set(GWENI_EXPERIMENTAL_FILESYSTEM 2)
+set(GWENI_BOOST 3)
+
+set(GWENI_COMPILE_DEFINITIONS ${GWENI_COMPILE_DEFINITIONS} "GWENI_STD_FILESYSTEM=${GWENI_STD_FILESYSTEM}")
+set(GWENI_COMPILE_DEFINITIONS ${GWENI_COMPILE_DEFINITIONS} "GWENI_EXPERIMENTAL_FILESYSTEM=${GWENI_EXPERIMENTAL_FILESYSTEM}")
+set(GWENI_COMPILE_DEFINITIONS ${GWENI_COMPILE_DEFINITIONS} "GWENI_BOOST=${GWENI_BOOST}")
+
+set(GWENI_USE_FILESYSTEM GWENI_STD_FILESYSTEM)
+
+if(${CMAKE_SYSTEM_NAME} STREQUAL "Android")
+    #filesystem seems to be missing from NDK
+    set(GWENI_USE_FILESYSTEM GWENI_BOOST)
+
+    hunter_add_package(Boost COMPONENTS system filesystem)
+    find_package(Boost CONFIG REQUIRED system filesystem)
+
+    set(GWENI_ADDITIONAL_LIBRARIES ${GWENI_ADDITIONAL_LIBRARIES} 
+        "Boost::system"
+        "Boost::filesystem"
+    )
+else()
+    if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang") 
+        if(CMAKE_CXX_COMPILER_VERSION VERSION_GREATER 7.0)
+            set(GWENI_USE_FILESYSTEM ${GWENI_STD_FILESYSTEM})
+        endif()
+    elseif("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU")
+        set(GWENI_USE_FILESYSTEM ${GWENI_EXPERIMENTAL_FILESYSTEM})
+        if(CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 8.0)
+            set(GWENI_USE_FILESYSTEM ${GWENI_STD_FILESYSTEM})
+            set(GWENI_ADDITIONAL_LIBRARIES "stdc++fs")
+        endif()
+    endif()
+endif()
+
+set(GWENI_COMPILE_DEFINITIONS ${GWENI_COMPILE_DEFINITIONS} "GWENI_USE_FILESYSTEM=${GWENI_USE_FILESYSTEM}")
+
 
 #set(GWENI_RENDER_SOURCES
 #    include/gweni/Renderers/${GWENI_RENDERER_NAME}.h
@@ -329,12 +370,13 @@ endif()
 # header folder groups
 source_group("" FILES ${GWENI_HEADERS} ${GWENI_SOURCES})
 source_group("controls" FILES ${GWENI_CONTROL_SOURCES})
-source_group("layouts" FILES ${GWENI_LAYOUT_SOURCES})
 source_group("dialogs" FILES ${GWENI_DIALOG_SOURCES})
-source_group("properties" FILES ${GWENI_PROPERTY_SOURCES})
-source_group("skins" FILES ${GWENI_SKIN_SOURCES})
+source_group("layouts" FILES ${GWENI_LAYOUT_SOURCES})
+source_group("skins\\simple" FILES ${GWENI_SKIN_SIMPLE_SOURCES})
+source_group("skins\\textured" FILES ${GWENI_SKIN_TEXTURED_SOURCES})
 source_group("platforms" FILES ${GWENI_PLATFORM_SOURCES})
 source_group("platforms\\renderers" FILES ${GWENI_RENDER_SOURCES})
+source_group("properties" FILES ${GWENI_PROPERTY_SOURCES})
 
 # gweni library
 add_library(gweni STATIC 
@@ -343,7 +385,8 @@ add_library(gweni STATIC
     ${GWENI_LAYOUT_SOURCES}
     ${GWENI_DIALOG_SOURCES}
     ${GWENI_PROPERTY_SOURCES}
-    ${GWENI_SKIN_SOURCES}
+    ${GWENI_SKIN_SIMPLE_SOURCES}
+    ${GWENI_SKIN_TEXTURED_SOURCES}
     ${GWENI_PLATFORM_SOURCES}
     ${GWENI_RENDER_SOURCES}
 )
@@ -353,10 +396,13 @@ target_link_libraries(gweni
     ${GWENI_ADDITIONAL_LIBRARIES}
 #    gweni${GWENI_RENDER_NAME}
 )
-
-if(GWENI_RENDER_OPENGL_CORE)
-    target_compile_definitions(gweni PUBLIC GLM_HAS_TEMPLATE_ALIASES)
+if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "MSVC")
+    target_link_options(gweni PUBLIC "/WHOLEARCHIVE:$<TARGET_FILE:gweni>")
+else()
+    target_link_options(gweni PUBLIC --whole-archive)
 endif()
+
+target_compile_definitions(gweni PUBLIC ${GWENI_COMPILE_DEFINITIONS})
 
 if(GWENI_BUILD_EXAMPLES)
     add_subdirectory(examples)

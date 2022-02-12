@@ -77,12 +77,6 @@ void ProgressBar::cycleThink(float delta)
     redraw();
 }
 
-void ProgressBar::render(skin::Base *skin)
-{
-    //skin->drawProgressBar(this, skin::Generate, m_horizontal, m_progress);
-    skin->drawControl(this);
-}
-
 float ProgressBar::getCycleSpeed()
 {
     return m_cycleSpeed;

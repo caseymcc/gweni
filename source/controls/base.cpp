@@ -33,17 +33,54 @@ namespace gweni
 namespace controls
 {
 
+size_t getControlType(std::string name)
+{
+    static std::vector<std::string> controlTypes;
+
+    for(size_t i=0; i<controlTypes.size(); ++i)
+    {
+        if(controlTypes[i] == name)
+            return i;
+    }
+
+    controlTypes.push_back(name);
+    return controlTypes.size()-1;
+}
+
+std::string getFullName(Base *base)
+{
+    std::string name=(!base->getName().empty())?base->getName():base->getTypeName();
+    controls::Base *parent=base->getParent();
+
+    while(parent)
+    {
+        std::string parentName=(!parent->getName().empty())?parent->getName():parent->getTypeName();
+
+        parentName+="/"+name;
+        name=parentName;
+        parent=parent->getParent();
+    }
+
+    return name;
+}
+
 ObjectIdBank<Base *, nullptr> g_controls;
 
-Base::Base(Base *parent, const String &Name)
+Base::Base(const String &name)
 {
+
     m_id=g_controls.getNextId(this);
-    init(parent, Name);
+
+    m_parent=nullptr;
+    m_actualParent=nullptr;
+    m_skin=nullptr;
+
+    init(name);
 
     addStateChange(StateChange_Created);
 }
 
-void Base::init(Base *parent, const String &Name)
+void Base::init(const String &name)
 {
     m_updatePrimitives=true;
 
@@ -52,12 +89,12 @@ void Base::init(Base *parent, const String &Name)
     m_minimumSize={0, 0};
     m_maximumSize={std::numeric_limits<int>::max(), std::numeric_limits<int>::max()};
     m_layoutItem=nullptr;
-    m_parent=nullptr;
-    m_actualParent=nullptr;
+//    m_parent=nullptr;
+//    m_actualParent=nullptr;
     m_innerPanel=nullptr;
-    m_skin=nullptr;
-    setName(Name);
-    setParent(parent);
+//    m_skin=nullptr;
+    setName(name);
+//    setParent(parent);
     m_hidden=false;
     m_bounds=Rect(0, 0, 10, 10);
     m_padding=Padding(0, 0, 0, 0);
@@ -165,7 +202,9 @@ void Base::setParent(Base *parent)
     m_actualParent=nullptr;
 
     if(m_parent)
+    {
         m_parent->addChild(this);
+    }
 }
 
 void Base::dock(Position dock)
@@ -502,12 +541,18 @@ bool Base::setSize(const Point &p)
 
 bool Base::setBounds(const Rect &bounds)
 {
+    if(m_name == "Basic")
+        m_bounds.x=m_bounds.x;
+
     if(m_bounds == bounds)
         return false;
 
     const Rect oldBounds=getBounds();
     m_bounds=bounds;
     onBoundsChanged(oldBounds);
+
+    addStateChange(StateChange_Geometry);
+
     return true;
 }
 
@@ -561,7 +606,7 @@ void Base::onBoundsChanged(Rect oldBounds)
     if(m_bounds.w != oldBounds.w || m_bounds.h != oldBounds.h)
         invalidate();
 
-    redraw();
+//    redraw();
     updateRenderBounds();
 }
 
@@ -581,35 +626,90 @@ void Base::setPrimitiveIdsSize(size_t size)
     enlargePrimitiveIds(this, m_primitiveIds, size);
 }
 
-void Base::render(skin::Base * /*skin*/)
-{}
+void Base::render(skin::Base *skin)
+{
+//    update();
+    if(getStateChange() == StateChange_Nothing)
+        return;
+    
+    if(!m_skinControl)
+        return;
+
+    if(getStateChange() & StateChange_Created)
+    {
+        m_skinControl->generate(m_skin->getRenderer(), this);
+        std::string name=getFullName(this);
+        const std::vector<size_t> &primitives=m_skinControl->getPrimitives();
+        std::string primitiveList;
+
+        for(size_t i=0; i<primitives.size(); i++)
+        {
+            if(i == 0)
+                primitiveList+=std::to_string(primitives[i]);
+            else
+                primitiveList+=", "+std::to_string(primitives[i]);
+        }
+        std::cout<<"Pimitives: "<<name<<" ("<<primitiveList<<")\n";
+    }
+
+    const Rect &bounds=getBounds();
+    
+    if(getStateChange() != StateChange_Text)
+    {
+        renderer::Base *baseRenderer=skin->getRenderer();
+        gweni::Point clipPt=baseRenderer->getRenderOffset();
+        std::string show=hidden()?"hide":"show";
+
+        std::string name=getFullName(this);
+        std::cout<<"Updating: "<<show<<" ("<<bounds.x+clipPt.x<<", "<<bounds.y+clipPt.y<<", w:"<<bounds.w<<", h:"<<bounds.h<<") \""<<name<<"\"\n";
+    }
+
+    m_skinControl->update(m_skin->getRenderer(), this);
+}
+
+void Base::update()
+{
+}
+
+void Base::updateRecursive(int &zIndex)
+{
+    update();
+    m_zIndex=zIndex++;
+    if(!m_children.empty())
+    {
+        for(auto &&child:m_children)
+        {
+            child->updateRecursive(zIndex);
+        }
+    }
+}
 
 void Base::doCacheRender(skin::Base *skin, controls::Base *master)
 {
-    renderer::Base *renderer=skin->getRender();
-    renderer::ICacheToTexture *cache=renderer->getCTT();
+    renderer::Base *baseRenderer=skin->getRenderer();
+    renderer::ICacheToTexture *cache=baseRenderer->getCTT();
 
     if(!cache)
         return;
 
-    Point oldRenderOffset=renderer->getRenderOffset();
-    Rect rOldRegion=renderer->clipRegion();
+    Point oldRenderOffset=baseRenderer->getRenderOffset();
+    Rect rOldRegion=baseRenderer->clipRegion();
 
     if(this != master)
     {
-        renderer->addRenderOffset(getBounds());
-        renderer->addClipRegion(getBounds());
+        baseRenderer->addRenderOffset(getBounds());
+        baseRenderer->addClipRegion(getBounds());
     }
     else
     {
-        renderer->setRenderOffset(Point(0, 0));
-        renderer->setClipRegion(getBounds());
+        baseRenderer->setRenderOffset(Point(0, 0));
+        baseRenderer->setClipRegion(getBounds());
     }
 
     // See if we need to update the cached texture. Dirty?
-    if(m_cacheTextureDirty && renderer->clipRegionVisible())
+    if(m_cacheTextureDirty && baseRenderer->clipRegionVisible())
     {
-        renderer->startClip();
+        baseRenderer->startClip();
         {
             if(isCachedToTexture())
                 cache->setupCacheTexture(this);
@@ -622,9 +722,9 @@ void Base::doCacheRender(skin::Base *skin, controls::Base *master)
                 // Now render my kids
                 for(auto &&child : m_children)
                 {
-                    if(child->hidden())
-                        child->doHide(skin);
-                    else
+//                    if(child->hidden())
+//                        child->doHide(skin);
+//                    else
                     {
                         // Draw child control using normal render. If it is cached it will
                         // be handled in the same way as this one.
@@ -639,17 +739,17 @@ void Base::doCacheRender(skin::Base *skin, controls::Base *master)
                 m_cacheTextureDirty=false;
             }
         }
-        renderer->endClip();
+        baseRenderer->endClip();
     }
 
     // Draw the cached texture.
-    renderer->setClipRegion(rOldRegion);
-    renderer->startClip();
+    baseRenderer->setClipRegion(rOldRegion);
+    baseRenderer->startClip();
     {
-        renderer->setRenderOffset(oldRenderOffset);
+        baseRenderer->setRenderOffset(oldRenderOffset);
         cache->drawCachedControlTexture(this);
     }
-    renderer->endClip();
+    baseRenderer->endClip();
 }
 
 void Base::doRender(skin::Base *skin)
@@ -661,9 +761,15 @@ void Base::doRender(skin::Base *skin)
 
     // Do think
     think();
-    renderer::Base *renderer=skin->getRender();
 
-    if(renderer->getCTT() && isCachedToTexture())
+
+    renderer::Base *baseRenderer=skin->getRenderer();
+
+    if(m_stateChange && StateChange_Created)
+    {
+    }
+
+    if(baseRenderer->getCTT() && isCachedToTexture())
     {
         doCacheRender(skin, this);
         return;
@@ -677,28 +783,28 @@ void Base::doRender(skin::Base *skin)
 
 void Base::renderRecursive(skin::Base *skin, const Rect &cliprect)
 {
-    renderer::Base *renderer=skin->getRender();
-    Point oldRenderOffset=renderer->getRenderOffset();
-    renderer->addRenderOffset(cliprect);
+    renderer::Base *baseRenderer=skin->getRenderer();
+    Point oldRenderOffset=baseRenderer->getRenderOffset();
+    baseRenderer->addRenderOffset(cliprect);
     renderUnder(skin);
-    Rect rOldRegion=renderer->clipRegion();
+    Rect rOldRegion=baseRenderer->clipRegion();
 
     // If this control is clipping, change the clip rect to ourselves
     // else clip using our parents clip rect.
-    if(shouldClip())
-    {
-        renderer->addClipRegion(cliprect);
-
-        if(!renderer->clipRegionVisible())
-        {
-            renderer->setRenderOffset(oldRenderOffset);
-            renderer->setClipRegion(rOldRegion);
-            return;
-        }
-    }
+//    if(shouldClip())
+//    {
+//        baseRenderer->addClipRegion(cliprect);
+//
+//        if(!baseRenderer->clipRegionVisible())
+//        {
+//            baseRenderer->setRenderOffset(oldRenderOffset);
+//            baseRenderer->setClipRegion(rOldRegion);
+//            return;
+//        }
+//    }
 
     // Render this control and children controls
-    renderer->startClip();
+    baseRenderer->startClip();
     {
         render(skin);
 
@@ -707,37 +813,37 @@ void Base::renderRecursive(skin::Base *skin, const Rect &cliprect)
             // Now render my kids
             for(auto &&child : m_children)
             {
-                if(child->hidden())
-                {
-                    child->doHide(skin);
-                    continue;
-                }
+//                if(child->hidden())
+//                {
+//                    child->doHide(skin);
+//                    continue;
+//                }
 
                 child->doRender(skin);
             }
         }
     }
-    renderer->endClip();
+    baseRenderer->endClip();
 
     // Render overlay/focus
     {
-        renderer->setClipRegion(rOldRegion);
-        renderer->startClip();
+        baseRenderer->setClipRegion(rOldRegion);
+        baseRenderer->startClip();
         {
             renderOver(skin);
             renderFocus(skin);
         }
-        renderer->endClip();
-        renderer->setRenderOffset(oldRenderOffset);
+        baseRenderer->endClip();
+        baseRenderer->setRenderOffset(oldRenderOffset);
     }
 }
 
 void Base::doHide(skin::Base *skin)
 {
-    renderer::Base *renderer=skin->getRender();
+    renderer::Base *baseRenderer=skin->getRenderer();
 
     for(size_t i=0; i<m_primitiveIds.size(); ++i)
-        renderer->hidePrimitive(m_primitiveIds[i]);
+        baseRenderer->hidePrimitive(m_primitiveIds[i]);
 
     hideRecursive(skin);
 }
@@ -756,9 +862,33 @@ void Base::setSkin(skin::Base *skin, bool doChildren)
         return;
 
     m_skin=skin;
+    m_skinControl=skin->getControlRenderer(getTypeName());
+
+    if(!m_skinControl)
+    {
+        const char *parentName=getParentTypeName();
+        size_t index=0;
+
+        while(parentName)
+        {
+            m_skinControl=skin->getControlRenderer(parentName);
+
+            if(m_skinControl)
+                break;
+
+            parentName=getParentTypeName(index);
+            index++;
+        }
+
+        if(!m_skinControl)
+            std::cout<<"Failed to get skin for: "<<getTypeName()<<"\n";
+    }
+
     invalidate();
     redraw();
     onSkinChanged(skin);
+
+    m_stateChange=StateChange_Created;
 
     if(doChildren)
     {
@@ -767,6 +897,10 @@ void Base::setSkin(skin::Base *skin, bool doChildren)
             child->setSkin(skin, true);
         }
     }
+
+    //need to set prefered size
+    calculateSize(skin, Dim::X);
+    calculateSize(skin, Dim::Y);
 }
 
 void Base::onSkinChanged(skin::Base * /*skin*/)
@@ -896,8 +1030,8 @@ Base *Base::getControlAt(int x, int y, bool bOnlyIfMouseEnabled)
 
 void Base::layout(skin::Base *skin)
 {
-    if(skin->getRender()->getCTT() && isCachedToTexture())
-        skin->getRender()->getCTT()->createControlCacheTexture(this, this->getBounds().getSize());
+    if(skin->getRenderer()->getCTT() && isCachedToTexture())
+        skin->getRenderer()->getCTT()->createControlCacheTexture(this, this->getBounds().getSize());
 }
 
 std::string info(Base *control, Dim dim)
@@ -1095,8 +1229,8 @@ Size Base::sizeOfChildren(skin::Base *skin, Dim dim)
 
 void Base::calculateSize(skin::Base *skin, Dim dim)
 {
-    if(m_name=="MultilineLabel")
-        dim=dim;
+    if(m_name == "Basic")
+        m_bounds.x=m_bounds.x;
 
     if(processLayout(skin, dim))
         return;
@@ -1111,9 +1245,6 @@ void Base::arrange(skin::Base *skin, Dim dim)
         m_needsLayout=false;
         layout(skin);
     }
-
-    if(m_name=="MultilineLabel")
-        dim=dim;
 
     if(m_layoutItem)
     {
@@ -1252,48 +1383,52 @@ void Base::arrangeVertical(skin::Base *skin)
         const Rect &bounds=child->getBounds();
         SizeFlags sizeFlags=child->getSizeFlags();
 
-        if(dock  &Position::Top)
+        if(dock & Position::Top)
         {
             child->setBounds(bounds.x,
                 innerBounds.y+margin.top,
                 bounds.w,
                 preferred.height);
+
             int iHeight=margin.top+margin.bottom+preferred.height;
             innerBounds.y+=iHeight;
             innerBounds.h-=iHeight;
         }
-        else if(dock  &Position::Left)
+        else if(dock & Position::Left)
         {
-            if(sizeFlags.vertical == SizeFlag::Fixed)
-                child->setBounds(bounds.x,
-                    innerBounds.y+margin.top,
-                    bounds.w,
-                    bounds.h);
-            else
-                child->setBounds(bounds.x,
-                    innerBounds.y+margin.top,
-                    bounds.w,
-                    innerBounds.h-margin.top-margin.bottom);
-        }
-        else if(dock  &Position::Right)
-        {
+            int height;
+
             if(sizeFlags.vertical==SizeFlag::Fixed)
-                child->setBounds(bounds.x,
-                    innerBounds.y+margin.top,
-                    bounds.w,
-                    bounds.h);
+                height=bounds.h;
             else
-                child->setBounds(bounds.x,
-                    innerBounds.y+margin.top,
-                    bounds.w,
-                    innerBounds.h-margin.top-margin.bottom);
+                height=innerBounds.h-margin.top-margin.bottom;
+
+            child->setBounds(bounds.x,
+                innerBounds.y+margin.top,
+                bounds.w,
+                height);
         }
-        else if(dock  &Position::Bottom)
+        else if(dock & Position::Right)
+        {
+            int height;
+
+            if(sizeFlags.vertical==SizeFlag::Fixed)
+                height=bounds.h;
+            else
+                height=innerBounds.h-margin.top-margin.bottom;
+
+            child->setBounds(bounds.x,
+                innerBounds.y+margin.top,
+                bounds.w,
+                height);
+        }
+        else if(dock & Position::Bottom)
         {
             child->setBounds(bounds.x,
                 (innerBounds.y+innerBounds.h)-preferred.height-margin.bottom,
                 bounds.w,
                 preferred.height);
+
             innerBounds.h-=preferred.height+margin.bottom+margin.top;
         }
         else if(dock==Position::None)
@@ -1636,11 +1771,12 @@ void Base::renderFocus(skin::Base *skin)
         return;
 
 //    skin->drawKeyboardHighlight(this, skin::Generate, getRenderBounds(), 3);
+    update();
 }
 
 void Base::setToolTipText(const String &text)
 {
-    Label *tooltip=new Label(this);
+    Label *tooltip=newChild<Label>();
 
     tooltip->setText(text);
     tooltip->setTextColorOverride(getSkin()->Colors.TooltipText);

@@ -22,15 +22,9 @@ class OpenToggleButton: public Button
         setTabable(false);
     }
 
+public:
     void renderFocus(skin::Base * /*skin*/) override
     {}
-
-    void render(skin::Base *skin) override
-    {
-//        skin->drawTreeButton(this, skin::Generate, getToggleState());
-        skin->drawControl(this);
-    }
-
 };
 
 
@@ -43,6 +37,7 @@ class TreeNodeText: public Button
         setHeight(16);
     }
 
+public:
     void updateColors() override
     {
         if(isDisabled())
@@ -65,16 +60,19 @@ const int TreeIndentation=14;
 GWENI_CONTROL_CONSTRUCTOR(TreeNode)
 {
     m_treeControl=nullptr;
-    m_toggleButton=new OpenToggleButton(this);
+
+    m_toggleButton=newChild<OpenToggleButton>();
     m_toggleButton->setBounds(0, 0, 15, 15);
     m_toggleButton->onToggleCaller.add(this, &TreeNode::onToggleButtonPress);
-    m_title=new TreeNodeText(this);
+
+    m_title=newChild<TreeNodeText>();
     m_title->dock(Position::Top);
     m_title->setMargin(Margin(16, 0, 0, 0));
     m_title->onDoubleClickCaller.add(this, &TreeNode::onDoubleClickName);
     m_title->onDownCaller.add(this, &TreeNode::onClickName);
     m_title->onRightPressCaller.add(this, &TreeNode::onRightPress);
-    m_innerPanel=new Base(this);
+
+    m_innerPanel=newChild<Base>();
     m_innerPanel->dock(Position::Top);
     m_innerPanel->setHeight(100);
     m_innerPanel->setMargin(Margin(TreeIndentation, 1, 0, 0));
@@ -84,27 +82,27 @@ GWENI_CONTROL_CONSTRUCTOR(TreeNode)
     m_selectable=true;
 }
 
-void TreeNode::render(skin::Base *skin)
-{
-    int iBottom=0;
-
-    if(m_innerPanel->getChildren().size() > 0)
-        iBottom=m_innerPanel->getChildren().back()->getY() + m_innerPanel->getY();
-
-    //skin->drawTreeNode(this, skin::Generate,
-    //    m_innerPanel->visible(),
-    //    isSelected(),
-    //    m_title->getHeight(),
-    //    m_title->textRight(),
-    //    m_toggleButton->getY() + m_toggleButton->getHeight()/2,
-    //    iBottom,
-    //    getParent() == m_treeControl);
-    skin->drawControl(this);
-}
+//void TreeNode::render(skin::Base *skin)
+//{
+//    int iBottom=0;
+//
+//    if(m_innerPanel->getChildren().size() > 0)
+//        iBottom=m_innerPanel->getChildren().back()->getY() + m_innerPanel->getY();
+//
+//    //skin->drawTreeNode(this, skin::Generate,
+//    //    m_innerPanel->visible(),
+//    //    isSelected(),
+//    //    m_title->getHeight(),
+//    //    m_title->textRight(),
+//    //    m_toggleButton->getY() + m_toggleButton->getHeight()/2,
+//    //    iBottom,
+//    //    getParent() == m_treeControl);
+//    skin->drawControl(this);
+//}
 
 TreeNode *TreeNode::addNode(const String &label)
 {
-    TreeNode *node=new TreeNode(this);
+    TreeNode *node=newChild<TreeNode>();
     node->setText(label);
     node->dock(Position::Top);
     node->setRoot(gweni_cast<TreeControl>(this) != nullptr);

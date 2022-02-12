@@ -4,10 +4,10 @@
 namespace gweni
 {
 
-RadioButtonDemo::RadioButtonDemo(controls::Base *parent, const String &name):
-    Base(parent)
+RadioButtonDemo::RadioButtonDemo(const String &name):
+    Base()
 {
-    controls::RadioButtonController *rc=new controls::RadioButtonController(this);
+    controls::RadioButtonController *rc=newChild<controls::RadioButtonController>();
     rc->addOption("Option 1");
     rc->addOption("Option 2");
     rc->addOption("Option 3");

@@ -24,12 +24,13 @@ public:
 
     GWENI_CONTROL_INLINE(Text, Base)
     {
-        m_textBox=new TextBox(this);
+        m_textBox=newChild<TextBox>();
         m_textBox->dock(Position::Fill);
         m_textBox->setShouldDrawBackground(false);
         m_textBox->onTextChangedCaller.add(this, &ParentClass::onPropertyValueChanged);
     }
 
+public:
     String getPropertyValue() override
     {
         return m_textBox->getText();

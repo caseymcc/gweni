@@ -11,6 +11,7 @@ class CheckBoxDemo: public controls::Base
 public:
     GWENI_CONTROL(CheckBoxDemo, controls::Base);
 
+public:
     void onChecked(event::Info info);
     void onUnchecked(event::Info info);
     void onCheckChanged(event::Info info);

@@ -24,6 +24,7 @@ public:
 
     GWENI_CONTROL(TabStrip, Base);
 
+public:
     void layout(skin::Base *skin) override;
 
     bool dragAndDrop_handleDrop(gweni::draganddrop::Package *package, int x, int y) override;

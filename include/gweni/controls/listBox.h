@@ -24,13 +24,14 @@ public:
 
     GWENI_CONTROL(ListBox, ScrollControl);
 
+public:
     typedef std::list<layout::TableRow *> Rows;
 
     layout::TableRow *addItem(const String &label, const String &name="");
 
     void RemoveItem(layout::TableRow *row);
 
-    void render(skin::Base *skin) override;
+    //void render(skin::Base *skin) override;
     void layout(skin::Base *skin) override;
 
     void unselectAll();

@@ -22,14 +22,15 @@ class GWENI_EXPORT Text: public controls::Base
 {
 public:
 
-    GWENI_CONTROL(Text, controls::Base);
+    GWENI_CONTROL(Text, Base);
 
+public:
     virtual ~Text();
     const gweni::Font &getFont() const;
 
-    void setString(const String &str);
+    void setText(const String &str);
 
-    void render(skin::Base *skin) override;
+//    void render(skin::Base *skin) override;
     void layout(skin::Base *skin) override;
 
     Size refreshSize(bool update=true);
@@ -58,9 +59,19 @@ public:
         m_color=col;
     }
 
+    virtual const gweni::Color &getTextColor()
+    {
+        return m_color;
+    }
+
     virtual void setTextColorOverride(const gweni::Color &col)
     {
         m_colorOverride=col;
+    }
+
+    virtual const gweni::Color &getTextColorOverride()
+    {
+        return m_colorOverride;
     }
 
     void onScaleChanged() override;
@@ -113,7 +124,7 @@ private:
 
     bool m_wrap;
     bool m_textChanged;
-    size_t m_textId;
+//    size_t m_textId;
 
     typedef std::list<Text *> TextLines;
     TextLines m_lines;

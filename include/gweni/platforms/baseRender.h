@@ -74,21 +74,20 @@ public:
     bool    clipRegionVisible();
     const gweni::Rect &clipRegion() const;
 
-    virtual void generatePrimitive(size_t primitiveId) {}
-    virtual void removePrimitive(size_t primitiveId) {}
+    virtual void generatePrimitive(size_t &primitiveId) {}
+    virtual void releasePrimitive(size_t primitiveId) {}
 
     //! Draw a filled rectangle using the current color.
-    virtual void drawFilledRect(size_t primitiveId, gweni::Rect rect) {}
+    virtual void drawFilledRect(size_t primitiveId, gweni::Rect rect, int zIndex) {}
 
-    virtual void drawTexturedRect(const gweni::Texture &texture, size_t primitiveId, gweni::Rect targetRect,
-        float u1=0.0f, float v1=0.0f,
-        float u2=1.0f, float v2=1.0f)
+    virtual void drawTexturedRect(const gweni::Texture &texture, size_t primitiveId, gweni::Rect targetRect, int zIndex,
+        float u1=0.0f, float v1=0.0f,float u2=1.0f, float v2=1.0f)
     {}
 
-    virtual void showPrimitive(size_t primitiveId) {}
+    virtual void showPrimitive(int style, size_t primitiveId) {}
     virtual void hidePrimitive(size_t primitiveId) {}
 
-    virtual void drawMissingImage(size_t primitiveId,gweni::Rect targetRect);
+    virtual void drawMissingImage(size_t primitiveId, gweni::Rect targetRect, int zIndex);
 
     virtual gweni::Color pixelColor(const gweni::Texture &texture,
         unsigned int x, unsigned int y,
@@ -102,9 +101,15 @@ public:
         return m_RTT;
     }
 
+    virtual void generateTextPrimitive(size_t &primitiveId) {}
+    virtual void releaseTextPrimitive(size_t primitiveId) {}
+
     virtual void renderText(size_t textId, const gweni::Font &font,
-        gweni::Point pos,
+        gweni::Point pos, int zIndex,
         const gweni::String &text);
+
+    virtual void showText(size_t textId) {}
+    virtual void hideText(size_t textId) {}
 
     virtual gweni::Point measureText(const gweni::Font &font,
         const gweni::String &text);
@@ -113,9 +118,9 @@ public:
     //!     No need to implement these functions in your derived class, but
     //!     if you can do them faster than the default implementation it's a
     //!     good idea to.
-    virtual void drawLinedRect(size_t *primitiveIds, gweni::Rect rect);
-    virtual void drawPixel(size_t *primitiveIds, int x, int y);
-    virtual void drawShavedCornerRect(size_t *primitiveIds, gweni::Rect rect, bool bSlight=false);
+    virtual void drawLinedRect(size_t *primitiveIds, gweni::Rect rect, int zIndex);
+    virtual void drawPixel(size_t *primitiveIds, int x, int y, int zIndex);
+    virtual void drawShavedCornerRect(size_t *primitiveIds, gweni::Rect rect, int zIndex, bool bSlight=false);
     //! \}
 
     //! \sect{Translate}

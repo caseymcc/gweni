@@ -19,17 +19,19 @@ namespace controls
 GWENI_CONTROL_CONSTRUCTOR(ScrollControl)
 {
     setMouseInputEnabled(false);
-    m_verticalScrollBar=new VerticalScrollBar(this);
+    m_verticalScrollBar=newChild<VerticalScrollBar>();
     m_verticalScrollBar->dock(Position::Right);
     m_verticalScrollBar->onBarMovedCaller.add(this, &ScrollControl::onVeritcalBarMoved);
     m_verticalScrollBar->setNudgeAmount(30);
     m_canScrollVertical=true;
-    m_horizontalScrollBar=new HorizontalScrollBar(this);
+
+    m_horizontalScrollBar=newChild<HorizontalScrollBar>();
     m_horizontalScrollBar->dock(Position::Bottom);
     m_horizontalScrollBar->onBarMovedCaller.add(this, &ScrollControl::onHorizontalBarMoved);
     m_canScrollHorizontal=true;
     m_horizontalScrollBar->setNudgeAmount(30);
-    m_innerPanel=new Base(this);
+
+    m_innerPanel=newChild<Base>();
     m_innerPanel->setPos(0, 0);
     m_innerPanel->setMargin(Margin(5, 5, 5, 5));
     m_innerPanel->sendToBack();
@@ -99,7 +101,7 @@ void ScrollControl::render(skin::Base *skin)
     // Debug render - this shouldn't render ANYTHING REALLY - it should be up to
     // the parent!
     gweni::Rect rect=getRenderBounds();
-    gweni::renderer::Base *render=skin->getRender();
+    gweni::renderer::Base *render=skin->getRenderer();
     render->setDrawColor(gweni::Color(255, 255, 0, 100));
     render->drawFilledRect(rect);
     render->setDrawColor(gweni::Color(255, 0, 0, 100));

@@ -22,6 +22,7 @@ class GWENI_EXPORT TextBox:public Label
 {
     GWENI_CONTROL(TextBox, Label);
 
+public:
     void render(skin::Base *skin) override;
     void renderFocus(skin::Base * /*skin*/) override {}
 
@@ -123,6 +124,7 @@ public:
 
     GWENI_CONTROL(TextBoxNumeric, TextBox);
 
+public:
     virtual float GetFloatFromText();
 
 private:
@@ -138,6 +140,7 @@ public:
 
     GWENI_CONTROL(TextBoxMultiline, TextBox);
 
+public:
     bool onKeyReturn(bool down) override;
     void render(skin::Base *skin) override;
     void makeCaretVisible() override;
@@ -160,6 +163,7 @@ public:
 
     GWENI_CONTROL(PasswordTextBox, TextBox);
 
+public:
     void setText(const String &str, bool doEvents=true) override;
     virtual void setPasswordChar(const char c);
 

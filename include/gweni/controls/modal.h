@@ -34,17 +34,11 @@ class Modal: public controls::Base
         m_innerBounds=m_bounds;
     }
 
+public:
     void layout(skin::Base * /*skin*/) override
     {
         setBounds(0, 0, getCanvas()->getWidth(), getCanvas()->getHeight());
     }
-
-    void render(skin::Base *skin) override
-    {
-//        skin->drawModalControl(this, skin::Generate);
-        skin->drawControl(this);
-    }
-
 };
 
 

@@ -27,6 +27,7 @@ public:
 
     GWENI_CONTROL(Resizer, Dragger);
 
+public:
     void onMouseMoved(int x, int y, int deltaX, int deltaY) override;
     virtual void setResizeDirection(Position dir);
 

@@ -36,6 +36,7 @@ public:
         setFileType("Any Type | *.*");
     }
 
+public:
     void setFileType(const gweni::String &string)
     {
         m_fileType=string;

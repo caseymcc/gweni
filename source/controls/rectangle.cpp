@@ -21,8 +21,8 @@ GWENI_CONTROL_CONSTRUCTOR(Rectangle)
 
 void Rectangle::render(skin::Base *skin)
 {
-    skin->getRender()->setDrawColor(m_color);
-    skin->getRender()->drawFilledRect(m_primitiveIds[0], getRenderBounds());
+    skin->getRenderer()->setDrawColor(m_color);
+    skin->getRenderer()->drawFilledRect(m_primitiveIds[0], getRenderBounds(), getZIndex());
 }
 
 }//namespace controls

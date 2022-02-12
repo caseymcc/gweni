@@ -21,7 +21,7 @@ GWENI_CONTROL_CONSTRUCTOR(DockedTabControl)
 {
     m_windowControl=nullptr;
     dock(Position::Fill);
-    m_titleBar=new TabTitleBar(this);
+    m_titleBar=newChild<TabTitleBar>();
     m_titleBar->dock(Position::Top);
     m_titleBar->setHidden(true);
     setAllowReorder(true);

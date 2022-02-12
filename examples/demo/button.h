@@ -11,6 +11,7 @@ class ButtonDemo : public controls::Base
 public:
     GWENI_CONTROL(ButtonDemo, controls::Base);
 
+public:
     void onButtonA(event::Info info);
     void onToggle(event::Info info);
     void onToggleOn(event::Info info);

@@ -21,12 +21,6 @@ GWENI_CONTROL_CONSTRUCTOR(LabelClickable)
     setAlignment(Position::Left|Position::CenterV);
 }
 
-void LabelClickable::render(skin::Base * /*skin*/)
-{
-    // skin->drawButton( this, isDepressed(), isToggle() && getToggleState() );
-}
-
-
 void LabelClickable::updateColors()
 {
     if(isDisabled())

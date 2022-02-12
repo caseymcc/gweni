@@ -27,18 +27,11 @@ GWENI_CONTROL_CONSTRUCTOR(Menu)
     setDeleteOnClose(false);
 }
 
-
-void Menu::render(skin::Base *skin)
-{
-//    skin->drawMenu(this, skin::Generate, iconMarginDisabled());
-    skin->drawControl(this);
-}
-
 void Menu::renderUnder(skin::Base *skin)
 {
     ParentClass::renderUnder(skin);
 //    skin->drawShadow(this, skin::Generate);
-    skin->drawControl(this);
+//    skin->drawControl(this);
 }
 
 void Menu::layout(skin::Base *skin)
@@ -70,7 +63,7 @@ MenuItem *Menu::addItem(const String &name,
     const String &strIconName,
     const String &strAccelerator)
 {
-    MenuItem *item=new MenuItem(this);
+    MenuItem *item=newChild<MenuItem>();
     item->setPadding(Padding(2, 4, 4, 4));
     item->setText(name);
     item->setImage(strIconName);
@@ -175,15 +168,9 @@ void Menu::closeMenus()
 
 void Menu::addDivider()
 {
-    MenuDivider *divider=new MenuDivider(this);
+    MenuDivider *divider=newChild<MenuDivider>();
     divider->dock(Position::Top);
     divider->setMargin(Margin(iconMarginDisabled()?0:24, 0, 4, 0));
-}
-
-void MenuDivider::render(gweni::skin::Base *skin)
-{
-//    skin->drawMenuDivider(this, skin::Generate);
-    skin->drawControl(this);
 }
 
 }//namespace controls

@@ -125,7 +125,7 @@ void TabStrip::dragAndDrop_hoverEnter(gweni::draganddrop::Package * /*package*/,
 {
     GWENI_ASSERT_MSG(!m_tabDragControl, "TabStrip::DragAndDrop_HoverEnter");
 
-    m_tabDragControl=new internal::Highlight(this);
+    m_tabDragControl=newChild<internal::Highlight>();
     m_tabDragControl->setMouseInputEnabled(false);
     m_tabDragControl->setSize(3, getHeight());
 }

@@ -123,23 +123,25 @@ void TextBox::updateCaretColor()
 
 void TextBox::render(skin::Base *skin)
 {
-    if(shouldDrawBackground())
-//        skin->drawTextBox(this, skin::Generate);
-        skin->drawControl(this);
-
-    if(!isFocussed())
-        return;
-
-    // Draw selection.. if selected..
-    if(m_cursorPos != m_cursorEnd)
-    {
-        skin->getRender()->setDrawColor(gweni::Color(50, 170, 255, 200));
-        skin->getRender()->drawFilledRect(m_primitiveIds[9], m_rectSelectionBounds);
-    }
-
-    // Draw caret
-    skin->getRender()->setDrawColor(m_caretColor);
-    skin->getRender()->drawFilledRect(m_primitiveIds[10], m_rectCaretBounds);
+//    if(shouldDrawBackground())
+////        skin->drawTextBox(this, skin::Generate);
+//        skin->drawControl(this);
+//
+//    if(!isFocussed())
+//        return;
+//
+//    // Draw selection.. if selected..
+//    if(m_cursorPos != m_cursorEnd)
+//    {
+//        skin->getRenderer()->setDrawColor(gweni::Color(50, 170, 255, 200));
+//        skin->getRenderer()->drawFilledRect(m_primitiveIds[9], m_rectSelectionBounds);
+//    }
+//
+//    // Draw caret
+//    skin->getRenderer()->setDrawColor(m_caretColor);
+//    skin->getRenderer()->drawFilledRect(m_primitiveIds[10], m_rectCaretBounds);
+    if(getStateChange() != StateChange_Nothing)
+        m_skinControl->update(skin->getRenderer(), this);
 }
 
 void TextBox::refreshCursorBounds()
@@ -531,7 +533,7 @@ void TextBoxMultiline::render(skin::Base *skin)
         int iSelectionStartPos=(m_cursorPos < m_cursorEnd)?m_cursorPos:m_cursorEnd;
         int iSelectionEndPos=(m_cursorPos < m_cursorEnd)?m_cursorEnd:m_cursorPos;
 
-        skin->getRender()->setDrawColor(gweni::Color(50, 170, 255, 200));
+        skin->getRenderer()->setDrawColor(gweni::Color(50, 170, 255, 200));
         m_rectSelectionBounds.h=m_text->getFont().size + 2;
 
         for(int iLine=iSelectionStartLine; iLine <= iSelectionEndLine; ++iLine)
@@ -567,7 +569,7 @@ void TextBoxMultiline::render(skin::Base *skin)
             if(m_primitiveIds.size() < index+1)
                 enlargePrimitiveIds(this, m_primitiveIds, index+1);
 
-            skin->getRender()->drawFilledRect(m_primitiveIds[index], m_rectSelectionBounds);
+            skin->getRenderer()->drawFilledRect(m_primitiveIds[index], m_rectSelectionBounds, getZIndex());
             index++;
         }
     }
@@ -575,13 +577,13 @@ void TextBoxMultiline::render(skin::Base *skin)
     // Draw selection.. if selected..
     if(m_cursorPos != m_cursorEnd)
     {
-        //skin->getRender()->setDrawColor( gweni::Color( 50, 170, 255, 200 ) );
-        //skin->getRender()->drawFilledRect( m_rectSelectionBounds );
+        //skin->getRenderer()->setDrawColor( gweni::Color( 50, 170, 255, 200 ) );
+        //skin->getRenderer()->drawFilledRect( m_rectSelectionBounds );
     }
 
     // Draw caret
-    skin->getRender()->setDrawColor(m_caretColor);
-    skin->getRender()->drawFilledRect(m_primitiveIds[index], m_rectCaretBounds);
+    skin->getRenderer()->setDrawColor(m_caretColor);
+    skin->getRenderer()->drawFilledRect(m_primitiveIds[index], m_rectCaretBounds, getZIndex());
 }
 
 void TextBoxMultiline::makeCaretVisible()
@@ -756,7 +758,7 @@ void PasswordTextBox::setText(const String &str, bool doEvents)
         passwordChars+=m_passwordChar;
     }
 
-    m_text->setString(passwordChars);
+    m_text->setText(passwordChars);
     redraw();
 
     if(doEvents)

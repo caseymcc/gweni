@@ -31,11 +31,12 @@ public:
 
     GWENI_CONTROL(BaseScrollBar, Base);
 
-    void render(skin::Base *skin) override;
+public:
+    //void render(skin::Base *skin) override;
 
-    virtual void setBarSize(int size)=0;
-    virtual int  getBarSize()=0;
-    virtual int  getBarPos()=0;
+    virtual void setBarSize(int size) {};
+    virtual int  getBarSize() { return 0; }
+    virtual int  getBarPos() { return 0; }
 
     virtual void onBarMoved(event::Info);
     void onMouseClickLeft(int /*x*/, int /*y*/, bool /*down*/) override {}

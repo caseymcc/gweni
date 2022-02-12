@@ -16,15 +16,20 @@ namespace controls
 
 GWENI_CONTROL_CONSTRUCTOR(CrossSplitter)
 {
-    m_verticalSplitter=new SplitterBar(this);
+    m_verticalSplitter=newChild<SplitterBar>();
+
     m_verticalSplitter->setPos(0, 128);
     m_verticalSplitter->onDragged.add(this, &CrossSplitter::onVerticalMoved);
     m_verticalSplitter->setCursor(gweni::cursor::SizeNS);
-    m_horizontalSplitter=new SplitterBar(this);
+
+    m_horizontalSplitter=newChild<SplitterBar>();
+
     m_horizontalSplitter->setPos(128, 0);
     m_horizontalSplitter->onDragged.add(this, &CrossSplitter::onHorizontalMoved);
     m_horizontalSplitter->setCursor(gweni::cursor::SizeWE);
-    m_centerSplitter=new SplitterBar(this);
+
+    m_centerSplitter=newChild<SplitterBar>();
+
     m_centerSplitter->setPos(128, 128);
     m_centerSplitter->onDragged.add(this, &CrossSplitter::onCenterMoved);
     m_centerSplitter->setCursor(gweni::cursor::SizeAll);

@@ -24,6 +24,7 @@ class GWENI_EXPORT DockBase: public Base
 public:
     GWENI_CONTROL(DockBase, Base);
 
+public:
     void render(skin::Base *skin) override;
     void renderOver(skin::Base *skin) override;
     virtual bool isEmpty();

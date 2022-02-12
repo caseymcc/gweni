@@ -27,35 +27,35 @@
             "color":[255, 255, 0]
         },
         {
-            "name": "Tab.Active.Normal",
+            "name": "TabControl.Active.Normal",
             "color":[255, 255, 0]
         },
         {
-            "name": "Tab.Active.Hover",
+            "name": "TabControl.Active.Hover",
             "color":[255, 255, 0]
         },
         {
-            "name": "Tab.Active.Down",
+            "name": "TabControl.Active.Down",
             "color":[255, 255, 0]
         },
         {
-            "name": "Tab.Active.Disabled",
+            "name": "TabControl.Active.Disabled",
             "color":[255, 255, 0]
         },
         {
-            "name": "Tab.Inactive.Normal",
+            "name": "TabControl.Inactive.Normal",
             "color":[255, 255, 0]
         },
         {
-            "name": "Tab.Inactive.Hover",
+            "name": "TabControl.Inactive.Hover",
             "color":[255, 255, 0]
         },
         {
-            "name": "Tab.Inactive.Down",
+            "name": "TabControl.Inactive.Down",
             "color":[255, 255, 0]
         },
         {
-            "name": "Tab.Inactive.Disabled",
+            "name": "TabControl.Inactive.Disabled",
             "color":[255, 255, 0]
         },
         {
@@ -73,7 +73,7 @@
         {
             "name": "Label.Highlight",
             "color":[255, 255, 0]
-        },
+        }
     ],
     "textureFileName":"DefaultSkin.png",
     "map":
@@ -115,7 +115,7 @@
         },
         {
             "name":"Panel.Highlight",
-            "bbox":[256 + 64, 64, 63, 63],
+            "bbox":[320, 64, 63, 63],
             "margin":[16, 16, 16, 16]
         },
         {
@@ -194,52 +194,52 @@
             "bbox":[448, 112, 15, 15]
         },
         {
-            "name":"Tab.Control",
+            "name":"TabControl.Control",
             "bbox":[0, 256, 127, 127],
             "margin":[8, 8, 8, 8]
         },
         {
-            "name":"Tab.Bottom.Active",
+            "name":"TabControl.Bottom.Active",
             "bbox":[0, 416, 63, 31],
             "margin":[8, 8, 8, 8]
         },
         {
-            "name":"Tab.Bottom.Inactive",
+            "name":"TabControl.Bottom.Inactive",
             "bbox":[128, 416, 63, 31],
             "margin":[8, 8, 8, 8]
         },
         {
-            "name":"Tab.Top.Active",
+            "name":"TabControl.Top.Active",
             "bbox":[0, 384, 63, 31],
             "margin":[8, 8, 8, 8]
         },
         {
-            "name":"Tab.Top.Inactive",
+            "name":"TabControl.Top.Inactive",
             "bbox":[128, 384, 63, 31],
             "margin":[8, 8, 8, 8]
         },
         {
-            "name":"Tab.Left.Active",
+            "name":"TabControl.Left.Active",
             "bbox":[64, 384, 31, 63],
             "margin":[8, 8, 8, 8]
         },
         {
-            "name":"Tab.Left.Inactive",
+            "name":"TabControl.Left.Inactive",
             "bbox":[192, 384, 31, 63],
             "margin":[8, 8, 8, 8]
         },
         {
-            "name":"Tab.Right.Active",
+            "name":"TabControl.Right.Active",
             "bbox":[96, 384, 31, 63],
             "margin":[8, 8, 8, 8]
         },
         {
-            "name":"Tab.Right.Inactive",
+            "name":"TabControl.Right.Inactive",
             "bbox":[224, 384, 31, 63],
             "margin":[8, 8, 8, 8]
         },
         {
-            "name":"Tab.HeaderBar",
+            "name":"CollapsibleCategory.HeaderButton",
             "bbox":[128, 352, 127, 31],
             "margin":[4, 4, 4, 4]
         },
@@ -383,6 +383,106 @@
             "name":"Scroller.Horizontal.Button.Disabled",
             "bbox":[384, 192, 127, 15],
             "margin":[4, 4, 4, 4]
+        },
+        {
+            "name":"ScrollBarButton.Up.Normal",
+            "bbox":[464, 224, 15, 15],
+            "margin":[2, 2, 2, 2]
+        },
+        {
+            "name":"ScrollBarButton.Up.Hover",
+            "bbox":[480, 224, 15, 15],
+            "margin":[2, 2, 2, 2]
+        },
+        {
+            "name":"ScrollBarButton.Up.Down",
+            "bbox":[464, 288, 15, 15],
+            "margin":[2, 2, 2, 2]
+        },
+        {
+            "name":"ScrollBarButton.Up.Disabled",
+            "bbox":[528, 288, 15, 15],
+            "margin":[2, 2, 2, 2]
+        },
+        {
+            "name":"ScrollBarButton.Down.Normal",
+            "bbox":[464, 256, 15, 15],
+            "margin":[2, 2, 2, 2]
+        },
+        {
+            "name":"ScrollBarButton.Down.Hover",
+            "bbox":[480, 256, 15, 15],
+            "margin":[2, 2, 2, 2]
+        },
+        {
+            "name":"ScrollBarButton.Down.Down",
+            "bbox":[464, 320, 15, 15],
+            "margin":[2, 2, 2, 2]
+        },
+        {
+            "name":"ScrollBarButton.Down.Disabled",
+            "bbox":[528, 320, 15, 15],
+            "margin":[2, 2, 2, 2]
+        },
+        {
+            "name":"ScrollBarButton.Left.Normal",
+            "bbox":[464, 208, 15, 15],
+            "margin":[2, 2, 2, 2]
+        },
+        {
+            "name":"ScrollBarButton.Left.Hover",
+            "bbox":[480, 208, 15, 15],
+            "margin":[2, 2, 2, 2]
+        },
+        {
+            "name":"ScrollBarButton.Left.Down",
+            "bbox":[464, 272, 15, 15],
+            "margin":[2, 2, 2, 2]
+        },
+        {
+            "name":"ScrollBarButton.Left.Disabled",
+            "bbox":[528, 272, 15, 15],
+            "margin":[2, 2, 2, 2]
+        },
+        {
+            "name":"ScrollBarButton.Right.Normal",
+            "bbox":[464, 240, 15, 15],
+            "margin":[2, 2, 2, 2]
+        },
+        {
+            "name":"ScrollBarButton.Right.Hover",
+            "bbox":[480, 240, 15, 15],
+            "margin":[2, 2, 2, 2]
+        },
+        {
+            "name":"ScrollBarButton.Right.Down",
+            "bbox":[464, 304, 15, 15],
+            "margin":[2, 2, 2, 2]
+        },
+        {
+            "name":"ScrollBarButton.Right.Disabled",
+            "bbox":[528, 304, 15, 15],
+            "margin":[2, 2, 2, 2]
+        },
+        {
+            "name":"Button.Normal",
+            "bbox":[480, 0, 31, 31],
+            "margin":[8, 8, 8, 8]
+        },
+        {
+            "name":"Button.Hover",
+            "bbox":[480, 32, 31, 31],
+            "margin":[8, 8, 8, 8]
+        },
+        {
+            "name":"Button.Disabled",
+            "bbox":[480, 64, 31, 31],
+            "margin":[8, 8, 8, 8]
+        },
+        {
+            "name":"Button.Down",
+            "bbox":[480, 96, 31, 31],
+            "margin":[8, 8, 8, 8]
         },
         {
             "name":"Input.Button.Normal",
@@ -561,6 +661,6 @@
             "name":"GroupBox",
             "bbox":[0, 448, 31, 31],
             "margin":[8, 8, 8, 8]
-        },
+        }
     ]
 }

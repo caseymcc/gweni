@@ -23,6 +23,7 @@ public:
 
     GWENI_CONTROL(RichLabel, gweni::controls::Base);
 
+public:
     void addLineBreak();
     void addText(const gweni::String &text, gweni::Color color, gweni::Font *font=nullptr);
 

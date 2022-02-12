@@ -22,17 +22,10 @@ namespace internal
 class GWENI_EXPORT Highlight: public controls::Base
 {
 public:
-
     GWENI_CONTROL_INLINE(Highlight, controls::Base)
     {
     }
-
-    void render(skin::Base *skin) override
-    {
-//        skin->drawHighlight(this, skin::Generate);
-        skin->drawControl(this);
-    }
-
+public:
 };
 
 

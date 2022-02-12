@@ -11,6 +11,7 @@ class SliderDemo : public controls::Base
 public:
     GWENI_CONTROL(SliderDemo, controls::Base);
 
+public:
     void sliderMoved(event::Info info);
 };
 

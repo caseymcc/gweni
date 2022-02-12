@@ -31,10 +31,11 @@ class ColorButton: public Button
         setText("");
     }
 
+public:
     void render(skin::Base *skin) override
     {
-        skin->getRender()->setDrawColor(m_color);
-        skin->getRender()->drawFilledRect(m_primitiveIds[0], getRenderBounds());
+        skin->getRenderer()->setDrawColor(m_color);
+        skin->getRenderer()->drawFilledRect(m_primitiveIds[0], getRenderBounds(), getZIndex());
     }
 
     void setColor(const gweni::Color &col)
@@ -54,7 +55,7 @@ class ColorSelector: public property::Text
 {
     GWENI_CONTROL_INLINE(ColorSelector, property::Text)
     {
-        m_button=new controls::internal::ColorButton(m_textBox);
+        m_button=m_textBox->newChild<controls::internal::ColorButton>();
         m_button->dock(Position::Right);
         m_button->setWidth(20);
         m_button->setSizeFlags({SizeFlag::Fixed, SizeFlag::Elastic});
@@ -62,14 +63,15 @@ class ColorSelector: public property::Text
         m_button->setMargin(Margin(1, 1, 1, 2));
     }
 
+public:
     void onButtonPress(event::Info info)
     {
-        gweni::controls::Menu *menu=new Menu(getCanvas());
+        gweni::controls::Menu *menu=getCanvas()->newChild<Menu>();
         menu->setSize(256, 180);
         menu->setDeleteOnClose(true);
         menu->setDisableIconMargin(true);
 
-        gweni::controls::HSVColorPicker *picker=new gweni::controls::HSVColorPicker(menu);
+        gweni::controls::HSVColorPicker *picker=menu->newChild<gweni::controls::HSVColorPicker>();
         picker->dock(Position::Fill);
         picker->setSize(256, 128);
         float defaultColor[3];

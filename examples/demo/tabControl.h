@@ -12,6 +12,7 @@ class TabControlDemo : public controls::Base
 public:
     GWENI_CONTROL(TabControlDemo, controls::Base);
 
+public:
     void onDockChange(event::Info info);
 
 private:

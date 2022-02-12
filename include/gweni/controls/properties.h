@@ -29,6 +29,7 @@ public:
 
     GWENI_CONTROL(Properties, Base);
 
+public:
     void postLayout(gweni::skin::Base *skin) override;
 
     PropertyRow *add(const String &text, const String &value="");
@@ -55,6 +56,7 @@ public:
 
     GWENI_CONTROL(PropertyRow, Base);
 
+public:
     virtual Label *getLabel()
     {
         return m_label;

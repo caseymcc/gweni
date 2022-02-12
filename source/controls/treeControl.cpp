@@ -25,7 +25,8 @@ GWENI_CONTROL_CONSTRUCTOR(TreeControl)
     m_innerPanel->delayedDelete();
     m_innerPanel=nullptr;
     m_allowMultipleSelection=false;
-    m_scrollControl=new ScrollControl(this);
+
+    m_scrollControl=newChild<ScrollControl>();
     m_scrollControl->dock(Position::Fill);
     m_scrollControl->setScroll(false, true);
     m_scrollControl->setAutoHideBars(true);
@@ -34,12 +35,12 @@ GWENI_CONTROL_CONSTRUCTOR(TreeControl)
     m_scrollControl->setInnerSize(1000, 1000);
 }
 
-void TreeControl::render(skin::Base *skin)
-{
-    if(shouldDrawBackground())
-//        skin->drawTreeControl(this, skin::Generate);
-        skin->drawControl(this);
-}
+//void TreeControl::render(skin::Base *skin)
+//{
+//    if(shouldDrawBackground())
+////        skin->drawTreeControl(this, skin::Generate);
+//        skin->drawControl(this);
+//}
 
 void TreeControl::onChildBoundsChanged(gweni::Rect /*oldChildBounds*/, Base * /*child*/)
 {

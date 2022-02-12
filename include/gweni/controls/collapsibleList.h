@@ -27,14 +27,13 @@ public:
 
     event::Caller onSelectionCaller;
 
-public:
-
     GWENI_CONTROL_INLINE(CollapsibleList, ScrollControl)
     {
         setScroll(false, true);
         setAutoHideBars(true);
     }
 
+public:
     virtual void add(CollapsibleCategory *category)
     {
         category->setParent(this);
@@ -46,17 +45,12 @@ public:
 
     virtual CollapsibleCategory *add(const String &name)
     {
-        CollapsibleCategory *category=new CollapsibleCategory(this);
+        CollapsibleCategory *category=newChild<CollapsibleCategory>();
 
         category->setText(name);
+        category->setName(name);
         add(category);
         return category;
-    }
-
-    void render(skin::Base *skin) override
-    {
-//        skin->drawCategoryHolder(this, skin::Generate);
-        skin->drawControl(this);
     }
 
     virtual void unselectAll()

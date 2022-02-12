@@ -30,12 +30,7 @@ public:
         dragAndDrop_setPackage(true, "TabWindowMove");
     }
 
-    void render(skin::Base *skin) override
-    {
-//        skin->drawTabTitleBar(this, skin::Generate);
-        skin->drawControl(this);
-    }
-
+public:
     void dragAndDrop_startDragging(gweni::draganddrop::Package *package, int x, int y) override
     {
         draganddrop::SourceControl=getParent();

@@ -25,6 +25,7 @@ public:
 
     GWENI_CONTROL(HSVColorPicker, controls::Base);
 
+public:
     gweni::Color getColor();
     gweni::Color getDefaultColor()
     {

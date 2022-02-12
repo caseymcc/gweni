@@ -22,6 +22,8 @@ class GWENI_EXPORT ColorLerpBox: public controls::Base
 public:
 
     GWENI_CONTROL(ColorLerpBox, controls::Base);
+
+public:
     void render(gweni::skin::Base *skin) override;
     gweni::Color  getColorAtPos(int x, int y);
     void         setColor(gweni::Color color, bool onlyHue=true);
@@ -43,8 +45,9 @@ protected:
 class GWENI_EXPORT ColorSlider: public controls::Base
 {
 public:
-
     GWENI_CONTROL(ColorSlider, controls::Base);
+
+public:
     void render(gweni::skin::Base *skin) override;
     void onMouseMoved(int x, int y, int deltaX, int deltaY) override;
     void onMouseClickLeft(int x, int y, bool down) override;

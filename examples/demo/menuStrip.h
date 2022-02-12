@@ -11,6 +11,7 @@ class MenuStripDemo : public controls::Base
 public:
     GWENI_CONTROL(MenuStripDemo, controls::Base);
 
+public:
     void menuItemSelect(event::Info info);
 };
 

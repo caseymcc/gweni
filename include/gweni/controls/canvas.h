@@ -26,16 +26,23 @@ public:
     Canvas(skin::Base *skin);
     virtual ~Canvas();
 
+    virtual const char *getTypeName() const { return "Canvas"; }
+
     /// For additional initialization
     /// (which is sometimes not appropriate in the constructor)
     virtual void initialize() {}
 
-    /// You should call this to render your canvas.
-    virtual void renderCanvas();
-
     /// Call this whenever you want to process input. This
     /// is usually once a frame..
     virtual void doThink();
+
+    //Called to calculate window positions and prep for render call
+    virtual void updateCanvas();
+
+    /// You should call this to render your canvas.
+    virtual void renderCanvas();
+
+    
 
     /// In most situations you will be rendering the canvas
     /// every frame. But in some situations you will only want
@@ -55,7 +62,7 @@ public:
         return this;
     }
 
-    virtual void  setScale(float f);
+    virtual void setScale(float f);
     virtual float scale() const
     {
         return m_scale;

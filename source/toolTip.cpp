@@ -68,7 +68,7 @@ void renderToolTip(skin::Base *skin)
     if(!g_toolTip)
         return;
 
-    gweni::renderer::Base *render=skin->getRender();
+    gweni::renderer::Base *render=skin->getRenderer();
     gweni::Point oldRenderOffset=render->getRenderOffset();
     gweni::Point MousePos=input::getMousePosition();
     gweni::Rect Bounds=g_toolTip->getToolTip()->getBounds();

@@ -55,7 +55,7 @@ void RadioButtonController::onChange()
 LabeledRadioButton *RadioButtonController::addOption(const gweni::String &text,
     const gweni::String &optionName)
 {
-    LabeledRadioButton *lrb=new LabeledRadioButton(this);
+    LabeledRadioButton *lrb=newChild<LabeledRadioButton>();
     lrb->setName(optionName);
     lrb->getLabel()->setText(text);
     lrb->getRadioButton()->onChecked.add(this, &RadioButtonController::onRadioClicked);

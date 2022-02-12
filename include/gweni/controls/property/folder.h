@@ -31,6 +31,7 @@ class Folder: public property::Text
         m_dialogName="Find Folder";
     }
 
+public:
     void onButtonPress(event::Info)
     {
         String folder;

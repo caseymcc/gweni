@@ -29,29 +29,29 @@ GWENI_CONTROL_CONSTRUCTOR(PageControl)
         m_pages[i]=nullptr;
     }
 
-    Base *controls=new Base(this);
+    Base *controls=newChild<Base>();
     controls->dock(Position::Bottom);
     controls->setSize(24, 24);
     controls->setMargin(Margin(10, 10, 10, 10));
-    m_finish=new Button(controls);
+    m_finish=controls->newChild<Button>();
     m_finish->setText("finish");
     m_finish->dock(Position::Right);
     m_finish->onPressCaller.add(this, &ThisClass::finish);
     m_finish->setSize(70);
     m_finish->setMargin(Margin(4, 0, 0, 0));
     m_finish->hide();
-    m_next=new Button(controls);
+    m_next=controls->newChild<Button>();
     m_next->setText("Next >");
     m_next->dock(Position::Right);
     m_next->onPressCaller.add(this, &ThisClass::nextPage);
     m_next->setSize(70);
     m_next->setMargin(Margin(4, 0, 0, 0));
-    m_back=new Button(controls);
+    m_back=controls->newChild<Button>();
     m_back->setText("< Back");
     m_back->dock(Position::Right);
     m_back->onPressCaller.add(this, &ThisClass::previousPage);
     m_back->setSize(70);
-    m_label=new Label(controls);
+    m_label=controls->newChild<Label>();
     m_label->dock(Position::Fill);
     m_label->setAlignment(Position::Left|Position::CenterV);
     m_label->setText("Page 1 or 2");
@@ -66,7 +66,7 @@ void PageControl::setPageCount(unsigned int num)
     {
         if(!m_pages[i])
         {
-            m_pages[i]=new Base(this);
+            m_pages[i]=newChild<Base>();
             m_pages[i]->dock(Position::Fill);
         }
     }

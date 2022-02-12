@@ -25,7 +25,8 @@ class GWENI_EXPORT SliderBar: public internal::Dragger
 {
     GWENI_CONTROL(SliderBar, internal::Dragger);
 
-    void render(skin::Base *skin) override;
+public:
+    //void render(skin::Base *skin) override;
     virtual void setHorizontal(bool b)
     {
         m_horizontal=b;
@@ -47,7 +48,8 @@ class GWENI_EXPORT Slider: public Base
 {
     GWENI_CONTROL(Slider, Base);
 
-    void render(skin::Base *skin) override=0;
+public:
+    //void render(skin::Base *skin) override=0;
     void layout(skin::Base *skin) override;
 
     virtual void setClampToNotches(bool bClamp)
@@ -124,7 +126,7 @@ class GWENI_EXPORT Slider: public Base
 protected:
 
     virtual void setValueInternal(float value);
-    virtual void updateBarFromValue()=0;
+    virtual void updateBarFromValue() {}
 
     internal::SliderBar *m_sliderBar;
     bool m_clampToNotches;

@@ -24,6 +24,7 @@ public:
 
     GWENI_CONTROL(Rectangle, controls::Base);
 
+public:
     void render(skin::Base *skin) override;
 
     const gweni::Color &getColor()

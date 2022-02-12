@@ -42,11 +42,11 @@ void VerticalSlider::layout(skin::Base * /*skin*/)
     m_sliderBar->setSize(getWidth(), 15);
 }
 
-void VerticalSlider::render(skin::Base *skin)
-{
-//    skin->drawSlider(this, skin::Generate, false, m_clampToNotches?m_numNotches:0, m_sliderBar->getHeight());
-    skin->drawControl(this);
-}
+//void VerticalSlider::render(skin::Base *skin)
+//{
+////    skin->drawSlider(this, skin::Generate, false, m_clampToNotches?m_numNotches:0, m_sliderBar->getHeight());
+//    skin->drawControl(this);
+//}
 
 }//namespace controls
 }//namespace gweni

@@ -11,6 +11,7 @@ class RadioButtonDemo : public controls::Base
 public:
     GWENI_CONTROL(RadioButtonDemo, controls::Base);
 
+public:
     void onChange(event::Info info);
 };
 

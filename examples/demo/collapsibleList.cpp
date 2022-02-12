@@ -4,10 +4,10 @@
 namespace gweni
 {
 
-CollapsibleListDemo::CollapsibleListDemo(gweni::controls::Base *parent, const gweni::String &name):
-    Base(parent)
+CollapsibleListDemo::CollapsibleListDemo(const gweni::String &name):
+    Base()
 {
-    controls::CollapsibleList *control=new controls::CollapsibleList(this);
+    controls::CollapsibleList *control=newChild<controls::CollapsibleList>();
 
     control->setSize(100, 200);
     control->setPos(10, 10);

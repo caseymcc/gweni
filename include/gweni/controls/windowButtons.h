@@ -27,6 +27,7 @@ class GWENI_EXPORT WindowCloseButton: public Button
         setText("");
     }
 
+public:
     void render(skin::Base *skin) override
     {
         if(!m_window)
@@ -36,7 +37,9 @@ class GWENI_EXPORT WindowCloseButton: public Button
 //            isDepressed() && isHovered(),
 //            isHovered() && shouldDrawHover(),
 //            isDisabled());
-        skin->drawControl(this);
+        //skin->drawControl(this);
+        if(getStateChange() != StateChange_Nothing)
+            m_skinControl->update(skin->getRenderer(), this);
     }
 
     void setWindow(gweni::controls::Base *p)
@@ -57,6 +60,7 @@ class GWENI_EXPORT WindowMaximizeButton: public WindowCloseButton
         m_maximized=false;
     }
 
+public:
     void render(skin::Base *skin) override
     {
         if(!m_window)
@@ -67,7 +71,9 @@ class GWENI_EXPORT WindowMaximizeButton: public WindowCloseButton
 //            isHovered() && shouldDrawHover(),
 //            isDisabled(),
 //            m_maximized);
-        skin->drawControl(this);
+        //skin->drawControl(this);
+        if(getStateChange() != StateChange_Nothing)
+            m_skinControl->update(skin->getRenderer(), this);
     }
 
     virtual void setMaximized(bool b)
@@ -86,6 +92,7 @@ class GWENI_EXPORT WindowMinimizeButton: public WindowCloseButton
     GWENI_CONTROL_INLINE(WindowMinimizeButton, WindowCloseButton)
     {}
 
+public:
     void render(skin::Base *skin) override
     {
         if(!m_window)
@@ -95,7 +102,9 @@ class GWENI_EXPORT WindowMinimizeButton: public WindowCloseButton
 //            isDepressed() && isHovered(),
 //            isHovered() && shouldDrawHover(),
 //            isDisabled());
-        skin->drawControl(this);
+        //skin->drawControl(this);
+        if(getStateChange() != StateChange_Nothing)
+            m_skinControl->update(skin->getRenderer(), this);
     }
 
 };

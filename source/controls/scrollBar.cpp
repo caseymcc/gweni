@@ -19,24 +19,16 @@ GWENI_CONTROL_CONSTRUCTOR(BaseScrollBar)
 {
     for(int i=0; i < 2; i++)
     {
-        m_scrollButton[i]=new internal::ScrollBarButton(this);
+        m_scrollButton[i]=newChild<internal::ScrollBarButton>();
     }
 
-    m_bar=new internal::ScrollBarBar(this);
+    m_bar=newChild<internal::ScrollBarBar>();
     setBounds(0, 0, 15, 15);
     m_depressed=false;
     m_scrolledAmount=0;
     m_contentSize=0;
     m_viewableContentSize=0;
     setNudgeAmount(20);
-}
-
-void BaseScrollBar::render(skin::Base *skin)
-{
-//    if(getStateChange() == StateChange_Created)
-//        skin->drawScrollBar(this, skin::Generate, isHorizontal(), m_depressed);
-//    skin->drawScrollBar(this, skin::Update, isHorizontal(), m_depressed);
-    skin->drawControl(this);
 }
 
 void BaseScrollBar::onBarMoved(event::Info)

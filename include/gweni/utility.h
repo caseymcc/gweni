@@ -16,6 +16,7 @@
 #include <stdarg.h>
 #include <algorithm>
 #include <array>
+#include <stdio.h>
 
  // Some platforms (e.g. Windows) define these. We want std::min/max.
 #ifdef min
@@ -28,66 +29,97 @@
 namespace gweni
 {
 
+
+#ifdef _MSC_VER
+
+//namespace detail
+//{
+//
+//template<typename ... _Types>
+//std::string &join(_Types const &... strings)
+//{
+//    static std::string value=(std::string(strings)+...);
+//    return value;
+//}
+//
+//template<typename ... _Types>
+//const std::string join(_Types const &... strings)
+//{
+//    (std::puts(std::string(strings).c_str()),...);
+//    return (std::string(strings)+...);
+//}
+//
+//template<std::string_view const &... _Strings>
+//const std::string join = detail::join(_Strings...);
+
 namespace detail
 {
 
+template<typename ... _Types>
+std::string joinFunc(_Types const &... strings)
+{
+    return (std::string(strings)+...);
+}
 
+template<std::string_view const &... _Strings>
+struct join
+{
+    inline static const std::string arr=joinFunc(_Strings...);
+    inline static const std::string_view value={arr.data(), arr.size()};
+};
 
 //template<std::string_view const &... _Strings>
-//struct join
-//{
-//    static constexpr auto impl() noexcept
-//    {
-//        constexpr std::size_t len=(_Strings.size()+...+0);
-//        std::array<char, len+1> arr{};
-//
-//        auto append = [i=0, &arr](auto const &s) mutable
-//        {
-//            for(auto c:s)
-//                arr[i++]=c;
-//        };
-//
-//        (append(_Strings), ...);
-//        arr[len]=0;
-//        return arr;
-//    }
-//
-//    static constexpr auto arr = impl();
-//    static constexpr std::string_view value {arr.data(), arr.size() - 1};
-//};
+//const std::string join<_Strings...>::arr=joinFunc(_Strings...);
+//template<std::string_view const &... _Strings>
+//const std::string_view join<_Strings...>::value={join<_Strings...>::arr.data(), join<_Strings...>::arr.size() - 1};
 
 }//namespace detail
 
-//template<std::string_view const &... _Strings>
-//static constexpr auto join = detail::join<_Strings...>::value;
+template<std::string_view const &... _Strings>
+std::string_view join = detail::join<_Strings...>::value;
 
-template<size_t _size>
-struct StringRet
+#define JoinConstExpr
+
+#else
+
+namespace detail
 {
-    char value[_size];
+
+template<std::string_view const &... _Strings>
+struct join
+{
+    static constexpr int len=(_Strings.size()+...+0);
+    using StringArray=std::array<char, len+1>;
+
+    static constexpr void append(StringArray &local, size_t &i, std::string_view const &s)
+    { 
+        for(std::string_view::value_type c:s)
+            local[i++]=c;
+    };
+
+    static constexpr StringArray impl() noexcept
+    {
+        StringArray local{};
+
+        size_t i=0;
+        (append(local, i, _Strings), ...);
+        local[len]=0;
+        return local;
+    }
+
+    static constexpr StringArray arr=impl();
+    static constexpr std::string_view value{arr.data(), arr.size() - 1};
 };
 
-template<size_t ..._sizes>
-constexpr auto join(const char (&..._strings)[_sizes])
-{
-    constexpr size_t length=(...+_sizes)-sizeof...(_sizes);
-    StringRet result={};
-    size_t srcIndex;
-    size_t dstIndex=0;
-    const char *dst=result.value;
+}//namespace detail
 
-    for(const char *src:{_strings...})
-    {
-        srcIndex=0;
-        for(; src[srcIndex]!='\0'; ++srcIndex, ++dstIndex)
-        {
-            dst[dstIndex]=src[srcIndex];
-        }
-    }
-    dst[length] = '\0';
+template<std::string_view const &... _Strings>
+static constexpr std::string_view join = detail::join<_Strings...>::value;
 
-    return result;
-}
+#define JoinConstExpr constexpr
+
+#endif
+
 
 
 //! Get the number of items in a static array.

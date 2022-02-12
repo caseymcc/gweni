@@ -48,34 +48,38 @@ namespace gweni
 	button->onPressCaller.add(this, &ThisClass::onCategorySelect, packet);\
 }
 
-Demo::Demo(controls::Base *parent, const String &name):
-    DockBase(parent)
+Demo::Demo(const String &name):
+    DockBase()
+{}
+
+void Demo::init(const String &name)
 {
     m_lastControl=NULL;
 
     dock(Position::Fill);
     setSize(1024, 768);
 
-    controls::CollapsibleList *list=new controls::CollapsibleList(this);
+    controls::CollapsibleList *list=newChild<controls::CollapsibleList>("DemoList");
 
     getLeft()->getTabControl()->addPage("CollapsibleList", list);
     getLeft()->setWidth(150);
 
-    m_textOutput=new controls::ListBox(getBottom());
+    m_textOutput=getBottom()->newChild<controls::ListBox>();
 
     getBottom()->getTabControl()->addPage("Output", m_textOutput);
     getBottom()->setHeight(200);
 
-    m_statusBar=new controls::StatusBar(this);
+    m_statusBar=newChild<controls::StatusBar>();
 
     m_statusBar->dock(Position::Bottom);
 
-    controls::layout::Center *center=new controls::layout::Center(this);
+    controls::layout::Center *center=newChild<controls::layout::Center>();
 
     center->dock(Position::Fill);
     {
         controls::CollapsibleCategory *cat=list->add("Basic");
 
+        cat->setName("Basic");
         addDemo<ButtonDemo>(cat, "ButtonDemo");
         addDemo<LabelDemo>(cat, "LabelDemo");
         addDemo<LabelMultilineDemo>(cat, "LabelMultilineDemo");

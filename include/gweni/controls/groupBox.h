@@ -24,7 +24,8 @@ public:
 
     GWENI_CONTROL(GroupBox, Label);
 
-    void render(skin::Base *skin) override;
+public:
+    //void render(skin::Base *skin) override;
     void layout(skin::Base *skin) override;
 
     virtual void setInnerMargin(int i)

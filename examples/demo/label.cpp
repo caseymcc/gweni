@@ -4,54 +4,54 @@
 namespace gweni
 {
 
-LabelDemo::LabelDemo(controls::Base *parent, const String &name):
-    Base(parent)
+LabelDemo::LabelDemo(const String &name):
+    Base()
 {
     {
-        controls::Label *label=new controls::Label(this);
+        controls::Label *label=newChild<controls::Label>();
         label->setText("Garry's Normal Label");
         label->sizeToContents();
         label->setPos(10, 10);
     }
     {
-        controls::Label *label=new controls::Label(this);
+        controls::Label *label=newChild<controls::Label>();
         label->setText("Chinese: n/a");
         label->sizeToContents();
         label->setPos(10, 30);
     }
     {
-        controls::Label *label=new controls::Label(this);
+        controls::Label *label=newChild<controls::Label>();
         label->setText("Japanese: n/a");
         label->sizeToContents();
         label->setPos(10, 50);
     }
     {
-        controls::Label *label=new controls::Label(this);
+        controls::Label *label=newChild<controls::Label>();
         label->setText("Korean: n/a");
         label->sizeToContents();
         label->setPos(10, 70);
     }
     {
-        controls::Label *label=new controls::Label(this);
+        controls::Label *label=newChild<controls::Label>();
         label->setText("Hindi: n/a");
         label->sizeToContents();
         label->setPos(10, 90);
     }
     {
-        controls::Label *label=new controls::Label(this);
+        controls::Label *label=newChild<controls::Label>();
         label->setText("Arabic: n/a");
         label->sizeToContents();
         label->setPos(10, 110);
     }
     {
-        controls::Label *label=new controls::Label(this);
+        controls::Label *label=newChild<controls::Label>();
         label->setText("Wow, Coloured Text");
         label->setTextColor(gweni::Color(0, 0, 255, 255));
         label->sizeToContents();
         label->setPos(10, 130);
     }
     {
-        controls::Label *label=new controls::Label(this);
+        controls::Label *label=newChild<controls::Label>();
         label->setText("Coloured Text With Alpha");
         label->setTextColor(gweni::Color(0, 0, 255, 100));
         label->sizeToContents();
@@ -64,7 +64,7 @@ LabelDemo::LabelDemo(controls::Base *parent, const String &name):
         //
 //        m_font.facename="Comic Sans MS";
 //        m_font.size=25;
-        controls::Label *label=new controls::Label(this);
+        controls::Label *label=newChild<controls::Label>();
         label->setText("Supose to be custom");// Custom Font(Comic Sans 25)");
 //        label->setFont(m_font);
         label->sizeToContents();

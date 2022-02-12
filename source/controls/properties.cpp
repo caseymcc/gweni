@@ -17,7 +17,7 @@ namespace controls
 
 GWENI_CONTROL_CONSTRUCTOR(Properties)
 {
-    m_splitterBar=new SplitterBar(this);
+    m_splitterBar=newChild<SplitterBar>();
     m_splitterBar->setPos(80, 0);
     m_splitterBar->setCursor(gweni::cursor::SizeWE);
     m_splitterBar->onDragged.add(this, &Properties::onSplitterMoved);
@@ -45,12 +45,14 @@ int Properties::getSplitWidth()
 
 PropertyRow *Properties::add(const String &text, const String &value)
 {
-    return add(text, new property::Text(this), value);
+    property::Text *textProperty=newChild<property::Text>();
+
+    return add(text, textProperty, value);
 }
 
 PropertyRow *Properties::add(const String &text, property::Base *prop, const String &value)
 {
-    PropertyRow *row=new PropertyRow(this);
+    PropertyRow *row=newChild<PropertyRow>();
     row->dock(Position::Top);
     row->getLabel()->setText(text);
     row->setProperty(prop);
@@ -98,6 +100,7 @@ class PropertyRowLabel: public Label
         m_propertyRow=nullptr;
     }
 
+public:
     void updateColors() override
     {
         if(isDisabled())
@@ -126,7 +129,7 @@ protected:
 GWENI_CONTROL_CONSTRUCTOR(PropertyRow)
 {
     m_property=nullptr;
-    PropertyRowLabel *label=new PropertyRowLabel(this);
+    PropertyRowLabel *label=newChild<PropertyRowLabel>();
     label->SetPropertyRow(this);
     label->dock(Position::Left);
     label->setAlignment(Position::Left|Position::CenterV);
@@ -153,7 +156,9 @@ void PropertyRow::render(gweni::skin::Base *skin)
     /* SORRY */
 //    skin->drawPropertyRow(this, skin::Generate, m_label->right(), isEditing(), isHovered()|
 //        m_property->isHovered());
-    skin->drawControl(this);
+    //skin->drawControl(this);
+    if(getStateChange() != StateChange_Nothing)
+        m_skinControl->update(skin->getRenderer(), this);
 }
 
 void PropertyRow::layout(gweni::skin::Base * /*skin*/)

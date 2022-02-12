@@ -11,6 +11,7 @@ class ListBoxDemo : public controls::Base
 public:
     GWENI_CONTROL(ListBoxDemo, controls::Base);
 
+public:
     void ListBoxDemo::rowSelected(event::Info info);
 
 private:

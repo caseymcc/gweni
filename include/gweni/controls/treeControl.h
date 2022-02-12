@@ -21,7 +21,8 @@ public:
 
     GWENI_CONTROL(TreeControl, TreeNode);
 
-    void render(skin::Base *skin) override;
+public:
+    //void render(skin::Base *skin) override;
 
     void onChildBoundsChanged(gweni::Rect oldChildBounds, Base *child) override;
 

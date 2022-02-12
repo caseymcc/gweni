@@ -28,13 +28,6 @@ public:
     {
         m_title->setTextColorOverride(getSkin()->Colors.Properties.Title);
     }
-
-    void render(skin::Base *skin) override
-    {
-//        skin->drawPropertyTreeNode(this, skin::Generate, m_innerPanel->getX(), m_innerPanel->getY());
-        skin->drawControl(this);
-    }
-
 };
 
 
@@ -45,6 +38,7 @@ public:
     GWENI_CONTROL_INLINE(PropertyTree, TreeControl)
     {}
 
+public:
     Properties *add(const String &text);
     Properties *find(const String &text);
 };

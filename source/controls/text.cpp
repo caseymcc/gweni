@@ -19,19 +19,21 @@ namespace internal
 
 GWENI_CONTROL_CONSTRUCTOR(Text)
 {
-    m_font=&getSkin()->getDefaultFont();
+//    m_font=&getSkin()->getDefaultFont();
+    m_font=&getDefaultFont();
     m_colorOverride=Color(255, 255, 255, 0);
-    m_color=getSkin()->Colors.Label.Default;
+//    m_color=getSkin()->Colors.Label.Default;
+    m_color=Color(255, 255, 255, 0);
     setMouseInputEnabled(false);
     setSizeFlags({SizeFlag::Expand, SizeFlag::Expand});
     setWrap(false);
 
-    m_textId=getTextId(this);
+//    m_textId=getTextId(this);
 }
 
 Text::~Text()
 {
-    releaseTextId(m_textId);
+//    releaseTextId(m_textId);
     // NOTE: This font doesn't need to be released
     // Because it's a pointer to another font somewhere.
 }
@@ -55,6 +57,8 @@ void Text::setFont(const gweni::Font &font)
     if(m_font == &font)
         return;
 
+    addStateChange(controls::StateChange_Text);
+
     m_font=&font;
     m_textChanged=true;
     // Change the font of multilines too!
@@ -66,33 +70,50 @@ void Text::setFont(const gweni::Font &font)
     invalidate();
 }
 
-void Text::setString(const String &str)
+void Text::setText(const String &str)
 {
     if(m_string == str)
         return;
+
+    addStateChange(controls::StateChange_Text);
 
     m_string=str;
     m_textChanged=true;
     invalidate();
 }
 
-void Text::render(skin::Base *skin)
-{
-    if(m_wrap)
-        return;
-
-    if(length() == 0)
-        return;
-
-    if(m_colorOverride.a == 0)
-        skin->getRender()->setDrawColor(m_color);
-    else
-        skin->getRender()->setDrawColor(m_colorOverride);
-
-    skin->getRender()->renderText(m_textId, getFont(),
-        gweni::Point(getPadding().left, getPadding().top),
-        m_string);
-}
+//void Text::render(skin::Base *skin)
+//{
+////    if(m_wrap)
+////        return;
+////
+////    if(length() == 0)
+////        return;
+//    if(getStateChange() == StateChange_Nothing)
+//        return;
+//    
+//    if(getStateChange() & StateChange_Created)
+//    {
+//
+//    }
+//
+//    if(m_colorOverride.a == 0)
+//        skin->getRenderer()->setDrawColor(m_color);
+//    else
+//        skin->getRenderer()->setDrawColor(m_colorOverride);
+//
+//    if(getStateChange() & controls::StateChange_Visibility)
+//    {
+//        if(hidden())
+//            skin->getRenderer()->hideText(m_textId);
+//        else
+//            skin->getRenderer()->showText(m_textId);
+//    }
+//
+//    skin->getRenderer()->renderText(m_textId, getFont(),
+//        gweni::Point(getPadding().left, getPadding().top), getZIndex(),
+//        m_string);
+//}
 
 gweni::Rect Text::getCharacterPosition(unsigned int value)
 {
@@ -128,12 +149,12 @@ gweni::Rect Text::getCharacterPosition(unsigned int value)
 
     if(length() == 0 || value == 0)
     {
-        gweni::Point p=getSkin()->getRender()->measureText(getFont(), " ");
+        gweni::Point p=getSkin()->getRenderer()->measureText(getFont(), " ");
         return gweni::Rect(0, 0, 0, p.y);
     }
 
     String sub=m_string.substr(0, value);
-    gweni::Point p=getSkin()->getRender()->measureText(getFont(), sub);
+    gweni::Point p=getSkin()->getRenderer()->measureText(getFont(), sub);
     return Rect(p.x, 0, 0, p.y);
 }
 
@@ -142,12 +163,12 @@ gweni::Rect Text::getLineBox(int i)
     Text *line=getLine(i);
     if(line != nullptr)
     {
-        gweni::Point p=getSkin()->getRender()->measureText(getFont(), line->m_string);
+        gweni::Point p=getSkin()->getRenderer()->measureText(getFont(), line->m_string);
         return gweni::Rect(line->getX(), line->getY(), clamp(p.x, 1, p.x), clamp(p.y, 1, p.y));
     }
     else
     {
-        gweni::Point p=getSkin()->getRender()->measureText(getFont(), m_string);
+        gweni::Point p=getSkin()->getRenderer()->measureText(getFont(), m_string);
         return gweni::Rect(0, 0, clamp(p.x, 1, p.x), clamp(p.y, 1, p.y));
     }
 }
@@ -241,7 +262,7 @@ Size Text::refreshSize(bool update)
     gweni::Point p(1, getFont().size);
 
     if(length() > 0)
-        p=getSkin()->getRender()->measureText(getFont(), m_string);
+        p=getSkin()->getRenderer()->measureText(getFont(), m_string);
 
     p.x+=getPadding().left+getPadding().right;
     p.y+=getPadding().top+getPadding().bottom;
@@ -295,7 +316,7 @@ void Text::splitWords(const gweni::String &s, std::vector<gweni::String> &elems)
         str+=s[i];
 
         // if adding character makes the word bigger than the textbox size
-        gweni::Point p=getSkin()->getRender()->measureText(getFont(), str);
+        gweni::Point p=getSkin()->getRenderer()->measureText(getFont(), str);
         if(p.x > w)
         {
             //split words
@@ -337,7 +358,7 @@ Size Text::RefreshSizeWrap(bool update)
         return Size(0, 0);
     }
 
-    Point fontSize=getSkin()->getRender()->measureText(getFont(), " ");
+    Point fontSize=getSkin()->getRenderer()->measureText(getFont(), " ");
     int w=getParent()->getWidth() - getParent()->getPadding().left - getParent()->getPadding().right;
     int x=0, y=0;
     gweni::String strLine;
@@ -355,7 +376,7 @@ Size Text::RefreshSizeWrap(bool update)
         // Does adding this word drive us over the width?
         {
             strLine+=*it;
-            gweni::Point p=getSkin()->getRender()->measureText(getFont(), strLine);
+            gweni::Point p=getSkin()->getRenderer()->measureText(getFont(), strLine);
 
             if(p.x > getWidth() && p.x > w)
             {
@@ -372,18 +393,18 @@ Size Text::RefreshSizeWrap(bool update)
         {
             if(update)
             {
-                Text *t=new Text(this);
+                Text *t=newChild<Text>();
                 t->setFont(getFont());
                 t->setTextColor(TextColor());
                 if(bWrapped)
                 {
-                    t->setString(strLine.substr(0, strLine.length()-(*it).length()));
+                    t->setText(strLine.substr(0, strLine.length()-(*it).length()));
                     // newline should start with the word that was too big
                     strLine=*it;
                 }
                 else
                 {
-                    t->setString(strLine.substr(0, strLine.length()));
+                    t->setText(strLine.substr(0, strLine.length()));
                     //new line is empty
                     strLine.clear();
                 }

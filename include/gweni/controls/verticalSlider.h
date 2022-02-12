@@ -24,8 +24,9 @@ class GWENI_EXPORT VerticalSlider: public Slider
 {
     GWENI_CONTROL(VerticalSlider, Slider);
 
+public:
     void layout(skin::Base *skin) override;
-    void render(skin::Base *skin) override;
+    //void render(skin::Base *skin) override;
 
     float calculateValue() override;
     void  updateBarFromValue() override;

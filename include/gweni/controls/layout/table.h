@@ -36,6 +36,7 @@ class GWENI_EXPORT TableRow: public Base
         m_columnCount=0;
     }
 
+public:
     void setColumnCount(int count)
     {
         if(count == m_columnCount)
@@ -50,7 +51,7 @@ class GWENI_EXPORT TableRow: public Base
             {
                 if(!m_columns[i])
                 {
-                    m_columns[i]=new Label(this);
+                    m_columns[i]=newChild<Label>();
                     m_columns[i]->dock(Position::Left);
                     m_columns[i]->setPadding(Padding(3, 3, 3, 3));
                 }
@@ -184,6 +185,7 @@ public:
         m_sizeToContents=false;
     }
 
+public:
     void setColumnCount(int i)
     {
         if(m_columnCount == i)
@@ -213,7 +215,7 @@ public:
 
     TableRow *addRow()
     {
-        TableRow *row=new TableRow(this);
+        TableRow *row=newChild<TableRow>();
         addRow(row);
         return row;
     }

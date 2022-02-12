@@ -16,10 +16,10 @@ namespace controls
 
 Properties *PropertyTree::add(const String &text)
 {
-    TreeNode *node=new PropertyTreeNode(this);
+    TreeNode *node=newChild<PropertyTreeNode>();
     node->setText(text);
     node->dock(Position::Top);
-    Properties *props=new Properties(node);
+    Properties *props=node->newChild<Properties>();
     props->dock(Position::Top);
     return props;
 }

@@ -34,9 +34,20 @@ class LayoutItem;
 
 constexpr int StateChange_Nothing=0x0000;
 constexpr int StateChange_Created=0x0001;
-constexpr int StateChange_Show=0x0002;
-constexpr int StateChange_Background=0x0004;
+constexpr int StateChange_Visibility=0x0002;
+constexpr int StateChange_Geometry=0x0004;
+constexpr int StateChange_Background=0x0008;
+constexpr int StateChange_Text=0x0010;
 
+size_t getControlType(std::string name);
+
+template<typename _Control>
+_Control *newControl(const gweni::String &name="")
+{
+    _Control *control=_Control::newInstance(name);
+
+    return control;
+}
 //
 //! This is the base class for all Gweni controls.
 //
@@ -49,13 +60,33 @@ public:
 
     typedef std::map<gweni::String, gweni::event::Caller *> AccelMap;
 
-    Base(Base *parent, const gweni::String &Name="");
+protected:
+    Base(const gweni::String &name="");
+
+public:
     virtual ~Base();
 
-    static const char *getTypeNameStatic() { return "Base"; }
+    static Base *newInstance(const gweni::String &name)
+    {
+        Base *instance=new Base(name);
+        instance->recursiveInit(name);
+        return instance;
+    }
 
+    void recursiveInit(const gweni::String &name)
+    {
+        init(name);
+    }
+    void init(const gweni::String &name);
+
+    static const char *getTypeNameStatic() { return "Base"; }
     virtual const char *getTypeName() const { return getTypeNameStatic(); }
+
+    static const char *getControlNameStatic() { return "Base"; }
+    virtual const char *getControlName() const { return getControlNameStatic(); }
+
     virtual const char *getParentTypeName() const { return nullptr; }
+    virtual const char *getParentTypeName(size_t index) const { return nullptr; }
 
     virtual void delayedDelete();
     virtual void preDelete(gweni::skin::Base *skin) {}
@@ -68,9 +99,6 @@ public:
     }
     virtual void removeAllChildren();
 
-
-    
-
     virtual Base::List &getChildren()
     {
         if(m_innerPanel)
@@ -78,6 +106,11 @@ public:
 
         return m_children;
     }
+
+    template<typename _Control>
+    friend _Control *newControl(const gweni::String &name);
+    template<typename _Control>
+    _Control *newChild(const gweni::String &name);
 
     virtual bool            isChild(controls::Base *child);
     virtual unsigned int    numChildren();
@@ -127,7 +160,6 @@ public:
     
     virtual int getStateChange() { return m_stateChange; }
     virtual void addStateChange(int stateChange) { m_stateChange|=stateChange; }
-
     
 
     virtual void restrictToParent(bool restrict) { m_restrictToParent=restrict; }
@@ -138,6 +170,8 @@ public:
 
     virtual int getWidth() const { return m_bounds.w; }  //!< Get Control width.
     virtual int getHeight() const { return m_bounds.h; }  //!< Get Control height.
+
+    virtual int getZIndex() const { return m_zIndex; }
 
     virtual int bottom() const
     {
@@ -237,6 +271,9 @@ protected:
     virtual void renderOver(gweni::skin::Base * /*skin*/) {}
     virtual void renderFocus(gweni::skin::Base * /*skin*/);
 
+    virtual void update();
+    void updateRecursive(int &zIndex);
+
 public:
 
     virtual void setHidden(bool hidden)
@@ -245,6 +282,13 @@ public:
             return;
 
         m_hidden=hidden;
+        
+        for(auto &&child : m_children)
+        {
+            child->setHidden(hidden);
+        }
+
+        addStateChange(StateChange_Visibility);
         invalidate();
         redraw();
     }
@@ -256,7 +300,7 @@ public:
     virtual void show() { setHidden(false); }   //!< Make control visible if hidden.
 
     // Skin
-    virtual void              setSkin(skin::Base *skin, bool doChildren=false);
+    virtual void setSkin(skin::Base *skin, bool doChildren=true);
     virtual gweni::skin::Base *getSkin(void);
 
     // Background drawing
@@ -443,7 +487,7 @@ public:
     gweni::event::Caller onHoverLeave;
 
 protected:
-    void init(Base *parent, const gweni::String &Name);
+//    void init(const String name);
 
     //Id of control, used to identify control to renderer
     size_t m_id;
@@ -469,6 +513,8 @@ protected:
     Base *m_toolTip;
 
     skin::Base *m_skin;
+    std::unique_ptr<skin::Control> m_skinControl;
+
     PrimitiveIds m_primitiveIds;
     //something altered in last ui loop so rendering changing
     bool m_updatePrimitives;
@@ -476,6 +522,7 @@ protected:
     //            gweni::Rect m_needed;
     gweni::Rect m_bounds;
     gweni::Rect m_renderBounds;
+    int m_zIndex;
 
     SizeFlags m_sizeFlags;
     Size m_preferredSize;
@@ -608,6 +655,11 @@ public:
         return getTypeNameStatic();
     }
 
+    static size_t getControlId()
+    {
+        return getControlType(getTypeNameStatic());
+    }
+
     virtual gweni::controls::Base *dynamicCast(const char *Variable)
     {
         return nullptr;
@@ -644,6 +696,18 @@ public:
     UserDataStorage m_userData;   // TODO - optimise memory usage.
 
 };
+
+template<typename _Control>
+_Control *Base::newChild(const gweni::String &name="")
+{
+    _Control *control=newControl<_Control>(name);
+
+    control->setParent(this);
+    control->recursiveInit(name);
+    control->setSkin(m_skin);
+    
+    return control;
+}
 
 
 }//namespace controls
@@ -703,34 +767,58 @@ inline T *controls::Base::findChild(const gweni::String &name, bool recursive)
         static const char *ident = #BASENAME ":" #THISNAME;             \
         return ident;                                                   \
     }                                                                   \
-    gweni::controls::Base *dynamicCast(const char *Variable) override \
+    gweni::controls::Base *dynamicCast(const char *Variable) override   \
     {                                                                   \
         if (getIdentifier() == Variable)                                \
             return this;                                                \
                                                                         \
-        return ParentClass::dynamicCast(Variable);                        \
+        return ParentClass::dynamicCast(Variable);                      \
     }
 
 #define GWENI_CLASS(THISNAME, BASENAME) \
     typedef BASENAME ParentClass; \
     typedef THISNAME ThisClass;
 
-// To be placed in the controls .h definition.
-#define GWENI_CONTROL(THISNAME, BASENAME) \
+ //To be placed in the controls .h definition.
+#define GWENI_CONTROL_BASE(THISNAME, BASENAME, CONTROLNAME) \
 public: \
     GWENI_CLASS(THISNAME, BASENAME)  \
     GWENI_DYNAMIC(THISNAME, BASENAME) \
     static  const char *getTypeNameStatic() { return #THISNAME; } \
     const char *getTypeName() const override { return getTypeNameStatic(); } \
+    static const char *getControlNameStatic(){ return #CONTROLNAME; } \
+    const char *getControlName() const override{ return getControlNameStatic(); } \
     const char *getParentTypeName() const override { return ParentClass::getTypeNameStatic(); } \
-    THISNAME(gweni::controls::Base *parent, const gweni::String &name = "")
+    const char *getParentTypeName(size_t index) const override { if(index == 0) return ParentClass::getParentTypeName(); else return ParentClass::getParentTypeName(index-1); } \
+    void recursiveInit(const gweni::String &name){BASENAME::recursiveInit(name); THISNAME::init(name);} \
+    static THISNAME *newInstance(const gweni::String &name){THISNAME *instance=new THISNAME(name); return instance;} 
 
-#define GWENI_CONTROL_INLINE(THISNAME, BASENAME) \
-    GWENI_CONTROL(THISNAME, BASENAME) : ParentClass(parent, name)
+#define GWENI_CONTROL_FUNC(THISNAME, BASENAME, CONTROLNAME) \
+    GWENI_CONTROL_BASE(THISNAME, BASENAME, CONTROLNAME) \
+    void init(const gweni::String &name); \
+protected: \
+    THISNAME(const gweni::String &name = "")
+
+
+#define GWENI_FUNC_SELECT(DUMMY, SPACER, FUNC, ...) DUMMY, SPACER, FUNC; ##__VA_ARGS__
+
+#define GWENI_CONTROL(THISNAME, BASENAME) GWENI_CONTROL_FUNC(THISNAME, BASENAME, THISNAME)
+//#define GWENI_DERIVED_CONTROL(THISNAME, BASENAME) GWENI_CONTROL_FUNC(THISNAME, BASENAME, BASENAME)
+
+#define GWENI_CONTROL_INLINE_FUNC(THISNAME, BASENAME, CONTROLNAME) \
+    GWENI_CONTROL_BASE(THISNAME, BASENAME, CONTROLNAME) \
+protected: \
+    THISNAME(const gweni::String &name="") : ParentClass(name) {} \
+public: \
+    void init(const gweni::String &name)
+
+#define GWENI_CONTROL_INLINE(THISNAME, BASENAME, ...) GWENI_CONTROL_INLINE_FUNC(THISNAME, BASENAME, THISNAME)
+//#define GWENI_DERIVED_CONTROL_INLINE(THISNAME, BASENAME) GWENI_CONTROL_INLINE_FUNC(THISNAME, BASENAME, BASENAME))
 
 #define GWENI_CONTROL_CONSTRUCTOR(THISNAME) \
-    THISNAME::THISNAME(gweni::controls::Base *parent, const gweni::String &name) \
-        : ParentClass(parent, name)
+    THISNAME::THISNAME(const gweni::String &name) \
+        : ParentClass(name){} \
+    void THISNAME::init(const gweni::String &name) \
 
 } // namespace gweni
 

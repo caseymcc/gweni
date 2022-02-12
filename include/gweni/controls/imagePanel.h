@@ -22,6 +22,8 @@ class GWENI_EXPORT ImagePanel: public controls::Base
 public:
 
     GWENI_CONTROL(ImagePanel, controls::Base);
+    
+public:
     virtual ~ImagePanel();
 
     virtual void setUV(float u1, float v1, float u2, float v2);

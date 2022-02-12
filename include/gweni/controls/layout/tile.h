@@ -27,6 +27,7 @@ public:
         setTileSize(22, 22);
     }
 
+public:
     void postLayout(skin::Base *skin) override
     {
         gweni::Rect bounds=getInnerBounds();

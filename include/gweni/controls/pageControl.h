@@ -22,6 +22,7 @@ class GWENI_EXPORT PageControl: public Base
 
     GWENI_CONTROL(PageControl, Base);
 
+public:
     virtual void         setPageCount(unsigned int i);
     virtual unsigned int getPageCount()
     {

@@ -17,6 +17,9 @@
 #include <algorithm>
 #include <limits>
 
+#include <glm/glm.hpp>
+#include <glm/detail/type_vec4.hpp>
+
 namespace gweni
 {
 namespace controls
@@ -25,29 +28,8 @@ class Base;
 class Canvas;
 }
 
-struct GWENI_EXPORT Margin
-{
-    Margin(int left_=0, int top_=0, int right_=0, int bottom_=0)
-        : top(top_)
-        , bottom(bottom_)
-        , left(left_)
-        , right(right_)
-    {}
-
-    Margin operator+ (const Margin &margin) const
-    {
-        Margin m;
-        m.top=top + margin.top;
-        m.bottom=bottom + margin.bottom;
-        m.left=left + margin.left;
-        m.right=right + margin.right;
-        return m;
-    }
-
-    int top, bottom, left, right;
-};
-
-typedef Margin Padding;
+typedef BoundingBox Margin;
+typedef BoundingBox Padding;
 
 struct GWENI_EXPORT HSV
 {

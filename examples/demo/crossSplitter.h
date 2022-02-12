@@ -12,6 +12,7 @@ class CrossSplitterDemo: public controls::Base
 public:
     GWENI_CONTROL(CrossSplitterDemo, controls::Base);
 
+public:
     void zoomTest(event::Info info);
     void unZoomTest(event::Info info);
     void centerPanels(event::Info info);
