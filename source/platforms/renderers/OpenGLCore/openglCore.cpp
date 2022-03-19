@@ -3,6 +3,7 @@
  *  Copyright (c) 2013-18 Nick Trout
  *  See license in Gweni.h
  */
+//#define DEBUG_RENDER
 
 #include <gweni/platforms/renderers/openglCore.h>
 #if defined(__APPLE__)
@@ -899,6 +900,10 @@ void OpenGLCore::drawFilledRect(size_t primitiveId, gweni::Rect rect, int zIndex
     if(m_vertexes.size() < vertexIndex+4)
         m_vertexes.resize(vertexIndex+4);
 
+#ifdef DEBUG_RENDER
+    std::cout<<"Rendering Fill: "<<primitiveId<<"("<<rect.x<<", "<<rect.y<<", "<<rect.w<<", "<<rect.h<<":"<<zIndex<<")\n";
+#endif//DEBUG_RENDER
+
     setVertex(m_vertexes[vertexIndex++], 1, rect.x, rect.y, zIndex, m_color.rg, m_color.ba);
     setVertex(m_vertexes[vertexIndex++], 1, rect.x+rect.w, rect.y, zIndex, m_color.rg, m_color.ba);
     setVertex(m_vertexes[vertexIndex++], 1, rect.x, rect.y+rect.h, zIndex, m_color.rg, m_color.ba);
@@ -1019,6 +1024,10 @@ void OpenGLCore::drawTexturedRect(const gweni::Texture &texture, size_t primitiv
     if(m_vertexes.size() < vertexIndex+4)
         m_vertexes.resize(vertexIndex+4);
 
+#ifdef DEBUG_RENDER
+    std::cout<<"Rendering: "<<primitiveId<<"("<<rect.x<<", "<<rect.y<<", "<<rect.w<<", "<<rect.h<<":"<<zIndex<<")\n";
+#endif//DEBUG_RENDER
+
     setVertex(m_vertexes[vertexIndex++], 2, rect.x, rect.y, zIndex, u1, v1);
     setVertex(m_vertexes[vertexIndex++], 2, rect.x + rect.w, rect.y, zIndex, u2, v1);
     setVertex(m_vertexes[vertexIndex++], 2, rect.x, rect.y + rect.h, zIndex, u1, v2);
@@ -1050,8 +1059,11 @@ void OpenGLCore::showPrimitive(int style, size_t primitiveId)
         assert(false);
     }
 
+//    std::cout<<"Show: "<<primitiveId<<"\n";
     for(size_t i=0; i<4; ++i)
+    {
         m_vertexes[vertexIndex+i].style=style;
+    }
 }
 
 void OpenGLCore::hidePrimitive(size_t primitiveId)
@@ -1070,8 +1082,11 @@ void OpenGLCore::hidePrimitive(size_t primitiveId)
         assert(false);
     }
 
+//    std::cout<<"Hide: "<<primitiveId<<"\n";
     for(size_t i=0; i<4; ++i)
+    {
         m_vertexes[vertexIndex+i].style=0;
+    }
 
 }
 
@@ -1147,6 +1162,10 @@ void OpenGLCore::renderText(size_t textId, const gweni::Font &font, gweni::Point
             float zDelta=1.0f/textPrimitiveIds.size();
             float zOffset=0.0f;
 
+#ifdef DEBUG_RENDER
+            std::cout<<"Moving text: ("<<pos.x<<", "<<pos.y<<", "<<zIndex<<") "<<text<<"\n";
+#endif//DEBUG_RENDER
+
             for(size_t i=0; i<textPrimitiveIds.size(); ++i)
             {
                 size_t vertIndex=textPrimitiveIds[i]*4;
@@ -1155,7 +1174,10 @@ void OpenGLCore::renderText(size_t textId, const gweni::Font &font, gweni::Point
                 {
                     m_textVertexes[vertIndex+j].x=m_textVertexes[vertIndex+j].x+delta.x;
                     m_textVertexes[vertIndex+j].y=m_textVertexes[vertIndex+j].y+delta.y;
-                    m_textVertexes[vertIndex+j].z=zIndex;
+                    if(m_textVertexes[vertIndex+j].z < 0)
+                        m_textVertexes[vertIndex+j].z=-zIndex;
+                    else
+                        m_textVertexes[vertIndex+j].z=zIndex;
                     m_textVertexes[vertIndex+j].shift=zOffset;
                 }
 //                m_zIndex++;
@@ -1226,6 +1248,10 @@ void OpenGLCore::renderText(size_t textId, const gweni::Font &font, gweni::Point
     size_t vertexPos=0;
     float zDelta=1.0f/primitiveCount;
     float zOffset=0.0f;
+
+#ifdef DEBUG_RENDER
+    std::cout<<"Rendering text: ("<<pos.x<<", "<<pos.y<<", "<<zIndex<<") "<<text<<"\n";
+#endif//DEBUG_RENDER
 
     for(size_t i=0; i<primitiveCount; ++i)
     {
@@ -1465,7 +1491,10 @@ bool OpenGLCore::presentContext(gweni::WindowProvider *window)
 
 bool OpenGLCore::resizedContext(gweni::WindowProvider *window, int w, int h)
 {
+#ifdef DEBUG_RENDER
     std::cout << "ResizedContext w=" << w << ", h=" << h << std::endl;
+#endif//DEBUG_RENDER
+
 #if CREATE_NATIVE_CONTEXT
     RECT r;
 
@@ -1485,7 +1514,9 @@ bool OpenGLCore::resizedContext(gweni::WindowProvider *window, int w, int h)
 
 bool OpenGLCore::beginContext(gweni::WindowProvider *window)
 {
+#ifdef DEBUG_RENDER
     std::cout << "BeginContext" << std::endl;
+#endif//DEBUG_RENDER
     glClearColor(0.5f, 0.5f, 0.5f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
     return true;
@@ -1493,7 +1524,9 @@ bool OpenGLCore::beginContext(gweni::WindowProvider *window)
 
 bool OpenGLCore::endContext(gweni::WindowProvider *window)
 {
+#ifdef DEBUG_RENDER
     std::cout << "EndContext" << std::endl;
+#endif//DEBUG_RENDER
     return true;
 }
 

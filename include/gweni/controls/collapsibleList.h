@@ -37,7 +37,7 @@ public:
     virtual void add(CollapsibleCategory *category)
     {
         category->setParent(this);
-        category->dock(Position::Top);
+        category->setDock(DockPosition::Top);
         category->setMargin(Margin(1, 0, 1, 1));
         category->setList(this);
         category->onSelectionCaller.add(this, &ThisClass::onSelectionEvent);

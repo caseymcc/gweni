@@ -25,13 +25,13 @@ public:
     GWENI_CONTROL_INLINE(FolderPicker, controls::Base)
     {
         m_button=new controls::Button(this);
-        m_button->dock(Position::Right);
+        m_button->setDock(DockPosition::Right);
         m_button->setMargin(Margin(2, 0, 0, 0));
         m_button->setText("..");
         m_button->setSize(20, 20);
         m_button->onPressCaller.add(this, &FolderPicker::OnBrowse);
         m_textBox=new controls::TextBox(this);
-        m_textBox->dock(Position::Fill);
+        m_textBox->setDock(DockPosition::Center);
         this->setSize(100, 20);
         m_browseName="Find Folder";
     }

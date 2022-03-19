@@ -13,65 +13,28 @@ namespace gweni
 namespace controls
 {
 
-class CategoryButton: public Button
+void CategoryButton::updateColors()
 {
-    GWENI_CONTROL_INLINE(CategoryButton, Button)
+    if(m_alt)
     {
-        enlargePrimitiveIds(this, m_primitiveIds, 1);
-
-        setAlignment(Position::Left | Position::CenterV);
-        m_alt=false;
-    }
-
-public:
-//    void render(skin::Base *skin) override
-//    {
-//        if(m_alt)
-//        {
-//            if(isDepressed() || getToggleState())
-//                skin->getRenderer()->setDrawColor(skin->Colors.Category.LineAlt.Button_Selected);
-//            else if(isHovered())
-//                skin->getRenderer()->setDrawColor(skin->Colors.Category.LineAlt.Button_Hover);
-//            else
-//                skin->getRenderer()->setDrawColor(skin->Colors.Category.LineAlt.Button);
-//        }
-//        else
-//        {
-//            if(isDepressed() || getToggleState())
-//                skin->getRenderer()->setDrawColor(skin->Colors.Category.Line.Button_Selected);
-//            else if(isHovered())
-//                skin->getRenderer()->setDrawColor(skin->Colors.Category.Line.Button_Hover);
-//            else
-//                skin->getRenderer()->setDrawColor(skin->Colors.Category.Line.Button);
-//        }
-//
-//        skin->getRenderer()->drawFilledRect(m_primitiveIds[0], this->getRenderBounds(), getZIndex());
-//    }
-
-    void updateColors() override
-    {
-        if(m_alt)
-        {
-            if(isDepressed() || getToggleState())
-                return setTextColor(getSkin()->Colors.Category.LineAlt.Text_Selected);
-
-            if(isHovered())
-                return setTextColor(getSkin()->Colors.Category.LineAlt.Text_Hover);
-
-            return setTextColor(getSkin()->Colors.Category.LineAlt.Text);
-        }
-
         if(isDepressed() || getToggleState())
-            return setTextColor(getSkin()->Colors.Category.Line.Text_Selected);
+            return setTextColor(getSkin()->Colors.Category.LineAlt.Text_Selected);
 
         if(isHovered())
-            return setTextColor(getSkin()->Colors.Category.Line.Text_Hover);
+            return setTextColor(getSkin()->Colors.Category.LineAlt.Text_Hover);
 
-        return setTextColor(getSkin()->Colors.Category.Line.Text);
+        return setTextColor(getSkin()->Colors.Category.LineAlt.Text);
     }
 
-    bool m_alt;
-};
+    if(isDepressed() || getToggleState())
+        return setTextColor(getSkin()->Colors.Category.Line.Text_Selected);
+
+    if(isHovered())
+        return setTextColor(getSkin()->Colors.Category.Line.Text_Hover);
+
+    return setTextColor(getSkin()->Colors.Category.Line.Text);
+}
+
 
 
 class CategoryHeaderButton: public Button
@@ -80,7 +43,7 @@ class CategoryHeaderButton: public Button
     {
         setShouldDrawBackground(false);
         setIsToggle(true);
-        setAlignment(Position::Center);
+        setAlignment(Alignment::Center);
     }
 
 public:
@@ -91,9 +54,101 @@ public:
 
         return setTextColor(getSkin()->Colors.Category.Header);
     }
-
 };
 
+GWENI_CONTROL_CONSTRUCTOR(CategoryInner)
+{
+    setPadding(Padding(1, 0, 1, 5));
+}
+
+CategoryButton *CategoryInner::add(const String &name)
+{
+//    CategoryButton *button=new CategoryButton(this);
+    CategoryButton *button=newChild<CategoryButton>(name);
+
+    button->setText(name);
+    button->setDock(DockPosition::Top);
+    button->sizeToContents();
+    button->setSize(button->getWidth()+4, button->getHeight()+4);
+    button->setSizeFlags({SizeFlag::Elastic, SizeFlag::Fixed});
+    button->setPadding({5, 2, 2, 2});
+//    button->onPressCaller.add(this, &ThisClass::onSelection);
+    return button;
+}
+
+void CategoryInner::remove(const String &name)
+{
+    Base::List &children=getChildren();
+
+    for(auto &&control:children)
+    {
+        CategoryButton *child=gweni_cast<CategoryButton>(control);
+
+        if(!child)
+            continue;
+
+        if(child->getName() == name)
+        {
+            removeChild(child);
+            break;
+        }
+    }
+}
+
+void CategoryInner::remove(CategoryButton *category)
+{
+    removeChild(category);
+}
+
+void CategoryInner::unselectAll()
+{
+    Base::List &children=getChildren();
+
+    for(auto &&control : children)
+    {
+        CategoryButton *child=gweni_cast<CategoryButton>(control);
+
+        if(!child)
+            continue;
+
+        child->setToggleState(false);
+    }
+}
+
+CategoryButton *CategoryInner::getSelected()
+{
+    Base::List &children=getChildren();
+
+    for(auto &&control : children)
+    {
+        CategoryButton *child=gweni_cast<CategoryButton>(control);
+
+        if(!child)
+            continue;
+
+        if(child->getToggleState())
+            return child;
+    }
+    return nullptr;
+}
+
+void CategoryInner::postLayout(skin::Base *skin)
+{
+    Base::List &children=getChildren();
+    bool b=true;
+
+    for(auto &&control : children)
+    {
+        CategoryButton *child=gweni_cast<CategoryButton>(control);
+
+        if(!child)
+            continue;
+
+        child->setAlt(b);
+        child->updateColors();
+        b=!b;
+    }
+}
 
 GWENI_CONTROL_CONSTRUCTOR(CollapsibleCategory)
 {
@@ -102,28 +157,45 @@ GWENI_CONTROL_CONSTRUCTOR(CollapsibleCategory)
     m_button=newChild<CategoryHeaderButton>();
 
     m_button->setText("Category Title");
-    m_button->dock(Position::Top);
+    m_button->setDock(DockPosition::Top);
     m_button->setHeight(20);
     m_button->setSizeFlags({SizeFlag::Elastic, SizeFlag::Fixed});
     m_button->setToggleState(true);
-    setPadding(Padding(1, 0, 1, 5));
+//    setPadding(Padding(1, 0, 1, 5));
     m_button->onToggleCaller.add(this, &ThisClass::onToggleHeaderButton);
+
+    m_inner=newChild<CategoryInner>();
+    m_inner->setDock(DockPosition::Bottom);
+
     setSize(512, 512);
 }
 
-Button *CollapsibleCategory::add(const String &name)
+CategoryButton *CollapsibleCategory::add(const String &name)
 {
 //    CategoryButton *button=new CategoryButton(this);
-    CategoryButton *button=newChild<CategoryButton>(name);
+//    CategoryButton *button=newChild<CategoryButton>(name);
+//
+//    button->setText(name);
+//    button->setDock(DockPosition::Top);
+//    button->sizeToContents();
+//    button->setSize(button->getWidth()+4, button->getHeight()+4);
+//    button->setSizeFlags({SizeFlag::Elastic, SizeFlag::Fixed});
+//    button->setPadding({5, 2, 2, 2});
+//    button->onPressCaller.add(this, &ThisClass::onSelection);
+    CategoryButton *category=m_inner->add(name);
 
-    button->setText(name);
-    button->dock(Position::Top);
-    button->sizeToContents();
-    button->setSize(button->getWidth()+4, button->getHeight()+4);
-    button->setSizeFlags({SizeFlag::Elastic, SizeFlag::Fixed});
-    button->setPadding(Padding(5, 2, 2, 2));
-    button->onPressCaller.add(this, &ThisClass::onSelection);
-    return button;
+    category->onPressCaller.add(this, &ThisClass::onSelection);
+    return category;
+}
+
+void CollapsibleCategory::remove(const String &name)
+{
+    m_inner->remove(name);
+}
+
+void CollapsibleCategory::remove(CategoryButton *category)
+{
+    m_inner->remove(category);
 }
 
 void CollapsibleCategory::onToggleHeaderButton(event::Info info)
@@ -136,15 +208,16 @@ void CollapsibleCategory::onToggleHeaderButton(event::Info info)
     bool hidden=!child->getToggleState();
     Base::List &children=getChildren();
 
-    for(auto &&control : children)
-    {
-        CategoryButton *child=gweni_cast<CategoryButton>(control);
-
-        if(!child)
-            continue;
-
-        child->setHidden(hidden);
-    }
+    m_inner->setHidden(hidden);
+//    for(auto &&control:children)
+//    {
+//        CategoryButton *child=gweni_cast<CategoryButton>(control);
+//
+//        if(!child)
+//            continue;
+//
+//        child->setHidden(hidden);
+//    }
 }
 
 void CollapsibleCategory::onSelection(event::Info info)
@@ -170,17 +243,18 @@ void CollapsibleCategory::setText(const String &text)
 
 void CollapsibleCategory::unselectAll()
 {
-    Base::List &children=getChildren();
-
-    for(auto &&control : children)
-    {
-        CategoryButton *child=gweni_cast<CategoryButton>(control);
-
-        if(!child)
-            continue;
-
-        child->setToggleState(false);
-    }
+//    Base::List &children=getChildren();
+//
+//    for(auto &&control : children)
+//    {
+//        CategoryButton *child=gweni_cast<CategoryButton>(control);
+//
+//        if(!child)
+//            continue;
+//
+//        child->setToggleState(false);
+//    }
+    m_inner->unselectAll();
 }
 
 void CollapsibleCategory::calculateSize(skin::Base *skin, Dim dim)
@@ -204,38 +278,39 @@ void CollapsibleCategory::postLayout(skin::Base * /*skin*/)
     else
         sizeToChildren(false, true);
 
-    Base::List &children=getChildren();
-    bool b=true;
-
-    for(auto &&control : children)
-    {
-        CategoryButton *child=gweni_cast<CategoryButton>(control);
-
-        if(!child)
-            continue;
-
-        child->m_alt=b;
-        child->updateColors();
-        b=!b;
-    }
+//    Base::List &children=getChildren();
+//    bool b=true;
+//
+//    for(auto &&control : children)
+//    {
+//        CategoryButton *child=gweni_cast<CategoryButton>(control);
+//
+//        if(!child)
+//            continue;
+//
+//        child->setAlt(b);
+//        child->updateColors();
+//        b=!b;
+//    }
 }
 
 Button *CollapsibleCategory::getSelected()
 {
-    Base::List &children=getChildren();
-
-    for(auto &&control : children)
-    {
-        CategoryButton *child=gweni_cast<CategoryButton>(control);
-
-        if(!child)
-            continue;
-
-        if(child->getToggleState())
-            return child;
-    }
-
-    return nullptr;
+//    Base::List &children=getChildren();
+//
+//    for(auto &&control : children)
+//    {
+//        CategoryButton *child=gweni_cast<CategoryButton>(control);
+//
+//        if(!child)
+//            continue;
+//
+//        if(child->getToggleState())
+//            return child;
+//    }
+//
+//    return nullptr;
+    return m_inner->getSelected();
 }
 
 

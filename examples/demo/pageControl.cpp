@@ -9,19 +9,20 @@ PageControlDemo::PageControlDemo(const String &name):
 {
     controls::PageControl *control=newChild<controls::PageControl>();
     control->setSize(500, 300);
-    control->setPageCount(5);
+    //control->setPageCount(5);
+    control->addPages(5);
     control->onPageChanged.add(this, &ThisClass::OnPageChanged);
     control->onFinish.add(this, &ThisClass::OnFinish);
     // Page 0
     {
         controls::Button *button=control->getPage(0)->newChild<controls::Button>();
-        button->dock(Position::Fill);
+        button->setDock(DockPosition::Center);
         button->setText("This button is fill docked on page 0");
     }
     // Page 1
     {
         controls::Button *button=control->getPage(1)->newChild<controls::Button>();
-        button->dock(Position::Top);
+        button->setDock(DockPosition::Top);
         button->setText("This button is top docked on page 1");
     }
     // Page 2

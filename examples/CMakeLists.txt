@@ -99,6 +99,8 @@ set(GWENI_DEMO_SOURCES
     demo/label.h
     demo/labelMultiline.cpp
     demo/labelMultiline.h
+    demo/layoutDemo.cpp
+    demo/layoutDemo.h
     demo/listBox.cpp
     demo/listBox.h
     demo/menuStrip.cpp

@@ -151,7 +151,7 @@ void CrossSplitter::setPanel(int index, controls::Base *panel)
 
     if(panel)
     {
-        panel->dock(Position::None);
+        panel->setDock(DockPosition::None);
         panel->setParent(this);
     }
 

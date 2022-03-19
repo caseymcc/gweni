@@ -59,7 +59,7 @@ LabeledRadioButton *RadioButtonController::addOption(const gweni::String &text,
     lrb->setName(optionName);
     lrb->getLabel()->setText(text);
     lrb->getRadioButton()->onChecked.add(this, &RadioButtonController::onRadioClicked);
-    lrb->dock(Position::Top);
+    lrb->setDock(DockPosition::Top);
     lrb->setMargin(Margin(0, 1, 0, 1));
     lrb->setKeyboardInputEnabled(false);
     lrb->setTabable(false);

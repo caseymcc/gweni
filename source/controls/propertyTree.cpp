@@ -18,9 +18,9 @@ Properties *PropertyTree::add(const String &text)
 {
     TreeNode *node=newChild<PropertyTreeNode>();
     node->setText(text);
-    node->dock(Position::Top);
+    node->setDock(DockPosition::Top);
     Properties *props=node->newChild<Properties>();
-    props->dock(Position::Top);
+    props->setDock(DockPosition::Top);
     return props;
 }
 

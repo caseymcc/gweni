@@ -40,11 +40,11 @@ GWENI_CONTROL_CONSTRUCTOR(ProgressBar)
     setBounds(gweni::Rect(0, 0, 128, 32));
     setTextPadding(Padding(3, 3, 3, 3));
     setHorizontal();
-    setAlignment(gweni::Position::Center);
+    setAlignment(Alignment::Center);
     m_progress=0.0f;
     m_autoLabel=true;
     m_cycleSpeed=0.0f;
-    gweni::anim::add(this, new ProgressBarThink());
+    anim::add(this, new ProgressBarThink());
 }
 
 void ProgressBar::setProgress(float val)

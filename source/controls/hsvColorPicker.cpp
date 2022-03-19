@@ -26,12 +26,12 @@ GWENI_CONTROL_CONSTRUCTOR(HSVColorPicker)
 
     m_lerpBox=newChild<controls::ColorLerpBox>();
     m_lerpBox->onSelectionChanged.add(this, &HSVColorPicker::colorBoxChanged);
-    m_lerpBox->dock(Position::Left);
+    m_lerpBox->setDock(DockPosition::Left);
 
     m_colorSlider=newChild<controls::ColorSlider>();
     m_colorSlider->setPos(m_lerpBox->getWidth()+15, 5);
     m_colorSlider->onSelectionChanged.add(this, &HSVColorPicker::colorSliderChanged);
-    m_colorSlider->dock(Position::Left);
+    m_colorSlider->setDock(DockPosition::Left);
 
     m_after=newChild<internal::ColorDisplay>();
     m_after->setSize(48, 24);

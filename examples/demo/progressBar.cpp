@@ -17,20 +17,20 @@ ProgressBarDemo::ProgressBarDemo(const String &name):
         controls::ProgressBar *pb=newChild<controls::ProgressBar>();
         pb->setBounds(gweni::Rect(110, 50, 200, 20));
         pb->setProgress(0.66f);
-        pb->setAlignment(Position::Right | Position::CenterV);
+        pb->setAlignment(Alignment::Right | Alignment::CenterV);
     }
     {
         controls::ProgressBar *pb=newChild<controls::ProgressBar>();
         pb->setBounds(gweni::Rect(110, 80, 200, 20));
         pb->setProgress(0.88f);
-        pb->setAlignment(Position::Left | Position::CenterV);
+        pb->setAlignment(Alignment::Left | Alignment::CenterV);
     }
     {
         controls::ProgressBar *pb=newChild<controls::ProgressBar>();
         pb->setBounds(gweni::Rect(110, 110, 200, 20));
         pb->setAutoLabel(false);
         pb->setProgress(0.20f);
-        pb->setAlignment(Position::Right | Position::CenterV);
+        pb->setAlignment(Alignment::Right | Alignment::CenterV);
         pb->setText("40,245 MB");
     }
     {
@@ -56,7 +56,7 @@ ProgressBarDemo::ProgressBarDemo(const String &name):
         pb->setBounds(gweni::Rect(20, 20, 25, 200));
         pb->setVertical();
         pb->setProgress(0.25f);
-        pb->setAlignment(Position::Top | Position::CenterH);
+        pb->setAlignment(Alignment::Top | Alignment::CenterH);
     }
     {
         controls::ProgressBar *pb=newChild<controls::ProgressBar>();
@@ -68,7 +68,7 @@ ProgressBarDemo::ProgressBarDemo(const String &name):
         controls::ProgressBar *pb=newChild<controls::ProgressBar>();
         pb->setBounds(gweni::Rect(80, 20, 25, 200));
         pb->setVertical();
-        pb->setAlignment(Position::Bottom | Position::CenterH);
+        pb->setAlignment(Alignment::Bottom | Alignment::CenterH);
         pb->setProgress(0.65f);
     }
 }

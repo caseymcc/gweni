@@ -52,7 +52,7 @@ public:
                 if(!m_columns[i])
                 {
                     m_columns[i]=newChild<Label>();
-                    m_columns[i]->dock(Position::Left);
+                    m_columns[i]->setDock(DockPosition::Left);
                     m_columns[i]->setPadding(Padding(3, 3, 3, 3));
                 }
             }
@@ -146,7 +146,7 @@ public:
     //
     gweni::event::Caller onRowSelectedCaller;
 
-    virtual bool GetEven()
+    virtual bool isEven()
     {
         return m_evenRow;
     }
@@ -225,7 +225,7 @@ public:
         row->setParent(this);
         row->setColumnCount(m_columnCount);
         row->setHeight(m_defaultRowHeight);
-        row->dock(Position::Top);
+        row->setDock(DockPosition::Top);
         invalidate();
     }
 

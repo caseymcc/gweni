@@ -53,7 +53,7 @@ PropertyRow *Properties::add(const String &text, const String &value)
 PropertyRow *Properties::add(const String &text, property::Base *prop, const String &value)
 {
     PropertyRow *row=newChild<PropertyRow>();
-    row->dock(Position::Top);
+    row->setDock(DockPosition::Top);
     row->getLabel()->setText(text);
     row->setProperty(prop);
     prop->setPropertyValue(value, true);
@@ -96,7 +96,7 @@ class PropertyRowLabel: public Label
 {
     GWENI_CONTROL_INLINE(PropertyRowLabel, Label)
     {
-        setAlignment(Position::Left|Position::CenterV);
+        setAlignment(Alignment::Left|Alignment::CenterV);
         m_propertyRow=nullptr;
     }
 
@@ -131,8 +131,8 @@ GWENI_CONTROL_CONSTRUCTOR(PropertyRow)
     m_property=nullptr;
     PropertyRowLabel *label=newChild<PropertyRowLabel>();
     label->SetPropertyRow(this);
-    label->dock(Position::Left);
-    label->setAlignment(Position::Left|Position::CenterV);
+    label->setDock(DockPosition::Left);
+    label->setAlignment(Alignment::Left|Alignment::CenterV);
     label->setMargin(Margin(2, 0, 0, 0));
     label->setSizeFlags({SizeFlag::Fixed, SizeFlag::Elastic});
     m_label=label;
@@ -178,7 +178,7 @@ void PropertyRow::setProperty(property::Base *prop)
 {
     m_property=prop;
     m_property->setParent(this);
-    m_property->dock(Position::Fill);
+    m_property->setDock(DockPosition::Center);
     m_property->setSizeFlags({SizeFlag::Fixed, SizeFlag::Elastic});
     m_property->onChange.add(this, &ThisClass::onPropertyValueChanged);
 }

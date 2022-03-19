@@ -61,6 +61,49 @@ struct GWENI_EXPORT Package
 
 }
 
+enum class DockPosition
+{
+    None=0,
+    Left=(1<<1),
+    Right=(1<<2),
+    Top=(1<<3),
+    Bottom=(1<<4),
+    Center=(1<<5)
+};
+
+inline DockPosition operator|(DockPosition a, DockPosition b)
+{
+    return DockPosition(static_cast<int>(a) | static_cast<int>(b));
+}
+
+inline bool operator&(DockPosition a, DockPosition b)
+{
+    return (static_cast<int>(a)  &static_cast<int>(b)) != 0;
+}
+
+enum class Alignment
+{
+    None=0,
+    Left=(1<<1),
+    Right=(1<<2),
+    Top=(1<<3),
+    Bottom=(1<<4),
+    Absolute=(1<<5),
+    CenterV=(1<<6),
+    CenterH=(1<<7),
+    Center=CenterV|CenterH
+};
+
+inline Alignment operator|(Alignment a, Alignment b)
+{
+    return Alignment(static_cast<int>(a) | static_cast<int>(b));
+}
+
+inline bool operator&(Alignment a, Alignment b)
+{
+    return (static_cast<int>(a) & static_cast<int>(b)) != 0;
+}
+
 enum class Position
 {
     None=0,
@@ -75,12 +118,12 @@ enum class Position
     Center=CenterV | CenterH
 };
 
-inline Position operator | (Position a, Position b)
+inline Position operator|(Position a, Position b)
 {
     return Position(static_cast<int>(a) | static_cast<int>(b));
 }
 
-inline bool operator  &(Position a, Position b)
+inline bool operator&(Position a, Position b)
 {
     return (static_cast<int>(a)  &static_cast<int>(b)) != 0;
 }

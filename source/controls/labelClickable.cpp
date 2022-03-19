@@ -18,7 +18,7 @@ GWENI_CONTROL_CONSTRUCTOR(LabelClickable)
 {
     setIsToggle(false);
     setCursor(cursor::Finger);
-    setAlignment(Position::Left|Position::CenterV);
+    setAlignment(Alignment::Left|Alignment::CenterV);
 }
 
 void LabelClickable::updateColors()

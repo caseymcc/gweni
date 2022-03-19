@@ -24,7 +24,8 @@ GWENI_CONTROL_CONSTRUCTOR(Button)
     setSize(100, 20);
     setMouseInputEnabled(true);
     setIsToggle(false);
-    setAlignment(Position::Center);
+//    setAlignment(Position::Center);
+    setAlignment(Alignment::Center);
     setTextPadding(Padding(3, 0, 3, 0));
     m_toggleStatus=false;
     setKeyboardInputEnabled(false);

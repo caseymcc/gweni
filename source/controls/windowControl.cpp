@@ -28,12 +28,12 @@ GWENI_CONTROL_CONSTRUCTOR(WindowControl)
     m_titleBar->setMargin(Margin(0, 0, 0, 4));
     m_titleBar->setTarget(this);
     m_titleBar->setSizeFlags({SizeFlag::Expand, SizeFlag::Fixed});
-    m_titleBar->dock(Position::Top);
+    m_titleBar->setDock(DockPosition::Top);
 
     m_title=m_titleBar->newChild<Label>();
-    m_title->setAlignment(Position::Left|Position::CenterV);
+    m_title->setAlignment(Alignment::Left|Alignment::CenterV);
     m_title->setText("Window");
-    m_title->dock(Position::Fill);
+    m_title->setDock(DockPosition::Center);
     m_title->setPadding(Padding(8, 0, 0, 0));
     m_title->setTextColor(getSkin()->Colors.Window.TitleInactive);
 
@@ -41,7 +41,7 @@ GWENI_CONTROL_CONSTRUCTOR(WindowControl)
     m_closeButton->setText("");
     m_closeButton->setSize(29, 24);
     m_closeButton->setSizeFlags({SizeFlag::Fixed, SizeFlag::Fixed});
-    m_closeButton->dock(Position::Right);
+    m_closeButton->setDock(DockPosition::Right);
     m_closeButton->onPressCaller.add(this, &WindowControl::closeButtonPressed);
     m_closeButton->setTabable(false);
     m_closeButton->setName("closeButton");
@@ -50,7 +50,7 @@ GWENI_CONTROL_CONSTRUCTOR(WindowControl)
     // Create a blank content control, dock it to the top - Should this be a
     // ScrollControl?
     m_innerPanel=newChild<Base>();
-    m_innerPanel->dock(Position::Fill);
+    m_innerPanel->setDock(DockPosition::Center);
 
     // hide the top resizer as we don't want it for window, we have a Dragger
     getResizer(3)->hide();  // TODO - hack

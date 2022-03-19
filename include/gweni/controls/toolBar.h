@@ -22,7 +22,7 @@ class ToolBarButton: public gweni::controls::Button
     GWENI_CONTROL_INLINE(ToolBarButton, gweni::controls::Button)
     {
         setSize(20, 20);
-        dock(Position::Left);
+        setDock(DockPosition::Left);
     }
 
 public:

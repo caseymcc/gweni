@@ -21,17 +21,17 @@ GWENI_CONTROL_CONSTRUCTOR(NumericUpDown)
 {
     setSize(100, 20);
     controls::Base *splitter=newChild<controls::Base>();
-    splitter->dock(Position::Right);
+    splitter->setDock(DockPosition::Right);
     splitter->setWidth(13);
     NumericUpDownButton_Up *buttonUp=splitter->newChild<NumericUpDownButton_Up>();
     buttonUp->onPressCaller.add(this, &NumericUpDown::onButtonUp);
     buttonUp->setTabable(false);
-    buttonUp->dock(Position::Top);
+    buttonUp->setDock(DockPosition::Top);
     buttonUp->setHeight(10);
     NumericUpDownButton_Down *buttonDown=splitter->newChild<NumericUpDownButton_Down>();
     buttonDown->onPressCaller.add(this, &NumericUpDown::onButtonDown);
     buttonDown->setTabable(false);
-    buttonDown->dock(Position::Fill);
+    buttonDown->setDock(DockPosition::Center);
     buttonUp->setPadding(Padding(0, 1, 1, 0));
     m_max=100;
     m_min=0;

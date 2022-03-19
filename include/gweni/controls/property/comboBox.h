@@ -25,7 +25,7 @@ public:
     GWENI_CONTROL_INLINE(ComboBox, property::Base)
     {
         m_comboBox=newChild<gweni::controls::ComboBox>();
-        m_comboBox->dock(Position::Fill);
+        m_comboBox->setDock(DockPosition::Center);
         m_comboBox->onSelection.add(this, &ParentClass::onPropertyValueChanged);
         m_comboBox->setTabable(true);
         m_comboBox->setKeyboardInputEnabled(true);

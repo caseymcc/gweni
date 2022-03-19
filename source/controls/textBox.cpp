@@ -35,12 +35,12 @@ public:
 
 GWENI_CONTROL_CONSTRUCTOR(TextBox)
 {
-    enlargePrimitiveIds(this, m_primitiveIds, 11);
+//    enlargePrimitiveIds(this, m_primitiveIds, 11);
 
     setSize(200, 20);
     setMouseInputEnabled(true);
     setKeyboardInputEnabled(true);
-    setAlignment(Position::Left|Position::CenterV);
+    setAlignment(Alignment::Left|Alignment::CenterV);
     setPadding(Padding(4, 2, 4, 2));
     m_cursorPos=0;
     m_cursorEnd=0;
@@ -495,7 +495,7 @@ void TextBox::moveCaretToStart()
 GWENI_CONTROL_CONSTRUCTOR(TextBoxMultiline)
 {
     setWrap(true);
-    setAlignment(Position::Left|Position::Top);
+    setAlignment(Alignment::Left|Alignment::Top);
 }
 
 bool TextBoxMultiline::onKeyReturn(bool down)
@@ -566,10 +566,10 @@ void TextBoxMultiline::render(skin::Base *skin)
             if(m_rectSelectionBounds.w < 1)
                 m_rectSelectionBounds.w=1;
 
-            if(m_primitiveIds.size() < index+1)
-                enlargePrimitiveIds(this, m_primitiveIds, index+1);
+//            if(m_primitiveIds.size() < index+1)
+//                enlargePrimitiveIds(this, m_primitiveIds, index+1);
 
-            skin->getRenderer()->drawFilledRect(m_primitiveIds[index], m_rectSelectionBounds, getZIndex());
+//            skin->getRenderer()->drawFilledRect(m_primitiveIds[index], m_rectSelectionBounds, getZIndex());
             index++;
         }
     }
@@ -583,7 +583,7 @@ void TextBoxMultiline::render(skin::Base *skin)
 
     // Draw caret
     skin->getRenderer()->setDrawColor(m_caretColor);
-    skin->getRenderer()->drawFilledRect(m_primitiveIds[index], m_rectCaretBounds, getZIndex());
+    //skin->getRenderer()->drawFilledRect(m_primitiveIds[index], m_rectCaretBounds, getZIndex());
 }
 
 void TextBoxMultiline::makeCaretVisible()

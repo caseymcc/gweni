@@ -239,7 +239,7 @@
             "margin":[8, 8, 8, 8]
         },
         {
-            "name":"CollapsibleCategory.HeaderButton",
+            "name":"TabControl.HeaderBar",
             "bbox":[128, 352, 127, 31],
             "margin":[4, 4, 4, 4]
         },
@@ -649,12 +649,12 @@
         },
         {
             "name":"CategoryList.Inner",
-            "bbox":[320, 384, 63, 63],
+            "bbox":[320, 404, 63, 63],
             "margin":[8, 21, 8, 8]
         },
         {
             "name":"CategoryList.Header",
-            "bbox":[320, 352, 63, 31],
+            "bbox":[320, 384, 63, 20],
             "margin":[8, 8, 8, 8]
         },
         {

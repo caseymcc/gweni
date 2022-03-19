@@ -25,7 +25,7 @@ WindowCanvas::WindowCanvas(int x, int y, int w, int h, skin::Base *skin,
     const String &strWindowTitle)
     : ParentClass(nullptr)
 {
-    enlargePrimitiveIds(this, m_primitiveIds, 1);
+//    enlargePrimitiveIds(this, m_primitiveIds, 1);
 
     m_quit=false;
     m_canMaximize=true;
@@ -55,23 +55,23 @@ WindowCanvas::WindowCanvas(int x, int y, int w, int h, skin::Base *skin,
     m_titleBar->setHeight(24);
     m_titleBar->setPadding(Padding(0, 0, 0, 0));
     m_titleBar->setMargin(Margin(0, 0, 0, 0));
-    m_titleBar->dock(Position::Top);
+    m_titleBar->setDock(DockPosition::Top);
     m_titleBar->setDoMove(false);
     m_titleBar->onDragged.add(this, &ThisClass::dragger_moved);
     m_titleBar->onDragStart.add(this, &ThisClass::dragger_start);
     m_titleBar->onDoubleClickLeft.add(this, &ThisClass::onTitleDoubleClicked);
 
     m_title=m_titleBar->newChild<Label>();
-    m_title->setAlignment(Position::Left|Position::CenterV);
+    m_title->setAlignment(Alignment::Left|Alignment::CenterV);
     m_title->setText(strWindowTitle);
-    m_title->dock(Position::Fill);
+    m_title->setDock(DockPosition::Center);
     m_title->setPadding(Padding(8, 0, 0, 0));
     m_title->setTextColor(getSkin()->Colors.Window.TitleInactive);
 
     // CLOSE
     {
         m_close=m_titleBar->newChild<WindowCloseButton>("Close");
-        m_close->dock(Position::Right);
+        m_close->setDock(DockPosition::Right);
         m_close->setMargin(Margin(0, 0, 4, 0));
         m_close->onPressCaller.add(this, &WindowCanvas::closeButtonPressed);
         m_close->setTabable(false);
@@ -80,7 +80,7 @@ WindowCanvas::WindowCanvas(int x, int y, int w, int h, skin::Base *skin,
     // MAXIMIZE
     {
         m_maximize=m_titleBar->newChild<WindowMaximizeButton>("Maximize");
-        m_maximize->dock(Position::Right);
+        m_maximize->setDock(DockPosition::Right);
         m_maximize->onPressCaller.add(this, &WindowCanvas::maximizeButtonPressed);
         m_maximize->setTabable(false);
         m_maximize->setWindow(this);
@@ -88,7 +88,7 @@ WindowCanvas::WindowCanvas(int x, int y, int w, int h, skin::Base *skin,
     // MINIMiZE
     {
         m_minimize=m_titleBar->newChild<WindowMinimizeButton>("Minimize");
-        m_minimize->dock(Position::Right);
+        m_minimize->setDock(DockPosition::Right);
         m_minimize->onPressCaller.add(this, &WindowCanvas::minimizeButtonPressed);
         m_minimize->setTabable(false);
         m_minimize->setWindow(this);
@@ -159,7 +159,7 @@ void WindowCanvas::renderCanvas()
         if(m_drawBackground)
         {
             render->setDrawColor(m_backgroundColor);
-            render->drawFilledRect(m_primitiveIds[0], getRenderBounds(), getZIndex());
+//            render->drawFilledRect(m_primitiveIds[0], getRenderBounds(), getZIndex());
         }
 
         doRender(m_skin);

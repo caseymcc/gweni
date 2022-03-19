@@ -5,13 +5,14 @@
 namespace gweni
 {
 
-ButtonDemo::ButtonDemo(const gweni::String &name):
-    Base()
+//ButtonDemo::ButtonDemo(const gweni::String &name):
+//    Base()
+GWENI_CONTROL_CONSTRUCTOR(ButtonDemo)
 {
 //    setText(name);
 
     // Normal button
-    controls::Button *buttonA=newChild<controls::Button>();
+    controls::Button *buttonA=newChild<controls::Button>("ButtonA");
     buttonA->setText("Event Tester");
     buttonA->onPressCaller.add(this, &ButtonDemo::onButtonA);
     {
@@ -27,12 +28,12 @@ ButtonDemo::ButtonDemo(const gweni::String &name):
     // Image with text
     controls::Button *buttonC=newChild<controls::Button>();
     buttonC->setText("Image Button");
-    buttonC->setImage("test16.png");
+//    buttonC->setImage("test16.png");
     align::placeBelow(buttonC, buttonB, 10);
     // Just image
     controls::Button *buttonD=newChild<controls::Button>();
     buttonD->setText("");
-    buttonD->setImage("test16.png");
+//    buttonD->setImage("test16.png");
     buttonD->setSize(20, 20);
     align::placeBelow(buttonD, buttonC, 10);
     // Toggle button

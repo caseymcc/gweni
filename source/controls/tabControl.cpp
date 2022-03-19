@@ -54,7 +54,7 @@ GWENI_CONTROL_CONSTRUCTOR(TabControl)
     m_scrollOffset=0;
     m_currentButton=nullptr;
     m_tabStrip=newChild<TabStrip>();
-    m_tabStrip->setTabPosition(Position::Top);
+    m_tabStrip->setTabPosition(DockPosition::Top);
     // Make this some special control?
     m_scroll[0]=newChild<internal::ScrollBarButton>();
     m_scroll[0]->setDirectionLeft();
@@ -67,7 +67,7 @@ GWENI_CONTROL_CONSTRUCTOR(TabControl)
     m_scroll[1]->setSize(14, 14);
 
     m_innerPanel=newChild<TabControlInner>();
-    m_innerPanel->dock(Position::Fill);
+    m_innerPanel->setDock(DockPosition::Center);
     m_innerPanel->sendToBack();
     setTabable(false);
 }
@@ -99,9 +99,9 @@ void TabControl::addPage(TabButton *button)
     page->setParent(this);
     page->setHidden(true);
     page->setMargin(Margin(6, 6, 6, 6));
-    page->dock(Position::Fill);
+    page->setDock(DockPosition::Center);
     button->setParent(m_tabStrip);
-    button->dock(Position::Left);
+    button->setDock(DockPosition::Left);
     button->sizeToContents();
 
     if(button->getTabControl())
@@ -175,7 +175,7 @@ TabButton *TabControl::getTab(int num)
     return gweni_cast<TabButton>(m_tabStrip->getChild(num));
 }
 
-void TabControl::setTabStripPosition(Position dock)
+void TabControl::setTabStripPosition(DockPosition dock)
 {
     m_tabStrip->setTabPosition(dock);
 }
@@ -193,7 +193,7 @@ void TabControl::handleOverflow()
     // Really TabControl should have derivitives for tabs placed elsewhere where
     // we could specialize
     // some functions like this for each direction.
-    bool bNeeded=TabsSize.x > getWidth() && m_tabStrip->getDock() == Position::Top;
+    bool bNeeded=TabsSize.x > getWidth() && m_tabStrip->getDock() == DockPosition::Top;
     m_scroll[0]->setHidden(!bNeeded);
     m_scroll[1]->setHidden(!bNeeded);
 

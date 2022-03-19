@@ -37,15 +37,29 @@ class Caller;
 class Packet
 {
 public:
-    Packet(controls::Base *control=nullptr):
-        value(control)
+    Packet():value(0) {}
+
+    template<typename _Type>
+    Packet(_Type value):
+        value(value)
     {}
 
     bool isControl() { return (value.index() == 0); }
-    controls::Base *getControl() { return std::get<controls::Base *>(value); }
+    bool isString() { return (value.index() == 1); }
+    bool isInt() { return (value.index() == 2); }
+    bool isFloat() { return (value.index() == 3); }
+    bool isSizeT() { return (value.index() == 4); }
+
+    template<typename _Type>
+    _Type get()
+    {
+        return std::get<_Type>(value);
+    }
+
+//    controls::Base *getControl() { return std::get<controls::Base *>(value); }
 
 private:
-    std::variant<controls::Base *, String, int, float, unsigned long long> value;
+    std::variant<controls::Base *, String, int, float, size_t> value;
 
     // TODO - union? variant?
 //    controls::Base *control;

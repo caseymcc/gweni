@@ -75,9 +75,9 @@ MenuItem *Menu::addItem(const String &name,
 void Menu::onAddItem(MenuItem *item)
 {
     item->setTextPadding(Padding(iconMarginDisabled()?0:24, 0, 16, 0));
-    item->dock(Position::Top);
+    item->setDock(DockPosition::Top);
     item->sizeToContents();
-    item->setAlignment(Position::CenterV|Position::Left);
+    item->setAlignment(Alignment::CenterV|Alignment::Left);
     item->onHoverEnter.add(this, &Menu::onHoverItem);
 
     // Do this here - after Top Docking these values mean nothing in layout
@@ -169,7 +169,7 @@ void Menu::closeMenus()
 void Menu::addDivider()
 {
     MenuDivider *divider=newChild<MenuDivider>();
-    divider->dock(Position::Top);
+    divider->setDock(DockPosition::Top);
     divider->setMargin(Margin(iconMarginDisabled()?0:24, 0, 4, 0));
 }
 

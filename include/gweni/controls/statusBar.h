@@ -22,17 +22,17 @@ public:
     GWENI_CONTROL_INLINE(StatusBar, controls::Label)
     {
         setHeight(22);
-        dock(Position::Bottom);
+        setDock(DockPosition::Bottom);
         setPadding(Padding(2, 2, 2, 2));
         setText("");
-        setAlignment(Position::Left|Position::CenterV);
+        setAlignment(Alignment::Left|Alignment::CenterV);
     }
 
 public:
     virtual void addControl(controls::Base *ctrl, bool right)
     {
         ctrl->setParent(this);
-        ctrl->dock(right?Position::Right:Position::Left);
+        ctrl->setDock(right?DockPosition::Right:DockPosition::Left);
     }
 };
 

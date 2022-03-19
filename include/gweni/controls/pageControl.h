@@ -23,20 +23,28 @@ class GWENI_EXPORT PageControl: public Base
     GWENI_CONTROL(PageControl, Base);
 
 public:
-    virtual void         setPageCount(unsigned int i);
+    Base *addPage(std::string name="");
+    std::vector<Base *> addPages(size_t count);
+
+//    virtual void setPageCount(unsigned int i);
     virtual unsigned int getPageCount()
     {
-        return m_pageCount;
+//        return m_pageCount;
+        return m_pages.size();
     }
 
-    virtual void         showPage(unsigned int i);
+    virtual void showPage(unsigned int index);
     virtual unsigned int getPageNumber()
     {
         return m_currentPage;
     }
 
-    virtual controls::Base *getPage(unsigned int i);
-    virtual controls::Base *getCurrentPage();
+    virtual Base *getPage(unsigned int index);
+    virtual void removePage(unsigned int index);
+    virtual Base *getCurrentPage();
+
+    virtual void setAnimated(bool animate) { m_animate=animate; }
+    virtual bool getAnimated() { return m_animate; }
 
     controls::Button *nextButton()
     {
@@ -68,6 +76,8 @@ public:
         return m_useFinish;
     }
 
+    void showControls(bool show=true);
+
     event::Caller onPageChanged;
     event::Caller onFinish;
 
@@ -80,13 +90,16 @@ protected:
     virtual void hideAll();
 
     unsigned int m_currentPage;
-    unsigned int m_pageCount;
-    controls::Base *m_pages[MaxPages];
+//    unsigned int m_pageCount;
+//    Base *m_pages[MaxPages];
+    std::vector<Base *> m_pages;
 
-    controls::Button *m_next;
-    controls::Button *m_back;
-    controls::Button *m_finish;
-    controls::Label *m_label;
+    bool m_animate;
+    Base *m_controls;
+    Button *m_next;
+    Button *m_back;
+    Button *m_finish;
+    Label *m_label;
 
     bool m_useFinish;
 

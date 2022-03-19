@@ -32,7 +32,7 @@ public:
     {
         for(auto &&child : getChildren())
         {
-            if(child->getDock() != Position::None)
+            if(child->getDock() != DockPosition::None)
                 continue;
 
             child->setPosition(m_position);
@@ -63,7 +63,8 @@ class GWENI_EXPORT Center: public CalcPosition
 };
 
 
-}
-}
-}
+}//namespace layout
+}//namespace controls
+}//namespace gweni
+
 #endif//_gweni_controls_layout_position_h_

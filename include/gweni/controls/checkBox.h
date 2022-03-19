@@ -65,12 +65,12 @@ public:
         setSize(200, 19);
 
         m_checkbox=newChild<CheckBox>();
-        m_checkbox->dock(Position::Left);
+        m_checkbox->setDock(DockPosition::Left);
         m_checkbox->setMargin(Margin(0, 2, 2, 2));
         m_checkbox->setTabable(false);
         
         m_label=newChild<LabelClickable>();
-        m_label->dock(Position::Fill);
+        m_label->setDock(DockPosition::Center);
         m_label->onPressCaller.add(m_checkbox, &CheckBox::onPress);
         m_label->setTabable(false);
         setTabable(false);

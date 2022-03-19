@@ -32,7 +32,7 @@ class TreeNodeText: public Button
 {
     GWENI_CONTROL_INLINE(TreeNodeText, Button)
     {
-        setAlignment(Position::Left|Position::CenterV);
+        setAlignment(Alignment::Left|Alignment::CenterV);
         setShouldDrawBackground(false);
         setHeight(16);
     }
@@ -66,14 +66,14 @@ GWENI_CONTROL_CONSTRUCTOR(TreeNode)
     m_toggleButton->onToggleCaller.add(this, &TreeNode::onToggleButtonPress);
 
     m_title=newChild<TreeNodeText>();
-    m_title->dock(Position::Top);
+    m_title->setDock(DockPosition::Top);
     m_title->setMargin(Margin(16, 0, 0, 0));
     m_title->onDoubleClickCaller.add(this, &TreeNode::onDoubleClickName);
     m_title->onDownCaller.add(this, &TreeNode::onClickName);
     m_title->onRightPressCaller.add(this, &TreeNode::onRightPress);
 
     m_innerPanel=newChild<Base>();
-    m_innerPanel->dock(Position::Top);
+    m_innerPanel->setDock(DockPosition::Top);
     m_innerPanel->setHeight(100);
     m_innerPanel->setMargin(Margin(TreeIndentation, 1, 0, 0));
     m_innerPanel->hide();
@@ -104,7 +104,7 @@ TreeNode *TreeNode::addNode(const String &label)
 {
     TreeNode *node=newChild<TreeNode>();
     node->setText(label);
-    node->dock(Position::Top);
+    node->setDock(DockPosition::Top);
     node->setRoot(gweni_cast<TreeControl>(this) != nullptr);
     node->setTreeControl(m_treeControl);
 

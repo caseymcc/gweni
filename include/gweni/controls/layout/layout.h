@@ -23,6 +23,9 @@ public:
     LayoutItem(LayoutType type);
     ~LayoutItem();
 
+    template<typename _Control>
+    _Control *newChild(const gweni::String &name);
+
     void setParent(Base *parent);
     Base *getParent() { return m_parent; }
     void setLayoutParent(LayoutItem *layoutParent);

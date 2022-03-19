@@ -35,7 +35,7 @@ public:
     void render(skin::Base *skin) override
     {
         skin->getRenderer()->setDrawColor(m_color);
-        skin->getRenderer()->drawFilledRect(m_primitiveIds[0], getRenderBounds(), getZIndex());
+//        skin->getRenderer()->drawFilledRect(m_primitiveIds[0], getRenderBounds(), getZIndex());
     }
 
     void setColor(const gweni::Color &col)
@@ -56,7 +56,7 @@ class ColorSelector: public property::Text
     GWENI_CONTROL_INLINE(ColorSelector, property::Text)
     {
         m_button=m_textBox->newChild<controls::internal::ColorButton>();
-        m_button->dock(Position::Right);
+        m_button->setDock(DockPosition::Right);
         m_button->setWidth(20);
         m_button->setSizeFlags({SizeFlag::Fixed, SizeFlag::Elastic});
         m_button->onPressCaller.add(this, &ColorSelector::onButtonPress);
@@ -72,7 +72,7 @@ public:
         menu->setDisableIconMargin(true);
 
         gweni::controls::HSVColorPicker *picker=menu->newChild<gweni::controls::HSVColorPicker>();
-        picker->dock(Position::Fill);
+        picker->setDock(DockPosition::Center);
         picker->setSize(256, 128);
         float defaultColor[3];
         toFloats(m_textBox->getText(), defaultColor, 3);

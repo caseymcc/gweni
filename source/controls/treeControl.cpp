@@ -27,7 +27,7 @@ GWENI_CONTROL_CONSTRUCTOR(TreeControl)
     m_allowMultipleSelection=false;
 
     m_scrollControl=newChild<ScrollControl>();
-    m_scrollControl->dock(Position::Fill);
+    m_scrollControl->setDock(DockPosition::Center);
     m_scrollControl->setScroll(false, true);
     m_scrollControl->setAutoHideBars(true);
     m_scrollControl->setMargin(Margin(1, 1, 1, 1));

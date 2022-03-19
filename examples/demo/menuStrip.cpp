@@ -7,7 +7,7 @@ namespace gweni
 MenuStripDemo::MenuStripDemo(const String &name):
     Base()
 {
-    dock(Position::Fill);
+    setDock(DockPosition::Center);
     controls::MenuStrip *menu=newChild<controls::MenuStrip>();
     {
         controls::MenuItem *root=menu->addItem("File");

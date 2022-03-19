@@ -45,7 +45,7 @@ public:
         return m_tabStrip;
     }
 
-    virtual void setTabStripPosition(Position dockSide);
+    virtual void setTabStripPosition(DockPosition dockSide);
 
     virtual bool doesAllowDrag();
 

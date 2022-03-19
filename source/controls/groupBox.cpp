@@ -20,10 +20,10 @@ GWENI_CONTROL_CONSTRUCTOR(GroupBox)
     // can't get it without us..
     setMouseInputEnabled(true);
     setTextPadding(Padding(10, 0, 0, 0));
-    setAlignment(Position::Top|Position::Left);
+    setAlignment(Alignment::Top|Alignment::Left);
     invalidate();
     m_innerPanel=newChild<Base>();
-    m_innerPanel->dock(Position::Fill);
+    m_innerPanel->setDock(DockPosition::Center);
     m_innerMargin=6;
 }
 

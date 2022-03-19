@@ -20,7 +20,7 @@ namespace controls
 
 GWENI_CONTROL_CONSTRUCTOR(DockBase)
 {
-    enlargePrimitiveIds(this, m_primitiveIds, 6);
+//    enlargePrimitiveIds(this, m_primitiveIds, 6);
 
     setPadding(Padding(1, 1, 1, 1));
     setSize(200, 200);
@@ -37,31 +37,42 @@ TabControl *DockBase::getTabControl()
     return m_dockedTabControl;
 }
 
-void DockBase::setupChildDock(Position pos)
+void DockBase::setupChildDock(DockPosition pos)
 {
     if(!m_dockedTabControl)
     {
         m_dockedTabControl=newChild<DockedTabControl>();
 
         m_dockedTabControl->onLoseTabCaller.add(this, &DockBase::onTabRemoved);
-        m_dockedTabControl->setTabStripPosition(Position::Bottom);
+        m_dockedTabControl->setTabStripPosition(DockPosition::Bottom);
         m_dockedTabControl->setShowTitleBar(true);
     }
 
-    dock(pos);
+    setDock(pos);
+    
+    DockPosition dockPos=DockPosition::Left;
     Position sizeDirection=Position::Left;
 
-    if(pos == Position::Left)
+    if(pos == DockPosition::Left)
+    {
+        dockPos=DockPosition::Right;
         sizeDirection=Position::Right;
+    }
 
-    if(pos == Position::Top)
+    if(pos == DockPosition::Top)
+    {
+        dockPos=DockPosition::Bottom;
         sizeDirection=Position::Bottom;
+    }
 
-    if(pos == Position::Bottom)
+    if(pos == DockPosition::Bottom)
+    {
+        dockPos=DockPosition::Top;
         sizeDirection=Position::Top;
+    }
 
     internal::Resizer *sizer=newChild<internal::Resizer>();
-    sizer->dock(sizeDirection);
+    sizer->setDock(dockPos);
     sizer->setResizeDirection(sizeDirection);
     sizer->setSize(2, 2);
     sizer->setTarget(this);
@@ -73,24 +84,24 @@ void DockBase::render(skin::Base * /*skin*/)
     // gweni::Render->drawLinedRect( getRenderBounds() );
 }
 
-DockBase **DockBase::getChildDockPtr(Position pos)
+DockBase **DockBase::getChildDockPtr(DockPosition pos)
 {
-    if(pos == Position::Left)
+    if(pos == DockPosition::Left)
         return &m_left;
 
-    if(pos == Position::Right)
+    if(pos == DockPosition::Right)
         return &m_right;
 
-    if(pos == Position::Top)
+    if(pos == DockPosition::Top)
         return &m_top;
 
-    if(pos == Position::Bottom)
+    if(pos == DockPosition::Bottom)
         return &m_bottom;
 
     return nullptr;
 }
 
-DockBase *DockBase::getChildDock(Position pos)
+DockBase *DockBase::getChildDock(DockPosition pos)
 {
     DockBase **dock=getChildDockPtr(pos);
 
@@ -107,7 +118,7 @@ DockBase *DockBase::getChildDock(Position pos)
     return *dock;
 }
 
-Position DockBase::getDroppedTabDirection(int x, int y)
+DockPosition DockBase::getDroppedTabDirection(int x, int y)
 {
     const int w=getWidth();
     const int h=getHeight();
@@ -119,21 +130,21 @@ Position DockBase::getDroppedTabDirection(int x, int y)
     m_dropFar=(minimum < 0.2f);
 
     if(minimum > 0.3f)
-        return Position::Fill;
+        return DockPosition::Center;
 
     if(top == minimum && (!m_top || m_top->hidden()))
-        return Position::Top;
+        return DockPosition::Top;
 
     if(left == minimum && (!m_left || m_left->hidden()))
-        return Position::Left;
+        return DockPosition::Left;
 
     if(right == minimum && (!m_right || m_right->hidden()))
-        return Position::Right;
+        return DockPosition::Right;
 
     if(bottom == minimum && (!m_bottom || m_bottom->hidden()))
-        return Position::Bottom;
+        return DockPosition::Bottom;
 
-    return Position::Fill;
+    return DockPosition::Center;
 }
 
 bool DockBase::dragAndDrop_canAcceptPackage(gweni::draganddrop::Package *package)
@@ -152,13 +163,13 @@ bool DockBase::dragAndDrop_canAcceptPackage(gweni::draganddrop::Package *package
 bool DockBase::dragAndDrop_handleDrop(gweni::draganddrop::Package *package, int x, int y)
 {
     gweni::Point pos=canvasPosToLocal(gweni::Point(x, y));
-    Position dir=getDroppedTabDirection(pos.x, pos.y);
+    DockPosition dir=getDroppedTabDirection(pos.x, pos.y);
     DockedTabControl *addTo=m_dockedTabControl;
 
-    if(dir == Position::Fill && addTo == nullptr)
+    if(dir == DockPosition::Center && addTo == nullptr)
         return false;
 
-    if(dir != Position::Fill)
+    if(dir != DockPosition::Center)
     {
         DockBase *dock=getChildDock(dir);
         addTo=dock->m_dockedTabControl;
@@ -292,9 +303,9 @@ void DockBase::dragAndDrop_hoverLeave(gweni::draganddrop::Package * /*package*/)
 void DockBase::dragAndDrop_hover(gweni::draganddrop::Package * /*package*/, int x, int y)
 {
     gweni::Point pos=canvasPosToLocal(gweni::Point(x, y));
-    Position dir=getDroppedTabDirection(pos.x, pos.y);
+    DockPosition dir=getDroppedTabDirection(pos.x, pos.y);
 
-    if(dir == Position::Fill)
+    if(dir == DockPosition::Center)
     {
         if(!m_dockedTabControl)
         {
@@ -309,33 +320,33 @@ void DockBase::dragAndDrop_hover(gweni::draganddrop::Package * /*package*/, int 
     m_hoverRect=getRenderBounds();
     int HelpBarWidth=0;
 
-    if(dir == Position::Left)
+    if(dir == DockPosition::Left)
     {
         HelpBarWidth=m_hoverRect.w/4;
         m_hoverRect.w=HelpBarWidth;
     }
 
-    if(dir == Position::Right)
+    if(dir == DockPosition::Right)
     {
         HelpBarWidth=m_hoverRect.w/4;
         m_hoverRect.x=m_hoverRect.w-HelpBarWidth;
         m_hoverRect.w=HelpBarWidth;
     }
 
-    if(dir == Position::Top)
+    if(dir == DockPosition::Top)
     {
         HelpBarWidth=m_hoverRect.h/4;
         m_hoverRect.h=HelpBarWidth;
     }
 
-    if(dir == Position::Bottom)
+    if(dir == DockPosition::Bottom)
     {
         HelpBarWidth=m_hoverRect.h/4;
         m_hoverRect.y=m_hoverRect.h-HelpBarWidth;
         m_hoverRect.h=HelpBarWidth;
     }
 
-    if((dir == Position::Top || dir == Position::Bottom) && !m_dropFar)
+    if((dir == DockPosition::Top || dir == DockPosition::Bottom) && !m_dropFar)
     {
         if(m_left && m_left->visible())
         {
@@ -347,7 +358,7 @@ void DockBase::dragAndDrop_hover(gweni::draganddrop::Package * /*package*/, int 
             m_hoverRect.w-=m_right->getWidth();
     }
 
-    if((dir == Position::Left || dir == Position::Right) && !m_dropFar)
+    if((dir == DockPosition::Left || dir == DockPosition::Right) && !m_dropFar)
     {
         if(m_top && m_top->visible())
         {
@@ -367,15 +378,15 @@ void DockBase::renderOver(skin::Base *skin)
 
     gweni::renderer::Base *render=skin->getRenderer();
     render->setDrawColor(gweni::Color(255, 100, 255, 20));
-    render->drawFilledRect(m_primitiveIds[0], getRenderBounds(), getZIndex());
+//    render->drawFilledRect(m_primitiveIds[0], getRenderBounds(), getZIndex());
 
     if(m_hoverRect.w == 0)
         return;
 
     render->setDrawColor(gweni::Color(255, 100, 255, 100));
-    render->drawFilledRect(m_primitiveIds[1], m_hoverRect, getZIndex());
+//    render->drawFilledRect(m_primitiveIds[1], m_hoverRect, getZIndex());
     render->setDrawColor(gweni::Color(255, 100, 255, 200));
-    render->drawLinedRect(&m_primitiveIds[2], m_hoverRect, getZIndex());
+//    render->drawLinedRect(&m_primitiveIds[2], m_hoverRect, getZIndex());
 }
 
 }//namespace controls

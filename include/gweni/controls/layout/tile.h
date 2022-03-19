@@ -23,7 +23,7 @@ public:
 
     GWENI_CONTROL_INLINE(Tile, Base)
     {
-        dock(Position::Fill);
+        setDock(DockPosition::Center);
         setTileSize(22, 22);
     }
 
@@ -35,7 +35,7 @@ public:
 
         for(auto &&child : getChildren())
         {
-            if(child->getDock() != Position::None)
+            if(child->getDock() != DockPosition::None)
                 continue;
 
             child->setPos(pos.x+m_tileSize.x/2 - child->getWidth()/2,

@@ -8,7 +8,7 @@ namespace gweni
 StatusBarDemo::StatusBarDemo(const String &name):
     Base()
 {
-    dock(Position::Fill);
+    setDock(DockPosition::Center);
     controls::StatusBar *status=newChild<controls::StatusBar>();
     controls::Label *right=status->newChild<controls::Label>();
     right->setText("Label Added to Right");

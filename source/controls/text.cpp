@@ -239,7 +239,7 @@ void Text::arrange(skin::Base *skin, Dim dim)
 {
     if(dim==Dim::Y)
     {
-        refreshSize();
+        refreshSize(getStateChange() != StateChange_Nothing);
         for(auto &&child:getChildren())
         {
             const Rect &bounds=child->getBounds();

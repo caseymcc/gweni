@@ -19,9 +19,48 @@ namespace gweni
 namespace controls
 {
 
+class CategoryButton: public Button
+{
+    GWENI_CONTROL_INLINE(CategoryButton, Button)
+    {
+//        enlargePrimitiveIds(this, m_primitiveIds, 1);
+
+        setAlignment(Alignment::Left | Alignment::CenterV);
+        m_alt=false;
+    }
+
+public:
+    void updateColors() override;
+
+    bool getAlt() { return m_alt; }
+    void setAlt(bool value) { m_alt=value; }
+
+private:
+    bool m_alt;
+};
+
 class CollapsibleList;
 
-class GWENI_EXPORT CollapsibleCategory: public controls::Base
+class CategoryInner: public Base
+{
+public:
+    GWENI_CONTROL(CategoryInner, Base);
+
+public:
+    CategoryButton *add(const String &name);
+    void remove(const String &name);
+    void remove(CategoryButton *category);
+
+    CategoryButton *getSelected();
+    void unselectAll();
+
+    void postLayout(skin::Base *skin) override;
+    
+private:
+
+};
+
+class GWENI_EXPORT CollapsibleCategory: public Base
 {
 public:
 
@@ -32,7 +71,9 @@ public:
 
     virtual void setText(const String &text);
 
-    virtual Button *add(const String &name);
+    virtual CategoryButton *add(const String &name);
+    virtual void remove(const String &name);
+    virtual void remove(CategoryButton *category);
 
     void postLayout(skin::Base * /*skin*/) override;
 
@@ -61,8 +102,9 @@ protected:
     void onToggleHeaderButton(event::Info info);
     virtual void onSelection(event::Info info);
 
-    controls::Button *m_button;
-    controls::CollapsibleList *m_list;
+    Button *m_button;
+    CategoryInner *m_inner;
+    CollapsibleList *m_list;
 };
 
 }//namespace controls

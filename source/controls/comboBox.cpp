@@ -57,7 +57,7 @@ GWENI_CONTROL_CONSTRUCTOR(ComboBox)
     m_button=arrow;
     m_selectedItem=nullptr;
 
-    setAlignment(gweni::Position::Left|gweni::Position::CenterV);
+    setAlignment(Alignment::Left|Alignment::CenterV);
     setText("");
     setMargin(Margin(3, 0, 0, 0));
     setTabable(true);

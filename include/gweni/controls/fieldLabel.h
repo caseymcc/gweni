@@ -24,7 +24,7 @@ public:
         FieldLabel *plbl=new FieldLabel(control->getParent());
         plbl->setText(text);
         plbl->setSize(control->getWidth(), control->getHeight());
-        plbl->dock(control->getDock());
+        plbl->setDock(control->getDock());
         plbl->setField(control);
         return plbl;
     }
@@ -42,7 +42,7 @@ public:
     void setField(controls::Base *field)
     {
         field->setParent(this);
-        field->dock(Position::Right);
+        field->setDock(DockPosition::Right);
         m_field=field;
     }
 

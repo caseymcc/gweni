@@ -49,12 +49,12 @@ void Primitive::draw(gweni::renderer::Base *render, controls::Base *control, gwe
     if(!m_texture)
         return;
 
-    PrimitiveIds &primitiveIds=control->getPrimitiveIds();
+//    PrimitiveIds &primitiveIds=control->getPrimitiveIds();
 //    if(primitiveIds.size() < 1)
 //        enlargePrimitiveIds(control, primitiveIds, 1);
 
     render->setDrawColor(col);
-    render->drawTexturedRect(*m_texture, primitiveIds[0], r, zIndex, m_uv[0], m_uv[1], m_uv[2], m_uv[3]);
+//    render->drawTexturedRect(*m_texture, primitiveIds[0], r, zIndex, m_uv[0], m_uv[1], m_uv[2], m_uv[3]);
 }
 
 void Primitive::drawCenter(gweni::renderer::Base *render, controls::Base *control, gweni::Rect r, int zIndex, const gweni::Color &col)

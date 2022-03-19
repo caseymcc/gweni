@@ -20,9 +20,9 @@ namespace controls
 GWENI_CONTROL_CONSTRUCTOR(DockedTabControl)
 {
     m_windowControl=nullptr;
-    dock(Position::Fill);
+    setDock(DockPosition::Center);
     m_titleBar=newChild<TabTitleBar>();
-    m_titleBar->dock(Position::Top);
+    m_titleBar->setDock(DockPosition::Top);
     m_titleBar->setHidden(true);
     setAllowReorder(true);
 }
@@ -70,7 +70,7 @@ void DockedTabControl::dragAndDrop_endDragging(bool bSuccess, int /*x*/, int /*y
       *     m_windowControl->setPosition( x, y );
       *     setParent( m_windowControl );
       *     setPosition( 0, 0 );
-      *     dock( Position::Fill );
+      *     setDock( DockPosition::Center );
       * }
      */
 }

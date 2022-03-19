@@ -31,10 +31,10 @@ public:
 
     virtual TabControl *getTabControl();
 
-    virtual DockBase *getRight() { return getChildDock(Position::Right); }
-    virtual DockBase *getLeft() { return getChildDock(Position::Left); }
-    virtual DockBase *getTop() { return getChildDock(Position::Top); }
-    virtual DockBase *getBottom() { return getChildDock(Position::Bottom); }
+    virtual DockBase *getRight() { return getChildDock(DockPosition::Right); }
+    virtual DockBase *getLeft() { return getChildDock(DockPosition::Left); }
+    virtual DockBase *getTop() { return getChildDock(DockPosition::Top); }
+    virtual DockBase *getBottom() { return getChildDock(DockPosition::Bottom); }
 
     // No action on space (default button action is to press)
     bool onKeySpace(bool /*down*/) override { return false; }
@@ -47,17 +47,17 @@ private:
     void dragAndDrop_hoverLeave(gweni::draganddrop::Package *package) override;
     void dragAndDrop_hover(gweni::draganddrop::Package *package, int x, int y) override;
 
-    virtual void setupChildDock(Position pos);
+    virtual void setupChildDock(DockPosition pos);
 
     virtual void doRedundancyCheck();
     virtual void doConsolidateCheck();
     virtual void onRedundantChildDock(DockBase *dockBase);
 
-    virtual Position getDroppedTabDirection(int x, int y);
+    virtual DockPosition getDroppedTabDirection(int x, int y);
     virtual void onTabRemoved(event::Info);
 
-    DockBase *getChildDock(Position pos);
-    DockBase **getChildDockPtr(Position pos);
+    DockBase *getChildDock(DockPosition pos);
+    DockBase **getChildDockPtr(DockPosition pos);
 
     DockBase *m_left;
     DockBase *m_right;

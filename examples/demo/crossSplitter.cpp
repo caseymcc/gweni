@@ -12,7 +12,7 @@ CrossSplitterDemo::CrossSplitterDemo(const String &name):
 
 void CrossSplitterDemo::init(const String &name)
 {
-    dock(Position::Fill);
+    setDock(DockPosition::Center);
 
     m_splittersVisible=false;
     m_curZoom=0;
@@ -20,7 +20,7 @@ void CrossSplitterDemo::init(const String &name)
     m_splitter=newChild<controls::CrossSplitter>();
 
     m_splitter->setPos(0, 0);
-    m_splitter->dock(Position::Fill);
+    m_splitter->setDock(DockPosition::Center);
     {
         controls::Button *testButton=m_splitter->newChild<controls::Button>();
 
@@ -49,7 +49,7 @@ void CrossSplitterDemo::init(const String &name)
     //Status bar to hold unit testing buttons
     controls::StatusBar *status=newChild<controls::StatusBar>();
 
-    status->dock(Position::Bottom);
+    status->setDock(DockPosition::Bottom);
     {
         controls::Button *button=status->newChild<controls::Button>();
 

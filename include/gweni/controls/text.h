@@ -56,7 +56,11 @@ public:
 
     virtual void setTextColor(const gweni::Color &col)
     {
+        if(m_color == col)
+            return;
+
         m_color=col;
+        addStateChange(controls::StateChange_Text);
     }
 
     virtual const gweni::Color &getTextColor()

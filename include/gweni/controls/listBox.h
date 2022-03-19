@@ -18,6 +18,49 @@ namespace gweni
 namespace controls
 {
 
+class ListBoxRow: public layout::TableRow
+{
+    GWENI_CONTROL_INLINE(ListBoxRow, layout::TableRow)
+    {
+        setMouseInputEnabled(true);
+        setSelected(false);
+    }
+
+public:
+    bool isSelected() const
+    {
+        return m_selected;
+    }
+
+    void DoSelect()
+    {
+        setSelected(true);
+        onRowSelectedCaller.call(this);
+        redraw();
+    }
+
+    void onMouseClickLeft(int /*x*/, int /*y*/, bool down) override
+    {
+        if(down)
+            DoSelect();
+    }
+
+    void setSelected(bool b) override
+    {
+        m_selected=b;
+
+        // TODO: Get these values from the skin.
+        if(b)
+            setTextColor(gweni::colors::White);
+        else
+            setTextColor(gweni::colors::Black);
+    }
+
+private:
+
+    bool m_selected;
+};
+
 class GWENI_EXPORT ListBox: public ScrollControl
 {
 public:

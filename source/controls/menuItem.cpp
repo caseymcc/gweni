@@ -177,8 +177,8 @@ void MenuItem::setAccelerator(const String &strAccelerator)
         return;
 
     m_accelerator=newChild<Label>();
-    m_accelerator->dock(Position::Right);
-    m_accelerator->setAlignment(Position::Right|Position::CenterV);
+    m_accelerator->setDock(DockPosition::Right);
+    m_accelerator->setAlignment(Alignment::Right|Alignment::CenterV);
     m_accelerator->setText(strAccelerator);
     m_accelerator->setMargin(Margin(0, 0, 16, 0));
     // TODO.

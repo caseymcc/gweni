@@ -24,7 +24,7 @@ namespace controls
 
 Canvas::Canvas(skin::Base *skin): ParentClass(), m_anyDelete(false)
 {
-    enlargePrimitiveIds(this, m_primitiveIds, 1);
+//    enlargePrimitiveIds(this, m_primitiveIds, 1);
 
     setBounds(0, 0, 10000, 10000);
     setScale(1.0f);
@@ -57,13 +57,14 @@ void Canvas::renderCanvas()
     render->setRenderOffset(Point(0, 0));
     render->setScale(scale());
 
-    if(m_drawBackground)
+    if(m_drawBackground && (m_stateChange != StateChange_Nothing))
     {
         render->setDrawColor(m_backgroundColor);
-        render->drawFilledRect(m_primitiveIds[0], getRenderBounds(), getZIndex());
+//        render->drawFilledRect(m_primitiveIds[0], getRenderBounds(), getZIndex());
     }
 
     doRender(m_skin);
+
     draganddrop::renderOverlay(this, m_skin);
     tooltip::renderToolTip(m_skin);
     render->end();

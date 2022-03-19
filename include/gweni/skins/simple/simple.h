@@ -84,13 +84,13 @@ public:
     void drawButton(gweni::controls::Base *control, State state, bool depressed, bool hovered,
         bool disabled)
     {
-        PrimitiveIds &primitiveIds=control->getPrimitiveIds();
-        if(primitiveIds.size() < 18)
-            enlargePrimitiveIds(control, primitiveIds, 18);
+//        PrimitiveIds &primitiveIds=control->getPrimitiveIds();
+//        if(primitiveIds.size() < 18)
+//            enlargePrimitiveIds(control, primitiveIds, 18);
 
         int w=control->getWidth();
         int h=control->getHeight();
-        drawButton(control, &primitiveIds[0], w, h, depressed, hovered);
+//        drawButton(control, &primitiveIds[0], w, h, depressed, hovered);
     }
 
     void drawWindowCloseButton(gweni::controls::Base *control, State state, bool depressed,
@@ -117,493 +117,493 @@ public:
     void drawMenuItem(gweni::controls::Base *control, State state, bool submenuOpen,
         bool checked)
     {
-        PrimitiveIds &primitiveIds=control->getPrimitiveIds();
-        if(primitiveIds.size() < 11)
-            enlargePrimitiveIds(control, primitiveIds, 11);
-
-        if(submenuOpen || control->isHovered())
-        {
-            m_render->setDrawColor(m_colHighlightBG);
-            m_render->drawFilledRect(primitiveIds[0], control->getRenderBounds(), control->getZIndex());
-            m_render->setDrawColor(m_colHighlightBorder);
-            m_render->drawLinedRect(&primitiveIds[1], control->getRenderBounds(), control->getZIndex());
-        }
-
-        if(checked)
-        {
-            m_render->setDrawColor(Color(0, 0, 0, 255));
-            gweni::Rect r(control->getWidth()/2-2, control->getHeight()/2-2, 5, 5);
-            drawCheck(&primitiveIds[5], r);
-        }
+//        PrimitiveIds &primitiveIds=control->getPrimitiveIds();
+//        if(primitiveIds.size() < 11)
+//            enlargePrimitiveIds(control, primitiveIds, 11);
+//
+//        if(submenuOpen || control->isHovered())
+//        {
+//            m_render->setDrawColor(m_colHighlightBG);
+//            m_render->drawFilledRect(primitiveIds[0], control->getRenderBounds(), control->getZIndex());
+//            m_render->setDrawColor(m_colHighlightBorder);
+//            m_render->drawLinedRect(&primitiveIds[1], control->getRenderBounds(), control->getZIndex());
+//        }
+//
+//        if(checked)
+//        {
+//            m_render->setDrawColor(Color(0, 0, 0, 255));
+//            gweni::Rect r(control->getWidth()/2-2, control->getHeight()/2-2, 5, 5);
+//            drawCheck(&primitiveIds[5], r);
+//        }
     }
 
     void drawMenuStrip(gweni::controls::Base *control, State state)
     {
-        PrimitiveIds &primitiveIds=control->getPrimitiveIds();
-        if(primitiveIds.size() < 3)
-            enlargePrimitiveIds(control, primitiveIds, 3);
-
-        int w=control->getWidth();
-        int h=control->getHeight();
-        m_render->setDrawColor(gweni::Color(246, 248, 252, 255));
-        m_render->drawFilledRect(primitiveIds[0], gweni::Rect(0, 0, w, h), control->getZIndex());
-        m_render->setDrawColor(gweni::Color(218, 224, 241, 150));
-        m_render->drawFilledRect(primitiveIds[1], gweni::Rect(0, h*0.4f, w, h*0.6f), control->getZIndex());
-        m_render->drawFilledRect(primitiveIds[2], gweni::Rect(0, h/2, w, h/2), control->getZIndex());
+ //       PrimitiveIds &primitiveIds=control->getPrimitiveIds();
+ //       if(primitiveIds.size() < 3)
+ //           enlargePrimitiveIds(control, primitiveIds, 3);
+ //
+ //       int w=control->getWidth();
+ //       int h=control->getHeight();
+ //       m_render->setDrawColor(gweni::Color(246, 248, 252, 255));
+ //       m_render->drawFilledRect(primitiveIds[0], gweni::Rect(0, 0, w, h), control->getZIndex());
+ //       m_render->setDrawColor(gweni::Color(218, 224, 241, 150));
+ //       m_render->drawFilledRect(primitiveIds[1], gweni::Rect(0, h*0.4f, w, h*0.6f), control->getZIndex());
+ //       m_render->drawFilledRect(primitiveIds[2], gweni::Rect(0, h/2, w, h/2), control->getZIndex());
     }
 
     void drawMenu(gweni::controls::Base *control, State state, bool paddingDisabled)
     {
-        PrimitiveIds &primitiveIds=control->getPrimitiveIds();
-        if(primitiveIds.size() < 3)
-            enlargePrimitiveIds(control, primitiveIds, 3);
-
-        int w=control->getWidth();
-        int h=control->getHeight();
-        m_render->setDrawColor(m_colControlBright);
-        m_render->drawFilledRect(primitiveIds[0], gweni::Rect(0, 0, w, h), control->getZIndex());
-
-        if(!paddingDisabled)
-        {
-            m_render->setDrawColor(m_colControl);
-            m_render->drawFilledRect(primitiveIds[1], gweni::Rect(1, 0, 22, h), control->getZIndex());
-        }
-
-        m_render->setDrawColor(m_colControlOutlineNormal);
-        m_render->drawLinedRect(&primitiveIds[3], gweni::Rect(0, 0, w, h), control->getZIndex());
+//        PrimitiveIds &primitiveIds=control->getPrimitiveIds();
+//        if(primitiveIds.size() < 3)
+//            enlargePrimitiveIds(control, primitiveIds, 3);
+//
+//        int w=control->getWidth();
+//        int h=control->getHeight();
+//        m_render->setDrawColor(m_colControlBright);
+//        m_render->drawFilledRect(primitiveIds[0], gweni::Rect(0, 0, w, h), control->getZIndex());
+//
+//        if(!paddingDisabled)
+//        {
+//            m_render->setDrawColor(m_colControl);
+//            m_render->drawFilledRect(primitiveIds[1], gweni::Rect(1, 0, 22, h), control->getZIndex());
+//        }
+//
+//        m_render->setDrawColor(m_colControlOutlineNormal);
+//        m_render->drawLinedRect(&primitiveIds[3], gweni::Rect(0, 0, w, h), control->getZIndex());
     }
 
     void drawShadow(gweni::controls::Base *control, State state)
     {
-        PrimitiveIds &primitiveIds=control->getPrimitiveIds();
-        if(primitiveIds.size() < 3)
-            enlargePrimitiveIds(control, primitiveIds, 3);
-
-        const int w=control->getWidth(), h=control->getHeight();
-        int x=4, y=6;
-        m_render->setDrawColor(gweni::Color(0, 0, 0, 10));
-        m_render->drawFilledRect(primitiveIds[0], gweni::Rect(x, y, w, h), control->getZIndex());
-        x+=2;
-        m_render->drawFilledRect(primitiveIds[1], gweni::Rect(x, y, w, h), control->getZIndex());
-        y+=2;
-        m_render->drawFilledRect(primitiveIds[2], gweni::Rect(x, y, w, h), control->getZIndex());
+//        PrimitiveIds &primitiveIds=control->getPrimitiveIds();
+//        if(primitiveIds.size() < 3)
+//            enlargePrimitiveIds(control, primitiveIds, 3);
+//
+//        const int w=control->getWidth(), h=control->getHeight();
+//        int x=4, y=6;
+//        m_render->setDrawColor(gweni::Color(0, 0, 0, 10));
+//        m_render->drawFilledRect(primitiveIds[0], gweni::Rect(x, y, w, h), control->getZIndex());
+//        x+=2;
+//        m_render->drawFilledRect(primitiveIds[1], gweni::Rect(x, y, w, h), control->getZIndex());
+//        y+=2;
+//        m_render->drawFilledRect(primitiveIds[2], gweni::Rect(x, y, w, h), control->getZIndex());
     }
 
     virtual void drawButton(gweni::controls::Base *control, size_t *primitiveIds, int w, int h, bool depressed, bool hovered,
         bool squared=false)
     {
-        if(depressed)
-            m_render->setDrawColor(m_colControlDark);
-        else if(hovered)
-            m_render->setDrawColor(m_colControlBright);
-        else
-            m_render->setDrawColor(m_colControl);
-        m_render->drawFilledRect(primitiveIds[0], gweni::Rect(1, 1, w-2, h-2), control->getZIndex());
-
-        if(depressed)
-            m_render->setDrawColor(m_colControlDark);
-        else if(hovered)
-            m_render->setDrawColor(m_colControl);
-        else
-            m_render->setDrawColor(m_colControlDark);
-        m_render->drawFilledRect(primitiveIds[1], gweni::Rect(1, h/2, w-2, h/2-2), control->getZIndex());
-
-        if(!depressed)
-        {
-            m_render->setDrawColor(m_colControlBright);
-            m_render->drawShavedCornerRect(&primitiveIds[2], gweni::Rect(1, 1, w-2, h-2), control->getZIndex(), squared);
-        }
-        else
-        {
-            m_render->setDrawColor(m_colControlDarker);
-            m_render->drawShavedCornerRect(&primitiveIds[2], gweni::Rect(1, 1, w-2, h-2), control->getZIndex(), squared);
-        }
-
-        // Border
-        m_render->setDrawColor(m_colControlOutlineNormal);
-        m_render->drawShavedCornerRect(&primitiveIds[10], gweni::Rect(0, 0, w, h), control->getZIndex(), squared);
+//        if(depressed)
+//            m_render->setDrawColor(m_colControlDark);
+//        else if(hovered)
+//            m_render->setDrawColor(m_colControlBright);
+//        else
+//            m_render->setDrawColor(m_colControl);
+//        m_render->drawFilledRect(primitiveIds[0], gweni::Rect(1, 1, w-2, h-2), control->getZIndex());
+//
+//        if(depressed)
+//            m_render->setDrawColor(m_colControlDark);
+//        else if(hovered)
+//            m_render->setDrawColor(m_colControl);
+//        else
+//            m_render->setDrawColor(m_colControlDark);
+//        m_render->drawFilledRect(primitiveIds[1], gweni::Rect(1, h/2, w-2, h/2-2), control->getZIndex());
+//
+//        if(!depressed)
+//        {
+//            m_render->setDrawColor(m_colControlBright);
+//            m_render->drawShavedCornerRect(&primitiveIds[2], gweni::Rect(1, 1, w-2, h-2), control->getZIndex(), squared);
+//        }
+//        else
+//        {
+//            m_render->setDrawColor(m_colControlDarker);
+//            m_render->drawShavedCornerRect(&primitiveIds[2], gweni::Rect(1, 1, w-2, h-2), control->getZIndex(), squared);
+//        }
+//
+//        // Border
+//        m_render->setDrawColor(m_colControlOutlineNormal);
+//        m_render->drawShavedCornerRect(&primitiveIds[10], gweni::Rect(0, 0, w, h), control->getZIndex(), squared);
     }
 
     void drawRadioButton(gweni::controls::Base *control, State state, bool selected,
         bool depressed)
     {
-        PrimitiveIds &primitiveIds=control->getPrimitiveIds();
-        if(primitiveIds.size() < 15)
-            enlargePrimitiveIds(control, primitiveIds, 15);
-
-        gweni::Rect rect=control->getRenderBounds();
-
-        // Inside colour
-        if(control->isHovered())
-            m_render->setDrawColor(gweni::Color(220, 242, 254, 255));
-        else
-            m_render->setDrawColor(m_colControlBright);
-        m_render->drawFilledRect(primitiveIds[0], gweni::Rect(1, 1, rect.w-2, rect.h-2), control->getZIndex());
-
-        // Border
-        if(control->isHovered())
-            m_render->setDrawColor(gweni::Color(85, 130, 164, 255));
-        else
-            m_render->setDrawColor(m_colControlOutlineLight);
-        m_render->drawShavedCornerRect(&primitiveIds[1], rect, control->getZIndex());
-        m_render->setDrawColor(gweni::Color(0, 50, 60, 15));
-        m_render->drawFilledRect(primitiveIds[9], gweni::Rect(rect.x+2, rect.y+2, rect.w-4, rect.h-4), control->getZIndex());
-        m_render->drawFilledRect(primitiveIds[10], gweni::Rect(rect.x+2, rect.y+2, rect.w*0.3f, rect.h-4), control->getZIndex());
-        m_render->drawFilledRect(primitiveIds[11], gweni::Rect(rect.x+2, rect.y+2, rect.w-4, rect.h*0.3f), control->getZIndex());
-
-        if(control->isHovered())
-            m_render->setDrawColor(gweni::Color(121, 198, 249, 255));
-        else
-            m_render->setDrawColor(gweni::Color(0, 50, 60, 50));
-        m_render->drawFilledRect(primitiveIds[12], gweni::Rect(rect.x+2, rect.y+3, 1, rect.h-5), control->getZIndex());
-        m_render->drawFilledRect(primitiveIds[13], gweni::Rect(rect.x+3, rect.y+2, rect.w-5, 1), control->getZIndex());
-
-        if(selected)
-        {
-            m_render->setDrawColor(gweni::Color(40, 230, 30, 255));
-            m_render->drawFilledRect(primitiveIds[14], gweni::Rect(rect.x+2, rect.y+2, rect.w-4, rect.h-4), control->getZIndex());
-        }
+//        PrimitiveIds &primitiveIds=control->getPrimitiveIds();
+//        if(primitiveIds.size() < 15)
+//            enlargePrimitiveIds(control, primitiveIds, 15);
+//
+//        gweni::Rect rect=control->getRenderBounds();
+//
+//        // Inside colour
+//        if(control->isHovered())
+//            m_render->setDrawColor(gweni::Color(220, 242, 254, 255));
+//        else
+//            m_render->setDrawColor(m_colControlBright);
+//        m_render->drawFilledRect(primitiveIds[0], gweni::Rect(1, 1, rect.w-2, rect.h-2), control->getZIndex());
+//
+//        // Border
+//        if(control->isHovered())
+//            m_render->setDrawColor(gweni::Color(85, 130, 164, 255));
+//        else
+//            m_render->setDrawColor(m_colControlOutlineLight);
+//        m_render->drawShavedCornerRect(&primitiveIds[1], rect, control->getZIndex());
+//        m_render->setDrawColor(gweni::Color(0, 50, 60, 15));
+//        m_render->drawFilledRect(primitiveIds[9], gweni::Rect(rect.x+2, rect.y+2, rect.w-4, rect.h-4), control->getZIndex());
+//        m_render->drawFilledRect(primitiveIds[10], gweni::Rect(rect.x+2, rect.y+2, rect.w*0.3f, rect.h-4), control->getZIndex());
+//        m_render->drawFilledRect(primitiveIds[11], gweni::Rect(rect.x+2, rect.y+2, rect.w-4, rect.h*0.3f), control->getZIndex());
+//
+//        if(control->isHovered())
+//            m_render->setDrawColor(gweni::Color(121, 198, 249, 255));
+//        else
+//            m_render->setDrawColor(gweni::Color(0, 50, 60, 50));
+//        m_render->drawFilledRect(primitiveIds[12], gweni::Rect(rect.x+2, rect.y+3, 1, rect.h-5), control->getZIndex());
+//        m_render->drawFilledRect(primitiveIds[13], gweni::Rect(rect.x+3, rect.y+2, rect.w-5, 1), control->getZIndex());
+//
+//        if(selected)
+//        {
+//            m_render->setDrawColor(gweni::Color(40, 230, 30, 255));
+//            m_render->drawFilledRect(primitiveIds[14], gweni::Rect(rect.x+2, rect.y+2, rect.w-4, rect.h-4), control->getZIndex());
+//        }
     }
 
     void drawCheckBox(gweni::controls::Base *control, State state, bool selected,
         bool depressed)
     {
-        PrimitiveIds &primitiveIds=control->getPrimitiveIds();
-        if(primitiveIds.size() < 15)
-            enlargePrimitiveIds(control, primitiveIds, 15);
-
-        gweni::Rect rect=control->getRenderBounds();
-
-        // Inside colour
-        if(control->isHovered())
-            m_render->setDrawColor(gweni::Color(220, 242, 254, 255));
-        else
-            m_render->setDrawColor(m_colControlBright);
-        m_render->drawFilledRect(primitiveIds[0], rect, control->getZIndex());
-
-        // Border
-        if(control->isHovered())
-            m_render->setDrawColor(gweni::Color(85, 130, 164, 255));
-        else
-            m_render->setDrawColor(m_colControlOutlineLight);
-        m_render->drawLinedRect(&primitiveIds[1], rect, control->getZIndex());
-        m_render->setDrawColor(gweni::Color(0, 50, 60, 15));
-        m_render->drawFilledRect(primitiveIds[5], gweni::Rect(rect.x+2, rect.y+2, rect.w-4, rect.h-4), control->getZIndex());
-        m_render->drawFilledRect(primitiveIds[6], gweni::Rect(rect.x+2, rect.y+2, rect.w*0.3f, rect.h-4), control->getZIndex());
-        m_render->drawFilledRect(primitiveIds[7], gweni::Rect(rect.x+2, rect.y+2, rect.w-4, rect.h*0.3f), control->getZIndex());
-
-        if(control->isHovered())
-            m_render->setDrawColor(gweni::Color(121, 198, 249, 255));
-        else
-            m_render->setDrawColor(gweni::Color(0, 50, 60, 50));
-        m_render->drawFilledRect(primitiveIds[8], gweni::Rect(rect.x+2, rect.y+2, 1, rect.h-4), control->getZIndex());
-        m_render->drawFilledRect(primitiveIds[9], gweni::Rect(rect.x+2, rect.y+2, rect.w-4, 1), control->getZIndex());
-
-        if(depressed)
-        {
-            m_render->setDrawColor(Color(100, 100, 100, 255));
-            gweni::Rect r(control->getWidth()/2-2, control->getHeight()/2-2, 5, 5);
-            drawCheck(&primitiveIds[10], r);
-        }
-        else if(selected)
-        {
-            m_render->setDrawColor(Color(0, 0, 0, 255));
-            gweni::Rect r(control->getWidth()/2-2, control->getHeight()/2-2, 5, 5);
-            drawCheck(&primitiveIds[10], r);
-        }
+//        PrimitiveIds &primitiveIds=control->getPrimitiveIds();
+//        if(primitiveIds.size() < 15)
+//            enlargePrimitiveIds(control, primitiveIds, 15);
+//
+//        gweni::Rect rect=control->getRenderBounds();
+//
+//        // Inside colour
+//        if(control->isHovered())
+//            m_render->setDrawColor(gweni::Color(220, 242, 254, 255));
+//        else
+//            m_render->setDrawColor(m_colControlBright);
+//        m_render->drawFilledRect(primitiveIds[0], rect, control->getZIndex());
+//
+//        // Border
+//        if(control->isHovered())
+//            m_render->setDrawColor(gweni::Color(85, 130, 164, 255));
+//        else
+//            m_render->setDrawColor(m_colControlOutlineLight);
+//        m_render->drawLinedRect(&primitiveIds[1], rect, control->getZIndex());
+//        m_render->setDrawColor(gweni::Color(0, 50, 60, 15));
+//        m_render->drawFilledRect(primitiveIds[5], gweni::Rect(rect.x+2, rect.y+2, rect.w-4, rect.h-4), control->getZIndex());
+//        m_render->drawFilledRect(primitiveIds[6], gweni::Rect(rect.x+2, rect.y+2, rect.w*0.3f, rect.h-4), control->getZIndex());
+//        m_render->drawFilledRect(primitiveIds[7], gweni::Rect(rect.x+2, rect.y+2, rect.w-4, rect.h*0.3f), control->getZIndex());
+//
+//        if(control->isHovered())
+//            m_render->setDrawColor(gweni::Color(121, 198, 249, 255));
+//        else
+//            m_render->setDrawColor(gweni::Color(0, 50, 60, 50));
+//        m_render->drawFilledRect(primitiveIds[8], gweni::Rect(rect.x+2, rect.y+2, 1, rect.h-4), control->getZIndex());
+//        m_render->drawFilledRect(primitiveIds[9], gweni::Rect(rect.x+2, rect.y+2, rect.w-4, 1), control->getZIndex());
+//
+//        if(depressed)
+//        {
+//            m_render->setDrawColor(Color(100, 100, 100, 255));
+//            gweni::Rect r(control->getWidth()/2-2, control->getHeight()/2-2, 5, 5);
+//            drawCheck(&primitiveIds[10], r);
+//        }
+//        else if(selected)
+//        {
+//            m_render->setDrawColor(Color(0, 0, 0, 255));
+//            gweni::Rect r(control->getWidth()/2-2, control->getHeight()/2-2, 5, 5);
+//            drawCheck(&primitiveIds[10], r);
+//        }
     }
 
     void drawGroupBox(gweni::controls::Base *control, State state, int textStart, int textHeight,
         int textWidth)
     {
-        PrimitiveIds &primitiveIds=control->getPrimitiveIds();
-        if(primitiveIds.size() < 10)
-            enlargePrimitiveIds(control, primitiveIds, 10);
-
-        gweni::Rect rect=control->getRenderBounds();
-        rect.y+=textHeight/2;
-        rect.h-=textHeight/2;
-        gweni::Color m_colDarker=gweni::Color(0, 50, 60, 50);
-        gweni::Color m_colLighter=gweni::Color(255, 255, 255, 150);
-        m_render->setDrawColor(m_colLighter);
-        m_render->drawFilledRect(primitiveIds[0], gweni::Rect(rect.x+1, rect.y+1, textStart-3, 1), control->getZIndex());
-        m_render->drawFilledRect(primitiveIds[1], gweni::Rect(rect.x+1+textStart+textWidth, rect.y+1,
-            rect.w-textStart+textWidth-2, 1), control->getZIndex());
-        m_render->drawFilledRect(primitiveIds[2], gweni::Rect(rect.x+1, (rect.y+rect.h)-1, rect.w-2, 1), control->getZIndex());
-        m_render->drawFilledRect(primitiveIds[3], gweni::Rect(rect.x+1, rect.y+1, 1, rect.h), control->getZIndex());
-        m_render->drawFilledRect(primitiveIds[4], gweni::Rect((rect.x+rect.w)-2, rect.y+1, 1, rect.h-1), control->getZIndex());
-        m_render->setDrawColor(m_colDarker);
-        m_render->drawFilledRect(primitiveIds[5], gweni::Rect(rect.x+1, rect.y, textStart-3, 1), control->getZIndex());
-        m_render->drawFilledRect(primitiveIds[6], gweni::Rect(rect.x+1+textStart+textWidth, rect.y,
-            rect.w-textStart-textWidth-2, 1), control->getZIndex());
-        m_render->drawFilledRect(primitiveIds[7], gweni::Rect(rect.x+1, (rect.y+rect.h)-1, rect.w-2, 1), control->getZIndex());
-        m_render->drawFilledRect(primitiveIds[8], gweni::Rect(rect.x, rect.y+1, 1, rect.h-1), control->getZIndex());
-        m_render->drawFilledRect(primitiveIds[9], gweni::Rect((rect.x+rect.w)-1, rect.y+1, 1, rect.h-1), control->getZIndex());
+//        PrimitiveIds &primitiveIds=control->getPrimitiveIds();
+//        if(primitiveIds.size() < 10)
+//            enlargePrimitiveIds(control, primitiveIds, 10);
+//
+//        gweni::Rect rect=control->getRenderBounds();
+//        rect.y+=textHeight/2;
+//        rect.h-=textHeight/2;
+//        gweni::Color m_colDarker=gweni::Color(0, 50, 60, 50);
+//        gweni::Color m_colLighter=gweni::Color(255, 255, 255, 150);
+//        m_render->setDrawColor(m_colLighter);
+//        m_render->drawFilledRect(primitiveIds[0], gweni::Rect(rect.x+1, rect.y+1, textStart-3, 1), control->getZIndex());
+//        m_render->drawFilledRect(primitiveIds[1], gweni::Rect(rect.x+1+textStart+textWidth, rect.y+1,
+//            rect.w-textStart+textWidth-2, 1), control->getZIndex());
+//        m_render->drawFilledRect(primitiveIds[2], gweni::Rect(rect.x+1, (rect.y+rect.h)-1, rect.w-2, 1), control->getZIndex());
+//        m_render->drawFilledRect(primitiveIds[3], gweni::Rect(rect.x+1, rect.y+1, 1, rect.h), control->getZIndex());
+//        m_render->drawFilledRect(primitiveIds[4], gweni::Rect((rect.x+rect.w)-2, rect.y+1, 1, rect.h-1), control->getZIndex());
+//        m_render->setDrawColor(m_colDarker);
+//        m_render->drawFilledRect(primitiveIds[5], gweni::Rect(rect.x+1, rect.y, textStart-3, 1), control->getZIndex());
+//        m_render->drawFilledRect(primitiveIds[6], gweni::Rect(rect.x+1+textStart+textWidth, rect.y,
+//            rect.w-textStart-textWidth-2, 1), control->getZIndex());
+//        m_render->drawFilledRect(primitiveIds[7], gweni::Rect(rect.x+1, (rect.y+rect.h)-1, rect.w-2, 1), control->getZIndex());
+//        m_render->drawFilledRect(primitiveIds[8], gweni::Rect(rect.x, rect.y+1, 1, rect.h-1), control->getZIndex());
+//        m_render->drawFilledRect(primitiveIds[9], gweni::Rect((rect.x+rect.w)-1, rect.y+1, 1, rect.h-1), control->getZIndex());
     }
 
     void drawTextBox(gweni::controls::Base *control, State state)
     {
-        PrimitiveIds &primitiveIds=control->getPrimitiveIds();
-        if(primitiveIds.size() < 9)
-            enlargePrimitiveIds(control, primitiveIds, 9);
-
-        gweni::Rect rect=control->getRenderBounds();
-        bool bIsFocussed=control->isFocussed();
-
-        // Box inside
-        m_render->setDrawColor(gweni::Color(255, 255, 255, 255));
-        m_render->drawFilledRect(primitiveIds[0], gweni::Rect(1, 1, rect.w-2, rect.h-2), control->getZIndex());
-        m_render->setDrawColor(m_colControlOutlineLight);
-        m_render->drawFilledRect(primitiveIds[1], gweni::Rect(rect.x+1, rect.y, rect.w-2, 1), control->getZIndex());
-        m_render->drawFilledRect(primitiveIds[2], gweni::Rect(rect.x, rect.y+1, 1, rect.h-2), control->getZIndex());
-        m_render->setDrawColor(m_colControlOutlineLighter);
-        m_render->drawFilledRect(primitiveIds[3], gweni::Rect(rect.x+1, (rect.y+rect.h)-1, rect.w-2, 1), control->getZIndex());
-        m_render->drawFilledRect(primitiveIds[4], gweni::Rect((rect.x+rect.w)-1, rect.y+1, 1, rect.h-2), control->getZIndex());
-
-        if(bIsFocussed)
-        {
-            m_render->setDrawColor(gweni::Color(50, 200, 255, 150));
-            m_render->drawLinedRect(&primitiveIds[5], rect, control->getZIndex());
-        }
+//        PrimitiveIds &primitiveIds=control->getPrimitiveIds();
+//        if(primitiveIds.size() < 9)
+//            enlargePrimitiveIds(control, primitiveIds, 9);
+//
+//        gweni::Rect rect=control->getRenderBounds();
+//        bool bIsFocussed=control->isFocussed();
+//
+//        // Box inside
+//        m_render->setDrawColor(gweni::Color(255, 255, 255, 255));
+//        m_render->drawFilledRect(primitiveIds[0], gweni::Rect(1, 1, rect.w-2, rect.h-2), control->getZIndex());
+//        m_render->setDrawColor(m_colControlOutlineLight);
+//        m_render->drawFilledRect(primitiveIds[1], gweni::Rect(rect.x+1, rect.y, rect.w-2, 1), control->getZIndex());
+//        m_render->drawFilledRect(primitiveIds[2], gweni::Rect(rect.x, rect.y+1, 1, rect.h-2), control->getZIndex());
+//        m_render->setDrawColor(m_colControlOutlineLighter);
+//        m_render->drawFilledRect(primitiveIds[3], gweni::Rect(rect.x+1, (rect.y+rect.h)-1, rect.w-2, 1), control->getZIndex());
+//        m_render->drawFilledRect(primitiveIds[4], gweni::Rect((rect.x+rect.w)-1, rect.y+1, 1, rect.h-2), control->getZIndex());
+//
+//        if(bIsFocussed)
+//        {
+//            m_render->setDrawColor(gweni::Color(50, 200, 255, 150));
+//            m_render->drawLinedRect(&primitiveIds[5], rect, control->getZIndex());
+//        }
     }
 
     void drawTabButton(gweni::controls::Base *control, State state, bool active, Position dir)
     {
-        PrimitiveIds &primitiveIds=control->getPrimitiveIds();
-        if(primitiveIds.size() < 25)
-            enlargePrimitiveIds(control, primitiveIds, 25);
-
-        gweni::Rect rect=control->getRenderBounds();
-        bool hovered=control->isHovered();
-
-        if(hovered)
-            m_render->setDrawColor(m_colControlBright);
-        else
-            m_render->setDrawColor(m_colControl);
-        m_render->drawFilledRect(primitiveIds[0], gweni::Rect(1, 1, rect.w-2, rect.h-1), control->getZIndex());
-
-        if(hovered)
-            m_render->setDrawColor(m_colControl);
-        else
-            m_render->setDrawColor(m_colControlDark);
-        m_render->drawFilledRect(primitiveIds[1], gweni::Rect(1, rect.h/2, rect.w-2, rect.h/2-1), control->getZIndex());
-        m_render->setDrawColor(m_colControlBright);
-        m_render->drawShavedCornerRect(&primitiveIds[9], gweni::Rect(1, 1, rect.w-2, rect.h), control->getZIndex());
-        m_render->setDrawColor(m_colBorderColor);
-        m_render->drawShavedCornerRect(&primitiveIds[17], gweni::Rect(0, 0, rect.w, rect.h), control->getZIndex());
+//        PrimitiveIds &primitiveIds=control->getPrimitiveIds();
+//        if(primitiveIds.size() < 25)
+//            enlargePrimitiveIds(control, primitiveIds, 25);
+//
+//        gweni::Rect rect=control->getRenderBounds();
+//        bool hovered=control->isHovered();
+//
+//        if(hovered)
+//            m_render->setDrawColor(m_colControlBright);
+//        else
+//            m_render->setDrawColor(m_colControl);
+//        m_render->drawFilledRect(primitiveIds[0], gweni::Rect(1, 1, rect.w-2, rect.h-1), control->getZIndex());
+//
+//        if(hovered)
+//            m_render->setDrawColor(m_colControl);
+//        else
+//            m_render->setDrawColor(m_colControlDark);
+//        m_render->drawFilledRect(primitiveIds[1], gweni::Rect(1, rect.h/2, rect.w-2, rect.h/2-1), control->getZIndex());
+//        m_render->setDrawColor(m_colControlBright);
+//        m_render->drawShavedCornerRect(&primitiveIds[9], gweni::Rect(1, 1, rect.w-2, rect.h), control->getZIndex());
+//        m_render->setDrawColor(m_colBorderColor);
+//        m_render->drawShavedCornerRect(&primitiveIds[17], gweni::Rect(0, 0, rect.w, rect.h), control->getZIndex());
     }
 
     void drawTabControl(gweni::controls::Base *control, State state)
     {
-        PrimitiveIds &primitiveIds=control->getPrimitiveIds();
-        if(primitiveIds.size() < 5)
-            enlargePrimitiveIds(control, primitiveIds, 5);
-
-        gweni::Rect rect=control->getRenderBounds();
-        m_render->setDrawColor(m_colControl);
-        m_render->drawFilledRect(primitiveIds[0], rect, control->getZIndex());
-        m_render->setDrawColor(m_colBorderColor);
-        m_render->drawLinedRect(&primitiveIds[1], rect, control->getZIndex());
-        //m_render->setDrawColor( m_colControl );
-        //m_render->drawFilledRect( CurrentButtonRect );
+//        PrimitiveIds &primitiveIds=control->getPrimitiveIds();
+//        if(primitiveIds.size() < 5)
+//            enlargePrimitiveIds(control, primitiveIds, 5);
+//
+//        gweni::Rect rect=control->getRenderBounds();
+//        m_render->setDrawColor(m_colControl);
+//        m_render->drawFilledRect(primitiveIds[0], rect, control->getZIndex());
+//        m_render->setDrawColor(m_colBorderColor);
+//        m_render->drawLinedRect(&primitiveIds[1], rect, control->getZIndex());
+//        //m_render->setDrawColor( m_colControl );
+//        //m_render->drawFilledRect( CurrentButtonRect );
     }
 
     void drawWindow(gweni::controls::Base *control, State state, int topHeight, bool inFocus)
     {
-        PrimitiveIds &primitiveIds=control->getPrimitiveIds();
-        if(primitiveIds.size() < 25)
-            enlargePrimitiveIds(control, primitiveIds, 25);
-
-        gweni::Rect rect=control->getRenderBounds();
-
-        // Titlebar
-        if(inFocus)
-            m_render->setDrawColor(gweni::Color(87, 164, 232, 230));
-        else
-            m_render->setDrawColor(gweni::Color(87*0.70, 164*0.70, 232*0.70, 230));
-        int iBorderSize=5;
-        m_render->drawFilledRect(primitiveIds[0], gweni::Rect(rect.x+1, rect.y+1, rect.w-2, topHeight-1), control->getZIndex());
-        m_render->drawFilledRect(primitiveIds[1], gweni::Rect(rect.x+1, rect.y+topHeight-1,
-            iBorderSize, rect.h-2-topHeight), control->getZIndex());
-        m_render->drawFilledRect(primitiveIds[2], gweni::Rect(rect.x+rect.w-iBorderSize, rect.y+topHeight-1,
-            iBorderSize, rect.h-2-topHeight), control->getZIndex());
-        m_render->drawFilledRect(primitiveIds[3], gweni::Rect(rect.x+1, rect.y+rect.h-iBorderSize,
-            rect.w-2, iBorderSize), control->getZIndex());
-        // Main inner
-        m_render->setDrawColor(gweni::Color(m_colControlDark.r,
-            m_colControlDark.g,
-            m_colControlDark.b,
-            230));
-        m_render->drawFilledRect(primitiveIds[4], gweni::Rect(rect.x + iBorderSize + 1,
-            rect.y + topHeight,
-            rect.w - iBorderSize*2 - 2,
-            rect.h - topHeight - iBorderSize - 1), control->getZIndex());
-        // Light inner border
-        m_render->setDrawColor(gweni::Color(255, 255, 255, 100));
-        m_render->drawShavedCornerRect(&primitiveIds[5], gweni::Rect(rect.x+1, rect.y+1, rect.w-2, rect.h-2), control->getZIndex());
-        // Dark line between titlebar and main
-        m_render->setDrawColor(m_colBorderColor);
-        // Inside border
-        m_render->setDrawColor(m_colControlOutlineNormal);
-        m_render->drawLinedRect(&primitiveIds[13], gweni::Rect(rect.x+iBorderSize, rect.y+topHeight-1,
-            rect.w-10, rect.h-topHeight-(iBorderSize-1)), control->getZIndex());
-        // Dark outer border
-        m_render->setDrawColor(m_colBorderColor);
-        m_render->drawShavedCornerRect(&primitiveIds[17], gweni::Rect(rect.x, rect.y, rect.w, rect.h), control->getZIndex());
+//        PrimitiveIds &primitiveIds=control->getPrimitiveIds();
+//        if(primitiveIds.size() < 25)
+//            enlargePrimitiveIds(control, primitiveIds, 25);
+//
+//        gweni::Rect rect=control->getRenderBounds();
+//
+//        // Titlebar
+//        if(inFocus)
+//            m_render->setDrawColor(gweni::Color(87, 164, 232, 230));
+//        else
+//            m_render->setDrawColor(gweni::Color(87*0.70, 164*0.70, 232*0.70, 230));
+//        int iBorderSize=5;
+//        m_render->drawFilledRect(primitiveIds[0], gweni::Rect(rect.x+1, rect.y+1, rect.w-2, topHeight-1), control->getZIndex());
+//        m_render->drawFilledRect(primitiveIds[1], gweni::Rect(rect.x+1, rect.y+topHeight-1,
+//            iBorderSize, rect.h-2-topHeight), control->getZIndex());
+//        m_render->drawFilledRect(primitiveIds[2], gweni::Rect(rect.x+rect.w-iBorderSize, rect.y+topHeight-1,
+//            iBorderSize, rect.h-2-topHeight), control->getZIndex());
+//        m_render->drawFilledRect(primitiveIds[3], gweni::Rect(rect.x+1, rect.y+rect.h-iBorderSize,
+//            rect.w-2, iBorderSize), control->getZIndex());
+//        // Main inner
+//        m_render->setDrawColor(gweni::Color(m_colControlDark.r,
+//            m_colControlDark.g,
+//            m_colControlDark.b,
+//            230));
+//        m_render->drawFilledRect(primitiveIds[4], gweni::Rect(rect.x + iBorderSize + 1,
+//            rect.y + topHeight,
+//            rect.w - iBorderSize*2 - 2,
+//            rect.h - topHeight - iBorderSize - 1), control->getZIndex());
+//        // Light inner border
+//        m_render->setDrawColor(gweni::Color(255, 255, 255, 100));
+//        m_render->drawShavedCornerRect(&primitiveIds[5], gweni::Rect(rect.x+1, rect.y+1, rect.w-2, rect.h-2), control->getZIndex());
+//        // Dark line between titlebar and main
+//        m_render->setDrawColor(m_colBorderColor);
+//        // Inside border
+//        m_render->setDrawColor(m_colControlOutlineNormal);
+//        m_render->drawLinedRect(&primitiveIds[13], gweni::Rect(rect.x+iBorderSize, rect.y+topHeight-1,
+//            rect.w-10, rect.h-topHeight-(iBorderSize-1)), control->getZIndex());
+//        // Dark outer border
+//        m_render->setDrawColor(m_colBorderColor);
+//        m_render->drawShavedCornerRect(&primitiveIds[17], gweni::Rect(rect.x, rect.y, rect.w, rect.h), control->getZIndex());
     }
 
     void drawHighlight(gweni::controls::Base *control, State state)
     {
-        PrimitiveIds &primitiveIds=control->getPrimitiveIds();
-        if(primitiveIds.size() < 1)
-            enlargePrimitiveIds(control, primitiveIds, 1);
-
-        gweni::Rect rect=control->getRenderBounds();
-        m_render->setDrawColor(gweni::Color(255, 100, 255, 255));
-        m_render->drawFilledRect(primitiveIds[0], rect, control->getZIndex());
+//        PrimitiveIds &primitiveIds=control->getPrimitiveIds();
+//        if(primitiveIds.size() < 1)
+//            enlargePrimitiveIds(control, primitiveIds, 1);
+//
+//        gweni::Rect rect=control->getRenderBounds();
+//        m_render->setDrawColor(gweni::Color(255, 100, 255, 255));
+//        m_render->drawFilledRect(primitiveIds[0], rect, control->getZIndex());
     }
 
     void drawScrollBar(gweni::controls::Base *control, State state, bool isHorizontal,
         bool depressed)
     {
-        PrimitiveIds &primitiveIds=control->getPrimitiveIds();
-        if(primitiveIds.size() < 1)
-            enlargePrimitiveIds(control, primitiveIds, 1);
-
-        gweni::Rect rect=control->getRenderBounds();
-
-        if(depressed)
-            m_render->setDrawColor(m_colControlDarker);
-        else
-            m_render->setDrawColor(m_colControlBright);
-        m_render->drawFilledRect(primitiveIds[0], rect, control->getZIndex());
+//        PrimitiveIds &primitiveIds=control->getPrimitiveIds();
+//        if(primitiveIds.size() < 1)
+//            enlargePrimitiveIds(control, primitiveIds, 1);
+//
+//        gweni::Rect rect=control->getRenderBounds();
+//
+//        if(depressed)
+//            m_render->setDrawColor(m_colControlDarker);
+//        else
+//            m_render->setDrawColor(m_colControlBright);
+//        m_render->drawFilledRect(primitiveIds[0], rect, control->getZIndex());
     }
 
     void drawScrollBarBar(controls::Base *control, State state, bool depressed, bool isHovered,
         bool isHorizontal)
     {
         //TODO: something specialized
-        drawButton(control, state, depressed, isHovered, false);
+//        drawButton(control, state, depressed, isHovered, false);
     }
 
     void drawTabTitleBar(gweni::controls::Base *control, State state)
     {
-        PrimitiveIds &primitiveIds=control->getPrimitiveIds();
-        if(primitiveIds.size() < 5)
-            enlargePrimitiveIds(control, primitiveIds, 5);
-
-        gweni::Rect rect=control->getRenderBounds();
-        m_render->setDrawColor(gweni::Color(177, 193, 214, 255));
-        m_render->drawFilledRect(primitiveIds[0], rect, control->getZIndex());
-        m_render->setDrawColor(m_colBorderColor);
-        rect.h+=1;
-        m_render->drawLinedRect(&primitiveIds[1], rect, control->getZIndex());
+//        PrimitiveIds &primitiveIds=control->getPrimitiveIds();
+//        if(primitiveIds.size() < 5)
+//            enlargePrimitiveIds(control, primitiveIds, 5);
+//
+//        gweni::Rect rect=control->getRenderBounds();
+//        m_render->setDrawColor(gweni::Color(177, 193, 214, 255));
+//        m_render->drawFilledRect(primitiveIds[0], rect, control->getZIndex());
+//        m_render->setDrawColor(m_colBorderColor);
+//        rect.h+=1;
+//        m_render->drawLinedRect(&primitiveIds[1], rect, control->getZIndex());
     }
 
     void drawProgressBar(gweni::controls::Base *control, State state, bool isHorizontal,
         float progress)
     {
-        PrimitiveIds &primitiveIds=control->getPrimitiveIds();
-        if(primitiveIds.size() < 26)
-            enlargePrimitiveIds(control, primitiveIds, 26);
-
-        gweni::Rect rect=control->getRenderBounds();
-        gweni::Color FillColor(0, 211, 40, 255);
-
-        if(isHorizontal)
-        {
-            //Background
-            m_render->setDrawColor(m_colControlDark);
-            m_render->drawFilledRect(primitiveIds[0], gweni::Rect(1, 1, rect.w-2, rect.h-2), control->getZIndex());
-            //Right half
-            m_render->setDrawColor(FillColor);
-            m_render->drawFilledRect(primitiveIds[1], gweni::Rect(1, 1, rect.w*progress-2, rect.h-2), control->getZIndex());
-            m_render->setDrawColor(gweni::Color(255, 255, 255, 150));
-            m_render->drawFilledRect(primitiveIds[2], gweni::Rect(1, 1, rect.w-2, rect.h*0.45f), control->getZIndex());
-        }
-        else
-        {
-            //Background
-            m_render->setDrawColor(m_colControlDark);
-            m_render->drawFilledRect(primitiveIds[0], gweni::Rect(1, 1, rect.w-2, rect.h-2), control->getZIndex());
-            //Top half
-            m_render->setDrawColor(FillColor);
-            m_render->drawFilledRect(primitiveIds[1], gweni::Rect(1, 1+(rect.h*(1-progress)),
-                rect.w-2, rect.h*progress-2), control->getZIndex());
-            m_render->setDrawColor(gweni::Color(255, 255, 255, 150));
-            m_render->drawFilledRect(primitiveIds[2], gweni::Rect(1, 1, rect.w*0.45f, rect.h-2), control->getZIndex());
-        }
-
-        m_render->setDrawColor(gweni::Color(255, 255, 255, 150));
-        m_render->drawShavedCornerRect(&primitiveIds[3], gweni::Rect(1, 1, rect.w-2, rect.h-2), control->getZIndex());
-        m_render->setDrawColor(gweni::Color(255, 255, 255, 70));
-        m_render->drawShavedCornerRect(&primitiveIds[11], gweni::Rect(2, 2, rect.w-4, rect.h-4), control->getZIndex());
-        m_render->setDrawColor(m_colBorderColor);
-        m_render->drawShavedCornerRect(&primitiveIds[18], rect, control->getZIndex());
+//        PrimitiveIds &primitiveIds=control->getPrimitiveIds();
+//        if(primitiveIds.size() < 26)
+//            enlargePrimitiveIds(control, primitiveIds, 26);
+//
+//        gweni::Rect rect=control->getRenderBounds();
+//        gweni::Color FillColor(0, 211, 40, 255);
+//
+//        if(isHorizontal)
+//        {
+//            //Background
+//            m_render->setDrawColor(m_colControlDark);
+//            m_render->drawFilledRect(primitiveIds[0], gweni::Rect(1, 1, rect.w-2, rect.h-2), control->getZIndex());
+//            //Right half
+//            m_render->setDrawColor(FillColor);
+//            m_render->drawFilledRect(primitiveIds[1], gweni::Rect(1, 1, rect.w*progress-2, rect.h-2), control->getZIndex());
+//            m_render->setDrawColor(gweni::Color(255, 255, 255, 150));
+//            m_render->drawFilledRect(primitiveIds[2], gweni::Rect(1, 1, rect.w-2, rect.h*0.45f), control->getZIndex());
+//        }
+//        else
+//        {
+//            //Background
+//            m_render->setDrawColor(m_colControlDark);
+//            m_render->drawFilledRect(primitiveIds[0], gweni::Rect(1, 1, rect.w-2, rect.h-2), control->getZIndex());
+//            //Top half
+//            m_render->setDrawColor(FillColor);
+//            m_render->drawFilledRect(primitiveIds[1], gweni::Rect(1, 1+(rect.h*(1-progress)),
+//                rect.w-2, rect.h*progress-2), control->getZIndex());
+//            m_render->setDrawColor(gweni::Color(255, 255, 255, 150));
+//            m_render->drawFilledRect(primitiveIds[2], gweni::Rect(1, 1, rect.w*0.45f, rect.h-2), control->getZIndex());
+//        }
+//
+//        m_render->setDrawColor(gweni::Color(255, 255, 255, 150));
+//        m_render->drawShavedCornerRect(&primitiveIds[3], gweni::Rect(1, 1, rect.w-2, rect.h-2), control->getZIndex());
+//        m_render->setDrawColor(gweni::Color(255, 255, 255, 70));
+//        m_render->drawShavedCornerRect(&primitiveIds[11], gweni::Rect(2, 2, rect.w-4, rect.h-4), control->getZIndex());
+//        m_render->setDrawColor(m_colBorderColor);
+//        m_render->drawShavedCornerRect(&primitiveIds[18], rect, control->getZIndex());
     }
 
     void drawListBox(gweni::controls::Base *control, State state)
     {
-        PrimitiveIds &primitiveIds=control->getPrimitiveIds();
-        if(primitiveIds.size() < 5)
-            enlargePrimitiveIds(control, primitiveIds, 5);
-
-        gweni::Rect rect=control->getRenderBounds();
-        m_render->setDrawColor(m_colControlBright);
-        m_render->drawFilledRect(primitiveIds[0], rect, control->getZIndex());
-        m_render->setDrawColor(m_colBorderColor);
-        m_render->drawLinedRect(&primitiveIds[1], rect, control->getZIndex());
+//        PrimitiveIds &primitiveIds=control->getPrimitiveIds();
+//        if(primitiveIds.size() < 5)
+//            enlargePrimitiveIds(control, primitiveIds, 5);
+//
+//        gweni::Rect rect=control->getRenderBounds();
+//        m_render->setDrawColor(m_colControlBright);
+//        m_render->drawFilledRect(primitiveIds[0], rect, control->getZIndex());
+//        m_render->setDrawColor(m_colBorderColor);
+//        m_render->drawLinedRect(&primitiveIds[1], rect, control->getZIndex());
     }
 
     void drawListBoxLine(gweni::controls::Base *control, State state, bool selected, bool even)
     {
-        PrimitiveIds &primitiveIds=control->getPrimitiveIds();
-        if(primitiveIds.size() < 1)
-            enlargePrimitiveIds(control, primitiveIds, 1);
-
-        gweni::Rect rect=control->getRenderBounds();
-
-        if(selected)
-        {
-            m_render->setDrawColor(m_colHighlightBorder);
-            m_render->drawFilledRect(primitiveIds[0], rect, control->getZIndex());
-        }
-        else if(control->isHovered())
-        {
-            m_render->setDrawColor(m_colHighlightBG);
-            m_render->drawFilledRect(primitiveIds[0], rect, control->getZIndex());
-        }
+//        PrimitiveIds &primitiveIds=control->getPrimitiveIds();
+//        if(primitiveIds.size() < 1)
+//            enlargePrimitiveIds(control, primitiveIds, 1);
+//
+//        gweni::Rect rect=control->getRenderBounds();
+//
+//        if(selected)
+//        {
+//            m_render->setDrawColor(m_colHighlightBorder);
+//            m_render->drawFilledRect(primitiveIds[0], rect, control->getZIndex());
+//        }
+//        else if(control->isHovered())
+//        {
+//            m_render->setDrawColor(m_colHighlightBG);
+//            m_render->drawFilledRect(primitiveIds[0], rect, control->getZIndex());
+//        }
     }
 
     void drawSlider(gweni::controls::Base *control, State state, bool isHorizontal,
         int numNotches, int barSize)
     {
-        PrimitiveIds &primitiveIds=control->getPrimitiveIds();
-        if(primitiveIds.size() < 5)
-            enlargePrimitiveIds(control, primitiveIds, 5);
-
-        gweni::Rect rect=control->getRenderBounds();
-
-        if(isHorizontal)
-        {
-            rect.y+=rect.h*0.4f;
-            rect.h-=rect.h*0.8f;
-        }
-        else
-        {
-            rect.x+=rect.w*0.4f;
-            rect.w-=rect.w*0.8f;
-        }
-
-        m_render->setDrawColor(m_colBGDark);
-        m_render->drawFilledRect(primitiveIds[0], rect, control->getZIndex());
-        m_render->setDrawColor(m_colControlDarker);
-        m_render->drawLinedRect(&primitiveIds[1], rect, control->getZIndex());
+//        PrimitiveIds &primitiveIds=control->getPrimitiveIds();
+//        if(primitiveIds.size() < 5)
+//            enlargePrimitiveIds(control, primitiveIds, 5);
+//
+//        gweni::Rect rect=control->getRenderBounds();
+//
+//        if(isHorizontal)
+//        {
+//            rect.y+=rect.h*0.4f;
+//            rect.h-=rect.h*0.8f;
+//        }
+//        else
+//        {
+//            rect.x+=rect.w*0.4f;
+//            rect.w-=rect.w*0.8f;
+//        }
+//
+//        m_render->setDrawColor(m_colBGDark);
+//        m_render->drawFilledRect(primitiveIds[0], rect, control->getZIndex());
+//        m_render->setDrawColor(m_colControlDarker);
+//        m_render->drawLinedRect(&primitiveIds[1], rect, control->getZIndex());
     }
 
     void drawComboBox(gweni::controls::Base *control, State state, bool isDown, bool isMenuOpen)
     {
-        drawTextBox(control, state);
+//        drawTextBox(control, state);
     }
 
     void drawKeyboardHighlight(gweni::controls::Base *control, State state, const gweni::Rect &r,
@@ -653,112 +653,112 @@ public:
 
     void drawTooltip(gweni::controls::Base *control, State state)
     {
-        PrimitiveIds &primitiveIds=control->getPrimitiveIds();
-        if(primitiveIds.size() < 5)
-            enlargePrimitiveIds(control, primitiveIds, 5);
-
-        gweni::Rect rct=control->getRenderBounds();
-        rct.x-=3;
-        rct.y-=3;
-        rct.w+=6;
-        rct.h+=6;
-        m_render->setDrawColor(m_colTooltipBackground);
-        m_render->drawFilledRect(primitiveIds[0], rct, control->getZIndex());
-        m_render->setDrawColor(m_colTooltipBorder);
-        m_render->drawLinedRect(&primitiveIds[1], rct, control->getZIndex());
+//        PrimitiveIds &primitiveIds=control->getPrimitiveIds();
+//        if(primitiveIds.size() < 5)
+//            enlargePrimitiveIds(control, primitiveIds, 5);
+//
+//        gweni::Rect rct=control->getRenderBounds();
+//        rct.x-=3;
+//        rct.y-=3;
+//        rct.w+=6;
+//        rct.h+=6;
+//        m_render->setDrawColor(m_colTooltipBackground);
+//        m_render->drawFilledRect(primitiveIds[0], rct, control->getZIndex());
+//        m_render->setDrawColor(m_colTooltipBorder);
+//        m_render->drawLinedRect(&primitiveIds[1], rct, control->getZIndex());
     }
 
     void drawScrollButton(gweni::controls::Base *control, State state, Position direction,
         bool depressed, bool hovered, bool disabled)
     {
-        PrimitiveIds &primitiveIds=control->getPrimitiveIds();
-        if(primitiveIds.size() < 24)
-            enlargePrimitiveIds(control, primitiveIds, 24);
-
-        drawButton(control, &primitiveIds[0], control->getWidth(), control->getHeight(), depressed, false, false);
-        m_render->setDrawColor(gweni::Color(0, 0, 0, 240));
-        Rect r(control->getWidth()/2 - 2, control->getHeight() / 2 - 2, 5, 5);
-
-        if(direction == Position::Top)
-            drawArrowUp(&primitiveIds[18], r);
-        else if(direction == Position::Bottom)
-            drawArrowDown(&primitiveIds[18], r);
-        else if(direction == Position::Left)
-            drawArrowLeft(&primitiveIds[18], r);
-        else
-            drawArrowRight(&primitiveIds[18], r);
+//        PrimitiveIds &primitiveIds=control->getPrimitiveIds();
+//        if(primitiveIds.size() < 24)
+//            enlargePrimitiveIds(control, primitiveIds, 24);
+//
+//        drawButton(control, &primitiveIds[0], control->getWidth(), control->getHeight(), depressed, false, false);
+//        m_render->setDrawColor(gweni::Color(0, 0, 0, 240));
+//        Rect r(control->getWidth()/2 - 2, control->getHeight() / 2 - 2, 5, 5);
+//
+//        if(direction == Position::Top)
+//            drawArrowUp(&primitiveIds[18], r);
+//        else if(direction == Position::Bottom)
+//            drawArrowDown(&primitiveIds[18], r);
+//        else if(direction == Position::Left)
+//            drawArrowLeft(&primitiveIds[18], r);
+//        else
+//            drawArrowRight(&primitiveIds[18], r);
     }
 
     void drawComboDownArrow(gweni::controls::Base *control, State state, bool hovered,
         bool down, bool open, bool disabled)
     {
-        PrimitiveIds &primitiveIds=control->getPrimitiveIds();
-        if(primitiveIds.size() < 6)
-            enlargePrimitiveIds(control, primitiveIds, 6);
-
-        //drawButton( control->getWidth(), control->getHeight(), depressed, false, true );
-        m_render->setDrawColor(gweni::Color(0, 0, 0, 240));
-        gweni::Rect r(control->getWidth()/2-2, control->getHeight()/2-2, 5, 5);
-        drawArrowDown(&primitiveIds[0], r);
+//        PrimitiveIds &primitiveIds=control->getPrimitiveIds();
+//        if(primitiveIds.size() < 6)
+//            enlargePrimitiveIds(control, primitiveIds, 6);
+//
+//        //drawButton( control->getWidth(), control->getHeight(), depressed, false, true );
+//        m_render->setDrawColor(gweni::Color(0, 0, 0, 240));
+//        gweni::Rect r(control->getWidth()/2-2, control->getHeight()/2-2, 5, 5);
+//        drawArrowDown(&primitiveIds[0], r);
     }
 
     void drawNumericUpDownButton(gweni::controls::Base *control, State state, bool depressed,
         bool up)
     {
-        PrimitiveIds &primitiveIds=control->getPrimitiveIds();
-        if(primitiveIds.size() < 6)
-            enlargePrimitiveIds(control, primitiveIds, 6);
-
-        //drawButton( control->getWidth(), control->getHeight(), depressed, false, true );
-        m_render->setDrawColor(gweni::Color(0, 0, 0, 240));
-        gweni::Rect r(control->getWidth()/2-2, control->getHeight()/2-2, 5, 5);
-
-        if(up)
-            drawArrowUp(&primitiveIds[0], r);
-        else
-            drawArrowDown(&primitiveIds[0], r);
+//        PrimitiveIds &primitiveIds=control->getPrimitiveIds();
+//        if(primitiveIds.size() < 6)
+//            enlargePrimitiveIds(control, primitiveIds, 6);
+//
+//        //drawButton( control->getWidth(), control->getHeight(), depressed, false, true );
+//        m_render->setDrawColor(gweni::Color(0, 0, 0, 240));
+//        gweni::Rect r(control->getWidth()/2-2, control->getHeight()/2-2, 5, 5);
+//
+//        if(up)
+//            drawArrowUp(&primitiveIds[0], r);
+//        else
+//            drawArrowDown(&primitiveIds[0], r);
     }
 
     void drawTreeButton(controls::Base *control, State state, bool open)
     {
-        PrimitiveIds &primitiveIds=control->getPrimitiveIds();
-        if(primitiveIds.size() < 7)
-            enlargePrimitiveIds(control, primitiveIds, 7);
-
-        gweni::Rect rect=control->getRenderBounds();
-        rect.x+=2;
-        rect.y+=2;
-        rect.w-=4;
-        rect.h-=4;
-        m_render->setDrawColor(m_colControlBright);
-        m_render->drawFilledRect(primitiveIds[0], rect, control->getZIndex());
-        m_render->setDrawColor(m_colBorderColor);
-        m_render->drawLinedRect(&primitiveIds[1], rect, control->getZIndex());
-        m_render->setDrawColor(m_colBorderColor);
-
-        if(!open)   // ! because the button shows intention, not the current state
-            m_render->drawFilledRect(primitiveIds[5], gweni::Rect(rect.x+rect.w/2,
-                rect.y+2,
-                1,
-                rect.h-4), control->getZIndex());
-
-        m_render->drawFilledRect(primitiveIds[6], gweni::Rect(rect.x+2,
-            rect.y+rect.h/2,
-            rect.w-4,
-            1), control->getZIndex());
+//        PrimitiveIds &primitiveIds=control->getPrimitiveIds();
+//        if(primitiveIds.size() < 7)
+//            enlargePrimitiveIds(control, primitiveIds, 7);
+//
+//        gweni::Rect rect=control->getRenderBounds();
+//        rect.x+=2;
+//        rect.y+=2;
+//        rect.w-=4;
+//        rect.h-=4;
+//        m_render->setDrawColor(m_colControlBright);
+//        m_render->drawFilledRect(primitiveIds[0], rect, control->getZIndex());
+//        m_render->setDrawColor(m_colBorderColor);
+//        m_render->drawLinedRect(&primitiveIds[1], rect, control->getZIndex());
+//        m_render->setDrawColor(m_colBorderColor);
+//
+//        if(!open)   // ! because the button shows intention, not the current state
+//            m_render->drawFilledRect(primitiveIds[5], gweni::Rect(rect.x+rect.w/2,
+//                rect.y+2,
+//                1,
+//                rect.h-4), control->getZIndex());
+//
+//        m_render->drawFilledRect(primitiveIds[6], gweni::Rect(rect.x+2,
+//            rect.y+rect.h/2,
+//            rect.w-4,
+//            1), control->getZIndex());
     }
 
     void drawTreeControl(controls::Base *control, State state)
     {
-        PrimitiveIds &primitiveIds=control->getPrimitiveIds();
-        if(primitiveIds.size() < 5)
-            enlargePrimitiveIds(control, primitiveIds, 5);
-
-        gweni::Rect rect=control->getRenderBounds();
-        m_render->setDrawColor(m_colControlBright);
-        m_render->drawFilledRect(primitiveIds[0], rect, control->getZIndex());
-        m_render->setDrawColor(m_colBorderColor);
-        m_render->drawLinedRect(&primitiveIds[1], rect, control->getZIndex());
+//        PrimitiveIds &primitiveIds=control->getPrimitiveIds();
+//        if(primitiveIds.size() < 5)
+//            enlargePrimitiveIds(control, primitiveIds, 5);
+//
+//        gweni::Rect rect=control->getRenderBounds();
+//        m_render->setDrawColor(m_colControlBright);
+//        m_render->drawFilledRect(primitiveIds[0], rect, control->getZIndex());
+//        m_render->setDrawColor(m_colBorderColor);
+//        m_render->drawLinedRect(&primitiveIds[1], rect, control->getZIndex());
     }
 
     void drawTreeNode(controls::Base *control, State state, bool open, bool selected, int labelHeight,
@@ -783,67 +783,67 @@ public:
 
     void drawColorDisplay(controls::Base *control, State state, gweni::Color color)
     {
-        PrimitiveIds &primitiveIds=control->getPrimitiveIds();
-        if(primitiveIds.size() < 8)
-            enlargePrimitiveIds(control, primitiveIds, 8);
-
-        gweni::Rect rect=control->getRenderBounds();
-
-        if(color.a != 255)
-        {
-            getRenderer()->setDrawColor(gweni::Color(255, 255, 255, 255));
-            getRenderer()->drawFilledRect(primitiveIds[0], rect, control->getZIndex());
-            getRenderer()->setDrawColor(gweni::Color(128, 128, 128, 128));
-            getRenderer()->drawFilledRect(primitiveIds[1], gweni::Rect(0, 0, rect.w/2, rect.h/2), control->getZIndex());
-            getRenderer()->drawFilledRect(primitiveIds[2], gweni::Rect(rect.w/2, rect.h/2, rect.w/2, rect.h/2), control->getZIndex());
-        }
-
-        getRenderer()->setDrawColor(color);
-        getRenderer()->drawFilledRect(primitiveIds[3], rect, control->getZIndex());
-        getRenderer()->setDrawColor(gweni::Color(0, 0, 0, 255));
-        getRenderer()->drawLinedRect(&primitiveIds[4], rect, control->getZIndex());
+//        PrimitiveIds &primitiveIds=control->getPrimitiveIds();
+//        if(primitiveIds.size() < 8)
+//            enlargePrimitiveIds(control, primitiveIds, 8);
+//
+//        gweni::Rect rect=control->getRenderBounds();
+//
+//        if(color.a != 255)
+//        {
+//            getRenderer()->setDrawColor(gweni::Color(255, 255, 255, 255));
+//            getRenderer()->drawFilledRect(primitiveIds[0], rect, control->getZIndex());
+//            getRenderer()->setDrawColor(gweni::Color(128, 128, 128, 128));
+//            getRenderer()->drawFilledRect(primitiveIds[1], gweni::Rect(0, 0, rect.w/2, rect.h/2), control->getZIndex());
+//            getRenderer()->drawFilledRect(primitiveIds[2], gweni::Rect(rect.w/2, rect.h/2, rect.w/2, rect.h/2), control->getZIndex());
+//        }
+//
+//        getRenderer()->setDrawColor(color);
+//        getRenderer()->drawFilledRect(primitiveIds[3], rect, control->getZIndex());
+//        getRenderer()->setDrawColor(gweni::Color(0, 0, 0, 255));
+//        getRenderer()->drawLinedRect(&primitiveIds[4], rect, control->getZIndex());
     }
 
     void drawModalControl(controls::Base *control, State state)
     {
-        PrimitiveIds &primitiveIds=control->getPrimitiveIds();
-        if(primitiveIds.size() < 1)
-            enlargePrimitiveIds(control, primitiveIds, 1);
-
-        if(control->shouldDrawBackground())
-        {
-            gweni::Rect rect=control->getRenderBounds();
-            getRenderer()->setDrawColor(m_colModal);
-            getRenderer()->drawFilledRect(primitiveIds[0], rect, control->getZIndex());
-        }
+//        PrimitiveIds &primitiveIds=control->getPrimitiveIds();
+//        if(primitiveIds.size() < 1)
+//            enlargePrimitiveIds(control, primitiveIds, 1);
+//
+//        if(control->shouldDrawBackground())
+//        {
+//            gweni::Rect rect=control->getRenderBounds();
+//            getRenderer()->setDrawColor(m_colModal);
+//            getRenderer()->drawFilledRect(primitiveIds[0], rect, control->getZIndex());
+//        }
     }
 
     void drawMenuDivider(controls::Base *control, State state)
     {
-        PrimitiveIds &primitiveIds=control->getPrimitiveIds();
-        if(primitiveIds.size() < 5)
-            enlargePrimitiveIds(control, primitiveIds, 5);
-
-        gweni::Rect rect=control->getRenderBounds();
-        getRenderer()->setDrawColor(m_colBGDark);
-        getRenderer()->drawFilledRect(primitiveIds[0], rect, control->getZIndex());
-        getRenderer()->setDrawColor(m_colControlDarker);
-        getRenderer()->drawLinedRect(&primitiveIds[1], rect, control->getZIndex());
+//        PrimitiveIds &primitiveIds=control->getPrimitiveIds();
+//        if(primitiveIds.size() < 5)
+//            enlargePrimitiveIds(control, primitiveIds, 5);
+//
+//        gweni::Rect rect=control->getRenderBounds();
+//        getRenderer()->setDrawColor(m_colBGDark);
+//        getRenderer()->drawFilledRect(primitiveIds[0], rect, control->getZIndex());
+//        getRenderer()->setDrawColor(m_colControlDarker);
+//        getRenderer()->drawLinedRect(&primitiveIds[1], rect, control->getZIndex());
     }
 
     void drawMenuRightArrow(controls::Base *control, State state)
     {
-        PrimitiveIds &primitiveIds=control->getPrimitiveIds();
-        if(primitiveIds.size() < 6)
-            enlargePrimitiveIds(control, primitiveIds, 6);
-
-        drawArrowRight(&primitiveIds[0], control->getRenderBounds());
+//        PrimitiveIds &primitiveIds=control->getPrimitiveIds();
+//        if(primitiveIds.size() < 6)
+//            enlargePrimitiveIds(control, primitiveIds, 6);
+//
+//        drawArrowRight(&primitiveIds[0], control->getRenderBounds());
     }
 
     void drawSlideButton(gweni::controls::Base *control, State state, bool depressed,
         bool horizontal)
     {
-        drawButton(control, state, depressed, control->isHovered(), control->isDisabled());
+//        drawButton(control, state, depressed, control->isHovered(), control->isDisabled());
     }
 
     void drawCategoryHolder(controls::Base *control, State state) {}

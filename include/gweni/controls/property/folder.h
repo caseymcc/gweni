@@ -23,7 +23,7 @@ class Folder: public property::Text
     GWENI_CONTROL_INLINE(Folder, property::Text)
     {
         controls::Button *button=new controls::Button(this);
-        button->dock(Position::Right);
+        button->setDock(DockPosition::Right);
         button->setText("...");
         button->setWidth(20);
         button->onPressCaller.add(this, &ThisClass::OnButtonPress);

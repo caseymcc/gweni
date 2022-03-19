@@ -34,7 +34,7 @@ public:
     void dragAndDrop_hoverLeave(gweni::draganddrop::Package *package) override;
     void dragAndDrop_hover(gweni::draganddrop::Package *package, int x, int y) override;
 
-    virtual void setTabPosition(Position pos);
+    virtual void setTabPosition(DockPosition pos);
 
     virtual void setAllowReorder(bool b)
     {

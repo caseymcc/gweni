@@ -22,7 +22,8 @@ GWENI_CONTROL_CONSTRUCTOR(Label)
     m_text->setFont(getDefaultFont());
     setMouseInputEnabled(false);
     setBounds(0, 0, 100, 10);
-    setAlignment(Position::Left | Position::CenterV);
+//    setAlignment(Position::Left | Position::CenterV);
+    setAlignment(Alignment::Left | Alignment::CenterV);
     setSizeFlags(SizeFlags(SizeFlag::Elastic, SizeFlag::Elastic));
 }
 
@@ -39,22 +40,22 @@ void Label::preDelete(skin::Base *skin)
 
 void Label::postLayout(skin::Base * /*skin*/)
 {
-    m_text->setPosition(m_align);
+//    m_text->setPosition(m_align);
 }
 
-void Label::setAlignment(Position iAlign)
-{
-    if(m_align == iAlign)
-        return;
-
-    m_align=iAlign;
-    invalidate();
-}
-
-Position Label::getAlignment()
-{
-    return m_align;
-}
+//void Label::setAlignment(Position iAlign)
+//{
+//    if(m_align == iAlign)
+//        return;
+//
+//    m_align=iAlign;
+//    invalidate();
+//}
+//
+//Position Label::getAlignment()
+//{
+//    return m_align;
+//}
 
 void Label::setText(const String &str, bool doEvents)
 {

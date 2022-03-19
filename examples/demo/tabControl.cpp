@@ -44,13 +44,13 @@ void TabControlDemo::onDockChange(event::Info info)
 {
     controls::RadioButtonController *rc=(controls::RadioButtonController *)info.controlCaller;
 
-    if(rc->getSelectedLabel() == "Top") { m_dockControlLeft->setTabStripPosition(Position::Top); }
+    if(rc->getSelectedLabel() == "Top") { m_dockControlLeft->setTabStripPosition(DockPosition::Top); }
 
-    if(rc->getSelectedLabel() == "Bottom") { m_dockControlLeft->setTabStripPosition(Position::Bottom); }
+    if(rc->getSelectedLabel() == "Bottom") { m_dockControlLeft->setTabStripPosition(DockPosition::Bottom); }
 
-    if(rc->getSelectedLabel() == "Left") { m_dockControlLeft->setTabStripPosition(Position::Left); }
+    if(rc->getSelectedLabel() == "Left") { m_dockControlLeft->setTabStripPosition(DockPosition::Left); }
 
-    if(rc->getSelectedLabel() == "Right") { m_dockControlLeft->setTabStripPosition(Position::Right); }
+    if(rc->getSelectedLabel() == "Right") { m_dockControlLeft->setTabStripPosition(DockPosition::Right); }
 }
 
 }//namespace gweni

@@ -25,7 +25,7 @@ public:
     GWENI_CONTROL_INLINE(Text, Base)
     {
         m_textBox=newChild<TextBox>();
-        m_textBox->dock(Position::Fill);
+        m_textBox->setDock(DockPosition::Center);
         m_textBox->setShouldDrawBackground(false);
         m_textBox->onTextChangedCaller.add(this, &ParentClass::onPropertyValueChanged);
     }

@@ -14,51 +14,6 @@ namespace gweni
 namespace controls
 {
 
-class ListBoxRow: public layout::TableRow
-{
-    GWENI_CONTROL_INLINE(ListBoxRow, layout::TableRow)
-    {
-        setMouseInputEnabled(true);
-        setSelected(false);
-    }
-
-public:
-    bool isSelected() const
-    {
-        return m_selected;
-    }
-
-    void DoSelect()
-    {
-        setSelected(true);
-        onRowSelectedCaller.call(this);
-        redraw();
-    }
-
-    void onMouseClickLeft(int /*x*/, int /*y*/, bool down) override
-    {
-        if(down)
-            DoSelect();
-    }
-
-    void setSelected(bool b) override
-    {
-        m_selected=b;
-
-        // TODO: Get these values from the skin.
-        if(b)
-            setTextColor(gweni::colors::White);
-        else
-            setTextColor(gweni::colors::Black);
-    }
-
-private:
-
-    bool m_selected;
-
-};
-
-
 GWENI_CONTROL_CONSTRUCTOR(ListBox)
 {
     setScroll(false, true);
@@ -66,6 +21,7 @@ GWENI_CONTROL_CONSTRUCTOR(ListBox)
     setMargin(Margin(1, 1, 1, 1));
     m_innerPanel->setPadding(Padding(2, 2, 2, 2));
     m_table=newChild<controls::layout::Table>();
+    m_table->setAlignment(Alignment::Absolute);
     m_table->setColumnCount(1);
     m_multiSelect=false;
 }

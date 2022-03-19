@@ -6,6 +6,8 @@
 #include "gweni/controls/scrollBarButton.h"
 #include "gweni/controls/tabControl.h"
 #include "gweni/controls/text.h"
+#include "gweni/controls/collapsibleCategory.h"
+#include "gweni/controls/listBox.h"
 
 
 namespace gweni
@@ -48,13 +50,13 @@ namespace textured
 
 ///////////////////////////////////////////////////////////////////////////
 //CategoryHeaderButton
-//
+//6
 size_t CategoryHeaderButton::Button;
 BorderedPrimitive CategoryHeaderButton::ButtonPrimitive;
 
 void CategoryHeaderButton::staticInit(TexturedSkin *skin)
 {
-    Button=skin->getTextureEntryId("CollapsibleCategory.HeaderButton");
+    Button=skin->getTextureEntryId("CategoryList.Header");
     ButtonPrimitive.init(skin, Button);
     m_staticInit=true;
 }
@@ -63,7 +65,9 @@ void CategoryHeaderButton::update(renderer::Base *renderer, controls::Base *base
 {
     controls::TabButton *control=static_cast<controls::TabButton *>(baseControl);
 
-    ButtonPrimitive.draw(renderer, m_primitives.data(), baseControl->getRenderBounds(), baseControl->getZIndex());
+    if(!baseControl->hidden())
+        ButtonPrimitive.draw(renderer, m_primitives.data(), baseControl->getRenderBounds(), baseControl->getZIndex());
+
     if(baseControl->getStateChange()&controls::StateChange_Visibility)
         ButtonPrimitive.show(renderer, m_primitives.data(), !baseControl->hidden());
 }
@@ -85,7 +89,9 @@ void CollapsibleCategory::update(renderer::Base *renderer, controls::Base *baseC
 {
     controls::TabButton *control=static_cast<controls::TabButton *>(baseControl);
 
-    BackgroundPrimitive.draw(renderer, m_primitives.data(), baseControl->getRenderBounds(), baseControl->getZIndex());
+    if(!baseControl->hidden())
+        BackgroundPrimitive.draw(renderer, m_primitives.data(), baseControl->getRenderBounds(), baseControl->getZIndex());
+
     if((baseControl->getStateChange()&controls::StateChange_Visibility) ||
         (baseControl->getStateChange()&controls::StateChange_Created))
     {
@@ -118,7 +124,9 @@ void CategoryList::update(renderer::Base *renderer, controls::Base *baseControl)
 {
     controls::TabButton *control=static_cast<controls::TabButton *>(baseControl);
 
-    OuterPrimitive.draw(renderer, m_primitives.data(), baseControl->getRenderBounds(), baseControl->getZIndex());
+    if(!baseControl->hidden())
+        OuterPrimitive.draw(renderer, m_primitives.data(), baseControl->getRenderBounds(), baseControl->getZIndex());
+
     if((baseControl->getStateChange()&controls::StateChange_Visibility) ||
         (baseControl->getStateChange()&controls::StateChange_Created))
     {
@@ -126,9 +134,65 @@ void CategoryList::update(renderer::Base *renderer, controls::Base *baseControl)
     }
 }
 
+///////////////////////////////////////////////////////////////////////////
+//CategoryButton
+gweni::Color CategoryButton::Normal;
+gweni::Color CategoryButton::Selected;
+gweni::Color CategoryButton::Hover;
+gweni::Color CategoryButton::AltNormal;
+gweni::Color CategoryButton::AltSelected;
+gweni::Color CategoryButton::AltHover;
+
+void CategoryButton::staticInit(TexturedSkin *skin)
+{
+    Normal=skin->Colors.Category.Line.Button;
+    Selected=skin->Colors.Category.Line.Button_Hover;
+    Hover=skin->Colors.Category.Line.Button_Selected;
+    AltNormal=skin->Colors.Category.LineAlt.Button;
+    AltSelected=skin->Colors.Category.LineAlt.Button_Hover;
+    AltHover=skin->Colors.Category.LineAlt.Button_Selected;
+
+    m_staticInit=true;
+}
+
+void CategoryButton::update(renderer::Base *renderer, controls::Base *baseControl)
+{
+    controls::CategoryButton *control=static_cast<controls::CategoryButton *>(baseControl);
+
+     if(control->getAlt())
+     {
+         if(control->isDepressed() || control->getToggleState())
+             renderer->setDrawColor(AltSelected);
+         else if(control->isHovered())
+             renderer->setDrawColor(AltHover);
+         else
+             renderer->setDrawColor(AltNormal);
+     }
+     else
+     {
+         if(control->isDepressed() || control->getToggleState())
+             renderer->setDrawColor(Selected);
+         else if(control->isHovered())
+             renderer->setDrawColor(Hover);
+         else
+             renderer->setDrawColor(Normal);
+     }
+
+     if(!baseControl->hidden())
+        renderer->drawFilledRect(m_primitives[0], baseControl->getRenderBounds(), baseControl->getZIndex());
+
+     if((baseControl->getStateChange()&controls::StateChange_Visibility) ||
+        (baseControl->getStateChange()&controls::StateChange_Created))
+     {
+         if(baseControl->hidden())
+             renderer->showPrimitive(0, m_primitives[0]);
+         else
+             renderer->showPrimitive(1, m_primitives[0]);
+     }
+}
 
 ///////////////////////////////////////////////////////////////////////////
-//CategoryList
+//Canvas
 void Canvas::staticInit(TexturedSkin *skin)
 {
 }
@@ -177,7 +241,9 @@ void CheckBox::update(renderer::Base *renderer, controls::Base *baseControl)
             primitive=&ActiveNormalPrimitive;
     }
 
-    primitive->draw(renderer, m_primitives.data(), baseControl->getRenderBounds(), baseControl->getZIndex());
+    if(!baseControl->hidden())
+        primitive->draw(renderer, m_primitives.data(), baseControl->getRenderBounds(), baseControl->getZIndex());
+
     if(baseControl->getStateChange()&controls::StateChange_Visibility)
         primitive->show(renderer, m_primitives.data(), !baseControl->hidden());
 }
@@ -224,7 +290,9 @@ void ComboBox::update(renderer::Base *renderer, controls::Base *baseControl)
     else
         primitive=&NormalPrimitive;
 
-    primitive->draw(renderer, m_primitives.data(), baseControl->getRenderBounds(), baseControl->getZIndex());
+    if(!baseControl->hidden())
+        primitive->draw(renderer, m_primitives.data(), baseControl->getRenderBounds(), baseControl->getZIndex());
+
     if(baseControl->getStateChange()&controls::StateChange_Visibility)
         primitive->show(renderer, m_primitives.data(), !baseControl->hidden());
 }
@@ -240,7 +308,9 @@ void DockBase::staticInit(TexturedSkin *skin)
 void DockBase::update(renderer::Base *renderer, controls::Base *baseControl)
 {
     renderer->setDrawColor(gweni::Color(255, 100, 255, 20));
-    renderer->drawFilledRect(m_primitives[0], baseControl->getRenderBounds(), baseControl->getZIndex());
+
+    if(!baseControl->hidden())
+        renderer->drawFilledRect(m_primitives[0], baseControl->getRenderBounds(), baseControl->getZIndex());
 
 //    if(m_hoverRect.w == 0)
 //        return;
@@ -274,7 +344,9 @@ void GroupBox::staticInit(TexturedSkin *skin)
 
 void GroupBox::update(renderer::Base *renderer, controls::Base *baseControl)
 {
-    NormalPrimitive.draw(renderer, m_primitives.data(), baseControl->getRenderBounds(), baseControl->getZIndex());
+    if(!baseControl->hidden())
+        NormalPrimitive.draw(renderer, m_primitives.data(), baseControl->getRenderBounds(), baseControl->getZIndex());
+
     if(baseControl->getStateChange()&controls::StateChange_Visibility)
     {
         NormalPrimitive.show(renderer, m_primitives.data(), !baseControl->hidden());
@@ -302,27 +374,98 @@ void Input::update(renderer::Base *renderer, controls::Base *baseControl)
 //ListBox
 size_t ListBox::Background;
 size_t ListBox::Hovered;
+//size_t ListBox::EvenLine;
+//size_t ListBox::OddLine;
+//size_t ListBox::EvenLineSelected;
+//size_t ListBox::OddLineSelected;
 
-size_t ListBox::EvenLine;
-size_t ListBox::OddLine;
-size_t ListBox::EvenLineSelected;
-size_t ListBox::OddLineSelected;
+BorderedPrimitive ListBox::BackgroundPrimitive;
+BorderedPrimitive ListBox::HoveredPrimitive;
 
 void ListBox::staticInit(TexturedSkin *skin)
 {
     Background=skin->getTextureEntryId("ListBox.Background");
     Hovered=skin->getTextureEntryId("ListBox.Hovered");
-    EvenLine=skin->getTextureEntryId("ListBox.EvenLine");
-    OddLine=skin->getTextureEntryId("ListBox.OddLine");
-    EvenLineSelected=skin->getTextureEntryId("ListBox.EvenLineSelected");
-    OddLineSelected=skin->getTextureEntryId("ListBox.OddLineSelected");
+//    EvenLine=skin->getTextureEntryId("ListBox.EvenLine");
+//    OddLine=skin->getTextureEntryId("ListBox.OddLine");
+//    EvenLineSelected=skin->getTextureEntryId("ListBox.EvenLineSelected");
+//    OddLineSelected=skin->getTextureEntryId("ListBox.OddLineSelected");
+    BackgroundPrimitive.init(skin, Background);
+    HoveredPrimitive.init(skin, Hovered);
 
     m_staticInit=true;
 }
 
 void ListBox::update(renderer::Base *renderer, controls::Base *baseControl)
-{}
+{
+    BorderedPrimitive *primitive=&BackgroundPrimitive;
 
+    if(baseControl->isHovered())
+        primitive=&HoveredPrimitive;
+
+    if(!baseControl->hidden())
+        primitive->draw(renderer, m_primitives.data(), baseControl->getRenderBounds(), baseControl->getZIndex());
+
+    if(baseControl->getStateChange()&controls::StateChange_Visibility)
+    {
+        primitive->show(renderer, m_primitives.data(), !baseControl->hidden());
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////
+//ListBoxRow
+size_t ListBoxRow::EvenLine;
+size_t ListBoxRow::OddLine;
+size_t ListBoxRow::EvenLineSelected;
+size_t ListBoxRow::OddLineSelected;
+
+BorderedPrimitive ListBoxRow::EvenLinePrimitive;
+BorderedPrimitive ListBoxRow::OddLinePrimitive;
+BorderedPrimitive ListBoxRow::EvenLineSelectedPrimitive;
+BorderedPrimitive ListBoxRow::OddLineSelectedPrimitive;
+
+void ListBoxRow::staticInit(TexturedSkin *skin)
+{
+    EvenLine=skin->getTextureEntryId("ListBox.EvenLine");
+    OddLine=skin->getTextureEntryId("ListBox.OddLine");
+    EvenLineSelected=skin->getTextureEntryId("ListBox.EvenLineSelected");
+    OddLineSelected=skin->getTextureEntryId("ListBox.OddLineSelected");
+
+    EvenLinePrimitive.init(skin, EvenLine);
+    OddLinePrimitive.init(skin, OddLine);
+    EvenLineSelectedPrimitive.init(skin, EvenLineSelected);
+    OddLineSelectedPrimitive.init(skin, OddLineSelected);
+
+    m_staticInit=true;
+}
+
+void ListBoxRow::update(renderer::Base *renderer, controls::Base *baseControl)
+{
+    controls::ListBoxRow *control=static_cast<controls::ListBoxRow *>(baseControl);
+
+    BorderedPrimitive *primitive=&OddLinePrimitive;
+
+    if(control->isSelected())
+    {
+        if(control->isEven())
+            primitive=&EvenLineSelectedPrimitive;
+        else
+            primitive=&OddLineSelectedPrimitive;
+    }
+    else
+    {
+        if(control->isEven())
+            primitive=&EvenLinePrimitive;
+    }
+
+    if(!baseControl->hidden())
+        primitive->draw(renderer, m_primitives.data(), baseControl->getRenderBounds(), baseControl->getZIndex());
+
+    if(baseControl->getStateChange()&controls::StateChange_Visibility)
+    {
+        primitive->show(renderer, m_primitives.data(), !baseControl->hidden());
+    }
+}
 
 ///////////////////////////////////////////////////////////////////////////
 //Menu
@@ -333,6 +476,8 @@ size_t Menu::Strip;
 size_t Menu::Background;
 size_t Menu::BackgroundWithMargin;
 size_t Menu::Hover;
+
+BorderedPrimitive Menu::BackgroundPrimitive;
 
 void Menu::staticInit(TexturedSkin *skin)
 {
@@ -362,6 +507,8 @@ size_t Panel::Bright;
 size_t Panel::Dark;
 size_t Panel::Highlight;
 
+BorderedPrimitive Panel::NormalPrimitive;
+
 void Panel::staticInit(TexturedSkin *skin)
 {
     Normal=skin->getTextureEntryId("Panel.Normal");
@@ -387,6 +534,8 @@ void Panel::remove(renderer::Base *renderer, controls::Base *baseControl)
 size_t ProgressBar::Back;
 size_t ProgressBar::Front;
 
+BorderedPrimitive ProgressBar::BackgroundPrimitive;
+
 void ProgressBar::staticInit(TexturedSkin *skin)
 {
     Back=skin->getTextureEntryId("ProgressBar.Back");
@@ -411,6 +560,8 @@ size_t RadioButton::ActiveNormal;
 size_t RadioButton::ActiveChecked;
 size_t RadioButton::DisabledNormal;
 size_t RadioButton::DisabledChecked;
+
+BorderedPrimitive RadioButton::NormalPrimitive;
 
 void RadioButton::staticInit(TexturedSkin *skin)
 {
@@ -488,8 +639,10 @@ void ScrollBarButton::update(renderer::Base *renderer, controls::Base *baseContr
         primitive=&DownPrimitive[index];
     else if(control->isHovered())
         primitive=&HoverPrimitive[index];
-    
-    primitive->draw(renderer, m_primitives.data(), baseControl->getRenderBounds(), baseControl->getZIndex());
+
+    if(!baseControl->hidden())
+        primitive->draw(renderer, m_primitives.data(), baseControl->getRenderBounds(), baseControl->getZIndex());
+
     if((baseControl->getStateChange()&controls::StateChange_Visibility) ||
         (baseControl->getStateChange()&controls::StateChange_Created))
     {
@@ -527,6 +680,7 @@ void Scroller::remove(renderer::Base *renderer, controls::Base *baseControl)
 ///////////////////////////////////////////////////////////////////////////
 //Shadow
 size_t Shadow::Background;
+BorderedPrimitive Shadow::BackgroundPrimitive;
 
 void Shadow::staticInit(TexturedSkin *skin)
 {
@@ -556,6 +710,8 @@ size_t Slider::Vertical_Hover;
 size_t Slider::Vertical_Down;
 size_t Slider::Vertical_Disabled;
 
+BorderedPrimitive Slider::NormalPrimitive;
+
 void Slider::staticInit(TexturedSkin *skin)
 {
     Horizontal_Normal=skin->getTextureEntryId("Input.Slider.H.Normal");
@@ -584,6 +740,7 @@ void Slider::remove(renderer::Base *renderer, controls::Base *baseControl)
 //StatusBar
 size_t StatusBar::Background;
 size_t StatusBar::Selection;
+BorderedPrimitive StatusBar::BackgroundPrimitive;
 
 void StatusBar::staticInit(TexturedSkin *skin)
 {
@@ -620,7 +777,9 @@ void TabButton::update(renderer::Base *renderer, controls::Base *baseControl)
 {
     controls::TabButton *control=static_cast<controls::TabButton *>(baseControl);
 
-    ButtonPrimitive.draw(renderer, m_primitives.data(), baseControl->getRenderBounds(), baseControl->getZIndex());
+    if(!baseControl->hidden())
+        ButtonPrimitive.draw(renderer, m_primitives.data(), baseControl->getRenderBounds(), baseControl->getZIndex());
+
     if(baseControl->getStateChange()&controls::StateChange_Visibility)
         ButtonPrimitive.show(renderer, m_primitives.data(), !baseControl->hidden());
 }
@@ -652,15 +811,43 @@ void TabControl::update(renderer::Base *renderer, controls::Base *baseControl)
 {
     controls::TabControl *control=static_cast<controls::TabControl *>(baseControl);
 
-    ControlPrimitive.draw(renderer, m_primitives.data(), baseControl->getRenderBounds(), baseControl->getZIndex());
+    if(!baseControl->hidden())
+        ControlPrimitive.draw(renderer, m_primitives.data(), baseControl->getRenderBounds(), baseControl->getZIndex());
+
     if(baseControl->getStateChange()&controls::StateChange_Visibility)
         ControlPrimitive.show(renderer, m_primitives.data(), !baseControl->hidden());
 }
 
 ///////////////////////////////////////////////////////////////////////////
+//TabTitleBar
+//
+size_t TabTitleBar::HeaderBar;
+BorderedPrimitive TabTitleBar::HeaderBarPrimitive;
+
+void TabTitleBar::staticInit(TexturedSkin *skin)
+{
+    HeaderBar=skin->getTextureEntryId("TabControl.HeaderBar");
+    HeaderBarPrimitive.init(skin, HeaderBar);
+    m_staticInit=true;
+}
+
+void TabTitleBar::update(renderer::Base *renderer, controls::Base *baseControl)
+{
+    controls::TabTitleBar *control=static_cast<controls::TabTitleBar *>(baseControl);
+
+    if(!baseControl->hidden())
+        HeaderBarPrimitive.draw(renderer, m_primitives.data(), baseControl->getRenderBounds(), baseControl->getZIndex());
+
+    if(baseControl->getStateChange()&controls::StateChange_Visibility)
+        HeaderBarPrimitive.show(renderer, m_primitives.data(), !baseControl->hidden());
+}
+
+///////////////////////////////////////////////////////////////////////////
 //Text
 void Text::staticInit(TexturedSkin *skin)
-{}
+{
+    m_staticInit=true;
+}
 
 void Text::generate(renderer::Base *renderer, controls::Base *baseControl)
 {
@@ -684,22 +871,24 @@ void Text::update(renderer::Base *renderer, controls::Base *baseControl)
     else
         renderer->setDrawColor(colorOverride);
 
-    if(baseControl->getStateChange() & controls::StateChange_Visibility)
+    renderer->renderText(m_primitives[0], control->getFont(),
+        gweni::Point(control->getPadding().left, control->getPadding().top), control->getZIndex(),
+        control->getText());
+
+    if((baseControl->getStateChange() & controls::StateChange_Visibility) || 
+        (baseControl->getStateChange() & controls::StateChange_Created))
     {
         if(baseControl->hidden())
             renderer->hideText(m_primitives[0]);
         else
             renderer->showText(m_primitives[0]);
     }
-
-    renderer->renderText(m_primitives[0], control->getFont(),
-        gweni::Point(control->getPadding().left, control->getPadding().top), control->getZIndex(),
-        control->getText());
 }
 
 void Text::remove(renderer::Base *renderer, controls::Base *baseControl)
 {
-    renderer->releaseTextPrimitive(m_primitives[0]);
+    if(!m_primitives.empty())
+        renderer->releaseTextPrimitive(m_primitives[0]);
 }
 
 
@@ -710,6 +899,7 @@ void Text::remove(renderer::Base *renderer, controls::Base *baseControl)
 size_t TextBox::Normal;
 size_t TextBox::Focus;
 size_t TextBox::Disabled;
+BorderedPrimitive TextBox::NormalPrimitive;
 
 void TextBox::staticInit(TexturedSkin *skin)
 {
@@ -733,6 +923,7 @@ void TextBox::remove(renderer::Base *renderer, controls::Base *baseControl)
 ///////////////////////////////////////////////////////////////////////////
 //Tooltip
 size_t Tooltip::Background;
+BorderedPrimitive Tooltip::BackgroundPrimitive;
 
 void Tooltip::staticInit(TexturedSkin *skin)
 {
@@ -756,6 +947,7 @@ void Tooltip::remove(renderer::Base *renderer, controls::Base *baseControl)
 size_t Tree::Background;
 size_t Tree::Minus;
 size_t Tree::Plus;
+BorderedPrimitive Tree::BackgroundPrimitive;
 
 void Tree::staticInit(TexturedSkin *skin)
 {
@@ -785,6 +977,7 @@ size_t SpinBox::DownNormal;
 size_t SpinBox::DownHover;
 size_t SpinBox::DownDown;
 size_t SpinBox::DownDisabled;
+BorderedPrimitive SpinBox::BackgroundPrimitive;
 
 void SpinBox::staticInit(TexturedSkin *skin)
 {
@@ -803,6 +996,19 @@ void SpinBox::update(renderer::Base *renderer, controls::Base *baseControl)
 //void SpinBox::remove(renderer::Base *renderer, controls::Base *baseControl)
 //{}
 
+///////////////////////////////////////////////////////////////////////////
+//SplitterBar
+size_t SplitterBar::Background;
+BorderedPrimitive SplitterBar::BackgroundPrimitive;
+
+void SplitterBar::staticInit(TexturedSkin *skin)
+{
+//    Background=skin->getTextureEntryId("SplitterBar.Background");
+    m_staticInit=true;
+}
+
+void SplitterBar::update(renderer::Base *renderer, controls::Base *baseControl)
+{}
 
 ///////////////////////////////////////////////////////////////////////////
 //Window
@@ -820,6 +1026,7 @@ size_t Window::Mini_Down;
 size_t Window::Restore;
 size_t Window::Restore_Hover;
 size_t Window::Restore_Down;
+BorderedPrimitive Window::NormalPrimitive;
 
 void Window::staticInit(TexturedSkin *skin)
 {

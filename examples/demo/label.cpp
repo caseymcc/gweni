@@ -4,8 +4,9 @@
 namespace gweni
 {
 
-LabelDemo::LabelDemo(const String &name):
-    Base()
+//LabelDemo::LabelDemo(const String &name):
+//    Base()
+GWENI_CONTROL_CONSTRUCTOR(LabelDemo)
 {
     {
         controls::Label *label=newChild<controls::Label>();

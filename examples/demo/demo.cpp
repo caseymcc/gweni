@@ -56,26 +56,31 @@ void Demo::init(const String &name)
 {
     m_lastControl=NULL;
 
-    dock(Position::Fill);
+    setDock(DockPosition::Center);
     setSize(1024, 768);
+    
+//    m_center=newChild<controls::layout::Center>("Center");
+    m_center=newChild<controls::PageControl>("Center");
+    m_center->setDock(DockPosition::Center);
+    m_center->showControls(false);
 
     controls::CollapsibleList *list=newChild<controls::CollapsibleList>("DemoList");
 
-    getLeft()->getTabControl()->addPage("CollapsibleList", list);
+    getLeft()->getTabControl()->addPage("Demos", list);
+    getLeft()->setSizeFlags({SizeFlag::Fixed, SizeFlag::Expand});
     getLeft()->setWidth(150);
+    
 
     m_textOutput=getBottom()->newChild<controls::ListBox>();
 
     getBottom()->getTabControl()->addPage("Output", m_textOutput);
+    getBottom()->setSizeFlags({SizeFlag::Expand, SizeFlag::Fixed});
     getBottom()->setHeight(200);
 
     m_statusBar=newChild<controls::StatusBar>();
 
-    m_statusBar->dock(Position::Bottom);
+    m_statusBar->setDock(DockPosition::Bottom);
 
-    controls::layout::Center *center=newChild<controls::layout::Center>();
-
-    center->dock(Position::Fill);
     {
         controls::CollapsibleCategory *cat=list->add("Basic");
 
@@ -135,18 +140,25 @@ void Demo::init(const String &name)
 
 void Demo::onCategorySelect(event::Info info)
 {
-    if(!info.packet->isControl())
+ //   if(!info.packet->isControl())
+ //       return;
+//
+//    if(m_lastControl)
+//    {
+//        m_lastControl->hide();
+//    }
+//
+//    controls::Base *control=info.packet->getControl();
+//
+//    control->show();
+//    m_lastControl=control;
+    
+    if(!info.packet->isSizeT())
         return;
 
-    if(m_lastControl)
-    {
-        m_lastControl->hide();
-    }
+    size_t pageIndex=info.packet->get<size_t>();
 
-    controls::Base *control=info.packet->getControl();
-
-    control->show();
-    m_lastControl=control;
+    m_center->showPage(pageIndex);
 }
 
 void Demo::printText(const String &str)

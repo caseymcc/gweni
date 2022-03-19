@@ -20,18 +20,19 @@ GWENI_CONTROL_CONSTRUCTOR(ScrollControl)
 {
     setMouseInputEnabled(false);
     m_verticalScrollBar=newChild<VerticalScrollBar>();
-    m_verticalScrollBar->dock(Position::Right);
+    m_verticalScrollBar->setDock(DockPosition::Right);
     m_verticalScrollBar->onBarMovedCaller.add(this, &ScrollControl::onVeritcalBarMoved);
     m_verticalScrollBar->setNudgeAmount(30);
     m_canScrollVertical=true;
 
     m_horizontalScrollBar=newChild<HorizontalScrollBar>();
-    m_horizontalScrollBar->dock(Position::Bottom);
+    m_horizontalScrollBar->setDock(DockPosition::Bottom);
     m_horizontalScrollBar->onBarMovedCaller.add(this, &ScrollControl::onHorizontalBarMoved);
     m_canScrollHorizontal=true;
     m_horizontalScrollBar->setNudgeAmount(30);
 
     m_innerPanel=newChild<Base>();
+    m_innerPanel->setAlignment(Alignment::Absolute);
     m_innerPanel->setPos(0, 0);
     m_innerPanel->setMargin(Margin(5, 5, 5, 5));
     m_innerPanel->sendToBack();
@@ -121,7 +122,7 @@ bool ScrollControl::contentsAreDocked()
 
     for(auto &&child : m_innerPanel->getChildren())
     {
-        if(child->getDock() == Position::None)
+        if(child->getDock() == DockPosition::None)
             return false;
     }
 

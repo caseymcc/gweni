@@ -84,25 +84,25 @@ void TabStrip::layout(skin::Base *skin)
 
         {
             m.left=iNotFirst;
-            button->dock(Position::Left);
+            button->setDock(DockPosition::Left);
         }
 
-        if(m_dock == Position::Left)
+        if(m_dock == DockPosition::Left)
         {
             m.top=iNotFirst;
-            button->dock(Position::Top);
+            button->setDock(DockPosition::Top);
         }
 
-        if(m_dock == Position::Right)
+        if(m_dock == DockPosition::Right)
         {
             m.top=iNotFirst;
-            button->dock(Position::Top);
+            button->setDock(DockPosition::Top);
         }
 
-        if(m_dock == Position::Bottom)
+        if(m_dock == DockPosition::Bottom)
         {
             m.left=iNotFirst;
-            button->dock(Position::Left);
+            button->setDock(DockPosition::Left);
         }
 
         largestTab.x=std::max(largestTab.x, button->getWidth());
@@ -111,10 +111,10 @@ void TabStrip::layout(skin::Base *skin)
         num++;
     }
 
-    if(m_dock == Position::Top || m_dock == Position::Bottom)
+    if(m_dock == DockPosition::Top || m_dock == DockPosition::Bottom)
         setSize(getWidth(), largestTab.y);
 
-    if(m_dock == Position::Left || m_dock == Position::Right)
+    if(m_dock == DockPosition::Left || m_dock == DockPosition::Right)
         setSize(largestTab.x, getHeight());
 
     ParentClass::layout(skin);
@@ -151,29 +151,29 @@ void TabStrip::dragAndDrop_hover(gweni::draganddrop::Package * /*package*/, int 
         if(DropPos.x > DroppedOn->getWidth()/2)
             m_tabDragControl->moveBy(DroppedOn->getWidth()-1, 0);
 
-        m_tabDragControl->dock(Position::None);
+        m_tabDragControl->setDock(DockPosition::None);
     }
     else
     {
-        m_tabDragControl->dock(Position::Left);
+        m_tabDragControl->setDock(DockPosition::Left);
         m_tabDragControl->bringToFront();
     }
 }
 
-void TabStrip::setTabPosition(Position pos)
+void TabStrip::setTabPosition(DockPosition pos)
 {
-    dock(pos);
+    setDock(pos);
 
-    if(m_dock == Position::Top)
+    if(m_dock == DockPosition::Top)
         setPadding(Padding(5, 0, 0, 0));
 
-    if(m_dock == Position::Left)
+    if(m_dock == DockPosition::Left)
         setPadding(Padding(0, 5, 0, 0));
 
-    if(m_dock == Position::Right)
+    if(m_dock == DockPosition::Right)
         setPadding(Padding(0, 5, 0, 0));
 
-    if(m_dock == Position::Bottom)
+    if(m_dock == DockPosition::Bottom)
         setPadding(Padding(5, 0, 0, 0));
 
     invalidateChildren(true);

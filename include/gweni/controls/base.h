@@ -24,6 +24,7 @@
 #include <map>
 #include <algorithm>
 
+
 namespace gweni
 {
 namespace controls
@@ -126,8 +127,11 @@ public:
 
     virtual controls::Canvas *getCanvas();
 //Position
-    virtual void dock(Position dock);
-    virtual Position getDock() const;
+    virtual void setDock(DockPosition dock);
+    virtual DockPosition getDock() const;
+
+    virtual Alignment getAlignment();
+    virtual void setAlignment(Alignment alignment);
 
     virtual SizeFlags getSizeFlags();
     virtual void setSizeFlags(SizeFlags sizeFlags);
@@ -160,6 +164,7 @@ public:
     
     virtual int getStateChange() { return m_stateChange; }
     virtual void addStateChange(int stateChange) { m_stateChange|=stateChange; }
+    virtual void addStateChangeRecursive(int stateChange);
     
 
     virtual void restrictToParent(bool restrict) { m_restrictToParent=restrict; }
@@ -249,7 +254,7 @@ protected:
     virtual void updateRenderBounds();
 
 public:
-    PrimitiveIds &getPrimitiveIds() { return m_primitiveIds; }
+//    PrimitiveIds &getPrimitiveIds() { return m_primitiveIds; }
 
 
     virtual void doRender(gweni::skin::Base *skin);
@@ -270,6 +275,8 @@ protected:
     virtual void renderUnder(gweni::skin::Base * /*skin*/) {}
     virtual void renderOver(gweni::skin::Base * /*skin*/) {}
     virtual void renderFocus(gweni::skin::Base * /*skin*/);
+
+    void removeSkinControl();
 
     virtual void update();
     void updateRecursive(int &zIndex);
@@ -297,7 +304,7 @@ public:
     virtual bool visible() const;   //!< Returns false if this control or its parents are hidden.
 
     virtual void hide() { setHidden(true); }    //!< Make control invisible.
-    virtual void show() { setHidden(false); }   //!< Make control visible if hidden.
+    virtual void show(bool show=true) { setHidden(!show); }   //!< Make control visible if hidden.
 
     // Skin
     virtual void setSkin(skin::Base *skin, bool doChildren=true);
@@ -515,7 +522,7 @@ protected:
     skin::Base *m_skin;
     std::unique_ptr<skin::Control> m_skinControl;
 
-    PrimitiveIds m_primitiveIds;
+    //PrimitiveIds m_primitiveIds;
     //something altered in last ui loop so rendering changing
     bool m_updatePrimitives;
 
@@ -532,6 +539,7 @@ protected:
     LayoutItem *m_layoutItem;
     Padding m_padding;
     Margin m_margin;
+    Alignment m_alignment;
 
     gweni::String m_name;
 
@@ -543,7 +551,7 @@ protected:
     bool m_keyboardInputEnabled;
     bool m_drawBackground;
 
-    Position m_dock;
+    DockPosition m_dock;
 
     unsigned char m_cursor;
 
@@ -678,8 +686,8 @@ public:
 
     virtual String getChildValue(const gweni::String &name);
     virtual String getValue();
-    virtual void       setValue(const String &value);
-    virtual void       doAction() {}
+    virtual void setValue(const String &value);
+    virtual void doAction() {}
 
     virtual void setAction(event::Handler *object,
         event::Caller::EventCaller function,

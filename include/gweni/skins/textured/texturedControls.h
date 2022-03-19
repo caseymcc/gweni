@@ -13,6 +13,15 @@ namespace skin
 namespace textured
 {
 
+class Base:public textured::ControlRegister<Base>
+{
+public:
+    static void staticInit(TexturedSkin *skin) {m_staticInit=true;}
+
+    size_t requiredPrimitives() override { return 0; }
+    inline static const std::string_view name="Base";
+};
+
 struct Horizontal
 {
     inline static const std::string_view value="Horizontal";
@@ -115,8 +124,11 @@ public:
             else
                 primitive=&NormalPrimitive;
 
-            primitive->draw(renderer, m_primitives.data(), baseControl->getRenderBounds(), baseControl->getZIndex());
-            if(baseControl->getStateChange()&controls::StateChange_Visibility)
+            if(!control->hidden())
+                primitive->draw(renderer, m_primitives.data(), baseControl->getRenderBounds(), baseControl->getZIndex());
+
+            if((baseControl->getStateChange()&controls::StateChange_Visibility) ||
+                (baseControl->getStateChange()&controls::StateChange_Created))
             {
                 primitive->show(renderer, m_primitives.data(), !control->hidden());
                 return;
@@ -252,6 +264,25 @@ public:
     static BorderedPrimitive HeaderPrimitive;
 };
 
+class CategoryButton:public textured::ControlRegister<CategoryButton>
+{
+public:
+    static void staticInit(TexturedSkin *skin);
+
+    size_t requiredPrimitives() override { return 1; }
+
+    void update(renderer::Base *renderer, controls::Base *baseControl) override;
+
+    inline static const std::string_view name="CategoryButton";
+
+    static Color Normal;
+    static Color Selected;
+    static Color Hover;
+    static Color AltNormal;
+    static Color AltSelected;
+    static Color AltHover;
+};
+
 class CheckBox:public textured::ControlRegister<CheckBox>
 {
 public:
@@ -371,11 +402,35 @@ public:
     static size_t Background;
     static size_t Hovered;
 
+//    static size_t EvenLine;
+//    static size_t OddLine;
+//    static size_t EvenLineSelected;
+//    static size_t OddLineSelected;
+
+    static BorderedPrimitive BackgroundPrimitive;
+    static BorderedPrimitive HoveredPrimitive;
+};
+
+class ListBoxRow:public textured::ControlRegister<ListBoxRow>
+{
+public:
+    static void staticInit(TexturedSkin *skin);
+
+    size_t requiredPrimitives() override { return 9; }
+
+    void update(renderer::Base *renderer, controls::Base *baseControl) override;
+
+    inline static const std::string_view name="ListBoxRow";
+
     static size_t EvenLine;
     static size_t OddLine;
     static size_t EvenLineSelected;
     static size_t OddLineSelected;
 
+    static BorderedPrimitive EvenLinePrimitive;
+    static BorderedPrimitive OddLinePrimitive;
+    static BorderedPrimitive EvenLineSelectedPrimitive;
+    static BorderedPrimitive OddLineSelectedPrimitive;
 };
 
 class Menu:public textured::ControlRegister<Menu>
@@ -399,6 +454,7 @@ public:
     static size_t BackgroundWithMargin;
     static size_t Hover;
 
+    static BorderedPrimitive BackgroundPrimitive;
 };
 
 class Panel:public textured::ControlRegister<Panel>
@@ -418,6 +474,8 @@ public:
     static size_t Bright;
     static size_t Dark;
     static size_t Highlight;
+
+    static BorderedPrimitive NormalPrimitive;
 };
 
 class ProgressBar:public textured::ControlRegister<ProgressBar>
@@ -435,6 +493,8 @@ public:
 
     static size_t Back;
     static size_t Front;
+
+    static BorderedPrimitive BackgroundPrimitive;
 
 };
 
@@ -455,6 +515,8 @@ public:
     static size_t ActiveChecked;
     static size_t DisabledNormal;
     static size_t DisabledChecked;
+
+    static BorderedPrimitive NormalPrimitive;
 };
 
 class ScrollBarButton:public textured::ControlRegister<ScrollBarButton>
@@ -531,6 +593,7 @@ public:
     inline static const std::string_view name="Shadow";
 
     static size_t Background;
+    static BorderedPrimitive BackgroundPrimitive;
 };
 
 class Slider:public textured::ControlRegister<Slider>
@@ -554,6 +617,7 @@ public:
     static size_t Vertical_Hover;
     static size_t Vertical_Down;
     static size_t Vertical_Disabled;
+    static BorderedPrimitive NormalPrimitive;
 };
 
 class StatusBar:public textured::ControlRegister<StatusBar>
@@ -571,6 +635,7 @@ public:
 
     static size_t Background;
     static size_t Selection;
+    static BorderedPrimitive BackgroundPrimitive;
 };
 
 
@@ -627,9 +692,11 @@ public:
 
     static size_t Active;
     static size_t Inactive;
+    static BorderedPrimitive ActivePrimitive;
 };
 template<typename _Type> size_t TabItem<_Type>::Active;
 template<typename _Type> size_t TabItem<_Type>::Inactive;
+template<typename _Type> BorderedPrimitive TabItem<_Type>::ActivePrimitive;
 
 
 class TabButton:public textured::ControlRegister<TabButton>
@@ -654,6 +721,7 @@ public:
 
     size_t requiredPrimitives() override { return 9; }
 
+    
 //    void generate(renderer::Base *renderer, controls::Base *baseControl) override;
     void update(renderer::Base *renderer, controls::Base *baseControl) override;
 //    void remove(renderer::Base *renderer, controls::Base *baseControl) override;
@@ -669,6 +737,22 @@ public:
     static size_t HeaderBar;
 
     static BorderedPrimitive ControlPrimitive;
+    static BorderedPrimitive HeaderBarPrimitive;
+
+};
+
+class TabTitleBar:public textured::ControlRegister<TabTitleBar>
+{
+public:
+    static void staticInit(TexturedSkin *skin);
+
+    size_t requiredPrimitives() override { return 9; }
+
+    void update(renderer::Base *renderer, controls::Base *baseControl) override;
+
+    inline static const std::string_view name="TabTitleBar";
+
+    static size_t HeaderBar;
     static BorderedPrimitive HeaderBarPrimitive;
 
 };
@@ -703,7 +787,7 @@ public:
     static size_t Normal;
     static size_t Focus;
     static size_t Disabled;
-
+    static BorderedPrimitive NormalPrimitive;
 };
 
 class Tooltip:public textured::ControlRegister<Tooltip>
@@ -720,6 +804,8 @@ public:
     inline static const std::string_view name="Tooltip";
 
     static size_t Background;
+    static BorderedPrimitive BackgroundPrimitive;
+
 };
 
 class Tree:public textured::ControlRegister<Tree>
@@ -738,6 +824,7 @@ public:
     static size_t Background;
     static size_t Minus;
     static size_t Plus;
+    static BorderedPrimitive BackgroundPrimitive;
 };
 
 class SpinBox:public textured::ControlRegister<SpinBox>
@@ -761,6 +848,22 @@ public:
     static size_t DownHover;
     static size_t DownDown;
     static size_t DownDisabled;
+    static BorderedPrimitive BackgroundPrimitive;
+};
+
+class SplitterBar:public textured::ControlRegister<SplitterBar>
+{
+public:
+    static void staticInit(TexturedSkin *skin);
+
+    size_t requiredPrimitives() override { return 9; }
+
+    void update(renderer::Base *renderer, controls::Base *baseControl) override;
+
+    inline static const std::string_view name="SplitterBar";
+
+    static size_t Background;
+    static BorderedPrimitive BackgroundPrimitive;
 };
 
 class Window:public textured::ControlRegister<Window>
@@ -790,7 +893,7 @@ public:
     static size_t Restore;
     static size_t Restore_Hover;
     static size_t Restore_Down;
-
+    static BorderedPrimitive NormalPrimitive;
 };
 
 }//namespace textured

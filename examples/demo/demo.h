@@ -14,6 +14,8 @@
 #include "gweni/controls/dockBase.h"
 #include "gweni/controls/statusBar.h"
 #include "gweni/controls/collapsibleList.h"
+#include "gweni/controls/pageControl.h"
+#include "gweni/controls/layout/position.h"
 
 namespace gweni
 {
@@ -38,7 +40,10 @@ private:
     controls::ListBox *m_textOutput;
     controls::StatusBar *m_statusBar;
     controls::Base *m_lastControl;
+//    controls::layout::Center *m_center;
+    controls::PageControl *m_center;
 
+    std::vector<controls::Base *> m_pages;
     unsigned int m_frames;
     float m_lastSecond;
 };
@@ -47,6 +52,27 @@ template<typename _Type>
 void Demo::addDemo(controls::CollapsibleCategory *category, const std::string &name)
 {
     controls::Button *button = category->add(name);
+
+    size_t index=m_pages.size();
+
+//    m_center->setPageCount(index+1);
+//    controls::Base *page=m_center->getPage(index);
+    controls::Base *page=m_center->addPage();
+
+    page->setDock(DockPosition::Center);
+//    page->setAlignment(Alignment::Center);
+    _Type *control=page->newChild<_Type>();
+
+    control->setAlignment(Alignment::Center);
+    m_pages.push_back(button);
+
+//    event::Packet packet(control);
+    event::Packet packet(index);
+    button->onPressCaller.add(this, &Demo::onCategorySelect, packet);
+
+    
+
+//    getTabControl()->addPage(name, control);
 
 //    button->setName(name);
 

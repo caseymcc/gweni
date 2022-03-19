@@ -46,15 +46,15 @@ public:
     {
         //                setSize(200, 19);
         m_radioButton=newChild<RadioButton>();
-        m_radioButton->dock(Position::Left);
+        m_radioButton->setDock(DockPosition::Left);
         m_radioButton->setMargin(Margin(0, 2, 2, 2));
         m_radioButton->setTabable(false);
         m_radioButton->setKeyboardInputEnabled(false);
         
         m_label=newChild<LabelClickable>();
-        m_label->setAlignment(Position::CenterV | Position::Left);
+        m_label->setAlignment(Alignment::CenterV | Alignment::Left);
         m_label->setText("Radio Button");
-        m_label->dock(Position::Fill);
+        m_label->setDock(DockPosition::Center);
         m_label->onPressCaller.add(m_radioButton, &CheckBox::onPress);
         m_label->setTabable(false);
         m_label->setKeyboardInputEnabled(false);

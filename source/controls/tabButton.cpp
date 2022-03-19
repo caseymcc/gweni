@@ -23,17 +23,17 @@ GWENI_CONTROL_CONSTRUCTOR(TabButton)
     m_page=nullptr;
     m_control=nullptr;
     dragAndDrop_setPackage(true, "TabButtonMove");
-    setAlignment(Position::Top|Position::Left);
+    setAlignment(Alignment::Top|Alignment::Left);
     setTextPadding(Padding(2, 2, 2, 2));
 }
 
 void TabButton::layout(skin::Base *skin)
 {
-    Position parentDock=m_control->getTabStrip()->getDock();
+    DockPosition parentDock=m_control->getTabStrip()->getDock();
 
-    if(parentDock == Position::Bottom)
+    if(parentDock == DockPosition::Bottom)
         setPadding(Padding(3, 1, 5, 4));
-    else if(parentDock == Position::Top)
+    else if(parentDock == DockPosition::Top)
         setPadding(Padding(3, 3, 5, 2));
     else
         setPadding(Padding(3, 2, 5, 2));

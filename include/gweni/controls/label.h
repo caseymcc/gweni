@@ -40,8 +40,8 @@ public:
     virtual void sizeToContents();
 
     bool hasAlignment() override { return true; }
-    virtual void setAlignment(Position area);
-    virtual Position getAlignment();
+//    virtual void setAlignment(Position area);
+//    virtual Position getAlignment();
 
     virtual void setFont(gweni::String strFacename, int iSize, bool bBold);
 

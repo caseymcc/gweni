@@ -59,14 +59,15 @@ public:
     virtual void generate(renderer::Base *baseRenderer, controls::Base *control)
     {
         generatePrimitives(baseRenderer, requiredPrimitives());
-    };
+    }
 
     virtual void remove(renderer::Base *baseRenderer, controls::Base *control)
     {
         releasePrimitives(baseRenderer);
-    };
+    }
 
-    virtual void update(renderer::Base *render, controls::Base *control)=0;
+    virtual void update(renderer::Base *render, controls::Base *control) 
+    {}
 
     const std::vector<size_t> &getPrimitives()
     {
@@ -76,6 +77,9 @@ public:
 protected:
     void generatePrimitives(renderer::Base *baseRenderer, size_t count)
     {
+        if(count == 0)
+            return;
+
         m_primitives.resize(count);
 
         for(size_t i=0; i<count; ++i)
