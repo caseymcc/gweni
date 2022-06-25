@@ -42,7 +42,7 @@ public:
     bool isMenuOpen();
     void clearItems();
 
-    virtual void open(Position pos);
+    virtual void open(Alignment pos);
     virtual void close();
 
     bool isMenuComponent() override

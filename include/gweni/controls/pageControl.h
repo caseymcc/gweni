@@ -27,20 +27,20 @@ public:
     std::vector<Base *> addPages(size_t count);
 
 //    virtual void setPageCount(unsigned int i);
-    virtual unsigned int getPageCount()
+    virtual size_t getPageCount()
     {
 //        return m_pageCount;
         return m_pages.size();
     }
 
-    virtual void showPage(unsigned int index);
-    virtual unsigned int getPageNumber()
+    virtual void showPage(size_t index);
+    virtual size_t getPageNumber()
     {
         return m_currentPage;
     }
 
-    virtual Base *getPage(unsigned int index);
-    virtual void removePage(unsigned int index);
+    virtual Base *getPage(size_t index);
+    virtual void removePage(size_t index);
     virtual Base *getCurrentPage();
 
     virtual void setAnimated(bool animate) { m_animate=animate; }
@@ -89,7 +89,7 @@ protected:
 
     virtual void hideAll();
 
-    unsigned int m_currentPage;
+    size_t m_currentPage;
 //    unsigned int m_pageCount;
 //    Base *m_pages[MaxPages];
     std::vector<Base *> m_pages;

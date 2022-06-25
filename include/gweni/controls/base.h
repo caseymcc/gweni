@@ -24,11 +24,22 @@
 #include <map>
 #include <algorithm>
 
+#define DEBUG_LAYOUT
+#if 1
+#define logUpdates(...) ::printf(__VA_ARGS__)
+#else
+#define logUpdates(...)
+#endif
 
 namespace gweni
 {
 namespace controls
 {
+
+size_t countParents(Base *base);
+std::string spaceByParent(Base *base);
+size_t getControlType(std::string name);
+std::string getFullName(Base *base);
 
 class Canvas;
 class LayoutItem;
@@ -130,6 +141,10 @@ public:
     virtual void setDock(DockPosition dock);
     virtual DockPosition getDock() const;
 
+    virtual Position getPosition() const;
+    virtual void setPosition(Position position);
+    virtual void setPosition(Position position, int x, int y);
+
     virtual Alignment getAlignment();
     virtual void setAlignment(Alignment alignment);
 
@@ -165,6 +180,7 @@ public:
     virtual int getStateChange() { return m_stateChange; }
     virtual void addStateChange(int stateChange) { m_stateChange|=stateChange; }
     virtual void addStateChangeRecursive(int stateChange);
+    virtual bool hasState(int state) { return m_stateChange&state; }
     
 
     virtual void restrictToParent(bool restrict) { m_restrictToParent=restrict; }
@@ -256,7 +272,7 @@ protected:
 public:
 //    PrimitiveIds &getPrimitiveIds() { return m_primitiveIds; }
 
-
+    virtual void doThink();
     virtual void doRender(gweni::skin::Base *skin);
     virtual void doCacheRender(gweni::skin::Base *skin, gweni::controls::Base *master);
     virtual void renderRecursive(gweni::skin::Base *skin, const gweni::Rect &cliprect);
@@ -269,6 +285,7 @@ public:
 protected:
     void setPrimitiveIdsSize(size_t size);
 
+    
     virtual void think() {}
 
     virtual void render(gweni::skin::Base *skin);
@@ -540,6 +557,7 @@ protected:
     Padding m_padding;
     Margin m_margin;
     Alignment m_alignment;
+    Position m_position;
 
     gweni::String m_name;
 
@@ -564,17 +582,17 @@ public:
         return m_needsLayout;
     }
 
-    void invalidate();
-    void invalidateParent()
+    void invalidate(int state=StateChange_Geometry);
+    void invalidateParent(int state=StateChange_Geometry)
     {
         if(m_parent)
-            m_parent->invalidate();
+            m_parent->invalidate(state);
     }
 
     void invalidateChildren(bool recursive=false);
 
     virtual bool hasAlignment() { return false; }
-    void setPosition(Position pos, int xpadding=0, int ypadding=0);
+//    void setPosition(Position pos, int xpadding=0, int ypadding=0);
 
     virtual void calculateSize(skin::Base *skin, Dim dim);
     virtual void arrange(skin::Base *skin, Dim dim);
@@ -594,6 +612,7 @@ protected:
     bool m_needsLayout;
     bool m_cacheTextureDirty;
     bool m_cacheToTexture;
+    bool m_updateLayout;
 
     //
     // Drag + Drop

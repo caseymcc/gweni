@@ -97,7 +97,7 @@ struct Info
 
     String string;
     Point point;
-    int integer;
+    size_t integer;
 };
 
 /**

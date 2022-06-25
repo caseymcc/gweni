@@ -26,6 +26,7 @@ GWENI_CONTROL_CONSTRUCTOR(Button)
     setIsToggle(false);
 //    setAlignment(Position::Center);
     setAlignment(Alignment::Center);
+    setSizeFlags({SizeFlag::Fixed, SizeFlag::Fixed});
     setTextPadding(Padding(3, 0, 3, 0));
     m_toggleStatus=false;
     setKeyboardInputEnabled(false);
@@ -217,9 +218,11 @@ void Button::postLayout(skin::Base *skin)
     if(m_image)
     {
         if(m_centerImage)
-            m_image->setPosition(Position::Center);
+//            m_image->setPosition(Position::Center);
+            m_image->setAlignment(Alignment::Center);
         else
-            m_image->setPosition(Position::Left|Position::CenterV);
+//            m_image->setPosition(Position::Left|Position::CenterV);
+            m_image->setAlignment(Alignment::Left|Alignment::CenterV);
     }
 }
 

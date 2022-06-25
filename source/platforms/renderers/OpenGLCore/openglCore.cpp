@@ -3,7 +3,7 @@
  *  Copyright (c) 2013-18 Nick Trout
  *  See license in Gweni.h
  */
-//#define DEBUG_RENDER
+#define DEBUG_RENDER
 
 #include <gweni/platforms/renderers/openglCore.h>
 #if defined(__APPLE__)
@@ -901,7 +901,7 @@ void OpenGLCore::drawFilledRect(size_t primitiveId, gweni::Rect rect, int zIndex
         m_vertexes.resize(vertexIndex+4);
 
 #ifdef DEBUG_RENDER
-    std::cout<<"Rendering Fill: "<<primitiveId<<"("<<rect.x<<", "<<rect.y<<", "<<rect.w<<", "<<rect.h<<":"<<zIndex<<")\n";
+    std::cout<<"Rendering Fill: "<<primitiveId<<"("<<rect.x<<", "<<rect.y<<", "<<rect.w<<", "<<rect.h<<" : "<<zIndex<<") color: "<<(int)m_color.r<<", "<<(int)m_color.g<<", "<<(int)m_color.b<<", "<<(int)m_color.a<<"\n";
 #endif//DEBUG_RENDER
 
     setVertex(m_vertexes[vertexIndex++], 1, rect.x, rect.y, zIndex, m_color.rg, m_color.ba);
@@ -1025,7 +1025,7 @@ void OpenGLCore::drawTexturedRect(const gweni::Texture &texture, size_t primitiv
         m_vertexes.resize(vertexIndex+4);
 
 #ifdef DEBUG_RENDER
-    std::cout<<"Rendering: "<<primitiveId<<"("<<rect.x<<", "<<rect.y<<", "<<rect.w<<", "<<rect.h<<":"<<zIndex<<")\n";
+    std::cout<<"Rendering: "<<primitiveId<<"("<<rect.x<<", "<<rect.y<<", "<<rect.w<<", "<<rect.h<<" : "<<zIndex<<")\n";
 #endif//DEBUG_RENDER
 
     setVertex(m_vertexes[vertexIndex++], 2, rect.x, rect.y, zIndex, u1, v1);
@@ -1163,7 +1163,7 @@ void OpenGLCore::renderText(size_t textId, const gweni::Font &font, gweni::Point
             float zOffset=0.0f;
 
 #ifdef DEBUG_RENDER
-            std::cout<<"Moving text: ("<<pos.x<<", "<<pos.y<<", "<<zIndex<<") "<<text<<"\n";
+            std::cout<<"Moving text: ("<<pos.x<<", "<<pos.y<<" : "<<zIndex<<") "<<text<<"\n";
 #endif//DEBUG_RENDER
 
             for(size_t i=0; i<textPrimitiveIds.size(); ++i)
@@ -1250,7 +1250,7 @@ void OpenGLCore::renderText(size_t textId, const gweni::Font &font, gweni::Point
     float zOffset=0.0f;
 
 #ifdef DEBUG_RENDER
-    std::cout<<"Rendering text: ("<<pos.x<<", "<<pos.y<<", "<<zIndex<<") "<<text<<"\n";
+    std::cout<<"Rendering text: ("<<pos.x<<", "<<pos.y<<" : "<<zIndex<<") "<<text<<"\n";
 #endif//DEBUG_RENDER
 
     for(size_t i=0; i<primitiveCount; ++i)
@@ -1337,6 +1337,10 @@ void OpenGLCore::showText(size_t textId)
 {
     std::vector<size_t> &textPrimitiveIds=m_textPrimitiveIds[textId];
 
+#ifdef DEBUG_RENDER
+    std::cout<<"Showing text: "<<m_textStrings[textId]<<"\n";
+#endif//DEBUG_RENDER
+
     for(size_t i=0; i<textPrimitiveIds.size(); ++i)
     {
         size_t vertIndex=textPrimitiveIds[i]*4;
@@ -1351,6 +1355,10 @@ void OpenGLCore::showText(size_t textId)
 void OpenGLCore::hideText(size_t textId)
 {
     std::vector<size_t> &textPrimitiveIds=m_textPrimitiveIds[textId];
+
+#ifdef DEBUG_RENDER
+    std::cout<<"Hiding text: "<<m_textStrings[textId]<<"\n";
+#endif//DEBUG_RENDER
 
     for(size_t i=0; i<textPrimitiveIds.size(); ++i)
     {

@@ -5,8 +5,9 @@
 namespace gweni
 {
 
-StatusBarDemo::StatusBarDemo(const String &name):
-    Base()
+//StatusBarDemo::StatusBarDemo(const String &name):
+//    Base()
+GWENI_CONTROL_CONSTRUCTOR(StatusBarDemo)
 {
     setDock(DockPosition::Center);
     controls::StatusBar *status=newChild<controls::StatusBar>();

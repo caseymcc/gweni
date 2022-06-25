@@ -31,11 +31,11 @@ public:
     void setDirectionLeft();
     void setDirectionRight();
 
-    Position getDirection() { return m_direction; }
+    Alignment getDirection() { return m_direction; }
 
 protected:
 
-    Position m_direction;
+    Alignment m_direction;
 
 };
 

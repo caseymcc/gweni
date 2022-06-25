@@ -117,7 +117,7 @@ void *WindowCanvas::getWindow()
 void WindowCanvas::layout(skin::Base *skin)
 {
     m_sizer->bringToFront();
-    m_sizer->setPosition(Position::Right|Position::Bottom);
+    m_sizer->setAlignment(Alignment::Right|Alignment::Bottom);
     ParentClass::layout(skin);
 }
 

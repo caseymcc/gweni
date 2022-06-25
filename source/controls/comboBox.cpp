@@ -90,7 +90,11 @@ void ComboBox::render(skin::Base *skin)
 
 void ComboBox::layout(skin::Base *skin)
 {
-    m_button->setPosition(Position::Right | Position::CenterV, 4, 0);
+//    m_button->setPosition(Position::Right | Position::CenterV, 4, 0);
+    m_button->setAlignment(Alignment::Right | Alignment::CenterV);
+    m_button->setPosition(Position::Absolute, 4, 0);
+    m_button->setPos(4, 0);
+
     ParentClass::layout(skin);
 }
 

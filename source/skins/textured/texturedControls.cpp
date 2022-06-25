@@ -4,6 +4,7 @@
 #include "gweni/controls/comboBox.h"
 #include "gweni/controls/checkBox.h"
 #include "gweni/controls/scrollBarButton.h"
+#include "gweni/controls/statusBar.h"
 #include "gweni/controls/tabControl.h"
 #include "gweni/controls/text.h"
 #include "gweni/controls/collapsibleCategory.h"
@@ -16,6 +17,15 @@ namespace skin
 {
 namespace textured
 {
+
+//Base
+size_t Base::requiredPrimitives() { return 0; }
+void Base::update(renderer::Base *renderer, controls::Base *baseControl)
+{
+//    renderer->setDrawColor({ 255, 255, 0, 255 });
+//    renderer->drawFilledRect(m_primitives[0], baseControl->getRenderBounds(), baseControl->getZIndex());
+}
+
 
 /////////////////////////////////////////////////////////////////////////////
 ////Button
@@ -621,14 +631,14 @@ void ScrollBarButton::update(renderer::Base *renderer, controls::Base *baseContr
 {
     controls::internal::ScrollBarButton *control=static_cast<controls::internal::ScrollBarButton *>(baseControl);
 
-    Position direction=control->getDirection();
+    Alignment direction=control->getDirection();
     size_t index=0;
 
-    if(direction == Position::Right)
+    if(direction == Alignment::Right)
         index=1;
-    else if(direction == Position::Top)
+    else if(direction == Alignment::Top)
         index=2;
-    if(direction == Position::Bottom)
+    if(direction == Alignment::Bottom)
         index=3;
 
     BorderedPrimitive *primitive=&NormalPrimitive[index];
@@ -745,19 +755,24 @@ BorderedPrimitive StatusBar::BackgroundPrimitive;
 void StatusBar::staticInit(TexturedSkin *skin)
 {
     Background=skin->getTextureEntryId("StatusBar.Background");
+    BackgroundPrimitive.init(skin, Background);
     Selection=skin->getTextureEntryId("StatusBar.Selection");
 
     m_staticInit=true;
 }
 
-void StatusBar::generate(renderer::Base *renderer, controls::Base *baseControl)
-{}
+//void StatusBar::generate(renderer::Base *renderer, controls::Base *baseControl)
+//{}
 
 void StatusBar::update(renderer::Base *renderer, controls::Base *baseControl)
-{}
+{
+    controls::StatusBar *control=static_cast<controls::StatusBar *>(baseControl);
 
-void StatusBar::remove(renderer::Base *renderer, controls::Base *baseControl)
-{}
+    BackgroundPrimitive.draw(renderer, m_primitives.data(), baseControl->getRenderBounds(), baseControl->getZIndex());
+}
+
+//void StatusBar::remove(renderer::Base *renderer, controls::Base *baseControl)
+//{}
 
 
 ///////////////////////////////////////////////////////////////////////////

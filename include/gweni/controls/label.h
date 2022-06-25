@@ -93,10 +93,10 @@ public:
         return m_text->getPadding();
     }
 
-    Position alignment() const
-    {
-        return m_align;
-    }
+//    Alignment alignment() const
+//    {
+//        return m_align;
+//    }
 
     virtual void makeColorNormal()
     {
@@ -146,7 +146,7 @@ protected:
 
     gweni::Font *m_createdFont;
     internal::Text *m_text;
-    Position m_align;
+//    Alignment m_align;
 
 };
 

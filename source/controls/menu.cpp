@@ -143,7 +143,7 @@ void Menu::onHoverItem(event::Info info)
     item->openMenu();
 }
 
-void Menu::open(Position pos)
+void Menu::open(Alignment pos)
 {
     setHidden(false);
     bringToFront();

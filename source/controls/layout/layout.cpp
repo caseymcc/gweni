@@ -448,6 +448,13 @@ void LayoutItem::arrangeHorizontal()
 
         child->setBounds(bounds);
         x+=bounds.w+m_spacing;
+
+#ifdef DEBUG_LAYOUT
+        Base *control=child->getControl();
+
+        if(control)
+            logUpdates("%s%s - layout arrangeHorizontal - (%d, %d, %d, %d)\n", spaceByParent(control).c_str(), control->getTypeName(), control->getX(), control->getY(), control->getWidth(), control->getHeight());
+#endif//DEBUG_LAYOUT
     }
 }
 
@@ -476,7 +483,14 @@ void LayoutItem::arrangeVerticalPos()
             if((sizeFlags.vertical==SizeFlag::Elastic)||(sizeFlags.vertical==SizeFlag::Shrink))
                 bounds.h=m_bounds.h-m_padding.top-m_padding.bottom;
         }
+
         child->setBounds(bounds);
+#ifdef DEBUG_LAYOUT
+        Base *control=child->getControl();
+
+        if(control)
+            logUpdates("%s%s - layout arrangeVerticalPos - (%d, %d, %d, %d)\n", spaceByParent(control).c_str(), control->getTypeName(), control->getX(), control->getY(), control->getWidth(), control->getHeight());
+#endif//DEBUG_LAYOUT
     }
 }
 
@@ -507,8 +521,15 @@ void LayoutItem::arrangeHorizontalPos()
             if((sizeFlags.horizontal == SizeFlag::Elastic) || (sizeFlags.horizontal == SizeFlag::Shrink))
                 bounds.w=m_bounds.w-m_padding.left-m_padding.right;
         }
+
         child->setBounds(bounds);
         //        child->updateControl();
+#ifdef DEBUG_LAYOUT
+        Base *control=child->getControl();
+
+        if(control)
+            logUpdates("%s%s - layout arrangeHorizontalPos - (%d, %d, %d, %d)\n", spaceByParent(control).c_str(), control->getTypeName(), control->getX(), control->getY(), control->getWidth(), control->getHeight());
+#endif//DEBUG_LAYOUT
     }
 }
 
@@ -578,6 +599,12 @@ void LayoutItem::arrangeVertical()
             bounds.h=preferred.height+shrinkSpace;
 
         child->setBounds(bounds);
+#ifdef DEBUG_LAYOUT
+        Base *control=child->getControl();
+
+        if(control)
+            logUpdates("%s%s - layout arrangeVertical - (%d, %d, %d, %d)\n", spaceByParent(control).c_str(), control->getTypeName(), control->getX(), control->getY(), control->getWidth(), control->getHeight());
+#endif//DEBUG_LAYOUT
         y+=bounds.h+m_spacing;
     }
 }

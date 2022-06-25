@@ -44,12 +44,12 @@ void Canvas::updateCanvas()
 {
     int zIndex=1;
 
+    doThink();
     updateRecursive(zIndex);
 }
 
 void Canvas::renderCanvas()
 {
-    doThink();
     renderer::Base *render=m_skin->getRenderer();
     render->begin();
     recurseLayout(m_skin);
@@ -105,6 +105,8 @@ void Canvas::doThink()
         m_nextTab=m_firstTab;
 
     input::onCanvasThink(this);
+
+    Base::doThink();
 }
 
 void Canvas::setScale(float f)

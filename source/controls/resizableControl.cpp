@@ -24,56 +24,56 @@ GWENI_CONTROL_CONSTRUCTOR(ResizableControl)
     // bottom
     m_resizers[0]=newChild<internal::Resizer>();
     m_resizers[0]->setDock(DockPosition::Bottom);
-    m_resizers[0]->setResizeDirection(Position::Bottom);
+    m_resizers[0]->setResizeDirection(Alignment::Bottom);
     m_resizers[0]->setTarget(this);
     m_resizers[0]->onResize.add(this, &ResizableControl::onResizedInternal);
 
     // bottom left
     m_resizers[1]=m_resizers[0]->newChild<internal::Resizer>();
     m_resizers[1]->setDock(DockPosition::Left);
-    m_resizers[1]->setResizeDirection(Position::Bottom|Position::Left);
+    m_resizers[1]->setResizeDirection(Alignment::Bottom|Alignment::Left);
     m_resizers[1]->setTarget(this);
     m_resizers[1]->onResize.add(this, &ResizableControl::onResizedInternal);
 
     // bottom right
     m_resizers[2]=m_resizers[0]->newChild<internal::Resizer>();
     m_resizers[2]->setDock(DockPosition::Right);
-    m_resizers[2]->setResizeDirection(Position::Bottom|Position::Right);
+    m_resizers[2]->setResizeDirection(Alignment::Bottom|Alignment::Right);
     m_resizers[2]->setTarget(this);
     m_resizers[2]->onResize.add(this, &ResizableControl::onResizedInternal);
 
     // top
     m_resizers[3]=newChild<internal::Resizer>();
     m_resizers[3]->setDock(DockPosition::Top);
-    m_resizers[3]->setResizeDirection(Position::Top);
+    m_resizers[3]->setResizeDirection(Alignment::Top);
     m_resizers[3]->setTarget(this);
     m_resizers[3]->onResize.add(this, &ResizableControl::onResizedInternal);
 
     // top left
     m_resizers[4]=m_resizers[3]->newChild<internal::Resizer>();
     m_resizers[4]->setDock(DockPosition::Left);
-    m_resizers[4]->setResizeDirection(Position::Top|Position::Left);
+    m_resizers[4]->setResizeDirection(Alignment::Top|Alignment::Left);
     m_resizers[4]->setTarget(this);
     m_resizers[4]->onResize.add(this, &ResizableControl::onResizedInternal);
 
     // top right
     m_resizers[5]=m_resizers[3]->newChild<internal::Resizer>();
     m_resizers[5]->setDock(DockPosition::Right);
-    m_resizers[5]->setResizeDirection(Position::Top|Position::Right);
+    m_resizers[5]->setResizeDirection(Alignment::Top|Alignment::Right);
     m_resizers[5]->setTarget(this);
     m_resizers[5]->onResize.add(this, &ResizableControl::onResizedInternal);
 
     // left
     m_resizers[6]=newChild<internal::Resizer>();
     m_resizers[6]->setDock(DockPosition::Left);
-    m_resizers[6]->setResizeDirection(Position::Left);
+    m_resizers[6]->setResizeDirection(Alignment::Left);
     m_resizers[6]->setTarget(this);
     m_resizers[6]->onResize.add(this, &ResizableControl::onResizedInternal);
 
     // right
     m_resizers[7]=newChild<internal::Resizer>();
     m_resizers[7]->setDock(DockPosition::Right);
-    m_resizers[7]->setResizeDirection(Position::Right);
+    m_resizers[7]->setResizeDirection(Alignment::Right);
     m_resizers[7]->setTarget(this);
     m_resizers[7]->onResize.add(this, &ResizableControl::onResizedInternal);
 }

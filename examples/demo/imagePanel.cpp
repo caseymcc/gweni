@@ -4,8 +4,9 @@
 namespace gweni
 {
 
-ImagePanelDemo::ImagePanelDemo(const String &name):
-    Base()
+//ImagePanelDemo::ImagePanelDemo(const String &name):
+//    Base()
+GWENI_CONTROL_CONSTRUCTOR(ImagePanelDemo)
 {
     // Normal
     {

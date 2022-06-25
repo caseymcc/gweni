@@ -410,7 +410,7 @@ void TextBox::makeCaretVisible()
 {
     if(m_text->getWidth() < getWidth())
     {
-        m_text->setPosition(m_align);
+        m_text->setAlignment(getAlignment());
     }
     else
     {
@@ -440,13 +440,13 @@ void TextBox::makeCaretVisible()
 
         int y=0;
 
-        if(m_align&Position::Top)
+        if(getAlignment() & Alignment::Top)
             y=getPadding().top;
 
-        if(m_align&Position::Bottom)
+        if(getAlignment() & Alignment::Bottom)
             y=getHeight()-m_text->getHeight()-getPadding().bottom;
 
-        if(m_align&Position::CenterV)
+        if(getAlignment() & Alignment::CenterV)
             y=(getHeight()-m_text->getHeight()) / 2;
 
         m_text->setPos(x, y);
@@ -590,15 +590,15 @@ void TextBoxMultiline::makeCaretVisible()
 {
     if(m_text->getHeight() < getHeight())
     {
-        m_text->setPosition(m_align);
+        m_text->setAlignment(getAlignment());
     }
     else
     {
         //const Rect &bounds = getInnerBounds();
 
-        //if ( pos  &Position::Top ) y = bounds.y + ypadding;
-        //if ( pos  &Position::Bottom ) y = bounds.y + ( bounds.h - getHeight() - ypadding );
-        //if ( pos  &Position::CenterV ) y = bounds.y + ( bounds.h - getHeight() )   *0.5;
+        //if ( pos  &Alignment::Top ) y = bounds.y + ypadding;
+        //if ( pos  &Alignment::Bottom ) y = bounds.y + ( bounds.h - getHeight() - ypadding );
+        //if ( pos  &Alignment::CenterV ) y = bounds.y + ( bounds.h - getHeight() )   *0.5;
 
         Rect pos=m_text->getCharacterPosition(m_cursorPos);
         int iCaretPos=pos.y; // + pos.h;
@@ -634,11 +634,11 @@ void TextBoxMultiline::makeCaretVisible()
             y=getPadding().top;
 
         int x=0;
-        if(m_align&Position::Left)
+        if(getAlignment() & Alignment::Left)
             x=getPadding().left;
-        if(m_align&Position::Right)
+        if(getAlignment() & Alignment::Right)
             x=getWidth()-m_text->getWidth()-getPadding().right;
-        if(m_align&Position::CenterH)
+        if(getAlignment() & Alignment::CenterH)
             x=(getWidth()-m_text->getWidth())*0.5f;
 
         m_text->setPos(x, y);

@@ -59,12 +59,12 @@ GWENI_CONTROL_CONSTRUCTOR(PageControl)
     m_label->setText("Page 1 or 2");
 }
 
-//void PageControl::setPageCount(unsigned int num)
+//void PageControl::setPageCount(size_t num)
 //{
 //    if(num >= MaxPages)
 //        num=MaxPages;
 //
-//    for(unsigned int i=0; i < num; i++)
+//    for(size_t i=0; i < num; i++)
 //    {
 //        if(!m_pages[i])
 //        {
@@ -91,8 +91,6 @@ Base *PageControl::addPage(std::string name)
 
     m_pages.push_back(page);
 
-
-
     return page;
 }
 
@@ -117,7 +115,7 @@ void PageControl::hideAll()
     }
 }
 
-void PageControl::showPage(unsigned int index)
+void PageControl::showPage(size_t index)
 {
     if(m_currentPage == index)
         return;
@@ -161,7 +159,7 @@ void PageControl::showPage(unsigned int index)
     }
 }
 
-Base *PageControl::getPage(unsigned int index)
+Base *PageControl::getPage(size_t index)
 {
     if(index >= m_pages.size())
         return nullptr;
@@ -169,7 +167,7 @@ Base *PageControl::getPage(unsigned int index)
     return m_pages[index];
 }
 
-void PageControl::removePage(unsigned int index)
+void PageControl::removePage(size_t index)
 {
     if(index >= m_pages.size())
         return;

@@ -16,10 +16,12 @@ namespace textured
 class Base:public textured::ControlRegister<Base>
 {
 public:
+    inline static const std::string_view name = "Base";
+    size_t requiredPrimitives() override;
+
     static void staticInit(TexturedSkin *skin) {m_staticInit=true;}
 
-    size_t requiredPrimitives() override { return 0; }
-    inline static const std::string_view name="Base";
+    void update(renderer::Base *renderer, controls::Base *baseControl) override;
 };
 
 struct Horizontal
@@ -627,9 +629,9 @@ public:
 
     size_t requiredPrimitives() override { return 9; }
 
-    void generate(renderer::Base *renderer, controls::Base *baseControl) override;
+//    void generate(renderer::Base *renderer, controls::Base *baseControl) override;
     void update(renderer::Base *renderer, controls::Base *baseControl) override;
-    void remove(renderer::Base *renderer, controls::Base *baseControl) override;
+//    void remove(renderer::Base *renderer, controls::Base *baseControl) override;
 
     inline static const std::string_view name="StatusBar";
 

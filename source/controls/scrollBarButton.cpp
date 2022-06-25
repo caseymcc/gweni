@@ -22,22 +22,22 @@ GWENI_CONTROL_CONSTRUCTOR(ScrollBarButton)
 
 void ScrollBarButton::setDirectionUp()
 {
-    m_direction=Position::Top;
+    m_direction=Alignment::Top;
 }
 
 void ScrollBarButton::setDirectionDown()
 {
-    m_direction=Position::Bottom;
+    m_direction=Alignment::Bottom;
 }
 
 void ScrollBarButton::setDirectionLeft()
 {
-    m_direction=Position::Left;
+    m_direction=Alignment::Left;
 }
 
 void ScrollBarButton::setDirectionRight()
 {
-    m_direction=Position::Right;
+    m_direction=Alignment::Right;
 }
 
 }//namespace internal

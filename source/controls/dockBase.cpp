@@ -51,24 +51,24 @@ void DockBase::setupChildDock(DockPosition pos)
     setDock(pos);
     
     DockPosition dockPos=DockPosition::Left;
-    Position sizeDirection=Position::Left;
+    Alignment sizeDirection=Alignment::Left;
 
     if(pos == DockPosition::Left)
     {
         dockPos=DockPosition::Right;
-        sizeDirection=Position::Right;
+        sizeDirection=Alignment::Right;
     }
 
     if(pos == DockPosition::Top)
     {
         dockPos=DockPosition::Bottom;
-        sizeDirection=Position::Bottom;
+        sizeDirection=Alignment::Bottom;
     }
 
     if(pos == DockPosition::Bottom)
     {
         dockPos=DockPosition::Top;
-        sizeDirection=Position::Top;
+        sizeDirection=Alignment::Top;
     }
 
     internal::Resizer *sizer=newChild<internal::Resizer>();

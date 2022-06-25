@@ -17,7 +17,7 @@ namespace internal
 
 GWENI_CONTROL_CONSTRUCTOR(Resizer)
 {
-    setResizeDirection(Position::Left);
+    setResizeDirection(Alignment::Left);
     setMouseInputEnabled(true);
     setSize(6, 6);
 }
@@ -40,7 +40,7 @@ void Resizer::onMouseMoved(int x, int y, int /*deltaX*/, int /*deltaY*/)
     delta.x-=x;
     delta.y-=y;
 
-    if(m_resizeDirection  &Position::Left)
+    if(m_resizeDirection  &Alignment::Left)
     {
         bounds.x-=delta.x;
         bounds.w+=delta.x;
@@ -55,7 +55,7 @@ void Resizer::onMouseMoved(int x, int y, int /*deltaX*/, int /*deltaY*/)
         }
     }
 
-    if(m_resizeDirection  &Position::Top)
+    if(m_resizeDirection  &Alignment::Top)
     {
         bounds.y-=delta.y;
         bounds.h+=delta.y;
@@ -70,7 +70,7 @@ void Resizer::onMouseMoved(int x, int y, int /*deltaX*/, int /*deltaY*/)
         }
     }
 
-    if(m_resizeDirection  &Position::Right)
+    if(m_resizeDirection  &Alignment::Right)
     {
         // This is complicated.
         // Basically we want to use the HoldPos, so it doesn't snap to the edge
@@ -89,7 +89,7 @@ void Resizer::onMouseMoved(int x, int y, int /*deltaX*/, int /*deltaY*/)
         m_holdPos.x-=diff;
     }
 
-    if(m_resizeDirection  &Position::Bottom)
+    if(m_resizeDirection  &Alignment::Bottom)
     {
         const int hoff=bounds.h - m_holdPos.y;
         int diff=bounds.h;
@@ -106,34 +106,34 @@ void Resizer::onMouseMoved(int x, int y, int /*deltaX*/, int /*deltaY*/)
     onResize.call(this);
 }
 
-void Resizer::setResizeDirection(Position dir)
+void Resizer::setResizeDirection(Alignment dir)
 {
     m_resizeDirection=dir;
 
-    if((dir  &Position::Left)||(dir  &Position::Right))
+    if((dir  &Alignment::Left)||(dir  &Alignment::Right))
     {
         m_sizeFlags.horizontal=SizeFlag::Fixed;
         m_sizeFlags.vertical=SizeFlag::Expand;
     }
 
-    if((dir  &Position::Top)||(dir  &Position::Bottom))
+    if((dir  &Alignment::Top)||(dir  &Alignment::Bottom))
     {
         m_sizeFlags.horizontal=SizeFlag::Expand;
         m_sizeFlags.vertical=SizeFlag::Fixed;
     }
 
-    if(((dir  &Position::Left) && (dir  &Position::Top))
-        || ((dir  &Position::Right) && (dir  &Position::Bottom)))
+    if(((dir  &Alignment::Left) && (dir  &Alignment::Top))
+        || ((dir  &Alignment::Right) && (dir  &Alignment::Bottom)))
         return setCursor(gweni::cursor::SizeNWSE);
 
-    if(((dir  &Position::Right) && (dir  &Position::Top))
-        || ((dir  &Position::Left) && (dir  &Position::Bottom)))
+    if(((dir  &Alignment::Right) && (dir  &Alignment::Top))
+        || ((dir  &Alignment::Left) && (dir  &Alignment::Bottom)))
         return setCursor(gweni::cursor::SizeNESW);
 
-    if((dir  &Position::Right) || (dir  &Position::Left))
+    if((dir  &Alignment::Right) || (dir  &Alignment::Left))
         return setCursor(gweni::cursor::SizeWE);
 
-    if((dir  &Position::Top) || (dir  &Position::Bottom))
+    if((dir  &Alignment::Top) || (dir  &Alignment::Bottom))
         return setCursor(gweni::cursor::SizeNS);
 }
 

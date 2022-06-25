@@ -79,7 +79,7 @@ void Text::setText(const String &str)
 
     m_string=str;
     m_textChanged=true;
-    invalidate();
+    invalidate(controls::StateChange_Text);
 }
 
 //void Text::render(skin::Base *skin)

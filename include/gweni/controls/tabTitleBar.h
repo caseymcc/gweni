@@ -40,7 +40,7 @@ public:
     void updateFromTab(TabButton *button)
     {
         setText(button->getText());
-        sizeToContents();
+//        sizeToContents();
     }
 
 private:

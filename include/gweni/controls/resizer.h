@@ -29,13 +29,13 @@ public:
 
 public:
     void onMouseMoved(int x, int y, int deltaX, int deltaY) override;
-    virtual void setResizeDirection(Position dir);
+    virtual void setResizeDirection(Alignment dir);
 
     event::Caller onResize;
 
 protected:
 
-    Position m_resizeDirection;
+    Alignment m_resizeDirection;
 
 };
 

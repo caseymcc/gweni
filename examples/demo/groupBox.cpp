@@ -4,8 +4,9 @@
 namespace gweni
 {
 
-GroupBoxDemo::GroupBoxDemo(const String &name):
-    Base()
+//GroupBoxDemo::GroupBoxDemo(const String &name):
+//    Base()
+GWENI_CONTROL_CONSTRUCTOR(GroupBoxDemo)
 {
     controls::GroupBox *group=newChild<controls::GroupBox>();
 

@@ -5,8 +5,9 @@
 namespace gweni
 {
 
-ProgressBarDemo::ProgressBarDemo(const String &name):
-    Base()
+//ProgressBarDemo::ProgressBarDemo(const String &name):
+//    Base()
+GWENI_CONTROL_CONSTRUCTOR(ProgressBarDemo)
 {
     {
         controls::ProgressBar *pb=newChild<controls::ProgressBar>();

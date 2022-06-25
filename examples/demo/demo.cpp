@@ -6,6 +6,7 @@
 
 #include "demo/demo.h"
 #include "gweni/controls/dockedTabControl.h"
+#include "gweni/controls/tabControl.h"
 #include "gweni/controls/windowControl.h"
 #include "gweni/controls/layout/position.h"
 #include "gweni/platforms/platform.h"
@@ -58,36 +59,42 @@ void Demo::init(const String &name)
 
     setDock(DockPosition::Center);
     setSize(1024, 768);
-    
-//    m_center=newChild<controls::layout::Center>("Center");
-    m_center=newChild<controls::PageControl>("Center");
+
+    m_dockBase=newChild<controls::DockBase>("DemoDockBase");
+    m_dockBase->setDock(DockPosition::Center);
+
+//    controls::TabControl *centerDock=m_dockBase->getTabControl();
+
+////    m_center=newChild<controls::layout::Center>("Center");
+    m_center=m_dockBase->newChild<controls::PageControl>("DemoCenter");
     m_center->setDock(DockPosition::Center);
-    m_center->showControls(false);
+//    m_center->showControls(false);
 
-    controls::CollapsibleList *list=newChild<controls::CollapsibleList>("DemoList");
-
-    getLeft()->getTabControl()->addPage("Demos", list);
-    getLeft()->setSizeFlags({SizeFlag::Fixed, SizeFlag::Expand});
-    getLeft()->setWidth(150);
+    controls::CollapsibleList *list=m_dockBase->newChild<controls::CollapsibleList>("DemoList");
     
+    DockBase *leftDock=m_dockBase->getLeft();
+    DockBase *bottomDock=m_dockBase->getBottom();
 
-    m_textOutput=getBottom()->newChild<controls::ListBox>();
+    leftDock->getTabControl()->setName("ControlsTab");
+    leftDock->getTabControl()->addPage("Demos", list);
+    leftDock->setSizeFlags({SizeFlag::Fixed, SizeFlag::Expand});
+    leftDock->setWidth(150);
+    
+    m_textOutput=bottomDock->newChild<controls::ListBox>();
 
-    getBottom()->getTabControl()->addPage("Output", m_textOutput);
-    getBottom()->setSizeFlags({SizeFlag::Expand, SizeFlag::Fixed});
-    getBottom()->setHeight(200);
+    bottomDock->getTabControl()->addPage("Output", m_textOutput);
+    bottomDock->setSizeFlags({SizeFlag::Expand, SizeFlag::Fixed});
+    bottomDock->setHeight(200);
 
     m_statusBar=newChild<controls::StatusBar>();
-
-    m_statusBar->setDock(DockPosition::Bottom);
 
     {
         controls::CollapsibleCategory *cat=list->add("Basic");
 
         cat->setName("Basic");
         addDemo<ButtonDemo>(cat, "ButtonDemo");
-        addDemo<LabelDemo>(cat, "LabelDemo");
-        addDemo<LabelMultilineDemo>(cat, "LabelMultilineDemo");
+//        addDemo<LabelDemo>(cat, "LabelDemo");
+//        addDemo<LabelMultilineDemo>(cat, "LabelMultilineDemo");
 //        ADD_DEMO(ButtonDemo);
 //        ButtonDemo *buttonDemo=new ButtonDemo(this);
 //        LabelDemo *labelDemo=new LabelDemo(this);
@@ -95,7 +102,12 @@ void Demo::init(const String &name)
     }
     {
         controls::CollapsibleCategory *cat=list->add("Non-Interactive");
-//
+
+//        addDemo<ProgressBarDemo>(cat, "ProgressBarDemo");
+//        addDemo<GroupBoxDemo>(cat, "GroupBoxDemo");
+//        addDemo<ImagePanelDemo>(cat, "ImagePanelDemo");
+//        addDemo<StatusBarDemo>(cat, "StatusBarDemo");
+
 //        ProgressBarDemo *progressBarDemo=new ProgressBarDemo(this);
 //        GroupBoxDemo *groupBoxDemo=new GroupBoxDemo(this);
 //        ImagePanelDemo *imagePanelDemo=new ImagePanelDemo(this);
@@ -103,7 +115,7 @@ void Demo::init(const String &name)
     }
     {
         controls::CollapsibleCategory *cat=list->add("Controls");
-//
+
 //        ComboBoxDemo *comboBoxDemo=new ComboBoxDemo(this);
 //        TextBoxDemo *textBoxDemo=new TextBoxDemo(this);
 //        ListBoxDemo *listBoxDemo=new ListBoxDemo(this);
@@ -116,7 +128,7 @@ void Demo::init(const String &name)
     }
     {
         controls::CollapsibleCategory *cat=list->add("Containers");
-//
+
 //        WindowDemo *windowDemo=new WindowDemo(this);
 //        TreeControlDemo *treeControlDemo=new TreeControlDemo(this);
 //        PropertiesDemo *propertiesDemo=new PropertiesDemo(this);
@@ -126,16 +138,16 @@ void Demo::init(const String &name)
     }
     {
         controls::CollapsibleCategory *cat=list->add("Non-Standard");
-//
+
 //        CollapsibleListDemo *collapsibleListDemo=new CollapsibleListDemo(this);
 //        ColorPickerDemo *colorPickerDemo=new ColorPickerDemo(this);
     }
-
-    m_statusBar->sendToBack();
-    printText("Unit Test Started.\n");
-    m_lastSecond=platform::getTimeInSeconds();
-    m_frames=0;
-    list->getNamedChildren("MenuStrip").doAction();
+//
+//    m_statusBar->sendToBack();
+//    printText("Unit Test Started.\n");
+//    m_lastSecond=platform::getTimeInSeconds();
+//    m_frames=0;
+//    list->getNamedChildren("MenuStrip").doAction();
 }
 
 void Demo::onCategorySelect(event::Info info)
@@ -167,17 +179,29 @@ void Demo::printText(const String &str)
     m_textOutput->scrollToBottom();
 }
 
-void Demo::render(skin::Base *skin)
+void Demo::think()
 {
     m_frames++;
 
-    if(m_lastSecond < platform::getTimeInSeconds())
+    if(m_lastSecond<platform::getTimeInSeconds())
     {
-        m_statusBar->setText(format("GWEN Unit Test - %i fps", m_frames * 2));
+//        m_statusBar->setText(format("GWEN Unit Test - %i fps", m_frames*2));
         m_lastSecond=platform::getTimeInSeconds() + 0.5f;
         m_frames=0;
     }
+}
 
+void Demo::render(skin::Base *skin)
+{
+//    m_frames++;
+//
+//    if(m_lastSecond < platform::getTimeInSeconds())
+//    {
+//        m_statusBar->setText(format("GWEN Unit Test - %i fps", m_frames * 2));
+////        m_lastSecond=platform::getTimeInSeconds() + 0.5f;
+//        m_frames=0;
+//    }
+//
     DockBase::render(skin);
 }
 

@@ -11,8 +11,8 @@ endif()
 
 include(${CMAKE_CURRENT_LIST_DIR}/cmake/Hunter/HunterGate.cmake)
 HunterGate(
-    URL "https://github.com/cpp-pm/hunter/archive/v0.23.254.tar.gz"
-    SHA1 "017e688b9848c1f695303e8cfe9f35d40e154112"
+    URL "https://github.com/cpp-pm/hunter/archive/v0.24.0.tar.gz"
+    SHA1 "a3d7f4372b1dcd52faa6ff4a3bd5358e1d0e5efd"
 )
 cmake_policy(SET CMP0074 NEW)
 

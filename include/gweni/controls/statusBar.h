@@ -25,7 +25,7 @@ public:
         setDock(DockPosition::Bottom);
         setPadding(Padding(2, 2, 2, 2));
         setText("");
-        setAlignment(Alignment::Left|Alignment::CenterV);
+        setAlignment(Alignment::Left|Alignment::Top);
     }
 
 public:

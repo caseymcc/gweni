@@ -24,7 +24,7 @@ public:
 
     GWENI_CONTROL_INLINE(CalcPosition, Base)
     {
-        setPosition(Position::Left | Position::Top);
+        setPositionAlignment(Alignment::Left |Alignment::Top);
     }
 
 public:
@@ -35,11 +35,11 @@ public:
             if(child->getDock() != DockPosition::None)
                 continue;
 
-            child->setPosition(m_position);
+            child->setAlignment(m_position);
         }
     }
 
-    void setPosition(Position p)
+    void setPositionAlignment(Alignment p)
     {
         if(m_position != p)
         {
@@ -50,7 +50,7 @@ public:
 
 private:
 
-    Position m_position;
+    Alignment m_position;
 };
 
 
@@ -58,7 +58,7 @@ class GWENI_EXPORT Center: public CalcPosition
 {
     GWENI_CONTROL_INLINE(Center, CalcPosition)
     {
-        setPosition(Position::Center);
+        setPositionAlignment(Alignment::Center);
     }
 };
 

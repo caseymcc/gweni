@@ -290,8 +290,8 @@ struct GWENI_EXPORT Color
     union
     {
         uint32_t rgba;
-        struct { uint16_t rg, ba; };
-        struct { unsigned char r, g, b, a; };
+        struct { uint16_t ba, rg; };
+        struct { unsigned char a, b, g, r; };
     };
 };
 

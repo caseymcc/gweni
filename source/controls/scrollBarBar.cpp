@@ -23,18 +23,18 @@ GWENI_CONTROL_CONSTRUCTOR(ScrollBarBar)
     setTarget(this);
 }
 
-void ScrollBarBar::render(skin::Base *skin)
-{
-
-//    skin->drawScrollBarBar(this, skin::Generate, m_depressed, isHovered(), m_horizontal);
-    if(getStateChange() != StateChange_Nothing)
-    {
-        if(m_skinControl)
-            m_skinControl->update(skin->getRenderer(), this);
-    }
-
-    ParentClass::render(skin);
-}
+//void ScrollBarBar::render(skin::Base *skin)
+//{
+//
+////    skin->drawScrollBarBar(this, skin::Generate, m_depressed, isHovered(), m_horizontal);
+//    if(getStateChange() != StateChange_Nothing)
+//    {
+//        if(m_skinControl)
+//            m_skinControl->update(skin->getRenderer(), this);
+//    }
+//
+//    ParentClass::render(skin);
+//}
 
 void ScrollBarBar::onMouseMoved(int x, int y, int deltaX, int deltaY)
 {

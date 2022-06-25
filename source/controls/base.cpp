@@ -26,12 +26,34 @@
 #include <sstream>
 #include <iostream>
 
-
-
 namespace gweni
 {
 namespace controls
 {
+
+size_t countParents(Base *base)
+{
+    Base *parent=base->getParent();
+    size_t count=0;
+
+    while(parent)
+    {
+        count++;
+        parent=parent->getParent();
+    }
+    return count;
+}
+
+std::string spaceByParent(Base *base)
+{
+    size_t parents=countParents(base);
+    std::string spaces;
+
+    for(size_t i=0; i<parents; ++i)
+        spaces+="  ";
+    
+    return spaces;
+}
 
 size_t getControlType(std::string name)
 {
@@ -76,6 +98,7 @@ Base::Base(const String &name)
     m_skin=nullptr;
 
     m_alignment=Alignment::Left | Alignment::Top;
+    m_position=Position::Absolute;
 
     init(name);
 
@@ -115,6 +138,7 @@ void Base::init(const String &name)
     m_cacheTextureDirty=true;
     m_cacheToTexture=false;
     m_includeInSize=true;
+    m_updateLayout=true;
 }
 
 Base::~Base()
@@ -171,10 +195,19 @@ Base::~Base()
 //        releasePrimitiveId(m_primitiveIds[i]);
 }
 
-void Base::invalidate()
+void Base::invalidate(int state)
 {
-    m_needsLayout=true;
+    if((state & StateChange_Created) || 
+        (state & StateChange_Visibility) ||
+        (state & StateChange_Geometry))
+    {
+        m_needsLayout=true;
+        m_updateLayout=true;
+    }
+
     m_cacheTextureDirty=true;
+
+    invalidateParent(state);
 }
 
 void Base::delayedDelete()
@@ -223,6 +256,30 @@ void Base::setDock(DockPosition dock)
 DockPosition Base::getDock() const
 {
     return m_dock;
+}
+
+Position Base::getPosition() const
+{
+    return m_position;
+}
+
+void Base::setPosition(Position position)
+{
+    if(position ==m_position)
+        return;
+
+    m_position=position;
+    invalidate();
+}
+
+void Base::setPosition(Position position, int x, int y)
+{
+    if(position==m_position)
+        return;
+
+    m_position=position;
+    setBounds(x, y, getWidth(), getHeight());
+    invalidate();
 }
 
 Alignment Base::getAlignment()
@@ -319,36 +376,38 @@ void Base::invalidateChildren(bool recursive)
     }
 }
 
-void Base::setPosition(Position pos, int xpadding, int ypadding)
-{
-    const Rect &bounds=getParent()->getInnerBounds();
-    const Margin &margin=getMargin();
-    int x=getX();
-    int y=getY();
-
-    if(pos  &Position::Left)
-        x=bounds.x + xpadding + margin.left;
-
-    if(pos  &Position::Right)
-        x=bounds.x + (bounds.w - getWidth() - xpadding - margin.right);
-
-    if(pos  &Position::CenterH)
-        x=bounds.x + (bounds.w - getWidth())/2;
-
-    if(pos  &Position::Top)
-        y=bounds.y + ypadding;
-
-    if(pos  &Position::Bottom)
-        y=bounds.y + (bounds.h - getHeight() - ypadding);
-
-    if(pos  &Position::CenterV)
-        y=bounds.y + (bounds.h - getHeight())/2 + ypadding;
-
-    x=std::max(0, x);
-    y=std::max(0, y);
-
-    setPos(x, y);
-}
+//void Base::setPosition(Position pos, int xpadding, int ypadding)
+//{
+//    m_position=pos;
+//
+//    const Rect &bounds=getParent()->getInnerBounds();
+//    const Margin &margin=getMargin();
+//    int x=getX();
+//    int y=getY();
+//
+//    if(pos  &Position::Left)
+//        x=bounds.x + xpadding + margin.left;
+//
+//    if(pos  &Position::Right)
+//        x=bounds.x + (bounds.w - getWidth() - xpadding - margin.right);
+//
+//    if(pos  &Position::CenterH)
+//        x=bounds.x + (bounds.w - getWidth())/2;
+//
+//    if(pos  &Position::Top)
+//        y=bounds.y + ypadding;
+//
+//    if(pos  &Position::Bottom)
+//        y=bounds.y + (bounds.h - getHeight() - ypadding);
+//
+//    if(pos  &Position::CenterV)
+//        y=bounds.y + (bounds.h - getHeight())/2 + ypadding;
+//
+//    x=std::max(0, x);
+//    y=std::max(0, y);
+//
+//    setPos(x, y);
+//}
 
 void Base::sendToBack()
 {
@@ -574,6 +633,8 @@ bool Base::setBounds(const Rect &bounds)
     if(m_bounds == bounds)
         return false;
 
+    invalidateChildren(true);
+
     const Rect oldBounds=getBounds();
     m_bounds=bounds;
     onBoundsChanged(oldBounds);
@@ -659,9 +720,6 @@ void Base::setPrimitiveIdsSize(size_t size)
 
 void Base::render(skin::Base *skin)
 {
-    if(m_name == "ButtonA")
-        skin=skin;
-
 //    update();
     if(getStateChange() == StateChange_Nothing)
         return;
@@ -683,7 +741,7 @@ void Base::render(skin::Base *skin)
             else
                 primitiveList+=", "+std::to_string(primitives[i]);
         }
-        std::cout<<"Pimitives: "<<name<<" ("<<primitiveList<<")\n";
+        std::cout<<"Primitives: "<<name<<" ("<<primitiveList<<")\n";
     }
 
     const Rect &bounds=getBounds();
@@ -803,6 +861,18 @@ void Base::doCacheRender(skin::Base *skin, controls::Base *master)
     baseRenderer->endClip();
 }
 
+void Base::doThink()
+{
+    think();
+    if(!m_children.empty())
+    {
+        for(auto &&child:m_children)
+        {
+            child->doThink();
+        }
+    }
+}
+
 void Base::doRender(skin::Base *skin)
 {
     // If this control has a different skin,
@@ -811,7 +881,7 @@ void Base::doRender(skin::Base *skin)
         skin=m_skin;
 
     // Do think
-    think();
+    //think();
 
 
     renderer::Base *baseRenderer=skin->getRenderer();
@@ -820,11 +890,13 @@ void Base::doRender(skin::Base *skin)
     {
     }
 
-    if(baseRenderer->getCTT() && isCachedToTexture())
-    {
-        doCacheRender(skin, this);
-        return;
-    }
+//    if(baseRenderer->getCTT() && isCachedToTexture())
+//    {
+//        doCacheRender(skin, this);
+//        return;
+//    }
+//    if(getStateChange()==StateChange_Nothing)
+//        return;
 
     renderRecursive(skin, getBounds());
 
@@ -835,10 +907,19 @@ void Base::doRender(skin::Base *skin)
 void Base::renderRecursive(skin::Base *skin, const Rect &cliprect)
 {
     renderer::Base *baseRenderer=skin->getRenderer();
-    Point oldRenderOffset=baseRenderer->getRenderOffset();
-    baseRenderer->addRenderOffset(cliprect);
+
+    //render current control
     renderUnder(skin);
+    render(skin);
+
+    //set clipping to this control
+    Point oldRenderOffset=baseRenderer->getRenderOffset();
     Rect rOldRegion=baseRenderer->clipRegion();
+
+    baseRenderer->addRenderOffset(cliprect);
+
+    Rect currentRegion=baseRenderer->clipRegion();
+//    std::cout<<"Adding offset: "<<cliprect.x<<", "<<cliprect.y<<" final loc ("<<currentRegion.x<<", "<<currentRegion.y<<", w:"<<currentRegion.w<<", h:"<<currentRegion.h<<")\n";
 
     // If this control is clipping, change the clip rect to ourselves
     // else clip using our parents clip rect.
@@ -854,11 +935,9 @@ void Base::renderRecursive(skin::Base *skin, const Rect &cliprect)
 //        }
 //    }
 
-    // Render this control and children controls
+    // Render this child controls under current objects clip
     baseRenderer->startClip();
     {
-        render(skin);
-
         if(!m_children.empty())
         {
             // Now render my kids
@@ -951,9 +1030,9 @@ void Base::setSkin(skin::Base *skin, bool doChildren)
         }
     }
 
-    //need to set prefered size
-    calculateSize(skin, Dim::X);
-    calculateSize(skin, Dim::Y);
+//    //need to set prefered size
+//    calculateSize(skin, Dim::X);
+//    calculateSize(skin, Dim::Y);
 }
 
 void Base::onSkinChanged(skin::Base * /*skin*/)
@@ -1136,6 +1215,9 @@ bool Base::processLayout(skin::Base *skin, Dim dim)
 Size Base::sizeOfChildren(skin::Base *skin, Dim dim)
 {
     Size preferredSize=m_preferredSize;
+
+    if(m_name == "ControlsTab")
+        dim=dim;
 
     if(dim==Dim::X)
     {
@@ -1328,7 +1410,8 @@ void Base::arrange(skin::Base *skin, Dim dim)
         child->arrange(skin, dim);
     }
 
-//    postLayout(skin);
+    if(dim == Dim::Y)
+        postLayout(skin);
 }
 
 void Base::arrangeHorizontal(skin::Base *skin)
@@ -1411,6 +1494,12 @@ void Base::arrangeHorizontal(skin::Base *skin)
             else //none/Absolute
                 child->setBounds(bounds.x, bounds.y, bounds.w, bounds.h);
         }
+
+#ifdef DEBUG_LAYOUT
+
+        if(!(dock&DockPosition::Center))
+            logUpdates("%s%s - arrangeH - dock: %s, (%d, %d, %d, %d)\n", spaceByParent(child).c_str(), child->getTypeName(), getDockPositionName(dock), child->getX(), child->getY(), child->getWidth(), child->getHeight());
+#endif//DEBUG_LAYOUT
     }
 
     m_innerBounds.x=innerBounds.x;
@@ -1430,6 +1519,10 @@ void Base::arrangeHorizontal(skin::Base *skin)
 
         child->setBounds(innerBounds.x+margin.left, bounds.y,
             innerBounds.w-margin.left-margin.right, bounds.h);
+
+#ifdef DEBUG_LAYOUT
+        logUpdates("%s%s - arrangeH - dock: %s, (%d, %d, %d, %d)\n", spaceByParent(child).c_str(), child->getTypeName(), getDockPositionName(dock), child->getX(), child->getY(), child->getWidth(), child->getHeight());
+#endif//DEBUG_LAYOUT
     }
 }
 
@@ -1439,6 +1532,8 @@ void Base::arrangeVertical(skin::Base *skin)
 
     innerBounds.y=m_padding.top;
     innerBounds.h-=m_padding.top+m_padding.bottom;
+
+    size_t centerCount=0;
 
     for(auto &&child:m_children)
     {
@@ -1516,23 +1611,41 @@ void Base::arrangeVertical(skin::Base *skin)
             else //none/Absolute
                 child->setBounds(bounds.x, bounds.y, bounds.w, bounds.h);
         }
+        else if(dock==DockPosition::Center)
+            centerCount++;
+
+#ifdef DEBUG_LAYOUT
+        if(!(dock&DockPosition::Center))
+            logUpdates("%s%s - arrangeV - dock: %s, (%d, %d, %d, %d)\n", spaceByParent(child).c_str(), child->getTypeName(), getDockPositionName(dock), child->getX(), child->getY(), child->getWidth(), child->getHeight());
+#endif//DEBUG_LAYOUT
     }
 
     m_innerBounds.y=innerBounds.y;
     m_innerBounds.h=innerBounds.h;
 
-    for(auto &&child:m_children)
+    if(centerCount > 0)
     {
-        DockPosition dock=child->getDock();
+        int centerH=innerBounds.h/centerCount;
 
-        if(!(dock & DockPosition::Center))
-            continue;
+        centerCount=0;
+        for(auto &&child:m_children)
+        {
+            DockPosition dock=child->getDock();
 
-        const Margin &margin=child->getMargin();
-        const Rect &bounds=child->getBounds();
+            if(!(dock & DockPosition::Center))
+                continue;
 
-        child->setBounds(bounds.x, innerBounds.y+margin.top,
-            bounds.w, innerBounds.h-margin.top-margin.bottom);
+            const Margin &margin=child->getMargin();
+            const Rect &bounds=child->getBounds();
+
+            child->setBounds(bounds.x, innerBounds.y+(centerCount*centerH)+margin.top,
+                bounds.w, centerH-margin.top-margin.bottom);
+
+            centerCount++;
+#ifdef DEBUG_LAYOUT
+            logUpdates("%s%s - arrangeV - dock: %s, (%d, %d, %d, %d)\n", spaceByParent(child).c_str(), child->getTypeName(), getDockPositionName(dock), child->getX(), child->getY(), child->getWidth(), child->getHeight());
+#endif//DEBUG_LAYOUT
+        }
     }
 }
 
@@ -1544,12 +1657,15 @@ void Base::recurseLayout(skin::Base *skin)
     if(hidden())
         return;
 
+    if(!m_updateLayout)
+        return;
+
     calculateSize(skin, Dim::X);
     arrange(skin, Dim::X);
     calculateSize(skin, Dim::Y);
     arrange(skin, Dim::Y);
 
-    //    postLayout(skin);
+    //postLayout(skin);
 
     if(isTabable() && !isDisabled())
     {
@@ -1562,6 +1678,8 @@ void Base::recurseLayout(skin::Base *skin)
 
     if(KeyboardFocus == this)
         getCanvas()->m_nextTab=nullptr;
+
+    m_updateLayout=false;
 }
 
 bool Base::isChild(controls::Base *possiblechild)

@@ -28,6 +28,7 @@ public:
 public:
     void printText(const String &str);
 
+    void think() override;
     void render(skin::Base *skin);
 
     template<typename _Type>
@@ -42,6 +43,7 @@ private:
     controls::Base *m_lastControl;
 //    controls::layout::Center *m_center;
     controls::PageControl *m_center;
+    controls::DockBase *m_dockBase;
 
     std::vector<controls::Base *> m_pages;
     unsigned int m_frames;

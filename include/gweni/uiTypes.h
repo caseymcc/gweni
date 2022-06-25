@@ -16,6 +16,7 @@
 #include <gweni/platforms/platformTypes.h>
 #include <algorithm>
 #include <limits>
+#include <string>
 
 #include <glm/glm.hpp>
 #include <glm/detail/type_vec4.hpp>
@@ -81,6 +82,33 @@ inline bool operator&(DockPosition a, DockPosition b)
     return (static_cast<int>(a)  &static_cast<int>(b)) != 0;
 }
 
+inline const char *getDockPositionName(DockPosition position)
+{
+    switch(position)
+    {
+    case DockPosition::None:
+        return "None";
+        break;
+    case DockPosition::Left:
+        return "Left";
+        break;
+    case DockPosition::Right:
+        return "Right";
+        break;
+    case DockPosition::Top:
+        return "Top";
+        break;
+    case DockPosition::Bottom:
+        return "Bottom";
+        break;
+    case DockPosition::Center:
+        return "Center";
+        break;
+    };
+
+    return "Unknown";
+}
+
 enum class Alignment
 {
     None=0,
@@ -107,15 +135,18 @@ inline bool operator&(Alignment a, Alignment b)
 enum class Position
 {
     None=0,
-    Left=(1<<1),
-    Right=(1<<2),
-    Top=(1<<3),
-    Bottom=(1<<4),
-    CenterV=(1<<5),
-    CenterH=(1<<6),
-    Fill=(1<<7),
-    Fixed=(1<<8),
-    Center=CenterV | CenterH
+    Relative=(1<<1),
+    Absolute=(1<<2)
+//    None=0,
+//    Left=(1<<1),
+//    Right=(1<<2),
+//    Top=(1<<3),
+//    Bottom=(1<<4),
+//    CenterV=(1<<5),
+//    CenterH=(1<<6),
+//    Fill=(1<<7),
+//    Fixed=(1<<8),
+//    Center=CenterV | CenterH
 };
 
 inline Position operator|(Position a, Position b)

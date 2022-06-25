@@ -80,7 +80,7 @@ public:
             false, true);
         picker->onColorChanged.add(this, &ColorSelector::colorChanged);
 
-        menu->open(Position::Right | Position::Top);
+        menu->open(Alignment::Right |Alignment::Top);
     }
 
     void colorChanged(event::Info info)
