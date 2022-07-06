@@ -128,7 +128,7 @@ private:
 
 template<typename _Class> std::string ControlRegister<_Class>::m_typeName=\
 ControlFactory::registerControl<_Class>();
-template<typename _Class> std::string ControlRegister<_Class>::m_forceTypeName;
+template<typename _Class> forceInit<std::string &,ControlRegister<_Class>::m_typeName> ControlRegister<_Class>::m_forceTypeName;
 
 //struct Textures_t
 //{

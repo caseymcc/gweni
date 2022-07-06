@@ -76,6 +76,8 @@ class ButtonTemplate:public textured::ControlRegister<ButtonTemplate<_Type>>
 public:
     size_t requiredPrimitives() override { return 9; }
 
+    using ThisClass=textured::ControlRegister<ButtonTemplate<_Type>>;
+
     inline static constexpr std::string_view ButtonNormal="Button.Normal";
     inline static constexpr std::string_view ButtonHover="Button.Hover";
     inline static constexpr std::string_view ButtonDown="Button.Down";
@@ -98,7 +100,7 @@ public:
         DownPrimitive.init(skin, Down);
         DisabledPrimitive.init(skin, Disabled);
 
-        m_staticInit=true;
+        ThisClass::m_staticInit=true;
     }
 
     void update(renderer::Base *renderer, controls::Base *baseControl) override
@@ -127,12 +129,12 @@ public:
                 primitive=&NormalPrimitive;
 
             if(!control->hidden())
-                primitive->draw(renderer, m_primitives.data(), baseControl->getRenderBounds(), baseControl->getZIndex());
+                primitive->draw(renderer, ThisClass::m_primitives.data(), baseControl->getRenderBounds(), baseControl->getZIndex());
 
             if((baseControl->getStateChange()&controls::StateChange_Visibility) ||
                 (baseControl->getStateChange()&controls::StateChange_Created))
             {
-                primitive->show(renderer, m_primitives.data(), !control->hidden());
+                primitive->show(renderer, ThisClass::m_primitives.data(), !control->hidden());
                 return;
             }
         }
@@ -169,7 +171,7 @@ template<typename _Type> BorderedPrimitive ButtonTemplate<_Type>::DisabledPrimit
 
 struct DefaultButton
 {
-    inline static const std::string_view value="";
+    inline static JoinConstExpr std::string_view value="";
 };
 
 //class Button:public textured::ControlRegister<Button>
@@ -361,17 +363,17 @@ public:
 
 struct InputButton
 {
-    inline static const std::string_view value="Input.Button.";
+    inline static JoinConstExpr std::string_view value="Input.Button.";
 };
 
 struct InputButtonUp
 {
-    inline static const std::string_view value="Input.UpDown.Up.";
+    inline static JoinConstExpr std::string_view value="Input.UpDown.Up.";
 };
 
 struct InputButtonDown
 {
-    inline static const std::string_view value="Input.UpDown.Down.";
+    inline static JoinConstExpr std::string_view value="Input.UpDown.Down.";
 };
 
 class Input:public textured::ControlRegister<Input>
@@ -532,10 +534,10 @@ public:
 
     inline static const std::string_view name="ScrollBarButton";
 
-    static size_t ScrollBarButton::Normal[4];
-    static size_t ScrollBarButton::Hover[4];
-    static size_t ScrollBarButton::Down[4];
-    static size_t ScrollBarButton::Disable[4];
+    static size_t Normal[4];
+    static size_t Hover[4];
+    static size_t Down[4];
+    static size_t Disable[4];
 
     static BorderedPrimitive NormalPrimitive[4];
     static BorderedPrimitive HoverPrimitive[4];
@@ -547,17 +549,17 @@ public:
 
 struct ScrollerButton
 {
-    inline static const std::string_view value="Scroller";
+    inline static JoinConstExpr std::string_view value="Scroller";
 };
 
 struct ScrollerHorizontal
 {
-    inline static const std::string_view value="Scroller.Horizontal";
+    inline static JoinConstExpr std::string_view value="Scroller.Horizontal";
 };
 
 struct ScrollerVertical
 {
-    inline static const std::string_view value="Scroller.Vertical";
+    inline static JoinConstExpr std::string_view value="Scroller.Vertical";
 };
 
 class Scroller:public textured::ControlRegister<Scroller>

@@ -105,7 +105,7 @@ public:
 
     Base(gweni::renderer::Base *renderer=nullptr)
     {
-        m_defaultFont.facename="Arial";
+        m_defaultFont.facename="arial";
         m_defaultFont.size=10.0f;
         m_render=renderer;
     }

@@ -1,5 +1,5 @@
-#ifndef _imglib_image_h_
-#define _imglib_image_h_
+#ifndef _imglib_filesystem_h_
+#define _imglib_filesystem_h_
 
 #ifdef IMGLIB_USE_PNG
 #include "png.h"
@@ -37,4 +37,4 @@ bool loadImage(_Image &image, char *filename)
 
 }//namespace imglib
 
-#endif //_imglib_image_h_
+#endif //_imglib_filesystem_h_

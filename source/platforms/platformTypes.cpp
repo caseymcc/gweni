@@ -7,7 +7,7 @@ const Font &getDefaultFont()
 {
     static Font defaultFont;
 
-    defaultFont.facename="Arial";
+    defaultFont.facename="arial";
     defaultFont.size=10.0f;
     defaultFont.bold=false;
 

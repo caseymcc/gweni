@@ -17,6 +17,7 @@
 #include <algorithm>
 #include <array>
 #include <stdio.h>
+#include <string_view>
 
  // Some platforms (e.g. Windows) define these. We want std::min/max.
 #ifdef min
@@ -76,9 +77,9 @@ struct join
 }//namespace detail
 
 template<std::string_view const &... _Strings>
-std::string_view join = detail::join<_Strings...>::value;
+std::string_view join = detaitl::join<_Strings...>::value;
 
-#define JoinConstExpr
+#define JoinConstExpr const
 
 #else
 

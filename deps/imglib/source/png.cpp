@@ -2,7 +2,8 @@
 #include <png.h>
 
 #include <vector>
-#include  <cassert>
+#include <cassert>
+#include <cstring>
 
 namespace imglib
 {

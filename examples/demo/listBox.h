@@ -12,7 +12,7 @@ public:
     GWENI_CONTROL(ListBoxDemo, controls::Base);
 
 public:
-    void ListBoxDemo::rowSelected(event::Info info);
+    void rowSelected(event::Info info);
 
 private:
     Font m_font;

@@ -7,13 +7,14 @@
 #include <gweni/platforms/commonPlatform.h>
 #include <gweni/platforms/platform.h>
 #include <gweni/utility.h>
+#include <gweni/utils/filesystem.h>
 
 #include <cstdlib>
 #include <map>
 #include <iostream>
-#include <filesystem>
+//#include <filesystem>
 
-#include "DebugBreak.h"
+#include "debugbreak.h"
 
 namespace gweni
 {
@@ -21,13 +22,13 @@ namespace platform
 {
 
 CurrentPath::CurrentPath(String const &resourceDir):
-    m_resDir((std::filesystem::current_path()/resourceDir).string())
+    m_resDir((fs::current_path()/resourceDir).string())
 {}
 
 String CurrentPath::getPath(Type type, String const &filename)
 {
     //    String filepath(m_resDir + filename);
-    String filepath((std::filesystem::path(m_resDir)/filename).string());
+    String filepath((fs::path(m_resDir)/filename).string());
 
     if(type == Type::Font)
     {
@@ -99,7 +100,7 @@ LogCaller setLogCaller(LogCaller caller)
 namespace debug
 {
 
-void debug::assertFail(const char *strMsg)
+void assertFail(const char *strMsg)
 {
     log::write(log::Level::Fatal, "Assert: %s\n", strMsg);
 

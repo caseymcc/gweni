@@ -1,7 +1,7 @@
 # CMake build instructions for gweni
 
 # configure cmake
-cmake_minimum_required(VERSION 3.1)
+cmake_minimum_required(VERSION 3.12)
 
 set(CMAKE_CXX_STANDARD 17)
 
@@ -90,7 +90,7 @@ set(GWENI_SOURCES
     include/gweni/skin.h
     source/skin.cpp
     include/gweni/toolTip.h
-    source/tooltip.cpp
+    source/toolTip.cpp
     include/gweni/uiTypes.h
     include/gweni/userData.h
     include/gweni/utility.h
@@ -226,13 +226,13 @@ set(GWENI_LAYOUT_SOURCES
 set(GWENI_DIALOG_SOURCES
     # dialog
     include/gweni/controls/dialogs/fileOpen.h
-    source/controls/Dialog/fileOpen.cpp
+    source/controls/dialog/fileOpen.cpp
     include/gweni/controls/dialogs/fileSave.h
-    source/controls/Dialog/fileSave.cpp
+    source/controls/dialog/fileSave.cpp
     include/gweni/controls/dialogs/folderOpen.h
-    source/controls/Dialog/folderOpen.cpp
+    source/controls/dialog/folderOpen.cpp
     include/gweni/controls/dialogs/query.h
-    source/controls/Dialog/query.cpp
+    source/controls/dialog/query.cpp
 )
 
 set(GWENI_SKIN_SIMPLE_SOURCES
@@ -379,7 +379,7 @@ source_group("platforms\\renderers" FILES ${GWENI_RENDER_SOURCES})
 source_group("properties" FILES ${GWENI_PROPERTY_SOURCES})
 
 # gweni library
-add_library(gweni STATIC 
+add_library(gweni OBJECT 
     ${GWENI_SOURCES}
     ${GWENI_CONTROL_SOURCES}
     ${GWENI_LAYOUT_SOURCES}
@@ -396,11 +396,11 @@ target_link_libraries(gweni
     ${GWENI_ADDITIONAL_LIBRARIES}
 #    gweni${GWENI_RENDER_NAME}
 )
-if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "MSVC")
-    target_link_options(gweni PUBLIC "/WHOLEARCHIVE:$<TARGET_FILE:gweni>")
-else()
-    target_link_options(gweni PUBLIC --whole-archive)
-endif()
+#if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "MSVC")
+#    target_link_options(gweni PUBLIC "/WHOLEARCHIVE:$<TARGET_FILE:gweni>")
+#else()
+#    target_link_options(gweni PUBLIC -W1,--whole-archive $<TARGET_FILE:gweni> -W1,--no-whole-archive)
+#endif()
 
 target_compile_definitions(gweni PUBLIC ${GWENI_COMPILE_DEFINITIONS})
 

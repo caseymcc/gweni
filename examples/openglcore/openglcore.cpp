@@ -6,11 +6,11 @@
 
 #include <GL/glew.h>
 #ifdef USE_DEBUG_FONT
-#   include <gweni/platforms/renderers/OpenGL_DebugFont.h>
+#   include <gweni/platforms/renderers/opengl_debugFont.h>
 #else
-#   include <gweni/platforms/renderers/OpenGLCore.h>
+#   include <gweni/platforms/renderers/openglCore.h>
 #endif
-#include <gweni/Gweni.h>
+#include <gweni/gweni.h>
 #include <gweni/platforms/platform.h>
 #include <gweni/skins/simple/simple.h>
 #include <gweni/skins/textured/texturedSkin.h>

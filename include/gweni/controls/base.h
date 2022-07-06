@@ -122,7 +122,7 @@ public:
     template<typename _Control>
     friend _Control *newControl(const gweni::String &name);
     template<typename _Control>
-    _Control *newChild(const gweni::String &name);
+    _Control *newChild(const gweni::String name="");
 
     virtual bool            isChild(controls::Base *child);
     virtual unsigned int    numChildren();
@@ -725,7 +725,7 @@ public:
 };
 
 template<typename _Control>
-_Control *Base::newChild(const gweni::String &name="")
+_Control *Base::newChild(const gweni::String name)
 {
     _Control *control=newControl<_Control>(name);
 

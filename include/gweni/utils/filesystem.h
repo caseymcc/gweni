@@ -13,7 +13,7 @@ namespace std
 {
 namespace filesystem
 {
-#elif GWENI_USE_FILESYSTEM == DGWENI_EXPERIMENTAL_FILESYSTEM
+#elif GWENI_USE_FILESYSTEM == GWENI_EXPERIMENTAL_FILESYSTEM
 
 #include <experimental/filesystem>
 namespace fs=std::experimental::filesystem;
@@ -49,7 +49,7 @@ inline bool isValid(std::string &fileName)
 
 #if GWENI_USE_FILESYSTEM == GWENI_STD_FILESYSTEM
 }}
-#elif GWENI_USE_FILESYSTEM == DGWENI_EXPERIMENTAL_FILESYSTEM
+#elif GWENI_USE_FILESYSTEM == GWENI_EXPERIMENTAL_FILESYSTEM
 }}}
 #else //GWENI_BOOST
 }}
