@@ -1,0 +1,79 @@
+#include "demo/label.h"
+#include <gweni/controls/layout/layout.h>
+#include "gweni/controls/label.h"
+
+namespace gweni
+{
+
+//LabelDemo::LabelDemo(const String &name):
+//    Base()
+GWENI_CONTROL_CONSTRUCTOR(LabelDemo)
+{
+    setLayout(new controls::VerticalLayout());
+
+    {
+        controls::Label *label=newChild<controls::Label>();
+        label->setText("Garry's Normal Label");
+        label->sizeToContents();
+        label->setPos(10, 10);
+    }
+    {
+        controls::Label *label=newChild<controls::Label>();
+        label->setText("Chinese: n/a");
+        label->sizeToContents();
+        label->setPos(10, 30);
+    }
+    {
+        controls::Label *label=newChild<controls::Label>();
+        label->setText("Japanese: n/a");
+        label->sizeToContents();
+        label->setPos(10, 50);
+    }
+    {
+        controls::Label *label=newChild<controls::Label>();
+        label->setText("Korean: n/a");
+        label->sizeToContents();
+        label->setPos(10, 70);
+    }
+    {
+        controls::Label *label=newChild<controls::Label>();
+        label->setText("Hindi: n/a");
+        label->sizeToContents();
+        label->setPos(10, 90);
+    }
+    {
+        controls::Label *label=newChild<controls::Label>();
+        label->setText("Arabic: n/a");
+        label->sizeToContents();
+        label->setPos(10, 110);
+    }
+    {
+        controls::Label *label=newChild<controls::Label>();
+        label->setText("Wow, Coloured Text");
+        label->setTextColor(gweni::Color(0, 0, 255, 255));
+        label->sizeToContents();
+        label->setPos(10, 130);
+    }
+    {
+        controls::Label *label=newChild<controls::Label>();
+        label->setText("Coloured Text With Alpha");
+        label->setTextColor(gweni::Color(0, 0, 255, 100));
+        label->sizeToContents();
+        label->setPos(10, 150);
+    }
+    {
+        //
+        // Note that when using a custom font, this font object has to stick around
+        // for the lifetime of the label. Rethink, or is that ideal?
+        //
+//        m_font.facename="Comic Sans MS";
+//        m_font.size=25;
+        controls::Label *label=newChild<controls::Label>();
+        label->setText("Supose to be custom");// Custom Font(Comic Sans 25)");
+//        label->setFont(m_font);
+        label->sizeToContents();
+        label->setPos(10, 170);
+    }
+}
+
+}//namespace gweni

@@ -1,0 +1,104 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## What this is
+
+gweni ("GUI Without Extravagant Nonsense") is a C++17 retained-mode GUI library, forked from Garry Newman's **GWEN** (MIT) and reworked to be OpenGL-aware. The core idea separating it from GWEN: instead of redrawing every widget each frame in immediate mode, controls allocate persistent renderer **primitives** and only regenerate/update them when their state actually changes. The long-term goal is good performance on modern OpenGL (3.0+ core profile) and eventually Vulkan.
+
+The library builds as a static/object library plus example executables. There is no test suite.
+
+## Building
+
+**All builds and dependency operations run inside Docker — never on the host.** The toolchain, vcpkg, and all build tooling live in the container. `run_docker.sh` builds an Ubuntu 22.04 image (`Dockerfile`), creates a container that mounts the repo at `/home/developer/gweni`, and either attaches a shell or runs a command you pass it:
+
+```bash
+./run_docker.sh                       # interactive shell in the container
+./run_docker.sh ./generate.sh linux   # run a single command in the container
+./run_docker.sh cmake --build build_linux_x64_debug -j
+```
+
+Flags (before the command): `-r` rebuild the image, `-s` force-restart the container.
+
+Dependencies are managed by **vcpkg** (manifest `vcpkg.json` at the repo root), which is bootstrapped into the image at `/opt/vcpkg` (`VCPKG_ROOT`). The vcpkg binary cache and downloads are persisted to `.vcpkg-cache/` in the repo, mounted into the container at `/vcpkg-cache` — so the slow first dependency build is reused across container runs. `.vcpkg-cache/` and `vcpkg_installed/` are git-ignored.
+
+`generate.sh` only runs `cmake` **configuration** (it does not build) and refuses to run without `VCPKG_ROOT` set (i.e. outside the container). It points CMake at the vcpkg toolchain and chainloads `cmake/linux_toolchain.cmake`:
+
+```bash
+./run_docker.sh ./generate.sh linux            # configures build_linux_x64_debug/ (SDL2+legacy GL off, GL core on)
+./run_docker.sh ./generate.sh linux release    # release build dir
+./run_docker.sh ./generate.sh linux -DSOME_OPT=ON   # any -D... arg is passed through to cmake
+```
+
+Then build into the generated directory (named `build_<platform>_<arch>_<buildtype>`):
+
+```bash
+./run_docker.sh cmake --build build_linux_x64_debug -j
+```
+
+The Linux example binary lands in `build_linux_x64_debug/examples/openglcore/OpenGLCore` and must be run from the **repo root** (it loads `resources/DefaultSkin.json`, `resources/OpenSans.ttf` via a `CurrentPath("resources")` loader).
+
+### Dependencies / vcpkg notes
+- The active OpenGL-core build pulls `rapidjson`, `glm`, `freetype`, `glew`, `glfw3`, `libpng`, `libjpeg-turbo` (last two via the `deps/imglib` subproject). RapidJSON is header-only — CMake consumes `RAPIDJSON_INCLUDE_DIRS`, not an imported target.
+- The SDL2 backend and the Android Boost.Filesystem backend are optional vcpkg **features** (`sdl2`, `boost-filesystem`); enable with `-DVCPKG_MANIFEST_FEATURES=sdl2`.
+- The vendored `deps/freetype-gl` and `deps/imglib` are added via `add_subdirectory`; `deps/CMakeLists.txt` sets `freetype-gl_USE_HUNTER OFF` so they resolve deps through the vcpkg toolchain's standard find modules.
+
+### Build options (CMakeLists.txt)
+`GWENI_RENDER_SDL2`, `GWENI_RENDER_OPENGL` (legacy fixed-function), `GWENI_RENDER_OPENGL_CORE` (the active modern renderer), `GWENI_BUILD_EXAMPLES`. The Linux toolchain turns SDL2 and legacy GL **off** and uses only the GL core renderer. `GWENI_RENDER_OPENGL_CORE` is what pulls in glm + freetype + the `deps/freetype-gl` and `deps/imglib` subprojects.
+
+## Architecture
+
+> Full write-up in [`docs/architecture.md`](docs/architecture.md); summary below.
+
+### Core goal: API-agnostic, change-tracked UI
+The whole point of gweni is that **UI logic (layout, padding, docking, hover/highlight/focus, hit-testing) is decoupled from the rendering API**. The same control/skin code is meant to drive OpenGL today and Vulkan (or any backend) later, by implementing one abstract interface — `gweni::renderer::Base` (`include/gweni/platforms/baseRender.h`). The core never makes API calls directly; it only calls that interface.
+
+The frame is two phases (`examples/openglcore/openglcore.cpp`):
+1. **`canvas->updateCanvas()`** — logic only: think/input, layout/docking, z-order, and recording *what changed* per control as a state-change bitmask. No draw calls.
+2. **`canvas->renderCanvas()`** — render: `renderer->begin()`, walk the tree, and for each control emit **only the draw-state changes needed**, then `renderer->end()`. A control with `StateChange_Nothing` issues no renderer calls.
+
+A backend may be **immediate** (redraw everything each `drawFilledRect`) or **retained** (primitive ids index a persistent GPU buffer); the same UI code drives both. The performance target is that per-frame cost scales with what changed, not UI size.
+
+### Namespaces & layout
+- `gweni::controls` — all widgets, rooted at `controls::Base`. Headers in `include/gweni/controls/`, impls in `source/controls/`.
+- `gweni::skin` — draws controls; `simple` (vector) and `textured` (atlas-based, the one the examples use) skins under `skins/`.
+- `gweni::renderer` — `renderer::Base` abstract API; concrete renderers under `source/platforms/renderers/` (`OpenGLCore/`, `OpenGL/`).
+- `gweni::platform` — OS abstractions (clipboard, cursor, file dialogs, timing, window creation) in `platforms/`.
+- `gweni::event` — signal/slot system in `events.h`.
+
+Public headers live under `include/gweni/...`; the directory tree there mirrors the `source/...` tree. Note the header path `include/gweni/controls/dialogs/` maps to source `source/controls/dialog/` (singular).
+
+### The retained-primitive model (the important part)
+This is what makes gweni different from upstream GWEN and is easy to get wrong:
+
+1. Every `controls::Base` tracks a dirty bitmask via `addStateChange(...)` with flags `StateChange_Created / Visibility / Geometry / Background / Text` (defined in `controls/base.h`). `StateChange_Nothing` means nothing to regenerate.
+2. Controls own persistent renderer **primitive IDs** (`primitiveIds.h`: `getPrimitiveId`/`getTextId`/`releasePrimitiveId`). The skin's `Control` objects (`skin.h`) declare `requiredPrimitives()` and have `generate()/update()/remove()` keyed off the control's `State` (`Generate`/`Update`/`Remove`).
+3. In `OpenGLCore` a **primitive id is a fixed slot in one persistent VBO/EBO**: vertices at `id*4`, indices at `id*6` (`source/platforms/renderers/OpenGLCore/openglCore.cpp`). `update()` rewrites only that slot in the CPU mirror; unchanged controls leave their slots intact. A `Vertex` carries `{style,x,y,z,tx,ty}` plus SDF fields `{lx,ly,radius,border,cx,cy,bx,by}` (16-bit); `style` selects the shader path (0 hidden / 1 fill / 2 texture / 3 text / **4 SDF rounded-rect**); `show/hidePrimitive` just toggle `style`. Text uses a separate freetype-gl buffer keyed by text id.
+
+### SDF rounded-rect path (the active visual style)
+Style 4 is an analytic **signed-distance-field** rounded rectangle drawn in the fragment shader (`drawRoundedRect` on `renderer::Base`): vertical gradient fill + optional border, anti-aliased via `fwidth()`. Style 5 is an **icon glyph** (`drawIcon`): a stroked SDF checkmark or directional chevron (used for checkbox ticks, combo/scrollbar arrows). The SDF fields are zero for all other styles, so the fill/texture/text paths are unchanged. Overlay primitives (checkmark, radio dot, arrows) must be drawn at `getZIndex()+1` so the `GL_LESS` depth test doesn't reject them behind their own background. The textured skin drives it through `tokyonight::Surface` + `paintSurface()` (`include/gweni/skins/textured/tokyoNight.h`) and the `RoundedPrimitive` helper (`texturedPrimitives.h`); each control renderer's `update()` just picks a `Surface` for its state. The default theme is **Tokyo Night** (dark, blue-toned): surface fills are mutable globals in `tokyoNight.h`, text/line colors are set in code by `TexturedSkin::setThemeColors()`, and `renderText` bakes the control's draw color into the glyphs so per-control text colors apply. **The theme is swappable without recompiling**: an optional `"theme"` object in `resources/DefaultSkin.json` (`surfaces` + `textColors`) is loaded by `TexturedSkin::loadTheme()` and overrides any surface (by name, via `tokyonight::surfaceRegistry()`) or text color; omitted entries keep the compiled defaults. The legacy 9-slice atlas path (`BorderedPrimitive`) still exists but is no longer used by the converted controls.
+
+When adding or modifying a control, the rule is: mutating anything visual must call the appropriate `addStateChange(...)` (or `addStateChangeRecursive`) so the primitive gets regenerated — otherwise the change won't appear. Conversely, don't redraw unconditionally; that defeats the whole design.
+
+**Current state vs goal:** the change-tracking + persistent-primitive *foundation* exists, but the headline optimization is **not done yet** — `OpenGLCore::flush()` still re-uploads the entire vertex/index buffer with `glBufferData` and redraws every frame. The goal is incremental upload: track dirty primitive slots and `glBufferSubData` only those ranges (or skip the upload when nothing changed), then just draw the existing buffer. A Vulkan backend would do the same with device-local buffers + a staging upload. See `docs/architecture.md` → "Current state vs. goals".
+
+### Controls
+- Construct via the canvas: `canvas->newChild<SomeControl>()` or the `newControl<T>(name)` / `T::newInstance(name)` factory pattern. Controls form a parent/child tree (`Base::List`), set up by `setParent`.
+- Each control type exposes static/virtual `getTypeName()` and `getControlName()` for runtime identification and the reflection-ish `getControlType(name)` lookup.
+- Layout helpers (`align.h`, `controls/layout/`) and docking (`DockPosition` in `uiTypes.h`) handle positioning.
+
+### Skins
+A skin is constructed around a renderer and `init()`'d from a resource: the textured skin loads `DefaultSkin.json` (atlas description) + a TTF font. `texturedControls.cpp` / `texturedPrimitives.cpp` map each control type to its primitive layout in the atlas.
+
+### Events
+`event::Handler` is a base of `controls::Base`. Hooks carry an optional `event::Packet` (a `std::variant<Base*, String, int, float, size_t>`) delivered via `event::Info`. Use `Packet::isControl()/isString()/...` + `get<T>()` to unpack.
+
+## Conventions
+- C++17, `lowerCamelCase` for methods/functions, `PascalCase` for types, member fields prefixed `m_`.
+- Public symbols crossing the library boundary are tagged `GWENI_EXPORT` (`export.h`).
+- `gweni::String` / `gweni::Point` / `gweni::Rect` / `gweni::Color` / `BoundingBox` (aliased to `Margin`/`Padding`) come from `platforms/platformTypes.h` and `uiTypes.h` — use these rather than raw types.
+- Filesystem backend is selected at configure time via `GWENI_USE_FILESYSTEM` (std / experimental / boost) based on compiler; code must go through that macro, not include `<filesystem>` directly.
+- `base.h` currently has debug logging hard-enabled (`logUpdates` → `printf`, `DEBUG_ID`, `DEBUG_LAYOUT`); expect verbose stdout when running.
+
+## Origin / license
+MIT. Copyright headers credit Facepunch Studios (original GWEN). Keep the license header on new files.

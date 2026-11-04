@@ -1,0 +1,273 @@
+/*
+  * Gweni
+  * Copyright (c) 2010 Facepunch Studios
+  * See license in gweni.h
+ */
+
+
+#ifndef _gweni_uitypes_h_
+#define _gweni_uitypes_h_
+
+#ifdef _MSC_VER
+#   pragma warning( disable : 4244 )
+#   pragma warning( disable : 4251 )
+#endif
+
+#include <gweni/platforms/platformTypes.h>
+#include <algorithm>
+#include <limits>
+#include <string>
+
+#include <glm/glm.hpp>
+#include <glm/detail/type_vec4.hpp>
+
+namespace gweni
+{
+namespace controls
+{
+class Base;
+class Canvas;
+}
+
+typedef BoundingBox Margin;
+typedef BoundingBox Padding;
+
+struct GWENI_EXPORT HSV
+{
+    float h;
+    float s;
+    float v;
+};
+
+namespace draganddrop
+{
+struct GWENI_EXPORT Package
+{
+    Package()
+    {
+        userdata=nullptr;
+        draggable=false;
+        drawcontrol=nullptr;
+        holdoffset=Point(0, 0);
+    }
+
+    String  name;
+    void *userdata;
+    bool draggable;
+
+    controls::Base *drawcontrol;
+    Point holdoffset;
+};
+
+
+}
+
+enum class DockPosition
+{
+    None=0,
+    Left=(1<<1),
+    Right=(1<<2),
+    Top=(1<<3),
+    Bottom=(1<<4),
+    Center=(1<<5)
+};
+
+inline DockPosition operator|(DockPosition a, DockPosition b)
+{
+    return DockPosition(static_cast<int>(a) | static_cast<int>(b));
+}
+
+inline bool operator&(DockPosition a, DockPosition b)
+{
+    return (static_cast<int>(a)  &static_cast<int>(b)) != 0;
+}
+
+inline const char *getDockPositionName(DockPosition position)
+{
+    switch(position)
+    {
+    case DockPosition::None:
+        return "None";
+        break;
+    case DockPosition::Left:
+        return "Left";
+        break;
+    case DockPosition::Right:
+        return "Right";
+        break;
+    case DockPosition::Top:
+        return "Top";
+        break;
+    case DockPosition::Bottom:
+        return "Bottom";
+        break;
+    case DockPosition::Center:
+        return "Center";
+        break;
+    };
+
+    return "Unknown";
+}
+
+enum class Alignment
+{
+    None=0,
+    Left=(1<<1),
+    Right=(1<<2),
+    Top=(1<<3),
+    Bottom=(1<<4),
+    Absolute=(1<<5),
+    CenterV=(1<<6),
+    CenterH=(1<<7),
+    Center=CenterV|CenterH
+};
+
+inline Alignment operator|(Alignment a, Alignment b)
+{
+    return Alignment(static_cast<int>(a) | static_cast<int>(b));
+}
+
+inline bool operator&(Alignment a, Alignment b)
+{
+    return (static_cast<int>(a) & static_cast<int>(b)) != 0;
+}
+
+inline const char *getAlignmentName(Alignment align)
+{
+    if(align == Alignment::None)
+        return "None";
+    else if((align & Alignment::Top) && (align&Alignment::Left))
+        return "TopLeft";
+    else if((align&Alignment::Top) && (align&Alignment::Right))
+        return "TopRight";
+    else if((align&Alignment::Top)&&(align&Alignment::CenterH))
+        return "TopCenter";
+    else if((align&Alignment::Bottom)&&(align&Alignment::Left))
+        return "BottomLeft";
+    else if((align&Alignment::Bottom)&&(align&Alignment::Right))
+        return "BottomRight";
+    else if((align&Alignment::Bottom)&&(align&Alignment::CenterH))
+        return "BottomCenter";
+    else if((align&Alignment::CenterV)&&(align&Alignment::Left))
+        return "CenterLeft";
+    else if((align&Alignment::CenterV)&&(align&Alignment::Right))
+        return "CenterRight";
+    else if((align&Alignment::CenterV)&&(align&Alignment::CenterH))
+        return "Center";
+    else if((align&Alignment::Absolute))
+        return "Absolute";
+
+    return "Unknown";
+}
+
+enum class Position
+{
+    None=0,
+    Relative=(1<<1),
+    Absolute=(1<<2)
+//    None=0,
+//    Left=(1<<1),
+//    Right=(1<<2),
+//    Top=(1<<3),
+//    Bottom=(1<<4),
+//    CenterV=(1<<5),
+//    CenterH=(1<<6),
+//    Fill=(1<<7),
+//    Fixed=(1<<8),
+//    Center=CenterV | CenterH
+};
+
+inline Position operator|(Position a, Position b)
+{
+    return Position(static_cast<int>(a) | static_cast<int>(b));
+}
+
+inline bool operator&(Position a, Position b)
+{
+    return (static_cast<int>(a)  &static_cast<int>(b)) != 0;
+}
+
+enum class Dim
+{
+    X,
+    Y
+};
+
+enum class SizeFlag
+{
+    Fixed=0, //Will not change size
+    Expand=1, //Will only expand
+    Shrink=2, //Will only shrink
+    Elastic=3, //Expands or shrinks as needed
+    Bloat=4 //Will take all available space
+};
+
+inline std::string sizeFlagName(SizeFlag sizeFlag)
+{
+    switch(sizeFlag)
+    {
+    case SizeFlag::Fixed:
+        return "Fixed";
+        break;
+    case SizeFlag::Expand:
+        return "Expand";
+        break;
+    case SizeFlag::Shrink:
+        return "Shrink";
+        break;
+    case SizeFlag::Elastic:
+        return "Elastic";
+        break;
+    case SizeFlag::Bloat:
+        return "Bloat";
+        break;
+    default:
+        return "Unknown";
+        break;
+    }
+    return "Unknown";
+}
+
+class SizeFlags
+{
+public:
+    SizeFlags():horizontal(SizeFlag::Expand), vertical(SizeFlag::Expand) {}
+    SizeFlags(SizeFlag horizontal, SizeFlag vertical):horizontal(horizontal), vertical(vertical) {}
+
+    union
+    {
+        struct
+        {
+            SizeFlag horizontal;
+            SizeFlag vertical;
+        };
+        SizeFlag value[2];
+    };
+
+};
+
+inline SizeFlag merge(SizeFlag flag1, SizeFlag flag2)
+{
+    typedef std::underlying_type<SizeFlag>::type Type;
+    Type _flag1=static_cast<Type>(flag1);
+    Type _flag2=static_cast<Type>(flag2);
+
+    if(_flag1+_flag2==3)
+        return SizeFlag::Elastic;
+    else
+        return static_cast<SizeFlag>(std::max(_flag1, _flag2));
+}
+
+
+
+inline int addWithOverflow(int value1, int value2)
+{
+    if((value2>0) && (value1>std::numeric_limits<int>::max()-value2))
+        return std::numeric_limits<int>::max();
+    if((value2<0) && (value1<std::numeric_limits<int>::min()-value2))
+        return 0;
+    return value1+value2;
+}
+} // namespace gweni
+
+#endif//_gweni_uitypes_h_
