@@ -11,8 +11,8 @@ LayoutItem::LayoutItem():
     m_parent(nullptr),
     m_layoutParent(nullptr),
     m_sizeFlags(SizeFlag::Fixed, SizeFlag::Fixed),
-    m_margin({0, 0, 0, 0}),
-    m_padding({0, 0, 0, 0}),
+    m_margin(0, 0, 0, 0),
+    m_padding(0, 0, 0, 0),
     m_spacing(2)
 {
 
@@ -24,8 +24,8 @@ LayoutItem::LayoutItem(LayoutType type):
     m_layoutParent(nullptr),
     m_control(nullptr),
     m_sizeFlags(SizeFlag::Fixed, SizeFlag::Fixed),
-    m_margin({0, 0, 0, 0}),
-    m_padding({0, 0, 0, 0}),
+    m_margin(0, 0, 0, 0),
+    m_padding(0, 0, 0, 0),
     m_spacing(2)
 {
 

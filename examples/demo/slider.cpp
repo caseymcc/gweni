@@ -1,4 +1,5 @@
 #include "demo/slider.h"
+#include <gweni/controls/layout/layout.h>
 #include "gweni/controls/radioButtonController.h"
 #include "gweni/controls/verticalSlider.h"
 #include "gweni/controls/horizontalSlider.h"
@@ -6,9 +7,10 @@
 namespace gweni
 {
 
-SliderDemo::SliderDemo(const String &name):
-    Base()
+GWENI_CONTROL_CONSTRUCTOR(SliderDemo)
 {
+    setLayout(new controls::VerticalLayout());
+
     {
         controls::HorizontalSlider *slider=newChild<controls::HorizontalSlider>();
         slider->setPos(10, 10);

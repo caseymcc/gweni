@@ -98,10 +98,11 @@ class ControlFactory
 public:
     static std::unique_ptr<Control> create(TexturedSkin *skin, std::string typeName)
     {
-        auto iter=std::find_if(m_controlFuncs.begin(), m_controlFuncs.end(),
+        auto &funcs=controlFuncs();
+        auto iter=std::find_if(funcs.begin(), funcs.end(),
             [&typeName](ControlEntry &entry){return (entry.name==typeName); });
 
-        if(iter == m_controlFuncs.end())
+        if(iter == funcs.end())
             return std::unique_ptr<Control>();
 
         std::unique_ptr<Control> control=iter->func(skin);
@@ -115,15 +116,22 @@ public:
     
     template<typename _Class> static const std::string registerControl()
     {
-        size_t index=m_controlFuncs.size();
         std::string name{_Class::name.data(), _Class::name.size()};
 
-        m_controlFuncs.emplace_back(name, &_Class::create);
+        controlFuncs().emplace_back(name, &_Class::create);
         return name;
     }
 
 private:
-    static std::vector<ControlEntry> m_controlFuncs;
+    // Construct-on-first-use: guarantees the registry is alive before any
+    // static self-registration initializer (in another TU) touches it,
+    // avoiding the static-initialization-order fiasco that otherwise lets a
+    // later-constructed registry wipe entries already inserted into it.
+    static std::vector<ControlEntry> &controlFuncs()
+    {
+        static std::vector<ControlEntry> funcs;
+        return funcs;
+    }
 };
 
 template<typename _Class> std::string ControlRegister<_Class>::m_typeName=\
@@ -415,6 +423,8 @@ public:
     void loadColors(const json::Value &jsonColors);
     bool loadConfig(std::string configFileName);
     void loadTextureMap(const json::Value &jsonMap);
+    void setThemeColors();
+    void loadTheme(const json::Value &jsonTheme);
     
     typedef glm::tvec4<unsigned char> Color;
     typedef std::unordered_map<std::string, size_t> IndexMap;

@@ -1,0 +1,1380 @@
+CMake Deprecation Warning at /h-- [hunter] Calculating Toolchain-SHA1
+-- [hunter] Calculating Config-SHA1
+-- [hunter] HUNTER_ROOT: /home/developer/.hunter
+-- [hunter] [ Hunter-ID: 1292e4d | Toolchain-ID: 347e47c | Config-ID: 338f12f ]
+-- [hunter] GLM_ROOT: /home/developer/.hunter/_Base/1292e4d/347e47c/338f12f/Install (ver.: 0.9.9.8)
+-- [hunter] GLEW_ROOT: /home/developer/.hunter/_Base/1292e4d/347e47c/338f12f/Install (ver.: 2.0.0-p1)
+-- [hunter] Building glew
+loading initial cache file /home/developer/.hunter/_Base/1292e4d/347e47c/338f12f/cache.cmake
+loading initial cache file /home/developer/.hunter/_Base/1292e4d/347e47c/338f12f/Build/glew/args.cmake
+-- The C compiler identification is GNU 11.4.0
+-- The CXX compiler identification is GNU 11.4.0
+-- Check for working C compiler: /usr/bin/cc - skipped
+-- Detecting C compile features
+-- Detecting C compile features - done
+-- Check for working CXX compiler: /usr/bin/c++ - skipped
+-- Detecting CXX compile features
+-- Detecting CXX compile features - done
+-- Configuring done (0.1s)
+-- Generating done (0.0s)
+-- Build files have been written to: /home/developer/.hunter/_Base/1292e4d/347e47c/338f12f/Build/glew/Build
+[  6%] Creating directories for 'glew-Release'
+[ 12%] Performing download step (download, verify and extract) for 'glew-Release'
+-- verifying file...
+       file='/home/developer/.hunter/_Base/Download/glew/2.0.0-p1/6a305e0/v2.0.0-p1.tar.gz'
+-- File already exists and hash match (skip download):
+  file='/home/developer/.hunter/_Base/Download/glew/2.0.0-p1/6a305e0/v2.0.0-p1.tar.gz'
+  SHA1='6a305e0cd0b2b4f02cc82809ba7e258c427ff36b'
+-- extracting...
+     src='/home/developer/.hunter/_Base/Download/glew/2.0.0-p1/6a305e0/v2.0.0-p1.tar.gz'
+     dst='/home/developer/.hunter/_Base/1292e4d/347e47c/338f12f/Build/glew/Source'
+-- extracting... [tar xfz]
+-- extracting... [analysis]
+-- extracting... [rename]
+-- extracting... [clean up]
+-- extracting... done
+[ 18%] No update step for 'glew-Release'
+[ 25%] No patch step for 'glew-Release'
+[ 31%] Performing configure step for 'glew-Release'
+loading initial cache file /home/developer/.hunter/_Base/1292e4d/347e47c/338f12f/cache.cmake
+loading initial cache file /home/developer/.hunter/_Base/1292e4d/347e47c/338f12f/Build/glew/args.cmake
+-- The C compiler identification is GNU 11.4.0
+-- The CXX compiler identification is GNU 11.4.0
+-- Check for working C compiler: /usr/bin/cc - skipped
+-- Detecting C compile features
+-- Detecting C compile features - done
+-- Check for working CXX compiler: /usr/bin/c++ - skipped
+-- Detecting CXX compile features
+-- Detecting CXX compile features - done
+-- Found OpenGL: /usr/lib/x86_64-linux-gnu/libOpenGL.so   
+-- Configuring incomplete, errors occurred!
+-- Configuring incomplete, errors occurred!
+2e4d/Unpacked/cmake/modules/hunter_add_package.cmake:7 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/Hunter:34 (include)
+  cmake/Hunter/HunterGate.cmake:537 (include)
+  CMakeLists.txt:17 (HunterGate)
+
+
+CMake Deprecation Warning at /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_make_directory.cmake:4 (cmake_minimum_required):
+  Compatibility with CMake < 3.5 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value or use a ...<max> suffix to tell
+  CMake that the project does not need compatibility with older versions.
+Call Stack (most recent call first):
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_calculate_config_sha1.cmake:10 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_apply_gate_settings.cmake:8 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_finalize.cmake:5 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_add_package.cmake:7 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/Hunter:34 (include)
+  cmake/Hunter/HunterGate.cmake:537 (include)
+  CMakeLists.txt:17 (HunterGate)
+
+
+CMake Deprecation Warning at /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_lock_directory.cmake:4 (cmake_minimum_required):
+  Compatibility with CMake < 3.5 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value or use a ...<max> suffix to tell
+  CMake that the project does not need compatibility with older versions.
+Call Stack (most recent call first):
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_make_directory.cmake:7 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_calculate_config_sha1.cmake:10 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_apply_gate_settings.cmake:8 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_finalize.cmake:5 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_add_package.cmake:7 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/Hunter:34 (include)
+  cmake/Hunter/HunterGate.cmake:537 (include)
+  CMakeLists.txt:17 (HunterGate)
+
+
+CMake Deprecation Warning at /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_calculate_self.cmake:4 (cmake_minimum_required):
+  Compatibility with CMake < 3.5 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value or use a ...<max> suffix to tell
+  CMake that the project does not need compatibility with older versions.
+Call Stack (most recent call first):
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_apply_gate_settings.cmake:9 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_finalize.cmake:5 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_add_package.cmake:7 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/Hunter:34 (include)
+  cmake/Hunter/HunterGate.cmake:537 (include)
+  CMakeLists.txt:17 (HunterGate)
+
+
+CMake Deprecation Warning at /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_lock_directory.cmake:4 (cmake_minimum_required):
+  Compatibility with CMake < 3.5 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value or use a ...<max> suffix to tell
+  CMake that the project does not need compatibility with older versions.
+Call Stack (most recent call first):
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_calculate_toolchain_sha1.cmake:5 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_apply_gate_settings.cmake:10 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_finalize.cmake:5 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_add_package.cmake:7 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/Hunter:34 (include)
+  cmake/Hunter/HunterGate.cmake:537 (include)
+  CMakeLists.txt:17 (HunterGate)
+
+
+CMake Deprecation Warning at /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_make_directory.cmake:4 (cmake_minimum_required):
+  Compatibility with CMake < 3.5 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value or use a ...<max> suffix to tell
+  CMake that the project does not need compatibility with older versions.
+Call Stack (most recent call first):
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_calculate_toolchain_sha1.cmake:6 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_apply_gate_settings.cmake:10 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_finalize.cmake:5 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_add_package.cmake:7 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/Hunter:34 (include)
+  cmake/Hunter/HunterGate.cmake:537 (include)
+  CMakeLists.txt:17 (HunterGate)
+
+
+CMake Deprecation Warning at /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_lock_directory.cmake:4 (cmake_minimum_required):
+  Compatibility with CMake < 3.5 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value or use a ...<max> suffix to tell
+  CMake that the project does not need compatibility with older versions.
+Call Stack (most recent call first):
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_make_directory.cmake:7 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_calculate_toolchain_sha1.cmake:6 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_apply_gate_settings.cmake:10 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_finalize.cmake:5 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_add_package.cmake:7 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/Hunter:34 (include)
+  cmake/Hunter/HunterGate.cmake:537 (include)
+  CMakeLists.txt:17 (HunterGate)
+
+
+CMake Deprecation Warning at /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_set_config_location.cmake:4 (cmake_minimum_required):
+  Compatibility with CMake < 3.5 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value or use a ...<max> suffix to tell
+  CMake that the project does not need compatibility with older versions.
+Call Stack (most recent call first):
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_apply_gate_settings.cmake:13 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_finalize.cmake:5 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_add_package.cmake:7 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/Hunter:34 (include)
+  cmake/Hunter/HunterGate.cmake:537 (include)
+  CMakeLists.txt:17 (HunterGate)
+
+
+CMake Deprecation Warning at /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_calculate_self.cmake:4 (cmake_minimum_required):
+  Compatibility with CMake < 3.5 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value or use a ...<max> suffix to tell
+  CMake that the project does not need compatibility with older versions.
+Call Stack (most recent call first):
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_finalize.cmake:6 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_add_package.cmake:7 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/Hunter:34 (include)
+  cmake/Hunter/HunterGate.cmake:537 (include)
+  CMakeLists.txt:17 (HunterGate)
+
+
+CMake Deprecation Warning at /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_lock_directory.cmake:4 (cmake_minimum_required):
+  Compatibility with CMake < 3.5 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value or use a ...<max> suffix to tell
+  CMake that the project does not need compatibility with older versions.
+Call Stack (most recent call first):
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_private_data.cmake:12 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/Hunter:35 (include)
+  cmake/Hunter/HunterGate.cmake:537 (include)
+  CMakeLists.txt:17 (HunterGate)
+
+
+CMake Deprecation Warning at /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_calculate_self.cmake:4 (cmake_minimum_required):
+  Compatibility with CMake < 3.5 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value or use a ...<max> suffix to tell
+  CMake that the project does not need compatibility with older versions.
+Call Stack (most recent call first):
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_initialize.cmake:4 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/Hunter:36 (include)
+  cmake/Hunter/HunterGate.cmake:537 (include)
+  CMakeLists.txt:17 (HunterGate)
+
+
+Project version: 0.1.0 Dev
+CMake Deprecation Warning at CMakeLists.txt:1 (cmake_minimum_required):
+  Compatibility with CMake < 3.5 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value or use a ...<max> suffix to tell
+  CMake that the project does not need compatibility with older versions.
+
+
+CMake Deprecation Warning at /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_apply_gate_settings.cmake:4 (cmake_minimum_required):
+  Compatibility with CMake < 3.5 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value or use a ...<max> suffix to tell
+  CMake that the project does not need compatibility with older versions.
+Call Stack (most recent call first):
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_finalize.cmake:5 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_add_package.cmake:7 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_load_from_cache.cmake:4 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_download.cmake:22 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/projects/glm/hunter.cmake:7 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_add_package.cmake:62 (include)
+  cmake/Config.cmake:119 (hunter_add_package)
+  CMakeLists.txt:47 (include)
+
+
+CMake Deprecation Warning at /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_calculate_config_sha1.cmake:4 (cmake_minimum_required):
+  Compatibility with CMake < 3.5 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value or use a ...<max> suffix to tell
+  CMake that the project does not need compatibility with older versions.
+Call Stack (most recent call first):
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_apply_gate_settings.cmake:8 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_finalize.cmake:5 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_add_package.cmake:7 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_load_from_cache.cmake:4 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_download.cmake:22 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/projects/glm/hunter.cmake:7 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_add_package.cmake:62 (include)
+  cmake/Config.cmake:119 (hunter_add_package)
+  CMakeLists.txt:47 (include)
+
+
+CMake Deprecation Warning at /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_lock_directory.cmake:4 (cmake_minimum_required):
+  Compatibility with CMake < 3.5 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value or use a ...<max> suffix to tell
+  CMake that the project does not need compatibility with older versions.
+Call Stack (most recent call first):
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_calculate_config_sha1.cmake:9 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_apply_gate_settings.cmake:8 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_finalize.cmake:5 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_add_package.cmake:7 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_load_from_cache.cmake:4 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_download.cmake:22 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/projects/glm/hunter.cmake:7 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_add_package.cmake:62 (include)
+  cmake/Config.cmake:119 (hunter_add_package)
+  CMakeLists.txt:47 (include)
+
+
+CMake Deprecation Warning at /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_make_directory.cmake:4 (cmake_minimum_required):
+  Compatibility with CMake < 3.5 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value or use a ...<max> suffix to tell
+  CMake that the project does not need compatibility with older versions.
+Call Stack (most recent call first):
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_calculate_config_sha1.cmake:10 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_apply_gate_settings.cmake:8 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_finalize.cmake:5 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_add_package.cmake:7 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_load_from_cache.cmake:4 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_download.cmake:22 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/projects/glm/hunter.cmake:7 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_add_package.cmake:62 (include)
+  cmake/Config.cmake:119 (hunter_add_package)
+  CMakeLists.txt:47 (include)
+
+
+CMake Deprecation Warning at /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_lock_directory.cmake:4 (cmake_minimum_required):
+  Compatibility with CMake < 3.5 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value or use a ...<max> suffix to tell
+  CMake that the project does not need compatibility with older versions.
+Call Stack (most recent call first):
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_make_directory.cmake:7 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_calculate_config_sha1.cmake:10 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_apply_gate_settings.cmake:8 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_finalize.cmake:5 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_add_package.cmake:7 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_load_from_cache.cmake:4 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_download.cmake:22 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/projects/glm/hunter.cmake:7 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_add_package.cmake:62 (include)
+  cmake/Config.cmake:119 (hunter_add_package)
+  CMakeLists.txt:47 (include)
+
+
+CMake Deprecation Warning at /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_calculate_self.cmake:4 (cmake_minimum_required):
+  Compatibility with CMake < 3.5 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value or use a ...<max> suffix to tell
+  CMake that the project does not need compatibility with older versions.
+Call Stack (most recent call first):
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_apply_gate_settings.cmake:9 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_finalize.cmake:5 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_add_package.cmake:7 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_load_from_cache.cmake:4 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_download.cmake:22 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/projects/glm/hunter.cmake:7 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_add_package.cmake:62 (include)
+  cmake/Config.cmake:119 (hunter_add_package)
+  CMakeLists.txt:47 (include)
+
+
+CMake Deprecation Warning at /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_lock_directory.cmake:4 (cmake_minimum_required):
+  Compatibility with CMake < 3.5 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value or use a ...<max> suffix to tell
+  CMake that the project does not need compatibility with older versions.
+Call Stack (most recent call first):
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_calculate_toolchain_sha1.cmake:5 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_apply_gate_settings.cmake:10 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_finalize.cmake:5 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_add_package.cmake:7 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_load_from_cache.cmake:4 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_download.cmake:22 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/projects/glm/hunter.cmake:7 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_add_package.cmake:62 (include)
+  cmake/Config.cmake:119 (hunter_add_package)
+  CMakeLists.txt:47 (include)
+
+
+CMake Deprecation Warning at /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_make_directory.cmake:4 (cmake_minimum_required):
+  Compatibility with CMake < 3.5 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value or use a ...<max> suffix to tell
+  CMake that the project does not need compatibility with older versions.
+Call Stack (most recent call first):
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_calculate_toolchain_sha1.cmake:6 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_apply_gate_settings.cmake:10 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_finalize.cmake:5 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_add_package.cmake:7 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_load_from_cache.cmake:4 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_download.cmake:22 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/projects/glm/hunter.cmake:7 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_add_package.cmake:62 (include)
+  cmake/Config.cmake:119 (hunter_add_package)
+  CMakeLists.txt:47 (include)
+
+
+CMake Deprecation Warning at /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_lock_directory.cmake:4 (cmake_minimum_required):
+  Compatibility with CMake < 3.5 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value or use a ...<max> suffix to tell
+  CMake that the project does not need compatibility with older versions.
+Call Stack (most recent call first):
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_make_directory.cmake:7 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_calculate_toolchain_sha1.cmake:6 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_apply_gate_settings.cmake:10 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_finalize.cmake:5 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_add_package.cmake:7 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_load_from_cache.cmake:4 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_download.cmake:22 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/projects/glm/hunter.cmake:7 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_add_package.cmake:62 (include)
+  cmake/Config.cmake:119 (hunter_add_package)
+  CMakeLists.txt:47 (include)
+
+
+CMake Deprecation Warning at /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_set_config_location.cmake:4 (cmake_minimum_required):
+  Compatibility with CMake < 3.5 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value or use a ...<max> suffix to tell
+  CMake that the project does not need compatibility with older versions.
+Call Stack (most recent call first):
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_apply_gate_settings.cmake:13 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_finalize.cmake:5 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_add_package.cmake:7 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_load_from_cache.cmake:4 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_download.cmake:22 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/projects/glm/hunter.cmake:7 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_add_package.cmake:62 (include)
+  cmake/Config.cmake:119 (hunter_add_package)
+  CMakeLists.txt:47 (include)
+
+
+CMake Deprecation Warning at /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_calculate_self.cmake:4 (cmake_minimum_required):
+  Compatibility with CMake < 3.5 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value or use a ...<max> suffix to tell
+  CMake that the project does not need compatibility with older versions.
+Call Stack (most recent call first):
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_finalize.cmake:6 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_add_package.cmake:7 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_load_from_cache.cmake:4 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_download.cmake:22 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/projects/glm/hunter.cmake:7 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_add_package.cmake:62 (include)
+  cmake/Config.cmake:119 (hunter_add_package)
+  CMakeLists.txt:47 (include)
+
+
+CMake Deprecation Warning at /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_apply_gate_settings.cmake:4 (cmake_minimum_required):
+  Compatibility with CMake < 3.5 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value or use a ...<max> suffix to tell
+  CMake that the project does not need compatibility with older versions.
+Call Stack (most recent call first):
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_finalize.cmake:5 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_add_package.cmake:7 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_cache_run.cmake:6 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_load_from_cache.cmake:5 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_download.cmake:22 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/projects/glm/hunter.cmake:7 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_add_package.cmake:62 (include)
+  cmake/Config.cmake:119 (hunter_add_package)
+  CMakeLists.txt:47 (include)
+
+
+CMake Deprecation Warning at /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_calculate_config_sha1.cmake:4 (cmake_minimum_required):
+  Compatibility with CMake < 3.5 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value or use a ...<max> suffix to tell
+  CMake that the project does not need compatibility with older versions.
+Call Stack (most recent call first):
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_apply_gate_settings.cmake:8 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_finalize.cmake:5 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_add_package.cmake:7 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_cache_run.cmake:6 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_load_from_cache.cmake:5 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_download.cmake:22 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/projects/glm/hunter.cmake:7 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_add_package.cmake:62 (include)
+  cmake/Config.cmake:119 (hunter_add_package)
+  CMakeLists.txt:47 (include)
+
+
+CMake Deprecation Warning at /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_lock_directory.cmake:4 (cmake_minimum_required):
+  Compatibility with CMake < 3.5 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value or use a ...<max> suffix to tell
+  CMake that the project does not need compatibility with older versions.
+Call Stack (most recent call first):
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_calculate_config_sha1.cmake:9 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_apply_gate_settings.cmake:8 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_finalize.cmake:5 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_add_package.cmake:7 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_cache_run.cmake:6 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_load_from_cache.cmake:5 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_download.cmake:22 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/projects/glm/hunter.cmake:7 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_add_package.cmake:62 (include)
+  cmake/Config.cmake:119 (hunter_add_package)
+  CMakeLists.txt:47 (include)
+
+
+CMake Deprecation Warning at /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_make_directory.cmake:4 (cmake_minimum_required):
+  Compatibility with CMake < 3.5 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value or use a ...<max> suffix to tell
+  CMake that the project does not need compatibility with older versions.
+Call Stack (most recent call first):
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_calculate_config_sha1.cmake:10 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_apply_gate_settings.cmake:8 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_finalize.cmake:5 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_add_package.cmake:7 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_cache_run.cmake:6 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_load_from_cache.cmake:5 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_download.cmake:22 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/projects/glm/hunter.cmake:7 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_add_package.cmake:62 (include)
+  cmake/Config.cmake:119 (hunter_add_package)
+  CMakeLists.txt:47 (include)
+
+
+CMake Deprecation Warning at /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_lock_directory.cmake:4 (cmake_minimum_required):
+  Compatibility with CMake < 3.5 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value or use a ...<max> suffix to tell
+  CMake that the project does not need compatibility with older versions.
+Call Stack (most recent call first):
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_make_directory.cmake:7 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_calculate_config_sha1.cmake:10 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_apply_gate_settings.cmake:8 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_finalize.cmake:5 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_add_package.cmake:7 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_cache_run.cmake:6 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_load_from_cache.cmake:5 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_download.cmake:22 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/projects/glm/hunter.cmake:7 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_add_package.cmake:62 (include)
+  cmake/Config.cmake:119 (hunter_add_package)
+  CMakeLists.txt:47 (include)
+
+
+CMake Deprecation Warning at /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_calculate_self.cmake:4 (cmake_minimum_required):
+  Compatibility with CMake < 3.5 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value or use a ...<max> suffix to tell
+  CMake that the project does not need compatibility with older versions.
+Call Stack (most recent call first):
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_apply_gate_settings.cmake:9 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_finalize.cmake:5 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_add_package.cmake:7 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_cache_run.cmake:6 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_load_from_cache.cmake:5 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_download.cmake:22 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/projects/glm/hunter.cmake:7 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_add_package.cmake:62 (include)
+  cmake/Config.cmake:119 (hunter_add_package)
+  CMakeLists.txt:47 (include)
+
+
+CMake Deprecation Warning at /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_lock_directory.cmake:4 (cmake_minimum_required):
+  Compatibility with CMake < 3.5 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value or use a ...<max> suffix to tell
+  CMake that the project does not need compatibility with older versions.
+Call Stack (most recent call first):
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_calculate_toolchain_sha1.cmake:5 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_apply_gate_settings.cmake:10 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_finalize.cmake:5 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_add_package.cmake:7 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_cache_run.cmake:6 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_load_from_cache.cmake:5 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_download.cmake:22 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/projects/glm/hunter.cmake:7 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_add_package.cmake:62 (include)
+  cmake/Config.cmake:119 (hunter_add_package)
+  CMakeLists.txt:47 (include)
+
+
+CMake Deprecation Warning at /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_make_directory.cmake:4 (cmake_minimum_required):
+  Compatibility with CMake < 3.5 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value or use a ...<max> suffix to tell
+  CMake that the project does not need compatibility with older versions.
+Call Stack (most recent call first):
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_calculate_toolchain_sha1.cmake:6 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_apply_gate_settings.cmake:10 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_finalize.cmake:5 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_add_package.cmake:7 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_cache_run.cmake:6 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_load_from_cache.cmake:5 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_download.cmake:22 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/projects/glm/hunter.cmake:7 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_add_package.cmake:62 (include)
+  cmake/Config.cmake:119 (hunter_add_package)
+  CMakeLists.txt:47 (include)
+
+
+CMake Deprecation Warning at /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_lock_directory.cmake:4 (cmake_minimum_required):
+  Compatibility with CMake < 3.5 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value or use a ...<max> suffix to tell
+  CMake that the project does not need compatibility with older versions.
+Call Stack (most recent call first):
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_make_directory.cmake:7 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_calculate_toolchain_sha1.cmake:6 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_apply_gate_settings.cmake:10 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_finalize.cmake:5 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_add_package.cmake:7 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_cache_run.cmake:6 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_load_from_cache.cmake:5 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_download.cmake:22 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/projects/glm/hunter.cmake:7 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_add_package.cmake:62 (include)
+  cmake/Config.cmake:119 (hunter_add_package)
+  CMakeLists.txt:47 (include)
+
+
+CMake Deprecation Warning at /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_set_config_location.cmake:4 (cmake_minimum_required):
+  Compatibility with CMake < 3.5 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value or use a ...<max> suffix to tell
+  CMake that the project does not need compatibility with older versions.
+Call Stack (most recent call first):
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_apply_gate_settings.cmake:13 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_finalize.cmake:5 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_add_package.cmake:7 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_cache_run.cmake:6 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_load_from_cache.cmake:5 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_download.cmake:22 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/projects/glm/hunter.cmake:7 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_add_package.cmake:62 (include)
+  cmake/Config.cmake:119 (hunter_add_package)
+  CMakeLists.txt:47 (include)
+
+
+CMake Deprecation Warning at /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_calculate_self.cmake:4 (cmake_minimum_required):
+  Compatibility with CMake < 3.5 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value or use a ...<max> suffix to tell
+  CMake that the project does not need compatibility with older versions.
+Call Stack (most recent call first):
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_finalize.cmake:6 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_add_package.cmake:7 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_cache_run.cmake:6 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_load_from_cache.cmake:5 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_download.cmake:22 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/projects/glm/hunter.cmake:7 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_add_package.cmake:62 (include)
+  cmake/Config.cmake:119 (hunter_add_package)
+  CMakeLists.txt:47 (include)
+
+
+CMake Deprecation Warning at /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_make_directory.cmake:4 (cmake_minimum_required):
+  Compatibility with CMake < 3.5 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value or use a ...<max> suffix to tell
+  CMake that the project does not need compatibility with older versions.
+Call Stack (most recent call first):
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_create_cache_meta_directory.cmake:5 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_load_from_cache.cmake:6 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_download.cmake:22 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/projects/glm/hunter.cmake:7 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_add_package.cmake:62 (include)
+  cmake/Config.cmake:119 (hunter_add_package)
+  CMakeLists.txt:47 (include)
+
+
+CMake Deprecation Warning at /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_lock_directory.cmake:4 (cmake_minimum_required):
+  Compatibility with CMake < 3.5 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value or use a ...<max> suffix to tell
+  CMake that the project does not need compatibility with older versions.
+Call Stack (most recent call first):
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_make_directory.cmake:7 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_create_cache_meta_directory.cmake:5 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_load_from_cache.cmake:6 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_download.cmake:22 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/projects/glm/hunter.cmake:7 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_add_package.cmake:62 (include)
+  cmake/Config.cmake:119 (hunter_add_package)
+  CMakeLists.txt:47 (include)
+
+
+CMake Deprecation Warning at /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_make_directory.cmake:4 (cmake_minimum_required):
+  Compatibility with CMake < 3.5 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value or use a ...<max> suffix to tell
+  CMake that the project does not need compatibility with older versions.
+Call Stack (most recent call first):
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_create_cache_meta_directory.cmake:5 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_save_to_cache.cmake:4 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_download.cmake:26 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/projects/glm/hunter.cmake:7 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_add_package.cmake:62 (include)
+  cmake/Config.cmake:119 (hunter_add_package)
+  CMakeLists.txt:47 (include)
+
+
+CMake Deprecation Warning at /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_lock_directory.cmake:4 (cmake_minimum_required):
+  Compatibility with CMake < 3.5 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value or use a ...<max> suffix to tell
+  CMake that the project does not need compatibility with older versions.
+Call Stack (most recent call first):
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_make_directory.cmake:7 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_create_cache_meta_directory.cmake:5 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_save_to_cache.cmake:4 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_download.cmake:26 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/projects/glm/hunter.cmake:7 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_add_package.cmake:62 (include)
+  cmake/Config.cmake:119 (hunter_add_package)
+  CMakeLists.txt:47 (include)
+
+
+CMake Deprecation Warning at /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_lock_directory.cmake:4 (cmake_minimum_required):
+  Compatibility with CMake < 3.5 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value or use a ...<max> suffix to tell
+  CMake that the project does not need compatibility with older versions.
+Call Stack (most recent call first):
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_save_to_cache.cmake:7 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_download.cmake:26 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/projects/glm/hunter.cmake:7 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_add_package.cmake:62 (include)
+  cmake/Config.cmake:119 (hunter_add_package)
+  CMakeLists.txt:47 (include)
+
+
+CMake Deprecation Warning at /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_make_directory.cmake:4 (cmake_minimum_required):
+  Compatibility with CMake < 3.5 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value or use a ...<max> suffix to tell
+  CMake that the project does not need compatibility with older versions.
+Call Stack (most recent call first):
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_save_to_cache.cmake:8 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_download.cmake:26 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/projects/glm/hunter.cmake:7 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_add_package.cmake:62 (include)
+  cmake/Config.cmake:119 (hunter_add_package)
+  CMakeLists.txt:47 (include)
+
+
+CMake Deprecation Warning at /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_lock_directory.cmake:4 (cmake_minimum_required):
+  Compatibility with CMake < 3.5 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value or use a ...<max> suffix to tell
+  CMake that the project does not need compatibility with older versions.
+Call Stack (most recent call first):
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_make_directory.cmake:7 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_save_to_cache.cmake:8 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_download.cmake:26 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/projects/glm/hunter.cmake:7 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_add_package.cmake:62 (include)
+  cmake/Config.cmake:119 (hunter_add_package)
+  CMakeLists.txt:47 (include)
+
+
+CMake Warning (dev) at cmake/Config.cmake:120 (find_package):
+  Policy CMP0144 is not set: find_package uses upper-case <PACKAGENAME>_ROOT
+  variables.  Run "cmake --help-policy CMP0144" for policy details.  Use the
+  cmake_policy command to set the policy and suppress this warning.
+
+  CMake variable GLM_ROOT is set to:
+
+    /home/developer/.hunter/_Base/1292e4d/347e47c/338f12f/Install
+
+  Environment variable GLM_ROOT is set to:
+
+    /home/developer/.hunter/_Base/1292e4d/347e47c/338f12f/Install
+
+  For compatibility, find_package is ignoring the variable, but code in a
+  .cmake module might still use it.
+Call Stack (most recent call first):
+  CMakeLists.txt:47 (include)
+This warning is for project developers.  Use -Wno-dev to suppress it.
+
+CMake Deprecation Warning at /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_apply_gate_settings.cmake:4 (cmake_minimum_required):
+  Compatibility with CMake < 3.5 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value or use a ...<max> suffix to tell
+  CMake that the project does not need compatibility with older versions.
+Call Stack (most recent call first):
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_finalize.cmake:5 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_add_package.cmake:7 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_load_from_cache.cmake:4 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_download.cmake:22 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/projects/glew/hunter.cmake:11 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_add_package.cmake:62 (include)
+  cmake/Config.cmake:122 (hunter_add_package)
+  CMakeLists.txt:47 (include)
+
+
+CMake Deprecation Warning at /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_calculate_config_sha1.cmake:4 (cmake_minimum_required):
+  Compatibility with CMake < 3.5 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value or use a ...<max> suffix to tell
+  CMake that the project does not need compatibility with older versions.
+Call Stack (most recent call first):
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_apply_gate_settings.cmake:8 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_finalize.cmake:5 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_add_package.cmake:7 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_load_from_cache.cmake:4 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_download.cmake:22 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/projects/glew/hunter.cmake:11 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_add_package.cmake:62 (include)
+  cmake/Config.cmake:122 (hunter_add_package)
+  CMakeLists.txt:47 (include)
+
+
+CMake Deprecation Warning at /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_lock_directory.cmake:4 (cmake_minimum_required):
+  Compatibility with CMake < 3.5 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value or use a ...<max> suffix to tell
+  CMake that the project does not need compatibility with older versions.
+Call Stack (most recent call first):
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_calculate_config_sha1.cmake:9 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_apply_gate_settings.cmake:8 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_finalize.cmake:5 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_add_package.cmake:7 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_load_from_cache.cmake:4 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_download.cmake:22 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/projects/glew/hunter.cmake:11 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_add_package.cmake:62 (include)
+  cmake/Config.cmake:122 (hunter_add_package)
+  CMakeLists.txt:47 (include)
+
+
+CMake Deprecation Warning at /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_make_directory.cmake:4 (cmake_minimum_required):
+  Compatibility with CMake < 3.5 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value or use a ...<max> suffix to tell
+  CMake that the project does not need compatibility with older versions.
+Call Stack (most recent call first):
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_calculate_config_sha1.cmake:10 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_apply_gate_settings.cmake:8 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_finalize.cmake:5 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_add_package.cmake:7 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_load_from_cache.cmake:4 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_download.cmake:22 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/projects/glew/hunter.cmake:11 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_add_package.cmake:62 (include)
+  cmake/Config.cmake:122 (hunter_add_package)
+  CMakeLists.txt:47 (include)
+
+
+CMake Deprecation Warning at /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_lock_directory.cmake:4 (cmake_minimum_required):
+  Compatibility with CMake < 3.5 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value or use a ...<max> suffix to tell
+  CMake that the project does not need compatibility with older versions.
+Call Stack (most recent call first):
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_make_directory.cmake:7 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_calculate_config_sha1.cmake:10 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_apply_gate_settings.cmake:8 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_finalize.cmake:5 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_add_package.cmake:7 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_load_from_cache.cmake:4 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_download.cmake:22 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/projects/glew/hunter.cmake:11 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_add_package.cmake:62 (include)
+  cmake/Config.cmake:122 (hunter_add_package)
+  CMakeLists.txt:47 (include)
+
+
+CMake Deprecation Warning at /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_calculate_self.cmake:4 (cmake_minimum_required):
+  Compatibility with CMake < 3.5 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value or use a ...<max> suffix to tell
+  CMake that the project does not need compatibility with older versions.
+Call Stack (most recent call first):
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_apply_gate_settings.cmake:9 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_finalize.cmake:5 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_add_package.cmake:7 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_load_from_cache.cmake:4 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_download.cmake:22 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/projects/glew/hunter.cmake:11 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_add_package.cmake:62 (include)
+  cmake/Config.cmake:122 (hunter_add_package)
+  CMakeLists.txt:47 (include)
+
+
+CMake Deprecation Warning at /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_lock_directory.cmake:4 (cmake_minimum_required):
+  Compatibility with CMake < 3.5 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value or use a ...<max> suffix to tell
+  CMake that the project does not need compatibility with older versions.
+Call Stack (most recent call first):
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_calculate_toolchain_sha1.cmake:5 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_apply_gate_settings.cmake:10 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_finalize.cmake:5 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_add_package.cmake:7 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_load_from_cache.cmake:4 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_download.cmake:22 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/projects/glew/hunter.cmake:11 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_add_package.cmake:62 (include)
+  cmake/Config.cmake:122 (hunter_add_package)
+  CMakeLists.txt:47 (include)
+
+
+CMake Deprecation Warning at /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_make_directory.cmake:4 (cmake_minimum_required):
+  Compatibility with CMake < 3.5 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value or use a ...<max> suffix to tell
+  CMake that the project does not need compatibility with older versions.
+Call Stack (most recent call first):
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_calculate_toolchain_sha1.cmake:6 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_apply_gate_settings.cmake:10 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_finalize.cmake:5 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_add_package.cmake:7 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_load_from_cache.cmake:4 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_download.cmake:22 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/projects/glew/hunter.cmake:11 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_add_package.cmake:62 (include)
+  cmake/Config.cmake:122 (hunter_add_package)
+  CMakeLists.txt:47 (include)
+
+
+CMake Deprecation Warning at /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_lock_directory.cmake:4 (cmake_minimum_required):
+  Compatibility with CMake < 3.5 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value or use a ...<max> suffix to tell
+  CMake that the project does not need compatibility with older versions.
+Call Stack (most recent call first):
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_make_directory.cmake:7 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_calculate_toolchain_sha1.cmake:6 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_apply_gate_settings.cmake:10 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_finalize.cmake:5 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_add_package.cmake:7 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_load_from_cache.cmake:4 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_download.cmake:22 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/projects/glew/hunter.cmake:11 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_add_package.cmake:62 (include)
+  cmake/Config.cmake:122 (hunter_add_package)
+  CMakeLists.txt:47 (include)
+
+
+CMake Deprecation Warning at /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_set_config_location.cmake:4 (cmake_minimum_required):
+  Compatibility with CMake < 3.5 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value or use a ...<max> suffix to tell
+  CMake that the project does not need compatibility with older versions.
+Call Stack (most recent call first):
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_apply_gate_settings.cmake:13 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_finalize.cmake:5 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_add_package.cmake:7 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_load_from_cache.cmake:4 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_download.cmake:22 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/projects/glew/hunter.cmake:11 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_add_package.cmake:62 (include)
+  cmake/Config.cmake:122 (hunter_add_package)
+  CMakeLists.txt:47 (include)
+
+
+CMake Deprecation Warning at /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_calculate_self.cmake:4 (cmake_minimum_required):
+  Compatibility with CMake < 3.5 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value or use a ...<max> suffix to tell
+  CMake that the project does not need compatibility with older versions.
+Call Stack (most recent call first):
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_finalize.cmake:6 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_add_package.cmake:7 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_load_from_cache.cmake:4 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_download.cmake:22 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/projects/glew/hunter.cmake:11 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_add_package.cmake:62 (include)
+  cmake/Config.cmake:122 (hunter_add_package)
+  CMakeLists.txt:47 (include)
+
+
+CMake Deprecation Warning at /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_apply_gate_settings.cmake:4 (cmake_minimum_required):
+  Compatibility with CMake < 3.5 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value or use a ...<max> suffix to tell
+  CMake that the project does not need compatibility with older versions.
+Call Stack (most recent call first):
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_finalize.cmake:5 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_add_package.cmake:7 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_cache_run.cmake:6 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_load_from_cache.cmake:5 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_download.cmake:22 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/projects/glew/hunter.cmake:11 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_add_package.cmake:62 (include)
+  cmake/Config.cmake:122 (hunter_add_package)
+  CMakeLists.txt:47 (include)
+
+
+CMake Deprecation Warning at /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_calculate_config_sha1.cmake:4 (cmake_minimum_required):
+  Compatibility with CMake < 3.5 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value or use a ...<max> suffix to tell
+  CMake that the project does not need compatibility with older versions.
+Call Stack (most recent call first):
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_apply_gate_settings.cmake:8 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_finalize.cmake:5 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_add_package.cmake:7 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_cache_run.cmake:6 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_load_from_cache.cmake:5 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_download.cmake:22 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/projects/glew/hunter.cmake:11 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_add_package.cmake:62 (include)
+  cmake/Config.cmake:122 (hunter_add_package)
+  CMakeLists.txt:47 (include)
+
+
+CMake Deprecation Warning at /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_lock_directory.cmake:4 (cmake_minimum_required):
+  Compatibility with CMake < 3.5 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value or use a ...<max> suffix to tell
+  CMake that the project does not need compatibility with older versions.
+Call Stack (most recent call first):
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_calculate_config_sha1.cmake:9 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_apply_gate_settings.cmake:8 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_finalize.cmake:5 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_add_package.cmake:7 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_cache_run.cmake:6 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_load_from_cache.cmake:5 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_download.cmake:22 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/projects/glew/hunter.cmake:11 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_add_package.cmake:62 (include)
+  cmake/Config.cmake:122 (hunter_add_package)
+  CMakeLists.txt:47 (include)
+
+
+CMake Deprecation Warning at /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_make_directory.cmake:4 (cmake_minimum_required):
+  Compatibility with CMake < 3.5 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value or use a ...<max> suffix to tell
+  CMake that the project does not need compatibility with older versions.
+Call Stack (most recent call first):
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_calculate_config_sha1.cmake:10 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_apply_gate_settings.cmake:8 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_finalize.cmake:5 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_add_package.cmake:7 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_cache_run.cmake:6 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_load_from_cache.cmake:5 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_download.cmake:22 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/projects/glew/hunter.cmake:11 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_add_package.cmake:62 (include)
+  cmake/Config.cmake:122 (hunter_add_package)
+  CMakeLists.txt:47 (include)
+
+
+CMake Deprecation Warning at /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_lock_directory.cmake:4 (cmake_minimum_required):
+  Compatibility with CMake < 3.5 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value or use a ...<max> suffix to tell
+  CMake that the project does not need compatibility with older versions.
+Call Stack (most recent call first):
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_make_directory.cmake:7 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_calculate_config_sha1.cmake:10 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_apply_gate_settings.cmake:8 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_finalize.cmake:5 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_add_package.cmake:7 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_cache_run.cmake:6 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_load_from_cache.cmake:5 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_download.cmake:22 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/projects/glew/hunter.cmake:11 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_add_package.cmake:62 (include)
+  cmake/Config.cmake:122 (hunter_add_package)
+  CMakeLists.txt:47 (include)
+
+
+CMake Deprecation Warning at /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_calculate_self.cmake:4 (cmake_minimum_required):
+  Compatibility with CMake < 3.5 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value or use a ...<max> suffix to tell
+  CMake that the project does not need compatibility with older versions.
+Call Stack (most recent call first):
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_apply_gate_settings.cmake:9 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_finalize.cmake:5 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_add_package.cmake:7 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_cache_run.cmake:6 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_load_from_cache.cmake:5 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_download.cmake:22 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/projects/glew/hunter.cmake:11 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_add_package.cmake:62 (include)
+  cmake/Config.cmake:122 (hunter_add_package)
+  CMakeLists.txt:47 (include)
+
+
+CMake Deprecation Warning at /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_lock_directory.cmake:4 (cmake_minimum_required):
+  Compatibility with CMake < 3.5 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value or use a ...<max> suffix to tell
+  CMake that the project does not need compatibility with older versions.
+Call Stack (most recent call first):
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_calculate_toolchain_sha1.cmake:5 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_apply_gate_settings.cmake:10 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_finalize.cmake:5 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_add_package.cmake:7 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_cache_run.cmake:6 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_load_from_cache.cmake:5 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_download.cmake:22 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/projects/glew/hunter.cmake:11 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_add_package.cmake:62 (include)
+  cmake/Config.cmake:122 (hunter_add_package)
+  CMakeLists.txt:47 (include)
+
+
+CMake Deprecation Warning at /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_make_directory.cmake:4 (cmake_minimum_required):
+  Compatibility with CMake < 3.5 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value or use a ...<max> suffix to tell
+  CMake that the project does not need compatibility with older versions.
+Call Stack (most recent call first):
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_calculate_toolchain_sha1.cmake:6 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_apply_gate_settings.cmake:10 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_finalize.cmake:5 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_add_package.cmake:7 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_cache_run.cmake:6 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_load_from_cache.cmake:5 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_download.cmake:22 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/projects/glew/hunter.cmake:11 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_add_package.cmake:62 (include)
+  cmake/Config.cmake:122 (hunter_add_package)
+  CMakeLists.txt:47 (include)
+
+
+CMake Deprecation Warning at /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_lock_directory.cmake:4 (cmake_minimum_required):
+  Compatibility with CMake < 3.5 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value or use a ...<max> suffix to tell
+  CMake that the project does not need compatibility with older versions.
+Call Stack (most recent call first):
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_make_directory.cmake:7 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_calculate_toolchain_sha1.cmake:6 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_apply_gate_settings.cmake:10 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_finalize.cmake:5 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_add_package.cmake:7 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_cache_run.cmake:6 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_load_from_cache.cmake:5 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_download.cmake:22 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/projects/glew/hunter.cmake:11 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_add_package.cmake:62 (include)
+  cmake/Config.cmake:122 (hunter_add_package)
+  CMakeLists.txt:47 (include)
+
+
+CMake Deprecation Warning at /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_set_config_location.cmake:4 (cmake_minimum_required):
+  Compatibility with CMake < 3.5 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value or use a ...<max> suffix to tell
+  CMake that the project does not need compatibility with older versions.
+Call Stack (most recent call first):
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_apply_gate_settings.cmake:13 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_finalize.cmake:5 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_add_package.cmake:7 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_cache_run.cmake:6 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_load_from_cache.cmake:5 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_download.cmake:22 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/projects/glew/hunter.cmake:11 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_add_package.cmake:62 (include)
+  cmake/Config.cmake:122 (hunter_add_package)
+  CMakeLists.txt:47 (include)
+
+
+CMake Deprecation Warning at /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_calculate_self.cmake:4 (cmake_minimum_required):
+  Compatibility with CMake < 3.5 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value or use a ...<max> suffix to tell
+  CMake that the project does not need compatibility with older versions.
+Call Stack (most recent call first):
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_finalize.cmake:6 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_add_package.cmake:7 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_cache_run.cmake:6 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_load_from_cache.cmake:5 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_download.cmake:22 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/projects/glew/hunter.cmake:11 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_add_package.cmake:62 (include)
+  cmake/Config.cmake:122 (hunter_add_package)
+  CMakeLists.txt:47 (include)
+
+
+CMake Deprecation Warning at /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_make_directory.cmake:4 (cmake_minimum_required):
+  Compatibility with CMake < 3.5 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value or use a ...<max> suffix to tell
+  CMake that the project does not need compatibility with older versions.
+Call Stack (most recent call first):
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_create_cache_meta_directory.cmake:5 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_load_from_cache.cmake:6 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_download.cmake:22 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/projects/glew/hunter.cmake:11 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_add_package.cmake:62 (include)
+  cmake/Config.cmake:122 (hunter_add_package)
+  CMakeLists.txt:47 (include)
+
+
+CMake Deprecation Warning at /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_lock_directory.cmake:4 (cmake_minimum_required):
+  Compatibility with CMake < 3.5 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value or use a ...<max> suffix to tell
+  CMake that the project does not need compatibility with older versions.
+Call Stack (most recent call first):
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_make_directory.cmake:7 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_create_cache_meta_directory.cmake:5 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_load_from_cache.cmake:6 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_download.cmake:22 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/projects/glew/hunter.cmake:11 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_add_package.cmake:62 (include)
+  cmake/Config.cmake:122 (hunter_add_package)
+  CMakeLists.txt:47 (include)
+
+
+CMake Deprecation Warning at /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_make_directory.cmake:4 (cmake_minimum_required):
+  Compatibility with CMake < 3.5 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value or use a ...<max> suffix to tell
+  CMake that the project does not need compatibility with older versions.
+Call Stack (most recent call first):
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_create_cache_meta_directory.cmake:5 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_save_to_cache.cmake:4 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_download.cmake:26 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/projects/glew/hunter.cmake:11 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_add_package.cmake:62 (include)
+  cmake/Config.cmake:122 (hunter_add_package)
+  CMakeLists.txt:47 (include)
+
+
+CMake Deprecation Warning at /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_lock_directory.cmake:4 (cmake_minimum_required):
+  Compatibility with CMake < 3.5 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value or use a ...<max> suffix to tell
+  CMake that the project does not need compatibility with older versions.
+Call Stack (most recent call first):
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_make_directory.cmake:7 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_create_cache_meta_directory.cmake:5 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_save_to_cache.cmake:4 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_download.cmake:26 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/projects/glew/hunter.cmake:11 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_add_package.cmake:62 (include)
+  cmake/Config.cmake:122 (hunter_add_package)
+  CMakeLists.txt:47 (include)
+
+
+CMake Deprecation Warning at /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_lock_directory.cmake:4 (cmake_minimum_required):
+  Compatibility with CMake < 3.5 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value or use a ...<max> suffix to tell
+  CMake that the project does not need compatibility with older versions.
+Call Stack (most recent call first):
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_save_to_cache.cmake:7 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_download.cmake:26 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/projects/glew/hunter.cmake:11 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_add_package.cmake:62 (include)
+  cmake/Config.cmake:122 (hunter_add_package)
+  CMakeLists.txt:47 (include)
+
+
+CMake Deprecation Warning at /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_make_directory.cmake:4 (cmake_minimum_required):
+  Compatibility with CMake < 3.5 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value or use a ...<max> suffix to tell
+  CMake that the project does not need compatibility with older versions.
+Call Stack (most recent call first):
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_save_to_cache.cmake:8 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_download.cmake:26 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/projects/glew/hunter.cmake:11 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_add_package.cmake:62 (include)
+  cmake/Config.cmake:122 (hunter_add_package)
+  CMakeLists.txt:47 (include)
+
+
+CMake Deprecation Warning at /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_lock_directory.cmake:4 (cmake_minimum_required):
+  Compatibility with CMake < 3.5 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value or use a ...<max> suffix to tell
+  CMake that the project does not need compatibility with older versions.
+Call Stack (most recent call first):
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_make_directory.cmake:7 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_save_to_cache.cmake:8 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_download.cmake:26 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/projects/glew/hunter.cmake:11 (include)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_add_package.cmake:62 (include)
+  cmake/Config.cmake:122 (hunter_add_package)
+  CMakeLists.txt:47 (include)
+
+
+CMake Deprecation Warning at CMakeLists.txt:4 (cmake_minimum_required):
+  Compatibility with CMake < 3.5 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value or use a ...<max> suffix to tell
+  CMake that the project does not need compatibility with older versions.
+
+
+CMake Warning (dev) at /usr/share/cmake-3.27/Modules/ExternalProject.cmake:3136 (message):
+  The DOWNLOAD_EXTRACT_TIMESTAMP option was not given and policy CMP0135 is
+  not set.  The policy's OLD behavior will be used.  When using a URL
+  download, the timestamps of extracted files should preferably be that of
+  the time of extraction, otherwise code that depends on the extracted
+  contents might not be rebuilt if the URL changes.  The OLD behavior
+  preserves the timestamps from the archive instead, but this is usually not
+  what you want.  Update your project to the NEW behavior or specify the
+  DOWNLOAD_EXTRACT_TIMESTAMP option with a value of true to avoid this
+  robustness issue.
+Call Stack (most recent call first):
+  /usr/share/cmake-3.27/Modules/ExternalProject.cmake:4345 (_ep_add_download_command)
+  CMakeLists.txt:162 (ExternalProject_Add)
+This warning is for project developers.  Use -Wno-dev to suppress it.
+
+CMake Warning (dev) at /usr/share/cmake-3.27/Modules/ExternalProject.cmake:3136 (message):
+  The DOWNLOAD_EXTRACT_TIMESTAMP option was not given and policy CMP0135 is
+  not set.  The policy's OLD behavior will be used.  When using a URL
+  download, the timestamps of extracted files should preferably be that of
+  the time of extraction, otherwise code that depends on the extracted
+  contents might not be rebuilt if the URL changes.  The OLD behavior
+  preserves the timestamps from the archive instead, but this is usually not
+  what you want.  Update your project to the NEW behavior or specify the
+  DOWNLOAD_EXTRACT_TIMESTAMP option with a value of true to avoid this
+  robustness issue.
+Call Stack (most recent call first):
+  /usr/share/cmake-3.27/Modules/ExternalProject.cmake:4345 (_ep_add_download_command)
+  CMakeLists.txt:162 (ExternalProject_Add)
+This warning is for project developers.  Use -Wno-dev to suppress it.
+
+CMake Deprecation Warning at cmake/HunterGate.cmake:45 (cmake_minimum_required):
+  Compatibility with CMake < 3.5 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value or use a ...<max> suffix to tell
+  CMake that the project does not need compatibility with older versions.
+Call Stack (most recent call first):
+  CMakeLists.txt:8 (include)
+
+
+CMake Error at cmake/HunterGate.cmake:362 (include):
+  include could not find requested file:
+
+    /home/caseymcc/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/Hunter
+Call Stack (most recent call first):
+  CMakeLists.txt:10 (HunterGate)
+
+
+CMake Error at CMakeLists.txt:44 (hunter_add_package):
+  Unknown CMake command "hunter_add_package".
+
+
+gmake[2]: *** [CMakeFiles/glew-Release.dir/build.make:92: glew-Release-prefix/src/glew-Release-stamp/glew-Release-configure] Error 1
+gmake[1]: *** [CMakeFiles/Makefile2:85: CMakeFiles/glew-Release.dir/all] Error 2
+gmake: *** [Makefile:91: all] Error 2
+
+[hunter ** FATAL ERROR **] Build step failed (dir: /home/developer/.hunter/_Base/1292e4d/347e47c/338f12f/Build/glew
+[hunter ** FATAL ERROR **] [Directory:/home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/projects/glew]
+
+------------------------------ ERROR -----------------------------
+    https://hunter.readthedocs.io/en/latest/reference/errors/error.external.build.failed.html
+------------------------------------------------------------------
+
+CMake Error at /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_error_page.cmake:12 (message):
+Call Stack (most recent call first):
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_fatal_error.cmake:20 (hunter_error_page)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_download.cmake:623 (hunter_fatal_error)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/projects/glew/hunter.cmake:37 (hunter_download)
+  /home/developer/.hunter/_Base/Download/Hunter/0.24.18/1292e4d/Unpacked/cmake/modules/hunter_add_package.cmake:62 (include)
+  cmake/Config.cmake:122 (hunter_add_package)
+  CMakeLists.txt:47 (include)
+
+

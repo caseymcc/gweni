@@ -44,7 +44,11 @@ GWENI_CONTROL_CONSTRUCTOR(TreeControl)
 
 void TreeControl::onChildBoundsChanged(gweni::Rect /*oldChildBounds*/, Base * /*child*/)
 {
-    m_scrollControl->updateScrollBars();
+    // TreeControl derives from TreeNode, so TreeNode::init (which creates child
+    // controls) runs before TreeControl::init creates m_scrollControl. Guard
+    // against the bounds-change callbacks that fire during that window.
+    if(m_scrollControl)
+        m_scrollControl->updateScrollBars();
     invalidate();
 }
 

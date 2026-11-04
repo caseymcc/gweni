@@ -1,4 +1,5 @@
 #include "demo/label.h"
+#include <gweni/controls/layout/layout.h>
 #include "gweni/controls/label.h"
 
 namespace gweni
@@ -8,6 +9,8 @@ namespace gweni
 //    Base()
 GWENI_CONTROL_CONSTRUCTOR(LabelDemo)
 {
+    setLayout(new controls::VerticalLayout());
+
     {
         controls::Label *label=newChild<controls::Label>();
         label->setText("Garry's Normal Label");

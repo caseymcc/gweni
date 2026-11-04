@@ -98,6 +98,43 @@ struct BorderedPrimitive
     float m_height;
 };
 
+//! Handle drawing a single anti-aliased rounded rectangle with a vertical fill
+//! gradient and an optional border, evaluated in the fragment shader (SDF). One
+//! primitive id == one rounded rect (a single quad), unlike the 9-slice
+//! BorderedPrimitive. Backed by renderer::Base::drawRoundedRect.
+struct RoundedPrimitive
+{
+    static size_t requiredPrimitives() { return 1; }
+
+    float m_radius=6.0f;   //!< Corner radius in px.
+    float m_border=1.0f;   //!< Border thickness in px (0 == no border).
+
+    void set(float radius, float border) { m_radius=radius; m_border=border; }
+
+    //! Flat fill (no gradient, no border-color difference): pass one color.
+    void draw(renderer::Base *render, size_t *primitiveIds, const Rect &r, int zIndex,
+        const Color &fill, const Color &border)
+    {
+        draw(render, primitiveIds, r, zIndex, fill, fill, border);
+    }
+
+    //! Gradient fill from \a fillTop (top) to \a fillBottom (bottom) with \a border.
+    void draw(renderer::Base *render, size_t *primitiveIds, const Rect &r, int zIndex,
+        const Color &fillTop, const Color &fillBottom, const Color &border)
+    {
+        if(!primitiveIds)
+            return;
+        render->drawRoundedRect(primitiveIds[0], r, m_radius, m_border, fillTop, fillBottom, border, zIndex);
+    }
+
+    void show(renderer::Base *render, size_t *primitiveIds, bool visible)
+    {
+        if(!primitiveIds)
+            return;
+        render->showPrimitive(visible?4:0, primitiveIds[0]);
+    }
+};
+
 }//namespace textured
 }//namespace skin
 }//namespace gweni

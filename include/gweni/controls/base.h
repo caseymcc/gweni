@@ -24,6 +24,7 @@
 #include <map>
 #include <algorithm>
 
+#define DEBUG_ID
 #define DEBUG_LAYOUT
 #if 1
 #define logUpdates(...) ::printf(__VA_ARGS__)
@@ -102,6 +103,11 @@ public:
 
     virtual void delayedDelete();
     virtual void preDelete(gweni::skin::Base *skin) {}
+
+    size_t getControlId()
+    {
+        return m_id;
+    }
 
 //Control hierarchy
     virtual void setParent(controls::Base *parent);
@@ -322,6 +328,19 @@ public:
 
     virtual void hide() { setHidden(true); }    //!< Make control invisible.
     virtual void show(bool show=true) { setHidden(!show); }   //!< Make control visible if hidden.
+
+    //! Set the hidden state on this control and its subtree without the
+    //! redraw/invalidate side-effects of setHidden() (which touch the skin and
+    //! so can't run during construction). Used when a child is added to an
+    //! already-hidden parent.
+    void propagateHidden(bool hidden)
+    {
+        m_hidden=hidden;
+        for(auto &&child : m_children)
+            child->propagateHidden(hidden);
+        addStateChange(StateChange_Visibility);
+        invalidate();
+    }
 
     // Skin
     virtual void setSkin(skin::Base *skin, bool doChildren=true);
@@ -595,6 +614,7 @@ public:
 //    void setPosition(Position pos, int xpadding=0, int ypadding=0);
 
     virtual void calculateSize(skin::Base *skin, Dim dim);
+    virtual void policyResize(const Size &limit, Dim dim);
     virtual void arrange(skin::Base *skin, Dim dim);
 
 protected:
@@ -682,7 +702,7 @@ public:
         return getTypeNameStatic();
     }
 
-    static size_t getControlId()
+    static size_t getControlTypeId()
     {
         return getControlType(getTypeNameStatic());
     }
@@ -731,8 +751,14 @@ _Control *Base::newChild(const gweni::String name)
 
     control->setParent(this);
     control->recursiveInit(name);
+    // recursiveInit() runs init() which resets m_hidden=false, clobbering the
+    // hidden state propagated by setParent()/addChild(). Now that the control's
+    // own subtree exists, re-propagate the parent's hidden state so a child
+    // added to a hidden parent (and everything it built in init) stays hidden.
+    if(m_hidden)
+        control->propagateHidden(true);
     control->setSkin(m_skin);
-    
+
     return control;
 }
 

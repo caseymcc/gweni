@@ -1,12 +1,14 @@
 #include "demo/menuStrip.h"
+#include <gweni/controls/layout/layout.h>
 #include "gweni/controls/menuStrip.h"
 
 namespace gweni
 {
 
-MenuStripDemo::MenuStripDemo(const String &name):
-    Base()
+GWENI_CONTROL_CONSTRUCTOR(MenuStripDemo)
 {
+    setLayout(new controls::VerticalLayout());
+
     setDock(DockPosition::Center);
     controls::MenuStrip *menu=newChild<controls::MenuStrip>();
     {

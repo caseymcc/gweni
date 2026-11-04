@@ -1,4 +1,5 @@
 #include "demo/progressBar.h"
+#include <gweni/controls/layout/layout.h>
 #include "gweni/controls/radioButtonController.h"
 #include "gweni/controls/progressBar.h"
 
@@ -9,6 +10,8 @@ namespace gweni
 //    Base()
 GWENI_CONTROL_CONSTRUCTOR(ProgressBarDemo)
 {
+    setLayout(new controls::VerticalLayout());
+
     {
         controls::ProgressBar *pb=newChild<controls::ProgressBar>();
         pb->setBounds(gweni::Rect(110, 20, 200, 20));

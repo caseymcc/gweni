@@ -1,12 +1,14 @@
 #include "demo/textBox.h"
+#include <gweni/controls/layout/layout.h>
 #include "gweni/controls/textBox.h"
 
 namespace gweni
 {
 
-TextBoxDemo::TextBoxDemo(const String &name):
-    Base()
+GWENI_CONTROL_CONSTRUCTOR(TextBoxDemo)
 {
+    setLayout(new controls::VerticalLayout());
+
     {
         controls::TextBox *label=newChild<controls::TextBox>();
         label->setText("");

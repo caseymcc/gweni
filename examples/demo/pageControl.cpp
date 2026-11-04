@@ -1,12 +1,14 @@
 #include "demo/pageControl.h"
+#include <gweni/controls/layout/layout.h>
 #include "gweni/controls/pageControl.h"
 
 namespace gweni
 {
 
-PageControlDemo::PageControlDemo(const String &name):
-    Base()
+GWENI_CONTROL_CONSTRUCTOR(PageControlDemo)
 {
+    setLayout(new controls::VerticalLayout());
+
     controls::PageControl *control=newChild<controls::PageControl>();
     control->setSize(500, 300);
     //control->setPageCount(5);

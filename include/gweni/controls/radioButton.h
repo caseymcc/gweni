@@ -45,6 +45,9 @@ public:
     GWENI_CONTROL_INLINE(LabeledRadioButton, Base)
     {
         //                setSize(200, 19);
+        // One compact clickable row (identifier + label).
+        setSizeFlags({SizeFlag::Shrink, SizeFlag::Shrink});
+
         m_radioButton=newChild<RadioButton>();
         m_radioButton->setDock(DockPosition::Left);
         m_radioButton->setMargin(Margin(0, 2, 2, 2));
@@ -83,6 +86,14 @@ public:
     virtual LabelClickable *getLabel()
     {
         return m_label;
+    }
+
+    //! Put the text on the left of the radio identifier (default: right).
+    virtual void setLabelOnLeft(bool left)
+    {
+        m_radioButton->setDock(left ? DockPosition::Right : DockPosition::Left);
+        m_label->setTextAlignment(left ? (Alignment::Right|Alignment::CenterV)
+                                       : (Alignment::Left|Alignment::CenterV));
     }
 
     virtual void setText(const String &str, bool doEvents=true)

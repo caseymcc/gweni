@@ -494,6 +494,12 @@ void Base::addChild(Base *child)
 
     onChildAdded(child);
     child->m_actualParent=this;
+
+    // A child added to a hidden parent inherits the hidden state; otherwise it
+    // renders (and bleeds) even though its parent is hidden — e.g. content built
+    // into a PageControl page that was hidden before its content was added.
+    if(m_hidden)
+        child->propagateHidden(true);
 }
 
 void Base::addChildOfLayout(Base *child)
@@ -502,6 +508,9 @@ void Base::addChildOfLayout(Base *child)
 
     onChildAdded(child);
     child->m_actualParent=this;
+
+    if(m_hidden)
+        child->propagateHidden(true);
 }
 
 void Base::removeChild(Base *child)
@@ -627,9 +636,6 @@ bool Base::setSize(const Point &p)
 
 bool Base::setBounds(const Rect &bounds)
 {
-    if(m_name == "Basic")
-        m_bounds.x=m_bounds.x;
-
     if(m_bounds == bounds)
         return false;
 
@@ -940,15 +946,14 @@ void Base::renderRecursive(skin::Base *skin, const Rect &cliprect)
     {
         if(!m_children.empty())
         {
-            // Now render my kids
-            for(auto &&child : m_children)
-            {
-//                if(child->hidden())
-//                {
-//                    child->doHide(skin);
-//                    continue;
-//                }
+            // Iterate a snapshot: a control's render() may mutate the sibling
+            // list (e.g. sendToBack() during a state change), which would
+            // otherwise invalidate this iterator (use-after-free).
+            Base::List children=m_children;
 
+            // Now render my kids
+            for(auto &&child : children)
+            {
                 child->doRender(skin);
             }
         }
@@ -1216,9 +1221,6 @@ Size Base::sizeOfChildren(skin::Base *skin, Dim dim)
 {
     Size preferredSize=m_preferredSize;
 
-    if(m_name == "ControlsTab")
-        dim=dim;
-
     if(dim==Dim::X)
     {
         int width=0;
@@ -1364,20 +1366,58 @@ Size Base::sizeOfChildren(skin::Base *skin, Dim dim)
 
 void Base::calculateSize(skin::Base *skin, Dim dim)
 {
-    if(m_name == "Center")
-        m_bounds.x=m_bounds.x;
-
     if(processLayout(skin, dim))
         return;
 
     m_preferredSize=sizeOfChildren(skin, dim);
 }
 
+void Base::policyResize(const Size &limit, Dim dim)
+{
+    SizeFlags sizeFlags=getSizeFlags();
+    Margin margin=getMargin();
+    Rect bounds=getBounds();
+
+    if(dim==Dim::X)
+    {
+        if(bounds.w>limit.width)
+        {
+            if((sizeFlags.horizontal==SizeFlag::Elastic)||
+                (sizeFlags.horizontal==SizeFlag::Shrink)||
+                (sizeFlags.horizontal==SizeFlag::Bloat))
+                bounds.w=limit.width;
+        }
+        else if(bounds.w<limit.width)
+        {
+            if((sizeFlags.horizontal==SizeFlag::Elastic)||
+                (sizeFlags.horizontal==SizeFlag::Expand)||
+                (sizeFlags.horizontal==SizeFlag::Bloat))
+                bounds.w=limit.width;
+        }
+    }
+    else
+    {
+        if(bounds.h>limit.height)
+        {
+            if((sizeFlags.vertical==SizeFlag::Elastic)||
+                (sizeFlags.vertical==SizeFlag::Shrink)||
+                (sizeFlags.vertical==SizeFlag::Bloat))
+                bounds.h=limit.height;
+        }
+        else if(bounds.h<limit.height)
+        {
+            if((sizeFlags.vertical==SizeFlag::Elastic)||
+                (sizeFlags.vertical==SizeFlag::Expand)||
+                (sizeFlags.vertical==SizeFlag::Bloat))
+                bounds.h=limit.height;
+        }
+    }
+
+    setBounds(bounds);
+}
+
 void Base::arrange(skin::Base *skin, Dim dim)
 {
-    if(m_name == "Center")
-        m_bounds.x=m_bounds.x;
-
     if(needsLayout())
     {
         m_needsLayout=false;
@@ -1479,6 +1519,8 @@ void Base::arrangeHorizontal(skin::Base *skin)
         }
         else if(dock == DockPosition::None)
         {
+            policyResize(preferred, Dim::X);
+
             Alignment alignment=child->getAlignment();
 
             //            child->setBounds(bounds.x, bounds.y, preferred.width, bounds.h);
@@ -1496,9 +1538,13 @@ void Base::arrangeHorizontal(skin::Base *skin)
         }
 
 #ifdef DEBUG_LAYOUT
-
         if(!(dock&DockPosition::Center))
-            logUpdates("%s%s - arrangeH - dock: %s, (%d, %d, %d, %d)\n", spaceByParent(child).c_str(), child->getTypeName(), getDockPositionName(dock), child->getX(), child->getY(), child->getWidth(), child->getHeight());
+        {
+            Alignment alignment=child->getAlignment();
+
+            logUpdates("%zd %s%s - arrangeH - dock: %s, align: %s (%d, %d, %d, %d) p(%d, %d)\n", child->getControlId(), spaceByParent(child).c_str(), child->getTypeName(), getDockPositionName(dock),
+                getAlignmentName(alignment), child->getX(), child->getY(), child->getWidth(), child->getHeight(), preferred.width, preferred.height);
+        }
 #endif//DEBUG_LAYOUT
     }
 
@@ -1521,7 +1567,11 @@ void Base::arrangeHorizontal(skin::Base *skin)
             innerBounds.w-margin.left-margin.right, bounds.h);
 
 #ifdef DEBUG_LAYOUT
-        logUpdates("%s%s - arrangeH - dock: %s, (%d, %d, %d, %d)\n", spaceByParent(child).c_str(), child->getTypeName(), getDockPositionName(dock), child->getX(), child->getY(), child->getWidth(), child->getHeight());
+        Alignment alignment=child->getAlignment();
+        Size preferred=child->getPreferredSize();
+
+        logUpdates("%zd %s%s - arrangeH - dock: %s, align: %s (%d, %d, %d, %d) p(%d, %d)\n", child->getControlId(), spaceByParent(child).c_str(), child->getTypeName(), getDockPositionName(dock),
+            getAlignmentName(alignment), child->getX(), child->getY(), child->getWidth(), child->getHeight(), preferred.width, preferred.height);
 #endif//DEBUG_LAYOUT
     }
 }
@@ -1533,7 +1583,7 @@ void Base::arrangeVertical(skin::Base *skin)
     innerBounds.y=m_padding.top;
     innerBounds.h-=m_padding.top+m_padding.bottom;
 
-    size_t centerCount=0;
+    int centerCount=0;
 
     for(auto &&child:m_children)
     {
@@ -1596,6 +1646,8 @@ void Base::arrangeVertical(skin::Base *skin)
         }
         else if(dock == DockPosition::None)
         {
+            policyResize(preferred, Dim::Y);
+
 //            const Rect &bounds=child->getBounds();
             Alignment alignment=child->getAlignment();
 
@@ -1616,7 +1668,12 @@ void Base::arrangeVertical(skin::Base *skin)
 
 #ifdef DEBUG_LAYOUT
         if(!(dock&DockPosition::Center))
-            logUpdates("%s%s - arrangeV - dock: %s, (%d, %d, %d, %d)\n", spaceByParent(child).c_str(), child->getTypeName(), getDockPositionName(dock), child->getX(), child->getY(), child->getWidth(), child->getHeight());
+        {
+            Alignment alignment=child->getAlignment();
+
+            logUpdates("%zd %s%s - arrangeV - dock: %s, align: %s (%d, %d, %d, %d) p(%d, %d)\n", child->getControlId(), spaceByParent(child).c_str(), child->getTypeName(), getDockPositionName(dock),
+                getAlignmentName(alignment), child->getX(), child->getY(), child->getWidth(), child->getHeight(), preferred.width, preferred.height);
+        }
 #endif//DEBUG_LAYOUT
     }
 
@@ -1630,6 +1687,13 @@ void Base::arrangeVertical(skin::Base *skin)
         centerCount=0;
         for(auto &&child:m_children)
         {
+            // Skip hidden children: they are excluded from centerCount above, so
+            // including them here would push the visible Center children down by
+            // one slot each (e.g. PageControl's hidden pages shoving the current
+            // page off-screen).
+            if(child->hidden())
+                continue;
+
             DockPosition dock=child->getDock();
 
             if(!(dock & DockPosition::Center))
@@ -1643,7 +1707,11 @@ void Base::arrangeVertical(skin::Base *skin)
 
             centerCount++;
 #ifdef DEBUG_LAYOUT
-            logUpdates("%s%s - arrangeV - dock: %s, (%d, %d, %d, %d)\n", spaceByParent(child).c_str(), child->getTypeName(), getDockPositionName(dock), child->getX(), child->getY(), child->getWidth(), child->getHeight());
+            Alignment alignment=child->getAlignment();
+            Size preferred=child->getPreferredSize();
+
+            logUpdates("%zd %s%s - arrangeV - dock: %s, align: %s (%d, %d, %d, %d) p(%d, %d)\n", child->getControlId(), spaceByParent(child).c_str(), child->getTypeName(), getDockPositionName(dock),
+                getAlignmentName(alignment), child->getX(), child->getY(), child->getWidth(), child->getHeight(), preferred.width, preferred.height);
 #endif//DEBUG_LAYOUT
         }
     }

@@ -77,7 +77,7 @@ struct join
 }//namespace detail
 
 template<std::string_view const &... _Strings>
-std::string_view join = detaitl::join<_Strings...>::value;
+std::string_view join = detail::join<_Strings...>::value;
 
 #define JoinConstExpr const
 

@@ -2,6 +2,9 @@
 #ifndef _gweni_objectIdBank_h_
 #define _gweni_objectIdBank_h_
 
+#include <cstddef>
+#include <vector>
+
 namespace gweni
 {
 

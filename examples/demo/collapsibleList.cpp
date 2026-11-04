@@ -1,12 +1,14 @@
 ﻿#include "demo/collapsibleList.h"
+#include <gweni/controls/layout/layout.h>
 #include "gweni/controls/collapsibleList.h"
 
 namespace gweni
 {
 
-CollapsibleListDemo::CollapsibleListDemo(const gweni::String &name):
-    Base()
+GWENI_CONTROL_CONSTRUCTOR(CollapsibleListDemo)
 {
+    setLayout(new controls::VerticalLayout());
+
     controls::CollapsibleList *control=newChild<controls::CollapsibleList>();
 
     control->setSize(100, 200);

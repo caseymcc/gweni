@@ -1,12 +1,14 @@
 #include "demo/radioButton.h"
+#include <gweni/controls/layout/layout.h>
 #include "gweni/controls/radioButtonController.h"
 
 namespace gweni
 {
 
-RadioButtonDemo::RadioButtonDemo(const String &name):
-    Base()
+GWENI_CONTROL_CONSTRUCTOR(RadioButtonDemo)
 {
+    setLayout(new controls::VerticalLayout());
+
     controls::RadioButtonController *rc=newChild<controls::RadioButtonController>();
     rc->addOption("Option 1");
     rc->addOption("Option 2");

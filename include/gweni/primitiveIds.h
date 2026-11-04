@@ -1,6 +1,7 @@
 #ifndef _gweni_primitiveIds_h_
 #define _gweni_primitiveIds_h_
 
+#include <cstddef>
 #include <vector>
 #include "gweni/export.h"
 

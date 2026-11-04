@@ -1,13 +1,15 @@
 #include "demo/colorPicker.h"
+#include <gweni/controls/layout/layout.h>
 #include "gweni/controls/colorPicker.h"
 #include "gweni/controls/hsvColorPicker.h"
 
 namespace gweni
 {
 
-ColorPickerDemo::ColorPickerDemo(const gweni::String &name):
-    Base()
+GWENI_CONTROL_CONSTRUCTOR(ColorPickerDemo)
 {
+    setLayout(new controls::VerticalLayout());
+
     controls::ColorPicker *control=newChild<controls::ColorPicker>();
 
     control->setBounds(0, 10, 250, 150);

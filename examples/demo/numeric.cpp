@@ -1,12 +1,14 @@
 #include "demo/numeric.h"
+#include <gweni/controls/layout/layout.h>
 #include "gweni/controls/numericUpDown.h"
 
 namespace gweni
 {
 
-NumericDemo::NumericDemo(const String &name):
-    Base()
+GWENI_CONTROL_CONSTRUCTOR(NumericDemo)
 {
+    setLayout(new controls::VerticalLayout());
+
     controls::NumericUpDown *control=newChild<controls::NumericUpDown>();
 
     control->setBounds(10, 10, 50, 20);

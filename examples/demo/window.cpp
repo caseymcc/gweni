@@ -1,13 +1,15 @@
 #include "demo/window.h"
+#include <gweni/controls/layout/layout.h>
 #include "gweni/controls/button.h"
 #include "gweni/controls/windowControl.h"
 
 namespace gweni
 {
 
-WindowDemo::WindowDemo(const String &name):
-    Base()
+GWENI_CONTROL_CONSTRUCTOR(WindowDemo)
 {
+    setLayout(new controls::VerticalLayout());
+
     {
         controls::Button *button=newChild<controls::Button>();
         button->setText("Normal Window");

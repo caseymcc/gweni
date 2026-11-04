@@ -63,6 +63,9 @@ public:
     GWENI_CONTROL_INLINE(CheckBoxWithLabel, Base)
     {
         setSize(200, 19);
+        // One compact clickable row (identifier + label); don't let the layout
+        // stretch it (which would float the label to the vertical centre).
+        setSizeFlags({SizeFlag::Shrink, SizeFlag::Shrink});
 
         m_checkbox=newChild<CheckBox>();
         m_checkbox->setDock(DockPosition::Left);
@@ -85,6 +88,14 @@ public:
     virtual LabelClickable *label()
     {
         return m_label;
+    }
+
+    //! Put the text on the left of the checkbox (default: right).
+    virtual void setLabelOnLeft(bool left)
+    {
+        m_checkbox->setDock(left ? DockPosition::Right : DockPosition::Left);
+        m_label->setTextAlignment(left ? (Alignment::Right|Alignment::CenterV)
+                                       : (Alignment::Left|Alignment::CenterV));
     }
 
     bool onKeySpace(bool down) override

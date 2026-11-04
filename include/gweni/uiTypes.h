@@ -132,6 +132,34 @@ inline bool operator&(Alignment a, Alignment b)
     return (static_cast<int>(a) & static_cast<int>(b)) != 0;
 }
 
+inline const char *getAlignmentName(Alignment align)
+{
+    if(align == Alignment::None)
+        return "None";
+    else if((align & Alignment::Top) && (align&Alignment::Left))
+        return "TopLeft";
+    else if((align&Alignment::Top) && (align&Alignment::Right))
+        return "TopRight";
+    else if((align&Alignment::Top)&&(align&Alignment::CenterH))
+        return "TopCenter";
+    else if((align&Alignment::Bottom)&&(align&Alignment::Left))
+        return "BottomLeft";
+    else if((align&Alignment::Bottom)&&(align&Alignment::Right))
+        return "BottomRight";
+    else if((align&Alignment::Bottom)&&(align&Alignment::CenterH))
+        return "BottomCenter";
+    else if((align&Alignment::CenterV)&&(align&Alignment::Left))
+        return "CenterLeft";
+    else if((align&Alignment::CenterV)&&(align&Alignment::Right))
+        return "CenterRight";
+    else if((align&Alignment::CenterV)&&(align&Alignment::CenterH))
+        return "Center";
+    else if((align&Alignment::Absolute))
+        return "Absolute";
+
+    return "Unknown";
+}
+
 enum class Position
 {
     None=0,

@@ -1,12 +1,14 @@
 #include "demo/listBox.h"
+#include <gweni/controls/layout/layout.h>
 #include "gweni/controls/listBox.h"
 
 namespace gweni
 {
 
-ListBoxDemo::ListBoxDemo(const String &name):
-    Base()
+GWENI_CONTROL_CONSTRUCTOR(ListBoxDemo)
 {
+    setLayout(new controls::VerticalLayout());
+
     {
         controls::ListBox *ctrl=newChild<controls::ListBox>();
         ctrl->setBounds(10, 10, 100, 200);

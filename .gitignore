@@ -33,5 +33,9 @@
 
 build*/
 
+# vcpkg
+.vcpkg-cache/
+vcpkg_installed/
+
 #Visual Studio Code
 .vscode/

@@ -1,12 +1,14 @@
 #include "demo/comboBox.h"
+#include <gweni/controls/layout/layout.h>
 #include "gweni/controls/comboBox.h"
 
 namespace gweni
 {
 
-ComboBoxDemo::ComboBoxDemo(const String &name):
-    Base()
+GWENI_CONTROL_CONSTRUCTOR(ComboBoxDemo)
 {
+    setLayout(new controls::VerticalLayout());
+
     {
         controls::ComboBox *combo=newChild<controls::ComboBox>();
 

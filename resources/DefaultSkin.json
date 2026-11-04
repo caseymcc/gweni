@@ -662,5 +662,21 @@
             "bbox":[0, 448, 31, 31],
             "margin":[8, 8, 8, 8]
         }
-    ]
+    ],
+    "theme":
+    {
+        "_comment": "Tokyo Night theme overrides. Any surface in tokyonight::surfaceRegistry() can be set here ([r,g,b] or [r,g,b,a]); omitted fields keep the compiled default. Edit to re-theme without recompiling.",
+        "surfaces":
+        {
+            "ButtonNormal":  { "top":[59,66,97],  "bottom":[44,48,71], "border":[65,72,104], "radius":6, "borderWidth":1 },
+            "ButtonHover":   { "top":[68,75,110], "bottom":[59,66,97], "border":[122,162,247], "radius":6, "borderWidth":1 },
+            "CategoryHeader":{ "top":[61,89,161], "bottom":[44,61,107], "border":[122,162,247], "radius":4, "borderWidth":1 },
+            "TextBoxFocus":  { "top":[22,22,30], "bottom":[22,22,30], "border":[122,162,247], "radius":4, "borderWidth":1 }
+        },
+        "textColors":
+        {
+            "LabelDefault":  [192,202,245],
+            "LabelHighlight":[122,162,247]
+        }
+    }
 }

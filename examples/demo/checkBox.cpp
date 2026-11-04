@@ -1,12 +1,14 @@
 #include "demo/checkBox.h"
+#include <gweni/controls/layout/layout.h>
 #include "gweni/controls/checkBox.h"
 
 namespace gweni
 {
 
-CheckBoxDemo::CheckBoxDemo(const gweni::String &name):
-    Base()
+GWENI_CONTROL_CONSTRUCTOR(CheckBoxDemo)
 {
+    setLayout(new controls::VerticalLayout());
+
     controls::CheckBox *check=newChild<controls::CheckBox>();
     check->setPos(10, 10);
     check->onChecked.add(this, &CheckBoxDemo::onChecked);

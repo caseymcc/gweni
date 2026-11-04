@@ -140,8 +140,15 @@ void TextBox::render(skin::Base *skin)
 //    // Draw caret
 //    skin->getRenderer()->setDrawColor(m_caretColor);
 //    skin->getRenderer()->drawFilledRect(m_primitiveIds[10], m_rectCaretBounds);
-    if(getStateChange() != StateChange_Nothing)
-        m_skinControl->update(skin->getRenderer(), this);
+    if(getStateChange() == StateChange_Nothing || !m_skinControl)
+        return;
+
+    // Generate primitives on first render, otherwise update() draws into an
+    // empty primitive buffer (mirrors Base::render).
+    if(getStateChange() & StateChange_Created)
+        m_skinControl->generate(skin->getRenderer(), this);
+
+    m_skinControl->update(skin->getRenderer(), this);
 }
 
 void TextBox::refreshCursorBounds()

@@ -1,12 +1,9 @@
 cmake_minimum_required(VERSION 3.12)
 
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${CMAKE_CURRENT_LIST_DIR}/cmake)
-include(${CMAKE_CURRENT_LIST_DIR}/cmake/Hunter/HunterGate.cmake)
 
-HunterGate(
-    URL "https://github.com/cpp-pm/hunter/archive/v0.23.267.tar.gz"
-    SHA1 "9c5c7fa6e17c2ae15dd922184bc7c51235aaae70"
-)
+# Dependencies are provided by vcpkg (see top-level vcpkg.json) via the standard
+# CMake find modules; no Hunter bootstrap here.
 
 project(imglib)
 
@@ -25,21 +22,23 @@ option(IMGLIB_BUILD_TEST "Turns on test application" OFF)
 #set(IMGLIB_STD_FILESYSTEM 1)
 #set(IMGLIB_EXPERIMENTAL_FILESYSTEM 2)
 
-#build embed
-include(ExternalProject)
+if(IMGLIB_USE_OPENCL)
+    #build embed
+    include(ExternalProject)
 
-ExternalProject_Add(embed
-    PREFIX ${CMAKE_CURRENT_BINARY_DIR}/embed
-    SOURCE_DIR ${CMAKE_CURRENT_LIST_DIR}/embed
-    CMAKE_ARGS -DCMAKE_BUILD_TYPE=Release #just need the release version
-    INSTALL_COMMAND "" #disable install, just use it from build dir
-)
-ExternalProject_Get_Property(embed BINARY_DIR)
+    ExternalProject_Add(embed
+        PREFIX ${CMAKE_CURRENT_BINARY_DIR}/embed
+        SOURCE_DIR ${CMAKE_CURRENT_LIST_DIR}/embed
+        CMAKE_ARGS -DCMAKE_BUILD_TYPE=Release #just need the release version
+        INSTALL_COMMAND "" #disable install, just use it from build dir
+    )
+    ExternalProject_Get_Property(embed BINARY_DIR)
 
-set(EMBED_LOCATION ${BINARY_DIR}/embed)
-add_executable(embed::embed IMPORTED)
-set_target_properties(embed::embed PROPERTIES IMPORTED_LOCATION ${EMBED_LOCATION})
-#complete embed project
+    set(EMBED_LOCATION ${BINARY_DIR}/embed)
+    add_executable(embed::embed IMPORTED)
+    set_target_properties(embed::embed PROPERTIES IMPORTED_LOCATION ${EMBED_LOCATION})
+    #complete embed project
+endif()
 
 set(imglib_headers
     include/imglib/colorConversion.h
@@ -78,22 +77,19 @@ set(imglib_compile_options "")
 #endif()
 
 if(IMGLIB_USE_COMPILETIME_TYPE)
-    hunter_add_package(ctti)
-    find_package(ctti REQUIRED CONFIG)
+    find_package(ctti CONFIG REQUIRED)
 
     set(imglib_libraries ${imglib_libraries} ctti)
 endif()
 
 if(IMGLIB_USE_EIGEN)
-    hunter_add_package(Eigen)
-    find_package(Eigen3 REQUIRED)
+    find_package(Eigen3 CONFIG REQUIRED)
 
     set(imglib_libraries ${imglib_libraries} Eigen3::Eigen)
 endif()
 
 if(IMGLIB_USE_PNG)
-    hunter_add_package(PNG)
-    find_package(PNG CONFIG REQUIRED)
+    find_package(PNG REQUIRED)
 
     set(imglib_headers ${imglib_headers}
         include/imglib/png.h
@@ -103,12 +99,11 @@ if(IMGLIB_USE_PNG)
         source/png.cpp
     )
 
-    set(imglib_libraries ${imglib_libraries} PNG::png)
+    set(imglib_libraries ${imglib_libraries} PNG::PNG)
 endif()
 
 if(IMGLIB_USE_JPEG)
-    hunter_add_package(Jpeg)
-    find_package(JPEG CONFIG REQUIRED)
+    find_package(JPEG REQUIRED)
 
     set(imglib_headers ${imglib_headers}
         include/imglib/jpeg.h
@@ -118,14 +113,12 @@ if(IMGLIB_USE_JPEG)
         source/jpeg.cpp
     )
 
-    set(imglib_libraries ${imglib_libraries} JPEG::jpeg)
+    set(imglib_libraries ${imglib_libraries} JPEG::JPEG)
 endif()
 
 if(IMGLIB_USE_OPENCL)
-    hunter_add_package(OpenCL)
     find_package(OpenCL CONFIG REQUIRED)
 
-    hunter_add_package(OpenCL-cpp)
     find_package(OpenCL-cpp CONFIG REQUIRED)
 
     set(imglib_headers ${imglib_headers}
@@ -149,8 +142,8 @@ if(IMGLIB_USE_OPENCL)
         source/utils_cl.cpp
     )
 
-    set(imglib_libraries ${imglib_libraries} 
-        OpenCL::OpenCL 
+    set(imglib_libraries ${imglib_libraries}
+        OpenCL::OpenCL
         OpenCL-cpp::OpenCL-cpp
     )
 
@@ -172,8 +165,10 @@ add_library(imglib
     ${embededFiles}
 )
 
-#force embed to build
-add_dependencies(imglib embed)
+if(IMGLIB_USE_OPENCL)
+    #force embed to build
+    add_dependencies(imglib embed)
+endif()
 
 include(GenerateExportHeader)
 generate_export_header(imglib)
@@ -222,7 +217,7 @@ endif()
 #if(IMGLIB_BUILD_TEST)
 #    set(imglib_benchmark_headers
 #    )
-#    
+#
 #    set(imglib_benchmark_sources
 #        test/benchmark.cpp
 #    )

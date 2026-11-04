@@ -4,12 +4,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 set(example_name "OpenGLCore")
 
-hunter_add_package(glfw)
-find_package(glfw3 REQUIRED)
-hunter_add_package(CreateLaunchers)
-find_package(CreateLaunchers CONFIG REQUIRED)
-
-include(CreateLaunchers)
+find_package(glfw3 CONFIG REQUIRED)
 
 set(${example_name}_sources
     openglcore.cpp)
@@ -33,6 +28,14 @@ endif()
 add_executable(${example_name} ${${example_name}_build_type} ${${example_name}_sources})
 
 target_link_libraries(${example_name}
+    gweni
+    gweni_demo
+    glfw
+)
+
+# Single-control test harness: drops one control on the canvas by name.
+add_executable(ControlTest controltest.cpp)
+target_link_libraries(ControlTest
     gweni
     gweni_demo
     glfw
@@ -63,8 +66,4 @@ else()
 #        CopyAppResource(${resource_file})
 #    endforeach()
 endif()
-
-create_target_launcher(${example_name}
-    WORKING_DIRECTORY "${GWENI_SOURCE_DIR}"
-)
 

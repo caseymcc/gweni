@@ -1,4 +1,7 @@
-set(freetype-gl_USE_HUNTER ON CACHE BOOL "" FORCE)
+# Dependencies come from vcpkg, not Hunter. With USE_HUNTER off, freetype-gl
+# locates freetype/glew via CMake's standard find modules (satisfied by the
+# vcpkg toolchain).
+set(freetype-gl_USE_HUNTER OFF CACHE BOOL "" FORCE)
 set(freetype-gl_USE_VAO ON CACHE BOOL "Use a VAO to render a vertex_buffer instance (required for forward compatible OpenGL 3.0 contexts)" FORCE)
 set(freetype-gl_BUILD_DEMOS OFF CACHE BOOL "Build the freetype-gl example programs" FORCE)
 set(freetype-gl_BUILD_APIDOC OFF CACHE BOOL "Build the freetype-gl API documentation" FORCE)

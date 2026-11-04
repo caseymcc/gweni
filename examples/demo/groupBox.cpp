@@ -1,4 +1,5 @@
 #include "demo/groupBox.h"
+#include <gweni/controls/layout/layout.h>
 #include "gweni/controls/groupBox.h"
 
 namespace gweni
@@ -8,6 +9,8 @@ namespace gweni
 //    Base()
 GWENI_CONTROL_CONSTRUCTOR(GroupBoxDemo)
 {
+    setLayout(new controls::VerticalLayout());
+
     controls::GroupBox *group=newChild<controls::GroupBox>();
 
     group->setText("Group Box");

@@ -1,4 +1,5 @@
 #include "gweni/skins/textured/texturedSkin.h"
+#include "gweni/skins/textured/tokyoNight.h"
 
 #include "gweni/utils/json.h"
 #include "gweni/utils/filesystem.h"
@@ -11,8 +12,6 @@ namespace skin
 {
 namespace textured
 {
-
-std::vector<ControlEntry> ControlFactory::m_controlFuncs;
 
 void TexturedSkin::init(std::string fileName)
 {
@@ -320,7 +319,141 @@ bool TexturedSkin::loadConfig(std::string configFileName)
     if(jsonDoc.HasMember("map"))
         loadTextureMap(jsonDoc["map"]);
 
+    setThemeColors();
+
+    // Optional "theme" object in the skin JSON overrides the compiled Tokyo Night
+    // surfaces / text colors, so the theme is swappable without recompiling.
+    if(jsonDoc.HasMember("theme"))
+        loadTheme(jsonDoc["theme"]);
+
     return true;
+}
+
+// Apply an external theme: a "surfaces" object (name -> {top,bottom,border arrays,
+// radius, borderWidth}) overriding tokyonight surfaces, and a "textColors" object
+// (name -> [r,g,b(,a)]) overriding control text colors. Anything omitted keeps its
+// compiled default.
+void TexturedSkin::loadTheme(const json::Value &jsonTheme)
+{
+    using namespace tokyonight;
+
+    auto toColor=[](const json::Value &arr, gweni::Color &dst)
+    {
+        if(!arr.IsArray() || arr.Size() < 3)
+            return;
+        dst=gweni::Color((uint8_t)arr[0].GetInt(), (uint8_t)arr[1].GetInt(),
+            (uint8_t)arr[2].GetInt(), arr.Size() >= 4 ? (uint8_t)arr[3].GetInt() : 255);
+    };
+
+    if(jsonTheme.HasMember("surfaces") && jsonTheme["surfaces"].IsObject())
+    {
+        std::unordered_map<std::string, Surface*> &reg=surfaceRegistry();
+
+        for(const auto &member:jsonTheme["surfaces"].GetObject())
+        {
+            auto iter=reg.find(member.name.GetString());
+
+            if(iter == reg.end() || !member.value.IsObject())
+                continue;
+
+            Surface &s=*iter->second;
+            const json::Value &v=member.value;
+
+            if(v.HasMember("top"))    toColor(v["top"], s.top);
+            if(v.HasMember("bottom")) toColor(v["bottom"], s.bottom);
+            if(v.HasMember("border")) toColor(v["border"], s.border);
+            if(v.HasMember("radius") && v["radius"].IsNumber())
+                s.radius=v["radius"].GetFloat();
+            if(v.HasMember("borderWidth") && v["borderWidth"].IsNumber())
+                s.borderWidth=v["borderWidth"].GetFloat();
+        }
+    }
+
+    if(jsonTheme.HasMember("textColors") && jsonTheme["textColors"].IsObject())
+    {
+        std::unordered_map<std::string, gweni::Color*> textMap={
+            {"LabelDefault",&Colors.Label.Default},{"LabelBright",&Colors.Label.Bright},
+            {"LabelDark",&Colors.Label.Dark},{"LabelHighlight",&Colors.Label.Highlight},
+            {"ButtonNormal",&Colors.Button.Normal},{"ButtonHover",&Colors.Button.Hover},
+            {"ButtonDown",&Colors.Button.Down},{"ButtonDisabled",&Colors.Button.Disabled},
+            {"TooltipText",&Colors.TooltipText},
+        };
+
+        for(const auto &member:jsonTheme["textColors"].GetObject())
+        {
+            auto iter=textMap.find(member.name.GetString());
+
+            if(iter != textMap.end())
+                toColor(member.value, *iter->second);
+        }
+    }
+}
+
+// Tokyo Night text/line colors. These drive the control text colors (controls
+// read getSkin()->Colors.*), independent of the SDF surface fills in the
+// renderers. Set in code so the theme is the project default regardless of the
+// (placeholder) colors in DefaultSkin.json.
+void TexturedSkin::setThemeColors()
+{
+    using namespace tokyonight;
+    const gweni::Color White(0xff, 0xff, 0xff);
+
+    Colors.Window.TitleActive=Fg;
+    Colors.Window.TitleInactive=Muted;
+
+    Colors.Label.Default=Fg;
+    Colors.Label.Bright=White;
+    Colors.Label.Dark=Muted;
+    Colors.Label.Highlight=Blue;
+
+    Colors.Tree.Lines=Muted;
+    Colors.Tree.Normal=Fg;
+    Colors.Tree.Hover=Cyan;
+    Colors.Tree.Selected=Blue;
+
+    Colors.Button.Normal=Fg;
+    Colors.Button.Hover=White;
+    Colors.Button.Down=Fg;
+    Colors.Button.Disabled=Muted;
+
+    Colors.Tab.Active.Normal=Fg;
+    Colors.Tab.Active.Hover=Fg;
+    Colors.Tab.Active.Down=Fg;
+    Colors.Tab.Active.Disabled=Muted;
+    Colors.Tab.Inactive.Normal=FgDark;
+    Colors.Tab.Inactive.Hover=Fg;
+    Colors.Tab.Inactive.Down=Fg;
+    Colors.Tab.Inactive.Disabled=Muted;
+
+    Colors.Category.Header=Fg;
+    Colors.Category.Header_Closed=FgDark;
+    Colors.Category.Line.Text=FgDark;
+    Colors.Category.Line.Text_Hover=Fg;
+    Colors.Category.Line.Text_Selected=White;
+    Colors.Category.Line.Button=Surf;
+    Colors.Category.Line.Button_Hover=SurfHover;
+    Colors.Category.Line.Button_Selected=Blue;
+    Colors.Category.LineAlt.Text=FgDark;
+    Colors.Category.LineAlt.Text_Hover=Fg;
+    Colors.Category.LineAlt.Text_Selected=White;
+    Colors.Category.LineAlt.Button=Surf;
+    Colors.Category.LineAlt.Button_Hover=SurfHover;
+    Colors.Category.LineAlt.Button_Selected=Blue;
+
+    Colors.Properties.Line_Normal=Fg;
+    Colors.Properties.Line_Selected=White;
+    Colors.Properties.Line_Hover=Cyan;
+    Colors.Properties.Column_Normal=FgDark;
+    Colors.Properties.Column_Selected=Fg;
+    Colors.Properties.Column_Hover=Cyan;
+    Colors.Properties.Label_Normal=Fg;
+    Colors.Properties.Label_Selected=White;
+    Colors.Properties.Label_Hover=Cyan;
+    Colors.Properties.Border=BgHighlight;
+    Colors.Properties.Title=Fg;
+
+    Colors.ModalBackground=gweni::Color(0x0a, 0x0a, 0x10, 160);
+    Colors.TooltipText=Fg;
 }
 
 

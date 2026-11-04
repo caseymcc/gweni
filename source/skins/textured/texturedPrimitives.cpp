@@ -141,6 +141,9 @@ void BorderedPrimitive::setRect(int num, float x, float y, float w, float h)
 
 void BorderedPrimitive::show(renderer::Base *render, size_t *primitiveIds, bool visible)
 {
+    if(!primitiveIds)
+        return;
+
     if(visible)
     {
         for(size_t i=0; i<9; i++)
@@ -160,7 +163,10 @@ void BorderedPrimitive::show(renderer::Base *render, size_t *primitiveIds, bool 
 void BorderedPrimitive::draw(renderer::Base *render, size_t *primitiveIds, const Rect &r, int zIndex,
     const Color &col, unsigned int draw)
 {
-    if(!m_texture)
+    // primitiveIds is null when the owning control's skin renderer never had its
+    // primitives generated (e.g. a control whose render() override skips
+    // generate()). Bail rather than dereference null.
+    if(!m_texture || !primitiveIds)
         return;
 
     render->setDrawColor(col);

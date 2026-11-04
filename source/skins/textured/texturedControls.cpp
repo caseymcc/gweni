@@ -1,6 +1,8 @@
 #include "gweni/skins/textured/texturedControls.h"
 #include "gweni/skins/textured/texturedSkin.h"
 
+#include "gweni/controls/canvas.h"
+#include "gweni/controls/progressBar.h"
 #include "gweni/controls/comboBox.h"
 #include "gweni/controls/checkBox.h"
 #include "gweni/controls/scrollBarButton.h"
@@ -19,11 +21,20 @@ namespace textured
 {
 
 //Base
-size_t Base::requiredPrimitives() { return 0; }
+// Fallback renderer used by any control that has no skin renderer of its own.
+// A plain controls::Base is a generic, transparent container (grouping/scroll
+// holders, inner panels), so it draws nothing. Any *specific* control type that
+// falls back to here is genuinely unskinned, so paint it bright red to stand out.
+size_t Base::requiredPrimitives() { return 1; }
 void Base::update(renderer::Base *renderer, controls::Base *baseControl)
 {
-//    renderer->setDrawColor({ 255, 255, 0, 255 });
-//    renderer->drawFilledRect(m_primitives[0], baseControl->getRenderBounds(), baseControl->getZIndex());
+    if(m_primitives.empty())
+        return;
+
+    // Controls with no skin renderer of their own are generic grouping containers
+    // (rows, inner panels, holders) and draw nothing, so the dark theme shows
+    // through. (Earlier this painted unskinned controls red as a debug aid.)
+    renderer->hidePrimitive(m_primitives[0]);
 }
 
 
@@ -73,13 +84,7 @@ void CategoryHeaderButton::staticInit(TexturedSkin *skin)
 
 void CategoryHeaderButton::update(renderer::Base *renderer, controls::Base *baseControl)
 {
-    controls::TabButton *control=static_cast<controls::TabButton *>(baseControl);
-
-    if(!baseControl->hidden())
-        ButtonPrimitive.draw(renderer, m_primitives.data(), baseControl->getRenderBounds(), baseControl->getZIndex());
-
-    if(baseControl->getStateChange()&controls::StateChange_Visibility)
-        ButtonPrimitive.show(renderer, m_primitives.data(), !baseControl->hidden());
+    tokyonight::paintSurface(renderer, m_primitives.data(), baseControl, tokyonight::CategoryHeader);
 }
 
 ///////////////////////////////////////////////////////////////////////////
@@ -97,16 +102,7 @@ void CollapsibleCategory::staticInit(TexturedSkin *skin)
 
 void CollapsibleCategory::update(renderer::Base *renderer, controls::Base *baseControl)
 {
-    controls::TabButton *control=static_cast<controls::TabButton *>(baseControl);
-
-    if(!baseControl->hidden())
-        BackgroundPrimitive.draw(renderer, m_primitives.data(), baseControl->getRenderBounds(), baseControl->getZIndex());
-
-    if((baseControl->getStateChange()&controls::StateChange_Visibility) ||
-        (baseControl->getStateChange()&controls::StateChange_Created))
-    {
-        BackgroundPrimitive.show(renderer, m_primitives.data(), !baseControl->hidden());
-    }
+    tokyonight::paintSurface(renderer, m_primitives.data(), baseControl, tokyonight::CategoryInner);
 }
 
 ///////////////////////////////////////////////////////////////////////////
@@ -132,16 +128,7 @@ void CategoryList::staticInit(TexturedSkin *skin)
 
 void CategoryList::update(renderer::Base *renderer, controls::Base *baseControl)
 {
-    controls::TabButton *control=static_cast<controls::TabButton *>(baseControl);
-
-    if(!baseControl->hidden())
-        OuterPrimitive.draw(renderer, m_primitives.data(), baseControl->getRenderBounds(), baseControl->getZIndex());
-
-    if((baseControl->getStateChange()&controls::StateChange_Visibility) ||
-        (baseControl->getStateChange()&controls::StateChange_Created))
-    {
-        OuterPrimitive.show(renderer, m_primitives.data(), !baseControl->hidden());
-    }
+    tokyonight::paintSurface(renderer, m_primitives.data(), baseControl, tokyonight::CategoryList);
 }
 
 ///////////////////////////////////////////////////////////////////////////
@@ -169,46 +156,33 @@ void CategoryButton::update(renderer::Base *renderer, controls::Base *baseContro
 {
     controls::CategoryButton *control=static_cast<controls::CategoryButton *>(baseControl);
 
-     if(control->getAlt())
-     {
-         if(control->isDepressed() || control->getToggleState())
-             renderer->setDrawColor(AltSelected);
-         else if(control->isHovered())
-             renderer->setDrawColor(AltHover);
-         else
-             renderer->setDrawColor(AltNormal);
-     }
-     else
-     {
-         if(control->isDepressed() || control->getToggleState())
-             renderer->setDrawColor(Selected);
-         else if(control->isHovered())
-             renderer->setDrawColor(Hover);
-         else
-             renderer->setDrawColor(Normal);
-     }
+    const tokyonight::Surface *surface;
+    if(control->isDepressed() || control->getToggleState())
+        surface=&tokyonight::ListItemSel;
+    else if(control->isHovered())
+        surface=&tokyonight::ListItemHover;
+    else
+        surface=&tokyonight::ListItem;
 
-     if(!baseControl->hidden())
-        renderer->drawFilledRect(m_primitives[0], baseControl->getRenderBounds(), baseControl->getZIndex());
-
-     if((baseControl->getStateChange()&controls::StateChange_Visibility) ||
-        (baseControl->getStateChange()&controls::StateChange_Created))
-     {
-         if(baseControl->hidden())
-             renderer->showPrimitive(0, m_primitives[0]);
-         else
-             renderer->showPrimitive(1, m_primitives[0]);
-     }
+    tokyonight::paintSurface(renderer, m_primitives.data(), baseControl, *surface);
 }
 
 ///////////////////////////////////////////////////////////////////////////
 //Canvas
 void Canvas::staticInit(TexturedSkin *skin)
 {
+    m_staticInit=true;
 }
 
 void Canvas::update(renderer::Base *renderer, controls::Base *baseControl)
-{}
+{
+    if(m_primitives.empty())
+        return;
+
+    // Full-window background: flat Tokyo Night base color (no rounding).
+    renderer->setDrawColor(tokyonight::Bg);
+    renderer->drawFilledRect(m_primitives[0], baseControl->getRenderBounds(), baseControl->getZIndex());
+}
 
 ///////////////////////////////////////////////////////////////////////////
 //CheckBox
@@ -232,30 +206,19 @@ void CheckBox::staticInit(TexturedSkin *skin)
 
 void CheckBox::update(renderer::Base *renderer, controls::Base *baseControl)
 {
+    if(m_primitives.size() < 2)
+        return;
+
     controls::CheckBox *control=static_cast<controls::CheckBox *>(baseControl);
-            
-    BorderedPrimitive *primitive;
 
-    if(control->isDisabled())
-    {
-        if(control->isChecked())
-            primitive=&DisabledCheckedPrimitive;
-        else
-            primitive=&DisabledNormalPrimitive;
-    }
+    // Dark box frame always; blue checkmark glyph overlaid when checked.
+    tokyonight::paintSurface(renderer, m_primitives.data(), baseControl, tokyonight::CheckOff);
+
+    if(baseControl->visible() && control->isChecked())
+        renderer->drawIcon(m_primitives[1], baseControl->getRenderBounds(), 0, 0,
+            tokyonight::Blue, baseControl->getZIndex()+1);
     else
-    {
-        if(control->isChecked())
-            primitive=&ActiveCheckedPrimitive;
-        else
-            primitive=&ActiveNormalPrimitive;
-    }
-
-    if(!baseControl->hidden())
-        primitive->draw(renderer, m_primitives.data(), baseControl->getRenderBounds(), baseControl->getZIndex());
-
-    if(baseControl->getStateChange()&controls::StateChange_Visibility)
-        primitive->show(renderer, m_primitives.data(), !baseControl->hidden());
+        renderer->hidePrimitive(m_primitives[1]);
 }
 
 
@@ -289,22 +252,30 @@ void ComboBox::staticInit(TexturedSkin *skin)
 void ComboBox::update(renderer::Base *renderer, controls::Base *baseControl)
 {
     controls::ComboBox *control=static_cast<controls::ComboBox *>(baseControl);
-    BorderedPrimitive *primitive;
+    const tokyonight::Surface *surface;
 
     if(baseControl->isDisabled())
-        primitive=&DisabledPrimitive;
+        surface=&tokyonight::ButtonDisabled;
     else if(control->isDepressed() || control->isMenuOpen())
-        primitive=&DownPrimitive;
+        surface=&tokyonight::ButtonDown;
     else if(baseControl->isHovered())
-        primitive=&HoverPrimitive;
+        surface=&tokyonight::ButtonHover;
     else
-        primitive=&NormalPrimitive;
+        surface=&tokyonight::ButtonNormal;
 
-    if(!baseControl->hidden())
-        primitive->draw(renderer, m_primitives.data(), baseControl->getRenderBounds(), baseControl->getZIndex());
+    tokyonight::paintSurface(renderer, m_primitives.data(), baseControl, *surface);
 
-    if(baseControl->getStateChange()&controls::StateChange_Visibility)
-        primitive->show(renderer, m_primitives.data(), !baseControl->hidden());
+    // Down chevron on the right edge.
+    if(m_primitives.size() >= 2)
+    {
+        const gweni::Rect r=baseControl->getRenderBounds();
+        const int sz=12;
+        const gweni::Rect arrow{ r.x+r.w-sz-6, r.y+(r.h-sz)/2, sz, sz };
+        if(baseControl->visible())
+            renderer->drawIcon(m_primitives[1], arrow, 1, 0, tokyonight::FgDark, baseControl->getZIndex()+1);
+        else
+            renderer->hidePrimitive(m_primitives[1]);
+    }
 }
 
 
@@ -319,7 +290,7 @@ void DockBase::update(renderer::Base *renderer, controls::Base *baseControl)
 {
     renderer->setDrawColor(gweni::Color(255, 100, 255, 20));
 
-    if(!baseControl->hidden())
+    if(baseControl->visible())
         renderer->drawFilledRect(m_primitives[0], baseControl->getRenderBounds(), baseControl->getZIndex());
 
 //    if(m_hoverRect.w == 0)
@@ -332,7 +303,7 @@ void DockBase::update(renderer::Base *renderer, controls::Base *baseControl)
 
     if(baseControl->getStateChange()&controls::StateChange_Visibility)
     {
-        if(baseControl->hidden())
+        if(!baseControl->visible())
             renderer->showPrimitive(0, m_primitives[0]);
         else
             renderer->showPrimitive(1, m_primitives[0]);
@@ -354,13 +325,7 @@ void GroupBox::staticInit(TexturedSkin *skin)
 
 void GroupBox::update(renderer::Base *renderer, controls::Base *baseControl)
 {
-    if(!baseControl->hidden())
-        NormalPrimitive.draw(renderer, m_primitives.data(), baseControl->getRenderBounds(), baseControl->getZIndex());
-
-    if(baseControl->getStateChange()&controls::StateChange_Visibility)
-    {
-        NormalPrimitive.show(renderer, m_primitives.data(), !baseControl->hidden());
-    }
+    tokyonight::paintSurface(renderer, m_primitives.data(), baseControl, tokyonight::GroupBox);
 }
 
 
@@ -408,18 +373,7 @@ void ListBox::staticInit(TexturedSkin *skin)
 
 void ListBox::update(renderer::Base *renderer, controls::Base *baseControl)
 {
-    BorderedPrimitive *primitive=&BackgroundPrimitive;
-
-    if(baseControl->isHovered())
-        primitive=&HoveredPrimitive;
-
-    if(!baseControl->hidden())
-        primitive->draw(renderer, m_primitives.data(), baseControl->getRenderBounds(), baseControl->getZIndex());
-
-    if(baseControl->getStateChange()&controls::StateChange_Visibility)
-    {
-        primitive->show(renderer, m_primitives.data(), !baseControl->hidden());
-    }
+    tokyonight::paintSurface(renderer, m_primitives.data(), baseControl, tokyonight::PanelDark);
 }
 
 ///////////////////////////////////////////////////////////////////////////
@@ -453,28 +407,15 @@ void ListBoxRow::update(renderer::Base *renderer, controls::Base *baseControl)
 {
     controls::ListBoxRow *control=static_cast<controls::ListBoxRow *>(baseControl);
 
-    BorderedPrimitive *primitive=&OddLinePrimitive;
-
+    const tokyonight::Surface *surface;
     if(control->isSelected())
-    {
-        if(control->isEven())
-            primitive=&EvenLineSelectedPrimitive;
-        else
-            primitive=&OddLineSelectedPrimitive;
-    }
+        surface=&tokyonight::ListItemSel;
+    else if(baseControl->isHovered())
+        surface=&tokyonight::ListItemHover;
     else
-    {
-        if(control->isEven())
-            primitive=&EvenLinePrimitive;
-    }
+        surface=&tokyonight::ListItem;
 
-    if(!baseControl->hidden())
-        primitive->draw(renderer, m_primitives.data(), baseControl->getRenderBounds(), baseControl->getZIndex());
-
-    if(baseControl->getStateChange()&controls::StateChange_Visibility)
-    {
-        primitive->show(renderer, m_primitives.data(), !baseControl->hidden());
-    }
+    tokyonight::paintSurface(renderer, m_primitives.data(), baseControl, *surface);
 }
 
 ///////////////////////////////////////////////////////////////////////////
@@ -498,17 +439,28 @@ void Menu::staticInit(TexturedSkin *skin)
     BackgroundWithMargin=skin->getTextureEntryId("Menu.BackgroundWithMargin");
     Hover=skin->getTextureEntryId("Menu.Hover");
 
+    BackgroundPrimitive.init(skin, Background);
+
     m_staticInit=true;
 }
 
 void Menu::generate(renderer::Base *renderer, controls::Base *baseControl)
-{}
+{
+    generatePrimitives(renderer, requiredPrimitives());
+}
 
 void Menu::update(renderer::Base *renderer, controls::Base *baseControl)
-{}
+{
+    if(m_primitives.empty())
+        return;
+
+    tokyonight::paintSurface(renderer, m_primitives.data(), baseControl, tokyonight::Menu);
+}
 
 void Menu::remove(renderer::Base *renderer, controls::Base *baseControl)
-{}
+{
+    releasePrimitives(renderer);
+}
 
 ///////////////////////////////////////////////////////////////////////////
 //Panel
@@ -530,13 +482,44 @@ void Panel::staticInit(TexturedSkin *skin)
 }
 
 void Panel::generate(renderer::Base *renderer, controls::Base *baseControl)
-{}
+{
+    generatePrimitives(renderer, requiredPrimitives());
+}
 
 void Panel::update(renderer::Base *renderer, controls::Base *baseControl)
-{}
+{
+    if(m_primitives.empty())
+        return;
+
+    tokyonight::paintSurface(renderer, m_primitives.data(), baseControl, tokyonight::Panel);
+}
 
 void Panel::remove(renderer::Base *renderer, controls::Base *baseControl)
-{}
+{
+    releasePrimitives(renderer);
+}
+
+///////////////////////////////////////////////////////////////////////////
+// Simple container/panel renderers: each draws one SDF rounded surface.
+#define GWENI_SIMPLE_PANEL(Class, surface)                                     \
+size_t Class::Background;                                                       \
+BorderedPrimitive Class::BackgroundPrimitive;                                   \
+void Class::staticInit(TexturedSkin *skin)                                      \
+{                                                                              \
+    m_staticInit=true;                                                         \
+}                                                                              \
+void Class::update(renderer::Base *renderer, controls::Base *baseControl)      \
+{                                                                              \
+    if(m_primitives.empty())                                                   \
+        return;                                                                \
+    tokyonight::paintSurface(renderer, m_primitives.data(), baseControl, surface); \
+}
+
+GWENI_SIMPLE_PANEL(PageControl, tokyonight::Panel)
+GWENI_SIMPLE_PANEL(TabControlInner, tokyonight::TabControl)
+GWENI_SIMPLE_PANEL(CollapsibleList, tokyonight::CategoryList)
+GWENI_SIMPLE_PANEL(CategoryInner, tokyonight::CategoryInner)
+#undef GWENI_SIMPLE_PANEL
 
 
 ///////////////////////////////////////////////////////////////////////////
@@ -545,23 +528,62 @@ size_t ProgressBar::Back;
 size_t ProgressBar::Front;
 
 BorderedPrimitive ProgressBar::BackgroundPrimitive;
+BorderedPrimitive ProgressBar::FrontPrimitive;
 
 void ProgressBar::staticInit(TexturedSkin *skin)
 {
     Back=skin->getTextureEntryId("ProgressBar.Back");
     Front=skin->getTextureEntryId("ProgressBar.Front");
 
+    BackgroundPrimitive.init(skin, Back);
+    FrontPrimitive.init(skin, Front);
+
     m_staticInit=true;
 }
 
 void ProgressBar::generate(renderer::Base *renderer, controls::Base *baseControl)
-{}
+{
+    generatePrimitives(renderer, requiredPrimitives());
+}
 
 void ProgressBar::update(renderer::Base *renderer, controls::Base *baseControl)
-{}
+{
+    if(m_primitives.size() < 18)
+        return;
+
+    controls::ProgressBar *progress=static_cast<controls::ProgressBar *>(baseControl);
+    const gweni::Rect bounds=baseControl->getRenderBounds();
+    const int zIndex=baseControl->getZIndex();
+    const bool visible=baseControl->visible();
+
+    if(visible)
+    {
+        const tokyonight::Surface &back=tokyonight::ProgressBack;
+        renderer->drawRoundedRect(m_primitives[0], bounds, back.radius, back.borderWidth,
+            back.top, back.bottom, back.border, zIndex);
+
+        float p=progress->getProgress();
+        p=(p < 0.0f) ? 0.0f : (p > 1.0f ? 1.0f : p);
+
+        gweni::Rect front=bounds;
+        front.w=(int)(bounds.w*p);
+        const tokyonight::Surface &fr=tokyonight::ProgressFront;
+        renderer->drawRoundedRect(m_primitives[9], front, fr.radius, fr.borderWidth,
+            fr.top, fr.bottom, fr.border, zIndex);
+    }
+
+    if((baseControl->getStateChange()&controls::StateChange_Visibility) ||
+        (baseControl->getStateChange()&controls::StateChange_Created))
+    {
+        renderer->showPrimitive(visible?4:0, m_primitives[0]);
+        renderer->showPrimitive(visible?4:0, m_primitives[9]);
+    }
+}
 
 void ProgressBar::remove(renderer::Base *renderer, controls::Base *baseControl)
-{}
+{
+    releasePrimitives(renderer);
+}
 
 
 ///////////////////////////////////////////////////////////////////////////
@@ -584,13 +606,40 @@ void RadioButton::staticInit(TexturedSkin *skin)
 }
 
 void RadioButton::generate(renderer::Base *renderer, controls::Base *baseControl)
-{}
+{
+    generatePrimitives(renderer, requiredPrimitives());
+}
 
 void RadioButton::update(renderer::Base *renderer, controls::Base *baseControl)
-{}
+{
+    if(m_primitives.size() < 2)
+        return;
+
+    // RadioButton derives from CheckBox, so isChecked() applies. A very large
+    // radius is clamped to half the box by the SDF shader -> a perfect circle.
+    controls::CheckBox *control=static_cast<controls::CheckBox *>(baseControl);
+
+    tokyonight::Surface ring=tokyonight::CheckOff;
+    ring.radius=1000.0f;
+    tokyonight::paintSurface(renderer, m_primitives.data(), baseControl, ring);
+
+    // Inner blue dot when selected (a small centered circle).
+    const gweni::Rect r=baseControl->getRenderBounds();
+    if(baseControl->visible() && control->isChecked())
+    {
+        const int dw=r.w*4/10, dh=r.h*4/10;
+        const gweni::Rect dot{ r.x+(r.w-dw)/2, r.y+(r.h-dh)/2, dw, dh };
+        renderer->drawRoundedRect(m_primitives[1], dot, 1000.0f, 0.0f,
+            tokyonight::Blue, tokyonight::DarkBlue, tokyonight::Blue, baseControl->getZIndex()+1);
+    }
+    else
+        renderer->hidePrimitive(m_primitives[1]);
+}
 
 void RadioButton::remove(renderer::Base *renderer, controls::Base *baseControl)
-{}
+{
+    releasePrimitives(renderer);
+}
 
 
 ///////////////////////////////////////////////////////////////////////////
@@ -631,32 +680,31 @@ void ScrollBarButton::update(renderer::Base *renderer, controls::Base *baseContr
 {
     controls::internal::ScrollBarButton *control=static_cast<controls::internal::ScrollBarButton *>(baseControl);
 
-    Alignment direction=control->getDirection();
-    size_t index=0;
+    const tokyonight::Surface *surface=&tokyonight::ScrollThumb;
 
-    if(direction == Alignment::Right)
-        index=1;
-    else if(direction == Alignment::Top)
-        index=2;
-    if(direction == Alignment::Bottom)
-        index=3;
-
-    BorderedPrimitive *primitive=&NormalPrimitive[index];
-
-    if(control->isDisabled())
-        primitive=&DisablePrimitive[index];
-    else if(control->isDepressed())
-        primitive=&DownPrimitive[index];
+    if(control->isDepressed())
+        surface=&tokyonight::ScrollThumbDown;
     else if(control->isHovered())
-        primitive=&HoverPrimitive[index];
+        surface=&tokyonight::ScrollThumbHover;
 
-    if(!baseControl->hidden())
-        primitive->draw(renderer, m_primitives.data(), baseControl->getRenderBounds(), baseControl->getZIndex());
+    tokyonight::paintSurface(renderer, m_primitives.data(), baseControl, *surface);
 
-    if((baseControl->getStateChange()&controls::StateChange_Visibility) ||
-        (baseControl->getStateChange()&controls::StateChange_Created))
+    // Directional chevron centered on the button.
+    if(m_primitives.size() >= 2)
     {
-        primitive->show(renderer, m_primitives.data(), !baseControl->hidden());
+        const Alignment direction=control->getDirection();
+        int dir=0; // Bottom -> down
+        if(direction == Alignment::Left)       dir=2;
+        else if(direction == Alignment::Right) dir=3;
+        else if(direction == Alignment::Top)   dir=1;
+
+        const gweni::Rect r=baseControl->getRenderBounds();
+        const int sz=((r.w<r.h)?r.w:r.h)*6/10;
+        const gweni::Rect arrow{ r.x+(r.w-sz)/2, r.y+(r.h-sz)/2, sz, sz };
+        if(baseControl->visible())
+            renderer->drawIcon(m_primitives[1], arrow, 1, dir, tokyonight::Fg, baseControl->getZIndex()+1);
+        else
+            renderer->hidePrimitive(m_primitives[1]);
     }
 }
 
@@ -664,6 +712,7 @@ void ScrollBarButton::update(renderer::Base *renderer, controls::Base *baseContr
 //Scroller
 size_t Scroller::TrackV;
 size_t Scroller::TrackH;
+BorderedPrimitive Scroller::TrackPrimitive;
 
 void Scroller::staticInit(TexturedSkin *skin)
 {
@@ -672,19 +721,30 @@ void Scroller::staticInit(TexturedSkin *skin)
     ButtonTemplate<ScrollerVertical>::staticInit(skin);
 
     TrackV=skin->getTextureEntryId("Scroller.TrackV");
-    TrackV=skin->getTextureEntryId("Scroller.TrackH");
+    TrackH=skin->getTextureEntryId("Scroller.TrackH");
+
+    TrackPrimitive.init(skin, TrackV);
 
     m_staticInit=true;
 }
 
 void Scroller::generate(renderer::Base *renderer, controls::Base *baseControl)
-{}
+{
+    generatePrimitives(renderer, requiredPrimitives());
+}
 
 void Scroller::update(renderer::Base *renderer, controls::Base *baseControl)
-{}
+{
+    if(m_primitives.empty())
+        return;
+
+    tokyonight::paintSurface(renderer, m_primitives.data(), baseControl, tokyonight::ScrollTrack);
+}
 
 void Scroller::remove(renderer::Base *renderer, controls::Base *baseControl)
-{}
+{
+    releasePrimitives(renderer);
+}
 
 
 ///////////////////////////////////////////////////////////////////////////
@@ -696,17 +756,31 @@ void Shadow::staticInit(TexturedSkin *skin)
 {
     Background=skin->getTextureEntryId("Shadow.Background");
 
+    BackgroundPrimitive.init(skin, Background);
+
     m_staticInit=true;
 }
 
 void Shadow::generate(renderer::Base *renderer, controls::Base *baseControl)
-{}
+{
+    generatePrimitives(renderer, requiredPrimitives());
+}
 
 void Shadow::update(renderer::Base *renderer, controls::Base *baseControl)
-{}
+{
+    if(m_primitives.empty())
+        return;
+
+    // Soft translucent dark drop shadow behind elevated controls.
+    static const tokyonight::Surface shadow{ Color(0,0,0,90), Color(0,0,0,90),
+        Color(0,0,0,0), tokyonight::RadiusLg, 0.0f };
+    tokyonight::paintSurface(renderer, m_primitives.data(), baseControl, shadow);
+}
 
 void Shadow::remove(renderer::Base *renderer, controls::Base *baseControl)
-{}
+{
+    releasePrimitives(renderer);
+}
 
 
 ///////////////////////////////////////////////////////////////////////////
@@ -766,9 +840,7 @@ void StatusBar::staticInit(TexturedSkin *skin)
 
 void StatusBar::update(renderer::Base *renderer, controls::Base *baseControl)
 {
-    controls::StatusBar *control=static_cast<controls::StatusBar *>(baseControl);
-
-    BackgroundPrimitive.draw(renderer, m_primitives.data(), baseControl->getRenderBounds(), baseControl->getZIndex());
+    tokyonight::paintSurface(renderer, m_primitives.data(), baseControl, tokyonight::StatusBar);
 }
 
 //void StatusBar::remove(renderer::Base *renderer, controls::Base *baseControl)
@@ -792,11 +864,8 @@ void TabButton::update(renderer::Base *renderer, controls::Base *baseControl)
 {
     controls::TabButton *control=static_cast<controls::TabButton *>(baseControl);
 
-    if(!baseControl->hidden())
-        ButtonPrimitive.draw(renderer, m_primitives.data(), baseControl->getRenderBounds(), baseControl->getZIndex());
-
-    if(baseControl->getStateChange()&controls::StateChange_Visibility)
-        ButtonPrimitive.show(renderer, m_primitives.data(), !baseControl->hidden());
+    tokyonight::paintSurface(renderer, m_primitives.data(), baseControl,
+        control->isActive()?tokyonight::TabActive:tokyonight::TabInactive);
 }
 
 ///////////////////////////////////////////////////////////////////////////
@@ -824,13 +893,7 @@ void TabControl::staticInit(TexturedSkin *skin)
 
 void TabControl::update(renderer::Base *renderer, controls::Base *baseControl)
 {
-    controls::TabControl *control=static_cast<controls::TabControl *>(baseControl);
-
-    if(!baseControl->hidden())
-        ControlPrimitive.draw(renderer, m_primitives.data(), baseControl->getRenderBounds(), baseControl->getZIndex());
-
-    if(baseControl->getStateChange()&controls::StateChange_Visibility)
-        ControlPrimitive.show(renderer, m_primitives.data(), !baseControl->hidden());
+    tokyonight::paintSurface(renderer, m_primitives.data(), baseControl, tokyonight::TabControl);
 }
 
 ///////////////////////////////////////////////////////////////////////////
@@ -848,13 +911,7 @@ void TabTitleBar::staticInit(TexturedSkin *skin)
 
 void TabTitleBar::update(renderer::Base *renderer, controls::Base *baseControl)
 {
-    controls::TabTitleBar *control=static_cast<controls::TabTitleBar *>(baseControl);
-
-    if(!baseControl->hidden())
-        HeaderBarPrimitive.draw(renderer, m_primitives.data(), baseControl->getRenderBounds(), baseControl->getZIndex());
-
-    if(baseControl->getStateChange()&controls::StateChange_Visibility)
-        HeaderBarPrimitive.show(renderer, m_primitives.data(), !baseControl->hidden());
+    tokyonight::paintSurface(renderer, m_primitives.data(), baseControl, tokyonight::Panel);
 }
 
 ///////////////////////////////////////////////////////////////////////////
@@ -875,8 +932,15 @@ void Text::update(renderer::Base *renderer, controls::Base *baseControl)
 {
     if(baseControl->getStateChange() == controls::StateChange_Nothing)
         return;
-    
-    controls::internal::Text *control=static_cast<controls::internal::Text *>(baseControl);
+
+    // getTypeName()=="Text" is ambiguous: both controls::internal::Text and
+    // controls::property::Text report it, so this renderer can be handed a
+    // property::Text. dynamic_cast bails on anything that isn't really an
+    // internal::Text instead of corrupting memory via a bad static_cast.
+    controls::internal::Text *control=dynamic_cast<controls::internal::Text *>(baseControl);
+
+    if(!control)
+        return;
 
     const gweni::Color &color=control->getTextColor();
     const gweni::Color &colorOverride=control->getTextColorOverride();
@@ -886,14 +950,18 @@ void Text::update(renderer::Base *renderer, controls::Base *baseControl)
     else
         renderer->setDrawColor(colorOverride);
 
+//    renderer->renderText(m_primitives[0], control->getFont(),
+//        gweni::Point(control->getPadding().left, control->getPadding().top), control->getZIndex(),
+//        control->getText());
+
     renderer->renderText(m_primitives[0], control->getFont(),
-        gweni::Point(control->getPadding().left, control->getPadding().top), control->getZIndex(),
+        gweni::Point(control->getBounds().x, control->getBounds().y), control->getZIndex(),
         control->getText());
 
     if((baseControl->getStateChange() & controls::StateChange_Visibility) || 
         (baseControl->getStateChange() & controls::StateChange_Created))
     {
-        if(baseControl->hidden())
+        if(!baseControl->visible())
             renderer->hideText(m_primitives[0]);
         else
             renderer->showText(m_primitives[0]);
@@ -926,13 +994,28 @@ void TextBox::staticInit(TexturedSkin *skin)
 }
 
 void TextBox::generate(renderer::Base *renderer, controls::Base *baseControl)
-{}
+{
+    generatePrimitives(renderer, requiredPrimitives());
+}
 
 void TextBox::update(renderer::Base *renderer, controls::Base *baseControl)
-{}
+{
+    if(m_primitives.empty())
+        return;
+
+    const tokyonight::Surface *surface=&tokyonight::TextBox;
+    if(baseControl->isDisabled())
+        surface=&tokyonight::TextBoxDisabled;
+    else if(baseControl->isFocussed())
+        surface=&tokyonight::TextBoxFocus;
+
+    tokyonight::paintSurface(renderer, m_primitives.data(), baseControl, *surface);
+}
 
 void TextBox::remove(renderer::Base *renderer, controls::Base *baseControl)
-{}
+{
+    releasePrimitives(renderer);
+}
 
 
 ///////////////////////////////////////////////////////////////////////////
@@ -944,17 +1027,28 @@ void Tooltip::staticInit(TexturedSkin *skin)
 {
     Background=skin->getTextureEntryId("Tooltip.Background");
 
+    BackgroundPrimitive.init(skin, Background);
+
     m_staticInit=true;
 }
 
 void Tooltip::generate(renderer::Base *renderer, controls::Base *baseControl)
-{}
+{
+    generatePrimitives(renderer, requiredPrimitives());
+}
 
 void Tooltip::update(renderer::Base *renderer, controls::Base *baseControl)
-{}
+{
+    if(m_primitives.empty())
+        return;
+
+    tokyonight::paintSurface(renderer, m_primitives.data(), baseControl, tokyonight::Tooltip);
+}
 
 void Tooltip::remove(renderer::Base *renderer, controls::Base *baseControl)
-{}
+{
+    releasePrimitives(renderer);
+}
 
 
 ///////////////////////////////////////////////////////////////////////////
@@ -970,17 +1064,28 @@ void Tree::staticInit(TexturedSkin *skin)
     Plus=skin->getTextureEntryId("Tree.Plus");
     Minus=skin->getTextureEntryId("Tree.Minus");
 
+    BackgroundPrimitive.init(skin, Background);
+
     m_staticInit=true;
 }
 
 void Tree::generate(renderer::Base *renderer, controls::Base *baseControl)
-{}
+{
+    generatePrimitives(renderer, requiredPrimitives());
+}
 
 void Tree::update(renderer::Base *renderer, controls::Base *baseControl)
-{}
+{
+    if(m_primitives.empty())
+        return;
+
+    tokyonight::paintSurface(renderer, m_primitives.data(), baseControl, tokyonight::PanelDark);
+}
 
 void Tree::remove(renderer::Base *renderer, controls::Base *baseControl)
-{}
+{
+    releasePrimitives(renderer);
+}
 
 ///////////////////////////////////////////////////////////////////////////
 //SpinBox
@@ -1048,17 +1153,81 @@ void Window::staticInit(TexturedSkin *skin)
     Normal=skin->getTextureEntryId("Window.Normal");
     Inactive=skin->getTextureEntryId("Window.Inactive");
 
+    NormalPrimitive.init(skin, Normal);
+
     m_staticInit=true;
 }
 
 void Window::generate(renderer::Base *renderer, controls::Base *baseControl)
-{}
+{
+    generatePrimitives(renderer, requiredPrimitives());
+}
 
 void Window::update(renderer::Base *renderer, controls::Base *baseControl)
-{}
+{
+    if(m_primitives.empty())
+        return;
+
+    tokyonight::paintSurface(renderer, m_primitives.data(), baseControl, tokyonight::Window);
+}
 
 void Window::remove(renderer::Base *renderer, controls::Base *baseControl)
-{}
+{
+    releasePrimitives(renderer);
+}
+
+// Force every ControlRegister<> specialization to instantiate so its static
+// self-registration initializer actually runs at startup. Without this, the
+// `forceInit`/m_forceTypeName trick never gets odr-used under modern toolchains
+// (e.g. gcc 11), ControlFactory's table stays empty, every control fails to
+// find a skin renderer, and nothing is drawn.
+template class ControlRegister<Base>;
+template class ControlRegister<ButtonTemplate<DefaultButton>>;
+template class ControlRegister<Canvas>;
+template class ControlRegister<CategoryHeaderButton>;
+template class ControlRegister<CategoryButton>;
+template class ControlRegister<CategoryList>;
+template class ControlRegister<CollapsibleCategory>;
+template class ControlRegister<CheckBox>;
+template class ControlRegister<ComboBox>;
+template class ControlRegister<DockBase>;
+template class ControlRegister<GroupBox>;
+template class ControlRegister<Input>;
+template class ControlRegister<ListBox>;
+template class ControlRegister<ListBoxRow>;
+template class ControlRegister<Menu>;
+template class ControlRegister<Panel>;
+template class ControlRegister<PageControl>;
+template class ControlRegister<TabControlInner>;
+template class ControlRegister<CollapsibleList>;
+template class ControlRegister<CategoryInner>;
+template class ControlRegister<Label>;
+template class ControlRegister<Resizer>;
+template class ControlRegister<Table>;
+template class ControlRegister<TabStrip>;
+template class ControlRegister<VerticalScrollBar>;
+template class ControlRegister<HorizontalScrollBar>;
+template class ControlRegister<ScrollBarBar>;
+template class ControlRegister<ProgressBar>;
+template class ControlRegister<RadioButton>;
+template class ControlRegister<ScrollBarButton>;
+template class ControlRegister<Scroller>;
+template class ControlRegister<Shadow>;
+template class ControlRegister<Slider>;
+template class ControlRegister<StatusBar>;
+// NOTE: TabItem<_Type> is itself a class template (TabItem<TabTop>, <TabBottom>,
+// <TabLeft>, <TabRight>); register those specializations here if/when their
+// per-position tab skinning is needed. Until then tabs fall back to Base.
+template class ControlRegister<TabButton>;
+template class ControlRegister<TabControl>;
+template class ControlRegister<TabTitleBar>;
+template class ControlRegister<Text>;
+template class ControlRegister<TextBox>;
+template class ControlRegister<Tooltip>;
+template class ControlRegister<Tree>;
+template class ControlRegister<SpinBox>;
+template class ControlRegister<SplitterBar>;
+template class ControlRegister<Window>;
 
 }//namespace textured
 }//namespace skin

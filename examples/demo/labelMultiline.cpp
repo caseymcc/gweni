@@ -1,4 +1,5 @@
 #include "demo/labelMultiline.h"
+#include <gweni/controls/layout/layout.h>
 #include "gweni/controls/label.h"
 #include "gweni/controls/crossSplitter.h"
 
@@ -9,6 +10,8 @@ namespace gweni
 //    Base()
 GWENI_CONTROL_CONSTRUCTOR(LabelMultilineDemo)
 {
+    setLayout(new controls::VerticalLayout());
+
     setDock(DockPosition::Center);
     controls::CrossSplitter *pSplitter=newChild<controls::CrossSplitter>();
     pSplitter->setDock(DockPosition::Center);

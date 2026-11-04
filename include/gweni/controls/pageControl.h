@@ -95,6 +95,7 @@ protected:
     std::vector<Base *> m_pages;
 
     bool m_animate;
+    Base *m_pageContainer;   //!< Holds the pages; only the current one is shown.
     Base *m_controls;
     Button *m_next;
     Button *m_back;

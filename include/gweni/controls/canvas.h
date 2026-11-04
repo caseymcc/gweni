@@ -111,6 +111,11 @@ public:
         m_drawBackground=bShouldDraw;
     }
 
+    virtual const gweni::Color &getBackgroundColor() const
+    {
+        return m_backgroundColor;
+    }
+
 protected:
 
     bool m_needsRedraw;

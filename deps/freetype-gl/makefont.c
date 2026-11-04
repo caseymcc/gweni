@@ -362,16 +362,16 @@ int main( int argc, char **argv )
         " * ============================================================================\n"
         " */\n\n");
 
-    fprintf( file, 
+    fprintf( file,
         "/* ============================================================================\n"
         " * Parameters\n"
         " * ----------------------------------------------------------------------------\n"
         " * Font size: %f\n"
-        " * Texture width: %d\n"
-        " * Texture height: %d\n"
-        " * Texture depth: %d\n"
+        " * Texture width: %ld\n"
+        " * Texture height: %ld\n"
+        " * Texture depth: %ld\n"
         " * ===============================================================================\n"
-        " */\n\n", 
+        " */\n\n",
         font_size, atlas->width, atlas->height, atlas->depth);
 
 

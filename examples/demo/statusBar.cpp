@@ -1,4 +1,5 @@
 #include "demo/statusBar.h"
+#include <gweni/controls/layout/layout.h>
 #include "gweni/controls/statusBar.h"
 #include "gweni/controls/label.h"
 
@@ -9,6 +10,8 @@ namespace gweni
 //    Base()
 GWENI_CONTROL_CONSTRUCTOR(StatusBarDemo)
 {
+    setLayout(new controls::VerticalLayout());
+
     setDock(DockPosition::Center);
     controls::StatusBar *status=newChild<controls::StatusBar>();
     controls::Label *right=status->newChild<controls::Label>();

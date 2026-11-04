@@ -1,4 +1,5 @@
 #include "demo/properties.h"
+#include <gweni/controls/layout/layout.h>
 #include "gweni/controls/properties.h"
 #include "gweni/controls/propertyTree.h"
 #include "gweni/controls/property/colorSelector.h"
@@ -8,9 +9,10 @@
 namespace gweni
 {
 
-PropertiesDemo::PropertiesDemo(const String &name):
-    Base()
+GWENI_CONTROL_CONSTRUCTOR(PropertiesDemo)
 {
+    setLayout(new controls::VerticalLayout());
+
     {
         controls::Properties *props=newChild<controls::Properties>();
         props->setBounds(10, 10, 150, 300);

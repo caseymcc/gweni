@@ -1,4 +1,5 @@
 #include "demo/imagePanel.h"
+#include <gweni/controls/layout/layout.h>
 #include "gweni/controls/imagePanel.h"
 
 namespace gweni
@@ -8,6 +9,8 @@ namespace gweni
 //    Base()
 GWENI_CONTROL_CONSTRUCTOR(ImagePanelDemo)
 {
+    setLayout(new controls::VerticalLayout());
+
     // Normal
     {
         controls::ImagePanel *img=newChild<controls::ImagePanel>();

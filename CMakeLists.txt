@@ -9,11 +9,9 @@ if(WIN32)
     add_definitions(-DNOMINMAX)
 endif()
 
-include(${CMAKE_CURRENT_LIST_DIR}/cmake/Hunter/HunterGate.cmake)
-HunterGate(
-    URL "https://github.com/cpp-pm/hunter/archive/v0.24.0.tar.gz"
-    SHA1 "a3d7f4372b1dcd52faa6ff4a3bd5358e1d0e5efd"
-)
+# Dependencies are provided by vcpkg (see vcpkg.json). The vcpkg toolchain file
+# is supplied via CMAKE_TOOLCHAIN_FILE by generate.sh; all builds run inside the
+# Docker container (see run_docker.sh).
 cmake_policy(SET CMP0074 NEW)
 
 option(GWENI_RENDER_SDL2 "Opengl Renderer" ON)
@@ -21,7 +19,7 @@ option(GWENI_RENDER_OPENGL "Opengl Renderer" ON)
 option(GWENI_RENDER_OPENGL_CORE "Opengl 3.0+ Renderer" ON)
 option(GWENI_BUILD_EXAMPLES "Build Examples" ON)
 
-project(gweni)
+project(gweni VERSION 0.1.0 LANGUAGES CXX)
 
 set(GWENI_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR})
 set(GWENI_HEADER_FOLDER "Headers")
@@ -57,7 +55,7 @@ include_directories(
     ${GWENI_SOURCE_DIR}/source/platform/include
     ${GWENI_SOURCE_DIR}/source/gweni/include
     ${GWENI_RENDER_INCLUDES}
-    ${GWENI_REFLECT_INCLUDE}    
+    ${GWENI_REFLECT_INCLUDE}
 )
 
 set(GWENI_UTILS_SOURCE
@@ -296,15 +294,14 @@ endif()
 set(GWENI_ADDITIONAL_LIBRARIES "")
 set(GWENI_COMPILE_DEFINITIONS "")
 
-hunter_add_package(RapidJSON)
+# RapidJSON is header-only; the vcpkg config exposes RAPIDJSON_INCLUDE_DIRS
+# rather than an imported target.
 find_package(RapidJSON CONFIG REQUIRED)
-set(GWENI_ADDITIONAL_LIBRARIES ${GWENI_ADDITIONAL_LIBRARIES} RapidJSON::rapidjson)
+include_directories(${RAPIDJSON_INCLUDE_DIRS})
 
 if(GWENI_RENDER_OPENGL_CORE)
-    hunter_add_package(glm)
     find_package(glm CONFIG REQUIRED)
 
-    hunter_add_package(freetype)
     find_package(freetype CONFIG REQUIRED)
 
     set(GWENI_RENDER_SOURCES
@@ -312,8 +309,8 @@ if(GWENI_RENDER_OPENGL_CORE)
         source/platforms/renderers/OpenGLCore/openglCore.cpp
     )
     set(GWENI_ADDITIONAL_LIBRARIES ${GWENI_ADDITIONAL_LIBRARIES}
-        glm
-        freetype::freetype
+        glm::glm
+        freetype
         freetype-gl
         imglib
     )
@@ -337,15 +334,14 @@ if(${CMAKE_SYSTEM_NAME} STREQUAL "Android")
     #filesystem seems to be missing from NDK
     set(GWENI_USE_FILESYSTEM GWENI_BOOST)
 
-    hunter_add_package(Boost COMPONENTS system filesystem)
     find_package(Boost CONFIG REQUIRED system filesystem)
 
-    set(GWENI_ADDITIONAL_LIBRARIES ${GWENI_ADDITIONAL_LIBRARIES} 
+    set(GWENI_ADDITIONAL_LIBRARIES ${GWENI_ADDITIONAL_LIBRARIES}
         "Boost::system"
         "Boost::filesystem"
     )
 else()
-    if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang") 
+    if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang")
         if(CMAKE_CXX_COMPILER_VERSION VERSION_GREATER 7.0)
             set(GWENI_USE_FILESYSTEM ${GWENI_STD_FILESYSTEM})
         endif()
@@ -353,7 +349,9 @@ else()
         set(GWENI_USE_FILESYSTEM ${GWENI_EXPERIMENTAL_FILESYSTEM})
         if(CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 8.0)
             set(GWENI_USE_FILESYSTEM ${GWENI_STD_FILESYSTEM})
-            set(GWENI_ADDITIONAL_LIBRARIES "stdc++fs")
+            # Append, don't overwrite: this list already holds glm/freetype/
+            # freetype-gl/imglib and their usage requirements (include dirs).
+            set(GWENI_ADDITIONAL_LIBRARIES ${GWENI_ADDITIONAL_LIBRARIES} "stdc++fs")
         endif()
     endif()
 endif()
@@ -379,7 +377,9 @@ source_group("platforms\\renderers" FILES ${GWENI_RENDER_SOURCES})
 source_group("properties" FILES ${GWENI_PROPERTY_SOURCES})
 
 # gweni library
-add_library(gweni OBJECT 
+if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "MSVC")
+
+add_library(gweni STATIC
     ${GWENI_SOURCES}
     ${GWENI_CONTROL_SOURCES}
     ${GWENI_LAYOUT_SOURCES}
@@ -390,6 +390,23 @@ add_library(gweni OBJECT
     ${GWENI_PLATFORM_SOURCES}
     ${GWENI_RENDER_SOURCES}
 )
+target_link_options(gweni PUBLIC "/WHOLEARCHIVE:$<TARGET_FILE:gweni>")
+
+else()
+
+add_library(gweni OBJECT
+    ${GWENI_SOURCES}
+    ${GWENI_CONTROL_SOURCES}
+    ${GWENI_LAYOUT_SOURCES}
+    ${GWENI_DIALOG_SOURCES}
+    ${GWENI_PROPERTY_SOURCES}
+    ${GWENI_SKIN_SIMPLE_SOURCES}
+    ${GWENI_SKIN_TEXTURED_SOURCES}
+    ${GWENI_PLATFORM_SOURCES}
+    ${GWENI_RENDER_SOURCES}
+)
+
+endif()
 
 target_include_directories(gweni PUBLIC "${CMAKE_CURRENT_LIST_DIR}/include")
 target_link_libraries(gweni

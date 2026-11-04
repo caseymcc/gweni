@@ -1,4 +1,5 @@
 #include "demo/crossSplitter.h"
+#include <gweni/controls/layout/layout.h>
 #include "gweni/controls/crossSplitter.h"
 #include "gweni/controls/statusBar.h"
 #include "gweni/controls/button.h"

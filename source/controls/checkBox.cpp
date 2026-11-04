@@ -49,6 +49,9 @@ void CheckBox::setChecked(bool checked)
         return;
 
     m_checked=checked;
+    // Checked state is visual (box fill / checkmark / radio dot), so the skin
+    // must regenerate the primitive — otherwise the toggle never re-renders.
+    addStateChange(StateChange_Background);
     onCheckStatusChanged();
 }
 

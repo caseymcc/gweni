@@ -1,12 +1,14 @@
 #include "demo/scrollControl.h"
+#include <gweni/controls/layout/layout.h>
 #include "gweni/controls/scrollControl.h"
 
 namespace gweni
 {
 
-ScrollControlDemo::ScrollControlDemo(const String &name):
-    Base()
+GWENI_CONTROL_CONSTRUCTOR(ScrollControlDemo)
 {
+    setLayout(new controls::VerticalLayout());
+
     {
         controls::ScrollControl *control=newChild<controls::ScrollControl>();
         control->setBounds(10, 10, 100, 100);

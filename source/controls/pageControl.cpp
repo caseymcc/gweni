@@ -57,6 +57,12 @@ GWENI_CONTROL_CONSTRUCTOR(PageControl)
     m_label->setDock(DockPosition::Center);
     m_label->setAlignment(Alignment::Left|Alignment::CenterV);
     m_label->setText("Page 1 or 2");
+
+    // The pages live in their own container that fills the area above the nav
+    // bar. Each page docks Center and fills this container; only the current
+    // page is shown, so there is exactly one visible page at the viewport.
+    m_pageContainer=newChild<Base>();
+    m_pageContainer->setDock(DockPosition::Center);
 }
 
 //void PageControl::setPageCount(size_t num)
@@ -82,10 +88,12 @@ GWENI_CONTROL_CONSTRUCTOR(PageControl)
 
 Base *PageControl::addPage(std::string name)
 {
-    Base *page=newChild<Base>(name);
+    Base *page=m_pageContainer->newChild<Base>(name);
 
     page->setDock(DockPosition::Center);
 
+    // Only the current page is visible; hide the rest. Hiding before content is
+    // added means that content inherits the hidden state (see Base::addChild).
     if(m_pages.size() != m_currentPage)
         page->hide();
 
@@ -117,36 +125,26 @@ void PageControl::hideAll()
 
 void PageControl::showPage(size_t index)
 {
-    if(m_currentPage == index)
-        return;
-
     if(index >= m_pages.size())
         return;
 
-    //hide current page
-    if(m_pages[m_currentPage])
+    // Show only the requested page; hide the rest. Every page docks Center in
+    // m_pageContainer, so the single visible page fills the viewport (hidden
+    // pages are skipped by layout, so they don't stack or bleed).
+    for(size_t i=0; i<m_pages.size(); ++i)
     {
-        m_pages[m_currentPage]->hide();
-        m_pages[m_currentPage]->setDock(DockPosition::None);
-    }
-
-    //show next page
-    if(m_pages[index])
-    {
-        m_pages[index]->show();
-        m_pages[index]->setDock(DockPosition::Center);
+        if(m_pages[i])
+            m_pages[i]->setHidden(i != index);
     }
 
     m_currentPage=index;
     m_back->setDisabled(m_currentPage == 0);
-//    m_next->setDisabled(m_currentPage >= m_pageCount);
-    m_next->setDisabled(m_currentPage >= m_pages.size());
-    m_label->setText(format("Page %i of %i", m_currentPage+1, m_pages));
+    m_next->setDisabled(m_currentPage+1 >= m_pages.size());
+    m_label->setText(format("Page %i of %i", (int)(m_currentPage+1), (int)m_pages.size()));
 
     if(getUseFinishButton())
     {
-//        const bool bFinished=m_currentPage >= m_pageCount-1;
-        const bool bFinished=(m_currentPage >= m_pages.size()-1);
+        const bool bFinished=(m_currentPage+1 >= m_pages.size());
         m_next->setHidden(bFinished);
         m_finish->setHidden(!bFinished);
     }
@@ -182,66 +180,14 @@ Base *PageControl::getCurrentPage()
 
 void PageControl::nextPage(event::Info)
 {
-    if(m_currentPage >= m_pages.size()-1)
-        return;
-
-    if(m_pages[m_currentPage])
-    {
-        m_pages[m_currentPage]->setDock(DockPosition::None);
-
-        if(m_animate)
-        {
-            anim::add(m_pages[m_currentPage],
-                new anim::pos::X(m_pages[m_currentPage]->getX(), getWidth() *-1, 0.2f, true, 0.0f,
-                    -1));
-        }
-        else
-            m_pages[m_currentPage]->setHidden(true);
-    }
-
-    showPage(m_currentPage+1);
-
-    if(m_pages[m_currentPage])
-    {
-        m_pages[m_currentPage]->setDock(DockPosition::None);
-
-        if(m_animate)
-        {
-            anim::add(m_pages[m_currentPage], new anim::pos::X(getWidth(), 0, 0.2f, false, 0.0f, -1));
-        }
-    }
+    if(m_currentPage+1 < m_pages.size())
+        showPage(m_currentPage+1);
 }
 
 void PageControl::previousPage(event::Info)
 {
-    if(m_currentPage == 0)
-        return;
-
-    if(m_pages[m_currentPage])
-    {
-        m_pages[m_currentPage]->setDock(DockPosition::None);
-        
-        if(m_animate)
-        {
-            anim::add(m_pages[m_currentPage],
-                new anim::pos::X(m_pages[m_currentPage]->getX(), getWidth(), 0.3f, true, 0.0f, -1));
-        }
-        else
-            m_pages[m_currentPage]->setHidden(true);
-    }
-
-    showPage(m_currentPage-1);
-
-    if(m_pages[m_currentPage])
-    {
-        if(m_animate)
-        {
-            m_pages[m_currentPage]->setDock(DockPosition::None);
-
-            anim::add(m_pages[m_currentPage],
-                new anim::pos::X(getWidth() *-1, 0, 0.3f, false, 0.0f, -1));
-        }
-    }
+    if(m_currentPage > 0)
+        showPage(m_currentPage-1);
 }
 
 void PageControl::finish(event::Info)

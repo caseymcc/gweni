@@ -451,8 +451,16 @@ void OpenGLCore::init()
     glVertexAttribIPointer(attrib++, 1, GL_UNSIGNED_SHORT, sizeof(Vertex), (GLvoid*)(offsetof(Vertex, style)));
     glEnableVertexAttribArray(attrib); // Attrib '1' is vertex pos
     glVertexAttribIPointer(attrib++, 3, GL_UNSIGNED_SHORT, sizeof(Vertex), (GLvoid*)(offsetof(Vertex, x)));
-    glEnableVertexAttribArray(attrib); // Attrib '2' is texture coord or packeted color
+    glEnableVertexAttribArray(attrib); // Attrib '2' is texture coord or packeted color0
     glVertexAttribIPointer(attrib++, 2, GL_UNSIGNED_SHORT, sizeof(Vertex), (GLvoid*)(offsetof(Vertex, tx)));
+    glEnableVertexAttribArray(attrib); // Attrib '3' is SDF local position (signed)
+    glVertexAttribIPointer(attrib++, 2, GL_SHORT, sizeof(Vertex), (GLvoid*)(offsetof(Vertex, lx)));
+    glEnableVertexAttribArray(attrib); // Attrib '4' is SDF radius + border
+    glVertexAttribIPointer(attrib++, 2, GL_UNSIGNED_SHORT, sizeof(Vertex), (GLvoid*)(offsetof(Vertex, radius)));
+    glEnableVertexAttribArray(attrib); // Attrib '5' is SDF gradient color1 (packed)
+    glVertexAttribIPointer(attrib++, 2, GL_UNSIGNED_SHORT, sizeof(Vertex), (GLvoid*)(offsetof(Vertex, cx)));
+    glEnableVertexAttribArray(attrib); // Attrib '6' is SDF border color (packed)
+    glVertexAttribIPointer(attrib++, 2, GL_UNSIGNED_SHORT, sizeof(Vertex), (GLvoid*)(offsetof(Vertex, bx)));
 
 //    glBindBuffer(GL_ARRAY_BUFFER, m_clipBuffer);
 //    glEnableVertexAttribArray(2); // Attrib '3' is show
@@ -497,29 +505,47 @@ void OpenGLCore::init()
 
 layout (location = 0) in uint style;
 layout (location = 1) in uvec3 inPosition;
-layout (location = 2) in uvec2 inTexCoords;
-//layout (location = 2) in uint inState;
-//layout (location = 3) in ivec4 inClippingBox;
+layout (location = 2) in uvec2 inTexCoords;    // color0 (top fill) or UV
+layout (location = 3) in ivec2 inLocal;        // SDF local position (rel to rect center)
+layout (location = 4) in uvec2 inRadiusBorder; // SDF .x=radius .y=border (px)
+layout (location = 5) in uvec2 inColor1;       // SDF gradient bottom color
+layout (location = 6) in uvec2 inBorderColor;  // SDF border color
 
 out vec2 TexCoords;
 out vec4 VertexColor;
 flat out uint ShaderType;
-//out vec4 clippingBox;
+out vec2 vLocal;          // interpolated local position (px)
+flat out vec2 vHalf;      // rect half-size (px)
+flat out float vRadius;
+flat out float vBorder;
+flat out vec4 vColor1;    // gradient bottom color
+flat out vec4 vBorderColor;
 
 uniform mat4 projection;
 uniform uvec2 textureSize;
 
+vec4 unpackColor(uvec2 c)
+{
+    return vec4(
+        float((c.x >> 8) & 0xffu)/255.0,
+        float(c.x & 0xffu)/255.0,
+        float((c.y >> 8) & 0xffu)/255.0,
+        float(c.y & 0xffu)/255.0);
+}
+
 void main()
 {
-//    ShaderType = int(inPosition.z);
     ShaderType = style;
-//    clippingBox = vec4(inClippingBox);
 
     TexCoords = vec2(inTexCoords)/vec2(textureSize);
-    VertexColor.x = float((inTexCoords.x >> 8) & 0xffu)/255.0;
-    VertexColor.y = float(inTexCoords.x & 0xffu)/255.0;
-    VertexColor.z = float((inTexCoords.y >> 8) & 0xffu)/255.0;
-    VertexColor.w = float(inTexCoords.y & 0xffu)/255.0;
+    VertexColor = unpackColor(inTexCoords);
+
+    vLocal = vec2(inLocal);
+    vHalf = abs(vec2(inLocal));
+    vRadius = float(inRadiusBorder.x);
+    vBorder = float(inRadiusBorder.y);
+    vColor1 = unpackColor(inColor1);
+    vBorderColor = unpackColor(inBorderColor);
 
     if(style == 0u)//item has been hidden, move all coords to 0.0f
         gl_Position = vec4(0.0f, 0.0f, 0.0f, 1.0f);
@@ -535,37 +561,101 @@ out vec4 FragColor;
 in vec2 TexCoords;
 in vec4 VertexColor;
 flat in uint ShaderType;
-//in vec4 clippingBox;
+in vec2 vLocal;
+flat in vec2 vHalf;
+flat in float vRadius;
+flat in float vBorder;
+flat in vec4 vColor1;
+flat in vec4 vBorderColor;
 
 uniform sampler2D texture1;
+
+// Signed distance to a rounded box centered at the origin (negative inside).
+float sdRoundBox(vec2 p, vec2 b, float r)
+{
+    vec2 q = abs(p) - b + vec2(r);
+    return min(max(q.x, q.y), 0.0) + length(max(q, vec2(0.0))) - r;
+}
+
+// Distance from p to the segment a-b (for stroked icon glyphs).
+float sdSegment(vec2 p, vec2 a, vec2 b)
+{
+    vec2 pa = p - a;
+    vec2 ba = b - a;
+    float h = clamp(dot(pa, ba)/dot(ba, ba), 0.0, 1.0);
+    return length(pa - ba*h);
+}
+
 void main()
 {
-    //check if frag should be clipped
-//    if(gl_FragCoord.x < clippingBox.x)
-//        discard;
-//    else if(gl_FragCoord.y < clippingBox.y)
-//        discard;
-//    else if(gl_FragCoord.x > clippingBox.z)
-//        discard;
-//    else if(gl_FragCoord.y > clippingBox.w)
-//        discard;
-
     if(ShaderType == 0u)
         FragColor = vec4(0.0, 0.0, 0.0, 0.0);
     else if(ShaderType == 1u)
         FragColor = VertexColor;
-//        FragColor = vec4(1.0, 0.0, 0.0, 1.0);
     else if (ShaderType == 2u)
     {
         FragColor = texture(texture1, TexCoords);// * VertexColor;
         FragColor.a=1.0f;
-//        FragColor = vec4(0.0, 1.0, 0.0, 1.0);
     }
     else if (ShaderType == 3u)
     {
         float color = texture(texture1, TexCoords).r;
         FragColor = vec4(VertexColor.rgb, color);
-//        FragColor = vec4(0.0, 0.0, 1.0, 1.0);
+    }
+    else if (ShaderType == 4u)
+    {
+        // SDF rounded rect: vertical gradient fill + optional border, analytic AA.
+        float r = clamp(vRadius, 0.0, min(vHalf.x, vHalf.y));
+        float d = sdRoundBox(vLocal, vHalf, r);
+        float aa = max(fwidth(d), 1e-4);
+        float shapeA = 1.0 - smoothstep(-aa, aa, d);   // outer edge coverage
+
+        // Vertical gradient: local y runs -half (top) .. +half (bottom).
+        float t = clamp(vLocal.y/max(vHalf.y, 1.0)*0.5 + 0.5, 0.0, 1.0);
+        vec4 fill = mix(VertexColor, vColor1, t);
+
+        vec3 rgb = fill.rgb;
+        if(vBorder > 0.0)
+        {
+            // -d is the inward distance from the edge; border occupies [0, vBorder].
+            float bMix = 1.0 - smoothstep(vBorder - aa, vBorder + aa, -d);
+            rgb = mix(fill.rgb, vBorderColor.rgb, clamp(bMix, 0.0, 1.0));
+        }
+        FragColor = vec4(rgb, fill.a * shapeA);
+    }
+    else if (ShaderType == 5u)
+    {
+        // Icon glyph: normalized local coords in [-1,1]; vRadius=kind, vBorder=dir.
+        vec2 p = vLocal / max(vHalf, vec2(1.0));
+        int kind = int(vRadius + 0.5);
+        int dir = int(vBorder + 0.5);
+
+        if(dir == 1) p = vec2(p.x, -p.y);       // up
+        else if(dir == 2) p = vec2(-p.y, p.x);  // left
+        else if(dir == 3) p = vec2(p.y, -p.x);  // right
+        // dir 0 == down / as-authored
+
+        float d;
+        if(kind == 0)
+        {
+            // checkmark (two strokes); y is down, so B is the low point.
+            vec2 A = vec2(-0.55, 0.0);
+            vec2 B = vec2(-0.18, 0.38);
+            vec2 C = vec2(0.55, -0.45);
+            d = min(sdSegment(p, A, B), sdSegment(p, B, C)) - 0.14;
+        }
+        else
+        {
+            // chevron "v" pointing down (rotated by dir above).
+            vec2 A = vec2(-0.5, -0.2);
+            vec2 B = vec2(0.0, 0.28);
+            vec2 C = vec2(0.5, -0.2);
+            d = min(sdSegment(p, A, B), sdSegment(p, B, C)) - 0.13;
+        }
+
+        float aa = fwidth(d) + 1e-4;
+        float a = 1.0 - smoothstep(0.0, aa, d);
+        FragColor = vec4(VertexColor.rgb, VertexColor.a * a);
     }
 })";
 
@@ -636,6 +726,22 @@ void main()
 
     m_textProgram=loadShaders(textVertexSource, textFragSource);
     m_textProjectionUniform=glGetUniformLocation(m_textProgram, "projection");
+
+    glViewport(m_viewRect.x, m_viewRect.y, m_viewRect.w, m_viewRect.h);
+}
+
+void OpenGLCore::setViewRect(const gweni::Rect &viewRect)
+{
+    m_viewRect=viewRect;
+
+    m_projectionMatrix=glm::ortho(
+        static_cast<float>(m_viewRect.x),
+        static_cast<float>(m_viewRect.x + m_viewRect.w),
+        static_cast<float>(m_viewRect.y + m_viewRect.h),
+        static_cast<float>(m_viewRect.y),
+        -10000.0f,
+        0.0f
+    );
 
     glViewport(m_viewRect.x, m_viewRect.y, m_viewRect.w, m_viewRect.h);
 }
@@ -804,6 +910,16 @@ void OpenGLCore::setVertex(Vertex &vertex, uint8_t type, int x, int y, int z, fl
         vertex.tx=u;
         vertex.ty=v;
     }
+
+    // SDF fields are only used by style 4 (drawRoundedRect); keep them 0 otherwise.
+    vertex.lx=0;
+    vertex.ly=0;
+    vertex.radius=0;
+    vertex.border=0;
+    vertex.cx=0;
+    vertex.cy=0;
+    vertex.bx=0;
+    vertex.by=0;
 //    else
 //    {
 //        vertex.tx=(m_color.r<<8)&m_color.g;
@@ -917,6 +1033,150 @@ void OpenGLCore::drawFilledRect(size_t primitiveId, gweni::Rect rect, int zIndex
 //    addVert(rect.x+rect.w, rect.y);
 //    addVert(rect.x+rect.w, rect.y+rect.h);
 //    addVert(rect.x, rect.y+rect.h);
+}
+
+void OpenGLCore::drawRoundedRect(size_t primitiveId, gweni::Rect rect, float radius, float border,
+    gweni::Color fillTop, gweni::Color fillBottom, gweni::Color borderColor, int zIndex)
+{
+    m_activeProgram=0;
+    m_zIndex++;
+
+    translate(rect);
+
+    size_t index=primitiveId*6;
+    size_t vertexIndex=primitiveId*4;
+
+    if(m_clippingBoxes.size() < primitiveId+1)
+        m_clippingBoxes.resize(primitiveId+1);
+
+    Box &box=m_clippingBoxes[primitiveId];
+
+    if(m_clipping)
+    {
+        gweni::Rect clip=clipRegion();
+
+        box.x0=clip.x;
+        box.y0=clip.y;
+        box.x1=clip.x+clip.w;
+        box.y1=clip.y+clip.h;
+    }
+    else
+    {
+        box.x0=m_viewRect.x;
+        box.y0=m_viewRect.y;
+        box.x1=m_viewRect.x+m_viewRect.w;
+        box.y1=m_viewRect.y+m_viewRect.h;
+    }
+
+    if(m_indexes.size() < index + 6)
+        m_indexes.resize(index+6);
+
+    m_indexes[index++]=vertexIndex;
+    m_indexes[index++]=vertexIndex+1;
+    m_indexes[index++]=vertexIndex+2;
+    m_indexes[index++]=vertexIndex+1;
+    m_indexes[index++]=vertexIndex+3;
+    m_indexes[index++]=vertexIndex+2;
+
+    if(m_vertexes.size() < vertexIndex+4)
+        m_vertexes.resize(vertexIndex+4);
+
+    // Center the SDF rect inside the control rect so the drawn shape and the quad
+    // positions coincide exactly (avoids edge clipping for odd sizes).
+    const int hw=rect.w/2;
+    const int hh=rect.h/2;
+    const int cx=rect.x+hw;
+    const int cy=rect.y+hh;
+
+    const uint16_t r0=fillTop.rg,    g0=fillTop.ba;
+    const uint16_t r1=fillBottom.rg, g1=fillBottom.ba;
+    const uint16_t rb=borderColor.rg, gb=borderColor.ba;
+    const uint16_t rad=(uint16_t)(radius<0.0f?0.0f:radius);
+    const uint16_t bor=(uint16_t)(border<0.0f?0.0f:border);
+
+    auto setRounded=[&](size_t vi, int px, int py, int lx, int ly)
+    {
+        Vertex &v=m_vertexes[vi];
+        setVertex(v, 4, px, py, zIndex, r0, g0);
+        v.lx=(int16_t)lx;
+        v.ly=(int16_t)ly;
+        v.radius=rad;
+        v.border=bor;
+        v.cx=r1; v.cy=g1;
+        v.bx=rb; v.by=gb;
+    };
+
+    setRounded(vertexIndex++, cx-hw, cy-hh, -hw, -hh);
+    setRounded(vertexIndex++, cx+hw, cy-hh, +hw, -hh);
+    setRounded(vertexIndex++, cx-hw, cy+hh, -hw, +hh);
+    setRounded(vertexIndex++, cx+hw, cy+hh, +hw, +hh);
+}
+
+void OpenGLCore::drawIcon(size_t primitiveId, gweni::Rect rect, int kind, int direction,
+    gweni::Color color, int zIndex)
+{
+    m_activeProgram=0;
+    m_zIndex++;
+
+    translate(rect);
+
+    size_t index=primitiveId*6;
+    size_t vertexIndex=primitiveId*4;
+
+    if(m_clippingBoxes.size() < primitiveId+1)
+        m_clippingBoxes.resize(primitiveId+1);
+
+    Box &box=m_clippingBoxes[primitiveId];
+
+    if(m_clipping)
+    {
+        gweni::Rect clip=clipRegion();
+
+        box.x0=clip.x;
+        box.y0=clip.y;
+        box.x1=clip.x+clip.w;
+        box.y1=clip.y+clip.h;
+    }
+    else
+    {
+        box.x0=m_viewRect.x;
+        box.y0=m_viewRect.y;
+        box.x1=m_viewRect.x+m_viewRect.w;
+        box.y1=m_viewRect.y+m_viewRect.h;
+    }
+
+    if(m_indexes.size() < index + 6)
+        m_indexes.resize(index+6);
+
+    m_indexes[index++]=vertexIndex;
+    m_indexes[index++]=vertexIndex+1;
+    m_indexes[index++]=vertexIndex+2;
+    m_indexes[index++]=vertexIndex+1;
+    m_indexes[index++]=vertexIndex+3;
+    m_indexes[index++]=vertexIndex+2;
+
+    if(m_vertexes.size() < vertexIndex+4)
+        m_vertexes.resize(vertexIndex+4);
+
+    const int hw=rect.w/2;
+    const int hh=rect.h/2;
+    const int cx=rect.x+hw;
+    const int cy=rect.y+hh;
+
+    auto setIcon=[&](size_t vi, int px, int py, int lx, int ly)
+    {
+        Vertex &v=m_vertexes[vi];
+        setVertex(v, 5, px, py, zIndex, color.rg, color.ba);
+        v.lx=(int16_t)lx;
+        v.ly=(int16_t)ly;
+        v.radius=(uint16_t)kind;
+        v.border=(uint16_t)direction;
+    };
+
+    setIcon(vertexIndex++, cx-hw, cy-hh, -hw, -hh);
+    setIcon(vertexIndex++, cx+hw, cy-hh, +hw, -hh);
+    setIcon(vertexIndex++, cx-hw, cy+hh, -hw, +hh);
+    setIcon(vertexIndex++, cx+hw, cy+hh, +hw, +hh);
 }
 
 void OpenGLCore::setDrawColor(gweni::Color color)
@@ -1205,6 +1465,14 @@ void OpenGLCore::renderText(size_t textId, const gweni::Font &font, gweni::Point
 //    pos.y=pos.y+fontData.markup.font->ascender;
 //    ftgl::vec2 pen={pos.x, pos.y};
     ftgl::vec2 pen={0.0f, 0.0f};
+
+    // Bake the current draw color (set by the control's text renderer from its
+    // text color) into the glyphs, so per-control text colors actually apply
+    // instead of the static black the markup was initialised with.
+    fontData.markup.foreground_color.r=m_color.r/255.0f;
+    fontData.markup.foreground_color.g=m_color.g/255.0f;
+    fontData.markup.foreground_color.b=m_color.b/255.0f;
+    fontData.markup.foreground_color.a=1.0f;
 
     ftgl::text_buffer_add_text(textBuffer, &pen, &fontData.markup, text.c_str(), text.length());
 

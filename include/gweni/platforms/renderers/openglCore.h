@@ -115,12 +115,17 @@ public:
     virtual ~OpenGLCore();
 
     void init() override;
+    void setViewRect(const gweni::Rect &viewRect) override;
 
     void begin() override;
     void end() override;
 
     void setDrawColor(gweni::Color color) override;
     void drawFilledRect(size_t primitiveId, gweni::Rect rect, int zIndex) override;
+    void drawRoundedRect(size_t primitiveId, gweni::Rect rect, float radius, float border,
+        gweni::Color fillTop, gweni::Color fillBottom, gweni::Color borderColor, int zIndex) override;
+    void drawIcon(size_t primitiveId, gweni::Rect rect, int kind, int direction,
+        gweni::Color color, int zIndex) override;
 
     void startClip() override;
     void endClip() override;
@@ -204,7 +209,13 @@ private:
     {
         uint16_t style;
         uint16_t x, y, z;
-        uint16_t tx, ty; //used for color if not texture
+        uint16_t tx, ty; //color0 (top fill) packed rg/ba, or UV for texture (style 2)
+        // SDF rounded-rect fields (style 4); left 0 for all other styles.
+        int16_t  lx, ly; //local position relative to rect center (= +/-halfSize at the four corners)
+        uint16_t radius; //corner radius in px
+        uint16_t border; //border thickness in px
+        uint16_t cx, cy; //color1 (bottom fill for vertical gradient) packed rg/ba
+        uint16_t bx, by; //border color packed rg/ba
 //        glm::vec3 pos;
 //        glm::vec2 uv;
 //        glm::vec4 color;

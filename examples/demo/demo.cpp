@@ -53,8 +53,14 @@ Demo::Demo(const String &name):
     DockBase()
 {}
 
+void registerDemoControlRenderers();
+
 void Demo::init(const String &name)
 {
+    // Pull in the demo's transparent control-renderer registrations (see
+    // demoControlRenderers.cpp) so the demo wrappers don't hit the red fallback.
+    registerDemoControlRenderers();
+
     m_lastControl=NULL;
 
     setDock(DockPosition::Center);
@@ -93,54 +99,49 @@ void Demo::init(const String &name)
 
         cat->setName("Basic");
         addDemo<ButtonDemo>(cat, "ButtonDemo");
-//        addDemo<LabelDemo>(cat, "LabelDemo");
-//        addDemo<LabelMultilineDemo>(cat, "LabelMultilineDemo");
-//        ADD_DEMO(ButtonDemo);
-//        ButtonDemo *buttonDemo=new ButtonDemo(this);
-//        LabelDemo *labelDemo=new LabelDemo(this);
-//        LabelMultilineDemo *labelMultilineDemo=new LabelMultilineDemo(this);
+        addDemo<LabelDemo>(cat, "LabelDemo");
+        addDemo<LabelMultilineDemo>(cat, "LabelMultilineDemo");
     }
     {
         controls::CollapsibleCategory *cat=list->add("Non-Interactive");
+        cat->setName("Non-Interactive");
 
-//        addDemo<ProgressBarDemo>(cat, "ProgressBarDemo");
-//        addDemo<GroupBoxDemo>(cat, "GroupBoxDemo");
-//        addDemo<ImagePanelDemo>(cat, "ImagePanelDemo");
-//        addDemo<StatusBarDemo>(cat, "StatusBarDemo");
-
-//        ProgressBarDemo *progressBarDemo=new ProgressBarDemo(this);
-//        GroupBoxDemo *groupBoxDemo=new GroupBoxDemo(this);
-//        ImagePanelDemo *imagePanelDemo=new ImagePanelDemo(this);
-//        StatusBarDemo *statusBarDemo=new StatusBarDemo(this);
+        addDemo<ProgressBarDemo>(cat, "ProgressBarDemo");
+        addDemo<GroupBoxDemo>(cat, "GroupBoxDemo");
+        addDemo<ImagePanelDemo>(cat, "ImagePanelDemo");
+        addDemo<StatusBarDemo>(cat, "StatusBarDemo");
     }
     {
         controls::CollapsibleCategory *cat=list->add("Controls");
+        cat->setName("Controls");
 
-//        ComboBoxDemo *comboBoxDemo=new ComboBoxDemo(this);
-//        TextBoxDemo *textBoxDemo=new TextBoxDemo(this);
-//        ListBoxDemo *listBoxDemo=new ListBoxDemo(this);
-//        CrossSplitterDemo *crossSplitterDemo=new CrossSplitterDemo(this);
-//        RadioButtonDemo *radioButtonDemo=new RadioButtonDemo(this);
-//        CheckBoxDemo *checkboxDemo=new CheckBoxDemo(this);
-//        NumericDemo *numericDemo=new NumericDemo(this);
-//        SliderDemo *sliderDemo=new SliderDemo(this);
-//        MenuStripDemo *menuStripDemo=new MenuStripDemo(this);
+        addDemo<ComboBoxDemo>(cat, "ComboBoxDemo");
+        addDemo<TextBoxDemo>(cat, "TextBoxDemo");
+        addDemo<ListBoxDemo>(cat, "ListBoxDemo");
+        addDemo<CrossSplitterDemo>(cat, "CrossSplitterDemo");
+        addDemo<RadioButtonDemo>(cat, "RadioButtonDemo");
+        addDemo<CheckBoxDemo>(cat, "CheckBoxDemo");
+        addDemo<NumericDemo>(cat, "NumericDemo");
+        addDemo<SliderDemo>(cat, "SliderDemo");
+        addDemo<MenuStripDemo>(cat, "MenuStripDemo");
     }
     {
         controls::CollapsibleCategory *cat=list->add("Containers");
+        cat->setName("Containers");
 
-//        WindowDemo *windowDemo=new WindowDemo(this);
-//        TreeControlDemo *treeControlDemo=new TreeControlDemo(this);
-//        PropertiesDemo *propertiesDemo=new PropertiesDemo(this);
-//        TabControlDemo *tabControlDemo=new TabControlDemo(this);
-//        ScrollControlDemo *scrollControlDemo=new ScrollControlDemo(this);
-//        PageControlDemo *pageControlDemo=new PageControlDemo(this);
+        addDemo<WindowDemo>(cat, "WindowDemo");
+        addDemo<TreeControlDemo>(cat, "TreeControlDemo");
+        addDemo<PropertiesDemo>(cat, "PropertiesDemo");
+        addDemo<TabControlDemo>(cat, "TabControlDemo");
+        addDemo<ScrollControlDemo>(cat, "ScrollControlDemo");
+        addDemo<PageControlDemo>(cat, "PageControlDemo");
     }
     {
         controls::CollapsibleCategory *cat=list->add("Non-Standard");
+        cat->setName("Non-Standard");
 
-//        CollapsibleListDemo *collapsibleListDemo=new CollapsibleListDemo(this);
-//        ColorPickerDemo *colorPickerDemo=new ColorPickerDemo(this);
+        addDemo<CollapsibleListDemo>(cat, "CollapsibleListDemo");
+        addDemo<ColorPickerDemo>(cat, "ColorPickerDemo");
     }
 //
 //    m_statusBar->sendToBack();

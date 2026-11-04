@@ -59,11 +59,20 @@ void Label::postLayout(skin::Base * /*skin*/)
 
 void Label::setText(const String &str, bool doEvents)
 {
+#ifdef DEBUG_ID
+    String local=str+" ("+std::to_string(getControlId())+")";
+
+    if(m_text->getText() == local)
+        return;
+
+    m_text->setText(local);
+#else //DEBUG_ID
     if(m_text->getText() == str)
         return;
 
     m_text->setText(str);
 //    redraw();
+#endif //DEBUG_ID
 
     if(doEvents)
         onTextChanged();

@@ -82,6 +82,16 @@ void ImagePanel::render(skin::Base *skin)
 {
     renderer::Base *render=skin->getRenderer();
 
+    // Hide the image when the control isn't visible (this control or a parent
+    // hidden), otherwise it keeps drawing and bleeds across other pages, since
+    // rendering doesn't skip hidden subtrees and this control draws its texture
+    // directly rather than through a skin renderer.
+    if(!visible())
+    {
+        render->hidePrimitive(m_primitiveId);
+        return;
+    }
+
     render->setDrawColor(m_drawColor);
 
     if(m_stretch)

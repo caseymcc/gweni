@@ -32,6 +32,13 @@ public:
         return m_text->getText();
     }
 
+    //! Alignment of the text within the label (the label's own alignment is
+    //! how it is placed within its parent; this is where the glyphs sit).
+    virtual void setTextAlignment(Alignment alignment)
+    {
+        m_text->setAlignment(alignment);
+    }
+
 //    void render(skin::Base *skin) override
 //    {}
 

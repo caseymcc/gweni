@@ -81,6 +81,7 @@ set(GWENI_DEMO_SOURCES
     demo/button.h
     demo/checkBox.cpp
     demo/checkBox.h
+    demo/demoControlRenderers.cpp
     demo/collapsibleList.cpp
     demo/collapsibleList.h
     demo/colorPicker.cpp

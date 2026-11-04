@@ -25,13 +25,14 @@ GWENI_CONTROL_CONSTRUCTOR(Button)
     setMouseInputEnabled(true);
     setIsToggle(false);
 //    setAlignment(Position::Center);
-    setAlignment(Alignment::Center);
-    setSizeFlags({SizeFlag::Fixed, SizeFlag::Fixed});
+    setAlignment(Alignment::Left|Alignment::Top);
+    setSizeFlags({SizeFlag::Shrink, SizeFlag::Shrink});
     setTextPadding(Padding(3, 0, 3, 0));
     m_toggleStatus=false;
     setKeyboardInputEnabled(false);
     setTabable(false);
 
+    m_text->setAlignment(Alignment::Center);
 //    setText(getTypeName());
 }
 

@@ -104,8 +104,7 @@ if(GWENI_RENDER_OPENGL)
 
     if (GWENI_USE_GLFW)
         message(STATUS "Configuring GLFW3...")
-        hunter_add_package(glfw)
-        find_package(glfw3 REQUIRED)
+        find_package(glfw3 CONFIG REQUIRED)
 
         set(GWENI_RENDER_LIBRARIES glfw)
     endif()
@@ -116,17 +115,14 @@ if(GWENI_RENDER_OPENGL_CORE)
     set(GWENI_INPUT_NAME "GLFW3")
     set(GWENI_PLATFORM_NAME "Cross")
 
-    hunter_add_package(glm)
     find_package(glm CONFIG REQUIRED)
 
-    hunter_add_package(glew)
-    find_package(glew CONFIG REQUIRED)
+    find_package(GLEW REQUIRED)
 
-    set(GWENI_RENDER_LIBRARIES glm glew::glew)
-    
+    set(GWENI_RENDER_LIBRARIES glm::glm GLEW::GLEW)
+
     if(GWENI_USE_GLFW)
-        hunter_add_package(glfw)
-        find_package(glfw3 REQUIRED)
+        find_package(glfw3 CONFIG REQUIRED)
 
         set(GWENI_RENDER_LIBRARIES ${GWENI_RENDER_LIBRARIES} glfw)
     endif()
@@ -137,14 +133,11 @@ if(GWENI_RENDER_SDL2)
     set(GWENI_INPUT_NAME "SDL2")
     set(GWENI_PLATFORM_NAME "Cross")
 
-    hunter_add_package(SDL2)
     find_package(SDL2 CONFIG REQUIRED)
-    hunter_add_package(SDL_ttf)
-    find_package(SDL_ttf CONFIG REQUIRED)
-    hunter_add_package(SDL_image)
-    find_package(SDL_image CONFIG REQUIRED)
+    find_package(SDL2_ttf CONFIG REQUIRED)
+    find_package(SDL2_image CONFIG REQUIRED)
 
-    set(GWENI_RENDER_LIBRARIES SDL2::SDL2 SDL_ttf::SDL_ttf SDL_image::SDL_image)
+    set(GWENI_RENDER_LIBRARIES SDL2::SDL2 SDL2_ttf::SDL2_ttf SDL2_image::SDL2_image)
 endif()
 
 if(GWENI_RENDER_SW)
@@ -153,7 +146,6 @@ if(GWENI_RENDER_SW)
     set(GWENI_PLATFORM_NAME "Cross")
     if(GWENI_SW_VIEWER)
         set(GWENI_INPUT_NAME "SDL2")
-        hunter_add_package(SDL2)
         find_package(SDL2 CONFIG REQUIRED)
         set(GWENI_RENDER_LIBRARIES SDL2::SDL2)
     else()

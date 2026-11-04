@@ -47,8 +47,8 @@ private:
 
     void OnNodeSelection(event::Info info);
 
-    ScrollControl *m_scrollControl;
-    bool m_allowMultipleSelection;
+    ScrollControl *m_scrollControl=nullptr;
+    bool m_allowMultipleSelection=false;
 
 };
 

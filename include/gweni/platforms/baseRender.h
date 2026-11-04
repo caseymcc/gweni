@@ -59,6 +59,9 @@ public:
     virtual void begin() {}
     virtual void end() {}
 
+    //! Update the viewport/projection when the output surface is resized.
+    virtual void setViewRect(const gweni::Rect &viewRect) {}
+
     //! Get ResourceLoader we are using for the renderer.
     IResourceLoader &getLoader() { return *reinterpret_cast<IResourceLoader *>(this); }
     ResourcePaths &getResourcePaths() { return m_paths; }
@@ -79,6 +82,20 @@ public:
 
     //! Draw a filled rectangle using the current color.
     virtual void drawFilledRect(size_t primitiveId, gweni::Rect rect, int zIndex) {}
+
+    //! Draw an anti-aliased rounded rectangle with a vertical fill gradient and an
+    //! optional border, evaluated analytically in the fragment shader (SDF). Backends
+    //! that don't support it can leave the default no-op; callers should treat absence
+    //! as "falls back to a plain filled rect" at the skin level. \a radius and \a border
+    //! are in pixels; \a fillTop/\a fillBottom are the gradient endpoints (pass equal
+    //! colors for a flat fill); \a borderColor is ignored when \a border<=0.
+    virtual void drawRoundedRect(size_t primitiveId, gweni::Rect rect, float radius, float border,
+        gweni::Color fillTop, gweni::Color fillBottom, gweni::Color borderColor, int zIndex) {}
+
+    //! Draw a stroked icon glyph (anti-aliased, SDF) in \a color: \a kind 0=checkmark,
+    //! 1=chevron; \a direction 0=down 1=up 2=left 3=right (chevron only).
+    virtual void drawIcon(size_t primitiveId, gweni::Rect rect, int kind, int direction,
+        gweni::Color color, int zIndex) {}
 
     virtual void drawTexturedRect(const gweni::Texture &texture, size_t primitiveId, gweni::Rect targetRect, int zIndex,
         float u1=0.0f, float v1=0.0f,float u2=1.0f, float v2=1.0f)

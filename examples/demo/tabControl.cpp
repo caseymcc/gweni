@@ -1,13 +1,15 @@
 #include "demo/tabControl.h"
+#include <gweni/controls/layout/layout.h>
 #include "gweni/controls/tabControl.h"
 #include "gweni/controls/radioButtonController.h"
 
 namespace gweni
 {
 
-TabControlDemo::TabControlDemo(const String &name):
-    Base()
+GWENI_CONTROL_CONSTRUCTOR(TabControlDemo)
 {
+    setLayout(new controls::VerticalLayout());
+
     {
         m_dockControlLeft=newChild<controls::TabControl>();
         m_dockControlLeft->setBounds(10, 10, 200, 200);

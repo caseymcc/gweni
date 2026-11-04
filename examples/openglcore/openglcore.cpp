@@ -1,6 +1,6 @@
 /*
  *  Gweni
- 
+
  *  See license in Gweni.h
  */
 
@@ -31,6 +31,8 @@
 //}
 
 static gweni::input::GLFW3 g_glfwInput;
+static gweni::renderer::Base *g_renderer=nullptr;
+static gweni::controls::Canvas *g_canvas=nullptr;
 
 static void key_callback(GLFWwindow* window, int key, int scancode, int action, int mods)
 {
@@ -53,22 +55,47 @@ static void scroll_callback(GLFWwindow* window, double xoffset, double yoffset)
     g_glfwInput.processScroll(xoffset, yoffset);
 }
 
+static void framebuffer_size_callback(GLFWwindow* /*window*/, int width, int height)
+{
+    if(width <= 0 || height <= 0)
+        return;
+
+    // Resize the GL viewport/projection and the root canvas so docked controls
+    // re-layout to the new window size.
+    if(g_renderer)
+        g_renderer->setViewRect(gweni::Rect(gweni::Point(0, 0), gweni::Point(width, height)));
+
+    if(g_canvas)
+        g_canvas->setSize(width, height);
+}
+
+void glfwErrorCallback(int error_code, const char *description)
+{
+    std::cout<<"GLFW error: "<<error_code<<" "<<description<<std::endl;
+}
+
+
 int main(int argc, char *argv[])
 {
     const gweni::Point screenSize(1024,768);
 
-    if (!glfwInit())
-        return EXIT_FAILURE;
+    glfwSetErrorCallback(&glfwErrorCallback);
 
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 2);
-    glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
-    glfwWindowHint(GLFW_OPENGL_DEBUG_CONTEXT, GL_TRUE);
+    if (!glfwInit())
+    {
+        glfwTerminate();
+        return EXIT_FAILURE;
+    }
+
+//    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
+//    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 2);
+//    glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+//    glfwWindowHint(GLFW_OPENGL_DEBUG_CONTEXT, GL_TRUE);%
 
     // Create a new window
     GLFWwindow *window=glfwCreateWindow(screenSize.x, screenSize.y,
         "Gweni OpenGL Core Profile Sample", NULL, NULL);
-    
+
     if(!window)
     {
         glfwTerminate();
@@ -112,6 +139,9 @@ int main(int argc, char *argv[])
     canvas->setDrawBackground(true);
     canvas->setBackgroundColor(gweni::Color(150, 170, 170, 255));
 
+    g_renderer=renderer;
+    g_canvas=canvas;
+
 //#define SINGLE_CONTROL
 
 #ifndef SINGLE_CONTROL
@@ -128,6 +158,15 @@ int main(int argc, char *argv[])
     glfwSetCursorPosCallback(window, cursor_pos_callback);
     glfwSetMouseButtonCallback(window, mouse_button_callback);
     glfwSetScrollCallback(window, scroll_callback);
+    glfwSetFramebufferSizeCallback(window, framebuffer_size_callback);
+
+    // Apply the actual framebuffer size now (it can differ from the requested
+    // window size, e.g. on high-DPI displays).
+    {
+        int fbWidth=0, fbHeight=0;
+        glfwGetFramebufferSize(window, &fbWidth, &fbHeight);
+        framebuffer_size_callback(window, fbWidth, fbHeight);
+    }
 
     // Begin the main game loop
     while (!glfwWindowShouldClose(window))
@@ -147,7 +186,7 @@ int main(int argc, char *argv[])
 #else//SINGLE_CONTROL
     delete button;
 #endif//SINGLE_CONTROL
-    
+
     delete canvas;
     delete skin;
     delete renderer;

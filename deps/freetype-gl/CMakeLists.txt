@@ -192,13 +192,14 @@ target_include_directories(freetype-gl PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}>/include
 )
 
-if(freetype-gl_USE_HUNTER)
-    target_link_libraries(freetype-gl
-        ${FREETYPE_TARGET_LIBS}
-        ${GLEW_TARGET_LIBS}
-        ${OPENGL_TARGET_LIBS}
-    )
-endif()
+# Link freetype-gl's dependencies regardless of how they were located (Hunter or
+# the standard find modules used with vcpkg) so the static library and its
+# consumers (e.g. makefont) resolve freetype/glew/opengl symbols.
+target_link_libraries(freetype-gl
+    ${FREETYPE_TARGET_LIBS}
+    ${GLEW_TARGET_LIBS}
+    ${OPENGL_TARGET_LIBS}
+)
 
 if(freetype-gl_BUILD_MAKEFONT)
     add_executable(makefont makefont.c)

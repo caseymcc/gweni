@@ -2,6 +2,8 @@
 
 #include <cassert>
 #include <cstring>
+#include <cstdio>
+#include <cstdlib>
 #include <vector>
 #include <limits>
 

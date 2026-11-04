@@ -1,3 +1,4 @@
+#include <cstdio>
 /*
 	GWEN
 	Copyright (c) 2011 Facepunch Studios

@@ -82,10 +82,15 @@ void ComboBox::render(skin::Base *skin)
     if(!shouldDrawBackground())
         return;
 
-//    skin->drawComboBox(this, skin::Generate, isDepressed(), isMenuOpen());
-    //skin->drawControl(this);
-    if(getStateChange() != StateChange_Nothing)
-        m_skinControl->update(skin->getRenderer(), this);
+    if(getStateChange() == StateChange_Nothing || !m_skinControl)
+        return;
+
+    // Allocate primitives on first render, mirroring Base::render, otherwise the
+    // skin renderer's update() draws with an empty primitive buffer.
+    if(getStateChange() & StateChange_Created)
+        m_skinControl->generate(skin->getRenderer(), this);
+
+    m_skinControl->update(skin->getRenderer(), this);
 }
 
 void ComboBox::layout(skin::Base *skin)

@@ -1,12 +1,14 @@
 #include "demo/treeControl.h"
+#include <gweni/controls/layout/layout.h>
 #include "gweni/controls/treeControl.h"
 
 namespace gweni
 {
 
-TreeControlDemo::TreeControlDemo(const String &name):
-    Base()
+GWENI_CONTROL_CONSTRUCTOR(TreeControlDemo)
 {
+    setLayout(new controls::VerticalLayout());
+
     {
         controls::TreeControl *ctrl=newChild<controls::TreeControl>();
         ctrl->addNode("Node One");

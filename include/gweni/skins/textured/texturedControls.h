@@ -3,6 +3,7 @@
 
 #include "gweni/skins/textured/texturedPrimitives.h"
 #include "gweni/skins/textured/texturedSkin.h"
+#include "gweni/skins/textured/tokyoNight.h"
 
 #include "gweni/controls/button.h"
 
@@ -74,100 +75,38 @@ template<typename _Type>
 class ButtonTemplate:public textured::ControlRegister<ButtonTemplate<_Type>>
 {
 public:
-    size_t requiredPrimitives() override { return 9; }
+    size_t requiredPrimitives() override { return 1; }
 
     using ThisClass=textured::ControlRegister<ButtonTemplate<_Type>>;
 
-    inline static constexpr std::string_view ButtonNormal="Button.Normal";
-    inline static constexpr std::string_view ButtonHover="Button.Hover";
-    inline static constexpr std::string_view ButtonDown="Button.Down";
-    inline static constexpr std::string_view ButtonDisabled="Button.Disabled";
-
-    inline static auto ControlButtonNormal=join<_Type::value, ButtonNormal>;
-    inline static auto ControlButtonHover=join<_Type::value, ButtonHover>;
-    inline static auto ControlButtonDown=join<_Type::value, ButtonDown>;
-    inline static auto ControlButtonDisabled=join<_Type::value, ButtonDisabled>;
-
     static void staticInit(TexturedSkin *skin)
     {
-        Normal=skin->getTextureEntryId(ControlButtonNormal);
-        Hover=skin->getTextureEntryId(ControlButtonHover);
-        Down=skin->getTextureEntryId(ControlButtonDown);
-        Disabled=skin->getTextureEntryId(ControlButtonDisabled);
-
-        NormalPrimitive.init(skin, Normal);
-        HoverPrimitive.init(skin, Hover);
-        DownPrimitive.init(skin, Down);
-        DisabledPrimitive.init(skin, Disabled);
-
         ThisClass::m_staticInit=true;
     }
 
     void update(renderer::Base *renderer, controls::Base *baseControl) override
     {
-        if(baseControl->getStateChange() != controls::StateChange_Nothing)
-        {
-            controls::Button *control=static_cast<controls::Button *>(baseControl);
-            BorderedPrimitive *primitive;
+        if(baseControl->getStateChange() == controls::StateChange_Nothing)
+            return;
 
-//            if(control->isDisabled())
-//                DisabledPrimitive.draw(renderer, m_primitives.data(), baseControl->getRenderBounds(), baseControl->getZIndex());
-//            else if(control->isDepressed())
-//                HoverPrimitive.draw(renderer, m_primitives.data(), baseControl->getRenderBounds(), baseControl->getZIndex());
-//            else if(control->isHovered())
-//                DownPrimitive.draw(renderer, m_primitives.data(), baseControl->getRenderBounds(), baseControl->getZIndex());
-//            else
-//                NormalPrimitive.draw(renderer, m_primitives.data(), baseControl->getRenderBounds(), baseControl->getZIndex());
+        controls::Button *control=static_cast<controls::Button *>(baseControl);
+        const tokyonight::Surface *surface;
 
-            if(control->isDisabled())
-                primitive=&DisabledPrimitive;
-            else if(control->isDepressed())
-                primitive=&HoverPrimitive;
-            else if(control->isHovered())
-                primitive=&DownPrimitive;
-            else
-                primitive=&NormalPrimitive;
+        if(control->isDisabled())
+            surface=&tokyonight::ButtonDisabled;
+        else if(control->isDepressed())
+            surface=&tokyonight::ButtonDown;
+        else if(control->isHovered())
+            surface=&tokyonight::ButtonHover;
+        else
+            surface=&tokyonight::ButtonNormal;
 
-            if(!control->hidden())
-                primitive->draw(renderer, ThisClass::m_primitives.data(), baseControl->getRenderBounds(), baseControl->getZIndex());
-
-            if((baseControl->getStateChange()&controls::StateChange_Visibility) ||
-                (baseControl->getStateChange()&controls::StateChange_Created))
-            {
-                primitive->show(renderer, ThisClass::m_primitives.data(), !control->hidden());
-                return;
-            }
-        }
+        tokyonight::paintSurface(renderer, ThisClass::m_primitives.data(), baseControl, *surface);
     }
-
-//    void remove(renderer::Base *renderer, controls::Base *baseControl)
-//    {
-//        releasePrimitives(renderer);
-//    }
 
     static constexpr std::string_view ButtonLabel="Button";
     static inline auto name=join<_Type::value, ButtonLabel>;
-
-private:
-    static size_t Normal;
-    static size_t Hover;
-    static size_t Down;
-    static size_t Disabled;
-
-    static BorderedPrimitive NormalPrimitive;
-    static BorderedPrimitive HoverPrimitive;
-    static BorderedPrimitive DownPrimitive;
-    static BorderedPrimitive DisabledPrimitive;
 };
-
-template<typename _Type> size_t ButtonTemplate<_Type>::Normal;
-template<typename _Type> size_t ButtonTemplate<_Type>::Hover;
-template<typename _Type> size_t ButtonTemplate<_Type>::Down;
-template<typename _Type> size_t ButtonTemplate<_Type>::Disabled;
-template<typename _Type> BorderedPrimitive ButtonTemplate<_Type>::NormalPrimitive;
-template<typename _Type> BorderedPrimitive ButtonTemplate<_Type>::HoverPrimitive;
-template<typename _Type> BorderedPrimitive ButtonTemplate<_Type>::DownPrimitive;
-template<typename _Type> BorderedPrimitive ButtonTemplate<_Type>::DisabledPrimitive;
 
 struct DefaultButton
 {
@@ -482,12 +421,81 @@ public:
     static BorderedPrimitive NormalPrimitive;
 };
 
+// Simple container/panel renderers: draw a single bordered background from the
+// skin atlas. One per control type so each self-registers under its own name.
+class PageControl:public textured::ControlRegister<PageControl>
+{
+public:
+    static void staticInit(TexturedSkin *skin);
+    size_t requiredPrimitives() override { return 9; }
+    void update(renderer::Base *renderer, controls::Base *baseControl) override;
+    inline static const std::string_view name="PageControl";
+    static size_t Background;
+    static BorderedPrimitive BackgroundPrimitive;
+};
+
+class TabControlInner:public textured::ControlRegister<TabControlInner>
+{
+public:
+    static void staticInit(TexturedSkin *skin);
+    size_t requiredPrimitives() override { return 9; }
+    void update(renderer::Base *renderer, controls::Base *baseControl) override;
+    inline static const std::string_view name="TabControlInner";
+    static size_t Background;
+    static BorderedPrimitive BackgroundPrimitive;
+};
+
+class CollapsibleList:public textured::ControlRegister<CollapsibleList>
+{
+public:
+    static void staticInit(TexturedSkin *skin);
+    size_t requiredPrimitives() override { return 9; }
+    void update(renderer::Base *renderer, controls::Base *baseControl) override;
+    inline static const std::string_view name="CollapsibleList";
+    static size_t Background;
+    static BorderedPrimitive BackgroundPrimitive;
+};
+
+class CategoryInner:public textured::ControlRegister<CategoryInner>
+{
+public:
+    static void staticInit(TexturedSkin *skin);
+    size_t requiredPrimitives() override { return 9; }
+    void update(renderer::Base *renderer, controls::Base *baseControl) override;
+    inline static const std::string_view name="CategoryInner";
+    static size_t Background;
+    static BorderedPrimitive BackgroundPrimitive;
+};
+
+// Renderers for controls that intentionally have no background (text labels,
+// layout/splitter/strip containers). They register and draw nothing, so they
+// don't trip the red "unskinned" fallback in the Base renderer.
+#define GWENI_TRANSPARENT_RENDERER(Class)                                      \
+class Class:public textured::ControlRegister<Class>                            \
+{                                                                              \
+public:                                                                        \
+    static void staticInit(TexturedSkin *) { m_staticInit=true; }              \
+    size_t requiredPrimitives() override { return 0; }                         \
+    void update(renderer::Base *, controls::Base *) override {}                \
+    inline static const std::string_view name=#Class;                          \
+};
+
+GWENI_TRANSPARENT_RENDERER(Label)
+GWENI_TRANSPARENT_RENDERER(Resizer)
+GWENI_TRANSPARENT_RENDERER(Table)
+GWENI_TRANSPARENT_RENDERER(TabStrip)
+GWENI_TRANSPARENT_RENDERER(VerticalScrollBar)
+GWENI_TRANSPARENT_RENDERER(HorizontalScrollBar)
+GWENI_TRANSPARENT_RENDERER(ScrollBarBar)
+#undef GWENI_TRANSPARENT_RENDERER
+
 class ProgressBar:public textured::ControlRegister<ProgressBar>
 {
 public:
     static void staticInit(TexturedSkin *skin);
 
-    size_t requiredPrimitives() override { return 9; }
+    // 9 for the back (track) + 9 for the front (fill).
+    size_t requiredPrimitives() override { return 18; }
 
     void generate(renderer::Base *renderer, controls::Base *baseControl) override;
     void update(renderer::Base *renderer, controls::Base *baseControl) override;
@@ -499,6 +507,7 @@ public:
     static size_t Front;
 
     static BorderedPrimitive BackgroundPrimitive;
+    static BorderedPrimitive FrontPrimitive;
 
 };
 
@@ -581,6 +590,8 @@ public:
 
     static size_t TrackV;
     static size_t TrackH;
+
+    static BorderedPrimitive TrackPrimitive;
 };
 
 class Shadow:public textured::ControlRegister<Shadow>
