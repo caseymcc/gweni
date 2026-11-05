@@ -16,6 +16,13 @@
  *    --trace            log each scripted input on stderr with what it hit
  *    --list             print the control demo names and exit
  *    --scenario <name>  per-control | resize | docked | scroll (see below)
+ *    --dump-bounds [<path>]
+ *                       print the laid-out control tree as text: one line per
+ *                       control, depth-first in child order, indented by depth,
+ *                       with its type, bounds, dock and size flags. No path
+ *                       writes to stdout; a path writes that file. Nothing
+ *                       pointer-, id- or time-derived is printed, so two runs
+ *                       of the same command give byte-identical listings.
  *
  *  Scripted input (repeatable, applied in the order written, and interleaved
  *  with --frames / --shot so one process run can capture a sequence):
@@ -45,6 +52,12 @@
  *                 non-zero unless the third shot is byte-identical to the first
  *    docked       the whole Demo (dock layout + status bar) at 1024x768
  *    scroll       the five overflowing demos, idle and after a scripted scroll
+ *
+ *  Every scenario (and --shot-all) takes a listing per shot when
+ *  --dump-bounds is on, named after that shot with a .txt extension, so the
+ *  shot and its listing sit side by side in --shot-dir - resize yields three
+ *  and per-control 24. A scenario names its own listings, so --dump-bounds
+ *  there takes no path.
  *
  *  All four, in the build container, from the repo root (resize's non-zero exit
  *  is its assertion, so it is reported rather than aborting the loop):
@@ -275,7 +288,75 @@ struct Session
     std::string label;                  // the control --stats lines name
     int frame=0;
     gweni::Point mouse=gweni::Point(-1, -1);
+    bool dumpBounds=false;              // --dump-bounds
+    bool dumpPerShot=false;             // one listing per shot, named after it
+    std::string dumpPath;               // --dump-bounds <path>; empty is stdout
 };
+
+//-----------------------------------------------------------------------------
+// --dump-bounds: the laid-out tree as text
+//-----------------------------------------------------------------------------
+
+// Base::getChildren() hands back the inner panel's children where there is one,
+// so a ScrollControl's rows appear directly under it rather than under a panel
+// row; that is the tree the layout code walks too.
+static void writeControlLine(std::ostream &out, gweni::controls::Base *control, int depth)
+{
+    const gweni::Rect &bounds=control->getBounds();
+    const gweni::SizeFlags flags=control->getSizeFlags();
+
+    out<<std::string(static_cast<size_t>(depth)*2, ' ')
+       <<control->getTypeName()
+       <<" bounds=("<<bounds.x<<", "<<bounds.y<<", "<<bounds.w<<", "<<bounds.h<<")"
+       <<" dock="<<gweni::getDockPositionName(control->getDock())
+       <<" size="<<gweni::sizeFlagName(flags.horizontal)
+       <<","<<gweni::sizeFlagName(flags.vertical)
+       <<"\n";
+
+    for(auto &&child : control->getChildren())
+        writeControlLine(out, child, depth+1);
+}
+
+static void writeBoundsListing(std::ostream &out, const Session &s)
+{
+    out<<"# control="<<s.label<<" size="<<s.size.x<<"x"<<s.size.y<<"\n";
+    writeControlLine(out, s.canvas, 0);
+}
+
+// The listing beside a shot: the same path with a .txt extension.
+static std::string boundsPathFor(const std::string &shotPath)
+{
+    const size_t dot=shotPath.rfind('.');
+    const size_t slash=shotPath.find_last_of('/');
+    if(dot != std::string::npos && (slash == std::string::npos || dot>slash))
+        return shotPath.substr(0, dot)+".txt";
+    return shotPath+".txt";
+}
+
+static bool dumpBoundsTo(Session &s, const std::string &path)
+{
+    if(path.empty())
+    {
+        writeBoundsListing(std::cout, s);
+        std::cout.flush();
+        return true;
+    }
+
+    if(!ensureDirectory(fs::path(path).parent_path()))
+        return false;
+
+    std::ofstream out(path, std::ios::binary|std::ios::trunc);
+    if(!out)
+    {
+        std::cerr<<"ControlTest: cannot write "<<path<<"\n";
+        return false;
+    }
+    writeBoundsListing(out, s);
+    out.close();
+
+    std::cout<<"wrote "<<path<<"\n";
+    return true;
+}
 
 static void renderFrames(Session &s, int count)
 {
@@ -302,6 +383,8 @@ static void renderFrames(Session &s, int count)
 
 static bool shoot(Session &s, const std::string &path)
 {
+    if(s.dumpBounds && s.dumpPerShot && !dumpBoundsTo(s, boundsPathFor(path)))
+        return false;
     if(!s.writePng)
         return true;
     if(!ensureDirectory(fs::path(path).parent_path()))
@@ -686,6 +769,8 @@ int main(int argc, char *argv[])
     bool stats=false;
     bool traceInput=false;
     bool chosenControl=false;
+    bool dumpBounds=false;
+    std::string dumpPath;
     Scenario scenario=Scenario::None;
     std::vector<Step> steps;
     bool scripted=false;    // any scripted input switch turns --frames/--shot into steps
@@ -715,6 +800,14 @@ int main(int argc, char *argv[])
         else if(arg == "--stats") stats=true;
         else if(arg == "--trace") traceInput=true;
         else if(arg == "--list"){ printControlNames(std::cout); return EXIT_SUCCESS; }
+        else if(arg == "--dump-bounds")
+        {
+            dumpBounds=true;
+            // The path is optional, so only a following word that is not itself
+            // a switch is one.
+            if(hasValue && std::strncmp(argv[i+1], "--", 2) != 0)
+                dumpPath=argv[++i];
+        }
         else if(arg == "--key" && hasValue)
         {
             scripted=true;
@@ -795,9 +888,20 @@ int main(int argc, char *argv[])
         return EXIT_FAILURE;
     }
 
+    // A run that shoots more than once names its listings after its shots, so
+    // there is nowhere for one explicit path to go.
+    const bool dumpPerShot=shotAll || scenario != Scenario::None;
+    if(dumpBounds && dumpPerShot && !dumpPath.empty())
+    {
+        std::cerr<<"ControlTest: --dump-bounds takes no path here;"
+                   " a scenario names its listings after its shots\n";
+        return EXIT_FAILURE;
+    }
+
     // --stats on its own still renders offscreen; it just keeps no PNG.
     const bool writingPng=shotAll || !shotPath.empty() || scenario != Scenario::None;
-    const bool capturing=writingPng || stats || scripted || scenario != Scenario::None;
+    const bool capturing=writingPng || stats || scripted || dumpBounds
+        || scenario != Scenario::None;
 
     // The two fixed-size scenarios say what they render at, so start there
     // rather than resizing away from --size on the first frame.
@@ -899,6 +1003,9 @@ int main(int argc, char *argv[])
         session.trace=traceInput;
         session.writePng=writingPng;
         session.frames=frames;
+        session.dumpBounds=dumpBounds;
+        session.dumpPerShot=dumpPerShot;
+        session.dumpPath=dumpPath;
 
         bool ok=true;
         switch(scenario)
@@ -943,6 +1050,8 @@ int main(int argc, char *argv[])
                     if(writingPng)
                         ok=shoot(session, shotPathIn(shotDir, shotPath));
                 }
+                if(ok && dumpBounds && !dumpBoundsTo(session, dumpPath))
+                    ok=false;
                 dropControl(session, control);
             }
             break;
