@@ -66,27 +66,32 @@ bool loadJpeg(ImageWrapper image, const char *filename)
     
     jpeg_read_header(&jpegDecompress, TRUE);
     jpeg_start_decompress(&jpegDecompress);
-  
+
     Format format=getFormat(jpegDecompress.out_color_space);
     Depth depth=Depth::Bit8;
 
-    if(!image.resize(format, depth, jpegDecompress.output_width, jpegDecompress.output_height))
-        return false;
-        
-    size_t row_stride=image.stride()*sizeOfPixel(format, depth);
-    uint8_t *bufferLinePos=image.data();
+    bool success=image.resize(format, depth, jpegDecompress.output_width, jpegDecompress.output_height);
 
-    while (jpegDecompress.output_scanline < jpegDecompress.output_height)
+    if(success)
     {
-        jpeg_read_scanlines(&jpegDecompress, (JSAMPARRAY)&bufferLinePos, 1);
-        bufferLinePos+=row_stride;
-    }
+        size_t row_stride=image.stride()*sizeOfPixel(format, depth);
+        uint8_t *bufferLinePos=image.data();
 
-    jpeg_finish_decompress(&jpegDecompress);
+        while(jpegDecompress.output_scanline < jpegDecompress.output_height)
+        {
+            jpeg_read_scanlines(&jpegDecompress, (JSAMPARRAY)&bufferLinePos, 1);
+            bufferLinePos+=row_stride;
+        }
+
+        jpeg_finish_decompress(&jpegDecompress);
+    }
+    else
+        jpeg_abort_decompress(&jpegDecompress);
+
     jpeg_destroy_decompress(&jpegDecompress);
 
     fclose(file);
-    return true;
+    return success;
 }
 
 bool saveJpeg(ImageWrapper image, const char *filename)
@@ -126,7 +131,7 @@ bool saveJpeg(ImageWrapper image, const char *filename)
     jpeg_destroy_compress(&jpegCompress);
 
     fclose(file);
-    return false;
+    return true;
 }
 
 }//namespace cvlib

@@ -114,6 +114,7 @@ bool savePpm(ImageWrapper image, const char *filename)
             writePpmGreyScale32f(image, file);
             success=true;
         }
+		break;
 	case Format::RGB:
         if(image.depth()==Depth::Bit8)
         {
