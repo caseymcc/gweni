@@ -323,6 +323,15 @@ void Text::splitWords(const gweni::String &s, std::vector<gweni::String> &elems)
         gweni::Point p=getSkin()->getRenderer()->measureText(getFont(), str);
         if(p.x > w)
         {
+            if(str.size() == 1)
+            {
+                // A single character already overflows the available width;
+                // retrying it would never make progress.
+                elems.push_back(str);
+                str.clear();
+                continue;
+            }
+
             //split words
             str.pop_back();
             elems.push_back(str);
