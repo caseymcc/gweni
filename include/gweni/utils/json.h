@@ -17,7 +17,7 @@ inline std::string returnValue<std::string>(const Value &value)
 {
     if(!value.IsString())
     {
-        std::cout<<"is not a string\n";
+        std::cerr<<"is not a string\n";
         return "";
     }
     return value.GetString(); 
@@ -28,7 +28,7 @@ inline size_t returnValue<size_t>(const Value &value)
 { 
     if(!value.IsNumber())
     {
-        std::cout<<"is not a number\n";
+        std::cerr<<"is not a number\n";
         return 0;
     }
     return value.GetInt(); 
@@ -39,7 +39,7 @@ inline uint8_t returnValue<uint8_t>(const Value &value)
 { 
     if(!value.IsUint())
     {
-        std::cout<<"is not an unsigned number\n";
+        std::cerr<<"is not an unsigned number\n";
         return 0;
     }
     return (uint8_t)value.GetUint(); 
@@ -50,7 +50,7 @@ inline float returnValue<float>(const Value &value)
 { 
     if(!value.IsNumber())
     {
-        std::cout<<"is not a number\n";
+        std::cerr<<"is not a number\n";
         return 0;
     }
     return value.GetFloat(); 
@@ -61,7 +61,7 @@ inline double returnValue<double>(const Value &value)
 { 
     if(!value.IsNumber())
     {
-        std::cout<<"is not a number\n";
+        std::cerr<<"is not a number\n";
         return 0;
     }
     return value.GetDouble(); 
@@ -82,7 +82,7 @@ _Type getValue(const Value &value, std::string name)
     {
         _Type retValue;
 
-        std::cout<<"\""<<name<<"\" member missing\n";
+        std::cerr<<"\""<<name<<"\" member missing\n";
         return retValue;
     }
 
@@ -96,7 +96,7 @@ std::vector<_Type> getVector(const Value &value, std::string name)
 
     if(!value.HasMember(name.c_str()))
     {
-        std::cout<<"\""<<name<<"\" member missing\n";
+        std::cerr<<"\""<<name<<"\" member missing\n";
         return retValues;
     }
 
@@ -104,7 +104,7 @@ std::vector<_Type> getVector(const Value &value, std::string name)
 
     if(!nameValue.IsArray())
     {
-        std::cout<<"\""<<name<<"\" member is not an array\n";
+        std::cerr<<"\""<<name<<"\" member is not an array\n";
         return retValues;
     }
 

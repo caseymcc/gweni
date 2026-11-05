@@ -274,7 +274,7 @@ bool TexturedSkin::loadConfig(std::string configFileName)
     {
         if(!fs::exists(configFileName.c_str()))
         {
-            std::cout<<"Unable to locate config file "<<configFileName<<"\n";
+            std::cerr<<"Unable to locate config file "<<configFileName<<"\n";
             return false;
         }
 
@@ -299,7 +299,7 @@ bool TexturedSkin::loadConfig(std::string configFileName)
     {
         json::OffsetInfo offsetInfo=json::getOffsetInfo(fileBuffer, jsonDoc.GetErrorOffset());
 
-        std::cout<<"Skin parse error(offset "<<offsetInfo.line<<", "<<offsetInfo.pos<<"): "<<json::GetParseError_En(jsonDoc.GetParseError())<<"\n";
+        std::cerr<<"Skin parse error(offset "<<offsetInfo.line<<", "<<offsetInfo.pos<<"): "<<json::GetParseError_En(jsonDoc.GetParseError())<<"\n";
         return false;
     }
 
