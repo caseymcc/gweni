@@ -1701,7 +1701,7 @@ void OpenGLCore::renderText(size_t textId, const gweni::Font &font, gweni::Point
         ::printf("[mirror] textId=%zu \"%s\" chars=%zu slots=%zu ftgl vertices=%zu indices=%zu\n",
             textId, text.c_str(), text.length(), textPrimitiveIds.size(),
             vertexes->size, indexes->size);
-        ::printf("[mirror]   pos=(%d,%d) z=%d atlas=%ux%u depth=%zu mirror verts=%zu idx=%zu\n",
+        ::printf("[mirror]   pos=(%d,%d) z=%d atlas=%zux%zu depth=%zu mirror verts=%zu idx=%zu\n",
             pos.x, pos.y, zIndex, fontData.atlas->width, fontData.atlas->height,
             fontData.atlas->depth, m_textVertexes.size(), m_textIndexes.size());
         for(size_t i=0; i<textPrimitiveIds.size(); ++i)
@@ -1892,7 +1892,7 @@ gweni::Point OpenGLCore::measureText(const gweni::Font &font, const gweni::Strin
         }
         ::printf("[measure]   => sz.x=%d sz.y=%d (max x=%f, max y=%f)\n",
             sz.x, sz.y, (double)x, (double)y);
-        ::printf("[measure]   atlas %ux%u depth=%zu used=%zu\n",
+        ::printf("[measure]   atlas %zux%zu depth=%zu used=%zu\n",
             fontData.atlas->width, fontData.atlas->height, fontData.atlas->depth,
             fontData.atlas->used);
         for(size_t i=0; i<text.length(); ++i)
