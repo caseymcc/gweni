@@ -158,24 +158,28 @@ size_t sizeOfImageDepth(Depth depth)
 
 size_t sizeOfPixel(Format format, Depth depth)
 {
+    //every Format is listed so -Wswitch catches a newly added one instead of it silently
+    //returning zero, which made libjpeg abort on a BGRA image
     switch(format)
     {
+    case Format::Unknown:
+        return 0;
     case Format::Binary:
         return sizeOfImageDepth<Format::Binary>(depth);
-        break;
     case Format::GreyScale:
         return sizeOfImageDepth<Format::GreyScale>(depth);
-        break;
     case Format::RA:
         return sizeOfImageDepth<Format::RA>(depth);
-        break;
     case Format::RGB:
         return sizeOfImageDepth<Format::RGB>(depth);
-        break;
     case Format::RGBA:
         return sizeOfImageDepth<Format::RGBA>(depth);
-        break;
+    case Format::BGRA:
+        return sizeOfImageDepth<Format::BGRA>(depth);
+    case Format::YUV:
+        return sizeOfImageDepth<Format::YUV>(depth);
     }
+    //unreachable for any valid Format, kept for -Wreturn-type
     return 0;
 }
 
