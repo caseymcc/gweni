@@ -365,6 +365,11 @@ private:
     bool m_uploadStats=false;
     FrameStats m_frameStats;
 
+    //! GWENI_TEXT_DEBUG=<substring>: dump measureText metrics and the text mirror for
+    //! strings containing <substring> (off unless the variable is set).
+    const char *m_textDebug=nullptr;
+    bool textDebugMatches(const gweni::String &text) const;
+
     glm::mat4 m_projectionMatrix;
 
     uint32_t m_program;

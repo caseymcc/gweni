@@ -38,11 +38,6 @@ texture_font_load_face(texture_font_t *self, float size,
         FT_Library *library, FT_Face *face)
 {
     FT_Error error;
-    FT_Matrix matrix = {
-        (int)((1.0/HRES) * 0x10000L),
-        (int)((0.0)      * 0x10000L),
-        (int)((0.0)      * 0x10000L),
-        (int)((1.0)      * 0x10000L)};
 
     assert(library);
     assert(size);
@@ -81,17 +76,23 @@ texture_font_load_face(texture_font_t *self, float size,
         goto cleanup_face;
     }
 
-    /* Set char size */
-    error = FT_Set_Char_Size(*face, (int)(size * HRES), 0, DPI * HRES, DPI);
+    /* Set char size.
+     *
+     * Upstream oversamples horizontally (resolution DPI*HRES) and undoes it with an
+     * FT_Set_Transform matrix of 1/HRES in x, to get sub-pixel-accurate advances.
+     * FreeType >= 2.14 rejects that matrix as degenerate (it ignores any transform
+     * whose scale is 1/32 or smaller), so the oversampling was left uncompensated and
+     * every glyph came out HRES times too wide. Rasterise at the real resolution
+     * instead; `size * HRES` is still the 26.6 fixed-point char width FreeType wants,
+     * and the `/HRESf` divisions below then convert 26.6 back to pixels.
+     */
+    error = FT_Set_Char_Size(*face, (int)(size * HRES), 0, DPI, DPI);
 
     if(error) {
         fprintf(stderr, "FT_Error (line %d, code 0x%02x) : %s\n",
                 __LINE__, FT_Errors[error].code, FT_Errors[error].message);
         goto cleanup_face;
     }
-
-    /* Set transform matrix */
-    FT_Set_Transform(*face, &matrix, NULL);
 
     return 1;
 
@@ -192,7 +193,8 @@ texture_font_generate_kerning( texture_font_t *self,
             //       glyph_index, glyph_index, kerning.x);
             if( kerning.x )
             {
-                kerning_t k = {prev_glyph->codepoint, kerning.x / (float)(HRESf*HRESf)};
+                //26.6 fixed point now that the face is no longer HRES-oversampled in x
+                kerning_t k = {prev_glyph->codepoint, kerning.x / HRESf};
                 vector_push_back( glyph->kerning, &k );
             }
         }

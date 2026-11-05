@@ -405,6 +405,16 @@ OpenGLCore::OpenGLCore(ResourcePaths &paths, const Rect &viewRect)
     m_clippingBoxes.reserve(minClippingSize);
 
     m_uploadStats=(getenv("GWENI_UPLOAD_STATS") != nullptr);
+    m_textDebug=getenv("GWENI_TEXT_DEBUG");
+}
+
+bool OpenGLCore::textDebugMatches(const gweni::String &text) const
+{
+    if(m_textDebug == nullptr)
+        return false;
+    if(m_textDebug[0] == '\0')
+        return true;
+    return text.find(m_textDebug) != gweni::String::npos;
 }
 
 OpenGLCore::~OpenGLCore()
@@ -1526,8 +1536,6 @@ void OpenGLCore::releaseTextPrimitive(size_t primitiveId)
 void OpenGLCore::renderText(size_t textId, const gweni::Font &font, gweni::Point pos, int zIndex,
     const gweni::String &text)
 {
-//    return;
-
     if(!ensureFont(font))
         return;
 
@@ -1577,9 +1585,6 @@ void OpenGLCore::renderText(size_t textId, const gweni::Font &font, gweni::Point
 //        m_zIndex++;
         return; //string hasn't changed
     }
-
-    if(text == "CollapsibleList")
-        textId=textId;
 
     m_textStrings[textId]=text;
     m_textPosition[textId]=pos;
@@ -1689,6 +1694,51 @@ void OpenGLCore::renderText(size_t textId, const gweni::Font &font, gweni::Point
 
         zOffset+=zDelta;
 //        m_zIndex++;
+    }
+
+    if(textDebugMatches(text))
+    {
+        ::printf("[mirror] textId=%zu \"%s\" chars=%zu slots=%zu ftgl vertices=%zu indices=%zu\n",
+            textId, text.c_str(), text.length(), textPrimitiveIds.size(),
+            vertexes->size, indexes->size);
+        ::printf("[mirror]   pos=(%d,%d) z=%d atlas=%ux%u depth=%zu mirror verts=%zu idx=%zu\n",
+            pos.x, pos.y, zIndex, fontData.atlas->width, fontData.atlas->height,
+            fontData.atlas->depth, m_textVertexes.size(), m_textIndexes.size());
+        for(size_t i=0; i<textPrimitiveIds.size(); ++i)
+        {
+            size_t slot=textPrimitiveIds[i];
+            size_t vertIndex=slot*4;
+            size_t index=slot*6;
+            float minX=m_textVertexes[vertIndex].x, maxX=minX;
+            float minY=m_textVertexes[vertIndex].y, maxY=minY;
+
+            ::printf("[mirror]   slot %zu (glyph %zu, char '%c') verts %zu..%zu idx %zu..%zu\n",
+                slot, i, i<text.length()?text[i]:'?', vertIndex, vertIndex+3, index, index+5);
+            for(size_t j=0; j<4; ++j)
+            {
+                const ftgl::glyph_vertex_t &v=m_textVertexes[vertIndex+j];
+                minX=std::min(minX, v.x); maxX=std::max(maxX, v.x);
+                minY=std::min(minY, v.y); maxY=std::max(maxY, v.y);
+                ::printf("[mirror]     v%zu x=%9.3f y=%9.3f z=%9.3f u=%8.5f v=%8.5f "
+                    "rgba=%.2f,%.2f,%.2f,%.2f shift=%.4f gamma=%.2f\n",
+                    j, (double)v.x, (double)v.y, (double)v.z, (double)v.u, (double)v.v,
+                    (double)v.r, (double)v.g, (double)v.b, (double)v.a,
+                    (double)v.shift, (double)v.gamma);
+            }
+            bool inSlot=true;
+            ::printf("[mirror]     idx =");
+            for(size_t j=0; j<6; ++j)
+            {
+                uint16_t e=m_textIndexes[index+j];
+                if((e < vertIndex) || (e > vertIndex+3))
+                    inSlot=false;
+                ::printf(" %u", (unsigned)e);
+            }
+            ::printf("  (all inside slot: %s)\n", inSlot?"yes":"NO");
+            ::printf("[mirror]     box w=%.3f h=%.3f  x=[%.3f..%.3f] y=[%.3f..%.3f]\n",
+                (double)(maxX-minX), (double)(maxY-minY),
+                (double)minX, (double)maxX, (double)minY, (double)maxY);
+        }
     }
 //    m_zIndex++;
 //    //cant use, need to move vertexes to main vertex buffer
@@ -1816,6 +1866,51 @@ gweni::Point OpenGLCore::measureText(const gweni::Font &font, const gweni::Strin
 
     sz.x=(int)x;
     sz.y=(int)ceil(fontData.markup.font->height);
+
+    if(textDebugMatches(text))
+    {
+        ::printf("[measure] \"%s\" len=%zu font.size=%f scale=%f c_pointsToPixels=%f\n",
+            text.c_str(), text.length(), (double)font.size, (double)scale(),
+            (double)c_pointsToPixels);
+        ::printf("[measure]   markup.size=%f font->size=%f height=%f ascender=%f descender=%f\n",
+            (double)fontData.markup.size, (double)fontData.markup.font->size,
+            (double)fontData.markup.font->height, (double)fontData.markup.font->ascender,
+            (double)fontData.markup.font->descender);
+        ::printf("[measure]   vertices->size=%zu item_size=%zu capacity=%zu floats_available=%zu "
+            "floats_read_max=%zu\n",
+            vertices->size, vertices->item_size, vertices->capacity,
+            (vertices->size*vertices->item_size)/sizeof(float),
+            vertices->size*11);
+        size_t dumpIndex=0;
+        for(size_t i=0; i<vertices->size; ++i)
+        {
+            ::printf("[measure]   v%-3zu x=%10.3f y=%10.3f z=%6.2f u=%8.5f v=%8.5f\n", i,
+                (double)verticesBuffer[dumpIndex], (double)verticesBuffer[dumpIndex+1],
+                (double)verticesBuffer[dumpIndex+2], (double)verticesBuffer[dumpIndex+3],
+                (double)verticesBuffer[dumpIndex+4]);
+            dumpIndex+=11;
+        }
+        ::printf("[measure]   => sz.x=%d sz.y=%d (max x=%f, max y=%f)\n",
+            sz.x, sz.y, (double)x, (double)y);
+        ::printf("[measure]   atlas %ux%u depth=%zu used=%zu\n",
+            fontData.atlas->width, fontData.atlas->height, fontData.atlas->depth,
+            fontData.atlas->used);
+        for(size_t i=0; i<text.length(); ++i)
+        {
+            char cp[2]={text[i], '\0'};
+            ftgl::texture_glyph_t *g=ftgl::texture_font_find_glyph(fontData.markup.font, cp);
+            if(g == nullptr)
+            {
+                ::printf("[measure]   glyph '%c' NOT CACHED\n", cp[0]);
+                continue;
+            }
+            ::printf("[measure]   glyph '%c' w=%zu h=%zu off=(%d,%d) advance=(%.3f,%.3f) "
+                "st=(%.5f,%.5f)-(%.5f,%.5f)\n",
+                cp[0], g->width, g->height, g->offset_x, g->offset_y,
+                (double)g->advance_x, (double)g->advance_y,
+                (double)g->s0, (double)g->t0, (double)g->s1, (double)g->t1);
+        }
+    }
 
     text_buffer_delete(textBuffer);
 

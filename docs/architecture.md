@@ -117,6 +117,11 @@ What exists today (the foundation) and what's still aspirational:
   change, so a control that redraws itself identically (the skin re-emits unchanged
   controls every frame) costs nothing. `GWENI_UPLOAD_STATS=1` prints the per-frame
   upload call/byte counts.
+- **Text-path diagnostics.** `GWENI_TEXT_DEBUG=<substring>` (empty matches everything)
+  makes `measureText` print its freetype-gl vertex run, the resolved
+  `texture_glyph_t` metrics and the size it returns, and `renderText` dump the
+  `m_textVertexes`/`m_textIndexes` slots it wrote for each matching string. Off unless
+  the variable is set; it is verbose (tens of lines per string).
 - Window resize (`renderer->setViewRect()` + `canvas->setSize()`), see
   `examples/openglcore/openglcore.cpp`.
 
