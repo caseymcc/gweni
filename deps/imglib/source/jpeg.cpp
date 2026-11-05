@@ -84,10 +84,12 @@ bool loadJpeg(ImageWrapper image, const char *filename)
     jpegDecompress.err=jpeg_std_error(&jerr.pub);
     jerr.pub.error_exit=jpegErrorExit;
 
-    jpeg_create_decompress(&jpegDecompress);
-
+    //setjmp before create: jpeg_create_decompress can itself raise JERR_BAD_LIB_VERSION,
+    //JERR_BAD_STRUCT_SIZE or an out-of-memory error, which error_exit turns into a longjmp
     if(setjmp(jerr.jmpBuffer)==0)
     {
+        jpeg_create_decompress(&jpegDecompress);
+
         jpeg_stdio_src(&jpegDecompress, file);
         jpeg_read_header(&jpegDecompress, TRUE);
 
@@ -150,10 +152,12 @@ bool saveJpeg(ImageWrapper image, const char *filename)
     jpegCompress.err=jpeg_std_error(&jerr.pub);
     jerr.pub.error_exit=jpegErrorExit;
 
-    jpeg_create_compress(&jpegCompress);
-
+    //setjmp before create: jpeg_create_compress can itself raise JERR_BAD_LIB_VERSION,
+    //JERR_BAD_STRUCT_SIZE or an out-of-memory error, which error_exit turns into a longjmp
     if(setjmp(jerr.jmpBuffer)==0)
     {
+        jpeg_create_compress(&jpegCompress);
+
         jpeg_stdio_dest(&jpegCompress, file);
 
         jpegCompress.image_width=image.width();
