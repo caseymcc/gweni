@@ -41,6 +41,12 @@ target_link_libraries(ControlTest
     glfw
 )
 
+if(UNIX AND NOT APPLE)
+    # Surfaceless EGL is the offscreen path used when there is no display at all.
+    find_package(OpenGL REQUIRED COMPONENTS EGL)
+    target_link_libraries(ControlTest OpenGL::EGL)
+endif()
+
 if(APPLE AND APP_BUNDLE)
     # make MacOS bundle
     set_target_properties(${example_name} PROPERTIES
