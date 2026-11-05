@@ -13,6 +13,8 @@
 #include <algorithm>
 #include <cstdint>
 #include <cstdlib>
+#include <string>
+#include <utility>
 
 #include <freetype-gl/freetype-gl.h>
 #include <freetype-gl/markup.h>
@@ -340,10 +342,39 @@ private:
     std::vector<Vertex> m_vertexes; //argue about vertices all you want
     std::vector<Box> m_clippingBoxes;
 
-    ObjectIdBank<size_t, std::numeric_limits<size_t>::max()> m_textIds;
-    std::vector<std::vector<size_t>> m_textPrimitiveIds;
-    std::vector<std::string> m_textStrings;
-    std::vector<gweni::Point> m_textPosition;
+    //! One contiguous run of glyph quads in the text mirrors, owned by one text id.
+    //
+    //! A run owns the glyph slots [start, start+capacity): vertexes
+    //! [start*4, (start+capacity)*4) and indexes [start*6, (start+capacity)*6).
+    //! Only the first `glyphs` of them are in use; the tail, and the whole run
+    //! while it is hidden, carries degenerate (all-zero) indexes so it draws
+    //! nothing. One run is therefore one dirty range per buffer for the upload.
+    struct TextRun
+    {
+        size_t start=0;
+        size_t capacity=0;
+        size_t glyphs=0;
+        gweni::Point position{0, 0};
+        bool hidden=false;
+        std::string text;
+    };
+
+    //! Gives the run at least `glyphs` slots, keeping its current ones when they
+    //! already fit: best fit over the free list, splitting the remainder off, and
+    //! bump-allocating past the end of the mirrors when nothing fits.
+    void allocateTextRun(TextRun &run, size_t glyphs);
+    //! Returns the run's slots to the free list, leaving them drawing nothing.
+    void freeTextRun(TextRun &run);
+    void addFreeTextRun(size_t start, size_t capacity);
+    //! Grows the text mirrors so the first `glyphSlots` glyph slots exist.
+    void ensureTextSlots(size_t glyphSlots);
+    //! (Re)writes the run's whole index range and marks it dirty.
+    void writeTextIndexes(const TextRun &run);
+    void markTextVertexes(const TextRun &run);
+
+    std::vector<TextRun> m_textRuns;
+    std::vector<std::pair<size_t, size_t>> m_freeTextRuns; //!< (capacity, start), by capacity
+    size_t m_textSlotsUsed=0; //!< glyph slots handed out of the mirrors so far
     std::vector<uint16_t> m_textIndexes;
     std::vector<ftgl::glyph_vertex_t> m_textVertexes;
 

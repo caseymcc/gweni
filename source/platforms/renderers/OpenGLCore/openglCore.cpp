@@ -453,10 +453,9 @@ void OpenGLCore::init()
     glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(glyph_vertex_t), (GLvoid*)(offsetof(glyph_vertex_t, u)));
     glEnableVertexAttribArray(2); // Attrib '2' is color
     glVertexAttribPointer(2, 4, GL_FLOAT, GL_FALSE, sizeof(glyph_vertex_t), (GLvoid*)(offsetof(glyph_vertex_t, r)));
-    glEnableVertexAttribArray(3); // Attrib '3' is shift
-    glVertexAttribPointer(3, 1, GL_FLOAT, GL_FALSE, sizeof(glyph_vertex_t), (GLvoid*)(offsetof(glyph_vertex_t, shift)));
-    glEnableVertexAttribArray(4); // Attrib '4' is gamma
-    glVertexAttribPointer(4, 1, GL_FLOAT, GL_FALSE, sizeof(glyph_vertex_t), (GLvoid*)(offsetof(glyph_vertex_t, gamma)));
+    glEnableVertexAttribArray(3); // Attrib '3' is gamma
+    glVertexAttribPointer(3, 1, GL_FLOAT, GL_FALSE, sizeof(glyph_vertex_t), (GLvoid*)(offsetof(glyph_vertex_t, gamma)));
+    // freetype-gl's subpixel `shift` is not read: the fragment shader samples one channel.
 
     glBindVertexArray(0);
 
@@ -634,35 +633,21 @@ void main()
 layout (location = 0) in vec3 vertPosition;
 layout (location = 1) in vec2 vertTexCoord;
 layout (location = 2) in vec4 vertColor;
-layout (location = 3) in float vertShift;
-layout (location = 4) in float vertGamma;
+layout (location = 3) in float vertGamma;
 
 uniform mat4 projection;
 
 out vec2 texCoord;
 out vec4 color;
-out float shift;
 out float gamma;
-flat out int draw;
 
 void main()
 {
     texCoord=vertTexCoord;
     color=vertColor;
-    shift=vertShift;
     gamma=vertGamma;
 
-    if(vertPosition.z < 0.0f)
-    {
-        draw=0;
-        gl_Position = vec4(0.0f, 0.0f, 0.0f, 1.0f);
-    }
-    else
-    {
-        draw=1;
-        gl_Position = projection * vec4(float(vertPosition.x), float(vertPosition.y), float(vertPosition.z)+shift, 1.0f);
-    }
-//    gl_Position = projection * vec4(float(vertPosition.x), float(vertPosition.y), 1000.0f, 1.0f);
+    gl_Position = projection * vec4(vertPosition, 1.0f);
 }
     )";
 
@@ -673,19 +658,14 @@ out vec4 FragColor;
 
 in vec2 texCoord;
 in vec4 color;
-in float shift;
 in float gamma;
-flat in int draw;
 
 uniform sampler2D texture1;
 void main()
 {
     float a = texture2D(texture1, texCoord).r;
 
-    if(draw != 0)
-        FragColor = color * pow( a, 1.0/gamma );
-    else
-        discard;
+    FragColor = color * pow( a, 1.0/gamma );
 }
     )";
 
@@ -1447,36 +1427,136 @@ gweni::Color OpenGLCore::pixelColor(const gweni::Texture &texture, unsigned int 
     return gweni::Color(pPixel[0], pPixel[1], pPixel[2], pPixel[3]);
 }
 
+void OpenGLCore::ensureTextSlots(size_t glyphSlots)
+{
+    if(m_textVertexes.size() < glyphSlots*4)
+        m_textVertexes.resize(glyphSlots*4);
+    if(m_textIndexes.size() < glyphSlots*6)
+        m_textIndexes.resize(glyphSlots*6);
+}
+
+void OpenGLCore::addFreeTextRun(size_t start, size_t capacity)
+{
+    if(capacity == 0)
+        return;
+
+    const std::pair<size_t, size_t> block(capacity, start);
+
+    m_freeTextRuns.insert(
+        std::lower_bound(m_freeTextRuns.begin(), m_freeTextRuns.end(), block), block);
+}
+
+void OpenGLCore::freeTextRun(TextRun &run)
+{
+    if(run.capacity == 0)
+        return;
+
+    // Blank the whole run before handing it back: a freed run must draw nothing
+    // until somebody allocates its slots again.
+    run.glyphs=0;
+    writeTextIndexes(run);
+    addFreeTextRun(run.start, run.capacity);
+
+    run.start=0;
+    run.capacity=0;
+}
+
+void OpenGLCore::allocateTextRun(TextRun &run, size_t glyphs)
+{
+    if(run.capacity >= glyphs)
+    {
+        // Keeps the run where it is; the tail past `glyphs` is blanked by
+        // writeTextIndexes, so a string that shrinks leaves no ghost glyphs.
+        run.glyphs=glyphs;
+        return;
+    }
+
+    freeTextRun(run);
+
+    //best fit: the smallest free run that holds the string, split if it is larger
+    const std::pair<size_t, size_t> wanted(glyphs, 0);
+    auto it=std::lower_bound(m_freeTextRuns.begin(), m_freeTextRuns.end(), wanted);
+
+    if(it != m_freeTextRuns.end())
+    {
+        run.start=it->second;
+        run.capacity=it->first;
+        m_freeTextRuns.erase(it);
+
+        if(run.capacity > glyphs)
+        {
+            addFreeTextRun(run.start+glyphs, run.capacity-glyphs);
+            run.capacity=glyphs;
+        }
+    }
+    else
+    {
+        run.start=m_textSlotsUsed;
+        run.capacity=glyphs;
+        m_textSlotsUsed+=glyphs;
+    }
+
+    run.glyphs=glyphs;
+    ensureTextSlots(run.start+run.capacity);
+}
+
+void OpenGLCore::writeTextIndexes(const TextRun &run)
+{
+    if(run.capacity == 0)
+        return;
+
+    static const uint16_t c_quad[6]={ 0, 1, 2, 0, 2, 3 };
+
+    for(size_t i=0; i<run.capacity; ++i)
+    {
+        const size_t slot=run.start+i;
+        uint16_t *indexes=&m_textIndexes[slot*6];
+
+        if(run.hidden || (i >= run.glyphs))
+        {
+            // Degenerate triangles: every index the same vertex, so the slot
+            // rasterises nothing whatever its vertices still hold. This is what
+            // hides a run and what keeps a freed or over-long run off the screen.
+            for(size_t j=0; j<6; ++j)
+                indexes[j]=0;
+        }
+        else
+        {
+            const uint16_t base=static_cast<uint16_t>(slot*4);
+
+            for(size_t j=0; j<6; ++j)
+                indexes[j]=static_cast<uint16_t>(base+c_quad[j]);
+        }
+
+        m_dirtyTextIndexSlots.mark(slot);
+    }
+}
+
+void OpenGLCore::markTextVertexes(const TextRun &run)
+{
+    for(size_t i=0; i<run.glyphs; ++i)
+        m_dirtyTextVertexSlots.mark(run.start+i);
+}
+
 void OpenGLCore::generateTextPrimitive(size_t &primitiveId)
 {
     primitiveId=getTextId(nullptr);
 
-    if(m_textPrimitiveIds.size() < primitiveId+1)
-    {
-        m_textPrimitiveIds.resize(primitiveId+1);
-        m_textStrings.resize(primitiveId+1);
-        m_textPosition.resize(primitiveId+1);
-    }
+    if(m_textRuns.size() < primitiveId+1)
+        m_textRuns.resize(primitiveId+1);
 }
 
 void OpenGLCore::releaseTextPrimitive(size_t primitiveId)
 {
-    hideText(primitiveId);
-
-    // The logical text id and the per-glyph slots are separate banks. Returning
-    // only the former left the glyph slots leaked and m_textStrings stale, so a
-    // reused text id whose string matched the dead control's took renderText's
-    // "string hasn't changed" path and inherited its hidden glyphs.
-    if(primitiveId < m_textPrimitiveIds.size())
+    if(primitiveId < m_textRuns.size())
     {
-        std::vector<size_t> &textPrimitiveIds=m_textPrimitiveIds[primitiveId];
+        TextRun &run=m_textRuns[primitiveId];
 
-        for(size_t i=0; i<textPrimitiveIds.size(); ++i)
-            m_textIds.releaseId(textPrimitiveIds[i]);
-
-        textPrimitiveIds.clear();
-        m_textStrings[primitiveId].clear();
-        m_textPosition[primitiveId]=gweni::Point(0, 0);
+        // The run goes back on the free list and the bookkeeping is reset, so a
+        // reused text id cannot take renderText's "string hasn't changed" path
+        // and inherit the dead control's glyphs.
+        freeTextRun(run);
+        run=TextRun();
     }
 
     releaseTextId(primitiveId);
@@ -1488,66 +1568,55 @@ void OpenGLCore::renderText(size_t textId, const gweni::Font &font, gweni::Point
     if(!ensureFont(font))
         return;
 
-    if(m_textPrimitiveIds.size() < textId+1)
-    {
-        m_textPrimitiveIds.resize(textId+1);
-        m_textStrings.resize(textId+1);
-        m_textPosition.resize(textId+1);
-    }
+    if(m_textRuns.size() < textId+1)
+        m_textRuns.resize(textId+1);
 
-    std::vector<size_t> &textPrimitiveIds=m_textPrimitiveIds[textId];
+    TextRun &run=m_textRuns[textId];
 
     translate(pos.x, pos.y);
-    if(m_textStrings[textId] == text)
+
+    if(run.text == text)
     {
-        if((pos.x != m_textPosition[textId].x) || (pos.y != m_textPosition[textId].y))
+        // String hasn't changed: at most offset the run that is already there.
+        // A zIndex that changed on its own is not acted on, as it was not before
+        // this rewrite either; the run keeps the depth it was last laid out at.
+        if((pos.x != run.position.x) || (pos.y != run.position.y))
         {
-            //move verts
-            gweni::Point delta=pos-m_textPosition[textId];
-            float zDelta=1.0f/textPrimitiveIds.size();
+            const gweni::Point delta=pos-run.position;
+            const float zDelta=run.glyphs?1.0f/run.glyphs:0.0f;
             float zOffset=0.0f;
 
 #ifdef DEBUG_RENDER
-            std::cout<<"Moving text: ("<<pos.x<<", "<<pos.y<<" : "<<zIndex<<") "<<text<<"\n";
+            std::cout<<"Moving text run: ("<<pos.x<<", "<<pos.y<<" : "<<zIndex<<") "<<text<<"\n";
 #endif//DEBUG_RENDER
 
-            for(size_t i=0; i<textPrimitiveIds.size(); ++i)
+            for(size_t i=0; i<run.glyphs; ++i)
             {
-                size_t vertIndex=textPrimitiveIds[i]*4;
+                const size_t vertIndex=(run.start+i)*4;
+                const float z=zIndex+zOffset;
+
+                zOffset+=zDelta;
 
                 for(size_t j=0; j<4; ++j)
                 {
-                    m_textVertexes[vertIndex+j].x=m_textVertexes[vertIndex+j].x+delta.x;
-                    m_textVertexes[vertIndex+j].y=m_textVertexes[vertIndex+j].y+delta.y;
-                    if(m_textVertexes[vertIndex+j].z < 0)
-                        m_textVertexes[vertIndex+j].z=-zIndex;
-                    else
-                        m_textVertexes[vertIndex+j].z=zIndex;
-                    m_textVertexes[vertIndex+j].shift=zOffset;
+                    m_textVertexes[vertIndex+j].x+=delta.x;
+                    m_textVertexes[vertIndex+j].y+=delta.y;
+                    m_textVertexes[vertIndex+j].z=z;
                 }
-//                m_zIndex++;
-                m_dirtyTextVertexSlots.mark(textPrimitiveIds[i]);
-                zOffset+=zDelta;
             }
-            m_textPosition[textId]=pos;
-        }
-//        m_zIndex++;
-        return; //string hasn't changed
-    }
 
-    m_textStrings[textId]=text;
-    m_textPosition[textId]=pos;
+            markTextVertexes(run);
+            run.position=pos;
+        }
+        return;
+    }
 
     GLFontData &fontData=m_lastFont->second;
 
     m_textTextureId=fontData.atlas->id;
 
     ftgl::text_buffer_t *textBuffer=ftgl::text_buffer_new();
-    ftgl::texture_font_t *textFont=fontData.markup.font;
-    
-//    pos.y=pos.y+fontData.markup.font->ascender;
-//    ftgl::vec2 pen={pos.x, pos.y};
-    ftgl::vec2 pen={0.0f, 0.0f};
+    ftgl::vec2 pen={ 0.0f, 0.0f };
 
     // Bake the current draw color (set by the control's text renderer from its
     // text color) into the glyphs, so per-control text colors actually apply
@@ -1562,128 +1631,91 @@ void OpenGLCore::renderText(size_t textId, const gweni::Font &font, gweni::Point
     ftgl::vector_t *indexes=textBuffer->buffer->indices;
     ftgl::vector_t *vertexes=textBuffer->buffer->vertices;
 
-    size_t primitiveCount=indexes->size/6;
+    //with every markup decoration off, freetype-gl emits exactly one quad per glyph
+    const size_t glyphCount=indexes->size/6;
 
-    if(textPrimitiveIds.size() != primitiveCount)
-    {
-        if(textPrimitiveIds.size() < primitiveCount)
-        {
-            for(size_t i=textPrimitiveIds.size(); i<primitiveCount; ++i)
-            {
-                textPrimitiveIds.push_back(m_textIds.getNextId(textId));
-            }
-        }
-        else
-        {
-            for(size_t i=primitiveCount; i<textPrimitiveIds.size(); ++i)
-            {
-                m_textIds.releaseId(textPrimitiveIds[i]);
-            }
-            textPrimitiveIds.resize(primitiveCount);
-        }
-    }
+    run.text=text;
+    run.position=pos;
+    allocateTextRun(run, glyphCount);
 
-    size_t textIdsSize=m_textIds.size();
-
-    if(m_textIndexes.size() < textIdsSize*6)
-        m_textIndexes.resize(textIdsSize*6);
-    if(m_textVertexes.size() < textIdsSize*4)
-        m_textVertexes.resize(textIdsSize*4);
-
-//    textPrimitiveIds.push_back(m_textIds.getNextId(textId));
-
-    GLuint *indexesBuffer=(GLuint *)indexes->items;
     ftgl::glyph_vertex_t *vertexBuffer=(ftgl::glyph_vertex_t *)vertexes->items;
 
-    size_t indexPos=0;
-    size_t vertexPos=0;
-    float zDelta=1.0f/primitiveCount;
+    const float zDelta=glyphCount?1.0f/glyphCount:0.0f;
     float zOffset=0.0f;
 
 #ifdef DEBUG_RENDER
-    std::cout<<"Rendering text: ("<<pos.x<<", "<<pos.y<<" : "<<zIndex<<") "<<text<<"\n";
+    std::cout<<"Regenerating text run: ("<<pos.x<<", "<<pos.y<<" : "<<zIndex<<") "<<text<<"\n";
 #endif//DEBUG_RENDER
 
-    for(size_t i=0; i<primitiveCount; ++i)
+    for(size_t i=0; i<glyphCount; ++i)
     {
-        size_t index=textPrimitiveIds[i]*6;
-        size_t vertIndex=textPrimitiveIds[i]*4;
-
-        m_textIndexes[index++]=vertIndex+(indexesBuffer[indexPos++]%4);
-        m_textIndexes[index++]=vertIndex+(indexesBuffer[indexPos++]%4);
-        m_textIndexes[index++]=vertIndex+(indexesBuffer[indexPos++]%4);
-        m_textIndexes[index++]=vertIndex+(indexesBuffer[indexPos++]%4);
-        m_textIndexes[index++]=vertIndex+(indexesBuffer[indexPos++]%4);
-        m_textIndexes[index++]=vertIndex+(indexesBuffer[indexPos++]%4);
-
-        m_textVertexes[vertIndex]=vertexBuffer[vertexPos];
-        m_textVertexes[vertIndex].x=pos.x+vertexBuffer[vertexPos].x;
-//        m_textVertexes[vertIndex].y=pos.y+(textFont->height+vertexBuffer[vertexPos++].y);
-        m_textVertexes[vertIndex].y=pos.y-vertexBuffer[vertexPos++].y;
-        m_textVertexes[vertIndex].shift=zOffset;
-        m_textVertexes[vertIndex++].z=zIndex;
-        m_textVertexes[vertIndex]=vertexBuffer[vertexPos];
-        m_textVertexes[vertIndex].x=pos.x+vertexBuffer[vertexPos].x;
-        m_textVertexes[vertIndex].y=pos.y-vertexBuffer[vertexPos++].y;
-        m_textVertexes[vertIndex].shift=zOffset;
-        m_textVertexes[vertIndex++].z=zIndex;
-        m_textVertexes[vertIndex]=vertexBuffer[vertexPos];
-        m_textVertexes[vertIndex].x=pos.x+vertexBuffer[vertexPos].x;
-        m_textVertexes[vertIndex].y=pos.y-vertexBuffer[vertexPos++].y;
-        m_textVertexes[vertIndex].shift=zOffset;
-        m_textVertexes[vertIndex++].z=zIndex;
-        m_textVertexes[vertIndex]=vertexBuffer[vertexPos];
-        m_textVertexes[vertIndex].x=pos.x+vertexBuffer[vertexPos].x;
-        m_textVertexes[vertIndex].y=pos.y-vertexBuffer[vertexPos++].y;
-        m_textVertexes[vertIndex].shift=zOffset;
-        m_textVertexes[vertIndex++].z=zIndex;
-
-        m_dirtyTextIndexSlots.mark(textPrimitiveIds[i]);
-        m_dirtyTextVertexSlots.mark(textPrimitiveIds[i]);
+        const size_t vertIndex=(run.start+i)*4;
+        // Each glyph of a run sits a fraction of a z unit in front of the one
+        // before it, so the GL_LESS depth test cannot reject the overlap between
+        // two neighbouring glyph boxes. Accumulated rather than i*zDelta, which
+        // rounds differently and would move a glyph by an ulp of depth.
+        const float z=zIndex+zOffset;
 
         zOffset+=zDelta;
-//        m_zIndex++;
+
+        for(size_t j=0; j<4; ++j)
+        {
+            const ftgl::glyph_vertex_t &source=vertexBuffer[i*4+j];
+            ftgl::glyph_vertex_t &vertex=m_textVertexes[vertIndex+j];
+
+            vertex=source;
+            vertex.x=pos.x+source.x;
+            vertex.y=pos.y-source.y;
+            vertex.z=z;
+        }
     }
+
+    writeTextIndexes(run);
+    markTextVertexes(run);
 
     if(textDebugMatches(text))
     {
-        ::printf("[mirror] textId=%zu \"%s\" chars=%zu slots=%zu ftgl vertices=%zu indices=%zu\n",
-            textId, text.c_str(), text.length(), textPrimitiveIds.size(),
-            vertexes->size, indexes->size);
-        ::printf("[mirror]   pos=(%d,%d) z=%d atlas=%zux%zu depth=%zu mirror verts=%zu idx=%zu\n",
-            pos.x, pos.y, zIndex, fontData.atlas->width, fontData.atlas->height,
-            fontData.atlas->depth, m_textVertexes.size(), m_textIndexes.size());
-        for(size_t i=0; i<textPrimitiveIds.size(); ++i)
+        ::printf("[mirror] textId=%zu \"%s\" chars=%zu run=[%zu,%zu) capacity=%zu "
+            "ftgl vertices=%zu indices=%zu\n",
+            textId, text.c_str(), text.length(), run.start, run.start+run.glyphs,
+            run.capacity, vertexes->size, indexes->size);
+        ::printf("[mirror]   pos=(%d,%d) z=%d hidden=%s atlas=%zux%zu depth=%zu "
+            "mirror verts=%zu idx=%zu slots used=%zu free runs=%zu\n",
+            pos.x, pos.y, zIndex, run.hidden?"yes":"no",
+            fontData.atlas->width, fontData.atlas->height, fontData.atlas->depth,
+            m_textVertexes.size(), m_textIndexes.size(), m_textSlotsUsed,
+            m_freeTextRuns.size());
+        for(size_t i=0; i<run.capacity; ++i)
         {
-            size_t slot=textPrimitiveIds[i];
-            size_t vertIndex=slot*4;
-            size_t index=slot*6;
+            const size_t slot=run.start+i;
+            const size_t vertIndex=slot*4;
+            const size_t index=slot*6;
             float minX=m_textVertexes[vertIndex].x, maxX=minX;
             float minY=m_textVertexes[vertIndex].y, maxY=minY;
 
-            ::printf("[mirror]   slot %zu (glyph %zu, char '%c') verts %zu..%zu idx %zu..%zu\n",
-                slot, i, i<text.length()?text[i]:'?', vertIndex, vertIndex+3, index, index+5);
+            ::printf("[mirror]   slot %zu (glyph %zu, char '%c')%s verts %zu..%zu idx %zu..%zu\n",
+                slot, i, i<text.length()?text[i]:'?', i<run.glyphs?"":" [unused tail]",
+                vertIndex, vertIndex+3, index, index+5);
             for(size_t j=0; j<4; ++j)
             {
                 const ftgl::glyph_vertex_t &v=m_textVertexes[vertIndex+j];
                 minX=std::min(minX, v.x); maxX=std::max(maxX, v.x);
                 minY=std::min(minY, v.y); maxY=std::max(maxY, v.y);
                 ::printf("[mirror]     v%zu x=%9.3f y=%9.3f z=%9.3f u=%8.5f v=%8.5f "
-                    "rgba=%.2f,%.2f,%.2f,%.2f shift=%.4f gamma=%.2f\n",
+                    "rgba=%.2f,%.2f,%.2f,%.2f gamma=%.2f\n",
                     j, (double)v.x, (double)v.y, (double)v.z, (double)v.u, (double)v.v,
-                    (double)v.r, (double)v.g, (double)v.b, (double)v.a,
-                    (double)v.shift, (double)v.gamma);
+                    (double)v.r, (double)v.g, (double)v.b, (double)v.a, (double)v.gamma);
             }
-            bool inSlot=true;
+            bool inRun=true;
             ::printf("[mirror]     idx =");
             for(size_t j=0; j<6; ++j)
             {
                 uint16_t e=m_textIndexes[index+j];
-                if((e < vertIndex) || (e > vertIndex+3))
-                    inSlot=false;
+                if((e < run.start*4) || (e >= (run.start+run.capacity)*4))
+                    inRun=false;
                 ::printf(" %u", (unsigned)e);
             }
-            ::printf("  (all inside slot: %s)\n", inSlot?"yes":"NO");
+            ::printf("  (all inside run: %s)\n", inRun?"yes":"NO");
             ::printf("[mirror]     box w=%.3f h=%.3f  x=[%.3f..%.3f] y=[%.3f..%.3f]\n",
                 (double)(maxX-minX), (double)(maxY-minY),
                 (double)minX, (double)maxX, (double)minY, (double)maxY);
@@ -1695,52 +1727,38 @@ void OpenGLCore::renderText(size_t textId, const gweni::Font &font, gweni::Point
 
 void OpenGLCore::showText(size_t textId)
 {
-    std::vector<size_t> &textPrimitiveIds=m_textPrimitiveIds[textId];
+    if(textId >= m_textRuns.size())
+        return;
+
+    TextRun &run=m_textRuns[textId];
+
+    if(!run.hidden)
+        return;
 
 #ifdef DEBUG_RENDER
-    std::cout<<"Showing text: "<<m_textStrings[textId]<<"\n";
+    std::cout<<"Showing text: "<<run.text<<"\n";
 #endif//DEBUG_RENDER
 
-    for(size_t i=0; i<textPrimitiveIds.size(); ++i)
-    {
-        size_t vertIndex=textPrimitiveIds[i]*4;
-
-        for(size_t j=0; j<4; ++j)
-        {
-            const float shown=abs(m_textVertexes[vertIndex+j].z);
-
-            if(m_textVertexes[vertIndex+j].z == shown)
-                continue;
-
-            m_textVertexes[vertIndex+j].z=shown;
-            m_dirtyTextVertexSlots.mark(textPrimitiveIds[i]);
-        }
-    }
+    run.hidden=false;
+    writeTextIndexes(run);
 }
 
 void OpenGLCore::hideText(size_t textId)
 {
-    std::vector<size_t> &textPrimitiveIds=m_textPrimitiveIds[textId];
+    if(textId >= m_textRuns.size())
+        return;
+
+    TextRun &run=m_textRuns[textId];
+
+    if(run.hidden)
+        return;
 
 #ifdef DEBUG_RENDER
-    std::cout<<"Hiding text: "<<m_textStrings[textId]<<"\n";
+    std::cout<<"Hiding text: "<<run.text<<"\n";
 #endif//DEBUG_RENDER
 
-    for(size_t i=0; i<textPrimitiveIds.size(); ++i)
-    {
-        size_t vertIndex=textPrimitiveIds[i]*4;
-
-        for(size_t j=0; j<4; ++j)
-        {
-            const float hidden=-abs(m_textVertexes[vertIndex+j].z);
-
-            if(m_textVertexes[vertIndex+j].z == hidden)
-                continue;
-
-            m_textVertexes[vertIndex+j].z=hidden;
-            m_dirtyTextVertexSlots.mark(textPrimitiveIds[i]);
-        }
-    }
+    run.hidden=true;
+    writeTextIndexes(run);
 }
 
 gweni::Point OpenGLCore::measureText(const gweni::Font &font, const gweni::String &text)
