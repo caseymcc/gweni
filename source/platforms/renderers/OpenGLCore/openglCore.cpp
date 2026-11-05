@@ -40,13 +40,6 @@
 #include <cassert>
 #include <limits>
 
- ////#define STBI_ASSERT(x)  // comment in for no asserts
- //#define STB_IMAGE_IMPLEMENTATION
- //#include <gweni/External/stb_image.h>
- //
- //#define STB_TRUETYPE_IMPLEMENTATION
- //#define STBTT_STATIC
- //#include <gweni/External/stb_truetype.h>
 #include <ft2build.h>
 #include FT_FREETYPE_H
 #include <freetype-gl/freetype-gl.h>

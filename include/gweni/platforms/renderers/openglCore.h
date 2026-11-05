@@ -12,6 +12,7 @@
 #include <functional>
 #include <algorithm>
 #include <cstdint>
+#include <cstdlib>
 
 #include <freetype-gl/freetype-gl.h>
 #include <freetype-gl/markup.h>
