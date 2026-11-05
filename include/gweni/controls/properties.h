@@ -45,7 +45,13 @@ protected:
 
     virtual void onSplitterMoved(event::Info info);
 
+    static const int SplitterBarWidth=3;
+
     controls::SplitterBar *m_splitterBar;
+
+    // The requested split, independent of the bar's clamped position: a layout
+    // pass against a not-yet-sized parent must not be able to lose it.
+    int m_splitWidth;
 
 };
 

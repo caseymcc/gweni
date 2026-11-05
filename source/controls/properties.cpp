@@ -17,8 +17,9 @@ namespace controls
 
 GWENI_CONTROL_CONSTRUCTOR(Properties)
 {
+    m_splitWidth=80;
     m_splitterBar=newChild<SplitterBar>();
-    m_splitterBar->setPos(80, 0);
+    m_splitterBar->setPos(m_splitWidth, 0);
     m_splitterBar->setCursor(gweni::cursor::SizeWE);
     m_splitterBar->onDragged.add(this, &Properties::onSplitterMoved);
     m_splitterBar->setShouldDrawBackground(false);
@@ -30,17 +31,21 @@ void Properties::postLayout(gweni::skin::Base * /*skin*/)
     if(sizeToChildren(false, true))
         invalidateParent();
 
-    m_splitterBar->setSize(3, getHeight());
+    m_splitterBar->setBounds(getSplitWidth(), 0, SplitterBarWidth, getHeight());
 }
 
 void Properties::onSplitterMoved(event::Info)
 {
+    m_splitWidth=m_splitterBar->getX();
     invalidateChildren();
 }
 
 int Properties::getSplitWidth()
 {
-    return m_splitterBar->getX();
+    if(getWidth() > SplitterBarWidth)
+        return std::max(0, std::min(m_splitWidth, getWidth()-SplitterBarWidth));
+
+    return m_splitWidth;
 }
 
 PropertyRow *Properties::add(const String &text, const String &value)
