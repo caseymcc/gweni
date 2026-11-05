@@ -10,6 +10,8 @@
 
 #include <gweni/platforms/commonPlatform.h>
 
+#include <functional>
+
 namespace gweni
 {
 //! The platform abstraction layer.
@@ -22,6 +24,13 @@ GWENI_EXPORT void sleep(unsigned int ms);
 
 // Needed for things like double click
 GWENI_EXPORT float getTimeInSeconds();
+
+//! Install a clock for getTimeInSeconds() to read instead of the platform one.
+//! Everything time-dependent in the library (animations, progress bars, the text
+//! caret blink, double-click and key-repeat timing) then runs off it, which is what
+//! makes a capture or a scripted input sequence reproducible.
+//! @param source : The clock, in seconds. An empty function restores the platform clock.
+GWENI_EXPORT void setTimeSource(std::function<float()> source);
 
 //! Get the directory of the running executable.
 //! \return Path string, blank if not known.

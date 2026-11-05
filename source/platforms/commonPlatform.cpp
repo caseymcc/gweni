@@ -60,6 +60,22 @@ String RelativeToExecutablePaths::getPath(Type type, String const &filename)
 }
 
 //------------------------------------------------------------------------------
+static std::function<float()> g_timeSource;
+
+void setTimeSource(std::function<float()> source)
+{
+    g_timeSource=std::move(source);
+}
+
+float getTimeInSeconds()
+{
+    if(g_timeSource)
+        return g_timeSource();
+
+    return platformTimeInSeconds();
+}
+
+//------------------------------------------------------------------------------
 }//namespace platform
 
 namespace log

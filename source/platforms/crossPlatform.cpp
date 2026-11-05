@@ -125,7 +125,7 @@ static double GetPerformanceFrequency()
     return Frequency;
 }
 
-float getTimeInSeconds()
+float platformTimeInSeconds()
 {
     static float currentTime=0.0f;
     static __int64 iLastTime=0;
@@ -144,7 +144,7 @@ float getTimeInSeconds()
 
 #else
 
-float getTimeInSeconds()
+float platformTimeInSeconds()
 {
     const float seconds=static_cast<float>(clock()) / CLOCKS_PER_SEC;
     return seconds;

@@ -1,16 +1,30 @@
 
 #include "demo/layoutDemo.h"
 
+#include <random>
+
 namespace gweni
 {
+
+namespace
+{
+//the process-wide rand() is never seeded, so these windows would land in the same
+//place only by accident; a capture of this demo has to be repeatable
+std::mt19937 g_rng(1337u);
+
+int pick(int range)
+{
+    return static_cast<int>(g_rng()%static_cast<unsigned>(range));
+}
+}//namespace
 
 GWENI_CONTROL_CONSTRUCTOR(LayoutDemo)
 {
     controls::WindowControl *window=newChild<controls::WindowControl>();
 
     window->setTitle("Layout Window");
-    window->setSize(200+rand()%100, 200+rand()%100);
-    window->setPos(rand()%700, rand()%400);
+    window->setSize(200+pick(100), 200+pick(100));
+    window->setPos(pick(700), pick(400));
     window->setDeleteOnClose(true);
 
     controls::GroupBox *verticalGroupBox1=window->newChild<controls::GroupBox>();

@@ -19,6 +19,11 @@ namespace platform
 
 // Cross-platform, low level functionality shared by all of the platforms.
 
+//! The platform's own clock, in seconds. Implemented by each platform backend.
+//! Do not use this directly: getTimeInSeconds() is the one that honours
+//! setTimeSource().
+float platformTimeInSeconds();
+
 class CurrentPath:public ResourcePaths
 {
 public:

@@ -3,8 +3,22 @@
 #include "gweni/controls/button.h"
 #include "gweni/controls/windowControl.h"
 
+#include <random>
+
 namespace gweni
 {
+
+namespace
+{
+//the process-wide rand() is never seeded, so these windows would land in the same
+//place only by accident; a capture of this demo has to be repeatable
+std::mt19937 g_rng(1337u);
+
+int pick(int range)
+{
+    return static_cast<int>(g_rng()%static_cast<unsigned>(range));
+}
+}//namespace
 
 GWENI_CONTROL_CONSTRUCTOR(WindowDemo)
 {
@@ -29,8 +43,8 @@ void WindowDemo::openWindow(event::Info info)
 {
     controls::WindowControl *window=getCanvas()->newChild<controls::WindowControl>();
     window->setTitle(format("Window %i", m_windowCount));
-    window->setSize(200 + rand() % 100, 200 + rand() % 100);
-    window->setPos(rand() % 700, rand() % 400);
+    window->setSize(200 + pick(100), 200 + pick(100));
+    window->setPos(pick(700), pick(400));
     window->setDeleteOnClose(true);
     m_windowCount++;
 }
@@ -39,7 +53,7 @@ void WindowDemo::openModalWindow(event::Info info)
 {
     controls::WindowControl *window=getCanvas()->newChild<controls::WindowControl>();
     window->setTitle(format("Window %i", m_windowCount));
-    window->setSize(200 + rand() % 100, 200 + rand() % 100);
+    window->setSize(200 + pick(100), 200 + pick(100));
     window->makeModal(true);
     window->setAlignment(Alignment::Center);
 //    window->setPosition(Position::Center);

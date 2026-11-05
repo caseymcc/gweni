@@ -23,7 +23,7 @@ void sleep(unsigned int ms)
 {
 }
 
-float getTimeInSeconds()
+float platformTimeInSeconds()
 {
     return 0.f;
 }
