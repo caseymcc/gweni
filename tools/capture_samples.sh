@@ -18,6 +18,8 @@ set -euo pipefail
 # hero: the whole demo window, one page selected. ColorPickerDemo would be the
 # obvious pick but draws nothing but its Result swatch (issue #82).
 HERO_DEMO=CollapsibleListDemo
+# OpenGLCore has no --size: its window is fixed at 1024x768
+# (examples/openglcore/openglcore.cpp), so HERO_SIZE only labels the output.
 HERO_SIZE=1024x768
 HERO_OUT=demo.png
 
