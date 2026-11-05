@@ -193,8 +193,8 @@ bool writeFramebufferPng(int width, int height, const std::string &path)
     imglib::SimpleImage image(imglib::Format::RGBA, imglib::Depth::Bit8,
         static_cast<size_t>(width), static_cast<size_t>(height), flipped.data(), flipped.size());
 
-    // Success is judged by the file below, so a stale PNG left at this path by an
-    // earlier run would turn a failed write into a reported success.
+    // A stale PNG left at this path by an earlier run must not be mistaken for
+    // this capture's output.
     std::remove(path.c_str());
     if(fs::exists(path))
     {

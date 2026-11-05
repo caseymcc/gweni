@@ -8,11 +8,11 @@
  *                         an unknown name lists the valid ones and exits non-zero
  *    --screenshot <path>  render a fixed number of frames, write one PNG and exit
  *
- *  With no options it opens the interactive window as before. A capture needs a
- *  display, so headless it goes through Xvfb, from the repo root:
+ *  With no options it opens the interactive window as before. A capture needs no
+ *  display: it hides the window, and with no display at all it falls back to a
+ *  surfaceless EGL context. Run it from the repo root:
  *
- *    xvfb-run -s "-screen 0 1280x1024x24" \
- *        ./build_linux_x64_debug/examples/openglcore/OpenGLCore \
+ *    ./build_linux_x64_debug/examples/openglcore/OpenGLCore \
  *        --demo ColorPickerDemo --screenshot /tmp/hero.png
  *
  *  A capture installs a stepped clock (gweni::platform::setTimeSource), so the
