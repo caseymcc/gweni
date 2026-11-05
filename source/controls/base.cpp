@@ -1318,13 +1318,6 @@ Size Base::sizeOfChildren(skin::Base *skin, Dim dim)
 
         for(auto &&child:m_children)
         {
-            Label *label=dynamic_cast<Label *>(child);
-
-            if(label)
-            {
-                if(label->getText()=="Basic")
-                    label=label;
-            }
             if(child->hidden())
                 continue;
 
@@ -1543,7 +1536,7 @@ void Base::arrangeHorizontal(skin::Base *skin)
         }
         else if(dock == DockPosition::None)
         {
-            policyResize(preferred, Dim::X);
+            child->policyResize(preferred, Dim::X);
 
             Alignment alignment=child->getAlignment();
 
@@ -1670,7 +1663,7 @@ void Base::arrangeVertical(skin::Base *skin)
         }
         else if(dock == DockPosition::None)
         {
-            policyResize(preferred, Dim::Y);
+            child->policyResize(preferred, Dim::Y);
 
 //            const Rect &bounds=child->getBounds();
             Alignment alignment=child->getAlignment();
