@@ -10,7 +10,7 @@
  *    --frames N         frames to render before capturing (default 3)
  *    --shot <path>      render offscreen and write one PNG, then exit
  *    --shot-all         write one PNG per control demo, in this one run
- *    --shot-dir <dir>   directory for --shot-all (default /tmp)
+ *    --shot-dir <dir>   directory for --shot-all, created if missing (default /tmp)
  *    --headless         force the surfaceless EGL context (no display needed)
  *    --list             print the control demo names and exit
  *
@@ -27,6 +27,8 @@
 #include <GLFW/glfw3.h>
 #include <imglib/png.h>
 #include <imglib/simpleImage.h>
+#include <gweni/utils/filesystem.h>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
@@ -241,6 +243,15 @@ struct Framebuffer
     GLuint depth=0;
 };
 
+static void destroyFramebuffer(Framebuffer &fb)
+{
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    if(fb.fbo) glDeleteFramebuffers(1, &fb.fbo);
+    if(fb.depth) glDeleteRenderbuffers(1, &fb.depth);
+    if(fb.color) glDeleteTextures(1, &fb.color);
+    fb={};
+}
+
 static bool createFramebuffer(Framebuffer &fb, int width, int height)
 {
     glGenTextures(1, &fb.color);
@@ -261,19 +272,11 @@ static bool createFramebuffer(Framebuffer &fb, int width, int height)
     if(glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
     {
         std::cerr<<"ControlTest: offscreen framebuffer incomplete\n";
+        destroyFramebuffer(fb);
         return false;
     }
     glViewport(0, 0, width, height);
     return true;
-}
-
-static void destroyFramebuffer(Framebuffer &fb)
-{
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
-    if(fb.fbo) glDeleteFramebuffers(1, &fb.fbo);
-    if(fb.depth) glDeleteRenderbuffers(1, &fb.depth);
-    if(fb.color) glDeleteTextures(1, &fb.color);
-    fb={};
 }
 
 static bool writeFramebufferPng(int width, int height, const std::string &path)
@@ -293,6 +296,15 @@ static bool writeFramebufferPng(int width, int height, const std::string &path)
     imglib::SimpleImage image(imglib::Format::RGBA, imglib::Depth::Bit8,
         static_cast<size_t>(width), static_cast<size_t>(height), flipped.data(), flipped.size());
 
+    // Success is judged by the file below, so a stale PNG left at this path by an
+    // earlier run would turn a failed write into a reported success.
+    std::remove(path.c_str());
+    if(fs::exists(path))
+    {
+        std::cerr<<"ControlTest: cannot replace existing "<<path<<"\n";
+        return false;
+    }
+
     imglib::savePng(image, path.c_str());
 
     // imglib::savePng returns false even when it succeeded (deps/imglib png.cpp
@@ -307,6 +319,27 @@ static bool writeFramebufferPng(int width, int height, const std::string &path)
 }
 
 //-----------------------------------------------------------------------------
+
+// A fresh container has no /tmp/shots, so make the destination rather than
+// failing once per capture.
+static bool ensureDirectory(const fs::path &dir)
+{
+    if(dir.empty() || fs::is_directory(dir))
+        return true;
+
+    try
+    {
+        if(fs::create_directories(dir))
+            return true;
+        std::cerr<<"ControlTest: cannot create directory "<<dir.string()<<"\n";
+    }
+    catch(const std::exception &error)
+    {
+        std::cerr<<"ControlTest: cannot create directory "<<dir.string()
+                 <<": "<<error.what()<<"\n";
+    }
+    return false;
+}
 
 static bool parseSize(const std::string &value, gweni::Point &size)
 {
@@ -367,16 +400,29 @@ int main(int argc, char *argv[])
         return EXIT_FAILURE;
     }
 
+    if(shotAll && !shotPath.empty())
+    {
+        std::cerr<<"ControlTest: --shot and --shot-all are exclusive;"
+                   " --shot-all names its files after the controls\n";
+        return EXIT_FAILURE;
+    }
+
     const bool capturing=shotAll || !shotPath.empty();
 
     std::vector<std::string> captures;
     if(shotAll)
     {
+        if(!ensureDirectory(shotDir))
+            return EXIT_FAILURE;
         for(const char *name : g_controlNames)
             captures.push_back(name);
     }
     else if(capturing)
+    {
+        if(!ensureDirectory(fs::path(shotPath).parent_path()))
+            return EXIT_FAILURE;
         captures.push_back(which);
+    }
 
     if(forceHeadless && !capturing)
     {
