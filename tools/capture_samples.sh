@@ -21,20 +21,27 @@ HERO_DEMO=CollapsibleListDemo
 HERO_SIZE=1024x768
 HERO_OUT=demo.png
 
-# The gallery: one ControlTest demo per line, captured at 640x480.
-# ComboBoxDemo and SliderDemo are left out: they still capture an empty canvas
-# (issue #69). ListBoxDemo is left out because it is the one demo that does not
-# capture reproducibly: it uses glyphs OpenSans lacks and they rasterise into the
-# atlas after it was uploaded, so those cells draw different garbage each run
-# (issue #70).
+# The gallery: one ControlTest demo per line, captured at 640x480. README.md
+# embeds each of these, so a change here needs a matching change there.
+#
+# Left out because they do not look right today:
+#   ComboBoxDemo, SliderDemo, ImagePanelDemo, LabelMultilineDemo - an empty
+#     canvas (issue #69)
+#   ListBoxDemo - not reproducible: it uses glyphs OpenSans lacks and they
+#     rasterise into the atlas after it was uploaded, so those cells differ
+#     every run (issues #70, #94)
+#   ProgressBarDemo - the fill is not drawn, only the empty track
+#   CheckBoxDemo, GroupBoxDemo, TextBoxDemo, NumericDemo - controls stacked on
+#     each other or inflated to their parent (issue #93)
+#   ColorPickerDemo - draws only its Result swatch (issue #82)
+#   CollapsibleListDemo - already the hero page
 SAMPLES=(
     ButtonDemo
-    CheckBoxDemo
-    LabelDemo
-    ProgressBarDemo
     RadioButtonDemo
     TabControlDemo
     TreeControlDemo
+    PropertiesDemo
+    PageControlDemo
 )
 
 CONTROL_SIZE=640x480

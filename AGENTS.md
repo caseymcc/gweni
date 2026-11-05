@@ -77,7 +77,7 @@ The sample PNGs under `docs/images/` (embedded by `README.md`) are checked in an
 ./tools/capture_samples.sh
 ```
 
-It captures the hero demo (`OpenGLCore --demo`) and the gallery controls (`ControlTest --control`) offscreen, so no display is needed: it uses `xvfb-run` when the image has it and otherwise the examples' own surfaceless-EGL path. The sample list at the top of the script is the interface — edit it to change the set. Re-running on an unchanged tree produces byte-identical PNGs.
+It captures the hero demo (`OpenGLCore --demo`) and the gallery controls (`ControlTest --control`) offscreen, so no display is needed: it uses `xvfb-run` when the image has it and otherwise the examples' own surfaceless-EGL path. The sample list at the top of the script is the interface — edit it to change the set, and update the gallery table in `README.md` to match, since it embeds each PNG by path. Re-running on an unchanged tree produces byte-identical PNGs.
 
 ### Dependencies / vcpkg notes
 - The active OpenGL-core build pulls `rapidjson`, `glm`, `freetype`, `glew`, `glfw3`, `libpng`, `libjpeg-turbo` (last two via the `deps/imglib` subproject). RapidJSON is header-only — CMake consumes `RAPIDJSON_INCLUDE_DIRS`, not an imported target.
