@@ -176,22 +176,27 @@ bool createFramebuffer(Framebuffer &fb, int width, int height)
     return true;
 }
 
-bool writeFramebufferPng(int width, int height, const std::string &path)
+void readFramebufferRgba(int width, int height, std::vector<uint8_t> &pixels)
 {
     const size_t rowBytes=static_cast<size_t>(width)*4;
-    std::vector<uint8_t> pixels(rowBytes*static_cast<size_t>(height));
+    std::vector<uint8_t> raw(rowBytes*static_cast<size_t>(height));
 
     glPixelStorei(GL_PACK_ALIGNMENT, 1);
-    glReadPixels(0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
+    glReadPixels(0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, raw.data());
 
     // glReadPixels hands back bottom-up rows; PNG wants top-down.
-    std::vector<uint8_t> flipped(pixels.size());
+    pixels.assign(raw.size(), 0);
     for(int y=0; y<height; ++y)
-        memcpy(&flipped[rowBytes*static_cast<size_t>(y)],
-               &pixels[rowBytes*static_cast<size_t>(height-1-y)], rowBytes);
+        memcpy(&pixels[rowBytes*static_cast<size_t>(y)],
+               &raw[rowBytes*static_cast<size_t>(height-1-y)], rowBytes);
+}
 
+bool writeRgbaPng(const std::vector<uint8_t> &pixels, int width, int height,
+    const std::string &path)
+{
     imglib::SimpleImage image(imglib::Format::RGBA, imglib::Depth::Bit8,
-        static_cast<size_t>(width), static_cast<size_t>(height), flipped.data(), flipped.size());
+        static_cast<size_t>(width), static_cast<size_t>(height),
+        const_cast<uint8_t *>(pixels.data()), pixels.size());
 
     // A stale PNG left at this path by an earlier run must not be mistaken for
     // this capture's output.
@@ -207,6 +212,13 @@ bool writeFramebufferPng(int width, int height, const std::string &path)
     if(!ok)
         std::cerr<<g_tool<<": failed to write "<<path<<"\n";
     return ok;
+}
+
+bool writeFramebufferPng(int width, int height, const std::string &path)
+{
+    std::vector<uint8_t> pixels;
+    readFramebufferRgba(width, height, pixels);
+    return writeRgbaPng(pixels, width, height, path);
 }
 
 bool ensureDirectory(const fs::path &dir)

@@ -13,8 +13,15 @@
  *    --shot-dir <dir>   directory for shots, created if missing (default /tmp)
  *    --headless         force the surfaceless EGL context (no display needed)
  *    --stats            print one key=value line per frame; freezes the clock
+ *    --check-teardown   build, render and destroy every control (or only
+ *                       --control's), then check that the canvas renders
+ *                       byte-identical to the empty canvas it started as.
+ *                       Exits non-zero on a mismatch and writes
+ *                       teardown-reference.png and teardown-after.png to
+ *                       --shot-dir, so the ghost can be looked at.
  *    --trace            log each scripted input on stderr with what it hit
  *    --list             print the control demo names and exit
+ *    --help, -h         print the option list and exit
  *    --scenario <name>  per-control | resize | docked | scroll (see below)
  *    --dump-bounds [<path>]
  *                       print the laid-out control tree as text: one line per
@@ -89,6 +96,7 @@
 #include <GLFW/glfw3.h>
 #include <gweni/utils/filesystem.h>
 #include "capture.h"
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <algorithm>
@@ -206,6 +214,29 @@ static void printControlNames(std::ostream &out)
     out<<"  "<<g_dockedControlName<<" (the whole docked demo)\n";
 }
 
+// The scripted input switches are deliberately left out: they only make sense
+// together, and the file header documents them as a group.
+static void printUsage(std::ostream &out)
+{
+    out<<"Usage: ControlTest [options]\n"
+         "  --control <Name>   control demo to show (default ButtonDemo)\n"
+         "  --size WxH         canvas/framebuffer size (default 640x480)\n"
+         "  --frames N         frames to render before capturing (default 3)\n"
+         "  --shot <path>      render offscreen and write one PNG, then exit\n"
+         "  --shot-all         write one PNG per control demo, in this one run\n"
+         "  --shot-dir <dir>   directory for shots (default /tmp)\n"
+         "  --headless         force the surfaceless EGL context\n"
+         "  --stats            print one key=value line per frame\n"
+         "  --check-teardown   check the canvas renders empty again once every\n"
+         "                     control has been destroyed; --control narrows it\n"
+         "  --trace            log each scripted input on stderr\n"
+         "  --scenario <name>  per-control | resize | docked | scroll\n"
+         "  --dump-bounds [<path>]  print the laid-out control tree as text\n"
+         "  --list             print the control demo names and exit\n"
+         "Scripted input (--move/--press/--release/--click/--double-click/\n"
+         "--scroll/--key) is documented in the header of controltest.cpp.\n";
+}
+
 //-----------------------------------------------------------------------------
 
 using gweni::capture::Context;
@@ -218,7 +249,9 @@ using gweni::capture::initGlfwContext;
 #if GWENI_EXAMPLE_EGL
 using gweni::capture::initEglContext;
 #endif
+using gweni::capture::readFramebufferRgba;
 using gweni::capture::writeFramebufferPng;
+using gweni::capture::writeRgbaPng;
 
 // One grep-able line per frame, frame index first. The renderer numbers are read
 // after renderCanvas(), so they describe the frame just flushed.
@@ -755,6 +788,78 @@ static bool runScrollScenario(Session &s, const std::string &shotDir)
     return ok;
 }
 
+//-----------------------------------------------------------------------------
+// --check-teardown: teardown identity
+//
+// In a retained renderer a control's primitives are a persistent slot in the
+// GPU buffer, so a destroyed control whose slots are never cleared keeps
+// drawing forever. The sharpest statement that this has not happened is that
+// the canvas, once every control is gone, renders byte for byte like the empty
+// canvas it started as. That does not care which control leaked or what its
+// leftover vertices drew, so it catches the whole class.
+//-----------------------------------------------------------------------------
+
+// The same starting point addControl() gives a control: no hover, clock and
+// frame counter back at zero, so the two empty renders are comparable.
+static void renderEmptyCanvas(Session &s, std::vector<uint8_t> &pixels)
+{
+    forgetMouse(s);
+    g_clockSeconds=0.0f;
+    s.frame=0;
+    s.label="(empty)";
+
+    renderFrames(s, s.frames);
+    readFramebufferRgba(s.size.x, s.size.y, pixels);
+}
+
+static bool checkTeardown(Session &s, const std::vector<std::string> &controls,
+    const std::string &shotDir)
+{
+    std::string set;
+    for(const std::string &name : controls)
+        set+=(set.empty() ? "" : ",")+name;
+
+    std::vector<uint8_t> reference;
+    renderEmptyCanvas(s, reference);
+
+    for(const std::string &name : controls)
+    {
+        gweni::controls::Base *control=addControl(s, name);
+        renderFrames(s, s.frames);
+        dropControl(s, control);
+    }
+
+    std::vector<uint8_t> after;
+    renderEmptyCanvas(s, after);
+
+    size_t differing=0;
+    for(size_t i=0; i<reference.size(); ++i)
+        if(reference[i] != after[i])
+            ++differing;
+
+    if(differing == 0)
+    {
+        std::cout<<"teardown controls="<<set<<" identical=yes\n";
+        return true;
+    }
+
+    const std::string referencePath=shotDir+"/teardown-reference.png";
+    const std::string afterPath=shotDir+"/teardown-after.png";
+
+    std::cout<<"teardown controls="<<set<<" identical=no"
+             <<" differing_bytes="<<differing<<" of "<<reference.size()<<"\n";
+    std::cerr<<"ControlTest: the canvas does not render empty after every control"
+               " was destroyed: "<<differing<<" of "<<reference.size()
+             <<" bytes differ, so something is still drawing. Compare "
+             <<referencePath<<" with "<<afterPath<<"\n";
+
+    bool wrote=writeRgbaPng(reference, s.size.x, s.size.y, referencePath);
+    wrote=writeRgbaPng(after, s.size.x, s.size.y, afterPath) && wrote;
+    if(wrote)
+        std::cout<<"wrote "<<referencePath<<"\nwrote "<<afterPath<<"\n";
+    return false;
+}
+
 int main(int argc, char *argv[])
 {
     gweni::capture::setToolName("ControlTest");
@@ -770,6 +875,7 @@ int main(int argc, char *argv[])
     bool traceInput=false;
     bool chosenControl=false;
     bool dumpBounds=false;
+    bool checkTeardownMode=false;
     std::string dumpPath;
     Scenario scenario=Scenario::None;
     std::vector<Step> steps;
@@ -798,8 +904,10 @@ int main(int argc, char *argv[])
         else if(arg == "--shot-all") shotAll=true;
         else if(arg == "--headless") forceHeadless=true;
         else if(arg == "--stats") stats=true;
+        else if(arg == "--check-teardown") checkTeardownMode=true;
         else if(arg == "--trace") traceInput=true;
         else if(arg == "--list"){ printControlNames(std::cout); return EXIT_SUCCESS; }
+        else if(arg == "--help" || arg == "-h"){ printUsage(std::cout); return EXIT_SUCCESS; }
         else if(arg == "--dump-bounds")
         {
             dumpBounds=true;
@@ -852,6 +960,7 @@ int main(int argc, char *argv[])
         else
         {
             std::cerr<<"ControlTest: unknown argument: "<<arg<<"\n";
+            printUsage(std::cerr);
             return EXIT_FAILURE;
         }
     }
@@ -862,6 +971,15 @@ int main(int argc, char *argv[])
     {
         std::cerr<<"ControlTest: --scenario runs its own script;"
                    " drop the scripted input switches\n";
+        return EXIT_FAILURE;
+    }
+
+    if(checkTeardownMode && (scenario != Scenario::None || scripted || shotAll
+        || !shotPath.empty()))
+    {
+        std::cerr<<"ControlTest: --check-teardown runs its own build/render/destroy"
+                   " cycle; drop --scenario, --shot, --shot-all and the scripted"
+                   " input switches\n";
         return EXIT_FAILURE;
     }
 
@@ -901,7 +1019,7 @@ int main(int argc, char *argv[])
     // --stats on its own still renders offscreen; it just keeps no PNG.
     const bool writingPng=shotAll || !shotPath.empty() || scenario != Scenario::None;
     const bool capturing=writingPng || stats || scripted || dumpBounds
-        || scenario != Scenario::None;
+        || checkTeardownMode || scenario != Scenario::None;
 
     // The two fixed-size scenarios say what they render at, so start there
     // rather than resizing away from --size on the first frame.
@@ -916,7 +1034,7 @@ int main(int argc, char *argv[])
     if(forceHeadless && !capturing)
     {
         std::cerr<<"ControlTest: --headless has no window to show;"
-                   " pass --shot, --shot-all or --stats\n";
+                   " pass --shot, --shot-all, --stats or --check-teardown\n";
         return EXIT_FAILURE;
     }
 
@@ -1008,7 +1126,20 @@ int main(int argc, char *argv[])
         session.dumpPath=dumpPath;
 
         bool ok=true;
-        switch(scenario)
+        if(checkTeardownMode)
+        {
+            // The whole set by default, so one run covers every control; a named
+            // --control narrows it, which is how a failure gets bisected.
+            std::vector<std::string> set;
+            if(chosenControl)
+                set.push_back(which);
+            else
+                for(const char *name : g_controlNames)
+                    set.push_back(name);
+
+            ok=checkTeardown(session, set, shotDir);
+        }
+        else switch(scenario)
         {
         case Scenario::PerControl:
             ok=runPerControlScenario(session, shotDir);

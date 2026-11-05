@@ -12,7 +12,9 @@
 #include <GLFW/glfw3.h>
 #include <gweni/platforms/platformTypes.h>
 #include <gweni/utils/filesystem.h>
+#include <cstdint>
 #include <string>
+#include <vector>
 
 #if defined(__linux__)
 #define GWENI_EXAMPLE_EGL 1
@@ -64,6 +66,13 @@ struct Framebuffer
 
 bool createFramebuffer(Framebuffer &fb, int width, int height);
 void destroyFramebuffer(Framebuffer &fb);
+
+//! Read the bound framebuffer into top-down RGBA8 rows, as a PNG wants them.
+void readFramebufferRgba(int width, int height, std::vector<uint8_t> &pixels);
+
+//! Write top-down RGBA8 rows as a PNG.
+bool writeRgbaPng(const std::vector<uint8_t> &pixels, int width, int height,
+    const std::string &path);
 
 //! Read the bound framebuffer and write it as a top-down RGBA PNG.
 bool writeFramebufferPng(int width, int height, const std::string &path);
