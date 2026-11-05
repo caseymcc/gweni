@@ -22,6 +22,7 @@
 #include <gweni/gweni.h>
 #include <gweni/platforms/platform.h>
 #include <gweni/skins/textured/texturedSkin.h>
+#include <gweni/skins/textured/tokyoNight.h>
 #include <gweni/platforms/input/glfw3.h>
 #include <gweni/controls/canvas.h>
 #include <GLFW/glfw3.h>
@@ -486,10 +487,17 @@ int main(int argc, char *argv[])
     skin->init("resources/DefaultSkin.json");
     skin->setDefaultFont("resources/OpenSans.ttf", 11);
 
+    // The canvas fill comes from the theme, so a "theme" block in
+    // resources/DefaultSkin.json moves it too. Canvas::renderCanvas does not
+    // currently paint its own background (the draw call there is commented
+    // out), so the clear color is what actually shows.
+    const gweni::Color background=gweni::skin::textured::tokyonight::Canvas.top;
+    glClearColor(background.r/255.0f, background.g/255.0f, background.b/255.0f, background.a/255.0f);
+
     gweni::controls::Canvas *canvas=new gweni::controls::Canvas(skin);
     canvas->setSize(screenSize.x, screenSize.y);
     canvas->setDrawBackground(true);
-    canvas->setBackgroundColor(gweni::Color(200, 200, 200, 255));
+    canvas->setBackgroundColor(background);
 
     g_renderer=renderer;
     g_canvas=canvas;

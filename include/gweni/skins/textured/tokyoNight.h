@@ -76,6 +76,8 @@ inline Surface PanelDark    { BgDark,                BgDark,                BgHi
 inline Surface GroupBox     { Color(0x1d,0x20,0x31), Bg,                    Line,        Radius,   BorderW };
 inline Surface Tooltip      { BgStorm,               Color(0x1f,0x22,0x33), Muted,       RadiusSm, BorderW };
 inline Surface StatusBar    { Color(0x1f,0x22,0x33), BgDark,                BgHighlight, 0.0f,     BorderW };
+// The canvas fill behind everything. Flat, so only top is read.
+inline Surface Canvas       { Bg,                    Bg,                    Bg,          0.0f,     0.0f };
 
 // Buttons
 inline Surface ButtonNormal   { SurfHi,                Surf,                  Line,  Radius, BorderW };
@@ -129,7 +131,7 @@ inline std::unordered_map<std::string, Surface*>& surfaceRegistry()
 {
     static std::unordered_map<std::string, Surface*> m={
         {"Window",&Window},{"WindowInact",&WindowInact},{"Panel",&Panel},{"PanelDark",&PanelDark},
-        {"GroupBox",&GroupBox},{"Tooltip",&Tooltip},{"StatusBar",&StatusBar},
+        {"GroupBox",&GroupBox},{"Tooltip",&Tooltip},{"StatusBar",&StatusBar},{"Canvas",&Canvas},
         {"ButtonNormal",&ButtonNormal},{"ButtonHover",&ButtonHover},{"ButtonDown",&ButtonDown},{"ButtonDisabled",&ButtonDisabled},
         {"TextBox",&TextBox},{"TextBoxFocus",&TextBoxFocus},{"TextBoxDisabled",&TextBoxDisabled},
         {"Menu",&Menu},{"MenuStrip",&MenuStrip},{"MenuHover",&MenuHover},
