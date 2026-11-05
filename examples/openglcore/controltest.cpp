@@ -12,9 +12,16 @@
  *    --shot-all         write one PNG per control demo, in this one run
  *    --shot-dir <dir>   directory for --shot-all, created if missing (default /tmp)
  *    --headless         force the surfaceless EGL context (no display needed)
+ *    --stats            print one key=value line per frame; freezes the clock
  *    --list             print the control demo names and exit
  *
- *  With no --shot/--shot-all it opens the interactive window, as before.
+ *  With no --shot/--shot-all/--stats it opens the interactive window, as before,
+ *  on the real platform clock.
+ *
+ *  Captures install a frame-counter clock (gweni::platform::setTimeSource), so a
+ *  shot depends on the frame number and not on how fast the process ran. --stats
+ *  freezes that clock instead, so an idle frame is genuinely idle and the
+ *  counters settle to zero.
  */
 
 #include <GL/glew.h>
@@ -66,6 +73,16 @@
 #include <demo/treeControl.h>
 #include <demo/textBox.h>
 #include <demo/window.h>
+
+// A capture's clock: one fixed step per rendered frame, so every run sees the
+// same times. 1/60 s is the step, i.e. a nominal 60fps.
+static const float g_frameStep=1.0f/60.0f;
+static int g_frameCounter=0;
+
+static float frameClock()
+{
+    return static_cast<float>(g_frameCounter)*g_frameStep;
+}
 
 static gweni::input::GLFW3 g_glfwInput;
 static gweni::renderer::Base *g_renderer=nullptr;
@@ -342,6 +359,23 @@ static bool ensureDirectory(const fs::path &dir)
     return false;
 }
 
+// One grep-able line per frame, frame index first. The renderer numbers are read
+// after renderCanvas(), so they describe the frame just flushed.
+static void printFrameStats(int frame, const std::string &control,
+    const gweni::controls::ChangeStats &changes,
+    const gweni::renderer::OpenGLCore::FrameStats &gpu)
+{
+    std::printf("frame=%d control=%s controls_changed=%zu created=%zu visibility=%zu"
+        " geometry=%zu background=%zu text=%zu prim_slots_written=%zu text_slots_written=%zu"
+        " upload_calls=%zu upload_bytes=%zu mirror_bytes=%zu draw_calls=%zu\n",
+        frame, control.c_str(),
+        changes.controls, changes.created, changes.visibility,
+        changes.geometry, changes.background, changes.text,
+        gpu.primitiveSlotsWritten, gpu.textSlotsWritten,
+        gpu.uploadCalls, gpu.uploadBytes, gpu.mirrorBytes, gpu.drawCalls);
+    std::fflush(stdout);
+}
+
 static bool parseSize(const std::string &value, gweni::Point &size)
 {
     const size_t sep=value.find_first_of("xX");
@@ -364,6 +398,7 @@ int main(int argc, char *argv[])
     int frames=3;
     bool shotAll=false;
     bool forceHeadless=false;
+    bool stats=false;
 
     for(int i=1; i<argc; ++i)
     {
@@ -376,6 +411,7 @@ int main(int argc, char *argv[])
         else if(arg == "--frames" && hasValue) frames=std::atoi(argv[++i]);
         else if(arg == "--shot-all") shotAll=true;
         else if(arg == "--headless") forceHeadless=true;
+        else if(arg == "--stats") stats=true;
         else if(arg == "--list"){ printControlNames(std::cout); return EXIT_SUCCESS; }
         else if(arg == "--size" && hasValue)
         {
@@ -408,7 +444,9 @@ int main(int argc, char *argv[])
         return EXIT_FAILURE;
     }
 
-    const bool capturing=shotAll || !shotPath.empty();
+    // --stats on its own still renders offscreen; it just keeps no PNG.
+    const bool writingPng=shotAll || !shotPath.empty();
+    const bool capturing=writingPng || stats;
 
     std::vector<std::string> captures;
     if(shotAll)
@@ -420,14 +458,15 @@ int main(int argc, char *argv[])
     }
     else if(capturing)
     {
-        if(!ensureDirectory(fs::path(shotPath).parent_path()))
+        if(!shotPath.empty() && !ensureDirectory(fs::path(shotPath).parent_path()))
             return EXIT_FAILURE;
         captures.push_back(which);
     }
 
     if(forceHeadless && !capturing)
     {
-        std::cerr<<"ControlTest: --headless has no window to show; pass --shot or --shot-all\n";
+        std::cerr<<"ControlTest: --headless has no window to show;"
+                   " pass --shot, --shot-all or --stats\n";
         return EXIT_FAILURE;
     }
 
@@ -506,23 +545,41 @@ int main(int argc, char *argv[])
 
     if(capturing)
     {
+        // Everything time-dependent in the library now reads this instead of the
+        // platform clock; --stats leaves the counter at 0 so time never moves.
+        gweni::platform::setTimeSource(&frameClock);
+
         for(const std::string &name : captures)
         {
+            g_frameCounter=0;
+
             gweni::controls::Base *control=createControl(canvas, name);
             control->setDock(gweni::DockPosition::Center);
 
             for(int frame=0; frame<frames; ++frame)
             {
+                gweni::controls::resetChangeStats();
+
                 canvas->updateCanvas();
                 glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
                 canvas->renderCanvas();
+
+                if(stats)
+                    printFrameStats(frame, name, gweni::controls::getChangeStats(),
+                        renderer->getFrameStats());
+
+                if(!stats)
+                    ++g_frameCounter;
             }
 
-            const std::string path=shotAll ? shotDir+"/"+name+".png" : shotPath;
-            if(!writeFramebufferPng(screenSize.x, screenSize.y, path))
-                result=EXIT_FAILURE;
-            else
-                std::cout<<"wrote "<<path<<"\n";
+            if(writingPng)
+            {
+                const std::string path=shotAll ? shotDir+"/"+name+".png" : shotPath;
+                if(!writeFramebufferPng(screenSize.x, screenSize.y, path))
+                    result=EXIT_FAILURE;
+                else
+                    std::cout<<"wrote "<<path<<"\n";
+            }
 
             // Goes through the canvas so preDelete() releases the control's
             // primitives; a bare delete leaves the renderer holding them.

@@ -724,12 +724,35 @@ void Base::setPrimitiveIdsSize(size_t size)
     //enlargePrimitiveIds(this, m_primitiveIds, size);
 }
 
+static ChangeStats g_changeStats;
+
+const ChangeStats &getChangeStats()
+{
+    return g_changeStats;
+}
+
+void resetChangeStats()
+{
+    g_changeStats=ChangeStats();
+}
+
 void Base::render(skin::Base *skin)
 {
 //    update();
-    if(getStateChange() == StateChange_Nothing)
+    const int stateChange=getStateChange();
+
+    if(stateChange == StateChange_Nothing)
         return;
-    
+
+    //the one choke point every changed control passes through, so the whole
+    //frame's change count is these few increments
+    ++g_changeStats.controls;
+    if(stateChange & StateChange_Created) ++g_changeStats.created;
+    if(stateChange & StateChange_Visibility) ++g_changeStats.visibility;
+    if(stateChange & StateChange_Geometry) ++g_changeStats.geometry;
+    if(stateChange & StateChange_Background) ++g_changeStats.background;
+    if(stateChange & StateChange_Text) ++g_changeStats.text;
+
     if(!m_skinControl)
         return;
 

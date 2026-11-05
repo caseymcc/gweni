@@ -55,6 +55,23 @@ constexpr int StateChange_Geometry=0x0004;
 constexpr int StateChange_Background=0x0008;
 constexpr int StateChange_Text=0x0010;
 
+//! Tally of the controls Base::render() found something to regenerate for.
+//! This is what "per-frame cost scales with what changed" means, measured: on a
+//! settled frame every field is zero.
+struct ChangeStats
+{
+    size_t controls=0;      //!< controls with getStateChange() != StateChange_Nothing
+    size_t created=0;
+    size_t visibility=0;
+    size_t geometry=0;
+    size_t background=0;
+    size_t text=0;
+};
+
+//! Changes counted since the last resetChangeStats().
+GWENI_EXPORT const ChangeStats &getChangeStats();
+GWENI_EXPORT void resetChangeStats();
+
 size_t getControlType(std::string name);
 
 template<typename _Control>

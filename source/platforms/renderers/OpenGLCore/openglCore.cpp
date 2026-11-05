@@ -768,6 +768,7 @@ void OpenGLCore::setViewRect(const gweni::Rect &viewRect)
 
 void OpenGLCore::begin()
 {
+    m_frameStats.primitiveSlotsWritten=0;
     m_zIndex=0;
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     glEnable(GL_BLEND);
@@ -801,14 +802,28 @@ void OpenGLCore::readPrimitiveSlot(size_t primitiveId, PrimitiveSlot &slot) cons
 
 void OpenGLCore::markPrimitiveChanges(size_t primitiveId, const PrimitiveSlot &before)
 {
+    bool written=false;
+
     if(memcmp(before.vertexes, &m_vertexes[primitiveId*4], sizeof(before.vertexes)) != 0)
+    {
         m_dirtyVertexSlots.mark(primitiveId);
+        written=true;
+    }
 
     if(memcmp(before.indexes, &m_indexes[primitiveId*6], sizeof(before.indexes)) != 0)
+    {
         m_dirtyIndexSlots.mark(primitiveId);
+        written=true;
+    }
 
     if(memcmp(&before.box, &m_clippingBoxes[primitiveId], sizeof(Box)) != 0)
+    {
         m_dirtyClipSlots.mark(primitiveId);
+        written=true;
+    }
+
+    if(written)
+        ++m_frameStats.primitiveSlotsWritten;
 }
 
 void OpenGLCore::uploadDirty(unsigned int target, uint32_t buffer, size_t &capacityElements,
@@ -830,8 +845,8 @@ void OpenGLCore::uploadDirty(unsigned int target, uint32_t buffer, size_t &capac
         capacityElements=elementCount;
         dirty.clear();
 
-        ++m_uploadCalls;
-        m_uploadBytes+=elementCount*elementSize;
+        ++m_frameStats.uploadCalls;
+        m_frameStats.uploadBytes+=elementCount*elementSize;
         return;
     }
 
@@ -848,8 +863,8 @@ void OpenGLCore::uploadDirty(unsigned int target, uint32_t buffer, size_t &capac
         glBufferSubData((GLenum)target, first*elementSize, (last-first)*elementSize,
             bytes+(first*elementSize));
 
-        ++m_uploadCalls;
-        m_uploadBytes+=(last-first)*elementSize;
+        ++m_frameStats.uploadCalls;
+        m_frameStats.uploadBytes+=(last-first)*elementSize;
     });
 
     dirty.clear();
@@ -857,8 +872,14 @@ void OpenGLCore::uploadDirty(unsigned int target, uint32_t buffer, size_t &capac
 
 void OpenGLCore::flush()
 {
-    m_uploadCalls=0;
-    m_uploadBytes=0;
+    m_frameStats.uploadCalls=0;
+    m_frameStats.uploadBytes=0;
+    m_frameStats.drawCalls=0;
+    m_frameStats.textSlotsWritten=m_dirtyTextVertexSlots.count();
+    m_frameStats.mirrorBytes=
+        m_vertexes.size()*sizeof(Vertex)+m_indexes.size()*sizeof(uint16_t)
+        +m_clippingBoxes.size()*sizeof(Box)
+        +m_textVertexes.size()*sizeof(glyph_vertex_t)+m_textIndexes.size()*sizeof(uint16_t);
 
     if(!m_vertexes.empty())
     {
@@ -890,6 +911,7 @@ void OpenGLCore::flush()
         glBindVertexArray(m_vertexArray);
 
         glDrawElements(GL_TRIANGLES, m_indexes.size(), (GLenum)GL_UNSIGNED_SHORT, 0);
+        ++m_frameStats.drawCalls;
 
         glBindVertexArray(0);
     }
@@ -919,6 +941,7 @@ void OpenGLCore::flush()
         glBindVertexArray(m_textVertexArray);
 
         glDrawElements(GL_TRIANGLES, m_textIndexes.size(), (GLenum)GL_UNSIGNED_SHORT, 0);
+        ++m_frameStats.drawCalls;
 
         glBindVertexArray(0);
     }
@@ -927,16 +950,14 @@ void OpenGLCore::flush()
 
     glFlush();
 
-    ++m_frameIndex;
+    ++m_frameStats.frameIndex;
 
     if(m_uploadStats)
     {
         //qualified: gweni::printf(String&, ...) would otherwise hide the C one
         ::printf("[upload] frame %zu: %zu calls, %zu bytes (mirror %zu bytes)\n",
-            m_frameIndex, m_uploadCalls, m_uploadBytes,
-            m_vertexes.size()*sizeof(Vertex)+m_indexes.size()*sizeof(uint16_t)
-            +m_clippingBoxes.size()*sizeof(Box)
-            +m_textVertexes.size()*sizeof(glyph_vertex_t)+m_textIndexes.size()*sizeof(uint16_t));
+            m_frameStats.frameIndex, m_frameStats.uploadCalls, m_frameStats.uploadBytes,
+            m_frameStats.mirrorBytes);
         fflush(stdout);
     }
 

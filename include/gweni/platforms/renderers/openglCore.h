@@ -191,6 +191,21 @@ public:
 
     void *m_context;
 
+    //! What the last flush() actually did. Reading it is how the "only what changed
+    //! is uploaded" claim gets checked from outside the renderer.
+    struct FrameStats
+    {
+        size_t frameIndex=0;            //!< frames flushed so far
+        size_t primitiveSlotsWritten=0; //!< primitive slots whose bytes changed this frame
+        size_t textSlotsWritten=0;      //!< glyph slots whose bytes changed this frame
+        size_t uploadCalls=0;           //!< glBufferData/glBufferSubData calls
+        size_t uploadBytes=0;           //!< bytes those calls sent
+        size_t mirrorBytes=0;           //!< size of the whole CPU mirror, for comparison
+        size_t drawCalls=0;             //!< glDrawElements calls
+    };
+
+    const FrameStats &getFrameStats() const { return m_frameStats; }
+
 private:
 
     uint32_t loadShaders(const char *vertex, const char *fragment);
@@ -251,6 +266,7 @@ private:
         }
 
         bool empty() const { return m_slots.empty(); }
+        size_t count() const { return m_slots.size(); }
 
         void clear()
         {
@@ -345,11 +361,9 @@ private:
     size_t m_textVertexBufferCapacity=0;
     size_t m_textIndexBufferCapacity=0;
 
-    //per-frame upload counters, reported when GWENI_UPLOAD_STATS is set
+    //per-frame counters; also reported to stdout when GWENI_UPLOAD_STATS is set
     bool m_uploadStats=false;
-    size_t m_uploadCalls=0;
-    size_t m_uploadBytes=0;
-    size_t m_frameIndex=0;
+    FrameStats m_frameStats;
 
     glm::mat4 m_projectionMatrix;
 
