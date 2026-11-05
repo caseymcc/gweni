@@ -296,8 +296,6 @@ protected:
     virtual void updateRenderBounds();
 
 public:
-//    PrimitiveIds &getPrimitiveIds() { return m_primitiveIds; }
-
     virtual void doThink();
     virtual void doRender(gweni::skin::Base *skin);
     virtual void doCacheRender(gweni::skin::Base *skin, gweni::controls::Base *master);
@@ -578,7 +576,6 @@ protected:
     skin::Base *m_skin;
     std::unique_ptr<skin::Control> m_skinControl;
 
-    //PrimitiveIds m_primitiveIds;
     //something altered in last ui loop so rendering changing
     bool m_updatePrimitives;
 

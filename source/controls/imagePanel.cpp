@@ -28,7 +28,7 @@ ImagePanel::~ImagePanel()
 {
     getSkin()->getRenderer()->getLoader().freeTexture(m_texture);
 
-    releasePrimitiveId(m_primitiveId);
+    getSkin()->getRenderer()->releasePrimitive(m_primitiveId);
 }
 
 void ImagePanel::setUV(float u1, float v1, float u2, float v2)

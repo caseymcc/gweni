@@ -1354,6 +1354,7 @@ void OpenGLCore::generatePrimitive(size_t &primitiveId)
 
 void OpenGLCore::releasePrimitive(size_t primitiveId)
 {
+    hidePrimitive(primitiveId);
     releasePrimitiveId(primitiveId);
 }
 
@@ -1446,9 +1447,7 @@ void OpenGLCore::showPrimitive(int style, size_t primitiveId)
     size_t vertexIndex=primitiveId*4;
 
     if(m_vertexes.size() < vertexIndex+4)
-    {
-        assert(false);
-    }
+        return;
 
 //    std::cout<<"Show: "<<primitiveId<<"\n";
     for(size_t i=0; i<4; ++i)
@@ -1473,9 +1472,7 @@ void OpenGLCore::hidePrimitive(size_t primitiveId)
     size_t vertexIndex=primitiveId*4;
 
     if(m_vertexes.size() < vertexIndex+4)
-    {
-        assert(false);
-    }
+        return;
 
 //    std::cout<<"Hide: "<<primitiveId<<"\n";
     for(size_t i=0; i<4; ++i)
@@ -1530,6 +1527,23 @@ void OpenGLCore::generateTextPrimitive(size_t &primitiveId)
 void OpenGLCore::releaseTextPrimitive(size_t primitiveId)
 {
     hideText(primitiveId);
+
+    // The logical text id and the per-glyph slots are separate banks. Returning
+    // only the former left the glyph slots leaked and m_textStrings stale, so a
+    // reused text id whose string matched the dead control's took renderText's
+    // "string hasn't changed" path and inherited its hidden glyphs.
+    if(primitiveId < m_textPrimitiveIds.size())
+    {
+        std::vector<size_t> &textPrimitiveIds=m_textPrimitiveIds[primitiveId];
+
+        for(size_t i=0; i<textPrimitiveIds.size(); ++i)
+            m_textIds.releaseId(textPrimitiveIds[i]);
+
+        textPrimitiveIds.clear();
+        m_textStrings[primitiveId].clear();
+        m_textPosition[primitiveId]=gweni::Point(0, 0);
+    }
+
     releaseTextId(primitiveId);
 }
 

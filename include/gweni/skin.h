@@ -80,6 +80,7 @@ protected:
         if(count == 0)
             return;
 
+        releasePrimitives(baseRenderer);
         m_primitives.resize(count);
 
         for(size_t i=0; i<count; ++i)

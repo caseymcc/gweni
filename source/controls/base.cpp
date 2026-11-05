@@ -191,8 +191,6 @@ Base::~Base()
     }
 
     removeSkinControl();
-//    for(size_t i=0; i<m_primitiveIds.size(); ++i)
-//        releasePrimitiveId(m_primitiveIds[i]);
 }
 
 void Base::invalidate(int state)
@@ -1001,12 +999,6 @@ void Base::renderRecursive(skin::Base *skin, const Rect &cliprect)
 
 void Base::doHide(skin::Base *skin)
 {
-//    renderer::Base *baseRenderer=skin->getRenderer();
-//
-//    for(size_t i=0; i<m_primitiveIds.size(); ++i)
-//        baseRenderer->hidePrimitive(m_primitiveIds[i]);
-//
-//    hideRecursive(skin);
 }
 
 void Base::hideRecursive(skin::Base *skin)
