@@ -129,7 +129,7 @@ A skin is constructed around a renderer and `init()`'d from a resource: the text
 - Public symbols crossing the library boundary are tagged `GWENI_EXPORT` (`export.h`).
 - `gweni::String` / `gweni::Point` / `gweni::Rect` / `gweni::Color` / `BoundingBox` (aliased to `Margin`/`Padding`) come from `platforms/platformTypes.h` and `uiTypes.h` — use these rather than raw types.
 - Filesystem backend is selected at configure time via `GWENI_USE_FILESYSTEM` (std / experimental / boost) based on compiler; code must go through that macro, not include `<filesystem>` directly.
-- `base.h` currently has debug logging hard-enabled (`logUpdates` → `printf`, `DEBUG_ID`, `DEBUG_LAYOUT`); expect verbose stdout when running.
+- Verbose per-control debug output (`logUpdates` → `printf`, plus `DEBUG_ID` and `DEBUG_LAYOUT` in `base.h`) is off by default and enabled by configuring with `-DGWENI_DEBUG_LOGGING=ON`; expect verbose stdout when running such a build. `DEBUG_ID` also appends each control's id to label text, so that build looks different too.
 
 ## Origin / license
 MIT. Copyright headers credit Facepunch Studios (original GWEN). Keep the license header on new files.

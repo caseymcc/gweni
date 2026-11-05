@@ -24,9 +24,12 @@
 #include <map>
 #include <algorithm>
 
+// Verbose per-control debug output. Enabled by the GWENI_DEBUG_LOGGING cmake
+// option; undefined (so: off) for consumers building without it.
+#ifdef GWENI_DEBUG_LOGGING
+#include <cstdio>
 #define DEBUG_ID
 #define DEBUG_LAYOUT
-#if 1
 #define logUpdates(...) ::printf(__VA_ARGS__)
 #else
 #define logUpdates(...)
