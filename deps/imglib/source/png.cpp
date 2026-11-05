@@ -229,7 +229,8 @@ bool savePng(ImageWrapper image, const char *filename)
     png_byte color_type=getPngColorType(image.format());
     png_byte bit_depth=getPngBitDepth(image.depth());
 
-    //rejected before the file is created, so an unsupported image leaves nothing behind
+    //rejected before the file is created; a failure after that point removes the destination on
+    //the way out, so a false return always means no file was left behind
     if((color_type==pngColorTypeUnsupported)||(bit_depth==pngBitDepthUnsupported))
         return false;
 
@@ -281,6 +282,12 @@ bool savePng(ImageWrapper image, const char *filename)
         png_destroy_write_struct(&png, info?&info:NULL);
 
     fclose(file);
+
+    //the destination was truncated by fopen before anything could fail, so there is nothing to
+    //preserve: drop the empty or partial file rather than leave it looking like an image
+    if(!success)
+        remove(filename);
+
     return success;
 }
 

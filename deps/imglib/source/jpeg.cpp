@@ -134,8 +134,9 @@ bool saveJpeg(ImageWrapper image, const char *filename)
 {
     J_COLOR_SPACE color_type=getJpegColorType(image.format());
 
-    //rejected before the file is created, so an unsupported image leaves nothing behind. the
-    //alpha formats are rejected rather than written without their alpha channel
+    //rejected before the file is created; a failure after that point removes the destination on
+    //the way out, so a false return always means no file was left behind. the alpha formats are
+    //rejected rather than written without their alpha channel
     if(color_type==JCS_UNKNOWN)
         return false;
 
@@ -189,6 +190,12 @@ bool saveJpeg(ImageWrapper image, const char *filename)
     jpeg_destroy_compress(&jpegCompress);
 
     fclose(file);
+
+    //the destination was truncated by fopen before anything could fail, so there is nothing to
+    //preserve: drop the empty or partial file rather than leave it looking like an image
+    if(!success)
+        remove(filename);
+
     return success;
 }
 
