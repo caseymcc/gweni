@@ -34,6 +34,7 @@
 #include <math.h>
 #include <sys/stat.h>
 #include <stdio.h>
+#include <cstdlib>
 #include <algorithm>
 #include <fstream>
 #include <cassert>
@@ -402,6 +403,8 @@ OpenGLCore::OpenGLCore(ResourcePaths &paths, const Rect &viewRect)
     m_vertexes.reserve(minVertexSize);
 
     m_clippingBoxes.reserve(minClippingSize);
+
+    m_uploadStats=(getenv("GWENI_UPLOAD_STATS") != nullptr);
 }
 
 OpenGLCore::~OpenGLCore()
@@ -443,6 +446,13 @@ void OpenGLCore::init()
         -10000.0f,
         0.0f
     );
+
+    //the buffers below are freshly created, so nothing of the mirror is on the device yet
+    m_vertexBufferCapacity=0;
+    m_indexBufferCapacity=0;
+    m_clipBufferCapacity=0;
+    m_textVertexBufferCapacity=0;
+    m_textIndexBufferCapacity=0;
 
     // Creating buffers
     glCreateVertexArrays(1, &m_vertexArray);
@@ -770,19 +780,97 @@ void OpenGLCore::end()
     flush();
 }
 
+void OpenGLCore::ensurePrimitiveSlots(size_t primitiveId)
+{
+    if(m_clippingBoxes.size() < primitiveId+1)
+        m_clippingBoxes.resize(primitiveId+1);
+
+    if(m_indexes.size() < primitiveId*6+6)
+        m_indexes.resize(primitiveId*6+6);
+
+    if(m_vertexes.size() < primitiveId*4+4)
+        m_vertexes.resize(primitiveId*4+4);
+}
+
+void OpenGLCore::readPrimitiveSlot(size_t primitiveId, PrimitiveSlot &slot) const
+{
+    memcpy(slot.vertexes, &m_vertexes[primitiveId*4], sizeof(slot.vertexes));
+    memcpy(slot.indexes, &m_indexes[primitiveId*6], sizeof(slot.indexes));
+    slot.box=m_clippingBoxes[primitiveId];
+}
+
+void OpenGLCore::markPrimitiveChanges(size_t primitiveId, const PrimitiveSlot &before)
+{
+    if(memcmp(before.vertexes, &m_vertexes[primitiveId*4], sizeof(before.vertexes)) != 0)
+        m_dirtyVertexSlots.mark(primitiveId);
+
+    if(memcmp(before.indexes, &m_indexes[primitiveId*6], sizeof(before.indexes)) != 0)
+        m_dirtyIndexSlots.mark(primitiveId);
+
+    if(memcmp(&before.box, &m_clippingBoxes[primitiveId], sizeof(Box)) != 0)
+        m_dirtyClipSlots.mark(primitiveId);
+}
+
+void OpenGLCore::uploadDirty(unsigned int target, uint32_t buffer, size_t &capacityElements,
+    const void *data, size_t elementSize, size_t elementCount,
+    DirtySlots &dirty, size_t elementsPerSlot)
+{
+    if(elementCount == 0)
+        return;
+
+    if((capacityElements >= elementCount) && dirty.empty())
+        return; //device already holds the mirror
+
+    glBindBuffer((GLenum)target, buffer);
+
+    if(capacityElements < elementCount)
+    {
+        //the mirror outgrew the allocation; resize it and resend everything
+        glBufferData((GLenum)target, elementCount*elementSize, data, GL_DYNAMIC_DRAW);
+        capacityElements=elementCount;
+        dirty.clear();
+
+        ++m_uploadCalls;
+        m_uploadBytes+=elementCount*elementSize;
+        return;
+    }
+
+    const char *bytes=static_cast<const char *>(data);
+
+    dirty.forEachRun([&](size_t firstSlot, size_t lastSlot)
+    {
+        size_t first=firstSlot*elementsPerSlot;
+        size_t last=std::min(lastSlot*elementsPerSlot, elementCount);
+
+        if(last <= first)
+            return;
+
+        glBufferSubData((GLenum)target, first*elementSize, (last-first)*elementSize,
+            bytes+(first*elementSize));
+
+        ++m_uploadCalls;
+        m_uploadBytes+=(last-first)*elementSize;
+    });
+
+    dirty.clear();
+}
+
 void OpenGLCore::flush()
 {
+    m_uploadCalls=0;
+    m_uploadBytes=0;
+
     if(!m_vertexes.empty())
     {
-        //copy data to gpu
-        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m_indexBuffer);
-        glBufferData(GL_ELEMENT_ARRAY_BUFFER, m_indexes.size()*sizeof(uint16_t), m_indexes.data(), GL_STATIC_DRAW);
+        //copy only the primitive slots that changed since the last frame
+        uploadDirty(GL_ELEMENT_ARRAY_BUFFER, m_indexBuffer, m_indexBufferCapacity,
+            m_indexes.data(), sizeof(uint16_t), m_indexes.size(), m_dirtyIndexSlots, 6);
 
-        glBindBuffer(GL_ARRAY_BUFFER, m_vertexBuffer);
-        glBufferData(GL_ARRAY_BUFFER, m_vertexes.size()*sizeof(Vertex), m_vertexes.data(), GL_STATIC_DRAW);
+        uploadDirty(GL_ARRAY_BUFFER, m_vertexBuffer, m_vertexBufferCapacity,
+            m_vertexes.data(), sizeof(Vertex), m_vertexes.size(), m_dirtyVertexSlots, 4);
 
-        glBindBuffer(GL_ARRAY_BUFFER, m_clipBuffer);
-        glBufferData(GL_ARRAY_BUFFER, m_clippingBoxes.size()*sizeof(Box), m_clippingBoxes.data(), GL_STATIC_DRAW);
+        uploadDirty(GL_ARRAY_BUFFER, m_clipBuffer, m_clipBufferCapacity,
+            m_clippingBoxes.data(), sizeof(Box), m_clippingBoxes.size(), m_dirtyClipSlots, 1);
 
         //draw primitives
         glUseProgram(m_program);
@@ -808,12 +896,12 @@ void OpenGLCore::flush()
 
     if(!m_textIndexes.empty())
     {
-        //copy text data to gpu
-        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m_textIndexBuffer);
-        glBufferData(GL_ELEMENT_ARRAY_BUFFER, m_textIndexes.size()*sizeof(uint16_t), m_textIndexes.data(), GL_STATIC_DRAW);
+        //copy only the glyph slots that changed since the last frame
+        uploadDirty(GL_ELEMENT_ARRAY_BUFFER, m_textIndexBuffer, m_textIndexBufferCapacity,
+            m_textIndexes.data(), sizeof(uint16_t), m_textIndexes.size(), m_dirtyTextIndexSlots, 6);
 
-        glBindBuffer(GL_ARRAY_BUFFER, m_textVertexBuffer);
-        glBufferData(GL_ARRAY_BUFFER, m_textVertexes.size()*sizeof(glyph_vertex_t), m_textVertexes.data(), GL_STATIC_DRAW);
+        uploadDirty(GL_ARRAY_BUFFER, m_textVertexBuffer, m_textVertexBufferCapacity,
+            m_textVertexes.data(), sizeof(glyph_vertex_t), m_textVertexes.size(), m_dirtyTextVertexSlots, 4);
 
         //draw text
         glUseProgram(m_textProgram);
@@ -838,6 +926,19 @@ void OpenGLCore::flush()
     glBindVertexArray(0);
 
     glFlush();
+
+    ++m_frameIndex;
+
+    if(m_uploadStats)
+    {
+        //qualified: gweni::printf(String&, ...) would otherwise hide the C one
+        ::printf("[upload] frame %zu: %zu calls, %zu bytes (mirror %zu bytes)\n",
+            m_frameIndex, m_uploadCalls, m_uploadBytes,
+            m_vertexes.size()*sizeof(Vertex)+m_indexes.size()*sizeof(uint16_t)
+            +m_clippingBoxes.size()*sizeof(Box)
+            +m_textVertexes.size()*sizeof(glyph_vertex_t)+m_textIndexes.size()*sizeof(uint16_t));
+        fflush(stdout);
+    }
 
 //    // Binding VAO
 //    glBindVertexArray(m_vertexArray);
@@ -990,8 +1091,11 @@ void OpenGLCore::drawFilledRect(size_t primitiveId, gweni::Rect rect, int zIndex
     size_t index=primitiveId*6;
     size_t vertexIndex=primitiveId*4;
 
-    if(m_clippingBoxes.size() < primitiveId+1)
-        m_clippingBoxes.resize(primitiveId+1);
+    ensurePrimitiveSlots(primitiveId);
+
+    PrimitiveSlot before;
+
+    readPrimitiveSlot(primitiveId, before);
 
     Box &box=m_clippingBoxes[primitiveId];
 
@@ -1013,18 +1117,12 @@ void OpenGLCore::drawFilledRect(size_t primitiveId, gweni::Rect rect, int zIndex
         box.y1=m_viewRect.y+m_viewRect.h;
     }
 
-    if(m_indexes.size() < index + 6)
-        m_indexes.resize(index+6);
-
     m_indexes[index++]=vertexIndex;
     m_indexes[index++]=vertexIndex+1;
     m_indexes[index++]=vertexIndex+2;
     m_indexes[index++]=vertexIndex+1;
     m_indexes[index++]=vertexIndex+3;
     m_indexes[index++]=vertexIndex+2;
-
-    if(m_vertexes.size() < vertexIndex+4)
-        m_vertexes.resize(vertexIndex+4);
 
 #ifdef DEBUG_RENDER
     std::cout<<"Rendering Fill: "<<primitiveId<<"("<<rect.x<<", "<<rect.y<<", "<<rect.w<<", "<<rect.h<<" : "<<zIndex<<") color: "<<(int)m_color.r<<", "<<(int)m_color.g<<", "<<(int)m_color.b<<", "<<(int)m_color.a<<"\n";
@@ -1036,6 +1134,8 @@ void OpenGLCore::drawFilledRect(size_t primitiveId, gweni::Rect rect, int zIndex
 //    setVertex(m_vertexes[vertexIndex++], rect.x+rect.w, rect.y);
     setVertex(m_vertexes[vertexIndex++], 1, rect.x+rect.w, rect.y+rect.h, zIndex, m_color.rg, m_color.ba);
 //    setVertex(m_vertexes[vertexIndex++], rect.x, rect.y+rect.h);
+
+    markPrimitiveChanges(primitiveId, before);
 
 //    addVert(rect.x, rect.y);
 //    addVert(rect.x+rect.w, rect.y);
@@ -1056,8 +1156,11 @@ void OpenGLCore::drawRoundedRect(size_t primitiveId, gweni::Rect rect, float rad
     size_t index=primitiveId*6;
     size_t vertexIndex=primitiveId*4;
 
-    if(m_clippingBoxes.size() < primitiveId+1)
-        m_clippingBoxes.resize(primitiveId+1);
+    ensurePrimitiveSlots(primitiveId);
+
+    PrimitiveSlot before;
+
+    readPrimitiveSlot(primitiveId, before);
 
     Box &box=m_clippingBoxes[primitiveId];
 
@@ -1078,18 +1181,12 @@ void OpenGLCore::drawRoundedRect(size_t primitiveId, gweni::Rect rect, float rad
         box.y1=m_viewRect.y+m_viewRect.h;
     }
 
-    if(m_indexes.size() < index + 6)
-        m_indexes.resize(index+6);
-
     m_indexes[index++]=vertexIndex;
     m_indexes[index++]=vertexIndex+1;
     m_indexes[index++]=vertexIndex+2;
     m_indexes[index++]=vertexIndex+1;
     m_indexes[index++]=vertexIndex+3;
     m_indexes[index++]=vertexIndex+2;
-
-    if(m_vertexes.size() < vertexIndex+4)
-        m_vertexes.resize(vertexIndex+4);
 
     // Center the SDF rect inside the control rect so the drawn shape and the quad
     // positions coincide exactly (avoids edge clipping for odd sizes).
@@ -1120,6 +1217,8 @@ void OpenGLCore::drawRoundedRect(size_t primitiveId, gweni::Rect rect, float rad
     setRounded(vertexIndex++, cx+hw, cy-hh, +hw, -hh);
     setRounded(vertexIndex++, cx-hw, cy+hh, -hw, +hh);
     setRounded(vertexIndex++, cx+hw, cy+hh, +hw, +hh);
+
+    markPrimitiveChanges(primitiveId, before);
 }
 
 void OpenGLCore::drawIcon(size_t primitiveId, gweni::Rect rect, int kind, int direction,
@@ -1133,8 +1232,11 @@ void OpenGLCore::drawIcon(size_t primitiveId, gweni::Rect rect, int kind, int di
     size_t index=primitiveId*6;
     size_t vertexIndex=primitiveId*4;
 
-    if(m_clippingBoxes.size() < primitiveId+1)
-        m_clippingBoxes.resize(primitiveId+1);
+    ensurePrimitiveSlots(primitiveId);
+
+    PrimitiveSlot before;
+
+    readPrimitiveSlot(primitiveId, before);
 
     Box &box=m_clippingBoxes[primitiveId];
 
@@ -1155,18 +1257,12 @@ void OpenGLCore::drawIcon(size_t primitiveId, gweni::Rect rect, int kind, int di
         box.y1=m_viewRect.y+m_viewRect.h;
     }
 
-    if(m_indexes.size() < index + 6)
-        m_indexes.resize(index+6);
-
     m_indexes[index++]=vertexIndex;
     m_indexes[index++]=vertexIndex+1;
     m_indexes[index++]=vertexIndex+2;
     m_indexes[index++]=vertexIndex+1;
     m_indexes[index++]=vertexIndex+3;
     m_indexes[index++]=vertexIndex+2;
-
-    if(m_vertexes.size() < vertexIndex+4)
-        m_vertexes.resize(vertexIndex+4);
 
     const int hw=rect.w/2;
     const int hh=rect.h/2;
@@ -1187,6 +1283,8 @@ void OpenGLCore::drawIcon(size_t primitiveId, gweni::Rect rect, int kind, int di
     setIcon(vertexIndex++, cx+hw, cy-hh, +hw, -hh);
     setIcon(vertexIndex++, cx-hw, cy+hh, -hw, +hh);
     setIcon(vertexIndex++, cx+hw, cy+hh, +hw, +hh);
+
+    markPrimitiveChanges(primitiveId, before);
 }
 
 void OpenGLCore::setDrawColor(gweni::Color color)
@@ -1219,15 +1317,8 @@ void OpenGLCore::generatePrimitive(size_t &primitiveId)
 {
     primitiveId=getPrimitiveId(nullptr);
 
-    //resize indexes/vertexes to covert the primitive
-    size_t index=primitiveId*6;
-    size_t vertexIndex=primitiveId*4;
-
-    if(m_indexes.size() < index + 6)
-        m_indexes.resize(index+6);
-
-    if(m_vertexes.size() < vertexIndex+4)
-        m_vertexes.resize(vertexIndex+4);
+    //resize indexes/vertexes to cover the primitive
+    ensurePrimitiveSlots(primitiveId);
 }
 
 void OpenGLCore::releasePrimitive(size_t primitiveId)
@@ -1258,8 +1349,11 @@ void OpenGLCore::drawTexturedRect(const gweni::Texture &texture, size_t primitiv
     size_t index=primitiveId*6;
     size_t vertexIndex=primitiveId*4;
 
-    if(m_clippingBoxes.size() < primitiveId+1)
-        m_clippingBoxes.resize(primitiveId+1);
+    ensurePrimitiveSlots(primitiveId);
+
+    PrimitiveSlot before;
+
+    readPrimitiveSlot(primitiveId, before);
 
     Box &box=m_clippingBoxes[primitiveId];
 
@@ -1281,18 +1375,12 @@ void OpenGLCore::drawTexturedRect(const gweni::Texture &texture, size_t primitiv
         box.y1=m_viewRect.y+m_viewRect.h;
     }
 
-    if(m_indexes.size() < index + 6)
-        m_indexes.resize(index+6);
-
     m_indexes[index++]=vertexIndex;
     m_indexes[index++]=vertexIndex+1;
     m_indexes[index++]=vertexIndex+2;
     m_indexes[index++]=vertexIndex+1;
     m_indexes[index++]=vertexIndex+3;
     m_indexes[index++]=vertexIndex+2;
-
-    if(m_vertexes.size() < vertexIndex+4)
-        m_vertexes.resize(vertexIndex+4);
 
 #ifdef DEBUG_RENDER
     std::cout<<"Rendering: "<<primitiveId<<"("<<rect.x<<", "<<rect.y<<", "<<rect.w<<", "<<rect.h<<" : "<<zIndex<<")\n";
@@ -1304,6 +1392,8 @@ void OpenGLCore::drawTexturedRect(const gweni::Texture &texture, size_t primitiv
 //    setVertex(m_vertexes[vertexIndex++], rect.x + rect.w, rect.y, u2, v1);
     setVertex(m_vertexes[vertexIndex++], 2, rect.x + rect.w, rect.y + rect.h, zIndex, u2, v2);
 //    setVertex(m_vertexes[vertexIndex++], rect.x, rect.y + rect.h, u1, v2);
+
+    markPrimitiveChanges(primitiveId, before);
 
 //    addVert(rect.x, rect.y, u1, v1);
 //    addVert(rect.x + rect.w, rect.y, u2, v1);
@@ -1332,7 +1422,11 @@ void OpenGLCore::showPrimitive(int style, size_t primitiveId)
 //    std::cout<<"Show: "<<primitiveId<<"\n";
     for(size_t i=0; i<4; ++i)
     {
+        if(m_vertexes[vertexIndex+i].style == style)
+            continue;
+
         m_vertexes[vertexIndex+i].style=style;
+        m_dirtyVertexSlots.mark(primitiveId);
     }
 }
 
@@ -1355,9 +1449,12 @@ void OpenGLCore::hidePrimitive(size_t primitiveId)
 //    std::cout<<"Hide: "<<primitiveId<<"\n";
     for(size_t i=0; i<4; ++i)
     {
-        m_vertexes[vertexIndex+i].style=0;
-    }
+        if(m_vertexes[vertexIndex+i].style == 0)
+            continue;
 
+        m_vertexes[vertexIndex+i].style=0;
+        m_dirtyVertexSlots.mark(primitiveId);
+    }
 }
 
 gweni::Color OpenGLCore::pixelColor(const gweni::Texture &texture, unsigned int x, unsigned int y,
@@ -1451,6 +1548,7 @@ void OpenGLCore::renderText(size_t textId, const gweni::Font &font, gweni::Point
                     m_textVertexes[vertIndex+j].shift=zOffset;
                 }
 //                m_zIndex++;
+                m_dirtyTextVertexSlots.mark(textPrimitiveIds[i]);
                 zOffset+=zDelta;
             }
             m_textPosition[textId]=pos;
@@ -1564,7 +1662,10 @@ void OpenGLCore::renderText(size_t textId, const gweni::Font &font, gweni::Point
         m_textVertexes[vertIndex].y=pos.y-vertexBuffer[vertexPos++].y;
         m_textVertexes[vertIndex].shift=zOffset;
         m_textVertexes[vertIndex++].z=zIndex;
-        
+
+        m_dirtyTextIndexSlots.mark(textPrimitiveIds[i]);
+        m_dirtyTextVertexSlots.mark(textPrimitiveIds[i]);
+
         zOffset+=zDelta;
 //        m_zIndex++;
     }
@@ -1625,7 +1726,13 @@ void OpenGLCore::showText(size_t textId)
 
         for(size_t j=0; j<4; ++j)
         {
-            m_textVertexes[vertIndex+j].z=abs(m_textVertexes[vertIndex+j].z);
+            const float shown=abs(m_textVertexes[vertIndex+j].z);
+
+            if(m_textVertexes[vertIndex+j].z == shown)
+                continue;
+
+            m_textVertexes[vertIndex+j].z=shown;
+            m_dirtyTextVertexSlots.mark(textPrimitiveIds[i]);
         }
     }
 }
@@ -1644,7 +1751,13 @@ void OpenGLCore::hideText(size_t textId)
 
         for(size_t j=0; j<4; ++j)
         {
-            m_textVertexes[vertIndex+j].z=-abs(m_textVertexes[vertIndex+j].z);
+            const float hidden=-abs(m_textVertexes[vertIndex+j].z);
+
+            if(m_textVertexes[vertIndex+j].z == hidden)
+                continue;
+
+            m_textVertexes[vertIndex+j].z=hidden;
+            m_dirtyTextVertexSlots.mark(textPrimitiveIds[i]);
         }
     }
 }

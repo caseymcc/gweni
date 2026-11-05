@@ -10,6 +10,8 @@
 #include <unordered_map>
 #include <memory>
 #include <functional>
+#include <algorithm>
+#include <cstdint>
 
 #include <freetype-gl/freetype-gl.h>
 #include <freetype-gl/markup.h>
@@ -228,6 +230,85 @@ private:
         uint16_t x1, y1;
     };
 
+    //
+    //! Set of primitive slots whose CPU-side data has diverged from the GPU buffer.
+    //
+    //! A slot is a fixed, equally sized run of elements in a buffer (4 vertexes or 6
+    //! indexes per primitive id), so the set only has to remember slot numbers; flush()
+    //! turns them into as few contiguous glBufferSubData ranges as it can.
+    //
+    class DirtySlots
+    {
+    public:
+        void mark(size_t slot)
+        {
+            if(m_marked.size() <= slot)
+                m_marked.resize(slot+1, 0);
+            if(m_marked[slot])
+                return;
+            m_marked[slot]=1;
+            m_slots.push_back(slot);
+        }
+
+        bool empty() const { return m_slots.empty(); }
+
+        void clear()
+        {
+            for(size_t slot: m_slots)
+                m_marked[slot]=0;
+            m_slots.clear();
+        }
+
+        //! Calls fn(firstSlot, lastSlotExclusive) for each maximal run of dirty slots.
+        template<typename Fn>
+        void forEachRun(Fn &&fn)
+        {
+            std::sort(m_slots.begin(), m_slots.end());
+
+            size_t i=0;
+
+            while(i < m_slots.size())
+            {
+                size_t begin=m_slots[i];
+                size_t end=begin+1;
+
+                while((i+1 < m_slots.size()) && (m_slots[i+1] <= end))
+                {
+                    end=m_slots[i+1]+1;
+                    ++i;
+                }
+
+                fn(begin, end);
+                ++i;
+            }
+        }
+
+    private:
+        std::vector<uint8_t> m_marked;
+        std::vector<size_t> m_slots;
+    };
+
+    //! Everything a primitive id owns in the CPU mirrors, as it stood before a redraw.
+    struct PrimitiveSlot
+    {
+        Vertex vertexes[4];
+        uint16_t indexes[6];
+        Box box;
+    };
+
+    //! Grows the CPU mirrors so the primitive's slots exist.
+    void ensurePrimitiveSlots(size_t primitiveId);
+    void readPrimitiveSlot(size_t primitiveId, PrimitiveSlot &slot) const;
+    //! Marks only the slots whose bytes differ from `before`, so a control that redraws
+    //! itself unchanged (the skin re-emits every frame) costs no upload.
+    void markPrimitiveChanges(size_t primitiveId, const PrimitiveSlot &before);
+
+    //! Uploads only the dirty slots of a buffer, growing (and fully re-uploading) it when the
+    //! mirror has outgrown the device allocation. Clears dirty on return.
+    void uploadDirty(unsigned int target, uint32_t buffer, size_t &capacityElements,
+        const void *data, size_t elementSize, size_t elementCount,
+        DirtySlots &dirty, size_t elementsPerSlot);
+
     void setVertex(Vertex &vertex, uint8_t type, int x, int y, int z, float u=0.0f, float v=0.0f);
     void addVert(int x, int y, float u=0.0f, float v=0.0f);
     void setTexture(unsigned int texture);
@@ -250,6 +331,25 @@ private:
     std::vector<gweni::Point> m_textPosition;
     std::vector<uint16_t> m_textIndexes;
     std::vector<ftgl::glyph_vertex_t> m_textVertexes;
+
+    DirtySlots m_dirtyVertexSlots;
+    DirtySlots m_dirtyIndexSlots;
+    DirtySlots m_dirtyClipSlots;
+    DirtySlots m_dirtyTextVertexSlots;
+    DirtySlots m_dirtyTextIndexSlots;
+
+    //element counts currently allocated on the device, per buffer
+    size_t m_vertexBufferCapacity=0;
+    size_t m_indexBufferCapacity=0;
+    size_t m_clipBufferCapacity=0;
+    size_t m_textVertexBufferCapacity=0;
+    size_t m_textIndexBufferCapacity=0;
+
+    //per-frame upload counters, reported when GWENI_UPLOAD_STATS is set
+    bool m_uploadStats=false;
+    size_t m_uploadCalls=0;
+    size_t m_uploadBytes=0;
+    size_t m_frameIndex=0;
 
     glm::mat4 m_projectionMatrix;
 
