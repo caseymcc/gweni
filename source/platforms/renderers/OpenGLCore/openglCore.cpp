@@ -320,6 +320,14 @@ GLTextureData *OpenGLCore::getFreeTextureData()
     {
         size_t index=m_freeTextureData.back();
         m_freeTextureData.pop_back();
+
+        // freeTexture() deletes the slot's data but keeps the index on the free
+        // list, so a recycled slot can be empty.
+        if(!m_textureData[index])
+        {
+            m_textureData[index]=new GLTextureData();
+            m_textureData[index]->m_index=index;
+        }
         textureData=m_textureData[index];
     }
     else
