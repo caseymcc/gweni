@@ -138,6 +138,8 @@ add_library(gweni_demo STATIC
 
 source_group("" FILES ${GWENI_DEMO_SOURCES})
 
+gweni_set_warnings(gweni_demo)
+
 target_include_directories(gweni_demo PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}>
     $<INSTALL_INTERFACE:examples>

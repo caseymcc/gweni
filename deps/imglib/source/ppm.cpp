@@ -129,6 +129,12 @@ bool savePpm(ImageWrapper image, const char *filename)
             success=true;
         }
 		break;
+	case Format::Unknown:
+	case Format::RA:
+	case Format::BGRA:
+	case Format::YUV:
+		//no P6 ppm encoding for these, success stays false
+		break;
 	}
 	
 	fclose(file);

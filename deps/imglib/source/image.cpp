@@ -134,8 +134,15 @@ Depth bitsToDepth(size_t bits)
 template<Format _Format>
 size_t sizeOfImageDepth(Depth depth)
 {
+    //every Depth is listed so -Werror=switch catches a newly added one instead of it
+    //silently returning zero
     switch(depth)
     {
+    case Depth::Unknown:
+        return 0;
+    case Depth::Packed:
+        //several pack formats are expected, none of them has a fixed pixel size yet
+        return 0;
     case Depth::Bit1:
         return traits::sizeOf<_Format, Depth::Bit1>();
     case Depth::Bit8:

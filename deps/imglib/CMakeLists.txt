@@ -178,7 +178,7 @@ target_link_libraries(imglib ${imglib_libraries})
 target_include_directories(imglib PUBLIC ${CMAKE_CURRENT_LIST_DIR}/include)
 target_include_directories(imglib PUBLIC ${CMAKE_CURRENT_BINARY_DIR}) #export files will be here
 #target_compile_definitions(imglib PRIVATE "-DIMGLIB_USE_FILESYSTEM=${IMGLIB_USE_FILESYSTEM}")
-target_compile_options(imglib PUBLIC ${imglib_compile_options})
+target_compile_options(imglib PRIVATE ${imglib_compile_options})
 
 #link to file system
 include(Filesystem)

@@ -28,6 +28,8 @@ endif()
 
 add_executable(${example_name} ${${example_name}_build_type} ${${example_name}_sources})
 
+gweni_set_warnings(${example_name})
+
 target_link_libraries(${example_name}
     gweni
     gweni_demo
@@ -36,6 +38,7 @@ target_link_libraries(${example_name}
 
 # Single-control test harness: drops one control on the canvas by name.
 add_executable(ControlTest controltest.cpp capture.cpp)
+gweni_set_warnings(ControlTest)
 target_link_libraries(ControlTest
     gweni
     gweni_demo

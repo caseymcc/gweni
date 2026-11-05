@@ -64,6 +64,10 @@ Format getFormat(J_COLOR_SPACE color_type)
     case J_COLOR_SPACE::JCS_YCbCr:
         format=Format::YUV;
         break;
+    default:
+        //J_COLOR_SPACE is libjpeg's, not ours, so it gets a default rather than the
+        //exhaustive treatment imglib's own enums get; CMYK/YCCK/JCS_EXT_* have no Format
+        break;
     }
 
     return format;

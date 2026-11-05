@@ -40,6 +40,7 @@ set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 
 # configure projects
 include(${GWENI_SOURCE_DIR}/cmake/Config.cmake)
+include(${GWENI_SOURCE_DIR}/cmake/Warnings.cmake)
 
 # write the version info
 configure_file(
@@ -412,6 +413,8 @@ add_library(gweni OBJECT
 )
 
 endif()
+
+gweni_set_warnings(gweni)
 
 target_include_directories(gweni PUBLIC "${CMAKE_CURRENT_LIST_DIR}/include")
 target_link_libraries(gweni
