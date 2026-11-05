@@ -10,7 +10,32 @@ The library builds as a static/object library plus example executables. There is
 
 ## Building
 
-**All builds and dependency operations run inside Docker — never on the host.** The toolchain, vcpkg, and all build tooling live in the container. `run_docker.sh` builds an Ubuntu 22.04 image (`Dockerfile`), creates a container that mounts the repo at `/home/developer/gweni`, and either attaches a shell or runs a command you pass it:
+**All builds and dependency operations run inside the build container — never directly on a developer's host.** The toolchain, vcpkg, and all build tooling live in the container.
+
+### Which situation are you in? Test `VCPKG_ROOT`
+
+Everything below depends on whether you are *outside* the container (a developer on their own machine) or *already inside* it. Check before you run anything:
+
+```bash
+[ -n "$VCPKG_ROOT" ] && echo "inside the container" || echo "on a host — go through run_docker.sh"
+```
+
+`VCPKG_ROOT=/opt/vcpkg` is baked into the image (`Dockerfile`), so if it is set you are inside the build container and already have cmake, the compilers and vcpkg. If it is unset you are on a host; `generate.sh` detects this itself and refuses to run, pointing you at `run_docker.sh`.
+
+### Inside the container (`VCPKG_ROOT` is set)
+
+Run the same two steps directly — there is no docker inside the container, so `run_docker.sh` cannot work here:
+
+```bash
+./generate.sh linux                   # configure build_linux_x64_debug/
+cmake --build build_linux_x64_debug -j # build
+```
+
+This is the case for an automated agent run: the agent image is built FROM this repo's own `Dockerfile`, so the container is already the environment described here. The repo is at the working directory, not at `run_docker.sh`'s `/home/developer/gweni`, and there is **no `/vcpkg-cache`** — nothing mounts it, so `VCPKG_DEFAULT_BINARY_CACHE`/`VCPKG_DOWNLOADS` are unset and the dependency build starts cold (slow, and not reused by the next run).
+
+### On a host machine (`VCPKG_ROOT` is unset)
+
+`run_docker.sh` builds an Ubuntu 22.04 image (`Dockerfile`), creates a container that mounts the repo at `/home/developer/gweni`, and either attaches a shell or runs a command you pass it:
 
 ```bash
 ./run_docker.sh                       # interactive shell in the container
@@ -20,20 +45,24 @@ The library builds as a static/object library plus example executables. There is
 
 Flags (before the command): `-r` rebuild the image, `-s` force-restart the container.
 
-Dependencies are managed by **vcpkg** (manifest `vcpkg.json` at the repo root), which is bootstrapped into the image at `/opt/vcpkg` (`VCPKG_ROOT`). The vcpkg binary cache and downloads are persisted to `.vcpkg-cache/` in the repo, mounted into the container at `/vcpkg-cache` — so the slow first dependency build is reused across container runs. `.vcpkg-cache/` and `vcpkg_installed/` are git-ignored.
+Only this path has a persistent vcpkg cache: `run_docker.sh` creates `.vcpkg-cache/` in the repo and mounts it at `/vcpkg-cache`, setting `VCPKG_DEFAULT_BINARY_CACHE` and `VCPKG_DOWNLOADS` into it, so the slow first dependency build is reused across container runs. `.vcpkg-cache/` and `vcpkg_installed/` are git-ignored.
 
-`generate.sh` only runs `cmake` **configuration** (it does not build) and refuses to run without `VCPKG_ROOT` set (i.e. outside the container). It points CMake at the vcpkg toolchain and chainloads `cmake/linux_toolchain.cmake`:
+### `generate.sh` is how this project is configured
+
+**The build always goes through `generate.sh`.** It only runs `cmake` **configuration** (it does not build), and it is what points CMake at the vcpkg toolchain (`$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake`), chainloads `cmake/linux_toolchain.cmake`, pins the `x64-linux` triplet and selects the renderer options. A hand-written `cmake -B ...` configure line skips all of that and produces a differently-configured tree — it is not a valid way to build this project, even inside the container.
 
 ```bash
-./run_docker.sh ./generate.sh linux            # configures build_linux_x64_debug/ (SDL2+legacy GL off, GL core on)
-./run_docker.sh ./generate.sh linux release    # release build dir
-./run_docker.sh ./generate.sh linux -DSOME_OPT=ON   # any -D... arg is passed through to cmake
+./generate.sh linux                  # configures build_linux_x64_debug/ (SDL2+legacy GL off, GL core on)
+./generate.sh linux release          # release build dir
+./generate.sh linux -DSOME_OPT=ON    # any -D... arg is passed through to cmake
 ```
+
+Dependencies are managed by **vcpkg** (manifest `vcpkg.json` at the repo root), bootstrapped into the image at `/opt/vcpkg`; `generate.sh` triggers the manifest install at configure time.
 
 Then build into the generated directory (named `build_<platform>_<arch>_<buildtype>`):
 
 ```bash
-./run_docker.sh cmake --build build_linux_x64_debug -j
+cmake --build build_linux_x64_debug -j
 ```
 
 The Linux example binary lands in `build_linux_x64_debug/examples/openglcore/OpenGLCore` and must be run from the **repo root** (it loads `resources/DefaultSkin.json`, `resources/OpenSans.ttf` via a `CurrentPath("resources")` loader).
