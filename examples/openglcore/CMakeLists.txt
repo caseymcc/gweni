@@ -7,7 +7,8 @@ set(example_name "OpenGLCore")
 find_package(glfw3 CONFIG REQUIRED)
 
 set(${example_name}_sources
-    openglcore.cpp)
+    openglcore.cpp
+    capture.cpp)
 
 set(${example_name}_resources
     "${GWENI_SOURCE_DIR}/resource/DefaultSkin.png"
@@ -34,7 +35,7 @@ target_link_libraries(${example_name}
 )
 
 # Single-control test harness: drops one control on the canvas by name.
-add_executable(ControlTest controltest.cpp)
+add_executable(ControlTest controltest.cpp capture.cpp)
 target_link_libraries(ControlTest
     gweni
     gweni_demo
@@ -45,6 +46,7 @@ if(UNIX AND NOT APPLE)
     # Surfaceless EGL is the offscreen path used when there is no display at all.
     find_package(OpenGL REQUIRED COMPONENTS EGL)
     target_link_libraries(ControlTest OpenGL::EGL)
+    target_link_libraries(${example_name} OpenGL::EGL)
 endif()
 
 if(APPLE AND APP_BUNDLE)
