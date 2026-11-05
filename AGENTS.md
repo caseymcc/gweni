@@ -31,7 +31,7 @@ Run the same two steps directly — there is no docker inside the container, so 
 cmake --build build_linux_x64_debug -j # build
 ```
 
-This is the case for an automated agent run: the agent image is built FROM this repo's own `Dockerfile`, so the container is already the environment described here. The repo is at the working directory, not at `run_docker.sh`'s `/home/developer/gweni`, and there is **no `/vcpkg-cache`** — nothing mounts it, so `VCPKG_DEFAULT_BINARY_CACHE`/`VCPKG_DOWNLOADS` are unset and the dependency build starts cold (slow, and not reused by the next run).
+This is the case for an automated agent run: the agent image is built FROM this repo's own `Dockerfile`, so the container is already the environment described here. The repo is at the working directory, not at `run_docker.sh`'s `/home/developer/gweni`. Whether the vcpkg cache is available depends on how the container was started: check `VCPKG_DEFAULT_BINARY_CACHE`/`VCPKG_DOWNLOADS` — if they are unset, nothing mounted `/vcpkg-cache` and the dependency build starts cold (slow, and not reused by the next run).
 
 ### On a host machine (`VCPKG_ROOT` is unset)
 
@@ -45,7 +45,7 @@ This is the case for an automated agent run: the agent image is built FROM this 
 
 Flags (before the command): `-r` rebuild the image, `-s` force-restart the container.
 
-Only this path has a persistent vcpkg cache: `run_docker.sh` creates `.vcpkg-cache/` in the repo and mounts it at `/vcpkg-cache`, setting `VCPKG_DEFAULT_BINARY_CACHE` and `VCPKG_DOWNLOADS` into it, so the slow first dependency build is reused across container runs. `.vcpkg-cache/` and `vcpkg_installed/` are git-ignored.
+This path always gets a persistent vcpkg cache: `run_docker.sh` creates `.vcpkg-cache/` in the repo and mounts it at `/vcpkg-cache`, setting `VCPKG_DEFAULT_BINARY_CACHE` and `VCPKG_DOWNLOADS` into it, so the slow first dependency build is reused across container runs. `.vcpkg-cache/` and `vcpkg_installed/` are git-ignored.
 
 ### `generate.sh` is how this project is configured
 
@@ -59,7 +59,7 @@ Only this path has a persistent vcpkg cache: `run_docker.sh` creates `.vcpkg-cac
 
 Dependencies are managed by **vcpkg** (manifest `vcpkg.json` at the repo root), bootstrapped into the image at `/opt/vcpkg`; `generate.sh` triggers the manifest install at configure time.
 
-Then build into the generated directory (named `build_<platform>_<arch>_<buildtype>`):
+Then build into the generated directory (named `build_<platform>_<arch>_<buildtype>`) — from a host, prefix it with `./run_docker.sh`:
 
 ```bash
 cmake --build build_linux_x64_debug -j
