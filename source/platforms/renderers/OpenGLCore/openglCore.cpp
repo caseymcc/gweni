@@ -21,6 +21,8 @@
 #include <gweni/utility.h>
 #include <gweni/primitiveIds.h>
 
+#include <iterator>
+
 #if defined(_WIN32)
 #   define WIN32_LEAN_AND_MEAN
 #   include <windows.h>
@@ -804,7 +806,7 @@ void OpenGLCore::flush()
     m_frameStats.mirrorBytes=
         m_vertexes.size()*sizeof(Vertex)+m_indexes.size()*sizeof(uint16_t)
         +m_clippingBoxes.size()*sizeof(Box)
-        +m_textVertexes.size()*sizeof(glyph_vertex_t)+m_textIndexes.size()*sizeof(uint16_t);
+        +m_textVertexes.size()*sizeof(glyph_vertex_t)+m_textIndexes.size()*sizeof(uint32_t);
 
     if(!m_vertexes.empty())
     {
@@ -845,7 +847,7 @@ void OpenGLCore::flush()
     {
         //copy only the glyph slots that changed since the last frame
         uploadDirty(GL_ELEMENT_ARRAY_BUFFER, m_textIndexBuffer, m_textIndexBufferCapacity,
-            m_textIndexes.data(), sizeof(uint16_t), m_textIndexes.size(), m_dirtyTextIndexSlots, 6);
+            m_textIndexes.data(), sizeof(uint32_t), m_textIndexes.size(), m_dirtyTextIndexSlots, 6);
 
         uploadDirty(GL_ARRAY_BUFFER, m_textVertexBuffer, m_textVertexBufferCapacity,
             m_textVertexes.data(), sizeof(glyph_vertex_t), m_textVertexes.size(), m_dirtyTextVertexSlots, 4);
@@ -865,7 +867,7 @@ void OpenGLCore::flush()
         glBindTexture(GL_TEXTURE_2D, m_textTextureId);
         glBindVertexArray(m_textVertexArray);
 
-        glDrawElements(GL_TRIANGLES, m_textIndexes.size(), (GLenum)GL_UNSIGNED_SHORT, 0);
+        glDrawElements(GL_TRIANGLES, m_textIndexes.size(), (GLenum)GL_UNSIGNED_INT, 0);
         ++m_frameStats.drawCalls;
 
         glBindVertexArray(0);
@@ -1440,10 +1442,35 @@ void OpenGLCore::addFreeTextRun(size_t start, size_t capacity)
     if(capacity == 0)
         return;
 
-    const std::pair<size_t, size_t> block(capacity, start);
+    size_t end=start+capacity;
 
-    m_freeTextRuns.insert(
-        std::lower_bound(m_freeTextRuns.begin(), m_freeTextRuns.end(), block), block);
+    //merge with the free block that ends where this one starts
+    auto next=m_freeTextRuns.lower_bound(start);
+
+    if(next != m_freeTextRuns.begin())
+    {
+        auto previous=std::prev(next);
+
+        if(previous->first+previous->second == start)
+        {
+            start=previous->first;
+            m_freeTextRuns.erase(previous);
+        }
+    }
+
+    //and with the one that starts where this one ends
+    if((next != m_freeTextRuns.end()) && (next->first == end))
+    {
+        end+=next->second;
+        m_freeTextRuns.erase(next);
+    }
+
+    // A block reaching the end of the in-use slots goes back to the bump
+    // allocator rather than the list, so the last run can grow in place.
+    if(end == m_textSlotsUsed)
+        m_textSlotsUsed=start;
+    else
+        m_freeTextRuns.emplace(start, end-start);
 }
 
 void OpenGLCore::freeTextRun(TextRun &run)
@@ -1473,14 +1500,22 @@ void OpenGLCore::allocateTextRun(TextRun &run, size_t glyphs)
 
     freeTextRun(run);
 
-    //best fit: the smallest free run that holds the string, split if it is larger
-    const std::pair<size_t, size_t> wanted(glyphs, 0);
-    auto it=std::lower_bound(m_freeTextRuns.begin(), m_freeTextRuns.end(), wanted);
+    // Best fit: the smallest free block that holds the string, split if it is
+    // larger. Blocks are merged as they are freed, so the list stays short and
+    // a linear scan is enough.
+    auto it=m_freeTextRuns.end();
+
+    for(auto block=m_freeTextRuns.begin(); block != m_freeTextRuns.end(); ++block)
+    {
+        if((block->second >= glyphs) &&
+            ((it == m_freeTextRuns.end()) || (block->second < it->second)))
+            it=block;
+    }
 
     if(it != m_freeTextRuns.end())
     {
-        run.start=it->second;
-        run.capacity=it->first;
+        run.start=it->first;
+        run.capacity=it->second;
         m_freeTextRuns.erase(it);
 
         if(run.capacity > glyphs)
@@ -1505,12 +1540,12 @@ void OpenGLCore::writeTextIndexes(const TextRun &run)
     if(run.capacity == 0)
         return;
 
-    static const uint16_t c_quad[6]={ 0, 1, 2, 0, 2, 3 };
+    static const uint32_t c_quad[6]={ 0, 1, 2, 0, 2, 3 };
 
     for(size_t i=0; i<run.capacity; ++i)
     {
         const size_t slot=run.start+i;
-        uint16_t *indexes=&m_textIndexes[slot*6];
+        uint32_t *indexes=&m_textIndexes[slot*6];
 
         if(run.hidden || (i >= run.glyphs))
         {
@@ -1522,10 +1557,10 @@ void OpenGLCore::writeTextIndexes(const TextRun &run)
         }
         else
         {
-            const uint16_t base=static_cast<uint16_t>(slot*4);
+            const uint32_t base=static_cast<uint32_t>(slot*4);
 
             for(size_t j=0; j<6; ++j)
-                indexes[j]=static_cast<uint16_t>(base+c_quad[j]);
+                indexes[j]=base+c_quad[j];
         }
 
         m_dirtyTextIndexSlots.mark(slot);
@@ -1675,16 +1710,24 @@ void OpenGLCore::renderText(size_t textId, const gweni::Font &font, gweni::Point
 
     if(textDebugMatches(text))
     {
+        size_t freeSlots=0, liveGlyphs=0;
+
+        for(const auto &block:m_freeTextRuns)
+            freeSlots+=block.second;
+        for(const TextRun &textRun:m_textRuns)
+            liveGlyphs+=textRun.glyphs;
+
         ::printf("[mirror] textId=%zu \"%s\" chars=%zu run=[%zu,%zu) capacity=%zu "
             "ftgl vertices=%zu indices=%zu\n",
             textId, text.c_str(), text.length(), run.start, run.start+run.glyphs,
             run.capacity, vertexes->size, indexes->size);
         ::printf("[mirror]   pos=(%d,%d) z=%d hidden=%s atlas=%zux%zu depth=%zu "
-            "mirror verts=%zu idx=%zu slots used=%zu free runs=%zu\n",
+            "mirror verts=%zu idx=%zu slots used=%zu free runs=%zu free slots=%zu "
+            "live glyphs=%zu\n",
             pos.x, pos.y, zIndex, run.hidden?"yes":"no",
             fontData.atlas->width, fontData.atlas->height, fontData.atlas->depth,
             m_textVertexes.size(), m_textIndexes.size(), m_textSlotsUsed,
-            m_freeTextRuns.size());
+            m_freeTextRuns.size(), freeSlots, liveGlyphs);
         for(size_t i=0; i<run.capacity; ++i)
         {
             const size_t slot=run.start+i;
@@ -1706,16 +1749,19 @@ void OpenGLCore::renderText(size_t textId, const gweni::Font &font, gweni::Point
                     j, (double)v.x, (double)v.y, (double)v.z, (double)v.u, (double)v.v,
                     (double)v.r, (double)v.g, (double)v.b, (double)v.a, (double)v.gamma);
             }
-            bool inRun=true;
+            //a drawn slot must index only its own run; a blanked one, only one vertex
+            const bool drawn=!run.hidden && (i < run.glyphs);
+            bool ok=true;
             ::printf("[mirror]     idx =");
             for(size_t j=0; j<6; ++j)
             {
-                uint16_t e=m_textIndexes[index+j];
-                if((e < run.start*4) || (e >= (run.start+run.capacity)*4))
-                    inRun=false;
+                uint32_t e=m_textIndexes[index+j];
+                if(drawn?((e < run.start*4) || (e >= (run.start+run.capacity)*4))
+                    :(e != m_textIndexes[index]))
+                    ok=false;
                 ::printf(" %u", (unsigned)e);
             }
-            ::printf("  (all inside run: %s)\n", inRun?"yes":"NO");
+            ::printf("  (%s: %s)\n", drawn?"all inside run":"degenerate", ok?"yes":"NO");
             ::printf("[mirror]     box w=%.3f h=%.3f  x=[%.3f..%.3f] y=[%.3f..%.3f]\n",
                 (double)(maxX-minX), (double)(maxY-minY),
                 (double)minX, (double)maxX, (double)minY, (double)maxY);

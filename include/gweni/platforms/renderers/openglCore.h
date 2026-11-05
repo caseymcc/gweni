@@ -8,6 +8,7 @@
 #include <vector>
 #include <glm/glm.hpp>
 #include <unordered_map>
+#include <map>
 #include <memory>
 #include <functional>
 #include <algorithm>
@@ -361,10 +362,13 @@ private:
 
     //! Gives the run at least `glyphs` slots, keeping its current ones when they
     //! already fit: best fit over the free list, splitting the remainder off, and
-    //! bump-allocating past the end of the mirrors when nothing fits.
+    //! bump-allocating past the end of the in-use slots when nothing fits.
     void allocateTextRun(TextRun &run, size_t glyphs);
     //! Returns the run's slots to the free list, leaving them drawing nothing.
     void freeTextRun(TextRun &run);
+    //! Adds a free block, merging it with the free blocks either side of it; a
+    //! block that ends at m_textSlotsUsed lowers m_textSlotsUsed instead, so the
+    //! last run grows in place and a string being typed does not leak slots.
     void addFreeTextRun(size_t start, size_t capacity);
     //! Grows the text mirrors so the first `glyphSlots` glyph slots exist.
     void ensureTextSlots(size_t glyphSlots);
@@ -373,9 +377,11 @@ private:
     void markTextVertexes(const TextRun &run);
 
     std::vector<TextRun> m_textRuns;
-    std::vector<std::pair<size_t, size_t>> m_freeTextRuns; //!< (capacity, start), by capacity
-    size_t m_textSlotsUsed=0; //!< glyph slots handed out of the mirrors so far
-    std::vector<uint16_t> m_textIndexes;
+    std::map<size_t, size_t> m_freeTextRuns; //!< start -> capacity, never adjacent to another
+    size_t m_textSlotsUsed=0; //!< glyph slots below which runs are handed out
+    //! 32-bit, unlike the primitive indexes: a glyph slot is 4 vertexes, so 16 bits
+    //! would cap the text mirror at 16384 glyph slots and wrap silently past it.
+    std::vector<uint32_t> m_textIndexes;
     std::vector<ftgl::glyph_vertex_t> m_textVertexes;
 
     DirtySlots m_dirtyVertexSlots;
