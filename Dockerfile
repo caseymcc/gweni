@@ -41,6 +41,7 @@ RUN apt-get update && \
         pkg-config \
         ninja-build \
         autoconf \
+        autoconf-archive \
         automake \
         libtool \
         python3 \
