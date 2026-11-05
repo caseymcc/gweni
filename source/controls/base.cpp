@@ -1042,9 +1042,15 @@ void Base::setSkin(skin::Base *skin, bool doChildren)
         }
 
         if(!m_skinControl)
-            std::cout<<"Failed to get skin for: "<<getTypeName()<<"\n";
+        {
+            std::cerr<<"Failed to get skin for: "<<getTypeName()<<"\n";
+        }
+#ifdef GWENI_DEBUG_LOGGING
         else
+        {
             std::cout<<"Using:"<<parentName<<" skin for: "<<getTypeName()<<"\n";
+        }
+#endif//GWENI_DEBUG_LOGGING
     }
 
     invalidate();
