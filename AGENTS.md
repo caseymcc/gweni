@@ -51,6 +51,8 @@ This path always gets a persistent vcpkg cache: `run_docker.sh` creates `.vcpkg-
 
 **The build always goes through `generate.sh`.** It only runs `cmake` **configuration** (it does not build), and it is what points CMake at the vcpkg toolchain (`$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake`), chainloads `cmake/linux_toolchain.cmake`, pins the `x64-linux` triplet and selects the renderer options. A hand-written `cmake -B ...` configure line skips all of that and produces a differently-configured tree — it is not a valid way to build this project, even inside the container.
 
+The commands in this section are the in-container form; from a host, prefix each with `./run_docker.sh`.
+
 ```bash
 ./generate.sh linux                  # configures build_linux_x64_debug/ (SDL2+legacy GL off, GL core on)
 ./generate.sh linux release          # release build dir
@@ -59,7 +61,7 @@ This path always gets a persistent vcpkg cache: `run_docker.sh` creates `.vcpkg-
 
 Dependencies are managed by **vcpkg** (manifest `vcpkg.json` at the repo root), bootstrapped into the image at `/opt/vcpkg`; `generate.sh` triggers the manifest install at configure time.
 
-Then build into the generated directory (named `build_<platform>_<arch>_<buildtype>`) — from a host, prefix it with `./run_docker.sh`:
+Then build into the generated directory (named `build_<platform>_<arch>_<buildtype>`):
 
 ```bash
 cmake --build build_linux_x64_debug -j
