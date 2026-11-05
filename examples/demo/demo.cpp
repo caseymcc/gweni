@@ -74,7 +74,7 @@ void Demo::init(const String &name)
 ////    m_center=newChild<controls::layout::Center>("Center");
     m_center=m_dockBase->newChild<controls::PageControl>("DemoCenter");
     m_center->setDock(DockPosition::Center);
-//    m_center->showControls(false);
+    m_center->showControls(false);
 
     controls::CollapsibleList *list=m_dockBase->newChild<controls::CollapsibleList>("DemoList");
     
