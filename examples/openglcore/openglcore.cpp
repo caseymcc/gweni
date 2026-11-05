@@ -7,6 +7,8 @@
  *    --demo <Name>        show that demo page at startup (e.g. ColorPickerDemo);
  *                         an unknown name lists the valid ones and exits non-zero
  *    --screenshot <path>  render a fixed number of frames, write one PNG and exit
+ *    --frames <N>         render exactly N frames offscreen and exit
+ *    --stats              with --frames, print per-frame timings and change counts
  *
  *  With no options it opens the interactive window as before. A capture needs no
  *  display: it hides the window, and with no display at all it falls back to a
@@ -41,8 +43,12 @@
 #include <GLFW/glfw3.h>
 
 #include "capture.h"
+#include <algorithm>
+#include <chrono>
+#include <cstdio>
 #include <cstdlib>
 #include <string>
+#include <vector>
 
 //namespace gweni
 //{
@@ -111,9 +117,102 @@ static float steppedClock()
 // settle, and fixed so the image does not depend on timing.
 static const int g_captureFrames=3;
 
+// How many controls the canvas tree holds, and how many of them still carry a
+// state-change mask. This has to run between updateCanvas() and renderCanvas():
+// render consumes the masks. getChildren() returns a control's inner panel's
+// children when it has one, so a wrapper's inner panel is not itself counted --
+// that is the public tree, and it is the same every run.
+struct ChangeCounts
+{
+    size_t controls=0;
+    size_t changed=0;
+};
+
+static void countChanges(gweni::controls::Base *control, ChangeCounts &counts)
+{
+    ++counts.controls;
+
+    if(control->getStateChange() != gweni::controls::StateChange_Nothing)
+        ++counts.changed;
+
+    for(gweni::controls::Base *child : control->getChildren())
+        countChanges(child, counts);
+}
+
+struct FrameSample
+{
+    ChangeCounts counts;
+    long long updateUs=0;
+    long long renderUs=0;
+};
+
+static long long medianOf(std::vector<long long> values)
+{
+    if(values.empty())
+        return 0;
+
+    std::sort(values.begin(), values.end());
+
+    const size_t mid=values.size()/2;
+
+    if(values.size()%2)
+        return values[mid];
+
+    return (values[mid-1]+values[mid])/2;
+}
+
+// min/median/max of both timing columns over the samples [first,end).
+static void printTimingSummary(const char *label,
+    const std::vector<FrameSample> &samples, size_t first)
+{
+    std::vector<long long> update, render;
+
+    for(size_t i=first; i<samples.size(); ++i)
+    {
+        update.push_back(samples[i].updateUs);
+        render.push_back(samples[i].renderUs);
+    }
+
+    if(update.empty())
+    {
+        std::printf("summary %s frames=0\n", label);
+        return;
+    }
+
+    std::printf("summary %s frames=%zu"
+        " update_us_min=%lld update_us_median=%lld update_us_max=%lld"
+        " render_us_min=%lld render_us_median=%lld render_us_max=%lld\n",
+        label, update.size(),
+        *std::min_element(update.begin(), update.end()), medianOf(update),
+        *std::max_element(update.begin(), update.end()),
+        *std::min_element(render.begin(), render.end()), medianOf(render),
+        *std::max_element(render.begin(), render.end()));
+}
+
 static void printUsage(std::ostream &out)
 {
-    out<<"Usage: OpenGLCore [--demo <Name>] [--screenshot <out.png>]\n";
+    out<<"Usage: OpenGLCore [--demo <Name>] [--screenshot <out.png>]"
+         " [--frames <N>] [--stats]\n"
+         "\n"
+         "  --demo <Name>        show that demo page at startup\n"
+         "  --screenshot <path>  render offscreen, write one PNG and exit\n"
+         "  --frames <N>         render exactly N offscreen frames and exit;\n"
+         "                       needs no display, and uses the same stepped\n"
+         "                       1/60s clock as --screenshot\n"
+         "  --stats              with --frames, print one line per frame plus a\n"
+         "                       summary, to stdout\n"
+         "\n"
+         "Per-frame line fields:\n"
+         "  frame      0-based frame index\n"
+         "  controls   controls in the canvas tree this frame\n"
+         "  changed    of those, how many had getStateChange() != Nothing,\n"
+         "             counted between updateCanvas() and renderCanvas()\n"
+         "  update_us  wall time of canvas->updateCanvas(), microseconds\n"
+         "  render_us  wall time of canvas->renderCanvas(), microseconds\n"
+         "  phase      warmup until the first frame with changed=0, then steady\n"
+         "\n"
+         "Summary lines give frames/controls, the warm-up frame count, and\n"
+         "min/median/max of each timing over all frames and over the steady ones.\n";
 }
 
 int main(int argc, char *argv[])
@@ -124,6 +223,8 @@ int main(int argc, char *argv[])
 
     std::string demoName;
     std::string shotPath;
+    int frameCount=0;
+    bool stats=false;
 
     for(int i=1; i<argc; ++i)
     {
@@ -134,6 +235,18 @@ int main(int argc, char *argv[])
             demoName=argv[++i];
         else if(arg == "--screenshot" && hasValue)
             shotPath=argv[++i];
+        else if(arg == "--frames" && hasValue)
+        {
+            frameCount=std::atoi(argv[++i]);
+
+            if(frameCount<=0)
+            {
+                std::cerr<<"OpenGLCore: --frames needs a positive count\n";
+                return EXIT_FAILURE;
+            }
+        }
+        else if(arg == "--stats")
+            stats=true;
         else if(arg == "--help" || arg == "-h")
         {
             printUsage(std::cout);
@@ -147,9 +260,20 @@ int main(int argc, char *argv[])
         }
     }
 
-    const bool capturing=!shotPath.empty();
+    const bool writingPng=!shotPath.empty();
 
-    if(capturing && !gweni::capture::ensureDirectory(fs::path(shotPath).parent_path()))
+    if(stats && frameCount == 0)
+    {
+        std::cerr<<"OpenGLCore: --stats needs --frames <N>\n";
+        printUsage(std::cerr);
+        return EXIT_FAILURE;
+    }
+
+    // Both a screenshot and a counted run render offscreen, so neither needs a
+    // display; anything else is the interactive loop.
+    const bool capturing=writingPng||(frameCount>0);
+
+    if(writingPng && !gweni::capture::ensureDirectory(fs::path(shotPath).parent_path()))
         return EXIT_FAILURE;
 
     glfwSetErrorCallback(&glfwErrorCallback);
@@ -267,18 +391,90 @@ int main(int argc, char *argv[])
         // platform clock, so the shot depends only on the frame number.
         gweni::platform::setTimeSource(&steppedClock);
 
-        for(int frame=0; frame<g_captureFrames; ++frame)
+        const int frames=(frameCount>0)?frameCount:g_captureFrames;
+
+        std::vector<FrameSample> samples;
+        bool steady=false;
+
+        if(stats)
+            samples.reserve(frames);
+
+        for(int frame=0; frame<frames; ++frame)
         {
+            typedef std::chrono::steady_clock Clock;
+
+            const Clock::time_point updateBegin=Clock::now();
             canvas->updateCanvas();
+            const Clock::time_point updateEnd=Clock::now();
+
+            // Between the two phases: renderCanvas() clears the masks.
+            FrameSample sample;
+
+            if(stats)
+                countChanges(canvas, sample.counts);
+
             glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
+
+            const Clock::time_point renderBegin=Clock::now();
             canvas->renderCanvas();
+            const Clock::time_point renderEnd=Clock::now();
+
+            if(stats)
+            {
+                using std::chrono::duration_cast;
+                using std::chrono::microseconds;
+
+                sample.updateUs=duration_cast<microseconds>(updateEnd-updateBegin).count();
+                sample.renderUs=duration_cast<microseconds>(renderEnd-renderBegin).count();
+
+                if(sample.counts.changed == 0)
+                    steady=true;
+
+                std::printf("frame=%d controls=%zu changed=%zu update_us=%lld"
+                    " render_us=%lld phase=%s\n",
+                    frame, sample.counts.controls, sample.counts.changed,
+                    sample.updateUs, sample.renderUs,
+                    steady?"steady":"warmup");
+                std::fflush(stdout);
+
+                samples.push_back(sample);
+            }
+
             g_clockSeconds+=g_frameStep;
         }
 
-        if(gweni::capture::writeFramebufferPng(screenSize.x, screenSize.y, shotPath))
-            std::cout<<"wrote "<<shotPath<<"\n";
-        else
-            result=EXIT_FAILURE;
+        if(stats)
+        {
+            // The warm-up is the leading run of frames that still had something
+            // to regenerate; the steady state after it is the measurement that
+            // matters, so it is summarised on its own.
+            size_t steadyFirst=0;
+
+            while(steadyFirst<samples.size() && samples[steadyFirst].counts.changed != 0)
+                ++steadyFirst;
+
+            size_t steadyChangedMax=0;
+
+            for(size_t i=steadyFirst; i<samples.size(); ++i)
+                steadyChangedMax=std::max(steadyChangedMax, samples[i].counts.changed);
+
+            std::printf("summary frames=%zu controls=%zu warmup_frames=%zu"
+                " steady_frames=%zu steady_changed_max=%zu\n",
+                samples.size(), samples.empty()?size_t(0):samples.back().counts.controls,
+                steadyFirst, samples.size()-steadyFirst, steadyChangedMax);
+
+            printTimingSummary("all", samples, 0);
+            printTimingSummary("steady", samples, steadyFirst);
+            std::fflush(stdout);
+        }
+
+        if(writingPng)
+        {
+            if(gweni::capture::writeFramebufferPng(screenSize.x, screenSize.y, shotPath))
+                std::cout<<"wrote "<<shotPath<<"\n";
+            else
+                result=EXIT_FAILURE;
+        }
     }
     else
     {
