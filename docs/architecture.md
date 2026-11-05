@@ -109,16 +109,18 @@ What exists today (the foundation) and what's still aspirational:
 - State-change tracking; unchanged controls emit no renderer calls.
 - Persistent primitive-id-indexed CPU vertex/index buffers in OpenGLCore; per-control
   primitive ownership via `skin::Control`.
+- **Incremental GPU upload.** `OpenGLCore::flush()` tracks which primitive slots were
+  written and uploads only those, coalesced into contiguous `glBufferSubData` ranges;
+  when nothing changed it skips the transfer and just draws the buffer already on the
+  device. The buffers are sized with a grow-only `glBufferData`, which also re-sends
+  everything for that one frame. A slot is marked dirty only when its bytes actually
+  change, so a control that redraws itself identically (the skin re-emits unchanged
+  controls every frame) costs nothing. `GWENI_UPLOAD_STATS=1` prints the per-frame
+  upload call/byte counts.
 - Window resize (`renderer->setViewRect()` + `canvas->setSize()`), see
   `examples/openglcore/openglcore.cpp`.
 
 **Not yet done (the performance goal)**
-- **Incremental GPU upload.** `OpenGLCore::flush()` currently re-uploads the *entire*
-  vertex/index buffer with `glBufferData` and redraws every frame, even when nothing
-  changed. The intended behavior is to track dirty primitive slots in `updateCanvas`
-  and upload only those ranges (`glBufferSubData`, coalescing adjacent dirty ranges, or
-  a whole-buffer copy when that's actually faster), and to skip the upload entirely
-  when no primitive changed. The render call should then just draw the existing buffer.
 - **Clipping.** Per-control scissor / per-primitive clip boxes are stubbed/commented
   (`shouldClip()`, `m_clippingBoxes`, `startClip/endClip`).
 - **Cache-to-texture** (`ICacheToTexture`) and free-slot compaction/defragmentation of
