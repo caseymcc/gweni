@@ -66,12 +66,6 @@ namespace gweni
 namespace renderer
 {
 
-// See "Font Size in Pixels or Points" in "stb_truetype.h"
-static constexpr float c_pointsToPixels=1.333f;
-// Arbitrary size chosen for texture cache target.
-static constexpr int c_texsz=800; // Texture size too small for wchar_t characters but stbtt_BakeFontBitmap crashes on larger sizes
-
-
 static constexpr size_t minPrimitiveSize=512;
 static constexpr size_t minIndexSize=minPrimitiveSize*6;
 static constexpr size_t minVertexSize=minPrimitiveSize*4;
@@ -90,9 +84,6 @@ Font::Status OpenGLCore::loadFont(const Font &font)
                          "@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_"
                          "`abcdefghijklmnopqrstuvwxyz{|}~";
 
-    //    FT_Library fontLibrary;
-    //
-    //    freeFont(font);
     m_lastFont=nullptr;
 
     const String filename=getResourcePaths().getPath(ResourcePaths::Type::Font, font.facename);
@@ -102,7 +93,10 @@ Font::Status OpenGLCore::loadFont(const Font &font)
     vec4 none={{1.0, 1.0, 1.0, 0.0}};
 
     fontData.faceName=font.facename;
-    fontData.markup.family=(char *)filename.c_str();
+    // markup_t keeps the family as a borrowed char*, and the markup outlives this
+    // function, so it cannot point at the local filename.
+    fontData.familyPath=strdup(filename.c_str());
+    fontData.markup.family=fontData.familyPath;
     fontData.markup.size=font.size;
     fontData.markup.bold=0;
     fontData.markup.italic=0;
@@ -120,16 +114,13 @@ Font::Status OpenGLCore::loadFont(const Font &font)
 
     fontData.fontManager=ftgl::font_manager_new(1024, 1024, LCD_FILTERING_ON);
 
-    size_t cacheLength=strlen(cache);
-    fontData.fontManager->cache=(char *)malloc(sizeof(char)*(cacheLength+1));
-    strncpy(fontData.fontManager->cache, cache, cacheLength+1);
+    free(fontData.fontManager->cache); // font_manager_new strdup'd a default
+    fontData.fontManager->cache=strdup(cache);
 
     fontData.markup.font=ftgl::font_manager_get_from_markup(fontData.fontManager, &fontData.markup);
     fontData.textureFont=fontData.markup.font;
 
     fontData.atlas=fontData.fontManager->atlas;
-
-//    texture_font_load_glyphs(fontData.textureFont, cache);
 
     glGenTextures(1, &fontData.atlas->id);
     glBindTexture(GL_TEXTURE_2D, fontData.atlas->id);
@@ -141,55 +132,6 @@ Font::Status OpenGLCore::loadFont(const Font &font)
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, fontData.atlas->width,
         fontData.atlas->height, 0, GL_RGB, GL_UNSIGNED_BYTE,
         fontData.atlas->data);
-
-//    fontData.atlas=ftgl::texture_atlas_new(1024, 1024, 1);
-//    fontData.textureFont=ftgl::texture_font_new_from_file(fontData.atlas, font.size, filename.c_str());
-//    fontData.markup.font=fontData.textureFont;
-//
-//    texture_font_load_glyphs(fontData.textureFont, cache);
-
-    //    std::ifstream inFile(filename, std::ifstream::in | std::ifstream::binary);
-    //
-    //    if (!inFile.good())
-    //    {
-    //        gweni::log::write(log::Level::Error, "Font file not found: %s", filename.c_str());
-    //        return Font::Status::ErrorFileNotFound;
-    //    }
-    //
-    //    std::streampos begin = inFile.tellg();
-    //    inFile.seekg(0, std::ios::end);
-    //    const size_t fsz = inFile.tellg() - begin;
-    //    inFile.seekg(0, std::ios::beg);
-    //    assert(fsz > 0);
-    //
-    //    std::unique_ptr<unsigned char[]> ttfdata = std::unique_ptr<unsigned char[]>(new unsigned char[fsz]);
-    //    inFile.read(reinterpret_cast<char*>(ttfdata.get()), fsz);
-    //    inFile.close();
-    //
-    //    std::unique_ptr<unsigned char[]> font_bmp = std::unique_ptr<unsigned char[]>(new unsigned char[c_texsz * c_texsz]);
-    //
-    //    GLFontData fontData;
-    //    const float realsize = font.size * scale();
-    //    fontData.baked_chars.resize(LastCharacter - BeginCharacter + 1);
-    //
-    //    stbtt_BakeFontBitmap(ttfdata.get(), 0,
-    //                    realsize * c_pointsToPixels, // height
-    //                    font_bmp.get(),
-    //                    c_texsz, c_texsz,
-    //                    BeginCharacter, LastCharacter,             // range to bake
-    //                    reinterpret_cast<stbtt_bakedchar*>(fontData.baked_chars.data()));
-    //
-    //    glGenTextures(1, &fontData.m_textureId);
-    //    setTexture(fontData.m_textureId);
-    //    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    //    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    //    glTexImage2D(GL_TEXTURE_2D, 0, GL_RED,
-    //        c_texsz, c_texsz, 0,
-    //        GL_RED, GL_UNSIGNED_BYTE,
-    //        font_bmp.get());
-    //
-    //    fontData.width = c_texsz;
-    //    fontData.height = c_texsz;
 
     m_lastFont=&(*m_fonts.insert(std::make_pair(font, std::move(fontData))).first);
     return Font::Status::Loaded;
@@ -1754,47 +1696,8 @@ void OpenGLCore::renderText(size_t textId, const gweni::Font &font, gweni::Point
                 (double)minX, (double)maxX, (double)minY, (double)maxY);
         }
     }
-//    m_zIndex++;
-//    //cant use, need to move vertexes to main vertex buffer
-//    vertex_buffer_render(textBuffer->buffer, GL_TRIANGLES);
 
     text_buffer_delete(textBuffer);
-
-    //    if (m_currentTexture != fontData.m_textureId)
-    //    {
-    //        flush();
-    //        setTexture(fontData.m_textureId);
-    //    }
-    //    m_activeProgram = 2;
-    //    float x = pos.x, y = pos.y;
-    //    char* text_ptr = const_cast<char*>(text.c_str());
-    //    // Height of font, allowing for descenders, because baseline is bottom of capitals.
-    //    const float height = font.size * scale() * c_pointsToPixels * 0.8f;
-    //
-    //    while (const auto wide_char = utf8_to_wchart(text_ptr))
-    //    {
-    //        const auto c = wide_char - BeginCharacter;
-    //
-    //        if (wide_char < BeginCharacter || wide_char > LastCharacter)
-    //            continue;
-    //
-    //        stbtt_aligned_quad q;
-    //        stbtt_GetBakedQuad(reinterpret_cast<stbtt_bakedchar*>(fontData.baked_chars.data()),
-    //            fontData.width, fontData.height,
-    //            c,
-    //            &x, &y, &q, 1); // 1=opengl & d3d10+,0=d3d9
-    //
-    //        Rect rect(q.x0, q.y0 + height, q.x1 - q.x0, q.y1 - q.y0);
-    //
-    //        translate(rect);
-    //
-    //        addVert(rect.x, rect.y, q.s0, q.t0);
-    //        addVert(rect.x + rect.w, rect.y, q.s1, q.t0);
-    //        addVert(rect.x, rect.y + rect.h, q.s0, q.t1);
-    //        addVert(rect.x + rect.w, rect.y, q.s1, q.t0);
-    //        addVert(rect.x + rect.w, rect.y + rect.h, q.s1, q.t1);
-    //        addVert(rect.x, rect.y + rect.h, q.s0, q.t1);
-    //    }
 }
 
 void OpenGLCore::showText(size_t textId)
@@ -1854,11 +1757,6 @@ gweni::Point OpenGLCore::measureText(const gweni::Font &font, const gweni::Strin
 
     GLFontData &fontData=m_lastFont->second;
 
-    Point sz(0, font.size * scale() * c_pointsToPixels);
-
-    float x=0.f, y=0.f;
-    char *text_ptr=const_cast<char *>(text.c_str());
-
     ftgl::text_buffer_t *textBuffer=ftgl::text_buffer_new();
     ftgl::vec2 pen={0.f, 0.f};
 
@@ -1867,25 +1765,18 @@ gweni::Point OpenGLCore::measureText(const gweni::Font &font, const gweni::Strin
     ftgl::vector_t *vertices=textBuffer->buffer->vertices;
     float *verticesBuffer=(float *)vertices->items;
 
-//    assert(vertices->item_size == 4);
-    assert(vertices->item_size == 44);
+    assert(vertices->item_size == sizeof(ftgl::glyph_vertex_t));
 
-    size_t index=0;
-    for(size_t i=0; i<vertices->size; ++i)
-    {
-        x=std::max(x, verticesBuffer[index]);
-        y=std::max(y, verticesBuffer[index+1]);
-        index+=11;
-    }
-
-    sz.x=(int)x;
-    sz.y=(int)ceil(fontData.markup.font->height);
+    // The pen ends at the sum of the glyph advances (plus kerning), which is the
+    // width the next string would start at. The right edge of the last glyph's
+    // ink is a different and smaller quantity, and is not what a control laying
+    // text out wants.
+    Point sz((int)ceil(pen.x), (int)ceil(fontData.markup.font->height));
 
     if(textDebugMatches(text))
     {
-        ::printf("[measure] \"%s\" len=%zu font.size=%f scale=%f c_pointsToPixels=%f\n",
-            text.c_str(), text.length(), (double)font.size, (double)scale(),
-            (double)c_pointsToPixels);
+        ::printf("[measure] \"%s\" len=%zu font.size=%f scale=%f\n",
+            text.c_str(), text.length(), (double)font.size, (double)scale());
         ::printf("[measure]   markup.size=%f font->size=%f height=%f ascender=%f descender=%f\n",
             (double)fontData.markup.size, (double)fontData.markup.font->size,
             (double)fontData.markup.font->height, (double)fontData.markup.font->ascender,
@@ -1904,8 +1795,8 @@ gweni::Point OpenGLCore::measureText(const gweni::Font &font, const gweni::Strin
                 (double)verticesBuffer[dumpIndex+4]);
             dumpIndex+=11;
         }
-        ::printf("[measure]   => sz.x=%d sz.y=%d (max x=%f, max y=%f)\n",
-            sz.x, sz.y, (double)x, (double)y);
+        ::printf("[measure]   => sz.x=%d sz.y=%d (pen advance=%f)\n",
+            sz.x, sz.y, (double)pen.x);
         ::printf("[measure]   atlas %zux%zu depth=%zu used=%zu\n",
             fontData.atlas->width, fontData.atlas->height, fontData.atlas->depth,
             fontData.atlas->used);
@@ -1927,24 +1818,6 @@ gweni::Point OpenGLCore::measureText(const gweni::Font &font, const gweni::Strin
     }
 
     text_buffer_delete(textBuffer);
-
-    //while (const auto wide_char = utf8_to_wchart(text_ptr))
-    //{
-    //    const auto c = wide_char - BeginCharacter;
-    //
-    //    if (wide_char < BeginCharacter || wide_char > LastCharacter)
-    //        continue;
-    //
-    //
-    //    stbtt_aligned_quad q;
-    //    stbtt_GetBakedQuad(reinterpret_cast<stbtt_bakedchar*>(fontData.baked_chars.data()),
-    //        fontData.width, fontData.height,
-    //        c,
-    //        &x, &y, &q, 1); // 1=opengl & d3d10+,0=d3d9
-    //
-    //    sz.x = q.x1;
-    //    sz.y = std::max(sz.y, int((q.y1 - q.y0) * c_pointsToPixels));
-    //}
 
     return sz;
 }

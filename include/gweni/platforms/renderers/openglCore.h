@@ -52,7 +52,8 @@ struct GLTextureData: public gweni::TextureData
 struct GLFontData
 {
     GLFontData():
-        spacing(0.f)
+        markup{}, familyPath(nullptr), fontManager(nullptr), atlas(nullptr),
+        textureFont(nullptr), spacing(0.f), width(0), height(0)
     {}
 
     GLFontData(const GLFontData &)=delete;
@@ -61,8 +62,12 @@ struct GLFontData
         : GLFontData()
     {
         faceName=std::move(other.faceName);
-        markup=std::move(other.markup);
+        markup=other.markup;
 
+        familyPath=other.familyPath;
+        other.familyPath=nullptr;
+        fontManager=other.fontManager;
+        other.fontManager=nullptr;
         atlas=other.atlas;
         other.atlas=nullptr;
         textureFont=other.textureFont;
@@ -71,22 +76,16 @@ struct GLFontData
         spacing=other.spacing;
         width=other.width;
         height=other.height;
-        //                    std::swap(texture_id, other.texture_id);
-        //                    std::swap(baked_chars, other.baked_chars);
     }
 
     ~GLFontData()
     {
+        free(familyPath);
     }
-    //                struct stbtt_bakedchar
-    //                {
-    //                    unsigned short x0, y0, x1, y1; // coordinates of bbox in bitmap
-    //                    float xoff, yoff, xadvance;
-    //                };
-    //
-    //                std::vector<stbtt_bakedchar> baked_chars;
-    std::string faceName; //holds pointer fir markup string
+
+    std::string faceName;
     ftgl::markup_t markup;
+    char *familyPath; //!< owns the string markup.family borrows
 
     ftgl::font_manager_t *fontManager;
     texture_atlas_t *atlas;
@@ -96,7 +95,6 @@ struct GLFontData
 
     int width;
     int height;
-    //                unsigned int texture_id;
 };
 
 //
