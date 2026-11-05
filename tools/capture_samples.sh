@@ -15,19 +15,24 @@
 
 set -euo pipefail
 
-# hero: the whole demo window, one page selected.
-HERO_DEMO=ColorPickerDemo
+# hero: the whole demo window, one page selected. ColorPickerDemo would be the
+# obvious pick but draws nothing but its Result swatch (issue #82).
+HERO_DEMO=CollapsibleListDemo
 HERO_SIZE=1024x768
 HERO_OUT=demo.png
 
 # The gallery: one ControlTest demo per line, captured at 640x480.
+# ComboBoxDemo and SliderDemo are left out: they still capture an empty canvas
+# (issue #69). ListBoxDemo is left out because it is the one demo that does not
+# capture reproducibly: it uses glyphs OpenSans lacks and they rasterise into the
+# atlas after it was uploaded, so those cells draw different garbage each run
+# (issue #70).
 SAMPLES=(
     ButtonDemo
     CheckBoxDemo
-    ComboBoxDemo
-    ListBoxDemo
+    LabelDemo
     ProgressBarDemo
-    SliderDemo
+    RadioButtonDemo
     TabControlDemo
     TreeControlDemo
 )
