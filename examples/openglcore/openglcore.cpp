@@ -1,6 +1,23 @@
 /*
  *  Gweni
-
+ *
+ *  The demo application.
+ *
+ *  Usage: OpenGLCore [options]
+ *    --demo <Name>        show that demo page at startup (e.g. ColorPickerDemo);
+ *                         an unknown name lists the valid ones and exits non-zero
+ *    --screenshot <path>  render a fixed number of frames, write one PNG and exit
+ *
+ *  With no options it opens the interactive window as before. A capture needs a
+ *  display, so headless it goes through Xvfb, from the repo root:
+ *
+ *    xvfb-run -s "-screen 0 1280x1024x24" \
+ *        ./build_linux_x64_debug/examples/openglcore/OpenGLCore \
+ *        --demo ColorPickerDemo --screenshot /tmp/hero.png
+ *
+ *  A capture installs a stepped clock (gweni::platform::setTimeSource), so the
+ *  image depends on the frame number and not on how fast the process ran.
+ *
  *  See license in Gweni.h
  */
 
@@ -22,6 +39,10 @@
 #include <demo/demo.h>
 
 #include <GLFW/glfw3.h>
+
+#include "capture.h"
+#include <cstdlib>
+#include <string>
 
 //namespace gweni
 //{
@@ -76,42 +97,105 @@ void glfwErrorCallback(int error_code, const char *description)
 }
 
 
+// A capture's clock: one fixed step per rendered frame, so every run sees the
+// same times. 1/60 s is the step, i.e. a nominal 60fps.
+static const float g_frameStep=1.0f/60.0f;
+static float g_clockSeconds=0.0f;
+
+static float steppedClock()
+{
+    return g_clockSeconds;
+}
+
+// Frames rendered before a --screenshot readback: enough for the dock layout to
+// settle, and fixed so the image does not depend on timing.
+static const int g_captureFrames=3;
+
+static void printUsage(std::ostream &out)
+{
+    out<<"Usage: OpenGLCore [--demo <Name>] [--screenshot <out.png>]\n";
+}
+
 int main(int argc, char *argv[])
 {
     const gweni::Point screenSize(1024,768);
 
-    glfwSetErrorCallback(&glfwErrorCallback);
+    gweni::capture::setToolName("OpenGLCore");
 
-    if (!glfwInit())
+    std::string demoName;
+    std::string shotPath;
+
+    for(int i=1; i<argc; ++i)
     {
-        glfwTerminate();
-        return EXIT_FAILURE;
+        const std::string arg=argv[i];
+        const bool hasValue=(i+1)<argc;
+
+        if(arg == "--demo" && hasValue)
+            demoName=argv[++i];
+        else if(arg == "--screenshot" && hasValue)
+            shotPath=argv[++i];
+        else if(arg == "--help" || arg == "-h")
+        {
+            printUsage(std::cout);
+            return EXIT_SUCCESS;
+        }
+        else
+        {
+            std::cerr<<"OpenGLCore: unexpected argument "<<arg<<"\n";
+            printUsage(std::cerr);
+            return EXIT_FAILURE;
+        }
     }
+
+    const bool capturing=!shotPath.empty();
+
+    if(capturing && !gweni::capture::ensureDirectory(fs::path(shotPath).parent_path()))
+        return EXIT_FAILURE;
+
+    glfwSetErrorCallback(&glfwErrorCallback);
 
 //    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
 //    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 2);
 //    glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 //    glfwWindowHint(GLFW_OPENGL_DEBUG_CONTEXT, GL_TRUE);%
 
-    // Create a new window
-    GLFWwindow *window=glfwCreateWindow(screenSize.x, screenSize.y,
-        "Gweni OpenGL Core Profile Sample", NULL, NULL);
+    // A capture does not need the window on screen, and on a machine with no
+    // display at all it falls back to a surfaceless EGL context, so the demo can
+    // be photographed in the build container as it stands.
+    gweni::capture::Context ctx;
 
-    if(!window)
+    if(!gweni::capture::initGlfwContext(ctx, screenSize,
+        "Gweni OpenGL Core Profile Sample", !capturing))
     {
-        glfwTerminate();
+        if(!capturing)
+        {
+            std::cerr<<"OpenGLCore: GLFW could not open a window;"
+                       " interactive mode needs a display\n";
+            return EXIT_FAILURE;
+        }
+#if GWENI_EXAMPLE_EGL
+        std::cerr<<"OpenGLCore: GLFW could not open a window"
+                   " (no display?); falling back to surfaceless EGL\n";
+        if(!gweni::capture::initEglContext(ctx))
+            return EXIT_FAILURE;
+#else
+        return EXIT_FAILURE;
+#endif
+    }
+
+//    glfwSwapInterval(0); //removes fps limiter
+
+    if(!gweni::capture::initGlew())
+    {
+        gweni::capture::destroyContext(ctx);
         return EXIT_FAILURE;
     }
 
-    glfwMakeContextCurrent(window);
-//    glfwSwapInterval(0); //removes fps limiter
-    glewExperimental = GL_TRUE;
-    GLuint error;
+    gweni::capture::Framebuffer fb;
 
-    if((error = glewInit()) != GLEW_OK)
+    if(capturing && !gweni::capture::createFramebuffer(fb, screenSize.x, screenSize.y))
     {
-        std::cout<<"Glew init error: "<<glewGetErrorString(error)<<std::endl;
-        glfwTerminate();
+        gweni::capture::destroyContext(ctx);
         return EXIT_FAILURE;
     }
 
@@ -153,40 +237,79 @@ int main(int argc, char *argv[])
 //#define SINGLE_CONTROL
 
 #ifndef SINGLE_CONTROL
-    gweni::controls::Base *demo=canvas->newChild<gweni::Demo>();
+    gweni::Demo *demo=canvas->newChild<gweni::Demo>();
+
+    if(!demoName.empty() && !demo->showDemo(demoName))
+    {
+        std::cerr<<"OpenGLCore: no such demo \""<<demoName<<"\"\nAvailable demos:\n";
+        for(const gweni::String &name : demo->getDemoNames())
+            std::cerr<<"  "<<name<<"\n";
+
+        delete demo;
+        delete canvas;
+        delete skin;
+        delete renderer;
+        if(capturing) gweni::capture::destroyFramebuffer(fb);
+        gweni::capture::destroyContext(ctx);
+        return EXIT_FAILURE;
+    }
 #else//SINGLE_CONTROL
     gweni::controls::Button *button=canvas->newChild<gweni::controls::Button>();
 
     button->setText("ButtonTest");
 #endif//SINGLE_CONTROL
 
-    g_glfwInput.initialize(canvas);
+    int result=EXIT_SUCCESS;
 
-    glfwSetKeyCallback(window, key_callback);
-    glfwSetCursorPosCallback(window, cursor_pos_callback);
-    glfwSetMouseButtonCallback(window, mouse_button_callback);
-    glfwSetScrollCallback(window, scroll_callback);
-    glfwSetFramebufferSizeCallback(window, framebuffer_size_callback);
-
-    // Apply the actual framebuffer size now (it can differ from the requested
-    // window size, e.g. on high-DPI displays).
+    if(capturing)
     {
-        int fbWidth=0, fbHeight=0;
-        glfwGetFramebufferSize(window, &fbWidth, &fbHeight);
-        framebuffer_size_callback(window, fbWidth, fbHeight);
+        // Everything time-dependent in the library reads this instead of the
+        // platform clock, so the shot depends only on the frame number.
+        gweni::platform::setTimeSource(&steppedClock);
+
+        for(int frame=0; frame<g_captureFrames; ++frame)
+        {
+            canvas->updateCanvas();
+            glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
+            canvas->renderCanvas();
+            g_clockSeconds+=g_frameStep;
+        }
+
+        if(gweni::capture::writeFramebufferPng(screenSize.x, screenSize.y, shotPath))
+            std::cout<<"wrote "<<shotPath<<"\n";
+        else
+            result=EXIT_FAILURE;
     }
-
-    // Begin the main game loop
-    while (!glfwWindowShouldClose(window))
+    else
     {
-        canvas->updateCanvas();
-        glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
-        canvas->renderCanvas();
-        glfwSwapBuffers(window);
+        g_glfwInput.initialize(canvas);
 
-        glfwPollEvents();
+        glfwSetKeyCallback(ctx.window, key_callback);
+        glfwSetCursorPosCallback(ctx.window, cursor_pos_callback);
+        glfwSetMouseButtonCallback(ctx.window, mouse_button_callback);
+        glfwSetScrollCallback(ctx.window, scroll_callback);
+        glfwSetFramebufferSizeCallback(ctx.window, framebuffer_size_callback);
 
-        gweni::platform::sleep(0);
+        // Apply the actual framebuffer size now (it can differ from the requested
+        // window size, e.g. on high-DPI displays).
+        {
+            int fbWidth=0, fbHeight=0;
+            glfwGetFramebufferSize(ctx.window, &fbWidth, &fbHeight);
+            framebuffer_size_callback(ctx.window, fbWidth, fbHeight);
+        }
+
+        // Begin the main game loop
+        while (!glfwWindowShouldClose(ctx.window))
+        {
+            canvas->updateCanvas();
+            glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
+            canvas->renderCanvas();
+            glfwSwapBuffers(ctx.window);
+
+            glfwPollEvents();
+
+            gweni::platform::sleep(0);
+        }
     }
 
 #ifndef SINGLE_CONTROL
@@ -200,7 +323,9 @@ int main(int argc, char *argv[])
     delete renderer;
 
     // Clean up OpenGL
-    glfwTerminate();
+    if(capturing)
+        gweni::capture::destroyFramebuffer(fb);
+    gweni::capture::destroyContext(ctx);
 
-    return EXIT_SUCCESS;
+    return result;
 }

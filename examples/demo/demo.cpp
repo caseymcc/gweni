@@ -174,6 +174,35 @@ void Demo::onCategorySelect(event::Info info)
     m_center->showPage(pageIndex);
 }
 
+bool Demo::showDemo(const String &name)
+{
+    for(controls::Base *entry : m_pages)
+    {
+        controls::Button *button=gweni_cast<controls::Button>(entry);
+
+        if(!button || button->getText() != name)
+            continue;
+
+        // The list button's own press path: it shows the page through
+        // onCategorySelect and leaves the entry selected in the demo list.
+        button->doAction();
+        return true;
+    }
+    return false;
+}
+
+std::vector<String> Demo::getDemoNames() const
+{
+    std::vector<String> names;
+
+    for(controls::Base *entry : m_pages)
+    {
+        if(controls::Button *button=gweni_cast<controls::Button>(entry))
+            names.push_back(button->getText());
+    }
+    return names;
+}
+
 void Demo::printText(const String &str)
 {
     m_textOutput->addItem(str);

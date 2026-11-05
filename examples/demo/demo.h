@@ -29,6 +29,13 @@ public:
 public:
     void printText(const String &str);
 
+    //! Show the page of the demo named \a name, as pressing its list button does.
+    //! \return false if no demo has that name.
+    bool showDemo(const String &name);
+
+    //! The demo names showDemo accepts, in list order.
+    std::vector<String> getDemoNames() const;
+
     void think() override;
     void render(skin::Base *skin);
 
