@@ -736,6 +736,7 @@ void Base::render(skin::Base *skin)
     if(getStateChange() & StateChange_Created)
     {
         m_skinControl->generate(m_skin->getRenderer(), this);
+#ifdef GWENI_DEBUG_LOGGING
         std::string name=getFullName(this);
         const std::vector<size_t> &primitives=m_skinControl->getPrimitives();
         std::string primitiveList;
@@ -748,12 +749,13 @@ void Base::render(skin::Base *skin)
                 primitiveList+=", "+std::to_string(primitives[i]);
         }
         std::cout<<"Primitives: "<<name<<" ("<<primitiveList<<")\n";
+#endif//GWENI_DEBUG_LOGGING
     }
 
-    const Rect &bounds=getBounds();
-    
+#ifdef GWENI_DEBUG_LOGGING
     if(getStateChange() != StateChange_Text)
     {
+        const Rect &bounds=getBounds();
         renderer::Base *baseRenderer=skin->getRenderer();
         gweni::Point clipPt=baseRenderer->getRenderOffset();
         std::string show=hidden()?"hide":"show";
@@ -761,6 +763,7 @@ void Base::render(skin::Base *skin)
         std::string name=getFullName(this);
         std::cout<<"Updating: "<<show<<" ("<<bounds.x+clipPt.x<<", "<<bounds.y+clipPt.y<<", w:"<<bounds.w<<", h:"<<bounds.h<<") "<<name<<"\n";
     }
+#endif//GWENI_DEBUG_LOGGING
 
     m_skinControl->update(m_skin->getRenderer(), this);
 

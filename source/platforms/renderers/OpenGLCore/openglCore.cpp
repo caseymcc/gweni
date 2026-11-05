@@ -3,7 +3,9 @@
  *  Copyright (c) 2013-18 Nick Trout
  *  See license in Gweni.h
  */
+#ifdef GWENI_DEBUG_LOGGING
 #define DEBUG_RENDER
+#endif
 
 #include <gweni/platforms/renderers/openglCore.h>
 #if defined(__APPLE__)
