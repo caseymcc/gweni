@@ -56,6 +56,14 @@ public:
     virtual std::string getTypeName()=0;
     virtual size_t requiredPrimitives()=0;
 
+    // The number of consecutive z values this control's primitives use,
+    // starting at the control's getZIndex(). Its first child is numbered
+    // after them, so an overlay drawn at getZIndex()+1 needs 2 here.
+    virtual size_t depthLayers()
+    {
+        return 1;
+    }
+
     virtual void generate(renderer::Base *baseRenderer, controls::Base *control)
     {
         generatePrimitives(baseRenderer, requiredPrimitives());

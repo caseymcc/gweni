@@ -22,6 +22,7 @@
 #include <memory>
 #include <set>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace test
@@ -169,17 +170,20 @@ class StubControl: public gweni::skin::Control
 public:
     static constexpr size_t primitivesPerControl=2;
 
-    StubControl(StubSkin *skin, bool takesText);
+    //! \p typeName picks the StubSkin::depthLayers entry it reports.
+    StubControl(StubSkin *skin, bool takesText, std::string typeName={});
     ~StubControl() override;
 
     std::string getTypeName() override { return "Stub"; }
     size_t requiredPrimitives() override { return primitivesPerControl; }
+    size_t depthLayers() override;
 
     void generate(gweni::renderer::Base *renderer, gweni::controls::Base *control) override;
     void remove(gweni::renderer::Base *renderer, gweni::controls::Base *control) override;
 
 private:
     StubSkin *m_skin;
+    std::string m_typeName;
     bool m_takesText;
     bool m_hasText=false;
     size_t m_textId=0;
@@ -194,8 +198,8 @@ public:
 
     std::unique_ptr<gweni::skin::Control> getControlRenderer(std::string typeName) override
     {
-        return std::make_unique<StubControl>(this,
-            typeName == StubText::getTypeNameStatic());
+        const bool takesText=typeName == StubText::getTypeNameStatic();
+        return std::make_unique<StubControl>(this, takesText, std::move(typeName));
     }
 
     void drawControl(gweni::controls::Base *) override {}
@@ -204,12 +208,22 @@ public:
 
     //! StubControls of this skin currently alive (owned by some control).
     size_t liveControls=0;
+
+    //! depthLayers() of the StubControls handed out for a type name, read on
+    //! every call; a type name not listed reports 1.
+    std::map<std::string, size_t> depthLayers;
 };
 
-inline StubControl::StubControl(StubSkin *skin, bool takesText)
-    : m_skin(skin), m_takesText(takesText)
+inline StubControl::StubControl(StubSkin *skin, bool takesText, std::string typeName)
+    : m_skin(skin), m_typeName(std::move(typeName)), m_takesText(takesText)
 {
     ++m_skin->liveControls;
+}
+
+inline size_t StubControl::depthLayers()
+{
+    auto layers=m_skin->depthLayers.find(m_typeName);
+    return layers == m_skin->depthLayers.end()?1:layers->second;
 }
 
 inline StubControl::~StubControl()

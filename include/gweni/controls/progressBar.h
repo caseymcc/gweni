@@ -36,6 +36,11 @@ public:
         m_horizontal=true;
     }
 
+    bool isHorizontal() const
+    {
+        return m_horizontal;
+    }
+
     virtual void  setProgress(float val);
     virtual float getProgress() const
     {

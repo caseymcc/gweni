@@ -552,7 +552,7 @@ void ProgressBar::generate(renderer::Base *renderer, controls::Base *baseControl
 
 void ProgressBar::update(renderer::Base *renderer, controls::Base *baseControl)
 {
-    if(m_primitives.size() < 18)
+    if(m_primitives.size() < 2)
         return;
 
     controls::ProgressBar *progress=static_cast<controls::ProgressBar *>(baseControl);
@@ -570,17 +570,27 @@ void ProgressBar::update(renderer::Base *renderer, controls::Base *baseControl)
         p=(p < 0.0f) ? 0.0f : (p > 1.0f ? 1.0f : p);
 
         gweni::Rect front=bounds;
-        front.w=(int)(bounds.w*p);
+
+        if(progress->isHorizontal())
+            front.w=(int)(bounds.w*p);
+        else
+        {
+            // a vertical bar fills from the bottom up
+            front.h=(int)(bounds.h*p);
+            front.y=bounds.y+bounds.h-front.h;
+        }
+
+        // +1, over the track (depthLayers() reserves it)
         const tokyonight::Surface &fr=tokyonight::ProgressFront;
-        renderer->drawRoundedRect(m_primitives[9], front, fr.radius, fr.borderWidth,
-            fr.top, fr.bottom, fr.border, zIndex);
+        renderer->drawRoundedRect(m_primitives[1], front, fr.radius, fr.borderWidth,
+            fr.top, fr.bottom, fr.border, zIndex+1);
     }
 
     if((baseControl->getStateChange()&controls::StateChange_Visibility) ||
         (baseControl->getStateChange()&controls::StateChange_Created))
     {
         renderer->showPrimitive(visible?4:0, m_primitives[0]);
-        renderer->showPrimitive(visible?4:0, m_primitives[9]);
+        renderer->showPrimitive(visible?4:0, m_primitives[1]);
     }
 }
 

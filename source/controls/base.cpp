@@ -1002,7 +1002,7 @@ void Base::updateRecursive(int &zIndex)
         m_zIndex=zIndex;
         addStateChange(StateChange_Geometry);
     }
-    zIndex++;
+    zIndex+=m_skinControl?(int)m_skinControl->depthLayers():1;
 
     if(!m_children.empty())
     {

@@ -170,7 +170,8 @@ add_executable(gweni_unit_tests
     unit/scrollControl.cpp
     unit/resourcePaths.cpp
     unit/requestedSize.cpp
-    unit/tabOrder.cpp)
+    unit/tabOrder.cpp
+    unit/depthLayers.cpp)
 gweni_set_warnings(gweni_unit_tests)
 target_link_libraries(gweni_unit_tests
     gweni
@@ -205,7 +206,8 @@ if(TARGET gweni_capture)
         clipBoxes.cpp
         scaledEdges.cpp
         textureReload.cpp
-        imageRects.cpp)
+        imageRects.cpp
+        progressBarFill.cpp)
     gweni_set_warnings(gweni_unittests)
     target_link_libraries(gweni_unittests
         gweni

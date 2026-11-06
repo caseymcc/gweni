@@ -49,7 +49,14 @@ GWENI_CONTROL_CONSTRUCTOR(ProgressBar)
 
 void ProgressBar::setProgress(float val)
 {
-    m_progress=clamp(val, 0.f, 1.f);
+    val=clamp(val, 0.f, 1.f);
+
+    // only the fill changes: the bounds stay as they are
+    if(val != m_progress)
+    {
+        m_progress=val;
+        addStateChange(StateChange_Background);
+    }
 
     if(m_autoLabel)
     {
@@ -66,15 +73,15 @@ void ProgressBar::cycleThink(float delta)
     if(m_cycleSpeed == 0.0f)
         return;
 
-    m_progress+=m_cycleSpeed*delta;
+    float progress=m_progress+m_cycleSpeed*delta;
 
-    if(m_progress < 0.0f)
-        m_progress+=1.0f;
+    if(progress < 0.0f)
+        progress+=1.0f;
 
-    if(m_progress > 1.0f)
-        m_progress-=1.0f;
+    if(progress > 1.0f)
+        progress-=1.0f;
 
-    redraw();
+    setProgress(progress);
 }
 
 float ProgressBar::getCycleSpeed()
