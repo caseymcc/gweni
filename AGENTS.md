@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 gweni ("GUI Without Extravagant Nonsense") is a C++17 retained-mode GUI library, forked from Garry Newman's **GWEN** (MIT) and reworked to be OpenGL-aware. The core idea separating it from GWEN: instead of redrawing every widget each frame in immediate mode, controls allocate persistent renderer **primitives** and only regenerate/update them when their state actually changes. The long-term goal is good performance on modern OpenGL (3.0+ core profile) and eventually Vulkan.
 
-The library builds as a static/object library plus example executables. Tests are run with CTest (see "Tests" under "Building").
+The library builds as a static/object library plus example executables. Tests are run with CTest (see "Tests" under "Building"; a short version for humans is in [`docs/building.md`](docs/building.md)).
 
 ## Building
 
@@ -57,6 +57,7 @@ The commands in this section are the in-container form; from a host, prefix each
 ./generate.sh linux                  # configures build_linux_x64_debug/ (SDL2+legacy GL off, GL core on)
 ./generate.sh linux release          # release build dir
 ./generate.sh linux -DSOME_OPT=ON    # any -D... arg is passed through to cmake
+./generate.sh linux asan             # AddressSanitizer tree, build_linux_x64_debug_asan/ (see "ASAN tree")
 ```
 
 Dependencies are managed by **vcpkg** (manifest `vcpkg.json` at the repo root), bootstrapped into the image at `/opt/vcpkg`; `generate.sh` triggers the manifest install at configure time.
@@ -93,6 +94,22 @@ Tests labelled `gpu` run the examples headless (`--headless`, the surfaceless-EG
 
 C++ unit tests use **doctest** and all build into one executable, `gweni_unittests` (registered as the CTest test `unittests`, label `gpu`). Its sources are in `tests/`: `main.cpp` creates a surfaceless EGL context through the examples' `gweni_capture` library (`examples/openglcore/capture.{h,cpp}`), plus one init()'d `OpenGLCore` with OpenSans loaded, and then runs every case. A test reaches them through `test::gpuRenderer()` / `test::openSans()` (`tests/gpuRenderer.h`). `textLength.cpp` pins the UTF-8 code-point counts `OpenGLCore` passes to freetype-gl (the `cca344a` bug). It counts drawn glyphs with `getFrameStats().textSlotsWritten`. To add a test, write a `.cpp` in `tests/` with `#include <doctest/doctest.h>` and `TEST_CASE`s, and add it to `gweni_unittests`'s source list in `tests/CMakeLists.txt`. Do not define a second `main`. The executable is only built when `gweni_capture` exists (`GWENI_BUILD_EXAMPLES`). It must run from the repo root, because it loads `resources/`. Run one case with `build_linux_x64_debug/tests/gweni_unittests -tc="<name>"`, holding the GPU lock as for any other GPU job.
 
+### ASAN tree
+
+`./generate.sh linux asan` configures a second tree, `build_linux_x64_debug_asan/` (`asan` combines with `release` too: `build_linux_x64_release_asan/`), with `-DGWENI_SANITIZE=address`. It builds and tests like the plain one:
+
+```bash
+./generate.sh linux asan
+cmake --build build_linux_x64_debug_asan -j
+mm run --lock gpu -- ctest --test-dir build_linux_x64_debug_asan --output-on-failure
+```
+
+The sanitizer flags are set before `deps/` is added, so gweni, the examples, the tests and the vendored freetype-gl and imglib are instrumented. The vcpkg-installed dependencies are not. In that tree every test runs with `ASAN_OPTIONS=detect_leaks=0:abort_on_error=1` (`tests/CMakeLists.txt`): Mesa/EGL leak at exit and that is not ours, so leak checking is off and only memory errors fail a test. An ASAN report aborts the process, and that fails the test, including a ControlTest child of `determinism.cmake`. Run one binary by hand with the same `ASAN_OPTIONS`.
+
+The heap-string case in `tests/textLength.cpp` is a real check only in this tree. If `OpenGLCore` passes freetype-gl a byte count again (the `cca344a` bug), ASAN reports `heap-buffer-overflow` in `deps/freetype-gl/text-buffer.c`. ControlTest's UnicodeTextDemo also triggers that report.
+
+**ASAN does not catch an over-read that stays inside one object.** ListBoxDemo's original instance of this bug read past a short string held in SSO storage inside `controls::Text`, into the neighbouring `m_font` field. That memory is addressable, so ASAN and valgrind both stay silent. The deterministic trailing-bytes test in `textLength.cpp` exists for that case, and so does the two-process determinism test.
+
 ### Dependencies / vcpkg notes
 - The active OpenGL-core build pulls `rapidjson`, `glm`, `freetype`, `glew`, `glfw3`, `libpng`, `libjpeg-turbo` (last two via the `deps/imglib` subproject). RapidJSON is header-only — CMake consumes `RAPIDJSON_INCLUDE_DIRS`, not an imported target.
 - `doctest` (header-only, `find_package(doctest CONFIG)` → `doctest::doctest`) is used only by the unit tests in `tests/`, never by the `gweni` library.
@@ -100,7 +117,7 @@ C++ unit tests use **doctest** and all build into one executable, `gweni_unittes
 - The vendored `deps/freetype-gl` and `deps/imglib` are added via `add_subdirectory`; `deps/CMakeLists.txt` sets `freetype-gl_USE_HUNTER OFF` so they resolve deps through the vcpkg toolchain's standard find modules.
 
 ### Build options (CMakeLists.txt)
-`GWENI_RENDER_SDL2`, `GWENI_RENDER_OPENGL` (legacy fixed-function), `GWENI_RENDER_OPENGL_CORE` (the active modern renderer), `GWENI_BUILD_EXAMPLES`, `GWENI_BUILD_TESTS` (CTest suite under `tests/`, default on). The Linux toolchain turns SDL2 and legacy GL **off** and uses only the GL core renderer. `GWENI_RENDER_OPENGL_CORE` is what pulls in glm + freetype + the `deps/freetype-gl` and `deps/imglib` subprojects.
+`GWENI_RENDER_SDL2`, `GWENI_RENDER_OPENGL` (legacy fixed-function), `GWENI_RENDER_OPENGL_CORE` (the active modern renderer), `GWENI_BUILD_EXAMPLES`, `GWENI_BUILD_TESTS` (CTest suite under `tests/`, default on), `GWENI_SANITIZE` (sanitizers to build everything with, passed as `-fsanitize=<value>`; empty by default, `address` in the ASAN tree that `./generate.sh linux asan` sets up). The Linux toolchain turns SDL2 and legacy GL **off** and uses only the GL core renderer. `GWENI_RENDER_OPENGL_CORE` is what pulls in glm + freetype + the `deps/freetype-gl` and `deps/imglib` subprojects.
 
 ## Architecture
 
