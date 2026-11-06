@@ -11,7 +11,8 @@
         "glew",
         "glfw3",
         "libpng",
-        "libjpeg-turbo"
+        "libjpeg-turbo",
+        "doctest"
     ],
     "features": {
         "sdl2": {

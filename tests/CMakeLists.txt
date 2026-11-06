@@ -39,3 +39,28 @@ if(TARGET ControlTest)
 else()
     message(STATUS "tests: ControlTest tests skipped, GWENI_BUILD_EXAMPLES is off")
 endif()
+
+# C++ unit tests (doctest), one executable. They need a GL context, which they
+# get from the examples' surfaceless EGL code (gweni_capture), so they are only
+# built along with the examples.
+if(TARGET gweni_capture)
+    find_package(doctest CONFIG REQUIRED)
+
+    add_executable(gweni_unittests
+        main.cpp
+        textLength.cpp)
+    gweni_set_warnings(gweni_unittests)
+    target_link_libraries(gweni_unittests
+        gweni
+        gweni_capture
+        doctest::doctest)
+
+    add_test(NAME unittests
+        COMMAND $<TARGET_FILE:gweni_unittests>
+        WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
+    set_tests_properties(unittests PROPERTIES
+        LABELS gpu
+        TIMEOUT 60)
+else()
+    message(STATUS "tests: unit tests skipped, they need gweni_capture (GWENI_BUILD_EXAMPLES)")
+endif()
