@@ -110,6 +110,15 @@ typedef struct texture_atlas_t
      */
     unsigned char * data;
 
+    /**
+     * Rows written since the owner last uploaded the atlas, as the half-open
+     * range [dirty_y0, dirty_y1); empty when dirty_y0 >= dirty_y1.
+     * texture_atlas_set_region widens it, texture_atlas_clear makes it the whole
+     * atlas. The owner uploads the band and resets it (gweni patch, not upstream).
+     */
+    size_t dirty_y0;
+    size_t dirty_y1;
+
 } texture_atlas_t;
 
 

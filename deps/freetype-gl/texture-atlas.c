@@ -36,6 +36,8 @@ texture_atlas_new( const size_t width,
     self->height = height;
     self->depth = depth;
     self->id = 0;
+    self->dirty_y0 = 0;
+    self->dirty_y1 = 0;
 
     vector_push_back( self->nodes, &node );
     self->data = (unsigned char *)
@@ -98,6 +100,22 @@ texture_atlas_set_region( texture_atlas_t * self,
     {
         memcpy( self->data+((y+i)*self->width + x ) * charsize * depth,
                 data + (i*stride) * charsize, width * charsize * depth  );
+    }
+
+    if( height > 0 )
+    {
+        if( self->dirty_y0 >= self->dirty_y1 )
+        {
+            self->dirty_y0 = y;
+            self->dirty_y1 = y + height;
+        }
+        else
+        {
+            if( y < self->dirty_y0 )
+                self->dirty_y0 = y;
+            if( y + height > self->dirty_y1 )
+                self->dirty_y1 = y + height;
+        }
     }
 }
 
@@ -272,4 +290,6 @@ texture_atlas_clear( texture_atlas_t * self )
 
     vector_push_back( self->nodes, &node );
     memset( self->data, 0, self->width*self->height*self->depth );
+    self->dirty_y0 = 0;
+    self->dirty_y1 = self->height;
 }
