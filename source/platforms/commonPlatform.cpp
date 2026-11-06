@@ -42,12 +42,12 @@ String CurrentPath::getPath(Type type, String const &filename)
 
 //------------------------------------------------------------------------------
 RelativeToExecutablePaths::RelativeToExecutablePaths(String const &resourceDir):
-    m_resDir(getExecutableDir() + resourceDir)
+    m_resDir((fs::path(getExecutableDir())/resourceDir).string())
 {}
 
 String RelativeToExecutablePaths::getPath(Type type, String const &filename)
 {
-    String filepath(m_resDir + filename);
+    String filepath((fs::path(m_resDir)/filename).string());
 
     if(type == Type::Font)
     {

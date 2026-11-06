@@ -74,6 +74,9 @@ public:
     };
 
     StubRenderer(): Base(resourcePaths()) {}
+    //! A stub that resolves resource names through \p paths, which must
+    //! outlive it.
+    explicit StubRenderer(gweni::ResourcePaths &paths): Base(paths) {}
 
     void generatePrimitive(size_t &primitiveId) override
     {

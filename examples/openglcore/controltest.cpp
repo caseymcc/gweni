@@ -2222,8 +2222,9 @@ int main(int argc, char *argv[])
     renderer->init();
 
     gweni::skin::textured::TexturedSkin *skin=new gweni::skin::textured::TexturedSkin(renderer);
-    skin->init("resources/DefaultSkin.json");
-    skin->setDefaultFont("resources/OpenSans.ttf", 11);
+    if(!skin->init("DefaultSkin.json"))
+        return EXIT_FAILURE;
+    skin->setDefaultFont("OpenSans.ttf", 11);
 
     // The canvas fill comes from the theme, so a "theme" block in
     // resources/DefaultSkin.json moves it too. Canvas::renderCanvas does not

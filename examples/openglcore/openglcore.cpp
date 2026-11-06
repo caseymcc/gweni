@@ -323,7 +323,6 @@ int main(int argc, char *argv[])
         return EXIT_FAILURE;
     }
 
-//    gweni::platform::RelativeToExecutablePaths paths("../../resources/");
     gweni::platform::CurrentPath paths("resources");
 
     // Create a Gweni OpenGL Renderer
@@ -334,9 +333,9 @@ int main(int argc, char *argv[])
     // Create a Gweni skin
     gweni::skin::textured::TexturedSkin *skin = new gweni::skin::textured::TexturedSkin(renderer);
 
-//    skin->init("DefaultSkin.png");
-    skin->init("resources/DefaultSkin.json");
-    skin->setDefaultFont("resources/OpenSans.ttf", 11);
+    if(!skin->init("DefaultSkin.json"))
+        return EXIT_FAILURE;
+    skin->setDefaultFont("OpenSans.ttf", 11);
 
     // Create a Canvas (it's root, on which all other Gweni panels are created)
     // The canvas fill comes from the theme, so a "theme" block in

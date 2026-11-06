@@ -410,7 +410,10 @@ public:
         m_render->getLoader().freeTexture(m_texture);
     }
 
-    void init(std::string fileName);
+    //! Load the skin config, a name resolved through the renderer's
+    //! ResourcePaths (e.g. "DefaultSkin.json"). Returns false, having printed
+    //! the resolved path to stderr, when it cannot be loaded.
+    bool init(std::string fileName);
 
     std::unique_ptr<Control> getControlRenderer(std::string typeName) override;
 

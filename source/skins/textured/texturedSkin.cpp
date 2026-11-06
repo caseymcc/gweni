@@ -6,6 +6,10 @@
 
 #include <imglib/imageIo.h>
 
+#include <cerrno>
+#include <cstring>
+#include <iostream>
+
 namespace gweni
 {
 namespace skin
@@ -13,9 +17,10 @@ namespace skin
 namespace textured
 {
 
-void TexturedSkin::init(std::string fileName)
+bool TexturedSkin::init(std::string fileName)
 {
-    loadConfig(fileName);
+    if(!loadConfig(fileName))
+        return false;
 
     m_defaultFont.facename="Microsoft Sans Serif";
     m_defaultFont.size=11;
@@ -187,6 +192,7 @@ void TexturedSkin::init(std::string fileName)
 //    Textures.CategoryList.Inner.init(&m_texture, texData, 256 + 64, 384, 63, 63, Margin(8, 21, 8, 8));
 //    Textures.CategoryList.Header.init(&m_texture, texData, 320, 352, 63, 31, Margin(8, 8, 8, 8));
 //    Textures.GroupBox.init(&m_texture, texData, 0, 448, 31, 31, Margin(8, 8, 8, 8));
+    return true;
 }
 
 std::unique_ptr<Control> TexturedSkin::getControlRenderer(std::string typeName)
@@ -269,20 +275,32 @@ void TexturedSkin::loadTextureMap(const json::Value &jsonMap)
 
 bool TexturedSkin::loadConfig(std::string configFileName)
 {
+    // The name is resolved through the application's ResourcePaths, like
+    // fonts and textures, so callers pass a bare name ("DefaultSkin.json").
+    const std::string configPath=getRenderer()->getResourcePaths().getPath(ResourcePaths::Type::Other, configFileName);
     std::vector<char> fileBuffer;
     
     {
-        if(!fs::exists(configFileName.c_str()))
+        FILE *configFile=fopen(configPath.c_str(), "r");
+
+        if(!configFile)
         {
-            std::cerr<<"Unable to locate config file "<<configFileName<<"\n";
+            std::cerr<<"Unable to open skin config "<<configPath<<": "<<strerror(errno)<<"\n";
+            return false;
+        }
+    
+        fseek(configFile, 0, SEEK_END);
+        const long configFileEnd=ftell(configFile);
+        fseek(configFile, 0, SEEK_SET);
+
+        if(configFileEnd < 0)
+        {
+            std::cerr<<"Unable to read skin config "<<configPath<<"\n";
+            fclose(configFile);
             return false;
         }
 
-        FILE *configFile=fopen(configFileName.c_str(), "r");
-    
-        fseek(configFile, 0, SEEK_END);
-        size_t configFileSize=(size_t)ftell(configFile);
-        fseek(configFile, 0, SEEK_SET);
+        size_t configFileSize=(size_t)configFileEnd;
     
         fileBuffer.resize(configFileSize+1);
         fread(fileBuffer.data(), 1, configFileSize, configFile);

@@ -29,6 +29,8 @@
 #   include <errno.h>
 #   include <libgen.h>
 #   include <libproc.h>
+#elif defined(__linux__)
+#   include <limits.h>
 #endif
 
 namespace gweni
@@ -93,6 +95,24 @@ String getExecutableDir()
         }
     }
     return String(path);
+
+#elif defined(__linux__)
+
+    // Linux: Resolve the /proc link to the running executable. readlink()
+    // does not NUL-terminate, and a result that fills the buffer may have
+    // been truncated.
+
+    char path[PATH_MAX];
+    const ssize_t len=readlink("/proc/self/exe", path, sizeof(path));
+    if(len <= 0 || len >= (ssize_t)sizeof(path))
+        return String();
+
+    const String exePath(path, (size_t)len);
+    const size_t slash=exePath.rfind('/');
+    if(slash == String::npos)
+        return String();
+
+    return exePath.substr(0, slash+1);
 
 #else
 

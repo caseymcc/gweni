@@ -361,8 +361,11 @@ TEST_CASE("Text run: a Button's label takes the Disabled text colour and gives i
 
     gweni::skin::textured::TexturedSkin *skin=new gweni::skin::textured::TexturedSkin(&renderer);
 
-    skin->init("resources/DefaultSkin.json");
-    skin->setDefaultFont("resources/OpenSans.ttf", 11);
+    // No setDefaultFont("OpenSans.ttf", 11) here: the label draws in the
+    // global default font, and the skin frees its default font when it is
+    // deleted, which would free the shared test::openSans() with it (the
+    // renderer keeps one entry per equal Font, with no reference count).
+    REQUIRE(skin->init("DefaultSkin.json"));
 
     gweni::controls::Canvas *canvas=new gweni::controls::Canvas(skin);
 
