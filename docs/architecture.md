@@ -104,7 +104,7 @@ on an OpenGL 3.3 core profile:
 What exists today (the foundation) and what's still aspirational:
 
 **Implemented**
-- Decoupled core ↔ renderer via `renderer::Base`; OpenGLCore, OpenGL and SDL2 backends.
+- Decoupled core ↔ renderer via `renderer::Base`; OpenGLCore and OpenGL backends.
 - Two-phase `updateCanvas` / `renderCanvas` split.
 - State-change tracking; unchanged controls emit no renderer calls.
 - Persistent primitive-id-indexed CPU vertex/index buffers in OpenGLCore; per-control

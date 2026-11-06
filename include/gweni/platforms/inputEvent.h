@@ -48,6 +48,8 @@ public:
     virtual bool inputMouseButton(int button, bool down)=0;
     virtual bool inputModifierKey(int key, bool down)=0;
     virtual bool inputCharacter(gweni::UnicodeChar chr)=0;
+    // 60 units per wheel notch, positive = away from the user (scroll up).
+    // ScrollControl divides by 60, so one notch is one nudge.
     virtual bool inputMouseWheel(int val)=0;
     virtual bool inputQuit()=0;
 };

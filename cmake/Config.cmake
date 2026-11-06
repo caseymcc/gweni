@@ -13,13 +13,8 @@ message("Project version: ${GWENI_VERSION_STR}")
 # User options
 
 # Cross-platform
-#option(GWENI_RENDER_ALLEGRO5      "Renderer: Allegro5"            OFF)
-#option(GWENI_RENDER_IRRLICHT      "Renderer: Irrlicht"            OFF)
 option(GWENI_RENDER_OPENGL        "Renderer: OPENGL"              OFF)
 option(GWENI_RENDER_OPENGL_CORE   "Renderer: OPENGL Core Profile" OFF)
-option(GWENI_RENDER_SDL2          "Renderer: SDL2"                OFF)
-#option(GWENI_RENDER_SFML2         "Renderer: SFML2"               OFF)
-#option(GWENI_RENDER_SW            "Renderer: Software"            OFF)
 #option(GWENI_RENDER_NULL          "Renderer: Null"                OFF) # Used for testing
 
 option(GWENI_USE_GLFW             "Use GLFW for OpenGL renderer." ON)
@@ -31,9 +26,6 @@ option(GWENI_WITH_SAMPLE          "Include sample" ON)
 
 # This is for development but can be used by the user.
 option(GWENI_WITH_ALLOC_STATS     "Track memory allocations" OFF)
-
-# Find SFML by SFMLConfig.cmake instead of local CMake module FindSFML.cmake.
-option(GWENI_USE_SFML_CONFIG "Use SFMLConfig.cmake to find SFML (>=2.5)" OFF)
 
 #-----------------------------------------------------------
 # Configure once options known
@@ -125,33 +117,6 @@ if(GWENI_RENDER_OPENGL_CORE)
         find_package(glfw3 CONFIG REQUIRED)
 
         set(GWENI_RENDER_LIBRARIES ${GWENI_RENDER_LIBRARIES} glfw)
-    endif()
-endif()
-
-if(GWENI_RENDER_SDL2)
-    set(GWENI_RENDER_NAME "SDL2")
-    set(GWENI_INPUT_NAME "SDL2")
-    set(GWENI_PLATFORM_NAME "Cross")
-
-    find_package(SDL2 CONFIG REQUIRED)
-    find_package(SDL2_ttf CONFIG REQUIRED)
-    find_package(SDL2_image CONFIG REQUIRED)
-
-    set(GWENI_RENDER_LIBRARIES SDL2::SDL2 SDL2_ttf::SDL2_ttf SDL2_image::SDL2_image)
-endif()
-
-if(GWENI_RENDER_SW)
-    set(GWENI_SW_VIEWER 1)
-    set(GWENI_RENDER_NAME "Software")
-    set(GWENI_PLATFORM_NAME "Cross")
-    if(GWENI_SW_VIEWER)
-        set(GWENI_INPUT_NAME "SDL2")
-        find_package(SDL2 CONFIG REQUIRED)
-        set(GWENI_RENDER_LIBRARIES SDL2::SDL2)
-    else()
-        set(GWENI_INPUT_NAME "Null")
-        set(GWENI_RENDER_INCLUDES "")
-        set(GWENI_RENDER_LIBRARIES "")
     endif()
 endif()
 

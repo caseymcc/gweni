@@ -12,7 +12,6 @@
 
 #include <gweni/platforms/utility.h>
 #include <gweni/platforms/platform.h>
-#include <gweni/platforms/input/windows.h>
 
 #include <windows.h>
 #include <ShlObj.h>

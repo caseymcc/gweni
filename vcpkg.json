@@ -15,14 +15,6 @@
         "doctest"
     ],
     "features": {
-        "sdl2": {
-            "description": "SDL2 renderer/input backend",
-            "dependencies": [
-                "sdl2",
-                "sdl2-ttf",
-                "sdl2-image"
-            ]
-        },
         "boost-filesystem": {
             "description": "Boost.Filesystem backend (used on platforms lacking std::filesystem, e.g. Android NDK)",
             "dependencies": [

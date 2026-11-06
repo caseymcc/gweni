@@ -14,7 +14,6 @@ endif()
 # Docker container (see run_docker.sh).
 cmake_policy(SET CMP0074 NEW)
 
-option(GWENI_RENDER_SDL2 "Opengl Renderer" ON)
 option(GWENI_RENDER_OPENGL "Opengl Renderer" ON)
 option(GWENI_RENDER_OPENGL_CORE "Opengl 3.0+ Renderer" ON)
 option(GWENI_BUILD_EXAMPLES "Build Examples" ON)
@@ -289,13 +288,6 @@ set(GWENI_PROPERTY_SOURCES
 
 set(GWENI_RENDER_SOURCES
 )
-
-if(GWENI_RENDER_SDL2)
-    set(GWENI_RENDER_SOURCES
-        include/gweni/platforms/renderers/sdl2.h
-        source/platforms/renderers/OpenGL/sdl2.cpp
-    )
-endif()
 
 if(GWENI_RENDER_OPENGL)
     set(GWENI_RENDER_SOURCES

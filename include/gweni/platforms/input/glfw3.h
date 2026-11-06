@@ -147,8 +147,9 @@ public:
 
     bool processScroll(float sx, float sy)
     {
-        // One wheel notch is 60 units, as in the sfml2/allegro5 backends. GLFW
-        // reports +-1 per notch, and fractional offsets on touchpads, so round.
+        // One wheel notch is 60 units, as documented on
+        // IInputEvent::inputMouseWheel. GLFW reports +-1 per notch, and
+        // fractional offsets on touchpads, so round.
         return m_eventCaller->inputMouseWheel(static_cast<int>(std::lround(sy*60.0f)));
     }
 

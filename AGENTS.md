@@ -54,7 +54,7 @@ This path always gets a persistent vcpkg cache: `run_docker.sh` creates `.vcpkg-
 The commands in this section are the in-container form; from a host, prefix each with `./run_docker.sh`.
 
 ```bash
-./generate.sh linux                  # configures build_linux_x64_debug/ (SDL2+legacy GL off, GL core on)
+./generate.sh linux                  # configures build_linux_x64_debug/ (legacy GL off, GL core on)
 ./generate.sh linux release          # release build dir
 ./generate.sh linux -DSOME_OPT=ON    # any -D... arg is passed through to cmake
 ./generate.sh linux asan             # AddressSanitizer tree, build_linux_x64_debug_asan/ (see "ASAN tree")
@@ -115,11 +115,11 @@ The heap-string case in `tests/textLength.cpp` is a real check only in this tree
 ### Dependencies / vcpkg notes
 - The active OpenGL-core build pulls `rapidjson`, `glm`, `freetype`, `glew`, `glfw3`, `libpng`, `libjpeg-turbo` (last two via the `deps/imglib` subproject). RapidJSON is header-only — CMake consumes `RAPIDJSON_INCLUDE_DIRS`, not an imported target.
 - `doctest` (header-only, `find_package(doctest CONFIG)` → `doctest::doctest`) is used only by the unit tests in `tests/`, never by the `gweni` library.
-- The SDL2 backend and the Android Boost.Filesystem backend are optional vcpkg **features** (`sdl2`, `boost-filesystem`); enable with `-DVCPKG_MANIFEST_FEATURES=sdl2`.
+- The Android Boost.Filesystem backend is an optional vcpkg **feature** (`boost-filesystem`); enable with `-DVCPKG_MANIFEST_FEATURES=boost-filesystem`.
 - The vendored `deps/freetype-gl` and `deps/imglib` are added via `add_subdirectory`; `deps/CMakeLists.txt` sets `freetype-gl_USE_HUNTER OFF` so they resolve deps through the vcpkg toolchain's standard find modules.
 
 ### Build options (CMakeLists.txt)
-`GWENI_RENDER_SDL2`, `GWENI_RENDER_OPENGL` (legacy fixed-function), `GWENI_RENDER_OPENGL_CORE` (the active modern renderer), `GWENI_BUILD_EXAMPLES`, `GWENI_BUILD_TESTS` (CTest suite under `tests/`, default on), `GWENI_SANITIZE` (sanitizers to build everything with, passed as `-fsanitize=<value>`; empty by default, `address` in the ASAN tree that `./generate.sh linux asan` sets up). The Linux toolchain turns SDL2 and legacy GL **off** and uses only the GL core renderer. `GWENI_RENDER_OPENGL_CORE` is what pulls in glm + freetype + the `deps/freetype-gl` and `deps/imglib` subprojects.
+`GWENI_RENDER_OPENGL` (legacy fixed-function), `GWENI_RENDER_OPENGL_CORE` (the active modern renderer), `GWENI_BUILD_EXAMPLES`, `GWENI_BUILD_TESTS` (CTest suite under `tests/`, default on), `GWENI_SANITIZE` (sanitizers to build everything with, passed as `-fsanitize=<value>`; empty by default, `address` in the ASAN tree that `./generate.sh linux asan` sets up). The Linux toolchain turns legacy GL **off** and uses only the GL core renderer. `GWENI_RENDER_OPENGL_CORE` is what pulls in glm + freetype + the `deps/freetype-gl` and `deps/imglib` subprojects.
 
 ## Architecture
 
