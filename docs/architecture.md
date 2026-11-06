@@ -113,6 +113,18 @@ on an OpenGL 3.3 core profile:
 - A single shader pair (vertex + fragment) draws all non-text primitives; an ortho
   projection (`setViewRect()`) maps UI pixel coords to clip space; `z`/depth gives
   draw order.
+- **Clip boxes.** Every primitive slot and every glyph slot carries the `clipRegion()`
+  current when it was drawn, as a `Box` of four `uint16_t` corners (`m_clippingBoxes`,
+  `m_textClipBoxes`), scaled like the vertices and clamped to `[0, 65535]` with
+  `x1 >= x0`, `y1 >= y0`, so an empty region is an empty box. Each list is uploaded
+  like the vertices (dirty slots only, compared by bytes) and read by the fragment
+  shaders as a `GL_RGBA16UI` buffer texture: `texelFetch(clipBoxes, gl_PrimitiveID >> 1)`,
+  then `discard` outside `[x0,x1) x [y0,y1)`. That index is the slot only because each
+  buffer is drawn with **one `glDrawElements` from index 0** and every slot is exactly
+  4 vertices / 6 indices (2 triangles), hidden and degenerate ones included; splitting
+  or offsetting a draw breaks it. `startClip()`/`endClip()` do nothing in this
+  renderer. `GWENI_CLIP_DEBUG=<inset px>` shrinks every box by the inset on each side,
+  which makes the clipping visible while the controls only ever set the canvas region.
 
 ## Current state vs. goals
 
@@ -131,7 +143,7 @@ What exists today (the foundation) and what's still aspirational:
   everything for that one frame. A slot is marked dirty only when its bytes actually
   change, so a control that redraws itself identically (the skin re-emits unchanged
   controls every frame) costs nothing. `GWENI_UPLOAD_STATS=1` prints the per-frame
-  upload call/byte counts.
+  upload call/byte counts (the clip-box buffers included).
 - **Font atlas upload follows lazy glyph rasterisation.** `loadFont()` uploads the
   atlas once, with the printable-ASCII cache in it; any other glyph is rasterised into
   the CPU atlas later, by `measureText` (logic phase) or `renderText`. The vendored
@@ -147,12 +159,17 @@ What exists today (the foundation) and what's still aspirational:
   `texture_glyph_t` metrics and the size it returns, and `renderText` dump the
   `m_textVertexes`/`m_textIndexes` slots it wrote for each matching string. Off unless
   the variable is set; it is verbose (tens of lines per string).
+- **Shader clipping (renderer side).** OpenGLCore clips every primitive and glyph to
+  its slot's clip box (see "Clip boxes" above). `GWENI_CLIP_DEBUG=<inset px>` insets
+  every box, to check it on screen.
 - Window resize (`renderer->setViewRect()` + `canvas->setSize()`), see
   `examples/openglcore/openglcore.cpp`.
 
 **Not yet done (the performance goal)**
-- **Clipping.** Per-control scissor / per-primitive clip boxes are stubbed/commented
-  (`shouldClip()`, `m_clippingBoxes`, `startClip/endClip`).
+- **Clipping, control side.** The renderer clips to each slot's box, but
+  `Base::renderRecursive` does not narrow the region per control yet (the
+  `shouldClip()` block is commented out), so the only region ever set is the canvas's
+  and nothing is cut.
 - **Cache-to-texture** (`ICacheToTexture`) and free-slot compaction/defragmentation of
   the primitive buffers are stubbed.
 

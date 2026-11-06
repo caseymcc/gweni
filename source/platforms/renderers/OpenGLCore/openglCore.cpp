@@ -384,7 +384,6 @@ OpenGLCore::OpenGLCore(ResourcePaths &paths, const Rect &viewRect)
     , m_currentTexture(0)
 //    , m_indexes(minIndexSize)
 //    , m_vertexes(minVertexSize)
-    , m_clipping(false)
 //    , m_clippingBoxes(minClippingSize)
 {
     m_indexes.reserve(minIndexSize);
@@ -394,6 +393,9 @@ OpenGLCore::OpenGLCore(ResourcePaths &paths, const Rect &viewRect)
 
     m_uploadStats=(getenv("GWENI_UPLOAD_STATS") != nullptr);
     m_textDebug=getenv("GWENI_TEXT_DEBUG");
+
+    if(const char *clipDebug=getenv("GWENI_CLIP_DEBUG"))
+        m_clipDebugInset=std::max(0, atoi(clipDebug));
 }
 
 bool OpenGLCore::textDebugMatches(const gweni::String &text) const
@@ -451,6 +453,11 @@ void OpenGLCore::init()
     m_clipBufferCapacity=0;
     m_textVertexBufferCapacity=0;
     m_textIndexBufferCapacity=0;
+    m_textClipBufferCapacity=0;
+
+    // Until a canvas sets its region, the whole view is visible: the shaders discard
+    // everything outside the clip box, and an unset region would be an empty one.
+    setClipRegion(m_viewRect);
 
     // Creating buffers
     glCreateVertexArrays(1, &m_vertexArray);
@@ -482,20 +489,18 @@ void OpenGLCore::init()
     glEnableVertexAttribArray(attrib); // Attrib '7' is color3 (packed): bilinear bottom edge / checker dark
     glVertexAttribIPointer(attrib++, 2, GL_UNSIGNED_SHORT, sizeof(Vertex), (GLvoid*)(offsetof(Vertex, dx)));
 
-//    glBindBuffer(GL_ARRAY_BUFFER, m_clipBuffer);
-//    glEnableVertexAttribArray(2); // Attrib '3' is show
-//    glVertexAttribIPointer(2, 1, GL_UNSIGNED_SHORT, sizeof(Box), (GLvoid*)(offsetof(Box, state)));
-//    glVertexAttribDivisor(2, 1);
-//    glEnableVertexAttribArray(3); // Attrib '4' is clipping
-//    glVertexAttribIPointer(3, 4, GL_UNSIGNED_SHORT, sizeof(Box), (GLvoid*)(offsetof(Box, x0)));
-//    glVertexAttribDivisor(3, 1);
-
     glBindVertexArray(0);
 
     //setup text vertex array
     glCreateVertexArrays(1, &m_textVertexArray);
     glCreateBuffers(1, &m_textVertexBuffer);
     glCreateBuffers(1, &m_textIndexBuffer);
+    glCreateBuffers(1, &m_textClipBuffer);
+
+    // The clip boxes are not vertex attributes: each fragment shader reads its slot's
+    // Box from a buffer texture, one RGBA16UI texel per slot (see flush()).
+    glGenTextures(1, &m_clipTexture);
+    glGenTextures(1, &m_textClipTexture);
 
     glBindVertexArray(m_textVertexArray);
 
@@ -541,6 +546,7 @@ flat out float vBorder;
 flat out vec4 vColor1;    // gradient bottom color
 flat out vec4 vBorderColor;
 out vec4 vColor3;         // smooth: style 6 interpolates it along x
+out vec2 vPixel;          // pixel-space position, the clip boxes' space
 
 uniform mat4 projection;
 uniform uvec2 textureSize;
@@ -568,6 +574,7 @@ void main()
     vColor1 = unpackColor(inColor1);
     vBorderColor = unpackColor(inBorderColor);
     vColor3 = unpackColor(inColor3);
+    vPixel = vec2(inPosition.xy);
 
     if(style == 0u)//item has been hidden, move all coords to 0.0f
         gl_Position = vec4(0.0f, 0.0f, 0.0f, 1.0f);
@@ -590,8 +597,12 @@ flat in float vBorder;
 flat in vec4 vColor1;
 flat in vec4 vBorderColor;
 in vec4 vColor3;
+in vec2 vPixel;
 
 uniform sampler2D texture1;
+// One Box (x0, y0, x1, y1) per primitive slot. A slot is 2 triangles, and the buffer
+// is drawn in one glDrawElements from index 0, so gl_PrimitiveID >> 1 is the slot.
+uniform usamplerBuffer clipBoxes;
 
 // Signed distance to a rounded box centered at the origin (negative inside).
 float sdRoundBox(vec2 p, vec2 b, float r)
@@ -630,6 +641,10 @@ float sdSegment(vec2 p, vec2 a, vec2 b)
 
 void main()
 {
+    // Tested here, discarded at the end: fwidth() below wants the whole quad alive.
+    uvec4 clip = texelFetch(clipBoxes, gl_PrimitiveID >> 1);
+    bool clipped = any(lessThan(vPixel, vec2(clip.xy))) || any(greaterThanEqual(vPixel, vec2(clip.zw)));
+
     if(ShaderType == 0u)
         FragColor = vec4(0.0, 0.0, 0.0, 0.0);
     else if(ShaderType == 1u)
@@ -701,11 +716,15 @@ void main()
         float a = 1.0 - smoothstep(0.0, aa, d);
         FragColor = vec4(VertexColor.rgb, VertexColor.a * a);
     }
+
+    if(clipped)
+        discard;
 })";
 
     m_program=loadShaders(vertexSource, fragmentTexturedSource);
     m_projectionUniform=glGetUniformLocation(m_program, "projection");
     m_textureSizeUniform=glGetUniformLocation(m_program, "textureSize");
+    m_clipBoxesUniform=glGetUniformLocation(m_program, "clipBoxes");
 
     auto textVertexSource=R"(
  #version 330 core
@@ -720,12 +739,14 @@ uniform mat4 projection;
 out vec2 texCoord;
 out vec4 color;
 out float gamma;
+out vec2 pixel;    // pixel-space position, the clip boxes' space
 
 void main()
 {
     texCoord=vertTexCoord;
     color=vertColor;
     gamma=vertGamma;
+    pixel=vertPosition.xy;
 
     gl_Position = projection * vec4(vertPosition, 1.0f);
 }
@@ -739,18 +760,34 @@ out vec4 FragColor;
 in vec2 texCoord;
 in vec4 color;
 in float gamma;
+in vec2 pixel;
 
 uniform sampler2D texture1;
+// One Box (x0, y0, x1, y1) per glyph slot; as for the primitives, one draw from
+// index 0 with 2 triangles per slot makes gl_PrimitiveID >> 1 the slot.
+uniform usamplerBuffer clipBoxes;
 void main()
 {
+    uvec4 clip = texelFetch(clipBoxes, gl_PrimitiveID >> 1);
+    bool clipped = any(lessThan(pixel, vec2(clip.xy))) || any(greaterThanEqual(pixel, vec2(clip.zw)));
+
     float a = texture2D(texture1, texCoord).r;
 
     FragColor = color * pow( a, 1.0/gamma );
+
+    // after the sample, as in the primitive shader: its implicit derivatives want the quad
+    if(clipped)
+        discard;
 }
     )";
 
     m_textProgram=loadShaders(textVertexSource, textFragSource);
     m_textProjectionUniform=glGetUniformLocation(m_textProgram, "projection");
+    m_textClipBoxesUniform=glGetUniformLocation(m_textProgram, "clipBoxes");
+
+    // texture1 stays on unit 0; the clip boxes are on unit 1 for both programs
+    glProgramUniform1i(m_program, m_clipBoxesUniform, 1);
+    glProgramUniform1i(m_textProgram, m_textClipBoxesUniform, 1);
 
     glViewport(m_viewRect.x, m_viewRect.y, m_viewRect.w, m_viewRect.h);
 }
@@ -964,10 +1001,17 @@ void OpenGLCore::flush()
     m_frameStats.atlasUploadCalls=0;
     m_frameStats.atlasUploadBytes=0;
     m_frameStats.textSlotsWritten=m_dirtyTextVertexSlots.count();
+    //a glyph slot whose clip box changed and its vertexes did not is written too
+    for(size_t slot: m_dirtyTextClipSlots.slots())
+    {
+        if(!m_dirtyTextVertexSlots.marked(slot))
+            ++m_frameStats.textSlotsWritten;
+    }
     m_frameStats.mirrorBytes=
         m_vertexes.size()*sizeof(Vertex)+m_indexes.size()*sizeof(uint16_t)
         +m_clippingBoxes.size()*sizeof(Box)
-        +m_textVertexes.size()*sizeof(glyph_vertex_t)+m_textIndexes.size()*sizeof(uint32_t);
+        +m_textVertexes.size()*sizeof(glyph_vertex_t)+m_textIndexes.size()*sizeof(uint32_t)
+        +m_textClipBoxes.size()*sizeof(Box);
 
     //glyphs measureText (logic phase) or renderText rasterised since the last frame; done
     //even when nothing draws text this frame, so they are on the GPU before first use
@@ -982,8 +1026,17 @@ void OpenGLCore::flush()
         uploadDirty(GL_ARRAY_BUFFER, m_vertexBuffer, m_vertexBufferCapacity,
             m_vertexes.data(), sizeof(Vertex), m_vertexes.size(), m_dirtyVertexSlots, 4);
 
-        uploadDirty(GL_ARRAY_BUFFER, m_clipBuffer, m_clipBufferCapacity,
+        const size_t clipCapacity=m_clipBufferCapacity;
+
+        uploadDirty(GL_TEXTURE_BUFFER, m_clipBuffer, m_clipBufferCapacity,
             m_clippingBoxes.data(), sizeof(Box), m_clippingBoxes.size(), m_dirtyClipSlots, 1);
+
+        //a regrow re-specified the data store; attach it again (cheap, and only then)
+        if(m_clipBufferCapacity != clipCapacity)
+        {
+            glBindTexture(GL_TEXTURE_BUFFER, m_clipTexture);
+            glTexBuffer(GL_TEXTURE_BUFFER, GL_RGBA16UI, m_clipBuffer);
+        }
 
         //draw primitives
         glUseProgram(m_program);
@@ -998,10 +1051,16 @@ void OpenGLCore::flush()
 
         glProgramUniform2ui(m_program, m_textureSizeUniform, m_currentTextureSize.x, m_currentTextureSize.y);
 
+        glActiveTexture(GL_TEXTURE1);
+        glBindTexture(GL_TEXTURE_BUFFER, m_clipTexture);
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, m_currentTexture);
         glBindVertexArray(m_vertexArray);
 
+        // The fragment shader finds a fragment's clip box at gl_PrimitiveID >> 1, which
+        // is its slot only because the whole buffer is ONE draw starting at index 0,
+        // with exactly 4 vertexes and 6 indexes (2 triangles) per slot, hidden ones
+        // included. Splitting this draw or giving it an offset breaks clipping.
         glDrawElements(GL_TRIANGLES, m_indexes.size(), (GLenum)GL_UNSIGNED_SHORT, 0);
         ++m_frameStats.drawCalls;
 
@@ -1017,6 +1076,17 @@ void OpenGLCore::flush()
         uploadDirty(GL_ARRAY_BUFFER, m_textVertexBuffer, m_textVertexBufferCapacity,
             m_textVertexes.data(), sizeof(glyph_vertex_t), m_textVertexes.size(), m_dirtyTextVertexSlots, 4);
 
+        const size_t clipCapacity=m_textClipBufferCapacity;
+
+        uploadDirty(GL_TEXTURE_BUFFER, m_textClipBuffer, m_textClipBufferCapacity,
+            m_textClipBoxes.data(), sizeof(Box), m_textClipBoxes.size(), m_dirtyTextClipSlots, 1);
+
+        if(m_textClipBufferCapacity != clipCapacity)
+        {
+            glBindTexture(GL_TEXTURE_BUFFER, m_textClipTexture);
+            glTexBuffer(GL_TEXTURE_BUFFER, GL_RGBA16UI, m_textClipBuffer);
+        }
+
         //draw text
         glUseProgram(m_textProgram);
 
@@ -1028,10 +1098,14 @@ void OpenGLCore::flush()
             glm::value_ptr(m_projectionMatrix)
         );
 
+        glActiveTexture(GL_TEXTURE1);
+        glBindTexture(GL_TEXTURE_BUFFER, m_textClipTexture);
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, m_textTextureId);
         glBindVertexArray(m_textVertexArray);
 
+        // As for the primitives: one draw from index 0, 2 triangles per glyph slot,
+        // so the shader's gl_PrimitiveID >> 1 is the slot of the glyph's clip box.
         glDrawElements(GL_TRIANGLES, m_textIndexes.size(), (GLenum)GL_UNSIGNED_INT, 0);
         ++m_frameStats.drawCalls;
 
@@ -1212,25 +1286,7 @@ void OpenGLCore::drawFilledRect(size_t primitiveId, gweni::Rect rect, int zIndex
 
     readPrimitiveSlot(primitiveId, before);
 
-    Box &box=m_clippingBoxes[primitiveId];
-
-//    box.state=1;
-    if(m_clipping)
-    {
-        gweni::Rect rect=clipRegion();
-
-        box.x0=rect.x;
-        box.y0=rect.y;
-        box.x1=rect.x+rect.w;
-        box.y1=rect.y+rect.h;
-    }
-    else
-    {
-        box.x0=m_viewRect.x;
-        box.y0=m_viewRect.y;
-        box.x1=m_viewRect.x+m_viewRect.w;
-        box.y1=m_viewRect.y+m_viewRect.h;
-    }
+    m_clippingBoxes[primitiveId]=makeClipBox();
 
     m_indexes[index++]=vertexIndex;
     m_indexes[index++]=vertexIndex+1;
@@ -1303,24 +1359,7 @@ void OpenGLCore::writeRoundedQuad(size_t primitiveId, gweni::Rect rect, int zInd
 
     readPrimitiveSlot(primitiveId, before);
 
-    Box &box=m_clippingBoxes[primitiveId];
-
-    if(m_clipping)
-    {
-        gweni::Rect clip=clipRegion();
-
-        box.x0=clip.x;
-        box.y0=clip.y;
-        box.x1=clip.x+clip.w;
-        box.y1=clip.y+clip.h;
-    }
-    else
-    {
-        box.x0=m_viewRect.x;
-        box.y0=m_viewRect.y;
-        box.x1=m_viewRect.x+m_viewRect.w;
-        box.y1=m_viewRect.y+m_viewRect.h;
-    }
+    m_clippingBoxes[primitiveId]=makeClipBox();
 
     m_indexes[index++]=vertexIndex;
     m_indexes[index++]=vertexIndex+1;
@@ -1378,24 +1417,7 @@ void OpenGLCore::drawIcon(size_t primitiveId, gweni::Rect rect, int kind, int di
 
     readPrimitiveSlot(primitiveId, before);
 
-    Box &box=m_clippingBoxes[primitiveId];
-
-    if(m_clipping)
-    {
-        gweni::Rect clip=clipRegion();
-
-        box.x0=clip.x;
-        box.y0=clip.y;
-        box.x1=clip.x+clip.w;
-        box.y1=clip.y+clip.h;
-    }
-    else
-    {
-        box.x0=m_viewRect.x;
-        box.y0=m_viewRect.y;
-        box.x1=m_viewRect.x+m_viewRect.w;
-        box.y1=m_viewRect.y+m_viewRect.h;
-    }
+    m_clippingBoxes[primitiveId]=makeClipBox();
 
     m_indexes[index++]=vertexIndex;
     m_indexes[index++]=vertexIndex+1;
@@ -1432,24 +1454,48 @@ void OpenGLCore::setDrawColor(gweni::Color color)
     m_color=color;
 }
 
+// Every primitive and glyph slot is stamped with the clipRegion() current when it is
+// drawn (makeClipBox), and the shaders discard outside it, so there is no clipping
+// state to switch on and off.
 void OpenGLCore::startClip()
-{
-    m_clipping=true;
-//    flush();
-//    gweni::Rect rect=clipRegion();
-//
-//    rect.y=m_viewRect.h - (rect.y + rect.h);
-//
-//    glScissor(rect.x * scale(), rect.y * scale(),
-//        rect.w * scale(), rect.h * scale());
-//    glEnable(GL_SCISSOR_TEST);
-}
+{}
 
 void OpenGLCore::endClip()
+{}
+
+OpenGLCore::Box OpenGLCore::makeClipBox() const
 {
-    m_clipping=false;
-//    flush();
-//    glDisable(GL_SCISSOR_TEST);
+    const gweni::Rect &clip=clipRegion();
+    const float scale=this->scale();
+
+    // rounded as translate() rounds a rect, so a box edge lands where a quad drawn
+    // over the same rect has its edge
+    long x0=(long)std::ceil(float(clip.x)*scale);
+    long y0=(long)std::ceil(float(clip.y)*scale);
+    long x1=x0+(long)std::ceil(float(clip.w)*scale);
+    long y1=y0+(long)std::ceil(float(clip.h)*scale);
+
+    x0+=m_clipDebugInset;
+    y0+=m_clipDebugInset;
+    x1-=m_clipDebugInset;
+    y1-=m_clipDebugInset;
+
+    // a corner left or above the view must not wrap in uint16_t, and an empty (or
+    // inverted) region becomes an empty box
+    const long limit=std::numeric_limits<uint16_t>::max();
+
+    x0=std::min(std::max(x0, 0L), limit);
+    y0=std::min(std::max(y0, 0L), limit);
+    x1=std::min(std::max(x1, x0), limit);
+    y1=std::min(std::max(y1, y0), limit);
+
+    Box box;
+
+    box.x0=(uint16_t)x0;
+    box.y0=(uint16_t)y0;
+    box.x1=(uint16_t)x1;
+    box.y1=(uint16_t)y1;
+    return box;
 }
 
 void OpenGLCore::generatePrimitive(size_t &primitiveId)
@@ -1495,25 +1541,7 @@ void OpenGLCore::drawTexturedRect(const gweni::Texture &texture, size_t primitiv
 
     readPrimitiveSlot(primitiveId, before);
 
-    Box &box=m_clippingBoxes[primitiveId];
-
-//    box.state=2;
-    if(m_clipping)
-    {
-        gweni::Rect rect=clipRegion();
-
-        box.x0=rect.x;
-        box.y0=rect.y;
-        box.x1=rect.x+rect.w;
-        box.y1=rect.y+rect.h;
-    }
-    else
-    {
-        box.x0=m_viewRect.x;
-        box.y0=m_viewRect.y;
-        box.x1=m_viewRect.x+m_viewRect.w;
-        box.y1=m_viewRect.y+m_viewRect.h;
-    }
+    m_clippingBoxes[primitiveId]=makeClipBox();
 
     m_indexes[index++]=vertexIndex;
     m_indexes[index++]=vertexIndex+1;
@@ -1626,6 +1654,8 @@ void OpenGLCore::ensureTextSlots(size_t glyphSlots)
         m_textVertexes.resize(glyphSlots*4);
     if(m_textIndexes.size() < glyphSlots*6)
         m_textIndexes.resize(glyphSlots*6);
+    if(m_textClipBoxes.size() < glyphSlots)
+        m_textClipBoxes.resize(glyphSlots);
 }
 
 void OpenGLCore::addFreeTextRun(size_t start, size_t capacity)
@@ -1764,6 +1794,20 @@ void OpenGLCore::markTextVertexes(const TextRun &run)
         m_dirtyTextVertexSlots.mark(run.start+i);
 }
 
+void OpenGLCore::writeTextClipBoxes(const TextRun &run, const Box &box)
+{
+    for(size_t i=0; i<run.glyphs; ++i)
+    {
+        Box &slotBox=m_textClipBoxes[run.start+i];
+
+        if(memcmp(&slotBox, &box, sizeof(Box)) == 0)
+            continue;
+
+        slotBox=box;
+        m_dirtyTextClipSlots.mark(run.start+i);
+    }
+}
+
 void OpenGLCore::generateTextPrimitive(size_t &primitiveId)
 {
     primitiveId=getTextId(nullptr);
@@ -1834,6 +1878,9 @@ void OpenGLCore::renderText(size_t textId, const gweni::Font &font, gweni::Point
             markTextVertexes(run);
             run.position=pos;
         }
+
+        // the region can change with or without a move; an unchanged box marks nothing
+        writeTextClipBoxes(run, makeClipBox());
         return;
     }
 
@@ -1900,6 +1947,7 @@ void OpenGLCore::renderText(size_t textId, const gweni::Font &font, gweni::Point
 
     writeTextIndexes(run);
     markTextVertexes(run);
+    writeTextClipBoxes(run, makeClipBox());
 
     if(textDebugMatches(text))
     {

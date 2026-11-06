@@ -208,7 +208,7 @@ public:
     {
         size_t frameIndex=0;            //!< frames flushed so far
         size_t primitiveSlotsWritten=0; //!< primitive slots whose bytes changed this frame
-        size_t textSlotsWritten=0;      //!< glyph slots whose bytes changed this frame
+        size_t textSlotsWritten=0;      //!< glyph slots whose vertexes or clip box changed this frame
         size_t uploadCalls=0;           //!< glBufferData/glBufferSubData calls
         size_t uploadBytes=0;           //!< bytes those calls sent
         size_t mirrorBytes=0;           //!< size of the whole CPU mirror, for comparison
@@ -271,12 +271,16 @@ private:
 
     static_assert(sizeof(Vertex) == 32, "Vertex is 16 16-bit fields; the GPU attribute layout depends on it");
 
+    //! A clip box in pixel space (the vertexes' space, scaled like translate()):
+    //! the fragment shaders keep [x0,x1) x [y0,y1) of the slot it belongs to and
+    //! discard the rest. Read on the GPU as one RGBA16UI texel of a buffer texture.
     struct Box
     {
-//        uint16_t state;
         uint16_t x0, y0;
         uint16_t x1, y1;
     };
+
+    static_assert(sizeof(Box) == 8, "Box is one GL_RGBA16UI texel of the clip buffer textures");
 
     //
     //! Set of primitive slots whose CPU-side data has diverged from the GPU buffer.
@@ -300,6 +304,8 @@ private:
 
         bool empty() const { return m_slots.empty(); }
         size_t count() const { return m_slots.size(); }
+        bool marked(size_t slot) const { return (slot < m_marked.size()) && m_marked[slot]; }
+        const std::vector<size_t> &slots() const { return m_slots; }
 
         void clear()
         {
@@ -352,6 +358,11 @@ private:
     //! itself unchanged (the skin re-emits every frame) costs no upload.
     void markPrimitiveChanges(size_t primitiveId, const PrimitiveSlot &before);
 
+    //! The current clipRegion() as a Box: scaled by m_scale like translate(), shrunk by
+    //! GWENI_CLIP_DEBUG's inset, then clamped to [0, 65535] with x1 >= x0 and y1 >= y0
+    //! (an empty region gives an empty box, which discards everything).
+    Box makeClipBox() const;
+
     //! Uploads only the dirty slots of a buffer, growing (and fully re-uploading) it when the
     //! mirror has outgrown the device allocation. Clears dirty on return.
     void uploadDirty(unsigned int target, uint32_t buffer, size_t &capacityElements,
@@ -378,11 +389,10 @@ private:
     glm::uvec2 m_currentTextureSize;
     unsigned char m_texturesOn;
     std::vector<glm::uvec2> m_textureSizes;
-    bool m_clipping;
 
     std::vector<uint16_t> m_indexes; //argue about indices all you want
     std::vector<Vertex> m_vertexes; //argue about vertices all you want
-    std::vector<Box> m_clippingBoxes;
+    std::vector<Box> m_clippingBoxes; //!< one per primitive slot
 
     //! One contiguous run of glyph quads in the text mirrors, owned by one text id.
     //
@@ -416,6 +426,8 @@ private:
     //! (Re)writes the run's whole index range and marks it dirty.
     void writeTextIndexes(const TextRun &run);
     void markTextVertexes(const TextRun &run);
+    //! Writes box into the run's glyph slots in use, marking only the ones that change.
+    void writeTextClipBoxes(const TextRun &run, const Box &box);
 
     std::vector<TextRun> m_textRuns;
     std::map<size_t, size_t> m_freeTextRuns; //!< start -> capacity, never adjacent to another
@@ -424,12 +436,14 @@ private:
     //! would cap the text mirror at 16384 glyph slots and wrap silently past it.
     std::vector<uint32_t> m_textIndexes;
     std::vector<ftgl::glyph_vertex_t> m_textVertexes;
+    std::vector<Box> m_textClipBoxes; //!< one per glyph slot
 
     DirtySlots m_dirtyVertexSlots;
     DirtySlots m_dirtyIndexSlots;
     DirtySlots m_dirtyClipSlots;
     DirtySlots m_dirtyTextVertexSlots;
     DirtySlots m_dirtyTextIndexSlots;
+    DirtySlots m_dirtyTextClipSlots;
 
     //element counts currently allocated on the device, per buffer
     size_t m_vertexBufferCapacity=0;
@@ -437,6 +451,7 @@ private:
     size_t m_clipBufferCapacity=0;
     size_t m_textVertexBufferCapacity=0;
     size_t m_textIndexBufferCapacity=0;
+    size_t m_textClipBufferCapacity=0;
 
     //per-frame counters; also reported to stdout when GWENI_UPLOAD_STATS is set
     bool m_uploadStats=false;
@@ -447,6 +462,10 @@ private:
     const char *m_textDebug=nullptr;
     bool textDebugMatches(const gweni::String &text) const;
 
+    //! GWENI_CLIP_DEBUG=<inset px>: shrink every clip box by the inset on each side, so
+    //! the shader clipping shows on screen while the controls only set the canvas region.
+    int m_clipDebugInset=0;
+
     glm::mat4 m_projectionMatrix;
 
     uint32_t m_program;
@@ -454,21 +473,26 @@ private:
 
     uint32_t m_projectionUniform;
     uint32_t m_textureSizeUniform;
+    uint32_t m_clipBoxesUniform;
 
     uint32_t m_vertexArray; 
     uint32_t m_vertexBuffer;
     uint32_t m_indexBuffer;
     uint32_t m_clipBuffer;
+    uint32_t m_clipTexture; //!< GL_TEXTURE_BUFFER view of m_clipBuffer
 
 //    ftgl::font_manager_t *m_fontManager;
 
     uint32_t m_textTextureId;
     uint32_t m_textProgram;
     uint32_t m_textProjectionUniform;
+    uint32_t m_textClipBoxesUniform;
 
     uint32_t m_textVertexArray; 
     uint32_t m_textVertexBuffer;
     uint32_t m_textIndexBuffer;
+    uint32_t m_textClipBuffer;
+    uint32_t m_textClipTexture; //!< GL_TEXTURE_BUFFER view of m_textClipBuffer
 
     uint16_t m_zIndex;
 };

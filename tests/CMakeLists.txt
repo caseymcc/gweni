@@ -87,7 +87,8 @@ if(TARGET gweni_capture)
         textLength.cpp
         fontLoad.cpp
         color.cpp
-        fillStyles.cpp)
+        fillStyles.cpp
+        clipBoxes.cpp)
     gweni_set_warnings(gweni_unittests)
     target_link_libraries(gweni_unittests
         gweni
