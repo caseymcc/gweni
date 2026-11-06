@@ -94,6 +94,7 @@ protected:
         {
             baseRenderer->releasePrimitive(m_primitives[i]);
         }
+        m_primitives.clear();
     }
 
     std::vector<size_t> m_primitives;

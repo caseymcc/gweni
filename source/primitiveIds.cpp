@@ -39,4 +39,34 @@ void releaseTextId(size_t id)
     g_textIds.releaseId(id);
 }
 
+size_t primitiveIdCount()
+{
+    return g_primitives.size();
+}
+
+size_t releasedPrimitiveIdCount()
+{
+    return g_primitives.returnedIds.size();
+}
+
+const std::vector<size_t> &releasedPrimitiveIds()
+{
+    return g_primitives.returnedIds;
+}
+
+size_t textIdCount()
+{
+    return g_textIds.size();
+}
+
+size_t releasedTextIdCount()
+{
+    return g_textIds.returnedIds.size();
+}
+
+const std::vector<size_t> &releasedTextIds()
+{
+    return g_textIds.returnedIds;
+}
+
 }//namespace gweni

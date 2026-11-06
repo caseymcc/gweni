@@ -20,15 +20,18 @@ ctest --test-dir build_linux_x64_debug
 ctest --test-dir build_linux_x64_debug_asan
 ```
 
-Every test opens a GL context through the examples' headless, surfaceless-EGL
-path and is labelled `gpu` (skip them with `-LE gpu`). On a shared host, hold
-the GPU lock around `ctest`. The tests:
+The tests labelled `gpu` open a GL context through the examples' headless,
+surfaceless-EGL path. On a shared host, hold the GPU lock around `ctest`;
+`ctest -LE gpu` runs only the headless ones, which need no lock. The tests:
 
 - `controltest_determinism`: two separate ControlTest processes must write
   byte-identical `--shot-all` PNGs and `--dump-bounds` listings.
 - `controltest_teardown`: every demo builds, renders and tears down cleanly.
 - `unittests`: doctest cases (`gweni_unittests`), e.g. the UTF-8 text-length
   guards in `tests/textLength.cpp`.
+- `unit:<case name>`: the headless doctest cases (`gweni_unit_tests`, sources
+  in `tests/unit/`), one CTest test per case, e.g. the id-bank checks across
+  skin swaps in `tests/unit/skinSwap.cpp`. No GL context, no `gpu` label.
 
 ## ASAN tree
 

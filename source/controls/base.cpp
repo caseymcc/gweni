@@ -1008,6 +1008,10 @@ void Base::setSkin(skin::Base *skin, bool doChildren)
     if(m_skin == skin)
         return;
 
+    // give the old skin's Control's ids back while m_skin is still the skin
+    // whose renderer they came from
+    removeSkinControl();
+
     m_skin=skin;
     m_skinControl=skin->getControlRenderer(getTypeName());
 

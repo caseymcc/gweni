@@ -1,0 +1,260 @@
+/*
+ *  Gweni
+ *  Copyright (c) 2010 Facepunch Studios
+ *  MIT License, see LICENSE
+ *
+ *  A renderer, skin and skin::Controls that need no GL context, for unit tests
+ *  of skin/control/id-bank behaviour. The renderer draws nothing; it forwards
+ *  primitive and text id requests to the real, process-global id banks
+ *  (primitiveIds.h) and records what every request did, so a test can check
+ *  the banks and who held which id.
+ */
+#ifndef _gweni_tests_unit_headlessFixture_h_
+#define _gweni_tests_unit_headlessFixture_h_
+
+#include <gweni/controls/base.h>
+#include <gweni/controls/canvas.h>
+#include <gweni/platforms/baseRender.h>
+#include <gweni/primitiveIds.h>
+#include <gweni/skin.h>
+
+#include <map>
+#include <memory>
+#include <set>
+#include <string>
+#include <vector>
+
+namespace test
+{
+
+//! Snapshot of both id banks. Tests compare deltas between two of these,
+//! never absolute values: the banks are process-global and every test case
+//! in the executable shares them.
+struct IdBankCounts
+{
+    size_t primitives;          //!< high-water mark
+    size_t releasedPrimitives;
+    size_t texts;               //!< high-water mark
+    size_t releasedTexts;
+
+    size_t livePrimitives() const { return primitives-releasedPrimitives; }
+    size_t liveTexts() const { return texts-releasedTexts; }
+
+    static IdBankCounts now()
+    {
+        return {gweni::primitiveIdCount(), gweni::releasedPrimitiveIdCount(),
+            gweni::textIdCount(), gweni::releasedTextIdCount()};
+    }
+};
+
+//! True if \p ids holds some id twice.
+inline bool hasDuplicates(const std::vector<size_t> &ids)
+{
+    return std::set<size_t>(ids.begin(), ids.end()).size() != ids.size();
+}
+
+class StubSkin;
+
+//! A renderer::Base that draws nothing and hands out ids from the real banks.
+class StubRenderer: public gweni::renderer::Base
+{
+public:
+    enum class Op
+    {
+        AcquirePrimitive,
+        ReleasePrimitive,
+        AcquireText,
+        ReleaseText
+    };
+
+    struct Event
+    {
+        Op op;
+        size_t id;
+    };
+
+    StubRenderer(): Base(resourcePaths()) {}
+
+    void generatePrimitive(size_t &primitiveId) override
+    {
+        primitiveId=gweni::getPrimitiveId(nullptr);
+        acquired(livePrimitives, Op::AcquirePrimitive, primitiveId);
+    }
+
+    void releasePrimitive(size_t primitiveId) override
+    {
+        released(livePrimitives, Op::ReleasePrimitive, primitiveId);
+        gweni::releasePrimitiveId(primitiveId);
+    }
+
+    void generateTextPrimitive(size_t &primitiveId) override
+    {
+        primitiveId=gweni::getTextId(nullptr);
+        acquired(liveTexts, Op::AcquireText, primitiveId);
+    }
+
+    void releaseTextPrimitive(size_t primitiveId) override
+    {
+        released(liveTexts, Op::ReleaseText, primitiveId);
+        gweni::releaseTextId(primitiveId);
+    }
+
+    //IResourceLoader, nothing to load
+    gweni::Font::Status loadFont(const gweni::Font &) override { return gweni::Font::Status::Loaded; }
+    void freeFont(const gweni::Font &) override {}
+    gweni::Texture::Status loadTexture(gweni::Texture &) override { return gweni::Texture::Status::Loaded; }
+    void freeTexture(const gweni::Texture &) override {}
+    gweni::TextureData getTextureData(const gweni::Texture &) const override { return gweni::TextureData(); }
+
+    //! Ids this renderer handed out and has not been given back, per bank.
+    std::set<size_t> livePrimitives;
+    std::set<size_t> liveTexts;
+
+    //! Every acquisition and release, in call order. Tests clear it as they go.
+    std::vector<Event> events;
+
+    //! An id handed out while this renderer still had it live (two owners), or
+    //! released while it was not live (released twice). Both should stay 0.
+    size_t doubleAcquired=0;
+    size_t doubleReleased=0;
+
+    //! The skin whose Control last generated each control's primitives;
+    //! removed when that Control's remove() runs.
+    std::map<gweni::controls::Base *, const StubSkin *> generatedBy;
+
+private:
+    //! Nothing is loaded, so no path is ever looked up.
+    struct NoPaths: gweni::ResourcePaths
+    {
+        gweni::String getPath(Type, gweni::String const &name) override { return name; }
+    };
+
+    static gweni::ResourcePaths &resourcePaths()
+    {
+        static NoPaths paths;
+        return paths;
+    }
+
+    void acquired(std::set<size_t> &live, Op op, size_t id)
+    {
+        if(!live.insert(id).second)
+            ++doubleAcquired;
+        events.push_back({op, id});
+    }
+
+    void released(std::set<size_t> &live, Op op, size_t id)
+    {
+        if(live.erase(id) == 0)
+            ++doubleReleased;
+        events.push_back({op, id});
+    }
+};
+
+//! A control type whose skin Control also takes a text id, the way the
+//! textured skin's Text does.
+class StubText: public gweni::controls::Base
+{
+public:
+    GWENI_CONTROL_INLINE(StubText, gweni::controls::Base)
+    {}
+};
+
+//! The skin::Control StubSkin hands out for every control type: a fixed number
+//! of primitives, plus one text id for StubText.
+class StubControl: public gweni::skin::Control
+{
+public:
+    static constexpr size_t primitivesPerControl=2;
+
+    StubControl(StubSkin *skin, bool takesText);
+    ~StubControl() override;
+
+    std::string getTypeName() override { return "Stub"; }
+    size_t requiredPrimitives() override { return primitivesPerControl; }
+
+    void generate(gweni::renderer::Base *renderer, gweni::controls::Base *control) override;
+    void remove(gweni::renderer::Base *renderer, gweni::controls::Base *control) override;
+
+private:
+    StubSkin *m_skin;
+    bool m_takesText;
+    bool m_hasText=false;
+    size_t m_textId=0;
+};
+
+//! A skin that hands out a StubControl for any type name and counts how many of
+//! its Controls exist.
+class StubSkin: public gweni::skin::Base
+{
+public:
+    explicit StubSkin(StubRenderer *renderer): Base(renderer) {}
+
+    std::unique_ptr<gweni::skin::Control> getControlRenderer(std::string typeName) override
+    {
+        return std::make_unique<StubControl>(this,
+            typeName == StubText::getTypeNameStatic());
+    }
+
+    void drawControl(gweni::controls::Base *) override {}
+
+    StubRenderer *stubRenderer() { return static_cast<StubRenderer *>(m_render); }
+
+    //! StubControls of this skin currently alive (owned by some control).
+    size_t liveControls=0;
+};
+
+inline StubControl::StubControl(StubSkin *skin, bool takesText)
+    : m_skin(skin), m_takesText(takesText)
+{
+    ++m_skin->liveControls;
+}
+
+inline StubControl::~StubControl()
+{
+    --m_skin->liveControls;
+}
+
+inline void StubControl::generate(gweni::renderer::Base *renderer, gweni::controls::Base *control)
+{
+    gweni::skin::Control::generate(renderer, control);
+
+    if(m_takesText && !m_hasText)
+    {
+        renderer->generateTextPrimitive(m_textId);
+        m_hasText=true;
+    }
+    m_skin->stubRenderer()->generatedBy[control]=m_skin;
+}
+
+inline void StubControl::remove(gweni::renderer::Base *renderer, gweni::controls::Base *control)
+{
+    gweni::skin::Control::remove(renderer, control);
+
+    if(m_hasText)
+    {
+        renderer->releaseTextPrimitive(m_textId);
+        m_hasText=false;
+    }
+    m_skin->stubRenderer()->generatedBy.erase(control);
+}
+
+//! One renderer and two skins on it, A and B, for swapping between.
+struct TwoSkins
+{
+    StubRenderer renderer;
+    StubSkin skinA{&renderer};
+    StubSkin skinB{&renderer};
+};
+
+//! Calls \p func on \p control and every control below it.
+template<typename Func>
+void forEachControl(gweni::controls::Base *control, Func &&func)
+{
+    func(control);
+    for(gweni::controls::Base *child : control->getChildren())
+        forEachControl(child, func);
+}
+
+}//namespace test
+
+#endif//_gweni_tests_unit_headlessFixture_h_

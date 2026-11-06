@@ -40,12 +40,35 @@ else()
     message(STATUS "tests: ControlTest tests skipped, GWENI_BUILD_EXAMPLES is off")
 endif()
 
-# C++ unit tests (doctest), one executable. They need a GL context, which they
-# get from the examples' surfaceless EGL code (gweni_capture), so they are only
+find_package(doctest CONFIG REQUIRED)
+include(doctest)
+
+# Headless C++ unit tests (doctest) under unit/: no GL context and no resources,
+# so they carry no gpu label and ctest -LE gpu runs them without the GPU lock.
+# Each test case is registered as its own CTest test, so a failure names it.
+add_executable(gweni_unit_tests
+    unit/main.cpp
+    unit/skinSwap.cpp)
+gweni_set_warnings(gweni_unit_tests)
+target_link_libraries(gweni_unit_tests
+    gweni
+    doctest::doctest)
+
+# discovered at build time, so the ASAN environment below does not reach them;
+# they get it here instead
+set(gweni_unit_tests_properties TIMEOUT 60)
+if(GWENI_SANITIZE MATCHES "address")
+    list(APPEND gweni_unit_tests_properties
+        ENVIRONMENT "ASAN_OPTIONS=detect_leaks=0:abort_on_error=1")
+endif()
+doctest_discover_tests(gweni_unit_tests
+    TEST_PREFIX "unit:"
+    PROPERTIES ${gweni_unit_tests_properties})
+
+# C++ unit tests (doctest) that need a GL context, one executable. They get it
+# from the examples' surfaceless EGL code (gweni_capture), so they are only
 # built along with the examples.
 if(TARGET gweni_capture)
-    find_package(doctest CONFIG REQUIRED)
-
     add_executable(gweni_unittests
         main.cpp
         textLength.cpp
