@@ -169,8 +169,9 @@ on an OpenGL 3.3 core profile:
   text is split into one draw per atlas (below). `startClip()`/`endClip()` do nothing in this
   renderer. `GWENI_CLIP_DEBUG=<inset px>` shrinks every box by the inset on each side,
   which shows the boxes on screen.
-- **One text draw per font atlas.** Every loaded `gweni::Font` (face, size) has its own
-  freetype-gl atlas texture. Each `TextRun` records the `GLFontData` it was laid out in,
+- **One text draw per font atlas.** Every loaded font has its own freetype-gl atlas
+  texture: a coverage font per (face, px, bold) below the SDF threshold, one SDF font
+  per (face, bold) at or above it (see "Hybrid text"). Each `TextRun` records the `GLFontData` it was laid out in,
   and each `GLFontData` keeps the text ids of its runs (`textRuns`). `flush()` binds
   each atlas in turn and draws its runs with one `glMultiDrawElements` over their
   existing index ranges (hidden and empty runs left out, adjacent ranges merged, in
@@ -194,6 +195,18 @@ on an OpenGL 3.3 core profile:
   `vec4(color.rgb, color.a * coverage)` under the `SRC_ALPHA, ONE_MINUS_SRC_ALPHA`
   blend, so coverage is applied once; no gamma or contrast curve is applied
   (`markup.gamma` is 1). `tests/textGrayscale.cpp` pins all of this.
+- **Hybrid text.** With `px = font.size*scale()`, text below `GWENI_SDF_TEXT_MIN`
+  (default 16 px; `0` = SDF everywhere, a large value = coverage everywhere) keeps the
+  hinted grayscale coverage atlas (above) of its (face, px, bold), byte for byte as before. At or
+  above it, a font resolves to its face's one R8 signed-distance-field atlas (1024²,
+  rasterised by FreeType's `FT_RENDER_MODE_SDF` at 48 px with a 6 px spread, unhinted),
+  shared by every size. `layoutSdfText` scales that atlas's metrics and unhinted
+  advances by `px/48` and puts the baseline on a whole pixel, for `measureText` and
+  `renderText` alike. The text shader's SDF mode anti-aliases the 0.5 edge over about a
+  screen pixel (`smoothstep` with `w` from the field's gradient) and discards where it
+  draws nothing, so a glyph's padded quad writes no depth. A size change inside the SDF
+  range therefore re-lays only that run: its vertex slots are uploaded and nothing else
+  (`writeTextIndexes` marks only index slots whose bytes change).
 
 ## Current state vs. goals
 
@@ -221,7 +234,8 @@ What exists today (the foundation) and what's still aspirational:
 - **Font atlas upload follows lazy glyph rasterisation.** `loadFont()` uploads the
   atlas once, with the printable-ASCII cache in it; any other glyph is rasterised into
   the CPU atlas later, by `measureText` (logic phase) or `renderText`. The vendored
-  freetype-gl carries a gweni patch for this: `texture_atlas_t` has a dirty row band
+  freetype-gl carries a gweni patch for this (and another, `texture_font_t::sdf_spread`,
+  for the SDF glyphs): `texture_atlas_t` has a dirty row band
   (`dirty_y0`/`dirty_y1`, half-open) that `texture_atlas_set_region` widens and
   `texture_atlas_clear` sets to the whole atlas. `flush()` uploads each font's band as
   full-width rows with one `glTexSubImage2D` and empties it. Glyphs are packed in

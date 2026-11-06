@@ -42,6 +42,9 @@ surfaceless-EGL path. On a shared host, hold the GPU lock around `ctest`;
   disabled and a focus hand-off repaint the control, a hover touches only a few
   slots, an idle frame changes nothing, and collapsing a tree node moves the
   nodes below it.
+- `controltest_text_size`: `ControlTest --scenario text-size`. A Label's font
+  changed from 24 to 36 px at runtime, both drawn from the face's SDF atlas,
+  uploads nothing to a font atlas and writes only that Label's glyph slots.
 - `unittests`: doctest cases (`gweni_unittests`), e.g. the UTF-8 text-length
   guards in `tests/textLength.cpp`.
 - `unit:<case name>`: the headless doctest cases (`gweni_unit_tests`, sources

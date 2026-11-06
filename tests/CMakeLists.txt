@@ -130,6 +130,16 @@ if(TARGET ControlTest)
         LABELS gpu
         TIMEOUT 300)
 
+    # a Label's font changed from 24 to 36 px, both drawn from the face's SDF
+    # atlas, uploads nothing to an atlas and writes only that Label's glyph slots
+    add_test(NAME controltest_text_size
+        COMMAND $<TARGET_FILE:ControlTest> --headless --scenario text-size
+            --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/text_size
+        WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
+    set_tests_properties(controltest_text_size PROPERTIES
+        LABELS gpu
+        TIMEOUT 60)
+
     # the resources/ next to the exe are found from a directory that has none
     add_test(NAME controltest_any_cwd
         COMMAND $<TARGET_FILE:ControlTest> --headless --control ButtonDemo
@@ -200,6 +210,7 @@ if(TARGET gweni_capture)
         textWrap.cpp
         textAtlases.cpp
         textGrayscale.cpp
+        sdfText.cpp
         fontLoad.cpp
         fontRelease.cpp
         color.cpp
