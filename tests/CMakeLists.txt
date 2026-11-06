@@ -182,11 +182,19 @@ add_executable(gweni_unit_tests
     unit/resourcePaths.cpp
     unit/requestedSize.cpp
     unit/tabOrder.cpp
-    unit/depthLayers.cpp)
+    unit/depthLayers.cpp
+    unit/utf8Typing.cpp)
 gweni_set_warnings(gweni_unit_tests)
 target_link_libraries(gweni_unit_tests
     gweni
     doctest::doctest)
+
+# utf8Typing.cpp drives a Canvas through the GLFW translator
+# (gweni/platforms/input/glfw3.h), which only uses GLFW's constants: it takes
+# GLFW's headers and does not link the library.
+find_package(glfw3 CONFIG REQUIRED)
+target_include_directories(gweni_unit_tests PRIVATE
+    $<TARGET_PROPERTY:glfw,INTERFACE_INCLUDE_DIRECTORIES>)
 
 # discovered at build time, so the ASAN environment below does not reach them;
 # they get it here instead
