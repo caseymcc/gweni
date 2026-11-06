@@ -196,7 +196,7 @@ on an OpenGL 3.3 core profile:
   blend, so coverage is applied once; no gamma or contrast curve is applied
   (`markup.gamma` is 1). `tests/textGrayscale.cpp` pins all of this.
 - **Hybrid text.** With `px = font.size*scale()`, text below `GWENI_SDF_TEXT_MIN`
-  (default 16 px; `0` = SDF everywhere, a large value = coverage everywhere) keeps the
+  (default 18 px; `0` = SDF everywhere, a large value = coverage everywhere) keeps the
   hinted grayscale coverage atlas (above) of its (face, px, bold), byte for byte as before. At or
   above it, a font resolves to its face's one R8 signed-distance-field atlas (1024²,
   rasterised by FreeType's `FT_RENDER_MODE_SDF` at 48 px with a 6 px spread, unhinted),

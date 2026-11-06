@@ -76,7 +76,7 @@ static constexpr float sdfBaseSize=48.0f;
 static constexpr int sdfSpread=6;
 static constexpr size_t sdfAtlasSize=1024;
 // GWENI_SDF_TEXT_MIN's default, in effective px
-static constexpr float defaultSdfTextMin=16.0f;
+static constexpr float defaultSdfTextMin=18.0f;
 
 // The printable ASCII every font rasterises when it is loaded
 static const char *const fontCache=" !\"#$%&'()*+,-./0123456789:;<=>?"

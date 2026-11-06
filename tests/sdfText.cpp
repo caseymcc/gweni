@@ -3,7 +3,7 @@
  *  Copyright (c) 2010 Facepunch Studios
  *  MIT License, see LICENSE
  *
- *  Text at or above OpenGLCore's SDF threshold (GWENI_SDF_TEXT_MIN, 16 px by
+ *  Text at or above OpenGLCore's SDF threshold (GWENI_SDF_TEXT_MIN, 18 px by
  *  default) is drawn from one signed distance field atlas per face, shared by
  *  every size, with its metrics scaled from the atlas's base size. These cases
  *  pin that sharing, that measureText scales with the size and fits the drawn
