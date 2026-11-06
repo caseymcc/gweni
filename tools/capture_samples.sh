@@ -27,8 +27,10 @@ HERO_OUT=demo.png
 # embeds each of these, so a change here needs a matching change there.
 #
 # Left out because they do not look right today:
-#   ComboBoxDemo, ImagePanelDemo, LabelMultilineDemo - an empty canvas
-#     (issue #69)
+#   ComboBoxDemo, ImagePanelDemo - an empty canvas (issue #69)
+#   LabelMultilineDemo - the CrossSplitter grows every frame and misplaces its
+#     panels (idea #190), its SplitterBars draw nothing (idea #191), and the
+#     wrapped lines are stacked on one row and never settle (idea #180)
 #   ProgressBarDemo - the fill is not drawn, only the empty track
 #   CheckBoxDemo, GroupBoxDemo, TextBoxDemo, NumericDemo - controls stacked on
 #     each other or inflated to their parent (issue #93)
