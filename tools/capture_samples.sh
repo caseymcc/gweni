@@ -34,8 +34,8 @@ HERO_OUT=demo.png
 #     (idea #191)
 #   CheckBoxDemo - the first CheckBox sticks out above the canvas top
 #   GroupBoxDemo - the caption sits on the frame's top-left corner
-#   TextBoxDemo, NumericDemo - the text sits on the box's left border, outside
-#     its padding (perhaps issue #206)
+#   TextBoxDemo, NumericDemo - the text sits inside the box's padding now, but
+#     there is no caret or selection yet (task #119)
 #   ColorPickerDemo - draws only its Result swatch and one slider (issue #82)
 #   CollapsibleListDemo - already the hero page
 SAMPLES=(
