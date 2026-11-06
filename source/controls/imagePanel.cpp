@@ -7,6 +7,8 @@
 
 #include <gweni/controls/imagePanel.h>
 
+#include <limits>
+
 namespace gweni
 {
 namespace controls
@@ -14,12 +16,18 @@ namespace controls
 
 GWENI_CONTROL_CONSTRUCTOR(ImagePanel)
 {
-    m_primitiveId=getPrimitiveId((void *)this);
+    // taken on the first render, after the parent's skin took its ids, so the image
+    // is drawn after the background it sits on (see render())
+    m_primitiveId=std::numeric_limits<size_t>::max();
+    m_status=Texture::Status::Unloaded;
 
-    setUV(0, 0, 1, 1);
+    m_uv[0]=0.0f;
+    m_uv[1]=0.0f;
+    m_uv[2]=1.0f;
+    m_uv[3]=1.0f;
     setMouseInputEnabled(false);
     m_drawColor=colors::White;
-    setStretch(true);
+    m_stretch=true;
     m_texWidth=0.0f;
     m_texHeight=0.0f;
 }
@@ -28,7 +36,8 @@ ImagePanel::~ImagePanel()
 {
     getSkin()->getRenderer()->getLoader().freeTexture(m_texture);
 
-    getSkin()->getRenderer()->releasePrimitive(m_primitiveId);
+    if(m_primitiveId != std::numeric_limits<size_t>::max())
+        getSkin()->getRenderer()->releasePrimitive(m_primitiveId);
 }
 
 void ImagePanel::setUV(float u1, float v1, float u2, float v2)
@@ -37,16 +46,14 @@ void ImagePanel::setUV(float u1, float v1, float u2, float v2)
     m_uv[1]=v1;
     m_uv[2]=u2;
     m_uv[3]=v2;
-    // render() redraws the image only when the walk reaches this control
-    addStateChange(StateChange_Background);
+    redraw();
 }
 
 void ImagePanel::setImage(const String &imageName)
 {
     m_texture.name=imageName;
-    addStateChange(StateChange_Background);
     IResourceLoader &loader=getSkin()->getRenderer()->getLoader();
-    Texture::Status m_status=loader.loadTexture(m_texture);
+    m_status=loader.loadTexture(m_texture);
     switch(m_status)
     {
     case Texture::Status::Loaded:
@@ -57,8 +64,10 @@ void ImagePanel::setImage(const String &imageName)
         break;
     }
     default:
-        ;
+        m_texWidth=0.0f;
+        m_texHeight=0.0f;
     }
+    redraw();
 }
 
 String &ImagePanel::getImage()
@@ -83,7 +92,17 @@ const String &ImagePanel::getImageName()
 
 void ImagePanel::render(skin::Base *skin)
 {
+    // as Base::render: an unchanged control leaves its slot as it is
+    if(getStateChange() == StateChange_Nothing)
+        return;
+
+    // counts the change in getChangeStats() (there is no skin Control to update)
+    ParentClass::render(skin);
+
     renderer::Base *render=skin->getRenderer();
+
+    if(m_primitiveId == std::numeric_limits<size_t>::max())
+        m_primitiveId=getPrimitiveId((void *)this);
 
     // Hide the image when the control isn't visible (this control or a parent
     // hidden), otherwise it keeps drawing and bleeds across other pages, since
@@ -97,18 +116,19 @@ void ImagePanel::render(skin::Base *skin)
 
     render->setDrawColor(m_drawColor);
 
-    if(m_stretch)
+    // render bounds are in the parent's space, the renderer's offset at this point;
+    // the z index is above the parent's, so its background does not hide the image.
+    // A texture that did not load draws the renderer's missing-image placeholder.
+    gweni::Rect rect=getRenderBounds();
+
+    if(!m_stretch)
     {
-        render->drawTexturedRect(m_texture, m_primitiveId,
-            getRenderBounds(),
-            m_uv[0], m_uv[1], m_uv[2], m_uv[3]);
+        rect.w=m_texWidth;
+        rect.h=m_texHeight;
     }
-    else
-    {
-        render->drawTexturedRect(m_texture, m_primitiveId,
-            gweni::Rect(0, 0, m_texWidth, m_texHeight),
-            m_uv[0], m_uv[1], m_uv[2], m_uv[3]);
-    }
+
+    render->drawTexturedRect(m_texture, m_primitiveId, rect, getZIndex(),
+        m_uv[0], m_uv[1], m_uv[2], m_uv[3]);
 }
 
 void ImagePanel::sizeToContents()
@@ -118,8 +138,11 @@ void ImagePanel::sizeToContents()
 
 void ImagePanel::setDrawColor(gweni::Color color)
 {
+    if(m_drawColor == color)
+        return;
+
     m_drawColor=color;
-    addStateChange(StateChange_Background);
+    redraw();
 }
 
 bool ImagePanel::failedToLoad()
@@ -135,7 +158,7 @@ bool ImagePanel::getStretch()
 void ImagePanel::setStretch(bool b)
 {
     m_stretch=b;
-    addStateChange(StateChange_Background);
+    redraw();
 }
 
 }//namespace controls
