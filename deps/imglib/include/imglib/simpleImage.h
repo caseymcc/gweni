@@ -11,15 +11,15 @@ namespace imglib
 /// as long as certain functions are declared, see image.h
 struct IMGLIB_EXPORT SimpleImage
 {
-    SimpleImage():width(0), stride(0), height(0), owned(false), data(nullptr), dataSize(0) {};
+    SimpleImage():width(0), height(0), stride(0), owned(false), data(nullptr), dataSize(0) {};
     SimpleImage(const SimpleImage &image);
     SimpleImage(SimpleImage &&image) noexcept;
     SimpleImage(Format format, Depth depth, size_t width, size_t height);
     SimpleImage(Format format, Depth depth, size_t width, size_t height, uint8_t *data, size_t dataSize):
-        format(format), depth(depth), width(width), stride(width), height(height), owned(false), data(data), dataSize(dataSize)
+        format(format), depth(depth), width(width), height(height), stride(width), owned(false), data(data), dataSize(dataSize)
     {}
     SimpleImage(Format format, Depth depth, size_t width, size_t stride, size_t height, uint8_t *data, size_t dataSize):
-        format(format), depth(depth), width(width), stride(stride), height(height), owned(false), data(data), dataSize(dataSize)
+        format(format), depth(depth), width(width), height(height), stride(stride), owned(false), data(data), dataSize(dataSize)
     {}
     ~SimpleImage();
 

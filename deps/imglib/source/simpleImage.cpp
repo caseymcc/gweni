@@ -30,7 +30,7 @@ SimpleImage::SimpleImage(SimpleImage &&image) noexcept
 }
 
 SimpleImage::SimpleImage(Format format, Depth depth, size_t width, size_t height):
-    format(format), width(width), stride(width), height(height), owned(false)
+    format(format), width(width), height(height), stride(width), owned(false)
 {
     allocData(format, depth, width, height);
 }

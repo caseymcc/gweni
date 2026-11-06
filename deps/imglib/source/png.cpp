@@ -68,7 +68,7 @@ std::vector<png_bytep> getRowPointers(ImageWrapper &image)
     size_t pos=0;
     size_t stride=image.width()*sizeOfPixel(image.format(), image.depth());
 
-    for(int y=0; y<image.height(); y++)
+    for(size_t y=0; y<image.height(); y++)
     {
         row_pointers[y]=&imageData[pos];
         pos+=stride;
@@ -156,7 +156,7 @@ bool loadPng(ImageWrapper image, const char *filename)
 
 struct BufferInfo
 {
-    BufferInfo(const uint8_t *buffer, size_t size, size_t index):buffer(buffer), size(size), index(index) {}
+    BufferInfo(const uint8_t *buffer, size_t size, size_t index):buffer(buffer), index(index), size(size) {}
 
     const uint8_t *buffer;
     size_t index;
