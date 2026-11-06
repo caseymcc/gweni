@@ -7,8 +7,7 @@ set(example_name "OpenGLCore")
 find_package(glfw3 CONFIG REQUIRED)
 
 set(${example_name}_sources
-    openglcore.cpp
-    capture.cpp)
+    openglcore.cpp)
 
 set(${example_name}_resources
     "${GWENI_SOURCE_DIR}/resource/DefaultSkin.png"
@@ -26,6 +25,23 @@ else()
     set(${example_name}_runtime_resource_dir "")
 endif()
 
+# Offscreen capture plumbing (GL context with or without a display, offscreen
+# target, PNG readback), shared by both examples and the unit tests (tests/) so
+# capture.cpp is compiled once. EGL stays here, out of the gweni library.
+add_library(gweni_capture STATIC capture.cpp)
+gweni_set_warnings(gweni_capture)
+target_include_directories(gweni_capture PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(gweni_capture PUBLIC
+    gweni
+    glfw
+)
+
+if(UNIX AND NOT APPLE)
+    # Surfaceless EGL is the offscreen path used when there is no display at all.
+    find_package(OpenGL REQUIRED COMPONENTS EGL)
+    target_link_libraries(gweni_capture PUBLIC OpenGL::EGL)
+endif()
+
 add_executable(${example_name} ${${example_name}_build_type} ${${example_name}_sources})
 
 gweni_set_warnings(${example_name})
@@ -33,24 +49,19 @@ gweni_set_warnings(${example_name})
 target_link_libraries(${example_name}
     gweni
     gweni_demo
+    gweni_capture
     glfw
 )
 
 # Single-control test harness: drops one control on the canvas by name.
-add_executable(ControlTest controltest.cpp capture.cpp)
+add_executable(ControlTest controltest.cpp)
 gweni_set_warnings(ControlTest)
 target_link_libraries(ControlTest
     gweni
     gweni_demo
+    gweni_capture
     glfw
 )
-
-if(UNIX AND NOT APPLE)
-    # Surfaceless EGL is the offscreen path used when there is no display at all.
-    find_package(OpenGL REQUIRED COMPONENTS EGL)
-    target_link_libraries(ControlTest OpenGL::EGL)
-    target_link_libraries(${example_name} OpenGL::EGL)
-endif()
 
 if(APPLE AND APP_BUNDLE)
     # make MacOS bundle
