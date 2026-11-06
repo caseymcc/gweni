@@ -29,6 +29,11 @@ void releasePrimitiveId(size_t id)
     g_primitives.releaseId(id);
 }
 
+bool isPrimitiveIdLive(size_t id)
+{
+    return g_primitives.isLive(id);
+}
+
 size_t getTextId(void *object)
 {
     return g_textIds.getNextId(object);
@@ -37,6 +42,11 @@ size_t getTextId(void *object)
 void releaseTextId(size_t id)
 {
     g_textIds.releaseId(id);
+}
+
+bool isTextIdLive(size_t id)
+{
+    return g_textIds.isLive(id);
 }
 
 size_t primitiveIdCount()

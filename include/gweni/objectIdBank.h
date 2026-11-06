@@ -19,6 +19,9 @@ struct ObjectIdBank
     void releaseId(size_t id);
 
     _Object getObject(size_t id);
+    //! Whether the id has been handed out and not released since. The object
+    //! can not tell: an id may be handed out with _EmptyValue as its object.
+    bool isLive(size_t id) const;
 
     size_t size();
 
@@ -66,6 +69,13 @@ template<typename _Object, _Object _EmptyValue>
 _Object ObjectIdBank<_Object, _EmptyValue>::getObject(size_t id)
 {
     return ids[id];
+}
+
+template<typename _Object, _Object _EmptyValue>
+bool ObjectIdBank<_Object, _EmptyValue>::isLive(size_t id) const
+{
+    return (id < ids.size()) &&
+        !std::binary_search(returnedIds.begin(), returnedIds.end(), id, std::greater<size_t>());
 }
 
 template<typename _Object, _Object _EmptyValue>

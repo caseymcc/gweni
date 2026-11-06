@@ -69,7 +69,7 @@ public:
     virtual void update(renderer::Base *render, controls::Base *control) 
     {}
 
-    const std::vector<size_t> &getPrimitives()
+    const std::vector<size_t> &getPrimitives() const
     {
         return m_primitives;
     }

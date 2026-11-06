@@ -730,6 +730,48 @@ void OpenGLCore::readPrimitiveSlot(size_t primitiveId, PrimitiveSlot &slot) cons
     slot.box=m_clippingBoxes[primitiveId];
 }
 
+OpenGLCore::MirrorSnapshot OpenGLCore::snapshotMirror() const
+{
+    MirrorSnapshot snapshot;
+
+    const size_t primitiveLimit=std::min(primitiveIdCount(),
+        std::min(m_vertexes.size()/4, m_indexes.size()/6));
+
+    for(size_t id=0; id<primitiveLimit; ++id)
+    {
+        if(!isPrimitiveIdLive(id))
+            continue;
+
+        const uint8_t *vertexes=reinterpret_cast<const uint8_t *>(&m_vertexes[id*4]);
+        const uint8_t *indexes=reinterpret_cast<const uint8_t *>(&m_indexes[id*6]);
+        std::vector<uint8_t> &bytes=snapshot.primitives[id];
+
+        bytes.assign(vertexes, vertexes+4*sizeof(Vertex));
+        bytes.insert(bytes.end(), indexes, indexes+6*sizeof(uint16_t));
+    }
+
+    const size_t textLimit=std::min(textIdCount(), m_textRuns.size());
+
+    for(size_t id=0; id<textLimit; ++id)
+    {
+        if(!isTextIdLive(id))
+            continue;
+
+        const TextRun &run=m_textRuns[id];
+        std::vector<uint8_t> &bytes=snapshot.texts[id];
+
+        bytes.push_back(run.hidden?1:0);
+        if(run.glyphs == 0)
+            continue;
+
+        const uint8_t *vertexes=reinterpret_cast<const uint8_t *>(&m_textVertexes[run.start*4]);
+
+        bytes.insert(bytes.end(), vertexes, vertexes+run.glyphs*4*sizeof(ftgl::glyph_vertex_t));
+    }
+
+    return snapshot;
+}
+
 void OpenGLCore::markPrimitiveChanges(size_t primitiveId, const PrimitiveSlot &before)
 {
     bool written=false;

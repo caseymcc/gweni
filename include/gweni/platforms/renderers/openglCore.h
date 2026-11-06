@@ -210,6 +210,23 @@ public:
 
     const FrameStats &getFrameStats() const { return m_frameStats; }
 
+    //! What every live id holds in the CPU mirrors, so two states of the UI can be
+    //! compared id by id rather than as raw buffers.
+    //
+    //! A primitive id's entry is the bytes of its slot: its 4 vertexes (at id*4)
+    //! followed by its 6 indexes (at id*6). A text id's entry is its hidden flag
+    //! followed by the vertexes of the glyphs in use, and not where the run sits:
+    //! allocateTextRun may hand the same string other slots after a free, and that
+    //! draws the same. A test hook: it copies the whole mirror, so keep it out of
+    //! the frame loop.
+    struct MirrorSnapshot
+    {
+        std::map<size_t, std::vector<uint8_t>> primitives;  //!< primitive id -> slot bytes
+        std::map<size_t, std::vector<uint8_t>> texts;       //!< text id -> run contents
+    };
+
+    MirrorSnapshot snapshotMirror() const;
+
 private:
 
     uint32_t loadShaders(const char *vertex, const char *fragment);

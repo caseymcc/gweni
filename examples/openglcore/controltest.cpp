@@ -26,10 +26,13 @@
  *    --dump-bounds [<path>]
  *                       print the laid-out control tree as text: one line per
  *                       control, depth-first in child order, indented by depth,
- *                       with its type, bounds, dock and size flags. No path
- *                       writes to stdout; a path writes that file. Nothing
- *                       pointer-, id- or time-derived is printed, so two runs
- *                       of the same command give byte-identical listings.
+ *                       with its type, bounds, dock, size flags and hidden
+ *                       state. Every child is listed, private ones included:
+ *                       a ScrollControl shows its inner panel (its rows under
+ *                       it) and both scrollbars. No path writes to stdout; a
+ *                       path writes that file. Nothing pointer-, id- or
+ *                       time-derived is printed, so two runs of the same
+ *                       command give byte-identical listings.
  *
  *  Scripted input (repeatable, applied in the order written, and interleaved
  *  with --frames / --shot so one process run can capture a sequence):
@@ -55,15 +58,29 @@
  *
  *  Scenarios:
  *    per-control  the 25 single-control shots (same as --shot-all)
- *    resize       one control at 640x480, 1024x768 and 640x480 again; exits
- *                 non-zero unless the third shot is byte-identical to the first
+ *    resize       one control (default Demo) at 640x480, 1024x768 and
+ *                 640x480 again, then once more on a new canvas built directly
+ *                 at 640x480 (resize-00-fresh-640x480.png). The three 640x480
+ *                 states are compared cheapest first - the listings, then the
+ *                 renderer mirror id by id (shot 1 against shot 3), then the
+ *                 pixels - and one line reports them:
+ *                   resize control=X listing_settled=yes|no mirror_settled=yes|no
+ *                          shrink_settled=yes|no fresh_matches=yes|no
+ *                 listing_settled and shrink_settled compare shot 3 with shot 1
+ *                 (listing, pixels), fresh_matches the fresh shot with both
+ *                 (listing and pixels). Each mismatch is described on stderr:
+ *                 the first differing listing line with its control path, the
+ *                 differing primitive/text ids with their owning control, the
+ *                 differing pixel count. Exits non-zero if any check is no.
  *    docked       the whole Demo (dock layout + status bar) at 1024x768
  *    scroll       the five overflowing demos, idle and after a scripted scroll
  *
  *  Every scenario (and --shot-all) takes a listing per shot when
  *  --dump-bounds is on, named after that shot with a .txt extension, so the
- *  shot and its listing sit side by side in --shot-dir - resize yields three
- *  and per-control 25. A scenario names its own listings, so --dump-bounds
+ *  shot and its listing sit side by side in --shot-dir - resize yields four
+ *  (the fresh one included) and per-control 25. The resize checks take their
+ *  listings in memory whether or not --dump-bounds is on; it only writes them
+ *  out. A scenario names its own listings, so --dump-bounds
  *  there takes no path.
  *
  *  All four, in the build container, from the repo root (resize's non-zero exit
@@ -90,12 +107,14 @@
 #include <gweni/platforms/platform.h>
 #include <gweni/skins/textured/texturedSkin.h>
 #include <gweni/skins/textured/tokyoNight.h>
+#include <gweni/skins/textured/texturedControls.h>
 #include <gweni/platforms/input/glfw3.h>
 #include <gweni/controls/canvas.h>
 #include <gweni/controls/scrollControl.h>
 #include <GLFW/glfw3.h>
 #include <gweni/utils/filesystem.h>
 #include "capture.h"
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -103,6 +122,8 @@
 #include <cstring>
 #include <fstream>
 #include <iostream>
+#include <map>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -232,8 +253,11 @@ static void printUsage(std::ostream &out)
          "  --check-teardown   check the canvas renders empty again once every\n"
          "                     control has been destroyed; --control narrows it\n"
          "  --trace            log each scripted input on stderr\n"
-         "  --scenario <name>  per-control | resize | docked | scroll\n"
-         "  --dump-bounds [<path>]  print the laid-out control tree as text\n"
+         "  --scenario <name>  per-control | resize | docked | scroll; resize\n"
+         "                     prints listing_settled, mirror_settled,\n"
+         "                     shrink_settled and fresh_matches, and fails on a no\n"
+         "  --dump-bounds [<path>]  print the laid-out control tree as text,\n"
+         "                     private children and hidden state included\n"
          "  --list             print the control demo names and exit\n"
          "Scripted input (--move/--press/--release/--click/--double-click/\n"
          "--scroll/--key) is documented in the header of controltest.cpp.\n";
@@ -297,16 +321,15 @@ static bool parsePoint(const std::string &value, int &x, int &y)
     return true;
 }
 
-static bool fileBytesEqual(const std::string &a, const std::string &b)
+// The canvas every capture draws on. The fill comes from the theme, so a
+// "theme" block in resources/DefaultSkin.json moves it too.
+static gweni::controls::Canvas *createCanvas(gweni::skin::Base *skin, const gweni::Point &size)
 {
-    std::ifstream left(a, std::ios::binary), right(b, std::ios::binary);
-    if(!left || !right) return false;
-
-    const std::vector<char> leftBytes((std::istreambuf_iterator<char>(left)),
-        std::istreambuf_iterator<char>());
-    const std::vector<char> rightBytes((std::istreambuf_iterator<char>(right)),
-        std::istreambuf_iterator<char>());
-    return leftBytes == rightBytes;
+    gweni::controls::Canvas *canvas=new gweni::controls::Canvas(skin);
+    canvas->setSize(size.x, size.y);
+    canvas->setDrawBackground(true);
+    canvas->setBackgroundColor(gweni::skin::textured::tokyonight::Canvas.top);
+    return canvas;
 }
 
 //-----------------------------------------------------------------------------
@@ -334,9 +357,11 @@ struct Session
 // --dump-bounds: the laid-out tree as text
 //-----------------------------------------------------------------------------
 
-// Base::getChildren() hands back the inner panel's children where there is one,
-// so a ScrollControl's rows appear directly under it rather than under a panel
-// row; that is the tree the layout code walks too.
+// Walks the children actually parented to each control, not getChildren(),
+// which skips past an inner panel to the children placed in it: so a
+// ScrollControl lists its inner panel (with the rows under it) and both of its
+// scrollbars, hidden or not. Those private parts are where a layout that does
+// not come back usually shows.
 static void writeControlLine(std::ostream &out, gweni::controls::Base *control, int depth)
 {
     const gweni::Rect &bounds=control->getBounds();
@@ -348,9 +373,10 @@ static void writeControlLine(std::ostream &out, gweni::controls::Base *control, 
        <<" dock="<<gweni::getDockPositionName(control->getDock())
        <<" size="<<gweni::sizeFlagName(flags.horizontal)
        <<","<<gweni::sizeFlagName(flags.vertical)
+       <<" hidden="<<(control->hidden() ? "yes" : "no")
        <<"\n";
 
-    for(auto &&child : control->getChildren())
+    for(auto &&child : control->getActualChildren())
         writeControlLine(out, child, depth+1);
 }
 
@@ -358,6 +384,52 @@ static void writeBoundsListing(std::ostream &out, const Session &s)
 {
     out<<"# control="<<s.label<<" size="<<s.size.x<<"x"<<s.size.y<<"\n";
     writeControlLine(out, s.canvas, 0);
+}
+
+static std::string boundsListing(const Session &s)
+{
+    std::ostringstream out;
+    writeBoundsListing(out, s);
+    return out.str();
+}
+
+// A control's place in the tree, as listed: each step is its type and its index
+// among its parent's children, e.g. Canvas/Demo[0]/DockBase[1]/Text[0]. That
+// names one control even where its siblings share its type.
+static std::string childPath(const std::string &parent, gweni::controls::Base *control, size_t index)
+{
+    return parent+"/"+control->getTypeName()+"["+std::to_string(index)+"]";
+}
+
+// The same path read back out of a listing, for its line `lineIndex` (0-based,
+// header included), from the indentation alone.
+static std::string listingPathAt(const std::string &listing, size_t lineIndex)
+{
+    std::vector<std::string> stack;     // path up to each depth
+    std::vector<size_t> childCount;     // children seen so far at each depth
+    std::istringstream in(listing);
+    std::string line;
+
+    for(size_t i=0; std::getline(in, line) && i <= lineIndex; ++i)
+    {
+        if(line.empty() || line[0] == '#')
+            continue;
+
+        const size_t indent=line.find_first_not_of(' ');
+        const size_t depth=indent/2;
+        const std::string type=line.substr(indent, line.find(' ', indent)-indent);
+
+        stack.resize(depth);
+        childCount.resize(depth+1, 0);
+
+        if(depth == 0)
+            stack.push_back(type);
+        else
+            stack.push_back(stack[depth-1]+"/"+type+"["+std::to_string(childCount[depth]++)+"]");
+        childCount.resize(depth+2, 0);
+        childCount[depth+1]=0;
+    }
+    return stack.empty() ? std::string("(header)") : stack.back();
 }
 
 // The listing beside a shot: the same path with a .txt extension.
@@ -653,15 +725,195 @@ static bool runPerControlScenario(Session &s, const std::string &shotDir)
     return ok;
 }
 
-// Three shots around a grow-then-shrink. The third has to come back to the
-// first byte for byte: anything that does not re-settle on shrink shows up here
-// and nowhere else in the harness.
+// Which control owns each primitive and text id, by its listing path. Only the
+// textured skin's Text renderer holds text ids; every other one holds primitive
+// ids.
+struct IdOwners
+{
+    std::map<size_t, std::string> primitives;
+    std::map<size_t, std::string> texts;
+};
+
+static void collectIdOwners(gweni::controls::Base *control, const std::string &path, IdOwners &owners)
+{
+    if(const gweni::skin::Control *skinControl=control->getSkinControl())
+    {
+        const bool text=dynamic_cast<const gweni::skin::textured::Text *>(skinControl) != nullptr;
+        for(size_t id : skinControl->getPrimitives())
+            (text ? owners.texts : owners.primitives)[id]=path;
+    }
+
+    size_t index=0;
+    for(auto &&child : control->getActualChildren())
+        collectIdOwners(child, childPath(path, child, index++), owners);
+}
+
+// One 640x480 state of the resize scenario, as its three checks compare it.
+struct ResizeState
+{
+    std::string name;                   // the shot's file name, for messages
+    std::string listing;                // --dump-bounds' listing, always taken
+    std::vector<uint8_t> pixels;
+    gweni::renderer::OpenGLCore::MirrorSnapshot mirror;
+    IdOwners owners;                    // who held each id, to name a mismatch
+};
+
+static void captureResizeState(Session &s, const std::string &path, ResizeState &state)
+{
+    state.name=fs::path(path).filename().string();
+    state.listing=boundsListing(s);
+    readFramebufferRgba(s.size.x, s.size.y, state.pixels);
+    state.mirror=s.renderer->snapshotMirror();
+    collectIdOwners(s.canvas, s.canvas->getTypeName(), state.owners);
+}
+
+// Prints the first line where two listings part, with the control it lists.
+static bool listingsMatch(const ResizeState &a, const ResizeState &b)
+{
+    if(a.listing == b.listing)
+        return true;
+
+    std::istringstream left(a.listing), right(b.listing);
+    std::string leftLine, rightLine;
+    size_t line=0;
+
+    for(;; ++line)
+    {
+        const bool haveLeft=static_cast<bool>(std::getline(left, leftLine));
+        const bool haveRight=static_cast<bool>(std::getline(right, rightLine));
+        if(!haveLeft) leftLine="(end of listing)";
+        if(!haveRight) rightLine="(end of listing)";
+        if(leftLine != rightLine || !haveLeft || !haveRight)
+            break;
+    }
+
+    const size_t linesInA=static_cast<size_t>(std::count(a.listing.begin(), a.listing.end(), '\n'));
+    const std::string &listing=(line < linesInA) ? a.listing : b.listing;
+    std::cerr<<"ControlTest: listing of "<<b.name<<" differs from "<<a.name
+             <<" first at line "<<line+1<<", control "<<listingPathAt(listing, line)<<"\n"
+             <<"  "<<a.name<<": "<<leftLine<<"\n"
+             <<"  "<<b.name<<": "<<rightLine<<"\n";
+    return false;
+}
+
+// The largest x/y move of any glyph vertex of a text run that kept its glyph
+// count: a run that was moved and moved back by `x += delta` (text defect B)
+// differs only there, by float rounding.
+static float largestGlyphMove(const std::vector<uint8_t> &before, const std::vector<uint8_t> &after)
+{
+    float largest=0.0f;
+    const size_t count=(before.size()-1)/sizeof(ftgl::glyph_vertex_t);
+    for(size_t i=0; i<count; ++i)
+    {
+        ftgl::glyph_vertex_t a, b;
+        std::memcpy(&a, before.data()+1+i*sizeof(a), sizeof(a));
+        std::memcpy(&b, after.data()+1+i*sizeof(b), sizeof(b));
+        largest=std::max(largest, std::max(std::fabs(a.x-b.x), std::fabs(a.y-b.y)));
+    }
+    return largest;
+}
+
+static size_t reportMirrorKind(const char *kind, const std::map<size_t, std::vector<uint8_t>> &before,
+    const std::map<size_t, std::vector<uint8_t>> &after, const std::map<size_t, std::string> &owners,
+    bool text)
+{
+    static const size_t maxReported=10;
+    size_t reported=0;
+
+    std::vector<size_t> ids;
+    for(const auto &entry : before) ids.push_back(entry.first);
+    for(const auto &entry : after)
+        if(before.find(entry.first) == before.end()) ids.push_back(entry.first);
+    std::sort(ids.begin(), ids.end());
+
+    size_t differing=0;
+    for(size_t id : ids)
+    {
+        const auto was=before.find(id);
+        const auto now=after.find(id);
+        std::string how;
+
+        if(was == before.end()) how="live only after the shrink";
+        else if(now == after.end()) how="live only before the grow";
+        else if(was->second == now->second) continue;
+        else if(was->second.size() != now->second.size()) how="contents differ (size)";
+        else if(text && was->second[0] != now->second[0]) how="hidden state differs";
+        else if(text)
+            how="glyph vertexes differ, largest x/y move "+std::to_string(largestGlyphMove(was->second, now->second));
+        else how="slot bytes differ";
+
+        ++differing;
+        if(reported++ == maxReported)
+            std::cerr<<"  ... (only the first "<<maxReported<<" "<<kind<<" ids are shown)\n";
+        if(reported > maxReported)
+            continue;
+
+        const auto owner=owners.find(id);
+        std::cerr<<"  "<<kind<<" id="<<id<<" "<<how<<", owner "
+                 <<(owner != owners.end() ? owner->second : std::string("(not found)"))<<"\n";
+    }
+    return differing;
+}
+
+// The renderer's CPU mirror, id by id, before the grow against after the
+// shrink. Owners are named from the tree as it stood after the shrink.
+static bool mirrorsMatch(const ResizeState &before, const ResizeState &after)
+{
+    if(before.mirror.primitives == after.mirror.primitives && before.mirror.texts == after.mirror.texts)
+        return true;
+
+    const IdOwners &owners=after.owners;
+    std::cerr<<"ControlTest: renderer mirror after the shrink ("<<after.name
+             <<") differs from before the grow ("<<before.name<<"):\n";
+    const size_t primitives=reportMirrorKind("primitive", before.mirror.primitives,
+        after.mirror.primitives, owners.primitives, false);
+    const size_t texts=reportMirrorKind("text", before.mirror.texts,
+        after.mirror.texts, owners.texts, true);
+    std::cerr<<"  "<<primitives<<" primitive ids and "<<texts<<" text ids differ\n";
+    return false;
+}
+
+static bool pixelsMatch(const ResizeState &a, const ResizeState &b)
+{
+    if(a.pixels == b.pixels)
+        return true;
+
+    size_t differing=0;
+    for(size_t i=0; i<a.pixels.size() && i<b.pixels.size(); i+=4)
+        if(std::memcmp(&a.pixels[i], &b.pixels[i], 4) != 0)
+            ++differing;
+    std::cerr<<"ControlTest: "<<b.name<<" differs from "<<a.name<<" in "
+             <<differing<<" pixels\n";
+    return false;
+}
+
+// Replaces the session's canvas with a new one, built directly at the
+// session's size. The old one goes first, so the new one gets the same
+// (lowest-first) primitive ids a canvas built at start-up got.
+static void replaceCanvas(Session &s)
+{
+    forgetMouse(s);
+    gweni::skin::Base *skin=s.canvas->getSkin();
+    delete s.canvas;
+    s.canvas=createCanvas(skin, s.size);
+    g_canvas=s.canvas;
+}
+
+// Three shots around a grow-then-shrink, plus a reference from a canvas built
+// directly at 640x480 once the cycle is over. All three 640x480 states have to
+// be the same, checked cheapest first: the listings, then the renderer mirror
+// id by id (before the grow against after the shrink), then the pixels.
+// Anything that does not re-settle on shrink shows up here and nowhere else in
+// the harness.
 static bool runResizeScenario(Session &s, const std::string &controlName,
     const std::string &shotDir, bool &settled)
 {
+    const std::string fresh=shotDir+"/resize-00-fresh-640x480.png";
     const std::string first=shotDir+"/resize-01-640x480.png";
     const std::string grown=shotDir+"/resize-02-1024x768.png";
     const std::string shrunk=shotDir+"/resize-03-640x480.png";
+
+    ResizeState freshState, firstState, shrunkState;
 
     if(!resizeSession(s, 640, 480))
         return false;
@@ -670,6 +922,7 @@ static bool runResizeScenario(Session &s, const std::string &controlName,
 
     renderFrames(s, s.frames);
     if(!shoot(s, first)) return false;
+    captureResizeState(s, first, firstState);
 
     if(!resizeSession(s, 1024, 768)) return false;
     renderFrames(s, s.frames);
@@ -678,21 +931,38 @@ static bool runResizeScenario(Session &s, const std::string &controlName,
     if(!resizeSession(s, 640, 480)) return false;
     renderFrames(s, s.frames);
     if(!shoot(s, shrunk)) return false;
+    captureResizeState(s, shrunk, shrunkState);
 
     dropControl(s, control);
 
-    if(!s.writePng)
-    {
-        settled=true;
-        return true;
-    }
+    replaceCanvas(s);
+    control=addControl(s, controlName);
+    renderFrames(s, s.frames);
+    if(!shoot(s, fresh)) return false;
+    captureResizeState(s, fresh, freshState);
+    dropControl(s, control);
 
-    settled=fileBytesEqual(first, shrunk);
+    // Every comparison runs, so a failing run names all that differs; each
+    // message says which pair it is about.
+    const bool listingSettled=listingsMatch(firstState, shrunkState);
+    bool freshMatches=listingsMatch(freshState, firstState);
+    freshMatches=listingsMatch(freshState, shrunkState) && freshMatches;
+
+    const bool mirrorSettled=mirrorsMatch(firstState, shrunkState);
+
+    const bool shrinkSettled=pixelsMatch(firstState, shrunkState);
+    freshMatches=pixelsMatch(freshState, firstState) && freshMatches;
+    freshMatches=pixelsMatch(freshState, shrunkState) && freshMatches;
+
+    settled=listingSettled && mirrorSettled && shrinkSettled && freshMatches;
+
     std::cout<<"resize control="<<controlName
-             <<" shrink_settled="<<(settled?"yes":"no")<<"\n";
+             <<" listing_settled="<<(listingSettled?"yes":"no")
+             <<" mirror_settled="<<(mirrorSettled?"yes":"no")
+             <<" shrink_settled="<<(shrinkSettled?"yes":"no")
+             <<" fresh_matches="<<(freshMatches?"yes":"no")<<"\n";
     if(!settled)
-        std::cerr<<"ControlTest: "<<shrunk<<" differs from "<<first
-                 <<": the layout did not come back to its 640x480 state\n";
+        std::cerr<<"ControlTest: the layout did not come back to its 640x480 state\n";
     return true;
 }
 
@@ -1099,10 +1369,7 @@ int main(int argc, char *argv[])
     const gweni::Color background=gweni::skin::textured::tokyonight::Canvas.top;
     glClearColor(background.r/255.0f, background.g/255.0f, background.b/255.0f, background.a/255.0f);
 
-    gweni::controls::Canvas *canvas=new gweni::controls::Canvas(skin);
-    canvas->setSize(screenSize.x, screenSize.y);
-    canvas->setDrawBackground(true);
-    canvas->setBackgroundColor(background);
+    gweni::controls::Canvas *canvas=createCanvas(skin, screenSize);
 
     g_renderer=renderer;
     g_canvas=canvas;
@@ -1194,6 +1461,9 @@ int main(int argc, char *argv[])
 
         if(!ok)
             result=EXIT_FAILURE;
+
+        // The resize scenario builds a canvas of its own for its fresh reference.
+        canvas=session.canvas;
     }
     else
     {

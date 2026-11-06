@@ -14,9 +14,13 @@ GWENI_EXPORT void enlargePrimitiveIds(void *object, PrimitiveIds &primitiveIds, 
 
 GWENI_EXPORT size_t getPrimitiveId(void *object);
 GWENI_EXPORT void releasePrimitiveId(size_t id);
+//! Whether the id is handed out and not yet released; primitiveIdCount()
+//! (below) bounds the ids worth asking about.
+GWENI_EXPORT bool isPrimitiveIdLive(size_t id);
 
 GWENI_EXPORT size_t getTextId(void *object);
 GWENI_EXPORT void releaseTextId(size_t id);
+GWENI_EXPORT bool isTextIdLive(size_t id);
 
 //! Id bank state, for tests and debug tooling. The count is the high-water
 //! mark (every id ever handed out); the released list holds the ids waiting to

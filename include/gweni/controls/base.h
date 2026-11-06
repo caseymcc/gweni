@@ -145,6 +145,14 @@ public:
         return m_children;
     }
 
+    //! The children actually parented to this control, inner panel and private
+    //! parts (a ScrollControl's scrollbars) included; getChildren() skips past
+    //! the inner panel to the children placed in it.
+    const Base::List &getActualChildren() const
+    {
+        return m_children;
+    }
+
     template<typename _Control>
     friend _Control *newControl(const gweni::String &name);
     template<typename _Control>
@@ -305,6 +313,10 @@ public:
     virtual void hideRecursive(skin::Base *skin);
 
     virtual bool shouldClip() { return true; }
+
+    //! The skin's renderer object for this control, which owns its primitive and
+    //! text ids; null until the control has been rendered once.
+    const skin::Control *getSkinControl() const { return m_skinControl.get(); }
 
 protected:
     void setPrimitiveIdsSize(size_t size);
