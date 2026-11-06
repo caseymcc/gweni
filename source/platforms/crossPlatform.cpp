@@ -15,13 +15,15 @@
 #ifdef _WIN32
 #   define WIN32_LEAN_AND_MEAN
 #   include <Windows.h>
-#   include <WinBase.h>     // sleep
 #   undef min
 #   undef max
 #else
 #   include <unistd.h>
 #endif
 #include <time.h>
+
+#include <chrono>
+#include <thread>
 
 #if defined(__APPLE__)
 #   include <errno.h>
@@ -101,12 +103,12 @@ String getExecutableDir()
 
 void sleep(unsigned int ms)
 {
-    // Only MSVC different.
-#ifdef _WIN32
-    ::Sleep(ms);
-#else
-    ::sleep(ms);
-#endif
+    if(ms == 0)
+    {
+        std::this_thread::yield();
+        return;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(ms));
 }
 
 #ifdef WIN32

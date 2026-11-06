@@ -74,12 +74,9 @@ String getExecutableDir()
 
 void sleep(unsigned int ms)
 {
-    // Only MSVC different.
-#ifdef _MSC_VER
+    // Win32 Sleep() takes milliseconds with every Windows compiler; POSIX
+    // ::sleep() takes seconds.
     ::Sleep(ms);
-#else
-    ::sleep(ms);
-#endif
 }
 
 #ifdef WIN32
