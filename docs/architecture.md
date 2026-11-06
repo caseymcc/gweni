@@ -154,7 +154,8 @@ on an OpenGL 3.3 core profile:
   with no seam or 1 px overlap. The SDF radius is `snap(radius)` and a border
   `max(1, snap(border))`, so a border stays a whole number of device pixels; icon
   strokes are relative to their rect and scale with it. At scale 1 all of this is
-  the identity. Text glyphs are still rasterised at 1x; only their positions scale.
+  the identity. Text is drawn at `font.size*scale()` px from its snapped origin
+  (see "Hybrid text"), while `measureText` stays in canvas units.
 - **Clip boxes.** Every primitive slot and every glyph slot carries the `clipRegion()`
   current when it was drawn, as a `Box` of four `uint16_t` corners (`m_clippingBoxes`,
   `m_textClipBoxes`), its edges snapped like the vertices' and clamped to `[0, 65535]` with
@@ -199,8 +200,8 @@ on an OpenGL 3.3 core profile:
   `vec4(color.rgb, color.a * coverage)` under the `SRC_ALPHA, ONE_MINUS_SRC_ALPHA`
   blend, so coverage is applied once; no gamma or contrast curve is applied
   (`markup.gamma` is 1). `tests/textGrayscale.cpp` pins all of this.
-- **Hybrid text.** With `px = textPx(font)` (`font.size` at any canvas scale for now;
-  #142 makes it `font.size*scale()`), text below `GWENI_SDF_TEXT_MIN`
+- **Hybrid text.** With the effective size `px = textPx(font) = font.size*scale()`,
+  text below `GWENI_SDF_TEXT_MIN`
   (default 18 px; `0` = SDF everywhere, a large value = coverage everywhere) keeps the
   hinted grayscale coverage atlas (above) of its (face, px, bold), byte for byte as before. At or
   above it, a font resolves to its face's one R8 signed-distance-field atlas (1024²,
@@ -212,6 +213,20 @@ on an OpenGL 3.3 core profile:
   draws nothing, so a glyph's padded quad writes no depth. A size change inside the SDF
   range therefore re-lays only that run: its vertex slots are uploaded and nothing else
   (`writeTextIndexes` marks only index slots whose bytes change).
+- **Text at a canvas scale.** `renderText` resolves and lays a run out at
+  `px = font.size*scale()` (11 px UI text at scale 2 is 22 px, in the SDF range), from
+  its origin snapped to a whole device pixel by `translate()`; a `TextRun` keeps the
+  `px` it was laid out at, so a run drawn again after a scale change is re-laid even in
+  the SDF atlas both sizes share. `measureText` measures at `font.size`, in the font that
+  size resolves to at scale 1, so it returns **canvas units** and a layout is the same
+  at every scale (`controltest_scale_bounds`). This deliberately differs from the legacy
+  OpenGL and Software renderers, which return scaled pixels. Where `font.size` is a
+  coverage size, its hinted whole-pixel advances are not the drawn font's scaled, so
+  `measuredPenShifts` moves each drawn glyph to its measured pen position times the
+  scale (rounded to a whole pixel for a coverage draw): the run ends where the layout
+  sized it, and a caret placed from `measureText` falls between the glyphs it means. An
+  SDF `font.size` needs no shift, its layout being linear in px. At scale 1 nothing
+  of this changes a byte. `tests/scaledText.cpp` pins it.
 
 ## Current state vs. goals
 

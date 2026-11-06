@@ -102,16 +102,12 @@ GLFontData::~GLFontData()
 
 float OpenGLCore::textPx(const Font &font) const
 {
-    // Not font.size*scale() yet: text is still rasterised, laid out and measured at
-    // font.size whatever the canvas scale, so measureText stays in canvas units and a
-    // scaled layout matches the unscaled one. #142 draws text at size*scale.
-    return font.size;
+    return font.size*scale();
 }
 
-Font OpenGLCore::resolveFont(const Font &font, GLTextMode &mode) const
+Font OpenGLCore::resolveFont(const Font &font, float px, GLTextMode &mode) const
 {
     Font key=font;
-    const float px=textPx(font);
 
     if(px >= m_sdfTextMin)
     {
@@ -130,15 +126,20 @@ GLTextMode OpenGLCore::getTextMode(const Font &font) const
 {
     GLTextMode mode;
 
-    resolveFont(font, mode);
+    resolveFont(font, textPx(font), mode);
     return mode;
 }
 
 Font::Status OpenGLCore::loadFont(const Font &requested)
 {
+    return loadFont(requested, textPx(requested));
+}
+
+Font::Status OpenGLCore::loadFont(const Font &requested, float px)
+{
     GLFontData fontData;
     GLTextMode mode;
-    const Font font=resolveFont(requested, mode);
+    const Font font=resolveFont(requested, px, mode);
     const bool sdf=(mode == GLTextMode::Sdf);
 
     // an explicit load is a fresh attempt; a failure is remembered again below,
@@ -249,8 +250,18 @@ Font::Status OpenGLCore::loadFont(const Font &requested)
 void OpenGLCore::freeFont(const gweni::Font &requested)
 {
     GLTextMode mode;
-    const Font font=resolveFont(requested, mode);
+    const Font drawn=resolveFont(requested, textPx(requested), mode);
+    const Font measured=resolveFont(requested, requested.size, mode);
 
+    freeFont(drawn, false);
+    // measureText's font, at another scale(): only measured by this font, unless
+    // another size is drawn in it
+    if(!(measured == drawn))
+        freeFont(measured, true);
+}
+
+void OpenGLCore::freeFont(const Font &font, bool onlyIfUnused)
+{
     if(m_lastFont != nullptr && m_lastFont->first == font)
         m_lastFont=nullptr;
 
@@ -259,6 +270,9 @@ void OpenGLCore::freeFont(const gweni::Font &requested)
     auto it=m_fonts.find(font);
 
     if(it == m_fonts.end())
+        return;
+
+    if(onlyIfUnused && !it->second.textRuns.empty())
         return;
 
     // An SDF atlas is shared by every size of its face, so the runs in it may be
@@ -283,8 +297,13 @@ void OpenGLCore::freeFont(const gweni::Font &requested)
 
 bool OpenGLCore::ensureFont(const Font &requested)
 {
+    return ensureFont(requested, textPx(requested));
+}
+
+bool OpenGLCore::ensureFont(const Font &requested, float px)
+{
     GLTextMode mode;
-    const Font font=resolveFont(requested, mode);
+    const Font font=resolveFont(requested, px, mode);
 
     if(m_lastFont != nullptr)
     {
@@ -309,7 +328,7 @@ bool OpenGLCore::ensureFont(const Font &requested)
     // No, try load to it
 
     // LoadFont sets m_lastFont, if loaded, and adds the font to m_failedFonts if not
-    return loadFont(requested) == Font::Status::Loaded;
+    return loadFont(requested, px) == Font::Status::Loaded;
 }
 
 Texture::Status OpenGLCore::loadTexture(Texture &texture)
@@ -477,7 +496,7 @@ unsigned int OpenGLCore::getTextureName(const Texture &texture) const
 unsigned int OpenGLCore::getFontAtlasName(const Font &requested) const
 {
     GLTextMode mode;
-    auto it=m_fonts.find(resolveFont(requested, mode));
+    auto it=m_fonts.find(resolveFont(requested, textPx(requested), mode));
 
     if((it != m_fonts.end()) && (it->second.atlas))
         return it->second.atlas->id;
@@ -2250,7 +2269,10 @@ void OpenGLCore::releaseTextPrimitive(size_t primitiveId)
 void OpenGLCore::renderText(size_t textId, const gweni::Font &font, gweni::Point pos, int zIndex,
     const gweni::String &text)
 {
-    if(!ensureFont(font))
+    // drawn at the effective size, in device pixels from the translated origin
+    const float px=textPx(font);
+
+    if(!ensureFont(font, px))
         return;
 
     if(m_textRuns.size() < textId+1)
@@ -2267,10 +2289,12 @@ void OpenGLCore::renderText(size_t textId, const gweni::Font &font, gweni::Point
 
     GLFontData &fontData=m_lastFont->second;
 
-    // Same string, font and colour, laid out in this font's atlas (not one freed
-    // since): the glyphs are the ones already there, at most offset. Anything else
-    // falls through to the full rebuild.
-    if((run.text == text) && (run.font == font) && (run.color == color) && (run.fontData == &fontData))
+    // Same string, font, effective size and colour, laid out in this font's atlas
+    // (not one freed since): the glyphs are the ones already there, at most offset.
+    // Anything else falls through to the full rebuild; a new scale() is a new px, and
+    // in an SDF font the same atlas.
+    if((run.text == text) && (run.font == font) && (run.px == px) && (run.color == color)
+        && (run.fontData == &fontData))
     {
         if((pos.x != run.position.x) || (pos.y != run.position.y) || (zIndex != run.zIndex))
         {
@@ -2314,7 +2338,7 @@ void OpenGLCore::renderText(size_t textId, const gweni::Font &font, gweni::Point
 
     if(fontData.mode == GLTextMode::Sdf)
     {
-        layoutSdfText(fontData, textPx(font), text, color, &sdfVertexes);
+        layoutSdfText(fontData, px, text, color, &sdfVertexes);
         vertexBuffer=sdfVertexes.data();
         glyphCount=sdfVertexes.size()/4;
     }
@@ -2340,11 +2364,16 @@ void OpenGLCore::renderText(size_t textId, const gweni::Font &font, gweni::Point
         vertexBuffer=(const ftgl::glyph_vertex_t *)textBuffer->buffer->vertices->items;
     }
 
+    std::vector<float> shifts;
+
+    measuredPenShifts(font, fontData, px, text, shifts);
+
     // hidden is left as it is: writeTextIndexes below keeps a hidden run blank
     run.text=text;
     run.position=pos;
     run.zIndex=zIndex;
     run.font=font;
+    run.px=px;
     run.color=color;
     setTextRunFont(textId, &fontData);
     allocateTextRun(run, glyphCount);
@@ -2359,6 +2388,7 @@ void OpenGLCore::renderText(size_t textId, const gweni::Font &font, gweni::Point
     for(size_t i=0; i<glyphCount; ++i)
     {
         const size_t vertIndex=(run.start+i)*4;
+        const float shift=shifts.empty()?0.0f:shifts[i];
         // Each glyph of a run sits a fraction of a z unit in front of the one
         // before it, so the GL_LESS depth test cannot reject the overlap between
         // two neighbouring glyph boxes. Accumulated rather than i*zDelta, which
@@ -2373,7 +2403,7 @@ void OpenGLCore::renderText(size_t textId, const gweni::Font &font, gweni::Point
             ftgl::glyph_vertex_t &vertex=m_textVertexes[vertIndex+j];
 
             vertex=source;
-            vertex.x=pos.x+source.x;
+            vertex.x=pos.x+source.x+shift;
             vertex.y=pos.y-source.y;
             vertex.z=z;
         }
@@ -2445,6 +2475,94 @@ void OpenGLCore::renderText(size_t textId, const gweni::Font &font, gweni::Point
 
     if(textBuffer)
         text_buffer_delete(textBuffer);
+}
+
+void OpenGLCore::textPens(GLFontData &fontData, float px, const gweni::String &text,
+    std::vector<float> &pens)
+{
+    ftgl::texture_font_t *font=fontData.textureFont;
+    const bool sdf=(fontData.mode == GLTextMode::Sdf);
+    const float s=sdf?px/fontData.baseSize:1.0f;
+    float pen=0.0f;
+    const char *previous=nullptr;
+
+    pens.clear();
+    // the walk of layoutSdfText, or of freetype-gl's text_buffer_add_text
+    for(size_t i=0; i < text.size(); i+=std::max<size_t>(1, ftgl::utf8_surrogate_len(text.c_str()+i)))
+    {
+        const char *current=text.c_str()+i;
+
+        if(*current == '\n')
+        {
+            pen=0.0f;
+            // text_buffer_add_text kerns the next glyph against the '\n'
+            previous=sdf?nullptr:current;
+            continue;
+        }
+
+        ftgl::texture_glyph_t *glyph=ftgl::texture_font_get_glyph(font, current);
+
+        if(glyph == nullptr)
+        {
+            if(!sdf)
+                previous=current;
+            continue;
+        }
+
+        if(previous && font->kerning)
+            pen+=ftgl::texture_glyph_get_kerning(glyph, previous)*s;
+
+        // a coverage glyph's quad sits at the pen rounded to a whole pixel
+        pens.push_back(sdf?pen:roundf(pen));
+        pen+=glyph->advance_x*s;
+        previous=current;
+    }
+}
+
+void OpenGLCore::measuredPenShifts(const gweni::Font &font, GLFontData &drawn, float px,
+    const gweni::String &text, std::vector<float> &shifts)
+{
+    shifts.clear();
+    if(px == font.size)
+        return;
+
+    // An SDF font lays a run out linearly in px, so measured at font.size and drawn
+    // at px its pens differ by the scale alone.
+    GLTextMode mode;
+
+    resolveFont(font, font.size, mode);
+    if(mode == GLTextMode::Sdf)
+        return;
+
+    std::pair<const Font, GLFontData> *drawFont=m_lastFont;
+
+    if(!ensureFont(font, font.size))
+    {
+        m_lastFont=drawFont;
+        return;
+    }
+
+    GLFontData &measured=m_lastFont->second;
+    std::vector<float> measuredPens, drawnPens;
+
+    m_lastFont=drawFont;
+    textPens(measured, font.size, text, measuredPens);
+    textPens(drawn, px, text, drawnPens);
+
+    // a glyph one font has and the other has not: left as drawn
+    if(measuredPens.size() != drawnPens.size())
+        return;
+
+    const float scale=px/font.size;
+
+    shifts.resize(drawnPens.size());
+    for(size_t i=0; i < drawnPens.size(); ++i)
+    {
+        const float target=measuredPens[i]*scale;
+
+        // a coverage glyph stays on whole pixels
+        shifts[i]=((drawn.mode == GLTextMode::Sdf)?target:roundf(target))-drawnPens[i];
+    }
 }
 
 gweni::Point OpenGLCore::layoutSdfText(GLFontData &fontData, float px, const gweni::String &text,
@@ -2551,9 +2669,14 @@ void OpenGLCore::hideText(size_t textId)
     writeTextIndexes(run);
 }
 
+// The size is in canvas (unscaled) units at any scale(): the text is measured at
+// font.size, in the font it is drawn in at scale 1, so a layout is the same at every
+// scale, and renderText draws it at font.size*scale() from the scaled origin. This
+// deliberately differs from the legacy OpenGL and Software renderers, whose
+// measureText returns scaled pixels (GWEN's long-standing inconsistency).
 gweni::Point OpenGLCore::measureText(const gweni::Font &font, const gweni::String &text)
 {
-    if(!ensureFont(font))
+    if(!ensureFont(font, font.size))
         return gweni::Point(0, 0);
 
     GLFontData &fontData=m_lastFont->second;
@@ -2561,7 +2684,7 @@ gweni::Point OpenGLCore::measureText(const gweni::Font &font, const gweni::Strin
     // In an SDF font: the same layout renderText draws, so sizeToContents fits it
     if(fontData.mode == GLTextMode::Sdf)
     {
-        const gweni::Point sz=layoutSdfText(fontData, textPx(font), text, gweni::Color(), nullptr);
+        const gweni::Point sz=layoutSdfText(fontData, font.size, text, gweni::Color(), nullptr);
 
         if(textDebugMatches(text))
             ::printf("[measure] \"%s\" sdf font.size=%f scale=%f base=%f => sz.x=%d sz.y=%d"

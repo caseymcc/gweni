@@ -225,6 +225,7 @@ if(TARGET gweni_capture)
         fillStyles.cpp
         clipBoxes.cpp
         scaledEdges.cpp
+        scaledText.cpp
         textureReload.cpp
         imageRects.cpp
         progressBarFill.cpp)

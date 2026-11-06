@@ -206,6 +206,7 @@ public:
     void showText(size_t textId) override;
     void hideText(size_t textId) override;
 
+    //! In canvas units at any scale(), unlike the legacy renderers (see the definition)
     gweni::Point measureText(const gweni::Font &font, const gweni::String &text) override;
 
     // Resource Loader
@@ -246,14 +247,18 @@ public:
 
 protected:// Resourses
 
-    //! The effective px a font's text is drawn at: font.size for now, at any scale()
-    //! (#142 makes it font.size*scale()).
+    //! The effective px a font's text is drawn at: font.size*scale(). measureText
+    //! measures at font.size instead, so it stays in canvas units.
     float textPx(const Font &font) const;
-    //! The m_fonts key a font is loaded under, and the mode it is drawn in. With
-    //! px=textPx(font): px >= m_sdfTextMin is (face, bold) in Sdf mode, with
-    //! size 0 standing for "every size"; below that it is (face, px, bold) in
-    //! Coverage mode.
-    Font resolveFont(const Font &font, GLTextMode &mode) const;
+    //! The m_fonts key a font is loaded under at px, and the mode it is drawn in:
+    //! px >= m_sdfTextMin is (face, bold) in Sdf mode, with size 0 standing for
+    //! "every size"; below that it is (face, px, bold) in Coverage mode.
+    Font resolveFont(const Font &font, float px, GLTextMode &mode) const;
+    //! loadFont/ensureFont at px rather than textPx(font): measureText's font size
+    Font::Status loadFont(const Font &font, float px);
+    bool ensureFont(const Font &font, float px);
+    //! Frees one resolved font; onlyIfUnused leaves it if runs are laid out in it
+    void freeFont(const Font &resolved, bool onlyIfUnused);
 
     std::unordered_map<Font, GLFontData> m_fonts; //!< keyed by resolveFont()
     //! Faces whose last load failed: ensureFont does not retry them
@@ -447,6 +452,17 @@ private:
     //! the last upload (renderText and measureText do so lazily), then empties the band.
     void uploadDirtyAtlases();
 
+    //! The pen x of each glyph a run lays out in fontData at px (one per glyph
+    //! quad, in quad order), from the start of its line.
+    void textPens(GLFontData &fontData, float px, const gweni::String &text, std::vector<float> &pens);
+    //! At a scale() other than 1, a run measured in a coverage font (font.size below
+    //! the threshold) is drawn in another font, whose advances are not the measured
+    //! ones scaled: hinted, whole-pixel at font.size. shifts gets, for each drawn glyph,
+    //! the x that puts it at its measured pen position scaled, so the run ends where
+    //! measureText sized it and a caret placed from measureText falls between the
+    //! glyphs it means; it is left empty where nothing moves.
+    void measuredPenShifts(const gweni::Font &font, GLFontData &drawn, float px,
+        const gweni::String &text, std::vector<float> &shifts);
     //! Lays text out in an Sdf font at px, in freetype-gl's convention (y up, the
     //! line's top at 0), as text_buffer_add_text does for a coverage font: metrics
     //! scaled by px/baseSize, unhinted advances, the baseline on a whole pixel.
@@ -514,6 +530,7 @@ private:
         bool hidden=false;
         std::string text;
         gweni::Font font;
+        float px=0.f; //!< the effective size it was laid out at, textPx(font)
         gweni::Color color;
         GLFontData *fontData=nullptr;
     };
