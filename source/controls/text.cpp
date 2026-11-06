@@ -78,7 +78,8 @@ void Text::setText(const String &str)
 
     m_string=str;
     m_textChanged=true;
-    invalidate(controls::StateChange_Text);
+    // Its size, and wrapped its lines, come from the string: lay it out again.
+    invalidate();
 }
 
 //void Text::render(skin::Base *skin)
@@ -118,29 +119,13 @@ gweni::Rect Text::getCharacterPosition(unsigned int value)
 {
     if(!m_lines.empty())
     {
-        TextLines::iterator it=m_lines.begin();
-        TextLines::iterator itEnd=m_lines.end();
-        unsigned int iChars=0;
+        const int index=static_cast<int>(value);
+        const int lineIndex=getLineFromChar(index);
+        Text *line=m_lines[lineIndex];
+        // On the '\n' that ends a line, the caret is at that line's end.
+        const int pos=gweni::clamp(index-getStartCharFromLine(lineIndex), 0, line->length());
 
-        Text *line=nullptr;
-        while(it != itEnd)
-        {
-            line=*it;
-            ++it;
-            iChars+=line->length();
-
-            if(iChars <= value)
-                continue;
-
-            iChars-=line->length();
-            gweni::Rect rect=line->getCharacterPosition(value-iChars);
-            rect.x+=line->getX();
-            rect.y+=line->getY();
-            return rect;
-        }
-
-        //manage special case of the last character
-        gweni::Rect rect=line->getCharacterPosition(line->length());
+        gweni::Rect rect=line->getCharacterPosition(pos);
         rect.x+=line->getX();
         rect.y+=line->getY();
         return rect;
@@ -176,28 +161,23 @@ int Text::getClosestCharacter(gweni::Point p)
 {
     if(!m_lines.empty())
     {
-        TextLines::iterator it=m_lines.begin();
-        TextLines::iterator itEnd=m_lines.end();
-        int iChars=0;
+        // The lines are stacked top to bottom: the last one starting at or
+        // above p, or the first one when p is above them all.
+        size_t lineIndex=0;
 
-        Text *line=nullptr;
-        while(it != itEnd)
+        for(size_t i=1; i < m_lines.size(); ++i)
         {
-            line=*it;
-            ++it;
-            iChars+=line->length();
-
-            if(p.y < line->getY())
-                continue;
-            if(p.y > line->bottom())
-                continue;
-            if(p.y < line->bottom())
+            if(p.y < m_lines[i]->getY())
                 break;
+            lineIndex=i;
         }
 
-        iChars-=line->length();
-        int iLinePos=line->getClosestCharacter(gweni::Point(p.x-line->getX(), p.y-line->getY()));
-        return iChars+iLinePos;
+        const int iLine=static_cast<int>(lineIndex);
+        Text *line=m_lines[lineIndex];
+        const int start=getStartCharFromLine(iLine);
+        const int iLinePos=line->getClosestCharacter(gweni::Point(p.x-line->getX(), p.y-line->getY()));
+
+        return gweni::clamp(start+iLinePos, start, getLastCaretOnLine(iLine));
     }
 
     int iDistance=4096;
@@ -230,8 +210,17 @@ void Text::onScaleChanged()
 // height is that of the lines at that width, final by the Y pass.
 void Text::calculateSize(skin::Base *skin, Dim dim)
 {
+    // Every row is a line of the font high, an empty one included, whose own
+    // measure would be the font's size.
+    const int rowHeight=(dim == Dim::Y && !m_lines.empty())?lineHeight():0;
+
     for(auto &&line : m_lines)
+    {
         line->calculateSize(skin, dim);
+
+        if(dim == Dim::Y)
+            line->m_preferredSize.height=rowHeight;
+    }
 
     if(m_wrap && dim == Dim::X)
     {
@@ -290,6 +279,11 @@ void Text::policyResize(const Size &preferred, Dim dim)
         setArrangedBounds(bounds.x, bounds.y, bounds.w, preferred.height);
 }
 
+int Text::lineHeight()
+{
+    return getSkin()->getRenderer()->measureText(getFont(), " ").y;
+}
+
 int Text::wrapWidth()
 {
     return getParent()->getWidth()-getParent()->getPadding().left-getParent()->getPadding().right;
@@ -326,14 +320,9 @@ Size Text::refreshSize(bool update)
     return Size(p.x, p.y);
 }
 
-void Text::splitWords(const gweni::String &s, std::vector<gweni::String> &elems)
+void Text::splitWords(const gweni::String &s, int w, std::vector<gweni::String> &elems)
 {
     gweni::String str;
-
-    int w=wrapWidth();
-
-    if(w<=0) //unable to place string in nothingness
-        return;
 
     for(size_t i=0; i < s.length(); i++)
     {
@@ -356,6 +345,10 @@ void Text::splitWords(const gweni::String &s, std::vector<gweni::String> &elems)
         }
 
         str+=s[i];
+
+        // With no width to place it in, a word is not broken up.
+        if(w <= 0)
+            continue;
 
         // if adding character makes the word bigger than the textbox size
         gweni::Point p=getSkin()->getRenderer()->measureText(getFont(), str);
@@ -383,115 +376,105 @@ void Text::splitWords(const gweni::String &s, std::vector<gweni::String> &elems)
         elems.push_back(str);
 }
 
-Size Text::RefreshSizeWrap(bool update)
+// A line ends at each '\n', which it holds but does not show (freetype-gl
+// would break the run there, below the line's box), and before a word that
+// would take it past w. A blank line is an empty line, and so is the one after
+// a final '\n'. With w <= 0 the lines only break at '\n'.
+void Text::wrapLines(int w, std::vector<WrappedLine> &lines)
 {
-    if(update)
-    {
-        removeAllChildren();
+    std::vector<gweni::String> words;
+    splitWords(getText(), w, words);
 
-        for(auto &&line:m_lines)
+    gweni::String strLine;
+    int lineLength=0;
+
+    for(auto &&word : words)
+    {
+        if(word == "\n")
         {
-            delete line;
+            lines.push_back({strLine, lineLength+1});
+            strLine.clear();
+            lineLength=0;
+            continue;
         }
-        m_lines.clear();
+
+        const int wordLength=static_cast<int>(word.length());
+
+        // Only the parent's width counts: this control's own is what the
+        // last wrap made it, and comparing with it kept lines that no
+        // longer fit once the parent got narrower.
+        if(w > 0 && !strLine.empty()
+            && getSkin()->getRenderer()->measureText(getFont(), strLine+word).x > w)
+        {
+            lines.push_back({strLine, lineLength});
+            // the new line starts with the word that did not fit
+            strLine=word;
+            lineLength=wordLength;
+            continue;
+        }
+
+        strLine+=word;
+        lineLength+=wordLength;
     }
 
-    std::vector<gweni::String> words;
-    splitWords(getText(), words);
+    lines.push_back({strLine, lineLength});
+}
 
-    // Adding a word to the end simplifies the code below
-    // which is anything but simple.
-    words.push_back("");
-
+Size Text::RefreshSizeWrap(bool update)
+{
     if(!m_font)
     {
         GWENI_ASSERT_MSG(false, "Text::refreshSize() - No Font!");
         return Size(0, 0);
     }
 
-    Point fontSize=getSkin()->getRenderer()->measureText(getFont(), " ");
-    int w=wrapWidth();
-    int x=0, y=0;
-    gweni::String strLine;
+    const int w=wrapWidth();
+    std::vector<WrappedLine> lines;
 
-    for(auto &&it=words.begin(); it != words.end(); ++it)
+    wrapLines(w, lines);
+
+    const int lineHeight=this->lineHeight();
+    const int height=static_cast<int>(lines.size())*lineHeight;
+
+    if(!update)
+        return Size(w, height);
+
+    removeAllChildren();
+
+    for(auto &&line:m_lines)
     {
-        bool bFinishLine=false;
-        bool bWrapped=false;
+        delete line;
+    }
+    m_lines.clear();
+    m_lineLengths.clear();
 
-        // If this word is a newline - make a newline (we still add it to the
-        // text)
-        if((*it).c_str()[0] == '\n')
-            bFinishLine=true;
+    int y=0;
 
-        // Does adding this word drive us over the width?
-        {
-            strLine+=*it;
-            gweni::Point p=getSkin()->getRenderer()->measureText(getFont(), strLine);
+    for(auto &&line : lines)
+    {
+        Text *t=newChild<Text>();
+        t->setFont(getFont());
+        t->setTextColor(TextColor());
+        t->setText(line.text);
+        // Each line stays where it is put; measured here, as it did not
+        // exist when this pass measured the tree.
+        t->setAlignment(Alignment::Absolute);
 
-            // Only the parent's width counts: this control's own is what the
-            // last wrap made it, and comparing with it kept lines that no
-            // longer fit once the parent got narrower.
-            if(p.x > w)
-            {
-                bFinishLine=true;
-                bWrapped=true;
-            }
-        }
+        Size size=t->refreshSize();
+        size.height=lineHeight;
+        t->setPreferredSize(size);
+        t->setPos(0, y);
 
-        // If this is the last word then finish the line
-        if(--words.end() == it)
-            bFinishLine=true;
-
-        if(bFinishLine)
-        {
-            if(update)
-            {
-                Text *t=newChild<Text>();
-                t->setFont(getFont());
-                t->setTextColor(TextColor());
-                if(bWrapped)
-                {
-                    t->setText(strLine.substr(0, strLine.length()-(*it).length()));
-                    // newline should start with the word that was too big
-                    strLine=*it;
-                }
-                else
-                {
-                    t->setText(strLine.substr(0, strLine.length()));
-                    //new line is empty
-                    strLine.clear();
-                }
-                // Each line stays where it is put; measured here, as it
-                // did not exist when this pass measured the tree.
-                t->setAlignment(Alignment::Absolute);
-                t->setPreferredSize(t->refreshSize());
-                t->setPos(x, y);
-                m_lines.push_back(t);
-            }
-            else
-            {
-                if(bWrapped)
-                    strLine=*it;
-                else
-                    strLine.clear();
-            }
-            // newline should start with the word that was too big
-            // strLine = *it;
-
-            // Position the newline
-            y+=fontSize.y;
-            x=0;
-            // if ( strLine[0] == ' ' ) x -= fontSize.x;
-        }
+        m_lines.push_back(t);
+        m_lineLengths.push_back(line.length);
+        y+=lineHeight;
     }
 
     // The parent's width and the height of the lines, the same as the
     // preferred size calculateSize gets from this function.
-    if(update)
-        setSize(w, y);
+    setSize(w, height);
 
-    return Size(w, y);
+    return Size(w, height);
 }
 
 unsigned int Text::numLines()
@@ -501,75 +484,72 @@ unsigned int Text::numLines()
 
 Text *Text::getLine(int i)
 {
-    TextLines::iterator it=m_lines.begin();
-    TextLines::iterator itEnd=m_lines.end();
+    if(i < 0 || i >= static_cast<int>(m_lines.size()))
+        return nullptr;
 
-    while(it != itEnd)
-    {
-        if(i == 0)
-            return *it;
-
-        ++it;
-        i--;
-    }
-
-    return nullptr;
+    return m_lines[i];
 }
 
+int Text::getLineLength(int i)
+{
+    if(i < 0 || i >= static_cast<int>(m_lineLengths.size()))
+        return 0;
+
+    return m_lineLengths[i];
+}
+
+// The line holding character i: the first one whose source range runs past
+// it, so a '\n' belongs to the line it ends; past the end, the last line.
 int Text::getLineFromChar(int i)
 {
     int iChars=0;
-    int iLine=0;
+    const int count=static_cast<int>(m_lineLengths.size());
 
-    for(auto &&line : m_lines)
+    for(int iLine=0; iLine < count; ++iLine)
     {
-        iChars+=line->length();
+        iChars+=m_lineLengths[iLine];
 
         if(iChars > i)
             return iLine;
-
-        iLine++;
     }
 
-    if(iLine > 0)
-        return iLine-1;
-
-    return iLine;
+    return std::max(0, count-1);
 }
 
 int Text::getStartCharFromLine(int i)
 {
     int iChars=0;
+    const int count=std::min(i, static_cast<int>(m_lineLengths.size()));
 
-    for(auto &&line : m_lines)
-    {
-        if(i == 0)
-            return gweni::clamp(iChars, 0, length());
-
-        iChars+=line->length();
-        i--;
-    }
+    for(int iLine=0; iLine < count; ++iLine)
+        iChars+=m_lineLengths[iLine];
 
     return gweni::clamp(iChars, 0, length());
 }
 
 int Text::getEndCharFromLine(int i)
 {
-    int iStart=getStartCharFromLine(i);
-    Text *iLine=getLine(i);
+    return gweni::clamp(getStartCharFromLine(i)+getLineLength(i), 0, length());
+}
 
-    if(iLine)
-        iStart+=iLine->length();
+int Text::getLastCaretOnLine(int i)
+{
+    const int start=getStartCharFromLine(i);
+    const int end=getEndCharFromLine(i);
 
-    return gweni::clamp(iStart, 0, length());
+    // The last line ends the text; any other ends with its '\n' or with the
+    // character the next line wraps after.
+    if(i >= static_cast<int>(m_lines.size())-1 || end <= start)
+        return end;
+
+    return end-1;
 }
 
 int Text::getCharPosOnLine(int i)
 {
     int iLine=getLineFromChar(i);
-    Text *line=getLine(iLine);
 
-    if(!line)
+    if(!getLine(iLine))
         return 0;
 
     int iStart=getStartCharFromLine(iLine);

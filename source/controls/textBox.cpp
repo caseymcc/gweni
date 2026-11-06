@@ -710,17 +710,8 @@ bool TextBoxMultiline::onKeyend(bool down)
     if(!down)
         return true;
 
-    int iCurrentLine=getCurrentLine();
-    int value=m_text->getEndCharFromLine(iCurrentLine);
     m_cursorLine=0;
-    m_cursorPos=value;
-
-    int iLastLine=m_text->numLines()-1;
-
-    if(iCurrentLine < iLastLine && value > 0)
-        m_cursorPos=value-1; // NAUGHTY
-    else
-        m_cursorPos=m_text->length();
+    m_cursorPos=m_text->getLastCaretOnLine(getCurrentLine());
 
     if(!gweni::input::isShiftDown())
         m_cursorEnd=m_cursorPos;
@@ -741,9 +732,9 @@ bool TextBoxMultiline::onKeyUp(bool down)
     if(iLine == 0)
         return true;
 
-    m_cursorPos=m_text->getStartCharFromLine(iLine-1);
-    m_cursorPos+=clamp(m_cursorLine, 0, m_text->getLine(iLine-1)->length()-1);
-    m_cursorPos=clamp(m_cursorPos, 0, m_text->length());
+    // The same column on the line above, or that line's last caret position.
+    const int start=m_text->getStartCharFromLine(iLine-1);
+    m_cursorPos=clamp(start+m_cursorLine, start, m_text->getLastCaretOnLine(iLine-1));
 
     if(!gweni::input::isShiftDown())
         m_cursorEnd=m_cursorPos;
@@ -764,12 +755,9 @@ bool TextBoxMultiline::onKeyDown(bool down)
     if(iLine >= iLastLine || iLastLine < 1)
         return true;
 
-    m_cursorPos=m_text->getStartCharFromLine(iLine+1);
-    if(iLine+1 >= iLastLine)
-        m_cursorPos+=clamp(m_cursorLine, 0, m_text->getLine(iLine+1)->length());
-    else
-        m_cursorPos+=clamp(m_cursorLine, 0, m_text->getLine(iLine+1)->length()-1);
-    m_cursorPos=clamp(m_cursorPos, 0, m_text->length());
+    // The same column on the line below, or that line's last caret position.
+    const int start=m_text->getStartCharFromLine(iLine+1);
+    m_cursorPos=clamp(start+m_cursorLine, start, m_text->getLastCaretOnLine(iLine+1));
 
     if(!gweni::input::isShiftDown())
         m_cursorEnd=m_cursorPos;

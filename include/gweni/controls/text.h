@@ -103,10 +103,19 @@ public:
         m_wrap=b; m_textChanged=true; invalidate();
     }
 
+    //! Wrapped lines are child Texts whose strings have no '\n'; character
+    //! indices are into getText(), which counts each '\n' in the line it ends.
     virtual Text *getLine(int i);
     virtual int   getLineFromChar(int i);
     virtual int   getStartCharFromLine(int i);
+    //! One past the line's last character in getText(), its '\n' included.
     virtual int   getEndCharFromLine(int i);
+    //! The last caret position on the line: before its '\n', or before its
+    //! last character when it wraps (after it is the next line's start), or
+    //! the end of the text on the last line.
+    virtual int   getLastCaretOnLine(int i);
+    //! The characters of getText() the line holds, its '\n' included.
+    virtual int   getLineLength(int i);
     virtual int   getCharPosOnLine(int i);
     virtual unsigned numLines();
 
@@ -116,13 +125,28 @@ public:
 
 protected:
 
-    virtual void splitWords(const gweni::String &s, std::vector<gweni::String> &elems);
+    //! Splits s into words (each with its trailing space), "\n" tokens and,
+    //! when w > 0, pieces of words wider than w.
+    virtual void splitWords(const gweni::String &s, int w, std::vector<gweni::String> &elems);
 
 private:
+
+    //! A wrapped line: what it shows, and how many characters of m_string it
+    //! holds (the shown ones and the '\n' that ended it, if one did).
+    struct WrappedLine
+    {
+        gweni::String text;
+        int length;
+    };
+
+    //! Breaks m_string into lines no wider than w ('\n' always breaks one).
+    void wrapLines(int w, std::vector<WrappedLine> &lines);
 
     virtual Size RefreshSizeWrap(bool update=true);
     //! The width wrapped lines break at: the parent's, less its padding.
     int wrapWidth();
+    //! The height of a wrapped line, the row each one is placed on.
+    int lineHeight();
 
     gweni::String m_string;
     const gweni::Font *m_font;
@@ -137,8 +161,10 @@ private:
     int m_wrappedWidth=-1;
 //    size_t m_textId;
 
-    typedef std::list<Text *> TextLines;
-    TextLines m_lines;
+    //! The line children, top to bottom, and the source length of each
+    //! (WrappedLine::length), so a line can be updated in place.
+    std::vector<Text *> m_lines;
+    std::vector<int> m_lineLengths;
 };
 
 }//namespace internal

@@ -130,7 +130,13 @@ TreeNode's toggle), not resize one.
   parent gives it (`Text::policyResize`). Wrapped, it asks for its parent's
   requested width, is laid out at its parent's width, and rebuilds its line
   children at the start of its X arrange when the string or that width
-  changed.
+  changed. `setText` invalidates layout, so an edit is laid out (and
+  re-wrapped) by the next frame. Each line is an `Alignment::Absolute` child
+  placed at `(0, i * lineHeight)` and given that row height, an empty line
+  included; its string has no `'\n'` (freetype-gl would break the run there),
+  and the parent keeps how many characters of its string each line holds, the
+  `'\n'` included (`getLineLength`), so caret indices still count every
+  `'\n'`.
 
 ### What re-dirties a pass
 
