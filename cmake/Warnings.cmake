@@ -5,9 +5,13 @@
 # imglib/gweni enum that misses an enumerator silently returns a wrong value
 # (imglib::sizeOfPixel returning 0 for Format::BGRA once killed the process
 # inside libjpeg), so a new enumerator must not compile until it is handled.
+#
+# -Wall but not -Wextra: -Wextra adds thousands of -Wunused-parameter reports,
+# nearly all from virtual-override signatures. No blanket -Werror either.
 
 function(gweni_set_warnings target)
     target_compile_options(${target} PRIVATE
+        $<$<COMPILE_LANG_AND_ID:CXX,GNU,Clang>:-Wall>
         $<$<COMPILE_LANG_AND_ID:CXX,GNU,Clang>:-Werror=switch>
     )
 endfunction()
