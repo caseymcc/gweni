@@ -22,7 +22,7 @@ bool TexturedSkin::init(std::string fileName)
     if(!loadConfig(fileName))
         return false;
 
-    m_defaultFont.facename="Microsoft Sans Serif";
+    m_defaultFont.facename="OpenSans";
     m_defaultFont.size=11;
 
 //    m_texture.name=TextureName;

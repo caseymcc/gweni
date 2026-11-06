@@ -2767,8 +2767,7 @@ int main(int argc, char *argv[])
     gweni::skin::textured::TexturedSkin *skin=new gweni::skin::textured::TexturedSkin(renderer);
     if(!skin->init("DefaultSkin.json"))
         return EXIT_FAILURE;
-    skin->setDefaultFont("OpenSans.ttf", 11);
-    if(!gweni::capture::loadDefaultFonts(*renderer, skin->getDefaultFont()))
+    if(!gweni::capture::loadDefaultFont(*renderer, skin->getDefaultFont()))
         return EXIT_FAILURE;
 
     // The canvas fill comes from the theme, so a "theme" block in

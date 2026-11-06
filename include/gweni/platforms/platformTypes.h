@@ -330,8 +330,6 @@ struct Font
     bool bold;
 };
 
-GWENI_EXPORT const Font &getDefaultFont();
-
 struct Texture
 {
     typedef std::list<Texture *> List;

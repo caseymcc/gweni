@@ -20,8 +20,7 @@ namespace internal
 
 GWENI_CONTROL_CONSTRUCTOR(Text)
 {
-//    m_font=&getSkin()->getDefaultFont();
-    m_font=&getDefaultFont();
+    m_font=&getSkin()->getDefaultFont();
     m_colorOverride=Color(255, 255, 255, 0);
 //    m_color=getSkin()->Colors.Label.Default;
     // Tokyo Night foreground: default text is light so it reads on the dark theme

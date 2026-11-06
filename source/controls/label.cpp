@@ -18,8 +18,7 @@ GWENI_CONTROL_CONSTRUCTOR(Label)
 {
     m_createdFont=nullptr;
     m_text=newChild<internal::Text>();
-//    m_text->setFont(getSkin()->getDefaultFont());
-    m_text->setFont(getDefaultFont());
+    m_text->setFont(getSkin()->getDefaultFont());
     setMouseInputEnabled(false);
     setBounds(0, 0, 100, 10);
 //    setAlignment(Position::Left | Position::CenterV);

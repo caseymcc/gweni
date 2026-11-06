@@ -37,13 +37,12 @@ const String paragraphs=
     "liquor jugs. How vexingly quick daft zebras jump!\n\n"
     "Sphinx of black quartz, judge my vow. The five boxing wizards jump quickly.";
 
-//! A plain greedy wrap of `text` at `width`, the oracle for the line count:
+//! A plain greedy wrap of `text` in `font` at `width`, the oracle for the line count:
 //! lines break at '\n' and before a word (with its trailing space) that would
 //! take the line past the width. No word here is wider than the widths used.
-std::vector<String> greedyWrap(const String &text, int width)
+std::vector<String> greedyWrap(const gweni::Font &font, const String &text, int width)
 {
     gweni::renderer::OpenGLCore &renderer=gweni::test::gpuRenderer();
-    const gweni::Font &font=gweni::getDefaultFont();
     std::vector<String> lines;
     String line;
     String word;
@@ -132,7 +131,7 @@ struct WrapScene
     //! The lines' layout and strings, against the oracle at `width`.
     void checkLines(int width, const String &source=paragraphs)
     {
-        const std::vector<String> expected=greedyWrap(source, width);
+        const std::vector<String> expected=greedyWrap(text->getFont(), source, width);
         const int rowHeight=lineHeight();
 
         REQUIRE(rowHeight > 0);

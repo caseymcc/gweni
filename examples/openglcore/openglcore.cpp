@@ -347,9 +347,8 @@ int main(int argc, char *argv[])
 
     if(!skin->init("DefaultSkin.json"))
         return EXIT_FAILURE;
-    skin->setDefaultFont("OpenSans.ttf", 11);
 
-    if(!gweni::capture::loadDefaultFonts(*renderer, skin->getDefaultFont()))
+    if(!gweni::capture::loadDefaultFont(*renderer, skin->getDefaultFont()))
         return EXIT_FAILURE;
 
     // Create a Canvas (it's root, on which all other Gweni panels are created)

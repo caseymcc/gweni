@@ -59,11 +59,9 @@ std::unique_ptr<ResourcePaths> resourcePaths(const std::string &dir)
     return paths;
 }
 
-bool loadDefaultFonts(IResourceLoader &loader, const Font &skinFont)
+bool loadDefaultFont(IResourceLoader &loader, const Font &skinFont)
 {
-    if(loader.loadFont(skinFont) != Font::Status::Loaded)
-        return false;
-    return loader.loadFont(getDefaultFont()) == Font::Status::Loaded;
+    return loader.loadFont(skinFont) == Font::Status::Loaded;
 }
 
 bool initGlfwContext(Context &ctx, const Point &size, const std::string &title, bool visible)

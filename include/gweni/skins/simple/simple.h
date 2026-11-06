@@ -60,7 +60,7 @@ public:
         m_colTooltipBackground=gweni::Color(255, 255, 225, 255);
         m_colTooltipBorder=gweni::Color(0, 0, 0, 255);
         m_colModal=gweni::Color(25, 25, 25, 150);
-        m_defaultFont.facename="Microsoft Sans Serif";
+        m_defaultFont.facename="OpenSans";
         m_defaultFont.size=11;
     }
     

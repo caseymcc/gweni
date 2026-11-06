@@ -115,8 +115,8 @@ public:
 
     Base(gweni::renderer::Base *renderer=nullptr)
     {
-        m_defaultFont.facename="arial";
-        m_defaultFont.size=10.0f;
+        m_defaultFont.facename="OpenSans";
+        m_defaultFont.size=11.0f;
         m_render=renderer;
     }
 
@@ -356,7 +356,10 @@ public:
         return m_defaultFont;
     }
 
-    virtual void setDefaultFont(const gweni::String &strFacename, float fSize=10.0f)
+    //! Call before building controls. Text and Label keep a pointer to
+    //! m_defaultFont, so a later call changes their font in place without an
+    //! addStateChange, and text already laid out does not relayout.
+    virtual void setDefaultFont(const gweni::String &strFacename, float fSize=11.0f)
     {
         m_defaultFont.facename=strFacename;
         m_defaultFont.size=fSize;

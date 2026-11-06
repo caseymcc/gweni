@@ -268,7 +268,6 @@ set(GWENI_PLATFORM_SOURCES
     include/gweni/platforms/inputEvent.h
     include/gweni/platforms/platform.h
     include/gweni/platforms/platformTypes.h
-    source/platforms/platformTypes.cpp
     include/gweni/platforms/windowProvider.h
 )
 

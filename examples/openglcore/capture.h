@@ -47,11 +47,10 @@ void installGlfwErrorHandler();
 //! reference, so the object must outlive it.
 std::unique_ptr<ResourcePaths> resourcePaths(const std::string &dir);
 
-//! Load the skin's default font and the global gweni::getDefaultFont() that
-//! Text and Label use, so a missing face fails here, once, instead of at the
-//! first text drawn. \return false if either did not load; the loader has
-//! already printed the path it tried.
-bool loadDefaultFonts(IResourceLoader &loader, const Font &skinFont);
+//! Load the skin's default font, the one Text and Label use, so a missing face
+//! fails here, once, instead of at the first text drawn. \return false if it
+//! did not load; the loader has already printed the path it tried.
+bool loadDefaultFont(IResourceLoader &loader, const Font &skinFont);
 
 //-----------------------------------------------------------------------------
 // Context creation: a GLFW window (visible or hidden) or a surfaceless EGL
