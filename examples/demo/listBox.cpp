@@ -48,7 +48,7 @@ GWENI_CONTROL_CONSTRUCTOR(ListBoxDemo)
         }
         {
             controls::layout::TableRow *row=ctrl->addItem("Chicken");
-            row->setCellText(1, "\u5355\u5143\u6D4B\u8BD5");
+            row->setCellText(1, "\u041A\u0443\u0440\u0438\u0446\u0430");
             row->setCellText(2, "\u20AC8.95");
         }
     }

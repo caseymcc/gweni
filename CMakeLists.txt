@@ -18,6 +18,7 @@ option(GWENI_RENDER_SDL2 "Opengl Renderer" ON)
 option(GWENI_RENDER_OPENGL "Opengl Renderer" ON)
 option(GWENI_RENDER_OPENGL_CORE "Opengl 3.0+ Renderer" ON)
 option(GWENI_BUILD_EXAMPLES "Build Examples" ON)
+option(GWENI_BUILD_TESTS "Build tests" ON)
 option(GWENI_DEBUG_LOGGING "Verbose per-control update/layout debug logging" OFF)
 
 project(gweni VERSION 0.1.0 LANGUAGES CXX)
@@ -432,6 +433,12 @@ target_compile_definitions(gweni PUBLIC ${GWENI_COMPILE_DEFINITIONS})
 if(GWENI_BUILD_EXAMPLES)
     add_subdirectory(examples)
 endif(GWENI_BUILD_EXAMPLES)
+
+# after examples: the process-level tests drive the ControlTest target
+if(GWENI_BUILD_TESTS)
+    enable_testing()
+    add_subdirectory(tests)
+endif(GWENI_BUILD_TESTS)
 
 #target_include_directories(gweni PUBLIC
 #        ${GWENI_SOURCE_DIR}/source/platform/include
