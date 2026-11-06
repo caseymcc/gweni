@@ -100,10 +100,18 @@ GLFontData::~GLFontData()
     free(familyPath);
 }
 
+float OpenGLCore::textPx(const Font &font) const
+{
+    // Not font.size*scale() yet: text is still rasterised, laid out and measured at
+    // font.size whatever the canvas scale, so measureText stays in canvas units and a
+    // scaled layout matches the unscaled one. #142 draws text at size*scale.
+    return font.size;
+}
+
 Font OpenGLCore::resolveFont(const Font &font, GLTextMode &mode) const
 {
     Font key=font;
-    const float px=font.size*scale();
+    const float px=textPx(font);
 
     if(px >= m_sdfTextMin)
     {
@@ -2306,7 +2314,7 @@ void OpenGLCore::renderText(size_t textId, const gweni::Font &font, gweni::Point
 
     if(fontData.mode == GLTextMode::Sdf)
     {
-        layoutSdfText(fontData, font.size*scale(), text, color, &sdfVertexes);
+        layoutSdfText(fontData, textPx(font), text, color, &sdfVertexes);
         vertexBuffer=sdfVertexes.data();
         glyphCount=sdfVertexes.size()/4;
     }
@@ -2553,7 +2561,7 @@ gweni::Point OpenGLCore::measureText(const gweni::Font &font, const gweni::Strin
     // In an SDF font: the same layout renderText draws, so sizeToContents fits it
     if(fontData.mode == GLTextMode::Sdf)
     {
-        const gweni::Point sz=layoutSdfText(fontData, font.size*scale(), text, gweni::Color(), nullptr);
+        const gweni::Point sz=layoutSdfText(fontData, textPx(font), text, gweni::Color(), nullptr);
 
         if(textDebugMatches(text))
             ::printf("[measure] \"%s\" sdf font.size=%f scale=%f base=%f => sz.x=%d sz.y=%d"

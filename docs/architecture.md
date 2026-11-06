@@ -199,7 +199,8 @@ on an OpenGL 3.3 core profile:
   `vec4(color.rgb, color.a * coverage)` under the `SRC_ALPHA, ONE_MINUS_SRC_ALPHA`
   blend, so coverage is applied once; no gamma or contrast curve is applied
   (`markup.gamma` is 1). `tests/textGrayscale.cpp` pins all of this.
-- **Hybrid text.** With `px = font.size*scale()`, text below `GWENI_SDF_TEXT_MIN`
+- **Hybrid text.** With `px = textPx(font)` (`font.size` at any canvas scale for now;
+  #142 makes it `font.size*scale()`), text below `GWENI_SDF_TEXT_MIN`
   (default 18 px; `0` = SDF everywhere, a large value = coverage everywhere) keeps the
   hinted grayscale coverage atlas (above) of its (face, px, bold), byte for byte as before. At or
   above it, a font resolves to its face's one R8 signed-distance-field atlas (1024²,

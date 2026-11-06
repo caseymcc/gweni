@@ -246,8 +246,11 @@ public:
 
 protected:// Resourses
 
+    //! The effective px a font's text is drawn at: font.size for now, at any scale()
+    //! (#142 makes it font.size*scale()).
+    float textPx(const Font &font) const;
     //! The m_fonts key a font is loaded under, and the mode it is drawn in. With
-    //! px=font.size*scale(): px >= m_sdfTextMin is (face, bold) in Sdf mode, with
+    //! px=textPx(font): px >= m_sdfTextMin is (face, bold) in Sdf mode, with
     //! size 0 standing for "every size"; below that it is (face, px, bold) in
     //! Coverage mode.
     Font resolveFont(const Font &font, GLTextMode &mode) const;
