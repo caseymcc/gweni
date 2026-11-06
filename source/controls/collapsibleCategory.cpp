@@ -206,18 +206,8 @@ void CollapsibleCategory::onToggleHeaderButton(event::Info info)
         return;
 
     bool hidden=!child->getToggleState();
-    Base::List &children=getChildren();
 
     m_inner->setHidden(hidden);
-//    for(auto &&control:children)
-//    {
-//        CategoryButton *child=gweni_cast<CategoryButton>(control);
-//
-//        if(!child)
-//            continue;
-//
-//        child->setHidden(hidden);
-//    }
 }
 
 void CollapsibleCategory::onSelection(event::Info info)

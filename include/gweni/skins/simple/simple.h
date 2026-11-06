@@ -88,8 +88,6 @@ public:
 //        if(primitiveIds.size() < 18)
 //            enlargePrimitiveIds(control, primitiveIds, 18);
 
-        int w=control->getWidth();
-        int h=control->getHeight();
 //        drawButton(control, &primitiveIds[0], w, h, depressed, hovered);
     }
 

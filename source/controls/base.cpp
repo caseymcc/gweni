@@ -913,9 +913,6 @@ void Base::doRender(skin::Base *skin)
     // Do think
     //think();
 
-
-    renderer::Base *baseRenderer=skin->getRenderer();
-
     if(m_stateChange && StateChange_Created)
     {
     }
@@ -947,9 +944,6 @@ void Base::renderRecursive(skin::Base *skin, const Rect &cliprect)
     Rect rOldRegion=baseRenderer->clipRegion();
 
     baseRenderer->addRenderOffset(cliprect);
-
-    Rect currentRegion=baseRenderer->clipRegion();
-//    std::cout<<"Adding offset: "<<cliprect.x<<", "<<cliprect.y<<" final loc ("<<currentRegion.x<<", "<<currentRegion.y<<", w:"<<currentRegion.w<<", h:"<<currentRegion.h<<")\n";
 
     // If this control is clipping, change the clip rect to ourselves
     // else clip using our parents clip rect.
@@ -1392,7 +1386,6 @@ void Base::calculateSize(skin::Base *skin, Dim dim)
 void Base::policyResize(const Size &limit, Dim dim)
 {
     SizeFlags sizeFlags=getSizeFlags();
-    Margin margin=getMargin();
     Rect bounds=getBounds();
 
     if(dim==Dim::X)

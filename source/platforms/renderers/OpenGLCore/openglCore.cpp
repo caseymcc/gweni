@@ -85,7 +85,6 @@ Font::Status OpenGLCore::loadFont(const Font &font)
     const String filename=getResourcePaths().getPath(ResourcePaths::Type::Font, font.facename);
 
     vec4 black={{0.0, 0.0, 0.0, 1.0}};
-    vec4 white={{1.0, 1.0, 1.0, 1.0}};
     vec4 none={{1.0, 1.0, 1.0, 0.0}};
 
     fontData.faceName=font.facename;

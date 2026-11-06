@@ -158,9 +158,7 @@ void LayoutItem::calculateSize(skin::Base *skin, Dim dim)
         m_control->calculateSize(skin, dim);
 
         const Size &preferred=m_control->getPreferredSize();
-        const Rect &bounds=m_control->getBounds();
         const Margin &margin=m_control->getMargin();
-        const SizeFlags &sizeFlags=m_control->getSizeFlags();
 
         if(dim==Dim::X)
         {
@@ -202,7 +200,6 @@ void LayoutItem::calculateSize(skin::Base *skin, Dim dim)
 
 void LayoutItem::calculateHorizontal()
 {
-    //    m_bounds.w=0;
     m_preferredSize.width=0;
     m_minimumSize.width=0;
     m_maximumSize.width=std::numeric_limits<int>::max();
@@ -211,7 +208,6 @@ void LayoutItem::calculateHorizontal()
 
     for(LayoutItem *child:m_children)
     {
-        const gweni::Rect &bounds=child->getBounds();
         SizeFlags sizeFlags=child->getSizeFlags();
 
         m_preferredSize.width+=child->getPreferredSize().width;
@@ -221,51 +217,39 @@ void LayoutItem::calculateHorizontal()
 
         if(addSpacing)
             m_preferredSize.width+=m_spacing;
-        //            m_bounds.w+=m_spacing;
         else
             addSpacing=true;
-
-        //        m_bounds.w+=bounds.w;
     }
 
     m_preferredSize.width+=m_padding.left+m_padding.right;
-    //    m_bounds.w+=m_padding.left+m_padding.right;
 }
 
 void LayoutItem::calculateMaxHeight()
 {
-    //    m_bounds.h=0;
     m_preferredSize.height=0;
     m_minimumSize.height=0;
     m_maximumSize.height=std::numeric_limits<int>::max();
 
     for(LayoutItem *child:m_children)
     {
-        const gweni::Rect &bounds=child->getBounds();
         SizeFlags sizeFlags=child->getSizeFlags();
 
         m_preferredSize.height=std::max(m_preferredSize.height, child->getPreferredSize().height);
         m_minimumSize.height=std::max(m_minimumSize.height, child->getMinimumSize().height);
         m_maximumSize.height=std::min(m_maximumSize.height, child->getMaximumSize().height);
         m_sizeFlags.vertical=merge(m_sizeFlags.vertical, sizeFlags.vertical);
-
-        //        if(bounds.h>m_bounds.h)
-        //            m_bounds.h=bounds.h;
     }
 
     m_preferredSize.height+=m_padding.top+m_padding.bottom;
-    //    m_bounds.h+=m_padding.top+m_padding.bottom;
 }
 
 void LayoutItem::calculateMaxWidth()
 {
-    //    m_bounds.w=0;
     m_minimumSize.width=0;
     m_maximumSize.width=std::numeric_limits<int>::max();
 
     for(LayoutItem *child:m_children)
     {
-        const gweni::Rect &bounds=child->getBounds();
         SizeFlags sizeFlags=child->getSizeFlags();
 
         m_preferredSize.width=std::max(m_preferredSize.width, child->getPreferredSize().width);
@@ -273,18 +257,13 @@ void LayoutItem::calculateMaxWidth()
         m_maximumSize.width=std::min(m_maximumSize.width, child->getMaximumSize().width);
 
         m_sizeFlags.horizontal=merge(m_sizeFlags.horizontal, sizeFlags.horizontal);
-
-        //        if(bounds.w>m_bounds.w)
-        //            m_bounds.w=bounds.w;
     }
     m_preferredSize.width+=m_padding.left+m_padding.right;
-    //    m_bounds.w+=m_padding.left+m_padding.right;
 
 }
 
 void LayoutItem::calculateVertical()
 {
-    //    m_bounds.h=0;
     m_preferredSize.height=0;
     m_minimumSize.height=0;
     m_maximumSize.height=std::numeric_limits<int>::max();
@@ -292,7 +271,6 @@ void LayoutItem::calculateVertical()
     bool addSpacing=false;
     for(LayoutItem *child:m_children)
     {
-        const gweni::Rect &bounds=child->getBounds();
         SizeFlags sizeFlags=child->getSizeFlags();
 
         m_preferredSize.height+=child->getPreferredSize().height;
@@ -302,15 +280,11 @@ void LayoutItem::calculateVertical()
 
         if(addSpacing)
             m_preferredSize.height+=m_spacing;
-        //            m_bounds.h+=m_spacing;
         else
             addSpacing=true;
-
-        //        m_bounds.h+=bounds.h;
     }
 
     m_preferredSize.height+=m_padding.top+m_padding.bottom;
-    //    m_bounds.h+=m_padding.top+m_padding.bottom;
 }
 
 void LayoutItem::updateControlSize(Dim dim)

@@ -178,7 +178,6 @@ void ColorLerpBox::render(gweni::skin::Base *skin)
     ParentClass::render(skin);
 
     size_t primitiveIndex=0;
-    size_t primitives=(getWidth()*getHeight())+4+8;
 
 //    if(m_primitiveIds.size() < primitives)
 //        enlargePrimitiveIds(this, m_primitiveIds, primitives);
@@ -202,7 +201,6 @@ void ColorLerpBox::render(gweni::skin::Base *skin)
     else
         skin->getRenderer()->setDrawColor(gweni::Color(0, 0, 0, 255));
 
-    gweni::Rect testRect=gweni::Rect(cursorPos.x-3, cursorPos.y-3, 6, 6);
 //    skin->getRenderer()->drawShavedCornerRect(&m_primitiveIds[primitiveIndex+4], testRect, getZIndex());
 }
 
@@ -219,7 +217,6 @@ void ColorSlider::render(gweni::skin::Base *skin)
     // Is there any way to move this into skin? Not for now, no idea how we'll
     // "actually" render these
     size_t primitiveIndex=0;
-    size_t primitives=getHeight()+5;
 
 //    if(m_primitiveIds.size() < primitives)
 //        enlargePrimitiveIds(this, m_primitiveIds, primitives);
@@ -232,7 +229,6 @@ void ColorSlider::render(gweni::skin::Base *skin)
         primitiveIndex++;
     }
 
-    int drawHeight=m_selectedDist-3;
     // Draw our selectors
     skin->getRenderer()->setDrawColor(gweni::Color(0, 0, 0, 255));
 //    skin->getRenderer()->drawFilledRect(m_primitiveIds[primitiveIndex], gweni::Rect(0, drawHeight+2, getWidth(), 1), getZIndex());

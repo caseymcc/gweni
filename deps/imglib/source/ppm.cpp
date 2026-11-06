@@ -83,8 +83,6 @@ bool loadPpm(ImageWrapper image, const char *filename)
     if(image.dataSize()<width*height*3)
         return false;
 
-    uint8_t *data=image.data();
-
     fread(image.data(), 1, width*height*3, file);
     
     return true;
