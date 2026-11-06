@@ -23,12 +23,6 @@ GWENI_CONTROL_CONSTRUCTOR(ButtonDemo)
     controls::Button *buttonA=newChild<controls::Button>("ButtonA");
     buttonA->setText("Event Tester");
     buttonA->onPressCaller.add(this, &ButtonDemo::onButtonA);
-    {
-        controls::Button *buttonA=newChild<controls::Button>();
-        buttonA->setBounds(200, 30, 300, 200);
-        buttonA->setText("Event Tester");
-        buttonA->onPressCaller.add(this, &ButtonDemo::onButtonA);
-    }
     // Unicode test
     controls::Button *buttonB=newChild<controls::Button>();
     buttonB->setText("Text");
@@ -42,6 +36,7 @@ GWENI_CONTROL_CONSTRUCTOR(ButtonDemo)
     controls::Button *buttonD=newChild<controls::Button>();
     buttonD->setText("");
 //    buttonD->setImage("test16.png");
+    buttonD->setSizeFlags({SizeFlag::Fixed, SizeFlag::Fixed});
     buttonD->setSize(20, 20);
     //align::placeBelow(buttonD, buttonC, 10);
     // Toggle button
