@@ -330,6 +330,8 @@ bool OpenGLCore::ensureTexture(const gweni::Texture &texture)
 
 OpenGLCore::OpenGLCore(ResourcePaths &paths, const Rect &viewRect)
     : Base(paths)
+    , m_lastFont(nullptr)
+    , m_lastTexture(std::numeric_limits<size_t>::max())
     , m_context(nullptr)
     , m_viewRect(viewRect)
     , m_currentTexture(0)
@@ -337,8 +339,6 @@ OpenGLCore::OpenGLCore(ResourcePaths &paths, const Rect &viewRect)
 //    , m_vertexes(minVertexSize)
     , m_clipping(false)
 //    , m_clippingBoxes(minClippingSize)
-    , m_lastFont(nullptr)
-    , m_lastTexture(std::numeric_limits<size_t>::max())
 {
     m_indexes.reserve(minIndexSize);
     m_vertexes.reserve(minVertexSize);

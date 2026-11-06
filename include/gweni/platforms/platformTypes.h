@@ -159,17 +159,17 @@ struct GWENI_EXPORT Rect
 struct GWENI_EXPORT BoundingBox
 {
     BoundingBox(int left_=0, int top_=0, int right_=0, int bottom_=0)
-        : top(top_)
-        , bottom(bottom_)
-        , left(left_)
+        : left(left_)
+        , top(top_)
         , right(right_)
+        , bottom(bottom_)
     {}
 
     BoundingBox(const glm::ivec4 &that)
-        : top(that.x)
-        , bottom(that.y)
-        , left(that.z)
+        : left(that.z)
+        , top(that.x)
         , right(that.w)
+        , bottom(that.y)
     {}
 
     BoundingBox operator=(const glm::ivec4 &that)
@@ -208,7 +208,7 @@ struct GWENI_EXPORT Color
         unsigned char g_=255,
         unsigned char b_=255,
         unsigned char a_=255)
-        : r(r_), g(g_), b(b_), a(a_)
+        : a(a_), b(b_), g(g_), r(r_)
     {}
 
     Color(const Color &c)

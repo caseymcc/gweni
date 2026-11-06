@@ -110,7 +110,7 @@ public:
         if(control->getTypeName() != typeName)
             return std::unique_ptr<Control>();
         
-        return std::move(control);
+        return control;
         
     }
     

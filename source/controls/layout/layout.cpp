@@ -7,26 +7,26 @@ namespace controls
 
 
 LayoutItem::LayoutItem():
-    m_control(nullptr),
     m_parent(nullptr),
     m_layoutParent(nullptr),
-    m_sizeFlags(SizeFlag::Fixed, SizeFlag::Fixed),
+    m_control(nullptr),
     m_margin(0, 0, 0, 0),
     m_padding(0, 0, 0, 0),
-    m_spacing(2)
+    m_spacing(2),
+    m_sizeFlags(SizeFlag::Fixed, SizeFlag::Fixed)
 {
 
 }
 
 LayoutItem::LayoutItem(LayoutType type):
-    m_type(type),
     m_parent(nullptr),
     m_layoutParent(nullptr),
     m_control(nullptr),
-    m_sizeFlags(SizeFlag::Fixed, SizeFlag::Fixed),
+    m_type(type),
     m_margin(0, 0, 0, 0),
     m_padding(0, 0, 0, 0),
-    m_spacing(2)
+    m_spacing(2),
+    m_sizeFlags(SizeFlag::Fixed, SizeFlag::Fixed)
 {
 
 }

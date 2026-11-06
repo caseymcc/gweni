@@ -87,7 +87,8 @@ static LogCaller g_logCaller=&defaultLogCaller;
 
 void write(Level lvl, const char *format, ...)
 {
-    char buff[512];
+    constexpr int buffSize=512;
+    char buff[buffSize];
     const char *logname[]={"INFO", "WARNING", "ERROR", "FATAL"};
     int slen=snprintf(buff, sizeof(buff), "[%s] ", logname[(int)lvl]);
 
@@ -96,7 +97,9 @@ void write(Level lvl, const char *format, ...)
     const int mlen=vsnprintf(buff + slen, sizeof(buff) - slen, format, argList);
     va_end(argList);
 
-    if(slen+mlen < sizeof(buff)-2)
+    // mlen is negative on an encoding error; a message that was truncated
+    // (or leaves no room for the newline) is passed on as it is.
+    if(mlen >= 0 && slen+mlen < buffSize-2)
     {
         buff[slen+mlen]='\n';
         buff[slen+mlen+1]='\0';
