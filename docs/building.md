@@ -27,6 +27,10 @@ surfaceless-EGL path. On a shared host, hold the GPU lock around `ctest`;
 - `controltest_determinism`: two separate ControlTest processes must write
   byte-identical `--shot-all` PNGs and `--dump-bounds` listings.
 - `controltest_teardown`: every demo builds, renders and tears down cleanly.
+- `controltest_interaction`: `ControlTest --scenario interaction`. Hover, press,
+  disabled and a focus hand-off repaint the control, a hover touches only a few
+  slots, an idle frame changes nothing, and collapsing a tree node moves the
+  nodes below it.
 - `unittests`: doctest cases (`gweni_unittests`), e.g. the UTF-8 text-length
   guards in `tests/textLength.cpp`.
 - `unit:<case name>`: the headless doctest cases (`gweni_unit_tests`, sources

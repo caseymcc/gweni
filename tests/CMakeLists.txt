@@ -34,6 +34,17 @@ if(TARGET ControlTest)
         LABELS gpu
         TIMEOUT 300)
 
+    # hover, press, disabled and focus repaint the control (and only it), a
+    # settled frame does nothing, and collapsing a tree node still moves the
+    # nodes below; exits non-zero on any failed check
+    add_test(NAME controltest_interaction
+        COMMAND $<TARGET_FILE:ControlTest> --headless --scenario interaction
+            --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/interaction
+        WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
+    set_tests_properties(controltest_interaction PROPERTIES
+        LABELS gpu
+        TIMEOUT 300)
+
     # Not registered: --scenario resize, which fails on main (issue #58, the
     # 640->1024->640 resize does not restore the layout).
 else()

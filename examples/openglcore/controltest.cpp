@@ -22,7 +22,8 @@
  *    --trace            log each scripted input on stderr with what it hit
  *    --list             print the control demo names and exit
  *    --help, -h         print the option list and exit
- *    --scenario <name>  per-control | resize | docked | scroll (see below)
+ *    --scenario <name>  per-control | resize | docked | scroll | interaction
+ *                       (see below)
  *    --dump-bounds [<path>]
  *                       print the laid-out control tree as text: one line per
  *                       control, depth-first in child order, indented by depth,
@@ -74,6 +75,20 @@
  *                 differing pixel count. Exits non-zero if any check is no.
  *    docked       the whole Demo (dock layout + status bar) at 1024x768
  *    scroll       the five overflowing demos, idle and after a scripted scroll
+ *    interaction  hover, press, disabled and focus have to repaint, checked on
+ *                 the pixels inside the control's own bounds, and one line
+ *                 reports each check as yes/no:
+ *                   ButtonDemo: idle, hover and press of the first Button
+ *                   differ pairwise, moving off and setDisabled(false) give
+ *                   the idle look back, setDisabled(true) changes it; the
+ *                   hover frame writes 1..4 primitive slots and changes at
+ *                   most 4 controls; a settled frame with no input changes
+ *                   nothing. TextBoxDemo: clicking TextBox 1 changes it, and
+ *                   once the mouse has moved on and clicked TextBox 2, TextBox
+ *                   1 looks as it did before any click.
+ *                   TreeControlDemo: collapsing a node repaints and moves the
+ *                   node below it up. Exits non-zero if any check is no. The
+ *                   clock is frozen as under --stats.
  *
  *  Every scenario (and --shot-all) takes a listing per shot when
  *  --dump-bounds is on, named after that shot with a .txt extension, so the
@@ -83,10 +98,11 @@
  *  out. A scenario names its own listings, so --dump-bounds
  *  there takes no path.
  *
- *  All four, in the build container, from the repo root (resize's non-zero exit
- *  is its assertion, so it is reported rather than aborting the loop):
+ *  All of them, in the build container, from the repo root (a non-zero exit
+ *  from resize or interaction is their assertion, so it is reported rather than
+ *  aborting the loop):
  *
- *    for s in per-control resize docked scroll; do \
+ *    for s in per-control resize docked scroll interaction; do \
  *      ./build_linux_x64_debug/examples/openglcore/ControlTest \
  *          --headless --scenario $s --shot-dir /tmp/shots/$s; \
  *      echo "$s exit=$?"; \
@@ -253,9 +269,10 @@ static void printUsage(std::ostream &out)
          "  --check-teardown   check the canvas renders empty again once every\n"
          "                     control has been destroyed; --control narrows it\n"
          "  --trace            log each scripted input on stderr\n"
-         "  --scenario <name>  per-control | resize | docked | scroll; resize\n"
-         "                     prints listing_settled, mirror_settled,\n"
-         "                     shrink_settled and fresh_matches, and fails on a no\n"
+         "  --scenario <name>  per-control | resize | docked | scroll | interaction;\n"
+         "                     resize prints listing_settled, mirror_settled,\n"
+         "                     shrink_settled and fresh_matches, interaction one\n"
+         "                     yes/no per repaint check; both fail on a no\n"
          "  --dump-bounds [<path>]  print the laid-out control tree as text,\n"
          "                     private children and hidden state included\n"
          "  --list             print the control demo names and exit\n"
@@ -342,6 +359,7 @@ struct Session
     Framebuffer *fb=nullptr;
     gweni::Point size;
     bool stats=false;
+    bool freezeClock=false;             // as under --stats, without the lines
     bool trace=false;
     bool writePng=true;
     int frames=3;                       // --frames: the scenarios' settle count
@@ -485,7 +503,7 @@ static void renderFrames(Session &s, int count)
 
         // --stats wants a frame with no input to be genuinely idle, so there the
         // clock only moves when a scripted press moves it.
-        if(!s.stats)
+        if(!s.stats && !s.freezeClock)
             g_clockSeconds+=g_frameStep;
     }
 }
@@ -699,7 +717,7 @@ static bool runSteps(Session &s, const std::vector<Step> &steps, const std::stri
 //-----------------------------------------------------------------------------
 // Scenarios
 //-----------------------------------------------------------------------------
-enum class Scenario { None, PerControl, Resize, Docked, Scroll };
+enum class Scenario { None, PerControl, Resize, Docked, Scroll, Interaction };
 
 static bool parseScenario(const std::string &name, Scenario &scenario)
 {
@@ -707,6 +725,7 @@ static bool parseScenario(const std::string &name, Scenario &scenario)
     else if(name == "resize") scenario=Scenario::Resize;
     else if(name == "docked") scenario=Scenario::Docked;
     else if(name == "scroll") scenario=Scenario::Scroll;
+    else if(name == "interaction") scenario=Scenario::Interaction;
     else return false;
     return true;
 }
@@ -1063,6 +1082,301 @@ static bool runScrollScenario(Session &s, const std::string &shotDir)
 }
 
 //-----------------------------------------------------------------------------
+// --scenario interaction: hover, press, disabled and focus repaint
+//
+// Every interaction state change ends in Base::redraw(), which has to mark the
+// control dirty or the skin never re-picks its look. Each check compares the
+// pixels inside one control's laid-out bounds, so an unrelated pixel elsewhere
+// (a label colour, a caret) cannot make it pass.
+//-----------------------------------------------------------------------------
+
+// The first visible control of exactly this type, depth-first in child order,
+// i.e. the first one --dump-bounds lists.
+static gweni::controls::Base *findControl(gweni::controls::Base *control, const char *type, int skip=0)
+{
+    std::vector<gweni::controls::Base *> stack(1, control);
+    while(!stack.empty())
+    {
+        gweni::controls::Base *at=stack.back();
+        stack.pop_back();
+        if(at->hidden())
+            continue;
+        if(std::strcmp(at->getTypeName(), type) == 0 && skip-- == 0)
+            return at;
+
+        const auto &children=at->getActualChildren();
+        for(auto it=children.rbegin(); it != children.rend(); ++it)
+            stack.push_back(*it);
+    }
+    return nullptr;
+}
+
+static gweni::Point centreOf(gweni::controls::Base *control)
+{
+    const gweni::Point origin=control->localPosToCanvas();
+    return gweni::Point(origin.x+control->getWidth()/2, origin.y+control->getHeight()/2);
+}
+
+// The RGBA pixels inside a control's bounds, clipped to the framebuffer.
+static std::vector<uint8_t> regionPixels(const Session &s, gweni::controls::Base *control)
+{
+    std::vector<uint8_t> frame;
+    readFramebufferRgba(s.size.x, s.size.y, frame);
+
+    const gweni::Point origin=control->localPosToCanvas();
+    const int left=std::max(0, origin.x);
+    const int top=std::max(0, origin.y);
+    const int right=std::min(s.size.x, origin.x+control->getWidth());
+    const int bottom=std::min(s.size.y, origin.y+control->getHeight());
+
+    std::vector<uint8_t> region;
+    for(int y=top; y<bottom; ++y)
+    {
+        const auto row=frame.begin()+(static_cast<size_t>(y)*s.size.x+left)*4;
+        region.insert(region.end(), row, row+static_cast<size_t>(std::max(0, right-left))*4);
+    }
+    return region;
+}
+
+// Renders the frames a step needs to settle and returns the control's pixels;
+// a shot is written for the record.
+static std::vector<uint8_t> settledRegion(Session &s, gweni::controls::Base *control,
+    const std::string &shotDir, const std::string &name, bool &ok)
+{
+    renderFrames(s, s.frames);
+    if(!shoot(s, shotDir+"/interaction-"+name+".png"))
+        ok=false;
+    return regionPixels(s, control);
+}
+
+// One named assertion: a line on stderr when it fails, and a yes/no for the
+// summary line.
+struct InteractionChecks
+{
+    std::vector<std::pair<std::string, bool>> results;
+
+    void check(const std::string &name, bool passed, const std::string &why)
+    {
+        results.emplace_back(name, passed);
+        if(!passed)
+            std::cerr<<"ControlTest: interaction "<<name<<" failed: "<<why<<"\n";
+    }
+
+    bool allPassed() const
+    {
+        for(const auto &result : results)
+            if(!result.second)
+                return false;
+        return true;
+    }
+};
+
+// A hover transition dirties the control left (here ButtonDemo, which owns no
+// primitive), the Button entered and the Button's label Text. Only the two
+// Button-side ones can write a primitive slot, and a button's background is a
+// single RoundedPrimitive slot. 4 leaves room for a left control that is a
+// button too, plus an overlay primitive each, while anything that dirties
+// ancestors or the whole tree (19 controls here) is far over it.
+static const size_t g_hoverBound=4;
+
+static void checkButton(Session &s, const std::string &shotDir, InteractionChecks &checks, bool &ok)
+{
+    gweni::controls::Base *demo=addControl(s, "ButtonDemo");
+    renderFrames(s, s.frames);
+
+    gweni::controls::Base *button=findControl(demo, "Button");
+    if(!button)
+    {
+        checks.check("button_found", false, "ButtonDemo has no visible Button");
+        dropControl(s, demo);
+        return;
+    }
+
+    const gweni::Point on=centreOf(button);
+    const gweni::Point off(s.size.x-1, s.size.y-1);    // ButtonDemo, no button
+
+    moveMouse(s, off.x, off.y);
+    const std::vector<uint8_t> idle=settledRegion(s, button, shotDir, "button-idle", ok);
+
+    // The hover frame alone, so its counters are the transition's.
+    moveMouse(s, on.x, on.y);
+    renderFrames(s, 1);
+    const gweni::controls::ChangeStats hoverChanges=gweni::controls::getChangeStats();
+    const size_t hoverSlots=s.renderer->getFrameStats().primitiveSlotsWritten;
+    const std::vector<uint8_t> hover=settledRegion(s, button, shotDir, "button-hover", ok);
+
+    mouseDown(s, on.x, on.y, true);
+    const std::vector<uint8_t> press=settledRegion(s, button, shotDir, "button-press", ok);
+
+    // Let go off the button, so it is not clicked. The input handler keeps the
+    // pressed control hovered until the mouse next moves, so move once more.
+    mouseUp(s, off.x, off.y);
+    moveMouse(s, off.x-1, off.y);
+    const std::vector<uint8_t> released=settledRegion(s, button, shotDir, "button-released", ok);
+
+    // A frame with no input once everything has settled must do nothing.
+    renderFrames(s, 1);
+    const gweni::controls::ChangeStats idleChanges=gweni::controls::getChangeStats();
+    const gweni::renderer::OpenGLCore::FrameStats idleGpu=s.renderer->getFrameStats();
+
+    button->setDisabled(true);
+    const std::vector<uint8_t> disabled=settledRegion(s, button, shotDir, "button-disabled", ok);
+    button->setDisabled(false);
+    const std::vector<uint8_t> enabled=settledRegion(s, button, shotDir, "button-enabled", ok);
+
+    dropControl(s, demo);
+
+    checks.check("button_hover", hover != idle, "hovering the Button left its pixels as they were idle");
+    checks.check("button_press", press != idle && press != hover,
+        "pressing the Button did not change its pixels from idle and hover");
+    checks.check("button_unhover", released == idle,
+        "moving off and releasing did not bring the Button back to its idle look");
+    checks.check("hover_bounded",
+        hoverChanges.background >= 1 && hoverChanges.background <= g_hoverBound
+        && hoverSlots >= 1 && hoverSlots <= g_hoverBound && hoverChanges.controls <= g_hoverBound,
+        "the hover frame had controls_changed="+std::to_string(hoverChanges.controls)
+        +" background="+std::to_string(hoverChanges.background)
+        +" prim_slots_written="+std::to_string(hoverSlots)
+        +"; want background and prim_slots_written in 1.."+std::to_string(g_hoverBound)
+        +" and controls_changed at most "+std::to_string(g_hoverBound));
+    checks.check("idle_zero",
+        idleChanges.controls == 0 && idleGpu.primitiveSlotsWritten == 0 && idleGpu.textSlotsWritten == 0,
+        "a settled frame with no input had controls_changed="+std::to_string(idleChanges.controls)
+        +" prim_slots_written="+std::to_string(idleGpu.primitiveSlotsWritten)
+        +" text_slots_written="+std::to_string(idleGpu.textSlotsWritten));
+    checks.check("button_disabled", disabled != idle && enabled == idle,
+        "setDisabled(true) did not change the Button, or setDisabled(false) did not restore it");
+}
+
+static void checkFocusHandOff(Session &s, const std::string &shotDir, InteractionChecks &checks, bool &ok)
+{
+    gweni::controls::Base *demo=addControl(s, "TextBoxDemo");
+    renderFrames(s, s.frames);
+
+    gweni::controls::Base *first=findControl(demo, "TextBox");
+    gweni::controls::Base *second=findControl(demo, "TextBox", 1);
+    if(!first || !second)
+    {
+        checks.check("textbox_found", false, "TextBoxDemo has fewer than two visible TextBoxes");
+        dropControl(s, demo);
+        return;
+    }
+
+    const std::vector<uint8_t> unfocused=settledRegion(s, first, shotDir, "textbox-unfocused", ok);
+
+    // The mouse is moved onto TextBox 2 before the click, so TextBox 1 has its
+    // mouse-leave repaint behind it and only the focus hand-off can change it.
+    const gweni::Point firstAt=centreOf(first);
+    const gweni::Point secondAt=centreOf(second);
+    clickMouse(s, firstAt.x, firstAt.y);
+    moveMouse(s, secondAt.x, secondAt.y);
+    const std::vector<uint8_t> focused=settledRegion(s, first, shotDir, "textbox-focused", ok);
+
+    clickMouse(s, secondAt.x, secondAt.y);
+    const std::vector<uint8_t> handedOff=settledRegion(s, first, shotDir, "textbox-handoff", ok);
+
+    dropControl(s, demo);
+
+    checks.check("textbox_focus", focused != unfocused,
+        "clicking TextBox 1 did not change its pixels");
+    checks.check("focus_handoff", handedOff == unfocused,
+        "after clicking TextBox 2, TextBox 1 does not look unfocused again");
+}
+
+// Walks the actual children, since a TreeNode's getParent() is the control it
+// was added to and not the inner panel that holds it and its siblings.
+static bool findOpenNode(gweni::controls::Base *control, gweni::controls::Base *&toggle,
+    gweni::controls::Base *&below)
+{
+    const auto &children=control->getActualChildren();
+    for(auto it=children.begin(); it != children.end(); ++it)
+    {
+        gweni::controls::Base *child=*it;
+        if(child->hidden())
+            continue;
+
+        auto next=std::next(it);
+        if(std::strcmp(child->getTypeName(), "TreeNode") == 0 && next != children.end())
+        {
+            for(auto &&part : child->getActualChildren())
+            {
+                if(!part->hidden() && std::strcmp(part->getTypeName(), "OpenToggleButton") == 0)
+                {
+                    toggle=part;
+                    below=*next;
+                    return true;
+                }
+            }
+        }
+        if(findOpenNode(child, toggle, below))
+            return true;
+    }
+    return false;
+}
+
+// The layout path (invalidate / setBounds' StateChange_Geometry) is separate
+// from redraw(), and is what moves the nodes below a collapsed one.
+static void checkTreeCollapse(Session &s, const std::string &shotDir, InteractionChecks &checks, bool &ok)
+{
+    gweni::controls::Base *demo=addControl(s, "TreeControlDemo");
+    renderFrames(s, s.frames);
+
+    // The first node with a toggle on show and a sibling below it.
+    gweni::controls::Base *toggle=nullptr;
+    gweni::controls::Base *below=nullptr;
+    findOpenNode(demo, toggle, below);
+    if(!below)
+    {
+        checks.check("tree_found", false, "TreeControlDemo has no open node with a node below it");
+        dropControl(s, demo);
+        return;
+    }
+
+    std::vector<uint8_t> before, after;
+    renderFrames(s, s.frames);
+    if(!shoot(s, shotDir+"/interaction-tree-expanded.png"))
+        ok=false;
+    readFramebufferRgba(s.size.x, s.size.y, before);
+    const gweni::Rect belowBefore=below->getBounds();
+
+    const gweni::Point at=centreOf(toggle);
+    clickMouse(s, at.x, at.y);
+    renderFrames(s, s.frames);
+    if(!shoot(s, shotDir+"/interaction-tree-collapsed.png"))
+        ok=false;
+    readFramebufferRgba(s.size.x, s.size.y, after);
+    const gweni::Rect belowAfter=below->getBounds();
+
+    dropControl(s, demo);
+
+    checks.check("tree_repaint", before != after, "collapsing a tree node left the frame as it was");
+    checks.check("tree_layout", belowAfter.y < belowBefore.y,
+        "the node below the collapsed one stayed at y="+std::to_string(belowBefore.y)
+        +" (now y="+std::to_string(belowAfter.y)+")");
+}
+
+static bool runInteractionScenario(Session &s, const std::string &shotDir, bool &passed)
+{
+    // Frozen like --stats, so a frame with no input is genuinely idle (no
+    // caret blink); a scripted press still steps it.
+    s.freezeClock=true;
+
+    InteractionChecks checks;
+    bool ok=true;
+    checkButton(s, shotDir, checks, ok);
+    checkFocusHandOff(s, shotDir, checks, ok);
+    checkTreeCollapse(s, shotDir, checks, ok);
+
+    std::cout<<"interaction";
+    for(const auto &result : checks.results)
+        std::cout<<" "<<result.first<<"="<<(result.second ? "yes" : "no");
+    std::cout<<"\n";
+
+    passed=checks.allPassed();
+    return ok;
+}
+
+//-----------------------------------------------------------------------------
 // --check-teardown: teardown identity
 //
 // In a retained renderer a control's primitives are a persistent slot in the
@@ -1219,7 +1533,7 @@ int main(int argc, char *argv[])
             if(!parseScenario(name, scenario))
             {
                 std::cerr<<"ControlTest: unknown scenario: "<<name
-                         <<"; try per-control, resize, docked or scroll\n";
+                         <<"; try per-control, resize, docked, scroll or interaction\n";
                 return EXIT_FAILURE;
             }
         }
@@ -1432,6 +1746,15 @@ int main(int argc, char *argv[])
         case Scenario::Scroll:
             ok=runScrollScenario(session, shotDir);
             break;
+
+        case Scenario::Interaction:
+        {
+            bool passed=false;
+            ok=runInteractionScenario(session, shotDir, passed);
+            if(ok && !passed)
+                ok=false;   // something did not repaint: a failing assertion
+            break;
+        }
 
         case Scenario::None:
             if(shotAll)
