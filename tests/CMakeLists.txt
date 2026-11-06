@@ -87,6 +87,7 @@ if(TARGET gweni_capture)
     add_executable(gweni_unittests
         main.cpp
         textLength.cpp
+        textRunCache.cpp
         fontLoad.cpp
         fontRelease.cpp
         color.cpp

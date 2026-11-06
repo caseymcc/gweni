@@ -1,0 +1,416 @@
+/*
+ *  Gweni
+ *  Copyright (c) 2010 Facepunch Studios
+ *  MIT License, see LICENSE
+ *
+ *  OpenGLCore keeps one glyph run per text id and skips the layout when the
+ *  string has not changed. Everything else the run was built from (zIndex,
+ *  draw colour, font) must still reach the glyphs: each case here changes one
+ *  of them with the same string and compares the run with a fresh layout of
+ *  the final inputs on a new text id. The snapshot holds the hidden flag and
+ *  the glyph vertexes, not where the run sits, so the two compare byte for byte.
+ */
+#include <doctest/doctest.h>
+
+#include "capture.h"
+#include "gpuRenderer.h"
+
+#include <gweni/controls/button.h>
+#include <gweni/controls/canvas.h>
+#include <gweni/skins/textured/texturedSkin.h>
+
+#include <cstring>
+#include <set>
+#include <vector>
+
+namespace
+{
+
+using gweni::Color;
+using gweni::Font;
+using gweni::Point;
+using gweni::String;
+using gweni::renderer::OpenGLCore;
+
+const Color background(0, 0, 255, 255);
+const Color colorA(255, 200, 100, 255);
+const Color colorB(40, 220, 90, 255);
+
+//! Everything one renderText call is made from.
+struct TextDraw
+{
+    Font font;
+    Point pos;
+    int zIndex;
+    Color color;
+    String text;
+};
+
+TextDraw baseDraw()
+{
+    return TextDraw{ gweni::test::openSans(), Point(8, 40), 5, colorA, "Cached run" };
+}
+
+void clearFrame()
+{
+    glClearColor(background.r/255.0f, background.g/255.0f, background.b/255.0f, 1.0f);
+    glClearDepth(1.0);
+    glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
+}
+
+//! One frame holding just this renderText.
+void drawFrame(size_t textId, const TextDraw &draw)
+{
+    OpenGLCore &renderer=gweni::test::gpuRenderer();
+
+    renderer.begin();
+    renderer.setDrawColor(draw.color);
+    renderer.renderText(textId, draw.font, draw.pos, draw.zIndex, draw.text);
+    renderer.end();
+}
+
+//! An empty frame, so the next case starts from a flushed mirror.
+void emptyFrame()
+{
+    OpenGLCore &renderer=gweni::test::gpuRenderer();
+
+    renderer.begin();
+    renderer.end();
+}
+
+std::vector<uint8_t> textBytes(size_t textId)
+{
+    const OpenGLCore::MirrorSnapshot snapshot=gweni::test::gpuRenderer().snapshotMirror();
+    const auto it=snapshot.texts.find(textId);
+
+    REQUIRE(it != snapshot.texts.end());
+    return it->second;
+}
+
+//! The bytes `draw` gives when laid out on a text id that has never been drawn.
+std::vector<uint8_t> freshLayout(const TextDraw &draw)
+{
+    OpenGLCore &renderer=gweni::test::gpuRenderer();
+    size_t textId=0;
+
+    renderer.generateTextPrimitive(textId);
+    drawFrame(textId, draw);
+
+    const std::vector<uint8_t> bytes=textBytes(textId);
+
+    renderer.releaseTextPrimitive(textId);
+    emptyFrame();
+    return bytes;
+}
+
+//! The glyph vertexes of a snapshot entry (past its hidden flag).
+std::vector<ftgl::glyph_vertex_t> glyphVertexes(const std::vector<uint8_t> &bytes)
+{
+    REQUIRE(!bytes.empty());
+
+    const size_t count=(bytes.size()-1)/sizeof(ftgl::glyph_vertex_t);
+    std::vector<ftgl::glyph_vertex_t> vertexes(count);
+
+    if(count > 0)
+        memcpy(vertexes.data(), bytes.data()+1, count*sizeof(ftgl::glyph_vertex_t));
+    return vertexes;
+}
+
+//! True when every glyph vertex carries `color`'s rgb, as renderText bakes it.
+bool glyphsHaveColor(const std::vector<uint8_t> &bytes, const Color &color)
+{
+    const std::vector<ftgl::glyph_vertex_t> vertexes=glyphVertexes(bytes);
+
+    if(vertexes.empty())
+        return false;
+
+    for(const ftgl::glyph_vertex_t &vertex:vertexes)
+    {
+        if((vertex.r != color.r/255.0f) || (vertex.g != color.g/255.0f) || (vertex.b != color.b/255.0f))
+            return false;
+    }
+    return true;
+}
+
+//! The offscreen framebuffer, top-down RGBA8.
+std::vector<uint8_t> readFrame()
+{
+    const Point size=gweni::test::viewSize();
+    std::vector<uint8_t> pixels;
+
+    gweni::capture::readFramebufferRgba(size.x, size.y, pixels);
+    return pixels;
+}
+
+//! Pixels that are not the background colour.
+size_t drawnPixels(const std::vector<uint8_t> &pixels)
+{
+    size_t drawn=0;
+
+    for(size_t i=0; i+3 < pixels.size(); i+=4)
+    {
+        if((pixels[i] != background.r) || (pixels[i+1] != background.g) || (pixels[i+2] != background.b))
+            ++drawn;
+    }
+    return drawn;
+}
+
+//! Pixels drawn by a frame holding just this renderText.
+size_t drawnPixelsOf(size_t textId, const TextDraw &draw)
+{
+    clearFrame();
+    drawFrame(textId, draw);
+    return drawnPixels(readFrame());
+}
+
+}//namespace
+
+TEST_CASE("Text run: a same-string zIndex change re-offsets the glyphs to a fresh layout's depth")
+{
+    OpenGLCore &renderer=gweni::test::gpuRenderer();
+    TextDraw draw=baseDraw();
+
+    const std::vector<uint8_t> atFive=freshLayout(draw);
+    draw.zIndex=9;
+    const std::vector<uint8_t> atNine=freshLayout(draw);
+
+    REQUIRE(atFive != atNine);
+
+    size_t textId=0;
+
+    renderer.generateTextPrimitive(textId);
+    draw.zIndex=5;
+    drawFrame(textId, draw);
+    CHECK(textBytes(textId) == atFive);
+
+    draw.zIndex=9;
+    drawFrame(textId, draw);
+
+    const std::vector<uint8_t> bytes=textBytes(textId);
+
+    CHECK(bytes == atNine);
+
+    // z = zIndex + the glyph's shift: the first glyph sits at zIndex itself and
+    // every later one in front of it, less than one z unit away
+    const std::vector<ftgl::glyph_vertex_t> vertexes=glyphVertexes(bytes);
+
+    REQUIRE(!vertexes.empty());
+    CHECK(vertexes.front().z == 9.0f);
+
+    bool inFrontOfZIndex=true;
+
+    for(const ftgl::glyph_vertex_t &vertex:vertexes)
+        inFrontOfZIndex=inFrontOfZIndex && (vertex.z >= 9.0f) && (vertex.z < 10.0f);
+    CHECK(inFrontOfZIndex);
+
+    renderer.releaseTextPrimitive(textId);
+    emptyFrame();
+}
+
+TEST_CASE("Text run: a same-string colour change rebuilds the glyphs with the new colour")
+{
+    OpenGLCore &renderer=gweni::test::gpuRenderer();
+    TextDraw draw=baseDraw();
+
+    const std::vector<uint8_t> withA=freshLayout(draw);
+    draw.color=colorB;
+    const std::vector<uint8_t> withB=freshLayout(draw);
+
+    REQUIRE(glyphsHaveColor(withA, colorA));
+    REQUIRE(glyphsHaveColor(withB, colorB));
+
+    size_t textId=0;
+
+    renderer.generateTextPrimitive(textId);
+    draw.color=colorA;
+    drawFrame(textId, draw);
+    CHECK(textBytes(textId) == withA);
+
+    draw.color=colorB;
+    drawFrame(textId, draw);
+    CHECK(textBytes(textId) == withB);
+    CHECK(glyphsHaveColor(textBytes(textId), colorB));
+
+    draw.color=colorA;
+    drawFrame(textId, draw);
+    CHECK(textBytes(textId) == withA);
+
+    SUBCASE("alpha is not baked in, so an alpha-only change rebuilds nothing")
+    {
+        drawFrame(textId, draw);
+        REQUIRE(renderer.getFrameStats().textSlotsWritten == 0);
+
+        draw.color.a=40;
+        drawFrame(textId, draw);
+        CHECK(renderer.getFrameStats().textSlotsWritten == 0);
+        CHECK(textBytes(textId) == withA);
+    }
+
+    renderer.releaseTextPrimitive(textId);
+    emptyFrame();
+}
+
+TEST_CASE("Text run: a same-string font change rebuilds the glyphs in the new font")
+{
+    OpenGLCore &renderer=gweni::test::gpuRenderer();
+    Font larger=gweni::test::openSans();
+
+    larger.size=17;
+    REQUIRE((renderer.loadFont(larger) == Font::Status::Loaded));
+
+    TextDraw draw=baseDraw();
+
+    const std::vector<uint8_t> inBase=freshLayout(draw);
+    draw.font=larger;
+    const std::vector<uint8_t> inLarger=freshLayout(draw);
+
+    REQUIRE(inBase != inLarger);
+
+    size_t textId=0;
+
+    renderer.generateTextPrimitive(textId);
+    draw.font=gweni::test::openSans();
+    drawFrame(textId, draw);
+    CHECK(textBytes(textId) == inBase);
+
+    draw.font=larger;
+    drawFrame(textId, draw);
+    CHECK(textBytes(textId) == inLarger);
+
+    draw.font=gweni::test::openSans();
+    drawFrame(textId, draw);
+    CHECK(textBytes(textId) == inBase);
+
+    renderer.releaseTextPrimitive(textId);
+    emptyFrame();
+    renderer.freeFont(larger);
+}
+
+TEST_CASE("Text run: a hidden run stays hidden through a re-offset and a rebuild")
+{
+    OpenGLCore &renderer=gweni::test::gpuRenderer();
+    TextDraw draw=baseDraw();
+    size_t textId=0;
+
+    renderer.generateTextPrimitive(textId);
+    REQUIRE(drawnPixelsOf(textId, draw) > 20);
+
+    renderer.hideText(textId);
+    CHECK(drawnPixelsOf(textId, draw) == 0);
+
+    SUBCASE("zIndex re-offset")
+    {
+        draw.zIndex=9;
+    }
+
+    SUBCASE("colour rebuild")
+    {
+        draw.color=colorB;
+    }
+
+    SUBCASE("zIndex and colour together")
+    {
+        draw.zIndex=9;
+        draw.color=colorB;
+    }
+
+    CHECK(drawnPixelsOf(textId, draw) == 0);
+
+    const std::vector<uint8_t> hidden=textBytes(textId);
+
+    REQUIRE(!hidden.empty());
+    CHECK(hidden[0] == 1);
+
+    renderer.showText(textId);
+    CHECK(drawnPixelsOf(textId, draw) > 20);
+    CHECK(textBytes(textId) == freshLayout(draw));
+
+    renderer.releaseTextPrimitive(textId);
+    emptyFrame();
+}
+
+TEST_CASE("Text run: the same call in the next frame writes and uploads nothing")
+{
+    OpenGLCore &renderer=gweni::test::gpuRenderer();
+    const TextDraw draw=baseDraw();
+    size_t textId=0;
+
+    renderer.generateTextPrimitive(textId);
+    drawFrame(textId, draw);
+    REQUIRE(renderer.getFrameStats().textSlotsWritten > 0);
+
+    drawFrame(textId, draw);
+    CHECK(renderer.getFrameStats().textSlotsWritten == 0);
+    CHECK(renderer.getFrameStats().primitiveSlotsWritten == 0);
+    CHECK(renderer.getFrameStats().uploadBytes == 0);
+    CHECK(renderer.getFrameStats().atlasUploadBytes == 0);
+
+    renderer.releaseTextPrimitive(textId);
+    emptyFrame();
+}
+
+TEST_CASE("Text run: a Button's label takes the Disabled text colour and gives it back")
+{
+    OpenGLCore &renderer=gweni::test::gpuRenderer();
+    const Point viewSize=gweni::test::viewSize();
+
+    std::set<size_t> textIdsBefore;
+
+    for(const auto &entry:renderer.snapshotMirror().texts)
+        textIdsBefore.insert(entry.first);
+
+    gweni::skin::textured::TexturedSkin *skin=new gweni::skin::textured::TexturedSkin(&renderer);
+
+    skin->init("resources/DefaultSkin.json");
+    skin->setDefaultFont("resources/OpenSans.ttf", 11);
+
+    gweni::controls::Canvas *canvas=new gweni::controls::Canvas(skin);
+
+    canvas->setSize(viewSize.x, viewSize.y);
+
+    gweni::controls::Button *button=canvas->newChild<gweni::controls::Button>();
+
+    button->setText("Disable me");
+    button->setBounds(10, 10, 160, 30);
+
+    const auto frame=[canvas]()
+    {
+        canvas->updateCanvas();
+        canvas->renderCanvas();
+    };
+
+    // the label's run is the one text id this canvas made
+    const auto labelBytes=[&]()
+    {
+        std::vector<std::vector<uint8_t>> runs;
+
+        for(const auto &entry:renderer.snapshotMirror().texts)
+        {
+            if(textIdsBefore.count(entry.first) == 0)
+                runs.push_back(entry.second);
+        }
+        REQUIRE(runs.size() == 1);
+        return runs.front();
+    };
+
+    const Color normal=skin->Colors.Button.Normal;
+    const Color disabled=skin->Colors.Button.Disabled;
+
+    REQUIRE(!(normal == disabled));
+
+    frame();
+    frame();
+    CHECK(glyphsHaveColor(labelBytes(), normal));
+
+    button->setDisabled(true);
+    frame();
+    CHECK(glyphsHaveColor(labelBytes(), disabled));
+
+    button->setDisabled(false);
+    frame();
+    CHECK(glyphsHaveColor(labelBytes(), normal));
+
+    delete canvas;
+    delete skin;
+    emptyFrame();
+}

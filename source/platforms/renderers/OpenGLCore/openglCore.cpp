@@ -1944,12 +1944,16 @@ void OpenGLCore::renderText(size_t textId, const gweni::Font &font, gweni::Point
 
     translate(pos.x, pos.y);
 
-    if(run.text == text)
+    // The colour the rebuild below bakes into the glyphs. Its alpha is always
+    // opaque, so the draw colour's alpha takes no part: a change in alpha alone
+    // would rebuild the run into the same bytes.
+    const gweni::Color color(m_color.r, m_color.g, m_color.b, 255);
+
+    // Same string, font and colour: the glyphs are the ones already there, at
+    // most offset. Anything else falls through to the full rebuild.
+    if((run.text == text) && (run.font == font) && (run.color == color))
     {
-        // String hasn't changed: at most offset the run that is already there.
-        // A zIndex that changed on its own is not acted on, as it was not before
-        // this rewrite either; the run keeps the depth it was last laid out at.
-        if((pos.x != run.position.x) || (pos.y != run.position.y))
+        if((pos.x != run.position.x) || (pos.y != run.position.y) || (zIndex != run.zIndex))
         {
             const gweni::Point delta=pos-run.position;
             const float zDelta=run.glyphs?1.0f/run.glyphs:0.0f;
@@ -1976,6 +1980,7 @@ void OpenGLCore::renderText(size_t textId, const gweni::Font &font, gweni::Point
 
             markTextVertexes(run);
             run.position=pos;
+            run.zIndex=zIndex;
         }
 
         // the region can change with or without a move; an unchanged box marks nothing
@@ -1993,10 +1998,10 @@ void OpenGLCore::renderText(size_t textId, const gweni::Font &font, gweni::Point
     // Bake the current draw color (set by the control's text renderer from its
     // text color) into the glyphs, so per-control text colors actually apply
     // instead of the static black the markup was initialised with.
-    fontData.markup.foreground_color.r=m_color.r/255.0f;
-    fontData.markup.foreground_color.g=m_color.g/255.0f;
-    fontData.markup.foreground_color.b=m_color.b/255.0f;
-    fontData.markup.foreground_color.a=1.0f;
+    fontData.markup.foreground_color.r=color.r/255.0f;
+    fontData.markup.foreground_color.g=color.g/255.0f;
+    fontData.markup.foreground_color.b=color.b/255.0f;
+    fontData.markup.foreground_color.a=color.a/255.0f;
 
     //the length is in codepoints, not bytes: text.length() overran the string for
     //anything non-ASCII and drew whatever followed it in memory as glyphs
@@ -2008,8 +2013,12 @@ void OpenGLCore::renderText(size_t textId, const gweni::Font &font, gweni::Point
     //with every markup decoration off, freetype-gl emits exactly one quad per glyph
     const size_t glyphCount=indexes->size/6;
 
+    // hidden is left as it is: writeTextIndexes below keeps a hidden run blank
     run.text=text;
     run.position=pos;
+    run.zIndex=zIndex;
+    run.font=font;
+    run.color=color;
     allocateTextRun(run, glyphCount);
 
     ftgl::glyph_vertex_t *vertexBuffer=(ftgl::glyph_vertex_t *)vertexes->items;

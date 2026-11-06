@@ -424,14 +424,21 @@ private:
     //! Only the first `glyphs` of them are in use; the tail, and the whole run
     //! while it is hidden, carries degenerate (all-zero) indexes so it draws
     //! nothing. One run is therefore one dirty range per buffer for the upload.
+    //
+    //! text, font and color are what the glyphs were laid out from: renderText
+    //! rebuilds the run when any of them changes, and only re-offsets it when
+    //! just position or zIndex did.
     struct TextRun
     {
         size_t start=0;
         size_t capacity=0;
         size_t glyphs=0;
         gweni::Point position{0, 0};
+        int zIndex=0;
         bool hidden=false;
         std::string text;
+        gweni::Font font;
+        gweni::Color color;
     };
 
     //! Gives the run at least `glyphs` slots, keeping its current ones when they
