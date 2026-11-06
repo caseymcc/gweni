@@ -2529,8 +2529,11 @@ gweni::Point OpenGLCore::measureText(const gweni::Font &font, const gweni::Strin
         const gweni::Point sz=layoutSdfText(fontData, font.size*scale(), text, gweni::Color(), nullptr);
 
         if(textDebugMatches(text))
-            ::printf("[measure] \"%s\" sdf font.size=%f scale=%f base=%f => sz.x=%d sz.y=%d\n",
-                text.c_str(), (double)font.size, (double)scale(), (double)fontData.baseSize, sz.x, sz.y);
+            ::printf("[measure] \"%s\" sdf font.size=%f scale=%f base=%f => sz.x=%d sz.y=%d"
+                " (atlas %zux%zu used=%zu glyphs=%zu)\n",
+                text.c_str(), (double)font.size, (double)scale(), (double)fontData.baseSize, sz.x, sz.y,
+                fontData.atlas->width, fontData.atlas->height, fontData.atlas->used,
+                fontData.textureFont->glyphs->size);
         return sz;
     }
 
