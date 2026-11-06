@@ -46,6 +46,7 @@
 #include FT_FREETYPE_H
 #include <freetype-gl/freetype-gl.h>
 #include <freetype-gl/text-buffer.h>
+#include <freetype-gl/utf8-utils.h>
 
 #include <iostream>
 #define GLM_ENABLE_EXPERIMENTAL
@@ -1709,7 +1710,9 @@ void OpenGLCore::renderText(size_t textId, const gweni::Font &font, gweni::Point
     fontData.markup.foreground_color.b=m_color.b/255.0f;
     fontData.markup.foreground_color.a=1.0f;
 
-    ftgl::text_buffer_add_text(textBuffer, &pen, &fontData.markup, text.c_str(), text.length());
+    //the length is in codepoints, not bytes: text.length() overran the string for
+    //anything non-ASCII and drew whatever followed it in memory as glyphs
+    ftgl::text_buffer_add_text(textBuffer, &pen, &fontData.markup, text.c_str(), ftgl::utf8_strlen(text.c_str()));
 
     ftgl::vector_t *indexes=textBuffer->buffer->indices;
     ftgl::vector_t *vertexes=textBuffer->buffer->vertices;
@@ -1865,7 +1868,8 @@ gweni::Point OpenGLCore::measureText(const gweni::Font &font, const gweni::Strin
     ftgl::text_buffer_t *textBuffer=ftgl::text_buffer_new();
     ftgl::vec2 pen={0.f, 0.f};
 
-    ftgl::text_buffer_add_text(textBuffer, &pen, &fontData.markup, text.c_str(), text.length());
+    //codepoints, as in renderText
+    ftgl::text_buffer_add_text(textBuffer, &pen, &fontData.markup, text.c_str(), ftgl::utf8_strlen(text.c_str()));
 
     ftgl::vector_t *vertices=textBuffer->buffer->vertices;
     float *verticesBuffer=(float *)vertices->items;
