@@ -1624,7 +1624,7 @@ void Base::arrange(skin::Base *skin, Dim dim)
     // height before arranging it, and a new one invalidates it again (as
     // placement, see onBoundsChanged), so layout() runs a second time here
     // with both final. What it computes in X must depend on the width only,
-    // so the second run writes the same X geometry.
+    // so the second run writes the same X geometry (docs/layout.md).
     if(needsLayout())
     {
         m_needsLayout=false;

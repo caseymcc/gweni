@@ -25,10 +25,13 @@ GWENI_CONTROL_CONSTRUCTOR(TabButton)
     dragAndDrop_setPackage(true, "TabButtonMove");
     setAlignment(Alignment::Top|Alignment::Left);
     setTextPadding(Padding(2, 2, 2, 2));
+    // The text stays where sizeToContents() puts it, inside the padding; the
+    // alignment rules would place it at the button's edge.
+    setTextAlignment(Alignment::Absolute);
 }
 
-// The padding follows the side the strip is docked on. Set before this
-// button is measured, which counts it.
+// The padding follows the side the strip is docked on, and the text sits
+// inside it. Set before this button is measured, which counts them.
 void TabButton::calculateSize(skin::Base *skin, Dim dim)
 {
     if(dim == Dim::X)
@@ -42,6 +45,8 @@ void TabButton::calculateSize(skin::Base *skin, Dim dim)
             setPadding(Padding(3, 3, 5, 2));
         else
             setPadding(Padding(3, 2, 5, 2));
+
+        sizeToContents();
     }
 
     ParentClass::calculateSize(skin, dim);

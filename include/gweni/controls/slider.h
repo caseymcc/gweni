@@ -53,6 +53,7 @@ class GWENI_EXPORT Slider: public Base
 
 public:
     //void render(skin::Base *skin) override=0;
+    void calculateSize(skin::Base *skin, Dim dim) override;
     void layout(skin::Base *skin) override;
 
     //! The notches are drawn only while the value is clamped to them.

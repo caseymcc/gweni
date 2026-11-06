@@ -29,6 +29,7 @@ public:
     //void render(skin::Base *skin) override;
     void renderUnder(skin::Base *skin) override;
 
+    void calculateSize(skin::Base *skin, Dim dim) override;
     void layout(skin::Base *skin) override;
 
     virtual MenuItem *addItem(const String &name,

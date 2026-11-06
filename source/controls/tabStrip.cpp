@@ -91,7 +91,6 @@ void TabStrip::placeButtons()
         if(!button)
             continue;
 
-        button->sizeToContents();
         Margin m;
         int iNotFirst=num > 0?-1:0;
 

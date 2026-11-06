@@ -34,27 +34,29 @@ void Menu::renderUnder(skin::Base *skin)
 //    skin->drawControl(this);
 }
 
+// As high as its items, which are docked Top, up to the canvas's height: a
+// preferred height its parent gives it, not a resize from its own layout.
+void Menu::calculateSize(skin::Base *skin, Dim dim)
+{
+    ParentClass::calculateSize(skin, dim);
+
+    if(dim == Dim::Y)
+        m_preferredSize.height=std::min(m_preferredSize.height, getCanvas()->getHeight());
+}
+
 void Menu::layout(skin::Base *skin)
 {
-    int menuHeight=0;
+    // if tall menu descends off screen then move it up. Only the position
+    // changes, which nothing laid out in this pass has read.
+    const int menuHeight=getPreferredSize().height;
 
-    for(auto &&child : m_innerPanel->getChildren())
-    {
-        if(child)
-            menuHeight+=child->getHeight();
-    }
-
-    // if tall menu descends off screen then clamp to screen height
     if(getY() + menuHeight > getCanvas()->getHeight())
     {
         const int dy=getCanvas()->getHeight() - getY();
         const int ytop=std::max(getY() - dy, 0);
 
         setPos(getX(), ytop);
-        menuHeight=std::min(menuHeight, getCanvas()->getHeight());
     }
-
-    setSize(getWidth(), menuHeight);
 
     ParentClass::layout(skin);
 }
