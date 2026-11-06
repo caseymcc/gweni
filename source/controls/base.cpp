@@ -224,6 +224,19 @@ Canvas *Base::getCanvas()
     return canvas->getCanvas();
 }
 
+void Base::redraw()
+{
+    updateColors();
+    m_cacheTextureDirty=true;
+    addStateChange(StateChange_Background);
+
+    // One hop to the canvas instead of walking the ancestors: their colors do
+    // not depend on this control's state, and re-running updateColors() on
+    // each of them dirtied their text whenever a descendant was hovered.
+    if(Canvas *canvas=getCanvas())
+        canvas->redraw();
+}
+
 void Base::setParent(Base *parent)
 {
     if(m_parent == parent)
@@ -913,10 +926,6 @@ void Base::doRender(skin::Base *skin)
     // Do think
     //think();
 
-    if(m_stateChange && StateChange_Created)
-    {
-    }
-
 //    if(baseRenderer->getCTT() && isCachedToTexture())
 //    {
 //        doCacheRender(skin, this);
@@ -1120,10 +1129,17 @@ void Base::focus()
     if(KeyboardFocus == this)
         return;
 
-    if(KeyboardFocus)
-        KeyboardFocus->onLostKeyboardFocus();
+    Base *previous=KeyboardFocus;
+    if(previous)
+        previous->onLostKeyboardFocus();
 
     KeyboardFocus=this;
+
+    // The outgoing holder repaints too, once KeyboardFocus has moved on, so its
+    // skin stops picking the focused look.
+    if(previous)
+        previous->redraw();
+
     onKeyboardFocus();
     redraw();
 }

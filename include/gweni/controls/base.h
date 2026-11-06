@@ -473,14 +473,13 @@ public:
         return m_disabled;
     }
 
-    virtual void redraw()
-    {
-        updateColors();
-        m_cacheTextureDirty=true;
-
-        if(m_parent)
-            m_parent->redraw();
-    }
+    //! Repaints this control: re-picks its colors and marks its background
+    //! dirty, so the skin's update() re-emits it on the next render. Only this
+    //! control is marked, plus the canvas's needsRedraw() flag. Call it from
+    //! the update phase (input, think, layout); doRender() clears the state
+    //! change once the subtree has rendered, so one issued while rendering is
+    //! lost.
+    virtual void redraw();
 
     virtual void updateColors() {}
 
