@@ -114,7 +114,7 @@ on an OpenGL 3.3 core profile:
   the border color as flat ones. `lx/ly` (the local position from the rect's centre),
   `radius`, `border`, color1, the border color and color3 are 0 except for the styles
   that use them. `style` selects the shader path: `0` = hidden (degenerate), `1` = solid
-  color (color0), `2` = textured, `3` = unused (it was a text glyph; text has its own
+  color (color0), `2` = image (`drawTexturedRect`, below), `3` = unused (it was a text glyph; text has its own
   program, below), `4` = SDF rounded rect
   (`drawRoundedRect`: vertical gradient color0 → color1, border), `5` = SDF icon glyph
   (`drawIcon`), `6` = SDF bilinear fill (`drawBilinearRect`: each vertex carries its
@@ -128,6 +128,18 @@ on an OpenGL 3.3 core profile:
   leaving geometry in place.
 - `drawFilledRect()`/`drawTexturedRect()` write the 4 vertices + 6 indices for a quad
   into that id's slot in the CPU mirror.
+- **Images (style 2) in the one draw.** `drawTexturedRect` takes a texture loaded on its
+  own (`loadTexture`, e.g. an `ImagePanel`'s `gwen.png`), not a region of the skin atlas.
+  Its UVs are 0..1 and stored in `tx/ty` as 0..65535; the draw colour is its tint (color1,
+  alpha included), and `radius` holds the slot's **image unit**: one of 8 texture units
+  (`GL_TEXTURE2` on, `OpenGLCore::ImageUnits`), all bound for the primitive draw, which
+  the fragment shader picks with a constant-indexed switch over `images[8]`. A texture
+  takes a unit on its first draw and keeps it until `freeTexture`, because a slot keeps
+  its unit across frames. With all 8 in use, a further texture draws the missing image
+  (`drawMissingImage`, a red fill) and logs once. A fully transparent texel is discarded,
+  so it writes no depth; a partly transparent one still depends on slot order, which is
+  why `ImagePanel` takes its primitive id on its first render, after its parent's skin
+  took its own. Textures are mipmapped and clamped to edge.
 - Because the CPU mirror is persistent, a control that didn't change leaves its slot
   untouched between frames; its geometry is still in the buffer.
 - A single shader pair (vertex + fragment) draws all non-text primitives; an ortho
