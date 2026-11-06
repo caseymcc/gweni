@@ -54,6 +54,7 @@ public:
         return static_cast<int>(m_string.size());
     }
 
+    //! Wrapped, the lines take the colour too: they draw the string.
     virtual void setTextColor(const gweni::Color &col)
     {
         if(m_color == col)
@@ -61,6 +62,9 @@ public:
 
         m_color=col;
         addStateChange(controls::StateChange_Text);
+
+        for(auto &&line : m_lines)
+            line->setTextColor(col);
     }
 
     virtual const gweni::Color &getTextColor()
@@ -71,6 +75,9 @@ public:
     virtual void setTextColorOverride(const gweni::Color &col)
     {
         m_colorOverride=col;
+
+        for(auto &&line : m_lines)
+            line->setTextColorOverride(col);
     }
 
     virtual const gweni::Color &getTextColorOverride()
@@ -87,7 +94,7 @@ public:
 
     virtual void textChanged()
     {
-        m_textChanged=true;
+        m_linesStale=true;
     }
 
     virtual bool wrap()
@@ -100,7 +107,7 @@ public:
         if(m_wrap == b)
             return;
 
-        m_wrap=b; m_textChanged=true; invalidate();
+        m_wrap=b; m_linesStale=true; invalidate();
     }
 
     //! Wrapped lines are child Texts whose strings have no '\n'; character
@@ -142,7 +149,14 @@ private:
     //! Breaks m_string into lines no wider than w ('\n' always breaks one).
     void wrapLines(int w, std::vector<WrappedLine> &lines);
 
+    //! Wraps the string at wrapWidth(); with update, makes the line children
+    //! match, reusing the ones there are. Does nothing while the inputs the
+    //! lines were built from are unchanged (linesCurrent()).
     virtual Size RefreshSizeWrap(bool update=true);
+    //! Whether the lines were wrapped from this string, font and width.
+    bool linesCurrent(int width) const;
+    //! Drops the lines past the first count.
+    void removeLines(size_t count);
     //! The width wrapped lines break at: the parent's, less its padding.
     int wrapWidth();
     //! The height of a wrapped line, the row each one is placed on.
@@ -153,12 +167,15 @@ private:
     gweni::Color m_color;
     gweni::Color m_colorOverride;
 
-    // Initialised here: the constructor's setWrap(false) reads m_wrap, and a
-    // Text whose string is never set relies on m_textChanged to get measured.
+    // Initialised here: the constructor's setWrap(false) reads m_wrap.
     bool m_wrap=false;
-    bool m_textChanged=true;
-    //! The wrapWidth() the current lines were built at.
+    //! Set by setText, setFont and setWrap: the lines are not of this string.
+    bool m_linesStale=true;
+    //! The width and font the current lines were wrapped at. The font is kept
+    //! by value as well, as one can change size in place (setDefaultFont).
     int m_wrappedWidth=-1;
+    const gweni::Font *m_wrappedFont=nullptr;
+    gweni::Font m_wrappedFontValue;
 //    size_t m_textId;
 
     //! The line children, top to bottom, and the source length of each

@@ -59,7 +59,7 @@ void Text::setFont(const gweni::Font &font)
     addStateChange(controls::StateChange_Text);
 
     m_font=&font;
-    m_textChanged=true;
+    m_linesStale=true;
     // Change the font of multilines too!
     for(auto &&line : m_lines)
     {
@@ -77,7 +77,7 @@ void Text::setText(const String &str)
     addStateChange(controls::StateChange_Text);
 
     m_string=str;
-    m_textChanged=true;
+    m_linesStale=true;
     // Its size, and wrapped its lines, come from the string: lay it out again.
     invalidate();
 }
@@ -240,27 +240,29 @@ void Text::calculateSize(skin::Base *skin, Dim dim)
 }
 
 // Wrapped text breaks its lines at its parent's inner width, which is final
-// once the parent was arranged in X, so the lines are rebuilt at the start of
-// this control's X arrange when the string, the font or that width changed.
-// They are new children this pass lays out next, X and Y, so building them is
-// placement.
+// once the parent was arranged in X, so the lines are brought up to date at
+// the start of this control's X arrange when the string, the font or that
+// width changed. Lines added there are children this pass lays out next, X
+// and Y, so building them is placement. Unwrapped, it has no lines.
 void Text::arrange(skin::Base *skin, Dim dim)
 {
     if(dim == Dim::X)
     {
         if(m_wrap)
         {
-            const int width=wrapWidth();
-
-            if(m_textChanged || width != m_wrappedWidth)
+            if(!linesCurrent(wrapWidth()))
             {
                 PlacementScope placement;
 
                 RefreshSizeWrap(true);
-                m_wrappedWidth=width;
             }
         }
-        m_textChanged=false;
+        else if(!m_lines.empty())
+        {
+            PlacementScope placement;
+
+            removeLines(0);
+        }
     }
 
     Base::arrange(skin, dim);
@@ -420,6 +422,28 @@ void Text::wrapLines(int w, std::vector<WrappedLine> &lines)
     lines.push_back({strLine, lineLength});
 }
 
+bool Text::linesCurrent(int width) const
+{
+    return !m_linesStale && !m_lines.empty() && width == m_wrappedWidth &&
+        m_font == m_wrappedFont && *m_font == m_wrappedFontValue;
+}
+
+void Text::removeLines(size_t count)
+{
+    while(m_lines.size() > count)
+    {
+        Text *line=m_lines.back();
+
+        m_lines.pop_back();
+        m_lineLengths.pop_back();
+        // ~Base takes it out of the children and gives its ids back.
+        delete line;
+    }
+}
+
+// The lines that are there are given the new strings and rows, which changes
+// nothing (no new text slots) for a line that shows the same text on the same
+// row; only the lines past them are added or deleted.
 Size Text::RefreshSizeWrap(bool update)
 {
     if(!m_font)
@@ -429,46 +453,57 @@ Size Text::RefreshSizeWrap(bool update)
     }
 
     const int w=wrapWidth();
+    const int lineHeight=this->lineHeight();
+
+    if(linesCurrent(w))
+        return Size(w, static_cast<int>(m_lines.size())*lineHeight);
+
     std::vector<WrappedLine> lines;
 
     wrapLines(w, lines);
 
-    const int lineHeight=this->lineHeight();
     const int height=static_cast<int>(lines.size())*lineHeight;
 
     if(!update)
         return Size(w, height);
 
-    removeAllChildren();
-
-    for(auto &&line:m_lines)
-    {
-        delete line;
-    }
-    m_lines.clear();
-    m_lineLengths.clear();
+    removeLines(lines.size());
 
     int y=0;
 
-    for(auto &&line : lines)
+    for(size_t i=0; i < lines.size(); ++i)
     {
-        Text *t=newChild<Text>();
-        t->setFont(getFont());
-        t->setTextColor(TextColor());
-        t->setText(line.text);
-        // Each line stays where it is put; measured here, as it did not
-        // exist when this pass measured the tree.
-        t->setAlignment(Alignment::Absolute);
+        if(i == m_lines.size())
+        {
+            Text *t=newChild<Text>();
+            t->setFont(getFont());
+            t->setTextColor(TextColor());
+            t->setTextColorOverride(m_colorOverride);
+            // Each line stays where it is put; measured here, as it did not
+            // exist when this pass measured the tree.
+            t->setAlignment(Alignment::Absolute);
+
+            m_lines.push_back(t);
+            m_lineLengths.push_back(0);
+        }
+
+        Text *t=m_lines[i];
+
+        t->setText(lines[i].text);
 
         Size size=t->refreshSize();
         size.height=lineHeight;
         t->setPreferredSize(size);
         t->setPos(0, y);
 
-        m_lines.push_back(t);
-        m_lineLengths.push_back(line.length);
+        m_lineLengths[i]=lines[i].length;
         y+=lineHeight;
     }
+
+    m_linesStale=false;
+    m_wrappedWidth=w;
+    m_wrappedFont=m_font;
+    m_wrappedFontValue=*m_font;
 
     // The parent's width and the height of the lines, the same as the
     // preferred size calculateSize gets from this function.

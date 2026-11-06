@@ -128,10 +128,13 @@ TreeNode's toggle), not resize one.
   it asks for.
 * **Text** never resizes itself: it is the size of its string, which its
   parent gives it (`Text::policyResize`). Wrapped, it asks for its parent's
-  requested width, is laid out at its parent's width, and rebuilds its line
-  children at the start of its X arrange when the string or that width
-  changed. `setText` invalidates layout, so an edit is laid out (and
-  re-wrapped) by the next frame. Each line is an `Alignment::Absolute` child
+  requested width, is laid out at its parent's width, and updates its line
+  children at the start of its X arrange when the string, the font (pointer
+  or value), the wrap flag or that width changed (`Text::linesCurrent`). The
+  lines there are reused: each gets its new string and row, which writes
+  nothing for a line that did not change, and only the extra lines are
+  created or the surplus ones deleted. `setText` invalidates layout, so an
+  edit is laid out (and re-wrapped) by the next frame. Each line is an `Alignment::Absolute` child
   placed at `(0, i * lineHeight)` and given that row height, an empty line
   included; its string has no `'\n'` (freetype-gl would break the run there),
   and the parent keeps how many characters of its string each line holds, the
