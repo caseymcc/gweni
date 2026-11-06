@@ -15,6 +15,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <cstdlib>
+#include <limits>
 #include <string>
 #include <utility>
 
@@ -48,8 +49,8 @@ struct GLTextureData: public gweni::TextureData
 
     ~GLTextureData();
 
-    unsigned int m_textureId;
-    unsigned int m_index;
+    unsigned int m_textureId{0};
+    size_t m_index{std::numeric_limits<size_t>::max()};
     //                deleted_unique_ptr<unsigned char> m_ReadData;
     std::vector<unsigned char> m_readData;
 };
@@ -176,6 +177,11 @@ public:
     TextureData getTextureData(const gweni::Texture &texture) const override;
     bool ensureTexture(const gweni::Texture &texture) override;
     GLTextureData *getFreeTextureData();
+
+    //! GL name of a loaded texture, 0 if it is not loaded
+    unsigned int getTextureName(const gweni::Texture &texture) const;
+    //! GL name of a loaded font's glyph atlas, 0 if the font is not loaded
+    unsigned int getFontAtlasName(const gweni::Font &font) const;
 
 protected:// Resourses
 

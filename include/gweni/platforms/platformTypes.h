@@ -365,7 +365,7 @@ struct Texture
 struct TextureData
 {
     TextureData()
-        : width{0.f}, height{0.f}
+        : width{0.f}, height{0.f}, readable{false}
     {}
 
     float width;

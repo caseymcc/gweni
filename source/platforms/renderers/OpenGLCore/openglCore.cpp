@@ -201,6 +201,9 @@ bool OpenGLCore::ensureFont(const Font &font)
 Texture::Status OpenGLCore::loadTexture(Texture &texture)
 {
     freeTexture(texture);
+    // only a successful load hands out a slot; a failed one leaves the texture
+    // unloaded, so it is drawn as missing and freeing it does nothing
+    texture.dataIndex=std::numeric_limits<size_t>::max();
     m_lastTexture=std::numeric_limits<size_t>::max();
 
     const String filename=getResourcePaths().getPath(ResourcePaths::Type::Texture, texture.name);
@@ -291,7 +294,7 @@ void OpenGLCore::freeTexture(const gweni::Texture &texture)
     if((m_lastTexture != std::numeric_limits<size_t>::max()) && (m_lastTexture == texture.dataIndex))
         m_lastTexture=std::numeric_limits<size_t>::max();
 
-    if((texture.dataIndex != std::numeric_limits<size_t>::max()) && (m_textureData[texture.dataIndex]))
+    if((texture.dataIndex < m_textureData.size()) && (m_textureData[texture.dataIndex]))
     {
         m_freeTextureData.push_back(texture.dataIndex);
         delete m_textureData[texture.dataIndex];
@@ -327,6 +330,22 @@ GLTextureData *OpenGLCore::getFreeTextureData()
         m_textureData.back()=textureData;
     }
     return textureData;
+}
+
+unsigned int OpenGLCore::getTextureName(const Texture &texture) const
+{
+    if((texture.dataIndex < m_textureData.size()) && (m_textureData[texture.dataIndex]))
+        return m_textureData[texture.dataIndex]->m_textureId;
+    return 0;
+}
+
+unsigned int OpenGLCore::getFontAtlasName(const Font &font) const
+{
+    auto it=m_fonts.find(font);
+
+    if((it != m_fonts.end()) && (it->second.atlas))
+        return it->second.atlas->id;
+    return 0;
 }
 
 TextureData OpenGLCore::getTextureData(const Texture &texture) const
