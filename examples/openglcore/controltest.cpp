@@ -13,6 +13,12 @@
  *    --shot-dir <dir>   directory for shots, created if missing (default /tmp)
  *    --headless         force the surfaceless EGL context (no display needed)
  *    --stats            print one key=value line per frame; freezes the clock
+ *    --require-one-pass fail the run (exit non-zero) if any frame's layout took
+ *                       more than one update-phase pass or the render phase
+ *                       laid out again; each such frame is named on stderr
+ *                       with its control and the control that re-dirtied
+ *                       layout. Works with any run that renders frames
+ *                       (--control, --scenario, --check-teardown).
  *    --check-teardown   build, render and destroy every control (or only
  *                       --control's), then check that the canvas renders
  *                       byte-identical to the empty canvas it started as.
@@ -266,6 +272,7 @@ static void printUsage(std::ostream &out)
          "  --shot-dir <dir>   directory for shots (default /tmp)\n"
          "  --headless         force the surfaceless EGL context\n"
          "  --stats            print one key=value line per frame\n"
+         "  --require-one-pass fail if a frame's layout takes more than one pass\n"
          "  --check-teardown   check the canvas renders empty again once every\n"
          "                     control has been destroyed; --control narrows it\n"
          "  --trace            log each scripted input on stderr\n"
@@ -296,22 +303,33 @@ using gweni::capture::readFramebufferRgba;
 using gweni::capture::writeFramebufferPng;
 using gweni::capture::writeRgbaPng;
 
+// The control that first re-dirtied layout in a frame, as Type#id, or "none".
+static std::string redirtiedBy(const gweni::controls::LayoutStats &layout)
+{
+    if(!layout.redirtiedType)
+        return "none";
+    return std::string(layout.redirtiedType)+"#"+std::to_string(layout.redirtiedId);
+}
+
 // One grep-able line per frame, frame index first. The renderer numbers are read
 // after renderCanvas(), so they describe the frame just flushed.
 static void printFrameStats(int frame, const std::string &control,
     const gweni::controls::ChangeStats &changes,
-    const gweni::renderer::OpenGLCore::FrameStats &gpu)
+    const gweni::renderer::OpenGLCore::FrameStats &gpu,
+    const gweni::controls::LayoutStats &layout)
 {
     std::printf("frame=%d control=%s controls_changed=%zu created=%zu visibility=%zu"
         " geometry=%zu background=%zu text=%zu prim_slots_written=%zu text_slots_written=%zu"
         " upload_calls=%zu upload_bytes=%zu mirror_bytes=%zu draw_calls=%zu"
-        " atlas_upload_calls=%zu atlas_upload_bytes=%zu\n",
+        " atlas_upload_calls=%zu atlas_upload_bytes=%zu"
+        " layout_passes=%d redirtied_by=%s render_layout=%d\n",
         frame, control.c_str(),
         changes.controls, changes.created, changes.visibility,
         changes.geometry, changes.background, changes.text,
         gpu.primitiveSlotsWritten, gpu.textSlotsWritten,
         gpu.uploadCalls, gpu.uploadBytes, gpu.mirrorBytes, gpu.drawCalls,
-        gpu.atlasUploadCalls, gpu.atlasUploadBytes);
+        gpu.atlasUploadCalls, gpu.atlasUploadBytes,
+        layout.passes, redirtiedBy(layout).c_str(), layout.renderLayout ? 1 : 0);
     std::fflush(stdout);
 }
 
@@ -360,6 +378,8 @@ struct Session
     gweni::Point size;
     bool stats=false;
     bool freezeClock=false;             // as under --stats, without the lines
+    bool requireOnePass=false;          // --require-one-pass
+    int multiPassFrames=0;              // frames that broke it
     bool trace=false;
     bool writePng=true;
     int frames=3;                       // --frames: the scenarios' settle count
@@ -485,6 +505,22 @@ static bool dumpBoundsTo(Session &s, const std::string &path)
     return true;
 }
 
+// --require-one-pass: a frame whose layout did not converge in its first pass
+// is named on stderr and fails the run at exit.
+static void checkOnePass(Session &s, const std::string &frame)
+{
+    const gweni::controls::LayoutStats &layout=s.canvas->getLayoutStats();
+    if(!s.requireOnePass || (layout.passes <= 1 && !layout.renderLayout))
+        return;
+
+    ++s.multiPassFrames;
+    std::cerr<<"ControlTest: layout took more than one pass: control="<<s.label
+             <<" frame="<<frame<<" layout_passes="<<layout.passes
+             <<" render_layout="<<(layout.renderLayout ? 1 : 0)
+             <<" redirtied_by="<<redirtiedBy(layout)
+             <<(layout.capped ? " (capped)" : "")<<"\n";
+}
+
 static void renderFrames(Session &s, int count)
 {
     for(int i=0; i<count; ++i)
@@ -497,7 +533,8 @@ static void renderFrames(Session &s, int count)
 
         if(s.stats)
             printFrameStats(s.frame, s.label, gweni::controls::getChangeStats(),
-                s.renderer->getFrameStats());
+                s.renderer->getFrameStats(), s.canvas->getLayoutStats());
+        checkOnePass(s, std::to_string(s.frame));
 
         ++s.frame;
 
@@ -670,6 +707,7 @@ static void dropControl(Session &s, gweni::controls::Base *control)
 {
     control->delayedDelete();
     s.canvas->updateCanvas();
+    checkOnePass(s, "drop");
 }
 
 //-----------------------------------------------------------------------------
@@ -1460,6 +1498,7 @@ int main(int argc, char *argv[])
     bool shotAll=false;
     bool forceHeadless=false;
     bool stats=false;
+    bool requireOnePass=false;
     bool traceInput=false;
     bool chosenControl=false;
     bool dumpBounds=false;
@@ -1492,6 +1531,7 @@ int main(int argc, char *argv[])
         else if(arg == "--shot-all") shotAll=true;
         else if(arg == "--headless") forceHeadless=true;
         else if(arg == "--stats") stats=true;
+        else if(arg == "--require-one-pass") requireOnePass=true;
         else if(arg == "--check-teardown") checkTeardownMode=true;
         else if(arg == "--trace") traceInput=true;
         else if(arg == "--list"){ printControlNames(std::cout); return EXIT_SUCCESS; }
@@ -1606,7 +1646,7 @@ int main(int argc, char *argv[])
 
     // --stats on its own still renders offscreen; it just keeps no PNG.
     const bool writingPng=shotAll || !shotPath.empty() || scenario != Scenario::None;
-    const bool capturing=writingPng || stats || scripted || dumpBounds
+    const bool capturing=writingPng || stats || requireOnePass || scripted || dumpBounds
         || checkTeardownMode || scenario != Scenario::None;
 
     // The two fixed-size scenarios say what they render at, so start there
@@ -1622,7 +1662,7 @@ int main(int argc, char *argv[])
     if(forceHeadless && !capturing)
     {
         std::cerr<<"ControlTest: --headless has no window to show;"
-                   " pass --shot, --shot-all, --stats or --check-teardown\n";
+                   " pass --shot, --shot-all, --stats, --require-one-pass or --check-teardown\n";
         return EXIT_FAILURE;
     }
 
@@ -1703,6 +1743,7 @@ int main(int argc, char *argv[])
         session.fb=&fb;
         session.size=screenSize;
         session.stats=stats;
+        session.requireOnePass=requireOnePass;
         session.trace=traceInput;
         session.writePng=writingPng;
         session.frames=frames;
@@ -1780,6 +1821,13 @@ int main(int argc, char *argv[])
                 dropControl(session, control);
             }
             break;
+        }
+
+        if(session.multiPassFrames > 0)
+        {
+            std::cerr<<"ControlTest: "<<session.multiPassFrames
+                     <<" frame(s) took more than one layout pass\n";
+            ok=false;
         }
 
         if(!ok)

@@ -16,6 +16,9 @@
 #endif
 
 #include <cctype>
+#include <cstdio>
+#include <set>
+#include <string>
 
 namespace gweni
 {
@@ -52,7 +55,7 @@ void Canvas::renderCanvas()
 {
     renderer::Base *render=m_skin->getRenderer();
     render->begin();
-    recurseLayout(m_skin);
+    renderPhaseLayout();
     render->setClipRegion(getBounds());
     render->setRenderOffset(Point(0, 0));
     render->setScale(scale());
@@ -83,6 +86,7 @@ void Canvas::onBoundsChanged(Rect oldBounds)
 
 void Canvas::doThink()
 {
+    m_layoutStats=LayoutStats();
     processDelayedDeletes();
 
     if(hidden())
@@ -98,7 +102,7 @@ void Canvas::doThink()
     }
     processDelayedDeletes();
     // Check has focus etc..
-    recurseLayout(m_skin);
+    layoutCanvas();
 
     // If we didn't have a next tab, cycle to the start.
     if(m_nextTab == nullptr)
@@ -107,6 +111,87 @@ void Canvas::doThink()
     input::onCanvasThink(this);
 
     Base::doThink();
+}
+
+Canvas *Canvas::s_layingOut=nullptr;
+unsigned Canvas::s_passSerial=0;
+
+void Canvas::layoutPass()
+{
+    m_passRedirtied=false;
+    m_passCulpritType=nullptr;
+    m_passCulpritId=0;
+
+    Canvas *outer=s_layingOut;
+    s_layingOut=this;
+    ++s_passSerial;
+    m_inLayout=true;
+    recurseLayout(m_skin);
+    m_inLayout=false;
+    s_layingOut=outer;
+
+    // recurseLayout cleared m_updateLayout as it started, and every layout
+    // invalidation since has set it again on its way up. Only the ones Base
+    // reported as re-dirtying ask for another pass; the rest were requests
+    // this pass consumed after they were raised (see Base::invalidate).
+    m_updateLayout=m_passRedirtied;
+}
+
+void Canvas::layoutCanvas()
+{
+    static std::set<std::string> warnedCapped;
+
+    while(m_updateLayout && !hidden())
+    {
+        if(m_layoutStats.passes == MaxLayoutPasses)
+        {
+            m_layoutStats.capped=true;
+            if(warnedCapped.insert(m_passCulpritType).second)
+                std::fprintf(stderr, "gweni: layout still dirty after %d passes in one frame,"
+                    " re-dirtied by %s#%zu; the rest is left to the next frame"
+                    " (warned once per control type)\n",
+                    MaxLayoutPasses, m_passCulpritType, m_passCulpritId);
+            break;
+        }
+
+        layoutPass();
+        ++m_layoutStats.passes;
+
+        if(m_passRedirtied && !m_layoutStats.redirtiedType)
+        {
+            m_layoutStats.redirtiedType=m_passCulpritType;
+            m_layoutStats.redirtiedId=m_passCulpritId;
+        }
+    }
+}
+
+void Canvas::renderPhaseLayout()
+{
+    if(!m_updateLayout || hidden())
+        return;
+
+    m_layoutStats.renderLayout=true;
+    layoutPass();
+}
+
+void Canvas::layoutInvalidated(controls::Base *control)
+{
+    if(m_passRedirtied)
+        return;
+
+    m_passRedirtied=true;
+    m_passCulpritType=control->getTypeName();
+    m_passCulpritId=control->getControlId();
+
+#ifndef NDEBUG
+    // Once per type, so an app author sees which of their controls lean on the
+    // loop without a line per frame.
+    static std::set<std::string> warned;
+    if(warned.insert(m_passCulpritType).second)
+        std::fprintf(stderr, "gweni: %s#%zu re-dirtied layout during a layout pass,"
+            " so the canvas lays out again (warned once per control type)\n",
+            m_passCulpritType, m_passCulpritId);
+#endif
 }
 
 void Canvas::setScale(float f)

@@ -121,6 +121,9 @@ void Base::init(const String &name)
     setName(name);
 //    setParent(parent);
     m_hidden=false;
+    // Read by the skin when a control created by the render phase's layout is
+    // drawn before updateRecursive() has numbered it.
+    m_zIndex=0;
     m_bounds=Rect(0, 0, 10, 10);
     m_padding=Padding(0, 0, 0, 0);
     m_margin=Margin(0, 0, 0, 0);
@@ -193,6 +196,36 @@ Base::~Base()
     removeSkinControl();
 }
 
+namespace
+{
+// Set while setBounds() invalidates for its own sake: the control's children,
+// and the control itself once its size changed. Those are placement, which a
+// running layout pass either has still to reach or is reported by setBounds.
+bool g_placement=false;
+// Set while invalidate() walks up to the canvas, so only its first call, the
+// control that asked, is looked at.
+bool g_propagating=false;
+
+struct PlacementScope
+{
+    bool outer=g_placement;
+    PlacementScope() { g_placement=true; }
+    ~PlacementScope() { g_placement=outer; }
+};
+}
+
+bool Base::laidOutThisPass() const
+{
+    return Canvas::s_layingOut && m_layoutPass == Canvas::s_passSerial;
+}
+
+// During a layout pass (Canvas::layoutPass) a layout invalidation either feeds
+// the pass or re-dirties it. Placement feeds it: the pass reaches the control
+// later and lays it out with its new bounds. Anything else raised during the
+// pass (setHidden, setDock, an explicit invalidate() from a layout() or an
+// onChildBoundsChanged()) may change what a control already laid out read, so
+// it re-dirties and the canvas runs another pass. A resize re-dirties only when
+// it hits a control this pass has already laid out; setBounds reports that.
 void Base::invalidate(int state)
 {
     if((state & StateChange_Created) || 
@@ -201,11 +234,17 @@ void Base::invalidate(int state)
     {
         m_needsLayout=true;
         m_updateLayout=true;
+
+        if(Canvas::s_layingOut && !g_propagating && !g_placement)
+            Canvas::s_layingOut->layoutInvalidated(this);
     }
 
     m_cacheTextureDirty=true;
 
+    const bool outer=g_propagating;
+    g_propagating=true;
     invalidateParent(state);
+    g_propagating=outer;
 }
 
 void Base::delayedDelete()
@@ -650,7 +689,13 @@ bool Base::setBounds(const Rect &bounds)
     if(m_bounds == bounds)
         return false;
 
-    invalidateChildren(true);
+    if((m_bounds.w != bounds.w || m_bounds.h != bounds.h) && laidOutThisPass())
+        Canvas::s_layingOut->layoutInvalidated(this);
+
+    {
+        PlacementScope placement;
+        invalidateChildren(true);
+    }
 
     const Rect oldBounds=getBounds();
     m_bounds=bounds;
@@ -709,7 +754,10 @@ void Base::onBoundsChanged(Rect oldBounds)
         getParent()->onChildBoundsChanged(oldBounds, this);
 
     if(m_bounds.w != oldBounds.w || m_bounds.h != oldBounds.h)
+    {
+        PlacementScope placement;
         invalidate();
+    }
 
     //notify children that we moved
     addStateChangeRecursive(StateChange_Geometry);
@@ -1448,6 +1496,11 @@ void Base::policyResize(const Size &limit, Dim dim)
 
 void Base::arrange(skin::Base *skin, Dim dim)
 {
+    // Stamped before layout(), so what it does to this control counts as
+    // done after this control was laid out.
+    if(dim == Dim::X && Canvas::s_layingOut)
+        m_layoutPass=Canvas::s_passSerial;
+
     if(needsLayout())
     {
         m_needsLayout=false;
@@ -1758,6 +1811,10 @@ void Base::recurseLayout(skin::Base *skin)
     if(!m_updateLayout)
         return;
 
+    // Cleared before the pass rather than after it, so an invalidate() raised
+    // while it runs is kept and Canvas::layoutCanvas runs another.
+    m_updateLayout=false;
+
     calculateSize(skin, Dim::X);
     arrange(skin, Dim::X);
     calculateSize(skin, Dim::Y);
@@ -1776,8 +1833,6 @@ void Base::recurseLayout(skin::Base *skin)
 
     if(KeyboardFocus == this)
         getCanvas()->m_nextTab=nullptr;
-
-    m_updateLayout=false;
 }
 
 bool Base::isChild(controls::Base *possiblechild)

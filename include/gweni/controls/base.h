@@ -661,6 +661,10 @@ protected:
     bool m_cacheTextureDirty;
     bool m_cacheToTexture;
     bool m_updateLayout;
+    //! The Canvas::s_passSerial of the last pass that laid this control out.
+    unsigned m_layoutPass=0;
+
+    bool laidOutThisPass() const;
 
     //
     // Drag + Drop

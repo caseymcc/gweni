@@ -17,6 +17,25 @@ namespace gweni
 {
 namespace controls
 {
+
+//! What the canvas's layout did in one frame: the update phase (doThink) and
+//! the render phase (renderCanvas). A frame whose layout converges runs at most
+//! one update-phase pass and none in the render phase.
+struct LayoutStats
+{
+    //! Update-phase passes. 0 on a frame nothing invalidated, 1 when the first
+    //! pass converged, more when a pass re-dirtied layout.
+    int passes=0;
+    //! The first control that re-dirtied layout during an update-phase pass:
+    //! its type name and control id. Null when no pass re-dirtied.
+    const char *redirtiedType=nullptr;
+    size_t redirtiedId=0;
+    //! The update phase stopped at Canvas::MaxLayoutPasses still dirty.
+    bool capped=false;
+    //! renderCanvas's own recurseLayout found layout dirty and ran a pass.
+    bool renderLayout=false;
+};
+
 class GWENI_EXPORT Canvas: public Base, public IInputEvent
 {
 public:
@@ -80,6 +99,23 @@ public:
     controls::Base *m_firstTab;
     controls::Base *m_nextTab;
 
+    /// \sect{Layout}
+    /// A layout pass that re-dirties layout (an invalidate() raised while it
+    /// runs) is followed by another, at most this many per frame. A library
+    /// control converges in one; the loop is a safety net, see docs/layout.md.
+    static constexpr int MaxLayoutPasses=4;
+
+    /// The update phase's layout: passes until one leaves layout clean, at most
+    /// MaxLayoutPasses. doThink() calls it.
+    void layoutCanvas();
+
+    /// True while one of this canvas's layout passes runs.
+    bool inLayout() const { return m_inLayout; }
+
+    /// This frame's layout passes, reset at the start of doThink().
+    const LayoutStats &getLayoutStats() const { return m_layoutStats; }
+    /// \}
+
     /// \sect{Input}
     bool inputMouseMoved(int x, int y, int deltaX, int deltaY) override;
     bool inputMouseButton(int button, bool down) override;
@@ -126,6 +162,27 @@ protected:
     std::set<controls::Base *> m_deleteSet;
     friend class controls::Base;
     void PreDeleteCanvas(controls::Base *);
+
+    /// renderCanvas's own pass, counted in LayoutStats::renderLayout.
+    void renderPhaseLayout();
+    /// One recurseLayout with m_inLayout set.
+    void layoutPass();
+    /// Base's report that `control` re-dirtied layout during the current pass.
+    void layoutInvalidated(controls::Base *control);
+
+    /// The canvas whose pass is running, so Base can report to it without
+    /// walking up to it. Passes do not nest.
+    static Canvas *s_layingOut;
+    /// Numbers every pass of every canvas; Base::arrange stamps it on each
+    /// control it lays out, so a pass can tell what it has already laid out.
+    static unsigned s_passSerial;
+
+    bool m_inLayout=false;
+    LayoutStats m_layoutStats;
+    /// The current pass re-dirtied layout, and the first control that did.
+    bool m_passRedirtied=false;
+    const char *m_passCulpritType=nullptr;
+    size_t m_passCulpritId=0;
 
     bool m_drawBackground;
     gweni::Color m_backgroundColor;

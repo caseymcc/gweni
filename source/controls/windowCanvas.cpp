@@ -151,7 +151,7 @@ void WindowCanvas::renderCanvas()
     if(render->beginContext(this))
     {
         render->begin();
-        recurseLayout(m_skin);
+        renderPhaseLayout();
         render->setClipRegion(getRenderBounds());
         render->setRenderOffset(Point(-getX(), -getY()));
         render->setScale(scale());
