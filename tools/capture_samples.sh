@@ -45,6 +45,7 @@ SAMPLES=(
     PageControlDemo
     ListBoxDemo
     SliderDemo
+    TextDemo
 )
 
 CONTROL_SIZE=640x480
