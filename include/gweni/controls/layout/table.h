@@ -31,6 +31,7 @@ class GWENI_EXPORT TableRow: public Base
         for(int i=0; i < MaxColumns; i++)
         {
             m_columns[i]=nullptr;
+            m_columnWidth[i]=-1;
         }
 
         m_columnCount=0;
@@ -54,6 +55,11 @@ public:
                     m_columns[i]=newChild<Label>();
                     m_columns[i]->setDock(DockPosition::Left);
                     m_columns[i]->setPadding(Padding(3, 3, 3, 3));
+                    // The text stays where sizeToContents() puts it, inside
+                    // the padding; an aligned child would be placed at the
+                    // label's edge.
+                    m_columns[i]->setTextAlignment(Alignment::Absolute);
+                    m_columns[i]->sizeToContents();
                 }
             }
             else if(m_columns[i])
@@ -66,15 +72,35 @@ public:
         }
     }
 
+    //! The width column i is laid out at. The Table sets it while it lays
+    //! itself out, before this row is placed; arrange() hands it to the
+    //! column. -1 leaves the column at its own preferred width.
     void setColumnWidth(int i, int iWidth)
     {
-        if(!m_columns[i])
-            return;
+        m_columnWidth[i]=iWidth;
+    }
 
-        if(m_columns[i]->getWidth() == iWidth)
-            return;
+    // The columns are docked Left, which lays each out at its preferred
+    // width; the X arrange gives that the column's width first. Their
+    // measured width is left as it is for this row's own preferred size, so
+    // the widths a wider table handed out do not feed back into it.
+    void arrange(skin::Base *skin, Dim dim) override
+    {
+        if(dim == Dim::X)
+        {
+            for(int i=0; i < m_columnCount; i++)
+            {
+                if(!m_columns[i] || m_columnWidth[i] < 0)
+                    continue;
 
-        m_columns[i]->setWidth(iWidth);
+                Size preferred=m_columns[i]->getPreferredSize();
+
+                preferred.width=m_columnWidth[i];
+                m_columns[i]->setPreferredSize(preferred);
+            }
+        }
+
+        ParentClass::arrange(skin, dim);
     }
 
     void setCellText(int i, const String &strString)
@@ -83,6 +109,7 @@ public:
             return;
 
         m_columns[i]->setText(strString);
+        m_columns[i]->sizeToContents();
     }
 
     void setCellContents(int i, Base *control, bool bEnableMouseInput=false)
@@ -161,6 +188,7 @@ private:
     bool m_evenRow;
     int m_columnCount;
     Label *m_columns[MaxColumns];
+    int m_columnWidth[MaxColumns];
 
     friend class Table;
 
@@ -287,7 +315,8 @@ public:
             if(!row)
                 continue;
 
-            row->sizeToContents();
+            // Docked Top, a row is as high as its tallest column measures,
+            // so it is not sized here.
             row->setEven(even);
             even=!even;
 

@@ -685,8 +685,11 @@ protected:
     //! included. sizeOfChildren() ends with it.
     int preferredFromContent(int contentSize, Dim dim) const;
 
-    void arrangeHorizontal(skin::Base *skin);
-    void arrangeVertical(skin::Base *skin);
+    //! Place the children along X and Y from their docks, alignments and
+    //! sizes; Base::arrange calls them before arranging each child. A control
+    //! whose layout() places its children itself overrides them to do nothing.
+    virtual void arrangeHorizontal(skin::Base *skin);
+    virtual void arrangeVertical(skin::Base *skin);
 
     virtual void recurseLayout(skin::Base *skin);
     virtual void layout(skin::Base *skin);
@@ -697,12 +700,18 @@ protected:
     bool m_cacheTextureDirty;
     bool m_cacheToTexture;
     bool m_updateLayout;
-    //! The Canvas::s_passSerial of the last pass that laid this control out.
-    unsigned m_layoutPass=0;
+    //! The Canvas::s_passSerial of the last pass that arranged this control
+    //! in X (m_layoutPassX) and in Y (m_layoutPassY).
+    unsigned m_layoutPassX=0;
+    unsigned m_layoutPassY=0;
 
-    bool laidOutThisPass() const;
-    //! Records that the running pass has laid this control out; Base::arrange
-    //! does it at the start of the X pass, before layout().
+    //! Whether the running pass has arranged this control along `dim` yet.
+    bool laidOutThisPass(Dim dim) const;
+    //! Records that the running pass arranges this control along `dim`;
+    //! Base::arrange does it at the start of each axis, before layout().
+    void stampLayoutPass(Dim dim);
+    //! Both axes at once, for a control that arranges itself and its subtree
+    //! in X and Y in one go (ScrollControl's Y arrange).
     void stampLayoutPass();
     //! True while a canvas runs a layout pass.
     static bool inLayoutPass();

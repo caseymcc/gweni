@@ -70,13 +70,6 @@ void MenuItem::render(skin::Base *skin)
 
 void MenuItem::layout(skin::Base *skin)
 {
-    if(m_submenuArrow)
-    {
-        //m_submenuArrow->setPosition(Position::Right|Position::CenterV, 4, 0);
-        m_submenuArrow->setAlignment(Alignment::Right|Alignment::CenterV);
-        m_submenuArrow->setPosition(Position::Absolute, 4, 0);
-    }
-
     ParentClass::layout(skin);
 }
 
@@ -91,6 +84,8 @@ Menu *MenuItem::getMenu()
         {
             m_submenuArrow=newChild<RightArrow>();
             m_submenuArrow->setSize(15, 15);
+            m_submenuArrow->setAlignment(Alignment::Right|Alignment::CenterV);
+            m_submenuArrow->setPosition(Position::Absolute, 4, 0);
         }
 
         invalidate();

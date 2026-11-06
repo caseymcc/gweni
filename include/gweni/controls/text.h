@@ -112,6 +112,7 @@ public:
 
     void calculateSize(skin::Base *skin, Dim dim) override;
     void arrange(skin::Base *skin, Dim dim) override;
+    void policyResize(const Size &preferred, Dim dim) override;
 
 protected:
 
@@ -120,6 +121,8 @@ protected:
 private:
 
     virtual Size RefreshSizeWrap(bool update=true);
+    //! The width wrapped lines break at: the parent's, less its padding.
+    int wrapWidth();
 
     gweni::String m_string;
     const gweni::Font *m_font;
@@ -130,6 +133,8 @@ private:
     // Text whose string is never set relies on m_textChanged to get measured.
     bool m_wrap=false;
     bool m_textChanged=true;
+    //! The wrapWidth() the current lines were built at.
+    int m_wrappedWidth=-1;
 //    size_t m_textId;
 
     typedef std::list<Text *> TextLines;

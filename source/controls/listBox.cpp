@@ -21,7 +21,9 @@ GWENI_CONTROL_CONSTRUCTOR(ListBox)
     setMargin(Margin(1, 1, 1, 1));
     m_innerPanel->setPadding(Padding(2, 2, 2, 2));
     m_table=newChild<controls::layout::Table>();
-    m_table->setAlignment(Alignment::Absolute);
+    // Docked Top in the inner panel: as wide as the panel inside its padding,
+    // as high as its rows.
+    m_table->setDock(DockPosition::Top);
     m_table->setColumnCount(1);
     m_multiSelect=false;
 }
@@ -44,11 +46,6 @@ void ListBox::RemoveItem(layout::TableRow *row)
 
 void ListBox::layout(skin::Base *skin)
 {
-    ParentClass::layout(skin);
-    const gweni::Rect &inner=m_innerPanel->getInnerBounds();
-    m_table->setPos(inner.x, inner.y);
-    m_table->setWidth(inner.w);
-    m_table->sizeToChildren(false, true);
     ParentClass::layout(skin);
 }
 

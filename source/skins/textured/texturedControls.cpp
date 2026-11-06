@@ -1042,9 +1042,13 @@ void Text::update(renderer::Base *renderer, controls::Base *baseControl)
 //        gweni::Point(control->getPadding().left, control->getPadding().top), control->getZIndex(),
 //        control->getText());
 
+    // Wrapped, the string is drawn by the line children; drawn here as well it
+    // would lie as one long line over the first of them.
+    static const String noText;
+
     renderer->renderText(m_primitives[0], control->getFont(),
         gweni::Point(control->getBounds().x, control->getBounds().y), control->getZIndex(),
-        control->getText());
+        control->wrap()?noText:control->getText());
 
     if((baseControl->getStateChange() & controls::StateChange_Visibility) || 
         (baseControl->getStateChange() & controls::StateChange_Created))

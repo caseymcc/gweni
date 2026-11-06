@@ -242,15 +242,28 @@ Base::PlacementScope::~PlacementScope()
     g_placement=m_outer;
 }
 
-bool Base::laidOutThisPass() const
+bool Base::laidOutThisPass(Dim dim) const
 {
-    return Canvas::s_layingOut && m_layoutPass == Canvas::s_passSerial;
+    const unsigned pass=(dim == Dim::X)?m_layoutPassX:m_layoutPassY;
+
+    return Canvas::s_layingOut && pass == Canvas::s_passSerial;
+}
+
+void Base::stampLayoutPass(Dim dim)
+{
+    if(!Canvas::s_layingOut)
+        return;
+
+    if(dim == Dim::X)
+        m_layoutPassX=Canvas::s_passSerial;
+    else
+        m_layoutPassY=Canvas::s_passSerial;
 }
 
 void Base::stampLayoutPass()
 {
-    if(Canvas::s_layingOut)
-        m_layoutPass=Canvas::s_passSerial;
+    stampLayoutPass(Dim::X);
+    stampLayoutPass(Dim::Y);
 }
 
 bool Base::inLayoutPass()
@@ -779,7 +792,10 @@ bool Base::setBounds(const Rect &bounds)
     if(m_bounds == bounds)
         return false;
 
-    if((m_bounds.w != bounds.w || m_bounds.h != bounds.h) && laidOutThisPass())
+    // A width is read from the X arrange on, a height from the Y arrange on
+    // (layout() runs again there if the height changed, see Base::arrange).
+    if((m_bounds.w != bounds.w && laidOutThisPass(Dim::X)) ||
+        (m_bounds.h != bounds.h && laidOutThisPass(Dim::Y)))
         Canvas::s_layingOut->layoutInvalidated(this);
 
     {
@@ -1416,6 +1432,11 @@ Size Base::sizeOfChildren(skin::Base *skin, Dim dim)
 
             child->calculateSize(skin, dim);
 
+            // Laid out like the others, but its size is taken from this
+            // control's (Properties' splitter bar), so it does not count.
+            if(!child->shouldIncludeInSize())
+                continue;
+
             DockPosition dock=child->getDock();
             const Size &preferred=child->getPreferredSize();
             const Margin &margin=child->getMargin();
@@ -1462,6 +1483,11 @@ Size Base::sizeOfChildren(skin::Base *skin, Dim dim)
                 continue;
 
             child->calculateSize(skin, dim);
+
+            // Laid out like the others, but its size is taken from this
+            // control's (Properties' splitter bar), so it does not count.
+            if(!child->shouldIncludeInSize())
+                continue;
 
             DockPosition dock=child->getDock();
             const Size &preferred=child->getPreferredSize();
@@ -1591,9 +1617,14 @@ void Base::arrange(skin::Base *skin, Dim dim)
 {
     // Stamped before layout(), so what it does to this control counts as
     // done after this control was laid out.
-    if(dim == Dim::X)
-        stampLayoutPass();
+    stampLayoutPass(dim);
 
+    // layout() runs at the start of the X arrange, when the width is final
+    // but the height is the previous pass's. The Y pass gives the control its
+    // height before arranging it, and a new one invalidates it again (as
+    // placement, see onBoundsChanged), so layout() runs a second time here
+    // with both final. What it computes in X must depend on the width only,
+    // so the second run writes the same X geometry.
     if(needsLayout())
     {
         m_needsLayout=false;

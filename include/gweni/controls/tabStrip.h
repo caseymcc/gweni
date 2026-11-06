@@ -25,7 +25,7 @@ public:
     GWENI_CONTROL(TabStrip, Base);
 
 public:
-    void layout(skin::Base *skin) override;
+    void calculateSize(skin::Base *skin, Dim dim) override;
 
     bool dragAndDrop_handleDrop(gweni::draganddrop::Package *package, int x, int y) override;
     bool dragAndDrop_canAcceptPackage(gweni::draganddrop::Package *package) override;
@@ -52,6 +52,9 @@ public:
     }
 
 private:
+
+    //! Docks each TabButton and sets its margin for its place in the row.
+    void placeButtons();
 
     Base *m_tabDragControl;
     bool m_allowReorder;

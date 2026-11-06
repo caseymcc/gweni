@@ -53,6 +53,11 @@ GWENI_CONTROL_CONSTRUCTOR(ComboBox)
     DownArrow *arrow=newChild<DownArrow>();
 
     arrow->setComboBox(this);
+    // Set once here rather than in layout(), where they would change what the
+    // pass had already measured.
+    arrow->setAlignment(Alignment::Right | Alignment::CenterV);
+    arrow->setPosition(Position::Absolute, 4, 0);
+    arrow->setPos(4, 0);
 
     m_button=arrow;
     m_selectedItem=nullptr;
@@ -95,11 +100,6 @@ void ComboBox::render(skin::Base *skin)
 
 void ComboBox::layout(skin::Base *skin)
 {
-//    m_button->setPosition(Position::Right | Position::CenterV, 4, 0);
-    m_button->setAlignment(Alignment::Right | Alignment::CenterV);
-    m_button->setPosition(Position::Absolute, 4, 0);
-    m_button->setPos(4, 0);
-
     ParentClass::layout(skin);
 }
 

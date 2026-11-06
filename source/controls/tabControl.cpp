@@ -149,9 +149,16 @@ void TabControl::onTabPressed(event::Info info)
     invalidate();
 }
 
-void TabControl::postLayout(skin::Base *skin)
+// Whether the tabs overflow needs only this control's width, final in the X
+// arrange, and the strip's preferred width, so it is decided before the
+// children are placed. The scroll buttons sit inside this control's width
+// and the strip's margin only shifts the tabs, so neither changes the size
+// this control was measured at.
+void TabControl::layout(skin::Base *skin)
 {
-    ParentClass::postLayout(skin);
+    ParentClass::layout(skin);
+
+    PlacementScope placement;
     handleOverflow();
 }
 
@@ -187,20 +194,20 @@ bool TabControl::doesAllowDrag()
 
 void TabControl::handleOverflow()
 {
-    gweni::Point TabsSize=m_tabStrip->childrenSize();
+    const int tabsWidth=m_tabStrip->getPreferredSize().width;
     // Only enable the scrollers if the tabs are at the top.
     // This is a limitation we should explore.
     // Really TabControl should have derivitives for tabs placed elsewhere where
     // we could specialize
     // some functions like this for each direction.
-    bool bNeeded=TabsSize.x > getWidth() && m_tabStrip->getDock() == DockPosition::Top;
+    bool bNeeded=tabsWidth > getWidth() && m_tabStrip->getDock() == DockPosition::Top;
     m_scroll[0]->setHidden(!bNeeded);
     m_scroll[1]->setHidden(!bNeeded);
 
     if(!bNeeded)
         return;
 
-    m_scrollOffset=gweni::clamp(m_scrollOffset, 0, TabsSize.x-getWidth()+32);
+    m_scrollOffset=gweni::clamp(m_scrollOffset, 0, tabsWidth-getWidth()+32);
 #if 0
     //
     // This isn't frame rate independent.

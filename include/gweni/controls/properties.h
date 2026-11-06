@@ -30,7 +30,7 @@ public:
     GWENI_CONTROL(Properties, Base);
 
 public:
-    void postLayout(gweni::skin::Base *skin) override;
+    void arrange(gweni::skin::Base *skin, Dim dim) override;
 
     PropertyRow *add(const String &text, const String &value="");
     PropertyRow *add(const String &text, property::Base *prop,
@@ -74,7 +74,8 @@ public:
         return m_property;
     }
 
-    void layout(gweni::skin::Base *skin) override;
+    void calculateSize(gweni::skin::Base *skin, Dim dim) override;
+    void arrange(gweni::skin::Base *skin, Dim dim) override;
     void render(gweni::skin::Base *skin) override;
 
     virtual bool isEditing()

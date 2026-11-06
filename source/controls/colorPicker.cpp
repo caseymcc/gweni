@@ -170,17 +170,33 @@ void ColorPicker::onSlidersMoved(event::Info info)
     // blueSlider->getValue(), alphaSlider->getValue() ) );
 }
 
-void ColorPicker::layout(skin::Base *skin)
+// As high as the channel boxes reach, plus 5: a preferred height, which the
+// parent gives this control, rather than a resize from inside its layout.
+void ColorPicker::calculateSize(skin::Base *skin, Dim dim)
 {
-    ParentClass::layout(skin);
-    sizeToChildren(false, true);
-    setSize(getWidth(), getHeight()+5);
-    GroupBox *groupBox=gweni_cast<GroupBox>(findChildByName("ResultGroupBox", true));
+    ParentClass::calculateSize(skin, dim);
 
-    if(groupBox)
-        groupBox->setPos(groupBox->getX(), getHeight()/2 - groupBox->getHeight()/2);
+    if(dim == Dim::Y)
+        m_preferredSize.height+=5;
+}
 
-    updateControls();
+// The result box is centred vertically once this control has its height,
+// before the Y pass places it.
+void ColorPicker::arrange(skin::Base *skin, Dim dim)
+{
+    if(dim == Dim::Y)
+    {
+        GroupBox *groupBox=gweni_cast<GroupBox>(findChildByName("ResultGroupBox", true));
+
+        if(groupBox)
+        {
+            PlacementScope placement;
+
+            groupBox->setPos(groupBox->getX(), getHeight()/2-groupBox->getPreferredSize().height/2);
+        }
+    }
+
+    ParentClass::arrange(skin, dim);
 }
 
 int ColorPicker::getColorByName(gweni::String colorName)

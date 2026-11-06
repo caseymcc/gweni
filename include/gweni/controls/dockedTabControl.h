@@ -27,7 +27,7 @@ public:
         m_titleBar->setHidden(!bShow);
     }
 
-    void layout(skin::Base *skin) override;
+    void calculateSize(skin::Base *skin, Dim dim) override;
     void updateTitleBar();
 
     virtual void dragAndDrop_startDragging(gweni::draganddrop::Package *package,

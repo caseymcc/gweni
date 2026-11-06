@@ -60,9 +60,12 @@ public:
     virtual void onTabPressed(event::Info info);
     virtual void onLoseTab(TabButton *button);
 
+protected:
+
+    void layout(skin::Base *skin) override;
+
 private:
 
-    void postLayout(skin::Base *skin) override;
     void handleOverflow();
 
     void onScrollPressLeft(event::Info);

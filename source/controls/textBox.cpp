@@ -156,6 +156,11 @@ void TextBox::refreshCursorBounds()
     m_nextCaretColorChange=gweni::platform::getTimeInSeconds()+1.5f;
     m_caretColor=getSkin()->Colors.Label.Bright;
     makeCaretVisible();
+    updateCursorRects();
+}
+
+void TextBox::updateCursorRects()
+{
     gweni::Rect pA=getCharacterPosition(m_cursorPos);
     gweni::Rect pB=getCharacterPosition(m_cursorEnd);
     m_rectSelectionBounds.x=std::min(pA.x, pB.x);
@@ -413,9 +418,13 @@ void TextBox::onMouseMoved(int x, int y, int /*deltaX*/, int /*deltaY*/)
     setCursorPos(value);
 }
 
+// Reads the measured string, not m_text's bounds: in a layout pass this runs
+// before m_text is placed.
 void TextBox::makeCaretVisible()
 {
-    if(m_text->getWidth() < getWidth())
+    const Size text=m_text->refreshSize(false);
+
+    if(text.width < getWidth())
     {
         m_text->setAlignment(getAlignment());
     }
@@ -438,8 +447,8 @@ void TextBox::makeCaretVisible()
             x=-iCaretPos+iSlidingZone;
 
         // Don't show too much whitespace to the right
-        if(x+m_text->getWidth() < getWidth()-getPadding().right)
-            x=-m_text->getWidth()+(getWidth()-getPadding().right);
+        if(x+text.width < getWidth()-getPadding().right)
+            x=-text.width+(getWidth()-getPadding().right);
 
         // Or the left
         if(x > getPadding().left)
@@ -451,23 +460,43 @@ void TextBox::makeCaretVisible()
             y=getPadding().top;
 
         if(getAlignment() & Alignment::Bottom)
-            y=getHeight()-m_text->getHeight()-getPadding().bottom;
+            y=getHeight()-text.height-getPadding().bottom;
 
         if(getAlignment() & Alignment::CenterV)
-            y=(getHeight()-m_text->getHeight()) / 2;
+            y=(getHeight()-text.height) / 2;
 
         m_text->setPos(x, y);
     }
 }
 
+// Where m_text goes (aligned, or scrolled to the caret) is decided before the
+// pass places it, from this control's size and the measured string: in X with
+// the final width, and again in Y with the final height. Both are placement of
+// a child laid out next. The caret and selection rectangles are taken once it
+// is placed.
 void TextBox::layout(skin::Base *skin)
 {
     ParentClass::layout(skin);
+
+    PlacementScope placement;
     refreshCursorBounds();
 }
 
+void TextBox::arrange(skin::Base *skin, Dim dim)
+{
+    if(dim == Dim::Y)
+    {
+        PlacementScope placement;
+        makeCaretVisible();
+    }
+
+    ParentClass::arrange(skin, dim);
+}
+
 void TextBox::postLayout(skin::Base *skin)
-{}
+{
+    updateCursorRects();
+}
 
 void TextBox::onTextChanged()
 {
@@ -595,7 +624,9 @@ void TextBoxMultiline::render(skin::Base *skin)
 
 void TextBoxMultiline::makeCaretVisible()
 {
-    if(m_text->getHeight() < getHeight())
+    const Size text=m_text->refreshSize(false);
+
+    if(text.height < getHeight())
     {
         m_text->setAlignment(getAlignment());
     }
@@ -633,8 +664,8 @@ void TextBoxMultiline::makeCaretVisible()
             y=-iCaretPos+getPadding().top;
 
         // Don't show too much whitespace to the bottom
-        if(y+m_text->getHeight() < getHeight()-getPadding().bottom)
-            y=-m_text->getHeight()+(getHeight()-getPadding().bottom);
+        if(y+text.height < getHeight()-getPadding().bottom)
+            y=-text.height+(getHeight()-getPadding().bottom);
 
         // Or the top
         if(y > getPadding().top)
@@ -644,9 +675,9 @@ void TextBoxMultiline::makeCaretVisible()
         if(getAlignment() & Alignment::Left)
             x=getPadding().left;
         if(getAlignment() & Alignment::Right)
-            x=getWidth()-m_text->getWidth()-getPadding().right;
+            x=getWidth()-text.width-getPadding().right;
         if(getAlignment() & Alignment::CenterH)
-            x=(getWidth()-m_text->getWidth())*0.5f;
+            x=(getWidth()-text.width)*0.5f;
 
         m_text->setPos(x, y);
     }

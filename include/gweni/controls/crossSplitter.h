@@ -24,7 +24,12 @@ public:
     GWENI_CONTROL(CrossSplitter, controls::Base);
 
 public:
+    void calculateSize(skin::Base *skin, Dim dim) override;
     void layout(skin::Base *skin) override;
+    //! layout() places the bars and the panels; the generic dock and size
+    //! rules would resize the panels it sized.
+    void arrangeHorizontal(skin::Base * /*skin*/) override {}
+    void arrangeVertical(skin::Base * /*skin*/) override {}
 
     virtual float calculateValueVertical();
     virtual float calculateValueHorizontal();

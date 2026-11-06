@@ -27,6 +27,7 @@ public:
     void renderFocus(skin::Base * /*skin*/) override {}
 
     void layout(skin::Base *skin) override;
+    void arrange(skin::Base *skin, Dim dim) override;
     void postLayout(skin::Base *skin) override;
 
 #if GWENI_ANIMATE
@@ -39,6 +40,8 @@ public:
     virtual void deleteText(int iStartPos, int iLength);
 
     virtual void refreshCursorBounds();
+    //! The selection and caret rectangles, from where m_text is now.
+    void updateCursorRects();
 
     bool onKeyReturn(bool down) override;
     bool onKeyBackspace(bool down) override;

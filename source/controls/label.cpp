@@ -94,15 +94,11 @@ Rect Label::getCharacterPosition(int value)
     return p;
 }
 
+// A wrapped m_text rebuilds its lines itself when it is laid out at a new
+// width (Text::arrange): the new bounds invalidate it as placement.
 void Label::onBoundsChanged(Rect oldChildBounds)
 {
     ParentClass::onBoundsChanged(oldChildBounds);
-
-    if(m_text->wrap())
-    {
-        m_text->refreshSize();
-        invalidate();
-    }
 }
 
 void Label::setFont(String strFacename, int iSize, bool bBold)

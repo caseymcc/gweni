@@ -27,18 +27,24 @@ GWENI_CONTROL_CONSTRUCTOR(TabButton)
     setTextPadding(Padding(2, 2, 2, 2));
 }
 
-void TabButton::layout(skin::Base *skin)
+// The padding follows the side the strip is docked on. Set before this
+// button is measured, which counts it.
+void TabButton::calculateSize(skin::Base *skin, Dim dim)
 {
-    DockPosition parentDock=m_control->getTabStrip()->getDock();
+    if(dim == Dim::X)
+    {
+        PlacementScope placement;
+        DockPosition parentDock=m_control->getTabStrip()->getDock();
 
-    if(parentDock == DockPosition::Bottom)
-        setPadding(Padding(3, 1, 5, 4));
-    else if(parentDock == DockPosition::Top)
-        setPadding(Padding(3, 3, 5, 2));
-    else
-        setPadding(Padding(3, 2, 5, 2));
+        if(parentDock == DockPosition::Bottom)
+            setPadding(Padding(3, 1, 5, 4));
+        else if(parentDock == DockPosition::Top)
+            setPadding(Padding(3, 3, 5, 2));
+        else
+            setPadding(Padding(3, 2, 5, 2));
+    }
 
-    ParentClass::layout(skin);
+    ParentClass::calculateSize(skin, dim);
 }
 
 

@@ -94,6 +94,24 @@ float CrossSplitter::calculateValueVertical()
     return static_cast<float>(m_verticalSplitter->getY()) / (getHeight() - m_verticalSplitter->getHeight());
 }
 
+// A splitter divides the space it is given: its bars and panels are sized
+// from its own size, so their sizes do not count in the size it asks for,
+// which would hand it back what an earlier pass gave it. They are still
+// measured, for their own subtrees.
+void CrossSplitter::calculateSize(skin::Base *skin, Dim dim)
+{
+    for(auto &&child : getChildren())
+    {
+        if(!child->hidden())
+            child->calculateSize(skin, dim);
+    }
+
+    if(dim == Dim::X)
+        m_preferredSize.width=preferredFromContent(m_padding.left+m_padding.right, Dim::X);
+    else
+        m_preferredSize.height=preferredFromContent(m_padding.top+m_padding.bottom, Dim::Y);
+}
+
 void CrossSplitter::layout(skin::Base * /*skin*/)
 {
     m_verticalSplitter->setSize(getWidth(), m_barSize);

@@ -40,14 +40,11 @@ Text::~Text()
     // Because it's a pointer to another font somewhere.
 }
 
-void Text::layout(skin::Base *skin)
-{
-    if(m_textChanged)
-    {
-        refreshSize();
-        m_textChanged=false;
-    }
-}
+// A Text is the size of its string: calculateSize measures it, and the parent
+// gives it that size when it places it (policyResize), so nothing here resizes
+// it after the parent has. Wrapped lines are built in arrange().
+void Text::layout(skin::Base * /*skin*/)
+{}
 
 const gweni::Font &Text::getFont() const
 {
@@ -226,30 +223,76 @@ void Text::onScaleChanged()
     invalidate();
 }
 
+// Unwrapped, the measured string. Wrapped, the text asks for the width its
+// parent asked for (less the parent's padding), not for the parent's current
+// width, which would hand a width an earlier pass gave back to the parent; it
+// is then laid out at whatever width the parent got (policyResize), and its
+// height is that of the lines at that width, final by the Y pass.
 void Text::calculateSize(skin::Base *skin, Dim dim)
 {
+    for(auto &&line : m_lines)
+        line->calculateSize(skin, dim);
+
+    if(m_wrap && dim == Dim::X)
+    {
+        const Base *parent=getParent();
+
+        m_preferredSize.width=std::max(0, parent->getRequestedBounds().w
+            -parent->getPadding().left-parent->getPadding().right);
+        return;
+    }
+
     Size size=refreshSize(false);
 
     if(dim==Dim::X)
         m_preferredSize.width=size.width;
     else
         m_preferredSize.height=size.height;
-    //    Base::calculateSize(skin, dim);
 }
 
+// Wrapped text breaks its lines at its parent's inner width, which is final
+// once the parent was arranged in X, so the lines are rebuilt at the start of
+// this control's X arrange when the string, the font or that width changed.
+// They are new children this pass lays out next, X and Y, so building them is
+// placement.
 void Text::arrange(skin::Base *skin, Dim dim)
 {
-    if(dim==Dim::Y)
+    if(dim == Dim::X)
     {
-        refreshSize(getStateChange() != StateChange_Nothing);
-        for(auto &&child:getChildren())
+        if(m_wrap)
         {
-            const Rect &bounds=child->getBounds();
-            child->setPreferredSize({bounds.w, bounds.h});
+            const int width=wrapWidth();
+
+            if(m_textChanged || width != m_wrappedWidth)
+            {
+                PlacementScope placement;
+
+                RefreshSizeWrap(true);
+                m_wrappedWidth=width;
+            }
         }
+        m_textChanged=false;
     }
-    
+
     Base::arrange(skin, dim);
+}
+
+// Whatever was asked, a Text placed by its parent takes its preferred size,
+// the measured string or the height of the wrapped lines; wrapped, it is as
+// wide as the parent's inner width, which its lines break at.
+void Text::policyResize(const Size &preferred, Dim dim)
+{
+    const Rect &bounds=getBounds();
+
+    if(dim == Dim::X)
+        setArrangedBounds(bounds.x, bounds.y, m_wrap?std::max(0, wrapWidth()):preferred.width, bounds.h);
+    else
+        setArrangedBounds(bounds.x, bounds.y, bounds.w, preferred.height);
+}
+
+int Text::wrapWidth()
+{
+    return getParent()->getWidth()-getParent()->getPadding().left-getParent()->getPadding().right;
 }
 
 Size Text::refreshSize(bool update)
@@ -278,11 +321,7 @@ Size Text::refreshSize(bool update)
         p.y=getFont().size;
 
     if(update)
-    {
         setSize(p.x, p.y);
-        invalidateParent();
-        invalidate();
-    }
 
     return Size(p.x, p.y);
 }
@@ -291,8 +330,7 @@ void Text::splitWords(const gweni::String &s, std::vector<gweni::String> &elems)
 {
     gweni::String str;
 
-    int w=getParent()->getWidth()
-        - (getParent()->getPadding().left + getParent()->getPadding().right);
+    int w=wrapWidth();
 
     if(w<=0) //unable to place string in nothingness
         return;
@@ -372,7 +410,7 @@ Size Text::RefreshSizeWrap(bool update)
     }
 
     Point fontSize=getSkin()->getRenderer()->measureText(getFont(), " ");
-    int w=getParent()->getWidth() - getParent()->getPadding().left - getParent()->getPadding().right;
+    int w=wrapWidth();
     int x=0, y=0;
     gweni::String strLine;
 
@@ -391,7 +429,10 @@ Size Text::RefreshSizeWrap(bool update)
             strLine+=*it;
             gweni::Point p=getSkin()->getRenderer()->measureText(getFont(), strLine);
 
-            if(p.x > getWidth() && p.x > w)
+            // Only the parent's width counts: this control's own is what the
+            // last wrap made it, and comparing with it kept lines that no
+            // longer fit once the parent got narrower.
+            if(p.x > w)
             {
                 bFinishLine=true;
                 bWrapped=true;
@@ -421,7 +462,10 @@ Size Text::RefreshSizeWrap(bool update)
                     //new line is empty
                     strLine.clear();
                 }
-                t->refreshSize();
+                // Each line stays where it is put; measured here, as it
+                // did not exist when this pass measured the tree.
+                t->setAlignment(Alignment::Absolute);
+                t->setPreferredSize(t->refreshSize());
                 t->setPos(x, y);
                 m_lines.push_back(t);
             }
@@ -442,16 +486,10 @@ Size Text::RefreshSizeWrap(bool update)
         }
     }
 
+    // The parent's width and the height of the lines, the same as the
+    // preferred size calculateSize gets from this function.
     if(update)
-    {
-        // Size to children height and parent width
-        {
-            Point childsize=childrenSize();
-            setSize(w, childsize.y);
-        }
-        invalidateParent();
-        invalidate();
-    }
+        setSize(w, y);
 
     return Size(w, y);
 }

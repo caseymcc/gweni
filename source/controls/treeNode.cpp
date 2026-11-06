@@ -114,12 +114,14 @@ TreeNode *TreeNode::addNode(const String &label)
     return node;
 }
 
-void TreeNode::layout(skin::Base *skin)
+// A node with no child nodes shows neither its toggle nor its inner panel.
+// Settled before the pass measures this node, so the sizes it takes count
+// them as they will be drawn; nothing has read them yet.
+void TreeNode::calculateSize(skin::Base *skin, Dim dim)
 {
-    if(m_toggleButton)
+    if(dim == Dim::X && m_toggleButton)
     {
-        if(m_title)
-            m_toggleButton->setPos(0, (m_title->getHeight()-m_toggleButton->getHeight()) / 2);
+        PlacementScope placement;
 
         if(m_innerPanel->numChildren() == 0)
         {
@@ -128,19 +130,25 @@ void TreeNode::layout(skin::Base *skin)
             m_innerPanel->hide();
         }
         else
-        {
             m_toggleButton->show();
-            m_innerPanel->sizeToChildren(false, true);
-        }
     }
 
+    ParentClass::calculateSize(skin, dim);
+}
+
+// The title and the inner panel are docked Top, so this node's height is
+// their preferred heights, which its parent gives it.
+void TreeNode::layout(skin::Base *skin)
+{
     ParentClass::layout(skin);
 }
 
+// The toggle is centred on the title once the title has its height. Only its
+// position changes, which nothing laid out in this pass has read.
 void TreeNode::postLayout(skin::Base * /*skin*/)
 {
-    if(sizeToChildren(false, true))
-        invalidateParent();
+    if(m_toggleButton && m_title)
+        m_toggleButton->setPos(0, (m_title->getHeight()-m_toggleButton->getHeight()) / 2);
 }
 
 void TreeNode::setText(const String &text)

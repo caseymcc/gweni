@@ -66,9 +66,22 @@ bool TabStrip::dragAndDrop_canAcceptPackage(gweni::draganddrop::Package *package
     return false;
 }
 
-void TabStrip::layout(skin::Base *skin)
+// Each button's dock and margin follow the side this strip is docked on and
+// its place in the row. They are set before the buttons are measured, so the
+// sizes taken from them are this pass's. The strip's own size along the row's
+// cross axis is its preferred size, the largest button, which its dock gives
+// it.
+void TabStrip::calculateSize(skin::Base *skin, Dim dim)
 {
-    gweni::Point largestTab(5, 5);
+    if(dim == Dim::X)
+        placeButtons();
+
+    ParentClass::calculateSize(skin, dim);
+}
+
+void TabStrip::placeButtons()
+{
+    PlacementScope placement;
     int num=0;
 
     for(auto &&control : getChildren())
@@ -105,19 +118,9 @@ void TabStrip::layout(skin::Base *skin)
             button->setDock(DockPosition::Left);
         }
 
-        largestTab.x=std::max(largestTab.x, button->getWidth());
-        largestTab.y=std::max(largestTab.y, button->getHeight());
         button->setMargin(m);
         num++;
     }
-
-    if(m_dock == DockPosition::Top || m_dock == DockPosition::Bottom)
-        setSize(getWidth(), largestTab.y);
-
-    if(m_dock == DockPosition::Left || m_dock == DockPosition::Right)
-        setSize(largestTab.x, getHeight());
-
-    ParentClass::layout(skin);
 }
 
 void TabStrip::dragAndDrop_hoverEnter(gweni::draganddrop::Package * /*package*/, int /*x*/,

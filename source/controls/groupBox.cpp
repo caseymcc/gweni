@@ -27,11 +27,20 @@ GWENI_CONTROL_CONSTRUCTOR(GroupBox)
     m_innerMargin=6;
 }
 
-void GroupBox::layout(skin::Base *skin)
+// The inner panel's margin clears the title, from the measured title rather
+// than m_text's bounds, which the pass has not set yet. Settled before this
+// control is measured, so the sizes taken from the margin are this pass's.
+void GroupBox::calculateSize(skin::Base *skin, Dim dim)
 {
-    m_innerPanel->setMargin(Margin(m_innerMargin, textHeight()/2 + m_innerMargin,
-        m_innerMargin, m_innerMargin));
-    ParentClass::layout(skin);
+    if(dim == Dim::X)
+    {
+        PlacementScope placement;
+
+        m_innerPanel->setMargin(Margin(m_innerMargin, m_text->refreshSize(false).height/2 + m_innerMargin,
+            m_innerMargin, m_innerMargin));
+    }
+
+    ParentClass::calculateSize(skin, dim);
 }
 
 }//namespace controls

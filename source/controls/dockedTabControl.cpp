@@ -27,11 +27,19 @@ GWENI_CONTROL_CONSTRUCTOR(DockedTabControl)
     setAllowReorder(true);
 }
 
-void DockedTabControl::layout(skin::Base *skin)
+// The strip shows only with two tabs or more, and the title bar follows the
+// current tab. Settled before this control is measured, which counts them.
+void DockedTabControl::calculateSize(skin::Base *skin, Dim dim)
 {
-    getTabStrip()->setHidden(tabCount() <= 1);
-    updateTitleBar();
-    ParentClass::layout(skin);
+    if(dim == Dim::X)
+    {
+        PlacementScope placement;
+
+        getTabStrip()->setHidden(tabCount() <= 1);
+        updateTitleBar();
+    }
+
+    ParentClass::calculateSize(skin, dim);
 }
 
 void DockedTabControl::updateTitleBar()

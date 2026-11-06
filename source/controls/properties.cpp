@@ -24,14 +24,25 @@ GWENI_CONTROL_CONSTRUCTOR(Properties)
     m_splitterBar->onDragged.add(this, &Properties::onSplitterMoved);
     m_splitterBar->setShouldDrawBackground(false);
     m_splitterBar->doNotIncludeInSize();
+    // Placed by arrange(), not by the alignment rules.
+    m_splitterBar->setAlignment(Alignment::Absolute);
 }
 
-void Properties::postLayout(gweni::skin::Base * /*skin*/)
+// The rows are docked Top, so this control's preferred height is theirs. The
+// bar runs down the split, its height this control's: it is placed before
+// each pass places it, once the size it is taken from is final.
+void Properties::arrange(gweni::skin::Base *skin, Dim dim)
 {
-    if(sizeToChildren(false, true))
-        invalidateParent();
+    {
+        PlacementScope placement;
 
-    m_splitterBar->setBounds(getSplitWidth(), 0, SplitterBarWidth, getHeight());
+        if(dim == Dim::X)
+            m_splitterBar->setBounds(getSplitWidth(), 0, SplitterBarWidth, m_splitterBar->getHeight());
+        else
+            m_splitterBar->setBounds(m_splitterBar->getX(), 0, SplitterBarWidth, getHeight());
+    }
+
+    ParentClass::arrange(skin, dim);
 }
 
 void Properties::onSplitterMoved(event::Info)
@@ -166,17 +177,38 @@ void PropertyRow::render(gweni::skin::Base *skin)
         m_skinControl->update(skin->getRenderer(), this);
 }
 
-void PropertyRow::layout(gweni::skin::Base * /*skin*/)
+// The label is as wide as the split. It is Fixed, so its width is asked for
+// before it is measured; the split is clamped to the Properties' width, which
+// is final only in the X arrange, so the label is handed the clamped split
+// there too. Docked Top, the row is as high as the taller of the label and
+// the property, which its preferred height already is.
+void PropertyRow::calculateSize(gweni::skin::Base *skin, Dim dim)
 {
     Properties *parent=gweni_cast<Properties>(getParent());
 
-    if(!parent)
-        return;
+    if(dim == Dim::X && parent)
+    {
+        PlacementScope placement;
 
-    m_label->setWidth(parent->getSplitWidth());
+        m_label->setWidth(parent->getSplitWidth());
+    }
 
-    if(m_property)
-        setHeight(std::max(m_label->getHeight(), m_property->getHeight()));
+    ParentClass::calculateSize(skin, dim);
+}
+
+void PropertyRow::arrange(gweni::skin::Base *skin, Dim dim)
+{
+    Properties *parent=gweni_cast<Properties>(getParent());
+
+    if(dim == Dim::X && parent)
+    {
+        Size preferred=m_label->getPreferredSize();
+
+        preferred.width=parent->getSplitWidth();
+        m_label->setPreferredSize(preferred);
+    }
+
+    ParentClass::arrange(skin, dim);
 }
 
 void PropertyRow::setProperty(property::Base *prop)

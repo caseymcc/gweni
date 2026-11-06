@@ -148,6 +148,11 @@ void Button::setImage(const String &name, bool center)
     m_image->sizeToContents();
     m_image->setMargin(Margin(2, 0, 2, 0));
     m_centerImage=center;
+
+    if(m_centerImage)
+        m_image->setAlignment(Alignment::Center);
+    else
+        m_image->setAlignment(Alignment::Left|Alignment::CenterV);
     // Ugh.
     Padding padding=getTextPadding();
     padding.left=m_image->right()+2;
@@ -212,19 +217,10 @@ void Button::updateColors()
     setTextColor(getSkin()->Colors.Button.Normal);
 }
 
+// The image's alignment is set with the image (setImage).
 void Button::postLayout(skin::Base *skin)
 {
     ParentClass::postLayout(skin);
-
-    if(m_image)
-    {
-        if(m_centerImage)
-//            m_image->setPosition(Position::Center);
-            m_image->setAlignment(Alignment::Center);
-        else
-//            m_image->setPosition(Position::Left|Position::CenterV);
-            m_image->setAlignment(Alignment::Left|Alignment::CenterV);
-    }
 }
 
 void Button::onMouseDoubleClickLeft(int x, int y)

@@ -83,7 +83,8 @@ public:
 
 protected:
 
-    void layout(skin::Base *skin) override;
+    void calculateSize(skin::Base *skin, Dim dim) override;
+    void arrange(skin::Base *skin, Dim dim) override;
     virtual void createControls();
     virtual void onSlidersMoved(event::Info info);
     virtual void onNumericTyped(event::Info info);
