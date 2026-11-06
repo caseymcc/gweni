@@ -75,9 +75,19 @@ public:
         if(m_primitives.empty())
             return;
 
+        const bool visible=baseControl->visible();
+
         // Tokyo Night Day's background
-        renderer->setDrawColor(Color(0xe1, 0xe2, 0xe7));
-        renderer->drawFilledRect(m_primitives[0], baseControl->getRenderBounds(), baseControl->getZIndex());
+        if(visible)
+        {
+            renderer->setDrawColor(Color(0xe1, 0xe2, 0xe7));
+            renderer->drawFilledRect(m_primitives[0], baseControl->getRenderBounds(), baseControl->getZIndex());
+        }
+
+        // as tokyonight::paintSurface does: a hidden page's panel draws nothing
+        const unsigned int stateChange=baseControl->getStateChange();
+        if((stateChange&controls::StateChange_Visibility) || (stateChange&controls::StateChange_Created))
+            renderer->showPrimitive(visible?1:0, m_primitives[0]);
     }
     inline static const std::string_view name="TextDemoLightPanel";
 };
