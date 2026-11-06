@@ -234,3 +234,45 @@ TEST_CASE("a layout child gets its request up to the cell, and a canvas resize a
     CHECK(text(asked->getBounds()) == text(askedBefore));
     CHECK(text(unasked->getBounds()) == text(unaskedBefore));
 }
+
+TEST_CASE("a Fixed layout child advances a Vertical and a HorizontalLayout by its size and margins")
+{
+    for(const bool vertical:{true, false})
+    {
+        CAPTURE(vertical);
+        Scene scene;
+        controls::Base *panel=scene.centerPanel();
+        if(vertical)
+            panel->setLayout(new controls::VerticalLayout());
+        else
+            panel->setLayout(new controls::HorizontalLayout());
+
+        Block *before=panel->newChild<Block>("before");
+        before->setSizeFlags({SizeFlag::Shrink, SizeFlag::Shrink});
+        before->want=Size(50, 20);
+
+        controls::Base *fixed=panel->newChild<controls::Base>("fixed");
+        fixed->setSizeFlags({SizeFlag::Fixed, SizeFlag::Fixed});
+        fixed->setSize(70, 30);
+        fixed->setMargin(Margin(3, 4, 5, 6));
+
+        Block *after=panel->newChild<Block>("after");
+        after->setSizeFlags({SizeFlag::Shrink, SizeFlag::Shrink});
+        after->want=Size(50, 20);
+
+        scene.settle();
+        // the layout's spacing is 2
+        if(vertical)
+        {
+            CHECK(text(before->getBounds()) == text(Rect(0, 0, 50, 20)));
+            CHECK(text(fixed->getBounds()) == text(Rect(3, 20+2+4, 70, 30)));
+            CHECK(text(after->getBounds()) == text(Rect(0, 20+2+4+30+6+2, 50, 20)));
+        }
+        else
+        {
+            CHECK(text(before->getBounds()) == text(Rect(0, 0, 50, 20)));
+            CHECK(text(fixed->getBounds()) == text(Rect(50+2+3, 4, 70, 30)));
+            CHECK(text(after->getBounds()) == text(Rect(50+2+3+70+5+2, 0, 50, 20)));
+        }
+    }
+}

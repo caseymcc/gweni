@@ -211,7 +211,7 @@ void LayoutItem::calculateHorizontal()
         SizeFlags sizeFlags=child->getSizeFlags();
 
         m_preferredSize.width+=child->getPreferredSize().width;
-        m_minimumSize.width=addWithOverflow(m_maximumSize.width, child->getMinimumSize().width);
+        m_minimumSize.width=addWithOverflow(m_minimumSize.width, child->getMinimumSize().width);
         m_maximumSize.width=addWithOverflow(m_maximumSize.width, child->getMaximumSize().width);
         m_sizeFlags.horizontal=merge(m_sizeFlags.horizontal, sizeFlags.horizontal);
 
@@ -395,6 +395,8 @@ void LayoutItem::arrangeHorizontal()
             bounds.w=preferred.width+expandSpace;
         else if((sizeFlags.horizontal==SizeFlag::Elastic)||(sizeFlags.horizontal==SizeFlag::Shrink))
             bounds.w=preferred.width+shrinkSpace;
+        else if(sizeFlags.horizontal==SizeFlag::Fixed)
+            bounds.w=preferred.width;
 
         child->setBounds(bounds);
         x+=bounds.w+m_spacing;
@@ -547,6 +549,8 @@ void LayoutItem::arrangeVertical()
             bounds.h=preferred.height+expandSpace;
         else if(sizeFlags.vertical == SizeFlag::Shrink)
             bounds.h=preferred.height+shrinkSpace;
+        else if(sizeFlags.vertical == SizeFlag::Fixed)
+            bounds.h=preferred.height;
 
         child->setBounds(bounds);
 #ifdef DEBUG_LAYOUT
