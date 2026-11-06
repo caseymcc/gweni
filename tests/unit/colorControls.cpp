@@ -207,20 +207,27 @@ TEST_CASE("the hue strip's six segments cover every row, behind the marker")
             CHECK(topZ[y] == z+1);
     }
 
-    // the six corner hues, red to red, each a segment's top and bottom
+    // segment i covers hue arc i, rows i*h/6..(i+1)*h/6, and reaches at most
+    // two rows into its neighbours; each stop is the strip's colour at its edge
     std::vector<Draw> segments;
     for(size_t i=0; i<6; ++i)
         segments.push_back(scene.drawOf(ids[i]));
     std::sort(segments.begin(), segments.end(),
         [](const Draw &a, const Draw &b) { return a.rect.y < b.rect.y; });
 
-    const Color stops[7]={Color(255, 0, 0, 255), Color(255, 255, 0, 255), Color(0, 255, 0, 255),
-        Color(0, 255, 255, 255), Color(0, 0, 255, 255), Color(255, 0, 255, 255), Color(255, 0, 0, 255)};
-    for(size_t i=0; i<6; ++i)
+    for(int i=0; i<6; ++i)
     {
-        CHECK((segments[i].c00 == stops[i]));
-        CHECK((segments[i].c01 == stops[i+1]));
+        const Rect &rect=segments[i].rect;
+
+        CHECK(rect.y <= i*height/6);
+        CHECK(rect.y >= i*height/6-2);
+        CHECK(rect.y+rect.h >= (i+1)*height/6);
+        CHECK(rect.y+rect.h <= (i+1)*height/6+2);
+        CHECK((segments[i].c00 == scene.slider->getColorAtHeight(rect.y)));
+        CHECK((segments[i].c01 == scene.slider->getColorAtHeight(rect.y+rect.h)));
     }
+    CHECK((segments[0].c00 == Color(255, 0, 0, 255)));
+    CHECK((segments[5].c01 == Color(255, 0, 0, 255)));
 
     // the marker, last and in front, follows a drag
     const int markerHeight=skin::textured::ColorSlider::MarkerHeight;

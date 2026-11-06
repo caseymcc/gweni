@@ -972,51 +972,65 @@ void ColorSlider::update(renderer::Base *renderer, controls::Base *baseControl)
     std::copy(m_primitives.begin(), m_primitives.begin()+7, slots);
     std::sort(slots, slots+7);
 
-    if(visible)
+    // getColorAtHeight() divides by the height
+    if(visible && r.h > 0)
     {
-        static const gweni::Color stops[7]=
-        {
-            gweni::Color(255, 0, 0, 255), gweni::Color(255, 255, 0, 255), gweni::Color(0, 255, 0, 255),
-            gweni::Color(0, 255, 255, 255), gweni::Color(0, 0, 255, 255), gweni::Color(255, 0, 255, 255),
-            gweni::Color(255, 0, 0, 255)
-        };
         const int x=r.x+Inset;
         const int w=std::max(r.w-2*Inset, 0);
         const int z=baseControl->getZIndex();
 
-        // Segment i spans the rows from joint i to joint i+1, joint i at row
-        // i*h/6 rounded to an even row: OpenGLCore draws a rect 2*(h/2) rows
-        // tall, so an odd height would leave a gap row.
-        int joints[7];
+        // Segment i is hue arc i, joint i (between segments i-1 and i) at row
+        // i*h/6. The odd segments are in front (z+1) and overlap the even ones
+        // by a row at each joint, because OpenGLCore anti-aliases a rect's
+        // outermost row to ~84% cover (#208): two rects that only abut leave a
+        // darker seam row. The front segment's edge row then blends over the
+        // segment behind it, not the background, and the one behind ends under
+        // the front one. That needs the segments behind drawn first, since the
+        // GL_LESS depth test rejects them where a nearer one already is.
+        int tops[6];
+        int bottoms[6];
 
-        joints[0]=0;
-        joints[6]=r.h;
+        tops[0]=0;
+        bottoms[5]=r.h;
         for(int i=1; i<6; ++i)
-            joints[i]=std::min(2*((i*r.h+6)/12), r.h);
+        {
+            if(i&1)
+            {
+                // the segment behind, above, ends at the joint rounded up
+                bottoms[i-1]=(i*r.h+5)/6;
+                tops[i]=bottoms[i-1]-1;
+            }
+            else
+            {
+                // the segment behind, below, starts at the joint rounded down
+                tops[i]=i*r.h/6;
+                bottoms[i-1]=tops[i]+1;
+            }
+        }
 
-        // A rect's outermost row is anti-aliased to ~84% cover, so two rects
-        // that only abut leave a darker seam row at every joint. The odd
-        // segments are drawn in front (z+1) and one row past both of their
-        // joints instead: each AA row then blends over its neighbour's colour,
-        // not the background. That needs the segments behind drawn first,
-        // since a GL_LESS depth test rejects them where a nearer one already is.
         for(int i=0; i<6; ++i)
         {
-            const bool front=(i&1) != 0;
-            int top=joints[i];
-            int bottom=joints[i+1];
-
-            if(front)
+            // OpenGLCore draws a rect 2*(h/2) rows tall, so an odd height grows
+            // by a row, further under or over its neighbour
+            if((bottoms[i]-tops[i])&1)
             {
-                top=std::max(top-1, 0);
-                bottom=std::min(bottom+1, r.h);
-
-                if((bottom-top)&1)
-                    top=std::max(top-1, 0);
+                if(i < 5)
+                    bottoms[i]=std::min(bottoms[i]+1, r.h);
+                else
+                    tops[i]=std::max(tops[i]-1, 0);
             }
 
+            const bool front=(i&1) != 0;
+            const int top=clamp(tops[i], 0, r.h);
+            const int bottom=clamp(bottoms[i], top, r.h);
+
+            // Each stop is the strip's own colour at that edge, the one a click
+            // there selects. A segment that reaches a row into its neighbour's
+            // arc then bends a little towards it instead of overshooting, so
+            // the overlap row continues the ramp.
             renderer->drawRoundedRect(slots[front?3+i/2:i/2], gweni::Rect(x, r.y+top, w, bottom-top),
-                0.0f, 0.0f, stops[i], stops[i+1], stops[i], front?z+1:z);
+                0.0f, 0.0f, slider->getColorAtHeight(top), slider->getColorAtHeight(bottom),
+                gweni::Color(0, 0, 0, 0), front?z+1:z);
         }
 
         // the selection bar across the whole width, centred on the selected

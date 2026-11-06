@@ -667,9 +667,10 @@ public:
 
 // controls::ColorSlider, the vertical hue strip: hue->RGB is linear over each
 // 60 degree arc, so the strip is six 2-stop vertical gradients (red, yellow,
-// green, cyan, blue, magenta, red), plus the selection bar. The odd segments
-// sit one z in front of the even ones and overlap them at the joints (no seam
-// row, see update()), so the bar is drawn at getZIndex()+2.
+// green, cyan, blue, magenta, red), each stop the strip's colour at that edge,
+// plus the selection bar. The odd segments sit one z in front of the even ones
+// and overlap them at the joints (no seam row, see update()), so the bar is
+// drawn at getZIndex()+2.
 class ColorSlider:public textured::ControlRegister<ColorSlider>
 {
 public:
