@@ -28,6 +28,40 @@ By default all controls support a dock layout
 setPosition()
 
 
+## Sizing a dock-None control
+
+A dock-None control, placed by its parent's `arrangeHorizontal/Vertical` or by
+a layout handler, is sized from three things only: the size it was **asked
+for**, its preferred size and its size flags. It never reads the bounds an
+earlier pass gave it, so a control that grew for a 1024-wide canvas shrinks
+back at 640, and the frame is a function of the current state.
+
+What counts as asked for: every `setBounds`/`setSize`/`setPos` that does not
+come from the generic arrange code (the dock branches, `policyResize`, a
+`LayoutItem` placing its control, which all write through
+`Base::setArrangedBounds`). App calls, constructors and a control's own
+`layout()` placing its children all are requests. `setPos`/`moveTo` ask for the
+position only, `setSize` for the size, `setWidth`/`setHeight` for one axis,
+`setBounds` for both. `getRequestedBounds()` returns it; it starts as the
+initial bounds, and `hasRequestedSize(dim)` says whether a size was asked.
+
+With r the request, p the preferred size:
+
+| flag | in a Base parent (`dockNoneSize`) | in a layout cell c (`layoutCellSize`) |
+|---|---|---|
+| Fixed | r | r |
+| Expand | max(r, p) | min(max(r, p), c) |
+| Shrink | min(r, p) | min(r, c) |
+| Elastic, Bloat | p | min(max(r, p), c) |
+| no size asked | p | c |
+
+A Base parent has no cell, so Expand is not capped there: content larger than
+the parent overflows it (a ScrollControl's panel). `Fixed`'s preferred, minimum
+and maximum size are its request too. `sizeOfChildren` counts a dock-None
+child at its requested position, not at the one the last pass gave it.
+
+Docked children keep the size their dock gives them.
+
 ## One pass per frame
 
 A frame lays the canvas out in the update phase (`Canvas::doThink`, through

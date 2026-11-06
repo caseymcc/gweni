@@ -64,7 +64,8 @@ add_executable(gweni_unit_tests
     unit/layoutPasses.cpp
     unit/sliderNotches.cpp
     unit/scrollControl.cpp
-    unit/resourcePaths.cpp)
+    unit/resourcePaths.cpp
+    unit/requestedSize.cpp)
 gweni_set_warnings(gweni_unit_tests)
 target_link_libraries(gweni_unit_tests
     gweni

@@ -125,6 +125,9 @@ void Base::init(const String &name)
     // drawn before updateRecursive() has numbered it.
     m_zIndex=0;
     m_bounds=Rect(0, 0, 10, 10);
+    m_requestedBounds=m_bounds;
+    m_widthRequested=false;
+    m_heightRequested=false;
     m_padding=Padding(0, 0, 0, 0);
     m_margin=Margin(0, 0, 0, 0);
     m_dock=DockPosition::None;
@@ -205,6 +208,27 @@ bool g_placement=false;
 // Set while invalidate() walks up to the canvas, so only its first call, the
 // control that asked, is looked at.
 bool g_propagating=false;
+
+// The parts of the bounds the next setBounds() call requests (see
+// Base::setBounds): setPos/moveTo ask for the position, setSize for the size.
+enum RequestPart
+{
+    RequestX=1,
+    RequestY=2,
+    RequestWidth=4,
+    RequestHeight=8,
+    RequestPosition=RequestX|RequestY,
+    RequestSize=RequestWidth|RequestHeight,
+    RequestAll=RequestPosition|RequestSize
+};
+int g_requestParts=RequestAll;
+
+struct RequestScope
+{
+    explicit RequestScope(int parts): m_outer(g_requestParts) { g_requestParts=parts; }
+    ~RequestScope() { g_requestParts=m_outer; }
+    int m_outer;
+};
 
 }
 
@@ -343,7 +367,10 @@ void Base::setPosition(Position position, int x, int y)
         return;
 
     m_position=position;
-    setBounds(x, y, getWidth(), getHeight());
+    {
+        RequestScope request(RequestPosition);
+        setBounds(x, y, getWidth(), getHeight());
+    }
     invalidate();
 }
 
@@ -681,16 +708,31 @@ void Base::moveTo(int x, int y)
             y=parent->getHeight()-parent->getMargin().bottom-getHeight()-getPadding().bottom;
     }
 
+    RequestScope request(RequestPosition);
     setBounds(x, y, getWidth(), getHeight());
 }
 
 void Base::setPos(int x, int y)
 {
+    RequestScope request(RequestPosition);
     setBounds(x, y, getWidth(), getHeight());
+}
+
+void Base::setWidth(int w)
+{
+    RequestScope request(RequestWidth);
+    setBounds(getX(), getY(), w, getHeight());
+}
+
+void Base::setHeight(int h)
+{
+    RequestScope request(RequestHeight);
+    setBounds(getX(), getY(), getWidth(), h);
 }
 
 bool Base::setSize(int w, int h)
 {
+    RequestScope request(RequestSize);
     return setBounds(getX(), getY(), w, h);
 }
 
@@ -701,6 +743,39 @@ bool Base::setSize(const Point &p)
 
 bool Base::setBounds(const Rect &bounds)
 {
+    // Taken once: any setBounds() the code below makes is a call of its own.
+    const int parts=g_requestParts;
+    g_requestParts=RequestAll;
+
+    if(parts)
+    {
+        const Rect requested=m_requestedBounds;
+
+        if(parts & RequestX)
+            m_requestedBounds.x=bounds.x;
+        if(parts & RequestY)
+            m_requestedBounds.y=bounds.y;
+        if(parts & RequestWidth)
+            m_requestedBounds.w=bounds.w;
+        if(parts & RequestHeight)
+            m_requestedBounds.h=bounds.h;
+
+        const bool newRequest=((parts & RequestWidth) && !m_widthRequested) ||
+            ((parts & RequestHeight) && !m_heightRequested);
+
+        m_widthRequested=m_widthRequested || (parts & RequestWidth);
+        m_heightRequested=m_heightRequested || (parts & RequestHeight);
+
+        // A request the bounds already match leaves the size the rules give
+        // (dockNoneSize, layoutCellSize) at these bounds, but the position
+        // counts in the parent's preferred size, so an app's request is laid
+        // out again. From inside a pass it is layout code putting a control
+        // where it already is (TabStrip sizing itself, say): no re-dirty.
+        if(m_bounds == bounds && !inLayoutPass() &&
+            (newRequest || !(requested == m_requestedBounds)))
+            invalidate();
+    }
+
     if(m_bounds == bounds)
         return false;
 
@@ -726,17 +801,23 @@ bool Base::setBounds(int x, int y, int w, int h)
     return setBounds(Rect(x, y, w, h));
 }
 
+bool Base::setArrangedBounds(int x, int y, int w, int h)
+{
+    RequestScope request(0);
+    return setBounds(x, y, w, h);
+}
+
 Size Base::getMinimumSize()
 {
     Size minimumSize=m_minimumSize;
 
     if(m_sizeFlags.horizontal==SizeFlag::Fixed)
-        minimumSize.width=m_bounds.w;
+        minimumSize.width=m_requestedBounds.w;
     else if((m_sizeFlags.horizontal == SizeFlag::Expand) || (m_sizeFlags.horizontal == SizeFlag::Bloat))
         minimumSize.width=std::max(minimumSize.width, m_preferredSize.width);
 
     if(m_sizeFlags.vertical==SizeFlag::Fixed)
-        minimumSize.height=m_bounds.h;
+        minimumSize.height=m_requestedBounds.h;
     else if((m_sizeFlags.vertical==SizeFlag::Expand)||(m_sizeFlags.vertical==SizeFlag::Bloat))
         minimumSize.height=std::max(minimumSize.height, m_preferredSize.height);
 
@@ -748,13 +829,13 @@ Size Base::getMaximumSize()
     Size maximumSize=m_maximumSize;
 
     if(m_sizeFlags.horizontal==SizeFlag::Fixed)
-        maximumSize.width=m_bounds.w;
+        maximumSize.width=m_requestedBounds.w;
     else if(m_sizeFlags.horizontal == SizeFlag::Shrink)
         maximumSize.width=std::max(maximumSize.width, m_preferredSize.width);
 
     if(m_sizeFlags.vertical==SizeFlag::Fixed)
-        maximumSize.height=m_bounds.h;
-    else if(m_sizeFlags.horizontal == SizeFlag::Shrink)
+        maximumSize.height=m_requestedBounds.h;
+    else if(m_sizeFlags.vertical == SizeFlag::Shrink)
         maximumSize.height=std::max(maximumSize.height, m_preferredSize.height);
 
     return maximumSize;
@@ -1355,10 +1436,9 @@ Size Base::sizeOfChildren(skin::Base *skin, Dim dim)
             }
             else
             {
-                const Rect &bounds=child->getBounds();
-
+                // Where the child asked to be, not where the last pass put it.
                 if(!hasAlignment())
-                    childWidth+=bounds.x;
+                    childWidth+=child->getRequestedBounds().x;
 
                 if(childWidth>width)
                     width=childWidth;
@@ -1404,10 +1484,8 @@ Size Base::sizeOfChildren(skin::Base *skin, Dim dim)
             }
             else
             {
-                const Rect &bounds=child->getBounds();
-
                 if(!hasAlignment())
-                    childHeight+=bounds.y;
+                    childHeight+=child->getRequestedBounds().y;
 
                 if(childHeight>height)
                     height=childHeight;
@@ -1428,14 +1506,14 @@ int Base::preferredFromContent(int contentSize, Dim dim) const
 {
     const bool x=(dim == Dim::X);
     const SizeFlag flag=x?m_sizeFlags.horizontal:m_sizeFlags.vertical;
-    const int bounds=x?m_bounds.w:m_bounds.h;
+    const int requested=x?m_requestedBounds.w:m_requestedBounds.h;
     const int minimum=x?m_minimumSize.width:m_minimumSize.height;
     const int maximum=x?m_maximumSize.width:m_maximumSize.height;
 
     switch(flag)
     {
     case SizeFlag::Fixed:
-        return bounds;
+        return requested;
     case SizeFlag::Shrink:
         return std::min(contentSize, maximum);
     case SizeFlag::Expand:
@@ -1457,47 +1535,56 @@ void Base::calculateSize(skin::Base *skin, Dim dim)
     m_preferredSize=sizeOfChildren(skin, dim);
 }
 
-void Base::policyResize(const Size &limit, Dim dim)
+int Base::dockNoneSize(Dim dim, int preferred) const
 {
-    SizeFlags sizeFlags=getSizeFlags();
-    Rect bounds=getBounds();
+    const bool x=(dim == Dim::X);
+    const SizeFlag flag=x?m_sizeFlags.horizontal:m_sizeFlags.vertical;
+    const int requested=x?m_requestedBounds.w:m_requestedBounds.h;
+
+    if(flag == SizeFlag::Fixed)
+        return requested;
+
+    if(!hasRequestedSize(dim))
+        return preferred;
+
+    switch(flag)
+    {
+    case SizeFlag::Expand:
+        return std::max(requested, preferred);
+    case SizeFlag::Shrink:
+        return std::min(requested, preferred);
+    default: // Elastic and Bloat both grow and shrink to the preferred size
+        return preferred;
+    }
+}
+
+int Base::layoutCellSize(Dim dim, int cell) const
+{
+    const bool x=(dim == Dim::X);
+    const SizeFlag flag=x?m_sizeFlags.horizontal:m_sizeFlags.vertical;
+    const int requested=x?m_requestedBounds.w:m_requestedBounds.h;
+    const int preferred=x?m_preferredSize.width:m_preferredSize.height;
+
+    if(flag == SizeFlag::Fixed)
+        return requested;
+
+    if(!hasRequestedSize(dim))
+        return cell;
+
+    if(flag == SizeFlag::Shrink)
+        return std::min(requested, cell);
+
+    return std::min(std::max(requested, preferred), cell);
+}
+
+void Base::policyResize(const Size &preferred, Dim dim)
+{
+    const Rect &bounds=getBounds();
 
     if(dim==Dim::X)
-    {
-        if(bounds.w>limit.width)
-        {
-            if((sizeFlags.horizontal==SizeFlag::Elastic)||
-                (sizeFlags.horizontal==SizeFlag::Shrink)||
-                (sizeFlags.horizontal==SizeFlag::Bloat))
-                bounds.w=limit.width;
-        }
-        else if(bounds.w<limit.width)
-        {
-            if((sizeFlags.horizontal==SizeFlag::Elastic)||
-                (sizeFlags.horizontal==SizeFlag::Expand)||
-                (sizeFlags.horizontal==SizeFlag::Bloat))
-                bounds.w=limit.width;
-        }
-    }
+        setArrangedBounds(bounds.x, bounds.y, dockNoneSize(dim, preferred.width), bounds.h);
     else
-    {
-        if(bounds.h>limit.height)
-        {
-            if((sizeFlags.vertical==SizeFlag::Elastic)||
-                (sizeFlags.vertical==SizeFlag::Shrink)||
-                (sizeFlags.vertical==SizeFlag::Bloat))
-                bounds.h=limit.height;
-        }
-        else if(bounds.h<limit.height)
-        {
-            if((sizeFlags.vertical==SizeFlag::Elastic)||
-                (sizeFlags.vertical==SizeFlag::Expand)||
-                (sizeFlags.vertical==SizeFlag::Bloat))
-                bounds.h=limit.height;
-        }
-    }
-
-    setBounds(bounds);
+        setArrangedBounds(bounds.x, bounds.y, bounds.w, dockNoneSize(dim, preferred.height));
 }
 
 void Base::arrange(skin::Base *skin, Dim dim)
@@ -1564,19 +1651,19 @@ void Base::arrangeHorizontal(skin::Base *skin)
         if(dock & DockPosition::Top)
         {
             if(sizeFlags.horizontal==SizeFlag::Fixed)
-                child->setBounds(innerBounds.x+margin.left,
+                child->setArrangedBounds(innerBounds.x+margin.left,
                     bounds.y,
                     bounds.w,
                     bounds.h);
             else
-                child->setBounds(innerBounds.x+margin.left,
+                child->setArrangedBounds(innerBounds.x+margin.left,
                     bounds.y,
                     innerBounds.w-margin.left-margin.right,
                     bounds.h);
         }
         else if(dock & DockPosition::Left)
         {
-            child->setBounds(innerBounds.x+margin.left,
+            child->setArrangedBounds(innerBounds.x+margin.left,
                 bounds.y,
                 preferred.width,
                 bounds.h);
@@ -1586,7 +1673,7 @@ void Base::arrangeHorizontal(skin::Base *skin)
         }
         else if(dock & DockPosition::Right)
         {
-            child->setBounds((innerBounds.x+innerBounds.w)-preferred.width-margin.right,
+            child->setArrangedBounds((innerBounds.x+innerBounds.w)-preferred.width-margin.right,
                 bounds.y,
                 preferred.width,
                 bounds.h);
@@ -1596,12 +1683,12 @@ void Base::arrangeHorizontal(skin::Base *skin)
         else if(dock & DockPosition::Bottom)
         {
             if(sizeFlags.horizontal==SizeFlag::Fixed)
-                child->setBounds(innerBounds.x,
+                child->setArrangedBounds(innerBounds.x,
                     bounds.y,
                     bounds.w,
                     bounds.h);
             else
-                child->setBounds(innerBounds.x,
+                child->setArrangedBounds(innerBounds.x,
                     bounds.y,
                     innerBounds.w-margin.left-margin.right,
                     bounds.h);
@@ -1614,16 +1701,16 @@ void Base::arrangeHorizontal(skin::Base *skin)
 
             //            child->setBounds(bounds.x, bounds.y, preferred.width, bounds.h);
             if(alignment & Alignment::Left)
-                child->setBounds(margin.left, bounds.y, bounds.w, bounds.h);
+                child->setArrangedBounds(margin.left, bounds.y, bounds.w, bounds.h);
             else if(alignment & Alignment::Right)
-                child->setBounds(innerBounds.w-bounds.w-margin.right, bounds.y, bounds.w, bounds.h);
+                child->setArrangedBounds(innerBounds.w-bounds.w-margin.right, bounds.y, bounds.w, bounds.h);
             else if(alignment & Alignment::CenterH)
             {
                 int start=(innerBounds.w-bounds.w-margin.left-margin.right)/2;
-                child->setBounds(start, bounds.y, bounds.w, bounds.h);
+                child->setArrangedBounds(start, bounds.y, bounds.w, bounds.h);
             }
             else //none/Absolute
-                child->setBounds(bounds.x, bounds.y, bounds.w, bounds.h);
+                child->setArrangedBounds(bounds.x, bounds.y, bounds.w, bounds.h);
         }
 
 #ifdef DEBUG_LAYOUT
@@ -1652,7 +1739,7 @@ void Base::arrangeHorizontal(skin::Base *skin)
         const Rect &bounds=child->getBounds();
         //            const Rect &preferred=child->getPreferredSize();
 
-        child->setBounds(innerBounds.x+margin.left, bounds.y,
+        child->setArrangedBounds(innerBounds.x+margin.left, bounds.y,
             innerBounds.w-margin.left-margin.right, bounds.h);
 
 #ifdef DEBUG_LAYOUT
@@ -1687,7 +1774,7 @@ void Base::arrangeVertical(skin::Base *skin)
 
         if(dock & DockPosition::Top)
         {
-            child->setBounds(bounds.x,
+            child->setArrangedBounds(bounds.x,
                 innerBounds.y+margin.top,
                 bounds.w,
                 preferred.height);
@@ -1705,7 +1792,7 @@ void Base::arrangeVertical(skin::Base *skin)
             else
                 height=innerBounds.h-margin.top-margin.bottom;
 
-            child->setBounds(bounds.x,
+            child->setArrangedBounds(bounds.x,
                 innerBounds.y+margin.top,
                 bounds.w,
                 height);
@@ -1719,14 +1806,14 @@ void Base::arrangeVertical(skin::Base *skin)
             else
                 height=innerBounds.h-margin.top-margin.bottom;
 
-            child->setBounds(bounds.x,
+            child->setArrangedBounds(bounds.x,
                 innerBounds.y+margin.top,
                 bounds.w,
                 height);
         }
         else if(dock & DockPosition::Bottom)
         {
-            child->setBounds(bounds.x,
+            child->setArrangedBounds(bounds.x,
                 (innerBounds.y+innerBounds.h)-preferred.height-margin.bottom,
                 bounds.w,
                 preferred.height);
@@ -1741,16 +1828,16 @@ void Base::arrangeVertical(skin::Base *skin)
             Alignment alignment=child->getAlignment();
 
             if(alignment & Alignment::Top)
-                child->setBounds(bounds.x, margin.top, bounds.w, bounds.h);
+                child->setArrangedBounds(bounds.x, margin.top, bounds.w, bounds.h);
             else if(alignment & Alignment::Bottom)
-                child->setBounds(bounds.x, innerBounds.h-bounds.h-margin.bottom, bounds.w, bounds.h);
+                child->setArrangedBounds(bounds.x, innerBounds.h-bounds.h-margin.bottom, bounds.w, bounds.h);
             else if(alignment & Alignment::CenterV)
             {
                 int start=(innerBounds.h-bounds.h-margin.top-margin.bottom)/2;
-                child->setBounds(bounds.x, start, bounds.w, bounds.h);
+                child->setArrangedBounds(bounds.x, start, bounds.w, bounds.h);
             }
             else //none/Absolute
-                child->setBounds(bounds.x, bounds.y, bounds.w, bounds.h);
+                child->setArrangedBounds(bounds.x, bounds.y, bounds.w, bounds.h);
         }
         else if(dock==DockPosition::Center)
             centerCount++;
@@ -1791,7 +1878,7 @@ void Base::arrangeVertical(skin::Base *skin)
             const Margin &margin=child->getMargin();
             const Rect &bounds=child->getBounds();
 
-            child->setBounds(bounds.x, innerBounds.y+(centerCount*centerH)+margin.top,
+            child->setArrangedBounds(bounds.x, innerBounds.y+(centerCount*centerH)+margin.top,
                 bounds.w, centerH-margin.top-margin.bottom);
 
             centerCount++;

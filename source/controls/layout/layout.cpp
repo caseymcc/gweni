@@ -289,48 +289,24 @@ void LayoutItem::calculateVertical()
 
 void LayoutItem::updateControlSize(Dim dim)
 {
-    SizeFlags sizeFlags=m_control->getSizeFlags();
+    // Sized from the control's request and preferred size against this cell
+    // (Base::layoutCellSize), never from its current bounds, which an earlier
+    // pass may have grown or shrunk.
     Margin margin=m_control->getMargin();
     Rect bounds=m_control->getBounds();
 
     if(dim == Dim::X)
     {
         bounds.x=m_bounds.x+margin.left;
-        if(bounds.w>m_bounds.w)
-        {
-            if((sizeFlags.horizontal == SizeFlag::Elastic)||
-                (sizeFlags.horizontal == SizeFlag::Shrink)||
-                (sizeFlags.horizontal==SizeFlag::Bloat))
-                bounds.w=m_bounds.w;
-        }
-        else if(bounds.w<m_bounds.w)
-        {
-            if((sizeFlags.horizontal == SizeFlag::Elastic)||
-                (sizeFlags.horizontal == SizeFlag::Expand)||
-                (sizeFlags.horizontal == SizeFlag::Bloat))
-                bounds.w=m_bounds.w;
-        }
+        bounds.w=m_control->layoutCellSize(dim, m_bounds.w);
     }
     else
     {
         bounds.y=m_bounds.y+margin.top;
-        if(bounds.h>m_bounds.h)
-        {
-            if((sizeFlags.vertical == SizeFlag::Elastic)||
-                (sizeFlags.vertical == SizeFlag::Shrink) ||
-                (sizeFlags.vertical==SizeFlag::Bloat))
-                bounds.h=m_bounds.h;
-        }
-        else if(bounds.h<m_bounds.h)
-        {
-            if((sizeFlags.vertical == SizeFlag::Elastic)||
-                (sizeFlags.vertical == SizeFlag::Expand)||
-                (sizeFlags.vertical == SizeFlag::Bloat))
-                bounds.h=m_bounds.h;
-        }
+        bounds.h=m_control->layoutCellSize(dim, m_bounds.h);
     }
 
-    m_control->setBounds(bounds);
+    m_control->setArrangedBounds(bounds.x, bounds.y, bounds.w, bounds.h);
 }
 
 void LayoutItem::arrange(skin::Base *skin, Dim dim)

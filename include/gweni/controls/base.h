@@ -249,15 +249,26 @@ public:
     virtual void setPos(const Point &p) { return setPos(p.x, p.y); }
     virtual Point getPos() const { return Point(getX(), getY()); }
 
-    virtual void setWidth(int w) { setSize(w, getHeight()); }
-    virtual void setHeight(int h) { setSize(getWidth(), h); }
+    virtual void setWidth(int w);
+    virtual void setHeight(int h);
 
     virtual bool  setSize(int w, int h);
     virtual bool  setSize(const Point &p);
     virtual Point getSize() const { return Point(getWidth(), getHeight()); }
 
+    //! Every call that does not come from the generic arrange code (the dock
+    //! branches of arrangeHorizontal/Vertical, policyResize and a LayoutItem
+    //! placing its control) is a request: setPos/moveTo record the position,
+    //! setSize/setWidth/setHeight the size, setBounds both. A dock-None control
+    //! is sized from its request, its preferred size and its size flags, never
+    //! from the bounds an earlier pass gave it (see policyResize).
     virtual bool setBounds(int x, int y, int w, int h);
     virtual bool setBounds(const gweni::Rect &bounds);
+
+    //! The bounds last asked for by a request (see setBounds). Starts as the
+    //! initial bounds; hasRequestedSize() says whether a size was ever asked.
+    const gweni::Rect &getRequestedBounds() const { return m_requestedBounds; }
+    bool hasRequestedSize(Dim dim) const { return dim == Dim::X?m_widthRequested:m_heightRequested; }
 
     virtual void setPadding(const Padding &padding);
     virtual void setMargin(const Margin &margin);
@@ -592,6 +603,10 @@ protected:
 
     //            gweni::Rect m_needed;
     gweni::Rect m_bounds;
+    //! See getRequestedBounds().
+    gweni::Rect m_requestedBounds;
+    bool m_widthRequested;
+    bool m_heightRequested;
     gweni::Rect m_renderBounds;
     int m_zIndex;
 
@@ -642,10 +657,27 @@ public:
 //    void setPosition(Position pos, int xpadding=0, int ypadding=0);
 
     virtual void calculateSize(skin::Base *skin, Dim dim);
-    virtual void policyResize(const Size &limit, Dim dim);
+    //! Sizes this dock-None control along `dim` for arrangeHorizontal/Vertical
+    //! of its parent: `preferred` is its preferred size (see dockNoneSize).
+    virtual void policyResize(const Size &preferred, Dim dim);
     virtual void arrange(skin::Base *skin, Dim dim);
 
 protected:
+    //! The width (Dim::X) or height (Dim::Y) of this control when its parent
+    //! places it with dock None, from its requested size r, its preferred size
+    //! p and its size flag: Fixed r, Expand max(r,p), Shrink min(r,p), Elastic
+    //! and Bloat p; with no size requested, p. There is no cell to fill, so
+    //! nothing caps Expand: content larger than the parent overflows it (a
+    //! ScrollControl's panel, say). Never reads the current bounds, so what an
+    //! earlier pass gave the control does not feed back.
+    int dockNoneSize(Dim dim, int preferred) const;
+    //! The same for this control placed by a LayoutItem in a cell `cell` wide
+    //! (Dim::X) or high: Fixed r, Shrink min(r,cell), Expand, Elastic and
+    //! Bloat max(r,p) up to the cell; with no size requested, the cell.
+    int layoutCellSize(Dim dim, int cell) const;
+    //! setBounds for the generic arrange code: its result is not a request.
+    bool setArrangedBounds(int x, int y, int w, int h);
+
     bool processLayout(skin::Base *skin, Dim dim);
     Size sizeOfChildren(skin::Base *skin, Dim dim);
     //! The preferred width (Dim::X) or height (Dim::Y) this control's size
