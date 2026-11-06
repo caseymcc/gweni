@@ -13,10 +13,13 @@
  *                         the GWENI_SCALE environment variable; the flag beats
  *                         it). The canvas is the framebuffer / scale in logical
  *                         units, so the UI is drawn s times as large
+ *    --headless           with a capture, go straight to the surfaceless EGL
+ *                         context instead of trying a GLFW window first
  *
  *  With no options it opens the interactive window as before. A capture needs no
  *  display: it hides the window, and with no display at all it falls back to a
- *  surfaceless EGL context. Run it from the repo root:
+ *  surfaceless EGL context (--headless skips the window, so the capture takes the
+ *  same path whether or not a display exists). Run it from the repo root:
  *
  *    ./build_linux_x64_debug/examples/openglcore/OpenGLCore \
  *        --demo ColorPickerDemo --screenshot /tmp/hero.png
@@ -204,7 +207,7 @@ static void printUsage(std::ostream &out)
 {
     out<<"Usage: OpenGLCore [--demo <Name>] [--screenshot <out.png>]"
          " [--frames <N>] [--stats]\n"
-         "                  [--scale <s>] [--resources <dir>]\n"
+         "                  [--scale <s>] [--headless] [--resources <dir>]\n"
          "\n"
          "  --demo <Name>        show that demo page at startup\n"
          "  --screenshot <path>  render offscreen, write one PNG and exit\n"
@@ -219,6 +222,8 @@ static void printUsage(std::ostream &out)
          "                       the framebuffer / scale, so the UI is s times\n"
          "                       as large; an offscreen capture has a content\n"
          "                       scale of 1\n"
+         "  --headless           force the surfaceless EGL context (no display\n"
+         "                       needed); needs --screenshot or --frames\n"
          "  --resources <dir>    load the skin, fonts and textures from <dir>\n"
          "                       (relative to the working directory, or\n"
          "                       absolute) instead of the resources/ next to\n"
@@ -249,6 +254,7 @@ int main(int argc, char *argv[])
     int frameCount=0;
     bool stats=false;
     bool scaleGiven=false;
+    bool forceHeadless=false;
 
     for(int i=1; i<argc; ++i)
     {
@@ -280,6 +286,8 @@ int main(int argc, char *argv[])
             }
             scaleGiven=true;
         }
+        else if(arg == "--headless")
+            forceHeadless=true;
         else if(arg == "--resources" && hasValue)
             resourceDir=argv[++i];
         else if(arg == "--help" || arg == "-h")
@@ -311,6 +319,13 @@ int main(int argc, char *argv[])
     // display; anything else is the interactive loop.
     const bool capturing=writingPng||(frameCount>0);
 
+    if(forceHeadless && !capturing)
+    {
+        std::cerr<<"OpenGLCore: --headless has no window to show;"
+                   " pass --screenshot or --frames\n";
+        return EXIT_FAILURE;
+    }
+
     if(writingPng && !gweni::capture::ensureDirectory(fs::path(shotPath).parent_path()))
         return EXIT_FAILURE;
 
@@ -332,7 +347,17 @@ int main(int argc, char *argv[])
     // be photographed in the build container as it stands.
     gweni::capture::Context ctx;
 
-    if(!gweni::capture::initGlfwContext(ctx, screenSize,
+    if(forceHeadless)
+    {
+#if GWENI_EXAMPLE_EGL
+        if(!gweni::capture::initEglContext(ctx))
+            return EXIT_FAILURE;
+#else
+        std::cerr<<"OpenGLCore: --headless needs the EGL path, which this platform lacks\n";
+        return EXIT_FAILURE;
+#endif
+    }
+    else if(!gweni::capture::initGlfwContext(ctx, screenSize,
         "Gweni OpenGL Core Profile Sample", !capturing))
     {
         if(!capturing)
