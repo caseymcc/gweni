@@ -122,9 +122,17 @@ gweni::Color ColorLerpBox::getSelectedColor()
     return getColorAtPos(cursorPos.x, cursorPos.y);
 }
 
+gweni::Color ColorLerpBox::getHueColor() const
+{
+    return HSVToColor(m_hue, 1, 1);
+}
+
 void ColorLerpBox::setColor(gweni::Color color, bool onlyHue)
 {
     HSV hsv=RGBtoHSV(color.r, color.g, color.b);
+    const int oldHue=m_hue;
+    const gweni::Point oldCursor=cursorPos;
+
     m_hue=hsv.h;
 
     if(!onlyHue)
@@ -133,6 +141,10 @@ void ColorLerpBox::setColor(gweni::Color color, bool onlyHue)
         cursorPos.y=(1-hsv.v)*getHeight();
     }
 
+    // the skin draws the hue and the cursor: repaint only when one moved
+    if(m_hue != oldHue || cursorPos.x != oldCursor.x || cursorPos.y != oldCursor.y)
+        redraw();
+
     onSelectionChanged.call(this);
 }
 
@@ -140,11 +152,16 @@ void ColorLerpBox::onMouseMoved(int x, int y, int /*deltaX*/, int /*deltaY*/)
 {
     if(m_depressed)
     {
+        const gweni::Point oldCursor=cursorPos;
+
         cursorPos=canvasPosToLocal(gweni::Point(x, y));
 
         // Do we have clamp?
         cursorPos.x=clamp(cursorPos.x, 0, getWidth());
         cursorPos.y=clamp(cursorPos.y, 0, getHeight());
+
+        if(cursorPos.x != oldCursor.x || cursorPos.y != oldCursor.y)
+            redraw();
 
         onSelectionChanged.call(this);
     }
@@ -171,72 +188,12 @@ gweni::Color ColorLerpBox::getColorAtPos(int x, int y)
     return result;
 }
 
-void ColorLerpBox::render(gweni::skin::Base *skin)
-{
-    // Is there any way to move this into skin? Not for now, no idea how we'll
-    // "actually" render these
-    ParentClass::render(skin);
-
-    size_t primitiveIndex=0;
-
-//    if(m_primitiveIds.size() < primitives)
-//        enlargePrimitiveIds(this, m_primitiveIds, primitives);
-
-    for(int x=0; x < getWidth(); x++)
-    {
-        for(int y=0; y < getHeight(); y++)
-        {
-            skin->getRenderer()->setDrawColor(getColorAtPos(x, y));
-//            skin->getRenderer()->drawPixel(&m_primitiveIds[primitiveIndex], x, y, getZIndex());
-            primitiveIndex++;
-        }
-    }
-
-    skin->getRenderer()->setDrawColor(gweni::Color(0, 0, 0, 255));
-//    skin->getRenderer()->drawLinedRect(&m_primitiveIds[primitiveIndex], getRenderBounds(), getZIndex());
-    gweni::Color selected=getSelectedColor();
-
-    if((selected.r+selected.g+selected.b)/3 < 170)
-        skin->getRenderer()->setDrawColor(gweni::Color(255, 255, 255, 255));
-    else
-        skin->getRenderer()->setDrawColor(gweni::Color(0, 0, 0, 255));
-
-//    skin->getRenderer()->drawShavedCornerRect(&m_primitiveIds[primitiveIndex+4], testRect, getZIndex());
-}
-
 GWENI_CONTROL_CONSTRUCTOR(ColorSlider)
 {
     setSize(32, 128);
     setSizeFlags({SizeFlag::Fixed, SizeFlag::Fixed});
     setMouseInputEnabled(true);
     m_depressed=false;
-}
-
-void ColorSlider::render(gweni::skin::Base *skin)
-{
-    // Is there any way to move this into skin? Not for now, no idea how we'll
-    // "actually" render these
-    size_t primitiveIndex=0;
-
-//    if(m_primitiveIds.size() < primitives)
-//        enlargePrimitiveIds(this, m_primitiveIds, primitives);
-
-    for(int y=0; y < getHeight(); y++)
-    {
-        const float yPercent=static_cast<float>(y) / getHeight();
-        skin->getRenderer()->setDrawColor(HSVToColor(yPercent*360, 1, 1));
-//        skin->getRenderer()->drawFilledRect(m_primitiveIds[primitiveIndex], gweni::Rect(5, y, getWidth()-10, 1), getZIndex());
-        primitiveIndex++;
-    }
-
-    // Draw our selectors
-    skin->getRenderer()->setDrawColor(gweni::Color(0, 0, 0, 255));
-//    skin->getRenderer()->drawFilledRect(m_primitiveIds[primitiveIndex], gweni::Rect(0, drawHeight+2, getWidth(), 1), getZIndex());
-//    skin->getRenderer()->drawFilledRect(m_primitiveIds[primitiveIndex+1], gweni::Rect(0, drawHeight, 5, 5), getZIndex());
-//    skin->getRenderer()->drawFilledRect(m_primitiveIds[primitiveIndex+2], gweni::Rect(getWidth()-5, drawHeight, 5, 5), getZIndex());
-    skin->getRenderer()->setDrawColor(gweni::Color(255, 255, 255, 255));
-//    skin->getRenderer()->drawFilledRect(m_primitiveIds[primitiveIndex+3], gweni::Rect(1, drawHeight+1, 3, 3), getZIndex());
-//    skin->getRenderer()->drawFilledRect(m_primitiveIds[primitiveIndex+4], gweni::Rect(getWidth()-4, drawHeight+1, 3, 3), getZIndex());
 }
 
 void ColorSlider::onMouseClickLeft(int x, int y, bool down)
@@ -269,7 +226,12 @@ void ColorSlider::onMouseMoved(int x, int y, int /*deltaX*/, int /*deltaY*/)
         if(cursorPos.y > getHeight())
             cursorPos.y=getHeight();
 
-        m_selectedDist=cursorPos.y;
+        if(cursorPos.y != m_selectedDist)
+        {
+            m_selectedDist=cursorPos.y;
+            redraw();
+        }
+
         onSelectionChanged.call(this);
     }
 }
@@ -277,7 +239,14 @@ void ColorSlider::onMouseMoved(int x, int y, int /*deltaX*/, int /*deltaY*/)
 void ColorSlider::setColor(gweni::Color color)
 {
     HSV hsv=RGBtoHSV(color.r, color.g, color.b);
-    m_selectedDist=hsv.h/360*getHeight();
+    const int selectedDist=hsv.h/360*getHeight();
+
+    if(selectedDist != m_selectedDist)
+    {
+        m_selectedDist=selectedDist;
+        redraw();
+    }
+
     onSelectionChanged.call(this);
 }
 

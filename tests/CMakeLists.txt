@@ -125,6 +125,7 @@ add_executable(gweni_unit_tests
     unit/platformSleep.cpp
     unit/layoutPasses.cpp
     unit/sliderNotches.cpp
+    unit/colorControls.cpp
     unit/scrollControl.cpp
     unit/resourcePaths.cpp
     unit/requestedSize.cpp)

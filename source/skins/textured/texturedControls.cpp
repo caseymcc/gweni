@@ -12,6 +12,7 @@
 #include "gweni/controls/collapsibleCategory.h"
 #include "gweni/controls/listBox.h"
 #include "gweni/controls/slider.h"
+#include "gweni/controls/colorControls.h"
 
 #include <algorithm>
 
@@ -909,6 +910,136 @@ void SliderBar::update(renderer::Base *renderer, controls::Base *baseControl)
 
 
 ///////////////////////////////////////////////////////////////////////////
+//ColorLerpBox
+void ColorLerpBox::update(renderer::Base *renderer, controls::Base *baseControl)
+{
+    if(m_primitives.size() < 2)
+        return;
+
+    controls::ColorLerpBox *box=static_cast<controls::ColorLerpBox *>(baseControl);
+    const gweni::Rect r=baseControl->getRenderBounds();
+    const bool visible=baseControl->visible();
+    // the field in the lower slot, drawn first, so the marker's AA rim blends
+    // over it (see ColorSlider::update)
+    const size_t field=std::min(m_primitives[0], m_primitives[1]);
+    const size_t cursorMarker=std::max(m_primitives[0], m_primitives[1]);
+
+    if(visible)
+    {
+        const tokyonight::Surface &surface=tokyonight::ColorField;
+        const tokyonight::Surface &marker=tokyonight::ColorMarker;
+        const gweni::Color white(255, 255, 255, 255);
+        const gweni::Color black(0, 0, 0, 255);
+
+        renderer->drawBilinearRect(field, r, baseControl->getZIndex(), white, box->getHueColor(),
+            black, black, surface.radius, surface.borderWidth, surface.border);
+
+        // centred on the cursor, kept inside the box
+        const gweni::Point &cursor=box->getCursorPos();
+        const int size=std::max(std::min({MarkerSize, r.w, r.h}), 0);
+        const gweni::Rect rect(r.x+clamp(cursor.x-size/2, 0, r.w-size),
+            r.y+clamp(cursor.y-size/2, 0, r.h-size), size, size);
+
+        renderer->drawRoundedRect(cursorMarker, rect, marker.radius, marker.borderWidth,
+            marker.top, marker.bottom, marker.border, baseControl->getZIndex()+1);
+    }
+
+    const unsigned int sc=baseControl->getStateChange();
+    if((sc&controls::StateChange_Visibility) || (sc&controls::StateChange_Created))
+    {
+        renderer->showPrimitive(visible?6:0, field);
+        renderer->showPrimitive(visible?4:0, cursorMarker);
+    }
+}
+
+
+///////////////////////////////////////////////////////////////////////////
+//ColorSlider
+void ColorSlider::update(renderer::Base *renderer, controls::Base *baseControl)
+{
+    if(m_primitives.size() < 7)
+        return;
+
+    controls::ColorSlider *slider=static_cast<controls::ColorSlider *>(baseControl);
+    const gweni::Rect r=baseControl->getRenderBounds();
+    const bool visible=baseControl->visible();
+
+    // OpenGLCore draws one buffer in slot order, so the lowest slots are drawn
+    // first: the three back segments take those, then the three front ones,
+    // then the marker (see below for why the order matters).
+    size_t slots[7];
+
+    std::copy(m_primitives.begin(), m_primitives.begin()+7, slots);
+    std::sort(slots, slots+7);
+
+    if(visible)
+    {
+        static const gweni::Color stops[7]=
+        {
+            gweni::Color(255, 0, 0, 255), gweni::Color(255, 255, 0, 255), gweni::Color(0, 255, 0, 255),
+            gweni::Color(0, 255, 255, 255), gweni::Color(0, 0, 255, 255), gweni::Color(255, 0, 255, 255),
+            gweni::Color(255, 0, 0, 255)
+        };
+        const int x=r.x+Inset;
+        const int w=std::max(r.w-2*Inset, 0);
+        const int z=baseControl->getZIndex();
+
+        // Segment i spans the rows from joint i to joint i+1, joint i at row
+        // i*h/6 rounded to an even row: OpenGLCore draws a rect 2*(h/2) rows
+        // tall, so an odd height would leave a gap row.
+        int joints[7];
+
+        joints[0]=0;
+        joints[6]=r.h;
+        for(int i=1; i<6; ++i)
+            joints[i]=std::min(2*((i*r.h+6)/12), r.h);
+
+        // A rect's outermost row is anti-aliased to ~84% cover, so two rects
+        // that only abut leave a darker seam row at every joint. The odd
+        // segments are drawn in front (z+1) and one row past both of their
+        // joints instead: each AA row then blends over its neighbour's colour,
+        // not the background. That needs the segments behind drawn first,
+        // since a GL_LESS depth test rejects them where a nearer one already is.
+        for(int i=0; i<6; ++i)
+        {
+            const bool front=(i&1) != 0;
+            int top=joints[i];
+            int bottom=joints[i+1];
+
+            if(front)
+            {
+                top=std::max(top-1, 0);
+                bottom=std::min(bottom+1, r.h);
+
+                if((bottom-top)&1)
+                    top=std::max(top-1, 0);
+            }
+
+            renderer->drawRoundedRect(slots[front?3+i/2:i/2], gweni::Rect(x, r.y+top, w, bottom-top),
+                0.0f, 0.0f, stops[i], stops[i+1], stops[i], front?z+1:z);
+        }
+
+        // the selection bar across the whole width, centred on the selected
+        // row, in front of the front segments
+        const tokyonight::Surface &marker=tokyonight::ColorMarker;
+        const int height=std::max(std::min(MarkerHeight, r.h), 0);
+        const gweni::Rect rect(r.x, r.y+clamp(slider->getSelectedDist()-height/2, 0, r.h-height),
+            r.w, height);
+
+        renderer->drawRoundedRect(slots[6], rect, marker.radius, marker.borderWidth,
+            marker.top, marker.bottom, marker.border, z+2);
+    }
+
+    const unsigned int sc=baseControl->getStateChange();
+    if((sc&controls::StateChange_Visibility) || (sc&controls::StateChange_Created))
+    {
+        for(size_t i=0; i<7; ++i)
+            renderer->showPrimitive(visible?4:0, slots[i]);
+    }
+}
+
+
+///////////////////////////////////////////////////////////////////////////
 //StatusBar
 size_t StatusBar::Background;
 size_t StatusBar::Selection;
@@ -1307,6 +1438,8 @@ template class ControlRegister<Scroller>;
 template class ControlRegister<Shadow>;
 template class ControlRegister<Slider>;
 template class ControlRegister<SliderBar>;
+template class ControlRegister<ColorLerpBox>;
+template class ControlRegister<ColorSlider>;
 template class ControlRegister<StatusBar>;
 // NOTE: TabItem<_Type> is itself a class template (TabItem<TabTop>, <TabBottom>,
 // <TabLeft>, <TabRight>); register those specializations here if/when their

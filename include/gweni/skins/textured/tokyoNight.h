@@ -130,6 +130,11 @@ inline Surface SliderThumbDisabled{ BgStorm,               Color(0x1f,0x22,0x33)
 inline Surface CheckOff       { BgDark,                BgDark,                Line,  RadiusSm, BorderW };
 inline Surface CheckOn        { Blue,                  DarkBlue,              Blue,  RadiusSm, BorderW };
 
+// Colour picker: the SV box's frame (its fill is the bilinear hue blend, so
+// only border/radius are read) and the opaque cursor/selection markers
+inline Surface ColorField     { Bg,                    Bg,                    Line,  RadiusSm, BorderW };
+inline Surface ColorMarker    { Color(0xff,0xff,0xff), Color(0xff,0xff,0xff), BgDark, 2.0f,    BorderW };
+
 // Generic transparent (draw nothing visible but keep a slot)
 inline Surface None           { Color(0,0,0,0),        Color(0,0,0,0),        Color(0,0,0,0), 0.0f, 0.0f };
 
@@ -151,6 +156,7 @@ inline std::unordered_map<std::string, Surface*>& surfaceRegistry()
         {"SliderTrack",&SliderTrack},{"SliderNotch",&SliderNotch},{"SliderThumb",&SliderThumb},
         {"SliderThumbHover",&SliderThumbHover},{"SliderThumbDown",&SliderThumbDown},{"SliderThumbDisabled",&SliderThumbDisabled},
         {"CheckOff",&CheckOff},{"CheckOn",&CheckOn},
+        {"ColorField",&ColorField},{"ColorMarker",&ColorMarker},
     };
     return m;
 }

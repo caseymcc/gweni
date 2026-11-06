@@ -648,6 +648,43 @@ public:
     inline static const std::string_view name="SliderBar";
 };
 
+// controls::ColorLerpBox, the saturation/value box: one bilinear fill (white
+// top-left, the hue top-right, black along the bottom) in the ColorField
+// surface, and the cursor marker one z above it.
+class ColorLerpBox:public textured::ControlRegister<ColorLerpBox>
+{
+public:
+    static void staticInit(TexturedSkin *skin) { m_staticInit=true; }
+
+    size_t requiredPrimitives() override { return 2; }
+
+    void update(renderer::Base *renderer, controls::Base *baseControl) override;
+
+    inline static const std::string_view name="ColorLerpBox";
+
+    static constexpr int MarkerSize=8;
+};
+
+// controls::ColorSlider, the vertical hue strip: hue->RGB is linear over each
+// 60 degree arc, so the strip is six 2-stop vertical gradients (red, yellow,
+// green, cyan, blue, magenta, red), plus the selection bar. The odd segments
+// sit one z in front of the even ones and overlap them at the joints (no seam
+// row, see update()), so the bar is drawn at getZIndex()+2.
+class ColorSlider:public textured::ControlRegister<ColorSlider>
+{
+public:
+    static void staticInit(TexturedSkin *skin) { m_staticInit=true; }
+
+    size_t requiredPrimitives() override { return 7; }
+
+    void update(renderer::Base *renderer, controls::Base *baseControl) override;
+
+    inline static const std::string_view name="ColorSlider";
+
+    static constexpr int Inset=5;
+    static constexpr int MarkerHeight=6;
+};
+
 class StatusBar:public textured::ControlRegister<StatusBar>
 {
 public:
