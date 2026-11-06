@@ -7,7 +7,10 @@
 #  registers it as controltest_determinism):
 #
 #      cmake -DCONTROLTEST=<ControlTest> -DSOURCE_DIR=<repo root> \
-#            -DSCRATCH_DIR=<dir> -P determinism.cmake
+#            -DSCRATCH_DIR=<dir> [-DSCALE=<s>] -P determinism.cmake
+#
+#  SCALE, when given, is passed to both runs as --scale (controltest_determinism_scale150
+#  runs it at 1.5, where every edge is rounded to the device-pixel grid).
 #
 #  Runs ControlTest --shot-all --dump-bounds twice, in two separate processes,
 #  and requires every PNG and .txt listing of the first run to be byte-identical
@@ -30,13 +33,18 @@ endforeach()
 #   )
 set(EXCLUDED_DEMOS)
 
+set(scale_args)
+if(DEFINED SCALE AND NOT SCALE STREQUAL "")
+    set(scale_args --scale "${SCALE}")
+endif()
+
 # a stale run must not be able to pass
 file(REMOVE_RECURSE "${SCRATCH_DIR}")
 file(MAKE_DIRECTORY "${SCRATCH_DIR}")
 
 foreach(run a b)
     execute_process(
-        COMMAND "${CONTROLTEST}" --headless --shot-all --dump-bounds
+        COMMAND "${CONTROLTEST}" --headless --shot-all --dump-bounds ${scale_args}
                 --shot-dir "${SCRATCH_DIR}/${run}"
         WORKING_DIRECTORY "${SOURCE_DIR}"
         RESULT_VARIABLE result

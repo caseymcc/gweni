@@ -27,6 +27,33 @@ if(TARGET ControlTest)
         LABELS gpu
         TIMEOUT 600)
 
+    # the same at --scale 1.5, where every edge is rounded to the device-pixel
+    # grid, so a rounding that depends on anything but the input shows here
+    add_test(NAME controltest_determinism_scale150
+        COMMAND ${CMAKE_COMMAND}
+            -DCONTROLTEST=$<TARGET_FILE:ControlTest>
+            -DSOURCE_DIR=${GWENI_SOURCE_DIR}
+            -DSCRATCH_DIR=${CMAKE_CURRENT_BINARY_DIR}/determinism_scale150
+            -DSCALE=1.5
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/determinism.cmake
+        WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
+    set_tests_properties(controltest_determinism_scale150 PROPERTIES
+        LABELS gpu
+        TIMEOUT 600)
+
+    # --shot-all --dump-bounds at --scale 1 and 2: the listings (logical units)
+    # are identical and every PNG (device pixels) is exactly twice the size
+    add_test(NAME controltest_scale_bounds
+        COMMAND ${CMAKE_COMMAND}
+            -DCONTROLTEST=$<TARGET_FILE:ControlTest>
+            -DSOURCE_DIR=${GWENI_SOURCE_DIR}
+            -DSCRATCH_DIR=${CMAKE_CURRENT_BINARY_DIR}/scale_bounds
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/scaleBounds.cmake
+        WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
+    set_tests_properties(controltest_scale_bounds PROPERTIES
+        LABELS gpu
+        TIMEOUT 600)
+
     # build, render and destroy every demo; exits non-zero unless the canvas
     # renders as the empty canvas it started as, and every frame of it takes
     # one layout pass

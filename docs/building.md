@@ -26,6 +26,10 @@ surfaceless-EGL path. On a shared host, hold the GPU lock around `ctest`;
 
 - `controltest_determinism`: two separate ControlTest processes must write
   byte-identical `--shot-all` PNGs and `--dump-bounds` listings.
+  `controltest_determinism_scale150` is the same at `--scale 1.5`.
+- `controltest_scale_bounds`: `--shot-all --dump-bounds` at `--scale 1` and 2.
+  The listings (logical units) must be identical and every PNG exactly twice
+  as wide and high (`tests/scaleBounds.cmake`).
 - `controltest_teardown`: every demo builds, renders and tears down cleanly,
   and every frame lays out in one pass (`--require-one-pass`).
 - `controltest_resize`: `ControlTest --scenario resize --require-one-pass`.
