@@ -34,6 +34,7 @@
 #include "demo/tabControl.h"
 #include "demo/treeControl.h"
 #include "demo/textBox.h"
+#include "demo/textSizes.h"
 #include "demo/unicodeText.h"
 #include "demo/window.h"
 
@@ -120,6 +121,7 @@ void Demo::init(const String &name)
         addDemo<TextBoxDemo>(cat, "TextBoxDemo");
         addDemo<ListBoxDemo>(cat, "ListBoxDemo");
         addDemo<UnicodeTextDemo>(cat, "UnicodeTextDemo");
+        addDemo<TextSizesDemo>(cat, "TextSizesDemo");
         addDemo<CrossSplitterDemo>(cat, "CrossSplitterDemo");
         addDemo<RadioButtonDemo>(cat, "RadioButtonDemo");
         addDemo<CheckBoxDemo>(cat, "CheckBoxDemo");

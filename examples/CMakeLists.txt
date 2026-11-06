@@ -50,6 +50,8 @@ set(GWENI_DEMO_SOURCES
     demo/tabControl.h
     demo/textBox.cpp
     demo/textBox.h
+    demo/textSizes.cpp
+    demo/textSizes.h
     demo/treeControl.cpp
     demo/treeControl.h
     demo/unicodeText.cpp
