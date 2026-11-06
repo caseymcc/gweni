@@ -169,6 +169,23 @@ GWENI_EXPORT bool wildcard(const String &strWildcard,
 GWENI_EXPORT void toUpper(String &str);
 GWENI_EXPORT void strip(String &str, const String &chars);
 
+//! \name UTF-8 byte offsets
+//! A String holds UTF-8, and positions in it are byte offsets. A codepoint
+//! boundary is 0, str.size(), or any offset whose byte is not a continuation
+//! byte (10xxxxxx); these helpers only ever return boundaries.
+//! @{
+
+//! The UTF-8 bytes of codepoint c; empty for a surrogate or one past U+10FFFF.
+GWENI_EXPORT String utf8Encode(char32_t c);
+//! The boundary after the codepoint at pos; str.size() at or past the end.
+GWENI_EXPORT size_t utf8Next(const String &str, size_t pos);
+//! The boundary before pos, which need not be one itself; 0 at the start.
+GWENI_EXPORT size_t utf8Prev(const String &str, size_t pos);
+//! pos moved back to the start of the codepoint it is in, at most str.size().
+GWENI_EXPORT size_t utf8Snap(const String &str, size_t pos);
+
+//! @}
+
 template <typename T>
 T trimLeft(const T &str, const T &strChars)
 {

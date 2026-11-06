@@ -19,6 +19,24 @@ namespace gweni
 namespace controls
 {
 
+// Positions in a TextBox are byte offsets into its UTF-8 getText(), and every
+// one of them is kept on a codepoint boundary: the editing steps below move by
+// whole codepoints, and a position set from outside is snapped back to one.
+static int snapPos(const String &str, int pos)
+{
+    return static_cast<int>(utf8Snap(str, static_cast<size_t>(std::max(pos, 0))));
+}
+
+static int nextPos(const String &str, int pos)
+{
+    return static_cast<int>(utf8Next(str, static_cast<size_t>(pos)));
+}
+
+static int prevPos(const String &str, int pos)
+{
+    return static_cast<int>(utf8Prev(str, static_cast<size_t>(pos)));
+}
+
 #if GWENI_ANIMATE
 class ChangeCaretColor: public gweni::anim::Animation
 {
@@ -62,7 +80,12 @@ bool TextBox::onChar(gweni::UnicodeChar c)
     if(c == '\t')
         return false;
 
-    insertText(String{c});
+    const String str=utf8Encode(c);
+
+    if(str.empty())
+        return false;
+
+    insertText(str);
     return true;
 }
 
@@ -74,8 +97,7 @@ void TextBox::insertText(const gweni::String &strInsert)
     if(hasSelection())
         eraseSelection();
 
-    if(m_cursorPos > textLength())
-        m_cursorPos=textLength();
+    m_cursorPos=snapPos(getText(), std::min(m_cursorPos, textLength()));
 
     if(!isTextAllowed(strInsert, m_cursorPos))
         return;
@@ -83,7 +105,8 @@ void TextBox::insertText(const gweni::String &strInsert)
     int insertSize=static_cast<int>(strInsert.size());
     if(m_maxTextLength > NO_MAX_LENGTH && textLength() + insertSize > m_maxTextLength)
     {
-        insertSize=m_maxTextLength - textLength();
+        // The limit is in bytes; a codepoint that does not fit whole is left out.
+        insertSize=snapPos(strInsert, m_maxTextLength - textLength());
 
         if(insertSize <= 0)
             return;
@@ -252,7 +275,8 @@ bool TextBox::onKeyBackspace(bool down)
     if(m_cursorPos == 0)
         return true;
 
-    deleteText(m_cursorPos-1, 1);
+    const int start=prevPos(getText(), m_cursorPos);
+    deleteText(start, m_cursorPos-start);
     return true;
 }
 
@@ -270,7 +294,7 @@ bool TextBox::onKeyDelete(bool down)
     if(m_cursorPos >= textLength())
         return true;
 
-    deleteText(m_cursorPos, 1);
+    deleteText(m_cursorPos, nextPos(getText(), m_cursorPos)-m_cursorPos);
     return true;
 }
 
@@ -279,8 +303,7 @@ bool TextBox::onKeyLeft(bool down)
     if(!down)
         return true;
 
-    if(m_cursorPos > 0)
-        m_cursorPos--;
+    m_cursorPos=prevPos(getText(), m_cursorPos);
 
     if(!gweni::input::isShiftDown())
         m_cursorEnd=m_cursorPos;
@@ -295,7 +318,7 @@ bool TextBox::onKeyRight(bool down)
         return true;
 
     if(m_cursorPos < textLength())
-        m_cursorPos++;
+        m_cursorPos=nextPos(getText(), m_cursorPos);
 
     if(!gweni::input::isShiftDown())
         m_cursorEnd=m_cursorPos;
@@ -331,6 +354,8 @@ bool TextBox::onKeyend(bool /*down*/)
 
 void TextBox::setCursorPos(int i)
 {
+    i=snapPos(getText(), i);
+
     if(m_cursorPos == i)
         return;
 
@@ -341,6 +366,8 @@ void TextBox::setCursorPos(int i)
 
 void TextBox::setCursorend(int i)
 {
+    i=snapPos(getText(), i);
+
     if(m_cursorEnd == i)
         return;
 
@@ -354,11 +381,24 @@ void TextBox::deleteText(int iStartPos, int iLength)
         return;
 
     String str=getText();
+    // Whole codepoints: both ends of the range are snapped back to a boundary.
+    const int iEndPos=snapPos(str, iStartPos+iLength);
+    iStartPos=snapPos(str, iStartPos);
+    iLength=iEndPos-iStartPos;
+
+    if(iLength <= 0)
+        return;
+
+    // Taken before setText, whose onTextChanged clamps it to the new length.
+    const int cursorPos=m_cursorPos;
+
     str.erase(iStartPos, iLength);
     setText(str);
 
-    if(m_cursorPos > iStartPos)
-        setCursorPos(m_cursorPos-iLength);
+    if(cursorPos >= iEndPos)
+        setCursorPos(cursorPos-iLength);
+    else if(cursorPos > iStartPos)
+        setCursorPos(iStartPos);
 
     setCursorend(m_cursorPos);
 }
@@ -500,11 +540,8 @@ void TextBox::postLayout(skin::Base *skin)
 
 void TextBox::onTextChanged()
 {
-    if(m_cursorPos > textLength())
-        m_cursorPos=textLength();
-
-    if(m_cursorEnd > textLength())
-        m_cursorEnd=textLength();
+    m_cursorPos=snapPos(getText(), std::min(m_cursorPos, textLength()));
+    m_cursorEnd=snapPos(getText(), std::min(m_cursorEnd, textLength()));
 
     onTextChangedCaller.call(this);
 }
@@ -688,6 +725,31 @@ int TextBoxMultiline::getCurrentLine()
     return m_text->getLineFromChar(m_cursorPos);
 }
 
+// Columns count codepoints, so Up and Down keep the caret over the same
+// character count whatever the bytes of the lines are.
+int TextBoxMultiline::columnOf(int pos)
+{
+    const String &str=getText();
+    int column=0;
+
+    for(int i=m_text->getStartCharFromLine(m_text->getLineFromChar(pos)); i < pos; i=nextPos(str, i))
+        ++column;
+
+    return column;
+}
+
+int TextBoxMultiline::columnOnLine(int line, int column)
+{
+    const String &str=getText();
+    const int last=m_text->getLastCaretOnLine(line);
+    int pos=m_text->getStartCharFromLine(line);
+
+    for(; column > 0 && pos < last; --column)
+        pos=nextPos(str, pos);
+
+    return std::min(pos, last);
+}
+
 bool TextBoxMultiline::onKeyHome(bool down)
 {
     if(!down)
@@ -725,7 +787,7 @@ bool TextBoxMultiline::onKeyUp(bool down)
     if(!down)
         return true;
     //if ( m_cursorLine == 0 )
-    m_cursorLine=m_text->getCharPosOnLine(m_cursorPos);
+    m_cursorLine=columnOf(m_cursorPos);
 
     int iLine=m_text->getLineFromChar(m_cursorPos);
 
@@ -733,8 +795,7 @@ bool TextBoxMultiline::onKeyUp(bool down)
         return true;
 
     // The same column on the line above, or that line's last caret position.
-    const int start=m_text->getStartCharFromLine(iLine-1);
-    m_cursorPos=clamp(start+m_cursorLine, start, m_text->getLastCaretOnLine(iLine-1));
+    m_cursorPos=columnOnLine(iLine-1, m_cursorLine);
 
     if(!gweni::input::isShiftDown())
         m_cursorEnd=m_cursorPos;
@@ -748,7 +809,7 @@ bool TextBoxMultiline::onKeyDown(bool down)
     if(!down)
         return true;
     //if ( m_cursorLine == 0 )
-    m_cursorLine=m_text->getCharPosOnLine(m_cursorPos);
+    m_cursorLine=columnOf(m_cursorPos);
 
     int iLine=m_text->getLineFromChar(m_cursorPos);
     int iLastLine=m_text->numLines()-1;
@@ -756,8 +817,7 @@ bool TextBoxMultiline::onKeyDown(bool down)
         return true;
 
     // The same column on the line below, or that line's last caret position.
-    const int start=m_text->getStartCharFromLine(iLine+1);
-    m_cursorPos=clamp(start+m_cursorLine, start, m_text->getLastCaretOnLine(iLine+1));
+    m_cursorPos=columnOnLine(iLine+1, m_cursorLine);
 
     if(!gweni::input::isShiftDown())
         m_cursorEnd=m_cursorPos;

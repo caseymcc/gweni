@@ -157,6 +157,11 @@ public:
 
 protected:
 
+    //! How many codepoints pos is from the start of its line.
+    int columnOf(int pos);
+    //! The position that many codepoints into the line, or its last caret.
+    int columnOnLine(int line, int column);
+
 };
 
 

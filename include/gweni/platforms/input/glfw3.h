@@ -141,15 +141,11 @@ public:
         return m_eventCaller->inputModifierKey(key, bPressed) || handled;
     }
 
-    // Typed text, from glfwSetCharCallback. UnicodeChar is still a char, so
-    // only printable ASCII is forwarded and every other codepoint is dropped;
-    // widening it to char32_t (and UTF-8-safe editing) is the follow-up task.
+    // Typed text, from glfwSetCharCallback: one codepoint per call, forwarded
+    // as it is. Canvas::inputCharacter drops the ones that are not text.
     bool processCharEvent(unsigned int codepoint)
     {
         if (!m_eventCaller)
-            return false;
-
-        if (codepoint < 0x20 || codepoint > 0x7E)
             return false;
 
         return m_eventCaller->inputCharacter(static_cast<UnicodeChar>(codepoint));

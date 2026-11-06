@@ -54,8 +54,6 @@ inline bool isControlDown()
     return isKeyDown(keys::Control);
 }
 
-// Does copy, paste etc
-bool GWENI_EXPORT doSpecialKeys(controls::Base *canvas, gweni::UnicodeChar chr);
 bool GWENI_EXPORT handleAccelerator(controls::Base *canvas, gweni::UnicodeChar chr);
 
 // Send input to canvas for study

@@ -8,6 +8,7 @@
 #include <gweni/gweni.h>
 #include <gweni/controls/text.h>
 #include <gweni/skin.h>
+#include <gweni/utility.h>
 #include <gweni/platforms/commonPlatform.h>
 
 namespace gweni
@@ -181,21 +182,25 @@ int Text::getClosestCharacter(gweni::Point p)
     }
 
     int iDistance=4096;
-    int value=0;
+    size_t value=0;
 
-    for(unsigned i=0; i < m_string.length()+1; i++)
+    // Only codepoint boundaries: the caret never goes inside a UTF-8 sequence.
+    for(size_t i=0; ; i=utf8Next(m_string, i))
     {
-        gweni::Rect cp=getCharacterPosition(i);
+        gweni::Rect cp=getCharacterPosition(static_cast<unsigned int>(i));
         const int iDist=std::abs(cp.x-p.x) + std::abs(cp.y-p.y);  // this isn't proper
 
-        if(iDist > iDistance)
-            continue;
+        if(iDist <= iDistance)
+        {
+            iDistance=iDist;
+            value=i;
+        }
 
-        iDistance=iDist;
-        value=i;
+        if(i >= m_string.length())
+            break;
     }
 
-    return value;
+    return static_cast<int>(value);
 }
 
 void Text::onScaleChanged()
@@ -326,8 +331,12 @@ void Text::splitWords(const gweni::String &s, int w, std::vector<gweni::String> 
 {
     gweni::String str;
 
-    for(size_t i=0; i < s.length(); i++)
+    // A step is one codepoint, so a word broken up for width is never broken
+    // inside a UTF-8 sequence.
+    for(size_t i=0, next=0; i < s.length(); i=next)
     {
+        next=utf8Next(s, i);
+
         if(s[i] == '\n')
         {
             if(!str.empty())
@@ -346,7 +355,8 @@ void Text::splitWords(const gweni::String &s, int w, std::vector<gweni::String> 
             continue;
         }
 
-        str+=s[i];
+        const size_t charLength=next-i;
+        str.append(s, i, charLength);
 
         // With no width to place it in, a word is not broken up.
         if(w <= 0)
@@ -356,7 +366,7 @@ void Text::splitWords(const gweni::String &s, int w, std::vector<gweni::String> 
         gweni::Point p=getSkin()->getRenderer()->measureText(getFont(), str);
         if(p.x > w)
         {
-            if(str.size() == 1)
+            if(str.size() == charLength)
             {
                 // A single character already overflows the available width;
                 // retrying it would never make progress.
@@ -366,10 +376,10 @@ void Text::splitWords(const gweni::String &s, int w, std::vector<gweni::String> 
             }
 
             //split words
-            str.pop_back();
+            str.resize(str.size()-charLength);
             elems.push_back(str);
             str.clear();
-            --i;
+            next=i;
             continue;
         }
     }
@@ -577,7 +587,7 @@ int Text::getLastCaretOnLine(int i)
     if(i >= static_cast<int>(m_lines.size())-1 || end <= start)
         return end;
 
-    return end-1;
+    return static_cast<int>(utf8Prev(m_string, static_cast<size_t>(end)));
 }
 
 int Text::getCharPosOnLine(int i)

@@ -290,6 +290,10 @@ bool onMouseClicked(controls::Base *canvas, int iMouseButton, bool down)
 
 bool handleAccelerator(controls::Base *canvas, UnicodeChar chr)
 {
+    // Accelerators are ASCII ("CTRL+C"), so nothing else can match one.
+    if(chr >= 0x80)
+        return false;
+
     // Build the accelerator search string
     String accelString;
 
@@ -299,8 +303,9 @@ bool handleAccelerator(controls::Base *canvas, UnicodeChar chr)
     if(isShiftDown())
         accelString+="SHIFT+";
 
-    chr=towupper(chr);
-    accelString+=chr;
+    if(chr >= 'a' && chr <= 'z')
+        chr-='a'-'A';
+    accelString+=static_cast<char>(chr);
 
     if(KeyboardFocus && KeyboardFocus->handleAccelerator(accelString))
         return true;
@@ -310,47 +315,6 @@ bool handleAccelerator(controls::Base *canvas, UnicodeChar chr)
 
     if(canvas->handleAccelerator(accelString))
         return true;
-
-    return false;
-}
-
-bool doSpecialKeys(controls::Base *canvas, UnicodeChar chr)
-{
-    if(!KeyboardFocus)
-        return false;
-
-    if(KeyboardFocus->getCanvas() != canvas)
-        return false;
-
-    if(!KeyboardFocus->visible())
-        return false;
-
-    if(!isControlDown())
-        return false;
-
-    if(chr == 'C' || chr == 'c')
-    {
-        KeyboardFocus->onCopy(nullptr);
-        return true;
-    }
-
-    if(chr == 'V' || chr == 'v')
-    {
-        KeyboardFocus->onPaste(nullptr);
-        return true;
-    }
-
-    if(chr == 'X' || chr == 'x')
-    {
-        KeyboardFocus->onCut(nullptr);
-        return true;
-    }
-
-    if(chr == 'A' || chr == 'a')
-    {
-        KeyboardFocus->onSelectAll(nullptr);
-        return true;
-    }
 
     return false;
 }

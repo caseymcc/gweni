@@ -40,7 +40,7 @@ class Canvas;
 // See: http://www.utf8everywhere.org
 //
 typedef std::string String;
-typedef char UnicodeChar;    // TODO - deal with multibyte UTF8 chars.
+typedef char32_t UnicodeChar;    //!< One typed character: a Unicode codepoint.
 
 namespace cursor
 {

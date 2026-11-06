@@ -15,7 +15,6 @@
 #include <gweni/anim.h>
 #endif
 
-#include <cctype>
 #include <cstdio>
 #include <set>
 #include <string>
@@ -310,8 +309,11 @@ bool Canvas::inputCharacter(UnicodeChar chr)
     if(hidden())
         return false;
 
-    // Check if character is printable, i.e. don't want hidden codes, like backspace.
-    if(!std::isprint(chr))
+    // Only a codepoint that is text gets in: no C0 controls (backspace, tab,
+    // ...), DEL or C1 controls, no surrogate (half of a UTF-16 pair, not a
+    // codepoint) and nothing past U+10FFFF.
+    if(chr < 0x20 || (chr >= 0x7F && chr <= 0x9F)
+        || (chr >= 0xD800 && chr <= 0xDFFF) || chr > 0x10FFFF)
         return false;
 
     // Handle Accelerators

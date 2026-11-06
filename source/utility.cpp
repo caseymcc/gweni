@@ -287,6 +287,77 @@ bool wildcard(const String &strWildcard, const String &strHaystack)
     return true;
 }
 
+String utf8Encode(char32_t c)
+{
+    String out;
+
+    if(c < 0x80)
+    {
+        out+=static_cast<char>(c);
+    }
+    else if(c < 0x800)
+    {
+        out+=static_cast<char>(0xC0 | (c >> 6));
+        out+=static_cast<char>(0x80 | (c & 0x3F));
+    }
+    else if(c < 0x10000)
+    {
+        if(c >= 0xD800 && c <= 0xDFFF)
+            return out;
+
+        out+=static_cast<char>(0xE0 | (c >> 12));
+        out+=static_cast<char>(0x80 | ((c >> 6) & 0x3F));
+        out+=static_cast<char>(0x80 | (c & 0x3F));
+    }
+    else if(c <= 0x10FFFF)
+    {
+        out+=static_cast<char>(0xF0 | (c >> 18));
+        out+=static_cast<char>(0x80 | ((c >> 12) & 0x3F));
+        out+=static_cast<char>(0x80 | ((c >> 6) & 0x3F));
+        out+=static_cast<char>(0x80 | (c & 0x3F));
+    }
+
+    return out;
+}
+
+static bool isUtf8Continuation(char c)
+{
+    return (static_cast<unsigned char>(c) & 0xC0) == 0x80;
+}
+
+size_t utf8Next(const String &str, size_t pos)
+{
+    if(pos >= str.size())
+        return str.size();
+
+    ++pos;
+    while(pos < str.size() && isUtf8Continuation(str[pos]))
+        ++pos;
+
+    return pos;
+}
+
+size_t utf8Prev(const String &str, size_t pos)
+{
+    pos=std::min(pos, str.size());
+
+    if(pos == 0)
+        return 0;
+
+    return utf8Snap(str, pos-1);
+}
+
+size_t utf8Snap(const String &str, size_t pos)
+{
+    if(pos >= str.size())
+        return str.size();
+
+    while(pos > 0 && isUtf8Continuation(str[pos]))
+        --pos;
+
+    return pos;
+}
+
 void toUpper(gweni::String &str)
 {
     transform(str.begin(), str.end(), str.begin(), toupper);
