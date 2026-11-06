@@ -126,8 +126,10 @@ private:
     gweni::Color m_color;
     gweni::Color m_colorOverride;
 
-    bool m_wrap;
-    bool m_textChanged;
+    // Initialised here: the constructor's setWrap(false) reads m_wrap, and a
+    // Text whose string is never set relies on m_textChanged to get measured.
+    bool m_wrap=false;
+    bool m_textChanged=true;
 //    size_t m_textId;
 
     typedef std::list<Text *> TextLines;
