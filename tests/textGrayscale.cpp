@@ -11,6 +11,9 @@
  *  A glyph quad is as wide and tall as its atlas region and sits on whole
  *  pixels, so each pixel centre samples exactly one texel centre: a pixel's
  *  coverage is that texel's value.
+ *
+ *  This is the coverage path: a size that GWENI_SDF_TEXT_MIN puts in the SDF
+ *  range is skipped.
  */
 #include <doctest/doctest.h>
 
@@ -150,6 +153,15 @@ bool isWhole(float v)
     return v == std::floor(v);
 }
 
+//! Whether font is drawn from a coverage atlas; says so when it is skipped.
+bool coverage(const Font &font)
+{
+    if(gweni::test::gpuRenderer().getTextMode(font) == gweni::renderer::GLTextMode::Coverage)
+        return true;
+    MESSAGE("skipped: GWENI_SDF_TEXT_MIN draws ", font.size, " px from the SDF atlas");
+    return false;
+}
+
 }//namespace
 
 TEST_CASE("Grayscale text: the glyph atlas holds one coverage byte per texel")
@@ -157,6 +169,8 @@ TEST_CASE("Grayscale text: the glyph atlas holds one coverage byte per texel")
     OpenGLCore &renderer=gweni::test::gpuRenderer();
     const Font &font=gweni::test::openSans();
 
+    if(!coverage(font))
+        return;
     CHECK(renderer.getFontAtlasDepth(font) == 1);
 
     GLint format=0;
@@ -175,6 +189,9 @@ TEST_CASE("Grayscale text: white text over mid-grey is neutral grey, with no col
 {
     const Color grey(128, 128, 128, 255);
     TextId textId;
+
+    if(!coverage(gweni::test::openSans()))
+        return;
 
     drawText(textId, gweni::test::openSans(), Point(8, 30), "Illumination Tester 0123 minimum", grey);
 
@@ -208,6 +225,8 @@ TEST_CASE("Grayscale text: white on black is the atlas coverage, applied once")
         const Font font=sized(size);
         TextId textId;
 
+        if(!coverage(font))
+            continue;
         drawText(textId, font, Point(20, 40), "o", Color(0, 0, 0, 255));
 
         const std::vector<GlyphQuad> quads=glyphQuads(textId);
@@ -263,6 +282,8 @@ TEST_CASE("Grayscale text: identical glyphs sit at identical whole-pixel steps, 
             const Font font=sized(size);
             TextId textId;
 
+            if(!coverage(font))
+                continue;
             drawText(textId, font, Point(10, 40), text, Color(0, 0, 0, 255));
 
             const std::vector<GlyphQuad> quads=glyphQuads(textId);
