@@ -32,7 +32,6 @@ HERO_OUT=demo.png
 #   LabelMultilineDemo - the wrapped lines stack now, but the right column runs
 #     past the canvas edge (issue #207) and its SplitterBars draw nothing
 #     (idea #191)
-#   ProgressBarDemo - the fill is not drawn, only the empty track
 #   CheckBoxDemo - the first CheckBox sticks out above the canvas top
 #   GroupBoxDemo - the caption sits on the frame's top-left corner
 #   TextBoxDemo, NumericDemo - the text sits on the box's left border, outside
@@ -49,6 +48,7 @@ SAMPLES=(
     ListBoxDemo
     SliderDemo
     TextDemo
+    ProgressBarDemo
 )
 
 CONTROL_SIZE=640x480

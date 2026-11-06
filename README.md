@@ -35,8 +35,8 @@ implemented-vs-planned status, and [docs/layout.md](docs/layout.md) for the layo
 | **Properties** | **PageControl** |
 | ![ListBox](docs/images/ListBoxDemo.png) | ![Slider](docs/images/SliderDemo.png) |
 | **ListBox** | **Slider** |
-| ![Text](docs/images/TextDemo.png) | |
-| **Text** (OpenSans 8-16 px) | |
+| ![Text](docs/images/TextDemo.png) | ![ProgressBar](docs/images/ProgressBarDemo.png) |
+| **Text** (OpenSans 8-16 px) | **ProgressBar** |
 
 Each control is shown on its own in `ControlTest`. All of these images are rendered offscreen by
 `tools/capture_samples.sh` (see `AGENTS.md`).
