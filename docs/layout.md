@@ -170,6 +170,10 @@ render_layout=0|1`), and `ControlTest --require-one-pass` fails the run on any
 frame with `layout_passes>1` or `render_layout=1`, naming the control, the
 frame and the culprit on stderr. It works with `--control X`, any `--scenario`
 and `--check-teardown`.
+ctest holds every library control to it: `controltest_teardown` and
+`controltest_resize` pass `--require-one-pass`, and `controltest_resize_each` and
+`controltest_one_pass_each` run the resize scenario and the plain run for
+each control in `--list` (`tests/eachControl.cmake`).
 
 ### Children whose X layout needs the parent's height
 

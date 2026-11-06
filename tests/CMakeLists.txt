@@ -28,14 +28,57 @@ if(TARGET ControlTest)
         TIMEOUT 600)
 
     # build, render and destroy every demo; exits non-zero unless the canvas
-    # renders as the empty canvas it started as
+    # renders as the empty canvas it started as, and every frame of it takes
+    # one layout pass
     add_test(NAME controltest_teardown
         COMMAND $<TARGET_FILE:ControlTest> --headless --check-teardown
+            --require-one-pass
             --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/teardown
         WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
     set_tests_properties(controltest_teardown PROPERTIES
         LABELS gpu
         TIMEOUT 300)
+
+    # the whole Demo at 640x480, 1024x768 and 640x480 again: the listing, the
+    # renderer mirror (per id) and the pixels of the last shot match the first
+    # and a canvas built directly at 640x480, and every frame takes one layout
+    # pass (issue #58)
+    add_test(NAME controltest_resize
+        COMMAND $<TARGET_FILE:ControlTest> --headless --scenario resize
+            --require-one-pass
+            --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/resize
+        WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
+    set_tests_properties(controltest_resize PROPERTIES
+        LABELS gpu
+        TIMEOUT 120)
+
+    # the same round trip for every other control in --list, one process each
+    add_test(NAME controltest_resize_each
+        COMMAND ${CMAKE_COMMAND}
+            -DCONTROLTEST=$<TARGET_FILE:ControlTest>
+            -DSOURCE_DIR=${GWENI_SOURCE_DIR}
+            -DSCRATCH_DIR=${CMAKE_CURRENT_BINARY_DIR}/resize_each
+            -DMODE=resize
+            -DSKIP=Demo
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/eachControl.cmake
+        WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
+    set_tests_properties(controltest_resize_each PROPERTIES
+        LABELS gpu
+        TIMEOUT 600)
+
+    # the plain run of every control in --list (Demo included): every frame
+    # takes one layout pass and the render phase lays out nothing
+    add_test(NAME controltest_one_pass_each
+        COMMAND ${CMAKE_COMMAND}
+            -DCONTROLTEST=$<TARGET_FILE:ControlTest>
+            -DSOURCE_DIR=${GWENI_SOURCE_DIR}
+            -DSCRATCH_DIR=${CMAKE_CURRENT_BINARY_DIR}/one_pass_each
+            -DMODE=one-pass
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/eachControl.cmake
+        WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
+    set_tests_properties(controltest_one_pass_each PROPERTIES
+        LABELS gpu
+        TIMEOUT 600)
 
     # hover, press, disabled and focus repaint the control (and only it), a
     # settled frame does nothing, and collapsing a tree node still moves the
@@ -66,9 +109,6 @@ if(TARGET ControlTest)
     set_tests_properties(controltest_missing_resources PROPERTIES
         PASS_REGULAR_EXPRESSION "^ControlTest: resource directory not found: [^\n]*/no_such_resources\n*$"
         TIMEOUT 30)
-
-    # Not registered: --scenario resize, which fails on main (issue #58, the
-    # 640->1024->640 resize does not restore the layout).
 else()
     message(STATUS "tests: ControlTest tests skipped, GWENI_BUILD_EXAMPLES is off")
 endif()

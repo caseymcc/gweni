@@ -26,7 +26,14 @@ surfaceless-EGL path. On a shared host, hold the GPU lock around `ctest`;
 
 - `controltest_determinism`: two separate ControlTest processes must write
   byte-identical `--shot-all` PNGs and `--dump-bounds` listings.
-- `controltest_teardown`: every demo builds, renders and tears down cleanly.
+- `controltest_teardown`: every demo builds, renders and tears down cleanly,
+  and every frame lays out in one pass (`--require-one-pass`).
+- `controltest_resize`: `ControlTest --scenario resize --require-one-pass`.
+  Demo at 640x480, 1024x768 and 640x480 again comes back byte for byte, and
+  matches a canvas built directly at 640x480.
+- `controltest_resize_each`, `controltest_one_pass_each`: the same round trip
+  for every other control in `ControlTest --list`, and the plain run of every
+  control in one layout pass per frame (`tests/eachControl.cmake`).
 - `controltest_interaction`: `ControlTest --scenario interaction`. Hover, press,
   disabled and a focus hand-off repaint the control, a hover touches only a few
   slots, an idle frame changes nothing, and collapsing a tree node moves the

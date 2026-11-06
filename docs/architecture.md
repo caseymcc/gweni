@@ -195,6 +195,14 @@ What exists today (the foundation) and what's still aspirational:
   every box, to check it on screen.
 - Window resize (`renderer->setViewRect()` + `canvas->setSize()`), see
   `examples/openglcore/openglcore.cpp`.
+- **A resize round trip comes back to the same frame, laid out in one pass.**
+  `ControlTest --scenario resize` shoots a control at 640x480, 1024x768 and 640x480
+  again, then on a canvas built directly at 640x480, and requires the listings, the
+  renderer mirror (per primitive and text id) and the pixels of the 640x480 shots to
+  match. `--require-one-pass` fails any frame whose layout took more than one pass
+  or that laid out again in the render phase ([layout.md](layout.md)). ctest runs
+  both for every demo: `controltest_resize`, `controltest_resize_each`,
+  `controltest_one_pass_each`, and `controltest_teardown` with `--require-one-pass`.
 
 **Not yet done (the performance goal)**
 - **Clipping, control side.** The renderer clips to each slot's box, but
