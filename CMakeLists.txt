@@ -20,6 +20,7 @@ option(GWENI_RENDER_OPENGL_CORE "Opengl 3.0+ Renderer" ON)
 option(GWENI_BUILD_EXAMPLES "Build Examples" ON)
 option(GWENI_BUILD_TESTS "Build tests" ON)
 option(GWENI_DEBUG_LOGGING "Verbose per-control update/layout debug logging" OFF)
+set(GWENI_SANITIZE "" CACHE STRING "Sanitizers to build with, e.g. address")
 
 project(gweni VERSION 0.1.0 LANGUAGES CXX)
 
@@ -48,6 +49,15 @@ configure_file(
     ${CMAKE_CURRENT_SOURCE_DIR}/cmake/gweni_config.h.in
     ${CMAKE_CURRENT_SOURCE_DIR}/source/platform/include/gwen/Version.h
     @ONLY)
+
+# Sanitizers apply to everything built here, so set them before deps: the
+# vendored freetype-gl and imglib must be instrumented too (text_buffer_add_text
+# is where an over-read of a gweni string executes). vcpkg's prebuilt
+# dependencies stay uninstrumented.
+if(GWENI_SANITIZE)
+    add_compile_options(-fsanitize=${GWENI_SANITIZE} -fno-omit-frame-pointer)
+    add_link_options(-fsanitize=${GWENI_SANITIZE})
+endif()
 
 # add our projects
 #add_subdirectory(docs)

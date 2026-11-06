@@ -64,3 +64,14 @@ if(TARGET gweni_capture)
 else()
     message(STATUS "tests: unit tests skipped, they need gweni_capture (GWENI_BUILD_EXAMPLES)")
 endif()
+
+# ASAN tree (./generate.sh linux asan): overflows fail the test, leaks do not.
+# Mesa/EGL leak at exit and none of that is ours, so leak checking is off; with
+# abort_on_error a report aborts the process instead of exiting 1, which ctest
+# and determinism.cmake (whose ControlTest children inherit this environment
+# through execute_process) both count as a failure.
+if(GWENI_SANITIZE MATCHES "address")
+    get_property(gweni_tests DIRECTORY PROPERTY TESTS)
+    set_tests_properties(${gweni_tests} PROPERTIES
+        ENVIRONMENT "ASAN_OPTIONS=detect_leaks=0:abort_on_error=1")
+endif()

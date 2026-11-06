@@ -5,6 +5,7 @@ build_type="debug"
 platform="linux"
 cmake_options=""
 cmake_custom_options=""
+sanitize=""
 
 for var in "$@"; do
     if [ "$var" = "x64" ]; then
@@ -27,6 +28,9 @@ for var in "$@"; do
     fi
     if [ "$var" = "release" ]; then
         build_type="release"
+    fi
+    if [ "$var" = "asan" ]; then
+        sanitize="asan"
     fi
     if [[ $var = -D* ]]; then
         cmake_custom_options+="$var "
@@ -76,6 +80,12 @@ if [ "$platform" = "linux" ]; then
 fi
 
 build_dir="build_${platform}_${arch}_${build_type}"
+
+if [ "$sanitize" = "asan" ]; then
+    # AddressSanitizer tree, next to the plain one: build_linux_x64_debug_asan
+    cmake_options="$cmake_options -DGWENI_SANITIZE=address"
+    build_dir="${build_dir}_asan"
+fi
 
 cmake -H. -B$build_dir \
     $cmake_options $cmake_custom_options
