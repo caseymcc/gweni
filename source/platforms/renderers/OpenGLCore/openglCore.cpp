@@ -74,6 +74,17 @@ GLTextureData::~GLTextureData()
     glDeleteTextures(1, reinterpret_cast<GLuint *>(&m_textureId));
 }
 
+GLFontData::~GLFontData()
+{
+    // the atlas lives in memory the manager owns, so its texture goes first
+    if(atlas && atlas->id)
+        glDeleteTextures(1, &atlas->id);
+    // frees the texture_font_t, the atlas and the cache string loadFont strdup'd
+    if(fontManager)
+        ftgl::font_manager_delete(fontManager);
+    free(familyPath);
+}
+
 Font::Status OpenGLCore::loadFont(const Font &font)
 {
     GLFontData fontData;
@@ -81,10 +92,20 @@ Font::Status OpenGLCore::loadFont(const Font &font)
                          "@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_"
                          "`abcdefghijklmnopqrstuvwxyz{|}~";
 
-    m_lastFont=nullptr;
     // an explicit load is a fresh attempt; a failure is remembered again below,
     // so ensureFont does not retry it
     m_failedFonts.erase(font);
+
+    // already loaded: a second manager and atlas would only leak
+    auto loaded=m_fonts.find(font);
+
+    if(loaded != m_fonts.end())
+    {
+        m_lastFont=&(*loaded);
+        return Font::Status::Loaded;
+    }
+
+    m_lastFont=nullptr;
 
     const String filename=getResourcePaths().getPath(ResourcePaths::Type::Font, font.facename);
 
@@ -127,14 +148,8 @@ Font::Status OpenGLCore::loadFont(const Font &font)
 
     if(fontData.markup.font == nullptr)
     {
-        // freetype-gl could not open the face. Free what this function made and
-        // reset the fields, so fontData's destructor finds nothing left to free.
-        ftgl::font_manager_delete(fontData.fontManager);
-        fontData.fontManager=nullptr;
-        free(fontData.familyPath);
-        fontData.familyPath=nullptr;
-        fontData.markup.family=nullptr;
-
+        // freetype-gl could not open the face. fontData's destructor frees the
+        // manager and familyPath; no atlas texture exists yet.
         gweni::log::write(log::Level::Error, "Font file failed to load: %s", filename.c_str());
         m_failedFonts.insert(font);
         return Font::Status::ErrorBadData;
@@ -168,7 +183,19 @@ void OpenGLCore::freeFont(const gweni::Font &font)
         m_lastFont=nullptr;
 
     m_failedFonts.erase(font);
-    m_fonts.erase(font); // calls GLFontData destructor
+
+    auto it=m_fonts.find(font);
+
+    if(it == m_fonts.end())
+        return;
+
+    // flush() binds m_textTextureId for the text draw; it must not be left
+    // holding the name the destructor deletes, which glGenTextures may hand out
+    // again. The next renderText sets it to a live atlas.
+    if(it->second.atlas && (it->second.atlas->id == m_textTextureId))
+        m_textTextureId=0;
+
+    m_fonts.erase(it); // GLFontData's destructor deletes the atlas texture and the manager
 }
 
 bool OpenGLCore::ensureFont(const Font &font)
@@ -296,6 +323,13 @@ void OpenGLCore::freeTexture(const gweni::Texture &texture)
 
     if((texture.dataIndex < m_textureData.size()) && (m_textureData[texture.dataIndex]))
     {
+        // setTexture() is skipped while m_currentTexture matches, and a later
+        // glGenTextures may hand the deleted name out again
+        if(m_textureData[texture.dataIndex]->m_textureId == m_currentTexture)
+        {
+            m_currentTexture=0;
+            m_currentTextureSize=glm::uvec2(0, 0);
+        }
         m_freeTextureData.push_back(texture.dataIndex);
         delete m_textureData[texture.dataIndex];
         m_textureData[texture.dataIndex]=nullptr;
@@ -346,6 +380,18 @@ unsigned int OpenGLCore::getFontAtlasName(const Font &font) const
     if((it != m_fonts.end()) && (it->second.atlas))
         return it->second.atlas->id;
     return 0;
+}
+
+OpenGLCore::GLObjectNames OpenGLCore::getGLObjectNames() const
+{
+    GLObjectNames names;
+
+    names.buffers={m_vertexBuffer, m_indexBuffer, m_clipBuffer,
+        m_textVertexBuffer, m_textIndexBuffer, m_textClipBuffer};
+    names.vertexArrays={m_vertexArray, m_textVertexArray};
+    names.textures={m_clipTexture, m_textClipTexture};
+    names.programs={m_program, m_textProgram};
+    return names;
 }
 
 TextureData OpenGLCore::getTextureData(const Texture &texture) const
@@ -427,7 +473,41 @@ bool OpenGLCore::textDebugMatches(const gweni::String &text) const
 }
 
 OpenGLCore::~OpenGLCore()
-{}
+{
+    // each GLFontData deletes its atlas texture and its freetype-gl manager
+    m_lastFont=nullptr;
+    m_fonts.clear();
+    m_failedFonts.clear();
+    m_textTextureId=0;
+
+    for(GLTextureData *textureData:m_textureData)
+        delete textureData;
+    m_textureData.clear();
+    m_freeTextureData.clear();
+    m_textures.clear();
+    m_currentTexture=0;
+
+    // nothing below exists before init()
+    if(m_vertexArray == 0)
+        return;
+
+    glBindVertexArray(0);
+    // a program still in use is only flagged for deletion
+    glUseProgram(0);
+
+    const GLuint vertexArrays[]={m_vertexArray, m_textVertexArray};
+    const GLuint buffers[]={m_vertexBuffer, m_indexBuffer, m_clipBuffer,
+        m_textVertexBuffer, m_textIndexBuffer, m_textClipBuffer};
+    const GLuint textures[]={m_clipTexture, m_textClipTexture};
+
+    // deleting a bound object unbinds it, so another renderer in this context
+    // finds nothing of these left bound; it binds its own every flush()
+    glDeleteVertexArrays(2, vertexArrays);
+    glDeleteBuffers(6, buffers);
+    glDeleteTextures(2, textures);
+    glDeleteProgram(m_program);
+    glDeleteProgram(m_textProgram);
+}
 
 void checkErrors(unsigned int shader, std::string type)
 {

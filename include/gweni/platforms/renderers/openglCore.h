@@ -84,17 +84,17 @@ struct GLFontData
         height=other.height;
     }
 
-    ~GLFontData()
-    {
-        free(familyPath);
-    }
+    //! Deletes the atlas texture, then the manager (which owns the atlas, the
+    //! texture_font_t and the cache string), then familyPath. A moved-from one
+    //! holds nothing and frees nothing. Needs the GL context current.
+    ~GLFontData();
 
     std::string faceName;
     ftgl::markup_t markup;
     char *familyPath; //!< owns the string markup.family borrows
 
-    ftgl::font_manager_t *fontManager;
-    texture_atlas_t *atlas;
+    ftgl::font_manager_t *fontManager; //!< owned
+    texture_atlas_t *atlas; //!< inside fontManager; atlas->id is a GL texture this owns
     ftgl::texture_font_t *textureFont;
 
     float spacing;
@@ -118,6 +118,9 @@ class GWENI_EXPORT OpenGLCore: public gweni::renderer::Base
 public:
 
     OpenGLCore(ResourcePaths &paths, const gweni::Rect &viewRect);
+    //! Releases every font, texture, buffer, vertex array and program it owns, so the
+    //! GL context it was init()'d in must still be current. Another OpenGLCore in the
+    //! same context keeps working: it rebinds its own objects every flush().
     virtual ~OpenGLCore();
 
     void init() override;
@@ -182,6 +185,20 @@ public:
     unsigned int getTextureName(const gweni::Texture &texture) const;
     //! GL name of a loaded font's glyph atlas, 0 if the font is not loaded
     unsigned int getFontAtlasName(const gweni::Font &font) const;
+    //! Fonts loaded and not freed yet
+    size_t getLoadedFontCount() const { return m_fonts.size(); }
+
+    //! The GL objects init() created (0 before init()), so a test can check that the
+    //! destructor deletes them.
+    struct GLObjectNames
+    {
+        std::vector<unsigned int> buffers;
+        std::vector<unsigned int> vertexArrays;
+        std::vector<unsigned int> textures; //!< the clip-box buffer textures
+        std::vector<unsigned int> programs;
+    };
+
+    GLObjectNames getGLObjectNames() const;
 
 protected:// Resourses
 
@@ -474,31 +491,31 @@ private:
 
     glm::mat4 m_projectionMatrix;
 
-    uint32_t m_program;
+    uint32_t m_program=0;
     uint32_t m_activeProgram;
 
     uint32_t m_projectionUniform;
     uint32_t m_textureSizeUniform;
     uint32_t m_clipBoxesUniform;
 
-    uint32_t m_vertexArray; 
-    uint32_t m_vertexBuffer;
-    uint32_t m_indexBuffer;
-    uint32_t m_clipBuffer;
-    uint32_t m_clipTexture; //!< GL_TEXTURE_BUFFER view of m_clipBuffer
+    uint32_t m_vertexArray=0;
+    uint32_t m_vertexBuffer=0;
+    uint32_t m_indexBuffer=0;
+    uint32_t m_clipBuffer=0;
+    uint32_t m_clipTexture=0; //!< GL_TEXTURE_BUFFER view of m_clipBuffer
 
 //    ftgl::font_manager_t *m_fontManager;
 
-    uint32_t m_textTextureId;
-    uint32_t m_textProgram;
+    uint32_t m_textTextureId=0;
+    uint32_t m_textProgram=0;
     uint32_t m_textProjectionUniform;
     uint32_t m_textClipBoxesUniform;
 
-    uint32_t m_textVertexArray; 
-    uint32_t m_textVertexBuffer;
-    uint32_t m_textIndexBuffer;
-    uint32_t m_textClipBuffer;
-    uint32_t m_textClipTexture; //!< GL_TEXTURE_BUFFER view of m_textClipBuffer
+    uint32_t m_textVertexArray=0;
+    uint32_t m_textVertexBuffer=0;
+    uint32_t m_textIndexBuffer=0;
+    uint32_t m_textClipBuffer=0;
+    uint32_t m_textClipTexture=0; //!< GL_TEXTURE_BUFFER view of m_textClipBuffer
 
     uint16_t m_zIndex;
 };

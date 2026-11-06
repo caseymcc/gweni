@@ -87,6 +87,7 @@ if(TARGET gweni_capture)
         main.cpp
         textLength.cpp
         fontLoad.cpp
+        fontRelease.cpp
         color.cpp
         fillStyles.cpp
         clipBoxes.cpp
