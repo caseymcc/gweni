@@ -14,7 +14,6 @@ endif()
 # Docker container (see run_docker.sh).
 cmake_policy(SET CMP0074 NEW)
 
-option(GWENI_RENDER_OPENGL "Opengl Renderer" ON)
 option(GWENI_RENDER_OPENGL_CORE "Opengl 3.0+ Renderer" ON)
 option(GWENI_BUILD_EXAMPLES "Build Examples" ON)
 option(GWENI_BUILD_TESTS "Build tests" ON)
@@ -271,8 +270,6 @@ set(GWENI_PLATFORM_SOURCES
     include/gweni/platforms/platformTypes.h
     source/platforms/platformTypes.cpp
     include/gweni/platforms/windowProvider.h
-    #source/platforms/nullPlatform.cpp
-    #source/platforms/windowsPlatform.cpp
 )
 
 set(GWENI_PROPERTY_SOURCES
@@ -286,16 +283,7 @@ set(GWENI_PROPERTY_SOURCES
     include/gweni/controls/property/text.h
 )
 
-set(GWENI_RENDER_SOURCES
-)
-
-if(GWENI_RENDER_OPENGL)
-    set(GWENI_RENDER_SOURCES
-        include/gweni/platforms/renderers/opengl.h
-        source/platforms/renderers/OpenGL/opengl.cpp
-    )
-endif()
-
+set(GWENI_RENDER_SOURCES "")
 set(GWENI_ADDITIONAL_LIBRARIES "")
 set(GWENI_COMPILE_DEFINITIONS "")
 
@@ -309,7 +297,7 @@ if(GWENI_RENDER_OPENGL_CORE)
 
     find_package(freetype CONFIG REQUIRED)
 
-    set(GWENI_RENDER_SOURCES
+    list(APPEND GWENI_RENDER_SOURCES
         include/gweni/platforms/renderers/openglCore.h
         source/platforms/renderers/OpenGLCore/openglCore.cpp
     )

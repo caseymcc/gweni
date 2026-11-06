@@ -54,7 +54,7 @@ This path always gets a persistent vcpkg cache: `run_docker.sh` creates `.vcpkg-
 The commands in this section are the in-container form; from a host, prefix each with `./run_docker.sh`.
 
 ```bash
-./generate.sh linux                  # configures build_linux_x64_debug/ (legacy GL off, GL core on)
+./generate.sh linux                  # configures build_linux_x64_debug/ (OpenGL core renderer)
 ./generate.sh linux release          # release build dir
 ./generate.sh linux -DSOME_OPT=ON    # any -D... arg is passed through to cmake
 ./generate.sh linux asan             # AddressSanitizer tree, build_linux_x64_debug_asan/ (see "ASAN tree")
@@ -119,14 +119,14 @@ The heap-string case in `tests/textLength.cpp` is a real check only in this tree
 - The vendored `deps/freetype-gl` and `deps/imglib` are added via `add_subdirectory`; `deps/CMakeLists.txt` sets `freetype-gl_USE_HUNTER OFF` so they resolve deps through the vcpkg toolchain's standard find modules.
 
 ### Build options (CMakeLists.txt)
-`GWENI_RENDER_OPENGL` (legacy fixed-function), `GWENI_RENDER_OPENGL_CORE` (the active modern renderer), `GWENI_BUILD_EXAMPLES`, `GWENI_BUILD_TESTS` (CTest suite under `tests/`, default on), `GWENI_SANITIZE` (sanitizers to build everything with, passed as `-fsanitize=<value>`; empty by default, `address` in the ASAN tree that `./generate.sh linux asan` sets up). The Linux toolchain turns legacy GL **off** and uses only the GL core renderer. `GWENI_RENDER_OPENGL_CORE` is what pulls in glm + freetype + the `deps/freetype-gl` and `deps/imglib` subprojects.
+`GWENI_RENDER_OPENGL_CORE` (the OpenGL 3.0+ core renderer, the only one), `GWENI_BUILD_EXAMPLES`, `GWENI_BUILD_TESTS` (CTest suite under `tests/`, default on), `GWENI_SANITIZE` (sanitizers to build everything with, passed as `-fsanitize=<value>`; empty by default, `address` in the ASAN tree that `./generate.sh linux asan` sets up). `GWENI_RENDER_OPENGL_CORE` is what pulls in glm + freetype + the `deps/freetype-gl` and `deps/imglib` subprojects.
 
 ## Architecture
 
 > Full write-up in [`docs/architecture.md`](docs/architecture.md); summary below.
 
 ### Core goal: API-agnostic, change-tracked UI
-The whole point of gweni is that **UI logic (layout, padding, docking, hover/highlight/focus, hit-testing) is decoupled from the rendering API**. The same control/skin code is meant to drive OpenGL today and Vulkan (or any backend) later, by implementing one abstract interface — `gweni::renderer::Base` (`include/gweni/platforms/baseRender.h`). The core never makes API calls directly; it only calls that interface.
+The whole point of gweni is that **UI logic (layout, padding, docking, hover/highlight/focus, hit-testing) is decoupled from the rendering API**. The same control/skin code is meant to drive OpenGL today and Vulkan (or any backend) later, by implementing one abstract interface — `gweni::renderer::Base` (`include/gweni/platforms/baseRender.h`). The core never makes API calls directly; it only calls that interface. `OpenGLCore` is the only shipped backend; `StubRenderer` (`tests/unit/headlessFixture.h`) is a second implementation of `renderer::Base`, compiled in every build with tests on (the default), so the interface stays implementable outside OpenGL.
 
 The frame is two phases (`examples/openglcore/openglcore.cpp`):
 1. **`canvas->updateCanvas()`** — logic only: think/input, layout/docking, z-order, and recording *what changed* per control as a state-change bitmask. No draw calls.
@@ -137,7 +137,7 @@ A backend may be **immediate** (redraw everything each `drawFilledRect`) or **re
 ### Namespaces & layout
 - `gweni::controls` — all widgets, rooted at `controls::Base`. Headers in `include/gweni/controls/`, impls in `source/controls/`.
 - `gweni::skin` — draws controls; `simple` (vector) and `textured` (atlas-based, the one the examples use) skins under `skins/`.
-- `gweni::renderer` — `renderer::Base` abstract API; concrete renderers under `source/platforms/renderers/` (`OpenGLCore/`, `OpenGL/`).
+- `gweni::renderer` — `renderer::Base` abstract API; the one concrete renderer, `OpenGLCore`, is under `source/platforms/renderers/OpenGLCore/`.
 - `gweni::platform` — OS abstractions (clipboard, cursor, file dialogs, timing, window creation) in `platforms/`.
 - `gweni::event` — signal/slot system in `events.h`.
 

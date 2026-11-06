@@ -74,7 +74,6 @@ if [ "$platform" = "linux" ]; then
         -DCMAKE_TOOLCHAIN_FILE=$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake \
         -DVCPKG_CHAINLOAD_TOOLCHAIN_FILE=$(pwd)/cmake/linux_toolchain.cmake \
         -DVCPKG_TARGET_TRIPLET=x64-linux \
-        -DGWENI_RENDER_OPENGL=OFF \
         -DGWENI_RENDER_OPENGL_CORE=ON"
 fi
 

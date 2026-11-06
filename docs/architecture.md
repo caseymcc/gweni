@@ -131,7 +131,10 @@ on an OpenGL 3.3 core profile:
 What exists today (the foundation) and what's still aspirational:
 
 **Implemented**
-- Decoupled core ↔ renderer via `renderer::Base`; OpenGLCore and OpenGL backends.
+- Decoupled core ↔ renderer via `renderer::Base`; OpenGLCore is the only backend.
+  `StubRenderer` (`tests/unit/headlessFixture.h`) is a second implementation, compiled
+  in every build with tests on (the default), so the interface stays implementable
+  outside OpenGL.
 - Two-phase `updateCanvas` / `renderCanvas` split.
 - State-change tracking; unchanged controls emit no renderer calls.
 - Persistent primitive-id-indexed CPU vertex/index buffers in OpenGLCore; per-control

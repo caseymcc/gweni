@@ -24,11 +24,7 @@
  */
 
 #include <GL/glew.h>
-#ifdef USE_DEBUG_FONT
-#   include <gweni/platforms/renderers/opengl_debugFont.h>
-#else
-#   include <gweni/platforms/renderers/openglCore.h>
-#endif
+#include <gweni/platforms/renderers/openglCore.h>
 #include <gweni/gweni.h>
 #include <gweni/platforms/platform.h>
 #include <gweni/skins/simple/simple.h>
@@ -327,12 +323,8 @@ int main(int argc, char *argv[])
     gweni::platform::CurrentPath paths("resources");
 
     // Create a Gweni OpenGL Renderer
-#ifdef USE_DEBUG_FONT
-    gweni::renderer::OpenGL* renderer = new gweni::renderer::OpenGL_DebugFont();
-#else
     gweni::renderer::OpenGLCore* renderer =
         new gweni::renderer::OpenGLCore(paths, gweni::Rect(gweni::Point(0,0), screenSize));
-#endif
     renderer->init();
 
     // Create a Gweni skin

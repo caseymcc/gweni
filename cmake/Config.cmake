@@ -13,9 +13,7 @@ message("Project version: ${GWENI_VERSION_STR}")
 # User options
 
 # Cross-platform
-option(GWENI_RENDER_OPENGL        "Renderer: OPENGL"              OFF)
 option(GWENI_RENDER_OPENGL_CORE   "Renderer: OPENGL Core Profile" OFF)
-#option(GWENI_RENDER_NULL          "Renderer: Null"                OFF) # Used for testing
 
 option(GWENI_USE_GLFW             "Use GLFW for OpenGL renderer." ON)
 
@@ -66,42 +64,12 @@ if(WITH_TESTS)
     message("Including tests")
 endif(WITH_TESTS)
 
-if(WITH_SAMPLE)
-    message(STATUS "Including gweni sample")
-
-    if (NOT USE_GLFW AND (RENDER_OPENGL OR RENDER_OPENGL_CORE))
-        message(FATAL_ERROR "Samples with OpenGL or OpenGLCore require GLFW")
-    endif()
-endif(WITH_SAMPLE)
-
 if(WITH_REFLECTION)
     message("Using reflection")
 endif(WITH_REFLECTION)
 
 #-----------------------------------------------------------
 # Renderer config
-#   - Order alphabetic.
-if(GWENI_RENDER_NULL)
-    set(GWENI_RENDER_NAME "Null")
-    set(GWENI_INPUT_NAME "Null")
-    set(GWENI_PLATFORM_NAME "Null")
-    set(GWENI_RENDER_INCLUDES "")
-    set(GWENI_RENDER_LIBRARIES "")
-endif()
-
-if(GWENI_RENDER_OPENGL)
-    set(GWENI_RENDER_NAME "OpenGL")
-    set(GWENI_INPUT_NAME "GLFW3")
-    set(GWENI_PLATFORM_NAME "Cross")
-
-    if (GWENI_USE_GLFW)
-        message(STATUS "Configuring GLFW3...")
-        find_package(glfw3 CONFIG REQUIRED)
-
-        set(GWENI_RENDER_LIBRARIES glfw)
-    endif()
-endif()
-
 if(GWENI_RENDER_OPENGL_CORE)
     set(GWENI_RENDER_NAME "OpenGLCore")
     set(GWENI_INPUT_NAME "GLFW3")
