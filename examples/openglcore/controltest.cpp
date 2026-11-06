@@ -6,7 +6,16 @@
  *
  *  Usage: ControlTest [options]
  *    --control <Name>   control demo to show (default ButtonDemo)
- *    --size WxH         canvas/framebuffer size (default 640x480)
+ *    --size WxH         canvas size in logical units (default 640x480); the
+ *                       framebuffer is that times --scale
+ *    --scale <s>        render at s device pixels per logical unit (default
+ *                       1, or the GWENI_SCALE environment variable; the flag
+ *                       beats it). The framebuffer and the PNGs are
+ *                       round(size*s) device pixels; --move/--click and the
+ *                       other scripted coordinates, the scenarios' fixed
+ *                       sizes and --dump-bounds stay in logical units, so a
+ *                       listing is the same at any scale. Text is still
+ *                       rasterised at 1x (glyph positions scale, sizes not).
  *    --frames N         frames to render before capturing (default 3)
  *    --shot <path>      render offscreen and write one PNG, then exit
  *    --shot-all         write one PNG per control demo, in this one run
@@ -260,11 +269,13 @@ static void mouse_button_callback(GLFWwindow*, int b, int a, int m)
 {   g_glfwInput.processMouseButtons(b,a,m); }
 static void scroll_callback(GLFWwindow*, double x, double y)
 {   g_glfwInput.processScroll(x, y); }
+// The framebuffer is in device pixels and the canvas in logical units.
 static void framebuffer_size_callback(GLFWwindow*, int w, int h)
 {
     if(w<=0||h<=0) return;
     if(g_renderer) g_renderer->setViewRect(gweni::Rect(gweni::Point(0,0), gweni::Point(w,h)));
-    if(g_canvas) g_canvas->setSize(w,h);
+    if(g_canvas) g_canvas->setSize(gweni::renderer::Base::snap(float(w), 1.0f/g_canvas->scale()),
+        gweni::renderer::Base::snap(float(h), 1.0f/g_canvas->scale()));
 }
 
 #define GWENI_CONTROL_DEMOS(X) \
@@ -319,7 +330,10 @@ static void printUsage(std::ostream &out)
 {
     out<<"Usage: ControlTest [options]\n"
          "  --control <Name>   control demo to show (default ButtonDemo)\n"
-         "  --size WxH         canvas/framebuffer size (default 640x480)\n"
+         "  --size WxH         canvas size in logical units (default 640x480)\n"
+         "  --scale <s>        device pixels per logical unit (default 1, or\n"
+         "                     GWENI_SCALE); the framebuffer and PNGs are\n"
+         "                     round(size*s), coordinates and listings logical\n"
          "  --frames N         frames to render before capturing (default 3)\n"
          "  --shot <path>      render offscreen and write one PNG, then exit\n"
          "  --shot-all         write one PNG per control demo, in this one run\n"
@@ -411,6 +425,25 @@ static bool parseSize(const std::string &value, gweni::Point &size)
     return true;
 }
 
+static bool parseScale(const char *value, float &scale)
+{
+    char *end=nullptr;
+    const float parsed=std::strtof(value, &end);
+    if(end == value || *end != '\0' || !(parsed > 0.0f) || parsed > 16.0f)
+        return false;
+
+    scale=parsed;
+    return true;
+}
+
+// A logical point or size in device pixels, snapped as the renderer snaps an
+// edge.
+static gweni::Point devicePixels(const gweni::Point &size, float scale)
+{
+    return gweni::Point(gweni::renderer::Base::snap(float(size.x), scale),
+        gweni::renderer::Base::snap(float(size.y), scale));
+}
+
 static bool parsePoint(const std::string &value, int &x, int &y)
 {
     const size_t sep=value.find(',');
@@ -423,9 +456,11 @@ static bool parsePoint(const std::string &value, int &x, int &y)
 
 // The canvas every capture draws on. The fill comes from the theme, so a
 // "theme" block in resources/DefaultSkin.json moves it too.
-static gweni::controls::Canvas *createCanvas(gweni::skin::Base *skin, const gweni::Point &size)
+static gweni::controls::Canvas *createCanvas(gweni::skin::Base *skin, const gweni::Point &size,
+    float scale)
 {
     gweni::controls::Canvas *canvas=new gweni::controls::Canvas(skin);
+    canvas->setScale(scale);
     canvas->setSize(size.x, size.y);
     canvas->setDrawBackground(true);
     canvas->setBackgroundColor(gweni::skin::textured::tokyonight::Canvas.top);
@@ -440,7 +475,9 @@ struct Session
     gweni::renderer::OpenGLCore *renderer=nullptr;
     gweni::controls::Canvas *canvas=nullptr;
     Framebuffer *fb=nullptr;
-    gweni::Point size;
+    gweni::Point size;                  // the canvas, logical units
+    float scale=1.0f;                   // --scale
+    gweni::Point pixels;                // the framebuffer, device pixels
     bool stats=false;
     bool freezeClock=false;             // as under --stats, without the lines
     bool requireOnePass=false;          // --require-one-pass
@@ -619,7 +656,7 @@ static bool shoot(Session &s, const std::string &path)
         return true;
     if(!ensureDirectory(fs::path(path).parent_path()))
         return false;
-    if(!writeFramebufferPng(s.size.x, s.size.y, path))
+    if(!writeFramebufferPng(s.pixels.x, s.pixels.y, path))
         return false;
 
     std::cout<<"wrote "<<path<<"\n";
@@ -628,14 +665,17 @@ static bool shoot(Session &s, const std::string &path)
 
 // The whole of framebuffer_size_callback, called directly: no window manager is
 // involved, so a scripted resize is just these two plus a new offscreen target.
+// The size is logical; the target is that at the session's scale.
 static bool resizeSession(Session &s, int width, int height)
 {
+    s.size=gweni::Point(width, height);
+    s.pixels=devicePixels(s.size, s.scale);
+
     destroyFramebuffer(*s.fb);
-    if(!createFramebuffer(*s.fb, width, height))
+    if(!createFramebuffer(*s.fb, s.pixels.x, s.pixels.y))
         return false;
 
-    s.size=gweni::Point(width, height);
-    s.renderer->setViewRect(gweni::Rect(gweni::Point(0, 0), s.size));
+    s.renderer->setViewRect(gweni::Rect(gweni::Point(0, 0), s.pixels));
     s.canvas->setSize(width, height);
     return true;
 }
@@ -1119,7 +1159,7 @@ static void captureResizeState(Session &s, const std::string &path, ResizeState 
 {
     state.name=fs::path(path).filename().string();
     state.listing=boundsListing(s);
-    readFramebufferRgba(s.size.x, s.size.y, state.pixels);
+    readFramebufferRgba(s.pixels.x, s.pixels.y, state.pixels);
     state.mirror=s.renderer->snapshotMirror();
     collectIdOwners(s.canvas, s.canvas->getTypeName(), state.owners);
 }
@@ -1252,7 +1292,7 @@ static void replaceCanvas(Session &s)
     forgetMouse(s);
     gweni::skin::Base *skin=s.canvas->getSkin();
     delete s.canvas;
-    s.canvas=createCanvas(skin, s.size);
+    s.canvas=createCanvas(skin, s.size, s.scale);
     g_canvas=s.canvas;
 }
 
@@ -1455,22 +1495,25 @@ static gweni::Point centreOf(gweni::controls::Base *control)
     return gweni::Point(origin.x+control->getWidth()/2, origin.y+control->getHeight()/2);
 }
 
-// The RGBA pixels inside a control's bounds, clipped to the framebuffer.
+// The RGBA pixels inside a control's bounds (snapped to device pixels as the
+// renderer snaps them), clipped to the framebuffer.
 static std::vector<uint8_t> regionPixels(const Session &s, gweni::controls::Base *control)
 {
     std::vector<uint8_t> frame;
-    readFramebufferRgba(s.size.x, s.size.y, frame);
+    readFramebufferRgba(s.pixels.x, s.pixels.y, frame);
 
     const gweni::Point origin=control->localPosToCanvas();
-    const int left=std::max(0, origin.x);
-    const int top=std::max(0, origin.y);
-    const int right=std::min(s.size.x, origin.x+control->getWidth());
-    const int bottom=std::min(s.size.y, origin.y+control->getHeight());
+    const gweni::Point topLeft=devicePixels(origin, s.scale);
+    const gweni::Point bottomRight=devicePixels(origin+control->getSize(), s.scale);
+    const int left=std::max(0, topLeft.x);
+    const int top=std::max(0, topLeft.y);
+    const int right=std::min(s.pixels.x, bottomRight.x);
+    const int bottom=std::min(s.pixels.y, bottomRight.y);
 
     std::vector<uint8_t> region;
     for(int y=top; y<bottom; ++y)
     {
-        const auto row=frame.begin()+(static_cast<size_t>(y)*s.size.x+left)*4;
+        const auto row=frame.begin()+(static_cast<size_t>(y)*s.pixels.x+left)*4;
         region.insert(region.end(), row, row+static_cast<size_t>(std::max(0, right-left))*4);
     }
     return region;
@@ -1675,7 +1718,7 @@ static void checkTreeCollapse(Session &s, const std::string &shotDir, Interactio
     renderFrames(s, s.frames);
     if(!shoot(s, shotDir+"/interaction-tree-expanded.png"))
         ok=false;
-    readFramebufferRgba(s.size.x, s.size.y, before);
+    readFramebufferRgba(s.pixels.x, s.pixels.y, before);
     const gweni::Rect belowBefore=below->getBounds();
 
     const gweni::Point at=centreOf(toggle);
@@ -1683,7 +1726,7 @@ static void checkTreeCollapse(Session &s, const std::string &shotDir, Interactio
     renderFrames(s, s.frames);
     if(!shoot(s, shotDir+"/interaction-tree-collapsed.png"))
         ok=false;
-    readFramebufferRgba(s.size.x, s.size.y, after);
+    readFramebufferRgba(s.pixels.x, s.pixels.y, after);
     const gweni::Rect belowAfter=below->getBounds();
 
     dropControl(s, demo);
@@ -1938,7 +1981,7 @@ static void renderEmptyCanvas(Session &s, std::vector<uint8_t> &pixels)
     s.label="(empty)";
 
     renderFrames(s, s.frames);
-    readFramebufferRgba(s.size.x, s.size.y, pixels);
+    readFramebufferRgba(s.pixels.x, s.pixels.y, pixels);
 }
 
 static bool checkTeardown(Session &s, const std::vector<std::string> &controls,
@@ -1982,8 +2025,8 @@ static bool checkTeardown(Session &s, const std::vector<std::string> &controls,
              <<" bytes differ, so something is still drawing. Compare "
              <<referencePath<<" with "<<afterPath<<"\n";
 
-    bool wrote=writeRgbaPng(reference, s.size.x, s.size.y, referencePath);
-    wrote=writeRgbaPng(after, s.size.x, s.size.y, afterPath) && wrote;
+    bool wrote=writeRgbaPng(reference, s.pixels.x, s.pixels.y, referencePath);
+    wrote=writeRgbaPng(after, s.pixels.x, s.pixels.y, afterPath) && wrote;
     if(wrote)
         std::cout<<"wrote "<<referencePath<<"\nwrote "<<afterPath<<"\n";
     return false;
@@ -1999,6 +2042,8 @@ int main(int argc, char *argv[])
     std::string shotDir="/tmp";
     std::string resourceDir;
     gweni::Point screenSize(640, 480);
+    float scale=1.0f;
+    bool scaleGiven=false;
     int frames=3;
     bool shotAll=false;
     bool forceHeadless=false;
@@ -2093,6 +2138,15 @@ int main(int argc, char *argv[])
                 return EXIT_FAILURE;
             }
         }
+        else if(arg == "--scale" && hasValue)
+        {
+            if(!parseScale(argv[++i], scale))
+            {
+                std::cerr<<"ControlTest: --scale wants a number in (0, 16], e.g. 1.5\n";
+                return EXIT_FAILURE;
+            }
+            scaleGiven=true;
+        }
         else if(arg == "--size" && hasValue)
         {
             if(!parseSize(argv[++i], screenSize))
@@ -2110,6 +2164,18 @@ int main(int argc, char *argv[])
     }
 
     if(frames<1) frames=1;
+
+    // The flag beats the environment.
+    if(!scaleGiven)
+    {
+        const char *env=std::getenv("GWENI_SCALE");
+        if(env && *env && !parseScale(env, scale))
+        {
+            std::cerr<<"ControlTest: GWENI_SCALE wants a number in (0, 16], e.g. 1.5, not '"
+                     <<env<<"'\n";
+            return EXIT_FAILURE;
+        }
+    }
 
     if(scripted && scenario != Scenario::None)
     {
@@ -2170,6 +2236,10 @@ int main(int argc, char *argv[])
     if(scenario == Scenario::Resize) screenSize=gweni::Point(640, 480);
     else if(scenario == Scenario::Docked) screenSize=gweni::Point(1024, 768);
 
+    // The canvas is screenSize logical units; the framebuffer, the window and
+    // the view are that in device pixels.
+    const gweni::Point screenPixels=devicePixels(screenSize, scale);
+
     if(capturing && !ensureDirectory(shotDir))
         return EXIT_FAILURE;
     if(!shotPath.empty() && !ensureDirectory(fs::path(shotPathIn(shotDir, shotPath)).parent_path()))
@@ -2197,7 +2267,7 @@ int main(int argc, char *argv[])
         return EXIT_FAILURE;
 #endif
     }
-    else if(!initGlfwContext(ctx, screenSize, "Gweni ControlTest - "+which, !capturing))
+    else if(!initGlfwContext(ctx, screenPixels, "Gweni ControlTest - "+which, !capturing))
     {
         if(!capturing)
         {
@@ -2222,14 +2292,14 @@ int main(int argc, char *argv[])
     }
 
     Framebuffer fb;
-    if(capturing && !createFramebuffer(fb, screenSize.x, screenSize.y))
+    if(capturing && !createFramebuffer(fb, screenPixels.x, screenPixels.y))
     {
         destroyContext(ctx);
         return EXIT_FAILURE;
     }
 
     gweni::renderer::OpenGLCore *renderer=
-        new gweni::renderer::OpenGLCore(*paths, gweni::Rect(gweni::Point(0,0), screenSize));
+        new gweni::renderer::OpenGLCore(*paths, gweni::Rect(gweni::Point(0,0), screenPixels));
     renderer->init();
 
     gweni::skin::textured::TexturedSkin *skin=new gweni::skin::textured::TexturedSkin(renderer);
@@ -2246,7 +2316,7 @@ int main(int argc, char *argv[])
     const gweni::Color background=gweni::skin::textured::tokyonight::Canvas.top;
     glClearColor(background.r/255.0f, background.g/255.0f, background.b/255.0f, background.a/255.0f);
 
-    gweni::controls::Canvas *canvas=createCanvas(skin, screenSize);
+    gweni::controls::Canvas *canvas=createCanvas(skin, screenSize, scale);
 
     g_renderer=renderer;
     g_canvas=canvas;
@@ -2265,6 +2335,8 @@ int main(int argc, char *argv[])
         session.canvas=canvas;
         session.fb=&fb;
         session.size=screenSize;
+        session.scale=scale;
+        session.pixels=screenPixels;
         session.stats=stats;
         session.requireOnePass=requireOnePass;
         session.trace=traceInput;
