@@ -56,10 +56,11 @@ struct GLTextureData: public gweni::TextureData
 };
 
 //! How the text shader turns an atlas sample into alpha. Set per draw, so each
-//! atlas's runs can use their own: today every atlas is a coverage one.
+//! atlas's runs can use their own.
 enum class GLTextMode: int
 {
-    Coverage=0 //!< the sample's red channel is the glyph's coverage
+    Coverage=0, //!< the sample's red channel is the glyph's coverage
+    Sdf=1       //!< the sample is a signed distance field, 0.5 on the glyph's edge
 };
 
 struct GLFontData
@@ -86,6 +87,7 @@ struct GLFontData
         textureFont=other.textureFont;
         other.textureFont=nullptr;
 
+        baseSize=other.baseSize;
         spacing=other.spacing;
         width=other.width;
         height=other.height;
@@ -110,11 +112,17 @@ struct GLFontData
     texture_atlas_t *atlas; //!< inside fontManager; atlas->id is a GL texture this owns
     ftgl::texture_font_t *textureFont;
 
+    //! The px size the atlas is rasterised at: the font's own size for a coverage
+    //! font, the shared base size for an SDF one, whose metrics scale by px/baseSize.
+    float baseSize=0.f;
     float spacing;
 
     int width;
     int height;
 
+    //! Coverage: an atlas for one (face, px, bold), drawn as freetype-gl lays it
+    //! out. Sdf: one distance field atlas for every px of a (face, bold), laid out
+    //! by OpenGLCore::layoutSdfText.
     GLTextMode mode=GLTextMode::Coverage;
 
     //! Text ids whose runs were laid out in this font, so flush() draws them with
@@ -215,6 +223,9 @@ public:
     size_t getFontAtlasDepth(const gweni::Font &font) const;
     //! Fonts loaded and not freed yet
     size_t getLoadedFontCount() const { return m_fonts.size(); }
+    //! The GLTextMode a font is drawn in: Sdf at or above the GWENI_SDF_TEXT_MIN
+    //! threshold (effective px), Coverage below it
+    GLTextMode getTextMode(const gweni::Font &font) const;
 
     //! The GL objects init() created (0 before init()), so a test can check that the
     //! destructor deletes them.
@@ -230,9 +241,13 @@ public:
 
 protected:// Resourses
 
+    //! The m_fonts key a font is loaded under, and the mode it is drawn in. With
+    //! px=font.size*scale(): px >= m_sdfTextMin is (face, bold) in Sdf mode, with
+    //! size 0 standing for "every size"; below that it is (face, px, bold) in
+    //! Coverage mode.
+    Font resolveFont(const Font &font, GLTextMode &mode) const;
 
-
-    std::unordered_map<Font, GLFontData> m_fonts;
+    std::unordered_map<Font, GLFontData> m_fonts; //!< keyed by resolveFont()
     //! Faces whose last load failed: ensureFont does not retry them
     std::unordered_set<Font> m_failedFonts;
     std::vector<GLTextureData *> m_textureData;
@@ -424,6 +439,14 @@ private:
     //! the last upload (renderText and measureText do so lazily), then empties the band.
     void uploadDirtyAtlases();
 
+    //! Lays text out in an Sdf font at px, in freetype-gl's convention (y up, the
+    //! line's top at 0), as text_buffer_add_text does for a coverage font: metrics
+    //! scaled by px/baseSize, unhinted advances, the baseline on a whole pixel.
+    //! Appends 4 vertexes per glyph to `vertexes` when it is not null, and gives
+    //! the size measureText reports. Rasterises the glyphs it has not seen yet.
+    gweni::Point layoutSdfText(GLFontData &fontData, float px, const gweni::String &text,
+        const gweni::Color &color, std::vector<ftgl::glyph_vertex_t> *vertexes);
+
     void setVertex(Vertex &vertex, uint8_t type, int x, int y, int z, float u=0.0f, float v=0.0f);
     //! Writes primitiveId's slot as one of the SDF rounded-rect quads (styles 4, 6, 7),
     //! centred in rect. color0 and color3 are given per side (left, right), because
@@ -545,6 +568,11 @@ private:
     //! GWENI_CLIP_DEBUG=<inset px>: shrink every clip box by the inset on each side, so
     //! the shader clipping shows on screen while the controls only set the canvas region.
     int m_clipDebugInset=0;
+
+    //! Effective px at and above which text is drawn from its face's SDF atlas;
+    //! GWENI_SDF_TEXT_MIN=<px> overrides it (0: SDF everywhere, a large value:
+    //! coverage everywhere).
+    float m_sdfTextMin;
 
     glm::mat4 m_projectionMatrix;
 

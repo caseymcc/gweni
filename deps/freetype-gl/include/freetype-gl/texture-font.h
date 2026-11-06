@@ -327,6 +327,15 @@ typedef struct texture_font_t
     */
     int padding;
 
+    /**
+     * gweni: when > 0, glyphs are rendered with FreeType's own signed distance
+     * field renderer (FT_RENDER_MODE_SDF) at this spread, in pixels at the
+     * font's size, unhinted, into a depth-1 atlas; advance_x is the unhinted
+     * linearHoriAdvance. 0 (the calloc default) keeps the normal render path.
+     * Set it before the first glyph is loaded.
+     */
+    int sdf_spread;
+
 } texture_font_t;
 
 

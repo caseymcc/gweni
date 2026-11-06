@@ -38,7 +38,7 @@
  *    --list             print the control demo names and exit
  *    --help, -h         print the option list and exit
  *    --scenario <name>  per-control | resize | docked | scroll | interaction |
- *                       typing | clip (see below)
+ *                       typing | clip | text-size (see below)
  *    --dump-bounds [<path>]
  *                       print the laid-out control tree as text: one line per
  *                       control, depth-first in child order, indented by depth,
@@ -165,6 +165,16 @@
  *                 and a settled frame changes and uploads nothing. One line
  *                   clip scroll_cut=yes|no ... window_back_steady=yes|no
  *                 reports the checks. Exits non-zero if any check is no.
+ *    text-size    a Label in OpenSans 24 px beside an 11 px one, then its font
+ *                 changed to 36 px at runtime (text-size-24.png, text-size-36.png).
+ *                 Both sizes are drawn from the face's one SDF atlas, so the
+ *                 change has to upload nothing to a font atlas and write no more
+ *                 glyph slots in a frame than the Label's run holds; the Label
+ *                 has to grow and repaint, and a frame after it write nothing:
+ *                   text-size from=24 to=36 sdf=yes atlas_upload_calls=N
+ *                          text_slots_written=N run_glyphs=N ...
+ *                 Exits non-zero if any of it fails, or if GWENI_SDF_TEXT_MIN puts
+ *                 either size below the SDF threshold.
  *
  *  Every scenario (and --shot-all) takes a listing per shot when
  *  --dump-bounds is on, named after that shot with a .txt extension, so the
@@ -175,10 +185,10 @@
  *  there takes no path.
  *
  *  All of them, in the build container, from the repo root (a non-zero exit
- *  from resize, interaction, typing or clip is their assertion, so it is
- *  reported rather than aborting the loop):
+ *  from resize, interaction, typing, clip or text-size is their assertion, so
+ *  it is reported rather than aborting the loop):
  *
- *    for s in per-control resize docked scroll interaction typing clip; do \
+ *    for s in per-control resize docked scroll interaction typing clip text-size; do \
  *      ./build_linux_x64_debug/examples/openglcore/ControlTest \
  *          --headless --scenario $s --shot-dir /tmp/shots/$s; \
  *      echo "$s exit=$?"; \
@@ -202,6 +212,7 @@
 #include <gweni/skins/textured/texturedControls.h>
 #include <gweni/platforms/input/glfw3.h>
 #include <gweni/controls/canvas.h>
+#include <gweni/controls/label.h>
 #include <gweni/controls/scrollControl.h>
 #include <gweni/controls/windowControl.h>
 #include <gweni/controls/checkBox.h>
@@ -363,11 +374,12 @@ static void printUsage(std::ostream &out)
          "                     control has been destroyed; --control narrows it\n"
          "  --trace            log each scripted input on stderr\n"
          "  --scenario <name>  per-control | resize | docked | scroll | interaction\n"
-         "                     | typing | clip; resize prints listing_settled,\n"
-         "                     mirror_settled, shrink_settled and fresh_matches,\n"
-         "                     interaction one yes/no per repaint check, typing\n"
-         "                     its keyboard checks, clip one yes/no per clipping\n"
-         "                     check; all four fail on a no\n"
+         "                     | typing | clip | text-size; resize prints\n"
+         "                     listing_settled, mirror_settled, shrink_settled and\n"
+         "                     fresh_matches, interaction one yes/no per repaint\n"
+         "                     check, typing its keyboard checks, clip one yes/no\n"
+         "                     per clipping check, text-size what a 24 -> 36 px\n"
+         "                     Label font change wrote; all five fail on a no\n"
          "  --dump-bounds [<path>]  print the laid-out control tree as text,\n"
          "                     private children and hidden state included\n"
          "  --resources <dir>  load the skin, fonts and textures from <dir> (relative\n"
@@ -1114,7 +1126,7 @@ static bool runSteps(Session &s, const std::vector<Step> &steps, const std::stri
 //-----------------------------------------------------------------------------
 // Scenarios
 //-----------------------------------------------------------------------------
-enum class Scenario { None, PerControl, Resize, Docked, Scroll, Interaction, Typing, Clip };
+enum class Scenario { None, PerControl, Resize, Docked, Scroll, Interaction, Typing, Clip, TextSize };
 
 static bool parseScenario(const std::string &name, Scenario &scenario)
 {
@@ -1125,6 +1137,7 @@ static bool parseScenario(const std::string &name, Scenario &scenario)
     else if(name == "interaction") scenario=Scenario::Interaction;
     else if(name == "typing") scenario=Scenario::Typing;
     else if(name == "clip") scenario=Scenario::Clip;
+    else if(name == "text-size") scenario=Scenario::TextSize;
     else return false;
     return true;
 }
@@ -1476,6 +1489,124 @@ static bool runScrollScenario(Session &s, const std::string &shotDir)
 
         dropControl(s, control);
     }
+    return ok;
+}
+
+//-----------------------------------------------------------------------------
+// --scenario text-size: a Label's font size changed at runtime
+//
+// Both sizes are at or above OpenGLCore's SDF threshold (by default), so both are
+// drawn from the face's one SDF atlas: the change has to rasterise and upload no
+// glyph, and rewrite only that Label's own glyph slots.
+//-----------------------------------------------------------------------------
+
+static const int g_textSizeFrom=24;
+static const int g_textSizeTo=36;
+
+static bool runTextSizeScenario(Session &s, const std::string &shotDir, bool &passed)
+{
+    // a Label keeps a pointer to its font, so both outlive it
+    gweni::Font from, to;
+    from.facename=to.facename="OpenSans";
+    from.size=static_cast<float>(g_textSizeFrom);
+    to.size=static_cast<float>(g_textSizeTo);
+
+    const char *const sample="Sphinx gyp 0123456789 &?!";
+
+    forgetMouse(s);
+    g_clockSeconds=0.0f;
+    s.frame=0;
+    s.label="text-size";
+
+    // a Label in the skin's default font beside it, whose run must not be touched
+    gweni::controls::Label *other=s.canvas->newChild<gweni::controls::Label>();
+    other->setAlignment(gweni::Alignment::Absolute);
+    other->setText("unchanged 11 px label");
+    other->sizeToContents();
+    other->setPos(20, 8);
+
+    gweni::controls::Label *label=s.canvas->newChild<gweni::controls::Label>();
+    label->setAlignment(gweni::Alignment::Absolute);
+    label->setFont(from);
+    label->setText(sample);
+    label->sizeToContents();
+    label->setPos(20, 30);
+
+    // the extra frame leaves every glyph the first frames needed on the GPU
+    renderFrames(s, s.frames+1);
+
+    const std::string fromShot=shotDir+"/text-size-"+std::to_string(g_textSizeFrom)+".png";
+    const std::string toShot=shotDir+"/text-size-"+std::to_string(g_textSizeTo)+".png";
+    std::vector<uint8_t> fromPixels, toPixels;
+
+    bool ok=shoot(s, fromShot);
+    readFramebufferRgba(s.size.x, s.size.y, fromPixels);
+
+    const gweni::Point fromSize=label->getSize();
+
+    label->setFont(to);
+    label->sizeToContents();
+
+    // The change and however many frames it takes to settle: the most glyph slots
+    // any one of them writes, and everything they upload to the font atlases.
+    size_t atlasUploadCalls=0, atlasUploadBytes=0;
+    size_t textSlotsWritten=0, primSlotsWritten=0, uploadBytes=0;
+
+    for(int i=0; i<s.frames; ++i)
+    {
+        renderFrames(s, 1);
+
+        const gweni::renderer::OpenGLCore::FrameStats &gpu=s.renderer->getFrameStats();
+        atlasUploadCalls+=gpu.atlasUploadCalls;
+        atlasUploadBytes+=gpu.atlasUploadBytes;
+        textSlotsWritten=std::max(textSlotsWritten, gpu.textSlotsWritten);
+        primSlotsWritten+=gpu.primitiveSlotsWritten;
+        uploadBytes+=gpu.uploadBytes;
+    }
+
+    // and one more with nothing to do, which has to write nothing
+    renderFrames(s, 1);
+    const size_t idleSlots=s.renderer->getFrameStats().textSlotsWritten
+        +s.renderer->getFrameStats().primitiveSlotsWritten;
+
+    ok=shoot(s, toShot) && ok;
+    readFramebufferRgba(s.size.x, s.size.y, toPixels);
+
+    const gweni::Point toSize=label->getSize();
+    // the sample is one glyph slot per codepoint, spaces included
+    const size_t glyphs=std::strlen(sample);
+
+    const bool sdf=(s.renderer->getTextMode(from) == gweni::renderer::GLTextMode::Sdf)
+        && (s.renderer->getTextMode(to) == gweni::renderer::GLTextMode::Sdf);
+    const bool noAtlasUpload=(atlasUploadCalls == 0);
+    const bool onlyThatRun=(textSlotsWritten > 0) && (textSlotsWritten <= glyphs);
+    const bool grew=(toSize.x > fromSize.x) && (toSize.y > fromSize.y);
+    const bool repainted=(fromPixels != toPixels);
+    const bool settled=(idleSlots == 0);
+
+    passed=sdf && noAtlasUpload && onlyThatRun && grew && repainted && settled;
+
+    std::cout<<"text-size from="<<g_textSizeFrom<<" to="<<g_textSizeTo
+             <<" sdf="<<(sdf?"yes":"no")
+             <<" atlas_upload_calls="<<atlasUploadCalls<<" atlas_upload_bytes="<<atlasUploadBytes
+             <<" text_slots_written="<<textSlotsWritten<<" run_glyphs="<<glyphs
+             <<" prim_slots_written="<<primSlotsWritten<<" upload_bytes="<<uploadBytes
+             <<" size="<<fromSize.x<<"x"<<fromSize.y<<"->"<<toSize.x<<"x"<<toSize.y
+             <<" repainted="<<(repainted?"yes":"no")
+             <<" idle_slots_written="<<idleSlots<<"\n";
+    if(!passed)
+        std::cerr<<"ControlTest: text-size: the "<<g_textSizeFrom<<" -> "<<g_textSizeTo
+                 <<" px change "<<(!sdf ? "is not in the SDF range (GWENI_SDF_TEXT_MIN?)"
+                     : !noAtlasUpload ? "uploaded to a font atlas"
+                     : !onlyThatRun ? "wrote glyph slots outside the Label's run"
+                     : !grew ? "did not grow the Label"
+                     : !repainted ? "did not repaint"
+                     : "left a frame that still writes slots")<<"\n";
+
+    other->delayedDelete();
+    label->delayedDelete();
+    s.canvas->updateCanvas();
+    checkOnePass(s, "drop");
     return ok;
 }
 
@@ -2416,7 +2547,7 @@ int main(int argc, char *argv[])
             if(!parseScenario(name, scenario))
             {
                 std::cerr<<"ControlTest: unknown scenario: "<<name
-                         <<"; try per-control, resize, docked, scroll, interaction or typing\n";
+                         <<"; try per-control, resize, docked, scroll, interaction, typing or text-size\n";
                 return EXIT_FAILURE;
             }
         }
@@ -2689,6 +2820,15 @@ int main(int argc, char *argv[])
             ok=runClipScenario(session, shotDir, passed);
             if(ok && !passed)
                 ok=false;   // something drew past its parent: a failing assertion
+            break;
+        }
+
+        case Scenario::TextSize:
+        {
+            bool passed=false;
+            ok=runTextSizeScenario(session, shotDir, passed);
+            if(ok && !passed)
+                ok=false;   // the size change cost more than its run: a failing assertion
             break;
         }
 

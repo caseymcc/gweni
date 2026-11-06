@@ -69,6 +69,20 @@ static constexpr size_t minIndexSize=minPrimitiveSize*6;
 static constexpr size_t minVertexSize=minPrimitiveSize*4;
 static constexpr size_t minClippingSize=minPrimitiveSize;
 
+// The SDF text atlas (GLTextMode::Sdf): one per (face, bold), shared by every size
+// at or above the threshold. Its glyphs are rasterised once, at sdfBaseSize px with
+// a distance field reaching sdfSpread px past each edge, into an R8 atlas.
+static constexpr float sdfBaseSize=48.0f;
+static constexpr int sdfSpread=6;
+static constexpr size_t sdfAtlasSize=1024;
+// GWENI_SDF_TEXT_MIN's default, in effective px
+static constexpr float defaultSdfTextMin=16.0f;
+
+// The printable ASCII every font rasterises when it is loaded
+static const char *const fontCache=" !\"#$%&'()*+,-./0123456789:;<=>?"
+    "@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_"
+    "`abcdefghijklmnopqrstuvwxyz{|}~";
+
 GLTextureData::~GLTextureData()
 {
     glBindTexture(GL_TEXTURE_2D, 0);
@@ -86,12 +100,38 @@ GLFontData::~GLFontData()
     free(familyPath);
 }
 
-Font::Status OpenGLCore::loadFont(const Font &font)
+Font OpenGLCore::resolveFont(const Font &font, GLTextMode &mode) const
+{
+    Font key=font;
+    const float px=font.size*scale();
+
+    if(px >= m_sdfTextMin)
+    {
+        mode=GLTextMode::Sdf;
+        key.size=0.f;
+    }
+    else
+    {
+        mode=GLTextMode::Coverage;
+        key.size=px;
+    }
+    return key;
+}
+
+GLTextMode OpenGLCore::getTextMode(const Font &font) const
+{
+    GLTextMode mode;
+
+    resolveFont(font, mode);
+    return mode;
+}
+
+Font::Status OpenGLCore::loadFont(const Font &requested)
 {
     GLFontData fontData;
-    static const char *cache = " !\"#$%&'()*+,-./0123456789:;<=>?"
-                         "@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_"
-                         "`abcdefghijklmnopqrstuvwxyz{|}~";
+    GLTextMode mode;
+    const Font font=resolveFont(requested, mode);
+    const bool sdf=(mode == GLTextMode::Sdf);
 
     // an explicit load is a fresh attempt; a failure is remembered again below,
     // so ensureFont does not retry it
@@ -121,11 +161,13 @@ Font::Status OpenGLCore::loadFont(const Font &font)
     vec4 none={{1.0, 1.0, 1.0, 0.0}};
 
     fontData.faceName=font.facename;
+    fontData.mode=mode;
+    fontData.baseSize=sdf?sdfBaseSize:font.size;
     // markup_t keeps the family as a borrowed char*, and the markup outlives this
     // function, so it cannot point at the local filename.
     fontData.familyPath=strdup(filename.c_str());
     fontData.markup.family=fontData.familyPath;
-    fontData.markup.size=font.size;
+    fontData.markup.size=fontData.baseSize;
     fontData.markup.bold=0;
     fontData.markup.italic=0;
     fontData.markup.spacing=0.0;
@@ -140,15 +182,27 @@ Font::Status OpenGLCore::loadFont(const Font &font)
     fontData.markup.strikethrough_color=black;
     fontData.markup.font=0;
 
-    // depth 1: one coverage byte per texel, rasterised grayscale with light
-    // (vertical-only) hinting. Depth 3 would make freetype-gl rasterise for LCD
+    // depth 1 for both: one coverage byte per texel for a coverage atlas,
+    // rasterised grayscale with light (vertical-only) hinting, or one distance
+    // byte for an SDF one. Depth 3 would make freetype-gl rasterise for LCD
     // subpixels, of which the text shader would only see red.
-    fontData.fontManager=ftgl::font_manager_new(1024, 1024, LCD_FILTERING_OFF);
+    fontData.fontManager=sdf?ftgl::font_manager_new(sdfAtlasSize, sdfAtlasSize, LCD_FILTERING_OFF)
+        :ftgl::font_manager_new(1024, 1024, LCD_FILTERING_OFF);
 
     free(fontData.fontManager->cache); // font_manager_new strdup'd a default
-    fontData.fontManager->cache=strdup(cache);
+    // The manager rasterises its cache as soon as it opens the face, before an SDF
+    // font's spread could be set, so an SDF font loads it itself below.
+    fontData.fontManager->cache=strdup(sdf?"":fontCache);
 
     fontData.markup.font=ftgl::font_manager_get_from_markup(fontData.fontManager, &fontData.markup);
+
+    if(sdf && fontData.markup.font)
+    {
+        fontData.markup.font->sdf_spread=sdfSpread;
+        // unhinted, so the kerning is not rounded to whole base-size pixels
+        fontData.markup.font->hinting=0;
+        ftgl::texture_font_load_glyphs(fontData.markup.font, fontCache);
+    }
 
     if(fontData.markup.font == nullptr)
     {
@@ -185,8 +239,13 @@ Font::Status OpenGLCore::loadFont(const Font &font)
     return Font::Status::Loaded;
 }
 
-void OpenGLCore::freeFont(const gweni::Font &font)
+void OpenGLCore::freeFont(const gweni::Font &requested)
 {
+    // An SDF font is shared by every size of its face: freeing one size frees it
+    // for all of them, and their runs are laid out again on their next renderText.
+    GLTextMode mode;
+    const Font font=resolveFont(requested, mode);
+
     if(m_lastFont != nullptr && m_lastFont->first == font)
         m_lastFont=nullptr;
 
@@ -207,8 +266,11 @@ void OpenGLCore::freeFont(const gweni::Font &font)
     m_fonts.erase(it); // GLFontData's destructor deletes the atlas texture and the manager
 }
 
-bool OpenGLCore::ensureFont(const Font &font)
+bool OpenGLCore::ensureFont(const Font &requested)
 {
+    GLTextMode mode;
+    const Font font=resolveFont(requested, mode);
+
     if(m_lastFont != nullptr)
     {
         if(m_lastFont->first == font)
@@ -231,7 +293,7 @@ bool OpenGLCore::ensureFont(const Font &font)
     // No, try load to it
 
     // LoadFont sets m_lastFont, if loaded, and adds the font to m_failedFonts if not
-    return loadFont(font) == Font::Status::Loaded;
+    return loadFont(requested) == Font::Status::Loaded;
 }
 
 Texture::Status OpenGLCore::loadTexture(Texture &texture)
@@ -396,9 +458,10 @@ unsigned int OpenGLCore::getTextureName(const Texture &texture) const
     return 0;
 }
 
-unsigned int OpenGLCore::getFontAtlasName(const Font &font) const
+unsigned int OpenGLCore::getFontAtlasName(const Font &requested) const
 {
-    auto it=m_fonts.find(font);
+    GLTextMode mode;
+    auto it=m_fonts.find(resolveFont(requested, mode));
 
     if((it != m_fonts.end()) && (it->second.atlas))
         return it->second.atlas->id;
@@ -489,6 +552,9 @@ OpenGLCore::OpenGLCore(ResourcePaths &paths, const Rect &viewRect)
     m_clippingBoxes.reserve(minClippingSize);
 
     m_uploadStats=(getenv("GWENI_UPLOAD_STATS") != nullptr);
+    m_sdfTextMin=defaultSdfTextMin;
+    if(const char *sdfTextMin=getenv("GWENI_SDF_TEXT_MIN"))
+        m_sdfTextMin=std::max(0.0f, (float)atof(sdfTextMin));
     m_textDebug=getenv("GWENI_TEXT_DEBUG");
 
     if(const char *clipDebug=getenv("GWENI_CLIP_DEBUG"))
@@ -920,8 +986,10 @@ uniform sampler2D texture1;
 // One Box (x0, y0, x1, y1) per glyph slot. Each atlas is a draw of its own over
 // some of the slots, so gl_PrimitiveID does not give the slot; the vertex shader does.
 uniform usamplerBuffer clipBoxes;
-// GLTextMode of the atlas this draw samples: 0 coverage
+// GLTextMode of the atlas this draw samples: 0 coverage, 1 signed distance field
 uniform int textMode;
+// the SDF edge's anti-aliasing half-width, in screen pixels
+const float SDF_AA = 0.7;
 void main()
 {
     uvec4 clip = texelFetch(clipBoxes, int(slot));
@@ -930,14 +998,31 @@ void main()
     float a = 0.0;
 
     if(textMode == 0)
+    {
         a = texture2D(texture1, texCoord).r;
 
-    // Straight alpha: the coverage scales alpha only, and the SRC_ALPHA blend
-    // applies it to the colour once. color * a here would apply it twice.
-    FragColor = vec4(color.rgb, color.a * pow( a, 1.0/gamma ));
+        // Straight alpha: the coverage scales alpha only, and the SRC_ALPHA blend
+        // applies it to the colour once. color * a here would apply it twice.
+        FragColor = vec4(color.rgb, color.a * pow( a, 1.0/gamma ));
+    }
+    else
+    {
+        // The field is 0.5 on the glyph's edge and changes by 1/(2*spread) per atlas
+        // texel; w is how much it changes over one screen pixel here, so the edge is
+        // anti-aliased over about a pixel at any size, as style 4's rounded rect is.
+        float d = texture(texture1, texCoord).r;
+        float w = max(SDF_AA*length(vec2(dFdx(d), dFdy(d))), 1e-4);
+
+        a = smoothstep(0.5-w, 0.5+w, d);
+        FragColor = vec4(color.rgb, color.a*a);
+    }
 
     // after the sample, as in the primitive shader: its implicit derivatives want the quad
     if(clipped)
+        discard;
+    // An SDF glyph's quad reaches the spread past its ink, over its neighbours and
+    // the next row: where it draws nothing it must not write depth either.
+    if((textMode != 0) && (a <= 0.0))
         discard;
 }
     )";
@@ -1996,6 +2081,7 @@ void OpenGLCore::writeTextIndexes(const TextRun &run)
     {
         const size_t slot=run.start+i;
         uint32_t *indexes=&m_textIndexes[slot*6];
+        uint32_t slotIndexes[6];
 
         if(run.hidden || (i >= run.glyphs))
         {
@@ -2003,16 +2089,21 @@ void OpenGLCore::writeTextIndexes(const TextRun &run)
             // rasterises nothing whatever its vertices still hold. This is what
             // hides a run and what keeps a freed or over-long run off the screen.
             for(size_t j=0; j<6; ++j)
-                indexes[j]=0;
+                slotIndexes[j]=0;
         }
         else
         {
             const uint32_t base=static_cast<uint32_t>(slot*4);
 
             for(size_t j=0; j<6; ++j)
-                indexes[j]=base+c_quad[j];
+                slotIndexes[j]=base+c_quad[j];
         }
 
+        // a run laid out again with as many glyphs keeps its indexes: no upload
+        if(memcmp(indexes, slotIndexes, sizeof(slotIndexes)) == 0)
+            continue;
+
+        memcpy(indexes, slotIndexes, sizeof(slotIndexes));
         m_dirtyTextIndexSlots.mark(slot);
     }
 }
@@ -2181,26 +2272,38 @@ void OpenGLCore::renderText(size_t textId, const gweni::Font &font, gweni::Point
         return;
     }
 
-    ftgl::text_buffer_t *textBuffer=ftgl::text_buffer_new();
-    ftgl::vec2 pen={ 0.0f, 0.0f };
+    ftgl::text_buffer_t *textBuffer=nullptr;
+    std::vector<ftgl::glyph_vertex_t> sdfVertexes;
+    const ftgl::glyph_vertex_t *vertexBuffer;
+    size_t glyphCount;
 
-    // Bake the current draw color (set by the control's text renderer from its
-    // text color) into the glyphs, so per-control text colors actually apply
-    // instead of the static black the markup was initialised with.
-    fontData.markup.foreground_color.r=color.r/255.0f;
-    fontData.markup.foreground_color.g=color.g/255.0f;
-    fontData.markup.foreground_color.b=color.b/255.0f;
-    fontData.markup.foreground_color.a=color.a/255.0f;
+    if(fontData.mode == GLTextMode::Sdf)
+    {
+        layoutSdfText(fontData, font.size*scale(), text, color, &sdfVertexes);
+        vertexBuffer=sdfVertexes.data();
+        glyphCount=sdfVertexes.size()/4;
+    }
+    else
+    {
+        textBuffer=ftgl::text_buffer_new();
+        ftgl::vec2 pen={ 0.0f, 0.0f };
 
-    //the length is in codepoints, not bytes: text.length() overran the string for
-    //anything non-ASCII and drew whatever followed it in memory as glyphs
-    ftgl::text_buffer_add_text(textBuffer, &pen, &fontData.markup, text.c_str(), ftgl::utf8_strlen(text.c_str()));
+        // Bake the current draw color (set by the control's text renderer from its
+        // text color) into the glyphs, so per-control text colors actually apply
+        // instead of the static black the markup was initialised with.
+        fontData.markup.foreground_color.r=color.r/255.0f;
+        fontData.markup.foreground_color.g=color.g/255.0f;
+        fontData.markup.foreground_color.b=color.b/255.0f;
+        fontData.markup.foreground_color.a=color.a/255.0f;
 
-    ftgl::vector_t *indexes=textBuffer->buffer->indices;
-    ftgl::vector_t *vertexes=textBuffer->buffer->vertices;
+        //the length is in codepoints, not bytes: text.length() overran the string for
+        //anything non-ASCII and drew whatever followed it in memory as glyphs
+        ftgl::text_buffer_add_text(textBuffer, &pen, &fontData.markup, text.c_str(), ftgl::utf8_strlen(text.c_str()));
 
-    //with every markup decoration off, freetype-gl emits exactly one quad per glyph
-    const size_t glyphCount=indexes->size/6;
+        //with every markup decoration off, freetype-gl emits exactly one quad per glyph
+        glyphCount=textBuffer->buffer->indices->size/6;
+        vertexBuffer=(const ftgl::glyph_vertex_t *)textBuffer->buffer->vertices->items;
+    }
 
     // hidden is left as it is: writeTextIndexes below keeps a hidden run blank
     run.text=text;
@@ -2210,8 +2313,6 @@ void OpenGLCore::renderText(size_t textId, const gweni::Font &font, gweni::Point
     run.color=color;
     setTextRunFont(textId, &fontData);
     allocateTextRun(run, glyphCount);
-
-    ftgl::glyph_vertex_t *vertexBuffer=(ftgl::glyph_vertex_t *)vertexes->items;
 
     const float zDelta=glyphCount?1.0f/glyphCount:0.0f;
     float zOffset=0.0f;
@@ -2257,9 +2358,9 @@ void OpenGLCore::renderText(size_t textId, const gweni::Font &font, gweni::Point
             liveGlyphs+=textRun.glyphs;
 
         ::printf("[mirror] textId=%zu \"%s\" chars=%zu run=[%zu,%zu) capacity=%zu "
-            "ftgl vertices=%zu indices=%zu\n",
+            "%s vertices=%zu indices=%zu\n",
             textId, text.c_str(), text.length(), run.start, run.start+run.glyphs,
-            run.capacity, vertexes->size, indexes->size);
+            run.capacity, textBuffer?"ftgl":"sdf", glyphCount*4, glyphCount*6);
         ::printf("[mirror]   pos=(%d,%d) z=%d hidden=%s atlas=%zux%zu depth=%zu "
             "mirror verts=%zu idx=%zu slots used=%zu free runs=%zu free slots=%zu "
             "live glyphs=%zu\n",
@@ -2307,7 +2408,76 @@ void OpenGLCore::renderText(size_t textId, const gweni::Font &font, gweni::Point
         }
     }
 
-    text_buffer_delete(textBuffer);
+    if(textBuffer)
+        text_buffer_delete(textBuffer);
+}
+
+gweni::Point OpenGLCore::layoutSdfText(GLFontData &fontData, float px, const gweni::String &text,
+    const gweni::Color &color, std::vector<ftgl::glyph_vertex_t> *vertexes)
+{
+    ftgl::texture_font_t *font=fontData.textureFont;
+    const float s=px/fontData.baseSize;
+    const float r=color.r/255.0f, g=color.g/255.0f, b=color.b/255.0f, a=color.a/255.0f;
+
+    // The baseline sits a whole number of pixels below the line's top, and the run's
+    // origin is a whole pixel, so a run moved by a sub-pixel amount cannot shimmer.
+    // Within the line the glyphs keep their fractional, unhinted pen positions.
+    const float ascender=roundf(font->ascender*s);
+    const float lineStep=roundf((font->ascender-font->descender)*s);
+    float baseline=-ascender;
+    float pen=0.0f;
+    float width=0.0f;
+    int lines=1;
+    const char *previous=nullptr;
+
+    //one codepoint at a time, as text_buffer_add_text goes
+    for(size_t i=0; i < text.size(); i+=std::max<size_t>(1, ftgl::utf8_surrogate_len(text.c_str()+i)))
+    {
+        const char *current=text.c_str()+i;
+
+        if(*current == '\n')
+        {
+            width=std::max(width, pen);
+            pen=0.0f;
+            baseline-=lineStep;
+            ++lines;
+            previous=nullptr;
+            continue;
+        }
+
+        ftgl::texture_glyph_t *glyph=ftgl::texture_font_get_glyph(font, current);
+
+        if(glyph == nullptr)
+            continue;
+
+        if(previous && font->kerning)
+            pen+=ftgl::texture_glyph_get_kerning(glyph, previous)*s;
+
+        if(vertexes)
+        {
+            // the glyph's field, its spread padding included, scaled about the pen
+            const float x0=pen+glyph->offset_x*s;
+            const float x1=x0+glyph->width*s;
+            const float y0=baseline+glyph->offset_y*s;
+            const float y1=y0-glyph->height*s;
+            // in text_buffer_add_char's vertex order; shift is unused, gamma 1
+            const ftgl::glyph_vertex_t quad[4]=
+            {
+                {x0, y0, 0.0f, glyph->s0, glyph->t0, r, g, b, a, 0.0f, 1.0f},
+                {x0, y1, 0.0f, glyph->s0, glyph->t1, r, g, b, a, 0.0f, 1.0f},
+                {x1, y1, 0.0f, glyph->s1, glyph->t1, r, g, b, a, 0.0f, 1.0f},
+                {x1, y0, 0.0f, glyph->s1, glyph->t0, r, g, b, a, 0.0f, 1.0f}
+            };
+
+            vertexes->insert(vertexes->end(), quad, quad+4);
+        }
+
+        pen+=glyph->advance_x*s;
+        previous=current;
+    }
+    width=std::max(width, pen);
+
+    return gweni::Point((int)ceil(width), (int)ceil(font->height*s+(lines-1)*lineStep));
 }
 
 void OpenGLCore::showText(size_t textId)
@@ -2352,6 +2522,17 @@ gweni::Point OpenGLCore::measureText(const gweni::Font &font, const gweni::Strin
         return gweni::Point(0, 0);
 
     GLFontData &fontData=m_lastFont->second;
+
+    // In an SDF font: the same layout renderText draws, so sizeToContents fits it
+    if(fontData.mode == GLTextMode::Sdf)
+    {
+        const gweni::Point sz=layoutSdfText(fontData, font.size*scale(), text, gweni::Color(), nullptr);
+
+        if(textDebugMatches(text))
+            ::printf("[measure] \"%s\" sdf font.size=%f scale=%f base=%f => sz.x=%d sz.y=%d\n",
+                text.c_str(), (double)font.size, (double)scale(), (double)fontData.baseSize, sz.x, sz.y);
+        return sz;
+    }
 
     ftgl::text_buffer_t *textBuffer=ftgl::text_buffer_new();
     ftgl::vec2 pen={0.f, 0.f};

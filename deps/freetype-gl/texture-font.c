@@ -8,6 +8,7 @@
 #include FT_STROKER_H
 // #include FT_ADVANCES_H
 #include FT_LCD_FILTER_H
+#include FT_MODULE_H
 #include <stdint.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -395,6 +396,7 @@ texture_font_load_glyph( texture_font_t * self,
     FT_Int32 flags = 0;
     int ft_glyph_top = 0;
     int ft_glyph_left = 0;
+    float sdf_advance_x = 0.f;
 
     ivec4 region;
     size_t missed = 0;
@@ -486,7 +488,27 @@ texture_font_load_glyph( texture_font_t * self,
         }
     }
 
+    /* gweni: FreeType's SDF renderer (sdf_spread > 0). The outline is loaded
+     * unhinted at the font's size and rendered with FT_RENDER_MODE_SDF, whose
+     * bitmap already carries the spread on every side: bitmap_left/top are
+     * moved out by it, so offset_x/offset_y, the size and the UVs below cover
+     * the padded field as they are. The atlas has to be depth 1. */
+    if( self->sdf_spread > 0 )
+    {
+        FT_UInt spread = (FT_UInt)self->sdf_spread;
+
+        assert( self->atlas->depth == 1 );
+        /* the library is made anew for every glyph, so the property is too */
+        FT_Property_Set( library, "sdf", "spread", &spread );
+        flags = FT_LOAD_NO_HINTING | FT_LOAD_NO_BITMAP;
+    }
+
     error = FT_Load_Glyph( face, glyph_index, flags );
+    if( !error && self->sdf_spread > 0 )
+    {
+        sdf_advance_x = face->glyph->linearHoriAdvance / 65536.f;
+        error = FT_Render_Glyph( face->glyph, FT_RENDER_MODE_SDF );
+    }
     if( error )
     {
         fprintf( stderr, "FT_Error (line %d, code 0x%02x) : %s\n",
@@ -662,8 +684,17 @@ cleanup_stroker:
     glyph->s1       = (x + glyph->width)/(float)self->atlas->width;
     glyph->t1       = (y + glyph->height)/(float)self->atlas->height;
 
-    glyph->advance_x = advance_x;
-    glyph->advance_y = advance_y;
+    if( self->sdf_spread > 0 )
+    {
+        /* gweni: the SDF load was unhinted already */
+        glyph->advance_x = sdf_advance_x;
+        glyph->advance_y = 0;
+    }
+    else
+    {
+        glyph->advance_x = advance_x;
+        glyph->advance_y = advance_y;
+    }
 
     vector_push_back( self->glyphs, &glyph );
 
