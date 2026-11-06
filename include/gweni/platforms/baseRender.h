@@ -92,6 +92,26 @@ public:
     virtual void drawRoundedRect(size_t primitiveId, gweni::Rect rect, float radius, float border,
         gweni::Color fillTop, gweni::Color fillBottom, gweni::Color borderColor, int zIndex) {}
 
+    //! Draw a rounded rectangle like drawRoundedRect, but filled with a four-corner
+    //! bilinear blend: \a c00 top-left, \a c10 top-right, \a c01 bottom-left, \a c11
+    //! bottom-right (exact, with no crease along the quad's diagonal). \a radius,
+    //! \a border and \a borderColor are as for drawRoundedRect. The default
+    //! approximates it with drawRoundedRect, top = mix(c00,c10), bottom = mix(c01,c11),
+    //! so a backend without it still shows the average colours.
+    virtual void drawBilinearRect(size_t primitiveId, gweni::Rect rect, int zIndex,
+        gweni::Color c00, gweni::Color c10, gweni::Color c01, gweni::Color c11,
+        float radius, float border, gweni::Color borderColor);
+
+    //! Draw a rounded rectangle like drawRoundedRect, filled with \a fill composited
+    //! over a checkerboard of \a light and \a dark cells, so a translucent colour can be
+    //! previewed. The result is opaque (only the rounded edge is blended), so it does not
+    //! depend on what is drawn behind it. \a radius, \a border and \a borderColor are as
+    //! for drawRoundedRect. The default approximates it with a flat drawRoundedRect of
+    //! \a fill over mix(light,dark).
+    virtual void drawCheckerRect(size_t primitiveId, gweni::Rect rect, int zIndex,
+        gweni::Color fill, gweni::Color light, gweni::Color dark,
+        float radius, float border, gweni::Color borderColor);
+
     //! Draw a stroked icon glyph (anti-aliased, SDF) in \a color: \a kind 0=checkmark,
     //! 1=chevron; \a direction 0=down 1=up 2=left 3=right (chevron only).
     virtual void drawIcon(size_t primitiveId, gweni::Rect rect, int kind, int direction,

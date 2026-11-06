@@ -83,7 +83,8 @@ if(TARGET gweni_capture)
     add_executable(gweni_unittests
         main.cpp
         textLength.cpp
-        color.cpp)
+        color.cpp
+        fillStyles.cpp)
     gweni_set_warnings(gweni_unittests)
     target_link_libraries(gweni_unittests
         gweni

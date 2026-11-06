@@ -135,6 +135,35 @@ void Base::drawMissingImage(size_t primitiveId, gweni::Rect targetRect, int zInd
     drawFilledRect(primitiveId, targetRect, zIndex);
 }
 
+//! a + (b-a)*t per channel, rounded; t in [0,1].
+static gweni::Color mixColor(const gweni::Color &a, const gweni::Color &b, float t)
+{
+    auto channel=[t](unsigned char x, unsigned char y)
+    {
+        return static_cast<unsigned char>(std::lround(x+(y-x)*t));
+    };
+
+    return gweni::Color(channel(a.r, b.r), channel(a.g, b.g), channel(a.b, b.b), channel(a.a, b.a));
+}
+
+void Base::drawBilinearRect(size_t primitiveId, gweni::Rect rect, int zIndex,
+    gweni::Color c00, gweni::Color c10, gweni::Color c01, gweni::Color c11,
+    float radius, float border, gweni::Color borderColor)
+{
+    drawRoundedRect(primitiveId, rect, radius, border,
+        mixColor(c00, c10, 0.5f), mixColor(c01, c11, 0.5f), borderColor, zIndex);
+}
+
+void Base::drawCheckerRect(size_t primitiveId, gweni::Rect rect, int zIndex,
+    gweni::Color fill, gweni::Color light, gweni::Color dark,
+    float radius, float border, gweni::Color borderColor)
+{
+    gweni::Color flat=mixColor(mixColor(light, dark, 0.5f), fill, fill.a/255.0f);
+
+    flat.a=255;
+    drawRoundedRect(primitiveId, rect, radius, border, flat, flat, borderColor, zIndex);
+}
+
 ///  If they haven't defined these font functions in their renderer code
 ///  we just draw some rects where the letters would be to give them an
 ///  idea.

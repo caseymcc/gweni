@@ -26,6 +26,7 @@ namespace test
 
 static renderer::OpenGLCore *g_renderer=nullptr;
 static Font g_openSans;
+static const Point g_viewSize(448, 160);
 
 renderer::OpenGLCore &gpuRenderer()
 {
@@ -35,6 +36,11 @@ renderer::OpenGLCore &gpuRenderer()
 const Font &openSans()
 {
     return g_openSans;
+}
+
+Point viewSize()
+{
+    return g_viewSize;
 }
 
 }//namespace test
@@ -68,7 +74,7 @@ int main(int argc, char **argv)
         return EXIT_FAILURE;
     }
 
-    const Point viewSize(256, 64);
+    const Point viewSize=test::viewSize();
     capture::Framebuffer fb;
 
     if(!capture::createFramebuffer(fb, viewSize.x, viewSize.y))

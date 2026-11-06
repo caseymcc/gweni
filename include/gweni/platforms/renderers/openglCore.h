@@ -128,6 +128,12 @@ public:
     void drawFilledRect(size_t primitiveId, gweni::Rect rect, int zIndex) override;
     void drawRoundedRect(size_t primitiveId, gweni::Rect rect, float radius, float border,
         gweni::Color fillTop, gweni::Color fillBottom, gweni::Color borderColor, int zIndex) override;
+    void drawBilinearRect(size_t primitiveId, gweni::Rect rect, int zIndex,
+        gweni::Color c00, gweni::Color c10, gweni::Color c01, gweni::Color c11,
+        float radius, float border, gweni::Color borderColor) override;
+    void drawCheckerRect(size_t primitiveId, gweni::Rect rect, int zIndex,
+        gweni::Color fill, gweni::Color light, gweni::Color dark,
+        float radius, float border, gweni::Color borderColor) override;
     void drawIcon(size_t primitiveId, gweni::Rect rect, int kind, int direction,
         gweni::Color color, int zIndex) override;
 
@@ -248,16 +254,19 @@ private:
         uint16_t style;
         uint16_t x, y, z;
         uint16_t tx, ty; //color0 (top fill) packed rg/ba, or UV for texture (style 2)
-        // SDF rounded-rect fields (style 4); left 0 for all other styles.
+        // SDF rounded-rect fields (styles 4, 6, 7); left 0 for all other styles.
         int16_t  lx, ly; //local position relative to rect center (= +/-halfSize at the four corners)
         uint16_t radius; //corner radius in px
         uint16_t border; //border thickness in px
         uint16_t cx, cy; //color1 (bottom fill for vertical gradient) packed rg/ba
         uint16_t bx, by; //border color packed rg/ba
+        uint16_t dx, dy; //color3 packed rg/ba: bottom edge (style 6) or checker dark (style 7)
 //        glm::vec3 pos;
 //        glm::vec2 uv;
 //        glm::vec4 color;
     };
+
+    static_assert(sizeof(Vertex) == 32, "Vertex is 16 16-bit fields; the GPU attribute layout depends on it");
 
     struct Box
     {
@@ -350,6 +359,13 @@ private:
     void uploadDirtyAtlases();
 
     void setVertex(Vertex &vertex, uint8_t type, int x, int y, int z, float u=0.0f, float v=0.0f);
+    //! Writes primitiveId's slot as one of the SDF rounded-rect quads (styles 4, 6, 7),
+    //! centred in rect. color0 and color3 are given per side (left, right), because
+    //! style 6 interpolates them along x; color1 and the border colour are per quad.
+    void writeRoundedQuad(size_t primitiveId, gweni::Rect rect, int zIndex, uint8_t style,
+        float radius, float border, gweni::Color color0Left, gweni::Color color0Right,
+        gweni::Color color1, gweni::Color color3Left, gweni::Color color3Right,
+        gweni::Color borderColor);
     void addVert(int x, int y, float u=0.0f, float v=0.0f);
     void setTexture(unsigned int texture);
 

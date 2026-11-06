@@ -23,6 +23,9 @@ renderer::OpenGLCore &gpuRenderer();
 //! OpenSans (resources/OpenSans.ttf), already loaded through loadFont.
 const Font &openSans();
 
+//! Size of the offscreen framebuffer, which is bound while the tests run.
+Point viewSize();
+
 }//namespace test
 }//namespace gweni
 

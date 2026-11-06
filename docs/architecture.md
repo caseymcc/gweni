@@ -62,7 +62,7 @@ The core never makes API calls directly — it only calls this interface. Key me
 | --- | --- |
 | Frame | `begin()`, `end()`, `setViewRect()` |
 | Primitive lifetime | `generatePrimitive(id)`, `releasePrimitive(id)` |
-| Geometry | `drawFilledRect(id, rect, z)`, `drawTexturedRect(tex, id, rect, z, uv…)` |
+| Geometry | `drawFilledRect(id, rect, z)`, `drawTexturedRect(tex, id, rect, z, uv…)`, `drawRoundedRect(…)`, `drawBilinearRect(…)`, `drawCheckerRect(…)`, `drawIcon(…)` |
 | Visibility | `showPrimitive(style, id)`, `hidePrimitive(id)` |
 | Text | `generateTextPrimitive(id)`, `renderText(id, font, pos, z, text)`, `showText/hideText`, `measureText()` |
 | Color / clip | `setDrawColor()`, `startClip()/endClip()`, `setClipRegion()` |
@@ -87,10 +87,25 @@ on an OpenGL 3.3 core profile:
 - **A primitive id is a fixed slot in those buffers**: vertices live at `id*4` (a quad),
   indices at `id*6`. `generatePrimitive()` pulls a free id from a bank
   (`getPrimitiveId`, `include/gweni/primitiveIds.h`) and grows the CPU buffers.
-- Each `Vertex` is `{ style, x, y, z, tx, ty }` packed as 16-bit ints. `style` selects
-  the shader path: `0` = hidden (degenerate), `1` = solid color (color packed into
-  `tx/ty`), `2` = textured, `3` = text glyph. `hidePrimitive()`/`showPrimitive()` just
-  set `style`, leaving geometry in place.
+- Each `Vertex` is 16 16-bit fields, 32 bytes:
+  `{ style, x, y, z, tx, ty, lx, ly, radius, border, cx, cy, bx, by, dx, dy }`.
+  `tx/ty` is color0 (or the UV of style 2), `cx/cy` color1, `bx/by` the border color
+  and `dx/dy` color3, each an RGBA color packed into two halves (`Color::rg()/ba()`).
+  The shader reads color0 and color3 as smooth (interpolated) varyings and color1 and
+  the border color as flat ones. `lx/ly` (the local position from the rect's centre),
+  `radius`, `border`, color1, the border color and color3 are 0 except for the styles
+  that use them. `style` selects the shader path: `0` = hidden (degenerate), `1` = solid
+  color (color0), `2` = textured, `3` = text glyph, `4` = SDF rounded rect
+  (`drawRoundedRect`: vertical gradient color0 → color1, border), `5` = SDF icon glyph
+  (`drawIcon`), `6` = SDF bilinear fill (`drawBilinearRect`: each vertex carries its
+  own top-edge color in color0 and bottom-edge color in color3; both are linear in x,
+  so the blend along y is exact, with no crease on the quad's diagonal), `7` = SDF
+  checker composite (`drawCheckerRect`: color0 with its alpha over 4 px cells of
+  color1 (light) and color3 (dark), output opaque, so it does not depend on draw
+  order). Styles 4, 6 and 7 share the rounded mask, anti-aliasing and border.
+  `renderer::Base`'s defaults for `drawBilinearRect`/`drawCheckerRect` approximate
+  them with `drawRoundedRect`. `hidePrimitive()`/`showPrimitive()` just set `style`,
+  leaving geometry in place.
 - `drawFilledRect()`/`drawTexturedRect()` write the 4 vertices + 6 indices for a quad
   into that id's slot in the CPU mirror.
 - Because the CPU mirror is persistent, a control that didn't change leaves its slot

@@ -431,6 +431,8 @@ void OpenGLCore::init()
     glVertexAttribIPointer(attrib++, 2, GL_UNSIGNED_SHORT, sizeof(Vertex), (GLvoid*)(offsetof(Vertex, cx)));
     glEnableVertexAttribArray(attrib); // Attrib '6' is SDF border color (packed)
     glVertexAttribIPointer(attrib++, 2, GL_UNSIGNED_SHORT, sizeof(Vertex), (GLvoid*)(offsetof(Vertex, bx)));
+    glEnableVertexAttribArray(attrib); // Attrib '7' is color3 (packed): bilinear bottom edge / checker dark
+    glVertexAttribIPointer(attrib++, 2, GL_UNSIGNED_SHORT, sizeof(Vertex), (GLvoid*)(offsetof(Vertex, dx)));
 
 //    glBindBuffer(GL_ARRAY_BUFFER, m_clipBuffer);
 //    glEnableVertexAttribArray(2); // Attrib '3' is show
@@ -479,6 +481,7 @@ layout (location = 3) in ivec2 inLocal;        // SDF local position (rel to rec
 layout (location = 4) in uvec2 inRadiusBorder; // SDF .x=radius .y=border (px)
 layout (location = 5) in uvec2 inColor1;       // SDF gradient bottom color
 layout (location = 6) in uvec2 inBorderColor;  // SDF border color
+layout (location = 7) in uvec2 inColor3;       // bilinear bottom edge (6) / checker dark (7)
 
 out vec2 TexCoords;
 out vec4 VertexColor;
@@ -489,6 +492,7 @@ flat out float vRadius;
 flat out float vBorder;
 flat out vec4 vColor1;    // gradient bottom color
 flat out vec4 vBorderColor;
+out vec4 vColor3;         // smooth: style 6 interpolates it along x
 
 uniform mat4 projection;
 uniform uvec2 textureSize;
@@ -515,6 +519,7 @@ void main()
     vBorder = float(inRadiusBorder.y);
     vColor1 = unpackColor(inColor1);
     vBorderColor = unpackColor(inBorderColor);
+    vColor3 = unpackColor(inColor3);
 
     if(style == 0u)//item has been hidden, move all coords to 0.0f
         gl_Position = vec4(0.0f, 0.0f, 0.0f, 1.0f);
@@ -536,6 +541,7 @@ flat in float vRadius;
 flat in float vBorder;
 flat in vec4 vColor1;
 flat in vec4 vBorderColor;
+in vec4 vColor3;
 
 uniform sampler2D texture1;
 
@@ -544,6 +550,25 @@ float sdRoundBox(vec2 p, vec2 b, float r)
 {
     vec2 q = abs(p) - b + vec2(r);
     return min(max(q.x, q.y), 0.0) + length(max(q, vec2(0.0))) - r;
+}
+
+// Rounded-rect mask of styles 4, 6 and 7: applies the border to fill and the
+// anti-aliased outer edge to its alpha.
+vec4 roundedRect(vec4 fill)
+{
+    float r = clamp(vRadius, 0.0, min(vHalf.x, vHalf.y));
+    float d = sdRoundBox(vLocal, vHalf, r);
+    float aa = max(fwidth(d), 1e-4);
+    float shapeA = 1.0 - smoothstep(-aa, aa, d);   // outer edge coverage
+
+    vec3 rgb = fill.rgb;
+    if(vBorder > 0.0)
+    {
+        // -d is the inward distance from the edge; border occupies [0, vBorder].
+        float bMix = 1.0 - smoothstep(vBorder - aa, vBorder + aa, -d);
+        rgb = mix(fill.rgb, vBorderColor.rgb, clamp(bMix, 0.0, 1.0));
+    }
+    return vec4(rgb, fill.a * shapeA);
 }
 
 // Distance from p to the segment a-b (for stroked icon glyphs).
@@ -574,23 +599,25 @@ void main()
     else if (ShaderType == 4u)
     {
         // SDF rounded rect: vertical gradient fill + optional border, analytic AA.
-        float r = clamp(vRadius, 0.0, min(vHalf.x, vHalf.y));
-        float d = sdRoundBox(vLocal, vHalf, r);
-        float aa = max(fwidth(d), 1e-4);
-        float shapeA = 1.0 - smoothstep(-aa, aa, d);   // outer edge coverage
-
         // Vertical gradient: local y runs -half (top) .. +half (bottom).
         float t = clamp(vLocal.y/max(vHalf.y, 1.0)*0.5 + 0.5, 0.0, 1.0);
-        vec4 fill = mix(VertexColor, vColor1, t);
-
-        vec3 rgb = fill.rgb;
-        if(vBorder > 0.0)
-        {
-            // -d is the inward distance from the edge; border occupies [0, vBorder].
-            float bMix = 1.0 - smoothstep(vBorder - aa, vBorder + aa, -d);
-            rgb = mix(fill.rgb, vBorderColor.rgb, clamp(bMix, 0.0, 1.0));
-        }
-        FragColor = vec4(rgb, fill.a * shapeA);
+        FragColor = roundedRect(mix(VertexColor, vColor1, t));
+    }
+    else if (ShaderType == 6u)
+    {
+        // Bilinear fill: VertexColor and vColor3 are the top and bottom edge colours
+        // at this x (each linear in x, so exact across the triangle split), blended
+        // along y as style 4's gradient is.
+        float t = clamp(vLocal.y/max(vHalf.y, 1.0)*0.5 + 0.5, 0.0, 1.0);
+        FragColor = roundedRect(mix(VertexColor, vColor3, t));
+    }
+    else if (ShaderType == 7u)
+    {
+        // Checker composite: VertexColor (with alpha) over 4 px cells of vColor1
+        // (light) and vColor3 (dark), counted from the rect's top-left; opaque.
+        ivec2 cell = ivec2(floor((vLocal + vHalf)/4.0));
+        vec3 checker = ((cell.x + cell.y) & 1) == 0 ? vColor1.rgb : vColor3.rgb;
+        FragColor = roundedRect(vec4(mix(checker, VertexColor.rgb, VertexColor.a), 1.0));
     }
     else if (ShaderType == 5u)
     {
@@ -1060,7 +1087,7 @@ void OpenGLCore::setVertex(Vertex &vertex, uint8_t type, int x, int y, int z, fl
         vertex.ty=v;
     }
 
-    // SDF fields are only used by style 4 (drawRoundedRect); keep them 0 otherwise.
+    // SDF fields are only used by styles 4, 6 and 7 (writeRoundedQuad); keep them 0 otherwise.
     vertex.lx=0;
     vertex.ly=0;
     vertex.radius=0;
@@ -1069,6 +1096,8 @@ void OpenGLCore::setVertex(Vertex &vertex, uint8_t type, int x, int y, int z, fl
     vertex.cy=0;
     vertex.bx=0;
     vertex.by=0;
+    vertex.dx=0;
+    vertex.dy=0;
 //    else
 //    {
 //        vertex.tx=(m_color.r<<8)&m_color.g;
@@ -1186,6 +1215,32 @@ void OpenGLCore::drawFilledRect(size_t primitiveId, gweni::Rect rect, int zIndex
 void OpenGLCore::drawRoundedRect(size_t primitiveId, gweni::Rect rect, float radius, float border,
     gweni::Color fillTop, gweni::Color fillBottom, gweni::Color borderColor, int zIndex)
 {
+    writeRoundedQuad(primitiveId, rect, zIndex, 4, radius, border, fillTop, fillTop,
+        fillBottom, gweni::Color(0, 0, 0, 0), gweni::Color(0, 0, 0, 0), borderColor);
+}
+
+void OpenGLCore::drawBilinearRect(size_t primitiveId, gweni::Rect rect, int zIndex,
+    gweni::Color c00, gweni::Color c10, gweni::Color c01, gweni::Color c11,
+    float radius, float border, gweni::Color borderColor)
+{
+    // top edge in color0, bottom edge in color3, each per side
+    writeRoundedQuad(primitiveId, rect, zIndex, 6, radius, border, c00, c10,
+        gweni::Color(0, 0, 0, 0), c01, c11, borderColor);
+}
+
+void OpenGLCore::drawCheckerRect(size_t primitiveId, gweni::Rect rect, int zIndex,
+    gweni::Color fill, gweni::Color light, gweni::Color dark,
+    float radius, float border, gweni::Color borderColor)
+{
+    writeRoundedQuad(primitiveId, rect, zIndex, 7, radius, border, fill, fill,
+        light, dark, dark, borderColor);
+}
+
+void OpenGLCore::writeRoundedQuad(size_t primitiveId, gweni::Rect rect, int zIndex, uint8_t style,
+    float radius, float border, gweni::Color color0Left, gweni::Color color0Right,
+    gweni::Color color1, gweni::Color color3Left, gweni::Color color3Right,
+    gweni::Color borderColor)
+{
     m_activeProgram=0;
     m_zIndex++;
 
@@ -1233,28 +1288,27 @@ void OpenGLCore::drawRoundedRect(size_t primitiveId, gweni::Rect rect, float rad
     const int cx=rect.x+hw;
     const int cy=rect.y+hh;
 
-    const uint16_t r0=fillTop.rg(),    g0=fillTop.ba();
-    const uint16_t r1=fillBottom.rg(), g1=fillBottom.ba();
-    const uint16_t rb=borderColor.rg(), gb=borderColor.ba();
     const uint16_t rad=(uint16_t)(radius<0.0f?0.0f:radius);
     const uint16_t bor=(uint16_t)(border<0.0f?0.0f:border);
 
-    auto setRounded=[&](size_t vi, int px, int py, int lx, int ly)
+    auto setRounded=[&](size_t vi, int px, int py, int lx, int ly, const gweni::Color &color0,
+        const gweni::Color &color3)
     {
         Vertex &v=m_vertexes[vi];
-        setVertex(v, 4, px, py, zIndex, r0, g0);
+        setVertex(v, style, px, py, zIndex, color0.rg(), color0.ba());
         v.lx=(int16_t)lx;
         v.ly=(int16_t)ly;
         v.radius=rad;
         v.border=bor;
-        v.cx=r1; v.cy=g1;
-        v.bx=rb; v.by=gb;
+        v.cx=color1.rg(); v.cy=color1.ba();
+        v.bx=borderColor.rg(); v.by=borderColor.ba();
+        v.dx=color3.rg(); v.dy=color3.ba();
     };
 
-    setRounded(vertexIndex++, cx-hw, cy-hh, -hw, -hh);
-    setRounded(vertexIndex++, cx+hw, cy-hh, +hw, -hh);
-    setRounded(vertexIndex++, cx-hw, cy+hh, -hw, +hh);
-    setRounded(vertexIndex++, cx+hw, cy+hh, +hw, +hh);
+    setRounded(vertexIndex++, cx-hw, cy-hh, -hw, -hh, color0Left, color3Left);
+    setRounded(vertexIndex++, cx+hw, cy-hh, +hw, -hh, color0Right, color3Right);
+    setRounded(vertexIndex++, cx-hw, cy+hh, -hw, +hh, color0Left, color3Left);
+    setRounded(vertexIndex++, cx+hw, cy+hh, +hw, +hh, color0Right, color3Right);
 
     markPrimitiveChanges(primitiveId, before);
 }
