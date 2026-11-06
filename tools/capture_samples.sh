@@ -27,14 +27,17 @@ HERO_OUT=demo.png
 # embeds each of these, so a change here needs a matching change there.
 #
 # Left out because they do not look right today:
-#   ComboBoxDemo, ImagePanelDemo - an empty canvas (issue #69)
-#   LabelMultilineDemo - the CrossSplitter grows every frame and misplaces its
-#     panels (idea #190), its SplitterBars draw nothing (idea #191), and the
-#     wrapped lines are stacked on one row and never settle (idea #180)
+#   ImagePanelDemo - an empty canvas (issue #69)
+#   ComboBoxDemo - three bare round dots in the corner, no combo boxes (issue #69)
+#   LabelMultilineDemo - the wrapped lines stack now, but the right column runs
+#     past the canvas edge (issue #207) and its SplitterBars draw nothing
+#     (idea #191)
 #   ProgressBarDemo - the fill is not drawn, only the empty track
-#   CheckBoxDemo, GroupBoxDemo, TextBoxDemo, NumericDemo - controls stacked on
-#     each other or inflated to their parent (issue #93)
-#   ColorPickerDemo - draws only its Result swatch (issue #82)
+#   CheckBoxDemo - the first CheckBox sticks out above the canvas top
+#   GroupBoxDemo - the caption sits on the frame's top-left corner
+#   TextBoxDemo, NumericDemo - the text sits on the box's left border, outside
+#     its padding (perhaps issue #206)
+#   ColorPickerDemo - draws only its Result swatch and one slider (issue #82)
 #   CollapsibleListDemo - already the hero page
 SAMPLES=(
     ButtonDemo
