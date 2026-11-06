@@ -96,9 +96,6 @@ public:
     virtual void addDelayedDelete(controls::Base *control);
     virtual void processDelayedDeletes();
 
-    controls::Base *m_firstTab;
-    controls::Base *m_nextTab;
-
     /// \sect{Layout}
     /// A layout pass that re-dirties layout (an invalidate() raised while it
     /// runs) is followed by another, at most this many per frame. A library

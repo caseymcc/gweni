@@ -1969,18 +1969,6 @@ void Base::recurseLayout(skin::Base *skin)
     arrange(skin, Dim::Y);
 
     //postLayout(skin);
-
-    if(isTabable() && !isDisabled())
-    {
-        if(!getCanvas()->m_firstTab)
-            getCanvas()->m_firstTab=this;
-
-        if(!getCanvas()->m_nextTab)
-            getCanvas()->m_nextTab=this;
-    }
-
-    if(KeyboardFocus == this)
-        getCanvas()->m_nextTab=nullptr;
 }
 
 bool Base::isChild(controls::Base *possiblechild)
@@ -2251,13 +2239,68 @@ bool Base::onKeyTab(bool down)
     if(!down)
         return true;
 
-    if(getCanvas()->m_nextTab)
-    {
-        getCanvas()->m_nextTab->focus();
-        redraw();
-    }
+    // focus() repaints both the old and the new focus holder.
+    if(Base *next=nextTabable(input::isShiftDown()))
+        next->focus();
 
     return true;
+}
+
+Base *Base::nextTabable(bool backwards)
+{
+    Base *root=getCanvas();
+
+    if(!root)
+        return nullptr;
+
+    // One pre-order walk of the canvas tree. Forward, the answer is the first
+    // candidate after this one, else (wrapping) the first before it; backwards,
+    // the last candidate before it, else the last after it. The whole tree is
+    // walked, so this is found even inside a hidden or disabled subtree, whose
+    // controls are never candidates.
+    bool passed=false;
+    Base *before=nullptr;   // forward: the first candidate before this; backwards: the last
+    Base *after=nullptr;    // forward: the first candidate after this; backwards: the last
+
+    auto walk=[&](auto &self, Base *control, bool excluded)->bool
+    {
+        excluded=excluded || control->hidden() || control->isDisabled();
+
+        if(control == this)
+        {
+            passed=true;
+
+            if(backwards && before)
+                return true;
+        }
+        else if(!excluded && control->isTabable())
+        {
+            if(!passed)
+            {
+                if(backwards || !before)
+                    before=control;
+            }
+            else
+            {
+                after=control;
+
+                if(!backwards)
+                    return true;
+            }
+        }
+
+        for(auto &&child : control->m_children)
+        {
+            if(self(self, child, excluded))
+                return true;
+        }
+        return false;
+    };
+    walk(walk, root, false);
+
+    if(backwards)
+        return before ? before : after;
+    return after ? after : before;
 }
 
 void Base::renderFocus(skin::Base *skin)

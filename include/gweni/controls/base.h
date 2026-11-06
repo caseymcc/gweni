@@ -538,6 +538,15 @@ public:
     virtual bool isTabable() { return m_tabable; }
     virtual void setTabable(bool isTabable) { m_tabable=isTabable; }
 
+    //! The control Tab (or Shift+Tab, \p backwards) moves the keyboard focus to
+    //! from this one: the next tabable, enabled, visible control in a pre-order
+    //! walk of this control's canvas, wrapping at the end. A hidden or disabled
+    //! control takes its whole subtree out of the order. Tab order is child
+    //! order (m_children), as in GWEN, not on-screen order, so docking can make
+    //! the two differ. Returns nullptr, never this, if there is no other one.
+    //! Walks the tree on each call; nothing is kept between key presses.
+    Base *nextTabable(bool backwards=false);
+
     // Accelerator functionality
     void defaultAccel(event::Info /*info*/)
     {

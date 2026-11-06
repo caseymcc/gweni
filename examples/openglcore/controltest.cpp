@@ -137,9 +137,8 @@
  *                 Ctrl+A and type "hello" (shot typing-hello.png), then
  *                 Backspace, Left, Delete, Home, End, Right, Shift+Left,
  *                 Ctrl+A/C/X/V, a Ctrl+letter with no shortcut, Escape, Ctrl
- *                 held while the window loses focus, Tab (sent, not yet
- *                 checked: see its step); digits and letters
- *                 into the TextBoxNumeric; Return and keypad Enter in the
+ *                 held while the window loses focus, Tab to the second
+ *                 box; digits and letters into the TextBoxNumeric; Return and keypad Enter in the
  *                 TextBoxMultiline. Each step is followed by a frame and checks
  *                 the focused control's text; a failure is named on stderr with
  *                 the expected and actual text. Then one keystroke into a
@@ -2106,11 +2105,8 @@ static const TypingStep g_typingSteps[]=
     {TypingAction::HoldControl, nullptr, "xx"},
     {TypingAction::LoseFocus, nullptr, nullptr},
     {TypingAction::Type, "y", "xxy"},
-    // Tab reaches TextBox::onKeyTab, but the canvas only rebuilds its tab
-    // order from the controls laid out this frame, so on a settled demo there
-    // is no next control and the focus stays put. That is a core bug (filed
-    // as an issue); once fixed this step expects "Normal Everyday Label".
-    {TypingAction::Key, "tab", nullptr},
+    // Tab moves the focus to the next tabable control in child order.
+    {TypingAction::Key, "tab", "Normal Everyday Label"},
     // A numeric box takes the digits and drops the rest.
     {TypingAction::Click, "TextBoxNumeric", "2004"},
     {TypingAction::Key, "ctrl+a", "2004"},

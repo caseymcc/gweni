@@ -97,18 +97,9 @@ void Canvas::doThink()
 #if GWENI_ANIMATE
     anim::think();
 #endif
-    // Reset tabbing
-    {
-        m_nextTab=nullptr;
-        m_firstTab=nullptr;
-    }
     processDelayedDeletes();
     // Check has focus etc..
     layoutCanvas();
-
-    // If we didn't have a next tab, cycle to the start.
-    if(m_nextTab == nullptr)
-        m_nextTab=m_firstTab;
 
     input::onCanvasThink(this);
 
