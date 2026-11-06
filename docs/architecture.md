@@ -168,7 +168,7 @@ on an OpenGL 3.3 core profile:
   shader takes the slot from the vertex instead (`gl_VertexID >> 2`, flat), because the
   text is split into one draw per atlas (below). `startClip()`/`endClip()` do nothing in this
   renderer. `GWENI_CLIP_DEBUG=<inset px>` shrinks every box by the inset on each side,
-  which makes the clipping visible while the controls only ever set the canvas region.
+  which shows the boxes on screen.
 - **One text draw per font atlas.** Every loaded `gweni::Font` (face, size) has its own
   freetype-gl atlas texture. Each `TextRun` records the `GLFontData` it was laid out in,
   and each `GLFontData` keeps the text ids of its runs (`textRuns`). `flush()` binds
@@ -233,9 +233,25 @@ What exists today (the foundation) and what's still aspirational:
   `texture_glyph_t` metrics and the size it returns, and `renderText` dump the
   `m_textVertexes`/`m_textIndexes` slots it wrote for each matching string. Off unless
   the variable is set; it is verbose (tens of lines per string).
-- **Shader clipping (renderer side).** OpenGLCore clips every primitive and glyph to
-  its slot's clip box (see "Clip boxes" above). `GWENI_CLIP_DEBUG=<inset px>` insets
-  every box, to check it on screen.
+- **Clipping.** Each control with `shouldClip()` (the default) narrows the clip region
+  for its children: `Base::renderRecursive` calls `addClipRegion` with its bounds at its
+  absolute origin, which intersects them with the parent's region. A control's own
+  `render()` runs before that, so it is clipped by its parent's region and its children by
+  its own; `renderOver()`/`renderFocus()` get the parent's region back. A control that
+  returns false (`TabStrip`, `TabButton`, and `Text`, whose children are its own wrapped
+  lines) hands its children its parent's region. OpenGLCore stamps the region into every
+  slot drawn under it and the shaders discard outside it (see "Clip boxes" above). A
+  region only changes when an ancestor's bounds do, and `onBoundsChanged` marks the whole
+  subtree (`StateChange_Geometry`), so a moved ScrollControl panel or a dragged Window
+  re-stamps exactly its own subtree and an unchanged box costs no upload. An intersection
+  with no overlap is an empty rect (never a negative size) and the walk goes on into it:
+  dirty children are drawn again with the empty box, so nothing stale stays on screen.
+  Clean, fully clipped subtrees are skipped like any clean subtree, not culled, and a
+  dirty one is still walked. `ControlTest --scenario clip` (ctest `controltest_clip`)
+  checks it on the pixels: content overflowing a ScrollControl and a Window dragged past
+  each edge of its parent leave everything outside unchanged, and moved right out they
+  leave nothing behind. `GWENI_CLIP_DEBUG=<inset px>` insets every box, to check it on
+  screen.
 - Window resize (`renderer->setViewRect()` + `canvas->setSize()`), see
   `examples/openglcore/openglcore.cpp`.
 - **A resize round trip comes back to the same frame, laid out in one pass.**
@@ -248,11 +264,10 @@ What exists today (the foundation) and what's still aspirational:
   `controltest_one_pass_each`, and `controltest_teardown` with `--require-one-pass`.
 
 **Not yet done (the performance goal)**
-- **Clipping, control side.** The renderer clips to each slot's box, but
-  `Base::renderRecursive` does not narrow the region per control yet (the
-  `shouldClip()` block is commented out), so the only region ever set is the canvas's
-  and nothing is cut. Once it does, the walk still skips unchanged subtrees, so a
-  clip-box change has to reach the affected descendants as a state change.
+- **Clipping leftovers.** A fully clipped subtree with changes in it is still walked and
+  its primitives still written (with an empty box) and drawn (every fragment discarded);
+  nothing culls them on the CPU. Clipping is rectangular only: a rounded parent does not
+  cut its children at its corners.
 - **The update phase still walks the whole tree.** `Base::doThink()` calls `think()`
   on every control every frame, and `updateRecursive()` renumbers every z index.
 - **Cache-to-texture** (`ICacheToTexture`) and free-slot compaction/defragmentation of
