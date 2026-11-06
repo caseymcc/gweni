@@ -355,6 +355,10 @@ TEST_CASE("ImagePanel: a Button's setImage icon draws at its bounds in front of 
     // off the origin, where a rect drawn in local coordinates would land
     canvas->setPadding(gweni::Padding(30, 20, 0, 0));
     button->setDock(gweni::DockPosition::Top);
+    // a fixed 20 px high, tall enough for the 16 px icon: the button clips its children,
+    // so an icon centred in the text-high button Shrink gives would lose its outer rows
+    button->setSizeFlags({gweni::SizeFlag::Shrink, gweni::SizeFlag::Fixed});
+    button->setHeight(20);
     button->setImage("test16.png");
 
     gweni::controls::ImagePanel *image=nullptr;
