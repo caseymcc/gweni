@@ -68,7 +68,14 @@ Then build into the generated directory (named `build_<platform>_<arch>_<buildty
 cmake --build build_linux_x64_debug -j
 ```
 
-The Linux example binary lands in `build_linux_x64_debug/examples/openglcore/OpenGLCore` and must be run from the **repo root** (it loads `resources/DefaultSkin.json`, `resources/OpenSans.ttf` via a `CurrentPath("resources")` loader).
+The Linux example binaries land in `build_linux_x64_debug/examples/openglcore/` (`OpenGLCore`, `ControlTest`). The build copies `resources/` next to them and they load it through `RelativeToExecutablePaths("resources")`, so they run from any cwd. `--resources <dir>` (relative to the cwd, or absolute) loads the skin, fonts and textures from `<dir>` instead, e.g. `--resources resources` from the repo root to pick up live `DefaultSkin.json` edits without a rebuild. A missing resource dir, skin config or default font prints one line naming the path tried and exits non-zero.
+
+### Running the examples
+
+`./run.sh [-b] [debug|release] [asan] [opengl|controltest] [args...]` runs one of them from any cwd (defaults `debug`, `opengl`; `asan` is `build_linux_x64_debug_asan/`). The first argument that is none of its words, and everything after it, goes to the exe unchanged, and the exe runs in the caller's cwd, so relative `--shot`/`--screenshot`/`--resources` paths mean what was typed. It never injects `--resources`. `-b` builds first (`cmake --build`, through `./run_docker.sh` when `VCPKG_ROOT` is unset) and stops with the build's exit status if it fails; without `-b` it never builds. A missing build tree or exe prints the path and the `generate.sh`/`cmake --build` commands, and exits 1. `./run.sh -h` is its usage; `./run.sh controltest --help` is ControlTest's. Nothing may depend on `run.sh`: scripts and tests call the exes directly.
+
+- On a host: `./run.sh`, `./run.sh -b`, `./run.sh controltest --control ButtonDemo`. The container-built exes need the host's glibc ≥ 2.34, GCC 11+ libstdc++ (`GLIBCXX_3.4.29`) and a glvnd GL driver (`libGLX.so.0`, `libOpenGL.so.0`, `libEGL.so.1`), e.g. Ubuntu 22.04+, Debian 12+, Fedora 35+; the vcpkg deps are static. The image is built with the host UID/GID, so the build output is owned by the developer.
+- In the container (an agent run) there is no display, so only the headless modes work: `./run.sh controltest --headless --shot /tmp/x.png`, under the GPU lock. Plain `./run.sh` execs `OpenGLCore`, which fails to open a window; that is expected.
 
 ### Regenerating the UI samples
 
