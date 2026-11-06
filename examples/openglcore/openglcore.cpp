@@ -64,6 +64,16 @@ static void key_callback(GLFWwindow* window, int key, int scancode, int action, 
     g_glfwInput.processKeyEvent(evt);
 }
 
+static void char_callback(GLFWwindow* window, unsigned int codepoint)
+{
+    g_glfwInput.processCharEvent(codepoint);
+}
+
+static void window_focus_callback(GLFWwindow* window, int focused)
+{
+    g_glfwInput.processFocus(focused == GLFW_TRUE);
+}
+
 static void cursor_pos_callback(GLFWwindow* window, double xpos, double ypos)
 {
     g_glfwInput.processMouseMove(xpos, ypos);
@@ -467,6 +477,8 @@ int main(int argc, char *argv[])
         g_glfwInput.initialize(canvas);
 
         glfwSetKeyCallback(ctx.window, key_callback);
+        glfwSetCharCallback(ctx.window, char_callback);
+        glfwSetWindowFocusCallback(ctx.window, window_focus_callback);
         glfwSetCursorPosCallback(ctx.window, cursor_pos_callback);
         glfwSetMouseButtonCallback(ctx.window, mouse_button_callback);
         glfwSetScrollCallback(ctx.window, scroll_callback);

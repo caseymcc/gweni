@@ -49,6 +49,7 @@ public:
             return keys::Backspace;
 
         case GLFW_KEY_ENTER:
+        case GLFW_KEY_KP_ENTER:
             return keys::Return;
 
         case GLFW_KEY_ESCAPE:
@@ -99,26 +100,73 @@ public:
         case GLFW_KEY_RIGHT_SHIFT:
             return keys::Shift;
 
+        case GLFW_KEY_LEFT_SUPER:
+        case GLFW_KEY_RIGHT_SUPER:
+            return keys::Command;
+
         default: ;
         }
 
         return keys::Invalid;
     }
 
+    // Shortcuts and text arrive on two separate paths, so nothing is handled
+    // twice: GLFW's char callback drops everything below 32 and emits no char
+    // for Ctrl/Alt+letter, so a Ctrl+letter comes only from here (as the
+    // uppercase letter, which handleAccelerator turns into "CTRL+V"), and
+    // typed text only from processCharEvent.
     bool processKeyEvent(const KeyEvent& event)
     {
         if (!m_eventCaller)
             return false;
 
+        // gweni repeats held keys itself (onCanvasThink), so the OS's repeats
+        // are dropped rather than treated as releases.
+        if (event.action == GLFW_REPEAT)
+            return false;
+
         const bool bPressed = (event.action == GLFW_PRESS);
-        const char keyCode = event.key;
+        const int keyCode = event.key;
         const bool control = (event.mods & GLFW_MOD_CONTROL) != 0;
 
-        if (control && bPressed && keyCode >= 'a' && keyCode <= 'z')
-            return m_eventCaller->inputCharacter(keyCode);
+        if (bPressed)
+            pressHeldModifiers(event.mods);
+
+        bool handled = false;
+
+        if (control && bPressed && keyCode >= GLFW_KEY_A && keyCode <= GLFW_KEY_Z)
+            handled = m_eventCaller->inputCharacter(static_cast<UnicodeChar>('A'+(keyCode-GLFW_KEY_A)));
 
         const unsigned char key = translateKeyCode(keyCode);
-        return m_eventCaller->inputModifierKey(key, bPressed);
+        return m_eventCaller->inputModifierKey(key, bPressed) || handled;
+    }
+
+    // Typed text, from glfwSetCharCallback. UnicodeChar is still a char, so
+    // only printable ASCII is forwarded and every other codepoint is dropped;
+    // widening it to char32_t (and UTF-8-safe editing) is the follow-up task.
+    bool processCharEvent(unsigned int codepoint)
+    {
+        if (!m_eventCaller)
+            return false;
+
+        if (codepoint < 0x20 || codepoint > 0x7E)
+            return false;
+
+        return m_eventCaller->inputCharacter(static_cast<UnicodeChar>(codepoint));
+    }
+
+    // From glfwSetWindowFocusCallback. GLFW sends releases for the keys held
+    // when the window loses focus, but a release that never reaches us would
+    // leave a modifier down (and a held Ctrl drops every typed character), so
+    // every key is let go here too. Releasing a key that is up does nothing.
+    bool processFocus(bool focused)
+    {
+        if (!m_eventCaller || focused)
+            return false;
+
+        for (int key = keys::Invalid+1; key < keys::KeysCount; ++key)
+            m_eventCaller->inputModifierKey(key, false);
+        return true;
     }
 
     bool processMouseMove(int x, int y)
@@ -154,6 +202,21 @@ public:
     }
 
 protected:
+
+    // Presses the gweni modifier for each modifier bit GLFW says is held. One
+    // that is already down is left alone; one the input handler forgot (it
+    // clears held keys when the keyboard focus moves) is pressed again, so a
+    // Ctrl held across a click into a TextBox still makes Ctrl+B a shortcut and
+    // not a typed "B".
+    void pressHeldModifiers(int mods)
+    {
+        if (mods & GLFW_MOD_CONTROL)
+            m_eventCaller->inputModifierKey(keys::Control, true);
+        if (mods & GLFW_MOD_SHIFT)
+            m_eventCaller->inputModifierKey(keys::Shift, true);
+        if (mods & GLFW_MOD_ALT)
+            m_eventCaller->inputModifierKey(keys::Alt, true);
+    }
 
     IInputEvent *m_eventCaller;
     Point m_mouse, m_lastMouse;

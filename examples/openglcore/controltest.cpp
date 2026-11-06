@@ -28,8 +28,8 @@
  *    --trace            log each scripted input on stderr with what it hit
  *    --list             print the control demo names and exit
  *    --help, -h         print the option list and exit
- *    --scenario <name>  per-control | resize | docked | scroll | interaction
- *                       (see below)
+ *    --scenario <name>  per-control | resize | docked | scroll | interaction |
+ *                       typing (see below)
  *    --dump-bounds [<path>]
  *                       print the laid-out control tree as text: one line per
  *                       control, depth-first in child order, indented by depth,
@@ -49,9 +49,30 @@
  *    --click X,Y        a whole left click (press then release)
  *    --double-click X,Y a left double click
  *    --scroll DX,DY     mouse wheel (DX is ignored; gweni only takes the Y axis)
- *    --key <name>       a key: return, tab, space, escape, up, down, left,
- *                       right, home, end, backspace, delete, shift, control,
- *                       alt, command, or a single printable character
+ *    --key <name>       a key: return, kp-enter, tab, space, escape, up, down,
+ *                       left, right, home, end, backspace, delete, shift,
+ *                       control, alt, command, or a single printable
+ *                       character. A named key is pressed and released as
+ *                       synthesised GLFW key events and a character is typed
+ *                       as a GLFW char event, both through the same
+ *                       gweni::input::GLFW3 translator the examples' callbacks
+ *                       use. A chord joins modifiers (ctrl, shift, alt,
+ *                       command) and a key with '+': --key ctrl+a, --key
+ *                       shift+left, --key ctrl+shift+end. The modifiers are
+ *                       pressed in order, the key goes down and up with their
+ *                       mods bits set, then the modifiers come up in reverse.
+ *                       A chord's key is a named key, a letter or a digit, and
+ *                       is sent as a key event only, as GLFW sends no char for
+ *                       Ctrl+letter.
+ *    --type <utf8>      type the text: it is decoded as UTF-8 and each
+ *                       codepoint sent as a GLFW char event. Until UnicodeChar
+ *                       is widened the translator drops all but printable
+ *                       ASCII, so only that arrives. To type a space, --type " ".
+ *    --expect-text <utf8>
+ *                       the keyboard-focused control's text has to be exactly
+ *                       this (a TextBox's getText()). A mismatch prints both on
+ *                       stderr and the run exits non-zero at the end; the
+ *                       script carries on, so every bad step is reported.
  *
  *  Any of those switches puts the run in script mode: --frames N then means
  *  "render N frames now" and --shot P means "capture the framebuffer now", both
@@ -62,6 +83,13 @@
  *
  *  Use --press (not --click) to photograph a held-down button: a --click is down
  *  and up again, so by the next frame the control is only hovered.
+ *
+ *  Typing into TextBoxDemo's first box (at 640x480 its centre is 320,28) and
+ *  checking the result:
+ *
+ *    --control TextBoxDemo --frames 3 --click 320,28 --frames 2 \
+ *        --type hello --expect-text hello --key backspace --expect-text hell \
+ *        --key ctrl+a --key ctrl+c --key end --key ctrl+v --expect-text hellhell
  *
  *  Scenarios:
  *    per-control  the 25 single-control shots (same as --shot-all)
@@ -95,6 +123,25 @@
  *                   TreeControlDemo: collapsing a node repaints and moves the
  *                   node below it up. Exits non-zero if any check is no. The
  *                   clock is frozen as under --stats.
+ *    typing       the keyboard on TextBoxDemo, every key a synthesised GLFW
+ *                 event through gweni::input::GLFW3: click into the first box,
+ *                 Ctrl+A and type "hello" (shot typing-hello.png), then
+ *                 Backspace, Left, Delete, Home, End, Right, Shift+Left,
+ *                 Ctrl+A/C/X/V, a Ctrl+letter with no shortcut, Escape, Ctrl
+ *                 held while the window loses focus, Tab (sent, not yet
+ *                 checked: see its step); digits and letters
+ *                 into the TextBoxNumeric; Return and keypad Enter in the
+ *                 TextBoxMultiline. Each step is followed by a frame and checks
+ *                 the focused control's text; a failure is named on stderr with
+ *                 the expected and actual text. Then one keystroke into a
+ *                 settled box has to rewrite one control's text run and the
+ *                 frame after it upload nothing; the line
+ *                   typing keystroke controls_changed=N text=N
+ *                          prim_slots_written=N text_slots_written=N upload_bytes=N
+ *                 gives its counters, and
+ *                   typing checks=N failed=N
+ *                 the total. Exits non-zero if any check fails. The clock is
+ *                 frozen, so key repeat (wall-time based) is not covered.
  *
  *  Every scenario (and --shot-all) takes a listing per shot when
  *  --dump-bounds is on, named after that shot with a .txt extension, so the
@@ -105,10 +152,10 @@
  *  there takes no path.
  *
  *  All of them, in the build container, from the repo root (a non-zero exit
- *  from resize or interaction is their assertion, so it is reported rather than
+ *  from resize, interaction or typing is their assertion, so it is reported rather than
  *  aborting the loop):
  *
- *    for s in per-control resize docked scroll interaction; do \
+ *    for s in per-control resize docked scroll interaction typing; do \
  *      ./build_linux_x64_debug/examples/openglcore/ControlTest \
  *          --headless --scenario $s --shot-dir /tmp/shots/$s; \
  *      echo "$s exit=$?"; \
@@ -136,6 +183,7 @@
 #include <GLFW/glfw3.h>
 #include <gweni/utils/filesystem.h>
 #include "capture.h"
+#include <cctype>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
@@ -200,6 +248,10 @@ static gweni::controls::Canvas *g_canvas=nullptr;
 
 static void key_callback(GLFWwindow*, int key, int scancode, int action, int mods)
 {   const gweni::input::GLFW3::KeyEvent e={key,scancode,action,mods}; g_glfwInput.processKeyEvent(e); }
+static void char_callback(GLFWwindow*, unsigned int codepoint)
+{   g_glfwInput.processCharEvent(codepoint); }
+static void window_focus_callback(GLFWwindow*, int focused)
+{   g_glfwInput.processFocus(focused == GLFW_TRUE); }
 static void cursor_pos_callback(GLFWwindow*, double x, double y)
 {   g_glfwInput.processMouseMove(x,y); }
 static void mouse_button_callback(GLFWwindow*, int b, int a, int m)
@@ -259,8 +311,8 @@ static void printControlNames(std::ostream &out)
     out<<"  "<<g_dockedControlName<<" (the whole docked demo)\n";
 }
 
-// The scripted input switches are deliberately left out: they only make sense
-// together, and the file header documents them as a group.
+// The scripted input switches are listed briefly: they only make sense
+// together, and the file header documents them in full.
 static void printUsage(std::ostream &out)
 {
     out<<"Usage: ControlTest [options]\n"
@@ -276,15 +328,23 @@ static void printUsage(std::ostream &out)
          "  --check-teardown   check the canvas renders empty again once every\n"
          "                     control has been destroyed; --control narrows it\n"
          "  --trace            log each scripted input on stderr\n"
-         "  --scenario <name>  per-control | resize | docked | scroll | interaction;\n"
-         "                     resize prints listing_settled, mirror_settled,\n"
-         "                     shrink_settled and fresh_matches, interaction one\n"
-         "                     yes/no per repaint check; both fail on a no\n"
+         "  --scenario <name>  per-control | resize | docked | scroll | interaction\n"
+         "                     | typing; resize prints listing_settled,\n"
+         "                     mirror_settled, shrink_settled and fresh_matches,\n"
+         "                     interaction one yes/no per repaint check, typing\n"
+         "                     its keyboard checks; all three fail on a no\n"
          "  --dump-bounds [<path>]  print the laid-out control tree as text,\n"
          "                     private children and hidden state included\n"
          "  --list             print the control demo names and exit\n"
-         "Scripted input (--move/--press/--release/--click/--double-click/\n"
-         "--scroll/--key) is documented in the header of controltest.cpp.\n";
+         "Scripted input, applied in order:\n"
+         "  --move/--press/--release/--click/--double-click X,Y, --scroll DX,DY\n"
+         "  --key <name>       a named key (backspace, left, home, ...), a single\n"
+         "                     character, or a chord such as ctrl+a or shift+left,\n"
+         "                     sent as GLFW events through the GLFW translator\n"
+         "  --type <utf8>      type the text, one GLFW char event per codepoint\n"
+         "  --expect-text <utf8>  fail the run unless the focused control's\n"
+         "                     text is exactly this\n"
+         "The header of controltest.cpp documents them in full.\n";
 }
 
 //-----------------------------------------------------------------------------
@@ -380,6 +440,7 @@ struct Session
     bool freezeClock=false;             // as under --stats, without the lines
     bool requireOnePass=false;          // --require-one-pass
     int multiPassFrames=0;              // frames that broke it
+    int expectFailures=0;               // --expect-text mismatches
     bool trace=false;
     bool writePng=true;
     int frames=3;                       // --frames: the scenarios' settle count
@@ -575,9 +636,11 @@ static bool resizeSession(Session &s, int width, int height)
 }
 
 //-----------------------------------------------------------------------------
-// Scripted input. All of it goes in through Canvas's IInputEvent methods, which
-// are the same gweni::input::onMouseMoved/onMouseClicked/onKeyEvent entry points
-// the GLFW backend uses - there is no event loop behind this.
+// Scripted input. The mouse goes in through Canvas's IInputEvent methods, which
+// are the same gweni::input::onMouseMoved/onMouseClicked entry points the GLFW
+// backend uses. The keyboard goes one step further out: synthesised GLFW key
+// and char events through gweni::input::GLFW3, so its translation is covered
+// too. There is no event loop behind either.
 //-----------------------------------------------------------------------------
 
 // --trace, on stderr so stdout stays parseable. Scripted coordinates are blind
@@ -638,44 +701,273 @@ static void doubleClickMouse(Session &s, int x, int y)
     mouseUp(s, x, y);
 }
 
+// Named keys as the GLFW key codes a keyboard sends, so --key goes through
+// gweni::input::GLFW3's translator exactly as the examples' key callback does.
 static const struct { const char *name; int key; } g_namedKeys[]=
 {
-    {"return", gweni::keys::Return},     {"backspace", gweni::keys::Backspace},
-    {"delete", gweni::keys::Delete},     {"left", gweni::keys::Left},
-    {"right", gweni::keys::Right},       {"shift", gweni::keys::Shift},
-    {"tab", gweni::keys::Tab},           {"space", gweni::keys::Space},
-    {"home", gweni::keys::Home},         {"end", gweni::keys::End},
-    {"control", gweni::keys::Control},   {"up", gweni::keys::Up},
-    {"down", gweni::keys::Down},         {"escape", gweni::keys::Escape},
-    {"alt", gweni::keys::Alt},           {"command", gweni::keys::Command},
+    {"return", GLFW_KEY_ENTER},          {"backspace", GLFW_KEY_BACKSPACE},
+    {"delete", GLFW_KEY_DELETE},         {"left", GLFW_KEY_LEFT},
+    {"right", GLFW_KEY_RIGHT},           {"shift", GLFW_KEY_LEFT_SHIFT},
+    {"tab", GLFW_KEY_TAB},               {"space", GLFW_KEY_SPACE},
+    {"home", GLFW_KEY_HOME},             {"end", GLFW_KEY_END},
+    {"control", GLFW_KEY_LEFT_CONTROL},  {"up", GLFW_KEY_UP},
+    {"down", GLFW_KEY_DOWN},             {"escape", GLFW_KEY_ESCAPE},
+    {"alt", GLFW_KEY_LEFT_ALT},          {"command", GLFW_KEY_LEFT_SUPER},
+    {"kp-enter", GLFW_KEY_KP_ENTER},
 };
+
+// The modifiers a --key chord may hold, with the mods bit GLFW reports for them.
+static const struct { const char *name; int key; int mod; } g_chordModifiers[]=
+{
+    {"ctrl", GLFW_KEY_LEFT_CONTROL, GLFW_MOD_CONTROL},
+    {"control", GLFW_KEY_LEFT_CONTROL, GLFW_MOD_CONTROL},
+    {"shift", GLFW_KEY_LEFT_SHIFT, GLFW_MOD_SHIFT},
+    {"alt", GLFW_KEY_LEFT_ALT, GLFW_MOD_ALT},
+    {"command", GLFW_KEY_LEFT_SUPER, GLFW_MOD_SUPER},
+};
+
+// The GLFW translator, pointed at this session's canvas. Looked up per event,
+// since the resize scenario replaces the canvas part way through.
+static gweni::input::GLFW3 &glfwInput(Session &s)
+{
+    g_glfwInput.initialize(s.canvas);
+    return g_glfwInput;
+}
+
+static std::string glfwKeyName(int key)
+{
+    for(const auto &named : g_namedKeys)
+        if(named.key == key)
+            return named.name;
+    if(key >= GLFW_KEY_A && key <= GLFW_KEY_Z)
+        return std::string(1, static_cast<char>(key));
+    if(key >= GLFW_KEY_0 && key <= GLFW_KEY_9)
+        return std::string(1, static_cast<char>(key));
+    return std::to_string(key);
+}
+
+// One synthesised GLFW key event, as glfwSetKeyCallback would deliver it.
+static void glfwKey(Session &s, int key, int action, int mods)
+{
+    const gweni::input::GLFW3::KeyEvent event={key, 0, action, mods};
+    glfwInput(s).processKeyEvent(event);
+    trace(s, std::string("key ")+glfwKeyName(key)+(action == GLFW_PRESS ? " press" : " release")
+        +" mods="+std::to_string(mods));
+}
+
+// One typed codepoint, as glfwSetCharCallback would deliver it.
+static void glfwChar(Session &s, unsigned int codepoint)
+{
+    const bool used=glfwInput(s).processCharEvent(codepoint);
+    char hex[16];
+    std::snprintf(hex, sizeof(hex), "U+%04X", codepoint);
+    trace(s, std::string("char ")+hex+(used ? " consumed" : " ignored"));
+}
+
+// A chord's last part: a named key or a single letter or digit. GLFW names a
+// letter by its uppercase ASCII code, and a digit by its own.
+static bool parseKeyPart(const std::string &part, int &key)
+{
+    for(const auto &named : g_namedKeys)
+    {
+        if(part == named.name)
+        {
+            key=named.key;
+            return true;
+        }
+    }
+
+    if(part.size() == 1 && std::isalpha(static_cast<unsigned char>(part[0])))
+    {
+        key=GLFW_KEY_A+(std::toupper(static_cast<unsigned char>(part[0]))-'A');
+        return true;
+    }
+    if(part.size() == 1 && part[0] >= '0' && part[0] <= '9')
+    {
+        key=GLFW_KEY_0+(part[0]-'0');
+        return true;
+    }
+    return false;
+}
+
+// --key: a single printable character is typed (the char callback); anything
+// else is a key, or a chord of modifiers and a key joined by '+', sent as GLFW
+// key events: each modifier pressed in order, the key pressed and released with
+// every modifier's mods bit set, then the modifiers released in reverse. A
+// chord's key goes only down the key path, as on a keyboard, where GLFW sends
+// no char for Ctrl+letter.
+static bool sendKey(Session &s, const std::string &name)
+{
+    if(name.size() == 1 && name[0]>=' ' && name[0]<'\x7f')
+    {
+        glfwChar(s, static_cast<unsigned char>(name[0]));
+        return true;
+    }
+
+    std::vector<std::string> parts;
+    for(size_t from=0;;)
+    {
+        const size_t plus=name.find('+', from);
+        parts.push_back(name.substr(from, plus == std::string::npos ? std::string::npos : plus-from));
+        if(plus == std::string::npos)
+            break;
+        from=plus+1;
+    }
+
+    std::vector<int> modifierKeys;
+    std::vector<int> modifierBits;
+    for(size_t i=0; i+1 < parts.size(); ++i)
+    {
+        bool found=false;
+        for(const auto &modifier : g_chordModifiers)
+        {
+            if(parts[i] != modifier.name)
+                continue;
+            modifierKeys.push_back(modifier.key);
+            modifierBits.push_back(modifier.mod);
+            found=true;
+            break;
+        }
+        if(!found)
+        {
+            std::cerr<<"ControlTest: --key "<<name<<": "<<parts[i]
+                     <<" is not a modifier (ctrl, shift, alt, command)\n";
+            return false;
+        }
+    }
+
+    int key=0;
+    if(!parseKeyPart(parts.back(), key))
+    {
+        std::cerr<<"ControlTest: unknown key name: "<<name<<"\n";
+        return false;
+    }
+
+    int mods=0;
+    for(size_t i=0; i < modifierKeys.size(); ++i)
+    {
+        glfwKey(s, modifierKeys[i], GLFW_PRESS, mods);
+        mods|=modifierBits[i];
+    }
+
+    glfwKey(s, key, GLFW_PRESS, mods);
+    glfwKey(s, key, GLFW_RELEASE, mods);
+
+    for(size_t i=modifierKeys.size(); i-- > 0;)
+    {
+        glfwKey(s, modifierKeys[i], GLFW_RELEASE, mods);
+        mods&=~modifierBits[i];
+    }
+    return true;
+}
+
+// UTF-8 to codepoints. A malformed sequence (a stray continuation byte, a
+// truncated, overlong or surrogate encoding) decodes to U+FFFD and decoding
+// resumes at the next byte.
+static std::vector<unsigned int> decodeUtf8(const std::string &text)
+{
+    std::vector<unsigned int> codepoints;
+    const size_t size=text.size();
+
+    for(size_t i=0; i < size;)
+    {
+        const unsigned char lead=static_cast<unsigned char>(text[i]);
+        size_t length=0;
+        unsigned int codepoint=0;
+        unsigned int minimum=0;
+
+        if(lead < 0x80){ length=1; codepoint=lead; }
+        else if((lead & 0xE0) == 0xC0){ length=2; codepoint=lead & 0x1F; minimum=0x80; }
+        else if((lead & 0xF0) == 0xE0){ length=3; codepoint=lead & 0x0F; minimum=0x800; }
+        else if((lead & 0xF8) == 0xF0){ length=4; codepoint=lead & 0x07; minimum=0x10000; }
+
+        bool valid=length != 0 && i+length <= size;
+        for(size_t j=1; valid && j < length; ++j)
+        {
+            const unsigned char next=static_cast<unsigned char>(text[i+j]);
+            if((next & 0xC0) != 0x80)
+                valid=false;
+            else
+                codepoint=(codepoint << 6) | (next & 0x3F);
+        }
+        if(valid && (codepoint < minimum || codepoint > 0x10FFFF
+            || (codepoint >= 0xD800 && codepoint <= 0xDFFF)))
+            valid=false;
+
+        if(valid)
+        {
+            codepoints.push_back(codepoint);
+            i+=length;
+        }
+        else
+        {
+            codepoints.push_back(0xFFFD);
+            ++i;
+        }
+    }
+    return codepoints;
+}
+
+// --type: the text one codepoint at a time through the char callback's path.
+static void typeText(Session &s, const std::string &text)
+{
+    for(unsigned int codepoint : decodeUtf8(text))
+        glfwChar(s, codepoint);
+}
+
+// The keyboard-focused control's text, if it has one (a Label, which every
+// TextBox is).
+static bool focusedText(std::string &text)
+{
+    const gweni::controls::Label *label=dynamic_cast<const gweni::controls::Label *>(gweni::KeyboardFocus);
+    if(!label)
+        return false;
+    text=label->getText();
+    return true;
+}
+
+// The text as a quoted C string, so a newline or an empty string shows.
+static std::string quotedText(const std::string &text)
+{
+    std::string out="\"";
+    for(char c : text)
+    {
+        if(c == '\n') out+="\\n";
+        else if(c == '\t') out+="\\t";
+        else if(c == '"' || c == '\\'){ out+='\\'; out+=c; }
+        else out+=c;
+    }
+    return out+"\"";
+}
+
+// --expect-text: the focused control's text has to be exactly this. A mismatch
+// names both on stderr and fails the run at exit, and the script carries on, so
+// one run reports every step that went wrong.
+static bool expectText(Session &s, const std::string &expected)
+{
+    std::string actual;
+    const bool hasText=focusedText(actual);
+    const bool match=hasText && actual == expected;
+    trace(s, "expect-text "+quotedText(expected)+(match ? " ok" : " MISMATCH"));
+    if(match)
+        return true;
+
+    ++s.expectFailures;
+    if(!hasText)
+        std::cerr<<"ControlTest: --expect-text "<<quotedText(expected)<<": the keyboard focus ("
+                 <<(gweni::KeyboardFocus ? gweni::KeyboardFocus->getTypeName() : "none")
+                 <<") has no text\n";
+    else
+        std::cerr<<"ControlTest: --expect-text mismatch: expected "<<quotedText(expected)
+                 <<", the focused "<<gweni::KeyboardFocus->getTypeName()<<" has "<<quotedText(actual)<<"\n";
+    return false;
+}
 
 static bool scrollWheel(Session &s, int delta)
 {
     const bool used=s.canvas->inputMouseWheel(delta);
     trace(s, std::string("wheel ")+std::to_string(delta)+(used?" consumed":" ignored"));
     return used;
-}
-
-static bool sendKey(Session &s, const std::string &name)
-{
-    if(name.size() == 1 && name[0]>=' ' && name[0]<'\x7f')
-    {
-        s.canvas->inputCharacter(static_cast<gweni::UnicodeChar>(name[0]));
-        return true;
-    }
-
-    for(const auto &named : g_namedKeys)
-    {
-        if(name != named.name)
-            continue;
-        s.canvas->inputModifierKey(named.key, true);
-        s.canvas->inputModifierKey(named.key, false);
-        return true;
-    }
-
-    std::cerr<<"ControlTest: unknown key name: "<<name<<"\n";
-    return false;
 }
 
 // Forgetting the hover between controls, so one capture entry cannot leave a
@@ -713,7 +1005,7 @@ static void dropControl(Session &s, gweni::controls::Base *control)
 //-----------------------------------------------------------------------------
 // Scripted runs
 //-----------------------------------------------------------------------------
-enum class StepKind { Move, Down, Up, Click, DoubleClick, Scroll, Key, Frames, Shot };
+enum class StepKind { Move, Down, Up, Click, DoubleClick, Scroll, Key, Type, ExpectText, Frames, Shot };
 
 struct Step
 {
@@ -742,6 +1034,8 @@ static bool runSteps(Session &s, const std::vector<Step> &steps, const std::stri
         case StepKind::DoubleClick: doubleClickMouse(s, step.x, step.y); break;
         case StepKind::Scroll: (void)scrollWheel(s, step.y); break;
         case StepKind::Key: if(!sendKey(s, step.text)) return false; break;
+        case StepKind::Type: typeText(s, step.text); break;
+        case StepKind::ExpectText: (void)expectText(s, step.text); break;
         case StepKind::Frames: renderFrames(s, step.x); break;
         case StepKind::Shot:
             if(!shoot(s, shotPathIn(shotDir, step.text)))
@@ -755,7 +1049,7 @@ static bool runSteps(Session &s, const std::vector<Step> &steps, const std::stri
 //-----------------------------------------------------------------------------
 // Scenarios
 //-----------------------------------------------------------------------------
-enum class Scenario { None, PerControl, Resize, Docked, Scroll, Interaction };
+enum class Scenario { None, PerControl, Resize, Docked, Scroll, Interaction, Typing };
 
 static bool parseScenario(const std::string &name, Scenario &scenario)
 {
@@ -764,6 +1058,7 @@ static bool parseScenario(const std::string &name, Scenario &scenario)
     else if(name == "docked") scenario=Scenario::Docked;
     else if(name == "scroll") scenario=Scenario::Scroll;
     else if(name == "interaction") scenario=Scenario::Interaction;
+    else if(name == "typing") scenario=Scenario::Typing;
     else return false;
     return true;
 }
@@ -1191,13 +1486,14 @@ static std::vector<uint8_t> settledRegion(Session &s, gweni::controls::Base *con
 // summary line.
 struct InteractionChecks
 {
+    std::string scenario="interaction";     // names the failures on stderr
     std::vector<std::pair<std::string, bool>> results;
 
     void check(const std::string &name, bool passed, const std::string &why)
     {
         results.emplace_back(name, passed);
         if(!passed)
-            std::cerr<<"ControlTest: interaction "<<name<<" failed: "<<why<<"\n";
+            std::cerr<<"ControlTest: "<<scenario<<" "<<name<<" failed: "<<why<<"\n";
     }
 
     bool allPassed() const
@@ -1415,6 +1711,208 @@ static bool runInteractionScenario(Session &s, const std::string &shotDir, bool 
 }
 
 //-----------------------------------------------------------------------------
+// --scenario typing: the keyboard, through the GLFW translator
+//
+// Every keystroke is a synthesised GLFW event fed to gweni::input::GLFW3, the
+// same object the examples' key and char callbacks feed, so this covers the
+// translator as well as TextBox's editing. Each step is followed by a frame and
+// checks the keyboard-focused control's text, so a step that went wrong is
+// named on its own.
+//-----------------------------------------------------------------------------
+
+enum class TypingAction
+{
+    Click,          // click the centre of the first visible control of type arg
+    Key,            // --key arg
+    Type,           // --type arg
+    HoldControl,    // press Left Ctrl and do not let it go
+    LoseFocus,      // the window loses focus (glfwSetWindowFocusCallback)
+};
+
+struct TypingStep
+{
+    TypingAction action;
+    const char *arg;
+    const char *expect;     // the focused control's text afterwards
+};
+
+static const TypingStep g_typingSteps[]=
+{
+    {TypingAction::Click, "TextBox", ""},
+    {TypingAction::Key, "ctrl+a", ""},              // a Ctrl+letter inserts nothing
+    {TypingAction::Type, "hello", "hello"},
+    {TypingAction::Key, "backspace", "hell"},
+    {TypingAction::Key, "left", "hell"},
+    {TypingAction::Key, "left", "hell"},            // caret between "he" and "ll"
+    {TypingAction::Key, "backspace", "hll"},        // caret after "h"
+    {TypingAction::Key, "delete", "hl"},
+    {TypingAction::Key, "home", "hl"},
+    {TypingAction::Type, "a", "ahl"},
+    {TypingAction::Key, "end", "ahl"},
+    {TypingAction::Type, "b", "ahlb"},
+    {TypingAction::Key, "right", "ahlb"},           // already at the end
+    {TypingAction::Key, "shift+left", "ahlb"},      // selects the "b"
+    {TypingAction::Type, "c", "ahlc"},              // typing replaces the selection
+    {TypingAction::Key, "shift+left", "ahlc"},
+    {TypingAction::Key, "shift+left", "ahlc"},      // selects "lc"
+    {TypingAction::Key, "delete", "ah"},
+    {TypingAction::Key, "ctrl+a", "ah"},
+    {TypingAction::Type, "x", "x"},
+    {TypingAction::Key, "ctrl+a", "x"},
+    {TypingAction::Key, "ctrl+c", "x"},
+    {TypingAction::Key, "end", "x"},
+    {TypingAction::Key, "ctrl+v", "xx"},
+    {TypingAction::Key, "ctrl+a", "xx"},
+    {TypingAction::Key, "ctrl+x", ""},
+    {TypingAction::Key, "ctrl+v", "xx"},            // the cut text is on the clipboard
+    {TypingAction::Key, "ctrl+b", "xx"},            // no accelerator: still not typed
+    {TypingAction::Key, "escape", "xx"},
+    // Ctrl held as the window loses focus, its release never seen: typing has
+    // to work once the window has it back.
+    {TypingAction::HoldControl, nullptr, "xx"},
+    {TypingAction::LoseFocus, nullptr, nullptr},
+    {TypingAction::Type, "y", "xxy"},
+    // Tab reaches TextBox::onKeyTab, but the canvas only rebuilds its tab
+    // order from the controls laid out this frame, so on a settled demo there
+    // is no next control and the focus stays put. That is a core bug (filed
+    // as an issue); once fixed this step expects "Normal Everyday Label".
+    {TypingAction::Key, "tab", nullptr},
+    // A numeric box takes the digits and drops the rest.
+    {TypingAction::Click, "TextBoxNumeric", "2004"},
+    {TypingAction::Key, "ctrl+a", "2004"},
+    {TypingAction::Type, "a1b2", "12"},
+    // Return and keypad Enter break the line in a multiline box.
+    {TypingAction::Click, "TextBoxMultiline", nullptr},
+    {TypingAction::Key, "ctrl+a", nullptr},
+    {TypingAction::Type, "ab", "ab"},
+    {TypingAction::Key, "return", "ab\n"},
+    {TypingAction::Type, "cd", "ab\ncd"},
+    {TypingAction::Key, "kp-enter", "ab\ncd\n"},
+    {TypingAction::Type, "e", "ab\ncd\ne"},
+};
+
+static std::string typingStepName(size_t index, const TypingStep &step)
+{
+    static const char *const actions[]={"click", "key", "type", "hold-control", "lose-focus"};
+    std::string name="step "+std::to_string(index)+" "+actions[static_cast<int>(step.action)];
+    if(step.arg)
+        name+=std::string(" ")+step.arg;
+    return name;
+}
+
+static bool runTypingStep(Session &s, gweni::controls::Base *demo, const TypingStep &step)
+{
+    switch(step.action)
+    {
+    case TypingAction::Click:
+    {
+        gweni::controls::Base *target=findControl(demo, step.arg);
+        if(!target)
+        {
+            std::cerr<<"ControlTest: typing: TextBoxDemo has no visible "<<step.arg<<"\n";
+            return false;
+        }
+        const gweni::Point at=centreOf(target);
+        clickMouse(s, at.x, at.y);
+        return true;
+    }
+    case TypingAction::Key: return sendKey(s, step.arg);
+    case TypingAction::Type: typeText(s, step.arg); return true;
+    case TypingAction::HoldControl: glfwKey(s, GLFW_KEY_LEFT_CONTROL, GLFW_PRESS, 0); return true;
+    case TypingAction::LoseFocus: glfwInput(s).processFocus(false); trace(s, "focus lost"); return true;
+    }
+    return false;
+}
+
+static bool runTypingScenario(Session &s, const std::string &shotDir, bool &passed)
+{
+    // Frozen like --stats: no caret blink, and no key repeat, which would need
+    // the clock to pass c_KeyRepeatDelay with a key held.
+    s.freezeClock=true;
+
+    gweni::controls::Base *demo=addControl(s, "TextBoxDemo");
+    renderFrames(s, s.frames);
+
+    InteractionChecks checks;
+    checks.scenario="typing";
+    bool ok=true;
+    size_t index=0;
+    for(const TypingStep &step : g_typingSteps)
+    {
+        const std::string name=typingStepName(index++, step);
+        if(!runTypingStep(s, demo, step))
+        {
+            checks.check(name, false, "the step could not be sent");
+            continue;
+        }
+        renderFrames(s, 1);
+
+        if(!step.expect)
+            continue;
+
+        std::string actual;
+        const bool hasText=focusedText(actual);
+        checks.check(name, hasText && actual == step.expect,
+            "expected "+quotedText(step.expect)+", the keyboard focus "
+            +(hasText ? std::string("has ")+quotedText(actual)
+                : std::string("(")+(gweni::KeyboardFocus ? gweni::KeyboardFocus->getTypeName() : "none")
+                  +") has no text"));
+
+        // The picture: "hello" typed, the caret after it.
+        if(step.action == TypingAction::Type && std::strcmp(step.arg, "hello") == 0)
+        {
+            renderFrames(s, s.frames);
+            if(!shoot(s, shotDir+"/typing-hello.png"))
+                ok=false;
+        }
+    }
+
+    // One keystroke into a settled box: it rewrites that box's text run and
+    // nothing else, and the frame after it is idle again.
+    gweni::controls::Base *box=findControl(demo, "TextBox");
+    if(box)
+    {
+        clickMouse(s, centreOf(box).x, centreOf(box).y);
+        renderFrames(s, s.frames);
+
+        typeText(s, "z");
+        renderFrames(s, 1);
+        const gweni::controls::ChangeStats keyChanges=gweni::controls::getChangeStats();
+        const gweni::renderer::OpenGLCore::FrameStats keyGpu=s.renderer->getFrameStats();
+
+        renderFrames(s, 1);
+        const gweni::controls::ChangeStats idleChanges=gweni::controls::getChangeStats();
+        const gweni::renderer::OpenGLCore::FrameStats idleGpu=s.renderer->getFrameStats();
+
+        std::cout<<"typing keystroke controls_changed="<<keyChanges.controls
+                 <<" text="<<keyChanges.text
+                 <<" prim_slots_written="<<keyGpu.primitiveSlotsWritten
+                 <<" text_slots_written="<<keyGpu.textSlotsWritten
+                 <<" upload_bytes="<<keyGpu.uploadBytes<<"\n";
+
+        checks.check("keystroke_one_text_run", keyChanges.text == 1 && keyGpu.textSlotsWritten >= 1,
+            "typing one character changed text="+std::to_string(keyChanges.text)
+            +" controls, text_slots_written="+std::to_string(keyGpu.textSlotsWritten)
+            +"; want one control's text run rewritten");
+        checks.check("keystroke_then_idle",
+            idleChanges.controls == 0 && idleGpu.uploadBytes == 0,
+            "the frame after the keystroke had controls_changed="+std::to_string(idleChanges.controls)
+            +" upload_bytes="+std::to_string(idleGpu.uploadBytes));
+    }
+
+    dropControl(s, demo);
+
+    size_t failed=0;
+    for(const auto &result : checks.results)
+        if(!result.second)
+            ++failed;
+    std::cout<<"typing checks="<<checks.results.size()<<" failed="<<failed<<"\n";
+
+    passed=checks.allPassed();
+    return ok;
+}
+
+//-----------------------------------------------------------------------------
 // --check-teardown: teardown identity
 //
 // In a retained renderer a control's primitives are a persistent slot in the
@@ -1550,6 +2048,16 @@ int main(int argc, char *argv[])
             scripted=true;
             steps.push_back({StepKind::Key, 0, 0, argv[++i]});
         }
+        else if(arg == "--type" && hasValue)
+        {
+            scripted=true;
+            steps.push_back({StepKind::Type, 0, 0, argv[++i]});
+        }
+        else if(arg == "--expect-text" && hasValue)
+        {
+            scripted=true;
+            steps.push_back({StepKind::ExpectText, 0, 0, argv[++i]});
+        }
         else if(isMouseStep && hasValue)
         {
             int x=0, y=0;
@@ -1574,7 +2082,7 @@ int main(int argc, char *argv[])
             if(!parseScenario(name, scenario))
             {
                 std::cerr<<"ControlTest: unknown scenario: "<<name
-                         <<"; try per-control, resize, docked, scroll or interaction\n";
+                         <<"; try per-control, resize, docked, scroll, interaction or typing\n";
                 return EXIT_FAILURE;
             }
         }
@@ -1798,6 +2306,15 @@ int main(int argc, char *argv[])
             break;
         }
 
+        case Scenario::Typing:
+        {
+            bool passed=false;
+            ok=runTypingScenario(session, shotDir, passed);
+            if(ok && !passed)
+                ok=false;   // a step left the wrong text: a failing assertion
+            break;
+        }
+
         case Scenario::None:
             if(shotAll)
             {
@@ -1824,6 +2341,13 @@ int main(int argc, char *argv[])
             break;
         }
 
+        if(session.expectFailures > 0)
+        {
+            std::cerr<<"ControlTest: "<<session.expectFailures
+                     <<" --expect-text check(s) failed\n";
+            ok=false;
+        }
+
         if(session.multiPassFrames > 0)
         {
             std::cerr<<"ControlTest: "<<session.multiPassFrames
@@ -1844,6 +2368,8 @@ int main(int argc, char *argv[])
 
         g_glfwInput.initialize(canvas);
         glfwSetKeyCallback(ctx.window, key_callback);
+        glfwSetCharCallback(ctx.window, char_callback);
+        glfwSetWindowFocusCallback(ctx.window, window_focus_callback);
         glfwSetCursorPosCallback(ctx.window, cursor_pos_callback);
         glfwSetMouseButtonCallback(ctx.window, mouse_button_callback);
         glfwSetScrollCallback(ctx.window, scroll_callback);
