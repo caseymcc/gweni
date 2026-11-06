@@ -54,7 +54,7 @@
  *  and up again, so by the next frame the control is only hovered.
  *
  *  Scenarios:
- *    per-control  the 24 single-control shots (same as --shot-all)
+ *    per-control  the 25 single-control shots (same as --shot-all)
  *    resize       one control at 640x480, 1024x768 and 640x480 again; exits
  *                 non-zero unless the third shot is byte-identical to the first
  *    docked       the whole Demo (dock layout + status bar) at 1024x768
@@ -63,7 +63,7 @@
  *  Every scenario (and --shot-all) takes a listing per shot when
  *  --dump-bounds is on, named after that shot with a .txt extension, so the
  *  shot and its listing sit side by side in --shot-dir - resize yields three
- *  and per-control 24. A scenario names its own listings, so --dump-bounds
+ *  and per-control 25. A scenario names its own listings, so --dump-bounds
  *  there takes no path.
  *
  *  All four, in the build container, from the repo root (resize's non-zero exit
@@ -130,6 +130,7 @@
 #include <demo/tabControl.h>
 #include <demo/treeControl.h>
 #include <demo/textBox.h>
+#include <demo/unicodeText.h>
 #include <demo/window.h>
 
 // A capture's clock: one fixed step per rendered frame, so every run sees the
@@ -175,7 +176,8 @@ static void framebuffer_size_callback(GLFWwindow*, int w, int h)
     X(TextBoxDemo) X(ListBoxDemo) X(CrossSplitterDemo) X(RadioButtonDemo) \
     X(CheckBoxDemo) X(NumericDemo) X(SliderDemo) X(MenuStripDemo) \
     X(WindowDemo) X(TreeControlDemo) X(PropertiesDemo) X(TabControlDemo) \
-    X(ScrollControlDemo) X(PageControlDemo) X(CollapsibleListDemo) X(ColorPickerDemo)
+    X(ScrollControlDemo) X(PageControlDemo) X(CollapsibleListDemo) X(ColorPickerDemo) \
+    X(UnicodeTextDemo)
 
 static const char *const g_controlNames[]=
 {
@@ -186,7 +188,7 @@ static const char *const g_controlNames[]=
 
 // The whole demo application, not one of its pages: the dock layout, the demo
 // list, the output ListBox and the status bar. Kept out of GWENI_CONTROL_DEMOS
-// so --shot-all and --scenario per-control stay the 24 single-control shots.
+// so --shot-all and --scenario per-control stay the 25 single-control shots.
 static const char *const g_dockedControlName="Demo";
 
 static gweni::controls::Base *createControl(gweni::controls::Canvas *canvas, const std::string &which)
@@ -261,12 +263,14 @@ static void printFrameStats(int frame, const std::string &control,
 {
     std::printf("frame=%d control=%s controls_changed=%zu created=%zu visibility=%zu"
         " geometry=%zu background=%zu text=%zu prim_slots_written=%zu text_slots_written=%zu"
-        " upload_calls=%zu upload_bytes=%zu mirror_bytes=%zu draw_calls=%zu\n",
+        " upload_calls=%zu upload_bytes=%zu mirror_bytes=%zu draw_calls=%zu"
+        " atlas_upload_calls=%zu atlas_upload_bytes=%zu\n",
         frame, control.c_str(),
         changes.controls, changes.created, changes.visibility,
         changes.geometry, changes.background, changes.text,
         gpu.primitiveSlotsWritten, gpu.textSlotsWritten,
-        gpu.uploadCalls, gpu.uploadBytes, gpu.mirrorBytes, gpu.drawCalls);
+        gpu.uploadCalls, gpu.uploadBytes, gpu.mirrorBytes, gpu.drawCalls,
+        gpu.atlasUploadCalls, gpu.atlasUploadBytes);
     std::fflush(stdout);
 }
 

@@ -128,6 +128,8 @@ set(GWENI_DEMO_SOURCES
     demo/textBox.h
     demo/treeControl.cpp
     demo/treeControl.h
+    demo/unicodeText.cpp
+    demo/unicodeText.h
     demo/window.cpp
     demo/window.h
 )

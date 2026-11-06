@@ -34,6 +34,7 @@
 #include "demo/tabControl.h"
 #include "demo/treeControl.h"
 #include "demo/textBox.h"
+#include "demo/unicodeText.h"
 #include "demo/window.h"
 
 namespace gweni
@@ -118,6 +119,7 @@ void Demo::init(const String &name)
         addDemo<ComboBoxDemo>(cat, "ComboBoxDemo");
         addDemo<TextBoxDemo>(cat, "TextBoxDemo");
         addDemo<ListBoxDemo>(cat, "ListBoxDemo");
+        addDemo<UnicodeTextDemo>(cat, "UnicodeTextDemo");
         addDemo<CrossSplitterDemo>(cat, "CrossSplitterDemo");
         addDemo<RadioButtonDemo>(cat, "RadioButtonDemo");
         addDemo<CheckBoxDemo>(cat, "CheckBoxDemo");
