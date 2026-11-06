@@ -210,6 +210,9 @@ public:
     unsigned int getTextureName(const gweni::Texture &texture) const;
     //! GL name of a loaded font's glyph atlas, 0 if the font is not loaded
     unsigned int getFontAtlasName(const gweni::Font &font) const;
+    //! Bytes per texel of a loaded font's glyph atlas (1: coverage only), 0 if the
+    //! font is not loaded
+    size_t getFontAtlasDepth(const gweni::Font &font) const;
     //! Fonts loaded and not freed yet
     size_t getLoadedFontCount() const { return m_fonts.size(); }
 

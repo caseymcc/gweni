@@ -139,7 +139,10 @@ Font::Status OpenGLCore::loadFont(const Font &font)
     fontData.markup.strikethrough_color=black;
     fontData.markup.font=0;
 
-    fontData.fontManager=ftgl::font_manager_new(1024, 1024, LCD_FILTERING_ON);
+    // depth 1: one coverage byte per texel, rasterised grayscale with light
+    // (vertical-only) hinting. Depth 3 would make freetype-gl rasterise for LCD
+    // subpixels, of which the text shader would only see red.
+    fontData.fontManager=ftgl::font_manager_new(1024, 1024, LCD_FILTERING_OFF);
 
     free(fontData.fontManager->cache); // font_manager_new strdup'd a default
     fontData.fontManager->cache=strdup(cache);
@@ -166,9 +169,13 @@ Font::Status OpenGLCore::loadFont(const Font &font)
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, fontData.atlas->width,
-        fontData.atlas->height, 0, GL_RGB, GL_UNSIGNED_BYTE,
+    // rows of one byte per texel: the default alignment of 4 only fits widths
+    // that are a multiple of 4
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_R8, fontData.atlas->width,
+        fontData.atlas->height, 0, GL_RED, GL_UNSIGNED_BYTE,
         fontData.atlas->data);
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
     //the whole atlas, cache included, is on the GPU now; flush() uploads only later glyphs
     fontData.atlas->dirty_y0=0;
     fontData.atlas->dirty_y1=0;
@@ -380,6 +387,15 @@ unsigned int OpenGLCore::getFontAtlasName(const Font &font) const
 
     if((it != m_fonts.end()) && (it->second.atlas))
         return it->second.atlas->id;
+    return 0;
+}
+
+size_t OpenGLCore::getFontAtlasDepth(const Font &font) const
+{
+    auto it=m_fonts.find(font);
+
+    if((it != m_fonts.end()) && (it->second.atlas))
+        return it->second.atlas->depth;
     return 0;
 }
 
@@ -755,11 +771,6 @@ void main()
         FragColor = texture(texture1, TexCoords);// * VertexColor;
         FragColor.a=1.0f;
     }
-    else if (ShaderType == 3u)
-    {
-        float color = texture(texture1, TexCoords).r;
-        FragColor = vec4(VertexColor.rgb, color);
-    }
     else if (ShaderType == 4u)
     {
         // SDF rounded rect: vertical gradient fill + optional border, analytic AA.
@@ -884,7 +895,9 @@ void main()
     if(textMode == 0)
         a = texture2D(texture1, texCoord).r;
 
-    FragColor = color * pow( a, 1.0/gamma );
+    // Straight alpha: the coverage scales alpha only, and the SRC_ALPHA blend
+    // applies it to the colour once. color * a here would apply it twice.
+    FragColor = vec4(color.rgb, color.a * pow( a, 1.0/gamma ));
 
     // after the sample, as in the primitive shader: its implicit derivatives want the quad
     if(clipped)
@@ -1077,10 +1090,8 @@ void OpenGLCore::uploadDirtyAtlases()
         if(atlas->dirty_y0 >= atlas->dirty_y1)
             continue;
 
-        //full-width rows are contiguous in atlas->data, and the default
-        //GL_UNPACK_ALIGNMENT of 4 holds as long as a row is a multiple of 4 bytes
-        assert((atlas->width*atlas->depth)%4 == 0);
-        assert(atlas->depth == 3);
+        //full-width rows are contiguous in atlas->data, one coverage byte per texel
+        assert(atlas->depth == 1);
 
         size_t rows=atlas->dirty_y1-atlas->dirty_y0;
 
@@ -1090,8 +1101,10 @@ void OpenGLCore::uploadDirtyAtlases()
             bound=true;
         }
         glBindTexture(GL_TEXTURE_2D, atlas->id);
+        glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
         glTexSubImage2D(GL_TEXTURE_2D, 0, 0, (GLint)atlas->dirty_y0, (GLsizei)atlas->width, (GLsizei)rows,
-            GL_RGB, GL_UNSIGNED_BYTE, atlas->data+atlas->dirty_y0*atlas->width*atlas->depth);
+            GL_RED, GL_UNSIGNED_BYTE, atlas->data+atlas->dirty_y0*atlas->width*atlas->depth);
+        glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
 
         ++m_frameStats.atlasUploadCalls;
         m_frameStats.atlasUploadBytes+=rows*atlas->width*atlas->depth;

@@ -423,7 +423,12 @@ text_buffer_add_char( text_buffer_t * self,
         float g = markup->foreground_color.green;
         float b = markup->foreground_color.blue;
         float a = markup->foreground_color.alpha;
-        float x0 = ( pen->x + glyph->offset_x );
+        // The quad sits on whole pixels, as wide as its bitmap, so each texel lands
+        // on one pixel. The pen's fraction is kept in shift (zero while hinted
+        // advances keep the pen on whole pixels), for a later subpixel mode.
+        float pen_x = roundf( pen->x );
+        float shift = pen->x - pen_x;
+        float x0 = ( pen_x + glyph->offset_x );
         float y0 = (float)(int)( pen->y + glyph->offset_y );
         float x1 = ( x0 + glyph->width );
         float y1 = (float)(int)( y0 - glyph->height );
@@ -433,13 +438,13 @@ text_buffer_add_char( text_buffer_t * self,
         float t1 = glyph->t1;
 
         SET_GLYPH_VERTEX(vertices[vcount+0],
-                         (float)(int)x0,y0,0,  s0,t0,  r,g,b,a,  x0-((int)x0), gamma );
+                         x0,y0,0,  s0,t0,  r,g,b,a,  shift, gamma );
         SET_GLYPH_VERTEX(vertices[vcount+1],
-                         (float)(int)x0,y1,0,  s0,t1,  r,g,b,a,  x0-((int)x0), gamma );
+                         x0,y1,0,  s0,t1,  r,g,b,a,  shift, gamma );
         SET_GLYPH_VERTEX(vertices[vcount+2],
-                         (float)(int)x1,y1,0,  s1,t1,  r,g,b,a,  x1-((int)x1), gamma );
+                         x1,y1,0,  s1,t1,  r,g,b,a,  shift, gamma );
         SET_GLYPH_VERTEX(vertices[vcount+3],
-                         (float)(int)x1,y0,0,  s1,t0,  r,g,b,a,  x1-((int)x1), gamma );
+                         x1,y0,0,  s1,t0,  r,g,b,a,  shift, gamma );
         indices[icount + 0] = vcount+0;
         indices[icount + 1] = vcount+1;
         indices[icount + 2] = vcount+2;

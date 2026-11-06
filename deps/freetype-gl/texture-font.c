@@ -193,8 +193,12 @@ texture_font_generate_kerning( texture_font_t *self,
             //       glyph_index, glyph_index, kerning.x);
             if( kerning.x )
             {
-                //26.6 fixed point now that the face is no longer HRES-oversampled in x
-                kerning_t k = {prev_glyph->codepoint, kerning.x / HRESf};
+                //26.6 fixed point now that the face is no longer HRES-oversampled in x;
+                //whole pixels when hinted, like the advances, to keep pens on the grid
+                float k_x = kerning.x / HRESf;
+                if( self->hinting )
+                    k_x = roundf( k_x );
+                kerning_t k = {prev_glyph->codepoint, k_x};
                 vector_push_back( glyph->kerning, &k );
             }
         }
@@ -459,7 +463,16 @@ texture_font_load_glyph( texture_font_t * self,
     }
     else
     {
+        // The auto-hinter for every face, rather than whatever bytecode (or none)
+        // a face ships with, so all faces are hinted alike and the result does not
+        // depend on which TrueType interpreter this FreeType was built with.
         flags |= FT_LOAD_FORCE_AUTOHINT;
+
+        // Grayscale: light hinting snaps to the pixel grid vertically only, so
+        // stems keep their horizontal position and weight, and the advance is the
+        // design advance rounded to whole pixels.
+        if( self->atlas->depth == 1 )
+            flags |= FT_LOAD_TARGET_LIGHT;
     }
 
     if( self->atlas->depth == 3 )
@@ -481,6 +494,18 @@ texture_font_load_glyph( texture_font_t * self,
         FT_Done_Face( face );
         FT_Done_FreeType( library );
         return 0;
+    }
+
+    // The advance of this same load, so it matches the bitmap: hinted, it is whole
+    // pixels (rounded again in case the hinter left a fraction), so pens stay on
+    // whole pixels and identical glyph pairs get identical gaps.
+    float advance_x = face->glyph->advance.x / HRESf;
+    float advance_y = face->glyph->advance.y / HRESf;
+
+    if( self->hinting )
+    {
+        advance_x = roundf( advance_x );
+        advance_y = roundf( advance_y );
     }
 
     if( self->rendermode == RENDER_NORMAL || self->rendermode == RENDER_SIGNED_DISTANCE_FIELD )
@@ -637,11 +662,8 @@ cleanup_stroker:
     glyph->s1       = (x + glyph->width)/(float)self->atlas->width;
     glyph->t1       = (y + glyph->height)/(float)self->atlas->height;
 
-    // Discard hinting to get advance
-    FT_Load_Glyph( face, glyph_index, FT_LOAD_RENDER | FT_LOAD_NO_HINTING);
-    slot = face->glyph;
-    glyph->advance_x = slot->advance.x / HRESf;
-    glyph->advance_y = slot->advance.y / HRESf;
+    glyph->advance_x = advance_x;
+    glyph->advance_y = advance_y;
 
     vector_push_back( self->glyphs, &glyph );
 

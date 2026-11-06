@@ -95,7 +95,8 @@ on an OpenGL 3.3 core profile:
   the border color as flat ones. `lx/ly` (the local position from the rect's centre),
   `radius`, `border`, color1, the border color and color3 are 0 except for the styles
   that use them. `style` selects the shader path: `0` = hidden (degenerate), `1` = solid
-  color (color0), `2` = textured, `3` = text glyph, `4` = SDF rounded rect
+  color (color0), `2` = textured, `3` = unused (it was a text glyph; text has its own
+  program, below), `4` = SDF rounded rect
   (`drawRoundedRect`: vertical gradient color0 → color1, border), `5` = SDF icon glyph
   (`drawIcon`), `6` = SDF bilinear fill (`drawBilinearRect`: each vertex carries its
   own top-edge color in color0 and bottom-edge color in color3; both are linear in x,
@@ -136,6 +137,22 @@ on an OpenGL 3.3 core profile:
   never moved for this, so the dirty-slot upload is the same with one font or many.
   `freeFont` takes the font's runs off every list (they keep their slots and draw
   nothing); their next `renderText` lays them out again in the font loaded anew.
+- **Grayscale text on the pixel grid.** Each font's atlas is depth 1 (`LCD_FILTERING_OFF`):
+  one coverage byte per texel, a `GL_R8` texture uploaded as `GL_RED` with
+  `GL_UNPACK_ALIGNMENT` 1, a third of the bytes an RGB atlas takes. The vendored
+  freetype-gl rasterises a hinted depth-1 atlas with `FT_LOAD_FORCE_AUTOHINT |
+  FT_LOAD_TARGET_LIGHT`, which snaps to the grid vertically only, so stems keep their
+  horizontal position (`FT_LOAD_TARGET_LCD` stays for a depth-3 atlas). A glyph's
+  advance comes from that same hinted load, in whole pixels, and kerning is rounded to
+  whole pixels too, so the pen stays on whole pixels and identical glyph pairs get
+  identical gaps; `text_buffer` places each quad at `round(pen.x) + offset_x`, as wide
+  as its bitmap, so every pixel samples exactly one texel, and keeps the pen's
+  fraction in the vertex's `shift` (zero while hinted) for a later subpixel mode.
+  `measureText` and `renderText` both lay out through `text_buffer_add_text`, so the
+  measured width (the final `pen.x`) is the drawn advance. The text shader outputs
+  `vec4(color.rgb, color.a * coverage)` under the `SRC_ALPHA, ONE_MINUS_SRC_ALPHA`
+  blend, so coverage is applied once; no gamma or contrast curve is applied
+  (`markup.gamma` is 1). `tests/textGrayscale.cpp` pins all of this.
 
 ## Current state vs. goals
 
