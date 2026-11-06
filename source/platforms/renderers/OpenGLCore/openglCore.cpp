@@ -38,6 +38,7 @@
 #include <sys/stat.h>
 #include <stdio.h>
 #include <cstdlib>
+#include <cmath>
 #include <algorithm>
 #include <fstream>
 #include <cassert>
@@ -278,8 +279,12 @@ Texture::Status OpenGLCore::loadTexture(Texture &texture)
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, texData.m_textureId);
 
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    // mipmapped, because an image is often drawn much smaller than it is; clamped,
+    // so the linear filter does not wrap the opposite edge into the border texels
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 
     imglib::Format imgFormat=imglib::format(texData);
     GLenum format;
@@ -298,8 +303,12 @@ Texture::Status OpenGLCore::loadTexture(Texture &texture)
         return Texture::Status::ErrorBadData;
     }
 
+    // RGB rows are not padded to 4 bytes
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, texData.width, texData.height, 0, format,
         GL_UNSIGNED_BYTE, (const GLvoid *)texData.m_readData.data());
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
+    glGenerateMipmap(GL_TEXTURE_2D);
 
     texData.readable=texture.readable;
     if(!texture.readable)
@@ -337,6 +346,12 @@ void OpenGLCore::freeTexture(const gweni::Texture &texture)
         {
             m_currentTexture=0;
             m_currentTextureSize=glm::uvec2(0, 0);
+        }
+        // the name may be handed out again; slots still on its unit sample nothing
+        for(unsigned int &name:m_imageUnits)
+        {
+            if(name == m_textureData[texture.dataIndex]->m_textureId)
+                name=0;
         }
         m_freeTextureData.push_back(texture.dataIndex);
         delete m_textureData[texture.dataIndex];
@@ -504,6 +519,7 @@ OpenGLCore::~OpenGLCore()
     m_freeTextureData.clear();
     m_textures.clear();
     m_currentTexture=0;
+    std::fill(std::begin(m_imageUnits), std::end(m_imageUnits), 0u);
 
     // nothing below exists before init()
     if(m_vertexArray == 0)
@@ -666,7 +682,6 @@ out vec4 vColor3;         // smooth: style 6 interpolates it along x
 out vec2 vPixel;          // pixel-space position, the clip boxes' space
 
 uniform mat4 projection;
-uniform uvec2 textureSize;
 
 vec4 unpackColor(uvec2 c)
 {
@@ -681,7 +696,7 @@ void main()
 {
     ShaderType = style;
 
-    TexCoords = vec2(inTexCoords)/vec2(textureSize);
+    TexCoords = vec2(inTexCoords)/65535.0;
     VertexColor = unpackColor(inTexCoords);
 
     vLocal = vec2(inLocal);
@@ -716,7 +731,9 @@ flat in vec4 vBorderColor;
 in vec4 vColor3;
 in vec2 vPixel;
 
-uniform sampler2D texture1;
+// Style 2's textures, one per image unit (vRadius picks it). GLSL 3.30 indexes a
+// sampler array only with a constant, hence the switch.
+uniform sampler2D images[8];
 // One Box (x0, y0, x1, y1) per primitive slot. A slot is 2 triangles, and the buffer
 // is drawn in one glDrawElements from index 0, so gl_PrimitiveID >> 1 is the slot.
 uniform usamplerBuffer clipBoxes;
@@ -756,11 +773,30 @@ float sdSegment(vec2 p, vec2 a, vec2 b)
     return length(pa - ba*h);
 }
 
+// The texel of image unit `unit` at uv, with the gradients taken in uniform control flow.
+vec4 imageTexel(int unit, vec2 uv, vec2 dx, vec2 dy)
+{
+    switch(unit)
+    {
+    case 0: return textureGrad(images[0], uv, dx, dy);
+    case 1: return textureGrad(images[1], uv, dx, dy);
+    case 2: return textureGrad(images[2], uv, dx, dy);
+    case 3: return textureGrad(images[3], uv, dx, dy);
+    case 4: return textureGrad(images[4], uv, dx, dy);
+    case 5: return textureGrad(images[5], uv, dx, dy);
+    case 6: return textureGrad(images[6], uv, dx, dy);
+    case 7: return textureGrad(images[7], uv, dx, dy);
+    }
+    return vec4(0.0);
+}
+
 void main()
 {
     // Tested here, discarded at the end: fwidth() below wants the whole quad alive.
     uvec4 clip = texelFetch(clipBoxes, gl_PrimitiveID >> 1);
     bool clipped = any(lessThan(vPixel, vec2(clip.xy))) || any(greaterThanEqual(vPixel, vec2(clip.zw)));
+    vec2 uvDx = dFdx(TexCoords);
+    vec2 uvDy = dFdy(TexCoords);
 
     if(ShaderType == 0u)
         FragColor = vec4(0.0, 0.0, 0.0, 0.0);
@@ -768,8 +804,8 @@ void main()
         FragColor = VertexColor;
     else if (ShaderType == 2u)
     {
-        FragColor = texture(texture1, TexCoords);// * VertexColor;
-        FragColor.a=1.0f;
+        // Image: its texture's unit is in vRadius, the draw colour (tint) in vColor1.
+        FragColor = imageTexel(int(vRadius + 0.5), TexCoords, uvDx, uvDy) * vColor1;
     }
     else if (ShaderType == 4u)
     {
@@ -829,13 +865,14 @@ void main()
         FragColor = vec4(VertexColor.rgb, VertexColor.a * a);
     }
 
-    if(clipped)
+    // a transparent image texel writes no depth, so what lies behind it still draws
+    if(clipped || (ShaderType == 2u && FragColor.a <= 0.0))
         discard;
 })";
 
     m_program=loadShaders(vertexSource, fragmentTexturedSource);
     m_projectionUniform=glGetUniformLocation(m_program, "projection");
-    m_textureSizeUniform=glGetUniformLocation(m_program, "textureSize");
+    m_imagesUniform=glGetUniformLocation(m_program, "images");
     m_clipBoxesUniform=glGetUniformLocation(m_program, "clipBoxes");
 
     auto textVertexSource=R"(
@@ -910,8 +947,15 @@ void main()
     m_textClipBoxesUniform=glGetUniformLocation(m_textProgram, "clipBoxes");
     m_textModeUniform=glGetUniformLocation(m_textProgram, "textMode");
 
-    // texture1 stays on unit 0; the clip boxes are on unit 1 for both programs
+    // texture1 stays on unit 0; the clip boxes are on unit 1 for both programs, and
+    // the primitive program's images on FirstImageUnit on
     glProgramUniform1i(m_program, m_clipBoxesUniform, 1);
+
+    GLint imageUnits[ImageUnits];
+
+    for(size_t i=0; i<ImageUnits; ++i)
+        imageUnits[i]=FirstImageUnit+(GLint)i;
+    glProgramUniform1iv(m_program, m_imagesUniform, (GLsizei)ImageUnits, imageUnits);
     glProgramUniform1i(m_textProgram, m_textClipBoxesUniform, 1);
 
     glViewport(m_viewRect.x, m_viewRect.y, m_viewRect.w, m_viewRect.h);
@@ -1175,10 +1219,13 @@ void OpenGLCore::flush()
             glm::value_ptr(m_projectionMatrix)
         );
 
-        glProgramUniform2ui(m_program, m_textureSizeUniform, m_currentTextureSize.x, m_currentTextureSize.y);
-
         glActiveTexture(GL_TEXTURE1);
         glBindTexture(GL_TEXTURE_BUFFER, m_clipTexture);
+        for(size_t i=0; i<ImageUnits; ++i)
+        {
+            glActiveTexture(GL_TEXTURE0+FirstImageUnit+(GLenum)i);
+            glBindTexture(GL_TEXTURE_2D, m_imageUnits[i]);
+        }
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, m_currentTexture);
         glBindVertexArray(m_vertexArray);
@@ -1662,17 +1709,21 @@ void OpenGLCore::drawTexturedRect(const gweni::Texture &texture, size_t primitiv
     if(!ensureTexture(texture))
         return drawMissingImage(primitiveId, rect, zIndex);
 
-//    m_zIndex++;
-
     GLTextureData &texData=*m_textureData[m_lastTexture];
+    const size_t unit=imageUnit(texData.m_textureId);
+
+    if(unit == ImageUnits)
+    {
+        if(!m_imageUnitsFullLogged)
+        {
+            gweni::log::write(log::Level::Error, "drawTexturedRect: more than %zu textures in use, "
+                "drawing the missing image", ImageUnits);
+            m_imageUnitsFullLogged=true;
+        }
+        return drawMissingImage(primitiveId, rect, zIndex);
+    }
 
     translate(rect);
-
-    if(!m_currentTexture || texData.m_textureId != m_currentTexture)
-    {
-//        flush();
-        setTexture(texData.m_textureId);
-    }
 
     m_activeProgram=1;
 
@@ -1698,12 +1749,25 @@ void OpenGLCore::drawTexturedRect(const gweni::Texture &texture, size_t primitiv
     std::cout<<"Rendering: "<<primitiveId<<"("<<rect.x<<", "<<rect.y<<", "<<rect.w<<", "<<rect.h<<" : "<<zIndex<<")\n";
 #endif//DEBUG_RENDER
 
-    setVertex(m_vertexes[vertexIndex++], 2, rect.x, rect.y, zIndex, u1, v1);
-    setVertex(m_vertexes[vertexIndex++], 2, rect.x + rect.w, rect.y, zIndex, u2, v1);
-    setVertex(m_vertexes[vertexIndex++], 2, rect.x, rect.y + rect.h, zIndex, u1, v2);
-//    setVertex(m_vertexes[vertexIndex++], rect.x + rect.w, rect.y, u2, v1);
-    setVertex(m_vertexes[vertexIndex++], 2, rect.x + rect.w, rect.y + rect.h, zIndex, u2, v2);
-//    setVertex(m_vertexes[vertexIndex++], rect.x, rect.y + rect.h, u1, v2);
+    // UVs as 0..65535 for 0..1, the image unit and the tint (the draw colour)
+    auto uv=[](float t)
+    {
+        return (float)std::lround(std::min(std::max(t, 0.0f), 1.0f)*65535.0f);
+    };
+    auto setImageVertex=[&](size_t vi, int x, int y, float u, float v)
+    {
+        Vertex &vertex=m_vertexes[vi];
+
+        setVertex(vertex, 2, x, y, zIndex, uv(u), uv(v));
+        vertex.radius=(uint16_t)unit;
+        vertex.cx=m_color.rg();
+        vertex.cy=m_color.ba();
+    };
+
+    setImageVertex(vertexIndex++, rect.x, rect.y, u1, v1);
+    setImageVertex(vertexIndex++, rect.x + rect.w, rect.y, u2, v1);
+    setImageVertex(vertexIndex++, rect.x, rect.y + rect.h, u1, v2);
+    setImageVertex(vertexIndex++, rect.x + rect.w, rect.y + rect.h, u2, v2);
 
     markPrimitiveChanges(primitiveId, before);
 
@@ -1713,6 +1777,23 @@ void OpenGLCore::drawTexturedRect(const gweni::Texture &texture, size_t primitiv
 //    addVert(rect.x + rect.w, rect.y, u2, v1);
 //    addVert(rect.x + rect.w, rect.y + rect.h, u2, v2);
 //    addVert(rect.x, rect.y + rect.h, u1, v2);
+}
+
+size_t OpenGLCore::imageUnit(unsigned int textureName)
+{
+    size_t freeUnit=ImageUnits;
+
+    for(size_t i=0; i<ImageUnits; ++i)
+    {
+        if(m_imageUnits[i] == textureName)
+            return i;
+        if((m_imageUnits[i] == 0) && (freeUnit == ImageUnits))
+            freeUnit=i;
+    }
+
+    if(freeUnit != ImageUnits)
+        m_imageUnits[freeUnit]=textureName;
+    return freeUnit;
 }
 
 void OpenGLCore::showPrimitive(int style, size_t primitiveId)

@@ -308,12 +308,12 @@ private:
     {
         uint16_t style;
         uint16_t x, y, z;
-        uint16_t tx, ty; //color0 (top fill) packed rg/ba, or UV for texture (style 2)
+        uint16_t tx, ty; //color0 (top fill) packed rg/ba, or UV for texture (style 2, 0..65535 = 0..1)
         // SDF rounded-rect fields (styles 4, 6, 7); left 0 for all other styles.
         int16_t  lx, ly; //local position relative to rect center (= +/-halfSize at the four corners)
-        uint16_t radius; //corner radius in px
+        uint16_t radius; //corner radius in px; icon kind (style 5); image unit (style 2)
         uint16_t border; //border thickness in px
-        uint16_t cx, cy; //color1 (bottom fill for vertical gradient) packed rg/ba
+        uint16_t cx, cy; //color1 (bottom fill for vertical gradient, image tint for style 2) packed rg/ba
         uint16_t bx, by; //border color packed rg/ba
         uint16_t dx, dy; //color3 packed rg/ba: bottom edge (style 6) or checker dark (style 7)
 //        glm::vec3 pos;
@@ -434,6 +434,18 @@ private:
         gweni::Color borderColor);
     void addVert(int x, int y, float u=0.0f, float v=0.0f);
     void setTexture(unsigned int texture);
+    //! The image unit (0..ImageUnits-1) a style-2 slot samples \a textureName from,
+    //! taking a free one the first time; ImageUnits when all are taken.
+    size_t imageUnit(unsigned int textureName);
+
+    //! Style-2 slots sample their texture from one of ImageUnits texture units
+    //! (GL_TEXTURE0+FirstImageUnit on), all bound for the one primitive draw. A slot
+    //! keeps its unit in its vertexes across frames, so a texture keeps its unit
+    //! until freeTexture.
+    static constexpr size_t ImageUnits=8;
+    static constexpr int FirstImageUnit=2; //!< unit 0 is setTexture's, 1 the clip boxes
+    unsigned int m_imageUnits[ImageUnits]={}; //!< GL texture name per image unit, 0 free
+    bool m_imageUnitsFullLogged=false;
 
     Rect m_viewRect;
     Color m_color;
@@ -540,7 +552,7 @@ private:
     uint32_t m_activeProgram;
 
     uint32_t m_projectionUniform;
-    uint32_t m_textureSizeUniform;
+    uint32_t m_imagesUniform;
     uint32_t m_clipBoxesUniform;
 
     uint32_t m_vertexArray=0;
