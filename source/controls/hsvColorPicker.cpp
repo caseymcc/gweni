@@ -34,10 +34,12 @@ GWENI_CONTROL_CONSTRUCTOR(HSVColorPicker)
     m_colorSlider->setDock(DockPosition::Left);
 
     m_after=newChild<internal::ColorDisplay>();
+    m_after->setAlignment(Alignment::Absolute);
     m_after->setSize(48, 24);
     m_after->setPos(m_colorSlider->getX()+m_colorSlider->getWidth()+15, 5);
 
     m_before=newChild<internal::ColorDisplay>();
+    m_before->setAlignment(Alignment::Absolute);
     m_before->setSize(48, 24);
     m_before->setPos(m_after->getX(), 28);
 
@@ -47,10 +49,12 @@ GWENI_CONTROL_CONSTRUCTOR(HSVColorPicker)
         Label *label=newChild<Label>();
         label->setText("R:");
         label->sizeToContents();
+        label->setAlignment(Alignment::Absolute);
         label->setPos(x, y);
 
         TextBoxNumeric *numeric=newChild<TextBoxNumeric>();
         numeric->setName("RedBox");
+        numeric->setAlignment(Alignment::Absolute);
         numeric->setPos(x+15, y-1);
         numeric->setSize(26, 16);
         numeric->setSelectAllOnFocus(true);
@@ -61,10 +65,12 @@ GWENI_CONTROL_CONSTRUCTOR(HSVColorPicker)
         Label *label=newChild<Label>();
         label->setText("G:");
         label->sizeToContents();
+        label->setAlignment(Alignment::Absolute);
         label->setPos(x, y);
 
         TextBoxNumeric *numeric=newChild<TextBoxNumeric>();
         numeric->setName("GreenBox");
+        numeric->setAlignment(Alignment::Absolute);
         numeric->setPos(x+15, y-1);
         numeric->setSize(26, 16);
         numeric->setSelectAllOnFocus(true);
@@ -75,10 +81,12 @@ GWENI_CONTROL_CONSTRUCTOR(HSVColorPicker)
         Label *label=newChild<Label>();
         label->setText("B:");
         label->sizeToContents();
+        label->setAlignment(Alignment::Absolute);
         label->setPos(x, y);
 
         TextBoxNumeric *numeric=newChild<TextBoxNumeric>();
         numeric->setName("BlueBox");
+        numeric->setAlignment(Alignment::Absolute);
         numeric->setPos(x+15, y-1);
         numeric->setSize(26, 16);
         numeric->setSelectAllOnFocus(true);
