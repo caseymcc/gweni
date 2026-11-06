@@ -190,7 +190,8 @@ if(TARGET gweni_capture)
         fillStyles.cpp
         clipBoxes.cpp
         scaledEdges.cpp
-        textureReload.cpp)
+        textureReload.cpp
+        imageRects.cpp)
     gweni_set_warnings(gweni_unittests)
     target_link_libraries(gweni_unittests
         gweni
