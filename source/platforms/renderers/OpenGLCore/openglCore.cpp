@@ -174,7 +174,7 @@ Texture::Status OpenGLCore::loadTexture(Texture &texture)
 
     GLTextureData &texData=*getFreeTextureData();
 
-    imglib::load(texData, filename.c_str());
+    bool loaded=imglib::load(texData, filename.c_str());
 
     //    int width, height, n;
     //    {
@@ -182,11 +182,22 @@ Texture::Status OpenGLCore::loadTexture(Texture &texture)
     //        texData.m_readData = deleted_unique_ptr<unsigned char>(image, [](unsigned char* mem) { if (mem) stbi_image_free(mem); });
     //    }
 
-        // Image failed to load..
-    if(texData.m_readData.empty())
+    // Image failed to load. The loaders resize before reading pixels, so a late
+    // failure leaves a non-empty buffer; either way hand the slot back.
+    if(!loaded || texData.m_readData.empty())
     {
-        gweni::log::write(log::Level::Error, "Texture file not found: %s", filename.c_str());
-        return Texture::Status::ErrorFileNotFound;
+        bool notFound=texData.m_readData.empty();
+
+        texData.m_readData.clear();
+        m_freeTextureData.push_back(texData.m_index);
+
+        if(notFound)
+        {
+            gweni::log::write(log::Level::Error, "Texture file not found: %s", filename.c_str());
+            return Texture::Status::ErrorFileNotFound;
+        }
+        gweni::log::write(log::Level::Error, "Texture file failed to load: %s", filename.c_str());
+        return Texture::Status::ErrorBadData;
     }
 
 
@@ -209,6 +220,10 @@ Texture::Status OpenGLCore::loadTexture(Texture &texture)
     else
     {
         glDeleteTextures(1, &texData.m_textureId);
+        texData.m_textureId=0;
+        texData.m_readData.clear();
+        m_freeTextureData.push_back(texData.m_index);
+        gweni::log::write(log::Level::Error, "Texture format not supported: %s", filename.c_str());
         return Texture::Status::ErrorBadData;
     }
 

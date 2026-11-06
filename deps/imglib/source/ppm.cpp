@@ -1,9 +1,9 @@
 #include "imglib/ppm.h"
 
-#include <cassert>
 #include <cstring>
 #include <cstdio>
 #include <cstdlib>
+#include <cstdint>
 #include <vector>
 #include <limits>
 
@@ -15,11 +15,18 @@ void writePpmGreyScale32f(ImageWrapper &image, FILE *file);
 void writePpmRGB(ImageWrapper &image, FILE *file);
 void writePpmRGBA(ImageWrapper &image, FILE *file);
 
+bool isPpmWhitespace(char c)
+{
+    return (c=='\n')||(c=='\r')||(c==' ')||(c=='\t');
+}
+
+//reads one unsigned decimal header field and the single whitespace byte that ends it; fails on an
+//empty, signed, non-numeric or too long (fills the buffer) token
 bool readNextNumber(FILE *file, std::vector<char> &buffer, size_t &number)
 {
     //skip whitespace
     size_t read=fread(buffer.data(), 1, 1, file);
-    while((read!=0)&&((buffer[0]=='\n')||(buffer[0]=='\r')||(buffer[0]==' ')||(buffer[0]=='\t')))
+    while((read!=0)&&isPpmWhitespace(buffer[0]))
     {
         read=fread(buffer.data(), 1, 1, file);
     }
@@ -27,35 +34,57 @@ bool readNextNumber(FILE *file, std::vector<char> &buffer, size_t &number)
     if(read==0)
         return false;
 
-    //read number
+    //read number, keeping the last byte of the buffer for the terminator
     size_t index=0;
 
-    while((read!=0) && (index<buffer.size()) && ((buffer[index]!='\n') && (buffer[index]!='\r') && (buffer[index]!=' ') && (buffer[index]!='\t')))
+    while(!isPpmWhitespace(buffer[index]))
     {
+        if(index+1>=buffer.size())
+            return false;
+
         index++;
-        read=fread(&buffer[index], 1, 1, file);
+        if(fread(&buffer[index], 1, 1, file)!=1)
+            return false;
     }
 
-    if((read==0)||(index==0))
+    buffer[index]='\0';
+
+    //strtoull skips leading whitespace and takes a sign, so require a digit first
+    if((buffer[0]<'0')||(buffer[0]>'9'))
         return false;
 
-    buffer[index]='\0';
-    number=atoi(buffer.data());
+    char *end=nullptr;
+    unsigned long long value=strtoull(buffer.data(), &end, 10);
+
+    if((end!=&buffer[index])||(value>std::numeric_limits<size_t>::max()))
+        return false;
+
+    number=(size_t)value;
     return true;
 }
 
-bool loadPpm(ImageWrapper image, const char *filename)
+//bytes left in the file from the current position, false if the file can not be seeked
+bool remainingBytes(FILE *file, size_t &remaining)
 {
-    FILE *file=fopen(filename, "rb");
+    long position=ftell(file);
 
-    if(file==NULL)
+    if((position<0)||(fseek(file, 0, SEEK_END)!=0))
         return false;
 
+    long size=ftell(file);
+
+    if((size<position)||(fseek(file, position, SEEK_SET)!=0))
+        return false;
+
+    remaining=(size_t)(size-position);
+    return true;
+}
+
+bool readPpm(ImageWrapper &image, FILE *file)
+{
     std::vector<char> buffer(10);
 
-    size_t read=fread(buffer.data(), 1, 2, file);
-
-    if(read==0)
+    if(fread(buffer.data(), 1, 2, file)!=2)
         return false;
 
     if(strncmp(buffer.data(), "P6", 2)!=0)
@@ -72,20 +101,40 @@ bool loadPpm(ImageWrapper image, const char *filename)
     if(!readNextNumber(file, buffer, maxColor))
         return false;
 
+    //only 8 bit samples are supported
     if(maxColor!=255)
-    {
-        assert(false);//not implemented
         return false;
-    }
+
+    if((width==0)||(height==0)||(width>SIZE_MAX/3/height))
+        return false;
+
+    size_t pixelBytes=width*height*3;
+
+    //reject a header that promises more pixels than the file holds before allocating for them
+    size_t remaining;
+
+    if(remainingBytes(file, remaining)&&(remaining<pixelBytes))
+        return false;
 
     image.resize(Format::RGB, Depth::Bit8, width, height);
 
-    if(image.dataSize()<width*height*3)
+    if(image.dataSize()<pixelBytes)
         return false;
 
-    fread(image.data(), 1, width*height*3, file);
-    
-    return true;
+    return fread(image.data(), 1, pixelBytes, file)==pixelBytes;
+}
+
+bool loadPpm(ImageWrapper image, const char *filename)
+{
+    FILE *file=fopen(filename, "rb");
+
+    if(file==NULL)
+        return false;
+
+    bool success=readPpm(image, file);
+
+    fclose(file);
+    return success;
 }
 
 bool savePpm(ImageWrapper image, const char *filename)
