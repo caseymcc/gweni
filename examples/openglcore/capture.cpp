@@ -26,6 +26,16 @@ void setToolName(const std::string &name)
     g_tool=name;
 }
 
+static void glfwErrorCallback(int code, const char *description)
+{
+    std::cerr<<g_tool<<": GLFW error "<<code<<": "<<description<<"\n";
+}
+
+void installGlfwErrorHandler()
+{
+    glfwSetErrorCallback(&glfwErrorCallback);
+}
+
 bool initGlfwContext(Context &ctx, const Point &size, const std::string &title, bool visible)
 {
     if(!glfwInit())

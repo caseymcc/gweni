@@ -1489,6 +1489,7 @@ static bool checkTeardown(Session &s, const std::vector<std::string> &controls,
 int main(int argc, char *argv[])
 {
     gweni::capture::setToolName("ControlTest");
+    gweni::capture::installGlfwErrorHandler();
 
     std::string which="ButtonDemo";
     std::string shotPath;

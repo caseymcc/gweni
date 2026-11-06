@@ -93,12 +93,6 @@ static void framebuffer_size_callback(GLFWwindow* /*window*/, int width, int hei
         g_canvas->setSize(width, height);
 }
 
-void glfwErrorCallback(int error_code, const char *description)
-{
-    std::cout<<"GLFW error: "<<error_code<<" "<<description<<std::endl;
-}
-
-
 // A capture's clock: one fixed step per rendered frame, so every run sees the
 // same times. 1/60 s is the step, i.e. a nominal 60fps.
 static const float g_frameStep=1.0f/60.0f;
@@ -272,7 +266,7 @@ int main(int argc, char *argv[])
     if(writingPng && !gweni::capture::ensureDirectory(fs::path(shotPath).parent_path()))
         return EXIT_FAILURE;
 
-    glfwSetErrorCallback(&glfwErrorCallback);
+    gweni::capture::installGlfwErrorHandler();
 
 //    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
 //    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 2);

@@ -30,6 +30,10 @@ namespace capture
 //! Prefix for this binary's diagnostics, e.g. "ControlTest".
 void setToolName(const std::string &name);
 
+//! Report GLFW errors on stderr under the tool-name prefix. Call it before the
+//! first initGlfwContext(): the "no display" error is raised inside glfwInit().
+void installGlfwErrorHandler();
+
 //-----------------------------------------------------------------------------
 // Context creation: a GLFW window (visible or hidden) or a surfaceless EGL
 // context for machines with no display at all.
