@@ -324,7 +324,12 @@ bool TexturedSkin::loadConfig(std::string configFileName)
     // Optional "theme" object in the skin JSON overrides the compiled Tokyo Night
     // surfaces / text colors, so the theme is swappable without recompiling.
     if(jsonDoc.HasMember("theme"))
-        loadTheme(jsonDoc["theme"]);
+    {
+        if(jsonDoc["theme"].IsObject())
+            loadTheme(jsonDoc["theme"]);
+        else
+            std::cerr<<"theme \"theme\" must be an object\n";
+    }
 
     return true;
 }
@@ -337,54 +342,115 @@ void TexturedSkin::loadTheme(const json::Value &jsonTheme)
 {
     using namespace tokyonight;
 
-    auto toColor=[](const json::Value &arr, gweni::Color &dst)
+    // Every rejected value is reported on stderr with a "theme " prefix and keeps
+    // its compiled default; the rest of the theme still applies.
+
+    // dst is only written once the whole array is valid, so a colour is never
+    // partly applied. context names the value, e.g. surface "ButtonNormal": "top".
+    auto toColor=[](const json::Value &arr, gweni::Color &dst, const std::string &context)
     {
-        if(!arr.IsArray() || arr.Size() < 3)
+        bool valid=arr.IsArray() && (arr.Size() == 3 || arr.Size() == 4);
+
+        for(rapidjson::SizeType i=0; valid && i < arr.Size(); ++i)
+            valid=arr[i].IsInt() && arr[i].GetInt() >= 0 && arr[i].GetInt() <= 255;
+
+        if(!valid)
+        {
+            std::cerr<<"theme "<<context<<" must be an array of 3-4 integers 0-255\n";
             return;
+        }
         dst=gweni::Color((uint8_t)arr[0].GetInt(), (uint8_t)arr[1].GetInt(),
-            (uint8_t)arr[2].GetInt(), arr.Size() >= 4 ? (uint8_t)arr[3].GetInt() : 255);
+            (uint8_t)arr[2].GetInt(), arr.Size() == 4 ? (uint8_t)arr[3].GetInt() : 255);
     };
 
-    if(jsonTheme.HasMember("surfaces") && jsonTheme["surfaces"].IsObject())
+    auto toFloat=[](const json::Value &v, float &dst, const std::string &context)
     {
-        std::unordered_map<std::string, Surface*> &reg=surfaceRegistry();
-
-        for(const auto &member:jsonTheme["surfaces"].GetObject())
+        if(!v.IsNumber())
         {
-            auto iter=reg.find(member.name.GetString());
+            std::cerr<<"theme "<<context<<" must be a number\n";
+            return;
+        }
+        dst=v.GetFloat();
+    };
 
-            if(iter == reg.end() || !member.value.IsObject())
-                continue;
+    // Keys starting with '_' (such as "_comment") are documentation, not values.
+    auto isComment=[](const json::Value &name)
+    {
+        return name.GetStringLength() > 0 && name.GetString()[0] == '_';
+    };
 
-            Surface &s=*iter->second;
-            const json::Value &v=member.value;
+    if(jsonTheme.HasMember("surfaces"))
+    {
+        const json::Value &surfaces=jsonTheme["surfaces"];
 
-            if(v.HasMember("top"))    toColor(v["top"], s.top);
-            if(v.HasMember("bottom")) toColor(v["bottom"], s.bottom);
-            if(v.HasMember("border")) toColor(v["border"], s.border);
-            if(v.HasMember("radius") && v["radius"].IsNumber())
-                s.radius=v["radius"].GetFloat();
-            if(v.HasMember("borderWidth") && v["borderWidth"].IsNumber())
-                s.borderWidth=v["borderWidth"].GetFloat();
+        if(!surfaces.IsObject())
+            std::cerr<<"theme \"surfaces\" must be an object\n";
+        else
+        {
+            std::unordered_map<std::string, Surface*> &reg=surfaceRegistry();
+
+            for(const auto &member:surfaces.GetObject())
+            {
+                if(isComment(member.name))
+                    continue;
+
+                std::string name=member.name.GetString();
+                std::string context="surface \""+name+"\"";
+                auto iter=reg.find(name);
+
+                if(iter == reg.end())
+                {
+                    std::cerr<<"theme "<<context<<" is not a known surface\n";
+                    continue;
+                }
+                if(!member.value.IsObject())
+                {
+                    std::cerr<<"theme "<<context<<" must be an object\n";
+                    continue;
+                }
+
+                Surface &s=*iter->second;
+                const json::Value &v=member.value;
+
+                if(v.HasMember("top"))         toColor(v["top"], s.top, context+": \"top\"");
+                if(v.HasMember("bottom"))      toColor(v["bottom"], s.bottom, context+": \"bottom\"");
+                if(v.HasMember("border"))      toColor(v["border"], s.border, context+": \"border\"");
+                if(v.HasMember("radius"))      toFloat(v["radius"], s.radius, context+": \"radius\"");
+                if(v.HasMember("borderWidth")) toFloat(v["borderWidth"], s.borderWidth, context+": \"borderWidth\"");
+            }
         }
     }
 
-    if(jsonTheme.HasMember("textColors") && jsonTheme["textColors"].IsObject())
+    if(jsonTheme.HasMember("textColors"))
     {
-        std::unordered_map<std::string, gweni::Color*> textMap={
-            {"LabelDefault",&Colors.Label.Default},{"LabelBright",&Colors.Label.Bright},
-            {"LabelDark",&Colors.Label.Dark},{"LabelHighlight",&Colors.Label.Highlight},
-            {"ButtonNormal",&Colors.Button.Normal},{"ButtonHover",&Colors.Button.Hover},
-            {"ButtonDown",&Colors.Button.Down},{"ButtonDisabled",&Colors.Button.Disabled},
-            {"TooltipText",&Colors.TooltipText},
-        };
+        const json::Value &textColors=jsonTheme["textColors"];
 
-        for(const auto &member:jsonTheme["textColors"].GetObject())
+        if(!textColors.IsObject())
+            std::cerr<<"theme \"textColors\" must be an object\n";
+        else
         {
-            auto iter=textMap.find(member.name.GetString());
+            std::unordered_map<std::string, gweni::Color*> textMap={
+                {"LabelDefault",&Colors.Label.Default},{"LabelBright",&Colors.Label.Bright},
+                {"LabelDark",&Colors.Label.Dark},{"LabelHighlight",&Colors.Label.Highlight},
+                {"ButtonNormal",&Colors.Button.Normal},{"ButtonHover",&Colors.Button.Hover},
+                {"ButtonDown",&Colors.Button.Down},{"ButtonDisabled",&Colors.Button.Disabled},
+                {"TooltipText",&Colors.TooltipText},
+            };
 
-            if(iter != textMap.end())
-                toColor(member.value, *iter->second);
+            for(const auto &member:textColors.GetObject())
+            {
+                if(isComment(member.name))
+                    continue;
+
+                std::string name=member.name.GetString();
+                std::string context="textColor \""+name+"\"";
+                auto iter=textMap.find(name);
+
+                if(iter == textMap.end())
+                    std::cerr<<"theme "<<context<<" is not a known text color\n";
+                else
+                    toColor(member.value, *iter->second, context);
+            }
         }
     }
 }
