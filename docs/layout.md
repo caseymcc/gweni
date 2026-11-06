@@ -60,6 +60,14 @@ the parent overflows it (a ScrollControl's panel). `Fixed`'s preferred, minimum
 and maximum size are its request too. `sizeOfChildren` counts a dock-None
 child at its requested position, not at the one the last pass gave it.
 
+Along a `VerticalLayout`'s or `HorizontalLayout`'s stacking axis the cell c is
+the child's preferred size plus its margins, grown when the layout has room
+left and the flag can grow, and cut when it has too little and the flag can
+shrink; Fixed does neither. So a Shrink child
+with a request bigger than its content is cut to the content, and a Fixed one
+takes its own size and the next child starts after it and its margins. Use
+Fixed for "exactly this size" in a layout (ButtonDemo's 20x20 button).
+
 Docked children keep the size their dock gives them.
 
 ## One pass per frame
