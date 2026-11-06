@@ -896,8 +896,14 @@ void Base::onBoundsChanged(Rect oldBounds)
     updateRenderBounds();
 }
 
+// A new canvas scale (Canvas::setScale): every control is laid out again and
+// re-emits its primitives, and the clip boxes they carry, at the new scale, by
+// one state change each. A subclass that overrides this calls it too.
 void Base::onScaleChanged()
 {
+    invalidate();
+    addStateChange(StateChange_Geometry);
+
     for(auto &&child : m_children)
     {
         child->onScaleChanged();

@@ -202,11 +202,6 @@ int Text::getClosestCharacter(gweni::Point p)
     return static_cast<int>(value);
 }
 
-void Text::onScaleChanged()
-{
-    invalidate();
-}
-
 // Unwrapped, the measured string. Wrapped, the text asks for the width its
 // parent asked for (less the parent's padding), not for the parent's current
 // width, which would hand a width an earlier pass gave back to the parent; it

@@ -263,8 +263,8 @@ bool Canvas::inputMouseMoved(int x, int y, int deltaX, int deltaY)
     if(tooltip::toolTipActive())
         redraw();
 
-    // Todo: Handle scaling here..
-    // float fScale = 1.0f / scale();
+    // x and y are logical units already: the platform input layer maps window
+    // coordinates through the scale (input::GLFW3::setWindowMetrics).
     input::onMouseMoved(this, x, y, deltaX, deltaY);
 
     if(!HoveredControl)

@@ -30,6 +30,10 @@ surfaceless-EGL path. On a shared host, hold the GPU lock around `ctest`;
 - `controltest_scale_bounds`: `--shot-all --dump-bounds` at `--scale 1` and 2.
   The listings (logical units) must be identical and every PNG exactly twice
   as wide and high (`tests/scaleBounds.cmake`).
+- `controltest_scale_roundtrip`: `ControlTest --scenario scale --require-one-pass`
+  for every control in `--list`, Demo included. `Canvas::setScale` 1 -> 2 -> 1
+  comes back byte for byte (listing, renderer mirror, pixels), and the 2x frame
+  matches a canvas built directly at scale 2 (`tests/eachControl.cmake`).
 - `controltest_teardown`: every demo builds, renders and tears down cleanly,
   and every frame lays out in one pass (`--require-one-pass`).
 - `controltest_resize`: `ControlTest --scenario resize --require-one-pass`.

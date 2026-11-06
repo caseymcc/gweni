@@ -90,8 +90,6 @@ public:
         return m_colorOverride;
     }
 
-    void onScaleChanged() override;
-
     inline const gweni::Color &TextColor() const
     {
         return m_color;

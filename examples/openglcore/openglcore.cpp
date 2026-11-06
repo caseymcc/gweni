@@ -9,6 +9,10 @@
  *    --screenshot <path>  render a fixed number of frames, write one PNG and exit
  *    --frames <N>         render exactly N frames offscreen and exit
  *    --stats              with --frames, print per-frame timings and change counts
+ *    --scale <s>          draw at s times the OS content scale (default 1, or
+ *                         the GWENI_SCALE environment variable; the flag beats
+ *                         it). The canvas is the framebuffer / scale in logical
+ *                         units, so the UI is drawn s times as large
  *
  *  With no options it opens the interactive window as before. A capture needs no
  *  display: it hides the window, and with no display at all it falls back to a
@@ -57,6 +61,7 @@
 static gweni::input::GLFW3 g_glfwInput;
 static gweni::renderer::Base *g_renderer=nullptr;
 static gweni::controls::Canvas *g_canvas=nullptr;
+static float g_manualScale=1.0f;        // --scale or GWENI_SCALE
 
 static void key_callback(GLFWwindow* window, int key, int scancode, int action, int mods)
 {
@@ -89,18 +94,24 @@ static void scroll_callback(GLFWwindow* window, double xoffset, double yoffset)
     g_glfwInput.processScroll(xoffset, yoffset);
 }
 
-static void framebuffer_size_callback(GLFWwindow* /*window*/, int width, int height)
+// The view is the framebuffer in device pixels and the canvas that in logical
+// units, so docked controls re-layout to the new window size; the cursor is
+// mapped through the same sizes and scale.
+static void fitCanvas(GLFWwindow* window)
 {
-    if(width <= 0 || height <= 0)
-        return;
+    if(g_renderer && g_canvas)
+        gweni::capture::fitCanvasToWindow(window, g_manualScale, *g_renderer, *g_canvas, g_glfwInput);
+}
 
-    // Resize the GL viewport/projection and the root canvas so docked controls
-    // re-layout to the new window size.
-    if(g_renderer)
-        g_renderer->setViewRect(gweni::Rect(gweni::Point(0, 0), gweni::Point(width, height)));
+static void framebuffer_size_callback(GLFWwindow* window, int /*width*/, int /*height*/)
+{
+    fitCanvas(window);
+}
 
-    if(g_canvas)
-        g_canvas->setSize(width, height);
+// The window moved to a monitor with another scale, or the desktop's changed.
+static void content_scale_callback(GLFWwindow* window, float /*xscale*/, float /*yscale*/)
+{
+    fitCanvas(window);
 }
 
 // A capture's clock: one fixed step per rendered frame, so every run sees the
@@ -193,7 +204,7 @@ static void printUsage(std::ostream &out)
 {
     out<<"Usage: OpenGLCore [--demo <Name>] [--screenshot <out.png>]"
          " [--frames <N>] [--stats]\n"
-         "                  [--resources <dir>]\n"
+         "                  [--scale <s>] [--resources <dir>]\n"
          "\n"
          "  --demo <Name>        show that demo page at startup\n"
          "  --screenshot <path>  render offscreen, write one PNG and exit\n"
@@ -202,6 +213,12 @@ static void printUsage(std::ostream &out)
          "                       1/60s clock as --screenshot\n"
          "  --stats              with --frames, print one line per frame plus a\n"
          "                       summary, to stdout\n"
+         "  --scale <s>          draw at s device pixels per logical unit times\n"
+         "                       the OS content scale (default 1, or\n"
+         "                       GWENI_SCALE; the flag beats it). The canvas is\n"
+         "                       the framebuffer / scale, so the UI is s times\n"
+         "                       as large; an offscreen capture has a content\n"
+         "                       scale of 1\n"
          "  --resources <dir>    load the skin, fonts and textures from <dir>\n"
          "                       (relative to the working directory, or\n"
          "                       absolute) instead of the resources/ next to\n"
@@ -231,6 +248,7 @@ int main(int argc, char *argv[])
     std::string resourceDir;
     int frameCount=0;
     bool stats=false;
+    bool scaleGiven=false;
 
     for(int i=1; i<argc; ++i)
     {
@@ -253,6 +271,15 @@ int main(int argc, char *argv[])
         }
         else if(arg == "--stats")
             stats=true;
+        else if(arg == "--scale" && hasValue)
+        {
+            if(!gweni::capture::parseScale(argv[++i], g_manualScale))
+            {
+                std::cerr<<"OpenGLCore: --scale wants a number in (0, 16], e.g. 1.5\n";
+                return EXIT_FAILURE;
+            }
+            scaleGiven=true;
+        }
         else if(arg == "--resources" && hasValue)
             resourceDir=argv[++i];
         else if(arg == "--help" || arg == "-h")
@@ -267,6 +294,9 @@ int main(int argc, char *argv[])
             return EXIT_FAILURE;
         }
     }
+
+    if(!gweni::capture::manualScale(scaleGiven, g_manualScale))
+        return EXIT_FAILURE;
 
     const bool writingPng=!shotPath.empty();
 
@@ -359,8 +389,13 @@ int main(int argc, char *argv[])
     const gweni::Color background=gweni::skin::textured::tokyonight::Canvas.top;
     glClearColor(background.r/255.0f, background.g/255.0f, background.b/255.0f, background.a/255.0f);
 
+    // The framebuffer is screenSize device pixels and the canvas that in logical
+    // units. An offscreen capture has no OS content scale, so only the manual
+    // factor counts; the window's own is applied once it is shown, below.
     gweni::controls::Canvas* canvas = new gweni::controls::Canvas(skin);
-    canvas->setSize(screenSize.x, screenSize.y);
+    const gweni::Point canvasSize=gweni::capture::logicalSize(screenSize, g_manualScale);
+    canvas->setScale(g_manualScale);
+    canvas->setSize(canvasSize.x, canvasSize.y);
     canvas->setDrawBackground(true);
     canvas->setBackgroundColor(background);
 
@@ -496,14 +531,11 @@ int main(int argc, char *argv[])
         glfwSetMouseButtonCallback(ctx.window, mouse_button_callback);
         glfwSetScrollCallback(ctx.window, scroll_callback);
         glfwSetFramebufferSizeCallback(ctx.window, framebuffer_size_callback);
+        glfwSetWindowContentScaleCallback(ctx.window, content_scale_callback);
 
-        // Apply the actual framebuffer size now (it can differ from the requested
-        // window size, e.g. on high-DPI displays).
-        {
-            int fbWidth=0, fbHeight=0;
-            glfwGetFramebufferSize(ctx.window, &fbWidth, &fbHeight);
-            framebuffer_size_callback(ctx.window, fbWidth, fbHeight);
-        }
+        // Apply the actual framebuffer size and content scale now (the
+        // framebuffer differs from the window size on high-DPI displays).
+        fitCanvas(ctx.window);
 
         // Begin the main game loop
         while (!glfwWindowShouldClose(ctx.window))

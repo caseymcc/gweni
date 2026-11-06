@@ -7,11 +7,14 @@
 
 #include "capture.h"
 
+#include <gweni/controls/canvas.h>
+#include <gweni/platforms/baseRender.h>
 #include <gweni/platforms/commonPlatform.h>
 
 #include <imglib/png.h>
 #include <imglib/simpleImage.h>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <iostream>
 #include <vector>
@@ -64,12 +67,81 @@ bool loadDefaultFont(IResourceLoader &loader, const Font &skinFont)
     return loader.loadFont(skinFont) == Font::Status::Loaded;
 }
 
+bool parseScale(const char *value, float &scale)
+{
+    char *end=nullptr;
+    const float parsed=std::strtof(value, &end);
+    if(end == value || *end != '\0' || !(parsed > 0.0f) || parsed > 16.0f)
+        return false;
+
+    scale=parsed;
+    return true;
+}
+
+bool manualScale(bool given, float &scale)
+{
+    if(given)
+        return true;
+
+    scale=1.0f;
+
+    const char *env=std::getenv("GWENI_SCALE");
+    if(env && *env && !parseScale(env, scale))
+    {
+        std::cerr<<g_tool<<": GWENI_SCALE wants a number in (0, 16], e.g. 1.5, not '"
+                 <<env<<"'\n";
+        return false;
+    }
+    return true;
+}
+
+float contentScale(GLFWwindow *window)
+{
+    if(!window)
+        return 1.0f;
+
+    float x=1.0f, y=1.0f;
+    glfwGetWindowContentScale(window, &x, &y);
+    return (x > 0.0f) ? x : 1.0f;
+}
+
+float effectiveScale(GLFWwindow *window, float manual)
+{
+    return contentScale(window)*manual;
+}
+
+Point logicalSize(const Point &framebuffer, float scale)
+{
+    return Point(renderer::Base::snap(float(framebuffer.x), 1.0f/scale),
+        renderer::Base::snap(float(framebuffer.y), 1.0f/scale));
+}
+
+void fitCanvasToWindow(GLFWwindow *window, float manual, renderer::Base &renderer,
+    controls::Canvas &canvas, input::GLFW3 &input)
+{
+    Point framebuffer, windowSize;
+    glfwGetFramebufferSize(window, &framebuffer.x, &framebuffer.y);
+    glfwGetWindowSize(window, &windowSize.x, &windowSize.y);
+
+    if(framebuffer.x <= 0 || framebuffer.y <= 0)
+        return;
+
+    const float scale=effectiveScale(window, manual);
+    const Point size=logicalSize(framebuffer, scale);
+
+    renderer.setViewRect(Rect(Point(0, 0), framebuffer));
+    canvas.setScale(scale);
+    canvas.setSize(size.x, size.y);
+    input.setWindowMetrics(windowSize, framebuffer, scale);
+}
+
 bool initGlfwContext(Context &ctx, const Point &size, const std::string &title, bool visible)
 {
     if(!glfwInit())
         return false;
 
     glfwWindowHint(GLFW_VISIBLE, visible?GLFW_TRUE:GLFW_FALSE);
+    glfwWindowHint(GLFW_SCALE_TO_MONITOR, visible?GLFW_TRUE:GLFW_FALSE);
     ctx.window=glfwCreateWindow(size.x, size.y, title.c_str(), NULL, NULL);
     if(!ctx.window)
     {

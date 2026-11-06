@@ -2,7 +2,8 @@
  *  Gweni - shared offscreen capture plumbing for the examples' capture modes
  *  (ControlTest --shot, OpenGLCore --screenshot): a GL context with or without
  *  a display, an offscreen target, and framebuffer readback to PNG. Also where
- *  both examples choose their resource directory and load their fonts.
+ *  both examples choose their resource directory, load their fonts and work
+ *  out the scale they draw at.
  *
  *  See license in Gweni.h
  */
@@ -11,6 +12,7 @@
 
 #include <GL/glew.h>
 #include <GLFW/glfw3.h>
+#include <gweni/platforms/input/glfw3.h>
 #include <gweni/platforms/platformTypes.h>
 #include <gweni/utils/filesystem.h>
 #include <cstdint>
@@ -26,6 +28,15 @@
 
 namespace gweni
 {
+namespace controls
+{
+class Canvas;
+}
+namespace renderer
+{
+class Base;
+}
+
 namespace capture
 {
 
@@ -53,6 +64,44 @@ std::unique_ptr<ResourcePaths> resourcePaths(const std::string &dir);
 bool loadDefaultFont(IResourceLoader &loader, const Font &skinFont);
 
 //-----------------------------------------------------------------------------
+// Scale: device pixels per logical unit. The canvas is laid out in logical
+// units and the renderer draws it at framebuffer pixels; the effective scale is
+// the window's OS content scale times a manual factor, which doubles as an
+// app-level zoom.
+//-----------------------------------------------------------------------------
+
+//! A scale given as text: a number in (0, 16]. \return false otherwise.
+bool parseScale(const char *value, float &scale);
+
+//! The manual factor: \a scale as --scale left it when \a given, otherwise
+//! GWENI_SCALE when it is set, otherwise 1 (the flag beats the environment).
+//! \return false, after one line naming the value, if GWENI_SCALE is not a
+//! scale.
+bool manualScale(bool given, float &scale);
+
+//! The OS content scale of \a window (glfwGetWindowContentScale, its x axis):
+//! 2 on a Retina display, 1.5 on a desktop scaled to 150 %. 1 with no window
+//! (the EGL context) and for every offscreen capture, so a capture is the same
+//! on any display.
+float contentScale(GLFWwindow *window);
+
+//! The scale a window draws at: contentScale(window) * \a manual.
+float effectiveScale(GLFWwindow *window, float manual);
+
+//! A framebuffer size in device pixels as the logical size of a canvas drawn
+//! at \a scale: round(size/scale), rounded half up as the renderer rounds.
+Point logicalSize(const Point &framebuffer, float scale);
+
+//! Fits the canvas to \a window's framebuffer: the renderer's view is the
+//! framebuffer in device pixels, the canvas is that at effectiveScale(window,
+//! \a manual) in logical units, and \a input maps the cursor through the
+//! window and framebuffer sizes and that scale. What the framebuffer-size and
+//! content-scale callbacks run; also call it once when the window is made. A
+//! minimised (zero-sized) framebuffer changes nothing.
+void fitCanvasToWindow(GLFWwindow *window, float manual, renderer::Base &renderer,
+    controls::Canvas &canvas, input::GLFW3 &input);
+
+//-----------------------------------------------------------------------------
 // Context creation: a GLFW window (visible or hidden) or a surfaceless EGL
 // context for machines with no display at all.
 //-----------------------------------------------------------------------------
@@ -65,6 +114,10 @@ struct Context
 #endif
 };
 
+//! A visible window is \a size in window coordinates scaled to its monitor's
+//! content scale (GLFW_SCALE_TO_MONITOR), so on X11 and Windows a 150 % desktop
+//! gets a window 1.5 times as many pixels across, as macOS and Wayland do on
+//! their own. A hidden one (a capture) is \a size as it is.
 bool initGlfwContext(Context &ctx, const Point &size, const std::string &title, bool visible);
 
 #if GWENI_EXAMPLE_EGL

@@ -5,10 +5,11 @@
 #
 #  Runs one ControlTest check for every control in ControlTest --list, one
 #  process per control, as a cmake -P script (tests/CMakeLists.txt registers it
-#  as controltest_resize_each and controltest_one_pass_each):
+#  as controltest_resize_each, controltest_one_pass_each and
+#  controltest_scale_roundtrip):
 #
 #      cmake -DCONTROLTEST=<ControlTest> -DSOURCE_DIR=<repo root> \
-#            -DSCRATCH_DIR=<dir> -DMODE=resize|one-pass [-DSKIP=<names>] \
+#            -DSCRATCH_DIR=<dir> -DMODE=resize|one-pass|scale [-DSKIP=<names>] \
 #            -P eachControl.cmake
 #
 #  MODE resize:   --scenario resize --require-one-pass, the 640->1024->640
@@ -16,6 +17,10 @@
 #                 in one layout pass.
 #  MODE one-pass: --stats --require-one-pass, the plain run (the default
 #                 frames), every frame in one layout pass.
+#  MODE scale:    --scenario scale --require-one-pass, the 1 -> 2 -> 1
+#                 Canvas::setScale round trip, which has to come back byte for
+#                 byte and match a canvas built at scale 2, every frame in one
+#                 layout pass.
 #
 #  Every control is run, and the failing ones are named together at the end,
 #  each with the lines ControlTest printed on stderr. SKIP leaves controls out
@@ -32,8 +37,10 @@ if(MODE STREQUAL "resize")
     set(mode_args --scenario resize --require-one-pass)
 elseif(MODE STREQUAL "one-pass")
     set(mode_args --stats --require-one-pass)
+elseif(MODE STREQUAL "scale")
+    set(mode_args --scenario scale --require-one-pass)
 else()
-    message(FATAL_ERROR "eachControl.cmake: MODE is resize or one-pass, not '${MODE}'")
+    message(FATAL_ERROR "eachControl.cmake: MODE is resize, one-pass or scale, not '${MODE}'")
 endif()
 
 # a stale run must not be able to pass
@@ -72,7 +79,7 @@ foreach(name IN LISTS names)
         list(APPEND failed "${name}")
         # the --stats frame lines are noise here; the ControlTest: lines say
         # which frame or check failed
-        file(STRINGS "${log}" reasons REGEX "^(ControlTest:|resize )")
+        file(STRINGS "${log}" reasons REGEX "^(ControlTest:|resize |scale )")
         string(REPLACE ";" "\n    " reasons "${reasons}")
         message("FAILED: ${name} (exit '${result}', log ${log})\n    ${reasons}")
     endif()

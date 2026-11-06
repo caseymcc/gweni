@@ -18,6 +18,21 @@ namespace gweni
 namespace input
 {
 
+//! One cursor coordinate GLFW reports in window coordinates, in the canvas's
+//! logical units: \a window * (\a framebufferSize / \a windowSize) / \a scale,
+//! with the sizes along the same axis. The ratio makes it right on both kinds
+//! of window system: on macOS and scaled Wayland window coordinates are points
+//! (the framebuffer is larger), on X11 and Windows they are pixels (the two
+//! sizes are equal). Not truncated, so a caller rounds once, at the end. A
+//! zero-sized (minimised) window or a non-positive scale leaves it unmapped.
+inline double windowToLogical(double window, int windowSize, int framebufferSize, float scale)
+{
+    if(windowSize <= 0 || framebufferSize <= 0 || !(scale > 0.0f))
+        return window;
+
+    return window*(static_cast<double>(framebufferSize)/windowSize)/scale;
+}
+
 class GLFW3
 {
 public:
@@ -34,6 +49,9 @@ public:
     :   m_eventCaller(nullptr)
     ,   m_mouse(-1, -1)
     ,   m_haveMouse(false)
+    ,   m_windowSize(0, 0)
+    ,   m_framebufferSize(0, 0)
+    ,   m_scale(1.0f)
     {}
 
     void initialize(IInputEvent *c)
@@ -165,9 +183,28 @@ public:
         return true;
     }
 
-    bool processMouseMove(int x, int y)
+    //! What processMouseMove maps the cursor through: the window's size in
+    //! window coordinates (glfwGetWindowSize), its framebuffer's in device
+    //! pixels (glfwGetFramebufferSize) and the canvas's scale. Keep it current
+    //! from the framebuffer-size and content-scale callbacks. Until it is
+    //! called the cursor is taken as it comes, as logical units.
+    void setWindowMetrics(const Point &windowSize, const Point &framebufferSize, float scale)
     {
-        m_mouse.set(x, y);
+        m_windowSize = windowSize;
+        m_framebufferSize = framebufferSize;
+        m_scale = scale;
+    }
+
+    //! The cursor in window coordinates, from glfwSetCursorPosCallback. The
+    //! canvas gets it, and the delta, in logical units.
+    bool processMouseMove(double x, double y)
+    {
+        if (!m_eventCaller)
+            return false;
+
+        m_mouse.set(
+            static_cast<int>(std::floor(windowToLogical(x, m_windowSize.x, m_framebufferSize.x, m_scale))),
+            static_cast<int>(std::floor(windowToLogical(y, m_windowSize.y, m_framebufferSize.y, m_scale))));
 
         // The first event has no previous position: report a zero delta.
         if (!m_haveMouse)
@@ -217,6 +254,8 @@ protected:
     IInputEvent *m_eventCaller;
     Point m_mouse, m_lastMouse;
     bool m_haveMouse;
+    Point m_windowSize, m_framebufferSize;
+    float m_scale;
 
 };
 

@@ -107,6 +107,22 @@ if(TARGET ControlTest)
         LABELS gpu
         TIMEOUT 600)
 
+    # Canvas::setScale 1 -> 2 -> 1 for every control in --list (Demo included),
+    # one process each: the last 1x shot, its listing and the renderer mirror
+    # are the first one's, the 2x shot is a canvas built at scale 2, and every
+    # frame takes one layout pass
+    add_test(NAME controltest_scale_roundtrip
+        COMMAND ${CMAKE_COMMAND}
+            -DCONTROLTEST=$<TARGET_FILE:ControlTest>
+            -DSOURCE_DIR=${GWENI_SOURCE_DIR}
+            -DSCRATCH_DIR=${CMAKE_CURRENT_BINARY_DIR}/scale_roundtrip
+            -DMODE=scale
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/eachControl.cmake
+        WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
+    set_tests_properties(controltest_scale_roundtrip PROPERTIES
+        LABELS gpu
+        TIMEOUT 600)
+
     # hover, press, disabled and focus repaint the control (and only it), a
     # settled frame does nothing, and collapsing a tree node still moves the
     # nodes below; exits non-zero on any failed check
@@ -183,7 +199,8 @@ add_executable(gweni_unit_tests
     unit/requestedSize.cpp
     unit/tabOrder.cpp
     unit/depthLayers.cpp
-    unit/utf8Typing.cpp)
+    unit/utf8Typing.cpp
+    unit/cursorScale.cpp)
 gweni_set_warnings(gweni_unit_tests)
 target_link_libraries(gweni_unit_tests
     gweni

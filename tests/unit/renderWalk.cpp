@@ -369,3 +369,32 @@ TEST_CASE("a change on a child a sibling's render() moves to the back is not los
     scene.settle();
     checkSettled(scene.frame());
 }
+
+TEST_CASE("a canvas scale change lays out and renders every control once, then settles")
+{
+    Scene scene;
+    scene.settle();
+
+    scene.canvas->setScale(2.0f);
+    CHECK(scene.renderer.scale() == 2.0f);
+
+    const controls::ChangeStats &stats=scene.frame();
+    CHECK(scene.canvas->getLayoutStats().passes == 1);
+    CHECK(stats.visited == Scene::Controls+1);
+    CHECK(scene.log.entered.size() == Scene::Controls);
+    CHECK(scene.log.rendered.size() == Scene::Controls);
+    // one Geometry change each (the canvas's own render() does not count itself)
+    CHECK(stats.geometry == Scene::Controls);
+    CHECK(stats.created == 0);
+
+    checkSettled(scene.frame());
+
+    // the same scale again is no change
+    scene.canvas->setScale(2.0f);
+    checkSettled(scene.frame());
+
+    scene.canvas->setScale(1.0f);
+    scene.frame();
+    CHECK(scene.log.rendered.size() == Scene::Controls);
+    checkSettled(scene.frame());
+}

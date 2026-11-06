@@ -156,6 +156,26 @@ on an OpenGL 3.3 core profile:
   strokes are relative to their rect and scale with it. At scale 1 all of this is
   the identity. Text is drawn at `font.size*scale()` px from its snapped origin
   (see "Hybrid text"), while `measureText` stays in canvas units.
+- **Where the scale comes from, and a change of it.** The GLFW examples size the
+  canvas in logical units: `capture::fitCanvasToWindow` (`examples/openglcore/capture.cpp`,
+  run once when the window is made and from the framebuffer-size and content-scale
+  callbacks) gives the renderer the framebuffer in device pixels as its view, and the
+  canvas `round(framebuffer/scale)` at `scale = glfwGetWindowContentScale x` the manual
+  factor (`--scale`, else `GWENI_SCALE`, else 1; it multiplies, so it is also an app
+  zoom). An offscreen capture and the EGL context have a content scale of 1. A visible
+  window is created with `GLFW_SCALE_TO_MONITOR`, so on X11 and Windows it is its
+  requested size in logical units too. The cursor arrives in window coordinates;
+  `input::GLFW3` maps it with `input::windowToLogical` (`x*(fbW/winW)/scale`, before
+  truncating, so the deltas are logical as well) through the sizes and scale the same
+  call sets with `setWindowMetrics`, and the canvas only sees logical units. That one
+  formula is right where window coordinates are points (macOS, scaled Wayland) and
+  where they are pixels (X11, Windows). `Canvas::setScale` reaches
+  `Base::onScaleChanged` on every control, which invalidates its layout and marks it
+  `StateChange_Geometry` once, so the next frame lays the tree out again and re-emits
+  every primitive and clip box at the new scale; the text runs re-lay themselves,
+  their `px` being in the run cache key. `ControlTest --scenario scale`
+  (`controltest_scale_roundtrip`, every control) checks that 1 -> 2 -> 1 comes back
+  byte for byte and that the 2x frame is a canvas built at scale 2.
 - **Clip boxes.** Every primitive slot and every glyph slot carries the `clipRegion()`
   current when it was drawn, as a `Box` of four `uint16_t` corners (`m_clippingBoxes`,
   `m_textClipBoxes`), its edges snapped like the vertices' and clamped to `[0, 65535]` with

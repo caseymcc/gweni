@@ -14,8 +14,9 @@
  *                       round(size*s) device pixels; --move/--click and the
  *                       other scripted coordinates, the scenarios' fixed
  *                       sizes and --dump-bounds stay in logical units, so a
- *                       listing is the same at any scale. Text is still
- *                       rasterised at 1x (glyph positions scale, sizes not).
+ *                       listing is the same at any scale. The interactive
+ *                       window draws at s times the OS content scale, and
+ *                       --size is its canvas in logical units.
  *    --frames N         frames to render before capturing (default 3)
  *    --shot <path>      render offscreen and write one PNG, then exit
  *    --shot-all         write one PNG per control demo, in this one run
@@ -38,7 +39,7 @@
  *    --list             print the control demo names and exit
  *    --help, -h         print the option list and exit
  *    --scenario <name>  per-control | resize | docked | scroll | interaction |
- *                       typing | clip | text-size (see below)
+ *                       typing | clip | text-size | scale (see below)
  *    --dump-bounds [<path>]
  *                       print the laid-out control tree as text: one line per
  *                       control, depth-first in child order, indented by depth,
@@ -180,6 +181,19 @@
  *                          text_slots_written=N run_glyphs=N ... same_atlas=yes
  *                 Exits non-zero if any of it fails, or if GWENI_SDF_TEXT_MIN puts
  *                 either size below the SDF threshold.
+ *    scale        one control (default Demo) on a 640x480 canvas at scale 1,
+ *                 then Canvas::setScale(2) with the framebuffer resized to
+ *                 1280x960, then back to 1 (scale-01-1x.png, scale-02-2x.png,
+ *                 scale-03-1x.png), then a new canvas built directly at scale
+ *                 2 (scale-00-fresh-2x.png). It sets both scales itself, so
+ *                 --scale is ignored. One line reports the checks:
+ *                   scale control=X listing_settled=yes|no mirror_settled=yes|no
+ *                          pixels_settled=yes|no fresh_matches=yes|no
+ *                 listing_settled, mirror_settled and pixels_settled compare
+ *                 shot 3 with shot 1 (listing, renderer mirror id by id,
+ *                 pixels), fresh_matches the fresh shot with shot 2 (listing
+ *                 and pixels). Mismatches are described as for resize. Exits
+ *                 non-zero if any check is no.
  *
  *  Every scenario (and --shot-all) takes a listing per shot when
  *  --dump-bounds is on, named after that shot with a .txt extension, so the
@@ -190,10 +204,10 @@
  *  there takes no path.
  *
  *  All of them, in the build container, from the repo root (a non-zero exit
- *  from resize, interaction, typing, clip or text-size is their assertion, so
- *  it is reported rather than aborting the loop):
+ *  from resize, interaction, typing, clip, text-size or scale is their
+ *  assertion, so it is reported rather than aborting the loop):
  *
- *    for s in per-control resize docked scroll interaction typing clip text-size; do \
+ *    for s in per-control resize docked scroll interaction typing clip text-size scale; do \
  *      ./build_linux_x64_debug/examples/openglcore/ControlTest \
  *          --headless --scenario $s --shot-dir /tmp/shots/$s; \
  *      echo "$s exit=$?"; \
@@ -290,6 +304,7 @@ static float steppedClock()
 static gweni::input::GLFW3 g_glfwInput;
 static gweni::renderer::Base *g_renderer=nullptr;
 static gweni::controls::Canvas *g_canvas=nullptr;
+static float g_manualScale=1.0f;        // --scale or GWENI_SCALE
 
 static void key_callback(GLFWwindow*, int key, int scancode, int action, int mods)
 {   const gweni::input::GLFW3::KeyEvent e={key,scancode,action,mods}; g_glfwInput.processKeyEvent(e); }
@@ -303,14 +318,17 @@ static void mouse_button_callback(GLFWwindow*, int b, int a, int m)
 {   g_glfwInput.processMouseButtons(b,a,m); }
 static void scroll_callback(GLFWwindow*, double x, double y)
 {   g_glfwInput.processScroll(x, y); }
-// The framebuffer is in device pixels and the canvas in logical units.
-static void framebuffer_size_callback(GLFWwindow*, int w, int h)
+// The framebuffer is in device pixels and the canvas in logical units, at the
+// window's content scale times --scale; the cursor is mapped the same way.
+static void fitCanvas(GLFWwindow *window)
 {
-    if(w<=0||h<=0) return;
-    if(g_renderer) g_renderer->setViewRect(gweni::Rect(gweni::Point(0,0), gweni::Point(w,h)));
-    if(g_canvas) g_canvas->setSize(gweni::renderer::Base::snap(float(w), 1.0f/g_canvas->scale()),
-        gweni::renderer::Base::snap(float(h), 1.0f/g_canvas->scale()));
+    if(g_renderer && g_canvas)
+        gweni::capture::fitCanvasToWindow(window, g_manualScale, *g_renderer, *g_canvas, g_glfwInput);
 }
+static void framebuffer_size_callback(GLFWwindow *window, int, int)
+{   fitCanvas(window); }
+static void content_scale_callback(GLFWwindow *window, float, float)
+{   fitCanvas(window); }
 
 #define GWENI_CONTROL_DEMOS(X) \
     X(ButtonDemo) X(LabelDemo) X(LabelMultilineDemo) X(ProgressBarDemo) \
@@ -379,12 +397,13 @@ static void printUsage(std::ostream &out)
          "                     control has been destroyed; --control narrows it\n"
          "  --trace            log each scripted input on stderr\n"
          "  --scenario <name>  per-control | resize | docked | scroll | interaction\n"
-         "                     | typing | clip | text-size; resize prints\n"
+         "                     | typing | clip | text-size | scale; resize prints\n"
          "                     listing_settled, mirror_settled, shrink_settled and\n"
          "                     fresh_matches, interaction one yes/no per repaint\n"
          "                     check, typing its keyboard checks, clip one yes/no\n"
          "                     per clipping check, text-size what a 24 -> 36 px\n"
-         "                     Label font change wrote; all five fail on a no\n"
+         "                     Label font change wrote, scale whether a 1 -> 2 -> 1\n"
+         "                     setScale round trip came back; all six fail on a no\n"
          "  --dump-bounds [<path>]  print the laid-out control tree as text,\n"
          "                     private children and hidden state included\n"
          "  --resources <dir>  load the skin, fonts and textures from <dir> (relative\n"
@@ -459,17 +478,6 @@ static bool parseSize(const std::string &value, gweni::Point &size)
     if(w<=0 || h<=0) return false;
 
     size=gweni::Point(w, h);
-    return true;
-}
-
-static bool parseScale(const char *value, float &scale)
-{
-    char *end=nullptr;
-    const float parsed=std::strtof(value, &end);
-    if(end == value || *end != '\0' || !(parsed > 0.0f) || parsed > 16.0f)
-        return false;
-
-    scale=parsed;
     return true;
 }
 
@@ -714,6 +722,22 @@ static bool resizeSession(Session &s, int width, int height)
 
     s.renderer->setViewRect(gweni::Rect(gweni::Point(0, 0), s.pixels));
     s.canvas->setSize(width, height);
+    return true;
+}
+
+// A runtime scale change, as the content-scale callback makes one: the canvas
+// keeps its logical size, and the target is that at the new scale.
+static bool rescaleSession(Session &s, float scale)
+{
+    s.scale=scale;
+    s.pixels=devicePixels(s.size, s.scale);
+
+    destroyFramebuffer(*s.fb);
+    if(!createFramebuffer(*s.fb, s.pixels.x, s.pixels.y))
+        return false;
+
+    s.renderer->setViewRect(gweni::Rect(gweni::Point(0, 0), s.pixels));
+    s.canvas->setScale(scale);
     return true;
 }
 
@@ -1131,7 +1155,7 @@ static bool runSteps(Session &s, const std::vector<Step> &steps, const std::stri
 //-----------------------------------------------------------------------------
 // Scenarios
 //-----------------------------------------------------------------------------
-enum class Scenario { None, PerControl, Resize, Docked, Scroll, Interaction, Typing, Clip, TextSize };
+enum class Scenario { None, PerControl, Resize, Docked, Scroll, Interaction, Typing, Clip, TextSize, Scale };
 
 static bool parseScenario(const std::string &name, Scenario &scenario)
 {
@@ -1143,6 +1167,7 @@ static bool parseScenario(const std::string &name, Scenario &scenario)
     else if(name == "typing") scenario=Scenario::Typing;
     else if(name == "clip") scenario=Scenario::Clip;
     else if(name == "text-size") scenario=Scenario::TextSize;
+    else if(name == "scale") scenario=Scenario::Scale;
     else return false;
     return true;
 }
@@ -1249,7 +1274,8 @@ static float largestGlyphMove(const std::vector<uint8_t> &before, const std::vec
     return largest;
 }
 
-static size_t reportMirrorKind(const char *kind, const std::map<size_t, std::vector<uint8_t>> &before,
+static size_t reportMirrorKind(const char *kind, const ResizeState &beforeState,
+    const std::map<size_t, std::vector<uint8_t>> &before, const ResizeState &afterState,
     const std::map<size_t, std::vector<uint8_t>> &after, const std::map<size_t, std::string> &owners,
     bool text)
 {
@@ -1269,8 +1295,8 @@ static size_t reportMirrorKind(const char *kind, const std::map<size_t, std::vec
         const auto now=after.find(id);
         std::string how;
 
-        if(was == before.end()) how="live only after the shrink";
-        else if(now == after.end()) how="live only before the grow";
+        if(was == before.end()) how="live only in "+afterState.name;
+        else if(now == after.end()) how="live only in "+beforeState.name;
         else if(was->second == now->second) continue;
         else if(was->second.size() != now->second.size()) how="contents differ (size)";
         else if(text && was->second[0] != now->second[0]) how="hidden state differs";
@@ -1291,20 +1317,21 @@ static size_t reportMirrorKind(const char *kind, const std::map<size_t, std::vec
     return differing;
 }
 
-// The renderer's CPU mirror, id by id, before the grow against after the
-// shrink. Owners are named from the tree as it stood after the shrink.
+// The renderer's CPU mirror, id by id, of an earlier state against a later one
+// (before the grow against after the shrink). Owners are named from the tree
+// as it stood in the later one.
 static bool mirrorsMatch(const ResizeState &before, const ResizeState &after)
 {
     if(before.mirror.primitives == after.mirror.primitives && before.mirror.texts == after.mirror.texts)
         return true;
 
     const IdOwners &owners=after.owners;
-    std::cerr<<"ControlTest: renderer mirror after the shrink ("<<after.name
-             <<") differs from before the grow ("<<before.name<<"):\n";
-    const size_t primitives=reportMirrorKind("primitive", before.mirror.primitives,
-        after.mirror.primitives, owners.primitives, false);
-    const size_t texts=reportMirrorKind("text", before.mirror.texts,
-        after.mirror.texts, owners.texts, true);
+    std::cerr<<"ControlTest: renderer mirror of "<<after.name
+             <<" differs from "<<before.name<<":\n";
+    const size_t primitives=reportMirrorKind("primitive", before, before.mirror.primitives,
+        after, after.mirror.primitives, owners.primitives, false);
+    const size_t texts=reportMirrorKind("text", before, before.mirror.texts,
+        after, after.mirror.texts, owners.texts, true);
     std::cerr<<"  "<<primitives<<" primitive ids and "<<texts<<" text ids differ\n";
     return false;
 }
@@ -1399,6 +1426,69 @@ static bool runResizeScenario(Session &s, const std::string &controlName,
              <<" fresh_matches="<<(freshMatches?"yes":"no")<<"\n";
     if(!settled)
         std::cerr<<"ControlTest: the layout did not come back to its 640x480 state\n";
+    return true;
+}
+
+// Three shots around a 1 -> 2 -> 1 Canvas::setScale, plus a reference from a
+// canvas built directly at scale 2. A scale change lays the whole tree out
+// again and re-emits every primitive, so the last 1x state has to be the first
+// one byte for byte (listing, renderer mirror, pixels), and the 2x one what a
+// start at --scale 2 draws.
+static bool runScaleScenario(Session &s, const std::string &controlName,
+    const std::string &shotDir, bool &settled)
+{
+    const std::string fresh=shotDir+"/scale-00-fresh-2x.png";
+    const std::string first=shotDir+"/scale-01-1x.png";
+    const std::string doubled=shotDir+"/scale-02-2x.png";
+    const std::string back=shotDir+"/scale-03-1x.png";
+
+    ResizeState freshState, firstState, doubledState, backState;
+
+    if(!rescaleSession(s, 1.0f) || !resizeSession(s, 640, 480))
+        return false;
+
+    gweni::controls::Base *control=addControl(s, controlName);
+
+    renderFrames(s, s.frames);
+    if(!shoot(s, first)) return false;
+    captureResizeState(s, first, firstState);
+
+    if(!rescaleSession(s, 2.0f)) return false;
+    renderFrames(s, s.frames);
+    if(!shoot(s, doubled)) return false;
+    captureResizeState(s, doubled, doubledState);
+
+    if(!rescaleSession(s, 1.0f)) return false;
+    renderFrames(s, s.frames);
+    if(!shoot(s, back)) return false;
+    captureResizeState(s, back, backState);
+
+    dropControl(s, control);
+
+    // built at scale 2 from the start, onto a 2x target
+    if(!rescaleSession(s, 2.0f)) return false;
+    replaceCanvas(s);
+    control=addControl(s, controlName);
+    renderFrames(s, s.frames);
+    if(!shoot(s, fresh)) return false;
+    captureResizeState(s, fresh, freshState);
+    dropControl(s, control);
+
+    const bool listingSettled=listingsMatch(firstState, backState);
+    const bool mirrorSettled=mirrorsMatch(firstState, backState);
+    const bool pixelsSettled=pixelsMatch(firstState, backState);
+    bool freshMatches=listingsMatch(doubledState, freshState);
+    freshMatches=pixelsMatch(doubledState, freshState) && freshMatches;
+
+    settled=listingSettled && mirrorSettled && pixelsSettled && freshMatches;
+
+    std::cout<<"scale control="<<controlName
+             <<" listing_settled="<<(listingSettled?"yes":"no")
+             <<" mirror_settled="<<(mirrorSettled?"yes":"no")
+             <<" pixels_settled="<<(pixelsSettled?"yes":"no")
+             <<" fresh_matches="<<(freshMatches?"yes":"no")<<"\n";
+    if(!settled)
+        std::cerr<<"ControlTest: the canvas did not come back from a 1 -> 2 -> 1 scale change\n";
     return true;
 }
 
@@ -2596,13 +2686,14 @@ int main(int argc, char *argv[])
             if(!parseScenario(name, scenario))
             {
                 std::cerr<<"ControlTest: unknown scenario: "<<name
-                         <<"; try per-control, resize, docked, scroll, interaction, typing, clip or text-size\n";
+                         <<"; try per-control, resize, docked, scroll, interaction, typing, clip,"
+                           " text-size or scale\n";
                 return EXIT_FAILURE;
             }
         }
         else if(arg == "--scale" && hasValue)
         {
-            if(!parseScale(argv[++i], scale))
+            if(!gweni::capture::parseScale(argv[++i], scale))
             {
                 std::cerr<<"ControlTest: --scale wants a number in (0, 16], e.g. 1.5\n";
                 return EXIT_FAILURE;
@@ -2628,16 +2719,13 @@ int main(int argc, char *argv[])
     if(frames<1) frames=1;
 
     // The flag beats the environment.
-    if(!scaleGiven)
-    {
-        const char *env=std::getenv("GWENI_SCALE");
-        if(env && *env && !parseScale(env, scale))
-        {
-            std::cerr<<"ControlTest: GWENI_SCALE wants a number in (0, 16], e.g. 1.5, not '"
-                     <<env<<"'\n";
-            return EXIT_FAILURE;
-        }
-    }
+    if(!gweni::capture::manualScale(scaleGiven, scale))
+        return EXIT_FAILURE;
+
+    // The scale scenario sets both of its scales itself.
+    if(scenario == Scenario::Scale)
+        scale=1.0f;
+    g_manualScale=scale;
 
     if(scripted && scenario != Scenario::None)
     {
@@ -2659,9 +2747,9 @@ int main(int argc, char *argv[])
     if(scenario == Scenario::PerControl)
         shotAll=true;
 
-    // The resize check is about the dock layout re-settling, so it shoots the
-    // whole demo unless a control was named.
-    if(scenario == Scenario::Resize && !chosenControl)
+    // The resize and scale checks are about the dock layout re-settling, so
+    // they shoot the whole demo unless a control was named.
+    if((scenario == Scenario::Resize || scenario == Scenario::Scale) && !chosenControl)
         which=g_dockedControlName;
 
     if(!isKnownControl(which))
@@ -2695,7 +2783,7 @@ int main(int argc, char *argv[])
 
     // The two fixed-size scenarios say what they render at, so start there
     // rather than resizing away from --size on the first frame.
-    if(scenario == Scenario::Resize) screenSize=gweni::Point(640, 480);
+    if(scenario == Scenario::Resize || scenario == Scenario::Scale) screenSize=gweni::Point(640, 480);
     else if(scenario == Scenario::Docked) screenSize=gweni::Point(1024, 768);
 
     // The canvas is screenSize logical units; the framebuffer, the window and
@@ -2840,6 +2928,15 @@ int main(int argc, char *argv[])
             ok=runDockedScenario(session, shotDir);
             break;
 
+        case Scenario::Scale:
+        {
+            bool settled=false;
+            ok=runScaleScenario(session, which, shotDir, settled);
+            if(ok && !settled)
+                ok=false;   // the round trip did not come back: a failing assertion
+            break;
+        }
+
         case Scenario::Scroll:
             ok=runScrollScenario(session, shotDir);
             break;
@@ -2923,7 +3020,8 @@ int main(int argc, char *argv[])
         if(!ok)
             result=EXIT_FAILURE;
 
-        // The resize scenario builds a canvas of its own for its fresh reference.
+        // The resize and scale scenarios build a canvas of their own for their
+        // fresh reference.
         canvas=session.canvas;
     }
     else
@@ -2939,6 +3037,10 @@ int main(int argc, char *argv[])
         glfwSetMouseButtonCallback(ctx.window, mouse_button_callback);
         glfwSetScrollCallback(ctx.window, scroll_callback);
         glfwSetFramebufferSizeCallback(ctx.window, framebuffer_size_callback);
+        glfwSetWindowContentScaleCallback(ctx.window, content_scale_callback);
+
+        // The window's own content scale, and its real framebuffer size.
+        fitCanvas(ctx.window);
 
         while(!glfwWindowShouldClose(ctx.window))
         {
