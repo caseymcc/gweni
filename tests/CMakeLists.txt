@@ -6,8 +6,11 @@
 #  gweni tests, run with: ctest --test-dir build_linux_x64_debug
 #
 #  Tests labelled "gpu" open a GL context (the examples' surfaceless EGL path,
-#  --headless), so skip them with ctest -LE gpu. They run from the repo root,
-#  because the binaries load resources/ relative to the working directory.
+#  --headless), so skip them with ctest -LE gpu. The examples load the
+#  resources/ the build copies next to them, so they run from any working
+#  directory (controltest_any_cwd checks it); their tests still run from the
+#  repo root, where relative --shot paths are meant. gweni_unittests loads
+#  resources/ relative to the working directory, so it must run there.
 #
 
 if(TARGET ControlTest)
@@ -44,6 +47,25 @@ if(TARGET ControlTest)
     set_tests_properties(controltest_interaction PROPERTIES
         LABELS gpu
         TIMEOUT 300)
+
+    # the resources/ next to the exe are found from a directory that has none
+    add_test(NAME controltest_any_cwd
+        COMMAND $<TARGET_FILE:ControlTest> --headless --control ButtonDemo
+            --shot ${CMAKE_CURRENT_BINARY_DIR}/any_cwd/ButtonDemo.png
+        WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+    set_tests_properties(controltest_any_cwd PROPERTIES
+        LABELS gpu
+        TIMEOUT 60)
+
+    # a --resources directory that does not exist is one line naming it, before
+    # any GL context is made, so this needs no GPU
+    add_test(NAME controltest_missing_resources
+        COMMAND $<TARGET_FILE:ControlTest> --headless --control ButtonDemo
+            --shot ${CMAKE_CURRENT_BINARY_DIR}/missing_resources/ButtonDemo.png
+            --resources ${CMAKE_CURRENT_BINARY_DIR}/no_such_resources)
+    set_tests_properties(controltest_missing_resources PROPERTIES
+        PASS_REGULAR_EXPRESSION "^ControlTest: resource directory not found: [^\n]*/no_such_resources\n*$"
+        TIMEOUT 30)
 
     # Not registered: --scenario resize, which fails on main (issue #58, the
     # 640->1024->640 resize does not restore the layout).

@@ -193,6 +193,7 @@ static void printUsage(std::ostream &out)
 {
     out<<"Usage: OpenGLCore [--demo <Name>] [--screenshot <out.png>]"
          " [--frames <N>] [--stats]\n"
+         "                  [--resources <dir>]\n"
          "\n"
          "  --demo <Name>        show that demo page at startup\n"
          "  --screenshot <path>  render offscreen, write one PNG and exit\n"
@@ -201,6 +202,10 @@ static void printUsage(std::ostream &out)
          "                       1/60s clock as --screenshot\n"
          "  --stats              with --frames, print one line per frame plus a\n"
          "                       summary, to stdout\n"
+         "  --resources <dir>    load the skin, fonts and textures from <dir>\n"
+         "                       (relative to the working directory, or\n"
+         "                       absolute) instead of the resources/ next to\n"
+         "                       the executable\n"
          "\n"
          "Per-frame line fields:\n"
          "  frame      0-based frame index\n"
@@ -223,6 +228,7 @@ int main(int argc, char *argv[])
 
     std::string demoName;
     std::string shotPath;
+    std::string resourceDir;
     int frameCount=0;
     bool stats=false;
 
@@ -247,6 +253,8 @@ int main(int argc, char *argv[])
         }
         else if(arg == "--stats")
             stats=true;
+        else if(arg == "--resources" && hasValue)
+            resourceDir=argv[++i];
         else if(arg == "--help" || arg == "-h")
         {
             printUsage(std::cout);
@@ -274,6 +282,12 @@ int main(int argc, char *argv[])
     const bool capturing=writingPng||(frameCount>0);
 
     if(writingPng && !gweni::capture::ensureDirectory(fs::path(shotPath).parent_path()))
+        return EXIT_FAILURE;
+
+    // Declared before the renderer, which keeps a reference to it.
+    const std::unique_ptr<gweni::ResourcePaths> paths=gweni::capture::resourcePaths(resourceDir);
+
+    if(!paths)
         return EXIT_FAILURE;
 
     gweni::capture::installGlfwErrorHandler();
@@ -323,11 +337,9 @@ int main(int argc, char *argv[])
         return EXIT_FAILURE;
     }
 
-    gweni::platform::CurrentPath paths("resources");
-
     // Create a Gweni OpenGL Renderer
     gweni::renderer::OpenGLCore* renderer =
-        new gweni::renderer::OpenGLCore(paths, gweni::Rect(gweni::Point(0,0), screenSize));
+        new gweni::renderer::OpenGLCore(*paths, gweni::Rect(gweni::Point(0,0), screenSize));
     renderer->init();
 
     // Create a Gweni skin
@@ -336,6 +348,9 @@ int main(int argc, char *argv[])
     if(!skin->init("DefaultSkin.json"))
         return EXIT_FAILURE;
     skin->setDefaultFont("OpenSans.ttf", 11);
+
+    if(!gweni::capture::loadDefaultFonts(*renderer, skin->getDefaultFont()))
+        return EXIT_FAILURE;
 
     // Create a Canvas (it's root, on which all other Gweni panels are created)
     // The canvas fill comes from the theme, so a "theme" block in

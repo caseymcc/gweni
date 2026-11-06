@@ -9,20 +9,10 @@ find_package(glfw3 CONFIG REQUIRED)
 set(${example_name}_sources
     openglcore.cpp)
 
-set(${example_name}_resources
-    "${GWENI_SOURCE_DIR}/resource/DefaultSkin.png"
-    "${GWENI_SOURCE_DIR}/resource/OpenSans.ttf"
-    "${GWENI_SOURCE_DIR}/test/resource/logo.png"
-    "${GWENI_SOURCE_DIR}/test/resource/test16.png")
-
 if(APPLE AND APP_BUNDLE)
     set(${example_name}_build_type MACOSX_BUNDLE)
-    set(${example_name}_resource_dir "resources")
-    set(${example_name}_runtime_resource_dir "../resources/") # relative to MacOS/
 else()
     set(${example_name}_build_type )
-    set(${example_name}_resource_dir "$<TARGET_FILE_DIR:${example_name}>")
-    set(${example_name}_runtime_resource_dir "")
 endif()
 
 # Offscreen capture plumbing (GL context with or without a display, offscreen
@@ -63,6 +53,28 @@ target_link_libraries(ControlTest
     glfw
 )
 
+# Both examples default to RelativeToExecutablePaths("resources"), so the
+# resources/ they load sits next to them and they run from any working
+# directory. One copy serves both, and each depends on it, so building either
+# alone makes it. A custom target runs on every build, unlike a POST_BUILD
+# step, so an edit under resources/ is copied even when nothing relinks. It
+# names the exes' default output directory: $<TARGET_FILE_DIR> here would make
+# the copy depend on the exes that depend on it.
+get_property(example_multi_config GLOBAL PROPERTY GENERATOR_IS_MULTI_CONFIG)
+if(example_multi_config)
+    set(example_resource_dir ${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/resources)
+else()
+    set(example_resource_dir ${CMAKE_CURRENT_BINARY_DIR}/resources)
+endif()
+
+add_custom_target(gweni_example_resources
+    COMMAND ${CMAKE_COMMAND} -E copy_directory_if_different
+        ${GWENI_SOURCE_DIR}/resources ${example_resource_dir}
+    COMMENT "Copying resources/ next to the examples"
+    VERBATIM)
+add_dependencies(${example_name} gweni_example_resources)
+add_dependencies(ControlTest gweni_example_resources)
+
 if(APPLE AND APP_BUNDLE)
     # make MacOS bundle
     set_target_properties(${example_name} PROPERTIES
@@ -72,20 +84,5 @@ if(APPLE AND APP_BUNDLE)
         MACOSX_BUNDLE_LONG_VERSION_STRING "${PROJECT_NAME} example v${APP_VERSION}"
         MACOSX_BUNDLE_GUI_IDENTIFIER "org.gweni.${PROJECT_NAME}.${example_name}"
         )
-    set_source_files_properties(${${example_name}_resources} PROPERTIES
-        MACOSX_PACKAGE_LOCATION "${${example_name}_resource_dir}")
-else()
-    # Non-bundled app
-#    macro(CopyAppResource RES_FROM)
-#        get_filename_component(FNANE "${RES_FROM}" NAME)
-#        add_custom_command(
-#            TARGET ${example_name} POST_BUILD
-#            COMMAND ${CMAKE_COMMAND} -E copy "${RES_FROM}" "${APP_RESOURCE_DIR}/${FNANE}"
-#            COMMENT "Copying sample resource")
-#    endmacro(CopyAppResource)
-#
-#    foreach(resource_file ${${example_name}_resources})
-#        CopyAppResource(${resource_file})
-#    endforeach()
 endif()
 

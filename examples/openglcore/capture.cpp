@@ -7,6 +7,8 @@
 
 #include "capture.h"
 
+#include <gweni/platforms/commonPlatform.h>
+
 #include <imglib/png.h>
 #include <imglib/simpleImage.h>
 #include <cstdio>
@@ -34,6 +36,34 @@ static void glfwErrorCallback(int code, const char *description)
 void installGlfwErrorHandler()
 {
     glfwSetErrorCallback(&glfwErrorCallback);
+}
+
+std::unique_ptr<ResourcePaths> resourcePaths(const std::string &dir)
+{
+    std::unique_ptr<ResourcePaths> paths;
+
+    if(dir.empty())
+        paths.reset(new platform::RelativeToExecutablePaths("resources"));
+    else
+        paths.reset(new platform::CurrentPath(dir));
+
+    // An empty name resolves to the directory itself, with a trailing
+    // separator that parent_path() drops.
+    const fs::path resolved=fs::path(paths->getPath(ResourcePaths::Type::Other, "")).parent_path();
+
+    if(!fs::is_directory(resolved))
+    {
+        std::cerr<<g_tool<<": resource directory not found: "<<resolved.string()<<"\n";
+        return nullptr;
+    }
+    return paths;
+}
+
+bool loadDefaultFonts(IResourceLoader &loader, const Font &skinFont)
+{
+    if(loader.loadFont(skinFont) != Font::Status::Loaded)
+        return false;
+    return loader.loadFont(getDefaultFont()) == Font::Status::Loaded;
 }
 
 bool initGlfwContext(Context &ctx, const Point &size, const std::string &title, bool visible)

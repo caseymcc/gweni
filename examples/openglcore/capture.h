@@ -1,7 +1,8 @@
 /*
  *  Gweni - shared offscreen capture plumbing for the examples' capture modes
  *  (ControlTest --shot, OpenGLCore --screenshot): a GL context with or without
- *  a display, an offscreen target, and framebuffer readback to PNG.
+ *  a display, an offscreen target, and framebuffer readback to PNG. Also where
+ *  both examples choose their resource directory and load their fonts.
  *
  *  See license in Gweni.h
  */
@@ -13,6 +14,7 @@
 #include <gweni/platforms/platformTypes.h>
 #include <gweni/utils/filesystem.h>
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -33,6 +35,23 @@ void setToolName(const std::string &name);
 //! Report GLFW errors on stderr under the tool-name prefix. Call it before the
 //! first initGlfwContext(): the "no display" error is raised inside glfwInit().
 void installGlfwErrorHandler();
+
+//-----------------------------------------------------------------------------
+// Resources
+//-----------------------------------------------------------------------------
+
+//! The ResourcePaths an example loads everything through: \a dir (relative to
+//! the working directory, or absolute) when --resources gave one, otherwise the
+//! resources/ the build copies next to the executable. Prints one line naming
+//! the directory and returns null if it does not exist. The renderer keeps a
+//! reference, so the object must outlive it.
+std::unique_ptr<ResourcePaths> resourcePaths(const std::string &dir);
+
+//! Load the skin's default font and the global gweni::getDefaultFont() that
+//! Text and Label use, so a missing face fails here, once, instead of at the
+//! first text drawn. \return false if either did not load; the loader has
+//! already printed the path it tried.
+bool loadDefaultFonts(IResourceLoader &loader, const Font &skinFont);
 
 //-----------------------------------------------------------------------------
 // Context creation: a GLFW window (visible or hidden) or a surfaceless EGL

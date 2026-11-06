@@ -335,6 +335,9 @@ static void printUsage(std::ostream &out)
          "                     its keyboard checks; all three fail on a no\n"
          "  --dump-bounds [<path>]  print the laid-out control tree as text,\n"
          "                     private children and hidden state included\n"
+         "  --resources <dir>  load the skin, fonts and textures from <dir> (relative\n"
+         "                     to the working directory, or absolute) instead of\n"
+         "                     the resources/ next to the executable\n"
          "  --list             print the control demo names and exit\n"
          "Scripted input, applied in order:\n"
          "  --move/--press/--release/--click/--double-click X,Y, --scroll DX,DY\n"
@@ -1992,6 +1995,7 @@ int main(int argc, char *argv[])
     std::string which="ButtonDemo";
     std::string shotPath;
     std::string shotDir="/tmp";
+    std::string resourceDir;
     gweni::Point screenSize(640, 480);
     int frames=3;
     bool shotAll=false;
@@ -2022,6 +2026,7 @@ int main(int argc, char *argv[])
             steps.push_back({StepKind::Shot, 0, 0, shotPath});
         }
         else if(arg == "--shot-dir" && hasValue) shotDir=argv[++i];
+        else if(arg == "--resources" && hasValue) resourceDir=argv[++i];
         else if(arg == "--frames" && hasValue)
         {
             frames=std::atoi(argv[++i]);
@@ -2175,6 +2180,11 @@ int main(int argc, char *argv[])
         return EXIT_FAILURE;
     }
 
+    // Declared before the renderer, which keeps a reference to it.
+    const std::unique_ptr<gweni::ResourcePaths> paths=gweni::capture::resourcePaths(resourceDir);
+    if(!paths)
+        return EXIT_FAILURE;
+
     Context ctx;
     if(forceHeadless)
     {
@@ -2216,15 +2226,16 @@ int main(int argc, char *argv[])
         return EXIT_FAILURE;
     }
 
-    gweni::platform::CurrentPath paths("resources");
     gweni::renderer::OpenGLCore *renderer=
-        new gweni::renderer::OpenGLCore(paths, gweni::Rect(gweni::Point(0,0), screenSize));
+        new gweni::renderer::OpenGLCore(*paths, gweni::Rect(gweni::Point(0,0), screenSize));
     renderer->init();
 
     gweni::skin::textured::TexturedSkin *skin=new gweni::skin::textured::TexturedSkin(renderer);
     if(!skin->init("DefaultSkin.json"))
         return EXIT_FAILURE;
     skin->setDefaultFont("OpenSans.ttf", 11);
+    if(!gweni::capture::loadDefaultFonts(*renderer, skin->getDefaultFont()))
+        return EXIT_FAILURE;
 
     // The canvas fill comes from the theme, so a "theme" block in
     // resources/DefaultSkin.json moves it too. Canvas::renderCanvas does not
