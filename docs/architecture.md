@@ -114,9 +114,19 @@ on an OpenGL 3.3 core profile:
 - A single shader pair (vertex + fragment) draws all non-text primitives; an ortho
   projection (`setViewRect()`) maps UI pixel coords to clip space; `z`/depth gives
   draw order.
+- **Scale and the device-pixel grid.** Controls lay out in logical units (integers);
+  `renderer::Base::translate()` turns them into device pixels at `scale()` (set by
+  `Canvas::setScale`). It snaps **edges**, not origin and size apart: a point is
+  `snap(x+offset.x)`, a rect is `x0=snap(x+offset.x)`, `x1=snap(x+offset.x+w)`,
+  `w=x1-x0`, and the same in y, where `Base::snap(v)` is `floor(v*scale+0.5)`. So
+  two rects that meet in logical units meet on one device-pixel edge at any scale,
+  with no seam or 1 px overlap. The SDF radius is `snap(radius)` and a border
+  `max(1, snap(border))`, so a border stays a whole number of device pixels; icon
+  strokes are relative to their rect and scale with it. At scale 1 all of this is
+  the identity. Text glyphs are still rasterised at 1x; only their positions scale.
 - **Clip boxes.** Every primitive slot and every glyph slot carries the `clipRegion()`
   current when it was drawn, as a `Box` of four `uint16_t` corners (`m_clippingBoxes`,
-  `m_textClipBoxes`), scaled like the vertices and clamped to `[0, 65535]` with
+  `m_textClipBoxes`), its edges snapped like the vertices' and clamped to `[0, 65535]` with
   `x1 >= x0`, `y1 >= y0`, so an empty region is an empty box. Each list is uploaded
   like the vertices (dirty slots only, compared by bytes) and read by the fragment
   shaders as a `GL_RGBA16UI` buffer texture, then `discard` outside

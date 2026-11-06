@@ -161,6 +161,7 @@ if(TARGET gweni_capture)
         color.cpp
         fillStyles.cpp
         clipBoxes.cpp
+        scaledEdges.cpp
         textureReload.cpp)
     gweni_set_warnings(gweni_unittests)
     target_link_libraries(gweni_unittests

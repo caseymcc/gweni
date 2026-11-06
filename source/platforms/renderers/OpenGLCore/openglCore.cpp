@@ -1516,8 +1516,12 @@ void OpenGLCore::writeRoundedQuad(size_t primitiveId, gweni::Rect rect, int zInd
     const int cx=rect.x+hw;
     const int cy=rect.y+hh;
 
-    const uint16_t rad=(uint16_t)(radius<0.0f?0.0f:radius);
-    const uint16_t bor=(uint16_t)(border<0.0f?0.0f:border);
+    // Scaled to device pixels. A border stays a whole number of them, and at
+    // least one, so it stays crisp at a fractional scale.
+    const long limit=std::numeric_limits<uint16_t>::max();
+    const uint16_t rad=(uint16_t)std::min(std::max((long)snap(radius), 0L), limit);
+    const uint16_t bor=(uint16_t)((border > 0.0f)
+        ? std::min(std::max((long)snap(border), 1L), limit) : 0L);
 
     auto setRounded=[&](size_t vi, int px, int py, int lx, int ly, const gweni::Color &color0,
         const gweni::Color &color3)
@@ -1607,14 +1611,13 @@ void OpenGLCore::endClip()
 OpenGLCore::Box OpenGLCore::makeClipBox() const
 {
     const gweni::Rect &clip=clipRegion();
-    const float scale=this->scale();
 
-    // rounded as translate() rounds a rect, so a box edge lands where a quad drawn
-    // over the same rect has its edge
-    long x0=(long)std::ceil(float(clip.x)*scale);
-    long y0=(long)std::ceil(float(clip.y)*scale);
-    long x1=x0+(long)std::ceil(float(clip.w)*scale);
-    long y1=y0+(long)std::ceil(float(clip.h)*scale);
+    // snapped as translate() snaps a rect's edges, so a box edge lands where a quad
+    // drawn over the same rect has its edge
+    long x0=snap(float(clip.x));
+    long y0=snap(float(clip.y));
+    long x1=snap(float(clip.x+clip.w));
+    long y1=snap(float(clip.y+clip.h));
 
     x0+=m_clipDebugInset;
     y0+=m_clipDebugInset;

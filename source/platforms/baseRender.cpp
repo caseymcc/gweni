@@ -69,19 +69,35 @@ void Base::drawShavedCornerRect(size_t *primitiveIds, gweni::Rect rect, int zInd
     }
 }
 
-void Base::translate(int &x, int &y)
+int Base::snap(float value) const
 {
-    x+=m_renderOffset.x;
-    y+=m_renderOffset.y;
-    x=std::ceil(float(x)  *m_scale);
-    y=std::ceil(float(y)  *m_scale);
+    return snap(value, m_scale);
 }
 
+int Base::snap(float value, float scale)
+{
+    return static_cast<int>(std::floor(value*scale+0.5f));
+}
+
+void Base::translate(int &x, int &y)
+{
+    x=snap(float(x+m_renderOffset.x));
+    y=snap(float(y+m_renderOffset.y));
+}
+
+// Both edges are snapped and the size is what lies between them, so a rect that
+// ends where the next one starts shares its device-pixel edge at any scale.
 void Base::translate(gweni::Rect &rect)
 {
-    translate(rect.x, rect.y);
-    rect.w=std::ceil(float(rect.w)  *m_scale);
-    rect.h=std::ceil(float(rect.h)  *m_scale);
+    const int x=rect.x+m_renderOffset.x;
+    const int y=rect.y+m_renderOffset.y;
+    const int x0=snap(float(x));
+    const int y0=snap(float(y));
+
+    rect.w=snap(float(x+rect.w))-x0;
+    rect.h=snap(float(y+rect.h))-y0;
+    rect.x=x0;
+    rect.y=y0;
 }
 
 void gweni::renderer::Base::setClipRegion(gweni::Rect const &rect)

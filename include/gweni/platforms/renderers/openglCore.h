@@ -323,7 +323,7 @@ private:
 
     static_assert(sizeof(Vertex) == 32, "Vertex is 16 16-bit fields; the GPU attribute layout depends on it");
 
-    //! A clip box in pixel space (the vertexes' space, scaled like translate()):
+    //! A clip box in pixel space (the vertexes' space, snapped like translate()):
     //! the fragment shaders keep [x0,x1) x [y0,y1) of the slot it belongs to and
     //! discard the rest. Read on the GPU as one RGBA16UI texel of a buffer texture.
     struct Box
@@ -410,7 +410,7 @@ private:
     //! itself unchanged (the skin re-emits every frame) costs no upload.
     void markPrimitiveChanges(size_t primitiveId, const PrimitiveSlot &before);
 
-    //! The current clipRegion() as a Box: scaled by m_scale like translate(), shrunk by
+    //! The current clipRegion() as a Box: its edges snapped like translate()'s, shrunk by
     //! GWENI_CLIP_DEBUG's inset, then clamped to [0, 65535] with x1 >= x0 and y1 >= y0
     //! (an empty region gives an empty box, which discards everything).
     Box makeClipBox() const;

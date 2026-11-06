@@ -163,8 +163,16 @@ public:
     //! \sect{Translate}
     //!     Translate a panel's local drawing coordinate
     //!     into view space, taking Offsets into account.
+    //!     A point becomes snap(x+offset.x); a rect has both of its edges
+    //!     snapped, and its size is the distance between them.
     void translate(int &x, int &y);
     void translate(gweni::Rect &rect);
+    //! A canvas coordinate (or length) in device pixels: value*scale(),
+    //! rounded half up. Every scaled edge goes through it, so edges that meet
+    //! in canvas units meet on the device-pixel grid too.
+    int snap(float value) const;
+    //! snap() at a given scale, for code that sizes a framebuffer to match.
+    static int snap(float value, float scale);
     //! \}
 
     //! Set the rendering offset. You shouldn't have to touch these, ever.
