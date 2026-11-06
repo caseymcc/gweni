@@ -10,6 +10,7 @@
 #include <gweni/utility.h>
 #include <gweni/platforms/platform.h>
 
+#include <algorithm>
 #include <cmath>
 
 namespace gweni
@@ -105,31 +106,18 @@ void gweni::renderer::Base::setClipRegion(gweni::Rect const &rect)
     m_rectClipRegion=rect;
 }
 
+// The rect's size at the current render offset (its position is the offset,
+// i.e. the control's absolute origin), intersected with the current region. No
+// overlap gives an empty region at the overlap's corner, never a negative size.
 void Base::addClipRegion(gweni::Rect rect)
 {
-    rect.x=m_renderOffset.x;
-    rect.y=m_renderOffset.y;
-    gweni::Rect out=rect;
+    const gweni::Rect &clip=m_rectClipRegion;
+    const int x0=std::max(m_renderOffset.x, clip.x);
+    const int y0=std::max(m_renderOffset.y, clip.y);
+    const int x1=std::min(m_renderOffset.x+rect.w, clip.x+clip.w);
+    const int y1=std::min(m_renderOffset.y+rect.h, clip.y+clip.h);
 
-    if(rect.x < m_rectClipRegion.x)
-    {
-        out.w-=m_rectClipRegion.x - out.x;
-        out.x=m_rectClipRegion.x;
-    }
-
-    if(rect.y < m_rectClipRegion.y)
-    {
-        out.h-=m_rectClipRegion.y - out.y;
-        out.y=m_rectClipRegion.y;
-    }
-
-    if(rect.x+rect.w > m_rectClipRegion.x+m_rectClipRegion.w)
-        out.w=(m_rectClipRegion.x + m_rectClipRegion.w) - out.x;
-
-    if(rect.y+rect.h > m_rectClipRegion.y+m_rectClipRegion.h)
-        out.h=(m_rectClipRegion.y + m_rectClipRegion.h) - out.y;
-
-    m_rectClipRegion=out;
+    m_rectClipRegion=gweni::Rect(x0, y0, std::max(0, x1-x0), std::max(0, y1-y0));
 }
 
 const gweni::Rect &Base::clipRegion() const

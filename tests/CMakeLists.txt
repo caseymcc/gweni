@@ -118,6 +118,18 @@ if(TARGET ControlTest)
         LABELS gpu
         TIMEOUT 300)
 
+    # children are cut at their clipping parent's edges: content overflowing a
+    # ScrollControl and a Window dragged past each edge of its parent leave the
+    # pixels outside unchanged, and moved right out they leave nothing behind;
+    # exits non-zero on any failed check
+    add_test(NAME controltest_clip
+        COMMAND $<TARGET_FILE:ControlTest> --headless --scenario clip --require-one-pass
+            --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/clip
+        WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
+    set_tests_properties(controltest_clip PROPERTIES
+        LABELS gpu
+        TIMEOUT 300)
+
     # the resources/ next to the exe are found from a directory that has none
     add_test(NAME controltest_any_cwd
         COMMAND $<TARGET_FILE:ControlTest> --headless --control ButtonDemo
@@ -152,6 +164,7 @@ add_executable(gweni_unit_tests
     unit/platformSleep.cpp
     unit/layoutPasses.cpp
     unit/renderWalk.cpp
+    unit/clipRegion.cpp
     unit/sliderNotches.cpp
     unit/colorControls.cpp
     unit/scrollControl.cpp

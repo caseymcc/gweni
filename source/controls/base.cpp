@@ -1135,19 +1135,16 @@ void Base::renderRecursive(skin::Base *skin, const Rect &cliprect)
 
     baseRenderer->addRenderOffset(cliprect);
 
-    // If this control is clipping, change the clip rect to ourselves
-    // else clip using our parents clip rect.
-//    if(shouldClip())
-//    {
-//        baseRenderer->addClipRegion(cliprect);
-//
-//        if(!baseRenderer->clipRegionVisible())
-//        {
-//            baseRenderer->setRenderOffset(oldRenderOffset);
-//            baseRenderer->setClipRegion(rOldRegion);
-//            return;
-//        }
-//    }
+    // A clipping control narrows the region to itself for its children; one
+    // that does not leaves them its parent's. Its own render() above was
+    // clipped by the parent's region.
+    //
+    // An empty region still walks the children: a dirty one has to be drawn
+    // again with the empty box, or its primitives stay on screen with the box
+    // of the frame they were drawn in (and its state change stays pending). A
+    // clean one is skipped by doRender() as anywhere else.
+    if(shouldClip())
+        baseRenderer->addClipRegion(cliprect);
 
     // Cleared before the children are visited, so a change raised on one of
     // them from here on (a sibling's render(), say) marks this control again

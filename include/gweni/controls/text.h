@@ -33,6 +33,11 @@ public:
 //    void render(skin::Base *skin) override;
     void layout(skin::Base *skin) override;
 
+    //! Wrapped, the children are this control's own lines, laid out inside
+    //! it: they are clipped by the parent's region, as an unwrapped Text's own
+    //! glyphs are, and a new wrap height re-stamps no line's clip box.
+    bool shouldClip() override { return false; }
+
     Size refreshSize(bool update=true);
 
     void setFont(const gweni::Font &font);

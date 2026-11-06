@@ -38,7 +38,7 @@
  *    --list             print the control demo names and exit
  *    --help, -h         print the option list and exit
  *    --scenario <name>  per-control | resize | docked | scroll | interaction |
- *                       typing (see below)
+ *                       typing | clip (see below)
  *    --dump-bounds [<path>]
  *                       print the laid-out control tree as text: one line per
  *                       control, depth-first in child order, indented by depth,
@@ -151,6 +151,21 @@
  *                   typing checks=N failed=N
  *                 the total. Exits non-zero if any check fails. The clock is
  *                 frozen, so key repeat (wall-time based) is not covered.
+ *    clip         children cut at their clipping parent's edges, on the bare
+ *                 canvas, each frame compared with the one with less in it:
+ *                 a ScrollControl with no bars and content past its right and
+ *                 bottom edges (a fill, a Button, a CheckBox, a Label) leaves
+ *                 every pixel outside it as on the empty canvas, and once the
+ *                 content is moved below it the frame is the empty canvas
+ *                 again. A Window in a 400x300 parent, dragged by its title
+ *                 bar past the parent's bottom-right and then top-left edges,
+ *                 leaves everything outside the parent as on the empty
+ *                 canvas; dragged right out of the parent the frame is the
+ *                 parent alone, and dragged back it looks as it started. A
+ *                 drag step changes controls in the Window's subtree only,
+ *                 and a settled frame changes and uploads nothing. One line
+ *                   clip scroll_cut=yes|no ... window_back_steady=yes|no
+ *                 reports the checks. Exits non-zero if any check is no.
  *
  *  Every scenario (and --shot-all) takes a listing per shot when
  *  --dump-bounds is on, named after that shot with a .txt extension, so the
@@ -161,10 +176,10 @@
  *  there takes no path.
  *
  *  All of them, in the build container, from the repo root (a non-zero exit
- *  from resize, interaction or typing is their assertion, so it is reported rather than
- *  aborting the loop):
+ *  from resize, interaction, typing or clip is their assertion, so it is
+ *  reported rather than aborting the loop):
  *
- *    for s in per-control resize docked scroll interaction typing; do \
+ *    for s in per-control resize docked scroll interaction typing clip; do \
  *      ./build_linux_x64_debug/examples/openglcore/ControlTest \
  *          --headless --scenario $s --shot-dir /tmp/shots/$s; \
  *      echo "$s exit=$?"; \
@@ -189,6 +204,9 @@
 #include <gweni/platforms/input/glfw3.h>
 #include <gweni/controls/canvas.h>
 #include <gweni/controls/scrollControl.h>
+#include <gweni/controls/windowControl.h>
+#include <gweni/controls/checkBox.h>
+#include <gweni/controls/label.h>
 #include <GLFW/glfw3.h>
 #include <gweni/utils/filesystem.h>
 #include "capture.h"
@@ -345,10 +363,11 @@ static void printUsage(std::ostream &out)
          "                     control has been destroyed; --control narrows it\n"
          "  --trace            log each scripted input on stderr\n"
          "  --scenario <name>  per-control | resize | docked | scroll | interaction\n"
-         "                     | typing; resize prints listing_settled,\n"
+         "                     | typing | clip; resize prints listing_settled,\n"
          "                     mirror_settled, shrink_settled and fresh_matches,\n"
          "                     interaction one yes/no per repaint check, typing\n"
-         "                     its keyboard checks; all three fail on a no\n"
+         "                     its keyboard checks, clip one yes/no per clipping\n"
+         "                     check; all four fail on a no\n"
          "  --dump-bounds [<path>]  print the laid-out control tree as text,\n"
          "                     private children and hidden state included\n"
          "  --resources <dir>  load the skin, fonts and textures from <dir> (relative\n"
@@ -1095,7 +1114,7 @@ static bool runSteps(Session &s, const std::vector<Step> &steps, const std::stri
 //-----------------------------------------------------------------------------
 // Scenarios
 //-----------------------------------------------------------------------------
-enum class Scenario { None, PerControl, Resize, Docked, Scroll, Interaction, Typing };
+enum class Scenario { None, PerControl, Resize, Docked, Scroll, Interaction, Typing, Clip };
 
 static bool parseScenario(const std::string &name, Scenario &scenario)
 {
@@ -1105,6 +1124,7 @@ static bool parseScenario(const std::string &name, Scenario &scenario)
     else if(name == "scroll") scenario=Scenario::Scroll;
     else if(name == "interaction") scenario=Scenario::Interaction;
     else if(name == "typing") scenario=Scenario::Typing;
+    else if(name == "clip") scenario=Scenario::Clip;
     else return false;
     return true;
 }
@@ -1376,10 +1396,9 @@ static bool runDockedScenario(Session &s, const std::string &shotDir)
     return ok;
 }
 
-// The demos that overflow their own bounds, idle and scrolled. Clipping is
-// stubbed in OpenGLCore (startClip/endClip only toggle a flag), so the scrolled
-// shots are expected to show content spilling outside the viewport - that is
-// the state these captures are here to record.
+// The demos that overflow their own bounds, idle and scrolled. Content is cut
+// at each clipping control's edges, so the scrolled shots show what is left
+// inside the viewports.
 static const char *const g_scrollDemos[]=
 {
     "ScrollControlDemo", "PageControlDemo", "ListBoxDemo",
@@ -1751,6 +1770,271 @@ static bool runInteractionScenario(Session &s, const std::string &shotDir, bool 
     checkTreeCollapse(s, shotDir, checks, ok);
 
     std::cout<<"interaction";
+    for(const auto &result : checks.results)
+        std::cout<<" "<<result.first<<"="<<(result.second ? "yes" : "no");
+    std::cout<<"\n";
+
+    passed=checks.allPassed();
+    return ok;
+}
+
+//-----------------------------------------------------------------------------
+// --scenario clip: children are cut at their clipping parent's edges
+//
+// Two scenes on the bare canvas, each compared against the frame with less in
+// it, so a pixel drawn past an edge (or left behind from an earlier frame)
+// shows as a difference. The comparisons are whole frames, or every pixel
+// outside one control's bounds.
+//-----------------------------------------------------------------------------
+
+static std::vector<uint8_t> framePixels(const Session &s)
+{
+    std::vector<uint8_t> frame;
+    readFramebufferRgba(s.pixels.x, s.pixels.y, frame);
+    return frame;
+}
+
+// The pixels of two frames that differ outside a control's bounds (snapped to
+// device pixels as the renderer snaps them).
+static size_t differencesOutside(const Session &s, const std::vector<uint8_t> &a,
+    const std::vector<uint8_t> &b, gweni::controls::Base *control)
+{
+    const gweni::Point origin=control->localPosToCanvas();
+    const gweni::Point topLeft=devicePixels(origin, s.scale);
+    const gweni::Point bottomRight=devicePixels(origin+control->getSize(), s.scale);
+
+    size_t count=0;
+    for(int y=0; y<s.pixels.y; ++y)
+    {
+        for(int x=0; x<s.pixels.x; ++x)
+        {
+            if(x >= topLeft.x && x < bottomRight.x && y >= topLeft.y && y < bottomRight.y)
+                continue;
+            const size_t at=(static_cast<size_t>(y)*s.pixels.x+x)*4;
+            if(std::memcmp(&a[at], &b[at], 4) != 0)
+                ++count;
+        }
+    }
+    return count;
+}
+
+static void countPending(gweni::controls::Base *control, size_t &count)
+{
+    if(control->getStateChange() != gweni::controls::StateChange_Nothing)
+        ++count;
+    for(auto &&child : control->getActualChildren())
+        countPending(child, count);
+}
+
+// One frame whose update phase is inspected before it renders: how many
+// controls have a change pending, in the whole tree and under `root`.
+static void renderInspectedFrame(Session &s, gweni::controls::Base *root,
+    size_t &pending, size_t &pendingUnderRoot)
+{
+    gweni::controls::resetChangeStats();
+    s.canvas->updateCanvas();
+
+    pending=0;
+    pendingUnderRoot=0;
+    countPending(s.canvas, pending);
+    countPending(root, pendingUnderRoot);
+
+    glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
+    s.canvas->renderCanvas();
+
+    if(s.stats)
+        printFrameStats(s.frame, s.label, gweni::controls::getChangeStats(),
+            s.renderer->getFrameStats(), s.canvas->getLayoutStats());
+    checkOnePass(s, std::to_string(s.frame));
+    ++s.frame;
+}
+
+// A frame with no input once a step has settled: nothing changes, nothing is
+// uploaded (the clip boxes included).
+static void checkSteady(Session &s, InteractionChecks &checks, const std::string &name)
+{
+    renderFrames(s, 1);
+    const gweni::controls::ChangeStats changes=gweni::controls::getChangeStats();
+    const gweni::renderer::OpenGLCore::FrameStats gpu=s.renderer->getFrameStats();
+
+    checks.check(name, changes.controls == 0 && gpu.uploadBytes == 0
+        && gpu.primitiveSlotsWritten == 0 && gpu.textSlotsWritten == 0,
+        "a settled frame had controls_changed="+std::to_string(changes.controls)
+        +" upload_bytes="+std::to_string(gpu.uploadBytes)
+        +" prim_slots_written="+std::to_string(gpu.primitiveSlotsWritten)
+        +" text_slots_written="+std::to_string(gpu.textSlotsWritten));
+}
+
+// Where the scene puts a control, kept by layout: a dock-None child is otherwise
+// aligned to its parent's top-left, and a size flag other than Fixed lets its
+// preferred size win.
+static void place(gweni::controls::Base *control, int x, int y, int w, int h)
+{
+    control->setAlignment(gweni::Alignment::Absolute);
+    control->setSizeFlags({gweni::SizeFlag::Fixed, gweni::SizeFlag::Fixed});
+    control->setBounds(x, y, w, h);
+}
+
+// The same at the control's preferred size.
+static void place(gweni::controls::Base *control, int x, int y)
+{
+    control->setAlignment(gweni::Alignment::Absolute);
+    control->setPos(x, y);
+}
+
+static std::vector<uint8_t> settledFrame(Session &s, const std::string &shotDir,
+    const std::string &name, bool &ok)
+{
+    renderFrames(s, s.frames);
+    if(!shoot(s, shotDir+"/clip-"+name+".png"))
+        ok=false;
+    return framePixels(s);
+}
+
+// (1) A ScrollControl with no scroll bars, holding content bigger than itself
+// that runs past its right and bottom edges: a flat fill, a Button (rounded
+// rect and text), a checked CheckBox (icon) and a Label. Then (3) the content
+// is moved down below the ScrollControl, where it must leave nothing behind.
+static void checkScrollContent(Session &s, const std::string &shotDir,
+    const std::vector<uint8_t> &empty, InteractionChecks &checks, bool &ok)
+{
+    auto *scroll=s.canvas->newChild<gweni::controls::ScrollControl>();
+    scroll->setScroll(false, false);
+    place(scroll, 40, 40, 240, 160);
+
+    std::vector<gweni::controls::Base *> content;
+
+    auto *fill=scroll->newChild<gweni::TextDemoLightPanel>();
+    place(fill, 150, 90, 200, 140);
+    content.push_back(fill);
+
+    auto *button=scroll->newChild<gweni::controls::Button>();
+    button->setText("A Button wider than its ScrollControl");
+    place(button, 10, 10, 300, 40);
+    content.push_back(button);
+
+    auto *check=scroll->newChild<gweni::controls::CheckBox>();
+    check->setChecked(true);
+    place(check, 228, 64);
+    content.push_back(check);
+
+    auto *label=scroll->newChild<gweni::controls::Label>();
+    label->setText("A Label that runs on past the right edge");
+    place(label, 120, 100);
+    content.push_back(label);
+
+    const std::vector<uint8_t> inside=settledFrame(s, shotDir, "scroll", ok);
+    const size_t outside=differencesOutside(s, inside, empty, scroll);
+    checks.check("scroll_cut", outside == 0,
+        std::to_string(outside)+" pixels outside the ScrollControl differ from the empty canvas");
+    checks.check("scroll_drawn", inside != empty, "the ScrollControl's content drew nothing");
+    checkSteady(s, checks, "scroll_steady");
+
+    for(gweni::controls::Base *child : content)
+        child->setPos(child->getX(), child->getY()+200);
+
+    const std::vector<uint8_t> out=settledFrame(s, shotDir, "scroll-out", ok);
+    checks.check("scroll_out_gone", out == empty,
+        "content moved out of the ScrollControl still draws (or left a stale copy)");
+    checkSteady(s, checks, "scroll_out_steady");
+
+    dropControl(s, scroll);
+}
+
+// Where the mouse holds a window's title bar, from the window's top-left.
+static const gweni::Point g_titleGrip(40, 12);
+
+static void dragTitleTo(Session &s, gweni::controls::Base *parent, const gweni::Point &local)
+{
+    const gweni::Point at=parent->localPosToCanvas()+local+g_titleGrip;
+    moveMouse(s, at.x, at.y);
+}
+
+// (2) A Window in a parent smaller than the canvas, dragged by its title bar
+// partly past the parent's right and bottom edges, then its left and top ones,
+// then (3) right out of it, and back to where it started.
+static void checkWindowDrag(Session &s, const std::string &shotDir,
+    const std::vector<uint8_t> &empty, InteractionChecks &checks, bool &ok)
+{
+    auto *parent=s.canvas->newChild<gweni::TextDemoLightPanel>();
+    place(parent, 120, 90, 400, 300);
+    const std::vector<uint8_t> parentOnly=settledFrame(s, shotDir, "window-parent", ok);
+
+    const gweni::Point start(100, 80);
+    auto *window=parent->newChild<gweni::controls::WindowControl>();
+    window->setTitle("Clipped Window");
+    window->setClampMovement(false);
+    place(window, start.x, start.y, 200, 140);
+    // the textured skin draws no window frame (its renderer is registered as
+    // "Window", the control's type is "WindowControl"), so a Button fills the
+    // content area for the window to have a body
+    auto *button=window->newChild<gweni::controls::Button>();
+    button->setText("Inside the Window");
+    button->setDock(gweni::DockPosition::Center);
+
+    dragTitleTo(s, parent, start);
+    const std::vector<uint8_t> inside=settledFrame(s, shotDir, "window-inside", ok);
+    checks.check("window_drawn", inside != parentOnly, "the Window drew nothing");
+
+    mouseDown(s, s.mouse.x, s.mouse.y, true);
+    renderFrames(s, s.frames);
+
+    // one drag step, inspected: only the window's subtree may have changed
+    dragTitleTo(s, parent, start+gweni::Point(10, 10));
+    size_t pending=0, pendingInWindow=0;
+    renderInspectedFrame(s, window, pending, pendingInWindow);
+    std::cout<<"clip drag controls_changed="<<pending<<" in_window="<<pendingInWindow<<"\n";
+    checks.check("drag_only_window", pending > 0 && pending == pendingInWindow,
+        std::to_string(pending-pendingInWindow)+" of the "+std::to_string(pending)
+        +" controls changed by a drag step are outside the Window");
+
+    const struct { const char *name; gweni::Point local; } edges[]=
+    {
+        {"window-bottomright", gweni::Point(290, 220)},
+        {"window-topleft", gweni::Point(-70, -50)},
+    };
+    for(const auto &edge : edges)
+    {
+        dragTitleTo(s, parent, edge.local);
+        const std::vector<uint8_t> frame=settledFrame(s, shotDir, edge.name, ok);
+        const size_t outside=differencesOutside(s, frame, empty, parent);
+        checks.check(std::string(edge.name)+"_cut", outside == 0,
+            std::to_string(outside)+" pixels outside the parent differ from the empty canvas");
+        checks.check(std::string(edge.name)+"_drawn", frame != parentOnly,
+            "the Window drew nothing inside its parent");
+    }
+
+    dragTitleTo(s, parent, gweni::Point(420, 100));
+    const std::vector<uint8_t> out=settledFrame(s, shotDir, "window-out", ok);
+    checks.check("window_out_gone", out == parentOnly,
+        "a Window dragged out of its parent still draws (or left a stale copy)");
+    checkSteady(s, checks, "window_out_steady");
+
+    dragTitleTo(s, parent, start);
+    mouseUp(s, s.mouse.x, s.mouse.y);
+    const std::vector<uint8_t> back=settledFrame(s, shotDir, "window-back", ok);
+    checks.check("window_back", back == inside,
+        "the Window dragged back to where it started does not look as it did");
+    checkSteady(s, checks, "window_back_steady");
+
+    forgetMouse(s);
+    dropControl(s, parent);
+}
+
+static bool runClipScenario(Session &s, const std::string &shotDir, bool &passed)
+{
+    s.freezeClock=true;
+    s.label="clip";
+
+    InteractionChecks checks;
+    checks.scenario="clip";
+    bool ok=true;
+
+    const std::vector<uint8_t> empty=settledFrame(s, shotDir, "empty", ok);
+    checkScrollContent(s, shotDir, empty, checks, ok);
+    checkWindowDrag(s, shotDir, empty, checks, ok);
+
+    std::cout<<"clip";
     for(const auto &result : checks.results)
         std::cout<<" "<<result.first<<"="<<(result.second ? "yes" : "no");
     std::cout<<"\n";
@@ -2399,6 +2683,15 @@ int main(int argc, char *argv[])
             ok=runTypingScenario(session, shotDir, passed);
             if(ok && !passed)
                 ok=false;   // a step left the wrong text: a failing assertion
+            break;
+        }
+
+        case Scenario::Clip:
+        {
+            bool passed=false;
+            ok=runClipScenario(session, shotDir, passed);
+            if(ok && !passed)
+                ok=false;   // something drew past its parent: a failing assertion
             break;
         }
 
