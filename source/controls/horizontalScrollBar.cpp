@@ -26,9 +26,13 @@ GWENI_CONTROL_CONSTRUCTOR(HorizontalScrollBar)
 void HorizontalScrollBar::layout(skin::Base *skin)
 {
     ParentClass::layout(skin);
-    m_scrollButton[SCROLL_BUTTON_LEFT]->setWidth(getHeight());
+
+    // Everything below sets up children this pass lays out next.
+    PlacementScope placement;
+
+    // Docked, the buttons take their preferred width; one set here would be
+    // replaced by it.
     m_scrollButton[SCROLL_BUTTON_LEFT]->setDock(DockPosition::Left);
-    m_scrollButton[SCROLL_BUTTON_RIGHT]->setWidth(getHeight());
     m_scrollButton[SCROLL_BUTTON_RIGHT]->setDock(DockPosition::Right);
     m_bar->setHeight(getButtonSize());
     m_bar->setPadding(Padding(getButtonSize(), 0, getButtonSize(), 0));
@@ -40,9 +44,18 @@ void HorizontalScrollBar::layout(skin::Base *skin)
     m_bar->setWidth(barWidth);
     m_bar->setHidden(getWidth()-(getButtonSize()*2) <= barWidth);
 
-    // Based on our last scroll amount, produce a position for the bar
+    // Based on our last scroll amount, produce a position for the bar. Only
+    // the thumb moves: setScrolledAmount() would invalidate this bar and its
+    // ScrollControl, which is laying it out right now.
     if(!m_bar->isDepressed())
-        setScrolledAmount(getScrolledAmount(), true);
+        placeBar();
+}
+
+void HorizontalScrollBar::placeBar()
+{
+    const int newX=getButtonSize()
+        + (getScrolledAmount()*((getWidth()-m_bar->getWidth())-(getButtonSize()*2)));
+    m_bar->moveTo(newX, m_bar->getY());
 }
 
 void HorizontalScrollBar::nudgeLeft(event::Info)
@@ -110,10 +123,7 @@ bool HorizontalScrollBar::setScrolledAmount(float amount, bool forceUpdate)
         return false;
 
     if(forceUpdate)
-    {
-        int newX=getButtonSize()+(amount*((getWidth()-m_bar->getWidth())-(getButtonSize()*2)));
-        m_bar->moveTo(newX, m_bar->getY());
-    }
+        placeBar();
 
     return true;
 }

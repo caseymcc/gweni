@@ -70,3 +70,21 @@ render_layout=0|1`), and `ControlTest --require-one-pass` fails the run on any
 frame with `layout_passes>1` or `render_layout=1`, naming the control, the
 frame and the culprit on stderr. It works with `--control X`, any `--scenario`
 and `--check-teardown`.
+
+### Children whose X layout needs the parent's height
+
+The X pass runs before any height is known, so a control whose children's
+widths depend on its own height cannot lay them out in X. `ScrollControl` is
+one: whether its vertical bar shows depends on its height, and the bar takes
+width from the content. It leaves its subtree alone in the X pass and, at its
+Y arrange, once its own size, the content's preferred size and the bars' are
+all final, decides the bars in arithmetic, sizes the inner panel and the bars,
+and then lays its children out X and then Y. Its preferred size is its
+content's (inner panel plus margins), not counting the bars or the scroll
+position, so it does not depend on what an earlier frame showed.
+
+The inputs such a control writes into children it has not laid out yet
+(visibility, scroll range, bounds) go through `Base::PlacementScope`, so the
+invalidations they raise count as placement rather than as a re-dirty. Keep
+the scope to those writes: anything a control already laid out has read must
+still be reported.

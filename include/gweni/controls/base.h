@@ -648,6 +648,10 @@ public:
 protected:
     bool processLayout(skin::Base *skin, Dim dim);
     Size sizeOfChildren(skin::Base *skin, Dim dim);
+    //! The preferred width (Dim::X) or height (Dim::Y) this control's size
+    //! flags make of `contentSize`, the size its children ask for, padding
+    //! included. sizeOfChildren() ends with it.
+    int preferredFromContent(int contentSize, Dim dim) const;
 
     void arrangeHorizontal(skin::Base *skin);
     void arrangeVertical(skin::Base *skin);
@@ -665,6 +669,26 @@ protected:
     unsigned m_layoutPass=0;
 
     bool laidOutThisPass() const;
+    //! Records that the running pass has laid this control out; Base::arrange
+    //! does it at the start of the X pass, before layout().
+    void stampLayoutPass();
+    //! True while a canvas runs a layout pass.
+    static bool inLayoutPass();
+
+    //! While one is alive, the layout invalidations raised are placement, not
+    //! a re-dirty (see Base::invalidate): for a control handing the children
+    //! it is about to lay out, later in the same pass, their inputs (bounds,
+    //! visibility, a scroll range). Keep it to such writes: anything an
+    //! already laid out control read must still be reported.
+    struct PlacementScope
+    {
+        PlacementScope();
+        ~PlacementScope();
+        PlacementScope(const PlacementScope &)=delete;
+        PlacementScope &operator=(const PlacementScope &)=delete;
+    private:
+        bool m_outer;
+    };
 
     //
     // Drag + Drop

@@ -61,6 +61,9 @@ public:
     float calculateScrolledAmount() override;
     bool  setScrolledAmount(float amount, bool forceUpdate) override;
 
+protected:
+    void placeBar() override;
+
     bool isHorizontal() override
     {
         return true;

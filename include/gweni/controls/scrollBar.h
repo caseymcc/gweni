@@ -92,6 +92,11 @@ public:
 
 protected:
 
+    //! Moves the thumb to where the scrolled amount puts it, and nothing else:
+    //! no invalidation, no onBarMoved. layout() uses it, so laying the bar out
+    //! does not ask for another layout pass.
+    virtual void placeBar() {}
+
     internal::ScrollBarButton *m_scrollButton[2];
     internal::ScrollBarBar *m_bar;
 

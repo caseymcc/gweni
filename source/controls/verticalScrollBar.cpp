@@ -26,10 +26,14 @@ GWENI_CONTROL_CONSTRUCTOR(VerticalScrollBar)
 void VerticalScrollBar::layout(skin::Base *skin)
 {
     ParentClass::layout(skin);
+
+    // Everything below sets up children this pass lays out next.
+    PlacementScope placement;
+
+    // Docked, the buttons take their preferred height; a height set here
+    // would be replaced by it in the Y pass, after they were laid out.
     m_scrollButton[SCROLL_BUTTON_UP]->setDock(DockPosition::Top);
-    m_scrollButton[SCROLL_BUTTON_UP]->setHeight(getWidth());
     m_scrollButton[SCROLL_BUTTON_DOWN]->setDock(DockPosition::Bottom);
-    m_scrollButton[SCROLL_BUTTON_DOWN]->setHeight(getWidth());
     m_bar->setWidth(getButtonSize());
     // Add padding
     m_bar->setPadding(Padding(0, getButtonSize(), 0, getButtonSize()));
@@ -42,12 +46,18 @@ void VerticalScrollBar::layout(skin::Base *skin)
     m_bar->setHeight(barHeight);
     m_bar->setHidden(getHeight()-(getButtonSize()*2) <= barHeight);
 
-    if(hidden())
-        setScrolledAmount(0, true);
-
-    // Based on our last scroll amount, produce a position for the bar
+    // Based on our last scroll amount, produce a position for the bar. Only
+    // the thumb moves: setScrolledAmount() would invalidate this bar and its
+    // ScrollControl, which is laying it out right now.
     if(!m_bar->isDepressed())
-        setScrolledAmount(getScrolledAmount(), true);
+        placeBar();
+}
+
+void VerticalScrollBar::placeBar()
+{
+    const int newY=getButtonSize()
+        + getScrolledAmount()*(getHeight() - m_bar->getHeight() - getButtonSize()*2);
+    m_bar->moveTo(m_bar->getX(), newY);
 }
 
 void VerticalScrollBar::scrollToTop()
@@ -115,11 +125,7 @@ bool VerticalScrollBar::setScrolledAmount(float amount, bool forceUpdate)
         return false;
 
     if(forceUpdate)
-    {
-        const int newY=getButtonSize()
-            + amount  *(getHeight() - m_bar->getHeight() - getButtonSize()*2);
-        m_bar->moveTo(m_bar->getX(), newY);
-    }
+        placeBar();
 
     return true;
 }

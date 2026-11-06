@@ -62,7 +62,8 @@ add_executable(gweni_unit_tests
     unit/skinSwap.cpp
     unit/platformSleep.cpp
     unit/layoutPasses.cpp
-    unit/sliderNotches.cpp)
+    unit/sliderNotches.cpp
+    unit/scrollControl.cpp)
 gweni_set_warnings(gweni_unit_tests)
 target_link_libraries(gweni_unit_tests
     gweni

@@ -29,8 +29,10 @@ public:
     GWENI_CONTROL(ScrollControl, Base);
 
 public:
-    void layout(skin::Base *skin) override;
     void render(skin::Base *skin) override;
+
+    void calculateSize(skin::Base *skin, Dim dim) override;
+    void arrange(skin::Base *skin, Dim dim) override;
 
     virtual void setScroll(bool h, bool v);
     virtual void setAutoHideBars(bool should)
@@ -49,10 +51,15 @@ public:
     }
 
     void onChildBoundsChanged(gweni::Rect oldChildBounds, Base *child) override;
+    //! Asks for the scrollbars to be brought up to date with the content. The
+    //! work is done by the next layout pass (arrange()); during a pass this
+    //! does nothing, as the pass already does it.
     virtual void updateScrollBars();
 
-    virtual void setVerticalScrollRequired(bool req);
-    virtual void setHorizontalScrollRequired(bool req);
+    //! Shows (and enables) the bar when the content overflows that way, or
+    //! scrolls it back to the start, disables it and, with auto-hide, hides it.
+    virtual void setVerticalScrollRequired(bool required);
+    virtual void setHorizontalScrollRequired(bool required);
 
     virtual void setInnerSize(int w, int h);
 
@@ -72,6 +79,10 @@ protected:
 
     virtual bool contentsAreDocked();
 
+    //! Decides which bars show and sizes the inner panel and the bars for this
+    //! control's current size, before any of them is laid out. See arrange().
+    void placeContents();
+
     bool m_canScrollHorizontal;
     bool m_canScrollVertical;
 
@@ -79,6 +90,11 @@ protected:
 
     controls::BaseScrollBar *m_verticalScrollBar;
     controls::BaseScrollBar *m_horizontalScrollBar;
+
+    //! The vertical bar's width and the horizontal bar's height, as last
+    //! measured while shown. A hidden bar measures as nothing (its children are
+    //! hidden with it), and deciding whether to show it needs its size.
+    Size m_barSize=Size(15, 15);
 };
 
 }//namespace controls

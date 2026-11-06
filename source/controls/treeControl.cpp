@@ -44,6 +44,11 @@ GWENI_CONTROL_CONSTRUCTOR(TreeControl)
 
 void TreeControl::onChildBoundsChanged(gweni::Rect /*oldChildBounds*/, Base * /*child*/)
 {
+    // During a layout pass this is the pass docking m_scrollControl, which
+    // lays it out next.
+    if(inLayoutPass())
+        return;
+
     // TreeControl derives from TreeNode, so TreeNode::init (which creates child
     // controls) runs before TreeControl::init creates m_scrollControl. Guard
     // against the bounds-change callbacks that fire during that window.

@@ -206,17 +206,32 @@ bool g_placement=false;
 // control that asked, is looked at.
 bool g_propagating=false;
 
-struct PlacementScope
+}
+
+Base::PlacementScope::PlacementScope(): m_outer(g_placement)
 {
-    bool outer=g_placement;
-    PlacementScope() { g_placement=true; }
-    ~PlacementScope() { g_placement=outer; }
-};
+    g_placement=true;
+}
+
+Base::PlacementScope::~PlacementScope()
+{
+    g_placement=m_outer;
 }
 
 bool Base::laidOutThisPass() const
 {
     return Canvas::s_layingOut && m_layoutPass == Canvas::s_passSerial;
+}
+
+void Base::stampLayoutPass()
+{
+    if(Canvas::s_layingOut)
+        m_layoutPass=Canvas::s_passSerial;
+}
+
+bool Base::inLayoutPass()
+{
+    return Canvas::s_layingOut != nullptr;
 }
 
 // During a layout pass (Canvas::layoutPass) a layout invalidation either feeds
@@ -1353,24 +1368,7 @@ Size Base::sizeOfChildren(skin::Base *skin, Dim dim)
         width=std::max(width, dockWidth);
         width+=m_padding.left+m_padding.right;
 
-        switch(m_sizeFlags.horizontal)
-        {
-        case SizeFlag::Fixed:
-            preferredSize.width=m_bounds.w;
-            break;
-        case SizeFlag::Shrink:
-            preferredSize.width=std::min(width, m_maximumSize.width);
-            break;
-        case SizeFlag::Expand:
-            preferredSize.width=std::max(width, m_minimumSize.width);
-            break;
-        case SizeFlag::Elastic:
-            preferredSize.width=width;
-            break;
-        case SizeFlag::Bloat:
-            preferredSize.width=std::max(width, m_minimumSize.width);
-            break;
-        }
+        preferredSize.width=preferredFromContent(width, Dim::X);
     }
     else
     {
@@ -1420,27 +1418,35 @@ Size Base::sizeOfChildren(skin::Base *skin, Dim dim)
         height=std::max(height, dockHeight);
         height+=m_padding.top+m_padding.bottom;
 
-        switch(m_sizeFlags.vertical)
-        {
-        case SizeFlag::Fixed:
-            preferredSize.height=m_bounds.h;
-            break;
-        case SizeFlag::Shrink:
-            preferredSize.height=std::min(height, m_maximumSize.height);
-            break;
-        case SizeFlag::Expand:
-            preferredSize.height=std::max(height, m_minimumSize.height);
-            break;
-        case SizeFlag::Elastic:
-            preferredSize.height=height;
-            break;
-        case SizeFlag::Bloat:
-            preferredSize.height=std::max(height, m_minimumSize.height);
-            break;
-        }
+        preferredSize.height=preferredFromContent(height, Dim::Y);
     }
 
     return preferredSize;
+}
+
+int Base::preferredFromContent(int contentSize, Dim dim) const
+{
+    const bool x=(dim == Dim::X);
+    const SizeFlag flag=x?m_sizeFlags.horizontal:m_sizeFlags.vertical;
+    const int bounds=x?m_bounds.w:m_bounds.h;
+    const int minimum=x?m_minimumSize.width:m_minimumSize.height;
+    const int maximum=x?m_maximumSize.width:m_maximumSize.height;
+
+    switch(flag)
+    {
+    case SizeFlag::Fixed:
+        return bounds;
+    case SizeFlag::Shrink:
+        return std::min(contentSize, maximum);
+    case SizeFlag::Expand:
+        return std::max(contentSize, minimum);
+    case SizeFlag::Elastic:
+        return contentSize;
+    case SizeFlag::Bloat:
+        return std::max(contentSize, minimum);
+    }
+
+    return contentSize;
 }
 
 void Base::calculateSize(skin::Base *skin, Dim dim)
@@ -1498,8 +1504,8 @@ void Base::arrange(skin::Base *skin, Dim dim)
 {
     // Stamped before layout(), so what it does to this control counts as
     // done after this control was laid out.
-    if(dim == Dim::X && Canvas::s_layingOut)
-        m_layoutPass=Canvas::s_passSerial;
+    if(dim == Dim::X)
+        stampLayoutPass();
 
     if(needsLayout())
     {

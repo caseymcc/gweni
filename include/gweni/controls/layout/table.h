@@ -300,7 +300,9 @@ public:
             }
         }
 
-        invalidateParent();
+        // No invalidateParent() here: the ListBox this sits in decides its
+        // scrollbars from the rows' preferred sizes before laying this table
+        // out, and asking it to lay out again from here re-dirtied every pass.
     }
 
     void postLayout(skin::Base * /*skin*/) override
