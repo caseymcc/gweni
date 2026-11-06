@@ -13,6 +13,7 @@
 #include "gweni/controls/listBox.h"
 #include "gweni/controls/slider.h"
 #include "gweni/controls/colorControls.h"
+#include "gweni/controls/colorPicker.h"
 
 #include <algorithm>
 
@@ -1064,6 +1065,45 @@ void ColorSlider::update(renderer::Base *renderer, controls::Base *baseControl)
 
 
 ///////////////////////////////////////////////////////////////////////////
+//ColorDisplay
+void ColorDisplay::update(renderer::Base *renderer, controls::Base *baseControl)
+{
+    if(m_primitives.empty())
+        return;
+
+    controls::internal::ColorDisplay *display=static_cast<controls::internal::ColorDisplay *>(baseControl);
+    const gweni::Color color=display->getColor();
+    const bool checker=display->getDrawCheckers() && color.a < 255;
+    const bool visible=baseControl->visible();
+    // the two draws write styles 4 and 7 into the same slot, so a switch
+    // between them changes the slot's style; showPrimitive below must give
+    // back the one drawn, not always 4
+    const int style=checker?7:4;
+
+    if(visible)
+    {
+        const tokyonight::Surface &swatch=tokyonight::ColorSwatch;
+        const gweni::Rect r=baseControl->getRenderBounds();
+
+        if(checker)
+        {
+            const tokyonight::Surface &cells=tokyonight::ColorChecker;
+
+            renderer->drawCheckerRect(m_primitives[0], r, baseControl->getZIndex(), color,
+                cells.top, cells.bottom, swatch.radius, swatch.borderWidth, swatch.border);
+        }
+        else
+            renderer->drawRoundedRect(m_primitives[0], r, swatch.radius, swatch.borderWidth,
+                color, color, swatch.border, baseControl->getZIndex());
+    }
+
+    const unsigned int sc=baseControl->getStateChange();
+    if((sc&controls::StateChange_Visibility) || (sc&controls::StateChange_Created))
+        renderer->showPrimitive(visible?style:0, m_primitives[0]);
+}
+
+
+///////////////////////////////////////////////////////////////////////////
 //StatusBar
 size_t StatusBar::Background;
 size_t StatusBar::Selection;
@@ -1464,6 +1504,7 @@ template class ControlRegister<Slider>;
 template class ControlRegister<SliderBar>;
 template class ControlRegister<ColorLerpBox>;
 template class ControlRegister<ColorSlider>;
+template class ControlRegister<ColorDisplay>;
 template class ControlRegister<StatusBar>;
 // NOTE: TabItem<_Type> is itself a class template (TabItem<TabTop>, <TabBottom>,
 // <TabLeft>, <TabRight>); register those specializations here if/when their

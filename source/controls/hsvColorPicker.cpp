@@ -84,6 +84,11 @@ GWENI_CONTROL_CONSTRUCTOR(HSVColorPicker)
         numeric->setSelectAllOnFocus(true);
         numeric->onTextChangedCaller.add(this, &HSVColorPicker::onNumericTyped);
     }
+
+    // the swatches and the boxes start at the box's selection, not at
+    // ColorDisplay's default red
+    m_before->setColor(getColor());
+    updateControls(getColor());
 }
 
 void HSVColorPicker::onNumericTyped(event::Info info)

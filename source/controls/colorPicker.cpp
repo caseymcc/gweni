@@ -18,6 +18,79 @@ namespace controls
 
 static const int gc_pickChannelHeight=40;     // As small as boxes will go without clipping.
 
+namespace internal
+{
+
+void ColorDisplay::setColor(gweni::Color color)
+{
+    if(color == m_color)
+        return;
+
+    m_color=color;
+    redraw();
+}
+
+void ColorDisplay::setRed(int red)
+{
+    gweni::Color color=m_color;
+
+    color.r=red;
+    setColor(color);
+}
+
+void ColorDisplay::setGreen(int green)
+{
+    gweni::Color color=m_color;
+
+    color.g=green;
+    setColor(color);
+}
+
+void ColorDisplay::setBlue(int blue)
+{
+    gweni::Color color=m_color;
+
+    color.b=blue;
+    setColor(color);
+}
+
+void ColorDisplay::setAlpha(int alpha)
+{
+    gweni::Color color=m_color;
+
+    color.a=alpha;
+    setColor(color);
+}
+
+void ColorDisplay::setDrawCheckers(bool should)
+{
+    if(should == m_drawCheckers)
+        return;
+
+    m_drawCheckers=should;
+    redraw();
+}
+
+}//namespace internal
+
+namespace
+{
+
+// The channel a name such as "Red" or "RedBox" refers to, set to value.
+void setChannel(gweni::Color &color, const gweni::String &name, int value)
+{
+    if(name.find("Red") != gweni::String::npos)
+        color.r=value;
+    else if(name.find("Green") != gweni::String::npos)
+        color.g=value;
+    else if(name.find("Blue") != gweni::String::npos)
+        color.b=value;
+    else if(name.find("Alpha") != gweni::String::npos)
+        color.a=value;
+}
+
+}
+
 
 GWENI_CONTROL_CONSTRUCTOR(ColorPicker)
 {
@@ -75,26 +148,52 @@ void ColorPicker::onNumericTyped(event::Info info)
         return;
 
     const int textValue=clamp(atoi(box->getText().c_str()), 0, 255);
+    gweni::Color color=m_color;
 
-    if(box->getName().find("Red") != gweni::String::npos)
-        setRed(textValue);
-
-    if(box->getName().find("Green") != gweni::String::npos)
-        setGreen(textValue);
-
-    if(box->getName().find("Blue") != gweni::String::npos)
-        setBlue(textValue);
-
-    if(box->getName().find("Alpha") != gweni::String::npos)
-        setAlpha(textValue);
-
-    updateControls();
+    setChannel(color, box->getName(), textValue);
+    setColor(color);
 }
 
 void ColorPicker::setColor(gweni::Color color)
 {
     m_color=color;
     updateControls();
+}
+
+void ColorPicker::setRed(int red)
+{
+    gweni::Color color=m_color;
+
+    color.r=red;
+    if(!(color == m_color))
+        setColor(color);
+}
+
+void ColorPicker::setGreen(int green)
+{
+    gweni::Color color=m_color;
+
+    color.g=green;
+    if(!(color == m_color))
+        setColor(color);
+}
+
+void ColorPicker::setBlue(int blue)
+{
+    gweni::Color color=m_color;
+
+    color.b=blue;
+    if(!(color == m_color))
+        setColor(color);
+}
+
+void ColorPicker::setAlpha(int alpha)
+{
+    gweni::Color color=m_color;
+
+    color.a=alpha;
+    if(!(color == m_color))
+        setColor(color);
 }
 
 void ColorPicker::createControls()
@@ -161,11 +260,12 @@ void ColorPicker::onSlidersMoved(event::Info info)
       *"AlphaSlider", true ) );
      */
     HorizontalSlider *slider=gweni_cast<HorizontalSlider>(info.controlCaller);
+    gweni::Color color=m_color;
 
     if(slider)
-        setColorByName(getColorFromName(slider->getName()), slider->getFloatValue());
+        setChannel(color, slider->getName(), slider->getFloatValue());
 
-    updateControls();
+    setColor(color);
     // setColor( gweni::Color( redSlider->getValue(), greenSlider->getValue(),
     // blueSlider->getValue(), alphaSlider->getValue() ) );
 }

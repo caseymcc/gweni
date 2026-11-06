@@ -167,6 +167,7 @@ add_executable(gweni_unit_tests
     unit/clipRegion.cpp
     unit/sliderNotches.cpp
     unit/colorControls.cpp
+    unit/colorDisplay.cpp
     unit/scrollControl.cpp
     unit/resourcePaths.cpp
     unit/requestedSize.cpp

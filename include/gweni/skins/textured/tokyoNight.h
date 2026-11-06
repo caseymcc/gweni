@@ -134,6 +134,11 @@ inline Surface CheckOn        { Blue,                  DarkBlue,              Bl
 // only border/radius are read) and the opaque cursor/selection markers
 inline Surface ColorField     { Bg,                    Bg,                    Line,  RadiusSm, BorderW };
 inline Surface ColorMarker    { Color(0xff,0xff,0xff), Color(0xff,0xff,0xff), BgDark, 2.0f,    BorderW };
+// The swatch (internal::ColorDisplay): its fill is the swatch's colour, so only
+// border/radius are read. A translucent colour is shown over a checker of
+// ColorChecker's top (light) and bottom (dark) cells; only those two are read.
+inline Surface ColorSwatch    { Bg,                    Bg,                    Line,  2.0f,     BorderW };
+inline Surface ColorChecker   { Color(0xc8,0xc8,0xc8), Color(0x7a,0x7a,0x7a), Line,  0.0f,     0.0f };
 
 // Generic transparent (draw nothing visible but keep a slot)
 inline Surface None           { Color(0,0,0,0),        Color(0,0,0,0),        Color(0,0,0,0), 0.0f, 0.0f };
@@ -156,7 +161,7 @@ inline std::unordered_map<std::string, Surface*>& surfaceRegistry()
         {"SliderTrack",&SliderTrack},{"SliderNotch",&SliderNotch},{"SliderThumb",&SliderThumb},
         {"SliderThumbHover",&SliderThumbHover},{"SliderThumbDown",&SliderThumbDown},{"SliderThumbDisabled",&SliderThumbDisabled},
         {"CheckOff",&CheckOff},{"CheckOn",&CheckOn},
-        {"ColorField",&ColorField},{"ColorMarker",&ColorMarker},
+        {"ColorField",&ColorField},{"ColorMarker",&ColorMarker},{"ColorSwatch",&ColorSwatch},{"ColorChecker",&ColorChecker},
     };
     return m;
 }

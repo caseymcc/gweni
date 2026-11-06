@@ -1343,38 +1343,6 @@ void TexturedSkin::setThemeColors()
 //    }
 //}
 //
-//void drawColorDisplay(controls::Base *control, State state, gweni::Color color) override
-//{
-//    PrimitiveIds &primitiveIds=control->getPrimitiveIds();
-//    if(primitiveIds.size() < 8)
-//        enlargePrimitiveIds(control, primitiveIds, 8);
-//
-//    if(state == State::Generate)
-//    {
-//    }
-//    else if(state == State::Update)
-//    {
-//        const gweni::Rect &rect=control->getRenderBounds();
-//
-//        if(color.a != 255)
-//        {
-//            getRenderer()->setDrawColor(gweni::Color(255, 255, 255, 255));
-//            getRenderer()->drawFilledRect(primitiveIds[0], rect);
-//            getRenderer()->setDrawColor(gweni::Color(128, 128, 128, 128));
-//            getRenderer()->drawFilledRect(primitiveIds[1], gweni::Rect(0, 0, rect.w/2, rect.h/2));
-//            getRenderer()->drawFilledRect(primitiveIds[2], gweni::Rect(rect.w/2, rect.h/2, rect.w/2, rect.h/2));
-//        }
-//
-//        getRenderer()->setDrawColor(color);
-//        getRenderer()->drawFilledRect(primitiveIds[3], rect);
-//        getRenderer()->setDrawColor(gweni::Color(0, 0, 0, 255));
-//        getRenderer()->drawLinedRect(&primitiveIds[4], rect);
-//    }
-//    else if(state == State::Remove)
-//    {
-//    }
-//}
-//
 //void drawModalControl(controls::Base *control, State state) override
 //{
 //    if(state == State::Generate)

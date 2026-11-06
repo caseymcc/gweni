@@ -688,6 +688,22 @@ public:
     static constexpr int MarkerHeight=6;
 };
 
+// controls::internal::ColorDisplay, the colour swatch: one primitive in the
+// ColorSwatch surface's radius and border, a flat fill of the colour, or (alpha
+// below 255, checkers on) the colour over a ColorChecker checkerboard. Both are
+// opaque, so the swatch does not depend on what is drawn behind it.
+class ColorDisplay:public textured::ControlRegister<ColorDisplay>
+{
+public:
+    static void staticInit(TexturedSkin *skin) { m_staticInit=true; }
+
+    size_t requiredPrimitives() override { return 1; }
+
+    void update(renderer::Base *renderer, controls::Base *baseControl) override;
+
+    inline static const std::string_view name="ColorDisplay";
+};
+
 class StatusBar:public textured::ControlRegister<StatusBar>
 {
 public:

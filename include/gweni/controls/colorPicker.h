@@ -26,21 +26,27 @@ public:
 
     GWENI_CONTROL_INLINE(ColorDisplay, controls::Base)
     {
+        // a swatch is the size it is given, and its parent sizes to it
+        setSizeFlags({SizeFlag::Fixed, SizeFlag::Fixed});
         setSize(32, 32);
         m_color=Color(255, 0, 0, 255);
         m_drawCheckers=true;
     }
 
 public:
-    virtual void setColor(gweni::Color color) { m_color=color; }
+    // Each setter repaints the swatch only when the value changes.
+    virtual void setColor(gweni::Color color);
     virtual gweni::Color getColor() { return m_color; }
 
-    virtual void setRed(int red) { m_color.r=red; }
-    virtual void setGreen(int green) { m_color.g=green; }
-    virtual void setBlue(int blue) { m_color.b=blue; }
-    virtual void setAlpha(int alpha) { m_color.a=alpha; }
+    virtual void setRed(int red);
+    virtual void setGreen(int green);
+    virtual void setBlue(int blue);
+    virtual void setAlpha(int alpha);
 
-    virtual void setDrawCheckers(bool should) { m_drawCheckers=should; }
+    //! Show a translucent colour over a checkerboard; when false the swatch is
+    //! always a plain fill.
+    virtual void setDrawCheckers(bool should);
+    bool getDrawCheckers() const { return m_drawCheckers; }
 
 protected:
 
@@ -73,10 +79,12 @@ public:
     /// \sect{Set by value}
     ///     Set colour channel value. Range: 0-255.
     //
-    virtual void setRed(int red) { m_color.r=red; }
-    virtual void setGreen(int green) { m_color.g=green; }
-    virtual void setBlue(int blue) { m_color.b=blue; }
-    virtual void setAlpha(int alpha) { m_color.a=alpha; }
+    ///     Each goes through setColor() when the value changes, so the rows
+    ///     and the Result swatch follow it.
+    virtual void setRed(int red);
+    virtual void setGreen(int green);
+    virtual void setBlue(int blue);
+    virtual void setAlpha(int alpha);
     // \}
 
     event::Caller onColorChanged;
