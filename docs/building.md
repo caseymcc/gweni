@@ -42,6 +42,10 @@ surfaceless-EGL path. On a shared host, hold the GPU lock around `ctest`;
 - `controltest_resize_each`, `controltest_one_pass_each`: the same round trip
   for every other control in `ControlTest --list`, and the plain run of every
   control in one layout pass per frame (`tests/eachControl.cmake`).
+- `docs_samples`: `tools/capture_samples.sh --check`. The README samples in
+  `docs/images/` must match a fresh capture byte for byte, so a change that
+  alters one regenerates them (`./tools/capture_samples.sh`) in the same
+  commit. Only meaningful inside the build container.
 - `controltest_interaction`: `ControlTest --scenario interaction`. Hover, press,
   disabled and a focus hand-off repaint the control, a hover touches only a few
   slots, an idle frame changes nothing, and collapsing a tree node moves the

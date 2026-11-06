@@ -54,6 +54,18 @@ if(TARGET ControlTest)
         LABELS gpu
         TIMEOUT 600)
 
+    # the README samples in docs/images/, byte-identical to a fresh capture
+    # (tools/capture_samples.sh --check; regenerate them in the same commit)
+    if(TARGET OpenGLCore)
+        add_test(NAME docs_samples
+            COMMAND bash ${GWENI_SOURCE_DIR}/tools/capture_samples.sh
+                --check --bin-dir $<TARGET_FILE_DIR:ControlTest>
+            WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
+        set_tests_properties(docs_samples PROPERTIES
+            LABELS gpu
+            TIMEOUT 300)
+    endif()
+
     # build, render and destroy every demo; exits non-zero unless the canvas
     # renders as the empty canvas it started as, and every frame of it takes
     # one layout pass
