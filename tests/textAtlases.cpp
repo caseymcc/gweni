@@ -10,6 +10,9 @@
  *  the same run drawn alone in a frame of its own: byte for byte, since the two
  *  runs do not overlap and each glyph goes through the same draw either way.
  *
+ *  Each case skips itself when GWENI_SDF_TEXT_MIN puts both sizes in the SDF
+ *  range, where they share the face's one atlas.
+ *
  *  GWENI_TEXT_ATLASES_PNG=<path> writes the two-font frame of the first case
  *  there, to look at.
  */
@@ -163,6 +166,18 @@ void clearGlErrors()
     {}
 }
 
+//! Whether the loaded large font and the shared OpenSans 11 have atlases of their own.
+bool twoAtlases(const Font &large)
+{
+    OpenGLCore &renderer=gweni::test::gpuRenderer();
+
+    if(renderer.getFontAtlasName(large) != renderer.getFontAtlasName(gweni::test::openSans()))
+        return true;
+    // not freed: that would free the shared font's atlas with it
+    MESSAGE("skipped: GWENI_SDF_TEXT_MIN draws both sizes from the face's one SDF atlas");
+    return false;
+}
+
 }//namespace
 
 TEST_CASE("Text atlases: two fonts in one frame each draw as they do alone")
@@ -171,6 +186,8 @@ TEST_CASE("Text atlases: two fonts in one frame each draw as they do alone")
     const Font large=largeFont();
 
     REQUIRE((renderer.loadFont(large) == Font::Status::Loaded));
+    if(!twoAtlases(large))
+        return;
 
     const std::vector<uint8_t> smallAlone=drawAlone(smallDraw());
     const std::vector<uint8_t> largeAlone=drawAlone(largeDraw());
@@ -231,6 +248,8 @@ TEST_CASE("Text atlases: freeing a font with a run still allocated leaves the ot
     const Font large=largeFont();
 
     REQUIRE((renderer.loadFont(large) == Font::Status::Loaded));
+    if(!twoAtlases(large))
+        return;
 
     const std::vector<uint8_t> smallAlone=drawAlone(smallDraw());
     const std::vector<uint8_t> largeAlone=drawAlone(largeDraw());
@@ -246,9 +265,14 @@ TEST_CASE("Text atlases: freeing a font with a run still allocated leaves the ot
     CHECK(differingPixels(smallBand(both), smallBand(smallAlone)) == 0);
     CHECK(differingPixels(largeBand(both), largeBand(largeAlone)) == 0);
 
-    // the large run keeps its slots, and its atlas is gone
+    // A coverage font: the large run keeps its slots, and its atlas is gone. An SDF
+    // one (24 px is at or above the default threshold): the atlas is the face's,
+    // shared by every size, so it stays while the run uses it, and the run draws on.
+    const bool kept=(renderer.getTextMode(large) == gweni::renderer::GLTextMode::Sdf);
+
     clearGlErrors();
     renderer.freeFont(large);
+    CHECK((renderer.getFontAtlasName(large) != 0) == kept);
 
     SUBCASE("a frame that renders only the other run")
     {
@@ -256,9 +280,17 @@ TEST_CASE("Text atlases: freeing a font with a run still allocated leaves the ot
 
         CHECK(glGetError() == GL_NO_ERROR);
         CHECK(differingPixels(smallBand(after), smallBand(smallAlone)) == 0);
-        // nothing is drawn with the freed atlas, or with whatever took its name
-        CHECK(drawnPixels(largeBand(after)) == 0);
-        CHECK(renderer.getFrameStats().textDraws == 1);
+        if(kept)
+        {
+            CHECK(differingPixels(largeBand(after), largeBand(largeAlone)) == 0);
+            CHECK(renderer.getFrameStats().textDraws == 2);
+        }
+        else
+        {
+            // nothing is drawn with the freed atlas, or with whatever took its name
+            CHECK(drawnPixels(largeBand(after)) == 0);
+            CHECK(renderer.getFrameStats().textDraws == 1);
+        }
     }
 
     SUBCASE("a frame that renders nothing")
@@ -271,11 +303,15 @@ TEST_CASE("Text atlases: freeing a font with a run still allocated leaves the ot
 
         CHECK(glGetError() == GL_NO_ERROR);
         CHECK(differingPixels(smallBand(after), smallBand(smallAlone)) == 0);
-        CHECK(drawnPixels(largeBand(after)) == 0);
+        if(kept)
+            CHECK(differingPixels(largeBand(after), largeBand(largeAlone)) == 0);
+        else
+            CHECK(drawnPixels(largeBand(after)) == 0);
     }
 
-    // the same call on the orphaned run loads the font again and lays the run out
-    // in the new atlas, rather than keeping glyphs that pointed into the old one
+    // the same call on the orphaned run (a coverage font's) loads the font again and
+    // lays the run out in the new atlas, rather than keeping glyphs that pointed into
+    // the old one
     const std::vector<uint8_t> again=drawFrame({ smallId, largeId }, { smallDraw(), largeDraw() });
 
     CHECK(glGetError() == GL_NO_ERROR);
@@ -295,6 +331,8 @@ TEST_CASE("Text atlases: a steady second frame with two fonts uploads no text")
     const Font large=largeFont();
 
     REQUIRE((renderer.loadFont(large) == Font::Status::Loaded));
+    if(!twoAtlases(large))
+        return;
 
     size_t smallId=0;
     size_t largeId=0;

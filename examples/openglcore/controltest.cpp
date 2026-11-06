@@ -165,14 +165,19 @@
  *                 and a settled frame changes and uploads nothing. One line
  *                   clip scroll_cut=yes|no ... window_back_steady=yes|no
  *                 reports the checks. Exits non-zero if any check is no.
- *    text-size    a Label in OpenSans 24 px beside an 11 px one, then its font
- *                 changed to 36 px at runtime (text-size-24.png, text-size-36.png).
- *                 Both sizes are drawn from the face's one SDF atlas, so the
+ *    text-size    a Label in OpenSans 24 px beside an 11 px one and a 48 px one,
+ *                 then its font changed to 36 px at runtime through
+ *                 Label::setFont(face, size, bold), then the Label deleted
+ *                 (text-size-24.png, text-size-36.png, text-size-deleted.png).
+ *                 All three sizes are drawn from the face's one SDF atlas, so the
  *                 change has to upload nothing to a font atlas and write no more
  *                 glyph slots in a frame than the Label's run holds; the Label
- *                 has to grow and repaint, and a frame after it write nothing:
+ *                 has to grow and repaint, and a frame after it write nothing.
+ *                 The 48 px Label has to draw the same pixels after the change
+ *                 and after the deletion, both of which free the Label's font,
+ *                 and the atlas has to keep its GL name:
  *                   text-size from=24 to=36 sdf=yes atlas_upload_calls=N
- *                          text_slots_written=N run_glyphs=N ...
+ *                          text_slots_written=N run_glyphs=N ... same_atlas=yes
  *                 Exits non-zero if any of it fails, or if GWENI_SDF_TEXT_MIN puts
  *                 either size below the SDF threshold.
  *
@@ -1502,15 +1507,20 @@ static bool runScrollScenario(Session &s, const std::string &shotDir)
 
 static const int g_textSizeFrom=24;
 static const int g_textSizeTo=36;
+static const int g_textSizeKept=48;
+
+static std::vector<uint8_t> regionPixels(const Session &s, gweni::controls::Base *control);
+
+static gweni::Font openSansAt(int size)
+{
+    gweni::Font font;
+    font.facename="OpenSans";
+    font.size=static_cast<float>(size);
+    return font;
+}
 
 static bool runTextSizeScenario(Session &s, const std::string &shotDir, bool &passed)
 {
-    // a Label keeps a pointer to its font, so both outlive it
-    gweni::Font from, to;
-    from.facename=to.facename="OpenSans";
-    from.size=static_cast<float>(g_textSizeFrom);
-    to.size=static_cast<float>(g_textSizeTo);
-
     const char *const sample="Sphinx gyp 0123456789 &?!";
 
     forgetMouse(s);
@@ -1525,26 +1535,41 @@ static bool runTextSizeScenario(Session &s, const std::string &shotDir, bool &pa
     other->sizeToContents();
     other->setPos(20, 8);
 
+    // Sizes are set through Label::setFont(face, size, bold), which frees the
+    // Label's previous font: each size of the face shares the one SDF atlas, so
+    // that must leave the other sizes drawing.
     gweni::controls::Label *label=s.canvas->newChild<gweni::controls::Label>();
     label->setAlignment(gweni::Alignment::Absolute);
-    label->setFont(from);
+    label->setFont("OpenSans", g_textSizeFrom, false);
     label->setText(sample);
     label->sizeToContents();
     label->setPos(20, 30);
+
+    // another size of the same face below it, which neither the change nor the
+    // changed Label's deletion may touch
+    gweni::controls::Label *kept=s.canvas->newChild<gweni::controls::Label>();
+    kept->setAlignment(gweni::Alignment::Absolute);
+    kept->setFont("OpenSans", g_textSizeKept, false);
+    kept->setText(sample);
+    kept->sizeToContents();
+    kept->setPos(20, 100);
 
     // the extra frame leaves every glyph the first frames needed on the GPU
     renderFrames(s, s.frames+1);
 
     const std::string fromShot=shotDir+"/text-size-"+std::to_string(g_textSizeFrom)+".png";
     const std::string toShot=shotDir+"/text-size-"+std::to_string(g_textSizeTo)+".png";
+    const std::string deletedShot=shotDir+"/text-size-deleted.png";
     std::vector<uint8_t> fromPixels, toPixels;
 
     bool ok=shoot(s, fromShot);
     readFramebufferRgba(s.size.x, s.size.y, fromPixels);
 
     const gweni::Point fromSize=label->getSize();
+    const std::vector<uint8_t> keptPixels=regionPixels(s, kept);
+    const unsigned int atlas=s.renderer->getFontAtlasName(openSansAt(g_textSizeKept));
 
-    label->setFont(to);
+    label->setFont("OpenSans", g_textSizeTo, false);
     label->sizeToContents();
 
     // The change and however many frames it takes to settle: the most glyph slots
@@ -1573,18 +1598,36 @@ static bool runTextSizeScenario(Session &s, const std::string &shotDir, bool &pa
     readFramebufferRgba(s.size.x, s.size.y, toPixels);
 
     const gweni::Point toSize=label->getSize();
+    const bool keptAfterChange=(regionPixels(s, kept) == keptPixels);
+
+    // the changed Label goes, freeing its font a second time
+    label->delayedDelete();
+    label=nullptr;
+    for(int i=0; i<s.frames; ++i)
+    {
+        renderFrames(s, 1);
+        atlasUploadCalls+=s.renderer->getFrameStats().atlasUploadCalls;
+        atlasUploadBytes+=s.renderer->getFrameStats().atlasUploadBytes;
+    }
+    ok=shoot(s, deletedShot) && ok;
+
+    const bool keptAfterDelete=(regionPixels(s, kept) == keptPixels);
+    const bool sameAtlas=(atlas != 0) && (s.renderer->getFontAtlasName(openSansAt(g_textSizeKept)) == atlas);
+
     // the sample is one glyph slot per codepoint, spaces included
     const size_t glyphs=std::strlen(sample);
 
-    const bool sdf=(s.renderer->getTextMode(from) == gweni::renderer::GLTextMode::Sdf)
-        && (s.renderer->getTextMode(to) == gweni::renderer::GLTextMode::Sdf);
+    const bool sdf=(s.renderer->getTextMode(openSansAt(g_textSizeFrom)) == gweni::renderer::GLTextMode::Sdf)
+        && (s.renderer->getTextMode(openSansAt(g_textSizeTo)) == gweni::renderer::GLTextMode::Sdf)
+        && (s.renderer->getTextMode(openSansAt(g_textSizeKept)) == gweni::renderer::GLTextMode::Sdf);
     const bool noAtlasUpload=(atlasUploadCalls == 0);
     const bool onlyThatRun=(textSlotsWritten > 0) && (textSlotsWritten <= glyphs);
     const bool grew=(toSize.x > fromSize.x) && (toSize.y > fromSize.y);
     const bool repainted=(fromPixels != toPixels);
     const bool settled=(idleSlots == 0);
+    const bool keptDrawing=keptAfterChange && keptAfterDelete && sameAtlas;
 
-    passed=sdf && noAtlasUpload && onlyThatRun && grew && repainted && settled;
+    passed=sdf && noAtlasUpload && onlyThatRun && grew && repainted && settled && keptDrawing;
 
     std::cout<<"text-size from="<<g_textSizeFrom<<" to="<<g_textSizeTo
              <<" sdf="<<(sdf?"yes":"no")
@@ -1593,7 +1636,11 @@ static bool runTextSizeScenario(Session &s, const std::string &shotDir, bool &pa
              <<" prim_slots_written="<<primSlotsWritten<<" upload_bytes="<<uploadBytes
              <<" size="<<fromSize.x<<"x"<<fromSize.y<<"->"<<toSize.x<<"x"<<toSize.y
              <<" repainted="<<(repainted?"yes":"no")
-             <<" idle_slots_written="<<idleSlots<<"\n";
+             <<" idle_slots_written="<<idleSlots
+             <<" kept="<<g_textSizeKept
+             <<" kept_after_change="<<(keptAfterChange?"yes":"no")
+             <<" kept_after_delete="<<(keptAfterDelete?"yes":"no")
+             <<" same_atlas="<<(sameAtlas?"yes":"no")<<"\n";
     if(!passed)
         std::cerr<<"ControlTest: text-size: the "<<g_textSizeFrom<<" -> "<<g_textSizeTo
                  <<" px change "<<(!sdf ? "is not in the SDF range (GWENI_SDF_TEXT_MIN?)"
@@ -1601,10 +1648,12 @@ static bool runTextSizeScenario(Session &s, const std::string &shotDir, bool &pa
                      : !onlyThatRun ? "wrote glyph slots outside the Label's run"
                      : !grew ? "did not grow the Label"
                      : !repainted ? "did not repaint"
-                     : "left a frame that still writes slots")<<"\n";
+                     : !settled ? "left a frame that still writes slots"
+                     : !sameAtlas ? "or the Label's deletion replaced the face's SDF atlas"
+                     : "or the Label's deletion changed the "+std::to_string(g_textSizeKept)+" px Label")<<"\n";
 
     other->delayedDelete();
-    label->delayedDelete();
+    kept->delayedDelete();
     s.canvas->updateCanvas();
     checkOnePass(s, "drop");
     return ok;

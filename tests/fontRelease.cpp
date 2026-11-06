@@ -9,7 +9,8 @@
  *  object it made without disturbing another renderer in the same context.
  *
  *  Every font here is a fresh Font (another size than test::openSans()), so
- *  freeing it leaves the shared fixture loaded.
+ *  freeing it leaves the shared fixture loaded. A case skips itself when
+ *  GWENI_SDF_TEXT_MIN puts its font and the fixture in the face's one SDF atlas.
  */
 #include <doctest/doctest.h>
 
@@ -39,6 +40,18 @@ Font makeFont(int size)
     font.facename="OpenSans";
     font.size=size;
     return font;
+}
+
+//! Whether font has an atlas of its own, apart from the shared fixture's.
+bool ownAtlas(const Font &font)
+{
+    OpenGLCore &renderer=gweni::test::gpuRenderer();
+
+    if((renderer.getTextMode(font) == gweni::renderer::GLTextMode::Coverage)
+        || (renderer.getTextMode(gweni::test::openSans()) == gweni::renderer::GLTextMode::Coverage))
+        return true;
+    MESSAGE("skipped: GWENI_SDF_TEXT_MIN puts it in the shared fixture's SDF atlas");
+    return false;
 }
 
 //! The offscreen framebuffer, top-down RGBA8.
@@ -112,6 +125,9 @@ TEST_CASE("freeFont deletes the font's atlas texture")
 {
     OpenGLCore &renderer=gweni::test::gpuRenderer();
     const Font font=makeFont(13);
+
+    if(!ownAtlas(font))
+        return;
     const size_t fontsBefore=renderer.getLoadedFontCount();
 
     REQUIRE(renderer.loadFont(font) == Font::Status::Loaded);
@@ -130,7 +146,7 @@ TEST_CASE("freeFont deletes the font's atlas texture")
 
     // freeing it again, or a font never loaded, does nothing
     renderer.freeFont(font);
-    renderer.freeFont(makeFont(77));
+    renderer.freeFont(makeFont(17));
     CHECK(renderer.getLoadedFontCount() == fontsBefore);
     CHECK(glIsTexture(renderer.getFontAtlasName(gweni::test::openSans())) == GL_TRUE);
 }
@@ -139,6 +155,9 @@ TEST_CASE("loadFont of a font already loaded returns Loaded and makes nothing ne
 {
     OpenGLCore &renderer=gweni::test::gpuRenderer();
     const Font font=makeFont(13);
+
+    if(!ownAtlas(font))
+        return;
     const size_t fontsBefore=renderer.getLoadedFontCount();
 
     REQUIRE(renderer.loadFont(font) == Font::Status::Loaded);
@@ -167,6 +186,9 @@ TEST_CASE("After freeing a font whose run is still allocated, the text draw bind
 {
     OpenGLCore &renderer=gweni::test::gpuRenderer();
     const Font font=makeFont(15);
+
+    if(!ownAtlas(font))
+        return;
 
     REQUIRE(renderer.loadFont(font) == Font::Status::Loaded);
 
@@ -222,6 +244,9 @@ TEST_CASE("Load, free and load the same face again: the same text draws the same
 {
     OpenGLCore &renderer=gweni::test::gpuRenderer();
     const Font font=makeFont(12);
+
+    if(!ownAtlas(font))
+        return;
     const String text="Hello gweni 0123";
 
     REQUIRE(renderer.loadFont(font) == Font::Status::Loaded);

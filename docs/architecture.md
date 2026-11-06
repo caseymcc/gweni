@@ -177,8 +177,12 @@ on an OpenGL 3.3 core profile:
   existing index ranges (hidden and empty runs left out, adjacent ranges merged, in
   slot order), with the atlas's `GLTextMode` in the `textMode` uniform. The slots are
   never moved for this, so the dirty-slot upload is the same with one font or many.
-  `freeFont` takes the font's runs off every list (they keep their slots and draw
-  nothing); their next `renderText` lays them out again in the font loaded anew.
+  `freeFont` of a coverage font takes its runs off every list (they keep their slots
+  and draw nothing); their next `renderText` lays them out again in the font loaded
+  anew. An SDF atlas is shared by every size of the face, so `freeFont` of one size
+  deletes it only when no run is laid out in it. Otherwise it marks it `freed`, every
+  run keeps drawing, and it goes when its last run leaves it (`setTextRunFont`), unless
+  an `ensureFont`/`loadFont` uses it again first.
 - **Grayscale text on the pixel grid.** Each font's atlas is depth 1 (`LCD_FILTERING_OFF`):
   one coverage byte per texel, a `GL_R8` texture uploaded as `GL_RED` with
   `GL_UNPACK_ALIGNMENT` 1, a third of the bytes an RGB atlas takes. The vendored
@@ -231,8 +235,10 @@ What exists today (the foundation) and what's still aspirational:
   change, so a control that redraws itself identically (the skin re-emits unchanged
   controls every frame) costs nothing. `GWENI_UPLOAD_STATS=1` prints the per-frame
   upload call/byte counts (the clip-box buffers included).
-- **Font atlas upload follows lazy glyph rasterisation.** `loadFont()` uploads the
-  atlas once, with the printable-ASCII cache in it; any other glyph is rasterised into
+- **Font atlas upload follows lazy glyph rasterisation.** `loadFont()` allocates the
+  atlas texture and marks the whole atlas, with the printable-ASCII cache in it, as the
+  dirty band, so the next `flush()` uploads it once and counts it like any other atlas
+  upload; any other glyph is rasterised into
   the CPU atlas later, by `measureText` (logic phase) or `renderText`. The vendored
   freetype-gl carries a gweni patch for this (and another, `texture_font_t::sdf_spread`,
   for the SDF glyphs): `texture_atlas_t` has a dirty row band

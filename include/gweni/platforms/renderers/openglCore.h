@@ -97,6 +97,7 @@ struct GLFontData
         drawCounts=std::move(other.drawCounts);
         drawOffsets=std::move(other.drawOffsets);
         drawListStale=other.drawListStale;
+        freed=other.freed;
     }
 
     //! Deletes the atlas texture, then the manager (which owns the atlas, the
@@ -134,6 +135,10 @@ struct GLFontData
     std::vector<int> drawCounts;
     std::vector<const void *> drawOffsets;
     bool drawListStale=true;
+    //! An SDF font freed while runs still use its shared atlas: it is kept until
+    //! its last run leaves it, and a use before then (ensureFont, loadFont) keeps
+    //! it for good.
+    bool freed=false;
 };
 
 //

@@ -142,6 +142,7 @@ Font::Status OpenGLCore::loadFont(const Font &requested)
 
     if(loaded != m_fonts.end())
     {
+        loaded->second.freed=false;
         m_lastFont=&(*loaded);
         return Font::Status::Loaded;
     }
@@ -224,16 +225,14 @@ Font::Status OpenGLCore::loadFont(const Font &requested)
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    // rows of one byte per texel: the default alignment of 4 only fits widths
-    // that are a multiple of 4
-    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+    // one byte per texel, coverage or distance alike
+    assert(fontData.atlas->depth == 1);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_R8, fontData.atlas->width,
-        fontData.atlas->height, 0, GL_RED, GL_UNSIGNED_BYTE,
-        fontData.atlas->data);
-    glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
-    //the whole atlas, cache included, is on the GPU now; flush() uploads only later glyphs
+        fontData.atlas->height, 0, GL_RED, GL_UNSIGNED_BYTE, nullptr);
+    //the next flush() uploads the whole atlas, cache included, as one dirty band, so
+    //a load shows in FrameStats::atlasUploadCalls; after that only later glyphs
     fontData.atlas->dirty_y0=0;
-    fontData.atlas->dirty_y1=0;
+    fontData.atlas->dirty_y1=fontData.atlas->height;
 
     m_lastFont=&(*m_fonts.insert(std::make_pair(font, std::move(fontData))).first);
     return Font::Status::Loaded;
@@ -241,8 +240,6 @@ Font::Status OpenGLCore::loadFont(const Font &requested)
 
 void OpenGLCore::freeFont(const gweni::Font &requested)
 {
-    // An SDF font is shared by every size of its face: freeing one size frees it
-    // for all of them, and their runs are laid out again on their next renderText.
     GLTextMode mode;
     const Font font=resolveFont(requested, mode);
 
@@ -255,6 +252,16 @@ void OpenGLCore::freeFont(const gweni::Font &requested)
 
     if(it == m_fonts.end())
         return;
+
+    // An SDF atlas is shared by every size of its face, so the runs in it may be
+    // another size's, whose owner has not freed it: Label frees its font when it
+    // changes size or is deleted. It stays, every run drawing, until its last run
+    // leaves it (setTextRunFont), unless it is used again before that.
+    if((it->second.mode == GLTextMode::Sdf) && !it->second.textRuns.empty())
+    {
+        it->second.freed=true;
+        return;
+    }
 
     // The runs laid out in this font keep their slots but leave every draw list:
     // their glyphs sample the atlas the destructor deletes, whose name glGenTextures
@@ -281,6 +288,7 @@ bool OpenGLCore::ensureFont(const Font &requested)
     auto it=m_fonts.find(font);
     if(it != m_fonts.end())
     {
+        it->second.freed=false;
         m_lastFont=&(*it);
         return true;
     }
@@ -553,7 +561,10 @@ OpenGLCore::OpenGLCore(ResourcePaths &paths, const Rect &viewRect)
 
     m_uploadStats=(getenv("GWENI_UPLOAD_STATS") != nullptr);
     m_sdfTextMin=defaultSdfTextMin;
-    if(const char *sdfTextMin=getenv("GWENI_SDF_TEXT_MIN"))
+    const char *sdfTextMin=getenv("GWENI_SDF_TEXT_MIN");
+
+    // set but empty keeps the default, rather than reading as 0 (SDF everywhere)
+    if(sdfTextMin && (sdfTextMin[0] != '\0'))
         m_sdfTextMin=std::max(0.0f, (float)atof(sdfTextMin));
     m_textDebug=getenv("GWENI_TEXT_DEBUG");
 
@@ -2135,13 +2146,29 @@ void OpenGLCore::setTextRunFont(size_t textId, GLFontData *fontData)
     if(run.fontData == fontData)
         return;
 
-    if(run.fontData)
+    GLFontData *previous=run.fontData;
+
+    if(previous)
     {
-        run.fontData->textRuns.erase(textId);
-        run.fontData->drawListStale=true;
+        previous->textRuns.erase(textId);
+        previous->drawListStale=true;
     }
 
     run.fontData=fontData;
+
+    // the last run has left an SDF atlas freeFont kept for it
+    if(previous && previous->freed && previous->textRuns.empty())
+    {
+        for(auto it=m_fonts.begin(); it != m_fonts.end(); ++it)
+        {
+            if(&it->second != previous)
+                continue;
+            if(m_lastFont == &(*it))
+                m_lastFont=nullptr;
+            m_fonts.erase(it);
+            break;
+        }
+    }
 
     if(fontData)
     {

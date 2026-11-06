@@ -133,7 +133,7 @@ TEST_CASE("SDF text: every size of a face shares one atlas, apart from the cover
     if(renderer.getTextMode(gweni::test::openSans()) == GLTextMode::Coverage)
         CHECK(renderer.getFontAtlasName(gweni::test::openSans()) != renderer.getFontAtlasName(at24));
 
-    // freeing one size frees the face's atlas for all of them
+    // with no run laid out in it, freeing one size frees the face's atlas for all of them
     renderer.freeFont(at36);
     CHECK(renderer.getFontAtlasName(at24) == 0);
     CHECK(renderer.getLoadedFontCount() == fonts-1);
@@ -227,4 +227,108 @@ TEST_CASE("SDF text: changing a run's size rewrites its vertexes and uploads not
     renderer.begin();
     renderer.end();
     renderer.freeFont(openSansAt(24.0f));
+}
+
+TEST_CASE("SDF text: freeing one size while other sizes' runs use the atlas leaves them drawing")
+{
+    OpenGLCore &renderer=gweni::test::gpuRenderer();
+
+    if(!allSdf({ 24.0f, 48.0f }))
+        return;
+
+    // what Label does: one Label's font is freed when it changes size or is
+    // deleted, while another Label still draws a different size of the face
+    const Font at24=openSansAt(24.0f);
+    const Font at48=openSansAt(48.0f);
+    const String text="Sphinx gyp";
+    const Point pos24(8, 10);
+    const Point pos48(8, 60);
+    size_t id24=0;
+    size_t id48=0;
+
+    renderer.generateTextPrimitive(id24);
+    renderer.generateTextPrimitive(id48);
+
+    // 48 px alone, for the pixels it must keep
+    const std::vector<uint8_t> alone48=drawFrame(id48, at48, pos48, text);
+
+    REQUIRE(inkOf(alone48).pixels > 100);
+
+    const unsigned int atlas=renderer.getFontAtlasName(at48);
+    const size_t fonts=renderer.getLoadedFontCount();
+
+    drawFrame(id24, at24, pos24, text);
+
+    renderer.freeFont(at24);
+
+    // the shared atlas stays, under the same GL name, and is not uploaded again
+    CHECK(renderer.getFontAtlasName(at48) == atlas);
+    CHECK(glIsTexture(atlas) == GL_TRUE);
+    CHECK(renderer.getLoadedFontCount() == fonts);
+
+    // the 24 px run goes; the 48 px run, untouched since, draws as it did alone
+    renderer.releaseTextPrimitive(id24);
+
+    glClearColor(background.r/255.0f, background.g/255.0f, background.b/255.0f, 1.0f);
+    glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
+    renderer.begin();
+    renderer.end();
+
+    std::vector<uint8_t> after;
+    const Point size=gweni::test::viewSize();
+
+    gweni::capture::readFramebufferRgba(size.x, size.y, after);
+    CHECK(after == alone48);
+    CHECK(renderer.getFrameStats().atlasUploadCalls == 0);
+    CHECK(renderer.getFontAtlasName(at48) == atlas);
+
+    // freed, and its last run gone: the atlas goes with it
+    renderer.freeFont(at48);
+    CHECK(renderer.getFontAtlasName(at48) == atlas);
+    renderer.releaseTextPrimitive(id48);
+    CHECK(renderer.getFontAtlasName(at48) == 0);
+    CHECK(glIsTexture(atlas) == GL_FALSE);
+    CHECK(renderer.getLoadedFontCount() == fonts-1);
+
+    // loading it anew uploads the whole atlas in the next frame, and that is counted
+    REQUIRE((renderer.loadFont(at48) == Font::Status::Loaded));
+    renderer.begin();
+    renderer.end();
+    CHECK(renderer.getFrameStats().atlasUploadCalls == 1);
+    CHECK(renderer.getFrameStats().atlasUploadBytes >= 1024*1024);
+    renderer.freeFont(at48);
+    CHECK(renderer.getFontAtlasName(at48) == 0);
+}
+
+TEST_CASE("SDF text: a freed atlas used again before its last run leaves is kept")
+{
+    OpenGLCore &renderer=gweni::test::gpuRenderer();
+
+    if(!allSdf({ 24.0f, 36.0f }))
+        return;
+
+    const Font at24=openSansAt(24.0f);
+    const Font at36=openSansAt(36.0f);
+    size_t textId=0;
+
+    renderer.generateTextPrimitive(textId);
+    drawFrame(textId, at24, Point(8, 20), "Sphinx");
+
+    const unsigned int atlas=renderer.getFontAtlasName(at24);
+
+    // Label::setFont(face, 36, bold): the 24 px font is freed first, then the run
+    // is laid out at 36 px, which moves it within the same atlas
+    renderer.freeFont(at24);
+    drawFrame(textId, at36, Point(8, 20), "Sphinx");
+    CHECK(renderer.getFrameStats().atlasUploadCalls == 0);
+
+    // the run leaving it now does not free it: the 36 px use took it back
+    renderer.releaseTextPrimitive(textId);
+    CHECK(renderer.getFontAtlasName(at36) == atlas);
+    CHECK(glIsTexture(atlas) == GL_TRUE);
+
+    renderer.begin();
+    renderer.end();
+    renderer.freeFont(at36);
+    CHECK(renderer.getFontAtlasName(at36) == 0);
 }
