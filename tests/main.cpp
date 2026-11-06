@@ -52,9 +52,9 @@ int main(int argc, char **argv)
 
     capture::setToolName("gweni_unittests");
 
-#if GWENI_EXAMPLE_EGL
     capture::Context ctx;
 
+#if GWENI_EXAMPLE_EGL
     if(!capture::initEglContext(ctx))
         return EXIT_FAILURE;
 #else
