@@ -2596,7 +2596,7 @@ int main(int argc, char *argv[])
             if(!parseScenario(name, scenario))
             {
                 std::cerr<<"ControlTest: unknown scenario: "<<name
-                         <<"; try per-control, resize, docked, scroll, interaction, typing or text-size\n";
+                         <<"; try per-control, resize, docked, scroll, interaction, typing, clip or text-size\n";
                 return EXIT_FAILURE;
             }
         }
