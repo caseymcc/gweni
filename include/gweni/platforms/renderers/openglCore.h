@@ -204,6 +204,8 @@ public:
         size_t uploadBytes=0;           //!< bytes those calls sent
         size_t mirrorBytes=0;           //!< size of the whole CPU mirror, for comparison
         size_t drawCalls=0;             //!< glDrawElements calls
+        size_t atlasUploadCalls=0;      //!< glTexSubImage2D calls for font atlas row bands
+        size_t atlasUploadBytes=0;      //!< bytes those calls sent
     };
 
     const FrameStats &getFrameStats() const { return m_frameStats; }
@@ -326,6 +328,9 @@ private:
     void uploadDirty(unsigned int target, uint32_t buffer, size_t &capacityElements,
         const void *data, size_t elementSize, size_t elementCount,
         DirtySlots &dirty, size_t elementsPerSlot);
+    //! Uploads the rows of every font atlas that freetype-gl rasterised glyphs into since
+    //! the last upload (renderText and measureText do so lazily), then empties the band.
+    void uploadDirtyAtlases();
 
     void setVertex(Vertex &vertex, uint8_t type, int x, int y, int z, float u=0.0f, float v=0.0f);
     void addVert(int x, int y, float u=0.0f, float v=0.0f);

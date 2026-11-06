@@ -117,6 +117,16 @@ What exists today (the foundation) and what's still aspirational:
   change, so a control that redraws itself identically (the skin re-emits unchanged
   controls every frame) costs nothing. `GWENI_UPLOAD_STATS=1` prints the per-frame
   upload call/byte counts.
+- **Font atlas upload follows lazy glyph rasterisation.** `loadFont()` uploads the
+  atlas once, with the printable-ASCII cache in it; any other glyph is rasterised into
+  the CPU atlas later, by `measureText` (logic phase) or `renderText`. The vendored
+  freetype-gl carries a gweni patch for this: `texture_atlas_t` has a dirty row band
+  (`dirty_y0`/`dirty_y1`, half-open) that `texture_atlas_set_region` widens and
+  `texture_atlas_clear` sets to the whole atlas. `flush()` uploads each font's band as
+  full-width rows with one `glTexSubImage2D` and empties it. Glyphs are packed in
+  shelves, so a few new glyphs make a band of a few rows, and many scattered ones grow it
+  to the whole atlas. Counted separately from the buffer uploads, as
+  `FrameStats::atlasUploadCalls`/`atlasUploadBytes`.
 - **Text-path diagnostics.** `GWENI_TEXT_DEBUG=<substring>` (empty matches everything)
   makes `measureText` print its freetype-gl vertex run, the resolved
   `texture_glyph_t` metrics and the size it returns, and `renderText` dump the

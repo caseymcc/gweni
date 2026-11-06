@@ -127,6 +127,9 @@ Font::Status OpenGLCore::loadFont(const Font &font)
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, fontData.atlas->width,
         fontData.atlas->height, 0, GL_RGB, GL_UNSIGNED_BYTE,
         fontData.atlas->data);
+    //the whole atlas, cache included, is on the GPU now; flush() uploads only later glyphs
+    fontData.atlas->dirty_y0=0;
+    fontData.atlas->dirty_y1=0;
 
     m_lastFont=&(*m_fonts.insert(std::make_pair(font, std::move(fontData))).first);
     return Font::Status::Loaded;
@@ -797,16 +800,61 @@ void OpenGLCore::uploadDirty(unsigned int target, uint32_t buffer, size_t &capac
     dirty.clear();
 }
 
+void OpenGLCore::uploadDirtyAtlases()
+{
+    bool bound=false;
+
+    for(auto &entry:m_fonts)
+    {
+        texture_atlas_t *atlas=entry.second.atlas;
+
+        if(atlas->dirty_y0 >= atlas->dirty_y1)
+            continue;
+
+        //full-width rows are contiguous in atlas->data, and the default
+        //GL_UNPACK_ALIGNMENT of 4 holds as long as a row is a multiple of 4 bytes
+        assert((atlas->width*atlas->depth)%4 == 0);
+        assert(atlas->depth == 3);
+
+        size_t rows=atlas->dirty_y1-atlas->dirty_y0;
+
+        if(!bound)
+        {
+            glActiveTexture(GL_TEXTURE0);
+            bound=true;
+        }
+        glBindTexture(GL_TEXTURE_2D, atlas->id);
+        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, (GLint)atlas->dirty_y0, (GLsizei)atlas->width, (GLsizei)rows,
+            GL_RGB, GL_UNSIGNED_BYTE, atlas->data+atlas->dirty_y0*atlas->width*atlas->depth);
+
+        ++m_frameStats.atlasUploadCalls;
+        m_frameStats.atlasUploadBytes+=rows*atlas->width*atlas->depth;
+
+        atlas->dirty_y0=0;
+        atlas->dirty_y1=0;
+    }
+
+    //setTexture() skips the bind when m_currentTexture already matches
+    if(bound)
+        glBindTexture(GL_TEXTURE_2D, m_currentTexture);
+}
+
 void OpenGLCore::flush()
 {
     m_frameStats.uploadCalls=0;
     m_frameStats.uploadBytes=0;
     m_frameStats.drawCalls=0;
+    m_frameStats.atlasUploadCalls=0;
+    m_frameStats.atlasUploadBytes=0;
     m_frameStats.textSlotsWritten=m_dirtyTextVertexSlots.count();
     m_frameStats.mirrorBytes=
         m_vertexes.size()*sizeof(Vertex)+m_indexes.size()*sizeof(uint16_t)
         +m_clippingBoxes.size()*sizeof(Box)
         +m_textVertexes.size()*sizeof(glyph_vertex_t)+m_textIndexes.size()*sizeof(uint32_t);
+
+    //glyphs measureText (logic phase) or renderText rasterised since the last frame; done
+    //even when nothing draws text this frame, so they are on the GPU before first use
+    uploadDirtyAtlases();
 
     if(!m_vertexes.empty())
     {
@@ -882,9 +930,9 @@ void OpenGLCore::flush()
     if(m_uploadStats)
     {
         //qualified: gweni::printf(String&, ...) would otherwise hide the C one
-        ::printf("[upload] frame %zu: %zu calls, %zu bytes (mirror %zu bytes)\n",
+        ::printf("[upload] frame %zu: %zu calls, %zu bytes (mirror %zu bytes), atlas %zu calls, %zu bytes\n",
             m_frameStats.frameIndex, m_frameStats.uploadCalls, m_frameStats.uploadBytes,
-            m_frameStats.mirrorBytes);
+            m_frameStats.mirrorBytes, m_frameStats.atlasUploadCalls, m_frameStats.atlasUploadBytes);
         fflush(stdout);
     }
 
