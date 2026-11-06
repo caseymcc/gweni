@@ -11,6 +11,8 @@
 #include <gweni/platforms/inputEvent.h>
 #include <GLFW/glfw3.h>
 
+#include <cmath>
+
 namespace gweni
 {
 namespace input
@@ -31,6 +33,7 @@ public:
     GLFW3()
     :   m_eventCaller(nullptr)
     ,   m_mouse(-1, -1)
+    ,   m_haveMouse(false)
     {}
 
     void initialize(IInputEvent *c)
@@ -120,11 +123,17 @@ public:
 
     bool processMouseMove(int x, int y)
     {
-        if (m_mouse.x < 0)
-            m_lastMouse = m_mouse;
-
         m_mouse.set(x, y);
-        const Point delta(m_lastMouse - m_mouse);
+
+        // The first event has no previous position: report a zero delta.
+        if (!m_haveMouse)
+        {
+            m_lastMouse = m_mouse;
+            m_haveMouse = true;
+        }
+
+        // Current minus last, the same sign as SDL2's xrel/yrel.
+        const Point delta(m_mouse - m_lastMouse);
         m_lastMouse = m_mouse;
 
         return m_eventCaller->inputMouseMoved(m_mouse.x, m_mouse.y,
@@ -138,13 +147,16 @@ public:
 
     bool processScroll(float sx, float sy)
     {
-        return m_eventCaller->inputMouseWheel(sy);
+        // One wheel notch is 60 units, as in the sfml2/allegro5 backends. GLFW
+        // reports +-1 per notch, and fractional offsets on touchpads, so round.
+        return m_eventCaller->inputMouseWheel(static_cast<int>(std::lround(sy*60.0f)));
     }
 
 protected:
 
     IInputEvent *m_eventCaller;
     Point m_mouse, m_lastMouse;
+    bool m_haveMouse;
 
 };
 
