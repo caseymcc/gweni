@@ -20,6 +20,7 @@
 #include <gweni/platforms/commonPlatform.h>
 #include <gweni/utility.h>
 #include <gweni/primitiveIds.h>
+#include <gweni/utils/filesystem.h>
 
 #include <iterator>
 
@@ -81,8 +82,18 @@ Font::Status OpenGLCore::loadFont(const Font &font)
                          "`abcdefghijklmnopqrstuvwxyz{|}~";
 
     m_lastFont=nullptr;
+    // an explicit load is a fresh attempt; a failure is remembered again below,
+    // so ensureFont does not retry it
+    m_failedFonts.erase(font);
 
     const String filename=getResourcePaths().getPath(ResourcePaths::Type::Font, font.facename);
+
+    if(!fs::exists(filename))
+    {
+        gweni::log::write(log::Level::Error, "Font file not found: %s", filename.c_str());
+        m_failedFonts.insert(font);
+        return Font::Status::ErrorFileNotFound;
+    }
 
     vec4 black={{0.0, 0.0, 0.0, 1.0}};
     vec4 none={{1.0, 1.0, 1.0, 0.0}};
@@ -113,6 +124,22 @@ Font::Status OpenGLCore::loadFont(const Font &font)
     fontData.fontManager->cache=strdup(cache);
 
     fontData.markup.font=ftgl::font_manager_get_from_markup(fontData.fontManager, &fontData.markup);
+
+    if(fontData.markup.font == nullptr)
+    {
+        // freetype-gl could not open the face. Free what this function made and
+        // reset the fields, so fontData's destructor finds nothing left to free.
+        ftgl::font_manager_delete(fontData.fontManager);
+        fontData.fontManager=nullptr;
+        free(fontData.familyPath);
+        fontData.familyPath=nullptr;
+        fontData.markup.family=nullptr;
+
+        gweni::log::write(log::Level::Error, "Font file failed to load: %s", filename.c_str());
+        m_failedFonts.insert(font);
+        return Font::Status::ErrorBadData;
+    }
+
     fontData.textureFont=fontData.markup.font;
 
     fontData.atlas=fontData.fontManager->atlas;
@@ -140,6 +167,7 @@ void OpenGLCore::freeFont(const gweni::Font &font)
     if(m_lastFont != nullptr && m_lastFont->first == font)
         m_lastFont=nullptr;
 
+    m_failedFonts.erase(font);
     m_fonts.erase(font); // calls GLFontData destructor
 }
 
@@ -159,9 +187,14 @@ bool OpenGLCore::ensureFont(const Font &font)
         return true;
     }
 
+    // Did it fail before? Then it is not tried (and reported) again for every
+    // text on every frame; freeFont or an explicit loadFont clears this.
+    if(m_failedFonts.count(font) != 0)
+        return false;
+
     // No, try load to it
 
-    // LoadFont sets m_lastFont, if loaded
+    // LoadFont sets m_lastFont, if loaded, and adds the font to m_failedFonts if not
     return loadFont(font) == Font::Status::Loaded;
 }
 

@@ -83,6 +83,7 @@ if(TARGET gweni_capture)
     add_executable(gweni_unittests
         main.cpp
         textLength.cpp
+        fontLoad.cpp
         color.cpp
         fillStyles.cpp)
     gweni_set_warnings(gweni_unittests)

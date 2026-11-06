@@ -8,6 +8,7 @@
 #include <vector>
 #include <glm/glm.hpp>
 #include <unordered_map>
+#include <unordered_set>
 #include <map>
 #include <memory>
 #include <functional>
@@ -181,6 +182,8 @@ protected:// Resourses
 
 
     std::unordered_map<Font, GLFontData> m_fonts;
+    //! Faces whose last load failed: ensureFont does not retry them
+    std::unordered_set<Font> m_failedFonts;
     std::vector<GLTextureData *> m_textureData;
     std::vector<size_t> m_freeTextureData;
     std::unordered_map<Texture, size_t> m_textures;
