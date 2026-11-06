@@ -189,11 +189,12 @@ void OpenGLCore::freeFont(const gweni::Font &font)
     if(it == m_fonts.end())
         return;
 
-    // flush() binds m_textTextureId for the text draw; it must not be left
-    // holding the name the destructor deletes, which glGenTextures may hand out
-    // again. The next renderText sets it to a live atlas.
-    if(it->second.atlas && (it->second.atlas->id == m_textTextureId))
-        m_textTextureId=0;
+    // The runs laid out in this font keep their slots but leave every draw list:
+    // their glyphs sample the atlas the destructor deletes, whose name glGenTextures
+    // may hand out again. The next renderText of each lays it out again, in the
+    // font loaded anew.
+    for(size_t textId:it->second.textRuns)
+        m_textRuns[textId].fontData=nullptr;
 
     m_fonts.erase(it); // GLFontData's destructor deletes the atlas texture and the manager
 }
@@ -478,7 +479,8 @@ OpenGLCore::~OpenGLCore()
     m_lastFont=nullptr;
     m_fonts.clear();
     m_failedFonts.clear();
-    m_textTextureId=0;
+    for(TextRun &run:m_textRuns)
+        run.fontData=nullptr;
 
     for(GLTextureData *textureData:m_textureData)
         delete textureData;
@@ -839,6 +841,9 @@ out vec2 texCoord;
 out vec4 color;
 out float gamma;
 out vec2 pixel;    // pixel-space position, the clip boxes' space
+// The glyph slot: its 4 vertexes are slot*4..slot*4+3, and the indexes are vertex
+// numbers, so this holds however the slots are split between draws.
+flat out uint slot;
 
 void main()
 {
@@ -846,6 +851,7 @@ void main()
     color=vertColor;
     gamma=vertGamma;
     pixel=vertPosition.xy;
+    slot=uint(gl_VertexID) >> 2;
 
     gl_Position = projection * vec4(vertPosition, 1.0f);
 }
@@ -860,17 +866,23 @@ in vec2 texCoord;
 in vec4 color;
 in float gamma;
 in vec2 pixel;
+flat in uint slot;
 
 uniform sampler2D texture1;
-// One Box (x0, y0, x1, y1) per glyph slot; as for the primitives, one draw from
-// index 0 with 2 triangles per slot makes gl_PrimitiveID >> 1 the slot.
+// One Box (x0, y0, x1, y1) per glyph slot. Each atlas is a draw of its own over
+// some of the slots, so gl_PrimitiveID does not give the slot; the vertex shader does.
 uniform usamplerBuffer clipBoxes;
+// GLTextMode of the atlas this draw samples: 0 coverage
+uniform int textMode;
 void main()
 {
-    uvec4 clip = texelFetch(clipBoxes, gl_PrimitiveID >> 1);
+    uvec4 clip = texelFetch(clipBoxes, int(slot));
     bool clipped = any(lessThan(pixel, vec2(clip.xy))) || any(greaterThanEqual(pixel, vec2(clip.zw)));
 
-    float a = texture2D(texture1, texCoord).r;
+    float a = 0.0;
+
+    if(textMode == 0)
+        a = texture2D(texture1, texCoord).r;
 
     FragColor = color * pow( a, 1.0/gamma );
 
@@ -883,6 +895,7 @@ void main()
     m_textProgram=loadShaders(textVertexSource, textFragSource);
     m_textProjectionUniform=glGetUniformLocation(m_textProgram, "projection");
     m_textClipBoxesUniform=glGetUniformLocation(m_textProgram, "clipBoxes");
+    m_textModeUniform=glGetUniformLocation(m_textProgram, "textMode");
 
     // texture1 stays on unit 0; the clip boxes are on unit 1 for both programs
     glProgramUniform1i(m_program, m_clipBoxesUniform, 1);
@@ -1097,6 +1110,7 @@ void OpenGLCore::flush()
     m_frameStats.uploadCalls=0;
     m_frameStats.uploadBytes=0;
     m_frameStats.drawCalls=0;
+    m_frameStats.textDraws=0;
     m_frameStats.atlasUploadCalls=0;
     m_frameStats.atlasUploadBytes=0;
     m_frameStats.textSlotsWritten=m_dirtyTextVertexSlots.count();
@@ -1200,13 +1214,28 @@ void OpenGLCore::flush()
         glActiveTexture(GL_TEXTURE1);
         glBindTexture(GL_TEXTURE_BUFFER, m_textClipTexture);
         glActiveTexture(GL_TEXTURE0);
-        glBindTexture(GL_TEXTURE_2D, m_textTextureId);
         glBindVertexArray(m_textVertexArray);
 
-        // As for the primitives: one draw from index 0, 2 triangles per glyph slot,
-        // so the shader's gl_PrimitiveID >> 1 is the slot of the glyph's clip box.
-        glDrawElements(GL_TRIANGLES, m_textIndexes.size(), (GLenum)GL_UNSIGNED_INT, 0);
-        ++m_frameStats.drawCalls;
+        // Each atlas draws the runs laid out in its font, over their own index
+        // ranges in the one index buffer: one draw per atlas, none for an atlas
+        // with nothing to show. The slots are not moved, so the upload above stays
+        // per dirty slot.
+        for(auto &entry:m_fonts)
+        {
+            GLFontData &fontData=entry.second;
+
+            if(fontData.drawListStale)
+                buildTextDrawList(fontData);
+            if(fontData.drawCounts.empty())
+                continue;
+
+            glBindTexture(GL_TEXTURE_2D, fontData.atlas->id);
+            glProgramUniform1i(m_textProgram, m_textModeUniform, (GLint)fontData.mode);
+            glMultiDrawElements(GL_TRIANGLES, fontData.drawCounts.data(), (GLenum)GL_UNSIGNED_INT,
+                fontData.drawOffsets.data(), (GLsizei)fontData.drawCounts.size());
+            ++m_frameStats.drawCalls;
+            ++m_frameStats.textDraws;
+        }
 
         glBindVertexArray(0);
     }
@@ -1860,6 +1889,10 @@ void OpenGLCore::writeTextIndexes(const TextRun &run)
     if(run.capacity == 0)
         return;
 
+    // the run's glyph count, slots or hidden flag changed: its draw range did too
+    if(run.fontData)
+        run.fontData->drawListStale=true;
+
     static const uint32_t c_quad[6]={ 0, 1, 2, 0, 2, 3 };
 
     for(size_t i=0; i<run.capacity; ++i)
@@ -1907,6 +1940,65 @@ void OpenGLCore::writeTextClipBoxes(const TextRun &run, const Box &box)
     }
 }
 
+void OpenGLCore::setTextRunFont(size_t textId, GLFontData *fontData)
+{
+    TextRun &run=m_textRuns[textId];
+
+    if(run.fontData == fontData)
+        return;
+
+    if(run.fontData)
+    {
+        run.fontData->textRuns.erase(textId);
+        run.fontData->drawListStale=true;
+    }
+
+    run.fontData=fontData;
+
+    if(fontData)
+    {
+        fontData->textRuns.insert(textId);
+        fontData->drawListStale=true;
+    }
+}
+
+void OpenGLCore::buildTextDrawList(GLFontData &fontData)
+{
+    // (first glyph slot, glyph count) of each run that draws something
+    std::vector<std::pair<size_t, size_t>> ranges;
+
+    ranges.reserve(fontData.textRuns.size());
+    for(size_t textId:fontData.textRuns)
+    {
+        const TextRun &run=m_textRuns[textId];
+
+        if(!run.hidden && (run.glyphs > 0))
+            ranges.emplace_back(run.start, run.glyphs);
+    }
+
+    // in slot order, as the single draw over the whole buffer went
+    std::sort(ranges.begin(), ranges.end());
+
+    fontData.drawCounts.clear();
+    fontData.drawOffsets.clear();
+
+    size_t i=0;
+
+    while(i < ranges.size())
+    {
+        const size_t start=ranges[i].first;
+        size_t end=start+ranges[i].second;
+
+        for(++i; (i < ranges.size()) && (ranges[i].first == end); ++i)
+            end+=ranges[i].second;
+
+        fontData.drawCounts.push_back(static_cast<int>((end-start)*6));
+        fontData.drawOffsets.push_back(reinterpret_cast<const void *>(start*6*sizeof(uint32_t)));
+    }
+
+    fontData.drawListStale=false;
+}
+
 void OpenGLCore::generateTextPrimitive(size_t &primitiveId)
 {
     primitiveId=getTextId(nullptr);
@@ -1925,6 +2017,7 @@ void OpenGLCore::releaseTextPrimitive(size_t primitiveId)
         // reused text id cannot take renderText's "string hasn't changed" path
         // and inherit the dead control's glyphs.
         freeTextRun(run);
+        setTextRunFont(primitiveId, nullptr);
         run=TextRun();
     }
 
@@ -1949,9 +2042,12 @@ void OpenGLCore::renderText(size_t textId, const gweni::Font &font, gweni::Point
     // would rebuild the run into the same bytes.
     const gweni::Color color(m_color.r, m_color.g, m_color.b, 255);
 
-    // Same string, font and colour: the glyphs are the ones already there, at
-    // most offset. Anything else falls through to the full rebuild.
-    if((run.text == text) && (run.font == font) && (run.color == color))
+    GLFontData &fontData=m_lastFont->second;
+
+    // Same string, font and colour, laid out in this font's atlas (not one freed
+    // since): the glyphs are the ones already there, at most offset. Anything else
+    // falls through to the full rebuild.
+    if((run.text == text) && (run.font == font) && (run.color == color) && (run.fontData == &fontData))
     {
         if((pos.x != run.position.x) || (pos.y != run.position.y) || (zIndex != run.zIndex))
         {
@@ -1988,10 +2084,6 @@ void OpenGLCore::renderText(size_t textId, const gweni::Font &font, gweni::Point
         return;
     }
 
-    GLFontData &fontData=m_lastFont->second;
-
-    m_textTextureId=fontData.atlas->id;
-
     ftgl::text_buffer_t *textBuffer=ftgl::text_buffer_new();
     ftgl::vec2 pen={ 0.0f, 0.0f };
 
@@ -2019,6 +2111,7 @@ void OpenGLCore::renderText(size_t textId, const gweni::Font &font, gweni::Point
     run.zIndex=zIndex;
     run.font=font;
     run.color=color;
+    setTextRunFont(textId, &fontData);
     allocateTextRun(run, glyphCount);
 
     ftgl::glyph_vertex_t *vertexBuffer=(ftgl::glyph_vertex_t *)vertexes->items;

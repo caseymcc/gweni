@@ -89,6 +89,7 @@ if(TARGET gweni_capture)
         main.cpp
         textLength.cpp
         textRunCache.cpp
+        textAtlases.cpp
         fontLoad.cpp
         fontRelease.cpp
         color.cpp

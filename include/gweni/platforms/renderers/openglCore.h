@@ -55,6 +55,13 @@ struct GLTextureData: public gweni::TextureData
     std::vector<unsigned char> m_readData;
 };
 
+//! How the text shader turns an atlas sample into alpha. Set per draw, so each
+//! atlas's runs can use their own: today every atlas is a coverage one.
+enum class GLTextMode: int
+{
+    Coverage=0 //!< the sample's red channel is the glyph's coverage
+};
+
 struct GLFontData
 {
     GLFontData():
@@ -82,6 +89,12 @@ struct GLFontData
         spacing=other.spacing;
         width=other.width;
         height=other.height;
+
+        mode=other.mode;
+        textRuns=std::move(other.textRuns);
+        drawCounts=std::move(other.drawCounts);
+        drawOffsets=std::move(other.drawOffsets);
+        drawListStale=other.drawListStale;
     }
 
     //! Deletes the atlas texture, then the manager (which owns the atlas, the
@@ -101,6 +114,18 @@ struct GLFontData
 
     int width;
     int height;
+
+    GLTextMode mode=GLTextMode::Coverage;
+
+    //! Text ids whose runs were laid out in this font, so flush() draws them with
+    //! this atlas. OpenGLCore keeps it in step with each TextRun's fontData.
+    std::unordered_set<size_t> textRuns;
+    //! What flush() hands glMultiDrawElements for this atlas: the index ranges of
+    //! the runs in textRuns that draw something, in slot order, adjacent ones merged.
+    //! Rebuilt from textRuns when drawListStale.
+    std::vector<int> drawCounts;
+    std::vector<const void *> drawOffsets;
+    bool drawListStale=true;
 };
 
 //
@@ -235,7 +260,8 @@ public:
         size_t uploadCalls=0;           //!< glBufferData/glBufferSubData calls
         size_t uploadBytes=0;           //!< bytes those calls sent
         size_t mirrorBytes=0;           //!< size of the whole CPU mirror, for comparison
-        size_t drawCalls=0;             //!< glDrawElements calls
+        size_t drawCalls=0;             //!< glDrawElements and glMultiDrawElements calls
+        size_t textDraws=0;             //!< of those, the text draws: one per atlas with runs to draw
         size_t atlasUploadCalls=0;      //!< glTexSubImage2D calls for font atlas row bands
         size_t atlasUploadBytes=0;      //!< bytes those calls sent
     };
@@ -428,6 +454,10 @@ private:
     //! text, font and color are what the glyphs were laid out from: renderText
     //! rebuilds the run when any of them changes, and only re-offsets it when
     //! just position or zIndex did.
+    //
+    //! fontData is the loaded font whose atlas the glyphs sample, and the run is on
+    //! its textRuns list; nullptr before the first layout and once that font is
+    //! freed, and then the run draws nothing until renderText lays it out again.
     struct TextRun
     {
         size_t start=0;
@@ -439,6 +469,7 @@ private:
         std::string text;
         gweni::Font font;
         gweni::Color color;
+        GLFontData *fontData=nullptr;
     };
 
     //! Gives the run at least `glyphs` slots, keeping its current ones when they
@@ -458,6 +489,10 @@ private:
     void markTextVertexes(const TextRun &run);
     //! Writes box into the run's glyph slots in use, marking only the ones that change.
     void writeTextClipBoxes(const TextRun &run, const Box &box);
+    //! Moves the text id's run from its font's draw list to fontData's (nullptr: to none).
+    void setTextRunFont(size_t textId, GLFontData *fontData);
+    //! Rebuilds fontData's drawCounts/drawOffsets from its textRuns.
+    void buildTextDrawList(GLFontData &fontData);
 
     std::vector<TextRun> m_textRuns;
     std::map<size_t, size_t> m_freeTextRuns; //!< start -> capacity, never adjacent to another
@@ -513,10 +548,10 @@ private:
 
 //    ftgl::font_manager_t *m_fontManager;
 
-    uint32_t m_textTextureId=0;
     uint32_t m_textProgram=0;
     uint32_t m_textProjectionUniform;
     uint32_t m_textClipBoxesUniform;
+    uint32_t m_textModeUniform; //!< the GLTextMode of the atlas being drawn
 
     uint32_t m_textVertexArray=0;
     uint32_t m_textVertexBuffer=0;

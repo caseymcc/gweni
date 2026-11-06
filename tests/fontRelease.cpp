@@ -163,7 +163,7 @@ TEST_CASE("loadFont of a font already loaded returns Loaded and makes nothing ne
     CHECK(renderer.getLoadedFontCount() == fontsBefore);
 }
 
-TEST_CASE("After freeing the font text was last drawn with, the text draw binds a live atlas")
+TEST_CASE("After freeing a font whose run is still allocated, the text draw binds only live atlases")
 {
     OpenGLCore &renderer=gweni::test::gpuRenderer();
     const Font font=makeFont(15);
@@ -171,29 +171,51 @@ TEST_CASE("After freeing the font text was last drawn with, the text draw binds 
     REQUIRE(renderer.loadFont(font) == Font::Status::Loaded);
 
     const unsigned int freedAtlas=renderer.getFontAtlasName(font);
+    size_t freedId=0;
+    size_t liveId=0;
 
-    // the last renderText, so flush() binds this font's atlas for the text draw
-    CHECK(drawnPixels(drawText(renderer, font, "Freed")) > 0);
+    renderer.generateTextPrimitive(freedId);
+    renderer.generateTextPrimitive(liveId);
+
+    // the only run, so the text draw binds this font's atlas
+    clearFrame();
+    renderer.begin();
+    renderer.setDrawColor(white);
+    renderer.renderText(freedId, font, Point(8, 40), 1, "Freed");
+    renderer.end();
+    CHECK(drawnPixels(readFrame()) > 0);
     CHECK(boundTexture2D() == freedAtlas);
 
     clearGlErrors();
     renderer.freeFont(font);
     REQUIRE(glIsTexture(freedAtlas) == GL_FALSE);
 
-    // a frame with no new text still draws the text mirror
+    // a frame with no new text still draws what the mirror holds, without the run
+    // whose atlas is gone
     clearFrame();
     renderer.begin();
     renderer.end();
     CHECK(glGetError() == GL_NO_ERROR);
     CHECK(boundTexture2D() != freedAtlas);
+    CHECK(drawnPixels(readFrame()) == 0);
 
     const unsigned int liveAtlas=renderer.getFontAtlasName(gweni::test::openSans());
-    const std::vector<uint8_t> pixels=drawText(renderer, gweni::test::openSans(), "Hello");
+
+    clearFrame();
+    renderer.begin();
+    renderer.setDrawColor(white);
+    renderer.renderText(liveId, gweni::test::openSans(), Point(8, 40), 1, "Hello");
+    renderer.end();
 
     CHECK(glGetError() == GL_NO_ERROR);
-    CHECK(drawnPixels(pixels) > 20);
+    CHECK(drawnPixels(readFrame()) > 20);
     CHECK(boundTexture2D() == liveAtlas);
     CHECK(glIsTexture(liveAtlas) == GL_TRUE);
+
+    renderer.releaseTextPrimitive(freedId);
+    renderer.releaseTextPrimitive(liveId);
+    renderer.begin();
+    renderer.end();
 }
 
 TEST_CASE("Load, free and load the same face again: the same text draws the same pixels")

@@ -118,13 +118,24 @@ on an OpenGL 3.3 core profile:
   `m_textClipBoxes`), scaled like the vertices and clamped to `[0, 65535]` with
   `x1 >= x0`, `y1 >= y0`, so an empty region is an empty box. Each list is uploaded
   like the vertices (dirty slots only, compared by bytes) and read by the fragment
-  shaders as a `GL_RGBA16UI` buffer texture: `texelFetch(clipBoxes, gl_PrimitiveID >> 1)`,
-  then `discard` outside `[x0,x1) x [y0,y1)`. That index is the slot only because each
-  buffer is drawn with **one `glDrawElements` from index 0** and every slot is exactly
-  4 vertices / 6 indices (2 triangles), hidden and degenerate ones included; splitting
-  or offsetting a draw breaks it. `startClip()`/`endClip()` do nothing in this
+  shaders as a `GL_RGBA16UI` buffer texture, then `discard` outside
+  `[x0,x1) x [y0,y1)`. The primitive shader fetches it at `gl_PrimitiveID >> 1`, which
+  is the slot only because the primitive buffer is drawn with **one `glDrawElements`
+  from index 0** and every slot is exactly 4 vertices / 6 indices (2 triangles), hidden
+  and degenerate ones included; splitting or offsetting that draw breaks it. The text
+  shader takes the slot from the vertex instead (`gl_VertexID >> 2`, flat), because the
+  text is split into one draw per atlas (below). `startClip()`/`endClip()` do nothing in this
   renderer. `GWENI_CLIP_DEBUG=<inset px>` shrinks every box by the inset on each side,
   which makes the clipping visible while the controls only ever set the canvas region.
+- **One text draw per font atlas.** Every loaded `gweni::Font` (face, size) has its own
+  freetype-gl atlas texture. Each `TextRun` records the `GLFontData` it was laid out in,
+  and each `GLFontData` keeps the text ids of its runs (`textRuns`). `flush()` binds
+  each atlas in turn and draws its runs with one `glMultiDrawElements` over their
+  existing index ranges (hidden and empty runs left out, adjacent ranges merged, in
+  slot order), with the atlas's `GLTextMode` in the `textMode` uniform. The slots are
+  never moved for this, so the dirty-slot upload is the same with one font or many.
+  `freeFont` takes the font's runs off every list (they keep their slots and draw
+  nothing); their next `renderText` lays them out again in the font loaded anew.
 
 ## Current state vs. goals
 
