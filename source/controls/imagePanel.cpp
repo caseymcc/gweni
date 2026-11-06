@@ -37,11 +37,14 @@ void ImagePanel::setUV(float u1, float v1, float u2, float v2)
     m_uv[1]=v1;
     m_uv[2]=u2;
     m_uv[3]=v2;
+    // render() redraws the image only when the walk reaches this control
+    addStateChange(StateChange_Background);
 }
 
 void ImagePanel::setImage(const String &imageName)
 {
     m_texture.name=imageName;
+    addStateChange(StateChange_Background);
     IResourceLoader &loader=getSkin()->getRenderer()->getLoader();
     Texture::Status m_status=loader.loadTexture(m_texture);
     switch(m_status)
@@ -116,6 +119,7 @@ void ImagePanel::sizeToContents()
 void ImagePanel::setDrawColor(gweni::Color color)
 {
     m_drawColor=color;
+    addStateChange(StateChange_Background);
 }
 
 bool ImagePanel::failedToLoad()
@@ -131,6 +135,7 @@ bool ImagePanel::getStretch()
 void ImagePanel::setStretch(bool b)
 {
     m_stretch=b;
+    addStateChange(StateChange_Background);
 }
 
 }//namespace controls

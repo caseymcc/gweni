@@ -95,6 +95,7 @@ Base::Base(const String &name)
 
     m_parent=nullptr;
     m_actualParent=nullptr;
+    m_childStateChanged=false;
     m_skin=nullptr;
 
     m_alignment=Alignment::Left | Alignment::Top;
@@ -599,6 +600,7 @@ void Base::addChild(Base *child)
 
     onChildAdded(child);
     child->m_actualParent=this;
+    markAttachedChanged(child);
 
     // A child added to a hidden parent inherits the hidden state; otherwise it
     // renders (and bleeds) even though its parent is hidden — e.g. content built
@@ -613,6 +615,7 @@ void Base::addChildOfLayout(Base *child)
 
     onChildAdded(child);
     child->m_actualParent=this;
+    markAttachedChanged(child);
 
     if(m_hidden)
         child->propagateHidden(true);
@@ -631,7 +634,21 @@ void Base::removeChild(Base *child)
         m_layoutItem->removeControl(child);
 
     m_children.remove(child);
+
+    // not in our list any more, so its changes must not mark us (nor reach
+    // through a stale pointer once we are deleted)
+    if(child->m_actualParent == this)
+        child->m_actualParent=nullptr;
+
     onChildRemoved(child);
+}
+
+void Base::markAttachedChanged(Base *child)
+{
+    // Created before it had a parent, or moved here from another branch: the
+    // walk has to reach it in its new place.
+    if(child->m_stateChange != StateChange_Nothing || child->m_childStateChanged)
+        child->markAncestorsChanged();
 }
 
 void Base::addStateChangeRecursive(int stateChange)
@@ -1091,8 +1108,10 @@ void Base::doRender(skin::Base *skin)
 //        doCacheRender(skin, this);
 //        return;
 //    }
-//    if(getStateChange()==StateChange_Nothing)
-//        return;
+    // Nothing pending here or below: the subtree's primitives are as they
+    // were, so skip it before any offset, clip or children work.
+    if(getStateChange() == StateChange_Nothing && !m_childStateChanged)
+        return;
 
     renderRecursive(skin, getBounds());
 
@@ -1103,6 +1122,8 @@ void Base::doRender(skin::Base *skin)
 void Base::renderRecursive(skin::Base *skin, const Rect &cliprect)
 {
     renderer::Base *baseRenderer=skin->getRenderer();
+
+    ++g_changeStats.visited;
 
     //render current control
     renderUnder(skin);
@@ -1127,6 +1148,11 @@ void Base::renderRecursive(skin::Base *skin, const Rect &cliprect)
 //            return;
 //        }
 //    }
+
+    // Cleared before the children are visited, so a change raised on one of
+    // them from here on (a sibling's render(), say) marks this control again
+    // and is rendered next frame, if not this one.
+    m_childStateChanged=false;
 
     // Render this child controls under current objects clip
     baseRenderer->startClip();
@@ -1217,6 +1243,7 @@ void Base::setSkin(skin::Base *skin, bool doChildren)
     onSkinChanged(skin);
 
     m_stateChange=StateChange_Created;
+    markAncestorsChanged();
 
     if(doChildren)
     {

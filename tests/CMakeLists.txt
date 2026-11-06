@@ -151,6 +151,7 @@ add_executable(gweni_unit_tests
     unit/skinSwap.cpp
     unit/platformSleep.cpp
     unit/layoutPasses.cpp
+    unit/renderWalk.cpp
     unit/sliderNotches.cpp
     unit/colorControls.cpp
     unit/scrollControl.cpp

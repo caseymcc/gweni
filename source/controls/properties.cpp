@@ -145,6 +145,9 @@ protected:
 GWENI_CONTROL_CONSTRUCTOR(PropertyRow)
 {
     m_property=nullptr;
+    // render() compares against these on its first call
+    m_lastEditing=false;
+    m_lastHover=false;
     PropertyRowLabel *label=newChild<PropertyRowLabel>();
     label->SetPropertyRow(this);
     label->setDock(DockPosition::Left);

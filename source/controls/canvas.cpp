@@ -59,6 +59,9 @@ void Canvas::renderCanvas()
     render->setClipRegion(getBounds());
     render->setRenderOffset(Point(0, 0));
     render->setScale(scale());
+    // here rather than in render(): doRender() skips the canvas too on a
+    // frame nothing below it changed
+    m_needsRedraw=false;
 
     if(m_drawBackground && (m_stateChange != StateChange_Nothing))
     {
@@ -75,7 +78,6 @@ void Canvas::renderCanvas()
 
 void Canvas::render(skin::Base * /*render*/)
 {
-    m_needsRedraw=false;
 }
 
 void Canvas::onBoundsChanged(Rect oldBounds)

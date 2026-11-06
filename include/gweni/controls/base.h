@@ -55,11 +55,15 @@ constexpr int StateChange_Geometry=0x0004;
 constexpr int StateChange_Background=0x0008;
 constexpr int StateChange_Text=0x0010;
 
-//! Tally of the controls Base::render() found something to regenerate for.
-//! This is what "per-frame cost scales with what changed" means, measured: on a
-//! settled frame every field is zero.
+//! Tally of the controls Base::render() found something to regenerate for,
+//! plus the controls the render walk entered at all. This is what "per-frame
+//! cost scales with what changed" means, measured: on a settled frame every
+//! field is zero, except visited, which is at most 1 (the Canvas).
 struct ChangeStats
 {
+    //! controls Base::renderRecursive() entered: the changed ones and their
+    //! ancestors; doRender() skips a subtree with nothing pending in it
+    size_t visited=0;
     size_t controls=0;      //!< controls with getStateChange() != StateChange_Nothing
     size_t created=0;
     size_t visibility=0;
@@ -212,7 +216,14 @@ protected:
 public:
     
     virtual int getStateChange() { return m_stateChange; }
-    virtual void addStateChange(int stateChange) { m_stateChange|=stateChange; }
+    //! Sets the bits and marks the path to the root (see
+    //! m_childStateChanged), so the render walk reaches this control.
+    virtual void addStateChange(int stateChange)
+    {
+        m_stateChange|=stateChange;
+        if(stateChange != StateChange_Nothing)
+            markAncestorsChanged();
+    }
     virtual void addStateChangeRecursive(int stateChange);
     virtual bool hasState(int state) { return m_stateChange&state; }
     
@@ -592,6 +603,26 @@ protected:
     //! This is the panel's actual parent - most likely the logical
     //! parent's InnerPanel (if it has one). You should rarely need this.
     Base *m_actualParent;
+
+    //! Some descendant has a pending state change, so doRender() has to walk
+    //! into this control even when its own m_stateChange is Nothing. Set on
+    //! the m_actualParent chain (the m_children lists the walk follows) by
+    //! addStateChange() and when a pending control is attached; cleared when
+    //! the walk enters the control, before it visits the children.
+    bool m_childStateChanged;
+
+    //! Sets m_childStateChanged on each m_actualParent up to the first that
+    //! already has it: O(depth), and amortised O(1) per frame.
+    void markAncestorsChanged()
+    {
+        for(Base *parent=m_actualParent; parent && !parent->m_childStateChanged;
+            parent=parent->m_actualParent)
+            parent->m_childStateChanged=true;
+    }
+
+    //! Called once child is in our m_children: marks our chain if it has
+    //! anything pending.
+    void markAttachedChanged(Base *child);
 
     Base *m_toolTip;
 

@@ -53,6 +53,25 @@ control, `Base::render()`:
 So an unchanged control issues no renderer calls at all; a changed control only
 rewrites its own primitives.
 
+The walk itself only goes where something changed. `addStateChange()` sets the
+control's bits and then `m_childStateChanged` on each ancestor, up to the first one
+that has it already (the chain is `m_actualParent`, the owners of the `m_children`
+lists the walk follows). Attaching a control that has something pending, in
+`addChild()` or `addChildOfLayout()`, marks its new parent's chain the same way.
+`doRender()` returns at once for a control with neither its own change nor the bit,
+before the offset and clip push and the copy of its children. So a settled frame
+enters no control at all, and a hover enters the controls it repaints and their
+ancestors.
+`renderRecursive()` clears the bit before it visits the children. A change raised on
+one of them later in the walk (from a sibling's `render()`, say) marks the path
+again: it is rendered later in the frame if the walk has not reached that control
+yet, and otherwise on the next frame. `ChangeStats::visited` counts the controls
+entered (`ControlTest --stats` prints it as `visited=`). Demo's first frame enters
+2662 and a settled one 0. `tests/unit/renderWalk.cpp` pins the skip. A
+control's `render()`, `renderOver()` and `renderFocus()` therefore run only on a
+frame something in or below it changed. Anything that changes what one of them draws
+must raise a state change: `ImagePanel`'s setters do, for example.
+
 ## The renderer abstraction
 
 A renderer implements `gweni::renderer::Base` (`include/gweni/platforms/baseRender.h`).
@@ -174,7 +193,9 @@ What exists today (the foundation) and what's still aspirational:
   in every build with tests on (the default), so the interface stays implementable
   outside OpenGL.
 - Two-phase `updateCanvas` / `renderCanvas` split.
-- State-change tracking; unchanged controls emit no renderer calls.
+- State-change tracking; unchanged controls emit no renderer calls, and the render
+  walk skips every subtree with nothing pending in it, so a settled frame visits no
+  control (`ChangeStats::visited`).
 - Persistent primitive-id-indexed CPU vertex/index buffers in OpenGLCore; per-control
   primitive ownership via `skin::Control`.
 - **Incremental GPU upload.** `OpenGLCore::flush()` tracks which primitive slots were
@@ -218,7 +239,10 @@ What exists today (the foundation) and what's still aspirational:
 - **Clipping, control side.** The renderer clips to each slot's box, but
   `Base::renderRecursive` does not narrow the region per control yet (the
   `shouldClip()` block is commented out), so the only region ever set is the canvas's
-  and nothing is cut.
+  and nothing is cut. Once it does, the walk still skips unchanged subtrees, so a
+  clip-box change has to reach the affected descendants as a state change.
+- **The update phase still walks the whole tree.** `Base::doThink()` calls `think()`
+  on every control every frame, and `updateRecursive()` renumbers every z index.
 - **Cache-to-texture** (`ICacheToTexture`) and free-slot compaction/defragmentation of
   the primitive buffers are stubbed.
 

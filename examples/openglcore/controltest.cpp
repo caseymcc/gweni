@@ -401,14 +401,15 @@ static void printFrameStats(int frame, const std::string &control,
         " geometry=%zu background=%zu text=%zu prim_slots_written=%zu text_slots_written=%zu"
         " upload_calls=%zu upload_bytes=%zu mirror_bytes=%zu draw_calls=%zu"
         " atlas_upload_calls=%zu atlas_upload_bytes=%zu"
-        " layout_passes=%d redirtied_by=%s render_layout=%d\n",
+        " layout_passes=%d redirtied_by=%s render_layout=%d visited=%zu\n",
         frame, control.c_str(),
         changes.controls, changes.created, changes.visibility,
         changes.geometry, changes.background, changes.text,
         gpu.primitiveSlotsWritten, gpu.textSlotsWritten,
         gpu.uploadCalls, gpu.uploadBytes, gpu.mirrorBytes, gpu.drawCalls,
         gpu.atlasUploadCalls, gpu.atlasUploadBytes,
-        layout.passes, redirtiedBy(layout).c_str(), layout.renderLayout ? 1 : 0);
+        layout.passes, redirtiedBy(layout).c_str(), layout.renderLayout ? 1 : 0,
+        changes.visited);
     std::fflush(stdout);
 }
 
