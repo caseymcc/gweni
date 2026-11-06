@@ -19,6 +19,18 @@ GWENI_CONTROL_CONSTRUCTOR(SliderBar)
 {
     setTarget(this);
     restrictToParent(true);
+    // the slider's layout() places the thumb at its value; arrange keeps it there
+    setAlignment(Alignment::Absolute);
+}
+
+void SliderBar::onMouseClickLeft(int x, int y, bool down)
+{
+    const bool wasDepressed=m_depressed;
+
+    ParentClass::onMouseClickLeft(x, y, down);
+
+    if(m_depressed != wasDepressed)
+        redraw();
 }
 
 }//namespace internal
@@ -35,6 +47,12 @@ GWENI_CONTROL_CONSTRUCTOR(Slider)
     m_numNotches=5;
     m_value=0.0f;
     setTabable(true);
+}
+
+void Slider::setDisabled(bool active)
+{
+    ParentClass::setDisabled(active);
+    m_sliderBar->setDisabled(active);
 }
 
 void Slider::onMoved(event::Info)

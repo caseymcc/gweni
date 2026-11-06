@@ -118,6 +118,14 @@ inline Surface ScrollThumbDown { Blue,                 DarkBlue,              Bl
 inline Surface ProgressBack   { BgDark,                BgDark,                BgHighlight, Radius, BorderW };
 inline Surface ProgressFront  { Blue,                  DarkBlue,              Blue,  Radius, 0.0f };
 
+// Slider: a thin inset track, a tick per notch, and the thumb (its own control)
+inline Surface SliderTrack        { BgDark,                BgDark,                Line,  2.0f,     BorderW };
+inline Surface SliderNotch        { Muted,                 Muted,                 Muted, 0.0f,     0.0f };
+inline Surface SliderThumb        { SurfHi,                Surf,                  Blue,  RadiusSm, BorderW };
+inline Surface SliderThumbHover   { SurfHover,             SurfHi,                Cyan,  RadiusSm, BorderW };
+inline Surface SliderThumbDown    { Blue,                  DarkBlue,              Cyan,  RadiusSm, BorderW };
+inline Surface SliderThumbDisabled{ BgStorm,               Color(0x1f,0x22,0x33), BgHighlight, RadiusSm, BorderW };
+
 // Check / radio
 inline Surface CheckOff       { BgDark,                BgDark,                Line,  RadiusSm, BorderW };
 inline Surface CheckOn        { Blue,                  DarkBlue,              Blue,  RadiusSm, BorderW };
@@ -140,6 +148,8 @@ inline std::unordered_map<std::string, Surface*>& surfaceRegistry()
         {"ListItem",&ListItem},{"ListItemSel",&ListItemSel},{"ListItemHover",&ListItemHover},
         {"ScrollTrack",&ScrollTrack},{"ScrollThumb",&ScrollThumb},{"ScrollThumbHover",&ScrollThumbHover},{"ScrollThumbDown",&ScrollThumbDown},
         {"ProgressBack",&ProgressBack},{"ProgressFront",&ProgressFront},
+        {"SliderTrack",&SliderTrack},{"SliderNotch",&SliderNotch},{"SliderThumb",&SliderThumb},
+        {"SliderThumbHover",&SliderThumbHover},{"SliderThumbDown",&SliderThumbDown},{"SliderThumbDisabled",&SliderThumbDisabled},
         {"CheckOff",&CheckOff},{"CheckOn",&CheckOn},
     };
     return m;
@@ -148,7 +158,9 @@ inline std::unordered_map<std::string, Surface*>& surfaceRegistry()
 // ---- paint helper ---------------------------------------------------------
 // Standard "draw if visible, toggle on visibility/created change" flow used by
 // almost every control renderer. ids must point at >=1 primitive id.
-inline void paintSurface(renderer::Base *render, size_t *ids, controls::Base *c, const Surface &s)
+// The overload taking a rect paints it in place of the control's render bounds.
+inline void paintSurface(renderer::Base *render, size_t *ids, controls::Base *c, const Surface &s,
+    const Rect &rect)
 {
     if(!ids)
         return;
@@ -156,12 +168,17 @@ inline void paintSurface(renderer::Base *render, size_t *ids, controls::Base *c,
     const bool visible=c->visible();
 
     if(visible)
-        render->drawRoundedRect(ids[0], c->getRenderBounds(), s.radius, s.borderWidth,
+        render->drawRoundedRect(ids[0], rect, s.radius, s.borderWidth,
             s.top, s.bottom, s.border, c->getZIndex());
 
     const unsigned int sc=c->getStateChange();
     if((sc&controls::StateChange_Visibility) || (sc&controls::StateChange_Created))
         render->showPrimitive(visible?4:0, ids[0]);
+}
+
+inline void paintSurface(renderer::Base *render, size_t *ids, controls::Base *c, const Surface &s)
+{
+    paintSurface(render, ids, c, s, c->getRenderBounds());
 }
 
 }//namespace tokyonight

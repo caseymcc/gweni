@@ -40,6 +40,8 @@ void VerticalSlider::onMouseClickLeft(int x, int y, bool down)
 void VerticalSlider::layout(skin::Base * /*skin*/)
 {
     m_sliderBar->setSize(getWidth(), 15);
+    // a resize moves the thumb's travel, so put it back at the value
+    updateBarFromValue();
 }
 
 //void VerticalSlider::render(skin::Base *skin)

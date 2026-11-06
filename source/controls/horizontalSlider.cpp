@@ -39,6 +39,8 @@ void HorizontalSlider::onMouseClickLeft(int x, int y, bool down)
 void HorizontalSlider::layout(skin::Base * /*skin*/)
 {
     m_sliderBar->setSize(15, getHeight());
+    // a resize moves the thumb's travel, so put it back at the value
+    updateBarFromValue();
 }
 
 }//namespace controls

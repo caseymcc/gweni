@@ -37,9 +37,12 @@ public:
         return m_horizontal;
     }
 
+    //! Dragger does not repaint on press/release; the thumb has a down look.
+    void onMouseClickLeft(int x, int y, bool down) override;
+
 protected:
 
-    bool m_horizontal;
+    bool m_horizontal=true;
 };
 
 }//namespace internal
@@ -52,19 +55,47 @@ public:
     //void render(skin::Base *skin) override=0;
     void layout(skin::Base *skin) override;
 
+    //! The notches are drawn only while the value is clamped to them.
     virtual void setClampToNotches(bool bClamp)
     {
+        if(m_clampToNotches == bClamp)
+            return;
+
         m_clampToNotches=bClamp;
+        redraw();
+    }
+
+    virtual bool getClampToNotches()
+    {
+        return m_clampToNotches;
     }
 
     virtual void setNotchCount(int num)
     {
+        if(m_numNotches == num)
+            return;
+
         m_numNotches=num;
+        redraw();
     }
 
     virtual int getNotchCount()
     {
         return m_numNotches;
+    }
+
+    //! Disables the thumb too, so it looks (and drags) disabled with the track.
+    void setDisabled(bool active) override;
+
+    virtual bool isHorizontal()
+    {
+        return m_sliderBar->isHorizontal();
+    }
+
+    //! The thumb, whose size along the axis insets the track.
+    virtual internal::SliderBar *getSliderBar()
+    {
+        return m_sliderBar;
     }
 
     virtual void  setRange(float fMin, float fMax);

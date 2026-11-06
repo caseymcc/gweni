@@ -27,8 +27,8 @@ HERO_OUT=demo.png
 # embeds each of these, so a change here needs a matching change there.
 #
 # Left out because they do not look right today:
-#   ComboBoxDemo, SliderDemo, ImagePanelDemo, LabelMultilineDemo - an empty
-#     canvas (issue #69)
+#   ComboBoxDemo, ImagePanelDemo, LabelMultilineDemo - an empty canvas
+#     (issue #69)
 #   ProgressBarDemo - the fill is not drawn, only the empty track
 #   CheckBoxDemo, GroupBoxDemo, TextBoxDemo, NumericDemo - controls stacked on
 #     each other or inflated to their parent (issue #93)
@@ -42,6 +42,7 @@ SAMPLES=(
     PropertiesDemo
     PageControlDemo
     ListBoxDemo
+    SliderDemo
 )
 
 CONTROL_SIZE=640x480

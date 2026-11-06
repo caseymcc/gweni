@@ -611,28 +611,41 @@ public:
     static BorderedPrimitive BackgroundPrimitive;
 };
 
+// The track and one tick per notch position (getNotchCount()+1 of them, only
+// while the slider clamps to its notches). The tick count can change after
+// generate(), so update() grows or shrinks this control's own slot list to
+// 1+ticks itself; requiredPrimitives() is only the track.
 class Slider:public textured::ControlRegister<Slider>
 {
 public:
-    static void staticInit(TexturedSkin *skin);
+    static void staticInit(TexturedSkin *skin) { m_staticInit=true; }
 
-    size_t requiredPrimitives() override { return 9; }
+    size_t requiredPrimitives() override { return 1; }
 
-    void generate(renderer::Base *renderer, controls::Base *baseControl) override;
     void update(renderer::Base *renderer, controls::Base *baseControl) override;
-    void remove(renderer::Base *renderer, controls::Base *baseControl) override;
 
     inline static const std::string_view name="Slider";
 
-    static size_t Horizontal_Normal;
-    static size_t Horizontal_Hover;
-    static size_t Horizontal_Down;
-    static size_t Horizontal_Disabled;
-    static size_t Vertical_Normal;
-    static size_t Vertical_Hover;
-    static size_t Vertical_Down;
-    static size_t Vertical_Disabled;
-    static BorderedPrimitive NormalPrimitive;
+    //! Thumb size across the slider's axis (it is never drawn thicker than its bounds).
+    static constexpr int ThumbThickness=20;
+    static constexpr int TrackThickness=4;
+
+private:
+    void resizePrimitives(renderer::Base *renderer, size_t count);
+};
+
+// The slider's thumb, controls::internal::SliderBar: its own child control, so
+// it sits one z above the track it moves along.
+class SliderBar:public textured::ControlRegister<SliderBar>
+{
+public:
+    static void staticInit(TexturedSkin *skin) { m_staticInit=true; }
+
+    size_t requiredPrimitives() override { return 1; }
+
+    void update(renderer::Base *renderer, controls::Base *baseControl) override;
+
+    inline static const std::string_view name="SliderBar";
 };
 
 class StatusBar:public textured::ControlRegister<StatusBar>
