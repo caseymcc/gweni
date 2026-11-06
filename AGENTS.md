@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 gweni ("GUI Without Extravagant Nonsense") is a C++17 retained-mode GUI library, forked from Garry Newman's **GWEN** (MIT) and reworked to be OpenGL-aware. The core idea separating it from GWEN: instead of redrawing every widget each frame in immediate mode, controls allocate persistent renderer **primitives** and only regenerate/update them when their state actually changes. The long-term goal is good performance on modern OpenGL (3.0+ core profile) and eventually Vulkan.
 
-The library builds as a static/object library plus example executables. There is no test suite.
+The library builds as a static/object library plus example executables. Tests are run with CTest (see "Tests" under "Building").
 
 ## Building
 
@@ -79,13 +79,25 @@ The sample PNGs under `docs/images/` (embedded by `README.md`) are checked in an
 
 It captures the hero demo (`OpenGLCore --demo`) and the gallery controls (`ControlTest --control`) offscreen, so no display is needed: it uses `xvfb-run` when the image has it and otherwise the examples' own surfaceless-EGL path. The sample list at the top of the script is the interface — edit it to change the set, and update the gallery table in `README.md` to match, since it embeds each PNG by path. Re-running on an unchanged tree produces byte-identical PNGs.
 
+### Tests
+
+The test suite is CTest, under `tests/`. After `cmake --build`, from the repo root:
+
+```bash
+ctest --test-dir build_linux_x64_debug            # everything
+ctest --test-dir build_linux_x64_debug -L gpu     # only the tests that need a GL context
+ctest --test-dir build_linux_x64_debug -LE gpu    # only the ones that don't (may be "no tests")
+```
+
+Tests labelled `gpu` run the examples headless (`--headless`, the surfaceless-EGL path), so an agent holds the GPU lock around `ctest` (`mm run --lock gpu -- ctest ...`), as for any ControlTest capture. `controltest_determinism` (`tests/determinism.cmake`) runs `ControlTest --shot-all --dump-bounds` in two separate processes and fails, naming each file, if any PNG or `.txt` listing differs between them. A demo that is known to differ is marked out in that script's `EXCLUDED_DEMOS` with its issue number. `controltest_teardown` runs `--check-teardown`. The tests are built only when `GWENI_BUILD_TESTS` is on (the default), and the ControlTest tests also need `GWENI_BUILD_EXAMPLES`.
+
 ### Dependencies / vcpkg notes
 - The active OpenGL-core build pulls `rapidjson`, `glm`, `freetype`, `glew`, `glfw3`, `libpng`, `libjpeg-turbo` (last two via the `deps/imglib` subproject). RapidJSON is header-only — CMake consumes `RAPIDJSON_INCLUDE_DIRS`, not an imported target.
 - The SDL2 backend and the Android Boost.Filesystem backend are optional vcpkg **features** (`sdl2`, `boost-filesystem`); enable with `-DVCPKG_MANIFEST_FEATURES=sdl2`.
 - The vendored `deps/freetype-gl` and `deps/imglib` are added via `add_subdirectory`; `deps/CMakeLists.txt` sets `freetype-gl_USE_HUNTER OFF` so they resolve deps through the vcpkg toolchain's standard find modules.
 
 ### Build options (CMakeLists.txt)
-`GWENI_RENDER_SDL2`, `GWENI_RENDER_OPENGL` (legacy fixed-function), `GWENI_RENDER_OPENGL_CORE` (the active modern renderer), `GWENI_BUILD_EXAMPLES`. The Linux toolchain turns SDL2 and legacy GL **off** and uses only the GL core renderer. `GWENI_RENDER_OPENGL_CORE` is what pulls in glm + freetype + the `deps/freetype-gl` and `deps/imglib` subprojects.
+`GWENI_RENDER_SDL2`, `GWENI_RENDER_OPENGL` (legacy fixed-function), `GWENI_RENDER_OPENGL_CORE` (the active modern renderer), `GWENI_BUILD_EXAMPLES`, `GWENI_BUILD_TESTS` (CTest suite under `tests/`, default on). The Linux toolchain turns SDL2 and legacy GL **off** and uses only the GL core renderer. `GWENI_RENDER_OPENGL_CORE` is what pulls in glm + freetype + the `deps/freetype-gl` and `deps/imglib` subprojects.
 
 ## Architecture
 

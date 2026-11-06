@@ -33,6 +33,8 @@ implemented-vs-planned status, and [docs/layout.md](docs/layout.md) for the layo
 | **TabControl** | **TreeControl** |
 | ![Properties](docs/images/PropertiesDemo.png) | ![PageControl](docs/images/PageControlDemo.png) |
 | **Properties** | **PageControl** |
+| ![ListBox](docs/images/ListBoxDemo.png) | |
+| **ListBox** | |
 
 Each control is shown on its own in `ControlTest`. All of these images are rendered offscreen by
 `tools/capture_samples.sh` (see `AGENTS.md`).

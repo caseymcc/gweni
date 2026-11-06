@@ -29,9 +29,6 @@ HERO_OUT=demo.png
 # Left out because they do not look right today:
 #   ComboBoxDemo, SliderDemo, ImagePanelDemo, LabelMultilineDemo - an empty
 #     canvas (issue #69)
-#   ListBoxDemo - not reproducible: it uses glyphs OpenSans lacks and they
-#     rasterise into the atlas after it was uploaded, so those cells differ
-#     every run (issues #70, #94)
 #   ProgressBarDemo - the fill is not drawn, only the empty track
 #   CheckBoxDemo, GroupBoxDemo, TextBoxDemo, NumericDemo - controls stacked on
 #     each other or inflated to their parent (issue #93)
@@ -44,6 +41,7 @@ SAMPLES=(
     TreeControlDemo
     PropertiesDemo
     PageControlDemo
+    ListBoxDemo
 )
 
 CONTROL_SIZE=640x480
