@@ -8,23 +8,24 @@ namespace gweni
 
 namespace
 {
-//the process-wide rand() is never seeded, so these windows would land in the same
-//place only by accident; a capture of this demo has to be repeatable
-std::mt19937 g_rng(1337u);
-
-int pick(int range)
+int pick(std::mt19937 &rng, int range)
 {
-    return static_cast<int>(g_rng()%static_cast<unsigned>(range));
+    return static_cast<int>(rng()%static_cast<unsigned>(range));
 }
 }//namespace
 
 GWENI_CONTROL_CONSTRUCTOR(LayoutDemo)
 {
+    //the process-wide rand() is never seeded, so this window would land in the same
+    //place only by accident; a capture of this demo has to be repeatable, and so does
+    //a second one in the same process
+    std::mt19937 rng(1337u);
+
     controls::WindowControl *window=newChild<controls::WindowControl>();
 
     window->setTitle("Layout Window");
-    window->setSize(200+pick(100), 200+pick(100));
-    window->setPos(pick(700), pick(400));
+    window->setSize(200+pick(rng, 100), 200+pick(rng, 100));
+    window->setPos(pick(rng, 700), pick(rng, 400));
     window->setDeleteOnClose(true);
 
     controls::GroupBox *verticalGroupBox1=window->newChild<controls::GroupBox>();
@@ -61,6 +62,15 @@ GWENI_CONTROL_CONSTRUCTOR(LayoutDemo)
     vb1_hbutton1->setName("HButton1");
     vb1_hbutton1->setText("HButton 1");
     horizontalLayout1->addControl(vb1_hbutton1);
+
+    //a Fixed child takes its own size in the row, whatever its content asks for
+    controls::Button *vb1_hfixed=verticalGroupBox1->newChild<controls::Button>();
+
+    vb1_hfixed->setName("HFixed");
+    vb1_hfixed->setText("F");
+    vb1_hfixed->setSizeFlags({SizeFlag::Fixed, SizeFlag::Fixed});
+    vb1_hfixed->setSize(24, 16);
+    horizontalLayout1->addControl(vb1_hfixed);
 
     controls::Button *vb1_hbutton2=verticalGroupBox1->newChild<controls::Button>();
 
@@ -137,4 +147,4 @@ GWENI_CONTROL_CONSTRUCTOR(LayoutDemo)
     vb1_multilineLabel->setSizeFlags({SizeFlag::Elastic, SizeFlag::Bloat});
 }
 
-}//namespace gweni
+}//namespace gweni
