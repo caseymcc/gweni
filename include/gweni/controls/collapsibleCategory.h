@@ -25,7 +25,8 @@ class CategoryButton: public Button
     {
 //        enlargePrimitiveIds(this, m_primitiveIds, 1);
 
-        setAlignment(Alignment::Left | Alignment::CenterV);
+        // a list entry reads from the left, inside the padding add() gives it
+        setTextAlignment(Alignment::Left | Alignment::CenterV);
         m_alt=false;
     }
 

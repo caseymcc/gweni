@@ -43,7 +43,7 @@ class CategoryHeaderButton: public Button
     {
         setShouldDrawBackground(false);
         setIsToggle(true);
-        setAlignment(Alignment::Center);
+        setTextAlignment(Alignment::Center);
     }
 
 public:

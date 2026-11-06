@@ -134,7 +134,12 @@ gweni::Rect Text::getCharacterPosition(unsigned int value)
         return rect;
     }
 
-    return characterPositionIn(m_string, value);
+    // Unwrapped, the string starts inside the padding (textOrigin()).
+    gweni::Rect rect=characterPositionIn(m_string, value);
+
+    rect.x+=getPadding().left;
+    rect.y+=getPadding().top;
+    return rect;
 }
 
 gweni::Rect Text::characterPositionIn(const gweni::String &str, unsigned int value)
@@ -154,10 +159,12 @@ gweni::Rect Text::getLineBox(int i)
 {
     const bool wrapped=ensureWrapped() && i >= 0 && i < static_cast<int>(m_wrapped.size());
     const gweni::String &str=wrapped?m_wrapped[i].text:m_string;
-    const int y=wrapped?i*lineHeight():0;
+    // wrapped, the rows of the line children; unwrapped, inside the padding
+    const int x=wrapped?0:getPadding().left;
+    const int y=wrapped?i*lineHeight():getPadding().top;
 
     gweni::Point p=getSkin()->getRenderer()->measureText(getFont(), str);
-    return gweni::Rect(0, y, clamp(p.x, 1, p.x), clamp(p.y, 1, p.y));
+    return gweni::Rect(x, y, clamp(p.x, 1, p.x), clamp(p.y, 1, p.y));
 }
 
 int Text::getClosestCharacter(gweni::Point p)
@@ -184,7 +191,9 @@ int Text::getClosestCharacter(gweni::Point p)
         return gweni::clamp(start+iLinePos, start, getLastCaretOnLine(iLine));
     }
 
-    return closestCharacterIn(m_string, p);
+    // Unwrapped, the string starts inside the padding (textOrigin()).
+    return closestCharacterIn(m_string,
+        gweni::Point(p.x-getPadding().left, p.y-getPadding().top));
 }
 
 int Text::closestCharacterIn(const gweni::String &str, gweni::Point p)

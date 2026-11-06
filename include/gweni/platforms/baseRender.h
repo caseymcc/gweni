@@ -141,6 +141,12 @@ public:
     virtual void generateTextPrimitive(size_t &primitiveId) {}
     virtual void releaseTextPrimitive(size_t primitiveId) {}
 
+    //! Draw \a text as one line into the run of \a textId, in front of
+    //! \a zIndex. \a pos is the top-left of the line box, in canvas units
+    //! like the rects: the box is measureText(font, text) wide and
+    //! ceil(font->height) high (ascender-descender, no line gap), and the
+    //! baseline is at pos.y+ascender. A control puts \a pos where it wants
+    //! the box; the renderer adds no ascent of its own.
     virtual void renderText(size_t textId, const gweni::Font &font,
         gweni::Point pos, int zIndex,
         const gweni::String &text);

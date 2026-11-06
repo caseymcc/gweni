@@ -32,7 +32,8 @@ class TreeNodeText: public Button
 {
     GWENI_CONTROL_INLINE(TreeNodeText, Button)
     {
-        setAlignment(Alignment::Left|Alignment::CenterV);
+        // Button centres its text; a tree label starts next to its expander.
+        setTextAlignment(Alignment::Left|Alignment::CenterV);
         setShouldDrawBackground(false);
         setHeight(16);
     }

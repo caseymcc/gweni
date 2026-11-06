@@ -20,7 +20,8 @@ GWENI_CONTROL_CONSTRUCTOR(GroupBox)
     // can't get it without us..
     setMouseInputEnabled(true);
     setTextPadding(Padding(10, 0, 0, 0));
-    setAlignment(Alignment::Top|Alignment::Left);
+    // The caption stays on the frame's top edge.
+    setTextAlignment(Alignment::Left|Alignment::Top);
     invalidate();
     m_innerPanel=newChild<Base>();
     m_innerPanel->setDock(DockPosition::Center);

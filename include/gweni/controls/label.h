@@ -140,9 +140,13 @@ public:
         return m_text->wrap();
     }
 
+    //! Wrapped, the text reads from the top: centred like a single line, a
+    //! paragraph taller than the label would start above it.
     virtual void setWrap(bool b)
     {
         m_text->setWrap(b);
+        if(b)
+            setTextAlignment(Alignment::Left|Alignment::Top);
     }
 
     void onBoundsChanged(gweni::Rect oldChildBounds) override;

@@ -62,7 +62,8 @@ GWENI_CONTROL_CONSTRUCTOR(ComboBox)
     m_button=arrow;
     m_selectedItem=nullptr;
 
-    setAlignment(Alignment::Left|Alignment::CenterV);
+    // the selected item reads from the left, clear of the arrow
+    setTextAlignment(Alignment::Left|Alignment::CenterV);
     setText("");
     setMargin(Margin(3, 0, 0, 0));
     setTabable(true);

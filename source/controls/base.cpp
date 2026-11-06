@@ -1761,13 +1761,15 @@ void Base::arrangeHorizontal(skin::Base *skin)
             Alignment alignment=child->getAlignment();
 
             //            child->setBounds(bounds.x, bounds.y, preferred.width, bounds.h);
+            // Aligned inside the padding and what the docked children
+            // already took (innerBounds), like the docked children are.
             if(alignment & Alignment::Left)
-                child->setArrangedBounds(margin.left, bounds.y, bounds.w, bounds.h);
+                child->setArrangedBounds(innerBounds.x+margin.left, bounds.y, bounds.w, bounds.h);
             else if(alignment & Alignment::Right)
-                child->setArrangedBounds(innerBounds.w-bounds.w-margin.right, bounds.y, bounds.w, bounds.h);
+                child->setArrangedBounds(innerBounds.x+innerBounds.w-bounds.w-margin.right, bounds.y, bounds.w, bounds.h);
             else if(alignment & Alignment::CenterH)
             {
-                int start=(innerBounds.w-bounds.w-margin.left-margin.right)/2;
+                int start=innerBounds.x+margin.left+(innerBounds.w-bounds.w-margin.left-margin.right)/2;
                 child->setArrangedBounds(start, bounds.y, bounds.w, bounds.h);
             }
             else //none/Absolute
@@ -1889,12 +1891,12 @@ void Base::arrangeVertical(skin::Base *skin)
             Alignment alignment=child->getAlignment();
 
             if(alignment & Alignment::Top)
-                child->setArrangedBounds(bounds.x, margin.top, bounds.w, bounds.h);
+                child->setArrangedBounds(bounds.x, innerBounds.y+margin.top, bounds.w, bounds.h);
             else if(alignment & Alignment::Bottom)
-                child->setArrangedBounds(bounds.x, innerBounds.h-bounds.h-margin.bottom, bounds.w, bounds.h);
+                child->setArrangedBounds(bounds.x, innerBounds.y+innerBounds.h-bounds.h-margin.bottom, bounds.w, bounds.h);
             else if(alignment & Alignment::CenterV)
             {
-                int start=(innerBounds.h-bounds.h-margin.top-margin.bottom)/2;
+                int start=innerBounds.y+margin.top+(innerBounds.h-bounds.h-margin.top-margin.bottom)/2;
                 child->setArrangedBounds(bounds.x, start, bounds.w, bounds.h);
             }
             else //none/Absolute

@@ -19,6 +19,9 @@ GWENI_CONTROL_CONSTRUCTOR(Label)
     m_createdFont=nullptr;
     m_text=newChild<internal::Text>();
     m_text->setFont(getSkin()->getDefaultFont());
+    // Where the glyphs sit in the label; setAlignment() is where the label
+    // sits in its parent. Subclasses that want another set it themselves.
+    m_text->setAlignment(Alignment::Left|Alignment::CenterV);
     setMouseInputEnabled(false);
     setBounds(0, 0, 100, 10);
 //    setAlignment(Position::Left | Position::CenterV);

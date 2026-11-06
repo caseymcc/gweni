@@ -17,6 +17,7 @@
 
 #include <gweni/controls/button.h>
 #include <gweni/controls/canvas.h>
+#include <gweni/controls/label.h>
 #include <gweni/skins/textured/texturedSkin.h>
 
 #include <cstring>
@@ -29,6 +30,7 @@ namespace
 using gweni::Color;
 using gweni::Font;
 using gweni::Point;
+using gweni::Rect;
 using gweni::String;
 using gweni::renderer::OpenGLCore;
 
@@ -413,6 +415,103 @@ TEST_CASE("Text run: a Button's label takes the Disabled text colour and gives i
     button->setDisabled(false);
     frame();
     CHECK(glyphsHaveColor(labelBytes(), normal));
+
+    delete canvas;
+    delete skin;
+    emptyFrame();
+}
+
+TEST_CASE("Text run: a label brought to front re-depths its glyphs with the same string and position")
+{
+    OpenGLCore &renderer=gweni::test::gpuRenderer();
+    const Point viewSize=gweni::test::viewSize();
+
+    std::set<size_t> textIdsBefore;
+
+    for(const auto &entry:renderer.snapshotMirror().texts)
+        textIdsBefore.insert(entry.first);
+
+    gweni::skin::textured::TexturedSkin *skin=new gweni::skin::textured::TexturedSkin(&renderer);
+
+    // the skin's own default font, as in the Button case above
+    REQUIRE(skin->init("DefaultSkin.json"));
+
+    gweni::controls::Canvas *canvas=new gweni::controls::Canvas(skin);
+
+    canvas->setSize(viewSize.x, viewSize.y);
+
+    // Overlapping, like two windows: only their order changes below.
+    gweni::controls::Label *back=canvas->newChild<gweni::controls::Label>();
+    gweni::controls::Label *front=canvas->newChild<gweni::controls::Label>();
+
+    back->setText("AAAA");
+    front->setText("BBBBBBBB");
+    for(gweni::controls::Label *label:{back, front})
+    {
+        label->setAlignment(gweni::Alignment::Absolute);
+        label->setBounds(10, 10, 160, 30);
+    }
+
+    const auto frame=[canvas]()
+    {
+        canvas->updateCanvas();
+        canvas->renderCanvas();
+    };
+
+    // the run of this canvas's text ids that has `glyphs` glyphs
+    const auto runOf=[&](size_t glyphs)
+    {
+        std::vector<std::vector<ftgl::glyph_vertex_t>> runs;
+
+        for(const auto &entry:renderer.snapshotMirror().texts)
+        {
+            if(textIdsBefore.count(entry.first) != 0)
+                continue;
+
+            std::vector<ftgl::glyph_vertex_t> vertexes=glyphVertexes(entry.second);
+
+            if(vertexes.size() == glyphs*4)
+                runs.push_back(vertexes);
+        }
+        REQUIRE(runs.size() == 1);
+        return runs.front();
+    };
+
+    gweni::controls::Base *backText=back->getChildren().front();
+    gweni::controls::Base *frontText=front->getChildren().front();
+
+    frame();
+    frame();
+
+    const int backZ=backText->getZIndex();
+    const Rect backBounds=backText->getBounds();
+    const std::vector<ftgl::glyph_vertex_t> before=runOf(4);
+
+    REQUIRE(backZ < frontText->getZIndex());
+    CHECK(before.front().z == float(backZ));
+
+    back->bringToFront();
+    frame();
+
+    // same string, same place; only the depth moved, in front of the other label
+    REQUIRE((backText->getBounds() == backBounds));
+    REQUIRE(backText->getZIndex() > frontText->getZIndex());
+
+    const std::vector<ftgl::glyph_vertex_t> after=runOf(4);
+
+    REQUIRE(after.size() == before.size());
+    CHECK(after.front().z == float(backText->getZIndex()));
+    CHECK(runOf(8).front().z == float(frontText->getZIndex()));
+
+    bool samePlace=true;
+
+    for(size_t i=0; i < after.size(); ++i)
+        samePlace=samePlace && (after[i].x == before[i].x) && (after[i].y == before[i].y);
+    CHECK(samePlace);
+
+    // and a frame after it writes nothing
+    frame();
+    CHECK(renderer.getFrameStats().textSlotsWritten == 0);
 
     delete canvas;
     delete skin;

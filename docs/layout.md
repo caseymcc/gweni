@@ -72,6 +72,21 @@ Fixed for "exactly this size" in a layout (ButtonDemo's 20x20 button).
 
 Docked children keep the size their dock gives them.
 
+## Placing a dock-None control
+
+Its alignment places it inside the parent's inner box: the parent's padding,
+less what the docked children placed before it took (the same box the docked
+children are placed in). With the box at x, w wide, and the child's margin m:
+`Left` puts it at x+m.left, `Right` at x+w-width-m.right and `CenterH` at
+x+m.left+(w-width-m.left-m.right)/2; `Top`, `Bottom` and `CenterV` do the same
+in y. With none of them (or `Absolute`) it stays at its requested position.
+
+A Label's alignment is where the label sits in its parent; where its text sits
+in the label is `setTextAlignment`, `Left|CenterV` by default (`Left|Top` once
+`setWrap(true)`). A text padding (`setTextPadding`) is the inner Text's own
+padding: it is counted in the Text's size and the string is drawn inside it
+(`Text::textOrigin()`).
+
 ## One pass per frame
 
 A frame lays the canvas out in the update phase (`Canvas::doThink`, through

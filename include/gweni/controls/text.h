@@ -47,6 +47,13 @@ public:
         return m_string;
     }
 
+    //! Where the string is drawn, in the parent's coordinates: inside this
+    //! control's padding, which refreshSize() adds to the measured string.
+    gweni::Point textOrigin() const
+    {
+        return gweni::Point(getBounds().x+getPadding().left, getBounds().y+getPadding().top);
+    }
+
     gweni::Rect getCharacterPosition(unsigned int value);
     int getClosestCharacter(gweni::Point p);
 

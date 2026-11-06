@@ -1202,7 +1202,7 @@ void Text::update(renderer::Base *renderer, controls::Base *baseControl)
     static const String noText;
 
     renderer->renderText(m_primitives[0], control->getFont(),
-        gweni::Point(control->getBounds().x, control->getBounds().y), control->getZIndex(),
+        control->textOrigin(), control->getZIndex(),
         control->wrap()?noText:control->getText());
 
     if((baseControl->getStateChange() & controls::StateChange_Visibility) || 
