@@ -64,6 +64,24 @@ GWENI_DEMO_TRANSPARENT(WindowDemo)
 
 #undef GWENI_DEMO_TRANSPARENT
 
+// TextDemo's dark-on-light block: one flat light rectangle behind its labels.
+class TextDemoLightPanel:public textured::ControlRegister<TextDemoLightPanel>
+{
+public:
+    static void staticInit(TexturedSkin *) { m_staticInit=true; }
+    size_t requiredPrimitives() override { return 1; }
+    void update(renderer::Base *renderer, controls::Base *baseControl) override
+    {
+        if(m_primitives.empty())
+            return;
+
+        // Tokyo Night Day's background
+        renderer->setDrawColor(Color(0xe1, 0xe2, 0xe7));
+        renderer->drawFilledRect(m_primitives[0], baseControl->getRenderBounds(), baseControl->getZIndex());
+    }
+    inline static const std::string_view name="TextDemoLightPanel";
+};
+
 // Force the registrar static initializers to run so each renderer is registered.
 template class ControlRegister<Demo>;
 template class ControlRegister<ButtonDemo>;
@@ -89,6 +107,7 @@ template class ControlRegister<SliderDemo>;
 template class ControlRegister<StatusBarDemo>;
 template class ControlRegister<TabControlDemo>;
 template class ControlRegister<TextBoxDemo>;
+template class ControlRegister<TextDemoLightPanel>;
 template class ControlRegister<TreeControlDemo>;
 template class ControlRegister<WindowDemo>;
 
