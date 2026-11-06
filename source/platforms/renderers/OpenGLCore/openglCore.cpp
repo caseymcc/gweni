@@ -1124,11 +1124,11 @@ void OpenGLCore::drawFilledRect(size_t primitiveId, gweni::Rect rect, int zIndex
     std::cout<<"Rendering Fill: "<<primitiveId<<"("<<rect.x<<", "<<rect.y<<", "<<rect.w<<", "<<rect.h<<" : "<<zIndex<<") color: "<<(int)m_color.r<<", "<<(int)m_color.g<<", "<<(int)m_color.b<<", "<<(int)m_color.a<<"\n";
 #endif//DEBUG_RENDER
 
-    setVertex(m_vertexes[vertexIndex++], 1, rect.x, rect.y, zIndex, m_color.rg, m_color.ba);
-    setVertex(m_vertexes[vertexIndex++], 1, rect.x+rect.w, rect.y, zIndex, m_color.rg, m_color.ba);
-    setVertex(m_vertexes[vertexIndex++], 1, rect.x, rect.y+rect.h, zIndex, m_color.rg, m_color.ba);
+    setVertex(m_vertexes[vertexIndex++], 1, rect.x, rect.y, zIndex, m_color.rg(), m_color.ba());
+    setVertex(m_vertexes[vertexIndex++], 1, rect.x+rect.w, rect.y, zIndex, m_color.rg(), m_color.ba());
+    setVertex(m_vertexes[vertexIndex++], 1, rect.x, rect.y+rect.h, zIndex, m_color.rg(), m_color.ba());
 //    setVertex(m_vertexes[vertexIndex++], rect.x+rect.w, rect.y);
-    setVertex(m_vertexes[vertexIndex++], 1, rect.x+rect.w, rect.y+rect.h, zIndex, m_color.rg, m_color.ba);
+    setVertex(m_vertexes[vertexIndex++], 1, rect.x+rect.w, rect.y+rect.h, zIndex, m_color.rg(), m_color.ba());
 //    setVertex(m_vertexes[vertexIndex++], rect.x, rect.y+rect.h);
 
     markPrimitiveChanges(primitiveId, before);
@@ -1191,9 +1191,9 @@ void OpenGLCore::drawRoundedRect(size_t primitiveId, gweni::Rect rect, float rad
     const int cx=rect.x+hw;
     const int cy=rect.y+hh;
 
-    const uint16_t r0=fillTop.rg,    g0=fillTop.ba;
-    const uint16_t r1=fillBottom.rg, g1=fillBottom.ba;
-    const uint16_t rb=borderColor.rg, gb=borderColor.ba;
+    const uint16_t r0=fillTop.rg(),    g0=fillTop.ba();
+    const uint16_t r1=fillBottom.rg(), g1=fillBottom.ba();
+    const uint16_t rb=borderColor.rg(), gb=borderColor.ba();
     const uint16_t rad=(uint16_t)(radius<0.0f?0.0f:radius);
     const uint16_t bor=(uint16_t)(border<0.0f?0.0f:border);
 
@@ -1268,7 +1268,7 @@ void OpenGLCore::drawIcon(size_t primitiveId, gweni::Rect rect, int kind, int di
     auto setIcon=[&](size_t vi, int px, int py, int lx, int ly)
     {
         Vertex &v=m_vertexes[vi];
-        setVertex(v, 5, px, py, zIndex, color.rg, color.ba);
+        setVertex(v, 5, px, py, zIndex, color.rg(), color.ba());
         v.lx=(int16_t)lx;
         v.ly=(int16_t)ly;
         v.radius=(uint16_t)kind;
@@ -1285,7 +1285,6 @@ void OpenGLCore::drawIcon(size_t primitiveId, gweni::Rect rect, int kind, int di
 
 void OpenGLCore::setDrawColor(gweni::Color color)
 {
-    //            glColor4ubv((GLubyte*)&color);
     m_color=color;
 }
 

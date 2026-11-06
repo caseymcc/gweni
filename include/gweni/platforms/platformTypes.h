@@ -22,6 +22,7 @@
 #include <list>
 #include <memory>
 #include <limits>
+#include <type_traits>
 
 #include <glm/glm.hpp>
 #include <glm/gtc/type_ptr.hpp>
@@ -204,32 +205,12 @@ struct GWENI_EXPORT BoundingBox
 
 struct GWENI_EXPORT Color
 {
-    Color(unsigned char r_=255,
+    constexpr Color(unsigned char r_=255,
         unsigned char g_=255,
         unsigned char b_=255,
         unsigned char a_=255)
-        : a(a_), b(b_), g(g_), r(r_)
+        : r(r_), g(g_), b(b_), a(a_)
     {}
-
-    Color(const Color &c)
-    {
-        rgba=c.rgba;
-    }
-
-    Color(Color &&c)
-    {
-        rgba=c.rgba;
-    }
-
-    void operator= (const Color &c)
-    {
-        rgba=c.rgba;
-    }
-
-    void operator= (Color &&c)
-    {
-        rgba=c.rgba;
-    }
 
     void operator+= (const Color &c)
     {
@@ -287,13 +268,18 @@ struct GWENI_EXPORT Color
         return c.r==r && c.g==g && c.b==b && c.a==a;
     }
 
-    union
-    {
-        uint32_t rgba;
-        struct { uint16_t ba, rg; };
-        struct { unsigned char a, b, g, r; };
-    };
+    // The two 16-bit halves OpenGLCore packs into a vertex (unpacked by the
+    // shader's unpackColor), built with shifts so they do not depend on byte order.
+    constexpr uint16_t rg() const { return uint16_t(r << 8 | g); }
+    constexpr uint16_t ba() const { return uint16_t(b << 8 | a); }
+
+    unsigned char r, g, b, a;
 };
+
+static_assert(Color(0x11, 0x22, 0x33, 0x44).rg() == 0x1122 &&
+              Color(0x11, 0x22, 0x33, 0x44).ba() == 0x3344,
+              "Color::rg()/ba() must pack as (r<<8)|g and (b<<8)|a");
+static_assert(std::is_trivially_copyable_v<Color>, "Color must be trivially copyable");
 
 namespace colors
 {

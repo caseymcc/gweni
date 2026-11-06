@@ -343,7 +343,7 @@ void OpenGL::drawFilledRect(gweni::Rect rect)
 
 void OpenGL::setDrawColor(gweni::Color color)
 {
-    glColor4ubv((GLubyte*)&color);
+    glColor4ub(color.r, color.g, color.b, color.a);
     m_color = color;
 }
 
