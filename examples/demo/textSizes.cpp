@@ -14,7 +14,7 @@ namespace gweni
 
 GWENI_CONTROL_CONSTRUCTOR(TextSizesDemo)
 {
-    const char *const faces[faceCount]={"OpenSans", "arial"};
+    const char *const faces[faceCount]={"OpenSans", "LiberationSans-Regular"};
     //18 is OpenGLCore's default SDF threshold: the smaller sizes before it are coverage text
     const int sizes[sizeCount]={9, 11, 14, 16, 18, 24, 36, 48, 72};
     //caps, ascenders, descenders, digits and punctuation, short enough for 72 px in 1024
