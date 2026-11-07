@@ -414,41 +414,24 @@ protected:
 
 public:
 
-    virtual void setHidden(bool hidden)
-    {
-        if(m_hidden == hidden)
-            return;
+    //! Hides or shows this control: sets its own flag, the one hidden()
+    //! returns. Its descendants keep theirs, so showing it again gives back
+    //! the children it or its subclass hid for its own reasons (a ComboBox's
+    //! list, a TabControl's other pages, a collapsed node). Marks
+    //! StateChange_Visibility on each control whose visible() changed, which
+    //! is none under a hidden ancestor, and does not enter the subtree of a
+    //! descendant that hid itself.
+    virtual void setHidden(bool hidden);
 
-        m_hidden=hidden;
-        
-        for(auto &&child : m_children)
-        {
-            child->setHidden(hidden);
-        }
-
-        addStateChange(StateChange_Visibility);
-        invalidate();
-        redraw();
-    }
-
-    virtual bool hidden() const;    //!< Returns true only if this control is hidden.
-    virtual bool visible() const;   //!< Returns false if this control or its parents are hidden.
+    //! This control's own flag: what setHidden(), hide() or show() last set on
+    //! it. Hiding or showing an ancestor does not change it.
+    virtual bool hidden() const;
+    //! Whether it is drawn: false if this control or any ancestor (on the
+    //! m_actualParent chain, inner panels included) is hidden. O(1).
+    virtual bool visible() const;
 
     virtual void hide() { setHidden(true); }    //!< Make control invisible.
     virtual void show(bool show=true) { setHidden(!show); }   //!< Make control visible if hidden.
-
-    //! Set the hidden state on this control and its subtree without the
-    //! redraw/invalidate side-effects of setHidden() (which touch the skin and
-    //! so can't run during construction). Used when a child is added to an
-    //! already-hidden parent.
-    void propagateHidden(bool hidden)
-    {
-        m_hidden=hidden;
-        for(auto &&child : m_children)
-            child->propagateHidden(hidden);
-        addStateChange(StateChange_Visibility);
-        invalidate();
-    }
 
     // Skin
     virtual void setSkin(skin::Base *skin, bool doChildren=true);
@@ -727,6 +710,12 @@ protected:
     //! anything pending.
     void markAttachedChanged(Base *child);
 
+    //! An ancestor was hidden or shown, or it was attached to or detached from
+    //! a parent: sets m_ancestorHidden and, if its visible() changed, marks
+    //! StateChange_Visibility and passes it on to the children. Stops at a
+    //! control that hid itself, which is not shown either way.
+    void setAncestorHidden(bool ancestorHidden);
+
     Base *m_toolTip=nullptr;
     gweni::String m_toolTipText;
 
@@ -774,7 +763,12 @@ protected:
     int m_stateChange;
     bool m_restrictToParent;
     bool m_disabled;
+    //! Its own hidden flag (hidden()).
     bool m_hidden;
+    //! Some control on its m_actualParent chain is hidden: kept by
+    //! setAncestorHidden() from setHidden() and from attaching it, so visible()
+    //! is one test. Set at construction only, not by init().
+    bool m_ancestorHidden;
     bool m_mouseInputEnabled;
     bool m_keyboardInputEnabled;
     bool m_drawBackground;
@@ -1035,12 +1029,6 @@ _Control *Base::newChild(const gweni::String name)
 
     control->setParent(this);
     control->recursiveInit(name);
-    // recursiveInit() runs init() which resets m_hidden=false, clobbering the
-    // hidden state propagated by setParent()/addChild(). Now that the control's
-    // own subtree exists, re-propagate the parent's hidden state so a child
-    // added to a hidden parent (and everything it built in init) stays hidden.
-    if(m_hidden)
-        control->propagateHidden(true);
     control->setSkin(m_skin);
 
     return control;

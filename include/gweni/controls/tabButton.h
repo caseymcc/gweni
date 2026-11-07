@@ -42,9 +42,12 @@ public:
         return m_control;
     }
 
+    //! The selected tab: its page's own flag, so a tab is as active under a
+    //! hidden ancestor as when it is shown (updateColors() reads it, and is not
+    //! run again when an ancestor is shown).
     bool isActive()
     {
-        return m_page && m_page->visible();
+        return m_page && !m_page->hidden();
     }
 
     bool dragAndDrop_shouldStartDrag() override;

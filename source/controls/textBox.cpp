@@ -201,13 +201,6 @@ void TextBox::updateColors()
     updatePlaceholder();
 }
 
-// Base::setHidden shows every child with the box, the hint included.
-void TextBox::setHidden(bool hidden)
-{
-    ParentClass::setHidden(hidden);
-    updatePlaceholder();
-}
-
 void TextBox::setFont(const gweni::Font &font)
 {
     ParentClass::setFont(font);

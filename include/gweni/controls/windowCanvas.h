@@ -68,7 +68,7 @@ public:
 
     virtual bool getSizable()
     {
-        return m_sizer->visible();
+        return !m_sizer->hidden();
     }
 
 protected:

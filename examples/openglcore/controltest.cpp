@@ -760,6 +760,7 @@ static void writeControlLine(std::ostream &out, gweni::controls::Base *control, 
        <<" size="<<gweni::sizeFlagName(flags.horizontal)
        <<","<<gweni::sizeFlagName(flags.vertical)
        <<" hidden="<<(control->hidden() ? "yes" : "no")
+       <<" visible="<<(control->visible() ? "yes" : "no")
        <<(inner ? " inner" : "")
        <<"\n";
 

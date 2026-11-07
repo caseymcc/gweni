@@ -148,7 +148,7 @@ TEST_CASE("a placeholder is hidden and shown with its box")
     scene.frame();
     CHECK_FALSE(box->isPlaceholderShown());
 
-    // showing the box shows every child: the hint stays hidden over text
+    // showing the box gives the hint back its own state: hidden over text
     box->setHidden(true);
     scene.frame();
     box->setHidden(false);

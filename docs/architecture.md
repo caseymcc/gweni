@@ -56,6 +56,32 @@ marks `StateChange_Geometry` on exactly the controls whose z index changed.
 `z_visited=`) counts the controls it entered: Demo's first frame 2668, a settled one 0.
 `tests/unit/updateWalk.cpp` pins it.
 
+#### Hidden and visible
+
+A control's `hidden()` is its own flag, what `setHidden`/`hide`/`show` last set on it,
+and `visible()` is whether it is drawn: neither it nor any control on its
+`m_actualParent` chain (inner panels included) hidden. Each control caches the second
+half (`m_ancestorHidden`), so `visible()` is one test. Hiding or showing a control never
+writes its descendants' own flags, so the children a control hid for its own reasons (a
+`ComboBox`'s closed list, a `TabControl`'s other pages, a collapsed `TreeNode` or
+`CollapsibleCategory`, a `ScrollControl`'s unneeded bar, a `setClosable(false)` close
+button, `VirtualList`'s spare rows) stay hidden when a hidden page or window holding them
+is shown. `setHidden` marks `StateChange_Visibility` on each control whose `visible()`
+changed and stops at a descendant that hid itself, so showing a page with a collapsed
+10 000-node tree enters none of the tree; under a hidden ancestor it changes the own
+flag and marks nothing. Attaching a child (`addChild`, `addChildOfLayout`, so `setParent`
+and `newChild` too) sets its cached flag from the new parent's `visible()`, and detaching
+it clears it, so a child moved out of a hidden parent into a shown one is drawn.
+
+Only the shown control is invalidated. The layout pass skips a hidden control's subtree
+(`hidden()` children in `calculateSize`/`arrange`), and an `invalidate()` raised inside it
+meanwhile stays pending on that control (`m_needsLayout`) and on the canvas, so the pass
+of the frame it is shown lays it out. A `setHidden` override (`WindowControl`'s
+`bringToFront`, `Menu`'s `onVisibilityChanged`) runs only for that control's own hide or
+show; code that must follow an ancestor's, as the context menu, the popup and the tooltip
+do, reads its owner's `visible()` in the update phase. `tests/unit/hiddenState.cpp` pins
+it.
+
 #### Hover and mouse capture
 
 `HoveredControl` is the control under the mouse, kept by `input::onMouseMoved`
@@ -179,9 +205,9 @@ it. Opening touches only the popup's subtree and the anchor (`controltest_popup`
 popup made on the canvas moves nothing else in the child order, while one made inside a
 page renumbers the page's later siblings the first time it is moved out.
 
-`Base::setHidden` shows every child with its parent, so a hidden popup holding a
-`ComboBox` would show the list the box keeps as a child until it first opens:
-`ComboBox::setHidden` hides it again.
+A popup holding a `ComboBox` shows it with its list closed: `Base::setHidden` sets the
+popup's own flag only, and the list the box keeps as a child until it first opens keeps
+its own (see "Hidden and visible").
 
 #### The context menu: a right-click opens a Menu at the cursor
 
@@ -469,8 +495,8 @@ on an OpenGL 3.3 core profile:
   is clipped by it like the text. `TextBox::updatePlaceholder` shows it while the box is
   visible and empty and does not have the focus, and hides it otherwise, through
   `setHidden` only: its text id is hidden, not freed, and nothing is laid out again. It
-  runs from `setText` (`PasswordTextBox`'s too, which shows the hint unmasked),
-  `setHidden` (showing a box shows every child) and `updateColors()`, which every focus
+  runs from `setText` (`PasswordTextBox`'s too, which shows the hint unmasked) and
+  `updateColors()`, which the box's own `setHidden` (through `redraw()`) and every focus
   change reaches through `redraw()` once `KeyboardFocus` has moved; `onLostKeyboardFocus`
   runs before it has (`Base::focus`), and a hidden box loses the focus with no call at
   all (`input::onCanvasThink`).

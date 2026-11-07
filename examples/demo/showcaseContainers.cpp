@@ -111,8 +111,7 @@ GWENI_CONTROL_CONSTRUCTOR(ShowcaseContainersDemo)
             label->setDock(DockPosition::Top);
         }
 
-        // Selected before its page is filled: showing a hidden page shows
-        // every control under it, the ComboBox's closed list included.
+        // The page opens on the Properties tab.
         propertiesTab->doAction();
 
         controls::Properties *props=propertiesTab->getPage()->newChild<controls::Properties>();

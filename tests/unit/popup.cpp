@@ -692,7 +692,8 @@ TEST_CASE("Popup: a ComboBox in it keeps its list closed when it opens, and its 
     combo->addItem("Two");
     scene.frame();
 
-    // Base::setHidden shows every child: the list is one until it first opens
+    // the list is the box's child until it first opens, and keeps its own
+    // hidden flag when the popup holding the box is shown
     popup->open(anchor);
     scene.frame();
     CHECK(!combo->isMenuOpen());

@@ -99,6 +99,7 @@ Base::Base(const String &name)
     m_parent=nullptr;
     m_actualParent=nullptr;
     m_childStateChanged=false;
+    m_ancestorHidden=false;
     m_skin=nullptr;
 
     m_alignment=Alignment::Absolute;
@@ -459,13 +460,45 @@ bool Base::hidden() const
 
 bool Base::visible() const
 {
-    if(hidden())
-        return false;
+    return !m_hidden && !m_ancestorHidden;
+}
 
-    if(getParent())
-        return getParent()->visible();
+void Base::setHidden(bool hidden)
+{
+    if(m_hidden == hidden)
+        return;
 
-    return true;
+    m_hidden=hidden;
+
+    // Under a hidden ancestor it is not shown either way: only its own flag
+    // changes, and nothing below it.
+    if(!m_ancestorHidden)
+    {
+        addStateChange(StateChange_Visibility);
+
+        for(auto &&child : m_children)
+            child->setAncestorHidden(hidden);
+    }
+
+    invalidate();
+    redraw();
+}
+
+void Base::setAncestorHidden(bool ancestorHidden)
+{
+    if(m_ancestorHidden == ancestorHidden)
+        return;
+
+    m_ancestorHidden=ancestorHidden;
+
+    // It hid itself: neither it nor anything under it changes.
+    if(m_hidden)
+        return;
+
+    addStateChange(StateChange_Visibility);
+
+    for(auto &&child : m_children)
+        child->setAncestorHidden(ancestorHidden);
 }
 
 void Base::invalidateChildren(bool recursive)
@@ -578,14 +611,11 @@ void Base::addChild(Base *child)
 
     onChildAdded(child);
     child->m_actualParent=this;
+    // Not visible under a hidden parent, e.g. content built into a PageControl
+    // page that is hidden before its content is added; its own flag is kept.
+    child->setAncestorHidden(!visible());
     markAttachedChanged(child);
     zOrderChanged();
-
-    // A child added to a hidden parent inherits the hidden state; otherwise it
-    // renders (and bleeds) even though its parent is hidden — e.g. content built
-    // into a PageControl page that was hidden before its content was added.
-    if(m_hidden)
-        child->propagateHidden(true);
 }
 
 void Base::addChildOfLayout(Base *child)
@@ -594,11 +624,9 @@ void Base::addChildOfLayout(Base *child)
 
     onChildAdded(child);
     child->m_actualParent=this;
+    child->setAncestorHidden(!visible());
     markAttachedChanged(child);
     zOrderChanged();
-
-    if(m_hidden)
-        child->propagateHidden(true);
 }
 
 void Base::removeChild(Base *child)
@@ -618,7 +646,12 @@ void Base::removeChild(Base *child)
     // not in our list any more, so its changes must not mark us (nor reach
     // through a stale pointer once we are deleted)
     if(child->m_actualParent == this)
+    {
         child->m_actualParent=nullptr;
+        // On its own it is shown unless it hid itself; a new parent sets this
+        // again as it is attached.
+        child->setAncestorHidden(false);
+    }
 
     zOrderChanged();
     onChildRemoved(child);

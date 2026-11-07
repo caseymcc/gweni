@@ -47,12 +47,10 @@ public:
     virtual void setPlaceholder(const String &str);
     const String &getPlaceholder() const;
     //! Whether the hint is drawn now.
-    bool isPlaceholderShown() const { return m_placeholder && !m_placeholder->hidden(); }
+    bool isPlaceholderShown() const { return m_placeholder && m_placeholder->visible(); }
     //! The hint's Text, nullptr until a hint is set: placed like the typed
     //! text, inside the same padding with the same alignment and font.
     const internal::Text *getPlaceholderText() const { return m_placeholder; }
-
-    void setHidden(bool hidden) override;
 
     using Label::setFont;
     void setFont(const gweni::Font &font) override;
