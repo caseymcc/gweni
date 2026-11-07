@@ -56,9 +56,30 @@ set_tests_properties(bench_smoke PROPERTIES
     LABELS gpu
     TIMEOUT 300)
 
+# The one check on the bench's numbers: every scaling=local scene's per-frame
+# work counters must be no larger at N=10000 than at N=1000 (scaling.cmake's
+# header says which counters and why). Exact counters only, never a time.
+# Under ASAN the type scene's whole-text re-wrap per keystroke (#323) takes
+# 200 s at N=10000 (4 s in the debug tree), so that tree compares N=1000 with
+# N=3000, which runs in under a minute.
+set(bench_scaling_large_n 10000)
+if(GWENI_SANITIZE MATCHES "address")
+    set(bench_scaling_large_n 3000)
+endif()
+add_test(NAME bench_scaling
+    COMMAND ${CMAKE_COMMAND}
+        -DBENCH=$<TARGET_FILE:gweni_bench>
+        -DSMALL_N=1000
+        -DLARGE_N=${bench_scaling_large_n}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/scaling.cmake
+    WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
+set_tests_properties(bench_scaling PROPERTIES
+    LABELS gpu
+    TIMEOUT 300)
+
 # ASAN tree: the same environment tests/CMakeLists.txt gives its tests, for the
 # same reasons (Mesa/EGL leak at exit; a report must abort).
 if(GWENI_SANITIZE MATCHES "address")
-    set_tests_properties(bench_smoke PROPERTIES
+    set_tests_properties(bench_smoke bench_scaling PROPERTIES
         ENVIRONMENT "ASAN_OPTIONS=detect_leaks=0:abort_on_error=1")
 endif()
