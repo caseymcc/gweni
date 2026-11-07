@@ -57,9 +57,12 @@ target_link_libraries(ControlTest
 # resources/ they load sits next to them and they run from any working
 # directory. One copy serves both, and each depends on it, so building either
 # alone makes it. A custom target runs on every build, unlike a POST_BUILD
-# step, so an edit under resources/ is copied even when nothing relinks. It
-# names the exes' default output directory: $<TARGET_FILE_DIR> here would make
-# the copy depend on the exes that depend on it.
+# step, so an edit under resources/ is copied even when nothing relinks. The
+# copy is a mirror (cmake/mirrorDirectory.cmake): a file deleted or renamed in
+# resources/ is removed from it too, so an old tree has what a fresh one has,
+# and an unchanged file is not rewritten. It names the exes' default output
+# directory: $<TARGET_FILE_DIR> here would make the copy depend on the exes
+# that depend on it.
 get_property(example_multi_config GLOBAL PROPERTY GENERATOR_IS_MULTI_CONFIG)
 if(example_multi_config)
     set(example_resource_dir ${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/resources)
@@ -68,9 +71,10 @@ else()
 endif()
 
 add_custom_target(gweni_example_resources
-    COMMAND ${CMAKE_COMMAND} -E copy_directory_if_different
-        ${GWENI_SOURCE_DIR}/resources ${example_resource_dir}
-    COMMENT "Copying resources/ next to the examples"
+    COMMAND ${CMAKE_COMMAND}
+        -DSRC=${GWENI_SOURCE_DIR}/resources -DDST=${example_resource_dir}
+        -P ${GWENI_SOURCE_DIR}/cmake/mirrorDirectory.cmake
+    COMMENT "Mirroring resources/ next to the examples"
     VERBATIM)
 add_dependencies(${example_name} gweni_example_resources)
 add_dependencies(ControlTest gweni_example_resources)

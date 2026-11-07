@@ -298,6 +298,19 @@ else()
     message(STATUS "tests: ControlTest tests skipped, GWENI_BUILD_EXAMPLES is off")
 endif()
 
+# The mirror that keeps the resources/ next to the examples in step with the
+# repo's (cmake/mirrorDirectory.cmake), on scratch directories: cmake alone, no
+# exe and no context, so it is registered in every tree, with no gpu label.
+add_test(NAME mirror_directory
+    COMMAND ${CMAKE_COMMAND}
+        -DMIRROR=${GWENI_SOURCE_DIR}/cmake/mirrorDirectory.cmake
+        -DSCRATCH_DIR=${CMAKE_CURRENT_BINARY_DIR}/mirror_directory
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/mirrorDirectory.cmake)
+set_tests_properties(mirror_directory PROPERTIES TIMEOUT 30)
+if(EMSCRIPTEN)
+    set_tests_properties(mirror_directory PROPERTIES LABELS web)
+endif()
+
 find_package(doctest CONFIG REQUIRED)
 include(doctest)
 
