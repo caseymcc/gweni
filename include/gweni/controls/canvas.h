@@ -57,6 +57,9 @@ struct UpdateStats
     //! Controls the z renumber entered, the canvas included: the whole tree on
     //! a frame after the tree order changed (Canvas::invalidateZOrder()), else 0.
     size_t zVisited=0;
+    //! Animations anim::think() ran for this canvas: its controls' active ones
+    //! (a focused TextBox's caret, a moving ProgressBar, a timed animation).
+    size_t animsRun=0;
 };
 
 class GWENI_EXPORT Canvas: public Base, public IInputEvent

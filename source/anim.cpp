@@ -7,7 +7,9 @@
 
 #include <gweni/anim.h>
 #include <gweni/utility.h>
+#include <gweni/controls/canvas.h>
 #include <cmath>
+#include <vector>
 
 namespace gweni
 {
@@ -16,83 +18,114 @@ namespace anim
 
 #if GWENI_ANIMATE
 
-static Animation::List g_animations;
-static Animation::ChildList g_animationsListed;
+// Only active animations are here, in the order they were added, so a
+// settled frame runs none and every process runs them in the same order.
+// While a think() is running (g_thinking), a cancelled or finished animation is
+// only marked m_removed: the loop, and an animation further down the stack,
+// may still hold it. sweep() deletes the marked ones once no think() runs.
+static std::vector<Animation *> g_animations;
+static int g_thinking=0;
+static bool g_swept=true;
+
+static void markRemoved(Animation *animation)
+{
+    animation->m_removed=true;
+    g_swept=false;
+}
+
+static void sweep()
+{
+    if(g_thinking || g_swept)
+        return;
+
+    size_t kept=0;
+
+    for(Animation *animation : g_animations)
+    {
+        if(animation->m_removed)
+            delete animation;
+        else
+            g_animations[kept++]=animation;
+    }
+
+    g_animations.resize(kept);
+    g_swept=true;
+}
 
 void add(gweni::controls::Base *control, Animation *animation)
 {
     animation->m_control=control;
-    g_animations[control].push_back(animation);
+    g_animations.push_back(animation);
 }
 
 void cancel(gweni::controls::Base *control)
 {
-    //    cannot use std::list iterator with algorithms based on pointers
-    //    struct AnimDeletePredicate
-    //    {
-    //        AnimDeletePredicate(gweni::controls::Base *control)
-    //        {
-    //            this->control=control;
-    //        }
-    //        bool operator() (gweni::anim::Animation *anim)
-    //        {
-    //            return anim->m_control == control;
-    //        }
-    //        gweni::controls::Base *control;
-    //    };
-    //    std::remove_if(g_animations.begin(), g_animations.end(), AnimDeletePredicate(control));
-
-    Animation::List::iterator iAnimations;
-
-    if((iAnimations=g_animations.find(control)) != g_animations.end())
+    for(Animation *animation : g_animations)
     {
-        Animation::ChildList &ChildAnimationsForControl=iAnimations->second;
-        Animation::ChildList::iterator iAnimationChild=
-            ChildAnimationsForControl.begin();
-
-        if(iAnimationChild != ChildAnimationsForControl.end())
-        {
-            do
-            {
-                delete(*iAnimationChild);
-            } while(++iAnimationChild != ChildAnimationsForControl.end());
-        }
-
-        g_animations.erase(iAnimations);
+        if(animation->m_control == control && !animation->m_removed)
+            markRemoved(animation);
     }
+
+    sweep();
 }
 
-void think()
+void cancel(gweni::controls::Base *control, Animation *animation)
 {
-    Animation::List::iterator it=g_animations.begin();
-
-    if(it != g_animations.end())
+    // compared, never dereferenced, until found: the caller may hold a pointer
+    // to one that finished and is gone
+    for(Animation *registered : g_animations)
     {
-        Animation::ChildList::iterator itChild;
-        Animation *anim;
-
-        do
+        if(registered == animation && registered->m_control == control
+            && !registered->m_removed)
         {
-            if((itChild=it->second.begin()) != it->second.end())
-            {
-                do
-                {
-                    anim=*itChild;
-                    anim->think();
-
-                    if(anim->finished())
-                    {
-                        itChild=it->second.erase(itChild);
-                        delete anim;
-                    }
-                    else
-                    {
-                        ++itChild;
-                    }
-                } while(itChild != it->second.end());
-            }
-        } while(++it != g_animations.end());
+            markRemoved(registered);
+            break;
+        }
     }
+
+    sweep();
+}
+
+size_t think(controls::Canvas *canvas)
+{
+    size_t run=0;
+    // one added from inside the loop waits for the next frame
+    const size_t count=g_animations.size();
+
+    ++g_thinking;
+
+    for(size_t i=0; i < count; ++i)
+    {
+        // by index: an add() may reallocate the vector
+        Animation *animation=g_animations[i];
+
+        // a removed one's control may be gone: m_removed is read first
+        if(animation->m_removed || (animation->m_control->getCanvas() != canvas))
+            continue;
+
+        animation->think();
+        ++run;
+
+        if(!animation->m_removed && animation->finished())
+            markRemoved(animation);
+    }
+
+    --g_thinking;
+    sweep();
+    return run;
+}
+
+size_t activeCount(const controls::Base *control)
+{
+    size_t count=0;
+
+    for(const Animation *animation : g_animations)
+    {
+        if(!animation->m_removed && (!control || (animation->m_control == control)))
+            ++count;
+    }
+
+    return count;
 }
 
 TimedAnimation::TimedAnimation(float length, float delay, float ease)
@@ -127,10 +160,11 @@ void TimedAnimation::think()
     if(!m_started)
     {
         m_started=true;
-        onFinish();
+        onStart();
     }
 
-    float delta=clamp(secondsIn/(m_end-m_start), 0.f, 1.f);
+    // a zero length (tools::Remove) is over as soon as it starts
+    float delta=(m_end > m_start) ? clamp(secondsIn/(m_end-m_start), 0.f, 1.f) : 1.0f;
 
     float eased=getEased(delta, m_ease);
     run(eased);

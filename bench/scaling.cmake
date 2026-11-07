@@ -30,6 +30,7 @@
 #    layout_passes, layout_capped,     yes      any increase
 #      render_layout
 #    z_visited                         yes      any increase
+#    anims_run                         yes      any increase
 #    allocs_<phase> (input, update,    yes      any increase
 #      render, flush, gpu)
 #    allocs                            no       the sum of allocs_<phase>,
@@ -84,6 +85,9 @@ set(EXCLUDED
     # allocations per text index chunk, when one run changes
     set-text:allocs_flush
     type:allocs_flush
+    # #340: every TextBox registers its caret animation for its whole life, so
+    # each of the idle tree's TextBoxes (150 at N=1000) runs one every frame
+    idle:anims_run
 )
 
 # Keys that are not work counters (see the table above).

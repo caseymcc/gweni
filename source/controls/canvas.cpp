@@ -116,7 +116,9 @@ void Canvas::doThink()
         return;
 
 #if GWENI_ANIMATE
-    anim::think();
+    // only this canvas's controls: another canvas's run in its own update
+    // phase, before its own layout
+    m_updateStats.animsRun+=anim::think(this);
 #endif
     processDelayedDeletes();
     updatePopup();

@@ -19,12 +19,32 @@ namespace gweni
 namespace anim
 {
 
+class Animation;
+
+//! Registers animation for control and takes ownership of it. It first runs on
+//! the next think() of control's canvas, also when added from inside one.
+GWENI_EXPORT void add(controls::Base *control, Animation *animation);
+//! Cancels and deletes every animation of control (~Base calls it).
+GWENI_EXPORT void cancel(controls::Base *control);
+//! Cancels and deletes one animation of control, leaving its others running.
+//! Nothing happens if it is not registered (finished, or cancelled already).
+GWENI_EXPORT void cancel(controls::Base *control, Animation *animation);
+//! Runs, in the order they were added, the animations whose control is on
+//! canvas, and removes those that finish. Animations of other canvases' controls
+//! and of controls on no canvas are left alone. An animation may add or cancel
+//! animations (its own included) or delete controls from inside its think():
+//! removal is deferred until the loop ends. Returns how many it ran.
+GWENI_EXPORT size_t think(controls::Canvas *canvas);
+//! The registered animations of control, or of every control when null.
+GWENI_EXPORT size_t activeCount(const controls::Base *control=nullptr);
+
+//! Something a control does over time. A registered animation is run once a
+//! frame by the update phase of its control's canvas (think(Canvas *)), until
+//! it finishes or is cancelled. Register one only while it has work to do: the
+//! registry holds active animations, so a settled frame runs none.
 class GWENI_EXPORT Animation
 {
 public:
-    typedef std::list<Animation *> ChildList;
-    typedef std::map<controls::Base *, ChildList> List;
-
     virtual void think()=0;
     virtual bool finished()
     {
@@ -34,13 +54,12 @@ public:
     virtual ~Animation()
     {}
 
-    controls::Base *m_control;
+    controls::Base *m_control=nullptr;
+    //! The registry's own: cancelled or finished, and deleted once no think()
+    //! is running.
+    bool m_removed=false;
 };
 
-
-GWENI_EXPORT void add(controls::Base *control, Animation *animation);
-GWENI_EXPORT void cancel(controls::Base *control);
-GWENI_EXPORT void think();
 
 //
 /// Timed animation. Provides a useful base for animations.

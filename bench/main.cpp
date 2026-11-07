@@ -73,7 +73,7 @@ const char *const g_counterNames[]=
     "visited", "controls_changed", "created", "visibility", "geometry", "background", "text",
     "prim_slots_written", "text_slots_written", "upload_calls", "upload_bytes", "mirror_bytes",
     "draw_calls", "text_draws", "atlas_upload_calls", "atlas_upload_bytes",
-    "layout_passes", "layout_capped", "render_layout", "z_visited", "prim_ids", "text_ids",
+    "layout_passes", "layout_capped", "render_layout", "z_visited", "anims_run", "prim_ids", "text_ids",
     "allocs", "alloc_bytes",
     "allocs_input", "allocs_update", "allocs_render", "allocs_flush", "allocs_gpu"
 };
@@ -108,7 +108,7 @@ void collectCounters(FrameRecord &record, const bench::PhaseTotals &phases,
         gpu.primitiveSlotsWritten, gpu.textSlotsWritten, gpu.uploadCalls, gpu.uploadBytes,
         gpu.mirrorBytes, gpu.drawCalls, gpu.textDraws, gpu.atlasUploadCalls, gpu.atlasUploadBytes,
         size_t(layout.passes), layout.capped ? 1u : 0u, layout.renderLayout ? 1u : 0u,
-        update.zVisited,
+        update.zVisited, update.animsRun,
         gweni::primitiveIdCount()-gweni::releasedPrimitiveIdCount(),
         gweni::textIdCount()-gweni::releasedTextIdCount(),
         allocs, allocBytes,
@@ -379,6 +379,7 @@ void printUsage()
         "             controls::LayoutStats: update-phase layout passes, whether they hit\n"
         "             the cap, whether the render phase laid out again\n"
         "  z_visited  controls::UpdateStats: controls the z renumber entered\n"
+        "  anims_run  controls::UpdateStats: animations the update phase ran\n"
         "  prim_ids text_ids   live primitive and text ids after the frame\n"
         "  allocs alloc_bytes  C++ heap allocations (operator new) in the frame's phases,\n"
         "             and allocs_<phase> for each phase; C malloc is not counted\n");

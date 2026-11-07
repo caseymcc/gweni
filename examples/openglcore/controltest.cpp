@@ -28,6 +28,8 @@
  *                       process-wide, so it covers every canvas;
  *                       z_visited= the controls updateCanvas()'s z renumber
  *                       entered (0 unless the tree order changed);
+ *                       anims_run= the animations its update phase ran
+ *                       (its controls' active ones only);
  *                       layout_requests= the requested sizes or positions
  *                       recorded while a layout pass ran, and requested_by=
  *                       the first control that recorded one (Type#id, or
@@ -646,7 +648,7 @@ static void printFrameStats(int frame, const std::string &control,
         " upload_calls=%zu upload_bytes=%zu mirror_bytes=%zu draw_calls=%zu"
         " atlas_upload_calls=%zu atlas_upload_bytes=%zu"
         " layout_passes=%d redirtied_by=%s render_layout=%d layout_requests=%d requested_by=%s"
-        " visited=%zu z_visited=%zu prim_ids=%zu\n",
+        " visited=%zu z_visited=%zu anims_run=%zu prim_ids=%zu\n",
         frame, control.c_str(),
         changes.controls, changes.created, changes.visibility,
         changes.geometry, changes.background, changes.text,
@@ -655,7 +657,7 @@ static void printFrameStats(int frame, const std::string &control,
         gpu.atlasUploadCalls, gpu.atlasUploadBytes,
         layout.passes, redirtiedBy(layout).c_str(), layout.renderLayout ? 1 : 0,
         layout.requests, requestedBy(layout).c_str(),
-        changes.visited, update.zVisited, gweni::primitiveIdCount()-gweni::releasedPrimitiveIdCount());
+        changes.visited, update.zVisited, update.animsRun, gweni::primitiveIdCount()-gweni::releasedPrimitiveIdCount());
     std::fflush(stdout);
 }
 
