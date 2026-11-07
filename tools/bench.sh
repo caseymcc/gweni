@@ -49,9 +49,10 @@
 #  The runs. Every gweni_bench run is a copy of that side's binary at one
 #  fixed path, /tmp/gweni-bench-run/gweni_bench, run from that directory with
 #  its own resources linked in, in a fixed environment (env -i with PATH,
-#  HOME and MESA_SHADER_CACHE_DISABLE=true), so where a side was built does
-#  not change what it does. A counter run sets LP_NUM_THREADS=0, as callgrind's
-#  do; a timed run leaves llvmpipe its threads. The instructions are
+#  HOME, LIBGL_ALWAYS_SOFTWARE=1 and MESA_SHADER_CACHE_DISABLE=true), so where
+#  a side was built does not change what it does. A counter run sets
+#  LP_NUM_THREADS=0, as callgrind's do; a timed run leaves llvmpipe its
+#  threads. The instructions are
 #  tools/profile.sh --phases-only of this checkout, run on each side's binary,
 #  so both sides are measured by the same harness. Each run takes its locks
 #  on its own, never around a batch: a counter run mm run --lock render (it
@@ -108,7 +109,10 @@ run_staged() {
     [[ -d "$binDir/resources" ]] || die "$binDir/resources is missing; cmake --build copies it next to gweni_bench"
     ln -s "$(cd "$binDir/resources" && pwd)" "$STAGE/resources"
 
-    local envArgs=(PATH=/usr/bin:/bin HOME="$STAGE" MESA_SHADER_CACHE_DISABLE=true)
+    # LIBGL_ALWAYS_SOFTWARE: llvmpipe even where the host's GPU is passed in,
+    # as the image sets it (env -i would drop it), so both sides draw with the
+    # same rasteriser as every other run here.
+    local envArgs=(PATH=/usr/bin:/bin HOME="$STAGE" LIBGL_ALWAYS_SOFTWARE=1 MESA_SHADER_CACHE_DISABLE=true)
     if [[ "$mode" == counters ]]; then
         envArgs+=(LP_NUM_THREADS=0)
     fi
