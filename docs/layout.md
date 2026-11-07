@@ -45,7 +45,9 @@ position only, `setSize` for the size, `setWidth`/`setHeight` for one axis,
 `setBounds` for both. `getRequestedBounds()` returns it; it starts as the
 initial bounds, and `hasRequestedSize(dim)` says whether a size was asked.
 
-With r the request, p the preferred size:
+With r the request, p the preferred size and c a layout cell less the child's
+margins (never below 0; the child is placed at the cell plus
+`margin.left`/`margin.top`):
 
 | flag | in a Base parent (`dockNoneSize`) | in a layout cell c (`layoutCellSize`) |
 |---|---|---|
@@ -60,7 +62,7 @@ the parent overflows it (a ScrollControl's panel). `Fixed`'s preferred, minimum
 and maximum size are its request too. `sizeOfChildren` counts a dock-None
 child at its requested position, not at the one the last pass gave it.
 
-Along a `VerticalLayout`'s or `HorizontalLayout`'s stacking axis the cell c is
+Along a `VerticalLayout`'s or `HorizontalLayout`'s stacking axis the cell is
 the child's preferred size plus its margins, grown when the layout has room
 left and the flag can grow, and cut when it has too little and the flag can
 shrink; Fixed does neither. So a Shrink child
