@@ -177,6 +177,13 @@ public:
         return m_children;
     }
 
+    //! The panel getChildren() hands out in place of this control's own
+    //! children (a ScrollControl's scrolled panel), or nullptr if it has none.
+    const Base *getInnerPanel() const
+    {
+        return m_innerPanel;
+    }
+
     template<typename _Control>
     friend _Control *newControl(const gweni::String &name);
     template<typename _Control>

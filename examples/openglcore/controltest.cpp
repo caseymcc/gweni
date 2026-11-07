@@ -64,7 +64,8 @@
  *                       with its type, bounds, dock, size flags and hidden
  *                       state. Every child is listed, private ones included:
  *                       a ScrollControl shows its inner panel (its rows under
- *                       it) and both scrollbars. No path writes to stdout; a
+ *                       it) and both scrollbars. An inner panel's line ends
+ *                       in " inner". No path writes to stdout; a
  *                       path writes that file. Nothing pointer-, id- or
  *                       time-derived is printed, so two runs of the same
  *                       command give byte-identical listings.
@@ -512,7 +513,8 @@ static void printUsage(std::ostream &out)
          "                     tooltip check, context-menu one per context-menu\n"
          "                     check; all eight fail on a no\n"
          "  --dump-bounds [<path>]  print the laid-out control tree as text,\n"
-         "                     private children and hidden state included\n"
+         "                     private children and hidden state included, an\n"
+         "                     inner panel marked \" inner\"\n"
          "  --resources <dir>  load the skin, fonts and textures from <dir> (relative\n"
          "                     to the working directory, or absolute) instead of\n"
          "                     the resources/ next to the executable\n"
@@ -657,8 +659,11 @@ struct Session
 // which skips past an inner panel to the children placed in it: so a
 // ScrollControl lists its inner panel (with the rows under it) and both of its
 // scrollbars, hidden or not. Those private parts are where a layout that does
-// not come back usually shows.
-static void writeControlLine(std::ostream &out, gweni::controls::Base *control, int depth)
+// not come back usually shows, and the inner panel is what a scroll moves.
+// That is the tree layout and render walk too. The inner panel's line ends in
+// " inner", so the listing still shows where getChildren() would have gone.
+static void writeControlLine(std::ostream &out, gweni::controls::Base *control, int depth,
+    bool inner=false)
 {
     const gweni::Rect &bounds=control->getBounds();
     const gweni::SizeFlags flags=control->getSizeFlags();
@@ -670,10 +675,11 @@ static void writeControlLine(std::ostream &out, gweni::controls::Base *control, 
        <<" size="<<gweni::sizeFlagName(flags.horizontal)
        <<","<<gweni::sizeFlagName(flags.vertical)
        <<" hidden="<<(control->hidden() ? "yes" : "no")
+       <<(inner ? " inner" : "")
        <<"\n";
 
     for(auto &&child : control->getActualChildren())
-        writeControlLine(out, child, depth+1);
+        writeControlLine(out, child, depth+1, child == control->getInnerPanel());
 }
 
 static void writeBoundsListing(std::ostream &out, const Session &s)
@@ -1655,7 +1661,9 @@ static void collectScrollControls(gweni::controls::Base *control,
         return;
     if(auto *scroll=dynamic_cast<gweni::controls::ScrollControl *>(control))
         found.push_back(scroll);
-    for(auto &&child : control->getChildren())
+    // The actual children: getChildren() would skip a ScrollControl that is
+    // its parent's inner panel (a TreeControl's).
+    for(auto &&child : control->getActualChildren())
         collectScrollControls(child, found);
 }
 
