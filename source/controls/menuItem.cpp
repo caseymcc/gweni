@@ -38,13 +38,7 @@ public:
 
 GWENI_CONTROL_CONSTRUCTOR(MenuItem)
 {
-    m_menu=nullptr;
-    m_onStrip=false;
-    m_submenuArrow=nullptr;
-    m_accelerator=nullptr;
     setTabable(false);
-    setCheckable(false);
-    setChecked(false);
 }
 
 MenuItem::~MenuItem()

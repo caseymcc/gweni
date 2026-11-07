@@ -82,15 +82,15 @@ public:
 
 private:
 
-    Menu *m_menu;
-    bool m_onStrip;
-    bool m_checkable;
-    bool m_checked;
+    Menu *m_menu=nullptr;
+    bool m_onStrip=false;
+    bool m_checkable=false;
+    bool m_checked=false;
 
-    Label *m_accelerator;
+    Label *m_accelerator=nullptr;
 
 
-    controls::Base *m_submenuArrow;
+    controls::Base *m_submenuArrow=nullptr;
 };
 
 
