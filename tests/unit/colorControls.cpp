@@ -170,7 +170,7 @@ TEST_CASE("the SV box draws one bilinear field and a marker centred on its curso
     CHECK((scene.drawOf(ids[0]).c10 == Color(0, 255, 255, 255)));
 }
 
-TEST_CASE("the hue strip's six segments cover every row, behind the marker")
+TEST_CASE("the hue strip's six segments tile every row once, behind the marker")
 {
     ColorScene scene;
 
@@ -183,68 +183,50 @@ TEST_CASE("the hue strip's six segments cover every row, behind the marker")
     const int z=scene.slider->getZIndex();
     const int height=scene.slider->getHeight();
     std::vector<int> cover(height, 0);
-    std::vector<int> topZ(height, -1);
 
-    for(size_t i=0; i<6; ++i)
+    // the six lowest slots are the segments, top to bottom, edge to edge
+    for(int i=0; i<6; ++i)
     {
-        const Draw &segment=scene.drawOf(ids[i]);
+        const Draw segment=scene.drawOf(ids[i]);
+        const int top=i*height/6;
+        const int bottom=(i+1)*height/6;
 
         CHECK_FALSE(segment.bilinear);
-        // OpenGLCore draws 2*(h/2) rows, so an odd height would drop a row
-        CHECK(segment.rect.h%2 == 0);
-        CHECK(segment.rect.x == skin::textured::ColorSlider::Inset);
-        // the three in front come after the three behind, in slot order
-        CHECK(segment.zIndex == (i < 3?z:z+1));
+        CHECK(segment.zIndex == z);
+        CHECK((segment.rect == Rect(skin::textured::ColorSlider::Inset, top,
+            scene.slider->getWidth()-2*skin::textured::ColorSlider::Inset, bottom-top)));
+        // each stop is the strip's colour at its edge
+        CHECK((segment.c00 == scene.slider->getColorAtHeight(top)));
+        CHECK((segment.c01 == scene.slider->getColorAtHeight(bottom)));
 
         for(int y=segment.rect.y; y<segment.rect.y+segment.rect.h; ++y)
         {
             REQUIRE(y >= 0);
             REQUIRE(y < height);
             ++cover[y];
-            topZ[y]=std::max(topZ[y], segment.zIndex);
         }
     }
+    CHECK((scene.drawOf(ids[0]).c00 == Color(255, 0, 0, 255)));
+    CHECK((scene.drawOf(ids[5]).c01 == Color(255, 0, 0, 255)));
 
-    // every row drawn, and where two overlap the front one is on top
+    // no gap and no overlap
     for(int y=0; y<height; ++y)
-    {
-        CHECK(cover[y] >= 1);
-        CHECK(cover[y] <= 2);
-        if(cover[y] == 2)
-            CHECK(topZ[y] == z+1);
-    }
+        CHECK(cover[y] == 1);
 
-    // segment i covers hue arc i, rows i*h/6..(i+1)*h/6, and reaches at most
-    // two rows into its neighbours; each stop is the strip's colour at its edge
-    std::vector<Draw> segments;
-    for(size_t i=0; i<6; ++i)
-        segments.push_back(scene.drawOf(ids[i]));
-    std::sort(segments.begin(), segments.end(),
-        [](const Draw &a, const Draw &b) { return a.rect.y < b.rect.y; });
-
-    for(int i=0; i<6; ++i)
-    {
-        const Rect &rect=segments[i].rect;
-
-        CHECK(rect.y <= i*height/6);
-        CHECK(rect.y >= i*height/6-2);
-        CHECK(rect.y+rect.h >= (i+1)*height/6);
-        CHECK(rect.y+rect.h <= (i+1)*height/6+2);
-        CHECK((segments[i].c00 == scene.slider->getColorAtHeight(rect.y)));
-        CHECK((segments[i].c01 == scene.slider->getColorAtHeight(rect.y+rect.h)));
-    }
-    CHECK((segments[0].c00 == Color(255, 0, 0, 255)));
-    CHECK((segments[5].c01 == Color(255, 0, 0, 255)));
-
-    // the marker, last and in front, follows a drag
+    // the marker, last and one z in front, follows a drag
     const int markerHeight=skin::textured::ColorSlider::MarkerHeight;
-    CHECK(scene.drawOf(ids[6]).zIndex == z+2);
+    CHECK(scene.drawOf(ids[6]).zIndex == z+1);
     CHECK((scene.drawOf(ids[6]).rect == Rect(0, 0, scene.slider->getWidth(), markerHeight)));
 
     ColorScene::drag(scene.slider, 16, 10, 16, 64);
     scene.frame();
     CHECK(scene.slider->getSelectedDist() == 64);
     CHECK((scene.drawOf(ids[6]).rect == Rect(0, 64-markerHeight/2, scene.slider->getWidth(), markerHeight)));
+
+    // depthLayers() reserves the marker's z: the next control is numbered after it
+    controls::Base *after=scene.canvas->newChild<controls::Base>();
+    scene.frame();
+    CHECK(after->getZIndex() == scene.slider->getZIndex()+2);
 }
 
 TEST_CASE("the SV box and hue strip repaint only when what they draw changes")

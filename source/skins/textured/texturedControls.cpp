@@ -930,8 +930,11 @@ void ColorLerpBox::update(renderer::Base *renderer, controls::Base *baseControl)
     controls::ColorLerpBox *box=static_cast<controls::ColorLerpBox *>(baseControl);
     const gweni::Rect r=baseControl->getRenderBounds();
     const bool visible=baseControl->visible();
-    // the field in the lower slot, drawn first, so the marker's AA rim blends
-    // over it (see ColorSlider::update)
+    // OpenGLCore draws one buffer in slot order. The field takes the lower
+    // slot so it is drawn first: the marker's partly covered AA rim, at z+1,
+    // then blends over the field, while a field drawn after it would be
+    // rejected by the GL_LESS depth test under the rim, which would blend
+    // over the background instead.
     const size_t field=std::min(m_primitives[0], m_primitives[1]);
     const size_t cursorMarker=std::max(m_primitives[0], m_primitives[1]);
 
@@ -975,9 +978,8 @@ void ColorSlider::update(renderer::Base *renderer, controls::Base *baseControl)
     const gweni::Rect r=baseControl->getRenderBounds();
     const bool visible=baseControl->visible();
 
-    // OpenGLCore draws one buffer in slot order, so the lowest slots are drawn
-    // first: the three back segments take those, then the three front ones,
-    // then the marker (see below for why the order matters).
+    // the six segments top to bottom in the lowest slots, the marker in the
+    // highest, so it is drawn after the strip (see ColorLerpBox::update)
     size_t slots[7];
 
     std::copy(m_primitives.begin(), m_primitives.begin()+7, slots);
@@ -990,69 +992,28 @@ void ColorSlider::update(renderer::Base *renderer, controls::Base *baseControl)
         const int w=std::max(r.w-2*Inset, 0);
         const int z=baseControl->getZIndex();
 
-        // Segment i is hue arc i, joint i (between segments i-1 and i) at row
-        // i*h/6. The odd segments are in front (z+1) and overlap the even ones
-        // by a row at each joint, because OpenGLCore anti-aliases a rect's
-        // outermost row to ~84% cover (#208): two rects that only abut leave a
-        // darker seam row. The front segment's edge row then blends over the
-        // segment behind it, not the background, and the one behind ends under
-        // the front one. That needs the segments behind drawn first, since the
-        // GL_LESS depth test rejects them where a nearer one already is.
-        int tops[6];
-        int bottoms[6];
-
-        tops[0]=0;
-        bottoms[5]=r.h;
-        for(int i=1; i<6; ++i)
-        {
-            if(i&1)
-            {
-                // the segment behind, above, ends at the joint rounded up
-                bottoms[i-1]=(i*r.h+5)/6;
-                tops[i]=bottoms[i-1]-1;
-            }
-            else
-            {
-                // the segment behind, below, starts at the joint rounded down
-                tops[i]=i*r.h/6;
-                bottoms[i-1]=tops[i]+1;
-            }
-        }
-
+        // Segment i is hue arc i, rows i*h/6 .. (i+1)*h/6, edge to edge with
+        // its neighbours. Each stop is the strip's own colour at that edge,
+        // the one a click there selects.
         for(int i=0; i<6; ++i)
         {
-            // OpenGLCore draws a rect 2*(h/2) rows tall, so an odd height grows
-            // by a row, further under or over its neighbour
-            if((bottoms[i]-tops[i])&1)
-            {
-                if(i < 5)
-                    bottoms[i]=std::min(bottoms[i]+1, r.h);
-                else
-                    tops[i]=std::max(tops[i]-1, 0);
-            }
+            const int top=i*r.h/6;
+            const int bottom=(i+1)*r.h/6;
 
-            const bool front=(i&1) != 0;
-            const int top=clamp(tops[i], 0, r.h);
-            const int bottom=clamp(bottoms[i], top, r.h);
-
-            // Each stop is the strip's own colour at that edge, the one a click
-            // there selects. A segment that reaches a row into its neighbour's
-            // arc then bends a little towards it instead of overshooting, so
-            // the overlap row continues the ramp.
-            renderer->drawRoundedRect(slots[front?3+i/2:i/2], gweni::Rect(x, r.y+top, w, bottom-top),
-                0.0f, 0.0f, slider->getColorAtHeight(top), slider->getColorAtHeight(bottom),
-                gweni::Color(0, 0, 0, 0), front?z+1:z);
+            renderer->drawRoundedRect(slots[i], gweni::Rect(x, r.y+top, w, bottom-top), 0.0f, 0.0f,
+                slider->getColorAtHeight(top), slider->getColorAtHeight(bottom),
+                gweni::Color(0, 0, 0, 0), z);
         }
 
         // the selection bar across the whole width, centred on the selected
-        // row, in front of the front segments
+        // row, in front of the strip
         const tokyonight::Surface &marker=tokyonight::ColorMarker;
         const int height=std::max(std::min(MarkerHeight, r.h), 0);
         const gweni::Rect rect(r.x, r.y+clamp(slider->getSelectedDist()-height/2, 0, r.h-height),
             r.w, height);
 
         renderer->drawRoundedRect(slots[6], rect, marker.radius, marker.borderWidth,
-            marker.top, marker.bottom, marker.border, z+2);
+            marker.top, marker.bottom, marker.border, z+1);
     }
 
     const unsigned int sc=baseControl->getStateChange();

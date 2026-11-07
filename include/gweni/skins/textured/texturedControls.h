@@ -669,16 +669,17 @@ public:
 
 // controls::ColorSlider, the vertical hue strip: hue->RGB is linear over each
 // 60 degree arc, so the strip is six 2-stop vertical gradients (red, yellow,
-// green, cyan, blue, magenta, red), each stop the strip's colour at that edge,
-// plus the selection bar. The odd segments sit one z in front of the even ones
-// and overlap them at the joints (no seam row, see update()), so the bar is
-// drawn at getZIndex()+2.
+// green, cyan, blue, magenta, red) edge to edge at getZIndex(), each stop the
+// strip's colour at that edge, plus the selection bar at getZIndex()+1.
 class ColorSlider:public textured::ControlRegister<ColorSlider>
 {
 public:
     static void staticInit(TexturedSkin *skin) { m_staticInit=true; }
 
+    // [0..5] the segments, top to bottom, [6] the selection bar (by slot order)
     size_t requiredPrimitives() override { return 7; }
+    // the bar is drawn at getZIndex()+1, over the strip
+    size_t depthLayers() override { return 2; }
 
     void update(renderer::Base *renderer, controls::Base *baseControl) override;
 
