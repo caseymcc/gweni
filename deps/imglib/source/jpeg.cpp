@@ -29,6 +29,8 @@ J_COLOR_SPACE getJpegColorType(Format format)
 {
     J_COLOR_SPACE color_type=JCS_UNKNOWN;
 
+    //every Format is listed so -Werror=switch catches a newly added one instead of it silently
+    //becoming JCS_UNKNOWN; JCS_UNKNOWN reports a format that has no jpeg color space
     switch(format)
     {
     case Format::GreyScale:
@@ -40,8 +42,18 @@ J_COLOR_SPACE getJpegColorType(Format format)
     case Format::YUV:
         color_type=J_COLOR_SPACE::JCS_YCbCr;
         break;
-    default:
-        //RGBA, BGRA, RA and Binary have no jpeg color space, JCS_UNKNOWN reports that
+    case Format::RGBA:
+        //writable through libjpeg-turbo's JCS_EXT_RGBA (4 input components)
+        color_type=JCS_UNKNOWN;
+        break;
+    case Format::BGRA:
+        //writable through libjpeg-turbo's JCS_EXT_BGRA (4 input components)
+        color_type=JCS_UNKNOWN;
+        break;
+    case Format::Unknown:
+    case Format::Binary:
+    case Format::RA:
+        //no meaningful jpeg color space
         color_type=JCS_UNKNOWN;
         break;
     }

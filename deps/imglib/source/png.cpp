@@ -17,6 +17,8 @@ png_byte getPngColorType(Format format)
 {
     png_byte color_type;
 
+    //every Format is listed so -Werror=switch catches a newly added one instead of it silently
+    //becoming unsupported
     switch(format)
     {
     case Format::GreyScale:
@@ -31,7 +33,14 @@ png_byte getPngColorType(Format format)
     case Format::RGBA:
         color_type=PNG_COLOR_TYPE_RGB_ALPHA;
         break;
-    default:
+    case Format::BGRA:
+        //writable as PNG_COLOR_TYPE_RGB_ALPHA with png_set_bgr
+        color_type=pngColorTypeUnsupported;
+        break;
+    case Format::Unknown:
+    case Format::Binary:
+    case Format::YUV:
+        //no meaningful png color type
         color_type=pngColorTypeUnsupported;
         break;
     }
@@ -43,7 +52,8 @@ png_byte getPngBitDepth(Depth depth)
 {
     png_byte bit_depth;
 
-    //libpng only accepts 1, 2, 4, 8 and 16, so the wider and floating point depths have no mapping
+    //libpng only accepts 1, 2, 4, 8 and 16 bits per sample. Every Depth is listed so
+    //-Werror=switch catches a newly added one instead of it silently becoming unsupported
     switch(depth)
     {
     case Depth::Bit8:
@@ -52,7 +62,37 @@ png_byte getPngBitDepth(Depth depth)
     case Depth::Bit16:
         bit_depth=16;
         break;
-    default:
+    case Depth::Bit1:
+        //writable as 1 with png_set_packing: imglib stores Bit1 as 1 byte per sample, png
+        //wants packed bits
+        bit_depth=pngBitDepthUnsupported;
+        break;
+    case Depth::Bit10:
+        //writable as 16 with png_set_sBIT + png_set_shift, already stored in uint16_t
+        bit_depth=pngBitDepthUnsupported;
+        break;
+    case Depth::Bit12:
+        //writable as 16 with png_set_sBIT + png_set_shift, already stored in uint16_t
+        bit_depth=pngBitDepthUnsupported;
+        break;
+    case Depth::Bit14:
+        //writable as 16 with png_set_sBIT + png_set_shift, already stored in uint16_t
+        bit_depth=pngBitDepthUnsupported;
+        break;
+    case Depth::Float:
+        //libpng has no floating point samples, imglib would have to quantise to 16 bit
+        bit_depth=pngBitDepthUnsupported;
+        break;
+    case Depth::Double:
+        //libpng has no floating point samples, imglib would have to quantise to 16 bit
+        bit_depth=pngBitDepthUnsupported;
+        break;
+    case Depth::Packed:
+        //no meaningful png bit depth
+        bit_depth=pngBitDepthUnsupported;
+        break;
+    case Depth::Unknown:
+        //no meaningful png bit depth
         bit_depth=pngBitDepthUnsupported;
         break;
     }

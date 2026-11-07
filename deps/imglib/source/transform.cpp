@@ -46,6 +46,8 @@ void reduceSimple(uint8_t *srcBuffer, size_t srcSize, Format srcFormat, Depth sr
         return;
     }
 
+    //every Format is listed so -Werror=switch catches a newly added one instead of it silently
+    //taking one of these paths
     switch(srcFormat)
     {
     case Format::Binary:
@@ -59,7 +61,8 @@ void reduceSimple(uint8_t *srcBuffer, size_t srcSize, Format srcFormat, Depth sr
     case Format::BGRA:
 //        reduceSimple_4(srcBuffer, srcSize, srcFormat, srcDepth, srcWidth, srcHeight, dstBuffer, dstSize, dstFormat, dstDepth, dstWidth, dstHeight);
         break;
-    default:
+    case Format::Unknown:
+    case Format::YUV:
         assert(false);//not implemented
         break;
     }
