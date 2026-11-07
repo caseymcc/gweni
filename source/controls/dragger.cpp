@@ -27,6 +27,8 @@ void Dragger::onMouseClickLeft(int x, int y, bool down)
     if(m_disabled)
         return;
 
+    const bool wasDepressed=m_depressed;
+
     if(down)
     {
         m_depressed=true;
@@ -42,6 +44,11 @@ void Dragger::onMouseClickLeft(int x, int y, bool down)
         m_depressed=false;
         gweni::MouseFocus=nullptr;
     }
+
+    // A handle that has a down look (a slider thumb, a scroll bar thumb, a
+    // splitter bar) shows it on the next frame.
+    if(m_depressed != wasDepressed)
+        redraw();
 }
 
 void Dragger::onMouseMoved(int x, int y, int deltaX, int deltaY)

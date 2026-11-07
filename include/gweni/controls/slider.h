@@ -37,9 +37,6 @@ public:
         return m_horizontal;
     }
 
-    //! Dragger does not repaint on press/release; the thumb has a down look.
-    void onMouseClickLeft(int x, int y, bool down) override;
-
 protected:
 
     bool m_horizontal=true;

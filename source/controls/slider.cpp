@@ -21,16 +21,6 @@ GWENI_CONTROL_CONSTRUCTOR(SliderBar)
     restrictToParent(true);
 }
 
-void SliderBar::onMouseClickLeft(int x, int y, bool down)
-{
-    const bool wasDepressed=m_depressed;
-
-    ParentClass::onMouseClickLeft(x, y, down);
-
-    if(m_depressed != wasDepressed)
-        redraw();
-}
-
 }//namespace internal
 
 
