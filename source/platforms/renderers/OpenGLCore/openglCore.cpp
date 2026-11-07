@@ -2983,10 +2983,19 @@ void OpenGLCore::renderText(size_t textId, const gweni::Font &font, gweni::Point
         {
             const ftgl::glyph_vertex_t &source=vertexBuffer[i*4+j];
             ftgl::glyph_vertex_t &vertex=m_textVertexes[vertIndex+j];
+            // The corner's offset in the run, rounded to 1/256 device px before the
+            // run's whole-pixel position is added. An SDF quad sits at pen+offset
+            // times px/48, which a float holds only rounded, and the move above adds
+            // its delta to these vertexes: with a dyadic offset every such sum is
+            // exact (while |x| < 65536), so a run moved any number of times is
+            // exactly a fresh layout where it ends. Without it a drag there and
+            // back left the corners some ulps off and changed SDF edge pixels.
+            const float offsetX=std::round((source.x+shift)*256.0f)/256.0f;
+            const float offsetY=std::round(source.y*256.0f)/256.0f;
 
             vertex=source;
-            vertex.x=pos.x+source.x+shift;
-            vertex.y=pos.y-source.y;
+            vertex.x=pos.x+offsetX;
+            vertex.y=pos.y-offsetY;
             vertex.z=z;
         }
     }

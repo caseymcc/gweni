@@ -783,6 +783,17 @@ on an OpenGL 3.3 core profile:
   sized it, and a caret placed from `measureText` falls between the glyphs it means. An
   SDF `font.size` needs no shift, its layout being linear in px. At scale 1 nothing
   of this changes a byte. `tests/scaledText.cpp` pins it.
+- **A moved run is a fresh layout.** A same-string run that only moved is not laid
+  out again: `renderText` adds the whole-device-pixel delta to its glyph vertexes.
+  That equals a fresh layout at the new place only if each sum is exact, and an SDF
+  quad's corners (pen and offset times `px/48`) and a coverage run's
+  `measuredPenShifts` are fractions a float holds only rounded. So the rebuild rounds
+  each corner's offset in the run to 1/256 device px before it adds the run's
+  position: a dyadic offset plus a whole pixel is exact while |x| < 65536, and so is
+  every later move. Without it a Window dragged around and back at `--scale 2`, its
+  11 px text drawn as 22 px SDF, came back a few ulps off and changed SDF edge
+  pixels (`controltest_clip_scale200`). `tests/textRunCache.cpp` moves SDF, coverage
+  and LCD runs away and back and in steps and compares each with a fresh layout.
 
 ## The theme file and strict mode
 

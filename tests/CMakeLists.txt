@@ -262,6 +262,17 @@ Erm, and I think it comes down to a choice between "The League Against Salivatin
         LABELS gpu
         TIMEOUT 300)
 
+    # the same at --scale 2, where the skin's 11 px text is 22 device px and so
+    # SDF text: the Window dragged around and back must still look as it did,
+    # which holds only if a moved text run is exactly a fresh layout
+    add_test(NAME controltest_clip_scale200
+        COMMAND $<TARGET_FILE:ControlTest> --headless --scale 2 --scenario clip --require-one-pass
+            --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/clip_scale200
+        WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
+    set_tests_properties(controltest_clip_scale200 PROPERTIES
+        LABELS gpu
+        TIMEOUT 300)
+
     # a Label's font changed from 24 to 36 px, both drawn from the face's SDF
     # atlas, uploads nothing to an atlas and writes only that Label's glyph slots
     add_test(NAME controltest_text_size

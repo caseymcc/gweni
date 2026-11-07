@@ -14,6 +14,13 @@
  *  colour, font and hidden. Also: a Button's label takes the Disabled text
  *  colour and gives it back, and a Label brought to front over another (same
  *  string and position, new zIndex) has its glyphs re-depthed (#100).
+ *
+ *  A run that only moved is not laid out again: its vertexes get the move's
+ *  delta added. After a series of odd moves away and back to the start, and on
+ *  to a new place, the run must be a fresh layout where it is after each move,
+ *  for SDF sizes (fractional corners, at scales 1, 1.25 and 2), coverage sizes
+ *  (at 1 and 1.5) and LCD text. The SDF ones drifted by some ulps before the
+ *  rebuild rounded each corner's offset to 1/256 px (#341).
  */
 #include <doctest/doctest.h>
 
@@ -25,6 +32,7 @@
 #include <gweni/controls/label.h>
 #include <gweni/skins/textured/texturedSkin.h>
 
+#include <algorithm>
 #include <cstring>
 #include <set>
 #include <vector>
@@ -37,7 +45,9 @@ using gweni::Font;
 using gweni::Point;
 using gweni::Rect;
 using gweni::String;
+using gweni::renderer::GLTextMode;
 using gweni::renderer::OpenGLCore;
+using gweni::renderer::TextAA;
 
 const Color background(0, 0, 255, 255);
 const Color colorA(255, 200, 100, 255);
@@ -528,4 +538,154 @@ TEST_CASE("Text run: a label brought to front re-depths its glyphs with the same
     delete canvas;
     delete skin;
     emptyFrame();
+}
+
+namespace
+{
+
+//! Puts the shared renderer's scale and text AA mode back when a case ends.
+struct RestoreScaleAndAA
+{
+    RestoreScaleAndAA(): aa(gweni::test::gpuRenderer().textAA()) {}
+    ~RestoreScaleAndAA()
+    {
+        OpenGLCore &renderer=gweni::test::gpuRenderer();
+
+        renderer.setScale(1.0f);
+        renderer.setTextAA(aa);
+    }
+
+    TextAA aa;
+};
+
+//! A run drawn at a font size and canvas scale, in the mode that gives.
+struct MoveSetup
+{
+    float size;
+    float scale;
+    TextAA aa;
+    GLTextMode mode;
+};
+
+const char *modeName(GLTextMode mode)
+{
+    switch(mode)
+    {
+    case GLTextMode::Sdf: return "sdf";
+    case GLTextMode::LcdRGB: return "rgb";
+    case GLTextMode::LcdBGR: return "bgr";
+    default: return "coverage";
+    }
+}
+
+//! Odd steps in canvas units, both signs on both axes, ending where they began.
+const std::vector<Point> awayAndBack={ Point(37, -23), Point(-11, 5), Point(3, 29), Point(-53, -7),
+    Point(19, 13), Point(5, -17) };
+
+//! Odd steps to somewhere new.
+const std::vector<Point> toNewPlace={ Point(13, 7), Point(-5, 21), Point(31, -3), Point(-9, -15),
+    Point(7, 11), Point(23, 1), Point(-1, 9) };
+
+//! The vertex fields that differ between two snapshot entries (every one if
+//! their sizes differ), so a failure prints a count, not two byte dumps.
+size_t differingFields(const std::vector<uint8_t> &a, const std::vector<uint8_t> &b)
+{
+    if(a.size() != b.size())
+        return std::max(a.size(), b.size())/sizeof(float);
+
+    size_t differing=(a.empty() || (a[0] == b[0]))?0:1;
+
+    for(size_t i=1; i+sizeof(float) <= a.size(); i+=sizeof(float))
+    {
+        if(memcmp(&a[i], &b[i], sizeof(float)) != 0)
+            ++differing;
+    }
+    return differing;
+}
+
+//! Moves the run of `draw` on one text id by each step, a frame each, and
+//! compares it after every move with a fresh layout where it now is.
+void checkMoves(size_t textId, TextDraw &draw, const std::vector<Point> &steps)
+{
+    for(const Point &step:steps)
+    {
+        draw.pos=draw.pos+step;
+        drawFrame(textId, draw);
+
+        const std::vector<uint8_t> moved=textBytes(textId);
+
+        CAPTURE(draw.pos.x);
+        CAPTURE(draw.pos.y);
+        CHECK(differingFields(moved, freshLayout(draw)) == 0);
+    }
+}
+
+}//namespace
+
+TEST_CASE("Text run: a moved run is the bytes of a fresh layout where it ends, after any number of moves")
+{
+    OpenGLCore &renderer=gweni::test::gpuRenderer();
+    const RestoreScaleAndAA restore;
+
+    // An SDF run is scaled by px/48 from the 48 px atlas, so its quad corners
+    // are fractions of a pixel that are not dyadic at 22 px, 25 px (20 at scale
+    // 1.25) and 22 px (11 at scale 2, the skin's default font in ControlTest's
+    // clip scenario at --scale 2); at 24 px they are (s = 1/2). 11 px at 1 and 1.5 is
+    // coverage text, on whole pixels, and the LCD modes shift its glyphs by
+    // thirds of a pixel. Each move must land exactly where a fresh layout does.
+    const MoveSetup setups[]={
+        { 22.0f, 1.0f, TextAA::Grayscale, GLTextMode::Sdf },
+        { 24.0f, 1.0f, TextAA::Grayscale, GLTextMode::Sdf },
+        { 20.0f, 1.25f, TextAA::Grayscale, GLTextMode::Sdf },
+        { 11.0f, 2.0f, TextAA::Grayscale, GLTextMode::Sdf },
+        { 11.0f, 1.0f, TextAA::Grayscale, GLTextMode::Coverage },
+        { 11.0f, 1.5f, TextAA::Grayscale, GLTextMode::Coverage },
+        { 11.0f, 1.0f, TextAA::LcdRGB, GLTextMode::LcdRGB },
+        { 11.0f, 1.5f, TextAA::LcdRGB, GLTextMode::LcdRGB },
+    };
+
+    for(const MoveSetup &setup:setups)
+    {
+        renderer.setTextAA(setup.aa);
+        renderer.setScale(setup.scale);
+
+        TextDraw draw=baseDraw();
+
+        draw.font.size=setup.size;
+        draw.text="Inside the Window, moved";
+
+        const String mode=modeName(setup.mode);
+
+        CAPTURE(setup.size);
+        CAPTURE(setup.scale);
+        CAPTURE(mode);
+
+        // GWENI_SDF_TEXT_MIN or GWENI_TEXT_AA may put this size in another mode
+        if(renderer.getTextMode(draw.font) != setup.mode)
+        {
+            MESSAGE("skipped: ", draw.font.size, " px at scale ", setup.scale, " is not ",
+                modeName(setup.mode), " here");
+            continue;
+        }
+
+        size_t textId=0;
+        const Point start=draw.pos;
+
+        renderer.generateTextPrimitive(textId);
+        drawFrame(textId, draw);
+
+        const std::vector<uint8_t> atStart=textBytes(textId);
+
+        REQUIRE(differingFields(atStart, freshLayout(draw)) == 0);
+
+        checkMoves(textId, draw, awayAndBack);
+        REQUIRE(((draw.pos.x == start.x) && (draw.pos.y == start.y)));
+        CHECK(differingFields(textBytes(textId), atStart) == 0);
+
+        checkMoves(textId, draw, toNewPlace);
+        CHECK(differingFields(textBytes(textId), atStart) > 0);
+
+        renderer.releaseTextPrimitive(textId);
+        emptyFrame();
+    }
 }
