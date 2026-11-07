@@ -718,7 +718,7 @@ const std::vector<SceneInfo> &scenes()
     {
         {"build", "construct an N-item tree of mixed controls and run its first frame",
             true, 1000, 0, 1, Scaling::Linear,
-            []{ return std::unique_ptr<Scene>(new MixedTreeScene()); }},
+            []{ return std::unique_ptr<Scene>(new MixedTreeScene()); }, true},
         {"idle", "the build tree, settled, with no input",
             true, 1000, 5, 10, Scaling::Local,
             []{ return std::unique_ptr<Scene>(new MixedTreeScene()); }},
