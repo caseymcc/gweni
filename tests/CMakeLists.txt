@@ -200,7 +200,8 @@ add_executable(gweni_unit_tests
     unit/tabOrder.cpp
     unit/depthLayers.cpp
     unit/utf8Typing.cpp
-    unit/cursorScale.cpp)
+    unit/cursorScale.cpp
+    unit/crossSplitter.cpp)
 gweni_set_warnings(gweni_unit_tests)
 target_link_libraries(gweni_unit_tests
     gweni
