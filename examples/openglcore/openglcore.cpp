@@ -19,13 +19,18 @@
  *  With no options it opens the interactive window as before. A capture needs no
  *  display: it hides the window, and with no display at all it falls back to a
  *  surfaceless EGL context (--headless skips the window, so the capture takes the
- *  same path whether or not a display exists). Run it from the repo root:
+ *  same path whether or not a display exists). For example:
  *
  *    ./build_linux_x64_debug/examples/openglcore/OpenGLCore \
  *        --demo ColorPickerDemo --screenshot /tmp/hero.png
  *
  *  A capture installs a stepped clock (gweni::platform::setTimeSource), so the
  *  image depends on the frame number and not on how fast the process ran.
+ *
+ *  A missing resource directory, skin config (DefaultSkin.json) or default font
+ *  is reported on stderr and drawn degraded: every surface magenta, the text in
+ *  the library's built-in OpenSans. The window keeps running. A capture writes
+ *  its image and exits 2 ("resources incomplete"); 1 is a failure, 0 a clean run.
  *
  *  See license in Gweni.h
  */
@@ -244,7 +249,12 @@ static void printUsage(std::ostream &out)
          "  phase      warmup until the first frame with changed=0, then steady\n"
          "\n"
          "Summary lines give frames/controls, the warm-up frame count, and\n"
-         "min/median/max of each timing over all frames and over the steady ones.\n";
+         "min/median/max of each timing over all frames and over the steady ones.\n"
+         "\n"
+         "Exit status of --screenshot / --frames: 0 success, 1 failure, 2 written\n"
+         "from incomplete resources (a missing resource dir, skin config or\n"
+         "default font, each reported on stderr and drawn degraded: magenta\n"
+         "surfaces, the built-in font).\n";
 }
 
 int main(int argc, char *argv[])
@@ -334,11 +344,11 @@ int main(int argc, char *argv[])
     if(writingPng && !gweni::capture::ensureDirectory(fs::path(shotPath).parent_path()))
         return EXIT_FAILURE;
 
-    // Declared before the renderer, which keeps a reference to it.
-    const std::unique_ptr<gweni::ResourcePaths> paths=gweni::capture::resourcePaths(resourceDir);
-
-    if(!paths)
-        return EXIT_FAILURE;
+    // Declared before the renderer, which keeps a reference to it. A missing
+    // directory is reported here and the run carries on: what loads from it
+    // degrades below.
+    bool resourcesFound=true;
+    const std::unique_ptr<gweni::ResourcePaths> paths=gweni::capture::resourcePaths(resourceDir, resourcesFound);
 
     gweni::capture::installGlfwErrorHandler();
 
@@ -405,11 +415,16 @@ int main(int argc, char *argv[])
     // Create a Gweni skin
     gweni::skin::textured::TexturedSkin *skin = new gweni::skin::textured::TexturedSkin(renderer);
 
-    if(!skin->init("DefaultSkin.json"))
-        return EXIT_FAILURE;
+    // A skin config or default font that does not load is reported by the
+    // library and drawn degraded (every surface magenta; the built-in face, or no
+    // text if that fails too). The window keeps running; a capture exits 2.
+    bool degraded=!resourcesFound;
 
-    if(!gweni::capture::loadDefaultFont(*renderer, skin->getDefaultFont()))
-        return EXIT_FAILURE;
+    if(!skin->init("DefaultSkin.json"))
+        degraded=true;
+
+    if(gweni::capture::loadDefaultFont(*renderer, skin->getDefaultFont()) != gweni::Font::Status::Loaded)
+        degraded=true;
 
     // Create a Canvas (it's root, on which all other Gweni panels are created)
     // The canvas fill comes from the theme, so a "theme" block in
@@ -597,5 +612,5 @@ int main(int argc, char *argv[])
         gweni::capture::destroyFramebuffer(fb);
     gweni::capture::destroyContext(ctx);
 
-    return result;
+    return capturing?gweni::capture::exitStatus(result, degraded):result;
 }

@@ -617,6 +617,33 @@ on an OpenGL 3.3 core profile:
   SDF `font.size` needs no shift, its layout being linear in px. At scale 1 nothing
   of this changes a byte. `tests/scaledText.cpp` pins it.
 
+## Missing resources: degraded, not fatal
+
+The library reports a resource it cannot load and goes on drawing; it never exits.
+
+- **Skin config** (`DefaultSkin.json` missing, a directory, unreadable, not parsing,
+  or not a JSON object): `TexturedSkin::init` prints one line naming it and returns
+  `false` with the skin usable: every registered surface `colors::Missing` (magenta,
+  `colors::MissingDark` borders, `tokyonight::setAllSurfacesMissing()`), the text
+  colours at their compiled defaults so labels stay readable. The canvas clear colour
+  the examples take from `tokyonight::Canvas.top` is magenta too.
+- **Atlas texture** (`textureFileName`): reported and `init` returns `false`, but the
+  rest of the config, the theme included, applies. A texture that cannot be drawn is
+  `drawMissingImage`, the same magenta.
+- **Font**: `OpenGLCore::loadFont` draws a missing or unreadable face in the built-in
+  OpenSans and returns `Font::Status::LoadedFallback` (see "A missing face is drawn in a
+  built-in font"); only if that fails too is the text drawn as nothing.
+
+What to do about it is the application's choice. The examples (`OpenGLCore`,
+`ControlTest`) keep going: `capture::resourcePaths()` reports a missing resource
+directory and returns the paths anyway, and a `false` from `init` or a default font
+that is not `Loaded` (`capture::loadDefaultFont` returns the status) only marks the run
+degraded. A window keeps running and exits as usual. A capture writes what it drew and
+`capture::exitStatus` turns its exit status into `capture::ExitDegraded` (2), after one
+`<exe>: resources incomplete, exiting 2` line, so a script notices; a failure (1) wins
+over it. `gweni_bench` stops with 1 instead, since a degraded frame measures nothing
+worth having.
+
 ## Current state vs. goals
 
 What exists today (the foundation) and what's still aspirational:

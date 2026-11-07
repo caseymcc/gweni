@@ -315,6 +315,12 @@
  *    ControlTest: N control type(s) with no skin renderer: <TypeName> ...
  *  and exits non-zero (gweni::controls::typesWithoutSkinRenderer()).
  *
+ *  A missing resource directory, skin config (DefaultSkin.json) or default font
+ *  is reported on stderr and drawn degraded: every surface magenta, the text in
+ *  the library's built-in OpenSans. The window keeps running. Any other mode
+ *  writes what it drew and exits 2 ("resources incomplete") unless it failed
+ *  (exit 1 wins); a clean run exits 0.
+ *
  *  Captures install a stepped clock (gweni::platform::setTimeSource), so a shot
  *  depends on the frame number and not on how fast the process ran. --stats
  *  freezes the per-frame step instead, so an idle frame is genuinely idle and
@@ -536,6 +542,10 @@ static void printUsage(std::ostream &out)
          "  --type <utf8>      type the text, one GLFW char event per codepoint\n"
          "  --expect-text <utf8>  fail the run unless the focused control's\n"
          "                     text is exactly this\n"
+         "Exit status (every mode but the window): 0 success, 1 failure, 2 run\n"
+         "from incomplete resources (a missing resource dir, skin config or\n"
+         "default font, each reported on stderr and drawn degraded: magenta\n"
+         "surfaces, the built-in font).\n"
          "The header of controltest.cpp documents them in full.\n";
 }
 
@@ -4089,10 +4099,11 @@ int main(int argc, char *argv[])
         return EXIT_FAILURE;
     }
 
-    // Declared before the renderer, which keeps a reference to it.
-    const std::unique_ptr<gweni::ResourcePaths> paths=gweni::capture::resourcePaths(resourceDir);
-    if(!paths)
-        return EXIT_FAILURE;
+    // Declared before the renderer, which keeps a reference to it. A missing
+    // directory is reported here and the run carries on: what loads from it
+    // degrades below.
+    bool resourcesFound=true;
+    const std::unique_ptr<gweni::ResourcePaths> paths=gweni::capture::resourcePaths(resourceDir, resourcesFound);
 
     Context ctx;
     if(forceHeadless)
@@ -4140,10 +4151,14 @@ int main(int argc, char *argv[])
     renderer->init();
 
     gweni::skin::textured::TexturedSkin *skin=new gweni::skin::textured::TexturedSkin(renderer);
+    // A skin config or default font that does not load is reported by the
+    // library and drawn degraded (every surface magenta; the built-in face, or no
+    // text if that fails too). The window keeps running; a capture exits 2.
+    bool degraded=!resourcesFound;
     if(!skin->init("DefaultSkin.json"))
-        return EXIT_FAILURE;
-    if(!gweni::capture::loadDefaultFont(*renderer, skin->getDefaultFont()))
-        return EXIT_FAILURE;
+        degraded=true;
+    if(gweni::capture::loadDefaultFont(*renderer, skin->getDefaultFont()) != gweni::Font::Status::Loaded)
+        degraded=true;
 
     // The canvas fill comes from the theme, so a "theme" block in
     // resources/DefaultSkin.json moves it too. Canvas::renderCanvas does not
@@ -4378,5 +4393,5 @@ int main(int argc, char *argv[])
         std::cerr<<"\n";
         result=EXIT_FAILURE;
     }
-    return result;
+    return capturing?gweni::capture::exitStatus(result, degraded):result;
 }

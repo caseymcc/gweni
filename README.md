@@ -75,7 +75,10 @@ Inside the container there is no display, so only the headless modes work there:
 (`build_linux_x64_debug/examples/openglcore/{OpenGLCore,ControlTest}`): by default they load the
 `resources/` that the build copies next to them. `--resources <dir>` loads everything from
 `<dir>` instead, e.g. `--resources resources` from the repo root to pick up live
-`DefaultSkin.json` edits without a rebuild.
+`DefaultSkin.json` edits without a rebuild. A resource that is missing is reported on stderr
+and drawn degraded instead of stopping the exe: no skin config paints every surface magenta,
+no font draws the text in a built-in OpenSans. A capture (`--shot`, `--screenshot`, ...) still
+writes its image and then exits 2.
 
 To run on the host, the container-built exes need:
 
@@ -89,4 +92,4 @@ output is owned by you.
 ---------------------------------------
 
 GWEN was originaly created by Garry Newman, and released under MIT License.
-https://github.com/garrynewman/GWEN
+https://github.com/garrynewman/GWEN

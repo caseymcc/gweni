@@ -53,15 +53,30 @@ void installGlfwErrorHandler();
 
 //! The ResourcePaths an example loads everything through: \a dir (relative to
 //! the working directory, or absolute) when --resources gave one, otherwise the
-//! resources/ the build copies next to the executable. Prints one line naming
-//! the directory and returns null if it does not exist. The renderer keeps a
-//! reference, so the object must outlive it.
-std::unique_ptr<ResourcePaths> resourcePaths(const std::string &dir);
+//! resources/ the build copies next to the executable. If the directory does not
+//! exist it prints one line naming it and sets \a found to false, but still
+//! returns the paths: the skin, fonts and textures then fail to load one by one
+//! and degrade (magenta surfaces, the built-in font) instead of the run stopping
+//! here. Never null. The renderer keeps a reference, so the object must outlive
+//! it.
+std::unique_ptr<ResourcePaths> resourcePaths(const std::string &dir, bool &found);
 
 //! Load the skin's default font, the one Text and Label use, so a missing face
-//! fails here, once, instead of at the first text drawn. \return false if it
-//! did not load; the loader has already printed the path it tried.
-bool loadDefaultFont(IResourceLoader &loader, const Font &skinFont);
+//! is reported here, once, instead of at the first text drawn. \return the
+//! loader's status: Loaded, LoadedFallback (the face is missing or unreadable
+//! and text is drawn in the built-in one) or an error (no text is drawn). The
+//! loader has already printed the path it tried.
+Font::Status loadDefaultFont(IResourceLoader &loader, const Font &skinFont);
+
+//! The exit status of a capture run that found a resource missing: it wrote
+//! what it rendered, but not from the resources it was given.
+constexpr int ExitDegraded=2;
+
+//! The exit status of a non-interactive run: \a result, or ExitDegraded, after
+//! one line saying so, when \a result is EXIT_SUCCESS and \a degraded (the
+//! resource dir, the skin config or the default font was missing; each of those
+//! has printed its own line already). A failure (EXIT_FAILURE) wins over it.
+int exitStatus(int result, bool degraded);
 
 //-----------------------------------------------------------------------------
 // Scale: device pixels per logical unit. The canvas is laid out in logical

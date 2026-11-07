@@ -253,15 +253,34 @@ Erm, and I think it comes down to a choice between "The League Against Salivatin
         LABELS gpu
         TIMEOUT 60)
 
-    # a --resources directory that does not exist is one line naming it, before
-    # any GL context is made, so this needs no GPU
-    add_test(NAME controltest_missing_resources
-        COMMAND $<TARGET_FILE:ControlTest> --headless --control ButtonDemo
-            --shot ${CMAKE_CURRENT_BINARY_DIR}/missing_resources/ButtonDemo.png
-            --resources ${CMAKE_CURRENT_BINARY_DIR}/no_such_resources)
-    set_tests_properties(controltest_missing_resources PROPERTIES
-        PASS_REGULAR_EXPRESSION "^ControlTest: resource directory not found: [^\n]*/no_such_resources\n*$"
-        TIMEOUT 30)
+    # a capture from a --resources directory that is missing, or lacks the skin
+    # config or the default font, names what is missing, still writes its
+    # (degraded) frame and exits 2; from a complete copy it exits 0
+    set(missing_resources_tools ControlTest)
+    if(TARGET OpenGLCore)
+        list(APPEND missing_resources_tools OpenGLCore)
+    endif()
+    foreach(tool ${missing_resources_tools})
+        string(TOLOWER ${tool} tool_lower)
+        foreach(case nodir noskin nofont complete)
+            if(case STREQUAL "nodir")
+                set(test_name ${tool_lower}_missing_resources)
+            else()
+                set(test_name ${tool_lower}_missing_resources_${case})
+            endif()
+            add_test(NAME ${test_name}
+                COMMAND ${CMAKE_COMMAND}
+                    -DEXE=$<TARGET_FILE:${tool}>
+                    -DTOOL=${tool}
+                    -DSOURCE_DIR=${GWENI_SOURCE_DIR}
+                    -DSCRATCH_DIR=${CMAKE_CURRENT_BINARY_DIR}/${test_name}
+                    -DCASE=${case}
+                    -P ${CMAKE_CURRENT_SOURCE_DIR}/missingResources.cmake)
+            set_tests_properties(${test_name} PROPERTIES
+                LABELS gpu
+                TIMEOUT 60)
+        endforeach()
+    endforeach()
 else()
     message(STATUS "tests: ControlTest tests skipped, GWENI_BUILD_EXAMPLES is off")
 endif()

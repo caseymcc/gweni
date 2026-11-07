@@ -41,7 +41,7 @@ void installGlfwErrorHandler()
     glfwSetErrorCallback(&glfwErrorCallback);
 }
 
-std::unique_ptr<ResourcePaths> resourcePaths(const std::string &dir)
+std::unique_ptr<ResourcePaths> resourcePaths(const std::string &dir, bool &found)
 {
     std::unique_ptr<ResourcePaths> paths;
 
@@ -54,17 +54,25 @@ std::unique_ptr<ResourcePaths> resourcePaths(const std::string &dir)
     // separator that parent_path() drops.
     const fs::path resolved=fs::path(paths->getPath(ResourcePaths::Type::Other, "")).parent_path();
 
-    if(!fs::is_directory(resolved))
-    {
+    found=fs::is_directory(resolved);
+
+    if(!found)
         std::cerr<<g_tool<<": resource directory not found: "<<resolved.string()<<"\n";
-        return nullptr;
-    }
     return paths;
 }
 
-bool loadDefaultFont(IResourceLoader &loader, const Font &skinFont)
+Font::Status loadDefaultFont(IResourceLoader &loader, const Font &skinFont)
 {
-    return loader.loadFont(skinFont) == Font::Status::Loaded;
+    return loader.loadFont(skinFont);
+}
+
+int exitStatus(int result, bool degraded)
+{
+    if(result != EXIT_SUCCESS || !degraded)
+        return result;
+
+    std::cerr<<g_tool<<": resources incomplete, exiting "<<ExitDegraded<<"\n";
+    return ExitDegraded;
 }
 
 bool parseScale(const char *value, float &scale)

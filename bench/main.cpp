@@ -490,8 +490,11 @@ int main(int argc, char *argv[])
     return EXIT_FAILURE;
 #else
     // Declared before the renderer, which keeps a reference to it.
-    const std::unique_ptr<gweni::ResourcePaths> paths=gweni::capture::resourcePaths(resourceDir);
-    if(!paths)
+    // Unlike the examples, a frame drawn from missing resources measures nothing
+    // worth having, so each of these stops the run.
+    bool resourcesFound=true;
+    const std::unique_ptr<gweni::ResourcePaths> paths=gweni::capture::resourcePaths(resourceDir, resourcesFound);
+    if(!resourcesFound)
         return EXIT_FAILURE;
 
     gweni::capture::Context ctx;
@@ -516,7 +519,7 @@ int main(int argc, char *argv[])
     gweni::skin::textured::TexturedSkin *skin=new gweni::skin::textured::TexturedSkin(renderer);
     if(!skin->init("DefaultSkin.json"))
         return EXIT_FAILURE;
-    if(!gweni::capture::loadDefaultFont(*renderer, skin->getDefaultFont()))
+    if(gweni::capture::loadDefaultFont(*renderer, skin->getDefaultFont()) != gweni::Font::Status::Loaded)
         return EXIT_FAILURE;
 
     const gweni::Color background=gweni::skin::textured::tokyonight::Canvas.top;
