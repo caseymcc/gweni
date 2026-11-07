@@ -16,9 +16,9 @@
  *  per key (the error, then "using built-in fallback for <face>") and not
  *  retried (a mode GWENI_SDF_TEXT_MIN moves its size out of is skipped,
  *  with a message). With setFallbackFont(false) they fail as
- *  ErrorFileNotFound / ErrorBadData, measuring (0,0) and drawing nothing. A fallback freed and
- *  loaded again leaves the loaded-font count as it was, and the embedded font
- *  is resources/OpenSans.ttf byte for byte.
+ *  ErrorFileNotFound / ErrorBadData, measuring (0,0) and drawing nothing. A
+ *  fallback freed and loaded again leaves the loaded-font count as it was,
+ *  and the embedded font is resources/OpenSans.ttf byte for byte.
  */
 #include <doctest/doctest.h>
 
