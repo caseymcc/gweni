@@ -592,3 +592,28 @@ small scene's instructions are Mesa llvmpipe rasterising, in the `flush` phase
 under callgrind; Mesa's functions and its JIT code show as anonymous
 `???:0x...` functions. See
 `AGENTS.md` → "Profiling a scene".
+
+## Comparing two revisions
+
+`tools/bench.sh compare` builds two revisions in their profile trees, runs every
+scene on both and prints a markdown report (also written to
+`/tmp/gweni-bench-<base>-<rev>.md`) of how the work counters, the instructions
+of each phase under callgrind and, with `--time`, the wall time moved. It flags
+regressions and never fails because of one: it is a report to accept or act on,
+not a gate, and the baseline is always the base revision.
+
+```bash
+tools/bench.sh compare origin/main            # origin/main vs the working tree
+tools/bench.sh compare origin/main --keep     # keep origin/main's build for next time
+tools/bench.sh compare origin/main --time     # wall time too, alternating runs
+```
+
+Before finishing a change to `source/` or `include/`, run it against
+`origin/main` without `--time` and look at the flags. The flags: any counter
+that changed; a phase more than 1 % more instructions; a counter of a local
+scene that now grows from N=1000 to N=10000 (a new O(N)); with `--time`, a phase
+more than 5 % and more than twice the spread slower. A base commit is exported
+with `git archive` to `/tmp` and built there, so the first compare against it
+configures a new tree (slow without the vcpkg binary cache); `--keep` keeps it.
+Timed runs hold the `perf` lock as well as `gpu`. See `AGENTS.md` → "Comparing
+two revisions".
