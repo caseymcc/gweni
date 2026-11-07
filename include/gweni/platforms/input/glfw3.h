@@ -132,7 +132,10 @@ public:
     // twice: GLFW's char callback drops everything below 32 and emits no char
     // for Ctrl/Alt+letter, so a Ctrl+letter comes only from here (as the
     // uppercase letter, which handleAccelerator turns into "CTRL+V"), and
-    // typed text only from processCharEvent.
+    // typed text only from processCharEvent. A letter with Ctrl and Alt both
+    // held is AltGr on Windows (see syncModifiers): its character comes from
+    // the char callback, so it is no shortcut, and a real Ctrl+Alt+letter does
+    // nothing (gweni has no Alt accelerators).
     bool processKeyEvent(const KeyEvent& event)
     {
         if (!m_eventCaller)
@@ -145,17 +148,20 @@ public:
 
         const bool bPressed = (event.action == GLFW_PRESS);
         const int keyCode = event.key;
+        const unsigned char key = translateKeyCode(keyCode);
         const bool control = (event.mods & GLFW_MOD_CONTROL) != 0;
+        const bool alt = (event.mods & GLFW_MOD_ALT) != 0;
 
-        if (bPressed)
-            pressHeldModifiers(event.mods);
+        syncModifiers(event.mods, key);
 
         bool handled = false;
 
-        if (control && bPressed && keyCode >= GLFW_KEY_A && keyCode <= GLFW_KEY_Z)
+        if (control && !alt && bPressed && keyCode >= GLFW_KEY_A && keyCode <= GLFW_KEY_Z)
             handled = m_eventCaller->inputCharacter(static_cast<UnicodeChar>('A'+(keyCode-GLFW_KEY_A)));
 
-        const unsigned char key = translateKeyCode(keyCode);
+        // The key's own press or release comes after the sync, so it wins: on
+        // X11 the mods are the state before the event, without Ctrl on Ctrl's
+        // own press and with it on its release.
         return m_eventCaller->inputModifierKey(key, bPressed) || handled;
     }
 
@@ -248,19 +254,40 @@ public:
 
 protected:
 
-    // Presses the gweni modifier for each modifier bit GLFW says is held. One
-    // that is already down is left alone; one the input handler forgot (it
-    // clears held keys when the keyboard focus moves) is pressed again, so a
-    // Ctrl held across a click into a TextBox still makes Ctrl+B a shortcut and
-    // not a typed "B".
-    void pressHeldModifiers(int mods)
+    // Makes the gweni modifiers match the bits GLFW says are held, pressing
+    // and releasing them, before each key event. One already in that state is
+    // left alone (onKeyEvent ignores a press of a key that is down and a
+    // release of one that is up). So a modifier the input handler forgot (it
+    // clears held keys when the keyboard focus moves) is pressed again, and a
+    // Ctrl held across a click into a TextBox still makes Ctrl+B a shortcut
+    // and not a typed "B"; and one whose release never arrived is let go by
+    // the next key event at the latest, which GLFW delivers before that key's
+    // char. \a ownKey, the event's own key, is left to that event.
+    //
+    // Ctrl and Alt held together count as no Ctrl, because that is AltGr on
+    // Windows, and Windows itself makes characters from Ctrl+Alt as AltGr. It
+    // sends AltGr as a synthetic Left Ctrl followed by Right Alt; GLFW (3.5.1,
+    // win32_window.c) discards the synthetic Ctrl's press and release, so no
+    // LEFT_CONTROL event ever comes, but it reads the mods from
+    // GetKeyState(VK_CONTROL), which that Ctrl has set. Every key under AltGr
+    // therefore carries GLFW_MOD_CONTROL|GLFW_MOD_ALT. Counted as Ctrl, it
+    // would drop the AltGr character (Canvas::inputCharacter refuses
+    // characters while Ctrl is down), and since the Ctrl release never comes
+    // only this sync lets it go. Linux and macOS never set the Ctrl bit for
+    // AltGr/Option. The mods on the Right Alt events themselves are not
+    // certain, so a Ctrl one of them presses is released by the next key.
+    void syncModifiers(int mods, unsigned char ownKey)
     {
-        if (mods & GLFW_MOD_CONTROL)
-            m_eventCaller->inputModifierKey(keys::Control, true);
-        if (mods & GLFW_MOD_SHIFT)
-            m_eventCaller->inputModifierKey(keys::Shift, true);
-        if (mods & GLFW_MOD_ALT)
-            m_eventCaller->inputModifierKey(keys::Alt, true);
+        const bool alt = (mods & GLFW_MOD_ALT) != 0;
+        const bool control = (mods & GLFW_MOD_CONTROL) != 0 && !alt;
+        const bool shift = (mods & GLFW_MOD_SHIFT) != 0;
+
+        if (ownKey != keys::Control)
+            m_eventCaller->inputModifierKey(keys::Control, control);
+        if (ownKey != keys::Shift)
+            m_eventCaller->inputModifierKey(keys::Shift, shift);
+        if (ownKey != keys::Alt)
+            m_eventCaller->inputModifierKey(keys::Alt, alt);
     }
 
     IInputEvent *m_eventCaller;

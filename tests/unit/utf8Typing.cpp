@@ -20,6 +20,14 @@
  *  multiline Up/Down keeps the column in codepoints, with wrapped words never
  *  broken inside a sequence. The helpers are utf8Encode, utf8Next, utf8Prev
  *  and utf8Snap.
+ *
+ *  The translator's modifiers: AltGr as GLFW reports it on Windows (a Right
+ *  Alt with no LEFT_CONTROL event, and Ctrl|Alt in the mods of the keys under
+ *  it), replayed with every plausible set of mods on the Right Alt events,
+ *  types its character (@, €, µ), fires no CTRL+<letter> accelerator and
+ *  leaves Ctrl up, by the next key's press at the latest. Real Ctrl shortcuts
+ *  work with X11's and Windows' mods, and a Ctrl held across a keyboard-focus
+ *  change is pressed again by the next key's mods.
  */
 #include "headlessFixture.h"
 
@@ -466,4 +474,164 @@ TEST_CASE("TextBoxMultiline: Up and Down keep the codepoint column, and wrapped 
     scene.key(GLFW_KEY_END);
     scene.type(U"|");
     CHECK(isValidUtf8(box->getText()));
+}
+
+namespace
+{
+
+//! Counts the calls of the accelerators it is hung on.
+struct AcceleratorCount : event::Handler
+{
+    int calls=0;
+    void hit(event::Info) { ++calls; }
+};
+
+//! One key typed as GLFW delivers it: its press, the char the layout makes of
+//! it (none for 0), then its release, all with the same mods.
+void typeKey(Scene &scene, int key, int mods, char32_t c)
+{
+    scene.glfwKey(key, GLFW_PRESS, mods);
+    if(c)
+        scene.glfw.processCharEvent(static_cast<unsigned int>(c));
+    scene.glfwKey(key, GLFW_RELEASE, mods);
+    scene.frame();
+}
+
+// The mods GLFW might report on the Right Alt press and release of AltGr on
+// Windows. Every key under AltGr has Ctrl|Alt (GetKeyState(VK_CONTROL) sees
+// the synthetic Left Ctrl, whose own events GLFW discards), but GLFW's source
+// does not settle the bits on the Right Alt events themselves.
+const int altGrPressMods[]={GLFW_MOD_CONTROL|GLFW_MOD_ALT, GLFW_MOD_CONTROL, 0};
+const int altGrReleaseMods[]={GLFW_MOD_CONTROL|GLFW_MOD_ALT, GLFW_MOD_ALT, GLFW_MOD_CONTROL, 0};
+
+}//namespace
+
+TEST_CASE("AltGr on Windows types its character, fires no Ctrl accelerator and leaves Ctrl up")
+{
+    const struct { int key; char32_t c; String text; } altGrKeys[]=
+    {
+        {GLFW_KEY_Q, U'@', "@"},                    // German layout
+        {GLFW_KEY_E, U'€', euro},
+        {GLFW_KEY_M, U'µ', "\xC2\xB5"},
+    };
+    const int altGr=GLFW_MOD_CONTROL|GLFW_MOD_ALT;
+
+    for(const auto &k : altGrKeys)
+    for(int pressMods : altGrPressMods)
+    for(int releaseMods : altGrReleaseMods)
+    {
+        CAPTURE(k.key);
+        CAPTURE(pressMods);
+        CAPTURE(releaseMods);
+
+        AcceleratorCount accelerators;
+        Scene scene;
+        for(const char *accelerator : {"CTRL+Q", "CTRL+E", "CTRL+M", "Q", "E", "M"})
+            scene.canvas->addAccelerator(accelerator, &AcceleratorCount::hit, &accelerators);
+        controls::TextBox *box=scene.focusedBox();
+
+        typeKey(scene, GLFW_KEY_A, 0, U'a');
+
+        // AltGr down: Right Alt alone, no LEFT_CONTROL event.
+        scene.glfwKey(GLFW_KEY_RIGHT_ALT, GLFW_PRESS, pressMods);
+        typeKey(scene, k.key, altGr, k.c);
+        scene.glfwKey(GLFW_KEY_RIGHT_ALT, GLFW_RELEASE, releaseMods);
+        scene.frame();
+
+        typeKey(scene, GLFW_KEY_B, 0, U'b');
+
+        CHECK(box->getText() == "a"+k.text+"b");
+        CHECK(accelerators.calls == 0);
+        CHECK_FALSE(input::isControlDown());
+        CHECK_FALSE(input::isKeyDown(keys::Alt));
+    }
+}
+
+TEST_CASE("AltGr pressed and released alone leaves Ctrl up by the next key at the latest")
+{
+    // After the Right Alt release Ctrl is up, unless that release itself
+    // reports Ctrl without Alt, which then counts as a held Ctrl. Either way
+    // the next key's press (which GLFW delivers before its char) lets it go,
+    // so the next character is typed.
+    for(int pressMods : altGrPressMods)
+    for(int releaseMods : altGrReleaseMods)
+    {
+        CAPTURE(pressMods);
+        CAPTURE(releaseMods);
+
+        Scene scene;
+        controls::TextBox *box=scene.focusedBox();
+
+        scene.glfwKey(GLFW_KEY_RIGHT_ALT, GLFW_PRESS, pressMods);
+        scene.glfwKey(GLFW_KEY_RIGHT_ALT, GLFW_RELEASE, releaseMods);
+        scene.frame();
+        if(releaseMods != GLFW_MOD_CONTROL)
+            CHECK_FALSE(input::isControlDown());
+
+        scene.glfwKey(GLFW_KEY_B, GLFW_PRESS, 0);
+        CHECK_FALSE(input::isControlDown());
+        scene.glfw.processCharEvent('b');
+        scene.glfwKey(GLFW_KEY_B, GLFW_RELEASE, 0);
+        scene.frame();
+        CHECK(box->getText() == "b");
+    }
+}
+
+TEST_CASE("Real Ctrl shortcuts still work, with the mods X11 and Windows each report")
+{
+    // Windows and Wayland report a modifier's own bit on its press, X11 the
+    // state before the event: without it on the press and with it on the
+    // release. Ctrl+A, Ctrl+C, End, Ctrl+V doubles the text either way.
+    for(bool x11 : {false, true})
+    {
+        CAPTURE(x11);
+        Scene scene;
+        controls::TextBox *box=scene.focusedBox();
+        scene.type(U"x€");
+
+        auto chord=[&](int key)
+        {
+            scene.glfwKey(GLFW_KEY_LEFT_CONTROL, GLFW_PRESS, x11 ? 0 : GLFW_MOD_CONTROL);
+            CHECK(input::isControlDown());
+            scene.glfwKey(key, GLFW_PRESS, GLFW_MOD_CONTROL);
+            scene.glfwKey(key, GLFW_RELEASE, GLFW_MOD_CONTROL);
+            scene.glfwKey(GLFW_KEY_LEFT_CONTROL, GLFW_RELEASE, x11 ? GLFW_MOD_CONTROL : 0);
+            CHECK_FALSE(input::isControlDown());
+            scene.frame();
+        };
+
+        chord(GLFW_KEY_A);
+        chord(GLFW_KEY_C);
+        CHECK(platform::getClipboardText() == "x"+euro);
+        scene.key(GLFW_KEY_END);
+        chord(GLFW_KEY_V);
+        CHECK(box->getText() == "x"+euro+"x"+euro);
+
+        typeKey(scene, GLFW_KEY_Y, 0, U'y');
+        CHECK(box->getText() == "x"+euro+"x"+euro+"y");
+    }
+}
+
+TEST_CASE("A Ctrl held across a keyboard-focus change is still held for the next shortcut")
+{
+    // The input handler lets go of every held key when the keyboard focus
+    // moves; the next key's mods press Ctrl again.
+    Scene scene;
+    controls::TextBox *first=scene.focusedBox("first");
+    controls::TextBox *second=scene.canvas->newChild<controls::TextBox>("second");
+    second->setText("abc");
+    scene.frame();
+
+    scene.glfwKey(GLFW_KEY_LEFT_CONTROL, GLFW_PRESS, GLFW_MOD_CONTROL);
+    second->focus();
+    scene.frame();
+    CHECK_FALSE(input::isControlDown());
+
+    scene.glfwKey(GLFW_KEY_A, GLFW_PRESS, GLFW_MOD_CONTROL);
+    CHECK(input::isControlDown());
+    scene.glfwKey(GLFW_KEY_A, GLFW_RELEASE, GLFW_MOD_CONTROL);
+    scene.glfwKey(GLFW_KEY_LEFT_CONTROL, GLFW_RELEASE, 0);
+    scene.frame();
+    CHECK(second->getSelection() == "abc");
+    CHECK(first->getText().empty());
 }
