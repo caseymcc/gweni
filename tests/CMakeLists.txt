@@ -245,7 +245,8 @@ add_executable(gweni_unit_tests
     unit/windowSkin.cpp
     unit/tabStrip.cpp
     unit/menuItem.cpp
-    unit/textBoxCaret.cpp)
+    unit/textBoxCaret.cpp
+    unit/dockNoneAlignment.cpp)
 gweni_set_warnings(gweni_unit_tests)
 target_link_libraries(gweni_unit_tests
     gweni

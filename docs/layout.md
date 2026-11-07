@@ -74,18 +74,29 @@ Docked children keep the size their dock gives them.
 
 ## Placing a dock-None control
 
-Its alignment places it inside the parent's inner box: the parent's padding,
-less what the docked children placed before it took (the same box the docked
-children are placed in). With the box at x, w wide, and the child's margin m:
-`Left` puts it at x+m.left, `Right` at x+w-width-m.right and `CenterH` at
-x+m.left+(w-width-m.left-m.right)/2; `Top`, `Bottom` and `CenterV` do the same
-in y. With none of them (or `Absolute`) it stays at its requested position.
+Alignment is opt-in. A control has none by default (`Alignment::Absolute`),
+and then it stays at the position it asked for: the x and y of its last
+`setPos`, `moveTo` or `setBounds`, wherever the request came from (the app,
+or its parent's `layout()`). Writes made by the arrange code are not
+requests, so an earlier pass or a parent resize cannot move it.
+
+An alignment places it inside the parent's padded content box: the parent's
+size less its padding. The box does not depend on the docked siblings or on
+the child's order among them, so a `Right`-aligned child sits at the far right
+even over a `Right`-docked sibling; dock it too if it must stand aside. With
+the box at x, w wide, and the child's margin m: `Left` puts it at x+m.left,
+`Right` at x+w-width-m.right and `CenterH` at x+m.left+(w-width-m.left-m.right)/2;
+`Top`, `Bottom` and `CenterV` do the same in y. Each axis is separate: a child
+aligned only `CenterV` keeps its requested x.
 
 A Label's alignment is where the label sits in its parent; where its text sits
 in the label is `setTextAlignment`, `Left|CenterV` by default (`Left|Top` once
 `setWrap(true)`). A text padding (`setTextPadding`) is the inner Text's own
 padding: it is counted in the Text's size and the string is drawn inside it
-(`Text::textOrigin()`).
+(`Text::textOrigin()`). Label and its subclasses, TextBox, Button, StatusBar,
+FieldLabel and the Properties rows still set an alignment on themselves, so
+they are aligned in their parent and a position they are given is not kept
+unless they are set back to `Alignment::Absolute`.
 
 ## One pass per frame
 

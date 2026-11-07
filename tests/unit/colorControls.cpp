@@ -182,6 +182,9 @@ TEST_CASE("the hue strip's six segments tile every row once, behind the marker")
 
     const int z=scene.slider->getZIndex();
     const int height=scene.slider->getHeight();
+    // the draws are in canvas coordinates, and the slider is where it asked
+    const int x=scene.slider->getX();
+    REQUIRE(x == 140);
     std::vector<int> cover(height, 0);
 
     // the six lowest slots are the segments, top to bottom, edge to edge
@@ -193,7 +196,7 @@ TEST_CASE("the hue strip's six segments tile every row once, behind the marker")
 
         CHECK_FALSE(segment.bilinear);
         CHECK(segment.zIndex == z);
-        CHECK((segment.rect == Rect(skin::textured::ColorSlider::Inset, top,
+        CHECK((segment.rect == Rect(x+skin::textured::ColorSlider::Inset, top,
             scene.slider->getWidth()-2*skin::textured::ColorSlider::Inset, bottom-top)));
         // each stop is the strip's colour at its edge
         CHECK((segment.c00 == scene.slider->getColorAtHeight(top)));
@@ -216,12 +219,12 @@ TEST_CASE("the hue strip's six segments tile every row once, behind the marker")
     // the marker, last and one z in front, follows a drag
     const int markerHeight=skin::textured::ColorSlider::MarkerHeight;
     CHECK(scene.drawOf(ids[6]).zIndex == z+1);
-    CHECK((scene.drawOf(ids[6]).rect == Rect(0, 0, scene.slider->getWidth(), markerHeight)));
+    CHECK((scene.drawOf(ids[6]).rect == Rect(x, 0, scene.slider->getWidth(), markerHeight)));
 
     ColorScene::drag(scene.slider, 16, 10, 16, 64);
     scene.frame();
     CHECK(scene.slider->getSelectedDist() == 64);
-    CHECK((scene.drawOf(ids[6]).rect == Rect(0, 64-markerHeight/2, scene.slider->getWidth(), markerHeight)));
+    CHECK((scene.drawOf(ids[6]).rect == Rect(x, 64-markerHeight/2, scene.slider->getWidth(), markerHeight)));
 
     // depthLayers() reserves the marker's z: the next control is numbered after it
     controls::Base *after=scene.canvas->newChild<controls::Base>();

@@ -100,7 +100,7 @@ Base::Base(const String &name)
     m_childStateChanged=false;
     m_skin=nullptr;
 
-    m_alignment=Alignment::Left | Alignment::Top;
+    m_alignment=Alignment::Absolute;
     m_position=Position::Absolute;
 
     init(name);
@@ -1727,6 +1727,11 @@ void Base::arrangeHorizontal(skin::Base *skin)
     innerBounds.x=m_padding.left;
     innerBounds.w-=m_padding.left+m_padding.right;
 
+    // The padded content box an aligned dock-None child is placed in; unlike
+    // innerBounds it does not shrink by the docked children.
+    const int contentX=innerBounds.x;
+    const int contentW=innerBounds.w;
+
     for(auto &&child:m_children)
     {
         if(child->hidden())
@@ -1773,12 +1778,12 @@ void Base::arrangeHorizontal(skin::Base *skin)
         else if(dock & DockPosition::Bottom)
         {
             if(sizeFlags.horizontal==SizeFlag::Fixed)
-                child->setArrangedBounds(innerBounds.x,
+                child->setArrangedBounds(innerBounds.x+margin.left,
                     bounds.y,
                     bounds.w,
                     bounds.h);
             else
-                child->setArrangedBounds(innerBounds.x,
+                child->setArrangedBounds(innerBounds.x+margin.left,
                     bounds.y,
                     innerBounds.w-margin.left-margin.right,
                     bounds.h);
@@ -1789,20 +1794,20 @@ void Base::arrangeHorizontal(skin::Base *skin)
 
             Alignment alignment=child->getAlignment();
 
-            //            child->setBounds(bounds.x, bounds.y, preferred.width, bounds.h);
-            // Aligned inside the padding and what the docked children
-            // already took (innerBounds), like the docked children are.
+            // Alignment is opt-in: an aligned child is placed in the padded
+            // content box, whatever the docked siblings took; an unaligned one
+            // stays at the position it asked for (setPos, setBounds, moveTo).
             if(alignment & Alignment::Left)
-                child->setArrangedBounds(innerBounds.x+margin.left, bounds.y, bounds.w, bounds.h);
+                child->setArrangedBounds(contentX+margin.left, bounds.y, bounds.w, bounds.h);
             else if(alignment & Alignment::Right)
-                child->setArrangedBounds(innerBounds.x+innerBounds.w-bounds.w-margin.right, bounds.y, bounds.w, bounds.h);
+                child->setArrangedBounds(contentX+contentW-bounds.w-margin.right, bounds.y, bounds.w, bounds.h);
             else if(alignment & Alignment::CenterH)
             {
-                int start=innerBounds.x+margin.left+(innerBounds.w-bounds.w-margin.left-margin.right)/2;
+                int start=contentX+margin.left+(contentW-bounds.w-margin.left-margin.right)/2;
                 child->setArrangedBounds(start, bounds.y, bounds.w, bounds.h);
             }
             else //none/Absolute
-                child->setArrangedBounds(bounds.x, bounds.y, bounds.w, bounds.h);
+                child->setArrangedBounds(child->getRequestedBounds().x, bounds.y, bounds.w, bounds.h);
         }
 
 #ifdef DEBUG_LAYOUT
@@ -1850,6 +1855,9 @@ void Base::arrangeVertical(skin::Base *skin)
 
     innerBounds.y=m_padding.top;
     innerBounds.h-=m_padding.top+m_padding.bottom;
+
+    const int contentY=innerBounds.y;
+    const int contentH=innerBounds.h;
 
     int centerCount=0;
 
@@ -1916,20 +1924,21 @@ void Base::arrangeVertical(skin::Base *skin)
         {
             child->policyResize(preferred, Dim::Y);
 
-//            const Rect &bounds=child->getBounds();
             Alignment alignment=child->getAlignment();
 
+            // As in arrangeHorizontal: the padded content box, or the
+            // requested position.
             if(alignment & Alignment::Top)
-                child->setArrangedBounds(bounds.x, innerBounds.y+margin.top, bounds.w, bounds.h);
+                child->setArrangedBounds(bounds.x, contentY+margin.top, bounds.w, bounds.h);
             else if(alignment & Alignment::Bottom)
-                child->setArrangedBounds(bounds.x, innerBounds.y+innerBounds.h-bounds.h-margin.bottom, bounds.w, bounds.h);
+                child->setArrangedBounds(bounds.x, contentY+contentH-bounds.h-margin.bottom, bounds.w, bounds.h);
             else if(alignment & Alignment::CenterV)
             {
-                int start=innerBounds.y+margin.top+(innerBounds.h-bounds.h-margin.top-margin.bottom)/2;
+                int start=contentY+margin.top+(contentH-bounds.h-margin.top-margin.bottom)/2;
                 child->setArrangedBounds(bounds.x, start, bounds.w, bounds.h);
             }
             else //none/Absolute
-                child->setArrangedBounds(bounds.x, bounds.y, bounds.w, bounds.h);
+                child->setArrangedBounds(bounds.x, child->getRequestedBounds().y, bounds.w, bounds.h);
         }
         else if(dock==DockPosition::Center)
             centerCount++;

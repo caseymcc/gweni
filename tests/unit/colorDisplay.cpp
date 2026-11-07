@@ -128,7 +128,7 @@ TEST_CASE("an opaque swatch is one flat fill in its colour with the ColorSwatch 
     const Draw &draw=scene.draw();
     CHECK_FALSE(draw.checker);
     CHECK((draw.rect == scene.swatch->getRenderBounds()));
-    CHECK((draw.rect == Rect(0, 0, 32, 24)));
+    CHECK((draw.rect == Rect(4, 4, 32, 24))); // where setBounds put it
     CHECK((draw.fill == Color(10, 200, 30, 255)));
     CHECK((draw.border == tn::ColorSwatch.border));
     CHECK(draw.radius == tn::ColorSwatch.radius);
