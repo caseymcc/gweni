@@ -18,6 +18,10 @@ GWENI_CONTROL_CONSTRUCTOR(MenuStrip)
 {
     setBounds(0, 0, 200, 22);
     setDock(DockPosition::Top);
+    // Menu's constructor moved its padding onto the inner panel; the strip
+    // keeps the geometry it had, its items the strip's full height.
+    setPadding(Padding(2, 2, 2, 2));
+    m_innerPanel->setMargin(Margin(5, 5, 5, 5));
     m_innerPanel->setPadding(Padding(5, 0, 0, 0));
 }
 

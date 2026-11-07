@@ -81,6 +81,8 @@ public:
     gweni::event::Caller onCheckChange;
 
 private:
+    //! Its submenu was shown or hidden: the open highlight (isMenuOpen()) changed.
+    void onMenuVisibilityChanged(event::Info);
 
     Menu *m_menu=nullptr;
     bool m_onStrip=false;

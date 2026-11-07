@@ -73,6 +73,7 @@ Menu *MenuItem::getMenu()
     {
         m_menu=getCanvas()->newChild<Menu>();
         m_menu->setHidden(true);
+        m_menu->onVisibilityChanged.add(this, &MenuItem::onMenuVisibilityChanged);
 
         if(!m_onStrip)
         {
@@ -85,6 +86,13 @@ Menu *MenuItem::getMenu()
     }
 
     return m_menu;
+}
+
+// However the submenu opens or closes (openMenu(), Menu::closeAll(), the
+// canvas closing every menu), the row's highlight follows it.
+void MenuItem::onMenuVisibilityChanged(event::Info)
+{
+    redraw();
 }
 
 void MenuItem::setChecked(bool check)

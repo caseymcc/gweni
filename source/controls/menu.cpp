@@ -28,7 +28,12 @@ bool samePoint(const Point &a, const Point &b)
 GWENI_CONTROL_CONSTRUCTOR(Menu)
 {
     setBounds(0, 0, 10, 10);
-    setPadding(Padding(2, 2, 2, 2));
+    // The padding is the inner panel's: ScrollControl places the inner panel
+    // over its whole area, so the items sit inside the backdrop's border only
+    // when the panel keeps them off it. Its margin would be counted in the
+    // size and drawn as empty backdrop under the last item.
+    m_innerPanel->setPadding(Padding(2, 2, 2, 2));
+    m_innerPanel->setMargin(Margin(0, 0, 0, 0));
     setDisableIconMargin(false);
     setAutoHideBars(true);
     setScroll(false, true);
@@ -121,6 +126,8 @@ MenuItem *Menu::addItem(const String &name,
 void Menu::onAddItem(MenuItem *item)
 {
     item->setTextPadding(Padding(iconMarginDisabled()?0:24, 0, 16, 0));
+    // after the icon column, clear of the accelerator docked on the right
+    item->setTextAlignment(Alignment::Left|Alignment::CenterV);
     item->setDock(DockPosition::Top);
     item->sizeToContents();
     item->onHoverEnter.add(this, &Menu::onHoverItem);
@@ -208,7 +215,12 @@ void Menu::setHidden(bool hidden)
     if(hidden)
         m_atCursor=false;
 
+    const bool changed=(hidden != this->hidden());
+
     ParentClass::setHidden(hidden);
+
+    if(changed)
+        onVisibilityChanged.call(this);
 }
 
 void Menu::close()
@@ -230,7 +242,8 @@ void Menu::addDivider()
 {
     MenuDivider *divider=newChild<MenuDivider>();
     divider->setDock(DockPosition::Top);
-    divider->setMargin(Margin(iconMarginDisabled()?0:24, 0, 4, 0));
+    // 3 units of backdrop above and below the rule
+    divider->setMargin(Margin(iconMarginDisabled()?0:24, 3, 4, 3));
 }
 
 }//namespace controls

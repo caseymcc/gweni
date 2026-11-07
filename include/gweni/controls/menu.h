@@ -57,6 +57,10 @@ public:
 
     void setHidden(bool hidden) override;
 
+    //! Called when it is shown or hidden (setHidden() with a new state), so
+    //! the MenuItem it is the submenu of redraws its open highlight.
+    gweni::event::Caller onVisibilityChanged;
+
     //! Where a menu of \p size opened at \p cursor goes in \p area: at the
     //! cursor, on its left where it would run past the right edge, above it
     //! where it would run past the bottom, then kept inside (keepInside()):

@@ -336,7 +336,8 @@ if(TARGET gweni_capture)
         progressBarFill.cpp
         comboBoxSize.cpp
         emptyText.cpp
-        scrollControlBackdrop.cpp)
+        scrollControlBackdrop.cpp
+        menuRows.cpp)
     gweni_set_warnings(gweni_unittests)
     target_link_libraries(gweni_unittests
         gweni

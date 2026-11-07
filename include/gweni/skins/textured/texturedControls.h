@@ -395,6 +395,31 @@ public:
     static BorderedPrimitive BackgroundPrimitive;
 };
 
+// The bar a MenuStrip's items sit in: flat and square (tokyonight::MenuStrip),
+// found before Menu's rounded panel by the type walk.
+class MenuStrip:public textured::ControlRegister<MenuStrip>
+{
+public:
+    static void staticInit(TexturedSkin *) { m_staticInit=true; }
+
+    void update(renderer::Base *renderer, controls::Base *baseControl) override;
+
+    inline static const std::string_view name="MenuStrip";
+};
+
+// A menu row: nothing of its own while idle or disabled (the slot hidden, so the
+// menu's backdrop shows), tokyonight::MenuHover while hovered, pressed or with
+// its submenu open. Found before Button's by the type walk.
+class MenuItem:public textured::ControlRegister<MenuItem>
+{
+public:
+    static void staticInit(TexturedSkin *) { m_staticInit=true; }
+
+    void update(renderer::Base *renderer, controls::Base *baseControl) override;
+
+    inline static const std::string_view name="MenuItem";
+};
+
 class Panel:public textured::ControlRegister<Panel>
 {
 public:

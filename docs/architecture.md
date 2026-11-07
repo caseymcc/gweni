@@ -342,6 +342,23 @@ on an OpenGL 3.3 core profile:
   previous one through its own `setSelected`, members are untoggleable, and a member
   that is deleted, or the group itself, lets the other go without an event. A selection
   change in a group therefore marks the two rows (and their labels) alone.
+- **Menu rows.** A `Menu` is one rounded backdrop (the textured `Menu` renderer, the
+  `Menu` surface) with flat rows on it; a `MenuStrip` has its own renderer, found
+  before `Menu`'s by the type walk, painting the flat, square `MenuStrip` surface. A
+  `MenuItem` has its own renderer too, found before `Button`'s: like a `Selectable` row
+  its one slot is **hidden** while idle or disabled, and paints `MenuHover` over the
+  item while it is hovered, pressed or has its submenu open (`isMenuOpen()`). The
+  submenu opening and closing marks the item: `Menu::setHidden` fires
+  `onVisibilityChanged` on a real change, and the item's handler calls `redraw()`, so
+  the highlight follows the submenu however it closes (`Menu::closeAll`, the canvas
+  closing every menu, a hover on another item). The menu's 2-unit padding is its
+  inner panel's, with no inner margin: `ScrollControl::placeContents` puts the inner
+  panel over the whole control, so only the panel's padding keeps the rows off the
+  backdrop's border, and a margin would be counted in the size and drawn as empty
+  backdrop under the last row (`MenuStrip` keeps the geometry it had). Labels are
+  `Left|CenterV` after the 24-unit icon column (their left text padding), clear of the
+  accelerator docked on the right; a `MenuDivider` has 3 units of backdrop above and
+  below its 1-unit rule.
 - **The indeterminate ProgressBar.** `ProgressBar::setIndeterminate(true)` draws a
   segment (`setSegmentLength`, 0.3 of the track) in the fill's slot instead of the fill,
   moving start to end (bottom to top when vertical) at `setIndeterminateSpeed` track

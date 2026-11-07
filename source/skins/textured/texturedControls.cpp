@@ -17,6 +17,7 @@
 #include "gweni/controls/textBox.h"
 #include "gweni/controls/separator.h"
 #include "gweni/controls/selectable.h"
+#include "gweni/controls/menuItem.h"
 #include "gweni/controls/bullet.h"
 #include "gweni/controls/windowButtons.h"
 
@@ -489,6 +490,40 @@ void Menu::update(renderer::Base *renderer, controls::Base *baseControl)
 void Menu::remove(renderer::Base *renderer, controls::Base *baseControl)
 {
     releasePrimitives(renderer);
+}
+
+///////////////////////////////////////////////////////////////////////////
+//MenuStrip
+void MenuStrip::update(renderer::Base *renderer, controls::Base *baseControl)
+{
+    if(m_primitives.empty())
+        return;
+
+    tokyonight::paintSurface(renderer, m_primitives.data(), baseControl, tokyonight::MenuStrip);
+}
+
+///////////////////////////////////////////////////////////////////////////
+//MenuItem
+void MenuItem::update(renderer::Base *renderer, controls::Base *baseControl)
+{
+    if(m_primitives.empty())
+        return;
+
+    controls::MenuItem *item=static_cast<controls::MenuItem *>(baseControl);
+    const bool highlighted=!item->isDisabled() &&
+        (item->isHovered() || item->isDepressed() || item->isMenuOpen());
+
+    // an idle row draws nothing: a transparent rect would still write depth over
+    // the backdrop, so the slot is hidden instead (drawRoundedRect shows it)
+    if(highlighted && baseControl->visible())
+    {
+        const tokyonight::Surface &surface=tokyonight::MenuHover;
+
+        renderer->drawRoundedRect(m_primitives[0], baseControl->getRenderBounds(), surface.radius,
+            surface.borderWidth, surface.top, surface.bottom, surface.border, baseControl->getZIndex());
+    }
+    else
+        renderer->hidePrimitive(m_primitives[0]);
 }
 
 ///////////////////////////////////////////////////////////////////////////
@@ -1705,6 +1740,8 @@ template class ControlRegister<Input>;
 template class ControlRegister<ListBox>;
 template class ControlRegister<ListBoxRow>;
 template class ControlRegister<Menu>;
+template class ControlRegister<MenuStrip>;
+template class ControlRegister<MenuItem>;
 template class ControlRegister<Panel>;
 template class ControlRegister<PageControl>;
 template class ControlRegister<TabControlInner>;
