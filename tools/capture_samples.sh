@@ -46,15 +46,13 @@ HERO_OUT=demo.png
 # The gallery: one ControlTest demo per line. README.md embeds each of these,
 # in this order, so a change here needs a matching change there.
 #
-# Left out because they do not look right today:
-#   ImagePanelDemo - an empty canvas (issue #69)
-#   LabelMultilineDemo - the wrapped lines stack now, but the right column runs
-#     past the canvas edge (issue #207) and its SplitterBars draw nothing
-#     (idea #191)
-#   CheckBoxDemo - the first CheckBox sticks out above the canvas top
-# Left out because the hero's page shows their controls: TabControlDemo,
-# TreeControlDemo, PropertiesDemo, PageControlDemo, ListBoxDemo,
-# CollapsibleListDemo, ScrollControlDemo.
+# Left out because it does not look right today:
+#   ImagePanelDemo - its VerticalLayout stacks the two images (the second the
+#     magenta missing-image placeholder it means to show) down the left edge,
+#     not side by side where they ask to be
+# Left out because the hero shows their controls: TabControlDemo,
+# TreeControlDemo, PropertiesDemo, ListBoxDemo, CollapsibleListDemo,
+# ScrollControlDemo, and PageControlDemo (the shell's centre pane is one).
 SAMPLES=(
     ButtonDemo
     RadioButtonDemo

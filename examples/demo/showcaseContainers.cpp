@@ -22,6 +22,12 @@ namespace gweni
 // Three columns of titled sections, laid out to fill the page: the shell's
 // centre pane (870x545), where it is the README's hero, or ControlTest's canvas.
 // Every state is set here, since the hero capture takes no input.
+//
+// A ScrollControl's preferred height is its content's unless it asked for one,
+// and a column shares out its height by the preferred heights, so each list
+// asks for the same small height and the sections of a column share it evenly.
+static const int SectionHeight=80;
+
 GWENI_CONTROL_CONSTRUCTOR(ShowcaseContainersDemo)
 {
     showcase::initPage(this);
@@ -34,6 +40,7 @@ GWENI_CONTROL_CONSTRUCTOR(ShowcaseContainersDemo)
         controls::TreeControl *tree=showcase::addSection(left, "TreeControl")->newChild<controls::TreeControl>();
 
         tree->setDock(DockPosition::Center);
+        tree->setHeight(SectionHeight);
 
         controls::TreeNode *assets=tree->addNode("Assets");
         controls::TreeNode *textures=assets->addNode("Textures");
@@ -56,6 +63,7 @@ GWENI_CONTROL_CONSTRUCTOR(ShowcaseContainersDemo)
         controls::ListBox *list=showcase::addSection(left, "ListBox")->newChild<controls::ListBox>();
 
         list->setDock(DockPosition::Center);
+        list->setHeight(SectionHeight);
         list->setColumnCount(2);
 
         const char *const rows[][2]=
@@ -66,6 +74,10 @@ GWENI_CONTROL_CONSTRUCTOR(ShowcaseContainersDemo)
             {"Mars", "1.52 AU"},
             {"Jupiter", "5.20 AU"},
             {"Saturn", "9.54 AU"},
+            {"Uranus", "19.2 AU"},
+            {"Neptune", "30.1 AU"},
+            {"Ceres", "2.77 AU"},
+            {"Pluto", "39.5 AU"},
         };
 
         for(const auto &row : rows)
@@ -91,6 +103,18 @@ GWENI_CONTROL_CONSTRUCTOR(ShowcaseContainersDemo)
         }
 
         controls::TabButton *propertiesTab=tabs->addPage("Properties");
+
+        {
+            controls::Label *label=tabs->addPage("History")->getPage()->newChild<controls::Label>();
+
+            label->setText("No changes yet");
+            label->setDock(DockPosition::Top);
+        }
+
+        // Selected before its page is filled: showing a hidden page shows
+        // every control under it, the ComboBox's closed list included.
+        propertiesTab->doAction();
+
         controls::Properties *props=propertiesTab->getPage()->newChild<controls::Properties>();
 
         props->setDock(DockPosition::Center);
@@ -106,23 +130,16 @@ GWENI_CONTROL_CONSTRUCTOR(ShowcaseContainersDemo)
             combo->getComboBox()->addItem("Screen", "screen");
             props->add("Blend", combo, "multiply");
         }
-
-        {
-            controls::Label *label=tabs->addPage("History")->getPage()->newChild<controls::Label>();
-
-            label->setText("No changes yet");
-            label->setDock(DockPosition::Top);
-        }
-        propertiesTab->doAction();
         m_notes.push_back("TabControl: \"Properties\" tab selected");
     }
     {
         controls::ScrollControl *scroll=showcase::addSection(middle, "ScrollControl")->newChild<controls::ScrollControl>();
 
         scroll->setDock(DockPosition::Center);
+        scroll->setHeight(SectionHeight);
         scroll->setScroll(false, true);
 
-        for(int i=1; i <= 12; ++i)
+        for(int i=1; i <= 24; ++i)
         {
             controls::Button *button=scroll->newChild<controls::Button>();
 
@@ -130,12 +147,13 @@ GWENI_CONTROL_CONSTRUCTOR(ShowcaseContainersDemo)
             button->setDock(DockPosition::Top);
             button->setMargin(Margin(0, 0, 0, 2));
         }
-        m_notes.push_back("ScrollControl: 12 rows, the bar showing");
+        m_notes.push_back("ScrollControl: 24 rows, the bar showing");
     }
     {
         controls::CollapsibleList *list=showcase::addSection(right, "CollapsibleList")->newChild<controls::CollapsibleList>();
 
         list->setDock(DockPosition::Center);
+        list->setHeight(SectionHeight);
 
         {
             controls::CollapsibleCategory *cat=list->add("Recent");
@@ -157,6 +175,12 @@ GWENI_CONTROL_CONSTRUCTOR(ShowcaseContainersDemo)
             cat->add("Team notes");
             cat->add("Roadmap");
             cat->add("Designs");
+        }
+        {
+            controls::CollapsibleCategory *cat=list->add("Archive");
+
+            for(const char *name : {"2019", "2020", "2021", "2022", "2023", "2024", "2025", "2026"})
+                cat->add(name);
         }
         m_notes.push_back("CollapsibleList: \"Budget.ods\" selected, \"Favourites\" collapsed");
     }
