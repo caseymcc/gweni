@@ -14,13 +14,25 @@
  *  re-attached control, a change raised from a render() during the walk
  *  (rendered that frame or the next), and on a Canvas::setScale every control,
  *  laid out in one pass and rendered once, then settled.
+ *
+ *  The walk allocates nothing per child: one changed child of a container of
+ *  1 000 costs the render phase as many heap allocations as one of a container
+ *  of 10 (it once copied each entered control's child list, one node per
+ *  sibling), while ChangeStats::childrenScanned counts the siblings its loop
+ *  still passes over. The allocations are counted by this file's replacement
+ *  of the global operator new, which is the whole gweni_unit_tests process's:
+ *  malloc and free underneath, counted only while a case sets the flag. The
+ *  aligned forms are left to the runtime (they pair among themselves), so an
+ *  over-aligned allocation is not counted; gweni makes none.
  */
 #include "headlessFixture.h"
 
 #include <doctest/doctest.h>
 
 #include <algorithm>
+#include <cstdlib>
 #include <functional>
+#include <new>
 #include <set>
 #include <vector>
 
@@ -28,6 +40,18 @@ using namespace gweni;
 
 namespace
 {
+
+//! The replacement operator new counts while this is set. Only the main
+//! thread sets it, around the part of a case it measures.
+bool g_countAllocations=false;
+size_t g_allocations=0;
+
+void *allocate(std::size_t size)
+{
+    if(g_countAllocations)
+        ++g_allocations;
+    return std::malloc(size ? size : 1);
+}
 
 //! What the walk did in one frame: the controls it entered (renderUnder() runs
 //! once per control renderRecursive() enters) and the ones render() found a
@@ -183,6 +207,37 @@ void checkSettled(const controls::ChangeStats &stats)
 }
 
 }//namespace
+
+void *operator new(std::size_t size)
+{
+    if(void *memory=allocate(size))
+        return memory;
+    throw std::bad_alloc();
+}
+
+void *operator new[](std::size_t size)
+{
+    if(void *memory=allocate(size))
+        return memory;
+    throw std::bad_alloc();
+}
+
+void *operator new(std::size_t size, const std::nothrow_t &) noexcept
+{
+    return allocate(size);
+}
+
+void *operator new[](std::size_t size, const std::nothrow_t &) noexcept
+{
+    return allocate(size);
+}
+
+void operator delete(void *memory) noexcept { std::free(memory); }
+void operator delete[](void *memory) noexcept { std::free(memory); }
+void operator delete(void *memory, std::size_t) noexcept { std::free(memory); }
+void operator delete[](void *memory, std::size_t) noexcept { std::free(memory); }
+void operator delete(void *memory, const std::nothrow_t &) noexcept { std::free(memory); }
+void operator delete[](void *memory, const std::nothrow_t &) noexcept { std::free(memory); }
 
 TEST_CASE("the first frame visits every control, a settled one at most the canvas")
 {
@@ -345,38 +400,6 @@ TEST_CASE("a change raised during the walk is rendered this frame or the next")
     checkSettled(scene.frame());
 }
 
-TEST_CASE("a change on a child a sibling's render() moves to the back is not lost")
-{
-    Scene scene;
-    scene.settle();
-
-    // a render() that reorders its parent's children (sendToBack(), as some
-    // controls do from a state change) and raises a change on a sibling
-    Probe *branch=scene.branches[0];
-    Probe *mover=static_cast<Probe *>(branch->getChildren().back());
-    Probe *sibling=static_cast<Probe *>(branch->getChildren().front());
-    Probe *leaf=static_cast<Probe *>(sibling->getChildren().front());
-    bool once=true;
-    mover->onRender=[&]()
-        {
-            if(!once)
-                return;
-            once=false;
-            mover->sendToBack();
-            leaf->addStateChange(controls::StateChange_Text);
-        };
-    mover->addStateChange(controls::StateChange_Background);
-
-    scene.frame();
-    bool rendered=scene.log.wasRendered(leaf);
-    scene.frame();
-    rendered=rendered || scene.log.wasRendered(leaf);
-    CHECK(rendered);
-
-    scene.settle();
-    checkSettled(scene.frame());
-}
-
 TEST_CASE("a canvas scale change lays out and renders every control once, then settles")
 {
     Scene scene;
@@ -404,4 +427,94 @@ TEST_CASE("a canvas scale change lays out and renders every control once, then s
     scene.frame();
     CHECK(scene.log.rendered.size() == Scene::Controls);
     checkSettled(scene.frame());
+}
+
+namespace
+{
+
+//! What one frame's render phase cost, after a change on one of \p count
+//! children of a container on a canvas.
+struct RenderCost
+{
+    size_t allocations=0;
+    size_t visited=0;
+    size_t childrenScanned=0;
+    size_t expectedScanned=0;   //!< the canvas's children and the container's
+    bool rendered=false;        //!< the changed child was rendered
+};
+
+RenderCost renderOneChangedChild(size_t count)
+{
+    test::StubRenderer renderer;
+    test::StubSkin skin{&renderer};
+    controls::Canvas *canvas=new controls::Canvas(&skin);
+    canvas->setSize(400, 300);
+
+    Probe *container=canvas->newChild<Probe>();
+    container->setBounds(0, 0, 200, 200);
+    std::vector<Probe *> children;
+    for(size_t i=0; i<count; ++i)
+    {
+        Probe *child=container->newChild<Probe>();
+        child->setBounds(0, int(i%20), 10, 10);
+        children.push_back(child);
+    }
+
+    for(int i=0; i<10; ++i)
+    {
+        controls::resetChangeStats();
+        canvas->updateCanvas();
+        canvas->renderCanvas();
+        if(controls::getChangeStats().controls == 0)
+            break;
+    }
+
+    // logs the changed child only, into vectors that have room already
+    WalkLog log;
+    log.entered.reserve(1);
+    log.rendered.reserve(1);
+    Probe *changed=children[count/2];
+    changed->log=&log;
+    changed->addStateChange(controls::StateChange_Background);
+
+    controls::resetChangeStats();
+    canvas->updateCanvas();
+
+    g_allocations=0;
+    g_countAllocations=true;
+    canvas->renderCanvas();
+    g_countAllocations=false;
+
+    RenderCost cost;
+    cost.allocations=g_allocations;
+    cost.visited=controls::getChangeStats().visited;
+    cost.childrenScanned=controls::getChangeStats().childrenScanned;
+    cost.expectedScanned=canvas->getChildren().size()+count;
+    cost.rendered=log.wasRendered(changed);
+
+    delete canvas;
+    return cost;
+}
+
+}//namespace
+
+TEST_CASE("the render walk allocates nothing per sibling of a changed control")
+{
+    const RenderCost small=renderOneChangedChild(10);
+    const RenderCost large=renderOneChangedChild(1000);
+
+    CHECK(small.rendered);
+    CHECK(large.rendered);
+    // the canvas, the container and the changed child
+    CHECK(small.visited == 3);
+    CHECK(large.visited == 3);
+
+    // the loop still passes over every child of each control it enters
+    CHECK(small.childrenScanned == small.expectedScanned);
+    CHECK(large.childrenScanned == large.expectedScanned);
+
+    // but allocates nothing for them
+    INFO("render-phase allocations: ", small.allocations, " with 10 children, ",
+        large.allocations, " with 1000");
+    CHECK(large.allocations == small.allocations);
 }

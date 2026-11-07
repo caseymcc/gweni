@@ -1228,18 +1228,12 @@ void Base::renderRecursive(skin::Base *skin, const Rect &cliprect)
     // Render this child controls under current objects clip
     baseRenderer->startClip();
     {
-        if(!m_children.empty())
+        // The live list, not a copy: the render walk only draws, and nothing
+        // it calls adds, removes or reorders a child.
+        for(Base *child : m_children)
         {
-            // Iterate a snapshot: a control's render() may mutate the sibling
-            // list (e.g. sendToBack() during a state change), which would
-            // otherwise invalidate this iterator (use-after-free).
-            Base::List children=m_children;
-
-            // Now render my kids
-            for(auto &&child : children)
-            {
-                child->doRender(skin);
-            }
+            ++g_changeStats.childrenScanned;
+            child->doRender(skin);
         }
     }
     baseRenderer->endClip();

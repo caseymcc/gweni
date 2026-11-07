@@ -65,12 +65,18 @@ constexpr int StateChange_Caret=0x0020;
 //! Tally of the controls Base::render() found something to regenerate for,
 //! plus the controls the render walk entered at all. This is what "per-frame
 //! cost scales with what changed" means, measured: on a settled frame every
-//! field is zero, except visited, which is at most 1 (the Canvas).
+//! field is zero, except visited, which is at most 1 (the Canvas), and
+//! childrenScanned, then at most the Canvas's child count.
 struct ChangeStats
 {
     //! controls Base::renderRecursive() entered: the changed ones and their
     //! ancestors; doRender() skips a subtree with nothing pending in it
     size_t visited=0;
+    //! children the walk's loop passed over in the controls it entered, each
+    //! handed to doRender() whether or not it had anything pending: the walk
+    //! is still O(siblings) of every entered control in time (it allocates
+    //! nothing for them)
+    size_t childrenScanned=0;
     size_t controls=0;      //!< controls with getStateChange() != StateChange_Nothing
     size_t created=0;
     size_t visibility=0;

@@ -26,6 +26,9 @@
  *                       prim_ids= counts the live primitive ids (handed out
  *                       and not released) after the frame; the id bank is
  *                       process-wide, so it covers every canvas;
+ *                       children_scanned= the children the render walk's
+ *                       loop passed over in the controls it entered
+ *                       (visited=), pending or not;
  *                       z_visited= the controls updateCanvas()'s z renumber
  *                       entered (0 unless the tree order changed);
  *                       anims_run= the animations its update phase ran
@@ -648,7 +651,7 @@ static void printFrameStats(int frame, const std::string &control,
         " upload_calls=%zu upload_bytes=%zu mirror_bytes=%zu draw_calls=%zu"
         " atlas_upload_calls=%zu atlas_upload_bytes=%zu"
         " layout_passes=%d redirtied_by=%s render_layout=%d layout_requests=%d requested_by=%s"
-        " visited=%zu z_visited=%zu anims_run=%zu prim_ids=%zu\n",
+        " visited=%zu children_scanned=%zu z_visited=%zu anims_run=%zu prim_ids=%zu\n",
         frame, control.c_str(),
         changes.controls, changes.created, changes.visibility,
         changes.geometry, changes.background, changes.text,
@@ -657,7 +660,8 @@ static void printFrameStats(int frame, const std::string &control,
         gpu.atlasUploadCalls, gpu.atlasUploadBytes,
         layout.passes, redirtiedBy(layout).c_str(), layout.renderLayout ? 1 : 0,
         layout.requests, requestedBy(layout).c_str(),
-        changes.visited, update.zVisited, update.animsRun, gweni::primitiveIdCount()-gweni::releasedPrimitiveIdCount());
+        changes.visited, changes.childrenScanned, update.zVisited, update.animsRun,
+        gweni::primitiveIdCount()-gweni::releasedPrimitiveIdCount());
     std::fflush(stdout);
 }
 

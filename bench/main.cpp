@@ -70,7 +70,7 @@ const size_t g_framePhaseCount=sizeof(g_framePhases)/sizeof(g_framePhases[0]);
 // printFrameStats keys where they overlap.
 const char *const g_counterNames[]=
 {
-    "visited", "controls_changed", "created", "visibility", "geometry", "background", "text",
+    "visited", "children_scanned", "controls_changed", "created", "visibility", "geometry", "background", "text",
     "prim_slots_written", "text_slots_written", "upload_calls", "upload_bytes", "mirror_bytes",
     "draw_calls", "text_draws", "atlas_upload_calls", "atlas_upload_bytes",
     "layout_passes", "layout_capped", "render_layout", "z_visited", "anims_run", "prim_ids", "text_ids",
@@ -103,7 +103,7 @@ void collectCounters(FrameRecord &record, const bench::PhaseTotals &phases,
 
     const size_t values[g_counterCount]=
     {
-        changes.visited, changes.controls, changes.created, changes.visibility,
+        changes.visited, changes.childrenScanned, changes.controls, changes.created, changes.visibility,
         changes.geometry, changes.background, changes.text,
         gpu.primitiveSlotsWritten, gpu.textSlotsWritten, gpu.uploadCalls, gpu.uploadBytes,
         gpu.mirrorBytes, gpu.drawCalls, gpu.textDraws, gpu.atlasUploadCalls, gpu.atlasUploadBytes,
@@ -369,9 +369,10 @@ void printUsage()
         "             the CPU rasteriser, not a GPU; gl_renderer= says which it was.\n"
         "\n"
         "Counters (per frame):\n"
-        "  visited controls_changed created visibility geometry background text\n"
-        "             controls::ChangeStats: controls the render walk entered, and those\n"
-        "             it found a state change on, by kind\n"
+        "  visited children_scanned controls_changed created visibility geometry background text\n"
+        "             controls::ChangeStats: controls the render walk entered, the children\n"
+        "             its loop passed over in them (pending or not), and the controls it\n"
+        "             found a state change on, by kind\n"
         "  prim_slots_written text_slots_written upload_calls upload_bytes mirror_bytes\n"
         "  draw_calls text_draws atlas_upload_calls atlas_upload_bytes\n"
         "             OpenGLCore::FrameStats of the frame's flush\n"
