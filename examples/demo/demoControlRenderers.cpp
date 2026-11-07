@@ -42,6 +42,7 @@ GWENI_DEMO_TRANSPARENT(CollapsibleListDemo)
 GWENI_DEMO_TRANSPARENT(ColorPickerDemo)
 GWENI_DEMO_TRANSPARENT(ComboBoxDemo)
 GWENI_DEMO_TRANSPARENT(ContextMenuDemo)
+GWENI_DEMO_TRANSPARENT(PopupDemo)
 GWENI_DEMO_TRANSPARENT(CrossSplitterDemo)
 GWENI_DEMO_TRANSPARENT(GroupBoxDemo)
 GWENI_DEMO_TRANSPARENT(ImagePanelDemo)
@@ -109,6 +110,7 @@ template class ControlRegister<CollapsibleListDemo>;
 template class ControlRegister<ColorPickerDemo>;
 template class ControlRegister<ComboBoxDemo>;
 template class ControlRegister<ContextMenuDemo>;
+template class ControlRegister<PopupDemo>;
 template class ControlRegister<CrossSplitterDemo>;
 template class ControlRegister<GroupBoxDemo>;
 template class ControlRegister<ImagePanelDemo>;

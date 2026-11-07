@@ -17,6 +17,7 @@
 #include "demo/colorPicker.h"
 #include "demo/comboBox.h"
 #include "demo/contextMenu.h"
+#include "demo/popup.h"
 #include "demo/crossSplitter.h"
 #include "demo/groupBox.h"
 #include "demo/imagePanel.h"
@@ -139,6 +140,7 @@ void Demo::init(const String &name)
         addDemo<SelectableDemo>(cat, "SelectableDemo");
         addDemo<VirtualListDemo>(cat, "VirtualListDemo");
         addDemo<ContextMenuDemo>(cat, "ContextMenuDemo");
+        addDemo<PopupDemo>(cat, "PopupDemo");
         addDemo<UnicodeTextDemo>(cat, "UnicodeTextDemo");
         addDemo<TextSizesDemo>(cat, "TextSizesDemo");
         addDemo<TextDemo>(cat, "TextDemo");

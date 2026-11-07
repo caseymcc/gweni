@@ -108,17 +108,75 @@ marks no control.
 **Its z: the canvas's last child.** The box has to draw above every control, an open
 `Menu` or `Modal` included, and be clipped to the canvas alone. It is a child of the
 canvas, so its clip region is the canvas's, and it is kept as the canvas's **last**
-child: `Canvas::keepToolTipLast()` moves it back to the end of the child list just
+child: `Canvas::keepOverlaysLast()` moves it back to the end of the child list just
 before each z renumber. Every change of the child order (a `Menu` added or opened with
 `bringToFront`, a `Modal`, any `addChild`) asks for a renumber anyway, so this costs
 nothing on other frames, and the depth-first numbering then gives the box and its text
 the highest z values in the tree. A reserved z range above the tree was the other
 choice; it would need a ceiling that no tree reaches and a second numbering for the
-overlays, while the last-child rule reuses the one numbering there is. A later
-canvas-level overlay (a popup, say) can take the same place. GWEN's drag-and-drop
+overlays, while the last-child rule reuses the one numbering there is. The popup (below)
+takes the place just before it. GWEN's drag-and-drop
 preview, which re-rendered the dragged control after the walk at the mouse offset, was
 deleted rather than moved here: the only drag that set it hid that control first, so it
 never drew anything.
+
+#### The popup: a panel next to an anchor, one per canvas
+
+`controls::Popup` (`include/gweni/controls/popup.h`) is imgui's `BeginPopup`: a panel of
+controls (its children, docked or placed like any control's) that the canvas shows over
+everything else next to an **anchor** control, a colour picker under its swatch or a list
+of tabs under its button. `popup->open(anchor, PopupPlacement::Below|Right)` hands it to
+`Canvas::showPopup`, which closes the popup shown before, moves it onto the canvas if it
+was made elsewhere, shows it, brings it to the front and fires `onOpen`. The canvas shows
+**one popup at a time**, and its context menu (below) is the same slot:
+`Canvas::shownPopup()` / `popupAnchor()` are whichever is open, `closePopup()` closes
+either, `shownContextMenu()` is the shown popup when it is a context menu. A popup's
+textured renderer paints one `tokyonight::Menu` surface, a context menu's panel.
+
+**It closes** on `close()` or `setHidden(true)` (both through `closePopup`, which fires
+`onClose`), on a press of either button that is not on the popup, on its anchor or on an
+open `Menu` (`Canvas::popupPressed`, called by `input::onMouseClicked` before the press is
+delivered, which it still is), on Escape (`Canvas::escapePopup`: a Menu open over it, a
+ComboBox's list in it, closes first), when the update phase finds its anchor hidden or
+disabled (`Canvas::updatePopup`, the step that also forgets a context menu closed as
+menus close), when the anchor is deleted (`Canvas::popupControlDeleted` from `~Base`, a
+delayed delete included), and when it is deleted itself (no `onClose` then). A press on
+the anchor is the anchor's, so a button toggles its popup (`isOpen() ? close() :
+open(this)`). Closing a popup closes the Menus open over it. **Ownership:** a popup is
+its creator's: closing only hides it, and the canvas deletes it with its other children,
+so a page that makes one on the canvas deletes it with itself (`PopupDemo`).
+
+**It places itself, in its own arrange.** A popup is owner-placed
+(`Placement::Owner`), so the canvas's arrange neither moves nor sizes it, and its own
+`arrange(dim)` does both before its subtree is arranged: the size the canvas would give a
+dock-None child (`policyResize`: its content, or its request by its size flags), then
+the position `Popup::placement(anchorRect, size, canvas, side)` gives. `Below` puts it
+`Popup::Gap` under the anchor with the left edges aligned, above it where it would run
+past the bottom, with the right edges aligned where it would run past the right edge;
+`Right` puts it beside the anchor with the top edges aligned, on its left, bottom edges
+aligned, likewise; then `Menu::keepInside`. Each axis needs only that axis's size, final
+when its arrange runs, and the anchor is arranged before it in the same pass (the popup
+comes after the anchor's top-level ancestor among the canvas's children), so it is
+right in the frame's one pass, and placed again on every pass: when the canvas shrinks or
+grows back and when the anchor moves. `updatePopup` lays it out again when the anchor's
+canvas rect is not the one it was last placed by (an ancestor scrolled or moved without a
+pass reaching the popup). A zero-size anchor is a point: `Menu::placement(cursor, ...)`
+is `Popup::placement` of the cursor with no gap. The position is computed, never asked
+for, unlike `Menu::openAt`'s cursor: the canvas's generic arrange puts a dock-None child
+at its requested position on every pass, which is why a popup is Owner rather than a
+child placed in `layout()`.
+
+**Its z.** `keepOverlaysLast` puts a shown popup after every other canvas child but the
+Menus that were after it (a ComboBox list opened from inside it stays above it) and the
+ToolTip box, which stays last: so the z renumber numbers the popup above the whole tree
+and under a tooltip, and a control added to the canvas after it opened still goes under
+it. Opening touches only the popup's subtree and the anchor (`controltest_popup`): a
+popup made on the canvas moves nothing else in the child order, while one made inside a
+page renumbers the page's later siblings the first time it is moved out.
+
+`Base::setHidden` shows every child with its parent, so a hidden popup holding a
+`ComboBox` would show the list the box keeps as a child until it first opens:
+`ComboBox::setHidden` hides it again.
 
 #### The context menu: a right-click opens a Menu at the cursor
 
@@ -130,13 +188,15 @@ think: `input::onMouseClicked` first closes the open menus, as for any press not
 menu, then delivers the press to the control, and only then, for a right press, calls
 `Canvas::showContextMenu`, which fires the owner's `onContextMenu` (so the application
 can fill in or disable items), re-parents the menu to the canvas if it is elsewhere and
-calls `Menu::openAt(cursor)`. So a right-click while one context menu is open closes it
-and opens the next, and the canvas keeps one open at a time (`shownContextMenu()`,
-`contextMenuOwner()`). It closes as every menu does (a press outside it, an item chosen),
-on Escape (`input::onKeyEvent` takes the press before the focused control does, and only
-while a context menu is open), when the update phase finds its owner hidden
-(`Canvas::updateContextMenu`, one pointer check in `doThink()`, before the tooltip step),
-and when the owner is deleted.
+calls `Menu::openAt(cursor)`. A context menu is the canvas's **popup** (above): opening
+one closes the popup shown, a Popup or another context menu, so a right-click while one
+context menu is open closes it and opens the next, and the canvas keeps one open at a time
+(`shownContextMenu()`, `contextMenuOwner()`, and `shownPopup()`/`popupAnchor()`). It closes
+as every menu does (a press outside it, an item chosen), on Escape (`input::onKeyEvent`
+takes the press before the focused control does, and only while a popup is open), when
+the update phase finds its owner hidden or disabled (`Canvas::updatePopup`, one pointer
+check in `doThink()`, before the tooltip step), when a Popup opens, and when the owner is
+deleted.
 
 **Placement waits for the size.** A menu that has been hidden has not been laid out, so
 its size is not known when it opens. `openAt` only shows it, brings it to the front and
@@ -153,7 +213,7 @@ that way (the Properties colour selector) now flips up near the bottom instead o
 running past it.
 
 **Its z** is the one every opened menu gets: `bringToFront` makes it the canvas's last
-child but one, and the tooltip box stays last (`keepToolTipLast`), so a tooltip draws
+child but one, and the tooltip box stays last (`keepOverlaysLast`), so a tooltip draws
 over an open context menu. Opening renumbers z, which marks the controls whose z changed;
 the menus a demo creates come after its content, so those are hidden menus, which render
 nothing, and the frame writes only the opened menu's subtree.

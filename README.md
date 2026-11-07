@@ -37,6 +37,8 @@ implemented-vs-planned status, and [docs/layout.md](docs/layout.md) for the layo
 | **Separator** (with a caption, vertical, and bullets) | **Selectable** (toggle rows and a single-selection group) |
 | ![ContextMenu](docs/images/ContextMenuDemo.png) | ![VirtualList](docs/images/VirtualListDemo.png) |
 | **Context menu** (`setContextMenu`, opened with a right-click) | **VirtualList** (100 000 items, a row for each one on screen) |
+| ![Popup](docs/images/PopupDemo.png) | |
+| **Popup** (a panel under its button, one per canvas) | |
 
 Each control is shown on its own in `ControlTest`. All of these images are rendered offscreen by
 `tools/capture_samples.sh` (see `AGENTS.md`).
@@ -88,4 +90,4 @@ output is owned by you.
 ---------------------------------------
 
 GWEN was originaly created by Garry Newman, and released under MIT License.
-https://github.com/garrynewman/GWEN
+https://github.com/garrynewman/GWEN

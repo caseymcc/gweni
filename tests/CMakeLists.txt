@@ -197,6 +197,21 @@ if(TARGET ControlTest)
         LABELS gpu
         TIMEOUT 300)
 
+    # PopupDemo: a click on Options opens its popup below it, changing nothing
+    # outside the popup and the button; a settled frame with it open writes
+    # nothing; a click outside and Escape each give the frame before opening
+    # back; the button toggles it; the Corner popup opens above its button,
+    # inside the canvas; one popup at a time; a ComboBox list opens over it;
+    # a tooltip draws over it; hiding its button closes it; exits non-zero on
+    # any failed check
+    add_test(NAME controltest_popup
+        COMMAND $<TARGET_FILE:ControlTest> --headless --scenario popup --require-one-pass
+            --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/popup
+        WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
+    set_tests_properties(controltest_popup PROPERTIES
+        LABELS gpu
+        TIMEOUT 300)
+
     # VirtualListDemo at 1 000 and 100 000 items: the same pool, ids and
     # per-frame counters at both, a settled frame writing nothing, and a
     # one-row scroll and a wheel notch writing no more than the shown rows'

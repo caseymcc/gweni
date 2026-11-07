@@ -69,6 +69,7 @@ SAMPLES=(
     SelectableDemo
     ContextMenuDemo
     VirtualListDemo
+    PopupDemo
 )
 
 # Each sample's canvas size: a showcase page at the size of the hero's centre
@@ -87,15 +88,18 @@ declare -A SAMPLE_SIZE=(
     [SelectableDemo]=640x480
     [ContextMenuDemo]=640x480
     [VirtualListDemo]=640x480
+    [PopupDemo]=640x480
 )
 
 # Scripted input a sample is captured after, in place of the plain capture's
 # frames: ControlTest steps, run in order before the --shot. ContextMenuDemo is
 # shown with the Document box's menu open, VirtualListDemo scrolled by its
-# "Go to Item 50000" button with a row hovered.
+# "Go to Item 50000" button with a row hovered, PopupDemo with the Options
+# button's popup open and the mouse off it.
 declare -A SAMPLE_STEPS=(
     [ContextMenuDemo]="--frames 3 --move 230,60 --frames 2 --click-right 230,60 --frames 3"
     [VirtualListDemo]="--frames 3 --click 336,41 --frames 3 --move 100,150 --frames 2"
+    [PopupDemo]="--frames 3 --click 34,17 --frames 3 --move 400,300 --frames 2"
 )
 
 # The samples are grayscale text whatever the caller's environment says: LCD

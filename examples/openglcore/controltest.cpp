@@ -62,7 +62,7 @@
  *    --help, -h         print the option list and exit
  *    --scenario <name>  per-control | resize | docked | scroll | interaction |
  *                       typing | clip | text-size | scale | tooltip |
- *                       context-menu | virtual-list (see below)
+ *                       context-menu | popup | virtual-list (see below)
  *    --dump-bounds [<path>]
  *                       print the laid-out control tree as text: one line per
  *                       control, depth-first in child order, indented by depth,
@@ -290,6 +290,22 @@
  *                 it deletes the menu it created). One line
  *                   context-menu opens_at_cursor=yes|no ... deleted_owner_closes=yes|no
  *                 reports the checks. Exits non-zero if any check is no.
+ *    popup        controls::Popup on PopupDemo, clicks through the GLFW
+ *                 translator, on the stepped clock: a click on Options opens
+ *                 its popup below it, and that frame changes no pixel and
+ *                 marks no visible control outside the popup and the button;
+ *                 a settled frame with it open writes nothing; a click
+ *                 outside closes it back to the idle frame; a second click on
+ *                 Options closes it (the button toggles it); Escape closes it
+ *                 back to the frame before it opened; the Corner button's
+ *                 popup opens above it with their right edges aligned, inside
+ *                 the canvas; opening Options closes it; the popup's ComboBox
+ *                 opens its list over the popup, Escape closes the list
+ *                 alone and choosing an item keeps the popup open; the Help
+ *                 button's tooltip draws over the open popup; hiding Options
+ *                 closes it. One line
+ *                   popup opens_below=yes|no ... hidden_anchor_closes=yes|no
+ *                 reports the checks. Exits non-zero if any check is no.
  *    virtual-list VirtualListDemo with its list at 1 000 and then 100 000
  *                 items, the clock frozen: a settled frame, a one-row scroll
  *                 from the top (scrollByRows) and a wheel notch over the list
@@ -371,6 +387,8 @@
 #include <gweni/controls/button.h>
 #include <gweni/controls/selectable.h>
 #include <gweni/controls/toolTip.h>
+#include <gweni/controls/popup.h>
+#include <gweni/controls/comboBox.h>
 #include <gweni/controls/virtualList.h>
 #include <GLFW/glfw3.h>
 #include <gweni/utils/filesystem.h>
@@ -396,6 +414,7 @@
 #include <demo/colorPicker.h>
 #include <demo/comboBox.h>
 #include <demo/contextMenu.h>
+#include <demo/popup.h>
 #include <demo/crossSplitter.h>
 #include <demo/groupBox.h>
 #include <demo/imagePanel.h>
@@ -478,7 +497,7 @@ static void content_scale_callback(GLFWwindow *window, float, float)
     X(ShowcaseContainersDemo) \
     X(ButtonDemo) X(LabelDemo) X(LabelMultilineDemo) X(ProgressBarDemo) \
     X(GroupBoxDemo) X(ImagePanelDemo) X(StatusBarDemo) X(SeparatorDemo) X(ComboBoxDemo) \
-    X(TextBoxDemo) X(ListBoxDemo) X(SelectableDemo) X(VirtualListDemo) X(ContextMenuDemo) X(CrossSplitterDemo) X(RadioButtonDemo) \
+    X(TextBoxDemo) X(ListBoxDemo) X(SelectableDemo) X(VirtualListDemo) X(ContextMenuDemo) X(PopupDemo) X(CrossSplitterDemo) X(RadioButtonDemo) \
     X(CheckBoxDemo) X(NumericDemo) X(SliderDemo) X(MenuStripDemo) \
     X(WindowDemo) X(WindowButtonsDemo) X(TreeControlDemo) X(PropertiesDemo) X(TabControlDemo) \
     X(ScrollControlDemo) X(PageControlDemo) X(CollapsibleListDemo) X(ColorPickerDemo) \
@@ -546,7 +565,7 @@ static void printUsage(std::ostream &out)
          "  --trace            log each scripted input on stderr\n"
          "  --scenario <name>  per-control | resize | docked | scroll | interaction\n"
          "                     | typing | clip | text-size | scale | tooltip\n"
-         "                     | context-menu | virtual-list; resize prints\n"
+         "                     | context-menu | popup | virtual-list; resize prints\n"
          "                     listing_settled, mirror_settled, shrink_settled and\n"
          "                     fresh_matches, interaction one yes/no per repaint\n"
          "                     check, typing its keyboard checks, clip one yes/no\n"
@@ -554,8 +573,9 @@ static void printUsage(std::ostream &out)
          "                     Label font change wrote, scale whether a 1 -> 2 -> 1\n"
          "                     setScale round trip came back, tooltip one yes/no per\n"
          "                     tooltip check, context-menu one per context-menu\n"
-         "                     check, virtual-list whether 1 000 and 100 000 items\n"
-         "                     cost the same; all nine fail on a no\n"
+         "                     check, popup one per popup check, virtual-list\n"
+         "                     whether 1 000 and 100 000 items cost the same; all\n"
+         "                     ten fail on a no\n"
          "  --dump-bounds [<path>]  print the laid-out control tree as text,\n"
          "                     private children and hidden state included, an\n"
          "                     inner panel marked \" inner\", with each control's\n"
@@ -1347,7 +1367,7 @@ static bool runSteps(Session &s, const std::vector<Step> &steps, const std::stri
 // Scenarios
 //-----------------------------------------------------------------------------
 enum class Scenario { None, PerControl, Resize, Docked, Scroll, Interaction, Typing, Clip, TextSize, Scale,
-    ToolTip, ContextMenu, VirtualList };
+    ToolTip, ContextMenu, Popup, VirtualList };
 
 static bool parseScenario(const std::string &name, Scenario &scenario)
 {
@@ -1362,6 +1382,7 @@ static bool parseScenario(const std::string &name, Scenario &scenario)
     else if(name == "scale") scenario=Scenario::Scale;
     else if(name == "tooltip") scenario=Scenario::ToolTip;
     else if(name == "context-menu") scenario=Scenario::ContextMenu;
+    else if(name == "popup") scenario=Scenario::Popup;
     else if(name == "virtual-list") scenario=Scenario::VirtualList;
     else return false;
     return true;
@@ -3590,6 +3611,268 @@ static bool runContextMenuScenario(Session &s, const std::string &shotDir, bool 
 }
 
 //-----------------------------------------------------------------------------
+// --scenario popup: controls::Popup, on PopupDemo
+//
+// Clicks go through the GLFW translator. The clock steps (under --stats too),
+// for the tooltip check's delay. Each check reads the canvas's popup state
+// (Canvas::shownPopup, popupAnchor), the popups' canvas rects or whole frames.
+//-----------------------------------------------------------------------------
+
+static std::vector<uint8_t> popupShot(Session &s, const std::string &shotDir,
+    const std::string &name, bool &ok)
+{
+    if(!shoot(s, shotDir+"/popup-"+name+".png"))
+        ok=false;
+    return framePixels(s);
+}
+
+// The pixels of two frames that differ outside every one of `rects` (logical
+// units, snapped to device pixels as the renderer snaps them).
+static size_t differencesOutsideRects(const Session &s, const std::vector<uint8_t> &a,
+    const std::vector<uint8_t> &b, const std::vector<gweni::Rect> &rects)
+{
+    std::vector<std::pair<gweni::Point, gweni::Point>> boxes;
+    for(const gweni::Rect &rect : rects)
+        boxes.push_back({devicePixels(gweni::Point(rect.x, rect.y), s.scale),
+            devicePixels(gweni::Point(rect.x+rect.w, rect.y+rect.h), s.scale)});
+
+    size_t count=0;
+    for(int y=0; y<s.pixels.y; ++y)
+    {
+        for(int x=0; x<s.pixels.x; ++x)
+        {
+            bool inside=false;
+            for(const auto &box : boxes)
+                inside=inside || (x >= box.first.x && x < box.second.x && y >= box.first.y && y < box.second.y);
+            if(inside)
+                continue;
+            const size_t at=(static_cast<size_t>(y)*s.pixels.x+x)*4;
+            if(std::memcmp(&a[at], &b[at], 4) != 0)
+                ++count;
+        }
+    }
+    return count;
+}
+
+static bool overlap(const gweni::Rect &a, const gweni::Rect &b)
+{
+    return a.x < b.x+b.w && b.x < a.x+a.w && a.y < b.y+b.h && b.y < a.y+a.h;
+}
+
+static bool runPopupScenario(Session &s, const std::string &shotDir, bool &passed)
+{
+    s.freezeClock=false;
+    s.statsClockSteps=true;
+
+    InteractionChecks checks;
+    checks.scenario="popup";
+    bool ok=true;
+
+    gweni::controls::Canvas *canvas=s.canvas;
+    gweni::controls::Base *demo=addControl(s, "PopupDemo");
+    renderFrames(s, s.frames);
+
+    auto *page=gweni::gweni_cast<gweni::PopupDemo>(demo);
+    gweni::controls::Base *help=findWithToolTip(demo, 0);
+
+    if(!page || !page->m_options || !page->m_corner || !page->m_optionsPopup || !page->m_cornerPopup || !help)
+    {
+        checks.check("demo_found", false, "PopupDemo has no two buttons with popups and a button with a tooltip");
+        dropControl(s, demo);
+        passed=false;
+        return ok;
+    }
+
+    gweni::controls::Button *options=page->m_options;
+    gweni::controls::Button *corner=page->m_corner;
+    gweni::controls::Popup *popup=page->m_optionsPopup;
+    gweni::controls::Popup *cornerPopup=page->m_cornerPopup;
+    const gweni::Rect canvasArea(0, 0, s.size.x, s.size.y);
+    const gweni::Rect optionsRect=canvasRectOf(options);
+    const gweni::Rect cornerRect=canvasRectOf(corner);
+    const gweni::Rect helpRect=canvasRectOf(help);
+    const gweni::Point onOptions=centreOf(options);
+    const gweni::Point onCorner=centreOf(corner);
+    // the middle of the page, where nothing is
+    const gweni::Point blank(s.size.x/2, s.size.y/2);
+    std::string why;
+
+    moveMouse(s, blank.x, blank.y);
+    renderFrames(s, s.frames);
+    const std::vector<uint8_t> idle=popupShot(s, shotDir, "idle", ok);
+
+    // Clicking Options opens its popup below it; the frame that opened it
+    // changes nothing outside the popup and the button. The mouse is on the
+    // button first, so the page's hover leaving it is not in that frame.
+    moveMouse(s, onOptions.x, onOptions.y);
+    renderFrames(s, s.frames);
+    clickMouse(s, onOptions.x, onOptions.y);
+    std::vector<std::string> strays;
+    frameCheckingStrays(s, {popup, options}, strays, true);
+    renderFrames(s, s.frames);
+    const gweni::Rect opened=canvasRectOf(popup);
+    std::string strayList;
+    for(const std::string &stray : strays)
+        strayList+=" "+stray;
+    checks.check("opens_below", popup->isOpen() && canvas->shownPopup() == popup
+        && canvas->popupAnchor() == options && !canvas->shownContextMenu()
+        && opened.x == optionsRect.x && opened.y == optionsRect.y+optionsRect.h+gweni::controls::Popup::Gap,
+        "a click on Options left the popup at "+rectText(opened)+(popup->isOpen() ? "" : ", closed")
+        +", the button at "+rectText(optionsRect));
+    const std::vector<uint8_t> open=popupShot(s, shotDir, "open", ok);
+    const size_t outside=differencesOutsideRects(s, idle, open, {opened, optionsRect});
+    checks.check("open_bounded", strays.empty() && outside == 0,
+        "opening it changed "+std::to_string(outside)+" px outside the popup and the button, and"
+        " controls outside them:"+strayList);
+    const bool openSettled=settledFrame(s, why);
+    checks.check("open_settled", openSettled, "a settled frame with the popup open had "+why);
+
+    // A click outside closes it, back to the idle frame.
+    clickMouse(s, blank.x, blank.y);
+    renderFrames(s, s.frames);
+    const std::vector<uint8_t> clickedOff=popupShot(s, shotDir, "clicked-off", ok);
+    const bool closedSettled=settledFrame(s, why);
+    checks.check("click_outside_closes", !popup->isOpen() && popup->hidden() && !canvas->shownPopup()
+        && clickedOff == idle && closedSettled,
+        "after a click outside, open="+std::string(popup->isOpen() ? "yes" : "no")
+        +", the frame differs from the idle one in "
+        +std::to_string(differencesIn(s, idle, clickedOff, canvasArea))+" px, settled: "+why);
+
+    // A click on its button closes it only because the button toggles it.
+    clickMouse(s, onOptions.x, onOptions.y);
+    renderFrames(s, s.frames);
+    const bool toggledOpen=popup->isOpen();
+    clickMouse(s, onOptions.x, onOptions.y);
+    renderFrames(s, s.frames);
+    checks.check("anchor_toggles", toggledOpen && !popup->isOpen() && popup->hidden(),
+        "a click on Options "+std::string(toggledOpen ? "opened" : "did not open")
+        +" it and a second one left it "+(popup->isOpen() ? "open" : "closed"));
+
+    // Escape closes it, back to the frame before it opened (the button has
+    // the keyboard focus in both, from the clicks).
+    moveMouse(s, blank.x, blank.y);
+    renderFrames(s, s.frames);
+    const std::vector<uint8_t> beforeEscape=popupShot(s, shotDir, "before-escape", ok);
+    clickMouse(s, onOptions.x, onOptions.y);
+    renderFrames(s, s.frames);
+    const bool reopened=popup->isOpen();
+    sendKey(s, "escape");
+    moveMouse(s, blank.x, blank.y);
+    renderFrames(s, s.frames);
+    const std::vector<uint8_t> escaped=popupShot(s, shotDir, "escaped", ok);
+    checks.check("escape_closes", reopened && !popup->isOpen() && popup->hidden() && escaped == beforeEscape,
+        "reopened="+std::string(reopened ? "yes" : "no")+", after Escape open="
+        +(popup->isOpen() ? "yes" : "no")+", "
+        +std::to_string(differencesIn(s, beforeEscape, escaped, canvasArea))
+        +" px differ from the frame before it opened");
+
+    // The Corner button's popup, with no room below it or on its right:
+    // above it, right edges aligned, inside the canvas.
+    clickMouse(s, onCorner.x, onCorner.y);
+    renderFrames(s, s.frames);
+    const gweni::Rect flipped=canvasRectOf(cornerPopup);
+    checks.check("flips_in_corner", cornerPopup->isOpen() && insideRect(flipped, canvasArea)
+        && flipped.x+flipped.w == cornerRect.x+cornerRect.w
+        && flipped.y+flipped.h == cornerRect.y-gweni::controls::Popup::Gap,
+        "the Corner popup is at "+rectText(flipped)+", the button at "+rectText(cornerRect)
+        +(cornerPopup->isOpen() ? "" : ", closed"));
+    popupShot(s, shotDir, "corner", ok);
+
+    // One at a time: opening Options closes the Corner one.
+    clickMouse(s, onOptions.x, onOptions.y);
+    renderFrames(s, s.frames);
+    checks.check("one_at_a_time", popup->isOpen() && !cornerPopup->isOpen() && cornerPopup->hidden()
+        && canvas->shownPopup() == popup,
+        "with the Corner popup open, a click on Options left Options "
+        +std::string(popup->isOpen() ? "open" : "closed")+" and Corner "
+        +(cornerPopup->isOpen() ? "open" : "closed"));
+
+    // A ComboBox in it opens its list over it; Escape closes the list
+    // first, and choosing an item from it keeps the popup open.
+    auto *zoom=gweni::gweni_cast<gweni::controls::ComboBox>(findControl(popup, "ComboBox"));
+    auto openList=[&]() -> gweni::controls::Base *
+    {
+        const gweni::Point onZoom=centreOf(zoom);
+        clickMouse(s, onZoom.x, onZoom.y);
+        renderFrames(s, s.frames);
+        for(gweni::controls::Base *child : canvas->getActualChildren())
+        {
+            if(gweni::gweni_cast<gweni::controls::Menu>(child) && child->visible())
+                return child;
+        }
+        return nullptr;
+    };
+    bool listOver=false, escapedList=false, chosen=false;
+    if(zoom)
+    {
+        if(gweni::controls::Base *list=openList())
+        {
+            listOver=list->getZIndex() > highestZOutside(popup, nullptr)
+                && overlap(canvasRectOf(list), canvasRectOf(popup));
+            popupShot(s, shotDir, "combo", ok);
+            sendKey(s, "escape");
+            renderFrames(s, s.frames);
+            escapedList=list->hidden() && popup->isOpen();
+        }
+        if(gweni::controls::Base *list=openList())
+        {
+            const gweni::Point onItem=centreOf(list->getChildren().back());
+            clickMouse(s, onItem.x, onItem.y);
+            renderFrames(s, s.frames);
+            chosen=list->hidden() && popup->isOpen() && zoom->getSelectedItem()
+                && zoom->getSelectedItem()->getText() == "Zoom 200%";
+        }
+    }
+    checks.check("combo_list_over", zoom && listOver && escapedList && chosen,
+        "the popup's ComboBox list is "+std::string(listOver ? "" : "not ")+"shown over the popup, Escape "
+        +(escapedList ? "closed the list only" : "did not close the list alone")+", choosing an item "
+        +(chosen ? "kept the popup open" : "did not keep the popup open with the item selected"));
+    if(!popup->isOpen())
+    {
+        clickMouse(s, onOptions.x, onOptions.y);
+        renderFrames(s, s.frames);
+    }
+
+    // The Help button's tooltip shows over the open popup.
+    moveMouse(s, helpRect.x+helpRect.w/2, helpRect.y+helpRect.h/2);
+    framesUntilShown(s, (int)std::ceil(canvas->getToolTipDelay()/g_frameStep)+8);
+    renderFrames(s, s.frames);
+    popupShot(s, shotDir, "tooltip", ok);
+    gweni::controls::ToolTip *box=canvas->toolTipControl();
+    const gweni::Rect tipRect=box ? canvasRectOf(box) : gweni::Rect();
+    const gweni::Rect popupRect=canvasRectOf(popup);
+    const bool overlaps=overlap(tipRect, popupRect);
+    checks.check("tooltip_above", box && canvas->toolTipShown() && popup->isOpen() && overlaps
+        && box->getZIndex() > highestZOutside(canvas, box) && canvas->getActualChildren().back() == box,
+        "the tooltip at "+rectText(tipRect)+" (shown="+(canvas->toolTipShown() ? "yes" : "no")
+        +") and the open popup at "+rectText(popupRect)+(overlaps ? "" : " do not overlap")
+        +", or the box is not above the popup");
+    moveMouse(s, blank.x, blank.y);
+    renderFrames(s, s.frames);
+
+    // Hiding its button closes it.
+    const bool openBeforeHide=popup->isOpen();
+    options->setHidden(true);
+    renderFrames(s, s.frames);
+    checks.check("hidden_anchor_closes", openBeforeHide && !popup->isOpen() && popup->hidden()
+        && !canvas->shownPopup(),
+        "hiding Options left its popup "+std::string(popup->isOpen() ? "open" : "closed"));
+    options->setHidden(false);
+    renderFrames(s, s.frames);
+
+    forgetMouse(s);
+    dropControl(s, demo);
+
+    std::cout<<"popup";
+    for(const auto &result : checks.results)
+        std::cout<<" "<<result.first<<"="<<(result.second ? "yes" : "no");
+    std::cout<<"\n";
+
+    passed=checks.allPassed();
+    return ok;
+}
+
+//-----------------------------------------------------------------------------
 // --scenario virtual-list: VirtualListDemo at 1 000 and 100 000 items
 //
 // The list holds a row for each one on screen plus one, whatever its count, so
@@ -4248,7 +4531,7 @@ int main(int argc, char *argv[])
             {
                 std::cerr<<"ControlTest: unknown scenario: "<<name
                          <<"; try per-control, resize, docked, scroll, interaction, typing, clip,"
-                           " text-size, scale, tooltip or context-menu\n";
+                           " text-size, scale, tooltip, context-menu, popup or virtual-list\n";
                 return EXIT_FAILURE;
             }
         }
@@ -4558,6 +4841,15 @@ int main(int argc, char *argv[])
             ok=runContextMenuScenario(session, shotDir, passed);
             if(ok && !passed)
                 ok=false;   // a context menu opened, sat or closed wrongly: a failing assertion
+            break;
+        }
+
+        case Scenario::Popup:
+        {
+            bool passed=false;
+            ok=runPopupScenario(session, shotDir, passed);
+            if(ok && !passed)
+                ok=false;   // a popup opened, sat or closed wrongly: a failing assertion
             break;
         }
 
