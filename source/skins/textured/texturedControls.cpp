@@ -213,7 +213,17 @@ void CheckBox::update(renderer::Base *renderer, controls::Base *baseControl)
     if(m_primitives.size() < 2)
         return;
 
-    controls::CheckBox *control=static_cast<controls::CheckBox *>(baseControl);
+    // getTypeName()=="CheckBox" is ambiguous, as for Text below: property::CheckBox
+    // reports it too. That one is the row's container (its child CheckBox draws),
+    // so it draws nothing here rather than be static_cast to a CheckBox.
+    controls::CheckBox *control=dynamic_cast<controls::CheckBox *>(baseControl);
+
+    if(!control)
+    {
+        for(size_t primitive : m_primitives)
+            renderer->hidePrimitive(primitive);
+        return;
+    }
 
     // Dark box frame always; blue checkmark glyph overlaid when checked.
     tokyonight::paintSurface(renderer, m_primitives.data(), baseControl, tokyonight::CheckOff);
@@ -255,8 +265,17 @@ void ComboBox::staticInit(TexturedSkin *skin)
 
 void ComboBox::update(renderer::Base *renderer, controls::Base *baseControl)
 {
-    controls::ComboBox *control=static_cast<controls::ComboBox *>(baseControl);
+    // As for CheckBox: property::ComboBox reports "ComboBox" too, and its child
+    // ComboBox is what draws.
+    controls::ComboBox *control=dynamic_cast<controls::ComboBox *>(baseControl);
     const tokyonight::Surface *surface;
+
+    if(!control)
+    {
+        for(size_t primitive : m_primitives)
+            renderer->hidePrimitive(primitive);
+        return;
+    }
 
     if(baseControl->isDisabled())
         surface=&tokyonight::ButtonDisabled;

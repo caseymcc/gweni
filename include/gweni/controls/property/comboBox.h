@@ -29,7 +29,6 @@ public:
         m_comboBox->onSelection.add(this, &ParentClass::onPropertyValueChanged);
         m_comboBox->setTabable(true);
         m_comboBox->setKeyboardInputEnabled(true);
-        m_comboBox->setShouldDrawBackground(false);
         setHeight(18);
     }
 
