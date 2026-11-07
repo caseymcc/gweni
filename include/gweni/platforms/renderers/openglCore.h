@@ -393,7 +393,8 @@ private:
     struct Vertex
     {
         uint16_t style;
-        uint16_t x, y, z;
+        int16_t  x, y;   //device px, signed: a quad must fit in +/-32 K (cullOutOfRangeQuad)
+        int16_t  z;      //0..10000, the projection's depth range
         uint16_t tx, ty; //color0 (top fill) packed rg/ba, or UV for texture (style 2, 0..65535 = 0..1)
         // SDF rounded-rect fields (styles 4, 6, 7); left 0 for all other styles.
         int16_t  lx, ly; //local position relative to rect center, in half-pixel units (= +/-size at the four corners, so an odd size is exact)
@@ -530,6 +531,12 @@ private:
         const gweni::Color &color, std::vector<ftgl::glyph_vertex_t> *vertexes);
 
     void setVertex(Vertex &vertex, uint8_t type, int x, int y, int z, float u=0.0f, float v=0.0f);
+    //! Called once primitiveId's four vertexes are written for the device-pixel
+    //! rect: if a corner of it is outside what Vertex::x/y hold (int16_t), puts
+    //! all four at 0,0, a zero-area quad that draws nothing and keeps its style and
+    //! other fields. A corner is never clamped: that would move it, and the
+    //! interpolated UV/colour/SDF local position (and the flat half-size) with it.
+    void cullOutOfRangeQuad(size_t primitiveId, const gweni::Rect &rect);
     //! Writes primitiveId's slot as one of the SDF rounded-rect quads (styles 4, 6, 7),
     //! centred in rect. color0 and color3 are given per side (left, right), because
     //! style 6 interpolates them along x; color1 and the border colour are per quad.

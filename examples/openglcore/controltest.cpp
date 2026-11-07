@@ -168,8 +168,12 @@
  *                 canvas; dragged right out of the parent the frame is the
  *                 parent alone, and dragged back it looks as it started. A
  *                 drag step changes controls in the Window's subtree only,
- *                 and a settled frame changes and uploads nothing. One line
- *                   clip scroll_cut=yes|no ... window_back_steady=yes|no
+ *                 and a settled frame changes and uploads nothing. A Window
+ *                 on the canvas itself, dragged past the canvas's own top-left
+ *                 corner (to -28,-8), leaves everything outside it as on the
+ *                 empty canvas, and its on-canvas part is the same Window
+ *                 drawn whole at (60,56), shifted. One line
+ *                   clip scroll_cut=yes|no ... canvas_back=yes|no
  *                 reports the checks. Exits non-zero if any check is no.
  *    text-size    a Label in OpenSans 24 px beside an 11 px one and a 48 px one,
  *                 then its font changed to 36 px at runtime through
@@ -2306,6 +2310,97 @@ static void checkWindowDrag(Session &s, const std::string &shotDir,
     dropControl(s, parent);
 }
 
+// The pixels of `frame` inside `control`'s on-canvas device rect that differ
+// from `reference` read `shift` device pixels further right and down, where the
+// same control was drawn whole. A channel may be 1 off: the GPU's interpolation
+// of a gradient is not exactly the same at every position (a Window moved
+// between two positive positions already differs by that much).
+static size_t differencesShifted(const Session &s, const std::vector<uint8_t> &frame,
+    const std::vector<uint8_t> &reference, gweni::controls::Base *control,
+    const gweni::Point &shift)
+{
+    const gweni::Point origin=control->localPosToCanvas();
+    const gweni::Point topLeft=devicePixels(origin, s.scale);
+    const gweni::Point bottomRight=devicePixels(origin+control->getSize(), s.scale);
+
+    size_t count=0;
+    for(int y=std::max(topLeft.y, 0); y<std::min(bottomRight.y, s.pixels.y); ++y)
+    {
+        for(int x=std::max(topLeft.x, 0); x<std::min(bottomRight.x, s.pixels.x); ++x)
+        {
+            const int rx=x+shift.x;
+            const int ry=y+shift.y;
+            if(rx < 0 || ry < 0 || rx >= s.pixels.x || ry >= s.pixels.y)
+            {
+                ++count;
+                continue;
+            }
+            const size_t at=(static_cast<size_t>(y)*s.pixels.x+x)*4;
+            const size_t refAt=(static_cast<size_t>(ry)*s.pixels.x+rx)*4;
+            for(int c=0; c<4; ++c)
+            {
+                if(std::abs(int(frame[at+c])-int(reference[refAt+c])) > 1)
+                {
+                    ++count;
+                    break;
+                }
+            }
+        }
+    }
+    return count;
+}
+
+// (4) A Window on the canvas itself, dragged by its title bar past the canvas's
+// own top-left corner, so its rects straddle device x=0 and y=0 (a primitive's
+// corner at a negative device coordinate). Everything outside it must be the
+// empty canvas, and its on-canvas part the matching part of the same Window
+// drawn whole, shifted. The drag is a multiple of 8 logical units on each
+// axis, so the shift is whole device pixels at scales 1.25, 1.5 and 2 too. The
+// grip stays on the canvas.
+static void checkWindowPastCanvasOrigin(Session &s, const std::string &shotDir,
+    const std::vector<uint8_t> &empty, InteractionChecks &checks, bool &ok)
+{
+    const gweni::Point start(60, 56);
+    const gweni::Point past(-28, -8);
+    auto *window=s.canvas->newChild<gweni::controls::WindowControl>();
+    window->setTitle("Clipped Window");
+    window->setClampMovement(false);
+    place(window, start.x, start.y, 200, 140);
+    auto *button=window->newChild<gweni::controls::Button>();
+    button->setText("Inside the Window");
+    button->setDock(gweni::DockPosition::Center);
+
+    // laid out before the mouse comes, and the reference taken with the title bar
+    // held, as the shot past the corner is
+    renderFrames(s, s.frames);
+    dragTitleTo(s, s.canvas, start);
+    mouseDown(s, s.mouse.x, s.mouse.y, true);
+    const std::vector<uint8_t> whole=settledFrame(s, shotDir, "canvas-window", ok);
+    checks.check("canvas_window_drawn", whole != empty, "the Window on the canvas drew nothing");
+
+    dragTitleTo(s, s.canvas, past);
+    const std::vector<uint8_t> frame=settledFrame(s, shotDir, "canvas-topleft", ok);
+    const size_t outside=differencesOutside(s, frame, empty, window);
+    checks.check("canvas_topleft_cut", outside == 0,
+        std::to_string(outside)+" pixels outside the Window past the canvas's top-left corner"
+        " differ from the empty canvas");
+    const gweni::Point shift=devicePixels(start, s.scale)-devicePixels(past, s.scale);
+    const size_t moved=differencesShifted(s, frame, whole, window, shift);
+    checks.check("canvas_topleft_drawn", frame != empty && moved == 0,
+        std::to_string(moved)+" pixels of the Window past the canvas's top-left corner"
+        " differ from the same Window drawn whole");
+    checkSteady(s, checks, "canvas_topleft_steady");
+
+    dragTitleTo(s, s.canvas, start);
+    const std::vector<uint8_t> back=settledFrame(s, shotDir, "canvas-back", ok);
+    checks.check("canvas_back", back == whole,
+        "the Window dragged back onto the canvas does not look as it did");
+    mouseUp(s, s.mouse.x, s.mouse.y);
+
+    forgetMouse(s);
+    dropControl(s, window);
+}
+
 static bool runClipScenario(Session &s, const std::string &shotDir, bool &passed)
 {
     s.freezeClock=true;
@@ -2318,6 +2413,7 @@ static bool runClipScenario(Session &s, const std::string &shotDir, bool &passed
     const std::vector<uint8_t> empty=settledFrame(s, shotDir, "empty", ok);
     checkScrollContent(s, shotDir, empty, checks, ok);
     checkWindowDrag(s, shotDir, empty, checks, ok);
+    checkWindowPastCanvasOrigin(s, shotDir, empty, checks, ok);
 
     std::cout<<"clip";
     for(const auto &result : checks.results)

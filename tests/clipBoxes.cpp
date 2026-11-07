@@ -8,7 +8,12 @@
  *  lies outside it. Drawn offscreen and read back.
  *
  *  The renderer is shared with the other cases, so each case puts the clip
- *  region back to the whole view when it ends (ClipGuard).
+ *  region back to the whole view when it ends (ClipGuard), and the scale and
+ *  render offset back to 1x and 0,0 (ScaleGuard).
+ *
+ *  The last cases draw quads past the view's top-left edge and past what the
+ *  signed 16-bit vertex position holds: a straddling quad draws exactly its
+ *  on-view part, and one with a corner outside +/-32767 device px nothing.
  */
 #include <doctest/doctest.h>
 
@@ -16,6 +21,7 @@
 #include "gpuRenderer.h"
 
 #include <algorithm>
+#include <cstdlib>
 #include <vector>
 
 namespace
@@ -99,6 +105,20 @@ Rect wholeView()
 struct ClipGuard
 {
     ~ClipGuard() { gweni::test::gpuRenderer().setClipRegion(wholeView()); }
+};
+
+//! Puts the scale and the render offset back, so the next case draws at 1x.
+struct ScaleGuard
+{
+    explicit ScaleGuard(float scale) { gweni::test::gpuRenderer().setScale(scale); }
+
+    ~ScaleGuard()
+    {
+        OpenGLCore &renderer=gweni::test::gpuRenderer();
+
+        renderer.setScale(1.0f);
+        renderer.setRenderOffset(Point(0, 0));
+    }
 };
 
 //! Primitive ids for one test case, released (and that flushed) when it ends, so the
@@ -254,4 +274,254 @@ TEST_CASE("Clip boxes: text is cut, and follows a new region when moved or only 
     renderer.releaseTextPrimitive(textId);
     renderer.begin();
     renderer.end();
+}
+
+namespace
+{
+
+//! The primitive styles a quad can be drawn with, each through its own draw call.
+enum class Style { Fill=1, Image=2, Rounded=4, Icon=5, Bilinear=6, Checker=7 };
+
+const Style allStyles[]={Style::Fill, Style::Image, Style::Rounded, Style::Icon, Style::Bilinear,
+    Style::Checker};
+
+//! Draws `rect` (canvas units) into `id` with `style`, in colours that make every
+//! part of it show: a gradient, a border, round corners, a texture.
+void drawStyled(OpenGLCore &renderer, Style style, size_t id, const Rect &rect,
+    const gweni::Texture &texture)
+{
+    const Color red(220, 40, 40, 255);
+    const Color green(40, 200, 60, 255);
+    const Color yellow(240, 220, 40, 255);
+
+    switch(style)
+    {
+    case Style::Fill:
+        renderer.setDrawColor(red);
+        renderer.drawFilledRect(id, rect, 1);
+        break;
+    case Style::Image:
+        renderer.setDrawColor(white);
+        renderer.drawTexturedRect(texture, id, rect, 1);
+        break;
+    case Style::Rounded:
+        renderer.drawRoundedRect(id, rect, 6.0f, 2.0f, red, green, yellow, 1);
+        break;
+    case Style::Icon:
+        renderer.drawIcon(id, rect, 1, 0, yellow, 1);
+        break;
+    case Style::Bilinear:
+        renderer.drawBilinearRect(id, rect, 1, white, red, green, yellow, 4.0f, 1.0f, white);
+        break;
+    case Style::Checker:
+        renderer.drawCheckerRect(id, rect, 1, Color(255, 0, 0, 128), white, Color(60, 60, 60, 255),
+            4.0f, 1.0f, yellow);
+        break;
+    }
+}
+
+//! A device-pixel rect [x0,x1) x [y0,y1).
+struct DeviceRect
+{
+    int x0, y0, x1, y1;
+
+    bool contains(int x, int y) const { return x >= x0 && x < x1 && y >= y0 && y < y1; }
+};
+
+DeviceRect deviceRect(const Rect &rect, float scale)
+{
+    using gweni::renderer::Base;
+
+    return {Base::snap(float(rect.x), scale), Base::snap(float(rect.y), scale),
+        Base::snap(float(rect.x+rect.w), scale), Base::snap(float(rect.y+rect.h), scale)};
+}
+
+int notBackground(const Frame &frame)
+{
+    const Point size=gweni::test::viewSize();
+    int drawn=0;
+
+    for(int y=0; y<size.y; ++y)
+        for(int x=0; x<size.x; ++x)
+            if(!frame.isBackground(x, y))
+                ++drawn;
+    return drawn;
+}
+
+}//namespace
+
+TEST_CASE("Clip boxes: a quad straddling the view's left or top edge draws exactly its on-view part")
+{
+    ClipGuard guard;
+    Primitives prims(1);
+    const Point size=gweni::test::viewSize();
+
+    gweni::Texture texture;
+
+    texture.name="test16.png";
+    REQUIRE(gweni::test::gpuRenderer().loadTexture(texture) == gweni::Texture::Status::Loaded);
+
+    // the straddling rect and the same rect moved by `shift` canvas units, wholly in
+    // the view; 40 is a whole, even number of device px at 1 and 1.5, so the snapped
+    // edges (and the icon's 2x2-pixel AA blocks) move by exactly that much
+    struct Edge
+    {
+        const char *name;
+        Rect rect;
+        Point shift;
+    };
+    const Edge edges[]=
+    {
+        {"left", Rect(-17, 30, 46, 34), Point(40, 0)},
+        {"top", Rect(30, -13, 46, 34), Point(0, 40)},
+        {"top-left", Rect(-17, -13, 46, 34), Point(40, 40)},
+    };
+
+    for(float scale : {1.0f, 1.5f})
+    {
+        ScaleGuard scaleGuard(scale);
+
+        for(const Edge &edge : edges)
+        {
+            for(Style style : allStyles)
+            {
+                CAPTURE(scale);
+                CAPTURE(edge.name);
+                CAPTURE(int(style));
+
+                const Rect placed(edge.rect.x+edge.shift.x, edge.rect.y+edge.shift.y,
+                    edge.rect.w, edge.rect.h);
+                const Frame whole=drawFrame([&](OpenGLCore &renderer)
+                    {
+                        drawStyled(renderer, style, prims.ids[0], placed, texture);
+                    });
+                const Frame frame=drawFrame([&](OpenGLCore &renderer)
+                    {
+                        drawStyled(renderer, style, prims.ids[0], edge.rect, texture);
+                    });
+
+                const DeviceRect onView=deviceRect(edge.rect, scale);
+                const int dx=gweni::renderer::Base::snap(float(edge.shift.x), scale);
+                const int dy=gweni::renderer::Base::snap(float(edge.shift.y), scale);
+
+                REQUIRE(notBackground(whole) > 0);
+
+                int outside=0;
+                int differ=0;
+
+                for(int y=0; y<size.y; ++y)
+                {
+                    for(int x=0; x<size.x; ++x)
+                    {
+                        if(!onView.contains(x, y))
+                        {
+                            if(!frame.isBackground(x, y))
+                                ++outside;
+                            continue;
+                        }
+
+                        const Color a=frame.at(x, y);
+                        const Color b=whole.at(x+dx, y+dy);
+
+                        if(a.r != b.r || a.g != b.g || a.b != b.b)
+                            ++differ;
+                    }
+                }
+
+                CHECK(outside == 0);
+                CHECK(differ == 0);
+            }
+        }
+    }
+
+    gweni::test::gpuRenderer().freeTexture(texture);
+}
+
+TEST_CASE("Clip boxes: a quad with a corner past +/-32767 device px draws nothing, nor does one wholly left of and above the view")
+{
+    ClipGuard guard;
+    Primitives prims(1);
+    OpenGLCore &renderer=gweni::test::gpuRenderer();
+
+    gweni::Texture texture;
+
+    texture.name="test16.png";
+    REQUIRE(renderer.loadTexture(texture) == gweni::Texture::Status::Loaded);
+
+    struct Case
+    {
+        const char *name;
+        Rect rect;
+        float scale;
+    };
+    const Case cases[]=
+    {
+        // its bottom edge past int16_t, which would wrap to -32746 and span the view
+        {"straddling 32767", Rect(40, 32760, 40, 30), 1.0f},
+        {"past 32767", Rect(40, 40000, 40, 30), 1.0f},
+        // its bottom edge past uint16_t, which wrapped to 24 before
+        {"straddling 65535", Rect(40, 65530, 40, 30), 1.0f},
+        // the far rows of a long list at scale 2: 16400*2 is past 32767
+        {"past 32767 at 2x", Rect(40, 16400, 40, 30), 2.0f},
+        {"right edge past 32767", Rect(32750, 40, 40, 30), 1.0f},
+        {"wholly left of and above the view", Rect(-80, -60, 40, 30), 1.0f},
+        {"wholly left of the view", Rect(-80, 40, 40, 30), 1.5f},
+    };
+
+    for(const Case &c : cases)
+    {
+        ScaleGuard scaleGuard(c.scale);
+
+        for(Style style : allStyles)
+        {
+            CAPTURE(c.name);
+            CAPTURE(int(style));
+
+            const Frame frame=drawFrame([&](OpenGLCore &renderer)
+                {
+                    drawStyled(renderer, style, prims.ids[0], c.rect, texture);
+                });
+
+            CHECK(notBackground(frame) == 0);
+        }
+    }
+
+    SUBCASE("a culled quad keeps its style through hide and show, and a settled frame uploads nothing")
+    {
+        const Rect far(40, 40000, 40, 30);
+        auto styleOf=[&](size_t id)
+        {
+            const OpenGLCore::MirrorSnapshot mirror=renderer.snapshotMirror();
+            const std::vector<uint8_t> &bytes=mirror.primitives.at(id);
+            uint16_t style=0;
+
+            std::copy(bytes.begin(), bytes.begin()+sizeof(style), reinterpret_cast<uint8_t *>(&style));
+            return style;
+        };
+
+        drawFrame([&](OpenGLCore &renderer)
+            {
+                drawStyled(renderer, Style::Rounded, prims.ids[0], far, texture);
+            });
+        CHECK(styleOf(prims.ids[0]) == 4);
+
+        const Frame again=drawFrame([&](OpenGLCore &renderer)
+            {
+                drawStyled(renderer, Style::Rounded, prims.ids[0], far, texture);
+            });
+        CHECK(renderer.getFrameStats().primitiveSlotsWritten == 0);
+        CHECK(renderer.getFrameStats().uploadBytes == 0);
+        CHECK(notBackground(again) == 0);
+
+        renderer.hidePrimitive(prims.ids[0]);
+        CHECK(styleOf(prims.ids[0]) == 0);
+        renderer.showPrimitive(4, prims.ids[0]);
+        CHECK(styleOf(prims.ids[0]) == 4);
+
+        const Frame shown=drawFrame([&](OpenGLCore &) {});
+
+        CHECK(notBackground(shown) == 0);
+    }
+
+    renderer.freeTexture(texture);
 }

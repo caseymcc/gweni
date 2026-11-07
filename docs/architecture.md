@@ -126,6 +126,21 @@ on an OpenGL 3.3 core profile:
   (`getPrimitiveId`, `include/gweni/primitiveIds.h`) and grows the CPU buffers.
 - Each `Vertex` is 16 16-bit fields, 32 bytes:
   `{ style, x, y, z, tx, ty, lx, ly, radius, border, cx, cy, bx, by, dx, dy }`.
+  `x, y` are the corner's device-pixel position, **signed** (`int16_t`, read as an
+  `ivec3` with `z`), so a rect that straddles the view's left or top edge keeps its
+  negative corner and draws exactly its on-view part; `z` is 0..10000, the
+  projection's depth range. A quad is drawn only if it fits in ±32 K device px:
+  `cullOutOfRangeQuad`, called by every quad writer (`drawFilledRect`,
+  `writeRoundedQuad`, `drawIcon`, `drawTexturedRect`), puts all four corners of a
+  quad with a corner outside `[-32768, 32767]` at 0,0, a zero-area quad that draws
+  nothing and keeps its `style` and other fields (so `hide/showPrimitive` work and an
+  unchanged one writes the same bytes). It never clamps a corner: that would move it,
+  and the interpolated UV, colour and `vLocal` with it, and the flat `vHalf` (the SDF
+  half-size, taken from the provoking corner). The limit matches the SDF's `lx/ly`,
+  which already hold no more than 32767. With unsigned positions a corner at -1 was
+  stored as 65535, and a rect straddling the edge drew as a bar out to the clip box's
+  edge (#170, #252); a long list's rows past 32 K device px are now culled instead of
+  wrapping.
   `tx/ty` is color0 (or the UV of style 2), `cx/cy` color1, `bx/by` the border color
   and `dx/dy` color3, each an RGBA color packed into two halves (`Color::rg()/ba()`).
   The shader reads color0 and color3 as smooth (interpolated) varyings and color1 and

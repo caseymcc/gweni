@@ -800,8 +800,8 @@ void OpenGLCore::init()
     size_t attrib=0;
     glEnableVertexAttribArray(attrib); // Attrib '0' is render type
     glVertexAttribIPointer(attrib++, 1, GL_UNSIGNED_SHORT, sizeof(Vertex), (GLvoid*)(offsetof(Vertex, style)));
-    glEnableVertexAttribArray(attrib); // Attrib '1' is vertex pos
-    glVertexAttribIPointer(attrib++, 3, GL_UNSIGNED_SHORT, sizeof(Vertex), (GLvoid*)(offsetof(Vertex, x)));
+    glEnableVertexAttribArray(attrib); // Attrib '1' is vertex pos (signed device px, and z)
+    glVertexAttribIPointer(attrib++, 3, GL_SHORT, sizeof(Vertex), (GLvoid*)(offsetof(Vertex, x)));
     glEnableVertexAttribArray(attrib); // Attrib '2' is texture coord or packeted color0
     glVertexAttribIPointer(attrib++, 2, GL_UNSIGNED_SHORT, sizeof(Vertex), (GLvoid*)(offsetof(Vertex, tx)));
     glEnableVertexAttribArray(attrib); // Attrib '3' is SDF local position (signed)
@@ -854,7 +854,7 @@ void OpenGLCore::init()
 //layout (location = 2) in vec4 inColor;
 
 layout (location = 0) in uint style;
-layout (location = 1) in uvec3 inPosition;
+layout (location = 1) in ivec3 inPosition;   // device px (signed) and z
 layout (location = 2) in uvec2 inTexCoords;    // color0 (top fill) or UV
 layout (location = 3) in ivec2 inLocal;        // SDF local position (rel to rect center)
 layout (location = 4) in uvec2 inRadiusBorder; // SDF .x=radius .y=border (px)
@@ -1675,10 +1675,11 @@ void OpenGLCore::setVertex(Vertex &vertex, uint8_t type, int x, int y, int z, fl
 {
     vertex.style=type;
 
-    vertex.x=x;
+    // a corner outside int16_t wraps here, and cullOutOfRangeQuad then collapses the quad
+    vertex.x=(int16_t)x;
 //    vertex.y=m_viewRect.h - y;
-    vertex.y=y;
-    vertex.z=z;// m_activeProgram;
+    vertex.y=(int16_t)y;
+    vertex.z=(int16_t)z;// m_activeProgram;
 
 //    if(m_activeProgram == 1)
     {
@@ -1708,6 +1709,29 @@ void OpenGLCore::setVertex(Vertex &vertex, uint8_t type, int x, int y, int z, fl
 ////            m_color.a / 255.0f
 ////        );
 //    }
+}
+
+void OpenGLCore::cullOutOfRangeQuad(size_t primitiveId, const gweni::Rect &rect)
+{
+    const int64_t low=std::numeric_limits<int16_t>::min();
+    const int64_t high=std::numeric_limits<int16_t>::max();
+    const int64_t x0=rect.x;
+    const int64_t y0=rect.y;
+    const int64_t x1=x0+rect.w;
+    const int64_t y1=y0+rect.h;
+
+    auto inRange=[&](int64_t v) { return v >= low && v <= high; };
+
+    if(inRange(x0) && inRange(y0) && inRange(x1) && inRange(y1))
+        return;
+
+    for(size_t i=0; i<4; ++i)
+    {
+        Vertex &vertex=m_vertexes[primitiveId*4+i];
+
+        vertex.x=0;
+        vertex.y=0;
+    }
 }
 
 void OpenGLCore::addVert(int x, int y, float u, float v)
@@ -1783,6 +1807,7 @@ void OpenGLCore::drawFilledRect(size_t primitiveId, gweni::Rect rect, int zIndex
     setVertex(m_vertexes[vertexIndex++], 1, rect.x+rect.w, rect.y+rect.h, zIndex, m_color.rg(), m_color.ba());
 //    setVertex(m_vertexes[vertexIndex++], rect.x, rect.y+rect.h);
 
+    cullOutOfRangeQuad(primitiveId, rect);
     markPrimitiveChanges(primitiveId, before);
 
 //    addVert(rect.x, rect.y);
@@ -1889,6 +1914,7 @@ void OpenGLCore::writeRoundedQuad(size_t primitiveId, gweni::Rect rect, int zInd
     setRounded(vertexIndex++, x0, y1, -hw, +hh, color0Left, color3Left);
     setRounded(vertexIndex++, x1, y1, +hw, +hh, color0Right, color3Right);
 
+    cullOutOfRangeQuad(primitiveId, rect);
     markPrimitiveChanges(primitiveId, before);
 }
 
@@ -1941,6 +1967,7 @@ void OpenGLCore::drawIcon(size_t primitiveId, gweni::Rect rect, int kind, int di
     setIcon(vertexIndex++, x0, y1, -hw, +hh);
     setIcon(vertexIndex++, x1, y1, +hw, +hh);
 
+    cullOutOfRangeQuad(primitiveId, rect);
     markPrimitiveChanges(primitiveId, before);
 }
 
@@ -2072,6 +2099,7 @@ void OpenGLCore::drawTexturedRect(const gweni::Texture &texture, size_t primitiv
     setImageVertex(vertexIndex++, rect.x, rect.y + rect.h, u1, v2);
     setImageVertex(vertexIndex++, rect.x + rect.w, rect.y + rect.h, u2, v2);
 
+    cullOutOfRangeQuad(primitiveId, rect);
     markPrimitiveChanges(primitiveId, before);
 
 //    addVert(rect.x, rect.y, u1, v1);
