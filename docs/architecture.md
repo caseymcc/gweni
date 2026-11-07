@@ -25,8 +25,9 @@ canvas->renderCanvas();   // 2. render: issue only the draw-state changes needed
 
 ### 1. `updateCanvas()` — logic / layout
 
-`Canvas::updateCanvas()` runs `doThink()` then `updateRecursive()` over the tree
-(`source/controls/canvas.cpp`, `source/controls/base.cpp`). This phase:
+`Canvas::updateCanvas()` runs `Canvas::doThink()`, then, if the tree order changed,
+`renumberZRecursive()` over the tree (`source/controls/canvas.cpp`,
+`source/controls/base.cpp`). This phase:
 
 - processes input-driven state (hover/focus/press), animations and delayed deletes,
 - runs layout/docking so every control has up-to-date bounds,
@@ -37,6 +38,23 @@ canvas->renderCanvas();   // 2. render: issue only the draw-state changes needed
   render work.
 
 No rendering-API calls happen here.
+
+Like the render walk, it enters only what changed. There is no per-control `think()`:
+`Canvas::doThink()` runs the delayed deletes, `anim::think()` (the animations, kept per
+control: a `ProgressBar`'s cycle, a `TextBox`'s caret blink), the layout passes, which
+stop at controls with nothing to lay out (`Base::recurseLayout`), and
+`input::onCanvasThink`. The z indices are numbered depth-first, each control taking its
+skin Control's `depthLayers()`, and that numbering only changes with the tree order, so
+the canvas renumbers only on a frame after something called `Canvas::invalidateZOrder()`.
+`Base` does for each order change: `addChild`/`addChildOfLayout`/`removeChild` (so a
+reparent through `setParent` and a delete, delayed or not, too), `bringToFront`,
+`sendToBack`, `bringNextToControl`, and a skin Control assigned or released (`setSkin`,
+whose new Control may report other `depthLayers()`). A control off any canvas reports
+nothing; attaching it is an `addChild` on the canvas's tree. A renumber is a full one and
+marks `StateChange_Geometry` on exactly the controls whose z index changed.
+`UpdateStats::zVisited` (`Canvas::getUpdateStats()`, `ControlTest --stats` prints it as
+`z_visited=`) counts the controls it entered: Demo's first frame 2668, a settled one 0.
+`tests/unit/updateWalk.cpp` pins it.
 
 ### 2. `renderCanvas()` — render
 
@@ -371,14 +389,16 @@ What exists today (the foundation) and what's still aspirational:
   or that laid out again in the render phase ([layout.md](layout.md)). ctest runs
   both for every demo: `controltest_resize`, `controltest_resize_each`,
   `controltest_one_pass_each`, and `controltest_teardown` with `--require-one-pass`.
+- **The update phase visits only what changed.** No control `think()`s (the animations
+  run from `anim::think()`), and the z indices are renumbered only on a frame after the
+  tree order changed (`Canvas::invalidateZOrder()`), so a settled frame enters no
+  control in `updateCanvas()` either (`UpdateStats::zVisited`, see "updateCanvas()").
 
 **Not yet done (the performance goal)**
 - **Clipping leftovers.** A fully clipped subtree with changes in it is still walked and
   its primitives still written (with an empty box) and drawn (every fragment discarded);
   nothing culls them on the CPU. Clipping is rectangular only: a rounded parent does not
   cut its children at its corners.
-- **The update phase still walks the whole tree.** `Base::doThink()` calls `think()`
-  on every control every frame, and `updateRecursive()` renumbers every z index.
 - **Cache-to-texture** (`ICacheToTexture`) and free-slot compaction/defragmentation of
   the primitive buffers are stubbed.
 

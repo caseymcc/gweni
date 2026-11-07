@@ -36,7 +36,6 @@ public:
     //! The demo names showDemo accepts, in list order.
     std::vector<String> getDemoNames() const;
 
-    void think() override;
     void render(skin::Base *skin);
 
     template<typename _Type>
@@ -54,8 +53,6 @@ private:
     controls::DockBase *m_dockBase;
 
     std::vector<controls::Base *> m_pages;
-    unsigned int m_frames;
-    float m_lastSecond;
 };
 
 template<typename _Type>

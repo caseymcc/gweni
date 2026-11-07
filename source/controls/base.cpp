@@ -125,7 +125,7 @@ void Base::init(const String &name)
 //    setParent(parent);
     m_hidden=false;
     // Read by the skin when a control created by the render phase's layout is
-    // drawn before updateRecursive() has numbered it.
+    // drawn before renumberZRecursive() has numbered it.
     m_zIndex=0;
     m_bounds=Rect(0, 0, 10, 10);
     m_requestedBounds=m_bounds;
@@ -527,6 +527,7 @@ void Base::sendToBack()
 
     m_actualParent->m_children.remove(this);
     m_actualParent->m_children.push_front(this);
+    zOrderChanged();
     invalidateParent();
 }
 
@@ -540,6 +541,7 @@ void Base::bringToFront()
 
     m_actualParent->m_children.remove(this);
     m_actualParent->m_children.push_back(this);
+    zOrderChanged();
     invalidateParent();
     redraw();
 }
@@ -584,6 +586,7 @@ void Base::bringNextToControl(controls::Base *child, bool bBehind)
     }
 
     m_actualParent->m_children.insert(it, this);
+    zOrderChanged();
     invalidateParent();
 }
 
@@ -603,6 +606,7 @@ void Base::addChild(Base *child)
     onChildAdded(child);
     child->m_actualParent=this;
     markAttachedChanged(child);
+    zOrderChanged();
 
     // A child added to a hidden parent inherits the hidden state; otherwise it
     // renders (and bleeds) even though its parent is hidden — e.g. content built
@@ -618,6 +622,7 @@ void Base::addChildOfLayout(Base *child)
     onChildAdded(child);
     child->m_actualParent=this;
     markAttachedChanged(child);
+    zOrderChanged();
 
     if(m_hidden)
         child->propagateHidden(true);
@@ -642,6 +647,7 @@ void Base::removeChild(Base *child)
     if(child->m_actualParent == this)
         child->m_actualParent=nullptr;
 
+    zOrderChanged();
     onChildRemoved(child);
 }
 
@@ -1007,16 +1013,13 @@ void Base::removeSkinControl()
     {
         m_skinControl->remove(m_skin->getRenderer(), this);
         m_skinControl=nullptr;
+        zOrderChanged();
     }
 }
 
-void Base::update()
+void Base::renumberZRecursive(int &zIndex, size_t &visited)
 {
-}
-
-void Base::updateRecursive(int &zIndex)
-{
-    update();
+    ++visited;
 
     if(m_zIndex != zIndex)
     {
@@ -1025,13 +1028,18 @@ void Base::updateRecursive(int &zIndex)
     }
     zIndex+=m_skinControl?(int)m_skinControl->depthLayers():1;
 
-    if(!m_children.empty())
+    for(auto &&child:m_children)
     {
-        for(auto &&child:m_children)
-        {
-            child->updateRecursive(zIndex);
-        }
+        child->renumberZRecursive(zIndex, visited);
     }
+}
+
+void Base::zOrderChanged()
+{
+    // A control not on a canvas yet is numbered once it is: attaching it is an
+    // addChild() on the canvas's tree, which reports there.
+    if(Canvas *canvas=getCanvas())
+        canvas->invalidateZOrder();
 }
 
 void Base::doCacheRender(skin::Base *skin, controls::Base *master)
@@ -1102,27 +1110,12 @@ void Base::doCacheRender(skin::Base *skin, controls::Base *master)
     baseRenderer->endClip();
 }
 
-void Base::doThink()
-{
-    think();
-    if(!m_children.empty())
-    {
-        for(auto &&child:m_children)
-        {
-            child->doThink();
-        }
-    }
-}
-
 void Base::doRender(skin::Base *skin)
 {
     // If this control has a different skin,
     // then so does its children.
     if(m_skin)
         skin=m_skin;
-
-    // Do think
-    //think();
 
 //    if(baseRenderer->getCTT() && isCachedToTexture())
 //    {
@@ -1265,6 +1258,8 @@ void Base::setSkin(skin::Base *skin, bool doChildren)
         }
     }
 
+    // the new Control's depthLayers() may differ from the old one's
+    zOrderChanged();
     invalidate();
     redraw();
     onSkinChanged(skin);
@@ -2344,7 +2339,6 @@ void Base::renderFocus(skin::Base *skin)
         return;
 
 //    skin->drawKeyboardHighlight(this, skin::Generate, getRenderBounds(), 3);
-    update();
 }
 
 void Base::setToolTipText(const String &text)

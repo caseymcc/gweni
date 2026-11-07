@@ -36,6 +36,16 @@ struct LayoutStats
     bool renderLayout=false;
 };
 
+//! What updateCanvas() did below the canvas in one frame, outside layout
+//! (LayoutStats). There is no per-control think() walk; a settled frame
+//! enters no control.
+struct UpdateStats
+{
+    //! Controls the z renumber entered, the canvas included: the whole tree on
+    //! a frame after the tree order changed (Canvas::invalidateZOrder()), else 0.
+    size_t zVisited=0;
+};
+
 class GWENI_EXPORT Canvas: public Base, public IInputEvent
 {
 public:
@@ -55,7 +65,8 @@ public:
     /// is usually once a frame..
     virtual void doThink();
 
-    //Called to calculate window positions and prep for render call
+    /// The update phase: doThink() (delayed deletes, animations, layout, input
+    /// state), then the z renumber if the tree order changed.
     virtual void updateCanvas();
 
     /// You should call this to render your canvas.
@@ -111,6 +122,21 @@ public:
 
     /// This frame's layout passes, reset at the start of doThink().
     const LayoutStats &getLayoutStats() const { return m_layoutStats; }
+    /// \}
+
+    /// \sect{Z order}
+    /// The tree order changed (a child added, removed or moved among its
+    /// siblings) or a control's skin Control, and with it its depthLayers(): the
+    /// next updateCanvas() numbers every z index again. Base calls it for each
+    /// of those; call it yourself only after making a skin Control's
+    /// depthLayers() return something else.
+    void invalidateZOrder() { m_zOrderDirty=true; }
+
+    /// A renumber is pending.
+    bool zOrderDirty() const { return m_zOrderDirty; }
+
+    /// This frame's updateCanvas() counts, reset as it starts.
+    const UpdateStats &getUpdateStats() const { return m_updateStats; }
     /// \}
 
     /// \sect{Input}
@@ -178,6 +204,9 @@ protected:
 
     bool m_inLayout=false;
     LayoutStats m_layoutStats;
+    /// A new tree has never been numbered.
+    bool m_zOrderDirty=true;
+    UpdateStats m_updateStats;
     /// The current pass re-dirtied layout, and the first control that did.
     bool m_passRedirtied=false;
     const char *m_passCulpritType=nullptr;

@@ -47,7 +47,7 @@ Canvas::~Canvas()
 
 void Canvas::updateCanvas()
 {
-    int zIndex=1;
+    m_updateStats=UpdateStats();
 
     // The renderer's text draws or measures otherwise now (a new text AA mode):
     // every control is laid out and re-emitted again, as for a new scale.
@@ -60,7 +60,14 @@ void Canvas::updateCanvas()
     }
 
     doThink();
-    updateRecursive(zIndex);
+
+    // Only after the order changed: otherwise every control keeps its number.
+    if(m_zOrderDirty)
+    {
+        m_zOrderDirty=false;
+        int zIndex=1;
+        renumberZRecursive(zIndex, m_updateStats.zVisited);
+    }
 }
 
 void Canvas::renderCanvas()
@@ -114,8 +121,6 @@ void Canvas::doThink()
     layoutCanvas();
 
     input::onCanvasThink(this);
-
-    Base::doThink();
 }
 
 Canvas *Canvas::s_layingOut=nullptr;

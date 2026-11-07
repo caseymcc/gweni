@@ -342,7 +342,6 @@ protected:
     virtual void updateRenderBounds();
 
 public:
-    virtual void doThink();
     virtual void doRender(gweni::skin::Base *skin);
     virtual void doCacheRender(gweni::skin::Base *skin, gweni::controls::Base *master);
     virtual void renderRecursive(gweni::skin::Base *skin, const gweni::Rect &cliprect);
@@ -359,9 +358,6 @@ public:
 protected:
     void setPrimitiveIdsSize(size_t size);
 
-    
-    virtual void think() {}
-
     virtual void render(gweni::skin::Base *skin);
     virtual void renderUnder(gweni::skin::Base * /*skin*/) {}
     virtual void renderOver(gweni::skin::Base * /*skin*/) {}
@@ -369,8 +365,16 @@ protected:
 
     void removeSkinControl();
 
-    virtual void update();
-    void updateRecursive(int &zIndex);
+    //! Numbers this control and its subtree depth-first from \p zIndex, each
+    //! control taking its skin Control's depthLayers(), and marks
+    //! StateChange_Geometry on each one whose z index changed. \p visited
+    //! counts the controls entered. Canvas::updateCanvas() runs it only after
+    //! the tree order changed (Canvas::invalidateZOrder()).
+    void renumberZRecursive(int &zIndex, size_t &visited);
+
+    //! The tree order below the canvas, or a control's depthLayers(), changed:
+    //! tells this control's canvas to renumber the z indices.
+    void zOrderChanged();
 
 public:
 
@@ -514,7 +518,7 @@ public:
     //! Repaints this control: re-picks its colors and marks its background
     //! dirty, so the skin's update() re-emits it on the next render. Only this
     //! control is marked, plus the canvas's needsRedraw() flag. Call it from
-    //! the update phase (input, think, layout); doRender() clears the state
+    //! the update phase (input, animations, layout); doRender() clears the state
     //! change once the subtree has rendered, so one issued while rendering is
     //! lost.
     virtual void redraw();

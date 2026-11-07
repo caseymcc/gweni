@@ -3,7 +3,7 @@
  *  Copyright (c) 2010 Facepunch Studios
  *  MIT License, see LICENSE
  *
- *  Base::updateRecursive numbers the controls depth-first, advancing the z
+ *  Base::renumberZRecursive numbers the controls depth-first, advancing the z
  *  index by each control's skin::Control::depthLayers(), so a control whose
  *  skin draws an overlay at getZIndex()+1 keeps that depth to itself: its
  *  first child comes after its layers, its next sibling after its subtree.
@@ -85,7 +85,10 @@ TEST_CASE("a skin Control's depthLayers() reserves z values before its children 
 
     SUBCASE("a count changed after the first frame renumbers on the next update")
     {
+        // the stub's count changes under its live Controls, which a real skin's
+        // never does, so the canvas has to be told
         scene.skin.depthLayers[Layered::getTypeNameStatic()]=3;
+        scene.canvas->invalidateZOrder();
         const int layeredZ=layered->getZIndex();
 
         scene.frame();

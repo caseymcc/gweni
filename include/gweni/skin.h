@@ -58,7 +58,10 @@ public:
 
     // The number of consecutive z values this control's primitives use,
     // starting at the control's getZIndex(). Its first child is numbered
-    // after them, so an overlay drawn at getZIndex()+1 needs 2 here.
+    // after them, so an overlay drawn at getZIndex()+1 needs 2 here. Read
+    // when the canvas renumbers the z indices, which it does only after the
+    // tree order or a control's skin Control changed: a Control whose count
+    // changes on its own must call Canvas::invalidateZOrder().
     virtual size_t depthLayers()
     {
         return 1;

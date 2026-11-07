@@ -25,7 +25,9 @@
  *    --stats            print one key=value line per frame; freezes the clock.
  *                       prim_ids= counts the live primitive ids (handed out
  *                       and not released) after the frame; the id bank is
- *                       process-wide, so it covers every canvas
+ *                       process-wide, so it covers every canvas;
+ *                       z_visited= the controls updateCanvas()'s z renumber
+ *                       entered (0 unless the tree order changed)
  *    --require-one-pass fail the run (exit non-zero) if any frame's layout took
  *                       more than one update-phase pass or the render phase
  *                       laid out again; each such frame is named on stderr
@@ -461,13 +463,14 @@ static std::string redirtiedBy(const gweni::controls::LayoutStats &layout)
 static void printFrameStats(int frame, const std::string &control,
     const gweni::controls::ChangeStats &changes,
     const gweni::renderer::OpenGLCore::FrameStats &gpu,
-    const gweni::controls::LayoutStats &layout)
+    const gweni::controls::LayoutStats &layout,
+    const gweni::controls::UpdateStats &update)
 {
     std::printf("frame=%d control=%s controls_changed=%zu created=%zu visibility=%zu"
         " geometry=%zu background=%zu text=%zu prim_slots_written=%zu text_slots_written=%zu"
         " upload_calls=%zu upload_bytes=%zu mirror_bytes=%zu draw_calls=%zu"
         " atlas_upload_calls=%zu atlas_upload_bytes=%zu"
-        " layout_passes=%d redirtied_by=%s render_layout=%d visited=%zu prim_ids=%zu\n",
+        " layout_passes=%d redirtied_by=%s render_layout=%d visited=%zu z_visited=%zu prim_ids=%zu\n",
         frame, control.c_str(),
         changes.controls, changes.created, changes.visibility,
         changes.geometry, changes.background, changes.text,
@@ -475,7 +478,7 @@ static void printFrameStats(int frame, const std::string &control,
         gpu.uploadCalls, gpu.uploadBytes, gpu.mirrorBytes, gpu.drawCalls,
         gpu.atlasUploadCalls, gpu.atlasUploadBytes,
         layout.passes, redirtiedBy(layout).c_str(), layout.renderLayout ? 1 : 0,
-        changes.visited, gweni::primitiveIdCount()-gweni::releasedPrimitiveIdCount());
+        changes.visited, update.zVisited, gweni::primitiveIdCount()-gweni::releasedPrimitiveIdCount());
     std::fflush(stdout);
 }
 
@@ -692,7 +695,8 @@ static void renderFrames(Session &s, int count)
 
         if(s.stats)
             printFrameStats(s.frame, s.label, gweni::controls::getChangeStats(),
-                s.renderer->getFrameStats(), s.canvas->getLayoutStats());
+                s.renderer->getFrameStats(), s.canvas->getLayoutStats(),
+                s.canvas->getUpdateStats());
         checkOnePass(s, std::to_string(s.frame));
 
         ++s.frame;
@@ -2125,7 +2129,8 @@ static void renderInspectedFrame(Session &s, gweni::controls::Base *root,
 
     if(s.stats)
         printFrameStats(s.frame, s.label, gweni::controls::getChangeStats(),
-            s.renderer->getFrameStats(), s.canvas->getLayoutStats());
+            s.renderer->getFrameStats(), s.canvas->getLayoutStats(),
+            s.canvas->getUpdateStats());
     checkOnePass(s, std::to_string(s.frame));
     ++s.frame;
 }

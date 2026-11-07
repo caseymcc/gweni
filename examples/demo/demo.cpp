@@ -215,18 +215,6 @@ void Demo::printText(const String &str)
     m_textOutput->scrollToBottom();
 }
 
-void Demo::think()
-{
-    m_frames++;
-
-    if(m_lastSecond<platform::getTimeInSeconds())
-    {
-//        m_statusBar->setText(format("GWEN Unit Test - %i fps", m_frames*2));
-        m_lastSecond=platform::getTimeInSeconds() + 0.5f;
-        m_frames=0;
-    }
-}
-
 void Demo::render(skin::Base *skin)
 {
 //    m_frames++;
