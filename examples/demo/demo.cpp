@@ -29,6 +29,7 @@
 #include "demo/properties.h"
 #include "demo/radioButton.h"
 #include "demo/scrollControl.h"
+#include "demo/separator.h"
 #include "demo/slider.h"
 #include "demo/statusBar.h"
 #include "demo/tabControl.h"
@@ -113,6 +114,7 @@ void Demo::init(const String &name)
         addDemo<GroupBoxDemo>(cat, "GroupBoxDemo");
         addDemo<ImagePanelDemo>(cat, "ImagePanelDemo");
         addDemo<StatusBarDemo>(cat, "StatusBarDemo");
+        addDemo<SeparatorDemo>(cat, "SeparatorDemo");
     }
     {
         controls::CollapsibleCategory *cat=list->add("Controls");

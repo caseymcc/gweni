@@ -15,6 +15,8 @@
 #include "gweni/controls/colorControls.h"
 #include "gweni/controls/colorPicker.h"
 #include "gweni/controls/textBox.h"
+#include "gweni/controls/separator.h"
+#include "gweni/controls/bullet.h"
 
 #include <algorithm>
 
@@ -618,6 +620,89 @@ void ProgressBar::update(renderer::Base *renderer, controls::Base *baseControl)
 void ProgressBar::remove(renderer::Base *renderer, controls::Base *baseControl)
 {
     releasePrimitives(renderer);
+}
+
+
+///////////////////////////////////////////////////////////////////////////
+//Separator
+void Separator::update(renderer::Base *renderer, controls::Base *baseControl)
+{
+    if(m_primitives.size() < 2)
+        return;
+
+    controls::Separator *separator=static_cast<controls::Separator *>(baseControl);
+    const gweni::Rect bounds=baseControl->getRenderBounds();
+    const bool horizontal=separator->isHorizontal();
+    gweni::Rect parts[2];
+    size_t count=1;
+
+    // one unit past the separator across the rule, on both sides: the stroke is
+    // centred in the quad, which then always has room for it
+    if(horizontal)
+    {
+        const int y=bounds.y-1;
+        const int h=bounds.h+2;
+
+        if(separator->captionShown())
+        {
+            // the caption is placed in the separator; the bounds are in its parent
+            gweni::Rect caption=separator->getCaption()->getBounds();
+
+            caption.x+=bounds.x;
+            const int leftEnd=caption.x-separator->captionGap();
+            const int rightStart=caption.x+caption.w+separator->captionGap();
+
+            parts[0]=gweni::Rect(bounds.x, y, leftEnd-bounds.x, h);
+            parts[1]=gweni::Rect(rightStart, y, bounds.x+bounds.w-rightStart, h);
+            count=2;
+        }
+        else
+            parts[0]=gweni::Rect(bounds.x, y, bounds.w, h);
+    }
+    else
+        parts[0]=gweni::Rect(bounds.x-1, bounds.y, bounds.w+2, bounds.h);
+
+    const bool visible=baseControl->visible();
+
+    for(size_t i=0; i < 2; ++i)
+    {
+        if(visible && i < count && parts[i].w > 0 && parts[i].h > 0)
+            renderer->drawIcon(m_primitives[i], parts[i], 6, horizontal?0:1,
+                tokyonight::Separator.top, baseControl->getZIndex());
+        else
+            renderer->hidePrimitive(m_primitives[i]);
+    }
+}
+
+
+///////////////////////////////////////////////////////////////////////////
+//Bullet
+void Bullet::update(renderer::Base *renderer, controls::Base *baseControl)
+{
+    if(m_primitives.empty())
+        return;
+
+    controls::Bullet *bullet=static_cast<controls::Bullet *>(baseControl);
+    const bool visible=baseControl->visible();
+
+    if(visible)
+    {
+        // bulletRect() is in the bullet; its render bounds are in its parent
+        const gweni::Rect &bounds=baseControl->getRenderBounds();
+        gweni::Rect circle=bullet->bulletRect();
+
+        circle.x+=bounds.x;
+        circle.y+=bounds.y;
+        const gweni::Color color=bullet->bulletColor();
+
+        renderer->drawRoundedRect(m_primitives[0], circle, circle.w*0.5f, 0.0f,
+            color, color, color, baseControl->getZIndex());
+    }
+
+    const unsigned int stateChange=baseControl->getStateChange();
+
+    if((stateChange&controls::StateChange_Visibility) || (stateChange&controls::StateChange_Created))
+        renderer->showPrimitive(visible?4:0, m_primitives[0]);
 }
 
 
@@ -1529,6 +1614,8 @@ template class ControlRegister<VerticalScrollBar>;
 template class ControlRegister<HorizontalScrollBar>;
 template class ControlRegister<ScrollBarBar>;
 template class ControlRegister<ProgressBar>;
+template class ControlRegister<Separator>;
+template class ControlRegister<Bullet>;
 template class ControlRegister<RadioButton>;
 template class ControlRegister<ScrollBarButton>;
 template class ControlRegister<Scroller>;

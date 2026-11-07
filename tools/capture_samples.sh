@@ -70,6 +70,7 @@ SAMPLES=(
     TextDemo
     ProgressBarDemo
     ComboBoxDemo
+    SeparatorDemo
 )
 
 CONTROL_SIZE=640x480

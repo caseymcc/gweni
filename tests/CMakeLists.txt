@@ -244,6 +244,7 @@ add_executable(gweni_unit_tests
     unit/layoutPasses.cpp
     unit/renderWalk.cpp
     unit/clipRegion.cpp
+    unit/separator.cpp
     unit/sliderNotches.cpp
     unit/colorControls.cpp
     unit/colorDisplay.cpp

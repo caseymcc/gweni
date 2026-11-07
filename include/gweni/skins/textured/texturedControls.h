@@ -513,6 +513,36 @@ public:
 
 };
 
+// A Separator's rule, and so a MenuDivider's (it derives from Separator and has
+// no renderer of its own): [0] the whole rule or, with a caption, the part
+// before it, [1] the part after the caption. Each part is an icon of kind 6
+// (drawIcon), stroked max(1, snap(1)) whole device px through the middle of its
+// quad, so a rule is equally thick wherever it lands on the pixel grid; the
+// quad reaches one unit past the separator on both sides across the rule,
+// enough room for the stroke where the separator itself snaps thinner.
+class Separator:public textured::ControlRegister<Separator>
+{
+public:
+    static void staticInit(TexturedSkin *) { m_staticInit=true; }
+
+    size_t requiredPrimitives() override { return 2; }
+
+    void update(renderer::Base *renderer, controls::Base *baseControl) override;
+
+    inline static const std::string_view name="Separator";
+};
+
+// A Bullet's circle, in its text colour; the label's Text draws the string.
+class Bullet:public textured::ControlRegister<Bullet>
+{
+public:
+    static void staticInit(TexturedSkin *) { m_staticInit=true; }
+
+    void update(renderer::Base *renderer, controls::Base *baseControl) override;
+
+    inline static const std::string_view name="Bullet";
+};
+
 class RadioButton:public textured::ControlRegister<RadioButton>
 {
 public:

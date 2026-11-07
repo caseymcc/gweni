@@ -199,7 +199,13 @@ on an OpenGL 3.3 core profile:
   square centred in the quad, with the stroke `max(1, snap(1))` packed in the high
   byte of `bx` and the box-filter coverage below at a constant `aa`, so the cross is
   mirror-symmetric pixel for pixel and every edge of 3-5 is a whole px from the
-  quad's corner: their strokes are whole rows and columns, fully covered), `6` = SDF bilinear fill (`drawBilinearRect`: each vertex carries its
+  quad's corner: their strokes are whole rows and columns, fully covered; kind 6 is
+  a separator's rule, the stroke the quad's whole length through the floor of its
+  middle, horizontal for direction 0 and vertical for 1, so a rule is
+  `max(1, snap(1))` px thick wherever it lands, where a 1-unit rect snapped by
+  `translate()` is 1 or 2 px by position at 1.25 and 1.5; a style 5 pixel with less
+  than half an 8-bit step of coverage is discarded, writing no depth, since the
+  textured Separator's quad reaches one unit past it over its neighbours), `6` = SDF bilinear fill (`drawBilinearRect`: each vertex carries its
   own top-edge color in color0 and bottom-edge color in color3; both are linear in x,
   so the blend along y is exact, with no crease on the quad's diagonal), `7` = SDF
   checker composite (`drawCheckerRect`: color0 with its alpha over 4 px cells of

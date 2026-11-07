@@ -17,6 +17,7 @@ GWENI_CONTROL_CONSTRUCTOR(MenuStripDemo)
         root->getMenu()->addItem("Load", "test16.png", "Ctrl+L")->setAction(this, &MenuStripDemo::menuItemSelect);
         root->getMenu()->addItem("Save", "", "CTRL+S")->setAction(this, &MenuStripDemo::menuItemSelect);
         root->getMenu()->addItem("Save As..", "", "Ctrl+Shift+S")->setAction(this, &MenuStripDemo::menuItemSelect);
+        root->getMenu()->addDivider();
         root->getMenu()->addItem("Quit", "", "Ctrl+Q")->setAction(this, &MenuStripDemo::menuItemSelect);
     }
     {

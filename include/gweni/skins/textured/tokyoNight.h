@@ -143,6 +143,10 @@ inline Surface ColorMarker    { Color(0xff,0xff,0xff), Color(0xff,0xff,0xff), Bg
 inline Surface ColorSwatch    { Bg,                    Bg,                    Line,  2.0f,     BorderW };
 inline Surface ColorChecker   { Color(0xc8,0xc8,0xc8), Color(0x7a,0x7a,0x7a), Line,  0.0f,     0.0f };
 
+// Separator rules (and menu dividers): flat, so only top is read, as the rule's
+// colour; the menu's border colour
+inline Surface Separator      { Line,                  Line,                  Line,  0.0f,     0.0f };
+
 // Generic transparent (draw nothing visible but keep a slot)
 inline Surface None           { Color(0,0,0,0),        Color(0,0,0,0),        Color(0,0,0,0), 0.0f, 0.0f };
 
@@ -165,6 +169,7 @@ inline std::unordered_map<std::string, Surface*>& surfaceRegistry()
         {"SliderThumbHover",&SliderThumbHover},{"SliderThumbDown",&SliderThumbDown},{"SliderThumbDisabled",&SliderThumbDisabled},
         {"CheckOff",&CheckOff},{"CheckOn",&CheckOn},
         {"ColorField",&ColorField},{"ColorMarker",&ColorMarker},{"ColorSwatch",&ColorSwatch},{"ColorChecker",&ColorChecker},
+        {"Separator",&Separator},
     };
     return m;
 }

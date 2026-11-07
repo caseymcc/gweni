@@ -12,6 +12,7 @@
 #include <gweni/controls/base.h>
 #include <gweni/controls/menuItem.h>
 #include <gweni/controls/scrollControl.h>
+#include <gweni/controls/separator.h>
 
 namespace gweni
 {
@@ -87,17 +88,17 @@ protected:
 };
 
 
-class GWENI_EXPORT MenuDivider: public Base
+//! The rule between a Menu's items (Menu::addDivider). It is a horizontal
+//! Separator, so the skin draws it with the Separator renderer: a renderer is
+//! looked up by type name up the parent types, and one renderer class is
+//! registered under one name.
+class GWENI_EXPORT MenuDivider: public Separator
 {
 public:
 
-    GWENI_CONTROL_INLINE(MenuDivider, Base)
+    GWENI_CONTROL_INLINE(MenuDivider, Separator)
     {
-        setHeight(1);
     }
-
-public:
-    //void render(gweni::skin::Base *skin) override;
 };
 
 

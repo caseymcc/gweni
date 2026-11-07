@@ -321,6 +321,7 @@
 #include <demo/properties.h>
 #include <demo/radioButton.h>
 #include <demo/scrollControl.h>
+#include <demo/separator.h>
 #include <demo/slider.h>
 #include <demo/statusBar.h>
 #include <demo/tabControl.h>
@@ -382,7 +383,7 @@ static void content_scale_callback(GLFWwindow *window, float, float)
 
 #define GWENI_CONTROL_DEMOS(X) \
     X(ButtonDemo) X(LabelDemo) X(LabelMultilineDemo) X(ProgressBarDemo) \
-    X(GroupBoxDemo) X(ImagePanelDemo) X(StatusBarDemo) X(ComboBoxDemo) \
+    X(GroupBoxDemo) X(ImagePanelDemo) X(StatusBarDemo) X(SeparatorDemo) X(ComboBoxDemo) \
     X(TextBoxDemo) X(ListBoxDemo) X(CrossSplitterDemo) X(RadioButtonDemo) \
     X(CheckBoxDemo) X(NumericDemo) X(SliderDemo) X(MenuStripDemo) \
     X(WindowDemo) X(TreeControlDemo) X(PropertiesDemo) X(TabControlDemo) \

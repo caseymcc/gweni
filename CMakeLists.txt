@@ -146,6 +146,8 @@ set(GWENI_CONTROL_SOURCES
     source/controls/imagePanel.cpp
     include/gweni/controls/label.h
     source/controls/label.cpp
+    include/gweni/controls/bullet.h
+    source/controls/bullet.cpp
     include/gweni/controls/labelClickable.h
     source/controls/labelClickable.cpp
     include/gweni/controls/toolTip.h
@@ -189,6 +191,8 @@ set(GWENI_CONTROL_SOURCES
     source/controls/scrollBarButton.cpp
     include/gweni/controls/scrollControl.h
     source/controls/scrollControl.cpp
+    include/gweni/controls/separator.h
+    source/controls/separator.cpp
     include/gweni/controls/slider.h
     source/controls/slider.cpp
     include/gweni/controls/splitterBar.h
