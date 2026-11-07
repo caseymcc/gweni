@@ -79,6 +79,20 @@ RUN apt-get update && \
         graphviz && \
     pip3 install --no-cache-dir gprof2dot==2025.4.14
 
+# Vulkan (GWENI_RENDER_VULKAN, on in every tree ./generate.sh configures): the
+# loader (libvulkan1, which volk and GLFW open at run time), Mesa's lavapipe CPU
+# driver (mesa-vulkan-drivers; Mesa 23.2 here, Vulkan 1.3) that the Vulkan
+# tests run on, as the GL tests run on llvmpipe, and Xvfb for the windowed
+# Vulkan test. libwayland-dev is for vcpkg's vulkan-validationlayers port,
+# whose build needs wayland-client's headers. The layer itself, the headers,
+# volk and glslang come from vcpkg (the manifest feature "vulkan").
+RUN apt-get update && \
+    apt-get install -y \
+        libvulkan1 \
+        mesa-vulkan-drivers \
+        libwayland-dev \
+        xvfb
+
 #clean up apt files, reduce docker size
 RUN rm -rf /var/lib/apt/lists/*
 

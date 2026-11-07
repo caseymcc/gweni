@@ -21,6 +21,20 @@
                 "boost-system",
                 "boost-filesystem"
             ]
+        },
+        "vulkan": {
+            "description": "The Vulkan renderer (GWENI_RENDER_VULKAN): headers, the volk loader, glslang's glslangValidator to compile its shaders to SPIR-V at build time, and the Khronos validation layer its tests run with",
+            "dependencies": [
+                "vulkan-headers",
+                "volk",
+                {
+                    "name": "glslang",
+                    "features": [
+                        "tools"
+                    ]
+                },
+                "vulkan-validationlayers"
+            ]
         }
     }
 }

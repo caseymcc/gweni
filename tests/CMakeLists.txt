@@ -355,6 +355,20 @@ else()
     message(STATUS "tests: unit tests skipped, they need gweni_capture (GWENI_BUILD_EXAMPLES)")
 endif()
 
+# The Vulkan plumbing (GWENI_RENDER_VULKAN): loader, validation layer, a 1.3
+# device and SPIR-V compiled at build time. Its source is under vulkan/, out of
+# the *.cpp glob above.
+if(GWENI_RENDER_VULKAN)
+    add_executable(vulkan_smoke vulkan/vulkanSmoke.cpp)
+    gweni_set_warnings(vulkan_smoke)
+    target_link_libraries(vulkan_smoke gweni_vulkan)
+    gweni_add_spirv(vulkan_smoke vulkan/smoke.vert vulkan/smoke.frag)
+
+    add_test(NAME vulkan_smoke COMMAND $<TARGET_FILE:vulkan_smoke>)
+    set_tests_properties(vulkan_smoke PROPERTIES TIMEOUT 60)
+    gweni_vulkan_test_environment(vulkan_smoke)
+endif()
+
 # ASAN tree (./generate.sh linux asan): overflows fail the test, leaks do not.
 # Mesa/EGL leak at exit and none of that is ours, so leak checking is off; with
 # abort_on_error a report aborts the process instead of exiting 1, which ctest
@@ -362,6 +376,7 @@ endif()
 # through execute_process) both count as a failure.
 if(GWENI_SANITIZE MATCHES "address")
     get_property(gweni_tests DIRECTORY PROPERTY TESTS)
-    set_tests_properties(${gweni_tests} PROPERTIES
+    # appended, so a test's own environment (the Vulkan tests') stays
+    set_property(TEST ${gweni_tests} APPEND PROPERTY
         ENVIRONMENT "ASAN_OPTIONS=detect_leaks=0:abort_on_error=1")
 endif()

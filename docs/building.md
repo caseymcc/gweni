@@ -12,6 +12,22 @@ Builds run inside the build container (`./run_docker.sh` from a host; see
 cmake --build build_linux_x64_debug -j
 ```
 
+Every tree `generate.sh` configures has the Vulkan build on
+(`GWENI_RENDER_VULKAN=ON`, with the vcpkg manifest feature `vulkan`: the Vulkan
+headers, the volk loader, glslang's `glslangValidator`, which compiles the
+shaders to SPIR-V at build time, and the Khronos validation layer). CMake's own
+default is off, so a plain CMake build needs none of it. For a GL-only tree:
+
+```bash
+./generate.sh linux -DGWENI_RENDER_VULKAN=OFF
+```
+
+A `-DVCPKG_MANIFEST_FEATURES=...` given to `generate.sh` (e.g.
+`boost-filesystem`) is merged with `vulkan`. The build image has the Vulkan
+loader, Mesa's lavapipe CPU driver (Vulkan 1.3), which the Vulkan tests run on,
+and Xvfb; an older container lacks them (`ls /usr/share/vulkan/icd.d` tells,
+and `vulkan_smoke` fails saying so).
+
 ## Tests
 
 The suite is CTest, under `tests/`, run from the repo root:
@@ -22,8 +38,10 @@ ctest --test-dir build_linux_x64_debug_asan
 ```
 
 The tests labelled `gpu` open a GL context through the examples' headless,
-surfaceless-EGL path. On a shared host, hold the GPU lock around `ctest`;
-`ctest -LE gpu` runs only the headless ones, which need no lock. The tests:
+surfaceless-EGL path, or a Vulkan device. On a shared host, hold the GPU lock
+around `ctest`; `ctest -LE gpu` runs only the headless ones, which need no lock.
+The Vulkan tests are also labelled `vulkan`, so `ctest -LE vulkan` runs the
+GL-only suite. The tests:
 
 - `controltest_determinism`: two separate ControlTest processes must write
   byte-identical `--shot-all` PNGs and `--dump-bounds` listings.
@@ -56,6 +74,13 @@ surfaceless-EGL path. On a shared host, hold the GPU lock around `ctest`;
   uploads nothing to a font atlas and writes only that Label's glyph slots.
 - `unittests`: doctest cases (`gweni_unittests`), e.g. the UTF-8 text-length
   guards in `tests/textLength.cpp`.
+- `vulkan_smoke` (labels `gpu`, `vulkan`): the Vulkan plumbing. It loads the
+  loader through volk, creates an instance with `VK_LAYER_KHRONOS_validation`
+  (any validation warning or error aborts it), finds a Vulkan 1.3 device with
+  `dynamicRendering` and `dualSrcBlend`, and builds a pipeline from SPIR-V
+  compiled at build time. Like every Vulkan test it runs with only the vcpkg
+  validation layer on the loader's layer path and the device pinned to
+  lavapipe (`gweni_vulkan_test_environment` in `cmake/Vulkan.cmake`).
 - `unit:<case name>`: the headless doctest cases (`gweni_unit_tests`, sources
   in `tests/unit/`), one CTest test per case, e.g. the id-bank checks across
   skin swaps in `tests/unit/skinSwap.cpp`. No GL context, no `gpu` label.

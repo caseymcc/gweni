@@ -7,6 +7,8 @@ cmake_options=""
 cmake_custom_options=""
 sanitize=""
 profile=""
+manifest_features=""
+vulkan="ON"
 
 for var in "$@"; do
     if [ "$var" = "x64" ]; then
@@ -36,8 +38,14 @@ for var in "$@"; do
     if [ "$var" = "profile" ]; then
         profile="profile"
     fi
-    if [[ $var = -D* ]]; then
+    if [[ $var = -DVCPKG_MANIFEST_FEATURES=* || $var = -DVCPKG_MANIFEST_FEATURES:*=* ]]; then
+        # merged with the features this script adds, below
+        manifest_features="${var#*=}"
+    elif [[ $var = -D* ]]; then
         cmake_custom_options+="$var "
+    fi
+    if [[ $var = -DGWENI_RENDER_VULKAN=* || $var = -DGWENI_RENDER_VULKAN:*=* ]]; then
+        vulkan="${var#*=}"
     fi
 done
 
@@ -94,8 +102,23 @@ if [ "$platform" = "linux" ]; then
         -DCMAKE_TOOLCHAIN_FILE=$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake \
         -DVCPKG_CHAINLOAD_TOOLCHAIN_FILE=$(pwd)/cmake/linux_toolchain.cmake \
         -DVCPKG_TARGET_TRIPLET=x64-linux \
-        -DGWENI_RENDER_OPENGL_CORE=ON"
+        -DGWENI_RENDER_OPENGL_CORE=ON \
+        -DGWENI_RENDER_VULKAN=ON"
+
+    # The Vulkan renderer is on in every tree configured here, so its tests run
+    # in every ctest (CMake's own default is OFF). A -DGWENI_RENDER_VULKAN=OFF
+    # passed through comes after the ON above and wins, and then the vcpkg
+    # feature is left out too. Features passed with -DVCPKG_MANIFEST_FEATURES
+    # are merged with it.
+    case "${vulkan^^}" in
+        OFF|0|FALSE|NO|N) ;;
+        *) manifest_features="vulkan${manifest_features:+;$manifest_features}" ;;
+    esac
 fi
+
+# Always passed, empty or not, so a feature cached by an earlier configure of
+# the same tree does not stay on.
+cmake_custom_options+="-DVCPKG_MANIFEST_FEATURES=$manifest_features"
 
 build_dir="build_${platform}_${arch}_${build_type}"
 

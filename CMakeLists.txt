@@ -15,6 +15,10 @@ endif()
 cmake_policy(SET CMP0074 NEW)
 
 option(GWENI_RENDER_OPENGL_CORE "Opengl 3.0+ Renderer" ON)
+# Off by default, so a build without the Vulkan headers and tools works;
+# ./generate.sh turns it on in every tree it configures (with the vcpkg
+# manifest feature "vulkan").
+option(GWENI_RENDER_VULKAN "Vulkan 1.3 Renderer" OFF)
 option(GWENI_BUILD_EXAMPLES "Build Examples" ON)
 option(GWENI_BUILD_TESTS "Build tests" ON)
 option(GWENI_DEBUG_LOGGING "Verbose per-control update/layout debug logging" OFF)
@@ -342,6 +346,14 @@ if(GWENI_RENDER_OPENGL_CORE)
     set(GWENI_COMPILE_DEFINITIONS ${GWENI_COMPILE_DEFINITIONS}
         GLM_HAS_TEMPLATE_ALIASES
     )
+endif()
+
+if(GWENI_RENDER_VULKAN)
+    # gweni_vulkan, gweni_add_spirv and gweni_vulkan_test_environment
+    include(${GWENI_SOURCE_DIR}/cmake/Vulkan.cmake)
+
+    # so code (the library, the examples, the tests) can #if on it
+    set(GWENI_COMPILE_DEFINITIONS ${GWENI_COMPILE_DEFINITIONS} GWENI_HAS_VULKAN)
 endif()
 
 set(GWENI_STD_FILESYSTEM 1)
