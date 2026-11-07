@@ -12,7 +12,8 @@
 #
 #  Usage: tools/profile.sh <scene> [--n N] [--frames F] [--out DIR]
 #                          [--bin-dir DIR] [--graph-thres P] [--graph-root FN]
-#                          [--layout-pad K] [-- <more gweni_bench args>]
+#                          [--layout-pad K] [--phases-only]
+#                          [-- <more gweni_bench args>]
 #
 #    <scene>        a scene of gweni_bench --list
 #    --n N          the scene's size (default: the scene's default N)
@@ -31,6 +32,9 @@
 #    --layout-pad K  run the bench from a directory K characters longer
 #                   (/tmp/gweni-profile-run-xxx...), which moves its heap: the
 #                   counts of runs at several K show the layout noise (below)
+#    --phases-only  write only callgrind.out, phases.txt, bench.txt and
+#                   valgrind.log: no annotate.txt or callgraph.svg (what
+#                   tools/bench.sh compare runs, many times)
 #    -- ARGS        passed to gweni_bench as they are (--k, --warmup, --size, ...);
 #                   it runs in /tmp/gweni-profile-run, so a --resources here must
 #                   be absolute
@@ -97,6 +101,7 @@ outDir=""
 graphThres=0.5
 graphRoot=""
 layoutPad=0
+phasesOnly=0
 binDirGiven=0
 benchArgs=()
 
@@ -122,6 +127,9 @@ while [[ $# -gt 0 ]]; do
             shift
             benchArgs=("$@")
             break
+            ;;
+        --phases-only)
+            phasesOnly=1
             ;;
         -h|--help)
             usage
@@ -171,7 +179,11 @@ if [[ ! -x "$BENCH" ]]; then
     exit 1
 fi
 
-for tool in valgrind callgrind_annotate gprof2dot dot python3; do
+tools=(valgrind python3)
+if [[ $phasesOnly -eq 0 ]]; then
+    tools+=(callgrind_annotate gprof2dot dot)
+fi
+for tool in "${tools[@]}"; do
     if ! command -v "$tool" >/dev/null 2>&1; then
         die "$tool is not installed; the build image has it (Dockerfile), so this container predates it"
     fi
@@ -266,6 +278,15 @@ fi
 
 python3 -I "$ROOT/tools/callgrind_phases.py" "$profile" >"$phases" \
     || die "could not read the phases from $profile (a gweni_bench built without <valgrind/callgrind.h> collects nothing)"
+
+if [[ $phasesOnly -eq 1 ]]; then
+    echo "callgrind ran ${elapsed}s"
+    sed 's/^/  /' "$phases"
+    for out in "$profile" "$phases" "$benchOut"; do
+        echo "  $out"
+    done
+    exit 0
+fi
 
 # gweni's own sources the profile has costs in: source/, include/ and bench/,
 # not the system's, vcpkg's or deps/.
