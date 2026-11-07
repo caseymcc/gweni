@@ -56,6 +56,42 @@ marks `StateChange_Geometry` on exactly the controls whose z index changed.
 `z_visited=`) counts the controls it entered: Demo's first frame 2668, a settled one 0.
 `tests/unit/updateWalk.cpp` pins it.
 
+#### The tooltip: a canvas-level overlay
+
+A tooltip is a retained control like any other, decided in this phase. Each canvas owns
+at most one `controls::ToolTip` box (`include/gweni/controls/toolTip.h`, a padded
+`Label` painting the theme's `Tooltip` surface), created the first time a tooltip is
+shown and reused for every control after that. `Base::setToolTipText` only stores the
+text, and `setToolTip(control)` keeps that control as a hidden child of its owner, so
+neither creates anything. `Canvas::updateToolTip`, run by `doThink()` before the layout
+passes, compares the control whose tooltip the hovered control shows (its own, else its
+parent's) with the one it has: a new one starts the delay (`Canvas::setToolTipDelay`,
+0.5 s of `platform::getTimeInSeconds()`, so the stepped clock in captures), and once
+the delay has passed the box is filled in (the text, or the owner's own control moved
+into the box), sized from the measured text and placed by `ToolTip::placement`: below
+the owner's bounds with the left edges aligned, above them when there is no room below,
+pulled inside the canvas's right and left edges. It is anchored to the control and not
+to the mouse, so moving the mouse inside the control writes nothing. Moving straight to
+another control with a tooltip refills the same box at once. Leaving, a press (until the
+mouse is on another control), and the owner being hidden, disabled, deleted or losing
+its tooltip hide it with `setHidden`, so its slots are hidden, not freed. The box is
+placed before layout, so it is laid out in the frame's one pass. On a frame where
+nothing about it changes the step walks up from the hovered control to its canvas and
+marks no control.
+
+**Its z: the canvas's last child.** The box has to draw above every control, an open
+`Menu` or `Modal` included, and be clipped to the canvas alone. It is a child of the
+canvas, so its clip region is the canvas's, and it is kept as the canvas's **last**
+child: `Canvas::keepToolTipLast()` moves it back to the end of the child list just
+before each z renumber. Every change of the child order (a `Menu` added or opened with
+`bringToFront`, a `Modal`, any `addChild`) asks for a renumber anyway, so this costs
+nothing on other frames, and the depth-first numbering then gives the box and its text
+the highest z values in the tree. A reserved z range above the tree was the other
+choice; it would need a ceiling that no tree reaches and a second numbering for the
+overlays, while the last-child rule reuses the one numbering there is. A later
+canvas-level overlay (a context menu, the drag-and-drop preview) can take the same
+place.
+
 ### 2. `renderCanvas()` — render
 
 `Canvas::renderCanvas()` brackets the frame with `renderer->begin()` / `end()` and

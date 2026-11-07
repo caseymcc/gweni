@@ -14,7 +14,7 @@
 #include <gweni/skin.h>
 #include <gweni/platforms/platform.h>
 #include <gweni/dragAndDrop.h>
-#include <gweni/toolTip.h>
+#include <gweni/controls/toolTip.h>
 #include <gweni/utility.h>
 #include <gweni/objectIdBank.h>
 #include <list>
@@ -154,8 +154,25 @@ Base::~Base()
     {
         Canvas *canvas=getCanvas();
 
+        // Its setToolTip() control is not its child, so it is shown in a
+        // canvas's ToolTip box: that canvas deletes it, whether or not this
+        // control is still on it.
+        Canvas *shownOn=nullptr;
+
+        if(m_toolTip && (m_toolTip->getParent() != this))
+        {
+            shownOn=m_toolTip->getCanvas();
+            m_toolTip=nullptr;
+        }
+
         if(canvas)
+        {
             canvas->PreDeleteCanvas(this);
+            canvas->toolTipControlDeleted(this);
+        }
+
+        if(shownOn && (shownOn != canvas))
+            shownOn->toolTipControlDeleted(this);
     }
 
     Base::List::iterator iter=m_children.begin();
@@ -187,7 +204,6 @@ Base::~Base()
         MouseFocus=nullptr;
 
     draganddrop::controlDeleted(this);
-    tooltip::controlDeleted(this);
 #if GWENI_ANIMATE
     anim::cancel(this);
 #endif
@@ -1248,22 +1264,12 @@ void Base::onMouseMoved(int /*x*/, int /*y*/, int /*deltaX*/, int /*deltaY*/)
 void Base::onMouseEnter()
 {
     onHoverEnter.call(this);
-
-    if(getToolTip())
-        tooltip::enable(this);
-    else if(getParent() && getParent()->getToolTip())
-        tooltip::enable(getParent());
-
     redraw();
 }
 
 void Base::onMouseLeave()
 {
     onHoverLeave.call(this);
-
-    if(getToolTip())
-        tooltip::disable(this);
-
     redraw();
 }
 
@@ -2299,16 +2305,34 @@ void Base::renderFocus(skin::Base *skin)
 //    skin->drawKeyboardHighlight(this, skin::Generate, getRenderBounds(), 3);
 }
 
+// The canvas reads the tooltip when it shows it (Canvas::updateToolTip), so
+// neither setter creates anything; one shown now is filled in again.
 void Base::setToolTipText(const String &text)
 {
-    Label *tooltip=newChild<Label>();
+    if(m_toolTipText == text)
+        return;
 
-    tooltip->setText(text);
-    tooltip->setTextColorOverride(getSkin()->Colors.TooltipText);
-    tooltip->setPadding(Padding(5, 3, 5, 3));
-    tooltip->sizeToContents();
+    m_toolTipText=text;
 
-    setToolTip(tooltip);
+    if(Canvas *canvas=getCanvas())
+        canvas->toolTipChanged(this);
+}
+
+void Base::setToolTip(Base *tooltip)
+{
+    if(m_toolTip == tooltip)
+        return;
+
+    m_toolTip=tooltip;
+
+    if(m_toolTip)
+    {
+        m_toolTip->setParent(this);
+        m_toolTip->setHidden(true);
+    }
+
+    if(Canvas *canvas=getCanvas())
+        canvas->toolTipChanged(this);
 }
 
 String Base::getChildValue(const String &name)

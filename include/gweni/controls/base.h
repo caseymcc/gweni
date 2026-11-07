@@ -539,21 +539,26 @@ public:
 
     virtual void updateCursor();
 
+    //! \sect{Tooltip}
+    //! Shown by the canvas, in its one ToolTip box, after the mouse has rested
+    //! on this control (or on a child of it with no tooltip of its own) for
+    //! Canvas::getToolTipDelay(). An empty text and no setToolTip() control
+    //! means no tooltip.
     virtual void setToolTipText(const gweni::String &text);
+    const gweni::String &getToolTipText() const { return m_toolTipText; }
 
-    virtual void setToolTip(Base *tooltip)
-    {
-        m_toolTip=tooltip;
-        if(m_toolTip)
-        {
-            m_toolTip->setParent(this);
-            m_toolTip->setHidden(true);
-        }
-    }
+    //! A control to show as the tooltip instead of the text. It stays a hidden
+    //! child of this control, and the canvas moves it into its ToolTip box
+    //! while it is shown (with its mouse input turned off) and back after.
+    virtual void setToolTip(Base *tooltip);
     virtual Base *getToolTip()
     {
         return m_toolTip;
     }
+
+    //! A text or a setToolTip() control is set.
+    bool hasToolTip() const { return m_toolTip || !m_toolTipText.empty(); }
+    //! \}
 
     virtual bool isMenuComponent();
     virtual void closeMenus();
@@ -656,7 +661,8 @@ protected:
     //! anything pending.
     void markAttachedChanged(Base *child);
 
-    Base *m_toolTip;
+    Base *m_toolTip=nullptr;
+    gweni::String m_toolTipText;
 
     skin::Base *m_skin;
     std::unique_ptr<skin::Control> m_skinControl;

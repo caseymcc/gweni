@@ -18,6 +18,8 @@ namespace gweni
 namespace controls
 {
 
+class ToolTip;
+
 //! What the canvas's layout did in one frame: the update phase (doThink) and
 //! the render phase (renderCanvas). A frame whose layout converges runs at most
 //! one update-phase pass and none in the render phase.
@@ -139,6 +141,39 @@ public:
     const UpdateStats &getUpdateStats() const { return m_updateStats; }
     /// \}
 
+    /// \sect{Tooltip}
+    /// The canvas shows the tooltip of the control the mouse rests on (or of
+    /// that control's parent, when it has none of its own) in one ToolTip box
+    /// it owns. The update phase decides, before layout: once the same control
+    /// has been hovered for getToolTipDelay() seconds of
+    /// platform::getTimeInSeconds() the box is filled in, placed below the
+    /// control (ToolTip::placement) and shown. Moving to another control with
+    /// a tooltip while one is shown fills the same box in for it at once. It
+    /// hides when the mouse leaves the control, on a mouse press (until the
+    /// mouse is on another control), and when the control is hidden,
+    /// disabled, deleted or loses its tooltip. The box is kept as the canvas's
+    /// last child, so the z renumber puts it above everything else, an open
+    /// Menu included, and it is clipped only to the canvas.
+
+    /// Seconds the mouse has to rest on a control before its tooltip shows;
+    /// 0.5 by default.
+    void setToolTipDelay(float seconds) { m_toolTipDelay=seconds; }
+    float getToolTipDelay() const { return m_toolTipDelay; }
+
+    /// The ToolTip box, created the first time a tooltip is shown; null before.
+    ToolTip *toolTipControl() const { return m_toolTip; }
+    /// The control whose tooltip is shown or waiting for its delay, or null.
+    Base *toolTipOwner() const { return m_toolTipOwner; }
+    /// The box is showing toolTipOwner()'s tooltip.
+    bool toolTipShown() const { return m_toolTipShown; }
+
+    /// Base: \p control's tooltip text or control changed; one shown is
+    /// filled in again in the next update phase.
+    void toolTipChanged(Base *control);
+    /// Base: \p control is being deleted.
+    void toolTipControlDeleted(Base *control);
+    /// \}
+
     /// \sect{Input}
     bool inputMouseMoved(int x, int y, int deltaX, int deltaY) override;
     bool inputMouseButton(int button, bool down) override;
@@ -190,6 +225,18 @@ protected:
 
     /// renderCanvas's own pass, counted in LayoutStats::renderLayout.
     void renderPhaseLayout();
+
+    /// The update phase's tooltip step (see setToolTipDelay()), run by
+    /// doThink() before layout so a box it shows or moves is laid out in the
+    /// same pass.
+    void updateToolTip();
+    /// The control whose tooltip \p hovered shows, or null.
+    Base *toolTipOwnerFor(Base *hovered);
+    void showToolTipFor(Base *owner);
+    void hideToolTip();
+    /// Puts the box back at the end of the child list; run before the z
+    /// renumber, which every change of the list's order asks for.
+    void keepToolTipLast();
     /// One recurseLayout with m_inLayout set.
     void layoutPass();
     /// Base's report that `control` re-dirtied layout during the current pass.
@@ -215,6 +262,16 @@ protected:
     bool m_drawBackground;
     gweni::Color m_backgroundColor;
 
+    ToolTip *m_toolTip=nullptr;
+    Base *m_toolTipOwner=nullptr;
+    /// When m_toolTipOwner was first hovered.
+    float m_toolTipSince=0.0f;
+    float m_toolTipDelay=0.5f;
+    bool m_toolTipShown=false;
+    /// The owner's tooltip changed while shown.
+    bool m_toolTipDirty=false;
+    /// Pressed on: shows no tooltip until the mouse is on another control.
+    Base *m_toolTipSuppressed=nullptr;
 };
 
 

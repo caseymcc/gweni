@@ -28,6 +28,18 @@
  *                       process-wide, so it covers every canvas;
  *                       z_visited= the controls updateCanvas()'s z renumber
  *                       entered (0 unless the tree order changed)
+ *    --stats-clock frozen|step
+ *                       whether the clock moves under --stats: frozen (the
+ *                       default) steps it only for a scripted press, so an
+ *                       idle frame is genuinely idle; step moves it by the
+ *                       capture's 1/60 s per frame, as without --stats, so
+ *                       the counters of something that waits on time (a
+ *                       tooltip's hover delay, an animation) can be read:
+ *                         --control ButtonDemo --stats --stats-clock step \
+ *                           --frames 3 --move 34,114 --frames 40
+ *                       (ButtonDemo's "With Tooltip" button is at 0,107 69x15
+ *                       and "Toggle Me", which has one too, at 0,73 58x15,
+ *                       whatever the canvas size)
  *    --require-one-pass fail the run (exit non-zero) if any frame's layout took
  *                       more than one update-phase pass or the render phase
  *                       laid out again; each such frame is named on stderr
@@ -44,7 +56,7 @@
  *    --list             print the control demo names and exit
  *    --help, -h         print the option list and exit
  *    --scenario <name>  per-control | resize | docked | scroll | interaction |
- *                       typing | clip | text-size | scale (see below)
+ *                       typing | clip | text-size | scale | tooltip (see below)
  *    --dump-bounds [<path>]
  *                       print the laid-out control tree as text: one line per
  *                       control, depth-first in child order, indented by depth,
@@ -203,6 +215,21 @@
  *                 pixels), fresh_matches the fresh shot with shot 2 (listing
  *                 and pixels). Mismatches are described as for resize. Exits
  *                 non-zero if any check is no.
+ *    tooltip      the canvas's tooltip on ButtonDemo, on the stepped clock
+ *                 (moving even under --stats): resting on "With Tooltip" shows
+ *                 nothing outside the button until the canvas's delay has
+ *                 passed, then a ToolTip box below the button, inside the
+ *                 canvas and above every other control; a settled frame and a
+ *                 move inside the button write nothing; moving straight to
+ *                 "Toggle Me" moves the same box there at once and changes
+ *                 only the box and the two buttons; moving off hides it and
+ *                 the frame is the one before hovering; a press hides it for
+ *                 good until the mouse has left; a button in the canvas's
+ *                 bottom-right corner gets its tooltip above it, inside the
+ *                 canvas; and with a Menu open over where the box goes, the
+ *                 box's pixels are the ones it has with no Menu. One line
+ *                   tooltip waits=yes|no shown=yes|no ... over_menu=yes|no
+ *                 reports the checks. Exits non-zero if any check is no.
  *
  *  Every scenario (and --shot-all) takes a listing per shot when
  *  --dump-bounds is on, named after that shot with a .txt extension, so the
@@ -216,7 +243,7 @@
  *  from resize, interaction, typing, clip, text-size or scale is their
  *  assertion, so it is reported rather than aborting the loop):
  *
- *    for s in per-control resize docked scroll interaction typing clip text-size scale; do \
+ *    for s in per-control resize docked scroll interaction typing clip text-size scale tooltip; do \
  *      ./build_linux_x64_debug/examples/openglcore/ControlTest \
  *          --headless --scenario $s --shot-dir /tmp/shots/$s; \
  *      echo "$s exit=$?"; \
@@ -236,7 +263,7 @@
  *  Captures install a stepped clock (gweni::platform::setTimeSource), so a shot
  *  depends on the frame number and not on how fast the process ran. --stats
  *  freezes the per-frame step instead, so an idle frame is genuinely idle and
- *  the counters settle to zero.
+ *  the counters settle to zero; --stats-clock step keeps it moving.
  */
 
 #include <GL/glew.h>
@@ -253,6 +280,9 @@
 #include <gweni/controls/windowControl.h>
 #include <gweni/controls/checkBox.h>
 #include <gweni/controls/label.h>
+#include <gweni/controls/menu.h>
+#include <gweni/controls/button.h>
+#include <gweni/controls/toolTip.h>
 #include <GLFW/glfw3.h>
 #include <gweni/utils/filesystem.h>
 #include "capture.h"
@@ -409,18 +439,22 @@ static void printUsage(std::ostream &out)
          "  --shot-dir <dir>   directory for shots (default /tmp)\n"
          "  --headless         force the surfaceless EGL context\n"
          "  --stats            print one key=value line per frame\n"
+         "  --stats-clock frozen|step  under --stats, keep the clock still (the\n"
+         "                     default) or step it 1/60 s per frame, so a\n"
+         "                     tooltip's delay or an animation runs\n"
          "  --require-one-pass fail if a frame's layout takes more than one pass\n"
          "  --check-teardown   check the canvas renders empty again once every\n"
          "                     control has been destroyed; --control narrows it\n"
          "  --trace            log each scripted input on stderr\n"
          "  --scenario <name>  per-control | resize | docked | scroll | interaction\n"
-         "                     | typing | clip | text-size | scale; resize prints\n"
+         "                     | typing | clip | text-size | scale | tooltip; resize prints\n"
          "                     listing_settled, mirror_settled, shrink_settled and\n"
          "                     fresh_matches, interaction one yes/no per repaint\n"
          "                     check, typing its keyboard checks, clip one yes/no\n"
          "                     per clipping check, text-size what a 24 -> 36 px\n"
          "                     Label font change wrote, scale whether a 1 -> 2 -> 1\n"
-         "                     setScale round trip came back; all six fail on a no\n"
+         "                     setScale round trip came back, tooltip one yes/no per\n"
+         "                     tooltip check; all seven fail on a no\n"
          "  --dump-bounds [<path>]  print the laid-out control tree as text,\n"
          "                     private children and hidden state included\n"
          "  --resources <dir>  load the skin, fonts and textures from <dir> (relative\n"
@@ -542,6 +576,7 @@ struct Session
     float scale=1.0f;                   // --scale
     gweni::Point pixels;                // the framebuffer, device pixels
     bool stats=false;
+    bool statsClockSteps=false;         // --stats-clock step
     bool freezeClock=false;             // as under --stats, without the lines
     bool requireOnePass=false;          // --require-one-pass
     int multiPassFrames=0;              // frames that broke it
@@ -706,8 +741,9 @@ static void renderFrames(Session &s, int count)
         ++s.frame;
 
         // --stats wants a frame with no input to be genuinely idle, so there the
-        // clock only moves when a scripted press moves it.
-        if(!s.stats && !s.freezeClock)
+        // clock only moves when a scripted press moves it, unless
+        // --stats-clock step asked for the capture's step.
+        if((!s.stats || s.statsClockSteps) && !s.freezeClock)
             g_clockSeconds+=g_frameStep;
     }
 }
@@ -1174,7 +1210,8 @@ static bool runSteps(Session &s, const std::vector<Step> &steps, const std::stri
 //-----------------------------------------------------------------------------
 // Scenarios
 //-----------------------------------------------------------------------------
-enum class Scenario { None, PerControl, Resize, Docked, Scroll, Interaction, Typing, Clip, TextSize, Scale };
+enum class Scenario { None, PerControl, Resize, Docked, Scroll, Interaction, Typing, Clip, TextSize, Scale,
+    ToolTip };
 
 static bool parseScenario(const std::string &name, Scenario &scenario)
 {
@@ -1187,6 +1224,7 @@ static bool parseScenario(const std::string &name, Scenario &scenario)
     else if(name == "clip") scenario=Scenario::Clip;
     else if(name == "text-size") scenario=Scenario::TextSize;
     else if(name == "scale") scenario=Scenario::Scale;
+    else if(name == "tooltip") scenario=Scenario::ToolTip;
     else return false;
     return true;
 }
@@ -2425,6 +2463,360 @@ static bool runClipScenario(Session &s, const std::string &shotDir, bool &passed
 }
 
 //-----------------------------------------------------------------------------
+// --scenario tooltip: the canvas's retained tooltip, on ButtonDemo
+//
+// The clock steps here even under --stats: the hover delay is what is checked.
+// Each check compares whole frames or the pixels inside one rect, and reads the
+// canvas's tooltip state (Canvas::toolTipShown, toolTipControl, toolTipOwner).
+//-----------------------------------------------------------------------------
+
+static gweni::Rect canvasRectOf(gweni::controls::Base *control)
+{
+    const gweni::Point origin=control->localPosToCanvas();
+    return gweni::Rect(origin.x, origin.y, control->getWidth(), control->getHeight());
+}
+
+// The pixels of two frames that differ inside a rect in logical units (snapped
+// to device pixels as the renderer snaps it), clipped to the framebuffer.
+static size_t differencesIn(const Session &s, const std::vector<uint8_t> &a,
+    const std::vector<uint8_t> &b, const gweni::Rect &rect)
+{
+    const gweni::Point topLeft=devicePixels(gweni::Point(rect.x, rect.y), s.scale);
+    const gweni::Point bottomRight=devicePixels(gweni::Point(rect.x+rect.w, rect.y+rect.h), s.scale);
+
+    size_t count=0;
+    for(int y=std::max(0, topLeft.y); y<std::min(s.pixels.y, bottomRight.y); ++y)
+    {
+        for(int x=std::max(0, topLeft.x); x<std::min(s.pixels.x, bottomRight.x); ++x)
+        {
+            const size_t at=(static_cast<size_t>(y)*s.pixels.x+x)*4;
+            if(std::memcmp(&a[at], &b[at], 4) != 0)
+                ++count;
+        }
+    }
+    return count;
+}
+
+// The `skip`-th visible control under `root` with a tooltip, depth first.
+static gweni::controls::Base *findWithToolTip(gweni::controls::Base *root, int skip)
+{
+    std::vector<gweni::controls::Base *> stack(1, root);
+    while(!stack.empty())
+    {
+        gweni::controls::Base *at=stack.back();
+        stack.pop_back();
+        if(at->hidden())
+            continue;
+        if(at->hasToolTip() && skip-- == 0)
+            return at;
+
+        const auto &children=at->getActualChildren();
+        for(auto it=children.rbegin(); it != children.rend(); ++it)
+            stack.push_back(*it);
+    }
+    return nullptr;
+}
+
+static bool isUnder(gweni::controls::Base *control, gweni::controls::Base *root)
+{
+    for(gweni::controls::Base *at=control; at; at=at->getParent())
+        if(at == root)
+            return true;
+    return false;
+}
+
+// The highest z index of a visible control outside `box`'s subtree.
+static int highestZOutside(gweni::controls::Base *control, gweni::controls::Base *box)
+{
+    if(control == box || control->hidden())
+        return 0;
+
+    int highest=control->getZIndex();
+    for(auto &&child : control->getActualChildren())
+        highest=std::max(highest, highestZOutside(child, box));
+    return highest;
+}
+
+// The controls with a change pending that are not under one of `allowed`.
+static void pendingOutside(gweni::controls::Base *control,
+    const std::vector<gweni::controls::Base *> &allowed, std::vector<std::string> &strays)
+{
+    if(control->getStateChange() != gweni::controls::StateChange_Nothing)
+    {
+        bool inside=false;
+        for(gweni::controls::Base *root : allowed)
+            inside=inside || isUnder(control, root);
+        if(!inside)
+            strays.push_back(std::string(control->getTypeName())+"#"+std::to_string(control->getControlId()));
+    }
+    for(auto &&child : control->getActualChildren())
+        pendingOutside(child, allowed, strays);
+}
+
+// One frame, its update phase inspected before it renders: the controls with a
+// change pending outside `allowed` go to `strays`.
+static void renderToolTipFrame(Session &s, const std::vector<gweni::controls::Base *> &allowed,
+    std::vector<std::string> &strays)
+{
+    gweni::controls::resetChangeStats();
+    s.canvas->updateCanvas();
+    pendingOutside(s.canvas, allowed, strays);
+
+    glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
+    s.canvas->renderCanvas();
+
+    if(s.stats)
+        printFrameStats(s.frame, s.label, gweni::controls::getChangeStats(),
+            s.renderer->getFrameStats(), s.canvas->getLayoutStats(),
+            s.canvas->getUpdateStats());
+    checkOnePass(s, std::to_string(s.frame));
+    ++s.frame;
+    g_clockSeconds+=g_frameStep;
+}
+
+static std::string rectText(const gweni::Rect &r)
+{
+    return "("+std::to_string(r.x)+", "+std::to_string(r.y)+", "+std::to_string(r.w)
+        +", "+std::to_string(r.h)+")";
+}
+
+static bool insideRect(const gweni::Rect &inner, const gweni::Rect &outer)
+{
+    return inner.x >= outer.x && inner.y >= outer.y
+        && inner.x+inner.w <= outer.x+outer.w && inner.y+inner.h <= outer.y+outer.h;
+}
+
+static std::vector<uint8_t> toolTipShot(Session &s, const std::string &shotDir,
+    const std::string &name, bool &ok)
+{
+    if(!shoot(s, shotDir+"/tooltip-"+name+".png"))
+        ok=false;
+    return framePixels(s);
+}
+
+// The frames from a move onto a control until its tooltip shows, at most `limit`.
+static int framesUntilShown(Session &s, int limit)
+{
+    for(int frame=1; frame <= limit; ++frame)
+    {
+        renderFrames(s, 1);
+        if(s.canvas->toolTipShown())
+            return frame;
+    }
+    return -1;
+}
+
+static void checkToolTip(Session &s, const std::string &shotDir, InteractionChecks &checks, bool &ok)
+{
+    gweni::controls::Canvas *canvas=s.canvas;
+    gweni::controls::Base *demo=addControl(s, "ButtonDemo");
+    renderFrames(s, s.frames);
+
+    gweni::controls::Base *first=findWithToolTip(demo, 0);
+    gweni::controls::Base *second=findWithToolTip(demo, 1);
+    if(!first || !second)
+    {
+        checks.check("buttons_found", false, "ButtonDemo has fewer than two controls with a tooltip");
+        dropControl(s, demo);
+        return;
+    }
+    // "Toggle Me" comes first in the demo; the one named for it is checked first
+    gweni::controls::Base *withToolTip=(first->getY() > second->getY())?first:second;
+    gweni::controls::Base *other=(withToolTip == first)?second:first;
+
+    const gweni::Point off(s.size.x-1, s.size.y-1);    // ButtonDemo, no button
+    const gweni::Rect canvasArea(0, 0, s.size.x, s.size.y);
+    const gweni::Rect button=canvasRectOf(withToolTip);
+    const int delayFrames=(int)std::ceil(canvas->getToolTipDelay()/g_frameStep);
+
+    moveMouse(s, off.x, off.y);
+    renderFrames(s, s.frames);
+    const std::vector<uint8_t> idle=toolTipShot(s, shotDir, "idle", ok);
+
+    // Resting on the button: nothing but its hover shows until the delay.
+    moveMouse(s, button.x+button.w/2, button.y+button.h/2);
+    renderFrames(s, std::max(1, delayFrames-2));
+    const bool early=canvas->toolTipShown();
+    const std::vector<uint8_t> waiting=toolTipShot(s, shotDir, "waiting", ok);
+    const size_t waitingOutside=differencesOutside(s, idle, waiting, withToolTip);
+    const int shownAfter=framesUntilShown(s, 8);
+    renderFrames(s, 1);
+    const std::vector<uint8_t> shown=toolTipShot(s, shotDir, "shown", ok);
+
+    gweni::controls::ToolTip *box=canvas->toolTipControl();
+    checks.check("waits", !early && waitingOutside == 0,
+        "the tooltip showed (or something outside the button changed: "+std::to_string(waitingOutside)
+        +" px) "+std::to_string(std::max(1, delayFrames-2))+" frames into a "
+        +std::to_string(canvas->getToolTipDelay())+" s delay");
+    checks.check("shown", box && shownAfter > 0 && canvas->toolTipOwner() == withToolTip,
+        "no tooltip for the button within 8 frames of its delay");
+    if(!box || !canvas->toolTipShown())
+    {
+        dropControl(s, demo);
+        return;
+    }
+
+    const gweni::Rect tip=canvasRectOf(box);
+    checks.check("below", tip.x == button.x && tip.y == button.y+button.h+gweni::controls::ToolTip::Gap
+        && insideRect(tip, canvasArea),
+        "the box is at "+rectText(tip)+" for a button at "+rectText(button));
+    checks.check("drawn", differencesIn(s, idle, shown, tip) > 0,
+        "the box's rect "+rectText(tip)+" looks as it did before hovering");
+    checks.check("on_top", box->getZIndex() > highestZOutside(canvas, box)
+        && canvas->getActualChildren().back() == box,
+        "the box's z "+std::to_string(box->getZIndex())+" is not above the rest of the tree ("
+        +std::to_string(highestZOutside(canvas, box))+"), or it is not the canvas's last child");
+
+    // Shown and settled, a frame and a move inside the button write nothing.
+    renderFrames(s, 1);
+    const gweni::renderer::OpenGLCore::FrameStats settled=s.renderer->getFrameStats();
+    const size_t settledControls=gweni::controls::getChangeStats().controls;
+    moveMouse(s, button.x+3, button.y+3);
+    renderFrames(s, 1);
+    const gweni::renderer::OpenGLCore::FrameStats moved=s.renderer->getFrameStats();
+    const size_t movedControls=gweni::controls::getChangeStats().controls;
+    checks.check("settled_zero", settledControls == 0 && settled.primitiveSlotsWritten == 0
+        && settled.textSlotsWritten == 0 && movedControls == 0 && moved.primitiveSlotsWritten == 0
+        && moved.textSlotsWritten == 0 && canvas->toolTipShown(),
+        "with the tooltip shown, a settled frame had controls_changed="+std::to_string(settledControls)
+        +" prim_slots_written="+std::to_string(settled.primitiveSlotsWritten)
+        +" text_slots_written="+std::to_string(settled.textSlotsWritten)
+        +" and a move inside the button controls_changed="+std::to_string(movedControls)
+        +" prim_slots_written="+std::to_string(moved.primitiveSlotsWritten)
+        +" text_slots_written="+std::to_string(moved.textSlotsWritten));
+
+    // Straight onto the other button: the same box, at once, and nothing else
+    // but the two buttons changes.
+    const gweni::Rect otherRect=canvasRectOf(other);
+    moveMouse(s, otherRect.x+otherRect.w/2, otherRect.y+otherRect.h/2);
+    std::vector<std::string> strays;
+    renderToolTipFrame(s, {box, withToolTip, other}, strays);
+    const gweni::renderer::OpenGLCore::FrameStats handOver=s.renderer->getFrameStats();
+    const gweni::Rect moveTip=canvasRectOf(box);
+    std::string strayList;
+    for(const std::string &stray : strays)
+        strayList+=" "+stray;
+    checks.check("reused", canvas->toolTipShown() && canvas->toolTipOwner() == other
+        && canvas->toolTipControl() == box
+        && moveTip.x == otherRect.x && moveTip.y == otherRect.y+otherRect.h+gweni::controls::ToolTip::Gap,
+        "moving to the other button did not show the same box below it at once (box at "
+        +rectText(moveTip)+", button at "+rectText(otherRect)+")");
+    checks.check("reuse_bounded", strays.empty() && handOver.primitiveSlotsWritten >= 1,
+        "the hand-over frame changed controls outside the box and the two buttons:"+strayList
+        +" (prim_slots_written="+std::to_string(handOver.primitiveSlotsWritten)+")");
+    renderFrames(s, s.frames);
+    toolTipShot(s, shotDir, "other", ok);
+
+    // Off both: hidden, and the frame is the idle one again.
+    moveMouse(s, off.x, off.y);
+    renderFrames(s, s.frames);
+    const std::vector<uint8_t> left=toolTipShot(s, shotDir, "left", ok);
+    checks.check("hides", !canvas->toolTipShown() && box->hidden() && left == idle,
+        "after moving off, the tooltip is still shown or the frame differs from the idle one in "
+        +std::to_string(differencesIn(s, idle, left, canvasArea))+" px");
+
+    // A press hides it, and it stays hidden while the mouse stays.
+    moveMouse(s, button.x+button.w/2, button.y+button.h/2);
+    const int again=framesUntilShown(s, delayFrames+8);
+    mouseDown(s, button.x+button.w/2, button.y+button.h/2, true);
+    renderFrames(s, 1);
+    const bool pressHid=!canvas->toolTipShown();
+    mouseUp(s, button.x+button.w/2, button.y+button.h/2);
+    renderFrames(s, delayFrames+4);
+    const bool stayedHidden=!canvas->toolTipShown();
+    checks.check("press_hides", again > 0 && pressHid && stayedHidden,
+        "shown again="+std::string(again > 0 ? "yes" : "no")+", hidden by the press="
+        +(pressHid ? "yes" : "no")+", still hidden after the delay="+(stayedHidden ? "yes" : "no"));
+
+    // With a Menu open over where the box goes, the box looks as it does alone.
+    moveMouse(s, off.x, off.y);
+    renderFrames(s, s.frames);
+    moveMouse(s, button.x+button.w/2, button.y+button.h/2);
+    framesUntilShown(s, delayFrames+8);
+    renderFrames(s, s.frames);
+    const std::vector<uint8_t> alone=toolTipShot(s, shotDir, "alone", ok);
+
+    gweni::controls::Menu *menu=canvas->newChild<gweni::controls::Menu>();
+    menu->addItem("Menu item one");
+    menu->addItem("Menu item two");
+    menu->addItem("Menu item three");
+    menu->open(gweni::Alignment::Left);
+    menu->setPos(button.x+30, button.y+button.h+1);
+    renderFrames(s, s.frames);
+    const std::vector<uint8_t> overMenu=toolTipShot(s, shotDir, "over-menu", ok);
+    const gweni::Rect menuRect=canvasRectOf(menu);
+    const gweni::Rect tipRect=canvasRectOf(box);
+    const bool overlaps=menu->visible() && menuRect.x < tipRect.x+tipRect.w && tipRect.x < menuRect.x+menuRect.w
+        && menuRect.y < tipRect.y+tipRect.h && tipRect.y < menuRect.y+menuRect.h;
+    const size_t covered=differencesIn(s, alone, overMenu, tipRect);
+    const size_t menuDrawn=differencesIn(s, alone, overMenu, menuRect);
+    checks.check("over_menu", canvas->toolTipShown() && overlaps && covered == 0 && menuDrawn > 0
+        && box->getZIndex() > highestZOutside(canvas, box),
+        "the Menu at "+rectText(menuRect)+(overlaps ? "" : " (not over the box)")+" changed "
+        +std::to_string(covered)+" px of the box at "+rectText(tipRect)+" ("
+        +std::to_string(menuDrawn)+" px of its own rect)");
+
+    menu->delayedDelete();
+    moveMouse(s, off.x, off.y);
+    renderFrames(s, s.frames);
+    dropControl(s, demo);
+}
+
+// A button in the canvas's bottom-right corner: its tooltip goes above it,
+// pulled inside the right edge.
+static void checkToolTipCorner(Session &s, const std::string &shotDir, InteractionChecks &checks, bool &ok)
+{
+    gweni::controls::Canvas *canvas=s.canvas;
+    forgetMouse(s);
+    s.label="tooltip-corner";
+
+    gweni::controls::Button *corner=canvas->newChild<gweni::controls::Button>();
+    corner->setText("Corner");
+    corner->setToolTipText("A tooltip that does not fit below or to the right");
+    place(corner, s.size.x-50, s.size.y-16, 50, 16);
+    renderFrames(s, s.frames);
+
+    const gweni::Rect button=canvasRectOf(corner);
+    moveMouse(s, button.x+button.w/2, button.y+button.h/2);
+    framesUntilShown(s, (int)std::ceil(canvas->getToolTipDelay()/g_frameStep)+8);
+    renderFrames(s, 1);
+    toolTipShot(s, shotDir, "corner", ok);
+
+    gweni::controls::ToolTip *box=canvas->toolTipControl();
+    const gweni::Rect tip=box ? canvasRectOf(box) : gweni::Rect();
+    checks.check("corner", canvas->toolTipShown() && canvas->toolTipOwner() == corner
+        && insideRect(tip, gweni::Rect(0, 0, s.size.x, s.size.y))
+        && tip.y+tip.h == button.y-gweni::controls::ToolTip::Gap && tip.x+tip.w == s.size.x,
+        "the corner button at "+rectText(button)+" has its tooltip at "+rectText(tip)
+        +"; want it above the button and against the canvas's right edge");
+
+    forgetMouse(s);
+    corner->delayedDelete();
+    renderFrames(s, s.frames);
+}
+
+static bool runToolTipScenario(Session &s, const std::string &shotDir, bool &passed)
+{
+    // The delay is what is checked, so the clock steps, under --stats too.
+    s.freezeClock=false;
+    s.statsClockSteps=true;
+
+    InteractionChecks checks;
+    checks.scenario="tooltip";
+    bool ok=true;
+    checkToolTip(s, shotDir, checks, ok);
+    checkToolTipCorner(s, shotDir, checks, ok);
+
+    std::cout<<"tooltip";
+    for(const auto &result : checks.results)
+        std::cout<<" "<<result.first<<"="<<(result.second ? "yes" : "no");
+    std::cout<<"\n";
+
+    passed=checks.allPassed();
+    return ok;
+}
+
+//-----------------------------------------------------------------------------
 // --scenario typing: the keyboard, through the GLFW translator
 //
 // Every keystroke is a synthesised GLFW event fed to gweni::input::GLFW3, the
@@ -2711,6 +3103,7 @@ int main(int argc, char *argv[])
     bool shotAll=false;
     bool forceHeadless=false;
     bool stats=false;
+    bool statsClockSteps=false;
     bool requireOnePass=false;
     bool traceInput=false;
     bool chosenControl=false;
@@ -2745,6 +3138,17 @@ int main(int argc, char *argv[])
         else if(arg == "--shot-all") shotAll=true;
         else if(arg == "--headless") forceHeadless=true;
         else if(arg == "--stats") stats=true;
+        else if(arg == "--stats-clock" && hasValue)
+        {
+            const std::string mode=argv[++i];
+            if(mode == "step") statsClockSteps=true;
+            else if(mode == "frozen") statsClockSteps=false;
+            else
+            {
+                std::cerr<<"ControlTest: --stats-clock wants frozen or step, not "<<mode<<"\n";
+                return EXIT_FAILURE;
+            }
+        }
         else if(arg == "--require-one-pass") requireOnePass=true;
         else if(arg == "--check-teardown") checkTeardownMode=true;
         else if(arg == "--trace") traceInput=true;
@@ -2798,7 +3202,7 @@ int main(int argc, char *argv[])
             {
                 std::cerr<<"ControlTest: unknown scenario: "<<name
                          <<"; try per-control, resize, docked, scroll, interaction, typing, clip,"
-                           " text-size or scale\n";
+                           " text-size, scale or tooltip\n";
                 return EXIT_FAILURE;
             }
         }
@@ -2998,6 +3402,7 @@ int main(int argc, char *argv[])
         session.scale=scale;
         session.pixels=screenPixels;
         session.stats=stats;
+        session.statsClockSteps=statsClockSteps;
         session.requireOnePass=requireOnePass;
         session.trace=traceInput;
         session.writePng=writingPng;
@@ -3085,6 +3490,15 @@ int main(int argc, char *argv[])
             ok=runTextSizeScenario(session, shotDir, passed);
             if(ok && !passed)
                 ok=false;   // the size change cost more than its run: a failing assertion
+            break;
+        }
+
+        case Scenario::ToolTip:
+        {
+            bool passed=false;
+            ok=runToolTipScenario(session, shotDir, passed);
+            if(ok && !passed)
+                ok=false;   // the tooltip showed, moved or cost wrongly: a failing assertion
             break;
         }
 

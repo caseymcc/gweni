@@ -878,7 +878,8 @@ public:
     static BorderedPrimitive NormalPrimitive;
 };
 
-class Tooltip:public textured::ControlRegister<Tooltip>
+//! controls::ToolTip, the canvas's tooltip box: one tokyonight::Tooltip surface.
+class ToolTip:public textured::ControlRegister<ToolTip>
 {
 public:
     static void staticInit(TexturedSkin *skin);
@@ -888,11 +889,7 @@ public:
     void update(renderer::Base *renderer, controls::Base *baseControl) override;
     void remove(renderer::Base *renderer, controls::Base *baseControl) override;
 
-    inline static const std::string_view name="Tooltip";
-
-    static size_t Background;
-    static BorderedPrimitive BackgroundPrimitive;
-
+    inline static const std::string_view name="ToolTip";
 };
 
 class Tree:public textured::ControlRegister<Tree>

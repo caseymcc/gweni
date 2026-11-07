@@ -98,8 +98,6 @@ set(GWENI_SOURCES
     source/primitiveIds.cpp
     include/gweni/skin.h
     source/skin.cpp
-    include/gweni/toolTip.h
-    source/toolTip.cpp
     include/gweni/uiTypes.h
     include/gweni/userData.h
     include/gweni/utility.h
@@ -150,6 +148,8 @@ set(GWENI_CONTROL_SOURCES
     source/controls/label.cpp
     include/gweni/controls/labelClickable.h
     source/controls/labelClickable.cpp
+    include/gweni/controls/toolTip.h
+    source/controls/toolTip.cpp
     include/gweni/controls/listBox.h
     source/controls/listBox.cpp
     include/gweni/controls/menu.h

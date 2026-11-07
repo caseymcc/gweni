@@ -9,7 +9,8 @@
 #include <gweni/skin.h>
 #include <gweni/controls/menu.h>
 #include <gweni/dragAndDrop.h>
-#include <gweni/toolTip.h>
+#include <gweni/controls/toolTip.h>
+#include <gweni/platforms/platform.h>
 
 #if GWENI_ANIMATE
 #include <gweni/anim.h>
@@ -65,6 +66,7 @@ void Canvas::updateCanvas()
     if(m_zOrderDirty)
     {
         m_zOrderDirty=false;
+        keepToolTipLast();
         int zIndex=1;
         renumberZRecursive(zIndex, m_updateStats.zVisited);
     }
@@ -91,7 +93,6 @@ void Canvas::renderCanvas()
     doRender(m_skin);
 
     draganddrop::renderOverlay(this, m_skin);
-    tooltip::renderToolTip(m_skin);
     render->end();
 }
 
@@ -117,6 +118,7 @@ void Canvas::doThink()
     anim::think();
 #endif
     processDelayedDeletes();
+    updateToolTip();
     // Check has focus etc..
     layoutCanvas();
 
@@ -278,9 +280,6 @@ bool Canvas::inputMouseMoved(int x, int y, int deltaX, int deltaY)
     if(hidden())
         return false;
 
-    if(tooltip::toolTipActive())
-        redraw();
-
     // x and y are logical units already: the platform input layer maps window
     // coordinates through the scale (input::GLFW3::setWindowMetrics).
     input::onMouseMoved(this, x, y, deltaX, deltaY);
@@ -305,7 +304,140 @@ bool Canvas::inputMouseButton(int button, bool down)
     if(hidden())
         return false;
 
+    // the next update phase hides it, and shows none for this control again
+    // until the mouse has been on another one
+    if(down && m_toolTipOwner)
+        m_toolTipSuppressed=m_toolTipOwner;
+
     return input::onMouseClicked(this, button, down);
+}
+
+//------------------------------------------------------------------------------
+// Tooltip
+//------------------------------------------------------------------------------
+
+Base *Canvas::toolTipOwnerFor(Base *hovered)
+{
+    if(!hovered || (hovered == this) || (hovered->getCanvas() != this))
+        return nullptr;
+
+    Base *owner=nullptr;
+
+    if(hovered->hasToolTip())
+        owner=hovered;
+    else if(hovered->getParent() && hovered->getParent()->hasToolTip())
+        owner=hovered->getParent();
+
+    if(!owner || !owner->visible() || owner->isDisabled())
+        return nullptr;
+
+    return owner;
+}
+
+void Canvas::updateToolTip()
+{
+    Base *owner=toolTipOwnerFor(HoveredControl);
+
+    if(m_toolTipSuppressed)
+    {
+        if(owner == m_toolTipSuppressed)
+            owner=nullptr;
+        else
+            m_toolTipSuppressed=nullptr;
+    }
+
+    const float now=platform::getTimeInSeconds();
+
+    if(owner != m_toolTipOwner)
+    {
+        // straight from one tooltip to the next: no second wait
+        const bool reshow=m_toolTipShown && owner;
+
+        hideToolTip();
+        m_toolTipOwner=owner;
+        m_toolTipSince=now;
+        m_toolTipDirty=false;
+
+        if(reshow)
+            showToolTipFor(owner);
+        return;
+    }
+
+    if(!owner)
+        return;
+
+    if(!m_toolTipShown)
+    {
+        if(now-m_toolTipSince >= m_toolTipDelay)
+            showToolTipFor(owner);
+    }
+    else if(m_toolTipDirty)
+        showToolTipFor(owner);
+    else
+        // the control moved (a scroll, a layout change): the box follows
+        m_toolTip->placeFor(owner, Rect(0, 0, getWidth(), getHeight()));
+
+    m_toolTipDirty=false;
+}
+
+void Canvas::showToolTipFor(Base *owner)
+{
+    if(!m_toolTip)
+        m_toolTip=newChild<ToolTip>();
+
+    m_toolTip->setContentFor(owner, Rect(0, 0, getWidth(), getHeight()));
+    m_toolTip->setHidden(false);
+    m_toolTipShown=true;
+}
+
+void Canvas::hideToolTip()
+{
+    if(!m_toolTipShown)
+        return;
+
+    m_toolTipShown=false;
+    m_toolTip->setHidden(true);
+    m_toolTip->releaseContent(false);
+}
+
+void Canvas::keepToolTipLast()
+{
+    if(!m_toolTip || (m_children.back() == m_toolTip))
+        return;
+
+    m_children.remove(m_toolTip);
+    m_children.push_back(m_toolTip);
+}
+
+void Canvas::toolTipChanged(Base *control)
+{
+    if(control == m_toolTipOwner)
+        m_toolTipDirty=true;
+}
+
+void Canvas::toolTipControlDeleted(Base *control)
+{
+    if(control == m_toolTip)
+    {
+        // ~ToolTip has given back what it held
+        m_toolTip=nullptr;
+        m_toolTipShown=false;
+    }
+
+    if(control == m_toolTipOwner)
+    {
+        if(m_toolTipShown)
+        {
+            m_toolTipShown=false;
+            m_toolTip->setHidden(true);
+            // the owner's setToolTip() control goes with it
+            m_toolTip->releaseContent(true);
+        }
+        m_toolTipOwner=nullptr;
+    }
+
+    if(control == m_toolTipSuppressed)
+        m_toolTipSuppressed=nullptr;
 }
 
 bool Canvas::inputModifierKey(int key, bool down)

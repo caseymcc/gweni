@@ -43,6 +43,7 @@ GWENI_CONTROL_CONSTRUCTOR(ButtonDemo)
     controls::Button *buttonE=newChild<controls::Button>();
     buttonE->setText("Toggle Me");
     buttonE->setIsToggle(true);
+    buttonE->setToolTipText("Stays down until clicked again");
     buttonE->onToggleCaller.add(this, &ButtonDemo::onToggle);
     buttonE->onToggleOnCaller.add(this, &ButtonDemo::onToggleOn);
     buttonE->onToggleOffCaller.add(this, &ButtonDemo::onToggleOff);

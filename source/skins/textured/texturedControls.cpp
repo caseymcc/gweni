@@ -1346,25 +1346,18 @@ void TextBox::remove(renderer::Base *renderer, controls::Base *baseControl)
 
 
 ///////////////////////////////////////////////////////////////////////////
-//Tooltip
-size_t Tooltip::Background;
-BorderedPrimitive Tooltip::BackgroundPrimitive;
-
-void Tooltip::staticInit(TexturedSkin *skin)
+//ToolTip
+void ToolTip::staticInit(TexturedSkin *skin)
 {
-    Background=skin->getTextureEntryId("Tooltip.Background");
-
-    BackgroundPrimitive.init(skin, Background);
-
     m_staticInit=true;
 }
 
-void Tooltip::generate(renderer::Base *renderer, controls::Base *baseControl)
+void ToolTip::generate(renderer::Base *renderer, controls::Base *baseControl)
 {
     generatePrimitives(renderer, requiredPrimitives());
 }
 
-void Tooltip::update(renderer::Base *renderer, controls::Base *baseControl)
+void ToolTip::update(renderer::Base *renderer, controls::Base *baseControl)
 {
     if(m_primitives.empty())
         return;
@@ -1372,7 +1365,7 @@ void Tooltip::update(renderer::Base *renderer, controls::Base *baseControl)
     tokyonight::paintSurface(renderer, m_primitives.data(), baseControl, tokyonight::Tooltip);
 }
 
-void Tooltip::remove(renderer::Base *renderer, controls::Base *baseControl)
+void ToolTip::remove(renderer::Base *renderer, controls::Base *baseControl)
 {
     releasePrimitives(renderer);
 }
@@ -1554,7 +1547,7 @@ template class ControlRegister<TabControl>;
 template class ControlRegister<TabTitleBar>;
 template class ControlRegister<Text>;
 template class ControlRegister<TextBox>;
-template class ControlRegister<Tooltip>;
+template class ControlRegister<ToolTip>;
 template class ControlRegister<Tree>;
 template class ControlRegister<SpinBox>;
 template class ControlRegister<SplitterBar>;

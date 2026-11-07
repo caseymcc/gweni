@@ -10,7 +10,6 @@
 #include <gweni/skin.h>
 #include <gweni/controls/menu.h>
 #include <gweni/dragAndDrop.h>
-#include <gweni/toolTip.h>
 
 #if GWENI_ANIMATE
 #include <gweni/anim.h>
@@ -163,7 +162,6 @@ void WindowCanvas::renderCanvas()
 
         doRender(m_skin);
         draganddrop::renderOverlay(this, m_skin);
-        tooltip::renderToolTip(m_skin);
         render->end();
     }
 

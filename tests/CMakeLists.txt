@@ -148,6 +148,20 @@ if(TARGET ControlTest)
         LABELS gpu
         TIMEOUT 300)
 
+    # the canvas's tooltip on ButtonDemo, on the stepped clock: it waits for
+    # its delay, shows below the button above every other control (an open
+    # Menu included), writes nothing once settled or for a move inside the
+    # button, moves the same box straight to the next button, hides on leaving
+    # (the frame as before hovering) and on a press, and goes above a button in
+    # the bottom-right corner; exits non-zero on any failed check
+    add_test(NAME controltest_tooltip
+        COMMAND $<TARGET_FILE:ControlTest> --headless --scenario tooltip --require-one-pass
+            --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/tooltip
+        WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
+    set_tests_properties(controltest_tooltip PROPERTIES
+        LABELS gpu
+        TIMEOUT 300)
+
     # keys handled in one frame, after an edit and before the layout that
     # re-wraps it, move the caret through the edited text's lines (#209): the
     # same script with no frame between the keys and with one after each edit
@@ -247,7 +261,8 @@ add_executable(gweni_unit_tests
     unit/menuItem.cpp
     unit/textBoxCaret.cpp
     unit/dockNoneAlignment.cpp
-    unit/textAlignment.cpp)
+    unit/textAlignment.cpp
+    unit/toolTip.cpp)
 gweni_set_warnings(gweni_unit_tests)
 target_link_libraries(gweni_unit_tests
     gweni
