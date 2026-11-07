@@ -171,6 +171,30 @@ on an OpenGL 3.3 core profile:
 - A single shader pair (vertex + fragment) draws all non-text primitives; an ortho
   projection (`setViewRect()`) maps UI pixel coords to clip space; `z`/depth gives
   draw order.
+- **Depth.** A larger z is in front (`GL_LESS`). The canvas numbers the controls
+  depth-first (`Base::renumberZRecursive`): a control takes its skin Control's
+  `depthLayers()` z values from `getZIndex()` on, then its children are numbered, then
+  it takes `overlayLayers()` more (0 by default) from `getOverlayZIndex()` on, for what
+  it draws in front of its whole subtree. A text run's glyph i is at
+  `z+(i+1)/(glyphs+1)` (`OpenGLCore::renderText`, the move branch included), strictly
+  between the Text control's z and the next one, so a rect drawn at the Text's z is
+  behind every glyph and in front of everything numbered before it.
+- **The TextBox caret and selection.** The textured skin's `TextBox` renderer (shared by
+  `TextBoxNumeric`, `TextBoxMultiline` and `PasswordTextBox`) keeps three slots: the box
+  at its z, the selection at the text's z (`TextBox::getTextZIndex()`) and the caret, 1
+  unit wide and line-high in the theme's `LabelDefault` colour, at its one overlay z, in
+  front of a multiline box's line children too. Both are drawn only while the box has
+  the focus. `TextBox::updateCursorRects` takes them in box coordinates from where the
+  text is after layout (`postLayout`) or after an edit or cursor move scrolled it
+  (`makeCaretVisible`), and marks `StateChange_Background` only when one changed; the
+  renderer adds the box's render position and cuts them to the box. The blink is an
+  animation (`TextBox::updateCaretBlink`, 0.5 s, lit for 1.5 s after an edit, a move or
+  the focus arriving) that raises `StateChange_Caret` alone, which shows or hides the
+  caret slot and rewrites nothing else: one 128-byte upload per edge
+  (`GWENI_UPLOAD_STATS=1`), nothing in between, and nothing at all while unfocused. The
+  selection colour is the `TextSelection` surface (`tokyoNight.h`, overridable in
+  `DefaultSkin.json`'s `"theme"`). A wrapped (multiline) box draws no selection yet: it
+  needs one rect per line.
 - **Scale and the device-pixel grid.** Controls lay out in logical units (integers);
   `renderer::Base::translate()` turns them into device pixels at `scale()` (set by
   `Canvas::setScale`). It snaps **edges**, not origin and size apart: a point is

@@ -57,6 +57,9 @@ constexpr int StateChange_Visibility=0x0002;
 constexpr int StateChange_Geometry=0x0004;
 constexpr int StateChange_Background=0x0008;
 constexpr int StateChange_Text=0x0010;
+//! Only a TextBox's caret blinked: its skin shows or hides the caret primitive
+//! and rewrites nothing else.
+constexpr int StateChange_Caret=0x0020;
 
 //! Tally of the controls Base::render() found something to regenerate for,
 //! plus the controls the render walk entered at all. This is what "per-frame
@@ -254,6 +257,10 @@ public:
     virtual int getHeight() const { return m_bounds.h; }  //!< Get Control height.
 
     virtual int getZIndex() const { return m_zIndex; }
+    //! The first z value after this control's subtree, which it keeps for
+    //! itself when its skin Control's overlayLayers() is not 0: what it draws
+    //! there is in front of every one of its descendants. 0 otherwise.
+    int getOverlayZIndex() const { return m_overlayZIndex; }
 
     virtual int bottom() const
     {
@@ -366,8 +373,9 @@ protected:
     void removeSkinControl();
 
     //! Numbers this control and its subtree depth-first from \p zIndex, each
-    //! control taking its skin Control's depthLayers(), and marks
-    //! StateChange_Geometry on each one whose z index changed. \p visited
+    //! control taking its skin Control's depthLayers() (and its
+    //! overlayLayers() after its subtree), and marks StateChange_Geometry on
+    //! each one whose z index changed. \p visited
     //! counts the controls entered. Canvas::updateCanvas() runs it only after
     //! the tree order changed (Canvas::invalidateZOrder()).
     void renumberZRecursive(int &zIndex, size_t &visited);
@@ -669,6 +677,7 @@ protected:
     bool m_heightRequested;
     gweni::Rect m_renderBounds;
     int m_zIndex;
+    int m_overlayZIndex=0;
 
     SizeFlags m_sizeFlags;
     Size m_preferredSize;

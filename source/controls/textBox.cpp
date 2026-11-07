@@ -7,6 +7,7 @@
 
 #include <gweni/gweni.h>
 #include <gweni/controls/textBox.h>
+#include <gweni/controls/canvas.h>
 #include <gweni/skin.h>
 #include <gweni/anim.h>
 #include <gweni/utility.h>
@@ -37,14 +38,19 @@ static int prevPos(const String &str, int pos)
     return static_cast<int>(utf8Prev(str, static_cast<size_t>(pos)));
 }
 
+// The caret blinks with this period, and stays lit this long after an edit, a
+// cursor move or the focus arriving.
+static constexpr float caretBlinkPeriod=0.5f;
+static constexpr float caretSolidTime=1.5f;
+
 #if GWENI_ANIMATE
-class ChangeCaretColor: public gweni::anim::Animation
+class CaretBlink: public gweni::anim::Animation
 {
 public:
 
     void think() override
     {
-        gweni_cast<TextBox>(m_control)->updateCaretColor();
+        gweni_cast<TextBox>(m_control)->updateCaretBlink();
     }
 
 };
@@ -72,7 +78,9 @@ GWENI_CONTROL_CONSTRUCTOR(TextBox)
     addAccelerator("Ctrl + X", &TextBox::onCut);
     addAccelerator("Ctrl + V", &TextBox::onPaste);
     addAccelerator("Ctrl + A", &TextBox::onSelectAll);
-    gweni::anim::add(this, new ChangeCaretColor());
+#if GWENI_ANIMATE
+    gweni::anim::add(this, new CaretBlink());
+#endif
 }
 
 bool TextBox::onChar(gweni::UnicodeChar c)
@@ -121,80 +129,84 @@ void TextBox::insertText(const gweni::String &strInsert)
     refreshCursorBounds();
 }
 
-#if GWENI_ANIMATE
-void TextBox::updateCaretColor()
+// Unfocused, the caret is not drawn and nothing here changes. Focused, each
+// blink edge is one StateChange_Caret, which only shows or hides the caret.
+void TextBox::updateCaretBlink()
 {
-    if(m_nextCaretColorChange > gweni::platform::getTimeInSeconds())
+    if(!isFocussed())
         return;
 
-    if(!isFocussed())
-    {
-        m_nextCaretColorChange=gweni::platform::getTimeInSeconds()+0.5f; return;
-    }
+    const float now=gweni::platform::getTimeInSeconds();
 
-    gweni::Color targetcolor=gweni::Color(230, 230, 230, 255);
+    if(m_nextCaretBlink > now)
+        return;
 
-    if(m_caretColor == targetcolor)
-        targetcolor=gweni::Color(20, 20, 20, 255);
+    m_nextCaretBlink=now+caretBlinkPeriod;
+    m_caretVisible=!m_caretVisible;
+    addStateChange(StateChange_Caret);
 
-    m_nextCaretColorChange=gweni::platform::getTimeInSeconds()+0.5f;
-    m_caretColor=targetcolor;
-    redraw();
+    if(Canvas *canvas=getCanvas())
+        canvas->redraw();
 }
 
-#endif // if GWENI_ANIMATE
-
-void TextBox::render(skin::Base *skin)
+// The focus change itself repaints this box (Base::focus's redraw()), which
+// shows the caret and selection.
+void TextBox::onKeyboardFocus()
 {
-//    if(shouldDrawBackground())
-////        skin->drawTextBox(this, skin::Generate);
-//        skin->drawControl(this);
-//
-//    if(!isFocussed())
-//        return;
-//
-//    // Draw selection.. if selected..
-//    if(m_cursorPos != m_cursorEnd)
-//    {
-//        skin->getRenderer()->setDrawColor(gweni::Color(50, 170, 255, 200));
-//        skin->getRenderer()->drawFilledRect(m_primitiveIds[9], m_rectSelectionBounds);
-//    }
-//
-//    // Draw caret
-//    skin->getRenderer()->setDrawColor(m_caretColor);
-//    skin->getRenderer()->drawFilledRect(m_primitiveIds[10], m_rectCaretBounds);
-    if(getStateChange() == StateChange_Nothing || !m_skinControl)
+    ParentClass::onKeyboardFocus();
+    keepCaretLit();
+}
+
+void TextBox::keepCaretLit()
+{
+    m_nextCaretBlink=gweni::platform::getTimeInSeconds()+caretSolidTime;
+
+    if(m_caretVisible)
         return;
 
-    // Generate primitives on first render, otherwise update() draws into an
-    // empty primitive buffer (mirrors Base::render).
-    if(getStateChange() & StateChange_Created)
-        m_skinControl->generate(skin->getRenderer(), this);
+    m_caretVisible=true;
 
-    m_skinControl->update(skin->getRenderer(), this);
+    if(isFocussed())
+        addStateChange(StateChange_Caret);
 }
 
 void TextBox::refreshCursorBounds()
 {
-    m_nextCaretColorChange=gweni::platform::getTimeInSeconds()+1.5f;
-    m_caretColor=getSkin()->Colors.Label.Bright;
+    keepCaretLit();
     makeCaretVisible();
     updateCursorRects();
 }
 
+// TextBox-local, from where m_text is now: the skin adds the box's position.
+// A wrapped text's selection spans lines, which the one selection rect cannot
+// show, so it is left empty there.
 void TextBox::updateCursorRects()
 {
-    gweni::Rect pA=getCharacterPosition(m_cursorPos);
-    gweni::Rect pB=getCharacterPosition(m_cursorEnd);
-    m_rectSelectionBounds.x=std::min(pA.x, pB.x);
-    m_rectSelectionBounds.y=m_text->getY()-1;
-    m_rectSelectionBounds.w=std::max(pA.x, pB.x)-m_rectSelectionBounds.x;
-    m_rectSelectionBounds.h=m_text->getHeight()+2;
-    m_rectCaretBounds.x=pA.x;
-    m_rectCaretBounds.y=pA.y;
-    m_rectCaretBounds.w=1;
-    m_rectCaretBounds.h=pA.h;
-    redraw();
+    const gweni::Rect pA=getCharacterPosition(m_cursorPos);
+    gweni::Rect selection;
+
+    if(hasSelection() && !m_text->wrap())
+    {
+        const gweni::Rect pB=getCharacterPosition(m_cursorEnd);
+
+        selection.x=std::min(pA.x, pB.x);
+        selection.y=pA.y;
+        selection.w=std::max(pA.x, pB.x)-selection.x;
+        selection.h=pA.h;
+    }
+
+    // one unit wide and as high as the line box renderText draws
+    const gweni::Rect caret(pA.x, pA.y, 1, pA.h);
+
+    if(caret == m_rectCaretBounds && selection == m_rectSelectionBounds)
+        return;
+
+    m_rectCaretBounds=caret;
+    m_rectSelectionBounds=selection;
+
+    // unfocused neither is drawn; the focus arriving repaints them
+    if(isFocussed())
+        addStateChange(StateChange_Background);
 }
 
 void TextBox::onPaste(event::Info)
@@ -519,7 +531,7 @@ void TextBox::layout(skin::Base *skin)
     ParentClass::layout(skin);
 
     PlacementScope placement;
-    refreshCursorBounds();
+    makeCaretVisible();
 }
 
 void TextBox::arrange(skin::Base *skin, Dim dim)
@@ -577,86 +589,6 @@ bool TextBoxMultiline::onKeyReturn(bool down)
         insertText("\n");
 
     return true;
-}
-
-void TextBoxMultiline::render(skin::Base *skin)
-{
-    if(shouldDrawBackground())
-//        skin->drawTextBox(this, skin::Generate);
-        skin->drawControl(this);
-
-    if(!isFocussed())
-        return;
-
-    size_t index=0;
-
-    if(m_cursorPos != m_cursorEnd)
-    {
-        unsigned int iCursorStartLine=m_text->getLineFromChar(m_cursorPos);
-        unsigned int iCursorEndLine=m_text->getLineFromChar(m_cursorEnd);
-
-        if(iCursorStartLine > m_text->numLines()-1)
-            iCursorStartLine=m_text->numLines()-1;
-        if(iCursorEndLine > m_text->numLines()-1)
-            iCursorEndLine=m_text->numLines()-1;
-
-        int iSelectionStartLine=(m_cursorPos < m_cursorEnd)?iCursorStartLine:iCursorEndLine;
-        int iSelectionEndLine=(m_cursorPos < m_cursorEnd)?iCursorEndLine:iCursorStartLine;
-
-        int iSelectionStartPos=(m_cursorPos < m_cursorEnd)?m_cursorPos:m_cursorEnd;
-        int iSelectionEndPos=(m_cursorPos < m_cursorEnd)?m_cursorEnd:m_cursorPos;
-
-        skin->getRenderer()->setDrawColor(gweni::Color(50, 170, 255, 200));
-        m_rectSelectionBounds.h=m_text->getFont().size + 2;
-
-        for(int iLine=iSelectionStartLine; iLine <= iSelectionEndLine; ++iLine)
-        {
-            gweni::Rect box=m_text->getLineBox(iLine);
-            box.x+=m_text->getX();
-            box.y+=m_text->getY();
-
-            if(iLine == iSelectionStartLine)
-            {
-                gweni::Rect pos=getCharacterPosition(iSelectionStartPos);
-                m_rectSelectionBounds.x=pos.x;
-                m_rectSelectionBounds.y=pos.y-1;
-            }
-            else
-            {
-                m_rectSelectionBounds.x=box.x;
-                m_rectSelectionBounds.y=box.y-1;
-            }
-
-            if(iLine == iSelectionEndLine)
-            {
-                gweni::Rect pos=getCharacterPosition(iSelectionEndPos);
-                m_rectSelectionBounds.w=pos.x - m_rectSelectionBounds.x;
-            }
-            else
-            {
-                m_rectSelectionBounds.w=box.x + box.w - m_rectSelectionBounds.x;
-            }
-            if(m_rectSelectionBounds.w < 1)
-                m_rectSelectionBounds.w=1;
-
-//            if(m_primitiveIds.size() < index+1)
-//                enlargePrimitiveIds(this, m_primitiveIds, index+1);
-
-//            skin->getRenderer()->drawFilledRect(m_primitiveIds[index], m_rectSelectionBounds, getZIndex());
-            index++;
-        }
-    }
-
-    // Draw selection.. if selected..
-    if(m_cursorPos != m_cursorEnd)
-    {
-        //skin->getRenderer()->setDrawColor( gweni::Color( 50, 170, 255, 200 ) );
-        //skin->getRenderer()->drawFilledRect( m_rectSelectionBounds );
-    }
-
-    // Draw caret
-    skin->getRenderer()->setDrawColor(m_caretColor);
-    //skin->getRenderer()->drawFilledRect(m_primitiveIds[index], m_rectCaretBounds, getZIndex());
 }
 
 void TextBoxMultiline::makeCaretVisible()

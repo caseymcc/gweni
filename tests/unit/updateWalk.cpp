@@ -38,16 +38,6 @@ public:
     {}
 };
 
-//! A TextBox that shows its caret colour, which its animation toggles.
-class CaretBox: public controls::TextBox
-{
-public:
-    GWENI_CONTROL_INLINE(CaretBox, controls::TextBox)
-    {}
-
-    Color caretColor() const { return m_caretColor; }
-};
-
 //! z index by control id, so a failed comparison prints readably
 using ZMap=std::map<size_t, int>;
 
@@ -353,38 +343,60 @@ TEST_CASE("a focused TextBox's caret blinks without a tree walk")
 {
     Scene scene;
 
-    CaretBox *box=scene.canvas->newChild<CaretBox>("box");
+    controls::TextBox *box=scene.canvas->newChild<controls::TextBox>("box");
     box->setBounds(0, 100, 100, 20);
     box->focus();
     REQUIRE(box->isFocussed());
     scene.frame();
     scene.frame();
-    // past the 1.5 s the caret stays lit after the box is laid out; from then
-    // on it blinks every 0.5 s
-    scene.clock+=2.0f;
+    // the caret stays lit for 1.5 s after the focus arrives
+    scene.clock+=1.0f;
+    scene.canvas->updateCanvas();
+    CHECK(box->isCaretVisible());
+    CHECK(box->getStateChange() == controls::StateChange_Nothing);
+    scene.canvas->renderCanvas();
+    // from then on it blinks every 0.5 s, each edge a StateChange_Caret alone
+    scene.clock+=1.0f;
     scene.frame();
 
     for(int i=0; i<4; ++i)
     {
         CAPTURE(i);
-        const Color caret=box->caretColor();
+        const bool caret=box->isCaretVisible();
         scene.clock+=0.6f;
 
         scene.canvas->updateCanvas();
         CHECK(scene.canvas->getUpdateStats().zVisited == 0);
-        CHECK_FALSE((box->caretColor() == caret));
-        CHECK((box->getStateChange()&controls::StateChange_Background) != 0);
+        CHECK(box->isCaretVisible() != caret);
+        CHECK(box->getStateChange() == controls::StateChange_Caret);
+        scene.canvas->renderCanvas();
+
+        // nothing between two edges
+        scene.clock+=0.1f;
+        scene.canvas->updateCanvas();
+        CHECK(box->getStateChange() == controls::StateChange_Nothing);
         scene.canvas->renderCanvas();
     }
 
-    // an unfocused box keeps its caret
-    box->unfocus();
+    // a cursor move lights it and holds it lit
+    box->moveCaretToStart();
+    CHECK(box->isCaretVisible());
     scene.frame();
-    const Color caret=box->caretColor();
+    scene.clock+=1.0f;
+    scene.canvas->updateCanvas();
+    CHECK(box->isCaretVisible());
+    CHECK(box->getStateChange() == controls::StateChange_Nothing);
+    scene.canvas->renderCanvas();
+
+    // losing the focus is one state change; unfocused, the box has none at all
+    box->unfocus();
+    CHECK(box->getStateChange() == controls::StateChange_Background);
+    scene.frame();
     for(int i=0; i<3; ++i)
     {
         scene.clock+=0.6f;
-        scene.frame();
+        scene.canvas->updateCanvas();
+        CHECK(box->getStateChange() == controls::StateChange_Nothing);
+        scene.canvas->renderCanvas();
     }
-    CHECK((box->caretColor() == caret));
 }

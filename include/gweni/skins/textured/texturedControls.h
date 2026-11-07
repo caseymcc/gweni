@@ -855,12 +855,22 @@ class TextBox:public textured::ControlRegister<TextBox>
 public:
     static void staticInit(TexturedSkin *skin);
 
+    // the box, the selection and the caret; the caret is drawn in front of
+    // the box's text, at the one overlay z after its subtree
+    size_t requiredPrimitives() override { return 3; }
+    size_t overlayLayers() override { return 1; }
 
     void generate(renderer::Base *renderer, controls::Base *baseControl) override;
     void update(renderer::Base *renderer, controls::Base *baseControl) override;
     void remove(renderer::Base *renderer, controls::Base *baseControl) override;
 
     inline static const std::string_view name="TextBox";
+
+private:
+    //! The caret's slot was not rewritten by the last change that moved it.
+    bool m_caretStale=true;
+
+public:
 
     static size_t Normal;
     static size_t Focus;

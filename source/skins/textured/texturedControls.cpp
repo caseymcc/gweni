@@ -14,6 +14,7 @@
 #include "gweni/controls/slider.h"
 #include "gweni/controls/colorControls.h"
 #include "gweni/controls/colorPicker.h"
+#include "gweni/controls/textBox.h"
 
 #include <algorithm>
 
@@ -1265,18 +1266,77 @@ void TextBox::generate(renderer::Base *renderer, controls::Base *baseControl)
     generatePrimitives(renderer, requiredPrimitives());
 }
 
+// A rect in the box's own coordinates moved to its parent's (the render offset
+// takes it on to the canvas) and cut to the box, which clips its text the same.
+static Rect inBox(const Rect &local, const Rect &box)
+{
+    const int x0=std::max(box.x+local.x, box.x);
+    const int y0=std::max(box.y+local.y, box.y);
+    const int x1=std::min(box.x+local.x+local.w, box.x+box.w);
+    const int y1=std::min(box.y+local.y+local.h, box.y+box.h);
+
+    return Rect(x0, y0, std::max(x1-x0, 0), std::max(y1-y0, 0));
+}
+
+// [0] the box, [1] the selection at the text's z, behind every glyph
+// (renderer::Base::renderText), [2] the caret at the overlay z, in front of
+// the whole subtree, a multiline box's line children included. Both are drawn
+// only while the box has the focus. A blink (StateChange_Caret alone) shows or
+// hides [2] and writes nothing else; any other change rewrites what is shown,
+// and a hidden primitive's geometry is rewritten when it is shown next.
 void TextBox::update(renderer::Base *renderer, controls::Base *baseControl)
 {
-    if(m_primitives.empty())
+    if(m_primitives.size() < 3)
         return;
 
-    const tokyonight::Surface *surface=&tokyonight::TextBox;
-    if(baseControl->isDisabled())
-        surface=&tokyonight::TextBoxDisabled;
-    else if(baseControl->isFocussed())
-        surface=&tokyonight::TextBoxFocus;
+    controls::TextBox *box=dynamic_cast<controls::TextBox *>(baseControl);
 
-    tokyonight::paintSurface(renderer, m_primitives.data(), baseControl, *surface);
+    if(!box)
+        return;
+
+    const int stateChange=box->getStateChange();
+    const bool blinkOnly=(stateChange == controls::StateChange_Caret);
+    const bool focused=box->visible() && box->isFocussed();
+    const Rect &bounds=box->getRenderBounds();
+
+    if(!blinkOnly)
+    {
+        const tokyonight::Surface *surface=&tokyonight::TextBox;
+        if(box->isDisabled())
+            surface=&tokyonight::TextBoxDisabled;
+        else if(box->isFocussed())
+            surface=&tokyonight::TextBoxFocus;
+
+        tokyonight::paintSurface(renderer, m_primitives.data(), box, *surface);
+
+        const Rect selection=inBox(box->getSelectionBounds(), bounds);
+        const tokyonight::Surface &fill=tokyonight::TextSelection;
+
+        if(focused && selection.w > 0 && selection.h > 0)
+            renderer->drawRoundedRect(m_primitives[1], selection, fill.radius, fill.borderWidth,
+                fill.top, fill.bottom, fill.border, box->getTextZIndex());
+        else
+            renderer->hidePrimitive(m_primitives[1]);
+
+        m_caretStale=true;
+    }
+
+    const Rect caret=inBox(box->getCaretBounds(), bounds);
+
+    if(!focused || !box->isCaretVisible() || caret.w <= 0 || caret.h <= 0)
+    {
+        renderer->hidePrimitive(m_primitives[2]);
+        return;
+    }
+
+    if(m_caretStale)
+    {
+        renderer->setDrawColor(box->getSkin()->Colors.Label.Default);
+        renderer->drawFilledRect(m_primitives[2], caret, box->getOverlayZIndex());
+        m_caretStale=false;
+    }
+    else
+        renderer->showPrimitive(1, m_primitives[2]);
 }
 
 void TextBox::remove(renderer::Base *renderer, controls::Base *baseControl)

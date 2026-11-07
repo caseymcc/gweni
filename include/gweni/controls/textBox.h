@@ -23,16 +23,16 @@ class GWENI_EXPORT TextBox:public Label
     GWENI_CONTROL(TextBox, Label);
 
 public:
-    void render(skin::Base *skin) override;
     void renderFocus(skin::Base * /*skin*/) override {}
 
     void layout(skin::Base *skin) override;
     void arrange(skin::Base *skin, Dim dim) override;
     void postLayout(skin::Base *skin) override;
 
-#if GWENI_ANIMATE
-    virtual void updateCaretColor();
-#endif
+    //! Flips the caret's blink phase when it is due, if focused.
+    virtual void updateCaretBlink();
+
+    void onKeyboardFocus() override;
 
     bool onChar(gweni::UnicodeChar c) override;
 
@@ -42,6 +42,17 @@ public:
     virtual void refreshCursorBounds();
     //! The selection and caret rectangles, from where m_text is now.
     void updateCursorRects();
+
+    //! Where the caret goes, one unit wide and line-high, in this control's
+    //! own coordinates (add getRenderBounds()'s position for its parent's).
+    const gweni::Rect &getCaretBounds() const { return m_rectCaretBounds; }
+    //! The selection behind the selected glyphs, same coordinates; empty
+    //! without a selection, and always in a wrapped (multiline) box.
+    const gweni::Rect &getSelectionBounds() const { return m_rectSelectionBounds; }
+    //! The caret's blink phase: whether it is lit, when the box has the focus.
+    bool isCaretVisible() const { return m_caretVisible; }
+    //! The z of the glyphs' run: a rect drawn at it is behind every glyph.
+    int getTextZIndex() const { return m_text->getZIndex(); }
 
     bool onKeyReturn(bool down) override;
     bool onKeyBackspace(bool down) override;
@@ -116,8 +127,11 @@ protected:
     gweni::Rect m_rectSelectionBounds;
     gweni::Rect m_rectCaretBounds;
 
-    float m_nextCaretColorChange;
-    gweni::Color m_caretColor;
+    //! Lights the caret and holds it lit for a while (an edit, a move).
+    void keepCaretLit();
+
+    float m_nextCaretBlink=0.0f;
+    bool m_caretVisible=true;
 };
 
 
@@ -145,7 +159,6 @@ public:
 
 public:
     bool onKeyReturn(bool down) override;
-    void render(skin::Base *skin) override;
     void makeCaretVisible() override;
 
     bool onKeyHome(bool down) override;

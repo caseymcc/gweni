@@ -1032,6 +1032,16 @@ void Base::renumberZRecursive(int &zIndex, size_t &visited)
     {
         child->renumberZRecursive(zIndex, visited);
     }
+
+    const int overlay=m_skinControl?(int)m_skinControl->overlayLayers():0;
+    const int overlayZIndex=overlay?zIndex:0;
+
+    if(m_overlayZIndex != overlayZIndex)
+    {
+        m_overlayZIndex=overlayZIndex;
+        addStateChange(StateChange_Geometry);
+    }
+    zIndex+=overlay;
 }
 
 void Base::zOrderChanged()

@@ -89,6 +89,9 @@ inline Surface ButtonDisabled { BgStorm,               Color(0x1f,0x22,0x33), Bg
 inline Surface TextBox        { BgDark,                BgDark,                Line,  RadiusSm, BorderW };
 inline Surface TextBoxFocus   { BgDark,                BgDark,                Blue,  RadiusSm, BorderW };
 inline Surface TextBoxDisabled{ Color(0x1f,0x22,0x33), Color(0x1f,0x22,0x33), BgHighlight, RadiusSm, BorderW };
+// The selection behind a TextBox's selected glyphs (Tokyo Night's visual-mode
+// background), drawn square and borderless by default.
+inline Surface TextSelection  { Color(0x28,0x34,0x57), Color(0x28,0x34,0x57), Color(0x28,0x34,0x57), 0.0f, 0.0f };
 
 // Menus
 inline Surface Menu           { Color(0x1f,0x22,0x33), Bg,                    Line,  Radius,   BorderW };
@@ -151,7 +154,7 @@ inline std::unordered_map<std::string, Surface*>& surfaceRegistry()
         {"Window",&Window},{"WindowInact",&WindowInact},{"Panel",&Panel},{"PanelDark",&PanelDark},
         {"GroupBox",&GroupBox},{"Tooltip",&Tooltip},{"StatusBar",&StatusBar},{"Canvas",&Canvas},
         {"ButtonNormal",&ButtonNormal},{"ButtonHover",&ButtonHover},{"ButtonDown",&ButtonDown},{"ButtonDisabled",&ButtonDisabled},
-        {"TextBox",&TextBox},{"TextBoxFocus",&TextBoxFocus},{"TextBoxDisabled",&TextBoxDisabled},
+        {"TextBox",&TextBox},{"TextBoxFocus",&TextBoxFocus},{"TextBoxDisabled",&TextBoxDisabled},{"TextSelection",&TextSelection},
         {"Menu",&Menu},{"MenuStrip",&MenuStrip},{"MenuHover",&MenuHover},
         {"TabActive",&TabActive},{"TabInactive",&TabInactive},{"TabControl",&TabControl},
         {"CategoryList",&CategoryList},{"CategoryInner",&CategoryInner},{"CategoryHeader",&CategoryHeader},

@@ -67,6 +67,15 @@ public:
         return 1;
     }
 
+    // The number of z values this control's primitives use after its whole
+    // subtree (controls::Base::getOverlayZIndex() is the first), for what it
+    // draws in front of its own children, a TextBox's caret over its text.
+    // Read when the canvas renumbers, as depthLayers() is.
+    virtual size_t overlayLayers()
+    {
+        return 0;
+    }
+
     virtual void generate(renderer::Base *baseRenderer, controls::Base *control)
     {
         generatePrimitives(baseRenderer, requiredPrimitives());
