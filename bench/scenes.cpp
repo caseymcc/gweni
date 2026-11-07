@@ -18,6 +18,7 @@
 #include <gweni/controls/scrollControl.h>
 #include <gweni/controls/textBox.h>
 #include <gweni/controls/treeControl.h>
+#include <gweni/controls/verticalScrollBar.h>
 #include <gweni/controls/windowControl.h>
 #include <gweni/platforms/inputEvent.h>
 
@@ -375,11 +376,14 @@ private:
 
 //-----------------------------------------------------------------------------
 // scroll: a ScrollControl the canvas's height holding N Buttons, one per
-// 30-unit row (the vertical bar's nudge, so one wheel notch is one row). The
-// last warm-up frame puts the mouse over it; each measured frame turns the
-// wheel one notch down, and back up once the end is reached. It is placed at
-// a fixed size, since a ScrollControl left to its own size asks for all its
-// content (issue #57) and would not scroll.
+// 30-unit row. A wheel notch moves the bar by its nudge, 30 units of the
+// content, as a fraction of the scrollable range (content - viewable), so a
+// notch scrolls 30*(1 - viewable/content) units: about one row at large N
+// (29.2 at N=1000), much less at small N. The last warm-up frame puts the
+// mouse over it; each measured frame turns the wheel one notch down, and once
+// the bar is at the bottom one notch up, until it is back at the top. It is
+// placed at a fixed size, since a ScrollControl left to its own size asks for
+// all its content (issue #57) and would not scroll.
 //-----------------------------------------------------------------------------
 class ScrollScene: public Scene
 {
@@ -396,6 +400,10 @@ public:
             button->setText(format("Row %05d", i));
             button->setBounds(0, i*30, 360, 28);
         }
+
+        for(controls::Base *child : m_scroll->getActualChildren())
+            if(controls::VerticalScrollBar *bar=dynamic_cast<controls::VerticalScrollBar *>(child))
+                m_bar=bar;
     }
 
     void step(SceneContext &ctx, int frame) override
@@ -408,8 +416,13 @@ public:
         if(frame < 0)
             return;
 
-        // a notch one way, or the other at the end
-        if(!ctx.canvas->inputMouseWheel(-60*m_direction))
+        // A notch one way, or the other at the end. The wheel reports a notch
+        // used even when the bar is already at its end (it clamps and still
+        // notifies), so the end is told by the bar's own amount, which the
+        // wheel sets at once (the content moves in the next layout).
+        const float before=m_bar ? m_bar->getScrolledAmount() : 0.0f;
+        ctx.canvas->inputMouseWheel(-60*m_direction);
+        if(m_bar && m_bar->getScrolledAmount() == before)
         {
             m_direction=-m_direction;
             ctx.canvas->inputMouseWheel(-60*m_direction);
@@ -418,6 +431,7 @@ public:
 
 private:
     controls::ScrollControl *m_scroll=nullptr;
+    controls::VerticalScrollBar *m_bar=nullptr;
     Point m_mouse=Point(-1, -1);
     int m_direction=1;      // 1 down, -1 up
 };
@@ -663,7 +677,10 @@ public:
 //-----------------------------------------------------------------------------
 // animate: N idle Labels in a grid left of a column holding K indeterminate
 // ProgressBars and a focused TextBox, the clock stepping 1/60 s per frame: the
-// bars' segments move every frame and the caret blinks. No input.
+// bars' segments move every frame and the caret blinks. No input. The caret
+// stays lit for 1.5 s (90 frames) after the focus before it starts to blink,
+// so the scene warms up for 90 frames by default; its 60 measured frames then
+// hold blink edges (measured frames 1 and 32).
 //-----------------------------------------------------------------------------
 class AnimateScene: public Scene
 {
@@ -714,7 +731,7 @@ const std::vector<SceneInfo> &scenes()
         {"type", "type into the middle of a focused TextBoxMultiline of N wrapped words",
             true, 1000, 3, 20, Scaling::Local,
             []{ return std::unique_ptr<Scene>(new TypeScene()); }},
-        {"scroll", "turn the wheel one row per frame over a ScrollControl of N Button rows",
+        {"scroll", "turn the wheel one notch per frame over a ScrollControl of N Button rows",
             true, 1000, 3, 20, Scaling::Linear,
             []{ return std::unique_ptr<Scene>(new ScrollScene()); }},
         {"drag", "drag a Window of 40 controls by its title bar over N Labels",
@@ -736,7 +753,7 @@ const std::vector<SceneInfo> &scenes()
             true, 1000, 3, 9, Scaling::Linear,
             []{ return std::unique_ptr<Scene>(new ScaleScene()); }},
         {"animate", "K indeterminate ProgressBars and a blinking caret among N idle Labels",
-            true, 1000, 3, 60, Scaling::Local,
+            true, 1000, 90, 60, Scaling::Local,
             []{ return std::unique_ptr<Scene>(new AnimateScene()); }},
     };
     return list;

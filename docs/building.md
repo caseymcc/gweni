@@ -104,4 +104,5 @@ dragged window, a tree node toggled, controls added, removed and brought to the
 front, a canvas resized and rescaled, and animations. `--list` marks each
 `scaling=local` (its per-frame counters must not grow with N) or `scaling=linear`
 (it touches every control by design). `--help` lists the options and every
-output key. `bench_smoke` (label `gpu`) only checks that every scene runs. See `AGENTS.md` → "Benchmarks and profiling".
+output key. `bench_smoke` (label `gpu`) only checks that every scene runs. See
+`AGENTS.md` → "Benchmarks and profiling".
