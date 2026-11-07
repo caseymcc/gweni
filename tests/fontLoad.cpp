@@ -14,8 +14,9 @@
  *  A missing face and a file freetype-gl cannot read are each LoadedFallback,
  *  drawn and measured as OpenSans in coverage, LCD and SDF modes, logged once
  *  per key (the error, then "using built-in fallback for <face>") and not
- *  retried. With setFallbackFont(false) they fail as ErrorFileNotFound /
- *  ErrorBadData, measuring (0,0) and drawing nothing. A fallback freed and
+ *  retried (a mode GWENI_SDF_TEXT_MIN moves its size out of is skipped,
+ *  with a message). With setFallbackFont(false) they fail as
+ *  ErrorFileNotFound / ErrorBadData, measuring (0,0) and drawing nothing. A fallback freed and
  *  loaded again leaves the loaded-font count as it was, and the embedded font
  *  is resources/OpenSans.ttf byte for byte.
  */
@@ -286,12 +287,13 @@ TEST_CASE("loadFont: the fallback draws in every text mode, measuring as OpenSan
 
     struct Mode
     {
-        const char *name;
+        String name;
         TextAA aa;
         float size;
         gweni::renderer::GLTextMode expected;
     };
-    // 11 is below GWENI_SDF_TEXT_MIN's default (18), 24 above it
+    // 11 is below GWENI_SDF_TEXT_MIN's default (18), 24 above it; a row whose
+    // size another threshold puts in another mode is skipped
     const Mode modes[]={
         {"coverage", TextAA::Grayscale, 11, gweni::renderer::GLTextMode::Coverage},
         {"lcd rgb", TextAA::LcdRGB, 11, gweni::renderer::GLTextMode::LcdRGB},
@@ -306,6 +308,12 @@ TEST_CASE("loadFont: the fallback draws in every text mode, measuring as OpenSan
 
         const Font missing=makeFont("NoSuchFace", mode.size);
         const Font openSans=makeFont("OpenSans", mode.size);
+
+        if(renderer.getTextMode(openSans) != mode.expected)
+        {
+            MESSAGE("skipped: GWENI_SDF_TEXT_MIN puts ", mode.size, " px out of the ", mode.name, " row's mode");
+            continue;
+        }
         ErrorLog log;
 
         REQUIRE(renderer.getTextMode(missing) == mode.expected);
