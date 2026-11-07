@@ -601,6 +601,62 @@ public:
 
 
 
+// The window title-bar buttons (WindowControl's close button, WindowCanvas's
+// minimise and maximise): [0] the surface, hidden while it has nothing to show
+// (at rest and disabled), [1] the glyph, an icon of drawIcon's kinds 2-5 at
+// getZIndex()+1 over a fixed GlyphSize square centred in the button. The three
+// share WindowButtonPainter::paint() and differ in their surfaces and glyph.
+class WindowButtonPainter
+{
+public:
+    static constexpr int GlyphSize=10;
+
+    static void paint(renderer::Base *renderer, const std::vector<size_t> &primitives,
+        controls::Base *baseControl, const tokyonight::Surface &hover,
+        const tokyonight::Surface &down, const gweni::Color &activeGlyph, int kind);
+};
+
+class WindowCloseButton:public textured::ControlRegister<WindowCloseButton>
+{
+public:
+    static void staticInit(TexturedSkin *) { m_staticInit=true; }
+
+    size_t requiredPrimitives() override { return 2; }
+    // the glyph is drawn at getZIndex()+1, its Text child after it
+    size_t depthLayers() override { return 2; }
+
+    void update(renderer::Base *renderer, controls::Base *baseControl) override;
+
+    inline static const std::string_view name="WindowCloseButton";
+};
+
+class WindowMaximizeButton:public textured::ControlRegister<WindowMaximizeButton>
+{
+public:
+    static void staticInit(TexturedSkin *) { m_staticInit=true; }
+
+    size_t requiredPrimitives() override { return 2; }
+    size_t depthLayers() override { return 2; }
+
+    void update(renderer::Base *renderer, controls::Base *baseControl) override;
+
+    inline static const std::string_view name="WindowMaximizeButton";
+};
+
+class WindowMinimizeButton:public textured::ControlRegister<WindowMinimizeButton>
+{
+public:
+    static void staticInit(TexturedSkin *) { m_staticInit=true; }
+
+    size_t requiredPrimitives() override { return 2; }
+    size_t depthLayers() override { return 2; }
+
+    void update(renderer::Base *renderer, controls::Base *baseControl) override;
+
+    inline static const std::string_view name="WindowMinimizeButton";
+};
+
+
 struct ScrollerButton
 {
     inline static JoinConstExpr std::string_view value="Scroller";
@@ -1006,18 +1062,6 @@ public:
 
     static size_t Normal;
     static size_t Inactive;
-    static size_t Close;
-    static size_t Close_Hover;
-    static size_t Close_Down;
-    static size_t Maxi;
-    static size_t Maxi_Hover;
-    static size_t Maxi_Down;
-    static size_t Mini;
-    static size_t Mini_Hover;
-    static size_t Mini_Down;
-    static size_t Restore;
-    static size_t Restore_Hover;
-    static size_t Restore_Down;
     static BorderedPrimitive NormalPrimitive;
 };
 

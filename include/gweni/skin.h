@@ -170,13 +170,6 @@ public:
 //    virtual void drawTextBox(controls::Base *control, State state)=0;
 //
 //    virtual void drawWindow(controls::Base *control, State state, int topHeight, bool inFocus)=0;
-//    virtual void drawWindowCloseButton(gweni::controls::Base *control, State state, bool depressed,
-//        bool hovered, bool disabled)=0;
-//    virtual void drawWindowMaximizeButton(gweni::controls::Base *control, State state, bool depressed,
-//        bool hovered, bool disabled,
-//        bool bMaximized)=0;
-//    virtual void drawWindowMinimizeButton(gweni::controls::Base *control, State state, bool depressed,
-//        bool hovered, bool disabled)=0;
 //
 //
 //    virtual void drawHighlight(controls::Base *control, State state)=0;

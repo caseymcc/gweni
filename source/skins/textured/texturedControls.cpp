@@ -18,6 +18,7 @@
 #include "gweni/controls/separator.h"
 #include "gweni/controls/selectable.h"
 #include "gweni/controls/bullet.h"
+#include "gweni/controls/windowButtons.h"
 
 #include <algorithm>
 
@@ -1580,18 +1581,6 @@ void SplitterBar::update(renderer::Base *renderer, controls::Base *baseControl)
 //Window
 size_t Window::Normal;
 size_t Window::Inactive;
-size_t Window::Close;
-size_t Window::Close_Hover;
-size_t Window::Close_Down;
-size_t Window::Maxi;
-size_t Window::Maxi_Hover;
-size_t Window::Maxi_Down;
-size_t Window::Mini;
-size_t Window::Mini_Hover;
-size_t Window::Mini_Down;
-size_t Window::Restore;
-size_t Window::Restore_Hover;
-size_t Window::Restore_Down;
 BorderedPrimitive Window::NormalPrimitive;
 
 void Window::staticInit(TexturedSkin *skin)
@@ -1620,6 +1609,80 @@ void Window::update(renderer::Base *renderer, controls::Base *baseControl)
 void Window::remove(renderer::Base *renderer, controls::Base *baseControl)
 {
     releasePrimitives(renderer);
+}
+
+///////////////////////////////////////////////////////////////////////////
+//WindowCloseButton, WindowMaximizeButton, WindowMinimizeButton
+void WindowButtonPainter::paint(renderer::Base *renderer, const std::vector<size_t> &primitives,
+    controls::Base *baseControl, const tokyonight::Surface &hover,
+    const tokyonight::Surface &down, const gweni::Color &activeGlyph, int kind)
+{
+    if(primitives.size() < 2)
+        return;
+
+    controls::Button *button=static_cast<controls::Button *>(baseControl);
+    const tokyonight::Surface *surface=nullptr;
+    gweni::Color glyph=tokyonight::FgDark;
+
+    if(button->isDisabled())
+        glyph=tokyonight::Muted;
+    else if(button->isDepressed())
+    {
+        surface=&down;
+        glyph=activeGlyph;
+    }
+    else if(button->isHovered())
+    {
+        surface=&hover;
+        glyph=activeGlyph;
+    }
+    else
+        surface=&tokyonight::WindowButton;
+
+    // a transparent rect would still write depth over the title bar behind it, so
+    // a surface with nothing to show hides its slot instead (drawRoundedRect shows it)
+    const bool fill=surface && (surface->top.a || surface->bottom.a ||
+        (surface->borderWidth > 0.0f && surface->border.a));
+    const bool visible=baseControl->visible();
+    const gweni::Rect bounds=baseControl->getRenderBounds();
+
+    if(visible && fill)
+        renderer->drawRoundedRect(primitives[0], bounds, surface->radius, surface->borderWidth,
+            surface->top, surface->bottom, surface->border, baseControl->getZIndex());
+    else
+        renderer->hidePrimitive(primitives[0]);
+
+    if(visible)
+    {
+        const gweni::Rect glyphRect(bounds.x+(bounds.w-GlyphSize)/2, bounds.y+(bounds.h-GlyphSize)/2,
+            GlyphSize, GlyphSize);
+
+        renderer->drawIcon(primitives[1], glyphRect, kind, 0, glyph, baseControl->getZIndex()+1);
+    }
+    else
+        renderer->hidePrimitive(primitives[1]);
+}
+
+// Tokyo Night's red is light, so the cross turns dark on it
+void WindowCloseButton::update(renderer::Base *renderer, controls::Base *baseControl)
+{
+    WindowButtonPainter::paint(renderer, m_primitives, baseControl, tokyonight::WindowCloseHover,
+        tokyonight::WindowCloseDown, tokyonight::Bg, 2);
+}
+
+// a square, or the restore glyph (two offset squares) while maximized
+void WindowMaximizeButton::update(renderer::Base *renderer, controls::Base *baseControl)
+{
+    controls::WindowMaximizeButton *button=static_cast<controls::WindowMaximizeButton *>(baseControl);
+
+    WindowButtonPainter::paint(renderer, m_primitives, baseControl, tokyonight::ButtonHover,
+        tokyonight::ButtonDown, tokyonight::Fg, button->isMaximized()?5:4);
+}
+
+void WindowMinimizeButton::update(renderer::Base *renderer, controls::Base *baseControl)
+{
+    WindowButtonPainter::paint(renderer, m_primitives, baseControl, tokyonight::ButtonHover,
+        tokyonight::ButtonDown, tokyonight::Fg, 3);
 }
 
 // Force every ControlRegister<> specialization to instantiate so its static
@@ -1681,6 +1744,9 @@ template class ControlRegister<Tree>;
 template class ControlRegister<SpinBox>;
 template class ControlRegister<SplitterBar>;
 template class ControlRegister<Window>;
+template class ControlRegister<WindowCloseButton>;
+template class ControlRegister<WindowMaximizeButton>;
+template class ControlRegister<WindowMinimizeButton>;
 template class ControlRegister<TreeControl>;
 template class ControlRegister<TreeNode>;
 template class ControlRegister<PropertyTreeNode>;

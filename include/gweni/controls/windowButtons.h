@@ -18,6 +18,9 @@ namespace gweni
 {
 namespace controls
 {
+// The title-bar buttons. They draw through their skin renderers, which the
+// usual Base::render path generates, updates and removes like any control's;
+// m_window is only the window they act on, drawing never needs it.
 class GWENI_EXPORT WindowCloseButton: public Button
 {
     GWENI_CONTROL_INLINE(WindowCloseButton, Button)
@@ -28,20 +31,6 @@ class GWENI_EXPORT WindowCloseButton: public Button
     }
 
 public:
-    void render(skin::Base *skin) override
-    {
-        if(!m_window)
-            return;
-
-//        skin->drawWindowCloseButton(this, skin::Generate,
-//            isDepressed() && isHovered(),
-//            isHovered() && shouldDrawHover(),
-//            isDisabled());
-        //skin->drawControl(this);
-        if(getStateChange() != StateChange_Nothing)
-            m_skinControl->update(skin->getRenderer(), this);
-    }
-
     void setWindow(gweni::controls::Base *p)
     {
         m_window=p;
@@ -61,24 +50,20 @@ class GWENI_EXPORT WindowMaximizeButton: public WindowCloseButton
     }
 
 public:
-    void render(skin::Base *skin) override
-    {
-        if(!m_window)
-            return;
-
-//        skin->drawWindowMaximizeButton(this, skin::Generate,
-//            isDepressed() && isHovered(),
-//            isHovered() && shouldDrawHover(),
-//            isDisabled(),
-//            m_maximized);
-        //skin->drawControl(this);
-        if(getStateChange() != StateChange_Nothing)
-            m_skinControl->update(skin->getRenderer(), this);
-    }
-
+    //! The renderer draws the restore glyph while maximized, so a change repaints
+    //! the button; the same value again marks nothing.
     virtual void setMaximized(bool b)
     {
+        if(m_maximized == b)
+            return;
+
         m_maximized=b;
+        addStateChange(StateChange_Background);
+    }
+
+    bool isMaximized() const
+    {
+        return m_maximized;
     }
 
 protected:
@@ -91,22 +76,6 @@ class GWENI_EXPORT WindowMinimizeButton: public WindowCloseButton
 {
     GWENI_CONTROL_INLINE(WindowMinimizeButton, WindowCloseButton)
     {}
-
-public:
-    void render(skin::Base *skin) override
-    {
-        if(!m_window)
-            return;
-
-//        skin->drawWindowMinimizeButton(this, skin::Generate,
-//            isDepressed() && isHovered(),
-//            isHovered() && shouldDrawHover(),
-//            isDisabled());
-        //skin->drawControl(this);
-        if(getStateChange() != StateChange_Nothing)
-            m_skinControl->update(skin->getRenderer(), this);
-    }
-
 };
 
 

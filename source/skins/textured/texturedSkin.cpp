@@ -118,18 +118,6 @@ bool TexturedSkin::init(std::string fileName)
 //    Textures.Tab.Right.Active.init(&m_texture, texData, 96, 384, 31, 63, Margin(8, 8, 8, 8));
 //    Textures.Tab.Right.Inactive.init(&m_texture, texData, 96 + 128, 384, 31, 63, Margin(8, 8, 8, 8));
 //    Textures.Tab.HeaderBar.init(&m_texture, texData, 128, 352, 127, 31, Margin(4, 4, 4, 4));
-//    Textures.Window.Close.init(&m_texture, texData, 32, 448, 31, 31);
-//    Textures.Window.Close_Hover.init(&m_texture, texData, 64, 448, 31, 31);
-//    Textures.Window.Close_Down.init(&m_texture, texData, 96, 448, 31, 31);
-//    Textures.Window.Maxi.init(&m_texture, texData, 32 + 96 * 2, 448, 31, 31);
-//    Textures.Window.Maxi_Hover.init(&m_texture, texData, 64 + 96 * 2, 448, 31, 31);
-//    Textures.Window.Maxi_Down.init(&m_texture, texData, 96 + 96 * 2, 448, 31, 31);
-//    Textures.Window.Restore.init(&m_texture, texData, 32 + 96 * 2, 448 + 32, 31, 31);
-//    Textures.Window.Restore_Hover.init(&m_texture, texData, 64 + 96 * 2, 448 + 32, 31, 31);
-//    Textures.Window.Restore_Down.init(&m_texture, texData, 96 + 96 * 2, 448 + 32, 31, 31);
-//    Textures.Window.Mini.init(&m_texture, texData, 32 + 96, 448, 31, 31);
-//    Textures.Window.Mini_Hover.init(&m_texture, texData, 64 + 96, 448, 31, 31);
-//    Textures.Window.Mini_Down.init(&m_texture, texData, 96 + 96, 448, 31, 31);
 //    Textures.Tree.Background.init(&m_texture, texData, 256, 128, 127, 127, Margin(16, 16, 16, 16));
 //    Textures.Tree.Plus.init(&m_texture, texData, 448, 96, 15, 15);
 //    Textures.Tree.Minus.init(&m_texture, texData, 464, 96, 15, 15);
@@ -1408,98 +1396,6 @@ void TexturedSkin::setThemeColors()
 //    {
 //    }
 //}
-//
-//void drawWindowCloseButton(gweni::controls::Base *control, State state, bool depressed, bool hovered, bool disabled) override
-//{
-//    if(state == State::Generate)
-//    {
-//    }
-//    else if(state == State::Update)
-//    {
-//        gweni::Rect r=gweni::Rect(control->getRenderBounds().x, control->getRenderBounds().y, 31, 31);
-//
-//        if(disabled)
-//            return Textures.Window.Close.draw(getRenderer(), control, r, gweni::Color(255, 255, 255, 50));
-//
-//        if(depressed)
-//            return Textures.Window.Close_Down.draw(getRenderer(), control, r);
-//
-//        if(hovered)
-//            return Textures.Window.Close_Hover.draw(getRenderer(), control, r);
-//
-//        Textures.Window.Close.draw(getRenderer(), control, r);
-//    }
-//    else if(state == State::Remove)
-//    {
-//    }
-//}
-//
-//void drawWindowMaximizeButton(gweni::controls::Base *control, State state, bool depressed,
-//    bool hovered, bool disabled, bool bMaximized) override
-//{
-//    if(state == State::Generate)
-//    {
-//    }
-//    else if(state == State::Update)
-//    {
-//        gweni::Rect r=gweni::Rect(control->getRenderBounds().x, control->getRenderBounds().y, 31, 31);
-//
-//        if(!bMaximized)
-//        {
-//            if(disabled)
-//                return Textures.Window.Maxi.draw(getRenderer(), control, r, gweni::Color(255, 255, 255, 50));
-//
-//            if(depressed)
-//                return Textures.Window.Maxi_Down.draw(getRenderer(), control, r);
-//
-//            if(hovered)
-//                return Textures.Window.Maxi_Hover.draw(getRenderer(), control, r);
-//
-//            return Textures.Window.Maxi.draw(getRenderer(), control, r);
-//        }
-//
-//        if(disabled)
-//            return Textures.Window.Restore.draw(getRenderer(), control, r, gweni::Color(255, 255, 255, 50));
-//
-//        if(depressed)
-//            return Textures.Window.Restore_Down.draw(getRenderer(), control, r);
-//
-//        if(hovered)
-//            return Textures.Window.Restore_Hover.draw(getRenderer(), control, r);
-//
-//        return Textures.Window.Restore.draw(getRenderer(), control, r);
-//    }
-//    else if(state == State::Remove)
-//    {
-//    }
-//}
-//
-//void drawWindowMinimizeButton(gweni::controls::Base *control, State state, bool depressed,
-//    bool hovered, bool disabled) override
-//{
-//    if(state == State::Generate)
-//    {
-//    }
-//    else if(state == State::Update)
-//    {
-//        const gweni::Rect r(control->getRenderBounds().x, control->getRenderBounds().y, 31, 31);
-//
-//        if(disabled)
-//            return Textures.Window.Mini.draw(getRenderer(), control, r, gweni::Color(255, 255, 255, 100));
-//
-//        if(depressed)
-//            return Textures.Window.Mini_Down.draw(getRenderer(), control, r);
-//
-//        if(hovered)
-//            return Textures.Window.Mini_Hover.draw(getRenderer(), control, r);
-//
-//        Textures.Window.Mini.draw(getRenderer(), control, r);
-//    }
-//    else if(state == State::Remove)
-//    {
-//    }
-//}
-//
 //
 //void drawSlideButton(gweni::controls::Base *control, State state, bool depressed, bool horizontal) override
 //{

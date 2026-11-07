@@ -163,18 +163,6 @@ template<typename _Class> forceInit<std::string &,ControlRegister<_Class>::m_typ
 //    {
 //        texturing::Bordered Normal;
 //        texturing::Bordered Inactive;
-//        texturing::Single Close;
-//        texturing::Single Close_Hover;
-//        texturing::Single Close_Down;
-//        texturing::Single Maxi;
-//        texturing::Single Maxi_Hover;
-//        texturing::Single Maxi_Down;
-//        texturing::Single Mini;
-//        texturing::Single Mini_Hover;
-//        texturing::Single Mini_Down;
-//        texturing::Single Restore;
-//        texturing::Single Restore_Hover;
-//        texturing::Single Restore_Down;
 //
 //    } Window;
 //

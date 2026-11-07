@@ -155,6 +155,13 @@ inline Surface SelectableSelected     { SurfHi,                Surf,            
 inline Surface SelectableSelectedHover{ SurfHover,             SurfHi,                Blue,    RadiusSm, BorderW };
 inline Surface SelectableSelectedDisabled{ BgStorm,            Color(0x1f,0x22,0x33), BgHighlight, RadiusSm, BorderW };
 
+// Window title-bar buttons: nothing at rest (a transparent fill hides its slot),
+// red under the close button while hovered, a deeper red while pressed. The
+// minimise and maximise buttons hover and press as ButtonHover/ButtonDown.
+inline Surface WindowButton     { Color(0,0,0,0),        Color(0,0,0,0),        Color(0,0,0,0), RadiusSm, 0.0f };
+inline Surface WindowCloseHover { Red,                   Red,                   Red,            RadiusSm, 0.0f };
+inline Surface WindowCloseDown  { Color(0xdb,0x4b,0x4b), Color(0xdb,0x4b,0x4b), Color(0xdb,0x4b,0x4b), RadiusSm, 0.0f };
+
 // Generic transparent (draw nothing visible but keep a slot)
 inline Surface None           { Color(0,0,0,0),        Color(0,0,0,0),        Color(0,0,0,0), 0.0f, 0.0f };
 
@@ -180,6 +187,7 @@ inline std::unordered_map<std::string, Surface*>& surfaceRegistry()
         {"Separator",&Separator},
         {"SelectableHover",&SelectableHover},{"SelectableDown",&SelectableDown},{"SelectableSelected",&SelectableSelected},
         {"SelectableSelectedHover",&SelectableSelectedHover},{"SelectableSelectedDisabled",&SelectableSelectedDisabled},
+        {"WindowButton",&WindowButton},{"WindowCloseHover",&WindowCloseHover},{"WindowCloseDown",&WindowCloseDown},
     };
     return m;
 }
