@@ -20,6 +20,8 @@ namespace controls
 
 class ToolTip;
 class Menu;
+class Popup;
+enum class PopupPlacement;
 
 //! What the canvas's layout did in one frame: the update phase (doThink) and
 //! the render phase (renderCanvas). A frame whose layout converges runs at most
@@ -197,30 +199,61 @@ public:
     void toolTipControlDeleted(Base *control);
     /// \}
 
+    /// \sect{Popup}
+    /// The canvas shows one popup at a time: a Popup (Popup::open, next to
+    /// its anchor) or a context menu (below). Opening one closes the one
+    /// shown. A press of either button closes a shown Popup unless it is on
+    /// the popup, on its anchor or on an open Menu (input::onMouseClicked,
+    /// before the press is delivered, which it still is); a context menu
+    /// closes as menus do. Escape closes either, whatever has the keyboard
+    /// focus (input::onKeyEvent), a Menu open over a Popup first. The update phase closes it when its anchor
+    /// is hidden or disabled, and deleting the anchor (delayed or outright)
+    /// closes it at once.
+
+    /// The shown popup, a Popup or a context Menu, or null.
+    Base *shownPopup() const { return m_popup; }
+    /// The control shownPopup() is open for (a context menu's owner), or null.
+    Base *popupAnchor() const { return m_popupAnchor; }
+    /// Closes shownPopup(), whichever kind it is. Closing a Popup closes the
+    /// Menus open over it too.
+    void closePopup();
+    /// input::onKeyEvent's Escape: closes the open Menus over a shown Popup
+    /// (a ComboBox's list in it), or else the shown popup. False when nothing
+    /// was shown.
+    bool escapePopup();
+    /// Popup::open: shows \p popup next to \p anchor, closing the one shown.
+    void showPopup(Popup *popup, Base *anchor, PopupPlacement side);
+    /// input::onMouseClicked: a press on \p hovered closes a shown Popup it
+    /// is not part of (see above).
+    void popupPressed(Base *hovered);
+    /// Base: \p control is being deleted.
+    void popupControlDeleted(Base *control);
+    /// \}
+
     /// \sect{Context menu}
     /// A right-button press opens the context menu (Base::setContextMenu) of
     /// the control under the mouse, or of its nearest ancestor with one
     /// (contextMenuOwnerFor), at the cursor: input::onMouseClicked does it after
     /// the press has closed the menus that were open and reached the control.
-    /// One is open at a time. Escape closes it (input::onKeyEvent, whatever
-    /// has the keyboard focus), and so does anything that closes a menu (a
-    /// click outside it, choosing an item); the update phase closes it when
-    /// its control is hidden, and deleting the control closes it at once.
+    /// It is the canvas's popup (shownPopup()), so one is open at a time and
+    /// opening a Popup closes it. Escape closes it, and so does anything that
+    /// closes a menu (a click outside it, choosing an item); the update phase
+    /// closes it when its control is hidden or disabled, and deleting the
+    /// control closes it at once.
 
-    /// The open context menu, or null.
-    Menu *shownContextMenu() const { return m_contextMenu; }
+    /// The open context menu, or null: shownPopup() when that is one.
+    Menu *shownContextMenu() const { return m_popupIsMenu ? m_contextMenu : nullptr; }
     /// The control shownContextMenu() is open for, or null.
-    Base *contextMenuOwner() const { return m_contextMenuOwner; }
+    Base *contextMenuOwner() const { return m_popupIsMenu ? m_popupAnchor : nullptr; }
     /// The control whose context menu a right-click on \p hovered opens: the
     /// nearest of it and its ancestors with one, if that is visible and
     /// enabled; null for none, or for a part of an open menu.
     Base *contextMenuOwnerFor(Base *hovered);
     /// Opens \p owner's context menu at \p at (canvas coordinates), after
-    /// firing its onContextMenu, closing the one open first.
+    /// firing its onContextMenu, closing the popup shown first.
     void showContextMenu(Base *owner, const Point &at);
+    /// Closes shownContextMenu(), if one is open; a Popup stays.
     void closeContextMenu();
-    /// Base: \p control is being deleted.
-    void contextMenuControlDeleted(Base *control);
     /// \}
 
     /// \sect{Input}
@@ -286,12 +319,14 @@ protected:
     Base *toolTipOwnerFor(Base *hovered);
     void showToolTipFor(Base *owner);
     void hideToolTip();
-    /// The update phase's context-menu step: forgets a menu closed some other
-    /// way and closes one whose control is hidden.
-    void updateContextMenu();
-    /// Puts the box back at the end of the child list; run before the z
-    /// renumber, which every change of the list's order asks for.
-    void keepToolTipLast();
+    /// The update phase's popup step: forgets a context menu closed some other
+    /// way, closes the popup whose anchor is hidden or disabled, and lays a
+    /// Popup out again when its anchor moved.
+    void updatePopup();
+    /// Puts a shown Popup after every other child but the Menus that were
+    /// after it, and the ToolTip box at the end of the child list; run before
+    /// the z renumber, which every change of the list's order asks for.
+    void keepOverlaysLast();
     /// One recurseLayout with m_inLayout set.
     void layoutPass();
     /// Base's report that `control` re-dirtied layout during the current pass.
@@ -319,8 +354,12 @@ protected:
     bool m_drawBackground;
     gweni::Color m_backgroundColor;
 
+    /// The shown popup and its anchor; m_popupIsMenu when it is a context
+    /// menu, then also m_contextMenu.
+    Base *m_popup=nullptr;
+    Base *m_popupAnchor=nullptr;
+    bool m_popupIsMenu=false;
     Menu *m_contextMenu=nullptr;
-    Base *m_contextMenuOwner=nullptr;
     /// releaseChildren() is deleting the tree.
     bool m_releasingChildren=false;
 

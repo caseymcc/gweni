@@ -38,6 +38,10 @@ public:
     void render(skin::Base *skin) override;
     void layout(skin::Base *skin) override;
     void updateColors() override;
+    //! Base::setHidden shows every child: the list, its child until it first
+    //! opens, stays closed when the box is shown (a hidden Popup or page
+    //! holding it being opened).
+    void setHidden(bool hidden) override;
 
     virtual void selectItem(MenuItem *item, bool fireChangeEvents=
         true);
@@ -71,7 +75,7 @@ public:
 
 protected:
 
-    Menu *m_menu;
+    Menu *m_menu=nullptr;
     MenuItem *m_selectedItem;
 
     controls::Base *m_button;

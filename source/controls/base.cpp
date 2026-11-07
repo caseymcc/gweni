@@ -170,7 +170,7 @@ Base::~Base()
         {
             canvas->PreDeleteCanvas(this);
             canvas->toolTipControlDeleted(this);
-            canvas->contextMenuControlDeleted(this);
+            canvas->popupControlDeleted(this);
         }
 
         // after the canvas has closed it: a menu this control owns goes too

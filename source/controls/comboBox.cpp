@@ -117,6 +117,14 @@ void ComboBox::updateColors()
     ParentClass::updateColors();
 }
 
+void ComboBox::setHidden(bool hidden)
+{
+    ParentClass::setHidden(hidden);
+
+    if(!hidden && m_menu && (m_menu->getParent() == this))
+        m_menu->setHidden(true);
+}
+
 void ComboBox::onPress(event::Info)
 {
     if(isMenuOpen())

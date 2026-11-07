@@ -8,6 +8,7 @@
 #include <gweni/controls/canvas.h>
 #include <gweni/skin.h>
 #include <gweni/controls/menu.h>
+#include <gweni/controls/popup.h>
 #include <gweni/dragAndDrop.h>
 #include <gweni/controls/toolTip.h>
 #include <gweni/platforms/platform.h>
@@ -16,6 +17,7 @@
 #include <gweni/anim.h>
 #endif
 
+#include <algorithm>
 #include <cstdio>
 #include <set>
 #include <string>
@@ -66,7 +68,7 @@ void Canvas::updateCanvas()
     if(m_zOrderDirty)
     {
         m_zOrderDirty=false;
-        keepToolTipLast();
+        keepOverlaysLast();
         int zIndex=1;
         renumberZRecursive(zIndex, m_updateStats.zVisited);
     }
@@ -116,7 +118,7 @@ void Canvas::doThink()
     anim::think();
 #endif
     processDelayedDeletes();
-    updateContextMenu();
+    updatePopup();
     updateToolTip();
     // Check has focus etc..
     layoutCanvas();
@@ -431,15 +433,6 @@ void Canvas::hideToolTip()
     m_toolTip->releaseContent(false);
 }
 
-void Canvas::keepToolTipLast()
-{
-    if(!m_toolTip || (m_children.back() == m_toolTip))
-        return;
-
-    m_children.remove(m_toolTip);
-    m_children.push_back(m_toolTip);
-}
-
 void Canvas::toolTipChanged(Base *control)
 {
     if(control == m_toolTipOwner)
@@ -472,6 +465,182 @@ void Canvas::toolTipControlDeleted(Base *control)
 }
 
 //------------------------------------------------------------------------------
+// Popup
+//------------------------------------------------------------------------------
+
+namespace
+{
+//! \p control is \p root or inside it.
+bool within(Base *control, Base *root)
+{
+    for(; control; control=control->getParent())
+    {
+        if(control == root)
+            return true;
+    }
+    return false;
+}
+}
+
+void Canvas::showPopup(Popup *popup, Base *anchor, PopupPlacement side)
+{
+    closePopup();
+
+    if(popup->getParent() != this)
+        popup->setParent(this);
+
+    m_popup=popup;
+    m_popupAnchor=anchor;
+    m_popupIsMenu=false;
+    popup->setAnchor(anchor, side);
+    popup->setHidden(false);
+    // last among the children, before the ToolTip box (keepOverlaysLast)
+    popup->bringToFront();
+    popup->invalidate();
+    popup->onOpen.call(popup);
+}
+
+void Canvas::closePopup()
+{
+    if(!m_popup)
+        return;
+
+    if(m_popupIsMenu)
+    {
+        closeContextMenu();
+        return;
+    }
+
+    Popup *popup=static_cast<Popup *>(m_popup);
+
+    m_popup=nullptr;
+    m_popupAnchor=nullptr;
+    popup->setAnchor(nullptr, popup->getPlacement());
+    // a ComboBox's list it opened goes with it
+    closeMenus();
+    popup->setHidden(true);
+    popup->onClose.call(popup);
+}
+
+bool Canvas::escapePopup()
+{
+    if(!m_popup)
+        return false;
+
+    if(!m_popupIsMenu)
+    {
+        for(Base *child : m_children)
+        {
+            if(gweni_cast<Menu>(child) && !child->hidden())
+            {
+                closeMenus();
+                return true;
+            }
+        }
+    }
+
+    closePopup();
+    return true;
+}
+
+void Canvas::popupPressed(Base *hovered)
+{
+    if(!m_popup || m_popupIsMenu)
+        return;
+
+    // A press on the anchor is the anchor's (a button toggling its popup); one
+    // on an open Menu may be on a ComboBox's list the popup opened.
+    if(hovered && (within(hovered, m_popup) || within(hovered, m_popupAnchor)
+        || hovered->isMenuComponent()))
+        return;
+
+    closePopup();
+}
+
+void Canvas::updatePopup()
+{
+    if(!m_popup)
+        return;
+
+    if(m_popupIsMenu && m_popup->hidden())
+    {
+        // closed as menus are (a click outside, an item chosen)
+        m_popup=nullptr;
+        m_popupAnchor=nullptr;
+        m_popupIsMenu=false;
+        m_contextMenu=nullptr;
+    }
+    else if(!m_popupAnchor->visible() || m_popupAnchor->isDisabled())
+        closePopup();
+    else if(!m_popupIsMenu)
+        static_cast<Popup *>(m_popup)->followAnchor();
+}
+
+void Canvas::keepOverlaysLast()
+{
+    if(m_popup && !m_popupIsMenu && (m_popup->getParent() == this))
+    {
+        // the Menus after it were opened over it (a ComboBox's list in it)
+        Base::List after;
+        Base::List::iterator iter=std::find(m_children.begin(), m_children.end(), m_popup);
+
+        for(++iter; iter != m_children.end();)
+        {
+            if((*iter != m_toolTip) && !gweni_cast<Menu>(*iter))
+            {
+                ++iter;
+                continue;
+            }
+            after.push_back(*iter);
+            iter=m_children.erase(iter);
+        }
+
+        m_children.remove(m_popup);
+        m_children.push_back(m_popup);
+        m_children.splice(m_children.end(), after);
+    }
+
+    if(!m_toolTip || (m_children.back() == m_toolTip))
+        return;
+
+    m_children.remove(m_toolTip);
+    m_children.push_back(m_toolTip);
+}
+
+void Canvas::popupControlDeleted(Base *control)
+{
+    if(!m_popup)
+        return;
+
+    if(control == m_popup)
+    {
+        // a deleted popup fires no onClose
+        m_popup=nullptr;
+        m_popupAnchor=nullptr;
+        m_popupIsMenu=false;
+        m_contextMenu=nullptr;
+        return;
+    }
+
+    if(control != m_popupAnchor)
+        return;
+
+    if(m_releasingChildren)
+    {
+        // A canvas tearing down only hides it: the submenus closeAll() reaches,
+        // or what an onClose handler reads, may already be gone. The owner
+        // deletes a menu it owns itself.
+        m_popup->setHidden(true);
+        m_popup=nullptr;
+        m_popupAnchor=nullptr;
+        m_popupIsMenu=false;
+        m_contextMenu=nullptr;
+    }
+    else
+        closePopup();
+}
+
+//------------------------------------------------------------------------------
 // Context menu
 //------------------------------------------------------------------------------
 
@@ -494,7 +663,7 @@ Base *Canvas::contextMenuOwnerFor(Base *hovered)
 
 void Canvas::showContextMenu(Base *owner, const Point &at)
 {
-    closeContextMenu();
+    closePopup();
 
     // the handler may fill the menu in, or replace or clear it
     owner->onContextMenu.call(owner);
@@ -508,58 +677,25 @@ void Canvas::showContextMenu(Base *owner, const Point &at)
         menu->setParent(this);
 
     menu->openAt(at);
+    m_popup=menu;
+    m_popupAnchor=owner;
+    m_popupIsMenu=true;
     m_contextMenu=menu;
-    m_contextMenuOwner=owner;
 }
 
 void Canvas::closeContextMenu()
 {
-    if(!m_contextMenu)
+    if(!m_popupIsMenu)
         return;
 
     Menu *menu=m_contextMenu;
 
+    m_popup=nullptr;
+    m_popupAnchor=nullptr;
+    m_popupIsMenu=false;
     m_contextMenu=nullptr;
-    m_contextMenuOwner=nullptr;
     menu->closeAll();
     menu->close();
-}
-
-void Canvas::updateContextMenu()
-{
-    if(!m_contextMenu)
-        return;
-
-    if(m_contextMenu->hidden())
-    {
-        // closed as menus are (a click outside, an item chosen)
-        m_contextMenu=nullptr;
-        m_contextMenuOwner=nullptr;
-    }
-    else if(!m_contextMenuOwner->visible())
-        closeContextMenu();
-}
-
-void Canvas::contextMenuControlDeleted(Base *control)
-{
-    if(control == m_contextMenu)
-    {
-        m_contextMenu=nullptr;
-        m_contextMenuOwner=nullptr;
-    }
-    else if(control == m_contextMenuOwner)
-    {
-        // The owner deletes a menu it owns itself. A canvas tearing down only
-        // hides it: the submenus closeAll() reaches may already be gone.
-        if(m_releasingChildren)
-        {
-            m_contextMenu->setHidden(true);
-            m_contextMenu=nullptr;
-            m_contextMenuOwner=nullptr;
-        }
-        else
-            closeContextMenu();
-    }
 }
 
 bool Canvas::inputModifierKey(int key, bool down)

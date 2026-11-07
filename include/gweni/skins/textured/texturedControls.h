@@ -1037,6 +1037,21 @@ public:
     inline static const std::string_view name="ToolTip";
 };
 
+//! controls::Popup, the panel a canvas shows next to an anchor: one
+//! tokyonight::Menu surface, a context menu's panel.
+class Popup:public textured::ControlRegister<Popup>
+{
+public:
+    static void staticInit(TexturedSkin *skin);
+
+
+    void generate(renderer::Base *renderer, controls::Base *baseControl) override;
+    void update(renderer::Base *renderer, controls::Base *baseControl) override;
+    void remove(renderer::Base *renderer, controls::Base *baseControl) override;
+
+    inline static const std::string_view name="Popup";
+};
+
 class Tree:public textured::ControlRegister<Tree>
 {
 public:

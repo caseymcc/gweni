@@ -1542,6 +1542,32 @@ void ToolTip::remove(renderer::Base *renderer, controls::Base *baseControl)
 
 
 ///////////////////////////////////////////////////////////////////////////
+//Popup
+void Popup::staticInit(TexturedSkin *skin)
+{
+    m_staticInit=true;
+}
+
+void Popup::generate(renderer::Base *renderer, controls::Base *baseControl)
+{
+    generatePrimitives(renderer, requiredPrimitives());
+}
+
+void Popup::update(renderer::Base *renderer, controls::Base *baseControl)
+{
+    if(m_primitives.empty())
+        return;
+
+    tokyonight::paintSurface(renderer, m_primitives.data(), baseControl, tokyonight::Menu);
+}
+
+void Popup::remove(renderer::Base *renderer, controls::Base *baseControl)
+{
+    releasePrimitives(renderer);
+}
+
+
+///////////////////////////////////////////////////////////////////////////
 //Tree
 size_t Tree::Background;
 size_t Tree::Minus;
@@ -1806,6 +1832,7 @@ template class ControlRegister<TabTitleBar>;
 template class ControlRegister<Text>;
 template class ControlRegister<TextBox>;
 template class ControlRegister<ToolTip>;
+template class ControlRegister<Popup>;
 template class ControlRegister<Tree>;
 template class ControlRegister<SpinBox>;
 template class ControlRegister<SplitterBar>;

@@ -10,6 +10,7 @@
 #include <gweni/skin.h>
 #include <gweni/utility.h>
 #include <gweni/controls/canvas.h>
+#include <gweni/controls/popup.h>
 
 namespace gweni
 {
@@ -90,17 +91,11 @@ void Menu::layout(skin::Base *skin)
     ParentClass::layout(skin);
 }
 
+// The cursor is a zero-size anchor: below it, flipped to its left and above
+// it, with no gap.
 Point Menu::placement(const Point &cursor, const Point &size, const Rect &area)
 {
-    Point pos=cursor;
-
-    if(pos.x+size.x > area.x+area.w)
-        pos.x=cursor.x-size.x;
-
-    if(pos.y+size.y > area.y+area.h)
-        pos.y=cursor.y-size.y;
-
-    return keepInside(pos, size, area);
+    return Popup::placement(Rect(cursor.x, cursor.y, 0, 0), size, area, PopupPlacement::Below, 0);
 }
 
 Point Menu::keepInside(const Point &pos, const Point &size, const Rect &area)

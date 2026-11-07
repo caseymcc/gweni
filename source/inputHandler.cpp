@@ -238,6 +238,14 @@ bool onMouseClicked(controls::Base *canvas, int iMouseButton, bool down)
     if(down && (!HoveredControl || !HoveredControl->isMenuComponent()))
         canvas->closeMenus();
 
+    // A press off the shown Popup and its anchor closes it, and still goes
+    // where it was going.
+    if(down)
+    {
+        if(controls::Canvas *target=canvas->getCanvas())
+            target->popupPressed(HoveredControl);
+    }
+
     const bool captured=(MouseFocus && MouseFocus->getCanvas() == canvas);
     const bool handled=deliverMouseClick(canvas, iMouseButton, down);
 
@@ -399,17 +407,15 @@ bool handleAccelerator(controls::Base *canvas, UnicodeChar chr)
 
 bool onKeyEvent(controls::Base *canvas, int key, bool down)
 {
-    // Escape closes an open context menu, whatever has the keyboard focus; its
-    // release then finds the key up and goes nowhere.
+    // Escape closes the shown popup (a Popup or a context menu), or the Menus
+    // open over a Popup first, whatever has the keyboard focus; its release
+    // then finds the key up and goes nowhere.
     if(down && (key == keys::Escape) && !g_keyData.KeyState[key])
     {
         controls::Canvas *target=canvas->getCanvas();
 
-        if(target && target->shownContextMenu())
-        {
-            target->closeContextMenu();
+        if(target && target->escapePopup())
             return true;
-        }
     }
 
     controls::Base *target=KeyboardFocus;
