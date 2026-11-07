@@ -17,6 +17,7 @@
 #include "gweni/controls/textBox.h"
 #include "gweni/controls/separator.h"
 #include "gweni/controls/selectable.h"
+#include "gweni/controls/splitterBar.h"
 #include "gweni/controls/menuItem.h"
 #include "gweni/controls/bullet.h"
 #include "gweni/controls/windowButtons.h"
@@ -1607,17 +1608,37 @@ void SpinBox::update(renderer::Base *renderer, controls::Base *baseControl)
 
 ///////////////////////////////////////////////////////////////////////////
 //SplitterBar
-size_t SplitterBar::Background;
-BorderedPrimitive SplitterBar::BackgroundPrimitive;
-
-void SplitterBar::staticInit(TexturedSkin *skin)
-{
-//    Background=skin->getTextureEntryId("SplitterBar.Background");
-    m_staticInit=true;
-}
-
 void SplitterBar::update(renderer::Base *renderer, controls::Base *baseControl)
-{}
+{
+    if(m_primitives.empty())
+        return;
+
+    controls::SplitterBar *bar=static_cast<controls::SplitterBar *>(baseControl);
+
+    // a bar that does not draw its background stays hidden on hover and drag
+    // too; setShouldDrawBackground() marks only StateChange_Background, so the
+    // slot is shown (drawRoundedRect) or hidden here on every update, not only
+    // on a visibility change as paintSurface() does
+    if(!bar->visible() || !bar->shouldDrawBackground())
+    {
+        renderer->hidePrimitive(m_primitives[0]);
+        return;
+    }
+
+    const tokyonight::Surface *surface;
+
+    if(bar->isDisabled())
+        surface=&tokyonight::SplitterBarDisabled;
+    else if(bar->isDepressed())
+        surface=&tokyonight::SplitterBarDown;
+    else if(bar->isHovered())
+        surface=&tokyonight::SplitterBarHover;
+    else
+        surface=&tokyonight::SplitterBar;
+
+    renderer->drawRoundedRect(m_primitives[0], bar->getRenderBounds(), surface->radius,
+        surface->borderWidth, surface->top, surface->bottom, surface->border, bar->getZIndex());
+}
 
 ///////////////////////////////////////////////////////////////////////////
 //Window

@@ -1079,19 +1079,19 @@ public:
     static BorderedPrimitive BackgroundPrimitive;
 };
 
+// controls::SplitterBar: one bar over its bounds, drawn only while the control
+// draws its background (a CrossSplitter's bars are off until
+// setSplittersVisible(true), a Properties' column split always is).
 class SplitterBar:public textured::ControlRegister<SplitterBar>
 {
 public:
-    static void staticInit(TexturedSkin *skin);
+    static void staticInit(TexturedSkin *skin) { m_staticInit=true; }
 
-    size_t requiredPrimitives() override { return 0; }
+    size_t requiredPrimitives() override { return 1; }
 
     void update(renderer::Base *renderer, controls::Base *baseControl) override;
 
     inline static const std::string_view name="SplitterBar";
-
-    static size_t Background;
-    static BorderedPrimitive BackgroundPrimitive;
 };
 
 class Window:public textured::ControlRegister<Window>

@@ -129,6 +129,12 @@ inline Surface SliderThumbHover   { SurfHover,             SurfHi,              
 inline Surface SliderThumbDown    { Blue,                  DarkBlue,              Cyan,  RadiusSm, BorderW };
 inline Surface SliderThumbDisabled{ BgStorm,               Color(0x1f,0x22,0x33), BgHighlight, RadiusSm, BorderW };
 
+// Splitter bars: a flat bar a few units thick, so a small radius and no border
+inline Surface SplitterBar        { Line,                  Line,                  Line,    2.0f,     0.0f };
+inline Surface SplitterBarHover   { Blue,                  Blue,                  Blue,    2.0f,     0.0f };
+inline Surface SplitterBarDown    { Cyan,                  Cyan,                  Cyan,    2.0f,     0.0f };
+inline Surface SplitterBarDisabled{ BgStorm,               BgStorm,               BgStorm, 2.0f,     0.0f };
+
 // Check / radio
 inline Surface CheckOff       { BgDark,                BgDark,                Line,  RadiusSm, BorderW };
 inline Surface CheckOn        { Blue,                  DarkBlue,              Blue,  RadiusSm, BorderW };
@@ -182,6 +188,8 @@ inline std::unordered_map<std::string, Surface*>& surfaceRegistry()
         {"ProgressBack",&ProgressBack},{"ProgressFront",&ProgressFront},
         {"SliderTrack",&SliderTrack},{"SliderNotch",&SliderNotch},{"SliderThumb",&SliderThumb},
         {"SliderThumbHover",&SliderThumbHover},{"SliderThumbDown",&SliderThumbDown},{"SliderThumbDisabled",&SliderThumbDisabled},
+        {"SplitterBar",&SplitterBar},{"SplitterBarHover",&SplitterBarHover},{"SplitterBarDown",&SplitterBarDown},
+        {"SplitterBarDisabled",&SplitterBarDisabled},
         {"CheckOff",&CheckOff},{"CheckOn",&CheckOn},
         {"ColorField",&ColorField},{"ColorMarker",&ColorMarker},{"ColorSwatch",&ColorSwatch},{"ColorChecker",&ColorChecker},
         {"Separator",&Separator},
