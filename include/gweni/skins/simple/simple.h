@@ -365,7 +365,7 @@ public:
 //        }
     }
 
-    void drawTabButton(gweni::controls::Base *control, State state, bool active, Position dir)
+    void drawTabButton(gweni::controls::Base *control, State state, bool active, DockPosition dir)
     {
 //        PrimitiveIds &primitiveIds=control->getPrimitiveIds();
 //        if(primitiveIds.size() < 25)
@@ -666,7 +666,7 @@ public:
 //        m_render->drawLinedRect(&primitiveIds[1], rct, control->getZIndex());
     }
 
-    void drawScrollButton(gweni::controls::Base *control, State state, Position direction,
+    void drawScrollButton(gweni::controls::Base *control, State state, DockPosition direction,
         bool depressed, bool hovered, bool disabled)
     {
 //        PrimitiveIds &primitiveIds=control->getPrimitiveIds();
@@ -677,11 +677,11 @@ public:
 //        m_render->setDrawColor(gweni::Color(0, 0, 0, 240));
 //        Rect r(control->getWidth()/2 - 2, control->getHeight() / 2 - 2, 5, 5);
 //
-//        if(direction == Position::Top)
+//        if(direction == DockPosition::Top)
 //            drawArrowUp(&primitiveIds[18], r);
-//        else if(direction == Position::Bottom)
+//        else if(direction == DockPosition::Bottom)
 //            drawArrowDown(&primitiveIds[18], r);
-//        else if(direction == Position::Left)
+//        else if(direction == DockPosition::Left)
 //            drawArrowLeft(&primitiveIds[18], r);
 //        else
 //            drawArrowRight(&primitiveIds[18], r);

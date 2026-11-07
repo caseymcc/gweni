@@ -101,7 +101,6 @@ Base::Base(const String &name)
     m_skin=nullptr;
 
     m_alignment=Alignment::Absolute;
-    m_position=Position::Absolute;
 
     init(name);
 
@@ -363,33 +362,6 @@ DockPosition Base::getDock() const
     return m_dock;
 }
 
-Position Base::getPosition() const
-{
-    return m_position;
-}
-
-void Base::setPosition(Position position)
-{
-    if(position ==m_position)
-        return;
-
-    m_position=position;
-    invalidate();
-}
-
-void Base::setPosition(Position position, int x, int y)
-{
-    if(position==m_position)
-        return;
-
-    m_position=position;
-    {
-        RequestScope request(RequestPosition);
-        setBounds(x, y, getWidth(), getHeight());
-    }
-    invalidate();
-}
-
 Alignment Base::getAlignment()
 {
     return m_alignment;
@@ -483,39 +455,6 @@ void Base::invalidateChildren(bool recursive)
         }
     }
 }
-
-//void Base::setPosition(Position pos, int xpadding, int ypadding)
-//{
-//    m_position=pos;
-//
-//    const Rect &bounds=getParent()->getInnerBounds();
-//    const Margin &margin=getMargin();
-//    int x=getX();
-//    int y=getY();
-//
-//    if(pos  &Position::Left)
-//        x=bounds.x + xpadding + margin.left;
-//
-//    if(pos  &Position::Right)
-//        x=bounds.x + (bounds.w - getWidth() - xpadding - margin.right);
-//
-//    if(pos  &Position::CenterH)
-//        x=bounds.x + (bounds.w - getWidth())/2;
-//
-//    if(pos  &Position::Top)
-//        y=bounds.y + ypadding;
-//
-//    if(pos  &Position::Bottom)
-//        y=bounds.y + (bounds.h - getHeight() - ypadding);
-//
-//    if(pos  &Position::CenterV)
-//        y=bounds.y + (bounds.h - getHeight())/2 + ypadding;
-//
-//    x=std::max(0, x);
-//    y=std::max(0, y);
-//
-//    setPos(x, y);
-//}
 
 void Base::sendToBack()
 {

@@ -36,9 +36,13 @@ public:
     //! how it is placed within its parent; this is where the glyphs sit).
     virtual void setTextAlignment(Alignment alignment)
     {
-        m_text->setAlignment(alignment);
+        setDefaultTextAlignment(alignment);
         m_textAlignmentSet=true;
     }
+
+    //! Where the text sits in the label, as setTextAlignment() (or the
+    //! default) set it.
+    Alignment getTextAlignment() const { return m_textAlignment; }
 
 //    void render(skin::Base *skin) override
 //    {}
@@ -48,8 +52,6 @@ public:
     virtual void sizeToContents();
 
     bool hasAlignment() override { return true; }
-//    virtual void setAlignment(Position area);
-//    virtual Position getAlignment();
 
     virtual void setFont(gweni::String strFacename, int iSize, bool bBold);
 
@@ -148,7 +150,7 @@ public:
     {
         m_text->setWrap(b);
         if(!m_textAlignmentSet)
-            m_text->setAlignment(b?(Alignment::Left|Alignment::Top):(Alignment::Left|Alignment::CenterV));
+            setDefaultTextAlignment(b?(Alignment::Left|Alignment::Top):(Alignment::Left|Alignment::CenterV));
     }
 
     void onBoundsChanged(gweni::Rect oldChildBounds) override;
@@ -157,10 +159,19 @@ protected:
 
     virtual void onTextChanged() {}
 
+    //! A subclass's own text alignment: as setTextAlignment(), but setWrap()
+    //! may still change it.
+    void setDefaultTextAlignment(Alignment alignment)
+    {
+        m_textAlignment=alignment;
+        m_text->setAlignment(alignment);
+    }
+
     gweni::Font *m_createdFont;
     internal::Text *m_text;
     //! setTextAlignment() was called, so setWrap() leaves the alignment alone
     bool m_textAlignmentSet=false;
+    Alignment m_textAlignment=Alignment::Left|Alignment::CenterV;
 //    Alignment m_align;
 
 };

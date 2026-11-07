@@ -79,7 +79,6 @@ void Menu::onAddItem(MenuItem *item)
     item->setTextPadding(Padding(iconMarginDisabled()?0:24, 0, 16, 0));
     item->setDock(DockPosition::Top);
     item->sizeToContents();
-    item->setAlignment(Alignment::CenterV|Alignment::Left);
     item->onHoverEnter.add(this, &Menu::onHoverItem);
 
     // Do this here - after Top Docking these values mean nothing in layout

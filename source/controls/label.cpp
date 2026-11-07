@@ -19,13 +19,12 @@ GWENI_CONTROL_CONSTRUCTOR(Label)
     m_createdFont=nullptr;
     m_text=newChild<internal::Text>();
     m_text->setFont(getSkin()->getDefaultFont());
-    // Where the glyphs sit in the label; setAlignment() is where the label
-    // sits in its parent. Subclasses that want another set it themselves.
-    m_text->setAlignment(Alignment::Left|Alignment::CenterV);
+    // Where the glyphs sit in the label (setTextAlignment); the label has no
+    // alignment in its parent unless one is set. Subclasses that want another
+    // text alignment set it themselves.
+    setDefaultTextAlignment(Alignment::Left|Alignment::CenterV);
     setMouseInputEnabled(false);
     setBounds(0, 0, 100, 10);
-//    setAlignment(Position::Left | Position::CenterV);
-    setAlignment(Alignment::Left | Alignment::CenterV);
     setSizeFlags(SizeFlags(SizeFlag::Elastic, SizeFlag::Elastic));
 }
 
@@ -42,22 +41,7 @@ void Label::preDelete(skin::Base *skin)
 
 void Label::postLayout(skin::Base * /*skin*/)
 {
-//    m_text->setPosition(m_align);
 }
-
-//void Label::setAlignment(Position iAlign)
-//{
-//    if(m_align == iAlign)
-//        return;
-//
-//    m_align=iAlign;
-//    invalidate();
-//}
-//
-//Position Label::getAlignment()
-//{
-//    return m_align;
-//}
 
 void Label::setText(const String &str, bool doEvents)
 {

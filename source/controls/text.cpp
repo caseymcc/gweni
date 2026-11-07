@@ -538,9 +538,6 @@ Size Text::RefreshSizeWrap(bool update)
             t->setFont(getFont());
             t->setTextColor(TextColor());
             t->setTextColorOverride(m_colorOverride);
-            // Each line stays where it is put; measured here, as it did not
-            // exist when this pass measured the tree.
-            t->setAlignment(Alignment::Absolute);
 
             m_lines.push_back(t);
         }

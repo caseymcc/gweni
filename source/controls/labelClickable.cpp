@@ -18,12 +18,11 @@ GWENI_CONTROL_CONSTRUCTOR(LabelClickable)
 {
     setIsToggle(false);
     setCursor(cursor::Finger);
-    setAlignment(Alignment::Left|Alignment::CenterV);
 
     // A clickable label reads as a label, not a button: its text sits at the
     // left edge (next to whatever identifier it labels), not centered like the
     // Button base would do.
-    m_text->setAlignment(Alignment::Left|Alignment::CenterV);
+    setDefaultTextAlignment(Alignment::Left|Alignment::CenterV);
 }
 
 void LabelClickable::updateColors()

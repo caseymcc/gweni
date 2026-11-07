@@ -29,7 +29,6 @@ GWENI_CONTROL_CONSTRUCTOR(TextSizesDemo)
     auto newLabel=[this]()
     {
         controls::Label *label=newChild<controls::Label>();
-        label->setAlignment(Alignment::Absolute);
         return label;
     };
 

@@ -62,7 +62,6 @@ WindowCanvas::WindowCanvas(int x, int y, int w, int h, skin::Base *skin,
     m_titleBar->onDoubleClickLeft.add(this, &ThisClass::onTitleDoubleClicked);
 
     m_title=m_titleBar->newChild<Label>();
-    m_title->setAlignment(Alignment::Left|Alignment::CenterV);
     m_title->setText(strWindowTitle);
     m_title->setDock(DockPosition::Center);
     m_title->setPadding(Padding(8, 0, 0, 0));

@@ -25,9 +25,6 @@ By default all controls support a dock layout
 * Vertical
 
 
-setPosition()
-
-
 ## Sizing a dock-None control
 
 A dock-None control, placed by its parent's `arrangeHorizontal/Vertical` or by
@@ -89,14 +86,18 @@ the box at x, w wide, and the child's margin m: `Left` puts it at x+m.left,
 `Top`, `Bottom` and `CenterV` do the same in y. Each axis is separate: a child
 aligned only `CenterV` keeps its requested x.
 
-A Label's alignment is where the label sits in its parent; where its text sits
-in the label is `setTextAlignment`, `Left|CenterV` by default (`Left|Top` once
-`setWrap(true)`). A text padding (`setTextPadding`) is the inner Text's own
-padding: it is counted in the Text's size and the string is drawn inside it
-(`Text::textOrigin()`). Label and its subclasses, TextBox, Button, StatusBar,
-FieldLabel and the Properties rows still set an alignment on themselves, so
-they are aligned in their parent and a position they are given is not kept
-unless they are set back to `Alignment::Absolute`.
+`setAlignment` is only ever this placement in the parent. It never moves the
+control's own content, and no control sets it on itself, so a Label, TextBox,
+Button or any other control given a position keeps it. Where a Label's text
+sits inside the label (and so a TextBox's, a Button's, ...) is its *content*
+alignment, `setTextAlignment`: `Left|CenterV` by default (`Left|Top` once
+`setWrap(true)`, and for a TextBoxMultiline), `Center` for a Button, read back
+with `getTextAlignment()`. It is the inner Text's alignment, so the text is
+placed by the same rules in the label's padded content box. A TextBox whose
+string is wider than the box scrolls it instead: the inner Text is then
+unaligned and kept where the caret needs it. A text padding (`setTextPadding`)
+is the inner Text's own padding: it is counted in the Text's size and the
+string is drawn inside it (`Text::textOrigin()`).
 
 ## One pass per frame
 
@@ -180,7 +181,7 @@ TreeNode's toggle), not resize one.
   lines there are reused: each gets its new string and row, which writes
   nothing for a line that did not change, and only the extra lines are
   created or the surplus ones deleted. `setText` invalidates layout, so an
-  edit is laid out by the next frame. Each line is an `Alignment::Absolute` child
+  edit is laid out by the next frame. Each line is an unaligned child
   placed at `(0, i * lineHeight)` and given that row height, an empty line
   included; its string has no `'\n'` (freetype-gl would break the run there),
   and the parent keeps how many characters of its string each line holds, the

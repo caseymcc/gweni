@@ -107,7 +107,6 @@ void ColorPicker::createColorControl(gweni::String name, int y)
 //    GroupBox *colorGroup=new GroupBox(this);
     GroupBox *colorGroup=newChild<GroupBox>();
 
-    colorGroup->setAlignment(Alignment::Absolute);
     colorGroup->setPos(10, y);
     colorGroup->setText(name);
     colorGroup->setSize(160, gc_pickChannelHeight);
@@ -117,14 +116,12 @@ void ColorPicker::createColorControl(gweni::String name, int y)
     internal::ColorDisplay *disp=colorGroup->newChild<internal::ColorDisplay>();
 
     disp->setName(name);
-    disp->setAlignment(Alignment::Absolute);
     disp->setBounds(0, 0, colorSize, colorSize);
 
 //    TextBoxNumeric *numeric=new TextBoxNumeric(colorGroup);
     TextBoxNumeric *numeric=colorGroup->newChild<TextBoxNumeric>();
 
     numeric->setName(name+"Box");
-    numeric->setAlignment(Alignment::Absolute);
     numeric->setPos(105, 0);
     numeric->setSize(26, 16);
     numeric->setSelectAllOnFocus(true);
@@ -133,7 +130,6 @@ void ColorPicker::createColorControl(gweni::String name, int y)
 //    HorizontalSlider *slider=new HorizontalSlider(colorGroup);
     HorizontalSlider *slider=colorGroup->newChild<HorizontalSlider>();
 
-    slider->setAlignment(Alignment::Absolute);
     slider->setPos(colorSize+5, 0);
     slider->setRange(0, 255);
     slider->setSize(80, std::max(colorSize, 15));
@@ -212,7 +208,6 @@ void ColorPicker::createControls()
 //    GroupBox *finalGroup=new GroupBox(this);
     GroupBox *finalGroup=newChild<GroupBox>();
 
-    finalGroup->setAlignment(Alignment::Absolute);
     finalGroup->setPos(180, 40);
     finalGroup->setSize(60, 60);
     finalGroup->setText("Result");
@@ -222,7 +217,6 @@ void ColorPicker::createControls()
     internal::ColorDisplay *disp=finalGroup->newChild<internal::ColorDisplay>();
 
     disp->setName("Result");
-    disp->setAlignment(Alignment::Absolute);
     disp->setBounds(0, 10, 32, 32);
     disp->setDrawCheckers(true);
     // updateControls();

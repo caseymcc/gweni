@@ -194,13 +194,8 @@ public:
 
 
     virtual controls::Canvas *getCanvas();
-//Position
     virtual void setDock(DockPosition dock);
     virtual DockPosition getDock() const;
-
-    virtual Position getPosition() const;
-    virtual void setPosition(Position position);
-    virtual void setPosition(Position position, int x, int y);
 
     virtual Alignment getAlignment();
     virtual void setAlignment(Alignment alignment);
@@ -688,7 +683,6 @@ protected:
     Padding m_padding;
     Margin m_margin;
     Alignment m_alignment;
-    Position m_position;
 
     gweni::String m_name;
 
@@ -723,7 +717,6 @@ public:
     void invalidateChildren(bool recursive=false);
 
     virtual bool hasAlignment() { return false; }
-//    void setPosition(Position pos, int xpadding=0, int ypadding=0);
 
     virtual void calculateSize(skin::Base *skin, Dim dim);
     //! Sizes this dock-None control along `dim` for arrangeHorizontal/Vertical

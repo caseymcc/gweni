@@ -64,7 +64,6 @@ GWENI_CONTROL_CONSTRUCTOR(TextBox)
     setSize(200, 20);
     setMouseInputEnabled(true);
     setKeyboardInputEnabled(true);
-    setAlignment(Alignment::Left|Alignment::CenterV);
     setPadding(Padding(4, 2, 4, 2));
     m_cursorPos=0;
     m_cursorEnd=0;
@@ -471,14 +470,16 @@ void TextBox::onMouseMoved(int x, int y, int /*deltaX*/, int /*deltaY*/)
 }
 
 // Reads the measured string, not m_text's bounds: in a layout pass this runs
-// before m_text is placed.
+// before m_text is placed. A string that fits is placed by the text alignment
+// (setTextAlignment); a scrolled one is unaligned, so its position is kept.
 void TextBox::makeCaretVisible()
 {
     const Size text=m_text->refreshSize(false);
+    const Alignment textAlignment=getTextAlignment();
 
     if(text.width < getWidth())
     {
-        m_text->setAlignment(getAlignment());
+        m_text->setAlignment(textAlignment);
     }
     else
     {
@@ -486,11 +487,9 @@ void TextBox::makeCaretVisible()
         int iRealCaretPos=iCaretPos+m_text->getX();
         int iSlidingZone=m_text->getFont().size + 1;   // getWidth()*0.1f
 
-        // If the carat is already in a semi-good position, leave it.
-        if(iRealCaretPos >= iSlidingZone && iRealCaretPos <= getWidth()-iSlidingZone)
-            return;
-
-        int x=0;
+        // If the carat is already in a semi-good position, leave it, but
+        // clamped below: the box may have grown since the text was scrolled.
+        int x=m_text->getX();
 
         if(iRealCaretPos > getWidth()-iSlidingZone)
             x=getWidth()-iCaretPos-iSlidingZone;
@@ -508,15 +507,16 @@ void TextBox::makeCaretVisible()
 
         int y=0;
 
-        if(getAlignment() & Alignment::Top)
+        if(textAlignment & Alignment::Top)
             y=getPadding().top;
 
-        if(getAlignment() & Alignment::Bottom)
+        if(textAlignment & Alignment::Bottom)
             y=getHeight()-text.height-getPadding().bottom;
 
-        if(getAlignment() & Alignment::CenterV)
+        if(textAlignment & Alignment::CenterV)
             y=(getHeight()-text.height) / 2;
 
+        m_text->setAlignment(Alignment::Absolute);
         m_text->setPos(x, y);
     }
 }
@@ -580,7 +580,6 @@ void TextBox::moveCaretToStart()
 GWENI_CONTROL_CONSTRUCTOR(TextBoxMultiline)
 {
     setWrap(true);
-    setAlignment(Alignment::Left|Alignment::Top);
 }
 
 bool TextBoxMultiline::onKeyReturn(bool down)
@@ -594,10 +593,11 @@ bool TextBoxMultiline::onKeyReturn(bool down)
 void TextBoxMultiline::makeCaretVisible()
 {
     const Size text=m_text->refreshSize(false);
+    const Alignment textAlignment=getTextAlignment();
 
     if(text.height < getHeight())
     {
-        m_text->setAlignment(getAlignment());
+        m_text->setAlignment(textAlignment);
     }
     else
     {
@@ -612,14 +612,9 @@ void TextBoxMultiline::makeCaretVisible()
         int iRealCaretPos=iCaretPos+m_text->getY();
         //int iSlidingZone =  m_text->getFont()->size; //getWidth()*0.1f
 
-        // If the carat is already in a semi-good position, leave it.
-//        int mi = getPadding().top;
-//        int ma = getHeight()-pos.h-getPadding().bottom;
-        if(iRealCaretPos >= getPadding().top && iRealCaretPos <= getHeight()-pos.h-
-            getPadding().bottom)
-            return;
-
-        int y=0;
+        // If the carat is already in a semi-good position, leave it, but
+        // clamped below: the box may have grown since the text was scrolled.
+        int y=m_text->getY();
 
         // bottom of carat too low
         if(iRealCaretPos > getHeight()-pos.h-getPadding().bottom)
@@ -641,13 +636,14 @@ void TextBoxMultiline::makeCaretVisible()
             y=getPadding().top;
 
         int x=0;
-        if(getAlignment() & Alignment::Left)
+        if(textAlignment & Alignment::Left)
             x=getPadding().left;
-        if(getAlignment() & Alignment::Right)
+        if(textAlignment & Alignment::Right)
             x=getWidth()-text.width-getPadding().right;
-        if(getAlignment() & Alignment::CenterH)
+        if(textAlignment & Alignment::CenterH)
             x=(getWidth()-text.width)*0.5f;
 
+        m_text->setAlignment(Alignment::Absolute);
         m_text->setPos(x, y);
     }
 }

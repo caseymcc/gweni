@@ -32,7 +32,6 @@ GWENI_CONTROL_CONSTRUCTOR(ScrollControl)
     m_horizontalScrollBar->setNudgeAmount(30);
 
     m_innerPanel=newChild<Base>();
-    m_innerPanel->setAlignment(Alignment::Absolute);
     m_innerPanel->setPos(0, 0);
     m_innerPanel->setMargin(Margin(5, 5, 5, 5));
     m_innerPanel->sendToBack();

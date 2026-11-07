@@ -19,8 +19,6 @@ GWENI_CONTROL_CONSTRUCTOR(SliderBar)
 {
     setTarget(this);
     restrictToParent(true);
-    // the slider's layout() places the thumb at its value; arrange keeps it there
-    setAlignment(Alignment::Absolute);
 }
 
 void SliderBar::onMouseClickLeft(int x, int y, bool down)

@@ -23,11 +23,10 @@ GWENI_CONTROL_CONSTRUCTOR(TabButton)
     m_page=nullptr;
     m_control=nullptr;
     dragAndDrop_setPackage(true, "TabButtonMove");
-    setAlignment(Alignment::Top|Alignment::Left);
     setTextPadding(Padding(2, 2, 2, 2));
-    // The text stays where sizeToContents() puts it, inside the padding; the
-    // alignment rules would place it at the button's edge.
-    setTextAlignment(Alignment::Absolute);
+    // The text reads from the top left of the padding, where sizeToContents()
+    // puts it, in a tab stretched to fill a Left/Right strip too.
+    setTextAlignment(Alignment::Left|Alignment::Top);
 }
 
 // The padding follows the side the strip is docked on, and the text sits

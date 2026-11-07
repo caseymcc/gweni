@@ -151,7 +151,7 @@ public:
 //
 //    virtual void drawButton(controls::Base *control, State state, bool depressed, bool hovered,
 //        bool disabled)=0;
-//    virtual void drawTabButton(controls::Base *control, State state, bool active, Position dir)=0;
+//    virtual void drawTabButton(controls::Base *control, State state, bool active, DockPosition dir)=0;
 //    virtual void drawTabControl(controls::Base *control, State state)=0;
 //    virtual void drawTabTitleBar(controls::Base *control, State state)=0;
 //
@@ -187,7 +187,7 @@ public:
 //        bool isHorizontal)=0;
 //    virtual void drawScrollBar(controls::Base *control, State state, bool isHorizontal,
 //        bool depressed)=0;
-//    virtual void drawScrollButton(controls::Base *control, State state, Position direction, bool depressed,
+//    virtual void drawScrollButton(controls::Base *control, State state, DockPosition direction, bool depressed,
 //        bool hovered, bool disabled)=0;
 //    virtual void drawProgressBar(controls::Base *control, State state, bool isHorizontal,
 //        float progress)=0;

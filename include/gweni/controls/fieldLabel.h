@@ -35,7 +35,6 @@ public:
     {
         m_field=nullptr;
         setMargin(Margin(0, 1, 0, 1));
-        setAlignment(Position::CenterV|Position::Left);
     }
 
 public:

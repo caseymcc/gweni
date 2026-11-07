@@ -79,7 +79,6 @@ Menu *MenuItem::getMenu()
             m_submenuArrow=newChild<RightArrow>();
             m_submenuArrow->setSize(15, 15);
             m_submenuArrow->setAlignment(Alignment::Right|Alignment::CenterV);
-            m_submenuArrow->setPosition(Position::Absolute, 4, 0);
         }
 
         invalidate();
@@ -177,7 +176,6 @@ void MenuItem::setAccelerator(const String &strAccelerator)
 
     m_accelerator=newChild<Label>();
     m_accelerator->setDock(DockPosition::Right);
-    m_accelerator->setAlignment(Alignment::Right|Alignment::CenterV);
     m_accelerator->setText(strAccelerator);
     m_accelerator->setMargin(Margin(0, 0, 16, 0));
     // TODO.

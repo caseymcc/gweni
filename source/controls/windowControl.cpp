@@ -31,7 +31,6 @@ GWENI_CONTROL_CONSTRUCTOR(WindowControl)
     m_titleBar->setDock(DockPosition::Top);
 
     m_title=m_titleBar->newChild<Label>();
-    m_title->setAlignment(Alignment::Left|Alignment::CenterV);
     m_title->setText("Window");
     m_title->setDock(DockPosition::Center);
     m_title->setPadding(Padding(8, 0, 0, 0));

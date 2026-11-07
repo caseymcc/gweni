@@ -24,8 +24,6 @@ GWENI_CONTROL_CONSTRUCTOR(Properties)
     m_splitterBar->onDragged.add(this, &Properties::onSplitterMoved);
     m_splitterBar->setShouldDrawBackground(false);
     m_splitterBar->doNotIncludeInSize();
-    // Placed by arrange(), not by the alignment rules.
-    m_splitterBar->setAlignment(Alignment::Absolute);
 }
 
 // The rows are docked Top, so this control's preferred height is theirs. The
@@ -112,7 +110,6 @@ class PropertyRowLabel: public Label
 {
     GWENI_CONTROL_INLINE(PropertyRowLabel, Label)
     {
-        setAlignment(Alignment::Left|Alignment::CenterV);
         m_propertyRow=nullptr;
     }
 
@@ -151,7 +148,6 @@ GWENI_CONTROL_CONSTRUCTOR(PropertyRow)
     PropertyRowLabel *label=newChild<PropertyRowLabel>();
     label->SetPropertyRow(this);
     label->setDock(DockPosition::Left);
-    label->setAlignment(Alignment::Left|Alignment::CenterV);
     label->setMargin(Margin(2, 0, 0, 0));
     label->setSizeFlags({SizeFlag::Fixed, SizeFlag::Elastic});
     m_label=label;

@@ -55,7 +55,6 @@ public:
         m_radioButton->setKeyboardInputEnabled(false);
         
         m_label=newChild<LabelClickable>();
-        m_label->setAlignment(Alignment::CenterV | Alignment::Left);
         m_label->setText("Radio Button");
         m_label->setDock(DockPosition::Center);
         m_label->onPressCaller.add(m_radioButton, &CheckBox::onPress);

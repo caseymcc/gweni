@@ -58,10 +58,10 @@ public:
                     m_columns[i]=newChild<Label>();
                     m_columns[i]->setDock(DockPosition::Left);
                     m_columns[i]->setPadding(Padding(3, 3, 3, 3));
-                    // The text stays where sizeToContents() puts it, inside
-                    // the padding; an aligned child would be placed at the
-                    // label's edge.
-                    m_columns[i]->setTextAlignment(Alignment::Absolute);
+                    // The text reads from the top left of the padding, where
+                    // sizeToContents() puts it, in a cell taller or wider
+                    // than it too.
+                    m_columns[i]->setTextAlignment(Alignment::Left|Alignment::Top);
                     m_columns[i]->sizeToContents();
                 }
             }

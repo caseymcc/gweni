@@ -56,7 +56,6 @@ void WindowDemo::openModalWindow(event::Info info)
     window->setSize(200 + pick(100), 200 + pick(100));
     window->makeModal(true);
     window->setAlignment(Alignment::Center);
-//    window->setPosition(Position::Center);
     window->setDeleteOnClose(true);
     m_windowCount++;
 }

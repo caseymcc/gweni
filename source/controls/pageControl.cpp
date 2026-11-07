@@ -55,7 +55,6 @@ GWENI_CONTROL_CONSTRUCTOR(PageControl)
     m_back->setSize(70);
     m_label=m_controls->newChild<Label>();
     m_label->setDock(DockPosition::Center);
-    m_label->setAlignment(Alignment::Left|Alignment::CenterV);
     m_label->setText("Page 1 or 2");
 
     // The pages live in their own container that fills the area above the nav
@@ -75,7 +74,7 @@ GWENI_CONTROL_CONSTRUCTOR(PageControl)
 //        if(!m_pages[i])
 //        {
 //            m_pages[i]=newChild<Base>();
-//            m_pages[i]->setDock(Position::Fill);
+//            m_pages[i]->setDock(DockPosition::Center);
 //        }
 //    }
 //

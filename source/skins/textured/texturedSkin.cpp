@@ -760,7 +760,7 @@ void TexturedSkin::setThemeColors()
 //    }
 //}
 //
-//virtual void drawActiveTabButton(gweni::controls::Base *control, State state, Position dir)
+//virtual void drawActiveTabButton(gweni::controls::Base *control, State state, DockPosition dir)
 //{
 //    if(state == State::Generate)
 //    {
@@ -768,13 +768,13 @@ void TexturedSkin::setThemeColors()
 //    }
 //    else if(state == State::Update)
 //    {
-//        if(dir == Position::Bottom)
+//        if(dir == DockPosition::Bottom)
 //            Textures.Tab.Bottom.Active.draw(getRenderer(), control, control->getRenderBounds() + Rect(0, -8, 0, 8));
-//        else if(dir == Position::Top)
+//        else if(dir == DockPosition::Top)
 //            Textures.Tab.Top.Active.draw(getRenderer(), control, control->getRenderBounds() + Rect(0, 0, 0, 8));
-//        else if(dir == Position::Left)
+//        else if(dir == DockPosition::Left)
 //            Textures.Tab.Left.Active.draw(getRenderer(), control, control->getRenderBounds() + Rect(0, 0, 8, 0));
-//        else if(dir == Position::Right)
+//        else if(dir == DockPosition::Right)
 //            Textures.Tab.Right.Active.draw(getRenderer(), control, control->getRenderBounds() + Rect(-8, 0, 8, 0));
 //    }
 //    else if(state == State::Remove)
@@ -783,7 +783,7 @@ void TexturedSkin::setThemeColors()
 //    }
 //}
 //
-//void drawTabButton(gweni::controls::Base *control, State state, bool active, Position dir) override
+//void drawTabButton(gweni::controls::Base *control, State state, bool active, DockPosition dir) override
 //{
 //    if(state == State::Generate)
 //    {
@@ -797,13 +797,13 @@ void TexturedSkin::setThemeColors()
 //            return;
 //        }
 //
-//        if(dir == Position::Bottom)
+//        if(dir == DockPosition::Bottom)
 //            Textures.Tab.Bottom.Inactive.draw(getRenderer(), control, control->getRenderBounds());
-//        else if(dir == Position::Top)
+//        else if(dir == DockPosition::Top)
 //            Textures.Tab.Top.Inactive.draw(getRenderer(), control, control->getRenderBounds());
-//        else if(dir == Position::Left)
+//        else if(dir == DockPosition::Left)
 //            Textures.Tab.Left.Inactive.draw(getRenderer(), control, control->getRenderBounds());
-//        else if(dir == Position::Right)
+//        else if(dir == DockPosition::Right)
 //            Textures.Tab.Right.Inactive.draw(getRenderer(), control, control->getRenderBounds());
 //    }
 //    else if(state == State::Remove)
@@ -1219,7 +1219,7 @@ void TexturedSkin::setThemeColors()
 //    }
 //}
 //
-//void drawScrollButton(gweni::controls::Base *control, State state, Position direction,
+//void drawScrollButton(gweni::controls::Base *control, State state, DockPosition direction,
 //    bool depressed, bool hovered, bool disabled) override
 //{
 //    if(state == State::Generate)
@@ -1229,9 +1229,9 @@ void TexturedSkin::setThemeColors()
 //    {
 //        int i=0;
 //
-//        if(direction == Position::Top) { i=1; }
-//        else if(direction == Position::Right) { i=2; }
-//        else if(direction == Position::Bottom) { i=3; }
+//        if(direction == DockPosition::Top) { i=1; }
+//        else if(direction == DockPosition::Right) { i=2; }
+//        else if(direction == DockPosition::Bottom) { i=3; }
 //
 //        if(disabled)
 //            return Textures.Scroller.Button.Disabled[i].draw(getRenderer(), control, control->getRenderBounds());

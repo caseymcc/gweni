@@ -42,7 +42,6 @@ GWENI_CONTROL_CONSTRUCTOR(TextDemo)
         const Color *color, int x, int y)
     {
         controls::Label *label=parent->newChild<controls::Label>();
-        label->setAlignment(Alignment::Absolute);
         if(font != nullptr)
             label->setFont(*font);
         if(color != nullptr)
@@ -84,7 +83,6 @@ GWENI_CONTROL_CONSTRUCTOR(TextDemo)
 
     TextDemoLightPanel *panel=newChild<TextDemoLightPanel>();
 
-    panel->setAlignment(Alignment::Absolute);
     panel->setPos(0, y);
     const int panelHeight=addRows(panel, &darkText, 6)+6;
     panel->setSize(620, panelHeight);
