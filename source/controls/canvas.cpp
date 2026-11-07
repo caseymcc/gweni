@@ -8,6 +8,7 @@
 #include <gweni/controls/canvas.h>
 #include <gweni/skin.h>
 #include <gweni/controls/menu.h>
+#include <gweni/controls/menuStrip.h>
 #include <gweni/controls/popup.h>
 #include <gweni/dragAndDrop.h>
 #include <gweni/controls/toolTip.h>
@@ -480,6 +481,31 @@ bool within(Base *control, Base *root)
     }
     return false;
 }
+
+//! A Menu that floats on the canvas (a ComboBox's list, a submenu) and closes
+//! with closeMenus(); not a MenuStrip, a bar laid out with the rest that never
+//! closes.
+bool floatingMenu(Base *control)
+{
+    return gweni_cast<Menu>(control) && !gweni_cast<MenuStrip>(control);
+}
+}
+
+bool Canvas::overPopup(Base *control)
+{
+    if(!m_popup || m_popupIsMenu)
+        return false;
+
+    // the canvas's child it is in
+    while(control && (control->getParent() != this))
+        control=control->getParent();
+
+    if(!control || !floatingMenu(control) || control->hidden())
+        return false;
+
+    // opened after the popup (bringToFront), so over it
+    Base::List::iterator popup=std::find(m_children.begin(), m_children.end(), m_popup);
+    return std::find(popup, m_children.end(), control) != m_children.end();
 }
 
 void Canvas::showPopup(Popup *popup, Base *anchor, PopupPlacement side)
@@ -531,7 +557,7 @@ bool Canvas::escapePopup()
     {
         for(Base *child : m_children)
         {
-            if(gweni_cast<Menu>(child) && !child->hidden())
+            if(overPopup(child))
             {
                 closeMenus();
                 return true;
@@ -549,9 +575,10 @@ void Canvas::popupPressed(Base *hovered)
         return;
 
     // A press on the anchor is the anchor's (a button toggling its popup); one
-    // on an open Menu may be on a ComboBox's list the popup opened.
+    // on a Menu opened over the popup is on a ComboBox's list in it, say. A
+    // menu bar is outside it like any other control.
     if(hovered && (within(hovered, m_popup) || within(hovered, m_popupAnchor)
-        || hovered->isMenuComponent()))
+        || overPopup(hovered)))
         return;
 
     closePopup();
@@ -586,7 +613,7 @@ void Canvas::keepOverlaysLast()
 
         for(++iter; iter != m_children.end();)
         {
-            if((*iter != m_toolTip) && !gweni_cast<Menu>(*iter))
+            if((*iter != m_toolTip) && !floatingMenu(*iter))
             {
                 ++iter;
                 continue;

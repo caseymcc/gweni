@@ -39,14 +39,18 @@ enum class PopupPlacement
 //! next to the anchor's canvas rect, flipped and kept inside the canvas, so
 //! it follows the anchor and a canvas that shrinks or grows again. It is
 //! closed by close(), setHidden(true), a press of either button outside it
-//! and its anchor (and outside an open Menu, which a ComboBox in it may have
-//! opened), Escape, its anchor hidden, disabled or deleted, and its own
-//! deletion. A press on the anchor is left to the anchor, so a button can
+//! and its anchor (and outside a Menu opened over it, a ComboBox's list in
+//! it; a menu bar, a MenuStrip, is outside it like any control), Escape, its
+//! anchor hidden, disabled or deleted, and its own deletion. A press on the anchor is left to the anchor, so a button can
 //! toggle the popup it opened.
 //!
 //! Ownership: a popup is its creator's. Opening it moves it onto the canvas
 //! (as a context menu set from outside is), and the canvas deletes it with
-//! its other children; closing it only hides it.
+//! its other children; closing it only hides it. Once opened it is not a
+//! child of the control that made it, so it is not deleted with that
+//! control: a control that makes a popup makes it on the canvas
+//! (getCanvas()->newChild<Popup>()) and deletes it in its destructor, with
+//! delayedDelete() so a canvas tearing down deletes it once (PopupDemo).
 //!
 //! While open it is kept after every other child of the canvas but the open
 //! Menus (one a ComboBox in it opened draws over it) and the ToolTip box, so

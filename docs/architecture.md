@@ -135,7 +135,9 @@ textured renderer paints one `tokyonight::Menu` surface, a context menu's panel.
 
 **It closes** on `close()` or `setHidden(true)` (both through `closePopup`, which fires
 `onClose`), on a press of either button that is not on the popup, on its anchor or on an
-open `Menu` (`Canvas::popupPressed`, called by `input::onMouseClicked` before the press is
+`Menu` opened over it, a ComboBox's list in it (`Canvas::overPopup`: a floating `Menu`
+after the popup among the canvas's children; a menu bar, a `MenuStrip`, is outside the
+popup like any control, and it never closes) (`Canvas::popupPressed`, called by `input::onMouseClicked` before the press is
 delivered, which it still is), on Escape (`Canvas::escapePopup`: a Menu open over it, a
 ComboBox's list in it, closes first), when the update phase finds its anchor hidden or
 disabled (`Canvas::updatePopup`, the step that also forgets a context menu closed as
@@ -143,8 +145,11 @@ menus close), when the anchor is deleted (`Canvas::popupControlDeleted` from `~B
 delayed delete included), and when it is deleted itself (no `onClose` then). A press on
 the anchor is the anchor's, so a button toggles its popup (`isOpen() ? close() :
 open(this)`). Closing a popup closes the Menus open over it. **Ownership:** a popup is
-its creator's: closing only hides it, and the canvas deletes it with its other children,
-so a page that makes one on the canvas deletes it with itself (`PopupDemo`).
+its creator's: closing only hides it, and the canvas deletes it with its other children.
+Once opened it is a child of the canvas, not of the control that made it, so it is not
+deleted with that control: a control that makes a popup makes it on the canvas and
+`delayedDelete()`s it in its destructor (`PopupDemo`), delayed so that a canvas tearing
+down, which deletes it as one of its children, deletes it once.
 
 **It places itself, in its own arrange.** A popup is owner-placed
 (`Placement::Owner`), so the canvas's arrange neither moves nor sizes it, and its own

@@ -29,13 +29,16 @@
  *  ComboBox in a popup keeps its list closed as the popup opens (its list is
  *  its child, which Base::setHidden would show), and its list opens over the
  *  popup and is chosen from without closing it; Escape closes that list
- *  before the popup, and the popup closing closes it too.
+ *  before the popup, and the popup closing closes it too. A MenuStrip on the
+ *  canvas (a menu bar, which never closes) is outside the popup like any
+ *  control: Escape still closes the popup, and a press on the strip does.
  */
 #include "headlessFixture.h"
 
 #include <gweni/controls/button.h>
 #include <gweni/controls/comboBox.h>
 #include <gweni/controls/menu.h>
+#include <gweni/controls/menuStrip.h>
 #include <gweni/controls/popup.h>
 #include <gweni/controls/toolTip.h>
 #include <gweni/inputHandler.h>
@@ -751,4 +754,39 @@ TEST_CASE("Popup: Escape closes a ComboBox list open over it first; closing it c
     scene.frame();
     CHECK(!popup->isOpen());
     CHECK(!combo->isMenuOpen());
+}
+
+TEST_CASE("Popup: a MenuStrip on the canvas is outside it: Escape and a press on the strip close it")
+{
+    Scene scene;
+    controls::MenuStrip *strip=scene.canvas->newChild<controls::MenuStrip>();
+
+    strip->setDock(DockPosition::Top);
+    strip->addItem("File");
+    controls::Base *anchor=scene.box(10, 50, 60, 20);
+    Popup *popup=scene.popup();
+    scene.frame();
+    REQUIRE(strip->visible());
+
+    popup->open(anchor);
+    scene.frame();
+    REQUIRE(popup->isOpen());
+    scene.escape();
+    CHECK(!popup->isOpen());
+    CHECK(strip->visible());
+
+    // a press on the strip, away from its items
+    popup->open(anchor);
+    scene.frame();
+    REQUIRE(popup->isOpen());
+    scene.leftClick(300, strip->getHeight()/2);
+    REQUIRE(HoveredControl);
+    CHECK(HoveredControl->isMenuComponent());
+    CHECK(!popup->isOpen());
+
+    // and on one of its items
+    popup->open(anchor);
+    scene.frame();
+    scene.clickOn(strip->getChildren().front());
+    CHECK(!popup->isOpen());
 }

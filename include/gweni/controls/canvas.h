@@ -203,7 +203,8 @@ public:
     /// The canvas shows one popup at a time: a Popup (Popup::open, next to
     /// its anchor) or a context menu (below). Opening one closes the one
     /// shown. A press of either button closes a shown Popup unless it is on
-    /// the popup, on its anchor or on an open Menu (input::onMouseClicked,
+    /// the popup, on its anchor or on a Menu opened over it (overPopup();
+    /// input::onMouseClicked,
     /// before the press is delivered, which it still is); a context menu
     /// closes as menus do. Escape closes either, whatever has the keyboard
     /// focus (input::onKeyEvent), a Menu open over a Popup first. The update phase closes it when its anchor
@@ -226,6 +227,10 @@ public:
     /// input::onMouseClicked: a press on \p hovered closes a shown Popup it
     /// is not part of (see above).
     void popupPressed(Base *hovered);
+    /// \p control is in a visible Menu opened over the shown Popup: a
+    /// floating Menu (a ComboBox's list, not a MenuStrip) after it among the
+    /// canvas's children.
+    bool overPopup(Base *control);
     /// Base: \p control is being deleted.
     void popupControlDeleted(Base *control);
     /// \}
