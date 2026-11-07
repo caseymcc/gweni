@@ -203,6 +203,7 @@ void LayoutItem::calculateHorizontal()
     m_preferredSize.width=0;
     m_minimumSize.width=0;
     m_maximumSize.width=std::numeric_limits<int>::max();
+    m_sizeFlags.horizontal=SizeFlag::Fixed;
 
     bool addSpacing=false;
 
@@ -229,6 +230,7 @@ void LayoutItem::calculateMaxHeight()
     m_preferredSize.height=0;
     m_minimumSize.height=0;
     m_maximumSize.height=std::numeric_limits<int>::max();
+    m_sizeFlags.vertical=SizeFlag::Fixed;
 
     for(LayoutItem *child:m_children)
     {
@@ -245,8 +247,10 @@ void LayoutItem::calculateMaxHeight()
 
 void LayoutItem::calculateMaxWidth()
 {
+    m_preferredSize.width=0;
     m_minimumSize.width=0;
     m_maximumSize.width=std::numeric_limits<int>::max();
+    m_sizeFlags.horizontal=SizeFlag::Fixed;
 
     for(LayoutItem *child:m_children)
     {
@@ -267,6 +271,7 @@ void LayoutItem::calculateVertical()
     m_preferredSize.height=0;
     m_minimumSize.height=0;
     m_maximumSize.height=std::numeric_limits<int>::max();
+    m_sizeFlags.vertical=SizeFlag::Fixed;
 
     bool addSpacing=false;
     for(LayoutItem *child:m_children)

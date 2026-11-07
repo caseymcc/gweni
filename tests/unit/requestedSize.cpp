@@ -382,3 +382,142 @@ TEST_CASE("a layout cell smaller than the child's margins gives it size 0, never
     CHECK(asked->getWidth() == 0);
     CHECK(asked->getHeight() >= 0);
 }
+
+namespace
+{
+
+//! A panel with a layout holding a nested layout of the other direction, with
+//! "inner" in it, and a Fixed 30x30 "after" past it along the row (vertical:
+//! the column), whose position shows how long the outer layout made the
+//! nested one.
+struct NestedScene: Scene
+{
+    bool vertical;
+    controls::LayoutItem *nested;
+    Block *inner;
+    controls::Base *after;
+
+    NestedScene(bool vertical, SizeFlag innerFlag, int innerLength):
+        vertical(vertical)
+    {
+        controls::Base *panel=centerPanel();
+        if(vertical)
+        {
+            panel->setLayout(new controls::VerticalLayout());
+            nested=new controls::HorizontalLayout();
+        }
+        else
+        {
+            panel->setLayout(new controls::HorizontalLayout());
+            nested=new controls::VerticalLayout();
+        }
+        panel->getLayout()->addLayout(nested);
+
+        inner=panel->newChild<Block>("inner");
+        nested->addControl(inner);
+        setInner(innerFlag, innerLength);
+
+        after=panel->newChild<controls::Base>("after");
+        after->setSizeFlags({SizeFlag::Fixed, SizeFlag::Fixed});
+        after->setSize(30, 30);
+    }
+
+    //! inner's flag and length along the outer layout's direction; 20 and
+    //! Fixed across it
+    void setInner(SizeFlag flag, int length)
+    {
+        if(vertical)
+        {
+            inner->setSizeFlags({SizeFlag::Fixed, flag});
+            inner->setSize(20, length);
+            inner->want=Size(20, length);
+        }
+        else
+        {
+            inner->setSizeFlags({flag, SizeFlag::Fixed});
+            inner->setSize(length, 20);
+            inner->want=Size(length, 20);
+        }
+        inner->invalidate();
+    }
+
+    int nestedLength() const
+    {
+        return vertical?nested->getPreferredSize().height:nested->getPreferredSize().width;
+    }
+
+    SizeFlag nestedFlag() const
+    {
+        return vertical?nested->getSizeFlags().vertical:nested->getSizeFlags().horizontal;
+    }
+
+    int afterPos() const
+    {
+        return vertical?after->getY():after->getX();
+    }
+};
+
+}//namespace
+
+TEST_CASE("a nested layout's preferred length shrinks back with its child, as in a fresh layout")
+{
+    for(const bool vertical:{false, true})
+    {
+        CAPTURE(vertical);
+        NestedScene scene(vertical, SizeFlag::Shrink, 300);
+        scene.settle();
+        REQUIRE(scene.nestedLength() == 300);
+
+        scene.setInner(SizeFlag::Shrink, 50);
+        scene.settle();
+
+        NestedScene fresh(vertical, SizeFlag::Shrink, 50);
+        fresh.settle();
+
+        // not stuck at the 300 the child was before
+        CHECK(fresh.nestedLength() == 50);
+        CHECK(scene.nestedLength() == fresh.nestedLength());
+        CHECK(text(scene.nested->getBounds()) == text(fresh.nested->getBounds()));
+        CHECK(text(scene.inner->getBounds()) == text(fresh.inner->getBounds()));
+        CHECK(text(scene.after->getBounds()) == text(fresh.after->getBounds()));
+
+        // and laying it out again and again changes nothing
+        const Rect nestedBounds=scene.nested->getBounds();
+        const Rect afterBounds=scene.after->getBounds();
+        for(int i=0; i<5; ++i)
+        {
+            scene.inner->invalidate();
+            scene.settle();
+        }
+        CHECK(scene.nestedLength() == 50);
+        CHECK(text(scene.nested->getBounds()) == text(nestedBounds));
+        CHECK(text(scene.after->getBounds()) == text(afterBounds));
+    }
+}
+
+TEST_CASE("a nested layout's size flag follows its child from Expand to Fixed, as in a fresh layout")
+{
+    for(const bool vertical:{false, true})
+    {
+        CAPTURE(vertical);
+        NestedScene scene(vertical, SizeFlag::Expand, 50);
+        scene.settle();
+        // the Expand nested layout takes the extra space: "after" is at the far end
+        REQUIRE(sizeFlagName(scene.nestedFlag()) == "Expand");
+        REQUIRE(scene.afterPos() > 52);
+
+        scene.setInner(SizeFlag::Fixed, 50);
+        scene.settle();
+
+        NestedScene fresh(vertical, SizeFlag::Fixed, 50);
+        fresh.settle();
+
+        CHECK(sizeFlagName(fresh.nestedFlag()) == "Fixed");
+        CHECK(sizeFlagName(scene.nestedFlag()) == "Fixed");
+        CHECK(text(scene.nested->getBounds()) == text(fresh.nested->getBounds()));
+        CHECK(text(scene.inner->getBounds()) == text(fresh.inner->getBounds()));
+        // the nested layout is its child's 50 long again, "after" 2 (the spacing) past it
+        CHECK(fresh.afterPos() == 52);
+        CHECK(text(scene.after->getBounds()) == text(fresh.after->getBounds()));
+    }
+}
