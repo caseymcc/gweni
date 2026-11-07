@@ -7,7 +7,8 @@
  *  setSize outside the arrange code), its preferred size and its size flags,
  *  never from the bounds an earlier pass gave it: an Expand control that grew
  *  shrinks back once what made it grow is gone, inside a Base parent and inside
- *  a layout, and a canvas resize and back gives the first bounds again.
+ *  a layout, and a canvas resize and back gives the first bounds again. A
+ *  layout child is sized from its cell minus its margin, clamped at 0.
  */
 #include "headlessFixture.h"
 
@@ -275,4 +276,109 @@ TEST_CASE("a Fixed layout child advances a Vertical and a HorizontalLayout by it
             CHECK(text(after->getBounds()) == text(Rect(50+2+3+70+5+2, 0, 50, 20)));
         }
     }
+}
+
+TEST_CASE("a layout child with a margin is sized from its cell minus the margin")
+{
+    Scene scene;
+    controls::Base *panel=scene.centerPanel();
+    panel->setLayout(new controls::VerticalLayout());
+
+    controls::Base *child=panel->newChild<controls::Base>("child");
+    child->setSizeFlags({SizeFlag::Expand, SizeFlag::Expand});
+    child->setMargin(Margin(10, 10, 10, 10));
+
+    scene.settle();
+    CHECK(text(child->getBounds()) == text(Rect(10, 10, 620, 460)));
+}
+
+TEST_CASE("a layout child's request wider than its cell minus the margin is capped there")
+{
+    Scene scene;
+    controls::Base *panel=scene.centerPanel();
+    panel->setLayout(new controls::VerticalLayout());
+
+    Block *asked=panel->newChild<Block>("asked");
+    asked->setBounds(0, 0, 700, 20);
+    asked->want=Size(700, 20);
+    asked->setSizeFlags({SizeFlag::Shrink, SizeFlag::Shrink});
+    asked->setMargin(Margin(7, 3, 11, 5));
+
+    scene.settle();
+    // the cell is the panel width (the preferred 700+7+11 shrunk to it) and
+    // 20+3+5 high
+    CHECK(text(asked->getBounds()) == text(Rect(7, 3, 640-7-11, 20)));
+}
+
+TEST_CASE("Expand children with margins in a HorizontalLayout do not overlap or pass the panel edge")
+{
+    Scene scene;
+    controls::Base *panel=scene.centerPanel();
+    panel->setLayout(new controls::HorizontalLayout());
+
+    controls::Base *c0=panel->newChild<controls::Base>("c0");
+    controls::Base *c1=panel->newChild<controls::Base>("c1");
+    for(controls::Base *c:{c0, c1})
+    {
+        c->setSizeFlags({SizeFlag::Expand, SizeFlag::Expand});
+        c->setMargin(Margin(5, 5, 5, 5));
+    }
+
+    scene.settle();
+    CAPTURE(text(c0->getBounds()));
+    CAPTURE(text(c1->getBounds()));
+    CHECK(c0->getX() == 5);
+    CHECK(c0->getWidth() > 0);
+    CHECK(c1->getWidth() > 0);
+    CHECK(c0->getX()+c0->getWidth()+5 <= c1->getX()-5);
+    CHECK(c1->getX()+c1->getWidth() <= 640-5);
+    CHECK(c0->getY() == 5);
+    CHECK(c0->getHeight() == 480-5-5);
+    CHECK(c1->getHeight() == 480-5-5);
+}
+
+TEST_CASE("a Fixed layout child with a margin keeps its requested size, also in a cell smaller than the margin")
+{
+    Scene scene;
+    controls::Base *panel=scene.centerPanel();
+    panel->setLayout(new controls::VerticalLayout());
+
+    controls::Base *fixed=panel->newChild<controls::Base>("fixed");
+    fixed->setSizeFlags({SizeFlag::Fixed, SizeFlag::Fixed});
+    fixed->setSize(70, 30);
+    fixed->setMargin(Margin(3, 4, 5, 6));
+
+    scene.settle();
+    CHECK(text(fixed->getBounds()) == text(Rect(3, 4, 70, 30)));
+
+    scene.canvas->setSize(6, 8);
+    scene.settle();
+    CHECK(text(fixed->getBounds()) == text(Rect(3, 4, 70, 30)));
+}
+
+TEST_CASE("a layout cell smaller than the child's margins gives it size 0, never a negative size")
+{
+    Scene scene;
+    controls::Base *panel=scene.centerPanel();
+    panel->setLayout(new controls::VerticalLayout());
+
+    controls::Base *expand=panel->newChild<controls::Base>("expand");
+    expand->setSizeFlags({SizeFlag::Expand, SizeFlag::Expand});
+    expand->setMargin(Margin(10, 10, 10, 10));
+
+    Block *asked=panel->newChild<Block>("asked");
+    asked->setBounds(0, 0, 50, 20);
+    asked->setSizeFlags({SizeFlag::Shrink, SizeFlag::Shrink});
+    asked->setMargin(Margin(10, 10, 10, 10));
+
+    scene.canvas->setSize(15, 15);
+    scene.settle();
+    CAPTURE(text(expand->getBounds()));
+    CAPTURE(text(asked->getBounds()));
+    CHECK(expand->getX() == 10);
+    CHECK(expand->getY() == 10);
+    CHECK(expand->getWidth() == 0);
+    CHECK(expand->getHeight() == 0);
+    CHECK(asked->getWidth() == 0);
+    CHECK(asked->getHeight() >= 0);
 }

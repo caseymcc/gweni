@@ -291,19 +291,20 @@ void LayoutItem::updateControlSize(Dim dim)
 {
     // Sized from the control's request and preferred size against this cell
     // (Base::layoutCellSize), never from its current bounds, which an earlier
-    // pass may have grown or shrunk.
+    // pass may have grown or shrunk. The cell holds the margins
+    // (calculateSize adds them), so the control gets what is inside them.
     Margin margin=m_control->getMargin();
     Rect bounds=m_control->getBounds();
 
     if(dim == Dim::X)
     {
         bounds.x=m_bounds.x+margin.left;
-        bounds.w=m_control->layoutCellSize(dim, m_bounds.w);
+        bounds.w=m_control->layoutCellSize(dim, std::max(0, m_bounds.w-margin.left-margin.right));
     }
     else
     {
         bounds.y=m_bounds.y+margin.top;
-        bounds.h=m_control->layoutCellSize(dim, m_bounds.h);
+        bounds.h=m_control->layoutCellSize(dim, std::max(0, m_bounds.h-margin.top-margin.bottom));
     }
 
     m_control->setArrangedBounds(bounds.x, bounds.y, bounds.w, bounds.h);
