@@ -81,6 +81,21 @@ static constexpr int lcdSubpixelPositions=3;
 // GWENI_TEXT_CONTRAST's default: the LCD coverage boost for white text
 static constexpr float defaultTextContrast=1.0f;
 
+// The view's projection: device px, y down, and z (a z index) from 0 at depth 1.0,
+// the depth-clear value, to OpenGLCore::kMaxZIndex at depth 0, so a higher z passes
+// GL_LESS in front of a lower one.
+static glm::mat4 viewProjection(const gweni::Rect &viewRect)
+{
+    return glm::ortho(
+        static_cast<float>(viewRect.x),
+        static_cast<float>(viewRect.x + viewRect.w),
+        static_cast<float>(viewRect.y + viewRect.h),
+        static_cast<float>(viewRect.y),
+        -static_cast<float>(OpenGLCore::kMaxZIndex),
+        0.0f
+    );
+}
+
 // The built-in fallback font's file, resources/OpenSans.ttf, compiled in by
 // cmake/embedFile.cmake (generated/fallbackFont.cpp in the build tree)
 extern const unsigned char fallbackFontData[];
@@ -847,16 +862,7 @@ void checkErrors(unsigned int shader, std::string type)
 
 void OpenGLCore::init()
 {
-    m_projectionMatrix=glm::ortho(
-        static_cast<float>(m_viewRect.x),
-        static_cast<float>(m_viewRect.x + m_viewRect.w),
-        static_cast<float>(m_viewRect.y + m_viewRect.h),
-        static_cast<float>(m_viewRect.y),
-//        static_cast<float>(m_viewRect.y),
-//        static_cast<float>(m_viewRect.y + m_viewRect.h),
-        -10000.0f,
-        0.0f
-    );
+    m_projectionMatrix=viewProjection(m_viewRect);
 
     //the buffers below are freshly created, so nothing of the mirror is on the device yet
     m_vertexBufferCapacity=0;
@@ -922,7 +928,7 @@ void OpenGLCore::init()
 //layout (location = 2) in vec4 inColor;
 
 layout (location = 0) in uint style;
-layout (location = 1) in ivec3 inPosition;   // device px (signed) and z
+layout (location = 1) in ivec3 inPosition;   // device px (signed) and z (16 bits unsigned, read as GL_SHORT with x and y)
 layout (location = 2) in uvec2 inTexCoords;    // color0 (top fill) or UV
 layout (location = 3) in ivec2 inLocal;        // SDF local position (rel to rect center)
 layout (location = 4) in uvec2 inRadiusBorder; // SDF .x=radius .y=border (px)
@@ -973,13 +979,15 @@ void main()
     // style 3 keeps its endpoints in color1 and color3, int16 bits in half-pixel units
     vSegment = vec4((ivec4(uvec4(inColor1, inColor3)) << 16) >> 16)*0.5;
     vPixel = vec2(inPosition.xy);
+    // GL_SHORT sign-extends z; its low 16 bits are Vertex::z, 0..65535
+    float z = float(inPosition.z & 0xffff);
 
     if(style == 0u)//item has been hidden, move all coords to 0.0f
         gl_Position = vec4(0.0f, 0.0f, 0.0f, 1.0f);
     else
-        gl_Position = projection * vec4(float(inPosition.x), float(inPosition.y), float(inPosition.z), 1.0f);
+        gl_Position = projection * vec4(float(inPosition.x), float(inPosition.y), z, 1.0f);
 
-    vec4 behind = projection * vec4(float(inPosition.x), float(inPosition.y), float(inPosition.z) - 0.5, 1.0);
+    vec4 behind = projection * vec4(float(inPosition.x), float(inPosition.y), z - 0.5, 1.0);
     vBehindDepth = behind.z*0.5 + 0.5;
 })";
 
@@ -1424,9 +1432,12 @@ void main()
     // after the sample, as in the primitive shader: its implicit derivatives want the quad
     if(clipped)
         discard;
-    // An SDF glyph's quad reaches the spread past its ink, over its neighbours and
-    // the next row: where it draws nothing it must not write depth either.
-    if((textMode == 1) && (a <= 0.0))
+    // Where a glyph draws nothing it must not write depth either: an SDF glyph's quad
+    // reaches the spread past its ink, over its neighbours and the next row, and a
+    // coverage glyph's box overlaps the next glyph's, which in a long run can sit at
+    // the same depth (glyph i is at z+(i+1)/(glyphs+1)). a is 0 exactly where every
+    // mode's colour and coverage are 0.
+    if(a <= 0.0)
         discard;
 }
     )";
@@ -1456,14 +1467,7 @@ void OpenGLCore::setViewRect(const gweni::Rect &viewRect)
 {
     m_viewRect=viewRect;
 
-    m_projectionMatrix=glm::ortho(
-        static_cast<float>(m_viewRect.x),
-        static_cast<float>(m_viewRect.x + m_viewRect.w),
-        static_cast<float>(m_viewRect.y + m_viewRect.h),
-        static_cast<float>(m_viewRect.y),
-        -10000.0f,
-        0.0f
-    );
+    m_projectionMatrix=viewProjection(m_viewRect);
 
     glViewport(m_viewRect.x, m_viewRect.y, m_viewRect.w, m_viewRect.h);
 }
@@ -2004,7 +2008,7 @@ void OpenGLCore::setVertex(Vertex &vertex, uint8_t type, int x, int y, int z, fl
     vertex.x=(int16_t)x;
 //    vertex.y=m_viewRect.h - y;
     vertex.y=(int16_t)y;
-    vertex.z=(int16_t)z;// m_activeProgram;
+    vertex.z=(uint16_t)std::clamp(z, 0, kMaxZIndex);
 
 //    if(m_activeProgram == 1)
     {

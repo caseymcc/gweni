@@ -259,8 +259,15 @@ on an OpenGL 3.3 core profile:
   `{ style, x, y, z, tx, ty, lx, ly, radius, border, cx, cy, bx, by, dx, dy }`.
   `x, y` are the corner's device-pixel position, **signed** (`int16_t`, read as an
   `ivec3` with `z`), so a rect that straddles the view's left or top edge keeps its
-  negative corner and draws exactly its on-view part; `z` is 0..10000, the
-  projection's depth range. A quad is drawn only if it fits in ±32 K device px:
+  negative corner and draws exactly its on-view part; `z` is `uint16_t`, 0..65535
+  (`OpenGLCore::kMaxZIndex`, what `maxZIndex()` reports; the shader takes its low 16
+  bits, `inPosition.z & 0xffff`, since `GL_SHORT` sign-extends it), the projection's
+  depth range: z=0 is depth 1.0, the clear value, and 65535 is depth 0. In a 24-bit
+  depth buffer (the capture framebuffer's `GL_DEPTH_COMPONENT24`, and the window's
+  through an explicit `GLFW_DEPTH_BITS` hint) that is 256 depth steps per z, so the
+  glyphs of a run longer than about 254 glyphs (glyph i at `z+(i+1)/(glyphs+1)`)
+  share depths: the text shader discards every pixel a glyph does not draw, in every
+  mode, so a glyph's box writes no depth over the next glyph's ink. A quad is drawn only if it fits in ±32 K device px:
   `cullOutOfRangeQuad`, called by every quad writer (`drawFilledRect`,
   `writeRoundedQuad`, `drawIcon`, `drawTexturedRect`), puts all four corners of a
   quad with a corner outside `[-32768, 32767]` at 0,0, a zero-area quad that draws

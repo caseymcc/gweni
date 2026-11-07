@@ -62,6 +62,11 @@ public:
     //! Update the viewport/projection when the output surface is resized.
     virtual void setViewRect(const gweni::Rect &viewRect) {}
 
+    //! The largest z index a control may be given: the draw calls' \a zIndex
+    //! (plus the control's depth and overlay layers) must stay in [0, maxZIndex()],
+    //! where a higher z is drawn in front. The canvas numbers within it.
+    virtual int maxZIndex() const { return 10000; }
+
     //! Get ResourceLoader we are using for the renderer.
     IResourceLoader &getLoader() { return *reinterpret_cast<IResourceLoader *>(this); }
     ResourcePaths &getResourcePaths() { return m_paths; }

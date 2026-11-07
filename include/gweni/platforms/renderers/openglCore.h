@@ -218,6 +218,11 @@ public:
     void init() override;
     void setViewRect(const gweni::Rect &viewRect) override;
 
+    //! Vertex::z is 16 bits unsigned, so a z index is 0..65535. The projection maps
+    //! z=0 to depth 1.0, the clear value, and kMaxZIndex to 0.
+    static constexpr int kMaxZIndex=65535;
+    int maxZIndex() const override { return kMaxZIndex; }
+
     void begin() override;
     void end() override;
 
@@ -443,7 +448,7 @@ private:
     {
         uint16_t style;
         int16_t  x, y;   //device px, signed: a quad must fit in +/-32 K (cullOutOfRangeQuad)
-        int16_t  z;      //0..10000, the projection's depth range
+        uint16_t z;      //0..kMaxZIndex, the projection's depth range (read in the shader as inPosition.z & 0xFFFF)
         uint16_t tx, ty; //color0 (top fill) packed rg/ba, or UV for texture (style 2, 0..65535 = 0..1)
         // SDF fields (styles 3-7); left 0 for all other styles.
         int16_t  lx, ly; //local position relative to rect center, in half-pixel units (= +/-size at the four corners, so an odd size is exact)
@@ -722,6 +727,7 @@ private:
     //! A missing or unreadable face is drawn in the built-in font (setFallbackFont)
     bool m_fallbackFont=true;
 
+    //! The view's orthographic projection, z from 0 (depth 1.0) to kMaxZIndex (depth 0).
     glm::mat4 m_projectionMatrix;
 
     uint32_t m_program=0;

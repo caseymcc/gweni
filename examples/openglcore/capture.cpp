@@ -150,6 +150,9 @@ bool initGlfwContext(Context &ctx, const Point &size, const std::string &title, 
 
     glfwWindowHint(GLFW_VISIBLE, visible?GLFW_TRUE:GLFW_FALSE);
     glfwWindowHint(GLFW_SCALE_TO_MONITOR, visible?GLFW_TRUE:GLFW_FALSE);
+    // GLFW's default, asked for: OpenGLCore spreads its 65536 z values over the
+    // depth buffer, 256 steps each in 24 bits, as in the EGL path's framebuffer
+    glfwWindowHint(GLFW_DEPTH_BITS, 24);
     ctx.window=glfwCreateWindow(size.x, size.y, title.c_str(), NULL, NULL);
     if(!ctx.window)
     {

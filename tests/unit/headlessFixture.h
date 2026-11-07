@@ -123,6 +123,11 @@ public:
         lines.push_back({primitiveId, p0, p1, thickness, zIndex, drawColor});
     }
 
+    //! What maxZIndex() reports: set it small to make the canvas run out of z.
+    int maxZ=65535;
+
+    int maxZIndex() const override { return maxZ; }
+
     //IResourceLoader, nothing to load
     gweni::Font::Status loadFont(const gweni::Font &) override { return gweni::Font::Status::Loaded; }
     void freeFont(const gweni::Font &) override {}
