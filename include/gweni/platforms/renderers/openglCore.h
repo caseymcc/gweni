@@ -98,6 +98,16 @@ struct GLFontKeyHash
     }
 };
 
+//! One glMultiDrawElements of an atlas's text: the runs it draws inside one index
+//! chunk (OpenGLCore::indexChunkSlots() glyph slots), as index ranges of the static
+//! 16-bit quad index buffer, which every chunk reads from its own first slot.
+struct GLTextChunkDraw
+{
+    size_t chunk=0; //!< the chunk's first slot is chunk*indexChunkSlots()
+    std::vector<int> counts;
+    std::vector<const void *> offsets; //!< byte offsets, from the chunk's first slot
+};
+
 struct GLFontData
 {
     GLFontData():
@@ -129,8 +139,7 @@ struct GLFontData
 
         mode=other.mode;
         textRuns=std::move(other.textRuns);
-        drawCounts=std::move(other.drawCounts);
-        drawOffsets=std::move(other.drawOffsets);
+        drawChunks=std::move(other.drawChunks);
         drawListStale=other.drawListStale;
         freed=other.freed;
     }
@@ -165,11 +174,11 @@ struct GLFontData
     //! Text ids whose runs were laid out in this font, so flush() draws them with
     //! this atlas. OpenGLCore keeps it in step with each TextRun's fontData.
     std::unordered_set<size_t> textRuns;
-    //! What flush() hands glMultiDrawElements for this atlas: the index ranges of
-    //! the runs in textRuns that draw something, in slot order, adjacent ones merged.
-    //! Rebuilt from textRuns when drawListStale.
-    std::vector<int> drawCounts;
-    std::vector<const void *> drawOffsets;
+    //! What flush() hands glMultiDrawElements for this atlas, one draw per index
+    //! chunk it touches, in slot order: the glyph slots in use of the runs in
+    //! textRuns that draw something, adjacent ones merged, split at the chunks'
+    //! edges. Rebuilt from textRuns when drawListStale.
+    std::vector<GLTextChunkDraw> drawChunks;
     bool drawListStale=true;
     //! An SDF font freed while runs still use its shared atlas: it is kept until
     //! its last run leaves it, and a use before then (ensureFont, loadFont) keeps
@@ -357,11 +366,11 @@ public:
 
     const FrameStats &getFrameStats() const { return m_frameStats; }
 
-    //! The most slots one draw covers. Every slot is a quad, 4 vertexes and 6 indexes
-    //! in the one static 16-bit index buffer that every draw shares (slot i of a chunk
-    //! is vertexes i*4..i*4+3 from the chunk's first vertex), so the buffers are drawn
-    //! in chunks of at most this many slots, each with its vertex attributes pointed
-    //! at its first slot. 16383, not 16384: WebGL 2 always restarts the primitive at
+    //! The most slots one draw covers. Every primitive and glyph slot is a quad, 4
+    //! vertexes and 6 indexes in a static 16-bit index buffer that every draw of its
+    //! path shares (slot i of a chunk is vertexes i*4..i*4+3 from the chunk's first
+    //! vertex), so the buffers are drawn in chunks of at most this many slots, each
+    //! with its vertex attributes pointed at its first slot. 16383, not 16384: WebGL 2 always restarts the primitive at
     //! index 0xFFFF, and 16384 quads would end on 65535. The largest index is 65531.
     static constexpr size_t kSlotsPerChunk=16383;
 
@@ -370,7 +379,8 @@ public:
     //! makes an ordinary scene span many chunks, which draws the same pixels.
     size_t indexChunkSlots() const { return m_chunkSlots; }
     //! Sets indexChunkSlots(), clamped to [1, kSlotsPerChunk]; the chunks' vertex
-    //! arrays are made again as the next flush() needs them. A test hook.
+    //! arrays and the atlases' draw lists are made again as the next flush() needs
+    //! them. A test hook.
     void setIndexChunkSlots(size_t slots);
 
     //! What every live id holds in the CPU mirrors, so two states of the UI can be
@@ -508,6 +518,9 @@ private:
     //! Chunk `chunk`'s primitive vertex array, made (with its attributes pointed at the
     //! chunk's first vertex and m_quadIndexBuffer as its element buffer) on first use.
     uint32_t primitiveVertexArray(size_t chunk);
+    //! The same for the text: chunk `chunk`'s glyph vertex array, its element buffer
+    //! m_textQuadIndexBuffer.
+    uint32_t textVertexArray(size_t chunk);
 
     //! Grows the CPU mirrors so the primitive's slots exist.
     void ensurePrimitiveSlots(size_t primitiveId);
@@ -591,10 +604,11 @@ private:
     //! One contiguous run of glyph quads in the text mirrors, owned by one text id.
     //
     //! A run owns the glyph slots [start, start+capacity): vertexes
-    //! [start*4, (start+capacity)*4) and indexes [start*6, (start+capacity)*6).
-    //! Only the first `glyphs` of them are in use; the tail, and the whole run
-    //! while it is hidden, carries degenerate (all-zero) indexes so it draws
-    //! nothing. One run is therefore one dirty range per buffer for the upload.
+    //! [start*4, (start+capacity)*4). Only the first `glyphs` of them are in use.
+    //! Its font's draw list (buildTextDrawList) holds just those, and only while
+    //! the run is not hidden, so the tail, a hidden run and a freed one draw
+    //! nothing whatever their vertexes still hold. One run is therefore one dirty
+    //! range per buffer for the upload.
     //
     //! text, font and color are what the glyphs were laid out from: renderText
     //! rebuilds the run when any of them changes, and only re-offsets it when
@@ -630,36 +644,32 @@ private:
     void addFreeTextRun(size_t start, size_t capacity);
     //! Grows the text mirrors so the first `glyphSlots` glyph slots exist.
     void ensureTextSlots(size_t glyphSlots);
-    //! (Re)writes the run's whole index range and marks it dirty.
-    void writeTextIndexes(const TextRun &run);
+    //! The run's glyph count, slots or hidden flag changed: its font's draw list is
+    //! rebuilt before the next draw.
+    void markTextDrawList(const TextRun &run);
     void markTextVertexes(const TextRun &run);
     //! Writes box into the run's glyph slots in use, marking only the ones that change.
     void writeTextClipBoxes(const TextRun &run, const Box &box);
     //! Moves the text id's run from its font's draw list to fontData's (nullptr: to none).
     void setTextRunFont(size_t textId, GLFontData *fontData);
-    //! Rebuilds fontData's drawCounts/drawOffsets from its textRuns.
+    //! Rebuilds fontData's drawChunks from its textRuns.
     void buildTextDrawList(GLFontData &fontData);
 
     std::vector<TextRun> m_textRuns;
     std::map<size_t, size_t> m_freeTextRuns; //!< start -> capacity, never adjacent to another
     size_t m_textSlotsUsed=0; //!< glyph slots below which runs are handed out
-    //! 32-bit, unlike the primitive indexes: a glyph slot is 4 vertexes, so 16 bits
-    //! would cap the text mirror at 16384 glyph slots and wrap silently past it.
-    std::vector<uint32_t> m_textIndexes;
     std::vector<ftgl::glyph_vertex_t> m_textVertexes;
     std::vector<Box> m_textClipBoxes; //!< one per glyph slot
 
     DirtySlots m_dirtyVertexSlots;
     DirtySlots m_dirtyClipSlots;
     DirtySlots m_dirtyTextVertexSlots;
-    DirtySlots m_dirtyTextIndexSlots;
     DirtySlots m_dirtyTextClipSlots;
 
     //element counts currently allocated on the device, per buffer
     size_t m_vertexBufferCapacity=0;
     size_t m_clipBufferCapacity=0;
     size_t m_textVertexBufferCapacity=0;
-    size_t m_textIndexBufferCapacity=0;
     size_t m_textClipBufferCapacity=0;
 
     //per-frame counters; also reported to stdout when GWENI_UPLOAD_STATS is set
@@ -717,9 +727,15 @@ private:
     uint32_t m_textModeUniform; //!< the GLTextMode of the atlas being drawn
     uint32_t m_textContrastUniform; //!< m_textContrast, set every flush()
 
-    uint32_t m_textVertexArray=0;
+    uint32_t m_textSlotBaseUniform; //!< the first glyph slot of the chunk being drawn
+
+    //! kSlotsPerChunk quads of uint16_t indexes in freetype-gl's glyph order (v, v+1,
+    //! v+2, v, v+2, v+3 for v=i*4: its quads go round their corners, where the
+    //! primitives' zigzag), GL_STATIC_DRAW, filled once by init().
+    uint32_t m_textQuadIndexBuffer=0;
+    //! One vertex array per chunk of m_chunkSlots glyph slots (textVertexArray()).
+    std::vector<uint32_t> m_textVertexArrays;
     uint32_t m_textVertexBuffer=0;
-    uint32_t m_textIndexBuffer=0;
     uint32_t m_textClipBuffer=0;
     uint32_t m_textClipTexture=0; //!< GL_TEXTURE_BUFFER view of m_textClipBuffer
 

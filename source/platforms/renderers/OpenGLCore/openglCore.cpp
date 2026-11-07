@@ -582,9 +582,9 @@ OpenGLCore::GLObjectNames OpenGLCore::getGLObjectNames() const
     GLObjectNames names;
 
     names.buffers={m_vertexBuffer, m_quadIndexBuffer, m_clipBuffer,
-        m_textVertexBuffer, m_textIndexBuffer, m_textClipBuffer};
+        m_textVertexBuffer, m_textQuadIndexBuffer, m_textClipBuffer};
     names.vertexArrays=std::vector<unsigned int>(m_vertexArrays.begin(), m_vertexArrays.end());
-    names.vertexArrays.push_back(m_textVertexArray);
+    names.vertexArrays.insert(names.vertexArrays.end(), m_textVertexArrays.begin(), m_textVertexArrays.end());
     names.textures={m_clipTexture, m_textClipTexture};
     names.programs={m_program, m_textProgram};
     return names;
@@ -735,14 +735,15 @@ OpenGLCore::~OpenGLCore()
     glUseProgram(0);
 
     const GLuint buffers[]={m_vertexBuffer, m_quadIndexBuffer, m_clipBuffer,
-        m_textVertexBuffer, m_textIndexBuffer, m_textClipBuffer};
+        m_textVertexBuffer, m_textQuadIndexBuffer, m_textClipBuffer};
     const GLuint textures[]={m_clipTexture, m_textClipTexture};
 
     // deleting a bound object unbinds it, so another renderer in this context
     // finds nothing of these left bound; it binds its own every flush()
     if(!m_vertexArrays.empty())
         glDeleteVertexArrays((GLsizei)m_vertexArrays.size(), m_vertexArrays.data());
-    glDeleteVertexArrays(1, &m_textVertexArray);
+    if(!m_textVertexArrays.empty())
+        glDeleteVertexArrays((GLsizei)m_textVertexArrays.size(), m_textVertexArrays.data());
     glDeleteBuffers(6, buffers);
     glDeleteTextures(2, textures);
     glDeleteProgram(m_program);
@@ -790,7 +791,6 @@ void OpenGLCore::init()
     m_vertexBufferCapacity=0;
     m_clipBufferCapacity=0;
     m_textVertexBufferCapacity=0;
-    m_textIndexBufferCapacity=0;
     m_textClipBufferCapacity=0;
 
     // Until a canvas sets its region, the whole view is visible: the shaders discard
@@ -801,60 +801,46 @@ void OpenGLCore::init()
     glCreateBuffers(1, &m_vertexBuffer);
     glCreateBuffers(1, &m_quadIndexBuffer);
     glCreateBuffers(1, &m_clipBuffer);
+    glCreateBuffers(1, &m_textVertexBuffer);
+    glCreateBuffers(1, &m_textQuadIndexBuffer);
+    glCreateBuffers(1, &m_textClipBuffer);
 
     // Every chunk draws its slots from vertex 0 of its own attribute base, so one
-    // pattern of kSlotsPerChunk quads serves every chunk and never changes.
+    // pattern of kSlotsPerChunk quads per path serves every chunk and never changes.
+    // The primitives' quads zigzag (v, v+1, v+2, v+1, v+3, v+2); freetype-gl's glyph
+    // quads, and layoutSdfText's in its order, go round their corners (v, v+1, v+2,
+    // v, v+2, v+3). Each path keeps the triangles it always had, so the diagonal
+    // each quad is split along, and with it every interpolated value, is unchanged.
     {
+        static const uint16_t primitiveQuad[6]={ 0, 1, 2, 1, 3, 2 };
+        static const uint16_t glyphQuad[6]={ 0, 1, 2, 0, 2, 3 };
         std::vector<uint16_t> quads(kSlotsPerChunk*6);
 
-        for(size_t slot=0; slot<kSlotsPerChunk; ++slot)
-        {
-            const uint16_t v=static_cast<uint16_t>(slot*4);
-            uint16_t *quad=&quads[slot*6];
-
-            quad[0]=v;
-            quad[1]=v+1;
-            quad[2]=v+2;
-            quad[3]=v+1;
-            quad[4]=v+3;
-            quad[5]=v+2;
-        }
-
         glBindVertexArray(0);
-        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m_quadIndexBuffer);
-        glBufferData(GL_ELEMENT_ARRAY_BUFFER, quads.size()*sizeof(uint16_t), quads.data(), GL_STATIC_DRAW);
+        for(const auto &pattern:{ std::make_pair(m_quadIndexBuffer, primitiveQuad),
+            std::make_pair(m_textQuadIndexBuffer, glyphQuad) })
+        {
+            for(size_t slot=0; slot<kSlotsPerChunk; ++slot)
+            {
+                const uint16_t v=static_cast<uint16_t>(slot*4);
+
+                for(size_t j=0; j<6; ++j)
+                    quads[slot*6+j]=v+pattern.second[j];
+            }
+
+            glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, pattern.first);
+            glBufferData(GL_ELEMENT_ARRAY_BUFFER, quads.size()*sizeof(uint16_t), quads.data(), GL_STATIC_DRAW);
+        }
     }
 
     // the chunks' vertex arrays are made as flush() first draws them
     m_vertexArrays.clear();
-
-    //setup text vertex array
-    glCreateVertexArrays(1, &m_textVertexArray);
-    glCreateBuffers(1, &m_textVertexBuffer);
-    glCreateBuffers(1, &m_textIndexBuffer);
-    glCreateBuffers(1, &m_textClipBuffer);
+    m_textVertexArrays.clear();
 
     // The clip boxes are not vertex attributes: each fragment shader reads its slot's
     // Box from a buffer texture, one RGBA16UI texel per slot (see flush()).
     glGenTextures(1, &m_clipTexture);
     glGenTextures(1, &m_textClipTexture);
-
-    glBindVertexArray(m_textVertexArray);
-
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m_textIndexBuffer);
-
-    glBindBuffer(GL_ARRAY_BUFFER, m_textVertexBuffer);
-    glEnableVertexAttribArray(0); // Attrib '0' is position
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(glyph_vertex_t), (GLvoid*)(offsetof(glyph_vertex_t, x)));
-    glEnableVertexAttribArray(1); // Attrib '1' is texture coords
-    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(glyph_vertex_t), (GLvoid*)(offsetof(glyph_vertex_t, u)));
-    glEnableVertexAttribArray(2); // Attrib '2' is color
-    glVertexAttribPointer(2, 4, GL_FLOAT, GL_FALSE, sizeof(glyph_vertex_t), (GLvoid*)(offsetof(glyph_vertex_t, r)));
-    glEnableVertexAttribArray(3); // Attrib '3' is gamma
-    glVertexAttribPointer(3, 1, GL_FLOAT, GL_FALSE, sizeof(glyph_vertex_t), (GLvoid*)(offsetof(glyph_vertex_t, gamma)));
-    // freetype-gl's subpixel `shift` is not read: the fragment shader samples one channel.
-
-    glBindVertexArray(0);
 
     // Loading shaders
     auto vertexSource=R"(
@@ -1197,8 +1183,11 @@ out vec2 texCoord;
 out vec4 color;
 out float gamma;
 out vec2 pixel;    // pixel-space position, the clip boxes' space
-// The glyph slot: its 4 vertexes are slot*4..slot*4+3, and the indexes are vertex
-// numbers, so this holds however the slots are split between draws.
+// The glyph slot. The text is drawn in chunks, each with its attributes pointed at
+// its first slot (slotBase) and indexed from there, so gl_VertexID is a vertex of
+// the chunk: slot (gl_VertexID >> 2) of it, however its runs are split between
+// draws.
+uniform int slotBase;
 flat out uint slot;
 
 void main()
@@ -1207,7 +1196,7 @@ void main()
     color=vertColor;
     gamma=vertGamma;
     pixel=vertPosition.xy;
-    slot=uint(gl_VertexID) >> 2;
+    slot=uint(slotBase)+(uint(gl_VertexID) >> 2);
 
     gl_Position = projection * vec4(vertPosition, 1.0f);
 }
@@ -1229,8 +1218,9 @@ in vec2 pixel;
 flat in uint slot;
 
 uniform sampler2D texture1;
-// One Box (x0, y0, x1, y1) per glyph slot. Each atlas is a draw of its own over
-// some of the slots, so gl_PrimitiveID does not give the slot; the vertex shader does.
+// One Box (x0, y0, x1, y1) per glyph slot. Each atlas draws its own runs, some of
+// the slots of each chunk, so gl_PrimitiveID does not give the slot; the vertex
+// shader does.
 uniform usamplerBuffer clipBoxes;
 // GLTextMode of the atlas this draw samples: 0 coverage, 1 signed distance field,
 // 2 subpixel coverage in r, g, b order, 3 in b, g, r order
@@ -1309,6 +1299,7 @@ void main()
     m_textClipBoxesUniform=glGetUniformLocation(m_textProgram, "clipBoxes");
     m_textModeUniform=glGetUniformLocation(m_textProgram, "textMode");
     m_textContrastUniform=glGetUniformLocation(m_textProgram, "textContrast");
+    m_textSlotBaseUniform=glGetUniformLocation(m_textProgram, "slotBase");
 
     // texture1 stays on unit 0; the clip boxes are on unit 1 for both programs, and
     // the primitive program's images on FirstImageUnit on
@@ -1395,6 +1386,38 @@ uint32_t OpenGLCore::primitiveVertexArray(size_t chunk)
     return m_vertexArrays[chunk];
 }
 
+uint32_t OpenGLCore::textVertexArray(size_t chunk)
+{
+    while(m_textVertexArrays.size() <= chunk)
+    {
+        // chunk n's vertex 0 is glyph slot n*m_chunkSlots's first vertex
+        const size_t base=m_textVertexArrays.size()*m_chunkSlots*4*sizeof(glyph_vertex_t);
+        auto at=[base](size_t offset){ return reinterpret_cast<const GLvoid *>(base+offset); };
+        GLuint vertexArray=0;
+
+        glCreateVertexArrays(1, &vertexArray);
+        glBindVertexArray(vertexArray);
+
+        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m_textQuadIndexBuffer);
+
+        glBindBuffer(GL_ARRAY_BUFFER, m_textVertexBuffer);
+        glEnableVertexAttribArray(0); // Attrib '0' is position
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(glyph_vertex_t), at(offsetof(glyph_vertex_t, x)));
+        glEnableVertexAttribArray(1); // Attrib '1' is texture coords
+        glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(glyph_vertex_t), at(offsetof(glyph_vertex_t, u)));
+        glEnableVertexAttribArray(2); // Attrib '2' is color
+        glVertexAttribPointer(2, 4, GL_FLOAT, GL_FALSE, sizeof(glyph_vertex_t), at(offsetof(glyph_vertex_t, r)));
+        glEnableVertexAttribArray(3); // Attrib '3' is gamma
+        glVertexAttribPointer(3, 1, GL_FLOAT, GL_FALSE, sizeof(glyph_vertex_t), at(offsetof(glyph_vertex_t, gamma)));
+        // freetype-gl's subpixel `shift` is not read: the fragment shader samples one channel.
+
+        glBindVertexArray(0);
+        m_textVertexArrays.push_back(vertexArray);
+    }
+
+    return m_textVertexArrays[chunk];
+}
+
 void OpenGLCore::setIndexChunkSlots(size_t slots)
 {
     slots=std::min(std::max<size_t>(slots, 1), kSlotsPerChunk);
@@ -1405,12 +1428,18 @@ void OpenGLCore::setIndexChunkSlots(size_t slots)
     m_chunkSlots=slots;
 
     // their attributes start at the old chunk size's slots
-    if(!m_vertexArrays.empty())
+    glBindVertexArray(0);
+    for(std::vector<uint32_t> *vertexArrays:{ &m_vertexArrays, &m_textVertexArrays })
     {
-        glBindVertexArray(0);
-        glDeleteVertexArrays((GLsizei)m_vertexArrays.size(), m_vertexArrays.data());
-        m_vertexArrays.clear();
+        if(vertexArrays->empty())
+            continue;
+        glDeleteVertexArrays((GLsizei)vertexArrays->size(), vertexArrays->data());
+        vertexArrays->clear();
     }
+
+    // and the atlases' draws are split at the old chunks' edges
+    for(auto &entry:m_fonts)
+        entry.second.drawListStale=true;
 }
 
 void OpenGLCore::ensurePrimitiveSlots(size_t primitiveId)
@@ -1587,7 +1616,7 @@ void OpenGLCore::flush()
     m_frameStats.mirrorBytes=
         m_vertexes.size()*sizeof(Vertex)
         +m_clippingBoxes.size()*sizeof(Box)
-        +m_textVertexes.size()*sizeof(glyph_vertex_t)+m_textIndexes.size()*sizeof(uint32_t)
+        +m_textVertexes.size()*sizeof(glyph_vertex_t)
         +m_textClipBoxes.size()*sizeof(Box);
 
     //glyphs measureText (logic phase) or renderText rasterised since the last frame; done
@@ -1654,12 +1683,9 @@ void OpenGLCore::flush()
         glBindVertexArray(0);
     }
 
-    if(!m_textIndexes.empty())
+    if(!m_textVertexes.empty())
     {
         //copy only the glyph slots that changed since the last frame
-        uploadDirty(GL_ELEMENT_ARRAY_BUFFER, m_textIndexBuffer, m_textIndexBufferCapacity,
-            m_textIndexes.data(), sizeof(uint32_t), m_textIndexes.size(), m_dirtyTextIndexSlots, 6);
-
         uploadDirty(GL_ARRAY_BUFFER, m_textVertexBuffer, m_textVertexBufferCapacity,
             m_textVertexes.data(), sizeof(glyph_vertex_t), m_textVertexes.size(), m_dirtyTextVertexSlots, 4);
 
@@ -1688,12 +1714,15 @@ void OpenGLCore::flush()
         glActiveTexture(GL_TEXTURE1);
         glBindTexture(GL_TEXTURE_BUFFER, m_textClipTexture);
         glActiveTexture(GL_TEXTURE0);
-        glBindVertexArray(m_textVertexArray);
 
-        // Each atlas draws the runs laid out in its font, over their own index
-        // ranges in the one index buffer: one draw per atlas, none for an atlas
-        // with nothing to show. The slots are not moved, so the upload above stays
-        // per dirty slot.
+        // Each atlas draws the runs laid out in its font: one draw per index chunk
+        // its runs reach (one per atlas until the glyph slots outgrow a chunk),
+        // none for an atlas with nothing to show. A chunk's draw reads the static
+        // quad indexes from its own first slot, through its vertex array, and the
+        // vertex shader's slot is slotBase plus the slot within the chunk. The
+        // atlases go in the same order, and each one's chunks in slot order, as the
+        // one draw per atlas over the whole buffer did. The slots are not moved, so
+        // the upload above stays per dirty slot.
         //
         // An LCD atlas's runs blend each channel by its own coverage, the fragment
         // shader's second output; the blend in place before the first of them is
@@ -1709,7 +1738,7 @@ void OpenGLCore::flush()
 
             if(fontData.drawListStale)
                 buildTextDrawList(fontData);
-            if(fontData.drawCounts.empty())
+            if(fontData.drawChunks.empty())
                 continue;
 
             const bool lcd=(fontData.mode == GLTextMode::LcdRGB) || (fontData.mode == GLTextMode::LcdBGR);
@@ -1731,10 +1760,15 @@ void OpenGLCore::flush()
 
             glBindTexture(GL_TEXTURE_2D, fontData.atlas->id);
             glProgramUniform1i(m_textProgram, m_textModeUniform, (GLint)fontData.mode);
-            glMultiDrawElements(GL_TRIANGLES, fontData.drawCounts.data(), (GLenum)GL_UNSIGNED_INT,
-                fontData.drawOffsets.data(), (GLsizei)fontData.drawCounts.size());
-            ++m_frameStats.drawCalls;
-            ++m_frameStats.textDraws;
+            for(const GLTextChunkDraw &draw:fontData.drawChunks)
+            {
+                glBindVertexArray(textVertexArray(draw.chunk));
+                glProgramUniform1i(m_textProgram, m_textSlotBaseUniform, (GLint)(draw.chunk*m_chunkSlots));
+                glMultiDrawElements(GL_TRIANGLES, draw.counts.data(), (GLenum)GL_UNSIGNED_SHORT,
+                    draw.offsets.data(), (GLsizei)draw.counts.size());
+                ++m_frameStats.drawCalls;
+                ++m_frameStats.textDraws;
+            }
         }
 
         if(lcdBlend)
@@ -2333,8 +2367,6 @@ void OpenGLCore::ensureTextSlots(size_t glyphSlots)
 {
     if(m_textVertexes.size() < glyphSlots*4)
         m_textVertexes.resize(glyphSlots*4);
-    if(m_textIndexes.size() < glyphSlots*6)
-        m_textIndexes.resize(glyphSlots*6);
     if(m_textClipBoxes.size() < glyphSlots)
         m_textClipBoxes.resize(glyphSlots);
 }
@@ -2380,10 +2412,10 @@ void OpenGLCore::freeTextRun(TextRun &run)
     if(run.capacity == 0)
         return;
 
-    // Blank the whole run before handing it back: a freed run must draw nothing
-    // until somebody allocates its slots again.
+    // Out of its font's draw list before handing it back: a freed run must draw
+    // nothing until somebody allocates its slots again.
     run.glyphs=0;
-    writeTextIndexes(run);
+    markTextDrawList(run);
     addFreeTextRun(run.start, run.capacity);
 
     run.start=0;
@@ -2394,8 +2426,8 @@ void OpenGLCore::allocateTextRun(TextRun &run, size_t glyphs)
 {
     if(run.capacity >= glyphs)
     {
-        // Keeps the run where it is; the tail past `glyphs` is blanked by
-        // writeTextIndexes, so a string that shrinks leaves no ghost glyphs.
+        // Keeps the run where it is; the tail past `glyphs` is not in the draw
+        // list (markTextDrawList), so a string that shrinks leaves no ghost glyphs.
         run.glyphs=glyphs;
         return;
     }
@@ -2437,46 +2469,11 @@ void OpenGLCore::allocateTextRun(TextRun &run, size_t glyphs)
     ensureTextSlots(run.start+run.capacity);
 }
 
-void OpenGLCore::writeTextIndexes(const TextRun &run)
+void OpenGLCore::markTextDrawList(const TextRun &run)
 {
-    if(run.capacity == 0)
-        return;
-
-    // the run's glyph count, slots or hidden flag changed: its draw range did too
+    // what the run draws, glyphs [start, start+glyphs) unless hidden, changed
     if(run.fontData)
         run.fontData->drawListStale=true;
-
-    static const uint32_t c_quad[6]={ 0, 1, 2, 0, 2, 3 };
-
-    for(size_t i=0; i<run.capacity; ++i)
-    {
-        const size_t slot=run.start+i;
-        uint32_t *indexes=&m_textIndexes[slot*6];
-        uint32_t slotIndexes[6];
-
-        if(run.hidden || (i >= run.glyphs))
-        {
-            // Degenerate triangles: every index the same vertex, so the slot
-            // rasterises nothing whatever its vertices still hold. This is what
-            // hides a run and what keeps a freed or over-long run off the screen.
-            for(size_t j=0; j<6; ++j)
-                slotIndexes[j]=0;
-        }
-        else
-        {
-            const uint32_t base=static_cast<uint32_t>(slot*4);
-
-            for(size_t j=0; j<6; ++j)
-                slotIndexes[j]=base+c_quad[j];
-        }
-
-        // a run laid out again with as many glyphs keeps its indexes: no upload
-        if(memcmp(indexes, slotIndexes, sizeof(slotIndexes)) == 0)
-            continue;
-
-        memcpy(indexes, slotIndexes, sizeof(slotIndexes));
-        m_dirtyTextIndexSlots.mark(slot);
-    }
 }
 
 void OpenGLCore::markTextVertexes(const TextRun &run)
@@ -2554,21 +2551,40 @@ void OpenGLCore::buildTextDrawList(GLFontData &fontData)
     // in slot order, as the single draw over the whole buffer went
     std::sort(ranges.begin(), ranges.end());
 
-    fontData.drawCounts.clear();
-    fontData.drawOffsets.clear();
+    fontData.drawChunks.clear();
 
+    // Only glyphs in use are listed, and a merge joins ranges that touch, so a
+    // run's tail, a freed block or another font's run between two runs keeps them
+    // apart: nothing outside the listed runs' glyphs is drawn.
     size_t i=0;
 
     while(i < ranges.size())
     {
-        const size_t start=ranges[i].first;
+        size_t start=ranges[i].first;
         size_t end=start+ranges[i].second;
 
         for(++i; (i < ranges.size()) && (ranges[i].first == end); ++i)
             end+=ranges[i].second;
 
-        fontData.drawCounts.push_back(static_cast<int>((end-start)*6));
-        fontData.drawOffsets.push_back(reinterpret_cast<const void *>(start*6*sizeof(uint32_t)));
+        // split at the chunks' edges, each piece indexed from its chunk's first slot
+        while(start < end)
+        {
+            const size_t chunk=start/m_chunkSlots;
+            const size_t chunkStart=chunk*m_chunkSlots;
+            const size_t pieceEnd=std::min(end, chunkStart+m_chunkSlots);
+
+            if(fontData.drawChunks.empty() || (fontData.drawChunks.back().chunk != chunk))
+            {
+                fontData.drawChunks.emplace_back();
+                fontData.drawChunks.back().chunk=chunk;
+            }
+
+            GLTextChunkDraw &draw=fontData.drawChunks.back();
+
+            draw.counts.push_back(static_cast<int>((pieceEnd-start)*6));
+            draw.offsets.push_back(reinterpret_cast<const void *>((start-chunkStart)*6*sizeof(uint16_t)));
+            start=pieceEnd;
+        }
     }
 
     fontData.drawListStale=false;
@@ -2702,7 +2718,7 @@ void OpenGLCore::renderText(size_t textId, const gweni::Font &font, gweni::Point
 
     measuredPenShifts(font, fontData, px, text, shifts);
 
-    // hidden is left as it is: writeTextIndexes below keeps a hidden run blank
+    // hidden is left as it is: a hidden run stays out of its font's draw list
     run.text=text;
     run.position=pos;
     run.zIndex=zIndex;
@@ -2746,7 +2762,7 @@ void OpenGLCore::renderText(size_t textId, const gweni::Font &font, gweni::Point
         }
     }
 
-    writeTextIndexes(run);
+    markTextDrawList(run);
     markTextVertexes(run);
     writeTextClipBoxes(run, makeClipBox());
 
@@ -2760,27 +2776,29 @@ void OpenGLCore::renderText(size_t textId, const gweni::Font &font, gweni::Point
             liveGlyphs+=textRun.glyphs;
 
         ::printf("[mirror] textId=%zu \"%s\" chars=%zu run=[%zu,%zu) capacity=%zu "
-            "%s vertices=%zu indices=%zu\n",
+            "%s vertices=%zu\n",
             textId, text.c_str(), text.length(), run.start, run.start+run.glyphs,
-            run.capacity, textBuffer?"ftgl":"sdf", glyphCount*4, glyphCount*6);
+            run.capacity, textBuffer?"ftgl":"sdf", glyphCount*4);
         ::printf("[mirror]   pos=(%d,%d) z=%d hidden=%s atlas=%zux%zu depth=%zu "
-            "mirror verts=%zu idx=%zu slots used=%zu free runs=%zu free slots=%zu "
-            "live glyphs=%zu\n",
+            "mirror verts=%zu slots used=%zu free runs=%zu free slots=%zu "
+            "live glyphs=%zu chunk slots=%zu\n",
             pos.x, pos.y, zIndex, run.hidden?"yes":"no",
             fontData.atlas->width, fontData.atlas->height, fontData.atlas->depth,
-            m_textVertexes.size(), m_textIndexes.size(), m_textSlotsUsed,
-            m_freeTextRuns.size(), freeSlots, liveGlyphs);
+            m_textVertexes.size(), m_textSlotsUsed,
+            m_freeTextRuns.size(), freeSlots, liveGlyphs, m_chunkSlots);
         for(size_t i=0; i<run.capacity; ++i)
         {
             const size_t slot=run.start+i;
             const size_t vertIndex=slot*4;
-            const size_t index=slot*6;
             float minX=m_textVertexes[vertIndex].x, maxX=minX;
             float minY=m_textVertexes[vertIndex].y, maxY=minY;
 
-            ::printf("[mirror]   slot %zu (glyph %zu, char '%c')%s verts %zu..%zu idx %zu..%zu\n",
+            // what buildTextDrawList lists for the run: its glyphs in use, unless hidden
+            const bool drawn=!run.hidden && (i < run.glyphs);
+
+            ::printf("[mirror]   slot %zu (glyph %zu, char '%c')%s verts %zu..%zu chunk %zu %s\n",
                 slot, i, i<text.length()?text[i]:'?', i<run.glyphs?"":" [unused tail]",
-                vertIndex, vertIndex+3, index, index+5);
+                vertIndex, vertIndex+3, slot/m_chunkSlots, drawn?"drawn":"not drawn");
             for(size_t j=0; j<4; ++j)
             {
                 const ftgl::glyph_vertex_t &v=m_textVertexes[vertIndex+j];
@@ -2791,19 +2809,6 @@ void OpenGLCore::renderText(size_t textId, const gweni::Font &font, gweni::Point
                     j, (double)v.x, (double)v.y, (double)v.z, (double)v.u, (double)v.v,
                     (double)v.r, (double)v.g, (double)v.b, (double)v.a, (double)v.gamma);
             }
-            //a drawn slot must index only its own run; a blanked one, only one vertex
-            const bool drawn=!run.hidden && (i < run.glyphs);
-            bool ok=true;
-            ::printf("[mirror]     idx =");
-            for(size_t j=0; j<6; ++j)
-            {
-                uint32_t e=m_textIndexes[index+j];
-                if(drawn?((e < run.start*4) || (e >= (run.start+run.capacity)*4))
-                    :(e != m_textIndexes[index]))
-                    ok=false;
-                ::printf(" %u", (unsigned)e);
-            }
-            ::printf("  (%s: %s)\n", drawn?"all inside run":"degenerate", ok?"yes":"NO");
             ::printf("[mirror]     box w=%.3f h=%.3f  x=[%.3f..%.3f] y=[%.3f..%.3f]\n",
                 (double)(maxX-minX), (double)(maxY-minY),
                 (double)minX, (double)maxX, (double)minY, (double)maxY);
@@ -2985,7 +2990,7 @@ void OpenGLCore::showText(size_t textId)
 #endif//DEBUG_RENDER
 
     run.hidden=false;
-    writeTextIndexes(run);
+    markTextDrawList(run);
 }
 
 void OpenGLCore::hideText(size_t textId)
@@ -3003,7 +3008,7 @@ void OpenGLCore::hideText(size_t textId)
 #endif//DEBUG_RENDER
 
     run.hidden=true;
-    writeTextIndexes(run);
+    markTextDrawList(run);
 }
 
 // The size is in canvas (unscaled) units at any scale(): the text is measured at

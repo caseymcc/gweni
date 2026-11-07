@@ -219,7 +219,7 @@ TEST_CASE("SDF text: changing a run's size rewrites its vertexes and uploads not
     CHECK(stats.atlasUploadCalls == 0);
     // one slot per codepoint, the space included: the run's own, and only them
     CHECK(stats.textSlotsWritten == text.size());
-    // the glyph count did not change, so neither did the indexes: one vertex range
+    // the glyph indexes are static, and the run kept its slots: one vertex range
     CHECK(stats.uploadCalls == 1);
     CHECK(stats.uploadBytes == text.size()*4*sizeof(ftgl::glyph_vertex_t));
 

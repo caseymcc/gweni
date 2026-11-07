@@ -3,13 +3,15 @@
  *  Copyright (c) 2010 Facepunch Studios
  *  MIT License, see LICENSE
  *
- *  OpenGLCore's chunked primitive draws: every slot is a quad in one static
- *  16-bit index buffer, and the slots are drawn in chunks of at most
+ *  OpenGLCore's chunked draws: every primitive and glyph slot is a quad in a
+ *  static 16-bit index buffer, and the slots are drawn in chunks of at most
  *  OpenGLCore::kSlotsPerChunk, each with its vertex attributes pointed at its
  *  first slot. A slot past 16383 (which a 16-bit index of slot*4 cannot reach)
  *  draws its own vertexes, and a chunk size of a few slots draws exactly the
  *  pixels of one chunk, one draw per chunk, each slot clipped by its own box.
- *  Drawn offscreen and read back.
+ *  Text runs split between chunks draw as one, and a hidden run or a shrunk
+ *  run's tail, which no index mirror blanks any more, draws nothing. Drawn
+ *  offscreen and read back.
  *
  *  The renderer is shared with the other cases, so each case puts the clip
  *  region and the chunk size back when it ends.
@@ -113,6 +115,39 @@ struct Primitives
 
     std::vector<size_t> ids;
 };
+
+//! Text ids for one test case, released (and that flushed) when it ends.
+struct Texts
+{
+    ~Texts()
+    {
+        OpenGLCore &renderer=gweni::test::gpuRenderer();
+
+        for(size_t id:ids)
+            renderer.releaseTextPrimitive(id);
+        renderer.begin();
+        renderer.end();
+    }
+
+    size_t generate()
+    {
+        size_t id=0;
+
+        gweni::test::gpuRenderer().generateTextPrimitive(id);
+        ids.push_back(id);
+        return id;
+    }
+
+    std::vector<size_t> ids;
+};
+
+gweni::Font openSansAt(float size)
+{
+    gweni::Font font=gweni::test::openSans();
+
+    font.size=size;
+    return font;
+}
 
 //! Cell i of a 6x2 grid of 60x60 rects.
 Rect cell(size_t i)
@@ -233,4 +268,115 @@ TEST_CASE("Index chunks: a few slots per chunk draw the same pixels, one draw pe
     CHECK(renderer.indexChunkSlots() == 1);
     renderer.setIndexChunkSlots(OpenGLCore::kSlotsPerChunk+1);
     CHECK(renderer.indexChunkSlots() == OpenGLCore::kSlotsPerChunk);
+}
+
+TEST_CASE("Index chunks: text split between chunks draws the same, hidden and shrunk runs nothing more")
+{
+    Guard guard;
+    Texts texts;
+    OpenGLCore &renderer=gweni::test::gpuRenderer();
+    const Color white(255, 255, 255, 255);
+    // two atlases: a coverage size and (by default) an SDF one
+    const gweni::Font small=openSansAt(11.0f);
+    const gweni::Font large=openSansAt(24.0f);
+    // no spaces: each is one glyph slot per character
+    const gweni::String straddling="Straddling";
+    const gweni::String wide="WWWWWWWWWW";
+    const gweni::String shrunk="WW";
+    // each run cut by a clip region of its own, so a glyph that read another
+    // slot's clip box (a chunk's slotBase left out) draws differently
+    const Rect clipA(10, 0, 40, 60);
+    const Rect clipC(10, 100, 35, 60);
+    const Rect view(Point(0, 0), gweni::test::viewSize());
+
+    // what other cases left drawing, one draw per glyph slot at one slot a chunk
+    renderer.setIndexChunkSlots(1);
+    drawFrame([](OpenGLCore &) {});
+    const size_t baseSingle=renderer.getFrameStats().textDraws;
+
+    renderer.setIndexChunkSlots(OpenGLCore::kSlotsPerChunk);
+
+    const size_t a=texts.generate();
+    const size_t b=texts.generate();
+    const size_t c=texts.generate();
+
+    drawFrame([&](OpenGLCore &renderer)
+    {
+        renderer.setDrawColor(white);
+        renderer.setClipRegion(clipA);
+        renderer.renderText(a, small, Point(10, 30), 1, straddling);
+        renderer.setClipRegion(view);
+        renderer.renderText(b, small, Point(10, 80), 1, "Hidden");
+        renderer.setClipRegion(clipC);
+        renderer.renderText(c, large, Point(10, 130), 1, wide);
+    });
+
+    // b hidden and c shrunk in place: its tail keeps its old glyphs' vertexes
+    const Frame whole=drawFrame([&](OpenGLCore &renderer)
+    {
+        renderer.hideText(b);
+        renderer.setDrawColor(white);
+        renderer.setClipRegion(clipC);
+        renderer.renderText(c, large, Point(10, 130), 1, shrunk);
+    });
+
+    // c's two glyphs' vertexes and nothing else: no indexes to upload
+    CHECK(renderer.getFrameStats().uploadCalls == 1);
+    CHECK(renderer.getFrameStats().uploadBytes == shrunk.size()*4*sizeof(ftgl::glyph_vertex_t));
+
+    // a fresh layout of only what is shown, on new ids, draws the same
+    {
+        Texts fresh;
+        const size_t d=fresh.generate();
+        const size_t e=fresh.generate();
+
+        const Frame reference=drawFrame([&](OpenGLCore &renderer)
+        {
+            renderer.hideText(a);
+            renderer.hideText(c);
+            renderer.setDrawColor(white);
+            renderer.setClipRegion(clipA);
+            renderer.renderText(d, small, Point(10, 30), 1, straddling);
+            renderer.setClipRegion(clipC);
+            renderer.renderText(e, large, Point(10, 130), 1, shrunk);
+        });
+
+        CHECK(reference.pixels == whole.pixels);
+    }
+
+    // and that is some text, not an empty frame
+    bool ink=false;
+
+    for(int y=0; (y < gweni::test::viewSize().y) && !ink; ++y)
+    {
+        for(int x=0; (x < gweni::test::viewSize().x) && !ink; ++x)
+            ink=!whole.is(x, y, background);
+    }
+    CHECK(ink);
+
+    // hiding and showing writes nothing either
+    const Frame shown=drawFrame([&](OpenGLCore &renderer)
+    {
+        renderer.showText(a);
+        renderer.showText(c);
+    });
+
+    CHECK(shown.pixels == whole.pixels);
+    CHECK(renderer.getFrameStats().uploadCalls == 0);
+
+    // three slots a chunk: every run of more than three glyphs is split between
+    // chunks, and the draws between atlases and chunks
+    renderer.setIndexChunkSlots(3);
+    const Frame three=drawFrame([](OpenGLCore &) {});
+
+    CHECK(three.pixels == whole.pixels);
+    CHECK(renderer.getFrameStats().uploadCalls == 0);
+
+    // one slot a chunk: one draw per (atlas, chunk) with something to draw is one
+    // per glyph shown, b's and c's tail not among them
+    renderer.setIndexChunkSlots(1);
+    const Frame single=drawFrame([](OpenGLCore &) {});
+
+    CHECK(single.pixels == whole.pixels);
+    CHECK(renderer.getFrameStats().textDraws == baseSingle+straddling.size()+shrunk.size());
 }
