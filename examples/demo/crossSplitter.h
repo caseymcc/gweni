@@ -16,6 +16,7 @@ public:
     void zoomTest(event::Info info);
     void unZoomTest(event::Info info);
     void centerPanels(event::Info info);
+    void toggleSplitters(event::Info info);
 
 private:
     bool m_splittersVisible;

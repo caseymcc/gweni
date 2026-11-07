@@ -71,6 +71,11 @@ public:
     //! can move in (0 top, 1 bottom).
     float getVerticalFraction() const { return m_vertical; }
 
+    //! Draws the three bars, or not (the default, as in GWEN: the bars are
+    //! still there to drag). A bar that is off stays hidden on hover and drag.
+    void setSplittersVisible(bool visible);
+    bool splittersVisible() const { return m_splittersVisible; }
+
 protected:
 
     virtual void  onVerticalMoved(event::Info);
@@ -96,6 +101,7 @@ private:
     int m_barSize;
 
     int m_zoomedSection;
+    bool m_splittersVisible=false;
 
     gweni::event::Caller onZoomed;
     gweni::event::Caller onUnZoomed;

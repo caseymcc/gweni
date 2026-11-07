@@ -15,13 +15,14 @@ void CrossSplitterDemo::init(const String &name)
 {
     setDock(DockPosition::Center);
 
-    m_splittersVisible=false;
+    m_splittersVisible=true;
     m_curZoom=0;
 
     m_splitter=newChild<controls::CrossSplitter>();
 
     m_splitter->setPos(0, 0);
     m_splitter->setDock(DockPosition::Center);
+    m_splitter->setSplittersVisible(m_splittersVisible);
     {
         controls::Button *testButton=m_splitter->newChild<controls::Button>();
 
@@ -68,6 +69,13 @@ void CrossSplitterDemo::init(const String &name)
     {
         controls::Button *button=status->newChild<controls::Button>();
 
+        button->setText("Toggle Splitters");
+        button->onPressCaller.add(this, &CrossSplitterDemo::toggleSplitters);
+        status->addControl(button, false);
+    }
+    {
+        controls::Button *button=status->newChild<controls::Button>();
+
         button->setText("CenterPanels");
         button->onPressCaller.add(this, &CrossSplitterDemo::centerPanels);
         status->addControl(button, true);
@@ -79,6 +87,12 @@ void CrossSplitterDemo::zoomTest(event::Info info)
 
 void CrossSplitterDemo::unZoomTest(event::Info info)
 {}
+
+void CrossSplitterDemo::toggleSplitters(event::Info info)
+{
+    m_splittersVisible=!m_splittersVisible;
+    m_splitter->setSplittersVisible(m_splittersVisible);
+}
 
 void CrossSplitterDemo::centerPanels(event::Info info)
 {}

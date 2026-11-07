@@ -53,6 +53,23 @@ GWENI_CONTROL_CONSTRUCTOR(CrossSplitter)
     setPanel(3, nullptr);
     setSplitterSize(5);
     m_zoomedSection=-1;
+
+    m_verticalSplitter->setShouldDrawBackground(false);
+    m_horizontalSplitter->setShouldDrawBackground(false);
+    m_centerSplitter->setShouldDrawBackground(false);
+}
+
+void CrossSplitter::setSplittersVisible(bool visible)
+{
+    m_splittersVisible=visible;
+
+    // setShouldDrawBackground marks the bar, redraw() also has the canvas
+    // render the next frame (a WindowCanvas skips it otherwise)
+    for(SplitterBar *bar:{m_verticalSplitter, m_horizontalSplitter, m_centerSplitter})
+    {
+        bar->setShouldDrawBackground(visible);
+        bar->redraw();
+    }
 }
 
 namespace
