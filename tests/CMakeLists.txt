@@ -162,6 +162,22 @@ if(TARGET ControlTest)
         LABELS gpu
         TIMEOUT 300)
 
+    # right-clicks on ContextMenuDemo (Base::setContextMenu): the menu opens with
+    # its top-left at the cursor changing nothing visible outside it and its box,
+    # a settled frame writes nothing, a click outside and Escape give the frame
+    # before opening back, it flips inside the canvas in the bottom-right
+    # corner, a right-click on the other box moves to its menu, a disabled item
+    # does nothing and an enabled one is chosen, the Help tooltip draws over an
+    # open menu, and hiding or deleting the box closes it; exits non-zero on any
+    # failed check
+    add_test(NAME controltest_context_menu
+        COMMAND $<TARGET_FILE:ControlTest> --headless --scenario context-menu --require-one-pass
+            --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/context-menu
+        WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
+    set_tests_properties(controltest_context_menu PROPERTIES
+        LABELS gpu
+        TIMEOUT 300)
+
     # keys handled in one frame, after an edit and before the layout that
     # re-wraps it, move the caret through the edited text's lines (#209): the
     # same script with no frame between the keys and with one after each edit
@@ -244,6 +260,7 @@ add_executable(gweni_unit_tests
     unit/layoutPasses.cpp
     unit/renderWalk.cpp
     unit/clipRegion.cpp
+    unit/contextMenu.cpp
     unit/selectable.cpp
     unit/separator.cpp
     unit/sliderNotches.cpp

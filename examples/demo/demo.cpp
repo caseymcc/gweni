@@ -16,6 +16,7 @@
 #include "demo/collapsibleList.h"
 #include "demo/colorPicker.h"
 #include "demo/comboBox.h"
+#include "demo/contextMenu.h"
 #include "demo/crossSplitter.h"
 #include "demo/groupBox.h"
 #include "demo/imagePanel.h"
@@ -125,6 +126,7 @@ void Demo::init(const String &name)
         addDemo<TextBoxDemo>(cat, "TextBoxDemo");
         addDemo<ListBoxDemo>(cat, "ListBoxDemo");
         addDemo<SelectableDemo>(cat, "SelectableDemo");
+        addDemo<ContextMenuDemo>(cat, "ContextMenuDemo");
         addDemo<UnicodeTextDemo>(cat, "UnicodeTextDemo");
         addDemo<TextSizesDemo>(cat, "TextSizesDemo");
         addDemo<TextDemo>(cat, "TextDemo");

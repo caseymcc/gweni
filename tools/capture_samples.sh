@@ -72,6 +72,14 @@ SAMPLES=(
     ComboBoxDemo
     SeparatorDemo
     SelectableDemo
+    ContextMenuDemo
+)
+
+# Scripted input a sample is captured after, in place of the plain capture's
+# frames: ControlTest steps, run in order before the --shot. ContextMenuDemo is
+# shown with the Document box's menu open.
+declare -A SAMPLE_STEPS=(
+    [ContextMenuDemo]="--frames 3 --move 230,60 --frames 2 --click-right 230,60 --frames 3"
 )
 
 CONTROL_SIZE=640x480
@@ -193,9 +201,12 @@ capture "$OUT_DIR/$HERO_OUT" \
 
 echo "controls at $CONTROL_SIZE:"
 for demo in "${SAMPLES[@]}"; do
+    # word-split on purpose: one ControlTest argument per word
+    # shellcheck disable=SC2206
+    steps=(${SAMPLE_STEPS[$demo]:-})
     capture "$OUT_DIR/$demo.png" \
         "$BIN_DIR/ControlTest" --headless --resources resources \
-        --control "$demo" --size "$CONTROL_SIZE" --shot "$OUT_DIR/$demo.png"
+        --control "$demo" --size "$CONTROL_SIZE" "${steps[@]}" --shot "$OUT_DIR/$demo.png"
 done
 
 if [[ $check -eq 0 ]]; then

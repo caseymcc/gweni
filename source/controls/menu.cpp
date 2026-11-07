@@ -16,6 +16,14 @@ namespace gweni
 namespace controls
 {
 
+namespace
+{
+bool samePoint(const Point &a, const Point &b)
+{
+    return (a.x == b.x) && (a.y == b.y);
+}
+}
+
 
 GWENI_CONTROL_CONSTRUCTOR(Menu)
 {
@@ -25,6 +33,12 @@ GWENI_CONTROL_CONSTRUCTOR(Menu)
     setAutoHideBars(true);
     setScroll(false, true);
     setDeleteOnClose(false);
+}
+
+Menu::~Menu()
+{
+    for(Base *owner : m_contextOwners)
+        owner->contextMenuDeleted();
 }
 
 void Menu::renderUnder(skin::Base *skin)
@@ -46,19 +60,49 @@ void Menu::calculateSize(skin::Base *skin, Dim dim)
 
 void Menu::layout(skin::Base *skin)
 {
-    // if tall menu descends off screen then move it up. Only the position
-    // changes, which nothing laid out in this pass has read.
-    const int menuHeight=getPreferredSize().height;
+    // Kept inside the canvas, flipped from the cursor when openAt() placed it.
+    // Only the position changes, which nothing laid out in this pass has read;
+    // layout() runs again in the Y arrange once the height is final.
+    Canvas *canvas=getCanvas();
 
-    if(getY() + menuHeight > getCanvas()->getHeight())
+    if(canvas && (getParent() == canvas))
     {
-        const int dy=getCanvas()->getHeight() - getY();
-        const int ytop=std::max(getY() - dy, 0);
+        const Rect area(0, 0, canvas->getWidth(), canvas->getHeight());
+        const Point size(getWidth(), getHeight());
+        const Point at(getRequestedBounds().x, getRequestedBounds().y);
 
-        setPos(getX(), ytop);
+        // a position requested since openAt() (or since the last placement)
+        // wins over the cursor
+        if(m_atCursor && !samePoint(at, m_cursor) && !samePoint(at, m_placed))
+            m_atCursor=false;
+
+        const Point pos=m_atCursor ? placement(m_cursor, size, area) : keepInside(at, size, area);
+
+        m_placed=pos;
+        if(!samePoint(pos, at))
+            setPos(pos.x, pos.y);
     }
 
     ParentClass::layout(skin);
+}
+
+Point Menu::placement(const Point &cursor, const Point &size, const Rect &area)
+{
+    Point pos=cursor;
+
+    if(pos.x+size.x > area.x+area.w)
+        pos.x=cursor.x-size.x;
+
+    if(pos.y+size.y > area.y+area.h)
+        pos.y=cursor.y-size.y;
+
+    return keepInside(pos, size, area);
+}
+
+Point Menu::keepInside(const Point &pos, const Point &size, const Rect &area)
+{
+    return Point(std::max(area.x, std::min(pos.x, area.x+area.w-size.x)),
+        std::max(area.y, std::min(pos.y, area.y+area.h-size.y)));
 }
 
 MenuItem *Menu::addItem(const String &name,
@@ -144,12 +188,27 @@ void Menu::onHoverItem(event::Info info)
     item->openMenu();
 }
 
-void Menu::open(Alignment pos)
+void Menu::open(Alignment /*pos*/)
+{
+    openAt(input::getMousePosition());
+}
+
+void Menu::openAt(const Point &cursor)
 {
     setHidden(false);
     bringToFront();
-    gweni::Point MousePos=input::getMousePosition();
-    setPos(MousePos.x, MousePos.y);
+    m_atCursor=true;
+    m_cursor=cursor;
+    m_placed=cursor;
+    setPos(cursor.x, cursor.y);
+}
+
+void Menu::setHidden(bool hidden)
+{
+    if(hidden)
+        m_atCursor=false;
+
+    ParentClass::setHidden(hidden);
 }
 
 void Menu::close()

@@ -95,8 +95,54 @@ nothing on other frames, and the depth-first numbering then gives the box and it
 the highest z values in the tree. A reserved z range above the tree was the other
 choice; it would need a ceiling that no tree reaches and a second numbering for the
 overlays, while the last-child rule reuses the one numbering there is. A later
-canvas-level overlay (a context menu, the drag-and-drop preview) can take the same
-place.
+canvas-level overlay (the drag-and-drop preview) can take the same place.
+
+#### The context menu: a right-click opens a Menu at the cursor
+
+`Base::setContextMenu(menu)` gives a control a `Menu` that a right-button press on it,
+or on a descendant with none of its own, opens (`Canvas::contextMenuOwnerFor` walks up
+from the hovered control to the nearest one with a menu, and finds nothing for a
+disabled or hidden one or for a part of an open menu). It is decided in input, not in a
+think: `input::onMouseClicked` first closes the open menus, as for any press not on a
+menu, then delivers the press to the control, and only then, for a right press, calls
+`Canvas::showContextMenu`, which fires the owner's `onContextMenu` (so the application
+can fill in or disable items), re-parents the menu to the canvas if it is elsewhere and
+calls `Menu::openAt(cursor)`. So a right-click while one context menu is open closes it
+and opens the next, and the canvas keeps one open at a time (`shownContextMenu()`,
+`contextMenuOwner()`). It closes as every menu does (a press outside it, an item chosen),
+on Escape (`input::onKeyEvent` takes the press before the focused control does, and only
+while a context menu is open), when the update phase finds its owner hidden
+(`Canvas::updateContextMenu`, one pointer check in `doThink()`, before the tooltip step),
+and when the owner is deleted.
+
+**Placement waits for the size.** A menu that has been hidden has not been laid out, so
+its size is not known when it opens. `openAt` only shows it, brings it to the front and
+records the cursor; `Menu::layout` places it, in the layout pass of that frame, with the
+pure `Menu::placement(cursor, size, canvas)`: at the cursor, on the cursor's left where
+it would run past the right edge, above it where it would run past the bottom, then
+`Menu::keepInside`. `layout()` runs at the start of the X arrange, with the height of the
+pass before, and again in the Y arrange once a new height is set (see
+`docs/layout.md`), so the second run puts it right, in the frame's one pass. Every other
+menu on the canvas (a ComboBox list, a strip or submenu placed by `setPos`/`setBounds`,
+and a position asked for after `openAt`) is only kept inside the canvas by `keepInside`,
+never flipped. `Menu::open(pos)` opens at the mouse through `openAt`, so a popup opened
+that way (the Properties colour selector) now flips up near the bottom instead of
+running past it.
+
+**Its z** is the one every opened menu gets: `bringToFront` makes it the canvas's last
+child but one, and the tooltip box stays last (`keepToolTipLast`), so a tooltip draws
+over an open context menu. Opening renumbers z, which marks the controls whose z changed;
+the menus a demo creates come after its content, so those are hidden menus, which render
+nothing, and the frame writes only the opened menu's subtree.
+
+**Ownership.** A menu passed to `setContextMenu` stays its creator's: deleting the
+control only closes it, one menu can be set on several controls, and deleting the menu
+clears it from all of them (`Menu::~Menu` walks its `m_contextOwners`). A menu made by
+`Base::createContextMenu()` (a hidden `Menu` on the canvas) belongs to the control: it is
+deleted with it, or when another menu is set, through `delayedDelete`, since this can
+run from one of the menu's own item events; a canvas tearing down deletes it with its
+other children, and while it does (`Canvas::m_releasingChildren`) a deleted owner only
+hides its open menu, because the submenus `closeAll()` would reach may already be gone.
 
 ### 2. `renderCanvas()` — render
 

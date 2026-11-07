@@ -39,8 +39,8 @@ implemented-vs-planned status, and [docs/layout.md](docs/layout.md) for the layo
 | **Text** (OpenSans 8-16 px) | **ProgressBar** |
 | ![ComboBox](docs/images/ComboBoxDemo.png) | ![Separator](docs/images/SeparatorDemo.png) |
 | **ComboBox** | **Separator** (with a caption, vertical, and bullets) |
-| ![Selectable](docs/images/SelectableDemo.png) | |
-| **Selectable** (toggle rows and a single-selection group) | |
+| ![Selectable](docs/images/SelectableDemo.png) | ![ContextMenu](docs/images/ContextMenuDemo.png) |
+| **Selectable** (toggle rows and a single-selection group) | **Context menu** (`setContextMenu`, opened with a right-click) |
 
 Each control is shown on its own in `ControlTest`. All of these images are rendered offscreen by
 `tools/capture_samples.sh` (see `AGENTS.md`).

@@ -50,6 +50,7 @@ std::string getFullName(Base *base);
 
 class Canvas;
 class LayoutItem;
+class Menu;
 
 constexpr int StateChange_Nothing=0x0000;
 constexpr int StateChange_Created=0x0001;
@@ -560,6 +561,37 @@ public:
     bool hasToolTip() const { return m_toolTip || !m_toolTipText.empty(); }
     //! \}
 
+    //! \sect{Context menu}
+    //! A right-button press on this control, or on a descendant with no
+    //! context menu of its own (the nearest ancestor with one wins), opens the
+    //! menu with its top-left at the cursor, flipped to the cursor's left or
+    //! above it where it would run past the canvas, and kept inside the canvas
+    //! (Menu::placement). It opens on the press, after the press has closed the
+    //! menus that were open, so a right-click while one context menu is open
+    //! closes it and opens the new one. onContextMenu fires just before it
+    //! opens, so the application can fill in or disable its items. It closes on
+    //! a click outside it, Escape, choosing an item, and when this control is
+    //! hidden or deleted (Canvas::shownContextMenu()). A disabled or hidden
+    //! control opens nothing.
+    //!
+    //! Ownership: a menu passed to setContextMenu() stays its creator's. It is
+    //! shown as a child of the canvas (opening re-parents it there if it is not,
+    //! as ComboBox does with its list), so make it with
+    //! getCanvas()->newChild<Menu>(). Deleting this control only closes it, and
+    //! deleting the menu clears it from every control it is set on: one menu can
+    //! be shared by several controls. A menu createContextMenu() made is this
+    //! control's: it is deleted with it, or when another menu (or nullptr) is
+    //! set.
+    virtual void setContextMenu(Menu *menu);
+    Menu *getContextMenu() const { return m_contextMenu; }
+    //! A new empty, hidden Menu on this control's canvas, set as its context
+    //! menu and owned by this control (see above); null when the control is
+    //! not on a canvas.
+    Menu *createContextMenu();
+    //! The control createContextMenu() made getContextMenu() for owns it.
+    bool ownsContextMenu() const { return m_ownsContextMenu; }
+    //! \}
+
     virtual bool isMenuComponent();
     virtual void closeMenus();
 
@@ -616,6 +648,8 @@ public:
 
     gweni::event::Caller onHoverEnter;
     gweni::event::Caller onHoverLeave;
+    //! Just before this control's context menu opens (see setContextMenu()).
+    gweni::event::Caller onContextMenu;
 
 protected:
 //    void init(const String name);
@@ -663,6 +697,19 @@ protected:
 
     Base *m_toolTip=nullptr;
     gweni::String m_toolTipText;
+
+    Menu *m_contextMenu=nullptr;
+    bool m_ownsContextMenu=false;
+    //! Takes the context menu off this control (closing it if it is open for
+    //! it), deleting it if this control owns it.
+    void dropContextMenu();
+    //! Menu: the context menu is being deleted.
+    void contextMenuDeleted()
+    {
+        m_contextMenu=nullptr;
+        m_ownsContextMenu=false;
+    }
+    friend class Menu;
 
     skin::Base *m_skin;
     std::unique_ptr<skin::Control> m_skinControl;

@@ -196,6 +196,9 @@ void onMouseLeft(controls::Base *canvas)
     oldHover->onMouseLeave();
 }
 
+// The click's delivery to the hovered control, once the open menus are closed.
+static bool deliverMouseClick(controls::Base *canvas, int iMouseButton, bool down);
+
 bool onMouseClicked(controls::Base *canvas, int iMouseButton, bool down)
 {
     // If we click on a control that isn't a menu we want to close
@@ -203,6 +206,30 @@ bool onMouseClicked(controls::Base *canvas, int iMouseButton, bool down)
     if(down && (!HoveredControl || !HoveredControl->isMenuComponent()))
         canvas->closeMenus();
 
+    const bool handled=deliverMouseClick(canvas, iMouseButton, down);
+
+    // A right press opens the context menu of the control under the mouse (or
+    // of its nearest ancestor with one), once the press has closed the menus
+    // that were open and reached the control.
+    if(down && (iMouseButton == 1))
+    {
+        controls::Canvas *target=canvas->getCanvas();
+
+        if(target)
+        {
+            if(controls::Base *owner=target->contextMenuOwnerFor(HoveredControl))
+            {
+                target->showContextMenu(owner, g_mousePosition);
+                return true;
+            }
+        }
+    }
+
+    return handled;
+}
+
+static bool deliverMouseClick(controls::Base *canvas, int iMouseButton, bool down)
+{
     if(!HoveredControl)
         return false;
 
@@ -334,6 +361,19 @@ bool handleAccelerator(controls::Base *canvas, UnicodeChar chr)
 
 bool onKeyEvent(controls::Base *canvas, int key, bool down)
 {
+    // Escape closes an open context menu, whatever has the keyboard focus; its
+    // release then finds the key up and goes nowhere.
+    if(down && (key == keys::Escape) && !g_keyData.KeyState[key])
+    {
+        controls::Canvas *target=canvas->getCanvas();
+
+        if(target && target->shownContextMenu())
+        {
+            target->closeContextMenu();
+            return true;
+        }
+    }
+
     controls::Base *target=KeyboardFocus;
 
     if(target && target->getCanvas() != canvas)

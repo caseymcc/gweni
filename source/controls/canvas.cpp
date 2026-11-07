@@ -118,6 +118,7 @@ void Canvas::doThink()
     anim::think();
 #endif
     processDelayedDeletes();
+    updateContextMenu();
     updateToolTip();
     // Check has focus etc..
     layoutCanvas();
@@ -265,6 +266,8 @@ void Canvas::processDelayedDeletes()
 
 void Canvas::releaseChildren()
 {
+    m_releasingChildren=true;
+
     Base::List::iterator iter=m_children.begin();
 
     while(iter != m_children.end())
@@ -273,6 +276,8 @@ void Canvas::releaseChildren()
         iter=m_children.erase(iter);
         delete child;
     }
+
+    m_releasingChildren=false;
 }
 
 bool Canvas::inputMouseMoved(int x, int y, int deltaX, int deltaY)
@@ -443,6 +448,97 @@ void Canvas::toolTipControlDeleted(Base *control)
 
     if(control == m_toolTipSuppressed)
         m_toolTipSuppressed=nullptr;
+}
+
+//------------------------------------------------------------------------------
+// Context menu
+//------------------------------------------------------------------------------
+
+Base *Canvas::contextMenuOwnerFor(Base *hovered)
+{
+    if(!hovered || (hovered->getCanvas() != this) || hovered->isMenuComponent())
+        return nullptr;
+
+    for(Base *control=hovered; control; control=control->getParent())
+    {
+        if(!control->getContextMenu())
+            continue;
+
+        if(!control->visible() || control->isDisabled())
+            return nullptr;
+        return control;
+    }
+    return nullptr;
+}
+
+void Canvas::showContextMenu(Base *owner, const Point &at)
+{
+    closeContextMenu();
+
+    // the handler may fill the menu in, or replace or clear it
+    owner->onContextMenu.call(owner);
+
+    Menu *menu=owner->getContextMenu();
+
+    if(!menu)
+        return;
+
+    if(menu->getParent() != this)
+        menu->setParent(this);
+
+    menu->openAt(at);
+    m_contextMenu=menu;
+    m_contextMenuOwner=owner;
+}
+
+void Canvas::closeContextMenu()
+{
+    if(!m_contextMenu)
+        return;
+
+    Menu *menu=m_contextMenu;
+
+    m_contextMenu=nullptr;
+    m_contextMenuOwner=nullptr;
+    menu->closeAll();
+    menu->close();
+}
+
+void Canvas::updateContextMenu()
+{
+    if(!m_contextMenu)
+        return;
+
+    if(m_contextMenu->hidden())
+    {
+        // closed as menus are (a click outside, an item chosen)
+        m_contextMenu=nullptr;
+        m_contextMenuOwner=nullptr;
+    }
+    else if(!m_contextMenuOwner->visible())
+        closeContextMenu();
+}
+
+void Canvas::contextMenuControlDeleted(Base *control)
+{
+    if(control == m_contextMenu)
+    {
+        m_contextMenu=nullptr;
+        m_contextMenuOwner=nullptr;
+    }
+    else if(control == m_contextMenuOwner)
+    {
+        // The owner deletes a menu it owns itself. A canvas tearing down only
+        // hides it: the submenus closeAll() reaches may already be gone.
+        if(m_releasingChildren)
+        {
+            m_contextMenu->setHidden(true);
+            m_contextMenu=nullptr;
+            m_contextMenuOwner=nullptr;
+        }
+        else
+            closeContextMenu();
+    }
 }
 
 bool Canvas::inputModifierKey(int key, bool down)

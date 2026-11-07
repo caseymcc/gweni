@@ -19,6 +19,7 @@ namespace controls
 {
 
 class ToolTip;
+class Menu;
 
 //! What the canvas's layout did in one frame: the update phase (doThink) and
 //! the render phase (renderCanvas). A frame whose layout converges runs at most
@@ -175,6 +176,32 @@ public:
     void toolTipControlDeleted(Base *control);
     /// \}
 
+    /// \sect{Context menu}
+    /// A right-button press opens the context menu (Base::setContextMenu) of
+    /// the control under the mouse, or of its nearest ancestor with one
+    /// (contextMenuOwnerFor), at the cursor: input::onMouseClicked does it after
+    /// the press has closed the menus that were open and reached the control.
+    /// One is open at a time. Escape closes it (input::onKeyEvent, whatever
+    /// has the keyboard focus), and so does anything that closes a menu (a
+    /// click outside it, choosing an item); the update phase closes it when
+    /// its control is hidden, and deleting the control closes it at once.
+
+    /// The open context menu, or null.
+    Menu *shownContextMenu() const { return m_contextMenu; }
+    /// The control shownContextMenu() is open for, or null.
+    Base *contextMenuOwner() const { return m_contextMenuOwner; }
+    /// The control whose context menu a right-click on \p hovered opens: the
+    /// nearest of it and its ancestors with one, if that is visible and
+    /// enabled; null for none, or for a part of an open menu.
+    Base *contextMenuOwnerFor(Base *hovered);
+    /// Opens \p owner's context menu at \p at (canvas coordinates), after
+    /// firing its onContextMenu, closing the one open first.
+    void showContextMenu(Base *owner, const Point &at);
+    void closeContextMenu();
+    /// Base: \p control is being deleted.
+    void contextMenuControlDeleted(Base *control);
+    /// \}
+
     /// \sect{Input}
     bool inputMouseMoved(int x, int y, int deltaX, int deltaY) override;
     bool inputMouseButton(int button, bool down) override;
@@ -238,6 +265,9 @@ protected:
     Base *toolTipOwnerFor(Base *hovered);
     void showToolTipFor(Base *owner);
     void hideToolTip();
+    /// The update phase's context-menu step: forgets a menu closed some other
+    /// way and closes one whose control is hidden.
+    void updateContextMenu();
     /// Puts the box back at the end of the child list; run before the z
     /// renumber, which every change of the list's order asks for.
     void keepToolTipLast();
@@ -265,6 +295,11 @@ protected:
 
     bool m_drawBackground;
     gweni::Color m_backgroundColor;
+
+    Menu *m_contextMenu=nullptr;
+    Base *m_contextMenuOwner=nullptr;
+    /// releaseChildren() is deleting the tree.
+    bool m_releasingChildren=false;
 
     ToolTip *m_toolTip=nullptr;
     Base *m_toolTipOwner=nullptr;

@@ -12,6 +12,8 @@ set(GWENI_DEMO_SOURCES
     demo/colorPicker.h
     demo/comboBox.cpp
     demo/comboBox.h
+    demo/contextMenu.cpp
+    demo/contextMenu.h
     demo/crossSplitter.cpp
     demo/crossSplitter.h
     demo/demo.cpp

@@ -56,7 +56,8 @@
  *    --list             print the control demo names and exit
  *    --help, -h         print the option list and exit
  *    --scenario <name>  per-control | resize | docked | scroll | interaction |
- *                       typing | clip | text-size | scale | tooltip (see below)
+ *                       typing | clip | text-size | scale | tooltip |
+ *                       context-menu (see below)
  *    --dump-bounds [<path>]
  *                       print the laid-out control tree as text: one line per
  *                       control, depth-first in child order, indented by depth,
@@ -75,6 +76,12 @@
  *    --release X,Y      move there and let the left button up
  *    --click X,Y        a whole left click (press then release)
  *    --double-click X,Y a left double click
+ *    --press-right X,Y, --release-right X,Y, --click-right X,Y
+ *                       the same with the right button (a right press opens
+ *                       a context menu, Base::setContextMenu). Every button
+ *                       goes through gweni::input::GLFW3's mouse-button
+ *                       callback, as a window's does, and a press (a click's
+ *                       included) steps the clock by 1 s, as --press does.
  *    --scroll DX,DY     mouse wheel (DX is ignored; gweni only takes the Y axis)
  *    --key <name>       a key: return, kp-enter, tab, space, escape, up, down,
  *                       left, right, home, end, backspace, delete, shift,
@@ -241,6 +248,23 @@
  *                 box's pixels are the ones it has with no Menu. One line
  *                   tooltip waits=yes|no shown=yes|no ... over_menu=yes|no
  *                 reports the checks. Exits non-zero if any check is no.
+ *    context-menu Base::setContextMenu on ContextMenuDemo, right-clicks
+ *                 through the GLFW translator, on the stepped clock: a
+ *                 right-click in the Document box opens its menu with its
+ *                 top-left at the cursor, and that frame changes nothing
+ *                 visible outside the menu and the box; a settled frame with
+ *                 it open writes nothing; a left click outside and Escape
+ *                 each close it back to the frame before opening; in the
+ *                 Corner box near the bottom-right corner the menu opens
+ *                 flipped to the cursor's left and above it, inside the
+ *                 canvas; a right-click in the other box closes one menu and
+ *                 opens the other; a disabled item does nothing and an
+ *                 enabled one is chosen (the demo's label names it) and
+ *                 closes it; the Help button's tooltip draws over an open
+ *                 menu; hiding or deleting the box closes its menu (deleting
+ *                 it deletes the menu it created). One line
+ *                   context-menu opens_at_cursor=yes|no ... deleted_owner_closes=yes|no
+ *                 reports the checks. Exits non-zero if any check is no.
  *
  *  Every scenario (and --shot-all) takes a listing per shot when
  *  --dump-bounds is on, named after that shot with a .txt extension, so the
@@ -318,6 +342,7 @@
 #include <demo/collapsibleList.h>
 #include <demo/colorPicker.h>
 #include <demo/comboBox.h>
+#include <demo/contextMenu.h>
 #include <demo/crossSplitter.h>
 #include <demo/groupBox.h>
 #include <demo/imagePanel.h>
@@ -396,7 +421,7 @@ static void content_scale_callback(GLFWwindow *window, float, float)
 #define GWENI_CONTROL_DEMOS(X) \
     X(ButtonDemo) X(LabelDemo) X(LabelMultilineDemo) X(ProgressBarDemo) \
     X(GroupBoxDemo) X(ImagePanelDemo) X(StatusBarDemo) X(SeparatorDemo) X(ComboBoxDemo) \
-    X(TextBoxDemo) X(ListBoxDemo) X(SelectableDemo) X(CrossSplitterDemo) X(RadioButtonDemo) \
+    X(TextBoxDemo) X(ListBoxDemo) X(SelectableDemo) X(ContextMenuDemo) X(CrossSplitterDemo) X(RadioButtonDemo) \
     X(CheckBoxDemo) X(NumericDemo) X(SliderDemo) X(MenuStripDemo) \
     X(WindowDemo) X(TreeControlDemo) X(PropertiesDemo) X(TabControlDemo) \
     X(ScrollControlDemo) X(PageControlDemo) X(CollapsibleListDemo) X(ColorPickerDemo) \
@@ -463,14 +488,16 @@ static void printUsage(std::ostream &out)
          "                     control has been destroyed; --control narrows it\n"
          "  --trace            log each scripted input on stderr\n"
          "  --scenario <name>  per-control | resize | docked | scroll | interaction\n"
-         "                     | typing | clip | text-size | scale | tooltip; resize prints\n"
+         "                     | typing | clip | text-size | scale | tooltip\n"
+         "                     | context-menu; resize prints\n"
          "                     listing_settled, mirror_settled, shrink_settled and\n"
          "                     fresh_matches, interaction one yes/no per repaint\n"
          "                     check, typing its keyboard checks, clip one yes/no\n"
          "                     per clipping check, text-size what a 24 -> 36 px\n"
          "                     Label font change wrote, scale whether a 1 -> 2 -> 1\n"
          "                     setScale round trip came back, tooltip one yes/no per\n"
-         "                     tooltip check; all seven fail on a no\n"
+         "                     tooltip check, context-menu one per context-menu\n"
+         "                     check; all eight fail on a no\n"
          "  --dump-bounds [<path>]  print the laid-out control tree as text,\n"
          "                     private children and hidden state included\n"
          "  --resources <dir>  load the skin, fonts and textures from <dir> (relative\n"
@@ -479,6 +506,7 @@ static void printUsage(std::ostream &out)
          "  --list             print the control demo names and exit\n"
          "Scripted input, applied in order:\n"
          "  --move/--press/--release/--click/--double-click X,Y, --scroll DX,DY\n"
+         "  --press-right/--release-right/--click-right X,Y  the right button\n"
          "  --key <name>       a named key (backspace, left, home, ...), a single\n"
          "                     character, or a chord such as ctrl+a or shift+left,\n"
          "                     sent as GLFW events through the GLFW translator\n"
@@ -849,26 +877,30 @@ static void moveMouse(Session &s, int x, int y)
     trace(s, "move "+std::to_string(to.x)+","+std::to_string(to.y));
 }
 
-static void mouseDown(Session &s, int x, int y, bool stepClock)
+static gweni::input::GLFW3 &glfwInput(Session &s);
+
+// A button through gweni::input::GLFW3's mouse-button callback, as the
+// examples' window delivers it: GLFW_MOUSE_BUTTON_LEFT (0) or _RIGHT (1).
+static void mouseDown(Session &s, int x, int y, bool stepClock, int button=GLFW_MOUSE_BUTTON_LEFT)
 {
     if(stepClock)
         g_clockSeconds+=g_pressStep;
     moveMouse(s, x, y);
-    s.canvas->inputMouseButton(0, true);
-    trace(s, "down");
+    glfwInput(s).processMouseButtons(button, GLFW_PRESS, 0);
+    trace(s, button == GLFW_MOUSE_BUTTON_RIGHT ? "right down" : "down");
 }
 
-static void mouseUp(Session &s, int x, int y)
+static void mouseUp(Session &s, int x, int y, int button=GLFW_MOUSE_BUTTON_LEFT)
 {
     moveMouse(s, x, y);
-    s.canvas->inputMouseButton(0, false);
-    trace(s, "up");
+    glfwInput(s).processMouseButtons(button, GLFW_RELEASE, 0);
+    trace(s, button == GLFW_MOUSE_BUTTON_RIGHT ? "right up" : "up");
 }
 
-static void clickMouse(Session &s, int x, int y)
+static void clickMouse(Session &s, int x, int y, int button=GLFW_MOUSE_BUTTON_LEFT)
 {
-    mouseDown(s, x, y, true);
-    mouseUp(s, x, y);
+    mouseDown(s, x, y, true, button);
+    mouseUp(s, x, y, button);
 }
 
 static void doubleClickMouse(Session &s, int x, int y)
@@ -1182,7 +1214,8 @@ static void dropControl(Session &s, gweni::controls::Base *control)
 //-----------------------------------------------------------------------------
 // Scripted runs
 //-----------------------------------------------------------------------------
-enum class StepKind { Move, Down, Up, Click, DoubleClick, Scroll, Key, Type, ExpectText, Frames, Shot };
+enum class StepKind { Move, Down, Up, Click, DoubleClick, DownRight, UpRight, ClickRight, Scroll, Key, Type,
+    ExpectText, Frames, Shot };
 
 struct Step
 {
@@ -1209,6 +1242,9 @@ static bool runSteps(Session &s, const std::vector<Step> &steps, const std::stri
         case StepKind::Up: mouseUp(s, step.x, step.y); break;
         case StepKind::Click: clickMouse(s, step.x, step.y); break;
         case StepKind::DoubleClick: doubleClickMouse(s, step.x, step.y); break;
+        case StepKind::DownRight: mouseDown(s, step.x, step.y, true, GLFW_MOUSE_BUTTON_RIGHT); break;
+        case StepKind::UpRight: mouseUp(s, step.x, step.y, GLFW_MOUSE_BUTTON_RIGHT); break;
+        case StepKind::ClickRight: clickMouse(s, step.x, step.y, GLFW_MOUSE_BUTTON_RIGHT); break;
         case StepKind::Scroll: (void)scrollWheel(s, step.y); break;
         case StepKind::Key: if(!sendKey(s, step.text)) return false; break;
         case StepKind::Type: typeText(s, step.text); break;
@@ -1227,7 +1263,7 @@ static bool runSteps(Session &s, const std::vector<Step> &steps, const std::stri
 // Scenarios
 //-----------------------------------------------------------------------------
 enum class Scenario { None, PerControl, Resize, Docked, Scroll, Interaction, Typing, Clip, TextSize, Scale,
-    ToolTip };
+    ToolTip, ContextMenu };
 
 static bool parseScenario(const std::string &name, Scenario &scenario)
 {
@@ -1241,6 +1277,7 @@ static bool parseScenario(const std::string &name, Scenario &scenario)
     else if(name == "text-size") scenario=Scenario::TextSize;
     else if(name == "scale") scenario=Scenario::Scale;
     else if(name == "tooltip") scenario=Scenario::ToolTip;
+    else if(name == "context-menu") scenario=Scenario::ContextMenu;
     else return false;
     return true;
 }
@@ -2731,10 +2768,15 @@ static int highestZOutside(gweni::controls::Base *control, gweni::controls::Base
     return highest;
 }
 
-// The controls with a change pending that are not under one of `allowed`.
+// The controls with a change pending that are not under one of `allowed`;
+// with `visibleOnly`, hidden subtrees (which render nothing) are left out.
 static void pendingOutside(gweni::controls::Base *control,
-    const std::vector<gweni::controls::Base *> &allowed, std::vector<std::string> &strays)
+    const std::vector<gweni::controls::Base *> &allowed, std::vector<std::string> &strays,
+    bool visibleOnly=false)
 {
+    if(visibleOnly && control->hidden())
+        return;
+
     if(control->getStateChange() != gweni::controls::StateChange_Nothing)
     {
         bool inside=false;
@@ -2744,17 +2786,17 @@ static void pendingOutside(gweni::controls::Base *control,
             strays.push_back(std::string(control->getTypeName())+"#"+std::to_string(control->getControlId()));
     }
     for(auto &&child : control->getActualChildren())
-        pendingOutside(child, allowed, strays);
+        pendingOutside(child, allowed, strays, visibleOnly);
 }
 
 // One frame, its update phase inspected before it renders: the controls with a
 // change pending outside `allowed` go to `strays`.
 static void frameCheckingStrays(Session &s, const std::vector<gweni::controls::Base *> &allowed,
-    std::vector<std::string> &strays)
+    std::vector<std::string> &strays, bool visibleOnly=false)
 {
     gweni::controls::resetChangeStats();
     s.canvas->updateCanvas();
-    pendingOutside(s.canvas, allowed, strays);
+    pendingOutside(s.canvas, allowed, strays, visibleOnly);
 
     glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
     s.canvas->renderCanvas();
@@ -3019,6 +3061,246 @@ static bool runToolTipScenario(Session &s, const std::string &shotDir, bool &pas
     checkToolTipCorner(s, shotDir, checks, ok);
 
     std::cout<<"tooltip";
+    for(const auto &result : checks.results)
+        std::cout<<" "<<result.first<<"="<<(result.second ? "yes" : "no");
+    std::cout<<"\n";
+
+    passed=checks.allPassed();
+    return ok;
+}
+
+//-----------------------------------------------------------------------------
+// --scenario context-menu: Base::setContextMenu, on ContextMenuDemo
+//
+// Right-clicks go through the GLFW translator as --click-right does. The clock
+// steps (under --stats too), for the tooltip check's delay. Each check reads
+// the canvas's context-menu state (Canvas::shownContextMenu,
+// contextMenuOwner), the menus' canvas rects or whole frames.
+//-----------------------------------------------------------------------------
+
+static void rightClick(Session &s, const gweni::Point &at)
+{
+    clickMouse(s, at.x, at.y, GLFW_MOUSE_BUTTON_RIGHT);
+}
+
+static std::vector<uint8_t> contextMenuShot(Session &s, const std::string &shotDir,
+    const std::string &name, bool &ok)
+{
+    if(!shoot(s, shotDir+"/context-menu-"+name+".png"))
+        ok=false;
+    return framePixels(s);
+}
+
+// One frame after the ones before it, with its counters: nothing may change.
+static bool settledFrame(Session &s, std::string &why)
+{
+    renderFrames(s, 1);
+    const gweni::renderer::OpenGLCore::FrameStats stats=s.renderer->getFrameStats();
+    const size_t controls=gweni::controls::getChangeStats().controls;
+    why="controls_changed="+std::to_string(controls)+" prim_slots_written="
+        +std::to_string(stats.primitiveSlotsWritten)+" text_slots_written="+std::to_string(stats.textSlotsWritten);
+    return controls == 0 && stats.primitiveSlotsWritten == 0 && stats.textSlotsWritten == 0;
+}
+
+static gweni::controls::MenuItem *menuItemNamed(gweni::controls::Menu *menu, const gweni::String &text)
+{
+    // its items are in its inner panel, which getChildren() lists
+    for(gweni::controls::Base *child : menu->getChildren())
+    {
+        auto *item=gweni::gweni_cast<gweni::controls::MenuItem>(child);
+        if(item && item->getText() == text)
+            return item;
+    }
+    return nullptr;
+}
+
+static bool runContextMenuScenario(Session &s, const std::string &shotDir, bool &passed)
+{
+    s.freezeClock=false;
+    s.statsClockSteps=true;
+
+    InteractionChecks checks;
+    checks.scenario="context-menu";
+    bool ok=true;
+
+    gweni::controls::Canvas *canvas=s.canvas;
+    gweni::controls::Base *demo=addControl(s, "ContextMenuDemo");
+    renderFrames(s, s.frames);
+
+    auto *page=gweni::gweni_cast<gweni::ContextMenuDemo>(demo);
+    gweni::controls::Base *document=findControl(demo, "GroupBox");
+    gweni::controls::Base *corner=findControl(demo, "GroupBox", 1);
+    gweni::controls::Base *help=findControl(demo, "Button");
+
+    if(!page || !document || !corner || !help || !document->getContextMenu() || !corner->getContextMenu())
+    {
+        checks.check("demo_found", false, "ContextMenuDemo has no two boxes with context menus and a button");
+        dropControl(s, demo);
+        passed=false;
+        return ok;
+    }
+
+    gweni::controls::Menu *documentMenu=document->getContextMenu();
+    gweni::controls::Menu *cornerMenu=corner->getContextMenu();
+    const gweni::Rect canvasArea(0, 0, s.size.x, s.size.y);
+    const gweni::Rect documentRect=canvasRectOf(document);
+    const gweni::Rect cornerRect=canvasRectOf(corner);
+    const gweni::Rect helpRect=canvasRectOf(help);
+    // the middle of the page, where nothing is
+    const gweni::Point blank(s.size.x/2, s.size.y/2);
+    const gweni::Point at(documentRect.x+documentRect.w-30, documentRect.y+50);
+    const gweni::Point far(cornerRect.x+cornerRect.w-10, cornerRect.y+cornerRect.h-10);
+    std::string why;
+
+    moveMouse(s, blank.x, blank.y);
+    renderFrames(s, s.frames);
+    const std::vector<uint8_t> idle=contextMenuShot(s, shotDir, "idle", ok);
+
+    // A right-click in the document box: its menu with its top-left at the
+    // cursor, and nothing visible outside the menu and the box changes.
+    moveMouse(s, at.x, at.y);
+    renderFrames(s, s.frames);
+    rightClick(s, at);
+    std::vector<std::string> strays;
+    frameCheckingStrays(s, {documentMenu, document}, strays, true);
+    const gweni::Rect opened=canvasRectOf(documentMenu);
+    std::string strayList;
+    for(const std::string &stray : strays)
+        strayList+=" "+stray;
+    checks.check("opens_at_cursor", canvas->shownContextMenu() == documentMenu
+        && canvas->contextMenuOwner() == document && documentMenu->visible()
+        && opened.x == at.x && opened.y == at.y,
+        "a right-click at ("+std::to_string(at.x)+", "+std::to_string(at.y)+") left the menu at "
+        +rectText(opened)+(documentMenu->visible() ? "" : ", hidden"));
+    checks.check("open_bounded", strays.empty(),
+        "the frame that opened it changed visible controls outside the menu and its box:"+strayList);
+    const bool openSettled=settledFrame(s, why);
+    checks.check("open_settled", openSettled, "a settled frame with the menu open had "+why);
+    contextMenuShot(s, shotDir, "document", ok);
+
+    // A left click outside closes it, back to the idle frame.
+    clickMouse(s, blank.x, blank.y);
+    renderFrames(s, s.frames);
+    const std::vector<uint8_t> clickedOff=contextMenuShot(s, shotDir, "clicked-off", ok);
+    const bool closedSettled=settledFrame(s, why);
+    checks.check("click_outside_closes", !canvas->shownContextMenu() && documentMenu->hidden()
+        && clickedOff == idle && closedSettled,
+        "after a click outside, shown="+std::string(canvas->shownContextMenu() ? "yes" : "no")
+        +", the frame differs from the idle one in "
+        +std::to_string(differencesIn(s, idle, clickedOff, canvasArea))+" px, settled: "+why);
+
+    // Escape closes it, whatever has the focus.
+    rightClick(s, at);
+    renderFrames(s, s.frames);
+    const bool reopened=canvas->shownContextMenu() == documentMenu;
+    sendKey(s, "escape");
+    moveMouse(s, blank.x, blank.y);
+    renderFrames(s, s.frames);
+    const std::vector<uint8_t> escaped=contextMenuShot(s, shotDir, "escaped", ok);
+    checks.check("escape_closes", reopened && !canvas->shownContextMenu() && documentMenu->hidden()
+        && escaped == idle,
+        "reopened="+std::string(reopened ? "yes" : "no")+", after Escape shown="
+        +(canvas->shownContextMenu() ? "yes" : "no")+", "
+        +std::to_string(differencesIn(s, idle, escaped, canvasArea))+" px differ from the idle frame");
+
+    // Near the canvas's bottom-right corner: flipped to the cursor's left and
+    // above it, inside the canvas.
+    rightClick(s, far);
+    renderFrames(s, s.frames);
+    const gweni::Rect flipped=canvasRectOf(cornerMenu);
+    checks.check("flips_in_corner", canvas->shownContextMenu() == cornerMenu && insideRect(flipped, canvasArea)
+        && flipped.x+flipped.w == far.x && flipped.y+flipped.h == far.y,
+        "a right-click at ("+std::to_string(far.x)+", "+std::to_string(far.y)+") put the corner menu at "
+        +rectText(flipped));
+    contextMenuShot(s, shotDir, "corner", ok);
+
+    // A right-click on the other box while that one is open: it closes, this
+    // one opens.
+    rightClick(s, at);
+    renderFrames(s, s.frames);
+    checks.check("reopens_elsewhere", cornerMenu->hidden() && canvas->shownContextMenu() == documentMenu
+        && documentMenu->visible(),
+        "with the corner menu open, a right-click in the document box left the corner menu "
+        +std::string(cornerMenu->hidden() ? "closed" : "open")+" and the document menu "
+        +(documentMenu->visible() ? "open" : "closed"));
+
+    // A disabled item does nothing; an enabled one is chosen and closes it.
+    gweni::controls::MenuItem *deleteItem=menuItemNamed(documentMenu, "Delete");
+    gweni::controls::MenuItem *copyItem=menuItemNamed(documentMenu, "Copy");
+    const gweni::String before=page->m_chosen->getText();
+    if(deleteItem)
+    {
+        const gweni::Point on=centreOf(deleteItem);
+        clickMouse(s, on.x, on.y);
+        renderFrames(s, s.frames);
+    }
+    const bool stayedOpen=deleteItem && documentMenu->visible() && page->m_chosen->getText() == before;
+    if(copyItem)
+    {
+        const gweni::Point on=centreOf(copyItem);
+        clickMouse(s, on.x, on.y);
+        renderFrames(s, s.frames);
+    }
+    checks.check("item_chosen", stayedOpen && copyItem && documentMenu->hidden() && !canvas->shownContextMenu()
+        && page->m_chosen->getText() == "Chosen: Copy",
+        "the disabled item "+std::string(stayedOpen ? "did nothing" : "closed the menu or was chosen")
+        +"; choosing Copy left the menu "+(documentMenu->hidden() ? "closed" : "open")
+        +" and the label at \""+page->m_chosen->getText()+"\"");
+
+    // The Help button's tooltip shows over a context menu open under it.
+    const gweni::Point under(documentRect.x+documentRect.w-5, helpRect.y+helpRect.h+2);
+    moveMouse(s, under.x, under.y);
+    renderFrames(s, s.frames);
+    rightClick(s, under);
+    renderFrames(s, s.frames);
+    moveMouse(s, helpRect.x+helpRect.w/2, helpRect.y+helpRect.h/2);
+    framesUntilShown(s, (int)std::ceil(canvas->getToolTipDelay()/g_frameStep)+8);
+    renderFrames(s, s.frames);
+    contextMenuShot(s, shotDir, "tooltip", ok);
+    gweni::controls::ToolTip *box=canvas->toolTipControl();
+    const gweni::Rect tipRect=box ? canvasRectOf(box) : gweni::Rect();
+    const gweni::Rect menuRect=canvasRectOf(documentMenu);
+    const bool overlaps=menuRect.x < tipRect.x+tipRect.w && tipRect.x < menuRect.x+menuRect.w
+        && menuRect.y < tipRect.y+tipRect.h && tipRect.y < menuRect.y+menuRect.h;
+    checks.check("tooltip_above", box && canvas->toolTipShown() && documentMenu->visible() && overlaps
+        && box->getZIndex() > highestZOutside(canvas, box) && canvas->getActualChildren().back() == box,
+        "the tooltip at "+rectText(tipRect)+" (shown="+(canvas->toolTipShown() ? "yes" : "no")
+        +") and the open menu at "+rectText(menuRect)+(overlaps ? "" : " do not overlap")
+        +", or the box is not above the menu");
+    moveMouse(s, blank.x, blank.y);
+    clickMouse(s, blank.x, blank.y);
+    renderFrames(s, s.frames);
+
+    // Hiding the box closes its menu.
+    rightClick(s, at);
+    renderFrames(s, s.frames);
+    const bool openBeforeHide=documentMenu->visible();
+    document->setHidden(true);
+    renderFrames(s, s.frames);
+    checks.check("hidden_owner_closes", openBeforeHide && documentMenu->hidden() && !canvas->shownContextMenu(),
+        "hiding the document box left its menu "+std::string(documentMenu->hidden() ? "closed" : "open"));
+    document->setHidden(false);
+    moveMouse(s, blank.x, blank.y);
+    renderFrames(s, s.frames);
+
+    // Deleting the corner box closes its menu and deletes it with the box.
+    rightClick(s, far);
+    renderFrames(s, s.frames);
+    const bool openBeforeDelete=canvas->shownContextMenu() == cornerMenu;
+    corner->delayedDelete();
+    renderFrames(s, s.frames);
+    const auto &children=canvas->getActualChildren();
+    const bool menuGone=std::find(children.begin(), children.end(),
+        static_cast<gweni::controls::Base *>(cornerMenu)) == children.end();
+    checks.check("deleted_owner_closes", openBeforeDelete && !canvas->shownContextMenu() && menuGone,
+        "deleting the corner box with its menu open left shown="
+        +std::string(canvas->shownContextMenu() ? "yes" : "no")+", its menu "
+        +(menuGone ? "deleted" : "still on the canvas"));
+
+    forgetMouse(s);
+    dropControl(s, demo);
+
+    std::cout<<"context-menu";
     for(const auto &result : checks.results)
         std::cout<<" "<<result.first<<"="<<(result.second ? "yes" : "no");
     std::cout<<"\n";
@@ -3331,7 +3613,8 @@ int main(int argc, char *argv[])
         const bool hasValue=(i+1)<argc;
 
         const bool isMouseStep=(arg == "--move" || arg == "--press" || arg == "--release"
-            || arg == "--click" || arg == "--double-click" || arg == "--scroll");
+            || arg == "--click" || arg == "--double-click" || arg == "--scroll"
+            || arg == "--press-right" || arg == "--release-right" || arg == "--click-right");
 
         if(arg == "--control" && hasValue){ which=argv[++i]; chosenControl=true; }
         else if(arg == "--shot" && hasValue)
@@ -3401,6 +3684,9 @@ int main(int argc, char *argv[])
             else if(arg == "--release") kind=StepKind::Up;
             else if(arg == "--click") kind=StepKind::Click;
             else if(arg == "--double-click") kind=StepKind::DoubleClick;
+            else if(arg == "--press-right") kind=StepKind::DownRight;
+            else if(arg == "--release-right") kind=StepKind::UpRight;
+            else if(arg == "--click-right") kind=StepKind::ClickRight;
             else if(arg == "--scroll") kind=StepKind::Scroll;
 
             scripted=true;
@@ -3413,7 +3699,7 @@ int main(int argc, char *argv[])
             {
                 std::cerr<<"ControlTest: unknown scenario: "<<name
                          <<"; try per-control, resize, docked, scroll, interaction, typing, clip,"
-                           " text-size, scale or tooltip\n";
+                           " text-size, scale, tooltip or context-menu\n";
                 return EXIT_FAILURE;
             }
         }
@@ -3710,6 +3996,14 @@ int main(int argc, char *argv[])
             ok=runToolTipScenario(session, shotDir, passed);
             if(ok && !passed)
                 ok=false;   // the tooltip showed, moved or cost wrongly: a failing assertion
+            break;
+        }
+        case Scenario::ContextMenu:
+        {
+            bool passed=false;
+            ok=runContextMenuScenario(session, shotDir, passed);
+            if(ok && !passed)
+                ok=false;   // a context menu opened, sat or closed wrongly: a failing assertion
             break;
         }
 

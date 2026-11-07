@@ -8,6 +8,7 @@
 #include <gweni/controls/base.h>
 #include <gweni/controls/label.h>
 #include <gweni/controls/canvas.h>
+#include <gweni/controls/menu.h>
 #include <gweni/controls/layout/layout.h>
 #include <gweni/gweni.h>
 #include <gweni/platforms/baseRender.h>
@@ -169,7 +170,11 @@ Base::~Base()
         {
             canvas->PreDeleteCanvas(this);
             canvas->toolTipControlDeleted(this);
+            canvas->contextMenuControlDeleted(this);
         }
+
+        // after the canvas has closed it: a menu this control owns goes too
+        dropContextMenu();
 
         if(shownOn && (shownOn != canvas))
             shownOn->toolTipControlDeleted(this);
@@ -2333,6 +2338,64 @@ void Base::setToolTip(Base *tooltip)
 
     if(Canvas *canvas=getCanvas())
         canvas->toolTipChanged(this);
+}
+
+void Base::setContextMenu(Menu *menu)
+{
+    if(menu == m_contextMenu)
+        return;
+
+    dropContextMenu();
+    m_contextMenu=menu;
+
+    if(menu)
+        menu->m_contextOwners.push_back(this);
+}
+
+Menu *Base::createContextMenu()
+{
+    Canvas *canvas=getCanvas();
+
+    if(!canvas)
+        return nullptr;
+
+    Menu *menu=canvas->newChild<Menu>();
+
+    menu->setHidden(true);
+    setContextMenu(menu);
+    m_ownsContextMenu=true;
+    return menu;
+}
+
+void Base::dropContextMenu()
+{
+    Menu *menu=m_contextMenu;
+
+    if(!menu)
+        return;
+
+    const bool owned=m_ownsContextMenu;
+
+    m_contextMenu=nullptr;
+    m_ownsContextMenu=false;
+
+    std::vector<Base *> &owners=menu->m_contextOwners;
+    owners.erase(std::remove(owners.begin(), owners.end(), this), owners.end());
+
+    Canvas *canvas=menu->getCanvas();
+
+    if(canvas && (canvas->contextMenuOwner() == this))
+        canvas->closeContextMenu();
+
+    if(!owned)
+        return;
+
+    // Delayed, as a menu is deleted: this may run from one of its own items'
+    // events. A canvas tearing down deletes it with its other children.
+    if(canvas)
+        menu->delayedDelete();
+    else
+        delete menu;
 }
 
 String Base::getChildValue(const String &name)
