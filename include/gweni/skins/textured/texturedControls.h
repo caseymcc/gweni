@@ -351,6 +351,17 @@ public:
     static BorderedPrimitive HoveredPrimitive;
 };
 
+// A VirtualList's backdrop, the ListBox's; its rows draw themselves.
+class VirtualList:public textured::ControlRegister<VirtualList>
+{
+public:
+    static void staticInit(TexturedSkin *) { m_staticInit=true; }
+
+    void update(renderer::Base *renderer, controls::Base *baseControl) override;
+
+    inline static const std::string_view name="VirtualList";
+};
+
 class ListBoxRow:public textured::ControlRegister<ListBoxRow>
 {
 public:

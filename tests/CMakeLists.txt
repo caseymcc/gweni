@@ -301,6 +301,7 @@ add_executable(gweni_unit_tests
     unit/clipRegion.cpp
     unit/contextMenu.cpp
     unit/selectable.cpp
+    unit/virtualList.cpp
     unit/separator.cpp
     unit/sliderNotches.cpp
     unit/colorControls.cpp

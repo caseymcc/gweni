@@ -11,6 +11,9 @@
 #include <gweni/controls/horizontalScrollBar.h>
 #include <gweni/utility.h>
 
+#include <algorithm>
+#include <cmath>
+
 namespace gweni
 {
 namespace controls
@@ -55,6 +58,45 @@ void ScrollControl::setScroll(bool h, bool v)
 void ScrollControl::setInnerSize(int w, int h)
 {
     m_innerPanel->setSize(w, h);
+}
+
+void ScrollControl::setVirtualContentHeight(int height)
+{
+    height=std::max(height, -1);
+
+    if(m_virtualHeight == height)
+        return;
+
+    m_virtualHeight=height;
+    invalidate();
+}
+
+int ScrollControl::getMaxVerticalScrollOffset() const
+{
+    return std::max(0, m_virtualHeight-m_viewportHeight);
+}
+
+void ScrollControl::setVerticalScrollOffset(int offset)
+{
+    offset=gweni::clamp(offset, 0, getMaxVerticalScrollOffset());
+
+    if(offset == m_virtualOffset)
+        return;
+
+    m_virtualOffset=offset;
+    showVirtualOffset();
+    invalidate();
+}
+
+void ScrollControl::showVirtualOffset()
+{
+    const int maxOffset=getMaxVerticalScrollOffset();
+    const float amount=maxOffset > 0?static_cast<float>(m_virtualOffset)/maxOffset:0.f;
+
+    if(m_verticalScrollBar->getScrolledAmount() != amount)
+        m_verticalScrollBar->setScrolledAmount(amount, true);
+
+    m_shownVirtualAmount=m_verticalScrollBar->getScrolledAmount();
 }
 
 void ScrollControl::onVeritcalBarMoved(event::Info)
@@ -159,9 +201,12 @@ void ScrollControl::calculateSize(skin::Base *skin, Dim dim)
             m_barSize.height=m_horizontalScrollBar->getPreferredSize().height;
     }
 
-    const Size &content=m_innerPanel->getPreferredSize();
+    Size content=m_innerPanel->getPreferredSize();
     const Margin &margin=m_innerPanel->getMargin();
     const Rect &requested=getRequestedBounds();
+
+    if(hasVirtualContent())
+        content.height=m_virtualHeight;
 
     if(dim == Dim::X)
         m_preferredSize.width=preferredFromContent(sizedByRequest(Dim::X)?requested.w:
@@ -207,6 +252,12 @@ void ScrollControl::arrange(skin::Base *skin, Dim dim)
 
     placeContents();
 
+    {
+        PlacementScope placement;
+
+        contentsPlaced(skin);
+    }
+
     for(auto &&child : m_children)
     {
         if(child->hidden())
@@ -227,7 +278,8 @@ void ScrollControl::arrange(skin::Base *skin, Dim dim)
             child->calculateSize(skin, Dim::Y);
     }
 
-    if(m_innerPanel->getPreferredSize().height != contentHeight)
+    // Virtual content is the viewport's height whatever its children ask for.
+    if(!hasVirtualContent() && m_innerPanel->getPreferredSize().height != contentHeight)
     {
         placeChildSize(m_innerPanel, m_innerPanel->getWidth(),
             std::max(getHeight(), m_innerPanel->getPreferredSize().height));
@@ -246,7 +298,11 @@ void ScrollControl::placeContents()
 {
     const int width=getWidth();
     const int height=getHeight();
-    const Size &content=m_innerPanel->getPreferredSize();
+    const bool virtualContent=hasVirtualContent();
+    Size content=m_innerPanel->getPreferredSize();
+
+    if(virtualContent)
+        content.height=m_virtualHeight;
 
     // Which bars show. Showing one narrows the viewport the other is compared
     // with, and a narrower viewport never makes a bar go away, so the second
@@ -269,7 +325,8 @@ void ScrollControl::placeContents()
 
     const int barWidth=verticalShown?m_barSize.width:0;
     const int barHeight=horizontalShown?m_barSize.height:0;
-    const int innerHeight=std::max(height, content.height);
+    // Virtual content is not scrolled: the inner panel is the viewport.
+    const int innerHeight=virtualContent?height-barHeight:std::max(height, content.height);
     int innerWidth;
 
     // The inner panel runs under the vertical bar: by one pixel when the
@@ -292,10 +349,28 @@ void ScrollControl::placeContents()
     else
         m_horizontalScrollBar->setHidden(true);
 
-    m_verticalScrollBar->setContentSize(innerHeight);
+    m_verticalScrollBar->setContentSize(virtualContent?m_virtualHeight:innerHeight);
     m_verticalScrollBar->setViewableContentSize(height-barHeight);
     m_horizontalScrollBar->setContentSize(innerWidth);
     m_horizontalScrollBar->setViewableContentSize(width-barWidth);
+
+    // Virtual content scrolls by its offset. A bar that is not where this
+    // control last put it was moved by the user (its thumb, its buttons, the
+    // wheel; a bar no longer required was scrolled back to the start above),
+    // so the offset is taken from it, at the viewport it was moved in. The
+    // offset is then kept inside the viewport this pass gives, and the bar
+    // shows it.
+    if(virtualContent)
+    {
+        const float amount=m_verticalScrollBar->getScrolledAmount();
+
+        if(amount != m_shownVirtualAmount)
+            m_virtualOffset=static_cast<int>(std::lround(amount*getMaxVerticalScrollOffset()));
+
+        m_viewportHeight=height-barHeight;
+        m_virtualOffset=gweni::clamp(m_virtualOffset, 0, getMaxVerticalScrollOffset());
+        showVirtualOffset();
+    }
 
     // Docked as Base::arrangeHorizontal/Vertical would dock them: the vertical
     // bar on the right at full height, the horizontal one along the bottom
@@ -327,7 +402,7 @@ void ScrollControl::placeContents()
     int innerX=0;
     int innerY=0;
 
-    if(verticalShown)
+    if(verticalShown && !virtualContent)
         innerY=-(innerHeight-height+barHeight)*m_verticalScrollBar->getScrolledAmount();
 
     if(horizontalShown)

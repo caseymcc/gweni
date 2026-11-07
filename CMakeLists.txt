@@ -230,6 +230,8 @@ set(GWENI_CONTROL_SOURCES
     source/controls/verticalScrollBar.cpp
     include/gweni/controls/verticalSlider.h
     source/controls/verticalSlider.cpp
+    include/gweni/controls/virtualList.h
+    source/controls/virtualList.cpp
     include/gweni/controls/windowButtons.h
     include/gweni/controls/windowCanvas.h
     source/controls/windowCanvas.cpp

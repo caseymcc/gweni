@@ -64,6 +64,32 @@ public:
 
     virtual void setInnerSize(int w, int h);
 
+    //! Virtual content: a vertical content height the inner panel does not
+    //! hold, for a subclass that places only what is on screen itself
+    //! (VirtualList). With one set (>= 0), the vertical bar is decided and
+    //! ranged from it instead of the inner panel's preferred height, and the
+    //! inner panel is not scrolled: it is placed at the top, the viewport's
+    //! height, and the subclass places its children by
+    //! getVerticalScrollOffset() in contentsPlaced(). So no child is ever
+    //! placed far outside the viewport, however tall the content is. -1 (the
+    //! default) turns it off.
+    void setVirtualContentHeight(int height);
+    int getVirtualContentHeight() const { return m_virtualHeight; }
+    bool hasVirtualContent() const { return m_virtualHeight >= 0; }
+
+    //! With virtual content, how far the content is scrolled, in units: from
+    //! 0 to getMaxVerticalScrollOffset(). It is kept as a whole number, and the
+    //! bar shows it as a fraction; a bar the user moves sets it (read by the
+    //! next layout). A new offset
+    //! is laid out by the next pass, which clamps it to the viewport it gives.
+    int getVerticalScrollOffset() const { return m_virtualOffset; }
+    void setVerticalScrollOffset(int offset);
+    //! The virtual content height less the viewport's, never negative.
+    int getMaxVerticalScrollOffset() const;
+    //! The height of the area the content is seen through (this control's,
+    //! less a horizontal bar), as the last layout pass gave it; 0 before one.
+    int getViewportHeight() const { return m_viewportHeight; }
+
     virtual void onVeritcalBarMoved(event::Info);
     virtual void onHorizontalBarMoved(event::Info);
 
@@ -91,6 +117,17 @@ protected:
     //! control's current size, before any of them is laid out. See arrange().
     void placeContents();
 
+    //! Called by the Y arrange right after placeContents(), before any child is
+    //! laid out, under a PlacementScope: a subclass with virtual content
+    //! places its children in the inner panel here, from
+    //! getVerticalScrollOffset() and getViewportHeight(). A child it creates,
+    //! or whose content it changes, here is measured in X by it (calculateSize)
+    //! before it returns, since the X measuring is over.
+    virtual void contentsPlaced(skin::Base * /*skin*/) {}
+
+    //! Sets the vertical bar to show m_virtualOffset.
+    void showVirtualOffset();
+
     bool m_canScrollHorizontal;
     bool m_canScrollVertical;
 
@@ -103,6 +140,13 @@ protected:
     //! measured while shown. A hidden bar measures as nothing (its children are
     //! hidden with it), and deciding whether to show it needs its size.
     Size m_barSize=Size(15, 15);
+
+    int m_virtualHeight=-1;
+    int m_virtualOffset=0;
+    int m_viewportHeight=0;
+    //! The vertical bar's scrolled amount when this control last set it from
+    //! m_virtualOffset: a bar found elsewhere was moved by the user.
+    float m_shownVirtualAmount=0.f;
 };
 
 }//namespace controls

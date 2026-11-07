@@ -894,6 +894,21 @@ protected:
         bool m_outer;
     };
 
+    //! While one is alive, a control made during a layout pass, as a part its
+    //! owner places (a VirtualList's pooled rows), sets up its bounds the way
+    //! any constructor does: its defaults are its requests, but they are not
+    //! counted as layout code recording one (LayoutStats::requests). Keep it
+    //! to the construction: what the owner writes afterwards is placement.
+    struct PartScope
+    {
+        PartScope();
+        ~PartScope();
+        PartScope(const PartScope &)=delete;
+        PartScope &operator=(const PartScope &)=delete;
+    private:
+        bool m_outer;
+    };
+
     //
     // Drag + Drop
 

@@ -407,6 +407,13 @@ void ListBox::update(renderer::Base *renderer, controls::Base *baseControl)
 }
 
 ///////////////////////////////////////////////////////////////////////////
+//VirtualList
+void VirtualList::update(renderer::Base *renderer, controls::Base *baseControl)
+{
+    tokyonight::paintSurface(renderer, m_primitives.data(), baseControl, tokyonight::PanelDark);
+}
+
+///////////////////////////////////////////////////////////////////////////
 //ListBoxRow
 size_t ListBoxRow::EvenLine;
 size_t ListBoxRow::OddLine;
@@ -1738,6 +1745,7 @@ template class ControlRegister<DockBase>;
 template class ControlRegister<GroupBox>;
 template class ControlRegister<Input>;
 template class ControlRegister<ListBox>;
+template class ControlRegister<VirtualList>;
 template class ControlRegister<ListBoxRow>;
 template class ControlRegister<Menu>;
 template class ControlRegister<MenuStrip>;

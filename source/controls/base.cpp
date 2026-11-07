@@ -231,6 +231,9 @@ bool g_placement=false;
 // Set while invalidate() walks up to the canvas, so only its first call, the
 // control that asked, is looked at.
 bool g_propagating=false;
+// Set while a part is made during a layout pass (Base::PartScope): its
+// constructor's requests are not counted as layout code's.
+bool g_makingPart=false;
 
 // The parts of the bounds the next setBounds() call requests (see
 // Base::setBounds): setPos/moveTo ask for the position, setSize for the size.
@@ -263,6 +266,16 @@ Base::PlacementScope::PlacementScope(): m_outer(g_placement)
 Base::PlacementScope::~PlacementScope()
 {
     g_placement=m_outer;
+}
+
+Base::PartScope::PartScope(): m_outer(g_makingPart)
+{
+    g_makingPart=true;
+}
+
+Base::PartScope::~PartScope()
+{
+    g_makingPart=m_outer;
 }
 
 bool Base::laidOutThisPass(Dim dim) const
@@ -756,7 +769,7 @@ bool Base::setBounds(const Rect &bounds)
     {
         // Only the app asks; layout code computes (setArrangedBounds,
         // placeChild). A request made while a pass runs is counted.
-        if(Canvas::s_layingOut)
+        if(Canvas::s_layingOut && !g_makingPart)
             Canvas::s_layingOut->layoutRequested(this);
 
         const Rect requested=m_requestedBounds;
