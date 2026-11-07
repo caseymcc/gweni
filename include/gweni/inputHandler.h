@@ -60,6 +60,10 @@ bool GWENI_EXPORT handleAccelerator(controls::Base *canvas, gweni::UnicodeChar c
 void GWENI_EXPORT onMouseMoved(controls::Base *canvas, int x, int y,
     int deltaX, int deltaY);
 bool GWENI_EXPORT onMouseClicked(controls::Base *canvas, int button, bool down);
+//! The cursor left the canvas's window: the hovered control on it gets its
+//! onMouseLeave() and nothing is hovered until the cursor moves again. A drag
+//! (a control holding the mouse focus) keeps its control.
+void GWENI_EXPORT onMouseLeft(controls::Base *canvas);
 bool GWENI_EXPORT onKeyEvent(controls::Base *canvas, int key, bool down);
 void GWENI_EXPORT onCanvasThink(controls::Base *control);
 

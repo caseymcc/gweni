@@ -221,6 +221,18 @@ public:
                                                 delta.x, delta.y);
     }
 
+    //! From glfwSetCursorEnterCallback. Leaving tells the canvas, which stops
+    //! hovering (and hides a tooltip); the next move after coming back reports
+    //! a zero delta, as the first one does.
+    bool processCursorEnter(bool entered)
+    {
+        if (!m_eventCaller || entered)
+            return false;
+
+        m_haveMouse = false;
+        return m_eventCaller->inputMouseLeave();
+    }
+
     bool processMouseButtons(int button, int action, int mods)
     {
         return m_eventCaller->inputMouseButton(button, action == GLFW_PRESS);

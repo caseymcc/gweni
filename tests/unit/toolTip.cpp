@@ -17,6 +17,7 @@
 #include <gweni/gweni.h>
 #include <gweni/controls/toolTip.h>
 #include <gweni/inputHandler.h>
+#include <gweni/platforms/input/glfw3.h>
 #include <gweni/platforms/platform.h>
 
 #include <doctest/doctest.h>
@@ -260,6 +261,91 @@ TEST_CASE("A press hides the tooltip until the mouse has been on another control
     scene.hover(a);
     scene.waitDelay();
     CHECK(scene.canvas->toolTipShown());
+}
+
+TEST_CASE("A press in the same frame as the move onto the control suppresses its tooltip")
+{
+    Scene scene;
+    controls::Base *a=scene.control(20, 30, 60, 15, "Tooltip A");
+    scene.control(20, 45, 60, 15, "Tooltip B");
+    scene.moveTo(300, 200);
+
+    // a fast click: move, press and release with no frame between
+    scene.canvas->inputMouseMoved(50, 37, 0, 0);
+    scene.canvas->inputMouseButton(0, true);
+    scene.canvas->inputMouseButton(0, false);
+    scene.frame();
+    scene.waitDelay();
+    scene.waitDelay();
+    CHECK_FALSE(scene.canvas->toolTipShown());
+
+    // from A's shown tooltip straight onto B, pressed in the same frame
+    scene.moveTo(300, 200);
+    scene.hover(a);
+    scene.waitDelay();
+    REQUIRE(scene.canvas->toolTipShown());
+    REQUIRE(scene.canvas->toolTipOwner() == a);
+    scene.canvas->inputMouseMoved(50, 52, 0, 0);
+    scene.canvas->inputMouseButton(0, true);
+    scene.canvas->inputMouseButton(0, false);
+    scene.frame();
+    CHECK_FALSE(scene.canvas->toolTipShown());
+    scene.waitDelay();
+    scene.waitDelay();
+    CHECK_FALSE(scene.canvas->toolTipShown());
+
+    // back on A, which was not pressed: it shows after the delay
+    scene.hover(a);
+    scene.waitDelay();
+    CHECK(scene.canvas->toolTipShown());
+    CHECK(scene.canvas->toolTipOwner() == a);
+}
+
+TEST_CASE("The cursor leaving the window hides the tooltip, through the GLFW translator")
+{
+    Scene scene;
+    controls::Base *a=scene.control(20, 30, 60, 15, "Tooltip A");
+    scene.frame();
+
+    input::GLFW3 glfw;
+    glfw.initialize(scene.canvas);
+
+    glfw.processMouseMove(50, 37);
+    scene.frame();
+    scene.waitDelay();
+    REQUIRE(scene.canvas->toolTipShown());
+    REQUIRE(HoveredControl == a);
+
+    glfw.processCursorEnter(false);
+    CHECK(HoveredControl == nullptr);
+    scene.frame();
+    CHECK_FALSE(scene.canvas->toolTipShown());
+    CHECK(scene.canvas->toolTipControl()->hidden());
+
+    // coming back in starts the delay again
+    glfw.processCursorEnter(true);
+    glfw.processMouseMove(50, 37);
+    scene.frame();
+    CHECK(HoveredControl == a);
+    CHECK_FALSE(scene.canvas->toolTipShown());
+    scene.waitDelay();
+    CHECK(scene.canvas->toolTipShown());
+}
+
+TEST_CASE("The cursor leaving the window during a drag keeps the dragged control hovered")
+{
+    Scene scene;
+    controls::Base *a=scene.control(20, 30, 60, 15, "Tooltip A");
+    scene.frame();
+    scene.hover(a);
+    MouseFocus=a;
+
+    scene.canvas->inputMouseLeave();
+    CHECK(HoveredControl == a);
+
+    MouseFocus=nullptr;
+    scene.canvas->inputMouseLeave();
+    CHECK(HoveredControl == nullptr);
 }
 
 TEST_CASE("Hiding, disabling, deleting the control or clearing its tooltip hides the tooltip")

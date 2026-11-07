@@ -73,9 +73,15 @@ the owner's bounds with the left edges aligned, above them when there is no room
 pulled inside the canvas's right and left edges. It is anchored to the control and not
 to the mouse, so moving the mouse inside the control writes nothing. Moving straight to
 another control with a tooltip refills the same box at once. Leaving, a press (until the
-mouse is on another control), and the owner being hidden, disabled, deleted or losing
-its tooltip hide it with `setHidden`, so its slots are hidden, not freed. The box is
-placed before layout, so it is laid out in the frame's one pass. On a frame where
+mouse is on another control; `Canvas::inputMouseButton` takes the control under the mouse
+at the press, so a move and a press in one frame count), the cursor leaving the window
+(`input::GLFW3::processCursorEnter` → `Canvas::inputMouseLeave` → `input::onMouseLeft`,
+which stops hovering unless a drag holds the mouse focus), and the owner being hidden,
+disabled, deleted or losing its tooltip hide it with `setHidden`, so its slots are hidden,
+not freed. The box is
+placed before layout, so it is laid out in the frame's one pass; it is placed from the
+owner's bounds of the frame before, so when the owner moves (a scroll, a re-layout) the
+box follows one frame later. On a frame where
 nothing about it changes the step walks up from the hovered control to its canvas and
 marks no control.
 

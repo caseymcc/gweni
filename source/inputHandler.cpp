@@ -183,6 +183,19 @@ void onMouseMoved(controls::Base *canvas, int x, int y,
     UpdateHoveredControl(canvas);
 }
 
+void onMouseLeft(controls::Base *canvas)
+{
+    if(MouseFocus && MouseFocus->getCanvas() == canvas)
+        return;
+
+    if(!HoveredControl || HoveredControl->getCanvas() != canvas)
+        return;
+
+    controls::Base *oldHover=HoveredControl;
+    HoveredControl=nullptr;
+    oldHover->onMouseLeave();
+}
+
 bool onMouseClicked(controls::Base *canvas, int iMouseButton, bool down)
 {
     // If we click on a control that isn't a menu we want to close

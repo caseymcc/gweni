@@ -149,7 +149,8 @@ public:
     /// platform::getTimeInSeconds() the box is filled in, placed below the
     /// control (ToolTip::placement) and shown. Moving to another control with
     /// a tooltip while one is shown fills the same box in for it at once. It
-    /// hides when the mouse leaves the control, on a mouse press (until the
+    /// hides when the mouse leaves the control or the window
+    /// (inputMouseLeave), on a mouse press (until the
     /// mouse is on another control), and when the control is hidden,
     /// disabled, deleted or loses its tooltip. The box is kept as the canvas's
     /// last child, so the z renumber puts it above everything else, an open
@@ -188,6 +189,9 @@ public:
     bool inputCharacter(gweni::UnicodeChar chr) override;
 
     bool inputMouseWheel(int val) override;
+    /// The cursor left the window: nothing on this canvas is hovered any more
+    /// (input::onMouseLeft), so the next update phase hides its tooltip.
+    bool inputMouseLeave() override;
     bool inputQuit() override
     {
         return true;

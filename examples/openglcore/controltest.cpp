@@ -224,7 +224,8 @@
  *                 "Toggle Me" moves the same box there at once and changes
  *                 only the box and the two buttons; moving off hides it and
  *                 the frame is the one before hovering; a press hides it for
- *                 good until the mouse has left; a button in the canvas's
+ *                 good until the mouse has left, a --click (the move and the
+ *                 press in one frame) included; a button in the canvas's
  *                 bottom-right corner gets its tooltip above it, inside the
  *                 canvas; and with a Menu open over where the box goes, the
  *                 box's pixels are the ones it has with no Menu. One line
@@ -361,6 +362,8 @@ static void window_focus_callback(GLFWwindow*, int focused)
 {   g_glfwInput.processFocus(focused == GLFW_TRUE); }
 static void cursor_pos_callback(GLFWwindow*, double x, double y)
 {   g_glfwInput.processMouseMove(x,y); }
+static void cursor_enter_callback(GLFWwindow*, int entered)
+{   g_glfwInput.processCursorEnter(entered == GLFW_TRUE); }
 static void mouse_button_callback(GLFWwindow*, int b, int a, int m)
 {   g_glfwInput.processMouseButtons(b,a,m); }
 static void scroll_callback(GLFWwindow*, double x, double y)
@@ -2728,6 +2731,23 @@ static void checkToolTip(Session &s, const std::string &shotDir, InteractionChec
         "shown again="+std::string(again > 0 ? "yes" : "no")+", hidden by the press="
         +(pressHid ? "yes" : "no")+", still hidden after the delay="+(stayedHidden ? "yes" : "no"));
 
+    // A fast click: the move onto the button and the press in one frame (a
+    // --click), from off it and from the other button's shown tooltip.
+    moveMouse(s, off.x, off.y);
+    renderFrames(s, s.frames);
+    clickMouse(s, button.x+button.w/2, button.y+button.h/2);
+    renderFrames(s, delayFrames+4);
+    const bool fastFromOff=!canvas->toolTipShown();
+    moveMouse(s, otherRect.x+otherRect.w/2, otherRect.y+otherRect.h/2);
+    const bool otherShown=framesUntilShown(s, delayFrames+8) > 0;
+    clickMouse(s, button.x+button.w/2, button.y+button.h/2);
+    renderFrames(s, delayFrames+4);
+    const bool fastFromOther=!canvas->toolTipShown();
+    checks.check("fast_click_hides", fastFromOff && otherShown && fastFromOther,
+        "a click with no frame between the move and the press: from off the button the tooltip "
+        +std::string(fastFromOff ? "stayed hidden" : "showed")+"; from the other button's tooltip ("
+        +(otherShown ? "shown" : "not shown")+") it "+(fastFromOther ? "stayed hidden" : "showed"));
+
     // With a Menu open over where the box goes, the box looks as it does alone.
     moveMouse(s, off.x, off.y);
     renderFrames(s, s.frames);
@@ -3559,6 +3579,7 @@ int main(int argc, char *argv[])
         glfwSetCharCallback(ctx.window, char_callback);
         glfwSetWindowFocusCallback(ctx.window, window_focus_callback);
         glfwSetCursorPosCallback(ctx.window, cursor_pos_callback);
+        glfwSetCursorEnterCallback(ctx.window, cursor_enter_callback);
         glfwSetMouseButtonCallback(ctx.window, mouse_button_callback);
         glfwSetScrollCallback(ctx.window, scroll_callback);
         glfwSetFramebufferSizeCallback(ctx.window, framebuffer_size_callback);

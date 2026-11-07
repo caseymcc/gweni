@@ -304,10 +304,15 @@ bool Canvas::inputMouseButton(int button, bool down)
     if(hidden())
         return false;
 
-    // the next update phase hides it, and shows none for this control again
-    // until the mouse has been on another one
-    if(down && m_toolTipOwner)
-        m_toolTipSuppressed=m_toolTipOwner;
+    // The next update phase hides it, and shows none for this control again
+    // until the mouse has been on another one. The control is the one under
+    // the mouse now (input::onMouseMoved keeps HoveredControl current), not
+    // m_toolTipOwner, which a move in this same frame has not updated yet.
+    if(down)
+    {
+        if(Base *pressed=toolTipOwnerFor(HoveredControl))
+            m_toolTipSuppressed=pressed;
+    }
 
     return input::onMouseClicked(this, button, down);
 }
@@ -484,6 +489,15 @@ bool Canvas::inputCharacter(UnicodeChar chr)
         return false;
 
     return KeyboardFocus->onChar(chr);
+}
+
+bool Canvas::inputMouseLeave()
+{
+    if(hidden())
+        return false;
+
+    input::onMouseLeft(this);
+    return true;
 }
 
 bool Canvas::inputMouseWheel(int val)

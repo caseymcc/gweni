@@ -87,6 +87,11 @@ static void cursor_pos_callback(GLFWwindow* window, double xpos, double ypos)
     g_glfwInput.processMouseMove(xpos, ypos);
 }
 
+static void cursor_enter_callback(GLFWwindow* window, int entered)
+{
+    g_glfwInput.processCursorEnter(entered == GLFW_TRUE);
+}
+
 static void mouse_button_callback(GLFWwindow* window, int button, int action, int mods)
 {
     g_glfwInput.processMouseButtons(button, action, mods);
@@ -553,6 +558,7 @@ int main(int argc, char *argv[])
         glfwSetCharCallback(ctx.window, char_callback);
         glfwSetWindowFocusCallback(ctx.window, window_focus_callback);
         glfwSetCursorPosCallback(ctx.window, cursor_pos_callback);
+        glfwSetCursorEnterCallback(ctx.window, cursor_enter_callback);
         glfwSetMouseButtonCallback(ctx.window, mouse_button_callback);
         glfwSetScrollCallback(ctx.window, scroll_callback);
         glfwSetFramebufferSizeCallback(ctx.window, framebuffer_size_callback);
