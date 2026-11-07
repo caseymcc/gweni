@@ -803,8 +803,9 @@ void main()
     TexCoords = vec2(inTexCoords)/65535.0;
     VertexColor = unpackColor(inTexCoords);
 
-    vLocal = vec2(inLocal);
-    vHalf = abs(vec2(inLocal));
+    // inLocal is in half-pixel units, so an odd-sized rect's half-size (3.5) is exact
+    vLocal = vec2(inLocal)*0.5;
+    vHalf = abs(vLocal);
     vRadius = float(inRadiusBorder.x);
     vBorder = float(inRadiusBorder.y);
     vColor1 = unpackColor(inColor1);
@@ -851,17 +852,21 @@ float sdRoundBox(vec2 p, vec2 b, float r)
 
 // Rounded-rect mask of styles 4, 6 and 7: applies the border to fill and the
 // anti-aliased outer edge to its alpha. Both are a 1 px box filter: the part of
-// the pixel on the inner side of the edge, with aa the length of d's screen
-// gradient (1 px of d per px). A pixel-aligned straight edge is then exactly 1
-// inside and 0 outside, so the outermost pixel is fully covered, two rects that
-// abut meet without a seam and an N px border is N whole rows; only a curved
-// edge (a corner arc) gets partial coverage.
+// the pixel on the inner side of the edge, with aa the size of a pixel in units
+// of d. A pixel-aligned straight edge is then exactly 1 inside and 0 outside, so
+// the outermost pixel is fully covered, two rects that abut meet without a seam
+// and an N px border is N whole rows; only a curved edge (a corner arc) gets
+// partial coverage.
 vec4 roundedRect(vec4 fill)
 {
     float r = clamp(vRadius, 0.0, min(vHalf.x, vHalf.y));
     float d = sdRoundBox(vLocal, vHalf, r);
-    // not fwidth(d) = |dx|+|dy|, which is sqrt(2) too wide across a corner diagonal
-    float aa = max(length(vec2(dFdx(d), dFdy(d))), 1e-4);
+    // d is a true distance in vLocal's units, so a pixel is aa of it: vLocal's
+    // screen gradient (1 while vLocal is in device px). Not d's own gradient:
+    // fwidth(d) is sqrt(2) too wide across a corner diagonal, and at a square
+    // corner, where d=max(qx,qy) has a kink, the 2x2 derivative of the corner
+    // pixel can span both axes and come out sqrt(2) too.
+    float aa = max(0.5*(length(dFdx(vLocal)) + length(dFdy(vLocal))), 1e-4);
     float shapeA = clamp(0.5 - d/aa, 0.0, 1.0);   // outer edge coverage
 
     vec3 rgb = fill.rgb;
@@ -1658,6 +1663,13 @@ void OpenGLCore::drawCheckerRect(size_t primitiveId, gweni::Rect rect, int zInde
         light, dark, dark, borderColor);
 }
 
+//! A rect's size as its half-size in half-pixel units, the Vertex::lx/ly of its
+//! corners: the size itself, clamped to what an int16_t holds.
+static int halfPixelSize(int size)
+{
+    return std::min(std::max(size, 0), (int)std::numeric_limits<int16_t>::max());
+}
+
 void OpenGLCore::writeRoundedQuad(size_t primitiveId, gweni::Rect rect, int zIndex, uint8_t style,
     float radius, float border, gweni::Color color0Left, gweni::Color color0Right,
     gweni::Color color1, gweni::Color color3Left, gweni::Color color3Right,
@@ -1686,12 +1698,16 @@ void OpenGLCore::writeRoundedQuad(size_t primitiveId, gweni::Rect rect, int zInd
     m_indexes[index++]=vertexIndex+3;
     m_indexes[index++]=vertexIndex+2;
 
-    // Center the SDF rect inside the control rect so the drawn shape and the quad
-    // positions coincide exactly (avoids edge clipping for odd sizes).
-    const int hw=rect.w/2;
-    const int hh=rect.h/2;
-    const int cx=rect.x+hw;
-    const int cy=rect.y+hh;
+    // The quad is the rect, and the SDF's local position runs from -size/2 to
+    // +size/2 across it, so the drawn shape and the quad coincide exactly at any
+    // size. lx/ly are in half-pixel units (+/-w, +/-h), which keeps an odd size's
+    // half (3.5) exact.
+    const int x0=rect.x;
+    const int y0=rect.y;
+    const int x1=rect.x+rect.w;
+    const int y1=rect.y+rect.h;
+    const int hw=halfPixelSize(rect.w);
+    const int hh=halfPixelSize(rect.h);
 
     // Scaled to device pixels. A border stays a whole number of them, and at
     // least one, so it stays crisp at a fractional scale.
@@ -1714,10 +1730,10 @@ void OpenGLCore::writeRoundedQuad(size_t primitiveId, gweni::Rect rect, int zInd
         v.dx=color3.rg(); v.dy=color3.ba();
     };
 
-    setRounded(vertexIndex++, cx-hw, cy-hh, -hw, -hh, color0Left, color3Left);
-    setRounded(vertexIndex++, cx+hw, cy-hh, +hw, -hh, color0Right, color3Right);
-    setRounded(vertexIndex++, cx-hw, cy+hh, -hw, +hh, color0Left, color3Left);
-    setRounded(vertexIndex++, cx+hw, cy+hh, +hw, +hh, color0Right, color3Right);
+    setRounded(vertexIndex++, x0, y0, -hw, -hh, color0Left, color3Left);
+    setRounded(vertexIndex++, x1, y0, +hw, -hh, color0Right, color3Right);
+    setRounded(vertexIndex++, x0, y1, -hw, +hh, color0Left, color3Left);
+    setRounded(vertexIndex++, x1, y1, +hw, +hh, color0Right, color3Right);
 
     markPrimitiveChanges(primitiveId, before);
 }
@@ -1748,10 +1764,13 @@ void OpenGLCore::drawIcon(size_t primitiveId, gweni::Rect rect, int kind, int di
     m_indexes[index++]=vertexIndex+3;
     m_indexes[index++]=vertexIndex+2;
 
-    const int hw=rect.w/2;
-    const int hh=rect.h/2;
-    const int cx=rect.x+hw;
-    const int cy=rect.y+hh;
+    // the quad is the rect, lx/ly in half-pixel units as in writeRoundedQuad
+    const int x0=rect.x;
+    const int y0=rect.y;
+    const int x1=rect.x+rect.w;
+    const int y1=rect.y+rect.h;
+    const int hw=halfPixelSize(rect.w);
+    const int hh=halfPixelSize(rect.h);
 
     auto setIcon=[&](size_t vi, int px, int py, int lx, int ly)
     {
@@ -1763,10 +1782,10 @@ void OpenGLCore::drawIcon(size_t primitiveId, gweni::Rect rect, int kind, int di
         v.border=(uint16_t)direction;
     };
 
-    setIcon(vertexIndex++, cx-hw, cy-hh, -hw, -hh);
-    setIcon(vertexIndex++, cx+hw, cy-hh, +hw, -hh);
-    setIcon(vertexIndex++, cx-hw, cy+hh, -hw, +hh);
-    setIcon(vertexIndex++, cx+hw, cy+hh, +hw, +hh);
+    setIcon(vertexIndex++, x0, y0, -hw, -hh);
+    setIcon(vertexIndex++, x1, y0, +hw, -hh);
+    setIcon(vertexIndex++, x0, y1, -hw, +hh);
+    setIcon(vertexIndex++, x1, y1, +hw, +hh);
 
     markPrimitiveChanges(primitiveId, before);
 }

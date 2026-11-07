@@ -338,7 +338,7 @@ private:
         uint16_t x, y, z;
         uint16_t tx, ty; //color0 (top fill) packed rg/ba, or UV for texture (style 2, 0..65535 = 0..1)
         // SDF rounded-rect fields (styles 4, 6, 7); left 0 for all other styles.
-        int16_t  lx, ly; //local position relative to rect center (= +/-halfSize at the four corners)
+        int16_t  lx, ly; //local position relative to rect center, in half-pixel units (= +/-size at the four corners, so an odd size is exact)
         uint16_t radius; //corner radius in px; icon kind (style 5); image unit (style 2)
         uint16_t border; //border thickness in px
         uint16_t cx, cy; //color1 (bottom fill for vertical gradient, image tint for style 2) packed rg/ba

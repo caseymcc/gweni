@@ -14,6 +14,8 @@
  *  a 1 px box filter, so a pixel-aligned straight edge covers its outermost
  *  pixel fully and nothing outside it: only a rounded corner's arc is partly
  *  covered, and the "interior" of a square-cornered rect is the whole rect.
+ *  A rect of odd size, at an odd position, covers exactly its w x h pixels, and
+ *  so does an icon's (style 5) quad.
  */
 #include <doctest/doctest.h>
 
@@ -571,5 +573,184 @@ TEST_CASE("Rounded rect (style 4) border: N px border is the outer N rows, then 
         CHECK_PIXEL(frame, rectX+border, rectY+mid, rgb(red));
         CHECK_PIXEL(frame, rectX+rectSize-1-border, rectY+mid, rgb(red));
         CHECK(outsideRingMismatches(frame, testRect) == 0);
+    }
+}
+
+namespace
+{
+
+//! Pixels inside `rect` that differ from `expected(x, y)`.
+template<typename Expected>
+int rectMismatches(const Frame &frame, const Rect &rect, Expected &&expected)
+{
+    int mismatches=0;
+
+    for(int y=rect.y; y<rect.y+rect.h; ++y)
+        for(int x=rect.x; x<rect.x+rect.w; ++x)
+            if(!near(frame.at(x, y), expected(x, y)))
+            {
+                if(mismatches == 0)
+                {
+                    const Color p=frame.at(x, y);
+                    const Rgb e=expected(x, y);
+
+                    MESSAGE("first mismatch at (", x, ",", y, "): (", int(p.r), ",", int(p.g), ",",
+                        int(p.b), "), expected (", e.r*255.0f, ",", e.g*255.0f, ",", e.b*255.0f, ")");
+                }
+                ++mismatches;
+            }
+    return mismatches;
+}
+
+//! Odd sizes at odd positions, wide and narrow, and an even one for comparison.
+const Rect oddRects[]={Rect(3, 9, 7, 5), Rect(21, 33, 37, 23), Rect(71, 17, 1, 3), Rect(81, 41, 30, 11)};
+
+}//namespace
+
+TEST_CASE("SDF rects (styles 4, 6, 7) of odd size cover exactly their rect")
+{
+    Primitives prims(1);
+
+    for(const Rect &rect:oddRects)
+    {
+        CAPTURE(rect.x);
+        CAPTURE(rect.y);
+        CAPTURE(rect.w);
+        CAPTURE(rect.h);
+
+        // a pixel centre's position across and down the rect, 0..1
+        auto u=[&](int x) { return (x-rect.x+0.5f)/rect.w; };
+        auto v=[&](int y) { return (y-rect.y+0.5f)/rect.h; };
+
+        {
+            INFO("style 4, flat");
+            const Frame frame=drawFrame([&](OpenGLCore &renderer)
+                {
+                    renderer.drawRoundedRect(prims.ids[0], rect, 0.0f, 0.0f, red, red, black, 1);
+                });
+
+            CHECK(rectMismatches(frame, rect, [](int, int) { return rgb(red); }) == 0);
+            CHECK(outsideRingMismatches(frame, rect) == 0);
+        }
+        {
+            // the gradient is centred on the rect too: row y is at v(y), so the
+            // first and last rows are equally far from the end colours
+            INFO("style 4, gradient");
+            const Frame frame=drawFrame([&](OpenGLCore &renderer)
+                {
+                    renderer.drawRoundedRect(prims.ids[0], rect, 0.0f, 0.0f, white, black, black, 1);
+                });
+
+            CHECK(rectMismatches(frame, rect,
+                [&](int, int y) { return mix(rgb(white), rgb(black), v(y)); }) == 0);
+            CHECK(outsideRingMismatches(frame, rect) == 0);
+        }
+        {
+            INFO("style 6");
+            const Frame frame=drawFrame([&](OpenGLCore &renderer)
+                {
+                    renderer.drawBilinearRect(prims.ids[0], rect, 1, white, red, black, green,
+                        0.0f, 0.0f, black);
+                });
+
+            CHECK(rectMismatches(frame, rect,
+                [&](int x, int y) { return bilinear(white, red, black, green, u(x), v(y)); }) == 0);
+            CHECK(outsideRingMismatches(frame, rect) == 0);
+        }
+        {
+            // 4 px cells counted from the rect's own top-left
+            INFO("style 7");
+            const Color light(204, 204, 204, 255);
+            const Color dark(102, 102, 102, 255);
+            const Frame frame=drawFrame([&](OpenGLCore &renderer)
+                {
+                    renderer.drawCheckerRect(prims.ids[0], rect, 1, Color(255, 0, 0, 128), light, dark,
+                        0.0f, 0.0f, black);
+                });
+
+            CHECK(rectMismatches(frame, rect, [&](int x, int y)
+                {
+                    const bool odd=(((x-rect.x)/4+(y-rect.y)/4)&1) != 0;
+
+                    return mix(rgb(odd?dark:light), rgb(red), 128/255.0f);
+                }) == 0);
+            CHECK(outsideRingMismatches(frame, rect) == 0);
+        }
+        if(rect.w > 2 && rect.h > 2)
+        {
+            // a 1 px border on all four sides, the fill inside it
+            INFO("style 4, 1 px border");
+            const Frame frame=drawFrame([&](OpenGLCore &renderer)
+                {
+                    renderer.drawRoundedRect(prims.ids[0], rect, 0.0f, 1.0f, red, red, green, 1);
+                });
+
+            CHECK(rectMismatches(frame, rect, [&](int x, int y)
+                {
+                    const bool edge=x == rect.x || y == rect.y || x == rect.x+rect.w-1
+                        || y == rect.y+rect.h-1;
+
+                    return rgb(edge?green:red);
+                }) == 0);
+            CHECK(outsideRingMismatches(frame, rect) == 0);
+        }
+    }
+}
+
+TEST_CASE("Icon (style 5) of odd size: drawn inside its rect and centred in it")
+{
+    Primitives prims(1);
+
+    // a chevron is mirror-symmetric across its axis: pointing down (direction 0)
+    // left to right, pointing right (direction 3) top to bottom. Its stroke's own
+    // AA (fwidth per 2x2 pixel block) is not quite mirrored pixel for pixel, so the
+    // centring is checked on the coverage-weighted centre of its ink, which a quad
+    // 1 px short (the old size/2 rounding) put half a pixel off.
+    struct Case
+    {
+        Rect rect;
+        int direction;
+    };
+    const Case cases[]={{Rect(21, 33, 15, 11), 0}, {Rect(51, 27, 11, 15), 3}, {Rect(81, 41, 13, 13), 0}};
+
+    for(const Case &c:cases)
+    {
+        const Rect &rect=c.rect;
+
+        CAPTURE(rect.w);
+        CAPTURE(rect.h);
+        CAPTURE(c.direction);
+
+        const Frame frame=drawFrame([&](OpenGLCore &renderer)
+            {
+                renderer.drawIcon(prims.ids[0], rect, 1, c.direction, red, 1);
+            });
+
+        // nothing outside the rect
+        CHECK(outsideRingMismatches(frame, rect) == 0);
+
+        double ink=0.0;
+        double sumX=0.0;
+        double sumY=0.0;
+
+        for(int y=rect.y; y<rect.y+rect.h; ++y)
+        {
+            for(int x=rect.x; x<rect.x+rect.w; ++x)
+            {
+                const double a=frame.at(x, y).r/255.0;
+
+                ink+=a;
+                sumX+=a*(x+0.5);
+                sumY+=a*(y+0.5);
+            }
+        }
+        REQUIRE(ink > 1.0);
+
+        const double centreX=rect.x+rect.w/2.0;
+        const double centreY=rect.y+rect.h/2.0;
+        const double off=(c.direction == 0)?sumX/ink-centreX:sumY/ink-centreY;
+
+        CAPTURE(off);
+        CHECK(std::fabs(off) < 0.15);
     }
 }

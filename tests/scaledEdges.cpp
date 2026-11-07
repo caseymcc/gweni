@@ -6,8 +6,11 @@
  *  Rects drawn at a fractional scale land on whole device pixels and meet
  *  edge to edge: translate() snaps both edges of a rect (x0=round(x*s),
  *  x1=round((x+w)*s), w=x1-x0) rather than its origin and size apart, which
- *  at 1.25 and 1.5 left adjacent rects overlapping by a pixel. Also the SDF
- *  border, which becomes a whole number of device pixels at the scale.
+ *  at 1.25 and 1.5 left adjacent rects overlapping by a pixel. The grid cases
+ *  run for plain fills (style 1) and SDF rects (style 4): an SDF rect also
+ *  covers its whole snapped rect, odd device sizes included, and its outermost
+ *  pixels fully. Also the SDF border, which becomes a whole number of device
+ *  pixels at the scale.
  *
  *  The renderer is shared with the other cases, so each case puts the scale and
  *  the render offset back when it ends (ScaleGuard).
@@ -129,11 +132,25 @@ int device(int logical, float scale)
     return OpenGLCore::snap(float(logical), scale);
 }
 
+//! How the grid's cells are drawn.
+enum class Cells
+{
+    Filled,     //!< drawFilledRect, style 1
+    Rounded     //!< drawRoundedRect at radius 0 and no border, style 4
+};
+
+const Cells cellKinds[]={Cells::Filled, Cells::Rounded};
+
+const char *name(Cells cells)
+{
+    return cells == Cells::Filled?"drawFilledRect":"drawRoundedRect";
+}
+
 //! Draws the grid, each cell from `colorOf(column, row)`. Each cell is nearer
 //! than the one before it (zIndex grows), so where two overlap the later one is
 //! drawn over the earlier rather than depth-rejected, and a blend shows it.
 template<typename ColorOf>
-Frame drawGrid(const Primitives &primitives, ColorOf &&colorOf)
+Frame drawGrid(const Primitives &primitives, Cells cells, ColorOf &&colorOf)
 {
     return drawFrame([&](OpenGLCore &renderer)
     {
@@ -142,10 +159,19 @@ Frame drawGrid(const Primitives &primitives, ColorOf &&colorOf)
             for(int column=0; column<columns; ++column)
             {
                 const int index=row*columns+column;
+                const Rect rect(column*cell, row*cell, cell, cell);
+                const Color color=colorOf(column, row);
 
-                renderer.setDrawColor(colorOf(column, row));
-                renderer.drawFilledRect(primitives.ids[index], Rect(column*cell, row*cell, cell, cell),
-                    index+1);
+                if(cells == Cells::Filled)
+                {
+                    renderer.setDrawColor(color);
+                    renderer.drawFilledRect(primitives.ids[index], rect, index+1);
+                }
+                else
+                {
+                    renderer.drawRoundedRect(primitives.ids[index], rect, 0.0f, 0.0f, color, color,
+                        color, index+1);
+                }
             }
         }
     });
@@ -163,12 +189,14 @@ TEST_CASE("Scaled rects: adjacent opaque rects leave no background between them,
 {
     const Primitives primitives(columns*rows);
 
+    for(Cells cells : cellKinds)
     for(float scale : scales)
     {
+        CAPTURE(name(cells));
         CAPTURE(scale);
 
         const ScaleGuard guard(scale);
-        const Frame frame=drawGrid(primitives, [](int column, int row)
+        const Frame frame=drawGrid(primitives, cells, [](int column, int row)
         {
             return ((column+row)%2 == 0) ? red : green;
         });
@@ -249,16 +277,18 @@ TEST_CASE("Scaled rects: adjacent opaque rects leave no background between them,
     }
 }
 
-TEST_CASE("Scaled rects: adjacent 50%-alpha rects do not overlap")
+TEST_CASE("Scaled rects: adjacent 50%-alpha rects neither overlap nor leave a gap")
 {
     const Primitives primitives(columns*rows);
 
+    for(Cells cells : cellKinds)
     for(float scale : scales)
     {
+        CAPTURE(name(cells));
         CAPTURE(scale);
 
         const ScaleGuard guard(scale);
-        const Frame frame=drawGrid(primitives, [](int, int)
+        const Frame frame=drawGrid(primitives, cells, [](int, int)
         {
             return halfBlack;
         });
@@ -358,12 +388,18 @@ TEST_CASE("Scaled rounded rect: the border is round(border*scale) device px, at 
         const int middle=(device(offset.y+rect.y, scale)+device(offset.y+rect.y+rect.h, scale))/2;
 
         // the columns from the left edge in that read nearer the border colour
-        // than the fill (the outer one is part-covered by the edge AA)
+        // than the fill: exactly the border colour, the outer one fully covered,
+        // and the next one exactly the fill
         int bordered=0;
 
         while(frame.at(left+bordered, middle).r > 127)
+        {
+            CHECK(sameRgb(frame.at(left+bordered, middle), border));
             ++bordered;
+        }
 
         CHECK(bordered == std::max(1, device(1, scale)));
+        CHECK(sameRgb(frame.at(left+bordered, middle), fill));
+        CHECK(sameRgb(frame.at(left-1, middle), background));
     }
 }
