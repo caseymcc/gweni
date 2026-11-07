@@ -12,7 +12,7 @@ GWENI_CONTROL_CONSTRUCTOR(ComboBoxDemo)
     {
         controls::ComboBox *combo=newChild<controls::ComboBox>();
 
-        combo->setPos(50, 50);
+        combo->setSizeFlags({SizeFlag::Fixed, SizeFlag::Shrink});
         combo->setWidth(200);
         combo->addItem("Option One", "one");
         combo->addItem("Number Two", "two");
@@ -25,14 +25,14 @@ GWENI_CONTROL_CONSTRUCTOR(ComboBoxDemo)
         // Empty..
         controls::ComboBox *combo=newChild<controls::ComboBox>();
 
-        combo->setPos(50, 80);
+        combo->setSizeFlags({SizeFlag::Fixed, SizeFlag::Shrink});
         combo->setWidth(200);
     }
     {
-        // Empty..
+        // Lots of items
         controls::ComboBox *combo=newChild<controls::ComboBox>();
 
-        combo->setPos(50, 110);
+        combo->setSizeFlags({SizeFlag::Fixed, SizeFlag::Shrink});
         combo->setWidth(200);
 
         for(int i=0; i < 500; i++)

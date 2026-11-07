@@ -28,7 +28,6 @@ HERO_OUT=demo.png
 #
 # Left out because they do not look right today:
 #   ImagePanelDemo - an empty canvas (issue #69)
-#   ComboBoxDemo - three bare round dots in the corner, no combo boxes (issue #69)
 #   LabelMultilineDemo - the wrapped lines stack now, but the right column runs
 #     past the canvas edge (issue #207) and its SplitterBars draw nothing
 #     (idea #191)
@@ -49,6 +48,7 @@ SAMPLES=(
     SliderDemo
     TextDemo
     ProgressBarDemo
+    ComboBoxDemo
 )
 
 CONTROL_SIZE=640x480
