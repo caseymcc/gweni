@@ -147,11 +147,12 @@ void OpenGLCore::setTextAA(TextAA aa)
     m_textAA=aa;
 
     // Every font of the coverage range is now resolved under another mode. Each is
-    // freed, its runs leaving every draw list (they draw nothing until renderText
+    // erased, its runs leaving every draw list (they draw nothing until renderText
     // lays them out again, in the font of the new mode), and loaded again in the
-    // new mode, so what was loaded stays loaded. An SDF atlas is the same in
-    // every mode and stays as it is, its runs drawing.
-    std::vector<Font> reload;
+    // new mode with the owners it had, so what was loaded stays loaded and takes
+    // as many freeFont calls to go as before. An SDF atlas is the same in every
+    // mode and stays as it is, its runs drawing.
+    std::vector<std::pair<Font, int>> reload;
 
     for(auto it=m_fonts.begin(); it != m_fonts.end();)
     {
@@ -161,7 +162,7 @@ void OpenGLCore::setTextAA(TextAA aa)
             continue;
         }
 
-        reload.push_back(it->first.font);
+        reload.emplace_back(it->first.font, it->second.owners);
         for(size_t textId:it->second.textRuns)
             m_textRuns[textId].fontData=nullptr;
         it=m_fonts.erase(it); // GLFontData's destructor deletes the atlas texture and the manager
@@ -178,8 +179,14 @@ void OpenGLCore::setTextAA(TextAA aa)
     }
 
     // the key's size is the px the atlas is rasterised at, so it resolves to itself
-    for(const Font &font:reload)
-        loadFont(font, font.size);
+    for(const auto &[font, owners]:reload)
+    {
+        const Font::Status status=loadFont(font, font.size);
+
+        // the load counted one owner, which the old entry's count replaces
+        if((status == Font::Status::Loaded) || (status == Font::Status::LoadedFallback))
+            m_lastFont->second.owners+=owners-1;
+    }
 
     textLayoutChanged();
 }
@@ -207,6 +214,7 @@ Font::Status OpenGLCore::loadFont(const Font &requested, float px)
 
     if(loaded != m_fonts.end())
     {
+        ++loaded->second.owners;
         loaded->second.freed=false;
         m_lastFont=&(*loaded);
         return loaded->second.fallback?Font::Status::LoadedFallback:Font::Status::Loaded;
@@ -351,6 +359,7 @@ Font::Status OpenGLCore::loadFont(const Font &requested, float px)
 
     const bool fallback=fontData.fallback;
 
+    fontData.owners=1;
     m_lastFont=&(*m_fonts.insert(std::make_pair(key, std::move(fontData))).first);
     return fallback?Font::Status::LoadedFallback:Font::Status::Loaded;
 }
@@ -359,6 +368,19 @@ void OpenGLCore::freeFont(const gweni::Font &requested)
 {
     const GLFontKey drawn=resolveFont(requested, textPx(requested));
     const GLFontKey measured=resolveFont(requested, requested.size);
+
+    // The owner a loadFont took: on the drawn key, or on the measured one if the
+    // font was loaded at another scale() (scale 1, the measured size).
+    for(const GLFontKey &key:{ drawn, measured })
+    {
+        auto it=m_fonts.find(key);
+
+        if((it != m_fonts.end()) && (it->second.owners > 0))
+        {
+            --it->second.owners;
+            break;
+        }
+    }
 
     freeFont(drawn, false);
     // measureText's font, at another scale(): only measured by this font, unless
@@ -379,25 +401,20 @@ void OpenGLCore::freeFont(const GLFontKey &font, bool onlyIfUnused)
     if(it == m_fonts.end())
         return;
 
-    if(onlyIfUnused && !it->second.textRuns.empty())
+    // another caller loaded it too and has not freed it
+    if(it->second.owners > 0)
         return;
 
-    // An SDF atlas is shared by every size of its face, so the runs in it may be
-    // another size's, whose owner has not freed it: Label frees its font when it
-    // changes size or is deleted. It stays, every run drawing, until its last run
-    // leaves it (setTextRunFont), unless it is used again before that.
-    if((it->second.mode == GLTextMode::Sdf) && !it->second.textRuns.empty())
+    if(!it->second.textRuns.empty())
     {
-        it->second.freed=true;
+        // The runs laid out in it hold it: another caller's Text in an equal Font,
+        // or, in an SDF atlas shared by every size of its face, another size's. It
+        // stays, every run drawing, until its last run leaves it (setTextRunFont),
+        // unless it is used or loaded again before that.
+        if(!onlyIfUnused)
+            it->second.freed=true;
         return;
     }
-
-    // The runs laid out in this font keep their slots but leave every draw list:
-    // their glyphs sample the atlas the destructor deletes, whose name glGenTextures
-    // may hand out again. The next renderText of each lays it out again, in the
-    // font loaded anew.
-    for(size_t textId:it->second.textRuns)
-        m_textRuns[textId].fontData=nullptr;
 
     m_fonts.erase(it); // GLFontData's destructor deletes the atlas texture and the manager
 }
@@ -436,7 +453,12 @@ bool OpenGLCore::ensureFont(const Font &requested, float px)
     // LoadFont sets m_lastFont, if loaded, and adds the font to m_failedFonts if not
     const Font::Status status=loadFont(requested, px);
 
-    return (status == Font::Status::Loaded) || (status == Font::Status::LoadedFallback);
+    if((status != Font::Status::Loaded) && (status != Font::Status::LoadedFallback))
+        return false;
+
+    // a use is no owner: the load made a new entry and counted its caller
+    m_lastFont->second.owners=0;
+    return true;
 }
 
 Texture::Status OpenGLCore::loadTexture(Texture &texture)
@@ -2716,8 +2738,8 @@ void OpenGLCore::setTextRunFont(size_t textId, GLFontData *fontData)
 
     run.fontData=fontData;
 
-    // the last run has left an SDF atlas freeFont kept for it
-    if(previous && previous->freed && previous->textRuns.empty())
+    // the last run has left a font freeFont kept for it, and nobody loaded it since
+    if(previous && previous->freed && (previous->owners == 0) && previous->textRuns.empty())
     {
         for(auto it=m_fonts.begin(); it != m_fonts.end(); ++it)
         {

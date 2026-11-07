@@ -555,12 +555,22 @@ on an OpenGL 3.3 core profile:
   none to upload) and marks only its font's list for rebuilding (`markTextDrawList`).
   The slots are never moved for this, so the dirty-slot upload is the same with one
   font or many.
-  `freeFont` of a coverage font takes its runs off every list (they keep their slots
-  and draw nothing); their next `renderText` lays them out again in the font loaded
-  anew. An SDF atlas is shared by every size of the face, so `freeFont` of one size
-  deletes it only when no run is laid out in it. Otherwise it marks it `freed`, every
-  run keeps drawing, and it goes when its last run leaves it (`setTextRunFont`), unless
-  an `ensureFont`/`loadFont` uses it again first.
+- **A font is held by its owners and by the runs laid out in it.** Every caller
+  holding an equal `Font` shares one entry (two Labels in the same font, a skin's
+  default font and the Texts drawn in it), so `loadFont`/`freeFont` are a counted
+  pair: each successful load adds one to `GLFontData::owners`, each `freeFont` takes
+  one back, and a font is freed only when none is left. Even then it is deleted only
+  if no run is laid out in it; otherwise it is marked `freed`, every run keeps
+  drawing from the same atlas, and it goes when its last run leaves it
+  (`setTextRunFont`), unless an `ensureFont`/`loadFont` uses it again first. That
+  matters most for an SDF atlas, which every size of the face shares, but holds in
+  every mode. A font loaded only by a use (`ensureFont`, from `renderText` or
+  `measureText`) has no owner and stays cached until a `freeFont` asks for it.
+  `setTextAA` is the one place a font goes with runs in it: it takes the coverage
+  fonts' runs off every list (they keep their slots and draw nothing until their next
+  `renderText` lays them out in the new mode) and loads each again with the owners it
+  had. A font loaded at one `scale()` and freed at another gives back its owner on
+  the drawn key if it has one there, else on the measured one (`font.size`).
 - **A missing face is drawn in a built-in font.** The library embeds
   `resources/OpenSans.ttf` (Apache-2.0, `resources/OpenSans-LICENSE.txt`): the build
   turns it into a byte array (`cmake/embedFile.cmake`, `generated/fallbackFont.cpp`

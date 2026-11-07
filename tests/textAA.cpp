@@ -196,6 +196,55 @@ TEST_CASE("Text AA: an LCD mode loads a depth-3 GL_RGB8 atlas of its own, graysc
     renderer.freeFont(at12());
 }
 
+TEST_CASE("Text AA: a switch keeps each font's owners, so it takes as many freeFonts to go as before")
+{
+    OpenGLCore &renderer=gweni::test::gpuRenderer();
+    RestoreTextAA restore;
+
+    if(!coverageRange())
+        return;
+
+    renderer.setTextAA(TextAA::Grayscale);
+
+    const size_t fontsBefore=renderer.getLoadedFontCount();
+
+    // two owners in gray
+    REQUIRE((renderer.loadFont(at12()) == Font::Status::Loaded));
+    REQUIRE((renderer.loadFont(at12()) == Font::Status::Loaded));
+
+    for(TextAA aa:{TextAA::LcdRGB, TextAA::Grayscale, TextAA::LcdBGR})
+    {
+        CAPTURE(name(aa));
+        renderer.setTextAA(aa);
+        CHECK(renderer.getFontAtlasName(at12()) != 0);
+        CHECK(renderer.getLoadedFontCount() == fontsBefore+1);
+    }
+
+    // the first free leaves it to the second owner, in the new mode
+    renderer.freeFont(at12());
+
+    const unsigned int atlas=renderer.getFontAtlasName(at12());
+
+    CHECK(atlas != 0);
+    CHECK(renderer.getFontAtlasDepth(at12()) == 3u);
+
+    // a switch with one owner left keeps that one
+    renderer.setTextAA(TextAA::Grayscale);
+    CHECK(renderer.getFontAtlasName(at12()) != 0);
+    CHECK(renderer.getFontAtlasDepth(at12()) == 1u);
+
+    renderer.freeFont(at12());
+    CHECK(renderer.getFontAtlasName(at12()) == 0);
+    CHECK(renderer.getLoadedFontCount() == fontsBefore);
+
+    // a font only used, never loaded, has no owner to keep: one free takes it
+    REQUIRE(renderer.ensureFont(at12()));
+    renderer.setTextAA(TextAA::LcdRGB);
+    CHECK(renderer.getFontAtlasName(at12()) != 0);
+    renderer.freeFont(at12());
+    CHECK(renderer.getFontAtlasName(at12()) == 0);
+}
+
 TEST_CASE("Text AA: a stem's edges fringe blue-left/red-right in rgb, mirrored in bgr, and not in gray")
 {
     OpenGLCore &renderer=gweni::test::gpuRenderer();

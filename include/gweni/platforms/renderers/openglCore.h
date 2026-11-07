@@ -141,6 +141,7 @@ struct GLFontData
         textRuns=std::move(other.textRuns);
         drawChunks=std::move(other.drawChunks);
         drawListStale=other.drawListStale;
+        owners=other.owners;
         freed=other.freed;
         fallback=other.fallback;
     }
@@ -181,9 +182,12 @@ struct GLFontData
     //! edges. Rebuilt from textRuns when drawListStale.
     std::vector<GLTextChunkDraw> drawChunks;
     bool drawListStale=true;
-    //! An SDF font freed while runs still use its shared atlas: it is kept until
-    //! its last run leaves it, and a use before then (ensureFont, loadFont) keeps
-    //! it for good.
+    //! Successful loadFont calls not yet matched by a freeFont. A font loaded only
+    //! by a use (ensureFont, from renderText or measureText) has none.
+    int owners=0;
+    //! Freed by its last owner (or by a freeFont with none) while runs are still
+    //! laid out in it: the atlas is kept, every run drawing, until its last run
+    //! leaves it (setTextRunFont), and a use or load before then keeps it for good.
     bool freed=false;
     //! The face's file was missing or unreadable, so textureFont is the built-in
     //! fallback font (OpenGLCore::setFallbackFont), loaded from memory into this
@@ -341,7 +345,8 @@ protected:// Resourses
     //! loadFont/ensureFont at px rather than textPx(font): measureText's font size
     Font::Status loadFont(const Font &font, float px);
     bool ensureFont(const Font &font, float px);
-    //! Frees one resolved font; onlyIfUnused leaves it if runs are laid out in it
+    //! Frees one resolved font if no owner holds it: erased if no run is laid out
+    //! in it, otherwise marked freed (or, onlyIfUnused, left as it is)
     void freeFont(const GLFontKey &resolved, bool onlyIfUnused);
 
     std::unordered_map<GLFontKey, GLFontData, GLFontKeyHash> m_fonts; //!< keyed by resolveFont()
@@ -635,8 +640,9 @@ private:
     //! just position or zIndex did.
     //
     //! fontData is the loaded font whose atlas the glyphs sample, and the run is on
-    //! its textRuns list; nullptr before the first layout and once that font is
-    //! freed, and then the run draws nothing until renderText lays it out again.
+    //! its textRuns list, which keeps that font loaded; nullptr before the first
+    //! layout and once setTextAA replaced the font, and then the run draws nothing
+    //! until renderText lays it out again.
     struct TextRun
     {
         size_t start=0;

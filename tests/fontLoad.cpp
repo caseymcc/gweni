@@ -176,7 +176,8 @@ TEST_CASE("loadFont: a missing face is LoadedFallback, drawn in OpenSans, report
     CHECK(renderer.loadFont(missing) == Font::Status::LoadedFallback);
     CHECK(g_errors.size() == 2);
 
-    // the first use after freeFont loads it again, once
+    // the first use after the two loads' freeFonts loads it again, once
+    renderer.freeFont(missing);
     renderer.freeFont(missing);
     CHECK(sameSize(renderer.measureText(missing, "Hello"), size));
     CHECK(sameSize(renderer.measureText(missing, "Hello"), size));

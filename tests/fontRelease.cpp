@@ -4,9 +4,10 @@
  *  MIT License, see LICENSE
  *
  *  OpenGLCore releases what it owns: freeFont deletes the font's atlas texture
- *  and its freetype-gl manager, loading a font twice makes nothing new, the text
- *  draw never binds a freed atlas, and deleting a renderer deletes every GL
- *  object it made without disturbing another renderer in the same context.
+ *  and its freetype-gl manager, loading a font twice makes nothing new and takes
+ *  two frees to go, a font with a run laid out in it stays (the run drawing)
+ *  until that run leaves it, and deleting a renderer deletes every GL object it
+ *  made without disturbing another renderer in the same context.
  *
  *  Every font here is a fresh Font (another size than test::openSans()), so
  *  freeing it leaves the shared fixture loaded. A case skips itself when
@@ -151,7 +152,7 @@ TEST_CASE("freeFont deletes the font's atlas texture")
     CHECK(glIsTexture(renderer.getFontAtlasName(gweni::test::openSans())) == GL_TRUE);
 }
 
-TEST_CASE("loadFont of a font already loaded returns Loaded and makes nothing new")
+TEST_CASE("loadFont of a font already loaded returns Loaded, makes nothing new, and takes a second freeFont")
 {
     OpenGLCore &renderer=gweni::test::gpuRenderer();
     const Font font=makeFont(13);
@@ -177,12 +178,122 @@ TEST_CASE("loadFont of a font already loaded returns Loaded and makes nothing ne
     // still usable through the entry it returned
     CHECK(renderer.measureText(font, "Hello").x > 0);
 
+    // two owners: the first free leaves it to the other
+    renderer.freeFont(font);
+    CHECK(renderer.getFontAtlasName(font) == atlas);
+    CHECK(glIsTexture(atlas) == GL_TRUE);
+    CHECK(renderer.getLoadedFontCount() == fontsBefore+1);
+
+    // the second, with no run laid out in it, deletes it
     renderer.freeFont(font);
     CHECK(glIsTexture(atlas) == GL_FALSE);
+    CHECK(renderer.getFontAtlasName(font) == 0);
     CHECK(renderer.getLoadedFontCount() == fontsBefore);
 }
 
-TEST_CASE("After freeing a font whose run is still allocated, the text draw binds only live atlases")
+namespace
+{
+
+//! How a run leaves the font it was laid out in.
+enum class Leave
+{
+    Released, //!< releaseTextPrimitive
+    OtherFont //!< laid out again in test::openSans()
+};
+
+//! Lays a run out in font (loaded once), frees the font, and checks that the run
+//! keeps drawing from the same atlas until it leaves the font, which then goes.
+void freeWhileARunUsesIt(const Font &font, Leave leave)
+{
+    OpenGLCore &renderer=gweni::test::gpuRenderer();
+    const size_t fontsBefore=renderer.getLoadedFontCount();
+
+    REQUIRE(renderer.loadFont(font) == Font::Status::Loaded);
+
+    const unsigned int atlas=renderer.getFontAtlasName(font);
+    size_t textId=0;
+
+    REQUIRE(atlas != 0);
+    renderer.generateTextPrimitive(textId);
+
+    // the only run, so the text draw binds this font's atlas
+    clearFrame();
+    renderer.begin();
+    renderer.setDrawColor(white);
+    renderer.renderText(textId, font, Point(8, 40), 1, "Freed");
+    renderer.end();
+
+    const std::vector<uint8_t> drawn=readFrame();
+
+    REQUIRE(drawnPixels(drawn) > 20);
+    CHECK(boundTexture2D() == atlas);
+
+    // its one owner frees it, and the run holds it
+    clearGlErrors();
+    renderer.freeFont(font);
+    CHECK(renderer.getFontAtlasName(font) == atlas);
+    CHECK(glIsTexture(atlas) == GL_TRUE);
+    CHECK(renderer.getLoadedFontCount() == fontsBefore+1);
+
+    // a frame with no new text draws the run as it was, from the same atlas
+    clearFrame();
+    renderer.begin();
+    renderer.end();
+    CHECK(glGetError() == GL_NO_ERROR);
+    CHECK(boundTexture2D() == atlas);
+    CHECK(readFrame() == drawn);
+    CHECK(renderer.getFrameStats().atlasUploadCalls == 0);
+
+    // a freeFont with no load to match it is deferred the same way
+    renderer.freeFont(font);
+    CHECK(renderer.getFontAtlasName(font) == atlas);
+    clearFrame();
+    renderer.begin();
+    renderer.end();
+    CHECK(readFrame() == drawn);
+
+    // the run leaving it takes the font with it
+    if(leave == Leave::Released)
+        renderer.releaseTextPrimitive(textId);
+    else
+    {
+        clearFrame();
+        renderer.begin();
+        renderer.setDrawColor(white);
+        renderer.renderText(textId, gweni::test::openSans(), Point(8, 40), 1, "Freed");
+        renderer.end();
+        CHECK(drawnPixels(readFrame()) > 20);
+    }
+
+    CHECK(renderer.getFontAtlasName(font) == 0);
+    CHECK(glIsTexture(atlas) == GL_FALSE);
+    CHECK(renderer.getLoadedFontCount() == fontsBefore);
+
+    // and nothing is drawn with the deleted atlas, or with whatever took its name
+    clearFrame();
+    renderer.begin();
+    renderer.end();
+    CHECK(glGetError() == GL_NO_ERROR);
+    CHECK(boundTexture2D() != atlas);
+
+    if(leave == Leave::OtherFont)
+        renderer.releaseTextPrimitive(textId);
+    renderer.begin();
+    renderer.end();
+}
+
+//! Puts the shared renderer's text AA mode back when a case ends.
+struct RestoreTextAA
+{
+    RestoreTextAA(): aa(gweni::test::gpuRenderer().textAA()) {}
+    ~RestoreTextAA() { gweni::test::gpuRenderer().setTextAA(aa); }
+
+    gweni::renderer::TextAA aa;
+};
+
+}//namespace
+
+TEST_CASE("Freeing a font with a run laid out in it keeps its atlas, the run drawing, until the run leaves it")
 {
     OpenGLCore &renderer=gweni::test::gpuRenderer();
     const Font font=makeFont(15);
@@ -190,54 +301,18 @@ TEST_CASE("After freeing a font whose run is still allocated, the text draw bind
     if(!ownAtlas(font))
         return;
 
-    REQUIRE(renderer.loadFont(font) == Font::Status::Loaded);
+    RestoreTextAA restore;
 
-    const unsigned int freedAtlas=renderer.getFontAtlasName(font);
-    size_t freedId=0;
-    size_t liveId=0;
-
-    renderer.generateTextPrimitive(freedId);
-    renderer.generateTextPrimitive(liveId);
-
-    // the only run, so the text draw binds this font's atlas
-    clearFrame();
-    renderer.begin();
-    renderer.setDrawColor(white);
-    renderer.renderText(freedId, font, Point(8, 40), 1, "Freed");
-    renderer.end();
-    CHECK(drawnPixels(readFrame()) > 0);
-    CHECK(boundTexture2D() == freedAtlas);
-
-    clearGlErrors();
-    renderer.freeFont(font);
-    REQUIRE(glIsTexture(freedAtlas) == GL_FALSE);
-
-    // a frame with no new text still draws what the mirror holds, without the run
-    // whose atlas is gone
-    clearFrame();
-    renderer.begin();
-    renderer.end();
-    CHECK(glGetError() == GL_NO_ERROR);
-    CHECK(boundTexture2D() != freedAtlas);
-    CHECK(drawnPixels(readFrame()) == 0);
-
-    const unsigned int liveAtlas=renderer.getFontAtlasName(gweni::test::openSans());
-
-    clearFrame();
-    renderer.begin();
-    renderer.setDrawColor(white);
-    renderer.renderText(liveId, gweni::test::openSans(), Point(8, 40), 1, "Hello");
-    renderer.end();
-
-    CHECK(glGetError() == GL_NO_ERROR);
-    CHECK(drawnPixels(readFrame()) > 20);
-    CHECK(boundTexture2D() == liveAtlas);
-    CHECK(glIsTexture(liveAtlas) == GL_TRUE);
-
-    renderer.releaseTextPrimitive(freedId);
-    renderer.releaseTextPrimitive(liveId);
-    renderer.begin();
-    renderer.end();
+    for(gweni::renderer::TextAA aa:{ gweni::renderer::TextAA::Grayscale, gweni::renderer::TextAA::LcdRGB })
+    {
+        for(Leave leave:{ Leave::Released, Leave::OtherFont })
+        {
+            CAPTURE(static_cast<int>(aa));
+            CAPTURE(static_cast<int>(leave));
+            renderer.setTextAA(aa);
+            freeWhileARunUsesIt(font, leave);
+        }
+    }
 }
 
 TEST_CASE("Load, free and load the same face again: the same text draws the same pixels")

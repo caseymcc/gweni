@@ -133,9 +133,30 @@ TEST_CASE("SDF text: every size of a face shares one atlas, apart from the cover
     if(renderer.getTextMode(gweni::test::openSans()) == GLTextMode::Coverage)
         CHECK(renderer.getFontAtlasName(gweni::test::openSans()) != renderer.getFontAtlasName(at24));
 
-    // with no run laid out in it, freeing one size frees the face's atlas for all of them
+    // each size's load holds the face's atlas: freeing one leaves it to the others
+    const unsigned int atlas=renderer.getFontAtlasName(at24);
+
     renderer.freeFont(at36);
+    CHECK(renderer.getFontAtlasName(at24) == atlas);
+    CHECK(glIsTexture(atlas) == GL_TRUE);
+    CHECK(renderer.getLoadedFontCount() == fonts);
+    renderer.freeFont(at72);
+    CHECK(renderer.getFontAtlasName(at24) == atlas);
+
+    // the last owner's free, with no run laid out in it, frees it for every size;
+    // unless GWENI_SDF_TEXT_MIN puts the shared fixture in it too, whose load holds it
+    const bool fixtureShares=(renderer.getFontAtlasName(gweni::test::openSans()) == atlas);
+
+    renderer.freeFont(at24);
+    if(fixtureShares)
+    {
+        CHECK(renderer.getFontAtlasName(at24) == atlas);
+        CHECK(renderer.getLoadedFontCount() == fonts);
+        return;
+    }
     CHECK(renderer.getFontAtlasName(at24) == 0);
+    CHECK(renderer.getFontAtlasName(at36) == 0);
+    CHECK(glIsTexture(atlas) == GL_FALSE);
     CHECK(renderer.getLoadedFontCount() == fonts-1);
 }
 

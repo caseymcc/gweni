@@ -435,6 +435,11 @@ public:
         UserMessageStart=100
     };
 
+    //! loadFont and freeFont are a counted pair: every load that succeeds (Loaded
+    //! or LoadedFallback) holds the font until one freeFont gives it back, so two
+    //! callers holding an equal Font each load it and each free it. A loader may
+    //! also keep a font while text is still laid out in it, freeing it once the
+    //! last of that text is gone.
     virtual gweni::Font::Status loadFont(const gweni::Font &font)=0;
     virtual void freeFont(const gweni::Font &font)=0;
 
