@@ -84,7 +84,8 @@ public:
     //! owner-placed (Placement::Owner), so the canvas leaves both to it.
     void arrange(skin::Base *skin, Dim dim) override;
 
-    //! Fired when it opens and when it closes, however it closes.
+    //! Fired when it opens and when it closes, however it closes, but not
+    //! when it is deleted.
     gweni::event::Caller onOpen;
     gweni::event::Caller onClose;
 
