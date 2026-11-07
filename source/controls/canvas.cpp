@@ -93,7 +93,11 @@ void Canvas::renderCanvas()
 //        render->drawFilledRect(m_primitiveIds[0], getRenderBounds(), getZIndex());
     }
 
-    doRender(m_skin);
+    {
+        // the walk only draws: a tree change from here on is reported
+        RenderWalkScope walk;
+        doRender(m_skin);
+    }
     render->end();
 }
 

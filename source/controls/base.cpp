@@ -25,6 +25,7 @@
 #endif
 
 #include <cstring>
+#include <map>
 #include <set>
 #include <sstream>
 #include <iostream>
@@ -91,6 +92,68 @@ std::string getFullName(Base *base)
 
 ObjectIdBank<Base *, nullptr> g_controls;
 
+namespace
+{
+// Open RenderWalkScopes, and the control whose renderRecursive() is running in
+// the innermost one (the walk is single-threaded).
+int g_renderWalkDepth=0;
+Base *g_renderingControl=nullptr;
+
+// The (operation, type) pairs reported, each with its record entry.
+std::map<std::pair<std::string, std::string>, std::string> &renderWalkMutationRecord()
+{
+    static std::map<std::pair<std::string, std::string>, std::string> record;
+    return record;
+}
+
+void reportRenderWalkMutation(Base *control, const char *operation)
+{
+    const char *type=control->getTypeName();
+    std::string &entry=renderWalkMutationRecord()[{operation, type}];
+    if(!entry.empty())
+        return;
+
+    const char *renderingType=g_renderingControl?g_renderingControl->getTypeName():"none";
+    entry=std::string(type)+" "+operation+" (rendering "+renderingType+")";
+
+    std::cerr<<"gweni: "<<type<<"#"<<control->getControlId()<<" "<<operation
+        <<" during the render walk (rendering "<<renderingType;
+    if(g_renderingControl)
+        std::cerr<<"#"<<g_renderingControl->getControlId();
+    std::cerr<<")\n";
+}
+
+// At the top of every tree change: one branch outside the walk.
+inline void noteRenderWalkMutation(Base *control, const char *operation)
+{
+    if(g_renderWalkDepth != 0)
+        reportRenderWalkMutation(control, operation);
+}
+}//namespace
+
+RenderWalkScope::RenderWalkScope()
+{
+    ++g_renderWalkDepth;
+}
+
+RenderWalkScope::~RenderWalkScope()
+{
+    --g_renderWalkDepth;
+}
+
+std::vector<std::string> renderWalkMutations()
+{
+    std::set<std::string> entries;
+    for(const auto &reported : renderWalkMutationRecord())
+        entries.insert(reported.second);
+    return std::vector<std::string>(entries.begin(), entries.end());
+}
+
+void resetRenderWalkMutations()
+{
+    renderWalkMutationRecord().clear();
+}
+
 Base::Base(const String &name)
 {
 
@@ -153,6 +216,8 @@ void Base::init(const String &name)
 
 Base::~Base()
 {
+    noteRenderWalkMutation(this, "~Base");
+
     {
         Canvas *canvas=getCanvas();
 
@@ -525,6 +590,8 @@ void Base::invalidateChildren(bool recursive)
 
 void Base::sendToBack()
 {
+    noteRenderWalkMutation(this, "sendToBack");
+
     if(!m_actualParent)
         return;
 
@@ -539,6 +606,8 @@ void Base::sendToBack()
 
 void Base::bringToFront()
 {
+    noteRenderWalkMutation(this, "bringToFront");
+
     if(!m_actualParent)
         return;
 
@@ -573,6 +642,8 @@ controls::Base *Base::findChildByName(const String &name, bool recursive)
 
 void Base::bringNextToControl(controls::Base *child, bool bBehind)
 {
+    noteRenderWalkMutation(this, "bringNextToControl");
+
     if(!m_actualParent)
         return;
 
@@ -604,6 +675,8 @@ void Base::addChild(Base *child)
         return;
     }
 
+    // the control whose list changes, not one forwarding to its inner panel
+    noteRenderWalkMutation(this, "addChild");
     m_children.push_back(child);
 
     if(m_layoutItem)
@@ -620,6 +693,7 @@ void Base::addChild(Base *child)
 
 void Base::addChildOfLayout(Base *child)
 {
+    noteRenderWalkMutation(this, "addChildOfLayout");
     m_children.push_back(child);
 
     onChildAdded(child);
@@ -631,6 +705,8 @@ void Base::addChildOfLayout(Base *child)
 
 void Base::removeChild(Base *child)
 {
+    noteRenderWalkMutation(this, "removeChild");
+
     // If we removed our innerpanel, remove our pointer to it
     if(m_innerPanel == child)
         m_innerPanel=nullptr;
@@ -1198,6 +1274,9 @@ void Base::renderRecursive(skin::Base *skin, const Rect &cliprect)
     renderer::Base *baseRenderer=skin->getRenderer();
 
     ++g_changeStats.visited;
+    // who a tree change made from here is reported against
+    Base *outerRendering=g_renderingControl;
+    g_renderingControl=this;
 
     //render current control
     renderUnder(skin);
@@ -1228,8 +1307,8 @@ void Base::renderRecursive(skin::Base *skin, const Rect &cliprect)
     // Render this child controls under current objects clip
     baseRenderer->startClip();
     {
-        // The live list, not a copy: the render walk only draws, and nothing
-        // it calls adds, removes or reorders a child.
+        // The live list, not a copy: the render walk only draws. A tree change
+        // made from it is reported (renderWalkMutations()), not survived.
         for(Base *child : m_children)
         {
             ++g_changeStats.childrenScanned;
@@ -1249,6 +1328,8 @@ void Base::renderRecursive(skin::Base *skin, const Rect &cliprect)
         baseRenderer->endClip();
         baseRenderer->setRenderOffset(oldRenderOffset);
     }
+
+    g_renderingControl=outerRendering;
 }
 
 void Base::doHide(skin::Base *skin)

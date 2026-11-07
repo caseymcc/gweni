@@ -24,16 +24,29 @@
  *  malloc and free underneath, counted only while a case sets the flag. The
  *  aligned forms are left to the runtime (they pair among themselves), so an
  *  over-aligned allocation is not counted; gweni makes none.
+ *
+ *  The walk only draws, and a tree change made from it is reported: a render()
+ *  that calls sendToBack() on itself, or adds a child to another control,
+ *  prints one stderr line naming both controls and is recorded in
+ *  renderWalkMutations() once per (operation, type) pair, until the record is
+ *  reset. The same changes made between frames, a delayed delete processed in
+ *  the update phase, and the line children a wrapped Text builds in
+ *  renderPhaseLayout() (layout, before the walk) record nothing.
  */
 #include "headlessFixture.h"
+
+#include <gweni/controls/text.h>
 
 #include <doctest/doctest.h>
 
 #include <algorithm>
 #include <cstdlib>
 #include <functional>
+#include <iostream>
 #include <new>
 #include <set>
+#include <sstream>
+#include <string>
 #include <vector>
 
 using namespace gweni;
@@ -51,6 +64,18 @@ void *allocate(std::size_t size)
     if(g_countAllocations)
         ++g_allocations;
     return std::malloc(size ? size : 1);
+}
+
+// Out of line, so GCC never sees a free() of what its inlined operator new
+// returned (-Wmismatched-new-delete cannot tell that new is malloc here).
+#if defined(_MSC_VER)
+__declspec(noinline)
+#else
+__attribute__((noinline))
+#endif
+void deallocate(void *memory) noexcept
+{
+    std::free(memory);
 }
 
 //! What the walk did in one frame: the controls it entered (renderUnder() runs
@@ -232,12 +257,12 @@ void *operator new[](std::size_t size, const std::nothrow_t &) noexcept
     return allocate(size);
 }
 
-void operator delete(void *memory) noexcept { std::free(memory); }
-void operator delete[](void *memory) noexcept { std::free(memory); }
-void operator delete(void *memory, std::size_t) noexcept { std::free(memory); }
-void operator delete[](void *memory, std::size_t) noexcept { std::free(memory); }
-void operator delete(void *memory, const std::nothrow_t &) noexcept { std::free(memory); }
-void operator delete[](void *memory, const std::nothrow_t &) noexcept { std::free(memory); }
+void operator delete(void *memory) noexcept { deallocate(memory); }
+void operator delete[](void *memory) noexcept { deallocate(memory); }
+void operator delete(void *memory, std::size_t) noexcept { deallocate(memory); }
+void operator delete[](void *memory, std::size_t) noexcept { deallocate(memory); }
+void operator delete(void *memory, const std::nothrow_t &) noexcept { deallocate(memory); }
+void operator delete[](void *memory, const std::nothrow_t &) noexcept { deallocate(memory); }
 
 TEST_CASE("the first frame visits every control, a settled one at most the canvas")
 {
@@ -517,4 +542,173 @@ TEST_CASE("the render walk allocates nothing per sibling of a changed control")
     INFO("render-phase allocations: ", small.allocations, " with 10 children, ",
         large.allocations, " with 1000");
     CHECK(large.allocations == small.allocations);
+}
+
+namespace
+{
+
+//! A Probe of its own type, to tell the controls apart in a report.
+class Mover: public Probe
+{
+public:
+    GWENI_CONTROL_INLINE(Mover, Probe)
+    {}
+};
+
+class Builder: public Probe
+{
+public:
+    GWENI_CONTROL_INLINE(Builder, Probe)
+    {}
+};
+
+//! Captures std::cerr while it lives.
+struct CerrCapture
+{
+    std::ostringstream text;
+    std::streambuf *saved;
+
+    CerrCapture(): saved(std::cerr.rdbuf(text.rdbuf())) {}
+    ~CerrCapture() { std::cerr.rdbuf(saved); }
+
+    size_t count(const std::string &needle) const
+    {
+        const std::string s=text.str();
+        size_t found=0;
+        for(size_t at=s.find(needle); at != std::string::npos; at=s.find(needle, at+1))
+            ++found;
+        return found;
+    }
+};
+
+std::string idOf(controls::Base *control)
+{
+    return std::to_string(control->getControlId());
+}
+
+}//namespace
+
+TEST_CASE("a render() that calls sendToBack() is reported once per operation and type")
+{
+    controls::resetRenderWalkMutations();
+    Scene scene;
+
+    // A Mover at the front of its branch, moved there between frames, which
+    // is the update phase's to do and records nothing. Its sendToBack() from
+    // render() then leaves the list as it is (it is at the front already), so
+    // the walk stays well defined while the call is still reported.
+    Probe *branch=scene.branches[1];
+    Mover *mover=branch->newChild<Mover>();
+    mover->setBounds(0, 0, 10, 10);
+    mover->sendToBack();
+    REQUIRE(branch->getChildren().front() == mover);
+    scene.settle();
+    CHECK(controls::renderWalkMutations().empty());
+
+    mover->onRender=[&]() { mover->sendToBack(); };
+
+    CerrCapture cerr;
+    mover->addStateChange(controls::StateChange_Background);
+    scene.frame();
+
+    const std::vector<std::string> expected={"Mover sendToBack (rendering Mover)"};
+    CHECK(controls::renderWalkMutations() == expected);
+    const std::string line="gweni: Mover#"+idOf(mover)+" sendToBack during the render walk"
+        " (rendering Mover#"+idOf(mover)+")\n";
+    CHECK(cerr.count(line) == 1);
+    CHECK(cerr.count("during the render walk") == 1);
+
+    // the same pair again is neither printed nor recorded twice
+    mover->addStateChange(controls::StateChange_Background);
+    scene.frame();
+    CHECK(controls::renderWalkMutations() == expected);
+    CHECK(cerr.count("during the render walk") == 1);
+
+    // a reset forgets it: the next one is reported again
+    controls::resetRenderWalkMutations();
+    CHECK(controls::renderWalkMutations().empty());
+    mover->addStateChange(controls::StateChange_Background);
+    scene.frame();
+    CHECK(controls::renderWalkMutations() == expected);
+    CHECK(cerr.count("during the render walk") == 2);
+
+    mover->onRender=nullptr;
+    controls::resetRenderWalkMutations();
+}
+
+TEST_CASE("a render() that adds a child to another control is reported")
+{
+    controls::resetRenderWalkMutations();
+    Scene scene;
+
+    Probe *branch=scene.branches[0];
+    Builder *builder=branch->newChild<Builder>();
+    builder->setBounds(0, 0, 10, 10);
+    scene.settle();
+
+    // a leaf of another branch, which the walk has not reached yet; appending
+    // to a std::list leaves the walk's iterators valid
+    Probe *target=scene.leaves.back();
+    bool once=true;
+    builder->onRender=[&]()
+        {
+            if(!once)
+                return;
+            once=false;
+            target->newChild<Probe>();
+        };
+
+    CerrCapture cerr;
+    builder->addStateChange(controls::StateChange_Background);
+    scene.frame();
+
+    const std::vector<std::string> expected={"Probe addChild (rendering Builder)"};
+    CHECK(controls::renderWalkMutations() == expected);
+    const std::string line="gweni: Probe#"+idOf(target)+" addChild during the render walk"
+        " (rendering Builder#"+idOf(builder)+")\n";
+    CHECK(cerr.count(line) == 1);
+
+    builder->onRender=nullptr;
+    scene.settle();
+    controls::resetRenderWalkMutations();
+}
+
+TEST_CASE("tree changes in the update phase and in renderPhaseLayout() are not reported")
+{
+    controls::resetRenderWalkMutations();
+    CerrCapture cerr;
+    Scene scene;
+    scene.settle();
+
+    // between frames: every operation the guard watches
+    Probe *leaf=scene.leaves[3];
+    leaf->setParent(scene.children[7]);
+    leaf->bringToFront();
+    leaf->sendToBack();
+    leaf->bringNextToControl(scene.children[7]->getChildren().back(), true);
+    scene.frame();
+    delete scene.leaves[8];
+    scene.frame();
+
+    // a delayed delete, carried out inside updateCanvas()
+    scene.leaves[11]->delayedDelete();
+    scene.frame();
+
+    // a wrapped Text made after the update phase: renderCanvas()'s
+    // renderPhaseLayout() lays it out and builds its line children, before
+    // the walk
+    controls::resetChangeStats();
+    scene.canvas->updateCanvas();
+    controls::Base *box=scene.canvas->newChild<controls::Base>();
+    box->setBounds(0, 0, 40, 200);
+    auto *wrapped=box->newChild<controls::internal::Text>();
+    wrapped->setWrap(true);
+    wrapped->setText("aa bbbbbbbbbb ccc dddd eeeee ff");
+    scene.canvas->renderCanvas();
+    CHECK(scene.canvas->getLayoutStats().renderLayout);
+    CHECK(wrapped->numLines() > 1);
+
+    scene.settle();
+    CHECK(controls::renderWalkMutations().empty());
+    CHECK(cerr.count("during the render walk") == 0);
 }

@@ -96,6 +96,33 @@ GWENI_EXPORT void resetChangeStats();
 //! harness to fail on.
 GWENI_EXPORT std::vector<std::string> typesWithoutSkinRenderer();
 
+//! The tree changes made during a render walk: the render walk only draws, and
+//! adding, removing, reordering or deleting a control belongs to the update
+//! phase or to layout. Base's addChild(), addChildOfLayout(), removeChild()
+//! (and so setParent()), bringToFront(), sendToBack(), bringNextToControl()
+//! and ~Base report a call made while a RenderWalkScope is open: one line on
+//! std::cerr, "gweni: <Type>#<id> <operation> during the render walk
+//! (rendering <Type>#<id>)", the first time each (operation, type) pair is
+//! seen, in every build. ~Base sees the type as Base (the derived destructors
+//! have run). The walk carries on over the changed list, so what that frame
+//! does next is undefined. This is the set of the reported pairs, sorted, each
+//! "<Type> <operation> (rendering <Type>)", for a harness to fail on.
+GWENI_EXPORT std::vector<std::string> renderWalkMutations();
+//! Forgets the reported pairs, so the next of each is printed and recorded
+//! again (for tests).
+GWENI_EXPORT void resetRenderWalkMutations();
+
+//! Open while a canvas walks its tree to draw it (Canvas::renderCanvas() and
+//! WindowCanvas's render, around doRender() only: renderPhaseLayout() runs
+//! before it and may create controls, which is layout). Scopes nest.
+struct GWENI_EXPORT RenderWalkScope
+{
+    RenderWalkScope();
+    ~RenderWalkScope();
+    RenderWalkScope(const RenderWalkScope &)=delete;
+    RenderWalkScope &operator=(const RenderWalkScope &)=delete;
+};
+
 size_t getControlType(std::string name);
 
 template<typename _Control>

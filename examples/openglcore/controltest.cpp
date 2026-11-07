@@ -360,7 +360,13 @@
  *    gweni: no skin renderer for <TypeName>
  *  on stderr, once per type, and before exiting ControlTest prints
  *    ControlTest: N control type(s) with no skin renderer: <TypeName> ...
- *  and exits non-zero (gweni::controls::typesWithoutSkinRenderer()).
+ *  and exits non-zero (gweni::controls::typesWithoutSkinRenderer()). A control
+ *  added, removed, reordered or deleted during a render walk is printed by the
+ *  library as
+ *    gweni: <Type>#<id> <operation> during the render walk (rendering <Type>#<id>)
+ *  and fails the run the same way, after
+ *    ControlTest: N tree change(s) during the render walk: [...] ...
+ *  (gweni::controls::renderWalkMutations()).
  *
  *  A missing resource directory, skin config (DefaultSkin.json) or default font
  *  is reported on stderr and drawn degraded: every surface magenta, the text in
@@ -4962,6 +4968,18 @@ int main(int argc, char *argv[])
         std::cerr<<"ControlTest: "<<unrendered.size()<<" control type(s) with no skin renderer:";
         for(const std::string &type : unrendered)
             std::cerr<<" "<<type;
+        std::cerr<<"\n";
+        result=EXIT_FAILURE;
+    }
+
+    // Base printed each of these as it happened: a control added, removed,
+    // reordered or deleted during a render walk.
+    const std::vector<std::string> mutations=gweni::controls::renderWalkMutations();
+    if(!mutations.empty())
+    {
+        std::cerr<<"ControlTest: "<<mutations.size()<<" tree change(s) during the render walk:";
+        for(const std::string &mutation : mutations)
+            std::cerr<<" ["<<mutation<<"]";
         std::cerr<<"\n";
         result=EXIT_FAILURE;
     }

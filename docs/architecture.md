@@ -292,7 +292,7 @@ that has it already (the chain is `m_actualParent`, the owners of the `m_childre
 lists the walk follows). Attaching a control that has something pending, in
 `addChild()` or `addChildOfLayout()`, marks its new parent's chain the same way.
 `doRender()` returns at once for a control with neither its own change nor the bit,
-before the offset and clip push and the copy of its children. So a settled frame
+before the offset and clip push and the loop over its children. So a settled frame
 enters no control at all, and a hover enters the controls it repaints and their
 ancestors.
 `renderRecursive()` clears the bit before it visits the children. A change raised on
@@ -304,6 +304,40 @@ entered (`ControlTest --stats` prints it as `visited=`). Demo's first frame ente
 control's `render()`, `renderOver()` and `renderFocus()` therefore run only on a
 frame something in or below it changed. Anything that changes what one of them draws
 must raise a state change: `ImagePanel`'s setters do, for example.
+
+`renderRecursive()` loops over the live `m_children` list, with no copy, so the walk
+allocates nothing per child. It still hands every child of an entered control to
+`doRender()`, so it costs O(siblings) of each control it enters in time, which
+`ChangeStats::childrenScanned` counts (`children_scanned=` in `ControlTest --stats`
+and gweni_bench). One changed row of a 10 000-row ListBox scans 10 000 children.
+Visiting only the dirty ones would need an index of them kept in `m_children` order
+(#407).
+
+**The render walk only draws.** Adding, removing, reordering or deleting a control
+belongs to the update phase or to layout, never to a `render()`, `renderUnder()`,
+`renderOver()` or `renderFocus()`. That is what lets the loop follow the live list:
+`sendToBack()` removes the control's list node and pushes a new one, so a render
+that called it on the child being visited would leave the loop on a freed node. The
+rule is checked in every build. `Canvas::renderCanvas()` and `WindowCanvas`'s
+render hold a `RenderWalkScope` around `doRender()`, after `renderPhaseLayout()`
+(layout may create controls before the walk: a wrapped `Text` builds its line
+children there). `renderRecursive()` keeps the control it is rendering in a global
+(saved, set and restored, one store per visit). While a scope is open,
+`Base::addChild()`, `addChildOfLayout()`, `removeChild()` (and so `setParent()`),
+`bringToFront()`, `sendToBack()`, `bringNextToControl()` and `~Base` each print one
+line on stderr the first time an (operation, type) pair is seen:
+
+```
+gweni: <Type>#<id> <operation> during the render walk (rendering <Type>#<id>)
+```
+
+They also record it in `controls::renderWalkMutations()` (`resetRenderWalkMutations()`
+forgets the record, for tests). `~Base` sees the type as `Base`, because the derived
+destructors have run. Outside a scope the check is one branch. The report does not
+stop the walk: what that frame does next is undefined, as with any use-after-free,
+and the line is how the bug is found. ControlTest exits non-zero when the record is
+not empty, as it does for `typesWithoutSkinRenderer()`, so `controltest_teardown` and
+`controltest_one_pass_each` fail on an offence in any demo.
 
 ## The renderer abstraction
 
