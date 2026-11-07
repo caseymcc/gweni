@@ -55,11 +55,17 @@ public:
     const Size &getMaximumSize() const { return m_maximumSize; }
     const Size &getPreferredSize() const { return m_preferredSize; }
 
+    //! space kept inside the layout's bounds, around its children
+    const Padding &getPadding() const { return m_padding; }
+    void setPadding(const Padding &padding);
+
+    //! gap between consecutive children along the stacking axis
+    int getSpacing() const { return m_spacing; }
+    void setSpacing(int spacing);
+
 private:
-    void calculateHorizontal();
-    void calculateMaxHeight();
-    void calculateVertical();
-    void calculateMaxWidth();
+    void calculateAlong(Dim dim);
+    void calculateAcross(Dim dim);
 
     void updateControlSize(Dim dim);
 

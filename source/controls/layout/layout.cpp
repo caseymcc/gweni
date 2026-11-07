@@ -151,27 +151,68 @@ void LayoutItem::updateControl()
     //    m_control->setBounds(bounds);
 }
 
+void LayoutItem::setPadding(const Padding &padding)
+{
+    m_padding=padding;
+
+    if(m_parent)
+        m_parent->invalidate();
+}
+
+void LayoutItem::setSpacing(int spacing)
+{
+    m_spacing=spacing;
+
+    if(m_parent)
+        m_parent->invalidate();
+}
+
+namespace
+{
+
+// One axis of a size, margin or size flags, so the size pass is written once
+// for both axes.
+int &length(Size &size, Dim dim)
+{
+    return (dim == Dim::X)?size.width:size.height;
+}
+
+int length(const Size &size, Dim dim)
+{
+    return (dim == Dim::X)?size.width:size.height;
+}
+
+//! both sides of a margin or padding along dim
+int sides(const Margin &margin, Dim dim)
+{
+    return (dim == Dim::X)?margin.left+margin.right:margin.top+margin.bottom;
+}
+
+SizeFlag &flag(SizeFlags &sizeFlags, Dim dim)
+{
+    return (dim == Dim::X)?sizeFlags.horizontal:sizeFlags.vertical;
+}
+
+SizeFlag flag(const SizeFlags &sizeFlags, Dim dim)
+{
+    return (dim == Dim::X)?sizeFlags.horizontal:sizeFlags.vertical;
+}
+
+}//namespace
+
 void LayoutItem::calculateSize(skin::Base *skin, Dim dim)
 {
     if(m_control)
     {
         m_control->calculateSize(skin, dim);
 
-        const Size &preferred=m_control->getPreferredSize();
-        const Margin &margin=m_control->getMargin();
+        // The cell holds the control and its margins, so its minimum and
+        // maximum do too, and minimum <= preferred <= maximum holds from here up.
+        const int margins=sides(m_control->getMargin(), dim);
 
-        if(dim==Dim::X)
-        {
-            m_minimumSize.width=m_control->getMinimumSize().width;
-            m_maximumSize.width=m_control->getMaximumSize().width;
-            m_preferredSize.width=preferred.width+margin.left+margin.right;
-        }
-        else
-        {
-            m_minimumSize.height=m_control->getMinimumSize().height;
-            m_maximumSize.height=m_control->getMaximumSize().height;
-            m_preferredSize.height=preferred.height+margin.top+margin.bottom;
-        }
+        length(m_minimumSize, dim)=addWithOverflow(length(m_control->getMinimumSize(), dim), margins);
+        length(m_maximumSize, dim)=addWithOverflow(length(m_control->getMaximumSize(), dim), margins);
+        length(m_preferredSize, dim)=length(m_control->getPreferredSize(), dim)+margins;
 
         m_sizeFlags=m_control->getSizeFlags();
         return;
@@ -180,116 +221,71 @@ void LayoutItem::calculateSize(skin::Base *skin, Dim dim)
     for(LayoutItem *child:m_children)
         child->calculateSize(skin, dim);
 
-    switch(m_type)
-    {
-    case LayoutType::Horizontal:
-        if(dim == Dim::X)
-            calculateHorizontal();
-        else
-            calculateMaxHeight();
-        break;
-    case LayoutType::Vertical:
-        if(dim == Dim::X)
-            calculateMaxWidth();
-        else
-            calculateVertical();
-        break;
-    }
+    const Dim along=(m_type == LayoutType::Horizontal)?Dim::X:Dim::Y;
 
+    if(dim == along)
+        calculateAlong(dim);
+    else
+        calculateAcross(dim);
 }
 
-void LayoutItem::calculateHorizontal()
+// Along the stacking axis the children follow each other: the preferred,
+// minimum and maximum lengths are each the children's sum, the spacing between
+// them and the padding. A sum saturates at INT_MAX, so the maximum is
+// unbounded only when a child's is.
+void LayoutItem::calculateAlong(Dim dim)
 {
-    m_preferredSize.width=0;
-    m_minimumSize.width=0;
-    m_maximumSize.width=std::numeric_limits<int>::max();
-    m_sizeFlags.horizontal=SizeFlag::Fixed;
-
+    int preferred=0;
+    int minimum=0;
+    int maximum=0;
+    SizeFlag sizeFlag=SizeFlag::Fixed;
     bool addSpacing=false;
 
     for(LayoutItem *child:m_children)
     {
-        SizeFlags sizeFlags=child->getSizeFlags();
+        const int spacing=addSpacing?m_spacing:0;
 
-        m_preferredSize.width+=child->getPreferredSize().width;
-        m_minimumSize.width=addWithOverflow(m_minimumSize.width, child->getMinimumSize().width);
-        m_maximumSize.width=addWithOverflow(m_maximumSize.width, child->getMaximumSize().width);
-        m_sizeFlags.horizontal=merge(m_sizeFlags.horizontal, sizeFlags.horizontal);
-
-        if(addSpacing)
-            m_preferredSize.width+=m_spacing;
-        else
-            addSpacing=true;
+        addSpacing=true;
+        preferred=addWithOverflow(addWithOverflow(preferred, spacing), length(child->getPreferredSize(), dim));
+        minimum=addWithOverflow(addWithOverflow(minimum, spacing), length(child->getMinimumSize(), dim));
+        maximum=addWithOverflow(addWithOverflow(maximum, spacing), length(child->getMaximumSize(), dim));
+        sizeFlag=merge(sizeFlag, flag(child->getSizeFlags(), dim));
     }
 
-    m_preferredSize.width+=m_padding.left+m_padding.right;
+    const int padding=sides(m_padding, dim);
+
+    length(m_preferredSize, dim)=addWithOverflow(preferred, padding);
+    length(m_minimumSize, dim)=addWithOverflow(minimum, padding);
+    length(m_maximumSize, dim)=addWithOverflow(maximum, padding);
+    flag(m_sizeFlags, dim)=sizeFlag;
 }
 
-void LayoutItem::calculateMaxHeight()
+// Across the stacking axis the children share one length: the preferred and
+// minimum lengths are the largest child's, the maximum the smallest child's
+// maximum (INT_MAX with no children), each with the padding. Children whose
+// ranges do not overlap give a minimum above the maximum: no length fits them
+// all.
+void LayoutItem::calculateAcross(Dim dim)
 {
-    m_preferredSize.height=0;
-    m_minimumSize.height=0;
-    m_maximumSize.height=std::numeric_limits<int>::max();
-    m_sizeFlags.vertical=SizeFlag::Fixed;
+    int preferred=0;
+    int minimum=0;
+    int maximum=std::numeric_limits<int>::max();
+    SizeFlag sizeFlag=SizeFlag::Fixed;
 
     for(LayoutItem *child:m_children)
     {
-        SizeFlags sizeFlags=child->getSizeFlags();
-
-        m_preferredSize.height=std::max(m_preferredSize.height, child->getPreferredSize().height);
-        m_minimumSize.height=std::max(m_minimumSize.height, child->getMinimumSize().height);
-        m_maximumSize.height=std::min(m_maximumSize.height, child->getMaximumSize().height);
-        m_sizeFlags.vertical=merge(m_sizeFlags.vertical, sizeFlags.vertical);
+        preferred=std::max(preferred, length(child->getPreferredSize(), dim));
+        minimum=std::max(minimum, length(child->getMinimumSize(), dim));
+        maximum=std::min(maximum, length(child->getMaximumSize(), dim));
+        sizeFlag=merge(sizeFlag, flag(child->getSizeFlags(), dim));
     }
 
-    m_preferredSize.height+=m_padding.top+m_padding.bottom;
-}
+    const int padding=sides(m_padding, dim);
 
-void LayoutItem::calculateMaxWidth()
-{
-    m_preferredSize.width=0;
-    m_minimumSize.width=0;
-    m_maximumSize.width=std::numeric_limits<int>::max();
-    m_sizeFlags.horizontal=SizeFlag::Fixed;
-
-    for(LayoutItem *child:m_children)
-    {
-        SizeFlags sizeFlags=child->getSizeFlags();
-
-        m_preferredSize.width=std::max(m_preferredSize.width, child->getPreferredSize().width);
-        m_minimumSize.width=std::max(m_minimumSize.width, child->getMinimumSize().width);
-        m_maximumSize.width=std::min(m_maximumSize.width, child->getMaximumSize().width);
-
-        m_sizeFlags.horizontal=merge(m_sizeFlags.horizontal, sizeFlags.horizontal);
-    }
-    m_preferredSize.width+=m_padding.left+m_padding.right;
-
-}
-
-void LayoutItem::calculateVertical()
-{
-    m_preferredSize.height=0;
-    m_minimumSize.height=0;
-    m_maximumSize.height=std::numeric_limits<int>::max();
-    m_sizeFlags.vertical=SizeFlag::Fixed;
-
-    bool addSpacing=false;
-    for(LayoutItem *child:m_children)
-    {
-        SizeFlags sizeFlags=child->getSizeFlags();
-
-        m_preferredSize.height+=child->getPreferredSize().height;
-        m_minimumSize.height=addWithOverflow(m_minimumSize.height, child->getMinimumSize().height);
-        m_maximumSize.height=addWithOverflow(m_maximumSize.height, child->getMaximumSize().height);
-        m_sizeFlags.vertical=merge(m_sizeFlags.vertical, sizeFlags.vertical);
-
-        if(addSpacing)
-            m_preferredSize.height+=m_spacing;
-        else
-            addSpacing=true;
-    }
-
-    m_preferredSize.height+=m_padding.top+m_padding.bottom;
+    length(m_preferredSize, dim)=addWithOverflow(preferred, padding);
+    length(m_minimumSize, dim)=addWithOverflow(minimum, padding);
+    length(m_maximumSize, dim)=addWithOverflow(maximum, padding);
+    flag(m_sizeFlags, dim)=sizeFlag;
 }
 
 void LayoutItem::updateControlSize(Dim dim)

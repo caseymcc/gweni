@@ -289,6 +289,7 @@ add_executable(gweni_unit_tests
     unit/scrollControl.cpp
     unit/resourcePaths.cpp
     unit/requestedSize.cpp
+    unit/layoutSizes.cpp
     unit/tabOrder.cpp
     unit/depthLayers.cpp
     unit/overlayDepth.cpp
