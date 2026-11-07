@@ -201,7 +201,8 @@ add_executable(gweni_unit_tests
     unit/depthLayers.cpp
     unit/utf8Typing.cpp
     unit/cursorScale.cpp
-    unit/crossSplitter.cpp)
+    unit/crossSplitter.cpp
+    unit/windowSkin.cpp)
 gweni_set_warnings(gweni_unit_tests)
 target_link_libraries(gweni_unit_tests
     gweni

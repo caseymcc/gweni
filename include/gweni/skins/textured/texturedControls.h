@@ -938,7 +938,7 @@ public:
     void update(renderer::Base *renderer, controls::Base *baseControl) override;
     void remove(renderer::Base *renderer, controls::Base *baseControl) override;
 
-    inline static const std::string_view name="Window";
+    inline static const std::string_view name="WindowControl";
 
     static size_t Normal;
     static size_t Inactive;
