@@ -6,6 +6,7 @@ platform="linux"
 cmake_options=""
 cmake_custom_options=""
 sanitize=""
+profile=""
 
 for var in "$@"; do
     if [ "$var" = "x64" ]; then
@@ -32,6 +33,9 @@ for var in "$@"; do
     if [ "$var" = "asan" ]; then
         sanitize="asan"
     fi
+    if [ "$var" = "profile" ]; then
+        profile="profile"
+    fi
     if [[ $var = -D* ]]; then
         cmake_custom_options+="$var "
     fi
@@ -44,12 +48,28 @@ if [ -z "$VCPKG_ROOT" ]; then
     exit 1
 fi
 
+if [ -n "$profile" ]; then
+    # The profile tree is its own build type (optimised, with debug info and
+    # frame pointers), so it does not combine with release or asan.
+    if [ "$build_type" = "release" ] || [ -n "$sanitize" ]; then
+        echo "ERROR: profile does not combine with release or asan; use ./generate.sh linux profile"
+        exit 1
+    fi
+    build_type="profile"
+fi
+
 echo "**Building $platform $arch for $build_type"
 
 if [ "$build_type" = "debug" ]; then
     cmake_options="$cmake_options \
         -DCMAKE_BUILD_TYPE=Debug \
         -DCMAKE_DEBUG_POSTFIX=d"
+elif [ "$build_type" = "profile" ]; then
+    # callgrind and other profilers: -O2 -g, and frame pointers in everything
+    # built here (GWENI_FRAME_POINTERS), deps/ included
+    cmake_options="$cmake_options \
+        -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+        -DGWENI_FRAME_POINTERS=ON"
 else
     cmake_options="$cmake_options \
         -DCMAKE_BUILD_TYPE=Release"

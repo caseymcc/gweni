@@ -19,6 +19,7 @@ option(GWENI_BUILD_EXAMPLES "Build Examples" ON)
 option(GWENI_BUILD_TESTS "Build tests" ON)
 option(GWENI_DEBUG_LOGGING "Verbose per-control update/layout debug logging" OFF)
 set(GWENI_SANITIZE "" CACHE STRING "Sanitizers to build with, e.g. address")
+option(GWENI_FRAME_POINTERS "Keep frame pointers (-fno-omit-frame-pointer), for profiling" OFF)
 
 project(gweni VERSION 0.1.0 LANGUAGES CXX)
 
@@ -55,6 +56,13 @@ configure_file(
 if(GWENI_SANITIZE)
     add_compile_options(-fsanitize=${GWENI_SANITIZE} -fno-omit-frame-pointer)
     add_link_options(-fsanitize=${GWENI_SANITIZE})
+endif()
+
+# The profile tree (./generate.sh linux profile) keeps frame pointers so a
+# profiler can walk the stack. Set here, before deps, for the same reason as the
+# sanitizers: the vendored freetype-gl and imglib are on the hot paths too.
+if(GWENI_FRAME_POINTERS)
+    add_compile_options(-fno-omit-frame-pointer)
 endif()
 
 # add our projects

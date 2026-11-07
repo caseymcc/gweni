@@ -69,6 +69,16 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         cmake
 
+# Profiling (./generate.sh linux profile, gweni_bench under callgrind):
+# valgrind (callgrind, callgrind_annotate and <valgrind/callgrind.h>), graphviz
+# (dot, for the call-graph SVG) and gprof2dot, which Ubuntu 22.04 does not
+# package, from PyPI at a pinned version.
+RUN apt-get update && \
+    apt-get install -y \
+        valgrind \
+        graphviz && \
+    pip3 install --no-cache-dir gprof2dot==2025.4.14
+
 #clean up apt files, reduce docker size
 RUN rm -rf /var/lib/apt/lists/*
 

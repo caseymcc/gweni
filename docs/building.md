@@ -8,6 +8,7 @@ Builds run inside the build container (`./run_docker.sh` from a host; see
 ./generate.sh linux                       # build_linux_x64_debug/
 ./generate.sh linux release               # build_linux_x64_release/
 ./generate.sh linux asan                  # build_linux_x64_debug_asan/, AddressSanitizer
+./generate.sh linux profile               # build_linux_x64_profile/, for profiling
 cmake --build build_linux_x64_debug -j
 ```
 
@@ -72,6 +73,16 @@ object goes unreported. ListBoxDemo's original UTF-8 over-read ran from a short
 (SSO) string into the neighbouring `m_font` field of `controls::Text`, and neither
 ASAN nor valgrind reported it. The deterministic trailing-bytes unit test and the
 two-process determinism test cover that case.
+
+## Profile tree
+
+`./generate.sh linux profile` configures `build_linux_x64_profile/`: an
+optimised build with debug info (`RelWithDebInfo`) and frame pointers kept
+(`GWENI_FRAME_POINTERS=ON`, `-fno-omit-frame-pointer` on everything, `deps/`
+included), for profiling and for comparing revisions. It does not combine with
+`release` or `asan`. Its tests pass like every other tree's. The build image has
+the profiling tools, `valgrind` (callgrind), `graphviz` (`dot`) and `gprof2dot`;
+an older container lacks them (`which valgrind` tells).
 
 ## Benchmarks
 

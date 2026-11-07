@@ -58,11 +58,12 @@ The commands in this section are the in-container form; from a host, prefix each
 ./generate.sh linux release          # release build dir
 ./generate.sh linux -DSOME_OPT=ON    # any -D... arg is passed through to cmake
 ./generate.sh linux asan             # AddressSanitizer tree, build_linux_x64_debug_asan/ (see "ASAN tree")
+./generate.sh linux profile          # profiling tree, build_linux_x64_profile/ (see "Profile tree")
 ```
 
 Dependencies are managed by **vcpkg** (manifest `vcpkg.json` at the repo root), bootstrapped into the image at `/opt/vcpkg`; `generate.sh` triggers the manifest install at configure time.
 
-Then build into the generated directory (named `build_<platform>_<arch>_<buildtype>`):
+Then build into the generated directory (named `build_<platform>_<arch>_<buildtype>`, `<buildtype>` being `debug`, `release` or `profile`, with `_asan` appended for an ASAN tree):
 
 ```bash
 cmake --build build_linux_x64_debug -j
@@ -139,6 +140,18 @@ The output, the interface the scripts parse: one line per measured frame, `scene
 
 The same arguments always give the same counters, and only the times vary: the clock is stepped 1/60 s per frame (`platform::setTimeSource`), the input is the scene's own, and before the scene is built a primer canvas (a small `build` tree) draws two frames and is deleted, so llvmpipe has compiled its shader variants before the measured frames (LLVM's allocations while compiling differ from run to run, and Mesa's on-disk shader cache changes them again). The font atlas's first upload therefore happens in the primer too, not in `build`'s frame. Times come from a release tree. Hold the GPU lock around a run, as for any capture. `bench_smoke` (`bench/smoke.cmake`, label `gpu`) runs every scene in `--list` at N=50 for 3 frames and fails, naming the scene, only if one exits non-zero, crashes or prints the wrong lines.
 
+### Profile tree
+
+`./generate.sh linux profile` configures `build_linux_x64_profile/`: `CMAKE_BUILD_TYPE=RelWithDebInfo` (`-O2 -g -DNDEBUG`) with `-DGWENI_FRAME_POINTERS=ON`, which adds `-fno-omit-frame-pointer` to everything built here, the vendored `deps/` included (set before `deps/` is added, as the sanitizers are). It is the tree to profile and to compare revisions in: optimised like a release build, but with the line tables callgrind's per-line annotation needs and frame pointers a stack-walking profiler needs. The toolchain, triplet, examples and tests are those of every other tree, and its tests pass like theirs, `docs_samples` included (it renders the same bytes). `profile` is its own build type, so `./generate.sh linux profile release` and `./generate.sh linux profile asan` print one error and exit 1.
+
+```bash
+./generate.sh linux profile
+cmake --build build_linux_x64_profile -j
+mm run --lock gpu -- ctest --test-dir build_linux_x64_profile
+```
+
+The image (`Dockerfile`) has the profiling tools: `valgrind` (callgrind, `callgrind_annotate`, and `<valgrind/callgrind.h>` for client requests), `graphviz` (`dot`) and `gprof2dot` (from PyPI, pinned, since Ubuntu 22.04 does not package it). A container built from an image older than that change lacks them: `which valgrind gprof2dot dot` tells. From a host, `./run_docker.sh -r` rebuilds the image.
+
 ### Dependencies / vcpkg notes
 - The active OpenGL-core build pulls `rapidjson`, `glm`, `freetype`, `glew`, `glfw3`, `libpng`, `libjpeg-turbo` (last two via the `deps/imglib` subproject). RapidJSON is header-only — CMake consumes `RAPIDJSON_INCLUDE_DIRS`, not an imported target.
 - `doctest` (header-only, `find_package(doctest CONFIG)` → `doctest::doctest`) is used only by the unit tests in `tests/`, never by the `gweni` library.
@@ -146,7 +159,7 @@ The same arguments always give the same counters, and only the times vary: the c
 - The vendored `deps/freetype-gl` and `deps/imglib` are added via `add_subdirectory`; `deps/CMakeLists.txt` sets `freetype-gl_USE_HUNTER OFF` so they resolve deps through the vcpkg toolchain's standard find modules.
 
 ### Build options (CMakeLists.txt)
-`GWENI_RENDER_OPENGL_CORE` (the OpenGL 3.0+ core renderer, the only one), `GWENI_BUILD_EXAMPLES`, `GWENI_BUILD_TESTS` (CTest suite under `tests/`, default on), `GWENI_SANITIZE` (sanitizers to build everything with, passed as `-fsanitize=<value>`; empty by default, `address` in the ASAN tree that `./generate.sh linux asan` sets up). `GWENI_RENDER_OPENGL_CORE` is what pulls in glm + freetype + the `deps/freetype-gl` and `deps/imglib` subprojects.
+`GWENI_RENDER_OPENGL_CORE` (the OpenGL 3.0+ core renderer, the only one), `GWENI_BUILD_EXAMPLES`, `GWENI_BUILD_TESTS` (CTest suite under `tests/`, default on), `GWENI_SANITIZE` (sanitizers to build everything with, passed as `-fsanitize=<value>`; empty by default, `address` in the ASAN tree that `./generate.sh linux asan` sets up), `GWENI_FRAME_POINTERS` (build everything with `-fno-omit-frame-pointer`; off by default, on in the profile tree). `GWENI_RENDER_OPENGL_CORE` is what pulls in glm + freetype + the `deps/freetype-gl` and `deps/imglib` subprojects.
 
 ## Architecture
 
