@@ -23,8 +23,9 @@
 #    --ir-n N       the size the instructions are measured at (default the
 #                   small N); 0, or --no-ir, measures none
 #    --no-ir        no instructions (no callgrind; much faster)
-#    --time         measure wall time too: R runs of each scene per side,
-#                   alternating A B A B ..., each holding the gpu and perf locks
+#    --time         measure wall time too: R rounds, each running every scene
+#                   once per side (A B, then B A in the next round), each run
+#                   holding the gpu and perf locks
 #    --repeat R     timed runs per scene and side (default 5)
 #    --time-n N     the size the times are measured at (default the small N)
 #    --out FILE     the report (default /tmp/gweni-bench-<base>-<rev>.md); the
@@ -246,6 +247,13 @@ if [[ $haveMm -eq 0 ]]; then
     echo "bench.sh: mm is not on PATH, so every run is unlocked"
     note "mm was not on PATH: every run ran without the gpu (and perf) lock, so other jobs may have shared the host; the wall times are not trustworthy."
 fi
+# mm ignores a lock the host does not manage, so a timed run asking for perf
+# there excludes nothing; say so, since it is what a wall-time flag is worth.
+if [[ $haveMm -eq 1 && $timed -eq 1 ]]; then
+    if ! mm lock status 2>/dev/null | python3 -I -c 'import json, sys; sys.exit(0 if any(r.get("name") == "perf" for r in json.load(sys.stdin).get("resources", [])) else 1)'; then
+        note "This host's master-mind does not manage a perf lock, so other jobs ran alongside the timed runs: rerun a wall-time flag before acting on it."
+    fi
+fi
 
 #-----------------------------------------------------------------------------
 # The sides: export and build
@@ -464,15 +472,25 @@ fi
 timeSeconds=0
 if [[ $timed -eq 1 ]]; then
     timeStart=$SECONDS
-    for scene in "${scenes[@]}"; do
-        has_scene base "$scene" && has_scene rev "$scene" || continue
-        n="$timeN"
-        if [[ "$(list_field rev "$scene" takes_n)" != 1 ]]; then
-            n=$(list_field rev "$scene" default_n)
+    mkdir -p "$results/base/time" "$results/rev/time"
+    # Round r runs every scene once per side before round r+1, so a scene's
+    # runs are spread over the whole timed part and a burst of load from
+    # another job lands on one of them, not on all of one side's. Within a
+    # round the sides take turns going first (A B, then B A), so whatever a
+    # run leaves behind (caches, clocks, llvmpipe's threads winding down)
+    # lands on both alike.
+    for ((r=1; r<=repeat; ++r)); do
+        order=(base rev)
+        if [[ $((r % 2)) -eq 0 ]]; then
+            order=(rev base)
         fi
-        mkdir -p "$results/base/time" "$results/rev/time"
-        for ((r=1; r<=repeat; ++r)); do
-            for side in base rev; do
+        for scene in "${scenes[@]}"; do
+            has_scene base "$scene" && has_scene rev "$scene" || continue
+            n="$timeN"
+            if [[ "$(list_field rev "$scene" takes_n)" != 1 ]]; then
+                n=$(list_field rev "$scene" default_n)
+            fi
+            for side in "${order[@]}"; do
                 echo "bench.sh: time      $side $scene --n $n ($r/$repeat)"
                 bench_run "$side" time "$results/$side/time/$scene-$n-$r.txt" --scene "$scene" --n "$n"
             done

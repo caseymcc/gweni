@@ -25,8 +25,8 @@
 #                    that phase is at least IR_MIN_SHARE of the scene's total
 #      scaling       a per-frame counter of a local scene larger at the large
 #                    N than at the small N on rev, where it was not on base
-#      wall time     a phase TIME_FLAG_PERCENT % slower and slower by more than
-#                    twice the larger side's MAD
+#      wall time     a phase TIME_FLAG_PERCENT % slower, slower by more than
+#                    twice the larger side's MAD and by at least TIME_MIN_US
 
 import math
 import os
@@ -40,6 +40,10 @@ IR_FLAG_PERCENT = 1.0
 # is shown but not flagged: a few hundred instructions moving is not a cost.
 IR_MIN_SHARE = 0.001
 TIME_FLAG_PERCENT = 5.0
+# A phase of a fraction of a microsecond (update on a frame with nothing to
+# lay out) doubles from timer noise alone: a slowdown smaller than this is
+# shown, not flagged.
+TIME_MIN_US = 2.0
 
 # Sizes, not work: they grow with N by definition.
 SIZE_COUNTERS = {"prim_ids", "text_ids", "mirror_bytes"}
@@ -481,13 +485,14 @@ class Report:
             return
         self.emit("## Wall time")
         self.emit()
-        self.emit("%s timed runs of each scene per side at N=%s, alternating base and rev, each "
+        self.emit("%s timed runs of each scene per side at N=%s, in rounds (every scene once per side per round, base and rev taking turns going first), each "
                   "holding the gpu and perf locks. Per run, a phase's time is its median over the "
                   "measured frames (µs; `construct` is the build itself); the table gives the "
                   "median of the runs ± their MAD (median absolute deviation). Flagged ⚠ when rev "
-                  "is more than %.0f %% slower and slower by more than twice the larger MAD. "
+                  "is more than %.0f %% slower, slower by more than twice the larger MAD and by "
+                  "at least %.0f µs (below that a phase is timer noise). "
                   "`gpu` is llvmpipe rasterising on the CPU, not a GPU." %
-                  (self.meta.get("repeat"), self.meta.get("time_n"), TIME_FLAG_PERCENT))
+                  (self.meta.get("repeat"), self.meta.get("time_n"), TIME_FLAG_PERCENT, TIME_MIN_US))
         self.emit()
         if self.meta.get("locked") != "1":
             self.emit("**These runs were not locked (no `mm`): other jobs may have run alongside, "
@@ -513,7 +518,8 @@ class Report:
                 spread = max(mad(bv), mad(rv))
                 p = percent(bm, rm)
                 flag = ""
-                if p is not None and not math.isinf(p) and p > TIME_FLAG_PERCENT and rm - bm > 2 * spread:
+                if p is not None and not math.isinf(p) and p > TIME_FLAG_PERCENT and rm - bm > 2 * spread \
+                        and rm - bm >= TIME_MIN_US:
                     flag = " ⚠"
                     self.flags["time"].append((scene, phase, bm, rm, p))
                 name = phase + (" (llvmpipe, not a GPU)" if phase == "gpu" else "")

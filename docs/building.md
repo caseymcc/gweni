@@ -615,5 +615,9 @@ scene that now grows from N=1000 to N=10000 (a new O(N)); with `--time`, a phase
 more than 5 % and more than twice the spread slower. A base commit is exported
 with `git archive` to `/tmp` and built there, so the first compare against it
 configures a new tree (slow without the vcpkg binary cache); `--keep` keeps it.
-Timed runs hold the `perf` lock as well as `gpu`. See `AGENTS.md` → "Comparing
-two revisions".
+A default compare takes about 40 minutes, nearly all of it callgrind;
+`--no-ir` about 2, and `--scenes` limits it to the scenes a change touches.
+Timed runs hold the `perf` lock as well as `gpu`; on a shared host whose
+master-mind does not manage `perf` yet, a wall-time flag is noise as often as
+not, so run it again before acting on it. See `AGENTS.md` → "Comparing two
+revisions".
