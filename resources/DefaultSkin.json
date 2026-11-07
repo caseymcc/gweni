@@ -665,7 +665,7 @@
     ],
     "theme":
     {
-        "_comment": "Tokyo Night theme overrides. Any surface in tokyonight::surfaceRegistry() can be set here ([r,g,b] or [r,g,b,a]); omitted fields keep the compiled default. Edit to re-theme without recompiling.",
+        "_comment": "Tokyo Night theme overrides. Any surface in tokyonight::surfaceRegistry() can be set here ([r,g,b] or [r,g,b,a]); omitted fields keep the compiled default. Edit to re-theme without recompiling. Add \"strict\": true here while writing a theme: every surface colour (top, bottom, border) and text color it does not set then draws magenta, and one stderr line per kind lists them; surfaces transparent at rest (WindowButton, SelectableHover) need an explicit [0,0,0,0].",
         "surfaces":
         {
             "ButtonNormal":  { "top":[59,66,97],  "bottom":[44,48,71], "border":[65,72,104], "radius":6, "borderWidth":1 },

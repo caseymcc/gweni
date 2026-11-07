@@ -19,6 +19,10 @@
 #include <glm/detail/type_vec4.hpp>
 #include <imglib/simpleImage.h>
 
+#include <set>
+#include <string>
+#include <unordered_map>
+
 namespace gweni
 {
 namespace skin
@@ -413,6 +417,12 @@ public:
     //! of the config.
     bool init(std::string fileName);
 
+    //! Name -> text colour of this skin's Colors that a theme's "textColors"
+    //! can set (LabelDefault, ButtonNormal, ...), the text counterpart of
+    //! tokyonight::surfaceRegistry(). The pointers are into this skin, so the
+    //! map is built for each call and is only valid while the skin lives.
+    std::unordered_map<std::string, gweni::Color*> textColorRegistry();
+
     std::unique_ptr<Control> getControlRenderer(std::string typeName) override;
 
     void generateControl();
@@ -426,6 +436,8 @@ public:
     void loadTextureMap(const json::Value &jsonMap);
     void setThemeColors();
     void loadTheme(const json::Value &jsonTheme);
+    void reportStrictTheme(const std::set<std::string> &surfaceFieldsSet,
+        const std::set<std::string> &textColorsSet);
     
     typedef glm::tvec4<unsigned char> Color;
     typedef std::unordered_map<std::string, size_t> IndexMap;

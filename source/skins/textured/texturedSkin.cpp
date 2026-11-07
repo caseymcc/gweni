@@ -6,9 +6,13 @@
 
 #include <imglib/imageIo.h>
 
+#include <algorithm>
 #include <cerrno>
 #include <cstring>
 #include <iostream>
+#include <iterator>
+#include <set>
+#include <vector>
 
 namespace gweni
 {
@@ -381,19 +385,37 @@ bool TexturedSkin::loadConfig(std::string configFileName)
     return textureLoaded;
 }
 
+std::unordered_map<std::string, gweni::Color*> TexturedSkin::textColorRegistry()
+{
+    return {
+        {"LabelDefault",&Colors.Label.Default},{"LabelBright",&Colors.Label.Bright},
+        {"LabelDark",&Colors.Label.Dark},{"LabelHighlight",&Colors.Label.Highlight},
+        {"ButtonNormal",&Colors.Button.Normal},{"ButtonHover",&Colors.Button.Hover},
+        {"ButtonDown",&Colors.Button.Down},{"ButtonDisabled",&Colors.Button.Disabled},
+        {"TooltipText",&Colors.TooltipText},
+        {"PlaceholderText",&Colors.PlaceholderText},
+        {"SelectableNormal",&Colors.Selectable.Normal},{"SelectableHover",&Colors.Selectable.Hover},
+        {"SelectableSelected",&Colors.Selectable.Selected},{"SelectableDisabled",&Colors.Selectable.Disabled},
+    };
+}
+
 // Apply an external theme: a "surfaces" object (name -> {top,bottom,border arrays,
 // radius, borderWidth}) overriding tokyonight surfaces, and a "textColors" object
 // (name -> [r,g,b(,a)]) overriding control text colors. Anything omitted keeps its
-// compiled default.
+// compiled default, unless "strict" is true: then every surface colour field and
+// text colour starts as colors::Missing, so only what the theme sets shows its
+// colour, and one line per kind on stderr lists what it did not set.
 void TexturedSkin::loadTheme(const json::Value &jsonTheme)
 {
     using namespace tokyonight;
 
     // Every rejected value is reported on stderr with a "theme " prefix and keeps
-    // its compiled default; the rest of the theme still applies.
+    // its compiled default (its magenta when strict); the rest of the theme still
+    // applies.
 
     // dst is only written once the whole array is valid, so a colour is never
-    // partly applied. context names the value, e.g. surface "ButtonNormal": "top".
+    // partly applied; returns whether it was. context names the value, e.g.
+    // surface "ButtonNormal": "top".
     auto toColor=[](const json::Value &arr, gweni::Color &dst, const std::string &context)
     {
         bool valid=arr.IsArray() && (arr.Size() == 3 || arr.Size() == 4);
@@ -404,10 +426,11 @@ void TexturedSkin::loadTheme(const json::Value &jsonTheme)
         if(!valid)
         {
             std::cerr<<"theme "<<context<<" must be an array of 3-4 integers 0-255\n";
-            return;
+            return false;
         }
         dst=gweni::Color((uint8_t)arr[0].GetInt(), (uint8_t)arr[1].GetInt(),
             (uint8_t)arr[2].GetInt(), arr.Size() == 4 ? (uint8_t)arr[3].GetInt() : 255);
+        return true;
     };
 
     auto toFloat=[](const json::Value &v, float &dst, const std::string &context)
@@ -425,6 +448,34 @@ void TexturedSkin::loadTheme(const json::Value &jsonTheme)
     {
         return name.GetStringLength() > 0 && name.GetString()[0] == '_';
     };
+
+    std::unordered_map<std::string, gweni::Color*> textMap=textColorRegistry();
+    bool strict=false;
+
+    if(jsonTheme.HasMember("strict"))
+    {
+        if(jsonTheme["strict"].IsBool())
+            strict=jsonTheme["strict"].GetBool();
+        else
+            std::cerr<<"theme \"strict\" must be a boolean\n";
+    }
+
+    // Strict: preset every colour the theme can set, so the loops below leave
+    // magenta exactly where the file is silent (per field: a surface given only
+    // top and bottom keeps a magenta border). radius and borderWidth are not
+    // colours and keep their compiled values.
+    if(strict)
+    {
+        setAllSurfacesMissing();
+
+        for(auto &entry:textMap)
+            *entry.second=colors::Missing;
+    }
+
+    // What the theme wrote: "Surface.field" for the surfaces' colour fields, the
+    // name for text colours. Only read for the strict summary.
+    std::set<std::string> surfaceFieldsSet;
+    std::set<std::string> textColorsSet;
 
     if(jsonTheme.HasMember("surfaces"))
     {
@@ -459,9 +510,15 @@ void TexturedSkin::loadTheme(const json::Value &jsonTheme)
                 Surface &s=*iter->second;
                 const json::Value &v=member.value;
 
-                if(v.HasMember("top"))         toColor(v["top"], s.top, context+": \"top\"");
-                if(v.HasMember("bottom"))      toColor(v["bottom"], s.bottom, context+": \"bottom\"");
-                if(v.HasMember("border"))      toColor(v["border"], s.border, context+": \"border\"");
+                const std::pair<const char *, gweni::Color Surface::*> fields[]={
+                    {"top", &Surface::top}, {"bottom", &Surface::bottom}, {"border", &Surface::border}};
+
+                for(const auto &field:fields)
+                {
+                    if(v.HasMember(field.first)
+                        && toColor(v[field.first], s.*field.second, context+": \""+field.first+"\""))
+                        surfaceFieldsSet.insert(name+"."+field.first);
+                }
                 if(v.HasMember("radius"))      toFloat(v["radius"], s.radius, context+": \"radius\"");
                 if(v.HasMember("borderWidth")) toFloat(v["borderWidth"], s.borderWidth, context+": \"borderWidth\"");
             }
@@ -476,17 +533,6 @@ void TexturedSkin::loadTheme(const json::Value &jsonTheme)
             std::cerr<<"theme \"textColors\" must be an object\n";
         else
         {
-            std::unordered_map<std::string, gweni::Color*> textMap={
-                {"LabelDefault",&Colors.Label.Default},{"LabelBright",&Colors.Label.Bright},
-                {"LabelDark",&Colors.Label.Dark},{"LabelHighlight",&Colors.Label.Highlight},
-                {"ButtonNormal",&Colors.Button.Normal},{"ButtonHover",&Colors.Button.Hover},
-                {"ButtonDown",&Colors.Button.Down},{"ButtonDisabled",&Colors.Button.Disabled},
-                {"TooltipText",&Colors.TooltipText},
-                {"PlaceholderText",&Colors.PlaceholderText},
-                {"SelectableNormal",&Colors.Selectable.Normal},{"SelectableHover",&Colors.Selectable.Hover},
-                {"SelectableSelected",&Colors.Selectable.Selected},{"SelectableDisabled",&Colors.Selectable.Disabled},
-            };
-
             for(const auto &member:textColors.GetObject())
             {
                 if(isComment(member.name))
@@ -498,11 +544,91 @@ void TexturedSkin::loadTheme(const json::Value &jsonTheme)
 
                 if(iter == textMap.end())
                     std::cerr<<"theme "<<context<<" is not a known text color\n";
-                else
-                    toColor(member.value, *iter->second, context);
+                else if(toColor(member.value, *iter->second, context))
+                    textColorsSet.insert(name);
             }
         }
     }
+
+    if(strict)
+        reportStrictTheme(surfaceFieldsSet, textColorsSet);
+}
+
+// One stderr line per kind naming, sorted, what a strict theme left magenta: a
+// surface with none of its colour fields set by its bare name, one with some of
+// them as "Name.field" for each one missing. A theme that sets everything gets
+// one line saying so, so it is clear strict mode is on.
+void TexturedSkin::reportStrictTheme(const std::set<std::string> &surfaceFieldsSet,
+    const std::set<std::string> &textColorsSet)
+{
+    static const char *const fields[]={"top", "bottom", "border"};
+
+    std::vector<std::string> surfaceNames;
+    std::vector<std::string> textNames;
+
+    for(const auto &entry:tokyonight::surfaceRegistry())
+        surfaceNames.push_back(entry.first);
+    for(const auto &entry:textColorRegistry())
+        textNames.push_back(entry.first);
+    std::sort(surfaceNames.begin(), surfaceNames.end());
+    std::sort(textNames.begin(), textNames.end());
+
+    std::vector<std::string> surfaceGaps;
+    size_t surfacesNotSet=0;
+
+    for(const std::string &name:surfaceNames)
+    {
+        std::vector<std::string> missing;
+
+        for(const char *field:fields)
+        {
+            if(surfaceFieldsSet.count(name+"."+field) == 0)
+                missing.push_back(name+"."+field);
+        }
+
+        if(missing.empty())
+            continue;
+
+        ++surfacesNotSet;
+        if(missing.size() == std::size(fields))
+            surfaceGaps.push_back(name);
+        else
+            surfaceGaps.insert(surfaceGaps.end(), missing.begin(), missing.end());
+    }
+
+    std::vector<std::string> textGaps;
+
+    for(const std::string &name:textNames)
+    {
+        if(textColorsSet.count(name) == 0)
+            textGaps.push_back(name);
+    }
+
+    if(surfaceGaps.empty() && textGaps.empty())
+    {
+        std::cerr<<"theme strict: all "<<surfaceNames.size()<<" surfaces and "
+            <<textNames.size()<<" text colors set\n";
+        return;
+    }
+
+    auto report=[](const char *kind, size_t notSet, size_t total, const std::vector<std::string> &gaps)
+    {
+        std::cerr<<"theme strict: ";
+
+        if(gaps.empty())
+        {
+            std::cerr<<"all "<<total<<" "<<kind<<" set\n";
+            return;
+        }
+
+        std::cerr<<notSet<<" of "<<total<<" "<<kind<<" not set: ";
+        for(size_t i=0; i < gaps.size(); ++i)
+            std::cerr<<(i?", ":"")<<gaps[i];
+        std::cerr<<"\n";
+    };
+
+    report("surfaces", surfacesNotSet, surfaceNames.size(), surfaceGaps);
+    report("text colors", textGaps.size(), textNames.size(), textGaps);
 }
 
 // Tokyo Night text/line colors. These drive the control text colors (controls

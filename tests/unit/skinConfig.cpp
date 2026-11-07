@@ -10,6 +10,10 @@
  *  at their compiled defaults, so labels stay readable over it. A config whose
  *  atlas texture does not load is reported and fails init too, but the rest of
  *  it (the theme included) still applies.
+ *
+ *  A theme with "strict": true starts every surface colour field and every
+ *  textColorRegistry() colour as magenta, so only what it sets shows its
+ *  colour, and names what it left out on one stderr line per kind.
  */
 #include "headlessFixture.h"
 
@@ -24,6 +28,8 @@
 #include <fstream>
 #include <iostream>
 #include <sstream>
+#include <string>
+#include <vector>
 
 #include <unistd.h>
 
@@ -219,4 +225,230 @@ TEST_CASE("TexturedSkin::init with a config and atlas that load succeeds silentl
     CHECK(result.loaded);
     CHECK(result.message.empty());
     CHECK((tokyonight::Canvas.top == surfaces.saved.at("Canvas").top));
+}
+
+namespace
+{
+
+//! A config whose theme is \p theme (the JSON text of the "theme" object).
+String themeConfig(const String &theme)
+{
+    return "{\"theme\": "+theme+"}\n";
+}
+
+//! \p names sorted, joined with ", ".
+String joined(std::vector<String> names)
+{
+    std::sort(names.begin(), names.end());
+
+    String text;
+
+    for(const String &name : names)
+        text+=(text.empty()?"":", ")+name;
+    return text;
+}
+
+}//namespace
+
+TEST_CASE("TexturedSkin::textColorRegistry names the theme's 14 text colours in this skin")
+{
+    test::StubRenderer renderer;
+    skin::textured::TexturedSkin skin(&renderer);
+    skin::textured::TexturedSkin other(&renderer);
+
+    auto registry=skin.textColorRegistry();
+
+    CHECK(registry.size() == 14);
+    CHECK((registry.at("LabelDefault") == &skin.Colors.Label.Default));
+    CHECK((registry.at("SelectableDisabled") == &skin.Colors.Selectable.Disabled));
+    CHECK((other.textColorRegistry().at("LabelDefault") == &other.Colors.Label.Default));
+}
+
+TEST_CASE("A strict theme leaves every colour it does not set magenta and lists them once")
+{
+    TempDir dir;
+    platform::CurrentPath paths(dir.path.string());
+    test::StubRenderer renderer(paths);
+    test::SurfaceSnapshot surfaces;
+
+    // Canvas fully set, ButtonNormal only top/bottom, TextBox's top rejected
+    dir.write("DefaultSkin.json", themeConfig(
+        "{\"strict\": true,"
+        " \"surfaces\": {"
+        "  \"Canvas\": {\"top\": [1, 2, 3], \"bottom\": [4, 5, 6], \"border\": [7, 8, 9, 10]},"
+        "  \"ButtonNormal\": {\"top\": [11, 12, 13], \"bottom\": [14, 15, 16]},"
+        "  \"TextBox\": {\"top\": \"red\"}},"
+        " \"textColors\": {\"LabelDefault\": [21, 22, 23], \"ButtonHover\": [300, 0, 0]}}"));
+
+    skin::textured::TexturedSkin skin(&renderer);
+    const InitResult result=initSkin(skin);
+
+    INFO("stderr: ", result.message);
+    // strict gaps are not a failure
+    CHECK(result.loaded);
+
+    // what the file sets
+    CHECK((tokyonight::Canvas.top == Color(1, 2, 3)));
+    CHECK((tokyonight::Canvas.bottom == Color(4, 5, 6)));
+    CHECK((tokyonight::Canvas.border == Color(7, 8, 9, 10)));
+    CHECK((tokyonight::ButtonNormal.top == Color(11, 12, 13)));
+    CHECK((tokyonight::ButtonNormal.bottom == Color(14, 15, 16)));
+    // per field: the border it does not give is magenta, radius and width compiled
+    CHECK((tokyonight::ButtonNormal.border == colors::MissingDark));
+    CHECK(tokyonight::ButtonNormal.radius == surfaces.saved.at("ButtonNormal").radius);
+    CHECK(tokyonight::ButtonNormal.borderWidth == surfaces.saved.at("ButtonNormal").borderWidth);
+
+    // everything else magenta, the transparent-at-rest WindowButton included,
+    // its radius and border width kept
+    for(const auto &entry : tokyonight::surfaceRegistry())
+    {
+        if(entry.first == "Canvas" || entry.first == "ButtonNormal")
+            continue;
+
+        const tokyonight::Surface &s=*entry.second;
+        const tokyonight::Surface &was=surfaces.saved.at(entry.first);
+
+        INFO("surface ", entry.first);
+        CHECK((s.top == colors::Missing));
+        CHECK((s.bottom == colors::Missing));
+        CHECK((s.border == colors::MissingDark));
+        CHECK(s.radius == was.radius);
+        CHECK(s.borderWidth == was.borderWidth);
+    }
+
+    for(const auto &entry : skin.textColorRegistry())
+    {
+        INFO("text color ", entry.first);
+        if(entry.first == "LabelDefault")
+            CHECK((*entry.second == Color(21, 22, 23)));
+        else
+            CHECK((*entry.second == colors::Missing));
+    }
+
+    // the two rejected values, then one summary line per kind
+    std::vector<String> surfaceGaps;
+    std::vector<String> textGaps;
+
+    for(const auto &entry : tokyonight::surfaceRegistry())
+    {
+        if(entry.first == "ButtonNormal")
+            surfaceGaps.push_back("ButtonNormal.border");
+        else if(entry.first != "Canvas")
+            surfaceGaps.push_back(entry.first);
+    }
+    for(const auto &entry : skin.textColorRegistry())
+    {
+        if(entry.first != "LabelDefault")
+            textGaps.push_back(entry.first);
+    }
+
+    const size_t surfaceCount=tokyonight::surfaceRegistry().size();
+    const String expected=
+        "theme surface \"TextBox\": \"top\" must be an array of 3-4 integers 0-255\n"
+        "theme textColor \"ButtonHover\" must be an array of 3-4 integers 0-255\n"
+        "theme strict: "+std::to_string(surfaceCount-1)+" of "+std::to_string(surfaceCount)
+            +" surfaces not set: "+joined(surfaceGaps)+"\n"
+        "theme strict: 13 of 14 text colors not set: "+joined(textGaps)+"\n";
+
+    CHECK(result.message == expected);
+}
+
+TEST_CASE("A strict theme that sets everything says so on one line")
+{
+    TempDir dir;
+    platform::CurrentPath paths(dir.path.string());
+    test::StubRenderer renderer(paths);
+    test::SurfaceSnapshot surfaces;
+    skin::textured::TexturedSkin skin(&renderer);
+
+    bool allTextColors=true;
+
+    SUBCASE("surfaces and text colours") {}
+    SUBCASE("surfaces only") { allTextColors=false; }
+
+    String surfaceJson;
+    String textJson;
+
+    for(const auto &entry : tokyonight::surfaceRegistry())
+        surfaceJson+=String(surfaceJson.empty()?"":",")+"\""+entry.first
+            +"\": {\"top\": [0,0,0,0], \"bottom\": [0,0,0,0], \"border\": [0,0,0,0]}";
+    for(const auto &entry : skin.textColorRegistry())
+    {
+        if(allTextColors || entry.first != "TooltipText")
+            textJson+=String(textJson.empty()?"":",")+"\""+entry.first+"\": [1, 1, 1]";
+    }
+    dir.write("DefaultSkin.json", themeConfig(
+        "{\"strict\": true, \"surfaces\": {"+surfaceJson+"}, \"textColors\": {"+textJson+"}}"));
+
+    const InitResult result=initSkin(skin);
+    const String count=std::to_string(tokyonight::surfaceRegistry().size());
+
+    INFO("stderr: ", result.message);
+    CHECK(result.loaded);
+    if(allTextColors)
+        CHECK(result.message == "theme strict: all "+count+" surfaces and 14 text colors set\n");
+    else
+    {
+        CHECK(result.message == "theme strict: all "+count+" surfaces set\n"
+            "theme strict: 1 of 14 text colors not set: TooltipText\n");
+        CHECK((skin.Colors.TooltipText == colors::Missing));
+    }
+
+    // transparent, as the theme said
+    CHECK((tokyonight::WindowButton.top == Color(0, 0, 0, 0)));
+}
+
+TEST_CASE("A theme that is not strict keeps the compiled default for what it omits")
+{
+    TempDir dir;
+    platform::CurrentPath paths(dir.path.string());
+    test::StubRenderer renderer(paths);
+    test::SurfaceSnapshot surfaces;
+    String strict;
+    String expectedMessage;
+
+    SUBCASE("no strict key") {}
+    SUBCASE("strict false") { strict="\"strict\": false,"; }
+    SUBCASE("strict not a boolean")
+    {
+        strict="\"strict\": \"yes\",";
+        expectedMessage="theme \"strict\" must be a boolean\n";
+    }
+
+    dir.write("DefaultSkin.json", themeConfig(
+        "{"+strict+" \"surfaces\": {\"ButtonNormal\": {\"top\": [11, 12, 13]}},"
+        " \"textColors\": {\"LabelDefault\": [21, 22, 23]}}"));
+
+    skin::textured::TexturedSkin skin(&renderer);
+    const InitResult result=initSkin(skin);
+
+    INFO("stderr: ", result.message);
+    CHECK(result.loaded);
+    CHECK(result.message == expectedMessage);
+
+    CHECK((tokyonight::ButtonNormal.top == Color(11, 12, 13)));
+    for(const auto &entry : tokyonight::surfaceRegistry())
+    {
+        const tokyonight::Surface &s=*entry.second;
+        const tokyonight::Surface &was=surfaces.saved.at(entry.first);
+
+        INFO("surface ", entry.first);
+        if(entry.first != "ButtonNormal")
+            CHECK((s.top == was.top));
+        CHECK((s.bottom == was.bottom));
+        CHECK((s.border == was.border));
+    }
+
+    skin::textured::TexturedSkin compiled(&renderer);
+    auto compiledColors=compiled.textColorRegistry();
+
+    compiled.setThemeColors();
+    for(const auto &entry : skin.textColorRegistry())
+    {
+        INFO("text color ", entry.first);
+        if(entry.first == "LabelDefault")
+            CHECK((*entry.second == Color(21, 22, 23)));
+        else
+            CHECK((*entry.second == *compiledColors.at(entry.first)));
+    }
 }

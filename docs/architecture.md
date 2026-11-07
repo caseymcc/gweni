@@ -617,6 +617,44 @@ on an OpenGL 3.3 core profile:
   SDF `font.size` needs no shift, its layout being linear in px. At scale 1 nothing
   of this changes a byte. `tests/scaledText.cpp` pins it.
 
+## The theme file and strict mode
+
+The textured skin's colours are compiled in (Tokyo Night): the SDF surface fills are
+mutable globals in `tokyoNight.h`, named in `tokyonight::surfaceRegistry()`, and the
+text colours are set by `TexturedSkin::setThemeColors()`. An optional `"theme"` object
+in `DefaultSkin.json` overrides them without recompiling: `"surfaces"` maps a surface
+name to any of `top`, `bottom`, `border` (`[r,g,b]` or `[r,g,b,a]`), `radius` and
+`borderWidth`, and `"textColors"` maps a name in `TexturedSkin::textColorRegistry()`
+(`LabelDefault`, `ButtonNormal`, ... 14 of them; the map points into that skin's
+`Colors`) to a colour. A value that is not valid is reported on one stderr line
+starting `theme ` and left as it was; the rest still applies. Anything the file omits
+keeps its compiled default.
+
+**Strict mode** is for writing a theme: with `"strict": true` in the `"theme"` object,
+`loadTheme` first paints every registered surface missing
+(`tokyonight::setAllSurfacesMissing()`: `top`/`bottom` `colors::Missing`, `border`
+`colors::MissingDark`) and sets every `textColorRegistry()` colour to `colors::Missing`,
+then applies the file as usual. So everything the theme has not said yet is magenta,
+field by field: a surface entry that gives only `top` and `bottom` keeps a magenta
+border. `radius` and `borderWidth` are not colours and keep their compiled values. After
+applying it prints one line per kind, names sorted, a surface with none of its colours
+set by its bare name and one with some of them as `Name.field` per missing field:
+
+```
+theme strict: 53 of 55 surfaces not set: ButtonDisabled, ButtonDown, ButtonHover.border, ...
+theme strict: 12 of 14 text colors not set: ButtonDisabled, ButtonDown, ...
+```
+
+(`theme strict: all 55 surfaces set` for a kind with no gaps, and a single
+`theme strict: all 55 surfaces and 14 text colors set` when there are none at all). A
+rejected value counts as not set. A surface that is transparent at rest on purpose
+(`WindowButton`, `SelectableHover`: a transparent fill hides the slot) is magenta too
+until the theme sets it to `[0,0,0,0]`; the theme has not said what it looks like. The
+gaps are deliberate, so they are not a failure: `init` stays `true` and a capture exits
+0. A `"strict"` that is not a boolean is reported and taken as `false`. The shipped
+`DefaultSkin.json` does not set it, and without it nothing changes. Like every theme
+value, it paints the process-global surfaces, which a later `init()` does not reset.
+
 ## Missing resources: degraded, not fatal
 
 The library reports a resource it cannot load and goes on drawing; it never exits.
