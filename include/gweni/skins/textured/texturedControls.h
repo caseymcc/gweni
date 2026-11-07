@@ -532,6 +532,18 @@ public:
     inline static const std::string_view name="Separator";
 };
 
+// A Selectable's row: hidden while idle (or disabled and unselected), a
+// surface for hover, press and selection; the label's Text draws the string.
+class Selectable:public textured::ControlRegister<Selectable>
+{
+public:
+    static void staticInit(TexturedSkin *) { m_staticInit=true; }
+
+    void update(renderer::Base *renderer, controls::Base *baseControl) override;
+
+    inline static const std::string_view name="Selectable";
+};
+
 // A Bullet's circle, in its text colour; the label's Text draws the string.
 class Bullet:public textured::ControlRegister<Bullet>
 {

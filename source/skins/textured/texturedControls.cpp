@@ -16,6 +16,7 @@
 #include "gweni/controls/colorPicker.h"
 #include "gweni/controls/textBox.h"
 #include "gweni/controls/separator.h"
+#include "gweni/controls/selectable.h"
 #include "gweni/controls/bullet.h"
 
 #include <algorithm>
@@ -622,6 +623,37 @@ void ProgressBar::remove(renderer::Base *renderer, controls::Base *baseControl)
     releasePrimitives(renderer);
 }
 
+
+///////////////////////////////////////////////////////////////////////////
+//Selectable
+void Selectable::update(renderer::Base *renderer, controls::Base *baseControl)
+{
+    if(m_primitives.empty())
+        return;
+
+    controls::Selectable *row=static_cast<controls::Selectable *>(baseControl);
+    const tokyonight::Surface *surface=nullptr;
+
+    if(row->isDisabled())
+    {
+        if(row->isSelected())
+            surface=&tokyonight::SelectableSelectedDisabled;
+    }
+    else if(row->isDepressed())
+        surface=&tokyonight::SelectableDown;
+    else if(row->isSelected())
+        surface=row->isHovered()?&tokyonight::SelectableSelectedHover:&tokyonight::SelectableSelected;
+    else if(row->isHovered())
+        surface=&tokyonight::SelectableHover;
+
+    // an idle row draws nothing: a transparent rect would still write depth over
+    // what lies behind it, so the slot is hidden instead (drawRoundedRect shows it)
+    if(surface && baseControl->visible())
+        renderer->drawRoundedRect(m_primitives[0], baseControl->getRenderBounds(), surface->radius,
+            surface->borderWidth, surface->top, surface->bottom, surface->border, baseControl->getZIndex());
+    else
+        renderer->hidePrimitive(m_primitives[0]);
+}
 
 ///////////////////////////////////////////////////////////////////////////
 //Separator
@@ -1614,6 +1646,7 @@ template class ControlRegister<VerticalScrollBar>;
 template class ControlRegister<HorizontalScrollBar>;
 template class ControlRegister<ScrollBarBar>;
 template class ControlRegister<ProgressBar>;
+template class ControlRegister<Selectable>;
 template class ControlRegister<Separator>;
 template class ControlRegister<Bullet>;
 template class ControlRegister<RadioButton>;

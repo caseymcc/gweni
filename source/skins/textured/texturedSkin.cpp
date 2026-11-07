@@ -454,6 +454,8 @@ void TexturedSkin::loadTheme(const json::Value &jsonTheme)
                 {"ButtonDown",&Colors.Button.Down},{"ButtonDisabled",&Colors.Button.Disabled},
                 {"TooltipText",&Colors.TooltipText},
                 {"PlaceholderText",&Colors.PlaceholderText},
+                {"SelectableNormal",&Colors.Selectable.Normal},{"SelectableHover",&Colors.Selectable.Hover},
+                {"SelectableSelected",&Colors.Selectable.Selected},{"SelectableDisabled",&Colors.Selectable.Disabled},
             };
 
             for(const auto &member:textColors.GetObject())
@@ -540,6 +542,11 @@ void TexturedSkin::setThemeColors()
     Colors.ModalBackground=gweni::Color(0x0a, 0x0a, 0x10, 160);
     Colors.TooltipText=Fg;
     Colors.PlaceholderText=Muted;
+    // the hover is the background alone, so hovering writes no glyph slot
+    Colors.Selectable.Normal=Fg;
+    Colors.Selectable.Hover=Fg;
+    Colors.Selectable.Selected=White;
+    Colors.Selectable.Disabled=Muted;
 }
 
 

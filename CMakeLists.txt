@@ -191,6 +191,8 @@ set(GWENI_CONTROL_SOURCES
     source/controls/scrollBarButton.cpp
     include/gweni/controls/scrollControl.h
     source/controls/scrollControl.cpp
+    include/gweni/controls/selectable.h
+    source/controls/selectable.cpp
     include/gweni/controls/separator.h
     source/controls/separator.cpp
     include/gweni/controls/slider.h

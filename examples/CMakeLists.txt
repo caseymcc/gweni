@@ -42,6 +42,8 @@ set(GWENI_DEMO_SOURCES
     demo/radioButton.h
     demo/scrollControl.cpp
     demo/scrollControl.h
+    demo/selectable.cpp
+    demo/selectable.h
     demo/separator.cpp
     demo/separator.h
     demo/slider.cpp

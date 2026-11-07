@@ -360,6 +360,15 @@ public:
         //! A TextBox's hint, drawn while it is empty and unfocused.
         gweni::Color PlaceholderText{0x80, 0x80, 0x80};
 
+        //! A Selectable row's text, by its state.
+        struct Selectable_t
+        {
+            gweni::Color Normal{0, 0, 0};
+            gweni::Color Hover{0, 0, 0};
+            gweni::Color Selected{0xff, 0xff, 0xff};
+            gweni::Color Disabled{0x80, 0x80, 0x80};
+        } Selectable;
+
     } Colors;
 
 

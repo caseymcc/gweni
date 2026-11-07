@@ -147,6 +147,14 @@ inline Surface ColorChecker   { Color(0xc8,0xc8,0xc8), Color(0x7a,0x7a,0x7a), Li
 // colour; the menu's border colour
 inline Surface Separator      { Line,                  Line,                  Line,  0.0f,     0.0f };
 
+// Selectable rows: nothing while idle (the slot is hidden), the list's hover
+// and selection looks otherwise, so a Selectable reads as a ListBox row
+inline Surface SelectableHover        { Color(0x24,0x28,0x3b), Color(0x24,0x28,0x3b), BgStorm, RadiusSm, 0.0f };
+inline Surface SelectableDown         { Surf,                  BgStorm,               BgStorm, RadiusSm, 0.0f };
+inline Surface SelectableSelected     { SurfHi,                Surf,                  Blue,    RadiusSm, BorderW };
+inline Surface SelectableSelectedHover{ SurfHover,             SurfHi,                Blue,    RadiusSm, BorderW };
+inline Surface SelectableSelectedDisabled{ BgStorm,            Color(0x1f,0x22,0x33), BgHighlight, RadiusSm, BorderW };
+
 // Generic transparent (draw nothing visible but keep a slot)
 inline Surface None           { Color(0,0,0,0),        Color(0,0,0,0),        Color(0,0,0,0), 0.0f, 0.0f };
 
@@ -170,6 +178,8 @@ inline std::unordered_map<std::string, Surface*>& surfaceRegistry()
         {"CheckOff",&CheckOff},{"CheckOn",&CheckOn},
         {"ColorField",&ColorField},{"ColorMarker",&ColorMarker},{"ColorSwatch",&ColorSwatch},{"ColorChecker",&ColorChecker},
         {"Separator",&Separator},
+        {"SelectableHover",&SelectableHover},{"SelectableDown",&SelectableDown},{"SelectableSelected",&SelectableSelected},
+        {"SelectableSelectedHover",&SelectableSelectedHover},{"SelectableSelectedDisabled",&SelectableSelectedDisabled},
     };
     return m;
 }

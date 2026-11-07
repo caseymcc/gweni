@@ -71,6 +71,7 @@ SAMPLES=(
     ProgressBarDemo
     ComboBoxDemo
     SeparatorDemo
+    SelectableDemo
 )
 
 CONTROL_SIZE=640x480

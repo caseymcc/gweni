@@ -148,8 +148,15 @@
  *                   once the mouse has moved on and clicked TextBox 2, TextBox
  *                   1 looks as it did before any click.
  *                   TreeControlDemo: collapsing a node repaints and moves the
- *                   node below it up. Exits non-zero if any check is no. The
- *                   clock is frozen as under --stats.
+ *                   node below it up. SelectableDemo: hovering a free row
+ *                   changes it and moving off gives its idle look back, a
+ *                   click selects it and a second one deselects it back to
+ *                   that look; with group row A selected and the mouse on row
+ *                   B, the click on B changes pixels inside A and B only, and
+ *                   that frame changes only A, B and their labels
+ *                   (background=2), with at most 2 primitive slots and their
+ *                   glyphs written (a line reports the counts). Exits non-zero
+ *                   if any check is no. The clock is frozen as under --stats.
  *    typing       the keyboard on TextBoxDemo, every key a synthesised GLFW
  *                 event through gweni::input::GLFW3: click into the first box,
  *                 Ctrl+A and type "hello" (shot typing-hello.png), then
@@ -283,6 +290,7 @@
 #include <gweni/controls/label.h>
 #include <gweni/controls/menu.h>
 #include <gweni/controls/button.h>
+#include <gweni/controls/selectable.h>
 #include <gweni/controls/toolTip.h>
 #include <GLFW/glfw3.h>
 #include <gweni/utils/filesystem.h>
@@ -321,6 +329,7 @@
 #include <demo/properties.h>
 #include <demo/radioButton.h>
 #include <demo/scrollControl.h>
+#include <demo/selectable.h>
 #include <demo/separator.h>
 #include <demo/slider.h>
 #include <demo/statusBar.h>
@@ -384,7 +393,7 @@ static void content_scale_callback(GLFWwindow *window, float, float)
 #define GWENI_CONTROL_DEMOS(X) \
     X(ButtonDemo) X(LabelDemo) X(LabelMultilineDemo) X(ProgressBarDemo) \
     X(GroupBoxDemo) X(ImagePanelDemo) X(StatusBarDemo) X(SeparatorDemo) X(ComboBoxDemo) \
-    X(TextBoxDemo) X(ListBoxDemo) X(CrossSplitterDemo) X(RadioButtonDemo) \
+    X(TextBoxDemo) X(ListBoxDemo) X(SelectableDemo) X(CrossSplitterDemo) X(RadioButtonDemo) \
     X(CheckBoxDemo) X(NumericDemo) X(SliderDemo) X(MenuStripDemo) \
     X(WindowDemo) X(TreeControlDemo) X(PropertiesDemo) X(TabControlDemo) \
     X(ScrollControlDemo) X(PageControlDemo) X(CollapsibleListDemo) X(ColorPickerDemo) \
@@ -2088,6 +2097,176 @@ static void checkTreeCollapse(Session &s, const std::string &shotDir, Interactio
         +" (now y="+std::to_string(belowAfter.y)+")");
 }
 
+static void countPending(gweni::controls::Base *control, size_t &count);
+static std::vector<uint8_t> framePixels(const Session &s);
+
+// The pixels of two frames that differ outside both controls' bounds (snapped
+// to device pixels as the renderer snaps them), and inside each.
+struct SplitDifferences
+{
+    size_t outside=0;
+    size_t inFirst=0;
+    size_t inSecond=0;
+};
+
+static SplitDifferences differencesSplit(const Session &s, const std::vector<uint8_t> &a,
+    const std::vector<uint8_t> &b, gweni::controls::Base *first, gweni::controls::Base *second)
+{
+    auto deviceRect=[&s](gweni::controls::Base *control)
+    {
+        const gweni::Point origin=control->localPosToCanvas();
+        const gweni::Point topLeft=devicePixels(origin, s.scale);
+        const gweni::Point bottomRight=devicePixels(origin+control->getSize(), s.scale);
+        return gweni::Rect(topLeft.x, topLeft.y, bottomRight.x-topLeft.x, bottomRight.y-topLeft.y);
+    };
+    auto inside=[](const gweni::Rect &r, int x, int y)
+    {
+        return x >= r.x && x < r.x+r.w && y >= r.y && y < r.y+r.h;
+    };
+    const gweni::Rect firstRect=deviceRect(first);
+    const gweni::Rect secondRect=deviceRect(second);
+
+    SplitDifferences counts;
+    for(int y=0; y<s.pixels.y; ++y)
+    {
+        for(int x=0; x<s.pixels.x; ++x)
+        {
+            const size_t at=(static_cast<size_t>(y)*s.pixels.x+x)*4;
+            if(std::memcmp(&a[at], &b[at], 4) == 0)
+                continue;
+            if(inside(firstRect, x, y))
+                ++counts.inFirst;
+            else if(inside(secondRect, x, y))
+                ++counts.inSecond;
+            else
+                ++counts.outside;
+        }
+    }
+    return counts;
+}
+
+// SelectableDemo: a free row's hover comes and goes, a click selects it and a
+// second one deselects it, back to its first look; in the group, a click on B
+// while A is selected changes A's and B's pixels only, and the frame changes
+// and writes only those two rows (and their labels).
+static void checkSelectable(Session &s, const std::string &shotDir, InteractionChecks &checks, bool &ok)
+{
+    gweni::controls::Base *demo=addControl(s, "SelectableDemo");
+    renderFrames(s, s.frames);
+
+    // the demo's first free row starts unselected, and its group is the four
+    // rows after the six free ones
+    auto *row=gweni::gweni_cast<gweni::controls::Selectable>(findControl(demo, "Selectable"));
+    auto *first=gweni::gweni_cast<gweni::controls::Selectable>(findControl(demo, "Selectable", 6));
+    auto *second=gweni::gweni_cast<gweni::controls::Selectable>(findControl(demo, "Selectable", 8));
+    if(!row || !first || !second || !first->getGroup() || first->getGroup() != second->getGroup())
+    {
+        checks.check("selectable_found", false,
+            "SelectableDemo has no free row and two rows of one group at the expected places");
+        dropControl(s, demo);
+        return;
+    }
+
+    const gweni::Point on=centreOf(row);
+    const gweni::Point off(s.size.x-1, s.size.y-1);    // SelectableDemo, no row
+
+    moveMouse(s, off.x, off.y);
+    const std::vector<uint8_t> idle=settledRegion(s, row, shotDir, "selectable-idle", ok);
+
+    moveMouse(s, on.x, on.y);
+    renderFrames(s, 1);
+    const gweni::controls::ChangeStats hoverChanges=gweni::controls::getChangeStats();
+    const size_t hoverSlots=s.renderer->getFrameStats().primitiveSlotsWritten;
+    const std::vector<uint8_t> hover=settledRegion(s, row, shotDir, "selectable-hover", ok);
+
+    moveMouse(s, off.x, off.y);
+    const std::vector<uint8_t> unhovered=settledRegion(s, row, shotDir, "selectable-unhover", ok);
+
+    clickMouse(s, on.x, on.y);
+    moveMouse(s, off.x, off.y);
+    const bool selectedByClick=row->isSelected();
+    const std::vector<uint8_t> selected=settledRegion(s, row, shotDir, "selectable-selected", ok);
+
+    clickMouse(s, on.x, on.y);
+    moveMouse(s, off.x, off.y);
+    const bool deselectedByClick=!row->isSelected();
+    const std::vector<uint8_t> deselected=settledRegion(s, row, shotDir, "selectable-deselected", ok);
+
+    // the group: A selected, the mouse settled on B, then the click on B alone
+    const gweni::Point firstAt=centreOf(first);
+    const gweni::Point secondAt=centreOf(second);
+    clickMouse(s, firstAt.x, firstAt.y);
+    moveMouse(s, secondAt.x, secondAt.y);
+    renderFrames(s, s.frames);
+    if(!shoot(s, shotDir+"/interaction-selectable-group-before.png"))
+        ok=false;
+    const std::vector<uint8_t> groupBefore=framePixels(s);
+    const bool firstSelected=first->isSelected() && first->getGroup()->getSelected() == first;
+
+    clickMouse(s, secondAt.x, secondAt.y);
+    gweni::controls::resetChangeStats();
+    s.canvas->updateCanvas();
+    size_t pending=0, pendingFirst=0, pendingSecond=0;
+    countPending(s.canvas, pending);
+    countPending(first, pendingFirst);
+    countPending(second, pendingSecond);
+    glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
+    s.canvas->renderCanvas();
+    const gweni::controls::ChangeStats groupChanges=gweni::controls::getChangeStats();
+    const gweni::renderer::OpenGLCore::FrameStats groupGpu=s.renderer->getFrameStats();
+    if(s.stats)
+        printFrameStats(s.frame, s.label, groupChanges, groupGpu, s.canvas->getLayoutStats(),
+            s.canvas->getUpdateStats());
+    checkOnePass(s, std::to_string(s.frame));
+    ++s.frame;
+
+    renderFrames(s, s.frames);
+    if(!shoot(s, shotDir+"/interaction-selectable-group-after.png"))
+        ok=false;
+    const std::vector<uint8_t> groupAfter=framePixels(s);
+    const SplitDifferences groupDiff=differencesSplit(s, groupBefore, groupAfter, first, second);
+    const bool handedOver=!first->isSelected() && second->isSelected()
+        && second->getGroup()->getSelected() == second;
+    const size_t glyphs=static_cast<size_t>(first->textLength()+second->textLength());
+
+    std::cout<<"interaction selectable_group controls_changed="<<groupChanges.controls
+        <<" background="<<groupChanges.background<<" text="<<groupChanges.text
+        <<" in_rows="<<(pendingFirst+pendingSecond)
+        <<" prim_slots_written="<<groupGpu.primitiveSlotsWritten
+        <<" text_slots_written="<<groupGpu.textSlotsWritten<<"\n";
+
+    forgetMouse(s);
+    dropControl(s, demo);
+
+    checks.check("selectable_hover", hover != idle && unhovered == idle,
+        "hovering the Selectable left its pixels as they were, or moving off did not bring them back");
+    checks.check("selectable_hover_bounded",
+        hoverChanges.background >= 1 && hoverChanges.background <= g_hoverBound
+        && hoverSlots >= 1 && hoverSlots <= g_hoverBound && hoverChanges.controls <= g_hoverBound,
+        "the hover frame had controls_changed="+std::to_string(hoverChanges.controls)
+        +" background="+std::to_string(hoverChanges.background)
+        +" prim_slots_written="+std::to_string(hoverSlots));
+    checks.check("selectable_select", selectedByClick && selected != idle,
+        "a click did not select the Selectable, or left its pixels as they were idle");
+    checks.check("selectable_deselect", deselectedByClick && deselected == idle,
+        "a second click did not deselect the Selectable back to its first look");
+    checks.check("selectable_group_select", firstSelected && handedOver,
+        "clicking B after A did not move the group's selection from A to B");
+    checks.check("selectable_group_pixels",
+        groupDiff.outside == 0 && groupDiff.inFirst > 0 && groupDiff.inSecond > 0,
+        std::to_string(groupDiff.outside)+" pixels outside A and B changed, "
+        +std::to_string(groupDiff.inFirst)+" in A, "+std::to_string(groupDiff.inSecond)+" in B");
+    checks.check("selectable_group_rows_only",
+        pending > 0 && pending == pendingFirst+pendingSecond
+        && groupChanges.background == 2 && groupGpu.primitiveSlotsWritten <= 2
+        && groupGpu.textSlotsWritten <= glyphs,
+        "the selection frame had "+std::to_string(pending-pendingFirst-pendingSecond)
+        +" of "+std::to_string(pending)+" changed controls outside A and B, background="
+        +std::to_string(groupChanges.background)+" (want 2), prim_slots_written="
+        +std::to_string(groupGpu.primitiveSlotsWritten)+" (want at most 2), text_slots_written="
+        +std::to_string(groupGpu.textSlotsWritten)+" (want at most "+std::to_string(glyphs)+")");
+}
+
 static bool runInteractionScenario(Session &s, const std::string &shotDir, bool &passed)
 {
     // Frozen like --stats, so a frame with no input is genuinely idle (no
@@ -2099,6 +2278,7 @@ static bool runInteractionScenario(Session &s, const std::string &shotDir, bool 
     checkButton(s, shotDir, checks, ok);
     checkFocusHandOff(s, shotDir, checks, ok);
     checkTreeCollapse(s, shotDir, checks, ok);
+    checkSelectable(s, shotDir, checks, ok);
 
     std::cout<<"interaction";
     for(const auto &result : checks.results)

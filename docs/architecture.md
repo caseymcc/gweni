@@ -279,6 +279,23 @@ on an OpenGL 3.3 core profile:
   change reaches through `redraw()` once `KeyboardFocus` has moved; `onLostKeyboardFocus`
   runs before it has (`Base::focus`), and a hidden box loses the focus with no call at
   all (`input::onCanvasThink`).
+- **Selectable rows.** `controls::Selectable` (`include/gweni/controls/selectable.h`) is a
+  `Button` (for its press handling: the click lands on release over the row, Space
+  presses it, Return too) that draws through its own textured renderer, docked Top with
+  `{Expand, Shrink}`, so it is its parent's (or its layout cell's) width and its text's
+  height. Its one slot is **hidden** while the row is idle, or disabled and unselected:
+  a transparent rect would still write depth over what lies behind it. Otherwise it
+  paints `SelectableHover`, `SelectableDown`, `SelectableSelected`,
+  `SelectableSelectedHover` or `SelectableSelectedDisabled` (`tokyoNight.h`, the list
+  row's looks), and the text takes `Colors.Selectable` (`"SelectableNormal"`,
+  `"SelectableHover"`, `"SelectableSelected"`, `"SelectableDisabled"` in
+  `"textColors"`; the hover colour is the normal one, so a hover rewrites no glyph).
+  `setSelected` changes the state through `redraw()`, so only that row is marked.
+  `SelectableGroup` is a plain object, not a container control, so its rows can sit in
+  any parents (a layout, later a table's cells): selecting a member deselects the
+  previous one through its own `setSelected`, members are untoggleable, and a member
+  that is deleted, or the group itself, lets the other go without an event. A selection
+  change in a group therefore marks the two rows (and their labels) alone.
 - **Scale and the device-pixel grid.** Controls lay out in logical units (integers);
   `renderer::Base::translate()` turns them into device pixels at `scale()` (set by
   `Canvas::setScale`). It snaps **edges**, not origin and size apart: a point is

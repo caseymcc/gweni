@@ -29,6 +29,7 @@
 #include "demo/properties.h"
 #include "demo/radioButton.h"
 #include "demo/scrollControl.h"
+#include "demo/selectable.h"
 #include "demo/separator.h"
 #include "demo/slider.h"
 #include "demo/statusBar.h"
@@ -123,6 +124,7 @@ void Demo::init(const String &name)
         addDemo<ComboBoxDemo>(cat, "ComboBoxDemo");
         addDemo<TextBoxDemo>(cat, "TextBoxDemo");
         addDemo<ListBoxDemo>(cat, "ListBoxDemo");
+        addDemo<SelectableDemo>(cat, "SelectableDemo");
         addDemo<UnicodeTextDemo>(cat, "UnicodeTextDemo");
         addDemo<TextSizesDemo>(cat, "TextSizesDemo");
         addDemo<TextDemo>(cat, "TextDemo");
