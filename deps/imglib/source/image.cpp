@@ -1,76 +1,86 @@
 #include "imglib/image.h"
 
-#include <unordered_map>
 #include <cstring>
 
 namespace imglib
 {
 
-struct FormatDetails
+//every Format is listed so -Werror=switch catches a newly added one instead of it silently
+//having no name; nullptr past the last Format ends formatFromString's walk
+static const char *formatName(Format format)
 {
-    const char *name;
-    size_t channels;
-};
-
-static std::unordered_map<Format, FormatDetails> FormatDetailsMap=
-{
-    {Format::Unknown,{"Unknown", 0}},
-    {Format::Binary,{"Binary", traits::channels<Format::Binary>()}},
-    {Format::GreyScale,{"GreyScale", traits::channels<Format::GreyScale>()}},
-    {Format::RA,{"RA", traits::channels<Format::RA>()}},
-    {Format::RGB,{"RGB", traits::channels<Format::RGB>()}},
-    {Format::RGBA,{"RGBA", traits::channels<Format::RGBA>()}},
-    {Format::BGRA,{"BGRA", traits::channels<Format::BGRA>()}},
-    {Format::YUV,{"YUV", traits::channels<Format::YUV>()}}
-};
-
-struct DepthDetails
-{
-    const char *name;
-    size_t bits;
-};
-
-static std::unordered_map<Depth, DepthDetails> DepthDetailsMap=
-{
-    {Depth::Unknown,{"Unknown", 0}},
-    {Depth::Bit1,{"1 bit", 1}},
-    {Depth::Bit8,{"8 bit", 8}},
-    {Depth::Bit10,{"10 bit", 10}},
-    {Depth::Bit12,{"12 bit", 12}},
-    {Depth::Bit14,{"14 bit", 14}},
-    {Depth::Bit16,{"16 bit", 16}},
-    {Depth::Float,{"Float", 32}},
-    {Depth::Double,{"Double", 64}}//,
-//    {Depth::Packed,{"Packed", traits::sizeOfDepth<Depth::Packed>()}}
-};
-
+    switch(format)
+    {
+    case Format::Unknown:
+        return "Unknown";
+    case Format::Binary:
+        return "Binary";
+    case Format::GreyScale:
+        return "GreyScale";
+    case Format::RA:
+        return "RA";
+    case Format::RGB:
+        return "RGB";
+    case Format::RGBA:
+        return "RGBA";
+    case Format::BGRA:
+        return "BGRA";
+    case Format::YUV:
+        return "YUV";
+    }
+    return nullptr;
+}
 
 const char *formatToString(Format format)
 {
-    auto iter=FormatDetailsMap.find(format);
+    const char *name=formatName(format);
 
-    if(iter==FormatDetailsMap.end())
+    if(name==nullptr)
         return "Unknown";
-    return iter->second.name;
+    return name;
 }
 
 Format formatFromString(const char *name)
 {
-    for(auto &iter:FormatDetailsMap)
+    //walks the Formats in declaration order through formatName, so there is no list to keep in step
+    for(int value=0; ; ++value)
     {
-        if(strcmp(iter.second.name, name) == 0)
-            return iter.first;
+        Format format=static_cast<Format>(value);
+        const char *formatString=formatName(format);
+
+        if(formatString==nullptr)
+            break;
+        if(strcmp(formatString, name)==0)
+            return format;
     }
     return Format::Binary;
 }
 
 size_t formatToChannels(Format format)
 {
-    auto iter=FormatDetailsMap.find(format);
-
-    if(iter==FormatDetailsMap.end())
+    //every Format is listed so -Werror=switch catches a newly added one instead of it silently
+    //having 0 channels
+    switch(format)
+    {
+    case Format::Unknown:
         return 0;
-    return iter->second.channels;
+    case Format::Binary:
+        return traits::channels<Format::Binary>();
+    case Format::GreyScale:
+        return traits::channels<Format::GreyScale>();
+    case Format::RA:
+        return traits::channels<Format::RA>();
+    case Format::RGB:
+        return traits::channels<Format::RGB>();
+    case Format::RGBA:
+        return traits::channels<Format::RGBA>();
+    case Format::BGRA:
+        return traits::channels<Format::BGRA>();
+    case Format::YUV:
+        return traits::channels<Format::YUV>();
+    }
+    //unreachable for any valid Format, kept for -Wreturn-type
+    return 0;
 }
 
 Format channelsToFormat(size_t channels)
@@ -93,40 +103,103 @@ Format channelsToFormat(size_t channels)
     return Format::Unknown;
 }
 
+//every Depth is listed so -Werror=switch catches a newly added one instead of it silently
+//having no name; nullptr past the last Depth ends the depthFromString and bitsToDepth walks
+static const char *depthName(Depth depth)
+{
+    switch(depth)
+    {
+    case Depth::Unknown:
+        return "Unknown";
+    case Depth::Bit1:
+        return "1 bit";
+    case Depth::Bit8:
+        return "8 bit";
+    case Depth::Bit10:
+        return "10 bit";
+    case Depth::Bit12:
+        return "12 bit";
+    case Depth::Bit14:
+        return "14 bit";
+    case Depth::Bit16:
+        return "16 bit";
+    case Depth::Float:
+        return "Float";
+    case Depth::Double:
+        return "Double";
+    case Depth::Packed:
+        return "Packed";
+    }
+    return nullptr;
+}
+
 const char *depthToString(Depth depth)
 {
-    auto iter=DepthDetailsMap.find(depth);
+    const char *name=depthName(depth);
 
-    if(iter==DepthDetailsMap.end())
+    if(name==nullptr)
         return "Unknown";
-    return iter->second.name;
+    return name;
 }
 
 Depth depthFromString(const char *name)
 {
-    for(auto &iter:DepthDetailsMap)
+    //walks the Depths in declaration order through depthName, so there is no list to keep in step
+    for(int value=0; ; ++value)
     {
-        if(strcmp(iter.second.name, name)==0)
-            return iter.first;
+        Depth depth=static_cast<Depth>(value);
+        const char *depthString=depthName(depth);
+
+        if(depthString==nullptr)
+            break;
+        if(strcmp(depthString, name)==0)
+            return depth;
     }
     return Depth::Bit1;
 }
 
 size_t depthToBits(Depth depth)
 {
-    auto iter=DepthDetailsMap.find(depth);
-
-    if(iter==DepthDetailsMap.end())
+    //every Depth is listed so -Werror=switch catches a newly added one instead of it silently
+    //having 0 bits
+    switch(depth)
+    {
+    case Depth::Unknown:
         return 0;
-    return iter->second.bits;
+    case Depth::Bit1:
+        return 1;
+    case Depth::Bit8:
+        return 8;
+    case Depth::Bit10:
+        return 10;
+    case Depth::Bit12:
+        return 12;
+    case Depth::Bit14:
+        return 14;
+    case Depth::Bit16:
+        return 16;
+    case Depth::Float:
+        return 32;
+    case Depth::Double:
+        return 64;
+    case Depth::Packed:
+        //depends on the pack format, which Depth does not carry
+        return 0;
+    }
+    //unreachable for any valid Depth, kept for -Wreturn-type
+    return 0;
 }
 
 Depth bitsToDepth(size_t bits)
 {
-    for(auto &iter:DepthDetailsMap)
+    //walks the Depths in declaration order, so of the depths with equal bits (Unknown and Packed,
+    //both 0) the first declared is returned
+    for(int value=0; depthName(static_cast<Depth>(value))!=nullptr; ++value)
     {
-        if(iter.second.bits==bits)
-            return iter.first;
+        Depth depth=static_cast<Depth>(value);
+
+        if(depthToBits(depth)==bits)
+            return depth;
     }
     return Depth::Unknown;
 }
