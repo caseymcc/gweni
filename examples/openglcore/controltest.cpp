@@ -2555,7 +2555,7 @@ static void pendingOutside(gweni::controls::Base *control,
 
 // One frame, its update phase inspected before it renders: the controls with a
 // change pending outside `allowed` go to `strays`.
-static void renderToolTipFrame(Session &s, const std::vector<gweni::controls::Base *> &allowed,
+static void frameCheckingStrays(Session &s, const std::vector<gweni::controls::Base *> &allowed,
     std::vector<std::string> &strays)
 {
     gweni::controls::resetChangeStats();
@@ -2690,7 +2690,7 @@ static void checkToolTip(Session &s, const std::string &shotDir, InteractionChec
     const gweni::Rect otherRect=canvasRectOf(other);
     moveMouse(s, otherRect.x+otherRect.w/2, otherRect.y+otherRect.h/2);
     std::vector<std::string> strays;
-    renderToolTipFrame(s, {box, withToolTip, other}, strays);
+    frameCheckingStrays(s, {box, withToolTip, other}, strays);
     const gweni::renderer::OpenGLCore::FrameStats handOver=s.renderer->getFrameStats();
     const gweni::Rect moveTip=canvasRectOf(box);
     std::string strayList;
