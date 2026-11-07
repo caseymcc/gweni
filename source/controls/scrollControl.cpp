@@ -37,6 +37,11 @@ GWENI_CONTROL_CONSTRUCTOR(ScrollControl)
     m_innerPanel->sendToBack();
     m_innerPanel->setMouseInputEnabled(true);
     m_autoHideBars=true;
+
+    // arrange() places the bars and the inner panel itself (placeContents).
+    m_verticalScrollBar->setPlacement(Placement::Owner);
+    m_horizontalScrollBar->setPlacement(Placement::Owner);
+    m_innerPanel->setPlacement(Placement::Owner);
 }
 
 void ScrollControl::setScroll(bool h, bool v)
@@ -224,7 +229,7 @@ void ScrollControl::arrange(skin::Base *skin, Dim dim)
 
     if(m_innerPanel->getPreferredSize().height != contentHeight)
     {
-        m_innerPanel->setSize(m_innerPanel->getWidth(),
+        placeChildSize(m_innerPanel, m_innerPanel->getWidth(),
             std::max(getHeight(), m_innerPanel->getPreferredSize().height));
     }
 
@@ -302,7 +307,7 @@ void ScrollControl::placeContents()
     {
         const Margin &margin=m_verticalScrollBar->getMargin();
 
-        m_verticalScrollBar->setBounds(area.x+area.w-barWidth-margin.right, area.y+margin.top,
+        placeChild(m_verticalScrollBar, area.x+area.w-barWidth-margin.right, area.y+margin.top,
             barWidth, area.h-margin.top-margin.bottom);
         area.w-=barWidth+margin.left+margin.right;
     }
@@ -311,7 +316,7 @@ void ScrollControl::placeContents()
     {
         const Margin &margin=m_horizontalScrollBar->getMargin();
 
-        m_horizontalScrollBar->setBounds(area.x, area.y+area.h-barHeight-margin.bottom,
+        placeChild(m_horizontalScrollBar, area.x, area.y+area.h-barHeight-margin.bottom,
             area.w-margin.left-margin.right, barHeight);
         area.h-=barHeight+margin.top+margin.bottom;
     }
@@ -328,7 +333,7 @@ void ScrollControl::placeContents()
     if(horizontalShown)
         innerX=-(innerWidth-width+barWidth)*m_horizontalScrollBar->getScrolledAmount();
 
-    m_innerPanel->setBounds(innerX, innerY, innerWidth, innerHeight);
+    placeChild(m_innerPanel, innerX, innerY, innerWidth, innerHeight);
 }
 
 void ScrollControl::updateScrollBars()

@@ -64,9 +64,11 @@ void Label::setText(const String &str, bool doEvents)
         onTextChanged();
 }
 
+// An app call: the label's own size is a request. Where the text sits in it
+// and the text's size are computed (the text alignment places it).
 void Label::sizeToContents()
 {
-    m_text->setPos(m_padding.left, m_padding.top);
+    placeChildPos(m_text, m_padding.left, m_padding.top);
     m_text->refreshSize();
     setSize(m_text->getWidth()+m_padding.left+m_padding.right,
         m_text->getHeight()+m_padding.top+m_padding.bottom);

@@ -571,7 +571,7 @@ void TextBox::makeCaretVisible()
 
     if(text.width < getWidth())
     {
-        m_text->setAlignment(textAlignment);
+        alignText(textAlignment);
     }
     else
     {
@@ -608,9 +608,44 @@ void TextBox::makeCaretVisible()
         if(textAlignment & Alignment::CenterV)
             y=(getHeight()-text.height) / 2;
 
-        m_text->setAlignment(Alignment::Absolute);
-        m_text->setPos(x, y);
+        placeScrolledText(x, y, text);
     }
+}
+
+void TextBox::alignText(Alignment textAlignment)
+{
+    m_text->setPlacement(Placement::Parent);
+    m_text->setAlignment(textAlignment);
+}
+
+void TextBox::placeScrolledText(int x, int y, const Size &text)
+{
+    const int width=m_text->wrap()?std::max(0, getWidth()-getPadding().left-getPadding().right):text.width;
+
+    m_text->setAlignment(Alignment::Absolute);
+    m_text->setPlacement(Placement::Owner);
+    placeChild(m_text, x, y, width, text.height);
+}
+
+// A scrolled string is placed by this box (Placement::Owner), which leaves it
+// out of sizeOfChildren; it counts as it does aligned, at its preferred size,
+// so the box's size does not depend on whether it is scrolled.
+void TextBox::calculateSize(skin::Base *skin, Dim dim)
+{
+    ParentClass::calculateSize(skin, dim);
+
+    if(m_text->hidden() || m_text->getPlacement() != Placement::Owner)
+        return;
+
+    const Size &text=m_text->getPreferredSize();
+    const Margin &margin=m_text->getMargin();
+
+    if(dim == Dim::X)
+        m_preferredSize.width=std::max(m_preferredSize.width, preferredFromContent(
+            text.width+margin.left+margin.right+m_padding.left+m_padding.right, Dim::X));
+    else
+        m_preferredSize.height=std::max(m_preferredSize.height, preferredFromContent(
+            text.height+margin.top+margin.bottom+m_padding.top+m_padding.bottom, Dim::Y));
 }
 
 // Where m_text goes (aligned, or scrolled to the caret) is decided before the
@@ -689,7 +724,7 @@ void TextBoxMultiline::makeCaretVisible()
 
     if(text.height < getHeight())
     {
-        m_text->setAlignment(textAlignment);
+        alignText(textAlignment);
     }
     else
     {
@@ -735,8 +770,7 @@ void TextBoxMultiline::makeCaretVisible()
         if(textAlignment & Alignment::CenterH)
             x=(getWidth()-text.width)*0.5f;
 
-        m_text->setAlignment(Alignment::Absolute);
-        m_text->setPos(x, y);
+        placeScrolledText(x, y, text);
     }
 }
 

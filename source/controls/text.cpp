@@ -336,8 +336,10 @@ Size Text::refreshSize(bool update)
     if(p.x == getWidth() && p.y == getHeight())
         return Size(p.x, p.y);
 
+    // The size of the string, computed: whoever placed this Text sizes it
+    // from its preferred size anyway (policyResize).
     if(update)
-        setSize(p.x, p.y);
+        setArrangedBounds(getX(), getY(), p.x, p.y);
 
     return Size(p.x, p.y);
 }

@@ -30,10 +30,13 @@ void VerticalSlider::updateBarFromValue()
         static_cast<int>((getHeight()-m_sliderBar->getHeight())*(1.f-m_value)));
 }
 
+// The thumb jumps to the click, kept on the track: computed, like the value.
 void VerticalSlider::onMouseClickLeft(int x, int y, bool down)
 {
-    m_sliderBar->moveTo(m_sliderBar->getX(),
+    const Point pos=m_sliderBar->restrictedPos(m_sliderBar->getX(),
         canvasPosToLocal(gweni::Point(x, y)).y - m_sliderBar->getHeight()  *0.5f);
+
+    placeChildPos(m_sliderBar, pos.x, pos.y);
     m_sliderBar->onMouseClickLeft(x, y, down);
     onMoved(m_sliderBar);
 }

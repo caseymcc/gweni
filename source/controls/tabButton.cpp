@@ -30,7 +30,8 @@ GWENI_CONTROL_CONSTRUCTOR(TabButton)
 }
 
 // The padding follows the side the strip is docked on, and the text sits
-// inside it. Set before this button is measured, which counts them.
+// inside it. Set before this button is measured, which counts them: the strip
+// docks the button at the size it measures.
 void TabButton::calculateSize(skin::Base *skin, Dim dim)
 {
     if(dim == Dim::X)
@@ -44,8 +45,6 @@ void TabButton::calculateSize(skin::Base *skin, Dim dim)
             setPadding(Padding(3, 3, 5, 2));
         else
             setPadding(Padding(3, 2, 5, 2));
-
-        sizeToContents();
     }
 
     ParentClass::calculateSize(skin, dim);

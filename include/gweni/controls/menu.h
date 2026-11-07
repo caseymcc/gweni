@@ -112,8 +112,6 @@ protected:
     //! openAt() was the last placement: layout() places it from m_cursor.
     bool m_atCursor=false;
     Point m_cursor;
-    //! Where layout() last put it, so a position requested since is told apart.
-    Point m_placed;
 
     //! The controls it is the context menu of (Base::setContextMenu).
     std::vector<Base *> m_contextOwners;

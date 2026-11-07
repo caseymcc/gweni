@@ -104,6 +104,10 @@ protected:
     virtual void createColorControl(gweni::String name, int y);
 
     gweni::Color m_color;
+    //! The Result swatch's group, placed by this control (Placement::Owner):
+    //! at resultX, centred vertically.
+    Base *m_result=nullptr;
+    static const int resultX=180;
 };
 
 

@@ -60,7 +60,17 @@ void Dragger::onMouseMoved(int x, int y, int deltaX, int deltaY)
         if(m_target->getParent())
             p=m_target->getParent()->canvasPosToLocal(p);
 
-        m_target->moveTo(p.x, p.y);
+        // A part its owner places (a splitter bar, a slider or scrollbar
+        // thumb) is moved as computed bounds; the owner reads the new
+        // position as its value. Anything else, a window dragged by its title
+        // bar, keeps where the user put it: a request.
+        if(m_target->getPlacement() == Placement::Owner)
+        {
+            p=m_target->restrictedPos(p.x, p.y);
+            placeChildPos(m_target, p.x, p.y);
+        }
+        else
+            m_target->moveTo(p.x, p.y);
     }
 
     gweni::event::Info info(this);

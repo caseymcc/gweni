@@ -66,7 +66,9 @@ void Menu::layout(skin::Base *skin)
 {
     // Kept inside the canvas, flipped from the cursor when openAt() placed it.
     // Only the position changes, which nothing laid out in this pass has read;
-    // layout() runs again in the Y arrange once the height is final.
+    // layout() runs again in the Y arrange once the height is final. Where it
+    // was asked to open is the request; where it is kept is computed, from
+    // the request each pass, so a canvas that grows again gets it back.
     Canvas *canvas=getCanvas();
 
     if(canvas && (getParent() == canvas))
@@ -75,16 +77,14 @@ void Menu::layout(skin::Base *skin)
         const Point size(getWidth(), getHeight());
         const Point at(getRequestedBounds().x, getRequestedBounds().y);
 
-        // a position requested since openAt() (or since the last placement)
-        // wins over the cursor
-        if(m_atCursor && !samePoint(at, m_cursor) && !samePoint(at, m_placed))
+        // a position requested since openAt() wins over the cursor
+        if(m_atCursor && !samePoint(at, m_cursor))
             m_atCursor=false;
 
         const Point pos=m_atCursor ? placement(m_cursor, size, area) : keepInside(at, size, area);
 
-        m_placed=pos;
-        if(!samePoint(pos, at))
-            setPos(pos.x, pos.y);
+        if(!samePoint(pos, Point(getX(), getY())))
+            setArrangedBounds(pos.x, pos.y, getWidth(), getHeight());
     }
 
     ParentClass::layout(skin);
@@ -207,7 +207,6 @@ void Menu::openAt(const Point &cursor)
     bringToFront();
     m_atCursor=true;
     m_cursor=cursor;
-    m_placed=cursor;
     setPos(cursor.x, cursor.y);
 }
 

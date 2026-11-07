@@ -64,6 +64,9 @@ GWENI_CONTROL_CONSTRUCTOR(TreeNode)
 
     m_toggleButton=newChild<OpenToggleButton>();
     m_toggleButton->setBounds(0, 0, 15, 15);
+    // Placed by this node: sized in arrange(), centred on the title in
+    // postLayout().
+    m_toggleButton->setPlacement(Placement::Owner);
     m_toggleButton->onToggleCaller.add(this, &TreeNode::onToggleButtonPress);
 
     m_title=newChild<TreeNodeText>();
@@ -137,6 +140,23 @@ void TreeNode::calculateSize(skin::Base *skin, Dim dim)
     ParentClass::calculateSize(skin, dim);
 }
 
+// The toggle is as big as it measures, given along each axis before this
+// node arranges it.
+void TreeNode::arrange(skin::Base *skin, Dim dim)
+{
+    if(m_toggleButton && !m_toggleButton->hidden())
+    {
+        const Size &preferred=m_toggleButton->getPreferredSize();
+
+        if(dim == Dim::X)
+            placeChildSize(m_toggleButton, preferred.width, m_toggleButton->getHeight());
+        else
+            placeChildSize(m_toggleButton, m_toggleButton->getWidth(), preferred.height);
+    }
+
+    ParentClass::arrange(skin, dim);
+}
+
 // The title and the inner panel are docked Top, so this node's height is
 // their preferred heights, which its parent gives it.
 void TreeNode::layout(skin::Base *skin)
@@ -149,7 +169,7 @@ void TreeNode::layout(skin::Base *skin)
 void TreeNode::postLayout(skin::Base * /*skin*/)
 {
     if(m_toggleButton && m_title)
-        m_toggleButton->setPos(0, (m_title->getHeight()-m_toggleButton->getHeight()) / 2);
+        placeChildPos(m_toggleButton, 0, (m_title->getHeight()-m_toggleButton->getHeight()) / 2);
 }
 
 void TreeNode::setText(const String &text)

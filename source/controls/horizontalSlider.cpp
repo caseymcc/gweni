@@ -29,10 +29,13 @@ void HorizontalSlider::updateBarFromValue()
         m_sliderBar->getY());
 }
 
+// The thumb jumps to the click, kept on the track: computed, like the value.
 void HorizontalSlider::onMouseClickLeft(int x, int y, bool down)
 {
-    m_sliderBar->moveTo(canvasPosToLocal(Point(x, y)).x - m_sliderBar->getWidth()/2,
+    const Point pos=m_sliderBar->restrictedPos(canvasPosToLocal(Point(x, y)).x - m_sliderBar->getWidth()/2,
         m_sliderBar->getY());
+
+    placeChildPos(m_sliderBar, pos.x, pos.y);
     m_sliderBar->onMouseClickLeft(x, y, down);
     onMoved(m_sliderBar);
 }

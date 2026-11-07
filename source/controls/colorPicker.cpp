@@ -208,10 +208,10 @@ void ColorPicker::createControls()
 //    GroupBox *finalGroup=new GroupBox(this);
     GroupBox *finalGroup=newChild<GroupBox>();
 
-    finalGroup->setPos(180, 40);
-    finalGroup->setSize(60, 60);
     finalGroup->setText("Result");
     finalGroup->setName("ResultGroupBox");
+    finalGroup->setPlacement(Placement::Owner);
+    m_result=finalGroup;
 
 //    internal::ColorDisplay *disp=new internal::ColorDisplay(finalGroup);
     internal::ColorDisplay *disp=finalGroup->newChild<internal::ColorDisplay>();
@@ -271,29 +271,42 @@ void ColorPicker::onSlidersMoved(event::Info info)
 }
 
 // As high as the channel boxes reach, plus 5: a preferred height, which the
-// parent gives this control, rather than a resize from inside its layout.
+// parent gives this control, rather than a resize from inside its layout. The
+// Result box, which this control places itself, is counted at resultX along X
+// and at its own height along Y, wherever the height puts it.
 void ColorPicker::calculateSize(skin::Base *skin, Dim dim)
 {
     ParentClass::calculateSize(skin, dim);
 
     if(dim == Dim::Y)
         m_preferredSize.height+=5;
+
+    if(!m_result || m_result->hidden())
+        return;
+
+    const Size &result=m_result->getPreferredSize();
+    const Margin &margin=m_result->getMargin();
+
+    if(dim == Dim::X)
+        m_preferredSize.width=std::max(m_preferredSize.width, preferredFromContent(
+            resultX+result.width+margin.left+margin.right+m_padding.left+m_padding.right, Dim::X));
+    else
+        m_preferredSize.height=std::max(m_preferredSize.height, preferredFromContent(
+            result.height+margin.top+margin.bottom+m_padding.top+m_padding.bottom, Dim::Y));
 }
 
-// The result box is centred vertically once this control has its height,
-// before the Y pass places it.
+// The Result box is as big as it measures, at resultX, and centred vertically
+// once this control has its height; each axis before the pass arranges it.
 void ColorPicker::arrange(skin::Base *skin, Dim dim)
 {
-    if(dim == Dim::Y)
+    if(m_result && !m_result->hidden())
     {
-        GroupBox *groupBox=gweni_cast<GroupBox>(findChildByName("ResultGroupBox", true));
+        const Size &result=m_result->getPreferredSize();
 
-        if(groupBox)
-        {
-            PlacementScope placement;
-
-            groupBox->setPos(groupBox->getX(), getHeight()/2-groupBox->getPreferredSize().height/2);
-        }
+        if(dim == Dim::X)
+            placeChild(m_result, resultX, m_result->getY(), result.width, m_result->getHeight());
+        else
+            placeChild(m_result, m_result->getX(), getHeight()/2-result.height/2, m_result->getWidth(), result.height);
     }
 
     ParentClass::arrange(skin, dim);

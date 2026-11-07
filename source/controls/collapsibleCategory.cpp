@@ -261,13 +261,10 @@ void CollapsibleCategory::calculateSize(skin::Base *skin, Dim dim)
         m_preferredSize=sizeOfChildren(skin, dim);
 }
 
+// Its height is its preferred height (calculateSize: the button alone when
+// collapsed), which its parent gives it; it does not resize itself.
 void CollapsibleCategory::postLayout(skin::Base * /*skin*/)
 {
-    if(!m_button->getToggleState())
-        setHeight(m_button->getHeight());
-    else
-        sizeToChildren(false, true);
-
 //    Base::List &children=getChildren();
 //    bool b=true;
 //

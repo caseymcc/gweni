@@ -111,8 +111,8 @@ public:
         if(!m_columns[i])
             return;
 
+        // Docked Left, the column is laid out at the width it measures.
         m_columns[i]->setText(strString);
-        m_columns[i]->sizeToContents();
     }
 
     void setCellContents(int i, Base *control, bool bEnableMouseInput=false)
@@ -337,13 +337,11 @@ public:
         // out, and asking it to lay out again from here re-dirtied every pass.
     }
 
+    // The columns' widths are worked out in layout() (doSizeToContents); the
+    // table itself is as big as its rows measure, which its parent gives it.
     void postLayout(skin::Base * /*skin*/) override
     {
-        if(m_sizeToContents)
-        {
-            sizeToChildren();
-            m_sizeToContents=false;
-        }
+        m_sizeToContents=false;
     }
 
     void sizeToContents()
@@ -366,14 +364,14 @@ public:
             if(!row)
                 continue;
 
-            row->sizeToContents();
-
+            // What each column measures, this pass (calculateSize has run):
+            // not a resize of the cells, which their rows lay out.
             for(int i=0; i < TableRow::MaxColumns; i++)
             {
                 if(row->m_columns[i])
                 {
                     m_columnWidth[i]=std::max(m_columnWidth[i],
-                        row->m_columns[i]->getWidth());
+                        row->m_columns[i]->getPreferredSize().width);
                 }
             }
 

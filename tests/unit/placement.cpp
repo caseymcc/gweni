@@ -15,6 +15,11 @@
  *  A wrapped Text asks for the width the app asked its parent to be, less the
  *  parent's padding, or with no such request for its longest word; its height
  *  is that of its lines at the width it is given.
+ *
+ *  Outside a pass too, what the library writes is computed: a slider's value,
+ *  a click or a drag on its thumb and a drag of a CrossSplitter bar leave
+ *  every request as it was. A window dragged by its title bar is where the
+ *  user put it, a request.
  */
 #include "headlessFixture.h"
 
@@ -24,6 +29,7 @@
 #include <gweni/controls/properties.h>
 #include <gweni/controls/text.h>
 #include <gweni/controls/verticalSlider.h>
+#include <gweni/controls/windowControl.h>
 
 #include <doctest/doctest.h>
 
@@ -433,4 +439,140 @@ TEST_CASE("a wrapped Text asks for its parent's requested width, or with none fo
         CHECK(wrapped->numLines() == 1);
         CHECK(scene.requests == 0);
     }
+}
+
+namespace
+{
+
+//! A control's request and whether a size was asked, as text.
+std::string request(const controls::Base *control)
+{
+    return text(control->getRequestedBounds())+" w="+std::to_string(control->hasRequestedSize(Dim::X))+
+        " h="+std::to_string(control->hasRequestedSize(Dim::Y));
+}
+
+//! The requests of \p control and of its whole subtree, depth-first.
+void listRequests(controls::Base *control, std::vector<std::string> &out)
+{
+    out.push_back(std::string(control->getTypeName())+" "+request(control));
+
+    for(auto &&child : control->getActualChildren())
+        listRequests(child, out);
+}
+
+std::vector<std::string> requests(controls::Base *control)
+{
+    std::vector<std::string> out;
+
+    listRequests(control, out);
+    return out;
+}
+
+//! Presses \p control at \p from (canvas coordinates), moves the mouse to
+//! \p to and lets go, through the control's own mouse handlers.
+void drag(controls::Base *control, const Point &from, const Point &to)
+{
+    control->onMouseClickLeft(from.x, from.y, true);
+    control->onMouseMoved(to.x, to.y, to.x-from.x, to.y-from.y);
+    control->onMouseClickLeft(to.x, to.y, false);
+}
+
+}
+
+TEST_CASE("a slider's value change, a click and a drag on its thumb record no request")
+{
+    Scene scene;
+    controls::VerticalSlider *slider=scene.canvas->newChild<controls::VerticalSlider>();
+
+    slider->setBounds(10, 10, 20, 200);
+    slider->setRange(0, 1);
+    slider->setFloatValue(0);
+    scene.settle();
+
+    const std::vector<std::string> before=requests(slider);
+    controls::Base *thumb=slider->getChildren().front();
+    const int atZero=thumb->getY();
+
+    slider->setFloatValue(1);
+    scene.settle();
+    CHECK(thumb->getY() != atZero);
+    checkSameTree(requests(slider), before);
+
+    // a click on the track jumps the thumb there, which sets the value
+    const Point track=slider->localPosToCanvas(Point(10, 150));
+
+    slider->onMouseClickLeft(track.x, track.y, true);
+    slider->onMouseClickLeft(track.x, track.y, false);
+    scene.settle();
+    CHECK(slider->getFloatValue() < 0.5f);
+    checkSameTree(requests(slider), before);
+
+    // a drag of the thumb itself, through its Dragger
+    const float clicked=slider->getFloatValue();
+    const Point grab=thumb->localPosToCanvas(Point(2, 2));
+
+    drag(thumb, grab, Point(grab.x, grab.y-60));
+    scene.settle();
+    CHECK(slider->getFloatValue() > clicked);
+    checkSameTree(requests(slider), before);
+    CHECK(scene.requests == 0);
+}
+
+TEST_CASE("dragging a CrossSplitter bar records no request")
+{
+    Scene scene;
+    controls::CrossSplitter *splitter=scene.canvas->newChild<controls::CrossSplitter>();
+
+    splitter->setBounds(0, 0, 400, 300);
+    scene.settle();
+
+    const std::vector<std::string> before=requests(splitter);
+    const float horizontal=splitter->getHorizontalFraction();
+    const float vertical=splitter->getVerticalFraction();
+
+    // the bars are its first three children: top/bottom, left/right, centre
+    for(int i=0; i < 3; ++i)
+    {
+        controls::Base *bar=*std::next(splitter->getChildren().begin(), i);
+        const Point grab=bar->localPosToCanvas(Point(2, 2));
+
+        drag(bar, grab, Point(grab.x+40, grab.y+30));
+        scene.settle();
+        checkSameTree(requests(splitter), before);
+    }
+
+    CHECK(splitter->getHorizontalFraction() != horizontal);
+    CHECK(splitter->getVerticalFraction() != vertical);
+    CHECK(scene.requests == 0);
+}
+
+TEST_CASE("a window dragged by its title bar asks to be where it was dropped")
+{
+    Scene scene;
+    controls::WindowControl *window=scene.canvas->newChild<controls::WindowControl>();
+
+    window->setBounds(20, 30, 200, 150);
+    scene.settle();
+
+    controls::Base *titleBar=nullptr;
+
+    for(auto &&child : window->getActualChildren())
+    {
+        if(std::string(child->getTypeName()) == "Dragger")
+            titleBar=child;
+    }
+    REQUIRE(titleBar != nullptr);
+
+    const Point grab=titleBar->localPosToCanvas(Point(50, 5));
+
+    drag(titleBar, grab, Point(grab.x+40, grab.y+25));
+    scene.settle();
+
+    CHECK(text(window->getRequestedBounds()) == text(Rect(60, 55, 200, 150)));
+    CHECK(text(window->getBounds()) == text(Rect(60, 55, 200, 150)));
+    // a size was asked by the app, and stays asked
+    CHECK(window->hasRequestedSize(Dim::X));
+    CHECK(window->hasRequestedSize(Dim::Y));
+    // made outside any pass: nothing is counted
+    CHECK(scene.requests == 0);
 }

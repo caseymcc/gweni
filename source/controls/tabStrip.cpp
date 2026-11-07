@@ -149,18 +149,22 @@ void TabStrip::dragAndDrop_hover(gweni::draganddrop::Package * /*package*/, int 
 
     if(DroppedOn && DroppedOn != this)
     {
+        // Over a tab: this strip places the marker at the edge of the tab
+        // the drop would go before or after.
         gweni::Point DropPos=DroppedOn->canvasPosToLocal(gweni::Point(x, y));
-        m_tabDragControl->setBounds(gweni::Rect(0, 0, 3, getHeight()));
-        m_tabDragControl->bringToFront();
-        m_tabDragControl->setPos(DroppedOn->getX()-1, 0);
+        int markerX=DroppedOn->getX()-1;
 
         if(DropPos.x > DroppedOn->getWidth()/2)
-            m_tabDragControl->moveBy(DroppedOn->getWidth()-1, 0);
+            markerX+=DroppedOn->getWidth()-1;
 
+        m_tabDragControl->bringToFront();
         m_tabDragControl->setDock(DockPosition::None);
+        m_tabDragControl->setPlacement(Placement::Owner);
+        placeChild(m_tabDragControl, markerX, 0, 3, getHeight());
     }
     else
     {
+        m_tabDragControl->setPlacement(Placement::Parent);
         m_tabDragControl->setDock(DockPosition::Left);
         m_tabDragControl->bringToFront();
     }

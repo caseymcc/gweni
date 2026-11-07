@@ -65,6 +65,9 @@ GWENI_CONTROL_CONSTRUCTOR(TabControl)
     m_scroll[1]->setDirectionRight();
     m_scroll[1]->onPressCaller.add(this, &TabControl::onScrollPressRight);
     m_scroll[1]->setSize(14, 14);
+    // Placed by handleOverflow(), at the size set here.
+    m_scroll[0]->setPlacement(Placement::Owner);
+    m_scroll[1]->setPlacement(Placement::Owner);
 
     m_innerPanel=newChild<TabControlInner>();
     m_innerPanel->setDock(DockPosition::Center);
@@ -222,8 +225,8 @@ void TabControl::handleOverflow()
 #else // if 0
     m_tabStrip->setMargin(Margin(m_scrollOffset *-1, 0, 0, 0));
 #endif // if 0
-    m_scroll[0]->setPos(getWidth()-30, 5);
-    m_scroll[1]->setPos(m_scroll[0]->right(), 5);
+    placeChildPos(m_scroll[0], getWidth()-30, 5);
+    placeChildPos(m_scroll[1], m_scroll[0]->right(), 5);
 }
 
 void TabControl::onScrollPressLeft(event::Info)

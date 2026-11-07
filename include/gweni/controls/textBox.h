@@ -25,6 +25,7 @@ class GWENI_EXPORT TextBox:public Label
 public:
     void renderFocus(skin::Base * /*skin*/) override {}
 
+    void calculateSize(skin::Base *skin, Dim dim) override;
     void layout(skin::Base *skin) override;
     void arrange(skin::Base *skin, Dim dim) override;
     void postLayout(skin::Base *skin) override;
@@ -119,6 +120,17 @@ public:
     virtual void makeCaretVisible();
 
     virtual void onEnter();
+
+protected:
+    //! A string that fits is placed by the text alignment in this box's
+    //! padded content box, like any Label's (Placement::Parent).
+    void alignText(Alignment textAlignment);
+    //! A string that does not fit is scrolled to where the caret needs it:
+    //! this box places it (Placement::Owner) at (x, y), at the size \p text
+    //! measured, as wide as the content box when it wraps.
+    void placeScrolledText(int x, int y, const Size &text);
+
+public:
 
     bool needsInputChars() override { return true; }
 
