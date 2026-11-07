@@ -55,12 +55,47 @@ struct GLTextureData: public gweni::TextureData
     std::vector<unsigned char> m_readData;
 };
 
+//! How text below the SDF threshold is anti-aliased (OpenGLCore::setTextAA).
+enum class TextAA
+{
+    Grayscale, //!< one coverage value per pixel
+    LcdRGB,    //!< one coverage value per subpixel, red on the left
+    LcdBGR     //!< one coverage value per subpixel, blue on the left
+};
+
 //! How the text shader turns an atlas sample into alpha. Set per draw, so each
 //! atlas's runs can use their own.
 enum class GLTextMode: int
 {
     Coverage=0, //!< the sample's red channel is the glyph's coverage
-    Sdf=1       //!< the sample is a signed distance field, 0.5 on the glyph's edge
+    Sdf=1,      //!< the sample is a signed distance field, 0.5 on the glyph's edge
+    LcdRGB=2,   //!< the sample's rgb is the coverage of the pixel's r, g and b subpixels
+    LcdBGR=3    //!< as LcdRGB, with the panel's subpixels in b, g, r order
+};
+
+//! What OpenGLCore loads a font under: the font at the size its atlas is
+//! rasterised at, and the mode it is drawn in, so atlases of different modes
+//! are never shared.
+struct GLFontKey
+{
+    Font font;
+    GLTextMode mode=GLTextMode::Coverage;
+
+    bool operator==(const GLFontKey &rhs) const
+    {
+        return (mode == rhs.mode) && (font == rhs.font);
+    }
+};
+
+struct GLFontKeyHash
+{
+    size_t operator()(const GLFontKey &key) const noexcept
+    {
+        size_t res=std::hash<Font>{}(key.font);
+
+        hash_combine<int>(res, static_cast<int>(key.mode));
+        return res;
+    }
 };
 
 struct GLFontData
@@ -123,7 +158,8 @@ struct GLFontData
 
     //! Coverage: an atlas for one (face, px, bold), drawn as freetype-gl lays it
     //! out. Sdf: one distance field atlas for every px of a (face, bold), laid out
-    //! by OpenGLCore::layoutSdfText.
+    //! by OpenGLCore::layoutSdfText. LcdRGB/LcdBGR: as Coverage, from a depth-3
+    //! atlas of subpixel coverage, drawn with dual-source blending.
     GLTextMode mode=GLTextMode::Coverage;
 
     //! Text ids whose runs were laid out in this font, so flush() draws them with
@@ -224,14 +260,22 @@ public:
     unsigned int getTextureName(const gweni::Texture &texture) const;
     //! GL name of a loaded font's glyph atlas, 0 if the font is not loaded
     unsigned int getFontAtlasName(const gweni::Font &font) const;
-    //! Bytes per texel of a loaded font's glyph atlas (1: coverage only), 0 if the
-    //! font is not loaded
+    //! Bytes per texel of a loaded font's glyph atlas (1: coverage or distance,
+    //! 3: subpixel coverage), 0 if the font is not loaded
     size_t getFontAtlasDepth(const gweni::Font &font) const;
     //! Fonts loaded and not freed yet
     size_t getLoadedFontCount() const { return m_fonts.size(); }
     //! The GLTextMode a font is drawn in: Sdf at or above the GWENI_SDF_TEXT_MIN
-    //! threshold (effective px), Coverage below it
+    //! threshold (effective px); below it Coverage, or LcdRGB/LcdBGR as textAA() says
     GLTextMode getTextMode(const gweni::Font &font) const;
+
+    //! How text below the SDF threshold is anti-aliased; GWENI_TEXT_AA=gray|rgb|bgr
+    //! sets it at construction, Grayscale otherwise. A change replaces every
+    //! coverage font with one in the new mode, lays no run out again by itself
+    //! (each draws nothing until its next renderText) and raises
+    //! textLayoutSerial(), so a canvas lays out and renders its whole tree again.
+    void setTextAA(TextAA aa);
+    TextAA textAA() const { return m_textAA; }
 
     //! The GL objects init() created (0 before init()), so a test can check that the
     //! destructor deletes them.
@@ -250,24 +294,25 @@ protected:// Resourses
     //! The effective px a font's text is drawn at: font.size*scale(). measureText
     //! measures at font.size instead, so it stays in canvas units.
     float textPx(const Font &font) const;
-    //! The m_fonts key a font is loaded under at px, and the mode it is drawn in:
+    //! The m_fonts key a font is loaded under at px, with the mode it is drawn in:
     //! px >= m_sdfTextMin is (face, bold) in Sdf mode, with size 0 standing for
-    //! "every size"; below that it is (face, px, bold) in Coverage mode.
-    Font resolveFont(const Font &font, float px, GLTextMode &mode) const;
+    //! "every size"; below that it is (face, px, bold) in Coverage mode, or in
+    //! m_textAA's LCD mode.
+    GLFontKey resolveFont(const Font &font, float px) const;
     //! loadFont/ensureFont at px rather than textPx(font): measureText's font size
     Font::Status loadFont(const Font &font, float px);
     bool ensureFont(const Font &font, float px);
     //! Frees one resolved font; onlyIfUnused leaves it if runs are laid out in it
-    void freeFont(const Font &resolved, bool onlyIfUnused);
+    void freeFont(const GLFontKey &resolved, bool onlyIfUnused);
 
-    std::unordered_map<Font, GLFontData> m_fonts; //!< keyed by resolveFont()
+    std::unordered_map<GLFontKey, GLFontData, GLFontKeyHash> m_fonts; //!< keyed by resolveFont()
     //! Faces whose last load failed: ensureFont does not retry them
-    std::unordered_set<Font> m_failedFonts;
+    std::unordered_set<GLFontKey, GLFontKeyHash> m_failedFonts;
     std::vector<GLTextureData *> m_textureData;
     std::vector<size_t> m_freeTextureData;
     std::unordered_map<Texture, size_t> m_textures;
     
-    std::pair<const Font, GLFontData> *m_lastFont;
+    std::pair<const GLFontKey, GLFontData> *m_lastFont;
 //    std::pair<const Texture, GLTextureData> *m_lastTexture;
     size_t m_lastTexture;
 public:
@@ -598,6 +643,8 @@ private:
     //! GWENI_SDF_TEXT_MIN=<px> overrides it (0: SDF everywhere, a large value:
     //! coverage everywhere).
     float m_sdfTextMin;
+    //! How coverage-range text is anti-aliased (setTextAA, GWENI_TEXT_AA)
+    TextAA m_textAA=TextAA::Grayscale;
 
     glm::mat4 m_projectionMatrix;
 

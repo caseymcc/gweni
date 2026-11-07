@@ -53,6 +53,10 @@ SAMPLES=(
 
 CONTROL_SIZE=640x480
 
+# The samples are grayscale text whatever the caller's environment says: LCD
+# subpixel text is opt-in, and checked by tests/textAA.cpp rather than here.
+export GWENI_TEXT_AA=gray
+
 BUILD_DIR=build_linux_x64_debug
 BIN_DIR="$BUILD_DIR/examples/openglcore"
 OUT_DIR=docs/images

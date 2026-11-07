@@ -154,6 +154,8 @@ protected:
     bool m_needsRedraw;
     bool m_anyDelete;
     float m_scale;
+    /// The renderer's textLayoutSerial() the tree was last laid out for
+    unsigned m_textLayoutSerial=0;
 
     controls::Base::List m_deleteList;
     std::set<controls::Base *> m_deleteSet;

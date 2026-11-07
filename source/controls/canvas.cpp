@@ -35,6 +35,9 @@ Canvas::Canvas(skin::Base *skin): ParentClass(), m_anyDelete(false)
 
     if(skin)
         setSkin(skin);
+    // a new tree is laid out and rendered whole anyway
+    if(skin && skin->getRenderer())
+        m_textLayoutSerial=skin->getRenderer()->textLayoutSerial();
 }
 
 Canvas::~Canvas()
@@ -45,6 +48,16 @@ Canvas::~Canvas()
 void Canvas::updateCanvas()
 {
     int zIndex=1;
+
+    // The renderer's text draws or measures otherwise now (a new text AA mode):
+    // every control is laid out and re-emitted again, as for a new scale.
+    if(m_skin && m_skin->getRenderer()
+        && (m_skin->getRenderer()->textLayoutSerial() != m_textLayoutSerial))
+    {
+        m_textLayoutSerial=m_skin->getRenderer()->textLayoutSerial();
+        onScaleChanged();
+        redraw();
+    }
 
     doThink();
     updateRecursive(zIndex);

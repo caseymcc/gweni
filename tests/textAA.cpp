@@ -1,0 +1,415 @@
+/*
+ *  Gweni
+ *  Copyright (c) 2010 Facepunch Studios
+ *  MIT License, see LICENSE
+ *
+ *  OpenGLCore's text AA modes (setTextAA, GWENI_TEXT_AA): Grayscale draws one
+ *  coverage per pixel from an R8 atlas, LcdRGB/LcdBGR one per subpixel from a
+ *  depth-3 atlas, blended per channel through the text shader's second output.
+ *
+ *  White "l" and "I" at 12 px on black are read back in each mode: on an RGB
+ *  panel a stem's left edge pixel is covered on its right, blue, side and its
+ *  right edge pixel on its red side, so blue leads on the left and red on the
+ *  right; BGR is the mirror; grayscale has red equal to blue everywhere. A
+ *  switch of mode at runtime must draw what a renderer started in that mode
+ *  draws, and nothing laid out in the old mode.
+ *
+ *  This is the coverage path: when GWENI_SDF_TEXT_MIN puts 12 px in the SDF
+ *  range, which stays grayscale, the cases are skipped.
+ */
+#include <doctest/doctest.h>
+
+#include "capture.h"
+#include "gpuRenderer.h"
+
+#include <gweni/controls/button.h>
+#include <gweni/controls/canvas.h>
+#include <gweni/controls/label.h>
+#include <gweni/platforms/commonPlatform.h>
+#include <gweni/skins/textured/texturedSkin.h>
+
+#include <vector>
+
+namespace
+{
+
+using gweni::Color;
+using gweni::Font;
+using gweni::Point;
+using gweni::String;
+using gweni::renderer::GLTextMode;
+using gweni::renderer::OpenGLCore;
+using gweni::renderer::TextAA;
+
+const Color white(255, 255, 255, 255);
+
+//! Where each glyph is drawn, a column band of the view to itself
+const int glyphLeft[2]={20, 60};
+const char *const glyphText[2]={"l", "I"};
+const int bandWidth=30;
+
+Font at12()
+{
+    Font font=gweni::test::openSans();
+
+    font.size=12;
+    return font;
+}
+
+const char *name(TextAA aa)
+{
+    return (aa == TextAA::LcdRGB)?"rgb":(aa == TextAA::LcdBGR)?"bgr":"gray";
+}
+
+//! Puts the shared renderer's mode back when a case ends.
+struct RestoreTextAA
+{
+    RestoreTextAA(): aa(gweni::test::gpuRenderer().textAA()) {}
+    ~RestoreTextAA() { gweni::test::gpuRenderer().setTextAA(aa); }
+
+    TextAA aa;
+};
+
+std::vector<uint8_t> readFrame()
+{
+    const Point size=gweni::test::viewSize();
+    std::vector<uint8_t> pixels;
+
+    gweni::capture::readFramebufferRgba(size.x, size.y, pixels);
+    return pixels;
+}
+
+const uint8_t *pixelAt(const std::vector<uint8_t> &frame, int x, int y)
+{
+    return &frame[(static_cast<size_t>(y)*gweni::test::viewSize().x+x)*4];
+}
+
+bool inked(const uint8_t *p)
+{
+    return (p[0] != 0) || (p[1] != 0) || (p[2] != 0);
+}
+
+size_t inkedPixels(const std::vector<uint8_t> &frame)
+{
+    size_t count=0;
+
+    for(size_t i=0; i < frame.size(); i+=4)
+        count+=inked(&frame[i])?1:0;
+    return count;
+}
+
+void clearFrame()
+{
+    glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+    glClearDepth(1.0);
+    glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
+}
+
+//! The two glyphs' text ids on one renderer, released (and that flushed) at the end.
+struct Glyphs
+{
+    explicit Glyphs(OpenGLCore &renderer): renderer(renderer)
+    {
+        for(size_t &id:ids)
+            renderer.generateTextPrimitive(id);
+    }
+
+    ~Glyphs()
+    {
+        for(size_t id:ids)
+            renderer.releaseTextPrimitive(id);
+        renderer.begin();
+        renderer.end();
+    }
+
+    //! One frame of both glyphs in white on black, read back
+    std::vector<uint8_t> draw()
+    {
+        clearFrame();
+        renderer.begin();
+        renderer.setDrawColor(white);
+        for(int i=0; i < 2; ++i)
+            renderer.renderText(ids[i], at12(), Point(glyphLeft[i], 40), 1, glyphText[i]);
+        renderer.end();
+        return readFrame();
+    }
+
+    OpenGLCore &renderer;
+    size_t ids[2]={0, 0};
+};
+
+//! A renderer of its own, over the same view, started in one mode.
+struct FreshRenderer
+{
+    explicit FreshRenderer(TextAA aa):
+        paths("resources"),
+        renderer(paths, gweni::Rect(Point(0, 0), gweni::test::viewSize()))
+    {
+        renderer.init();
+        // explicitly, so GWENI_TEXT_AA in the environment takes no part
+        renderer.setTextAA(aa);
+    }
+
+    gweni::platform::CurrentPath paths;
+    OpenGLCore renderer;
+};
+
+bool coverageRange()
+{
+    if(gweni::test::gpuRenderer().getTextMode(at12()) != GLTextMode::Sdf)
+        return true;
+    MESSAGE("skipped: GWENI_SDF_TEXT_MIN draws 12 px from the SDF atlas, which is grayscale");
+    return false;
+}
+
+}//namespace
+
+TEST_CASE("Text AA: an LCD mode loads a depth-3 GL_RGB8 atlas of its own, grayscale an R8 one")
+{
+    OpenGLCore &renderer=gweni::test::gpuRenderer();
+    RestoreTextAA restore;
+
+    if(!coverageRange())
+        return;
+
+    for(TextAA aa:{TextAA::Grayscale, TextAA::LcdRGB, TextAA::LcdBGR, TextAA::Grayscale})
+    {
+        CAPTURE(name(aa));
+        renderer.setTextAA(aa);
+        REQUIRE(renderer.textAA() == aa);
+        REQUIRE(renderer.ensureFont(at12()));
+
+        const bool lcd=(aa != TextAA::Grayscale);
+        GLint format=0;
+
+        CHECK(renderer.getTextMode(at12()) == ((aa == TextAA::LcdRGB)?GLTextMode::LcdRGB:
+            (aa == TextAA::LcdBGR)?GLTextMode::LcdBGR:GLTextMode::Coverage));
+        CHECK(renderer.getFontAtlasDepth(at12()) == (lcd?3u:1u));
+
+        glBindTexture(GL_TEXTURE_2D, renderer.getFontAtlasName(at12()));
+        glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_INTERNAL_FORMAT, &format);
+        glBindTexture(GL_TEXTURE_2D, 0);
+        CHECK(format == (lcd?GL_RGB8:GL_R8));
+        // the font loaded before the switch is loaded again in the new mode
+        CHECK(renderer.getFontAtlasName(gweni::test::openSans()) != 0);
+    }
+    renderer.freeFont(at12());
+}
+
+TEST_CASE("Text AA: a stem's edges fringe blue-left/red-right in rgb, mirrored in bgr, and not in gray")
+{
+    OpenGLCore &renderer=gweni::test::gpuRenderer();
+    RestoreTextAA restore;
+
+    if(!coverageRange())
+        return;
+
+    for(TextAA aa:{TextAA::Grayscale, TextAA::LcdRGB, TextAA::LcdBGR})
+    {
+        CAPTURE(name(aa));
+        renderer.setTextAA(aa);
+
+        Glyphs glyphs(renderer);
+        const std::vector<uint8_t> frame=glyphs.draw();
+        const Point size=gweni::test::viewSize();
+
+        REQUIRE(inkedPixels(frame) > 20); // the premise: something was drawn
+
+        if(aa == TextAA::Grayscale)
+        {
+            int coloured=0;
+
+            for(int y=0; y < size.y; ++y)
+                for(int x=0; x < size.x; ++x)
+                {
+                    const uint8_t *p=pixelAt(frame, x, y);
+
+                    coloured+=(p[0] != p[2])?1:0;
+                }
+            CHECK(coloured == 0);
+            continue;
+        }
+
+        // the channel the left subpixel of a pixel is, and the right one's
+        const int leftChannel=(aa == TextAA::LcdRGB)?0:2;
+        const int rightChannel=2-leftChannel;
+
+        for(int i=0; i < 2; ++i)
+        {
+            CAPTURE(glyphText[i]);
+
+            int rows=0;
+            int wrong=0;
+
+            for(int y=0; y < size.y; ++y)
+            {
+                int left=-1, right=-1;
+
+                for(int x=glyphLeft[i]-5; x < glyphLeft[i]+bandWidth; ++x)
+                {
+                    if(!inked(pixelAt(frame, x, y)))
+                        continue;
+                    if(left < 0)
+                        left=x;
+                    right=x;
+                }
+                if(left < 0)
+                    continue;
+
+                const uint8_t *l=pixelAt(frame, left, y);
+                const uint8_t *r=pixelAt(frame, right, y);
+
+                ++rows;
+                // the left edge pixel is covered on its right side, the right one on its left
+                if(!(l[rightChannel] > l[leftChannel]) || !(r[leftChannel] > r[rightChannel]))
+                {
+                    if(wrong < 4)
+                        MESSAGE("row ", y, ": left (", left, ") rgb ", (int)l[0], ",", (int)l[1], ",", (int)l[2],
+                            ", right (", right, ") rgb ", (int)r[0], ",", (int)r[1], ",", (int)r[2]);
+                    ++wrong;
+                }
+            }
+
+            CHECK(rows >= 8); // the premise: a stem the height of a 12 px letter
+            CHECK(wrong == 0);
+        }
+    }
+}
+
+TEST_CASE("Text AA: gray -> rgb -> gray at runtime draws what fresh renderers in each mode draw")
+{
+    OpenGLCore &renderer=gweni::test::gpuRenderer();
+    RestoreTextAA restore;
+
+    if(!coverageRange())
+        return;
+
+    std::vector<uint8_t> freshGray, freshRgb;
+
+    {
+        FreshRenderer fresh(TextAA::Grayscale);
+        Glyphs glyphs(fresh.renderer);
+
+        freshGray=glyphs.draw();
+    }
+    {
+        FreshRenderer fresh(TextAA::LcdRGB);
+        Glyphs glyphs(fresh.renderer);
+
+        freshRgb=glyphs.draw();
+    }
+
+    REQUIRE(inkedPixels(freshGray) > 20);
+    REQUIRE(freshRgb != freshGray);
+
+    renderer.setTextAA(TextAA::Grayscale);
+
+    Glyphs glyphs(renderer);
+    const std::vector<uint8_t> gray0=glyphs.draw();
+
+    renderer.setTextAA(TextAA::LcdRGB);
+
+    // nothing laid out in the old mode is drawn: a frame without renderText is empty
+    clearFrame();
+    renderer.begin();
+    renderer.end();
+    CHECK(inkedPixels(readFrame()) == 0);
+
+    const std::vector<uint8_t> rgb=glyphs.draw();
+
+    renderer.setTextAA(TextAA::Grayscale);
+
+    const std::vector<uint8_t> gray1=glyphs.draw();
+
+    CHECK(gray0 == freshGray);
+    CHECK(rgb == freshRgb);
+    CHECK(gray1 == freshGray);
+}
+
+namespace
+{
+
+//! A textured-skin canvas over the whole view: a Label sized to its text and a Button.
+struct CanvasScene
+{
+    explicit CanvasScene(OpenGLCore &renderer)
+    {
+        skin=new gweni::skin::textured::TexturedSkin(&renderer);
+        REQUIRE(skin->init("DefaultSkin.json"));
+
+        canvas=new gweni::controls::Canvas(skin);
+        canvas->setSize(gweni::test::viewSize().x, gweni::test::viewSize().y);
+        canvas->setPadding(gweni::Padding(10, 10, 10, 10));
+
+        gweni::controls::Label *label=canvas->newChild<gweni::controls::Label>();
+
+        label->setText("Illumination Tester 0123 minimum");
+        label->sizeToContents();
+        label->setPos(10, 10);
+
+        gweni::controls::Button *button=canvas->newChild<gweni::controls::Button>();
+
+        button->setText("Button");
+        button->setBounds(10, 50, 120, 30);
+    }
+
+    ~CanvasScene()
+    {
+        delete canvas;
+        delete skin;
+    }
+
+    std::vector<uint8_t> frame()
+    {
+        clearFrame();
+        canvas->updateCanvas();
+        canvas->renderCanvas();
+        return readFrame();
+    }
+
+    gweni::skin::textured::TexturedSkin *skin;
+    gweni::controls::Canvas *canvas;
+};
+
+std::vector<uint8_t> freshCanvasFrame(TextAA aa)
+{
+    FreshRenderer fresh(aa);
+    CanvasScene scene(fresh.renderer);
+
+    scene.frame();
+    return scene.frame();
+}
+
+}//namespace
+
+TEST_CASE("Text AA: a switch at runtime re-lays a canvas's whole tree, its next frame a fresh start's")
+{
+    if(!coverageRange())
+        return;
+
+    const std::vector<uint8_t> freshGray=freshCanvasFrame(TextAA::Grayscale);
+    const std::vector<uint8_t> freshRgb=freshCanvasFrame(TextAA::LcdRGB);
+    const std::vector<uint8_t> freshBgr=freshCanvasFrame(TextAA::LcdBGR);
+
+    REQUIRE(freshRgb != freshGray);
+    REQUIRE(freshBgr != freshRgb);
+
+    FreshRenderer switched(TextAA::Grayscale);
+    CanvasScene scene(switched.renderer);
+
+    scene.frame();
+    CHECK(scene.frame() == freshGray);
+
+    for(TextAA aa:{TextAA::LcdRGB, TextAA::LcdBGR, TextAA::Grayscale})
+    {
+        CAPTURE(name(aa));
+        switched.renderer.setTextAA(aa);
+
+        const std::vector<uint8_t> &fresh=(aa == TextAA::LcdRGB)?freshRgb:(aa == TextAA::LcdBGR)?freshBgr:freshGray;
+
+        CHECK(scene.frame() == fresh);
+        // and it stays so, with nothing left to do
+        CHECK(scene.frame() == fresh);
+        CHECK(switched.renderer.getFrameStats().textSlotsWritten == 0);
+    }
+}

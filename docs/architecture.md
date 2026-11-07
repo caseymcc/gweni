@@ -228,6 +228,29 @@ on an OpenGL 3.3 core profile:
   `vec4(color.rgb, color.a * coverage)` under the `SRC_ALPHA, ONE_MINUS_SRC_ALPHA`
   blend, so coverage is applied once; no gamma or contrast curve is applied
   (`markup.gamma` is 1). `tests/textGrayscale.cpp` pins all of this.
+- **LCD subpixel text (opt-in).** `OpenGLCore::setTextAA(TextAA::{Grayscale, LcdRGB,
+  LcdBGR})`, or `GWENI_TEXT_AA=gray|rgb|bgr` at construction; Grayscale by default, and
+  then every output is the grayscale path's byte for byte. In an LCD mode a coverage-range
+  font resolves to `GLTextMode::LcdRGB`/`LcdBGR` (the mode is part of the `GLFontKey`, so
+  grayscale and LCD fonts never share an atlas) and loads a depth-3 atlas
+  (`LCD_FILTERING_ON`): freetype-gl rasterises it with `FT_LOAD_FORCE_AUTOHINT |
+  FT_LOAD_TARGET_LCD` and FreeType's LCD filter, one coverage byte per subpixel, uploaded
+  as `GL_RGB8`/`GL_RGB` initially and in the dirty bands. The text fragment shader has a
+  dual-source output (`layout(location=0, index=1) Coverage`): for an LCD atlas it is the
+  texel's `.rgb` (`.bgr` for BGR) times the colour's alpha, and `flush()` draws that
+  atlas's runs under `glBlendFunc(GL_SRC1_COLOR, GL_ONE_MINUS_SRC1_COLOR)`, putting the
+  previous blend back after, so each channel blends by its own subpixel's coverage. The
+  other modes leave `FragColor` as it was and their blend does not read `Coverage`.
+  Glyphs are still on whole pixels with whole-pixel advances, and no contrast curve is
+  applied, so on the dark theme LCD text is fringe-heavy for now. The SDF range stays
+  grayscale in every mode. `setTextAA` at runtime replaces every coverage-range font with
+  one in the new mode (its runs drop out of the draw lists and draw nothing until laid out
+  again) and raises `renderer::Base::textLayoutSerial()`; `Canvas::updateCanvas` sees the
+  new serial and calls `onScaleChanged()`, the whole-tree re-layout a scale change uses, so
+  the next frame is the one a canvas started in that mode draws. `tests/textAA.cpp` pins
+  it: stem edges blue-left/red-right in rgb, mirrored in bgr, R == B in gray, and runtime
+  switches matching fresh renderers pixel for pixel. A Vulkan backend would need the
+  `dualSrcBlend` device feature and fall back to grayscale without it.
 - **Hybrid text.** With the effective size `px = textPx(font) = font.size*scale()`,
   text below `GWENI_SDF_TEXT_MIN`
   (default 18 px; `0` = SDF everywhere, a large value = coverage everywhere) keeps the

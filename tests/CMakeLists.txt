@@ -234,6 +234,7 @@ if(TARGET gweni_capture)
         textRunCache.cpp
         textWrap.cpp
         textAtlases.cpp
+        textAA.cpp
         textGrayscale.cpp
         sdfText.cpp
         fontLoad.cpp

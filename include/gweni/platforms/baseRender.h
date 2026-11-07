@@ -196,6 +196,11 @@ public:
     void setScale(float fScale) { m_scale=fScale; }
     float scale() const { return m_scale; }
 
+    //! Raised whenever text drawn or measured before may draw or measure otherwise
+    //! now, for a reason other than the scale (OpenGLCore::setTextAA). A canvas that
+    //! sees it change lays out and renders its whole tree again, as for a new scale.
+    unsigned textLayoutSerial() const { return m_textLayoutSerial; }
+
     //
     // Self Initialization, shutdown
     //
@@ -234,9 +239,14 @@ protected:
     virtual bool ensureFont(const gweni::Font &font) { return false; }
     virtual bool ensureTexture(const gweni::Texture &texture) { return false; }
 
+    //! Every text run laid out so far is stale: raises textLayoutSerial()
+    void textLayoutChanged() { ++m_textLayoutSerial; }
+
     float m_scale;
 
 private:
+
+    unsigned m_textLayoutSerial=0;
 
     ResourcePaths &m_paths;
     gweni::Point m_renderOffset;

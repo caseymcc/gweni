@@ -105,29 +105,75 @@ float OpenGLCore::textPx(const Font &font) const
     return font.size*scale();
 }
 
-Font OpenGLCore::resolveFont(const Font &font, float px, GLTextMode &mode) const
+GLFontKey OpenGLCore::resolveFont(const Font &font, float px) const
 {
-    Font key=font;
+    GLFontKey key{font, GLTextMode::Coverage};
 
     if(px >= m_sdfTextMin)
     {
-        mode=GLTextMode::Sdf;
-        key.size=0.f;
+        // LCD is for the coverage range only: an SDF atlas is grayscale in every mode
+        key.mode=GLTextMode::Sdf;
+        key.font.size=0.f;
     }
     else
     {
-        mode=GLTextMode::Coverage;
-        key.size=px;
+        if(m_textAA == TextAA::LcdRGB)
+            key.mode=GLTextMode::LcdRGB;
+        else if(m_textAA == TextAA::LcdBGR)
+            key.mode=GLTextMode::LcdBGR;
+        key.font.size=px;
     }
     return key;
 }
 
 GLTextMode OpenGLCore::getTextMode(const Font &font) const
 {
-    GLTextMode mode;
+    return resolveFont(font, textPx(font)).mode;
+}
 
-    resolveFont(font, textPx(font), mode);
-    return mode;
+void OpenGLCore::setTextAA(TextAA aa)
+{
+    if(aa == m_textAA)
+        return;
+
+    m_textAA=aa;
+
+    // Every font of the coverage range is now resolved under another mode. Each is
+    // freed, its runs leaving every draw list (they draw nothing until renderText
+    // lays them out again, in the font of the new mode), and loaded again in the
+    // new mode, so what was loaded stays loaded. An SDF atlas is the same in
+    // every mode and stays as it is, its runs drawing.
+    std::vector<Font> reload;
+
+    for(auto it=m_fonts.begin(); it != m_fonts.end();)
+    {
+        if(it->second.mode == GLTextMode::Sdf)
+        {
+            ++it;
+            continue;
+        }
+
+        reload.push_back(it->first.font);
+        for(size_t textId:it->second.textRuns)
+            m_textRuns[textId].fontData=nullptr;
+        it=m_fonts.erase(it); // GLFontData's destructor deletes the atlas texture and the manager
+    }
+
+    m_lastFont=nullptr;
+    // a failure in another mode is tried again in this one
+    for(auto it=m_failedFonts.begin(); it != m_failedFonts.end();)
+    {
+        if(it->mode != GLTextMode::Sdf)
+            it=m_failedFonts.erase(it);
+        else
+            ++it;
+    }
+
+    // the key's size is the px the atlas is rasterised at, so it resolves to itself
+    for(const Font &font:reload)
+        loadFont(font, font.size);
+
+    textLayoutChanged();
 }
 
 Font::Status OpenGLCore::loadFont(const Font &requested)
@@ -138,16 +184,18 @@ Font::Status OpenGLCore::loadFont(const Font &requested)
 Font::Status OpenGLCore::loadFont(const Font &requested, float px)
 {
     GLFontData fontData;
-    GLTextMode mode;
-    const Font font=resolveFont(requested, px, mode);
+    const GLFontKey key=resolveFont(requested, px);
+    const Font &font=key.font;
+    const GLTextMode mode=key.mode;
     const bool sdf=(mode == GLTextMode::Sdf);
+    const bool lcd=(mode == GLTextMode::LcdRGB) || (mode == GLTextMode::LcdBGR);
 
     // an explicit load is a fresh attempt; a failure is remembered again below,
     // so ensureFont does not retry it
-    m_failedFonts.erase(font);
+    m_failedFonts.erase(key);
 
     // already loaded: a second manager and atlas would only leak
-    auto loaded=m_fonts.find(font);
+    auto loaded=m_fonts.find(key);
 
     if(loaded != m_fonts.end())
     {
@@ -163,7 +211,7 @@ Font::Status OpenGLCore::loadFont(const Font &requested, float px)
     if(!fs::exists(filename))
     {
         gweni::log::write(log::Level::Error, "Font file not found: %s", filename.c_str());
-        m_failedFonts.insert(font);
+        m_failedFonts.insert(key);
         return Font::Status::ErrorFileNotFound;
     }
 
@@ -192,12 +240,12 @@ Font::Status OpenGLCore::loadFont(const Font &requested, float px)
     fontData.markup.strikethrough_color=black;
     fontData.markup.font=0;
 
-    // depth 1 for both: one coverage byte per texel for a coverage atlas,
-    // rasterised grayscale with light (vertical-only) hinting, or one distance
-    // byte for an SDF one. Depth 3 would make freetype-gl rasterise for LCD
-    // subpixels, of which the text shader would only see red.
+    // Depth 1 for a coverage atlas, one coverage byte per texel rasterised
+    // grayscale with light (vertical-only) hinting, and for an SDF one, one
+    // distance byte. Depth 3 for an LCD one: freetype-gl rasterises it with
+    // FT_LOAD_TARGET_LCD and the LCD filter, one coverage byte per subpixel.
     fontData.fontManager=sdf?ftgl::font_manager_new(sdfAtlasSize, sdfAtlasSize, LCD_FILTERING_OFF)
-        :ftgl::font_manager_new(1024, 1024, LCD_FILTERING_OFF);
+        :ftgl::font_manager_new(1024, 1024, lcd?LCD_FILTERING_ON:LCD_FILTERING_OFF);
 
     free(fontData.fontManager->cache); // font_manager_new strdup'd a default
     // The manager rasterises its cache as soon as it opens the face, before an SDF
@@ -219,7 +267,7 @@ Font::Status OpenGLCore::loadFont(const Font &requested, float px)
         // freetype-gl could not open the face. fontData's destructor frees the
         // manager and familyPath; no atlas texture exists yet.
         gweni::log::write(log::Level::Error, "Font file failed to load: %s", filename.c_str());
-        m_failedFonts.insert(font);
+        m_failedFonts.insert(key);
         return Font::Status::ErrorBadData;
     }
 
@@ -234,24 +282,23 @@ Font::Status OpenGLCore::loadFont(const Font &requested, float px)
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    // one byte per texel, coverage or distance alike
-    assert(fontData.atlas->depth == 1);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_R8, fontData.atlas->width,
-        fontData.atlas->height, 0, GL_RED, GL_UNSIGNED_BYTE, nullptr);
+    // one byte per texel, coverage or distance alike, or three of subpixel coverage
+    assert(fontData.atlas->depth == (lcd?3u:1u));
+    glTexImage2D(GL_TEXTURE_2D, 0, lcd?GL_RGB8:GL_R8, fontData.atlas->width,
+        fontData.atlas->height, 0, lcd?GL_RGB:GL_RED, GL_UNSIGNED_BYTE, nullptr);
     //the next flush() uploads the whole atlas, cache included, as one dirty band, so
     //a load shows in FrameStats::atlasUploadCalls; after that only later glyphs
     fontData.atlas->dirty_y0=0;
     fontData.atlas->dirty_y1=fontData.atlas->height;
 
-    m_lastFont=&(*m_fonts.insert(std::make_pair(font, std::move(fontData))).first);
+    m_lastFont=&(*m_fonts.insert(std::make_pair(key, std::move(fontData))).first);
     return Font::Status::Loaded;
 }
 
 void OpenGLCore::freeFont(const gweni::Font &requested)
 {
-    GLTextMode mode;
-    const Font drawn=resolveFont(requested, textPx(requested), mode);
-    const Font measured=resolveFont(requested, requested.size, mode);
+    const GLFontKey drawn=resolveFont(requested, textPx(requested));
+    const GLFontKey measured=resolveFont(requested, requested.size);
 
     freeFont(drawn, false);
     // measureText's font, at another scale(): only measured by this font, unless
@@ -260,7 +307,7 @@ void OpenGLCore::freeFont(const gweni::Font &requested)
         freeFont(measured, true);
 }
 
-void OpenGLCore::freeFont(const Font &font, bool onlyIfUnused)
+void OpenGLCore::freeFont(const GLFontKey &font, bool onlyIfUnused)
 {
     if(m_lastFont != nullptr && m_lastFont->first == font)
         m_lastFont=nullptr;
@@ -302,8 +349,7 @@ bool OpenGLCore::ensureFont(const Font &requested)
 
 bool OpenGLCore::ensureFont(const Font &requested, float px)
 {
-    GLTextMode mode;
-    const Font font=resolveFont(requested, px, mode);
+    const GLFontKey font=resolveFont(requested, px);
 
     if(m_lastFont != nullptr)
     {
@@ -495,17 +541,16 @@ unsigned int OpenGLCore::getTextureName(const Texture &texture) const
 
 unsigned int OpenGLCore::getFontAtlasName(const Font &requested) const
 {
-    GLTextMode mode;
-    auto it=m_fonts.find(resolveFont(requested, textPx(requested), mode));
+    auto it=m_fonts.find(resolveFont(requested, textPx(requested)));
 
     if((it != m_fonts.end()) && (it->second.atlas))
         return it->second.atlas->id;
     return 0;
 }
 
-size_t OpenGLCore::getFontAtlasDepth(const Font &font) const
+size_t OpenGLCore::getFontAtlasDepth(const Font &requested) const
 {
-    auto it=m_fonts.find(font);
+    auto it=m_fonts.find(resolveFont(requested, textPx(requested)));
 
     if((it != m_fonts.end()) && (it->second.atlas))
         return it->second.atlas->depth;
@@ -597,6 +642,22 @@ OpenGLCore::OpenGLCore(ResourcePaths &paths, const Rect &viewRect)
 
     if(const char *clipDebug=getenv("GWENI_CLIP_DEBUG"))
         m_clipDebugInset=std::max(0, atoi(clipDebug));
+
+    // set but empty keeps the default, as GWENI_SDF_TEXT_MIN does
+    if(const char *textAA=getenv("GWENI_TEXT_AA"))
+    {
+        const std::string value(textAA);
+
+        if(value == "gray")
+            m_textAA=TextAA::Grayscale;
+        else if(value == "rgb")
+            m_textAA=TextAA::LcdRGB;
+        else if(value == "bgr")
+            m_textAA=TextAA::LcdBGR;
+        else if(!value.empty())
+            gweni::log::write(log::Level::Error,
+                "GWENI_TEXT_AA=%s: not gray, rgb or bgr; text stays grayscale", textAA);
+    }
 }
 
 bool OpenGLCore::textDebugMatches(const gweni::String &text) const
@@ -1024,7 +1085,11 @@ void main()
     auto textFragSource=R"(
 #version 330 core
 
-out vec4 FragColor;
+// Dual-source: FragColor is the colour, Coverage what flush() blends an LCD
+// atlas's runs with (GL_SRC1_COLOR), one weight per channel. The other atlases'
+// SRC_ALPHA blend does not read Coverage.
+layout(location = 0, index = 0) out vec4 FragColor;
+layout(location = 0, index = 1) out vec4 Coverage;
 
 in vec2 texCoord;
 in vec4 color;
@@ -1036,7 +1101,8 @@ uniform sampler2D texture1;
 // One Box (x0, y0, x1, y1) per glyph slot. Each atlas is a draw of its own over
 // some of the slots, so gl_PrimitiveID does not give the slot; the vertex shader does.
 uniform usamplerBuffer clipBoxes;
-// GLTextMode of the atlas this draw samples: 0 coverage, 1 signed distance field
+// GLTextMode of the atlas this draw samples: 0 coverage, 1 signed distance field,
+// 2 subpixel coverage in r, g, b order, 3 in b, g, r order
 uniform int textMode;
 // the SDF edge's anti-aliasing half-width, in screen pixels
 const float SDF_AA = 0.7;
@@ -1054,6 +1120,23 @@ void main()
         // Straight alpha: the coverage scales alpha only, and the SRC_ALPHA blend
         // applies it to the colour once. color * a here would apply it twice.
         FragColor = vec4(color.rgb, color.a * pow( a, 1.0/gamma ));
+        Coverage = vec4(0.0);
+    }
+    else if(textMode >= 2)
+    {
+        // the atlas texel's r, g, b cover the left, middle and right subpixels;
+        // on a BGR panel the left one is blue
+        vec3 c = texture(texture1, texCoord).rgb;
+
+        if(textMode == 3)
+            c = c.bgr;
+        c = pow(c, vec3(1.0/gamma));
+        a = (c.r+c.g+c.b)/3.0;
+
+        // dst = colour*coverage + dst*(1-coverage) per channel; the alpha
+        // channel as the grayscale path writes it, with the mean coverage
+        FragColor = vec4(color.rgb, color.a*a);
+        Coverage = vec4(color.a*c, color.a*a);
     }
     else
     {
@@ -1065,6 +1148,7 @@ void main()
 
         a = smoothstep(0.5-w, 0.5+w, d);
         FragColor = vec4(color.rgb, color.a*a);
+        Coverage = vec4(0.0);
     }
 
     // after the sample, as in the primitive shader: its implicit derivatives want the quad
@@ -1072,7 +1156,7 @@ void main()
         discard;
     // An SDF glyph's quad reaches the spread past its ink, over its neighbours and
     // the next row: where it draws nothing it must not write depth either.
-    if((textMode != 0) && (a <= 0.0))
+    if((textMode == 1) && (a <= 0.0))
         discard;
 }
     )";
@@ -1269,8 +1353,8 @@ void OpenGLCore::uploadDirtyAtlases()
         if(atlas->dirty_y0 >= atlas->dirty_y1)
             continue;
 
-        //full-width rows are contiguous in atlas->data, one coverage byte per texel
-        assert(atlas->depth == 1);
+        //full-width rows are contiguous in atlas->data, depth bytes per texel
+        assert((atlas->depth == 1) || (atlas->depth == 3));
 
         size_t rows=atlas->dirty_y1-atlas->dirty_y0;
 
@@ -1282,7 +1366,7 @@ void OpenGLCore::uploadDirtyAtlases()
         glBindTexture(GL_TEXTURE_2D, atlas->id);
         glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
         glTexSubImage2D(GL_TEXTURE_2D, 0, 0, (GLint)atlas->dirty_y0, (GLsizei)atlas->width, (GLsizei)rows,
-            GL_RED, GL_UNSIGNED_BYTE, atlas->data+atlas->dirty_y0*atlas->width*atlas->depth);
+            (atlas->depth == 3)?GL_RGB:GL_RED, GL_UNSIGNED_BYTE, atlas->data+atlas->dirty_y0*atlas->width*atlas->depth);
         glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
 
         ++m_frameStats.atlasUploadCalls;
@@ -1415,6 +1499,13 @@ void OpenGLCore::flush()
         // ranges in the one index buffer: one draw per atlas, none for an atlas
         // with nothing to show. The slots are not moved, so the upload above stays
         // per dirty slot.
+        //
+        // An LCD atlas's runs blend each channel by its own coverage, the fragment
+        // shader's second output; the blend in place before the first of them is
+        // put back for the other atlases and after the pass.
+        GLint blend[4]={0, 0, 0, 0};
+        bool lcdBlend=false;
+
         for(auto &entry:m_fonts)
         {
             GLFontData &fontData=entry.second;
@@ -1424,6 +1515,23 @@ void OpenGLCore::flush()
             if(fontData.drawCounts.empty())
                 continue;
 
+            const bool lcd=(fontData.mode == GLTextMode::LcdRGB) || (fontData.mode == GLTextMode::LcdBGR);
+
+            if(lcd && !lcdBlend)
+            {
+                glGetIntegerv(GL_BLEND_SRC_RGB, &blend[0]);
+                glGetIntegerv(GL_BLEND_DST_RGB, &blend[1]);
+                glGetIntegerv(GL_BLEND_SRC_ALPHA, &blend[2]);
+                glGetIntegerv(GL_BLEND_DST_ALPHA, &blend[3]);
+                glBlendFunc(GL_SRC1_COLOR, GL_ONE_MINUS_SRC1_COLOR);
+                lcdBlend=true;
+            }
+            else if(!lcd && lcdBlend)
+            {
+                glBlendFuncSeparate(blend[0], blend[1], blend[2], blend[3]);
+                lcdBlend=false;
+            }
+
             glBindTexture(GL_TEXTURE_2D, fontData.atlas->id);
             glProgramUniform1i(m_textProgram, m_textModeUniform, (GLint)fontData.mode);
             glMultiDrawElements(GL_TRIANGLES, fontData.drawCounts.data(), (GLenum)GL_UNSIGNED_INT,
@@ -1431,6 +1539,9 @@ void OpenGLCore::flush()
             ++m_frameStats.drawCalls;
             ++m_frameStats.textDraws;
         }
+
+        if(lcdBlend)
+            glBlendFuncSeparate(blend[0], blend[1], blend[2], blend[3]);
 
         glBindVertexArray(0);
     }
@@ -2554,13 +2665,10 @@ void OpenGLCore::measuredPenShifts(const gweni::Font &font, GLFontData &drawn, f
 
     // An SDF font lays a run out linearly in px, so measured at font.size and drawn
     // at px its pens differ by the scale alone.
-    GLTextMode mode;
-
-    resolveFont(font, font.size, mode);
-    if(mode == GLTextMode::Sdf)
+    if(resolveFont(font, font.size).mode == GLTextMode::Sdf)
         return;
 
-    std::pair<const Font, GLFontData> *drawFont=m_lastFont;
+    std::pair<const GLFontKey, GLFontData> *drawFont=m_lastFont;
 
     if(!ensureFont(font, font.size))
     {
