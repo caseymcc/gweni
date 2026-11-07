@@ -277,6 +277,19 @@ public:
     void setTextAA(TextAA aa);
     TextAA textAA() const { return m_textAA; }
 
+    //! The LCD modes' contrast correction: the subpixel coverage of text of
+    //! luminance L is raised through c*(k+1)/(c*k+1), k=contrast*L, so light text
+    //! over a dark background gets more and black text none. 0 turns it off.
+    //! GWENI_TEXT_CONTRAST=<f> sets it at construction, 1 otherwise. Grayscale and
+    //! SDF text do not use it. A change shows from the next frame on, with nothing
+    //! laid out again.
+    void setTextContrast(float contrast) { m_textContrast=std::max(0.0f, contrast); }
+    float textContrast() const { return m_textContrast; }
+
+    //! The freetype-gl font a font's text is drawn from (resolved at its draw px),
+    //! nullptr if it is not loaded: a test hook, to look its glyphs up.
+    ftgl::texture_font_t *getTextureFont(const gweni::Font &font) const;
+
     //! The GL objects init() created (0 before init()), so a test can check that the
     //! destructor deletes them.
     struct GLObjectNames
@@ -645,6 +658,8 @@ private:
     float m_sdfTextMin;
     //! How coverage-range text is anti-aliased (setTextAA, GWENI_TEXT_AA)
     TextAA m_textAA=TextAA::Grayscale;
+    //! The LCD modes' coverage boost for light text (setTextContrast, GWENI_TEXT_CONTRAST)
+    float m_textContrast;
 
     glm::mat4 m_projectionMatrix;
 
@@ -667,6 +682,7 @@ private:
     uint32_t m_textProjectionUniform;
     uint32_t m_textClipBoxesUniform;
     uint32_t m_textModeUniform; //!< the GLTextMode of the atlas being drawn
+    uint32_t m_textContrastUniform; //!< m_textContrast, set every flush()
 
     uint32_t m_textVertexArray=0;
     uint32_t m_textVertexBuffer=0;

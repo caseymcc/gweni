@@ -217,12 +217,12 @@ on an OpenGL 3.3 core profile:
   `GL_UNPACK_ALIGNMENT` 1, a third of the bytes an RGB atlas takes. The vendored
   freetype-gl rasterises a hinted depth-1 atlas with `FT_LOAD_FORCE_AUTOHINT |
   FT_LOAD_TARGET_LIGHT`, which snaps to the grid vertically only, so stems keep their
-  horizontal position (`FT_LOAD_TARGET_LCD` stays for a depth-3 atlas). A glyph's
+  horizontal position. A glyph's
   advance comes from that same hinted load, in whole pixels, and kerning is rounded to
   whole pixels too, so the pen stays on whole pixels and identical glyph pairs get
   identical gaps; `text_buffer` places each quad at `round(pen.x) + offset_x`, as wide
   as its bitmap, so every pixel samples exactly one texel, and keeps the pen's
-  fraction in the vertex's `shift` (zero while hinted) for a later subpixel mode.
+  fraction in the vertex's `shift` (zero while hinted).
   `measureText` and `renderText` both lay out through `text_buffer_add_text`, so the
   measured width (the final `pen.x`) is the drawn advance. The text shader outputs
   `vec4(color.rgb, color.a * coverage)` under the `SRC_ALPHA, ONE_MINUS_SRC_ALPHA`
@@ -233,23 +233,45 @@ on an OpenGL 3.3 core profile:
   then every output is the grayscale path's byte for byte. In an LCD mode a coverage-range
   font resolves to `GLTextMode::LcdRGB`/`LcdBGR` (the mode is part of the `GLFontKey`, so
   grayscale and LCD fonts never share an atlas) and loads a depth-3 atlas
-  (`LCD_FILTERING_ON`): freetype-gl rasterises it with `FT_LOAD_FORCE_AUTOHINT |
-  FT_LOAD_TARGET_LCD` and FreeType's LCD filter, one coverage byte per subpixel, uploaded
+  (`LCD_FILTERING_ON`): freetype-gl rasterises it with FreeType's LCD filter
+  (`FT_RENDER_MODE_LCD`), one coverage byte per subpixel, uploaded
   as `GL_RGB8`/`GL_RGB` initially and in the dirty bands. The text fragment shader has a
   dual-source output (`layout(location=0, index=1) Coverage`): for an LCD atlas it is the
   texel's `.rgb` (`.bgr` for BGR) times the colour's alpha, and `flush()` draws that
   atlas's runs under `glBlendFunc(GL_SRC1_COLOR, GL_ONE_MINUS_SRC1_COLOR)`, putting the
   previous blend back after, so each channel blends by its own subpixel's coverage. The
   other modes leave `FragColor` as it was and their blend does not read `Coverage`.
-  Glyphs are still on whole pixels with whole-pixel advances, and no contrast curve is
-  applied, so on the dark theme LCD text is fringe-heavy for now. The SDF range stays
+  **Glyphs sit at 1/3 device px.** An LCD font sets freetype-gl's
+  `texture_font_t::subpixel_positions` to 3 (a gweni patch, before its cache loads):
+  glyphs load with `FT_LOAD_FORCE_AUTOHINT | FT_LOAD_TARGET_LIGHT` (vertical-only
+  hinting, so the outline's x is the design's), advances are the unhinted
+  `linearHoriAdvance` and kerning is `FT_KERNING_UNFITTED` unrounded, so the pen is the
+  exact fractional sum. `text_buffer_add_char` rounds the pen to the nearest third,
+  puts the quad on the whole pixel below it and draws the image of that phase
+  (`texture_font_get_glyph_phase`): the outline moved right by `phase*64/3` 26.6 units
+  (`FT_Outline_Translate`) before `FT_Render_Glyph(FT_RENDER_MODE_LCD)`, each phase a
+  glyph of its own in the atlas, keyed by `texture_glyph_t::phase`. The cache is
+  rasterised at phase 0 and the other phases as runs first need them; three phases of
+  8-16 px ASCII take 1-3 % of the 1024x1024 atlas. The vertex's `shift` is `phase/3`.
+  `measureText` lays out through the same `text_buffer_add_text`, so its width (the
+  final pen, rounded up) is the drawn one; at a canvas scale an LCD run gets no
+  `measuredPenShifts`, since unhinted pens scale linearly. **Contrast:** blending sRGB
+  values, light text over a dark background comes out thinner than dark over light, so
+  the LCD branch of the text shader raises each subpixel's coverage through
+  DirectWrite's enhanced-contrast curve `c*(k+1)/(c*k+1)`, `k = contrast * luminance`
+  of the text colour: white text gets the most and black none. `contrast` is
+  `setTextContrast()`, `GWENI_TEXT_CONTRAST=<f>` at construction, default 1 (mid
+  coverage 0.5 becomes 0.67 for white); 0 turns it off. Grayscale and SDF text do not
+  use it. The SDF range stays
   grayscale in every mode. `setTextAA` at runtime replaces every coverage-range font with
   one in the new mode (its runs drop out of the draw lists and draw nothing until laid out
   again) and raises `renderer::Base::textLayoutSerial()`; `Canvas::updateCanvas` sees the
   new serial and calls `onScaleChanged()`, the whole-tree re-layout a scale change uses, so
   the next frame is the one a canvas started in that mode draws. `tests/textAA.cpp` pins
   it: stem edges blue-left/red-right in rgb, mirrored in bgr, R == B in gray, and runtime
-  switches matching fresh renderers pixel for pixel. A Vulkan backend would need the
+  switches matching fresh renderers pixel for pixel; `tests/textSubpixel.cpp` the
+  positions (each glyph within 1/3 px of FreeType's own unhinted pens, at scale 1 and
+  1.5), the atlas fill and the contrast curve. A Vulkan backend would need the
   `dualSrcBlend` device feature and fall back to grayscale without it.
 - **Hybrid text.** With the effective size `px = textPx(font) = font.size*scale()`,
   text below `GWENI_SDF_TEXT_MIN`

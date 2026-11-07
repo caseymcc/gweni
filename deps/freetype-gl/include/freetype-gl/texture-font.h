@@ -194,6 +194,14 @@ typedef struct texture_glyph_t
      */
     float outline_thickness;
 
+    /**
+     * gweni: which of the font's subpixel_positions this image was rasterised
+     * at: its outline moved right by phase/subpixel_positions px before it was
+     * rendered. 0 for every glyph of a font without subpixel positions. Only a
+     * phase 0 glyph carries kerning pairs.
+     */
+    int phase;
+
 } texture_glyph_t;
 
 
@@ -336,6 +344,18 @@ typedef struct texture_font_t
      */
     int sdf_spread;
 
+    /**
+     * gweni: when > 1, the number of horizontal positions per pixel a glyph is
+     * drawn at (3 for LCD text, one per subpixel), into a depth-3 atlas. The
+     * glyphs are hinted lightly (vertically only) whatever the hinting flag,
+     * advance_x and the kerning are the unhinted, fractional horizontal metrics,
+     * and text_buffer_add_char quantises each pen x to 1/subpixel_positions px,
+     * drawing the image rasterised at that phase (texture_font_get_glyph_phase)
+     * from the whole pixel below. 0 (the calloc default) keeps glyphs on whole
+     * pixels. Set it before the first glyph is loaded.
+     */
+    int subpixel_positions;
+
 } texture_font_t;
 
 
@@ -405,6 +425,16 @@ typedef struct texture_font_t
   texture_glyph_t *
   texture_font_get_glyph( texture_font_t * self,
                           const char * codepoint );
+
+/**
+ * gweni: as texture_font_get_glyph, the image rasterised at one phase of the
+ * font's subpixel_positions (its outline moved right by
+ * phase/subpixel_positions px). Phase 0 is texture_font_get_glyph's glyph; a
+ * phase outside [0, subpixel_positions) is taken as 0.
+ */
+  texture_glyph_t *
+  texture_font_get_glyph_phase( texture_font_t * self,
+                                const char * codepoint, int phase );
 
 /**
  * Request an already loaded glyph from the font.

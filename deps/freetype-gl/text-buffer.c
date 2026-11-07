@@ -425,17 +425,38 @@ text_buffer_add_char( text_buffer_t * self,
         float a = markup->foreground_color.alpha;
         // The quad sits on whole pixels, as wide as its bitmap, so each texel lands
         // on one pixel. The pen's fraction is kept in shift (zero while hinted
-        // advances keep the pen on whole pixels), for a later subpixel mode.
+        // advances keep the pen on whole pixels).
         float pen_x = roundf( pen->x );
         float shift = pen->x - pen_x;
-        float x0 = ( pen_x + glyph->offset_x );
-        float y0 = (float)(int)( pen->y + glyph->offset_y );
-        float x1 = ( x0 + glyph->width );
-        float y1 = (float)(int)( y0 - glyph->height );
-        float s0 = glyph->s0;
-        float t0 = glyph->t0;
-        float s1 = glyph->s1;
-        float t1 = glyph->t1;
+        texture_glyph_t *image = glyph;
+
+        // gweni: with subpixel positions the pen is quantised to 1/n px instead:
+        // the whole pixel below it places the quad, and the phase, the n-ths
+        // past it, picks the image rasterised that far right. shift is phase/n.
+        if( font->subpixel_positions > 1 )
+        {
+            const int n = font->subpixel_positions;
+            const float steps = roundf( pen->x * n );
+            const float whole = floorf( steps / n );
+            const int phase = (int)( steps - whole * n );
+            texture_glyph_t *variant = texture_font_get_glyph_phase( font, current, phase );
+
+            pen_x = whole;
+            shift = phase / (float)n;
+            if( variant )
+                image = variant;
+            else
+                shift = 0.0f; // no room for it: the phase 0 image, on the pixel below
+        }
+
+        float x0 = ( pen_x + image->offset_x );
+        float y0 = (float)(int)( pen->y + image->offset_y );
+        float x1 = ( x0 + image->width );
+        float y1 = (float)(int)( y0 - image->height );
+        float s0 = image->s0;
+        float t0 = image->t0;
+        float s1 = image->s1;
+        float t1 = image->t1;
 
         SET_GLYPH_VERTEX(vertices[vcount+0],
                          x0,y0,0,  s0,t0,  r,g,b,a,  shift, gamma );

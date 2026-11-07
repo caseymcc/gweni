@@ -8,6 +8,7 @@
 #include FT_STROKER_H
 // #include FT_ADVANCES_H
 #include FT_LCD_FILTER_H
+#include FT_OUTLINE_H
 #include FT_MODULE_H
 #include <stdint.h>
 #include <stdlib.h>
@@ -129,6 +130,7 @@ texture_glyph_new(void)
     self->t0        = 0.0;
     self->s1        = 0.0;
     self->t1        = 0.0;
+    self->phase     = 0;
     self->kerning   = vector_new( sizeof(kerning_t) );
     return self;
 }
@@ -178,15 +180,20 @@ texture_font_generate_kerning( texture_font_t *self,
 
     /* For each glyph couple combination, check if kerning is necessary */
     /* Starts at index 1 since 0 is for the special backgroudn glyph */
+    /* gweni: a phase variant's pairs are its phase 0 glyph's, which holds them */
     for( i=1; i<self->glyphs->size; ++i )
     {
         glyph = *(texture_glyph_t **) vector_get( self->glyphs, i );
+        if( glyph->phase != 0 )
+            continue;
         glyph_index = FT_Get_Char_Index( *face, glyph->codepoint );
         vector_clear( glyph->kerning );
 
         for( j=1; j<self->glyphs->size; ++j )
         {
             prev_glyph = *(texture_glyph_t **) vector_get( self->glyphs, j );
+            if( prev_glyph->phase != 0 )
+                continue;
             prev_index = FT_Get_Char_Index( *face, prev_glyph->codepoint );
             FT_Get_Kerning( *face, prev_index, glyph_index, FT_KERNING_UNFITTED, &kerning );
             // printf("%c(%d)-%c(%d): %ld\n",
@@ -195,9 +202,10 @@ texture_font_generate_kerning( texture_font_t *self,
             if( kerning.x )
             {
                 //26.6 fixed point now that the face is no longer HRES-oversampled in x;
-                //whole pixels when hinted, like the advances, to keep pens on the grid
+                //whole pixels when hinted, like the advances, to keep pens on the grid,
+                //fractional with subpixel positions, like theirs
                 float k_x = kerning.x / HRESf;
-                if( self->hinting )
+                if( self->hinting && self->subpixel_positions <= 1 )
                     k_x = roundf( k_x );
                 kerning_t k = {prev_glyph->codepoint, k_x};
                 vector_push_back( glyph->kerning, &k );
@@ -353,9 +361,16 @@ texture_font_delete( texture_font_t *self )
     free( self );
 }
 
-texture_glyph_t *
-texture_font_find_glyph( texture_font_t * self,
-                         const char * codepoint )
+/* gweni: the phase a glyph of this font can be rasterised at, 0 for any other */
+static int
+texture_font_valid_phase( const texture_font_t * self, int phase )
+{
+    return (phase > 0 && phase < self->subpixel_positions) ? phase : 0;
+}
+
+static texture_glyph_t *
+texture_font_find_glyph_phase( texture_font_t * self,
+                               const char * codepoint, int phase )
 {
     size_t i;
     texture_glyph_t *glyph;
@@ -368,7 +383,8 @@ texture_font_find_glyph( texture_font_t * self,
         if( (glyph->codepoint == ucodepoint) &&
             ((ucodepoint == -1) ||
              ((glyph->rendermode == self->rendermode) &&
-              (glyph->outline_thickness == self->outline_thickness)) ))
+              (glyph->outline_thickness == self->outline_thickness) &&
+              (glyph->phase == phase)) ))
         {
             return glyph;
         }
@@ -377,10 +393,17 @@ texture_font_find_glyph( texture_font_t * self,
     return NULL;
 }
 
-// ------------------------------------------------ texture_font_load_glyph ---
-int
-texture_font_load_glyph( texture_font_t * self,
+texture_glyph_t *
+texture_font_find_glyph( texture_font_t * self,
                          const char * codepoint )
+{
+    return texture_font_find_glyph_phase( self, codepoint, 0 );
+}
+
+// ------------------------------------------------ texture_font_load_glyph ---
+static int
+texture_font_load_glyph_phase( texture_font_t * self,
+                               const char * codepoint, int phase )
 {
     size_t i, x, y;
 
@@ -406,7 +429,7 @@ texture_font_load_glyph( texture_font_t * self,
         return 0;
 
     /* Check if codepoint has been already loaded */
-    if (texture_font_find_glyph(self, codepoint)) {
+    if (texture_font_find_glyph_phase(self, codepoint, phase)) {
         FT_Done_Face(face);
         FT_Done_FreeType(library);
         return 1;
@@ -503,11 +526,35 @@ texture_font_load_glyph( texture_font_t * self,
         flags = FT_LOAD_NO_HINTING | FT_LOAD_NO_BITMAP;
     }
 
+    /* gweni: subpixel positions (LCD text). Light hinting, vertical only, leaves
+     * the outline's x where the design has it, so the unhinted advance and
+     * kerning place it; the outline is loaded without rendering, moved right by
+     * the phase's fraction of a pixel (in 26.6) and rendered for the LCD. */
+    if( self->subpixel_positions > 1 )
+    {
+        assert( self->atlas->depth == 3 );
+        assert( self->rendermode == RENDER_NORMAL );
+        flags = FT_LOAD_NO_BITMAP;
+        if( self->hinting )
+            flags |= FT_LOAD_FORCE_AUTOHINT | FT_LOAD_TARGET_LIGHT;
+        else
+            flags |= FT_LOAD_NO_HINTING | FT_LOAD_NO_AUTOHINT;
+    }
+
     error = FT_Load_Glyph( face, glyph_index, flags );
     if( !error && self->sdf_spread > 0 )
     {
         sdf_advance_x = face->glyph->linearHoriAdvance / 65536.f;
         error = FT_Render_Glyph( face->glyph, FT_RENDER_MODE_SDF );
+    }
+    if( !error && self->subpixel_positions > 1 )
+    {
+        FT_Pos dx = (FT_Pos)lroundf( phase * HRESf / self->subpixel_positions );
+
+        sdf_advance_x = face->glyph->linearHoriAdvance / 65536.f;
+        if( dx )
+            FT_Outline_Translate( &face->glyph->outline, dx, 0 );
+        error = FT_Render_Glyph( face->glyph, FT_RENDER_MODE_LCD );
     }
     if( error )
     {
@@ -524,7 +571,7 @@ texture_font_load_glyph( texture_font_t * self,
     float advance_x = face->glyph->advance.x / HRESf;
     float advance_y = face->glyph->advance.y / HRESf;
 
-    if( self->hinting )
+    if( self->hinting && self->subpixel_positions <= 1 )
     {
         advance_x = roundf( advance_x );
         advance_y = roundf( advance_y );
@@ -677,6 +724,7 @@ cleanup_stroker:
     glyph->height   = tgt_h;
     glyph->rendermode = self->rendermode;
     glyph->outline_thickness = self->outline_thickness;
+    glyph->phase    = phase;
     glyph->offset_x = ft_glyph_left;
     glyph->offset_y = ft_glyph_top;
     glyph->s0       = x/(float)self->atlas->width;
@@ -684,9 +732,9 @@ cleanup_stroker:
     glyph->s1       = (x + glyph->width)/(float)self->atlas->width;
     glyph->t1       = (y + glyph->height)/(float)self->atlas->height;
 
-    if( self->sdf_spread > 0 )
+    if( self->sdf_spread > 0 || self->subpixel_positions > 1 )
     {
-        /* gweni: the SDF load was unhinted already */
+        /* gweni: the unhinted advance, of the SDF load or of the light-hinted one */
         glyph->advance_x = sdf_advance_x;
         glyph->advance_y = 0;
     }
@@ -701,12 +749,21 @@ cleanup_stroker:
     if( self->rendermode != RENDER_NORMAL && self->rendermode != RENDER_SIGNED_DISTANCE_FIELD )
         FT_Done_Glyph( ft_glyph );
 
-    texture_font_generate_kerning( self, &library, &face );
+    /* a phase variant adds no codepoint, so no pair */
+    if( phase == 0 )
+        texture_font_generate_kerning( self, &library, &face );
 
     FT_Done_Face( face );
     FT_Done_FreeType( library );
 
     return 1;
+}
+
+int
+texture_font_load_glyph( texture_font_t * self,
+                         const char * codepoint )
+{
+    return texture_font_load_glyph_phase( self, codepoint, 0 );
 }
 
 // ----------------------------------------------- texture_font_load_glyphs ---
@@ -744,6 +801,30 @@ texture_font_get_glyph( texture_font_t * self,
     /* Glyph has not been already loaded */
     if( texture_font_load_glyph( self, codepoint ) )
         return texture_font_find_glyph( self, codepoint );
+
+    return NULL;
+}
+
+// ------------------------------------------- texture_font_get_glyph_phase ---
+texture_glyph_t *
+texture_font_get_glyph_phase( texture_font_t * self,
+                              const char * codepoint, int phase )
+{
+    texture_glyph_t *glyph;
+
+    assert( self );
+    assert( self->atlas );
+
+    /* the NULL glyph (lines, background) has no phase */
+    phase = codepoint ? texture_font_valid_phase( self, phase ) : 0;
+    if( phase == 0 )
+        return texture_font_get_glyph( self, codepoint );
+
+    if( (glyph = texture_font_find_glyph_phase( self, codepoint, phase )) )
+        return glyph;
+
+    if( texture_font_load_glyph_phase( self, codepoint, phase ) )
+        return texture_font_find_glyph_phase( self, codepoint, phase );
 
     return NULL;
 }

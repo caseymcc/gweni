@@ -77,6 +77,10 @@ static constexpr int sdfSpread=6;
 static constexpr size_t sdfAtlasSize=1024;
 // GWENI_SDF_TEXT_MIN's default, in effective px
 static constexpr float defaultSdfTextMin=18.0f;
+// An LCD font's glyph positions per device pixel: one per subpixel
+static constexpr int lcdSubpixelPositions=3;
+// GWENI_TEXT_CONTRAST's default: the LCD coverage boost for white text
+static constexpr float defaultTextContrast=1.0f;
 
 // The printable ASCII every font rasterises when it is loaded
 static const char *const fontCache=" !\"#$%&'()*+,-./0123456789:;<=>?"
@@ -243,14 +247,16 @@ Font::Status OpenGLCore::loadFont(const Font &requested, float px)
     // Depth 1 for a coverage atlas, one coverage byte per texel rasterised
     // grayscale with light (vertical-only) hinting, and for an SDF one, one
     // distance byte. Depth 3 for an LCD one: freetype-gl rasterises it with
-    // FT_LOAD_TARGET_LCD and the LCD filter, one coverage byte per subpixel.
+    // light hinting, FT_RENDER_MODE_LCD and the LCD filter, one coverage byte
+    // per subpixel, at up to lcdSubpixelPositions phases per glyph.
     fontData.fontManager=sdf?ftgl::font_manager_new(sdfAtlasSize, sdfAtlasSize, LCD_FILTERING_OFF)
         :ftgl::font_manager_new(1024, 1024, lcd?LCD_FILTERING_ON:LCD_FILTERING_OFF);
 
     free(fontData.fontManager->cache); // font_manager_new strdup'd a default
     // The manager rasterises its cache as soon as it opens the face, before an SDF
-    // font's spread could be set, so an SDF font loads it itself below.
-    fontData.fontManager->cache=strdup(sdf?"":fontCache);
+    // font's spread or an LCD font's subpixel positions could be set, so those
+    // fonts load it themselves below.
+    fontData.fontManager->cache=strdup((sdf || lcd)?"":fontCache);
 
     fontData.markup.font=ftgl::font_manager_get_from_markup(fontData.fontManager, &fontData.markup);
 
@@ -259,6 +265,14 @@ Font::Status OpenGLCore::loadFont(const Font &requested, float px)
         fontData.markup.font->sdf_spread=sdfSpread;
         // unhinted, so the kerning is not rounded to whole base-size pixels
         fontData.markup.font->hinting=0;
+        ftgl::texture_font_load_glyphs(fontData.markup.font, fontCache);
+    }
+    else if(lcd && fontData.markup.font)
+    {
+        // Pens at 1/3 device px with the unhinted advances and kerning, each glyph
+        // drawn from the image rasterised at its pen's phase. The cache is phase 0;
+        // the other phases are rasterised as a run first needs them.
+        fontData.markup.font->subpixel_positions=lcdSubpixelPositions;
         ftgl::texture_font_load_glyphs(fontData.markup.font, fontCache);
     }
 
@@ -557,6 +571,13 @@ size_t OpenGLCore::getFontAtlasDepth(const Font &requested) const
     return 0;
 }
 
+ftgl::texture_font_t *OpenGLCore::getTextureFont(const Font &requested) const
+{
+    auto it=m_fonts.find(resolveFont(requested, textPx(requested)));
+
+    return (it != m_fonts.end())?it->second.textureFont:nullptr;
+}
+
 OpenGLCore::GLObjectNames OpenGLCore::getGLObjectNames() const
 {
     GLObjectNames names;
@@ -642,6 +663,13 @@ OpenGLCore::OpenGLCore(ResourcePaths &paths, const Rect &viewRect)
 
     if(const char *clipDebug=getenv("GWENI_CLIP_DEBUG"))
         m_clipDebugInset=std::max(0, atoi(clipDebug));
+
+    m_textContrast=defaultTextContrast;
+    if(const char *textContrast=getenv("GWENI_TEXT_CONTRAST"))
+    {
+        if(textContrast[0] != '\0')
+            m_textContrast=std::max(0.0f, (float)atof(textContrast));
+    }
 
     // set but empty keeps the default, as GWENI_SDF_TEXT_MIN does
     if(const char *textAA=getenv("GWENI_TEXT_AA"))
@@ -1104,6 +1132,8 @@ uniform usamplerBuffer clipBoxes;
 // GLTextMode of the atlas this draw samples: 0 coverage, 1 signed distance field,
 // 2 subpixel coverage in r, g, b order, 3 in b, g, r order
 uniform int textMode;
+// The LCD modes' contrast boost for white text (GWENI_TEXT_CONTRAST); 0 is none
+uniform float textContrast;
 // the SDF edge's anti-aliasing half-width, in screen pixels
 const float SDF_AA = 0.7;
 void main()
@@ -1131,6 +1161,16 @@ void main()
         if(textMode == 3)
             c = c.bgr;
         c = pow(c, vec3(1.0/gamma));
+
+        // Blending sRGB values, as this framebuffer does, light text over a dark
+        // background comes out thinner than dark over light at the same coverage,
+        // and its colour fringes stand out from its thin stems. Light text's
+        // coverage is raised through DirectWrite's enhanced-contrast curve
+        // c*(k+1)/(c*k+1), which keeps 0 and 1 and lifts what is between, by k
+        // growing with the text's luminance; black text is left as it is.
+        float k = textContrast*dot(color.rgb, vec3(0.2126, 0.7152, 0.0722));
+
+        c = c*(k+1.0)/(c*k+1.0);
         a = (c.r+c.g+c.b)/3.0;
 
         // dst = colour*coverage + dst*(1-coverage) per channel; the alpha
@@ -1165,6 +1205,7 @@ void main()
     m_textProjectionUniform=glGetUniformLocation(m_textProgram, "projection");
     m_textClipBoxesUniform=glGetUniformLocation(m_textProgram, "clipBoxes");
     m_textModeUniform=glGetUniformLocation(m_textProgram, "textMode");
+    m_textContrastUniform=glGetUniformLocation(m_textProgram, "textContrast");
 
     // texture1 stays on unit 0; the clip boxes are on unit 1 for both programs, and
     // the primitive program's images on FirstImageUnit on
@@ -1505,6 +1546,8 @@ void OpenGLCore::flush()
         // put back for the other atlases and after the pass.
         GLint blend[4]={0, 0, 0, 0};
         bool lcdBlend=false;
+
+        glProgramUniform1f(m_textProgram, m_textContrastUniform, m_textContrast);
 
         for(auto &entry:m_fonts)
         {
@@ -2664,8 +2707,11 @@ void OpenGLCore::measuredPenShifts(const gweni::Font &font, GLFontData &drawn, f
         return;
 
     // An SDF font lays a run out linearly in px, so measured at font.size and drawn
-    // at px its pens differ by the scale alone.
+    // at px its pens differ by the scale alone. So does an LCD font, whose pens are
+    // the unhinted advances and kerning, to within its 1/3 px quantisation.
     if(resolveFont(font, font.size).mode == GLTextMode::Sdf)
+        return;
+    if((drawn.mode == GLTextMode::LcdRGB) || (drawn.mode == GLTextMode::LcdBGR))
         return;
 
     std::pair<const GLFontKey, GLFontData> *drawFont=m_lastFont;
