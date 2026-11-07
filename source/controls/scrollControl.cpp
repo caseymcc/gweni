@@ -94,25 +94,6 @@ bool ScrollControl::onMouseWheeled(int iDelta)
     return false;
 }
 
-void ScrollControl::render(skin::Base *skin)
-{
-#if 0
-    // Debug render - this shouldn't render ANYTHING REALLY - it should be up to
-    // the parent!
-    gweni::Rect rect=getRenderBounds();
-    gweni::renderer::Base *render=skin->getRenderer();
-    render->setDrawColor(gweni::Color(255, 255, 0, 100));
-    render->drawFilledRect(rect);
-    render->setDrawColor(gweni::Color(255, 0, 0, 100));
-    render->drawFilledRect(m_innerPanel->getBounds());
-    render->renderText(skin->getDefaultFont(),
-        gweni::Point(0, 0),
-        format("Offset: %i %i", m_innerPanel->getX(), m_innerPanel->getY()));
-#else // 0
-    (void)skin;
-#endif // 0
-}
-
 bool ScrollControl::contentsAreDocked()
 {
     if(!m_innerPanel)
