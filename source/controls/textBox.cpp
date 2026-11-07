@@ -148,6 +148,98 @@ void TextBox::updateCaretBlink()
         canvas->redraw();
 }
 
+void TextBox::setText(const String &str, bool doEvents)
+{
+    ParentClass::setText(str, doEvents);
+    updatePlaceholder();
+}
+
+// The hint is a Text of its own rather than a text id of the skin's: it is
+// laid out, clipped, scaled and shown or hidden like m_text, and it does not
+// count in the box's size (doNotIncludeInSize).
+void TextBox::setPlaceholder(const String &str)
+{
+    if(!m_placeholder)
+    {
+        if(str.empty())
+            return;
+
+        m_placeholder=newChild<internal::Text>();
+        m_placeholder->doNotIncludeInSize();
+        m_placeholder->setFont(m_text->getFont());
+        m_placeholder->setPadding(m_text->getPadding());
+        m_placeholder->setAlignment(getTextAlignment());
+        m_placeholder->setTextColor(getSkin()->Colors.PlaceholderText);
+    }
+
+    m_placeholder->setText(str);
+    updatePlaceholder();
+}
+
+const String &TextBox::getPlaceholder() const
+{
+    static const String none;
+    return m_placeholder?m_placeholder->getText():none;
+}
+
+void TextBox::updatePlaceholder()
+{
+    if(!m_placeholder)
+        return;
+
+    const bool show=!m_placeholder->getText().empty() && !hidden() && getText().empty() && !isFocussed();
+
+    if(m_placeholder->hidden() == !show)
+        return;
+
+    m_placeholder->setHidden(!show);
+}
+
+void TextBox::updateColors()
+{
+    ParentClass::updateColors();
+    updatePlaceholder();
+}
+
+// Base::setHidden shows every child with the box, the hint included.
+void TextBox::setHidden(bool hidden)
+{
+    ParentClass::setHidden(hidden);
+    updatePlaceholder();
+}
+
+void TextBox::setFont(const gweni::Font &font)
+{
+    ParentClass::setFont(font);
+
+    if(m_placeholder)
+        m_placeholder->setFont(font);
+}
+
+void TextBox::setTextPadding(const Padding &padding)
+{
+    ParentClass::setTextPadding(padding);
+
+    if(m_placeholder)
+        m_placeholder->setPadding(padding);
+}
+
+void TextBox::setTextAlignment(Alignment alignment)
+{
+    ParentClass::setTextAlignment(alignment);
+
+    if(m_placeholder)
+        m_placeholder->setAlignment(getTextAlignment());
+}
+
+void TextBox::setWrap(bool b)
+{
+    ParentClass::setWrap(b);
+
+    if(m_placeholder)
+        m_placeholder->setAlignment(getTextAlignment());
+}
+
 // The focus change itself repaints this box (Base::focus's redraw()), which
 // shows the caret and selection.
 void TextBox::onKeyboardFocus()
@@ -774,6 +866,7 @@ void PasswordTextBox::setText(const String &str, bool doEvents)
 
     m_text->setText(passwordChars);
     redraw();
+    updatePlaceholder();
 
     if(doEvents)
         onTextChanged();

@@ -36,6 +36,29 @@ public:
 
     bool onChar(gweni::UnicodeChar c) override;
 
+    void setText(const String &str, bool doEvents=true) override;
+
+    //! A hint shown in the skin's PlaceholderText colour while the box is
+    //! empty and does not have the keyboard focus (imgui's InputTextWithHint).
+    //! It is not content: getText(), the caret, the length limit and the box's
+    //! size see only the typed text, and a hint wider than the box is clipped
+    //! by it. An empty string means no hint.
+    virtual void setPlaceholder(const String &str);
+    const String &getPlaceholder() const;
+    //! Whether the hint is drawn now.
+    bool isPlaceholderShown() const { return m_placeholder && !m_placeholder->hidden(); }
+    //! The hint's Text, nullptr until a hint is set: placed like the typed
+    //! text, inside the same padding with the same alignment and font.
+    const internal::Text *getPlaceholderText() const { return m_placeholder; }
+
+    void setHidden(bool hidden) override;
+
+    using Label::setFont;
+    void setFont(const gweni::Font &font) override;
+    void setTextPadding(const Padding &padding) override;
+    void setTextAlignment(Alignment alignment) override;
+    void setWrap(bool b) override;
+
     virtual void insertText(const gweni::String &str);
     virtual void deleteText(int iStartPos, int iLength);
 
@@ -110,6 +133,16 @@ public:
 protected:
 
     void onTextChanged() override;
+
+    //! Every focus change repaints the box through redraw(), once the focus
+    //! has moved (Base::focus, unfocus, and a hidden control's focus dropped
+    //! by the canvas): the hint's visibility follows it there.
+    void updateColors() override;
+    //! Shows the hint if there is one, the box is visible and empty and does
+    //! not have the focus; hides it otherwise. Only ever toggles its
+    //! visibility, so nothing is laid out again.
+    void updatePlaceholder();
+
     virtual bool isTextAllowed(const gweni::String &/*str*/, int /*pos*/)
     {
         return true;
@@ -132,6 +165,9 @@ protected:
 
     float m_nextCaretBlink=0.0f;
     bool m_caretVisible=true;
+
+    //! The hint, a second Text beside m_text, made by the first setPlaceholder.
+    internal::Text *m_placeholder=nullptr;
 };
 
 

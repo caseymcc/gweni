@@ -12,6 +12,7 @@ GWENI_CONTROL_CONSTRUCTOR(TextBoxDemo)
     {
         controls::TextBox *label=newChild<controls::TextBox>();
         label->setText("");
+        label->setPlaceholder("Type here...");
         label->setPos(10, 10);
         label->onTextChangedCaller.add(this, &TextBoxDemo::onEdit);
         label->onReturnPressedCaller.add(this, &TextBoxDemo::onSubmit);
@@ -38,6 +39,17 @@ GWENI_CONTROL_CONSTRUCTOR(TextBoxDemo)
         label->setText("2004");
         label->setTextColor(Color(255, 0, 255, 255));
         label->setPos(10, 10 + 25 * 4);
+    }
+    {
+        // the hint is not masked; what is typed is
+        controls::PasswordTextBox *label=newChild<controls::PasswordTextBox>();
+        label->setPlaceholder("Password");
+    }
+    {
+        // the hint is not the value: GetFloatFromText() reads the typed text
+        controls::TextBoxNumeric *label=newChild<controls::TextBoxNumeric>();
+        label->setText("");
+        label->setPlaceholder("Year");
     }
     {
 //        m_font.facename="Impact";

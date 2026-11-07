@@ -453,6 +453,7 @@ void TexturedSkin::loadTheme(const json::Value &jsonTheme)
                 {"ButtonNormal",&Colors.Button.Normal},{"ButtonHover",&Colors.Button.Hover},
                 {"ButtonDown",&Colors.Button.Down},{"ButtonDisabled",&Colors.Button.Disabled},
                 {"TooltipText",&Colors.TooltipText},
+                {"PlaceholderText",&Colors.PlaceholderText},
             };
 
             for(const auto &member:textColors.GetObject())
@@ -538,6 +539,7 @@ void TexturedSkin::setThemeColors()
 
     Colors.ModalBackground=gweni::Color(0x0a, 0x0a, 0x10, 160);
     Colors.TooltipText=Fg;
+    Colors.PlaceholderText=Muted;
 }
 
 

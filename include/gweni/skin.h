@@ -357,6 +357,8 @@ public:
 
         gweni::Color ModalBackground;
         gweni::Color TooltipText;
+        //! A TextBox's hint, drawn while it is empty and unfocused.
+        gweni::Color PlaceholderText{0x80, 0x80, 0x80};
 
     } Colors;
 

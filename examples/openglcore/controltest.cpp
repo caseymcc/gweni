@@ -111,10 +111,10 @@
  *  Use --press (not --click) to photograph a held-down button: a --click is down
  *  and up again, so by the next frame the control is only hovered.
  *
- *  Typing into TextBoxDemo's first box (at 640x480 its centre is 320,28) and
+ *  Typing into TextBoxDemo's first box (at 640x480 its centre is 100,10) and
  *  checking the result:
  *
- *    --control TextBoxDemo --frames 3 --click 320,28 --frames 2 \
+ *    --control TextBoxDemo --frames 3 --click 100,10 --frames 2 \
  *        --type hello --expect-text hello --key backspace --expect-text hell \
  *        --key ctrl+a --key ctrl+c --key end --key ctrl+v --expect-text hellhell
  *

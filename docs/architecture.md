@@ -264,6 +264,21 @@ on an OpenGL 3.3 core profile:
   selection colour is the `TextSelection` surface (`tokyoNight.h`, overridable in
   `DefaultSkin.json`'s `"theme"`). A wrapped (multiline) box draws no selection yet: it
   needs one rect per line.
+- **The TextBox placeholder.** `TextBox::setPlaceholder` adds a second `internal::Text`
+  child, made on the first non-empty hint, with `m_text`'s font, text padding and text
+  alignment (kept in step by `setFont`, `setTextPadding`, `setTextAlignment` and
+  `setWrap`), so its first glyph is where the first typed one goes; a multiline box's
+  hint is one unwrapped line at its first line. It is drawn in the skin's
+  `Colors.PlaceholderText` (the theme's `Muted`, `"PlaceholderText"` in `"textColors"`),
+  is `doNotIncludeInSize()`, so it never widens the box, and a hint wider than the box
+  is clipped by it like the text. `TextBox::updatePlaceholder` shows it while the box is
+  visible and empty and does not have the focus, and hides it otherwise, through
+  `setHidden` only: its text id is hidden, not freed, and nothing is laid out again. It
+  runs from `setText` (`PasswordTextBox`'s too, which shows the hint unmasked),
+  `setHidden` (showing a box shows every child) and `updateColors()`, which every focus
+  change reaches through `redraw()` once `KeyboardFocus` has moved; `onLostKeyboardFocus`
+  runs before it has (`Base::focus`), and a hidden box loses the focus with no call at
+  all (`input::onCanvasThink`).
 - **Scale and the device-pixel grid.** Controls lay out in logical units (integers);
   `renderer::Base::translate()` turns them into device pixels at `scale()` (set by
   `Canvas::setScale`). It snaps **edges**, not origin and size apart: a point is
