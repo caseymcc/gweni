@@ -61,7 +61,10 @@
  *    --dump-bounds [<path>]
  *                       print the laid-out control tree as text: one line per
  *                       control, depth-first in child order, indented by depth,
- *                       with its type, bounds, dock, size flags and hidden
+ *                       with its type, bounds, preferred size (pref=, the
+ *                       getPreferredSize() the last layout measured; for a
+ *                       control with a layout, its top-level LayoutItem's
+ *                       plus its padding), dock, size flags and hidden
  *                       state. Every child is listed, private ones included:
  *                       a ScrollControl shows its inner panel (its rows under
  *                       it) and both scrollbars. An inner panel's line ends
@@ -518,7 +521,8 @@ static void printUsage(std::ostream &out)
          "                     check; all eight fail on a no\n"
          "  --dump-bounds [<path>]  print the laid-out control tree as text,\n"
          "                     private children and hidden state included, an\n"
-         "                     inner panel marked \" inner\"\n"
+         "                     inner panel marked \" inner\", with each control's\n"
+         "                     bounds and preferred size (pref=)\n"
          "  --resources <dir>  load the skin, fonts and textures from <dir> (relative\n"
          "                     to the working directory, or absolute) instead of\n"
          "                     the resources/ next to the executable\n"
@@ -666,15 +670,20 @@ struct Session
 // not come back usually shows, and the inner panel is what a scroll moves.
 // That is the tree layout and render walk too. The inner panel's line ends in
 // " inner", so the listing still shows where getChildren() would have gone.
+// pref= is the control's getPreferredSize(), so a preferred size that does not
+// come back shows too; a nested LayoutItem is not a control and has no line of
+// its own.
 static void writeControlLine(std::ostream &out, gweni::controls::Base *control, int depth,
     bool inner=false)
 {
     const gweni::Rect &bounds=control->getBounds();
+    const gweni::Size &preferred=control->getPreferredSize();
     const gweni::SizeFlags flags=control->getSizeFlags();
 
     out<<std::string(static_cast<size_t>(depth)*2, ' ')
        <<control->getTypeName()
        <<" bounds=("<<bounds.x<<", "<<bounds.y<<", "<<bounds.w<<", "<<bounds.h<<")"
+       <<" pref=("<<preferred.width<<", "<<preferred.height<<")"
        <<" dock="<<gweni::getDockPositionName(control->getDock())
        <<" size="<<gweni::sizeFlagName(flags.horizontal)
        <<","<<gweni::sizeFlagName(flags.vertical)
