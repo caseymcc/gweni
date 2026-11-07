@@ -72,3 +72,21 @@ object goes unreported. ListBoxDemo's original UTF-8 over-read ran from a short
 (SSO) string into the neighbouring `m_font` field of `controls::Text`, and neither
 ASAN nor valgrind reported it. The deterministic trailing-bytes unit test and the
 two-process determinism test cover that case.
+
+## Benchmarks
+
+`gweni_bench` (`bench/`) runs a fixed scene on the full path, gweni plus
+`OpenGLCore` on surfaceless EGL, and prints per measured frame the wall time of
+each phase (`input`, `update`, `render`, `flush`, `gpu`) and the work counters:
+controls visited and changed, slots written, uploads, draw calls, layout passes,
+z renumbering, live ids and C++ allocations. The same arguments give the same
+counters every run. Times are only meaningful from a release tree, and `gpu` is
+Mesa llvmpipe on the CPU inside the container:
+
+```bash
+build_linux_x64_release/bench/gweni_bench --list
+build_linux_x64_release/bench/gweni_bench --scene hover-sweep --n 10000
+```
+
+`--help` lists the options and every output key. `bench_smoke` (label `gpu`) only
+checks that every scene runs. See `AGENTS.md` → "Benchmarks and profiling".

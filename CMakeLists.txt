@@ -435,6 +435,12 @@ if(GWENI_BUILD_TESTS)
     add_subdirectory(tests)
 endif(GWENI_BUILD_TESTS)
 
+# gweni_bench (bench/): needs gweni_capture from the examples, and registers its
+# smoke test with the tests
+if(GWENI_BUILD_TESTS AND GWENI_BUILD_EXAMPLES)
+    add_subdirectory(bench)
+endif()
+
 #target_include_directories(gweni PUBLIC
 #        ${GWENI_SOURCE_DIR}/source/platform/include
 #        ${GWENI_SOURCE_DIR}/source/gweni/include
