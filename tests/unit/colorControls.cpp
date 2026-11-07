@@ -89,11 +89,12 @@ struct ColorScene
         canvas->renderCanvas();
     }
 
-    const Draw &drawOf(size_t id) const
+    //! A copy of the slot's draw this frame (Draw{} if none): the next frame()
+    //! clears the map, so a reference into it would not outlive the frame.
+    Draw drawOf(size_t id) const
     {
-        static const Draw none{};
         auto it=renderer.drawn.find(id);
-        return it == renderer.drawn.end()?none:it->second;
+        return it == renderer.drawn.end()?Draw{}:it->second;
     }
 
     //! The control's slots, in the order the renderer draws them.
@@ -137,7 +138,7 @@ TEST_CASE("the SV box draws one bilinear field and a marker centred on its curso
     const std::vector<size_t> ids=ColorScene::sortedIds(scene.box);
     REQUIRE(ids.size() == 2);
 
-    const Draw &field=scene.drawOf(ids[0]);
+    const Draw field=scene.drawOf(ids[0]);
     CHECK(field.bilinear);
     CHECK((field.rect == Rect(0, 0, 128, 128)));
     CHECK(field.zIndex == scene.box->getZIndex());
@@ -155,7 +156,13 @@ TEST_CASE("the SV box draws one bilinear field and a marker centred on its curso
     ColorScene::drag(scene.box, 10, 10, 96, 32);
     scene.frame();
     CHECK((scene.drawOf(ids[1]).rect == Rect(96-size/2, 32-size/2, size, size)));
-    CHECK((scene.drawOf(ids[0]).rect == field.rect));
+    REQUIRE(scene.renderer.drawn.count(ids[0]) == 1);
+    const Draw dragged=scene.drawOf(ids[0]);
+    CHECK((dragged.rect == field.rect));
+    CHECK((dragged.c00 == field.c00));
+    CHECK((dragged.c10 == field.c10));
+    CHECK((dragged.c01 == field.c01));
+    CHECK((dragged.c11 == field.c11));
 
     // a new hue moves the top-right corner
     scene.box->setColor(Color(0, 255, 255, 255));
