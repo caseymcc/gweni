@@ -27,7 +27,12 @@
  *                       and not released) after the frame; the id bank is
  *                       process-wide, so it covers every canvas;
  *                       z_visited= the controls updateCanvas()'s z renumber
- *                       entered (0 unless the tree order changed)
+ *                       entered (0 unless the tree order changed);
+ *                       layout_requests= the requested sizes or positions
+ *                       recorded while a layout pass ran, and requested_by=
+ *                       the first control that recorded one (Type#id, or
+ *                       none): layout code computes bounds, so it is 0 for
+ *                       every library control (docs/layout.md)
  *    --stats-clock frozen|step
  *                       whether the clock moves under --stats: frozen (the
  *                       default) steps it only for a scripted press, so an
@@ -573,6 +578,15 @@ static std::string redirtiedBy(const gweni::controls::LayoutStats &layout)
     return std::string(layout.redirtiedType)+"#"+std::to_string(layout.redirtiedId);
 }
 
+// The control that first recorded a request during a pass in a frame, as
+// Type#id, or "none" (LayoutStats::requests).
+static std::string requestedBy(const gweni::controls::LayoutStats &layout)
+{
+    if(!layout.requestedType)
+        return "none";
+    return std::string(layout.requestedType)+"#"+std::to_string(layout.requestedId);
+}
+
 // One grep-able line per frame, frame index first. The renderer numbers are read
 // after renderCanvas(), so they describe the frame just flushed.
 static void printFrameStats(int frame, const std::string &control,
@@ -585,7 +599,8 @@ static void printFrameStats(int frame, const std::string &control,
         " geometry=%zu background=%zu text=%zu prim_slots_written=%zu text_slots_written=%zu"
         " upload_calls=%zu upload_bytes=%zu mirror_bytes=%zu draw_calls=%zu"
         " atlas_upload_calls=%zu atlas_upload_bytes=%zu"
-        " layout_passes=%d redirtied_by=%s render_layout=%d visited=%zu z_visited=%zu prim_ids=%zu\n",
+        " layout_passes=%d redirtied_by=%s render_layout=%d layout_requests=%d requested_by=%s"
+        " visited=%zu z_visited=%zu prim_ids=%zu\n",
         frame, control.c_str(),
         changes.controls, changes.created, changes.visibility,
         changes.geometry, changes.background, changes.text,
@@ -593,6 +608,7 @@ static void printFrameStats(int frame, const std::string &control,
         gpu.uploadCalls, gpu.uploadBytes, gpu.mirrorBytes, gpu.drawCalls,
         gpu.atlasUploadCalls, gpu.atlasUploadBytes,
         layout.passes, redirtiedBy(layout).c_str(), layout.renderLayout ? 1 : 0,
+        layout.requests, requestedBy(layout).c_str(),
         changes.visited, update.zVisited, gweni::primitiveIdCount()-gweni::releasedPrimitiveIdCount());
     std::fflush(stdout);
 }

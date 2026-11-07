@@ -38,11 +38,13 @@ struct LayoutStats
     //! renderCanvas's own recurseLayout found layout dirty and ran a pass.
     bool renderLayout=false;
     //! Requests (see Base::setBounds) recorded while a pass ran, in either
-    //! phase, and the type name of the first control that recorded one. Only
-    //! the app asks for bounds; layout code computes them (setArrangedBounds,
-    //! placeChild), so a library control should leave this 0.
+    //! phase, and the first control that recorded one: its type name and
+    //! control id. Only the app asks for bounds; layout code computes them
+    //! (setArrangedBounds, placeChild), so a library control should leave
+    //! this 0.
     int requests=0;
     const char *requestedType=nullptr;
+    size_t requestedId=0;
 };
 
 //! What updateCanvas() did below the canvas in one frame, outside layout

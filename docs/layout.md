@@ -136,8 +136,10 @@ ScrollControl, see above).
 but that does not count in the parent's size (TextBox's placeholder).
 
 `Canvas::getLayoutStats()` counts the requests recorded while a pass runs
-(`requests`, and `requestedType`, the first control type that recorded one), and
-debug builds print one line per control type that recorded one. Layout code
+(`requests`, and `requestedType`/`requestedId`, the first control that recorded
+one), and debug builds print one line per control type that recorded one.
+`ControlTest --stats` prints them on every frame line (`layout_requests=N
+requested_by=<Type>#<id>|none`). Layout code
 should leave it at 0; a request it records makes a preferred size depend on
 what an earlier pass did (a CrossSplitter's bars asking for the canvas size they
 were given). Library controls that still write their children with

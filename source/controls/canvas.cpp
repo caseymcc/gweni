@@ -212,7 +212,10 @@ void Canvas::layoutRequested(controls::Base *control)
     ++m_layoutStats.requests;
 
     if(!m_layoutStats.requestedType)
+    {
         m_layoutStats.requestedType=control->getTypeName();
+        m_layoutStats.requestedId=control->getControlId();
+    }
 
 #ifndef NDEBUG
     // Once per type, like the re-dirty warning: what layout code writes is
