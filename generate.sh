@@ -29,6 +29,10 @@ for var in "$@"; do
     if [ "$var" = "android" ]; then
         platform="android"
     fi
+    if [ "$var" = "web" ]; then
+        platform="web"
+        arch="wasm32"
+    fi
     if [ "$var" = "release" ]; then
         build_type="release"
     fi
@@ -64,6 +68,27 @@ if [ -n "$profile" ]; then
         exit 1
     fi
     build_type="profile"
+fi
+
+if [ "$platform" = "web" ]; then
+    # The web tree (build_web_wasm32_<debug|release>/) is built by Emscripten
+    # from emsdk, which the image installs at /opt/emsdk (EMSDK, see Dockerfile).
+    if [ -n "$sanitize" ] || [ -n "$profile" ]; then
+        echo "ERROR: asan and profile do not combine with web; use ./generate.sh web [release]"
+        exit 1
+    fi
+    emscripten_toolchain="$EMSDK/upstream/emscripten/cmake/Modules/Platform/Emscripten.cmake"
+    if [ -z "$EMSDK" ] || [ ! -f "$emscripten_toolchain" ]; then
+        echo "ERROR: the web tree needs emsdk: EMSDK is not set or has no upstream/emscripten/cmake/Modules/Platform/Emscripten.cmake (the build image installs it at /opt/emsdk)"
+        exit 1
+    fi
+    # emsdk's own node runs the wasm tests and the browser probe; Emscripten.cmake
+    # would otherwise take whichever node is first on PATH, if any
+    emsdk_node="${EMSDK_NODE:-$(ls "$EMSDK"/node/*/bin/node 2>/dev/null | head -1)}"
+    if [ ! -x "$emsdk_node" ]; then
+        echo "ERROR: the web tree needs emsdk's node: EMSDK_NODE is not set and there is no $EMSDK/node/*/bin/node"
+        exit 1
+    fi
 fi
 
 echo "**Building $platform $arch for $build_type"
@@ -114,6 +139,23 @@ if [ "$platform" = "linux" ]; then
         OFF|0|FALSE|NO|N) ;;
         *) manifest_features="vulkan${manifest_features:+;$manifest_features}" ;;
     esac
+fi
+
+if [ "$platform" = "web" ]; then
+
+    # vcpkg's wasm32-emscripten triplet builds the dependencies with Emscripten
+    # (finding it through EMSDK), and this project is configured with emsdk's
+    # own toolchain file chainloaded. No Vulkan and, for now, no OpenGLCore or
+    # examples: the library, the textured skin and the headless unit tests,
+    # which run under emsdk's node (CMAKE_CROSSCOMPILING_EMULATOR).
+    cmake_options="$cmake_options \
+        -DCMAKE_TOOLCHAIN_FILE=$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake \
+        -DVCPKG_CHAINLOAD_TOOLCHAIN_FILE=$emscripten_toolchain \
+        -DVCPKG_TARGET_TRIPLET=wasm32-emscripten \
+        -DGWENI_RENDER_OPENGL_CORE=OFF \
+        -DGWENI_RENDER_VULKAN=OFF \
+        -DGWENI_BUILD_EXAMPLES=OFF \
+        -DCMAKE_CROSSCOMPILING_EMULATOR=$emsdk_node"
 fi
 
 # Always passed, empty or not, so a feature cached by an earlier configure of

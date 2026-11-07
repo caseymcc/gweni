@@ -28,6 +28,46 @@ loader, Mesa's lavapipe CPU driver (Vulkan 1.3), which the Vulkan tests run on,
 and Xvfb; an older container lacks them (`ls /usr/share/vulkan/icd.d` tells,
 and `vulkan_smoke` fails saying so).
 
+## Web tree
+
+`./generate.sh web` configures `build_web_wasm32_debug/` (`web release`:
+`build_web_wasm32_release/`), a WebAssembly build made by Emscripten:
+
+```bash
+./generate.sh web
+cmake --build build_web_wasm32_debug -j
+ctest --test-dir build_web_wasm32_debug -L web
+```
+
+It builds the `gweni` library, the textured skin and the headless unit tests
+(`gweni_unit_tests.js`/`.wasm`, run under node). The renderer and the example
+apps are not in it yet. The dependencies come from vcpkg's `wasm32-emscripten`
+triplet, with emsdk's own `Emscripten.cmake` chainloaded. `glew` and `glfw3`
+are left out on that platform; the GLFW headers come from Emscripten's
+`contrib.glfw3` port instead. `asan` and `profile` do not combine with `web`.
+The vcpkg binary cache starts cold for this triplet: the first configure builds
+its dependencies, about 30 s on a 32-core host.
+
+The build image has what it needs, pinned in the `Dockerfile`, about 2.1 GB
+more image in all:
+
+- emsdk 6.0.13 at `/opt/emsdk` (`EMSDK`), with its bundled node 24, which runs
+  the wasm tests and Playwright;
+- Playwright 1.65.0 at `/opt/playwright` (`NODE_PATH`), with the Chromium 158
+  headless shell it pins (`PLAYWRIGHT_BROWSERS_PATH`) and that shell's apt
+  packages.
+
+Without emsdk (an older container: `echo $EMSDK` is empty), `./generate.sh web`
+prints one line saying so and exits 1. From a host, `./run_docker.sh -r`
+rebuilds the image.
+
+Every test in the web tree has the label `web` and needs no GPU lock: each
+`unit:` case, run by node, and `web_probe`, which opens a blank page in the
+headless Chromium (`tests/web/probe.mjs`). The probe fails unless the page gets
+a WebGL 2 context with at least 24 depth bits, which in the container is ANGLE
+on SwiftShader. `web_probe_fails_without_webgl2` checks that the probe fails
+when the browser has no WebGL 2.
+
 ## Tests
 
 The suite is CTest, under `tests/`, run from the repo root:

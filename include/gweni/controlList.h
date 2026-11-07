@@ -62,7 +62,7 @@ public:
 
     void add(const EasyList<_TYPE> &list)
     {
-        add(list.list);
+        add(list.m_list);
     }
 
     bool contains(_TYPE control) const

@@ -39,7 +39,8 @@ macro(set_target_filesystem target)
     endif()
 
     target_compile_definitions(${target} PUBLIC "-D${target}_FILESYSTEM=${${target}_FILESYSTEM}")
-    if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang" OR "${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU" OR "${CMAKE_CXX_COMPILER_ID}" STREQUAL "AppleClang")
+    # Emscripten's libc++ has std::filesystem in itself, and no stdc++fs to link
+    if(("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang" OR "${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU" OR "${CMAKE_CXX_COMPILER_ID}" STREQUAL "AppleClang") AND NOT EMSCRIPTEN)
         if(${target}_FILESYSTEM GREATER ${${target}_BOOST_FILESYSTEM})
             target_compile_options(${target} PUBLIC "-lstdc++fs")
             target_link_libraries(${target} stdc++fs)

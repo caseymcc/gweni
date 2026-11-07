@@ -10,7 +10,9 @@
  *  on top of a getExecutableDir() that returned "" on Linux, and the textured
  *  skin opened its config name as given, bypassing ResourcePaths entirely.
  *
- *  Pinned: getExecutableDir() on Linux, RelativeToExecutablePaths /
+ *  Pinned: getExecutableDir() on Linux (and on the web, the "/" its preloaded
+ *  resources/ sit under, so "resources" resolves to /resources/...),
+ *  RelativeToExecutablePaths /
  *  CurrentPath joining as paths ("resources" and "resources/" alike, an
  *  absolute dir taken as it is), the .ttf font suffix, and TexturedSkin::init
  *  resolving its bare config name through the renderer's ResourcePaths (a
@@ -40,11 +42,13 @@ using Type=ResourcePaths::Type;
 namespace
 {
 
+#if defined(__linux__)
 //! The directory the running test binary is in, with no trailing separator.
 fs::path exeDir()
 {
     return fs::canonical("/proc/self/exe").parent_path();
 }
+#endif
 
 //! A fresh directory under the temp dir, removed again on destruction.
 struct TempDir
@@ -85,6 +89,16 @@ TEST_CASE("getExecutableDir is the test binary's directory, with a trailing slas
     REQUIRE_FALSE(dir.empty());
     CHECK(dir.back() == '/');
     CHECK(fs::canonical(dir) == exeDir());
+}
+#endif
+
+#if defined(__EMSCRIPTEN__)
+TEST_CASE("getExecutableDir on the web is the root the resources are preloaded under")
+{
+    CHECK(platform::getExecutableDir() == "/");
+
+    platform::RelativeToExecutablePaths paths("resources");
+    CHECK(paths.getPath(Type::Other, "DefaultSkin.json") == "/resources/DefaultSkin.json");
 }
 #endif
 

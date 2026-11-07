@@ -86,6 +86,12 @@ if(GWENI_RENDER_OPENGL_CORE)
 
         set(GWENI_RENDER_LIBRARIES ${GWENI_RENDER_LIBRARIES} glfw)
     endif()
+else()
+    # No renderer: the library, the skins and the headless unit tests only, as
+    # the web tree builds them until OpenGLCore is on there.
+    set(GWENI_RENDER_NAME "None")
+    set(GWENI_INPUT_NAME "None")
+    set(GWENI_PLATFORM_NAME "Cross")
 endif()
 
 #-----------------------------------------------------------

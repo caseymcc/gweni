@@ -315,10 +315,16 @@ target_link_libraries(gweni_unit_tests
 
 # utf8Typing.cpp drives a Canvas through the GLFW translator
 # (gweni/platforms/input/glfw3.h), which only uses GLFW's constants: it takes
-# GLFW's headers and does not link the library.
-find_package(glfw3 CONFIG REQUIRED)
-target_include_directories(gweni_unit_tests PRIVATE
-    $<TARGET_PROPERTY:glfw,INTERFACE_INCLUDE_DIRECTORIES>)
+# GLFW's headers and does not link the library. On the web they come from
+# Emscripten's contrib.glfw3 port (emscripten-glfw), which the web apps will
+# link; vcpkg's glfw3 is not built for wasm32 (vcpkg.json).
+if(EMSCRIPTEN)
+    target_compile_options(gweni_unit_tests PRIVATE --use-port=contrib.glfw3)
+else()
+    find_package(glfw3 CONFIG REQUIRED)
+    target_include_directories(gweni_unit_tests PRIVATE
+        $<TARGET_PROPERTY:glfw,INTERFACE_INCLUDE_DIRECTORIES>)
+endif()
 
 # discovered at build time, so the ASAN environment below does not reach them;
 # they get it here instead
@@ -326,6 +332,20 @@ set(gweni_unit_tests_properties TIMEOUT 60)
 if(GWENI_SANITIZE MATCHES "address")
     list(APPEND gweni_unit_tests_properties
         ENVIRONMENT "ASAN_OPTIONS=detect_leaks=0:abort_on_error=1")
+endif()
+if(EMSCRIPTEN)
+    # The web tree: gweni_unit_tests.js runs under emsdk's node, through
+    # CMAKE_CROSSCOMPILING_EMULATOR (./generate.sh web sets it), for discovery
+    # and for each case. The cases need no resources, and those that write
+    # files write to the in-memory file system's /tmp.
+    list(APPEND gweni_unit_tests_properties LABELS web)
+    # Emscripten's heap is a fixed 16 MB unless it may grow; the native cases
+    # assume no such limit.
+    target_link_options(gweni_unit_tests PRIVATE -sALLOW_MEMORY_GROWTH=1)
+    # Emscripten's isatty() says yes for node's piped stdout, so doctest would
+    # colour its --list-test-cases output and discovery would register the
+    # escape codes as test names.
+    target_compile_definitions(gweni_unit_tests PRIVATE DOCTEST_CONFIG_COLORS_NONE)
 endif()
 doctest_discover_tests(gweni_unit_tests
     TEST_PREFIX "unit:"
@@ -353,6 +373,27 @@ if(TARGET gweni_capture)
         TIMEOUT 60)
 else()
     message(STATUS "tests: unit tests skipped, they need gweni_capture (GWENI_BUILD_EXAMPLES)")
+endif()
+
+# web_probe: the image's pinned headless Chromium gives a WebGL 2 context with
+# 24 depth bits (web/probe.mjs, run on emsdk's node with Playwright from
+# NODE_PATH, as the Dockerfile sets them up), and web_probe_fails_without_webgl2
+# that the probe fails when the browser has no WebGL 2 (--disable-webgl2), so
+# it cannot pass with no GL at all. Registered in the web tree only.
+if(EMSCRIPTEN)
+    # emsdk's node, which ./generate.sh web sets as the emulator
+    if(NOT CMAKE_CROSSCOMPILING_EMULATOR)
+        message(FATAL_ERROR "tests: the web tree needs node as CMAKE_CROSSCOMPILING_EMULATOR (./generate.sh web sets emsdk's)")
+    endif()
+    add_test(NAME web_probe
+        COMMAND ${CMAKE_CROSSCOMPILING_EMULATOR} ${CMAKE_CURRENT_SOURCE_DIR}/web/probe.mjs)
+    add_test(NAME web_probe_fails_without_webgl2
+        COMMAND ${CMAKE_CROSSCOMPILING_EMULATOR} ${CMAKE_CURRENT_SOURCE_DIR}/web/probe.mjs --no-webgl2)
+    set_tests_properties(web_probe web_probe_fails_without_webgl2 PROPERTIES
+        LABELS web
+        TIMEOUT 120)
+    set_tests_properties(web_probe_fails_without_webgl2 PROPERTIES
+        PASS_REGULAR_EXPRESSION "FAIL: canvas.getContext\\('webgl2'\\) gave no WebGL 2 context")
 endif()
 
 # The Vulkan plumbing (GWENI_RENDER_VULKAN): loader, validation layer, a 1.3

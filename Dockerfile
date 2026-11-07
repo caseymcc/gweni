@@ -93,6 +93,39 @@ RUN apt-get update && \
         libwayland-dev \
         xvfb
 
+# The web tree (./generate.sh web, build_web_wasm32_<debug|release>/) and its
+# browser tests, the versions pinned here and nowhere else:
+# - emsdk at /opt/emsdk: Emscripten, its clang, and the node it bundles, which
+#   runs the wasm tests and Playwright (the image has no other node). The
+#   contrib.glfw3 port (emscripten-glfw) is fetched into the cache now, so a
+#   build needs no network. /opt/emsdk/node/current links to the bundled node,
+#   so the ENV lines below need not name its version.
+# - Playwright (npm) at /opt/playwright, found through NODE_PATH, with the
+#   Chromium headless shell it pins in PLAYWRIGHT_BROWSERS_PATH and that
+#   shell's apt dependencies (install-deps, before the apt lists are removed).
+#   tests/web/probe.mjs (CTest web_probe) checks that it gives WebGL 2.
+# About 2.1 GB more image: emsdk 1.7 GB, Playwright and its headless shell
+# 0.3 GB, the shell's 21 apt packages (fonts, mostly) 0.07 GB.
+ARG EMSDK_VERSION=6.0.13
+ARG PLAYWRIGHT_VERSION=1.65.0
+ENV EMSDK=/opt/emsdk
+ENV EMSDK_NODE=${EMSDK}/node/current/bin/node
+ENV PATH=${EMSDK}:${EMSDK}/upstream/emscripten:${EMSDK}/node/current/bin:${PATH}
+ENV NODE_PATH=/opt/playwright/node_modules
+ENV PLAYWRIGHT_BROWSERS_PATH=/opt/playwright/browsers
+RUN git clone --depth 1 --branch ${EMSDK_VERSION} https://github.com/emscripten-core/emsdk.git ${EMSDK} && \
+    ${EMSDK}/emsdk install ${EMSDK_VERSION} && \
+    ${EMSDK}/emsdk activate ${EMSDK_VERSION} && \
+    ln -s $(dirname $(dirname $(ls ${EMSDK}/node/*/bin/node | head -1))) ${EMSDK}/node/current && \
+    rm -rf ${EMSDK}/downloads ${EMSDK}/.git && \
+    embuilder build contrib.glfw3 && \
+    mkdir -p /opt/playwright && \
+    npm install --prefix /opt/playwright --no-audit --no-fund playwright@${PLAYWRIGHT_VERSION} && \
+    /opt/playwright/node_modules/.bin/playwright install chromium-headless-shell && \
+    apt-get update && \
+    /opt/playwright/node_modules/.bin/playwright install-deps chromium-headless-shell && \
+    chown -R ${USER_NAME}:${USER_NAME} ${EMSDK} /opt/playwright
+
 #clean up apt files, reduce docker size
 RUN rm -rf /var/lib/apt/lists/*
 

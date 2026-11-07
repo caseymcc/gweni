@@ -31,6 +31,9 @@
 #   include <libproc.h>
 #elif defined(__linux__)
 #   include <limits.h>
+#elif defined(__EMSCRIPTEN__)
+#   include <emscripten.h>
+#   include <cstdio>
 #endif
 
 namespace gweni
@@ -58,6 +61,20 @@ namespace platform
 {
 
 static String gs_ClipboardEmulator;
+
+#if defined(__EMSCRIPTEN__)
+
+// What the web build does not have yet, said once per process on stderr, never
+// silently: the cursor, the file dialogs and the system clipboard.
+static void reportMissingOnce(bool &reported, const char *what)
+{
+    if(reported)
+        return;
+    reported=true;
+    fprintf(stderr, "gweni: %s\n", what);
+}
+
+#endif
 
 String getExecutableDir()
 {
@@ -114,6 +131,14 @@ String getExecutableDir()
 
     return exePath.substr(0, slash+1);
 
+#elif defined(__EMSCRIPTEN__)
+
+    // Web: there is no executable file. The build preloads resources/ into the
+    // virtual file system (MEMFS) at /resources, so the root is the directory
+    // RelativeToExecutablePaths("resources") resolves against.
+
+    return "/";
+
 #else
 
     return String();
@@ -121,6 +146,8 @@ String getExecutableDir()
 #endif
 }
 
+// On the web (no threads), sleep_for busy-waits on the main thread: it waits,
+// but the page does not draw meanwhile.
 void sleep(unsigned int ms)
 {
     if(ms == 0)
@@ -164,6 +191,14 @@ float platformTimeInSeconds()
     return currentTime;
 }
 
+#elif defined(__EMSCRIPTEN__)
+
+// Wall time since the page (or node) started, from performance.now().
+float platformTimeInSeconds()
+{
+    return static_cast<float>(emscripten_get_now()/1000.0);
+}
+
 #else
 
 float platformTimeInSeconds()
@@ -177,33 +212,68 @@ float platformTimeInSeconds()
 void setCursor(unsigned char iCursor)
 {
     // No platform independent way to do this
+#if defined(__EMSCRIPTEN__)
+    static bool reported=false;
+    reportMissingOnce(reported, "the web build does not set the cursor yet (platform::setCursor)");
+#endif
 }
+
+#if defined(__EMSCRIPTEN__)
+static void reportClipboard()
+{
+    static bool reported=false;
+    reportMissingOnce(reported, "the web build's clipboard is in-process only, not the system clipboard");
+}
+#endif
 
 String getClipboardText()
 {
+#if defined(__EMSCRIPTEN__)
+    reportClipboard();
+#endif
     return gs_ClipboardEmulator;
 }
 
 bool setClipboardText(const String &str)
 {
+#if defined(__EMSCRIPTEN__)
+    reportClipboard();
+#endif
     gs_ClipboardEmulator=str;
     return true;
 }
 
+#if defined(__EMSCRIPTEN__)
+static void reportFileDialogs()
+{
+    static bool reported=false;
+    reportMissingOnce(reported, "the web build has no file dialogs; they return cancelled");
+}
+#endif
+
 bool fileOpen(const String &Name, const String &StartPath, const String &Extension,
     String &filePathOut)
 {
+#if defined(__EMSCRIPTEN__)
+    reportFileDialogs();
+#endif
     return false;
 }
 
 bool fileSave(const String &Name, const String &StartPath, const String &Extension,
     String &filePathOut)
 {
+#if defined(__EMSCRIPTEN__)
+    reportFileDialogs();
+#endif
     return false;
 }
 
 bool folderOpen(const String &Name, const String &StartPath, String &filePathOut)
 {
+#if defined(__EMSCRIPTEN__)
+    reportFileDialogs();
+#endif
     return false;
 }
 

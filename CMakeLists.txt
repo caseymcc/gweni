@@ -303,7 +303,8 @@ set(GWENI_PROPERTY_SOURCES
 )
 
 set(GWENI_RENDER_SOURCES "")
-set(GWENI_ADDITIONAL_LIBRARIES "")
+# imglib with every renderer or none: the textured skin loads its atlas with it
+set(GWENI_ADDITIONAL_LIBRARIES imglib)
 set(GWENI_COMPILE_DEFINITIONS "")
 
 # RapidJSON is header-only; the vcpkg config exposes RAPIDJSON_INCLUDE_DIRS
@@ -340,7 +341,6 @@ if(GWENI_RENDER_OPENGL_CORE)
         glm::glm
         freetype
         freetype-gl
-        imglib
     )
 
     set(GWENI_COMPILE_DEFINITIONS ${GWENI_COMPILE_DEFINITIONS}

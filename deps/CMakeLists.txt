@@ -8,8 +8,12 @@ set(freetype-gl_BUILD_APIDOC OFF CACHE BOOL "Build the freetype-gl API documenta
 set(freetype-gl_BUILD_TESTS OFF CACHE BOOL "Build the tests" FORCE)
 
 # SYSTEM: freetype-gl keeps its own flags, and its headers must not be able to
-# raise a diagnostic inside a gweni translation unit.
-add_subdirectory(freetype-gl SYSTEM)
+# raise a diagnostic inside a gweni translation unit. Only OpenGLCore uses it,
+# and it needs GL and glew to configure, so a tree without the renderer (the
+# web tree, for now) leaves it out.
+if(GWENI_RENDER_OPENGL_CORE)
+    add_subdirectory(freetype-gl SYSTEM)
+endif()
 
 set(IMGLIB_USE_COMPILETIME_TYPE OFF CACHE BOOL "Turn on/off support for compile time type informat" FORCE)
 set(IMGLIB_USE_EIGEN OFF CACHE BOOL "Turn on/off support for eigen library" FORCE)

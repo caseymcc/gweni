@@ -8,8 +8,14 @@
         "rapidjson",
         "glm",
         "freetype",
-        "glew",
-        "glfw3",
+        {
+            "name": "glew",
+            "platform": "!emscripten"
+        },
+        {
+            "name": "glfw3",
+            "platform": "!emscripten"
+        },
         "libpng",
         "libjpeg-turbo",
         "doctest"

@@ -104,6 +104,12 @@ static void __inline__ trap_instruction(void)
 }
 #else
 enum { HAVE_TRAP_INSTRUCTION = 0, };
+/* never called (HAVE_TRAP_INSTRUCTION is 0), but debug_break() below must
+ * still compile on a target with no trap instruction here, e.g. wasm32 */
+__attribute__((gnu_inline, always_inline))
+static void __inline__ trap_instruction(void)
+{
+}
 #endif
 
 __attribute__((gnu_inline, always_inline))
