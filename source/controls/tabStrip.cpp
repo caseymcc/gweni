@@ -91,9 +91,13 @@ void TabStrip::placeButtons()
         if(!button)
             continue;
 
+        // Each tab after the first overlaps the one before it by 1 px along the
+        // row, so neighbours share their border. Only along the row: across it
+        // a tab fills the strip.
         Margin m;
         int iNotFirst=num > 0?-1:0;
 
+        if(m_dock == DockPosition::Top)
         {
             m.left=iNotFirst;
             button->setDock(DockPosition::Left);

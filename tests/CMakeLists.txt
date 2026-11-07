@@ -227,7 +227,8 @@ add_executable(gweni_unit_tests
     unit/utf8Typing.cpp
     unit/cursorScale.cpp
     unit/crossSplitter.cpp
-    unit/windowSkin.cpp)
+    unit/windowSkin.cpp
+    unit/tabStrip.cpp)
 gweni_set_warnings(gweni_unit_tests)
 target_link_libraries(gweni_unit_tests
     gweni
