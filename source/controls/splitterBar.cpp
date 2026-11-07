@@ -19,9 +19,17 @@ GWENI_CONTROL_CONSTRUCTOR(SplitterBar)
     restrictToParent(true);
 }
 
+// Kept inside its parent, as a drag keeps it, which is computed, not asked
+// for. A bar its owner places (Placement::Owner: CrossSplitter's, Properties')
+// is where the owner put it.
 void SplitterBar::layout(skin::Base * /*skin*/)
 {
-    moveTo(getX(), getY());
+    if(getPlacement() == Placement::Owner)
+        return;
+
+    const Point pos=restrictedPos(getX(), getY());
+
+    setArrangedBounds(pos.x, pos.y, getWidth(), getHeight());
 }
 
 }//namespace controls

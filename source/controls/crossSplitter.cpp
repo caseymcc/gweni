@@ -21,8 +21,10 @@ GWENI_CONTROL_CONSTRUCTOR(CrossSplitter)
 {
     // layout() places the bars from the split fractions, in this control's
     // own coordinates; restrictToParent would clamp them against its margin.
+    // They and the panels are this control's to place (Placement::Owner).
     m_verticalSplitter=newChild<SplitterBar>();
 
+    m_verticalSplitter->setPlacement(Placement::Owner);
     m_verticalSplitter->setPos(0, 128);
     m_verticalSplitter->restrictToParent(false);
     m_verticalSplitter->onDragged.add(this, &CrossSplitter::onVerticalMoved);
@@ -30,6 +32,7 @@ GWENI_CONTROL_CONSTRUCTOR(CrossSplitter)
 
     m_horizontalSplitter=newChild<SplitterBar>();
 
+    m_horizontalSplitter->setPlacement(Placement::Owner);
     m_horizontalSplitter->setPos(128, 0);
     m_horizontalSplitter->restrictToParent(false);
     m_horizontalSplitter->onDragged.add(this, &CrossSplitter::onHorizontalMoved);
@@ -37,6 +40,7 @@ GWENI_CONTROL_CONSTRUCTOR(CrossSplitter)
 
     m_centerSplitter=newChild<SplitterBar>();
 
+    m_centerSplitter->setPlacement(Placement::Owner);
     m_centerSplitter->setPos(128, 128);
     m_centerSplitter->restrictToParent(false);
     m_centerSplitter->onDragged.add(this, &CrossSplitter::onCenterMoved);
@@ -91,12 +95,12 @@ int CrossSplitter::barY() const
 
 void CrossSplitter::updateVSplitter()
 {
-    m_verticalSplitter->setBounds(0, barY(), getWidth(), m_barSize);
+    placeChild(m_verticalSplitter, 0, barY(), getWidth(), m_barSize);
 }
 
 void CrossSplitter::updateHSplitter()
 {
-    m_horizontalSplitter->setBounds(barX(), 0, m_barSize, getHeight());
+    placeChild(m_horizontalSplitter, barX(), 0, m_barSize, getHeight());
 }
 
 void CrossSplitter::onCenterMoved(event::Info)
@@ -108,7 +112,7 @@ void CrossSplitter::onCenterMoved(event::Info)
 
 void CrossSplitter::updateCSplitter()
 {
-    m_centerSplitter->setBounds(barX(), barY(), m_barSize, m_barSize);
+    placeChild(m_centerSplitter, barX(), barY(), m_barSize, m_barSize);
 }
 
 // The Dragger has moved the bar to the mouse, in both axes and unclamped: the
@@ -142,24 +146,6 @@ float CrossSplitter::calculateValueVertical()
     return barFraction(m_verticalSplitter->getY(), getHeight(), m_barSize, m_vertical);
 }
 
-// A splitter divides the space it is given: its bars and panels are sized
-// from its own size, so their sizes do not count in the size it asks for,
-// which would hand it back what an earlier pass gave it. They are still
-// measured, for their own subtrees.
-void CrossSplitter::calculateSize(skin::Base *skin, Dim dim)
-{
-    for(auto &&child : getChildren())
-    {
-        if(!child->hidden())
-            child->calculateSize(skin, dim);
-    }
-
-    if(dim == Dim::X)
-        m_preferredSize.width=preferredFromContent(m_padding.left+m_padding.right, Dim::X);
-    else
-        m_preferredSize.height=preferredFromContent(m_padding.top+m_padding.bottom, Dim::Y);
-}
-
 void CrossSplitter::layout(skin::Base * /*skin*/)
 {
     updateVSplitter();
@@ -176,32 +162,38 @@ void CrossSplitter::layout(skin::Base * /*skin*/)
         const int bottomHeight=std::max(0, getHeight()-bottom);
 
         if(m_sections[0])
-            m_sections[0]->setBounds(0, 0, x, y);
+            placeChild(m_sections[0], 0, 0, x, y);
 
         if(m_sections[1])
-            m_sections[1]->setBounds(right, 0, rightWidth, y);
+            placeChild(m_sections[1], right, 0, rightWidth, y);
 
         if(m_sections[2])
-            m_sections[2]->setBounds(0, bottom, x, bottomHeight);
+            placeChild(m_sections[2], 0, bottom, x, bottomHeight);
 
         if(m_sections[3])
-            m_sections[3]->setBounds(right, bottom, rightWidth, bottomHeight);
+            placeChild(m_sections[3], right, bottom, rightWidth, bottomHeight);
     }
     else
     {
         // This should probably use Fill docking instead
-        m_sections[m_zoomedSection]->setBounds(0, 0, getWidth(), getHeight());
+        placeChild(m_sections[m_zoomedSection], 0, 0, getWidth(), getHeight());
     }
 }
 
 void CrossSplitter::setPanel(int index, controls::Base *panel)
 {
     GWENI_ASSERT_MSG(index >= 0 && index <= 3, "CrossSplitter::setPanel out of range");
+
+    // A panel taken out is the generic arrange's again, if it stays here.
+    if(m_sections[index] && m_sections[index] != panel)
+        m_sections[index]->setPlacement(Placement::Parent);
+
     m_sections[index]=panel;
 
     if(panel)
     {
         panel->setDock(DockPosition::None);
+        panel->setPlacement(Placement::Owner);
         panel->setParent(this);
     }
 

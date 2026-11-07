@@ -190,6 +190,10 @@ private:
     void removeLines(size_t count);
     //! The width wrapped lines break at: the parent's, less its padding.
     int wrapWidth();
+    //! The measured width of the widest word of the string (a wrapped line
+    //! never breaks inside one unless it is wider than the line): what a
+    //! wrapped Text asks for when its parent has no width asked by the app.
+    int longestWordWidth();
     //! The height of a wrapped line, the row each one is placed on.
     int lineHeight();
 

@@ -689,9 +689,17 @@ void Base::moveBy(int x, int y)
 
 void Base::moveTo(int x, int y)
 {
+    const Point pos=restrictedPos(x, y);
+
+    RequestScope request(RequestPosition);
+    setBounds(pos.x, pos.y, getWidth(), getHeight());
+}
+
+Point Base::restrictedPos(int x, int y) const
+{
     if(m_restrictToParent && getParent())
     {
-        Base *parent=getParent();
+        const Base *parent=getParent();
 
         if(x-getPadding().left < parent->getMargin().left)
             x=parent->getMargin().left+getPadding().left;
@@ -706,8 +714,7 @@ void Base::moveTo(int x, int y)
             y=parent->getHeight()-parent->getMargin().bottom-getHeight()-getPadding().bottom;
     }
 
-    RequestScope request(RequestPosition);
-    setBounds(x, y, getWidth(), getHeight());
+    return Point(x, y);
 }
 
 void Base::setPos(int x, int y)
@@ -747,6 +754,11 @@ bool Base::setBounds(const Rect &bounds)
 
     if(parts)
     {
+        // Only the app asks; layout code computes (setArrangedBounds,
+        // placeChild). A request made while a pass runs is counted.
+        if(Canvas::s_layingOut)
+            Canvas::s_layingOut->layoutRequested(this);
+
         const Rect requested=m_requestedBounds;
 
         if(parts & RequestX)
@@ -806,6 +818,38 @@ bool Base::setArrangedBounds(int x, int y, int w, int h)
 {
     RequestScope request(0);
     return setBounds(x, y, w, h);
+}
+
+bool Base::placeChild(Base *child, const Rect &bounds)
+{
+    RequestScope request(0);
+    PlacementScope placement;
+    return child->setBounds(bounds);
+}
+
+bool Base::placeChild(Base *child, int x, int y, int w, int h)
+{
+    return placeChild(child, Rect(x, y, w, h));
+}
+
+bool Base::placeChildPos(Base *child, int x, int y)
+{
+    return placeChild(child, Rect(x, y, child->getWidth(), child->getHeight()));
+}
+
+bool Base::placeChildSize(Base *child, int w, int h)
+{
+    return placeChild(child, Rect(child->getX(), child->getY(), w, h));
+}
+
+void Base::setPlacement(Placement placement)
+{
+    if(m_placement == placement)
+        return;
+
+    m_placement=placement;
+    // The parent's size and arrange read it.
+    invalidateParent();
 }
 
 Size Base::getMinimumSize()
@@ -1441,8 +1485,8 @@ Size Base::sizeOfChildren(skin::Base *skin, Dim dim)
 
             child->calculateSize(skin, dim);
 
-            // Laid out like the others, but its size is taken from this
-            // control's (Properties' splitter bar), so it does not count.
+            // Placed by this control (Placement::Owner) or asked not to
+            // count: measured for its own subtree, but not counted.
             if(!child->shouldIncludeInSize())
                 continue;
 
@@ -1493,8 +1537,8 @@ Size Base::sizeOfChildren(skin::Base *skin, Dim dim)
 
             child->calculateSize(skin, dim);
 
-            // Laid out like the others, but its size is taken from this
-            // control's (Properties' splitter bar), so it does not count.
+            // Placed by this control (Placement::Owner) or asked not to
+            // count: measured for its own subtree, but not counted.
             if(!child->shouldIncludeInSize())
                 continue;
 
@@ -1568,6 +1612,16 @@ void Base::calculateSize(skin::Base *skin, Dim dim)
         return;
 
     m_preferredSize=sizeOfChildren(skin, dim);
+
+    // Its content is the size it was asked for: the children were measured,
+    // for their own subtrees, but do not count.
+    if(sizedByRequest(dim))
+    {
+        if(dim == Dim::X)
+            m_preferredSize.width=preferredFromContent(m_requestedBounds.w, Dim::X);
+        else
+            m_preferredSize.height=preferredFromContent(m_requestedBounds.h, Dim::Y);
+    }
 }
 
 int Base::dockNoneSize(Dim dim, int preferred) const
@@ -1684,7 +1738,7 @@ void Base::arrangeHorizontal(skin::Base *skin)
 
     for(auto &&child:m_children)
     {
-        if(child->hidden())
+        if(child->hidden() || child->getPlacement() == Placement::Owner)
             continue;
 
         DockPosition dock=child->getDock();
@@ -1779,7 +1833,7 @@ void Base::arrangeHorizontal(skin::Base *skin)
     {
         DockPosition dock=child->getDock();
 
-        if(!(dock & DockPosition::Center))
+        if(!(dock & DockPosition::Center) || child->getPlacement() == Placement::Owner)
             continue;
 
         const Margin &margin=child->getMargin();
@@ -1813,7 +1867,7 @@ void Base::arrangeVertical(skin::Base *skin)
 
     for(auto &&child:m_children)
     {
-        if(child->hidden())
+        if(child->hidden() || child->getPlacement() == Placement::Owner)
             continue;
 
         DockPosition dock=child->getDock();
@@ -1918,7 +1972,7 @@ void Base::arrangeVertical(skin::Base *skin)
             // including them here would push the visible Center children down by
             // one slot each (e.g. PageControl's hidden pages shoving the current
             // page off-screen).
-            if(child->hidden())
+            if(child->hidden() || child->getPlacement() == Placement::Owner)
                 continue;
 
             DockPosition dock=child->getDock();

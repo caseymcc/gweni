@@ -37,6 +37,12 @@ struct LayoutStats
     bool capped=false;
     //! renderCanvas's own recurseLayout found layout dirty and ran a pass.
     bool renderLayout=false;
+    //! Requests (see Base::setBounds) recorded while a pass ran, in either
+    //! phase, and the type name of the first control that recorded one. Only
+    //! the app asks for bounds; layout code computes them (setArrangedBounds,
+    //! placeChild), so a library control should leave this 0.
+    int requests=0;
+    const char *requestedType=nullptr;
 };
 
 //! What updateCanvas() did below the canvas in one frame, outside layout
@@ -275,6 +281,8 @@ protected:
     void layoutPass();
     /// Base's report that `control` re-dirtied layout during the current pass.
     void layoutInvalidated(controls::Base *control);
+    /// Base's report that `control` recorded a request during the current pass.
+    void layoutRequested(controls::Base *control);
 
     /// The canvas whose pass is running, so Base can report to it without
     /// walking up to it. Passes do not nest.

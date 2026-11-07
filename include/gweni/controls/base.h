@@ -99,6 +99,18 @@ _Control *newControl(const gweni::String &name="")
 
     return control;
 }
+//! Who places a child in its parent (Base::setPlacement).
+enum class Placement
+{
+    //! The generic arrange: the child's dock, alignment and size flags, or
+    //! the parent's LayoutItem. Its size counts in the parent's.
+    Parent,
+    //! The control that owns it, which writes its bounds through
+    //! Base::placeChild: the generic arrange leaves it alone, and neither its
+    //! position nor its size counts in the parent's preferred size.
+    Owner
+};
+
 //
 //! This is the base class for all Gweni controls.
 //
@@ -293,12 +305,15 @@ public:
     virtual bool  setSize(const Point &p);
     virtual Point getSize() const { return Point(getWidth(), getHeight()); }
 
-    //! Every call that does not come from the generic arrange code (the dock
-    //! branches of arrangeHorizontal/Vertical, policyResize and a LayoutItem
-    //! placing its control) is a request: setPos/moveTo record the position,
-    //! setSize/setWidth/setHeight the size, setBounds both. A dock-None control
-    //! is sized from its request, its preferred size and its size flags, never
-    //! from the bounds an earlier pass gave it (see policyResize).
+    //! A call from the app is a request: setPos/moveTo record the position,
+    //! setSize/setWidth/setHeight the size, setBounds both. So is a
+    //! constructor's default size. Bounds the library computes are not: the
+    //! generic arrange code (the dock branches of arrangeHorizontal/Vertical,
+    //! policyResize, a LayoutItem placing its control) writes them through
+    //! setArrangedBounds, and a control placing a child it owns through
+    //! placeChild. A dock-None control is sized from its request, its
+    //! preferred size and its size flags, never from the bounds an earlier
+    //! pass gave it (see policyResize).
     virtual bool setBounds(int x, int y, int w, int h);
     virtual bool setBounds(const gweni::Rect &bounds);
 
@@ -307,11 +322,21 @@ public:
     const gweni::Rect &getRequestedBounds() const { return m_requestedBounds; }
     bool hasRequestedSize(Dim dim) const { return dim == Dim::X?m_widthRequested:m_heightRequested; }
 
+    //! Who places this control in its parent (see Placement). A composite
+    //! declares the children it places itself Owner when it creates or adopts
+    //! them, before anything measures them: the parent's calculateSize runs
+    //! before its arrange, and must already leave them out.
+    void setPlacement(Placement placement);
+    Placement getPlacement() const { return m_placement; }
+
     virtual void setPadding(const Padding &padding);
     virtual void setMargin(const Margin &margin);
 
     //! MoveTo is identical to setPos except it uses shouldRestrictToParent().
     virtual void moveTo(int x, int y);
+    //! Where moveTo(x, y) would put this control: (x, y), kept inside the
+    //! parent when shouldRestrictToParent().
+    Point restrictedPos(int x, int y) const;
     virtual void moveBy(int x, int y);
 
     virtual const gweni::Rect &getBounds() const { return m_bounds; }
@@ -797,8 +822,23 @@ protected:
     //! (Dim::X) or high: Fixed r, Shrink min(r,cell), Expand, Elastic and
     //! Bloat max(r,p) up to the cell; with no size requested, the cell.
     int layoutCellSize(Dim dim, int cell) const;
-    //! setBounds for the generic arrange code: its result is not a request.
+    //! setBounds for the generic arrange code, and for a control computing its
+    //! own bounds: its result is not a request.
     bool setArrangedBounds(int x, int y, int w, int h);
+    //! setBounds for a control placing a child it owns (Placement::Owner):
+    //! computed bounds, not a request, and placement, since the owner lays the
+    //! child out next (see PlacementScope). Static, so a subclass can call it
+    //! on any child; placeChildPos keeps the size, placeChildSize the position.
+    static bool placeChild(Base *child, const gweni::Rect &bounds);
+    static bool placeChild(Base *child, int x, int y, int w, int h);
+    static bool placeChildPos(Base *child, int x, int y);
+    static bool placeChildSize(Base *child, int w, int h);
+
+    //! Whether this control's content along `dim` is the size it was asked
+    //! for (Base::calculateSize then takes the request, not its children's
+    //! size): a Slider, whose track is drawn by its skin, and a ScrollControl,
+    //! whose content scrolls inside it. False by default.
+    virtual bool sizedByRequest(Dim /*dim*/) const { return false; }
 
     bool processLayout(skin::Base *skin, Dim dim);
     Size sizeOfChildren(skin::Base *skin, Dim dim);
@@ -808,8 +848,8 @@ protected:
     int preferredFromContent(int contentSize, Dim dim) const;
 
     //! Place the children along X and Y from their docks, alignments and
-    //! sizes; Base::arrange calls them before arranging each child. A control
-    //! whose layout() places its children itself overrides them to do nothing.
+    //! sizes; Base::arrange calls them before arranging each child. They skip
+    //! a child whose owner places it (Placement::Owner).
     virtual void arrangeHorizontal(skin::Base *skin);
     virtual void arrangeVertical(skin::Base *skin);
 
@@ -840,8 +880,9 @@ protected:
 
     //! While one is alive, the layout invalidations raised are placement, not
     //! a re-dirty (see Base::invalidate): for a control handing the children
-    //! it is about to lay out, later in the same pass, their inputs (bounds,
-    //! visibility, a scroll range). Keep it to such writes: anything an
+    //! it is about to lay out, later in the same pass, their inputs other than
+    //! bounds (visibility, docks, margins, a scroll range); bounds go through
+    //! placeChild, which opens one itself. Keep it to such writes: anything an
     //! already laid out control read must still be reported.
     struct PlacementScope
     {
@@ -933,12 +974,18 @@ public:
 
 public:
 
+    //! Laid out by the generic arrange like any other child, but not counted
+    //! in the parent's size (TextBox's placeholder).
     void doNotIncludeInSize() { m_includeInSize=false; }
-    bool shouldIncludeInSize() { return m_includeInSize; }
+    //! Whether this control counts in its parent's size: not when it asked
+    //! not to (doNotIncludeInSize), nor when its owner places it
+    //! (Placement::Owner).
+    bool shouldIncludeInSize() const { return m_includeInSize && m_placement == Placement::Parent; }
 
 protected:
 
     bool m_includeInSize;
+    Placement m_placement=Placement::Parent;
 
 public:
 

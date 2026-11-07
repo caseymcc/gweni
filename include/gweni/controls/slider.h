@@ -53,7 +53,10 @@ class GWENI_EXPORT Slider: public Base
 
 public:
     //void render(skin::Base *skin) override=0;
-    void calculateSize(skin::Base *skin, Dim dim) override;
+    //! A slider asks for the size it was asked to be (its constructor's
+    //! default, or the app's): its track is drawn by its skin, and its thumb
+    //! is placed by it (Placement::Owner).
+    bool sizedByRequest(Dim /*dim*/) const override { return true; }
     void layout(skin::Base *skin) override;
 
     //! The notches are drawn only while the value is clamped to them.

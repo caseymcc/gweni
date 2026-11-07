@@ -26,7 +26,8 @@ float VerticalSlider::calculateValue()
 
 void VerticalSlider::updateBarFromValue()
 {
-    m_sliderBar->moveTo(m_sliderBar->getX(), (getHeight() - m_sliderBar->getHeight())  *(1.f - m_value));
+    placeChildPos(m_sliderBar, m_sliderBar->getX(),
+        static_cast<int>((getHeight()-m_sliderBar->getHeight())*(1.f-m_value)));
 }
 
 void VerticalSlider::onMouseClickLeft(int x, int y, bool down)
@@ -39,7 +40,7 @@ void VerticalSlider::onMouseClickLeft(int x, int y, bool down)
 
 void VerticalSlider::layout(skin::Base * /*skin*/)
 {
-    m_sliderBar->setSize(getWidth(), 15);
+    placeChildSize(m_sliderBar, getWidth(), 15);
     // a resize moves the thumb's travel, so put it back at the value
     updateBarFromValue();
 }

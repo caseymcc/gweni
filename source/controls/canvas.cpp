@@ -207,6 +207,26 @@ void Canvas::layoutInvalidated(controls::Base *control)
 #endif
 }
 
+void Canvas::layoutRequested(controls::Base *control)
+{
+    ++m_layoutStats.requests;
+
+    if(!m_layoutStats.requestedType)
+        m_layoutStats.requestedType=control->getTypeName();
+
+#ifndef NDEBUG
+    // Once per type, like the re-dirty warning: what layout code writes is
+    // computed, and a request it records makes a preferred size depend on
+    // what an earlier pass did.
+    static std::set<std::string> warned;
+    if(warned.insert(control->getTypeName()).second)
+        std::fprintf(stderr, "gweni: %s#%zu recorded a requested size or position during a"
+            " layout pass; layout code should write through setArrangedBounds or"
+            " placeChild (warned once per control type)\n",
+            control->getTypeName(), control->getControlId());
+#endif
+}
+
 void Canvas::setScale(float f)
 {
     if(m_scale == f)

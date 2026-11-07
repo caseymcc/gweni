@@ -27,12 +27,11 @@ public:
     //! A container: its bars are SplitterBars and its panes draw themselves.
     GWENI_DRAWS_NOTHING
 
-    void calculateSize(skin::Base *skin, Dim dim) override;
+    //! Places the bars and the panels from the split fractions and this
+    //! control's size. They are Placement::Owner, so the generic arrange
+    //! leaves them alone and they do not count in the size it asks for, which
+    //! would hand it back what an earlier pass gave it.
     void layout(skin::Base *skin) override;
-    //! layout() places the bars and the panels; the generic dock and size
-    //! rules would resize the panels it sized.
-    void arrangeHorizontal(skin::Base * /*skin*/) override {}
-    void arrangeVertical(skin::Base * /*skin*/) override {}
 
     virtual float calculateValueVertical();
     virtual float calculateValueHorizontal();
@@ -90,7 +89,7 @@ private:
     SplitterBar *m_horizontalSplitter;
     SplitterBar *m_centerSplitter;
 
-    controls::Base *m_sections[4];
+    controls::Base *m_sections[4]={nullptr, nullptr, nullptr, nullptr};
 
     float m_horizontal;
     float m_vertical;

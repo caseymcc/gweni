@@ -299,6 +299,7 @@ add_executable(gweni_unit_tests
     unit/progressBarIndeterminate.cpp
     unit/cursorScale.cpp
     unit/crossSplitter.cpp
+    unit/placement.cpp
     unit/windowSkin.cpp
     unit/tabStrip.cpp
     unit/menuItem.cpp

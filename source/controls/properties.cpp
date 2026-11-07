@@ -23,22 +23,19 @@ GWENI_CONTROL_CONSTRUCTOR(Properties)
     m_splitterBar->setCursor(gweni::cursor::SizeWE);
     m_splitterBar->onDragged.add(this, &Properties::onSplitterMoved);
     m_splitterBar->setShouldDrawBackground(false);
-    m_splitterBar->doNotIncludeInSize();
+    m_splitterBar->setPlacement(Placement::Owner);
 }
 
 // The rows are docked Top, so this control's preferred height is theirs. The
-// bar runs down the split, its height this control's: it is placed before
-// each pass places it, once the size it is taken from is final.
+// bar runs down the split, its height this control's: it is this control's to
+// place (Placement::Owner), at the start of each axis's arrange, once the size
+// it is taken from is final.
 void Properties::arrange(gweni::skin::Base *skin, Dim dim)
 {
-    {
-        PlacementScope placement;
-
-        if(dim == Dim::X)
-            m_splitterBar->setBounds(getSplitWidth(), 0, SplitterBarWidth, m_splitterBar->getHeight());
-        else
-            m_splitterBar->setBounds(m_splitterBar->getX(), 0, SplitterBarWidth, getHeight());
-    }
+    if(dim == Dim::X)
+        placeChild(m_splitterBar, getSplitWidth(), 0, SplitterBarWidth, m_splitterBar->getHeight());
+    else
+        placeChild(m_splitterBar, m_splitterBar->getX(), 0, SplitterBarWidth, getHeight());
 
     ParentClass::arrange(skin, dim);
 }
@@ -145,11 +142,13 @@ GWENI_CONTROL_CONSTRUCTOR(PropertyRow)
     // render() compares against these on its first call
     m_lastEditing=false;
     m_lastHover=false;
+    // The row places its label and its property itself (Placement::Owner):
+    // the label is as wide as the split, which the Properties gives it, not
+    // its own request.
     PropertyRowLabel *label=newChild<PropertyRowLabel>();
     label->SetPropertyRow(this);
-    label->setDock(DockPosition::Left);
+    label->setPlacement(Placement::Owner);
     label->setMargin(Margin(2, 0, 0, 0));
-    label->setSizeFlags({SizeFlag::Fixed, SizeFlag::Elastic});
     m_label=label;
 }
 
@@ -176,35 +175,79 @@ void PropertyRow::render(gweni::skin::Base *skin)
         m_skinControl->update(skin->getRenderer(), this);
 }
 
-// The label is as wide as the split. It is Fixed, so its width is asked for
-// before it is measured; the split is clamped to the Properties' width, which
-// is final only in the X arrange, so the label is handed the clamped split
-// there too. Docked Top, the row is as high as the taller of the label and
-// the property, which its preferred height already is.
+// The label column is the split and the property the rest of the row. The
+// width asked for is the split as set, not as clamped to the Properties'
+// current width, which an earlier pass gave it: the label's margins, the split
+// and the property's preferred width. The height is the taller of the two.
+// Both are still measured, for their own subtrees.
 void PropertyRow::calculateSize(gweni::skin::Base *skin, Dim dim)
 {
-    Properties *parent=gweni_cast<Properties>(getParent());
-
-    if(dim == Dim::X && parent)
-    {
-        PlacementScope placement;
-
-        m_label->setWidth(parent->getSplitWidth());
-    }
-
     ParentClass::calculateSize(skin, dim);
+
+    const Margin &labelMargin=m_label->getMargin();
+
+    if(dim == Dim::X)
+    {
+        Properties *parent=gweni_cast<Properties>(getParent());
+        int width=m_padding.left+m_padding.right+labelMargin.left+labelMargin.right
+            +(parent?parent->getRequestedSplitWidth():m_label->getPreferredSize().width);
+
+        if(m_property)
+            width+=m_property->getPreferredSize().width+m_property->getMargin().left
+                +m_property->getMargin().right;
+
+        m_preferredSize.width=preferredFromContent(width, Dim::X);
+    }
+    else
+    {
+        int height=m_label->getPreferredSize().height+labelMargin.top+labelMargin.bottom;
+
+        if(m_property)
+            height=std::max(height, m_property->getPreferredSize().height
+                +m_property->getMargin().top+m_property->getMargin().bottom);
+
+        m_preferredSize.height=preferredFromContent(height+m_padding.top+m_padding.bottom, Dim::Y);
+    }
 }
 
+// The label from the left padding to the split, clamped to the Properties'
+// width, which is final in the X arrange; the property from there to the
+// right padding. Both fill the row's height inside its padding.
 void PropertyRow::arrange(gweni::skin::Base *skin, Dim dim)
 {
-    Properties *parent=gweni_cast<Properties>(getParent());
+    const Margin &labelMargin=m_label->getMargin();
 
-    if(dim == Dim::X && parent)
+    if(dim == Dim::X)
     {
-        Size preferred=m_label->getPreferredSize();
+        Properties *parent=gweni_cast<Properties>(getParent());
+        const int labelX=m_padding.left+labelMargin.left;
+        const int labelWidth=parent?parent->getSplitWidth():m_label->getPreferredSize().width;
 
-        preferred.width=parent->getSplitWidth();
-        m_label->setPreferredSize(preferred);
+        placeChild(m_label, labelX, m_label->getY(), labelWidth, m_label->getHeight());
+
+        if(m_property)
+        {
+            const Margin &margin=m_property->getMargin();
+            const int x=labelX+labelWidth+labelMargin.right+margin.left;
+
+            placeChild(m_property, x, m_property->getY(),
+                std::max(0, getWidth()-m_padding.right-margin.right-x), m_property->getHeight());
+        }
+    }
+    else
+    {
+        const int innerHeight=getHeight()-m_padding.top-m_padding.bottom;
+
+        placeChild(m_label, m_label->getX(), m_padding.top+labelMargin.top, m_label->getWidth(),
+            std::max(0, innerHeight-labelMargin.top-labelMargin.bottom));
+
+        if(m_property)
+        {
+            const Margin &margin=m_property->getMargin();
+
+            placeChild(m_property, m_property->getX(), m_padding.top+margin.top, m_property->getWidth(),
+                std::max(0, innerHeight-margin.top-margin.bottom));
+        }
     }
 
     ParentClass::arrange(skin, dim);
@@ -213,8 +256,8 @@ void PropertyRow::arrange(gweni::skin::Base *skin, Dim dim)
 void PropertyRow::setProperty(property::Base *prop)
 {
     m_property=prop;
+    m_property->setPlacement(Placement::Owner);
     m_property->setParent(this);
-    m_property->setDock(DockPosition::Center);
     m_property->setSizeFlags({SizeFlag::Fixed, SizeFlag::Elastic});
     m_property->onChange.add(this, &ThisClass::onPropertyValueChanged);
 }

@@ -38,6 +38,9 @@ GWENI_CONTROL_CONSTRUCTOR(Slider)
 {
     setBounds(gweni::Rect(0, 0, 32, 128));
     m_sliderBar=newChild<internal::SliderBar>();
+    // Sized from this control and placed at its value by layout(), so it
+    // does not count in the size this control asks for.
+    m_sliderBar->setPlacement(Placement::Owner);
     m_sliderBar->onDragged.add(this, &Slider::onMoved);
     m_min=0.0f;
     m_max=1.0f;
@@ -56,20 +59,6 @@ void Slider::setDisabled(bool active)
 void Slider::onMoved(event::Info)
 {
     setValueInternal(calculateValue());
-}
-
-// The thumb is sized from this control and placed at its value, so it does
-// not count in the size this control asks for: that would hand it back what
-// an earlier pass gave it, and move it with the value. A slider asks for the
-// size it was asked to be.
-void Slider::calculateSize(skin::Base *skin, Dim dim)
-{
-    m_sliderBar->calculateSize(skin, dim);
-
-    if(dim == Dim::X)
-        m_preferredSize.width=preferredFromContent(getRequestedBounds().w, Dim::X);
-    else
-        m_preferredSize.height=preferredFromContent(getRequestedBounds().h, Dim::Y);
 }
 
 void Slider::layout(skin::Base *skin)

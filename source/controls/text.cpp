@@ -217,11 +217,13 @@ int Text::closestCharacterIn(const gweni::String &str, gweni::Point p)
     return static_cast<int>(value);
 }
 
-// Unwrapped, the measured string. Wrapped, the text asks for the width its
-// parent asked for (less the parent's padding), not for the parent's current
-// width, which would hand a width an earlier pass gave back to the parent; it
-// is then laid out at whatever width the parent got (policyResize), and its
-// height is that of the lines at that width, final by the Y pass.
+// Unwrapped, the measured string. Wrapped, the text asks for the width the
+// app asked its parent to be (less the parent's padding), or with no such
+// request for its longest word; never for the parent's current width, which
+// would hand a width an earlier pass gave back to the parent. Only the app's
+// calls are requests, so neither depends on an earlier pass. It is then laid
+// out at whatever width the parent got (policyResize), and its height is that
+// of the lines at that width, final by the Y pass.
 void Text::calculateSize(skin::Base *skin, Dim dim)
 {
     // Every row is a line of the font high, an empty one included, whose own
@@ -240,8 +242,11 @@ void Text::calculateSize(skin::Base *skin, Dim dim)
     {
         const Base *parent=getParent();
 
-        m_preferredSize.width=std::max(0, parent->getRequestedBounds().w
-            -parent->getPadding().left-parent->getPadding().right);
+        if(parent->hasRequestedSize(Dim::X))
+            m_preferredSize.width=std::max(0, parent->getRequestedBounds().w
+                -parent->getPadding().left-parent->getPadding().right);
+        else
+            m_preferredSize.width=longestWordWidth()+getPadding().left+getPadding().right;
         return;
     }
 
@@ -335,6 +340,33 @@ Size Text::refreshSize(bool update)
         setSize(p.x, p.y);
 
     return Size(p.x, p.y);
+}
+
+int Text::longestWordWidth()
+{
+    if(!m_font)
+        return 0;
+
+    // Unbroken (no width): each word with the space after it, or a '\n'.
+    std::vector<gweni::String> words;
+    splitWords(getText(), 0, words);
+
+    int width=0;
+
+    for(auto &&word : words)
+    {
+        size_t end=word.size();
+
+        while(end > 0 && (word[end-1] == ' ' || word[end-1] == '\n'))
+            --end;
+
+        if(end == 0)
+            continue;
+
+        width=std::max(width, getSkin()->getRenderer()->measureText(getFont(), word.substr(0, end)).x);
+    }
+
+    return width;
 }
 
 void Text::splitWords(const gweni::String &s, int w, std::vector<gweni::String> &elems)
@@ -531,7 +563,9 @@ Size Text::RefreshSizeWrap(bool update)
     {
         if(i == m_lines.size())
         {
+            // This control places its lines (Placement::Owner).
             Text *t=newChild<Text>();
+            t->setPlacement(Placement::Owner);
             t->setFont(getFont());
             t->setTextColor(TextColor());
             t->setTextColorOverride(m_colorOverride);
@@ -543,10 +577,10 @@ Size Text::RefreshSizeWrap(bool update)
 
         t->setText(m_wrapped[i].text);
 
-        Size size=t->refreshSize();
+        Size size=t->refreshSize(false);
         size.height=lineHeight;
         t->setPreferredSize(size);
-        t->setPos(0, y);
+        placeChild(t, 0, y, size.width, size.height);
 
         y+=lineHeight;
     }
@@ -556,7 +590,7 @@ Size Text::RefreshSizeWrap(bool update)
 
     // The parent's width and the height of the lines, the same as the
     // preferred size calculateSize gets from this function.
-    setSize(w, height);
+    setArrangedBounds(getX(), getY(), w, height);
 
     return Size(w, height);
 }

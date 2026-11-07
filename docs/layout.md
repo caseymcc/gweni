@@ -33,14 +33,15 @@ for**, its preferred size and its size flags. It never reads the bounds an
 earlier pass gave it, so a control that grew for a 1024-wide canvas shrinks
 back at 640, and the frame is a function of the current state.
 
-What counts as asked for: every `setBounds`/`setSize`/`setPos` that does not
-come from the generic arrange code (the dock branches, `policyResize`, a
-`LayoutItem` placing its control, which all write through
-`Base::setArrangedBounds`). App calls, constructors and a control's own
-`layout()` placing its children all are requests. `setPos`/`moveTo` ask for the
-position only, `setSize` for the size, `setWidth`/`setHeight` for one axis,
-`setBounds` for both. `getRequestedBounds()` returns it; it starts as the
-initial bounds, and `hasRequestedSize(dim)` says whether a size was asked.
+What counts as asked for: **only the app's calls**, plus a constructor's
+default size on the control itself (a Slider's 32x128, a Label's 100x10),
+which is the default the app overrides. A user dragging a window or a
+resizable control asks too: it is persistent user state. Everything the
+library computes is not a request, inside a layout pass or not (see
+"Requested and computed bounds" below). `setPos`/`moveTo` ask for the position
+only, `setSize` for the size, `setWidth`/`setHeight` for one axis, `setBounds`
+for both. `getRequestedBounds()` returns it; it starts as the initial bounds,
+and `hasRequestedSize(dim)` says whether a size was asked.
 
 With r the request, p the preferred size and c a layout cell less the child's
 margins (never below 0; the child is placed at the cell plus
@@ -80,13 +81,63 @@ MenuStrip is as high as its items, its 200x22 only the least it gets.
 
 Docked children keep the size their dock gives them.
 
+## Requested and computed bounds
+
+Each control keeps the bounds it is **asked for** (`getRequestedBounds()`)
+apart from the bounds layout **computes** (`getBounds()`), and a preferred size
+is made of requests and content only, never of what an earlier pass computed.
+So the library writes bounds through two setters that record no request:
+
+* `setArrangedBounds(x, y, w, h)`, protected: a control's own bounds. The
+  generic arrange code (the dock branches, `policyResize`, a `LayoutItem`
+  placing its control) writes through it, and so does a control computing its
+  own size (a wrapped Text taking the height of its lines).
+* `placeChild(child, rect)`, protected and static, so a subclass can call it on
+  any child; `placeChildPos` keeps the child's size and `placeChildSize` its
+  position: a control placing a child it owns. It also opens a
+  `PlacementScope`: what it invalidates is placement, since the owner lays the
+  child out next. A size change on a child the pass has already arranged on
+  that axis still re-dirties, as any other.
+
+A child that its control places itself is marked **owner-placed**,
+`setPlacement(Placement::Owner)`, when the control creates or adopts it: in its
+constructor, or wherever it takes the child in (`CrossSplitter::setPanel`,
+`PropertyRow::setProperty`). It is declared up front because the parent's
+`calculateSize` runs before its `arrange`, so it must already leave the child
+out. The generic `arrangeHorizontal`/`arrangeVertical` skip an Owner child
+(no dock, no alignment, no `policyResize`), and `sizeOfChildren` and
+`childrenSize` do not count it: neither its position nor its size is part of
+the parent's preferred size. It is still measured, and still arranged in turn
+for its own subtree. A control that needs content size from an Owner child asks
+for it in its own `calculateSize` (PropertyRow adds the split and its
+property's preferred width). The children placed this way today: the
+CrossSplitter's bars and panels, Properties' splitter bar, a PropertyRow's
+label and property, a Slider's thumb and a wrapped Text's lines.
+
+A control whose content along an axis is the size it was asked to be says so
+with `sizedByRequest(dim)`: `Base::calculateSize` then takes the request as its
+content, not its children (a Slider, whose track its skin draws; a
+ScrollControl, see above).
+
+`doNotIncludeInSize()` is narrower: a child the generic arrange still places
+but that does not count in the parent's size (TextBox's placeholder).
+
+`Canvas::getLayoutStats()` counts the requests recorded while a pass runs
+(`requests`, and `requestedType`, the first control type that recorded one), and
+debug builds print one line per control type that recorded one. Layout code
+should leave it at 0; a request it records makes a preferred size depend on
+what an earlier pass did (a CrossSplitter's bars asking for the canvas size they
+were given). Library controls that still write their children with
+`setBounds`/`setSize`/`setPos` are being moved onto `placeChild`.
+
 ## Placing a dock-None control
 
 Alignment is opt-in. A control has none by default (`Alignment::Absolute`),
 and then it stays at the position it asked for: the x and y of its last
-`setPos`, `moveTo` or `setBounds`, wherever the request came from (the app,
-or its parent's `layout()`). Writes made by the arrange code are not
-requests, so an earlier pass or a parent resize cannot move it.
+`setPos`, `moveTo` or `setBounds`. Writes made by the arrange code are not
+requests, so an earlier pass or a parent resize cannot move it. A child its
+parent places itself is owner-placed instead (see "Requested and computed
+bounds").
 
 An alignment places it inside the parent's padded content box: the parent's
 size less its padding. The box does not depend on the docked siblings or on
@@ -168,15 +219,18 @@ TreeNode's toggle), not resize one.
   arranged**, not resized from a `layout()` that runs after: a TableRow sets
   its columns' preferred widths in its X arrange; TextBox places its text in
   `layout()` and again at the start of its Y arrange.
-* **A container that places its children itself** overrides
-  `arrangeHorizontal`/`arrangeVertical` to do nothing (CrossSplitter), and does
-  not count children it sizes from itself in its own preferred size
-  (CrossSplitter, Slider's thumb, `doNotIncludeInSize()` for Properties'
-  splitter bar); otherwise the size an earlier pass gave it comes back as what
+* **A container that places its children itself** marks them
+  `Placement::Owner` and writes them with `placeChild` (CrossSplitter's bars and
+  panels, Properties' splitter bar, PropertyRow's label and property, Slider's
+  thumb): the generic arrange leaves them alone and they do not count in its
+  preferred size; otherwise the size an earlier pass gave it comes back as what
   it asks for.
 * **Text** never resizes itself: it is the size of its string, which its
-  parent gives it (`Text::policyResize`). Wrapped, it asks for its parent's
-  requested width, is laid out at its parent's width, and updates its line
+  parent gives it (`Text::policyResize`). Wrapped, it asks for the width the
+  app asked its parent to be, less the parent's padding, or with no such
+  request for its longest word (`Text::longestWordWidth`), so a parent that
+  sizes to its content shrinks around it; it is laid out at its parent's
+  width, its height is that of its lines there, and it updates its line
   children at the start of its X arrange when the string, the font (pointer
   or value), the wrap flag or that width changed (`Text::linesCurrent`). The
   wrap itself is data (`m_wrapped`: each line's text and how many characters
@@ -192,9 +246,9 @@ TreeNode's toggle), not resize one.
   lines there are reused: each gets its new string and row, which writes
   nothing for a line that did not change, and only the extra lines are
   created or the surplus ones deleted. `setText` invalidates layout, so an
-  edit is laid out by the next frame. Each line is an unaligned child
-  placed at `(0, i * lineHeight)` and given that row height, an empty line
-  included; its string has no `'\n'` (freetype-gl would break the run there),
+  edit is laid out by the next frame. Each line is an owner-placed child
+  (`Placement::Owner`) placed at `(0, i * lineHeight)` and given that row
+  height, an empty line included; its string has no `'\n'` (freetype-gl would break the run there),
   and the parent keeps how many characters of its string each line holds, the
   `'\n'` included (`getLineLength`), so caret indices still count every
   `'\n'`.
@@ -214,8 +268,10 @@ Base tells the canvas when a control re-dirties layout while the pass runs:
 Placement does not count: the bounds a pass gives a control it has not reached
 yet along that axis (the height the Y pass gives a control arranged in X
 only), and the invalidations `setBounds()` raises for that control's children,
-are inputs the same pass lays out when it gets there. Writes a control makes,
-under a `PlacementScope`, to children it lays out next count as placement too.
+are inputs the same pass lays out when it gets there. Writes a control makes
+to children it lays out next count as placement too: bounds through
+`placeChild`, other inputs (visibility, docks, margins, a scroll range) under a
+`PlacementScope`.
 
 ### The safety net
 

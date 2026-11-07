@@ -25,7 +25,8 @@ float HorizontalSlider::calculateValue()
 
 void HorizontalSlider::updateBarFromValue()
 {
-    m_sliderBar->moveTo((getWidth()-m_sliderBar->getWidth())*(m_value), m_sliderBar->getY());
+    placeChildPos(m_sliderBar, static_cast<int>((getWidth()-m_sliderBar->getWidth())*m_value),
+        m_sliderBar->getY());
 }
 
 void HorizontalSlider::onMouseClickLeft(int x, int y, bool down)
@@ -38,7 +39,7 @@ void HorizontalSlider::onMouseClickLeft(int x, int y, bool down)
 
 void HorizontalSlider::layout(skin::Base * /*skin*/)
 {
-    m_sliderBar->setSize(15, getHeight());
+    placeChildSize(m_sliderBar, 15, getHeight());
     // a resize moves the thumb's travel, so put it back at the value
     updateBarFromValue();
 }

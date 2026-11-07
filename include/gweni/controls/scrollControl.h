@@ -85,7 +85,7 @@ protected:
     //! With no request it asks for its content. A subclass that never scrolls
     //! its content on an axis returns false to ask for the content there, a
     //! request then only being the least it is given.
-    virtual bool sizedByRequest(Dim dim) const { return hasRequestedSize(dim); }
+    bool sizedByRequest(Dim dim) const override { return hasRequestedSize(dim); }
 
     //! Decides which bars show and sizes the inner panel and the bars for this
     //! control's current size, before any of them is laid out. See arrange().

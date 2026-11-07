@@ -40,7 +40,12 @@ public:
         const String &value="");
     PropertyRow *find(const String &text);
 
+    //! Where the label column ends: the split, clamped to this control's
+    //! width once it has one wider than the bar.
     virtual int getSplitWidth();
+    //! The split as set (dragged), not clamped: what a row asks for, which
+    //! does not depend on the width an earlier pass gave this control.
+    int getRequestedSplitWidth() const { return m_splitWidth; }
 
     virtual void clear();
 
