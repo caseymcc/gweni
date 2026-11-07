@@ -60,6 +60,15 @@ png_byte getPngBitDepth(Depth depth)
     return bit_depth;
 }
 
+bool isLittleEndianHost()
+{
+    const uint16_t one=1;
+    uint8_t firstByte;
+
+    memcpy(&firstByte, &one, 1);
+    return firstByte==1;
+}
+
 std::vector<png_bytep> getRowPointers(ImageWrapper &image)
 {
     std::vector<png_bytep> row_pointers(image.height());
@@ -94,6 +103,36 @@ Format getFormatFromPngColorType(png_byte color_type)
     }
 }
 
+//the depth policy of both loaders: every PNG is read as 8 bits per sample, which is what the
+//renderer uploads. The transforms expand a palette to RGB, grey of 1, 2 or 4 bits to 8 and a tRNS
+//chunk to an alpha channel, and scale 16 bits to 8 (rounded), so every valid file comes out as 8 bit
+//GRAY, GA, RGB or RGBA. Sizes the image for those rows; false (before any row is read) if the rows
+//libpng will write do not fit it
+bool setupPngRead(png_structp png, png_infop info, ImageWrapper &image)
+{
+    png_set_expand(png);
+    png_set_scale_16(png);
+    png_set_interlace_handling(png);
+    png_read_update_info(png, info);
+
+    //read after the update: the transforms change the colour type and depth the rows come out in
+    png_byte color_type=png_get_color_type(png, info);
+    png_byte bit_depth=png_get_bit_depth(png, info);
+    Format format=getFormatFromPngColorType(color_type);
+
+    if((bit_depth!=8)||(format==Format::Unknown))
+        return false;
+
+    size_t width=png_get_image_width(png, info);
+    size_t height=png_get_image_height(png, info);
+
+    //the stride getRowPointers gives each row
+    if(png_get_rowbytes(png, info)!=width*sizeOfPixel(format, Depth::Bit8))
+        return false;
+
+    return image.resize(format, Depth::Bit8, width, height);
+}
+
 bool loadPng(ImageWrapper image, const char *filename)
 {
     FILE *file=fopen(filename, "rb");
@@ -126,18 +165,8 @@ bool loadPng(ImageWrapper image, const char *filename)
             png_set_sig_bytes(png_ptr, 8);
             png_read_info(png_ptr, info_ptr);
 
-            int width=png_get_image_width(png_ptr, info_ptr);
-            int height=png_get_image_height(png_ptr, info_ptr);
-            png_byte color_type=png_get_color_type(png_ptr, info_ptr);
-
-            png_set_interlace_handling(png_ptr);
-            png_read_update_info(png_ptr, info_ptr);
-
-            Format format=getFormatFromPngColorType(color_type);
-
-            if(format!=Format::Unknown)
+            if(setupPngRead(png_ptr, info_ptr, image))
             {
-                image.resize(format, Depth::Bit8, width, height);
                 row_pointers=getRowPointers(image);
 
                 png_read_image(png_ptr, row_pointers.data());
@@ -198,18 +227,8 @@ bool loadPngBuffer(ImageWrapper image, const uint8_t *buffer, size_t bufferSize)
             png_set_sig_bytes(png_ptr, 8);
             png_read_info(png_ptr, info_ptr);
 
-            int width=png_get_image_width(png_ptr, info_ptr);
-            int height=png_get_image_height(png_ptr, info_ptr);
-            png_byte color_type=png_get_color_type(png_ptr, info_ptr);
-
-            png_set_interlace_handling(png_ptr);
-            png_read_update_info(png_ptr, info_ptr);
-
-            Format format=getFormatFromPngColorType(color_type);
-
-            if(format!=Format::Unknown)
+            if(setupPngRead(png_ptr, info_ptr, image))
             {
-                image.resize(format, Depth::Bit8, width, height);
                 row_pointers=getRowPointers(image);
 
                 png_read_image(png_ptr, row_pointers.data());
@@ -267,6 +286,11 @@ bool savePng(ImageWrapper image, const char *filename)
                 PNG_FILTER_TYPE_DEFAULT
             );
             png_write_info(png, info);
+
+            //PNG stores 16 bit samples big-endian and the image holds them in host order; libpng's
+            //swap is unconditional, so it is asked for only where the two differ
+            if((image.depth()==Depth::Bit16)&&isLittleEndianHost())
+                png_set_swap(png);
 
             // To remove the alpha channel for PNG_COLOR_TYPE_RGB format,
             // Use png_set_filler().
