@@ -37,6 +37,7 @@ public:
     virtual void setTextAlignment(Alignment alignment)
     {
         m_text->setAlignment(alignment);
+        m_textAlignmentSet=true;
     }
 
 //    void render(skin::Base *skin) override
@@ -140,13 +141,14 @@ public:
         return m_text->wrap();
     }
 
-    //! Wrapped, the text reads from the top: centred like a single line, a
-    //! paragraph taller than the label would start above it.
+    //! Wrapped, the text reads from the top unless setTextAlignment() said
+    //! otherwise: centred like a single line, a paragraph taller than the
+    //! label would start above it.
     virtual void setWrap(bool b)
     {
         m_text->setWrap(b);
-        if(b)
-            setTextAlignment(Alignment::Left|Alignment::Top);
+        if(!m_textAlignmentSet)
+            m_text->setAlignment(b?(Alignment::Left|Alignment::Top):(Alignment::Left|Alignment::CenterV));
     }
 
     void onBoundsChanged(gweni::Rect oldChildBounds) override;
@@ -157,6 +159,8 @@ protected:
 
     gweni::Font *m_createdFont;
     internal::Text *m_text;
+    //! setTextAlignment() was called, so setWrap() leaves the alignment alone
+    bool m_textAlignmentSet=false;
 //    Alignment m_align;
 
 };
