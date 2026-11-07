@@ -2238,9 +2238,8 @@ static void checkWindowDrag(Session &s, const std::string &shotDir,
     window->setTitle("Clipped Window");
     window->setClampMovement(false);
     place(window, start.x, start.y, 200, 140);
-    // the textured skin draws no window frame (its renderer is registered as
-    // "Window", the control's type is "WindowControl"), so a Button fills the
-    // content area for the window to have a body
+    // a Button fills the content area, so the window's subtree holds more than
+    // its own surface
     auto *button=window->newChild<gweni::controls::Button>();
     button->setText("Inside the Window");
     button->setDock(gweni::DockPosition::Center);
