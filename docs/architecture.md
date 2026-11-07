@@ -540,10 +540,13 @@ on an OpenGL 3.3 core profile:
   `onVisibilityChanged` on a real change, and the item's handler calls `redraw()`, so
   the highlight follows the submenu however it closes (`Menu::closeAll`, the canvas
   closing every menu, a hover on another item). The menu's 2-unit padding is its
-  inner panel's, with no inner margin: `ScrollControl::placeContents` puts the inner
-  panel over the whole control, so only the panel's padding keeps the rows off the
-  backdrop's border, and a margin would be counted in the size and drawn as empty
-  backdrop under the last row (`MenuStrip` keeps the geometry it had). Labels are
+  inner panel's, with no inner margin and none of its own: `ScrollControl::placeContents`
+  places the inner panel at the viewport (`getViewport()`: the control less its padding,
+  the bars that show and the inner panel's margin, 5 by default), which for a menu is
+  the whole control, so the rows are 2 units in from the backdrop's border on every
+  side. A `MenuStrip` has no padding, no inner margin and no bars (`setScroll(false,
+  false)`); its items' `StripItemInset` (7) above and below their caption makes it 29
+  high, and the inner panel's 5-unit left padding puts the first one 5 in. Labels are
   `Left|CenterV` after the 24-unit icon column (their left text padding), clear of the
   accelerator docked on the right; a `MenuDivider` has 3 units of backdrop above and
   below its 1-unit rule.

@@ -28,10 +28,10 @@ bool samePoint(const Point &a, const Point &b)
 
 GWENI_CONTROL_CONSTRUCTOR(Menu)
 {
-    // The padding is the inner panel's: ScrollControl places the inner panel
-    // over its whole area, so the items sit inside the backdrop's border only
-    // when the panel keeps them off it. Its margin would be counted in the
-    // size and drawn as empty backdrop under the last item.
+    // The padding is the inner panel's, with no margin: ScrollControl places
+    // the inner panel at its viewport, which with neither is the whole menu,
+    // and the panel's padding keeps the items 2 units off the backdrop's
+    // border on every side.
     m_innerPanel->setPadding(Padding(2, 2, 2, 2));
     m_innerPanel->setMargin(Margin(0, 0, 0, 0));
     setDisableIconMargin(false);

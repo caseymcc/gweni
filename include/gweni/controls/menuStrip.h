@@ -22,6 +22,10 @@ class GWENI_EXPORT MenuStrip: public Menu
     GWENI_CONTROL(MenuStrip, Menu);
 
 public:
+    //! An item's padding above and below its caption, which makes the strip's
+    //! height: 29 for 15-unit text.
+    static constexpr int StripItemInset=7;
+
     //void render(skin::Base *skin) override;
     void renderUnder(skin::Base * /*skin*/) override {}
 

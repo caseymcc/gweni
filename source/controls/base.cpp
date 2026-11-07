@@ -2078,45 +2078,30 @@ bool Base::isChild(controls::Base *possiblechild)
     return false;
 }
 
+// Up the controls this one is actually placed in, each at its own offset: a
+// child added to a control with an inner panel is the inner panel's, which
+// may itself be another control's inner panel (a TreeNode is in its
+// TreeControl's ScrollControl's panel), so the logical parent chain would
+// miss an offset.
 Point Base::localPosToCanvas(const Point &pnt)
 {
-    if(m_parent)
-    {
-        int x=pnt.x+getX();
-        int y=pnt.y+getY();
+    Base *placedIn=m_actualParent?m_actualParent:m_parent;
 
-        // If our parent has an innerpanel and we're a child of it
-        // add its offset onto us.
-        //
-        if(m_parent->m_innerPanel && m_parent->m_innerPanel->isChild(this))
-        {
-            x+=m_parent->m_innerPanel->getX();
-            y+=m_parent->m_innerPanel->getY();
-        }
-
-        return m_parent->localPosToCanvas(Point(x, y));
-    }
+    if(placedIn)
+        return placedIn->localPosToCanvas(Point(pnt.x+getX(), pnt.y+getY()));
 
     return pnt;
 }
 
 Point Base::canvasPosToLocal(const Point &pnt)
 {
-    if(m_parent)
+    Base *placedIn=m_actualParent?m_actualParent:m_parent;
+
+    if(placedIn)
     {
-        int x=pnt.x-getX();
-        int y=pnt.y-getY();
+        const Point local=placedIn->canvasPosToLocal(pnt);
 
-        // If our parent has an innerpanel and we're a child of it
-        // add its offset onto us.
-        //
-        if(m_parent->m_innerPanel && m_parent->m_innerPanel->isChild(this))
-        {
-            x-=m_parent->m_innerPanel->getX();
-            y-=m_parent->m_innerPanel->getY();
-        }
-
-        return m_parent->canvasPosToLocal(Point(x, y));
+        return Point(local.x-getX(), local.y-getY());
     }
 
     return pnt;

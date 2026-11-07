@@ -390,8 +390,15 @@ width from the content. It leaves its subtree alone in the X pass and, at its
 Y arrange, once its own size, the content's preferred size and the bars' are
 all final, decides the bars in arithmetic, sizes the inner panel and the bars,
 and then lays its children out X and then Y. Its preferred size is its
-content's (inner panel plus margins), not counting the bars or the scroll
-position, so it does not depend on what an earlier frame showed.
+content's (inner panel plus its margin and the control's padding), not
+counting the bars or the scroll position, so it does not depend on what an
+earlier frame showed. The content is seen through the viewport
+(`ScrollControl::getViewport()`): the control less its padding, the bars that
+show and the inner panel's margin. The bars are decided against it, the inner
+panel is placed at its origin less the scroll offset and is at least its size,
+and the bars range over the inner panel through it, so at its preferred size a
+ScrollControl shows its content exactly in the viewport, the same inset on
+every side.
 
 The inputs such a control writes into children it has not laid out yet count
 as placement rather than as a re-dirty: their bounds through `placeChild` (the

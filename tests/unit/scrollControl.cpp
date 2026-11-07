@@ -7,10 +7,24 @@
  *  size, from that pass's sizes, and sizes its inner panel for them: a resize
  *  that shows or hides a bar takes one pass, re-dirties nothing, and lays the
  *  content out at the width that leaves room for the bar.
+ *
+ *  It places the content at its viewport: the control less its padding, the
+ *  bars that show and the inner panel's (default 5 unit) margin. Unscrolled
+ *  the inner panel's top-left is the viewport's; at its content size the
+ *  control shows the content with that inset on all four sides; a bar shows
+ *  exactly when the content does not fit the viewport; scrolled to the end the
+ *  content's far edge is the viewport's. A Menu and a ListBox at their content
+ *  size have the same gap on opposite sides, and a MenuStrip keeps its items on
+ *  one row, its full height, with no bar. A control in nested inner panels (a
+ *  TreeNode in its TreeControl's ScrollControl) maps to and from canvas
+ *  coordinates through every panel's offset, as hit-testing finds it.
  */
 #include "headlessFixture.h"
 
 #include <gweni/controls/scrollControl.h>
+#include <gweni/controls/listBox.h>
+#include <gweni/controls/menuStrip.h>
+#include <gweni/controls/treeControl.h>
 #include <gweni/controls/layout/layout.h>
 
 #include <doctest/doctest.h>
@@ -116,25 +130,28 @@ TEST_CASE("a ScrollControl hides and shows its vertical bar in the pass that res
     Block *row=scene.addRow(50, 200);
     scene.settle();
 
-    // too short: the bar shows, and the row is laid out beside it (the inner
-    // panel runs one pixel under the bar)
+    // too short: the bar shows, and the row is laid out beside it, inside the
+    // inner panel's 5 unit margin on both sides
     REQUIRE_FALSE(scene.verticalBar->hidden());
     CHECK(scene.horizontalBar->hidden());
     const int barWidth=scene.verticalBar->getWidth();
     CHECK(barWidth > 1);
     CHECK(scene.verticalBar->getX() == 400-barWidth);
     CHECK(scene.verticalBar->getHeight() == 150);
-    CHECK(scene.inner->getWidth() == 400-barWidth+1);
-    CHECK(row->getWidth() == 400-barWidth+1);
+    CHECK(scene.inner->getX() == 5);
+    CHECK(scene.inner->getY() == 5);
+    CHECK(scene.inner->getWidth() == 400-barWidth-10);
+    CHECK(row->getWidth() == 400-barWidth-10);
     CHECK(scene.inner->getHeight() == 200);
 
-    // the content fits: no bar, and the same pass gives the row the full width
+    // the content fits: no bar, and the same pass gives the row the full
+    // viewport width
     scene.canvas->setSize(400, 300);
     checkOnePass(scene.frame());
     CHECK(scene.verticalBar->hidden());
-    CHECK(scene.inner->getWidth() == 400);
-    CHECK(row->getWidth() == 400);
-    CHECK(scene.inner->getHeight() == 300);
+    CHECK(scene.inner->getWidth() == 390);
+    CHECK(row->getWidth() == 390);
+    CHECK(scene.inner->getHeight() == 290);
     CHECK(scene.frame().passes == 0);
 
     // and back, in one pass
@@ -142,8 +159,8 @@ TEST_CASE("a ScrollControl hides and shows its vertical bar in the pass that res
     checkOnePass(scene.frame());
     CHECK_FALSE(scene.verticalBar->hidden());
     CHECK(scene.verticalBar->getHeight() == 150);
-    CHECK(scene.inner->getWidth() == 400-barWidth+1);
-    CHECK(row->getWidth() == 400-barWidth+1);
+    CHECK(scene.inner->getWidth() == 400-barWidth-10);
+    CHECK(row->getWidth() == 400-barWidth-10);
     CHECK(scene.frame().passes == 0);
 }
 
@@ -151,8 +168,8 @@ TEST_CASE("showing one scrollbar can make the other one necessary")
 {
     Scene scene;
     scene.canvas->setSize(400, 100);
-    // 395 wide fits in 400, but not in 400 less the vertical bar
-    scene.addRow(395, 200);
+    // 385 wide fits the 390 wide viewport, but not 390 less the vertical bar
+    scene.addRow(385, 200);
     scene.settle();
     REQUIRE_FALSE(scene.verticalBar->hidden());
     REQUIRE(scene.verticalBar->getWidth() > 5);
@@ -185,15 +202,16 @@ TEST_CASE("the scroll offset follows the bar and is reset when the bar goes away
     auto *bar=static_cast<controls::BaseScrollBar *>(scene.verticalBar);
     bar->setScrolledAmount(1, true);
     checkOnePass(scene.frame());
-    // scrolled to the bottom: the 400 tall panel ends where the 300 tall
-    // viewport does
-    CHECK(scene.inner->getY() == 300-400);
+    // scrolled to the bottom: the 400 tall panel ends where the 290 tall
+    // viewport does, 5 above the control's bottom
+    CHECK(scene.inner->getY() == 5+290-400);
+    CHECK(scene.inner->getY()+scene.inner->getHeight() == 300-5);
 
     scene.canvas->setSize(400, 500);
     checkOnePass(scene.frame());
     CHECK(scene.verticalBar->hidden());
     CHECK(bar->getScrolledAmount() == 0);
-    CHECK(scene.inner->getY() == 0);
+    CHECK(scene.inner->getY() == 5);
 }
 
 TEST_CASE("a row added by app code is picked up by the next frame")
@@ -401,8 +419,8 @@ TEST_CASE("the wheel does not move a bar that is shown but disabled")
     CHECK(scrolled(scene.verticalBar) == 0);
     CHECK(scrolled(scene.horizontalBar) == 0);
     CHECK(scene.frame().passes == 0);
-    CHECK(scene.inner->getY() == 0);
-    CHECK(scene.inner->getX() == 0);
+    CHECK(scene.inner->getY() == 5);
+    CHECK(scene.inner->getX() == 5);
 }
 
 TEST_CASE("a wheel over a ScrollControl that cannot scroll scrolls the one around it")
@@ -431,8 +449,8 @@ TEST_CASE("a wheel over a ScrollControl that cannot scroll scrolls the one aroun
     CHECK(small->onMouseWheeled(-60));
     CHECK(scrolled(scene.verticalBar) > 0);
     scene.frame();
-    CHECK(scene.inner->getY() < 0);
-    CHECK(nestedParts.inner->getY() == 0);
+    CHECK(scene.inner->getY() < 5);
+    CHECK(nestedParts.inner->getY() == 5);
 }
 
 TEST_CASE("a wheel past the end of a ScrollControl goes on to the one around it")
@@ -478,4 +496,311 @@ TEST_CASE("a wheel past the end of a ScrollControl goes on to the one around it"
     static_cast<controls::BaseScrollBar *>(nestedParts.verticalBar)->setScrolledAmount(0, true);
     scene.settle();
     CHECK_FALSE(tall->onMouseWheeled(60));
+}
+
+// The viewport: the control less its padding, the bars that show and the inner
+// panel's margin. The bars are decided against it, the inner panel sits at its
+// origin unscrolled and at least fills it, and scrolled to the end the
+// content's far edge is the viewport's.
+
+namespace
+{
+
+//! The scroll bar of a ScrollControl, cast for its scrolled amount.
+controls::BaseScrollBar *asBar(controls::Base *bar)
+{
+    return static_cast<controls::BaseScrollBar *>(bar);
+}
+
+//! A control's bounds in canvas coordinates.
+Rect onCanvas(controls::Base *control)
+{
+    const Point origin=control->localPosToCanvas();
+    return Rect(origin.x, origin.y, control->getWidth(), control->getHeight());
+}
+
+}//namespace
+
+TEST_CASE("a ScrollControl at its content size shows the content inside its padding and margin, the same inset on every side")
+{
+    Scene scene;
+    scene.scroll->setDock(DockPosition::None);
+    scene.scroll->setPadding(Padding(3, 4, 6, 8));
+    Block *row=scene.addRow(60, 70);
+    scene.settle();
+
+    // the content, the inner panel's 5 unit margins and the padding
+    CHECK(scene.scroll->getWidth() == 60+10+3+6);
+    CHECK(scene.scroll->getHeight() == 70+10+4+8);
+    CHECK(scene.verticalBar->hidden());
+    CHECK(scene.horizontalBar->hidden());
+
+    // the panel at the viewport's origin, the content filling it exactly
+    const Rect &viewport=scene.scroll->getViewport();
+    CHECK(viewport.x == 3+5);
+    CHECK(viewport.y == 4+5);
+    CHECK(viewport.w == 60);
+    CHECK(viewport.h == 70);
+    CHECK(scene.inner->getX() == viewport.x);
+    CHECK(scene.inner->getY() == viewport.y);
+    CHECK(scene.inner->getWidth() == 60);
+    CHECK(scene.inner->getHeight() == 70);
+    CHECK(row->getWidth() == 60);
+    CHECK(row->getHeight() == 70);
+    // nothing left over below or right of the content
+    CHECK(scene.scroll->getWidth()-(scene.inner->getX()+scene.inner->getWidth()) == 6+5);
+    CHECK(scene.scroll->getHeight()-(scene.inner->getY()+scene.inner->getHeight()) == 8+5);
+}
+
+TEST_CASE("a ScrollControl with padding keeps its bars inside it and scrolls its content inside the viewport")
+{
+    Scene scene;
+    scene.scroll->setDock(DockPosition::None);
+    scene.scroll->setScroll(false, true);
+    scene.scroll->setPadding(Padding(3, 4, 6, 8));
+    scene.scroll->setBounds(0, 0, 100, 80);
+    scene.addRow(40, 200);
+    scene.settle();
+
+    REQUIRE_FALSE(scene.verticalBar->hidden());
+    const int barWidth=scene.verticalBar->getWidth();
+    CHECK(scene.verticalBar->getX() == 100-6-barWidth);
+    CHECK(scene.verticalBar->getY() == 4);
+    CHECK(scene.verticalBar->getHeight() == 80-4-8);
+
+    const Rect &viewport=scene.scroll->getViewport();
+    CHECK(viewport.x == 8);
+    CHECK(viewport.y == 9);
+    CHECK(viewport.w == 100-3-6-barWidth-10);
+    CHECK(viewport.h == 80-4-8-10);
+    CHECK(scene.inner->getX() == 8);
+    CHECK(scene.inner->getY() == 9);
+    CHECK(scene.inner->getWidth() == viewport.w);
+    CHECK(scene.inner->getHeight() == 200);
+
+    asBar(scene.verticalBar)->setScrolledAmount(1, true);
+    checkOnePass(scene.frame());
+    CHECK(scene.inner->getY()+scene.inner->getHeight() == viewport.y+viewport.h);
+
+    asBar(scene.verticalBar)->setScrolledAmount(0, true);
+    checkOnePass(scene.frame());
+    CHECK(scene.inner->getY() == viewport.y);
+}
+
+TEST_CASE("a bar shows exactly when the content does not fit the viewport")
+{
+    // 100x80 asked for, so a 90x70 viewport inside the 5 unit margins
+    SUBCASE("vertical")
+    {
+        Scene scene;
+        scene.scroll->setDock(DockPosition::None);
+        scene.scroll->setScroll(false, true);
+        scene.scroll->setBounds(0, 0, 100, 80);
+        Block *row=scene.addRow(40, 70);
+        scene.settle();
+        CHECK(scene.verticalBar->hidden());
+        CHECK(scene.scroll->getViewport().h == 70);
+        CHECK(scene.inner->getHeight() == 70);
+
+        row->want=Size(40, 71);
+        row->invalidate();
+        checkOnePass(scene.frame());
+        CHECK_FALSE(scene.verticalBar->hidden());
+        CHECK_FALSE(scene.verticalBar->isDisabled());
+        CHECK(scene.inner->getHeight() == 71);
+
+        row->want=Size(40, 70);
+        row->invalidate();
+        checkOnePass(scene.frame());
+        CHECK(scene.verticalBar->hidden());
+    }
+
+    SUBCASE("horizontal")
+    {
+        Scene scene;
+        scene.scroll->setDock(DockPosition::None);
+        scene.scroll->setScroll(true, false);
+        scene.scroll->setBounds(0, 0, 100, 80);
+        Block *row=scene.addRow(90, 20);
+        scene.settle();
+        CHECK(scene.horizontalBar->hidden());
+        CHECK(scene.scroll->getViewport().w == 90);
+        CHECK(scene.inner->getWidth() == 90);
+
+        row->want=Size(91, 20);
+        row->invalidate();
+        checkOnePass(scene.frame());
+        CHECK_FALSE(scene.horizontalBar->hidden());
+        CHECK_FALSE(scene.horizontalBar->isDisabled());
+        CHECK(scene.inner->getWidth() == 91);
+
+        row->want=Size(90, 20);
+        row->invalidate();
+        checkOnePass(scene.frame());
+        CHECK(scene.horizontalBar->hidden());
+    }
+}
+
+TEST_CASE("scrolled to either end, the content's edge is the viewport's")
+{
+    SUBCASE("vertical")
+    {
+        Scene scene;
+        scene.scroll->setDock(DockPosition::None);
+        scene.scroll->setScroll(false, true);
+        scene.scroll->setBounds(0, 0, 100, 80);
+        scene.addRow(40, 300);
+        scene.settle();
+        REQUIRE_FALSE(scene.verticalBar->hidden());
+        const Rect viewport=scene.scroll->getViewport();
+        CHECK(viewport.y == 5);
+        CHECK(viewport.h == 70);
+        CHECK(scene.inner->getY() == 5);
+
+        asBar(scene.verticalBar)->setScrolledAmount(1, true);
+        checkOnePass(scene.frame());
+        CHECK(scene.inner->getY() == 5+70-300);
+        CHECK(scene.inner->getY()+scene.inner->getHeight() == viewport.y+viewport.h);
+
+        asBar(scene.verticalBar)->setScrolledAmount(0, true);
+        checkOnePass(scene.frame());
+        CHECK(scene.inner->getY() == 5);
+    }
+
+    SUBCASE("horizontal")
+    {
+        Scene scene;
+        scene.scroll->setDock(DockPosition::None);
+        scene.scroll->setScroll(true, false);
+        scene.scroll->setBounds(0, 0, 100, 80);
+        scene.addRow(300, 20);
+        scene.settle();
+        REQUIRE_FALSE(scene.horizontalBar->hidden());
+        const Rect viewport=scene.scroll->getViewport();
+        CHECK(viewport.x == 5);
+        CHECK(viewport.w == 90);
+        CHECK(viewport.h == 70-scene.horizontalBar->getHeight());
+        CHECK(scene.inner->getX() == 5);
+        CHECK(scene.inner->getWidth() == 300);
+
+        asBar(scene.horizontalBar)->setScrolledAmount(1, true);
+        checkOnePass(scene.frame());
+        CHECK(scene.inner->getX() == 5+90-300);
+        CHECK(scene.inner->getX()+scene.inner->getWidth() == viewport.x+viewport.w);
+
+        asBar(scene.horizontalBar)->setScrolledAmount(0, true);
+        checkOnePass(scene.frame());
+        CHECK(scene.inner->getX() == 5);
+    }
+}
+
+TEST_CASE("a MenuStrip keeps its items on one row, the strip's full height, with no bar")
+{
+    Scene scene;
+    controls::MenuStrip *strip=scene.canvas->newChild<controls::MenuStrip>();
+    strip->addItem("File");
+    strip->addItem("Edit");
+    strip->addItem("A rather long caption");
+    scene.settle();
+
+    Parts parts(strip);
+    const controls::Base::List &items=parts.inner->getChildren();
+    REQUIRE(items.size() == 3);
+
+    // at least the 22 it asks for, and as high as an item
+    CHECK(strip->getHeight() >= 22);
+    CHECK(parts.verticalBar->hidden());
+    CHECK(strip->getActualChildren().back()->hidden());
+    CHECK(parts.inner->getX() == 0);
+    CHECK(parts.inner->getY() == 0);
+    CHECK(parts.inner->getHeight() == strip->getHeight());
+
+    // one row, 5 in from the left, each item the strip's height with its
+    // caption StripItemInset from the top
+    int x=5;
+    for(controls::Base *item : items)
+    {
+        auto *menuItem=static_cast<controls::MenuItem *>(item);
+        CHECK(item->getX() == x);
+        CHECK(item->getY() == 0);
+        CHECK(item->getHeight() == strip->getHeight());
+        CHECK(menuItem->textHeight()+2*controls::MenuStrip::StripItemInset == strip->getHeight());
+        CHECK(menuItem->textY() == controls::MenuStrip::StripItemInset);
+        x+=item->getWidth();
+    }
+    CHECK(scene.frame().passes == 0);
+}
+
+TEST_CASE("a Menu at its content size has the same gap above its first item as below its last")
+{
+    Scene scene;
+    controls::Menu *menu=scene.canvas->newChild<controls::Menu>();
+    menu->addItem("One");
+    menu->addItem("A longer item");
+    menu->addItem("Three");
+    scene.settle();
+
+    Parts parts(menu);
+    REQUIRE(parts.verticalBar->hidden());
+    const controls::Base::List &items=parts.inner->getChildren();
+    REQUIRE(items.size() == 3);
+    const Rect box=onCanvas(menu);
+    const Rect first=onCanvas(items.front());
+    const Rect last=onCanvas(items.back());
+
+    CHECK(first.y-box.y > 0);
+    CHECK(first.y-box.y == (box.y+box.h)-(last.y+last.h));
+    CHECK(first.x-box.x > 0);
+    CHECK(first.x-box.x == (box.x+box.w)-(first.x+first.w));
+}
+
+TEST_CASE("a ListBox at its content size has the same gap left of its rows as right of them")
+{
+    Scene scene;
+    controls::ListBox *list=scene.canvas->newChild<controls::ListBox>();
+    list->addItem("One");
+    list->addItem("A much wider row than the others");
+    list->addItem("Three");
+    scene.settle();
+
+    Parts parts(list);
+    REQUIRE(parts.verticalBar->hidden());
+    const Rect box=onCanvas(list);
+    const Rect widest=onCanvas(list->getTable()->getChildren().front());
+    const Rect last=onCanvas(list->getTable()->getChildren().back());
+
+    // the inner panel's 5 unit margin and its 2 unit padding
+    CHECK(widest.x-box.x == 5+2);
+    CHECK((box.x+box.w)-(widest.x+widest.w) == 5+2);
+    CHECK(widest.y-box.y == 5+2);
+    CHECK((box.y+box.h)-(last.y+last.h) == 5+2);
+}
+
+TEST_CASE("a TreeNode maps to the canvas through its TreeControl's ScrollControl's inner panel")
+{
+    Scene scene;
+    controls::TreeControl *tree=scene.canvas->newChild<controls::TreeControl>();
+    tree->setBounds(20, 30, 200, 200);
+    controls::TreeNode *first=tree->addNode("First");
+    controls::TreeNode *second=tree->addNode("Second");
+    second->addNode("Child");
+    scene.settle();
+
+    // the TreeControl's ScrollControl, 1 in, and its inner panel 5 in that
+    const Point origin=second->localPosToCanvas();
+    CHECK(origin.x == 20+1+5+second->getX());
+    CHECK(origin.y == 30+1+5+second->getY());
+    CHECK(second->getY() == first->getHeight());
+    CHECK(second->canvasPosToLocal(origin).x == 0);
+    CHECK(second->canvasPosToLocal(origin).y == 0);
+
+    // the point it maps to is the control hit-testing finds there
+    const Point inside=second->localPosToCanvas(Point(second->getWidth()-2, 2));
+    controls::Base *hit=scene.canvas->getControlAt(inside.x, inside.y, false);
+    controls::Base *up=hit;
+
+    while(up && up != second)
+        up=up->getParent();
+
+    CHECK(up == second);
 }

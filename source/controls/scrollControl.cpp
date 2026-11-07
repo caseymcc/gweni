@@ -282,7 +282,7 @@ void ScrollControl::arrange(skin::Base *skin, Dim dim)
     if(!hasVirtualContent() && m_innerPanel->getPreferredSize().height != contentHeight)
     {
         placeChildSize(m_innerPanel, m_innerPanel->getWidth(),
-            std::max(getHeight(), m_innerPanel->getPreferredSize().height));
+            std::max(m_viewport.h, m_innerPanel->getPreferredSize().height));
     }
 
     for(auto &&child : m_children)
@@ -294,15 +294,31 @@ void ScrollControl::arrange(skin::Base *skin, Dim dim)
     postLayout(skin);
 }
 
+// The viewport is what the content is seen through: this control less its
+// padding, the bars that show (with their margins) and the inner panel's
+// margin. calculateSize() asks for the content plus those insets, so at its
+// preferred size a ScrollControl shows its content exactly in the viewport,
+// with the inset on all four sides. The bars are decided against the viewport,
+// the inner panel is placed at its origin (less the scroll offset) and is at
+// least its size, and the bars range over the inner panel through it.
 void ScrollControl::placeContents()
 {
     const int width=getWidth();
     const int height=getHeight();
     const bool virtualContent=hasVirtualContent();
+    const Margin &inset=m_innerPanel->getMargin();
+    const Margin &verticalMargin=m_verticalScrollBar->getMargin();
+    const Margin &horizontalMargin=m_horizontalScrollBar->getMargin();
     Size content=m_innerPanel->getPreferredSize();
 
     if(virtualContent)
         content.height=m_virtualHeight;
+
+    // The viewport with no bar shown, and what each bar takes from it.
+    const int openWidth=width-m_padding.left-m_padding.right-inset.left-inset.right;
+    const int openHeight=height-m_padding.top-m_padding.bottom-inset.top-inset.bottom;
+    const int verticalSpan=m_barSize.width+verticalMargin.left+verticalMargin.right;
+    const int horizontalSpan=m_barSize.height+horizontalMargin.top+horizontalMargin.bottom;
 
     // Which bars show. Showing one narrows the viewport the other is compared
     // with, and a narrower viewport never makes a bar go away, so the second
@@ -315,26 +331,31 @@ void ScrollControl::placeContents()
     for(int round=0; round < 2; ++round)
     {
         verticalRequired=m_canScrollVertical &&
-            content.height > height-(horizontalShown?m_barSize.height:0);
+            content.height > openHeight-(horizontalShown?horizontalSpan:0);
         verticalShown=m_canScrollVertical && (verticalRequired || !m_autoHideBars);
 
         horizontalRequired=m_canScrollHorizontal &&
-            content.width > width-(verticalShown?m_barSize.width:0);
+            content.width > openWidth-(verticalShown?verticalSpan:0);
         horizontalShown=m_canScrollHorizontal && (horizontalRequired || !m_autoHideBars);
     }
 
     const int barWidth=verticalShown?m_barSize.width:0;
     const int barHeight=horizontalShown?m_barSize.height:0;
+    const int viewportWidth=std::max(0, openWidth-(verticalShown?verticalSpan:0));
+    const int viewportHeight=std::max(0, openHeight-(horizontalShown?horizontalSpan:0));
     // Virtual content is not scrolled: the inner panel is the viewport.
-    const int innerHeight=virtualContent?height-barHeight:std::max(height, content.height);
+    const int innerHeight=virtualContent?viewportHeight:std::max(viewportHeight, content.height);
     int innerWidth;
 
-    // The inner panel runs under the vertical bar: by one pixel when the
-    // content cannot scroll sideways, to the full width when it can.
+    // When the content can scroll sideways the inner panel is the content's
+    // width. When it cannot, it is the viewport's, and one pixel more where it
+    // meets the vertical bar (no margin on its right): it runs under the bar
+    // by that pixel. Past a margin it would only make the right inset one
+    // less than the left.
     if(m_canScrollHorizontal)
-        innerWidth=std::max(width, content.width);
+        innerWidth=std::max(viewportWidth, content.width);
     else
-        innerWidth=width-(verticalShown?barWidth-1:0);
+        innerWidth=viewportWidth+((verticalShown && inset.right == 0)?1:0);
 
     // Everything below sets up children this pass lays out next.
     PlacementScope placement;
@@ -350,9 +371,34 @@ void ScrollControl::placeContents()
         m_horizontalScrollBar->setHidden(true);
 
     m_verticalScrollBar->setContentSize(virtualContent?m_virtualHeight:innerHeight);
-    m_verticalScrollBar->setViewableContentSize(height-barHeight);
+    m_verticalScrollBar->setViewableContentSize(viewportHeight);
     m_horizontalScrollBar->setContentSize(innerWidth);
-    m_horizontalScrollBar->setViewableContentSize(width-barWidth);
+    m_horizontalScrollBar->setViewableContentSize(viewportWidth);
+
+    // Docked as Base::arrangeHorizontal/Vertical would dock them: the vertical
+    // bar on the right at full height, the horizontal one along the bottom
+    // beside it.
+    Rect area(m_padding.left, m_padding.top,
+        width-m_padding.left-m_padding.right, height-m_padding.top-m_padding.bottom);
+
+    if(verticalShown)
+    {
+        placeChild(m_verticalScrollBar, area.x+area.w-barWidth-verticalMargin.right,
+            area.y+verticalMargin.top, barWidth,
+            area.h-verticalMargin.top-verticalMargin.bottom);
+        area.w-=verticalSpan;
+    }
+
+    if(horizontalShown)
+    {
+        placeChild(m_horizontalScrollBar, area.x,
+            area.y+area.h-barHeight-horizontalMargin.bottom,
+            area.w-horizontalMargin.left-horizontalMargin.right, barHeight);
+        area.h-=horizontalSpan;
+    }
+
+    m_innerBounds=area;
+    m_viewport=Rect(area.x+inset.left, area.y+inset.top, viewportWidth, viewportHeight);
 
     // Virtual content scrolls by its offset. A bar that is not where this
     // control last put it was moved by the user (its thumb, its buttons, the
@@ -368,48 +414,23 @@ void ScrollControl::placeContents()
             m_virtualOffset=static_cast<int>(std::lround(
                 static_cast<double>(amount)*getMaxVerticalScrollOffset()));
 
-        m_viewportHeight=height-barHeight;
+        m_viewportHeight=viewportHeight;
         m_virtualOffset=gweni::clamp(m_virtualOffset, 0, getMaxVerticalScrollOffset());
         showVirtualOffset();
     }
 
-    // Docked as Base::arrangeHorizontal/Vertical would dock them: the vertical
-    // bar on the right at full height, the horizontal one along the bottom
-    // beside it.
-    Rect area(m_padding.left, m_padding.top,
-        width-m_padding.left-m_padding.right, height-m_padding.top-m_padding.bottom);
-
-    if(verticalShown)
-    {
-        const Margin &margin=m_verticalScrollBar->getMargin();
-
-        placeChild(m_verticalScrollBar, area.x+area.w-barWidth-margin.right, area.y+margin.top,
-            barWidth, area.h-margin.top-margin.bottom);
-        area.w-=barWidth+margin.left+margin.right;
-    }
-
-    if(horizontalShown)
-    {
-        const Margin &margin=m_horizontalScrollBar->getMargin();
-
-        placeChild(m_horizontalScrollBar, area.x, area.y+area.h-barHeight-margin.bottom,
-            area.w-margin.left-margin.right, barHeight);
-        area.h-=barHeight+margin.top+margin.bottom;
-    }
-
-    m_innerBounds=area;
-
-    // The scroll position, from the amount each shown bar is scrolled by.
-    int innerX=0;
-    int innerY=0;
+    // The scroll position, from the amount each shown bar is scrolled by: at
+    // 0 the content's top-left is the viewport's, at 1 its bottom-right is.
+    int scrollX=0;
+    int scrollY=0;
 
     if(verticalShown && !virtualContent)
-        innerY=-(innerHeight-height+barHeight)*m_verticalScrollBar->getScrolledAmount();
+        scrollY=-(innerHeight-viewportHeight)*m_verticalScrollBar->getScrolledAmount();
 
     if(horizontalShown)
-        innerX=-(innerWidth-width+barWidth)*m_horizontalScrollBar->getScrolledAmount();
+        scrollX=-(innerWidth-viewportWidth)*m_horizontalScrollBar->getScrolledAmount();
 
-    placeChild(m_innerPanel, innerX, innerY, innerWidth, innerHeight);
+    placeChild(m_innerPanel, m_viewport.x+scrollX, m_viewport.y+scrollY, innerWidth, innerHeight);
 }
 
 void ScrollControl::updateScrollBars()

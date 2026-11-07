@@ -86,9 +86,15 @@ public:
     void setVerticalScrollOffset(int offset);
     //! The virtual content height less the viewport's, never negative.
     int getMaxVerticalScrollOffset() const;
-    //! The height of the area the content is seen through (this control's,
-    //! less a horizontal bar), as the last layout pass gave it; 0 before one.
+    //! With virtual content, the viewport's height (see getViewport()), as
+    //! the last layout pass gave it; 0 before one.
     int getViewportHeight() const { return m_viewportHeight; }
+
+    //! The area the content is seen through, in this control's coordinates,
+    //! as the last layout pass placed it: this control less its padding, the
+    //! bars that show and the inner panel's margin. Unscrolled, the inner
+    //! panel's top-left is the viewport's; it is at least the viewport's size.
+    const Rect &getViewport() const { return m_viewport; }
 
     virtual void onVeritcalBarMoved(event::Info);
     virtual void onHorizontalBarMoved(event::Info);
@@ -144,6 +150,7 @@ protected:
     int m_virtualHeight=-1;
     int m_virtualOffset=0;
     int m_viewportHeight=0;
+    Rect m_viewport;
     //! The vertical bar's scrolled amount when this control last set it from
     //! m_virtualOffset: a bar found elsewhere was moved by the user.
     float m_shownVirtualAmount=0.f;
