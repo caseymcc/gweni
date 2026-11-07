@@ -271,6 +271,7 @@ add_executable(gweni_unit_tests
     unit/requestedSize.cpp
     unit/tabOrder.cpp
     unit/depthLayers.cpp
+    unit/overlayDepth.cpp
     unit/updateWalk.cpp
     unit/utf8Typing.cpp
     unit/placeholder.cpp

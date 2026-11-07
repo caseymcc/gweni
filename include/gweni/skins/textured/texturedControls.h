@@ -228,6 +228,8 @@ public:
     static void staticInit(TexturedSkin *skin);
 
     size_t requiredPrimitives() override { return 2; }
+    // the check icon is drawn at getZIndex()+1, over the box
+    size_t depthLayers() override { return 2; }
 
     void update(renderer::Base *renderer, controls::Base *baseControl) override;
 
@@ -250,6 +252,8 @@ public:
     static void staticInit(TexturedSkin *skin);
 
     size_t requiredPrimitives() override { return 2; }
+    // the chevron is drawn at getZIndex()+1, over the box
+    size_t depthLayers() override { return 2; }
 
     //void generate(renderer::Base *renderer, controls::Base *baseControl) override;
     void update(renderer::Base *renderer, controls::Base *baseControl) override;
@@ -562,6 +566,8 @@ public:
     static void staticInit(TexturedSkin *skin);
 
     size_t requiredPrimitives() override { return 2; }
+    // the dot is drawn at getZIndex()+1, over the ring
+    size_t depthLayers() override { return 2; }
 
     void generate(renderer::Base *renderer, controls::Base *baseControl) override;
     void update(renderer::Base *renderer, controls::Base *baseControl) override;
@@ -583,6 +589,8 @@ public:
     static void staticInit(TexturedSkin *skin);
 
     size_t requiredPrimitives() override { return 2; }
+    // the arrow is drawn at getZIndex()+1, over the button
+    size_t depthLayers() override { return 2; }
 
     void update(renderer::Base *renderer, controls::Base *baseControl) override;
 
@@ -756,6 +764,8 @@ public:
     static void staticInit(TexturedSkin *skin) { m_staticInit=true; }
 
     size_t requiredPrimitives() override { return 2; }
+    // the cursor marker is drawn at getZIndex()+1, over the field
+    size_t depthLayers() override { return 2; }
 
     void update(renderer::Base *renderer, controls::Base *baseControl) override;
 
