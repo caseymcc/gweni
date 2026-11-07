@@ -126,7 +126,7 @@
  *        --key ctrl+a --key ctrl+c --key end --key ctrl+v --expect-text hellhell
  *
  *  Scenarios:
- *    per-control  the 28 single-control shots (same as --shot-all)
+ *    per-control  the single-control shots (same as --shot-all)
  *    resize       one control (default Demo) at 640x480, 1024x768 and
  *                 640x480 again, then once more on a new canvas built directly
  *                 at 640x480 (resize-00-fresh-640x480.png). The three 640x480
@@ -164,8 +164,14 @@
  *                   B, the click on B changes pixels inside A and B only, and
  *                   that frame changes only A, B and their labels
  *                   (background=2), with at most 2 primitive slots and their
- *                   glyphs written (a line reports the counts). Exits non-zero
- *                   if any check is no. The clock is frozen as under --stats.
+ *                   glyphs written (a line reports the counts). WindowDemo:
+ *                   the close button of the window "Normal Window" opens
+ *                   draws something at rest, hover and press change its
+ *                   pixels and moving off gives the rest look back, the hover
+ *                   frame writes 1..2 primitive slots, and a click closes the
+ *                   window with the live primitive ids back where they were
+ *                   before it opened. Exits non-zero if any check is no. The
+ *                   clock is frozen as under --stats.
  *    typing       the keyboard on TextBoxDemo, every key a synthesised GLFW
  *                 event through gweni::input::GLFW3: click into the first box,
  *                 Ctrl+A and type "hello" (shot typing-hello.png), then
@@ -368,6 +374,7 @@
 #include <demo/textSizes.h>
 #include <demo/unicodeText.h>
 #include <demo/window.h>
+#include <demo/windowButtons.h>
 
 // A capture's clock: one fixed step per rendered frame, so every run sees the
 // same times. 1/60 s is the step, i.e. a nominal 60fps.
@@ -423,7 +430,7 @@ static void content_scale_callback(GLFWwindow *window, float, float)
     X(GroupBoxDemo) X(ImagePanelDemo) X(StatusBarDemo) X(SeparatorDemo) X(ComboBoxDemo) \
     X(TextBoxDemo) X(ListBoxDemo) X(SelectableDemo) X(ContextMenuDemo) X(CrossSplitterDemo) X(RadioButtonDemo) \
     X(CheckBoxDemo) X(NumericDemo) X(SliderDemo) X(MenuStripDemo) \
-    X(WindowDemo) X(TreeControlDemo) X(PropertiesDemo) X(TabControlDemo) \
+    X(WindowDemo) X(WindowButtonsDemo) X(TreeControlDemo) X(PropertiesDemo) X(TabControlDemo) \
     X(ScrollControlDemo) X(PageControlDemo) X(CollapsibleListDemo) X(ColorPickerDemo) \
     X(UnicodeTextDemo) X(TextSizesDemo) X(TextDemo) X(LayoutDemo)
 
@@ -436,7 +443,7 @@ static const char *const g_controlNames[]=
 
 // The whole demo application, not one of its pages: the dock layout, the demo
 // list, the output ListBox and the status bar. Kept out of GWENI_CONTROL_DEMOS
-// so --shot-all and --scenario per-control stay the 28 single-control shots.
+// so --shot-all and --scenario per-control stay the single-control shots.
 static const char *const g_dockedControlName="Demo";
 
 static gweni::controls::Base *createControl(gweni::controls::Canvas *canvas, const std::string &which)
@@ -2314,6 +2321,108 @@ static void checkSelectable(Session &s, const std::string &shotDir, InteractionC
         +std::to_string(groupGpu.textSlotsWritten)+" (want at most "+std::to_string(glyphs)+")");
 }
 
+static size_t livePrimitiveIds()
+{
+    return gweni::primitiveIdCount()-gweni::releasedPrimitiveIdCount();
+}
+
+// WindowDemo: the close button of the window "Normal Window" opens shows
+// something at rest, a hover and a press change its pixels and moving off gives
+// the rest look back; the hover frame writes only the button's two slots, and
+// the release closes the window and gives the window's primitive ids back.
+static void checkWindowClose(Session &s, const std::string &shotDir, InteractionChecks &checks, bool &ok)
+{
+    gweni::controls::Base *demo=addControl(s, "WindowDemo");
+    renderFrames(s, s.frames);
+
+    const size_t idsBefore=livePrimitiveIds();
+    gweni::controls::Base *open=findControl(demo, "Button");
+    if(!open)
+    {
+        checks.check("window_close_found", false, "WindowDemo has no visible Button");
+        dropControl(s, demo);
+        return;
+    }
+
+    const gweni::Point openAt=centreOf(open);
+    clickMouse(s, openAt.x, openAt.y);
+    renderFrames(s, s.frames);
+
+    gweni::controls::Base *window=findControl(s.canvas, "WindowControl");
+    gweni::controls::Base *close=window?findControl(window, "WindowCloseButton"):nullptr;
+    if(!close)
+    {
+        checks.check("window_close_found", false, "\"Normal Window\" opened no window with a close button");
+        forgetMouse(s);
+        dropControl(s, demo);
+        return;
+    }
+
+    // a canvas corner the window does not cover, so moving there leaves it alone
+    const gweni::Point at=window->localPosToCanvas();
+    const gweni::Point corners[3]={gweni::Point(s.size.x-1, s.size.y-1), gweni::Point(s.size.x-1, 0),
+        gweni::Point(0, s.size.y-1)};
+    gweni::Point off=corners[0];
+    for(const gweni::Point &corner : corners)
+    {
+        if(corner.x < at.x || corner.x >= at.x+window->getWidth()
+            || corner.y < at.y || corner.y >= at.y+window->getHeight())
+        {
+            off=corner;
+            break;
+        }
+    }
+    const gweni::Point on=centreOf(close);
+
+    moveMouse(s, off.x, off.y);
+    const std::vector<uint8_t> idle=settledRegion(s, close, shotDir, "window-close-idle", ok);
+    // what the title bar shows there without the button's two slots
+    s.renderer->hidePrimitive(close->getSkinControl()->getPrimitives()[0]);
+    s.renderer->hidePrimitive(close->getSkinControl()->getPrimitives()[1]);
+    renderFrames(s, 1);
+    const std::vector<uint8_t> bare=regionPixels(s, close);
+    close->addStateChange(gweni::controls::StateChange_Background);
+    renderFrames(s, s.frames);
+    const std::vector<uint8_t> restored=regionPixels(s, close);
+
+    moveMouse(s, on.x, on.y);
+    renderFrames(s, 1);
+    const size_t hoverSlots=s.renderer->getFrameStats().primitiveSlotsWritten;
+    const std::vector<uint8_t> hover=settledRegion(s, close, shotDir, "window-close-hover", ok);
+
+    moveMouse(s, off.x, off.y);
+    const std::vector<uint8_t> unhovered=settledRegion(s, close, shotDir, "window-close-unhover", ok);
+
+    // A Button pressed keeps the mouse, so its release anywhere is a click and
+    // the press comes last: the release closes the window.
+    moveMouse(s, on.x, on.y);
+    mouseDown(s, on.x, on.y, true);
+    const std::vector<uint8_t> press=settledRegion(s, close, shotDir, "window-close-press", ok);
+
+    mouseUp(s, on.x, on.y);
+    moveMouse(s, off.x, off.y);
+    renderFrames(s, s.frames);
+    const bool closed=(findControl(s.canvas, "WindowControl") == nullptr);
+    const size_t idsAfter=livePrimitiveIds();
+
+    forgetMouse(s);
+    dropControl(s, demo);
+
+    checks.check("window_close_rest", idle != bare && restored == idle,
+        "the close button at rest draws nothing over its title bar");
+    checks.check("window_close_hover", hover != idle && unhovered == idle,
+        "hovering the close button left its pixels as they were, or moving off did not bring"
+        " its rest look back");
+    checks.check("window_close_press", press != idle && press != hover,
+        "pressing the close button did not change its pixels from rest and hover");
+    checks.check("window_close_hover_bounded", hoverSlots >= 1 && hoverSlots <= 2,
+        "the hover frame wrote "+std::to_string(hoverSlots)+" primitive slots; want 1..2");
+    checks.check("window_close_closes", closed && idsAfter == idsBefore,
+        std::string(closed ? "" : "a click on the close button left the window open; ")
+        +"live primitive ids "+std::to_string(idsBefore)+" before the window, "
+        +std::to_string(idsAfter)+" after it closed");
+}
+
 static bool runInteractionScenario(Session &s, const std::string &shotDir, bool &passed)
 {
     // Frozen like --stats, so a frame with no input is genuinely idle (no
@@ -2326,6 +2435,7 @@ static bool runInteractionScenario(Session &s, const std::string &shotDir, bool 
     checkFocusHandOff(s, shotDir, checks, ok);
     checkTreeCollapse(s, shotDir, checks, ok);
     checkSelectable(s, shotDir, checks, ok);
+    checkWindowClose(s, shotDir, checks, ok);
 
     std::cout<<"interaction";
     for(const auto &result : checks.results)

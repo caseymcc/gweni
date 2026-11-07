@@ -67,6 +67,7 @@ GWENI_DEMO_TRANSPARENT(TextSizesDemo)
 GWENI_DEMO_TRANSPARENT(TreeControlDemo)
 GWENI_DEMO_TRANSPARENT(UnicodeTextDemo)
 GWENI_DEMO_TRANSPARENT(WindowDemo)
+GWENI_DEMO_TRANSPARENT(WindowButtonsDemo)
 
 #undef GWENI_DEMO_TRANSPARENT
 
@@ -132,6 +133,7 @@ template class ControlRegister<TextSizesDemo>;
 template class ControlRegister<TreeControlDemo>;
 template class ControlRegister<UnicodeTextDemo>;
 template class ControlRegister<WindowDemo>;
+template class ControlRegister<WindowButtonsDemo>;
 
 }//namespace textured
 }//namespace skin

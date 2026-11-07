@@ -66,6 +66,8 @@ set(GWENI_DEMO_SOURCES
     demo/unicodeText.h
     demo/window.cpp
     demo/window.h
+    demo/windowButtons.cpp
+    demo/windowButtons.h
 )
 
 add_library(gweni_demo STATIC

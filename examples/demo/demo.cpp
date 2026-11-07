@@ -41,6 +41,7 @@
 #include "demo/textSizes.h"
 #include "demo/unicodeText.h"
 #include "demo/window.h"
+#include "demo/windowButtons.h"
 
 namespace gweni
 {
@@ -142,6 +143,7 @@ void Demo::init(const String &name)
         cat->setName("Containers");
 
         addDemo<WindowDemo>(cat, "WindowDemo");
+        addDemo<WindowButtonsDemo>(cat, "WindowButtonsDemo");
         addDemo<TreeControlDemo>(cat, "TreeControlDemo");
         addDemo<PropertiesDemo>(cat, "PropertiesDemo");
         addDemo<TabControlDemo>(cat, "TabControlDemo");
