@@ -170,8 +170,8 @@ void LayoutItem::setSpacing(int spacing)
 namespace
 {
 
-// One axis of a size, margin or size flags, so the size pass is written once
-// for both axes.
+// One axis of a size, rect, margin or size flags, so the size and arrange
+// passes are written once for both axes.
 int &length(Size &size, Dim dim)
 {
     return (dim == Dim::X)?size.width:size.height;
@@ -182,10 +182,38 @@ int length(const Size &size, Dim dim)
     return (dim == Dim::X)?size.width:size.height;
 }
 
+int &pos(Rect &rect, Dim dim)
+{
+    return (dim == Dim::X)?rect.x:rect.y;
+}
+
+int &length(Rect &rect, Dim dim)
+{
+    return (dim == Dim::X)?rect.w:rect.h;
+}
+
+//! the side of a margin or padding a layout starts from along dim
+int lead(const Margin &margin, Dim dim)
+{
+    return (dim == Dim::X)?margin.left:margin.top;
+}
+
 //! both sides of a margin or padding along dim
 int sides(const Margin &margin, Dim dim)
 {
     return (dim == Dim::X)?margin.left+margin.right:margin.top+margin.bottom;
+}
+
+//! Bloat takes all the space there is: it grows and shrinks like Elastic,
+//! and along the stacking axis before the others
+bool canGrow(SizeFlag sizeFlag)
+{
+    return (sizeFlag == SizeFlag::Expand) || (sizeFlag == SizeFlag::Elastic) || (sizeFlag == SizeFlag::Bloat);
+}
+
+bool canShrink(SizeFlag sizeFlag)
+{
+    return (sizeFlag == SizeFlag::Shrink) || (sizeFlag == SizeFlag::Elastic) || (sizeFlag == SizeFlag::Bloat);
 }
 
 SizeFlag &flag(SizeFlags &sizeFlags, Dim dim)
@@ -218,12 +246,15 @@ void LayoutItem::calculateSize(skin::Base *skin, Dim dim)
         return;
     }
 
+    // A hidden control takes no space and no spacing, as in a dock layout
+    // (Base::sizeOfChildren); a nested layout always counts.
     for(LayoutItem *child:m_children)
-        child->calculateSize(skin, dim);
+    {
+        if(!child->skipped())
+            child->calculateSize(skin, dim);
+    }
 
-    const Dim along=(m_type == LayoutType::Horizontal)?Dim::X:Dim::Y;
-
-    if(dim == along)
+    if(dim == alongDim())
         calculateAlong(dim);
     else
         calculateAcross(dim);
@@ -243,6 +274,9 @@ void LayoutItem::calculateAlong(Dim dim)
 
     for(LayoutItem *child:m_children)
     {
+        if(child->skipped())
+            continue;
+
         const int spacing=addSpacing?m_spacing:0;
 
         addSpacing=true;
@@ -274,6 +308,9 @@ void LayoutItem::calculateAcross(Dim dim)
 
     for(LayoutItem *child:m_children)
     {
+        if(child->skipped())
+            continue;
+
         preferred=std::max(preferred, length(child->getPreferredSize(), dim));
         minimum=std::max(minimum, length(child->getMinimumSize(), dim));
         maximum=std::min(maximum, length(child->getMaximumSize(), dim));
@@ -320,248 +357,128 @@ void LayoutItem::arrange(skin::Base *skin, Dim dim)
         return;
     }
 
-    switch(m_type)
-    {
-    case LayoutType::Horizontal:
-        if(dim == Dim::X)
-            arrangeHorizontal();
-        else
-            arrangeVerticalPos();
-        break;
-    case LayoutType::Vertical:
-        if(dim == Dim::X)
-            arrangeHorizontalPos();
-        else
-            arrangeVertical();
-        break;
-    }
+    if(dim == alongDim())
+        arrangeAlong(dim);
+    else
+        arrangeAcross(dim);
 
+    // a hidden control keeps the bounds it had, as in a dock layout
     for(LayoutItem *child:m_children)
-        child->arrange(skin, dim);
+    {
+        if(!child->skipped())
+            child->arrange(skin, dim);
+    }
 }
 
-void LayoutItem::arrangeHorizontal()
+// Along the stacking axis the children follow each other from the lead
+// padding, m_spacing apart, each at its preferred length plus its share of
+// the space the layout has over its own preferred length (which holds the
+// padding and the spacing). Space over goes to the Bloat children if there
+// are any, otherwise to the Expand and Elastic ones; space short comes out of
+// the Bloat children if there are any, otherwise out of the Shrink and Elastic
+// ones. Fixed keeps its preferred length.
+void LayoutItem::arrangeAlong(Dim dim)
 {
-    int x=m_bounds.x+m_padding.left;
-
     int shrink=0;
     int expand=0;
     int bloat=0;
 
     for(LayoutItem *child:m_children)
     {
-        const SizeFlags &sizeFlags=child->getSizeFlags();
+        if(child->skipped())
+            continue;
 
-        if(sizeFlags.horizontal==SizeFlag::Shrink)
-            shrink++;
-        else if(sizeFlags.horizontal==SizeFlag::Expand)
-            expand++;
-        else if(sizeFlags.horizontal==SizeFlag::Elastic)
-        {
-            shrink++;
-            expand++;
-        }
-        else if(sizeFlags.horizontal==SizeFlag::Bloat)
+        const SizeFlag sizeFlag=flag(child->getSizeFlags(), dim);
+
+        if(sizeFlag == SizeFlag::Bloat)
             bloat++;
+        else
+        {
+            if(canGrow(sizeFlag))
+                expand++;
+            if(canShrink(sizeFlag))
+                shrink++;
+        }
     }
 
-    int extraSpace=m_bounds.w-m_preferredSize.width-m_padding.left-m_padding.right;
+    const int extraSpace=length(m_bounds, dim)-length(m_preferredSize, dim);
     int bloatSpace=0;
     int expandSpace=0;
     int shrinkSpace=0;
 
-    if(extraSpace > 0)
-    {
-        if(bloat > 0)
-            bloatSpace=extraSpace/bloat;
-        else if(expand > 0)
-            expandSpace=extraSpace/expand;
-    }
-    else if(extraSpace < 0)
-    {
-        if(shrink > 0)
-            shrinkSpace=extraSpace/shrink;
-    }
+    if(bloat > 0)
+        bloatSpace=extraSpace/bloat;
+    else if((extraSpace > 0) && (expand > 0))
+        expandSpace=extraSpace/expand;
+    else if((extraSpace < 0) && (shrink > 0))
+        shrinkSpace=extraSpace/shrink;
+
+    int position=pos(m_bounds, dim)+lead(m_padding, dim);
 
     for(LayoutItem *child:m_children)
     {
+        if(child->skipped())
+            continue;
+
         Rect bounds=child->getBounds();
-        Size preferred=child->getPreferredSize();
-        const SizeFlags &sizeFlags=child->getSizeFlags();
+        const SizeFlag sizeFlag=flag(child->getSizeFlags(), dim);
+        int childLength=length(child->getPreferredSize(), dim);
 
-        bounds.x=x;
+        if(sizeFlag == SizeFlag::Bloat)
+            childLength+=bloatSpace;
+        else
+        {
+            if(canGrow(sizeFlag))
+                childLength+=expandSpace;
+            if(canShrink(sizeFlag))
+                childLength+=shrinkSpace;
+        }
 
-        if(sizeFlags.horizontal==SizeFlag::Bloat)
-            bounds.w=preferred.width+bloatSpace;
-        else if((sizeFlags.horizontal==SizeFlag::Elastic)||(sizeFlags.horizontal==SizeFlag::Expand))
-            bounds.w=preferred.width+expandSpace;
-        else if((sizeFlags.horizontal==SizeFlag::Elastic)||(sizeFlags.horizontal==SizeFlag::Shrink))
-            bounds.w=preferred.width+shrinkSpace;
-        else if(sizeFlags.horizontal==SizeFlag::Fixed)
-            bounds.w=preferred.width;
-
+        pos(bounds, dim)=position;
+        length(bounds, dim)=childLength;
         child->setBounds(bounds);
-        x+=bounds.w+m_spacing;
+        position+=childLength+m_spacing;
 
 #ifdef DEBUG_LAYOUT
         Base *control=child->getControl();
 
         if(control)
-            logUpdates("%s%s - layout arrangeHorizontal - (%d, %d, %d, %d)\n", spaceByParent(control).c_str(), control->getTypeName(), control->getX(), control->getY(), control->getWidth(), control->getHeight());
+            logUpdates("%s%s - layout arrangeAlong %s - (%d, %d, %d, %d)\n", spaceByParent(control).c_str(), control->getTypeName(), (dim == Dim::X)?"X":"Y", control->getX(), control->getY(), control->getWidth(), control->getHeight());
 #endif//DEBUG_LAYOUT
     }
 }
 
-void LayoutItem::arrangeVerticalPos()
+// Across the stacking axis every child starts at the lead padding and gets
+// its preferred length, or the whole length inside the padding when it is
+// shorter and the child can grow, or longer and the child can shrink.
+void LayoutItem::arrangeAcross(Dim dim)
 {
-    int y=m_bounds.y+m_padding.top;
+    const int position=pos(m_bounds, dim)+lead(m_padding, dim);
+    const int inner=length(m_bounds, dim)-sides(m_padding, dim);
 
     for(LayoutItem *child:m_children)
     {
+        if(child->skipped())
+            continue;
+
         Rect bounds=child->getBounds();
-        const Size preferred=child->getPreferredSize();
+        const SizeFlag sizeFlag=flag(child->getSizeFlags(), dim);
+        const int preferred=length(child->getPreferredSize(), dim);
+        int childLength=preferred;
 
-        bounds.y=y;
-        bounds.h=preferred.height+m_padding.top+m_padding.bottom;
+        if(((preferred < inner) && canGrow(sizeFlag)) || ((preferred > inner) && canShrink(sizeFlag)))
+            childLength=inner;
 
-        SizeFlags sizeFlags=child->getSizeFlags();
-
-        if(preferred.height < m_bounds.h)
-        {
-            if((sizeFlags.vertical==SizeFlag::Elastic)||(sizeFlags.vertical==SizeFlag::Expand)||(sizeFlags.vertical==SizeFlag::Bloat))
-                bounds.h=m_bounds.h-m_padding.top-m_padding.bottom;
-
-        }
-        else if(preferred.height > m_bounds.h)
-        {
-            if((sizeFlags.vertical==SizeFlag::Elastic)||(sizeFlags.vertical==SizeFlag::Shrink))
-                bounds.h=m_bounds.h-m_padding.top-m_padding.bottom;
-        }
-
+        pos(bounds, dim)=position;
+        length(bounds, dim)=childLength;
         child->setBounds(bounds);
+
 #ifdef DEBUG_LAYOUT
         Base *control=child->getControl();
 
         if(control)
-            logUpdates("%s%s - layout arrangeVerticalPos - (%d, %d, %d, %d)\n", spaceByParent(control).c_str(), control->getTypeName(), control->getX(), control->getY(), control->getWidth(), control->getHeight());
+            logUpdates("%s%s - layout arrangeAcross %s - (%d, %d, %d, %d)\n", spaceByParent(control).c_str(), control->getTypeName(), (dim == Dim::X)?"X":"Y", control->getX(), control->getY(), control->getWidth(), control->getHeight());
 #endif//DEBUG_LAYOUT
-    }
-}
-
-void LayoutItem::arrangeHorizontalPos()
-{
-    int x=m_bounds.x+m_padding.left;
-
-    for(LayoutItem *child:m_children)
-    {
-        Rect bounds=child->getBounds();
-        const Size preferred=child->getPreferredSize();
-
-        bounds.x=x;
-        bounds.w=preferred.width+m_padding.left+m_padding.right;
-
-        //        child->setPosition(x, bounds.y);
-
-        SizeFlags sizeFlags=child->getSizeFlags();
-
-        if(preferred.width < m_bounds.w)
-        {
-            if((sizeFlags.horizontal == SizeFlag::Elastic) || (sizeFlags.horizontal == SizeFlag::Expand) || (sizeFlags.horizontal == SizeFlag::Bloat))
-                bounds.w=m_bounds.w-m_padding.left-m_padding.right;
-
-        }
-        else if(preferred.width > m_bounds.w)
-        {
-            if((sizeFlags.horizontal == SizeFlag::Elastic) || (sizeFlags.horizontal == SizeFlag::Shrink))
-                bounds.w=m_bounds.w-m_padding.left-m_padding.right;
-        }
-
-        child->setBounds(bounds);
-        //        child->updateControl();
-#ifdef DEBUG_LAYOUT
-        Base *control=child->getControl();
-
-        if(control)
-            logUpdates("%s%s - layout arrangeHorizontalPos - (%d, %d, %d, %d)\n", spaceByParent(control).c_str(), control->getTypeName(), control->getX(), control->getY(), control->getWidth(), control->getHeight());
-#endif//DEBUG_LAYOUT
-    }
-}
-
-void LayoutItem::arrangeVertical()
-{
-    int y=m_bounds.y+m_padding.top;
-
-    int shrink=0;
-    int expand=0;
-    int bloat=0;
-
-    for(LayoutItem *child:m_children)
-    {
-        const SizeFlags &sizeFlags=child->getSizeFlags();
-
-        if(sizeFlags.vertical == SizeFlag::Shrink)
-            shrink++;
-        else if(sizeFlags.vertical == SizeFlag::Expand)
-            expand++;
-        else if(sizeFlags.vertical == SizeFlag::Elastic)
-        {
-            shrink++;
-            expand++;
-        }
-        else if(sizeFlags.vertical == SizeFlag::Bloat)
-        {
-            shrink++;
-            bloat++;
-        }
-    }
-
-    int extraSpace=m_bounds.h-m_preferredSize.height-m_padding.top-m_padding.bottom;
-    int bloatSpace=0;
-    int expandSpace=0;
-    int shrinkSpace=0;
-
-    if(extraSpace > 0)
-    {
-        if(bloat > 0)
-            bloatSpace=extraSpace/bloat;
-        else if(expand > 0)
-            expandSpace=extraSpace/expand;
-    }
-    else if(extraSpace < 0)
-    {
-        if(bloat > 0)
-            bloatSpace=extraSpace/bloat;
-        else if(shrink > 0)
-            shrinkSpace=extraSpace/shrink;
-    }
-
-    for(LayoutItem *child:m_children)
-    {
-        Rect bounds=child->getBounds();
-        Size preferred=child->getPreferredSize();
-        const SizeFlags &sizeFlags=child->getSizeFlags();
-
-        bounds.y=y;
-
-        if(sizeFlags.vertical==SizeFlag::Bloat)
-            bounds.h=preferred.height+bloatSpace;
-        else if(sizeFlags.vertical == SizeFlag::Elastic)
-            bounds.h=preferred.height+expandSpace+shrinkSpace;
-        else if(sizeFlags.vertical == SizeFlag::Expand)
-            bounds.h=preferred.height+expandSpace;
-        else if(sizeFlags.vertical == SizeFlag::Shrink)
-            bounds.h=preferred.height+shrinkSpace;
-        else if(sizeFlags.vertical == SizeFlag::Fixed)
-            bounds.h=preferred.height;
-
-        child->setBounds(bounds);
-#ifdef DEBUG_LAYOUT
-        Base *control=child->getControl();
-
-        if(control)
-            logUpdates("%s%s - layout arrangeVertical - (%d, %d, %d, %d)\n", spaceByParent(control).c_str(), control->getTypeName(), control->getX(), control->getY(), control->getWidth(), control->getHeight());
-#endif//DEBUG_LAYOUT
-        y+=bounds.h+m_spacing;
     }
 }
 

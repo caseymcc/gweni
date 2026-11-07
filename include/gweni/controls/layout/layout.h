@@ -64,15 +64,19 @@ public:
     void setSpacing(int spacing);
 
 private:
+    //! the stacking axis: X for a HorizontalLayout, Y for a VerticalLayout
+    Dim alongDim() const { return (m_type == LayoutType::Horizontal)?Dim::X:Dim::Y; }
+
     void calculateAlong(Dim dim);
     void calculateAcross(Dim dim);
 
     void updateControlSize(Dim dim);
 
-    void arrangeHorizontal();
-    void arrangeVerticalPos();
-    void arrangeVertical();
-    void arrangeHorizontalPos();
+    void arrangeAlong(Dim dim);
+    void arrangeAcross(Dim dim);
+
+    //! a control's cell while its control is hidden: it takes no space
+    bool skipped() const { return m_control && m_control->hidden(); }
 
     Base *m_parent;
     LayoutItem *m_layoutParent;

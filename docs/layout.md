@@ -63,10 +63,23 @@ child at its requested position, not at the one the last pass gave it.
 Along a `VerticalLayout`'s or `HorizontalLayout`'s stacking axis the cell is
 the child's preferred size plus its margins, grown when the layout has room
 left and the flag can grow, and cut when it has too little and the flag can
-shrink; Fixed does neither. So a Shrink child
+shrink; Fixed does neither. Room left goes to the Bloat children if there are
+any, otherwise to Expand and Elastic; room short comes out of the Bloat
+children if there are any, otherwise out of Shrink and Elastic. The rules are
+the same in a row and in a column (`LayoutItem::arrangeAlong`). So a Shrink child
 with a request bigger than its content is cut to the content, and a Fixed one
 takes its own size and the next child starts after it and its margins. Use
 Fixed for "exactly this size" in a layout (ButtonDemo's 20x20 button).
+
+Across the stacking axis the cell is the child's preferred size plus its
+margins, or the whole length inside the layout's padding when it is shorter
+and the flag can grow (Expand, Elastic, Bloat), or longer and the flag can
+shrink (Shrink, Elastic, Bloat) (`arrangeAcross`). A layout's padding
+(`LayoutItem::setPadding`, 0 by default) insets its children on both axes and
+is never added to a child's cell; its spacing (`setSpacing`, 2 by default) is
+the gap between consecutive children. A hidden child takes no space and no
+spacing and keeps the bounds it had, as in a dock layout; shown again it is
+laid out as if it had never been hidden. A nested layout always counts.
 
 A ScrollControl (ListBox, CollapsibleList, Menu, ...) takes p from its request
 on an axis where a size was asked: the request is its outer size, the bars go

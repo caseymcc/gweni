@@ -310,6 +310,7 @@ add_executable(gweni_unit_tests
     unit/skinConfig.cpp
     unit/requestedSize.cpp
     unit/layoutSizes.cpp
+    unit/layoutArrange.cpp
     unit/tabOrder.cpp
     unit/depthLayers.cpp
     unit/overlayDepth.cpp
