@@ -12,7 +12,7 @@
 #
 #  Usage: tools/profile.sh <scene> [--n N] [--frames F] [--out DIR]
 #                          [--bin-dir DIR] [--graph-thres P] [--graph-root FN]
-#                          [-- <more gweni_bench args>]
+#                          [--layout-pad K] [-- <more gweni_bench args>]
 #
 #    <scene>        a scene of gweni_bench --list
 #    --n N          the scene's size (default: the scene's default N)
@@ -28,7 +28,12 @@
 #    --graph-root FN  callgraph.svg shows only FN and what it calls, e.g.
 #                   gweni_bench_phase_update (gprof2dot -z; the percentages stay
 #                   shares of the whole profile)
-#    -- ARGS        passed to gweni_bench as they are (--k, --warmup, --size, ...)
+#    --layout-pad K  run the bench from a directory K characters longer
+#                   (/tmp/gweni-profile-run-xxx...), which moves its heap: the
+#                   counts of runs at several K show the layout noise (below)
+#    -- ARGS        passed to gweni_bench as they are (--k, --warmup, --size, ...);
+#                   it runs in /tmp/gweni-profile-run, so a --resources here must
+#                   be absolute
 #    --help         this text
 #
 #  It writes into DIR:
@@ -51,11 +56,17 @@
 #  (bench/bench.h, "Profiling"), so EGL and GL init, loading the skin and
 #  fonts, the shader primer, the warm-up frames and teardown are not in the
 #  profile. llvmpipe runs with LP_NUM_THREADS=0, so it rasterises on the main
-#  thread, inside the flush phase's glFlush(). With that, the shader cache off
-#  and gweni_bench's fixed getrandom() under valgrind (bench/fixedRandom.cpp),
-#  the same scene and arguments give the same counts in every run, to the
-#  instruction. Mesa's own functions are the anonymous ???:0x... in
-#  swrast_dri.so (no symbols), its JIT-compiled shaders ???:0x... in no object.
+#  thread, inside the flush phase's glFlush(). The bench runs as a copy at a
+#  fixed path, from a fixed directory, in a fixed environment (below), with
+#  the shader cache off and its own fixed getrandom() under valgrind
+#  (bench/fixedRandom.cpp): the same binary, scene and arguments give the same
+#  counts in every run, to the instruction, whatever the cwd, the environment
+#  or where the binary was built. Two different binaries also lay the heap out
+#  differently, and glibc's malloc does more or less work for it: that layout
+#  noise, measured with --layout-pad, is under 0.4 % of update and under
+#  0.1 % of every other phase (AGENTS.md, "Profiling a scene"). Mesa's own
+#  functions are the anonymous ???:0x... in swrast_dri.so (no symbols), its
+#  JIT-compiled shaders ???:0x... in no object.
 #
 #  A run holds the GPU lock (mm lock acquire --until-exit) when mm is on PATH,
 #  and runs unlocked with a note otherwise. Exit status: 0 when every output
@@ -83,12 +94,13 @@ frames=""
 outDir=""
 graphThres=0.5
 graphRoot=""
+layoutPad=0
 binDirGiven=0
 benchArgs=()
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --n|--frames|--out|--bin-dir|--graph-thres|--graph-root)
+        --n|--frames|--out|--bin-dir|--graph-thres|--graph-root|--layout-pad)
             if [[ $# -lt 2 ]]; then
                 echo "profile.sh: $1 needs a value" >&2
                 exit 2
@@ -100,6 +112,7 @@ while [[ $# -gt 0 ]]; do
                 --bin-dir) BIN_DIR="$2"; binDirGiven=1 ;;
                 --graph-thres) graphThres="$2" ;;
                 --graph-root) graphRoot="$2" ;;
+                --layout-pad) layoutPad="$2" ;;
             esac
             shift
             ;;
@@ -131,6 +144,11 @@ done
 if [[ -z "$scene" ]]; then
     echo "profile.sh: no scene given" >&2
     usage >&2
+    exit 2
+fi
+
+if ! [[ "$layoutPad" =~ ^[0-9]+$ ]]; then
+    echo "profile.sh: --layout-pad needs a count of characters, not $layoutPad" >&2
     exit 2
 fi
 
@@ -199,18 +217,53 @@ else
     echo "profile.sh: mm is not on PATH, so this runs without the gpu lock"
 fi
 
+# The run's surroundings are fixed, so its counts depend only on the binary,
+# its resources and the arguments: a copy of gweni_bench at a fixed path (its
+# argv[0] and /proc/self/exe), run from that directory with the resources
+# linked into it (--resources resources, so every path the bench builds has
+# the same length), in a fixed environment. The lengths of argv, the
+# environment and those paths move the stack and the heap, and glibc's malloc
+# and memcmp then do a different amount of work (build --n 10000: update
+# 1879.5 M to 1932.5 M over six resource-path lengths). Runs on one host take
+# turns on the directory (flock).
+stage=/tmp/gweni-profile-run
+if [[ $layoutPad -gt 0 ]]; then
+    stage="$stage-$(printf '%*s' "$layoutPad" '' | tr ' ' x)"
+fi
+mkdir -p "$stage" || die "cannot create $stage"
+exec 9>/tmp/gweni-profile-run.lock
+flock 9 || die "cannot lock /tmp/gweni-profile-run.lock"
+rm -rf "${stage:?}/gweni_bench" "$stage/resources"
+cp "$BENCH" "$stage/gweni_bench" || die "cannot copy $BENCH to $stage"
+if [[ ! -d "$BIN_DIR/resources" ]]; then
+    die "$BIN_DIR/resources is missing; cmake --build copies it next to gweni_bench"
+fi
+ln -s "$(cd "$BIN_DIR/resources" && pwd)" "$stage/resources"
+
 echo "profiling: gweni_bench ${args[*]}"
 start=$SECONDS
 status=0
 # LP_NUM_THREADS=0: llvmpipe rasterises inline, deterministically.
 # MESA_SHADER_CACHE_DISABLE: a shader variant first met in a measured frame is
 # compiled in every run, not loaded from the cache in some.
-LP_NUM_THREADS=0 MESA_SHADER_CACHE_DISABLE=true \
-    valgrind --tool=callgrind --instr-atstart=no --collect-atstart=no --dump-instr=yes --collect-jumps=yes \
+# HOME: Mesa looks for ~/.drirc there; the stage has none.
+# GLIBC_TUNABLES: how much work glibc's malloc does depends on the heap's
+# layout (consolidating fastbins, searching its bins), so a change that only
+# moves the heap moved update by up to 6 %. With no fastbins (mxfast=0), every
+# small free kept in the thread cache (tcache_count) and a fixed mmap threshold
+# it moves update by under 0.4 % and the other phases by under 0.05 % (AGENTS.md,
+# "Profiling a scene"). glibc's share of the counts is then that of this
+# configuration, not of the default one.
+(cd "$stage" && env -i PATH=/usr/bin:/bin HOME="$stage" \
+    GLIBC_TUNABLES=glibc.malloc.mxfast=0:glibc.malloc.tcache_count=65535:glibc.malloc.mmap_threshold=131072 \
+    LP_NUM_THREADS=0 MESA_SHADER_CACHE_DISABLE=true \
+    "$(command -v valgrind)" --tool=callgrind --instr-atstart=no --collect-atstart=no \
+        --dump-instr=yes --collect-jumps=yes \
         --callgrind-out-file="$profile" --log-file="$valgrindLog" \
-        "$BENCH" "${args[@]}" >"$benchOut" 2>&1 || status=$?
+        "$stage/gweni_bench" --resources resources "${args[@]}") >"$benchOut" 2>&1 || status=$?
 elapsed=$((SECONDS-start))
 
+exec 9>&-
 if [[ -n "$lease" ]]; then
     mm lock release "$lease" >/dev/null || true
 fi

@@ -122,7 +122,11 @@ It writes `callgrind.out` (open it with kcachegrind or qcachegrind on a host),
 `phases.txt` (the instructions of each phase, `phase=<name> ir=<n>`, and their
 `total`), `annotate.txt` (the functions by inclusive cost and every line of
 gweni's sources with its cost) and `callgraph.svg` (the call graph, hot paths
-red). The counts are the same every run. Inside the container nearly all of a
+red). It runs a copy of the bench from a fixed directory in a fixed
+environment, so the same binary gives the same counts every run, to the
+instruction; two revisions lay the heap out differently, which alone can move
+`update` by up to 0.4 % and the other phases by under 0.1 %
+(`--layout-pad K` samples that). Inside the container nearly all of a
 small scene's instructions are Mesa llvmpipe rasterising, in the `flush` phase
 under callgrind; Mesa's functions and its JIT code show as anonymous
 `???:0x...` functions. See
