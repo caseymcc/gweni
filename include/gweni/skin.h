@@ -364,6 +364,15 @@ public:
 
     } Colors;
 
+    //! Sizes a skin sets for its controls, in logical units. Read when a
+    //! control lays out, so a control given another skin takes its values.
+    struct
+    {
+        //! A scroll bar's thickness across it, and the side of each of its
+        //! square arrow buttons.
+        int ScrollBarThickness=15;
+    } Metrics;
+
 
 public:
 

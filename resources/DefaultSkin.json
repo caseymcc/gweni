@@ -678,6 +678,11 @@
         {
             "LabelDefault":  [192,202,245],
             "LabelHighlight":[122,162,247]
+        },
+        "metrics":
+        {
+            "_comment": "Sizes in logical units. ScrollBarThickness: a scroll bar's width (height when horizontal) and the side of its square arrow buttons, an integer 6-64.",
+            "ScrollBarThickness": 12
         }
     }
 }

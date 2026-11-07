@@ -20,7 +20,7 @@ namespace gweni
 {
 
 // Three columns of titled sections, laid out to fill the page: the shell's
-// centre pane (870x545), where it is the README's hero, or ControlTest's canvas.
+// centre pane (865x545), where it is the README's hero, or ControlTest's canvas.
 // Every state is set here, since the hero capture takes no input.
 //
 // A ScrollControl's preferred height is its content's unless it asked for one,

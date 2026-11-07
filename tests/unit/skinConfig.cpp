@@ -13,7 +13,11 @@
  *
  *  A theme with "strict": true starts every surface colour field and every
  *  textColorRegistry() colour as magenta, so only what it sets shows its
- *  colour, and names what it left out on one stderr line per kind.
+ *  colour, and names what it left out on one stderr line per kind. Its
+ *  "metrics" object sets the skin's sizes (skin::Base::Metrics) over Tokyo
+ *  Night's compiled ones: a ScrollBarThickness of 6-64 applies, anything else
+ *  (out of range, not an integer, an unknown name, "metrics" not an object)
+ *  keeps 12 with one stderr line.
  *
  *  The unusable configs, over a temp dir: no DefaultSkin.json, a directory of
  *  that name, an empty one, one that does not parse and one whose root is not
@@ -463,4 +467,62 @@ TEST_CASE("A theme that is not strict keeps the compiled default for what it omi
         else
             CHECK((*entry.second == *compiledColors.at(entry.first)));
     }
+}
+
+TEST_CASE("A theme's \"metrics\" sets the scroll bar thickness, and a bad value keeps Tokyo Night's 12")
+{
+    TempDir dir;
+    platform::CurrentPath paths(dir.path.string());
+    test::StubRenderer renderer(paths);
+    test::SurfaceSnapshot surfaces;
+
+    // the compiled default, for any skin, before a theme is applied
+    CHECK(skin::textured::TexturedSkin(&renderer).Metrics.ScrollBarThickness == 15);
+
+    String theme;
+    int expected=12;
+    String expectedMessage;
+
+    SUBCASE("no metrics") { theme="{}"; }
+    SUBCASE("a valid thickness")
+    {
+        theme="{\"metrics\": {\"_comment\": \"skipped\", \"ScrollBarThickness\": 20}}";
+        expected=20;
+    }
+    SUBCASE("the range's ends")
+    {
+        SUBCASE("6") { theme="{\"metrics\": {\"ScrollBarThickness\": 6}}"; expected=6; }
+        SUBCASE("64") { theme="{\"metrics\": {\"ScrollBarThickness\": 64}}"; expected=64; }
+    }
+    SUBCASE("rejected")
+    {
+        const String outOfRange="theme metric \"ScrollBarThickness\" must be an integer 6-64\n";
+
+        SUBCASE("too small") { theme="{\"metrics\": {\"ScrollBarThickness\": 3}}"; expectedMessage=outOfRange; }
+        SUBCASE("too large") { theme="{\"metrics\": {\"ScrollBarThickness\": 100}}"; expectedMessage=outOfRange; }
+        SUBCASE("not an integer") { theme="{\"metrics\": {\"ScrollBarThickness\": 12.5}}"; expectedMessage=outOfRange; }
+        SUBCASE("a string") { theme="{\"metrics\": {\"ScrollBarThickness\": \"12\"}}"; expectedMessage=outOfRange; }
+        SUBCASE("an unknown name")
+        {
+            theme="{\"metrics\": {\"ScrollbarThickness\": 20}}";
+            expectedMessage="theme metric \"ScrollbarThickness\" is not a known metric\n";
+        }
+        SUBCASE("metrics not an object")
+        {
+            theme="{\"metrics\": [20]}";
+            expectedMessage="theme \"metrics\" must be an object\n";
+        }
+    }
+
+    dir.write("DefaultSkin.json", themeConfig(theme));
+
+    skin::textured::TexturedSkin skin(&renderer);
+    const InitResult result=initSkin(skin);
+
+    INFO("theme: ", theme);
+    INFO("stderr: ", result.message);
+    CHECK(result.loaded);
+    CHECK(result.message == expectedMessage);
+    CHECK(lines(result.message) == (expectedMessage.empty()?0:1));
+    CHECK(skin.Metrics.ScrollBarThickness == expected);
 }

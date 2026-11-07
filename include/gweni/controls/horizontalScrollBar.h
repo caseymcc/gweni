@@ -39,17 +39,12 @@ public:
 
     int getBarPos() override
     {
-        return m_bar->getX()-getHeight();
+        return m_bar->getX()-getButtonSize();
     }
 
     void setBarSize(int size) override
     {
         m_bar->setWidth(size);
-    }
-
-    int getButtonSize() override
-    {
-        return getHeight();
     }
 
     void  scrollToLeft() override;

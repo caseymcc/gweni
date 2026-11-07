@@ -20,11 +20,6 @@ GWENI_CONTROL_CONSTRUCTOR(VerticalScrollBar)
     m_scrollButton[SCROLL_BUTTON_UP]->onPressCaller.add(this, &VerticalScrollBar::nudgeUp);
     m_scrollButton[SCROLL_BUTTON_DOWN]->setDirectionDown();
     m_scrollButton[SCROLL_BUTTON_DOWN]->onPressCaller.add(this, &VerticalScrollBar::nudgeDown);
-    // Docked, the buttons take their preferred height, and the first pass
-    // measures this bar with them; a height set in layout() would be replaced
-    // by it in the Y pass, after they were laid out.
-    m_scrollButton[SCROLL_BUTTON_UP]->setDock(DockPosition::Top);
-    m_scrollButton[SCROLL_BUTTON_DOWN]->setDock(DockPosition::Bottom);
     m_bar->onDragged.add(this, &VerticalScrollBar::onBarMoved);
 }
 
@@ -35,16 +30,23 @@ void VerticalScrollBar::layout(skin::Base *skin)
     // Everything below sets up children this pass lays out next.
     PlacementScope placement;
 
-    // Add padding
-    m_bar->setPadding(Padding(0, getButtonSize(), 0, getButtonSize()));
-    // Calculate bar sizes
-    float barHeight=(m_viewableContentSize/m_contentSize)*(getHeight()-getButtonSize());
+    const int thickness=getButtonSize();
+    // The track between the two buttons, which the thumb runs along.
+    const int track=getHeight()-thickness*2;
 
-    if(barHeight < getButtonSize()/2)
-        barHeight=getButtonSize()/2;
+    placeChild(m_scrollButton[SCROLL_BUTTON_UP], 0, 0, thickness, thickness);
+    placeChild(m_scrollButton[SCROLL_BUTTON_DOWN], 0, getHeight()-thickness, thickness, thickness);
 
-    placeChildSize(m_bar, getButtonSize(), barHeight);
-    m_bar->setHidden(getHeight()-(getButtonSize()*2) <= barHeight);
+    // Its padding keeps a dragged thumb on the track.
+    m_bar->setPadding(Padding(0, thickness, 0, thickness));
+
+    float barHeight=(m_viewableContentSize/m_contentSize)*track;
+
+    if(barHeight < thickness/2)
+        barHeight=thickness/2;
+
+    placeChildSize(m_bar, thickness, barHeight);
+    m_bar->setHidden(track <= barHeight);
 
     // Based on our last scroll amount, produce a position for the bar. Only
     // the thumb moves: setScrolledAmount() would invalidate this bar and its

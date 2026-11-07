@@ -17,6 +17,9 @@ namespace internal
 
 GWENI_CONTROL_CONSTRUCTOR(ScrollBarButton)
 {
+    // An arrow with no caption: the size its owner gives it, not an empty
+    // Text's.
+    setSizeFlags({SizeFlag::Fixed, SizeFlag::Fixed});
     setDirectionUp();
 }
 

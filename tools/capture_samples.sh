@@ -76,7 +76,7 @@ SAMPLES=(
 # pane (DemoCenter, from ControlTest --control Demo --size 1024x768
 # --dump-bounds), so it lays out as it does in the shell; a page of one
 # control at its own size.
-PANE_SIZE=870x545
+PANE_SIZE=865x545
 declare -A SAMPLE_SIZE=(
     [ButtonDemo]=640x480
     [RadioButtonDemo]=640x480

@@ -20,10 +20,6 @@ GWENI_CONTROL_CONSTRUCTOR(HorizontalScrollBar)
     m_scrollButton[SCROLL_BUTTON_LEFT]->onPressCaller.add(this, &HorizontalScrollBar::nudgeLeft);
     m_scrollButton[SCROLL_BUTTON_RIGHT]->setDirectionRight();
     m_scrollButton[SCROLL_BUTTON_RIGHT]->onPressCaller.add(this, &HorizontalScrollBar::nudgeRight);
-    // Docked, the buttons take their preferred width, and the first pass
-    // measures this bar with them; one set in layout() would be replaced by it.
-    m_scrollButton[SCROLL_BUTTON_LEFT]->setDock(DockPosition::Left);
-    m_scrollButton[SCROLL_BUTTON_RIGHT]->setDock(DockPosition::Right);
     m_bar->onDragged.add(this, &HorizontalScrollBar::onBarMoved);
 }
 
@@ -34,14 +30,23 @@ void HorizontalScrollBar::layout(skin::Base *skin)
     // Everything below sets up children this pass lays out next.
     PlacementScope placement;
 
-    m_bar->setPadding(Padding(getButtonSize(), 0, getButtonSize(), 0));
-    float barWidth=(m_viewableContentSize/m_contentSize)*(getWidth()-getButtonSize());
+    const int thickness=getButtonSize();
+    // The track between the two buttons, which the thumb runs along.
+    const int track=getWidth()-thickness*2;
 
-    if(barWidth < getButtonSize()/2)
-        barWidth=getButtonSize()/2;
+    placeChild(m_scrollButton[SCROLL_BUTTON_LEFT], 0, 0, thickness, thickness);
+    placeChild(m_scrollButton[SCROLL_BUTTON_RIGHT], getWidth()-thickness, 0, thickness, thickness);
 
-    placeChildSize(m_bar, barWidth, getButtonSize());
-    m_bar->setHidden(getWidth()-(getButtonSize()*2) <= barWidth);
+    // Its padding keeps a dragged thumb on the track.
+    m_bar->setPadding(Padding(thickness, 0, thickness, 0));
+
+    float barWidth=(m_viewableContentSize/m_contentSize)*track;
+
+    if(barWidth < thickness/2)
+        barWidth=thickness/2;
+
+    placeChildSize(m_bar, barWidth, thickness);
+    m_bar->setHidden(track <= barWidth);
 
     // Based on our last scroll amount, produce a position for the bar. Only
     // the thumb moves: setScrolledAmount() would invalidate this bar and its

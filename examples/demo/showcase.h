@@ -19,7 +19,7 @@ class GroupBox;
 
 //! The showcase pages: many controls on one page, each in a state it is not in
 //! by default, filling their host. In the demo shell a page fills the centre
-//! pane (DemoCenter, 870x545 at the shell's 1024x768); tools/capture_samples.sh
+//! pane (DemoCenter, 865x545 at the shell's 1024x768); tools/capture_samples.sh
 //! captures the gallery pages at that size, so a page lays out the same in both.
 //!
 //! The states a page sets in its constructor, one line each, for the shell's

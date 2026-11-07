@@ -94,7 +94,8 @@ void Demo::init(const String &name)
     leftDock->getTabControl()->setName("ControlsTab");
     leftDock->getTabControl()->addPage("Demos", list);
     leftDock->setSizeFlags({SizeFlag::Fixed, SizeFlag::Expand});
-    leftDock->setWidth(150);
+    // The list's rows are 113 wide beside its scroll bar (12 in Tokyo Night).
+    leftDock->setWidth(155);
     
     m_textOutput=bottomDock->newChild<controls::ListBox>();
 

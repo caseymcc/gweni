@@ -73,10 +73,14 @@ public:
     virtual void setContentSize(float size);
     virtual void setViewableContentSize(float size);
 
-    virtual int getButtonSize()
-    {
-        return 0;
-    }
+    //! The bar's thickness T, its skin's Metrics.ScrollBarThickness: the bar
+    //! is T across, and each arrow button TxT at one end. Read when it is
+    //! called, so the bar follows a new skin.
+    int getButtonSize();
+
+    //! T across the bar, two buttons along it: what the bar asks for whatever
+    //! its children, which it places itself.
+    void calculateSize(skin::Base *skin, Dim dim) override;
 
     virtual float getScrolledAmount()
     {

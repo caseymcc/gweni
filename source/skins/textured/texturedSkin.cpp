@@ -400,8 +400,9 @@ std::unordered_map<std::string, gweni::Color*> TexturedSkin::textColorRegistry()
 }
 
 // Apply an external theme: a "surfaces" object (name -> {top,bottom,border arrays,
-// radius, borderWidth}) overriding tokyonight surfaces, and a "textColors" object
-// (name -> [r,g,b(,a)]) overriding control text colors. Anything omitted keeps its
+// radius, borderWidth}) overriding tokyonight surfaces, a "textColors" object
+// (name -> [r,g,b(,a)]) overriding control text colors, and a "metrics" object
+// (name -> integer) overriding the skin's sizes. Anything omitted keeps its
 // compiled default, unless "strict" is true: then every surface colour field and
 // text colour starts as colors::Missing, so only what the theme sets shows its
 // colour, and one line per kind on stderr lists what it did not set.
@@ -546,6 +547,58 @@ void TexturedSkin::loadTheme(const json::Value &jsonTheme)
                     std::cerr<<"theme "<<context<<" is not a known text color\n";
                 else if(toColor(member.value, *iter->second, context))
                     textColorsSet.insert(name);
+            }
+        }
+    }
+
+    // "metrics": name -> an integer, the skin's sizes (skin::Base::Metrics).
+    // Strict mode leaves them alone: it marks unset colours, and a size has no
+    // magenta to show.
+    if(jsonTheme.HasMember("metrics"))
+    {
+        const json::Value &metrics=jsonTheme["metrics"];
+
+        if(!metrics.IsObject())
+            std::cerr<<"theme \"metrics\" must be an object\n";
+        else
+        {
+            // name -> where it goes and the range it must be in.
+            struct MetricEntry
+            {
+                int *value;
+                int minimum;
+                int maximum;
+            };
+            const std::unordered_map<std::string, MetricEntry> metricMap={
+                {"ScrollBarThickness", {&Metrics.ScrollBarThickness, 6, 64}},
+            };
+
+            for(const auto &member:metrics.GetObject())
+            {
+                if(isComment(member.name))
+                    continue;
+
+                std::string name=member.name.GetString();
+                std::string context="metric \""+name+"\"";
+                auto iter=metricMap.find(name);
+
+                if(iter == metricMap.end())
+                {
+                    std::cerr<<"theme "<<context<<" is not a known metric\n";
+                    continue;
+                }
+
+                const MetricEntry &entry=iter->second;
+
+                if(!member.value.IsInt() || member.value.GetInt() < entry.minimum
+                    || member.value.GetInt() > entry.maximum)
+                {
+                    std::cerr<<"theme "<<context<<" must be an integer "<<entry.minimum
+                        <<"-"<<entry.maximum<<"\n";
+                    continue;
+                }
+
+                *entry.value=member.value.GetInt();
             }
         }
     }
@@ -702,6 +755,10 @@ void TexturedSkin::setThemeColors()
     Colors.Selectable.Hover=Fg;
     Colors.Selectable.Selected=White;
     Colors.Selectable.Disabled=Muted;
+
+    // Tokyo Night's sizes, set with its colours so a theme's "metrics" applies
+    // over them.
+    Metrics.ScrollBarThickness=12;
 }
 
 
