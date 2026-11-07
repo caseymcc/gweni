@@ -27,8 +27,17 @@ public:
     GWENI_CONTROL(ComboBox, Button);
 
 public:
+    //! The down chevron the skin paints on the right, ChevronInset from the
+    //! edge: the box keeps that column as its right padding, so it is part of
+    //! the content size and the text is never laid out under it.
+    static constexpr int ChevronSize=12;
+    static constexpr int ChevronInset=6;
+    //! Above and below the text line.
+    static constexpr int VerticalPadding=2;
+
     void render(skin::Base *skin) override;
     void layout(skin::Base *skin) override;
+    void calculateSize(skin::Base *skin, Dim dim) override;
     void updateColors() override;
 
     virtual void selectItem(MenuItem *item, bool fireChangeEvents=

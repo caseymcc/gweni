@@ -273,8 +273,9 @@ void ComboBox::update(renderer::Base *renderer, controls::Base *baseControl)
     if(m_primitives.size() >= 2)
     {
         const gweni::Rect r=baseControl->getRenderBounds();
-        const int sz=12;
-        const gweni::Rect arrow{ r.x+r.w-sz-6, r.y+(r.h-sz)/2, sz, sz };
+        // The column the control keeps for it as its right padding.
+        const int sz=controls::ComboBox::ChevronSize;
+        const gweni::Rect arrow{ r.x+r.w-sz-controls::ComboBox::ChevronInset, r.y+(r.h-sz)/2, sz, sz };
         if(baseControl->visible())
             renderer->drawIcon(m_primitives[1], arrow, 1, 0, tokyonight::FgDark, baseControl->getZIndex()+1);
         else

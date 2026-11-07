@@ -64,8 +64,11 @@ GWENI_CONTROL_CONSTRUCTOR(ComboBox)
 
     // the selected item reads from the left, clear of the arrow
     setTextAlignment(Alignment::Left|Alignment::CenterV);
+    // Inset from the left edge as the chevron is from the right.
+    setTextPadding(Padding(ChevronInset, 0, 3, 0));
     setText("");
     setMargin(Margin(3, 0, 0, 0));
+    setPadding(Padding(0, VerticalPadding, ChevronSize+ChevronInset, VerticalPadding));
     setTabable(true);
     setKeyboardInputEnabled(true);
 }
@@ -76,9 +79,10 @@ MenuItem *ComboBox::addItem(const String &strLabel, const String &strName)
     item->setName(strName);
     item->onMenuItemSelected.add(this, &ComboBox::onItemSelected);
 
-    // Default
+    // Default. Not through onItemSelected, which takes the item from the
+    // event's caller, and there is none here.
     if(m_selectedItem == nullptr)
-        onItemSelected(item);
+        selectItem(item, false);
 
     return item;
 }
@@ -102,6 +106,24 @@ void ComboBox::render(skin::Base *skin)
 void ComboBox::layout(skin::Base *skin)
 {
     ParentClass::layout(skin);
+}
+
+// The text and the padding, the chevron's column included, from the Text
+// child: the hidden menu is not counted (sizeOfChildren skips hidden
+// children) and DownArrow has no preferred size. An empty string measures
+// the font's size high and a set one a line high, so the height is at least
+// a line: the box does not change height when an item is selected.
+void ComboBox::calculateSize(skin::Base *skin, Dim dim)
+{
+    ParentClass::calculateSize(skin, dim);
+
+    if(dim == Dim::Y)
+    {
+        const int line=std::max(m_text->getPreferredSize().height,
+            getSkin()->getRenderer()->measureText(getFont(), " ").y);
+
+        m_preferredSize.height=preferredFromContent(line+m_padding.top+m_padding.bottom, dim);
+    }
 }
 
 void ComboBox::updateColors()
@@ -221,8 +243,8 @@ bool ComboBox::onKeyUp(bool down)
 
         if(it != children.rend() && (++it != children.rend()))
         {
-            Base *upElement=*it;
-            onItemSelected(upElement);
+            if(MenuItem *upElement=gweni_cast<MenuItem>(*it))
+                selectItem(upElement);
         }
     }
 
@@ -238,8 +260,8 @@ bool ComboBox::onKeyDown(bool down)
 
         if(it != children.end() && (++it != children.end()))
         {
-            Base *downElement=*it;
-            onItemSelected(downElement);
+            if(MenuItem *downElement=gweni_cast<MenuItem>(*it))
+                selectItem(downElement);
         }
     }
 
