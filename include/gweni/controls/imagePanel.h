@@ -24,6 +24,9 @@ public:
     GWENI_CONTROL(ImagePanel, controls::Base);
     
 public:
+    //! Draws its texture itself in render(), not through the skin (kept after #169).
+    GWENI_DRAWS_NOTHING
+
     virtual ~ImagePanel();
 
     virtual void setUV(float u1, float v1, float u2, float v2);

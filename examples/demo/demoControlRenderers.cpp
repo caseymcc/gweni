@@ -59,7 +59,10 @@ GWENI_DEMO_TRANSPARENT(SliderDemo)
 GWENI_DEMO_TRANSPARENT(StatusBarDemo)
 GWENI_DEMO_TRANSPARENT(TabControlDemo)
 GWENI_DEMO_TRANSPARENT(TextBoxDemo)
+GWENI_DEMO_TRANSPARENT(TextDemo)
+GWENI_DEMO_TRANSPARENT(TextSizesDemo)
 GWENI_DEMO_TRANSPARENT(TreeControlDemo)
+GWENI_DEMO_TRANSPARENT(UnicodeTextDemo)
 GWENI_DEMO_TRANSPARENT(WindowDemo)
 
 #undef GWENI_DEMO_TRANSPARENT
@@ -117,8 +120,11 @@ template class ControlRegister<SliderDemo>;
 template class ControlRegister<StatusBarDemo>;
 template class ControlRegister<TabControlDemo>;
 template class ControlRegister<TextBoxDemo>;
+template class ControlRegister<TextDemo>;
 template class ControlRegister<TextDemoLightPanel>;
+template class ControlRegister<TextSizesDemo>;
 template class ControlRegister<TreeControlDemo>;
+template class ControlRegister<UnicodeTextDemo>;
 template class ControlRegister<WindowDemo>;
 
 }//namespace textured

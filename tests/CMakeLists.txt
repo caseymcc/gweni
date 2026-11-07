@@ -68,7 +68,9 @@ if(TARGET ControlTest)
 
     # build, render and destroy every demo; exits non-zero unless the canvas
     # renders as the empty canvas it started as, and every frame of it takes
-    # one layout pass
+    # one layout pass. Since it builds every demo in --list, it is also the
+    # test that fails when a control type has no skin renderer (ControlTest
+    # exits non-zero after "gweni: no skin renderer for <TypeName>")
     add_test(NAME controltest_teardown
         COMMAND $<TARGET_FILE:ControlTest> --headless --check-teardown
             --require-one-pass

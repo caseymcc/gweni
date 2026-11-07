@@ -1499,6 +1499,11 @@ template class ControlRegister<Tree>;
 template class ControlRegister<SpinBox>;
 template class ControlRegister<SplitterBar>;
 template class ControlRegister<Window>;
+template class ControlRegister<TreeControl>;
+template class ControlRegister<TreeNode>;
+template class ControlRegister<PropertyTreeNode>;
+template class ControlRegister<PropertyRow>;
+template class ControlRegister<RightArrow>;
 
 }//namespace textured
 }//namespace skin

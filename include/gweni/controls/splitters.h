@@ -30,6 +30,9 @@ class GWENI_EXPORT SplitterVertical: public controls::Base
     }
 
 public:
+    //! A container: its SplitterBar and its two panels draw.
+    GWENI_DRAWS_NOTHING
+
     void postLayout(skin::Base *skin) override
     {
         refreshContainers();

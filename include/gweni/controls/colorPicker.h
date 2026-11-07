@@ -63,6 +63,9 @@ public:
     GWENI_CONTROL(ColorPicker, Base);
 
 public:
+    //! A container of its sliders, text boxes and ColorDisplays.
+    GWENI_DRAWS_NOTHING
+
     virtual void setAlphaVisible(bool visible);
 
     virtual void        setColor(gweni::Color color);

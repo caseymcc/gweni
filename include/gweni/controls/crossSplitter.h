@@ -24,6 +24,9 @@ public:
     GWENI_CONTROL(CrossSplitter, controls::Base);
 
 public:
+    //! A container: its bars are SplitterBars and its panes draw themselves.
+    GWENI_DRAWS_NOTHING
+
     void calculateSize(skin::Base *skin, Dim dim) override;
     void layout(skin::Base *skin) override;
     //! layout() places the bars and the panels; the generic dock and size

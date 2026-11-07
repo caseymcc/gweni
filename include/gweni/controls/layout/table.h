@@ -38,6 +38,9 @@ class GWENI_EXPORT TableRow: public Base
     }
 
 public:
+    //! Layout only: a Table row's cells; ListBoxRow draws a row.
+    GWENI_DRAWS_NOTHING
+
     void setColumnCount(int count)
     {
         if(count == m_columnCount)

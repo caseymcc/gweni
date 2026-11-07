@@ -24,6 +24,9 @@ public:
     GWENI_CONTROL(RichLabel, gweni::controls::Base);
 
 public:
+    //! A container of the Labels it splits its text into.
+    GWENI_DRAWS_NOTHING
+
     void addLineBreak();
     void addText(const gweni::String &text, gweni::Color color, gweni::Font *font=nullptr);
 

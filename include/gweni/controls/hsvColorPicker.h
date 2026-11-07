@@ -26,6 +26,9 @@ public:
     GWENI_CONTROL(HSVColorPicker, controls::Base);
 
 public:
+    //! A container of its ColorLerpBox, ColorSlider, ColorDisplays and text boxes.
+    GWENI_DRAWS_NOTHING
+
     gweni::Color getColor();
     gweni::Color getDefaultColor()
     {

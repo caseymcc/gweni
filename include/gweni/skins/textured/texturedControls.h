@@ -473,6 +473,20 @@ GWENI_TRANSPARENT_RENDERER(TabStrip)
 GWENI_TRANSPARENT_RENDERER(VerticalScrollBar)
 GWENI_TRANSPARENT_RENDERER(HorizontalScrollBar)
 GWENI_TRANSPARENT_RENDERER(ScrollBarBar)
+
+// Visual controls this skin does not draw yet. Each is an empty renderer on
+// purpose, so Base::setSkin() does not report the type as having none (#185),
+// and each names the idea that tracks its real renderer: drop the line when
+// that renderer lands. A drawsNothing() override is not the place for these,
+// since the controls are meant to draw.
+#define GWENI_PENDING_RENDERER(Class) GWENI_TRANSPARENT_RENDERER(Class)
+
+GWENI_PENDING_RENDERER(TreeControl)      // #219: the Tree renderer is registered as "Tree"
+GWENI_PENDING_RENDERER(TreeNode)         // #219: tree lines
+GWENI_PENDING_RENDERER(PropertyTreeNode) // #219: category rail
+GWENI_PENDING_RENDERER(PropertyRow)      // #219: separators, hover and editing highlight
+GWENI_PENDING_RENDERER(RightArrow)       // #219: a MenuItem's submenu chevron
+#undef GWENI_PENDING_RENDERER
 #undef GWENI_TRANSPARENT_RENDERER
 
 class ProgressBar:public textured::ControlRegister<ProgressBar>

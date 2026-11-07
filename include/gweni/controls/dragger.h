@@ -27,6 +27,9 @@ public:
     GWENI_CONTROL(Dragger, controls::Base);
 
 public:
+    //! A drag handle: the control it moves draws it (a WindowControl's title bar).
+    GWENI_DRAWS_NOTHING
+
     void onMouseMoved(int x, int y, int deltaX, int deltaY) override;
 
     void onMouseClickLeft(int x, int y, bool down) override;

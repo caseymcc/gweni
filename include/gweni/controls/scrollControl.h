@@ -29,6 +29,9 @@ public:
     GWENI_CONTROL(ScrollControl, Base);
 
 public:
+    //! A container: its inner panel's children and its scroll bars draw.
+    GWENI_DRAWS_NOTHING
+
     void render(skin::Base *skin) override;
 
     void calculateSize(skin::Base *skin, Dim dim) override;

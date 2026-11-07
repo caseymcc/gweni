@@ -24,6 +24,9 @@ public:
     GWENI_CONTROL(RadioButtonController, Base);
 
 public:
+    //! A container of its LabeledRadioButtons.
+    GWENI_DRAWS_NOTHING
+
     void render(skin::Base * /*skin*/) override
     {}
 

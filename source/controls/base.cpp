@@ -23,6 +23,8 @@
 #   include <gweni/anim.h>
 #endif
 
+#include <cstring>
+#include <set>
 #include <sstream>
 #include <iostream>
 
@@ -930,6 +932,19 @@ void resetChangeStats()
     g_changeStats=ChangeStats();
 }
 
+// The types reported by setSkin(), each printed once when it was added.
+static std::set<std::string> &typesReportedWithoutRenderer()
+{
+    static std::set<std::string> types;
+    return types;
+}
+
+std::vector<std::string> typesWithoutSkinRenderer()
+{
+    const std::set<std::string> &types=typesReportedWithoutRenderer();
+    return std::vector<std::string>(types.begin(), types.end());
+}
+
 void Base::render(skin::Base *skin)
 {
 //    update();
@@ -1239,6 +1254,15 @@ void Base::setSkin(skin::Base *skin, bool doChildren)
             std::cout<<"Using:"<<parentName<<" skin for: "<<getTypeName()<<"\n";
         }
 #endif//GWENI_DEBUG_LOGGING
+
+        // Falling back to an intermediate ancestor's renderer is by design
+        // (TextBoxNumeric draws as a TextBox); ending at the Base entry, which
+        // draws nothing, means this type has no renderer of its own.
+        if(m_skinControl && std::strcmp(parentName, Base::getTypeNameStatic()) == 0
+            && !drawsNothing() && typesReportedWithoutRenderer().insert(getTypeName()).second)
+        {
+            std::cerr<<"gweni: no skin renderer for "<<getTypeName()<<"\n";
+        }
     }
 
     invalidate();

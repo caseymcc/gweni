@@ -80,6 +80,9 @@ public:
     }
 
 public:
+    //! A container of its CheckBox and its label.
+    GWENI_DRAWS_NOTHING
+
     virtual CheckBox *checkBox()
     {
         return m_checkbox;

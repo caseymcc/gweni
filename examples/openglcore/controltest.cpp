@@ -219,6 +219,14 @@
  *  With no --shot/--shot-all/--stats/--scenario and no scripted input it opens
  *  the interactive window, as before, on the real platform clock.
  *
+ *  A control type with no skin renderer fails the run, in every mode: when
+ *  Base::setSkin() finds that a control's renderer lookup ended at the skin's
+ *  Base entry (and the type does not opt out with drawsNothing()), it prints
+ *    gweni: no skin renderer for <TypeName>
+ *  on stderr, once per type, and before exiting ControlTest prints
+ *    ControlTest: N control type(s) with no skin renderer: <TypeName> ...
+ *  and exits non-zero (gweni::controls::typesWithoutSkinRenderer()).
+ *
  *  Captures install a stepped clock (gweni::platform::setTimeSource), so a shot
  *  depends on the frame number and not on how fast the process ran. --stats
  *  freezes the per-frame step instead, so an idle frame is genuinely idle and
@@ -3062,5 +3070,17 @@ int main(int argc, char *argv[])
     delete renderer;
     if(capturing) destroyFramebuffer(fb);
     destroyContext(ctx);
+
+    // setSkin() printed each of these when it first met it; the run fails on
+    // them whatever the mode, so a control that draws nothing is not silent.
+    const std::vector<std::string> unrendered=gweni::controls::typesWithoutSkinRenderer();
+    if(!unrendered.empty())
+    {
+        std::cerr<<"ControlTest: "<<unrendered.size()<<" control type(s) with no skin renderer:";
+        for(const std::string &type : unrendered)
+            std::cerr<<" "<<type;
+        std::cerr<<"\n";
+        result=EXIT_FAILURE;
+    }
     return result;
 }

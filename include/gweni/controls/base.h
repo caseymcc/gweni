@@ -22,6 +22,9 @@
 
 #include <list>
 #include <map>
+#include <cstring>
+#include <string>
+#include <vector>
 #include <algorithm>
 
 // Verbose per-control debug output. Enabled by the GWENI_DEBUG_LOGGING cmake
@@ -76,6 +79,13 @@ struct ChangeStats
 GWENI_EXPORT const ChangeStats &getChangeStats();
 GWENI_EXPORT void resetChangeStats();
 
+//! The control types setSkin() found no skin renderer for: its walk up the
+//! parent types reached the skin's Base entry, for a type that is not Base and
+//! not drawsNothing(). Each is printed once on std::cerr when first seen
+//! ("gweni: no skin renderer for <TypeName>"); this is the set, sorted, for a
+//! harness to fail on.
+GWENI_EXPORT std::vector<std::string> typesWithoutSkinRenderer();
+
 size_t getControlType(std::string name);
 
 template<typename _Control>
@@ -124,6 +134,12 @@ public:
 
     virtual const char *getParentTypeName() const { return nullptr; }
     virtual const char *getParentTypeName(size_t index) const { return nullptr; }
+
+    //! True for a type that has no skin renderer by design (it paints nothing,
+    //! or draws itself outside the skin), so setSkin() does not report it.
+    //! Override it with GWENI_DRAWS_NOTHING, which holds for the declaring type
+    //! only: a subclass with no renderer (SliderBar of Dragger) is still reported.
+    virtual bool drawsNothing() const { return false; }
 
     virtual void delayedDelete();
     virtual void preDelete(gweni::skin::Base *skin) {}
@@ -1009,6 +1025,11 @@ public: \
     THISNAME::THISNAME(const gweni::String &name) \
         : ParentClass(name){} \
     void THISNAME::init(const gweni::String &name) \
+
+//! drawsNothing() for the class it is written in, and not for its subclasses,
+//! which opt out with their own GWENI_DRAWS_NOTHING.
+#define GWENI_DRAWS_NOTHING \
+    bool drawsNothing() const override { return std::strcmp(getTypeName(), getTypeNameStatic()) == 0; }
 
 } // namespace gweni
 

@@ -27,6 +27,9 @@ public:
     }
 
 public:
+    //! The ComboBox renderer paints the chevron itself.
+    GWENI_DRAWS_NOTHING
+
     void setComboBox(ComboBox *p)
     {
         m_comboBox=p;

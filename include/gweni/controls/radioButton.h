@@ -64,6 +64,9 @@ public:
     }
 
 public:
+    //! A container of its RadioButton and its label.
+    GWENI_DRAWS_NOTHING
+
     void renderFocus(gweni::skin::Base *skin) override
     {
         if(gweni::KeyboardFocus != this)

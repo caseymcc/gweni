@@ -37,6 +37,9 @@ public:
     }
 
 public:
+    //! A container of its TextBox and browse Button.
+    GWENI_DRAWS_NOTHING
+
     void setFileType(const gweni::String &string)
     {
         m_fileType=string;

@@ -28,6 +28,9 @@ public:
     }
 
 public:
+    //! Layout only: it positions its children.
+    GWENI_DRAWS_NOTHING
+
     void postLayout(skin::Base *skin) override
     {
         gweni::Rect bounds=getInnerBounds();

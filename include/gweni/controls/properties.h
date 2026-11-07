@@ -30,6 +30,9 @@ public:
     GWENI_CONTROL(Properties, Base);
 
 public:
+    //! A container of its PropertyRows.
+    GWENI_DRAWS_NOTHING
+
     void arrange(gweni::skin::Base *skin, Dim dim) override;
 
     PropertyRow *add(const String &text, const String &value="");
