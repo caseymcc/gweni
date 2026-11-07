@@ -111,6 +111,16 @@ RUN git clone --depth 1 https://github.com/microsoft/vcpkg.git ${VCPKG_ROOT} && 
 #set owner of everything in home to user
 RUN chown -R $USER_NAME:$USER_NAME /home/$USER_NAME/
 
+# Render in software only: Mesa llvmpipe for GL/EGL and lavapipe for Vulkan,
+# which the samples' bytes (docs/images/, docs_samples) depend on. A host may
+# pass its GPU (/dev/dri) into the container, and without these a Mesa that
+# knows that GPU would pick its hardware driver instead. VK_DRIVER_FILES is
+# what newer loaders read, VK_ICD_FILENAMES what this one (1.3.204) does. Kept
+# after the last RUN, so changing them rebuilds no layer.
+ENV LIBGL_ALWAYS_SOFTWARE=1
+ENV VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.x86_64.json
+ENV VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.x86_64.json
+
 #swith to user with host id/groupid
 USER $USER_NAME
 

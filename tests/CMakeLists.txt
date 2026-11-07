@@ -302,7 +302,7 @@ find_package(doctest CONFIG REQUIRED)
 include(doctest)
 
 # Headless C++ unit tests (doctest) under unit/: no GL context and no resources,
-# so they carry no gpu label and ctest -LE gpu runs them without the GPU lock.
+# so they carry no gpu label and ctest -LE gpu runs them without a lock.
 # Each test case is registered as its own CTest test, so a failure names it.
 # Every unit/*.cpp is a test file: a new test is a new file, no list to extend.
 file(GLOB gweni_unit_tests_sources CONFIGURE_DEPENDS

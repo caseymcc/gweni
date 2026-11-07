@@ -38,8 +38,16 @@ ctest --test-dir build_linux_x64_debug_asan
 ```
 
 The tests labelled `gpu` open a GL context through the examples' headless,
-surfaceless-EGL path, or a Vulkan device. On a shared host, hold the GPU lock
-around `ctest`; `ctest -LE gpu` runs only the headless ones, which need no lock.
+surfaceless-EGL path, or a Vulkan device: Mesa's CPU rasterisers, llvmpipe and
+lavapipe, not a hardware GPU. On a shared host run them under the `render` lock,
+and the headless rest on their own with no lock; never hold a lock around a
+whole `ctest`, and never around a build (`./generate.sh`, `cmake --build`):
+
+```bash
+mm run --lock render -- ctest --test-dir build_linux_x64_debug -L gpu
+ctest --test-dir build_linux_x64_debug -LE gpu
+```
+
 The Vulkan tests are also labelled `vulkan`, so `ctest -LE vulkan` runs the
 GL-only suite. The tests:
 

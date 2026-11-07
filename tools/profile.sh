@@ -68,10 +68,12 @@
 #  functions are the anonymous ???:0x... in swrast_dri.so (no symbols), its
 #  JIT-compiled shaders ???:0x... in no object.
 #
-#  A run holds the GPU lock (mm lock acquire --until-exit) when mm is on PATH,
-#  and runs unlocked with a note otherwise. Exit status: 0 when every output
-#  was written, 1 if the bench is missing or the run or a tool failed, 2 for a
-#  bad argument.
+#  It takes no lock from the host: callgrind counts instructions, and with
+#  LP_NUM_THREADS=0 on one core the counts are the same however busy the host
+#  is. The only lock is a local flock on its staging directory, so two runs on
+#  one host take turns on its files. Exit status: 0 when every output was
+#  written, 1 if the bench is missing or the run or a tool failed, 2 for a bad
+#  argument.
 
 set -euo pipefail
 
@@ -206,17 +208,6 @@ if [[ -n "$frames" ]]; then
 fi
 args+=("${benchArgs[@]}")
 
-# The GPU lock, held until the run is over (or this script exits).
-lease=""
-if command -v mm >/dev/null 2>&1; then
-    lockReply=$(mm lock acquire --until-exit $$ --label "profile.sh $scene" gpu) \
-        || die "could not take the gpu lock"
-    lease=$(python3 -I -c 'import json, sys; print(json.load(sys.stdin).get("lease") or "")' \
-        <<<"$lockReply")
-else
-    echo "profile.sh: mm is not on PATH, so this runs without the gpu lock"
-fi
-
 # The run's surroundings are fixed, so its counts depend only on the binary,
 # its resources and the arguments: a copy of gweni_bench at a fixed path (its
 # argv[0] and /proc/self/exe), run from that directory with the resources
@@ -247,6 +238,8 @@ status=0
 # MESA_SHADER_CACHE_DISABLE: a shader variant first met in a measured frame is
 # compiled in every run, not loaded from the cache in some.
 # HOME: Mesa looks for ~/.drirc there; the stage has none.
+# LIBGL_ALWAYS_SOFTWARE: llvmpipe even where the host's GPU is passed in, as
+# the image's own ENV says (Dockerfile); env -i would drop that.
 # GLIBC_TUNABLES: how much work glibc's malloc does depends on the heap's
 # layout (consolidating fastbins, searching its bins), so a change that only
 # moves the heap moved update by up to 6 %. With no fastbins (mxfast=0), every
@@ -256,7 +249,7 @@ status=0
 # configuration, not of the default one.
 (cd "$stage" && env -i PATH=/usr/bin:/bin HOME="$stage" \
     GLIBC_TUNABLES=glibc.malloc.mxfast=0:glibc.malloc.tcache_count=65535:glibc.malloc.mmap_threshold=131072 \
-    LP_NUM_THREADS=0 MESA_SHADER_CACHE_DISABLE=true \
+    LIBGL_ALWAYS_SOFTWARE=1 LP_NUM_THREADS=0 MESA_SHADER_CACHE_DISABLE=true \
     "$(command -v valgrind)" --tool=callgrind --instr-atstart=no --collect-atstart=no \
         --dump-instr=yes --collect-jumps=yes \
         --callgrind-out-file="$profile" --log-file="$valgrindLog" \
@@ -264,9 +257,6 @@ status=0
 elapsed=$((SECONDS-start))
 
 exec 9>&-
-if [[ -n "$lease" ]]; then
-    mm lock release "$lease" >/dev/null || true
-fi
 
 if [[ $status -ne 0 || ! -s "$profile" ]]; then
     echo "profile.sh: gweni_bench failed under callgrind (exit $status):" >&2

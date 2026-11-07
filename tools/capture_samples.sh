@@ -30,6 +30,11 @@
 #  only inside the pinned build container: another Mesa or compiler renders
 #  other bytes, so a --check failure on a host means nothing.
 #
+#  On a shared host (an agent run) it renders on llvmpipe, Mesa's CPU
+#  rasteriser, so it takes the render lock, not the gpu one:
+#
+#      mm run --lock render -- ./tools/capture_samples.sh --check
+#
 #  It can be run from any directory. Editing SAMPLES below is how the sample set
 #  changes.
 
