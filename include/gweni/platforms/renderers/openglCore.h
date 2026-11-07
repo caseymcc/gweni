@@ -370,8 +370,9 @@ public:
     //! vertexes and 6 indexes in a static 16-bit index buffer that every draw of its
     //! path shares (slot i of a chunk is vertexes i*4..i*4+3 from the chunk's first
     //! vertex), so the buffers are drawn in chunks of at most this many slots, each
-    //! with its vertex attributes pointed at its first slot. 16383, not 16384: WebGL 2 always restarts the primitive at
-    //! index 0xFFFF, and 16384 quads would end on 65535. The largest index is 65531.
+    //! with its vertex attributes pointed at its first slot. 16383, not 16384: WebGL 2
+    //! always restarts the primitive at index 0xFFFF, and 16384 quads would end on
+    //! 65535. The largest index is 65531.
     static constexpr size_t kSlotsPerChunk=16383;
 
     //! The slots one draw covers, kSlotsPerChunk unless GWENI_INDEX_CHUNK_SLOTS=<n>
