@@ -56,6 +56,26 @@ marks `StateChange_Geometry` on exactly the controls whose z index changed.
 `z_visited=`) counts the controls it entered: Demo's first frame 2668, a settled one 0.
 `tests/unit/updateWalk.cpp` pins it.
 
+#### Hover and mouse capture
+
+`HoveredControl` is the control under the mouse, kept by `input::onMouseMoved`
+(`UpdateHoveredControl`, `source/inputHandler.cpp`): a move hit-tests the canvas
+(`getControlAt`) and gives the old control `onMouseLeave` and the new one
+`onMouseEnter`, each of which fires `onHoverLeave`/`onHoverEnter` and `redraw()`s that
+control. **While a control on the canvas holds the mouse (`MouseFocus`, taken by a
+press: Button, Dragger and its subclasses, the scroll bar tracks, TextBox selection, the
+colour controls), it is the hovered control**: a move hit-tests nothing and sends no
+leave or enter, so a drag repaints only what the captured control changes itself (a
+slider thumb drag changes the thumb alone each frame) and the controls the cursor crosses
+fire no hover events. A capture taken while another control is hovered gives that one a
+single leave. When the capture ends, hover is hit-tested once: after a click whose
+delivery cleared `MouseFocus` (`onMouseClicked`), and when `onCanvasThink` drops it
+because its holder is hidden; the old holder is repainted unhovered in that frame. Since
+the holder is hovered wherever the mouse is, `isHovered()` cannot tell a release on a
+control from one off it: `Button` tests the release point against its own bounds
+(`containsCanvasPoint`), so a press let go off the button is no click.
+`tests/unit/mouseCapture.cpp` pins it.
+
 #### The tooltip: a canvas-level overlay
 
 A tooltip is a retained control like any other, decided in this phase. Each canvas owns

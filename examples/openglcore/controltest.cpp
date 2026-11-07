@@ -169,9 +169,13 @@
  *                   the close button of the window "Normal Window" opens
  *                   draws something at rest, hover and press change its
  *                   pixels and moving off gives the rest look back, the hover
- *                   frame writes 1..2 primitive slots, and a click closes the
- *                   window with the live primitive ids back where they were
- *                   before it opened. Exits non-zero if any check is no. The
+ *                   frame writes 1..2 primitive slots, a press let go off it
+ *                   leaves the window open and the button at rest, and a
+ *                   click closes the window with the live primitive ids back
+ *                   where they were before it opened. SliderDemo: each frame
+ *                   of a thumb drag, along the track and off it, changes the
+ *                   thumb only and moves it, and the release off it takes
+ *                   its hover away. Exits non-zero if any check is no. The
  *                   clock is frozen as under --stats.
  *    typing       the keyboard on TextBoxDemo, every key a synthesised GLFW
  *                 event through gweni::input::GLFW3: click into the first,
@@ -2018,10 +2022,9 @@ static void checkButton(Session &s, const std::string &shotDir, InteractionCheck
     mouseDown(s, on.x, on.y, true);
     const std::vector<uint8_t> press=settledRegion(s, button, shotDir, "button-press", ok);
 
-    // Let go off the button, so it is not clicked. The input handler keeps the
-    // pressed control hovered until the mouse next moves, so move once more.
+    // Let go off the button, so it is not clicked. The release hit-tests the
+    // hover again, so no further move is needed for its idle look.
     mouseUp(s, off.x, off.y);
-    moveMouse(s, off.x-1, off.y);
     const std::vector<uint8_t> released=settledRegion(s, button, shotDir, "button-released", ok);
 
     // A frame with no input once everything has settled must do nothing.
@@ -2342,8 +2345,9 @@ static size_t livePrimitiveIds()
 
 // WindowDemo: the close button of the window "Normal Window" opens shows
 // something at rest, a hover and a press change its pixels and moving off gives
-// the rest look back; the hover frame writes only the button's two slots, and
-// the release closes the window and gives the window's primitive ids back.
+// the rest look back; the hover frame writes only the button's two slots; a
+// press let go off the button is no click, and one let go on it closes the
+// window and gives the window's primitive ids back.
 static void checkWindowClose(Session &s, const std::string &shotDir, InteractionChecks &checks, bool &ok)
 {
     gweni::controls::Base *demo=addControl(s, "WindowDemo");
@@ -2407,12 +2411,31 @@ static void checkWindowClose(Session &s, const std::string &shotDir, Interaction
     moveMouse(s, off.x, off.y);
     const std::vector<uint8_t> unhovered=settledRegion(s, close, shotDir, "window-close-unhover", ok);
 
-    // A Button pressed keeps the mouse, so its release anywhere is a click and
-    // the press comes last: the release closes the window.
+    // Pressed and let go off the button: not a click, so the window stays open
+    // and the button is back at rest.
     moveMouse(s, on.x, on.y);
     mouseDown(s, on.x, on.y, true);
     const std::vector<uint8_t> press=settledRegion(s, close, shotDir, "window-close-press", ok);
+    moveMouse(s, off.x, off.y);
+    renderFrames(s, 1);
+    mouseUp(s, off.x, off.y);
+    renderFrames(s, s.frames);
+    const bool stayedOpen=(findControl(s.canvas, "WindowControl") == window);
+    if(!stayedOpen)
+    {
+        // the window and its close button are gone, so the rest cannot run
+        checks.check("window_close_cancel", false,
+            "a press on the close button let go off it closed the window");
+        forgetMouse(s);
+        dropControl(s, demo);
+        return;
+    }
+    const std::vector<uint8_t> cancelled=settledRegion(s, close, shotDir, "window-close-cancelled", ok);
 
+    // Pressed and let go on it: the release closes the window.
+    moveMouse(s, on.x, on.y);
+    mouseDown(s, on.x, on.y, true);
+    renderFrames(s, s.frames);
     mouseUp(s, on.x, on.y);
     moveMouse(s, off.x, off.y);
     renderFrames(s, s.frames);
@@ -2429,12 +2452,82 @@ static void checkWindowClose(Session &s, const std::string &shotDir, Interaction
         " its rest look back");
     checks.check("window_close_press", press != idle && press != hover,
         "pressing the close button did not change its pixels from rest and hover");
+    checks.check("window_close_cancel", cancelled == idle,
+        "the close button let go off it did not get its rest look back");
     checks.check("window_close_hover_bounded", hoverSlots >= 1 && hoverSlots <= 2,
         "the hover frame wrote "+std::to_string(hoverSlots)+" primitive slots; want 1..2");
     checks.check("window_close_closes", closed && idsAfter == idsBefore,
         std::string(closed ? "" : "a click on the close button left the window open; ")
         +"live primitive ids "+std::to_string(idsBefore)+" before the window, "
         +std::to_string(idsAfter)+" after it closed");
+}
+
+// SliderDemo: dragging the first slider's thumb, along the track and off it,
+// changes the thumb alone on every drag frame (the mouse is held, so the
+// controls it crosses get no hover), the thumb follows the mouse, and the
+// release off the thumb takes its hover away.
+static void checkSliderDrag(Session &s, const std::string &shotDir, InteractionChecks &checks, bool &ok)
+{
+    gweni::controls::Base *demo=addControl(s, "SliderDemo");
+    renderFrames(s, s.frames);
+
+    gweni::controls::Base *thumb=findControl(demo, "SliderBar");
+    gweni::controls::Base *slider=thumb?thumb->getParent():nullptr;
+    if(!slider)
+    {
+        checks.check("slider_drag_found", false, "SliderDemo has no visible SliderBar");
+        dropControl(s, demo);
+        return;
+    }
+
+    const gweni::Point grab=centreOf(thumb);
+    moveMouse(s, grab.x, grab.y);
+    renderFrames(s, s.frames);
+    mouseDown(s, grab.x, grab.y, true);
+    renderFrames(s, s.frames);
+
+    // towards the track's far end, in steps that stay inside it; the second
+    // half of the steps runs below the track, off the slider
+    const gweni::Point sliderAt=slider->localPosToCanvas();
+    const int direction=(grab.x < sliderAt.x+slider->getWidth()/2) ? 1 : -1;
+    const int step=std::max(1, slider->getWidth()/10);
+    const int below=sliderAt.y+slider->getHeight()+5;
+
+    std::string frames;
+    bool onlyThumb=true;
+    bool followed=true;
+    for(int i=1; i <= 4; ++i)
+    {
+        const int thumbX=thumb->getX();
+        moveMouse(s, grab.x+direction*step*i, i <= 2 ? grab.y : below);
+        renderFrames(s, 1);
+        const gweni::controls::ChangeStats changes=gweni::controls::getChangeStats();
+
+        frames+=" controls_changed="+std::to_string(changes.controls)
+            +" background="+std::to_string(changes.background);
+        if(changes.controls != 1)
+            onlyThumb=false;
+        if(thumb->getX() == thumbX)
+            followed=false;
+    }
+    const bool hoveredWhileHeld=thumb->isHovered();
+    if(!shoot(s, shotDir+"/interaction-slider-drag.png"))
+        ok=false;
+
+    mouseUp(s, s.mouse.x, s.mouse.y);
+    renderFrames(s, s.frames);
+    const bool unhovered=!thumb->isHovered() && gweni::MouseFocus == nullptr;
+
+    forgetMouse(s);
+    dropControl(s, demo);
+
+    checks.check("slider_drag_one_control", onlyThumb,
+        "a drag frame changed other controls than the thumb:"+frames+"; want controls_changed=1 each");
+    checks.check("slider_drag_follows", followed && hoveredWhileHeld,
+        std::string(followed ? "" : "the thumb did not move with every drag step; ")
+        +(hoveredWhileHeld ? "" : "the held thumb was not hovered"));
+    checks.check("slider_drag_release", unhovered,
+        "the thumb let go off itself kept the hover or the mouse");
 }
 
 static bool runInteractionScenario(Session &s, const std::string &shotDir, bool &passed)
@@ -2450,6 +2543,7 @@ static bool runInteractionScenario(Session &s, const std::string &shotDir, bool 
     checkTreeCollapse(s, shotDir, checks, ok);
     checkSelectable(s, shotDir, checks, ok);
     checkWindowClose(s, shotDir, checks, ok);
+    checkSliderDrag(s, shotDir, checks, ok);
 
     std::cout<<"interaction";
     for(const auto &result : checks.results)
