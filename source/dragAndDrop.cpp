@@ -43,9 +43,6 @@ void controlDeleted(gweni::controls::Base *control)
         NewHoveredControl=nullptr;
 }
 
-static int m_mouseX=0;
-static int m_mouseY=0;
-
 bool start(gweni::controls::Base *control, Package *package)
 {
     if(CurrentPackage)
@@ -132,7 +129,6 @@ bool ShouldStartDraggingControl(int x, int y)
     SourceControl=LastPressedControl;
     gweni::MouseFocus=nullptr;
     LastPressedControl=nullptr;
-    CurrentPackage->drawcontrol=nullptr;
 
     // Some controls will want to decide whether they should be dragged at that
     // moment.
@@ -201,18 +197,10 @@ void UpdateHoveredControl(gweni::controls::Base *ctrl, int x, int y)
 
 void onMouseMoved(gweni::controls::Base *hoveredControl, int x, int y)
 {
-    // Always keep these up to date, they're used to draw the dragged control.
-    m_mouseX=x;
-    m_mouseY=y;
-
     // If we're not carrying anything, then check to see if we should
     // pick up from a control that we're holding down. If not, then forget it.
     if(!CurrentPackage && !ShouldStartDraggingControl(x, y))
         return;
-
-    // Make sure the canvas redraws when we move
-    if(CurrentPackage && CurrentPackage->drawcontrol)
-        CurrentPackage->drawcontrol->redraw();
 
     // Swap to this new hovered control and notify them of the change.
     UpdateHoveredControl(hoveredControl, x, y);
@@ -227,23 +215,6 @@ void onMouseMoved(gweni::controls::Base *hoveredControl, int x, int y)
     // Ideally this would show the 'being dragged' control. TODO
     platform::setCursor(cursor::Normal);
     hoveredControl->redraw();
-}
-
-void renderOverlay(gweni::controls::Canvas * /*canvas*/, skin::Base *skin)
-{
-    if(!CurrentPackage)
-        return;
-
-    if(!CurrentPackage->drawcontrol)
-        return;
-
-    gweni::Point pntOld=skin->getRenderer()->getRenderOffset();
-    skin->getRenderer()->addRenderOffset(gweni::Rect(m_mouseX-SourceControl->getX()-
-        CurrentPackage->holdoffset.x, m_mouseY-
-        SourceControl->getY()-CurrentPackage->holdoffset.y,
-        0, 0));
-    CurrentPackage->drawcontrol->doRender(skin);
-    skin->getRenderer()->setRenderOffset(pntOld);
 }
 
 }//namespace draganddrop

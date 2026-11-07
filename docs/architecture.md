@@ -115,7 +115,10 @@ nothing on other frames, and the depth-first numbering then gives the box and it
 the highest z values in the tree. A reserved z range above the tree was the other
 choice; it would need a ceiling that no tree reaches and a second numbering for the
 overlays, while the last-child rule reuses the one numbering there is. A later
-canvas-level overlay (the drag-and-drop preview) can take the same place.
+canvas-level overlay (a popup, say) can take the same place. GWEN's drag-and-drop
+preview, which re-rendered the dragged control after the walk at the mouse offset, was
+deleted rather than moved here: the only drag that set it hid that control first, so it
+never drew anything.
 
 #### The context menu: a right-click opens a Menu at the cursor
 

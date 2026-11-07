@@ -27,8 +27,6 @@ bool GWENI_EXPORT nnMouseButton(gweni::controls::Base *hoveredControl, int x, in
     bool down);
 void GWENI_EXPORT onMouseMoved(gweni::controls::Base *hoveredControl, int x, int y);
 
-void GWENI_EXPORT renderOverlay(gweni::controls::Canvas *canvas, skin::Base *skin);
-
 void GWENI_EXPORT controlDeleted(gweni::controls::Base *control);
 }
 

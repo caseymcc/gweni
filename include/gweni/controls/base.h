@@ -906,7 +906,8 @@ public:
     virtual bool dragAndDrop_draggable();
     virtual bool dragAndDrop_shouldStartDrag() { return true; }
 
-    virtual void dragAndDrop_startDragging(draganddrop::Package *package, int x, int y);
+    virtual void dragAndDrop_startDragging(draganddrop::Package * /*package*/, int /*x*/,
+        int /*y*/) {}
     virtual gweni::draganddrop::Package *dragAndDrop_getPackage(int x, int y);
     virtual void dragAndDrop_endDragging(bool /*bSuccess*/, int /*x*/, int /*y*/) {}
 

@@ -91,8 +91,6 @@ void Canvas::renderCanvas()
     }
 
     doRender(m_skin);
-
-    draganddrop::renderOverlay(this, m_skin);
     render->end();
 }
 

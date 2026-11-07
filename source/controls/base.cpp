@@ -2134,12 +2134,6 @@ void Base::dragAndDrop_setPackage(bool draggable, const String &name, void *user
     m_dragAndDrop_Package->userdata=userData;
 }
 
-void Base::dragAndDrop_startDragging(draganddrop::Package *package, int x, int y)
-{
-    package->holdoffset=canvasPosToLocal(Point(x, y));
-    package->drawcontrol=this;
-}
-
 bool Base::sizeToChildren(bool w, bool h)
 {
     Point size=childrenSize();

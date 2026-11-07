@@ -47,16 +47,11 @@ struct GWENI_EXPORT Package
     {
         userdata=nullptr;
         draggable=false;
-        drawcontrol=nullptr;
-        holdoffset=Point(0, 0);
     }
 
     String  name;
     void *userdata;
     bool draggable;
-
-    controls::Base *drawcontrol;
-    Point holdoffset;
 };
 
 
