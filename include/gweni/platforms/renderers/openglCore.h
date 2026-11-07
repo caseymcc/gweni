@@ -401,7 +401,7 @@ private:
         uint16_t radius; //corner radius in px; icon kind (style 5); image unit (style 2)
         uint16_t border; //border thickness in px
         uint16_t cx, cy; //color1 (bottom fill for vertical gradient, image tint for style 2) packed rg/ba
-        uint16_t bx, by; //border color packed rg/ba
+        uint16_t bx, by; //border color packed rg/ba; icon stroke px in bx's high byte (style 5)
         uint16_t dx, dy; //color3 packed rg/ba: bottom edge (style 6) or checker dark (style 7)
 //        glm::vec3 pos;
 //        glm::vec2 uv;

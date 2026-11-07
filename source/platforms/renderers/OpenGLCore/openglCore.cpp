@@ -968,6 +968,19 @@ vec4 roundedRect(vec4 fill)
     return vec4(rgb, fill.a * shapeA);
 }
 
+// Signed distance to the axis-aligned box [lo, hi] (negative inside).
+float sdBox(vec2 p, vec2 lo, vec2 hi)
+{
+    vec2 v = abs(p - 0.5*(lo + hi)) - 0.5*(hi - lo);
+    return length(max(v, vec2(0.0))) + min(max(v.x, v.y), 0.0);
+}
+
+// Signed distance to the outline of [lo, hi], s thick on its inner side.
+float sdOutline(vec2 p, vec2 lo, vec2 hi, float s)
+{
+    return max(sdBox(p, lo, hi), -sdBox(p, lo + vec2(s), hi - vec2(s)));
+}
+
 // Distance from p to the segment a-b (for stroked icon glyphs).
 float sdSegment(vec2 p, vec2 a, vec2 b)
 {
@@ -1037,36 +1050,92 @@ void main()
     }
     else if (ShaderType == 5u)
     {
-        // Icon glyph: normalized local coords in [-1,1]; vRadius=kind, vBorder=dir.
-        vec2 p = vLocal / max(vHalf, vec2(1.0));
+        // Icon glyph: vRadius=kind, vBorder=dir (the chevron only).
         int kind = int(vRadius + 0.5);
-        int dir = int(vBorder + 0.5);
+        float a;
 
-        if(dir == 1) p = vec2(p.x, -p.y);       // up
-        else if(dir == 2) p = vec2(-p.y, p.x);  // left
-        else if(dir == 3) p = vec2(p.y, -p.x);  // right
-        // dir 0 == down / as-authored
-
-        float d;
-        if(kind == 0)
+        if(kind <= 1)
         {
-            // checkmark (two strokes); y is down, so B is the low point.
-            vec2 A = vec2(-0.55, 0.0);
-            vec2 B = vec2(-0.18, 0.38);
-            vec2 C = vec2(0.55, -0.45);
-            d = min(sdSegment(p, A, B), sdSegment(p, B, C)) - 0.14;
+            // Normalized local coords in [-1,1], so the stroke scales with the rect.
+            vec2 p = vLocal / max(vHalf, vec2(1.0));
+            int dir = int(vBorder + 0.5);
+
+            if(dir == 1) p = vec2(p.x, -p.y);       // up
+            else if(dir == 2) p = vec2(-p.y, p.x);  // left
+            else if(dir == 3) p = vec2(p.y, -p.x);  // right
+            // dir 0 == down / as-authored
+
+            float d;
+            if(kind == 0)
+            {
+                // checkmark (two strokes); y is down, so B is the low point.
+                vec2 A = vec2(-0.55, 0.0);
+                vec2 B = vec2(-0.18, 0.38);
+                vec2 C = vec2(0.55, -0.45);
+                d = min(sdSegment(p, A, B), sdSegment(p, B, C)) - 0.14;
+            }
+            else
+            {
+                // chevron "v" pointing down (rotated by dir above).
+                vec2 A = vec2(-0.5, -0.2);
+                vec2 B = vec2(0.0, 0.28);
+                vec2 C = vec2(0.5, -0.2);
+                d = min(sdSegment(p, A, B), sdSegment(p, B, C)) - 0.13;
+            }
+
+            float aa = fwidth(d) + 1e-4;
+            a = 1.0 - smoothstep(0.0, aa, d);
         }
         else
         {
-            // chevron "v" pointing down (rotated by dir above).
-            vec2 A = vec2(-0.5, -0.2);
-            vec2 B = vec2(0.0, 0.28);
-            vec2 C = vec2(0.5, -0.2);
-            d = min(sdSegment(p, A, B), sdSegment(p, B, C)) - 0.13;
-        }
+            // Kinds 2-5 (the window buttons' glyphs) are measured in device px, with
+            // a stroke of the whole px drawIcon packs into the border colour's red
+            // byte and roundedRect()'s 1 px box filter. Its aa is constant over the
+            // quad (fwidth(d) is not: it changes per 2x2 block), so the glyph is
+            // mirror-symmetric pixel for pixel. Every edge of the dash and squares is
+            // a whole px from the quad's top-left, so each stroke covers whole rows
+            // and columns fully and nothing beside them.
+            float s = floor(vBorderColor.r*255.0 + 0.5);
+            float aa = max(0.5*(length(dFdx(vLocal)) + length(dFdy(vLocal))), 1e-4);
+            vec2 size = 2.0*vHalf;
+            vec2 q = vLocal + vHalf;    // px from the quad's top-left
+            float side = min(size.x, size.y);
+            vec2 o = floor((size - vec2(side))*0.5);  // the glyph's square, centred
 
-        float aa = fwidth(d) + 1e-4;
-        float a = 1.0 - smoothstep(0.0, aa, d);
+            float d;
+            if(kind == 2)
+            {
+                // cross: both diagonals of the centred square, their round caps
+                // reaching its edges
+                float e = 0.5*side - 0.5*s;
+                d = min(sdSegment(vLocal, vec2(-e), vec2(e)),
+                        sdSegment(vLocal, vec2(-e, e), vec2(e, -e))) - 0.5*s;
+            }
+            else if(kind == 3)
+            {
+                // dash: the square's width, on the row(s) at (the floor of) its middle
+                float y0 = o.y + floor((side - s)*0.5);
+                d = sdBox(q, vec2(o.x, y0), vec2(o.x + side, y0 + s));
+            }
+            else if(kind == 4)
+            {
+                // square outline
+                d = sdOutline(q, o, o + vec2(side), s);
+            }
+            else
+            {
+                // restore: a front square at the bottom left, and the outline of one
+                // offset up and right, only where it is outside the front square
+                float off = max(floor(side/5.0 + 0.5), s + 1.0);
+                vec2 frontLo = o + vec2(0.0, off);
+                vec2 frontHi = o + vec2(side - off, side);
+                vec2 backLo = o + vec2(off, 0.0);
+                vec2 backHi = o + vec2(side, side - off);
+                d = min(sdOutline(q, frontLo, frontHi, s),
+                        max(sdOutline(q, backLo, backHi, s), -sdBox(q, frontLo, frontHi)));
+            }
+            a = clamp(0.5 - d/aa, 0.0, 1.0);
+        }
         FragColor = vec4(VertexColor.rgb, VertexColor.a * a);
     }
 
@@ -1951,6 +2020,8 @@ void OpenGLCore::drawIcon(size_t primitiveId, gweni::Rect rect, int kind, int di
     const int y1=rect.y+rect.h;
     const int hw=halfPixelSize(rect.w);
     const int hh=halfPixelSize(rect.h);
+    // whole device px, so every stroke of kinds 3-5 covers whole rows and columns
+    const int stroke=std::min(std::max(1, snap(1.0f)), 255);
 
     auto setIcon=[&](size_t vi, int px, int py, int lx, int ly)
     {
@@ -1960,6 +2031,7 @@ void OpenGLCore::drawIcon(size_t primitiveId, gweni::Rect rect, int kind, int di
         v.ly=(int16_t)ly;
         v.radius=(uint16_t)kind;
         v.border=(uint16_t)direction;
+        v.bx=(uint16_t)(stroke<<8);    // kinds 2-5: the stroke in px, the "red" byte
     };
 
     setIcon(vertexIndex++, x0, y0, -hw, -hh);

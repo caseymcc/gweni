@@ -288,6 +288,7 @@ if(TARGET gweni_capture)
         fontRelease.cpp
         color.cpp
         fillStyles.cpp
+        iconGlyphs.cpp
         clipBoxes.cpp
         scaledEdges.cpp
         scaledText.cpp

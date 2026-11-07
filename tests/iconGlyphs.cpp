@@ -1,0 +1,432 @@
+/*
+ *  Gweni
+ *  Copyright (c) 2010 Facepunch Studios
+ *  MIT License, see LICENSE
+ *
+ *  OpenGLCore's window-button icon glyphs (style 5, drawIcon kinds 2-5), drawn
+ *  offscreen and read back pixel by pixel. Kinds 2-5 are measured in device px
+ *  and fill the square centred in their rect, stroked max(1, snap(1)) px wide:
+ *
+ *    2 cross    both diagonals of the square, anti-aliased; mirror-symmetric
+ *               and centred in the rect at every scale.
+ *    3 dash     the square's width, s rows at (the floor of) its middle.
+ *    4 square   the square's outline, s px on its inner side.
+ *    5 restore  a front square at the bottom left and the outline of one offset
+ *               up and right, drawn only outside the front one.
+ *
+ *  The strokes of 3-5 are whole rows and columns of fully covered pixels, with
+ *  nothing partly covered beside them, at scales 1, 1.5 and 2.
+ *
+ *  The renderer is shared with the other cases, so each case puts the scale and
+ *  the render offset back when it ends (ScaleGuard).
+ */
+#include <doctest/doctest.h>
+
+#include "capture.h"
+#include "gpuRenderer.h"
+
+#include <algorithm>
+#include <cmath>
+#include <cstdlib>
+#include <vector>
+
+namespace
+{
+
+using gweni::Color;
+using gweni::Point;
+using gweni::Rect;
+using gweni::renderer::OpenGLCore;
+
+const Color background(0, 0, 255, 255);
+const Color red(255, 0, 0, 255);
+
+const float scales[]={1.0f, 1.5f, 2.0f};
+
+//! The render offset each case draws at, so a logical position is not a multiple
+//! of the scale.
+const Point offset(3, 2);
+
+//! One frame read back from the offscreen framebuffer, top-down RGBA8.
+struct Frame
+{
+    std::vector<uint8_t> pixels;
+
+    Color at(int x, int y) const
+    {
+        const uint8_t *p=&pixels[(static_cast<size_t>(y)*gweni::test::viewSize().x+x)*4];
+
+        return Color(p[0], p[1], p[2], p[3]);
+    }
+
+    //! The glyph's coverage at (x,y): red over blue, so red's channel is it.
+    double coverage(int x, int y) const
+    {
+        return at(x, y).r/255.0;
+    }
+};
+
+//! Clears to `background`, draws one frame with `draw` and reads it back.
+template<typename Draw>
+Frame drawFrame(Draw &&draw)
+{
+    OpenGLCore &renderer=gweni::test::gpuRenderer();
+    const Point size=gweni::test::viewSize();
+
+    glClearColor(background.r/255.0f, background.g/255.0f, background.b/255.0f, 1.0f);
+    glClearDepth(1.0);
+    glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
+
+    renderer.begin();
+    draw(renderer);
+    renderer.end();
+
+    Frame frame;
+
+    gweni::capture::readFramebufferRgba(size.x, size.y, frame.pixels);
+    return frame;
+}
+
+//! Puts the scale and the render offset back, so the next case draws at 1x.
+struct ScaleGuard
+{
+    explicit ScaleGuard(float scale)
+    {
+        OpenGLCore &renderer=gweni::test::gpuRenderer();
+
+        renderer.setScale(scale);
+        renderer.setRenderOffset(offset);
+    }
+
+    ~ScaleGuard()
+    {
+        OpenGLCore &renderer=gweni::test::gpuRenderer();
+
+        renderer.setScale(1.0f);
+        renderer.setRenderOffset(Point(0, 0));
+    }
+};
+
+//! Primitive ids for one test case, released (and that flushed) when it ends, so the
+//! next case's frame starts empty.
+struct Primitives
+{
+    explicit Primitives(size_t count)
+        : ids(count)
+    {
+        for(size_t &id:ids)
+            gweni::test::gpuRenderer().generatePrimitive(id);
+        std::sort(ids.begin(), ids.end());
+    }
+
+    ~Primitives()
+    {
+        OpenGLCore &renderer=gweni::test::gpuRenderer();
+
+        for(size_t id:ids)
+            renderer.releasePrimitive(id);
+        renderer.begin();
+        renderer.end();
+    }
+
+    std::vector<size_t> ids;
+};
+
+//! The device rect a logical rect lands on at `scale`, both edges snapped with
+//! the render offset, as translate() does.
+Rect deviceRect(const Rect &logical, float scale)
+{
+    const int x0=OpenGLCore::snap(float(logical.x+offset.x), scale);
+    const int y0=OpenGLCore::snap(float(logical.y+offset.y), scale);
+    const int x1=OpenGLCore::snap(float(logical.x+logical.w+offset.x), scale);
+    const int y1=OpenGLCore::snap(float(logical.y+logical.h+offset.y), scale);
+
+    return Rect(x0, y0, x1-x0, y1-y0);
+}
+
+//! The stroke drawIcon gives kinds 2-5 at `scale`, in device px.
+int strokeAt(float scale)
+{
+    return std::max(1, OpenGLCore::snap(1.0f, scale));
+}
+
+bool isBackground(const Color &c)
+{
+    return std::abs(c.r-background.r) <= 2 && std::abs(c.g-background.g) <= 2
+        && std::abs(c.b-background.b) <= 2;
+}
+
+bool isGlyph(const Color &c)
+{
+    return std::abs(c.r-red.r) <= 2 && std::abs(c.g-red.g) <= 2 && std::abs(c.b-red.b) <= 2;
+}
+
+//! Pixels in a 4 px ring around `rect` that are not the background.
+int outsideRingMismatches(const Frame &frame, const Rect &rect)
+{
+    int mismatches=0;
+
+    for(int y=rect.y-4; y<rect.y+rect.h+4; ++y)
+    {
+        for(int x=rect.x-4; x<rect.x+rect.w+4; ++x)
+        {
+            const bool inside=x >= rect.x && x < rect.x+rect.w && y >= rect.y && y < rect.y+rect.h;
+
+            if(!inside && !isBackground(frame.at(x, y)))
+                ++mismatches;
+        }
+    }
+    return mismatches;
+}
+
+//! A half-open box of device px, [x0,x1) x [y0,y1).
+struct Box
+{
+    int x0, y0, x1, y1;
+
+    bool contains(int x, int y) const
+    {
+        return x >= x0 && x < x1 && y >= y0 && y < y1;
+    }
+
+    Box inset(int s) const
+    {
+        return {x0+s, y0+s, x1-s, y1-s};
+    }
+};
+
+bool onOutline(const Box &box, int s, int x, int y)
+{
+    return box.contains(x, y) && !box.inset(s).contains(x, y);
+}
+
+//! The glyph's square in `rect`: min(w, h) on a side, centred on whole px.
+Box glyphSquare(const Rect &rect)
+{
+    const int side=std::min(rect.w, rect.h);
+    const int x0=rect.x+(rect.w-side)/2;
+    const int y0=rect.y+(rect.h-side)/2;
+
+    return {x0, y0, x0+side, y0+side};
+}
+
+//! The restore glyph's front and back squares.
+void restoreSquares(const Box &square, int s, Box &front, Box &back)
+{
+    const int side=square.x1-square.x0;
+    const int off=std::max(int(std::floor(side/5.0+0.5)), s+1);
+
+    front={square.x0, square.y0+off, square.x1-off, square.y1};
+    back={square.x0+off, square.y0, square.x1, square.y1-off};
+}
+
+//! Whether kind 3, 4 or 5 covers device pixel (x,y) of `rect`.
+bool expectedCovered(int kind, const Rect &rect, int s, int x, int y)
+{
+    const Box square=glyphSquare(rect);
+
+    if(kind == 3)
+    {
+        const int side=square.x1-square.x0;
+        const int row=square.y0+(side-s)/2;
+
+        return Box{square.x0, row, square.x1, row+s}.contains(x, y);
+    }
+    if(kind == 4)
+        return onOutline(square, s, x, y);
+
+    Box front, back;
+
+    restoreSquares(square, s, front, back);
+    return onOutline(front, s, x, y) || (onOutline(back, s, x, y) && !front.contains(x, y));
+}
+
+//! Lengths of the runs of glyph pixels along a row (dx=1) or a column (dy=1).
+std::vector<int> runs(const Frame &frame, int x, int y, int dx, int dy, int count)
+{
+    std::vector<int> lengths;
+    int run=0;
+
+    for(int i=0; i<count; ++i)
+    {
+        if(isGlyph(frame.at(x+i*dx, y+i*dy)))
+            ++run;
+        else if(run > 0)
+        {
+            lengths.push_back(run);
+            run=0;
+        }
+    }
+    if(run > 0)
+        lengths.push_back(run);
+    return lengths;
+}
+
+}//namespace
+
+TEST_CASE("Icon kind 2 (cross): symmetric and centred in odd and even rects, at scales 1, 1.5 and 2")
+{
+    Primitives prims(1);
+    const Rect logicalRects[]={Rect(21, 33, 11, 11), Rect(51, 27, 10, 10), Rect(81, 41, 12, 9)};
+
+    for(float scale:scales)
+    {
+        ScaleGuard guard(scale);
+
+        for(const Rect &logical:logicalRects)
+        {
+            const Rect rect=deviceRect(logical, scale);
+
+            CAPTURE(scale);
+            CAPTURE(rect.x);
+            CAPTURE(rect.y);
+            CAPTURE(rect.w);
+            CAPTURE(rect.h);
+
+            const Frame frame=drawFrame([&](OpenGLCore &renderer)
+                {
+                    renderer.drawIcon(prims.ids[0], logical, 2, 0, red, 1);
+                });
+
+            CHECK(outsideRingMismatches(frame, rect) == 0);
+
+            double ink=0.0;
+            double sumX=0.0;
+            double sumY=0.0;
+            int asymmetric=0;
+
+            for(int y=rect.y; y<rect.y+rect.h; ++y)
+            {
+                for(int x=rect.x; x<rect.x+rect.w; ++x)
+                {
+                    const double a=frame.coverage(x, y);
+                    const int mirrorX=2*rect.x+rect.w-1-x;
+                    const int mirrorY=2*rect.y+rect.h-1-y;
+
+                    if(std::fabs(a-frame.coverage(mirrorX, y)) > 2.5/255.0
+                        || std::fabs(a-frame.coverage(x, mirrorY)) > 2.5/255.0)
+                        ++asymmetric;
+                    ink+=a;
+                    sumX+=a*(x+0.5);
+                    sumY+=a*(y+0.5);
+                }
+            }
+            REQUIRE(ink > 1.0);
+            CHECK(asymmetric == 0);
+
+            const double offX=sumX/ink-(rect.x+rect.w/2.0);
+            const double offY=sumY/ink-(rect.y+rect.h/2.0);
+
+            CAPTURE(offX);
+            CAPTURE(offY);
+            CHECK(std::fabs(offX) < 0.5);
+            CHECK(std::fabs(offY) < 0.5);
+
+            // both diagonals reach the square's corners: its four corner pixels have ink
+            const Box square=glyphSquare(rect);
+
+            CHECK(frame.coverage(square.x0, square.y0) > 0.1);
+            CHECK(frame.coverage(square.x1-1, square.y0) > 0.1);
+            CHECK(frame.coverage(square.x0, square.y1-1) > 0.1);
+            CHECK(frame.coverage(square.x1-1, square.y1-1) > 0.1);
+        }
+    }
+}
+
+TEST_CASE("Icon kinds 3-5 (dash, square, restore): whole fully covered rows and columns at scales 1, 1.5 and 2")
+{
+    Primitives prims(1);
+    const Rect logicalRects[]={Rect(21, 33, 10, 10), Rect(51, 27, 11, 11), Rect(81, 41, 12, 9)};
+
+    for(float scale:scales)
+    {
+        ScaleGuard guard(scale);
+        const int s=strokeAt(scale);
+
+        for(int kind=3; kind <= 5; ++kind)
+        {
+            for(const Rect &logical:logicalRects)
+            {
+                const Rect rect=deviceRect(logical, scale);
+
+                CAPTURE(scale);
+                CAPTURE(kind);
+                CAPTURE(rect.x);
+                CAPTURE(rect.y);
+                CAPTURE(rect.w);
+                CAPTURE(rect.h);
+
+                const Frame frame=drawFrame([&](OpenGLCore &renderer)
+                    {
+                        renderer.drawIcon(prims.ids[0], logical, kind, 0, red, 1);
+                    });
+
+                CHECK(outsideRingMismatches(frame, rect) == 0);
+
+                // every pixel is the glyph colour or the background, never between,
+                // and exactly where the glyph's strokes are
+                int partial=0;
+                int wrong=0;
+
+                for(int y=rect.y; y<rect.y+rect.h; ++y)
+                {
+                    for(int x=rect.x; x<rect.x+rect.w; ++x)
+                    {
+                        const Color pixel=frame.at(x, y);
+                        const bool glyph=isGlyph(pixel);
+
+                        if(!glyph && !isBackground(pixel))
+                            ++partial;
+                        else if(glyph != expectedCovered(kind, rect, s, x, y))
+                            ++wrong;
+                    }
+                }
+                CHECK(partial == 0);
+                CHECK(wrong == 0);
+
+                // the stroke widths, read off the pixels on their own
+                const Box square=glyphSquare(rect);
+                const int side=square.x1-square.x0;
+                const int midX=square.x0+side/2;
+                const int midY=square.y0+side/2;
+                const std::vector<int> column=runs(frame, midX, square.y0, 0, 1, side);
+                const std::vector<int> row=runs(frame, square.x0, midY, 1, 0, side);
+
+                if(kind == 3)
+                {
+                    CHECK(column == std::vector<int>{s});
+                    CHECK(runs(frame, square.x0, square.y0+(side-s)/2, 1, 0, side)
+                        == std::vector<int>{side});
+                }
+                else if(kind == 4)
+                {
+                    CHECK(column == std::vector<int>{s, s});
+                    CHECK(row == std::vector<int>{s, s});
+                    CHECK(isGlyph(frame.at(square.x0, square.y0)));
+                    CHECK(isGlyph(frame.at(square.x1-1, square.y1-1)));
+                }
+                else
+                {
+                    Box front, back;
+
+                    restoreSquares(square, s, front, back);
+
+                    // nothing of the back square inside the front one
+                    int insideFront=0;
+
+                    for(int y=front.y0+s; y<front.y1-s; ++y)
+                        for(int x=front.x0+s; x<front.x1-s; ++x)
+                            if(!isBackground(frame.at(x, y)))
+                                ++insideFront;
+                    CHECK(insideFront == 0);
+                    // the back square shows at the top right, apart from the front one
+                    CHECK(isGlyph(frame.at(square.x1-1, square.y0)));
+                    CHECK(isBackground(frame.at(front.x1-1-s, front.y0-1)));
+                    // a column through both squares: back top, front top, front bottom
+                    CHECK(runs(frame, front.x1-1-s, square.y0, 0, 1, side)
+                        == std::vector<int>{s, s, s});
+                }
+            }
+        }
+    }
+}

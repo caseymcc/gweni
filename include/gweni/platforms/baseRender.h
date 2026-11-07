@@ -113,7 +113,11 @@ public:
         float radius, float border, gweni::Color borderColor);
 
     //! Draw a stroked icon glyph (anti-aliased, SDF) in \a color: \a kind 0=checkmark,
-    //! 1=chevron; \a direction 0=down 1=up 2=left 3=right (chevron only).
+    //! 1=chevron, 2=cross (x), 3=dash, 4=square outline, 5=restore (a square outline
+    //! with a second one behind it, offset up and right); \a direction 0=down 1=up
+    //! 2=left 3=right (chevron only). Kinds 2-5 fill the square centred in \a rect and
+    //! are stroked max(1, snap(1)) device px wide; the strokes of 3-5 are whole rows
+    //! and columns of fully covered pixels.
     virtual void drawIcon(size_t primitiveId, gweni::Rect rect, int kind, int direction,
         gweni::Color color, int zIndex) {}
 

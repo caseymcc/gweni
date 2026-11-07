@@ -151,7 +151,13 @@ on an OpenGL 3.3 core profile:
   color (color0), `2` = image (`drawTexturedRect`, below), `3` = unused (it was a text glyph; text has its own
   program, below), `4` = SDF rounded rect
   (`drawRoundedRect`: vertical gradient color0 → color1, border), `5` = SDF icon glyph
-  (`drawIcon`), `6` = SDF bilinear fill (`drawBilinearRect`: each vertex carries its
+  (`drawIcon`; `radius` = kind, `border` = direction: kinds 0 checkmark and 1 chevron
+  in coords normalized to the rect, with a `smoothstep` edge; kinds 2 cross, 3 dash,
+  4 square outline and 5 restore, the window buttons' glyphs, in device px over the
+  square centred in the quad, with the stroke `max(1, snap(1))` packed in the high
+  byte of `bx` and the box-filter coverage below at a constant `aa`, so the cross is
+  mirror-symmetric pixel for pixel and every edge of 3-5 is a whole px from the
+  quad's corner: their strokes are whole rows and columns, fully covered), `6` = SDF bilinear fill (`drawBilinearRect`: each vertex carries its
   own top-edge color in color0 and bottom-edge color in color3; both are linear in x,
   so the blend along y is exact, with no crease on the quad's diagonal), `7` = SDF
   checker composite (`drawCheckerRect`: color0 with its alpha over 4 px cells of
