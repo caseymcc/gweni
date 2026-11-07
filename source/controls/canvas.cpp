@@ -114,6 +114,7 @@ void Canvas::onBoundsChanged(Rect oldBounds)
 void Canvas::doThink()
 {
     m_layoutStats=LayoutStats();
+    m_measureCallsAtThink=measureTextCalls();
     processDelayedDeletes();
 
     if(hidden())
@@ -131,6 +132,12 @@ void Canvas::doThink()
     layoutCanvas();
 
     input::onCanvasThink(this);
+    noteMeasureCalls();
+}
+
+void Canvas::noteMeasureCalls()
+{
+    m_layoutStats.measureCalls=measureTextCalls()-m_measureCallsAtThink;
 }
 
 Canvas *Canvas::s_layingOut=nullptr;
@@ -192,6 +199,7 @@ void Canvas::renderPhaseLayout()
 
     m_layoutStats.renderLayout=true;
     layoutPass();
+    noteMeasureCalls();
 }
 
 void Canvas::layoutInvalidated(controls::Base *control)

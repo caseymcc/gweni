@@ -143,12 +143,12 @@ gweni::Rect Text::characterPositionIn(const gweni::String &str, unsigned int val
 {
     if(str.empty() || value == 0)
     {
-        gweni::Point p=getSkin()->getRenderer()->measureText(getFont(), " ");
+        gweni::Point p=measureText(getFont(), " ");
         return gweni::Rect(0, 0, 0, p.y);
     }
 
     String sub=str.substr(0, value);
-    gweni::Point p=getSkin()->getRenderer()->measureText(getFont(), sub);
+    gweni::Point p=measureText(getFont(), sub);
     return Rect(p.x, 0, 0, p.y);
 }
 
@@ -160,7 +160,7 @@ gweni::Rect Text::getLineBox(int i)
     const int x=wrapped?0:getPadding().left;
     const int y=wrapped?i*lineHeight():getPadding().top;
 
-    gweni::Point p=getSkin()->getRenderer()->measureText(getFont(), str);
+    gweni::Point p=measureText(getFont(), str);
     return gweni::Rect(x, y, clamp(p.x, 1, p.x), clamp(p.y, 1, p.y));
 }
 
@@ -232,7 +232,7 @@ void Text::calculateSize(skin::Base *skin, Dim dim)
 
     for(auto &&line : m_lines)
     {
-        line->calculateSize(skin, dim);
+        line->doCalculateSize(skin, dim);
 
         if(dim == Dim::Y)
             line->m_preferredSize.height=rowHeight;
@@ -303,7 +303,7 @@ void Text::policyResize(const Size &preferred, Dim dim)
 
 int Text::lineHeight()
 {
-    return getSkin()->getRenderer()->measureText(getFont(), " ").y;
+    return measureText(getFont(), " ").y;
 }
 
 int Text::wrapWidth()
@@ -328,7 +328,7 @@ Size Text::refreshSize(bool update)
     gweni::Point p(1, lineHeight());
 
     if(length() > 0)
-        p=getSkin()->getRenderer()->measureText(getFont(), m_string);
+        p=measureText(getFont(), m_string);
 
     p.x+=getPadding().left+getPadding().right;
     p.y+=getPadding().top+getPadding().bottom;
@@ -365,7 +365,7 @@ int Text::longestWordWidth()
         if(end == 0)
             continue;
 
-        width=std::max(width, getSkin()->getRenderer()->measureText(getFont(), word.substr(0, end)).x);
+        width=std::max(width, measureText(getFont(), word.substr(0, end)).x);
     }
 
     return width;
@@ -407,7 +407,7 @@ void Text::splitWords(const gweni::String &s, int w, std::vector<gweni::String> 
             continue;
 
         // if adding character makes the word bigger than the textbox size
-        gweni::Point p=getSkin()->getRenderer()->measureText(getFont(), str);
+        gweni::Point p=measureText(getFont(), str);
         if(p.x > w)
         {
             if(str.size() == charLength)
@@ -460,7 +460,7 @@ void Text::wrapLines(int w, std::vector<WrappedLine> &lines)
         // last wrap made it, and comparing with it kept lines that no
         // longer fit once the parent got narrower.
         if(w > 0 && !strLine.empty()
-            && getSkin()->getRenderer()->measureText(getFont(), strLine+word).x > w)
+            && measureText(getFont(), strLine+word).x > w)
         {
             lines.push_back({strLine, lineLength});
             // the new line starts with the word that did not fit

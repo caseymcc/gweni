@@ -39,10 +39,20 @@ canvas->renderCanvas();   // 2. render: issue only the draw-state changes needed
 
 No rendering-API calls happen here.
 
-Like the render walk, it enters only what changed. There is no per-control `think()`:
-`Canvas::doThink()` runs the delayed deletes, `anim::think(this)` (the animations), the
-layout passes, which stop at controls with nothing to lay out (`Base::recurseLayout`),
-and `input::onCanvasThink`. The animation registry (`source/anim.cpp`) holds only
+Like the render walk, it enters only what changed, with one exception: layout. There is
+no per-control `think()`: `Canvas::doThink()` runs the delayed deletes,
+`anim::think(this)` (the animations), the layout passes and `input::onCanvasThink`. A
+frame nothing invalidated runs no pass, but a pass, once anything invalidated layout,
+still measures and arranges the whole tree: `Base::recurseLayout` checks
+`m_updateLayout` only on the canvas, and below it `sizeOfChildren` and `Base::arrange`
+enter every shown child in X and in Y (`docs/layout.md` → "One pass per frame"; issue
+#321). `LayoutStats::visited` (`layout_visited=` in `ControlTest --stats` and
+`gweni_bench`) counts the controls the frame's passes entered, one per `calculateSize()`
+and one per `arrange()` in each axis, so about four times the shown controls on a frame
+with a pass and 0 on a settled one; `LayoutStats::measureCalls` (`measure_calls=`)
+counts the renderer `measureText()` calls the controls made, every one through
+`Base::measureText()` (`tests/unit/layoutVisited.cpp`).
+The animation registry (`source/anim.cpp`) holds only
 animations with work to do: a `TextBox`'s caret blink from the focus arriving until it
 leaves, a `ProgressBar`'s while it cycles or is indeterminate at a non-zero speed, and a
 timed animation (`anim_widthIn`, `anim::pos::X`, `anim::tools::Remove`, ...) until it

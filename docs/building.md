@@ -162,9 +162,10 @@ an older container lacks them (`which valgrind` tells).
 `gweni_bench` (`bench/`) runs a fixed scene on the full path, gweni plus
 `OpenGLCore` on surfaceless EGL, and prints per measured frame the wall time of
 each phase (`input`, `update`, `render`, `flush`, `gpu`) and the work counters:
-controls visited and changed, slots written, uploads, draw calls, layout passes,
-z renumbering, live ids and C++ allocations. The same arguments give the same
-counters every run. Times are only meaningful from a release tree, and `gpu` is
+controls visited and changed, slots written, uploads, draw calls, layout passes
+and the controls they entered (`layout_visited`), text measures
+(`measure_calls`), z renumbering, live ids and C++ allocations. The same
+arguments give the same counters every run. Times are only meaningful from a release tree, and `gpu` is
 Mesa llvmpipe on the CPU inside the container:
 
 ```bash

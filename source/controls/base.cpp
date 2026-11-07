@@ -1077,6 +1077,19 @@ std::vector<std::string> typesWithoutSkinRenderer()
     return std::vector<std::string>(types.begin(), types.end());
 }
 
+static size_t g_measureTextCalls=0;
+
+size_t measureTextCalls()
+{
+    return g_measureTextCalls;
+}
+
+gweni::Point Base::measureText(const gweni::Font &font, const gweni::String &text)
+{
+    ++g_measureTextCalls;
+    return getSkin()->getRenderer()->measureText(font, text);
+}
+
 void Base::render(skin::Base *skin)
 {
 //    update();
@@ -1604,7 +1617,7 @@ Size Base::sizeOfChildren(skin::Base *skin, Dim dim)
             if(child->hidden())
                 continue;
 
-            child->calculateSize(skin, dim);
+            child->doCalculateSize(skin, dim);
 
             // Placed by this control (Placement::Owner) or asked not to
             // count: measured for its own subtree, but not counted.
@@ -1656,7 +1669,7 @@ Size Base::sizeOfChildren(skin::Base *skin, Dim dim)
             if(child->hidden())
                 continue;
 
-            child->calculateSize(skin, dim);
+            child->doCalculateSize(skin, dim);
 
             // Placed by this control (Placement::Owner) or asked not to
             // count: measured for its own subtree, but not counted.
@@ -1797,6 +1810,24 @@ void Base::policyResize(const Size &preferred, Dim dim)
         setArrangedBounds(bounds.x, bounds.y, bounds.w, dockNoneSize(dim, preferred.height));
 }
 
+// Counted only inside a pass: a calculateSize() made outside one (a
+// sizeToContents(), say) is no entry of a pass.
+void Base::doCalculateSize(skin::Base *skin, Dim dim)
+{
+    if(Canvas::s_layingOut)
+        ++Canvas::s_layingOut->m_layoutStats.visited;
+
+    calculateSize(skin, dim);
+}
+
+void Base::doArrange(skin::Base *skin, Dim dim)
+{
+    if(Canvas::s_layingOut)
+        ++Canvas::s_layingOut->m_layoutStats.visited;
+
+    arrange(skin, dim);
+}
+
 void Base::arrange(skin::Base *skin, Dim dim)
 {
     // Stamped before layout(), so what it does to this control counts as
@@ -1838,7 +1869,7 @@ void Base::arrange(skin::Base *skin, Dim dim)
         if(child->hidden())
             continue;
 
-        child->arrange(skin, dim);
+        child->doArrange(skin, dim);
     }
 
     if(dim == Dim::Y)
@@ -2134,10 +2165,10 @@ void Base::recurseLayout(skin::Base *skin)
     // while it runs is kept and Canvas::layoutCanvas runs another.
     m_updateLayout=false;
 
-    calculateSize(skin, Dim::X);
-    arrange(skin, Dim::X);
-    calculateSize(skin, Dim::Y);
-    arrange(skin, Dim::Y);
+    doCalculateSize(skin, Dim::X);
+    doArrange(skin, Dim::X);
+    doCalculateSize(skin, Dim::Y);
+    doArrange(skin, Dim::Y);
 
     //postLayout(skin);
 }

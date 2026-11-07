@@ -47,6 +47,21 @@ struct LayoutStats
     int requests=0;
     const char *requestedType=nullptr;
     size_t requestedId=0;
+    //! Controls the passes entered, in either phase: one per call of a
+    //! control's calculateSize() and one per call of its arrange(), each axis
+    //! on its own, through Base::doCalculateSize/doArrange (the canvas's own
+    //! from recurseLayout, every other from the walk of its parent, a
+    //! LayoutItem or a Text over its lines). An override calling its
+    //! ParentClass is the same entry, and a control a walk skips (a hidden
+    //! one) is not entered, so a pass over C shown controls is 4C plus what
+    //! a walk enters twice (a ScrollControl's Y arrange measures and arranges
+    //! its children in X too). 0 on a frame with no pass.
+    size_t visited=0;
+    //! The renderer::Base::measureText() calls the controls made from the
+    //! start of doThink() to the end of the frame's layout, the render phase's
+    //! pass included (see measureTextCalls()): nearly all from layout, the
+    //! rest from what the update phase itself measures.
+    size_t measureCalls=0;
 };
 
 //! What updateCanvas() did below the canvas in one frame, outside layout
@@ -337,6 +352,8 @@ protected:
     void keepOverlaysLast();
     /// One recurseLayout with m_inLayout set.
     void layoutPass();
+    /// Sets LayoutStats::measureCalls to the measures made since doThink() began.
+    void noteMeasureCalls();
     /// Base's report that `control` re-dirtied layout during the current pass.
     void layoutInvalidated(controls::Base *control);
     /// Base's report that `control` recorded a request during the current pass.
@@ -351,6 +368,8 @@ protected:
 
     bool m_inLayout=false;
     LayoutStats m_layoutStats;
+    /// measureTextCalls() when doThink() began, for LayoutStats::measureCalls.
+    size_t m_measureCallsAtThink=0;
     /// A new tree has never been numbered.
     bool m_zOrderDirty=true;
     UpdateStats m_updateStats;

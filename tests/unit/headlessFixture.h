@@ -123,6 +123,16 @@ public:
         lines.push_back({primitiveId, p0, p1, thickness, zIndex, drawColor});
     }
 
+    //! Counted in `measures`, then measured as renderer::Base does.
+    gweni::Point measureText(const gweni::Font &font, const gweni::String &text) override
+    {
+        ++measures;
+        return Base::measureText(font, text);
+    }
+
+    //! measureText() calls so far. Tests take deltas.
+    size_t measures=0;
+
     //! What maxZIndex() reports: set it small to make the canvas run out of z.
     int maxZ=65535;
 

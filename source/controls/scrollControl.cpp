@@ -183,11 +183,11 @@ void ScrollControl::calculateSize(skin::Base *skin, Dim dim)
         return;
     }
 
-    m_innerPanel->calculateSize(skin, dim);
+    m_innerPanel->doCalculateSize(skin, dim);
 
     if(!m_verticalScrollBar->hidden())
     {
-        m_verticalScrollBar->calculateSize(skin, dim);
+        m_verticalScrollBar->doCalculateSize(skin, dim);
 
         if(dim == Dim::X)
             m_barSize.width=m_verticalScrollBar->getPreferredSize().width;
@@ -195,7 +195,7 @@ void ScrollControl::calculateSize(skin::Base *skin, Dim dim)
 
     if(!m_horizontalScrollBar->hidden())
     {
-        m_horizontalScrollBar->calculateSize(skin, dim);
+        m_horizontalScrollBar->doCalculateSize(skin, dim);
 
         if(dim == Dim::Y)
             m_barSize.height=m_horizontalScrollBar->getPreferredSize().height;
@@ -265,9 +265,9 @@ void ScrollControl::arrange(skin::Base *skin, Dim dim)
 
         // A bar placeContents() has just shown was not measured this pass.
         if(child != m_innerPanel)
-            child->calculateSize(skin, Dim::X);
+            child->doCalculateSize(skin, Dim::X);
 
-        child->arrange(skin, Dim::X);
+        child->doArrange(skin, Dim::X);
     }
 
     const int contentHeight=m_innerPanel->getPreferredSize().height;
@@ -275,7 +275,7 @@ void ScrollControl::arrange(skin::Base *skin, Dim dim)
     for(auto &&child : m_children)
     {
         if(!child->hidden())
-            child->calculateSize(skin, Dim::Y);
+            child->doCalculateSize(skin, Dim::Y);
     }
 
     // Virtual content is the viewport's height whatever its children ask for.
@@ -288,7 +288,7 @@ void ScrollControl::arrange(skin::Base *skin, Dim dim)
     for(auto &&child : m_children)
     {
         if(!child->hidden())
-            child->arrange(skin, Dim::Y);
+            child->doArrange(skin, Dim::Y);
     }
 
     postLayout(skin);

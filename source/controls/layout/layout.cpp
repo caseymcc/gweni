@@ -232,7 +232,7 @@ void LayoutItem::calculateSize(skin::Base *skin, Dim dim)
 {
     if(m_control)
     {
-        m_control->calculateSize(skin, dim);
+        m_control->doCalculateSize(skin, dim);
 
         // The cell holds the control and its margins, so its minimum and
         // maximum do too, and minimum <= preferred <= maximum holds from here up.
@@ -353,7 +353,7 @@ void LayoutItem::arrange(skin::Base *skin, Dim dim)
     if(m_control)
     {
         updateControlSize(dim);
-        m_control->arrange(skin, dim);
+        m_control->doArrange(skin, dim);
         return;
     }
 

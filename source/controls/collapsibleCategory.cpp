@@ -254,7 +254,7 @@ void CollapsibleCategory::calculateSize(skin::Base *skin, Dim dim)
 
     if(!m_button->getToggleState())
     {
-        m_button->calculateSize(skin, dim);
+        m_button->doCalculateSize(skin, dim);
         m_preferredSize=m_button->getPreferredSize();
     }
     else

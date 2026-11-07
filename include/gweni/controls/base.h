@@ -96,6 +96,12 @@ GWENI_EXPORT void resetChangeStats();
 //! harness to fail on.
 GWENI_EXPORT std::vector<std::string> typesWithoutSkinRenderer();
 
+//! The renderer::Base::measureText() calls the controls made since the process
+//! started, every one going through Base::measureText(). It is counted here, in
+//! the controls, rather than in a renderer, so it is the same whichever backend
+//! measures; a canvas takes its frame's share as LayoutStats::measureCalls.
+GWENI_EXPORT size_t measureTextCalls();
+
 //! The tree changes made during a render walk: the render walk only draws, and
 //! adding, removing, reordering or deleting a control belongs to the update
 //! phase or to layout. Base's addChild(), addChildOfLayout(), removeChild()
@@ -831,6 +837,14 @@ public:
     virtual bool hasAlignment() { return false; }
 
     virtual void calculateSize(skin::Base *skin, Dim dim);
+    //! How layout code enters a control: recurseLayout on the canvas, and every
+    //! walk over children (a parent's, a LayoutItem's, a Text's over its lines)
+    //! calls these on the child, never its calculateSize()/arrange() directly.
+    //! Each is one entry of the current layout pass (LayoutStats::visited)
+    //! followed by the virtual. An override calling ParentClass::calculateSize
+    //! or ParentClass::arrange stays in its own control: not another entry.
+    void doCalculateSize(skin::Base *skin, Dim dim);
+    void doArrange(skin::Base *skin, Dim dim);
     //! Sizes this dock-None control along `dim` for arrangeHorizontal/Vertical
     //! of its parent: `preferred` is its preferred size (see dockNoneSize).
     virtual void policyResize(const Size &preferred, Dim dim);
@@ -869,6 +883,10 @@ protected:
 
     bool processLayout(skin::Base *skin, Dim dim);
     Size sizeOfChildren(skin::Base *skin, Dim dim);
+    //! The size `text` takes in `font`: the skin's renderer's measureText().
+    //! Controls measure through this, never the renderer directly, so every
+    //! measure is counted (measureTextCalls()).
+    gweni::Point measureText(const gweni::Font &font, const gweni::String &text);
     //! The preferred width (Dim::X) or height (Dim::Y) this control's size
     //! flags make of `contentSize`, the size its children ask for, padding
     //! included. sizeOfChildren() ends with it.

@@ -402,7 +402,7 @@ void VirtualList::contentsPlaced(skin::Base *skin)
             m_binder(control, row.item);
 
         if(bind || wasHidden)
-            control->calculateSize(skin, Dim::X);
+            control->doCalculateSize(skin, Dim::X);
 
         const int64_t y=static_cast<int64_t>(row.item)*m_rowHeight-offset;
 
