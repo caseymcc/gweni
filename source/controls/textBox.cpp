@@ -71,7 +71,7 @@ GWENI_CONTROL_CONSTRUCTOR(TextBox)
     m_editable=true;
     m_selectAll=false;
     m_maxTextLength=NO_MAX_LENGTH;
-    setTextColor(gweni::Color(50, 50, 50, 255));         // TODO: From Skin
+    setTextColor(getSkin()->Colors.Label.Default);
     setTabable(true);
     addAccelerator("Ctrl + C", &TextBox::onCopy);
     addAccelerator("Ctrl + X", &TextBox::onCut);

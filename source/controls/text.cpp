@@ -22,10 +22,7 @@ GWENI_CONTROL_CONSTRUCTOR(Text)
 {
     m_font=&getSkin()->getDefaultFont();
     m_colorOverride=Color(255, 255, 255, 0);
-//    m_color=getSkin()->Colors.Label.Default;
-    // Tokyo Night foreground: default text is light so it reads on the dark theme
-    // even for controls that never explicitly set a text color.
-    m_color=Color(0xc0, 0xca, 0xf5, 255);
+    m_color=getSkin()->Colors.Label.Default;
     setMouseInputEnabled(false);
     setSizeFlags({SizeFlag::Expand, SizeFlag::Expand});
     setWrap(false);
