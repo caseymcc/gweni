@@ -407,9 +407,11 @@ if(TARGET gweni_capture)
     add_test(NAME unittests
         COMMAND $<TARGET_FILE:gweni_unittests>
         WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
+    # every case in one process: about 57 s in the ASAN tree on its own, so 60
+    # timed out there as soon as another test ran beside it
     set_tests_properties(unittests PROPERTIES
         LABELS gpu
-        TIMEOUT 60)
+        TIMEOUT 180)
 else()
     message(STATUS "tests: unit tests skipped, they need gweni_capture (GWENI_BUILD_EXAMPLES)")
 endif()

@@ -17,7 +17,7 @@
  *
  *  A run that only moved is not laid out again: its vertexes get the move's
  *  delta added. After a series of odd moves away and back to the start, and on
- *  to a new place, the run must be a fresh layout where it is after each move,
+ *  to a new place, the run must be a fresh layout where it ends each series,
  *  for SDF sizes (fractional corners, at scales 1, 1.25 and 2), coverage sizes
  *  (at 1 and 1.5) and LCD text. The SDF ones drifted by some ulps before the
  *  rebuild rounded each corner's offset to 1/256 px (#341).
@@ -603,21 +603,23 @@ size_t differingFields(const std::vector<uint8_t> &a, const std::vector<uint8_t>
     return differing;
 }
 
-//! Moves the run of `draw` on one text id by each step, a frame each, and
-//! compares it after every move with a fresh layout where it now is.
-void checkMoves(size_t textId, TextDraw &draw, const std::vector<Point> &steps)
+//! Moves the run of `draw` on one text id by each step and returns its bytes
+//! where it ends. Each renderText of the same string takes the move path and
+//! adds its delta to the mirror, so the steps share one frame: the arithmetic
+//! is the same as a frame each, without a frame's cost per step under ASAN.
+std::vector<uint8_t> moveThrough(size_t textId, TextDraw &draw, const std::vector<Point> &steps)
 {
+    OpenGLCore &renderer=gweni::test::gpuRenderer();
+
+    renderer.begin();
+    renderer.setDrawColor(draw.color);
     for(const Point &step:steps)
     {
         draw.pos=draw.pos+step;
-        drawFrame(textId, draw);
-
-        const std::vector<uint8_t> moved=textBytes(textId);
-
-        CAPTURE(draw.pos.x);
-        CAPTURE(draw.pos.y);
-        CHECK(differingFields(moved, freshLayout(draw)) == 0);
+        renderer.renderText(textId, draw.font, draw.pos, draw.zIndex, draw.text);
     }
+    renderer.end();
+    return textBytes(textId);
 }
 
 }//namespace
@@ -678,12 +680,17 @@ TEST_CASE("Text run: a moved run is the bytes of a fresh layout where it ends, a
 
         REQUIRE(differingFields(atStart, freshLayout(draw)) == 0);
 
-        checkMoves(textId, draw, awayAndBack);
-        REQUIRE(((draw.pos.x == start.x) && (draw.pos.y == start.y)));
-        CHECK(differingFields(textBytes(textId), atStart) == 0);
+        const std::vector<uint8_t> back=moveThrough(textId, draw, awayAndBack);
 
-        checkMoves(textId, draw, toNewPlace);
-        CHECK(differingFields(textBytes(textId), atStart) > 0);
+        REQUIRE(((draw.pos.x == start.x) && (draw.pos.y == start.y)));
+        CHECK(differingFields(back, atStart) == 0);
+
+        const std::vector<uint8_t> moved=moveThrough(textId, draw, toNewPlace);
+
+        CAPTURE(draw.pos.x);
+        CAPTURE(draw.pos.y);
+        CHECK(differingFields(moved, atStart) > 0);
+        CHECK(differingFields(moved, freshLayout(draw)) == 0);
 
         renderer.releaseTextPrimitive(textId);
         emptyFrame();
