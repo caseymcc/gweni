@@ -975,7 +975,9 @@ public:
 public:
 
     //! Laid out by the generic arrange like any other child, but not counted
-    //! in the parent's size (TextBox's placeholder).
+    //! in the parent's size (TextBox's placeholder). Not a Placement: the
+    //! parent places such a child; a child its owner places is
+    //! Placement::Owner, which already leaves it out of the size.
     void doNotIncludeInSize() { m_includeInSize=false; }
     //! Whether this control counts in its parent's size: not when it asked
     //! not to (doNotIncludeInSize), nor when its owner places it

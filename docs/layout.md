@@ -123,34 +123,77 @@ out. The generic `arrangeHorizontal`/`arrangeVertical` skip an Owner child
 the parent's preferred size. It is still measured, and still arranged in turn
 for its own subtree. A control that needs content size from an Owner child asks
 for it in its own `calculateSize` (PropertyRow adds the split and its
-property's preferred width). The children placed this way today: the
-CrossSplitter's bars and panels, Properties' splitter bar, a PropertyRow's
-label and property, a Slider's thumb and a wrapped Text's lines.
+property's preferred width; ColorPicker its Result box at x 180; a TextBox
+its scrolled string). The children placed this way:
+
+| owner | Owner children | placed in |
+|---|---|---|
+| CrossSplitter | its bars and panels | `layout()` |
+| Properties, PropertyRow | the splitter bar; a row's label and property | `arrange()` |
+| Slider | the thumb | `layout()`, a value change, a click |
+| ScrollBar | the thumb | `layout()`, a scroll |
+| ScrollControl | both bars and the inner panel | `placeContents()`, its Y arrange |
+| TreeNode | the toggle | sized in `arrange()`, centred in `postLayout()` |
+| ColorPicker | the Result box | `arrange()` |
+| TextBox | its Text while the string is scrolled | `makeCaretVisible()` |
+| TabControl, TabStrip | the overflow buttons; the drop marker over a tab | `layout()`; a drag hover |
+| Text | its wrapped lines | its X arrange |
+
+A `Dragger` (a splitter bar, a slider or scrollbar thumb) whose target is an
+Owner child moves it as computed bounds, and its owner reads the new position
+as its value; any other target (a window by its title bar) is moved with
+`moveTo`, a request.
+
+What still counts as a request, besides the app's own calls:
+
+* **Defaults set where a control is made**: a constructor sizing itself or a
+  part it creates, and the factory methods that create a part and set it up
+  (`Menu::addItem`, `TabControl::addPage`, `CategoryInner::add`, a submenu's
+  arrow in `MenuItem::getMenu`). They run once, outside any pass, and are the
+  defaults the app overrides. A part created during a pass is Owner (a wrapped
+  Text's lines), so its constructor's default is not read.
+* **Where a popup was opened**: `Menu::openAt`, a ComboBox's list, a submenu,
+  the tooltip box. That is the popup's state while it is open, like a window's
+  position; keeping it inside the canvas is computed (`Menu::layout`, from
+  that request each pass, so a canvas that grows again gives it back).
+* **App-facing helpers**: `sizeToContents()`, `sizeToChildren()`,
+  `ScrollControl::setInnerSize()` ask for the size they compute, as if the app
+  had passed it. Library code does not call them from a pass: the parent
+  gives a control the size it measures (`calculateSize`) instead.
+* **What the user drags**: a window by its title bar, a `Resizer`.
 
 A control whose content along an axis is the size it was asked to be says so
 with `sizedByRequest(dim)`: `Base::calculateSize` then takes the request as its
 content, not its children (a Slider, whose track its skin draws; a
 ScrollControl, see above).
 
-`doNotIncludeInSize()` is narrower: a child the generic arrange still places
-but that does not count in the parent's size (TextBox's placeholder).
+`doNotIncludeInSize()` is the one other way out of the parent's size, kept for
+exactly one case: a child the generic arrange still places, by its alignment
+and `policyResize` like any other, but that does not count in the parent's
+size (TextBox's placeholder, a hint that must not widen a `Shrink` box). It is
+not folded into `Placement`, because `Placement` says who places a child and
+the placeholder is placed by the parent; making it Owner would have the
+TextBox repeat the alignment the generic arrange already does for it.
 
 `Canvas::getLayoutStats()` counts the requests recorded while a pass runs
 (`requests`, and `requestedType`/`requestedId`, the first control that recorded
 one), and debug builds print one line per control type that recorded one.
 `ControlTest --stats` prints them on every frame line (`layout_requests=N
 requested_by=<Type>#<id>|none`). Layout code
-should leave it at 0; a request it records makes a preferred size depend on
-what an earlier pass did (a CrossSplitter's bars asking for the canvas size they
-were given). Library controls that still write their children with
-`setBounds`/`setSize`/`setPos` are being moved onto `placeChild`.
+leaves it at 0; a request it records makes a preferred size depend on what an
+earlier pass did (a CrossSplitter's bars asking for the canvas size they were
+given). Every library control does: it is 0 on every frame of every
+`ControlTest --list` demo, in the plain run, `--scenario resize` and
+`--check-teardown`.
 
 ## Placing a dock-None control
 
 Alignment is opt-in. A control has none by default (`Alignment::Absolute`),
 and then it stays at the position it asked for: the x and y of its last
-`setPos`, `moveTo` or `setBounds`. Writes made by the arrange code are not
-requests, so an earlier pass or a parent resize cannot move it. A child its
+`setPos`, `moveTo` or `setBounds`, which only the app makes (or a default
+where the control was made). Writes made by the arrange code and by the
+library are not requests, so an earlier pass or a parent resize cannot move
+it. A child its
 parent places itself is owner-placed instead (see "Requested and computed
 bounds").
 
@@ -172,7 +215,8 @@ alignment, `setTextAlignment`: `Left|CenterV` by default (`Left|Top` once
 with `getTextAlignment()`. It is the inner Text's alignment, so the text is
 placed by the same rules in the label's padded content box. A TextBox whose
 string is wider than the box scrolls it instead: the inner Text is then
-unaligned and kept where the caret needs it. A text padding (`setTextPadding`)
+owner-placed, where the caret needs it (`TextBox::placeScrolledText`), and
+aligned again once it fits. A text padding (`setTextPadding`)
 is the inner Text's own padding: it is counted in the Text's size and the
 string is drawn inside it (`Text::textOrigin()`).
 
@@ -220,26 +264,50 @@ TreeNode's toggle), not resize one.
 
 ### Patterns that keep a control to one pass
 
-* **Configuration before measuring.** Docks, margins, padding and visibility a
-  control derives for its children are set at the start of its
-  `calculateSize(X)`, under a `PlacementScope`, before anything has measured
-  them (TabStrip, TabButton, GroupBox, DockedTabControl, TreeNode). Settings
-  that never change go in the constructor (ComboBox's arrow).
+One rule decides who writes what (see "Requested and computed bounds"): the
+app asks, through `setBounds`/`setSize`/`setPos`/`moveTo`; the library
+computes, through `setArrangedBounds` for a control's own bounds and
+`placeChild` for a child it places. The patterns below are that rule applied
+to the order a pass runs in.
+
+* **A child its control places itself is Owner.** Mark it
+  `setPlacement(Placement::Owner)` where the control creates or adopts it, and
+  write its bounds with `placeChild`/`placeChildPos`/`placeChildSize`: the
+  generic arrange skips it and it does not count in the control's preferred
+  size, so the size an earlier pass gave it cannot come back as what the
+  control asks for. If the control's size must include it, add it in the
+  control's own `calculateSize` from the child's preferred size (ColorPicker's
+  Result box, a TextBox's scrolled string). The table in "Requested and
+  computed bounds" lists them.
+* **Handed its size before it is arranged.** An owner sizes an Owner child
+  along an axis before the pass arranges the child along it: in `layout()`
+  (the start of the owner's X arrange, and again in Y when the height
+  changed) or in an `arrange(dim)` override before `ParentClass::arrange`
+  (TreeNode's toggle, ColorPicker's Result box, Properties' bar). A size
+  given after the child was arranged re-dirties the pass. A position may be
+  set later, in `postLayout()`, when nothing laid out in this pass read it
+  (TreeNode centring its toggle on the title).
 * **A preferred size instead of a resize.** A control that wants to be as big
   as its content says so in `calculateSize` (ColorPicker, Menu, Properties,
-  the Table under a ListBox), and its parent gives it that size;
-  `sizeToChildren()`/`setSize()` on itself from `layout()` resizes a control
-  its parent has already placed.
-* **Children placed by their parent are handed their size before they are
-  arranged**, not resized from a `layout()` that runs after: a TableRow sets
-  its columns' preferred widths in its X arrange; TextBox places its text in
-  `layout()` and again at the start of its Y arrange.
-* **A container that places its children itself** marks them
-  `Placement::Owner` and writes them with `placeChild` (CrossSplitter's bars and
-  panels, Properties' splitter bar, PropertyRow's label and property, Slider's
-  thumb): the generic arrange leaves them alone and they do not count in its
-  preferred size; otherwise the size an earlier pass gave it comes back as what
-  it asks for.
+  CollapsibleCategory, the Table under a ListBox), and its parent gives it that
+  size. It never resizes itself from `layout()`/`postLayout()`, with
+  `sizeToChildren()`, `sizeToContents()` or `setSize()`: those are requests
+  (app helpers), and its parent has already placed it. A tab button is docked
+  at the size it measures; it does not size itself to its label.
+* **Children the generic arrange places are handed their inputs, not their
+  bounds.** A TableRow sets its columns' preferred widths in its X arrange;
+  the docks, margins, padding and visibility a control derives for its
+  children are set at the start of its `calculateSize(X)`, before anything has
+  measured them (TabStrip, TabButton, GroupBox, DockedTabControl, TreeNode).
+  These are not bounds, so they are written under a `PlacementScope`, which is
+  what it is still for: the invalidations they raise are placement, not a
+  re-dirty. Settings that never change go in the constructor (ComboBox's
+  arrow).
+* **Outside a pass, the same rule.** A value change, a click or a drag on a
+  part writes computed bounds (a slider's thumb, a splitter bar, a scrollbar
+  thumb, a TabStrip's drop marker); only what the user moves as their own
+  state (a window, a resized control) and where a popup was opened are
+  requests.
 * **Text** never resizes itself: it is the size of its string, which its
   parent gives it (`Text::policyResize`). Wrapped, it asks for the width the
   app asked its parent to be, less the parent's padding, or with no such
@@ -325,8 +393,8 @@ and then lays its children out X and then Y. Its preferred size is its
 content's (inner panel plus margins), not counting the bars or the scroll
 position, so it does not depend on what an earlier frame showed.
 
-The inputs such a control writes into children it has not laid out yet
-(visibility, scroll range, bounds) go through `Base::PlacementScope`, so the
-invalidations they raise count as placement rather than as a re-dirty. Keep
-the scope to those writes: anything a control already laid out has read must
-still be reported.
+The inputs such a control writes into children it has not laid out yet count
+as placement rather than as a re-dirty: their bounds through `placeChild` (the
+bars and the inner panel are Owner), the rest (visibility, scroll range) under
+a `Base::PlacementScope`. Keep the scope to those writes: anything a control
+already laid out has read must still be reported.
