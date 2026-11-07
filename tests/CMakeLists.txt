@@ -255,6 +255,7 @@ include(doctest)
 # Each test case is registered as its own CTest test, so a failure names it.
 add_executable(gweni_unit_tests
     unit/main.cpp
+    unit/imglibEnums.cpp
     unit/skinSwap.cpp
     unit/platformSleep.cpp
     unit/layoutPasses.cpp
