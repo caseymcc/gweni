@@ -53,6 +53,8 @@ private:
     controls::DockBase *m_dockBase;
 
     std::vector<controls::Base *> m_pages;
+    //! the demo control on each page, in m_pages' order
+    std::vector<controls::Base *> m_demoControls;
 };
 
 template<typename _Type>
@@ -72,6 +74,7 @@ void Demo::addDemo(controls::CollapsibleCategory *category, const std::string &n
 
     control->setAlignment(Alignment::Center);
     m_pages.push_back(button);
+    m_demoControls.push_back(control);
 
 //    event::Packet packet(control);
     event::Packet packet(index);

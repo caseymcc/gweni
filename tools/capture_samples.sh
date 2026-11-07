@@ -35,17 +35,16 @@
 
 set -euo pipefail
 
-# hero: the whole demo window, one page selected. ColorPickerDemo would be the
-# obvious pick but draws nothing but its Result swatch (issue #82).
-HERO_DEMO=CollapsibleListDemo
+# hero: the whole demo window with a showcase page selected, filling the
+# centre pane (examples/demo/showcase.h).
+HERO_DEMO=ShowcaseContainersDemo
 # OpenGLCore has no --size: its window is fixed at 1024x768
 # (examples/openglcore/openglcore.cpp), so HERO_SIZE only labels the output.
 HERO_SIZE=1024x768
 HERO_OUT=demo.png
 
-# The gallery: one ControlTest demo per line, captured at 640x480. README.md
-# embeds each of these, in this order, so a change here needs a matching
-# change there.
+# The gallery: one ControlTest demo per line. README.md embeds each of these,
+# in this order, so a change here needs a matching change there.
 #
 # Left out because they do not look right today:
 #   ImagePanelDemo - an empty canvas (issue #69)
@@ -53,19 +52,12 @@ HERO_OUT=demo.png
 #     past the canvas edge (issue #207) and its SplitterBars draw nothing
 #     (idea #191)
 #   CheckBoxDemo - the first CheckBox sticks out above the canvas top
-#   GroupBoxDemo - the caption sits on the frame's top-left corner
-#   TextBoxDemo, NumericDemo - the text sits inside the box's padding now, but
-#     there is no caret or selection yet (task #119)
-#   ColorPickerDemo - draws only its Result swatch and one slider (issue #82)
-#   CollapsibleListDemo - already the hero page
+# Left out because the hero's page shows their controls: TabControlDemo,
+# TreeControlDemo, PropertiesDemo, PageControlDemo, ListBoxDemo,
+# CollapsibleListDemo, ScrollControlDemo.
 SAMPLES=(
     ButtonDemo
     RadioButtonDemo
-    TabControlDemo
-    TreeControlDemo
-    PropertiesDemo
-    PageControlDemo
-    ListBoxDemo
     SliderDemo
     TextDemo
     ProgressBarDemo
@@ -76,6 +68,24 @@ SAMPLES=(
     VirtualListDemo
 )
 
+# Each sample's canvas size: a showcase page at the size of the hero's centre
+# pane (DemoCenter, from ControlTest --control Demo --size 1024x768
+# --dump-bounds), so it lays out as it does in the shell; a page of one
+# control at its own size.
+PANE_SIZE=870x545
+declare -A SAMPLE_SIZE=(
+    [ButtonDemo]=640x480
+    [RadioButtonDemo]=640x480
+    [SliderDemo]=640x480
+    [TextDemo]=640x480
+    [ProgressBarDemo]=640x480
+    [ComboBoxDemo]=640x480
+    [SeparatorDemo]=640x480
+    [SelectableDemo]=640x480
+    [ContextMenuDemo]=640x480
+    [VirtualListDemo]=640x480
+)
+
 # Scripted input a sample is captured after, in place of the plain capture's
 # frames: ControlTest steps, run in order before the --shot. ContextMenuDemo is
 # shown with the Document box's menu open, VirtualListDemo scrolled by its
@@ -84,8 +94,6 @@ declare -A SAMPLE_STEPS=(
     [ContextMenuDemo]="--frames 3 --move 230,60 --frames 2 --click-right 230,60 --frames 3"
     [VirtualListDemo]="--frames 3 --click 336,41 --frames 3 --move 100,150 --frames 2"
 )
-
-CONTROL_SIZE=640x480
 
 # The samples are grayscale text whatever the caller's environment says: LCD
 # subpixel text is opt-in, and checked by tests/textAA.cpp rather than here.
@@ -202,14 +210,15 @@ capture "$OUT_DIR/$HERO_OUT" \
     "$BIN_DIR/OpenGLCore" --headless --resources resources \
     --demo "$HERO_DEMO" --screenshot "$OUT_DIR/$HERO_OUT"
 
-echo "controls at $CONTROL_SIZE:"
+echo "controls:"
 for demo in "${SAMPLES[@]}"; do
+    size=${SAMPLE_SIZE[$demo]:-$PANE_SIZE}
     # word-split on purpose: one ControlTest argument per word
     # shellcheck disable=SC2206
     steps=(${SAMPLE_STEPS[$demo]:-})
     capture "$OUT_DIR/$demo.png" \
         "$BIN_DIR/ControlTest" --headless --resources resources \
-        --control "$demo" --size "$CONTROL_SIZE" "${steps[@]}" --shot "$OUT_DIR/$demo.png"
+        --control "$demo" --size "$size" "${steps[@]}" --shot "$OUT_DIR/$demo.png"
 done
 
 if [[ $check -eq 0 ]]; then

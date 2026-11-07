@@ -32,6 +32,7 @@
 #include "demo/scrollControl.h"
 #include "demo/selectable.h"
 #include "demo/separator.h"
+#include "demo/showcaseContainers.h"
 #include "demo/slider.h"
 #include "demo/statusBar.h"
 #include "demo/tabControl.h"
@@ -102,6 +103,14 @@ void Demo::init(const String &name)
 
     m_statusBar=newChild<controls::StatusBar>();
 
+    // First, so the selected page shows at the top of the list (the list runs
+    // past the dock's bottom edge).
+    {
+        controls::CollapsibleCategory *cat=list->add("Showcase");
+
+        cat->setName("Showcase");
+        addDemo<ShowcaseContainersDemo>(cat, "ShowcaseContainersDemo");
+    }
     {
         controls::CollapsibleCategory *cat=list->add("Basic");
 
@@ -188,6 +197,17 @@ void Demo::onCategorySelect(event::Info info)
     size_t pageIndex=info.packet->get<size_t>();
 
     m_center->showPage(pageIndex);
+
+    // The Output pane: the page shown and, for a showcase page, the states it
+    // sets in its constructor.
+    if(controls::Button *button=gweni_cast<controls::Button>(m_pages[pageIndex]))
+        printText("Showing "+button->getText());
+
+    if(const ShowcaseNotes *notes=dynamic_cast<const ShowcaseNotes *>(m_demoControls[pageIndex]))
+    {
+        for(const String &line : notes->showcaseNotes())
+            printText("  "+line);
+    }
 }
 
 bool Demo::showDemo(const String &name)

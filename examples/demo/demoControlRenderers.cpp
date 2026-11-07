@@ -58,6 +58,7 @@ GWENI_DEMO_TRANSPARENT(RadioButtonDemo)
 GWENI_DEMO_TRANSPARENT(ScrollControlDemo)
 GWENI_DEMO_TRANSPARENT(SelectableDemo)
 GWENI_DEMO_TRANSPARENT(SeparatorDemo)
+GWENI_DEMO_TRANSPARENT(ShowcaseContainersDemo)
 GWENI_DEMO_TRANSPARENT(SliderDemo)
 GWENI_DEMO_TRANSPARENT(StatusBarDemo)
 GWENI_DEMO_TRANSPARENT(TabControlDemo)
@@ -124,6 +125,7 @@ template class ControlRegister<RadioButtonDemo>;
 template class ControlRegister<ScrollControlDemo>;
 template class ControlRegister<SelectableDemo>;
 template class ControlRegister<SeparatorDemo>;
+template class ControlRegister<ShowcaseContainersDemo>;
 template class ControlRegister<SliderDemo>;
 template class ControlRegister<StatusBarDemo>;
 template class ControlRegister<TabControlDemo>;

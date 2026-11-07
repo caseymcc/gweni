@@ -3,9 +3,9 @@ gweni - GUI Without Extravagant Nonsense (plus i for breaking changes)
 
 This is an attempt to make GWEN a more opengl aware ui. The expectation is to build it to provide better performance with the way modern opengl works (and later vulkan)
 
-![The OpenGLCore demo, CollapsibleListDemo page, Tokyo Night theme](docs/images/demo.png)
+![The OpenGLCore demo shell showing the Containers & data showcase page (a TreeControl, ListBox, TabControl with a Properties grid, ScrollControl and CollapsibleList), Tokyo Night theme](docs/images/demo.png)
 
-*The `OpenGLCore` demo on the OpenGL 3.0+ core renderer with the textured skin's Tokyo Night theme.*
+*The `OpenGLCore` demo on the OpenGL 3.0+ core renderer with the textured skin's Tokyo Night theme, showing the Containers & data showcase page: a TreeControl, a ListBox, a TabControl holding a Properties grid, a ScrollControl and a CollapsibleList.*
 
 ## Goals
 
@@ -29,20 +29,14 @@ implemented-vs-planned status, and [docs/layout.md](docs/layout.md) for the layo
 |---|---|
 | ![Button](docs/images/ButtonDemo.png) | ![RadioButton](docs/images/RadioButtonDemo.png) |
 | **Button** | **RadioButton** |
-| ![TabControl](docs/images/TabControlDemo.png) | ![TreeControl](docs/images/TreeControlDemo.png) |
-| **TabControl** | **TreeControl** |
-| ![Properties](docs/images/PropertiesDemo.png) | ![PageControl](docs/images/PageControlDemo.png) |
-| **Properties** | **PageControl** |
-| ![ListBox](docs/images/ListBoxDemo.png) | ![Slider](docs/images/SliderDemo.png) |
-| **ListBox** | **Slider** |
-| ![Text](docs/images/TextDemo.png) | ![ProgressBar](docs/images/ProgressBarDemo.png) |
-| **Text** (OpenSans 8-16 px) | **ProgressBar** |
-| ![ComboBox](docs/images/ComboBoxDemo.png) | ![Separator](docs/images/SeparatorDemo.png) |
-| **ComboBox** | **Separator** (with a caption, vertical, and bullets) |
-| ![Selectable](docs/images/SelectableDemo.png) | ![ContextMenu](docs/images/ContextMenuDemo.png) |
-| **Selectable** (toggle rows and a single-selection group) | **Context menu** (`setContextMenu`, opened with a right-click) |
-| ![VirtualList](docs/images/VirtualListDemo.png) | |
-| **VirtualList** (100 000 items, a row for each one on screen) | |
+| ![Slider](docs/images/SliderDemo.png) | ![Text](docs/images/TextDemo.png) |
+| **Slider** | **Text** (OpenSans 8-16 px) |
+| ![ProgressBar](docs/images/ProgressBarDemo.png) | ![ComboBox](docs/images/ComboBoxDemo.png) |
+| **ProgressBar** | **ComboBox** |
+| ![Separator](docs/images/SeparatorDemo.png) | ![Selectable](docs/images/SelectableDemo.png) |
+| **Separator** (with a caption, vertical, and bullets) | **Selectable** (toggle rows and a single-selection group) |
+| ![ContextMenu](docs/images/ContextMenuDemo.png) | ![VirtualList](docs/images/VirtualListDemo.png) |
+| **Context menu** (`setContextMenu`, opened with a right-click) | **VirtualList** (100 000 items, a row for each one on screen) |
 
 Each control is shown on its own in `ControlTest`. All of these images are rendered offscreen by
 `tools/capture_samples.sh` (see `AGENTS.md`).
