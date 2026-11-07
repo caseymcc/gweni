@@ -30,7 +30,6 @@ namespace textured
 // A plain controls::Base is a generic, transparent container (grouping/scroll
 // holders, inner panels), so it draws nothing. Any *specific* control type that
 // falls back to here is genuinely unskinned, so paint it bright red to stand out.
-size_t Base::requiredPrimitives() { return 1; }
 void Base::update(renderer::Base *renderer, controls::Base *baseControl)
 {
     if(m_primitives.empty())

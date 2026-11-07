@@ -70,6 +70,11 @@ public:
 
      std::string getTypeName() override { return m_typeName; }
 
+     // Most textured renderers paint one SDF surface (tokyonight::paintSurface,
+     // which writes ids[0] only), so one slot is the default; a renderer that
+     // draws more (an overlay icon, a fill) or nothing overrides it.
+     size_t requiredPrimitives() override { return 1; }
+
      static bool isStaticInit() { return m_staticInit; }
 
 protected:

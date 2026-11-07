@@ -18,7 +18,6 @@ class Base:public textured::ControlRegister<Base>
 {
 public:
     inline static const std::string_view name = "Base";
-    size_t requiredPrimitives() override;
 
     static void staticInit(TexturedSkin *skin) {m_staticInit=true;}
 
@@ -161,7 +160,6 @@ class CategoryHeaderButton:public textured::ControlRegister<CategoryHeaderButton
 public:
     static void staticInit(TexturedSkin *skin);
 
-    size_t requiredPrimitives() override { return 9; }
 
     void update(renderer::Base *renderer, controls::Base *baseControl) override;
 
@@ -176,7 +174,6 @@ class CollapsibleCategory:public textured::ControlRegister<CollapsibleCategory>
 public:
     static void staticInit(TexturedSkin *skin);
 
-    size_t requiredPrimitives() override { return 9; }
 
     void update(renderer::Base *renderer, controls::Base *baseControl) override;
 
@@ -192,7 +189,6 @@ class CategoryList:public textured::ControlRegister<CategoryList>
 public:
     static void staticInit(TexturedSkin *skin);
 
-    size_t requiredPrimitives() override { return 9; }
 
     void update(renderer::Base *renderer, controls::Base *baseControl) override;
 
@@ -231,7 +227,7 @@ class CheckBox:public textured::ControlRegister<CheckBox>
 public:
     static void staticInit(TexturedSkin *skin);
 
-    size_t requiredPrimitives() override { return 9; }
+    size_t requiredPrimitives() override { return 2; }
 
     void update(renderer::Base *renderer, controls::Base *baseControl) override;
 
@@ -253,7 +249,7 @@ class ComboBox:public textured::ControlRegister<ComboBox>
 public:
     static void staticInit(TexturedSkin *skin);
 
-    size_t requiredPrimitives() override { return 9; }
+    size_t requiredPrimitives() override { return 2; }
 
     //void generate(renderer::Base *renderer, controls::Base *baseControl) override;
     void update(renderer::Base *renderer, controls::Base *baseControl) override;
@@ -277,7 +273,6 @@ class DockBase:public textured::ControlRegister<DockBase>
 public:
     static void staticInit(TexturedSkin *skin);
 
-    size_t requiredPrimitives() override { return 3; }
 
     void update(renderer::Base *renderer, controls::Base *baseControl) override;
 
@@ -289,7 +284,6 @@ class GroupBox:public textured::ControlRegister<GroupBox>
 public:
     static void staticInit(TexturedSkin *skin);
 
-    size_t requiredPrimitives() override { return 9; }
 
     void update(renderer::Base *renderer, controls::Base *baseControl) override;
 
@@ -320,7 +314,7 @@ class Input:public textured::ControlRegister<Input>
 public:
     static void staticInit(TexturedSkin *skin);
 
-    size_t requiredPrimitives() override { return 9; }
+    size_t requiredPrimitives() override { return 0; }
 
     void update(renderer::Base *renderer, controls::Base *baseControl) override;
 
@@ -336,7 +330,6 @@ class ListBox:public textured::ControlRegister<ListBox>
 public:
     static void staticInit(TexturedSkin *skin);
 
-    size_t requiredPrimitives() override { return 9; }
 
     void update(renderer::Base *renderer, controls::Base *baseControl) override;
 
@@ -359,7 +352,6 @@ class ListBoxRow:public textured::ControlRegister<ListBoxRow>
 public:
     static void staticInit(TexturedSkin *skin);
 
-    size_t requiredPrimitives() override { return 9; }
 
     void update(renderer::Base *renderer, controls::Base *baseControl) override;
 
@@ -381,7 +373,6 @@ class Menu:public textured::ControlRegister<Menu>
 public:
     static void staticInit(TexturedSkin *skin);
 
-    size_t requiredPrimitives() override { return 9; }
 
     void generate(renderer::Base *renderer, controls::Base *baseControl) override;
     void update(renderer::Base *renderer, controls::Base *baseControl) override;
@@ -405,7 +396,6 @@ class Panel:public textured::ControlRegister<Panel>
 public:
     static void staticInit(TexturedSkin *skin);
 
-    size_t requiredPrimitives() override { return 9; }
 
     void generate(renderer::Base *renderer, controls::Base *baseControl) override;
     void update(renderer::Base *renderer, controls::Base *baseControl) override;
@@ -427,7 +417,6 @@ class PageControl:public textured::ControlRegister<PageControl>
 {
 public:
     static void staticInit(TexturedSkin *skin);
-    size_t requiredPrimitives() override { return 9; }
     void update(renderer::Base *renderer, controls::Base *baseControl) override;
     inline static const std::string_view name="PageControl";
     static size_t Background;
@@ -438,7 +427,6 @@ class TabControlInner:public textured::ControlRegister<TabControlInner>
 {
 public:
     static void staticInit(TexturedSkin *skin);
-    size_t requiredPrimitives() override { return 9; }
     void update(renderer::Base *renderer, controls::Base *baseControl) override;
     inline static const std::string_view name="TabControlInner";
     static size_t Background;
@@ -449,7 +437,6 @@ class CollapsibleList:public textured::ControlRegister<CollapsibleList>
 {
 public:
     static void staticInit(TexturedSkin *skin);
-    size_t requiredPrimitives() override { return 9; }
     void update(renderer::Base *renderer, controls::Base *baseControl) override;
     inline static const std::string_view name="CollapsibleList";
     static size_t Background;
@@ -460,7 +447,6 @@ class CategoryInner:public textured::ControlRegister<CategoryInner>
 {
 public:
     static void staticInit(TexturedSkin *skin);
-    size_t requiredPrimitives() override { return 9; }
     void update(renderer::Base *renderer, controls::Base *baseControl) override;
     inline static const std::string_view name="CategoryInner";
     static size_t Background;
@@ -518,7 +504,7 @@ class RadioButton:public textured::ControlRegister<RadioButton>
 public:
     static void staticInit(TexturedSkin *skin);
 
-    size_t requiredPrimitives() override { return 9; }
+    size_t requiredPrimitives() override { return 2; }
 
     void generate(renderer::Base *renderer, controls::Base *baseControl) override;
     void update(renderer::Base *renderer, controls::Base *baseControl) override;
@@ -539,7 +525,7 @@ class ScrollBarButton:public textured::ControlRegister<ScrollBarButton>
 public:
     static void staticInit(TexturedSkin *skin);
 
-    size_t requiredPrimitives() override { return 9; }
+    size_t requiredPrimitives() override { return 2; }
 
     void update(renderer::Base *renderer, controls::Base *baseControl) override;
 
@@ -578,7 +564,6 @@ class Scroller:public textured::ControlRegister<Scroller>
 public:
     static void staticInit(TexturedSkin *skin);
 
-    size_t requiredPrimitives() override { return 9; }
 
     void generate(renderer::Base *renderer, controls::Base *baseControl) override;
     void update(renderer::Base *renderer, controls::Base *baseControl) override;
@@ -601,7 +586,6 @@ class Shadow:public textured::ControlRegister<Shadow>
 public:
     static void staticInit(TexturedSkin *skin);
 
-    size_t requiredPrimitives() override { return 9; }
 
     void generate(renderer::Base *renderer, controls::Base *baseControl) override;
     void update(renderer::Base *renderer, controls::Base *baseControl) override;
@@ -710,7 +694,6 @@ class StatusBar:public textured::ControlRegister<StatusBar>
 public:
     static void staticInit(TexturedSkin *skin);
 
-    size_t requiredPrimitives() override { return 9; }
 
 //    void generate(renderer::Base *renderer, controls::Base *baseControl) override;
     void update(renderer::Base *renderer, controls::Base *baseControl) override;
@@ -752,7 +735,7 @@ template<typename _Type>
 class TabItem:public textured::ControlRegister<TabItem<_Type>>
 {
 public:
-    size_t requiredPrimitives() override { return 9; }
+    size_t requiredPrimitives() override { return 0; }
 
     static void staticInit(TexturedSkin *skin)
     {
@@ -789,7 +772,6 @@ class TabButton:public textured::ControlRegister<TabButton>
 public:
     static void staticInit(TexturedSkin *skin);
 
-    size_t requiredPrimitives() override { return 9; }
 
     void update(renderer::Base *renderer, controls::Base *baseControl) override;
 
@@ -804,7 +786,6 @@ class TabControl:public textured::ControlRegister<TabControl>
 public:
     static void staticInit(TexturedSkin *skin);
 
-    size_t requiredPrimitives() override { return 9; }
 
     
 //    void generate(renderer::Base *renderer, controls::Base *baseControl) override;
@@ -831,7 +812,6 @@ class TabTitleBar:public textured::ControlRegister<TabTitleBar>
 public:
     static void staticInit(TexturedSkin *skin);
 
-    size_t requiredPrimitives() override { return 9; }
 
     void update(renderer::Base *renderer, controls::Base *baseControl) override;
 
@@ -861,7 +841,6 @@ class TextBox:public textured::ControlRegister<TextBox>
 public:
     static void staticInit(TexturedSkin *skin);
 
-    size_t requiredPrimitives() override { return 9; }
 
     void generate(renderer::Base *renderer, controls::Base *baseControl) override;
     void update(renderer::Base *renderer, controls::Base *baseControl) override;
@@ -880,7 +859,6 @@ class Tooltip:public textured::ControlRegister<Tooltip>
 public:
     static void staticInit(TexturedSkin *skin);
 
-    size_t requiredPrimitives() override { return 9; }
 
     void generate(renderer::Base *renderer, controls::Base *baseControl) override;
     void update(renderer::Base *renderer, controls::Base *baseControl) override;
@@ -898,7 +876,6 @@ class Tree:public textured::ControlRegister<Tree>
 public:
     static void staticInit(TexturedSkin *skin);
 
-    size_t requiredPrimitives() override { return 9; }
 
     void generate(renderer::Base *renderer, controls::Base *baseControl) override;
     void update(renderer::Base *renderer, controls::Base *baseControl) override;
@@ -917,7 +894,7 @@ class SpinBox:public textured::ControlRegister<SpinBox>
 public:
     static void staticInit(TexturedSkin *skin);
 
-    size_t requiredPrimitives() override { return 9; }
+    size_t requiredPrimitives() override { return 0; }
 
     //void generate(renderer::Base *renderer, controls::Base *baseControl) override;
     void update(renderer::Base *renderer, controls::Base *baseControl) override;
@@ -941,7 +918,7 @@ class SplitterBar:public textured::ControlRegister<SplitterBar>
 public:
     static void staticInit(TexturedSkin *skin);
 
-    size_t requiredPrimitives() override { return 9; }
+    size_t requiredPrimitives() override { return 0; }
 
     void update(renderer::Base *renderer, controls::Base *baseControl) override;
 
@@ -956,7 +933,6 @@ class Window:public textured::ControlRegister<Window>
 public:
     static void staticInit(TexturedSkin *skin);
 
-    size_t requiredPrimitives() override { return 9; }
 
     void generate(renderer::Base *renderer, controls::Base *baseControl) override;
     void update(renderer::Base *renderer, controls::Base *baseControl) override;
