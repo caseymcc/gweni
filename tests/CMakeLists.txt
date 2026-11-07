@@ -330,7 +330,8 @@ add_executable(gweni_unit_tests
     unit/toolTip.cpp
     unit/textBoxColor.cpp
     unit/drawLine.cpp
-    unit/mouseCapture.cpp)
+    unit/mouseCapture.cpp
+    unit/dragAndDrop.cpp)
 gweni_set_warnings(gweni_unit_tests)
 target_link_libraries(gweni_unit_tests
     gweni
