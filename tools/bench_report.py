@@ -486,7 +486,7 @@ class Report:
         self.emit("## Wall time")
         self.emit()
         self.emit("%s timed runs of each scene per side at N=%s, in rounds (every scene once per side per round, base and rev taking turns going first), each "
-                  "holding the gpu and perf locks. Per run, a phase's time is its median over the "
+                  "holding the render and quiet locks (no other job holding a lock while it ran). Per run, a phase's time is its median over the "
                   "measured frames (µs; `construct` is the build itself); the table gives the "
                   "median of the runs ± their MAD (median absolute deviation). Flagged ⚠ when rev "
                   "is more than %.0f %% slower, slower by more than twice the larger MAD and by "

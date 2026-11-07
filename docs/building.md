@@ -617,7 +617,8 @@ with `git archive` to `/tmp` and built there, so the first compare against it
 configures a new tree (slow without the vcpkg binary cache); `--keep` keeps it.
 A default compare takes about 40 minutes, nearly all of it callgrind;
 `--no-ir` about 2, and `--scenes` limits it to the scenes a change touches.
-Timed runs hold the `perf` lock as well as `gpu`; on a shared host whose
-master-mind does not manage `perf` yet, a wall-time flag is noise as often as
-not, so run it again before acting on it. See `AGENTS.md` → "Comparing two
+Each timed run holds the `render` and `quiet` locks (no other locked job runs
+alongside it), but builds take no lock, so on a shared host a wall-time flag can
+still be noise (a compare of a commit with itself flagged 2 of 78 phases): run
+it again before acting on it. Callgrind runs take no lock. See `AGENTS.md` → "Comparing two
 revisions".

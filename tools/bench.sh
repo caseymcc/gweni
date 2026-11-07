@@ -10,7 +10,7 @@
 #      tools/bench.sh compare origin/main            # origin/main vs the working tree
 #      tools/bench.sh compare origin/main --keep     # keep origin/main's build for next time
 #      tools/bench.sh compare HEAD~3 HEAD --scenes hover-sweep,type
-#      tools/bench.sh compare origin/main --time     # wall time too (holds the perf lock)
+#      tools/bench.sh compare origin/main --time     # wall time too (holds the quiet lock)
 #
 #  Usage: tools/bench.sh compare <base-rev> [<rev>] [options]
 #
@@ -25,7 +25,7 @@
 #    --no-ir        no instructions (no callgrind; much faster)
 #    --time         measure wall time too: R rounds, each running every scene
 #                   once per side (A B, then B A in the next round), each run
-#                   holding the gpu and perf locks
+#                   holding the render and quiet locks
 #    --repeat R     timed runs per scene and side (default 5)
 #    --time-n N     the size the times are measured at (default the small N)
 #    --out FILE     the report (default /tmp/gweni-bench-<base>-<rev>.md); the
@@ -53,10 +53,13 @@
 #  not change what it does. A counter run sets LP_NUM_THREADS=0, as callgrind's
 #  do; a timed run leaves llvmpipe its threads. The instructions are
 #  tools/profile.sh --phases-only of this checkout, run on each side's binary,
-#  so both sides are measured by the same harness. Each run takes the gpu lock
-#  on its own (mm run --lock gpu; a timed one --lock gpu --lock perf), never
-#  around a batch; without mm on PATH everything runs unlocked, and the report
-#  says so.
+#  so both sides are measured by the same harness. Each run takes its locks
+#  on its own, never around a batch: a counter run mm run --lock render (it
+#  opens a GL context, on llvmpipe), a timed one --lock render --lock quiet
+#  (quiet waits until no other job holds a lock and keeps them off while the
+#  run lasts, so the times are of a quiet host). The callgrind runs take no
+#  lock: instruction counts do not depend on the host's load. Without mm on
+#  PATH everything runs unlocked, and the report says so.
 #
 #  The report (tools/bench_report.py writes it from the raw outputs): the
 #  counters, the instructions, the scaling check and the wall times, each
@@ -245,14 +248,7 @@ note() {
 
 if [[ $haveMm -eq 0 ]]; then
     echo "bench.sh: mm is not on PATH, so every run is unlocked"
-    note "mm was not on PATH: every run ran without the gpu (and perf) lock, so other jobs may have shared the host; the wall times are not trustworthy."
-fi
-# mm ignores a lock the host does not manage, so a timed run asking for perf
-# there excludes nothing; say so, since it is what a wall-time flag is worth.
-if [[ $haveMm -eq 1 && $timed -eq 1 ]]; then
-    if ! mm lock status 2>/dev/null | python3 -I -c 'import json, sys; sys.exit(0 if any(r.get("name") == "perf" for r in json.load(sys.stdin).get("resources", [])) else 1)'; then
-        note "This host's master-mind does not manage a perf lock, so other jobs ran alongside the timed runs: rerun a wall-time flag before acting on it."
-    fi
+    note "mm was not on PATH: every run ran without the render (and quiet) lock, so other jobs may have shared the host; the wall times are not trustworthy."
 fi
 
 #-----------------------------------------------------------------------------
@@ -404,9 +400,12 @@ bench_run() {
     shift 3
     local bin
     bin=$(cat "$results/$side/bin_dir")
-    local lockList=(gpu)
+    # render: a GL context on llvmpipe. quiet, for a timed run only: no other
+    # job holds a lock while it runs. Each run takes them on its own: a hold
+    # of quiet over 10 min would take it over.
+    local lockList=(render)
     if [[ "$mode" == time ]]; then
-        lockList+=(perf)
+        lockList+=(quiet)
     fi
     if ! locked "${lockList[@]}" -- "$SELF" __run "$bin" "$file" "$mode" "$@"; then
         echo "bench.sh: gweni_bench $* failed on $side ($bin):" >&2
