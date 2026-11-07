@@ -2,7 +2,6 @@
 #include <png.h>
 
 #include <vector>
-#include <cassert>
 #include <cstring>
 #include <cstdio>
 
@@ -236,13 +235,22 @@ void readBuffer(png_structp png_ptr, png_bytep data, png_size_t length)
 {
     BufferInfo *bufferInfo=(BufferInfo *)png_get_io_ptr(png_ptr);
 
-    assert(bufferInfo->size>=bufferInfo->index+length);
+    //a subtraction, so it cannot overflow: loadPngBuffer starts index at 8 only for a buffer of 8
+    //bytes or more. png_error does not return, it longjmps to loadPngBuffer's setjmp, which returns
+    //false (this frame holds nothing with a destructor)
+    if(length>bufferInfo->size-bufferInfo->index)
+        png_error(png_ptr, "read past end of buffer");
+
     memcpy(data, bufferInfo->buffer+bufferInfo->index, length);
     bufferInfo->index+=length;
 }
 
 bool loadPngBuffer(ImageWrapper image, const uint8_t *buffer, size_t bufferSize)
 {
+    //png_sig_cmp reads 8 bytes whatever the size
+    if((buffer==nullptr)||(bufferSize<8))
+        return false;
+
     if(png_sig_cmp((png_const_bytep)buffer, 0, 8))
         return false;
 
