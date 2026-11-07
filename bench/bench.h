@@ -16,6 +16,7 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 namespace gweni
@@ -51,6 +52,12 @@ const char *phaseName(Phase phase);
 //! \a phase.
 void enterPhase(Phase phase);
 
+//! Starts \a phase (enterPhase) and runs \a body in it, inside \a phase's own
+//! marker function, so a profile attributes the body's whole cost to the
+//! phase. The phase runs on until the next enterPhase() or inPhase().
+template<typename Body>
+void inPhase(Phase phase, Body &&body);
+
 //! What the phases cost since the last resetPhases().
 struct PhaseTotals
 {
@@ -62,6 +69,41 @@ struct PhaseTotals
 //! Clears the totals; the current phase restarts now.
 void resetPhases();
 const PhaseTotals &phaseTotals();
+
+//-----------------------------------------------------------------------------
+// Profiling. Under callgrind (tools/profile.sh), cost is collected only while
+// collection is on and a phase other than None runs: enterPhase() switches it
+// with client requests, so setup, EGL and GL init, resource loading, the
+// primer, warm-up frames, glClear, the bench's own bookkeeping and teardown
+// are never in the profile. Outside valgrind the requests do nothing.
+//
+// Each phase's work also runs inside a marker function of its own,
+// gweni_bench_phase_<name> (inPhase()), and the per-phase instruction counts
+// are those functions' inclusive costs, read from the call costs callgrind
+// records for them (tools/callgrind_phases.py): exact, not a guess from
+// gweni's function names. One collection over the whole run keeps one
+// profile for kcachegrind, callgrind_annotate and gprof2dot; dumping a part
+// per phase (CALLGRIND_DUMP_STATS_AT) would give the totals too, but as
+// hundreds of parts that callgrind_annotate and gprof2dot do not merge. The
+// flush runs inside the render walk (the renderer's end()), so the render
+// phase is its marker's cost minus the flush marker's.
+//-----------------------------------------------------------------------------
+
+//! Whether the measured phases are collected from now on (off at start).
+void setCollecting(bool collecting);
+
+//! Runs body(context) in \a phase's marker function.
+void callPhaseMarker(Phase phase, void (*body)(void *), void *context);
+
+template<typename Body>
+void inPhase(Phase phase, Body &&body)
+{
+    typedef typename std::remove_reference<Body>::type BodyType;
+
+    enterPhase(phase);
+    callPhaseMarker(phase, [](void *context){ (*static_cast<BodyType *>(context))(); },
+        const_cast<void *>(static_cast<const void *>(&body)));
+}
 
 //-----------------------------------------------------------------------------
 // Allocations: the bench replaces the global operator new, so this counts every
@@ -133,6 +175,9 @@ struct SceneInfo
     int defaultFrames;      //!< measured frames
     Scaling scaling;
     std::function<std::unique_ptr<Scene>()> make;
+    //! Whether Scene::build() is measured work, not setup: profiled as the
+    //! construct phase (only the build scene)
+    bool profileConstruct=false;
 };
 
 //! Every scene, in --list order.

@@ -57,8 +57,7 @@ public:
 
     void end() override
     {
-        bench::enterPhase(Phase::Flush);
-        OpenGLCore::end();
+        bench::inPhase(Phase::Flush, [this]{ OpenGLCore::end(); });
         bench::enterPhase(Phase::Render);
     }
 };
@@ -167,20 +166,14 @@ void runFrame(bench::Scene &scene, bench::SceneContext &ctx, int frame)
     gweni::controls::resetChangeStats();
     bench::resetPhases();
 
-    bench::enterPhase(Phase::Input);
-    scene.step(ctx, frame);
-
-    bench::enterPhase(Phase::Update);
-    ctx.canvas->updateCanvas();
+    bench::inPhase(Phase::Input, [&]{ scene.step(ctx, frame); });
+    bench::inPhase(Phase::Update, [&]{ ctx.canvas->updateCanvas(); });
 
     bench::enterPhase(Phase::None);
     glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
 
-    bench::enterPhase(Phase::Render);
-    ctx.canvas->renderCanvas();
-
-    bench::enterPhase(Phase::Gpu);
-    glFinish();
+    bench::inPhase(Phase::Render, [&]{ ctx.canvas->renderCanvas(); });
+    bench::inPhase(Phase::Gpu, []{ glFinish(); });
 
     bench::enterPhase(Phase::None);
     g_clockSeconds+=g_frameStep;
@@ -568,10 +561,13 @@ int main(int argc, char *argv[])
     if(const GLubyte *name=glGetString(GL_RENDERER))
         summary.glRenderer=reinterpret_cast<const char *>(name);
 
+    // Under callgrind only the measured work is collected: the build scene's
+    // construction and the measured frames, not the warm-up.
     bench::resetPhases();
-    bench::enterPhase(Phase::Construct);
-    scene->build(sceneCtx);
+    bench::setCollecting(info->profileConstruct);
+    bench::inPhase(Phase::Construct, [&]{ scene->build(sceneCtx); });
     bench::enterPhase(Phase::None);
+    bench::setCollecting(false);
     summary.constructUs=bench::phaseTotals().us[size_t(Phase::Construct)];
     summary.constructAllocs=bench::phaseTotals().allocs[size_t(Phase::Construct)];
     summary.constructAllocBytes=bench::phaseTotals().allocBytes[size_t(Phase::Construct)];
@@ -580,11 +576,13 @@ int main(int argc, char *argv[])
         runFrame(*scene, sceneCtx, frame);
 
     std::vector<FrameRecord> records(static_cast<size_t>(frames));
+    bench::setCollecting(true);
     for(int frame=0; frame<frames; ++frame)
     {
         runFrame(*scene, sceneCtx, frame);
         collectCounters(records[size_t(frame)], bench::phaseTotals(), *renderer, *canvas);
     }
+    bench::setCollecting(false);
     // after the frames: layout may add parts of its own
     summary.controls=countControls(canvas);
 
