@@ -100,6 +100,25 @@ struct GWENI_EXPORT Point
     };
 };
 
+//! A point with fractional coordinates, in canvas units like Point: what a
+//! line's endpoints are given in (renderer::Base::drawLine), so a plot can put
+//! its samples between whole units. A Point converts to it.
+struct GWENI_EXPORT PointF
+{
+    PointF(float x_=0.0f, float y_=0.0f)
+        : x{x_}, y{y_}
+    {}
+
+    PointF(const Point &p)
+        : x{float(p.x)}, y{float(p.y)}
+    {}
+
+    bool operator==(const PointF &p) const { return x == p.x && y == p.y; }
+    bool operator!=(const PointF &p) const { return !(*this == p); }
+
+    float x, y;
+};
+
 struct GWENI_EXPORT Size
 {
     Size():width{0}, height{0} {}

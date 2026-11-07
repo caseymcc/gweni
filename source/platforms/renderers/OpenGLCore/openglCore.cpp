@@ -869,6 +869,8 @@ flat out float vBorder;
 flat out vec4 vColor1;    // gradient bottom color
 flat out vec4 vBorderColor;
 out vec4 vColor3;         // smooth: style 6 interpolates it along x
+flat out vec4 vSegment;   // style 3: the line's endpoints (xy, zw), px from the quad centre
+flat out float vBehindDepth; // style 3: the depth half a layer behind this slot's z
 out vec2 vPixel;          // pixel-space position, the clip boxes' space
 
 uniform mat4 projection;
@@ -897,12 +899,17 @@ void main()
     vColor1 = unpackColor(inColor1);
     vBorderColor = unpackColor(inBorderColor);
     vColor3 = unpackColor(inColor3);
+    // style 3 keeps its endpoints in color1 and color3, int16 bits in half-pixel units
+    vSegment = vec4((ivec4(uvec4(inColor1, inColor3)) << 16) >> 16)*0.5;
     vPixel = vec2(inPosition.xy);
 
     if(style == 0u)//item has been hidden, move all coords to 0.0f
         gl_Position = vec4(0.0f, 0.0f, 0.0f, 1.0f);
     else
         gl_Position = projection * vec4(float(inPosition.x), float(inPosition.y), float(inPosition.z), 1.0f);
+
+    vec4 behind = projection * vec4(float(inPosition.x), float(inPosition.y), float(inPosition.z) - 0.5, 1.0);
+    vBehindDepth = behind.z*0.5 + 0.5;
 })";
 
     auto fragmentTexturedSource=R"(
@@ -920,6 +927,8 @@ flat in float vBorder;
 flat in vec4 vColor1;
 flat in vec4 vBorderColor;
 in vec4 vColor3;
+flat in vec4 vSegment;
+flat in float vBehindDepth;
 in vec2 vPixel;
 
 // Style 2's textures, one per image unit (vRadius picks it). GLSL 3.30 indexes a
@@ -989,6 +998,30 @@ float sdSegment(vec2 p, vec2 a, vec2 b)
     return length(pa - ba*h);
 }
 
+// The part of a pixel (a unit square of device px) on the inner side of a straight
+// edge e px from its centre, n the edge's unit normal: exact for a half-plane. Its
+// projection on n is |n.x|+|n.y| wide: the corners give the quadratic ends, the
+// middle is linear, and an axis-aligned edge (n = (1,0) or (0,1)) is the plain
+// clamp(0.5 + e, 0, 1) of style 4's box filter.
+float pixelArea(float e, vec2 n)
+{
+    vec2 m = abs(n);
+    float a = max(m.x, m.y);
+    float b = min(m.x, m.y);
+    float h1 = 0.5*(a - b);
+    float h2 = 0.5*(a + b);
+
+    if(e <= -h2)
+        return 0.0;
+    if(e >= h2)
+        return 1.0;
+    if(e < -h1)
+        return (e + h2)*(e + h2)/(2.0*a*b);
+    if(e > h1)
+        return 1.0 - (h2 - e)*(h2 - e)/(2.0*a*b);
+    return 0.5 + e/a;
+}
+
 // The texel of image unit `unit` at uv, with the gradients taken in uniform control flow.
 vec4 imageTexel(int unit, vec2 uv, vec2 dx, vec2 dy)
 {
@@ -1011,6 +1044,7 @@ void main()
     // Tested here, discarded at the end: the derivatives below (dFdx/dFdy, fwidth)
     // want the whole quad alive.
     uvec4 clip = texelFetch(clipBoxes, slotBase + (gl_PrimitiveID >> 1));
+    float depth = gl_FragCoord.z;
     bool clipped = any(lessThan(vPixel, vec2(clip.xy))) || any(greaterThanEqual(vPixel, vec2(clip.zw)));
     vec2 uvDx = dFdx(TexCoords);
     vec2 uvDy = dFdy(TexCoords);
@@ -1023,6 +1057,35 @@ void main()
     {
         // Image: its texture's unit is in vRadius, the draw colour (tint) in vColor1.
         FragColor = imageTexel(int(vRadius + 0.5), TexCoords, uvDx, uvDy) * vColor1;
+    }
+    else if (ShaderType == 3u)
+    {
+        // Line: a capsule vBorder px thick around the segment vSegment.xy-vSegment.zw
+        // (vLocal is in device px). A pixel is covered by the part of it between the
+        // stroke's two edges, each taken as a straight edge across the pixel along
+        // the normal from the nearest point of the segment (radial in a cap): the
+        // pixel's exact area for the body of the stroke, so a thin slanted line is
+        // as bright on every row. drawLine puts the stroke's edges of a horizontal
+        // or vertical segment on pixel boundaries, where this is style 4's box
+        // filter: whole fully covered rows (columns) and nothing beside them.
+        vec2 pa = vLocal - vSegment.xy;
+        vec2 ba = vSegment.zw - vSegment.xy;
+        float h = clamp(dot(pa, ba)/max(dot(ba, ba), 1e-8), 0.0, 1.0);
+        vec2 v = pa - ba*h;
+        float d = length(v);
+        vec2 n = d > 1e-4 ? v/d
+            : (dot(ba, ba) > 1e-8 ? normalize(vec2(-ba.y, ba.x)) : vec2(0.0, 1.0));
+        float radius = 0.5*vBorder;
+        float a = clamp(pixelArea(radius - d, n) + pixelArea(radius + d, n) - 1.0, 0.0, 1.0);
+        FragColor = vec4(VertexColor.rgb, VertexColor.a * a);
+        // A partly covered pixel's depth is moved toward the layer behind, up to half
+        // a layer as its coverage goes to 0. The segments of a polyline share a z, and
+        // with GL_LESS the first one's anti-aliased cap rim would otherwise keep the
+        // next one off pixels it covers fully; this way a later segment draws over the
+        // pixels an earlier one covers less, still in front of every lower z, while
+        // a fully covered pixel keeps its z, so a translucent polyline is blended once
+        // there however many of its segments cover it.
+        depth = mix(vBehindDepth, gl_FragCoord.z, a);
     }
     else if (ShaderType == 4u)
     {
@@ -1155,12 +1218,15 @@ void main()
     }
 
     // a transparent image texel writes no depth, so what lies behind it still draws;
-    // nor does a pixel an icon leaves uncovered (a rule's quad reaches past its
-    // control, over its neighbours), whose coverage beside a stroke's edge is 0 give
-    // or take rounding: less than half a step of 8-bit alpha changes no pixel
+    // nor does a pixel an icon or a line leaves uncovered (a rule's quad reaches past
+    // its control, over its neighbours, and a line's quad is its bounding box), whose
+    // coverage beside a stroke's edge is 0 give or take rounding: less than half a
+    // step of 8-bit alpha changes no pixel
     if(clipped || (ShaderType == 2u && FragColor.a <= 0.0)
-        || (ShaderType == 5u && FragColor.a < 0.5/255.0))
+        || ((ShaderType == 3u || ShaderType == 5u) && FragColor.a < 0.5/255.0))
         discard;
+    // every other style writes the depth the fixed function would
+    gl_FragDepth = depth;
 })";
 
     m_program=loadShaders(vertexSource, fragmentTexturedSource);
@@ -1875,7 +1941,7 @@ void OpenGLCore::setVertex(Vertex &vertex, uint8_t type, int x, int y, int z, fl
         vertex.ty=v;
     }
 
-    // SDF fields are only used by styles 4, 6 and 7 (writeRoundedQuad); keep them 0 otherwise.
+    // SDF fields are only used by styles 3-7 (drawLine, writeRoundedQuad, drawIcon); keep them 0 otherwise.
     vertex.lx=0;
     vertex.ly=0;
     vertex.radius=0;
@@ -2135,6 +2201,94 @@ void OpenGLCore::drawIcon(size_t primitiveId, gweni::Rect rect, int kind, int di
     setIcon(vertexIndex++, x1, y1, +hw, +hh);
 
     cullOutOfRangeQuad(primitiveId, rect);
+    markPrimitiveChanges(primitiveId, before);
+}
+
+void OpenGLCore::drawLine(size_t primitiveId, gweni::PointF p0, gweni::PointF p1,
+    float thickness, int zIndex)
+{
+    m_activeProgram=0;
+    m_zIndex++;
+
+    size_t vertexIndex=primitiveId*4;
+
+    ensurePrimitiveSlots(primitiveId);
+
+    PrimitiveSlot before;
+
+    readPrimitiveSlot(primitiveId, before);
+
+    m_clippingBoxes[primitiveId]=makeClipBox();
+
+    // Whole device px, like a border, so the stroke can sit on the pixel grid.
+    const int stroke=std::min(std::max(1, snap(thickness)), 4096);
+    const gweni::Point &offset=getRenderOffset();
+
+    // The device px where the stroke across an endpoint coordinate starts: its
+    // centre at v*scale, moved to put both its edges on pixel boundaries. For an
+    // even stroke that is snap(v)-stroke/2, the edge translate() snaps v to; for an
+    // odd one, the pixel v*scale falls in is its middle row (column).
+    auto strokeStart=[&](float v, int origin)
+    {
+        const double centre=(double(v)+origin)*scale();
+        const double start=std::floor(centre-0.5*stroke+0.5);
+
+        return (int64_t)std::max(std::min(start, 1e9), -1e9);
+    };
+    const int64_t ax=strokeStart(p0.x, offset.x);
+    const int64_t ay=strokeStart(p0.y, offset.y);
+    const int64_t bx=strokeStart(p1.x, offset.x);
+    const int64_t by=strokeStart(p1.y, offset.y);
+
+    // The quad: both endpoints' stroke squares, which hold the round caps, and 1 px
+    // around them for the anti-aliased edge of a slanted stroke.
+    const int64_t x0=std::min(ax, bx)-1;
+    const int64_t y0=std::min(ay, by)-1;
+    const int64_t x1=std::max(ax, bx)+stroke+1;
+    const int64_t y1=std::max(ay, by)+stroke+1;
+
+    // lx/ly and the endpoints in half-pixel units from the quad's centre, as in
+    // writeRoundedQuad: an endpoint (start+stroke/2) is a whole number of them.
+    const int64_t hw=x1-x0;
+    const int64_t hh=y1-y0;
+    const int64_t centreX=x0+x1;
+    const int64_t centreY=y0+y1;
+    const uint16_t a0=(uint16_t)(int16_t)(2*ax+stroke-centreX);
+    const uint16_t a1=(uint16_t)(int16_t)(2*ay+stroke-centreY);
+    const uint16_t b0=(uint16_t)(int16_t)(2*bx+stroke-centreX);
+    const uint16_t b1=(uint16_t)(int16_t)(2*by+stroke-centreY);
+
+    auto setLine=[&](size_t vi, int64_t px, int64_t py, int64_t lx, int64_t ly)
+    {
+        Vertex &v=m_vertexes[vi];
+
+        setVertex(v, 3, (int)px, (int)py, zIndex, m_color.rg(), m_color.ba());
+        v.lx=(int16_t)lx;
+        v.ly=(int16_t)ly;
+        v.border=(uint16_t)stroke;
+        v.cx=a0; v.cy=a1;
+        v.dx=b0; v.dy=b1;
+    };
+
+    setLine(vertexIndex++, x0, y0, -hw, -hh);
+    setLine(vertexIndex++, x1, y0, +hw, -hh);
+    setLine(vertexIndex++, x0, y1, -hw, +hh);
+    setLine(vertexIndex++, x1, y1, +hw, +hh);
+
+    cullOutOfRangeQuad(primitiveId, gweni::Rect((int)x0, (int)y0, (int)hw, (int)hh));
+
+    // A quad inside the vertex range can still be wider or higher than lx/ly hold
+    // (32767 half px); it is collapsed the same way.
+    const int64_t maxHalf=std::numeric_limits<int16_t>::max();
+
+    if(hw > maxHalf || hh > maxHalf)
+    {
+        for(size_t i=0; i<4; ++i)
+        {
+            m_vertexes[primitiveId*4+i].x=0;
+            m_vertexes[primitiveId*4+i].y=0;
+        }
+    }
     markPrimitiveChanges(primitiveId, before);
 }
 

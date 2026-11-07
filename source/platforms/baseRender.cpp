@@ -158,6 +158,25 @@ void Base::drawBilinearRect(size_t primitiveId, gweni::Rect rect, int zIndex,
         mixColor(c00, c10, 0.5f), mixColor(c01, c11, 0.5f), borderColor, zIndex);
 }
 
+// A rect along the longer axis, from the nearer whole unit of one end to the other's,
+// and round(thickness) units across, starting where OpenGLCore's stroke of that many
+// device px does at scale 1.
+void Base::drawLine(size_t primitiveId, gweni::PointF p0, gweni::PointF p1,
+    float thickness, int zIndex)
+{
+    const int across=std::max(1, static_cast<int>(std::lround(thickness)));
+    const bool horizontal=std::abs(p1.x-p0.x) >= std::abs(p1.y-p0.y);
+    const float lo=horizontal ? std::min(p0.x, p1.x) : std::min(p0.y, p1.y);
+    const float hi=horizontal ? std::max(p0.x, p1.x) : std::max(p0.y, p1.y);
+    const float middle=horizontal ? 0.5f*(p0.y+p1.y) : 0.5f*(p0.x+p1.x);
+    const int start=static_cast<int>(std::lround(lo));
+    const int length=std::max(1, static_cast<int>(std::lround(hi))-start);
+    const int top=static_cast<int>(std::floor(middle-0.5f*across+0.5f));
+
+    drawFilledRect(primitiveId, horizontal ? gweni::Rect(start, top, length, across)
+        : gweni::Rect(top, start, across, length), zIndex);
+}
+
 void Base::drawCheckerRect(size_t primitiveId, gweni::Rect rect, int zIndex,
     gweni::Color fill, gweni::Color light, gweni::Color dark,
     float radius, float border, gweni::Color borderColor)

@@ -224,6 +224,10 @@ public:
         float radius, float border, gweni::Color borderColor) override;
     void drawIcon(size_t primitiveId, gweni::Rect rect, int kind, int direction,
         gweni::Color color, int zIndex) override;
+    //! Style 3: the capsule's distance evaluated in the fragment shader, over a quad
+    //! of the two endpoints' stroke squares and 1 px around them.
+    void drawLine(size_t primitiveId, gweni::PointF p0, gweni::PointF p1,
+        float thickness, int zIndex) override;
 
     void startClip() override;
     void endClip() override;
@@ -423,13 +427,15 @@ private:
         int16_t  x, y;   //device px, signed: a quad must fit in +/-32 K (cullOutOfRangeQuad)
         int16_t  z;      //0..10000, the projection's depth range
         uint16_t tx, ty; //color0 (top fill) packed rg/ba, or UV for texture (style 2, 0..65535 = 0..1)
-        // SDF rounded-rect fields (styles 4, 6, 7); left 0 for all other styles.
+        // SDF fields (styles 3-7); left 0 for all other styles.
         int16_t  lx, ly; //local position relative to rect center, in half-pixel units (= +/-size at the four corners, so an odd size is exact)
         uint16_t radius; //corner radius in px; icon kind (style 5); image unit (style 2)
-        uint16_t border; //border thickness in px
-        uint16_t cx, cy; //color1 (bottom fill for vertical gradient, image tint for style 2) packed rg/ba
+        uint16_t border; //border thickness in px; line thickness in px (style 3)
+        uint16_t cx, cy; //color1 (bottom fill for vertical gradient, image tint for style 2) packed rg/ba;
+                         //line (style 3): its first endpoint, int16_t bits, in lx/ly's units
         uint16_t bx, by; //border color packed rg/ba; icon stroke px in bx's high byte (style 5)
-        uint16_t dx, dy; //color3 packed rg/ba: bottom edge (style 6) or checker dark (style 7)
+        uint16_t dx, dy; //color3 packed rg/ba: bottom edge (style 6) or checker dark (style 7);
+                         //line (style 3): its second endpoint, as cx/cy
 //        glm::vec3 pos;
 //        glm::vec2 uv;
 //        glm::vec4 color;

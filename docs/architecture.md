@@ -256,8 +256,8 @@ on an OpenGL 3.3 core profile:
   in half-pixel units: `±w`/`±h` at the corners, halved by the vertex shader, so an
   odd size's half is exact and the quad is exactly the rect), `radius`, `border`, color1, the border color and color3 are 0 except for the styles
   that use them. `style` selects the shader path: `0` = hidden (degenerate), `1` = solid
-  color (color0), `2` = image (`drawTexturedRect`, below), `3` = unused (it was a text glyph; text has its own
-  program, below), `4` = SDF rounded rect
+  color (color0), `2` = image (`drawTexturedRect`, below), `3` = line segment (`drawLine`, below; it
+  was a text glyph once, and text has its own program), `4` = SDF rounded rect
   (`drawRoundedRect`: vertical gradient color0 → color1, border), `5` = SDF icon glyph
   (`drawIcon`; `radius` = kind, `border` = direction: kinds 0 checkmark and 1 chevron
   in coords normalized to the rect, with a `smoothstep` edge; kinds 2 cross, 3 dash,
@@ -287,6 +287,40 @@ on an OpenGL 3.3 core profile:
   `renderer::Base`'s defaults for `drawBilinearRect`/`drawCheckerRect` approximate
   them with `drawRoundedRect`. `hidePrimitive()`/`showPrimitive()` just set `style`,
   leaving geometry in place.
+- **Line segments (style 3).** `drawLine(id, p0, p1, thickness, z)` draws a segment
+  with round caps (a capsule) in the draw colour, its endpoints in canvas units as
+  `PointF`s, so a plot's samples can fall between whole units. The thickness is
+  snapped like a border, `max(1, snap(thickness))` whole device px, and each endpoint
+  coordinate is placed where its stroke across starts on a whole px,
+  `floor(v*scale - T/2 + 0.5)` (for an even `T` that is `snap(v) - T/2`), so a
+  horizontal or vertical segment is `T` whole fully covered rows (columns), like a
+  rule. The quad is both endpoints' stroke squares and 1 px around them. `lx/ly` run
+  over it in half-pixel units as for style 4, the two endpoints are stored the same way
+  relative to the quad's centre in color1 (`cx/cy`) and color3 (`dx/dy`) as `int16_t`
+  bits (the vertex shader sign-extends them into the flat `vSegment`), and `border` is
+  `T`. The fragment shader covers a pixel by the part of it between the stroke's two
+  edges, each a straight edge across the pixel normal to the direction from the
+  segment's nearest point (`pixelArea()`: the exact area of a unit square on one side
+  of a line, linear in the middle of its `|nx|+|ny|` wide projection and quadratic at
+  its corners). That is the pixel's exact area along the body of the stroke, so a thin
+  slanted line is equally bright on every row (a 1 px box filter of the distance, style
+  4's, is up to 12 % off per row at 45°), and for an axis-aligned edge it is style 4's
+  box filter. A pixel with less than half an 8-bit step of coverage is discarded, as
+  for style 5. **Depth at a joint:** the segments of a polyline share a z, and under
+  `GL_LESS` the first segment's anti-aliased cap rim would keep the next one off
+  pixels it covers fully, a lighter arc inside the stroke at every joint. So a partly
+  covered style 3 pixel writes its depth up to half a layer behind its z,
+  `mix(depth(z - 0.5), depth(z), coverage)` (`vBehindDepth`, the shader writing
+  `gl_FragDepth`, which for every other style is the fixed function's
+  `gl_FragCoord.z`): a later segment at the same z draws over the pixels an earlier
+  one covers less, and nothing at a lower z does. A fully covered pixel keeps its z,
+  so a translucent polyline is blended once there however many of its segments cover
+  it, and only the rim of a cap's disc can be blended twice. A quad wider or higher
+  than `lx/ly` hold (32767 half px) is collapsed like one past the vertex range.
+  `renderer::Base`'s default draws a filled rect along the segment's longer axis, its
+  extent there and `round(thickness)` across, centred on its middle: exact only for an
+  axis-aligned segment without its caps. `tests/lines.cpp` checks style 3 pixel by
+  pixel against a model of the placement and the coverage.
 - `drawFilledRect()`/`drawTexturedRect()` write the 4 vertices + 6 indices for a quad
   into that id's slot in the CPU mirror.
 - **Images (style 2) in the one draw.** `drawTexturedRect` takes a texture loaded on its

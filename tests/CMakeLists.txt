@@ -306,7 +306,8 @@ add_executable(gweni_unit_tests
     unit/dockNoneAlignment.cpp
     unit/textAlignment.cpp
     unit/toolTip.cpp
-    unit/textBoxColor.cpp)
+    unit/textBoxColor.cpp
+    unit/drawLine.cpp)
 gweni_set_warnings(gweni_unit_tests)
 target_link_libraries(gweni_unit_tests
     gweni
@@ -359,7 +360,8 @@ if(TARGET gweni_capture)
         comboBoxSize.cpp
         emptyText.cpp
         scrollControlBackdrop.cpp
-        menuRows.cpp)
+        menuRows.cpp
+        lines.cpp)
     gweni_set_warnings(gweni_unittests)
     target_link_libraries(gweni_unittests
         gweni

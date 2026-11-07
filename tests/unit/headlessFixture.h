@@ -103,6 +103,25 @@ public:
         gweni::releaseTextId(primitiveId);
     }
 
+    //! One drawLine call, as it was made.
+    struct LineDraw
+    {
+        size_t id;
+        gweni::PointF p0, p1;
+        float thickness;
+        int zIndex;
+        gweni::Color color;     //!< the draw colour when it was made
+    };
+
+    void setDrawColor(gweni::Color color) override { drawColor=color; }
+
+    //! Recorded in `lines`, not drawn: a control test checks its segments there.
+    void drawLine(size_t primitiveId, gweni::PointF p0, gweni::PointF p1, float thickness,
+        int zIndex) override
+    {
+        lines.push_back({primitiveId, p0, p1, thickness, zIndex, drawColor});
+    }
+
     //IResourceLoader, nothing to load
     gweni::Font::Status loadFont(const gweni::Font &) override { return gweni::Font::Status::Loaded; }
     void freeFont(const gweni::Font &) override {}
@@ -116,6 +135,12 @@ public:
 
     //! Every acquisition and release, in call order. Tests clear it as they go.
     std::vector<Event> events;
+
+    //! The last setDrawColor().
+    gweni::Color drawColor;
+
+    //! Every drawLine call, in call order. Tests clear it as they go.
+    std::vector<LineDraw> lines;
 
     //! An id handed out while this renderer still had it live (two owners), or
     //! released while it was not live (released twice). Both should stay 0.

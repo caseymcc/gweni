@@ -124,6 +124,21 @@ public:
     virtual void drawIcon(size_t primitiveId, gweni::Rect rect, int kind, int direction,
         gweni::Color color, int zIndex) {}
 
+    //! Draw a line segment from \a p0 to \a p1 in the current color (setDrawColor):
+    //! a capsule (round caps) \a thickness wide, anti-aliased, in one primitive.
+    //! The endpoints are in canvas units and may be fractional; the thickness is
+    //! snapped like a border, max(1, snap(thickness)) whole device px, and the stroke
+    //! is placed so a horizontal or vertical segment covers whole rows (columns)
+    //! fully and nothing beside them. A pixel the line does not cover writes nothing,
+    //! depth included. Segments that share an endpoint join without a gap (their caps
+    //! overlap, so a translucent polyline is darker at its joints). p0 == p1 draws
+    //! a disc. The default is an approximation for a backend without it: a filled
+    //! rect along the segment's longer axis, its extent on that axis and \a thickness
+    //! across, centred on the segment's middle; exact only for an axis-aligned
+    //! segment (without the caps).
+    virtual void drawLine(size_t primitiveId, gweni::PointF p0, gweni::PointF p1,
+        float thickness, int zIndex);
+
     virtual void drawTexturedRect(const gweni::Texture &texture, size_t primitiveId, gweni::Rect targetRect, int zIndex,
         float u1=0.0f, float v1=0.0f,float u2=1.0f, float v2=1.0f)
     {}
