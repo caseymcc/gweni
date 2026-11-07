@@ -135,7 +135,7 @@ bool Base::clipRegionVisible()
 
 void Base::drawMissingImage(size_t primitiveId, gweni::Rect targetRect, int zIndex)
 {
-    setDrawColor(colors::Red);
+    setDrawColor(colors::Missing);
     drawFilledRect(primitiveId, targetRect, zIndex);
 }
 

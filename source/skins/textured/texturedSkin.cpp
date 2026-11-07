@@ -19,11 +19,10 @@ namespace textured
 
 bool TexturedSkin::init(std::string fileName)
 {
-    if(!loadConfig(fileName))
-        return false;
-
     m_defaultFont.facename="OpenSans";
     m_defaultFont.size=11;
+
+    const bool loaded=loadConfig(fileName);
 
 //    m_texture.name=TextureName;
 //    m_texture.readable=true;
@@ -180,7 +179,7 @@ bool TexturedSkin::init(std::string fileName)
 //    Textures.CategoryList.Inner.init(&m_texture, texData, 256 + 64, 384, 63, 63, Margin(8, 21, 8, 8));
 //    Textures.CategoryList.Header.init(&m_texture, texData, 320, 352, 63, 31, Margin(8, 8, 8, 8));
 //    Textures.GroupBox.init(&m_texture, texData, 0, 448, 31, 31, Margin(8, 8, 8, 8));
-    return true;
+    return loaded;
 }
 
 std::unique_ptr<Control> TexturedSkin::getControlRenderer(std::string typeName)
@@ -267,14 +266,35 @@ bool TexturedSkin::loadConfig(std::string configFileName)
     // fonts and textures, so callers pass a bare name ("DefaultSkin.json").
     const std::string configPath=getRenderer()->getResourcePaths().getPath(ResourcePaths::Type::Other, configFileName);
     std::vector<char> fileBuffer;
-    
+
+    // A config that cannot be used leaves the compiled text colours, so labels
+    // stay readable, and every surface magenta, so the missing theme shows.
+    auto unusable=[this]()
+    {
+        setThemeColors();
+        tokyonight::setAllSurfacesMissing();
+        return false;
+    };
+
+    // fopen succeeds on a directory on Linux, and the reads after it fail.
+    // (A path whose status cannot be read is left to fopen to report.)
+    bool isDirectory=false;
+
+    try { isDirectory=fs::is_directory(configPath); } catch(...) {}
+
+    if(isDirectory)
+    {
+        std::cerr<<"Unable to open skin config "<<configPath<<": "<<strerror(EISDIR)<<"\n";
+        return unusable();
+    }
+
     {
         FILE *configFile=fopen(configPath.c_str(), "r");
 
         if(!configFile)
         {
             std::cerr<<"Unable to open skin config "<<configPath<<": "<<strerror(errno)<<"\n";
-            return false;
+            return unusable();
         }
     
         fseek(configFile, 0, SEEK_END);
@@ -285,16 +305,22 @@ bool TexturedSkin::loadConfig(std::string configFileName)
         {
             std::cerr<<"Unable to read skin config "<<configPath<<"\n";
             fclose(configFile);
-            return false;
+            return unusable();
         }
 
         size_t configFileSize=(size_t)configFileEnd;
     
         fileBuffer.resize(configFileSize+1);
-        fread(fileBuffer.data(), 1, configFileSize, configFile);
+        const size_t read=fread(fileBuffer.data(), 1, configFileSize, configFile);
         fileBuffer.back()='\0';
 
         fclose(configFile);
+
+        if(read != configFileSize)
+        {
+            std::cerr<<"Unable to read skin config "<<configPath<<"\n";
+            return unusable();
+        }
     }
 
     json::Document jsonDoc;
@@ -305,9 +331,13 @@ bool TexturedSkin::loadConfig(std::string configFileName)
     {
         json::OffsetInfo offsetInfo=json::getOffsetInfo(fileBuffer, jsonDoc.GetErrorOffset());
 
-        std::cerr<<"Skin parse error(offset "<<offsetInfo.line<<", "<<offsetInfo.pos<<"): "<<json::GetParseError_En(jsonDoc.GetParseError())<<"\n";
-        return false;
+        std::cerr<<"Skin parse error in "<<configPath<<" (offset "<<offsetInfo.line<<", "<<offsetInfo.pos<<"): "<<json::GetParseError_En(jsonDoc.GetParseError())<<"\n";
+        return unusable();
     }
+
+    // a missing atlas is reported and init fails, but the rest of the config
+    // still applies: no converted control draws from it
+    bool textureLoaded=true;
 
     if(jsonDoc.HasMember("colors"))
         loadColors(jsonDoc["colors"]);
@@ -319,7 +349,12 @@ bool TexturedSkin::loadConfig(std::string configFileName)
         m_texture.name=fileName;
         m_texture.readable=true;
         
-        getRenderer()->getLoader().loadTexture(m_texture);
+        if(getRenderer()->getLoader().loadTexture(m_texture) != Texture::Status::Loaded)
+        {
+            std::cerr<<"Unable to load skin texture "
+                <<getRenderer()->getResourcePaths().getPath(ResourcePaths::Type::Texture, fileName)<<"\n";
+            textureLoaded=false;
+        }
     }
         
     if(jsonDoc.HasMember("map"))
@@ -337,7 +372,7 @@ bool TexturedSkin::loadConfig(std::string configFileName)
             std::cerr<<"theme \"theme\" must be an object\n";
     }
 
-    return true;
+    return textureLoaded;
 }
 
 // Apply an external theme: a "surfaces" object (name -> {top,bottom,border arrays,

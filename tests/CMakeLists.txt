@@ -288,6 +288,7 @@ add_executable(gweni_unit_tests
     unit/colorDisplay.cpp
     unit/scrollControl.cpp
     unit/resourcePaths.cpp
+    unit/skinConfig.cpp
     unit/requestedSize.cpp
     unit/layoutSizes.cpp
     unit/tabOrder.cpp

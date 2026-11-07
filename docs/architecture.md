@@ -351,7 +351,7 @@ on an OpenGL 3.3 core profile:
   the fragment shader picks with a constant-indexed switch over `images[8]`. A texture
   takes a unit on its first draw and keeps it until `freeTexture`, because a slot keeps
   its unit across frames. With all 8 in use, a further texture draws the missing image
-  (`drawMissingImage`, a red fill) and logs once. A fully transparent texel is discarded,
+  (`drawMissingImage`, a magenta `colors::Missing` fill) and logs once. A fully transparent texel is discarded,
   so it writes no depth; a partly transparent one still depends on slot order, which is
   why `ImagePanel` takes its primitive id on its first render, after its parent's skin
   took its own. Textures are mipmapped and clamped to edge.

@@ -192,6 +192,21 @@ inline std::unordered_map<std::string, Surface*>& surfaceRegistry()
     return m;
 }
 
+// Paints every registered surface in the missing colour (colors::Missing fill,
+// colors::MissingDark border), keeping its radius and border width, so what a
+// theme does not provide shows. The surfaces stay so until set again.
+inline void setAllSurfacesMissing()
+{
+    for(auto &entry:surfaceRegistry())
+    {
+        Surface &s=*entry.second;
+
+        s.top=colors::Missing;
+        s.bottom=colors::Missing;
+        s.border=colors::MissingDark;
+    }
+}
+
 // ---- paint helper ---------------------------------------------------------
 // Standard "draw if visible, toggle on visibility/created change" flow used by
 // almost every control renderer. ids must point at >=1 primitive id.

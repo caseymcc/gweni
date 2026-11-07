@@ -40,7 +40,8 @@ using gweni::renderer::OpenGLCore;
 
 const Color background(0, 0, 255, 255);
 const Color white(255, 255, 255, 255);
-const Color red(255, 0, 0, 255);
+//! drawMissingImage's fill
+const Color missingColor=gweni::colors::Missing;
 
 //! One frame read back from the offscreen framebuffer, top-down RGBA8.
 struct Frame
@@ -288,7 +289,7 @@ TEST_CASE("Image (style 2): a texture that did not load draws the missing-image 
             renderer.drawTexturedRect(missing, prims.ids[0], Rect(16, 16, 16, 16), 1);
         });
 
-    CHECK(blockMismatches(frame, 16, 16, 16, 16, [](int, int) { return red; }) == 0);
+    CHECK(blockMismatches(frame, 16, 16, 16, 16, [](int, int) { return missingColor; }) == 0);
 }
 
 TEST_CASE("Image (style 2): past the image units in use, a new texture draws the placeholder until one is freed")
@@ -319,7 +320,7 @@ TEST_CASE("Image (style 2): past the image units in use, a new texture draws the
         CHECK(blockMismatches(full, 16+i*20, 16, 16, 16,
             [&](int x, int y) { return over(textures[i]->texel(x, y)); }) == 0);
     }
-    CHECK(blockMismatches(full, 16+8*20, 16, 16, 16, [](int, int) { return red; }) == 0);
+    CHECK(blockMismatches(full, 16+8*20, 16, 16, 16, [](int, int) { return missingColor; }) == 0);
 
     // freeing the first gives its unit to the ninth
     textures[0].reset();

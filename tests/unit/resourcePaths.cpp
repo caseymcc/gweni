@@ -136,6 +136,8 @@ TEST_CASE("TexturedSkin::init resolves the config name through the renderer's Re
 
     SUBCASE("a missing config fails with one stderr line naming the resolved path")
     {
+        // a config that does not load paints every surface magenta
+        test::SurfaceSnapshot surfaces;
         skin::textured::TexturedSkin skin(&renderer);
         bool loaded;
         String message;

@@ -310,6 +310,10 @@ static const Color Blue(0, 0, 255, 255);
 static const Color Green(0, 255, 0, 255);
 static const Color Grey(200, 200, 200, 255);
 static const Color GreyLight(230, 230, 230, 255);
+//! What a missing asset is drawn in: a missing image, a missing skin config's
+//! surfaces. MissingDark is their borders, so controls stay apart.
+static const Color Missing(255, 0, 255, 255);
+static const Color MissingDark(128, 0, 128, 255);
 }
 
 struct Font

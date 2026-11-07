@@ -17,6 +17,7 @@
 #include <gweni/platforms/baseRender.h>
 #include <gweni/primitiveIds.h>
 #include <gweni/skin.h>
+#include <gweni/skins/textured/tokyoNight.h>
 
 #include <map>
 #include <memory>
@@ -125,7 +126,7 @@ public:
     //IResourceLoader, nothing to load
     gweni::Font::Status loadFont(const gweni::Font &) override { return gweni::Font::Status::Loaded; }
     void freeFont(const gweni::Font &) override {}
-    gweni::Texture::Status loadTexture(gweni::Texture &) override { return gweni::Texture::Status::Loaded; }
+    gweni::Texture::Status loadTexture(gweni::Texture &) override { return textureStatus; }
     void freeTexture(const gweni::Texture &) override {}
     gweni::TextureData getTextureData(const gweni::Texture &) const override { return gweni::TextureData(); }
 
@@ -138,6 +139,9 @@ public:
 
     //! The last setDrawColor().
     gweni::Color drawColor;
+
+    //! What every loadTexture returns: set it to an error to fail the loads.
+    gweni::Texture::Status textureStatus=gweni::Texture::Status::Loaded;
 
     //! Every drawLine call, in call order. Tests clear it as they go.
     std::vector<LineDraw> lines;
@@ -296,6 +300,28 @@ void forEachControl(gweni::controls::Base *control, Func &&func)
     for(gweni::controls::Base *child : control->getChildren())
         forEachControl(child, func);
 }
+
+//! The tokyonight surfaces as they are when it is made, written back when it
+//! goes. They are process globals, so a case that changes them (a theme, a
+//! skin config that does not load) must leave them as it found them.
+struct SurfaceSnapshot
+{
+    SurfaceSnapshot()
+    {
+        for(const auto &entry : gweni::skin::textured::tokyonight::surfaceRegistry())
+            saved.emplace(entry.first, *entry.second);
+    }
+
+    ~SurfaceSnapshot()
+    {
+        auto &registry=gweni::skin::textured::tokyonight::surfaceRegistry();
+
+        for(const auto &entry : saved)
+            *registry.at(entry.first)=entry.second;
+    }
+
+    std::map<std::string, gweni::skin::textured::tokyonight::Surface> saved;
+};
 
 }//namespace test
 

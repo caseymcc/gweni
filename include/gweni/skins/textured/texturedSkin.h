@@ -404,8 +404,12 @@ public:
     }
 
     //! Load the skin config, a name resolved through the renderer's
-    //! ResourcePaths (e.g. "DefaultSkin.json"). Returns false, having printed
-    //! the resolved path to stderr, when it cannot be loaded.
+    //! ResourcePaths (e.g. "DefaultSkin.json"). Returns false when the config
+    //! or its atlas texture cannot be loaded, having printed one line naming
+    //! the resolved path to stderr. The skin is still usable then, degraded:
+    //! a config that is missing, unreadable or does not parse leaves every
+    //! tokyonight surface in colors::Missing (magenta) with the compiled text
+    //! colours; a missing atlas still applies the rest of the config.
     bool init(std::string fileName);
 
     std::unique_ptr<Control> getControlRenderer(std::string typeName) override;
