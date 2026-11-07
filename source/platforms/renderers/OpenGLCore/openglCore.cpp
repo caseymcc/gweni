@@ -1088,11 +1088,12 @@ void main()
         }
         else
         {
-            // Kinds 2-5 (the window buttons' glyphs) are measured in device px, with
+            // Kinds 2-6 (the window buttons' glyphs and a separator's rule) are
+            // measured in device px, with
             // a stroke of the whole px drawIcon packs into the border colour's red
             // byte and roundedRect()'s 1 px box filter. Its aa is constant over the
             // quad (fwidth(d) is not: it changes per 2x2 block), so the glyph is
-            // mirror-symmetric pixel for pixel. Every edge of the dash and squares is
+            // mirror-symmetric pixel for pixel. Every edge of the dash, squares and rule is
             // a whole px from the quad's top-left, so each stroke covers whole rows
             // and columns fully and nothing beside them.
             float s = floor(vBorderColor.r*255.0 + 0.5);
@@ -1122,6 +1123,21 @@ void main()
                 // square outline
                 d = sdOutline(q, o, o + vec2(side), s);
             }
+            else if(kind == 6)
+            {
+                // rule: the quad's whole length, on the row(s) (column(s) for dir 1)
+                // at (the floor of) its middle across
+                if(int(vBorder + 0.5) == 0)
+                {
+                    float y0 = floor((size.y - s)*0.5);
+                    d = sdBox(q, vec2(0.0, y0), vec2(size.x, y0 + s));
+                }
+                else
+                {
+                    float x0 = floor((size.x - s)*0.5);
+                    d = sdBox(q, vec2(x0, 0.0), vec2(x0 + s, size.y));
+                }
+            }
             else
             {
                 // restore: a front square at the bottom left, and the outline of one
@@ -1139,8 +1155,12 @@ void main()
         FragColor = vec4(VertexColor.rgb, VertexColor.a * a);
     }
 
-    // a transparent image texel writes no depth, so what lies behind it still draws
-    if(clipped || (ShaderType == 2u && FragColor.a <= 0.0))
+    // a transparent image texel writes no depth, so what lies behind it still draws;
+    // nor does a pixel an icon leaves uncovered (a rule's quad reaches past its
+    // control, over its neighbours), whose coverage beside a stroke's edge is 0 give
+    // or take rounding: less than half a step of 8-bit alpha changes no pixel
+    if(clipped || (ShaderType == 2u && FragColor.a <= 0.0)
+        || (ShaderType == 5u && FragColor.a < 0.5/255.0))
         discard;
 })";
 
@@ -2020,7 +2040,7 @@ void OpenGLCore::drawIcon(size_t primitiveId, gweni::Rect rect, int kind, int di
     const int y1=rect.y+rect.h;
     const int hw=halfPixelSize(rect.w);
     const int hh=halfPixelSize(rect.h);
-    // whole device px, so every stroke of kinds 3-5 covers whole rows and columns
+    // whole device px, so every stroke of kinds 3-6 covers whole rows and columns
     const int stroke=std::min(std::max(1, snap(1.0f)), 255);
 
     auto setIcon=[&](size_t vi, int px, int py, int lx, int ly)
@@ -2031,7 +2051,7 @@ void OpenGLCore::drawIcon(size_t primitiveId, gweni::Rect rect, int kind, int di
         v.ly=(int16_t)ly;
         v.radius=(uint16_t)kind;
         v.border=(uint16_t)direction;
-        v.bx=(uint16_t)(stroke<<8);    // kinds 2-5: the stroke in px, the "red" byte
+        v.bx=(uint16_t)(stroke<<8);    // kinds 2-6: the stroke in px, the "red" byte
     };
 
     setIcon(vertexIndex++, x0, y0, -hw, -hh);

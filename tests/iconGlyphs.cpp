@@ -17,6 +17,11 @@
  *  The strokes of 3-5 are whole rows and columns of fully covered pixels, with
  *  nothing partly covered beside them, at scales 1, 1.5 and 2.
  *
+ *  Kind 6, a separator's rule, is s whole rows (columns for direction 1) the
+ *  quad's whole length, at the floor of its middle, at scales 1, 1.25, 1.5 and 2
+ *  and at every phase of the pixel grid; and the pixels it leaves uncovered write
+ *  no depth, so a rect at a lower z drawn after it shows through them.
+ *
  *  The renderer is shared with the other cases, so each case puts the scale and
  *  the render offset back when it ends (ScaleGuard).
  */
@@ -428,5 +433,117 @@ TEST_CASE("Icon kinds 3-5 (dash, square, restore): whole fully covered rows and 
                 }
             }
         }
+    }
+}
+
+TEST_CASE("Icon kind 6 (rule): s whole rows or columns the quad's length, wherever it lands, at scales 1, 1.25, 1.5 and 2")
+{
+    Primitives prims(1);
+    const float ruleScales[]={1.0f, 1.25f, 1.5f, 2.0f};
+
+    for(float scale:ruleScales)
+    {
+        ScaleGuard guard(scale);
+        const int s=strokeAt(scale);
+
+        // a separator's quad: one logical unit tall plus one on each side, at four
+        // consecutive positions, so every phase of the grid at 1.25 and 1.5 is met
+        for(int direction=0; direction <= 1; ++direction)
+        {
+            for(int step=0; step < 4; ++step)
+            {
+                const Rect logical=direction == 0?Rect(17, 30+step, 41, 3):Rect(30+step, 17, 3, 41);
+                const Rect rect=deviceRect(logical, scale);
+
+                CAPTURE(scale);
+                CAPTURE(direction);
+                CAPTURE(rect.x);
+                CAPTURE(rect.y);
+                CAPTURE(rect.w);
+                CAPTURE(rect.h);
+
+                const Frame frame=drawFrame([&](OpenGLCore &renderer)
+                    {
+                        renderer.drawIcon(prims.ids[0], logical, 6, direction, red, 1);
+                    });
+
+                CHECK(outsideRingMismatches(frame, rect) == 0);
+
+                // the stroke's first row (column), at the floor of the quad's middle
+                const int across=direction == 0?rect.h:rect.w;
+                const int first=(direction == 0?rect.y:rect.x)+(across-s)/2;
+                int partial=0;
+                int wrong=0;
+
+                for(int y=rect.y; y<rect.y+rect.h; ++y)
+                {
+                    for(int x=rect.x; x<rect.x+rect.w; ++x)
+                    {
+                        const Color pixel=frame.at(x, y);
+                        const bool glyph=isGlyph(pixel);
+                        const int at=direction == 0?y:x;
+
+                        if(!glyph && !isBackground(pixel))
+                            ++partial;
+                        else if(glyph != (at >= first && at < first+s))
+                            ++wrong;
+                    }
+                }
+                CHECK(partial == 0);
+                CHECK(wrong == 0);
+
+                // read off the pixels: s thick across the middle, the quad's whole length
+                if(direction == 0)
+                {
+                    CHECK(runs(frame, rect.x+rect.w/2, rect.y, 0, 1, rect.h) == std::vector<int>{s});
+                    CHECK(runs(frame, rect.x, first, 1, 0, rect.w) == std::vector<int>{rect.w});
+                }
+                else
+                {
+                    CHECK(runs(frame, rect.x, rect.y+rect.h/2, 1, 0, rect.w) == std::vector<int>{s});
+                    CHECK(runs(frame, first, rect.y, 0, 1, rect.h) == std::vector<int>{rect.h});
+                }
+            }
+        }
+    }
+}
+
+TEST_CASE("Icon pixels a glyph leaves uncovered write no depth: a rect behind a rule's quad shows around the stroke")
+{
+    // the rule's slot comes first, so it is drawn before the rect at a lower z
+    Primitives prims(2);
+    const Color green(0, 255, 0, 255);
+    const Rect rule(17, 30, 41, 5);
+    const Rect behind(10, 25, 60, 15);
+
+    for(float scale:scales)
+    {
+        ScaleGuard guard(scale);
+        const Rect rect=deviceRect(rule, scale);
+        const int s=strokeAt(scale);
+        const int first=rect.y+(rect.h-s)/2;
+
+        CAPTURE(scale);
+
+        const Frame frame=drawFrame([&](OpenGLCore &renderer)
+            {
+                renderer.drawIcon(prims.ids[0], rule, 6, 0, red, 2);
+                renderer.drawRoundedRect(prims.ids[1], behind, 0.0f, 0.0f, green, green, green, 1);
+            });
+
+        int wrong=0;
+
+        for(int y=rect.y; y<rect.y+rect.h; ++y)
+        {
+            for(int x=rect.x; x<rect.x+rect.w; ++x)
+            {
+                const Color pixel=frame.at(x, y);
+                const bool stroke=y >= first && y < first+s;
+
+                if(stroke?!isGlyph(pixel):(pixel.g < 250 || pixel.r > 5))
+                    ++wrong;
+            }
+        }
+        CHECK(wrong == 0);
     }
 }

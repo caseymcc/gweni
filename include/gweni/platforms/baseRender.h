@@ -114,10 +114,13 @@ public:
 
     //! Draw a stroked icon glyph (anti-aliased, SDF) in \a color: \a kind 0=checkmark,
     //! 1=chevron, 2=cross (x), 3=dash, 4=square outline, 5=restore (a square outline
-    //! with a second one behind it, offset up and right); \a direction 0=down 1=up
-    //! 2=left 3=right (chevron only). Kinds 2-5 fill the square centred in \a rect and
-    //! are stroked max(1, snap(1)) device px wide; the strokes of 3-5 are whole rows
-    //! and columns of fully covered pixels.
+    //! with a second one behind it, offset up and right), 6=rule (a separator line);
+    //! \a direction 0=down 1=up 2=left 3=right (chevron only), and for the rule
+    //! 0=horizontal 1=vertical. Kinds 2-5 fill the square centred in \a rect, and the
+    //! rule runs the whole length of \a rect through its middle; all are stroked
+    //! max(1, snap(1)) device px wide, and the strokes of 3-6 are whole rows and
+    //! columns of fully covered pixels, so a rule is as thick wherever it lands on the
+    //! pixel grid. A pixel the glyph does not cover writes nothing, depth included.
     virtual void drawIcon(size_t primitiveId, gweni::Rect rect, int kind, int direction,
         gweni::Color color, int zIndex) {}
 
