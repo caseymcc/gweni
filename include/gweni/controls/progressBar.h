@@ -47,23 +47,80 @@ public:
         return m_progress;
     }
 
+    //! While on, the label is the progress in whole percent, set only when that
+    //! number changes.
     virtual void setAutoLabel(bool b)
     {
         m_autoLabel=b;
+        m_labelPercent=-1;
     }
 
     virtual float getCycleSpeed();
     virtual void  setCycleSpeed(float f);
 
+    //! An indeterminate bar shows work of unknown length: a segment of
+    //! getSegmentLength() of the track moves along it, start to end (bottom to
+    //! top when vertical), slides out past the end and in again at the start.
+    //! It starts wholly on the track at its start. The auto label is empty
+    //! meanwhile. setProgress() still stores its value, and
+    //! setIndeterminate(false) shows it again, with its label.
+    virtual void setIndeterminate(bool indeterminate);
+    bool isIndeterminate() const
+    {
+        return m_indeterminate;
+    }
+
+    //! How fast the segment moves, in track lengths per second.
+    void setIndeterminateSpeed(float speed)
+    {
+        m_indeterminateSpeed=speed;
+    }
+    float getIndeterminateSpeed() const
+    {
+        return m_indeterminateSpeed;
+    }
+
+    //! The segment's length as a fraction of the track, 0.05..1.
+    virtual void setSegmentLength(float fraction);
+    float getSegmentLength() const
+    {
+        return m_segmentLength;
+    }
+
+    //! Where the segment is in its cycle, 0..1: at 0 it is just before the
+    //! track's start, and it leaves past the end as the phase comes to 1.
+    float getIndeterminatePhase() const
+    {
+        return m_phase;
+    }
+
+    //! The segment's rect inside \p track (the bar's render bounds), in whole
+    //! units and cut to the track: empty while it is wholly outside. The skin
+    //! draws this rect, and cycleThink() marks StateChange_Background only on a
+    //! frame it changes.
+    Rect indeterminateSegment(const Rect &track) const;
+
     virtual void cycleThink(float delta);
 
 protected:
+
+    void updateAutoLabel();
+    void advanceIndeterminate(float delta);
 
     float m_progress;
     float m_cycleSpeed;
 
     bool m_horizontal;
     bool m_autoLabel;
+    //! the percentage the auto label shows, -1 when it may show anything
+    int m_labelPercent;
+
+    bool m_indeterminate;
+    float m_indeterminateSpeed;
+    float m_segmentLength;
+    float m_phase;
+    //! the segment as last marked for drawing
+    Rect m_segmentMarked;
 };
 
 

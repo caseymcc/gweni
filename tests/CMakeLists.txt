@@ -257,6 +257,7 @@ add_executable(gweni_unit_tests
     unit/updateWalk.cpp
     unit/utf8Typing.cpp
     unit/placeholder.cpp
+    unit/progressBarIndeterminate.cpp
     unit/cursorScale.cpp
     unit/crossSplitter.cpp
     unit/windowSkin.cpp

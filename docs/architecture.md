@@ -296,6 +296,22 @@ on an OpenGL 3.3 core profile:
   previous one through its own `setSelected`, members are untoggleable, and a member
   that is deleted, or the group itself, lets the other go without an event. A selection
   change in a group therefore marks the two rows (and their labels) alone.
+- **The indeterminate ProgressBar.** `ProgressBar::setIndeterminate(true)` draws a
+  segment (`setSegmentLength`, 0.3 of the track) in the fill's slot instead of the fill,
+  moving start to end (bottom to top when vertical) at `setIndeterminateSpeed` track
+  lengths a second (0.75), sliding out past the end and in again at the start; it starts
+  wholly on the track at its start. The bar's existing animation (`ProgressBarThink`,
+  `platform::getTimeInSeconds()`, so the stepped clock in captures) advances its phase,
+  and `ProgressBar::indeterminateSegment` turns the phase into the segment's rect in
+  whole units, cut to the track (the bar's own `render()` is clipped by its parent's
+  region, not its own). The control and the renderer both use that function, and the
+  control marks `StateChange_Background` only on a frame the rect changes, so a running
+  bar writes its one fill slot per frame at most and a frame it moves less than a unit
+  writes nothing. Its auto label is empty while it runs; `setProgress` still stores the
+  value, and `setIndeterminate(false)` brings back that fill and its label. The auto
+  label is set only when the whole percentage changes. An `Elastic` bar is as high as
+  its label, so a bar whose label comes and goes is given a `Fixed` height if that must
+  not move its neighbours (ProgressBarDemo does).
 - **Scale and the device-pixel grid.** Controls lay out in logical units (integers);
   `renderer::Base::translate()` turns them into device pixels at `scale()` (set by
   `Canvas::setScale`). It snaps **edges**, not origin and size apart: a point is

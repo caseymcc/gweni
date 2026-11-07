@@ -590,18 +590,27 @@ void ProgressBar::update(renderer::Base *renderer, controls::Base *baseControl)
         renderer->drawRoundedRect(m_primitives[0], bounds, back.radius, back.borderWidth,
             back.top, back.bottom, back.border, zIndex);
 
-        float p=progress->getProgress();
-        p=(p < 0.0f) ? 0.0f : (p > 1.0f ? 1.0f : p);
-
         gweni::Rect front=bounds;
 
-        if(progress->isHorizontal())
-            front.w=(int)(bounds.w*p);
+        if(progress->isIndeterminate())
+        {
+            // the moving segment, already cut to the track: the bar's own
+            // render() is clipped by its parent's region, not its own
+            front=progress->indeterminateSegment(bounds);
+        }
         else
         {
-            // a vertical bar fills from the bottom up
-            front.h=(int)(bounds.h*p);
-            front.y=bounds.y+bounds.h-front.h;
+            float p=progress->getProgress();
+            p=(p < 0.0f) ? 0.0f : (p > 1.0f ? 1.0f : p);
+
+            if(progress->isHorizontal())
+                front.w=(int)(bounds.w*p);
+            else
+            {
+                // a vertical bar fills from the bottom up
+                front.h=(int)(bounds.h*p);
+                front.y=bounds.y+bounds.h-front.h;
+            }
         }
 
         // +1, over the track (depthLayers() reserves it)

@@ -134,6 +134,8 @@
  *                 the first differing listing line with its control path, the
  *                 differing primitive/text ids with their owning control, the
  *                 differing pixel count. Exits non-zero if any check is no.
+ *                 The clock is frozen as under --stats, so an animation (an
+ *                 indeterminate ProgressBar) is at the same place in every shot.
  *    docked       the whole Demo (dock layout + status bar) at 1024x768
  *    scroll       the five overflowing demos, idle and after a scripted scroll
  *    interaction  hover, press, disabled and focus have to repaint, checked on
@@ -221,7 +223,8 @@
  *                 shot 3 with shot 1 (listing, renderer mirror id by id,
  *                 pixels), fresh_matches the fresh shot with shot 2 (listing
  *                 and pixels). Mismatches are described as for resize. Exits
- *                 non-zero if any check is no.
+ *                 non-zero if any check is no. The clock is frozen, as for
+ *                 resize.
  *    tooltip      the canvas's tooltip on ButtonDemo, on the stepped clock
  *                 (moving even under --stats): resting on "With Tooltip" shows
  *                 nothing outside the button until the canvas's delay has
@@ -1448,6 +1451,10 @@ static bool runResizeScenario(Session &s, const std::string &controlName,
 
     ResizeState freshState, firstState, shrunkState;
 
+    // the shots are compared with each other, so nothing may move between them
+    // but what the resize moves: an animation stands still
+    s.freezeClock=true;
+
     if(!resizeSession(s, 640, 480))
         return false;
 
@@ -1513,6 +1520,9 @@ static bool runScaleScenario(Session &s, const std::string &controlName,
     const std::string back=shotDir+"/scale-03-1x.png";
 
     ResizeState freshState, firstState, doubledState, backState;
+
+    // as for resize: an animation stands still between the shots
+    s.freezeClock=true;
 
     if(!rescaleSession(s, 1.0f) || !resizeSession(s, 640, 480))
         return false;

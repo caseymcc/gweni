@@ -494,7 +494,8 @@ class ProgressBar:public textured::ControlRegister<ProgressBar>
 public:
     static void staticInit(TexturedSkin *skin);
 
-    // [0] the back (track), [1] the front (fill).
+    // [0] the back (track), [1] the front (the fill, or an indeterminate
+    // bar's moving segment).
     size_t requiredPrimitives() override { return 2; }
     // the fill is drawn at getZIndex()+1, over the track
     size_t depthLayers() override { return 2; }
