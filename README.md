@@ -92,4 +92,4 @@ output is owned by you.
 ---------------------------------------
 
 GWEN was originaly created by Garry Newman, and released under MIT License.
-https://github.com/garrynewman/GWEN
+https://github.com/garrynewman/GWEN
