@@ -357,12 +357,28 @@ public:
 
     const FrameStats &getFrameStats() const { return m_frameStats; }
 
+    //! The most slots one draw covers. Every slot is a quad, 4 vertexes and 6 indexes
+    //! in the one static 16-bit index buffer that every draw shares (slot i of a chunk
+    //! is vertexes i*4..i*4+3 from the chunk's first vertex), so the buffers are drawn
+    //! in chunks of at most this many slots, each with its vertex attributes pointed
+    //! at its first slot. 16383, not 16384: WebGL 2 always restarts the primitive at
+    //! index 0xFFFF, and 16384 quads would end on 65535. The largest index is 65531.
+    static constexpr size_t kSlotsPerChunk=16383;
+
+    //! The slots one draw covers, kSlotsPerChunk unless GWENI_INDEX_CHUNK_SLOTS=<n>
+    //! (read at construction) or setIndexChunkSlots() made it smaller. A small value
+    //! makes an ordinary scene span many chunks, which draws the same pixels.
+    size_t indexChunkSlots() const { return m_chunkSlots; }
+    //! Sets indexChunkSlots(), clamped to [1, kSlotsPerChunk]; the chunks' vertex
+    //! arrays are made again as the next flush() needs them. A test hook.
+    void setIndexChunkSlots(size_t slots);
+
     //! What every live id holds in the CPU mirrors, so two states of the UI can be
     //! compared id by id rather than as raw buffers.
     //
-    //! A primitive id's entry is the bytes of its slot: its 4 vertexes (at id*4)
-    //! followed by its 6 indexes (at id*6). A text id's entry is its hidden flag
-    //! followed by the vertexes of the glyphs in use, and not where the run sits:
+    //! A primitive id's entry is the bytes of its slot: its 4 vertexes (at id*4),
+    //! its indexes being the static quad pattern every slot shares. A text id's
+    //! entry is its hidden flag followed by the vertexes of the glyphs in use, and not where the run sits:
     //! allocateTextRun may hand the same string other slots after a free, and that
     //! draws the same. A test hook: it copies the whole mirror, so keep it out of
     //! the frame loop.
@@ -486,9 +502,12 @@ private:
     struct PrimitiveSlot
     {
         Vertex vertexes[4];
-        uint16_t indexes[6];
         Box box;
     };
+
+    //! Chunk `chunk`'s primitive vertex array, made (with its attributes pointed at the
+    //! chunk's first vertex and m_quadIndexBuffer as its element buffer) on first use.
+    uint32_t primitiveVertexArray(size_t chunk);
 
     //! Grows the CPU mirrors so the primitive's slots exist.
     void ensurePrimitiveSlots(size_t primitiveId);
@@ -566,7 +585,6 @@ private:
     unsigned char m_texturesOn;
     std::vector<glm::uvec2> m_textureSizes;
 
-    std::vector<uint16_t> m_indexes; //argue about indices all you want
     std::vector<Vertex> m_vertexes; //argue about vertices all you want
     std::vector<Box> m_clippingBoxes; //!< one per primitive slot
 
@@ -632,7 +650,6 @@ private:
     std::vector<Box> m_textClipBoxes; //!< one per glyph slot
 
     DirtySlots m_dirtyVertexSlots;
-    DirtySlots m_dirtyIndexSlots;
     DirtySlots m_dirtyClipSlots;
     DirtySlots m_dirtyTextVertexSlots;
     DirtySlots m_dirtyTextIndexSlots;
@@ -640,7 +657,6 @@ private:
 
     //element counts currently allocated on the device, per buffer
     size_t m_vertexBufferCapacity=0;
-    size_t m_indexBufferCapacity=0;
     size_t m_clipBufferCapacity=0;
     size_t m_textVertexBufferCapacity=0;
     size_t m_textIndexBufferCapacity=0;
@@ -676,10 +692,20 @@ private:
     uint32_t m_projectionUniform;
     uint32_t m_imagesUniform;
     uint32_t m_clipBoxesUniform;
+    uint32_t m_slotBaseUniform; //!< the first slot of the chunk being drawn
 
-    uint32_t m_vertexArray=0;
+    //! kSlotsPerChunk quads of uint16_t indexes (v, v+1, v+2, v+1, v+3, v+2 for v=i*4),
+    //! GL_STATIC_DRAW, filled once by init() and the element buffer of every chunk's
+    //! vertex array. A slot's indexes never change, so there is no index mirror.
+    uint32_t m_quadIndexBuffer=0;
+    //! The slots one draw covers (indexChunkSlots())
+    size_t m_chunkSlots=kSlotsPerChunk;
+
+    //! One vertex array per chunk of m_chunkSlots primitive slots, made as the slot
+    //! count first reaches it (primitiveVertexArray()); chunk c's attributes start at
+    //! vertex c*m_chunkSlots*4.
+    std::vector<uint32_t> m_vertexArrays;
     uint32_t m_vertexBuffer=0;
-    uint32_t m_indexBuffer=0;
     uint32_t m_clipBuffer=0;
     uint32_t m_clipTexture=0; //!< GL_TEXTURE_BUFFER view of m_clipBuffer
 

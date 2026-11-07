@@ -206,12 +206,26 @@ GPU buffer). The same control/skin code drives both.
 `source/platforms/renderers/OpenGLCore/openglCore.cpp` implements the retained model
 on an OpenGL 3.3 core profile:
 
-- One VAO + one vertex buffer (`m_vertexBuffer` / CPU mirror `m_vertexes`) + one index
-  buffer (`m_indexBuffer` / `m_indexes`). Text has its own freetype-gl-backed buffer
-  (`m_textVertexes`).
-- **A primitive id is a fixed slot in those buffers**: vertices live at `id*4` (a quad),
-  indices at `id*6`. `generatePrimitive()` pulls a free id from a bank
+- One vertex buffer (`m_vertexBuffer` / CPU mirror `m_vertexes`), drawn over one
+  **static 16-bit quad index buffer** (`m_quadIndexBuffer`): `kSlotsPerChunk` (16383)
+  quads of `v, v+1, v+2, v+1, v+3, v+2` with `v = i*4`, filled once by `init()`. A
+  slot's indices never change, so there is no index mirror and no index upload. Text
+  has its own freetype-gl-backed buffer (`m_textVertexes`).
+- **A primitive id is a fixed slot in the vertex buffer**: its vertices live at `id*4`
+  (a quad). `generatePrimitive()` pulls a free id from a bank
   (`getPrimitiveId`, `include/gweni/primitiveIds.h`) and grows the CPU buffers.
+- **Chunked draws.** A 16-bit index of `id*4` cannot reach past slot 16383, so the
+  slots are drawn in chunks of at most `kSlotsPerChunk`: chunk `c` has a vertex array
+  of its own (`primitiveVertexArray(c)`, made on first use) whose attributes start at
+  slot `c*kSlotsPerChunk`'s first vertex, and is one `glDrawElements` of its slots'
+  `count*6` indices from the start of the static buffer, in ascending slot order, so
+  blending and depth are those of one draw over the whole buffer. Today's scenes are
+  one chunk, one draw. 16383 rather than 16384 keeps the largest index at 65531:
+  WebGL 2 always restarts the primitive at `0xFFFF`. No `glDrawElementsBaseVertex` and
+  no 32-bit indices, so this holds on GLES and WebGL. `GWENI_INDEX_CHUNK_SLOTS=<n>`
+  (read at construction; `setIndexChunkSlots()` in tests) makes the chunks `n` slots,
+  which must draw the same pixels; `controltest_index_chunks` checks every
+  `--shot-all` PNG and the hero `--screenshot` byte for byte at 64.
 - Each `Vertex` is 16 16-bit fields, 32 bytes:
   `{ style, x, y, z, tx, ty, lx, ly, radius, border, cx, cy, bx, by, dx, dy }`.
   `x, y` are the corner's device-pixel position, **signed** (`int16_t`, read as an
@@ -412,10 +426,11 @@ on an OpenGL 3.3 core profile:
   `x1 >= x0`, `y1 >= y0`, so an empty region is an empty box. Each list is uploaded
   like the vertices (dirty slots only, compared by bytes) and read by the fragment
   shaders as a `GL_RGBA16UI` buffer texture, then `discard` outside
-  `[x0,x1) x [y0,y1)`. The primitive shader fetches it at `gl_PrimitiveID >> 1`, which
-  is the slot only because the primitive buffer is drawn with **one `glDrawElements`
-  from index 0** and every slot is exactly 4 vertices / 6 indices (2 triangles), hidden
-  and degenerate ones included; splitting or offsetting that draw breaks it. The text
+  `[x0,x1) x [y0,y1)`. The primitive shader fetches it at `slotBase + (gl_PrimitiveID >> 1)`:
+  each chunk is drawn from index 0 of its own slots and every slot is exactly 4
+  vertices / 6 indices (2 triangles), hidden and degenerate ones included, so
+  `gl_PrimitiveID >> 1` is the slot within the chunk, and the `slotBase` uniform, set
+  per chunk, its first slot. The text
   shader takes the slot from the vertex instead (`gl_VertexID >> 2`, flat), because the
   text is split into one draw per atlas (below). `startClip()`/`endClip()` do nothing in this
   renderer. `GWENI_CLIP_DEBUG=<inset px>` shrinks every box by the inset on each side,
@@ -536,7 +551,8 @@ What exists today (the foundation) and what's still aspirational:
 - State-change tracking; unchanged controls emit no renderer calls, and the render
   walk skips every subtree with nothing pending in it, so a settled frame visits no
   control (`ChangeStats::visited`).
-- Persistent primitive-id-indexed CPU vertex/index buffers in OpenGLCore; per-control
+- Persistent primitive-id-indexed CPU vertex buffers in OpenGLCore, drawn in chunks
+  over one static 16-bit quad index buffer; per-control
   primitive ownership via `skin::Control`.
 - **Incremental GPU upload.** `OpenGLCore::flush()` tracks which primitive slots were
   written and uploads only those, coalesced into contiguous `glBufferSubData` ranges;

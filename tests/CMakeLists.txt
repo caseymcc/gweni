@@ -54,6 +54,25 @@ if(TARGET ControlTest)
         LABELS gpu
         TIMEOUT 600)
 
+    # every --shot-all PNG (and OpenGLCore's --screenshot) byte-identical with the
+    # draws split into chunks of 64 slots (GWENI_INDEX_CHUNK_SLOTS) and without
+    set(index_chunks_opengl)
+    if(TARGET OpenGLCore)
+        set(index_chunks_opengl -DOPENGLCORE=$<TARGET_FILE:OpenGLCore>)
+    endif()
+    add_test(NAME controltest_index_chunks
+        COMMAND ${CMAKE_COMMAND}
+            -DCONTROLTEST=$<TARGET_FILE:ControlTest>
+            ${index_chunks_opengl}
+            -DSOURCE_DIR=${GWENI_SOURCE_DIR}
+            -DSCRATCH_DIR=${CMAKE_CURRENT_BINARY_DIR}/index_chunks
+            -DCHUNK_SLOTS=64
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/indexChunks.cmake
+        WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
+    set_tests_properties(controltest_index_chunks PROPERTIES
+        LABELS gpu
+        TIMEOUT 600)
+
     # the README samples in docs/images/, byte-identical to a fresh capture
     # (tools/capture_samples.sh --check; regenerate them in the same commit)
     if(TARGET OpenGLCore)
@@ -330,6 +349,7 @@ if(TARGET gweni_capture)
         fillStyles.cpp
         iconGlyphs.cpp
         clipBoxes.cpp
+        indexChunks.cpp
         scaledEdges.cpp
         scaledText.cpp
         textureReload.cpp

@@ -65,7 +65,6 @@ namespace renderer
 {
 
 static constexpr size_t minPrimitiveSize=512;
-static constexpr size_t minIndexSize=minPrimitiveSize*6;
 static constexpr size_t minVertexSize=minPrimitiveSize*4;
 static constexpr size_t minClippingSize=minPrimitiveSize;
 
@@ -582,9 +581,10 @@ OpenGLCore::GLObjectNames OpenGLCore::getGLObjectNames() const
 {
     GLObjectNames names;
 
-    names.buffers={m_vertexBuffer, m_indexBuffer, m_clipBuffer,
+    names.buffers={m_vertexBuffer, m_quadIndexBuffer, m_clipBuffer,
         m_textVertexBuffer, m_textIndexBuffer, m_textClipBuffer};
-    names.vertexArrays={m_vertexArray, m_textVertexArray};
+    names.vertexArrays=std::vector<unsigned int>(m_vertexArrays.begin(), m_vertexArrays.end());
+    names.vertexArrays.push_back(m_textVertexArray);
     names.textures={m_clipTexture, m_textClipTexture};
     names.programs={m_program, m_textProgram};
     return names;
@@ -643,16 +643,28 @@ OpenGLCore::OpenGLCore(ResourcePaths &paths, const Rect &viewRect)
     , m_context(nullptr)
     , m_viewRect(viewRect)
     , m_currentTexture(0)
-//    , m_indexes(minIndexSize)
 //    , m_vertexes(minVertexSize)
 //    , m_clippingBoxes(minClippingSize)
 {
-    m_indexes.reserve(minIndexSize);
     m_vertexes.reserve(minVertexSize);
 
     m_clippingBoxes.reserve(minClippingSize);
 
     m_uploadStats=(getenv("GWENI_UPLOAD_STATS") != nullptr);
+
+    // set but empty, or not a number, keeps the default
+    if(const char *chunkSlots=getenv("GWENI_INDEX_CHUNK_SLOTS"))
+    {
+        char *end=nullptr;
+        const unsigned long long value=strtoull(chunkSlots, &end, 10);
+
+        if((end != chunkSlots) && (*end == '\0') && (chunkSlots[0] != '-'))
+            m_chunkSlots=(size_t)std::min<unsigned long long>(std::max(value, 1ull), kSlotsPerChunk);
+        else if(chunkSlots[0] != '\0')
+            gweni::log::write(log::Level::Error,
+                "GWENI_INDEX_CHUNK_SLOTS=%s: not a slot count; draws keep %zu slots",
+                chunkSlots, kSlotsPerChunk);
+    }
     m_sdfTextMin=defaultSdfTextMin;
     const char *sdfTextMin=getenv("GWENI_SDF_TEXT_MIN");
 
@@ -715,21 +727,22 @@ OpenGLCore::~OpenGLCore()
     std::fill(std::begin(m_imageUnits), std::end(m_imageUnits), 0u);
 
     // nothing below exists before init()
-    if(m_vertexArray == 0)
+    if(m_quadIndexBuffer == 0)
         return;
 
     glBindVertexArray(0);
     // a program still in use is only flagged for deletion
     glUseProgram(0);
 
-    const GLuint vertexArrays[]={m_vertexArray, m_textVertexArray};
-    const GLuint buffers[]={m_vertexBuffer, m_indexBuffer, m_clipBuffer,
+    const GLuint buffers[]={m_vertexBuffer, m_quadIndexBuffer, m_clipBuffer,
         m_textVertexBuffer, m_textIndexBuffer, m_textClipBuffer};
     const GLuint textures[]={m_clipTexture, m_textClipTexture};
 
     // deleting a bound object unbinds it, so another renderer in this context
     // finds nothing of these left bound; it binds its own every flush()
-    glDeleteVertexArrays(2, vertexArrays);
+    if(!m_vertexArrays.empty())
+        glDeleteVertexArrays((GLsizei)m_vertexArrays.size(), m_vertexArrays.data());
+    glDeleteVertexArrays(1, &m_textVertexArray);
     glDeleteBuffers(6, buffers);
     glDeleteTextures(2, textures);
     glDeleteProgram(m_program);
@@ -775,7 +788,6 @@ void OpenGLCore::init()
 
     //the buffers below are freshly created, so nothing of the mirror is on the device yet
     m_vertexBufferCapacity=0;
-    m_indexBufferCapacity=0;
     m_clipBufferCapacity=0;
     m_textVertexBufferCapacity=0;
     m_textIndexBufferCapacity=0;
@@ -786,36 +798,35 @@ void OpenGLCore::init()
     setClipRegion(m_viewRect);
 
     // Creating buffers
-    glCreateVertexArrays(1, &m_vertexArray);
     glCreateBuffers(1, &m_vertexBuffer);
-    glCreateBuffers(1, &m_indexBuffer);
+    glCreateBuffers(1, &m_quadIndexBuffer);
     glCreateBuffers(1, &m_clipBuffer);
 
-    //setup vertex array
-    glBindVertexArray(m_vertexArray);
+    // Every chunk draws its slots from vertex 0 of its own attribute base, so one
+    // pattern of kSlotsPerChunk quads serves every chunk and never changes.
+    {
+        std::vector<uint16_t> quads(kSlotsPerChunk*6);
 
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m_indexBuffer);
+        for(size_t slot=0; slot<kSlotsPerChunk; ++slot)
+        {
+            const uint16_t v=static_cast<uint16_t>(slot*4);
+            uint16_t *quad=&quads[slot*6];
 
-    glBindBuffer(GL_ARRAY_BUFFER, m_vertexBuffer);
-    size_t attrib=0;
-    glEnableVertexAttribArray(attrib); // Attrib '0' is render type
-    glVertexAttribIPointer(attrib++, 1, GL_UNSIGNED_SHORT, sizeof(Vertex), (GLvoid*)(offsetof(Vertex, style)));
-    glEnableVertexAttribArray(attrib); // Attrib '1' is vertex pos (signed device px, and z)
-    glVertexAttribIPointer(attrib++, 3, GL_SHORT, sizeof(Vertex), (GLvoid*)(offsetof(Vertex, x)));
-    glEnableVertexAttribArray(attrib); // Attrib '2' is texture coord or packeted color0
-    glVertexAttribIPointer(attrib++, 2, GL_UNSIGNED_SHORT, sizeof(Vertex), (GLvoid*)(offsetof(Vertex, tx)));
-    glEnableVertexAttribArray(attrib); // Attrib '3' is SDF local position (signed)
-    glVertexAttribIPointer(attrib++, 2, GL_SHORT, sizeof(Vertex), (GLvoid*)(offsetof(Vertex, lx)));
-    glEnableVertexAttribArray(attrib); // Attrib '4' is SDF radius + border
-    glVertexAttribIPointer(attrib++, 2, GL_UNSIGNED_SHORT, sizeof(Vertex), (GLvoid*)(offsetof(Vertex, radius)));
-    glEnableVertexAttribArray(attrib); // Attrib '5' is SDF gradient color1 (packed)
-    glVertexAttribIPointer(attrib++, 2, GL_UNSIGNED_SHORT, sizeof(Vertex), (GLvoid*)(offsetof(Vertex, cx)));
-    glEnableVertexAttribArray(attrib); // Attrib '6' is SDF border color (packed)
-    glVertexAttribIPointer(attrib++, 2, GL_UNSIGNED_SHORT, sizeof(Vertex), (GLvoid*)(offsetof(Vertex, bx)));
-    glEnableVertexAttribArray(attrib); // Attrib '7' is color3 (packed): bilinear bottom edge / checker dark
-    glVertexAttribIPointer(attrib++, 2, GL_UNSIGNED_SHORT, sizeof(Vertex), (GLvoid*)(offsetof(Vertex, dx)));
+            quad[0]=v;
+            quad[1]=v+1;
+            quad[2]=v+2;
+            quad[3]=v+1;
+            quad[4]=v+3;
+            quad[5]=v+2;
+        }
 
-    glBindVertexArray(0);
+        glBindVertexArray(0);
+        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m_quadIndexBuffer);
+        glBufferData(GL_ELEMENT_ARRAY_BUFFER, quads.size()*sizeof(uint16_t), quads.data(), GL_STATIC_DRAW);
+    }
+
+    // the chunks' vertex arrays are made as flush() first draws them
+    m_vertexArrays.clear();
 
     //setup text vertex array
     glCreateVertexArrays(1, &m_textVertexArray);
@@ -929,8 +940,10 @@ in vec2 vPixel;
 // sampler array only with a constant, hence the switch.
 uniform sampler2D images[8];
 // One Box (x0, y0, x1, y1) per primitive slot. A slot is 2 triangles, and the buffer
-// is drawn in one glDrawElements from index 0, so gl_PrimitiveID >> 1 is the slot.
+// is drawn in chunks, each from index 0 of its own slots, so gl_PrimitiveID >> 1 is
+// the slot within the chunk and slotBase the chunk's first slot.
 uniform usamplerBuffer clipBoxes;
+uniform int slotBase;
 
 // Signed distance to a rounded box centered at the origin (negative inside).
 float sdRoundBox(vec2 p, vec2 b, float r)
@@ -1011,7 +1024,7 @@ void main()
 {
     // Tested here, discarded at the end: the derivatives below (dFdx/dFdy, fwidth)
     // want the whole quad alive.
-    uvec4 clip = texelFetch(clipBoxes, gl_PrimitiveID >> 1);
+    uvec4 clip = texelFetch(clipBoxes, slotBase + (gl_PrimitiveID >> 1));
     bool clipped = any(lessThan(vPixel, vec2(clip.xy))) || any(greaterThanEqual(vPixel, vec2(clip.zw)));
     vec2 uvDx = dFdx(TexCoords);
     vec2 uvDy = dFdy(TexCoords);
@@ -1168,6 +1181,7 @@ void main()
     m_projectionUniform=glGetUniformLocation(m_program, "projection");
     m_imagesUniform=glGetUniformLocation(m_program, "images");
     m_clipBoxesUniform=glGetUniformLocation(m_program, "clipBoxes");
+    m_slotBaseUniform=glGetUniformLocation(m_program, "slotBase");
 
     auto textVertexSource=R"(
  #version 330 core
@@ -1341,13 +1355,68 @@ void OpenGLCore::end()
     flush();
 }
 
+uint32_t OpenGLCore::primitiveVertexArray(size_t chunk)
+{
+    while(m_vertexArrays.size() <= chunk)
+    {
+        // chunk n's vertex 0 is slot n*m_chunkSlots's first vertex
+        const size_t base=m_vertexArrays.size()*m_chunkSlots*4*sizeof(Vertex);
+        auto at=[base](size_t offset){ return reinterpret_cast<const GLvoid *>(base+offset); };
+        GLuint vertexArray=0;
+
+        glCreateVertexArrays(1, &vertexArray);
+        glBindVertexArray(vertexArray);
+
+        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m_quadIndexBuffer);
+
+        glBindBuffer(GL_ARRAY_BUFFER, m_vertexBuffer);
+        GLuint attrib=0;
+        glEnableVertexAttribArray(attrib); // Attrib '0' is render type
+        glVertexAttribIPointer(attrib++, 1, GL_UNSIGNED_SHORT, sizeof(Vertex), at(offsetof(Vertex, style)));
+        glEnableVertexAttribArray(attrib); // Attrib '1' is vertex pos (signed device px, and z)
+        glVertexAttribIPointer(attrib++, 3, GL_SHORT, sizeof(Vertex), at(offsetof(Vertex, x)));
+        glEnableVertexAttribArray(attrib); // Attrib '2' is texture coord or packeted color0
+        glVertexAttribIPointer(attrib++, 2, GL_UNSIGNED_SHORT, sizeof(Vertex), at(offsetof(Vertex, tx)));
+        glEnableVertexAttribArray(attrib); // Attrib '3' is SDF local position (signed)
+        glVertexAttribIPointer(attrib++, 2, GL_SHORT, sizeof(Vertex), at(offsetof(Vertex, lx)));
+        glEnableVertexAttribArray(attrib); // Attrib '4' is SDF radius + border
+        glVertexAttribIPointer(attrib++, 2, GL_UNSIGNED_SHORT, sizeof(Vertex), at(offsetof(Vertex, radius)));
+        glEnableVertexAttribArray(attrib); // Attrib '5' is SDF gradient color1 (packed)
+        glVertexAttribIPointer(attrib++, 2, GL_UNSIGNED_SHORT, sizeof(Vertex), at(offsetof(Vertex, cx)));
+        glEnableVertexAttribArray(attrib); // Attrib '6' is SDF border color (packed)
+        glVertexAttribIPointer(attrib++, 2, GL_UNSIGNED_SHORT, sizeof(Vertex), at(offsetof(Vertex, bx)));
+        glEnableVertexAttribArray(attrib); // Attrib '7' is color3 (packed): bilinear bottom edge / checker dark
+        glVertexAttribIPointer(attrib++, 2, GL_UNSIGNED_SHORT, sizeof(Vertex), at(offsetof(Vertex, dx)));
+
+        glBindVertexArray(0);
+        m_vertexArrays.push_back(vertexArray);
+    }
+
+    return m_vertexArrays[chunk];
+}
+
+void OpenGLCore::setIndexChunkSlots(size_t slots)
+{
+    slots=std::min(std::max<size_t>(slots, 1), kSlotsPerChunk);
+
+    if(slots == m_chunkSlots)
+        return;
+
+    m_chunkSlots=slots;
+
+    // their attributes start at the old chunk size's slots
+    if(!m_vertexArrays.empty())
+    {
+        glBindVertexArray(0);
+        glDeleteVertexArrays((GLsizei)m_vertexArrays.size(), m_vertexArrays.data());
+        m_vertexArrays.clear();
+    }
+}
+
 void OpenGLCore::ensurePrimitiveSlots(size_t primitiveId)
 {
     if(m_clippingBoxes.size() < primitiveId+1)
         m_clippingBoxes.resize(primitiveId+1);
-
-    if(m_indexes.size() < primitiveId*6+6)
-        m_indexes.resize(primitiveId*6+6);
 
     if(m_vertexes.size() < primitiveId*4+4)
         m_vertexes.resize(primitiveId*4+4);
@@ -1356,7 +1425,6 @@ void OpenGLCore::ensurePrimitiveSlots(size_t primitiveId)
 void OpenGLCore::readPrimitiveSlot(size_t primitiveId, PrimitiveSlot &slot) const
 {
     memcpy(slot.vertexes, &m_vertexes[primitiveId*4], sizeof(slot.vertexes));
-    memcpy(slot.indexes, &m_indexes[primitiveId*6], sizeof(slot.indexes));
     slot.box=m_clippingBoxes[primitiveId];
 }
 
@@ -1364,8 +1432,7 @@ OpenGLCore::MirrorSnapshot OpenGLCore::snapshotMirror() const
 {
     MirrorSnapshot snapshot;
 
-    const size_t primitiveLimit=std::min(primitiveIdCount(),
-        std::min(m_vertexes.size()/4, m_indexes.size()/6));
+    const size_t primitiveLimit=std::min(primitiveIdCount(), m_vertexes.size()/4);
 
     for(size_t id=0; id<primitiveLimit; ++id)
     {
@@ -1373,11 +1440,8 @@ OpenGLCore::MirrorSnapshot OpenGLCore::snapshotMirror() const
             continue;
 
         const uint8_t *vertexes=reinterpret_cast<const uint8_t *>(&m_vertexes[id*4]);
-        const uint8_t *indexes=reinterpret_cast<const uint8_t *>(&m_indexes[id*6]);
-        std::vector<uint8_t> &bytes=snapshot.primitives[id];
 
-        bytes.assign(vertexes, vertexes+4*sizeof(Vertex));
-        bytes.insert(bytes.end(), indexes, indexes+6*sizeof(uint16_t));
+        snapshot.primitives[id].assign(vertexes, vertexes+4*sizeof(Vertex));
     }
 
     const size_t textLimit=std::min(textIdCount(), m_textRuns.size());
@@ -1409,12 +1473,6 @@ void OpenGLCore::markPrimitiveChanges(size_t primitiveId, const PrimitiveSlot &b
     if(memcmp(before.vertexes, &m_vertexes[primitiveId*4], sizeof(before.vertexes)) != 0)
     {
         m_dirtyVertexSlots.mark(primitiveId);
-        written=true;
-    }
-
-    if(memcmp(before.indexes, &m_indexes[primitiveId*6], sizeof(before.indexes)) != 0)
-    {
-        m_dirtyIndexSlots.mark(primitiveId);
         written=true;
     }
 
@@ -1527,7 +1585,7 @@ void OpenGLCore::flush()
             ++m_frameStats.textSlotsWritten;
     }
     m_frameStats.mirrorBytes=
-        m_vertexes.size()*sizeof(Vertex)+m_indexes.size()*sizeof(uint16_t)
+        m_vertexes.size()*sizeof(Vertex)
         +m_clippingBoxes.size()*sizeof(Box)
         +m_textVertexes.size()*sizeof(glyph_vertex_t)+m_textIndexes.size()*sizeof(uint32_t)
         +m_textClipBoxes.size()*sizeof(Box);
@@ -1539,9 +1597,6 @@ void OpenGLCore::flush()
     if(!m_vertexes.empty())
     {
         //copy only the primitive slots that changed since the last frame
-        uploadDirty(GL_ELEMENT_ARRAY_BUFFER, m_indexBuffer, m_indexBufferCapacity,
-            m_indexes.data(), sizeof(uint16_t), m_indexes.size(), m_dirtyIndexSlots, 6);
-
         uploadDirty(GL_ARRAY_BUFFER, m_vertexBuffer, m_vertexBufferCapacity,
             m_vertexes.data(), sizeof(Vertex), m_vertexes.size(), m_dirtyVertexSlots, 4);
 
@@ -1577,14 +1632,24 @@ void OpenGLCore::flush()
         }
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, m_currentTexture);
-        glBindVertexArray(m_vertexArray);
 
-        // The fragment shader finds a fragment's clip box at gl_PrimitiveID >> 1, which
-        // is its slot only because the whole buffer is ONE draw starting at index 0,
-        // with exactly 4 vertexes and 6 indexes (2 triangles) per slot, hidden ones
-        // included. Splitting this draw or giving it an offset breaks clipping.
-        glDrawElements(GL_TRIANGLES, m_indexes.size(), (GLenum)GL_UNSIGNED_SHORT, 0);
-        ++m_frameStats.drawCalls;
+        // One draw per chunk of m_chunkSlots slots, in slot order as a single draw
+        // over the whole buffer would go, so blending and depth come out the same.
+        // Each draws its slots, hidden ones included, as 4 vertexes and 6 indexes
+        // (2 triangles) apiece from the start of the static quad index buffer, with
+        // the chunk's vertex array pointing the attributes at its first slot; the
+        // fragment shader's slot is then slotBase + (gl_PrimitiveID >> 1).
+        const size_t slots=m_vertexes.size()/4;
+
+        for(size_t first=0; first<slots; first+=m_chunkSlots)
+        {
+            const size_t count=std::min(slots-first, m_chunkSlots);
+
+            glBindVertexArray(primitiveVertexArray(first/m_chunkSlots));
+            glProgramUniform1i(m_program, m_slotBaseUniform, (GLint)first);
+            glDrawElements(GL_TRIANGLES, (GLsizei)(count*6), (GLenum)GL_UNSIGNED_SHORT, 0);
+            ++m_frameStats.drawCalls;
+        }
 
         glBindVertexArray(0);
     }
@@ -1867,7 +1932,6 @@ void OpenGLCore::drawFilledRect(size_t primitiveId, gweni::Rect rect, int zIndex
 
     translate(rect);
 
-    size_t index=primitiveId*6;
     size_t vertexIndex=primitiveId*4;
 
     ensurePrimitiveSlots(primitiveId);
@@ -1877,13 +1941,6 @@ void OpenGLCore::drawFilledRect(size_t primitiveId, gweni::Rect rect, int zIndex
     readPrimitiveSlot(primitiveId, before);
 
     m_clippingBoxes[primitiveId]=makeClipBox();
-
-    m_indexes[index++]=vertexIndex;
-    m_indexes[index++]=vertexIndex+1;
-    m_indexes[index++]=vertexIndex+2;
-    m_indexes[index++]=vertexIndex+1;
-    m_indexes[index++]=vertexIndex+3;
-    m_indexes[index++]=vertexIndex+2;
 
 #ifdef DEBUG_RENDER
     std::cout<<"Rendering Fill: "<<primitiveId<<"("<<rect.x<<", "<<rect.y<<", "<<rect.w<<", "<<rect.h<<" : "<<zIndex<<") color: "<<(int)m_color.r<<", "<<(int)m_color.g<<", "<<(int)m_color.b<<", "<<(int)m_color.a<<"\n";
@@ -1948,7 +2005,6 @@ void OpenGLCore::writeRoundedQuad(size_t primitiveId, gweni::Rect rect, int zInd
 
     translate(rect);
 
-    size_t index=primitiveId*6;
     size_t vertexIndex=primitiveId*4;
 
     ensurePrimitiveSlots(primitiveId);
@@ -1958,13 +2014,6 @@ void OpenGLCore::writeRoundedQuad(size_t primitiveId, gweni::Rect rect, int zInd
     readPrimitiveSlot(primitiveId, before);
 
     m_clippingBoxes[primitiveId]=makeClipBox();
-
-    m_indexes[index++]=vertexIndex;
-    m_indexes[index++]=vertexIndex+1;
-    m_indexes[index++]=vertexIndex+2;
-    m_indexes[index++]=vertexIndex+1;
-    m_indexes[index++]=vertexIndex+3;
-    m_indexes[index++]=vertexIndex+2;
 
     // The quad is the rect, and the SDF's local position runs from -size/2 to
     // +size/2 across it, so the drawn shape and the quad coincide exactly at any
@@ -2015,7 +2064,6 @@ void OpenGLCore::drawIcon(size_t primitiveId, gweni::Rect rect, int kind, int di
 
     translate(rect);
 
-    size_t index=primitiveId*6;
     size_t vertexIndex=primitiveId*4;
 
     ensurePrimitiveSlots(primitiveId);
@@ -2025,13 +2073,6 @@ void OpenGLCore::drawIcon(size_t primitiveId, gweni::Rect rect, int kind, int di
     readPrimitiveSlot(primitiveId, before);
 
     m_clippingBoxes[primitiveId]=makeClipBox();
-
-    m_indexes[index++]=vertexIndex;
-    m_indexes[index++]=vertexIndex+1;
-    m_indexes[index++]=vertexIndex+2;
-    m_indexes[index++]=vertexIndex+1;
-    m_indexes[index++]=vertexIndex+3;
-    m_indexes[index++]=vertexIndex+2;
 
     // the quad is the rect, lx/ly in half-pixel units as in writeRoundedQuad
     const int x0=rect.x;
@@ -2149,7 +2190,6 @@ void OpenGLCore::drawTexturedRect(const gweni::Texture &texture, size_t primitiv
 
     m_activeProgram=1;
 
-    size_t index=primitiveId*6;
     size_t vertexIndex=primitiveId*4;
 
     ensurePrimitiveSlots(primitiveId);
@@ -2159,13 +2199,6 @@ void OpenGLCore::drawTexturedRect(const gweni::Texture &texture, size_t primitiv
     readPrimitiveSlot(primitiveId, before);
 
     m_clippingBoxes[primitiveId]=makeClipBox();
-
-    m_indexes[index++]=vertexIndex;
-    m_indexes[index++]=vertexIndex+1;
-    m_indexes[index++]=vertexIndex+2;
-    m_indexes[index++]=vertexIndex+1;
-    m_indexes[index++]=vertexIndex+3;
-    m_indexes[index++]=vertexIndex+2;
 
 #ifdef DEBUG_RENDER
     std::cout<<"Rendering: "<<primitiveId<<"("<<rect.x<<", "<<rect.y<<", "<<rect.w<<", "<<rect.h<<" : "<<zIndex<<")\n";
