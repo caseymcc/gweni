@@ -335,6 +335,12 @@ bool TexturedSkin::loadConfig(std::string configFileName)
         return unusable();
     }
 
+    if(!jsonDoc.IsObject())
+    {
+        std::cerr<<"Skin config "<<configPath<<" is not a JSON object\n";
+        return unusable();
+    }
+
     // a missing atlas is reported and init fails, but the rest of the config
     // still applies: no converted control draws from it
     bool textureLoaded=true;

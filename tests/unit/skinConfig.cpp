@@ -146,6 +146,11 @@ TEST_CASE("TexturedSkin::init with a config it cannot use paints every surface m
         dir.write("DefaultSkin.json", "");
     }
 
+    SUBCASE("DefaultSkin.json that parses but is not an object")
+    {
+        dir.write("DefaultSkin.json", "[1]\n");
+    }
+
     skin::textured::TexturedSkin skin(&renderer);
     const InitResult result=initSkin(skin);
 

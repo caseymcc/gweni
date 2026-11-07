@@ -126,7 +126,7 @@ inline OffsetInfo getOffsetInfo(std::vector<char> &buffer, size_t offset)
 {
     size_t line;
     size_t pos;
-    size_t linePos;
+    size_t linePos=0;
     
     line=1;
     offset=std::min(offset, buffer.size());
