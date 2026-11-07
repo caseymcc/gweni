@@ -71,11 +71,20 @@ void resetPhases();
 const PhaseTotals &phaseTotals();
 
 //-----------------------------------------------------------------------------
-// Profiling. Under callgrind (tools/profile.sh), cost is collected only while
-// collection is on and a phase other than None runs: enterPhase() switches it
-// with client requests, so setup, EGL and GL init, resource loading, the
-// primer, warm-up frames, glClear, the bench's own bookkeeping and teardown
-// are never in the profile. Outside valgrind the requests do nothing.
+// Profiling. Under callgrind (tools/profile.sh, which starts it with
+// --instr-atstart=no --collect-atstart=no), the measured work is instrumented
+// and only the phases are collected, both switched with client requests
+// (bench/callgrind.h):
+// setCollecting() starts instrumentation for the build scene's construction
+// and for the measured frames and stops it after them, and enterPhase()
+// collects while a phase other than None runs. So setup, EGL and GL init,
+// resource loading, the primer, warm-up frames, glClear, the bench's own
+// bookkeeping and teardown are never in the profile. Collection alone would
+// keep their costs out but still count their calls at call sites the frames
+// share (a "(25x)" for 20 frames); uninstrumented they run at nearly native
+// speed too. Starting instrumentation discards valgrind's translations, which
+// is why it is switched only around those two stretches, and collection per
+// phase. Outside valgrind the requests do nothing.
 //
 // Each phase's work also runs inside a marker function of its own,
 // gweni_bench_phase_<name> (inPhase()), and the per-phase instruction counts
@@ -89,7 +98,8 @@ const PhaseTotals &phaseTotals();
 // phase is its marker's cost minus the flush marker's.
 //-----------------------------------------------------------------------------
 
-//! Whether the measured phases are collected from now on (off at start).
+//! Whether the measured phases are instrumented and collected from now on
+//! (off at start).
 void setCollecting(bool collecting);
 
 //! Runs body(context) in \a phase's marker function.
