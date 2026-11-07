@@ -40,10 +40,23 @@ canvas->renderCanvas();   // 2. render: issue only the draw-state changes needed
 No rendering-API calls happen here.
 
 Like the render walk, it enters only what changed. There is no per-control `think()`:
-`Canvas::doThink()` runs the delayed deletes, `anim::think()` (the animations, kept per
-control: a `ProgressBar`'s cycle, a `TextBox`'s caret blink), the layout passes, which
-stop at controls with nothing to lay out (`Base::recurseLayout`), and
-`input::onCanvasThink`. The z indices are numbered depth-first, each control taking its
+`Canvas::doThink()` runs the delayed deletes, `anim::think(this)` (the animations), the
+layout passes, which stop at controls with nothing to lay out (`Base::recurseLayout`),
+and `input::onCanvasThink`. The animation registry (`source/anim.cpp`) holds only
+animations with work to do: a `TextBox`'s caret blink from the focus arriving until it
+leaves, a `ProgressBar`'s while it cycles or is indeterminate at a non-zero speed, and a
+timed animation (`anim_widthIn`, `anim::pos::X`, `anim::tools::Remove`, ...) until it
+finishes. `anim::think(canvas)` runs, in the order they were added, those whose control
+is on that canvas (`getCanvas()`, looked up when it runs, so a control moved to another
+canvas animates there and one on no canvas, or on a hidden canvas, does not run), so
+with several canvases each animation runs once a frame, in its own canvas's update
+phase before that canvas's layout. An animation may add or cancel animations, or delete
+controls, from inside its `think()`: removal waits until the loop ends.
+`anim::cancel(control, animation)` removes one animation and leaves the control's
+others. `UpdateStats::animsRun` (`anims_run=` in `ControlTest --stats` and
+`gweni_bench`) counts the animations a canvas's update ran: 0 on a settled frame with no
+focused TextBox and no moving bar (Demo's 2 are ProgressBarDemo's indeterminate bars).
+`tests/unit/animations.cpp` pins it. The z indices are numbered depth-first, each control taking its
 skin Control's `depthLayers()`, and that numbering only changes with the tree order, so
 the canvas renumbers only on a frame after something called `Canvas::invalidateZOrder()`.
 `Base` does for each order change: `addChild`/`addChildOfLayout`/`removeChild` (so a
@@ -479,7 +492,7 @@ on an OpenGL 3.3 core profile:
   (`makeCaretVisible`), and marks `StateChange_Background` only when one changed; the
   renderer adds the box's render position and cuts them to the box. The blink is an
   animation (`TextBox::updateCaretBlink`, 0.5 s, lit for 1.5 s after an edit, a move or
-  the focus arriving) that raises `StateChange_Caret` alone, which shows or hides the
+  the focus arriving; registered only while the box has the focus) that raises `StateChange_Caret` alone, which shows or hides the
   caret slot and rewrites nothing else: one 128-byte upload per edge
   (`GWENI_UPLOAD_STATS=1`), nothing in between, and nothing at all while unfocused. The
   selection colour is the `TextSelection` surface (`tokyoNight.h`, overridable in
@@ -538,8 +551,9 @@ on an OpenGL 3.3 core profile:
   segment (`setSegmentLength`, 0.3 of the track) in the fill's slot instead of the fill,
   moving start to end (bottom to top when vertical) at `setIndeterminateSpeed` track
   lengths a second (0.75), sliding out past the end and in again at the start; it starts
-  wholly on the track at its start. The bar's existing animation (`ProgressBarThink`,
-  `platform::getTimeInSeconds()`, so the stepped clock in captures) advances its phase,
+  wholly on the track at its start. The bar's animation (`ProgressBarThink`,
+  `platform::getTimeInSeconds()`, so the stepped clock in captures; registered only
+  while the bar moves, its first step the time since it started) advances its phase,
   and `ProgressBar::indeterminateSegment` turns the phase into the segment's rect in
   whole units, cut to the track (the bar's own `render()` is clipped by its parent's
   region, not its own). The control and the renderer both use that function, and the
@@ -907,10 +921,12 @@ What exists today (the foundation) and what's still aspirational:
   or that laid out again in the render phase ([layout.md](layout.md)). ctest runs
   both for every demo: `controltest_resize`, `controltest_resize_each`,
   `controltest_one_pass_each`, and `controltest_teardown` with `--require-one-pass`.
-- **The update phase visits only what changed.** No control `think()`s (the animations
-  run from `anim::think()`), and the z indices are renumbered only on a frame after the
-  tree order changed (`Canvas::invalidateZOrder()`), so a settled frame enters no
-  control in `updateCanvas()` either (`UpdateStats::zVisited`, see "updateCanvas()").
+- **The update phase visits only what changed.** No control `think()`s, the z indices
+  are renumbered only on a frame after the tree order changed
+  (`Canvas::invalidateZOrder()`), and the animations are only the active ones, each run
+  by its own control's canvas (`anim::think(canvas)`), so a settled frame enters no
+  control in `updateCanvas()` and runs no animation either (`UpdateStats::zVisited`,
+  `UpdateStats::animsRun`, see "updateCanvas()").
 
 **Not yet done (the performance goal)**
 - **Clipping leftovers.** A fully clipped subtree with changes in it is still walked and

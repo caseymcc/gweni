@@ -77,9 +77,6 @@ GWENI_CONTROL_CONSTRUCTOR(TextBox)
     addAccelerator("Ctrl + X", &TextBox::onCut);
     addAccelerator("Ctrl + V", &TextBox::onPaste);
     addAccelerator("Ctrl + A", &TextBox::onSelectAll);
-#if GWENI_ANIMATE
-    gweni::anim::add(this, new CaretBlink());
-#endif
 }
 
 bool TextBox::onChar(gweni::UnicodeChar c)
@@ -132,8 +129,13 @@ void TextBox::insertText(const gweni::String &strInsert)
 // blink edge is one StateChange_Caret, which only shows or hides the caret.
 void TextBox::updateCaretBlink()
 {
+    // the focus went without onLostKeyboardFocus (the canvas dropping a
+    // hidden holder's, a direct KeyboardFocus assignment): stop here
     if(!isFocussed())
+    {
+        stopCaretBlink();
         return;
+    }
 
     const float now=gweni::platform::getTimeInSeconds();
 
@@ -239,6 +241,37 @@ void TextBox::onKeyboardFocus()
 {
     ParentClass::onKeyboardFocus();
     keepCaretLit();
+    startCaretBlink();
+}
+
+void TextBox::onLostKeyboardFocus()
+{
+    ParentClass::onLostKeyboardFocus();
+    stopCaretBlink();
+}
+
+// Only a focused box blinks, so only it has an animation to run: an unfocused
+// one costs its canvas's update phase nothing.
+void TextBox::startCaretBlink()
+{
+#if GWENI_ANIMATE
+    if(m_caretBlink)
+        return;
+
+    m_caretBlink=new CaretBlink();
+    gweni::anim::add(this, m_caretBlink);
+#endif
+}
+
+void TextBox::stopCaretBlink()
+{
+#if GWENI_ANIMATE
+    if(!m_caretBlink)
+        return;
+
+    gweni::anim::cancel(this, m_caretBlink);
+    m_caretBlink=nullptr;
+#endif
 }
 
 void TextBox::keepCaretLit()

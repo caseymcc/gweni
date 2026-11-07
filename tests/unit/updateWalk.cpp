@@ -4,7 +4,7 @@
  *  MIT License, see LICENSE
  *
  *  The update phase enters only what changed. There is no per-control think()
- *  walk (animations run from anim::think(), keyed by control), and
+ *  walk (animations run from anim::think(canvas), the active ones only), and
  *  Canvas::updateCanvas() renumbers the z indices only on a frame after the
  *  tree order changed: a child added, removed, reparented, deleted or moved
  *  among its siblings, or a skin Control replaced. UpdateStats::zVisited counts

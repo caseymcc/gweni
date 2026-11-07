@@ -15,6 +15,11 @@
 
 namespace gweni
 {
+namespace anim
+{
+class Animation;
+}
+
 namespace controls
 {
 
@@ -30,10 +35,12 @@ public:
     void arrange(skin::Base *skin, Dim dim) override;
     void postLayout(skin::Base *skin) override;
 
-    //! Flips the caret's blink phase when it is due, if focused.
+    //! Flips the caret's blink phase when it is due, if focused. Its
+    //! animation is registered only while the box has the focus.
     virtual void updateCaretBlink();
 
     void onKeyboardFocus() override;
+    void onLostKeyboardFocus() override;
 
     bool onChar(gweni::UnicodeChar c) override;
 
@@ -175,6 +182,11 @@ protected:
 
     float m_nextCaretBlink=0.0f;
     bool m_caretVisible=true;
+    //! The caret's blink animation, registered from the focus arriving until
+    //! it leaves (or the blink finds the box unfocused); null meanwhile.
+    anim::Animation *m_caretBlink=nullptr;
+    void startCaretBlink();
+    void stopCaretBlink();
 
     //! The hint, a second Text beside m_text, made by the first setPlaceholder.
     internal::Text *m_placeholder=nullptr;

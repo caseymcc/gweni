@@ -15,6 +15,11 @@
 
 namespace gweni
 {
+namespace anim
+{
+class Animation;
+}
+
 namespace controls
 {
 class GWENI_EXPORT ProgressBar: public Label
@@ -71,10 +76,7 @@ public:
     }
 
     //! How fast the segment moves, in track lengths per second.
-    void setIndeterminateSpeed(float speed)
-    {
-        m_indeterminateSpeed=speed;
-    }
+    void setIndeterminateSpeed(float speed);
     float getIndeterminateSpeed() const
     {
         return m_indeterminateSpeed;
@@ -106,6 +108,10 @@ protected:
 
     void updateAutoLabel();
     void advanceIndeterminate(float delta);
+    //! Registers the bar's animation when it starts moving (cycling, or
+    //! indeterminate at a non-zero speed) and cancels it when it stops, so a
+    //! bar standing still costs its canvas's update phase nothing.
+    void updateAnimation();
 
     float m_progress;
     float m_cycleSpeed;
@@ -121,6 +127,8 @@ protected:
     float m_phase;
     //! the segment as last marked for drawing
     Rect m_segmentMarked;
+    //! the registered animation while the bar moves, else null
+    anim::Animation *m_animation=nullptr;
 };
 
 

@@ -25,11 +25,21 @@
  *  or another control's animation, add one (which first runs next frame),
  *  delayedDelete its control or delete another control outright; none of it
  *  touches freed memory (the ASAN tree checks).
+ *
+ *  The library's own animations are registered only while they have work: a
+ *  TextBox's caret blink from the focus arriving until it leaves (moved,
+ *  unfocused, the box deleted outright or delayed, or the canvas dropping a
+ *  hidden box's focus, which the blink notices on its next run), never twice
+ *  and without touching the box's other animations; a ProgressBar's while it
+ *  cycles or is indeterminate at a non-zero speed, hidden or not, its first
+ *  step the time since it started moving.
  */
 #include "headlessFixture.h"
 
 #include <gweni/gweni.h>
 #include <gweni/anim.h>
+#include <gweni/controls/progressBar.h>
+#include <gweni/controls/textBox.h>
 #include <gweni/platforms/platform.h>
 
 #include <doctest/doctest.h>
@@ -136,6 +146,7 @@ struct Scene
 
     ~Scene()
     {
+        KeyboardFocus=nullptr;
         delete a;
         delete b;
         // every animation of a deleted control went with it
@@ -574,4 +585,172 @@ TEST_CASE("deleting a control in the middle of a timed animation is safe")
     CHECK(anim::activeCount() == scene.baseline);
     scene.clock+=0.5f;
     CHECK(scene.logged().empty());
+}
+
+TEST_CASE("only the focused TextBox runs a caret animation")
+{
+    Scene scene;
+
+    std::vector<controls::TextBox *> boxes;
+    for(int i=0; i<5; ++i)
+    {
+        boxes.push_back(scene.a->newChild<controls::TextBox>("box"));
+        boxes.back()->setBounds(0, 30*i, 100, 20);
+    }
+
+    scene.frame();
+    CHECK(scene.a->getUpdateStats().animsRun == 0);
+    CHECK(anim::activeCount() == scene.baseline);
+
+    boxes[1]->focus();
+    CHECK(anim::activeCount(boxes[1]) == 1);
+    for(int i=0; i<3; ++i)
+    {
+        scene.frame();
+        CHECK(scene.a->getUpdateStats().animsRun == 1);
+    }
+
+    // the focus moving keeps one running, on the new box
+    boxes[3]->focus();
+    CHECK(anim::activeCount(boxes[1]) == 0);
+    CHECK(anim::activeCount(boxes[3]) == 1);
+    scene.frame();
+    CHECK(scene.a->getUpdateStats().animsRun == 1);
+
+    // focus arriving again adds none
+    boxes[3]->focus();
+    boxes[3]->onKeyboardFocus();
+    CHECK(anim::activeCount(boxes[3]) == 1);
+
+    boxes[3]->unfocus();
+    CHECK(anim::activeCount() == scene.baseline);
+    scene.frame();
+    CHECK(scene.a->getUpdateStats().animsRun == 0);
+}
+
+TEST_CASE("deleting the focused TextBox takes its caret animation, outright or delayed")
+{
+    Scene scene;
+
+    controls::TextBox *outright=scene.a->newChild<controls::TextBox>("outright");
+    outright->focus();
+    CHECK(anim::activeCount() == scene.baseline+1);
+    delete outright;
+    CHECK(anim::activeCount() == scene.baseline);
+
+    controls::TextBox *delayed=scene.a->newChild<controls::TextBox>("delayed");
+    delayed->focus();
+    delayed->delayedDelete();
+    scene.frame();
+    CHECK(anim::activeCount() == scene.baseline);
+    scene.frame();
+    CHECK(scene.a->getUpdateStats().animsRun == 0);
+}
+
+TEST_CASE("a focused TextBox hidden loses its caret animation with the focus")
+{
+    Scene scene;
+
+    controls::TextBox *box=scene.a->newChild<controls::TextBox>("box");
+    box->focus();
+    scene.frame();
+    box->setHidden(true);
+    // the canvas drops the focus after this frame's animations ran
+    scene.frame();
+    CHECK_FALSE(box->isFocussed());
+    // and the blink, finding the box unfocused, stops on its next run
+    scene.frame();
+    CHECK(anim::activeCount(box) == 0);
+    scene.frame();
+    CHECK(scene.a->getUpdateStats().animsRun == 0);
+}
+
+TEST_CASE("blurring a TextBox cancels its caret alone, not its other animations")
+{
+    Scene scene;
+
+    controls::TextBox *box=scene.a->newChild<controls::TextBox>("box");
+    box->setBounds(0, 0, 100, 20);
+    box->focus();
+    box->anim_widthIn(1.0f);
+    CHECK(anim::activeCount(box) == 2);
+
+    box->unfocus();
+    CHECK(anim::activeCount(box) == 1);
+    scene.clock+=0.5f;
+    scene.frame();
+    CHECK(scene.a->getUpdateStats().animsRun == 1);
+    // the size animation runs to its end
+    scene.clock+=0.5f;
+    scene.frame();
+    CHECK(anim::activeCount(box) == 0);
+}
+
+TEST_CASE("a ProgressBar has an animation only while it moves")
+{
+    Scene scene;
+
+    controls::ProgressBar *bar=scene.a->newChild<controls::ProgressBar>("bar");
+    scene.frame();
+    CHECK(anim::activeCount(bar) == 0);
+    CHECK(scene.a->getUpdateStats().animsRun == 0);
+
+    bar->setCycleSpeed(0.5f);
+    CHECK(anim::activeCount(bar) == 1);
+    bar->setCycleSpeed(0.25f);
+    CHECK(anim::activeCount(bar) == 1);
+    scene.frame();
+    CHECK(scene.a->getUpdateStats().animsRun == 1);
+    bar->setCycleSpeed(0.0f);
+    CHECK(anim::activeCount(bar) == 0);
+
+    // indeterminate at its default, non-zero speed
+    bar->setIndeterminate(true);
+    CHECK(anim::activeCount(bar) == 1);
+    bar->setIndeterminateSpeed(0.0f);
+    CHECK(anim::activeCount(bar) == 0);
+    bar->setIndeterminateSpeed(0.5f);
+    CHECK(anim::activeCount(bar) == 1);
+    bar->setIndeterminate(false);
+    CHECK(anim::activeCount(bar) == 0);
+
+    // a speed alone, not indeterminate, does not move it
+    bar->setIndeterminateSpeed(0.75f);
+    CHECK(anim::activeCount(bar) == 0);
+
+    // cycling keeps it moving when indeterminate goes off
+    bar->setCycleSpeed(0.5f);
+    bar->setIndeterminate(true);
+    bar->setIndeterminate(false);
+    CHECK(anim::activeCount(bar) == 1);
+
+    // hidden, it stays registered and stands still
+    bar->setHidden(true);
+    const float progress=bar->getProgress();
+    scene.clock+=0.2f;
+    scene.frame();
+    CHECK(anim::activeCount(bar) == 1);
+    CHECK(bar->getProgress() == progress);
+
+    bar->setCycleSpeed(0.0f);
+    scene.frame();
+    CHECK(scene.a->getUpdateStats().animsRun == 0);
+}
+
+TEST_CASE("a ProgressBar's first step is the time since it started moving")
+{
+    Scene scene;
+
+    controls::ProgressBar *bar=scene.a->newChild<controls::ProgressBar>("bar");
+    bar->setProgress(0.1f);
+    scene.frame();
+    // a long idle, then the cycle starts
+    scene.clock+=5.0f;
+    bar->setCycleSpeed(0.5f);
+    scene.clock+=0.1f;
+    scene.frame();
+    CHECK(bar->getProgress() == doctest::Approx(0.15f));
+    scene.clock+=0.2f;
+    scene.frame();
+    CHECK(bar->getProgress() == doctest::Approx(0.25f));
 }

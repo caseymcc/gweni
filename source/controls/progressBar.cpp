@@ -21,8 +21,9 @@ class ProgressBarThink: public gweni::anim::Animation
 {
 public:
 
+    // the first step is the time since the bar started moving
     ProgressBarThink()
-        : m_fLastFrame(0.f)
+        : m_fLastFrame(platform::getTimeInSeconds())
     {}
 
     void think() override
@@ -52,7 +53,6 @@ GWENI_CONTROL_CONSTRUCTOR(ProgressBar)
     m_segmentLength=0.3f;
     m_phase=0.0f;
     m_segmentMarked=Rect(0, 0, -1, -1);
-    anim::add(this, new ProgressBarThink());
 }
 
 void ProgressBar::setProgress(float val)
@@ -92,6 +92,7 @@ void ProgressBar::setIndeterminate(bool indeterminate)
 
     m_indeterminate=indeterminate;
     addStateChange(StateChange_Background);
+    updateAnimation();
 
     if(m_indeterminate)
     {
@@ -191,6 +192,32 @@ float ProgressBar::getCycleSpeed()
 void ProgressBar::setCycleSpeed(float f)
 {
     m_cycleSpeed=f;
+    updateAnimation();
+}
+
+void ProgressBar::setIndeterminateSpeed(float speed)
+{
+    m_indeterminateSpeed=speed;
+    updateAnimation();
+}
+
+void ProgressBar::updateAnimation()
+{
+#if GWENI_ANIMATE
+    const bool moving=(m_indeterminate && (m_indeterminateSpeed != 0.0f))
+        || (m_cycleSpeed != 0.0f);
+
+    if(moving && !m_animation)
+    {
+        m_animation=new ProgressBarThink();
+        anim::add(this, m_animation);
+    }
+    else if(!moving && m_animation)
+    {
+        anim::cancel(this, m_animation);
+        m_animation=nullptr;
+    }
+#endif
 }
 
 }//namespace controls
