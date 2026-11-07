@@ -49,7 +49,11 @@ public:
 //! vertical bar is ranged from itemCount*rowHeight, and the rows are placed in
 //! the viewport at index*rowHeight-offset, so nothing drawn is far off screen
 //! however long the list is. Scrolling moves the rows and binds only the ones
-//! that come into view; a row still showing its item is not bound again.
+//! that come into view; a row still showing its item is not bound again. A
+//! row given another item gives up a press and the keyboard focus it held,
+//! and once the rows moved the hover is hit-tested again
+//! (Canvas::hoverMayHaveMoved), so the row under a resting mouse is the
+//! hovered one and a click without a move presses the item under it.
 //!
 //! Rows are bound in the layout pass that places them (the Y arrange), so the
 //! binder must only set the row's content (its text, colours, children), not
@@ -91,10 +95,14 @@ public:
     void refresh();
     void refreshItem(size_t index);
 
-    //! Scrolls as little as puts the item fully in view (with the viewport of
-    //! the last layout): to its top if it is above, to its bottom if below.
+    //! Scrolls as little as puts the item fully in view: to its top if it is
+    //! above the viewport, to its bottom if below. It is resolved by the next
+    //! layout, with the viewport that layout gives, so it may be called before
+    //! the first one (an app restoring a position) or in the frame of a resize;
+    //! until then getVerticalScrollOffset() is the old offset.
     void scrollToItem(size_t index);
-    //! Scrolls by whole rows, down for a positive count.
+    //! Scrolls by whole rows, down for a positive count; it drops a
+    //! scrollToItem() not yet laid out.
     void scrollByRows(int rows);
 
     //! The item at the top of the viewport (partly scrolled out or not), as
@@ -131,6 +139,8 @@ private:
 
     void updateContentHeight();
     void clearPool();
+    //! The row shows another item, or none: it gives up the mouse and the focus.
+    void releaseRow(Base *control);
     void rowPressed(Base *row);
     //! The pool size the viewport needs: ceil(viewport/rowHeight)+1.
     size_t poolSizeFor(int viewport) const;
@@ -139,6 +149,8 @@ private:
     RowBinder m_binder;
     std::vector<Row> m_rows;
     size_t m_itemCount=0;
+    //! The item a scrollToItem() asked for, resolved by the next layout.
+    size_t m_pendingItem=NoItem;
     int m_rowHeight=20;
     int m_wheelRows=3;
 };

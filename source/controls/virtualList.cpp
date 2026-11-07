@@ -6,6 +6,7 @@
 
 
 #include <gweni/controls/virtualList.h>
+#include <gweni/controls/canvas.h>
 
 #include <algorithm>
 #include <climits>
@@ -133,24 +134,22 @@ void VirtualList::clearPool()
     m_rows.clear();
 }
 
+// Resolved by the next layout (contentsPlaced), which knows the viewport: so a
+// call made before the first layout, or in the frame of a resize, scrolls for
+// the viewport the item is shown in.
 void VirtualList::scrollToItem(size_t index)
 {
     if(index >= m_itemCount)
         return;
 
-    const int64_t top=static_cast<int64_t>(index)*m_rowHeight;
-    const int64_t bottom=top+m_rowHeight;
-    const int64_t offset=getVerticalScrollOffset();
-    const int64_t viewport=getViewportHeight();
-
-    if(top < offset)
-        setVerticalScrollOffset(static_cast<int>(std::min<int64_t>(top, INT_MAX)));
-    else if(bottom > offset+viewport)
-        setVerticalScrollOffset(static_cast<int>(std::min<int64_t>(bottom-viewport, INT_MAX)));
+    m_pendingItem=index;
+    invalidate();
 }
 
 void VirtualList::scrollByRows(int rows)
 {
+    m_pendingItem=NoItem;
+
     const int64_t offset=static_cast<int64_t>(getVerticalScrollOffset())
         +static_cast<int64_t>(rows)*m_rowHeight;
 
@@ -238,24 +237,84 @@ size_t VirtualList::poolSizeFor(int viewport) const
     return static_cast<size_t>((viewport+m_rowHeight-1)/m_rowHeight)+1;
 }
 
+// The offset that puts the item fully in view, scrolling as little as it can:
+// to the item's top if it is above the viewport, to its bottom if below.
+static int64_t offsetShowing(size_t item, int rowHeight, int64_t offset, int64_t viewport)
+{
+    const int64_t top=static_cast<int64_t>(item)*rowHeight;
+    const int64_t bottom=top+rowHeight;
+
+    if(top < offset)
+        return top;
+    if(bottom > offset+viewport)
+        return bottom-viewport;
+    return offset;
+}
+
+// Whether control is row or inside it.
+static bool inRow(const Base *control, const Base *row)
+{
+    for(; control; control=control->getParent())
+    {
+        if(control == row)
+            return true;
+    }
+    return false;
+}
+
+// A row that shows another item now, or none: the mouse it holds (a press on
+// its old item) and the keyboard focus are taken from it, so neither acts on
+// the item it shows now. A dropped press is a capture ending: the canvas
+// hit-tests the hover again.
+void VirtualList::releaseRow(Base *control)
+{
+    if(MouseFocus && inRow(MouseFocus, control))
+    {
+        Base *held=MouseFocus;
+
+        MouseFocus=nullptr;
+        if(Button *button=gweni_cast<Button>(held))
+            button->setDepressed(false);
+    }
+
+    if(KeyboardFocus && inRow(KeyboardFocus, control))
+        KeyboardFocus->unfocus();
+}
+
 // The viewport and the offset are final here (placeContents), and nothing in
-// the inner panel has been laid out yet. The pool is resized to the viewport,
+// the inner panel has been laid out yet. A pending scrollToItem is resolved
+// first, with the viewport now known. The pool is resized to the viewport,
 // and each item the viewport shows any of gets a row: a row already showing an
 // item that is still in view keeps it, unbound; the rows left over take the
 // items that came into view and are bound, and the rest (the spare row while
 // the offset is a whole number of rows, the rows past the last item) are
 // hidden. Every shown row is placed at its item's place.
 // What is bound was measured in X with its old content, so it is measured
-// again.
+// again. A row given another item gives up its press and focus. When a shown
+// row moved, was bound to another item, or was shown or hidden, what is under
+// the resting mouse may be another row: the canvas hit-tests the hover again
+// once the layout is done.
 void VirtualList::contentsPlaced(skin::Base *skin)
 {
     const int viewport=getViewportHeight();
     const size_t poolSize=poolSizeFor(viewport);
+    bool moved=false;
+
+    if(m_pendingItem != NoItem)
+    {
+        const size_t item=std::min(m_pendingItem, m_itemCount > 0?m_itemCount-1:0);
+        const int64_t offset=offsetShowing(item, m_rowHeight, m_virtualOffset, viewport);
+
+        m_pendingItem=NoItem;
+        m_virtualOffset=static_cast<int>(gweni::clamp<int64_t>(offset, 0, getMaxVerticalScrollOffset()));
+        showVirtualOffset();
+    }
 
     while(m_rows.size() > poolSize)
     {
         delete m_rows.back().control;
         m_rows.pop_back();
+        moved=true;
     }
 
     while(m_rows.size() < poolSize)
@@ -283,6 +342,10 @@ void VirtualList::contentsPlaced(skin::Base *skin)
         static_cast<size_t>((static_cast<int64_t>(offset)+viewport+m_rowHeight-1)/m_rowHeight)));
     const size_t inView=end > first?end-first:0;
     std::vector<bool> held(inView, false);
+    std::vector<size_t> previous(m_rows.size());
+
+    for(size_t i=0; i < m_rows.size(); ++i)
+        previous[i]=m_rows[i].item;
 
     // Rows still showing an item in view keep it.
     for(Row &row : m_rows)
@@ -310,9 +373,16 @@ void VirtualList::contentsPlaced(skin::Base *skin)
 
     const int width=m_innerPanel->getWidth();
 
-    for(Row &row : m_rows)
+    for(size_t i=0; i < m_rows.size(); ++i)
     {
+        Row &row=m_rows[i];
         Base *control=row.control;
+
+        if(row.item != previous[i])
+        {
+            releaseRow(control);
+            moved=true;
+        }
 
         if(row.item == NoItem)
         {
@@ -336,7 +406,14 @@ void VirtualList::contentsPlaced(skin::Base *skin)
 
         const int64_t y=static_cast<int64_t>(row.item)*m_rowHeight-offset;
 
-        placeChild(control, 0, static_cast<int>(y), width, m_rowHeight);
+        if(placeChild(control, 0, static_cast<int>(y), width, m_rowHeight) || wasHidden)
+            moved=true;
+    }
+
+    if(moved)
+    {
+        if(Canvas *canvas=getCanvas())
+            canvas->hoverMayHaveMoved();
     }
 }
 

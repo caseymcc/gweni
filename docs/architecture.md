@@ -481,10 +481,19 @@ on an OpenGL 3.3 core profile:
   changes binds only the rows that came into view, keeping the offset inside the new
   content. Rows made during the pass are made under a `Base::PartScope`, so their
   constructors' defaults are not counted as layout requests. The binder must only set a
-  row's content. `scrollToItem`, `scrollByRows`, `firstVisibleItem`,
-  `rowForItem`/`itemForRow` and `refresh`/`refreshItem` are the rest; a wheel notch
-  scrolls `setWheelRows` rows (3). A row hovered when the list scrolls stays hovered
-  until the mouse moves, as in any ScrollControl. VirtualListDemo holds 100 000 items.
+  row's content. **A row's interaction state is its item's:** a row given another item
+  gives up the mouse it holds (a press on its old item is cancelled, its depressed look
+  dropped) and the keyboard focus, so neither acts on the item it shows now; and when a
+  shown row moved, was bound again or was shown or hidden, the list calls
+  `Canvas::hoverMayHaveMoved()`, and `input::onCanvasThink`, which runs after the
+  frame's layout, hit-tests the hover again at the resting mouse (on the canvas the
+  mouse last moved on, unless a capture pins it). So after a wheel the highlight is on
+  the row under the mouse, and a click with no move in between presses that item.
+  `scrollToItem` is resolved by the next layout, with the viewport it gives, so it works
+  before the first one and in the frame of a resize. `scrollByRows`,
+  `firstVisibleItem`, `rowForItem`/`itemForRow` and `refresh`/`refreshItem` are the
+  rest; a wheel notch scrolls `setWheelRows` rows (3). VirtualListDemo holds 100 000
+  items.
 - **Scale and the device-pixel grid.** Controls lay out in logical units (integers);
   `renderer::Base::translate()` turns them into device pixels at `scale()` (set by
   `Canvas::setScale`). It snaps **edges**, not origin and size apart: a point is

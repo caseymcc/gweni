@@ -93,6 +93,19 @@ public:
 
     void redraw() override { m_needsRedraw=true; }
 
+    /// Content moved under a mouse that did not move (a VirtualList scrolled
+    /// its rows, or bound one to another item): the hovered control is
+    /// hit-tested again at the end of this update phase, once the frame's
+    /// layout is done (input::onCanvasThink), as when a capture ends.
+    void hoverMayHaveMoved() { m_hoverStale=true; }
+    /// Whether hoverMayHaveMoved() was called since the last call, and clears it.
+    bool takeHoverStale()
+    {
+        const bool stale=m_hoverStale;
+        m_hoverStale=false;
+        return stale;
+    }
+
     // Internal. Do not call directly.
     void render(skin::Base *render) override;
 
@@ -321,6 +334,8 @@ protected:
     bool m_toolTipDirty=false;
     /// Pressed on: shows no tooltip until the mouse is on another control.
     Base *m_toolTipSuppressed=nullptr;
+
+    bool m_hoverStale=false;
 };
 
 

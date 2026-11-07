@@ -55,6 +55,9 @@ struct KeyData
 
 static KeyData g_keyData;
 static Point g_mousePosition;
+// The canvas the mouse last moved on, until it leaves it (onMouseLeft): the
+// one a stale hover may be hit-tested again on.
+static controls::Base *g_mouseCanvas=nullptr;
 
 static float g_fLastClickTime[c_MaxMouseButtons];
 static Point g_pntLastClickPos;
@@ -140,6 +143,15 @@ void onCanvasThink(controls::Base *control)
             UpdateHoveredControl(control);
     }
 
+    // Content moved under the resting mouse this frame, and the layout that
+    // moved it is done: the hover goes to what is under the mouse now. A
+    // capture keeps its holder hovered, as for a move.
+    if(controls::Canvas *canvas=control->getCanvas())
+    {
+        if(canvas->takeHoverStale() && g_mouseCanvas == control)
+            UpdateHoveredControl(control);
+    }
+
     if(KeyboardFocus
         && (!KeyboardFocus->visible() || !KeyboardFocus->getKeyboardInputEnabled()))
     {
@@ -196,11 +208,15 @@ void onMouseMoved(controls::Base *canvas, int x, int y,
 {
     g_mousePosition.x=x;
     g_mousePosition.y=y;
+    g_mouseCanvas=canvas;
     UpdateHoveredControl(canvas);
 }
 
 void onMouseLeft(controls::Base *canvas)
 {
+    if(g_mouseCanvas == canvas)
+        g_mouseCanvas=nullptr;
+
     if(MouseFocus && MouseFocus->getCanvas() == canvas)
         return;
 

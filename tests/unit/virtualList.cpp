@@ -494,10 +494,195 @@ TEST_CASE("VirtualList: scrollToItem puts the item fully in view")
     s.list->setVerticalScrollOffset(10);
     s.frame();
     s.list->scrollToItem(2);
+    s.frame();
     CHECK(s.list->getVerticalScrollOffset() == 10);
     // past the end: nothing
     s.list->scrollToItem(1000);
+    s.frame();
     CHECK(s.list->getVerticalScrollOffset() == 10);
+
+    // asked in the frame of a resize: shown in the viewport that frame gives
+    s.list->scrollToItem(600);
+    s.list->setSize(200, 40);
+    s.frame();
+    REQUIRE(s.list->rowForItem(600) != nullptr);
+    CHECK(s.list->rowForItem(600)->getY() == 20);
+    checkView(s);
+    s.checkOnePass();
+}
+
+TEST_CASE("VirtualList: scrollToItem before the first layout shows the item")
+{
+    test::StubRenderer renderer;
+    test::StubSkin skin{&renderer};
+    controls::Canvas *canvas=new controls::Canvas(&skin);
+
+    canvas->setSize(400, 400);
+
+    controls::VirtualList *list=canvas->newChild<controls::VirtualList>();
+
+    list->setPos(0, 0);
+    list->setSize(200, 160);
+    list->setItemCount(1000);
+    list->scrollToItem(500);
+    canvas->updateCanvas();
+    canvas->renderCanvas();
+
+    CHECK(list->getViewportHeight() == 160);
+    // scrolled down to it: at the bottom of the viewport
+    CHECK(list->getVerticalScrollOffset() == 501*RowHeight-160);
+    REQUIRE(list->rowForItem(500) != nullptr);
+    CHECK(list->rowForItem(500)->getY() == 160-RowHeight);
+    CHECK(canvas->getLayoutStats().passes == 1);
+    delete canvas;
+}
+
+namespace
+{
+
+struct PressReceiver: event::Handler
+{
+    std::vector<size_t> items;
+    void pressed(event::Info info) { items.push_back(info.integer); }
+};
+
+//! A Scene whose clicks are far from any other test's (never a double click),
+//! with the mouse resting over the list's fourth row.
+struct MouseScene: Scene
+{
+    float clock=2000.0f;
+    PressReceiver receiver;
+    Point at;
+
+    MouseScene(): Scene(1000)
+    {
+        platform::setTimeSource([this]() { return clock; });
+        list->onItemPressed.add(&receiver, &PressReceiver::pressed);
+
+        const Point origin=list->localPosToCanvas();
+
+        at=Point(origin.x+50, origin.y+3*RowHeight+10);
+        canvas->inputMouseMoved(at.x, at.y, 0, 0);
+        frame();
+    }
+
+    ~MouseScene()
+    {
+        input::onMouseClicked(canvas, 0, false);
+        platform::setTimeSource(nullptr);
+    }
+
+    //! The item under the resting mouse.
+    size_t itemUnderMouse() const
+    {
+        return static_cast<size_t>((list->getVerticalScrollOffset()+at.y-list->localPosToCanvas().y)
+            /RowHeight);
+    }
+};
+
+}//namespace
+
+TEST_CASE("VirtualList: after a scroll the row under the resting mouse is hovered and takes the click")
+{
+    MouseScene s;
+
+    REQUIRE(HoveredControl == s.list->rowForItem(3));
+
+    // the wheel, then a frame, with no move: the rows moved under the mouse
+    CHECK(s.canvas->inputMouseWheel(-60));
+    s.frame();
+    REQUIRE(s.itemUnderMouse() == 6);
+    CHECK(HoveredControl == s.list->rowForItem(6));
+    for(controls::Base *row : s.list->getRows())
+    {
+        if(row != s.list->rowForItem(6))
+            CHECK(!row->isHovered());
+    }
+
+    // a click with no move presses the item under the mouse
+    s.clock+=1.0f;
+    s.canvas->inputMouseButton(0, true);
+    s.canvas->inputMouseButton(0, false);
+    s.frame();
+    REQUIRE(s.receiver.items.size() == 1);
+    CHECK(s.receiver.items[0] == 6);
+
+    // a part-row scroll that keeps every row's item still moves the hover
+    s.list->setVerticalScrollOffset(s.list->getVerticalScrollOffset()+15);
+    s.frame();
+    CHECK(HoveredControl == s.list->rowForItem(s.itemUnderMouse()));
+    s.checkOnePass();
+}
+
+TEST_CASE("VirtualList: a row given another item gives up its press and focus")
+{
+    MouseScene s;
+    auto *row=gweni_cast<controls::internal::VirtualListRow>(s.list->rowForItem(3));
+
+    REQUIRE(row != nullptr);
+
+    SUBCASE("a press held while the list scrolls the row to another item is cancelled")
+    {
+        s.clock+=1.0f;
+        s.canvas->inputMouseButton(0, true);
+        s.frame();
+        REQUIRE(row->isDepressed());
+        REQUIRE(MouseFocus == row);
+
+        // far enough that the row shows another item
+        s.list->scrollByRows(20);
+        s.frame();
+        CHECK(s.list->itemForRow(row) != 3);
+        CHECK(!row->isDepressed());
+        CHECK(MouseFocus == nullptr);
+        CHECK(HoveredControl == s.list->rowForItem(s.itemUnderMouse()));
+
+        s.canvas->inputMouseButton(0, false);
+        s.frame();
+        // pressed on item 3, released on another: not a click on either
+        CHECK(s.receiver.items.empty());
+    }
+
+    SUBCASE("a press held while its row keeps its item still clicks it")
+    {
+        s.clock+=1.0f;
+        s.canvas->inputMouseButton(0, true);
+        s.frame();
+
+        s.list->setVerticalScrollOffset(5);
+        s.frame();
+        CHECK(s.list->itemForRow(row) == 3);
+        CHECK(row->isDepressed());
+
+        s.canvas->inputMouseButton(0, false);
+        s.frame();
+        REQUIRE(s.receiver.items.size() == 1);
+        CHECK(s.receiver.items[0] == 3);
+    }
+
+    SUBCASE("the keyboard focus goes with the item")
+    {
+        row->focus();
+        s.frame();
+        REQUIRE(KeyboardFocus == row);
+
+        // refreshed on the same item: it keeps the focus
+        s.list->refreshItem(3);
+        s.frame();
+        CHECK(KeyboardFocus == row);
+
+        s.list->scrollByRows(20);
+        s.frame();
+        CHECK(s.list->itemForRow(row) != 3);
+        CHECK(KeyboardFocus == nullptr);
+
+        // so Space presses nothing
+        input::onKeyEvent(s.canvas, keys::Space, true);
+        input::onKeyEvent(s.canvas, keys::Space, false);
+        s.frame();
+        CHECK(s.receiver.items.empty());
+    }
+    s.checkOnePass();
 }
 
 TEST_CASE("VirtualList: the vertical bar is ranged from the virtual content")
