@@ -11,6 +11,13 @@
  *  the controls the renumber entered. After each change the z indices are the
  *  ones a full depth-first numbering gives, and exactly the controls whose z
  *  index changed carry StateChange_Geometry.
+ *
+ *  The first frame's renumber enters every control; a settled frame, a state
+ *  change, a layout and a scale change enter none. The tree changes checked
+ *  are bringToFront, sendToBack, bringNextToControl, an added, removed,
+ *  reparented or delayed-deleted child and a replaced skin, each followed by
+ *  one renumber. A cycling ProgressBar and a focused TextBox's caret still
+ *  animate under a stepped platform::setTimeSource clock.
  */
 #include "headlessFixture.h"
 

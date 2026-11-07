@@ -12,6 +12,13 @@
  *  hidden, hover is hit-tested once and goes to the control under the mouse. A
  *  Button released off itself is not clicked (a toggle does not toggle), one
  *  released on itself is clicked once.
+ *
+ *  The drag goes across the capturing control's parent and a sibling and sends
+ *  no onHoverEnter/onHoverLeave. A hidden holder's capture is dropped by
+ *  onCanvasThink; when a capture ends, hover moves with one leave and one
+ *  enter. The Button cases cover the left and right buttons, a toggle and a
+ *  button in a moved parent. The control with a tooltip does not become
+ *  toolTipOwner().
  */
 #include "headlessFixture.h"
 

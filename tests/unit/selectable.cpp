@@ -13,6 +13,13 @@
  *  skin's Selectable renderer hides the slot of an idle row and paints the
  *  hover, press and selection surfaces, and a selection change marks only the
  *  rows involved.
+ *
+ *  Space and Return press a focused row. A row added selected becomes the
+ *  group's selection, and a selected row may be deleted outright or delayed.
+ *  The renderer, on a recording StubRenderer, paints the hover, press,
+ *  selected, selected+hover and selected+disabled surfaces with their text
+ *  colours, a settled frame draws nothing, and a group's selection change
+ *  marks only the two rows involved.
  */
 #include "headlessFixture.h"
 

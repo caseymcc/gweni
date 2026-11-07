@@ -9,6 +9,12 @@
  *  it is setTextAlignment(), and the control's own setAlignment() never moves
  *  its text. A TextBox's text is placed by the text alignment while the string
  *  fits, and keeps its scroll position once it does not.
+ *
+ *  The Label family checked: Label, TextBox, TextBoxMultiline, Button and
+ *  StatusBar, each keeping a setPos through passes, its text placed by
+ *  setTextAlignment / getTextAlignment(). A TextBox's string wider than the
+ *  box keeps its scroll position: the tail at the right padding with the caret
+ *  at the end, the head at the left padding with it at the start.
  */
 #include "headlessFixture.h"
 

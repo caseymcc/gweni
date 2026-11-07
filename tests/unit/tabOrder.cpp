@@ -9,6 +9,9 @@
  *  subtree out of the order, a control on another canvas is never chosen, and
  *  with no other tabable control the focus stays put. Return in a single-line
  *  TextBox moves the focus the same way before it fires onReturnPressed.
+ *
+ *  The keys go through input::onKeyEvent on a real Canvas; non-tabable,
+ *  disabled and hidden controls are skipped.
  */
 #include "headlessFixture.h"
 

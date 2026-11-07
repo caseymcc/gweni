@@ -9,6 +9,11 @@
  *  first child comes after its layers, its next sibling after its subtree.
  *  ProgressBar is such a control (the fill over the track), and setProgress
  *  raises StateChange_Background only when the value changes.
+ *
+ *  The Control reporting depthLayers() 2 comes from StubSkin::depthLayers, by
+ *  type name: it puts its first child at its z+2; controls at 1 step by 1. The
+ *  value setProgress compares is the clamped one, and its animation goes
+ *  through the same check.
  */
 #include "headlessFixture.h"
 

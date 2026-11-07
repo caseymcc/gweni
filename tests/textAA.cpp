@@ -16,6 +16,11 @@
  *
  *  This is the coverage path: when GWENI_SDF_TEXT_MIN puts 12 px in the SDF
  *  range, which stays grayscale, the cases are skipped.
+ *
+ *  The LCD modes' atlas is depth 3 / GL_RGB8. The runtime switch is checked as
+ *  gray -> rgb -> gray on the shared renderer and on a canvas switched at
+ *  runtime, byte for byte against fresh renderers started in each mode. A case
+ *  that changes the mode puts it back when it ends.
  */
 #include <doctest/doctest.h>
 

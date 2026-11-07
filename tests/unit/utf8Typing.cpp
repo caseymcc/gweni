@@ -11,6 +11,15 @@
  *  limit, mouse placement and multiline Up/Down never stop inside a sequence,
  *  and codepoints that are not text (C0, DEL, C1, surrogates, past U+10FFFF)
  *  are dropped. Also the utf8 helpers of utility.h on their own.
+ *
+ *  It takes GLFW's headers only, not its library. A 4-byte codepoint is stored
+ *  as its 4 bytes; positions set from outside snap to a boundary, as the
+ *  length limit does; the codepoints that are not text are dropped by
+ *  Canvas::inputCharacter; TextBoxNumeric refuses ٣ (Arabic-Indic three);
+ *  Text::getClosestCharacter and a mouse click land only on boundaries; and
+ *  multiline Up/Down keeps the column in codepoints, with wrapped words never
+ *  broken inside a sequence. The helpers are utf8Encode, utf8Next, utf8Prev
+ *  and utf8Snap.
  */
 #include "headlessFixture.h"
 

@@ -10,6 +10,14 @@
  *  way ensureFont does not try a face again for every text on every frame.
  *  The tests count the error lines the renderer logs (through
  *  log::setLogCaller) to see how often a load was attempted.
+ *
+ *  A missing face and a file freetype-gl cannot read are each LoadedFallback,
+ *  drawn and measured as OpenSans in coverage, LCD and SDF modes, logged once
+ *  per key (the error, then "using built-in fallback for <face>") and not
+ *  retried. With setFallbackFont(false) they fail as ErrorFileNotFound /
+ *  ErrorBadData, measuring (0,0) and drawing nothing. A fallback freed and
+ *  loaded again leaves the loaded-font count as it was, and the embedded font
+ *  is resources/OpenSans.ttf byte for byte.
  */
 #include <doctest/doctest.h>
 

@@ -10,6 +10,15 @@
  *  GL_LESS. Each row of the table is a textured renderer that draws an overlay,
  *  run on a real control in the state that shows it; a new overlay renderer is
  *  one more row.
+ *
+ *  The rows: ProgressBar, ColorSlider, ColorLerpBox, CheckBox, RadioButton,
+ *  ComboBox, ScrollBarButton, the three window buttons, and TextBox's caret;
+ *  every other type gets a StubControl. A row fails, naming the renderer, if
+ *  any draw into its slots is at a z outside [getZIndex(),
+ *  getZIndex()+depthLayers()) and [getOverlayZIndex(),
+ *  getOverlayZIndex()+overlayLayers()), if no draw is at the overlay's z, or
+ *  unless its first child is numbered at getZIndex()+depthLayers() and its
+ *  next sibling after its whole subtree.
  */
 #include "headlessFixture.h"
 

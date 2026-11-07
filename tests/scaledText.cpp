@@ -12,6 +12,10 @@
  *
  *  The renderer is shared with the other cases, so each case puts the scale back
  *  when it ends (ScaleGuard).
+ *
+ *  measureText is checked at scales 1, 1.5 and 2; a run at scale 2 is twice
+ *  the scale-1 ink, inside its measured box scaled; and the run drawn again
+ *  after a scale change matches one laid out fresh at that scale.
  */
 #include <doctest/doctest.h>
 

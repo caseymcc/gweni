@@ -9,6 +9,9 @@
  *  pin that sharing, that measureText scales with the size and fits the drawn
  *  run, and that changing a run's size uploads nothing to the atlas. Each skips
  *  itself when GWENI_SDF_TEXT_MIN puts its sizes out of the SDF range.
+ *
+ *  measureText contains the drawn ink, and a run's size change uploads its
+ *  vertex slots only.
  */
 #include <doctest/doctest.h>
 

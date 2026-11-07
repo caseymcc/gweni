@@ -15,6 +15,12 @@
  *
  *  This is the coverage path: a size that GWENI_SDF_TEXT_MIN puts in the SDF
  *  range, which stays grayscale, is skipped.
+ *
+ *  In rgb mode, for "IIIIIIII"/"nnnnnnnn" at 8-16 px (and at scale 1.5), each
+ *  glyph's quad x plus phase/3 is within 1/3 device px of those pens, every
+ *  phase is used, and measureText's width is the sum rounded up. Three phases
+ *  of 8-16 px ASCII fill a few percent of the atlas. Under the contrast curve
+ *  black text and grayscale stay byte for byte.
  */
 #include <doctest/doctest.h>
 

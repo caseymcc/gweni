@@ -8,6 +8,10 @@
  *  generated. Its update() then has to resize its own slot list to 1+ticks and
  *  draw only into slots it owns; requiredPrimitives() only sizes the first
  *  generate().
+ *
+ *  It runs the textured skin's real Slider/SliderBar renderers on the
+ *  StubRenderer. A renderer's update() may grow or shrink its m_primitives
+ *  itself.
  */
 #include "headlessFixture.h"
 

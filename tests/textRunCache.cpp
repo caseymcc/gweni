@@ -9,6 +9,11 @@
  *  of them with the same string and compares the run with a fresh layout of
  *  the final inputs on a new text id. The snapshot holds the hidden flag and
  *  the glyph vertexes, not where the run sits, so the two compare byte for byte.
+ *
+ *  The inputs of a same-string renderText changed one at a time are zIndex,
+ *  colour, font and hidden. Also: a Button's label takes the Disabled text
+ *  colour and gives it back, and a Label brought to front over another (same
+ *  string and position, new zIndex) has its glyphs re-depthed (#100).
  */
 #include <doctest/doctest.h>
 

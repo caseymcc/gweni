@@ -304,48 +304,10 @@ include(doctest)
 # Headless C++ unit tests (doctest) under unit/: no GL context and no resources,
 # so they carry no gpu label and ctest -LE gpu runs them without the GPU lock.
 # Each test case is registered as its own CTest test, so a failure names it.
-add_executable(gweni_unit_tests
-    unit/main.cpp
-    unit/imglibEnums.cpp
-    unit/skinSwap.cpp
-    unit/platformSleep.cpp
-    unit/layoutPasses.cpp
-    unit/renderWalk.cpp
-    unit/clipRegion.cpp
-    unit/contextMenu.cpp
-    unit/selectable.cpp
-    unit/virtualList.cpp
-    unit/separator.cpp
-    unit/sliderNotches.cpp
-    unit/colorControls.cpp
-    unit/colorDisplay.cpp
-    unit/scrollControl.cpp
-    unit/resourcePaths.cpp
-    unit/skinConfig.cpp
-    unit/requestedSize.cpp
-    unit/layoutSizes.cpp
-    unit/layoutArrange.cpp
-    unit/tabOrder.cpp
-    unit/depthLayers.cpp
-    unit/overlayDepth.cpp
-    unit/updateWalk.cpp
-    unit/utf8Typing.cpp
-    unit/placeholder.cpp
-    unit/progressBarIndeterminate.cpp
-    unit/cursorScale.cpp
-    unit/crossSplitter.cpp
-    unit/placement.cpp
-    unit/windowSkin.cpp
-    unit/tabStrip.cpp
-    unit/menuItem.cpp
-    unit/textBoxCaret.cpp
-    unit/dockNoneAlignment.cpp
-    unit/textAlignment.cpp
-    unit/toolTip.cpp
-    unit/textBoxColor.cpp
-    unit/drawLine.cpp
-    unit/mouseCapture.cpp
-    unit/dragAndDrop.cpp)
+# Every unit/*.cpp is a test file: a new test is a new file, no list to extend.
+file(GLOB gweni_unit_tests_sources CONFIGURE_DEPENDS
+    ${CMAKE_CURRENT_SOURCE_DIR}/unit/*.cpp)
+add_executable(gweni_unit_tests ${gweni_unit_tests_sources})
 gweni_set_warnings(gweni_unit_tests)
 target_link_libraries(gweni_unit_tests
     gweni
@@ -373,33 +335,10 @@ doctest_discover_tests(gweni_unit_tests
 # from the examples' surfaceless EGL code (gweni_capture), so they are only
 # built along with the examples.
 if(TARGET gweni_capture)
-    add_executable(gweni_unittests
-        main.cpp
-        textLength.cpp
-        textRunCache.cpp
-        textWrap.cpp
-        textAtlases.cpp
-        textAA.cpp
-        textSubpixel.cpp
-        textGrayscale.cpp
-        sdfText.cpp
-        fontLoad.cpp
-        fontRelease.cpp
-        color.cpp
-        fillStyles.cpp
-        iconGlyphs.cpp
-        clipBoxes.cpp
-        indexChunks.cpp
-        scaledEdges.cpp
-        scaledText.cpp
-        textureReload.cpp
-        imageRects.cpp
-        progressBarFill.cpp
-        comboBoxSize.cpp
-        emptyText.cpp
-        scrollControlBackdrop.cpp
-        menuRows.cpp
-        lines.cpp)
+    # every *.cpp here is a test file (main.cpp included), as under unit/
+    file(GLOB gweni_unittests_sources CONFIGURE_DEPENDS
+        ${CMAKE_CURRENT_SOURCE_DIR}/*.cpp)
+    add_executable(gweni_unittests ${gweni_unittests_sources})
     gweni_set_warnings(gweni_unittests)
     target_link_libraries(gweni_unittests
         gweni

@@ -12,6 +12,10 @@
  *  bar stands still, and setIndeterminate(false) gives back the fill and label
  *  of the stored progress. A determinate cycling bar sets its auto label only
  *  when the whole percentage changes.
+ *
+ *  The segment is drawn only on a frame its rect changes, and
+ *  setIndeterminate(false) draws the stored progress's fill and label once and
+ *  then nothing.
  */
 #include "headlessFixture.h"
 

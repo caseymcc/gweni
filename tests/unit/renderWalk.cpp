@@ -7,6 +7,13 @@
  *  their ancestors: addStateChange() marks the path to the root, attaching a
  *  pending control marks its new parent's, and doRender() skips a subtree with
  *  nothing pending in it. ChangeStats::visited counts the controls entered.
+ *
+ *  The tree is 51 logging controls on a real Canvas. The walk enters all of
+ *  them on the first frame, none on a settled one, only a changed leaf and its
+ *  ancestors, a whole addStateChangeRecursive subtree, a newly added or
+ *  re-attached control, a change raised from a render() during the walk
+ *  (rendered that frame or the next), and on a Canvas::setScale every control,
+ *  laid out in one pass and rendered once, then settled.
  */
 #include "headlessFixture.h"
 

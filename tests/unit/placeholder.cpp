@@ -9,6 +9,15 @@
  *  laid out again), it sits where the typed text will, it is not content
  *  (getText(), the cursor, the length limit and the box's size do not see
  *  it), and a PasswordTextBox shows it unmasked.
+ *
+ *  In detail: hidden by the focus, by typed text (after the focus has gone)
+ *  and by setText, back when the box is cleared and blurred; kept hidden over
+ *  text when its box is shown again, and back when a focused box is hidden
+ *  (the canvas drops the focus) and shown; toggling it takes and gives back no
+ *  id and does not move it; its origin is the typed text's, with a text
+ *  padding; it does not widen a Shrink box and is not getValue() either; a
+ *  TextBoxNumeric's is not its value, and a TextBoxMultiline's is unwrapped at
+ *  its first line.
  */
 #include "headlessFixture.h"
 

@@ -8,6 +8,9 @@
  *  side the strip is docked on, neighbours overlap only by their 1 px shared
  *  border along the row and stay inside the strip across it, and a tab moved
  *  into another TabControl takes that strip's padding.
+ *
+ *  In a Left/Right strip every tab fills the strip, none at x=-1. The tab is
+ *  moved into the other TabControl through addPage.
  */
 #include "headlessFixture.h"
 

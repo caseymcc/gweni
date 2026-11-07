@@ -14,6 +14,28 @@
  *  item fully in view. Also ScrollControl's virtual content under it: the
  *  vertical bar ranged from the virtual height, the offset clamped to it, and
  *  a bar the user moves setting the offset.
+ *
+ *  In detail: the pool is ceil(viewport/rowHeight)+1 rows for several heights,
+ *  and the rows on screen are bound once. A one-row scroll binds exactly the
+ *  row that came into view (the one that left); a page, a part-row offset, a
+ *  jump to the middle and to the end, the wheel (three rows a notch, a wheel
+ *  it cannot use passed on) and a resize taller and shorter bind only the rows
+ *  whose item changed; after each, every item in view is shown by one row
+ *  bound to it at index*rowHeight-offset in the viewport, no row elsewhere. A
+ *  shrinking count keeps every item from the top when they all fit; refresh /
+ *  refreshItem bind again. scrollToItem leaves an item already in view, called
+ *  in the frame of a resize shows it in the new viewport, and called before
+ *  the first layout shows it at the bottom of the first viewport. After a
+ *  wheel or a part-row scroll with no mouse move the row under the resting
+ *  mouse is the hovered one and a click there presses its item. A press held
+ *  while its row is scrolled to another item is cancelled (not depressed, no
+ *  capture, no click on release), one whose row keeps its item still clicks
+ *  it, and the keyboard focus leaves a row given another item (kept through
+ *  refreshItem of its own) so Space presses nothing. ScrollControl's inner
+ *  panel is the viewport, and content that fits hides the bar and scrolls
+ *  back. Deleting the list gives back every id; a pressed default row fires
+ *  onItemPressed with its item and stays unselected; and every frame lays out
+ *  in one pass with no layout request.
  */
 #include "headlessFixture.h"
 

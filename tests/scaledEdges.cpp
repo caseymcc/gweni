@@ -14,6 +14,13 @@
  *
  *  The renderer is shared with the other cases, so each case puts the scale and
  *  the render offset back when it ends (ScaleGuard).
+ *
+ *  The grid is adjacent 7x7 logical rects at scales 1.25, 1.5 and 2, drawn
+ *  with drawFilledRect and with drawRoundedRect: in opaque alternating colours
+ *  no background shows inside and the run lengths are within 1 px; in 50 %
+ *  black there is no darker overlap or lighter gap. A drawLinedRect must stay
+ *  closed, and a rounded-rect border must be max(1, round(border*s)) device px
+ *  of exactly the border colour.
  */
 #include <doctest/doctest.h>
 

@@ -8,6 +8,10 @@
  *  round(thickness) units across, centred on its middle) and the StubRenderer's
  *  record of every call, which control tests check their segments against.
  *  OpenGLCore's capsule (style 3) is checked pixel by pixel in tests/lines.cpp.
+ *
+ *  The default's rect starts across where OpenGLCore's stroke starts, its
+ *  fractional endpoints are rounded, and a zero-length segment is one unit
+ *  long.
  */
 #include "headlessFixture.h"
 

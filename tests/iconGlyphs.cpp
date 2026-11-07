@@ -24,6 +24,12 @@
  *
  *  The renderer is shared with the other cases, so each case puts the scale and
  *  the render offset back when it ends (ScaleGuard).
+ *
+ *  The cross is checked in odd, even and non-square rects: mirror-symmetric,
+ *  centred and inside its rect. The dash, square and restore are checked
+ *  against exactly the expected pixels, the restore's back square only outside
+ *  the front one. The rule is drawn horizontal and vertical at four
+ *  consecutive positions and covers nothing else.
  */
 #include <doctest/doctest.h>
 

@@ -14,6 +14,16 @@
  *  The last cases draw quads past the view's top-left edge and past what the
  *  signed 16-bit vertex position holds: a straddling quad draws exactly its
  *  on-view part, and one with a corner outside +/-32767 device px nothing.
+ *
+ *  The clipping cases: a slot after a hidden one, a region past the top-left
+ *  edge, an empty region, text laid out, moved and re-clipped. Every primitive
+ *  style (1, 2, 4, 5, 6, 7) is drawn straddling the view's left edge, top edge
+ *  and both, at scales 1 and 1.5: nothing outside the rect's on-view part, and
+ *  that part pixel for pixel the same rect drawn wholly inside the view,
+ *  shifted. Quads with a corner past +/-32767 device px (straddling 32767 or
+ *  65535, the far rows of a list at 2x, a right edge past 32767) or wholly
+ *  left of and above the view draw nothing; a culled quad keeps its style
+ *  through hide/show, and drawing it again writes and uploads nothing.
  */
 #include <doctest/doctest.h>
 

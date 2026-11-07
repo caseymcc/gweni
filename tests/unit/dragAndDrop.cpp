@@ -9,6 +9,11 @@
  *  its own page; a docked tab's title bar dragged onto another DockBase moves
  *  its tabs into that dock's tab control, and the dock it left, empty, is
  *  hidden. Neither drag draws anything of its own: there is no drag preview.
+ *
+ *  The tab is dropped on its neighbour's right half (the point taken once the
+ *  strip has closed up around the hidden tab); one dropped past the last tab
+ *  goes to the end. A title bar dropped on the root's empty centre is refused
+ *  and puts its dock back. Nothing is drawn after the walk.
  */
 #include "headlessFixture.h"
 

@@ -14,6 +14,9 @@
  *  they do not depend on the draw path under test. Each rect is drawn 1:1 with
  *  the texels, so a pixel centre is a texel centre and the linear filter returns
  *  that texel unblended.
+ *
+ *  Also: a UV sub-rect in the same frame as the two textures, and a ninth
+ *  texture, past the 8 image units.
  */
 #include <doctest/doctest.h>
 

@@ -40,6 +40,12 @@
  *
  *  GWENI_LINES_DUMP=<dir> writes the polyline frame at scale 1.5 to
  *  <dir>/lines_1.5x.png, to look at.
+ *
+ *  The horizontal and vertical cases run thicknesses 1, 1.5, 2 and 3 at four
+ *  phases of the grid. The joints are two 3-segment polylines at one z, which
+ *  also leave no centre-line pixel uncovered. A rect at a lower z drawn after
+ *  a line shows wherever the line leaves a pixel uncovered, the clip region
+ *  cuts a line, and an endpoint past +/-32767 device px draws nothing.
  */
 #include <doctest/doctest.h>
 

@@ -9,6 +9,8 @@
  *  follows it as extra glyphs (fixed in cca344a; it showed as ListBoxDemo
  *  output that changed with ASLR). These tests put known bytes after the NUL,
  *  so that over-read changes the result every time instead of by luck.
+ *
+ *  The glyphs drawn are counted with getFrameStats().textSlotsWritten.
  */
 #include <doctest/doctest.h>
 

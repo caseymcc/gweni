@@ -15,6 +15,15 @@
  *
  *  The renderer is shared with the other cases, so each case puts the clip
  *  region and the chunk size back when it ends.
+ *
+ *  The rects are a grid, each clipped to its left half, in slots past 16383
+ *  (the second index chunk) and at chunk sizes of 1 and 5
+ *  (setIndexChunkSlots): every chunk size gives the same pixels, with one
+ *  primitive draw per chunk. The text runs are clipped and laid out in two
+ *  atlases; one is hidden and another shrunk in place, and they draw what a
+ *  fresh layout of only what is shown draws. Hiding, showing and shrinking
+ *  upload no index, chunks of 3 and 1 glyph slots draw the same pixels, and at
+ *  1 there is one text draw per glyph shown.
  */
 #include <doctest/doctest.h>
 

@@ -13,6 +13,17 @@
  *  fires once per open; a disabled or hidden owner opens nothing; a menu the
  *  control created goes with it, one set from outside stays, and deleting a
  *  shared menu clears it from every control.
+ *
+ *  Menu::placement and keepInside on their own also put the menu against the
+ *  left/top edge where it fits on neither side. An open menu is placed again
+ *  when the canvas shrinks; when the nearest ancestor's menu wins, the other
+ *  one closes; a click outside may be with either button; onContextMenu fires
+ *  before the menu is laid out; a hidden owner closes its open menu. A created
+ *  menu goes with its owner on a delayed or outright delete, on
+ *  setContextMenu(nullptr) and when the canvas is deleted with it open; a menu
+ *  set from outside stays when an owner is deleted, and can be shared by two
+ *  owners. A menu elsewhere in the tree is re-parented to the canvas, and
+ *  Menu::open opens at the mouse, a later setPos winning.
  */
 #include "headlessFixture.h"
 

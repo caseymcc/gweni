@@ -16,6 +16,13 @@
  *  covered, and the "interior" of a square-cornered rect is the whole rect.
  *  A rect of odd size, at an odd position, covers exactly its w x h pixels, and
  *  so does an icon's (style 5) quad.
+ *
+ *  The pixels read back from the offscreen framebuffer (test::viewSize()) are
+ *  checked against the analytic colours: every straight-edge pixel fully
+ *  covered and the ring outside untouched, corner arcs partly covered,
+ *  abutting rects with no seam, an N px border exactly N rows, rects of odd
+ *  size at odd positions covering exactly w x h, and odd-sized icons (style 5)
+ *  centred in their rect.
  */
 #include <doctest/doctest.h>
 

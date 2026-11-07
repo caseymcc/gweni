@@ -20,6 +20,16 @@
  *  a click or a drag on its thumb and a drag of a CrossSplitter bar leave
  *  every request as it was. A window dragged by its title bar is where the
  *  user put it, a request.
+ *
+ *  See docs/layout.md, "Requested and computed bounds". A Placement::Owner
+ *  child is placed by placeChild alone (not docked, its request untouched) and
+ *  counted again once given back; a request made from a layout() is counted in
+ *  LayoutStats::requests / requestedType. The CrossSplitter holds wrapped
+ *  Labels, and of the two Properties one is docked and one in an unsized box:
+ *  they list the same bounds and preferred sizes after a trip to 1024x768 as
+ *  before it and as a fresh canvas, recording no request. A VerticalSlider
+ *  asks for its request at value 0 and 1 and takes a smaller layout cell in
+ *  one pass.
  */
 #include "headlessFixture.h"
 

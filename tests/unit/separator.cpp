@@ -11,6 +11,14 @@
  *  its Text, and moves the rule after it; MenuDivider draws through the
  *  Separator renderer; a bullet's circle sits in its column, centred on its line,
  *  in the text colour; and a settled frame draws nothing.
+ *
+ *  A docked rule is one icon of kind 6, its second slot hidden. A caption
+ *  interrupts the rule captionGap() clear on both sides; a longer caption
+ *  marks the separator StateChange_Background (its Text StateChange_Text), and
+ *  an empty one gives the single rule back; a placed separator's caption is
+ *  offset by its position. A Bullet's column is its font size (a larger font
+ *  widens it), its circle drawn at its parent's coordinates and redrawn by
+ *  setTextColor alone.
  */
 #include "headlessFixture.h"
 

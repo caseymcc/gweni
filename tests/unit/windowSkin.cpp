@@ -13,6 +13,20 @@
  *  WindowMinimizeButton) used to override render() without ever generating
  *  their primitives, so they drew nothing; now each has a renderer of its own,
  *  a surface slot and a glyph slot (an icon of drawIcon's kinds 2-5).
+ *
+ *  With the real, un-init()'d TexturedSkin on a recording StubRenderer: a
+ *  WindowControl gets the Window renderer and draws its body. Its close button
+ *  and standalone WindowMinimizeButton / WindowMaximizeButtons resolve their
+ *  own renderers (not Button) and take 2 primitive ids each (a surface hidden
+ *  at rest, a glyph of icon kind 2, 3 or 4 at the button's z+1 in FgDark,
+ *  centred), kept while the window is hidden and given back when it is
+ *  deleted. A hover and a press draw only that button's slots (the red
+ *  WindowCloseHover / WindowCloseDown with a Bg cross, ButtonHover and an Fg
+ *  glyph for maximise); moving off hides the surface again, a settled frame
+ *  draws nothing, and the release closes the window. A disabled button hides
+ *  its surface and draws a Muted glyph. setMaximized(true) marks
+ *  StateChange_Background and redraws only the glyph, as kind 5; the same
+ *  value again marks and draws nothing. setClosable(false) hides both slots.
  */
 #include "headlessFixture.h"
 

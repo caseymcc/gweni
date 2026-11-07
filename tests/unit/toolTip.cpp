@@ -11,6 +11,16 @@
  *  fills the same box in at once; leaving, a press, and the control being
  *  hidden, disabled or deleted hide it. A setToolTip() control is shown in the
  *  box and handed back to its owner, hidden, afterwards.
+ *
+ *  The clock is a driven setTimeSource. ToolTip::placement puts the box at the
+ *  bottom when neither below nor above fits; the box is unmoved by a move
+ *  inside the control; through a gap the delay starts again; a child shows its
+ *  parent's tooltip; a press hides it until the mouse has left, also when the
+ *  press comes in the same frame as the move onto the control; the cursor
+ *  leaving the window (input::GLFW3::processCursorEnter) hides it, while a
+ *  drag keeps its control hovered; clearing the text hides it too, and a
+ *  delete may be delayed or outright; a setToolTip() control is deleted with
+ *  its owner.
  */
 #include "headlessFixture.h"
 

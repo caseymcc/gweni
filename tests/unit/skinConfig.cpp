@@ -14,6 +14,18 @@
  *  A theme with "strict": true starts every surface colour field and every
  *  textColorRegistry() colour as magenta, so only what it sets shows its
  *  colour, and names what it left out on one stderr line per kind.
+ *
+ *  The unusable configs, over a temp dir: no DefaultSkin.json, a directory of
+ *  that name, an empty one, one that does not parse and one whose root is not
+ *  an object. Each fails with one stderr line naming it, every surface magenta
+ *  with its radius and border width kept, and the compiled text colours. The
+ *  atlas case uses StubRenderer::textureStatus, and its line names the
+ *  texture. A strict theme's gaps are per field, with the radius and border
+ *  width compiled and a rejected value counting as not set; init is still
+ *  true, with exactly its two summary lines, sorted (one line when it sets
+ *  everything). Without strict, with false or with a non-boolean (one
+ *  diagnostic), omitted values keep their compiled defaults. A case that
+ *  changes the global surfaces restores them through test::SurfaceSnapshot.
  */
 #include "headlessFixture.h"
 

@@ -14,6 +14,11 @@
  *
  *  This is the coverage path: a size that GWENI_SDF_TEXT_MIN puts in the SDF
  *  range is skipped.
+ *
+ *  The atlas is depth 1 / GL_R8. White text over mid-grey reads back with
+ *  R==G==B, white on black reads back as the atlas coverage texel for texel
+ *  (applied once, not squared), and "IIIIIIII"/"nnnnnnnn" at 8-16 px step by
+ *  one whole-pixel advance whose sum is measureText's width.
  */
 #include <doctest/doctest.h>
 

@@ -9,6 +9,10 @@
  *  OpenSans 11, a typed string 15), so the first character typed into an
  *  empty TextBox, or the last one deleted, changed the box's height and its
  *  layout moved every sibling.
+ *
+ *  One caret is 1 + padding wide and the line box lineHeight() + padding high;
+ *  checked at 11, 14, 24 and 36 px and at scales 1, 1.5 and 2. A TextBox keeps
+ *  its height when its first character is typed and its last deleted (#268).
  */
 #include <doctest/doctest.h>
 

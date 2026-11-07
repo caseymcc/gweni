@@ -9,6 +9,10 @@
  *  is a line high plus its padding with or without an item; its hidden menu
  *  (however wide its items) is not counted; Fixed takes the requested width.
  *  The first item added is selected, and Up/Down step the selection.
+ *
+ *  The chevron's column is ComboBox::ChevronSize+ChevronInset, kept as the
+ *  box's right padding, and the glyphs end before it. Up/Down also fire
+ *  onSelection.
  */
 #include <doctest/doctest.h>
 

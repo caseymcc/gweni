@@ -7,6 +7,9 @@
  *  initialisers, so its constructor reads no indeterminate bool), and
  *  setChecked fires onCheckChange plus onChecked or onUnChecked only when the
  *  state actually changes.
+ *
+ *  The uninitialised m_checked this guards against (#251) was harmless at -O0
+ *  and showed only under -DGWENI_SANITIZE=undefined.
  */
 #include "headlessFixture.h"
 

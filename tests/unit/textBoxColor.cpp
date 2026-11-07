@@ -7,6 +7,10 @@
  *  (Colors.Label.Default, which a theme's textColors.LabelDefault sets), and
  *  a colour the caller sets with setTextColor is kept through the focus,
  *  hover, redraw() and typing that re-run updateColors().
+ *
+ *  Checked for a new TextBox, TextBoxNumeric, TextBoxMultiline, property::Text
+ *  and Label, from their constructors; the caller's colour also survives the
+ *  focus moving away.
  */
 #include "headlessFixture.h"
 

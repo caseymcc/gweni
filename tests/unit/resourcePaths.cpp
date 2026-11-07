@@ -9,6 +9,13 @@
  *  join by string concatenation ("resources" + "x.json" gave resourcesx.json)
  *  on top of a getExecutableDir() that returned "" on Linux, and the textured
  *  skin opened its config name as given, bypassing ResourcePaths entirely.
+ *
+ *  Pinned: getExecutableDir() on Linux, RelativeToExecutablePaths /
+ *  CurrentPath joining as paths ("resources" and "resources/" alike, an
+ *  absolute dir taken as it is), the .ttf font suffix, and TexturedSkin::init
+ *  resolving its bare config name through the renderer's ResourcePaths (a
+ *  StubRenderer(paths) over a temp dir) and failing with one stderr line
+ *  naming the resolved path.
  */
 #include "headlessFixture.h"
 

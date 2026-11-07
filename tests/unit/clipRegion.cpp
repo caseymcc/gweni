@@ -8,6 +8,11 @@
  *  control (unless it does not clip), and a region with no overlap left is an
  *  empty rect, never a negative one, that the walk still passes to dirty
  *  children.
+ *
+ *  addClipRegion is checked on its own: an intersection at the render offset.
+ *  A shouldClip()==false control passes its parent's region through, and a
+ *  control moved out of its parent still renders its dirty children, with an
+ *  empty region.
  */
 #include "headlessFixture.h"
 

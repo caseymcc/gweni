@@ -15,6 +15,9 @@
  *
  *  GWENI_TEXT_ATLASES_PNG=<path> writes the two-font frame of the first case
  *  there, to look at.
+ *
+ *  Also: one font freed while its run is still allocated, and a steady
+ *  two-font frame uploading nothing.
  */
 #include <doctest/doctest.h>
 

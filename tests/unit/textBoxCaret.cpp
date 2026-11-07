@@ -10,6 +10,13 @@
  *  box is drawn changes. The selection sits at the text's z (behind every
  *  glyph, renderer::Base::renderText) and the caret at the box's overlay z,
  *  past its whole subtree and before the next control.
+ *
+ *  On a recording StubRenderer: nothing but hides while unfocused and no call
+ *  at all on idle frames; the caret at the cursor, each blink edge a single
+ *  show or hide of it; the geometry redrawn when the box moved while the caret
+ *  was off; the selection over the selected glyphs; a scrolled box's caret
+ *  following its text and the selection cut to the box; and a
+ *  TextBoxMultiline's caret past its line children, with no selection.
  */
 #include "headlessFixture.h"
 

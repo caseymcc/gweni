@@ -10,6 +10,11 @@
  *  points (the framebuffer is larger); a manual zoom multiplies the scale on
  *  top. The mapping happens before the truncation to whole units, and the
  *  deltas are in logical units too.
+ *
+ *  Pinned through input::windowToLogical and GLFW3::processMouseMove: X11-like
+ *  (window == framebuffer, scale 1.5), macOS-like (framebuffer twice the
+ *  window, scale 2), a 1.25 zoom on top, truncation after the mapping and
+ *  logical deltas.
  */
 #include <gweni/platforms/input/glfw3.h>
 

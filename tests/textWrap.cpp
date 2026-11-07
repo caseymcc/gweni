@@ -13,6 +13,21 @@
  *  deleted. The helpers read the wrap as data, re-wrapped when a helper asks
  *  after an edit, so between an edit and its layout they already answer for
  *  the edited string, and layout does not wrap it a second time.
+ *
+ *  The cases wrap a two-paragraph string in a container of known width and
+ *  check the line children (one row apart, no '\n' in any line string, one
+ *  empty line for "\n\n", none wider than the width), the char <-> line
+ *  helpers and caret rows across the '\n's, a re-wrap at a narrower width in
+ *  the first frame, that a layout with unchanged inputs keeps the same line
+ *  pointers and writes no text slots, that a new width or string reuses the
+ *  surviving lines (and matches a fresh wrap), that a text colour reaches the
+ *  lines, and TextBoxMultiline's Home/End/Up/Down, with a frame between keys
+ *  and with none. After a setText with no layout between, every char <-> line
+ *  helper (index and geometry, for every index, row and a grid of click
+ *  points) must answer as it does after the layout; before the first layout
+ *  they read the string unwrapped; and an edit is wrapped once, by a helper or
+ *  by layout (Text::wrapCount()), the children being synced from that wrap in
+ *  arrange.
  */
 #include <doctest/doctest.h>
 

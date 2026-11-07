@@ -16,6 +16,14 @@
  *  Each MenuItem, Menu and MenuStrip holds one slot, a settled frame writes
  *  none, and a hover move from one item to the next changes only those two
  *  items' pixels.
+ *
+ *  The menu's padding is 2 units. A disabled item keeps the Disabled text
+ *  colour. An item stays highlighted while its submenu is open with the mouse
+ *  in the submenu, and loses it when Menu::closeAll or Canvas::closeMenus
+ *  closes it. Labels are Left|CenterV at the item's padding, their Text ending
+ *  before the accelerator with no ink between. A MenuStrip's items are flat
+ *  until hovered or open. Opening and closing a submenu leaves the live ids as
+ *  they were.
  */
 #include <doctest/doctest.h>
 
