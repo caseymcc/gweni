@@ -20,6 +20,10 @@
 #  minimum CMake (3.12).
 #
 
+# a -P script starts with no policies set, and before CMake 4 GLOB_RECURSE then
+# follows a directory link in DST and the loop below deletes through it
+cmake_policy(SET CMP0009 NEW)
+
 foreach(var SRC DST)
     if(NOT DEFINED ${var} OR "${${var}}" STREQUAL "")
         message(FATAL_ERROR "mirrorDirectory.cmake: pass -D${var}=<dir>")
