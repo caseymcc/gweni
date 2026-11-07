@@ -22,7 +22,10 @@
  *    --shot-all         write one PNG per control demo, in this one run
  *    --shot-dir <dir>   directory for shots, created if missing (default /tmp)
  *    --headless         force the surfaceless EGL context (no display needed)
- *    --stats            print one key=value line per frame; freezes the clock
+ *    --stats            print one key=value line per frame; freezes the clock.
+ *                       prim_ids= counts the live primitive ids (handed out
+ *                       and not released) after the frame; the id bank is
+ *                       process-wide, so it covers every canvas
  *    --require-one-pass fail the run (exit non-zero) if any frame's layout took
  *                       more than one update-phase pass or the render phase
  *                       laid out again; each such frame is named on stderr
@@ -456,7 +459,7 @@ static void printFrameStats(int frame, const std::string &control,
         " geometry=%zu background=%zu text=%zu prim_slots_written=%zu text_slots_written=%zu"
         " upload_calls=%zu upload_bytes=%zu mirror_bytes=%zu draw_calls=%zu"
         " atlas_upload_calls=%zu atlas_upload_bytes=%zu"
-        " layout_passes=%d redirtied_by=%s render_layout=%d visited=%zu\n",
+        " layout_passes=%d redirtied_by=%s render_layout=%d visited=%zu prim_ids=%zu\n",
         frame, control.c_str(),
         changes.controls, changes.created, changes.visibility,
         changes.geometry, changes.background, changes.text,
@@ -464,7 +467,7 @@ static void printFrameStats(int frame, const std::string &control,
         gpu.uploadCalls, gpu.uploadBytes, gpu.mirrorBytes, gpu.drawCalls,
         gpu.atlasUploadCalls, gpu.atlasUploadBytes,
         layout.passes, redirtiedBy(layout).c_str(), layout.renderLayout ? 1 : 0,
-        changes.visited);
+        changes.visited, gweni::primitiveIdCount()-gweni::releasedPrimitiveIdCount());
     std::fflush(stdout);
 }
 
