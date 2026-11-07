@@ -56,7 +56,17 @@ void Button::render(skin::Base *skin)
 //    }
 }
 
-void Button::onMouseClickLeft(int /*x*/, int /*y*/, bool down)
+// Whether the canvas point (x, y) is inside the button. A press holds the
+// mouse, and the holder stays hovered wherever the mouse goes, so the release
+// is tested by its position: one off the button cancels the click.
+bool Button::containsCanvasPoint(int x, int y)
+{
+    const Point local=canvasPosToLocal(Point(x, y));
+
+    return local.x >= 0 && local.y >= 0 && local.x < getWidth() && local.y < getHeight();
+}
+
+void Button::onMouseClickLeft(int x, int y, bool down)
 {
     if(isDisabled())
         return;
@@ -69,7 +79,7 @@ void Button::onMouseClickLeft(int /*x*/, int /*y*/, bool down)
     }
     else
     {
-        if(isHovered() && m_depressed)
+        if(m_depressed && containsCanvasPoint(x, y))
         {
             onPress(event::Info(this));
         }
@@ -80,7 +90,7 @@ void Button::onMouseClickLeft(int /*x*/, int /*y*/, bool down)
     }
 }
 
-void Button::onMouseClickRight(int /*x*/, int /*y*/, bool down)
+void Button::onMouseClickRight(int x, int y, bool down)
 {
     if(isDisabled())
         return;
@@ -93,7 +103,7 @@ void Button::onMouseClickRight(int /*x*/, int /*y*/, bool down)
     }
     else
     {
-        if(isHovered() && m_depressed)
+        if(m_depressed && containsCanvasPoint(x, y))
         {
             onRightPress(event::Info(this));
         }

@@ -60,8 +60,29 @@ static float g_fLastClickTime[c_MaxMouseButtons];
 static Point g_pntLastClickPos;
 
 
+// While a control on this canvas holds the mouse (MouseFocus), it is the
+// hovered control: a move hit-tests nothing and sends no leave or enter, so a
+// drag repaints only what the captured control changes itself. Hover is
+// hit-tested again once the capture ends (onMouseClicked, onCanvasThink).
 static void UpdateHoveredControl(controls::Base *inCanvas)
 {
+    if(MouseFocus && MouseFocus->getCanvas() == inCanvas)
+    {
+        if(HoveredControl != MouseFocus)
+        {
+            if(HoveredControl)
+            {
+                controls::Base *OldHover=HoveredControl;
+                HoveredControl=nullptr;
+                OldHover->onMouseLeave();
+            }
+
+            HoveredControl=MouseFocus;
+        }
+
+        return;
+    }
+
     controls::Base *hovered=inCanvas->getControlAt(g_mousePosition.x, g_mousePosition.y);
 
     if(hovered != HoveredControl)
@@ -77,18 +98,6 @@ static void UpdateHoveredControl(controls::Base *inCanvas)
 
         if(HoveredControl)
             HoveredControl->onMouseEnter();
-    }
-
-    if(MouseFocus && MouseFocus->getCanvas() == inCanvas)
-    {
-        if(HoveredControl)
-        {
-            controls::Base *OldHover=HoveredControl;
-            HoveredControl=nullptr;
-            OldHover->redraw();
-        }
-
-        HoveredControl=MouseFocus;
     }
 }
 
@@ -122,7 +131,14 @@ Point getMousePosition()
 void onCanvasThink(controls::Base *control)
 {
     if(MouseFocus && !MouseFocus->visible())
+    {
+        const bool captured=(MouseFocus->getCanvas() == control);
         MouseFocus=nullptr;
+
+        // its holder hidden, the hover goes to what is under the mouse
+        if(captured)
+            UpdateHoveredControl(control);
+    }
 
     if(KeyboardFocus
         && (!KeyboardFocus->visible() || !KeyboardFocus->getKeyboardInputEnabled()))
@@ -206,7 +222,13 @@ bool onMouseClicked(controls::Base *canvas, int iMouseButton, bool down)
     if(down && (!HoveredControl || !HoveredControl->isMenuComponent()))
         canvas->closeMenus();
 
+    const bool captured=(MouseFocus && MouseFocus->getCanvas() == canvas);
     const bool handled=deliverMouseClick(canvas, iMouseButton, down);
+
+    // The click ended the capture (a release, usually): the hover was pinned
+    // to the holder, so it goes to what is under the mouse now.
+    if(captured && !MouseFocus)
+        UpdateHoveredControl(canvas);
 
     // A right press opens the context menu of the control under the mouse (or
     // of its nearest ancestor with one), once the press has closed the menus

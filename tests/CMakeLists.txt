@@ -307,7 +307,8 @@ add_executable(gweni_unit_tests
     unit/textAlignment.cpp
     unit/toolTip.cpp
     unit/textBoxColor.cpp
-    unit/drawLine.cpp)
+    unit/drawLine.cpp
+    unit/mouseCapture.cpp)
 gweni_set_warnings(gweni_unit_tests)
 target_link_libraries(gweni_unit_tests
     gweni

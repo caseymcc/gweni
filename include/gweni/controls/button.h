@@ -101,6 +101,10 @@ public:
 
 protected:
 
+    //! Is the canvas point (x, y) inside the button? A release decides the
+    //! click by it, since the pressed button stays hovered off itself.
+    bool containsCanvasPoint(int x, int y);
+
     ImagePanel *m_image;    ///< Optional image to be displayed on button.
 
     bool m_depressed;          ///< Is button currently being pressed?
