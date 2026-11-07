@@ -142,7 +142,8 @@ public:
     virtual void releaseTextPrimitive(size_t primitiveId) {}
 
     //! Draw \a text as one line into the run of \a textId, in front of
-    //! \a zIndex. \a pos is the top-left of the line box, in canvas units
+    //! \a zIndex and behind \a zIndex+1: a rect drawn at \a zIndex is
+    //! behind every glyph. \a pos is the top-left of the line box, in canvas units
     //! like the rects: the box is measureText(font, text) wide and
     //! ceil(font->height) high (ascender-descender, no line gap), and the
     //! baseline is at pos.y+ascender. A control puts \a pos where it wants

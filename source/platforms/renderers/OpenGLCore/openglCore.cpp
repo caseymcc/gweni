@@ -2479,8 +2479,9 @@ void OpenGLCore::renderText(size_t textId, const gweni::Font &font, gweni::Point
         if((pos.x != run.position.x) || (pos.y != run.position.y) || (zIndex != run.zIndex))
         {
             const gweni::Point delta=pos-run.position;
-            const float zDelta=run.glyphs?1.0f/run.glyphs:0.0f;
-            float zOffset=0.0f;
+            // the same offsets as the rebuild below gives
+            const float zDelta=1.0f/(run.glyphs+1);
+            float zOffset=zDelta;
 
 #ifdef DEBUG_RENDER
             std::cout<<"Moving text run: ("<<pos.x<<", "<<pos.y<<" : "<<zIndex<<") "<<text<<"\n";
@@ -2558,8 +2559,8 @@ void OpenGLCore::renderText(size_t textId, const gweni::Font &font, gweni::Point
     setTextRunFont(textId, &fontData);
     allocateTextRun(run, glyphCount);
 
-    const float zDelta=glyphCount?1.0f/glyphCount:0.0f;
-    float zOffset=0.0f;
+    const float zDelta=1.0f/(glyphCount+1);
+    float zOffset=zDelta;
 
 #ifdef DEBUG_RENDER
     std::cout<<"Regenerating text run: ("<<pos.x<<", "<<pos.y<<" : "<<zIndex<<") "<<text<<"\n";
@@ -2571,8 +2572,11 @@ void OpenGLCore::renderText(size_t textId, const gweni::Font &font, gweni::Point
         const float shift=shifts.empty()?0.0f:shifts[i];
         // Each glyph of a run sits a fraction of a z unit in front of the one
         // before it, so the GL_LESS depth test cannot reject the overlap between
-        // two neighbouring glyph boxes. Accumulated rather than i*zDelta, which
-        // rounds differently and would move a glyph by an ulp of depth.
+        // two neighbouring glyph boxes. Glyph i is at zIndex+(i+1)/(glyphs+1),
+        // strictly between zIndex and zIndex+1: a primitive drawn at the run's
+        // own z (a TextBox's selection) is behind every glyph, not tied with the
+        // first. Accumulated rather than (i+1)*zDelta, which rounds differently
+        // and would move a glyph by an ulp of depth.
         const float z=zIndex+zOffset;
 
         zOffset+=zDelta;

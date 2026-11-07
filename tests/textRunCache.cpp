@@ -192,17 +192,18 @@ TEST_CASE("Text run: a same-string zIndex change re-offsets the glyphs to a fres
 
     CHECK(bytes == atNine);
 
-    // z = zIndex + the glyph's shift: the first glyph sits at zIndex itself and
-    // every later one in front of it, less than one z unit away
+    // z = zIndex + the glyph's shift: every glyph in front of zIndex itself
+    // (a rect drawn there is behind the whole run) and of the one before it,
+    // less than one z unit away
     const std::vector<ftgl::glyph_vertex_t> vertexes=glyphVertexes(bytes);
 
     REQUIRE(!vertexes.empty());
-    CHECK(vertexes.front().z == 9.0f);
+    CHECK(vertexes.front().z > 9.0f);
 
     bool inFrontOfZIndex=true;
 
     for(const ftgl::glyph_vertex_t &vertex:vertexes)
-        inFrontOfZIndex=inFrontOfZIndex && (vertex.z >= 9.0f) && (vertex.z < 10.0f);
+        inFrontOfZIndex=inFrontOfZIndex && (vertex.z > 9.0f) && (vertex.z < 10.0f);
     CHECK(inFrontOfZIndex);
 
     renderer.releaseTextPrimitive(textId);
@@ -488,7 +489,13 @@ TEST_CASE("Text run: a label brought to front re-depths its glyphs with the same
     const std::vector<ftgl::glyph_vertex_t> before=runOf(4);
 
     REQUIRE(backZ < frontText->getZIndex());
-    CHECK(before.front().z == float(backZ));
+    // each run just in front of its label's z
+    auto atZ=[](const std::vector<ftgl::glyph_vertex_t> &run, int z)
+        {
+            return !run.empty() && run.front().z > float(z) && run.back().z < float(z+1);
+        };
+
+    CHECK(atZ(before, backZ));
 
     back->bringToFront();
     frame();
@@ -500,8 +507,8 @@ TEST_CASE("Text run: a label brought to front re-depths its glyphs with the same
     const std::vector<ftgl::glyph_vertex_t> after=runOf(4);
 
     REQUIRE(after.size() == before.size());
-    CHECK(after.front().z == float(backText->getZIndex()));
-    CHECK(runOf(8).front().z == float(frontText->getZIndex()));
+    CHECK(atZ(after, backText->getZIndex()));
+    CHECK(atZ(runOf(8), frontText->getZIndex()));
 
     bool samePlace=true;
 
