@@ -850,20 +850,26 @@ float sdRoundBox(vec2 p, vec2 b, float r)
 }
 
 // Rounded-rect mask of styles 4, 6 and 7: applies the border to fill and the
-// anti-aliased outer edge to its alpha.
+// anti-aliased outer edge to its alpha. Both are a 1 px box filter: the part of
+// the pixel on the inner side of the edge, with aa the length of d's screen
+// gradient (1 px of d per px). A pixel-aligned straight edge is then exactly 1
+// inside and 0 outside, so the outermost pixel is fully covered, two rects that
+// abut meet without a seam and an N px border is N whole rows; only a curved
+// edge (a corner arc) gets partial coverage.
 vec4 roundedRect(vec4 fill)
 {
     float r = clamp(vRadius, 0.0, min(vHalf.x, vHalf.y));
     float d = sdRoundBox(vLocal, vHalf, r);
-    float aa = max(fwidth(d), 1e-4);
-    float shapeA = 1.0 - smoothstep(-aa, aa, d);   // outer edge coverage
+    // not fwidth(d) = |dx|+|dy|, which is sqrt(2) too wide across a corner diagonal
+    float aa = max(length(vec2(dFdx(d), dFdy(d))), 1e-4);
+    float shapeA = clamp(0.5 - d/aa, 0.0, 1.0);   // outer edge coverage
 
     vec3 rgb = fill.rgb;
     if(vBorder > 0.0)
     {
         // -d is the inward distance from the edge; border occupies [0, vBorder].
-        float bMix = 1.0 - smoothstep(vBorder - aa, vBorder + aa, -d);
-        rgb = mix(fill.rgb, vBorderColor.rgb, clamp(bMix, 0.0, 1.0));
+        float bMix = clamp(0.5 + (vBorder + d)/aa, 0.0, 1.0);
+        rgb = mix(fill.rgb, vBorderColor.rgb, bMix);
     }
     return vec4(rgb, fill.a * shapeA);
 }
@@ -896,7 +902,8 @@ vec4 imageTexel(int unit, vec2 uv, vec2 dx, vec2 dy)
 
 void main()
 {
-    // Tested here, discarded at the end: fwidth() below wants the whole quad alive.
+    // Tested here, discarded at the end: the derivatives below (dFdx/dFdy, fwidth)
+    // want the whole quad alive.
     uvec4 clip = texelFetch(clipBoxes, gl_PrimitiveID >> 1);
     bool clipped = any(lessThan(vPixel, vec2(clip.xy))) || any(greaterThanEqual(vPixel, vec2(clip.zw)));
     vec2 uvDx = dFdx(TexCoords);
