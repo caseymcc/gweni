@@ -134,6 +134,31 @@ if(TARGET ControlTest)
         LABELS gpu
         TIMEOUT 300)
 
+    # keys handled in one frame, after an edit and before the layout that
+    # re-wraps it, move the caret through the edited text's lines (#209): the
+    # same script with no frame between the keys and with one after each edit
+    # ends with the same text. Click on TextBoxMultiline's blank row, then Home,
+    # X, Up, Y, Up, Z.
+    set(SAME_FRAME_TEXT [=[I think we're losing sight of the real isZsue here, which is: what are we gYonna call ourselves?
+X
+Erm, and I think it comes down to a choice between "The League Against Salivating Monsters" or my own personal preference, which is "The Committee for the Liberation and Integration of Terrifying Organisms and their Rehabilitation Into Society." Erm, one drawback with that: the abbreviation is "CLITORIS."]=])
+    foreach(variant same_frame layout_between)
+        if(variant STREQUAL "same_frame")
+            set(between)
+        else()
+            set(between --frames 1)
+        endif()
+        add_test(NAME controltest_multiline_keys_${variant}
+            COMMAND $<TARGET_FILE:ControlTest> --headless --control TextBoxDemo
+                --frames 3 --click 5,308 --frames 2
+                --key home --type X ${between} --key up --type Y ${between}
+                --key up --type Z ${between} --expect-text "${SAME_FRAME_TEXT}"
+            WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
+        set_tests_properties(controltest_multiline_keys_${variant} PROPERTIES
+            LABELS gpu
+            TIMEOUT 60)
+    endforeach()
+
     # children are cut at their clipping parent's edges: content overflowing a
     # ScrollControl and a Window dragged past each edge of its parent leave the
     # pixels outside unchanged, and moved right out they leave nothing behind;

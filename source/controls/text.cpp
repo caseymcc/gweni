@@ -59,7 +59,7 @@ void Text::setFont(const gweni::Font &font)
     addStateChange(controls::StateChange_Text);
 
     m_font=&font;
-    m_linesStale=true;
+    m_wrapStale=true;
     // Change the font of multilines too!
     for(auto &&line : m_lines)
     {
@@ -77,7 +77,7 @@ void Text::setText(const String &str)
     addStateChange(controls::StateChange_Text);
 
     m_string=str;
-    m_linesStale=true;
+    m_wrapStale=true;
     // Its size, and wrapped its lines, come from the string: lay it out again.
     invalidate();
 }
@@ -115,78 +115,87 @@ void Text::setText(const String &str)
 //        m_string);
 //}
 
+// Wrapped, the rect on the row of the line holding the character, measured
+// in the line's text as the line child would measure it, so it needs the wrap
+// only, not the children (out of date between an edit and layout).
 gweni::Rect Text::getCharacterPosition(unsigned int value)
 {
-    if(!m_lines.empty())
+    if(ensureWrapped())
     {
         const int index=static_cast<int>(value);
         const int lineIndex=getLineFromChar(index);
-        Text *line=m_lines[lineIndex];
+        const WrappedLine &line=m_wrapped[lineIndex];
         // On the '\n' that ends a line, the caret is at that line's end.
-        const int pos=gweni::clamp(index-getStartCharFromLine(lineIndex), 0, line->length());
+        const int pos=gweni::clamp(index-getStartCharFromLine(lineIndex), 0,
+            static_cast<int>(line.text.length()));
 
-        gweni::Rect rect=line->getCharacterPosition(pos);
-        rect.x+=line->getX();
-        rect.y+=line->getY();
+        gweni::Rect rect=characterPositionIn(line.text, static_cast<unsigned int>(pos));
+        rect.y+=lineIndex*lineHeight();
         return rect;
     }
 
-    if(length() == 0 || value == 0)
+    return characterPositionIn(m_string, value);
+}
+
+gweni::Rect Text::characterPositionIn(const gweni::String &str, unsigned int value)
+{
+    if(str.empty() || value == 0)
     {
         gweni::Point p=getSkin()->getRenderer()->measureText(getFont(), " ");
         return gweni::Rect(0, 0, 0, p.y);
     }
 
-    String sub=m_string.substr(0, value);
+    String sub=str.substr(0, value);
     gweni::Point p=getSkin()->getRenderer()->measureText(getFont(), sub);
     return Rect(p.x, 0, 0, p.y);
 }
 
 gweni::Rect Text::getLineBox(int i)
 {
-    Text *line=getLine(i);
-    if(line != nullptr)
-    {
-        gweni::Point p=getSkin()->getRenderer()->measureText(getFont(), line->m_string);
-        return gweni::Rect(line->getX(), line->getY(), clamp(p.x, 1, p.x), clamp(p.y, 1, p.y));
-    }
-    else
-    {
-        gweni::Point p=getSkin()->getRenderer()->measureText(getFont(), m_string);
-        return gweni::Rect(0, 0, clamp(p.x, 1, p.x), clamp(p.y, 1, p.y));
-    }
+    const bool wrapped=ensureWrapped() && i >= 0 && i < static_cast<int>(m_wrapped.size());
+    const gweni::String &str=wrapped?m_wrapped[i].text:m_string;
+    const int y=wrapped?i*lineHeight():0;
+
+    gweni::Point p=getSkin()->getRenderer()->measureText(getFont(), str);
+    return gweni::Rect(0, y, clamp(p.x, 1, p.x), clamp(p.y, 1, p.y));
 }
 
 int Text::getClosestCharacter(gweni::Point p)
 {
-    if(!m_lines.empty())
+    if(ensureWrapped())
     {
         // The lines are stacked top to bottom: the last one starting at or
         // above p, or the first one when p is above them all.
+        const int rowHeight=lineHeight();
         size_t lineIndex=0;
 
-        for(size_t i=1; i < m_lines.size(); ++i)
+        for(size_t i=1; i < m_wrapped.size(); ++i)
         {
-            if(p.y < m_lines[i]->getY())
+            if(p.y < static_cast<int>(i)*rowHeight)
                 break;
             lineIndex=i;
         }
 
         const int iLine=static_cast<int>(lineIndex);
-        Text *line=m_lines[lineIndex];
         const int start=getStartCharFromLine(iLine);
-        const int iLinePos=line->getClosestCharacter(gweni::Point(p.x-line->getX(), p.y-line->getY()));
+        const int iLinePos=closestCharacterIn(m_wrapped[lineIndex].text,
+            gweni::Point(p.x, p.y-iLine*rowHeight));
 
         return gweni::clamp(start+iLinePos, start, getLastCaretOnLine(iLine));
     }
 
+    return closestCharacterIn(m_string, p);
+}
+
+int Text::closestCharacterIn(const gweni::String &str, gweni::Point p)
+{
     int iDistance=4096;
     size_t value=0;
 
     // Only codepoint boundaries: the caret never goes inside a UTF-8 sequence.
-    for(size_t i=0; ; i=utf8Next(m_string, i))
+    for(size_t i=0; ; i=utf8Next(str, i))
     {
-        gweni::Rect cp=getCharacterPosition(static_cast<unsigned int>(i));
+        gweni::Rect cp=characterPositionIn(str, static_cast<unsigned int>(i));
         const int iDist=std::abs(cp.x-p.x) + std::abs(cp.y-p.y);  // this isn't proper
 
         if(iDist <= iDistance)
@@ -195,7 +204,7 @@ int Text::getClosestCharacter(gweni::Point p)
             value=i;
         }
 
-        if(i >= m_string.length())
+        if(i >= str.length())
             break;
     }
 
@@ -261,6 +270,7 @@ void Text::arrange(skin::Base *skin, Dim dim)
             PlacementScope placement;
 
             removeLines(0);
+            m_wrappedWidth=-1;
         }
     }
 
@@ -426,10 +436,47 @@ void Text::wrapLines(int w, std::vector<WrappedLine> &lines)
     lines.push_back({strLine, lineLength});
 }
 
+bool Text::wrapCurrent(int w) const
+{
+    return !m_wrapStale && w == m_wrapWidth && m_font == m_wrapFont && *m_font == m_wrapFontValue;
+}
+
+void Text::wrapAt(int w)
+{
+    if(wrapCurrent(w))
+        return;
+
+    m_wrapped.clear();
+    wrapLines(w, m_wrapped);
+    ++m_wrapCount;
+
+    m_wrapStale=false;
+    m_wrapWidth=w;
+    m_wrapFont=m_font;
+    m_wrapFontValue=*m_font;
+    // a new wrap, which the line children do not show yet
+    m_linesStale=true;
+}
+
+// Between an edit and the next layout the string is wrapped again at the
+// width of the last wrap (the last layout's, or a newer parent width a
+// measure has wrapped at since), the width that layout will wrap at unless
+// the parent changes size, so the helpers see the edited string. Only the
+// data: a child is made, moved or deleted by layout alone.
+bool Text::ensureWrapped()
+{
+    if(!m_wrap || m_wrappedWidth < 0 || !m_font)
+        return false;
+
+    if(!wrapCurrent(m_wrapWidth))
+        wrapAt(m_wrapWidth);
+
+    return true;
+}
+
 bool Text::linesCurrent(int width) const
 {
-    return !m_linesStale && !m_lines.empty() && width == m_wrappedWidth &&
-        m_font == m_wrappedFont && *m_font == m_wrappedFontValue;
+    return !m_linesStale && !m_lines.empty() && wrapCurrent(width);
 }
 
 void Text::removeLines(size_t count)
@@ -439,15 +486,16 @@ void Text::removeLines(size_t count)
         Text *line=m_lines.back();
 
         m_lines.pop_back();
-        m_lineLengths.pop_back();
         // ~Base takes it out of the children and gives its ids back.
         delete line;
     }
 }
 
-// The lines that are there are given the new strings and rows, which changes
-// nothing (no new text slots) for a line that shows the same text on the same
-// row; only the lines past them are added or deleted.
+// The string is wrapped into m_wrapped unless it already holds this wrap (a
+// helper wrapped the edit before this layout). The lines that are there are
+// given the new strings and rows, which changes nothing (no new text slots)
+// for a line that shows the same text on the same row; only the lines past
+// them are added or deleted.
 Size Text::RefreshSizeWrap(bool update)
 {
     if(!m_font)
@@ -462,20 +510,18 @@ Size Text::RefreshSizeWrap(bool update)
     if(linesCurrent(w))
         return Size(w, static_cast<int>(m_lines.size())*lineHeight);
 
-    std::vector<WrappedLine> lines;
+    wrapAt(w);
 
-    wrapLines(w, lines);
-
-    const int height=static_cast<int>(lines.size())*lineHeight;
+    const int height=static_cast<int>(m_wrapped.size())*lineHeight;
 
     if(!update)
         return Size(w, height);
 
-    removeLines(lines.size());
+    removeLines(m_wrapped.size());
 
     int y=0;
 
-    for(size_t i=0; i < lines.size(); ++i)
+    for(size_t i=0; i < m_wrapped.size(); ++i)
     {
         if(i == m_lines.size())
         {
@@ -488,26 +534,22 @@ Size Text::RefreshSizeWrap(bool update)
             t->setAlignment(Alignment::Absolute);
 
             m_lines.push_back(t);
-            m_lineLengths.push_back(0);
         }
 
         Text *t=m_lines[i];
 
-        t->setText(lines[i].text);
+        t->setText(m_wrapped[i].text);
 
         Size size=t->refreshSize();
         size.height=lineHeight;
         t->setPreferredSize(size);
         t->setPos(0, y);
 
-        m_lineLengths[i]=lines[i].length;
         y+=lineHeight;
     }
 
     m_linesStale=false;
     m_wrappedWidth=w;
-    m_wrappedFont=m_font;
-    m_wrappedFontValue=*m_font;
 
     // The parent's width and the height of the lines, the same as the
     // preferred size calculateSize gets from this function.
@@ -518,7 +560,10 @@ Size Text::RefreshSizeWrap(bool update)
 
 unsigned int Text::numLines()
 {
-    return static_cast<unsigned int>(m_lines.size());
+    if(!ensureWrapped())
+        return 0;
+
+    return static_cast<unsigned int>(m_wrapped.size());
 }
 
 Text *Text::getLine(int i)
@@ -531,22 +576,25 @@ Text *Text::getLine(int i)
 
 int Text::getLineLength(int i)
 {
-    if(i < 0 || i >= static_cast<int>(m_lineLengths.size()))
+    if(!ensureWrapped() || i < 0 || i >= static_cast<int>(m_wrapped.size()))
         return 0;
 
-    return m_lineLengths[i];
+    return m_wrapped[i].length;
 }
 
 // The line holding character i: the first one whose source range runs past
 // it, so a '\n' belongs to the line it ends; past the end, the last line.
 int Text::getLineFromChar(int i)
 {
+    if(!ensureWrapped())
+        return 0;
+
     int iChars=0;
-    const int count=static_cast<int>(m_lineLengths.size());
+    const int count=static_cast<int>(m_wrapped.size());
 
     for(int iLine=0; iLine < count; ++iLine)
     {
-        iChars+=m_lineLengths[iLine];
+        iChars+=m_wrapped[iLine].length;
 
         if(iChars > i)
             return iLine;
@@ -557,11 +605,14 @@ int Text::getLineFromChar(int i)
 
 int Text::getStartCharFromLine(int i)
 {
+    if(!ensureWrapped())
+        return 0;
+
     int iChars=0;
-    const int count=std::min(i, static_cast<int>(m_lineLengths.size()));
+    const int count=std::min(i, static_cast<int>(m_wrapped.size()));
 
     for(int iLine=0; iLine < count; ++iLine)
-        iChars+=m_lineLengths[iLine];
+        iChars+=m_wrapped[iLine].length;
 
     return gweni::clamp(iChars, 0, length());
 }
@@ -578,7 +629,7 @@ int Text::getLastCaretOnLine(int i)
 
     // The last line ends the text; any other ends with its '\n' or with the
     // character the next line wraps after.
-    if(i >= static_cast<int>(m_lines.size())-1 || end <= start)
+    if(i >= static_cast<int>(numLines())-1 || end <= start)
         return end;
 
     return static_cast<int>(utf8Prev(m_string, static_cast<size_t>(end)));
@@ -586,11 +637,10 @@ int Text::getLastCaretOnLine(int i)
 
 int Text::getCharPosOnLine(int i)
 {
-    int iLine=getLineFromChar(i);
-
-    if(!getLine(iLine))
+    if(!ensureWrapped())
         return 0;
 
+    int iLine=getLineFromChar(i);
     int iStart=getStartCharFromLine(iLine);
     return i-iStart;
 }

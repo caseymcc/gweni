@@ -141,10 +141,20 @@ TreeNode's toggle), not resize one.
   requested width, is laid out at its parent's width, and updates its line
   children at the start of its X arrange when the string, the font (pointer
   or value), the wrap flag or that width changed (`Text::linesCurrent`). The
+  wrap itself is data (`m_wrapped`: each line's text and how many characters
+  of the string it holds), kept apart from the children: the char <-> line
+  helpers (`getLineFromChar`, `getCharacterPosition`, `getClosestCharacter`,
+  ...) read only that data, and re-wrap it on demand at the last layout's
+  width when the string or font changed since (`Text::ensureWrapped`), so a
+  key or click handled in the frame of an edit, before its layout, sees the
+  edited string. That re-wrap touches no child; the X arrange then makes the
+  children show the data, and does not wrap again for a width it already
+  holds (`Text::wrapCount`). Before the first wrapped layout no width is
+  known, and the helpers read the string unwrapped. The
   lines there are reused: each gets its new string and row, which writes
   nothing for a line that did not change, and only the extra lines are
   created or the surplus ones deleted. `setText` invalidates layout, so an
-  edit is laid out (and re-wrapped) by the next frame. Each line is an `Alignment::Absolute` child
+  edit is laid out by the next frame. Each line is an `Alignment::Absolute` child
   placed at `(0, i * lineHeight)` and given that row height, an empty line
   included; its string has no `'\n'` (freetype-gl would break the run there),
   and the parent keeps how many characters of its string each line holds, the

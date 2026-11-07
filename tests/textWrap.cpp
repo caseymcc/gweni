@@ -10,7 +10,9 @@
  *  string, which still counts every '\n', to the line and row holding them.
  *  The lines are kept while the string, font and width are unchanged, and
  *  updated in place when they change: only the difference is created or
- *  deleted.
+ *  deleted. The helpers read the wrap as data, re-wrapped when a helper asks
+ *  after an edit, so between an edit and its layout they already answer for
+ *  the edited string, and layout does not wrap it a second time.
  */
 #include <doctest/doctest.h>
 
@@ -23,6 +25,7 @@
 #include <gweni/skins/textured/texturedSkin.h>
 
 #include <memory>
+#include <string>
 #include <vector>
 
 namespace
@@ -444,7 +447,244 @@ TEST_CASE("Wrapped text: a text colour reaches the lines")
         CHECK((line->getTextColor() == red));
 }
 
-TEST_CASE("TextBoxMultiline: Home, End, Up and Down land on the rows of the wrapped text")
+namespace
+{
+
+//! Every char <-> line helper's answer for every index and row of the
+//! string, and the character a click finds at points along and past each
+//! row, one line each, so two states can be compared answer by answer.
+std::vector<String> helperAnswers(WrapScene &scene)
+{
+    Text *text=scene.text;
+    const int length=text->length();
+    const int lines=static_cast<int>(text->numLines());
+    const int rowHeight=scene.lineHeight();
+    std::vector<String> answers;
+
+    const auto rect=[](const gweni::Rect &r)
+    {
+        return std::to_string(r.x)+","+std::to_string(r.y)+","+std::to_string(r.w)+","+std::to_string(r.h);
+    };
+
+    answers.push_back("numLines="+std::to_string(lines));
+
+    for(int c=0; c <= length; ++c)
+    {
+        const String at="("+std::to_string(c)+")=";
+
+        answers.push_back("getLineFromChar"+at+std::to_string(text->getLineFromChar(c)));
+        answers.push_back("getCharPosOnLine"+at+std::to_string(text->getCharPosOnLine(c)));
+        answers.push_back("getCharacterPosition"+at+rect(text->getCharacterPosition(c)));
+    }
+
+    // one row past the last, which the helpers clamp
+    for(int i=0; i <= lines; ++i)
+    {
+        const String at="("+std::to_string(i)+")=";
+
+        answers.push_back("getStartCharFromLine"+at+std::to_string(text->getStartCharFromLine(i)));
+        answers.push_back("getEndCharFromLine"+at+std::to_string(text->getEndCharFromLine(i)));
+        answers.push_back("getLastCaretOnLine"+at+std::to_string(text->getLastCaretOnLine(i)));
+        answers.push_back("getLineLength"+at+std::to_string(text->getLineLength(i)));
+        answers.push_back("getLineBox"+at+rect(text->getLineBox(i)));
+    }
+
+    // above the first row, on each, and below the last
+    for(int y=-rowHeight/2; y <= (lines+1)*rowHeight; y+=rowHeight/2)
+    {
+        for(int x=-4; x <= text->getWidth()+8; x+=3)
+        {
+            answers.push_back("getClosestCharacter("+std::to_string(x)+","+std::to_string(y)+")="
+                +std::to_string(text->getClosestCharacter(Point(x, y))));
+        }
+    }
+
+    return answers;
+}
+
+//! The answers given between an edit and its layout against those after it:
+//! each that differs fails on its own, the first few named.
+void checkSameAnswers(const std::vector<String> &beforeLayout, const std::vector<String> &afterLayout)
+{
+    REQUIRE(beforeLayout.size() == afterLayout.size());
+
+    int differing=0;
+
+    for(size_t i=0; i < beforeLayout.size(); ++i)
+    {
+        if(beforeLayout[i] == afterLayout[i])
+            continue;
+
+        if(++differing <= 8)
+            CHECK(beforeLayout[i] == afterLayout[i]);
+    }
+
+    CHECK(differing == 0);
+}
+
+//! The string with the characters [at, at+count) replaced by insert.
+String edited(const String &source, size_t at, size_t count, const String &insert)
+{
+    String result=source;
+
+    result.replace(at, count, insert);
+    return result;
+}
+
+}//namespace
+
+TEST_CASE("Wrapped text: before the first layout the helpers read the string unwrapped")
+{
+    WrapScene scene(200);
+    Text *text=scene.text;
+    // the same string, never wrapped
+    Text *plain=scene.container->newChild<Text>();
+
+    plain->setText(paragraphs);
+
+    const int length=text->length();
+    const int rowHeight=scene.lineHeight();
+
+    // no width yet, so nothing to wrap at: as an unwrapped Text
+    CHECK(text->numLines() == 0);
+    for(int c=0; c <= length; ++c)
+    {
+        CAPTURE(c);
+        CHECK(text->getLineFromChar(c) == plain->getLineFromChar(c));
+        CHECK(text->getCharPosOnLine(c) == plain->getCharPosOnLine(c));
+        CHECK((text->getCharacterPosition(c) == plain->getCharacterPosition(c)));
+    }
+    CHECK(text->getStartCharFromLine(0) == plain->getStartCharFromLine(0));
+    CHECK(text->getLastCaretOnLine(0) == plain->getLastCaretOnLine(0));
+    CHECK(text->getLineLength(0) == plain->getLineLength(0));
+    CHECK((text->getLineBox(0) == plain->getLineBox(0)));
+    for(int x=-4; x < 200; x+=5)
+        CHECK(text->getClosestCharacter(Point(x, rowHeight/2)) == plain->getClosestCharacter(Point(x, rowHeight/2)));
+    CHECK(text->wrapCount() == 0);
+
+    // and laid out, wrapped
+    scene.frame();
+    CHECK(text->numLines() > 3);
+    CHECK(text->wrapCount() == 1);
+}
+
+TEST_CASE("Wrapped text: an edit is seen by every helper before it is laid out")
+{
+    const int width=260;
+
+    // an insert at the start of the first row pushes its last word down a
+    // row, and the rows after it; a delete of the start of the second row
+    // pulls the third row's first word up
+    SUBCASE("insert")
+    {
+        WrapScene scene(width);
+        Text *text=scene.text;
+
+        scene.frame();
+
+        const String insert="Remarkably enough, ";
+        const String source=edited(paragraphs, 0, 0, insert);
+        const int oldSecond=text->getStartCharFromLine(1);
+
+        text->setText(source);
+
+        const std::vector<String> beforeLayout=helperAnswers(scene);
+
+        scene.frame();
+        scene.checkLines(width, source);
+        // it did reflow: the second row starts before the old one's moved start
+        REQUIRE(text->getStartCharFromLine(1) < oldSecond+static_cast<int>(insert.length()));
+        checkSameAnswers(beforeLayout, helperAnswers(scene));
+    }
+
+    SUBCASE("delete")
+    {
+        WrapScene scene(width);
+        Text *text=scene.text;
+
+        scene.frame();
+
+        const int second=text->getStartCharFromLine(1);
+        const int third=text->getStartCharFromLine(2);
+        // the second row's first two words
+        const size_t firstSpace=paragraphs.find(' ', second);
+        const size_t count=paragraphs.find(' ', firstSpace+1)+1-second;
+        const String source=edited(paragraphs, second, count, "");
+
+        text->setText(source);
+
+        const std::vector<String> beforeLayout=helperAnswers(scene);
+
+        scene.frame();
+        scene.checkLines(width, source);
+        // it did reflow: the third row starts after the old one's moved start
+        REQUIRE(text->getStartCharFromLine(2) > third-static_cast<int>(count));
+        checkSameAnswers(beforeLayout, helperAnswers(scene));
+    }
+}
+
+TEST_CASE("Wrapped text: a click right after an edit finds the edited text's characters")
+{
+    WrapScene scene(260);
+    Text *text=scene.text;
+
+    scene.frame();
+
+    const String source=edited(paragraphs, 0, 0, "Remarkably enough, ");
+
+    text->setText(source);
+
+    // every caret position, found again at its own place, with no layout
+    for(int c=0; c <= text->length(); ++c)
+    {
+        CAPTURE(c);
+        const gweni::Rect pos=text->getCharacterPosition(c);
+
+        CHECK(text->getClosestCharacter(Point(pos.x, pos.y+1)) == c);
+    }
+}
+
+TEST_CASE("Wrapped text: an edit is wrapped once, by a helper or by layout")
+{
+    WrapScene scene(260);
+    Text *text=scene.text;
+
+    scene.frame();
+
+    const size_t laidOut=text->wrapCount();
+    const String first=edited(paragraphs, 0, 0, "Remarkably enough, ");
+
+    // asked before its layout: the helpers wrap it, layout uses that wrap
+    text->setText(first);
+    CHECK(text->wrapCount() == laidOut);
+    helperAnswers(scene);
+    helperAnswers(scene);
+    CHECK(text->wrapCount() == laidOut+1);
+    scene.frame();
+    CHECK(text->wrapCount() == laidOut+1);
+    scene.checkLines(260, first);
+
+    // not asked: layout wraps it
+    const String second=edited(first, 0, 0, "Truly ");
+
+    text->setText(second);
+    scene.frame();
+    CHECK(text->wrapCount() == laidOut+2);
+    scene.checkLines(260, second);
+
+    // and a frame with no change wraps nothing
+    scene.frame();
+    helperAnswers(scene);
+    CHECK(text->wrapCount() == laidOut+2);
+}
+
+namespace
+{
+
+//! The keys and markers of the TextBoxMultiline case; with layoutBetween a
+//! frame after each marker, as between keystrokes, without it every key in
+//! the frame of the edits before it, as GLFW delivers queued events.
+void homeEndUpDown(bool layoutBetween)
 {
     WrapScene scene(200);
     auto *box=scene.canvas->newChild<gweni::controls::TextBoxMultiline>();
@@ -456,13 +696,13 @@ TEST_CASE("TextBoxMultiline: Home, End, Up and Down land on the rows of the wrap
     const int rowHeight=scene.lineHeight();
     const int textY=box->getCharacterPosition(0).y;
 
-    // Each step moves the caret, then types a marker where it landed. The
-    // edit is laid out (re-wrapped) by the next frame, as between keystrokes.
+    // Each step moves the caret, then types a marker where it landed.
     const auto type=[&](const String &marker, int row, const String &expected)
     {
         CHECK(box->getCurrentLine() == row);
         box->insertText(marker);
-        scene.frame();
+        if(layoutBetween)
+            scene.frame();
         CHECK(box->getText() == expected);
     };
 
@@ -502,4 +742,16 @@ TEST_CASE("TextBoxMultiline: Home, End, Up and Down land on the rows of the wrap
     box->onKeyUp(true);
     box->onKeyUp(true);
     type("Q", 0, "QoZne twoW\nYV\nXtUhree fourR");
+}
+
+}//namespace
+
+TEST_CASE("TextBoxMultiline: Home, End, Up and Down land on the rows of the wrapped text")
+{
+    homeEndUpDown(true);
+}
+
+TEST_CASE("TextBoxMultiline: keys in the frame of an edit land on the rows of the edited text")
+{
+    homeEndUpDown(false);
 }

@@ -97,7 +97,7 @@ public:
 
     virtual void textChanged()
     {
-        m_linesStale=true;
+        m_wrapStale=true;
     }
 
     virtual bool wrap()
@@ -110,11 +110,15 @@ public:
         if(m_wrap == b)
             return;
 
-        m_wrap=b; m_linesStale=true; invalidate();
+        m_wrap=b; m_wrapStale=true; invalidate();
     }
 
     //! Wrapped lines are child Texts whose strings have no '\n'; character
     //! indices are into getText(), which counts each '\n' in the line it ends.
+    //! The helpers below read the wrap of the current string, re-wrapped at
+    //! the last layout's width when it changed since, so they are right
+    //! between an edit and the next layout. The line children are brought up
+    //! to date only by layout: getLine() is the child, valid after it.
     virtual Text *getLine(int i);
     virtual int   getLineFromChar(int i);
     virtual int   getStartCharFromLine(int i);
@@ -128,6 +132,13 @@ public:
     virtual int   getLineLength(int i);
     virtual int   getCharPosOnLine(int i);
     virtual unsigned numLines();
+
+    //! How many times the string has been wrapped (wrapLines run) by this
+    //! control, for tests: once per edit, however many helpers ask.
+    size_t wrapCount() const
+    {
+        return m_wrapCount;
+    }
 
     void calculateSize(skin::Base *skin, Dim dim) override;
     void arrange(skin::Base *skin, Dim dim) override;
@@ -152,18 +163,34 @@ private:
     //! Breaks m_string into lines no wider than w ('\n' always breaks one).
     void wrapLines(int w, std::vector<WrappedLine> &lines);
 
+    //! Makes m_wrapped the wrap of this string and font at w, wrapping again
+    //! only when one of them changed (wrapCurrent()). Touches no child.
+    void wrapAt(int w);
+    //! Whether m_wrapped is the wrap of this string and font at w.
+    bool wrapCurrent(int w) const;
+    //! For the char <-> line helpers: whether they read m_wrapped (wrapped
+    //! and laid out once, so a width is known), re-wrapped first if the
+    //! string or font changed since. False: they read m_string unwrapped.
+    bool ensureWrapped();
+
     //! Wraps the string at wrapWidth(); with update, makes the line children
-    //! match, reusing the ones there are. Does nothing while the inputs the
-    //! lines were built from are unchanged (linesCurrent()).
+    //! match m_wrapped, reusing the ones there are. Does nothing while the
+    //! lines are of the wrap at that width (linesCurrent()).
     virtual Size RefreshSizeWrap(bool update=true);
-    //! Whether the lines were wrapped from this string, font and width.
+    //! Whether the line children show the wrap of this string and font at width.
     bool linesCurrent(int width) const;
-    //! Drops the lines past the first count.
+    //! Drops the line children past the first count.
     void removeLines(size_t count);
     //! The width wrapped lines break at: the parent's, less its padding.
     int wrapWidth();
     //! The height of a wrapped line, the row each one is placed on.
     int lineHeight();
+
+    //! An unwrapped string's caret rect at byte value, and the codepoint
+    //! boundary closest to p; a line child's own helpers, read here from a
+    //! line's text so they need no child.
+    gweni::Rect characterPositionIn(const gweni::String &str, unsigned int value);
+    int closestCharacterIn(const gweni::String &str, gweni::Point p);
 
     gweni::String m_string;
     const gweni::Font *m_font;
@@ -172,19 +199,28 @@ private:
 
     // Initialised here: the constructor's setWrap(false) reads m_wrap.
     bool m_wrap=false;
-    //! Set by setText, setFont and setWrap: the lines are not of this string.
+    //! The wrap of m_string, as data: what the helpers read, and what layout
+    //! makes the line children show.
+    std::vector<WrappedLine> m_wrapped;
+    //! Set by setText, setFont, setWrap and textChanged: m_wrapped is not of
+    //! this string. Then the width and font it was wrapped at; the font is
+    //! kept by value as well, as one can change size in place (setDefaultFont).
+    bool m_wrapStale=true;
+    int m_wrapWidth=-1;
+    const gweni::Font *m_wrapFont=nullptr;
+    gweni::Font m_wrapFontValue;
+    size_t m_wrapCount=0;
+
+    //! The line children do not show m_wrapped (it was wrapped again since
+    //! layout last made them). The width they were laid out at, -1 before
+    //! the first wrapped layout: until then the helpers read m_string.
     bool m_linesStale=true;
-    //! The width and font the current lines were wrapped at. The font is kept
-    //! by value as well, as one can change size in place (setDefaultFont).
     int m_wrappedWidth=-1;
-    const gweni::Font *m_wrappedFont=nullptr;
-    gweni::Font m_wrappedFontValue;
 //    size_t m_textId;
 
-    //! The line children, top to bottom, and the source length of each
-    //! (WrappedLine::length), so a line can be updated in place.
+    //! The line children, top to bottom: m_wrapped's lines after layout,
+    //! updated in place.
     std::vector<Text *> m_lines;
-    std::vector<int> m_lineLengths;
 };
 
 }//namespace internal
