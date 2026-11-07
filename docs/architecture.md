@@ -111,8 +111,9 @@ on an OpenGL 3.3 core profile:
   `tx/ty` is color0 (or the UV of style 2), `cx/cy` color1, `bx/by` the border color
   and `dx/dy` color3, each an RGBA color packed into two halves (`Color::rg()/ba()`).
   The shader reads color0 and color3 as smooth (interpolated) varyings and color1 and
-  the border color as flat ones. `lx/ly` (the local position from the rect's centre),
-  `radius`, `border`, color1, the border color and color3 are 0 except for the styles
+  the border color as flat ones. `lx/ly` (the local position from the rect's centre,
+  in half-pixel units: `±w`/`±h` at the corners, halved by the vertex shader, so an
+  odd size's half is exact and the quad is exactly the rect), `radius`, `border`, color1, the border color and color3 are 0 except for the styles
   that use them. `style` selects the shader path: `0` = hidden (degenerate), `1` = solid
   color (color0), `2` = image (`drawTexturedRect`, below), `3` = unused (it was a text glyph; text has its own
   program, below), `4` = SDF rounded rect
@@ -122,7 +123,14 @@ on an OpenGL 3.3 core profile:
   so the blend along y is exact, with no crease on the quad's diagonal), `7` = SDF
   checker composite (`drawCheckerRect`: color0 with its alpha over 4 px cells of
   color1 (light) and color3 (dark), output opaque, so it does not depend on draw
-  order). Styles 4, 6 and 7 share the rounded mask, anti-aliasing and border.
+  order). Styles 4, 6 and 7 share the rounded mask, anti-aliasing and border
+  (`roundedRect()` in the fragment shader). The edge and the border are a 1 px box
+  filter: coverage `clamp(0.5 - d/aa, 0, 1)` and border mix
+  `clamp(0.5 + (border + d)/aa, 0, 1)`, with `aa` the pixel's size from `vLocal`'s
+  derivatives (not `fwidth(d)`, which is √2 too wide on a corner diagonal and at a
+  square corner's kink). A pixel-aligned straight edge is therefore 1 inside and 0
+  outside: the outermost pixel is fully covered, two rects that abut meet with no
+  seam, and an N px border is exactly N rows; only a corner arc is partly covered.
   `renderer::Base`'s defaults for `drawBilinearRect`/`drawCheckerRect` approximate
   them with `drawRoundedRect`. `hidePrimitive()`/`showPrimitive()` just set `style`,
   leaving geometry in place.
