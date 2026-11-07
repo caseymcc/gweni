@@ -9,13 +9,21 @@
  *  shrinks back once what made it grow is gone, inside a Base parent and inside
  *  a layout, and a canvas resize and back gives the first bounds again. A
  *  layout child is sized from its cell minus its margin, clamped at 0.
+ *
+ *  A size request caps a ScrollControl, so the library's own menus ask for no
+ *  height: a Menu and a ComboBox's list are as high as their items.
  */
 #include "headlessFixture.h"
 
+#include <gweni/controls/comboBox.h>
 #include <gweni/controls/layout/layout.h>
+#include <gweni/controls/menu.h>
+#include <gweni/controls/menuItem.h>
+#include <gweni/controls/menuStrip.h>
 
 #include <doctest/doctest.h>
 
+#include <algorithm>
 #include <limits>
 #include <string>
 
@@ -520,4 +528,114 @@ TEST_CASE("a nested layout's size flag follows its child from Expand to Fixed, a
         CHECK(fresh.afterPos() == 52);
         CHECK(text(scene.after->getBounds()) == text(fresh.after->getBounds()));
     }
+}
+
+namespace
+{
+
+//! The sum of the item heights and the 2 unit padding a Menu gives its inner
+//! panel above and below them.
+int itemsHeight(controls::Menu *menu)
+{
+    int height=0;
+
+    for(controls::Base *item : menu->getChildren())
+        height+=item->getHeight();
+
+    return height+2+2;
+}
+
+controls::Menu *openMenuOf(controls::Canvas *canvas)
+{
+    for(controls::Base *child : canvas->getActualChildren())
+    {
+        auto *menu=dynamic_cast<controls::Menu *>(child);
+
+        if(menu && !menu->hidden())
+            return menu;
+    }
+    return nullptr;
+}
+
+}//namespace
+
+TEST_CASE("a Menu asks for no height and is as high as its items")
+{
+    Scene scene;
+    controls::Menu *menu=scene.canvas->newChild<controls::Menu>("menu");
+    menu->setPos(20, 30);
+    menu->addItem("One");
+    menu->addItem("Two");
+    menu->addItem("Three");
+    scene.settle();
+
+    CHECK_FALSE(menu->hasRequestedSize(Dim::Y));
+    CHECK(menu->getHeight() > 10);
+    CHECK(menu->getHeight() == itemsHeight(menu));
+    CHECK(menu->getX() == 20);
+    CHECK(menu->getY() == 30);
+
+    // more items: taller, and still no bar
+    menu->addItem("Four");
+    menu->addItem("Five");
+    scene.settle();
+    CHECK(menu->getHeight() == itemsHeight(menu));
+    CHECK(menu->getChildren().size() == 5);
+}
+
+TEST_CASE("a ComboBox's list fits its items each time it is opened")
+{
+    Scene scene;
+    controls::ComboBox *combo=scene.canvas->newChild<controls::ComboBox>("combo");
+    combo->setPos(10, 10);
+    combo->addItem("One");
+    combo->addItem("Two");
+    combo->addItem("Three");
+    scene.settle();
+
+    combo->openList();
+    scene.settle();
+    controls::Menu *menu=openMenuOf(scene.canvas);
+    REQUIRE(menu != nullptr);
+    CHECK_FALSE(menu->hasRequestedSize(Dim::Y));
+    CHECK(menu->getX() == combo->getX());
+    CHECK(menu->getY() == combo->getY()+combo->getHeight());
+    CHECK(menu->getWidth() == combo->getWidth());
+    const int threeItems=menu->getHeight();
+    CHECK(threeItems == itemsHeight(menu));
+
+    // opened again with more items, it grows to fit them
+    combo->closeList();
+    scene.settle();
+    combo->addItem("Four");
+    combo->addItem("Five");
+    combo->openList();
+    scene.settle();
+    CHECK(menu->getHeight() == itemsHeight(menu));
+    CHECK(menu->getHeight() > threeItems);
+
+    // and with fewer, it is not held at the height it had
+    combo->closeList();
+    scene.settle();
+    combo->clearItems();
+    combo->addItem("One");
+    combo->openList();
+    scene.settle();
+    CHECK(menu->getHeight() == itemsHeight(menu));
+    CHECK(menu->getHeight() < threeItems);
+}
+
+TEST_CASE("a MenuStrip in a layout is as high as its items, its 200x22 only the least it gets")
+{
+    Scene scene;
+    controls::Base *panel=scene.centerPanel();
+    panel->setLayout(new controls::VerticalLayout());
+    controls::MenuStrip *strip=panel->newChild<controls::MenuStrip>("strip");
+    controls::MenuItem *file=strip->addItem("File");
+    strip->addItem("Edit");
+    scene.settle();
+
+    // not the cell's 480, and not capped at the 22 it asked for
+    CHECK(strip->getHeight() == std::max(22, file->getHeight()));
+    CHECK(strip->getWidth() == 200);
 }

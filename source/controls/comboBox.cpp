@@ -205,7 +205,10 @@ void ComboBox::openList()
     m_menu->setHidden(false);
     m_menu->bringToFront();
     gweni::Point p=localPosToCanvas(gweni::Point(0, 0));
-    m_menu->setBounds(gweni::Rect(p.x, p.y+getHeight(), getWidth(), m_menu->getHeight()));
+    // Its position and width, never a height: a height asked for would cap
+    // the list (ScrollControl), which is as high as its items.
+    m_menu->setPos(p.x, p.y+getHeight());
+    m_menu->setWidth(getWidth());
 }
 
 void ComboBox::closeList()

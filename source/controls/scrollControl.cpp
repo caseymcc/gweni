@@ -108,10 +108,12 @@ bool ScrollControl::contentsAreDocked()
     return true;
 }
 
-// What a ScrollControl asks for is its content: the inner panel's preferred
-// size and margins. Neither the scroll position nor a bar an earlier pass
-// showed counts, so the size does not depend on earlier frames; a bar is only
-// shown when this control got less than that anyway.
+// On an axis the app asked a size for, a ScrollControl asks for that size: it
+// is the outer size, the bars go inside it, and content that does not fit is
+// scrolled. On an axis with no request it asks for its content: the inner
+// panel's preferred size and margins. Neither the scroll position nor a bar an
+// earlier pass showed counts, so the size does not depend on earlier frames;
+// placeContents() shows a bar when the control got less than its content.
 void ScrollControl::calculateSize(skin::Base *skin, Dim dim)
 {
     if(!m_innerPanel)
@@ -140,13 +142,14 @@ void ScrollControl::calculateSize(skin::Base *skin, Dim dim)
 
     const Size &content=m_innerPanel->getPreferredSize();
     const Margin &margin=m_innerPanel->getMargin();
+    const Rect &requested=getRequestedBounds();
 
     if(dim == Dim::X)
-        m_preferredSize.width=preferredFromContent(content.width+margin.left+margin.right
-            +m_padding.left+m_padding.right, Dim::X);
+        m_preferredSize.width=preferredFromContent(sizedByRequest(Dim::X)?requested.w:
+            content.width+margin.left+margin.right+m_padding.left+m_padding.right, Dim::X);
     else
-        m_preferredSize.height=preferredFromContent(content.height+margin.top+margin.bottom
-            +m_padding.top+m_padding.bottom, Dim::Y);
+        m_preferredSize.height=preferredFromContent(sizedByRequest(Dim::Y)?requested.h:
+            content.height+margin.top+margin.bottom+m_padding.top+m_padding.bottom, Dim::Y);
 }
 
 // Whether a bar shows depends on this control's height, which its parent only

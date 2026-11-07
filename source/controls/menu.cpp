@@ -27,7 +27,6 @@ bool samePoint(const Point &a, const Point &b)
 
 GWENI_CONTROL_CONSTRUCTOR(Menu)
 {
-    setBounds(0, 0, 10, 10);
     // The padding is the inner panel's: ScrollControl places the inner panel
     // over its whole area, so the items sit inside the backdrop's border only
     // when the panel keeps them off it. Its margin would be counted in the
@@ -135,7 +134,9 @@ void Menu::onAddItem(MenuItem *item)
     // Do this here - after Top Docking these values mean nothing in layout
     const int w=std::max(item->getWidth()+10+32, getWidth());
 
-    setSize(w, getHeight());
+    // The width only: a height asked for would cap the menu (ScrollControl),
+    // which is as high as its items.
+    setWidth(w);
 }
 
 void Menu::clearItems()

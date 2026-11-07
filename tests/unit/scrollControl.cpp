@@ -11,6 +11,7 @@
 #include "headlessFixture.h"
 
 #include <gweni/controls/scrollControl.h>
+#include <gweni/controls/layout/layout.h>
 
 #include <doctest/doctest.h>
 
@@ -218,4 +219,136 @@ TEST_CASE("a row added by app code is picked up by the next frame")
     CHECK_FALSE(scene.verticalBar->hidden());
     CHECK(scene.inner->getHeight() == 400);
     CHECK(scene.frame().passes == 0);
+}
+
+// A size the app asked for is the ScrollControl's outer size: the bars go
+// inside it and the content scrolls. With no request it is its content.
+
+TEST_CASE("a requested size smaller than the content caps a ScrollControl in a Base parent")
+{
+    Scene scene;
+    scene.scroll->setDock(DockPosition::None);
+    scene.scroll->setBounds(10, 20, 100, 80);
+    Block *row=scene.addRow(50, 200);
+    scene.settle();
+
+    CHECK(scene.scroll->getX() == 10);
+    CHECK(scene.scroll->getY() == 20);
+    CHECK(scene.scroll->getWidth() == 100);
+    CHECK(scene.scroll->getHeight() == 80);
+
+    // the vertical bar shows, enabled, inside the requested size
+    REQUIRE_FALSE(scene.verticalBar->hidden());
+    CHECK(scene.verticalBar->visible());
+    CHECK_FALSE(scene.verticalBar->isDisabled());
+    const int barWidth=scene.verticalBar->getWidth();
+    CHECK(scene.verticalBar->getX() == 100-barWidth);
+    CHECK(scene.verticalBar->getHeight() == 80);
+    // 50 wide fits beside it: no horizontal bar
+    CHECK(scene.horizontalBar->hidden());
+    // the inner panel holds all of the content, to scroll it
+    CHECK(scene.inner->getHeight() == 200);
+    CHECK(row->getHeight() == 200);
+    CHECK(scene.frame().passes == 0);
+
+    // content that fits: still the requested size, and no bar
+    row->want=Size(50, 40);
+    row->invalidate();
+    scene.settle();
+    CHECK(scene.scroll->getWidth() == 100);
+    CHECK(scene.scroll->getHeight() == 80);
+    CHECK(scene.verticalBar->hidden());
+}
+
+TEST_CASE("a requested size smaller than the content caps a ScrollControl in a layout cell")
+{
+    Scene scene;
+    controls::Base *panel=scene.canvas->newChild<controls::Base>("panel");
+    panel->setDock(DockPosition::Center);
+    panel->setLayout(new controls::VerticalLayout());
+    scene.scroll->setDock(DockPosition::None);
+    scene.scroll->setParent(panel);
+    scene.scroll->setBounds(0, 0, 100, 200);
+    scene.addRow(40, 500);
+    scene.settle();
+
+    // the request, not the 500 tall content
+    CHECK(scene.scroll->getWidth() == 100);
+    CHECK(scene.scroll->getHeight() == 200);
+    REQUIRE_FALSE(scene.verticalBar->hidden());
+    CHECK_FALSE(scene.verticalBar->isDisabled());
+    CHECK(scene.verticalBar->getHeight() == 200);
+    CHECK(scene.horizontalBar->hidden());
+
+    // a larger cell does not stretch it either
+    scene.canvas->setSize(640, 480);
+    scene.settle();
+    CHECK(scene.scroll->getWidth() == 100);
+    CHECK(scene.scroll->getHeight() == 200);
+    CHECK_FALSE(scene.verticalBar->hidden());
+}
+
+TEST_CASE("a ScrollControl with no requested size is its content's size")
+{
+    Scene scene;
+    scene.scroll->setDock(DockPosition::None);
+    scene.addRow(60, 70);
+    scene.settle();
+
+    CHECK_FALSE(scene.scroll->hasRequestedSize(Dim::X));
+    CHECK_FALSE(scene.scroll->hasRequestedSize(Dim::Y));
+    // the row and the inner panel's 5 unit margins
+    CHECK(scene.scroll->getWidth() == 60+10);
+    CHECK(scene.scroll->getHeight() == 70+10);
+    CHECK(scene.verticalBar->hidden());
+    CHECK(scene.horizontalBar->hidden());
+}
+
+TEST_CASE("a requested height caps only the height")
+{
+    Scene scene;
+    scene.scroll->setDock(DockPosition::None);
+    scene.scroll->setScroll(false, true);
+    scene.scroll->setHeight(60);
+    scene.addRow(80, 200);
+    scene.settle();
+
+    // as wide as its content, as high as asked
+    CHECK(scene.scroll->getWidth() == 80+10);
+    CHECK(scene.scroll->getHeight() == 60);
+    CHECK_FALSE(scene.verticalBar->hidden());
+}
+
+TEST_CASE("setScroll turns an axis off even when its content overflows the requested size")
+{
+    SUBCASE("vertical only")
+    {
+        Scene scene;
+        scene.scroll->setDock(DockPosition::None);
+        scene.scroll->setScroll(false, true);
+        scene.scroll->setBounds(0, 0, 100, 80);
+        scene.addRow(300, 200);
+        scene.settle();
+
+        CHECK(scene.scroll->getWidth() == 100);
+        CHECK(scene.scroll->getHeight() == 80);
+        CHECK_FALSE(scene.verticalBar->hidden());
+        CHECK(scene.horizontalBar->hidden());
+    }
+
+    SUBCASE("horizontal only")
+    {
+        Scene scene;
+        scene.scroll->setDock(DockPosition::None);
+        scene.scroll->setScroll(true, false);
+        scene.scroll->setBounds(0, 0, 100, 80);
+        scene.addRow(300, 200);
+        scene.settle();
+
+        CHECK(scene.scroll->getWidth() == 100);
+        CHECK(scene.scroll->getHeight() == 80);
+        CHECK(scene.verticalBar->hidden());
+        CHECK_FALSE(scene.horizontalBar->hidden());
+        CHECK_FALSE(scene.horizontalBar->isDisabled());
+    }
 }

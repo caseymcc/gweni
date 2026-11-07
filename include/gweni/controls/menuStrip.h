@@ -30,6 +30,9 @@ public:
 protected:
 
     void onAddItem(MenuItem *item) override;
+    //! A strip is as wide and as high as its items and never scrolls them: its
+    //! size request (200x22) is only the least it is given.
+    bool sizedByRequest(Dim /*dim*/) const override { return false; }
     bool shouldHoverOpenMenu() override;
     void close() override {}
 

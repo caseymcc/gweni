@@ -67,6 +67,17 @@ with a request bigger than its content is cut to the content, and a Fixed one
 takes its own size and the next child starts after it and its margins. Use
 Fixed for "exactly this size" in a layout (ButtonDemo's 20x20 button).
 
+A ScrollControl (ListBox, CollapsibleList, Menu, ...) takes p from its request
+on an axis where a size was asked: the request is its outer size, the bars go
+inside it and the content scrolls. Expand then gives r in a Base parent and
+min(r, c) in a cell, and `placeContents()` shows the bar when the content does
+not fit. On an axis with no request p is its content. So a 100x200 ListBox of
+13 rows is 100x200 with a bar, and code that sizes a ScrollControl
+incidentally must not ask for the axis it means to grow along: a Menu asks for
+no height (a ComboBox opening its list sets the position and width only). A
+subclass that never scrolls an axis opts out with `sizedByRequest()`: a
+MenuStrip is as high as its items, its 200x22 only the least it gets.
+
 Docked children keep the size their dock gives them.
 
 ## Placing a dock-None control
