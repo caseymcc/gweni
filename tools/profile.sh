@@ -251,7 +251,7 @@ status=0
 # layout (consolidating fastbins, searching its bins), so a change that only
 # moves the heap moved update by up to 6 %. With no fastbins (mxfast=0), every
 # small free kept in the thread cache (tcache_count) and a fixed mmap threshold
-# it moves update by under 0.4 % and the other phases by under 0.05 % (AGENTS.md,
+# it moves update by under 0.4 % and the other phases by under 0.1 % (AGENTS.md,
 # "Profiling a scene"). glibc's share of the counts is then that of this
 # configuration, not of the default one.
 (cd "$stage" && env -i PATH=/usr/bin:/bin HOME="$stage" \
