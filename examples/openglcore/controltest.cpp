@@ -62,7 +62,7 @@
  *    --help, -h         print the option list and exit
  *    --scenario <name>  per-control | resize | docked | scroll | interaction |
  *                       typing | clip | text-size | scale | tooltip |
- *                       context-menu (see below)
+ *                       context-menu | virtual-list (see below)
  *    --dump-bounds [<path>]
  *                       print the laid-out control tree as text: one line per
  *                       control, depth-first in child order, indented by depth,
@@ -290,6 +290,27 @@
  *                 it deletes the menu it created). One line
  *                   context-menu opens_at_cursor=yes|no ... deleted_owner_closes=yes|no
  *                 reports the checks. Exits non-zero if any check is no.
+ *    virtual-list VirtualListDemo with its list at 1 000 and then 100 000
+ *                 items, the clock frozen: a settled frame, a one-row scroll
+ *                 from the top (scrollByRows) and a wheel notch over the list
+ *                 (three rows), each followed by settled frames, then the last
+ *                 item scrolled into view (virtual-list-1000-end.png,
+ *                 virtual-list-100000-end.png). One line per count
+ *                   virtual-list items=N rows=N subtree=N prim_ids=N
+ *                          idle_slots=0 ... row_prim_slots=N row_text_slots=N
+ *                          row_visited=N row_z_visited=0 ... ids_left=0
+ *                 gives the counters, and one line
+ *                   virtual-list same_cost=yes|no settled=yes|no
+ *                          rows_only=yes|no ids_back=yes|no
+ *                 the checks: the pool, the subtree, the ids and the one-row
+ *                 scroll's counters are the same at both counts (the wheel's
+ *                 slots too; its three rows move the bar's thumb a pixel at
+ *                 1 000 items only); settled frames write and change nothing;
+ *                 each scroll writes no more than its shown rows' primitive
+ *                 slots and glyphs, enters no more than the list's subtree
+ *                 and the two controls above it, renumbers no z and lays out
+ *                 in one pass with no request; the demo gives every primitive
+ *                 id back. Exits non-zero if any check is no.
  *
  *  Every scenario (and --shot-all) takes a listing per shot when
  *  --dump-bounds is on, named after that shot with a .txt extension, so the
@@ -350,6 +371,7 @@
 #include <gweni/controls/button.h>
 #include <gweni/controls/selectable.h>
 #include <gweni/controls/toolTip.h>
+#include <gweni/controls/virtualList.h>
 #include <GLFW/glfw3.h>
 #include <gweni/utils/filesystem.h>
 #include "capture.h"
@@ -398,6 +420,7 @@
 #include <demo/textDemo.h>
 #include <demo/textSizes.h>
 #include <demo/unicodeText.h>
+#include <demo/virtualList.h>
 #include <demo/window.h>
 #include <demo/windowButtons.h>
 
@@ -453,7 +476,7 @@ static void content_scale_callback(GLFWwindow *window, float, float)
 #define GWENI_CONTROL_DEMOS(X) \
     X(ButtonDemo) X(LabelDemo) X(LabelMultilineDemo) X(ProgressBarDemo) \
     X(GroupBoxDemo) X(ImagePanelDemo) X(StatusBarDemo) X(SeparatorDemo) X(ComboBoxDemo) \
-    X(TextBoxDemo) X(ListBoxDemo) X(SelectableDemo) X(ContextMenuDemo) X(CrossSplitterDemo) X(RadioButtonDemo) \
+    X(TextBoxDemo) X(ListBoxDemo) X(SelectableDemo) X(VirtualListDemo) X(ContextMenuDemo) X(CrossSplitterDemo) X(RadioButtonDemo) \
     X(CheckBoxDemo) X(NumericDemo) X(SliderDemo) X(MenuStripDemo) \
     X(WindowDemo) X(WindowButtonsDemo) X(TreeControlDemo) X(PropertiesDemo) X(TabControlDemo) \
     X(ScrollControlDemo) X(PageControlDemo) X(CollapsibleListDemo) X(ColorPickerDemo) \
@@ -521,7 +544,7 @@ static void printUsage(std::ostream &out)
          "  --trace            log each scripted input on stderr\n"
          "  --scenario <name>  per-control | resize | docked | scroll | interaction\n"
          "                     | typing | clip | text-size | scale | tooltip\n"
-         "                     | context-menu; resize prints\n"
+         "                     | context-menu | virtual-list; resize prints\n"
          "                     listing_settled, mirror_settled, shrink_settled and\n"
          "                     fresh_matches, interaction one yes/no per repaint\n"
          "                     check, typing its keyboard checks, clip one yes/no\n"
@@ -529,7 +552,8 @@ static void printUsage(std::ostream &out)
          "                     Label font change wrote, scale whether a 1 -> 2 -> 1\n"
          "                     setScale round trip came back, tooltip one yes/no per\n"
          "                     tooltip check, context-menu one per context-menu\n"
-         "                     check; all eight fail on a no\n"
+         "                     check, virtual-list whether 1 000 and 100 000 items\n"
+         "                     cost the same; all nine fail on a no\n"
          "  --dump-bounds [<path>]  print the laid-out control tree as text,\n"
          "                     private children and hidden state included, an\n"
          "                     inner panel marked \" inner\", with each control's\n"
@@ -1321,7 +1345,7 @@ static bool runSteps(Session &s, const std::vector<Step> &steps, const std::stri
 // Scenarios
 //-----------------------------------------------------------------------------
 enum class Scenario { None, PerControl, Resize, Docked, Scroll, Interaction, Typing, Clip, TextSize, Scale,
-    ToolTip, ContextMenu };
+    ToolTip, ContextMenu, VirtualList };
 
 static bool parseScenario(const std::string &name, Scenario &scenario)
 {
@@ -1336,6 +1360,7 @@ static bool parseScenario(const std::string &name, Scenario &scenario)
     else if(name == "scale") scenario=Scenario::Scale;
     else if(name == "tooltip") scenario=Scenario::ToolTip;
     else if(name == "context-menu") scenario=Scenario::ContextMenu;
+    else if(name == "virtual-list") scenario=Scenario::VirtualList;
     else return false;
     return true;
 }
@@ -3563,6 +3588,227 @@ static bool runContextMenuScenario(Session &s, const std::string &shotDir, bool 
 }
 
 //-----------------------------------------------------------------------------
+// --scenario virtual-list: VirtualListDemo at 1 000 and 100 000 items
+//
+// The list holds a row for each one on screen plus one, whatever its count, so
+// what a frame does is the same at both counts: the controls and ids it holds,
+// a settled frame (nothing), a one-row scroll from the top and a wheel notch
+// (the rows on screen moved and those that came into view bound), each within
+// the list's subtree and its shown rows' slots.
+//-----------------------------------------------------------------------------
+
+namespace
+{
+
+struct VirtualListStep
+{
+    size_t primSlots=0;
+    size_t textSlots=0;
+    size_t visited=0;
+    size_t zVisited=0;
+    size_t changed=0;
+    int passes=0;
+    int requests=0;
+    // what the rows on screen hold after the step: their controls' primitive
+    // slots and their strings' glyphs
+    size_t rowPrims=0;
+    size_t rowGlyphs=0;
+
+    bool operator==(const VirtualListStep &o) const
+    {
+        return primSlots == o.primSlots && textSlots == o.textSlots && visited == o.visited
+            && zVisited == o.zVisited && changed == o.changed && passes == o.passes
+            && requests == o.requests && rowPrims == o.rowPrims && rowGlyphs == o.rowGlyphs;
+    }
+};
+
+struct VirtualListRun
+{
+    size_t items=0;
+    size_t rows=0;          // the pool
+    size_t subtree=0;       // controls under the list, the list included
+    size_t primIds=0;       // live primitive ids the demo holds
+    size_t idleSlots=0;     // slots the settled frames wrote
+    size_t idleChanged=0;   // and controls they changed
+    size_t idsLeft=0;       // live primitive ids left once the demo is gone
+    VirtualListStep row, wheel;
+};
+
+size_t subtreeControls(gweni::controls::Base *control)
+{
+    size_t count=1;
+
+    for(gweni::controls::Base *child : control->getActualChildren())
+        count+=subtreeControls(child);
+    return count;
+}
+
+void addRowCost(gweni::controls::Base *control, VirtualListStep &step)
+{
+    if(const gweni::skin::Control *skin=control->getSkinControl())
+        step.rowPrims+=skin->getPrimitives().size();
+    if(auto *text=gweni::gweni_cast<gweni::controls::internal::Text>(control))
+        step.rowGlyphs+=text->getText().size();
+
+    for(gweni::controls::Base *child : control->getActualChildren())
+        addRowCost(child, step);
+}
+
+}//namespace
+
+static VirtualListStep virtualListFrame(Session &s, gweni::controls::VirtualList *list)
+{
+    renderFrames(s, 1);
+
+    VirtualListStep step;
+    const gweni::renderer::OpenGLCore::FrameStats &gpu=s.renderer->getFrameStats();
+    const gweni::controls::ChangeStats &changes=gweni::controls::getChangeStats();
+
+    step.primSlots=gpu.primitiveSlotsWritten;
+    step.textSlots=gpu.textSlotsWritten;
+    step.visited=changes.visited;
+    step.changed=changes.controls;
+    step.zVisited=s.canvas->getUpdateStats().zVisited;
+    step.passes=s.canvas->getLayoutStats().passes;
+    step.requests=s.canvas->getLayoutStats().requests;
+
+    for(gweni::controls::Base *row : list->getRows())
+    {
+        if(!row->hidden())
+            addRowCost(row, step);
+    }
+    return step;
+}
+
+static void printVirtualListStep(const char *name, const VirtualListStep &step)
+{
+    std::cout<<" "<<name<<"_prim_slots="<<step.primSlots<<" "<<name<<"_text_slots="<<step.textSlots
+             <<" "<<name<<"_visited="<<step.visited<<" "<<name<<"_z_visited="<<step.zVisited
+             <<" "<<name<<"_changed="<<step.changed<<" "<<name<<"_passes="<<step.passes
+             <<" "<<name<<"_row_prims="<<step.rowPrims<<" "<<name<<"_row_glyphs="<<step.rowGlyphs;
+}
+
+// The frames after a step: nothing to do, so nothing written or changed.
+static void settleVirtualList(Session &s, gweni::controls::VirtualList *list, VirtualListRun &run)
+{
+    for(int i=0; i<2; ++i)
+    {
+        const VirtualListStep idle=virtualListFrame(s, list);
+
+        run.idleSlots+=idle.primSlots+idle.textSlots;
+        run.idleChanged+=idle.changed;
+    }
+}
+
+static bool runVirtualList(Session &s, const std::string &shotDir, size_t items, VirtualListRun &run)
+{
+    const size_t idsBefore=livePrimitiveIds();
+    gweni::controls::Base *control=addControl(s, "VirtualListDemo");
+    auto *demo=gweni::gweni_cast<gweni::VirtualListDemo>(control);
+
+    if(!demo || !demo->m_list)
+    {
+        std::cerr<<"ControlTest: virtual-list: VirtualListDemo has no list\n";
+        return false;
+    }
+
+    gweni::controls::VirtualList *list=demo->m_list;
+
+    s.label="VirtualListDemo-"+std::to_string(items);
+    list->setItemCount(items);
+    renderFrames(s, s.frames);
+
+    run.items=items;
+    run.rows=list->getRows().size();
+    run.subtree=subtreeControls(list);
+    run.primIds=livePrimitiveIds()-idsBefore;
+    settleVirtualList(s, list, run);
+
+    list->scrollByRows(1);
+    run.row=virtualListFrame(s, list);
+    settleVirtualList(s, list, run);
+
+    // a wheel notch over the list, through the input path: three rows
+    const gweni::Point origin=list->localPosToCanvas();
+
+    moveMouse(s, origin.x+list->getWidth()/2, origin.y+list->getHeight()/2);
+    renderFrames(s, 1);
+    settleVirtualList(s, list, run);
+    scrollWheel(s, -60);
+    run.wheel=virtualListFrame(s, list);
+    settleVirtualList(s, list, run);
+
+    // the last item in view, for the picture
+    forgetMouse(s);
+    list->scrollToItem(items-1);
+    renderFrames(s, s.frames);
+
+    const bool shot=shoot(s, shotDir+"/virtual-list-"+std::to_string(items)+"-end.png");
+
+    dropControl(s, control);
+    renderFrames(s, 1);
+    run.idsLeft=livePrimitiveIds()-idsBefore;
+    return shot;
+}
+
+static bool runVirtualListScenario(Session &s, const std::string &shotDir, bool &passed)
+{
+    s.freezeClock=true;
+
+    VirtualListRun small, large;
+    bool ok=runVirtualList(s, shotDir, 1000, small);
+
+    ok=runVirtualList(s, shotDir, 100000, large) && ok;
+
+    auto withinRows=[](const VirtualListRun &run, const VirtualListStep &step)
+    {
+        // the list's subtree and the canvas and demo above it
+        return step.passes == 1 && step.zVisited == 0 && step.requests == 0
+            && step.visited <= run.subtree+2 && step.changed <= run.subtree
+            && step.primSlots+step.textSlots > 0
+            && step.primSlots <= step.rowPrims && step.textSlots <= step.rowGlyphs;
+    };
+
+    // The wheel's three rows move the bar's thumb a pixel at 1 000 items and
+    // not at 100 000, so that step's controls differ by the thumb; its slots
+    // (the thumb is one primitive, and moves inside the ones counted) do not.
+    const bool sameCost=small.rows == large.rows && small.subtree == large.subtree
+        && small.primIds == large.primIds && small.row == large.row
+        && small.wheel.primSlots == large.wheel.primSlots
+        && small.wheel.textSlots == large.wheel.textSlots
+        && small.wheel.rowPrims == large.wheel.rowPrims
+        && small.wheel.rowGlyphs == large.wheel.rowGlyphs;
+    const bool settled=small.idleSlots == 0 && small.idleChanged == 0
+        && large.idleSlots == 0 && large.idleChanged == 0;
+    const bool rowsOnly=withinRows(small, small.row) && withinRows(small, small.wheel)
+        && withinRows(large, large.row) && withinRows(large, large.wheel);
+    const bool idsBack=small.idsLeft == 0 && large.idsLeft == 0;
+
+    for(const VirtualListRun *run : {&small, &large})
+    {
+        std::cout<<"virtual-list items="<<run->items<<" rows="<<run->rows<<" subtree="<<run->subtree
+                 <<" prim_ids="<<run->primIds<<" idle_slots="<<run->idleSlots
+                 <<" idle_changed="<<run->idleChanged;
+        printVirtualListStep("row", run->row);
+        printVirtualListStep("wheel", run->wheel);
+        std::cout<<" ids_left="<<run->idsLeft<<"\n";
+    }
+
+    passed=sameCost && settled && rowsOnly && idsBack;
+
+    std::cout<<"virtual-list same_cost="<<(sameCost?"yes":"no")<<" settled="<<(settled?"yes":"no")
+             <<" rows_only="<<(rowsOnly?"yes":"no")<<" ids_back="<<(idsBack?"yes":"no")<<"\n";
+    if(!passed)
+        std::cerr<<"ControlTest: virtual-list: "
+                 <<(!sameCost ? "a frame at 100 000 items did not cost what it did at 1 000"
+                     : !settled ? "a settled frame wrote slots or changed controls"
+                     : !rowsOnly ? "a scroll wrote more than its shown rows' slots, entered more than"
+                         " the list, renumbered z or took more than one layout pass"
+                     : "the demo did not give its primitive ids back")<<"\n";
+    return ok;
+}
+
+//-----------------------------------------------------------------------------
 // --scenario typing: the keyboard, through the GLFW translator
 //
 // Every keystroke is a synthesised GLFW event fed to gweni::input::GLFW3, the
@@ -4310,6 +4556,15 @@ int main(int argc, char *argv[])
             ok=runContextMenuScenario(session, shotDir, passed);
             if(ok && !passed)
                 ok=false;   // a context menu opened, sat or closed wrongly: a failing assertion
+            break;
+        }
+
+        case Scenario::VirtualList:
+        {
+            bool passed=false;
+            ok=runVirtualListScenario(session, shotDir, passed);
+            if(ok && !passed)
+                ok=false;   // a frame cost more at 100 000 items, or more than its rows: a failing assertion
             break;
         }
 

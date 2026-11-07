@@ -197,6 +197,19 @@ if(TARGET ControlTest)
         LABELS gpu
         TIMEOUT 300)
 
+    # VirtualListDemo at 1 000 and 100 000 items: the same pool, ids and
+    # per-frame counters at both, a settled frame writing nothing, and a
+    # one-row scroll and a wheel notch writing no more than the shown rows'
+    # slots, entering only the list's subtree in one layout pass with no z
+    # renumber; exits non-zero on any failed check
+    add_test(NAME controltest_virtual_list
+        COMMAND $<TARGET_FILE:ControlTest> --headless --scenario virtual-list --require-one-pass
+            --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/virtual-list
+        WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
+    set_tests_properties(controltest_virtual_list PROPERTIES
+        LABELS gpu
+        TIMEOUT 120)
+
     # keys handled in one frame, after an edit and before the layout that
     # re-wraps it, move the caret through the edited text's lines (#209): the
     # same script with no frame between the keys and with one after each edit

@@ -64,6 +64,8 @@ set(GWENI_DEMO_SOURCES
     demo/treeControl.h
     demo/unicodeText.cpp
     demo/unicodeText.h
+    demo/virtualList.cpp
+    demo/virtualList.h
     demo/window.cpp
     demo/window.h
     demo/windowButtons.cpp

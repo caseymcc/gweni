@@ -365,7 +365,8 @@ void ScrollControl::placeContents()
         const float amount=m_verticalScrollBar->getScrolledAmount();
 
         if(amount != m_shownVirtualAmount)
-            m_virtualOffset=static_cast<int>(std::lround(amount*getMaxVerticalScrollOffset()));
+            m_virtualOffset=static_cast<int>(std::lround(
+                static_cast<double>(amount)*getMaxVerticalScrollOffset()));
 
         m_viewportHeight=height-barHeight;
         m_virtualOffset=gweni::clamp(m_virtualOffset, 0, getMaxVerticalScrollOffset());

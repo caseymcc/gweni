@@ -452,6 +452,39 @@ on an OpenGL 3.3 core profile:
   label is set only when the whole percentage changes. An `Elastic` bar is as high as
   its label, so a bar whose label comes and goes is given a `Fixed` height if that must
   not move its neighbours (ProgressBarDemo does).
+- **The virtual list: a pool of the rows on screen.** `controls::VirtualList`
+  (`include/gweni/controls/virtualList.h`) shows `setItemCount(n)` fixed-height rows
+  (`setRowHeight`, 20 by default) through a pool of row controls: `ceil(viewport/rowHeight)+1`,
+  made by the row factory (`setRowFactory`; by default `internal::VirtualListRow`, a
+  `Selectable` that never stays selected, since the row shows another item once the list
+  scrolls, and fires `onItemPressed` with its item) and filled for an item by the row
+  binder (`setRowBinder(row, index)`). The pool is created or deleted only when the
+  viewport's height changes, so 100 000 items have the controls, primitive ids and text
+  ids of the dozen or so rows on screen, and a frame costs what those rows cost.
+  **Positions stay small:** nothing is `n*rowHeight` high. The list is a `ScrollControl`
+  with *virtual content* (`ScrollControl::setVirtualContentHeight`): the vertical bar is
+  decided and ranged from that height, but the inner panel is the viewport, not scrolled,
+  and the scroll position is a whole-unit offset (`getVerticalScrollOffset`, 0 to
+  `getMaxVerticalScrollOffset()`), which the bar shows as a fraction and which a bar the
+  user moves (thumb, buttons, wheel) sets, as `placeContents` finds the bar where it did
+  not put it. Each row is placed in the viewport at `index*rowHeight-offset`, so every
+  rect drawn is on screen: a list of millions of rows never comes near the int16 device
+  range (`cullOutOfRangeQuad`) or the slot ceiling. The content height is capped at
+  `INT_MAX` units. **Binding** happens in the Y arrange, in `contentsPlaced` (called by
+  `ScrollControl::arrange` right after `placeContents`, under a `PlacementScope`): the
+  rows still showing an item in view keep it and are not bound again; the others take
+  the items that came into view and are bound, then measured in X, since the X
+  measuring of the pass is over; a row showing nothing (the spare one while the offset
+  is a whole number of rows, the rows past the last item) is hidden. So a one-row scroll
+  moves the rows on screen (their glyph slots; an idle row's slot is hidden and costs
+  nothing) and binds one, a jump binds the rows whose item changed, and a count that
+  changes binds only the rows that came into view, keeping the offset inside the new
+  content. Rows made during the pass are made under a `Base::PartScope`, so their
+  constructors' defaults are not counted as layout requests. The binder must only set a
+  row's content. `scrollToItem`, `scrollByRows`, `firstVisibleItem`,
+  `rowForItem`/`itemForRow` and `refresh`/`refreshItem` are the rest; a wheel notch
+  scrolls `setWheelRows` rows (3). A row hovered when the list scrolls stays hovered
+  until the mouse moves, as in any ScrollControl. VirtualListDemo holds 100 000 items.
 - **Scale and the device-pixel grid.** Controls lay out in logical units (integers);
   `renderer::Base::translate()` turns them into device pixels at `scale()` (set by
   `Canvas::setScale`). It snaps **edges**, not origin and size apart: a point is

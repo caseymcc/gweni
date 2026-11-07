@@ -41,6 +41,8 @@ implemented-vs-planned status, and [docs/layout.md](docs/layout.md) for the layo
 | **ComboBox** | **Separator** (with a caption, vertical, and bullets) |
 | ![Selectable](docs/images/SelectableDemo.png) | ![ContextMenu](docs/images/ContextMenuDemo.png) |
 | **Selectable** (toggle rows and a single-selection group) | **Context menu** (`setContextMenu`, opened with a right-click) |
+| ![VirtualList](docs/images/VirtualListDemo.png) | |
+| **VirtualList** (100 000 items, a row for each one on screen) | |
 
 Each control is shown on its own in `ControlTest`. All of these images are rendered offscreen by
 `tools/capture_samples.sh` (see `AGENTS.md`).

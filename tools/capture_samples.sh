@@ -73,13 +73,16 @@ SAMPLES=(
     SeparatorDemo
     SelectableDemo
     ContextMenuDemo
+    VirtualListDemo
 )
 
 # Scripted input a sample is captured after, in place of the plain capture's
 # frames: ControlTest steps, run in order before the --shot. ContextMenuDemo is
-# shown with the Document box's menu open.
+# shown with the Document box's menu open, VirtualListDemo scrolled by its
+# "Go to Item 50000" button with a row hovered.
 declare -A SAMPLE_STEPS=(
     [ContextMenuDemo]="--frames 3 --move 230,60 --frames 2 --click-right 230,60 --frames 3"
+    [VirtualListDemo]="--frames 3 --click 336,41 --frames 3 --move 100,150 --frames 2"
 )
 
 CONTROL_SIZE=640x480

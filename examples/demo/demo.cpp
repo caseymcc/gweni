@@ -40,6 +40,7 @@
 #include "demo/textDemo.h"
 #include "demo/textSizes.h"
 #include "demo/unicodeText.h"
+#include "demo/virtualList.h"
 #include "demo/window.h"
 #include "demo/windowButtons.h"
 
@@ -127,6 +128,7 @@ void Demo::init(const String &name)
         addDemo<TextBoxDemo>(cat, "TextBoxDemo");
         addDemo<ListBoxDemo>(cat, "ListBoxDemo");
         addDemo<SelectableDemo>(cat, "SelectableDemo");
+        addDemo<VirtualListDemo>(cat, "VirtualListDemo");
         addDemo<ContextMenuDemo>(cat, "ContextMenuDemo");
         addDemo<UnicodeTextDemo>(cat, "UnicodeTextDemo");
         addDemo<TextSizesDemo>(cat, "TextSizesDemo");

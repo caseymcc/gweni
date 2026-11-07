@@ -66,6 +66,7 @@ GWENI_DEMO_TRANSPARENT(TextDemo)
 GWENI_DEMO_TRANSPARENT(TextSizesDemo)
 GWENI_DEMO_TRANSPARENT(TreeControlDemo)
 GWENI_DEMO_TRANSPARENT(UnicodeTextDemo)
+GWENI_DEMO_TRANSPARENT(VirtualListDemo)
 GWENI_DEMO_TRANSPARENT(WindowDemo)
 GWENI_DEMO_TRANSPARENT(WindowButtonsDemo)
 
@@ -132,6 +133,7 @@ template class ControlRegister<TextDemoLightPanel>;
 template class ControlRegister<TextSizesDemo>;
 template class ControlRegister<TreeControlDemo>;
 template class ControlRegister<UnicodeTextDemo>;
+template class ControlRegister<VirtualListDemo>;
 template class ControlRegister<WindowDemo>;
 template class ControlRegister<WindowButtonsDemo>;
 
