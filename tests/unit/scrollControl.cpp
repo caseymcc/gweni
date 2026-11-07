@@ -352,3 +352,130 @@ TEST_CASE("setScroll turns an axis off even when its content overflows the reque
         CHECK_FALSE(scene.horizontalBar->isDisabled());
     }
 }
+
+// The wheel scrolls a bar that is shown and enabled; one the ScrollControl
+// cannot use goes on to its parent, as Canvas::inputMouseWheel's dispatch to
+// the hovered control does through Base::onMouseWheeled.
+
+namespace
+{
+
+float scrolled(controls::Base *bar)
+{
+    return static_cast<controls::BaseScrollBar *>(bar)->getScrolledAmount();
+}
+
+//! The bars of a ScrollControl, inner panel first as in Scene.
+struct Parts
+{
+    controls::Base *inner;
+    controls::Base *verticalBar;
+
+    explicit Parts(controls::ScrollControl *scroll)
+    {
+        const controls::Base::List &parts=scroll->getActualChildren();
+        REQUIRE(parts.size() == 3);
+        auto part=parts.begin();
+        inner=*part++;
+        verticalBar=*part;
+    }
+};
+
+}//namespace
+
+TEST_CASE("the wheel does not move a bar that is shown but disabled")
+{
+    Scene scene;
+    scene.scroll->setAutoHideBars(false);
+    Block *row=scene.addRow(50, 50);
+    scene.settle();
+
+    // the content fits: both bars are shown, and disabled
+    REQUIRE(scene.verticalBar->visible());
+    REQUIRE(scene.verticalBar->isDisabled());
+    REQUIRE(scene.horizontalBar->visible());
+    REQUIRE(scene.horizontalBar->isDisabled());
+
+    CHECK_FALSE(row->onMouseWheeled(-60));
+    CHECK_FALSE(row->onMouseWheeled(60));
+    CHECK(scrolled(scene.verticalBar) == 0);
+    CHECK(scrolled(scene.horizontalBar) == 0);
+    CHECK(scene.frame().passes == 0);
+    CHECK(scene.inner->getY() == 0);
+    CHECK(scene.inner->getX() == 0);
+}
+
+TEST_CASE("a wheel over a ScrollControl that cannot scroll scrolls the one around it")
+{
+    Scene scene;
+    scene.canvas->setSize(400, 150);
+    scene.scroll->setScroll(false, true);
+
+    // a short ScrollControl whose content fits, above a tall row
+    controls::ScrollControl *nested=scene.scroll->newChild<controls::ScrollControl>("nested");
+    nested->setDock(DockPosition::Top);
+    nested->setHeight(60);
+    Block *small=nested->newChild<Block>();
+    small->want=Size(20, 20);
+    small->setDock(DockPosition::Top);
+    scene.addRow(50, 400);
+    scene.settle();
+
+    Parts nestedParts(nested);
+    REQUIRE(nested->getHeight() == 60);
+    REQUIRE(nestedParts.verticalBar->hidden());
+    REQUIRE_FALSE(scene.verticalBar->hidden());
+    REQUIRE_FALSE(scene.verticalBar->isDisabled());
+
+    // down a notch: the nested one cannot, so the outer one scrolls
+    CHECK(small->onMouseWheeled(-60));
+    CHECK(scrolled(scene.verticalBar) > 0);
+    scene.frame();
+    CHECK(scene.inner->getY() < 0);
+    CHECK(nestedParts.inner->getY() == 0);
+}
+
+TEST_CASE("a wheel past the end of a ScrollControl goes on to the one around it")
+{
+    Scene scene;
+    scene.canvas->setSize(400, 150);
+    scene.scroll->setScroll(false, true);
+
+    controls::ScrollControl *nested=scene.scroll->newChild<controls::ScrollControl>("nested");
+    nested->setDock(DockPosition::Top);
+    nested->setScroll(false, true);
+    nested->setHeight(60);
+    Block *tall=nested->newChild<Block>();
+    tall->want=Size(20, 200);
+    tall->setDock(DockPosition::Top);
+    scene.addRow(50, 400);
+    scene.settle();
+
+    Parts nestedParts(nested);
+    REQUIRE_FALSE(nestedParts.verticalBar->hidden());
+    REQUIRE_FALSE(nestedParts.verticalBar->isDisabled());
+    REQUIRE_FALSE(scene.verticalBar->hidden());
+
+    // the nested one scrolls first, while it can
+    static_cast<controls::BaseScrollBar *>(nestedParts.verticalBar)->setScrolledAmount(1, true);
+    scene.settle();
+    REQUIRE(scrolled(nestedParts.verticalBar) == 1);
+    REQUIRE(scrolled(scene.verticalBar) == 0);
+
+    // at its bottom, a notch down goes to the outer one
+    CHECK(tall->onMouseWheeled(-60));
+    CHECK(scrolled(nestedParts.verticalBar) == 1);
+    CHECK(scrolled(scene.verticalBar) > 0);
+
+    // a notch up still scrolls the nested one, and leaves the outer one
+    const float outer=scrolled(scene.verticalBar);
+    CHECK(tall->onMouseWheeled(60));
+    CHECK(scrolled(nestedParts.verticalBar) < 1);
+    CHECK(scrolled(scene.verticalBar) == outer);
+
+    // the outer one at its top, a notch up over it goes nowhere
+    static_cast<controls::BaseScrollBar *>(scene.verticalBar)->setScrolledAmount(0, true);
+    static_cast<controls::BaseScrollBar *>(nestedParts.verticalBar)->setScrolledAmount(0, true);
+    scene.settle();
+    CHECK_FALSE(tall->onMouseWheeled(60));
+}

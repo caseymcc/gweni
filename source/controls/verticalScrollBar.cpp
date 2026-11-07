@@ -20,6 +20,11 @@ GWENI_CONTROL_CONSTRUCTOR(VerticalScrollBar)
     m_scrollButton[SCROLL_BUTTON_UP]->onPressCaller.add(this, &VerticalScrollBar::nudgeUp);
     m_scrollButton[SCROLL_BUTTON_DOWN]->setDirectionDown();
     m_scrollButton[SCROLL_BUTTON_DOWN]->onPressCaller.add(this, &VerticalScrollBar::nudgeDown);
+    // Docked, the buttons take their preferred height, and the first pass
+    // measures this bar with them; a height set in layout() would be replaced
+    // by it in the Y pass, after they were laid out.
+    m_scrollButton[SCROLL_BUTTON_UP]->setDock(DockPosition::Top);
+    m_scrollButton[SCROLL_BUTTON_DOWN]->setDock(DockPosition::Bottom);
     m_bar->onDragged.add(this, &VerticalScrollBar::onBarMoved);
 }
 
@@ -30,11 +35,6 @@ void VerticalScrollBar::layout(skin::Base *skin)
     // Everything below sets up children this pass lays out next.
     PlacementScope placement;
 
-    // Docked, the buttons take their preferred height; a height set here
-    // would be replaced by it in the Y pass, after they were laid out.
-    m_scrollButton[SCROLL_BUTTON_UP]->setDock(DockPosition::Top);
-    m_scrollButton[SCROLL_BUTTON_DOWN]->setDock(DockPosition::Bottom);
-    m_bar->setWidth(getButtonSize());
     // Add padding
     m_bar->setPadding(Padding(0, getButtonSize(), 0, getButtonSize()));
     // Calculate bar sizes
@@ -43,7 +43,7 @@ void VerticalScrollBar::layout(skin::Base *skin)
     if(barHeight < getButtonSize()/2)
         barHeight=getButtonSize()/2;
 
-    m_bar->setHeight(barHeight);
+    placeChildSize(m_bar, getButtonSize(), barHeight);
     m_bar->setHidden(getHeight()-(getButtonSize()*2) <= barHeight);
 
     // Based on our last scroll amount, produce a position for the bar. Only
@@ -57,7 +57,9 @@ void VerticalScrollBar::placeBar()
 {
     const int newY=getButtonSize()
         + getScrolledAmount()*(getHeight() - m_bar->getHeight() - getButtonSize()*2);
-    m_bar->moveTo(m_bar->getX(), newY);
+    const Point pos=m_bar->restrictedPos(m_bar->getX(), newY);
+
+    placeChildPos(m_bar, pos.x, pos.y);
 }
 
 void VerticalScrollBar::scrollToTop()

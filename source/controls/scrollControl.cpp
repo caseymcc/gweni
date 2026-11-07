@@ -73,25 +73,39 @@ void ScrollControl::onChildBoundsChanged(gweni::Rect /*oldChildBounds*/, Base * 
     invalidate();
 }
 
+namespace
+{
+
+// Moves a bar by a wheel delta if that changes where it is; a bar at the end
+// the wheel pushes towards stays there and the wheel is not used.
+bool wheelBar(BaseScrollBar *bar, int iDelta)
+{
+    const float amount=bar->getScrolledAmount();
+    const float moved=gweni::clamp(amount-bar->getNudgeAmount()*iDelta/60.0f, 0.f, 1.f);
+
+    if(moved == amount)
+        return false;
+
+    bar->setScrolledAmount(moved, true);
+    return true;
+}
+
+}//namespace
+
+// Only a bar that is shown and enabled scrolls: vertical first, then
+// horizontal. A wheel neither axis can use goes on to the parent, so it
+// reaches an ancestor that can scroll.
 bool ScrollControl::onMouseWheeled(int iDelta)
 {
-    if(canScrollVertical() && m_verticalScrollBar->visible())
-    {
-        if(m_verticalScrollBar->setScrolledAmount(
-            m_verticalScrollBar->getScrolledAmount()
-            - m_verticalScrollBar->getNudgeAmount()  *iDelta / 60.0f, true))
-            return true;
-    }
+    if(canScrollVertical() && m_verticalScrollBar->visible()
+        && !m_verticalScrollBar->isDisabled() && wheelBar(m_verticalScrollBar, iDelta))
+        return true;
 
-    if(canScrollHorizontal() && m_horizontalScrollBar->visible())
-    {
-        if(m_horizontalScrollBar->setScrolledAmount(
-            m_horizontalScrollBar->getScrolledAmount()
-            - m_horizontalScrollBar->getNudgeAmount()  *iDelta / 60.0f, true))
-            return true;
-    }
+    if(canScrollHorizontal() && m_horizontalScrollBar->visible()
+        && !m_horizontalScrollBar->isDisabled() && wheelBar(m_horizontalScrollBar, iDelta))
+        return true;
 
-    return false;
+    return ParentClass::onMouseWheeled(iDelta);
 }
 
 bool ScrollControl::contentsAreDocked()

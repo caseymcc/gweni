@@ -27,6 +27,7 @@ public:
 
 public:
 //    void render(skin::Base *skin) override;
+    void calculateSize(skin::Base *skin, Dim dim) override;
     void layout(skin::Base *skin) override;
 
     void onMouseMoved(int x, int y, int deltaX, int deltaY) override;

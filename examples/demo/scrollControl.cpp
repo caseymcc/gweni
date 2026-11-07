@@ -1,108 +1,66 @@
 #include "demo/scrollControl.h"
-#include <gweni/controls/layout/layout.h>
 #include "gweni/controls/scrollControl.h"
+#include <gweni/controls/button.h>
 
 namespace gweni
 {
 
+namespace
+{
+
+//! One region: a 100x100 ScrollControl holding a Button of a fixed size, or
+//! with no size one docked to fill it, which fits whatever room the bars leave.
+struct Region
+{
+    const char *text;
+    int contentWidth;
+    int contentHeight;
+    bool horizontal;
+    bool vertical;
+};
+
+const Region g_regions[]=
+{
+    {"Twice As Big", 200, 200, true, true},
+    {"Same Size", 0, 0, true, true},
+    {"Wide", 200, 50, true, true},
+    {"Tall", 50, 200, true, true},
+    {"Vertical", 200, 200, false, true},
+    {"Horizontal", 200, 200, true, false},
+};
+
+}//namespace
+
+// Two rows of the same six regions, placed where their bounds say: the top
+// row always shows its bars (disabled where the content fits), the bottom row
+// hides them until they are needed.
 GWENI_CONTROL_CONSTRUCTOR(ScrollControlDemo)
 {
-    setLayout(new controls::VerticalLayout());
+    for(int row=0; row < 2; ++row)
+    {
+        int x=10;
 
-    {
-        controls::ScrollControl *control=newChild<controls::ScrollControl>();
-        control->setBounds(10, 10, 100, 100);
-        controls::Button *testButton=control->newChild<controls::Button>();
-        testButton->setText("Twice As Big");
-        testButton->setBounds(0, 0, 200, 200);
-    }
-    {
-        controls::ScrollControl *control=newChild<controls::ScrollControl>();
-        control->setBounds(110, 10, 100, 100);
-        controls::Button *testButton=control->newChild<controls::Button>();
-        testButton->setText("Same Size");
-        testButton->setBounds(0, 0, 100, 100);
-    }
-    {
-        controls::ScrollControl *control=newChild<controls::ScrollControl>();
-        control->setBounds(210, 10, 100, 100);
-        controls::Button *testButton=control->newChild<controls::Button>();
-        testButton->setText("Wide");
-        testButton->setBounds(0, 0, 200, 50);
-    }
-    {
-        controls::ScrollControl *control=newChild<controls::ScrollControl>();
-        control->setBounds(310, 10, 100, 100);
-        controls::Button *testButton=control->newChild<controls::Button>();
-        testButton->setText("Tall");
-        testButton->setBounds(0, 0, 50, 200);
-    }
-    {
-        controls::ScrollControl *control=newChild<controls::ScrollControl>();
-        control->setBounds(410, 10, 100, 100);
-        control->setScroll(false, true);
-        controls::Button *testButton=control->newChild<controls::Button>();
-        testButton->setText("Vertical");
-        testButton->setBounds(0, 0, 200, 200);
-    }
-    {
-        controls::ScrollControl *control=newChild<controls::ScrollControl>();
-        control->setBounds(510, 10, 100, 100);
-        control->setScroll(true, false);
-        controls::Button *testButton=control->newChild<controls::Button>();
-        testButton->setText("Horinzontal");
-        testButton->setBounds(0, 0, 200, 200);
-    }
-    // Bottom Row
-    {
-        controls::ScrollControl *control=newChild<controls::ScrollControl>();
-        control->setBounds(10, 110, 100, 100);
-        control->setAutoHideBars(true);
-        controls::Button *testButton=control->newChild<controls::Button>();
-        testButton->setText("Twice As Big");
-        testButton->setBounds(0, 0, 200, 200);
-    }
-    {
-        controls::ScrollControl *control=newChild<controls::ScrollControl>();
-        control->setBounds(110, 110, 100, 100);
-        control->setAutoHideBars(true);
-        controls::Button *testButton=control->newChild<controls::Button>();
-        testButton->setText("Same Size");
-        testButton->setBounds(0, 0, 100, 100);
-    }
-    {
-        controls::ScrollControl *control=newChild<controls::ScrollControl>();
-        control->setBounds(210, 110, 100, 100);
-        control->setAutoHideBars(true);
-        controls::Button *testButton=control->newChild<controls::Button>();
-        testButton->setText("Wide");
-        testButton->setBounds(0, 0, 200, 50);
-    }
-    {
-        controls::ScrollControl *control=newChild<controls::ScrollControl>();
-        control->setBounds(310, 110, 100, 100);
-        control->setAutoHideBars(true);
-        controls::Button *testButton=control->newChild<controls::Button>();
-        testButton->setText("Tall");
-        testButton->setBounds(0, 0, 50, 200);
-    }
-    {
-        controls::ScrollControl *control=newChild<controls::ScrollControl>();
-        control->setBounds(410, 110, 100, 100);
-        control->setAutoHideBars(true);
-        control->setScroll(false, true);
-        controls::Button *testButton=control->newChild<controls::Button>();
-        testButton->setText("Vertical");
-        testButton->setBounds(0, 0, 200, 200);
-    }
-    {
-        controls::ScrollControl *control=newChild<controls::ScrollControl>();
-        control->setBounds(510, 110, 100, 100);
-        control->setAutoHideBars(true);
-        control->setScroll(true, false);
-        controls::Button *testButton=control->newChild<controls::Button>();
-        testButton->setText("Horinzontal");
-        testButton->setBounds(0, 0, 200, 200);
+        for(const Region &region : g_regions)
+        {
+            controls::ScrollControl *control=newChild<controls::ScrollControl>();
+            control->setBounds(x, 10+row*100, 100, 100);
+            if(!region.horizontal || !region.vertical)
+                control->setScroll(region.horizontal, region.vertical);
+            control->setAutoHideBars(row == 1);
+
+            controls::Button *testButton=control->newChild<controls::Button>();
+            testButton->setText(region.text);
+
+            if(region.contentWidth == 0)
+                testButton->setDock(DockPosition::Center);
+            else
+            {
+                testButton->setSizeFlags({SizeFlag::Fixed, SizeFlag::Fixed});
+                testButton->setBounds(0, 0, region.contentWidth, region.contentHeight);
+            }
+
+            x+=100;
+        }
     }
 }
 

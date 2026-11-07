@@ -23,6 +23,9 @@ GWENI_CONTROL_CONSTRUCTOR(BaseScrollBar)
     }
 
     m_bar=newChild<internal::ScrollBarBar>();
+    // Sized from the content and placed at the scroll amount by layout(), so
+    // it does not count in the size this bar asks for.
+    m_bar->setPlacement(Placement::Owner);
     setBounds(0, 0, 15, 15);
     m_depressed=false;
     m_scrolledAmount=0;

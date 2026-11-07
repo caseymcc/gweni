@@ -52,13 +52,27 @@ void ScrollBarBar::onMouseClickLeft(int x, int y, bool down)
     invalidateParent();
 }
 
+// The scroll bar sizes and places the thumb (Placement::Owner), and its
+// padding only keeps it between the bar's buttons, so it asks for nothing: a
+// size from the padding would depend on whether the bar has set it yet.
+void ScrollBarBar::calculateSize(skin::Base * /*skin*/, Dim dim)
+{
+    if(dim == Dim::X)
+        m_preferredSize.width=0;
+    else
+        m_preferredSize.height=0;
+}
+
 void ScrollBarBar::layout(skin::Base * /*skin*/)
 {
     if(!getParent())
         return;
 
-    // Move to our current position to force clamping - is this a hack?
-    moveTo(getX(), getY());
+    // Kept between the scroll bar's buttons (its padding) when the bar
+    // shrank; the bar places it, so this is no request.
+    const Point pos=restrictedPos(getX(), getY());
+
+    placeChildPos(this, pos.x, pos.y);
 }
 
 void ScrollBarBar::moveTo(int x, int y)
