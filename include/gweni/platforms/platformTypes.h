@@ -322,6 +322,9 @@ struct Font
         Loaded,                 //!< Loaded successful.
         ErrorFileNotFound,      //!< File requested was not found.
         ErrorBadData,           //!< Resource was bad data.
+        //! The file was missing or bad data, and the face's text is drawn in the
+        //! renderer's built-in fallback font instead: text works, the face is wrong.
+        LoadedFallback,
         MaxStatus
     };
 

@@ -81,6 +81,11 @@ static constexpr int lcdSubpixelPositions=3;
 // GWENI_TEXT_CONTRAST's default: the LCD coverage boost for white text
 static constexpr float defaultTextContrast=1.0f;
 
+// The built-in fallback font's file, resources/OpenSans.ttf, compiled in by
+// cmake/embedFile.cmake (generated/fallbackFont.cpp in the build tree)
+extern const unsigned char fallbackFontData[];
+extern const size_t fallbackFontDataSize;
+
 // The printable ASCII every font rasterises when it is loaded
 static const char *const fontCache=" !\"#$%&'()*+,-./0123456789:;<=>?"
     "@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_"
@@ -204,18 +209,26 @@ Font::Status OpenGLCore::loadFont(const Font &requested, float px)
     {
         loaded->second.freed=false;
         m_lastFont=&(*loaded);
-        return Font::Status::Loaded;
+        return loaded->second.fallback?Font::Status::LoadedFallback:Font::Status::Loaded;
     }
 
     m_lastFont=nullptr;
 
     const String filename=getResourcePaths().getPath(ResourcePaths::Type::Font, font.facename);
+    const bool found=fs::exists(filename);
+    // what the face's own file gave; the built-in font may still draw it
+    Font::Status status=Font::Status::Loaded;
 
-    if(!fs::exists(filename))
+    if(!found)
     {
         gweni::log::write(log::Level::Error, "Font file not found: %s", filename.c_str());
-        m_failedFonts.insert(key);
-        return Font::Status::ErrorFileNotFound;
+        status=Font::Status::ErrorFileNotFound;
+
+        if(!m_fallbackFont)
+        {
+            m_failedFonts.insert(key);
+            return status;
+        }
     }
 
     vec4 black={{0.0, 0.0, 0.0, 1.0}};
@@ -225,7 +238,8 @@ Font::Status OpenGLCore::loadFont(const Font &requested, float px)
     fontData.mode=mode;
     fontData.baseSize=sdf?sdfBaseSize:font.size;
     // markup_t keeps the family as a borrowed char*, and the markup outlives this
-    // function, so it cannot point at the local filename.
+    // function, so it cannot point at the local filename. A fallback keeps the
+    // requested path too: only font_manager_get_from_markup below opens it.
     fontData.familyPath=strdup(filename.c_str());
     fontData.markup.family=fontData.familyPath;
     fontData.markup.size=fontData.baseSize;
@@ -257,7 +271,37 @@ Font::Status OpenGLCore::loadFont(const Font &requested, float px)
     // fonts load it themselves below.
     fontData.fontManager->cache=strdup((sdf || lcd)?"":fontCache);
 
-    fontData.markup.font=ftgl::font_manager_get_from_markup(fontData.fontManager, &fontData.markup);
+    if(found)
+    {
+        fontData.markup.font=ftgl::font_manager_get_from_markup(fontData.fontManager, &fontData.markup);
+
+        if(fontData.markup.font == nullptr)
+        {
+            gweni::log::write(log::Level::Error, "Font file failed to load: %s", filename.c_str());
+            status=Font::Status::ErrorBadData;
+        }
+    }
+
+    if((fontData.markup.font == nullptr) && m_fallbackFont)
+    {
+        // The built-in font, from memory into this font's own atlas, so it is drawn
+        // like any face of this mode. The manager frees it with its atlas
+        // (font_manager_delete); it is never asked for a face again, whose lookup
+        // would compare this font's memory location as a filename. The manager
+        // rasterises its cache only for faces it opens itself, so every mode loads
+        // it below.
+        fontData.markup.font=ftgl::texture_font_new_from_memory(fontData.fontManager->atlas,
+            fontData.baseSize, fallbackFontData, fallbackFontDataSize);
+
+        if(fontData.markup.font != nullptr)
+        {
+            ftgl::vector_push_back(fontData.fontManager->fonts, &fontData.markup.font);
+            fontData.fallback=true;
+            gweni::log::write(log::Level::Error, "using built-in fallback for %s", font.facename.c_str());
+        }
+        else
+            gweni::log::write(log::Level::Error, "The built-in fallback font failed to load for %s", font.facename.c_str());
+    }
 
     if(sdf && fontData.markup.font)
     {
@@ -274,14 +318,15 @@ Font::Status OpenGLCore::loadFont(const Font &requested, float px)
         fontData.markup.font->subpixel_positions=lcdSubpixelPositions;
         ftgl::texture_font_load_glyphs(fontData.markup.font, fontCache);
     }
+    else if(fontData.fallback)
+        ftgl::texture_font_load_glyphs(fontData.markup.font, fontCache);
 
     if(fontData.markup.font == nullptr)
     {
-        // freetype-gl could not open the face. fontData's destructor frees the
-        // manager and familyPath; no atlas texture exists yet.
-        gweni::log::write(log::Level::Error, "Font file failed to load: %s", filename.c_str());
+        // Neither the face nor the fallback could be opened. fontData's destructor
+        // frees the manager and familyPath; no atlas texture exists yet.
         m_failedFonts.insert(key);
-        return Font::Status::ErrorBadData;
+        return status;
     }
 
     fontData.textureFont=fontData.markup.font;
@@ -304,8 +349,10 @@ Font::Status OpenGLCore::loadFont(const Font &requested, float px)
     fontData.atlas->dirty_y0=0;
     fontData.atlas->dirty_y1=fontData.atlas->height;
 
+    const bool fallback=fontData.fallback;
+
     m_lastFont=&(*m_fonts.insert(std::make_pair(key, std::move(fontData))).first);
-    return Font::Status::Loaded;
+    return fallback?Font::Status::LoadedFallback:Font::Status::Loaded;
 }
 
 void OpenGLCore::freeFont(const gweni::Font &requested)
@@ -387,7 +434,9 @@ bool OpenGLCore::ensureFont(const Font &requested, float px)
     // No, try load to it
 
     // LoadFont sets m_lastFont, if loaded, and adds the font to m_failedFonts if not
-    return loadFont(requested, px) == Font::Status::Loaded;
+    const Font::Status status=loadFont(requested, px);
+
+    return (status == Font::Status::Loaded) || (status == Font::Status::LoadedFallback);
 }
 
 Texture::Status OpenGLCore::loadTexture(Texture &texture)

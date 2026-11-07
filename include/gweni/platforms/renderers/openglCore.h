@@ -142,6 +142,7 @@ struct GLFontData
         drawChunks=std::move(other.drawChunks);
         drawListStale=other.drawListStale;
         freed=other.freed;
+        fallback=other.fallback;
     }
 
     //! Deletes the atlas texture, then the manager (which owns the atlas, the
@@ -184,6 +185,10 @@ struct GLFontData
     //! its last run leaves it, and a use before then (ensureFont, loadFont) keeps
     //! it for good.
     bool freed=false;
+    //! The face's file was missing or unreadable, so textureFont is the built-in
+    //! fallback font (OpenGLCore::setFallbackFont), loaded from memory into this
+    //! manager's atlas; loadFont reports it as Font::Status::LoadedFallback.
+    bool fallback=false;
 };
 
 //
@@ -298,6 +303,14 @@ public:
     //! laid out again.
     void setTextContrast(float contrast) { m_textContrast=std::max(0.0f, contrast); }
     float textContrast() const { return m_textContrast; }
+
+    //! Whether loadFont draws a face whose file is missing or unreadable in the
+    //! built-in fallback font (OpenSans, compiled into the library), returning
+    //! Font::Status::LoadedFallback, rather than failing with the face drawing no
+    //! text. On by default; off is for tests of the failure path. A change applies
+    //! to the next load: what is loaded stays as it is.
+    void setFallbackFont(bool enabled) { m_fallbackFont=enabled; }
+    bool fallbackFont() const { return m_fallbackFont; }
 
     //! The freetype-gl font a font's text is drawn from (resolved at its draw px),
     //! nullptr if it is not loaded: a test hook, to look its glyphs up.
@@ -700,6 +713,8 @@ private:
     TextAA m_textAA=TextAA::Grayscale;
     //! The LCD modes' coverage boost for light text (setTextContrast, GWENI_TEXT_CONTRAST)
     float m_textContrast;
+    //! A missing or unreadable face is drawn in the built-in font (setFallbackFont)
+    bool m_fallbackFont=true;
 
     glm::mat4 m_projectionMatrix;
 

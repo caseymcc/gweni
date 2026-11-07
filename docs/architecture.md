@@ -516,6 +516,18 @@ on an OpenGL 3.3 core profile:
   deletes it only when no run is laid out in it. Otherwise it marks it `freed`, every
   run keeps drawing, and it goes when its last run leaves it (`setTextRunFont`), unless
   an `ensureFont`/`loadFont` uses it again first.
+- **A missing face is drawn in a built-in font.** The library embeds
+  `resources/OpenSans.ttf` (Apache-2.0, `resources/OpenSans-LICENSE.txt`): the build
+  turns it into a byte array (`cmake/embedFile.cmake`, `generated/fallbackFont.cpp`
+  in the build tree). When a face's file is missing or freetype-gl cannot read it,
+  `loadFont` logs that error, then loads this font from memory
+  (`texture_font_new_from_memory`) into that key's own manager and atlas, set up for
+  its mode like any face, logs `using built-in fallback for <face>` and returns
+  `Font::Status::LoadedFallback` (`GLFontData::fallback`, so a second `loadFont`
+  says so again). It is in `m_fonts` like a loaded face, so it is loaded and
+  reported once per key, and `ensureFont` counts it as loaded. Only if that fails
+  too, or with `setFallbackFont(false)` (a test hook), does the key go into
+  `m_failedFonts`, its text drawing nothing and measuring `(0,0)`.
 - **Grayscale text on the pixel grid.** Each font's atlas is depth 1 (`LCD_FILTERING_OFF`):
   one coverage byte per texel, a `GL_R8` texture uploaded as `GL_RED` with
   `GL_UNPACK_ALIGNMENT` 1, a third of the bytes an RGB atlas takes. The vendored

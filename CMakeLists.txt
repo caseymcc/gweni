@@ -310,9 +310,25 @@ if(GWENI_RENDER_OPENGL_CORE)
 
     find_package(freetype CONFIG REQUIRED)
 
+    # The built-in fallback font OpenGLCore::loadFont draws a missing or
+    # unreadable face in: resources/OpenSans.ttf (Apache-2.0, see
+    # resources/OpenSans-LICENSE.txt) as a byte array, generated into the build
+    # tree whenever the font or the script changes.
+    set(GWENI_FALLBACK_FONT ${GWENI_SOURCE_DIR}/resources/OpenSans.ttf)
+    set(GWENI_FALLBACK_FONT_SOURCE ${CMAKE_CURRENT_BINARY_DIR}/generated/fallbackFont.cpp)
+    add_custom_command(
+        OUTPUT ${GWENI_FALLBACK_FONT_SOURCE}
+        COMMAND ${CMAKE_COMMAND} -DINPUT=${GWENI_FALLBACK_FONT}
+            -DOUTPUT=${GWENI_FALLBACK_FONT_SOURCE} -DSYMBOL=fallbackFontData
+            -P ${GWENI_SOURCE_DIR}/cmake/embedFile.cmake
+        DEPENDS ${GWENI_FALLBACK_FONT} ${GWENI_SOURCE_DIR}/cmake/embedFile.cmake
+        COMMENT "Embedding the fallback font ${GWENI_FALLBACK_FONT}"
+        VERBATIM)
+
     list(APPEND GWENI_RENDER_SOURCES
         include/gweni/platforms/renderers/openglCore.h
         source/platforms/renderers/OpenGLCore/openglCore.cpp
+        ${GWENI_FALLBACK_FONT_SOURCE}
     )
     set(GWENI_ADDITIONAL_LIBRARIES ${GWENI_ADDITIONAL_LIBRARIES}
         glm::glm
