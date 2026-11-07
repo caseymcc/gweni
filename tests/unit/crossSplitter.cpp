@@ -117,7 +117,30 @@ struct Scene
     controls::Base *verticalBar() { return bar(0); }   //!< full width, splits top/bottom
     controls::Base *horizontalBar() { return bar(1); } //!< full height, splits left/right
     controls::Base *centerBar() { return bar(2); }
+
+    //! Drags \p bar by a point 2 px inside it until its top-left is at
+    //! (x, y) in the splitter's coordinates, through the Dragger's own mouse
+    //! handlers, then releases it.
+    void drag(controls::Base *bar, int x, int y)
+    {
+        const Point grab(2, 2);
+        const Point from=bar->localPosToCanvas(grab);
+        const Point to=splitter->localPosToCanvas(Point(x+grab.x, y+grab.y));
+
+        bar->onMouseClickLeft(from.x, from.y, true);
+        bar->onMouseMoved(to.x, to.y, to.x-from.x, to.y-from.y);
+        bar->onMouseClickLeft(to.x, to.y, false);
+    }
+
+    float h() const { return splitter->getHorizontalFraction(); }
+    float v() const { return splitter->getVerticalFraction(); }
 };
+
+//! The fraction a bar at \p pos has of the room along \p extent.
+float fractionAt(int pos, int extent)
+{
+    return static_cast<float>(pos)/(extent-BarSize);
+}
 
 int barPos(int extent, float fraction)
 {
@@ -134,6 +157,9 @@ void checkPlacement(Scene &scene, float h, float v)
     const int hx=barPos(W, h);
     const int vy=barPos(H, v);
     INFO("splitter ", W, "x", H, " hx=", hx, " vy=", vy);
+
+    CHECK(scene.h() == doctest::Approx(h));
+    CHECK(scene.v() == doctest::Approx(v));
 
     CHECK(rect(scene.verticalBar()) == rect(Rect(0, vy, W, b)));
     CHECK(rect(scene.horizontalBar()) == rect(Rect(hx, 0, b, H)));
@@ -182,19 +208,25 @@ TEST_CASE("CrossSplitter keeps its fractions across a resize, in one frame")
     const int width=scene.splitter->getWidth();
     const int height=scene.splitter->getHeight();
 
+    scene.drag(scene.centerBar(), 200, 100);
+    scene.frame();
+    const float h=fractionAt(200, width);
+    const float v=fractionAt(100, height);
+    checkPlacement(scene, h, v);
+
     scene.canvas->setSize(1023, 767);
     const controls::LayoutStats &stats=scene.frame();
     CHECK(stats.passes == 1);
     CHECK_FALSE(stats.capped);
     CHECK(scene.splitter->getWidth() != width);
     CHECK(scene.splitter->getHeight() != height);
-    checkPlacement(scene, 0.5f, 0.5f);
+    checkPlacement(scene, h, v);
 
     scene.canvas->setSize(640, 480);
     scene.frame();
     CHECK(scene.splitter->getWidth() == width);
     CHECK(scene.splitter->getHeight() == height);
-    checkPlacement(scene, 0.5f, 0.5f);
+    checkPlacement(scene, h, v);
 }
 
 TEST_CASE("CrossSplitter::zoom shows one panel over the whole splitter and hides the bars")
@@ -232,6 +264,82 @@ TEST_CASE("CrossSplitter::zoom shows one panel over the whole splitter and hides
     checkPlacement(scene, 0.5f, 0.5f);
 }
 
+TEST_CASE("dragging the vertical-position bar moves only it, along y, and the panels follow")
+{
+    Scene scene;
+    scene.settle();
+    const int W=scene.splitter->getWidth();
+    const int H=scene.splitter->getHeight();
+
+    // the mouse also goes 37 px sideways: the full-width bar stays at x=0
+    scene.drag(scene.verticalBar(), 37, 100);
+    const controls::LayoutStats &stats=scene.frame();
+    CHECK(stats.passes == 1);
+    CHECK_FALSE(stats.capped);
+    CHECK(scene.verticalBar()->getX() == 0);
+    checkPlacement(scene, 0.5f, fractionAt(100, H));
+
+    // past either edge it stops at the edge, the margin of 10 aside
+    scene.drag(scene.verticalBar(), -20, -50);
+    CHECK(scene.frame().passes == 1);
+    checkPlacement(scene, 0.5f, 0.0f);
+    CHECK(scene.verticalBar()->getY() == 0);
+
+    scene.drag(scene.verticalBar(), 20, H+50);
+    CHECK(scene.frame().passes == 1);
+    checkPlacement(scene, 0.5f, 1.0f);
+    CHECK(rect(scene.verticalBar()) == rect(Rect(0, H-BarSize, W, BarSize)));
+}
+
+TEST_CASE("dragging the horizontal-position bar moves only it, along x, and the panels follow")
+{
+    Scene scene;
+    scene.settle();
+    const int W=scene.splitter->getWidth();
+    const int H=scene.splitter->getHeight();
+
+    scene.drag(scene.horizontalBar(), 200, -30);
+    const controls::LayoutStats &stats=scene.frame();
+    CHECK(stats.passes == 1);
+    CHECK_FALSE(stats.capped);
+    CHECK(scene.horizontalBar()->getY() == 0);
+    checkPlacement(scene, fractionAt(200, W), 0.5f);
+
+    scene.drag(scene.horizontalBar(), -50, 20);
+    CHECK(scene.frame().passes == 1);
+    checkPlacement(scene, 0.0f, 0.5f);
+
+    scene.drag(scene.horizontalBar(), W+50, 20);
+    CHECK(scene.frame().passes == 1);
+    checkPlacement(scene, 1.0f, 0.5f);
+    CHECK(rect(scene.horizontalBar()) == rect(Rect(W-BarSize, 0, BarSize, H)));
+}
+
+TEST_CASE("dragging the centre bar moves both splits, clamped to the splitter")
+{
+    Scene scene;
+    scene.settle();
+    const int W=scene.splitter->getWidth();
+    const int H=scene.splitter->getHeight();
+
+    scene.drag(scene.centerBar(), 150, 333);
+    const controls::LayoutStats &stats=scene.frame();
+    CHECK(stats.passes == 1);
+    CHECK_FALSE(stats.capped);
+    checkPlacement(scene, fractionAt(150, W), fractionAt(333, H));
+
+    // to the top-left corner and past it: (0, 0), not the margin's (10, 10)
+    scene.drag(scene.centerBar(), -100, -100);
+    CHECK(scene.frame().passes == 1);
+    checkPlacement(scene, 0.0f, 0.0f);
+    CHECK(rect(scene.centerBar()) == rect(Rect(0, 0, BarSize, BarSize)));
+
+    scene.drag(scene.centerBar(), W+100, H+100);
+    CHECK(scene.frame().passes == 1);
+    checkPlacement(scene, 1.0f, 1.0f);
+    CHECK(rect(scene.centerBar()) == rect(Rect(W-BarSize, H-BarSize, BarSize, BarSize)));
+}
+
 TEST_CASE("CrossSplitter no bigger than its bar gives nothing a negative size")
 {
     // 0x0 on the first frame, then each axis on its own no bigger than the
@@ -246,6 +354,22 @@ TEST_CASE("CrossSplitter no bigger than its bar gives nothing a negative size")
         INFO("canvas ", size.x, "x", size.y);
         scene.canvas->setSize(size.x, size.y);
         scene.settle();
+
+        // a drag along an axis the bars have no room in keeps its fraction
+        const bool noWidth=scene.splitter->getWidth() <= BarSize;
+        const bool noHeight=scene.splitter->getHeight() <= BarSize;
+        REQUIRE((noWidth || noHeight));
+        if(noWidth)
+            scene.drag(scene.horizontalBar(), 3, 0);
+        if(noHeight)
+            scene.drag(scene.verticalBar(), 0, 3);
+        if(noWidth && noHeight)
+            scene.drag(scene.centerBar(), 3, 3);
+        scene.settle();
+        CHECK(std::isfinite(scene.h()));
+        CHECK(std::isfinite(scene.v()));
+        CHECK(scene.h() == 0.5f);
+        CHECK(scene.v() == 0.5f);
 
         for(int i=0; i<4; ++i)
         {

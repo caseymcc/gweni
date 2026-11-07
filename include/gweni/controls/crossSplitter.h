@@ -59,13 +59,27 @@ public:
     virtual void setSplitterSize(int size)
     {
         m_barSize=size;
+        invalidate();
     }
+
+    //! Where the horizontal-position bar sits, as a fraction of the width it
+    //! can move in (0 left, 1 right).
+    float getHorizontalFraction() const { return m_horizontal; }
+    //! Where the vertical-position bar sits, as a fraction of the height it
+    //! can move in (0 top, 1 bottom).
+    float getVerticalFraction() const { return m_vertical; }
 
 protected:
 
     virtual void  onVerticalMoved(event::Info);
     virtual void  onHorizontalMoved(event::Info);
     virtual void  onCenterMoved(event::Info);
+
+    //! The bars' positions from the fractions: round((W-b)*h) and
+    //! round((H-b)*v), 0 when the splitter is no bigger than a bar.
+    int barX() const;
+    int barY() const;
+    void setBarsHidden(bool hidden);
 
 private:
 

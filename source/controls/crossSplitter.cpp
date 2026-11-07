@@ -9,6 +9,9 @@
 #include <gweni/controls/button.h>
 #include <gweni/platforms/commonPlatform.h>
 
+#include <algorithm>
+#include <cmath>
+
 namespace gweni
 {
 namespace controls
@@ -16,21 +19,26 @@ namespace controls
 
 GWENI_CONTROL_CONSTRUCTOR(CrossSplitter)
 {
+    // layout() places the bars from the split fractions, in this control's
+    // own coordinates; restrictToParent would clamp them against its margin.
     m_verticalSplitter=newChild<SplitterBar>();
 
     m_verticalSplitter->setPos(0, 128);
+    m_verticalSplitter->restrictToParent(false);
     m_verticalSplitter->onDragged.add(this, &CrossSplitter::onVerticalMoved);
     m_verticalSplitter->setCursor(gweni::cursor::SizeNS);
 
     m_horizontalSplitter=newChild<SplitterBar>();
 
     m_horizontalSplitter->setPos(128, 0);
+    m_horizontalSplitter->restrictToParent(false);
     m_horizontalSplitter->onDragged.add(this, &CrossSplitter::onHorizontalMoved);
     m_horizontalSplitter->setCursor(gweni::cursor::SizeWE);
 
     m_centerSplitter=newChild<SplitterBar>();
 
     m_centerSplitter->setPos(128, 128);
+    m_centerSplitter->restrictToParent(false);
     m_centerSplitter->onDragged.add(this, &CrossSplitter::onCenterMoved);
     m_centerSplitter->setCursor(gweni::cursor::SizeAll);
     m_horizontal=0.5f;
@@ -43,14 +51,52 @@ GWENI_CONTROL_CONSTRUCTOR(CrossSplitter)
     m_zoomedSection=-1;
 }
 
+namespace
+{
+
+//! The position of a bar \p bar wide along an extent \p extent long at
+//! \p fraction of the room it has: round((extent-bar)*fraction), never
+//! negative.
+int barPosition(int extent, int bar, float fraction)
+{
+    const int room=extent-bar;
+
+    if(room <= 0)
+        return 0;
+    return std::clamp(static_cast<int>(std::lround(room*fraction)), 0, room);
+}
+
+//! The fraction of the room a bar at \p pos has, clamped to [0, 1], or
+//! \p current when there is no room (the extent is no bigger than the bar).
+float barFraction(int pos, int extent, int bar, float current)
+{
+    const int room=extent-bar;
+
+    if(room <= 0)
+        return current;
+    return static_cast<float>(std::clamp(pos, 0, room))/room;
+}
+
+}//namespace
+
+int CrossSplitter::barX() const
+{
+    return barPosition(getWidth(), m_barSize, m_horizontal);
+}
+
+int CrossSplitter::barY() const
+{
+    return barPosition(getHeight(), m_barSize, m_vertical);
+}
+
 void CrossSplitter::updateVSplitter()
 {
-    m_verticalSplitter->moveTo(m_verticalSplitter->getX(), (getHeight()-m_verticalSplitter->getHeight())*(m_vertical));
+    m_verticalSplitter->setBounds(0, barY(), getWidth(), m_barSize);
 }
 
 void CrossSplitter::updateHSplitter()
 {
-    m_horizontalSplitter->moveTo((getWidth()-m_horizontalSplitter->getWidth())*(m_horizontal), m_horizontalSplitter->getY());
+    m_horizontalSplitter->setBounds(barX(), 0, m_barSize, getHeight());
 }
 
 void CrossSplitter::onCenterMoved(event::Info)
@@ -62,10 +108,12 @@ void CrossSplitter::onCenterMoved(event::Info)
 
 void CrossSplitter::updateCSplitter()
 {
-    m_centerSplitter->moveTo((getWidth()-m_centerSplitter->getWidth())*(m_horizontal),
-        (getHeight()-m_centerSplitter->getHeight())*(m_vertical));
+    m_centerSplitter->setBounds(barX(), barY(), m_barSize, m_barSize);
 }
 
+// The Dragger has moved the bar to the mouse, in both axes and unclamped: the
+// fraction is taken from the bar's own axis, clamped to the room it has, and
+// layout() puts the bar back on the line the fraction gives.
 void CrossSplitter::onHorizontalMoved(event::Info)
 {
     m_horizontal=calculateValueHorizontal();
@@ -80,18 +128,18 @@ void CrossSplitter::onVerticalMoved(event::Info)
 
 void CrossSplitter::calculateValueCenter()
 {
-    m_horizontal=static_cast<float>(m_centerSplitter->getX()) / (getWidth() - m_centerSplitter->getWidth());
-    m_vertical=static_cast<float>(m_centerSplitter->getY()) / (getHeight() - m_centerSplitter->getHeight());
+    m_horizontal=barFraction(m_centerSplitter->getX(), getWidth(), m_barSize, m_horizontal);
+    m_vertical=barFraction(m_centerSplitter->getY(), getHeight(), m_barSize, m_vertical);
 }
 
 float CrossSplitter::calculateValueHorizontal()
 {
-    return static_cast<float>(m_horizontalSplitter->getX()) / (getWidth() - m_horizontalSplitter->getWidth());
+    return barFraction(m_horizontalSplitter->getX(), getWidth(), m_barSize, m_horizontal);
 }
 
 float CrossSplitter::calculateValueVertical()
 {
-    return static_cast<float>(m_verticalSplitter->getY()) / (getHeight() - m_verticalSplitter->getHeight());
+    return barFraction(m_verticalSplitter->getY(), getHeight(), m_barSize, m_vertical);
 }
 
 // A splitter divides the space it is given: its bars and panels are sized
@@ -114,46 +162,30 @@ void CrossSplitter::calculateSize(skin::Base *skin, Dim dim)
 
 void CrossSplitter::layout(skin::Base * /*skin*/)
 {
-    m_verticalSplitter->setSize(getWidth(), m_barSize);
-    m_horizontalSplitter->setSize(m_barSize, getHeight());
-    m_centerSplitter->setSize(m_barSize, m_barSize);
     updateVSplitter();
     updateHSplitter();
     updateCSplitter();
 
     if(m_zoomedSection == -1)
     {
+        const int x=barX();
+        const int y=barY();
+        const int right=x+m_barSize;
+        const int bottom=y+m_barSize;
+        const int rightWidth=std::max(0, getWidth()-right);
+        const int bottomHeight=std::max(0, getHeight()-bottom);
+
         if(m_sections[0])
-        {
-            m_sections[0]->setBounds(0,
-                0,
-                m_horizontalSplitter->getX(),
-                m_verticalSplitter->getY());
-        }
+            m_sections[0]->setBounds(0, 0, x, y);
 
         if(m_sections[1])
-        {
-            m_sections[1]->setBounds(m_horizontalSplitter->getX()+m_barSize,
-                0,
-                getWidth()-(m_horizontalSplitter->getX()+m_barSize),
-                m_verticalSplitter->getY());
-        }
+            m_sections[1]->setBounds(right, 0, rightWidth, y);
 
         if(m_sections[2])
-        {
-            m_sections[2]->setBounds(0,
-                m_verticalSplitter->getY()+m_barSize,
-                m_horizontalSplitter->getX(),
-                getHeight()-(m_verticalSplitter->getY()+m_barSize));
-        }
+            m_sections[2]->setBounds(0, bottom, x, bottomHeight);
 
         if(m_sections[3])
-        {
-            m_sections[3]->setBounds(m_horizontalSplitter->getX()+m_barSize,
-                m_verticalSplitter->getY()+m_barSize,
-                getWidth()-(m_horizontalSplitter->getX()+m_barSize),
-                getHeight()-(m_verticalSplitter->getY()+m_barSize));
-        }
+            m_sections[3]->setBounds(right, bottom, rightWidth, bottomHeight);
     }
     else
     {
@@ -191,6 +223,13 @@ void CrossSplitter::zoomChanged()
         onZoomed.call(this);
 }
 
+void CrossSplitter::setBarsHidden(bool hidden)
+{
+    m_verticalSplitter->setHidden(hidden);
+    m_horizontalSplitter->setHidden(hidden);
+    m_centerSplitter->setHidden(hidden);
+}
+
 void CrossSplitter::zoom(int section)
 {
     unZoom();
@@ -203,6 +242,8 @@ void CrossSplitter::zoom(int section)
                 m_sections[i]->setHidden(true);
         }
 
+        // the bars would lie under the zoomed panel and catch its edges
+        setBarsHidden(true);
         m_zoomedSection=section;
         invalidate();
     }
@@ -220,6 +261,7 @@ void CrossSplitter::unZoom()
             m_sections[i]->setHidden(false);
     }
 
+    setBarsHidden(false);
     invalidate();
     zoomChanged();
 }
