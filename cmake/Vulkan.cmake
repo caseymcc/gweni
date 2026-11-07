@@ -35,18 +35,21 @@ find_package(volk CONFIG QUIET)
 
 set(gweni_vulkan_installed "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}")
 
-find_program(GWENI_GLSLANG_VALIDATOR glslangValidator
-    HINTS "${gweni_vulkan_installed}/tools/glslang"
-    NO_DEFAULT_PATH)
-find_file(GWENI_VULKAN_LAYER_MANIFEST VkLayer_khronos_validation.json
-    HINTS "${gweni_vulkan_installed}/share/vulkan/explicit_layer.d"
-    NO_DEFAULT_PATH)
-find_file(GWENI_VULKAN_LAYER_LIBRARY libVkLayer_khronos_validation.so
-    HINTS "${gweni_vulkan_installed}/lib"
-    NO_DEFAULT_PATH)
+# Plain paths in vcpkg's fixed layout, not cached find_*() results: a cached
+# path would outlive the feature being dropped from an existing tree, and the
+# check below would pass with the files gone.
+set(GWENI_GLSLANG_VALIDATOR "${gweni_vulkan_installed}/tools/glslang/glslangValidator")
+set(GWENI_VULKAN_LAYER_MANIFEST
+    "${gweni_vulkan_installed}/share/vulkan/explicit_layer.d/VkLayer_khronos_validation.json")
+set(GWENI_VULKAN_LAYER_LIBRARY "${gweni_vulkan_installed}/lib/libVkLayer_khronos_validation.so")
+foreach(file GWENI_GLSLANG_VALIDATOR GWENI_VULKAN_LAYER_MANIFEST GWENI_VULKAN_LAYER_LIBRARY)
+    if(NOT EXISTS "${${file}}")
+        set(${file} "${${file}} (missing)")
+        set(gweni_vulkan_missing TRUE)
+    endif()
+endforeach()
 
-if(NOT VulkanHeaders_FOUND OR NOT volk_FOUND OR NOT GWENI_GLSLANG_VALIDATOR
-        OR NOT GWENI_VULKAN_LAYER_MANIFEST OR NOT GWENI_VULKAN_LAYER_LIBRARY)
+if(NOT VulkanHeaders_FOUND OR NOT volk_FOUND OR gweni_vulkan_missing)
     message(FATAL_ERROR
         "GWENI_RENDER_VULKAN is ON but the vcpkg feature \"vulkan\" is not installed "
         "(VulkanHeaders found: ${VulkanHeaders_FOUND}, volk found: ${volk_FOUND}, "
