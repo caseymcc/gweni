@@ -14,12 +14,17 @@
 #include <gweni/controls/checkBox.h>
 #include <gweni/controls/label.h>
 #include <gweni/controls/listBox.h>
+#include <gweni/controls/progressBar.h>
 #include <gweni/controls/scrollControl.h>
 #include <gweni/controls/textBox.h>
 #include <gweni/controls/treeControl.h>
+#include <gweni/controls/windowControl.h>
+#include <gweni/platforms/inputEvent.h>
 
 #include <algorithm>
 #include <cstdio>
+#include <cstdlib>
+#include <deque>
 
 namespace gweni
 {
@@ -42,6 +47,48 @@ void moveMouse(SceneContext &ctx, Point &mouse, const Point &to)
 
     mouse=to;
     ctx.canvas->inputMouseMoved(to.x, to.y, delta.x, delta.y);
+}
+
+// At a fixed position and size whatever its content asks for, as ControlTest's
+// scenarios place a control.
+void place(controls::Base *control, int x, int y, int w, int h)
+{
+    control->setAlignment(Alignment::Absolute);
+    control->setSizeFlags({SizeFlag::Fixed, SizeFlag::Fixed});
+    control->setBounds(x, y, w, h);
+}
+
+// \a count Labels named "<prefix>NNNNN" on \a parent, in a grid of 100x20-unit
+// cells \a columns wide from (x, y); rows past the parent's bottom are
+// off-screen but still laid out.
+std::vector<controls::Label *> labelGrid(controls::Base *parent, int count, int x, int y,
+    int columns, const char *prefix)
+{
+    const int cellW=100, cellH=20;
+    std::vector<controls::Label *> labels;
+    labels.reserve(size_t(count));
+    columns=std::max(columns, 1);
+
+    for(int i=0; i<count; ++i)
+    {
+        controls::Label *label=parent->newChild<controls::Label>();
+        label->setBounds(x+(i%columns)*cellW, y+(i/columns)*cellH, cellW-4, cellH-2);
+        label->setText(prefix+format("%05d", i));
+        labels.push_back(label);
+    }
+    return labels;
+}
+
+void setTarget(SceneContext &ctx, const Point &size, float scale)
+{
+    if(!ctx.setTarget)
+        return;     // the primer canvas
+    if(!ctx.setTarget(size, scale))
+    {
+        std::fprintf(stderr, "gweni_bench: could not make a %dx%d target at scale %g\n",
+            size.x, size.y, double(scale));
+        std::exit(EXIT_FAILURE);
+    }
 }
 
 //-----------------------------------------------------------------------------
@@ -275,20 +322,422 @@ private:
     std::vector<controls::Label *> m_labels;
 };
 
+//-----------------------------------------------------------------------------
+// type: a focused TextBoxMultiline, 600 units wide and the canvas's height,
+// holding N words of 6 characters in paragraphs of 12 words, so each paragraph
+// wraps to two lines. The caret starts at the beginning of the middle
+// paragraph; each measured frame types one letter there, and every fourth a
+// Backspace instead, so the text grows by half a character a frame. The caret
+// blinks on the stepped clock, the same in every run.
+//-----------------------------------------------------------------------------
+class TypeScene: public Scene
+{
+public:
+    void build(SceneContext &ctx) override
+    {
+        String text;
+        text.reserve(size_t(ctx.n)*7);
+        for(int i=0; i<ctx.n; ++i)
+        {
+            text+=format("w%05d", i);
+            if(i+1 < ctx.n)
+                text+=(i%12 == 11) ? '\n' : ' ';
+        }
+
+        size_t middle=text.find('\n', text.size()/2);
+        middle=(middle == String::npos) ? text.size()/2 : middle+1;
+
+        m_box=ctx.canvas->newChild<controls::TextBoxMultiline>();
+        place(m_box, 10, 10, 600, ctx.size.y-20);
+        m_box->setText(text);
+        m_box->setCursorPos(int(middle));
+        m_box->setCursorend(int(middle));
+        m_box->focus();
+    }
+
+    void step(SceneContext &ctx, int frame) override
+    {
+        if(frame < 0)
+            return;
+
+        if(frame%4 == 3)
+        {
+            ctx.canvas->inputModifierKey(keys::Backspace, true);
+            ctx.canvas->inputModifierKey(keys::Backspace, false);
+        }
+        else
+            ctx.canvas->inputCharacter(UnicodeChar('a'+frame%26));
+    }
+
+private:
+    controls::TextBoxMultiline *m_box=nullptr;
+};
+
+//-----------------------------------------------------------------------------
+// scroll: a ScrollControl the canvas's height holding N Buttons, one per
+// 30-unit row (the vertical bar's nudge, so one wheel notch is one row). The
+// last warm-up frame puts the mouse over it; each measured frame turns the
+// wheel one notch down, and back up once the end is reached. It is placed at
+// a fixed size, since a ScrollControl left to its own size asks for all its
+// content (issue #57) and would not scroll.
+//-----------------------------------------------------------------------------
+class ScrollScene: public Scene
+{
+public:
+    void build(SceneContext &ctx) override
+    {
+        m_scroll=ctx.canvas->newChild<controls::ScrollControl>();
+        place(m_scroll, 10, 10, 400, ctx.size.y-20);
+        m_scroll->setScroll(false, true);
+
+        for(int i=0; i<ctx.n; ++i)
+        {
+            controls::Button *button=m_scroll->newChild<controls::Button>();
+            button->setText(format("Row %05d", i));
+            button->setBounds(0, i*30, 360, 28);
+        }
+    }
+
+    void step(SceneContext &ctx, int frame) override
+    {
+        if(frame == -1 || (frame == 0 && m_mouse.x < 0))
+        {
+            const Point origin=m_scroll->localPosToCanvas(Point(0, 0));
+            moveMouse(ctx, m_mouse, Point(origin.x+100, origin.y+m_scroll->getHeight()/2));
+        }
+        if(frame < 0)
+            return;
+
+        // a notch one way, or the other at the end
+        if(!ctx.canvas->inputMouseWheel(-60*m_direction))
+        {
+            m_direction=-m_direction;
+            ctx.canvas->inputMouseWheel(-60*m_direction);
+        }
+    }
+
+private:
+    controls::ScrollControl *m_scroll=nullptr;
+    Point m_mouse=Point(-1, -1);
+    int m_direction=1;      // 1 down, -1 up
+};
+
+//-----------------------------------------------------------------------------
+// drag: N Labels in a grid filling the canvas, and over them one 360x300
+// WindowControl holding a fixed 40 controls (20 Labels and 20 Buttons), so the
+// moving subtree is the same at any N. The last warm-up frame presses on its
+// title bar; each measured frame drags it 3 units right and 2 down (left and
+// up for the next 30 frames, and so on), and the last one releases it.
+//-----------------------------------------------------------------------------
+class DragScene: public Scene
+{
+public:
+    void build(SceneContext &ctx) override
+    {
+        labelGrid(ctx.canvas, ctx.n, 10, 10, (ctx.size.x-20)/100, "L");
+
+        m_window=ctx.canvas->newChild<controls::WindowControl>();
+        m_window->setTitle("Dragged");
+        place(m_window, 200, 150, 360, 300);
+
+        for(int i=0; i<40; ++i)
+        {
+            const Rect cell((i%2)*170+4, (i/2)*26+4, 160, 22);
+            if(i%4 < 2)
+            {
+                controls::Label *label=m_window->newChild<controls::Label>();
+                label->setText(format("Inside %02d", i));
+                label->setBounds(cell);
+            }
+            else
+            {
+                controls::Button *button=m_window->newChild<controls::Button>();
+                button->setText(format("Button %02d", i));
+                button->setBounds(cell);
+            }
+        }
+    }
+
+    void step(SceneContext &ctx, int frame) override
+    {
+        if(frame < -1)
+            return;
+
+        // 40,12 from the window's corner is on its title bar, left of the
+        // close button
+        if(!m_pressed)
+        {
+            moveMouse(ctx, m_mouse, m_window->localPosToCanvas(Point(0, 0))+Point(40, 12));
+            ctx.canvas->inputMouseButton(0, true);
+            m_pressed=true;
+        }
+        if(frame < 0)
+            return;
+
+        const int sign=((frame/30)%2 == 0) ? 1 : -1;
+        moveMouse(ctx, m_mouse, m_mouse+Point(3*sign, 2*sign));
+
+        if(frame == ctx.frames-1)
+            ctx.canvas->inputMouseButton(0, false);
+    }
+
+private:
+    controls::WindowControl *m_window=nullptr;
+    Point m_mouse=Point(-1, -1);
+    bool m_pressed=false;
+};
+
+//-----------------------------------------------------------------------------
+// tree-toggle: a TreeControl the canvas's height with N nodes, all expanded.
+// The second top-level node holds 50 leaves; the rest are groups of 10 (a
+// top-level node, 3 children, 2 leaves under each). Measured frames alternate
+// collapsing and expanding the second node, which hides or shows its 50
+// leaves and moves every node below it.
+//-----------------------------------------------------------------------------
+class TreeToggleScene: public Scene
+{
+public:
+    void build(SceneContext &ctx) override
+    {
+        m_tree=ctx.canvas->newChild<controls::TreeControl>();
+        place(m_tree, 10, 10, 500, ctx.size.y-20);
+
+        int made=0;
+        auto group=[&](controls::TreeNode *top)
+        {
+            for(int c=0; c<3 && made < ctx.n; ++c)
+            {
+                controls::TreeNode *child=top->addNode(format("Child %05d", made++));
+                for(int l=0; l<2 && made < ctx.n; ++l)
+                    child->addNode(format("Leaf %05d", made++));
+            }
+        };
+
+        group(m_tree->addNode(format("Node %05d", made++)));
+
+        if(made < ctx.n)
+        {
+            m_toggle=m_tree->addNode(format("Toggle %05d", made++));
+            for(int l=0; l<50 && made < ctx.n; ++l)
+                m_toggle->addNode(format("Leaf %05d", made++));
+        }
+
+        while(made < ctx.n)
+            group(m_tree->addNode(format("Node %05d", made++)));
+
+        m_tree->expandAll();
+    }
+
+    void step(SceneContext &/*ctx*/, int frame) override
+    {
+        if(frame < 0 || !m_toggle)
+            return;
+
+        if(frame%2 == 0)
+            m_toggle->close();
+        else
+            m_toggle->open();
+    }
+
+private:
+    controls::TreeControl *m_tree=nullptr;
+    controls::TreeNode *m_toggle=nullptr;
+};
+
+//-----------------------------------------------------------------------------
+// add-remove: N Labels in a grid filling the canvas width. Each measured frame
+// removes the oldest Label (deleted outright on even frames, delayedDelete()
+// on odd ones) and adds a new one in its cell, as the canvas's last child; both
+// change the tree order, so the next update phase renumbers z over the whole
+// tree.
+//-----------------------------------------------------------------------------
+class AddRemoveScene: public Scene
+{
+public:
+    void build(SceneContext &ctx) override
+    {
+        const std::vector<controls::Label *> labels=labelGrid(ctx.canvas, ctx.n, 10, 10,
+            (ctx.size.x-20)/100, "L");
+        m_labels.assign(labels.begin(), labels.end());
+    }
+
+    void step(SceneContext &ctx, int frame) override
+    {
+        if(frame < 0 || m_labels.empty())
+            return;
+
+        controls::Label *oldest=m_labels.front();
+        m_labels.pop_front();
+        const Rect cell=oldest->getBounds();
+
+        if(frame%2 == 0)
+            delete oldest;
+        else
+            oldest->delayedDelete();
+
+        controls::Label *label=ctx.canvas->newChild<controls::Label>();
+        label->setBounds(cell);
+        label->setText(format("A%05d -----", frame%100000));
+        m_labels.push_back(label);
+    }
+
+private:
+    std::deque<controls::Label *> m_labels;
+};
+
+//-----------------------------------------------------------------------------
+// bring-to-front: 8 overlapping 420x320 WindowControls, cascaded 60 units
+// right and 40 down, holding N Labels between them (a grid of 4 columns in
+// each; most rows lie below the window and are clipped). Each measured frame
+// brings the next window to the front, starting with the bottom one, which
+// changes the tree order and renumbers z over the whole tree.
+//-----------------------------------------------------------------------------
+class BringToFrontScene: public Scene
+{
+public:
+    void build(SceneContext &ctx) override
+    {
+        const int windows=8;
+
+        for(int w=0; w<windows; ++w)
+        {
+            controls::WindowControl *window=ctx.canvas->newChild<controls::WindowControl>();
+            window->setTitle(format("Window %d", w));
+            place(window, 20+w*60, 20+w*40, 420, 320);
+
+            const int count=ctx.n/windows+((w < ctx.n%windows) ? 1 : 0);
+            labelGrid(window, count, 4, 4, 4, format("W%d.", w).c_str());
+            m_windows.push_back(window);
+        }
+    }
+
+    void step(SceneContext &/*ctx*/, int frame) override
+    {
+        if(frame < 0)
+            return;
+
+        m_windows[size_t(frame)%m_windows.size()]->bringToFront();
+    }
+
+private:
+    std::vector<controls::WindowControl *> m_windows;
+};
+
+//-----------------------------------------------------------------------------
+// resize: the build tree; measured frames alternate the canvas between 3/4 of
+// --size and --size, with the offscreen target and the renderer's view
+// resized to match, as a window's framebuffer-size callback does.
+//-----------------------------------------------------------------------------
+class ResizeScene: public MixedTreeScene
+{
+public:
+    void step(SceneContext &ctx, int frame) override
+    {
+        if(frame < 0)
+            return;
+
+        const Point size=(frame%2 == 0) ? Point(ctx.size.x*3/4, ctx.size.y*3/4) : ctx.size;
+        setTarget(ctx, size, 1.0f);
+    }
+};
+
+//-----------------------------------------------------------------------------
+// scale: the build tree; measured frames step Canvas::setScale through 1.5, 2
+// and 1, the canvas keeping its logical size and the target and the view
+// resized to it in device pixels, as a window's content-scale callback does.
+// Every text run is laid out again at the new scale.
+//-----------------------------------------------------------------------------
+class ScaleScene: public MixedTreeScene
+{
+public:
+    void step(SceneContext &ctx, int frame) override
+    {
+        if(frame < 0)
+            return;
+
+        const float scales[]={1.5f, 2.0f, 1.0f};
+        setTarget(ctx, ctx.size, scales[frame%3]);
+    }
+};
+
+//-----------------------------------------------------------------------------
+// animate: N idle Labels in a grid left of a column holding K indeterminate
+// ProgressBars and a focused TextBox, the clock stepping 1/60 s per frame: the
+// bars' segments move every frame and the caret blinks. No input.
+//-----------------------------------------------------------------------------
+class AnimateScene: public Scene
+{
+public:
+    void build(SceneContext &ctx) override
+    {
+        const int columnX=ctx.size.x-320;
+
+        labelGrid(ctx.canvas, ctx.n, 10, 10, (columnX-20)/100, "L");
+
+        controls::TextBox *box=ctx.canvas->newChild<controls::TextBox>();
+        place(box, columnX, 10, 300, 24);
+        box->setText("Caret");
+        box->focus();
+
+        for(int i=0; i<std::max(ctx.k, 1); ++i)
+        {
+            controls::ProgressBar *bar=ctx.canvas->newChild<controls::ProgressBar>();
+            place(bar, columnX, 44+i*24, 300, 18);
+            bar->setIndeterminate(true);
+        }
+    }
+};
+
 }//namespace
+
+const char *scalingName(Scaling scaling)
+{
+    return (scaling == Scaling::Local) ? "local" : "linear";
+}
 
 const std::vector<SceneInfo> &scenes()
 {
     static const std::vector<SceneInfo> list=
     {
         {"build", "construct an N-item tree of mixed controls and run its first frame",
-            true, 1000, 0, 1, []{ return std::unique_ptr<Scene>(new MixedTreeScene()); }},
+            true, 1000, 0, 1, Scaling::Linear,
+            []{ return std::unique_ptr<Scene>(new MixedTreeScene()); }},
         {"idle", "the build tree, settled, with no input",
-            true, 1000, 5, 10, []{ return std::unique_ptr<Scene>(new MixedTreeScene()); }},
+            true, 1000, 5, 10, Scaling::Local,
+            []{ return std::unique_ptr<Scene>(new MixedTreeScene()); }},
         {"hover-sweep", "move the mouse one row down a ListBox of N rows per frame",
-            true, 1000, 3, 20, []{ return std::unique_ptr<Scene>(new HoverSweepScene()); }},
+            true, 1000, 3, 20, Scaling::Local,
+            []{ return std::unique_ptr<Scene>(new HoverSweepScene()); }},
         {"set-text", "K of N Labels get a new string of the same length per frame",
-            true, 1000, 3, 20, []{ return std::unique_ptr<Scene>(new SetTextScene()); }},
+            true, 1000, 3, 20, Scaling::Local,
+            []{ return std::unique_ptr<Scene>(new SetTextScene()); }},
+        {"type", "type into the middle of a focused TextBoxMultiline of N wrapped words",
+            true, 1000, 3, 20, Scaling::Local,
+            []{ return std::unique_ptr<Scene>(new TypeScene()); }},
+        {"scroll", "turn the wheel one row per frame over a ScrollControl of N Button rows",
+            true, 1000, 3, 20, Scaling::Linear,
+            []{ return std::unique_ptr<Scene>(new ScrollScene()); }},
+        {"drag", "drag a Window of 40 controls by its title bar over N Labels",
+            true, 1000, 3, 20, Scaling::Local,
+            []{ return std::unique_ptr<Scene>(new DragScene()); }},
+        {"tree-toggle", "collapse and expand a 50-leaf node near the top of an N-node TreeControl",
+            true, 1000, 3, 20, Scaling::Linear,
+            []{ return std::unique_ptr<Scene>(new TreeToggleScene()); }},
+        {"add-remove", "add one Label and delete another per frame among N (whole-tree z renumber)",
+            true, 1000, 3, 20, Scaling::Linear,
+            []{ return std::unique_ptr<Scene>(new AddRemoveScene()); }},
+        {"bring-to-front", "bring the next of 8 Windows holding N Labels to the front per frame",
+            true, 1000, 3, 16, Scaling::Linear,
+            []{ return std::unique_ptr<Scene>(new BringToFrontScene()); }},
+        {"resize", "the build tree, the canvas resized between 3/4 of --size and --size per frame",
+            true, 1000, 3, 10, Scaling::Linear,
+            []{ return std::unique_ptr<Scene>(new ResizeScene()); }},
+        {"scale", "the build tree at Canvas::setScale 1.5, 2 and 1 in turn",
+            true, 1000, 3, 9, Scaling::Linear,
+            []{ return std::unique_ptr<Scene>(new ScaleScene()); }},
+        {"animate", "K indeterminate ProgressBars and a blinking caret among N idle Labels",
+            true, 1000, 3, 60, Scaling::Local,
+            []{ return std::unique_ptr<Scene>(new AnimateScene()); }},
     };
     return list;
 }

@@ -99,5 +99,9 @@ build_linux_x64_release/bench/gweni_bench --list
 build_linux_x64_release/bench/gweni_bench --scene hover-sweep --n 10000
 ```
 
-`--help` lists the options and every output key. `bench_smoke` (label `gpu`) only
-checks that every scene runs. See `AGENTS.md` → "Benchmarks and profiling".
+The scenes cover a cold first frame, idle frames, hover, typing, scrolling, a
+dragged window, a tree node toggled, controls added, removed and brought to the
+front, a canvas resized and rescaled, and animations. `--list` marks each
+`scaling=local` (its per-frame counters must not grow with N) or `scaling=linear`
+(it touches every control by design). `--help` lists the options and every
+output key. `bench_smoke` (label `gpu`) only checks that every scene runs. See `AGENTS.md` → "Benchmarks and profiling".

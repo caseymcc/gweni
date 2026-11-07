@@ -195,6 +195,7 @@ struct Summary
     int n=0;
     int k=0;
     int warmup=0;
+    std::string scaling;
     gweni::Point size;
     size_t controls=0;
     double constructUs=0.0;
@@ -235,6 +236,7 @@ std::vector<std::pair<std::string, std::string>> summaryFields(const Summary &su
     add("k", std::to_string(summary.k));
     add("frames", std::to_string(frames.size()));
     add("warmup", std::to_string(summary.warmup));
+    add("scaling", summary.scaling);
     add("size", std::to_string(summary.size.x)+"x"+std::to_string(summary.size.y));
     add("controls", std::to_string(summary.controls));
     add("construct_us", number(summary.constructUs));
@@ -292,7 +294,7 @@ void printLines(const Summary &summary, const std::vector<FrameRecord> &frames)
 // Numbers stay JSON numbers; the few string fields are quoted.
 bool isStringField(const std::string &key)
 {
-    return key == "scene" || key == "size" || key == "gl_renderer";
+    return key == "scene" || key == "scaling" || key == "size" || key == "gl_renderer";
 }
 
 void printJson(const Summary &summary, const std::vector<FrameRecord> &frames)
@@ -349,13 +351,17 @@ void printUsage()
         "                     or absolute) instead of the resources/ next to the exe\n"
         "  --json             print one JSON object instead of the key=value lines\n"
         "  --list             print the scenes, one per line:\n"
-        "                       <name> takes_n=<0|1> default_n=<N> warmup=<W> frames=<F> <description>\n"
+        "                       <name> takes_n=<0|1> default_n=<N> warmup=<W> frames=<F>\n"
+        "                       scaling=<local|linear> <description>\n"
+        "                     scaling=local: the scene changes a fixed part of the tree each\n"
+        "                     frame, so its per-frame counters must not grow with N;\n"
+        "                     linear: it touches every control by design\n"
         "  --help             this text\n"
         "\n"
         "Output: one line per measured frame, then one summary line, all key=value\n"
         "pairs separated by spaces:\n"
         "  scene=<name> n=<N> frame=<i> <phase>_us=<t>... <counter>=<v>...\n"
-        "  summary scene= n= k= frames= warmup= size= controls= construct_us=\n"
+        "  summary scene= n= k= frames= warmup= scaling= size= controls= construct_us=\n"
         "    construct_allocs= construct_alloc_bytes=\n"
         "    <phase>_us_min= <phase>_us_median= <phase>_us_max= (each frame phase)\n"
         "    <counter>_total= <counter>_max= (each counter) gl_renderer=\n"
@@ -388,9 +394,9 @@ void printUsage()
 void printList()
 {
     for(const bench::SceneInfo &info : bench::scenes())
-        std::printf("%s takes_n=%d default_n=%d warmup=%d frames=%d %s\n", info.name,
+        std::printf("%s takes_n=%d default_n=%d warmup=%d frames=%d scaling=%s %s\n", info.name,
             info.takesN ? 1 : 0, info.defaultN, info.defaultWarmup, info.defaultFrames,
-            info.description);
+            bench::scalingName(info.scaling), info.description);
 }
 
 bool parseInt(const char *value, int &out, int minimum)
@@ -531,6 +537,24 @@ int main(int argc, char *argv[])
     sceneCtx.size=size;
     sceneCtx.n=n;
     sceneCtx.k=k;
+    sceneCtx.frames=frames;
+    // A window's framebuffer-size and content-scale callbacks, called directly:
+    // a new offscreen target and the renderer's view at the device size, and
+    // the canvas's logical size and scale.
+    sceneCtx.setTarget=[&fb, renderer, canvas](const gweni::Point &logical, float scale)
+    {
+        const gweni::Point pixels(gweni::renderer::Base::snap(float(logical.x), scale),
+            gweni::renderer::Base::snap(float(logical.y), scale));
+
+        gweni::capture::destroyFramebuffer(fb);
+        if(!gweni::capture::createFramebuffer(fb, pixels.x, pixels.y))
+            return false;
+
+        renderer->setViewRect(gweni::Rect(gweni::Point(0, 0), pixels));
+        canvas->setScale(scale);
+        canvas->setSize(logical.x, logical.y);
+        return true;
+    };
 
     std::unique_ptr<bench::Scene> scene=info->make();
 
@@ -539,6 +563,7 @@ int main(int argc, char *argv[])
     summary.n=n;
     summary.k=k;
     summary.warmup=warmup;
+    summary.scaling=bench::scalingName(info->scaling);
     summary.size=size;
     if(const GLubyte *name=glGetString(GL_RENDERER))
         summary.glRenderer=reinterpret_cast<const char *>(name);
