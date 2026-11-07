@@ -26,7 +26,9 @@
 //  runner of the later web tests starts from launchArgs() and webgl2Report()
 //  here.
 
+import { realpathSync } from 'node:fs';
 import { createRequire } from 'node:module';
+import { pathToFileURL } from 'node:url';
 
 const require = createRequire(import.meta.url);
 
@@ -121,6 +123,9 @@ async function main()
     }
 }
 
-// Only when run as a script, so the runner can import the helpers above.
-if(import.meta.url === `file://${process.argv[1]}`)
+// Only when run as a script, so the runner can import the helpers above. Node
+// gives the main module's URL of its real path, percent-encoded, so argv[1] is
+// compared the same way: a symlink or a space in the path must not make the
+// probe exit 0 without running.
+if(process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href)
     process.exit(await main());

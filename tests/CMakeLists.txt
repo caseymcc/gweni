@@ -392,6 +392,9 @@ if(EMSCRIPTEN)
     set_tests_properties(web_probe web_probe_fails_without_webgl2 PROPERTIES
         LABELS web
         TIMEOUT 120)
+    # each passes only on its own last line, so a probe that never ran fails
+    set_tests_properties(web_probe PROPERTIES
+        PASS_REGULAR_EXPRESSION "web_probe: OK, WebGL 2")
     set_tests_properties(web_probe_fails_without_webgl2 PROPERTIES
         PASS_REGULAR_EXPRESSION "FAIL: canvas.getContext\\('webgl2'\\) gave no WebGL 2 context")
 endif()
