@@ -7,22 +7,9 @@
  *  since the last call to the phase that was running.
  */
 #include "bench.h"
+#include "callgrind.h"
 
 #include <chrono>
-
-// The callgrind client requests, when valgrind's headers are there (the image
-// has them; GWENI_BENCH_NO_VALGRIND builds as if they were not). The requests
-// are a few no-op instructions outside valgrind.
-#if defined(__has_include) && !defined(GWENI_BENCH_NO_VALGRIND)
-#if __has_include(<valgrind/callgrind.h>)
-#include <valgrind/callgrind.h>
-#define GWENI_BENCH_CALLGRIND 1
-#endif
-#endif
-
-#ifndef GWENI_BENCH_CALLGRIND
-#define CALLGRIND_TOGGLE_COLLECT do {} while(0)
-#endif
 
 // The phases' marker functions (bench.h, "Profiling"): C names, so a profile
 // shows them as gweni_bench_phase_<name> and tools/callgrind_phases.py finds
@@ -139,8 +126,15 @@ void resetPhases()
 
 void setCollecting(bool collecting)
 {
+    if(collecting == g_collectionWanted)
+        return;
+
+    if(collecting)
+        CALLGRIND_START_INSTRUMENTATION;
     g_collectionWanted=collecting;
     syncCollection();
+    if(!collecting)
+        CALLGRIND_STOP_INSTRUMENTATION;
 }
 
 void callPhaseMarker(Phase phase, void (*body)(void *), void *context)

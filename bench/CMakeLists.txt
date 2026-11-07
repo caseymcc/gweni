@@ -12,8 +12,16 @@ add_executable(gweni_bench
     main.cpp
     phases.cpp
     allocCounter.cpp
+    fixedRandom.cpp
     scenes.cpp)
 gweni_set_warnings(gweni_bench)
+
+# Its getrandom() (fixedRandom.cpp) must interpose libc's for the libraries
+# Mesa loads, so the exe exports that symbol, and only that one.
+if(UNIX AND NOT APPLE)
+    target_link_options(gweni_bench PRIVATE
+        -Wl,--dynamic-list=${CMAKE_CURRENT_SOURCE_DIR}/exports.list)
+endif()
 target_link_libraries(gweni_bench
     gweni
     gweni_capture

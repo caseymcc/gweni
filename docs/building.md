@@ -106,3 +106,24 @@ front, a canvas resized and rescaled, and animations. `--list` marks each
 (it touches every control by design). `--help` lists the options and every
 output key. `bench_smoke` (label `gpu`) only checks that every scene runs. See
 `AGENTS.md` → "Benchmarks and profiling".
+
+## Profiling
+
+`tools/profile.sh` runs one scene from the profile tree under callgrind,
+collecting only the measured frames (and the `build` scene's construction), not
+setup, EGL init, resource loading, warm-up or teardown:
+
+```bash
+tools/profile.sh hover-sweep --n 1000     # into /tmp/gweni-profile-hover-sweep-1000/
+tools/profile.sh build --n 10000 --out /tmp/build10k
+```
+
+It writes `callgrind.out` (open it with kcachegrind or qcachegrind on a host),
+`phases.txt` (the instructions of each phase, `phase=<name> ir=<n>`, and their
+`total`), `annotate.txt` (the functions by inclusive cost and every line of
+gweni's sources with its cost) and `callgraph.svg` (the call graph, hot paths
+red). The counts are the same every run. Inside the container nearly all of a
+small scene's instructions are Mesa llvmpipe rasterising, in the `flush` phase
+under callgrind; Mesa's functions and its JIT code show as anonymous
+`???:0x...` functions. See
+`AGENTS.md` → "Profiling a scene".
