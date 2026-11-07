@@ -173,7 +173,13 @@
  *                   before it opened. Exits non-zero if any check is no. The
  *                   clock is frozen as under --stats.
  *    typing       the keyboard on TextBoxDemo, every key a synthesised GLFW
- *                 event through gweni::input::GLFW3: click into the first box,
+ *                 event through gweni::input::GLFW3: click into the first,
+ *                 empty, box, type "a" and Backspace, each of which has to
+ *                 change nothing outside that box and rewrite only its text
+ *                 run (the lines
+ *                   typing first-char|last-char controls_changed=N geometry=N
+ *                          text=N prim_slots_written=N text_slots_written=N
+ *                 give their counters); then click it again,
  *                 Ctrl+A and type "hello" (shot typing-hello.png), then
  *                 Backspace, Left, Delete, Home, End, Right, Shift+Left,
  *                 Ctrl+A/C/X/V, a Ctrl+letter with no shortcut, Escape, Ctrl
@@ -3542,6 +3548,54 @@ static bool runTypingScenario(Session &s, const std::string &shotDir, bool &pass
     InteractionChecks checks;
     checks.scenario="typing";
     bool ok=true;
+
+    // The first box starts empty. Its first character, and the Backspace that
+    // empties it again, change that box alone, as any other keystroke does: an
+    // empty Text is as high as a typed one, so the box keeps its height and
+    // the layout moves no other row (#268).
+    if(gweni::controls::Base *empty=findControl(demo, "TextBox"))
+    {
+        clickMouse(s, centreOf(empty).x, centreOf(empty).y);
+        renderFrames(s, s.frames);
+
+        std::string start;
+        checks.check("empty_box_focused", focusedText(start) && start.empty(),
+            "clicking the first TextBox did not focus an empty box");
+
+        for(const char *key : {"a", "backspace"})
+        {
+            const bool typing=(std::strcmp(key, "a") == 0);
+            if(typing)
+                typeText(s, key);
+            else
+                sendKey(s, key);
+
+            std::vector<std::string> strays;
+            frameCheckingStrays(s, {empty}, strays, true);
+            const gweni::controls::ChangeStats changes=gweni::controls::getChangeStats();
+            const gweni::renderer::OpenGLCore::FrameStats gpu=s.renderer->getFrameStats();
+            const std::string name=typing ? "empty_box_first_char" : "empty_box_last_char";
+
+            std::cout<<"typing "<<(typing ? "first-char" : "last-char")
+                     <<" controls_changed="<<changes.controls
+                     <<" geometry="<<changes.geometry
+                     <<" text="<<changes.text
+                     <<" prim_slots_written="<<gpu.primitiveSlotsWritten
+                     <<" text_slots_written="<<gpu.textSlotsWritten<<"\n";
+
+            std::string strayList;
+            for(const std::string &stray : strays)
+                strayList+=" "+stray;
+            checks.check(name, strays.empty() && changes.text == 1 && gpu.textSlotsWritten <= 1,
+                std::string(typing ? "typing the first character" : "deleting the last character")
+                +" changed controls outside the box:"+(strays.empty() ? std::string(" none") : strayList)
+                +", text="+std::to_string(changes.text)
+                +" text_slots_written="+std::to_string(gpu.textSlotsWritten)
+                +"; want that box's one text run rewritten");
+        }
+        renderFrames(s, s.frames);
+    }
+
     size_t index=0;
     for(const TypingStep &step : g_typingSteps)
     {

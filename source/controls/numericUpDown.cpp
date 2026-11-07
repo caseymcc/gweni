@@ -27,11 +27,13 @@ GWENI_CONTROL_CONSTRUCTOR(NumericUpDown)
     buttonUp->onPressCaller.add(this, &NumericUpDown::onButtonUp);
     buttonUp->setTabable(false);
     buttonUp->setDock(DockPosition::Top);
-    buttonUp->setHeight(10);
+    // the top half of the 16 inside the 20 high box's padding
+    buttonUp->setHeight(8);
     NumericUpDownButton_Down *buttonDown=splitter->newChild<NumericUpDownButton_Down>();
     buttonDown->onPressCaller.add(this, &NumericUpDown::onButtonDown);
     buttonDown->setTabable(false);
     buttonDown->setDock(DockPosition::Center);
+    buttonDown->setHeight(8);
     buttonUp->setPadding(Padding(0, 1, 1, 0));
     m_max=100;
     m_min=0;

@@ -317,7 +317,10 @@ Size Text::refreshSize(bool update)
         return Size(0, 0);
     }
 
-    gweni::Point p(1, getFont().size);
+    // An empty string is one caret wide and one line box high, as high as
+    // any typed string: the first character typed or the last one deleted
+    // changes the width only, so the parent's layout does not move.
+    gweni::Point p(1, lineHeight());
 
     if(length() > 0)
         p=getSkin()->getRenderer()->measureText(getFont(), m_string);
@@ -327,9 +330,6 @@ Size Text::refreshSize(bool update)
 
     if(p.x == getWidth() && p.y == getHeight())
         return Size(p.x, p.y);
-
-    if(p.y < getFont().size)
-        p.y=getFont().size;
 
     if(update)
         setSize(p.x, p.y);

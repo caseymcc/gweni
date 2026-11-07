@@ -109,24 +109,6 @@ void ComboBox::layout(skin::Base *skin)
     ParentClass::layout(skin);
 }
 
-// The text and the padding, the chevron's column included, from the Text
-// child: the hidden menu is not counted (sizeOfChildren skips hidden
-// children) and DownArrow has no preferred size. An empty string measures
-// the font's size high and a set one a line high, so the height is at least
-// a line: the box does not change height when an item is selected.
-void ComboBox::calculateSize(skin::Base *skin, Dim dim)
-{
-    ParentClass::calculateSize(skin, dim);
-
-    if(dim == Dim::Y)
-    {
-        const int line=std::max(m_text->getPreferredSize().height,
-            getSkin()->getRenderer()->measureText(getFont(), " ").y);
-
-        m_preferredSize.height=preferredFromContent(line+m_padding.top+m_padding.bottom, dim);
-    }
-}
-
 void ComboBox::updateColors()
 {
     if(!shouldDrawBackground())

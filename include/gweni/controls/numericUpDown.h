@@ -20,6 +20,8 @@ class GWENI_EXPORT NumericUpDownButton_Up: public Button
 {
     GWENI_CONTROL_INLINE(NumericUpDownButton_Up, Button)
     {
+        // No caption: its size is its own, not its empty Text's line.
+        setSizeFlags({SizeFlag::Fixed, SizeFlag::Fixed});
         setSize(7, 7);
     }
 };
@@ -29,6 +31,8 @@ class GWENI_EXPORT NumericUpDownButton_Down: public Button
 {
     GWENI_CONTROL_INLINE(NumericUpDownButton_Down, Button)
     {
+        // No caption: its size is its own, not its empty Text's line.
+        setSizeFlags({SizeFlag::Fixed, SizeFlag::Fixed});
         setSize(7, 7);
     }
 };

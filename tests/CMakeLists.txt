@@ -334,7 +334,8 @@ if(TARGET gweni_capture)
         textureReload.cpp
         imageRects.cpp
         progressBarFill.cpp
-        comboBoxSize.cpp)
+        comboBoxSize.cpp
+        emptyText.cpp)
     gweni_set_warnings(gweni_unittests)
     target_link_libraries(gweni_unittests
         gweni
