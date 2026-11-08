@@ -551,6 +551,31 @@ void MenuItem::update(renderer::Base *renderer, controls::Base *baseControl)
 }
 
 ///////////////////////////////////////////////////////////////////////////
+//RightArrow
+void RightArrow::update(renderer::Base *renderer, controls::Base *baseControl)
+{
+    if(m_primitives.empty())
+        return;
+
+    if(!baseControl->visible())
+    {
+        renderer->hidePrimitive(m_primitives[0]);
+        return;
+    }
+
+    // the item's text colour, so the chevron follows its hover and disabled looks
+    controls::Label *item=gweni_cast<controls::Label>(baseControl->getParent());
+    const gweni::Color colour=item?item->getTextColor():tokyonight::Fg;
+
+    // kind 1's directions: 0 down, 3 right
+    const gweni::Rect r=baseControl->getRenderBounds();
+    const int sz=((r.w<r.h)?r.w:r.h)*6/10;
+    const gweni::Rect chevron{ r.x+(r.w-sz)/2, r.y+(r.h-sz)/2, sz, sz };
+
+    renderer->drawIcon(m_primitives[0], chevron, 1, 3, colour, baseControl->getZIndex());
+}
+
+///////////////////////////////////////////////////////////////////////////
 //Panel
 size_t Panel::Normal;
 size_t Panel::Bright;
@@ -1856,6 +1881,7 @@ template class ControlRegister<ListBoxRow>;
 template class ControlRegister<Menu>;
 template class ControlRegister<MenuStrip>;
 template class ControlRegister<MenuItem>;
+template class ControlRegister<RightArrow>;
 template class ControlRegister<Panel>;
 template class ControlRegister<PageControl>;
 template class ControlRegister<TabControlInner>;
@@ -1898,11 +1924,9 @@ template class ControlRegister<WindowCloseButton>;
 template class ControlRegister<WindowMaximizeButton>;
 template class ControlRegister<WindowMinimizeButton>;
 template class ControlRegister<OpenToggleButton>;
-template class ControlRegister<TreeControl>;
 template class ControlRegister<TreeNode>;
 template class ControlRegister<PropertyTreeNode>;
 template class ControlRegister<PropertyRow>;
-template class ControlRegister<RightArrow>;
 
 }//namespace textured
 }//namespace skin

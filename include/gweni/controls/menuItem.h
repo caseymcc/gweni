@@ -30,6 +30,9 @@ public:
 
     void render(skin::Base *skin) override;
     void layout(skin::Base *skin) override;
+    //! Button's text colour, and a repaint of the submenu chevron, drawn in it,
+    //! when that colour changes.
+    void updateColors() override;
 
     void sizeToContents() override;
 

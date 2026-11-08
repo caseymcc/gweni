@@ -23,16 +23,6 @@ public:
     {
         setMouseInputEnabled(false);
     }
-
-public:
-    void render(skin::Base *skin) override
-    {
-//        skin->drawMenuRightArrow(this, skin::Generate);
-//        skin->drawControl(this);
-        if(getStateChange() != StateChange_Nothing)
-            m_skinControl->update(skin->getRenderer(), this);
-    }
-
 };
 
 
@@ -65,6 +55,16 @@ void MenuItem::render(skin::Base *skin)
 void MenuItem::layout(skin::Base *skin)
 {
     ParentClass::layout(skin);
+}
+
+void MenuItem::updateColors()
+{
+    const gweni::Color before=getTextColor();
+
+    ParentClass::updateColors();
+
+    if(m_submenuArrow && !(getTextColor() == before))
+        m_submenuArrow->redraw();
 }
 
 Menu *MenuItem::getMenu()

@@ -431,6 +431,20 @@ public:
     inline static const std::string_view name="MenuItem";
 };
 
+// The chevron a MenuItem with a submenu shows at its right: one style 5 icon
+// pointing right, in the item's text colour (MenuItem::updateColors repaints it
+// when that changes). It is the item's child, so it is numbered after the
+// item's surface and needs no depth layer of its own.
+class RightArrow:public textured::ControlRegister<RightArrow>
+{
+public:
+    static void staticInit(TexturedSkin *) { m_staticInit=true; }
+
+    void update(renderer::Base *renderer, controls::Base *baseControl) override;
+
+    inline static const std::string_view name="RightArrow";
+};
+
 class Panel:public textured::ControlRegister<Panel>
 {
 public:
@@ -518,11 +532,9 @@ GWENI_TRANSPARENT_RENDERER(TabStrip)
 // since the controls are meant to draw.
 #define GWENI_PENDING_RENDERER(Class) GWENI_TRANSPARENT_RENDERER(Class)
 
-GWENI_PENDING_RENDERER(TreeControl)      // #219: the Tree renderer is registered as "Tree"
 GWENI_PENDING_RENDERER(TreeNode)         // #219: tree lines
 GWENI_PENDING_RENDERER(PropertyTreeNode) // #219: category rail
 GWENI_PENDING_RENDERER(PropertyRow)      // #219: separators, hover and editing highlight
-GWENI_PENDING_RENDERER(RightArrow)       // #219: a MenuItem's submenu chevron
 #undef GWENI_PENDING_RENDERER
 #undef GWENI_TRANSPARENT_RENDERER
 
@@ -1048,6 +1060,7 @@ public:
     inline static const std::string_view name="Popup";
 };
 
+// TreeControl's panel; PropertyTree finds it through its parent type.
 class Tree:public textured::ControlRegister<Tree>
 {
 public:
@@ -1058,7 +1071,7 @@ public:
     void update(renderer::Base *renderer, controls::Base *baseControl) override;
     void remove(renderer::Base *renderer, controls::Base *baseControl) override;
 
-    inline static const std::string_view name="Tree";
+    inline static const std::string_view name="TreeControl";
 
     static size_t Background;
     static size_t Minus;
