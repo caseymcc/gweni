@@ -11,6 +11,7 @@
 #include <gweni/controls/button.h>
 #include <gweni/utility.h>
 
+#include <algorithm>
 #include <vector>
 
 namespace gweni
@@ -78,34 +79,39 @@ public:
     }
 
     //! The width column i is laid out at. The Table sets it while it lays
-    //! itself out, before this row is placed; arrange() hands it to the
-    //! column. -1 leaves the column at its own preferred width.
+    //! itself out, before this row is placed; arrangeHorizontal() places the
+    //! column at it. -1 leaves the column at its own preferred width.
+    //!
+    //! A new width marks this row alone for the pass, which is placement: the
+    //! Table that sets it arranges the row next, and nothing above the Table
+    //! reads it.
     void setColumnWidth(int i, int iWidth)
     {
+        if(m_columnWidth[i] == iWidth)
+            return;
+
         m_columnWidth[i]=iWidth;
+        m_updateLayout=true;
     }
 
-    // The columns are docked Left, which lays each out at its preferred
-    // width; the X arrange gives that the column's width first. Their
-    // measured width is left as it is for this row's own preferred size, so
-    // the widths a wider table handed out do not feed back into it.
-    void arrange(skin::Base *skin, Dim dim) override
+    //! The width column i was given (setColumnWidth), -1 if none.
+    int getColumnWidth(int i) const
     {
-        if(dim == Dim::X)
-        {
-            for(int i=0; i < m_columnCount; i++)
-            {
-                if(!m_columns[i] || m_columnWidth[i] < 0)
-                    continue;
+        return m_columnWidth[i];
+    }
 
-                Size preferred=m_columns[i]->getPreferredSize();
+    //! What column i's content takes: its Label's preferred width, the text
+    //! and the padding, or what setCellContents() put in it. Nothing writes
+    //! that but the Label's own measure, so it is the content's whatever
+    //! width the Table gave the column last.
+    int getColumnContentWidth(int i) const
+    {
+        if(!m_columns[i])
+            return 0;
 
-                preferred.width=m_columnWidth[i];
-                m_columns[i]->setPreferredSize(preferred);
-            }
-        }
-
-        ParentClass::arrange(skin, dim);
+        const Label *column=m_columns[i];
+        return column->getPreferredSize().width+column->getMargin().left+
+            column->getMargin().right;
     }
 
     void setCellText(int i, const String &strString)
@@ -186,6 +192,41 @@ public:
     virtual void setEven(bool b)
     {
         m_evenRow=b;
+    }
+
+protected:
+
+    // The columns, its only children (setCellContents puts a cell's control
+    // in its Label), are docked Left, each at the width the Table gave it.
+    // Their preferred sizes are left as they measured, so the row's own
+    // preferred width and what the Table reads next pass are the content's,
+    // not the width a wider or narrower table handed out.
+    void arrangeHorizontal(skin::Base * /*skin*/) override
+    {
+        int x=m_padding.left;
+        int w=getWidth()-m_padding.left-m_padding.right;
+
+        for(int i=0; i < m_columnCount && i < MaxColumns; i++)
+        {
+            Label *column=m_columns[i];
+
+            if(!column || column->hidden())
+                continue;
+
+            const Margin &margin=column->getMargin();
+            const Rect &bounds=column->getBounds();
+            const int width=(m_columnWidth[i] >= 0)?m_columnWidth[i]:
+                column->getPreferredSize().width;
+
+            placeChild(column, x+margin.left, bounds.y, width, bounds.h);
+
+            const int span=margin.left+width+margin.right;
+            x+=span;
+            w-=span;
+        }
+
+        m_innerBounds.x=x;
+        m_innerBounds.w=w;
     }
 
 private:
@@ -308,19 +349,29 @@ public:
         if(m_sizeToContents)
             doSizeToContents();
 
-        int sizeRemainder=getWidth();
-        int autoSizeColumns=0;
+        const int columns=std::min(m_columnCount, int(TableRow::MaxColumns));
+        int content[TableRow::MaxColumns]={};
 
-        for(int i=0; i < TableRow::MaxColumns && i < m_columnCount; i++)
+        // What each auto column's widest cell takes, from the cells'
+        // preferred widths: calculateSize(X) has measured them this pass.
+        for(auto &&child : getChildren())
         {
-            sizeRemainder-=m_columnWidth[i];
+            TableRow *row=gweni_cast<TableRow>(child);
 
-            if(m_columnWidth[i] == 0)
-                autoSizeColumns++;
+            if(!row || row->hidden())
+                continue;
+
+            for(int i=0; i < columns; i++)
+            {
+                if(m_columnWidth[i] <= 0)
+                    content[i]=std::max(content[i], row->getColumnContentWidth(i));
+            }
         }
 
-        if(autoSizeColumns > 1)
-            sizeRemainder/=autoSizeColumns;
+        int width[TableRow::MaxColumns]={};
+
+        splitColumns(columns, m_columnWidth, content,
+            getWidth()-m_padding.left-m_padding.right, width);
 
         bool even=false;
 
@@ -336,13 +387,8 @@ public:
             row->setEven(even);
             even=!even;
 
-            for(int i=0; i < TableRow::MaxColumns && i < m_columnCount; i++)
-            {
-                if(m_columnWidth[i] == 0)
-                    row->setColumnWidth(i, sizeRemainder);
-                else
-                    row->setColumnWidth(i, m_columnWidth[i]);
-            }
+            for(int i=0; i < columns; i++)
+                row->setColumnWidth(i, width[i]);
         }
 
         // No invalidateParent() here: the ListBox this sits in decides its
@@ -421,6 +467,77 @@ protected:
     }
 
 private:
+
+    //! The widths of `columns` columns sharing `available` units. A column
+    //! with a fixed width (fixed[i] > 0) keeps it. The auto ones (fixed[i] <=
+    //! 0) share what is left, `free`, by their content widths, whose sum is
+    //! C: each gets its content and an even share of free-C when that fits,
+    //! floor(content*free/C) when it does not, and nothing when free <= 0.
+    //! What the integer division leaves goes one unit each to the auto
+    //! columns, lowest index first, so the columns add up to `available`
+    //! exactly whenever there is an auto column and free >= 0.
+    static void splitColumns(int columns, const int *fixed, const int *content,
+        int available, int *width)
+    {
+        int free=available;
+        int autoColumns=0;
+        long long contentSum=0;
+
+        for(int i=0; i < columns; i++)
+        {
+            if(fixed[i] > 0)
+            {
+                width[i]=fixed[i];
+                free-=fixed[i];
+            }
+            else
+            {
+                width[i]=0;
+                contentSum+=content[i];
+                autoColumns++;
+            }
+        }
+
+        if(autoColumns == 0 || free <= 0)
+            return;
+
+        int given=0;
+
+        if(contentSum <= free)
+        {
+            const int share=(free-int(contentSum))/autoColumns;
+
+            for(int i=0; i < columns; i++)
+            {
+                if(fixed[i] <= 0)
+                {
+                    width[i]=content[i]+share;
+                    given+=width[i];
+                }
+            }
+        }
+        else
+        {
+            for(int i=0; i < columns; i++)
+            {
+                if(fixed[i] <= 0)
+                {
+                    width[i]=int(content[i]*(long long)free/contentSum);
+                    given+=width[i];
+                }
+            }
+        }
+
+        // Less than one unit per auto column is left in either case.
+        for(int i=0; i < columns && given < free; i++)
+        {
+            if(fixed[i] <= 0)
+            {
+                width[i]++;
+                given++;
+            }
+        }
+    }
 
     //! Rebuilds m_hitRows if a child was added, removed, moved, resized,
     //! hidden or shown since the last build; whether the search holds.
