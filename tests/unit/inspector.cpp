@@ -19,6 +19,12 @@
  *    slot at all, its own included; an app change shows that frame's slots
  *    written (the app's alone, its own taken out) on the next frame, and 0
  *    again on the one after, and the frame after that writes nothing;
+ *  - its highlight box is the canvas's last child, kept there when the app
+ *    adds a child; it frames the selected control (its rect grown by
+ *    InspectorHighlight::Edge), follows the hovered node's control and goes
+ *    back to the selected one, hides when its target is hidden, and is drawn
+ *    only on a frame its rect or visibility changed;
+ *  - a control selected whose node was never made opens the way down to it;
  *  - closed, it gives back every primitive and text id it took.
  */
 #include "headlessFixture.h"
@@ -29,6 +35,7 @@
 
 #include <doctest/doctest.h>
 
+#include <algorithm>
 #include <memory>
 #include <string>
 #include <vector>
@@ -134,7 +141,7 @@ std::vector<controls::Base *> childrenLessInspector(controls::Base *parent)
 
     for(controls::Base *child : parent->getActualChildren())
     {
-        if(!gweni_cast<Inspector>(child))
+        if(!gweni_cast<Inspector>(child) && !gweni_cast<tools::InspectorHighlight>(child))
             out.push_back(child);
     }
     return out;
@@ -340,4 +347,74 @@ TEST_CASE("Inspector: closed, it gives back every id it took")
     // and it opens again
     CHECK(Inspector::toggle(scene.canvas));
     CHECK(Inspector::find(scene.canvas));
+}
+
+TEST_CASE("Inspector: the highlight box frames the selected or the hovered control")
+{
+    Scene scene;
+    Inspector *inspector=Inspector::open(scene.canvas);
+    tools::InspectorHighlight *highlight=inspector->highlight();
+    controls::Label *label=scene.labels[1];
+
+    REQUIRE(highlight);
+    scene.frames(2);
+    CHECK(scene.canvas->getActualChildren().back() == highlight);
+    CHECK(highlight->hidden());
+
+    // the label's node is made on the way: its panel's node opened
+    inspector->select(label);
+    REQUIRE(inspector->nodeFor(label));
+    CHECK(inspector->nodeFor(scene.panel)->isOpen());
+    scene.frames(2);
+
+    const Point at=label->localPosToCanvas();
+    const int edge=tools::InspectorHighlight::Edge;
+
+    CHECK_FALSE(highlight->hidden());
+    CHECK(inspector->highlightTarget() == label);
+    CHECK(highlight->getBounds().x == at.x-edge);
+    CHECK(highlight->getBounds().y == at.y-edge);
+    CHECK(highlight->getBounds().w == label->getWidth()+2*edge);
+    CHECK(highlight->getBounds().h == label->getHeight()+2*edge);
+
+    // settled: not drawn again
+    scene.frames(3);
+    CHECK(scene.renderer.frameStats().primitiveSlotsWritten == 0);
+
+    // a new top-level control: the highlight stays the last child
+    scene.canvas->newChild<controls::Base>("late");
+    scene.frames(2);
+    CHECK(scene.canvas->getActualChildren().back() == highlight);
+
+    // the mouse on another node's row: that node's control, then back
+    HoveredControl=inspector->nodeFor(scene.other);
+    scene.frames(1);
+    CHECK(inspector->highlightTarget() == scene.other);
+    CHECK(highlight->getBounds().y == scene.other->localPosToCanvas().y-edge);
+    HoveredControl=nullptr;
+    scene.frames(1);
+    CHECK(inspector->highlightTarget() == label);
+
+    // its target hidden: hidden too
+    label->hide();
+    scene.frames(2);
+    CHECK(highlight->hidden());
+    label->show();
+    scene.frames(2);
+    CHECK_FALSE(highlight->hidden());
+
+    // its ids are the inspector's own: settled frames show 0 written
+    scene.frames(3);
+    CHECK(inspector->counterLines()[Inspector::SlotsLine] == "slots written: 0 primitive, 0 text");
+    std::vector<size_t> primitives, texts;
+
+    inspector->ownIds(primitives, texts);
+    for(size_t id : highlight->getSkinControl()->getPrimitives())
+        CHECK(std::find(primitives.begin(), primitives.end(), id) != primitives.end());
+
+    // closed: the highlight goes with it
+    Inspector::close(scene.canvas);
+    scene.frames(2);
+    for(controls::Base *child : scene.canvas->getActualChildren())
+        CHECK_FALSE(gweni_cast<tools::InspectorHighlight>(child));
 }

@@ -267,6 +267,7 @@ Base::~Base()
             canvas->PreDeleteCanvas(this);
             canvas->toolTipControlDeleted(this);
             canvas->popupControlDeleted(this);
+            canvas->overlayDeleted(this);
         }
 
         // after the canvas has closed it: a menu this control owns goes too

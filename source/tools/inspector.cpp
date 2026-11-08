@@ -6,6 +6,7 @@
 #include <gweni/tools/inspector.h>
 
 #include <gweni/anim.h>
+#include <gweni/gweni.h>
 #include <gweni/controls/separator.h>
 #include <gweni/platforms/baseRender.h>
 #include <gweni/skin.h>
@@ -168,13 +169,52 @@ GWENI_CONTROL_CONSTRUCTOR(Inspector)
         m_details.push_back(label);
     }
 
+    // next to the inspector, so it goes wherever the inspector is shown; on the
+    // canvas, above everything
+    if(controls::Base *parent=getParent())
+    {
+        m_highlight=parent->newChild<InspectorHighlight>();
+        m_highlight->m_inspector=this;
+        if(controls::Canvas *canvas=dynamic_cast<controls::Canvas *>(parent))
+            canvas->addOverlay(m_highlight);
+    }
+
 #if GWENI_ANIMATE
     anim::add(this, new RefreshAnimation());
 #endif
 }
 
 Inspector::~Inspector()
-{}
+{
+    // a sibling: its parent may be deleting its children, so it goes later
+    if(m_highlight)
+    {
+        m_highlight->m_inspector=nullptr;
+        m_highlight->hide();
+        m_highlight->delayedDelete();
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////
+// InspectorHighlight
+
+GWENI_CONTROL_CONSTRUCTOR(InspectorHighlight)
+{
+    setExcludedFromStats(true);
+    setMouseInputEnabled(false);
+    setKeyboardInputEnabled(false);
+    setTabable(false);
+    hide();
+}
+
+InspectorHighlight::~InspectorHighlight()
+{
+    if(m_inspector)
+    {
+        m_inspector->m_highlight=nullptr;
+        m_inspector->m_highlightTarget=nullptr;
+    }
+}
 
 Inspector *Inspector::find(controls::Canvas *canvas)
 {
@@ -255,11 +295,59 @@ void Inspector::refresh()
 
     refreshCounters();
     refreshDetails();
+    refreshHighlight();
+}
+
+void Inspector::refreshHighlight()
+{
+    if(!m_highlight)
+        return;
+
+    // the row under the mouse, if it is one of this inspector's
+    controls::Base *target=nullptr;
+
+    for(controls::Base *at=HoveredControl; at; at=at->getParent())
+    {
+        InspectorNode *node=gweni_cast<InspectorNode>(at);
+
+        if(node && (node->m_inspector == this))
+        {
+            target=node->target();
+            break;
+        }
+    }
+    if(!target)
+        target=m_selected;
+    // a node's target was on the canvas when the tree was last brought in
+    // line; one deleted since moved treeSerial(), which refresh() checked
+    if((target != m_highlightTarget) && target && !onCanvas(target))
+        target=nullptr;
+    m_highlightTarget=target;
+
+    if(!target || !target->visible() || hidden())
+    {
+        if(!m_highlight->hidden())
+            m_highlight->hide();
+        return;
+    }
+
+    controls::Base *parent=m_highlight->getParent();
+    const Point at=parent?parent->canvasPosToLocal(target->localPosToCanvas()):target->localPosToCanvas();
+    const int edge=InspectorHighlight::Edge;
+    const Rect rect(at.x-edge, at.y-edge, target->getWidth()+2*edge, target->getHeight()+2*edge);
+    const Rect &bounds=m_highlight->getBounds();
+
+    if((bounds.x != rect.x) || (bounds.y != rect.y) || (bounds.w != rect.w) || (bounds.h != rect.h))
+        m_highlight->setBounds(rect);
+    if(m_highlight->hidden())
+        m_highlight->show();
 }
 
 void Inspector::ownIds(std::vector<size_t> &primitiveIds, std::vector<size_t> &textIds) const
 {
     appendSubtreeIds(this, primitiveIds, textIds);
+    if(m_highlight)
+        appendSubtreeIds(m_highlight, primitiveIds, textIds);
 }
 
 void Inspector::refreshCounters()
@@ -391,8 +479,35 @@ void Inspector::select(controls::Base *control)
     if(m_selected == control)
         return;
     m_selected=control;
+    if(!m_canvas)
+        m_canvas=getCanvas();
 
     InspectorNode *node=control?nodeFor(control):nullptr;
+
+    if(control && !node && m_canvas && onCanvas(control))
+    {
+        // open the way down to it: its ancestors from the canvas's child on
+        std::vector<controls::Base *> path;
+
+        for(controls::Base *at=control->getParent(); at && (at != m_canvas); at=at->getParent())
+            path.push_back(at);
+        if(!m_treeBuilt)
+        {
+            syncTree();
+            m_treeSerial=m_canvas->treeSerial();
+            m_treeBuilt=true;
+        }
+        for(auto at=path.rbegin(); at != path.rend(); ++at)
+        {
+            InspectorNode *ancestor=nodeFor(*at);
+
+            if(!ancestor)
+                break;
+            if(!ancestor->isOpen())
+                ancestor->open();
+        }
+        node=nodeFor(control);
+    }
 
     if(!node || !node->isSelected())
     {
@@ -446,7 +561,7 @@ void Inspector::childrenOf(const controls::Base *parent, std::vector<controls::B
     out.clear();
     for(controls::Base *child : parent->getActualChildren())
     {
-        if(child != this)
+        if((child != this) && (child != m_highlight))
             out.push_back(child);
     }
 }

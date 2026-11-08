@@ -12,6 +12,7 @@
 #include <gweni/inputHandler.h>
 #include <gweni/platforms/inputEvent.h>
 #include <set>
+#include <vector>
 
 namespace gweni
 {
@@ -264,6 +265,16 @@ public:
     unsigned treeSerial() const { return m_treeSerial; }
     /// \}
 
+    /// \sect{Overlays}
+    /// Keeps control, a child of this canvas, after every other child but a
+    /// shown Popup's Menus and the ToolTip box, so the z renumber numbers it
+    /// above the tree, the Popup included (an inspector's highlight box). The
+    /// overlays stay in the order they were added. A deleted overlay is
+    /// forgotten.
+    void addOverlay(Base *control);
+    void removeOverlay(Base *control);
+    /// \}
+
     /// \sect{Tooltip}
     /// The canvas shows the tooltip of the control the mouse rests on (or of
     /// that control's parent, when it has none of its own) in one ToolTip box
@@ -330,6 +341,8 @@ public:
     /// floating Menu (a ComboBox's list, not a MenuStrip) after it among the
     /// canvas's children.
     bool overPopup(Base *control);
+    /// Base's report that control is being deleted: forgets it as an overlay.
+    void overlayDeleted(controls::Base *control);
     /// Base: \p control is being deleted.
     void popupControlDeleted(Base *control);
     /// \}
@@ -491,6 +504,8 @@ protected:
     CanvasFrameStats m_previousFrame;
     ChangeStats m_renderChange;
     unsigned m_treeSerial=0;
+    /// See addOverlay().
+    std::vector<Base *> m_overlays;
     /// The current pass re-dirtied layout, and the first control that did.
     bool m_passRedirtied=false;
     const char *m_passCulpritType=nullptr;

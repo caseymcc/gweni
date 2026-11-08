@@ -30,6 +30,7 @@
 #include "gweni/controls/dataTable.h"
 #include "gweni/controls/treeNode.h"
 #include "gweni/controls/propertyTree.h"
+#include "gweni/tools/inspector.h"
 
 #include <algorithm>
 
@@ -1057,6 +1058,30 @@ void Separator::update(renderer::Base *renderer, controls::Base *baseControl)
 
 
 ///////////////////////////////////////////////////////////////////////////
+//InspectorHighlight
+void InspectorHighlight::update(renderer::Base *renderer, controls::Base *baseControl)
+{
+    if((m_primitives.size() < 4) || (baseControl->getStateChange() == controls::StateChange_Nothing))
+        return;
+
+    if(!baseControl->visible())
+    {
+        for(size_t id : m_primitives)
+            renderer->hidePrimitive(id);
+        return;
+    }
+
+    const gweni::Rect &r=baseControl->getRenderBounds();
+    const int e=tools::InspectorHighlight::Edge;
+    const int z=baseControl->getZIndex();
+
+    renderer->setDrawColor(tokyonight::Orange);
+    renderer->drawFilledRect(m_primitives[0], gweni::Rect(r.x, r.y, r.w, e), z);
+    renderer->drawFilledRect(m_primitives[1], gweni::Rect(r.x, r.y+r.h-e, r.w, e), z);
+    renderer->drawFilledRect(m_primitives[2], gweni::Rect(r.x, r.y+e, e, r.h-2*e), z);
+    renderer->drawFilledRect(m_primitives[3], gweni::Rect(r.x+r.w-e, r.y+e, e, r.h-2*e), z);
+}
+
 //Bullet
 void Bullet::update(renderer::Base *renderer, controls::Base *baseControl)
 {
@@ -2529,6 +2554,7 @@ template class ControlRegister<ProgressBar>;
 template class ControlRegister<Selectable>;
 template class ControlRegister<Separator>;
 template class ControlRegister<Bullet>;
+template class ControlRegister<InspectorHighlight>;
 template class ControlRegister<RadioButton>;
 template class ControlRegister<ScrollBarButton>;
 template class ControlRegister<BaseScrollBar>;

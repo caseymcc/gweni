@@ -1387,6 +1387,23 @@ public:
     inline static const std::string_view name="SplitterBar";
 };
 
+// gweni::tools::Inspector's highlight box: four slots, its edges, filled in
+// tokyonight::Orange, InspectorHighlight::Edge units thick, inside its render
+// bounds (the target's rect grown by the edge). Not one rect with a
+// transparent fill: a style 4 pixel writes depth even where it is
+// transparent, over whatever it frames.
+class InspectorHighlight:public textured::ControlRegister<InspectorHighlight>
+{
+public:
+    static void staticInit(TexturedSkin *) { m_staticInit=true; }
+
+    size_t requiredPrimitives() override { return 4; }
+
+    void update(renderer::Base *renderer, controls::Base *baseControl) override;
+
+    inline static const std::string_view name="InspectorHighlight";
+};
+
 class Window:public textured::ControlRegister<Window>
 {
 public:

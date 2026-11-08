@@ -49,6 +49,27 @@ private:
     bool m_populated=false;
 };
 
+//! The Inspector's highlight box: a frame drawn just outside the control the
+//! inspector points at (the hovered node's, else the selected one). On the
+//! canvas it is an overlay (Canvas::addOverlay), numbered above every other
+//! control but the ToolTip box. It takes no input, and is excluded from the
+//! frame counts like the inspector. Its renderer draws its four edges; it
+//! moves, and so draws, only when its target's rect changes.
+class GWENI_EXPORT InspectorHighlight: public controls::Base
+{
+public:
+    GWENI_CONTROL(InspectorHighlight, controls::Base);
+public:
+    ~InspectorHighlight() override;
+
+    //! The edges' thickness, in logical units, outside the target's rect.
+    static constexpr int Edge=2;
+
+private:
+    friend class Inspector;
+    Inspector *m_inspector=nullptr;
+};
+
 //! A window on a canvas showing what the canvas is made of and what its last
 //! frame did (docs/architecture.md, "The inspector"):
 //! - the control tree, a node per control (type, name, id), each node's
@@ -87,8 +108,8 @@ public:
     //! The canvas's inspector, or null.
     static Inspector *find(controls::Canvas *canvas);
 
-    //! Shows control's details, and selects its node if it has one; null
-    //! selects nothing.
+    //! Shows control's details and selects its node, opening the nodes of its
+    //! ancestors so it has one; null selects nothing.
     void select(controls::Base *control);
     controls::Base *selected() const { return m_selected; }
 
@@ -106,7 +127,13 @@ public:
     //! The Label setText() calls refresh() made since the inspector was opened.
     size_t textSets() const { return m_textSets; }
 
-    //! The primitive and text ids the inspector's own controls hold.
+    //! The highlight box, made with the inspector next to it (a child of its
+    //! parent), and the control it frames now, or null.
+    InspectorHighlight *highlight() const { return m_highlight; }
+    controls::Base *highlightTarget() const { return m_highlightTarget; }
+
+    //! The primitive and text ids the inspector's own controls hold, its
+    //! highlight box's included.
     void ownIds(std::vector<size_t> &primitiveIds, std::vector<size_t> &textIds) const;
 
     //! The counter lines, one Label each.
@@ -136,10 +163,14 @@ public:
 
 private:
     friend class InspectorNode;
+    friend class InspectorHighlight;
 
     void setLine(controls::Label *label, const String &text);
     void refreshCounters();
     void refreshDetails();
+    //! Points the highlight box at the hovered node's control, else the
+    //! selected one, and moves it to that control's rect.
+    void refreshHighlight();
     //! Brings the tree's nodes in line with the canvas's tree.
     void syncTree();
     //! Makes node's (or, null, the tree's top-level) child nodes for parent's
@@ -163,6 +194,8 @@ private:
     std::vector<controls::Label *> m_counters;
     std::vector<controls::Label *> m_details;
     controls::Base *m_selected=nullptr;
+    InspectorHighlight *m_highlight=nullptr;
+    controls::Base *m_highlightTarget=nullptr;
     unsigned m_treeSerial=0;
     bool m_treeBuilt=false;
     size_t m_textSets=0;

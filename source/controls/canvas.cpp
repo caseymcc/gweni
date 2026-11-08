@@ -934,12 +934,68 @@ void Canvas::keepOverlaysLast()
         m_children.splice(m_children.end(), after);
     }
 
+    if(!m_overlays.empty())
+    {
+        // in place when the children end with the overlays, in order, and the
+        // ToolTip box (if any) after them
+        Base::List::reverse_iterator tail=m_children.rbegin();
+
+        if((tail != m_children.rend()) && (*tail == m_toolTip))
+            ++tail;
+
+        bool inPlace=true;
+
+        for(auto overlay=m_overlays.rbegin(); overlay != m_overlays.rend(); ++overlay)
+        {
+            if((*overlay)->getParent() != this)
+                continue;
+            if((tail == m_children.rend()) || (*tail != *overlay))
+            {
+                inPlace=false;
+                break;
+            }
+            ++tail;
+        }
+
+        if(!inPlace)
+        {
+            for(Base *overlay : m_overlays)
+            {
+                if(overlay->getParent() != this)
+                    continue;
+                m_children.remove(overlay);
+                m_children.push_back(overlay);
+                zOrderMoved(overlay);
+            }
+        }
+    }
+
     if(!m_toolTip || (m_children.back() == m_toolTip))
         return;
 
     m_children.remove(m_toolTip);
     m_children.push_back(m_toolTip);
     zOrderMoved(m_toolTip);
+}
+
+void Canvas::addOverlay(Base *control)
+{
+    if(std::find(m_overlays.begin(), m_overlays.end(), control) != m_overlays.end())
+        return;
+    m_overlays.push_back(control);
+    // moved into place by the next renumber
+    m_zOrderDirty=true;
+}
+
+void Canvas::removeOverlay(Base *control)
+{
+    m_overlays.erase(std::remove(m_overlays.begin(), m_overlays.end(), control), m_overlays.end());
+}
+
+void Canvas::overlayDeleted(controls::Base *control)
+{
+    if(!m_overlays.empty())
+        removeOverlay(control);
 }
 
 void Canvas::popupControlDeleted(Base *control)
