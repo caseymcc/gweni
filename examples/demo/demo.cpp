@@ -33,7 +33,9 @@
 #include "demo/scrollControl.h"
 #include "demo/selectable.h"
 #include "demo/separator.h"
+#include "demo/showcaseButtons.h"
 #include "demo/showcaseContainers.h"
+#include "demo/showcaseInput.h"
 #include "demo/slider.h"
 #include "demo/statusBar.h"
 #include "demo/tabControl.h"
@@ -112,6 +114,8 @@ void Demo::init(const String &name)
 
         cat->setName("Showcase");
         addDemo<ShowcaseContainersDemo>(cat, "ShowcaseContainersDemo", "Containers & data");
+        addDemo<ShowcaseButtonsDemo>(cat, "ShowcaseButtonsDemo", "Buttons & toggles");
+        addDemo<ShowcaseInputDemo>(cat, "ShowcaseInputDemo", "Text input");
     }
     {
         controls::CollapsibleCategory *cat=list->add("Basic");
@@ -206,10 +210,12 @@ void Demo::onCategorySelect(event::Info info)
     if(controls::Button *button=gweni_cast<controls::Button>(m_pages[pageIndex]))
         printText("Showing "+button->getText());
 
-    if(const ShowcaseNotes *notes=dynamic_cast<const ShowcaseNotes *>(m_demoControls[pageIndex]))
+    if(ShowcaseNotes *notes=dynamic_cast<ShowcaseNotes *>(m_demoControls[pageIndex]))
     {
         for(const String &line : notes->showcaseNotes())
             printText("  "+line);
+
+        notes->showcaseShown();
     }
 }
 

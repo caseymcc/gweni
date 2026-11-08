@@ -25,22 +25,29 @@ implemented-vs-planned status, and [docs/layout.md](docs/layout.md) for the layo
 
 ## Samples
 
+![Buttons & toggles showcase page](docs/images/ShowcaseButtonsDemo.png)
+
+**Buttons & toggles**: Buttons (disabled, with an image, a toolbar of icon-only ones, a dialog row),
+CheckBoxes (checked, unchecked, disabled labels), three RadioButton groups, Selectable rows and a
+single-selection SelectableGroup, and the window buttons (maximised, disabled).
+
+![Text input showcase page](docs/images/ShowcaseInputDemo.png)
+
+**Text input**: TextBoxes (a placeholder, a password, a number, coloured text, read-only, one focused
+with its caret), a wrapped TextBoxMultiline, ComboBoxes, a NumericUpDown, and horizontal and vertical
+Sliders, plain, notched and disabled.
+
 | | |
 |---|---|
-| ![Button](docs/images/ButtonDemo.png) | ![RadioButton](docs/images/RadioButtonDemo.png) |
-| **Button** | **RadioButton** |
-| ![Slider](docs/images/SliderDemo.png) | ![Text](docs/images/TextDemo.png) |
-| **Slider** | **Text** (OpenSans 8-16 px) |
-| ![ProgressBar](docs/images/ProgressBarDemo.png) | ![ComboBox](docs/images/ComboBoxDemo.png) |
-| **ProgressBar** | **ComboBox** |
-| ![Separator](docs/images/SeparatorDemo.png) | ![Selectable](docs/images/SelectableDemo.png) |
-| **Separator** (with a caption, vertical, and bullets) | **Selectable** (toggle rows and a single-selection group) |
-| ![ContextMenu](docs/images/ContextMenuDemo.png) | ![VirtualList](docs/images/VirtualListDemo.png) |
-| **Context menu** (`setContextMenu`, opened with a right-click) | **VirtualList** (100 000 items, a row for each one on screen) |
-| ![Popup](docs/images/PopupDemo.png) | |
-| **Popup** (a panel under its button, one per canvas) | |
+| ![Text](docs/images/TextDemo.png) | ![ProgressBar](docs/images/ProgressBarDemo.png) |
+| **Text** (OpenSans 8-16 px) | **ProgressBar** |
+| ![Separator](docs/images/SeparatorDemo.png) | ![ContextMenu](docs/images/ContextMenuDemo.png) |
+| **Separator** (with a caption, vertical, and bullets) | **Context menu** (`setContextMenu`, opened with a right-click) |
+| ![VirtualList](docs/images/VirtualListDemo.png) | ![Popup](docs/images/PopupDemo.png) |
+| **VirtualList** (100 000 items, a row for each one on screen) | **Popup** (a panel under its button, one per canvas) |
 
-Each control is shown on its own in `ControlTest`. All of these images are rendered offscreen by
+The showcase pages each hold many controls; the images in the table show one control on its own
+in `ControlTest`. All of these images are rendered offscreen by
 `tools/capture_samples.sh` (see `AGENTS.md`).
 
 ## Running the examples

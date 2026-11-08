@@ -23,13 +23,17 @@ class GroupBox;
 //! captures the gallery pages at that size, so a page lays out the same in both.
 //!
 //! The states a page sets in its constructor, one line each, for the shell's
-//! Output pane when the page is shown.
+//! Output pane when the page is shown, and what the page does once shown.
 class ShowcaseNotes
 {
 public:
     virtual ~ShowcaseNotes()=default;
 
     virtual const std::vector<String> &showcaseNotes() const=0;
+
+    //! Called by the shell after it has shown the page, for a state a hidden
+    //! control cannot keep, such as the keyboard focus.
+    virtual void showcaseShown() {}
 };
 
 namespace showcase
@@ -43,8 +47,23 @@ void initPage(controls::Base *page);
 controls::Base *addColumn(controls::Base *page);
 
 //! A titled frame stacked in a column, growing and shrinking with it; its
-//! content docks Center in it.
-controls::GroupBox *addSection(controls::Base *column, const String &title);
+//! content docks Center in it. With \a fill false it is as high as its
+//! content, and the column's other sections share what is left.
+controls::GroupBox *addSection(controls::Base *column, const String &title, bool fill=true);
+
+//! A new child of \a parent docked Top, below the ones added before it with a
+//! gap: the width of \a parent and its own height. A control with a size of
+//! its own from its constructor (a Slider) takes no more of a layout cell
+//! than that, but takes all of a dock.
+template<typename T>
+T *addRow(controls::Base *parent)
+{
+    T *row=parent->newChild<T>();
+
+    row->setDock(DockPosition::Top);
+    row->setMargin(Margin(0, 0, 0, 4));
+    return row;
+}
 
 }//namespace showcase
 

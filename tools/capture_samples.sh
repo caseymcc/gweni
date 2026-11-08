@@ -58,15 +58,16 @@ HERO_OUT=demo.png
 # Left out because the hero shows their controls: TabControlDemo,
 # TreeControlDemo, PropertiesDemo, ListBoxDemo, CollapsibleListDemo,
 # ScrollControlDemo, and PageControlDemo (the shell's centre pane is one).
+# Left out because a showcase page below shows their controls: ButtonDemo,
+# RadioButtonDemo, SelectableDemo, CheckBoxDemo, WindowButtonsDemo
+# (ShowcaseButtonsDemo), TextBoxDemo, NumericDemo, ComboBoxDemo and SliderDemo
+# (ShowcaseInputDemo).
 SAMPLES=(
-    ButtonDemo
-    RadioButtonDemo
-    SliderDemo
+    ShowcaseButtonsDemo
+    ShowcaseInputDemo
     TextDemo
     ProgressBarDemo
-    ComboBoxDemo
     SeparatorDemo
-    SelectableDemo
     ContextMenuDemo
     VirtualListDemo
     PopupDemo
@@ -78,14 +79,9 @@ SAMPLES=(
 # control at its own size.
 PANE_SIZE=865x545
 declare -A SAMPLE_SIZE=(
-    [ButtonDemo]=640x480
-    [RadioButtonDemo]=640x480
-    [SliderDemo]=640x480
     [TextDemo]=640x480
     [ProgressBarDemo]=640x480
-    [ComboBoxDemo]=640x480
     [SeparatorDemo]=640x480
-    [SelectableDemo]=640x480
     [ContextMenuDemo]=640x480
     [VirtualListDemo]=640x480
     [PopupDemo]=640x480

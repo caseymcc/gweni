@@ -36,7 +36,7 @@ controls::Base *addColumn(controls::Base *page)
     return column;
 }
 
-controls::GroupBox *addSection(controls::Base *column, const String &title)
+controls::GroupBox *addSection(controls::Base *column, const String &title, bool fill)
 {
     // A GroupBox is a Label, whose constructor asks for a size, and a control
     // that asked for one takes no more of a layout cell than that or its
@@ -44,7 +44,7 @@ controls::GroupBox *addSection(controls::Base *column, const String &title)
     // and the frame docked in it fills the Base.
     controls::Base *cell=column->newChild<controls::Base>();
 
-    cell->setSizeFlags({SizeFlag::Bloat, SizeFlag::Bloat});
+    cell->setSizeFlags({SizeFlag::Bloat, fill ? SizeFlag::Bloat : SizeFlag::Shrink});
 
     controls::GroupBox *section=cell->newChild<controls::GroupBox>();
 

@@ -52,8 +52,12 @@ set(GWENI_DEMO_SOURCES
     demo/separator.h
     demo/showcase.cpp
     demo/showcase.h
+    demo/showcaseButtons.cpp
+    demo/showcaseButtons.h
     demo/showcaseContainers.cpp
     demo/showcaseContainers.h
+    demo/showcaseInput.cpp
+    demo/showcaseInput.h
     demo/slider.cpp
     demo/slider.h
     demo/statusBar.cpp
