@@ -684,7 +684,10 @@ two programs and the draws. What follows describes both together:
   gradient pixel near a rounding boundary, up to 10.5 % of a text-heavy page
   (LabelMultilineDemo), and no shader can remove that. What is counted measured 0.021 %
   at worst (`native.cmake` has the table), against a ceiling of 2 and 0.5 %: a PNG
-  over it is a bug to find, not a bound to widen. Getting there took four shader
+  over it is a bug to find, not a bound to widen. Leaving the 1-off pixels out of the
+  count (and ImagePanelDemo at scale 1 out until #418) was the user's decision on
+  #382, since no shader can meet the first bar, which counted every differing pixel.
+  Getting there took four shader
   changes, each something GL leaves to the implementation, which had put 14 demos up
   to 82/255 apart at icon edges and 78/255 at SDF-text ones:
   - the checkmark and chevron (icon kinds 0 and 1) take their anti-aliasing width as

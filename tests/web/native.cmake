@@ -70,6 +70,10 @@ set(web_native_bins
 # so 2 and 0.1 %, the latter the measured worst rounded up. The ceiling is
 # max |delta| 2 and 0.5 %: a PNG above it is a bug to find (docs/architecture.md
 # -> "The browser against native"), never a reason to widen the bound.
+# Counting only pixels more than 1 off, and leaving ImagePanelDemo out at scale 1
+# until #418, is the user's decision (#382): the first bar, every differing pixel
+# counted against 0.5 %, cannot be met by any shader. A change to this rule is
+# theirs too.
 set(web_pixels_max_delta 2)
 set(web_pixels_max_fraction 0.1)
 set(web_pixels_count_over 1)
