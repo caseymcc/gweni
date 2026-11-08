@@ -216,6 +216,17 @@ void CheckBox::staticInit(TexturedSkin *skin)
     DisabledChecked=skin->getTextureEntryId("CheckBox.Disabled.Checked");
 }
 
+// The frame of a CheckBox or RadioButton: disabled first, then hovered (the
+// box itself or the label of its row), then at rest.
+static const tokyonight::Surface &checkSurface(controls::CheckBox *control)
+{
+    if(control->isDisabled())
+        return tokyonight::CheckDisabled;
+    if(control->isHovered() || control->isLabelHovered())
+        return tokyonight::CheckHover;
+    return tokyonight::CheckOff;
+}
+
 void CheckBox::update(renderer::Base *renderer, controls::Base *baseControl)
 {
     if(m_primitives.size() < 2)
@@ -233,12 +244,16 @@ void CheckBox::update(renderer::Base *renderer, controls::Base *baseControl)
         return;
     }
 
-    // Dark box frame always; blue checkmark glyph overlaid when checked.
-    tokyonight::paintSurface(renderer, m_primitives.data(), baseControl, tokyonight::CheckOff);
+    // Dark box frame, lit while it or its row's label is hovered; blue
+    // checkmark glyph overlaid when checked. Disabled: a faint frame and a
+    // muted tick, and no hover.
+    const bool disabled=control->isDisabled();
+
+    tokyonight::paintSurface(renderer, m_primitives.data(), baseControl, checkSurface(control));
 
     if(baseControl->visible() && control->isChecked())
         renderer->drawIcon(m_primitives[1], baseControl->getRenderBounds(), 0, 0,
-            tokyonight::Blue, baseControl->getZIndex()+1);
+            disabled?tokyonight::Muted:tokyonight::Blue, baseControl->getZIndex()+1);
     else
         renderer->hidePrimitive(m_primitives[1]);
 }
@@ -825,18 +840,23 @@ void RadioButton::update(renderer::Base *renderer, controls::Base *baseControl)
     // radius is clamped to half the box by the SDF shader -> a perfect circle.
     controls::CheckBox *control=static_cast<controls::CheckBox *>(baseControl);
 
-    tokyonight::Surface ring=tokyonight::CheckOff;
+    tokyonight::Surface ring=checkSurface(control);
     ring.radius=1000.0f;
     tokyonight::paintSurface(renderer, m_primitives.data(), baseControl, ring);
 
-    // Inner blue dot when selected (a small centered circle).
+    // Inner blue dot when selected (a small centered circle), muted when
+    // disabled.
     const gweni::Rect r=baseControl->getRenderBounds();
     if(baseControl->visible() && control->isChecked())
     {
         const int dw=r.w*4/10, dh=r.h*4/10;
         const gweni::Rect dot{ r.x+(r.w-dw)/2, r.y+(r.h-dh)/2, dw, dh };
-        renderer->drawRoundedRect(m_primitives[1], dot, 1000.0f, 0.0f,
-            tokyonight::Blue, tokyonight::DarkBlue, tokyonight::Blue, baseControl->getZIndex()+1);
+        if(control->isDisabled())
+            renderer->drawRoundedRect(m_primitives[1], dot, 1000.0f, 0.0f,
+                tokyonight::Muted, tokyonight::Muted, tokyonight::Muted, baseControl->getZIndex()+1);
+        else
+            renderer->drawRoundedRect(m_primitives[1], dot, 1000.0f, 0.0f,
+                tokyonight::Blue, tokyonight::DarkBlue, tokyonight::Blue, baseControl->getZIndex()+1);
     }
     else
         renderer->hidePrimitive(m_primitives[1]);

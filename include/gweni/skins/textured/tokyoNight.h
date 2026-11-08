@@ -138,6 +138,9 @@ inline Surface SplitterBarDisabled{ BgStorm,               BgStorm,             
 // Check / radio
 inline Surface CheckOff       { BgDark,                BgDark,                Line,  RadiusSm, BorderW };
 inline Surface CheckOn        { Blue,                  DarkBlue,              Blue,  RadiusSm, BorderW };
+inline Surface CheckHover     { Surf,                  BgStorm,               Blue,  RadiusSm, BorderW };
+// sunk into the background, with a faint frame; the tick or dot is Muted
+inline Surface CheckDisabled  { Bg,                    Bg,                    BgHighlight, RadiusSm, BorderW };
 
 // Colour picker: the SV box's frame (its fill is the bilinear hue blend, so
 // only border/radius are read) and the opaque cursor/selection markers
@@ -190,7 +193,7 @@ inline std::unordered_map<std::string, Surface*>& surfaceRegistry()
         {"SliderThumbHover",&SliderThumbHover},{"SliderThumbDown",&SliderThumbDown},{"SliderThumbDisabled",&SliderThumbDisabled},
         {"SplitterBar",&SplitterBar},{"SplitterBarHover",&SplitterBarHover},{"SplitterBarDown",&SplitterBarDown},
         {"SplitterBarDisabled",&SplitterBarDisabled},
-        {"CheckOff",&CheckOff},{"CheckOn",&CheckOn},
+        {"CheckOff",&CheckOff},{"CheckOn",&CheckOn},{"CheckHover",&CheckHover},{"CheckDisabled",&CheckDisabled},
         {"ColorField",&ColorField},{"ColorMarker",&ColorMarker},{"ColorSwatch",&ColorSwatch},{"ColorChecker",&ColorChecker},
         {"Separator",&Separator},
         {"SelectableHover",&SelectableHover},{"SelectableDown",&SelectableDown},{"SelectableSelected",&SelectableSelected},

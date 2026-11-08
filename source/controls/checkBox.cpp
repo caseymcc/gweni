@@ -55,5 +55,24 @@ void CheckBox::setChecked(bool checked)
     onCheckStatusChanged();
 }
 
+void CheckBox::setLabelHovered(bool hovered)
+{
+    if(m_labelHovered == hovered)
+        return;
+
+    m_labelHovered=hovered;
+    redraw();
+}
+
+void CheckBox::onLabelHoverEnter(event::Info)
+{
+    setLabelHovered(true);
+}
+
+void CheckBox::onLabelHoverLeave(event::Info)
+{
+    setLabelHovered(false);
+}
+
 }//namespace controls
 }//namespace gweni

@@ -39,6 +39,21 @@ public:
         return m_checked;
     }
 
+    //! Whether the label of the row this box belongs to (CheckBoxWithLabel,
+    //! LabeledRadioButton) is hovered. A click on that label toggles the box,
+    //! so the skin lights the box for it as for the box itself. Repaints the
+    //! box when it changes.
+    virtual void setLabelHovered(bool hovered);
+
+    virtual bool isLabelHovered() const
+    {
+        return m_labelHovered;
+    }
+
+    //! Handlers for the label's onHoverEnter/onHoverLeave.
+    void onLabelHoverEnter(event::Info);
+    void onLabelHoverLeave(event::Info);
+
     gweni::event::Caller onChecked;
     gweni::event::Caller onUnChecked;
     gweni::event::Caller onCheckChanged;
@@ -54,6 +69,7 @@ private:
     void onCheckStatusChanged();
 
     bool m_checked;
+    bool m_labelHovered=false;
 };
 
 
@@ -75,6 +91,8 @@ public:
         m_label=newChild<LabelClickable>();
         m_label->setDock(DockPosition::Center);
         m_label->onPressCaller.add(m_checkbox, &CheckBox::onPress);
+        m_label->onHoverEnter.add(m_checkbox, &CheckBox::onLabelHoverEnter);
+        m_label->onHoverLeave.add(m_checkbox, &CheckBox::onLabelHoverLeave);
         m_label->setTabable(false);
         setTabable(false);
     }

@@ -58,6 +58,8 @@ public:
         m_label->setText("Radio Button");
         m_label->setDock(DockPosition::Center);
         m_label->onPressCaller.add(m_radioButton, &CheckBox::onPress);
+        m_label->onHoverEnter.add(m_radioButton, &CheckBox::onLabelHoverEnter);
+        m_label->onHoverLeave.add(m_radioButton, &CheckBox::onLabelHoverLeave);
         m_label->setTabable(false);
         m_label->setKeyboardInputEnabled(false);
     }
