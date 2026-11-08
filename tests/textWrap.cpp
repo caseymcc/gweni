@@ -23,8 +23,9 @@
  *  surviving lines (and matches a fresh wrap), that a text colour reaches the
  *  lines, and TextBoxMultiline's Home/End/Up/Down, with a frame between keys
  *  and with none. After a setText with no layout between, every char <-> line
- *  helper (index and geometry, for every index, row and a grid of click
- *  points) must answer as it does after the layout; before the first layout
+ *  helper (index and geometry, for every index and row, and clicks aimed at
+ *  every caret, the midpoints between them and every row's edges, asked
+ *  first) must answer as it does after the layout; before the first layout
  *  they read the string unwrapped; and an edit is wrapped once, by a helper or
  *  by layout (Text::wrapCount()), the children being synced from that wrap in
  *  arrange.
@@ -53,8 +54,10 @@
 #include <gweni/skins/textured/texturedSkin.h>
 #include <gweni/utility.h>
 
+#include <algorithm>
 #include <cstdint>
 #include <memory>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -479,21 +482,111 @@ TEST_CASE("Wrapped text: a text colour reaches the lines")
 namespace
 {
 
-//! Every char <-> line helper's answer for every index and row of the
-//! string, and the character a click finds at points along and past each
-//! row, one line each, so two states can be compared answer by answer.
-std::vector<String> helperAnswers(WrapScene &scene)
+//! The x of every caret (codepoint boundary) in [first, last] of `text`'s string.
+std::vector<int> caretXs(Text *text, int first, int last)
+{
+    const String &str=text->getText();
+    std::vector<int> xs;
+
+    for(size_t c=static_cast<size_t>(first); c <= static_cast<size_t>(last); c=gweni::utf8Next(str, c))
+    {
+        xs.push_back(text->getCharacterPosition(static_cast<unsigned>(c)).x);
+        if(c >= str.size())
+            break;
+    }
+    return xs;
+}
+
+//! Click x's along one row of carets at `xs`: before the row's start, past
+//! its end, and at every `stride`th caret (and the last) its x, x-1 and x+1
+//! and the midpoint to the caret after it, both sides of it when the gap is odd.
+void addRowXs(std::set<int> &probes, const std::vector<int> &xs, int pastEnd, size_t stride=1)
+{
+    probes.insert(-4);
+    probes.insert(pastEnd);
+    for(size_t k=0; k < xs.size(); k=(k+1 < xs.size())?std::min(k+stride, xs.size()-1):xs.size())
+    {
+        probes.insert({xs[k]-1, xs[k], xs[k]+1});
+        if(k+1 < xs.size())
+            probes.insert({(xs[k]+xs[k+1])/2, (xs[k]+xs[k+1]+1)/2});
+    }
+}
+
+//! The points helperAnswers() clicks at, from the carets of the scene's laid
+//! out Text. getClosestCharacter picks the row from y alone and the nearest
+//! caret on it from x, so its answer can only change at a row's edge and at
+//! the midpoint between two carets: each row gets every caret's x, x+-1 and
+//! the midpoints between them (where a tie goes, and where a caret one pixel
+//! off would show) at its middle, before its start and past its end; its top
+//! and bottom pixel, above the first row and below the last, get the row's
+//! ends and first and last caret. A uniform grid as dense costs a multiple:
+//! each click measures every prefix of its row.
+std::vector<Point> clickProbes(WrapScene &scene)
 {
     Text *text=scene.text;
-    const int length=text->length();
     const int lines=static_cast<int>(text->numLines());
     const int rowHeight=scene.lineHeight();
+    const int pastEnd=text->getWidth()+8;
+    std::vector<Point> probes;
+
+    for(int i=0; i < lines; ++i)
+    {
+        const std::vector<int> xs=caretXs(text, text->getStartCharFromLine(i), text->getLastCaretOnLine(i));
+        const int top=text->getLineBox(i).y;
+        std::set<int> along;
+
+        addRowXs(along, xs, pastEnd);
+        for(int x:along)
+            probes.emplace_back(x, top+rowHeight/2);
+
+        std::vector<int> edges={top, top+rowHeight-1};
+
+        if(i == 0)
+            edges.insert(edges.end(), {top-rowHeight/2, top-1});
+        if(i+1 == lines)
+            edges.insert(edges.end(), {top+rowHeight, top+rowHeight+rowHeight/2});
+        for(int y:edges)
+            for(int x:{-4, xs.front(), xs.back(), pastEnd})
+                probes.emplace_back(x, y);
+    }
+    return probes;
+}
+
+//! clickProbes() of a fresh Text holding `source`, laid out at `width`: the
+//! points to click an edit of a scene's Text to `source` at, the same before
+//! its layout and after it, found without asking that Text anything.
+std::vector<Point> laidOutProbes(int width, const String &source)
+{
+    WrapScene fresh(width);
+
+    fresh.text->setText(source);
+    fresh.frame();
+    return clickProbes(fresh);
+}
+
+//! The character a click finds at each of `probes`, then every char <-> line
+//! helper's answer for every index and row of the string, one line each, so
+//! two states can be compared answer by answer. The clicks come first, so
+//! between an edit and its layout getClosestCharacter is the helper that has
+//! to see the edit, with no other having wrapped it.
+std::vector<String> helperAnswers(WrapScene &scene, const std::vector<Point> &probes)
+{
+    Text *text=scene.text;
     std::vector<String> answers;
 
     const auto rect=[](const gweni::Rect &r)
     {
         return std::to_string(r.x)+","+std::to_string(r.y)+","+std::to_string(r.w)+","+std::to_string(r.h);
     };
+
+    for(const Point &p:probes)
+    {
+        answers.push_back("getClosestCharacter("+std::to_string(p.x)+","+std::to_string(p.y)+")="
+            +std::to_string(text->getClosestCharacter(p)));
+    }
+
+    const int length=text->length();
+    const int lines=static_cast<int>(text->numLines());
 
     answers.push_back("numLines="+std::to_string(lines));
 
@@ -516,16 +609,6 @@ std::vector<String> helperAnswers(WrapScene &scene)
         answers.push_back("getLastCaretOnLine"+at+std::to_string(text->getLastCaretOnLine(i)));
         answers.push_back("getLineLength"+at+std::to_string(text->getLineLength(i)));
         answers.push_back("getLineBox"+at+rect(text->getLineBox(i)));
-    }
-
-    // above the first row, on each, and below the last
-    for(int y=-rowHeight/2; y <= (lines+1)*rowHeight; y+=rowHeight/2)
-    {
-        for(int x=-4; x <= text->getWidth()+8; x+=3)
-        {
-            answers.push_back("getClosestCharacter("+std::to_string(x)+","+std::to_string(y)+")="
-                +std::to_string(text->getClosestCharacter(Point(x, y))));
-        }
     }
 
     return answers;
@@ -587,8 +670,28 @@ TEST_CASE("Wrapped text: before the first layout the helpers read the string unw
     CHECK(text->getLastCaretOnLine(0) == plain->getLastCaretOnLine(0));
     CHECK(text->getLineLength(0) == plain->getLineLength(0));
     CHECK((text->getLineBox(0) == plain->getLineBox(0)));
-    for(int x=-4; x < 200; x+=5)
-        CHECK(text->getClosestCharacter(Point(x, rowHeight/2)) == plain->getClosestCharacter(Point(x, rowHeight/2)));
+
+    // clickProbes' points on the string's one row, from the unwrapped Text's
+    // carets; a click measures every prefix of the whole string, so only five
+    // carets along it are aimed at, and above and below the row only its ends
+    const std::vector<int> xs=caretXs(plain, 0, length);
+    const int top=plain->getLineBox(0).y;
+    const int pastEnd=xs.back()+8;
+    std::set<int> along;
+    std::vector<Point> probes;
+
+    addRowXs(along, xs, pastEnd, xs.size()/4);
+    for(int x:along)
+        probes.emplace_back(x, top+rowHeight/2);
+    for(int y:{top-rowHeight/2, top, top+rowHeight-1, top+rowHeight+rowHeight/2})
+        for(int x:{-4, pastEnd})
+            probes.emplace_back(x, y);
+    for(const Point &p:probes)
+    {
+        CAPTURE(p.x);
+        CAPTURE(p.y);
+        CHECK(text->getClosestCharacter(p) == plain->getClosestCharacter(p));
+    }
     CHECK(text->wrapCount() == 0);
 
     // and laid out, wrapped
@@ -614,16 +717,17 @@ TEST_CASE("Wrapped text: an edit is seen by every helper before it is laid out")
         const String insert="Remarkably enough, ";
         const String source=edited(paragraphs, 0, 0, insert);
         const int oldSecond=text->getStartCharFromLine(1);
+        const std::vector<Point> probes=laidOutProbes(width, source);
 
         text->setText(source);
 
-        const std::vector<String> beforeLayout=helperAnswers(scene);
+        const std::vector<String> beforeLayout=helperAnswers(scene, probes);
 
         scene.frame();
         scene.checkLines(width, source);
         // it did reflow: the second row starts before the old one's moved start
         REQUIRE(text->getStartCharFromLine(1) < oldSecond+static_cast<int>(insert.length()));
-        checkSameAnswers(beforeLayout, helperAnswers(scene));
+        checkSameAnswers(beforeLayout, helperAnswers(scene, probes));
     }
 
     SUBCASE("delete")
@@ -639,16 +743,17 @@ TEST_CASE("Wrapped text: an edit is seen by every helper before it is laid out")
         const size_t firstSpace=paragraphs.find(' ', second);
         const size_t count=paragraphs.find(' ', firstSpace+1)+1-second;
         const String source=edited(paragraphs, second, count, "");
+        const std::vector<Point> probes=laidOutProbes(width, source);
 
         text->setText(source);
 
-        const std::vector<String> beforeLayout=helperAnswers(scene);
+        const std::vector<String> beforeLayout=helperAnswers(scene, probes);
 
         scene.frame();
         scene.checkLines(width, source);
         // it did reflow: the third row starts after the old one's moved start
         REQUIRE(text->getStartCharFromLine(2) > third-static_cast<int>(count));
-        checkSameAnswers(beforeLayout, helperAnswers(scene));
+        checkSameAnswers(beforeLayout, helperAnswers(scene, probes));
     }
 }
 
@@ -682,12 +787,15 @@ TEST_CASE("Wrapped text: an edit is wrapped once, by a helper or by layout")
 
     const size_t laidOut=text->wrapCount();
     const String first=edited(paragraphs, 0, 0, "Remarkably enough, ");
+    // every helper is asked, a click included; what they answer is the case
+    // above's, so one click does
+    const std::vector<Point> click={Point(4, scene.lineHeight()/2)};
 
     // asked before its layout: the helpers wrap it, layout uses that wrap
     text->setText(first);
     CHECK(text->wrapCount() == laidOut);
-    helperAnswers(scene);
-    helperAnswers(scene);
+    helperAnswers(scene, click);
+    helperAnswers(scene, click);
     CHECK(text->wrapCount() == laidOut+1);
     scene.frame();
     CHECK(text->wrapCount() == laidOut+1);
@@ -703,7 +811,7 @@ TEST_CASE("Wrapped text: an edit is wrapped once, by a helper or by layout")
 
     // and a frame with no change wraps nothing
     scene.frame();
-    helperAnswers(scene);
+    helperAnswers(scene, click);
     CHECK(text->wrapCount() == laidOut+2);
 }
 

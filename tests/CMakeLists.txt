@@ -484,11 +484,12 @@ if(TARGET gweni_capture)
         add_test(NAME unittests
             COMMAND $<TARGET_FILE:gweni_unittests>
             WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
-        # every case in one process: about 57 s in the ASAN tree on its own, so 60
-        # timed out there as soon as another test ran beside it
+        # every case in one process: about 45 s in the ASAN tree on its own, and
+        # past 90 s on a loaded host, so 60 timed out there as soon as another
+        # test ran beside it
         set_tests_properties(unittests PROPERTIES
             LABELS gpu
-            TIMEOUT 180)
+            TIMEOUT 300)
 
         if(GWENI_RENDER_VULKAN)
             # The same cases on renderer::Vulkan (main.cpp: GWENI_RENDERER=vulkan,
@@ -499,7 +500,7 @@ if(TARGET gweni_capture)
                 WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
             set_tests_properties(unittests_vulkan PROPERTIES
                 ENVIRONMENT GWENI_RENDERER=vulkan
-                TIMEOUT 180)
+                TIMEOUT 300)
             gweni_vulkan_test_environment(unittests_vulkan)
         endif()
     endif()
