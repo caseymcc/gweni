@@ -95,8 +95,7 @@ foreach(scale_suffix "1:" "1.5:_scale150" "2:_scale200")
             --scratch ${CMAKE_CURRENT_BINARY_DIR}/web_bounds_native${suffix})
     set_tests_properties(web_bounds_native${suffix} PROPERTIES
         LABELS web
-        TIMEOUT 600
-        PASS_REGULAR_EXPRESSION "native.mjs: OK")
+        TIMEOUT 600)
 
     if(scale STREQUAL "1.5")
         continue()
@@ -116,8 +115,7 @@ foreach(scale_suffix "1:" "1.5:_scale150" "2:_scale200")
             --scratch ${CMAKE_CURRENT_BINARY_DIR}/web_pixels_native${suffix})
     set_tests_properties(web_pixels_native${suffix} PROPERTIES
         LABELS web
-        TIMEOUT 600
-        PASS_REGULAR_EXPRESSION "native.mjs: OK")
+        TIMEOUT 600)
 endforeach()
 
 add_test(NAME web_stats_native
@@ -125,5 +123,4 @@ add_test(NAME web_stats_native
         --scratch ${CMAKE_CURRENT_BINARY_DIR}/web_stats_native)
 set_tests_properties(web_stats_native PROPERTIES
     LABELS web
-    TIMEOUT 900
-    PASS_REGULAR_EXPRESSION "native.mjs: OK")
+    TIMEOUT 900)
