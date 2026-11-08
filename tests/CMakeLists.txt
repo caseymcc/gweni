@@ -295,7 +295,7 @@ Erm, and I think it comes down to a choice between "The League Against Salivatin
         endif()
         add_test(NAME controltest_multiline_keys_${variant}
             COMMAND $<TARGET_FILE:ControlTest> --headless --control TextBoxDemo
-                --frames 3 --click 5,314 --frames 2
+                --frames 3 --click 5,261 --frames 2
                 --key home --type X ${between} --key up --type Y ${between}
                 --key up --type Z ${between} --expect-text "${SAME_FRAME_TEXT}"
             WORKING_DIRECTORY ${GWENI_SOURCE_DIR})

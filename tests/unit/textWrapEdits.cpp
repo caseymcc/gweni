@@ -454,7 +454,9 @@ size_t measuresForKeystroke(int paragraphs)
     controls::TextBoxMultiline *box=canvas->newChild<controls::TextBoxMultiline>();
     const String source=document(paragraphs);
 
-    box->setBounds(0, 0, 200, 500);
+    // a TextBox is Fixed: both lengths overflow this box, so both scroll the
+    // caret into view (a document that fits takes 4 measures fewer)
+    box->setBounds(0, 0, 200, 100);
     box->setText(source);
     canvas->updateCanvas();
     canvas->renderCanvas();

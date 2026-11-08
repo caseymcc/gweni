@@ -12,6 +12,10 @@
  *
  *  A size request caps a ScrollControl, so the library's own menus ask for no
  *  height: a Menu and a ComboBox's list are as high as their items.
+ *
+ *  A TextBox is Fixed: it is the size it asked for whatever its text, in a
+ *  Base parent and in a layout cell (it scrolls its text, it is no Label that
+ *  sizes to it), while docked Center it still fills its dock rect.
  */
 #include "headlessFixture.h"
 
@@ -20,6 +24,7 @@
 #include <gweni/controls/menu.h>
 #include <gweni/controls/menuItem.h>
 #include <gweni/controls/menuStrip.h>
+#include <gweni/controls/textBox.h>
 
 #include <doctest/doctest.h>
 
@@ -638,4 +643,62 @@ TEST_CASE("a MenuStrip in a layout is as high as its items, its 200x22 only the 
     // not the cell's 480, and not capped at the 22 it asked for
     CHECK(strip->getHeight() == std::max(22, file->getHeight()));
     CHECK(strip->getWidth() == 200);
+}
+
+TEST_CASE("a TextBoxNumeric in a Base parent is the 26x16 it asked for, whatever its digits")
+{
+    Scene scene;
+    controls::Base *panel=scene.centerPanel();
+    controls::TextBoxNumeric *numeric=panel->newChild<controls::TextBoxNumeric>("numeric");
+    numeric->setAlignment(Alignment::Absolute);
+    numeric->setPos(105, 0);
+    numeric->setSize(26, 16);
+
+    for(const char *digits:{"", "5", "50", "255", "5", ""})
+    {
+        CAPTURE(digits);
+        // each a setText after the last layout, so the digit count changes
+        numeric->setText(digits);
+        scene.settle();
+        CHECK(text(numeric->getBounds()) == text(Rect(105, 0, 26, 16)));
+    }
+}
+
+TEST_CASE("a TextBox in a VerticalLayout stays 200x20 with a text wider than 200")
+{
+    Scene scene;
+    controls::Base *panel=scene.centerPanel();
+    panel->setLayout(new controls::VerticalLayout());
+    controls::TextBox *box=panel->newChild<controls::TextBox>("box");
+    const String wide(100, 'w');
+    box->setText(wide);
+    scene.settle();
+
+    // the text would widen it past its request, up to the 640 cell
+    REQUIRE(scene.renderer.measureText(box->getFont(), wide).x > 200);
+    CHECK(text(box->getBounds()) == text(Rect(0, 0, 200, 20)));
+
+    // typing more scrolls the text; it never grows the box
+    box->setText(wide+wide);
+    scene.settle();
+    CHECK(text(box->getBounds()) == text(Rect(0, 0, 200, 20)));
+}
+
+TEST_CASE("a TextBox docked Center fills its dock rect")
+{
+    Scene scene;
+    controls::Base *panel=scene.canvas->newChild<controls::Base>("panel");
+    panel->setAlignment(Alignment::Absolute);
+    panel->setSizeFlags({SizeFlag::Fixed, SizeFlag::Fixed});
+    panel->setBounds(10, 10, 300, 40);
+    controls::TextBox *box=panel->newChild<controls::TextBox>("box");
+    box->setDock(DockPosition::Center);
+    box->setText("short");
+    scene.settle();
+    CHECK(text(box->getBounds()) == text(Rect(0, 0, 300, 40)));
+
+    // nor does a text wider than the rect move it
+    box->setText(String(100, 'w'));
+    scene.settle();
+    CHECK(text(box->getBounds()) == text(Rect(0, 0, 300, 40)));
 }

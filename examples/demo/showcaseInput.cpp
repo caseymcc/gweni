@@ -28,6 +28,17 @@ void addCaption(controls::Base *parent, const String &text)
     caption->setMargin(Margin(0, 0, 0, 2));
 }
 
+//! A text box row, as wide as its section: a TextBox is Fixed, and a Top dock
+//! leaves a Fixed width as it was asked for (200, a NumericUpDown's 100).
+template<typename T>
+T *textRow(controls::Base *parent)
+{
+    T *row=showcase::addRow<T>(parent);
+
+    row->setSizeFlags({SizeFlag::Elastic, SizeFlag::Fixed});
+    return row;
+}
+
 }//namespace
 
 // Three columns of titled sections filling the page (the shell's centre pane,
@@ -45,17 +56,17 @@ GWENI_CONTROL_CONSTRUCTOR(ShowcaseInputDemo)
         controls::GroupBox *section=showcase::addSection(left, "TextBox");
 
         addCaption(section, "Placeholder");
-        showcase::addRow<controls::TextBox>(section)->setPlaceholder("Search files...");
+        textRow<controls::TextBox>(section)->setPlaceholder("Search files...");
 
         addCaption(section, "PasswordTextBox");
-        showcase::addRow<controls::PasswordTextBox>(section)->setText("hunter2");
+        textRow<controls::PasswordTextBox>(section)->setText("hunter2");
 
         addCaption(section, "TextBoxNumeric");
-        showcase::addRow<controls::TextBoxNumeric>(section)->setText("2026");
+        textRow<controls::TextBoxNumeric>(section)->setText("2026");
 
         addCaption(section, "Coloured text");
         {
-            controls::TextBox *coloured=showcase::addRow<controls::TextBox>(section);
+            controls::TextBox *coloured=textRow<controls::TextBox>(section);
 
             coloured->setText("Unsaved changes");
             coloured->setTextColor(Color(255, 158, 100, 255));
@@ -63,14 +74,14 @@ GWENI_CONTROL_CONSTRUCTOR(ShowcaseInputDemo)
 
         addCaption(section, "Read-only");
         {
-            controls::TextBox *readOnly=showcase::addRow<controls::TextBox>(section);
+            controls::TextBox *readOnly=textRow<controls::TextBox>(section);
 
             readOnly->setText("/home/gweni/notes.txt");
             readOnly->setEditable(false);
         }
 
         addCaption(section, "Focused, the caret at the end");
-        m_focused=showcase::addRow<controls::TextBox>(section);
+        m_focused=textRow<controls::TextBox>(section);
         m_focused->setText("Hello, gweni");
         m_focused->focus();
         m_focused->moveCaretToend();
@@ -106,7 +117,7 @@ GWENI_CONTROL_CONSTRUCTOR(ShowcaseInputDemo)
     }
     {
         controls::GroupBox *section=showcase::addSection(middle, "NumericUpDown", false);
-        controls::NumericUpDown *number=showcase::addRow<controls::NumericUpDown>(section);
+        controls::NumericUpDown *number=textRow<controls::NumericUpDown>(section);
 
         number->setMin(0);
         number->setMax(100);

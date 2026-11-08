@@ -62,6 +62,9 @@ GWENI_CONTROL_CONSTRUCTOR(TextBox)
 //    enlargePrimitiveIds(this, m_primitiveIds, 11);
 
     setSize(200, 20);
+    // the box scrolls its text to the caret, so its size is the one asked for,
+    // never its text's (a Label's Elastic)
+    setSizeFlags({SizeFlag::Fixed, SizeFlag::Fixed});
     setMouseInputEnabled(true);
     setKeyboardInputEnabled(true);
     setPadding(Padding(4, 2, 4, 2));
