@@ -205,7 +205,9 @@ TEST_CASE("Z relabel: controls added in the middle change only their own z and a
         const std::set<controls::Base *> marked=scene.update(before);
 
         CHECK(scene.violation() == "");
-        CHECK(scene.canvas->getUpdateStats().zVisited == 261+k);
+        // the canvas, the branch and the parent, then the added controls and
+        // the ones after them that they pushed on (every one relabelled)
+        CHECK(scene.canvas->getUpdateStats().zVisited == 3+marked.size());
         CHECK(marked.size() <= k+8);
         for(controls::Base *control : added)
             CHECK(marked.count(control) == 1);
@@ -473,7 +475,8 @@ TEST_CASE("Z relabel: labels past maxZIndex() are compacted in one full pass")
             compacted=true;
             // the whole tree, once
             CHECK(scene.canvas->getUpdateStats().zChanged >= size/2);
-            CHECK(scene.canvas->getUpdateStats().zVisited == 2*(size+5));
+            // the canvas and the 5 new ones, then the whole tree once
+            CHECK(scene.canvas->getUpdateStats().zVisited == (1+5)+(size+5));
         }
     }
     CHECK(compacted);

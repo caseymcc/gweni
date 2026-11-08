@@ -8,7 +8,8 @@
  *  Canvas::updateCanvas() renumbers the z indices only on a frame after the
  *  tree order changed: a child added, removed, reparented, deleted or moved
  *  among its siblings, or a skin Control replaced. UpdateStats::zVisited counts
- *  the controls the renumber entered, UpdateStats::zChanged those whose z it
+ *  the controls the renumber entered (the path to what changed, a moved
+ *  subtree whole, none for a removal), UpdateStats::zChanged those whose z it
  *  changed. After each change the z ranges are in tree order
  *  (test::zOrderViolation), exactly the controls whose z index changed carry
  *  StateChange_Geometry and are counted in zChanged, and an add or a removal
@@ -155,17 +156,18 @@ struct Scene
 
     //! Runs the update phase after a tree-order change made on a settled scene
     //! and checks that the z ranges are in tree order again. \p before is
-    //! zIndices() from before the change; \p fresh are the controls the change
-    //! created, which carry StateChange_Created anyway; \p moved is false for
-    //! a change that moves no control that was numbered (an add, a removal).
-    void checkRenumber(const ZMap &before, const std::vector<controls::Base *> &fresh={},
-        bool moved=true)
+    //! zIndices() from before the change; \p visited the controls the renumber
+    //! enters; \p fresh are the controls the change created, which carry
+    //! StateChange_Created anyway; \p moved is false for a change that moves
+    //! no control that was numbered (an add, a removal).
+    void checkRenumber(const ZMap &before, size_t visited,
+        const std::vector<controls::Base *> &fresh={}, bool moved=true)
     {
         CHECK(canvas->zOrderDirty());
         canvas->updateCanvas();
         const ZMap now=zIndices();
 
-        CHECK(canvas->getUpdateStats().zVisited == now.size());
+        CHECK(canvas->getUpdateStats().zVisited == visited);
         CHECK(zOrderViolation() == "");
 
         size_t changed=0;
@@ -238,13 +240,14 @@ TEST_CASE("an order change renumbers once, as a full numbering does")
     SUBCASE("bringToFront on the first of several siblings")
     {
         scene.children[0]->bringToFront();
-        scene.checkRenumber(before);
+        // the canvas, the branch, the child and its two leaves
+        scene.checkRenumber(before, 3+Scene::Leaves);
     }
 
     SUBCASE("sendToBack on the last of several siblings")
     {
         scene.children[Scene::Children-1]->sendToBack();
-        scene.checkRenumber(before);
+        scene.checkRenumber(before, 3+Scene::Leaves);
     }
 
     SUBCASE("bringNextToControl")
@@ -253,26 +256,29 @@ TEST_CASE("an order change renumbers once, as a full numbering does")
         controls::Base *first=branch->getActualChildren().front();
         controls::Base *last=branch->getActualChildren().back();
         first->bringNextToControl(last, false);
-        scene.checkRenumber(before);
+        scene.checkRenumber(before, 3+Scene::Leaves);
     }
 
     SUBCASE("bringToFront on a whole branch")
     {
         scene.branches[0]->bringToFront();
-        scene.checkRenumber(before);
+        // the canvas and the whole branch
+        scene.checkRenumber(before, 2+Scene::Children*(1+Scene::Leaves));
     }
 
     SUBCASE("a child added in the middle")
     {
         controls::Base *added=Scene::add(scene.children[2], 2, true);
-        scene.checkRenumber(before, {added}, false);
+        // the canvas, the branch, the child and the new one
+        scene.checkRenumber(before, 4, {added}, false);
     }
 
     SUBCASE("a child removed")
     {
         controls::Base *removed=scene.children[1];
         removed->setParent(nullptr);
-        scene.checkRenumber(before, {}, false);
+        // a removal leaves a gap: nothing to enter
+        scene.checkRenumber(before, 0, {}, false);
         // deleting it once it is off the canvas changes nothing there
         delete removed;
         CHECK_FALSE(scene.canvas->zOrderDirty());
@@ -282,7 +288,9 @@ TEST_CASE("an order change renumbers once, as a full numbering does")
     SUBCASE("a child reparented to another branch")
     {
         scene.children[0]->setParent(scene.branches[2]);
-        scene.checkRenumber(before);
+        // the canvas, the new branch, the child and its leaves; the old
+        // branch only lost a child
+        scene.checkRenumber(before, 3+Scene::Leaves);
     }
 
     SUBCASE("a delayed delete")
@@ -291,7 +299,7 @@ TEST_CASE("an order change renumbers once, as a full numbering does")
         // nothing is renumbered until the delete is processed
         CHECK_FALSE(scene.canvas->zOrderDirty());
         scene.canvas->updateCanvas();
-        CHECK(scene.canvas->getUpdateStats().zVisited == Scene::Controls+1-(1+Scene::Leaves));
+        CHECK(scene.canvas->getUpdateStats().zVisited == 0);
         CHECK(scene.canvas->getUpdateStats().zChanged == 0);
         CHECK(scene.zOrderViolation() == "");
         scene.canvas->renderCanvas();

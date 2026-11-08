@@ -112,8 +112,9 @@ TEST_CASE("a control the render phase's layout creates is drawn at its z in that
     CHECK(after->getStateChange() == controls::StateChange_Nothing);
 
     // the render-phase renumber counted into this frame's stats: the new
-    // control alone changed
-    CHECK(scene.canvas->getUpdateStats().zVisited == 5);
+    // control alone changed, and the walk entered the canvas, the grower and
+    // it, passing the clean siblings
+    CHECK(scene.canvas->getUpdateStats().zVisited == 3);
     CHECK(scene.canvas->getUpdateStats().zChanged == 1);
 
     // and the next frame has nothing left to number
@@ -136,7 +137,8 @@ TEST_CASE("UpdateStats::zChanged counts the controls an insert renumbered")
     scene.frame();
 
     const controls::UpdateStats &stats=scene.canvas->getUpdateStats();
-    CHECK(stats.zVisited == 12);
+    // the canvas, the row and the child: the rows keep theirs
+    CHECK(stats.zVisited == 3);
     CHECK(stats.zChanged > 0);
     CHECK(stats.zChanged <= stats.zVisited);
     // the rows before it keep their numbers

@@ -717,6 +717,7 @@ void Base::addChild(Base *child)
     markAttachedChanged(child);
     // new, or moved here from another place: its old labels mean nothing here
     child->m_zMoved=true;
+    child->markZDirty();
     zOrderChanged();
 }
 
@@ -731,6 +732,7 @@ void Base::addChildOfLayout(Base *child)
     markAttachedChanged(child);
     // new, or moved here from another place: its old labels mean nothing here
     child->m_zMoved=true;
+    child->markZDirty();
     zOrderChanged();
 }
 
@@ -760,7 +762,7 @@ void Base::removeChild(Base *child)
         child->setAncestorHidden(false);
     }
 
-    zOrderChanged();
+    zChildRemoved();
     onChildRemoved(child);
 }
 
@@ -1229,12 +1231,13 @@ bool Base::placeZRange(ZNumbering &numbering, int &z, int layers, bool take)
             gap=(z != 0)?numbering.movedTailGap:numbering.tailGap;
 
         if(placed+layers-1 > numbering.clampTo)
+        {
             placed=std::max(1, numbering.clampTo-layers+1);
+            numbering.clamped=true;
+        }
     }
     numbering.cursor=placed+layers+gap;
     numbering.maxUsed=std::max(numbering.maxUsed, placed+layers-1);
-    numbering.layers+=(size_t)layers;
-    ++numbering.ranges;
 
     const bool changed=(placed != z);
     z=placed;
@@ -1247,12 +1250,23 @@ void Base::renumberZRecursive(ZNumbering &numbering, bool moved)
     // a moved control's subtree is out of order wherever it kept its labels
     moved=moved || m_zMoved;
     m_zMoved=false;
+    m_zDirty=false;
 
     const int layers=m_skinControl?(int)m_skinControl->depthLayers():1;
     bool changed=placeZRange(numbering, m_zIndex, layers, moved);
 
     for(auto &&child:m_children)
     {
+        // Nothing changed in it since it was numbered, so its ranges are in
+        // order and, its first still past the cursor, it keeps every label: a
+        // pass that entered it would leave the cursor at its end.
+        if(numbering.skipClean && !moved && !child->m_zDirty
+            && (child->m_zIndex >= numbering.cursor))
+        {
+            numbering.cursor=child->m_zEnd;
+            numbering.maxUsed=std::max(numbering.maxUsed, child->m_zEnd-1);
+            continue;
+        }
         child->renumberZRecursive(numbering, moved);
     }
 
@@ -1266,10 +1280,38 @@ void Base::renumberZRecursive(ZNumbering &numbering, bool moved)
         changed=true;
     }
 
+    m_zEnd=zSubtreeEnd();
+
     if(changed)
     {
         ++numbering.stats->zChanged;
         addStateChange(StateChange_Geometry);
+    }
+}
+
+int Base::zSubtreeEnd() const
+{
+    const int overlay=m_skinControl?(int)m_skinControl->overlayLayers():0;
+
+    if(overlay)
+        return m_overlayZIndex+overlay;
+    if(!m_children.empty())
+        return m_children.back()->m_zEnd;
+    return m_zIndex+(m_skinControl?(int)m_skinControl->depthLayers():1);
+}
+
+void Base::countZRanges(size_t &layers, size_t &ranges) const
+{
+    layers+=m_skinControl?m_skinControl->depthLayers():1;
+    ++ranges;
+
+    for(const Base *child:m_children)
+        child->countZRanges(layers, ranges);
+
+    if(const size_t overlay=m_skinControl?m_skinControl->overlayLayers():0)
+    {
+        layers+=overlay;
+        ++ranges;
     }
 }
 
@@ -1281,10 +1323,29 @@ void Base::zOrderMoved(Base *control)
 
 void Base::zOrderChanged()
 {
+    markZDirty();
+
     // A control not on a canvas yet is numbered once it is: attaching it is an
     // addChild() on the canvas's tree, which reports there.
     if(Canvas *canvas=getCanvas())
-        canvas->invalidateZOrder();
+        canvas->m_zOrderDirty=true;
+}
+
+void Base::zChildRemoved()
+{
+    // A dirty control is entered by the next renumber, which sets its end, and
+    // its ancestors are dirty too.
+    for(Base *control=this; control && !control->m_zDirty; control=control->m_actualParent)
+    {
+        const int end=control->zSubtreeEnd();
+
+        if(end == control->m_zEnd)
+            break;
+        control->m_zEnd=end;
+    }
+
+    if(Canvas *canvas=getCanvas())
+        canvas->m_zOrderDirty=true;
 }
 
 void Base::doCacheRender(skin::Base *skin, controls::Base *master)

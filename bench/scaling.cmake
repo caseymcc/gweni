@@ -83,9 +83,6 @@ set(EXCLUDED
     drag:children_scanned
     animate:children_scanned
     add-remove:children_scanned
-    # #419: the z renumber relabels only what an order change moved (#327),
-    # but its walk still enters every control
-    add-remove:z_visited
 )
 
 # Keys that are not work counters (see the table above).

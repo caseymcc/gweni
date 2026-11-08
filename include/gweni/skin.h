@@ -64,7 +64,9 @@ public:
     // (Canvas::ZGap). Read
     // when the canvas renumbers the z indices, which it does only after the
     // tree order or a control's skin Control changed: a Control whose count
-    // changes on its own must call Canvas::invalidateZOrder().
+    // changes on its own must call Canvas::invalidateZOrder(), whose
+    // renumber enters every control, since the canvas cannot tell whose
+    // count changed.
     virtual size_t depthLayers()
     {
         return 1;

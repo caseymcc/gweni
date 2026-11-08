@@ -93,19 +93,23 @@ the canvas renumbers only on a frame after something called `Canvas::invalidateZ
 reparent through `setParent` and a delete, delayed or not, too), `bringToFront`,
 `sendToBack`, `bringNextToControl`, and a skin Control assigned or released (`setSkin`,
 whose new Control may report other `depthLayers()`). A control off any canvas reports
-nothing; attaching it is an `addChild` on the canvas's tree. A renumber walks the whole
-tree but relabels only what the change put out of order, and marks `StateChange_Geometry`
-on exactly the controls whose z index changed (see "Gapped z labels" below).
+nothing; attaching it is an `addChild` on the canvas's tree. A renumber enters only the
+part of the tree the change can relabel and relabels only what it put out of order, and
+marks `StateChange_Geometry` on exactly the controls whose z index changed (see "Gapped
+z labels" and "Which controls a renumber enters" below).
 `Canvas::renumberZOrder()` runs it at the end of `updateCanvas()` and again in
 `renderCanvas()` right after `renderPhaseLayout()`, so a control that pass created (a
 wrapped `Text`'s lines) is numbered before the walk draws it; it is not left at the
 constructor's z 0, which is the depth-clear value and draws nothing. When the order did
 not change both calls return at once.
 `UpdateStats::zVisited` (`Canvas::getUpdateStats()`, `ControlTest --stats` prints it as
-`z_visited=`) counts the controls it entered: Demo's first frame 2668, a settled one 0.
+`z_visited=`) counts the controls it entered: Demo's first frame 2668, a settled one 0,
+`gweni_bench --scene add-remove` 3 a frame at any N (the canvas, the new Label and its
+text).
 `UpdateStats::zChanged` (`z_changed=` in `gweni_bench`) counts those whose z or overlay
 z it changed: the controls added or moved and the few after them up to a free gap.
-`tests/unit/updateWalk.cpp` and `tests/unit/renderPhaseZ.cpp` pin them.
+`tests/unit/updateWalk.cpp`, `tests/unit/renderPhaseZ.cpp` and `tests/unit/zWalk.cpp`
+pin them.
 
 **Gapped z labels.** The numbering keeps tree order as draw order, but it hands z out
 with gaps, so an order change rewrites the slots of what it moved and not of every
@@ -140,6 +144,33 @@ next compaction, packed when the tree barely fits, and clamped (with ties, one w
 on stderr) when even packed it does not. That pass costs a whole-tree rewrite once:
 `gweni_bench --scene bring-to-front --n 2000` (4120 controls, a 515-control Window
 moved to the end per frame) compacts once in about 32 frames.
+
+**Which controls a renumber enters.** A walk that kept every label of a subtree would
+leave the cursor at that subtree's end and change nothing in it, so the walk does not
+enter such a subtree (`ZNumbering::skipClean` in `Base::renumberZRecursive`). Each
+control caches that end, `m_zEnd` (the end of its last range: its overlay range, else
+its last child's end, else its own range), set as the walk leaves it. A control whose
+child list changed (an add, a removal, a move among its siblings, `keepOverlaysLast()`)
+or whose skin Control was assigned or released marks itself and its `m_actualParent`
+chain `m_zDirty` (`Base::zOrderChanged`), as `m_childStateChanged` is marked for the
+render walk, and a new control starts dirty. The walk then passes a child in O(1),
+jumping the cursor to its `m_zEnd`, when the child is clean, not under a moved control
+and its z is still at or past the cursor; it enters a dirty one, a moved subtree whole,
+and a clean one the cascade from an insert reaches into (its z behind the cursor),
+which is relabelled. So an insert enters the path to it, itself and its cascade
+(`tests/unit/zWalk.cpp`: no more than depth + 1 + `zChanged`, the same count in a tree
+of 61 controls as in one of 2401), and a move the path and the moved subtree. A
+removal walks nothing: every label left is still in order, so `Base::zChildRemoved`
+only moves the `m_zEnd` of the parent back, and of each ancestor whose last range it
+was, and the canvas takes its new highest z from its own end. Three cases still enter
+every control: the first numbering and a compaction (full passes), the pass after
+`Canvas::invalidateZOrder()` (a skin Control's `depthLayers()` or `overlayLayers()`
+changed on its own, in a control the canvas cannot name), and the pass after a
+clamped one, whose ties are out of order. The walk still scans every child of each
+control it enters, as the render walk does (#407): `add-remove` enters 3 controls
+but passes each of the canvas's N children. `tests/unit/zWalk.cpp` runs 300 random
+edits on two identical trees, one renumbered with `Canvas::invalidateZOrder()` before
+each pass, and checks that every label is the same in both.
 
 #### Hidden and visible
 

@@ -563,7 +563,8 @@ private:
 // removes the oldest Label (deleted outright on even frames, delayedDelete()
 // on odd ones) and adds a new one in its cell, as the canvas's last child; both
 // change the tree order, so the next update phase renumbers z: its walk enters
-// the whole tree, and it relabels only the new Label (a removal leaves a gap).
+// the canvas and the new Label, passing the clean ones, and relabels only the
+// new Label (a removal leaves a gap, and walks nothing).
 //-----------------------------------------------------------------------------
 class AddRemoveScene: public Scene
 {

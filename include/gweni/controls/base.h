@@ -492,10 +492,15 @@ protected:
         //! The largest z a range may end at; past it ranges are clamped and
         //! tie (only a tree too large to number at all, packed).
         int clampTo=std::numeric_limits<int>::max();
-        //! The highest z this pass used, the layers and the ranges it numbered.
+        //! A clean subtree (no m_zDirty) whose first label is still at or past
+        //! the cursor keeps every label, so the walk passes it without
+        //! entering it: false for a full pass, and for one after the canvas
+        //! cannot tell what changed (Canvas::invalidateZOrder()) or after a
+        //! clamped pass, whose ties are out of order.
+        bool skipClean=false;
+        //! The highest z this pass used, and whether it clamped a range.
         int maxUsed=0;
-        size_t layers=0;
-        size_t ranges=0;
+        bool clamped=false;
         UpdateStats *stats=nullptr;
     };
 
@@ -505,24 +510,47 @@ protected:
     //! and otherwise takes the cursor, so after an insert only the inserted
     //! controls and the ones up to the next free gap get a new z. A control
     //! moved since the last renumber (\p moved, or its own m_zMoved) takes the
-    //! cursor with its whole subtree. Marks StateChange_Geometry on each
-    //! control whose z or overlay z changed; the stats count the controls
-    //! entered (zVisited) and changed (zChanged). Canvas::renumberZOrder() runs
-    //! it only after the tree order changed (Canvas::invalidateZOrder()).
+    //! cursor with its whole subtree. A child with nothing changed below it
+    //! (no m_zDirty) whose z is still at or past the cursor would keep every
+    //! label, so with ZNumbering::skipClean the walk does not enter it: the
+    //! cursor jumps to its m_zEnd. Marks StateChange_Geometry on each control
+    //! whose z or overlay z changed; the stats count the controls entered
+    //! (zVisited) and changed (zChanged). Canvas::renumberZOrder() runs it only
+    //! after the tree order changed (Canvas::zOrderDirty()).
     void renumberZRecursive(ZNumbering &numbering, bool moved=false);
     //! Places one range of \p layers z values at \p z: keeps it where it is
     //! if that is still at or past the cursor and \p take does not force a new
     //! one, else gives it the cursor. Returns whether \p z changed.
     static bool placeZRange(ZNumbering &numbering, int &z, int layers, bool take);
+    //! The cursor a renumber that keeps every label of this subtree leaves
+    //! after it: the end of its last range (its overlay range, else its last
+    //! child's m_zEnd, else its own range).
+    int zSubtreeEnd() const;
+    //! Adds the z values and the ranges this subtree reserves to \p layers
+    //! and \p ranges, as a full pass numbers them.
+    void countZRanges(size_t &layers, size_t &ranges) const;
 
     //! \p control moved in the tree order (or to another parent): its subtree
     //! gives up its z labels, which are out of order where it is now, and
     //! takes new ones at the next renumber. Reports the change to the canvas.
     static void zOrderMoved(Base *control);
 
-    //! The tree order below the canvas, or a control's depthLayers(), changed:
-    //! tells this control's canvas to renumber the z indices.
+    //! This control's child list (its order included) or its skin Control's
+    //! depthLayers()/overlayLayers() changed: marks it and its ancestors
+    //! m_zDirty and tells its canvas to renumber the z indices.
     void zOrderChanged();
+    //! A child was taken off this control's list. Every label left is still in
+    //! order (a removal leaves a gap), so nothing has to be walked: only the
+    //! m_zEnd of this control, and of each clean ancestor whose last range it
+    //! was, moves back. Tells the canvas, whose highest z it may lower.
+    void zChildRemoved();
+    //! Sets m_zDirty on this control and its m_actualParent chain up to the
+    //! first that already has it.
+    void markZDirty()
+    {
+        for(Base *control=this; control && !control->m_zDirty; control=control->m_actualParent)
+            control->m_zDirty=true;
+    }
 
 public:
 
@@ -861,6 +889,14 @@ protected:
     int m_overlayZIndex=0;
     //! Moved since the last renumber: see zOrderMoved().
     bool m_zMoved=false;
+    //! The renumber has to enter this control: its child list or its layer
+    //! counts changed, or a descendant's did, since it was last entered (set on
+    //! the m_actualParent chain, as m_childStateChanged is for the render
+    //! walk). A control is created dirty: it was never numbered.
+    bool m_zDirty=true;
+    //! zSubtreeEnd() when the renumber last entered this control (or a removal
+    //! changed it), so a clean subtree is passed in O(1).
+    int m_zEnd=0;
 
     SizeFlags m_sizeFlags;
     Size m_preferredSize;

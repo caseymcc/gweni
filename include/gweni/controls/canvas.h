@@ -89,8 +89,12 @@ GWENI_EXPORT size_t layoutVerifyFailures();
 //! enters no control.
 struct UpdateStats
 {
-    //! Controls the z renumber entered, the canvas included: the whole tree on
-    //! a frame after the tree order changed (Canvas::invalidateZOrder()), else 0.
+    //! Controls the z renumber entered, the canvas included, on a frame after
+    //! the tree order changed, else 0: the path to each control whose child
+    //! list or layer counts changed, those controls and what a new label
+    //! cascades into, but no clean subtree that keeps its labels; none for
+    //! removals alone, and the whole tree for the first numbering, a
+    //! compaction and after Canvas::invalidateZOrder().
     size_t zVisited=0;
     //! Controls of those whose z index or overlay z index the renumber changed
     //! (each counted once), every one marked StateChange_Geometry.
@@ -196,13 +200,20 @@ public:
     /// \}
 
     /// \sect{Z order}
-    /// The tree order changed (a child added, removed or moved among its
-    /// siblings) or a control's skin Control, and with it its depthLayers(): the
-    /// next updateCanvas() renumbers the z indices, which gives a new z only to
-    /// the controls out of order (see ZGap). Base calls it for each
-    /// of those; call it yourself only after making a skin Control's
-    /// depthLayers() return something else.
-    void invalidateZOrder() { m_zOrderDirty=true; }
+    /// Some skin Control's depthLayers() or overlayLayers() now returns
+    /// something else, on its own: the next updateCanvas() renumbers the z
+    /// indices, entering every control, since the canvas cannot tell which
+    /// changed. It still gives a new z only to the controls out of order (see
+    /// ZGap). Base reports the changes it makes itself (a child added, removed
+    /// or moved among its siblings, a skin Control assigned or released) for
+    /// the control they happen to, and that renumber enters only the
+    /// subtrees those controls are in, the ones a new label reaches into and
+    /// the path to them.
+    void invalidateZOrder()
+    {
+        m_zOrderDirty=true;
+        m_zWalkAll=true;
+    }
 
     /// The z values left free after each control's range (its depthLayers(),
     /// or its overlayLayers()) where the canvas spreads the tree out: its
@@ -429,6 +440,11 @@ protected:
     /// pass, ZGap unless a compaction had to make it smaller.
     bool m_zNumbered=false;
     int m_zHigh=0;
+    /// invalidateZOrder() was called: the next renumber enters every control.
+    bool m_zWalkAll=false;
+    /// The last pass clamped ranges to the renderer's maxZIndex(), so they
+    /// tie: the next one enters every control (as the first would).
+    bool m_zClamped=false;
     int m_zGap=ZGap;
     UpdateStats m_updateStats;
     /// The current pass re-dirtied layout, and the first control that did.

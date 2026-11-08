@@ -85,6 +85,18 @@ void Canvas::renumberZOrder()
     renderer::Base *render=m_skin?m_skin->getRenderer():nullptr;
     // with nothing to draw into, nothing limits the range
     const int maxZ=render?render->maxZIndex():std::numeric_limits<int>::max();
+    // a clamped tree's ties are out of order wherever they are
+    const bool skipClean=m_zNumbered && !m_zWalkAll && !m_zClamped;
+    m_zWalkAll=false;
+
+    // Nothing to enter: only removals since the last pass. Each left a gap and
+    // every label is still in order, so a walk would keep them all and end
+    // where the canvas's subtree now ends.
+    if(skipClean && !m_zDirty && (m_zEnd-1 <= maxZ))
+    {
+        m_zHigh=m_zEnd-1;
+        return;
+    }
 
     // The first numbering spreads the tree out; after that a control keeps
     // its z unless the ones before it now reach past it.
@@ -94,6 +106,7 @@ void Canvas::renumberZOrder()
     numbering.high=m_zHigh;
     numbering.tailGap=m_zGap;
     numbering.movedTailGap=std::min(m_zGap, MovedZGap);
+    numbering.skipClean=skipClean;
     numbering.stats=&m_updateStats;
     renumberZRecursive(numbering);
 
@@ -103,10 +116,13 @@ void Canvas::renumberZOrder()
         // half of the range, so what is added or moved to the end after it
         // (which takes new z at the top) has the other half before the next
         // compaction; packed for a tree that barely fits at all.
-        const size_t spare=(numbering.layers < (size_t)maxZ)?(size_t)maxZ-numbering.layers:0;
-        m_zGap=(int)std::min<size_t>(ZGap, numbering.ranges?spare/(2*numbering.ranges):0);
+        size_t layers=0;
+        size_t ranges=0;
+        countZRanges(layers, ranges);
+        const size_t spare=(layers < (size_t)maxZ)?(size_t)maxZ-layers:0;
+        m_zGap=(int)std::min<size_t>(ZGap, ranges?spare/(2*ranges):0);
 
-        if(numbering.layers > (size_t)maxZ)
+        if(layers > (size_t)maxZ)
         {
             static bool warned=false;
 
@@ -114,7 +130,7 @@ void Canvas::renumberZOrder()
             {
                 warned=true;
                 std::fprintf(stderr, "gweni: %zu z layers do not fit the renderer's %d;"
-                    " the last controls share z values (warned once)\n", numbering.layers, maxZ);
+                    " the last controls share z values (warned once)\n", layers, maxZ);
             }
         }
 
@@ -127,6 +143,7 @@ void Canvas::renumberZOrder()
         numbering=compaction;
     }
     m_zNumbered=true;
+    m_zClamped=numbering.clamped;
     m_zHigh=numbering.maxUsed;
 }
 
