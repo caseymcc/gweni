@@ -12,7 +12,8 @@ namespace gweni
 {
 
 //! Display & feedback: Labels at several sizes and colours, Bullets,
-//! ProgressBars (labelled, vertical, indeterminate), a PlotHistogram,
+//! ProgressBars (labelled, vertical, indeterminate), a PlotHistogram, a
+//! PlotLines,
 //! Separators, a VirtualList
 //! and a StatusBar, each in a state set here.
 class ShowcaseDisplayDemo: public controls::Base, public ShowcaseNotes

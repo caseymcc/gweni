@@ -18,6 +18,8 @@ set(GWENI_DEMO_SOURCES
     demo/contextMenu.h
     demo/plotHistogram.cpp
     demo/plotHistogram.h
+    demo/plotLines.cpp
+    demo/plotLines.h
     demo/popup.cpp
     demo/popup.h
     demo/crossSplitter.cpp

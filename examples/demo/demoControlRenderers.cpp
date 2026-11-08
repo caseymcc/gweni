@@ -57,6 +57,7 @@ GWENI_DEMO_TRANSPARENT(MenuStripDemo)
 GWENI_DEMO_TRANSPARENT(NumericDemo)
 GWENI_DEMO_TRANSPARENT(PageControlDemo)
 GWENI_DEMO_TRANSPARENT(PlotHistogramDemo)
+GWENI_DEMO_TRANSPARENT(PlotLinesDemo)
 GWENI_DEMO_TRANSPARENT(ProgressBarDemo)
 GWENI_DEMO_TRANSPARENT(PropertiesDemo)
 GWENI_DEMO_TRANSPARENT(RadioButtonDemo)
@@ -137,6 +138,7 @@ template class ControlRegister<MenuStripDemo>;
 template class ControlRegister<NumericDemo>;
 template class ControlRegister<PageControlDemo>;
 template class ControlRegister<PlotHistogramDemo>;
+template class ControlRegister<PlotLinesDemo>;
 template class ControlRegister<ProgressBarDemo>;
 template class ControlRegister<PropertiesDemo>;
 template class ControlRegister<RadioButtonDemo>;

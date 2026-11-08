@@ -10,6 +10,7 @@
 #include "gweni/controls/groupBox.h"
 #include "gweni/controls/label.h"
 #include "gweni/controls/plotHistogram.h"
+#include "gweni/controls/plotLines.h"
 #include "gweni/controls/progressBar.h"
 #include "gweni/controls/separator.h"
 #include "gweni/controls/statusBar.h"
@@ -143,6 +144,23 @@ GWENI_CONTROL_CONSTRUCTOR(ShowcaseDisplayDemo)
         plot->setValues(values);
         plot->setCaption("32 samples");
         m_notes.push_back("PlotHistogram: 32 bars, automatic range, a caption");
+    }
+    {
+        controls::GroupBox *section=showcase::addSection(middle, "PlotLines", false);
+        controls::PlotLines *plot=showcase::addRow<controls::PlotLines>(section);
+
+        // frame times in a fixed 0..33 ms range, two spikes past it on its top
+        const float frameTimes[]={16.6f, 16.7f, 16.5f, 18.2f, 16.6f, 24.9f, 16.7f, 16.6f,
+            33.4f, 16.7f, 16.6f, 17.0f, 16.6f, 40.2f, 16.7f, 16.5f, 16.6f, 20.1f, 16.7f, 16.6f,
+            16.6f, 17.4f, 16.5f, 16.8f, 22.3f, 16.6f, 16.7f, 16.6f, 19.0f, 16.6f, 16.5f, 16.7f,
+            28.1f, 16.6f, 16.7f, 16.6f, 16.5f, 18.4f, 16.6f, 16.7f};
+
+        plot->setHeight(70);
+        plot->setScaleRange(0.0f, 33.3f);
+        plot->setLineThickness(1.5f);
+        plot->setValues(std::vector<float>(std::begin(frameTimes), std::end(frameTimes)));
+        plot->setCaption("avg 18.5 ms");
+        m_notes.push_back("PlotLines: 40 frame times in a fixed range, a caption");
     }
     {
         // side by side from the left, each the section's height

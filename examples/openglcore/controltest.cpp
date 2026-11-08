@@ -116,7 +116,7 @@
  *                       typing | clip | text-size | scale | tooltip |
  *                       context-menu | popup | virtual-list |
  *                       data-table-virtual | hide-show | demo-labels |
- *                       plot-histogram (see below)
+ *                       plot-histogram | plot-lines (see below)
  *    --dump-bounds [<path>]
  *                       print the laid-out control tree as text: one line per
  *                       control, depth-first in child order, indented by depth,
@@ -385,6 +385,20 @@
  *                 (plot-histogram-hover.png). One line
  *                   plot-histogram bars=32 sample_prim_slots=1 ... ids_back=yes
  *                 Exits non-zero if any check is no.
+ *    plot-lines   PlotLinesDemo's two series, the clock frozen: a sample of
+ *                 the 64-sample sine moved (sample 20, to 0) has to write at
+ *                 least one and at most 2 primitive slots (the two segments
+ *                 next to it) and change that control alone; a frame time
+ *                 past the fixed range raised further (still on its top edge)
+ *                 nothing; the sine's highest value doubled (a rescale of the
+ *                 automatic range) more than 2 slots and no more than every
+ *                 segment's; a push() onto the frame times no more than every
+ *                 segment's, with no layout pass; the mouse near sample 10
+ *                 no slot, with "10: <value>" as the tooltip; every settled
+ *                 frame nothing; the demo gives every primitive id back
+ *                 (plot-lines.png). One line
+ *                   plot-lines segments=63 sample_prim_slots=2 ... ids_back=yes
+ *                 Exits non-zero if any check is no.
  *    scale        one control (default Demo) on a 640x480 canvas at scale 1,
  *                 then Canvas::setScale(2) with the framebuffer resized to
  *                 1280x960, then back to 1 (scale-01-1x.png, scale-02-2x.png,
@@ -645,7 +659,9 @@
 #include <demo/numeric.h>
 #include <demo/pageControl.h>
 #include <demo/plotHistogram.h>
+#include <demo/plotLines.h>
 #include <gweni/controls/plotHistogram.h>
+#include <gweni/controls/plotLines.h>
 #include <demo/progressBar.h>
 #include <demo/properties.h>
 #include <demo/radioButton.h>
@@ -730,7 +746,7 @@ static void content_scale_callback(GLFWwindow *window, float, float)
     X(ShowcaseContainersDemo) X(ShowcaseButtonsDemo) X(ShowcaseInputDemo) \
     X(ShowcaseDisplayDemo) X(ShowcaseWindowsDemo) \
     X(ButtonDemo) X(LabelDemo) X(LabelMultilineDemo) X(ProgressBarDemo) \
-    X(GroupBoxDemo) X(ImagePanelDemo) X(StatusBarDemo) X(SeparatorDemo) X(PlotHistogramDemo) X(ComboBoxDemo) \
+    X(GroupBoxDemo) X(ImagePanelDemo) X(StatusBarDemo) X(SeparatorDemo) X(PlotHistogramDemo) X(PlotLinesDemo) X(ComboBoxDemo) \
     X(TextBoxDemo) X(ListBoxDemo) X(SelectableDemo) X(VirtualListDemo) X(DataTableDemo) X(DataTableVirtualDemo) X(ContextMenuDemo) X(PopupDemo) X(CrossSplitterDemo) X(RadioButtonDemo) \
     X(CheckBoxDemo) X(NumericDemo) X(SliderDemo) X(SliderTextDemo) X(DragNumberDemo) X(MenuStripDemo) \
     X(WindowDemo) X(WindowButtonsDemo) X(TreeControlDemo) X(PropertiesDemo) X(TabControlDemo) X(TabCloseDemo) X(TabOverflowDemo) \
@@ -810,7 +826,7 @@ static void printUsage(std::ostream &out)
          "                     | typing | clip | text-size | scale | tooltip\n"
          "                     | context-menu | popup | virtual-list\n"
          "                     | data-table-virtual | hide-show | demo-labels\n"
-         "                     | plot-histogram;\n"
+         "                     | plot-histogram | plot-lines;\n"
          "                     resize prints listing_settled, mirror_settled,\n"
          "                     shrink_settled and fresh_matches, interaction one\n"
          "                     yes/no per repaint check, typing its keyboard\n"
@@ -827,7 +843,8 @@ static void printUsage(std::ostream &out)
          "                     one built hidden and shown, are the one built shown,\n"
          "                     demo-labels whether every demo-list label fits,\n"
          "                     plot-histogram whether a changed sample wrote its\n"
-         "                     bar's slot alone; all fourteen fail on a no\n"
+         "                     bar's slot alone, plot-lines whether it wrote the\n"
+         "                     two segments next to it; all fifteen fail on a no\n"
          "  --dump-bounds [<path>]  print the laid-out control tree as text,\n"
          "                     private children and hidden state included, an\n"
          "                     inner panel marked \" inner\", with each control's\n"
@@ -1706,7 +1723,8 @@ static bool runSteps(Session &s, const std::vector<Step> &steps, const std::stri
 // Scenarios
 //-----------------------------------------------------------------------------
 enum class Scenario { None, PerControl, Resize, Docked, Scroll, Interaction, Typing, Clip, TextSize, Scale,
-    ToolTip, ContextMenu, Popup, VirtualList, DataTableVirtual, HideShow, DemoLabels, PlotHistogram };
+    ToolTip, ContextMenu, Popup, VirtualList, DataTableVirtual, HideShow, DemoLabels, PlotHistogram,
+    PlotLines };
 
 static bool parseScenario(const std::string &name, Scenario &scenario)
 {
@@ -1727,6 +1745,7 @@ static bool parseScenario(const std::string &name, Scenario &scenario)
     else if(name == "hide-show") scenario=Scenario::HideShow;
     else if(name == "demo-labels") scenario=Scenario::DemoLabels;
     else if(name == "plot-histogram") scenario=Scenario::PlotHistogram;
+    else if(name == "plot-lines") scenario=Scenario::PlotLines;
     else return false;
     return true;
 }
@@ -2460,6 +2479,160 @@ static bool runPlotHistogramScenario(Session &s, const std::string &shotDir, boo
                      : !nothingKept ? "a sample that kept its height wrote or changed something"
                      : !rescaled ? "a rescale did not redraw the bars that moved"
                      : !hovered ? "the hover wrote other than the hovered bars' slots"
+                     : !settled ? "a settled frame wrote slots or changed controls"
+                     : "the demo did not give its primitive ids back")<<"\n";
+    return shot;
+}
+
+//-----------------------------------------------------------------------------
+// --scenario plot-lines: PlotLinesDemo's two series changed and hovered
+//
+// One primitive slot per segment, redrawn only where a segment's endpoints
+// moved: a sample whose point moves writes the two segments next to it (at
+// most; the renderer counts a slot only if its bytes differ), one whose point
+// stays (clamped to the range's edge) nothing, a rescale every segment that
+// moved, and a push() onto a scrolling series no more than every segment,
+// with no layout. A hover has no look of its own: it writes nothing and sets
+// the nearest sample's tooltip.
+//-----------------------------------------------------------------------------
+
+static bool runPlotLinesScenario(Session &s, const std::string &shotDir, bool &passed)
+{
+    s.freezeClock=true;
+
+    const size_t idsBefore=livePrimitiveIds();
+    gweni::controls::Base *control=addControl(s, "PlotLinesDemo");
+    auto *demo=gweni::gweni_cast<gweni::PlotLinesDemo>(control);
+
+    if(!demo || !demo->series() || !demo->captioned())
+    {
+        std::cerr<<"ControlTest: plot-lines: PlotLinesDemo has no series\n";
+        return false;
+    }
+
+    gweni::controls::PlotLines *plot=demo->series();
+    gweni::controls::PlotLines *frames=demo->captioned();
+
+    s.label="plot-lines";
+    renderFrames(s, s.frames);
+
+    // read now: both series go with the demo before the checks
+    const size_t segments=plot->getSegmentCount();
+    const size_t frameSegments=frames->getSegmentCount();
+    PlotStep idle=plotFrame(s);
+    size_t idleSlots=idle.primSlots+idle.textSlots;
+    size_t idleChanged=idle.changed;
+
+    auto settle=[&]()
+    {
+        const PlotStep step=plotFrame(s);
+
+        idleSlots+=step.primSlots+step.textSlots;
+        idleChanged+=step.changed;
+    };
+
+    // sample 20 of the sine, inside the automatic range, moved to 0
+    const size_t sample=20;
+    const float yBefore=plot->getSamplePoint(sample).y;
+
+    plot->setValue(sample, 0.0f);
+
+    const bool moved=plot->getSamplePoint(sample).y != yBefore;
+    const PlotStep change=plotFrame(s);
+    settle();
+
+    // a frame time past the fixed range raised further: still on its top edge
+    size_t past=0;
+
+    while((past < frames->getValueCount()) && !(frames->getValues()[past] > frames->getScaleMax()))
+        ++past;
+
+    const bool hasPast=past < frames->getValueCount();
+    PlotStep keep;
+
+    if(hasPast)
+    {
+        frames->setValue(past, frames->getValues()[past]*2.0f);
+        keep=plotFrame(s);
+        settle();
+    }
+
+    // the sine's highest value doubled: the automatic range rescales it
+    size_t highest=0;
+    for(size_t i=1; i < plot->getValueCount(); ++i)
+    {
+        if(plot->getValues()[i] > plot->getValues()[highest])
+            highest=i;
+    }
+
+    const float top=plot->getValues()[highest];
+
+    plot->setValue(highest, top*2.0f);
+    const PlotStep rescale=plotFrame(s);
+    settle();
+    plot->setValue(highest, top);
+    renderFrames(s, 1);
+    settle();
+
+    // a new frame time pushed onto the scrolling series: no layout
+    frames->push(21.5f);
+    const PlotStep push=plotFrame(s);
+    const int pushPasses=s.canvas->getLayoutStats().passes;
+    settle();
+
+    // the mouse near sample 10 of the sine
+    const gweni::Rect area=plot->getPlotBounds();
+    const gweni::Point origin=plot->localPosToCanvas();
+    const gweni::Point at(origin.x+int(plot->getSamplePoint(10).x), origin.y+area.y+area.h/2);
+
+    moveMouse(s, at.x, at.y);
+    const PlotStep hover=plotFrame(s);
+    const int hovered=plot->getHoveredSample();
+    const std::string toolTip=plot->getToolTipText();
+    settle();
+
+    const bool shot=shoot(s, shotDir+"/plot-lines.png");
+
+    forgetMouse(s);
+    renderFrames(s, 1);
+    settle();
+
+    dropControl(s, control);
+    renderFrames(s, 1);
+
+    const size_t idsLeft=livePrimitiveIds()-idsBefore;
+
+    const bool twoSegments=moved && change.primSlots >= 1 && change.primSlots <= 2 && change.textSlots == 0
+        && change.changed == 1;
+    const bool nothingKept=hasPast && keep.primSlots == 0 && keep.textSlots == 0 && keep.changed == 0;
+    const bool rescaled=rescale.primSlots > 2 && rescale.primSlots <= segments && rescale.textSlots == 0;
+    const bool pushed=push.primSlots >= 1 && push.primSlots <= frameSegments && push.textSlots == 0
+        && push.changed == 1 && pushPasses == 0;
+    const bool hoverNothing=hovered == 10 && hover.primSlots == 0 && hover.textSlots == 0
+        && toolTip.rfind("10: ", 0) == 0;
+    const bool settled=idleSlots == 0 && idleChanged == 0;
+    const bool idsBack=idsLeft == 0;
+
+    passed=twoSegments && nothingKept && rescaled && pushed && hoverNothing && settled && idsBack;
+
+    std::cout<<"plot-lines segments="<<segments;
+    printPlotStep("sample", change);
+    printPlotStep("same_y", keep);
+    printPlotStep("rescale", rescale);
+    printPlotStep("push", push);
+    printPlotStep("hover", hover);
+    std::cout<<" push_layout_passes="<<pushPasses<<" idle_slots="<<idleSlots<<" idle_changed="<<idleChanged
+             <<" ids_left="<<idsLeft<<" two_segments="<<(twoSegments?"yes":"no")
+             <<" same_y_nothing="<<(nothingKept?"yes":"no")<<" rescaled="<<(rescaled?"yes":"no")
+             <<" pushed="<<(pushed?"yes":"no")<<" hover_nothing="<<(hoverNothing?"yes":"no")
+             <<" settled="<<(settled?"yes":"no")<<" ids_back="<<(idsBack?"yes":"no")<<"\n";
+    if(!passed)
+        std::cerr<<"ControlTest: plot-lines: "
+                 <<(!twoSegments ? "a moved sample did not write at most the two segments next to it"
+                     : !nothingKept ? "a sample that kept its point wrote or changed something"
+                     : !rescaled ? "a rescale did not redraw the segments that moved"
+                     : !pushed ? "a push wrote more than the series' segments, or laid out"
+                     : !hoverNothing ? "the hover wrote slots or set the wrong tooltip"
                      : !settled ? "a settled frame wrote slots or changed controls"
                      : "the demo did not give its primitive ids back")<<"\n";
     return shot;
@@ -7249,6 +7422,15 @@ int main(int argc, char *argv[])
             ok=runPlotHistogramScenario(session, shotDir, passed);
             if(ok && !passed)
                 ok=false;   // a change wrote more than its bars' slots: a failing assertion
+            break;
+        }
+
+        case Scenario::PlotLines:
+        {
+            bool passed=false;
+            ok=runPlotLinesScenario(session, shotDir, passed);
+            if(ok && !passed)
+                ok=false;   // a change wrote more than its segments' slots: a failing assertion
             break;
         }
 

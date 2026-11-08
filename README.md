@@ -47,8 +47,8 @@ notched, disabled and one showing its value.
 
 **Display & feedback**: Labels from 14 to 32 px (coverage and SDF text) and in four colours, Bullets,
 a wrapped Label, ProgressBars (labelled, custom text, vertical, indeterminate), a PlotHistogram of
-32 bars with a caption, Separators (plain, captioned, vertical), a VirtualList of 100 000 items
-scrolled to the middle, and a StatusBar.
+32 bars with a caption, a PlotLines of 40 frame times with a caption, Separators (plain, captioned,
+vertical), a VirtualList of 100 000 items scrolled to the middle, and a StatusBar.
 
 [![Windows & menus showcase page](docs/images/ShowcaseWindowsDemo.png)](https://caseymcc.github.io/gweni/controltest.html?control=ShowcaseWindowsDemo)
 

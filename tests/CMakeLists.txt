@@ -357,6 +357,14 @@ Erm, and I think it comes down to a choice between "The League Against Salivatin
             --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/plot_histogram@VARIANT@
         WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
 
+    # PlotLinesDemo's series: a moved sample writes at most the two segments
+    # next to it, one that keeps its point nothing, a push no layout, a hover
+    # nothing
+    gweni_whole_app_test(controltest_plot_lines 60
+        COMMAND $<TARGET_FILE:ControlTest> --headless --scenario plot-lines --require-one-pass
+            --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/plot_lines@VARIANT@
+        WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
+
     # every entry of the shell's demo list fits its row at the README hero's
     # 1024x768, at scale 1 and 1.5: a label wider than its button's inner rect
     # (or running under the list's scrollbar) fails, naming the entry's key

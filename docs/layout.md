@@ -131,7 +131,7 @@ its scrolled string). The children placed this way:
 | CrossSplitter | its bars and panels | `layout()` |
 | Properties, PropertyRow | the splitter bar; a row's label and property | `arrange()` |
 | Slider | the thumb | `layout()`, a value change, a click |
-| PlotHistogram | its caption | `layout()` |
+| PlotHistogram, PlotLines | its caption | `PlotBase::layout()` |
 | DragNumber | its edit box | `layout()` |
 | ScrollBar | the arrow buttons; the thumb | `layout()`; `layout()`, a scroll |
 | ScrollControl | both bars and the inner panel | `placeContents()`, its Y arrange |

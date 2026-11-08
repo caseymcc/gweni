@@ -1693,6 +1693,35 @@ two programs and the draws. What follows describes both together:
   changes at once while shown; a move inside the same column changes nothing.
   PlotHistogramDemo has a 32-bar series in the automatic range and frame times in a fixed
   range with a caption; ShowcaseDisplayDemo has one.
+- **The plot lines: one slot per segment, redrawn where a segment's endpoints moved.**
+  `controls::PlotLines` (`include/gweni/controls/plotLines.h`, imgui's PlotLines) draws a
+  series as a polyline in the same frame. The series, its range (fixed, or the automatic
+  `min(0, lowest)` to the highest value), its caption, the plot's bounds and the hovered
+  sample's tooltip are `controls::PlotBase`'s (`plotBase.h`), which `PlotHistogram`
+  derives from too; a subclass says what a value is drawn as (`drawnKey`: a bar's height,
+  a point's y), which sample a point is over (`sampleAt`) and what a new hovered sample
+  changes (`hoveredChanged`: the bars' looks, nothing for a line). **Points:** the N
+  samples are joined by N-1 segments, each one `drawLine` (style 3) of the line's
+  thickness T (`setLineThickness`, 1 unit by default); sample i is at
+  `T/2 + i*(W-T)/(N-1)` across the plot and `T/2 + (1-share)*(H-T)` down it, fractional
+  units, the share clamped to 0..1, so the stroke stays inside the plot and a value past
+  the range lies on its edge. With T = 1 that is `i*(W-1)/(N-1)` plus the half unit that
+  centres the stroke on its column, where `drawLine` puts it. A NaN value leaves a gap
+  (the segments touching it are hidden); a single sample draws nothing. **Change
+  tracking:** `setValue` marks `StateChange_Background` only when its point's y or the
+  automatic range changes. The textured `PlotLines` renderer draws the frame
+  (`PlotFrame`) at the control's z and one slot per segment at z+1 (`depthLayers()` 2)
+  in `PlotLine`'s colour, resizes its slot list with the sample count, and, as
+  `PlotHistogram`'s, keeps what it last drew in each slot: a frame marking geometry,
+  visibility or creation draws every slot, any other only the segments whose endpoints,
+  thickness, colour or z changed. So a changed sample rewrites the two segments next to
+  it (one at either end), and a rescale or a new thickness every segment. `push(v)`, for
+  a scrolling series such as a frame-time graph, drops the oldest value and appends `v`:
+  every value moves one sample left, so a series of distinct values redraws every
+  segment, with no layout. A hover has no look: it sets the tooltip to the nearest
+  sample's `"<index>: <value>"` and writes nothing. PlotLinesDemo has a 64-sample sine
+  in the automatic range and 40 frame times in a fixed range with a caption and a
+  1.5-unit line; ShowcaseDisplayDemo has the frame times.
 - **The drag number: scrubbed by the mouse, typed into in a box made once.**
   `controls::DragNumber` (`include/gweni/controls/dragNumber.h`, imgui's DragFloat and
   DragInt) is a `Label` whose text is its value, centred in a field of the size asked for

@@ -24,6 +24,7 @@
 #include "demo/comboBox.h"
 #include "demo/contextMenu.h"
 #include "demo/plotHistogram.h"
+#include "demo/plotLines.h"
 #include "demo/dragNumber.h"
 #include "demo/popup.h"
 #include "demo/crossSplitter.h"
@@ -153,6 +154,7 @@ void Demo::init(const String &name)
         addDemo<StatusBarDemo>(cat, "StatusBarDemo", "Status bar");
         addDemo<SeparatorDemo>(cat, "SeparatorDemo", "Separator");
         addDemo<PlotHistogramDemo>(cat, "PlotHistogramDemo", "Plot histogram");
+        addDemo<PlotLinesDemo>(cat, "PlotLinesDemo", "Plot lines");
     }
     {
         controls::CollapsibleCategory *cat=list->add("Controls");
