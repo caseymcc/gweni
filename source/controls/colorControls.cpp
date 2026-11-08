@@ -83,11 +83,18 @@ static void al_color_rgb_to_hsv(float red, float green, float blue,
     *value=a;
 }
 
+//! One channel in 0..1 as 0..255, rounded and clamped: converting an
+//! out-of-range float to unsigned char is undefined.
+static inline unsigned char toChannel(float value)
+{
+    return static_cast<unsigned char>(clamp(static_cast<int>(std::lround(value*255.f)), 0, 255));
+}
+
 static inline Color HSVToColor(float h, float s, float v)
 {
     float r, g, b;
     al_color_hsv_to_rgb(h, s, v, &r, &g, &b);
-    return Color(r*255.f, g*255.f, b*255.f, 255);
+    return Color(toChannel(r), toChannel(g), toChannel(b), 255);
 }
 
 static inline HSV RGBtoHSV(int r, int g, int b)
@@ -99,29 +106,32 @@ static inline HSV RGBtoHSV(int r, int g, int b)
     return hsv;
 }
 
+//! True if \p hsv's hue means nothing: black and greys come out as hue 0.
+static inline bool hasNoHue(const HSV &hsv)
+{
+    return hsv.s <= 0.f || hsv.v <= 0.f;
+}
+
+//! \p value/\p size, clamped to 0..1 (0 for an empty size).
+static inline float fraction(int value, int size)
+{
+    if(size <= 0)
+        return 0.f;
+    return clamp(static_cast<float>(value)/size, 0.f, 1.f);
+}
+
 GWENI_CONTROL_CONSTRUCTOR(ColorLerpBox)
 {
-    setColor(gweni::Color(255, 128, 0, 255));
+    m_depressed=false;
+    setColor(gweni::Color(255, 128, 0, 255), false, false);
     setSize(128, 128);
     setSizeFlags({SizeFlag::Fixed, SizeFlag::Fixed});
     setMouseInputEnabled(true);
-    m_depressed=false;
 }
-
-//// Find a place to put this? color member?
-//static gweni::Color LerpColor(gweni::Color &toColor, gweni::Color &fromColor, float amount)
-//{
-//    gweni::Color colorDelta = toColor-fromColor;
-//    colorDelta.r *= amount;
-//    colorDelta.g *= amount;
-//    colorDelta.b *= amount;
-//    gweni::Color newColor = fromColor+colorDelta;
-//    return newColor;
-//}
 
 gweni::Color ColorLerpBox::getSelectedColor()
 {
-    return getColorAtPos(cursorPos.x, cursorPos.y);
+    return HSVToColor(m_hue, m_saturation, m_value);
 }
 
 gweni::Color ColorLerpBox::getHueColor() const
@@ -129,43 +139,57 @@ gweni::Color ColorLerpBox::getHueColor() const
     return HSVToColor(m_hue, 1, 1);
 }
 
-void ColorLerpBox::setColor(gweni::Color color, bool onlyHue)
+gweni::Point ColorLerpBox::getCursorPos() const
 {
-    HSV hsv=RGBtoHSV(color.r, color.g, color.b);
-    const int oldHue=m_hue;
-    const gweni::Point oldCursor=cursorPos;
+    return gweni::Point(static_cast<int>(std::lround(m_saturation*getWidth())),
+        static_cast<int>(std::lround((1.f-m_value)*getHeight())));
+}
 
-    m_hue=hsv.h;
+void ColorLerpBox::select(float hue, float saturation, float value, bool doEvents)
+{
+    if(hue == m_hue && saturation == m_saturation && value == m_value)
+        return;
 
-    if(!onlyHue)
-    {
-        cursorPos.x=hsv.s*getWidth();
-        cursorPos.y=(1-hsv.v)*getHeight();
-    }
+    const float oldHue=m_hue;
+    const gweni::Point oldCursor=getCursorPos();
+
+    m_hue=hue;
+    m_saturation=saturation;
+    m_value=value;
 
     // the skin draws the hue and the cursor: repaint only when one moved
-    if(m_hue != oldHue || cursorPos.x != oldCursor.x || cursorPos.y != oldCursor.y)
+    const gweni::Point cursor=getCursorPos();
+
+    if(m_hue != oldHue || cursor.x != oldCursor.x || cursor.y != oldCursor.y)
         redraw();
 
-    onSelectionChanged.call(this);
+    if(doEvents)
+        onSelectionChanged.call(this);
+}
+
+void ColorLerpBox::setColor(gweni::Color color, bool onlyHue, bool doEvents)
+{
+    const HSV hsv=RGBtoHSV(color.r, color.g, color.b);
+    const float hue=hasNoHue(hsv)?m_hue:hsv.h;
+
+    if(onlyHue)
+        select(hue, m_saturation, m_value, doEvents);
+    else
+        select(hue, hsv.s, hsv.v, doEvents);
+}
+
+void ColorLerpBox::setHue(float hue, bool doEvents)
+{
+    select(hue, m_saturation, m_value, doEvents);
 }
 
 void ColorLerpBox::onMouseMoved(int x, int y, int /*deltaX*/, int /*deltaY*/)
 {
     if(m_depressed)
     {
-        const gweni::Point oldCursor=cursorPos;
+        const gweni::Point local=canvasPosToLocal(gweni::Point(x, y));
 
-        cursorPos=canvasPosToLocal(gweni::Point(x, y));
-
-        // Do we have clamp?
-        cursorPos.x=clamp(cursorPos.x, 0, getWidth());
-        cursorPos.y=clamp(cursorPos.y, 0, getHeight());
-
-        if(cursorPos.x != oldCursor.x || cursorPos.y != oldCursor.y)
-            redraw();
-
-        onSelectionChanged.call(this);
+        select(m_hue, fraction(local.x, getWidth()), 1.f-fraction(local.y, getHeight()), true);
     }
 }
 
@@ -183,11 +207,7 @@ void ColorLerpBox::onMouseClickLeft(int x, int y, bool down)
 
 gweni::Color ColorLerpBox::getColorAtPos(int x, int y)
 {
-    float xPercent=static_cast<float>(x) / getWidth();
-    float yPercent=1.f - static_cast<float>(y) / getHeight();
-    gweni::Color result=HSVToColor(m_hue, xPercent, yPercent);
-    result.a=255;
-    return result;
+    return HSVToColor(m_hue, fraction(x, getWidth()), 1.f-fraction(y, getHeight()));
 }
 
 GWENI_CONTROL_CONSTRUCTOR(ColorSlider)
@@ -216,45 +236,49 @@ gweni::Color ColorSlider::getColorAtHeight(int y)
     return HSVToColor(yPercent*360, 1, 1);
 }
 
+int ColorSlider::getSelectedDist() const
+{
+    return static_cast<int>(std::lround(m_hue/360.f*getHeight()));
+}
+
 void ColorSlider::onMouseMoved(int x, int y, int /*deltaX*/, int /*deltaY*/)
 {
     if(m_depressed)
     {
-        gweni::Point cursorPos=canvasPosToLocal(gweni::Point(x, y));
+        const gweni::Point local=canvasPosToLocal(gweni::Point(x, y));
 
-        if(cursorPos.y < 0)
-            cursorPos.y=0;
-
-        if(cursorPos.y > getHeight())
-            cursorPos.y=getHeight();
-
-        if(cursorPos.y != m_selectedDist)
-        {
-            m_selectedDist=cursorPos.y;
-            redraw();
-        }
-
-        onSelectionChanged.call(this);
+        setHue(fraction(local.y, getHeight())*360.f, true);
     }
 }
 
-void ColorSlider::setColor(gweni::Color color)
+void ColorSlider::setHue(float hue, bool doEvents)
 {
-    HSV hsv=RGBtoHSV(color.r, color.g, color.b);
-    const int selectedDist=hsv.h/360*getHeight();
+    if(hue == m_hue)
+        return;
 
-    if(selectedDist != m_selectedDist)
-    {
-        m_selectedDist=selectedDist;
+    const int oldDist=getSelectedDist();
+
+    m_hue=hue;
+
+    // the skin draws the marker at the row: repaint only when it moved
+    if(getSelectedDist() != oldDist)
         redraw();
-    }
 
-    onSelectionChanged.call(this);
+    if(doEvents)
+        onSelectionChanged.call(this);
+}
+
+void ColorSlider::setColor(gweni::Color color, bool doEvents)
+{
+    const HSV hsv=RGBtoHSV(color.r, color.g, color.b);
+
+    if(!hasNoHue(hsv))
+        setHue(hsv.h, doEvents);
 }
 
 gweni::Color ColorSlider::getSelectedColor()
 {
-    return getColorAtHeight(m_selectedDist);
+    return HSVToColor(m_hue, 1, 1);
 }
 
 }//namespace controls

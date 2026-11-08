@@ -147,9 +147,14 @@ TEST_CASE("the SV box draws one bilinear field and a marker centred on its curso
     CHECK((field.c01 == Color(0, 0, 0, 255)));
     CHECK((field.c11 == Color(0, 0, 0, 255)));
 
-    // the cursor starts in the corner: the marker is clamped inside the box
+    // the cursor starts on the default colour, (255,128,0) at full saturation
+    // and value: the top-right corner, the marker clamped inside the box (it
+    // was in the top-left one while the cursor was kept in pixels, placed
+    // before the box had its size)
     const int size=skin::textured::ColorLerpBox::MarkerSize;
-    CHECK((scene.drawOf(ids[1]).rect == Rect(0, 0, size, size)));
+    CHECK(scene.box->getCursorPos().x == 128);
+    CHECK(scene.box->getCursorPos().y == 0);
+    CHECK((scene.drawOf(ids[1]).rect == Rect(128-size, 0, size, size)));
     CHECK(scene.drawOf(ids[1]).zIndex == scene.box->getZIndex()+1);
 
     // dragged to (96, 32): only the marker moves
