@@ -473,6 +473,8 @@
 #include <demo/showcaseButtons.h>
 #include <demo/showcaseContainers.h>
 #include <demo/showcaseInput.h>
+#include <demo/showcaseDisplay.h>
+#include <demo/showcaseWindows.h>
 #include <demo/slider.h>
 #include <demo/statusBar.h>
 #include <demo/tabControl.h>
@@ -536,6 +538,7 @@ static void content_scale_callback(GLFWwindow *window, float, float)
 
 #define GWENI_CONTROL_DEMOS(X) \
     X(ShowcaseContainersDemo) X(ShowcaseButtonsDemo) X(ShowcaseInputDemo) \
+    X(ShowcaseDisplayDemo) X(ShowcaseWindowsDemo) \
     X(ButtonDemo) X(LabelDemo) X(LabelMultilineDemo) X(ProgressBarDemo) \
     X(GroupBoxDemo) X(ImagePanelDemo) X(StatusBarDemo) X(SeparatorDemo) X(ComboBoxDemo) \
     X(TextBoxDemo) X(ListBoxDemo) X(SelectableDemo) X(VirtualListDemo) X(ContextMenuDemo) X(PopupDemo) X(CrossSplitterDemo) X(RadioButtonDemo) \

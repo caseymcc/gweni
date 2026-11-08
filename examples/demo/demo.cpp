@@ -36,6 +36,8 @@
 #include "demo/showcaseButtons.h"
 #include "demo/showcaseContainers.h"
 #include "demo/showcaseInput.h"
+#include "demo/showcaseDisplay.h"
+#include "demo/showcaseWindows.h"
 #include "demo/slider.h"
 #include "demo/statusBar.h"
 #include "demo/tabControl.h"
@@ -116,6 +118,8 @@ void Demo::init(const String &name)
         addDemo<ShowcaseContainersDemo>(cat, "ShowcaseContainersDemo", "Containers & data");
         addDemo<ShowcaseButtonsDemo>(cat, "ShowcaseButtonsDemo", "Buttons & toggles");
         addDemo<ShowcaseInputDemo>(cat, "ShowcaseInputDemo", "Text input");
+        addDemo<ShowcaseDisplayDemo>(cat, "ShowcaseDisplayDemo", "Display & feedback");
+        addDemo<ShowcaseWindowsDemo>(cat, "ShowcaseWindowsDemo", "Windows & menus");
     }
     {
         controls::CollapsibleCategory *cat=list->add("Basic");

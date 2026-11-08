@@ -37,18 +37,26 @@ single-selection SelectableGroup, and the window buttons (maximised, disabled).
 with its caret), a wrapped TextBoxMultiline, ComboBoxes, a NumericUpDown, and horizontal and vertical
 Sliders, plain, notched and disabled.
 
-| | |
-|---|---|
-| ![Text](docs/images/TextDemo.png) | ![ProgressBar](docs/images/ProgressBarDemo.png) |
-| **Text** (OpenSans 8-16 px) | **ProgressBar** |
-| ![Separator](docs/images/SeparatorDemo.png) | ![ContextMenu](docs/images/ContextMenuDemo.png) |
-| **Separator** (with a caption, vertical, and bullets) | **Context menu** (`setContextMenu`, opened with a right-click) |
-| ![VirtualList](docs/images/VirtualListDemo.png) | ![Popup](docs/images/PopupDemo.png) |
-| **VirtualList** (100 000 items, a row for each one on screen) | **Popup** (a panel under its button, one per canvas) |
+![Display & feedback showcase page](docs/images/ShowcaseDisplayDemo.png)
 
-The showcase pages each hold many controls; the images in the table show one control on its own
-in `ControlTest`. All of these images are rendered offscreen by
-`tools/capture_samples.sh` (see `AGENTS.md`).
+**Display & feedback**: Labels from 14 to 32 px (coverage and SDF text) and in four colours, Bullets,
+a wrapped Label, ProgressBars (labelled, custom text, vertical, indeterminate), Separators (plain,
+captioned, vertical), a VirtualList of 100 000 items scrolled to the middle, and a StatusBar.
+
+![Windows & menus showcase page](docs/images/ShowcaseWindowsDemo.png)
+
+**Windows & menus**: a MenuStrip with a disabled menu, a ColorPicker, a context menu opened with a
+right-click (accelerators, a divider, a disabled item, one hovered), and two WindowControls over the
+page's content, one with no close button.
+
+![Text](docs/images/TextDemo.png)
+
+**Text**: OpenSans from 8 to 16 px, on the pixel grid.
+
+The showcase pages, the hero's *Containers & data* among them, are in the demo shell's "Showcase"
+category and in `ControlTest --control`, which also still shows every control on a page of its own
+(`ControlTest --list`). All of these images are rendered
+offscreen by `tools/capture_samples.sh` (see `AGENTS.md`).
 
 ## Running the examples
 

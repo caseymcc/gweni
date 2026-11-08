@@ -49,28 +49,26 @@ HERO_SIZE=1024x768
 HERO_OUT=demo.png
 
 # The gallery: one ControlTest demo per line. README.md embeds each of these,
-# in this order, so a change here needs a matching change there.
+# in this order, so a change here needs a matching change there. The showcase
+# pages (examples/demo/showcase*.cpp) hold many controls each; TextDemo is the
+# one page of a single control, the text sizes side by side.
 #
-# Left out because it does not look right today:
-#   ImagePanelDemo - its VerticalLayout stacks the two images (the second the
-#     magenta missing-image placeholder it means to show) down the left edge,
-#     not side by side where they ask to be
-# Left out because the hero shows their controls: TabControlDemo,
-# TreeControlDemo, PropertiesDemo, ListBoxDemo, CollapsibleListDemo,
-# ScrollControlDemo, and PageControlDemo (the shell's centre pane is one).
-# Left out because a showcase page below shows their controls: ButtonDemo,
-# RadioButtonDemo, SelectableDemo, CheckBoxDemo, WindowButtonsDemo
-# (ShowcaseButtonsDemo), TextBoxDemo, NumericDemo, ComboBoxDemo and SliderDemo
-# (ShowcaseInputDemo).
+# Every other page of one control is left out (ControlTest --control still
+# shows each). Left off the showcase pages because they do not look right on
+# one today:
+#   ImagePanel (ImagePanelDemo) - its VerticalLayout stacks the two images
+#     down the left edge, not side by side where they ask to be
+#   HSVColorPicker (ColorPickerDemo) - a colour set before its first layout
+#     puts its cursor at the top and its R/G/B boxes on another colour (#413)
+#   a checkable MenuItem (MenuStripDemo) - its check is not drawn (#414)
+#   Popup (PopupDemo) - the canvas shows one popup at a time, and the Windows &
+#     menus page's capture opens its context menu
 SAMPLES=(
     ShowcaseButtonsDemo
     ShowcaseInputDemo
+    ShowcaseDisplayDemo
+    ShowcaseWindowsDemo
     TextDemo
-    ProgressBarDemo
-    SeparatorDemo
-    ContextMenuDemo
-    VirtualListDemo
-    PopupDemo
 )
 
 # Each sample's canvas size: a showcase page at the size of the hero's centre
@@ -80,22 +78,14 @@ SAMPLES=(
 PANE_SIZE=865x545
 declare -A SAMPLE_SIZE=(
     [TextDemo]=640x480
-    [ProgressBarDemo]=640x480
-    [SeparatorDemo]=640x480
-    [ContextMenuDemo]=640x480
-    [VirtualListDemo]=640x480
-    [PopupDemo]=640x480
 )
 
 # Scripted input a sample is captured after, in place of the plain capture's
-# frames: ControlTest steps, run in order before the --shot. ContextMenuDemo is
-# shown with the Document box's menu open, VirtualListDemo scrolled by its
-# "Go to Item 50000" button with a row hovered, PopupDemo with the Options
-# button's popup open and the mouse off it.
+# frames: ControlTest steps, run in order before the --shot.
+# ShowcaseWindowsDemo is shown with its context menu open, right-clicked in
+# the "Context menu" box, and the mouse on its "Paste" item.
 declare -A SAMPLE_STEPS=(
-    [ContextMenuDemo]="--frames 3 --move 230,60 --frames 2 --click-right 230,60 --frames 3"
-    [VirtualListDemo]="--frames 3 --click 336,41 --frames 3 --move 100,150 --frames 2"
-    [PopupDemo]="--frames 3 --click 34,17 --frames 3 --move 400,300 --frames 2"
+    [ShowcaseWindowsDemo]="--frames 3 --move 70,280 --frames 2 --click-right 70,280 --frames 3 --move 110,340 --frames 3"
 )
 
 # The samples are grayscale text whatever the caller's environment says: LCD

@@ -62,6 +62,8 @@ GWENI_DEMO_TRANSPARENT(SeparatorDemo)
 GWENI_DEMO_TRANSPARENT(ShowcaseContainersDemo)
 GWENI_DEMO_TRANSPARENT(ShowcaseButtonsDemo)
 GWENI_DEMO_TRANSPARENT(ShowcaseInputDemo)
+GWENI_DEMO_TRANSPARENT(ShowcaseDisplayDemo)
+GWENI_DEMO_TRANSPARENT(ShowcaseWindowsDemo)
 GWENI_DEMO_TRANSPARENT(SliderDemo)
 GWENI_DEMO_TRANSPARENT(StatusBarDemo)
 GWENI_DEMO_TRANSPARENT(TabControlDemo)
@@ -132,6 +134,8 @@ template class ControlRegister<SeparatorDemo>;
 template class ControlRegister<ShowcaseContainersDemo>;
 template class ControlRegister<ShowcaseButtonsDemo>;
 template class ControlRegister<ShowcaseInputDemo>;
+template class ControlRegister<ShowcaseDisplayDemo>;
+template class ControlRegister<ShowcaseWindowsDemo>;
 template class ControlRegister<SliderDemo>;
 template class ControlRegister<StatusBarDemo>;
 template class ControlRegister<TabControlDemo>;
