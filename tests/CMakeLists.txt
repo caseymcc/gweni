@@ -649,6 +649,68 @@ if(GWENI_RENDER_VULKAN)
     gweni_vulkan_test_environment(vulkan_smoke)
 endif()
 
+# renderer::Vulkan held to OpenGLCore (backends.mjs, whose header says what each
+# mode runs): backend_counters, every counter of every gweni_bench scene and
+# ControlTest --stats run the same on both backends; backend_pixels[_scale200],
+# every --shot-all PNG and the hero within the bound below of GL's. node is
+# emsdk's, which the image has (EMSDK_NODE) for the web tree; without it the
+# tests fail, saying so, rather than skip. gweni_bench is added after this
+# directory, in every tree that has ControlTest outside the web.
+if(GWENI_RENDER_VULKAN AND TARGET ControlTest AND TARGET OpenGLCore AND NOT EMSCRIPTEN)
+    find_program(GWENI_NODE node HINTS "$ENV{EMSDK_NODE}/.." /opt/emsdk/node/current/bin
+        DOC "node, which runs backends.mjs (the image's is emsdk's)")
+    if(GWENI_NODE)
+        set(backends ${GWENI_NODE} ${CMAKE_CURRENT_SOURCE_DIR}/backends.mjs)
+    else()
+        message(STATUS "tests: no node for backend_counters and backend_pixels, which will fail")
+        set(backends sh -c "echo 'backends.mjs: FAIL: no node (EMSDK_NODE, PATH), which this test runs on' >&2; exit 1" backends.mjs)
+    endif()
+    set(backends_bin --bin $<TARGET_FILE_DIR:ControlTest>)
+
+    add_test(NAME backend_counters
+        COMMAND ${backends} counters ${backends_bin} --bench $<TARGET_FILE:gweni_bench>
+        WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
+    set_tests_properties(backend_counters PROPERTIES TIMEOUT 1800)
+    gweni_vulkan_test_environment(backend_counters)
+
+    # The pixel bound, per PNG (web/pngdiff.mjs): no channel of any pixel more
+    # than backend_pixels_max_delta from GL, and at most backend_pixels_max_fraction
+    # percent of the pixels differing from it at all.
+    # Measured 2026-11-08 over the 41 --shot-all PNGs and the hero, lavapipe
+    # against llvmpipe (Mesa 23.2.1), debug tree:
+    #   scale  max |delta|  pixels that differ, worst
+    #   1      1            0.003 % (TextSizesDemo: 8 pixels; ShowcaseDisplayDemo 1)
+    #   1.5    1            0.002 % (TextSizesDemo)
+    #   2      1            0.007 % (LabelMultilineDemo; 25 of the 42 differ, in 1 to 82 pixels)
+    # They are SDF glyphs' edge pixels (and at 1.5 one rounded rect's edge) where
+    # a blend or a coverage lands on an 8-bit tie, which the two drivers round
+    # apart. The rest is exact: the shared fragment bodies spell mix() out
+    # (lerp()), which the GLSL compiler and glslang otherwise hand Mesa as two
+    # different lerps, a level apart on a gradient's tie rows, up to 0.875 % of a
+    # page (docs/architecture.md -> "Vulkan's counters and pixels against GL's").
+    # So 1 and 0.01 %, the worst rounded up.
+    # The ceiling is max |delta| 2 and 0.5 %: a PNG above it is a bug to find,
+    # never a reason to widen the bound.
+    set(backend_pixels_max_delta 1)
+    set(backend_pixels_max_fraction 0.01)
+    foreach(scale_suffix "1:" "2:_scale200")
+        string(REPLACE ":" ";" scale_suffix "${scale_suffix}")
+        list(GET scale_suffix 0 scale)
+        list(GET scale_suffix 1 suffix)
+        set(scale_args)
+        if(suffix)
+            set(scale_args --scale ${scale})
+        endif()
+        add_test(NAME backend_pixels${suffix}
+            COMMAND ${backends} pixels ${backends_bin} ${scale_args}
+                --max-delta ${backend_pixels_max_delta}
+                --max-fraction ${backend_pixels_max_fraction}
+            WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
+        set_tests_properties(backend_pixels${suffix} PROPERTIES TIMEOUT 900)
+        gweni_vulkan_test_environment(backend_pixels${suffix})
+    endforeach()
+endif()
+
 # ASAN tree (./generate.sh linux asan): overflows fail the test, leaks do not.
 # Mesa/EGL leak at exit and none of that is ours, so leak checking is off; with
 # abort_on_error a report aborts the process instead of exiting 1, which ctest

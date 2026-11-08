@@ -757,8 +757,8 @@ the other, up to 64 per channel. Both pass the model the test checks; the
 difference is the float code GL's GLSL compiler and the SPIR-V path make of the same
 line arithmetic, not a different algorithm, and no control draws a line yet. It is
 above the feature's T = 2 ceiling, so it is an open issue (#427) rather than a
-tolerance: the pixel test of the apps (#374) measures its own on the ControlTest
-shots.
+tolerance: the pixel test of the apps, `backend_pixels`, has its own bound, measured
+on the ControlTest shots ("Vulkan's counters and pixels against GL's" below).
 
 Text is as near. Three runs of 12 to 40 px OpenSans (white, blue and black, on
 Tokyo Night's dark ground) and a skinned canvas (a Label, a Button and a TextBox in
@@ -788,6 +788,64 @@ unchanged on Vulkan: each is registered again as `<name>_vulkan`
 in its environment, which the exes and every child a script starts take as their
 `--renderer`. There is no Vulkan window yet (#375): a run on Vulkan without a
 capture says so and exits 1.
+
+### Vulkan's counters and pixels against GL's
+
+Two tests hold a Vulkan run of the apps to the GL run of the same tree
+(`tests/backends.mjs`, run on node, labels `gpu` and `vulkan`):
+
+- **`backend_counters`**: every `gweni_bench` scene at N=50 for 3 frames, every
+  `ControlTest --list` control with `--headless --stats` (one process each, Demo
+  included) and `OpenGLCore --headless --frames 3 --stats`, on both backends: every
+  counter of every frame and summary line must be the same, slots written, uploads
+  and their bytes, atlas uploads, draws, text draws, regrows, the change, render,
+  layout, measure, z and hit-test counts and the live ids. They are counted by the
+  core, so a difference is the core taking another path on one backend (a hook
+  reporting another limit, a frame the backend made the core redo). Left out, with
+  the reason in the script's `EXCLUDED`: the times, the bench's `allocs*`/`alloc_bytes*`
+  (C++ allocations in a frame, which count the backend's own: Vulkan's command
+  recording and the validation layer's in the flush, its target resized in the input
+  phase of `resize` and `scale`, the atlas textures it makes for text laid out at a
+  new scale in their render phase) and the summary's `renderer=`/`device=`. It also
+  checks, on Vulkan, that every settled frame (a ControlTest frame after the first
+  that changed and rendered no control, every measured frame of the `idle` scene)
+  writes and uploads nothing.
+- **`backend_pixels`** and **`backend_pixels_scale200`**: `ControlTest --headless
+  --shot-all` and the hero (`OpenGLCore --headless --demo ShowcaseContainersDemo
+  --screenshot`, as `tools/capture_samples.sh` takes it), at scale 1 and 2, on both
+  backends, every PNG compared by `tests/web/pngdiff.mjs` (the browser's own bound
+  is that script's too): no channel of any pixel more than 1 from GL's, and at most
+  0.01 % of a PNG's pixels differing at all. On a failure it keeps its `mktemp -d`
+  directory, with `diff/<name>.diff.png` (GL, Vulkan and the difference side by side)
+  for each PNG over the bound.
+
+**The bound is measured.** The feature's ceiling is 2 and 0.5 %; the bound is the
+measurement rounded up (2026-11-08, lavapipe against llvmpipe, Mesa 23.2.1, the 41
+`--shot-all` PNGs and the hero): at scale 1 two PNGs differ, in 9 pixels (the worst
+TextSizesDemo, 0.003 %), at 1.5 four, at most 0.002 %, at 2 25 of the 42 in 1 to 82
+pixels, at most 0.007 % (LabelMultilineDemo); every one by 1. They are edge pixels
+of SDF glyphs (all of them at scale 1; at 1.5 one is a rounded rect's anti-aliased
+edge), where a value lands on an 8-bit tie and the two drivers round it apart. Some
+are the blend's: one pixel is `109,114,142` on GL and `109,115,141` on Vulkan, half
+coverage of `192,202,245` over `26,27,38`, so G and B are exactly 114.5 and 141.5 and
+come out rounded in opposite directions, which no alpha a level off would give.
+Others move every channel by 1, as a coverage a level apart would. Spelling `smoothstep` out as
+`mix()` is below changes none of them, so no shader change removes them. There are
+more at scale 2, where the skin's 11 px text is in the SDF range.
+
+The first measurement was not within the ceiling: up to 0.875 % of a page differed
+(ShowcaseContainersDemo, TreeControlDemo 0.732 %, ShowcaseButtonsDemo 0.572 %), all
+by 1, on two rows of every vertical gradient (style 4, a TreeControl node's, a
+Button's) and the text over them. Reading the operands back as bits showed the
+gradient's `t` the same on both and `mix(VertexColor, vColor1, t)` not: Mesa's GLSL
+compiler and lavapipe (from glslang's `FMix`) lower `mix()` to different arithmetic.
+Of ButtonDemo's 1 510 gradient pixels where the result differed, GL's was
+`a + (b - a)*t` in 1 315 and Vulkan's `a*(1 - t) + b*t` in 1 268, and on a row where
+the value falls on an 8-bit tie the two round apart. Written out in either form, each
+was bit-identical on both backends. The shared fragment bodies now spell it out as
+`a + (b - a)*t` (`lerp()` in `shaders/primitive.frag.glsl` and `text.frag.glsl`), so
+every backend computes the same, and GL's own pixels did not change (every
+`--shot-all` PNG and the hero, and `docs_samples`, byte for byte). A `mix()` in a shader body is a tie waiting to happen; use `lerp()`.
 
 ## OpenGLCore renderer (retained model)
 

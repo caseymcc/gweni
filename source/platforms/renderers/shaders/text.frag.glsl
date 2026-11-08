@@ -32,6 +32,14 @@ in float gamma;
 in vec2 pixel;
 flat in uint slot;
 
+// mix(), spelled out, and used in its place throughout: Mesa's GLSL compiler
+// and lavapipe (from glslang's FMix) lower mix() to different arithmetic (mostly
+// a + (b - a)*t and a*(1 - t) + b*t), which round a value that falls on an 8-bit
+// tie a level apart (primitive.frag.glsl's gradients). Written out, every
+// backend computes the same, and GL its pixels as before (docs/architecture.md ->
+// "Vulkan's counters and pixels against GL's").
+float lerp(float a, float b, float t) { return a + (b - a)*t; }
+
 // texture1: the atlas being drawn.
 // clipBoxes: one Box (x0, y0, x1, y1) per glyph slot, slot s at texel
 // (s % CLIP_COLUMNS, s / CLIP_COLUMNS). Each atlas draws its own runs, some of
@@ -110,8 +118,8 @@ void main()
         ivec2 last = ivec2(texels) - 1;
         ivec2 i0 = clamp(ivec2(floor(t)), ivec2(0), last);
         ivec2 i1 = clamp(ivec2(floor(t)) + 1, ivec2(0), last);
-        float d = mix(mix(texelFetch(texture1, i0, 0).r, texelFetch(texture1, ivec2(i1.x, i0.y), 0).r, f.x),
-                      mix(texelFetch(texture1, ivec2(i0.x, i1.y), 0).r, texelFetch(texture1, i1, 0).r, f.x), f.y);
+        float d = lerp(lerp(texelFetch(texture1, i0, 0).r, texelFetch(texture1, ivec2(i1.x, i0.y), 0).r, f.x),
+                      lerp(texelFetch(texture1, ivec2(i0.x, i1.y), 0).r, texelFetch(texture1, i1, 0).r, f.x), f.y);
         float texelsPerPixel = 0.5*(length(dFdx(texCoord)*texels) + length(dFdy(texCoord)*texels));
         float w = max(SDF_AA*texelsPerPixel/(2.0*SDF_SPREAD), 1e-4);
 

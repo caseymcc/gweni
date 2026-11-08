@@ -26,6 +26,17 @@ flat in vec4 vSegment;
 flat in float vBehindDepth;
 in vec2 vPixel;
 
+// mix(), spelled out, and used in its place throughout: Mesa's GLSL compiler
+// and lavapipe (from glslang's FMix) lower mix() to different arithmetic (mostly
+// a + (b - a)*t and a*(1 - t) + b*t), which round a value that falls on an 8-bit
+// tie a level apart (a row of every vertical gradient). Written out, every
+// backend computes the same, and GL its pixels as before (docs/architecture.md ->
+// "Vulkan's counters and pixels against GL's").
+float lerp(float a, float b, float t) { return a + (b - a)*t; }
+vec2 lerp(vec2 a, vec2 b, vec2 t) { return a + (b - a)*t; }
+vec3 lerp(vec3 a, vec3 b, float t) { return a + (b - a)*t; }
+vec4 lerp(vec4 a, vec4 b, float t) { return a + (b - a)*t; }
+
 // images[8]: style 2's textures, one per image unit (vRadius picks it). GLSL 3.30
 // and ES 3.00 index a sampler array only with a constant, hence the switch.
 // clipBoxes: one Box (x0, y0, x1, y1) per primitive slot, slot s at texel
@@ -68,7 +79,7 @@ vec4 roundedRect(vec4 fill)
     {
         // -d is the inward distance from the edge; border occupies [0, vBorder].
         float bMix = clamp(0.5 + (vBorder + d)/aa, 0.0, 1.0);
-        rgb = mix(fill.rgb, vBorderColor.rgb, bMix);
+        rgb = lerp(fill.rgb, vBorderColor.rgb, bMix);
     }
     return vec4(rgb, fill.a * shapeA);
 }
@@ -189,7 +200,7 @@ vec4 imageTexel(int unit, vec2 uv, vec2 dx, vec2 dy)
         vec2 f = floor(fract(t)*256.0 + 0.5)/256.0;
         ivec2 corner = ivec2(tap & 1, (tap >> 1) & 1);
         ivec2 p = clamp(ivec2(floor(t)) + corner, ivec2(0), size - 1);
-        vec2 w = mix(vec2(1.0) - f, f, vec2(corner));
+        vec2 w = lerp(vec2(1.0) - f, f, vec2(corner));
         vec2 centre = (vec2(p) + 0.5)/vec2(size);
         float texelLod = float(level);
         vec4 texel = vec4(0.0);
@@ -256,14 +267,14 @@ void main()
         // pixels an earlier one covers less, still in front of every lower z, while
         // a fully covered pixel keeps its z, so a translucent polyline is blended once
         // there however many of its segments cover it.
-        depth = mix(vBehindDepth, gl_FragCoord.z, a);
+        depth = lerp(vBehindDepth, gl_FragCoord.z, a);
     }
     else if (ShaderType == 4u)
     {
         // SDF rounded rect: vertical gradient fill + optional border, analytic AA.
         // Vertical gradient: local y runs -half (top) .. +half (bottom).
         float t = clamp(vLocal.y/max(vHalf.y, 1.0)*0.5 + 0.5, 0.0, 1.0);
-        FragColor = roundedRect(mix(VertexColor, vColor1, t));
+        FragColor = roundedRect(lerp(VertexColor, vColor1, t));
     }
     else if (ShaderType == 6u)
     {
@@ -271,7 +282,7 @@ void main()
         // at this x (each linear in x, so exact across the triangle split), blended
         // along y as style 4's gradient is.
         float t = clamp(vLocal.y/max(vHalf.y, 1.0)*0.5 + 0.5, 0.0, 1.0);
-        FragColor = roundedRect(mix(VertexColor, vColor3, t));
+        FragColor = roundedRect(lerp(VertexColor, vColor3, t));
     }
     else if (ShaderType == 7u)
     {
@@ -279,7 +290,7 @@ void main()
         // (light) and vColor3 (dark), counted from the rect's top-left; opaque.
         ivec2 cell = ivec2(floor((vLocal + vHalf)/4.0));
         vec3 checker = ((cell.x + cell.y) & 1) == 0 ? vColor1.rgb : vColor3.rgb;
-        FragColor = roundedRect(vec4(mix(checker, VertexColor.rgb, VertexColor.a), 1.0));
+        FragColor = roundedRect(vec4(lerp(checker, VertexColor.rgb, VertexColor.a), 1.0));
     }
     else if (ShaderType == 5u)
     {

@@ -375,6 +375,17 @@ paths, not drawing) and `bench_smoke` is registered twice: on GL, and as
   compiled at build time. Like every Vulkan test it runs with only the vcpkg
   validation layer on the loader's layer path and the device pinned to
   lavapipe (`gweni_vulkan_test_environment` in `cmake/Vulkan.cmake`).
+- `backend_counters` (labels `gpu`, `vulkan`): every `gweni_bench` scene, every
+  `ControlTest --stats` control and `OpenGLCore --stats` run on `--renderer gl`
+  and `--renderer vulkan`; every counter of every frame must be the same (the
+  times and the bench's allocation counts left out), and a settled Vulkan frame
+  must write and upload nothing (`tests/backends.mjs`, run on emsdk's node).
+- `backend_pixels` and `backend_pixels_scale200` (labels `gpu`, `vulkan`):
+  `ControlTest --shot-all` and the hero on both backends, at scale 1 and 2; each
+  Vulkan PNG within 1 level per channel of GL's, with at most 0.01 % of its pixels
+  differing. A failure keeps its scratch dir under `/tmp` with a
+  `diff/<name>.diff.png` (GL, Vulkan, the difference) per PNG over the bound
+  (`docs/architecture.md` -> "Vulkan's counters and pixels against GL's").
 - `unit:<case name>`: the headless doctest cases (`gweni_unit_tests`, sources
   in `tests/unit/`), one CTest test per case, e.g. the id-bank checks across
   skin swaps in `tests/unit/skinSwap.cpp`. No GL context, no `gpu` label.
