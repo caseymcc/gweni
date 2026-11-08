@@ -423,7 +423,7 @@ TEST_CASE("DragNumber: onValueChanged fires once per real change, never for a no
     scene.release();
 }
 
-TEST_CASE("DragNumber: a drag frame that keeps the shown string marks nothing; one that changes it the Text alone")
+TEST_CASE("DragNumber: a drag frame that keeps the shown string marks nothing, one that changes it the Text alone")
 {
     Scene scene;
     DragNumber *field=scene.field();
