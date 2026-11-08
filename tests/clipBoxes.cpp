@@ -221,7 +221,8 @@ TEST_CASE("Clip boxes: a region past the top-left edge is clamped, an empty one 
     CHECK(frame.isBackground(200, 60));
 }
 
-TEST_CASE("Clip boxes: text is cut, and follows a new region when moved or only re-clipped")
+// needs_text: a Vulkan run leaves it out until renderer::Vulkan draws text (#372)
+TEST_CASE("Clip boxes: text is cut, and follows a new region when moved or only re-clipped" * doctest::test_suite("needs_text"))
 {
     ClipGuard guard;
     SlotRenderer &renderer=gweni::test::gpuRenderer();

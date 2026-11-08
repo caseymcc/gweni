@@ -7,13 +7,17 @@
 //  prologue goes in front of it (OpenGLCore::shaderSource, Vulkan/primitive.vert)
 //  and declares what differs between the APIs:
 //
-//    projection        mat4: device px, y down, z index -> the API's clip space
+//    projection        mat4: device px, y down, z index -> GL's clip space
+//                      (y up, z in [-1, 1], w = 1), the same matrix for every API
 //    slotBase          int: the first slot of the chunk being drawn
 //    VERTEX_ID         the vertex's index from the chunk's first vertex
 //                      (gl_VertexID; gl_VertexIndex with the chunk's vertex
 //                      buffer bound at its first slot)
-//    NDC_TO_DEPTH(z)   a clip-space z (w = 1) as the depth the rasteriser
-//                      writes (GL: z*0.5 + 0.5; Vulkan: z)
+//    CLIP_SPACE_TO_API(p)
+//                      a statement turning GL's clip-space position into the
+//                      API's (nothing for GL; Vulkan maps z to [0, 1] as GL's
+//                      viewport transform does, z*0.5 + 0.5, so every depth is
+//                      computed as on GL)
 //
 layout (location = 0) in uint style;
 layout (location = 1) in ivec3 inPosition;   // device px (signed) and z (16 bits unsigned, read as GL_SHORT with x and y)
@@ -80,7 +84,8 @@ void main()
         gl_Position = vec4(0.0f, 0.0f, 0.0f, 1.0f);
     else
         gl_Position = projection * vec4(float(inPosition.x), float(inPosition.y), z, 1.0f);
+    CLIP_SPACE_TO_API(gl_Position);
 
     vec4 behind = projection * vec4(float(inPosition.x), float(inPosition.y), z - 0.5, 1.0);
-    vBehindDepth = NDC_TO_DEPTH(behind.z);
+    vBehindDepth = behind.z*0.5 + 0.5;
 }

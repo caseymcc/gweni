@@ -641,10 +641,10 @@ std::string embeddedText(const unsigned char *data, size_t size)
 // GL's prologue of each stage: what the bodies leave to the backend. The uniforms
 // are found by name (init()); VERTEX_ID is gl_VertexID, which counts from the
 // chunk's first vertex because each chunk's vertex array points there; and the
-// fixed function's depth is the clip-space z mapped from [-1, 1] to [0, 1].
+// clip space is GL's own.
 const char *primitiveVertexPrologue=
     "#define VERTEX_ID gl_VertexID\n"
-    "#define NDC_TO_DEPTH(z) ((z)*0.5 + 0.5)\n"
+    "#define CLIP_SPACE_TO_API(p)\n"
     "uniform mat4 projection;\n"
     "uniform int slotBase;\n";
 const char *primitiveFragmentPrologue=

@@ -505,6 +505,27 @@ if(TARGET gweni_capture)
         set_tests_properties(unittests PROPERTIES
             LABELS gpu
             TIMEOUT 180)
+
+        if(GWENI_RENDER_VULKAN)
+            # The same cases on renderer::Vulkan (main.cpp: GWENI_RENDERER=vulkan,
+            # validated), but the gl_only suite. Until renderer::Vulkan draws text
+            # (#372) only the primitive styles' files run, without their cases in
+            # the needs_text suite; #372 drops both filters.
+            set(unittests_vulkan_files fillStyles iconGlyphs lines clipBoxes indexChunks
+                scaledEdges imageRects)
+            list(TRANSFORM unittests_vulkan_files PREPEND "*/tests/")
+            list(TRANSFORM unittests_vulkan_files APPEND ".cpp")
+            string(REPLACE ";" "," unittests_vulkan_files "${unittests_vulkan_files}")
+            add_test(NAME unittests_vulkan
+                COMMAND $<TARGET_FILE:gweni_unittests>
+                    "--source-file=${unittests_vulkan_files}"
+                    --test-suite-exclude=gl_only,needs_text
+                WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
+            set_tests_properties(unittests_vulkan PROPERTIES
+                ENVIRONMENT GWENI_RENDERER=vulkan
+                TIMEOUT 180)
+            gweni_vulkan_test_environment(unittests_vulkan)
+        endif()
     endif()
 else()
     message(STATUS "tests: unit tests skipped, they need gweni_capture (GWENI_BUILD_EXAMPLES)")

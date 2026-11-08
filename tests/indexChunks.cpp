@@ -275,7 +275,8 @@ TEST_CASE("Index chunks: a few slots per chunk draw the same pixels, one draw pe
     CHECK(renderer.indexChunkSlots() == SlotRenderer::kSlotsPerChunk);
 }
 
-TEST_CASE("Index chunks: text split between chunks draws the same, hidden and shrunk runs nothing more")
+// needs_text: a Vulkan run leaves it out until renderer::Vulkan draws text (#372)
+TEST_CASE("Index chunks: text split between chunks draws the same, hidden and shrunk runs nothing more" * doctest::test_suite("needs_text"))
 {
     Guard guard;
     Texts texts;

@@ -430,6 +430,22 @@ if(GWENI_RENDER_VULKAN)
 
     # so code (the library, the examples, the tests) can #if on it
     set(GWENI_COMPILE_DEFINITIONS ${GWENI_COMPILE_DEFINITIONS} GWENI_HAS_VULKAN)
+
+    # renderer::Vulkan, the Vulkan backend of SlotRenderer, which (with
+    # freetype-gl and the shader bodies) is built with the GL renderer for now
+    if(NOT GWENI_RENDER_OPENGL_CORE)
+        message(FATAL_ERROR "GWENI_RENDER_VULKAN needs GWENI_RENDER_OPENGL_CORE: "
+            "renderer::Vulkan derives from SlotRenderer, built with it")
+    endif()
+    list(APPEND GWENI_RENDER_SOURCES
+        include/gweni/platforms/renderers/vulkan.h
+        source/platforms/renderers/Vulkan/vulkan.cpp
+    )
+    set(GWENI_ADDITIONAL_LIBRARIES ${GWENI_ADDITIONAL_LIBRARIES} gweni_vulkan)
+    set(GWENI_VULKAN_SHADERS
+        source/platforms/renderers/Vulkan/primitive.vert
+        source/platforms/renderers/Vulkan/primitive.frag
+    )
 endif()
 
 set(GWENI_STD_FILESYSTEM 1)
@@ -538,6 +554,10 @@ target_link_libraries(gweni
 #endif()
 
 target_compile_definitions(gweni PUBLIC ${GWENI_COMPILE_DEFINITIONS})
+if(GWENI_VULKAN_SHADERS)
+    # renderer::Vulkan's SPIR-V, each wrapper #including its body from shaders/
+    gweni_add_spirv(gweni ${GWENI_VULKAN_SHADERS})
+endif()
 if(GWENI_WEB_LINK_OPTIONS)
     target_link_options(gweni INTERFACE ${GWENI_WEB_LINK_OPTIONS})
 endif()

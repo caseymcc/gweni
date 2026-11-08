@@ -99,10 +99,14 @@ function(gweni_add_spirv target)
         set(header "${outputDir}/${shaderName}.h")
 
         # -I the shader's own dir so a shared body can be #included
-        # (GL_GOOGLE_include_directive); the depfile rebuilds on its change
+        # (GL_GOOGLE_include_directive); the depfile rebuilds on its change.
+        # --auto-map-locations numbers the in/out variables that have no
+        # location in the order they are declared, as both stages of the
+        # shared bodies declare them (GL links them by name)
         add_custom_command(
             OUTPUT "${header}"
             COMMAND "${GWENI_GLSLANG_VALIDATOR}" -V --target-env vulkan1.3
+                --auto-map-locations
                 --vn "${symbol}" "-I${shaderDir}"
                 --depfile "${header}.d"
                 -o "${header}" "${shaderPath}"
