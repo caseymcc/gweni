@@ -119,7 +119,8 @@ public:
         if(!m_columns[i])
             return;
 
-        // Docked Left, the column is laid out at the width it measures.
+        // The Label measures the new text, and the Table, which the text's
+        // invalidation reaches, sizes the column from it in the same pass.
         m_columns[i]->setText(strString);
     }
 
@@ -135,28 +136,6 @@ public:
     Label *getCellContents(int i)
     {
         return m_columns[i];
-    }
-
-    void sizeToContents()
-    {
-        int iHeight=0;
-
-        for(int i=0; i < m_columnCount; i++)
-        {
-            if(!m_columns[i])
-                continue;
-
-            // Note, more than 1 child here, because the
-            // label has a child built in ( The Text )
-            if(m_columns[i]->numChildren() > 1)
-                m_columns[i]->sizeToChildren();
-            else
-                m_columns[i]->sizeToContents();
-
-            iHeight=std::max(iHeight, m_columns[i]->getHeight());
-        }
-
-        setHeight(iHeight);
     }
 
     void setTextColor(const gweni::Color &color)
@@ -255,8 +234,6 @@ public:
         {
             m_columnWidth[i]=0;
         }
-
-        m_sizeToContents=false;
     }
 
 public:
@@ -278,6 +255,9 @@ public:
         m_columnCount=i;
     }
 
+    //! Gives column i a fixed width (iWidth > 0), which it keeps whatever the
+    //! table's width, or makes it an auto column again (0), sized from its
+    //! content in layout().
     void setColumnWidth(int i, int iWidth)
     {
         if(m_columnWidth[i] == iWidth)
@@ -342,12 +322,15 @@ public:
     //! for the bounds as they are, laid out or not.
     controls::Base *getControlAt(int x, int y, bool bOnlyIfMouseEnabled=true) override;
 
+    //! Hands every row its columns' widths (splitColumns). It runs at the
+    //! start of the table's X arrange, with the table's width final and every
+    //! cell measured (calculateSize(X)), so a cell's new text, a row added,
+    //! removed, hidden or shown re-sizes the columns in that same pass: each
+    //! invalidates the table. The table itself is as big as its rows measure,
+    //! which its parent gives it.
     void layout(skin::Base *skin) override
     {
         ParentClass::layout(skin);
-
-        if(m_sizeToContents)
-            doSizeToContents();
 
         const int columns=std::min(m_columnCount, int(TableRow::MaxColumns));
         int content[TableRow::MaxColumns]={};
@@ -394,50 +377,6 @@ public:
         // No invalidateParent() here: the ListBox this sits in decides its
         // scrollbars from the rows' preferred sizes before laying this table
         // out, and asking it to lay out again from here re-dirtied every pass.
-    }
-
-    // The columns' widths are worked out in layout() (doSizeToContents); the
-    // table itself is as big as its rows measure, which its parent gives it.
-    void postLayout(skin::Base * /*skin*/) override
-    {
-        m_sizeToContents=false;
-    }
-
-    void sizeToContents()
-    {
-        m_sizeToContents=true;
-        invalidate();
-    }
-
-    void doSizeToContents()
-    {
-        for(int i=0; i < TableRow::MaxColumns; i++)
-        {
-            m_columnWidth[i]=10;
-        }
-
-        for(auto &&child : getChildren())
-        {
-            TableRow *row=gweni_cast<TableRow>(child);
-
-            if(!row)
-                continue;
-
-            // What each column measures, this pass (calculateSize has run):
-            // not a resize of the cells, which their rows lay out.
-            for(int i=0; i < TableRow::MaxColumns; i++)
-            {
-                if(row->m_columns[i])
-                {
-                    m_columnWidth[i]=std::max(m_columnWidth[i],
-                        row->m_columns[i]->getPreferredSize().width);
-                }
-            }
-
-            // iBottom += row->getHeight();
-        }
-
-        invalidateParent();
     }
 
 protected:
@@ -543,7 +482,6 @@ private:
     //! hidden or shown since the last build; whether the search holds.
     bool hitRowsSearchable();
 
-    bool m_sizeToContents;
     int m_columnCount;
     int m_defaultRowHeight;
 

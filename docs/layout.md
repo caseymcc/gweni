@@ -353,9 +353,21 @@ to the order a pass runs in.
   `sizeToChildren()`, `sizeToContents()` or `setSize()`: those are requests
   (app helpers), and its parent has already placed it. A tab button is docked
   at the size it measures; it does not size itself to its label.
+* **Columns sized from their content, in the same pass.** A `layout::Table`
+  sizes its auto columns in `layout()`, at the start of its X arrange, from
+  its cells' preferred widths, which `calculateSize(X)` has just measured:
+  each gets its widest cell and an even share of what is left, or, when the
+  content is wider than the table, a share in proportion to it, and the
+  integer remainder goes to the lowest-index ones, so the columns add up to
+  the table's width (`Table::splitColumns`). Its rows place their column
+  Labels at those widths in their own `arrangeHorizontal`, without writing
+  them into the Labels' preferred sizes, so a Label's preferred width stays
+  its text's and a column shrinks back when its widest cell does. A row
+  handed a new width marks itself for the pass as placement (the Table
+  arranges it next), so a cell's new text re-places the clean rows in that
+  pass too (`tests/unit/tableColumns.cpp`).
 * **Children the generic arrange places are handed their inputs, not their
-  bounds.** A TableRow sets its columns' preferred widths in its X arrange;
-  the docks, margins, padding and visibility a control derives for its
+  bounds.** The docks, margins, padding and visibility a control derives for its
   children are set at the start of its `calculateSize(X)`, before anything has
   measured them (TabStrip, TabButton, GroupBox, DockedTabControl, TreeNode).
   These are not bounds, so they are written under a `PlacementScope`, which is
