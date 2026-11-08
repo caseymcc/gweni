@@ -87,8 +87,7 @@ GWENI_CONTROL_CONSTRUCTOR(HSVColorPicker)
 
     // the swatches and the boxes start at the box's selection, not at
     // ColorDisplay's default red
-    m_before->setColor(getColor());
-    updateControls(getColor());
+    setColor(m_lerpBox->getSelectedColor(), false, true);
 }
 
 void HSVColorPicker::onNumericTyped(event::Info info)
@@ -103,7 +102,7 @@ void HSVColorPicker::onNumericTyped(event::Info info)
 
     int textValue=clamp(atoi(box->getText().c_str()), 0, 255);
 
-    Color newColor=getColor();
+    Color newColor=m_color;
 
     if(box->getName().find("Red") != String::npos)
         newColor.r=textValue;
@@ -114,7 +113,12 @@ void HSVColorPicker::onNumericTyped(event::Info info)
     else if(box->getName().find("Alpha") != String::npos)
         newColor.a=textValue;
 
+    if(newColor == m_color)
+        return;
+
+    // typing is the user's change, setColor a programmatic one
     setColor(newColor);
+    onColorChanged.call(this);
 }
 
 void HSVColorPicker::updateControls(Color color)
@@ -143,34 +147,50 @@ void HSVColorPicker::updateControls(Color color)
 
 void HSVColorPicker::setColor(Color color, bool onlyHue, bool reset)
 {
-    updateControls(color);
+    // the box and the slider are set without their events, which would
+    // read the colour back through them
+    m_colorSlider->setColor(color, false);
+
+    if(onlyHue)
+    {
+        m_lerpBox->setColor(color, true, false);
+        m_color=m_lerpBox->getSelectedColor();
+        m_color.a=color.a;
+    }
+    else
+    {
+        m_lerpBox->setColor(color, false, false);
+        m_color=color;
+    }
 
     if(reset)
-        m_before->setColor(color);
+        m_before->setColor(m_color);
 
-    m_colorSlider->setColor(color);
-    m_lerpBox->setColor(color, onlyHue);
-    m_after->setColor(color);
+    updateControls(m_color);
 }
 
-Color HSVColorPicker::getColor()
+void HSVColorPicker::selectionChanged()
 {
-    return m_lerpBox->getSelectedColor();
+    Color color=m_lerpBox->getSelectedColor();
+
+    color.a=m_color.a;
+    if(color == m_color)
+        return;
+
+    m_color=color;
+    updateControls(m_color);
+    onColorChanged.call(this);
 }
 
 void HSVColorPicker::colorBoxChanged(event::Info)
 {
-    onColorChanged.call(this);
-    updateControls(getColor());
-    invalidate();
+    selectionChanged();
 }
 
 void HSVColorPicker::colorSliderChanged(event::Info)
 {
-    if(m_lerpBox)
-        m_lerpBox->setColor(m_colorSlider->getSelectedColor(), true);
-
-    invalidate();
+    m_lerpBox->setHue(m_colorSlider->getHue(), false);
+    selectionChanged();
 }
 
 }//namespace controls

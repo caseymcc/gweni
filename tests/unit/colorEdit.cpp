@@ -26,7 +26,8 @@
  *  field edit, the only pending changes in the ColorEdit are the swatch's
  *  Background and that field's text. Alpha off hides the A field and makes
  *  the colour opaque, the hex field six digits. A click on the swatch opens
- *  an HSVColorPicker in a Popup anchored below it, showing the colour; a
+ *  an HSVColorPicker in a Popup anchored below it, holding the colour
+ *  exactly, alpha included (#463); a
  *  field edit moves the picker, a picker change updates the swatch and the
  *  fields keeping the alpha, with no loop back; Escape, a click outside and
  *  a second click on the swatch close it. Deleting the ColorEdit gives its
@@ -36,8 +37,8 @@
  *  the front (the canvas deleted the popup first, and ~ColorEdit touched it:
  *  a heap-use-after-free in the ASAN tree), the popup open or closed.
  *
- *  HSVColorPicker::setColor before any layout leaves the picker on that
- *  colour (#413: RGBtoHSV gave al_color_rgb_to_hsv 0-255 channels where it
+ *  HSVColorPicker::setColor before any layout leaves the picker on exactly
+ *  that colour (#413: RGBtoHSV gave al_color_rgb_to_hsv 0-255 channels where it
  *  takes 0-1, so the value was 255 times too large and the cursor on the
  *  box's top edge). property::ColorSelector's swatch is a ColorButton showing
  *  the "r g b" or "r,g,b" value.
@@ -198,13 +199,6 @@ struct Scene
 bool sameColor(const Color &a, const Color &b)
 {
     return a.r == b.r && a.g == b.g && a.b == b.b && a.a == b.a;
-}
-
-//! Within the HSV picker's round trip: its cursor is on whole units of a
-//! 128-unit box, so saturation and value are each 1/128 off at most.
-bool nearColor(const Color &a, const Color &b)
-{
-    return std::abs(a.r-b.r) <= 4 && std::abs(a.g-b.g) <= 4 && std::abs(a.b-b.b) <= 4;
 }
 
 //! Every control under \p control (itself included) with a pending change.
@@ -523,14 +517,14 @@ TEST_CASE("a click on ColorEdit's swatch opens an HSV picker in a Popup below it
         CHECK(popup.y >= swatch.y+edit->getSwatch()->getHeight());
         CHECK(popup.x == swatch.x);
         // opening it shows the colour and changes nothing
-        CHECK(nearColor(edit->getPicker()->getColor(), edit->getColor()));
+        CHECK(sameColor(edit->getPicker()->getColor(), edit->getColor()));
         CHECK(counter.count == 0);
         CHECK(sameColor(edit->getColor(), Color(224, 175, 104, 200)));
 
         // a field edit moves the picker
         edit->getField(1)->setText("20");
         CHECK(counter.count == 1);
-        CHECK(nearColor(edit->getPicker()->getColor(), Color(224, 20, 104, 255)));
+        CHECK(sameColor(edit->getPicker()->getColor(), Color(224, 20, 104, 200)));
         CHECK(sameColor(edit->getColor(), Color(224, 20, 104, 200)));
 
         // a click in the picker's saturation/value box reaches the swatch and
@@ -547,7 +541,7 @@ TEST_CASE("a click on ColorEdit's swatch opens an HSV picker in a Popup below it
         CHECK(edit->isPickerOpen());
         CHECK(counter.count == 2);
         const Color picked=edit->getColor();
-        CHECK(sameColor(Color(picked.r, picked.g, picked.b, 255), edit->getPicker()->getColor()));
+        CHECK(sameColor(picked, edit->getPicker()->getColor()));
         CHECK(picked.a == 200);
         CHECK(sameColor(edit->getSwatch()->getColor(), picked));
         CHECK(edit->getField(1)->getText() == toString(+picked.g));
@@ -557,7 +551,7 @@ TEST_CASE("a click on ColorEdit's swatch opens an HSV picker in a Popup below it
         CHECK_FALSE(edit->isPickerOpen());
         scene.clickOn(edit->getSwatch());
         CHECK(edit->isPickerOpen());
-        CHECK(nearColor(edit->getPicker()->getColor(), picked));
+        CHECK(sameColor(edit->getPicker()->getColor(), picked));
         scene.leftClick(600, 460);
         CHECK_FALSE(edit->isPickerOpen());
         scene.clickOn(edit->getSwatch());
@@ -634,7 +628,7 @@ TEST_CASE("HSVColorPicker::setColor before any layout leaves the picker on that 
     for(const Color &color : {Color(158, 206, 106, 255), Color(224, 175, 104, 255), Color(10, 20, 30, 255)})
     {
         picker->setColor(color);
-        CHECK(nearColor(picker->getColor(), color));
+        CHECK(sameColor(picker->getColor(), color));
     }
 }
 

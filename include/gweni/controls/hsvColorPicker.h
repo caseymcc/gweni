@@ -29,12 +29,18 @@ public:
     //! A container of its ColorLerpBox, ColorSlider, ColorDisplays and text boxes.
     GWENI_DRAWS_NOTHING
 
-    gweni::Color getColor();
+    //! The colour last set or chosen, alpha included (the picker has no
+    //! alpha field: it carries the alpha it was given).
+    gweni::Color getColor() { return m_color; }
     gweni::Color getDefaultColor()
     {
         return m_before->getColor();
     }
 
+    //! Shows \p color: the box, the slider, the R, G, B fields and the
+    //! "after" swatch, and with \p reset the "before" one. With \p onlyHue
+    //! only the hue moves, and the colour is the box's at its saturation and
+    //! value. A programmatic set: it fires no onColorChanged.
     void setColor(gweni::Color color, bool onlyHue=false, bool reset=false);
 
     void colorBoxChanged(event::Info info);
@@ -43,9 +49,16 @@ public:
 
     void updateControls(gweni::Color newColor);
 
+    //! Fired once per change of the colour the user makes: a drag in the box
+    //! or the slider, a value typed into R, G or B.
     event::Caller onColorChanged;
 
 protected:
+    //! Takes the box's selected colour (keeping the alpha) after a user
+    //! change, and fires onColorChanged if the colour changed.
+    void selectionChanged();
+
+    gweni::Color m_color;
 
     ColorLerpBox *m_lerpBox;
     ColorSlider *m_colorSlider;
