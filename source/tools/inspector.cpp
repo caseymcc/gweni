@@ -140,6 +140,7 @@ GWENI_CONTROL_CONSTRUCTOR(Inspector)
 
     m_tree=newChild<controls::TreeControl>();
     m_tree->setDock(DockPosition::Left);
+    m_tree->setSizeFlags({SizeFlag::Fixed, SizeFlag::Expand});
     m_tree->setWidth(250);
     m_tree->setMargin(Margin(0, 0, 4, 0));
 
@@ -489,7 +490,7 @@ void Inspector::select(controls::Base *control)
         // open the way down to it: its ancestors from the canvas's child on
         std::vector<controls::Base *> path;
 
-        for(controls::Base *at=control->getParent(); at && (at != m_canvas); at=at->getParent())
+        for(controls::Base *at=control->getActualParent(); at && (at != m_canvas); at=at->getActualParent())
             path.push_back(at);
         if(!m_treeBuilt)
         {

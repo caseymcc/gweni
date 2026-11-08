@@ -86,6 +86,11 @@ struct ChangeStats
     size_t geometry=0;
     size_t background=0;
     size_t text=0;
+    //! controls with a state change inside a Base::setExcludedFromStats()
+    //! subtree (a tool such as the inspector), counted in no other field: a
+    //! frame with only these changes writes slots the other fields say nothing
+    //! of
+    size_t excluded=0;
 };
 
 //! Changes counted since the last resetChangeStats().
@@ -240,6 +245,10 @@ public:
     {
         return m_children;
     }
+    //! The control this one is actually parented to (an inner panel, where
+    //! getParent() names the control that has it): the parent in
+    //! getActualChildren()'s tree.
+    Base *getActualParent() const { return m_actualParent; }
 
     //! The panel getChildren() hands out in place of this control's own
     //! children (a ScrollControl's scrolled panel), or nullptr if it has none.
@@ -321,16 +330,23 @@ public:
     //! drawn on the canvas it measures (gweni::tools::Inspector) shows the
     //! app's work alone: ChangeStats (getChangeStats()), the canvas's
     //! UpdateStats and LayoutStats, and measureTextCalls() count none of its
-    //! entries, renders, changes, animations or measures. A layout pass or z
-    //! renumber that entered nothing outside such subtrees but the canvas
-    //! itself is not counted at all, the canvas's entries included. Off by
-    //! default; with no control flagged nothing is looked up.
+    //! entries, renders, changes, animations or measures; nor the layout and z
+    //! renumber entries of controls outside it that only its own changes made
+    //! dirty (the way up to it: layoutEntryCounted()), and a layout pass with
+    //! no entry counted is not counted at all. Off by default; with no control
+    //! flagged nothing is looked up.
     void setExcludedFromStats(bool exclude);
     bool isExcludedFromStats() const { return m_excludeFromStats; }
     //! Whether this control is in a subtree setExcludedFromStats() flagged: it
     //! or an ancestor (getParent() chain). O(depth) while any control is
     //! flagged, O(1) when none is.
     bool statsExcluded() const;
+    //! Whether this control's entry of a layout pass is counted in
+    //! LayoutStats::visited: always while no control is flagged; else when it
+    //! is not statsExcluded() and something outside the flagged subtrees made
+    //! it dirty, so a control entered only on the way to a flagged subtree's
+    //! change is not counted either.
+    bool layoutEntryCounted() const;
     
 
     virtual void restrictToParent(bool restrict) { m_restrictToParent=restrict; }
@@ -594,11 +610,7 @@ protected:
     void zChildRemoved();
     //! Sets m_zDirty on this control and its m_actualParent chain up to the
     //! first that already has it.
-    void markZDirty()
-    {
-        for(Base *control=this; control && !control->m_zDirty; control=control->m_actualParent)
-            control->m_zDirty=true;
-    }
+    void markZDirty();
 
 public:
 
@@ -959,6 +971,9 @@ protected:
     //! the m_actualParent chain). A control is created dirty: it was never
     //! numbered.
     bool m_zDirty=true;
+    //! m_zDirty was set from outside every setExcludedFromStats() subtree (or
+    //! the control is new), so its renumber entry counts in zVisited.
+    bool m_zDirtyCounted=true;
     //! zSubtreeEnd() when the renumber last entered this control (or a removal
     //! changed it), so a clean subtree is passed in O(1).
     int m_zEnd=0;
@@ -1110,6 +1125,9 @@ protected:
     bool m_cacheTextureDirty;
     bool m_cacheToTexture;
     bool m_updateLayout;
+    //! m_updateLayout was set from outside every setExcludedFromStats()
+    //! subtree (or the control is new): see layoutEntryCounted().
+    bool m_layoutDirtyCounted=true;
     //! The Canvas::s_passSerial of the last pass that arranged this control
     //! in X (m_layoutPassX) and in Y (m_layoutPassY).
     unsigned m_layoutPassX=0;

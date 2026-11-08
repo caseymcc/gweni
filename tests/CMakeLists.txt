@@ -145,6 +145,11 @@ if(TARGET ControlTest AND NOT EMSCRIPTEN)
             --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/resize@VARIANT@
         WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
 
+    # The modes that build a control again in the same process and compare the
+    # two (resize, scale, hide-show) leave InspectorDemo out: its inspector
+    # shows control ids, which are process-wide and never reused, so the second
+    # build's captions are other strings. determinism (two processes),
+    # one_pass_each, teardown and controltest_inspector cover it.
     # the same round trip for every other control in --list, one process each
     gweni_whole_app_test(controltest_resize_each 600
         COMMAND ${CMAKE_COMMAND}
@@ -152,7 +157,7 @@ if(TARGET ControlTest AND NOT EMSCRIPTEN)
             -DSOURCE_DIR=${GWENI_SOURCE_DIR}
             -DSCRATCH_DIR=${CMAKE_CURRENT_BINARY_DIR}/resize_each@VARIANT@
             -DMODE=resize
-            -DSKIP=Demo
+            -DSKIP=Demo,InspectorDemo
             -P ${CMAKE_CURRENT_SOURCE_DIR}/eachControl.cmake
         WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
 
@@ -177,6 +182,7 @@ if(TARGET ControlTest AND NOT EMSCRIPTEN)
             -DSOURCE_DIR=${GWENI_SOURCE_DIR}
             -DSCRATCH_DIR=${CMAKE_CURRENT_BINARY_DIR}/scale_roundtrip@VARIANT@
             -DMODE=scale
+            -DSKIP=InspectorDemo
             -P ${CMAKE_CURRENT_SOURCE_DIR}/eachControl.cmake
         WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
 
@@ -193,6 +199,7 @@ if(TARGET ControlTest AND NOT EMSCRIPTEN)
             -DSOURCE_DIR=${GWENI_SOURCE_DIR}
             -DSCRATCH_DIR=${CMAKE_CURRENT_BINARY_DIR}/hide_show_each@VARIANT@
             -DMODE=hide-show
+            -DSKIP=InspectorDemo
             -P ${CMAKE_CURRENT_SOURCE_DIR}/eachControl.cmake
         WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
 
@@ -363,6 +370,14 @@ Erm, and I think it comes down to a choice between "The League Against Salivatin
     gweni_whole_app_test(controltest_plot_lines 60
         COMMAND $<TARGET_FILE:ControlTest> --headless --scenario plot-lines --require-one-pass
             --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/plot_lines@VARIANT@
+        WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
+
+    # gweni::tools::Inspector over the settled Demo, opened and closed by F12:
+    # it settles to 0 and a frame that writes nothing, its own slots included,
+    # shows a hover's slots on the next frame, and gives its ids back
+    gweni_whole_app_test(controltest_inspector 120
+        COMMAND $<TARGET_FILE:ControlTest> --headless --scenario inspector --require-one-pass
+            --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/inspector@VARIANT@
         WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
 
     # every entry of the shell's demo list fits its row at the README hero's

@@ -275,7 +275,9 @@ nothing on other frames, and the depth-first numbering then gives the box and it
 the highest z values in the tree. A reserved z range above the tree was the other
 choice; it would need a ceiling that no tree reaches and a second numbering for the
 overlays, while the last-child rule reuses the one numbering there is. The popup (below)
-takes the place just before it. GWEN's drag-and-drop
+takes the place just before it, and the controls registered with `Canvas::addOverlay` (the
+inspector's highlight box) go between the popup's Menus and the box, in the order they were
+added. GWEN's drag-and-drop
 preview, which re-rendered the dragged control after the walk at the mouse offset, was
 deleted rather than moved here: the only drag that set it hid that control first, so it
 never drew anything.
@@ -2010,6 +2012,64 @@ two programs and the draws. What follows describes both together:
   counts it as one measure (`measureTextCalls()`). `tests/measureCarets.cpp` pins the
   equality and `getClosestCharacter`'s answers against the old per-prefix walk in every
   mode and at scale 1.5; `tests/unit/closestCharacter.cpp` the one call per probe.
+
+## The inspector
+
+`gweni::tools::Inspector` (`include/gweni/tools/inspector.h`, `source/tools/inspector.cpp`)
+is the library's live view of the change tracking: a `WindowControl` an app opens on its
+canvas (`Inspector::open`/`close`/`toggle`; the library binds no key, the examples bind
+F12). It shows the control tree, the selected control's state and the counters of the
+last frame, and over a settled UI it shows 0 slots written, which is true: the frames
+after it write nothing, its own slots included (`controltest_inspector`).
+
+**What it shows.** The tree is a `TreeControl` of `InspectorNode`s, one per control
+(type, name, id), each node's children made only when it is first opened (a `...`
+placeholder shows the toggle until then), so a tree of thousands of controls costs the
+rows opened. It is brought in line with the canvas when `Canvas::treeSerial()` moves,
+which every tree-order change Base reports raises (what makes the z renumber run) unless
+it happened inside an excluded subtree, so its own nodes do not move it: a level whose
+targets differ is made again, the nodes that were open opened again. The selected
+control's lines are its type, bounds (logical and on the canvas), z and `depthLayers()`,
+overlay z and `overlayLayers()`, its primitive and text ids (`skin::Control::appendIds`,
+which a Control taking text ids overrides: the textured `Text`), its pending
+`StateChange_*` flags by name, and hidden/visible/disabled/clips. Selecting a control
+whose node was never made opens the nodes down to it. The counters are
+`Canvas::previousFrameStats()`, the last whole frame's `LayoutStats`, `UpdateStats` and
+the `ChangeStats` its render phase counted, kept as the next `updateCanvas()` starts,
+and the renderer's slots written and uploaded (`renderer::Base::frameStats()`, "not
+counted" by default). An `InspectorHighlight` frames the hovered node's control, else
+the selected one: four edge slots (a style 4 rect with a transparent fill would write
+depth over what it frames), an overlay on the canvas (`Canvas::addOverlay`), moved, and
+so drawn, only when its target's rect or visibility changes.
+
+**Its own work is not the app's.** It refreshes once a frame, at the start of the update
+phase, from an animation of its own, reading the frame before, and sets a label only
+when its string changes. Two things keep what it shows the app's alone:
+- Its window and its highlight box are `Base::setExcludedFromStats()`. Nothing under a
+  flagged root counts in `ChangeStats`, the canvas's `LayoutStats` and `UpdateStats`,
+  `measureTextCalls()` or `animsRun`. Neither do the entries of app controls a pass or a
+  renumber enters only on the way to a flagged subtree's change: an invalidation or a z
+  mark started inside one sets `m_updateLayout`/`m_zDirty` up the chain without
+  `m_layoutDirtyCounted`/`m_zDirtyCounted` (`Base::layoutEntryCounted()`), and a pass
+  with no counted entry is not counted at all. While no control is flagged none of this
+  is looked up (`statsExcluded()` is O(1)), and every count is as it was.
+  `tests/unit/statsExclusion.cpp` runs two canvases with the same app tree, one with a
+  changing flagged panel on the canvas or inside an app panel, and requires every count
+  to be the same on both, frame by frame.
+- The slots are counted by the renderer, in `SlotRenderer::flush()`, by comparing slot
+  bytes, so no snapshot around its subtree in the walk could separate them. The
+  renderer reports which ids it wrote instead (`writtenPrimitiveIds()`, and
+  `writtenTextIds()` per text id with its glyph slots, a glyph slot under the text id
+  whose run last held it), and the inspector takes out the ids its controls hold now and
+  those of the nodes it deleted since the frame before (their slots are cleared in the
+  next flush). Uploads cannot be told apart by id: a frame in which only it wrote shows
+  0 uploads, one in which the app wrote shows the frame's whole uploads.
+
+After an app change it converges in two frames: frame k writes the app's slots; frame
+k+1 shows them and writes its own labels' (taken out); frame k+2 shows 0 again and
+writes those; frame k+3 changes no string and writes nothing.
+`tests/unit/inspector.cpp` pins the tree, the details, the settling and the ids given
+back on close; `--scenario inspector` does the same over the whole Demo.
 
 ## The theme file and strict mode
 

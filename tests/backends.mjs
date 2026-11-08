@@ -24,7 +24,8 @@
 //              changes, uploads and draws is counted by the shared core
 //              (SlotRenderer), so it does not depend on the backend. It also
 //              fails unless on Vulkan every settled frame (a ControlTest frame
-//              after the first that changed and rendered no control, and every
+//              after the first that changed and rendered no control, none in
+//              an excluded subtree such as the inspector's either, and every
 //              measured frame of the bench's idle scene) writes and uploads
 //              nothing.
 //    pixels    ControlTest --headless --shot-all and the hero (OpenGLCore
@@ -260,7 +261,8 @@ function counters(options, exes)
             continue;
         let ok = compareCounters(`ControlTest --control ${name}`, gl, vulkan);
         ok = checkSettled(`ControlTest --control ${name}`, vulkan.stdout,
-            pairs => number(pairs, 'frame') > 0 && number(pairs, 'controls_changed') === 0 && number(pairs, 'visited') === 0,
+            pairs => number(pairs, 'frame') > 0 && number(pairs, 'controls_changed') === 0 && number(pairs, 'visited') === 0
+                && number(pairs, 'excluded_changed') === 0,
             settled) && ok;
         same += ok ? 1 : 0;
     }

@@ -92,6 +92,7 @@ public:
 
         m_columnWidth[i]=iWidth;
         m_updateLayout=true;
+        m_layoutDirtyCounted=true;
     }
 
     //! The width column i was given (setColumnWidth), -1 if none.

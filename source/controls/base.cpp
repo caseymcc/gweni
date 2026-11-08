@@ -339,6 +339,11 @@ bool g_placement=false;
 // Set while invalidate() walks up to the canvas, so only its first call, the
 // control that asked, is looked at.
 bool g_propagating=false;
+// Controls flagged with setExcludedFromStats(true): while there are none,
+// statsExcluded() looks nothing up.
+size_t g_statsExcludedRoots=0;
+// The invalidation now going up started outside every flagged subtree.
+bool g_invalidationCounted=true;
 // Set while a part is made during a layout pass (Base::PartScope): its
 // constructor's requests are not counted as layout code's.
 bool g_makingPart=false;
@@ -432,18 +437,29 @@ bool Base::inLayoutPass()
 // it hits a control this pass has already laid out; setBounds reports that.
 void Base::invalidate(int state)
 {
+    // where the invalidation started decides, all the way up, whether the
+    // entries it causes are counted (layoutEntryCounted)
+    if(!g_propagating)
+        g_invalidationCounted=(g_statsExcludedRoots == 0) || !statsExcluded();
+
     if((state & StateChange_Created) || 
         (state & StateChange_Visibility) ||
         (state & StateChange_Geometry))
     {
         m_needsLayout=true;
         m_updateLayout=true;
+        if(g_invalidationCounted)
+            m_layoutDirtyCounted=true;
 
         // A pass walks the children a control actually holds: a child of a
         // control with an inner panel is held by the panel, which the
         // invalidation of the logical parent below does not reach.
         for(Base *holder=m_actualParent; holder && holder != m_parent; holder=holder->m_actualParent)
+        {
             holder->m_updateLayout=true;
+            if(g_invalidationCounted)
+                holder->m_layoutDirtyCounted=true;
+        }
 
         if(Canvas::s_layingOut && !g_propagating && !g_placement)
             noteRedirty();
@@ -1003,9 +1019,15 @@ bool Base::setBounds(const Rect &bounds)
     // pass is on that way already.
     m_needsLayout=true;
 
+    const bool counted=(g_statsExcludedRoots == 0) || !statsExcluded();
+
     for(Base *control=this; control;
         control=control->m_actualParent?control->m_actualParent:control->m_parent)
+    {
         control->m_updateLayout=true;
+        if(counted)
+            control->m_layoutDirtyCounted=true;
+    }
 
     const Rect oldBounds=getBounds();
     m_bounds=bounds;
@@ -1164,9 +1186,6 @@ std::vector<std::string> typesWithoutSkinRenderer()
 
 static size_t g_measureTextCalls=0;
 
-// Controls flagged with setExcludedFromStats(true): while there are none,
-// statsExcluded() looks nothing up.
-static size_t g_statsExcludedRoots=0;
 
 void Base::setExcludedFromStats(bool exclude)
 {
@@ -1177,6 +1196,27 @@ void Base::setExcludedFromStats(bool exclude)
         ++g_statsExcludedRoots;
     else
         --g_statsExcludedRoots;
+}
+
+bool Base::layoutEntryCounted() const
+{
+    return (g_statsExcludedRoots == 0) || (m_layoutDirtyCounted && !statsExcluded());
+}
+
+void Base::markZDirty()
+{
+    // a mark from a flagged subtree makes the way up dirty but not counted; a
+    // counted one goes on up through what is dirty uncounted
+    const bool counted=(g_statsExcludedRoots == 0) || !statsExcluded();
+
+    for(Base *control=this; control; control=control->m_actualParent)
+    {
+        if(control->m_zDirty && (!counted || control->m_zDirtyCounted))
+            break;
+        control->m_zDirty=true;
+        if(counted)
+            control->m_zDirtyCounted=true;
+    }
 }
 
 bool Base::statsExcluded() const
@@ -1237,6 +1277,8 @@ void Base::render(skin::Base *skin)
         if(stateChange & StateChange_Background) ++g_changeStats.background;
         if(stateChange & StateChange_Text) ++g_changeStats.text;
     }
+    else
+        ++g_changeStats.excluded;
 
     if(!m_skinControl)
         return;
@@ -1322,10 +1364,13 @@ void Base::renumberZRecursive(ZNumbering &numbering, bool moved)
     // apart (Canvas::renumberZOrder)
     if(m_excludeFromStats)
         ++numbering.excludedDepth;
-    if(numbering.excludedDepth)
+    // entered only on the way to a flagged subtree's change: not counted
+    const bool uncountedPath=m_zDirty && !m_zDirtyCounted && !moved && !m_zMoved;
+    if(numbering.excludedDepth || uncountedPath)
         ++numbering.excludedVisited;
     else
         ++numbering.stats->zVisited;
+    m_zDirtyCounted=false;
     // a moved control's subtree is out of order wherever it kept its labels
     moved=moved || m_zMoved;
     m_zMoved=false;
@@ -2420,6 +2465,8 @@ void Base::doArrange(skin::Base *skin, Dim dim)
         m_updateLayout=(m_redirtiedPass == Canvas::s_passSerial) ||
             std::any_of(m_children.begin(), m_children.end(), [](const Base *child)
                 { return !child->hidden() && child->m_updateLayout; });
+        if(!m_updateLayout)
+            m_layoutDirtyCounted=false;
     }
 }
 

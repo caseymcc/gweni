@@ -10,7 +10,7 @@
 #  controltest_hide_show_each):
 #
 #      cmake -DCONTROLTEST=<ControlTest> -DSOURCE_DIR=<repo root> \
-#            -DSCRATCH_DIR=<dir> -DMODE=resize|one-pass|scale|verify|hide-show [-DSKIP=<names>] \
+#            -DSCRATCH_DIR=<dir> -DMODE=resize|one-pass|scale|verify|hide-show [-DSKIP=<name>,<name>...] \
 #            -P eachControl.cmake
 #
 #  MODE resize:   --scenario resize --require-one-pass, the 640->1024->640
@@ -34,7 +34,9 @@
 #
 #  Every control is run, and the failing ones are named together at the end,
 #  each with the lines ControlTest printed on stderr. SKIP leaves controls out
-#  that another test already covers (Demo, for controltest_resize).
+#  that another test already covers (Demo, for controltest_resize), or that a
+#  second build in the same process cannot match (InspectorDemo, whose
+#  inspector shows the process-wide control ids).
 #
 
 foreach(var CONTROLTEST SOURCE_DIR SCRATCH_DIR MODE)
@@ -73,7 +75,11 @@ endif()
 # "  ButtonDemo" lines, and "  Demo (the whole docked demo)"
 string(REGEX MATCHALL "\n  [A-Za-z0-9_]+" names "${listing}")
 string(REGEX REPLACE "\n  " "" names "${names}")
-list(REMOVE_ITEM names ${SKIP})
+# SKIP is comma-separated: a list's ';' does not survive the add_test command
+string(REPLACE "," ";" SKIP "${SKIP}")
+if(SKIP)
+    list(REMOVE_ITEM names ${SKIP})
+endif()
 if(NOT names)
     message(FATAL_ERROR "no control names in ControlTest --list:\n${listing}")
 endif()

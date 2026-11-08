@@ -113,14 +113,7 @@ void Canvas::renumberZOrder()
     numbering.movedTailGap=std::min(m_zGap, MovedZGap);
     numbering.skipClean=skipClean;
     numbering.stats=&m_updateStats;
-
-    const size_t zVisitedBefore=m_updateStats.zVisited;
-
     renumberZRecursive(numbering);
-    // a renumber that entered an excluded subtree and no other control but the
-    // canvas ran for that subtree alone: the canvas's entry is taken back
-    if(numbering.excludedVisited && (m_updateStats.zVisited == zVisitedBefore+1))
-        m_updateStats.zVisited=zVisitedBefore;
 
     if(numbering.maxUsed > maxZ)
     {
@@ -197,6 +190,7 @@ void Canvas::renderCanvas()
     m_renderChange.geometry+=after.geometry-before.geometry;
     m_renderChange.background+=after.background-before.background;
     m_renderChange.text+=after.text-before.text;
+    m_renderChange.excluded+=after.excluded-before.excluded;
     m_renderChange.renderCarried=after.renderCarried;
     render->end();
 }
@@ -255,7 +249,7 @@ void Canvas::layoutPass()
     m_passCulpritType=nullptr;
     m_passCulpritId=0;
     m_passExcludedEntries=0;
-    m_passOtherEntries=0;
+    m_passCountedEntries=0;
 
     Canvas *outer=s_layingOut;
     s_layingOut=this;
@@ -413,14 +407,13 @@ void Canvas::verifyLayout()
 
 void Canvas::countLayoutEntry(controls::Base *control)
 {
-    if(control->statsExcluded())
+    if(!control->layoutEntryCounted())
     {
         ++m_passExcludedEntries;
         return;
     }
     ++m_layoutStats.visited;
-    if(control != this)
-        ++m_passOtherEntries;
+    ++m_passCountedEntries;
 }
 
 void Canvas::layoutCanvas()

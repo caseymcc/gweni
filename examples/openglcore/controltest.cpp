@@ -57,6 +57,10 @@
  *                       the queued ones alone (0 on a settled frame);
  *                       render_carried= the entries its drain left queued
  *                       for a later frame (controls off the canvas);
+ *                       excluded_changed= the controls with a state change
+ *                       in a setExcludedFromStats() subtree (the inspector),
+ *                       which no other change count includes: a frame where
+ *                       only they changed writes slots with controls_changed=0;
  *                       layout_visited= the controls the frame's layout
  *                       passes entered, one per calculateSize() and one per
  *                       arrange(), each axis counted (0 with no pass);
@@ -116,7 +120,7 @@
  *                       typing | clip | text-size | scale | tooltip |
  *                       context-menu | popup | virtual-list |
  *                       data-table-virtual | hide-show | demo-labels |
- *                       plot-histogram | plot-lines (see below)
+ *                       plot-histogram | plot-lines | inspector (see below)
  *    --dump-bounds [<path>]
  *                       print the laid-out control tree as text: one line per
  *                       control, depth-first in child order, indented by depth,
@@ -148,8 +152,9 @@
  *    --scroll DX,DY     mouse wheel (DX is ignored; gweni only takes the Y axis)
  *    --key <name>       a key: return, kp-enter, tab, space, escape, up, down,
  *                       left, right, home, end, backspace, delete, shift,
- *                       control, alt, command, or a single printable
- *                       character. A named key is pressed and released as
+ *                       control, alt, command, f12 (which, as in the window,
+ *                       opens and closes the inspector and is not passed on),
+ *                       or a single printable character. A named key is pressed and released as
  *                       synthesised GLFW key events and a character is typed
  *                       as a GLFW char event, both through the same
  *                       gweni::input::GLFW3 translator the examples' callbacks
@@ -399,6 +404,20 @@
  *                 (plot-lines.png). One line
  *                   plot-lines segments=63 sample_prim_slots=2 ... ids_back=yes
  *                 Exits non-zero if any check is no.
+ *    inspector    Demo, the clock frozen, settled; F12 (scripted, through the
+ *                 same key handler as the window's) opens the inspector
+ *                 (gweni::tools::Inspector) over it. It has to settle within 6
+ *                 frames to one that writes no primitive or glyph slot at all,
+ *                 its own included, while showing 0 slots written, 0 controls
+ *                 rendered and 0 layout passes, and the frame after it must
+ *                 write nothing either. The mouse onto a demo-list button: that
+ *                 frame writes some slots, the next frame's inspector shows
+ *                 exactly that frame's primitive and glyph slots, and within 4
+ *                 frames it shows 0 again and a frame writes nothing. F12 again
+ *                 closes it, giving back every primitive id it took
+ *                 (inspector.png, with it open). One line
+ *                   inspector settle_frames=2 settled_zero=yes ... ids_back=yes
+ *                 Exits non-zero if any check is no.
  *    scale        one control (default Demo) on a 640x480 canvas at scale 1,
  *                 then Canvas::setScale(2) with the framebuffer resized to
  *                 1280x960, then back to 1 (scale-01-1x.png, scale-02-2x.png,
@@ -619,6 +638,7 @@
 #include <gweni/controls/virtualList.h>
 #include <gweni/controls/dataTable.h>
 #include <gweni/controls/properties.h>
+#include <gweni/tools/inspector.h>
 #include <GLFW/glfw3.h>
 #include <gweni/utils/filesystem.h>
 #include "capture.h"
@@ -660,6 +680,7 @@
 #include <demo/pageControl.h>
 #include <demo/plotHistogram.h>
 #include <demo/plotLines.h>
+#include <demo/inspector.h>
 #include <gweni/controls/plotHistogram.h>
 #include <gweni/controls/plotLines.h>
 #include <demo/progressBar.h>
@@ -716,8 +737,24 @@ static gweni::renderer::Base *g_renderer=nullptr;
 static gweni::controls::Canvas *g_canvas=nullptr;
 static float g_manualScale=1.0f;        // --scale or GWENI_SCALE
 
+// The app's own keys, before the canvas sees them: F12 opens and closes the
+// inspector (the library binds no key).
+static bool appKey(int key, int action)
+{
+    if((key != GLFW_KEY_F12) || !g_canvas)
+        return false;
+    if(action == GLFW_PRESS)
+        gweni::tools::Inspector::toggle(g_canvas);
+    return true;
+}
+
 static void key_callback(GLFWwindow*, int key, int scancode, int action, int mods)
-{   const gweni::input::GLFW3::KeyEvent e={key,scancode,action,mods}; g_glfwInput.processKeyEvent(e); }
+{
+    if(appKey(key, action))
+        return;
+    const gweni::input::GLFW3::KeyEvent e={key,scancode,action,mods};
+    g_glfwInput.processKeyEvent(e);
+}
 static void char_callback(GLFWwindow*, unsigned int codepoint)
 {   g_glfwInput.processCharEvent(codepoint); }
 static void window_focus_callback(GLFWwindow*, int focused)
@@ -751,7 +788,7 @@ static void content_scale_callback(GLFWwindow *window, float, float)
     X(CheckBoxDemo) X(NumericDemo) X(SliderDemo) X(SliderTextDemo) X(DragNumberDemo) X(MenuStripDemo) \
     X(WindowDemo) X(WindowButtonsDemo) X(TreeControlDemo) X(PropertiesDemo) X(TabControlDemo) X(TabCloseDemo) X(TabOverflowDemo) \
     X(ScrollControlDemo) X(PageControlDemo) X(CollapsibleListDemo) X(ColorPickerDemo) X(ColorEditDemo) \
-    X(UnicodeTextDemo) X(TextSizesDemo) X(TextDemo) X(LayoutDemo)
+    X(UnicodeTextDemo) X(TextSizesDemo) X(TextDemo) X(LayoutDemo) X(InspectorDemo)
 
 static const char *const g_controlNames[]=
 {
@@ -826,7 +863,7 @@ static void printUsage(std::ostream &out)
          "                     | typing | clip | text-size | scale | tooltip\n"
          "                     | context-menu | popup | virtual-list\n"
          "                     | data-table-virtual | hide-show | demo-labels\n"
-         "                     | plot-histogram | plot-lines;\n"
+         "                     | plot-histogram | plot-lines | inspector;\n"
          "                     resize prints listing_settled, mirror_settled,\n"
          "                     shrink_settled and fresh_matches, interaction one\n"
          "                     yes/no per repaint check, typing its keyboard\n"
@@ -844,7 +881,9 @@ static void printUsage(std::ostream &out)
          "                     demo-labels whether every demo-list label fits,\n"
          "                     plot-histogram whether a changed sample wrote its\n"
          "                     bar's slot alone, plot-lines whether it wrote the\n"
-         "                     two segments next to it; all fifteen fail on a no\n"
+         "                     two segments next to it, inspector whether the\n"
+         "                     inspector over Demo settles to 0 and shows a hover's\n"
+         "                     slots; all sixteen fail on a no\n"
          "  --dump-bounds [<path>]  print the laid-out control tree as text,\n"
          "                     private children and hidden state included, an\n"
          "                     inner panel marked \" inner\", with each control's\n"
@@ -916,7 +955,7 @@ static void printFrameStats(int frame, const std::string &control,
         " atlas_upload_calls=%zu atlas_upload_bytes=%zu buffer_regrows=%zu"
         " layout_passes=%d redirtied_by=%s render_layout=%d layout_requests=%d requested_by=%s"
         " layout_visited=%zu measure_calls=%zu"
-        " visited=%zu render_carried=%zu z_visited=%zu anims_run=%zu prim_ids=%zu\n",
+        " visited=%zu render_carried=%zu z_visited=%zu anims_run=%zu prim_ids=%zu excluded_changed=%zu\n",
         frame, control.c_str(),
         changes.controls, changes.created, changes.visibility,
         changes.geometry, changes.background, changes.text,
@@ -927,7 +966,7 @@ static void printFrameStats(int frame, const std::string &control,
         layout.requests, requestedBy(layout).c_str(),
         layout.visited, measures,
         changes.visited, changes.renderCarried, update.zVisited, update.animsRun,
-        gweni::primitiveIdCount()-gweni::releasedPrimitiveIdCount());
+        gweni::primitiveIdCount()-gweni::releasedPrimitiveIdCount(), changes.excluded);
     std::fflush(stdout);
 }
 
@@ -1358,7 +1397,7 @@ static const struct { const char *name; int key; } g_namedKeys[]=
     {"control", GLFW_KEY_LEFT_CONTROL},  {"up", GLFW_KEY_UP},
     {"down", GLFW_KEY_DOWN},             {"escape", GLFW_KEY_ESCAPE},
     {"alt", GLFW_KEY_LEFT_ALT},          {"command", GLFW_KEY_LEFT_SUPER},
-    {"kp-enter", GLFW_KEY_KP_ENTER},
+    {"kp-enter", GLFW_KEY_KP_ENTER},     {"f12", GLFW_KEY_F12},
 };
 
 // The modifiers a --key chord may hold, with the mods bit GLFW reports for them.
@@ -1395,7 +1434,8 @@ static std::string glfwKeyName(int key)
 static void glfwKey(Session &s, int key, int action, int mods)
 {
     const gweni::input::GLFW3::KeyEvent event={key, 0, action, mods};
-    glfwInput(s).processKeyEvent(event);
+    if(!appKey(key, action))
+        glfwInput(s).processKeyEvent(event);
     trace(s, std::string("key ")+glfwKeyName(key)+(action == GLFW_PRESS ? " press" : " release")
         +" mods="+std::to_string(mods));
 }
@@ -1724,7 +1764,7 @@ static bool runSteps(Session &s, const std::vector<Step> &steps, const std::stri
 //-----------------------------------------------------------------------------
 enum class Scenario { None, PerControl, Resize, Docked, Scroll, Interaction, Typing, Clip, TextSize, Scale,
     ToolTip, ContextMenu, Popup, VirtualList, DataTableVirtual, HideShow, DemoLabels, PlotHistogram,
-    PlotLines };
+    PlotLines, Inspector };
 
 static bool parseScenario(const std::string &name, Scenario &scenario)
 {
@@ -1746,6 +1786,7 @@ static bool parseScenario(const std::string &name, Scenario &scenario)
     else if(name == "demo-labels") scenario=Scenario::DemoLabels;
     else if(name == "plot-histogram") scenario=Scenario::PlotHistogram;
     else if(name == "plot-lines") scenario=Scenario::PlotLines;
+    else if(name == "inspector") scenario=Scenario::Inspector;
     else return false;
     return true;
 }
@@ -2481,6 +2522,158 @@ static bool runPlotHistogramScenario(Session &s, const std::string &shotDir, boo
                      : !hovered ? "the hover wrote other than the hovered bars' slots"
                      : !settled ? "a settled frame wrote slots or changed controls"
                      : "the demo did not give its primitive ids back")<<"\n";
+    return shot;
+}
+
+//-----------------------------------------------------------------------------
+// --scenario inspector: gweni::tools::Inspector over the settled Demo
+//
+// The inspector shows the previous frame's counters with its own controls'
+// work and slots taken out, and sets a label only when its string changes, so
+// over a settled app it settles too: it shows 0, and the frames after it
+// write nothing at all, its own slots included (docs/architecture.md -> "The
+// inspector").
+//-----------------------------------------------------------------------------
+
+// The first shown demo-list entry (a CategoryButton, which lights up while
+// hovered) under control whose centre is outside avoid.
+static gweni::controls::Base *findListEntry(gweni::controls::Base *control, const gweni::Rect &avoid)
+{
+    if(!control->visible())
+        return nullptr;
+    if(std::strcmp(control->getTypeName(), "CategoryButton") == 0)
+    {
+        const gweni::Point at=control->localPosToCanvas();
+        const gweni::Point centre(at.x+control->getWidth()/2, at.y+control->getHeight()/2);
+        const bool inside=centre.x >= avoid.x && centre.x < avoid.x+avoid.w
+            && centre.y >= avoid.y && centre.y < avoid.y+avoid.h;
+
+        if(!inside && control->getWidth() > 0 && control->getHeight() > 0)
+            return control;
+    }
+    for(gweni::controls::Base *child : control->getActualChildren())
+    {
+        if(gweni::controls::Base *found=findListEntry(child, avoid))
+            return found;
+    }
+    return nullptr;
+}
+
+static bool runInspectorScenario(Session &s, const std::string &shotDir, bool &passed)
+{
+    using gweni::tools::Inspector;
+
+    s.freezeClock=true;
+
+    gweni::controls::Base *control=addControl(s, g_dockedControlName);
+
+    if(!control)
+        return false;
+    s.label="inspector";
+    renderFrames(s, std::max(s.frames, 5));
+
+    // Demo leaves canvas-level Menus behind when it goes: the inspector's ids
+    // are counted from here to its close
+    const size_t idsBefore=livePrimitiveIds();
+
+    // F12, as the window's key callback would deliver it
+    glfwKey(s, GLFW_KEY_F12, GLFW_PRESS, 0);
+    glfwKey(s, GLFW_KEY_F12, GLFW_RELEASE, 0);
+
+    Inspector *inspector=Inspector::find(s.canvas);
+
+    if(!inspector)
+    {
+        std::cerr<<"ControlTest: inspector: F12 opened no inspector\n";
+        return false;
+    }
+
+    const gweni::renderer::SlotRenderer::FrameStats &gpu=s.renderer->getFrameStats();
+    const std::string zeroSlots="slots written: 0 primitive, 0 text";
+    const std::string zeroRender="render: 0 rendered, 0 changed";
+
+    // frames until one writes nothing at all
+    auto settle=[&](int most)
+    {
+        for(int frame=1; frame <= most; ++frame)
+        {
+            renderFrames(s, 1);
+            if(gpu.primitiveSlotsWritten == 0 && gpu.textSlotsWritten == 0)
+                return frame;
+        }
+        return -1;
+    };
+
+    const int settleFrames=settle(6);
+    const std::vector<gweni::String> settledLines=inspector->counterLines();
+    const bool settledZero=settledLines[Inspector::SlotsLine] == zeroSlots
+        && settledLines[Inspector::RenderLine] == zeroRender
+        && settledLines[Inspector::LayoutLine].rfind("layout: 0 passes", 0) == 0;
+    renderFrames(s, 1);
+    const size_t afterSlots=gpu.primitiveSlotsWritten+gpu.textSlotsWritten;
+
+    const bool shot=shoot(s, shotDir+"/inspector.png");
+
+    // a hover in the app: shown on the next frame, then 0 again
+    const gweni::Point at=inspector->localPosToCanvas();
+    gweni::controls::Base *button=findListEntry(control,
+        gweni::Rect(at.x, at.y, inspector->getWidth(), inspector->getHeight()));
+    size_t hoverPrim=0;
+    size_t hoverText=0;
+    std::string shownHover;
+    int backFrames=-1;
+    std::string backLine;
+
+    if(button)
+    {
+        const gweni::Point origin=button->localPosToCanvas();
+
+        moveMouse(s, origin.x+button->getWidth()/2, origin.y+button->getHeight()/2);
+        renderFrames(s, 1);
+        hoverPrim=gpu.primitiveSlotsWritten;
+        hoverText=gpu.textSlotsWritten;
+        renderFrames(s, 1);
+        shownHover=inspector->counterLines()[Inspector::SlotsLine];
+        backFrames=settle(4);
+        backLine=inspector->counterLines()[Inspector::SlotsLine];
+    }
+
+    const std::string expectHover="slots written: "+std::to_string(hoverPrim)+" primitive, "
+        +std::to_string(hoverText)+" text";
+
+    // F12 again closes it
+    forgetMouse(s);
+    glfwKey(s, GLFW_KEY_F12, GLFW_PRESS, 0);
+    glfwKey(s, GLFW_KEY_F12, GLFW_RELEASE, 0);
+    renderFrames(s, 2);
+
+    const bool closed=Inspector::find(s.canvas) == nullptr;
+    const size_t idsLeft=livePrimitiveIds()-idsBefore;
+
+    dropControl(s, control);
+    renderFrames(s, 1);
+
+    const bool settles=settleFrames > 0 && settledZero && afterSlots == 0;
+    const bool hoverShown=button && (hoverPrim+hoverText) > 0 && shownHover == expectHover;
+    const bool back=backFrames > 0 && backLine == zeroSlots;
+    const bool idsBack=idsLeft == 0;
+
+    passed=settles && hoverShown && back && closed && idsBack;
+
+    std::cout<<"inspector settle_frames="<<settleFrames<<" settled_zero="<<(settledZero?"yes":"no")
+             <<" after_slots="<<afterSlots<<" hover_prim_slots="<<hoverPrim<<" hover_text_slots="<<hoverText
+             <<" hover_shown="<<(hoverShown?"yes":"no")<<" back_frames="<<backFrames
+             <<" back_zero="<<(back?"yes":"no")<<" closed="<<(closed?"yes":"no")
+             <<" ids_left="<<idsLeft<<" ids_back="<<(idsBack?"yes":"no")<<"\n";
+    if(!passed)
+        std::cerr<<"ControlTest: inspector: "
+                 <<(!settles ? "it did not settle to a frame writing nothing while showing 0 ("
+                        +settledLines[Inspector::SlotsLine]+", "+settledLines[Inspector::RenderLine]+")"
+                     : !hoverShown ? "the hover frame's slots were not shown (expected \""+expectHover
+                        +"\", shown \""+shownHover+"\")"
+                     : !back ? "it did not come back to 0 after the hover (\""+backLine+"\")"
+                     : !closed ? "F12 did not close it"
+                     : "the inspector did not give its primitive ids back")<<"\n";
     return shot;
 }
 
@@ -7431,6 +7624,15 @@ int main(int argc, char *argv[])
             ok=runPlotLinesScenario(session, shotDir, passed);
             if(ok && !passed)
                 ok=false;   // a change wrote more than its segments' slots: a failing assertion
+            break;
+        }
+
+        case Scenario::Inspector:
+        {
+            bool passed=false;
+            ok=runInspectorScenario(session, shotDir, passed);
+            if(ok && !passed)
+                ok=false;   // the inspector did not settle or showed the wrong counts
             break;
         }
 

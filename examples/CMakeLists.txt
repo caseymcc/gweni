@@ -34,6 +34,8 @@ set(GWENI_DEMO_SOURCES
     demo/groupBox.h
     demo/imagePanel.cpp
     demo/imagePanel.h
+    demo/inspector.cpp
+    demo/inspector.h
     demo/label.cpp
     demo/label.h
     demo/labelMultiline.cpp
