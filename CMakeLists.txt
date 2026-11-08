@@ -359,6 +359,28 @@ if(GWENI_RENDER_OPENGL_CORE)
         COMMENT "Embedding the fallback font ${GWENI_FALLBACK_FONT}"
         VERBATIM)
 
+    # The programs' shader bodies, shared by OpenGLCore (embedded here as text,
+    # behind GL's prologue) and the Vulkan backend (compiled to SPIR-V from
+    # wrappers that #include them, source/platforms/renderers/Vulkan/)
+    set(GWENI_SHADER_DIR ${GWENI_SOURCE_DIR}/source/platforms/renderers/shaders)
+    set(GWENI_SHADER_SOURCES "")
+    foreach(shader primitive.vert:primitiveVertexGlsl primitive.frag:primitiveFragmentGlsl
+            text.vert:textVertexGlsl text.frag:textFragmentGlsl)
+        string(REPLACE ":" ";" shader "${shader}")
+        list(GET shader 0 shaderName)
+        list(GET shader 1 shaderSymbol)
+        set(shaderOutput ${CMAKE_CURRENT_BINARY_DIR}/generated/${shaderSymbol}.cpp)
+        add_custom_command(
+            OUTPUT ${shaderOutput}
+            COMMAND ${CMAKE_COMMAND} -DINPUT=${GWENI_SHADER_DIR}/${shaderName}.glsl
+                -DOUTPUT=${shaderOutput} -DSYMBOL=${shaderSymbol}
+                -P ${GWENI_SOURCE_DIR}/cmake/embedFile.cmake
+            DEPENDS ${GWENI_SHADER_DIR}/${shaderName}.glsl ${GWENI_SOURCE_DIR}/cmake/embedFile.cmake
+            COMMENT "Embedding the shader body ${shaderName}.glsl"
+            VERBATIM)
+        list(APPEND GWENI_SHADER_SOURCES ${shaderOutput})
+    endforeach()
+
     # SlotRenderer, the API-independent part of a retained renderer (the mirrors,
     # the vertex packing, the text runs and fonts), and OpenGLCore, its GL backend
     list(APPEND GWENI_RENDER_SOURCES
@@ -368,6 +390,7 @@ if(GWENI_RENDER_OPENGL_CORE)
         include/gweni/platforms/renderers/openglCore.h
         source/platforms/renderers/OpenGLCore/openglCore.cpp
         ${GWENI_FALLBACK_FONT_SOURCE}
+        ${GWENI_SHADER_SOURCES}
     )
     set(GWENI_ADDITIONAL_LIBRARIES ${GWENI_ADDITIONAL_LIBRARIES}
         glm::glm

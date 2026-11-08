@@ -4,7 +4,7 @@
 #  MIT License, see LICENSE
 #
 #  Writes a file's bytes as a C++ array, run as a cmake -P script at build time
-#  (CMakeLists.txt uses it for the built-in fallback font):
+#  (CMakeLists.txt uses it for the built-in fallback font and the shader bodies):
 #
 #      cmake -DINPUT=<file> -DOUTPUT=<file.cpp> -DSYMBOL=<name> -P embedFile.cmake
 #
