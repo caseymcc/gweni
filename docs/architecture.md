@@ -88,9 +88,10 @@ others. `UpdateStats::animsRun` (`anims_run=` in `ControlTest --stats` and
 focused TextBox and no moving bar (Demo's 2 are ProgressBarDemo's indeterminate bars).
 `tests/unit/animations.cpp` pins it. The z indices are numbered depth-first, each control taking its
 skin Control's `depthLayers()`, and that numbering only changes with the tree order, so
-the canvas renumbers only on a frame after something called `Canvas::invalidateZOrder()`.
-`Base` does for each order change: `addChild`/`addChildOfLayout`/`removeChild` (so a
-reparent through `setParent` and a delete, delayed or not, too), `bringToFront`,
+the canvas renumbers only on a frame after the tree order changed
+(`Canvas::zOrderDirty()`). `Base` reports each order change itself, for the control it
+happens to: `addChild`/`addChildOfLayout`/`removeChild` (so a reparent through
+`setParent` and a delete, delayed or not, too), `bringToFront`,
 `sendToBack`, `bringNextToControl`, and a skin Control assigned or released (`setSkin`,
 whose new Control may report other `depthLayers()`). A control off any canvas reports
 nothing; attaching it is an `addChild` on the canvas's tree. A renumber enters only the
@@ -1360,7 +1361,7 @@ What exists today (the foundation) and what's still aspirational:
   `controltest_one_pass_each`, and `controltest_teardown` with `--require-one-pass`.
 - **The update phase visits only what changed.** No control `think()`s, the z indices
   are renumbered only on a frame after the tree order changed
-  (`Canvas::invalidateZOrder()`), and the animations are only the active ones, each run
+  (`Canvas::zOrderDirty()`), and the animations are only the active ones, each run
   by its own control's canvas (`anim::think(canvas)`), so a settled frame enters no
   control in `updateCanvas()` and runs no animation either (`UpdateStats::zVisited`,
   `UpdateStats::animsRun`, see "updateCanvas()").
