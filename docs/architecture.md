@@ -1291,6 +1291,36 @@ two programs and the draws. What follows describes both together:
   and re-measures the column. With no format every path is as before: the same track,
   thumb and ticks, byte for byte. SliderTextDemo shows `%.0f`, `%.2f`, a percentage, a
   notched and a disabled slider and a vertical one; ShowcaseInputDemo has one.
+- **Closable tabs.** `TabButton::setClosable(true)` gives a tab a `TabCloseButton` child
+  (imgui's `BeginTabItem(..., &open)`), a `WindowCloseButton` subclass, so it draws with
+  the window close button's renderer, found up its parent types: the cross (icon kind 2)
+  in `FgDark`, a red `WindowCloseHover`/`WindowCloseDown` surface on hover and press,
+  nothing at rest. It is owner-placed in a `TabButton::CloseButtonSize` (14) square at
+  the start of the tab's right padding: `calculateSize(X)` adds the square to the padding
+  it sets for the strip's side, so the text is laid out clear of it on every side (on a
+  Left/Right strip, where a tab fills the strip, the square is at the tab's right end),
+  `arrange` sizes it and `postLayout` places it, centred between the top and bottom
+  padding. The square is reserved whether or not the button shows, so a hover never
+  changes a tab's width or moves its neighbours. **Shown like imgui's:** on the selected
+  tab and on the hovered one, the tab or the button itself under the mouse
+  (`isTabHovered()`, which the tab's text colour follows too), and on no disabled tab.
+  `updateColors()` decides it, so every `redraw()` (hover, press, a selection change;
+  `TabControl::onTabPressed` redraws the tab it selects, also from a key or a close) and
+  the button's own enter and leave (`onDescendantInteraction`) settle it with a
+  `setHidden`: a hover writes the button's glyph slot and nothing outside that tab. The
+  mouse moving from the tab onto its button leaves the tab before it enters the button,
+  so for that one frame the button is hidden and shown again, which writes nothing.
+  **Closing:** the press goes to the button, which has no drag package, so it neither
+  selects the tab nor starts a tab drag; its click is `TabControl::requestClose(tab)`,
+  which fires `onClose` (`controlCaller` the TabControl, `control` the TabButton). A
+  handler that calls `vetoClose()` keeps the tab (an "unsaved changes" prompt); otherwise
+  `closeTab(tab)` runs: if the tab was selected, the next tab is selected, or the previous
+  one when it was the last; it leaves through `removePage` (so `onLoseTabCaller` fires),
+  and the tab and its page are hidden and `delayedDelete()`d, so a close from the
+  button's own click handler is safe and their ids are given back at the start of the
+  next frame. `closeTab` closes without asking. TabCloseDemo has a pinned tab among
+  closable ones and a Left strip; ShowcaseContainersDemo's TabControl has two closable
+  tabs.
 - **Scale and the device-pixel grid.** Controls lay out in logical units (integers);
   `renderer::Base::translate()` turns them into device pixels at `scale()` (set by
   `Canvas::setScale`). It snaps **edges**, not origin and size apart: a point is

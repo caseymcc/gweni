@@ -251,7 +251,12 @@
  *                   "%.0f" value text writes no glyph slot and at most the
  *                   thumb's primitive slot, and one that changes it no more
  *                   glyph slots than the new string's (a line lists them).
- *                   Exits non-zero if any check is no. The
+ *                   TabCloseDemo: hovering an unselected closable tab shows
+ *                   its close button, changing no pixel outside the tab and
+ *                   writing at most the tab's and the button's slots, moving
+ *                   off gives the frame back, and a click on the button
+ *                   closes the tab, the selection kept and its ids given
+ *                   back. Exits non-zero if any check is no. The
  *                   clock is frozen as under --stats.
  *    typing       the keyboard on TextBoxDemo, every key a synthesised GLFW
  *                 event through gweni::input::GLFW3: click into the first,
@@ -498,6 +503,7 @@
 #include <gweni/controls/toolTip.h>
 #include <gweni/controls/popup.h>
 #include <gweni/controls/slider.h>
+#include <gweni/controls/tabControl.h>
 #include <gweni/controls/comboBox.h>
 #include <gweni/controls/virtualList.h>
 #include <GLFW/glfw3.h>
@@ -3166,6 +3172,108 @@ static void checkSliderText(Session &s, const std::string &shotDir, InteractionC
         "a drag frame that changed the shown value wrote no glyph slot or more than the new string's:"+frames);
 }
 
+// The ids a control and everything under it hold: primitive ids, and a Text's
+// text id (its skin Control keeps it with them).
+static size_t ownedIds(gweni::controls::Base *control)
+{
+    size_t count=control->getSkinControl()?control->getSkinControl()->getPrimitives().size():0;
+
+    for(auto &&child : control->getActualChildren())
+        count+=ownedIds(child);
+    return count;
+}
+
+// TabCloseDemo: hovering "README.md", a closable tab that is not selected,
+// shows its close button. The hover frame writes at least one primitive slot
+// and no more than the tab's and its button's, the hover changes no pixel
+// outside the tab, and moving off gives the frame before back. A click on the
+// button closes the tab: it leaves the strip, the selected tab stays selected,
+// and the ids of the tab and its page are given back.
+static void checkTabClose(Session &s, const std::string &shotDir, InteractionChecks &checks, bool &ok)
+{
+    gweni::controls::Base *demo=addControl(s, "TabCloseDemo");
+    renderFrames(s, s.frames);
+
+    gweni::controls::TabControl *control=gweni::gweni_cast<gweni::controls::TabControl>(findControl(demo, "TabControl"));
+    gweni::controls::TabButton *tab=(control && control->tabCount() > 2)?control->getTab(2):nullptr;
+    if(!tab || !tab->getCloseButton() || tab == control->getCurrentButton())
+    {
+        checks.check("tab_close_found", false, "TabCloseDemo has no closable unselected third tab");
+        dropControl(s, demo);
+        return;
+    }
+
+    gweni::controls::TabButton *selected=control->getCurrentButton();
+    gweni::controls::Base *close=tab->getCloseButton();
+    const size_t tabSlots=tab->getSkinControl()->getPrimitives().size()
+        +close->getSkinControl()->getPrimitives().size();
+    const gweni::Point origin=tab->localPosToCanvas();
+    const gweni::Point body(origin.x+4, origin.y+tab->getHeight()/2);
+    const gweni::Point off(s.size.x-1, s.size.y-1);
+    const int tabs=control->tabCount();
+
+    moveMouse(s, off.x, off.y);
+    renderFrames(s, s.frames);
+    const bool hiddenAtRest=!close->visible();
+    const std::vector<uint8_t> rest=framePixels(s);
+
+    moveMouse(s, body.x, body.y);
+    renderFrames(s, 1);
+    const size_t hoverSlots=s.renderer->getFrameStats().primitiveSlotsWritten;
+    renderFrames(s, s.frames);
+    if(!shoot(s, shotDir+"/interaction-tab-close-hover.png"))
+        ok=false;
+    const bool shownOnHover=close->visible();
+    const std::vector<uint8_t> hover=framePixels(s);
+    const SplitDifferences hoverDiff=differencesSplit(s, rest, hover, tab, tab);
+
+    moveMouse(s, off.x, off.y);
+    renderFrames(s, s.frames);
+    const std::vector<uint8_t> unhovered=framePixels(s);
+
+    auto liveIds=[]()
+    {
+        return livePrimitiveIds()+gweni::textIdCount()-gweni::releasedTextIdCount();
+    };
+    const size_t idsBefore=liveIds();
+    const size_t owned=ownedIds(tab)+ownedIds(tab->getPage());
+    const gweni::Point on=centreOf(close);
+    moveMouse(s, body.x, body.y);
+    renderFrames(s, s.frames);
+    clickMouse(s, on.x, on.y);
+    renderFrames(s, s.frames);
+    moveMouse(s, off.x, off.y);
+    renderFrames(s, s.frames);
+    if(!shoot(s, shotDir+"/interaction-tab-closed.png"))
+        ok=false;
+
+    bool gone=control->tabCount() == tabs-1;
+    for(int i=0; i < control->tabCount(); ++i)
+    {
+        if(control->getTab(i) == tab)
+            gone=false;
+    }
+    const bool selectionKept=control->getCurrentButton() == selected;
+    const size_t idsAfter=liveIds();
+
+    forgetMouse(s);
+    dropControl(s, demo);
+
+    checks.check("tab_close_hover", hiddenAtRest && shownOnHover && hover != rest && hoverDiff.outside == 0
+        && unhovered == rest,
+        "hovering the unselected closable tab did not show its close button inside the tab alone"
+        " ("+std::to_string(hoverDiff.outside)+" pixels changed outside it), or moving off did not"
+        " give the frame before back");
+    checks.check("tab_close_hover_bounded", hoverSlots >= 1 && hoverSlots <= tabSlots,
+        "the hover frame wrote "+std::to_string(hoverSlots)+" primitive slots; want 1.."
+        +std::to_string(tabSlots)+", the tab's and its close button's");
+    checks.check("tab_close_closes", gone && selectionKept && idsAfter+owned == idsBefore,
+        std::string(gone ? "" : "a click on the close button left the tab in the strip; ")
+        +(selectionKept ? "" : "the selected tab changed; ")
+        +"live primitive and text ids "+std::to_string(idsBefore)+" before the close, "
+        +std::to_string(idsAfter)+" after, the tab and its page held "+std::to_string(owned));
+}
+
 static bool runInteractionScenario(Session &s, const std::string &shotDir, bool &passed)
 {
     // Frozen like --stats, so a frame with no input is genuinely idle (no
@@ -3182,6 +3290,7 @@ static bool runInteractionScenario(Session &s, const std::string &shotDir, bool 
     checkWindowClose(s, shotDir, checks, ok);
     checkSliderDrag(s, shotDir, checks, ok);
     checkSliderText(s, shotDir, checks, ok);
+    checkTabClose(s, shotDir, checks, ok);
 
     std::cout<<"interaction";
     for(const auto &result : checks.results)

@@ -102,11 +102,16 @@ GWENI_CONTROL_CONSTRUCTOR(ShowcaseContainersDemo)
             label->setDock(DockPosition::Top);
         }
 
+        // "General" is pinned, the other two are closable (their close
+        // button shows on the selected tab and the hovered one)
         controls::TabButton *propertiesTab=tabs->addPage("Properties");
+        propertiesTab->setClosable(true);
 
         {
-            controls::Label *label=tabs->addPage("History")->getPage()->newChild<controls::Label>();
+            controls::TabButton *historyTab=tabs->addPage("History");
+            controls::Label *label=historyTab->getPage()->newChild<controls::Label>();
 
+            historyTab->setClosable(true);
             label->setText("No changes yet");
             label->setDock(DockPosition::Top);
         }
@@ -129,7 +134,7 @@ GWENI_CONTROL_CONSTRUCTOR(ShowcaseContainersDemo)
             combo->getComboBox()->addItem("Screen", "screen");
             props->add("Blend", combo, "multiply");
         }
-        m_notes.push_back("TabControl: \"Properties\" tab selected");
+        m_notes.push_back("TabControl: \"Properties\" tab selected, it and \"History\" closable");
     }
     {
         controls::ScrollControl *scroll=showcase::addSection(middle, "ScrollControl")->newChild<controls::ScrollControl>();

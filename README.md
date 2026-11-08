@@ -3,9 +3,9 @@ gweni - GUI Without Extravagant Nonsense (plus i for breaking changes)
 
 This is an attempt to make GWEN a more opengl aware ui. The expectation is to build it to provide better performance with the way modern opengl works (and later vulkan)
 
-![The OpenGLCore demo shell showing the Containers & data showcase page (a TreeControl, ListBox, TabControl with a Properties grid, ScrollControl and CollapsibleList), Tokyo Night theme](docs/images/demo.png)
+![The OpenGLCore demo shell showing the Containers & data showcase page (a TreeControl, ListBox, TabControl with closable tabs and a Properties grid, ScrollControl and CollapsibleList), Tokyo Night theme](docs/images/demo.png)
 
-*The `OpenGLCore` demo on the OpenGL 3.0+ core renderer with the textured skin's Tokyo Night theme, showing the Containers & data showcase page: a TreeControl, a ListBox, a TabControl holding a Properties grid, a ScrollControl and a CollapsibleList.*
+*The `OpenGLCore` demo on the OpenGL 3.0+ core renderer with the textured skin's Tokyo Night theme, showing the Containers & data showcase page: a TreeControl, a ListBox, a TabControl with closable tabs holding a Properties grid, a ScrollControl and a CollapsibleList.*
 
 ## Goals
 
