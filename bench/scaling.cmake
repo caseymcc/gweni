@@ -26,6 +26,7 @@
 #    prim_slots_written,               yes      any increase
 #      text_slots_written
 #    upload_calls, upload_bytes        yes      any increase
+#    buffer_regrows                    yes      any increase
 #    atlas_upload_calls,               yes      any increase
 #      atlas_upload_bytes
 #    layout_passes, layout_capped,     yes      any increase
@@ -78,11 +79,9 @@ set(EXCLUDED
     type:children_scanned
     drag:children_scanned
     animate:children_scanned
-    # #323 (tasks #359, #360): a typed character re-wraps the whole
-    # TextBoxMultiline in the input phase, and the grown glyph buffer is sent
-    # again whole
+    # #323 (task #360): a typed character re-wraps the whole
+    # TextBoxMultiline in the input phase
     type:allocs_input
-    type:upload_bytes
     # #404: buildTextDrawList rebuilds the font's whole draw list, two
     # allocations per text index chunk, when one run changes
     set-text:allocs_flush

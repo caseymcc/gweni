@@ -739,10 +739,12 @@ on an OpenGL 3.3 core profile:
   slots, below.) The boxes are uploaded like the vertices, dirty slots only, compared
   by bytes (`uploadDirtyClipBoxes`): each dirty run is one `glTexSubImage2D` per row
   piece it covers (its part of its first row, the whole rows between, its part of its
-  last), straight from the mirror, whose rows are consecutive. When the mirror has
-  outgrown what was sent, everything is sent again, as a vertex buffer's regrow does,
-  into a texture re-allocated first if its rows do not hold it. Its height is a power
-  of two (grow-only, doubling): llvmpipe compiles a shader variant per sampler shape,
+  last), straight from the mirror, whose rows are consecutive. The boxes the mirror
+  gained since the last upload go up with the dirty runs. Only when the texture's rows
+  no longer hold the mirror is it re-allocated, with the power of two rows at or above
+  1.5 times what the mirror needs, and every box sent again, as a vertex buffer's
+  regrow does (`FrameStats::bufferRegrows`; see "Incremental GPU upload" below). Its
+  height is a power of two (grow-only): llvmpipe compiles a shader variant per sampler shape,
   power-of-two or not among it, so any other height compiled one more mid-frame (with
   LLVM's C++ allocations in `gweni_bench`'s `allocs_flush`); 2048 wide and up to 2048
   rows (GLES 3.0's least `GL_MAX_TEXTURE_SIZE`) holds 4 M slots. The bytes sent are
@@ -987,8 +989,28 @@ What exists today (the foundation) and what's still aspirational:
 - **Incremental GPU upload.** `OpenGLCore::flush()` tracks which primitive slots were
   written and uploads only those, coalesced into contiguous `glBufferSubData` ranges;
   when nothing changed it skips the transfer and just draws the buffer already on the
-  device. The buffers are sized with a grow-only `glBufferData`, which also re-sends
-  everything for that one frame. A slot is marked dirty only when its bytes actually
+  device. The buffers grow geometrically (`uploadDirty`): when the mirror outgrows a
+  vertex buffer it is re-allocated (`glBufferData` with no data, so its name and the
+  chunks' vertex arrays stay) at 1.5 times the mirror in whole slots, and the mirror
+  sent once with `glBufferSubData`; the clip-box textures likewise, by rows, above.
+  That one frame is a regrow (`FrameStats::bufferRegrows`, `buffer_regrows=` in
+  `gweni_bench` and `ControlTest --stats`), so a mirror growing by a slot a frame
+  regrows O(log n) times over n frames. Every other frame sends the dirty slots and
+  the slots the mirror gained since the last upload, never the slack past the mirror,
+  which nothing draws. Before (#323) a buffer grew to exactly the mirror, and growing
+  by one slot sent all of it: typing a character into `gweni_bench`'s `type`
+  TextBoxMultiline sent 1.29 MB a frame at N=1000 and 12.7 MB at 10 000; now 15.9 KB
+  at both, with no regrow in its measured frames.
+  The glyph mirror grows by slots a run takes past its end. `allocateTextRun` gives a
+  run its slots best fit from the free blocks, split to what it needs, or past the end
+  of the in-use ones when none fits. A first layout gets exactly its glyphs, since most
+  strings never change length; a run that outgrew its slots (a line typed into) gets
+  slack, a quarter more rounded up to `kTextRunSlackGranule` (8) slots, kept when a
+  free block is split, so the next characters fit where it lands and it moves O(log n)
+  times growing to n glyphs. The tail past its glyphs is in no draw list. Without
+  the slack the typed line freed its slots and found nothing big enough (its own hole
+  was a slot short), so it moved to the end and the mirror grew by a glyph per
+  keystroke. A slot is marked dirty only when its bytes actually
   change, so a control that redraws itself identically (the skin re-emits unchanged
   controls every frame) costs nothing. `GWENI_UPLOAD_STATS=1` prints the per-frame
   upload call/byte counts (the clip-box textures' row uploads included).

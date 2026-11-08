@@ -461,6 +461,10 @@ public:
         size_t textDraws=0;             //!< of those, the text draws: one per atlas with runs to draw
         size_t atlasUploadCalls=0;      //!< glTexSubImage2D calls for font atlas row bands
         size_t atlasUploadBytes=0;      //!< bytes those calls sent
+        //! vertex buffers and clip-box textures re-allocated this frame because the
+        //! mirror outgrew them, each sending its whole mirror once; capacity grows
+        //! geometrically, so over K slots added that is O(log K) frames
+        size_t bufferRegrows=0;
     };
 
     const FrameStats &getFrameStats() const { return m_frameStats; }
@@ -577,6 +581,15 @@ private:
             m_slots.push_back(slot);
         }
 
+        //! Marks slots [first, last): the ones a mirror gained since its last
+        //! upload. A new slot whose bytes are still zero is marked by no draw, but
+        //! the device holds nothing defined there until it is sent.
+        void markRange(size_t first, size_t last)
+        {
+            for(size_t slot=first; slot<last; ++slot)
+                mark(slot);
+        }
+
         bool empty() const { return m_slots.empty(); }
         size_t count() const { return m_slots.size(); }
         bool marked(size_t slot) const { return (slot < m_marked.size()) && m_marked[slot]; }
@@ -644,19 +657,25 @@ private:
     //! (an empty region gives an empty box, which discards everything).
     Box makeClipBox() const;
 
-    //! Uploads only the dirty slots of a vertex buffer, growing (and fully re-uploading) it when the
-    //! mirror has outgrown the device allocation. Clears dirty on return.
-    void uploadDirty(uint32_t buffer, size_t &capacityElements,
+    //! Uploads only the dirty slots of a vertex buffer, and the slots the mirror
+    //! gained since the last upload (sentElements on), as coalesced glBufferSubData
+    //! runs. When the mirror has outgrown the device allocation (capacityElements),
+    //! the buffer is re-allocated geometrically, to 1.5 times the mirror in whole
+    //! slots (more than 1.5 times its old capacity), and the whole mirror sent once (a regrow,
+    //! FrameStats::bufferRegrows); the buffer name stays, so the chunks' vertex
+    //! arrays keep pointing at it. Clears dirty on return.
+    void uploadDirty(uint32_t buffer, size_t &capacityElements, size_t &sentElements,
         const void *data, size_t elementSize, size_t elementCount,
         DirtySlots &dirty, size_t elementsPerSlot);
     //! The same for a clip-box texture, kClipColumns boxes per row, on texture unit 1
     //! (where the draws read it; GL_TEXTURE0 is active again on return): the dirty
-    //! slots' runs as glTexSubImage2D calls, a run that crosses rows split at them
-    //! (its part in the first row, the whole rows between, its part in the last).
-    //! When the mirror has outgrown what was uploaded, every box is sent again, the
-    //! texture re-allocated first, a power of two rows high, if its rows do not hold
-    //! them. Clears dirty.
-    void uploadDirtyClipBoxes(uint32_t texture, size_t &rows, size_t &capacityBoxes,
+    //! slots' runs, and the boxes the mirror gained since sentBoxes, as
+    //! glTexSubImage2D calls, a run that crosses rows split at them (its part in the
+    //! first row, the whole rows between, its part in the last). Only when the
+    //! texture's rows no longer hold the mirror is it re-allocated, the power of two
+    //! rows at or above 1.5 times what the mirror needs, and every box sent again
+    //! (a regrow). Clears dirty.
+    void uploadDirtyClipBoxes(uint32_t texture, size_t &rows, size_t &sentBoxes,
         const std::vector<Box> &boxes, DirtySlots &dirty);
     //! Boxes [first, last) of a clip-box texture as glTexSubImage2D calls, one per row
     //! piece (a partial first row, the whole rows, a partial last row), counted in
@@ -758,8 +777,13 @@ private:
 
     //! Gives the run at least `glyphs` slots, keeping its current ones when they
     //! already fit: best fit over the free list, splitting the remainder off, and
-    //! bump-allocating past the end of the in-use slots when nothing fits.
+    //! bump-allocating past the end of the in-use slots when nothing fits. A first
+    //! layout gets exactly `glyphs`; a run that outgrew its slots gets slack, a
+    //! quarter more rounded up to kTextRunSlackGranule, so it grows in place next
+    //! time (the tail past `glyphs` is in no draw list).
     void allocateTextRun(TextRun &run, size_t glyphs);
+    //! A growing run's capacity is a multiple of this many glyph slots
+    static constexpr size_t kTextRunSlackGranule=8;
     //! Returns the run's slots to the free list, leaving them drawing nothing.
     void freeTextRun(TextRun &run);
     //! Adds a free block, merging it with the free blocks either side of it; a
@@ -790,12 +814,15 @@ private:
     DirtySlots m_dirtyTextVertexSlots;
     DirtySlots m_dirtyTextClipSlots;
 
-    //element counts currently allocated on the device, per buffer; for the clip
-    //boxes, the boxes sent since the texture's last full upload, and its rows
+    //element counts allocated on the device per vertex buffer, and how many of the
+    //mirror's elements it holds (the mirror's size at the last upload); for the clip
+    //boxes, the boxes the texture holds, and its rows
     size_t m_vertexBufferCapacity=0;
-    size_t m_clipBufferCapacity=0;
+    size_t m_vertexBufferSent=0;
+    size_t m_clipBoxesSent=0;
     size_t m_textVertexBufferCapacity=0;
-    size_t m_textClipBufferCapacity=0;
+    size_t m_textVertexBufferSent=0;
+    size_t m_textClipBoxesSent=0;
     size_t m_clipTextureRows=0;
     size_t m_textClipTextureRows=0;
 

@@ -877,9 +877,11 @@ void OpenGLCore::init()
 
     //the buffers below are freshly created, so nothing of the mirror is on the device yet
     m_vertexBufferCapacity=0;
-    m_clipBufferCapacity=0;
+    m_vertexBufferSent=0;
+    m_clipBoxesSent=0;
     m_textVertexBufferCapacity=0;
-    m_textClipBufferCapacity=0;
+    m_textVertexBufferSent=0;
+    m_textClipBoxesSent=0;
     m_clipTextureRows=0;
     m_textClipTextureRows=0;
 
@@ -1794,14 +1796,14 @@ void OpenGLCore::markPrimitiveChanges(size_t primitiveId, const PrimitiveSlot &b
         m_dirtyClipSlots.mark(primitiveId);
 }
 
-void OpenGLCore::uploadDirty(uint32_t buffer, size_t &capacityElements,
+void OpenGLCore::uploadDirty(uint32_t buffer, size_t &capacityElements, size_t &sentElements,
     const void *data, size_t elementSize, size_t elementCount,
     DirtySlots &dirty, size_t elementsPerSlot)
 {
     if(elementCount == 0)
         return;
 
-    if((capacityElements >= elementCount) && dirty.empty())
+    if((sentElements >= elementCount) && dirty.empty())
         return; //device already holds the mirror
 
     const GLenum target=GL_ARRAY_BUFFER;
@@ -1810,15 +1812,31 @@ void OpenGLCore::uploadDirty(uint32_t buffer, size_t &capacityElements,
 
     if(capacityElements < elementCount)
     {
-        //the mirror outgrew the allocation; resize it and resend everything
-        glBufferData(target, elementCount*elementSize, data, GL_DYNAMIC_DRAW);
-        capacityElements=elementCount;
+        // The mirror outgrew the allocation: allocate half as much again as it
+        // holds now (whole slots), more than 1.5 times the old capacity, so a
+        // mirror growing a slot at a time regrows O(log n) times, and one that has
+        // just grown a lot (a first frame) has room to grow before the next; then
+        // send all of it once. The slots past the mirror are undefined on the
+        // device, and nothing draws them: the draws stop at the mirror's slots, and
+        // a slot is sent when the mirror reaches it.
+        size_t capacity=elementCount+elementCount/2;
+
+        capacity=(capacity+elementsPerSlot-1)/elementsPerSlot*elementsPerSlot;
+        glBufferData(target, capacity*elementSize, nullptr, GL_DYNAMIC_DRAW);
+        glBufferSubData(target, 0, elementCount*elementSize, data);
+        capacityElements=capacity;
+        sentElements=elementCount;
         dirty.clear();
 
+        ++m_frameStats.bufferRegrows;
         ++m_frameStats.uploadCalls;
         m_frameStats.uploadBytes+=elementCount*elementSize;
         return;
     }
+
+    // the slots the mirror gained since the last upload go up with the dirty runs
+    dirty.markRange(sentElements/elementsPerSlot, (elementCount+elementsPerSlot-1)/elementsPerSlot);
+    sentElements=elementCount;
 
     const char *bytes=static_cast<const char *>(data);
 
@@ -1840,7 +1858,7 @@ void OpenGLCore::uploadDirty(uint32_t buffer, size_t &capacityElements,
     dirty.clear();
 }
 
-void OpenGLCore::uploadDirtyClipBoxes(uint32_t texture, size_t &rows, size_t &capacityBoxes,
+void OpenGLCore::uploadDirtyClipBoxes(uint32_t texture, size_t &rows, size_t &sentBoxes,
     const std::vector<Box> &boxes, DirtySlots &dirty)
 {
     const size_t count=boxes.size();
@@ -1848,46 +1866,47 @@ void OpenGLCore::uploadDirtyClipBoxes(uint32_t texture, size_t &rows, size_t &ca
     if(count == 0)
         return;
 
-    if((capacityBoxes >= count) && dirty.empty())
+    if((sentBoxes >= count) && dirty.empty())
         return; //device already holds the mirror
 
     glActiveTexture(GL_TEXTURE1);
     glBindTexture(GL_TEXTURE_2D, texture);
 
-    if(capacityBoxes < count)
+    const size_t needed=(count+kClipColumns-1)/kClipColumns;
+
+    if(rows < needed)
     {
-        //the mirror outgrew what was sent: resend everything, as a vertex buffer's
-        //regrow does, into a texture with rows enough for it (grow-only)
-        const size_t needed=(count+kClipColumns-1)/kClipColumns;
+        // The mirror outgrew the texture's rows: re-allocate it with half as many
+        // rows again as the mirror needs, as a vertex buffer, rounded up to a power
+        // of two, as the width is (llvmpipe compiles a shader variant per sampler
+        // shape, power-of-two or not among it, and a texture of any other height
+        // would compile one more, mid-frame), so it regrows O(log n) times, and
+        // send every box again.
+        const size_t wanted=needed+needed/2;
+        size_t height=std::max<size_t>(rows, 1);
+        GLint maxSize=0;
 
-        if(rows < needed)
+        while(height < wanted)
+            height*=2;
+        glGetIntegerv(GL_MAX_TEXTURE_SIZE, &maxSize);
+        if(height > (size_t)maxSize)
         {
-            // a power of two rows, as the width is: llvmpipe compiles a shader
-            // variant per sampler shape, power-of-two or not among it, and a
-            // texture of any other height would compile one more, mid-frame
-            size_t height=std::max<size_t>(rows, 1);
-            GLint maxSize=0;
-
-            while(height < needed)
-                height*=2;
-            glGetIntegerv(GL_MAX_TEXTURE_SIZE, &maxSize);
-            if(height > (size_t)maxSize)
-            {
-                if(needed > (size_t)maxSize)
-                    gweni::log::write(log::Level::Error,
-                        "%zu clip boxes need %zu rows of %zu, past GL_MAX_TEXTURE_SIZE %d",
-                        count, needed, kClipColumns, (int)maxSize);
-                height=std::max(needed, (size_t)maxSize);
-            }
-            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16UI, (GLsizei)kClipColumns, (GLsizei)height, 0,
-                GL_RGBA_INTEGER, GL_UNSIGNED_SHORT, nullptr);
-            rows=height;
+            if(needed > (size_t)maxSize)
+                gweni::log::write(log::Level::Error,
+                    "%zu clip boxes need %zu rows of %zu, past GL_MAX_TEXTURE_SIZE %d",
+                    count, needed, kClipColumns, (int)maxSize);
+            height=std::max(needed, (size_t)maxSize);
         }
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16UI, (GLsizei)kClipColumns, (GLsizei)height, 0,
+            GL_RGBA_INTEGER, GL_UNSIGNED_SHORT, nullptr);
+        rows=height;
         uploadClipBoxRange(boxes, 0, count);
-        capacityBoxes=count;
+        ++m_frameStats.bufferRegrows;
     }
     else
     {
+        // the rows hold the mirror: its dirty boxes, and the ones it gained
+        dirty.markRange(sentBoxes, count);
         dirty.forEachRun([&](size_t firstSlot, size_t lastSlot)
         {
             const size_t last=std::min(lastSlot, count);
@@ -1897,6 +1916,7 @@ void OpenGLCore::uploadDirtyClipBoxes(uint32_t texture, size_t &rows, size_t &ca
         });
     }
 
+    sentBoxes=count;
     dirty.clear();
     glActiveTexture(GL_TEXTURE0);
 }
@@ -1987,6 +2007,7 @@ void OpenGLCore::flush()
     m_frameStats.textDraws=0;
     m_frameStats.atlasUploadCalls=0;
     m_frameStats.atlasUploadBytes=0;
+    m_frameStats.bufferRegrows=0;
     //the slots this frame uploads: every draw, hide, show and release since the last
     //flush, each slot once however many of them touched it
     m_frameStats.primitiveSlotsWritten=m_dirtyVertexSlots.count();
@@ -2016,9 +2037,9 @@ void OpenGLCore::flush()
     if(!m_vertexes.empty())
     {
         //copy only the primitive slots that changed since the last frame
-        uploadDirty(m_vertexBuffer, m_vertexBufferCapacity,
+        uploadDirty(m_vertexBuffer, m_vertexBufferCapacity, m_vertexBufferSent,
             m_vertexes.data(), sizeof(Vertex), m_vertexes.size(), m_dirtyVertexSlots, 4);
-        uploadDirtyClipBoxes(m_clipTexture, m_clipTextureRows, m_clipBufferCapacity,
+        uploadDirtyClipBoxes(m_clipTexture, m_clipTextureRows, m_clipBoxesSent,
             m_clippingBoxes, m_dirtyClipSlots);
 
         //draw primitives
@@ -2065,9 +2086,9 @@ void OpenGLCore::flush()
     if(!m_textVertexes.empty())
     {
         //copy only the glyph slots that changed since the last frame
-        uploadDirty(m_textVertexBuffer, m_textVertexBufferCapacity,
+        uploadDirty(m_textVertexBuffer, m_textVertexBufferCapacity, m_textVertexBufferSent,
             m_textVertexes.data(), sizeof(glyph_vertex_t), m_textVertexes.size(), m_dirtyTextVertexSlots, 4);
-        uploadDirtyClipBoxes(m_textClipTexture, m_textClipTextureRows, m_textClipBufferCapacity,
+        uploadDirtyClipBoxes(m_textClipTexture, m_textClipTextureRows, m_textClipBoxesSent,
             m_textClipBoxes, m_dirtyTextClipSlots);
 
         //draw text
@@ -2167,9 +2188,10 @@ void OpenGLCore::flush()
     if(m_uploadStats)
     {
         //qualified: gweni::printf(String&, ...) would otherwise hide the C one
-        ::printf("[upload] frame %zu: %zu calls, %zu bytes (mirror %zu bytes), atlas %zu calls, %zu bytes\n",
+        ::printf("[upload] frame %zu: %zu calls, %zu bytes (mirror %zu bytes, %zu regrows), atlas %zu calls, %zu bytes\n",
             m_frameStats.frameIndex, m_frameStats.uploadCalls, m_frameStats.uploadBytes,
-            m_frameStats.mirrorBytes, m_frameStats.atlasUploadCalls, m_frameStats.atlasUploadBytes);
+            m_frameStats.mirrorBytes, m_frameStats.bufferRegrows, m_frameStats.atlasUploadCalls,
+            m_frameStats.atlasUploadBytes);
         fflush(stdout);
     }
 }
@@ -2893,11 +2915,21 @@ void OpenGLCore::allocateTextRun(TextRun &run, size_t glyphs)
         return;
     }
 
+    // A run that outgrew its slots (a line typed into, a counter gaining a digit)
+    // gets a quarter as many again, in whole groups of kTextRunSlackGranule, so
+    // the next characters fit where it lands: it moves O(log n) times growing to
+    // n glyphs, rather than once per glyph, each move leaving a hole and, at the
+    // end of the slots, growing the mirror. A first layout gets exactly its
+    // glyphs: most strings never change length.
+    const bool grows=(run.capacity > 0);
+    const size_t capacity=grows?
+        (glyphs+glyphs/4+kTextRunSlackGranule-1)/kTextRunSlackGranule*kTextRunSlackGranule:glyphs;
+
     freeTextRun(run);
 
     // Best fit: the smallest free block that holds the string, split if it is
-    // larger. Blocks are merged as they are freed, so the list stays short and
-    // a linear scan is enough.
+    // larger than the capacity (the slack kept). Blocks are merged as they are
+    // freed, so the list stays short and a linear scan is enough.
     auto it=m_freeTextRuns.end();
 
     for(auto block=m_freeTextRuns.begin(); block != m_freeTextRuns.end(); ++block)
@@ -2913,17 +2945,17 @@ void OpenGLCore::allocateTextRun(TextRun &run, size_t glyphs)
         run.capacity=it->second;
         m_freeTextRuns.erase(it);
 
-        if(run.capacity > glyphs)
+        if(run.capacity > capacity)
         {
-            addFreeTextRun(run.start+glyphs, run.capacity-glyphs);
-            run.capacity=glyphs;
+            addFreeTextRun(run.start+capacity, run.capacity-capacity);
+            run.capacity=capacity;
         }
     }
     else
     {
         run.start=m_textSlotsUsed;
-        run.capacity=glyphs;
-        m_textSlotsUsed+=glyphs;
+        run.capacity=capacity;
+        m_textSlotsUsed+=capacity;
     }
 
     run.glyphs=glyphs;

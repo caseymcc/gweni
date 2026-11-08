@@ -72,7 +72,7 @@ const char *const g_counterNames[]=
 {
     "visited", "children_scanned", "controls_changed", "created", "visibility", "geometry", "background", "text",
     "prim_slots_written", "text_slots_written", "upload_calls", "upload_bytes", "mirror_bytes",
-    "draw_calls", "text_draws", "atlas_upload_calls", "atlas_upload_bytes",
+    "draw_calls", "text_draws", "atlas_upload_calls", "atlas_upload_bytes", "buffer_regrows",
     "layout_passes", "layout_capped", "render_layout", "layout_visited", "measure_calls", "z_visited", "anims_run", "prim_ids", "text_ids",
     "allocs", "alloc_bytes",
     "allocs_input", "allocs_update", "allocs_render", "allocs_flush", "allocs_gpu"
@@ -107,6 +107,7 @@ void collectCounters(FrameRecord &record, const bench::PhaseTotals &phases,
         changes.geometry, changes.background, changes.text,
         gpu.primitiveSlotsWritten, gpu.textSlotsWritten, gpu.uploadCalls, gpu.uploadBytes,
         gpu.mirrorBytes, gpu.drawCalls, gpu.textDraws, gpu.atlasUploadCalls, gpu.atlasUploadBytes,
+        gpu.bufferRegrows,
         size_t(layout.passes), layout.capped ? 1u : 0u, layout.renderLayout ? 1u : 0u,
         layout.visited, layout.measureCalls, update.zVisited, update.animsRun,
         gweni::primitiveIdCount()-gweni::releasedPrimitiveIdCount(),
@@ -374,10 +375,12 @@ void printUsage()
         "             its loop passed over in them (pending or not), and the controls it\n"
         "             found a state change on, by kind\n"
         "  prim_slots_written text_slots_written upload_calls upload_bytes mirror_bytes\n"
-        "  draw_calls text_draws atlas_upload_calls atlas_upload_bytes\n"
+        "  draw_calls text_draws atlas_upload_calls atlas_upload_bytes buffer_regrows\n"
         "             OpenGLCore::FrameStats of the frame's flush; the slots written are\n"
         "             the distinct primitive and glyph slots it uploads, each once, whether\n"
-        "             a draw, a hide, a show or a release changed it\n"
+        "             a draw, a hide, a show or a release changed it; buffer_regrows the\n"
+        "             vertex buffers and clip-box textures the mirror outgrew, each\n"
+        "             re-allocated (geometrically) and sent whole once\n"
         "  layout_passes layout_capped render_layout\n"
         "             controls::LayoutStats: update-phase layout passes, whether they hit\n"
         "             the cap, whether the render phase laid out again\n"
