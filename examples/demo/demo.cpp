@@ -49,6 +49,7 @@
 #include "demo/statusBar.h"
 #include "demo/tabClose.h"
 #include "demo/tabControl.h"
+#include "demo/tabOverflow.h"
 #include "demo/treeControl.h"
 #include "demo/textBox.h"
 #include "demo/textDemo.h"
@@ -180,6 +181,7 @@ void Demo::init(const String &name)
         addDemo<PropertiesDemo>(cat, "PropertiesDemo", "Properties");
         addDemo<TabControlDemo>(cat, "TabControlDemo", "Tab control");
         addDemo<TabCloseDemo>(cat, "TabCloseDemo", "Closable tabs");
+        addDemo<TabOverflowDemo>(cat, "TabOverflowDemo", "Tab overflow");
         addDemo<ScrollControlDemo>(cat, "ScrollControlDemo", "Scroll control");
         addDemo<PageControlDemo>(cat, "PageControlDemo", "Page control");
     }

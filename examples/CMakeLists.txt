@@ -74,6 +74,8 @@ set(GWENI_DEMO_SOURCES
     demo/tabClose.h
     demo/tabControl.cpp
     demo/tabControl.h
+    demo/tabOverflow.cpp
+    demo/tabOverflow.h
     demo/textBox.cpp
     demo/textBox.h
     demo/textDemo.cpp

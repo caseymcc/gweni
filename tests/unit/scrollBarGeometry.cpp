@@ -15,8 +15,8 @@
  *  button at every one of its pixels, so a click on an arrow nudges and never
  *  grabs the thumb. The thumb is hidden when the track is no longer than it:
  *  content that fits (bars kept shown) or a bar too short for its track to
- *  pass T/2. A TabControl's overflow buttons are the 14x14 its constructor
- *  asks for. Every frame lays out in one pass with no layout request.
+ *  pass T/2. A TabControl's overflow buttons and its tab-list button are the
+ *  14x14 its constructor asks for. Every frame lays out in one pass with no layout request.
  */
 #include "headlessFixture.h"
 
@@ -298,7 +298,7 @@ TEST_CASE("A scroll bar's thumb is hidden when the track is no longer than it")
     }
 }
 
-TEST_CASE("A TabControl's overflow buttons are the 14x14 its constructor asks for")
+TEST_CASE("A TabControl's overflow and tab-list buttons are the 14x14 its constructor asks for")
 {
     test::StubRenderer renderer;
     test::StubSkin skin(&renderer);
@@ -325,7 +325,8 @@ TEST_CASE("A TabControl's overflow buttons are the 14x14 its constructor asks fo
             ++found;
         }
     }
-    CHECK(found == 2);
+    // the left and right scroll buttons and the tab-list button
+    CHECK(found == 3);
 
     delete canvas;
 }

@@ -136,7 +136,7 @@ its scrolled string). The children placed this way:
 | TreeNode | the toggle | sized in `arrange()`, centred in `postLayout()` |
 | ColorPicker | the Result box | `arrange()` |
 | TextBox | its Text while the string is scrolled | `makeCaretVisible()` |
-| TabControl, TabStrip | the overflow buttons; the drop marker over a tab | `layout()`; a drag hover |
+| TabControl, TabStrip | the overflow and tab-list buttons; the drop marker over a tab | `arrange()`, x in X and y in Y; a drag hover |
 | Text | its wrapped lines | its X arrange |
 
 A `Dragger` (a splitter bar, a slider or scrollbar thumb) whose target is an

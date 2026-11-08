@@ -1499,6 +1499,47 @@ two programs and the draws. What follows describes both together:
   next frame. `closeTab` closes without asking. TabCloseDemo has a pinned tab among
   closable ones and a Left strip; ShowcaseContainersDemo's TabControl has two closable
   tabs.
+- **Tab overflow and the tab list.** A Top or Bottom strip whose tabs are wider than the
+  `TabControl` **overflows**. Like any control a TabControl is as wide as its content, the
+  whole row of tabs, so it overflows only where something makes it narrower: its size
+  flags (Fixed, Shrink), a dock or a layout cell. `TabControl::arrange(X)` decides it,
+  before the children are placed, from the control's width (final then) and the strip's
+  preferred width: the left and right `internal::ScrollBarButton`s (`TabControl::ButtonSize`,
+  14, square, chevrons of icon kind 1) show in a column at the strip's trailing end,
+  `ColumnInset` (2) in from the right edge and `ButtonSpacing` (2) apart, and the visible
+  tabs end `ColumnGap` (4) before it (`getTabsRight()`). The strip, whose tabs do not clip
+  themselves, is clipped there and to its left padding through `getChildClipRect`, so no
+  tab draws or takes the mouse under the column, and a clip that changes without the
+  strip's bounds marks the strip's subtree `StateChange_Geometry`. `arrange(Y)` centres the
+  buttons on the row once its height is final. The buttons are owner-placed, measured even
+  while hidden (`calculateSize`), since the X arrange may show one. **Scrolling:** the
+  offset is `TabStrip::setScrollOffset`, which moves the row's origin in the strip's own
+  `arrangeHorizontal` and nothing else: the strip's preferred size, and so the
+  TabControl's, is the whole row's at any offset, so the offset can be clamped in the X
+  arrange without making any preferred size depend on it. A press on the right button
+  scrolls by one tab, to the next tab's start along the row (from the tabs' preferred
+  sizes and margins), so that tab sits where the first one starts; the last step stops at
+  `getMaxScrollOffset()`, where the last tab's right edge is at the column, and the left
+  button goes back a tab at a time to 0. A press only invalidates the TabControl and the
+  strip: the tabs move (their slots and glyphs are rewritten), the page is not entered.
+  Selecting a tab (a click, a key, a close, the list, code) asks for it to be scrolled
+  fully into view by the least offset (`scrollToTab`), resolved in the next X arrange. A
+  control that grows until the tabs fit, or closes tabs until they do, hides the buttons
+  and the offset goes back to 0; one that only changes width keeps the offset clamped, so
+  scrolled to the end it keeps the last tab at the column. A Left or Right strip never
+  overflows. **The tab list:** `setTabListButton(true)` (off by default) puts a down
+  chevron, a third `ScrollBarButton`, at the column's right end on a Top or Bottom strip,
+  shown whether or not the tabs overflow (the tabs overflow when they run past the column
+  of that button alone). Its press opens the canvas's `Popup` below it (`toggleTabList`,
+  so a second press closes it) with one `Selectable` row per shown tab in strip order,
+  captioned as the tab, the selected tab's row selected; the rows are made the first time
+  and reused, the surplus deleted, each time it opens, never per frame. A row's click
+  selects its tab, if it is still in the strip, scrolls it into view and closes the
+  popup; Escape, a press outside and the button hidden close it as they close any popup.
+  The popup is made on the canvas and deleted with the TabControl (delayed, as a Popup's
+  creator does). TabOverflowDemo has twelve tabs in a Top strip with the list and in a
+  Bottom one opened on its eighth tab; ShowcaseContainersDemo's TabControl has six tabs in
+  a strip too short for them, with the list.
 - **The colour field: ColorButton and ColorEdit.** `controls::ColorButton`
   (`colorButton.h`, imgui's ColorButton) is a Button with an empty caption drawn as a
   swatch: the textured `ColorButton` renderer paints its colour in one slot, through the

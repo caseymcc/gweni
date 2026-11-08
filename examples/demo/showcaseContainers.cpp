@@ -94,6 +94,13 @@ GWENI_CONTROL_CONSTRUCTOR(ShowcaseContainersDemo)
         controls::TabControl *tabs=showcase::addSection(middle, "TabControl")->newChild<controls::TabControl>();
 
         tabs->setDock(DockPosition::Center);
+        // More tabs than fit: the scroll buttons and the tab-list button show
+        // at the strip's end. It asks for a fixed width, about what its first
+        // three tabs take, so the other three do not widen the column; docked,
+        // it fills its section whatever it asks.
+        tabs->setSizeFlags({SizeFlag::Fixed, SizeFlag::Expand});
+        tabs->setWidth(200);
+        tabs->setTabListButton(true);
 
         {
             controls::Label *label=tabs->addPage("General")->getPage()->newChild<controls::Label>();
@@ -116,6 +123,14 @@ GWENI_CONTROL_CONSTRUCTOR(ShowcaseContainersDemo)
             label->setDock(DockPosition::Top);
         }
 
+        for(const char *caption : {"Layers", "Output", "Console"})
+        {
+            controls::Label *label=tabs->addPage(caption)->getPage()->newChild<controls::Label>();
+
+            label->setText(String("The ")+caption+" page");
+            label->setDock(DockPosition::Top);
+        }
+
         // The page opens on the Properties tab.
         propertiesTab->doAction();
 
@@ -134,7 +149,8 @@ GWENI_CONTROL_CONSTRUCTOR(ShowcaseContainersDemo)
             combo->getComboBox()->addItem("Screen", "screen");
             props->add("Blend", combo, "multiply");
         }
-        m_notes.push_back("TabControl: \"Properties\" tab selected, it and \"History\" closable");
+        m_notes.push_back("TabControl: \"Properties\" tab selected, it and \"History\" closable,"
+            " six tabs overflowing the strip, with the scroll and tab-list buttons");
     }
     {
         controls::ScrollControl *scroll=showcase::addSection(middle, "ScrollControl")->newChild<controls::ScrollControl>();

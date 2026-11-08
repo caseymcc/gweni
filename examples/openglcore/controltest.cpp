@@ -273,7 +273,16 @@
  *                   writing at most the tab's and the button's slots, moving
  *                   off gives the frame back, and a click on the button
  *                   closes the tab, the selection kept and its ids given
- *                   back. PropertiesDemo: hovering the first PropertyRow's
+ *                   back. TabOverflowDemo: a press on the first TabControl's
+ *                   right scroll button scrolls its tabs, the frame leaving
+ *                   nothing pending outside the strip and the buttons,
+ *                   writing no more than their primitive slots and the tabs'
+ *                   glyphs and changing no pixel outside the TabControl; the
+ *                   left one gives the first look back; settled frames write
+ *                   nothing, with the tab list closed and open; the list
+ *                   button opens one row per tab, and choosing the tenth
+ *                   selects it, closes the list and shows the whole tab.
+ *                   PropertiesDemo: hovering the first PropertyRow's
  *                   value changes the row's pixels (column fill, lines,
  *                   label colour) and none outside it, every change of that
  *                   frame in the row but the left control's; moving onto its
@@ -536,6 +545,7 @@
 #include <gweni/controls/popup.h>
 #include <gweni/controls/slider.h>
 #include <gweni/controls/tabControl.h>
+#include <gweni/controls/scrollBarButton.h>
 #include <gweni/controls/comboBox.h>
 #include <gweni/controls/virtualList.h>
 #include <gweni/controls/properties.h>
@@ -595,6 +605,7 @@
 #include <gweni/controls/colorButton.h>
 #include <gweni/controls/colorEdit.h>
 #include <demo/tabControl.h>
+#include <demo/tabOverflow.h>
 #include <demo/treeControl.h>
 #include <demo/textBox.h>
 #include <demo/textDemo.h>
@@ -660,7 +671,7 @@ static void content_scale_callback(GLFWwindow *window, float, float)
     X(GroupBoxDemo) X(ImagePanelDemo) X(StatusBarDemo) X(SeparatorDemo) X(ComboBoxDemo) \
     X(TextBoxDemo) X(ListBoxDemo) X(SelectableDemo) X(VirtualListDemo) X(ContextMenuDemo) X(PopupDemo) X(CrossSplitterDemo) X(RadioButtonDemo) \
     X(CheckBoxDemo) X(NumericDemo) X(SliderDemo) X(SliderTextDemo) X(MenuStripDemo) \
-    X(WindowDemo) X(WindowButtonsDemo) X(TreeControlDemo) X(PropertiesDemo) X(TabControlDemo) X(TabCloseDemo) \
+    X(WindowDemo) X(WindowButtonsDemo) X(TreeControlDemo) X(PropertiesDemo) X(TabControlDemo) X(TabCloseDemo) X(TabOverflowDemo) \
     X(ScrollControlDemo) X(PageControlDemo) X(CollapsibleListDemo) X(ColorPickerDemo) X(ColorEditDemo) \
     X(UnicodeTextDemo) X(TextSizesDemo) X(TextDemo) X(LayoutDemo)
 
@@ -3306,6 +3317,158 @@ static void checkTabClose(Session &s, const std::string &shotDir, InteractionChe
 static size_t differencesOutside(const Session &s, const std::vector<uint8_t> &a,
     const std::vector<uint8_t> &b, gweni::controls::Base *control);
 static void countPending(gweni::controls::Base *control, size_t &count);
+static void checkSteady(Session &s, InteractionChecks &checks, const std::string &name);
+
+// The controls with a change pending that are under none of \p roots.
+static void countPendingOutside(gweni::controls::Base *control,
+    const std::vector<gweni::controls::Base *> &roots, size_t &count)
+{
+    bool under=false;
+    for(gweni::controls::Base *at=control; at; at=at->getParent())
+    {
+        if(std::find(roots.begin(), roots.end(), at) != roots.end())
+            under=true;
+    }
+    if(control->getStateChange() != gweni::controls::StateChange_Nothing && !under)
+        ++count;
+    for(auto &&child : control->getActualChildren())
+        countPendingOutside(child, roots, count);
+}
+
+// TabOverflowDemo: its first TabControl's twelve tabs overflow it. A press on
+// the right scroll button scrolls them: the frame leaves nothing pending
+// outside the strip's and the three buttons' subtrees, writes no more primitive
+// slots than they own and no more glyph slots than the tabs' captions hold,
+// and changes no pixel outside the TabControl. A press on the left one gives
+// the first look back. Settled frames write nothing, with the tab list closed
+// and open. The list button opens one row per tab, and a click on the tenth
+// row selects that tab, closes the list and shows the whole tab.
+static void checkTabOverflow(Session &s, const std::string &shotDir, InteractionChecks &checks, bool &ok)
+{
+    gweni::controls::Base *demo=addControl(s, "TabOverflowDemo");
+    renderFrames(s, s.frames);
+
+    auto *control=gweni::gweni_cast<gweni::controls::TabControl>(findControl(demo, "TabControl"));
+    if(!control || !control->isOverflowing() || !control->getTabListButton()->visible()
+       || control->tabCount() < 10)
+    {
+        checks.check("tab_overflow_found", false,
+            "TabOverflowDemo has no overflowing TabControl of ten tabs or more with a tab list");
+        dropControl(s, demo);
+        return;
+    }
+
+    gweni::controls::TabStrip *strip=control->getTabStrip();
+    const std::vector<gweni::controls::Base *> buttons=
+        {control->getScrollButton(0), control->getScrollButton(1), control->getTabListButton()};
+    std::vector<gweni::controls::Base *> scrolled=buttons;
+    scrolled.push_back(strip);
+    size_t slots=ownedIds(strip);
+    size_t glyphs=0;
+    for(gweni::controls::Base *button : buttons)
+        slots+=ownedIds(button);
+    for(int i=0; i < control->tabCount(); ++i)
+        glyphs+=control->getTab(i)->getText().size();
+
+    const gweni::Point off(s.size.x-1, s.size.y-1);
+    moveMouse(s, off.x, off.y);
+    renderFrames(s, s.frames);
+    const std::vector<uint8_t> rest=framePixels(s);
+
+    const gweni::Point right=centreOf(control->getScrollButton(1));
+    moveMouse(s, right.x, right.y);
+    renderFrames(s, s.frames);
+    const std::vector<uint8_t> hovered=framePixels(s);
+
+    clickMouse(s, right.x, right.y);
+    gweni::controls::resetChangeStats();
+    s.canvas->updateCanvas();
+    size_t elsewhere=0;
+    countPendingOutside(s.canvas, scrolled, elsewhere);
+    s.renderer->clearTarget(s.background);
+    s.canvas->renderCanvas();
+    const gweni::renderer::SlotRenderer::FrameStats press=s.renderer->getFrameStats();
+    if(s.stats)
+        printFrameStats(s.frame, s.label, gweni::controls::getChangeStats(), press,
+            s.canvas->getLayoutStats(), s.canvas->getUpdateStats());
+    checkOnePass(s, std::to_string(s.frame));
+    ++s.frame;
+    const int offset=control->getScrollOffset();
+    renderFrames(s, s.frames);
+    if(!shoot(s, shotDir+"/interaction-tab-overflow-scrolled.png"))
+        ok=false;
+    const std::vector<uint8_t> after=framePixels(s);
+    const size_t outside=differencesOutside(s, hovered, after, control);
+    checkSteady(s, checks, "tab_overflow_steady");
+
+    const gweni::Point left=centreOf(control->getScrollButton(0));
+    moveMouse(s, left.x, left.y);
+    renderFrames(s, s.frames);
+    clickMouse(s, left.x, left.y);
+    renderFrames(s, s.frames);
+    const int back=control->getScrollOffset();
+    moveMouse(s, off.x, off.y);
+    renderFrames(s, s.frames);
+    const std::vector<uint8_t> unscrolled=framePixels(s);
+
+    checks.check("tab_overflow_scroll", offset > 0 && back == 0 && elsewhere == 0 && outside == 0
+        && unscrolled == rest,
+        "a press on the right scroll button left the offset at "+std::to_string(offset)
+        +", "+std::to_string(elsewhere)+" controls pending outside the strip and the buttons and "
+        +std::to_string(outside)+" pixels changed outside the TabControl; the left one left it at "
+        +std::to_string(back)+(unscrolled == rest ? "" : ", and the frame differs from the first"));
+    checks.check("tab_overflow_scroll_bounded", press.primitiveSlotsWritten <= slots
+        && press.textSlotsWritten <= glyphs,
+        "the press frame wrote "+std::to_string(press.primitiveSlotsWritten)+" primitive and "
+        +std::to_string(press.textSlotsWritten)+" glyph slots; want at most "+std::to_string(slots)
+        +" (the strip's and the buttons') and "+std::to_string(glyphs)+" (the tabs' captions)");
+
+    // the tab list
+    const gweni::Point list=centreOf(control->getTabListButton());
+    moveMouse(s, list.x, list.y);
+    renderFrames(s, s.frames);
+    clickMouse(s, list.x, list.y);
+    renderFrames(s, s.frames);
+    gweni::controls::Popup *popup=control->getTabListPopup();
+    std::vector<gweni::controls::Base *> rows;
+    if(popup)
+    {
+        for(auto &&child : popup->getChildren())
+        {
+            if(gweni::gweni_cast<gweni::controls::Selectable>(child))
+                rows.push_back(child);
+        }
+    }
+    const bool opened=popup && popup->isOpen() && rows.size() == (size_t)control->tabCount();
+    if(!shoot(s, shotDir+"/interaction-tab-overflow-list.png"))
+        ok=false;
+    checkSteady(s, checks, "tab_overflow_list_steady");
+
+    bool chosen=false;
+    if(opened)
+    {
+        gweni::controls::TabButton *tenth=control->getTab(9);
+        const gweni::Point row=centreOf(rows[9]);
+        moveMouse(s, row.x, row.y);
+        renderFrames(s, s.frames);
+        clickMouse(s, row.x, row.y);
+        renderFrames(s, s.frames);
+        moveMouse(s, off.x, off.y);
+        renderFrames(s, s.frames);
+        const int tabRight=tenth->localPosToCanvas().x-control->localPosToCanvas().x+tenth->getWidth();
+        chosen=!popup->isOpen() && control->getCurrentButton() == tenth
+            && tabRight <= control->getTabsRight();
+    }
+
+    forgetMouse(s);
+    dropControl(s, demo);
+
+    checks.check("tab_overflow_list", opened && chosen,
+        std::string(opened ? "" : "the tab-list button opened no popup of one row per tab; ")
+        +(chosen || !opened ? "" : "choosing its tenth row did not select that tab, close the list"
+        " and show the whole tab"));
+}
+
 static void renderInspectedFrame(Session &s, gweni::controls::Base *root,
     size_t &pending, size_t &pendingUnderRoot);
 static void checkSteady(Session &s, InteractionChecks &checks, const std::string &name);
@@ -3522,6 +3685,7 @@ static bool runInteractionScenario(Session &s, const std::string &shotDir, bool 
     checkSliderDrag(s, shotDir, checks, ok);
     checkSliderText(s, shotDir, checks, ok);
     checkTabClose(s, shotDir, checks, ok);
+    checkTabOverflow(s, shotDir, checks, ok);
     checkPropertyRow(s, shotDir, checks, ok);
     checkColorEdit(s, shotDir, checks, ok);
 

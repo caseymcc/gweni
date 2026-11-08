@@ -51,6 +51,20 @@ public:
         return false;
     }
 
+    //! Units the row of tabs is scrolled along a Top or Bottom strip: the tabs
+    //! are placed that much left of where they would be, so the first ones
+    //! leave the strip and later ones come into it (TabControl's overflow
+    //! buttons). It moves the tabs only: the strip's preferred size is the
+    //! whole row's, at any offset. Set by its TabControl as it lays the strip
+    //! out; a strip on the left or right never scrolls.
+    void setScrollOffset(int offset);
+    int getScrollOffset() const { return m_scrollOffset; }
+
+protected:
+
+    //! Places the row \p m_scrollOffset units left of the padding.
+    void arrangeHorizontal(skin::Base *skin) override;
+
 private:
 
     //! Docks each TabButton and sets its margin for its place in the row.
@@ -58,6 +72,7 @@ private:
 
     Base *m_tabDragControl;
     bool m_allowReorder;
+    int m_scrollOffset=0;
 
 };
 

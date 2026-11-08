@@ -126,6 +126,28 @@ void TabStrip::placeButtons()
     }
 }
 
+void TabStrip::setScrollOffset(int offset)
+{
+    if(m_scrollOffset == offset)
+        return;
+
+    m_scrollOffset=offset;
+    // the tabs are placed again; nothing is measured again
+    invalidate();
+}
+
+// The offset moves the row's origin, the left padding, for this arrange only:
+// calculateSize() measures the strip with its real padding, so its preferred
+// size, and its TabControl's, are the whole row's whatever is scrolled.
+void TabStrip::arrangeHorizontal(skin::Base *skin)
+{
+    const int left=m_padding.left;
+
+    m_padding.left=left-m_scrollOffset;
+    ParentClass::arrangeHorizontal(skin);
+    m_padding.left=left;
+}
+
 void TabStrip::dragAndDrop_hoverEnter(gweni::draganddrop::Package * /*package*/, int /*x*/,
     int /*y*/)
 {
