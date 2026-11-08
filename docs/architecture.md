@@ -1577,6 +1577,53 @@ two programs and the draws. What follows describes both together:
   window and a `bringToFront` of the window can put it earlier again (#436).
   ColorEditDemo has the two buttons and both modes; ShowcaseInputDemo has a
   translucent RGBA field and a hex one.
+- **The data table: a frozen header over scrolled rows.** `controls::DataTable`
+  (`include/gweni/controls/dataTable.h`, imgui's BeginTable) is a header
+  (`internal::DataTableHeader`) above a body (`internal::DataTableBody`, a
+  `ScrollControl` with no inset) of `DataTableRow`s, both owner-placed. It is not called
+  `Table`: `controls::layout::Table` has that type name, and renderers are looked up by
+  bare type name. **Columns** are table state: a caption, a width (`setColumnWidth`, at
+  least `setColumnMinWidth`, 40 by default, room for a short caption and the chevron) and,
+  with `setLastColumnStretch` (on by default), the last column grown to fill the body's
+  width (never shrunk below its own). The stretch is the last column's so that a column's
+  new width moves only it and the columns after it. `columnSpans(width)` gives every
+  column's x and width across a width, and the header and every row place their cells
+  (owner-placed) with it across the same width, the body's content width (its inner
+  panel's), so a row's cells sit exactly under the header's. A row's preferred width is
+  the columns' sum (`contentWidth()`), so the body scrolls sideways when they do not fit;
+  a width change invalidates the header and every row, and a cell whose bounds do not
+  change is not marked. **Layout:** the header's cells follow the body's scrolled
+  content, which the body only knows once laid out, and a `ScrollControl` lays its subtree
+  out in its Y arrange. So the table does as a `ScrollControl` does: it leaves its subtree
+  alone in X, and in its Y arrange places the header and the body, lays the body out,
+  then hands the header the content's origin and width (`setTrack`, as placement) and
+  lays it out X then Y. The header clips its cells to the body's viewport
+  (`getChildClipRect`), so they never draw over the vertical bar. **Resize and sort:**
+  each header cell (a `Button`) has a `DataTableColumnGrip` along its right edge, 5 units
+  wide with the resize cursor: a drag there sets the column's width from the press's
+  width and the mouse's travel, and does not reach the cell, so it never sorts. A click
+  elsewhere on the cell sorts by its column, ascending first, then alternating
+  (`setSortColumn(-1, SortDirection::None)` clears it), fires `onSortChanged` once per
+  change (`point` is the column and 1, -1 or 0) and redraws only the two cells whose
+  chevron changed; the chevron's column is always kept in the cell's right text padding,
+  so sorting changes no size. The table never sorts: the app orders its records and
+  either sets the rows' cells again or puts the rows in the new order (`setRowOrder`,
+  each row brought to the inner panel's end in turn; the inner panel is invalidated
+  itself, since a child's `bringToFront` invalidates only its logical parent). Either is
+  laid out in one pass. **Rows** are `Selectable`s in the table's `SelectableGroup`: one
+  selected at a time (`getSelectedRow`, `onSelectionChange`), hover and selection drawn
+  as a Selectable's. `setStriped` (on by default) fills every odd row of the row order
+  (`DataTableStripe`); the stripes are set again on `addRow`, `removeRow` and
+  `setRowOrder`, and a row whose stripe does not change is not marked. `setBorders`
+  draws a kind-6 rule along each row's bottom (`Rows`), at each column's right edge but
+  the last (`Columns`) or both, at the row's z+1; the header always has its rule along
+  the bottom and its column rules (the grips), lit while hovered or dragged. The row's
+  renderer resizes its slot list to its rules, and a row whose cells moved marks itself
+  for its column rules. `removeRow` takes a row out of the group (firing the change if
+  it was selected), hides it and deletes it with the canvas; a row deleted outright
+  leaves the table too. There is no virtualisation yet: every row is a control.
+  DataTableDemo has the first 40 elements, sortable by any column; ShowcaseContainersDemo
+  has a two-column file table.
 - **Scale and the device-pixel grid.** Controls lay out in logical units (integers);
   `renderer::Base::translate()` turns them into device pixels at `scale()` (set by
   `Canvas::setScale`). It snaps **edges**, not origin and size apart: a point is

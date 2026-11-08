@@ -177,6 +177,16 @@ inline Surface PropertyColumn       { Color(0x1d,0x20,0x31), Color(0x1d,0x20,0x3
 inline Surface PropertyColumnHover  { BgStorm,               BgStorm,               BgHighlight, 0.0f, 0.0f };
 inline Surface PropertyColumnEditing{ Color(0x26,0x31,0x55), Color(0x26,0x31,0x55), BgHighlight, 0.0f, 0.0f };
 
+// A DataTable: its header strip (a gradient like a tab strip's, its rule along
+// the bottom is the Separator's), a header cell's hover and press (flat, over
+// the strip; at rest the cell's slot is hidden) and the fill of a striped
+// table's odd rows (flat, a shade over the table's PanelDark backdrop). Rows
+// otherwise hover and select as Selectables.
+inline Surface DataTableHeader     { Color(0x24,0x28,0x3b), Color(0x1f,0x22,0x33), BgHighlight, 0.0f, 0.0f };
+inline Surface DataTableHeaderHover{ BgHighlight,           BgHighlight,           BgHighlight, 0.0f, 0.0f };
+inline Surface DataTableHeaderDown { Surf,                  Surf,                  Surf,        0.0f, 0.0f };
+inline Surface DataTableStripe     { Color(0x1f,0x21,0x30), Color(0x1f,0x21,0x30), BgDark,      0.0f, 0.0f };
+
 // Window title-bar buttons: nothing at rest (a transparent fill hides its slot),
 // red under the close button while hovered, a deeper red while pressed. The
 // minimise and maximise buttons hover and press as ButtonHover/ButtonDown.
@@ -214,6 +224,8 @@ inline std::unordered_map<std::string, Surface*>& surfaceRegistry()
         {"SelectableSelectedHover",&SelectableSelectedHover},{"SelectableSelectedDisabled",&SelectableSelectedDisabled},
         {"PropertyColumn",&PropertyColumn},{"PropertyColumnHover",&PropertyColumnHover},
         {"PropertyColumnEditing",&PropertyColumnEditing},
+        {"DataTableHeader",&DataTableHeader},{"DataTableHeaderHover",&DataTableHeaderHover},
+        {"DataTableHeaderDown",&DataTableHeaderDown},{"DataTableStripe",&DataTableStripe},
         {"WindowButton",&WindowButton},{"WindowCloseHover",&WindowCloseHover},{"WindowCloseDown",&WindowCloseDown},
     };
     return m;

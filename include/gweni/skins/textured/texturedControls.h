@@ -617,6 +617,87 @@ public:
     inline static const std::string_view name="Selectable";
 };
 
+// A DataTable's backdrop, the ListBox's; its header and rows draw themselves.
+class DataTable:public textured::ControlRegister<DataTable>
+{
+public:
+    static void staticInit(TexturedSkin *) { m_staticInit=true; }
+
+    void update(renderer::Base *renderer, controls::Base *baseControl) override;
+
+    inline static const std::string_view name="DataTable";
+};
+
+// A DataTable's header strip: [0] its fill (DataTableHeader), [1] the rule
+// along its bottom, an icon of kind 6 as a Separator's, at getZIndex()+1.
+class DataTableHeader:public textured::ControlRegister<DataTableHeader>
+{
+public:
+    static void staticInit(TexturedSkin *) { m_staticInit=true; }
+
+    size_t requiredPrimitives() override { return 2; }
+    // the rule is drawn at getZIndex()+1, over the fill
+    size_t depthLayers() override { return 2; }
+
+    void update(renderer::Base *renderer, controls::Base *baseControl) override;
+
+    inline static const std::string_view name="DataTableHeader";
+};
+
+// A column's header cell: [0] a surface while hovered or pressed
+// (DataTableHeaderHover, DataTableHeaderDown), hidden at rest, [1] the sort
+// chevron (icon kind 1, up ascending, down descending) in the cell's right
+// column at getZIndex()+1, hidden while the column is not sorted.
+class DataTableHeaderCell:public textured::ControlRegister<DataTableHeaderCell>
+{
+public:
+    static void staticInit(TexturedSkin *) { m_staticInit=true; }
+
+    size_t requiredPrimitives() override { return 2; }
+    // the chevron is drawn at getZIndex()+1, over the hover surface
+    size_t depthLayers() override { return 2; }
+
+    void update(renderer::Base *renderer, controls::Base *baseControl) override;
+
+    inline static const std::string_view name="DataTableHeaderCell";
+};
+
+// A header cell's resize grip: [0] the column's rule along the cell's right
+// edge (a vertical icon of kind 6), in the Separator colour, Blue while hovered
+// or dragged.
+class DataTableColumnGrip:public textured::ControlRegister<DataTableColumnGrip>
+{
+public:
+    static void staticInit(TexturedSkin *) { m_staticInit=true; }
+
+    void update(renderer::Base *renderer, controls::Base *baseControl) override;
+
+    inline static const std::string_view name="DataTableColumnGrip";
+};
+
+// A DataTable's body row: [0] its fill, the Selectable's surfaces for hover,
+// press and selection and, idle, DataTableStripe on a striped odd row or
+// nothing (the slot hidden), [1] the rule along its bottom with Rows borders,
+// [2...] one rule at each column's right edge but the last with Columns
+// borders. The rules are icons of kind 6 at getZIndex()+1, over the fill; the
+// slot list follows the column count (update() resizes it).
+class DataTableRow:public textured::ControlRegister<DataTableRow>
+{
+public:
+    static void staticInit(TexturedSkin *) { m_staticInit=true; }
+
+    size_t requiredPrimitives() override { return 2; }
+    // the rules are drawn at getZIndex()+1, over the fill
+    size_t depthLayers() override { return 2; }
+
+    void update(renderer::Base *renderer, controls::Base *baseControl) override;
+
+    inline static const std::string_view name="DataTableRow";
+
+private:
+    void resizePrimitives(renderer::Base *renderer, size_t count);
+};
+
 // A Bullet's circle, in its text colour; the label's Text draws the string.
 class Bullet:public textured::ControlRegister<Bullet>
 {

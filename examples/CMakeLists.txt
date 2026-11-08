@@ -20,6 +20,8 @@ set(GWENI_DEMO_SOURCES
     demo/popup.h
     demo/crossSplitter.cpp
     demo/crossSplitter.h
+    demo/dataTable.cpp
+    demo/dataTable.h
     demo/demo.cpp
     demo/demo.h
     demo/groupBox.cpp

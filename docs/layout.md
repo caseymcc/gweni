@@ -138,6 +138,7 @@ its scrolled string). The children placed this way:
 | TextBox | its Text while the string is scrolled | `makeCaretVisible()` |
 | TabControl, TabStrip | the overflow and tab-list buttons; the drop marker over a tab | `arrange()`, x in X and y in Y; a drag hover |
 | Text | its wrapped lines | its X arrange |
+| DataTable, its header and rows | the header and the body; the header's and each row's cells; a header cell's grip | the table's Y arrange (the body first, then the header at the body's content); `arrangeHorizontal`/`arrangeVertical` |
 
 A `Dragger` (a splitter bar, a slider or scrollbar thumb) whose target is an
 Owner child moves it as computed bounds, and its owner reads the new position

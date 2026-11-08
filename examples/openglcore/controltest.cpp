@@ -297,7 +297,14 @@
  *                   the swatch taking the value; a settled frame writes
  *                   nothing with the picker closed and open, a click on the
  *                   swatch opening it below and Escape closing it (a line
- *                   lists the edit frames). Exits non-zero if any check is
+ *                   lists the edit frames). DataTableDemo: hovering an
+ *                   unselected row leaves nothing pending outside it, writes
+ *                   no more than its primitive slots and its cells' glyphs and
+ *                   changes no pixel outside it, moving off gives the frame
+ *                   back, and a click on the Number header sorts the rows by
+ *                   number in one layout pass; settled frames write nothing
+ *                   (a line gives the hover's and the sort's counts). Exits
+ *                   non-zero if any check is
  *                   no. The
  *                   clock is frozen as under --stats.
  *    typing       the keyboard on TextBoxDemo, every key a synthesised GLFW
@@ -549,6 +556,7 @@
 #include <gweni/controls/scrollBarButton.h>
 #include <gweni/controls/comboBox.h>
 #include <gweni/controls/virtualList.h>
+#include <gweni/controls/dataTable.h>
 #include <gweni/controls/properties.h>
 #include <GLFW/glfw3.h>
 #include <gweni/utils/filesystem.h>
@@ -578,6 +586,7 @@
 #include <demo/contextMenu.h>
 #include <demo/popup.h>
 #include <demo/crossSplitter.h>
+#include <demo/dataTable.h>
 #include <demo/groupBox.h>
 #include <demo/imagePanel.h>
 #include <demo/label.h>
@@ -670,7 +679,7 @@ static void content_scale_callback(GLFWwindow *window, float, float)
     X(ShowcaseDisplayDemo) X(ShowcaseWindowsDemo) \
     X(ButtonDemo) X(LabelDemo) X(LabelMultilineDemo) X(ProgressBarDemo) \
     X(GroupBoxDemo) X(ImagePanelDemo) X(StatusBarDemo) X(SeparatorDemo) X(ComboBoxDemo) \
-    X(TextBoxDemo) X(ListBoxDemo) X(SelectableDemo) X(VirtualListDemo) X(ContextMenuDemo) X(PopupDemo) X(CrossSplitterDemo) X(RadioButtonDemo) \
+    X(TextBoxDemo) X(ListBoxDemo) X(SelectableDemo) X(VirtualListDemo) X(DataTableDemo) X(ContextMenuDemo) X(PopupDemo) X(CrossSplitterDemo) X(RadioButtonDemo) \
     X(CheckBoxDemo) X(NumericDemo) X(SliderDemo) X(SliderTextDemo) X(MenuStripDemo) \
     X(WindowDemo) X(WindowButtonsDemo) X(TreeControlDemo) X(PropertiesDemo) X(TabControlDemo) X(TabCloseDemo) X(TabOverflowDemo) \
     X(ScrollControlDemo) X(PageControlDemo) X(CollapsibleListDemo) X(ColorPickerDemo) X(ColorEditDemo) \
@@ -3669,6 +3678,108 @@ static void checkColorEdit(Session &s, const std::string &shotDir, InteractionCh
         +(closed ? "" : "Escape did not close the picker"));
 }
 
+// DataTableDemo: hovering a row that is not selected leaves nothing pending
+// outside it but the control the mouse left, writes no more primitive slots
+// than the row's own (its fill and rules) and no more glyph slots than its
+// cells' text, changes no pixel outside it, and moving off gives the frame
+// before back; a settled frame writes nothing. A click on the Number header
+// sorts the rows by it, the demo putting them in that order, all laid out in
+// one update-phase pass, the rows then shown in ascending numbers.
+static void checkDataTable(Session &s, const std::string &shotDir, InteractionChecks &checks, bool &ok)
+{
+    gweni::controls::Base *demo=addControl(s, "DataTableDemo");
+    renderFrames(s, s.frames);
+
+    auto *table=gweni::gweni_cast<gweni::controls::DataTable>(findControl(demo, "DataTable"));
+    gweni::controls::DataTableRow *row=(table && table->rowCount() > 2)?table->getRow(1):nullptr;
+    if(!row || row->isSelected() || table->getColumnCount() < 3)
+    {
+        checks.check("data_table_found", false,
+            "DataTableDemo has no table of three columns or more with an unselected second row");
+        dropControl(s, demo);
+        return;
+    }
+
+    const size_t rowSlots=row->getSkinControl()->getPrimitives().size();
+    size_t glyphs=0;
+    for(int c=0; c < row->getCellCount(); ++c)
+        glyphs+=static_cast<size_t>(row->getCell(c)->textLength());
+    const gweni::Point on=centreOf(row);
+    const gweni::Point off(s.size.x-1, s.size.y-1);
+
+    moveMouse(s, off.x, off.y);
+    renderFrames(s, s.frames);
+    const std::vector<uint8_t> rest=framePixels(s);
+
+    gweni::controls::Base *left=gweni::HoveredControl;
+    size_t outside=0;
+    moveMouse(s, on.x, on.y);
+    countPendingBesides(s.canvas, left, row, outside);
+    renderFrames(s, 1);
+    const gweni::renderer::SlotRenderer::FrameStats hoverGpu=s.renderer->getFrameStats();
+    renderFrames(s, s.frames);
+    if(!shoot(s, shotDir+"/interaction-data-table-hover.png"))
+        ok=false;
+    const std::vector<uint8_t> hover=framePixels(s);
+    const SplitDifferences hoverDiff=differencesSplit(s, rest, hover, row, row);
+
+    moveMouse(s, off.x, off.y);
+    renderFrames(s, s.frames);
+    const std::vector<uint8_t> unhovered=framePixels(s);
+    checkSteady(s, checks, "data_table_steady");
+
+    // the Number header, clear of its grip at the right edge
+    gweni::controls::internal::DataTableHeaderCell *number=table->getHeader()->getCells().at(2);
+    const gweni::Point origin=number->localPosToCanvas();
+    clickMouse(s, origin.x+number->getWidth()/3, origin.y+number->getHeight()/2);
+    gweni::controls::resetChangeStats();
+    s.canvas->updateCanvas();
+    const gweni::controls::LayoutStats sortLayout=s.canvas->getLayoutStats();
+    s.renderer->clearTarget(s.background);
+    s.canvas->renderCanvas();
+    if(s.stats)
+        printFrameStats(s.frame, s.label, gweni::controls::getChangeStats(), s.renderer->getFrameStats(),
+            s.canvas->getLayoutStats(), s.canvas->getUpdateStats());
+    checkOnePass(s, std::to_string(s.frame));
+    ++s.frame;
+    moveMouse(s, off.x, off.y);
+    renderFrames(s, s.frames);
+    if(!shoot(s, shotDir+"/interaction-data-table-sorted.png"))
+        ok=false;
+
+    bool ordered=table->getSortColumn() == 2
+        && table->getSortDirection() == gweni::controls::SortDirection::Ascending;
+    for(int i=1; i < table->rowCount(); ++i)
+    {
+        gweni::controls::DataTableRow *above=table->getRow(i-1);
+        gweni::controls::DataTableRow *below=table->getRow(i);
+
+        if(std::atoi(above->getCellText(2).c_str()) > std::atoi(below->getCellText(2).c_str())
+            || above->localPosToCanvas().y >= below->localPosToCanvas().y)
+            ordered=false;
+    }
+    checkSteady(s, checks, "data_table_steady_sorted");
+
+    forgetMouse(s);
+    dropControl(s, demo);
+
+    std::cout<<"interaction data_table_hover outside="<<outside<<" prim_slots_written="
+        <<hoverGpu.primitiveSlotsWritten<<" text_slots_written="<<hoverGpu.textSlotsWritten
+        <<" sort_layout_passes="<<sortLayout.passes<<"\n";
+    checks.check("data_table_hover", hover != rest && hoverDiff.outside == 0 && unhovered == rest && outside == 0,
+        "hovering the second row left its pixels as they were, changed "+std::to_string(hoverDiff.outside)
+        +" pixels outside it or left "+std::to_string(outside)+" controls outside it with a change"
+        " pending, or moving off did not give the frame before back");
+    checks.check("data_table_hover_bounded", hoverGpu.primitiveSlotsWritten >= 1
+        && hoverGpu.primitiveSlotsWritten <= rowSlots && hoverGpu.textSlotsWritten <= glyphs,
+        "the hover frame wrote "+std::to_string(hoverGpu.primitiveSlotsWritten)+" primitive slots and "
+        +std::to_string(hoverGpu.textSlotsWritten)+" glyph slots; want 1.."+std::to_string(rowSlots)
+        +" and at most "+std::to_string(glyphs)+", the row's");
+    checks.check("data_table_sort", ordered && sortLayout.passes == 1 && !sortLayout.capped,
+        "a click on the Number header did not sort the rows by number in one layout pass (it took "
+        +std::to_string(sortLayout.passes)+")");
+}
+
 static bool runInteractionScenario(Session &s, const std::string &shotDir, bool &passed)
 {
     // Frozen like --stats, so a frame with no input is genuinely idle (no
@@ -3689,6 +3800,7 @@ static bool runInteractionScenario(Session &s, const std::string &shotDir, bool 
     checkTabOverflow(s, shotDir, checks, ok);
     checkPropertyRow(s, shotDir, checks, ok);
     checkColorEdit(s, shotDir, checks, ok);
+    checkDataTable(s, shotDir, checks, ok);
 
     std::cout<<"interaction";
     for(const auto &result : checks.results)

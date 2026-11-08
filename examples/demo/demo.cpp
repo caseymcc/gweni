@@ -25,6 +25,7 @@
 #include "demo/contextMenu.h"
 #include "demo/popup.h"
 #include "demo/crossSplitter.h"
+#include "demo/dataTable.h"
 #include "demo/groupBox.h"
 #include "demo/imagePanel.h"
 #include "demo/label.h"
@@ -158,6 +159,7 @@ void Demo::init(const String &name)
         addDemo<ListBoxDemo>(cat, "ListBoxDemo", "List box");
         addDemo<SelectableDemo>(cat, "SelectableDemo", "Selectable");
         addDemo<VirtualListDemo>(cat, "VirtualListDemo", "Virtual list");
+        addDemo<DataTableDemo>(cat, "DataTableDemo", "Data table");
         addDemo<ContextMenuDemo>(cat, "ContextMenuDemo", "Context menu");
         addDemo<PopupDemo>(cat, "PopupDemo", "Popup");
         addDemo<UnicodeTextDemo>(cat, "UnicodeTextDemo", "Unicode text");

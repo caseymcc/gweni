@@ -164,6 +164,8 @@ set(GWENI_CONTROL_SOURCES
     source/controls/comboBox.cpp
     include/gweni/controls/crossSplitter.h
     source/controls/crossSplitter.cpp
+    include/gweni/controls/dataTable.h
+    source/controls/dataTable.cpp
     include/gweni/controls/dockBase.h
     source/controls/dockBase.cpp
     include/gweni/controls/dockedTabControl.h

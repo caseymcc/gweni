@@ -13,8 +13,10 @@
  *
  *  The rows: ProgressBar, ColorSlider, ColorLerpBox, CheckBox, RadioButton,
  *  ComboBox, ScrollBarButton, the three window buttons, TreeNode's
- *  OpenToggleButton, and TextBox's caret; every other type gets a
- *  StubControl. A row fails, naming the renderer, if
+ *  OpenToggleButton, a DataTable's header (its rule), header cell (a sorted
+ *  column's chevron) and row (its rules), and TextBox's caret; every other
+ *  type gets a StubControl. A part of another control is followed by its next
+ *  sibling in that control. A row fails, naming the renderer, if
  *  any draw into its slots is at a z outside [getZIndex(),
  *  getZIndex()+depthLayers()) and [getOverlayZIndex(),
  *  getOverlayZIndex()+overlayLayers()), if no draw is at the overlay's z, or
@@ -27,6 +29,7 @@
 #include <gweni/controls/checkBox.h>
 #include <gweni/controls/colorControls.h>
 #include <gweni/controls/comboBox.h>
+#include <gweni/controls/dataTable.h>
 #include <gweni/controls/progressBar.h>
 #include <gweni/controls/radioButton.h>
 #include <gweni/controls/scrollBarButton.h>
@@ -133,6 +136,27 @@ struct Row
     std::function<controls::Base *(controls::Canvas *)> build;
 };
 
+//! A two-column, two-row table sorted by its first column, with every rule.
+controls::DataTable *dataTable(controls::Canvas *canvas)
+{
+    auto *table=canvas->newChild<controls::DataTable>();
+
+    table->setBounds(10, 10, 240, 120);
+    table->setColumnCount(2);
+    table->setColumnCaption(0, "Name");
+    table->setColumnCaption(1, "Value");
+    table->setBorders(controls::DataTableBorders::All);
+    for(int i=0; i < 2; ++i)
+    {
+        controls::DataTableRow *row=table->addRow();
+
+        row->setCellText(0, "row");
+        row->setCellText(1, std::to_string(i));
+    }
+    table->setSortColumn(0, controls::SortDirection::Ascending);
+    return table;
+}
+
 const std::vector<Row> &rows()
 {
     static const std::vector<Row> table={
@@ -208,6 +232,20 @@ const std::vector<Row> &rows()
                 auto *toggle=canvas->newChild<controls::OpenToggleButton>();
                 toggle->setPos(10, 10);
                 return toggle;
+            }},
+        // a DataTable's parts, each a part of a real table: the header's rule,
+        // a sorted column's chevron and a row's rules (DataTableBorders::All)
+        {"DataTableHeader", Overlay::Above, [](controls::Canvas *canvas) -> controls::Base *
+            {
+                return dataTable(canvas)->getHeader();
+            }},
+        {"DataTableHeaderCell", Overlay::Above, [](controls::Canvas *canvas) -> controls::Base *
+            {
+                return dataTable(canvas)->getHeader()->getCells().front();
+            }},
+        {"DataTableRow", Overlay::Above, [](controls::Canvas *canvas) -> controls::Base *
+            {
+                return dataTable(canvas)->getRow(0);
             }},
         // the caret, drawn in front of the box's text
         {"TextBox", Overlay::AfterSubtree, [](controls::Canvas *canvas) -> controls::Base *
@@ -373,8 +411,10 @@ TEST_CASE("a textured overlay renderer's first child and next sibling come after
             CHECK(children.front()->getZIndex() >= end);
 
         // the next sibling: a control may move one of its own to the canvas
-        // (a ComboBox's open menu), so it is not always the scene's "after"
-        const controls::Base::List &siblings=scene.canvas->getChildren();
+        // (a ComboBox's open menu), so it is not always the scene's "after";
+        // a part of another control (a DataTable's header cell) is followed
+        // by the next part
+        const controls::Base::List &siblings=scene.control->getParent()->getChildren();
         auto it=std::find(siblings.begin(), siblings.end(), scene.control);
         REQUIRE(it != siblings.end());
         ++it;

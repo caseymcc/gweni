@@ -6,6 +6,7 @@
 #include "demo/showcaseContainers.h"
 #include "gweni/controls/button.h"
 #include "gweni/controls/collapsibleList.h"
+#include "gweni/controls/dataTable.h"
 #include "gweni/controls/groupBox.h"
 #include "gweni/controls/label.h"
 #include "gweni/controls/listBox.h"
@@ -203,6 +204,46 @@ GWENI_CONTROL_CONSTRUCTOR(ShowcaseContainersDemo)
                 cat->add(name);
         }
         m_notes.push_back("CollapsibleList: \"Budget.ods\" selected, \"Favourites\" collapsed");
+    }
+    {
+        controls::DataTable *table=showcase::addSection(right, "DataTable")->newChild<controls::DataTable>();
+
+        table->setDock(DockPosition::Center);
+        // a small request, as the lists': the columns' widths and a column's
+        // height are shared out by what the sections ask for, and this one
+        // asks no wider than the CollapsibleList above it
+        table->setSize(80, SectionHeight);
+        table->setColumnCount(2);
+        table->setColumnCaption(0, "File");
+        table->setColumnCaption(1, "Size");
+        table->setColumnWidth(0, 110);
+        table->setColumnWidth(1, 50);
+        table->setBorders(controls::DataTableBorders::Rows);
+
+        // already in name order, as the sort below shows it
+        const char *const files[][2]=
+        {
+            {"atlas.png", "512 KB"},
+            {"build.ninja", "88 KB"},
+            {"CMakeLists.txt", "9 KB"},
+            {"LICENSE", "1 KB"},
+            {"main.cpp", "14 KB"},
+            {"README.md", "6 KB"},
+            {"skin.json", "21 KB"},
+            {"theme.json", "4 KB"},
+        };
+
+        for(const auto &file : files)
+        {
+            controls::DataTableRow *row=table->addRow();
+
+            row->setCellText(0, file[0]);
+            row->setCellText(1, file[1]);
+            if(String(file[0]) == "main.cpp")
+                table->setSelectedRow(row);
+        }
+        table->setSortColumn(0, controls::SortDirection::Ascending, false);
+        m_notes.push_back("DataTable: sorted by File, striped, \"main.cpp\" selected");
     }
 }
 

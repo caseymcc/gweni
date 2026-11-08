@@ -24,6 +24,7 @@
 #include "gweni/controls/bullet.h"
 #include "gweni/controls/windowButtons.h"
 #include "gweni/controls/properties.h"
+#include "gweni/controls/dataTable.h"
 
 #include <algorithm>
 
@@ -803,6 +804,199 @@ void PropertyRow::update(renderer::Base *renderer, controls::Base *baseControl)
         renderer->hidePrimitive(m_primitives[1]);
 
     renderer->drawIcon(m_primitives[2], gweni::Rect(bounds.x, bounds.y+bounds.h-2, bounds.w, 3), 6, 0, line, z+1);
+}
+
+///////////////////////////////////////////////////////////////////////////
+//DataTable
+void DataTable::update(renderer::Base *renderer, controls::Base *baseControl)
+{
+    tokyonight::paintSurface(renderer, m_primitives.data(), baseControl, tokyonight::PanelDark);
+}
+
+///////////////////////////////////////////////////////////////////////////
+//DataTableHeader
+void DataTableHeader::update(renderer::Base *renderer, controls::Base *baseControl)
+{
+    if(m_primitives.size() < 2)
+        return;
+
+    const gweni::Rect bounds=baseControl->getRenderBounds();
+
+    if(!baseControl->visible() || bounds.w <= 0 || bounds.h <= 0)
+    {
+        for(size_t primitive : m_primitives)
+            renderer->hidePrimitive(primitive);
+        return;
+    }
+
+    const tokyonight::Surface &surface=tokyonight::DataTableHeader;
+    const int z=baseControl->getZIndex();
+
+    renderer->drawRoundedRect(m_primitives[0], bounds, surface.radius, surface.borderWidth,
+        surface.top, surface.bottom, surface.border, z);
+    // as a Separator's rule: the quad reaches one unit past the line on both
+    // sides across it, and the stroke is drawn through its middle
+    renderer->drawIcon(m_primitives[1], gweni::Rect(bounds.x, bounds.y+bounds.h-2, bounds.w, 3), 6, 0,
+        tokyonight::Separator.top, z+1);
+}
+
+///////////////////////////////////////////////////////////////////////////
+//DataTableHeaderCell
+void DataTableHeaderCell::update(renderer::Base *renderer, controls::Base *baseControl)
+{
+    if(m_primitives.size() < 2)
+        return;
+
+    controls::internal::DataTableHeaderCell *cell=
+        static_cast<controls::internal::DataTableHeaderCell *>(baseControl);
+    const gweni::Rect r=baseControl->getRenderBounds();
+    const bool visible=baseControl->visible() && r.w > 0 && r.h > 0;
+    const tokyonight::Surface *surface=nullptr;
+
+    if(!cell->isDisabled())
+    {
+        if(cell->isDepressed())
+            surface=&tokyonight::DataTableHeaderDown;
+        else if(cell->isHovered())
+            surface=&tokyonight::DataTableHeaderHover;
+    }
+
+    // at rest the header's fill shows: a hidden slot, not a transparent rect
+    // that would write depth over it
+    if(visible && surface)
+        renderer->drawRoundedRect(m_primitives[0], r, surface->radius, surface->borderWidth,
+            surface->top, surface->bottom, surface->border, baseControl->getZIndex());
+    else
+        renderer->hidePrimitive(m_primitives[0]);
+
+    const controls::SortDirection sort=cell->getSortDirection();
+
+    if(visible && sort != controls::SortDirection::None)
+    {
+        // kind 1's directions: 0 down, 1 up
+        const int size=controls::internal::DataTableHeaderCell::ChevronSize;
+        const int inset=controls::internal::DataTableHeaderCell::ChevronInset;
+        const gweni::Rect chevron{ r.x+r.w-size-inset, r.y+(r.h-size)/2, size, size };
+
+        renderer->drawIcon(m_primitives[1], chevron, 1, sort == controls::SortDirection::Ascending?1:0,
+            tokyonight::FgDark, baseControl->getZIndex()+1);
+    }
+    else
+        renderer->hidePrimitive(m_primitives[1]);
+}
+
+///////////////////////////////////////////////////////////////////////////
+//DataTableColumnGrip
+void DataTableColumnGrip::update(renderer::Base *renderer, controls::Base *baseControl)
+{
+    if(m_primitives.empty())
+        return;
+
+    controls::internal::DataTableColumnGrip *grip=
+        static_cast<controls::internal::DataTableColumnGrip *>(baseControl);
+    const gweni::Rect bounds=baseControl->getRenderBounds();
+    // the rule a few units in from the cell's top and bottom
+    const int inset=std::min(4, bounds.h/4);
+
+    if(!baseControl->visible() || bounds.w <= 0 || bounds.h-2*inset <= 0)
+    {
+        renderer->hidePrimitive(m_primitives[0]);
+        return;
+    }
+
+    const gweni::Color color=(grip->isDragging() || grip->isHovered())?
+        tokyonight::Blue:tokyonight::Separator.top;
+    const int x=bounds.x+bounds.w-1;
+
+    // the stroke through the middle of a quad one unit past the line on both
+    // sides; the cell clips the unit past its right edge
+    renderer->drawIcon(m_primitives[0], gweni::Rect(x-1, bounds.y+inset, 3, bounds.h-2*inset), 6, 1,
+        color, baseControl->getZIndex());
+}
+
+///////////////////////////////////////////////////////////////////////////
+//DataTableRow
+void DataTableRow::resizePrimitives(renderer::Base *renderer, size_t count)
+{
+    while(m_primitives.size() > count)
+    {
+        renderer->releasePrimitive(m_primitives.back());
+        m_primitives.pop_back();
+    }
+
+    while(m_primitives.size() < count)
+    {
+        size_t id;
+
+        renderer->generatePrimitive(id);
+        m_primitives.push_back(id);
+    }
+}
+
+void DataTableRow::update(renderer::Base *renderer, controls::Base *baseControl)
+{
+    controls::DataTableRow *row=static_cast<controls::DataTableRow *>(baseControl);
+    const controls::DataTable *table=row->getTable();
+    const bool columnRules=table && table->hasColumnBorders();
+    const int cells=row->getCellCount();
+    const size_t rules=(columnRules && cells > 1)?size_t(cells-1):0;
+
+    resizePrimitives(renderer, 2+rules);
+
+    const gweni::Rect bounds=baseControl->getRenderBounds();
+
+    if(!baseControl->visible() || bounds.w <= 0 || bounds.h <= 0)
+    {
+        for(size_t primitive : m_primitives)
+            renderer->hidePrimitive(primitive);
+        return;
+    }
+
+    const tokyonight::Surface *surface=nullptr;
+
+    if(row->isDisabled())
+    {
+        if(row->isSelected())
+            surface=&tokyonight::SelectableSelectedDisabled;
+    }
+    else if(row->isDepressed())
+        surface=&tokyonight::SelectableDown;
+    else if(row->isSelected())
+        surface=row->isHovered()?&tokyonight::SelectableSelectedHover:&tokyonight::SelectableSelected;
+    else if(row->isHovered())
+        surface=&tokyonight::SelectableHover;
+
+    if(!surface && row->isStriped())
+        surface=&tokyonight::DataTableStripe;
+
+    const int z=baseControl->getZIndex();
+
+    // an idle row that is not striped draws nothing: the slot is hidden, not
+    // drawn transparent (it would write depth over the backdrop)
+    if(surface)
+        renderer->drawRoundedRect(m_primitives[0], bounds, surface->radius, surface->borderWidth,
+            surface->top, surface->bottom, surface->border, z);
+    else
+        renderer->hidePrimitive(m_primitives[0]);
+
+    const gweni::Color line=tokyonight::Separator.top;
+
+    // as a Separator's rule: each quad reaches one unit past its line on both
+    // sides across it, and the stroke is drawn through its middle
+    if(table && table->hasRowBorders())
+        renderer->drawIcon(m_primitives[1], gweni::Rect(bounds.x, bounds.y+bounds.h-2, bounds.w, 3), 6, 0,
+            line, z+1);
+    else
+        renderer->hidePrimitive(m_primitives[1]);
+
+    for(size_t i=0; i < rules; ++i)
+    {
+        // the cells are placed in the row; their bounds are in its
+        const gweni::Rect cell=row->getCell(int(i))->getBounds();
+        const int x=bounds.x+cell.x+cell.w-1;
+
+        renderer->drawIcon(m_primitives[2+i], gweni::Rect(x-1, bounds.y, 3, bounds.h), 6, 1, line, z+1);
+    }
 }
 
 ///////////////////////////////////////////////////////////////////////////
@@ -2010,6 +2204,11 @@ template class ControlRegister<OpenToggleButton>;
 template class ControlRegister<TreeNode>;
 template class ControlRegister<PropertyTreeNode>;
 template class ControlRegister<PropertyRow>;
+template class ControlRegister<DataTable>;
+template class ControlRegister<DataTableHeader>;
+template class ControlRegister<DataTableHeaderCell>;
+template class ControlRegister<DataTableColumnGrip>;
+template class ControlRegister<DataTableRow>;
 
 }//namespace textured
 }//namespace skin
