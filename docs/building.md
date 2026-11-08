@@ -378,7 +378,9 @@ an older container lacks them (`which valgrind` tells).
 `gweni_bench` (`bench/`) runs a fixed scene on the full path, gweni plus
 `OpenGLCore` on surfaceless EGL, and prints per measured frame the wall time of
 each phase (`input`, `update`, `render`, `flush`, `gpu`) and the work counters:
-controls visited and changed, slots written, uploads and buffer regrows
+controls rendered and changed (`visited`, the queued controls the render
+phase rendered, 0 on a settled frame, and `render_carried`, the entries it
+left queued for a later frame), slots written, uploads and buffer regrows
 (`buffer_regrows`), draw calls, layout passes
 and the controls they entered (`layout_visited`), text measures
 (`measure_calls`, and `measure_calls_<phase>` for the input, update and

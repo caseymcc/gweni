@@ -153,8 +153,7 @@ control caches that end, `m_zEnd` (the end of its last range: its overlay range,
 its last child's end, else its own range), set as the walk leaves it. A control whose
 child list changed (an add, a removal, a move among its siblings, `keepOverlaysLast()`)
 or whose skin Control was assigned or released marks itself and its `m_actualParent`
-chain `m_zDirty` (`Base::zOrderChanged`), as `m_childStateChanged` is marked for the
-render walk, and a new control starts dirty. The walk then passes a child in O(1),
+chain `m_zDirty` (`Base::zOrderChanged`), and a new control starts dirty. The walk then passes a child in O(1),
 jumping the cursor to its `m_zEnd`, when the child is clean, not under a moved control
 and its z is still at or past the cursor; it enters a dirty one, a moved subtree whole,
 and a clean one the cascade from an insert reaches into (its z behind the cursor),
@@ -396,59 +395,102 @@ hides its open menu, because the submenus `closeAll()` would reach may already b
 
 ### 2. `renderCanvas()` — render
 
-`Canvas::renderCanvas()` brackets the frame with `renderer->begin()` / `end()` and
-walks the tree via `doRender()` → `renderRecursive()` → `Base::render()`. For each
-control, `Base::render()`:
+`Canvas::renderCanvas()` brackets the frame with `renderer->begin()` / `end()` and,
+after `renderPhaseLayout()` and the z renumber, renders the controls waiting in the
+**pending-render queue** (`Canvas::renderPendingControls()` → `Base::drainRenderQueue()`
+→ each one's hooks → `Base::render()`). For each control, `Base::render()`:
 
 - returns immediately if `getStateChange() == StateChange_Nothing` (nothing to do),
 - on `StateChange_Created`, calls the skin renderer's `generate()` to **allocate
   primitives** for that control,
 - calls the skin renderer's `update()` to **re-emit only the changed draw state**,
-- clears the control's state-change mask.
 
+and the drain clears the control's state-change mask once its hooks have returned.
 So an unchanged control issues no renderer calls at all; a changed control only
 rewrites its own primitives.
 
-The walk itself only goes where something changed. `addStateChange()` sets the
-control's bits and then `m_childStateChanged` on each ancestor, up to the first one
-that has it already (the chain is `m_actualParent`, the owners of the `m_children`
-lists the walk follows). Attaching a control that has something pending, in
-`addChild()` or `addChildOfLayout()`, marks its new parent's chain the same way.
-`doRender()` returns at once for a control with neither its own change nor the bit,
-before the offset and clip push and the loop over its children. So a settled frame
-enters no control at all, and a hover enters the controls it repaints and their
-ancestors.
-`renderRecursive()` clears the bit before it visits the children. A change raised on
-one of them later in the walk (from a sibling's `render()`, say) marks the path
-again: it is rendered later in the frame if the walk has not reached that control
-yet, and otherwise on the next frame. `ChangeStats::visited` counts the controls
-entered (`ControlTest --stats` prints it as `visited=`). Demo's first frame enters
-2662 and a settled one 0. `tests/unit/renderWalk.cpp` pins the skip. A
-control's `render()`, `renderOver()` and `renderFocus()` therefore run only on a
-frame something in or below it changed. Anything that changes what one of them draws
-must raise a state change: `ImagePanel`'s setters do, for example.
+**The queue.** `addStateChange()` (not virtual, so no subclass can set bits without
+it) puts the control at the end of one process-global `std::vector<Base *>`, unless it
+is queued already: each control keeps its index, `m_renderQueueIndex` (-1 when it is
+not queued), so the push is O(1) and a control is in the queue once. `setSkin()`,
+which sets `StateChange_Created` itself, queues it the same way. `~Base`, as the last
+thing it does, nulls its slot through that index, and a drain compacts the vector,
+so the queue never hands out a deleted control. Nothing happens on attach: a control
+created or changed off any canvas keeps its entry until it is on one that renders.
+One UI thread uses it, as the id banks in `primitiveIds.h` (`controls::queuedRenderCount()`
+for tests). A canvas renders the queued controls on its own tree and nothing else, so a
+settled frame renders no control and a hover renders the controls it repaints, not
+their ancestors. `ChangeStats::visited` counts the controls rendered (`visited=` in
+`ControlTest --stats` and gweni_bench): Demo's first frame renders 4150 and a settled
+one 0, and one changed row of a 10 000-row ListBox renders that row, with no
+sibling scanned. `tests/unit/renderWalk.cpp` pins it.
 
-`renderRecursive()` loops over the live `m_children` list, with no copy, so the walk
-allocates nothing per child. It still hands every child of an entered control to
-`doRender()`, so it costs O(siblings) of each control it enters in time, which
-`ChangeStats::childrenScanned` counts (`children_scanned=` in `ControlTest --stats`
-and gweni_bench). One changed row of a 10 000-row ListBox scans 10 000 children.
-Visiting only the dirty ones would need an index of them kept in `m_children` order
-(#407).
+**The drain** (`Base::drainRenderQueue(skin, zTied)`, shared by `Canvas` and
+`WindowCanvas`):
+
+1. *Root state.* It reads the render offset and clip region the canvas has just set on
+   the renderer, rather than assuming them: (0, 0) and `getBounds()` for a `Canvas`,
+   (-x, -y) and `getRenderBounds()` for a `WindowCanvas`. It leaves the renderer at
+   that state when it is done, as the recursive walk did, for whatever the canvas
+   draws after.
+2. *Order.* It sorts the entries by `getZIndex()`, ties by queue order. z is the tree's
+   preorder (a parent before its children, each child's subtree before the next
+   child's) and strictly increasing, because the renumber that has just run
+   (`renumberZOrder()`, after `renderPhaseLayout()`) gives every control a range after
+   the one before it in preorder, gaps or not, and leaves a clean subtree's labels only
+   when they are still in that order ("Which controls a renumber enters"). So `generate()`
+   allocates ids, and the skin writes slots, in the same order as a walk of the tree,
+   and the pixels are byte for byte the same. When the renumber clamped
+   (`Canvas::m_zClamped`: a tree too large for the depth range, whose last ranges tie)
+   the drain takes the order from a preorder walk of the tree instead of the sort.
+3. *State.* For each entry it follows `m_actualParent` up to the nearest control on its
+   **ancestor stack**: the levels of the previous entry's chain, each holding the
+   offset and region that control's children render in. The root is always the
+   stack's first level. It pops back to that ancestor and pushes the levels below it,
+   each as the recursive walk computed them: the control's bounds' origin added to the
+   offset, the region narrowed to its bounds if it `shouldClip()`, and a child's region
+   narrowed further by its parent's `getChildClipRect()` (a ScrollControl's viewport).
+   Since the entries come in preorder, a parent is usually on the stack, and the entry
+   is pushed after it renders, since the next one is often its child: a change over the
+   whole tree (the first frame, a resize, a scale) costs O(controls), not
+   O(controls × depth). A control's level is found from its `m_renderStackLevel`,
+   trusted only if that level still holds it, so the stack is never cleared control by
+   control and holds pointers it compares but never dereferences.
+4. *Hooks.* `renderUnder()` and `render()` run at the parent's offset and region,
+   `renderOver()` and `renderFocus()` with the control's own offset added, in the
+   parent's region, as in the recursive walk. They run one after the other, before the
+   control's children: the walk ran `renderOver()` and `renderFocus()` after the
+   subtree, which no override depends on (each draws only its own control, or nothing).
+   A hook runs only for a control that is queued, never for a clean ancestor of one,
+   so a look that depends on descendants' state cannot be picked in a hook: a
+   `PropertyRow`'s label, which follows its property's hover and focus, is redrawn
+   from `onDescendantInteraction()`, which `Base` calls on every ancestor of a control
+   whose hover or keyboard focus changed, in the update phase.
+5. *Clearing.* After the hooks have returned, the control's state and index are
+   cleared, so a change it raised on itself from its own hooks is cleared with it, as
+   before.
+6. *Carried entries.* An entry whose chain ends somewhere else (detached, or on another
+   canvas) stays queued for a later drain, the one of the canvas it is on then. An
+   entry queued during the drain (a hook raising a change on another control) is
+   rendered after the sorted ones, in the order they came, up to a cap (the number of
+   entries the drain began with, at least 256), so hooks that keep queueing each other
+   end the frame; the rest waits for the next one. `ChangeStats::renderCarried`
+   (`render_carried=`) counts the entries left: 0 in every Demo frame, and constant at
+   any N in every gweni_bench scene (`bench_scaling` checks both counters).
+
+The drain allocates nothing once its vectors (the queue, the order, the stack and the
+chain, kept from frame to frame) have grown.
 
 **The render walk only draws.** Adding, removing, reordering or deleting a control
 belongs to the update phase or to layout, never to a `render()`, `renderUnder()`,
-`renderOver()` or `renderFocus()`. That is what lets the loop follow the live list:
-`sendToBack()` removes the control's list node and pushes a new one, so a render
-that called it on the child being visited would leave the loop on a freed node. The
-rule is checked in every build. `Canvas::renderCanvas()` and `WindowCanvas`'s
-render hold a `RenderWalkScope` around `doRender()`, after `renderPhaseLayout()`
-(layout may create controls before the walk: a wrapped `Text` builds its line
-children there). `renderRecursive()` keeps the control it is rendering in a global
-(saved, set and restored, one store per visit). While a scope is open,
-`Base::addChild()`, `addChildOfLayout()`, `removeChild()` (and so `setParent()`),
-`bringToFront()`, `sendToBack()`, `bringNextToControl()` and `~Base` each print one
-line on stderr the first time an (operation, type) pair is seen:
+`renderOver()` or `renderFocus()`. The rule is checked in every build.
+`Canvas::renderCanvas()` and `WindowCanvas`'s render hold a `RenderWalkScope` around
+the drain only, after `renderPhaseLayout()` (layout may create controls before the
+drain: a wrapped `Text` builds its line children there), and the drain holds one of
+its own. The drain keeps the control whose hooks are running in a global. While a
+scope is open, `Base::addChild()`, `addChildOfLayout()`, `removeChild()` (and so
+`setParent()`), `bringToFront()`, `sendToBack()`, `bringNextToControl()` and `~Base`
+each print one line on stderr the first time an (operation, type) pair is seen:
 
 ```
 gweni: <Type>#<id> <operation> during the render walk (rendering <Type>#<id>)
@@ -456,11 +498,23 @@ gweni: <Type>#<id> <operation> during the render walk (rendering <Type>#<id>)
 
 They also record it in `controls::renderWalkMutations()` (`resetRenderWalkMutations()`
 forgets the record, for tests). `~Base` sees the type as `Base`, because the derived
-destructors have run. Outside a scope the check is one branch. The report does not
-stop the walk: what that frame does next is undefined, as with any use-after-free,
-and the line is how the bug is found. ControlTest exits non-zero when the record is
-not empty, as it does for `typesWithoutSkinRenderer()`, so `controltest_teardown` and
-`controltest_one_pass_each` fail on an offence in any demo.
+destructors have run. Outside a scope the check is one branch. ControlTest exits
+non-zero when the record is not empty, as it does for `typesWithoutSkinRenderer()`,
+so `controltest_teardown` and `controltest_one_pass_each` fail on an offence in any
+demo.
+
+**The guard reports a tree change; the queue survives it.** The drain follows no list
+a hook could change under it: it holds queue slots, which a deleted control nulls,
+and checks its entry's slot after each hook, so a hook that deletes the control being
+rendered (with its parent, say) ends that control's turn without another call on it.
+Every reported change also bumps a counter the drain reads before each entry: if it
+moved, the stack is rebuilt from the root, since it may name a control that moved or
+was deleted. A control detached by a hook is carried, and rendered once it is on a
+canvas again. What that frame draws for the controls the hook moved is still not
+defined (they may render at their old place, or not until the next frame), which is
+why it is reported; but nothing is touched after it is freed, and the drain ends
+(`tests/unit/renderWalk.cpp` deletes and detaches queued controls from a `render()`;
+the ASAN tree checks the memory).
 
 ## The renderer abstraction
 
@@ -1514,8 +1568,9 @@ What exists today (the foundation) and what's still aspirational:
   chunk and whether its font's draw list draws it. Off unless
   the variable is set; it is verbose (tens of lines per string).
 - **Clipping.** Each control with `shouldClip()` (the default) narrows the clip region
-  for its children: `Base::renderRecursive` calls `addClipRegion` with its bounds at its
-  absolute origin, which intersects them with the parent's region. A control's own
+  for its children: the render drain (`Base::drainRenderQueue`, "renderCanvas()") calls
+  `addClipRegion` with its bounds at its absolute origin, which intersects them with the
+  parent's region, as it rebuilds a queued control's state down its ancestor chain. A control's own
   `render()` runs before that, so it is clipped by its parent's region and its children by
   its own; `renderOver()`/`renderFocus()` get the parent's region back. A control that
   returns false (`TabStrip`, `TabButton`, and `Text`, whose children are its own wrapped
