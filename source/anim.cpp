@@ -103,8 +103,13 @@ size_t think(controls::Canvas *canvas)
         if(animation->m_removed || (animation->m_control->getCanvas() != canvas))
             continue;
 
+        // an excluded subtree's animation runs but is not counted
+        // (Base::setExcludedFromStats); read before think(), which may delete the control
+        const bool counted=!animation->m_control->statsExcluded();
+
         animation->think();
-        ++run;
+        if(counted)
+            ++run;
 
         if(!animation->m_removed && animation->finished())
             markRemoved(animation);

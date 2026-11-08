@@ -316,6 +316,21 @@ public:
     bool isQueuedForRender() const { return m_renderQueueIndex >= 0; }
     virtual void addStateChangeRecursive(int stateChange);
     virtual bool hasState(int state) { return m_stateChange&state; }
+
+    //! Leaves this control and its subtree out of the frame counts, so a tool
+    //! drawn on the canvas it measures (gweni::tools::Inspector) shows the
+    //! app's work alone: ChangeStats (getChangeStats()), the canvas's
+    //! UpdateStats and LayoutStats, and measureTextCalls() count none of its
+    //! entries, renders, changes, animations or measures. A layout pass or z
+    //! renumber that entered nothing outside such subtrees but the canvas
+    //! itself is not counted at all, the canvas's entries included. Off by
+    //! default; with no control flagged nothing is looked up.
+    void setExcludedFromStats(bool exclude);
+    bool isExcludedFromStats() const { return m_excludeFromStats; }
+    //! Whether this control is in a subtree setExcludedFromStats() flagged: it
+    //! or an ancestor (getParent() chain). O(depth) while any control is
+    //! flagged, O(1) when none is.
+    bool statsExcluded() const;
     
 
     virtual void restrictToParent(bool restrict) { m_restrictToParent=restrict; }
@@ -531,6 +546,10 @@ protected:
         int maxUsed=0;
         bool clamped=false;
         UpdateStats *stats=nullptr;
+        //! Inside how many setExcludedFromStats() roots the walk is, and the
+        //! controls it entered there, which are not counted in stats.
+        int excludedDepth=0;
+        size_t excludedVisited=0;
     };
 
     //! Numbers this control and its subtree depth-first against \p numbering's
@@ -931,6 +950,8 @@ protected:
     gweni::Rect m_renderBounds;
     int m_zIndex;
     int m_overlayZIndex=0;
+    //! See setExcludedFromStats().
+    bool m_excludeFromStats=false;
     //! Moved since the last renumber: see zOrderMoved().
     bool m_zMoved=false;
     //! The renumber has to enter this control: its child list or its layer

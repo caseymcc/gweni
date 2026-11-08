@@ -245,6 +245,8 @@ void Base::init(const String &name)
 Base::~Base()
 {
     noteRenderWalkMutation(this, "~Base");
+    // no longer a root statsExcluded() looks for
+    setExcludedFromStats(false);
 
     {
         Canvas *canvas=getCanvas();
@@ -1161,6 +1163,34 @@ std::vector<std::string> typesWithoutSkinRenderer()
 
 static size_t g_measureTextCalls=0;
 
+// Controls flagged with setExcludedFromStats(true): while there are none,
+// statsExcluded() looks nothing up.
+static size_t g_statsExcludedRoots=0;
+
+void Base::setExcludedFromStats(bool exclude)
+{
+    if(m_excludeFromStats == exclude)
+        return;
+    m_excludeFromStats=exclude;
+    if(exclude)
+        ++g_statsExcludedRoots;
+    else
+        --g_statsExcludedRoots;
+}
+
+bool Base::statsExcluded() const
+{
+    if(g_statsExcludedRoots == 0)
+        return false;
+
+    for(const Base *control=this; control; control=control->m_parent)
+    {
+        if(control->m_excludeFromStats)
+            return true;
+    }
+    return false;
+}
+
 size_t measureTextCalls()
 {
     return g_measureTextCalls;
@@ -1168,19 +1198,22 @@ size_t measureTextCalls()
 
 gweni::Point Base::measureText(const gweni::Font &font, const gweni::String &text)
 {
-    ++g_measureTextCalls;
+    if(!statsExcluded())
+        ++g_measureTextCalls;
     return getSkin()->getRenderer()->measureText(font, text);
 }
 
 int Base::measureLineHeight(const gweni::Font &font)
 {
-    ++g_measureTextCalls;
+    if(!statsExcluded())
+        ++g_measureTextCalls;
     return getSkin()->getRenderer()->lineHeight(font);
 }
 
 void Base::measureCarets(const gweni::Font &font, const gweni::String &text, std::vector<int> &xs)
 {
-    ++g_measureTextCalls;
+    if(!statsExcluded())
+        ++g_measureTextCalls;
     getSkin()->getRenderer()->measureCarets(font, text, xs);
 }
 
@@ -1194,12 +1227,15 @@ void Base::render(skin::Base *skin)
 
     //the one choke point every changed control passes through, so the whole
     //frame's change count is these few increments
-    ++g_changeStats.controls;
-    if(stateChange & StateChange_Created) ++g_changeStats.created;
-    if(stateChange & StateChange_Visibility) ++g_changeStats.visibility;
-    if(stateChange & StateChange_Geometry) ++g_changeStats.geometry;
-    if(stateChange & StateChange_Background) ++g_changeStats.background;
-    if(stateChange & StateChange_Text) ++g_changeStats.text;
+    if(!statsExcluded())
+    {
+        ++g_changeStats.controls;
+        if(stateChange & StateChange_Created) ++g_changeStats.created;
+        if(stateChange & StateChange_Visibility) ++g_changeStats.visibility;
+        if(stateChange & StateChange_Geometry) ++g_changeStats.geometry;
+        if(stateChange & StateChange_Background) ++g_changeStats.background;
+        if(stateChange & StateChange_Text) ++g_changeStats.text;
+    }
 
     if(!m_skinControl)
         return;
@@ -1281,7 +1317,14 @@ bool Base::placeZRange(ZNumbering &numbering, int &z, int layers, bool take)
 
 void Base::renumberZRecursive(ZNumbering &numbering, bool moved)
 {
-    ++numbering.stats->zVisited;
+    // a setExcludedFromStats() subtree is numbered like any other, but counted
+    // apart (Canvas::renumberZOrder)
+    if(m_excludeFromStats)
+        ++numbering.excludedDepth;
+    if(numbering.excludedDepth)
+        ++numbering.excludedVisited;
+    else
+        ++numbering.stats->zVisited;
     // a moved control's subtree is out of order wherever it kept its labels
     moved=moved || m_zMoved;
     m_zMoved=false;
@@ -1319,9 +1362,13 @@ void Base::renumberZRecursive(ZNumbering &numbering, bool moved)
 
     if(changed)
     {
-        ++numbering.stats->zChanged;
+        if(!numbering.excludedDepth)
+            ++numbering.stats->zChanged;
         addStateChange(StateChange_Geometry);
     }
+
+    if(m_excludeFromStats)
+        --numbering.excludedDepth;
 }
 
 int Base::zSubtreeEnd() const
@@ -1526,7 +1573,8 @@ void Base::drainRenderQueue(skin::Base *skin, bool zTied, size_t treeSize)
     const auto renderQueued=[&](Base *control, size_t slot, const Point &offset, const Rect &clip)
         GWENI_RENDER_INLINE
         {
-            ++g_changeStats.visited;
+            if(!control->statsExcluded())
+                ++g_changeStats.visited;
             g_renderingControl=control;
 
             baseRenderer->setRenderOffset(offset);
@@ -2330,7 +2378,7 @@ void Base::doCalculateSize(skin::Base *skin, Dim dim)
         if(!m_updateLayout && !Canvas::s_verifyingLayout)
             return;
 
-        ++Canvas::s_layingOut->m_layoutStats.visited;
+        Canvas::s_layingOut->countLayoutEntry(this);
     }
 
     calculateSize(skin, dim);
@@ -2352,7 +2400,7 @@ void Base::doArrange(skin::Base *skin, Dim dim)
     if(!m_updateLayout && !Canvas::s_verifyingLayout)
         return;
 
-    ++Canvas::s_layingOut->m_layoutStats.visited;
+    Canvas::s_layingOut->countLayoutEntry(this);
 
     arrange(skin, dim);
 

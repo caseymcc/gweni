@@ -424,6 +424,12 @@ protected:
     void verifyLayout();
     /// Sets LayoutStats::measureCalls to the measures made since doThink() began.
     void noteMeasureCalls();
+    /// Base's entry of `control` in the current pass: one LayoutStats::visited,
+    /// unless it is statsExcluded().
+    void countLayoutEntry(controls::Base *control);
+    /// The current pass entered a setExcludedFromStats() subtree and nothing
+    /// else but the canvas: it ran for that subtree alone, and is not counted.
+    bool passOnlyExcluded() const { return m_passExcludedEntries && !m_passOtherEntries; }
     /// Base's report that `control` re-dirtied layout during the current pass.
     void layoutInvalidated(controls::Base *control);
     /// Base's report that `control` recorded a request during the current pass.
@@ -460,6 +466,10 @@ protected:
     bool m_passRedirtied=false;
     const char *m_passCulpritType=nullptr;
     size_t m_passCulpritId=0;
+    /// The current pass's entries of statsExcluded() controls, and of the
+    /// others but the canvas, for passOnlyExcluded().
+    size_t m_passExcludedEntries=0;
+    size_t m_passOtherEntries=0;
 
     bool m_drawBackground;
     gweni::Color m_backgroundColor;

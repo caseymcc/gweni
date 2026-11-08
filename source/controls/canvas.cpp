@@ -108,7 +108,14 @@ void Canvas::renumberZOrder()
     numbering.movedTailGap=std::min(m_zGap, MovedZGap);
     numbering.skipClean=skipClean;
     numbering.stats=&m_updateStats;
+
+    const size_t zVisitedBefore=m_updateStats.zVisited;
+
     renumberZRecursive(numbering);
+    // a renumber that entered an excluded subtree and no other control but the
+    // canvas ran for that subtree alone: the canvas's entry is taken back
+    if(numbering.excludedVisited && (m_updateStats.zVisited == zVisitedBefore+1))
+        m_updateStats.zVisited=zVisitedBefore;
 
     if(numbering.maxUsed > maxZ)
     {
@@ -228,6 +235,8 @@ void Canvas::layoutPass()
     m_passRedirtied=false;
     m_passCulpritType=nullptr;
     m_passCulpritId=0;
+    m_passExcludedEntries=0;
+    m_passOtherEntries=0;
 
     Canvas *outer=s_layingOut;
     s_layingOut=this;
@@ -383,13 +392,27 @@ void Canvas::verifyLayout()
     g_layoutVerifyFailures+=failures;
 }
 
+void Canvas::countLayoutEntry(controls::Base *control)
+{
+    if(control->statsExcluded())
+    {
+        ++m_passExcludedEntries;
+        return;
+    }
+    ++m_layoutStats.visited;
+    if(control != this)
+        ++m_passOtherEntries;
+}
+
 void Canvas::layoutCanvas()
 {
     static std::set<std::string> warnedCapped;
+    // every pass run, counted or not (passOnlyExcluded), for the cap
+    int passesRun=0;
 
     while(m_updateLayout && !hidden())
     {
-        if(m_layoutStats.passes == MaxLayoutPasses)
+        if(passesRun == MaxLayoutPasses)
         {
             m_layoutStats.capped=true;
             if(warnedCapped.insert(m_passCulpritType).second)
@@ -400,7 +423,18 @@ void Canvas::layoutCanvas()
             break;
         }
 
+        const size_t visitedBefore=m_layoutStats.visited;
+
         layoutPass();
+        ++passesRun;
+
+        // a pass that ran for an excluded subtree alone is none of the app's:
+        // its entries of the canvas are taken back too
+        if(passOnlyExcluded())
+        {
+            m_layoutStats.visited=visitedBefore;
+            continue;
+        }
         ++m_layoutStats.passes;
 
         if(m_passRedirtied && !m_layoutStats.redirtiedType)
@@ -419,8 +453,13 @@ void Canvas::renderPhaseLayout()
     if(!m_updateLayout || hidden())
         return;
 
-    m_layoutStats.renderLayout=true;
+    const size_t visitedBefore=m_layoutStats.visited;
+
     layoutPass();
+    if(passOnlyExcluded())
+        m_layoutStats.visited=visitedBefore;
+    else
+        m_layoutStats.renderLayout=true;
 
     if(!m_updateLayout && layoutVerifyEnabled())
         verifyLayout();

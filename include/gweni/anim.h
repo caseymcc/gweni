@@ -33,7 +33,8 @@ GWENI_EXPORT void cancel(controls::Base *control, Animation *animation);
 //! canvas, and removes those that finish. Animations of other canvases' controls
 //! and of controls on no canvas are left alone. An animation may add or cancel
 //! animations (its own included) or delete controls from inside its think():
-//! removal is deferred until the loop ends. Returns how many it ran.
+//! removal is deferred until the loop ends. Returns how many it ran, less those of
+//! controls::Base::statsExcluded() controls.
 GWENI_EXPORT size_t think(controls::Canvas *canvas);
 //! The registered animations of control, or of every control when null.
 GWENI_EXPORT size_t activeCount(const controls::Base *control=nullptr);
