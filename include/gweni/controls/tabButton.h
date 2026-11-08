@@ -10,12 +10,25 @@
 
 #include <gweni/controls/base.h>
 #include <gweni/controls/button.h>
+#include <gweni/controls/windowButtons.h>
 
 namespace gweni
 {
 namespace controls
 {
 class TabControl;
+
+//! A closable tab's close button: the window close button's look (the
+//! WindowCloseButton renderer, found up its parent types: a cross, icon kind 2,
+//! and a red surface on hover and press), a CloseButtonSize square.
+class GWENI_EXPORT TabCloseButton: public WindowCloseButton
+{
+    GWENI_CONTROL_INLINE(TabCloseButton, WindowCloseButton)
+    {
+        setTabable(false);
+        setKeyboardInputEnabled(false);
+    }
+};
 
 class GWENI_EXPORT TabButton: public Button
 {
@@ -76,9 +89,43 @@ public:
         return false;
     }
 
+    //! The side of the close button's square, in units.
+    static constexpr int CloseButtonSize=14;
+
+    //! A closable tab owns a TabCloseButton (getCloseButton()) in a
+    //! CloseButtonSize square at its trailing end, added to its right padding,
+    //! so the tab is that much wider whether or not the button shows. The
+    //! button shows on the selected tab and on the hovered one (the tab or the
+    //! button itself under the mouse), and is hidden otherwise. Clicking it
+    //! asks the TabControl to close the tab (TabControl::requestClose), which
+    //! fires TabControl::onClose. Turning it off deletes the button.
+    void setClosable(bool closable);
+    bool isClosable() const
+    {
+        return m_closeButton != nullptr;
+    }
+
+    //! The close button, or null when the tab is not closable.
+    TabCloseButton *getCloseButton() const
+    {
+        return m_closeButton;
+    }
+
+    //! The tab or its close button is under the mouse.
+    bool isTabHovered() const;
+
+    void arrange(skin::Base *skin, Dim dim) override;
+    void postLayout(skin::Base *skin) override;
+    void onDescendantInteraction(Base *control) override;
+
 private:
+    //! Shows or hides the close button for the tab's state.
+    void updateCloseButton();
+    void onCloseButtonPressed(event::Info info);
+
     Base *m_page;
     TabControl *m_control;
+    TabCloseButton *m_closeButton;
 
 };
 

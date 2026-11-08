@@ -46,6 +46,7 @@
 #include "demo/slider.h"
 #include "demo/sliderText.h"
 #include "demo/statusBar.h"
+#include "demo/tabClose.h"
 #include "demo/tabControl.h"
 #include "demo/treeControl.h"
 #include "demo/textBox.h"
@@ -177,6 +178,7 @@ void Demo::init(const String &name)
         addDemo<TreeControlDemo>(cat, "TreeControlDemo", "Tree control");
         addDemo<PropertiesDemo>(cat, "PropertiesDemo", "Properties");
         addDemo<TabControlDemo>(cat, "TabControlDemo", "Tab control");
+        addDemo<TabCloseDemo>(cat, "TabCloseDemo", "Closable tabs");
         addDemo<ScrollControlDemo>(cat, "ScrollControlDemo", "Scroll control");
         addDemo<PageControlDemo>(cat, "PageControlDemo", "Page control");
     }

@@ -53,6 +53,7 @@ GWENI_CONTROL_CONSTRUCTOR(TabControl)
 {
     m_scrollOffset=0;
     m_currentButton=nullptr;
+    m_closeVetoed=false;
     m_tabStrip=newChild<TabStrip>();
     m_tabStrip->setTabPosition(DockPosition::Top);
     // Make this some special control?
@@ -148,8 +149,77 @@ void TabControl::onTabPressed(event::Info info)
 
     m_currentButton=button;
     page->setHidden(false);
+    // its colours and close button follow the selection, also when it was
+    // selected by a key or a close rather than its own click
+    button->redraw();
     m_tabStrip->invalidate();
     invalidate();
+}
+
+bool TabControl::requestClose(TabButton *button)
+{
+    if(!button || button->getTabControl() != this)
+        return false;
+
+    // a handler may close another tab itself, which asks again
+    const bool outer=m_closeVetoed;
+    m_closeVetoed=false;
+
+    event::Info info(button);
+    onClose.call(this, info);
+
+    const bool vetoed=m_closeVetoed;
+    m_closeVetoed=outer;
+
+    if(vetoed)
+        return false;
+
+    closeTab(button);
+    return true;
+}
+
+void TabControl::closeTab(TabButton *button)
+{
+    if(!button || button->getTabControl() != this)
+        return;
+
+    if(m_currentButton == button)
+    {
+        TabButton *neighbour=nullptr;
+        const int count=tabCount();
+
+        for(int i=0; i < count; ++i)
+        {
+            if(getTab(i) != button)
+                continue;
+
+            neighbour=(i+1 < count)?getTab(i+1):nullptr;
+
+            if(!neighbour && i > 0)
+                neighbour=getTab(i-1);
+            break;
+        }
+
+        if(neighbour)
+        {
+            event::Info info(neighbour);
+            info.controlCaller=neighbour;
+            onTabPressed(info);
+        }
+    }
+
+    Base *page=button->getPage();
+
+    button->setHidden(true);
+    removePage(button);
+
+    if(page)
+    {
+        page->setHidden(true);
+        page->delayedDelete();
+    }
+
+    button->delayedDelete();
 }
 
 // Whether the tabs overflow needs only this control's width, final in the X

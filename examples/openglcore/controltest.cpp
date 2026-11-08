@@ -550,6 +550,7 @@
 #include <demo/slider.h>
 #include <demo/sliderText.h>
 #include <demo/statusBar.h>
+#include <demo/tabClose.h>
 #include <demo/tabControl.h>
 #include <demo/treeControl.h>
 #include <demo/textBox.h>
@@ -616,7 +617,7 @@ static void content_scale_callback(GLFWwindow *window, float, float)
     X(GroupBoxDemo) X(ImagePanelDemo) X(StatusBarDemo) X(SeparatorDemo) X(ComboBoxDemo) \
     X(TextBoxDemo) X(ListBoxDemo) X(SelectableDemo) X(VirtualListDemo) X(ContextMenuDemo) X(PopupDemo) X(CrossSplitterDemo) X(RadioButtonDemo) \
     X(CheckBoxDemo) X(NumericDemo) X(SliderDemo) X(SliderTextDemo) X(MenuStripDemo) \
-    X(WindowDemo) X(WindowButtonsDemo) X(TreeControlDemo) X(PropertiesDemo) X(TabControlDemo) \
+    X(WindowDemo) X(WindowButtonsDemo) X(TreeControlDemo) X(PropertiesDemo) X(TabControlDemo) X(TabCloseDemo) \
     X(ScrollControlDemo) X(PageControlDemo) X(CollapsibleListDemo) X(ColorPickerDemo) \
     X(UnicodeTextDemo) X(TextSizesDemo) X(TextDemo) X(LayoutDemo)
 

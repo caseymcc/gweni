@@ -68,6 +68,8 @@ set(GWENI_DEMO_SOURCES
     demo/sliderText.h
     demo/statusBar.cpp
     demo/statusBar.h
+    demo/tabClose.cpp
+    demo/tabClose.h
     demo/tabControl.cpp
     demo/tabControl.h
     demo/textBox.cpp

@@ -57,6 +57,30 @@ public:
     gweni::event::Caller onLoseTabCaller;
     gweni::event::Caller onAddTabCaller;
 
+    //! A closable tab's close button was clicked (TabButton::setClosable), before
+    //! the tab closes: controlCaller is this control, `control` the TabButton.
+    //! A handler that calls vetoClose() keeps the tab (an "unsaved changes"
+    //! prompt, say); otherwise closeTab() closes it once every handler has run.
+    gweni::event::Caller onClose;
+
+    //! From an onClose handler: the tab being closed stays.
+    void vetoClose()
+    {
+        m_closeVetoed=true;
+    }
+
+    //! What a tab's close button does: fires onClose for \p button, then closes
+    //! it with closeTab() unless a handler vetoed. Returns whether it closed.
+    virtual bool requestClose(TabButton *button);
+
+    //! Closes \p button without asking. If it was the selected tab, the next
+    //! tab is selected, or the previous one when it was the last; closing
+    //! another tab leaves the selection alone. The tab leaves through
+    //! removePage() (so onLoseTabCaller fires), and the button and its page are
+    //! hidden and deleted at the start of the next frame (delayedDelete), so a
+    //! close from the button's own click handler is safe.
+    virtual void closeTab(TabButton *button);
+
     virtual void onTabPressed(event::Info info);
     virtual void onLoseTab(TabButton *button);
 
@@ -73,6 +97,7 @@ private:
 
     TabStrip *m_tabStrip;
     TabButton *m_currentButton;
+    bool m_closeVetoed;
 
     internal::ScrollBarButton *m_scroll[2];
     int m_scrollOffset;
