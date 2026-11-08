@@ -854,19 +854,21 @@ void Vulkan::init()
         check(vkAllocateDescriptorSets(device(), &set, &frame.primitiveSet), "vkAllocateDescriptorSets");
     }
 
-    // the images as OpenGLCore's: mipmapped and clamped, the atlases linear, the
+    // the images as OpenGLCore's: every level, nearest, clamped (the shader reads
+    // texel centres and filters them itself, imageTexel); the atlases linear, the
     // clip boxes (integer texels) nearest
     VkSamplerCreateInfo sampler{};
     sampler.sType=VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
-    sampler.magFilter=VK_FILTER_LINEAR;
-    sampler.minFilter=VK_FILTER_LINEAR;
-    sampler.mipmapMode=VK_SAMPLER_MIPMAP_MODE_LINEAR;
+    sampler.magFilter=VK_FILTER_NEAREST;
+    sampler.minFilter=VK_FILTER_NEAREST;
+    sampler.mipmapMode=VK_SAMPLER_MIPMAP_MODE_NEAREST;
     sampler.addressModeU=VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
     sampler.addressModeV=VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
     sampler.addressModeW=VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
     sampler.maxLod=VK_LOD_CLAMP_NONE;
     check(vkCreateSampler(device(), &sampler, nullptr, &m_imageSampler), "vkCreateSampler");
-    sampler.mipmapMode=VK_SAMPLER_MIPMAP_MODE_NEAREST;
+    sampler.magFilter=VK_FILTER_LINEAR;
+    sampler.minFilter=VK_FILTER_LINEAR;
     sampler.maxLod=0.0f;
     check(vkCreateSampler(device(), &sampler, nullptr, &m_atlasSampler), "vkCreateSampler");
     sampler.magFilter=VK_FILTER_NEAREST;
@@ -1618,69 +1620,70 @@ TextureHandle Vulkan::createImageTexture(const SlotTextureData &image, bool rgba
     if(!createTexture(texture, width, height, VK_FORMAT_R8G8B8A8_UNORM, levels, 0))
         return 0;
 
+    // every level made on the CPU (imageMipChain), OpenGLCore's bytes, which the
+    // shader filters itself (imageTexel)
     const size_t pixels=(size_t)width*height;
+    std::vector<uint8_t> level0;
+    const uint8_t *texels=image.m_readData.data();
+
+    if(!rgba)
+    {
+        level0.resize(pixels*4);
+        for(size_t i=0; i<pixels; ++i)
+        {
+            level0[i*4+0]=image.m_readData[i*3+0];
+            level0[i*4+1]=image.m_readData[i*3+1];
+            level0[i*4+2]=image.m_readData[i*3+2];
+            level0[i*4+3]=255;
+        }
+        texels=level0.data();
+    }
+
+    const std::vector<ImageMipLevel> mips=imageMipChain(texels, image.width, image.height, 4);
+
+    assert(mips.size()+1 == levels);
+    size_t stagingBytes=pixels*4;
+
+    for(const ImageMipLevel &mip:mips)
+        stagingBytes+=mip.texels.size();
+
     Buffer staging;
 
-    if(!createBuffer(staging, pixels*4, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, true))
+    if(!createBuffer(staging, stagingBytes, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, true))
     {
         destroyTexture(texture);
         return 0;
     }
 
-    uint8_t *texels=static_cast<uint8_t *>(staging.mapped);
+    uint8_t *mapped=static_cast<uint8_t *>(staging.mapped);
+    std::vector<VkBufferImageCopy> copies(levels);
 
-    if(rgba)
-        memcpy(texels, image.m_readData.data(), pixels*4);
-    else
+    memcpy(mapped, texels, pixels*4);
+    copies[0].imageSubresource={ VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 };
+    copies[0].imageExtent={ width, height, 1 };
+
+    size_t offset=pixels*4;
+
+    for(size_t i=0; i<mips.size(); ++i)
     {
-        for(size_t i=0; i<pixels; ++i)
-        {
-            texels[i*4+0]=image.m_readData[i*3+0];
-            texels[i*4+1]=image.m_readData[i*3+1];
-            texels[i*4+2]=image.m_readData[i*3+2];
-            texels[i*4+3]=255;
-        }
+        memcpy(mapped+offset, mips[i].texels.data(), mips[i].texels.size());
+        copies[i+1].bufferOffset=offset;
+        copies[i+1].imageSubresource={ VK_IMAGE_ASPECT_COLOR_BIT, (uint32_t)(i+1), 0, 1 };
+        copies[i+1].imageExtent={ (uint32_t)mips[i].width, (uint32_t)mips[i].height, 1 };
+        offset+=mips[i].texels.size();
     }
 
-    // level 0, then each level a linear blit of the one above, as glGenerateMipmap
     immediate([&](VkCommandBuffer commands)
     {
         imageBarrier(commands, texture.image, VK_IMAGE_ASPECT_COLOR_BIT,
             VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
             VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, 0, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT);
-
-        VkBufferImageCopy copy{};
-        copy.imageSubresource.aspectMask=VK_IMAGE_ASPECT_COLOR_BIT;
-        copy.imageSubresource.layerCount=1;
-        copy.imageExtent={ width, height, 1 };
-        vkCmdCopyBufferToImage(commands, staging.buffer, texture.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copy);
-
-        for(uint32_t level=1; level<levels; ++level)
-        {
-            imageBarrier(commands, texture.image, VK_IMAGE_ASPECT_COLOR_BIT,
-                VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-                VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT,
-                VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_READ_BIT, level-1, 1);
-
-            VkImageBlit blit{};
-            blit.srcSubresource={ VK_IMAGE_ASPECT_COLOR_BIT, level-1, 0, 1 };
-            blit.srcOffsets[1]={ (int32_t)std::max(width >> (level-1), 1u), (int32_t)std::max(height >> (level-1), 1u), 1 };
-            blit.dstSubresource={ VK_IMAGE_ASPECT_COLOR_BIT, level, 0, 1 };
-            blit.dstOffsets[1]={ (int32_t)std::max(width >> level, 1u), (int32_t)std::max(height >> level, 1u), 1 };
-            vkCmdBlitImage(commands, texture.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-                texture.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blit, VK_FILTER_LINEAR);
-        }
-
-        // every level but the last is TRANSFER_SRC now, the last TRANSFER_DST
-        if(levels > 1)
-            imageBarrier(commands, texture.image, VK_IMAGE_ASPECT_COLOR_BIT,
-                VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-                VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_READ_BIT,
-                VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT, 0, levels-1);
+        vkCmdCopyBufferToImage(commands, staging.buffer, texture.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+            (uint32_t)copies.size(), copies.data());
         imageBarrier(commands, texture.image, VK_IMAGE_ASPECT_COLOR_BIT,
             VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
             VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT,
-            VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT, levels-1, 1);
+            VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT);
     });
     destroyBuffer(staging);
 

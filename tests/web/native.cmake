@@ -63,26 +63,27 @@ set(web_native_bins
 # Measured over the 39 --shot-all PNGs and the hero at scales 1, 1.5 and 2,
 # SwiftShader (Chromium 158's headless shell) against llvmpipe (Mesa 23.2.1):
 #   scale  max |delta|  pixels more than 1 off, worst
-#   1      2            0.021 % (TreeControlDemo); ImagePanelDemo 4 and 0.046 %, left out below
-#   1.5    2            0.005 % (ImagePanelDemo)
-#   2      2            0.017 % (ImagePanelDemo)
+#   1      2            0.021 % (TreeControlDemo)
+#   1.5    2            0.001 % (ProgressBarDemo)
+#   2      2            0.007 % (ShowcaseDisplayDemo)
+#   ImagePanelDemo, its image filtered in the shader since #418: byte-identical at all three
 #   the hero: 2 and 0.006 % at most; any difference at all: up to 10.5 % (LabelMultilineDemo)
 # so 2 and 0.1 %, the latter the measured worst rounded up. The ceiling is
 # max |delta| 2 and 0.5 %: a PNG above it is a bug to find (docs/architecture.md
 # -> "The browser against native"), never a reason to widen the bound.
-# Counting only pixels more than 1 off, and leaving ImagePanelDemo out at scale 1
-# until #418, is the user's decision (#382): the first bar, every differing pixel
-# counted against 0.5 %, cannot be met by any shader. A change to this rule is
-# theirs too.
+# Counting only pixels more than 1 off is the user's decision (#382), as was
+# leaving ImagePanelDemo out at scale 1 until #418: the first bar, every
+# differing pixel counted against 0.5 %, cannot be met by any shader. A change
+# to this rule is theirs too.
 set(web_pixels_max_delta 2)
 set(web_pixels_max_fraction 0.1)
 set(web_pixels_count_over 1)
-# PNGs left out of web_pixels_native at scale 1, each with its issue:
-# - ImagePanelDemo: gwen.png, 896x896, minified to 100x100, sampled trilinearly from
-#   glGenerateMipmap's levels, both implementation-defined (the mip filter, the
-#   LOD and the trilinear weights): max |delta| 4 on one pixel, 3 on two.
-#   Issue #418: build the mip chain on the CPU and filter in the shader.
-set(web_pixels_excluded_scale1 ImagePanelDemo)
+# PNGs left out of web_pixels_native at scale 1, each with its issue: none.
+# ImagePanelDemo was until #418 (max |delta| 4, from glGenerateMipmap's filter
+# and textureGrad's LOD and weights, each the implementation's); its image is
+# now filtered in the shader from levels made on the CPU (docs/architecture.md
+# -> "Images: mip levels on the CPU, filtered in the shader").
+set(web_pixels_excluded_scale1)
 
 # each scale with its test-name suffix, as controltest_determinism_scale150's
 foreach(scale_suffix "1:" "1.5:_scale150" "2:_scale200")

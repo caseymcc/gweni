@@ -591,7 +591,7 @@ sizes, ranges and the core's own data, never an API object:
 | `allocateVertexBuffer(path, bytes)`, `uploadVertexRange(path, offset, bytes, data)` | (re)allocate a path's vertex buffer, copy a byte range of its mirror to it |
 | `maxClipBoxRows()`, `allocateClipBoxes(path, rows)`, `uploadClipBoxRows(path, x, y, w, h, boxes)` | the device's row limit; (re)allocate a path's clip-box table, `kClipColumns` boxes a row; copy a block of boxes to it |
 | `createAtlasTexture(atlas)`, `uploadAtlasRows(texture, atlas, firstRow, rows)`, `destroyAtlasTexture(texture)` | a font atlas's texture (R8, or RGB8 for depth 3), its dirty rows, its end |
-| `createImageTexture(image, rgba)`, `destroyImageTexture(texture)`, `readTextureRgba(...)` | an image's mipmapped texture, its end, a read back (`pixelColor`, `readFontAtlas`) |
+| `createImageTexture(image, rgba)`, `destroyImageTexture(texture)`, `readTextureRgba(...)` | an image's texture with its mip levels, each uploaded from `imageMipChain`, its end, a read back (`pixelColor`, `readFontAtlas`) |
 | `beginPrimitiveDraws()`, `drawPrimitiveChunk(chunk, firstSlot, slots)`, `endPrimitiveDraws()` | one draw per chunk of slots, in slot order |
 | `beginTextDraws()`, `beginTextAtlas(font)`, `drawTextChunk(draw)`, `endTextDraws()` | per atlas with runs to draw: its texture and `TextMode` (an LCD one blended per channel), then one draw per `TextChunkDraw` |
 | `submitFrame()` | the end of `flush()`: the frame's commands go to the device |
@@ -677,7 +677,7 @@ How each GL feature maps:
 | clip boxes: 2D `GL_RGBA16UI` texture, `glTexSubImage2D` per row piece | 2D `R16G16B16A16_UINT` image, `kClipColumns` texels a row, one `vkCmdCopyBufferToImage` per row piece, sampled `NEAREST` |
 | 8 image units, `uniform sampler2D images[8]` | one array of 8 combined image samplers in set 0 (an empty unit samples a 1x1 opaque black image, as GL samples texture 0) |
 | `projection`, `slotBase` uniforms | push constants (`PrimitivePush`) |
-| image: `GL_RGBA8`/`GL_RGB8` + `glGenerateMipmap` | `R8G8B8A8_UNORM` (RGB with alpha 255), the levels a chain of linear `vkCmdBlitImage`s |
+| image: `GL_RGBA8`/`GL_RGB8`, every level a `glTexImage2D` of `imageMipChain`'s bytes, filtered nearest | `R8G8B8A8_UNORM` (RGB with alpha 255), the same levels in one staging buffer, one `vkCmdCopyBufferToImage` of a region per level, sampled `NEAREST` |
 | atlas: `GL_R8`, `GL_RGB8` for LCD | `R8_UNORM`; `R8G8B8A8_UNORM` for LCD (no RGB8 format is guaranteed to be sampled), expanded on upload, `textureChannelSizes` still 8,8,8,0 |
 | `glBlendFunc(SRC_ALPHA, ONE_MINUS_SRC_ALPHA)`, `GL_LESS` with depth writes | the pipeline's blend and depth state |
 | `glClear` | a dynamic rendering with `LOAD_OP_CLEAR`, submitted at once |
@@ -861,7 +861,7 @@ two programs and the draws. What follows describes both together:
   over it is a bug to find, not a bound to widen. Leaving the 1-off pixels out of the
   count (and ImagePanelDemo at scale 1 out until #418) was the user's decision on
   #382, since no shader can meet the first bar, which counted every differing pixel.
-  Getting there took four shader
+  Getting there took five shader
   changes, each something GL leaves to the implementation, which had put 14 demos up
   to 82/255 apart at icon edges and 78/255 at SDF-text ones:
   - the checkmark and chevron (icon kinds 0 and 1) take their anti-aliasing width as
@@ -881,9 +881,14 @@ two programs and the draws. What follows describes both together:
     further: an SDF glyph's pen is fractional, and each rasteriser's own grid moved the
     field by up to 1/32 px, 10/255 at an edge.
 
-  One case is left out until #418: ImagePanelDemo at scale 1, an image minified
-  through `glGenerateMipmap`'s levels, whose filter, LOD and trilinear weights are the
-  implementation's too (4 off on one pixel). The comparator is `pngdiff.mjs`, which
+  - an image (style 2) is filtered in the shader, from mip levels made on the CPU
+    ("Images: mip levels on the CPU, filtered in the shader" below), not through
+    `glGenerateMipmap`'s levels and `textureGrad`, whose downsampling filter, LOD and
+    trilinear weights are the implementation's: ImagePanelDemo, minified 8.96 times,
+    was 4 off on one pixel at scale 1 and left out of the comparison until #418; it is
+    now byte-identical at scales 1, 1.5 and 2.
+
+  No PNG is left out. The comparator is `pngdiff.mjs`, which
   needs node alone, so another backend held to the first within a tolerance (the Vulkan
   feature) can share it; a PNG over the bound gets an expected | actual | difference
   image beside it.
@@ -1040,7 +1045,50 @@ two programs and the draws. What follows describes both together:
   (`drawMissingImage`, a magenta `colors::Missing` fill) and logs once. A fully transparent texel is discarded,
   so it writes no depth; a partly transparent one still depends on slot order, which is
   why `ImagePanel` takes its primitive id on its first render, after its parent's skin
-  took its own. Textures are mipmapped and clamped to edge.
+  took its own.
+- **Images: mip levels on the CPU, filtered in the shader.** An image's levels are
+  made by `imageMipChain` (`slotRenderer.h`) when it is loaded, the same bytes for
+  every backend: level n is `max(1, size >> n)` on each axis down to 1x1, GL's and
+  Vulkan's sizes, and each texel the 2x2 box of the level above, every channel
+  `(a+b+c+d+2)/4`, rounded to nearest. Alpha is averaged straight, not premultiplied,
+  as `glGenerateMipmap` averaged the stored texels and as the image is blended
+  (`SRC_ALPHA, ONE_MINUS_SRC_ALPHA`). Where the level above is 1 texel wide (high) the
+  box takes that column (row) twice, and an odd side's last column (row) is in no box.
+  `OpenGLCore` uploads each level with `glTexImage2D` (`GL_TEXTURE_MAX_LEVEL` the
+  last), `renderer::Vulkan` copies them all from one staging buffer.
+  The primitive shader's `imageTexel` (`shaders/primitive.frag.glsl`) filters them as
+  `GL_LINEAR_MIPMAP_LINEAR` with `GL_CLAMP_TO_EDGE` would, with the GL spec's LOD
+  and weights computed in float, so that llvmpipe and the browser's SwiftShader draw
+  the same pixels (they did not: "The browser against native" above):
+  - the LOD is `log2` of the longer of `uv`'s two screen gradients (`dFdx`, `dFdy` of
+    the UV, linear over the quad, so the same anywhere and on any GL up to a float
+    error) in level 0's texels, rounded to 1/256;
+  - at or below 0 (magnification) it is level 0 bilinear, the 4 texels around the UV
+    clamped to the level's edge, weighted by the UV's place between their centres to
+    1/256 (as a texture unit keeps its filter's weights, so that the float error of
+    the UV, which a moved quad or another GL interpolates differently, moves no level:
+    `tests/clipBoxes.cpp` draws an image straddling the view's edge and the same one
+    moved inside it, and wants the same pixels); above 0 the 4 of each of the two
+    levels around the LOD, mixed by its fraction; past the last level (1x1), its 4.
+  Each tap reads one texel exactly, a `textureLod` at its centre and its level's whole
+  LOD with the image's filter nearest. Not a `texelFetch`, which reads the same texel:
+  llvmpipe runs every branch of a shader for every pixel, masked, and skips a sample
+  whose pixels are all masked off but not a `texelFetch`. The 8 image units need a
+  switch around each sample (GLSL 3.30 and ES 3.00 index a sampler array only with a
+  constant), so the taps are one loop whose count (4 or 8) is not a constant, around
+  one switch of 8 samples, which no compiler unrolls into 8 switches.
+
+  **What it costs.** Per image pixel, the shader went from one `textureGrad` to one
+  `textureSize` and 8 `textureLod`s minified (4 magnified), about 375 SPIR-V
+  instructions minified (glslang, unoptimised; 205 magnified). Under llvmpipe
+  (callgrind, `LP_NUM_THREADS=0`, Mesa 23.2.1) a frame of ImagePanelDemo, whose image
+  is 100x100 px, went from 14.29 M to 21.63 M instructions, about 700 more a pixel of
+  the image, and a frame of ButtonDemo, which has none, from 15.17 M to 15.53 M
+  (2.4 %: every pixel runs the image branch masked; with `texelFetch`es it was
+  5.7 %, and with the taps unrolled, 52 %). The primitive program compiles in fewer
+  instructions than with the 8 `textureGrad`s (ButtonDemo's whole run 2.74 G against
+  3.06 G). `gweni_bench`'s counters are unchanged in every scene; no scene draws an
+  image.
 - Because the CPU mirror is persistent, a control that didn't change leaves its slot
   untouched between frames; its geometry is still in the buffer.
 - A single shader pair (vertex + fragment) draws all non-text primitives; an ortho

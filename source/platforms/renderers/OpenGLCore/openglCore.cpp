@@ -240,10 +240,12 @@ TextureHandle OpenGLCore::createImageTexture(const SlotTextureData &image, bool 
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, texture);
 
-    // mipmapped, because an image is often drawn much smaller than it is; clamped,
-    // so the linear filter does not wrap the opposite edge into the border texels
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    // mipmapped, because an image is often drawn much smaller than it is. The
+    // shader filters it itself, trilinearly (imageTexel), from texels it reads at
+    // their centres from one level at a time, so the unit's filter is nearest:
+    // it returns each texel as it is.
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST_MIPMAP_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 
@@ -252,12 +254,20 @@ TextureHandle OpenGLCore::createImageTexture(const SlotTextureData &image, bool 
     const GLenum format=rgba?GL_RGBA:GL_RGB;
     const GLint internalFormat=rgba?GL_RGBA8:GL_RGB8;
 
+    // every level made on the CPU (imageMipChain), not by glGenerateMipmap, whose
+    // filter is the implementation's
+    const std::vector<ImageMipLevel> levels=imageMipChain(image.m_readData.data(), image.width, image.height,
+        rgba?4:3);
+
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, (GLint)levels.size());
     // RGB rows are not padded to 4 bytes
     glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
     glTexImage2D(GL_TEXTURE_2D, 0, internalFormat, image.width, image.height, 0, format,
         GL_UNSIGNED_BYTE, (const GLvoid *)image.m_readData.data());
+    for(size_t i=0; i<levels.size(); ++i)
+        glTexImage2D(GL_TEXTURE_2D, (GLint)(i+1), internalFormat, levels[i].width, levels[i].height, 0, format,
+            GL_UNSIGNED_BYTE, (const GLvoid *)levels[i].texels.data());
     glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
-    glGenerateMipmap(GL_TEXTURE_2D);
 
     if(texture >= m_textureSizes.size())
         m_textureSizes.resize(texture+1);

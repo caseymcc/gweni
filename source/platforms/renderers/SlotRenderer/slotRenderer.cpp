@@ -457,6 +457,46 @@ bool SlotRenderer::ensureFont(const Font &requested, float px)
     return true;
 }
 
+std::vector<ImageMipLevel> imageMipChain(const uint8_t *texels, int width, int height, int depth)
+{
+    std::vector<ImageMipLevel> levels;
+    const uint8_t *above=texels;
+    int aboveWidth=width;
+    int aboveHeight=height;
+
+    while(aboveWidth > 1 || aboveHeight > 1)
+    {
+        ImageMipLevel level;
+
+        level.width=std::max(aboveWidth/2, 1);
+        level.height=std::max(aboveHeight/2, 1);
+        level.texels.resize((size_t)level.width*level.height*depth);
+
+        const size_t rowBytes=(size_t)aboveWidth*depth;
+        uint8_t *out=level.texels.data();
+
+        for(int y=0; y<level.height; ++y)
+        {
+            const uint8_t *row0=above+(size_t)std::min(2*y, aboveHeight-1)*rowBytes;
+            const uint8_t *row1=above+(size_t)std::min(2*y+1, aboveHeight-1)*rowBytes;
+
+            for(int x=0; x<level.width; ++x)
+            {
+                const size_t x0=(size_t)std::min(2*x, aboveWidth-1)*depth;
+                const size_t x1=(size_t)std::min(2*x+1, aboveWidth-1)*depth;
+
+                for(int c=0; c<depth; ++c)
+                    *out++=(uint8_t)((row0[x0+c]+row0[x1+c]+row1[x0+c]+row1[x1+c]+2)/4);
+            }
+        }
+        levels.push_back(std::move(level));
+        above=levels.back().texels.data();
+        aboveWidth=levels.back().width;
+        aboveHeight=levels.back().height;
+    }
+    return levels;
+}
+
 Texture::Status SlotRenderer::loadTexture(Texture &texture)
 {
     freeTexture(texture);

@@ -119,21 +119,95 @@ float pixelArea(float e, vec2 n)
     return 0.5 + e/a;
 }
 
-// The texel of image unit `unit` at uv, with the gradients taken in uniform control flow.
+// Image unit `unit` at uv as GL_LINEAR_MIPMAP_LINEAR with GL_CLAMP_TO_EDGE samples
+// it, with uv's screen gradients dx and dy (taken in uniform control flow),
+// computed so that every GL gives the same value, which textureGrad did not
+// (llvmpipe against the browser's SwiftShader, by up to 4/255 in ImagePanelDemo):
+// the levels are made on the CPU (imageMipChain), and the LOD and the weights are
+// the GL spec's, computed in float here:
+// - the LOD is log2 of the longer of the two gradients in level 0's texels,
+//   rounded to 1/256: uv is linear over the image's quad, so its gradients are
+//   the same anywhere and on any GL up to a float error the rounding removes;
+// - at or below 0 (magnification) it is level 0, bilinear: the 4 texels around
+//   uv, clamped to the level's edge, weighted by uv's place between their
+//   centres to 1/256; above, the 4 of each of the 2 levels around it, the levels
+//   mixed by its fraction; past the last level (1x1) that level's 4.
+// Each tap reads one texel exactly: textureLod at its centre and its level's
+// whole LOD, the image's filter nearest (OpenGLCore::createImageTexture). Not
+// texelFetch, which reads the same texel: llvmpipe runs every branch of a shader
+// for every pixel, masked, and skips a sample whose pixels are all masked off but
+// not a texelFetch, so with 8 of them here a page without an image took 5.7 %
+// more instructions a frame than with textureGrad (ButtonDemo), and 1.7 % now.
+// GLSL 3.30 and ES 3.00 index a sampler array only with a constant, hence the
+// switches; the taps are one loop whose count is not a constant, so that no
+// compiler unrolls it into 8 switches.
 vec4 imageTexel(int unit, vec2 uv, vec2 dx, vec2 dy)
 {
+    ivec2 size0 = ivec2(1);
+
     switch(unit)
     {
-    case 0: return textureGrad(images[0], uv, dx, dy);
-    case 1: return textureGrad(images[1], uv, dx, dy);
-    case 2: return textureGrad(images[2], uv, dx, dy);
-    case 3: return textureGrad(images[3], uv, dx, dy);
-    case 4: return textureGrad(images[4], uv, dx, dy);
-    case 5: return textureGrad(images[5], uv, dx, dy);
-    case 6: return textureGrad(images[6], uv, dx, dy);
-    case 7: return textureGrad(images[7], uv, dx, dy);
+    case 0: size0 = textureSize(images[0], 0); break;
+    case 1: size0 = textureSize(images[1], 0); break;
+    case 2: size0 = textureSize(images[2], 0); break;
+    case 3: size0 = textureSize(images[3], 0); break;
+    case 4: size0 = textureSize(images[4], 0); break;
+    case 5: size0 = textureSize(images[5], 0); break;
+    case 6: size0 = textureSize(images[6], 0); break;
+    case 7: size0 = textureSize(images[7], 0); break;
     }
-    return vec4(0.0);
+
+    vec2 texels = vec2(size0);
+    float rho = max(length(dx*texels), length(dy*texels));
+    float lod = floor(log2(max(rho, 1e-8))*256.0 + 0.5)/256.0;
+
+    // the last level, floor(log2(the longer side)), log2's float error corrected
+    int longer = max(size0.x, size0.y);
+    int last = int(log2(float(longer)));
+    if((longer >> last) == 0)
+        last -= 1;
+    else if((longer >> (last + 1)) != 0)
+        last += 1;
+
+    lod = clamp(lod, 0.0, float(last));
+    int level0 = int(floor(lod));
+    int level1 = min(level0 + 1, last);
+    float levelWeight = lod - float(level0);
+    int taps = levelWeight > 0.0 ? 8 : 4;
+    vec4 sum = vec4(0.0);
+
+    for(int tap = 0; tap < taps; ++tap)
+    {
+        bool first = tap < 4;
+        int level = first ? level0 : level1;
+        // level n's size, as GL and Vulkan size a mip level
+        ivec2 size = max(size0 >> level, ivec2(1));
+        vec2 t = uv*vec2(size) - 0.5;
+        // the weights to 1/256 of a texel, as a texture unit's bilinear filter
+        // keeps them, so that uv's float error (a quad moved, or another GL's
+        // interpolation) does not move a level
+        vec2 f = floor(fract(t)*256.0 + 0.5)/256.0;
+        ivec2 corner = ivec2(tap & 1, (tap >> 1) & 1);
+        ivec2 p = clamp(ivec2(floor(t)) + corner, ivec2(0), size - 1);
+        vec2 w = mix(vec2(1.0) - f, f, vec2(corner));
+        vec2 centre = (vec2(p) + 0.5)/vec2(size);
+        float texelLod = float(level);
+        vec4 texel = vec4(0.0);
+
+        switch(unit)
+        {
+        case 0: texel = textureLod(images[0], centre, texelLod); break;
+        case 1: texel = textureLod(images[1], centre, texelLod); break;
+        case 2: texel = textureLod(images[2], centre, texelLod); break;
+        case 3: texel = textureLod(images[3], centre, texelLod); break;
+        case 4: texel = textureLod(images[4], centre, texelLod); break;
+        case 5: texel = textureLod(images[5], centre, texelLod); break;
+        case 6: texel = textureLod(images[6], centre, texelLod); break;
+        case 7: texel = textureLod(images[7], centre, texelLod); break;
+        }
+        sum += texel*(w.x*w.y*(first ? 1.0 - levelWeight : levelWeight));
+    }
+    return sum;
 }
 
 void main()

@@ -62,6 +62,25 @@ struct SlotTextureData: public gweni::TextureData
     std::vector<unsigned char> m_readData;
 };
 
+//! One level of an image's mip chain below level 0 (the image itself).
+struct ImageMipLevel
+{
+    int width=0;
+    int height=0;
+    std::vector<uint8_t> texels; //!< width x height texels of the image's depth, row 0 first
+};
+
+//! Levels 1 to the last (1x1) of the mip chain of a width x height image of
+//! `depth` bytes a texel (3 or 4), each made on the CPU from the one above, so
+//! every backend uploads the same bytes instead of leaving the filter to its
+//! API's mipmap generation. Level n is max(1, width >> n) x max(1, height >> n),
+//! GL's and Vulkan's sizes. Texel (x, y) is the 2x2 box (2x..2x+1, 2y..2y+1) of
+//! the level above, each channel (a+b+c+d+2)/4: rounded to nearest, alpha
+//! straight (not premultiplied), as glGenerateMipmap averaged the stored texels.
+//! Where the level above is 1 texel wide (high), the box takes that column (row)
+//! twice; where it is an odd size, its last column (row) is in no box.
+std::vector<ImageMipLevel> imageMipChain(const uint8_t *texels, int width, int height, int depth);
+
 //! How text below the SDF threshold is anti-aliased (SlotRenderer::setTextAA).
 enum class TextAA
 {
