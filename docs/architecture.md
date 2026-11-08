@@ -1631,9 +1631,35 @@ two programs and the draws. What follows describes both together:
   leaves the table too. `setCellContents` puts a control in a cell; the cell takes no
   mouse, the control as its own flag says, so a Button there takes its click and
   selects nothing, while a click on a Label or elsewhere on the cell selects the row.
-  There is no virtualisation yet: every row is a control.
-  DataTableDemo has the first 40 elements, sortable by any column; ShowcaseContainersDemo
-  has a two-column file table.
+  **Source mode** is the virtualised body, for tables of any length: `setItemCount(n)`
+  and `setRowBinder((row, item))` (the first of either turns it on for good) drop the
+  row-mode body and the rows `addRow` made (their selection with its event), and the
+  body becomes a `DataTableVirtualBody`, a `VirtualList` (see "The virtual list") of
+  pooled `DataTableRow`s of the table's columns, `setRowHeight` high (21, a row-mode
+  row's at the default skin's text). So 100 000 items cost the controls, ids and slots of
+  the rows on screen plus one, and a frame's counters are the same at any count. The
+  binder fills a row for an item (its cells' text or contents) as the list binds it; a
+  row still showing its item is not bound again. The body scrolls sideways too: its rows
+  are owner-placed, which do not count in the inner panel's preferred size, so it gives
+  the columns' width as its content through `ScrollControl::contentSize()`, the hook the
+  bars and the inner panel are sized from, and the header follows it exactly as in row
+  mode. Everything else goes by **item index**: a bound row is striped when its item is
+  odd and selected when its item is the selection (`bindRow`, before the app's binder),
+  so a stripe never moves with a pooled row; the selection is an item
+  (`getSelectedItem`, `setSelectedItem`; `onSelectionChange`'s `integer` is the item, its
+  `control` the row showing it or null), a press on a row selects the item it shows, and
+  it is drawn on whichever row holds the item, none while it is scrolled out. A sort
+  still only fires `onSortChanged`: the app reorders its own data and calls `rebind()`,
+  which binds the rows on screen again in the next layout and only those
+  (`rebindItem(i)` one), in one pass. The column API, resize included, reaches every
+  pooled row (`bodyRows()`) and moves only the changed column's cells and the following
+  columns'; a new item count keeps the rows still showing their item, the view inside
+  the count, and drops a selection past its end. The row API (`addRow`, `removeRow`,
+  `setRowOrder`) does nothing in source mode.
+  DataTableDemo has the first 40 elements, sortable by any column, and
+  DataTableVirtualDemo 100 000 generated records in source mode, made into text only as
+  a row binds them, sorted by any column on a vector of record numbers;
+  ShowcaseContainersDemo has a two-column file table.
 - **Scale and the device-pixel grid.** Controls lay out in logical units (integers);
   `renderer::Base::translate()` turns them into device pixels at `scale()` (set by
   `Canvas::setScale`). It snaps **edges**, not origin and size apart: a point is

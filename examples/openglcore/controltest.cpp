@@ -114,8 +114,9 @@
  *    --help, -h         print the option list and exit
  *    --scenario <name>  per-control | resize | docked | scroll | interaction |
  *                       typing | clip | text-size | scale | tooltip |
- *                       context-menu | popup | virtual-list | hide-show |
- *                       demo-labels (see below)
+ *                       context-menu | popup | virtual-list |
+ *                       data-table-virtual | hide-show | demo-labels
+ *                       (see below)
  *    --dump-bounds [<path>]
  *                       print the laid-out control tree as text: one line per
  *                       control, depth-first in child order, indented by depth,
@@ -450,6 +451,33 @@
  *                 and the two controls above it, renumbers no z and lays out
  *                 in one pass with no request; the demo gives every primitive
  *                 id back. Exits non-zero if any check is no.
+ *    data-table-virtual
+ *                 DataTableVirtualDemo with its source-mode DataTable at
+ *                 1 000 and then 100 000 records, the clock frozen: a settled
+ *                 frame, a one-row scroll from the top and a wheel notch over
+ *                 the body, a click on the Score header (the demo sorts its
+ *                 records and rebinds) and the Name column's grip dragged 30
+ *                 units, each followed by settled frames
+ *                 (data-table-virtual-1000.png, data-table-virtual-100000.png
+ *                 after the drag). One line per count
+ *                   data-table-virtual items=N rows=N subtree=N prim_ids=N
+ *                          idle_slots=0 ... row_prim_slots=N ... sort_passes=1
+ *                          ... drag_passes=1 ... ids_left=0
+ *                 gives the counters, and one line
+ *                   data-table-virtual same_cost=yes|no settled=yes|no
+ *                          rows_only=yes|no sort_one_pass=yes|no
+ *                          drag_one_pass=yes|no ids_back=yes|no
+ *                 the checks: the pool, the table's subtree, the ids and the
+ *                 one-row scroll's counters are the same at both counts (the
+ *                 wheel's slots too, less a thumb that moved at one count
+ *                 only); settled frames write and change nothing; each
+ *                 scroll writes no more than its shown rows' primitive slots
+ *                 and glyphs, enters no more than the table's subtree and the
+ *                 two controls above it, renumbers no z and lays out in one
+ *                 pass; the click sorts the rows on screen by score and the
+ *                 drag gives the column its width, each in one pass with no
+ *                 z renumber or layout request; the demo gives every
+ *                 primitive id back. Exits non-zero if any check is no.
  *    hide-show    one control (default ButtonDemo) built into a host page, a
  *                 plain Base docked to fill the canvas as PageControl::addPage
  *                 makes the shell's pages, the clock frozen. On a new canvas
@@ -587,6 +615,7 @@
 #include <demo/popup.h>
 #include <demo/crossSplitter.h>
 #include <demo/dataTable.h>
+#include <demo/dataTableVirtual.h>
 #include <demo/groupBox.h>
 #include <demo/imagePanel.h>
 #include <demo/label.h>
@@ -679,7 +708,7 @@ static void content_scale_callback(GLFWwindow *window, float, float)
     X(ShowcaseDisplayDemo) X(ShowcaseWindowsDemo) \
     X(ButtonDemo) X(LabelDemo) X(LabelMultilineDemo) X(ProgressBarDemo) \
     X(GroupBoxDemo) X(ImagePanelDemo) X(StatusBarDemo) X(SeparatorDemo) X(ComboBoxDemo) \
-    X(TextBoxDemo) X(ListBoxDemo) X(SelectableDemo) X(VirtualListDemo) X(DataTableDemo) X(ContextMenuDemo) X(PopupDemo) X(CrossSplitterDemo) X(RadioButtonDemo) \
+    X(TextBoxDemo) X(ListBoxDemo) X(SelectableDemo) X(VirtualListDemo) X(DataTableDemo) X(DataTableVirtualDemo) X(ContextMenuDemo) X(PopupDemo) X(CrossSplitterDemo) X(RadioButtonDemo) \
     X(CheckBoxDemo) X(NumericDemo) X(SliderDemo) X(SliderTextDemo) X(MenuStripDemo) \
     X(WindowDemo) X(WindowButtonsDemo) X(TreeControlDemo) X(PropertiesDemo) X(TabControlDemo) X(TabCloseDemo) X(TabOverflowDemo) \
     X(ScrollControlDemo) X(PageControlDemo) X(CollapsibleListDemo) X(ColorPickerDemo) X(ColorEditDemo) \
@@ -756,8 +785,8 @@ static void printUsage(std::ostream &out)
          "  --trace            log each scripted input on stderr\n"
          "  --scenario <name>  per-control | resize | docked | scroll | interaction\n"
          "                     | typing | clip | text-size | scale | tooltip\n"
-         "                     | context-menu | popup | virtual-list | hide-show\n"
-         "                     | demo-labels;\n"
+         "                     | context-menu | popup | virtual-list\n"
+         "                     | data-table-virtual | hide-show | demo-labels;\n"
          "                     resize prints listing_settled, mirror_settled,\n"
          "                     shrink_settled and fresh_matches, interaction one\n"
          "                     yes/no per repaint check, typing its keyboard\n"
@@ -768,10 +797,12 @@ static void printUsage(std::ostream &out)
          "                     tooltip check, context-menu one per context-menu\n"
          "                     check, popup one per popup check, virtual-list\n"
          "                     whether 1 000 and 100 000 items cost the same,\n"
+         "                     data-table-virtual the same for a DataTable's\n"
+         "                     records (and a sort and a column drag in one pass),\n"
          "                     hide-show whether a demo hidden and shown again, and\n"
          "                     one built hidden and shown, are the one built shown,\n"
          "                     demo-labels whether every demo-list label fits;\n"
-         "                     all twelve fail on a no\n"
+         "                     all thirteen fail on a no\n"
          "  --dump-bounds [<path>]  print the laid-out control tree as text,\n"
          "                     private children and hidden state included, an\n"
          "                     inner panel marked \" inner\", with each control's\n"
@@ -1650,7 +1681,7 @@ static bool runSteps(Session &s, const std::vector<Step> &steps, const std::stri
 // Scenarios
 //-----------------------------------------------------------------------------
 enum class Scenario { None, PerControl, Resize, Docked, Scroll, Interaction, Typing, Clip, TextSize, Scale,
-    ToolTip, ContextMenu, Popup, VirtualList, HideShow, DemoLabels };
+    ToolTip, ContextMenu, Popup, VirtualList, DataTableVirtual, HideShow, DemoLabels };
 
 static bool parseScenario(const std::string &name, Scenario &scenario)
 {
@@ -1667,6 +1698,7 @@ static bool parseScenario(const std::string &name, Scenario &scenario)
     else if(name == "context-menu") scenario=Scenario::ContextMenu;
     else if(name == "popup") scenario=Scenario::Popup;
     else if(name == "virtual-list") scenario=Scenario::VirtualList;
+    else if(name == "data-table-virtual") scenario=Scenario::DataTableVirtual;
     else if(name == "hide-show") scenario=Scenario::HideShow;
     else if(name == "demo-labels") scenario=Scenario::DemoLabels;
     else return false;
@@ -5281,6 +5313,218 @@ static bool runVirtualListScenario(Session &s, const std::string &shotDir, bool 
 }
 
 //-----------------------------------------------------------------------------
+// --scenario data-table-virtual: DataTableVirtualDemo at 1 000 and 100 000
+// records
+//
+// The table's body is a VirtualList of pooled rows, so as for the virtual
+// list, what a frame does is the same at both counts: the controls and ids it
+// holds, a settled frame (nothing), a one-row scroll from the top and a wheel
+// notch, each within the table's subtree and its shown rows' slots. A click on
+// a header (the app sorting its records and calling rebind()) and a drag of a
+// column's grip are each laid out in one update-phase pass.
+//-----------------------------------------------------------------------------
+
+namespace
+{
+
+struct DataTableVirtualRun
+{
+    size_t items=0;
+    size_t rows=0;          // the pool
+    size_t subtree=0;       // controls under the table, the table included
+    size_t primIds=0;       // live primitive ids the demo holds
+    size_t idleSlots=0;     // slots the settled frames wrote
+    size_t idleChanged=0;   // and controls they changed
+    size_t idsLeft=0;       // live primitive ids left once the demo is gone
+    VirtualListStep row, wheel, sort, drag;
+    bool sorted=false;      // the click sorted by the column, rows shown in its order
+    bool resized=false;     // the drag gave the column its width
+};
+
+}//namespace
+
+static void settleDataTableVirtual(Session &s, gweni::controls::VirtualList *body, DataTableVirtualRun &run)
+{
+    for(int i=0; i<2; ++i)
+    {
+        const VirtualListStep idle=virtualListFrame(s, body);
+
+        run.idleSlots+=idle.primSlots+idle.textSlots;
+        run.idleChanged+=idle.changed;
+    }
+}
+
+static bool runDataTableVirtual(Session &s, const std::string &shotDir, size_t items, DataTableVirtualRun &run)
+{
+    const size_t idsBefore=livePrimitiveIds();
+    gweni::controls::Base *control=addControl(s, "DataTableVirtualDemo");
+    auto *demo=gweni::gweni_cast<gweni::DataTableVirtualDemo>(control);
+    gweni::controls::DataTable *table=demo?demo->m_table:nullptr;
+    gweni::controls::VirtualList *body=table?table->getVirtualBody():nullptr;
+
+    if(!body || table->getColumnCount() < 3)
+    {
+        std::cerr<<"ControlTest: data-table-virtual: DataTableVirtualDemo has no source-mode table"
+            " of three columns or more\n";
+        return false;
+    }
+
+    s.label="DataTableVirtualDemo-"+std::to_string(items);
+    demo->setRecordCount(items);
+    renderFrames(s, s.frames);
+
+    run.items=table->getItemCount();
+    run.rows=body->getRows().size();
+    run.subtree=subtreeControls(table);
+    run.primIds=livePrimitiveIds()-idsBefore;
+    settleDataTableVirtual(s, body, run);
+
+    body->scrollByRows(1);
+    run.row=virtualListFrame(s, body);
+    settleDataTableVirtual(s, body, run);
+
+    // a wheel notch over the body, through the input path: three rows
+    const gweni::Point origin=body->localPosToCanvas();
+
+    moveMouse(s, origin.x+body->getWidth()/2, origin.y+body->getHeight()/2);
+    renderFrames(s, 1);
+    settleDataTableVirtual(s, body, run);
+    gweni::controls::Base *bar=findControl(body, "VerticalScrollBar");
+    gweni::controls::Base *thumb=bar?findControl(bar, "ScrollBarBar"):nullptr;
+    const gweni::Rect thumbBefore=thumb?thumb->getBounds():gweni::Rect();
+
+    scrollWheel(s, -60);
+    run.wheel=virtualListFrame(s, body);
+    run.wheel.thumbMoved=thumb && !(thumb->getBounds() == thumbBefore);
+    settleDataTableVirtual(s, body, run);
+
+    // a click on the third header, clear of its grip: the demo sorts its
+    // records by it and rebinds the rows on screen
+    gweni::controls::internal::DataTableHeaderCell *header=table->getHeader()->getCells().at(2);
+    const gweni::Point at=header->localPosToCanvas();
+
+    clickMouse(s, at.x+header->getWidth()/3, at.y+header->getHeight()/2);
+    run.sort=virtualListFrame(s, body);
+    settleDataTableVirtual(s, body, run);
+
+    run.sorted=table->getSortColumn() == 2
+        && table->getSortDirection() == gweni::controls::SortDirection::Ascending;
+    {
+        // the rows on screen, top to bottom, in the column's order
+        std::vector<std::pair<int, std::string>> shown;
+
+        for(gweni::controls::Base *row : body->getRows())
+        {
+            auto *tableRow=gweni::gweni_cast<gweni::controls::DataTableRow>(row);
+
+            if(tableRow && !row->hidden())
+                shown.push_back({row->getY(), tableRow->getCellText(2)});
+        }
+        std::sort(shown.begin(), shown.end());
+        for(size_t i=1; i < shown.size(); ++i)
+        {
+            if(std::atof(shown[i-1].second.c_str()) > std::atof(shown[i].second.c_str()))
+                run.sorted=false;
+        }
+        if(shown.empty())
+            run.sorted=false;
+    }
+
+    // the second column's grip dragged 30 units right
+    gweni::controls::internal::DataTableColumnGrip *grip=table->getHeader()->getCells().at(1)->getGrip();
+    const gweni::Point gripAt=centreOf(grip);
+    const int width=table->getColumnWidth(1);
+
+    mouseDown(s, gripAt.x, gripAt.y, true);
+    moveMouse(s, gripAt.x+30, gripAt.y);
+    mouseUp(s, gripAt.x+30, gripAt.y);
+    run.drag=virtualListFrame(s, body);
+    settleDataTableVirtual(s, body, run);
+    run.resized=table->getColumnWidth(1) == width+30;
+
+    forgetMouse(s);
+    renderFrames(s, s.frames);
+
+    const bool shot=shoot(s, shotDir+"/data-table-virtual-"+std::to_string(items)+".png");
+
+    dropControl(s, control);
+    renderFrames(s, 1);
+    run.idsLeft=livePrimitiveIds()-idsBefore;
+    return shot;
+}
+
+static bool runDataTableVirtualScenario(Session &s, const std::string &shotDir, bool &passed)
+{
+    s.freezeClock=true;
+
+    DataTableVirtualRun small, large;
+    bool ok=runDataTableVirtual(s, shotDir, 1000, small);
+
+    ok=runDataTableVirtual(s, shotDir, 100000, large) && ok;
+
+    auto withinRows=[](const DataTableVirtualRun &run, const VirtualListStep &step)
+    {
+        // the table's subtree and the canvas and demo above it
+        return step.passes == 1 && step.zVisited == 0 && step.requests == 0
+            && step.visited <= run.subtree+2 && step.changed <= run.subtree
+            && step.primSlots+step.textSlots > 0
+            && step.primSlots <= step.rowPrims && step.textSlots <= step.rowGlyphs;
+    };
+    // as for the virtual list: the wheel's three rows may move the bar's
+    // thumb a pixel at one count and not the other, rewriting its one slot
+    auto wheelPrimSlots=[](const DataTableVirtualRun &run)
+    {
+        return run.wheel.primSlots-(run.wheel.thumbMoved?1:0);
+    };
+    const bool sameCost=small.rows == large.rows && small.subtree == large.subtree
+        && small.primIds == large.primIds && small.row == large.row
+        && wheelPrimSlots(small) == wheelPrimSlots(large)
+        && small.wheel.textSlots == large.wheel.textSlots
+        && small.wheel.rowPrims == large.wheel.rowPrims
+        && small.wheel.rowGlyphs == large.wheel.rowGlyphs;
+    const bool settled=small.idleSlots == 0 && small.idleChanged == 0
+        && large.idleSlots == 0 && large.idleChanged == 0;
+    const bool rowsOnly=withinRows(small, small.row) && withinRows(small, small.wheel)
+        && withinRows(large, large.row) && withinRows(large, large.wheel);
+    // the sort and the drag: one pass each, no z renumber, no layout request
+    auto onePass=[](const VirtualListStep &step)
+    {
+        return step.passes == 1 && step.zVisited == 0 && step.requests == 0;
+    };
+    const bool sortOnePass=small.sorted && large.sorted && onePass(small.sort) && onePass(large.sort);
+    const bool dragOnePass=small.resized && large.resized && onePass(small.drag) && onePass(large.drag);
+    const bool idsBack=small.idsLeft == 0 && large.idsLeft == 0;
+
+    for(const DataTableVirtualRun *run : {&small, &large})
+    {
+        std::cout<<"data-table-virtual items="<<run->items<<" rows="<<run->rows<<" subtree="<<run->subtree
+                 <<" prim_ids="<<run->primIds<<" idle_slots="<<run->idleSlots
+                 <<" idle_changed="<<run->idleChanged;
+        printVirtualListStep("row", run->row);
+        printVirtualListStep("wheel", run->wheel);
+        printVirtualListStep("sort", run->sort);
+        printVirtualListStep("drag", run->drag);
+        std::cout<<" ids_left="<<run->idsLeft<<"\n";
+    }
+
+    passed=sameCost && settled && rowsOnly && sortOnePass && dragOnePass && idsBack;
+
+    std::cout<<"data-table-virtual same_cost="<<(sameCost?"yes":"no")<<" settled="<<(settled?"yes":"no")
+             <<" rows_only="<<(rowsOnly?"yes":"no")<<" sort_one_pass="<<(sortOnePass?"yes":"no")
+             <<" drag_one_pass="<<(dragOnePass?"yes":"no")<<" ids_back="<<(idsBack?"yes":"no")<<"\n";
+    if(!passed)
+        std::cerr<<"ControlTest: data-table-virtual: "
+                 <<(!sameCost ? "a frame at 100 000 records did not cost what it did at 1 000"
+                     : !settled ? "a settled frame wrote slots or changed controls"
+                     : !rowsOnly ? "a scroll wrote more than its shown rows' slots, entered more than"
+                         " the table, renumbered z or took more than one layout pass"
+                     : !sortOnePass ? "a header click did not sort the rows on screen in one layout pass"
+                     : !dragOnePass ? "a grip drag did not resize its column in one layout pass"
+                     : "the demo did not give its primitive ids back")<<"\n";
+    return ok;
+}
+
+//-----------------------------------------------------------------------------
 // --scenario typing: the keyboard, through the GLFW translator
 //
 // Every keystroke is a synthesised GLFW event fed to gweni::input::GLFW3, the
@@ -6714,6 +6958,15 @@ int main(int argc, char *argv[])
             ok=runVirtualListScenario(session, shotDir, passed);
             if(ok && !passed)
                 ok=false;   // a frame cost more at 100 000 items, or more than its rows: a failing assertion
+            break;
+        }
+
+        case Scenario::DataTableVirtual:
+        {
+            bool passed=false;
+            ok=runDataTableVirtualScenario(session, shotDir, passed);
+            if(ok && !passed)
+                ok=false;   // a frame cost more at 100 000 records, or a sort or drag took two passes
             break;
         }
 

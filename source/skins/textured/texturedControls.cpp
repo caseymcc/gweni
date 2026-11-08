@@ -2167,6 +2167,7 @@ template class ControlRegister<Label>;
 template class ControlRegister<Resizer>;
 template class ControlRegister<Table>;
 template class ControlRegister<TabStrip>;
+template class ControlRegister<DataTableVirtualBody>;
 template class ControlRegister<ScrollBarBar>;
 template class ControlRegister<ProgressBar>;
 template class ControlRegister<Selectable>;

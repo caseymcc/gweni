@@ -71,6 +71,15 @@ void ScrollControl::setVirtualContentHeight(int height)
     invalidate();
 }
 
+Size ScrollControl::contentSize() const
+{
+    Size content=m_innerPanel->getPreferredSize();
+
+    if(hasVirtualContent())
+        content.height=m_virtualHeight;
+    return content;
+}
+
 int ScrollControl::getMaxVerticalScrollOffset() const
 {
     return std::max(0, m_virtualHeight-m_viewportHeight);
@@ -201,12 +210,9 @@ void ScrollControl::calculateSize(skin::Base *skin, Dim dim)
             m_barSize.height=m_horizontalScrollBar->getPreferredSize().height;
     }
 
-    Size content=m_innerPanel->getPreferredSize();
+    const Size content=contentSize();
     const Margin &margin=m_innerPanel->getMargin();
     const Rect &requested=getRequestedBounds();
-
-    if(hasVirtualContent())
-        content.height=m_virtualHeight;
 
     if(dim == Dim::X)
         m_preferredSize.width=preferredFromContent(sizedByRequest(Dim::X)?requested.w:
@@ -309,10 +315,7 @@ void ScrollControl::placeContents()
     const Margin &inset=m_innerPanel->getMargin();
     const Margin &verticalMargin=m_verticalScrollBar->getMargin();
     const Margin &horizontalMargin=m_horizontalScrollBar->getMargin();
-    Size content=m_innerPanel->getPreferredSize();
-
-    if(virtualContent)
-        content.height=m_virtualHeight;
+    const Size content=contentSize();
 
     // The viewport with no bar shown, and what each bar takes from it.
     const int openWidth=width-m_padding.left-m_padding.right-inset.left-inset.right;

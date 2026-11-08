@@ -141,6 +141,15 @@ protected:
     //! Sets the vertical bar to show m_virtualOffset.
     void showVirtualOffset();
 
+    //! The content's size, which the size asked for with no request, the bars
+    //! and the inner panel's size are worked out from: the inner panel's
+    //! preferred size (measured by calculateSize), with the virtual content
+    //! height when there is one. A subclass that places owner-placed children
+    //! in the inner panel itself, which do not count in its preferred size,
+    //! gives their extent here (a virtualised DataTable body its columns'
+    //! width, so it scrolls sideways).
+    virtual Size contentSize() const;
+
     bool m_canScrollHorizontal;
     bool m_canScrollVertical;
 

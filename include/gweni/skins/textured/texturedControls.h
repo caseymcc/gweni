@@ -524,6 +524,9 @@ GWENI_TRANSPARENT_RENDERER(Label)
 GWENI_TRANSPARENT_RENDERER(Resizer)
 GWENI_TRANSPARENT_RENDERER(Table)
 GWENI_TRANSPARENT_RENDERER(TabStrip)
+// a source-mode DataTable's body, a VirtualList the table's backdrop shows
+// through, as through the row-mode DataTableBody (which draws nothing)
+GWENI_TRANSPARENT_RENDERER(DataTableVirtualBody)
 
 // Visual controls this skin does not draw yet. Each is an empty renderer on
 // purpose, so Base::setSkin() does not report the type as having none (#185),

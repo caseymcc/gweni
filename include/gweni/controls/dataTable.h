@@ -11,7 +11,9 @@
 #include <gweni/controls/label.h>
 #include <gweni/controls/scrollControl.h>
 #include <gweni/controls/selectable.h>
+#include <gweni/controls/virtualList.h>
 
+#include <functional>
 #include <vector>
 
 namespace gweni
@@ -157,6 +159,25 @@ public:
     void rowOrderChanged();
 };
 
+//! The body of a DataTable in source mode: a VirtualList of pooled
+//! DataTableRows, which also scrolls sideways when the columns are wider than
+//! its viewport. Its rows are owner-placed and do not count in the inner
+//! panel's size, so the content's width is the table's columns'. It draws
+//! nothing: the table's backdrop shows through, as under the row-mode body.
+class GWENI_EXPORT DataTableVirtualBody: public VirtualList
+{
+public:
+    GWENI_CONTROL(DataTableVirtualBody, VirtualList);
+
+protected:
+    Size contentSize() const override;
+
+private:
+    friend class controls::DataTable;
+
+    DataTable *m_table=nullptr;
+};
+
 }//namespace internal
 
 //! A body row of a DataTable: one cell per column, each a Label, placed at the
@@ -192,6 +213,11 @@ public:
     void calculateSize(skin::Base *skin, Dim dim) override;
     //! The row's colours, and its cells' text colours with them.
     void updateColors() override;
+
+    //! In a source-mode table a press selects the item the row shows (through
+    //! the table, not the row's own selection, which only shows it); in row
+    //! mode it is a Selectable's press.
+    void onPress(event::Info info) override;
 
 protected:
     void arrangeHorizontal(skin::Base *skin) override;
@@ -232,6 +258,20 @@ private:
 //! through the table's SelectableGroup. setStriped fills every odd row (by its
 //! place in the row order), setBorders draws rules along the rows and between
 //! the columns.
+//!
+//! Source mode: instead of a row per record, the table is given an item count
+//! (setItemCount) and a row binder (setRowBinder), and its body is a
+//! VirtualList of pooled DataTableRows, the rows on screen plus one, so a table
+//! of 100 000 items has the controls, ids and slots of the rows it shows. The
+//! binder fills a pooled row for an item, as the VirtualList's does: its cells'
+//! text (setCellText) or contents. The rows are setRowHeight high. Everything
+//! but the row API works as in row mode, by item index: the stripes are the
+//! odd items', the selection is an item (getSelectedItem, setSelectedItem),
+//! shown on whichever pooled row holds it, and a sort leaves the order to the
+//! app, which reorders its own data and calls rebind() (only the rows on screen
+//! are bound again). The first setItemCount or setRowBinder turns source mode
+//! on for good: the rows addRow made are removed, and the row API (addRow,
+//! removeRow, setRowOrder) does nothing.
 class GWENI_EXPORT DataTable: public controls::Base
 {
 public:
@@ -239,6 +279,12 @@ public:
 
 public:
     static constexpr int DefaultColumnWidth=100;
+    //! A source-mode row's height: a row-mode row's at the default skin's text.
+    static constexpr int DefaultRowHeight=21;
+    static constexpr size_t NoItem=VirtualList::NoItem;
+
+    //! Fills a pooled row for the item at the given index (source mode).
+    using RowBinder=std::function<void(DataTableRow *row, size_t item)>;
     //! Room for a short caption and the header's chevron column.
     static constexpr int DefaultMinColumnWidth=40;
 
@@ -301,15 +347,57 @@ public:
     //! its row.
     void setRowOrder(const std::vector<DataTableRow *> &rows);
 
+    //! The selected row. In source mode, the pooled row showing the selected
+    //! item, or null when it is not on screen.
     DataTableRow *getSelectedRow() const;
-    //! Selects the row (null: none).
+    //! Selects the row (null: none). In source mode, the item it shows.
     void setSelectedRow(DataTableRow *row);
-    //! Fired once per change of getSelectedRow(), with the row (or null) as
-    //! the info's `control`.
+    //! Fired once per change of the selection, with the row (or null) as the
+    //! info's `control`; in source mode the item is its `integer` (NoItem for
+    //! none) and the control the row showing it, if any.
     gweni::event::Caller onSelectionChange;
 
+    //! Source mode (see the class comment): how many items there are. It may
+    //! change at any time, as a VirtualList's: the rows still showing their
+    //! item keep it, the view stays inside the new count, and a selected item
+    //! past the end is deselected (onSelectionChange fires).
+    void setItemCount(size_t count);
+    //! The item count in source mode, the row count in row mode.
+    size_t getItemCount() const;
+    //! Source mode: the binder that fills a pooled row for an item. Every row
+    //! on screen is bound again.
+    void setRowBinder(RowBinder binder);
+    bool isSourceMode() const { return m_virtualBody != nullptr; }
+
+    //! Source mode: the items changed (a sort reordered them, say): the rows
+    //! on screen are bound again by the next layout, and only those.
+    //! rebindItem binds only the row showing that item, if any.
+    void rebind();
+    void rebindItem(size_t item);
+
+    //! Source mode: every row's height, in units (at least 1).
+    void setRowHeight(int height);
+    int getRowHeight() const { return m_rowHeight; }
+
+    //! Source mode: the selected item, or NoItem.
+    size_t getSelectedItem() const { return m_selectedItem; }
+    //! Selects the item (NoItem or past the end: none). With doEvents
+    //! onSelectionChange fires if the selection changed.
+    void setSelectedItem(size_t item, bool doEvents=true);
+    //! Source mode: the pooled row showing the item, null when it is not on
+    //! screen; and the item a pooled row shows, NoItem for none.
+    DataTableRow *rowForItem(size_t item) const;
+    size_t itemForRow(const DataTableRow *row) const;
+    //! Source mode: scrolls as little as puts the item fully in view (resolved
+    //! by the next layout, VirtualList::scrollToItem).
+    void scrollToItem(size_t item);
+
     internal::DataTableHeader *getHeader() const { return m_header; }
+    //! The body the rows scroll in: a DataTableBody in row mode, the
+    //! VirtualList in source mode.
     ScrollControl *getBody() const { return m_body; }
+    //! The source-mode body, null in row mode.
+    VirtualList *getVirtualBody() const { return m_virtualBody; }
 
     //! Column x offsets and widths across `width` units: each column at its
     //! width, the last one stretched to fill when it stretches. Written to x
@@ -339,6 +427,16 @@ private:
 
     //! What changes with a column's width: the rows' and the header's sizes.
     void columnsChanged();
+    //! The rows a column, border or stripe change reaches: the table's rows
+    //! in row mode, the pooled ones in source mode.
+    std::vector<DataTableRow *> bodyRows() const;
+    //! Turns source mode on: the rows go, the VirtualList body replaces the
+    //! row-mode one.
+    void enterSourceMode();
+    //! The VirtualList's binder: the row's stripe and selection by its item,
+    //! then the app's binder.
+    void bindRow(controls::Base *row, size_t item);
+    void itemRowPressed(DataTableRow *row);
     void headerCellPressed(int column);
     void rowDeleted(DataTableRow *row);
     void restripe();
@@ -349,7 +447,15 @@ private:
     SelectableGroup m_selection;
 
     internal::DataTableHeader *m_header=nullptr;
-    internal::DataTableBody *m_body=nullptr;
+    //! The body in use, and which kind it is: the row-mode one until source
+    //! mode replaces it with the VirtualList.
+    ScrollControl *m_body=nullptr;
+    internal::DataTableBody *m_rowBody=nullptr;
+    internal::DataTableVirtualBody *m_virtualBody=nullptr;
+
+    RowBinder m_rowBinder;
+    size_t m_selectedItem=NoItem;
+    int m_rowHeight=DefaultRowHeight;
 
     int m_sortColumn=-1;
     SortDirection m_sortDirection=SortDirection::None;

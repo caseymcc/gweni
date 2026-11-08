@@ -238,6 +238,28 @@ void DataTableBody::rowOrderChanged()
     m_innerPanel->invalidate();
 }
 
+///////////////////////////////////////////////////////////////////////////
+//DataTableVirtualBody
+
+// A VirtualList that scrolls both ways: the rows sideways past the viewport
+// when the columns are wider than it, as the row-mode body's do.
+GWENI_CONTROL_CONSTRUCTOR(DataTableVirtualBody)
+{
+    setScroll(true, true);
+}
+
+// The pooled rows are owner-placed, so the inner panel's preferred width is
+// none of theirs: the content is as wide as the columns ask for together,
+// which is what a row asks for (DataTableRow::calculateSize).
+Size DataTableVirtualBody::contentSize() const
+{
+    Size content=ParentClass::contentSize();
+
+    if(m_table)
+        content.width=m_table->contentWidth();
+    return content;
+}
+
 }//namespace internal
 
 ///////////////////////////////////////////////////////////////////////////
@@ -392,6 +414,21 @@ void DataTableRow::arrangeVertical(skin::Base *skin)
         placeChild(cell, cell->getX(), m_padding.top, cell->getWidth(), height);
 }
 
+void DataTableRow::onPress(event::Info info)
+{
+    if(!m_table || !m_table->isSourceMode())
+    {
+        ParentClass::onPress(info);
+        return;
+    }
+
+    if(isDisabled())
+        return;
+
+    m_table->itemRowPressed(this);
+    Button::onPress(info);
+}
+
 void DataTableRow::updateColors()
 {
     ParentClass::updateColors();
@@ -417,8 +454,9 @@ GWENI_CONTROL_CONSTRUCTOR(DataTable)
     m_header->m_table=this;
     m_header->setPlacement(Placement::Owner);
 
-    m_body=newChild<internal::DataTableBody>();
-    m_body->setPlacement(Placement::Owner);
+    m_rowBody=newChild<internal::DataTableBody>();
+    m_rowBody->setPlacement(Placement::Owner);
+    m_body=m_rowBody;
 
     m_selection.onSelectionChange.add(this, &DataTable::groupSelectionChanged);
 
@@ -428,8 +466,23 @@ GWENI_CONTROL_CONSTRUCTOR(DataTable)
 // The rows outlive this body (Base deletes them): they no longer report to it.
 DataTable::~DataTable()
 {
-    for(DataTableRow *row : m_rows)
+    for(DataTableRow *row : bodyRows())
         row->m_table=nullptr;
+}
+
+std::vector<DataTableRow *> DataTable::bodyRows() const
+{
+    if(!m_virtualBody)
+        return m_rows;
+
+    std::vector<DataTableRow *> rows;
+
+    for(Base *control : m_virtualBody->getRows())
+    {
+        if(DataTableRow *row=gweni_cast<DataTableRow>(control))
+            rows.push_back(row);
+    }
+    return rows;
 }
 
 void DataTable::setColumnCount(int count)
@@ -465,8 +518,12 @@ void DataTable::setColumnCount(int count)
         cells.push_back(cell);
     }
 
-    for(DataTableRow *row : m_rows)
+    for(DataTableRow *row : bodyRows())
         row->setCellCount(count);
+
+    // a new column's cells are empty until the binder fills them
+    if(m_virtualBody)
+        m_virtualBody->refresh();
 
     if(m_sortColumn >= count)
         setSortColumn(-1, SortDirection::None, false);
@@ -589,8 +646,13 @@ void DataTable::columnsChanged()
 {
     m_header->invalidate();
 
-    for(DataTableRow *row : m_rows)
+    for(DataTableRow *row : bodyRows())
         row->invalidate();
+
+    // the content's width, which the source-mode body takes from the columns
+    // and not from its rows (an empty table has none)
+    if(m_virtualBody)
+        m_virtualBody->invalidate();
 }
 
 void DataTable::headerCellPressed(int column)
@@ -650,7 +712,7 @@ void DataTable::setBorders(DataTableBorders borders)
 
     m_borders=borders;
 
-    for(DataTableRow *row : m_rows)
+    for(DataTableRow *row : bodyRows())
         row->addStateChange(StateChange_Background);
 }
 
@@ -668,7 +730,10 @@ bool DataTable::hasColumnBorders() const
 // other rows.
 DataTableRow *DataTable::addRow()
 {
-    DataTableRow *row=m_body->newChild<DataTableRow>();
+    if(isSourceMode())
+        return nullptr;
+
+    DataTableRow *row=m_rowBody->newChild<DataTableRow>();
 
     row->m_table=this;
     row->setCellCount(getColumnCount());
@@ -728,7 +793,7 @@ int DataTable::getRowIndex(const DataTableRow *row) const
 // brought to its end in turn, which leaves them in the new order.
 void DataTable::setRowOrder(const std::vector<DataTableRow *> &rows)
 {
-    if(rows.size() != m_rows.size() || rows == m_rows)
+    if(isSourceMode() || rows.size() != m_rows.size() || rows == m_rows)
         return;
 
     std::vector<DataTableRow *> mine=m_rows;
@@ -743,18 +808,30 @@ void DataTable::setRowOrder(const std::vector<DataTableRow *> &rows)
     for(DataTableRow *row : rows)
         row->bringToFront();
 
-    m_body->rowOrderChanged();
+    m_rowBody->rowOrderChanged();
     m_rows=rows;
     restripe();
 }
 
 DataTableRow *DataTable::getSelectedRow() const
 {
+    if(isSourceMode())
+        return rowForItem(m_selectedItem);
+
     return gweni_cast<DataTableRow>(m_selection.getSelected());
 }
 
 void DataTable::setSelectedRow(DataTableRow *row)
 {
+    if(isSourceMode())
+    {
+        if(!row)
+            setSelectedItem(NoItem);
+        else if(row->m_table == this)
+            setSelectedItem(itemForRow(row));
+        return;
+    }
+
     if(!row)
     {
         if(Selectable *selected=m_selection.getSelected())
@@ -787,12 +864,183 @@ void DataTable::rowDeleted(DataTableRow *row)
     restripe();
 }
 
-// Every odd row of the row order is filled; a row whose stripe does not
-// change is not marked.
+// Every odd row of the row order is filled (in source mode, every row showing
+// an odd item); a row whose stripe does not change is not marked.
 void DataTable::restripe()
 {
+    if(m_virtualBody)
+    {
+        for(DataTableRow *row : bodyRows())
+        {
+            const size_t item=itemForRow(row);
+
+            row->setStriped(m_striped && item != NoItem && (item%2) == 1);
+        }
+        return;
+    }
+
     for(size_t i=0; i < m_rows.size(); ++i)
         m_rows[i]->setStriped(m_striped && (i%2) == 1);
+}
+
+///////////////////////////////////////////////////////////////////////////
+// Source mode
+
+// The row-mode body goes with its rows (deleted with it once the frame is
+// over); the selection they held is dropped first, with its event. The
+// VirtualList body takes its place, after the header in the child order as
+// the old one was, and makes DataTableRows of the table's columns.
+void DataTable::enterSourceMode()
+{
+    if(m_virtualBody)
+        return;
+
+    if(m_selection.getSelected())
+        setSelectedRow(nullptr);
+
+    for(DataTableRow *row : m_rows)
+    {
+        row->m_table=nullptr;
+        m_selection.remove(row);
+    }
+    m_rows.clear();
+
+    dropPart(m_rowBody);
+    m_rowBody=nullptr;
+
+    m_virtualBody=newChild<internal::DataTableVirtualBody>();
+    m_virtualBody->m_table=this;
+    m_virtualBody->setPlacement(Placement::Owner);
+    m_virtualBody->setRowHeight(m_rowHeight);
+    m_virtualBody->setRowFactory([this](Base *parent) -> Base *
+        {
+            DataTableRow *row=parent->newChild<DataTableRow>();
+
+            row->m_table=this;
+            row->setCellCount(getColumnCount());
+            return row;
+        });
+    m_virtualBody->setRowBinder([this](Base *row, size_t item) { bindRow(row, item); });
+    m_body=m_virtualBody;
+}
+
+// The row takes the stripe and the selection of its item, as the row-mode
+// rows have them by their place, before the app fills its cells.
+void DataTable::bindRow(Base *control, size_t item)
+{
+    DataTableRow *row=gweni_cast<DataTableRow>(control);
+
+    if(!row)
+        return;
+
+    row->setStriped(m_striped && (item%2) == 1);
+    row->setSelected(item == m_selectedItem, false);
+
+    if(m_rowBinder)
+        m_rowBinder(row, item);
+}
+
+void DataTable::itemRowPressed(DataTableRow *row)
+{
+    const size_t item=itemForRow(row);
+
+    if(item != NoItem)
+        setSelectedItem(item);
+}
+
+void DataTable::setItemCount(size_t count)
+{
+    enterSourceMode();
+    m_virtualBody->setItemCount(count);
+
+    if(m_selectedItem != NoItem && m_selectedItem >= count)
+        setSelectedItem(NoItem);
+}
+
+size_t DataTable::getItemCount() const
+{
+    return m_virtualBody?m_virtualBody->getItemCount():m_rows.size();
+}
+
+void DataTable::setRowBinder(RowBinder binder)
+{
+    enterSourceMode();
+    m_rowBinder=std::move(binder);
+    m_virtualBody->refresh();
+}
+
+void DataTable::rebind()
+{
+    if(m_virtualBody)
+        m_virtualBody->refresh();
+}
+
+void DataTable::rebindItem(size_t item)
+{
+    if(m_virtualBody)
+        m_virtualBody->refreshItem(item);
+}
+
+void DataTable::setRowHeight(int height)
+{
+    m_rowHeight=std::max(height, 1);
+
+    if(m_virtualBody)
+        m_virtualBody->setRowHeight(m_rowHeight);
+}
+
+// The selection is the item: the row showing the old one (if it is on
+// screen) shows it no more, the row showing the new one does, and a row that
+// comes to show either later is bound with it (bindRow). The rows' own
+// selection has no group and fires nothing.
+void DataTable::setSelectedItem(size_t item, bool doEvents)
+{
+    if(!m_virtualBody)
+        return;
+
+    if(item >= getItemCount())
+        item=NoItem;
+
+    if(item == m_selectedItem)
+        return;
+
+    if(DataTableRow *previous=rowForItem(m_selectedItem))
+        previous->setSelected(false, false);
+
+    m_selectedItem=item;
+
+    DataTableRow *row=rowForItem(item);
+
+    if(row)
+        row->setSelected(true, false);
+
+    if(!doEvents)
+        return;
+
+    event::Info info(this);
+
+    info.control=row;
+    info.integer=item;
+    onSelectionChange.call(this, info);
+}
+
+DataTableRow *DataTable::rowForItem(size_t item) const
+{
+    if(!m_virtualBody || item == NoItem)
+        return nullptr;
+
+    return gweni_cast<DataTableRow>(m_virtualBody->rowForItem(item));
+}
+
+size_t DataTable::itemForRow(const DataTableRow *row) const
+{
+    return m_virtualBody?m_virtualBody->itemForRow(row):NoItem;
+}
+
+void DataTable::scrollToItem(size_t item)
+{
+    if(m_virtualBody)
+        m_virtualBody->scrollToItem(item);
 }
 
 // The header and the body, stacked; with a size asked for that is the size.

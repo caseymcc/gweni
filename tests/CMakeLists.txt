@@ -281,6 +281,17 @@ if(TARGET ControlTest AND NOT EMSCRIPTEN)
             --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/virtual-list@VARIANT@
         WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
 
+    # DataTableVirtualDemo at 1 000 and 100 000 records: the source-mode
+    # table's pool, ids and per-frame counters the same at both, a settled
+    # frame writing nothing, a one-row scroll and a wheel notch writing no more
+    # than the shown rows' slots in one layout pass with no z renumber, and a
+    # header click (the app sorting and rebinding) and a column drag each laid
+    # out in one pass; exits non-zero on any failed check
+    gweni_whole_app_test(controltest_data_table_virtual 120
+        COMMAND $<TARGET_FILE:ControlTest> --headless --scenario data-table-virtual --require-one-pass
+            --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/data-table-virtual@VARIANT@
+        WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
+
     # keys handled in one frame, after an edit and before the layout that
     # re-wraps it, move the caret through the edited text's lines (#209): the
     # same script with no frame between the keys and with one after each edit

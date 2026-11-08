@@ -26,6 +26,7 @@
 #include "demo/popup.h"
 #include "demo/crossSplitter.h"
 #include "demo/dataTable.h"
+#include "demo/dataTableVirtual.h"
 #include "demo/groupBox.h"
 #include "demo/imagePanel.h"
 #include "demo/label.h"
@@ -160,6 +161,7 @@ void Demo::init(const String &name)
         addDemo<SelectableDemo>(cat, "SelectableDemo", "Selectable");
         addDemo<VirtualListDemo>(cat, "VirtualListDemo", "Virtual list");
         addDemo<DataTableDemo>(cat, "DataTableDemo", "Data table");
+        addDemo<DataTableVirtualDemo>(cat, "DataTableVirtualDemo", "Data table, 100k");
         addDemo<ContextMenuDemo>(cat, "ContextMenuDemo", "Context menu");
         addDemo<PopupDemo>(cat, "PopupDemo", "Popup");
         addDemo<UnicodeTextDemo>(cat, "UnicodeTextDemo", "Unicode text");
