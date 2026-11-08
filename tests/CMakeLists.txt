@@ -455,6 +455,60 @@ if(EMSCRIPTEN)
     set_tests_properties(mirror_directory PROPERTIES LABELS web)
 endif()
 
+# Every public header compiles as the only include of a translation unit: one
+# generated header_check/gweni/<rel>.cpp holding #include <gweni/<rel>> per
+# header under include/gweni/, built in every tree as the OBJECT library
+# gweni_header_check, part of `all`, so a header that does not include what it
+# uses fails cmake --build, naming its .cpp. The glob covers a new header with
+# no edit here, and a .cpp is written only when its text changes, so
+# re-configuring an unchanged tree rebuilds nothing.
+file(GLOB_RECURSE gweni_public_headers CONFIGURE_DEPENDS
+    RELATIVE ${GWENI_SOURCE_DIR}/include
+    ${GWENI_SOURCE_DIR}/include/gweni/*.h)
+# A backend's headers are checked only in a tree that builds it, the one that
+# has its dependencies.
+set(gweni_header_check_excluded)
+if(NOT GWENI_RENDER_OPENGL_CORE)
+    # freetype-gl and glew or the GLES headers come with the GL renderer
+    list(APPEND gweni_header_check_excluded
+        gweni/platforms/renderers/glApi.h
+        gweni/platforms/renderers/openglCore.h
+        gweni/platforms/renderers/slotRenderer.h)
+endif()
+if(NOT GWENI_RENDER_VULKAN)
+    # volk comes with the vcpkg feature vulkan
+    list(APPEND gweni_header_check_excluded gweni/platforms/renderers/vulkan.h)
+endif()
+set(gweni_header_check_sources)
+foreach(header IN LISTS gweni_public_headers)
+    if(header IN_LIST gweni_header_check_excluded)
+        continue()
+    endif()
+    set(source ${CMAKE_CURRENT_BINARY_DIR}/header_check/${header}.cpp)
+    set(content "#include <${header}>\n")
+    set(written "")
+    if(EXISTS ${source})
+        file(READ ${source} written)
+    endif()
+    if(NOT written STREQUAL content)
+        file(WRITE ${source} "${content}")
+    endif()
+    list(APPEND gweni_header_check_sources ${source})
+endforeach()
+add_library(gweni_header_check OBJECT ${gweni_header_check_sources})
+gweni_set_warnings(gweni_header_check)
+# gweni brings the include dir, its compile definitions and its dependencies'
+# headers; platforms/input/glfw3.h needs GLFW's, which gweni does not link (as
+# for gweni_unit_tests below)
+target_link_libraries(gweni_header_check PRIVATE gweni)
+if(EMSCRIPTEN)
+    target_compile_options(gweni_header_check PRIVATE --use-port=contrib.glfw3)
+else()
+    find_package(glfw3 CONFIG REQUIRED)
+    target_include_directories(gweni_header_check PRIVATE
+        $<TARGET_PROPERTY:glfw,INTERFACE_INCLUDE_DIRECTORIES>)
+endif()
+
 find_package(doctest CONFIG REQUIRED)
 include(doctest)
 
