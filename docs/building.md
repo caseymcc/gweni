@@ -333,6 +333,11 @@ GL-only suite. The tests:
   `--frames 0 --shot` exits 1 and writes nothing (`tests/scriptFirstFrame.cmake`).
 - `unittests`: doctest cases (`gweni_unittests`), e.g. the UTF-8 text-length
   guards in `tests/textLength.cpp`.
+- `unittests_vulkan` (labels `gpu`, `vulkan`): the same `gweni_unittests` on
+  the Vulkan backend (`GWENI_RENDERER=vulkan`: a validated Vulkan device and
+  `renderer::Vulkan`, no GL context), so its cases check the same analytic
+  models on both. Until the backend draws text it runs the primitive styles'
+  files only, without the `gl_only` and `needs_text` suites.
 - `vulkan_smoke` (labels `gpu`, `vulkan`): the Vulkan plumbing. It loads the
   loader through volk, creates an instance with `VK_LAYER_KHRONOS_validation`
   (any validation warning or error aborts it), finds a Vulkan 1.3 device with

@@ -491,8 +491,9 @@ A retained renderer is mostly API-independent, so that part is one class,
 `renderer::SlotRenderer` (`include/gweni/platforms/renderers/slotRenderer.h`,
 `source/platforms/renderers/SlotRenderer/slotRenderer.cpp`), deriving from
 `renderer::Base`, and a backend derives from it and implements a narrow set of
-pure-virtual hooks. `OpenGLCore` is the GL backend; a Vulkan one (#368) and a WebGL one
-(#338) are meant to be others. The core holds, with no API call and no GL header of its
+pure-virtual hooks. `OpenGLCore` is the GL backend and `renderer::Vulkan` the Vulkan
+one (#368, "renderer::Vulkan (headless)" below); a WebGL one (#338) is meant to be
+another. The core holds, with no API call and no GL header of its
 own:
 
 - the CPU mirrors: the primitive `Vertex` slots and their clip `Box`es, the glyph
@@ -560,6 +561,111 @@ The GPU unit tests (`tests/`) take the shared renderer as a `SlotRenderer`
 the one place that picks it. The three that check GL itself (`fontRelease.cpp`,
 `glslDialects.cpp`, `textDrawLoop.cpp`) are the doctest test suite `gl_only`
 (`tests/glRenderer.h`), which a run on another backend leaves out (`-tse=gl_only`).
+`GWENI_RENDERER=vulkan` makes `main.cpp` create a Vulkan device and a
+`renderer::Vulkan` instead, with no GL or EGL context, and `unittests_vulkan` is that
+run ("renderer::Vulkan" below).
+
+## renderer::Vulkan (headless)
+
+`renderer::Vulkan` (`include/gweni/platforms/renderers/vulkan.h`,
+`source/platforms/renderers/Vulkan/`) is the Vulkan 1.3 backend of `SlotRenderer`,
+built with `GWENI_RENDER_VULKAN` (which, for now, needs `GWENI_RENDER_OPENGL_CORE`:
+the core, freetype-gl and the shader bodies are built with it). It draws every
+primitive style, with the clip boxes and the image units; it makes, uploads and reads
+back the font atlases, but does not draw text yet (#372: the text hooks record
+nothing, and print `gweni: renderer::Vulkan does not draw text yet` once).
+
+The application owns the Vulkan objects, as it owns a GL context:
+
+- **`VulkanDevice`**: the instance, physical device, device and one graphics queue.
+  `createVulkanDevice(device, options, error)` makes one (volk loads
+  `libvulkan.so.1`, nothing links it): Vulkan 1.3, the first device with
+  `dynamicRendering`, `shaderDemoteToHelperInvocation` (glslang compiles a Vulkan 1.3
+  shader's `discard` to a demote) and a graphics queue, and `dualSrcBlend` where the
+  device has it (`VulkanDevice::dualSourceBlend`; without it `lcdTextUnavailable()`
+  says so and LCD text is grayscale, as on a GLES context without
+  `GL_EXT_blend_func_extended`). With `VulkanDeviceOptions::validation` it enables
+  `VK_LAYER_KHRONOS_validation` and a debug-utils messenger that prints every
+  validation warning and error on stderr (`gweni: Vulkan validation error: ...`) and
+  aborts, and fails, saying so, without the layer. The options also take the
+  instance and device extensions a window adds (#375). No GLFW in the library.
+- **`VulkanTarget`**: a colour image (`R8G8B8A8_UNORM`) and its depth buffer
+  (`X8_D24_UNORM_PACK32` where the device renders to it, as GL's
+  `GL_DEPTH_COMPONENT24`, else `D24_UNORM_S8_UINT` or `D32_SFLOAT`), of one size,
+  what an EGL context's framebuffer is to `OpenGLCore`. Any renderer on the device
+  draws into it and reads it back; between frames its images are in
+  `COLOR_ATTACHMENT_OPTIMAL` and `DEPTH_STENCIL_ATTACHMENT_OPTIMAL`, as every
+  renderer leaves them. `renderer::Vulkan(paths, viewRect, device, target)` draws
+  into one, `setTarget()` into another of the same formats (another format makes its
+  pipeline again).
+
+How each GL feature maps:
+
+| OpenGLCore | renderer::Vulkan |
+| --- | --- |
+| GL context, offscreen framebuffer | `VulkanDevice`, `VulkanTarget` |
+| `glBufferData` (a regrow) | a new device-local buffer, after `vkQueueWaitIdle` (a frame in flight may draw from the old one) |
+| `glBufferSubData` per dirty range | the range copied into the frame's host-visible staging memory, one `vkCmdCopyBuffer` per range |
+| per-chunk vertex array, `glDrawElements` | `vkCmdBindVertexBuffers` at the chunk's first slot, `slotBase` pushed, one `vkCmdDrawIndexed(slots*6)` from index 0 |
+| the static 16-bit quad index buffers | the same patterns, device-local, uploaded once by `init()` |
+| clip boxes: 2D `GL_RGBA16UI` texture, `glTexSubImage2D` per row piece | 2D `R16G16B16A16_UINT` image, `kClipColumns` texels a row, one `vkCmdCopyBufferToImage` per row piece, sampled `NEAREST` |
+| 8 image units, `uniform sampler2D images[8]` | one array of 8 combined image samplers in set 0 (an empty unit samples a 1x1 opaque black image, as GL samples texture 0) |
+| `projection`, `slotBase` uniforms | push constants (`PrimitivePush`) |
+| image: `GL_RGBA8`/`GL_RGB8` + `glGenerateMipmap` | `R8G8B8A8_UNORM` (RGB with alpha 255), the levels a chain of linear `vkCmdBlitImage`s |
+| atlas: `GL_R8`, `GL_RGB8` for LCD | `R8_UNORM`; `R8G8B8A8_UNORM` for LCD (no RGB8 format is guaranteed to be sampled), expanded on upload, `textureChannelSizes` still 8,8,8,0 |
+| `glBlendFunc(SRC_ALPHA, ONE_MINUS_SRC_ALPHA)`, `GL_LESS` with depth writes | the pipeline's blend and depth state |
+| `glClear` | a dynamic rendering with `LOAD_OP_CLEAR`, submitted at once |
+| `glReadPixels`, rows turned over | `vkCmdCopyImageToBuffer` into a host-visible buffer, rows turned over |
+| `glFlush` | the frame's two command buffers submitted with its fence |
+
+**One frame.** A frame records two command buffers, submitted together: the uploads
+(staging copies, the atlas and clip-box images' layout changes) and then the draws
+(one `vkCmdBeginRendering` with `LOAD_OP_LOAD`). `flush()` uploads the glyph slots
+after drawing the primitives, and a copy cannot go inside a rendering, so every upload
+goes into the first buffer, which runs before every draw. Each frame in flight
+(`FramesInFlight`, 2) has its own command buffers, staging memory, descriptor set and
+fence, and a frame waits for the one that last used them. The uploads buffer starts
+with a barrier after every earlier submission's vertex, index and shader reads, so
+a copy never overwrites a slot a frame still in flight draws from, and ends with one
+before this frame's reads; the draws buffer starts with a barrier after every earlier
+use of the target, another renderer's frame or a clear included. A texture written in
+the frame is `TRANSFER_DST_OPTIMAL` from its first upload and `SHADER_READ_ONLY_OPTIMAL`
+again at the end of the uploads. Making or freeing something the frames in flight
+might use (a regrown buffer or clip-box table, a freed atlas or image) waits for the
+queue first. `clearTarget`, `readPixels` and `readTextureRgba` submit what the frame
+recorded, then run their own command buffer and wait for it. The counts are the
+core's: one upload per range it hands over, one draw per chunk, and a settled frame
+uploads nothing, on Vulkan as on GL.
+
+**The shaders** are GL's bodies: `source/platforms/renderers/Vulkan/primitive.vert`
+and `primitive.frag` are `#version 450` prologues that `#include` them
+(`GL_GOOGLE_include_directive`), compiled to SPIR-V at build time by
+`gweni_add_spirv` with `--auto-map-locations` (the bodies' `in`/`out` variables have
+no locations: GL links them by name, and both stages declare them in the same order).
+The prologue makes `projection` and `slotBase` the push constants, declares the
+samplers in set 0, and makes `VERTEX_ID` `gl_VertexIndex`, which counts from the
+chunk's first vertex as `gl_VertexID` does because each chunk binds its vertex buffer
+at its first slot (with a `vertexOffset` it would count from the buffer's start).
+`primitive.frag` hard-codes `CLIP_COLUMNS` (2048), which `vulkan.cpp` asserts.
+
+**GL's pixels.** The projection is OpenGLCore's matrix, into GL's clip space, and
+`CLIP_SPACE_TO_API` maps its z from [-1, 1] to [0, 1] in the vertex shader as GL's
+viewport transform does (`z*0.5 + 0.5`, w being 1), so every depth is computed as on
+GL. y is not flipped: the target holds its rows bottom-up, as a GL framebuffer does,
+and `readPixels` turns them over as `OpenGLCore::readPixels` does. Every triangle then
+lands on GL's window coordinates, so its coverage, its interpolated values and its
+2x2 derivatives are GL's. A window will show the target through a flipping blit
+(#375), not by drawing it the other way up. Flipping y in the projection (the first
+way this was written) gave 405 of the 422 frames the primitive cases read back
+byte-identical to GL's; not flipping gives 415. Of the 7 that differ, 4 differ by 1
+in 1 or 2 pixels (a 50 % blend rounding to 127 or 128), and 3 are the polyline
+frames of `lines.cpp`: a cap or joint pixel's coverage 1.0 on GL and 254/255 on
+Vulkan, and so (the line style's half-layer depth deciding which segment of a
+polyline blends over a joint) 1 or 2 joint pixels blended twice on one and once on
+the other, up to 64 per channel. Both pass the model the test checks; the
+difference is the float code GL's GLSL compiler and the SPIR-V path make of the same
+line arithmetic, not a different algorithm, and no control draws a line yet. The
+pixel test of the apps (#374) measures its tolerance on the ControlTest shots.
 
 ## OpenGLCore renderer (retained model)
 
@@ -714,12 +820,19 @@ two programs and the draws. What follows describes both together:
   feature) can share it; a PNG over the bound gets an expected | actual | difference
   image beside it.
 - **The shaders' dialect is chosen at run time.** Each stage is one body shared by
-  every dialect, behind a header `OpenGLCore::shaderSource` puts in front:
-  `#version 330 core`, or for an ES context `#version 300 es` with `precision highp`
+  every dialect, and by the Vulkan backend ("renderer::Vulkan" below): a file of its
+  own in `source/platforms/renderers/shaders/` (`primitive.vert.glsl`,
+  `primitive.frag.glsl`, `text.vert.glsl`, `text.frag.glsl`), embedded in the library
+  at build time (`cmake/embedFile.cmake`). `OpenGLCore::shaderSource` puts a header in
+  front: `#version 330 core`, or for an ES context `#version 300 es` with `precision highp`
   for `float`, `int`, `sampler2D` and `usampler2D` (ES's fragment defaults, mediump
   int and lowp samplers, would not give the desktop bytes), plus the clip-box
   texture's width (`CLIP_COLUMNS`) and, for the text program with dual-source
-  blending, `GWENI_DUAL_SOURCE` (and on ES `#extension GL_EXT_blend_func_extended`).
+  blending, `GWENI_DUAL_SOURCE` (and on ES `#extension GL_EXT_blend_func_extended`),
+  then GL's prologue: what a body leaves to its backend, each file's header listing
+  it. That is the uniforms (`projection`, `slotBase`, the samplers, `textMode`,
+  `textContrast`, found by name), `VERTEX_ID` (`gl_VertexID`) and
+  `CLIP_SPACE_TO_API(p)` (nothing on GL).
   The bodies use no implicit conversion and nothing else GLSL ES 3.00 lacks:
   `tests/glslDialects.cpp` compiles and links every program as ES 3.00 in the desktop
   context (`GL_ARB_ES3_compatibility`), and without its dual-source output.
@@ -1450,12 +1563,12 @@ What exists today (the foundation) and what's still aspirational:
 - **Cache-to-texture** (`ICacheToTexture`) and free-slot compaction/defragmentation of
   the primitive buffers are stubbed.
 
-**Vulkan (planned, #368)**
-- A second `SlotRenderer` backend: it implements the hooks ("The shared core") with
+**Vulkan (#368)**
+- `renderer::Vulkan` ("renderer::Vulkan (headless)" above) implements the hooks with
   device-local vertex buffers indexed by primitive id, the dirty ranges pushed through a
-  staging buffer, and a command buffer recording one draw per chunk. The mirrors, the
-  packing, the text and the counts are the core's, so no control/skin/layout change is
-  required and `FrameStats` counts the same.
+  staging buffer per frame in flight, and command buffers recording one draw per chunk.
+  It draws every primitive style headless; text (#372), the apps' `--renderer` (#373),
+  the cross-backend checks (#374) and a window (#375) are still to come.
 
 See also [layout.md](layout.md) for the docking/layout system, and the skin/primitive
 registration notes in `source/skins/textured/`.
