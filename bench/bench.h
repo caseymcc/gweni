@@ -58,12 +58,15 @@ void enterPhase(Phase phase);
 template<typename Body>
 void inPhase(Phase phase, Body &&body);
 
-//! What the phases cost since the last resetPhases().
+//! What the phases cost since the last resetPhases(): time, allocations, and
+//! the measures the controls made (controls::measureTextCalls()), so an edit
+//! measured in the input phase is counted where it happens.
 struct PhaseTotals
 {
     double us[size_t(Phase::Count)]={};
     size_t allocs[size_t(Phase::Count)]={};
     size_t allocBytes[size_t(Phase::Count)]={};
+    size_t measures[size_t(Phase::Count)]={};
 };
 
 //! Clears the totals; the current phase restarts now.

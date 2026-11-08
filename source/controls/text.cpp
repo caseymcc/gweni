@@ -11,6 +11,9 @@
 #include <gweni/utility.h>
 #include <gweni/platforms/commonPlatform.h>
 
+#include <algorithm>
+#include <iterator>
+
 namespace gweni
 {
 namespace controls
@@ -73,10 +76,55 @@ void Text::setText(const String &str)
 
     addStateChange(controls::StateChange_Text);
 
+    noteEdit(m_string, str);
     m_string=str;
-    m_wrapStale=true;
     // Its size, and wrapped its lines, come from the string: lay it out again.
     invalidate();
+}
+
+// The bytes that differ, found without measuring or allocating: the string is
+// compared from both ends. Before the first wrap, or when something else
+// already wants the whole string wrapped again, there is nothing to record.
+void Text::noteEdit(const gweni::String &oldString, const gweni::String &newString)
+{
+    if(m_wrapStale)
+        return;
+
+    const size_t oldLength=oldString.size();
+    const size_t newLength=newString.size();
+    const size_t common=std::min(oldLength, newLength);
+
+    const size_t prefix=static_cast<size_t>(std::mismatch(oldString.begin(), oldString.begin()+common,
+        newString.begin()).first-oldString.begin());
+    size_t suffix=0;
+
+    while(suffix < common-prefix && oldString[oldLength-1-suffix] == newString[newLength-1-suffix])
+        ++suffix;
+
+    // oldString[start, oldEnd) became newString[start, newEnd)
+    const size_t start=prefix;
+    const size_t oldEnd=oldLength-suffix;
+    const size_t newEnd=newLength-suffix;
+
+    if(!m_editPending)
+    {
+        m_editPending=true;
+        m_editStart=start;
+        m_editOldEnd=oldEnd;
+        m_editNewEnd=newEnd;
+        return;
+    }
+
+    // An edit of a string that was itself an edit of the wrapped one: the
+    // union of the two, in the wrapped string's bytes and the new string's.
+    // The bytes of oldString from m_editNewEnd on are the wrapped string's
+    // from m_editOldEnd on, and those from oldEnd on are newString's from
+    // newEnd on, so the end of the union in oldString maps to both.
+    const size_t end=std::max(m_editNewEnd, oldEnd);
+
+    m_editOldEnd=m_editOldEnd+(end-m_editNewEnd);
+    m_editNewEnd=newEnd+(end-oldEnd);
+    m_editStart=std::min(m_editStart, start);
 }
 
 //void Text::render(skin::Base *skin)
@@ -431,10 +479,10 @@ void Text::splitWords(const gweni::String &s, int w, std::vector<gweni::String> 
 // would break the run there, below the line's box), and before a word that
 // would take it past w. A blank line is an empty line, and so is the one after
 // a final '\n'. With w <= 0 the lines only break at '\n'.
-void Text::wrapLines(int w, std::vector<WrappedLine> &lines)
+void Text::wrapLines(const gweni::String &s, int w, std::vector<WrappedLine> &lines)
 {
     std::vector<gweni::String> words;
-    splitWords(getText(), w, words);
+    splitWords(s, w, words);
 
     gweni::String strLine;
     int lineLength=0;
@@ -473,7 +521,8 @@ void Text::wrapLines(int w, std::vector<WrappedLine> &lines)
 
 bool Text::wrapCurrent(int w) const
 {
-    return !m_wrapStale && w == m_wrapWidth && m_font == m_wrapFont && *m_font == m_wrapFontValue;
+    return !m_wrapStale && !m_editPending && w == m_wrapWidth && m_font == m_wrapFont
+        && *m_font == m_wrapFontValue;
 }
 
 void Text::wrapAt(int w)
@@ -481,16 +530,132 @@ void Text::wrapAt(int w)
     if(wrapCurrent(w))
         return;
 
-    m_wrapped.clear();
-    wrapLines(w, m_wrapped);
+    if(!m_wrapStale && w == m_wrapWidth && m_font == m_wrapFont && *m_font == m_wrapFontValue)
+    {
+        // only the string changed: its edited paragraphs
+        wrapEdit(w);
+    }
+    else
+    {
+        m_wrapped.clear();
+        wrapLines(m_string, w, m_wrapped);
+        // a new wrap, which the line children do not show yet: all of them
+        m_linesStale=true;
+        m_linesPartial=false;
+    }
     ++m_wrapCount;
 
     m_wrapStale=false;
+    m_editPending=false;
     m_wrapWidth=w;
     m_wrapFont=m_font;
     m_wrapFontValue=*m_font;
-    // a new wrap, which the line children do not show yet
-    m_linesStale=true;
+}
+
+// A line ends at a '\n' when it holds one more character than it shows.
+static bool endsParagraph(int length, const gweni::String &text)
+{
+    return length > static_cast<int>(text.length());
+}
+
+// A paragraph's lines depend on nothing outside it: the lines restart at each
+// '\n', and splitWords never carries a word across one. So the edit is
+// widened to whole paragraphs, from the start of the one holding its first
+// byte to the first '\n' at or after its end (the end of the string if there
+// is none), and that part of the string is wrapped again alone, by the same
+// code with the same measures as a wrap of the whole string, which therefore
+// gives the same lines. Its lines replace those of the old paragraphs; the
+// lines before and after them hold the same characters as before, and a line
+// records only how many it holds, so they are kept as they are. Finding the
+// paragraph walks the lines' lengths and measures nothing. One paragraph with
+// no '\n' in it is the whole string, and is wrapped again whole.
+void Text::wrapEdit(int w)
+{
+    const size_t start=m_editStart;
+    const size_t oldEditEnd=m_editOldEnd;
+    const size_t newEditEnd=m_editNewEnd;
+    const size_t count=m_wrapped.size();
+
+    // the paragraph holding byte `start` of the wrapped string: its first
+    // line and where it starts (the line holding a '\n' is the one it ends,
+    // and the end of the string is on the last line)
+    size_t first=0;
+    size_t paragraphStart=0;
+    size_t offset=0;
+
+    for(size_t i=0; i < count; ++i)
+    {
+        const WrappedLine &line=m_wrapped[i];
+
+        if(offset+static_cast<size_t>(line.length) > start)
+            break;
+
+        offset+=static_cast<size_t>(line.length);
+
+        if(endsParagraph(line.length, line.text) && i+1 < count)
+        {
+            first=i+1;
+            paragraphStart=offset;
+        }
+    }
+
+    // to the first '\n' at or after the edit, found in the new string: the
+    // bytes after the edit are the wrapped string's after its edit
+    const size_t newLength=m_string.size();
+    const size_t oldLength=newLength-newEditEnd+oldEditEnd;
+    const size_t newline=m_string.find('\n', newEditEnd);
+    const bool toEnd=(newline == gweni::String::npos);
+    const size_t newEnd=toEnd?newLength:newline+1;
+    const size_t oldEnd=toEnd?oldLength:oldEditEnd+(newline-newEditEnd)+1;
+
+    // the old paragraphs' lines: from `first` until they reach oldEnd
+    size_t last=first;
+
+    for(size_t held=paragraphStart; last < count && (held < oldEnd || toEnd); ++last)
+        held+=static_cast<size_t>(m_wrapped[last].length);
+
+    std::vector<WrappedLine> lines;
+
+    wrapLines(m_string.substr(paragraphStart, newEnd-paragraphStart), w, lines);
+    // wrapped alone, a part ending in a '\n' has an empty line after it,
+    // which is the next paragraph's first, kept
+    if(!toEnd)
+        lines.pop_back();
+
+    const size_t oldCount=last-first;
+    const size_t newCount=lines.size();
+
+    if(oldCount == newCount)
+    {
+        std::move(lines.begin(), lines.end(), m_wrapped.begin()+first);
+    }
+    else
+    {
+        m_wrapped.erase(m_wrapped.begin()+first, m_wrapped.begin()+last);
+        m_wrapped.insert(m_wrapped.begin()+first, std::make_move_iterator(lines.begin()),
+            std::make_move_iterator(lines.end()));
+    }
+
+    // The children showed the lines before this edit: only these differ
+    // now. Already behind by an earlier edit, they differ by the union of the
+    // two, in their lines and in the new ones, mapped as in noteEdit. Behind
+    // a whole wrap, they are synced whole anyway.
+    if(!m_linesStale)
+    {
+        m_linesStale=true;
+        m_linesPartial=true;
+        m_syncFirst=first;
+        m_syncOldEnd=last;
+        m_syncNewEnd=first+newCount;
+    }
+    else if(m_linesPartial)
+    {
+        const size_t end=std::max(m_syncNewEnd, last);
+
+        m_syncOldEnd=m_syncOldEnd+(end-m_syncNewEnd);
+        m_syncNewEnd=first+newCount+(end-last);
+        m_syncFirst=std::min(m_syncFirst, first);
+    }
 }
 
 // Between an edit and the next layout the string is wrapped again at the
@@ -527,10 +692,8 @@ void Text::removeLines(size_t count)
 }
 
 // The string is wrapped into m_wrapped unless it already holds this wrap (a
-// helper wrapped the edit before this layout). The lines that are there are
-// given the new strings and rows, which changes nothing (no new text slots)
-// for a line that shows the same text on the same row; only the lines past
-// them are added or deleted.
+// helper wrapped the edit before this layout), and the line children are made
+// to show it (syncLines).
 Size Text::RefreshSizeWrap(bool update)
 {
     if(!m_font)
@@ -552,37 +715,10 @@ Size Text::RefreshSizeWrap(bool update)
     if(!update)
         return Size(w, height);
 
-    removeLines(m_wrapped.size());
-
-    int y=0;
-
-    for(size_t i=0; i < m_wrapped.size(); ++i)
-    {
-        if(i == m_lines.size())
-        {
-            // This control places its lines (Placement::Owner).
-            Text *t=newChild<Text>();
-            t->setPlacement(Placement::Owner);
-            t->setFont(getFont());
-            t->setTextColor(TextColor());
-            t->setTextColorOverride(m_colorOverride);
-
-            m_lines.push_back(t);
-        }
-
-        Text *t=m_lines[i];
-
-        t->setText(m_wrapped[i].text);
-
-        Size size=t->refreshSize(false);
-        size.height=lineHeight;
-        t->setPreferredSize(size);
-        placeChild(t, 0, y, size.width, size.height);
-
-        y+=lineHeight;
-    }
+    syncLines(lineHeight);
 
     m_linesStale=false;
+    m_linesPartial=false;
     m_wrappedWidth=w;
 
     // The parent's width and the height of the lines, the same as the
@@ -590,6 +726,97 @@ Size Text::RefreshSizeWrap(bool update)
     setArrangedBounds(getX(), getY(), w, height);
 
     return Size(w, height);
+}
+
+// After edits alone, the children of the lines that did not change keep
+// their strings and rows and are not touched; the edited lines' children are
+// reused in order, the surplus deleted or the shortfall made there, so a line
+// below an edit keeps its own child, and is moved only if the number of lines
+// above it changed. Otherwise (a first wrap, a new width or font) the lines
+// that are there are given the new strings and rows by index, which changes
+// nothing (no new text slots) for a line that shows the same text on the same
+// row; only the lines past them are added or deleted.
+void Text::syncLines(int lineHeight)
+{
+    const size_t count=m_wrapped.size();
+
+    if(m_linesPartial && m_syncOldEnd <= m_lines.size()
+        && m_lines.size()-(m_syncOldEnd-m_syncFirst)+(m_syncNewEnd-m_syncFirst) == count)
+    {
+        const size_t first=m_syncFirst;
+        const size_t oldCount=m_syncOldEnd-first;
+        const size_t newCount=m_syncNewEnd-first;
+
+        if(oldCount > newCount)
+        {
+            for(size_t i=first+newCount; i < first+oldCount; ++i)
+                // ~Base takes it out of the children and gives its ids back.
+                delete m_lines[i];
+
+            m_lines.erase(m_lines.begin()+first+newCount, m_lines.begin()+first+oldCount);
+        }
+        else
+        {
+            for(size_t i=first+oldCount; i < first+newCount; ++i)
+                insertLine(i);
+        }
+
+        // a new child is synced whatever it shows
+        for(size_t i=first; i < first+newCount; ++i)
+            syncLine(i, lineHeight, i >= first+oldCount);
+
+        // the rows below, when there are more or fewer lines above them
+        if(oldCount != newCount)
+        {
+            for(size_t i=first+newCount; i < count; ++i)
+                placeChildPos(m_lines[i], 0, static_cast<int>(i)*lineHeight);
+        }
+        return;
+    }
+
+    removeLines(count);
+
+    while(m_lines.size() < count)
+        insertLine(m_lines.size());
+
+    for(size_t i=0; i < count; ++i)
+        syncLine(i, lineHeight, true);
+}
+
+void Text::syncLine(size_t i, int lineHeight, bool always)
+{
+    Text *t=m_lines[i];
+    const int y=static_cast<int>(i)*lineHeight;
+
+    // After edits alone, a child showing this string on this row was given
+    // them by an earlier sync, in this font, so its size is the same too.
+    if(!always && t->getText() == m_wrapped[i].text && t->getY() == y)
+        return;
+
+    t->setText(m_wrapped[i].text);
+
+    Size size=t->refreshSize(false);
+    size.height=lineHeight;
+    t->setPreferredSize(size);
+    placeChild(t, 0, y, size.width, size.height);
+}
+
+Text *Text::insertLine(size_t index)
+{
+    // This control places its lines (Placement::Owner).
+    Text *t=newChild<Text>();
+    t->setPlacement(Placement::Owner);
+    t->setFont(getFont());
+    t->setTextColor(TextColor());
+    t->setTextColorOverride(m_colorOverride);
+
+    // among the children in the lines' order, so they are numbered top to
+    // bottom however they were made: made last, it is after the last already
+    if(index < m_lines.size())
+        t->bringNextToControl(m_lines[index], false);
+
+    m_lines.insert(m_lines.begin()+static_cast<std::ptrdiff_t>(index), t);
+    return t;
 }
 
 unsigned int Text::numLines()

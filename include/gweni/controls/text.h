@@ -170,12 +170,33 @@ private:
         int length;
     };
 
-    //! Breaks m_string into lines no wider than w ('\n' always breaks one).
-    void wrapLines(int w, std::vector<WrappedLine> &lines);
+    //! Breaks s into lines no wider than w ('\n' always breaks one), appended
+    //! to lines.
+    void wrapLines(const gweni::String &s, int w, std::vector<WrappedLine> &lines);
 
     //! Makes m_wrapped the wrap of this string and font at w, wrapping again
-    //! only when one of them changed (wrapCurrent()). Touches no child.
+    //! only when one of them changed (wrapCurrent()): only the edited
+    //! paragraphs when the string is all that changed (wrapEdit()), the whole
+    //! string otherwise. Touches no child.
     void wrapAt(int w);
+    //! Records the edit setText makes, old into the new string, as the bytes
+    //! that differ (common prefix and suffix), merged with one not wrapped yet.
+    void noteEdit(const gweni::String &oldString, const gweni::String &newString);
+    //! Wraps again the paragraphs of the pending edit (m_edit*) and splices
+    //! their lines into m_wrapped in place of the old ones, recording the
+    //! lines the children no longer show (m_sync*).
+    void wrapEdit(int w);
+    //! Makes the line children show m_wrapped: only the lines m_sync* names,
+    //! and the rows below them when their count changed, if that is all that
+    //! changed since the children last showed the wrap (syncLines()), or
+    //! every line by index.
+    void syncLines(int lineHeight);
+    //! Gives line child i m_wrapped[i]'s string, size and row; unless always,
+    //! not when it shows that string on that row already.
+    void syncLine(size_t i, int lineHeight, bool always);
+    //! A new line child, inserted into m_lines at index, and among the
+    //! children before the line it is inserted before.
+    Text *insertLine(size_t index);
     //! Whether m_wrapped is the wrap of this string and font at w.
     bool wrapCurrent(int w) const;
     //! For the char <-> line helpers: whether they read m_wrapped (wrapped
@@ -216,10 +237,20 @@ private:
     //! The wrap of m_string, as data: what the helpers read, and what layout
     //! makes the line children show.
     std::vector<WrappedLine> m_wrapped;
-    //! Set by setText, setFont, setWrap and textChanged: m_wrapped is not of
-    //! this string. Then the width and font it was wrapped at; the font is
-    //! kept by value as well, as one can change size in place (setDefaultFont).
+    //! Set by setFont, setWrap and textChanged, and by setText before the
+    //! first wrap: m_wrapped is to be wrapped again whole. Then the width and
+    //! font it was wrapped at; the font is kept by value as well, as one can
+    //! change size in place (setDefaultFont).
     bool m_wrapStale=true;
+    //! Set by setText once there is a wrap: m_wrapped is of an earlier string,
+    //! whose bytes [m_editStart, m_editOldEnd) are [m_editStart, m_editNewEnd)
+    //! of m_string, everything before and after them the same. Merged over
+    //! setTexts until the next wrap, which re-wraps only the paragraphs they
+    //! touch.
+    bool m_editPending=false;
+    size_t m_editStart=0;
+    size_t m_editOldEnd=0;
+    size_t m_editNewEnd=0;
     int m_wrapWidth=-1;
     const gweni::Font *m_wrapFont=nullptr;
     gweni::Font m_wrapFontValue;
@@ -230,6 +261,14 @@ private:
     //! the first wrapped layout: until then the helpers read m_string.
     bool m_linesStale=true;
     int m_wrappedWidth=-1;
+    //! With m_linesStale, whether only edits made it so: line children
+    //! [m_syncFirst, m_syncOldEnd) show what m_wrapped's [m_syncFirst,
+    //! m_syncNewEnd) replaced, and every other one its line (moved down or up
+    //! by the difference). Else every child is synced by index.
+    bool m_linesPartial=false;
+    size_t m_syncFirst=0;
+    size_t m_syncOldEnd=0;
+    size_t m_syncNewEnd=0;
 //    size_t m_textId;
 
     //! The line children, top to bottom: m_wrapped's lines after layout,

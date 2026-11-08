@@ -59,9 +59,9 @@ set_tests_properties(bench_smoke PROPERTIES
 # The one check on the bench's numbers: every scaling=local scene's per-frame
 # work counters must be no larger at N=10000 than at N=1000 (scaling.cmake's
 # header says which counters and why). Exact counters only, never a time.
-# Under ASAN the type scene's whole-text re-wrap per keystroke (#323) takes
-# 200 s at N=10000 (4 s in the debug tree), so that tree compares N=1000 with
-# N=3000, which runs in under a minute.
+# Under ASAN the six scenes take about 180 s together at N=10000 (most of it
+# building and settling the large trees; 7 s in the debug tree), close to the
+# timeout, so that tree compares N=1000 with N=3000, which takes 25 s.
 set(bench_scaling_large_n 10000)
 if(GWENI_SANITIZE MATCHES "address")
     set(bench_scaling_large_n 3000)

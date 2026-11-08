@@ -257,7 +257,8 @@ each phase (`input`, `update`, `render`, `flush`, `gpu`) and the work counters:
 controls visited and changed, slots written, uploads and buffer regrows
 (`buffer_regrows`), draw calls, layout passes
 and the controls they entered (`layout_visited`), text measures
-(`measure_calls`), z renumbering, live ids and C++ allocations. The same
+(`measure_calls`, and `measure_calls_<phase>` for the input, update and
+render phases), z renumbering, live ids and C++ allocations. The same
 arguments give the same counters every run. Times are only meaningful from a release tree, and `gpu` is
 Mesa llvmpipe on the CPU inside the container:
 

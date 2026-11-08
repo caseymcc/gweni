@@ -28,6 +28,19 @@
  *  they read the string unwrapped; and an edit is wrapped once, by a helper or
  *  by layout (Text::wrapCount()), the children being synced from that wrap in
  *  arrange.
+ *
+ *  An edit is wrapped again by the paragraph and only the changed lines'
+ *  children are synced, which must give what a fresh Text holding the edited
+ *  string gives (the wrap the helpers read before and after the layout, the
+ *  line children's strings, lengths and bounds, and the children in the
+ *  lines' order): a '\n' deleted (two paragraphs joined) and typed again, one
+ *  typed inside a paragraph, edits at the start and the end (a final '\n'
+ *  included), multi-byte UTF-8 typed and deleted, several lines pasted, two
+ *  edits with no wrap between, a new font (a whole wrap), and a seeded random
+ *  run of inserts and deletes on the real renderer's measures. An edit in the
+ *  second paragraph keeps every line child before it and writes no glyph of
+ *  theirs. tests/unit/textWrapEdits.cpp runs the long random check and the
+ *  counts on the StubRenderer.
  */
 #include <doctest/doctest.h>
 
@@ -38,7 +51,9 @@
 #include <gweni/controls/textBox.h>
 #include <gweni/primitiveIds.h>
 #include <gweni/skins/textured/texturedSkin.h>
+#include <gweni/utility.h>
 
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <vector>
@@ -769,4 +784,217 @@ TEST_CASE("TextBoxMultiline: Home, End, Up and Down land on the rows of the wrap
 TEST_CASE("TextBoxMultiline: keys in the frame of an edit land on the rows of the edited text")
 {
     homeEndUpDown(false);
+}
+
+namespace
+{
+
+//! The wrap the helpers read, one "start+length" per line, to compare a wrap
+//! before its layout with a fresh one.
+std::vector<String> wrapData(Text *text)
+{
+    std::vector<String> lines;
+
+    for(unsigned i=0; i < text->numLines(); ++i)
+    {
+        const int line=static_cast<int>(i);
+
+        lines.push_back(std::to_string(text->getStartCharFromLine(line))+"+"
+            +std::to_string(text->getLineLength(line)));
+    }
+    return lines;
+}
+
+//! The scene's Text, edited to `source` (and given a helper's question
+//! before its layout, when asked), against a fresh Text holding it: the same
+//! wrap before the layout and after, and the same line children after it, in
+//! the lines' order among the Text's children.
+void checkAgainstFresh(WrapScene &scene, int width, const String &source, bool askFirst)
+{
+    scene.text->setText(source);
+    if(askFirst)
+        scene.text->getCharacterPosition(static_cast<unsigned>(source.size()));
+
+    WrapScene fresh(width);
+
+    fresh.text->setText(source);
+    fresh.frame();
+
+    CHECK(wrapData(scene.text) == wrapData(fresh.text));
+    scene.frame();
+    CHECK(wrapData(scene.text) == wrapData(fresh.text));
+    CHECK(lineStates(scene.text) == lineStates(fresh.text));
+
+    std::vector<gweni::controls::Base *> order;
+
+    for(Text *line : scene.lines())
+        order.push_back(line);
+    CHECK(std::vector<gweni::controls::Base *>(scene.text->getChildren().begin(),
+        scene.text->getChildren().end()) == order);
+}
+
+}//namespace
+
+TEST_CASE("Wrapped text: each kind of edit matches a fresh wrap of the edited string")
+{
+    const int width=200;
+    WrapScene scene(width);
+    String source=paragraphs;
+
+    scene.frame();
+
+    const size_t firstBreak=source.find('\n');
+
+    SUBCASE("a '\\n' deleted joins two paragraphs, typed again splits them")
+    {
+        source.erase(firstBreak, 1);
+        checkAgainstFresh(scene, width, source, false);
+        source.insert(firstBreak, "\n");
+        checkAgainstFresh(scene, width, source, true);
+    }
+
+    SUBCASE("a '\\n' typed inside a paragraph splits it")
+    {
+        source.insert(source.find("Pack"), "\n");
+        checkAgainstFresh(scene, width, source, true);
+    }
+
+    SUBCASE("at the start and at the end")
+    {
+        source.insert(0, "Remarkably enough, ");
+        checkAgainstFresh(scene, width, source, false);
+        source+=" And then some more words at the end.";
+        checkAgainstFresh(scene, width, source, true);
+        source+="\n";
+        checkAgainstFresh(scene, width, source, false);
+        source.erase(0, 11);
+        checkAgainstFresh(scene, width, source, true);
+    }
+
+    SUBCASE("multi-byte UTF-8")
+    {
+        source.insert(source.find("fox"), "\xC3\xA9t\xC3\xA9 \xE2\x82\xAC\xF0\x9F\x98\x80 ");
+        checkAgainstFresh(scene, width, source, true);
+        source.erase(source.find("\xE2\x82\xAC"), 3);
+        checkAgainstFresh(scene, width, source, false);
+    }
+
+    SUBCASE("several lines pasted")
+    {
+        source.insert(source.find("How"), "First pasted line.\nSecond pasted line, longer than "
+            "the width it is wrapped at.\n\nAfter a blank one.\n");
+        checkAgainstFresh(scene, width, source, true);
+    }
+
+    SUBCASE("two edits before a wrap")
+    {
+        String first=source;
+
+        first.insert(source.find("Sphinx"), "Then ");
+        scene.text->setText(first);
+        source=first;
+        source.insert(4, "very ");
+        checkAgainstFresh(scene, width, source, false);
+    }
+
+    SUBCASE("a new font wraps it whole")
+    {
+        gweni::Font bigger=scene.text->getFont();
+
+        bigger.size+=4;
+        source.insert(0, "Big ");
+        scene.text->setText(source);
+        scene.text->setFont(bigger);
+        scene.frame();
+
+        WrapScene fresh(width);
+
+        fresh.text->setFont(bigger);
+        fresh.text->setText(source);
+        fresh.frame();
+
+        CHECK(lineStates(scene.text) == lineStates(fresh.text));
+        // the font outlives the canvases' last frames
+        scene.text->setFont(gweni::test::openSans());
+        fresh.text->setFont(gweni::test::openSans());
+        scene.frame();
+        fresh.frame();
+    }
+}
+
+TEST_CASE("Wrapped text: an edit in one paragraph keeps the other lines and writes no glyph of theirs")
+{
+    const int width=200;
+    WrapScene scene(width);
+
+    scene.frame();
+    scene.frame();
+
+    const std::vector<Text *> before=scene.lines();
+    const size_t at=paragraphs.find("Sphinx");
+    const int firstEdited=scene.text->getLineFromChar(static_cast<int>(at));
+    String source=paragraphs;
+
+    // a word into the second paragraph's first line
+    source.insert(at+7, "big ");
+    scene.text->setText(source);
+    scene.frame();
+    scene.checkLines(width, source);
+
+    const std::vector<Text *> after=scene.lines();
+
+    REQUIRE(after.size() >= before.size());
+    for(int i=0; i < firstEdited; ++i)
+    {
+        CAPTURE(i);
+        CHECK(after[i] == before[i]);
+    }
+
+    // only the lines of the edited paragraph were written
+    size_t editedGlyphs=0;
+
+    for(size_t i=firstEdited; i < after.size(); ++i)
+        editedGlyphs+=after[i]->getText().size();
+    CHECK(gweni::test::gpuRenderer().getFrameStats().textSlotsWritten <= editedGlyphs);
+}
+
+TEST_CASE("Wrapped text: random edits on the real renderer match a fresh wrap")
+{
+    const int width=180;
+    WrapScene scene(width);
+    String source=paragraphs;
+    // a fixed sequence, the same on every run
+    uint32_t seed=12345u;
+    const auto below=[&](size_t n)
+    {
+        seed=seed*1664525u+1013904223u;
+        return n == 0 ? size_t(0) : static_cast<size_t>((seed >> 8)%n);
+    };
+    const char *const inserts[]={"a", "word ", " ", "\n", "\xC3\xA9", "\xF0\x9F\x98\x80 ",
+        "two\nlines ", "averyveryverylongwordindeed "};
+
+    scene.frame();
+
+    for(int step=0; step < 40; ++step)
+    {
+        CAPTURE(step);
+
+        const size_t at=gweni::utf8Snap(source, below(source.size()+1));
+
+        if(below(3) == 0)
+        {
+            size_t end=at;
+
+            for(size_t n=1+below(10); n > 0 && end < source.size(); --n)
+                end=gweni::utf8Next(source, end);
+            source.erase(at, end-at);
+        }
+        else
+        {
+            source.insert(at, inserts[below(sizeof(inserts)/sizeof(inserts[0]))]);
+        }
+
+        CAPTURE(source);
+        checkAgainstFresh(scene, width, source, below(2) == 0);
+    }
 }

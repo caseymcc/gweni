@@ -80,7 +80,8 @@ const char *const g_counterNames[]=
     "visited", "children_scanned", "controls_changed", "created", "visibility", "geometry", "background", "text",
     "prim_slots_written", "text_slots_written", "upload_calls", "upload_bytes", "mirror_bytes",
     "draw_calls", "text_draws", "atlas_upload_calls", "atlas_upload_bytes", "buffer_regrows",
-    "layout_passes", "layout_capped", "render_layout", "layout_visited", "measure_calls", "z_visited", "z_changed", "anims_run", "hit_tests", "prim_ids", "text_ids",
+    "layout_passes", "layout_capped", "render_layout", "layout_visited",
+    "measure_calls", "measure_calls_input", "measure_calls_update", "measure_calls_render", "z_visited", "z_changed", "anims_run", "hit_tests", "prim_ids", "text_ids",
     "allocs", "alloc_bytes",
     "allocs_input", "allocs_update", "allocs_render", "allocs_flush", "allocs_gpu"
 };
@@ -100,12 +101,13 @@ void collectCounters(FrameRecord &record, const bench::PhaseTotals &phases,
     const gweni::controls::LayoutStats &layout=canvas.getLayoutStats();
     const gweni::controls::UpdateStats &update=canvas.getUpdateStats();
 
-    size_t allocs=0, allocBytes=0;
+    size_t allocs=0, allocBytes=0, measures=0;
     for(size_t i=0; i<g_framePhaseCount; ++i)
     {
         record.us[i]=phases.us[size_t(g_framePhases[i])];
         allocs+=phases.allocs[size_t(g_framePhases[i])];
         allocBytes+=phases.allocBytes[size_t(g_framePhases[i])];
+        measures+=phases.measures[size_t(g_framePhases[i])];
     }
 
     const size_t values[g_counterCount]=
@@ -116,7 +118,8 @@ void collectCounters(FrameRecord &record, const bench::PhaseTotals &phases,
         gpu.mirrorBytes, gpu.drawCalls, gpu.textDraws, gpu.atlasUploadCalls, gpu.atlasUploadBytes,
         gpu.bufferRegrows,
         size_t(layout.passes), layout.capped ? 1u : 0u, layout.renderLayout ? 1u : 0u,
-        layout.visited, layout.measureCalls, update.zVisited, update.zChanged, update.animsRun,
+        layout.visited, measures, phases.measures[size_t(Phase::Input)],
+        phases.measures[size_t(Phase::Update)], phases.measures[size_t(Phase::Render)], update.zVisited, update.zChanged, update.animsRun,
         gweni::input::hitTestVisits()-g_hitTestsAtFrame,
         gweni::primitiveIdCount()-gweni::releasedPrimitiveIdCount(),
         gweni::textIdCount()-gweni::releasedTextIdCount(),
@@ -395,8 +398,11 @@ void printUsage()
         "             the cap, whether the render phase laid out again\n"
         "  layout_visited  controls::LayoutStats: controls the frame's layout passes entered,\n"
         "             one per calculateSize() and one per arrange(), each axis counted\n"
-        "  measure_calls   controls::LayoutStats: renderer measureText() and lineHeight() calls\n"
-        "             the controls made in the update phase and any render-phase layout\n"
+        "  measure_calls   renderer measureText() and lineHeight() calls the controls made in\n"
+        "             the frame (controls::measureTextCalls()), every phase, and\n"
+        "             measure_calls_input/_update/_render in each: an edit wraps in the\n"
+        "             input phase, layout in the update phase and any render-phase layout\n"
+        "             in the render phase (LayoutStats::measureCalls holds the last two)\n"
         "  z_visited  controls::UpdateStats: controls the z renumber entered\n"
         "  z_changed  controls::UpdateStats: of those, the controls whose z or overlay z it changed\n"
         "  anims_run  controls::UpdateStats: animations the update phase ran\n"

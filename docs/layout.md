@@ -384,9 +384,27 @@ to the order a pass runs in.
   edited string. That re-wrap touches no child; the X arrange then makes the
   children show the data, and does not wrap again for a width it already
   holds (`Text::wrapCount`). Before the first wrapped layout no width is
-  known, and the helpers read the string unwrapped. The
-  lines there are reused: each gets its new string and row, which writes
-  nothing for a line that did not change, and only the extra lines are
+  known, and the helpers read the string unwrapped.
+  An edit is wrapped again by the paragraph (`Text::wrapEdit`): `setText`
+  finds the bytes that changed by comparing the old and new string from both
+  ends (no measuring, no allocation; two edits with no wrap between are
+  merged), and the next wrap re-wraps only the paragraphs they touch, from the
+  start of the one holding the first changed byte to the first `'\n'` after
+  the last, with the same code and measures as a whole-string wrap (a line
+  restarts at each `'\n'` and no word crosses one), so it gives the same lines.
+  Those lines are spliced in place of the old ones; the others hold the same
+  characters and are kept. The X arrange then syncs only those lines'
+  children (`Text::syncLines`): the edited lines' children are reused in
+  order, the surplus deleted or the shortfall made there, so a line below the
+  edit keeps its own child, and is moved a row only when the number of lines
+  above it changed; a child already showing its string on its row is not
+  touched. So a keystroke costs its paragraph, not the document
+  (`tests/unit/textWrapEdits.cpp`, `tests/textWrap.cpp`), except that rows below
+  an edit that changed its paragraph's line count all move (their glyphs are
+  rewritten), and a string with no `'\n'` is one paragraph, wrapped again whole.
+  A first wrap, a new width, font or wrap flag wraps the whole string, and the
+  lines there are reused by index: each gets its new string and row, which
+  writes nothing for a line that did not change, and only the extra lines are
   created or the surplus ones deleted. `setText` invalidates layout, so an
   edit is laid out by the next frame. Each line is an owner-placed child
   (`Placement::Owner`) placed at `(0, i * lineHeight)` and given that row

@@ -3,11 +3,13 @@
  *  Copyright (c) 2010 Facepunch Studios
  *  MIT License, see LICENSE
  *
- *  gweni_bench's phase clock: enterPhase() charges the time and allocations
- *  since the last call to the phase that was running.
+ *  gweni_bench's phase clock: enterPhase() charges the time, allocations and
+ *  measures since the last call to the phase that was running.
  */
 #include "bench.h"
 #include "callgrind.h"
+
+#include <gweni/controls/base.h>
 
 #include <chrono>
 
@@ -49,6 +51,7 @@ Phase g_phase=Phase::None;
 Clock::time_point g_phaseStart=Clock::now();
 size_t g_phaseAllocs=0;
 size_t g_phaseAllocBytes=0;
+size_t g_phaseMeasures=0;
 
 bool g_collectionWanted=false;  // setCollecting()
 bool g_collecting=false;        // whether callgrind collects now
@@ -79,6 +82,7 @@ void startPhase(Phase phase)
     g_phase=phase;
     g_phaseAllocs=allocCount();
     g_phaseAllocBytes=allocBytes();
+    g_phaseMeasures=controls::measureTextCalls();
     g_phaseStart=Clock::now();
 }
 
@@ -111,6 +115,7 @@ void enterPhase(Phase phase)
     g_totals.us[index]+=std::chrono::duration<double, std::micro>(now-g_phaseStart).count();
     g_totals.allocs[index]+=allocCount()-g_phaseAllocs;
     g_totals.allocBytes[index]+=allocBytes()-g_phaseAllocBytes;
+    g_totals.measures[index]+=controls::measureTextCalls()-g_phaseMeasures;
 
     startPhase(phase);
     syncCollection();

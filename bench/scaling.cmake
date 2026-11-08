@@ -31,7 +31,9 @@
 #      atlas_upload_bytes
 #    layout_passes, layout_capped,     yes      any increase
 #      render_layout
-#    layout_visited, measure_calls     yes      any increase
+#    layout_visited, measure_calls,    yes      any increase
+#      measure_calls_<phase> (input,
+#      update, render)
 #    z_visited, z_changed              yes      any increase
 #    anims_run                         yes      any increase
 #    hit_tests                         yes      any increase
@@ -80,16 +82,10 @@ set(EXCLUDED
     type:children_scanned
     drag:children_scanned
     animate:children_scanned
-    # #323 (task #360): a typed character re-wraps the whole
-    # TextBoxMultiline in the input phase
-    type:allocs_input
     # #404: buildTextDrawList rebuilds the font's whole draw list, two
     # allocations per text index chunk, when one run changes
     set-text:allocs_flush
     type:allocs_flush
-    # #323 and #324 (tasks #360, #361, #362): the edited TextBoxMultiline,
-    # which a pass enters, re-measures every one of its lines
-    type:measure_calls
 )
 
 # Keys that are not work counters (see the table above).

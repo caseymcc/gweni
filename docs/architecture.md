@@ -57,7 +57,16 @@ counts the controls the frame's passes entered, one per `calculateSize()` and on
 `Base::measureLineHeight()` (`tests/unit/layoutVisited.cpp`, `tests/unit/layoutWalk.cpp`).
 An unwrapped `Text` with a string measures it once per `calculateSize()`, its height
 being that line box; only an empty one asks for `lineHeight(font)`
-(`tests/unit/textLineHeight.cpp`). `GWENI_LAYOUT_VERIFY=1` (ControlTest `--verify-layout`)
+(`tests/unit/textLineHeight.cpp`). A wrapped `Text` wraps an edit again by the
+paragraph, from the bytes `setText` found changed, and syncs only the line children of
+the lines that changed, so typing into a long `TextBoxMultiline` measures and allocates
+for its paragraph, not the document (`docs/layout.md` → "Text"; a string with no `'\n'`
+is one paragraph). Those measures are made where the edit is, mostly in the input
+phase (`TextBox::insertText` asks for the caret's place), so `gweni_bench` splits
+`measure_calls` by phase (`measure_calls_input`, `_update`, `_render`), and
+`ControlTest --stats`'s `measure_calls=` counts everything since the last frame line;
+`LayoutStats::measureCalls` holds the update phase's and a render-phase layout's.
+`GWENI_LAYOUT_VERIFY=1` (ControlTest `--verify-layout`)
 checks every frame's layout against a pass that enters every control.
 The animation registry (`source/anim.cpp`) holds only
 animations with work to do: a `TextBox`'s caret blink from the focus arriving until it

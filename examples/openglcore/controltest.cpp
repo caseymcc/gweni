@@ -43,7 +43,10 @@
  *                       passes entered, one per calculateSize() and one per
  *                       arrange(), each axis counted (0 with no pass);
  *                       measure_calls= the renderer measureText() and
- *                       lineHeight() calls the controls made in the update
+ *                       lineHeight() calls the controls made since the
+ *                       last frame line (the first: since the control was
+ *                       built), so the frame's total: the scripted input
+ *                       before it (a typed key re-wraps there), the update
  *                       phase and any render-phase layout;
  *                       z_visited= the controls updateCanvas()'s z renumber
  *                       entered (0 unless the tree order changed);
@@ -738,6 +741,10 @@ static std::string requestedBy(const gweni::controls::LayoutStats &layout)
     return std::string(layout.requestedType)+"#"+std::to_string(layout.requestedId);
 }
 
+// measureTextCalls() after the last frame line, or when the frames started:
+// measure_calls= is every measure since, the input before the frame included.
+static size_t g_measuresAtFrame=0;
+
 // One grep-able line per frame, frame index first. The renderer numbers are read
 // after renderCanvas(), so they describe the frame just flushed.
 static void printFrameStats(int frame, const std::string &control,
@@ -746,6 +753,9 @@ static void printFrameStats(int frame, const std::string &control,
     const gweni::controls::LayoutStats &layout,
     const gweni::controls::UpdateStats &update)
 {
+    const size_t measures=gweni::controls::measureTextCalls()-g_measuresAtFrame;
+
+    g_measuresAtFrame=gweni::controls::measureTextCalls();
     std::printf("frame=%d control=%s controls_changed=%zu created=%zu visibility=%zu"
         " geometry=%zu background=%zu text=%zu prim_slots_written=%zu text_slots_written=%zu"
         " upload_calls=%zu upload_bytes=%zu mirror_bytes=%zu draw_calls=%zu"
@@ -761,7 +771,7 @@ static void printFrameStats(int frame, const std::string &control,
         gpu.atlasUploadCalls, gpu.atlasUploadBytes, gpu.bufferRegrows,
         layout.passes, redirtiedBy(layout).c_str(), layout.renderLayout ? 1 : 0,
         layout.requests, requestedBy(layout).c_str(),
-        layout.visited, layout.measureCalls,
+        layout.visited, measures,
         changes.visited, changes.childrenScanned, update.zVisited, update.animsRun,
         gweni::primitiveIdCount()-gweni::releasedPrimitiveIdCount());
     std::fflush(stdout);
@@ -1418,6 +1428,7 @@ static gweni::controls::Base *addControl(Session &s, const std::string &name)
     forgetMouse(s);
     g_clockSeconds=0.0f;
     s.frame=0;
+    g_measuresAtFrame=gweni::controls::measureTextCalls();
     s.label=name;
 
     gweni::controls::Base *control=createControl(s.canvas, name);
@@ -2021,6 +2032,7 @@ static bool runTextSizeScenario(Session &s, const std::string &shotDir, bool &pa
     forgetMouse(s);
     g_clockSeconds=0.0f;
     s.frame=0;
+    g_measuresAtFrame=gweni::controls::measureTextCalls();
     s.label="text-size";
 
     // a Label in the skin's default font beside it, whose run must not be touched
@@ -4553,6 +4565,7 @@ static gweni::controls::Base *addHost(Session &s, const std::string &name, bool 
     forgetMouse(s);
     g_clockSeconds=0.0f;
     s.frame=0;
+    g_measuresAtFrame=gweni::controls::measureTextCalls();
     s.label=name;
 
     gweni::controls::Base *host=s.canvas->newChild<gweni::controls::Base>("HideShowHost");
@@ -4970,6 +4983,7 @@ static void renderEmptyCanvas(Session &s, std::vector<uint8_t> &pixels)
     forgetMouse(s);
     g_clockSeconds=0.0f;
     s.frame=0;
+    g_measuresAtFrame=gweni::controls::measureTextCalls();
     s.label="(empty)";
 
     renderFrames(s, s.frames);
