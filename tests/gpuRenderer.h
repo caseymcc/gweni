@@ -31,6 +31,15 @@ renderer::SlotRenderer &gpuRenderer();
 //! paths.
 renderer::SlotRenderer *newRenderer(ResourcePaths &paths, const Rect &viewRect);
 
+//! As newRenderer, on the same device as if it had no dual-source blending:
+//! an OpenGLCore constructed with GWENI_GL_NO_DUAL_SOURCE=1, a renderer::Vulkan
+//! on a copy of the device with VulkanDevice::dualSourceBlend off.
+renderer::SlotRenderer *newRendererWithoutDualSource(ResourcePaths &paths, const Rect &viewRect);
+
+//! Whether gpuRenderer()'s device has dual-source blending (GL's
+//! glCapabilities(), Vulkan's dualSrcBlend feature)
+bool deviceHasDualSource();
+
 //! OpenSans (resources/OpenSans.ttf), already loaded through loadFont.
 const Font &openSans();
 

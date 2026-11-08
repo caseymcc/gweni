@@ -127,8 +127,13 @@ private:
 //! constants. The shader bodies are OpenGLCore's (shaders/*.glsl), compiled to
 //! SPIR-V at build time behind a Vulkan prologue.
 //
-//! Text is not drawn yet: the atlases are made, uploaded and read back, the text
-//! draws record nothing (#372).
+//! The font atlases are R8 (coverage and distance fields) or RGBA8 (an LCD
+//! atlas's RGB, expanded on upload), their dirty row bands copied through the
+//! same staging memory. Each atlas's text is drawn with a descriptor set of its
+//! own for that frame (the atlas and the glyph slots' clip-box table), one
+//! vkCmdDrawIndexed per range of its draw list, an LCD atlas's with dual-source
+//! blending. A texture freed while a frame in flight may still sample it (a
+//! font's atlas, an image) is destroyed once that frame's fence has signalled.
 //
 class GWENI_EXPORT Vulkan: public SlotRenderer
 {
@@ -228,6 +233,13 @@ private:
         size_t stagingBlock=0;
         VkDeviceSize stagingUsed=0;
         VkDescriptorSet primitiveSet=VK_NULL_HANDLE;
+        //! the text draws' descriptor sets, one per atlas drawn, from pools of
+        //! TextSetsPerPool sets reset as the frame begins
+        std::vector<VkDescriptorPool> textPools;
+        size_t textSets=0;
+        //! Textures freed while this frame might still sample them: destroyed
+        //! once its fence has signalled (retireHandle)
+        std::vector<Texture> retired;
     };
 
     struct PrimitivePush
@@ -235,6 +247,18 @@ private:
         float projection[16];
         int32_t slotBase;
     };
+
+    //! Vulkan/textPush.glsl: one block for both stages of the text pipelines
+    struct TextPush
+    {
+        float projection[16];
+        int32_t slotBase;
+        int32_t textMode;
+        float textContrast;
+    };
+
+    //! the descriptor sets of a text pool
+    static constexpr size_t TextSetsPerPool=64;
 
     VkDevice device() const { return m_device.device; }
     //! Records a VkResult that is an error (deviceError()), and returns whether it succeeded.
@@ -265,7 +289,7 @@ private:
     //! Submits what the frame recorded, if anything.
     void submit();
 
-    //! The primitive slots' pipeline and its layout, for the target's formats.
+    //! The primitive slots' and the glyph slots' pipelines and their layouts, for the target's formats.
     bool createPipelines();
     void destroyPipelines();
 
@@ -273,6 +297,12 @@ private:
     const Texture *texture(TextureHandle handle) const;
     TextureHandle addTexture(Texture &&texture);
     void destroyHandle(TextureHandle handle);
+    //! Destroys a texture once no frame in flight can sample it: at once if none
+    //! is, otherwise when the newest one that might (being recorded, or the last
+    //! submitted) is done. Its handle names nothing from now on.
+    void retireHandle(TextureHandle handle);
+    //! A descriptor set of the text set layout for this frame's draws
+    VkDescriptorSet allocateTextSet();
 
     const VulkanDevice &m_device;
     VulkanTarget *m_target;
@@ -294,6 +324,12 @@ private:
     VkDescriptorPool m_descriptorPool=VK_NULL_HANDLE;
     VkPipelineLayout m_primitiveLayout=VK_NULL_HANDLE;
     VkPipeline m_primitivePipeline=VK_NULL_HANDLE;
+    //! the text pipelines: SRC_ALPHA blended, and an LCD atlas's dual-source one
+    //! (VK_NULL_HANDLE without dualSrcBlend)
+    VkDescriptorSetLayout m_textSetLayout=VK_NULL_HANDLE;
+    VkPipelineLayout m_textLayout=VK_NULL_HANDLE;
+    VkPipeline m_textPipeline=VK_NULL_HANDLE;
+    VkPipeline m_lcdTextPipeline=VK_NULL_HANDLE;
     VkFormat m_pipelineColorFormat=VK_FORMAT_UNDEFINED;
     VkFormat m_pipelineDepthFormat=VK_FORMAT_UNDEFINED;
 
@@ -319,8 +355,12 @@ private:
     TextureHandle m_nextHandle=1;
 
     PrimitivePush m_push{};
+    TextPush m_textPush{};
+    //! the text pass's bound pipeline, and whether the atlas being drawn has a
+    //! texture (beginTextAtlas)
+    VkPipeline m_boundTextPipeline=VK_NULL_HANDLE;
+    bool m_drawingAtlas=false;
     bool m_error=false;
-    bool m_warnedText=false;
 };
 
 

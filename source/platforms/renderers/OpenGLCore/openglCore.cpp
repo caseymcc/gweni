@@ -662,6 +662,7 @@ const char *primitiveFragmentPrologue=
     "uniform usampler2D clipBoxes;\n";
 const char *textVertexPrologue=
     "#define VERTEX_ID gl_VertexID\n"
+    "#define CLIP_SPACE_TO_API(p)\n"
     "uniform mat4 projection;\n"
     "uniform int slotBase;\n";
 const char *textFragmentPrologue=

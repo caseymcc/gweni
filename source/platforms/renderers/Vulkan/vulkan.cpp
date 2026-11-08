@@ -7,6 +7,9 @@
 
 #include "primitive.frag.h"
 #include "primitive.vert.h"
+#include "text.frag.h"
+#include "text.vert.h"
+#include "textSingle.frag.h"
 
 #include <algorithm>
 #include <cassert>
@@ -527,6 +530,12 @@ Vulkan::~Vulkan()
 
     // each font's atlas, then each image, through the hooks
     releaseResources();
+    for(Frame &frame:m_frames)
+    {
+        for(Texture &retired:frame.retired)
+            destroyTexture(retired);
+        frame.retired.clear();
+    }
 
     for(TextureHandle handle:{ m_clipTexture, m_textClipTexture, m_blackTexture })
         destroyHandle(handle);
@@ -543,6 +552,9 @@ Vulkan::~Vulkan()
         frame.staging.clear();
         if(frame.fence != VK_NULL_HANDLE)
             vkDestroyFence(device(), frame.fence, nullptr);
+        for(VkDescriptorPool pool:frame.textPools)
+            vkDestroyDescriptorPool(device(), pool, nullptr);
+        frame.textPools.clear();
     }
 
     destroyPipelines();
@@ -551,6 +563,7 @@ Vulkan::~Vulkan()
     vkDestroySampler(device(), m_clipSampler, nullptr);
     vkDestroyDescriptorPool(device(), m_descriptorPool, nullptr);
     vkDestroyDescriptorSetLayout(device(), m_primitiveSetLayout, nullptr);
+    vkDestroyDescriptorSetLayout(device(), m_textSetLayout, nullptr);
     // frees the frames' command buffers
     vkDestroyCommandPool(device(), m_commandPool, nullptr);
 }
@@ -776,6 +789,68 @@ void Vulkan::destroyHandle(TextureHandle handle)
         m_writtenTextures.end());
 }
 
+void Vulkan::retireHandle(TextureHandle handle)
+{
+    auto it=m_textures.find(handle);
+
+    if(it == m_textures.end())
+        return;
+    m_writtenTextures.erase(std::remove(m_writtenTextures.begin(), m_writtenTextures.end(), handle),
+        m_writtenTextures.end());
+
+    // The queue runs the frames in order, so once the newest one that may sample
+    // it is done, every earlier one is: the frame being recorded, else the one
+    // submitted last (its fence is the next waited of the two before its slot is
+    // used again). With neither, nothing on the device uses it.
+    Frame &newest=m_recording?m_frames[m_frameIndex]:
+        m_frames[(m_frameIndex+FramesInFlight-1)%FramesInFlight];
+
+    if(m_recording || newest.submitted)
+        newest.retired.push_back(std::move(it->second));
+    else
+        destroyTexture(it->second);
+    m_textures.erase(it);
+}
+
+VkDescriptorSet Vulkan::allocateTextSet()
+{
+    Frame &current=frame();
+    const size_t pool=current.textSets/TextSetsPerPool;
+
+    // a pool more when the frame's are full; they stay, reset as the frame begins
+    if(pool >= current.textPools.size())
+    {
+        VkDescriptorPoolSize size{};
+        size.type=VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        size.descriptorCount=(uint32_t)(2*TextSetsPerPool);
+
+        VkDescriptorPoolCreateInfo info{};
+        info.sType=VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+        info.maxSets=(uint32_t)TextSetsPerPool;
+        info.poolSizeCount=1;
+        info.pPoolSizes=&size;
+
+        VkDescriptorPool made=VK_NULL_HANDLE;
+
+        if(!check(vkCreateDescriptorPool(device(), &info, nullptr, &made), "vkCreateDescriptorPool"))
+            return VK_NULL_HANDLE;
+        current.textPools.push_back(made);
+    }
+
+    VkDescriptorSetAllocateInfo allocate{};
+    allocate.sType=VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    allocate.descriptorPool=current.textPools[pool];
+    allocate.descriptorSetCount=1;
+    allocate.pSetLayouts=&m_textSetLayout;
+
+    VkDescriptorSet set=VK_NULL_HANDLE;
+
+    if(!check(vkAllocateDescriptorSets(device(), &allocate, &set), "vkAllocateDescriptorSets"))
+        return VK_NULL_HANDLE;
+    ++current.textSets;
+    return set;
+}
+
 void Vulkan::init()
 {
     // nothing of the mirror is on the buffers below yet, and the view is the clip region
@@ -815,6 +890,11 @@ void Vulkan::init()
     setLayout.bindingCount=2;
     setLayout.pBindings=bindings;
     check(vkCreateDescriptorSetLayout(device(), &setLayout, nullptr, &m_primitiveSetLayout),
+        "vkCreateDescriptorSetLayout");
+
+    // the text draws' set 0: the atlas being drawn and the glyph slots' clip boxes
+    bindings[1].descriptorCount=1;
+    check(vkCreateDescriptorSetLayout(device(), &setLayout, nullptr, &m_textSetLayout),
         "vkCreateDescriptorSetLayout");
 
     VkDescriptorPoolSize poolSize{};
@@ -957,6 +1037,9 @@ void Vulkan::setTarget(VulkanTarget &target)
 
 bool Vulkan::createPipelines()
 {
+    // text.frag's SDF_SPREAD
+    static_assert(kSdfSpread == 6, "Vulkan/textFragment.glsl hard-codes SDF_SPREAD 6.0");
+
     m_pipelineColorFormat=m_target->colorFormat();
     m_pipelineDepthFormat=m_target->depthFormat();
 
@@ -973,43 +1056,12 @@ bool Vulkan::createPipelines()
     if(!check(vkCreatePipelineLayout(device(), &layout, nullptr, &m_primitiveLayout), "vkCreatePipelineLayout"))
         return false;
 
-    VkShaderModule vert=createShader(primitive_vert, sizeof(primitive_vert));
-    VkShaderModule frag=createShader(primitive_frag, sizeof(primitive_frag));
-
-    VkPipelineShaderStageCreateInfo stages[2]{};
-    stages[0].sType=VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-    stages[0].stage=VK_SHADER_STAGE_VERTEX_BIT;
-    stages[0].module=vert;
-    stages[0].pName="main";
-    stages[1].sType=VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-    stages[1].stage=VK_SHADER_STAGE_FRAGMENT_BIT;
-    stages[1].module=frag;
-    stages[1].pName="main";
-
-    // the Vertex layout, attribute for attribute as OpenGLCore's vertex arrays read it
-    VkVertexInputBindingDescription binding{};
-    binding.binding=0;
-    binding.stride=sizeof(Vertex);
-    binding.inputRate=VK_VERTEX_INPUT_RATE_VERTEX;
-
-    const VkVertexInputAttributeDescription attributes[]=
-    {
-        { 0, 0, VK_FORMAT_R16_UINT, (uint32_t)offsetof(Vertex, style) },
-        { 1, 0, m_positionFormat, (uint32_t)offsetof(Vertex, x) },
-        { 2, 0, VK_FORMAT_R16G16_UINT, (uint32_t)offsetof(Vertex, tx) },
-        { 3, 0, VK_FORMAT_R16G16_SINT, (uint32_t)offsetof(Vertex, lx) },
-        { 4, 0, VK_FORMAT_R16G16_UINT, (uint32_t)offsetof(Vertex, radius) },
-        { 5, 0, VK_FORMAT_R16G16_UINT, (uint32_t)offsetof(Vertex, cx) },
-        { 6, 0, VK_FORMAT_R16G16_UINT, (uint32_t)offsetof(Vertex, bx) },
-        { 7, 0, VK_FORMAT_R16G16_UINT, (uint32_t)offsetof(Vertex, dx) },
-    };
-
-    VkPipelineVertexInputStateCreateInfo vertexInput{};
-    vertexInput.sType=VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-    vertexInput.vertexBindingDescriptionCount=1;
-    vertexInput.pVertexBindingDescriptions=&binding;
-    vertexInput.vertexAttributeDescriptionCount=(uint32_t)(sizeof(attributes)/sizeof(attributes[0]));
-    vertexInput.pVertexAttributeDescriptions=attributes;
+    // the text draws read their push constants in both stages
+    push.stageFlags=VK_SHADER_STAGE_VERTEX_BIT|VK_SHADER_STAGE_FRAGMENT_BIT;
+    push.size=sizeof(TextPush);
+    layout.pSetLayouts=&m_textSetLayout;
+    if(!check(vkCreatePipelineLayout(device(), &layout, nullptr, &m_textLayout), "vkCreatePipelineLayout"))
+        return false;
 
     VkPipelineInputAssemblyStateCreateInfo assembly{};
     assembly.sType=VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
@@ -1031,7 +1083,7 @@ bool Vulkan::createPipelines()
     multisample.sType=VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
     multisample.rasterizationSamples=VK_SAMPLE_COUNT_1_BIT;
 
-    // GL_LESS, writing depth (the fragment shader's gl_FragDepth)
+    // GL_LESS, writing depth (the primitive shader's gl_FragDepth, the text's own)
     VkPipelineDepthStencilStateCreateInfo depth{};
     depth.sType=VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
     depth.depthTestEnable=VK_TRUE;
@@ -1067,6 +1119,18 @@ bool Vulkan::createPipelines()
     rendering.pColorAttachmentFormats=&m_pipelineColorFormat;
     rendering.depthAttachmentFormat=m_pipelineDepthFormat;
 
+    VkPipelineShaderStageCreateInfo stages[2]{};
+    stages[0].sType=VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    stages[0].stage=VK_SHADER_STAGE_VERTEX_BIT;
+    stages[0].pName="main";
+    stages[1].sType=VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    stages[1].stage=VK_SHADER_STAGE_FRAGMENT_BIT;
+    stages[1].pName="main";
+
+    VkPipelineVertexInputStateCreateInfo vertexInput{};
+    vertexInput.sType=VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+    vertexInput.vertexBindingDescriptionCount=1;
+
     VkGraphicsPipelineCreateInfo info{};
     info.sType=VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
     info.pNext=&rendering;
@@ -1080,24 +1144,109 @@ bool Vulkan::createPipelines()
     info.pDepthStencilState=&depth;
     info.pColorBlendState=&blend;
     info.pDynamicState=&dynamic;
-    info.layout=m_primitiveLayout;
 
-    const bool made=check(vkCreateGraphicsPipelines(device(), VK_NULL_HANDLE, 1, &info, nullptr,
-        &m_primitivePipeline), "vkCreateGraphicsPipelines");
+    bool made=true;
 
-    vkDestroyShaderModule(device(), vert, nullptr);
-    vkDestroyShaderModule(device(), frag, nullptr);
+    // The primitive slots: the Vertex layout, attribute for attribute as
+    // OpenGLCore's vertex arrays read it
+    {
+        VkVertexInputBindingDescription binding{};
+        binding.binding=0;
+        binding.stride=sizeof(Vertex);
+        binding.inputRate=VK_VERTEX_INPUT_RATE_VERTEX;
+
+        const VkVertexInputAttributeDescription attributes[]=
+        {
+            { 0, 0, VK_FORMAT_R16_UINT, (uint32_t)offsetof(Vertex, style) },
+            { 1, 0, m_positionFormat, (uint32_t)offsetof(Vertex, x) },
+            { 2, 0, VK_FORMAT_R16G16_UINT, (uint32_t)offsetof(Vertex, tx) },
+            { 3, 0, VK_FORMAT_R16G16_SINT, (uint32_t)offsetof(Vertex, lx) },
+            { 4, 0, VK_FORMAT_R16G16_UINT, (uint32_t)offsetof(Vertex, radius) },
+            { 5, 0, VK_FORMAT_R16G16_UINT, (uint32_t)offsetof(Vertex, cx) },
+            { 6, 0, VK_FORMAT_R16G16_UINT, (uint32_t)offsetof(Vertex, bx) },
+            { 7, 0, VK_FORMAT_R16G16_UINT, (uint32_t)offsetof(Vertex, dx) },
+        };
+
+        vertexInput.pVertexBindingDescriptions=&binding;
+        vertexInput.vertexAttributeDescriptionCount=(uint32_t)(sizeof(attributes)/sizeof(attributes[0]));
+        vertexInput.pVertexAttributeDescriptions=attributes;
+
+        VkShaderModule vert=createShader(primitive_vert, sizeof(primitive_vert));
+        VkShaderModule frag=createShader(primitive_frag, sizeof(primitive_frag));
+
+        stages[0].module=vert;
+        stages[1].module=frag;
+        info.layout=m_primitiveLayout;
+        made=check(vkCreateGraphicsPipelines(device(), VK_NULL_HANDLE, 1, &info, nullptr,
+            &m_primitivePipeline), "vkCreateGraphicsPipelines") && made;
+        vkDestroyShaderModule(device(), vert, nullptr);
+        vkDestroyShaderModule(device(), frag, nullptr);
+    }
+
+    // The glyph slots: freetype-gl's glyph_vertex_t, as OpenGLCore's text vertex
+    // arrays read it (position, texture coordinates, colour, gamma)
+    {
+        VkVertexInputBindingDescription binding{};
+        binding.binding=0;
+        binding.stride=sizeof(ftgl::glyph_vertex_t);
+        binding.inputRate=VK_VERTEX_INPUT_RATE_VERTEX;
+
+        const VkVertexInputAttributeDescription attributes[]=
+        {
+            { 0, 0, VK_FORMAT_R32G32B32_SFLOAT, (uint32_t)offsetof(ftgl::glyph_vertex_t, x) },
+            { 1, 0, VK_FORMAT_R32G32_SFLOAT, (uint32_t)offsetof(ftgl::glyph_vertex_t, u) },
+            { 2, 0, VK_FORMAT_R32G32B32A32_SFLOAT, (uint32_t)offsetof(ftgl::glyph_vertex_t, r) },
+            { 3, 0, VK_FORMAT_R32_SFLOAT, (uint32_t)offsetof(ftgl::glyph_vertex_t, gamma) },
+        };
+
+        vertexInput.pVertexBindingDescriptions=&binding;
+        vertexInput.vertexAttributeDescriptionCount=(uint32_t)(sizeof(attributes)/sizeof(attributes[0]));
+        vertexInput.pVertexAttributeDescriptions=attributes;
+
+        // the fragment shader with a second output wherever dual-source blending
+        // is there, as OpenGLCore compiles its text program, so the two pipelines
+        // run the same code
+        VkShaderModule vert=createShader(text_vert, sizeof(text_vert));
+        VkShaderModule frag=m_device.dualSourceBlend?createShader(text_frag, sizeof(text_frag)):
+            createShader(textSingle_frag, sizeof(textSingle_frag));
+
+        stages[0].module=vert;
+        stages[1].module=frag;
+        info.layout=m_textLayout;
+        made=check(vkCreateGraphicsPipelines(device(), VK_NULL_HANDLE, 1, &info, nullptr,
+            &m_textPipeline), "vkCreateGraphicsPipelines") && made;
+
+        // an LCD atlas's runs: glBlendFunc(GL_SRC1_COLOR, GL_ONE_MINUS_SRC1_COLOR),
+        // each channel by its own coverage, the alpha by the second output's
+        if(m_device.dualSourceBlend)
+        {
+            blendAttachment.srcColorBlendFactor=VK_BLEND_FACTOR_SRC1_COLOR;
+            blendAttachment.dstColorBlendFactor=VK_BLEND_FACTOR_ONE_MINUS_SRC1_COLOR;
+            blendAttachment.srcAlphaBlendFactor=VK_BLEND_FACTOR_SRC1_COLOR;
+            blendAttachment.dstAlphaBlendFactor=VK_BLEND_FACTOR_ONE_MINUS_SRC1_COLOR;
+            made=check(vkCreateGraphicsPipelines(device(), VK_NULL_HANDLE, 1, &info, nullptr,
+                &m_lcdTextPipeline), "vkCreateGraphicsPipelines") && made;
+        }
+        vkDestroyShaderModule(device(), vert, nullptr);
+        vkDestroyShaderModule(device(), frag, nullptr);
+    }
     return made;
 }
 
 void Vulkan::destroyPipelines()
 {
-    if(m_primitivePipeline != VK_NULL_HANDLE)
-        vkDestroyPipeline(device(), m_primitivePipeline, nullptr);
-    if(m_primitiveLayout != VK_NULL_HANDLE)
-        vkDestroyPipelineLayout(device(), m_primitiveLayout, nullptr);
-    m_primitivePipeline=VK_NULL_HANDLE;
-    m_primitiveLayout=VK_NULL_HANDLE;
+    for(VkPipeline *pipeline:{ &m_primitivePipeline, &m_textPipeline, &m_lcdTextPipeline })
+    {
+        if(*pipeline != VK_NULL_HANDLE)
+            vkDestroyPipeline(device(), *pipeline, nullptr);
+        *pipeline=VK_NULL_HANDLE;
+    }
+    for(VkPipelineLayout *layout:{ &m_primitiveLayout, &m_textLayout })
+    {
+        if(*layout != VK_NULL_HANDLE)
+            vkDestroyPipelineLayout(device(), *layout, nullptr);
+        *layout=VK_NULL_HANDLE;
+    }
 }
 
 //-------------------------------------------------------------------------------
@@ -1117,6 +1266,13 @@ Vulkan::Frame &Vulkan::frame()
         check(vkResetFences(device(), 1, &frame.fence), "vkResetFences");
         frame.submitted=false;
     }
+    // nothing samples what was freed while that frame was in flight any more
+    for(Texture &retired:frame.retired)
+        destroyTexture(retired);
+    frame.retired.clear();
+    for(VkDescriptorPool pool:frame.textPools)
+        vkResetDescriptorPool(device(), pool, 0);
+    frame.textSets=0;
 
     // what the last use spread over several staging blocks fits in one from now on
     if(frame.staging.size() > 1)
@@ -1594,11 +1750,8 @@ void Vulkan::uploadAtlasRows(TextureHandle handle, const texture_atlas_t &atlas,
 
 void Vulkan::destroyAtlasTexture(TextureHandle handle)
 {
-    if(!texture(handle))
-        return;
-    // a frame in flight may sample it; this one has not drawn yet
-    vkQueueWaitIdle(m_device.queue);
-    destroyHandle(handle);
+    // a frame in flight may still sample it
+    retireHandle(handle);
 }
 
 TextureHandle Vulkan::createImageTexture(const SlotTextureData &image, bool rgba)
@@ -1695,10 +1848,7 @@ TextureHandle Vulkan::createImageTexture(const SlotTextureData &image, bool rgba
 
 void Vulkan::destroyImageTexture(TextureHandle handle)
 {
-    if(!texture(handle))
-        return;
-    vkQueueWaitIdle(m_device.queue);
-    destroyHandle(handle);
+    retireHandle(handle);
 }
 
 bool Vulkan::readTextureRgba(TextureHandle handle, int width, int height, std::vector<uint8_t> &rgba)
@@ -1827,25 +1977,93 @@ void Vulkan::endPrimitiveDraws()
 
 void Vulkan::beginTextDraws()
 {
+    Frame &current=frame();
+
+    beginRendering();
+    vkCmdBindIndexBuffer(current.draw, m_textQuadIndexBuffer.buffer, 0, VK_INDEX_TYPE_UINT16);
+    m_boundTextPipeline=VK_NULL_HANDLE;
+    m_drawingAtlas=false;
+
+    memcpy(m_textPush.projection, m_push.projection, sizeof(m_textPush.projection));
+    m_textPush.textContrast=textContrast();
 }
 
-void Vulkan::beginTextAtlas(const FontData & /*font*/)
+void Vulkan::beginTextAtlas(const FontData &fontData)
 {
-}
+    Frame &current=frame();
+    const bool lcd=(fontData.mode == TextMode::LcdRGB) || (fontData.mode == TextMode::LcdBGR);
+    // without dual-source blending an LCD atlas would be blended by its mean
+    // coverage, as on GL; lcdTextUnavailable() keeps the LCD modes from being used
+    const VkPipeline pipeline=(lcd && (m_lcdTextPipeline != VK_NULL_HANDLE))?m_lcdTextPipeline:m_textPipeline;
+    const Texture *atlas=texture(fontData.atlas?(TextureHandle)fontData.atlas->id:0);
+    const Texture *clip=texture(m_textClipTexture);
 
-void Vulkan::drawTextChunk(const TextChunkDraw & /*draw*/)
-{
-    // the text pipeline is #372's; until then the runs are laid out, uploaded and
-    // counted as on GL, and draw nothing
-    if(!m_warnedText)
+    m_drawingAtlas=(atlas != nullptr) && (clip != nullptr) && (m_textVertexBuffer.buffer != VK_NULL_HANDLE);
+    if(!m_drawingAtlas)
+        return;
+
+    const VkDescriptorSet set=allocateTextSet();
+
+    if(set == VK_NULL_HANDLE)
     {
-        std::fprintf(stderr, "gweni: renderer::Vulkan does not draw text yet\n");
-        m_warnedText=true;
+        m_drawingAtlas=false;
+        return;
     }
+
+    // the atlas linear and clamped, as OpenGLCore's GL_LINEAR atlases; the clip
+    // boxes nearest
+    const VkDescriptorImageInfo images[2]=
+    {
+        { m_atlasSampler, atlas->view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL },
+        { m_clipSampler, clip->view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL }
+    };
+    VkWriteDescriptorSet writes[2]{};
+
+    for(uint32_t i=0; i<2; ++i)
+    {
+        writes[i].sType=VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        writes[i].dstSet=set;
+        writes[i].dstBinding=i;
+        writes[i].descriptorCount=1;
+        writes[i].descriptorType=VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        writes[i].pImageInfo=&images[i];
+    }
+    vkUpdateDescriptorSets(device(), 2, writes, 0, nullptr);
+
+    if(pipeline != m_boundTextPipeline)
+    {
+        vkCmdBindPipeline(current.draw, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+        m_boundTextPipeline=pipeline;
+    }
+    vkCmdBindDescriptorSets(current.draw, VK_PIPELINE_BIND_POINT_GRAPHICS, m_textLayout,
+        0, 1, &set, 0, nullptr);
+    m_textPush.textMode=(int32_t)fontData.mode;
+}
+
+void Vulkan::drawTextChunk(const TextChunkDraw &draw)
+{
+    if(!m_drawingAtlas)
+        return;
+
+    Frame &current=frame();
+    const size_t firstSlot=draw.chunk*indexChunkSlots();
+    // the chunk's glyph vertexes from its first slot's, as its GL vertex array points
+    const VkDeviceSize offset=firstSlot*4*sizeof(ftgl::glyph_vertex_t);
+
+    m_textPush.slotBase=(int32_t)firstSlot;
+    vkCmdBindVertexBuffers(current.draw, 0, 1, &m_textVertexBuffer.buffer, &offset);
+    vkCmdPushConstants(current.draw, m_textLayout, VK_SHADER_STAGE_VERTEX_BIT|VK_SHADER_STAGE_FRAGMENT_BIT,
+        0, sizeof(TextPush), &m_textPush);
+    // glMultiDrawElements' ranges, one draw each; the offsets are bytes of 16-bit indexes
+    for(size_t range=0; range<draw.counts.size(); ++range)
+        vkCmdDrawIndexed(current.draw, (uint32_t)draw.counts[range], 1,
+            (uint32_t)(draw.offsets[range]/sizeof(uint16_t)), 0, 0);
 }
 
 void Vulkan::endTextDraws()
 {
+    m_boundTextPipeline=VK_NULL_HANDLE;
+    m_drawingAtlas=false;
 }
 
 void Vulkan::submitFrame()

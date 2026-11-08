@@ -43,6 +43,8 @@ static const Point g_viewSize(448, 160);
 // set in a Vulkan run: the device and the target every renderer draws into
 static renderer::VulkanDevice *g_vulkanDevice=nullptr;
 static renderer::VulkanTarget *g_vulkanTarget=nullptr;
+// g_vulkanDevice's handles, claiming no dualSrcBlend (newRendererWithoutDualSource)
+static renderer::VulkanDevice g_noDualSourceDevice;
 #endif
 
 renderer::SlotRenderer &gpuRenderer()
@@ -57,6 +59,40 @@ renderer::SlotRenderer *newRenderer(ResourcePaths &paths, const Rect &viewRect)
         return new renderer::Vulkan(paths, viewRect, *g_vulkanDevice, *g_vulkanTarget);
 #endif
     return new renderer::OpenGLCore(paths, viewRect);
+}
+
+renderer::SlotRenderer *newRendererWithoutDualSource(ResourcePaths &paths, const Rect &viewRect)
+{
+#ifdef GWENI_HAS_VULKAN
+    if(g_vulkanDevice)
+    {
+        g_noDualSourceDevice=*g_vulkanDevice;
+        g_noDualSourceDevice.dualSourceBlend=false;
+        return new renderer::Vulkan(paths, viewRect, g_noDualSourceDevice, *g_vulkanTarget);
+    }
+#endif
+    // read at construction only, so it is put back at once
+    const char *previous=getenv("GWENI_GL_NO_DUAL_SOURCE");
+    const std::string kept=previous?previous:"";
+
+    setenv("GWENI_GL_NO_DUAL_SOURCE", "1", 1);
+
+    renderer::SlotRenderer *made=new renderer::OpenGLCore(paths, viewRect);
+
+    if(previous)
+        setenv("GWENI_GL_NO_DUAL_SOURCE", kept.c_str(), 1);
+    else
+        unsetenv("GWENI_GL_NO_DUAL_SOURCE");
+    return made;
+}
+
+bool deviceHasDualSource()
+{
+#ifdef GWENI_HAS_VULKAN
+    if(g_vulkanDevice)
+        return g_vulkanDevice->dualSourceBlend;
+#endif
+    return dynamic_cast<renderer::OpenGLCore &>(*g_renderer).glCapabilities().dualSourceBlend;
 }
 
 const Font &openSans()

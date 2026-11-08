@@ -336,8 +336,8 @@ GL-only suite. The tests:
 - `unittests_vulkan` (labels `gpu`, `vulkan`): the same `gweni_unittests` on
   the Vulkan backend (`GWENI_RENDERER=vulkan`: a validated Vulkan device and
   `renderer::Vulkan`, no GL context), so its cases check the same analytic
-  models on both. Until the backend draws text it runs the primitive styles'
-  files only, without the `gl_only` and `needs_text` suites.
+  models on both: every case but the `gl_only` suite (what only GL has: the
+  GLSL dialects, `glMultiDrawElements`, the GL objects a renderer deletes).
 - `vulkan_smoke` (labels `gpu`, `vulkan`): the Vulkan plumbing. It loads the
   loader through volk, creates an instance with `VK_LAYER_KHRONOS_validation`
   (any validation warning or error aborts it), finds a Vulkan 1.3 device with

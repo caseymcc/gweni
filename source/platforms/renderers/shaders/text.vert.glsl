@@ -4,8 +4,9 @@
 //  MIT License, see LICENSE
 //
 //  The glyph slots' vertex shader body, shared by every backend, behind a
-//  backend's prologue (OpenGLCore::shaderSource), which declares projection
-//  and slotBase and defines VERTEX_ID, as for primitive.vert.glsl.
+//  backend's prologue (OpenGLCore::shaderSource, Vulkan/text.vert), which
+//  declares projection and slotBase and defines VERTEX_ID and
+//  CLIP_SPACE_TO_API, as for primitive.vert.glsl.
 //
 layout (location = 0) in vec3 vertPosition;
 layout (location = 1) in vec2 vertTexCoord;
@@ -37,4 +38,5 @@ void main()
     // and its anti-aliased edge by up to 10/255. Coverage and LCD glyphs are on
     // whole pixels already.
     gl_Position = projection * vec4(floor(vertPosition.xy*16.0 + 0.5)/16.0, vertPosition.z, 1.0f);
+    CLIP_SPACE_TO_API(gl_Position);
 }

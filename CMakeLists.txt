@@ -445,6 +445,9 @@ if(GWENI_RENDER_VULKAN)
     set(GWENI_VULKAN_SHADERS
         source/platforms/renderers/Vulkan/primitive.vert
         source/platforms/renderers/Vulkan/primitive.frag
+        source/platforms/renderers/Vulkan/text.vert
+        source/platforms/renderers/Vulkan/text.frag
+        source/platforms/renderers/Vulkan/textSingle.frag
     )
 endif()
 

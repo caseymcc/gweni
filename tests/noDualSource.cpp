@@ -4,24 +4,25 @@
  *  MIT License, see LICENSE
  *
  *  LCD text without dual-source blending: a GLES context without
- *  GL_EXT_blend_func_extended (and WebGL 2) cannot blend each channel by its own
- *  coverage, so OpenGLCore's LCD modes fall back to grayscale.
- *  GWENI_GL_NO_DUAL_SOURCE=1 at construction makes any context look like that,
- *  so the fallback is checked in every tree, whatever the context has.
+ *  GL_EXT_blend_func_extended (and WebGL 2), or a Vulkan device without the
+ *  dualSrcBlend feature, cannot blend each channel by its own coverage, so the
+ *  LCD modes fall back to grayscale. test::newRendererWithoutDualSource makes
+ *  any device look like that (an OpenGLCore constructed with
+ *  GWENI_GL_NO_DUAL_SOURCE=1, a renderer::Vulkan on the device claiming no
+ *  dualSrcBlend, which then draws with its single-output text shader), so the
+ *  fallback is checked on every backend in every tree, whatever the device has.
  *
  *  A renderer constructed with it and GWENI_TEXT_AA=rgb reports no dual-source
  *  blending once init()'d, logs one warning saying why (the first time an LCD
  *  mode is asked for, GWENI_TEXT_AA included, and never again from that
  *  renderer, however often setTextAA asks), and is Grayscale: 12 px text is
  *  drawn from a depth-1 coverage atlas, byte for byte what a renderer started
- *  in grayscale draws. A renderer constructed without the switch, in the same
- *  context, keeps whatever the context has.
- *
- *  GL only (the test suite "gl_only"): the switch and the extension are GL's.
+ *  in grayscale draws. A renderer constructed without the switch, on the same
+ *  device, keeps whatever the device has.
  */
 #include <doctest/doctest.h>
 
-#include "glRenderer.h"
+#include "gpuRenderer.h"
 
 #include <gweni/platforms/commonPlatform.h>
 
@@ -30,8 +31,6 @@
 #include <string>
 #include <vector>
 
-TEST_SUITE_BEGIN("gl_only");
-
 namespace
 {
 
@@ -39,7 +38,6 @@ using gweni::Color;
 using gweni::Font;
 using gweni::Point;
 using gweni::Rect;
-using gweni::renderer::OpenGLCore;
 using gweni::renderer::SlotRenderer;
 using gweni::renderer::TextAA;
 using gweni::renderer::TextMode;
@@ -110,22 +108,21 @@ Font at12()
     return font;
 }
 
-//! A renderer of its own over the shared view, constructed while the
-//! environment holds noDualSource and textAA (null: unset), and init()'d.
+//! A renderer of its own over the shared view, without dual-source blending
+//! (noDualSource) or with what the device has, constructed while the
+//! environment holds textAA (null: gray), not init()'d.
 struct OwnRenderer
 {
     OwnRenderer(bool noDualSource, const char *textAA):
         paths("resources")
     {
-        ScopedEnv dualSource("GWENI_GL_NO_DUAL_SOURCE", noDualSource?"1":"0");
-        std::unique_ptr<ScopedEnv> aa(textAA?new ScopedEnv("GWENI_TEXT_AA", textAA):nullptr);
-        std::unique_ptr<ScopedEnv> gray(textAA?nullptr:new ScopedEnv("GWENI_TEXT_AA", "gray"));
+        ScopedEnv aa("GWENI_TEXT_AA", textAA?textAA:"gray");
+        const Rect view(Point(0, 0), gweni::test::viewSize());
 
-        owned.reset(gweni::test::newRenderer(paths, Rect(Point(0, 0), gweni::test::viewSize())));
+        owned.reset(noDualSource?gweni::test::newRendererWithoutDualSource(paths, view):
+            gweni::test::newRenderer(paths, view));
         // read at construction only: the environment goes back before init()
     }
-
-    OpenGLCore &gl() { return dynamic_cast<OpenGLCore &>(*owned); }
 
     //! "Il" in white at 12 px on black, read back, its text id released after
     std::vector<uint8_t> draw()
@@ -173,7 +170,6 @@ TEST_CASE("No dual-source blending: GWENI_TEXT_AA=rgb falls back to grayscale wi
     CHECK(fallback.owned->textAA() == TextAA::LcdRGB);
     CHECK(log.dualSourceLines() == 0);
     fallback.owned->init();
-    CHECK_FALSE(fallback.gl().glCapabilities().dualSourceBlend);
     CHECK_FALSE(fallback.owned->lcdTextAvailable());
     CHECK(fallback.owned->textAA() == TextAA::Grayscale);
     CHECK(log.dualSourceLines() == 1);
@@ -226,10 +222,6 @@ TEST_CASE("No dual-source blending: setTextAA after init() falls back once, per 
     CHECK(second.owned->textAA() == TextAA::Grayscale);
     CHECK(log.dualSourceLines() == 2);
 
-    // the shared renderer, constructed without the switch, keeps what the context has
-    const bool contextHasIt=gweni::test::glRenderer().glCapabilities().dualSourceBlend;
-
-    CHECK(gweni::test::glRenderer().lcdTextAvailable() == contextHasIt);
+    // the shared renderer, constructed without the switch, keeps what the device has
+    CHECK(gweni::test::gpuRenderer().lcdTextAvailable() == gweni::test::deviceHasDualSource());
 }
-
-TEST_SUITE_END();

@@ -624,9 +624,10 @@ including `slotRenderer.h`, through them; the core calls only freetype-gl's CPU 
 The GPU unit tests (`tests/`) take the shared renderer as a `SlotRenderer`
 (`test::gpuRenderer()`, `test::newRenderer()`, `test::clearView()`,
 `test::readView()`), so they are written once for every backend; `tests/main.cpp` is
-the one place that picks it. The three that check GL itself (`fontRelease.cpp`,
-`glslDialects.cpp`, `textDrawLoop.cpp`) are the doctest test suite `gl_only`
-(`tests/glRenderer.h`), which a run on another backend leaves out (`-tse=gl_only`).
+the one place that picks it. What checks GL itself (`glslDialects.cpp`,
+`textDrawLoop.cpp` and `fontRelease.cpp`'s GL-object case) is the doctest test suite
+`gl_only` (`tests/glRenderer.h`), which a run on another backend leaves out
+(`-tse=gl_only`); each file's header says why.
 `GWENI_RENDERER=vulkan` makes `main.cpp` create a Vulkan device and a
 `renderer::Vulkan` instead, with no GL or EGL context, and `unittests_vulkan` is that
 run ("renderer::Vulkan" below).
@@ -637,9 +638,9 @@ run ("renderer::Vulkan" below).
 `source/platforms/renderers/Vulkan/`) is the Vulkan 1.3 backend of `SlotRenderer`,
 built with `GWENI_RENDER_VULKAN` (which, for now, needs `GWENI_RENDER_OPENGL_CORE`:
 the core, freetype-gl and the shader bodies are built with it). It draws every
-primitive style, with the clip boxes and the image units; it makes, uploads and reads
-back the font atlases, but does not draw text yet (#372: the text hooks record
-nothing, and print `gweni: renderer::Vulkan does not draw text yet` once).
+primitive style, with the clip boxes and the image units, and text in every mode
+(coverage, LCD with dual-source blending, SDF) from the core's atlases and glyph
+slots, so `unittests_vulkan` runs every GPU unit case but the `gl_only` ones.
 
 The application owns the Vulkan objects, as it owns a GL context:
 
@@ -678,7 +679,12 @@ How each GL feature maps:
 | 8 image units, `uniform sampler2D images[8]` | one array of 8 combined image samplers in set 0 (an empty unit samples a 1x1 opaque black image, as GL samples texture 0) |
 | `projection`, `slotBase` uniforms | push constants (`PrimitivePush`) |
 | image: `GL_RGBA8`/`GL_RGB8`, every level a `glTexImage2D` of `imageMipChain`'s bytes, filtered nearest | `R8G8B8A8_UNORM` (RGB with alpha 255), the same levels in one staging buffer, one `vkCmdCopyBufferToImage` of a region per level, sampled `NEAREST` |
-| atlas: `GL_R8`, `GL_RGB8` for LCD | `R8_UNORM`; `R8G8B8A8_UNORM` for LCD (no RGB8 format is guaranteed to be sampled), expanded on upload, `textureChannelSizes` still 8,8,8,0 |
+| atlas: `GL_R8`, `GL_RGB8` for LCD, `GL_LINEAR`, clamped | `R8_UNORM` for coverage and SDF; `R8G8B8A8_UNORM` for LCD (no RGB8 format is guaranteed to be sampled), each texel expanded with alpha 255 on upload (the shader reads `.rgb`), `textureChannelSizes` still 8,8,8,0; sampled `LINEAR`, clamped |
+| an atlas's dirty row band: one `glTexSubImage2D` | the band's rows staged (expanded for LCD), one `vkCmdCopyBufferToImage` into them, the image `TRANSFER_DST_OPTIMAL` for the frame's uploads; `atlas_upload_*` count the same, being the core's |
+| text: per-chunk vertex array, `glMultiDrawElements` of an atlas's ranges | `vkCmdBindVertexBuffers` at the chunk's first glyph slot, one `vkCmdDrawIndexed` per range (`offsets/2` the first index) through the glyph quad order (`0, 1, 2, 0, 2, 3`); `text_draws` counts the chunk once, as on GL |
+| `texture1` bound per atlas, `textMode`, `textContrast` uniforms | a descriptor set per atlas drawn in the frame (the atlas, the glyph clip-box table), from the frame's pools, reset as it begins; `textMode`, `textContrast` with `projection`, `slotBase` in one push-constant block for both stages (`TextPush`, `Vulkan/textPush.glsl`) |
+| `glBlendFunc(SRC1_COLOR, ONE_MINUS_SRC1_COLOR)` for an LCD atlas | a second text pipeline with those factors (colour and alpha), made only with `dualSrcBlend` |
+| `glDeleteTextures` of a freed atlas or image | retired: destroyed once the newest frame that may sample it has signalled its fence, its handle naming nothing from then on |
 | `glBlendFunc(SRC_ALPHA, ONE_MINUS_SRC_ALPHA)`, `GL_LESS` with depth writes | the pipeline's blend and depth state |
 | `glClear` | a dynamic rendering with `LOAD_OP_CLEAR`, submitted at once |
 | `glReadPixels`, rows turned over | `vkCmdCopyImageToBuffer` into a host-visible buffer, rows turned over |
@@ -696,9 +702,13 @@ a copy never overwrites a slot a frame still in flight draws from, and ends with
 before this frame's reads; the draws buffer starts with a barrier after every earlier
 use of the target, another renderer's frame or a clear included. A texture written in
 the frame is `TRANSFER_DST_OPTIMAL` from its first upload and `SHADER_READ_ONLY_OPTIMAL`
-again at the end of the uploads. Making or freeing something the frames in flight
-might use (a regrown buffer or clip-box table, a freed atlas or image) waits for the
-queue first. `clearTarget`, `readPixels` and `readTextureRgba` submit what the frame
+again at the end of the uploads. Replacing something the frames in flight might use
+(a regrown vertex buffer or clip-box table) waits for the queue first; a freed atlas
+or image is **retired** instead (`Vulkan::retireHandle`): the queue runs the frames in
+order, so it is destroyed when the newest frame that may sample it is done (the one
+being recorded, else the one submitted last), as that frame's slot is begun again
+after its fence, or at once if no frame is in flight. A font freed and loaded again,
+or one Label of many changing size, then costs no wait. `clearTarget`, `readPixels` and `readTextureRgba` submit what the frame
 recorded, then run their own command buffer and wait for it. The counts are the
 core's: one upload per range it hands over, one draw per chunk, and a settled frame
 uploads nothing, on Vulkan as on GL.
@@ -713,6 +723,16 @@ samplers in set 0, and makes `VERTEX_ID` `gl_VertexIndex`, which counts from the
 chunk's first vertex as `gl_VertexID` does because each chunk binds its vertex buffer
 at its first slot (with a `vertexOffset` it would count from the buffer's start).
 `primitive.frag` hard-codes `CLIP_COLUMNS` (2048), which `vulkan.cpp` asserts.
+The text shaders are the same: `Vulkan/text.vert` before `shaders/text.vert.glsl`
+(whose `CLIP_SPACE_TO_API` GL defines as nothing), and `Vulkan/textFragment.glsl`,
+which declares the atlas and the clip-box table in set 0 and hard-codes `SDF_SPREAD`
+(6, asserted too), before `shaders/text.frag.glsl`, in two variants: `text.frag` with
+the second output dual-source blending reads (`GWENI_DUAL_SOURCE`, `index = 1`), which
+both text pipelines use on a device with `dualSrcBlend`, as OpenGLCore compiles its
+one text program with it on a context that has it, and `textSingle.frag` without, for
+a device that has not (whose LCD modes fall back to grayscale, as on GLES without
+`GL_EXT_blend_func_extended`: `tests/noDualSource.cpp` checks that fallback on Vulkan
+too, with a renderer on the device claiming no `dualSrcBlend`).
 
 **GL's pixels.** The projection is OpenGLCore's matrix, into GL's clip space, and
 `CLIP_SPACE_TO_API` maps its z from [-1, 1] to [0, 1] in the vertex shader as GL's
@@ -734,6 +754,17 @@ line arithmetic, not a different algorithm, and no control draws a line yet. It 
 above the feature's T = 2 ceiling, so it is an open issue (#427) rather than a
 tolerance: the pixel test of the apps (#374) measures its own on the ControlTest
 shots.
+
+Text is as near. Three runs of 12 to 40 px OpenSans (white, blue and black, on
+Tokyo Night's dark ground) and a skinned canvas (a Label, a Button and a TextBox in
+the skin's 11 px font, a 26 px Label) at scales 1 and 1.5, 448x160 each, read back
+from both backends: grayscale 12 px, LCD rgb 12 px, LCD bgr 14 px and the canvas at
+1.5 are byte-identical to GL's; SDF at 28 and 40 px differ in 2 and 1 pixels, by 1;
+the canvas at scale 1 in 62 of 71 680 pixels (0.09 %), by 1, at the Button's and the
+SDF Label's edges. The coverage and LCD paths do nothing but sample, multiply and
+blend, which both rasterisers do alike; the SDF path's `smoothstep` over a filtered
+field and its screen-space gradient is where the two shader compilers' float code can
+round a value the other way.
 
 ## OpenGLCore renderer (retained model)
 
@@ -1453,8 +1484,8 @@ two programs and the draws. What follows describes both together:
   it: stem edges blue-left/red-right in rgb, mirrored in bgr, R == B in gray, and runtime
   switches matching fresh renderers pixel for pixel; `tests/textSubpixel.cpp` the
   positions (each glyph within 1/3 px of FreeType's own unhinted pens, at scale 1 and
-  1.5), the atlas fill and the contrast curve. A Vulkan backend would need the
-  `dualSrcBlend` device feature and fall back to grayscale without it.
+  1.5), the atlas fill and the contrast curve. `renderer::Vulkan` blends it with the
+  `dualSrcBlend` device feature and falls back to grayscale without it.
 - **Hybrid text.** With the effective size `px = textPx(font) = font.size*scale()`,
   text below `GWENI_SDF_TEXT_MIN`
   (default 18 px; `0` = SDF everywhere, a large value = coverage everywhere) keeps the
@@ -1684,8 +1715,9 @@ What exists today (the foundation) and what's still aspirational:
 - `renderer::Vulkan` ("renderer::Vulkan (headless)" above) implements the hooks with
   device-local vertex buffers indexed by primitive id, the dirty ranges pushed through a
   staging buffer per frame in flight, and command buffers recording one draw per chunk.
-  It draws every primitive style headless; text (#372), the apps' `--renderer` (#373),
-  the cross-backend checks (#374) and a window (#375) are still to come.
+  It draws every primitive style and every text mode headless, and runs every GPU unit
+  case but the `gl_only` ones; the apps' `--renderer` (#373), the cross-backend checks
+  (#374) and a window (#375) are still to come.
 
 See also [layout.md](layout.md) for the docking/layout system, and the skin/primitive
 registration notes in `source/skins/textured/`.
