@@ -25,10 +25,21 @@
  *    --headless         force the surfaceless EGL context (no display needed)
  *    --renderer gl|vulkan  the backend (default gl, or GWENI_RENDERER; the
  *                       flag beats it): OpenGLCore, or renderer::Vulkan on a
- *                       headless Vulkan device with no GL or EGL context. Vulkan
- *                       only captures (with or without --headless, the same),
- *                       there is no Vulkan window yet; GWENI_VULKAN_VALIDATION=1
- *                       turns the validation layer on, any message aborting
+ *                       Vulkan device with no GL or EGL context. A Vulkan
+ *                       capture is headless (with or without --headless, the
+ *                       same), the window has a FIFO swapchain;
+ *                       GWENI_VULKAN_VALIDATION=1 turns the validation layer
+ *                       on, any message aborting
+ *    --window-test <dir>  the window (--renderer vulkan), scripted: it presents
+ *                       at --size, resizes itself to 5/4 and 4/5 of it and back,
+ *                       iconifies and restores (a window manager must run),
+ *                       writes each image it presented, read back from the
+ *                       swapchain, to <dir>/window_<i>_<W>x<H>.png and
+ *                       window_restored_<W>x<H>.png, prints the swapchain's
+ *                       counts and fails if a resize made no new swapchain or
+ *                       anything was drawn or presented while iconified. No
+ *                       input is taken, the clock steps as in a capture;
+ *                       window_vulkan (tests/windowVulkan.cmake) runs it
  *    --stats            print one key=value line per frame; freezes the clock.
  *                       prim_slots_written= and text_slots_written= count
  *                       the distinct primitive and glyph slots the frame's
@@ -697,6 +708,8 @@ static void printUsage(std::ostream &out)
          "  --shot-dir <dir>   directory for shots (default /tmp)\n"
          "  --headless         force the surfaceless EGL context\n"
        <<gweni::capture::RendererHelp<<
+         "  --window-test <dir>  the Vulkan window, scripted: resized, iconified and\n"
+         "                     restored, each presented image written to <dir>\n"
          "  --stats            print one key=value line per frame; prim_slots_written=\n"
          "                     and text_slots_written= are the distinct slots its\n"
          "                     flush uploads (a draw, hide, show or release each)\n"

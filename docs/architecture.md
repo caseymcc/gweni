@@ -778,7 +778,7 @@ for GL the context the examples always made (a window, a hidden one for a captur
 or surfaceless EGL) with the offscreen `Framebuffer` a capture draws into; for Vulkan
 a `VulkanDevice` from `createVulkanDevice` (validated with
 `GWENI_VULKAN_VALIDATION=1`) and a `VulkanTarget`, with no GL or EGL context and no
-window, so every capture is headless. The apps see only the `SlotRenderer` it makes
+window for a capture, so every capture is headless. The apps see only the `SlotRenderer` it makes
 (`Device::newRenderer`): a frame starts with `clearTarget` (on GL the `glClear` it
 replaces), a capture reads back with `readPixels` (`glReadPixels`), a resize remakes
 the target (`Device::resizeTarget`) and the bench waits for the device with
@@ -786,8 +786,76 @@ the target (`Device::resizeTarget`) and the bench waits for the device with
 unchanged on Vulkan: each is registered again as `<name>_vulkan`
 (`gweni_whole_app_test` in `tests/CMakeLists.txt`), with `GWENI_RENDERER=vulkan`
 in its environment, which the exes and every child a script starts take as their
-`--renderer`. There is no Vulkan window yet (#375): a run on Vulkan without a
-capture says so and exits 1.
+`--renderer`. A run on Vulkan without a capture is the window, below.
+
+### The Vulkan window
+
+An interactive run on Vulkan (`OpenGLCore --renderer vulkan`, ControlTest without a
+capture) gets its `capture::Device` from `openVulkanWindowDevice`
+(`examples/openglcore/vulkanWindow.cpp`): a GLFW window with no client API
+(`GLFW_NO_API`, `GLFW_SCALE_TO_MONITOR` as a GL window), a `VulkanDevice` made with
+the instance extensions `glfwGetRequiredInstanceExtensions` names and
+`VK_KHR_swapchain`, the window's surface (`glfwCreateWindowSurface`; GLFW opens the
+same `libvulkan.so.1` volk does), and a FIFO swapchain of `B8G8R8A8_UNORM` (or
+`R8G8B8A8_UNORM`) images, UNORM as a GL window's default framebuffer is, with
+`TRANSFER_DST` and `TRANSFER_SRC` usage. The library has no swapchain in it:
+renderer::Vulkan draws into the device's `VulkanTarget` as in a capture, the target
+kept at the framebuffer's size, and showing a frame is the application's.
+
+**One loop, three steps.** `Device::runWindowLoop(frame)` is the loop both apps run on
+either backend (GL: `capture::runWindowLoop`, unchanged, the browser's included). On
+Vulkan it is `beginWindowFrame()`, then `frame()` (update, clear, render, which
+submits the renderer's frame) and `presentWindowFrame()`, then an event poll; or,
+when `beginWindowFrame()` says the window is minimised, only `glfwWaitEvents()`.
+`presentWindowFrame` waits for the frame in flight two frames back (its command
+buffer, fence and acquire semaphore), acquires an image, and records: the target to
+`TRANSFER_SRC` after the renderer's draws, the image to `TRANSFER_DST`, one
+`vkCmdBlitImage` of the target turned over (the target's rows are bottom-up, GL's;
+the image's top-down, as the window shows it), `NEAREST` and one to one, so every
+pixel is copied as it is (RGBA8 into the 8-bit image, swizzled), the image to
+`PRESENT_SRC` and the target back to `COLOR_ATTACHMENT_OPTIMAL` for the next frame's
+draws. The submit waits for the acquire's semaphore at the transfer and signals the
+image's own semaphore, which the present waits for; one per swapchain image, so it is
+free again by the time the image is acquired again. On one queue every barrier is
+ordered after the renderer's submits, so the blit reads the finished frame and the
+next frame draws after the blit. With a `pixels` argument the presented image is
+also copied into a host-visible buffer after the blit, which is how ControlTest's
+`--window-test` reads back what was presented.
+
+**Recreate.** The swapchain is made again in `beginWindowFrame`, after
+`vkDeviceWaitIdle` (nothing in flight uses an old image, view or semaphore), when the
+framebuffer is another size than the target (GLFW's framebuffer-size callback has
+already run `fitCanvasToWindow`: the renderer's view and the canvas are the new size,
+the content scale applied), and when an acquire or a present returned
+`VK_ERROR_OUT_OF_DATE_KHR` (nothing acquired: the frame is not shown) or
+`VK_SUBOPTIMAL_KHR` (shown, then made again). The target is made again first if the
+size changed; the new swapchain is made with the old one as `oldSwapchain`, at the
+surface's `currentExtent`. A frame between the surface changing and the recreate
+blits the part of the target both share and clears the rest of the image to black.
+Under Xvfb, lavapipe's X11 WSI answers each resize with one `VK_SUBOPTIMAL_KHR`.
+
+**Minimise.** While the window is iconified (`GLFW_ICONIFIED`: on X11 the framebuffer
+keeps its size) or its framebuffer is 0x0 (Windows), `beginWindowFrame` returns false:
+no frame is drawn, nothing is acquired or presented, no swapchain is made at 0x0, and
+the loop sleeps in `glfwWaitEvents` until the restore's events come. A frame begun
+just before the window was iconified is dropped by `presentWindowFrame`
+(`WindowStats::dropped`) rather than presented to the unmapped window.
+
+**`window_vulkan`.** ControlTest's `--window-test <dir>` drives that loop one iteration
+at a time (with `glfwWaitEventsTimeout` while minimised, so the script goes on), on the
+stepped clock and with no input callbacks, so what it shows depends on the window's
+sizes alone: it presents at `--size`, resizes itself (`glfwSetWindowSize`) to 5/4 and
+4/5 of it and back, iconifies and restores (`glfwIconifyWindow`, `glfwRestoreWindow`),
+reads back the image presented at each size and after the restore, and prints the
+swapchain's counts (`Device::WindowStats`). `tests/windowVulkan.cmake` runs it under
+`xvfb-run -a` and `gweni_test_wm` (`tests/vulkan/testWindowManager.cpp`): Xvfb has no
+window manager, and without one an iconify (an ICCCM `WM_CHANGE_STATE` message to the
+root) does nothing, so the test window manager unmaps the window and sets its
+`WM_STATE` to iconic, which GLFW reads as iconified. The five images must be byte for
+byte `--headless` captures at their sizes, every resize must have recreated the
+swapchain, and the iconified half second must draw and present nothing. Under Xvfb the
+content scale is 1; the scale path in a window is `fitCanvasToWindow`'s, the same as
+GL's, and a real HiDPI display is not tested.
 
 ### Vulkan's counters and pixels against GL's
 

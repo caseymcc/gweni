@@ -33,8 +33,8 @@ and `vulkan_smoke` fails saying so).
 
 `ControlTest`, `OpenGLCore` and `gweni_bench` draw with `OpenGLCore` by default.
 `--renderer vulkan` (or `GWENI_RENDERER=vulkan`; the flag wins) draws with
-`renderer::Vulkan` on a headless Vulkan device instead, with no GL or EGL
-context at all:
+`renderer::Vulkan` on a Vulkan device instead, with no GL or EGL context at
+all; a capture is always headless:
 
 ```bash
 mm run --lock render -- build_linux_x64_debug/examples/openglcore/ControlTest \
@@ -45,14 +45,47 @@ mm run --lock render -- build_linux_x64_release/bench/gweni_bench \
     --renderer vulkan --scene hover-sweep --n 1000
 ```
 
-Vulkan only captures for now (`--shot`, `--shot-all`, `--screenshot`, `--frames`,
-`--stats`, the scenarios, `--check-teardown`), with or without `--headless`;
-without a capture it prints one line saying there is no Vulkan window yet and
-exits 1, and so does `--renderer vulkan` in a tree built without Vulkan.
+On Vulkan a capture (`--shot`, `--shot-all`, `--screenshot`, `--frames`,
+`--stats`, the scenarios, `--check-teardown`) is the same headless run with or
+without `--headless`. Without one, both examples open their window as on GL,
+with a Vulkan swapchain (see "Vulkan in a window" below). `--renderer vulkan`
+in a tree built without Vulkan prints one line and exits 1.
 `GWENI_VULKAN_VALIDATION=1` turns the validation layer on (any warning or error
 aborts the run); the Vulkan tests set it, with the layer's path
 (`VK_LAYER_PATH=<tree>/vulkan/explicit_layer.d`) and lavapipe's ICD
 (`VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.x86_64.json`).
+
+### Vulkan in a window
+
+`OpenGLCore --renderer vulkan` and `ControlTest --renderer vulkan` with no
+capture open a GLFW window with no GL context and draw into it through a FIFO
+swapchain. They resize, follow the content scale and stop drawing while
+minimised as the GL window does (`docs/architecture.md` -> "The Vulkan
+window"). The build container has no display, so there it is tried under
+Xvfb (`window_vulkan` does that for you, see "Tests"):
+
+```bash
+xvfb-run -a -s "-screen 0 1280x1024x24"     build_linux_x64_debug/examples/openglcore/ControlTest --renderer vulkan --control ButtonDemo
+```
+
+To try it on a host with a real Vulkan driver (not part of any check; on a
+HiDPI display the window is drawn at its content scale):
+
+```bash
+./run.sh opengl --renderer vulkan
+./run.sh controltest --renderer vulkan --control ButtonDemo
+GWENI_VULKAN_VALIDATION=1 VK_LAYER_PATH=$PWD/build_linux_x64_debug/vulkan/explicit_layer.d \
+    ./run.sh opengl --renderer vulkan      # the same, every validation message aborting
+```
+
+The host needs, besides what the GL exes need (see "Running the examples"
+in `AGENTS.md`), the Vulkan loader (`libvulkan.so.1`, e.g. Ubuntu's
+`libvulkan1`) and a Vulkan 1.3 driver (its ICD manifest under
+`/usr/share/vulkan/icd.d/`: Mesa's `mesa-vulkan-drivers` for AMD and Intel,
+NVIDIA's own driver), on X11 or XWayland. `vulkaninfo --summary`
+(`vulkan-tools`) lists what the loader finds. The exes take the first device
+with Vulkan 1.3, dynamic rendering and a graphics queue; one that cannot present
+to the window prints one line and exits 1.
 
 ## GLES tree
 
@@ -375,6 +408,14 @@ paths, not drawing) and `bench_smoke` is registered twice: on GL, and as
   compiled at build time. Like every Vulkan test it runs with only the vcpkg
   validation layer on the loader's layer path and the device pinned to
   lavapipe (`gweni_vulkan_test_environment` in `cmake/Vulkan.cmake`).
+- `window_vulkan` (labels `gpu`, `vulkan`): the Vulkan window, under an Xvfb
+  it starts itself and a minimal test window manager (`gweni_test_wm`):
+  `ControlTest --renderer vulkan --window-test` presents ButtonDemo at
+  640x480, resizes the window to 800x600, 512x384 and back, iconifies and
+  restores it, and reads back each image it presented; every one must be byte
+  for byte a `--headless` capture at its size, every resize must recreate the
+  swapchain and nothing may be drawn or presented while iconified
+  (`tests/windowVulkan.cmake`). It fails, not skips, without Xvfb.
 - `backend_counters` (labels `gpu`, `vulkan`): every `gweni_bench` scene, every
   `ControlTest --stats` control and `OpenGLCore --stats` run on `--renderer gl`
   and `--renderer vulkan`; every counter of every frame must be the same (the
