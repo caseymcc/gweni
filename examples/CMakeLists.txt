@@ -64,6 +64,8 @@ set(GWENI_DEMO_SOURCES
     demo/showcaseWindows.h
     demo/slider.cpp
     demo/slider.h
+    demo/sliderText.cpp
+    demo/sliderText.h
     demo/statusBar.cpp
     demo/statusBar.h
     demo/tabControl.cpp

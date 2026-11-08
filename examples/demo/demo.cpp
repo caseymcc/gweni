@@ -44,6 +44,7 @@
 #include "demo/showcaseDisplay.h"
 #include "demo/showcaseWindows.h"
 #include "demo/slider.h"
+#include "demo/sliderText.h"
 #include "demo/statusBar.h"
 #include "demo/tabControl.h"
 #include "demo/treeControl.h"
@@ -164,6 +165,7 @@ void Demo::init(const String &name)
         addDemo<CheckBoxDemo>(cat, "CheckBoxDemo", "Check box");
         addDemo<NumericDemo>(cat, "NumericDemo", "Numeric");
         addDemo<SliderDemo>(cat, "SliderDemo", "Slider");
+        addDemo<SliderTextDemo>(cat, "SliderTextDemo", "Slider text");
         addDemo<MenuStripDemo>(cat, "MenuStripDemo", "Menu strip");
     }
     {

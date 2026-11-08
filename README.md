@@ -35,7 +35,7 @@ single-selection SelectableGroup, and the window buttons (maximised, disabled).
 
 **Text input**: TextBoxes (a placeholder, a password, a number, coloured text, read-only, one focused
 with its caret), a wrapped TextBoxMultiline, ComboBoxes, a NumericUpDown, and horizontal and vertical
-Sliders, plain, notched and disabled.
+Sliders, plain, notched, disabled and one showing its value.
 
 ![Display & feedback showcase page](docs/images/ShowcaseDisplayDemo.png)
 

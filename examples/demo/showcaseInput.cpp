@@ -122,11 +122,13 @@ GWENI_CONTROL_CONSTRUCTOR(ShowcaseInputDemo)
             float value;
             int notches;
             bool disabled;
+            const char *format;
         } rows[]=
         {
-            {"Plain, 35 %", 35, 0, false},
-            {"10 notches, 70 %", 70, 10, false},
-            {"Disabled", 50, 0, true},
+            {"Plain, 35 %", 35, 0, false, ""},
+            {"10 notches, 70 %", 70, 10, false, ""},
+            {"Disabled", 50, 0, true, ""},
+            {"Its value shown", 62.5f, 0, false, "%.1f %%"},
         };
 
         for(const auto &row : rows)
@@ -144,6 +146,7 @@ GWENI_CONTROL_CONSTRUCTOR(ShowcaseInputDemo)
             }
             slider->setFloatValue(row.value);
             slider->setDisabled(row.disabled);
+            slider->setValueFormat(row.format);
         }
     }
     {
@@ -179,7 +182,7 @@ GWENI_CONTROL_CONSTRUCTOR(ShowcaseInputDemo)
             slider->setFloatValue(entry.value);
             slider->setDisabled(entry.disabled);
         }
-        m_notes.push_back("Slider: plain and notched, horizontal and vertical, one disabled");
+        m_notes.push_back("Slider: plain and notched, horizontal and vertical, one disabled, one showing its value");
     }
 }
 

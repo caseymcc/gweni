@@ -955,6 +955,35 @@ two programs and the draws. What follows describes both together:
   `firstVisibleItem`, `rowForItem`/`itemForRow` and `refresh`/`refreshItem` are the
   rest; a wheel notch scrolls `setWheelRows` rows (3). VirtualListDemo holds 100 000
   items.
+- **The slider's value text.** `Slider::setValueFormat("%.2f")` shows the value as text
+  (imgui's SliderFloat), formatted with `snprintf` from `getFloatValue()`. The format is
+  checked first (`Slider::validValueFormat`): exactly one conversion of a double (`f F e
+  E g G a A`, with the flags `-+ #0`, a width and a precision of at most 2 digits each,
+  no `*`, no length modifier), plus any text and `%%`; anything else is refused with one
+  stderr line and the old format kept, so an app string is never passed to `snprintf`
+  unchecked. The text is an `internal::Text` child, created by the first non-empty
+  format and deleted by an empty one, so a slider with no format takes no text id. It is
+  owner-placed (`placeValueText()`, from the subclasses' `layout()`) and added after the
+  thumb, so it is numbered, and drawn, above it. **Horizontal:** the textured `Slider`
+  renderer draws the track as a field the thumb's height (`ThumbThickness`, at most the
+  slider's) and the slider's length, in `SliderTrack`, with the thumb moving inside it and
+  the text centred over both in `Colors.Label.Default` (`Colors.Button.Disabled` while
+  disabled); the notch ticks go below the field, which shrinks to leave them room, so a
+  notched slider with a value text wants about 10 units more height than the field. The
+  slider asks for at least the text's line plus 2 high. **Vertical:** the text sits in a
+  column right of the track, `ValueTextGap` (4) from it and vertically centred; the column
+  is the wider of the formatted min and max (`getValueTextColumn()`, measured in the X
+  pass from the range, never the value), and the slider asks for its request plus the gap
+  and the column, so it keeps its width while it is dragged. `getTrackBounds()` is the
+  part of the slider the track, thumb and ticks are drawn in: all of it but that column.
+  **Only a new string costs anything:** `setValueInternal` sets the text when the value
+  changes, and `Text::setText` returns at once for the same string, so a drag, a key step
+  or a `setFloatValue` that keeps the shown string marks nothing text-related and writes
+  no glyph slot (the thumb's one slot moves); a new string rewrites that run, at most its
+  glyphs, and lays the slider out again to re-centre it. `setRange` re-formats the text
+  and re-measures the column. With no format every path is as before: the same track,
+  thumb and ticks, byte for byte. SliderTextDemo shows `%.0f`, `%.2f`, a percentage, a
+  notched and a disabled slider and a vertical one; ShowcaseInputDemo has one.
 - **Scale and the device-pixel grid.** Controls lay out in logical units (integers);
   `renderer::Base::translate()` turns them into device pixels at `scale()` (set by
   `Canvas::setScale`). It snaps **edges**, not origin and size apart: a point is

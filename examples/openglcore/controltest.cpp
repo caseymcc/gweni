@@ -245,7 +245,12 @@
  *                   where they were before it opened. SliderDemo: each frame
  *                   of a thumb drag, along the track and off it, changes the
  *                   thumb only and moves it, and the release off it takes
- *                   its hover away. Exits non-zero if any check is no. The
+ *                   its hover away. SliderTextDemo: dragging the first
+ *                   slider's thumb a unit at a time, a frame that keeps the
+ *                   "%.0f" value text writes no glyph slot and at most the
+ *                   thumb's primitive slot, and one that changes it no more
+ *                   glyph slots than the new string's (a line lists them).
+ *                   Exits non-zero if any check is no. The
  *                   clock is frozen as under --stats.
  *    typing       the keyboard on TextBoxDemo, every key a synthesised GLFW
  *                 event through gweni::input::GLFW3: click into the first,
@@ -491,6 +496,7 @@
 #include <gweni/controls/selectable.h>
 #include <gweni/controls/toolTip.h>
 #include <gweni/controls/popup.h>
+#include <gweni/controls/slider.h>
 #include <gweni/controls/comboBox.h>
 #include <gweni/controls/virtualList.h>
 #include <GLFW/glfw3.h>
@@ -541,6 +547,7 @@
 #include <demo/showcaseDisplay.h>
 #include <demo/showcaseWindows.h>
 #include <demo/slider.h>
+#include <demo/sliderText.h>
 #include <demo/statusBar.h>
 #include <demo/tabControl.h>
 #include <demo/treeControl.h>
@@ -607,7 +614,7 @@ static void content_scale_callback(GLFWwindow *window, float, float)
     X(ButtonDemo) X(LabelDemo) X(LabelMultilineDemo) X(ProgressBarDemo) \
     X(GroupBoxDemo) X(ImagePanelDemo) X(StatusBarDemo) X(SeparatorDemo) X(ComboBoxDemo) \
     X(TextBoxDemo) X(ListBoxDemo) X(SelectableDemo) X(VirtualListDemo) X(ContextMenuDemo) X(PopupDemo) X(CrossSplitterDemo) X(RadioButtonDemo) \
-    X(CheckBoxDemo) X(NumericDemo) X(SliderDemo) X(MenuStripDemo) \
+    X(CheckBoxDemo) X(NumericDemo) X(SliderDemo) X(SliderTextDemo) X(MenuStripDemo) \
     X(WindowDemo) X(WindowButtonsDemo) X(TreeControlDemo) X(PropertiesDemo) X(TabControlDemo) \
     X(ScrollControlDemo) X(PageControlDemo) X(CollapsibleListDemo) X(ColorPickerDemo) \
     X(UnicodeTextDemo) X(TextSizesDemo) X(TextDemo) X(LayoutDemo)
@@ -3086,6 +3093,77 @@ static void checkSliderDrag(Session &s, const std::string &shotDir, InteractionC
         "the thumb let go off itself kept the hover or the mouse");
 }
 
+// SliderTextDemo: the first slider shows its value as "%.0f" over 0..100, so a
+// one-unit drag step changes the value by about half a unit of it. Dragging
+// its thumb a unit at a time, a frame whose string stays writes no glyph slot
+// and at most the thumb's one primitive slot, and a frame whose string
+// changes writes no more glyph slots than the new string has glyphs. Both
+// kinds must happen.
+static void checkSliderText(Session &s, const std::string &shotDir, InteractionChecks &checks, bool &ok)
+{
+    gweni::controls::Base *demo=addControl(s, "SliderTextDemo");
+    renderFrames(s, s.frames);
+
+    gweni::controls::Slider *slider=gweni::gweni_cast<gweni::controls::Slider>(findControl(demo, "HorizontalSlider"));
+    if(!slider || !slider->getValueTextControl())
+    {
+        checks.check("slider_text_found", false, "SliderTextDemo has no visible HorizontalSlider with a value text");
+        dropControl(s, demo);
+        return;
+    }
+
+    gweni::controls::Base *thumb=slider->getSliderBar();
+    const gweni::Point grab=centreOf(thumb);
+    moveMouse(s, grab.x, grab.y);
+    renderFrames(s, s.frames);
+    mouseDown(s, grab.x, grab.y, true);
+    renderFrames(s, s.frames);
+
+    std::string frames;
+    int kept=0, changed=0;
+    bool keptWroteNothing=true;
+    bool changedWithinRun=true;
+
+    for(int i=1; i <= 12; ++i)
+    {
+        const gweni::String shown=slider->getValueText();
+        moveMouse(s, grab.x+i, grab.y);
+        renderFrames(s, 1);
+
+        const gweni::renderer::SlotRenderer::FrameStats &gpu=s.renderer->getFrameStats();
+        const gweni::String now=slider->getValueText();
+
+        frames+=" \""+now+"\":prim="+std::to_string(gpu.primitiveSlotsWritten)
+            +",text="+std::to_string(gpu.textSlotsWritten);
+        if(now == shown)
+        {
+            ++kept;
+            if(gpu.textSlotsWritten != 0 || gpu.primitiveSlotsWritten > 1)
+                keptWroteNothing=false;
+        }
+        else
+        {
+            ++changed;
+            if(gpu.textSlotsWritten == 0 || gpu.textSlotsWritten > now.size())
+                changedWithinRun=false;
+        }
+    }
+
+    if(!shoot(s, shotDir+"/interaction-slider-text.png"))
+        ok=false;
+
+    mouseUp(s, s.mouse.x, s.mouse.y);
+    renderFrames(s, s.frames);
+    forgetMouse(s);
+    dropControl(s, demo);
+
+    std::cout<<"slider_text_drag"<<frames<<"\n";
+    checks.check("slider_text_kept", kept > 0 && keptWroteNothing,
+        "a drag frame that kept the shown value wrote glyph slots or more than the thumb's slot:"+frames);
+    checks.check("slider_text_changed", changed > 0 && changedWithinRun,
+        "a drag frame that changed the shown value wrote no glyph slot or more than the new string's:"+frames);
+}
+
 static bool runInteractionScenario(Session &s, const std::string &shotDir, bool &passed)
 {
     // Frozen like --stats, so a frame with no input is genuinely idle (no
@@ -3101,6 +3179,7 @@ static bool runInteractionScenario(Session &s, const std::string &shotDir, bool 
     checkCheckBox(s, shotDir, checks, ok);
     checkWindowClose(s, shotDir, checks, ok);
     checkSliderDrag(s, shotDir, checks, ok);
+    checkSliderText(s, shotDir, checks, ok);
 
     std::cout<<"interaction";
     for(const auto &result : checks.results)
