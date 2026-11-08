@@ -21,20 +21,22 @@
 //                     URL names
 //  A page with a window must draw frames (gweniRun.frames, web/pre.js) on a
 //  WebGL 2 context on ANGLE's SwiftShader with at least 24 depth bits
-//  (run.mjs' conditions, through probe.mjs' launchOptions), and its canvas must
-//  not be one colour after 5 frames. On the scale=2 page it then picks
-//  SliderDemo, which must load controltest.html?control=SliderDemo&scale=2 and
-//  draw it. Every link and image of every page that points into the site
+//  (run.mjs' conditions, through probe.mjs' launchOptions), write nothing to
+//  stderr (the page shows it in its #output panel, under the canvas) and its
+//  canvas must not be one colour after 5 frames. On the scale=2 page it then
+//  picks SliderDemo, which must load controltest.html?control=SliderDemo&scale=2
+//  and draw it. Every link and image of every page that points into the site
 //  (relative URLs: the site is served from a subdirectory on GitHub Pages)
 //  must be there.
 //
 //  It fails, one "site.mjs: FAIL: <page>: ..." line each, on any console error,
 //  uncaught exception, failed request or HTTP error status (a 404 for a file
 //  the site lacks), a page that ends its run (the window exits) or draws no
-//  frames, a missing or wrong WebGL context, a blank canvas, a picker that
-//  does not show its control, and a link into the site that is not there. It
-//  ends with "site.mjs: OK, every page loaded" when everything passed. --out
-//  keeps a screenshot of each page there, as a visitor sees it.
+//  frames, a missing or wrong WebGL context, a window that writes to stderr, a
+//  blank canvas, a picker that does not show its control, and a link into the
+//  site that is not there. It ends with "site.mjs: OK, every page loaded" when
+//  everything passed. --out keeps a screenshot of each page there, as a
+//  visitor sees it.
 //
 //  The size budget is tools/build_site.sh's own check (tools/site/sizes.mjs),
 //  which web_site_smoke runs before this (tests/web/site.cmake).
@@ -196,7 +198,8 @@ class Visit
             await new Promise(resolvePromise => setTimeout(resolvePromise, 100));
         }
         const run = await page.evaluate(() => ({ done: gweniRun.done, exitCode: gweniRun.exitCode, aborted: gweniRun.aborted,
-            frames: gweniRun.frames, webgl: gweniRun.webgl, output: gweniRun.output.map(l => l.text) }));
+            frames: gweniRun.frames, webgl: gweniRun.webgl, output: gweniRun.output.map(l => l.text),
+            stderr: gweniRun.output.filter(l => l.stream === 'stderr').map(l => l.text) }));
         if(run.done)
         {
             fail(label, `the window's run ended (exit ${run.exitCode}${run.aborted ? `, aborted: ${run.aborted}` : ''}): ${run.output.join(' | ')}`);
@@ -220,6 +223,14 @@ class Visit
         const png = await page.locator('#canvas').screenshot();
         if(this.out)
             await page.screenshot({ path: join(this.out, `${name}.png`) });
+        // the page shows stderr in its #output panel, under the canvas: a
+        // complete site has nothing to say there (checked after the
+        // screenshot, so --out keeps what a visitor sees)
+        if(run.stderr.length)
+        {
+            fail(label, `wrote ${run.stderr.length} line(s) to stderr, shown in #output: ${run.stderr.join(' | ')}`);
+            return false;
+        }
         if(colourCount(png) === 1)
         {
             fail(label, `its canvas is one colour after ${run.frames} frames`);
