@@ -18,6 +18,9 @@
  *  one row, its full height, with no bar. A control in nested inner panels (a
  *  TreeNode in its TreeControl's ScrollControl) maps to and from canvas
  *  coordinates through every panel's offset, as hit-testing finds it.
+ *  Hit-testing finds the content only inside the viewport: in the inset band
+ *  around it, over a row scrolled half out of view or one below it, the point
+ *  reaches neither the row nor the inner panel, and the bar still takes it.
  */
 #include "headlessFixture.h"
 
@@ -29,7 +32,9 @@
 
 #include <doctest/doctest.h>
 
+#include <algorithm>
 #include <string>
+#include <vector>
 
 using namespace gweni;
 
@@ -803,4 +808,70 @@ TEST_CASE("a TreeNode maps to the canvas through its TreeControl's ScrollControl
         up=up->getParent();
 
     CHECK(up == second);
+}
+
+TEST_CASE("hit-testing finds a ScrollControl's content only inside its viewport")
+{
+    Scene scene;
+    scene.scroll->setScroll(false, true);
+    scene.scroll->setPadding(Padding(3, 4, 6, 8));
+
+    std::vector<Block *> rows;
+    for(int i=0; i<30; ++i)
+    {
+        Block *row=scene.addRow(50, 20);
+        row->setMouseInputEnabled(true);
+        rows.push_back(row);
+    }
+    scene.settle();
+    REQUIRE_FALSE(scene.verticalBar->hidden());
+
+    // scrolled by half a row: the first row is half above the viewport's top
+    const Rect &viewport=scene.scroll->getViewport();
+    const int range=scene.inner->getHeight()-viewport.h;
+    REQUIRE(range > 20);
+    asBar(scene.verticalBar)->setScrolledAmount(10.f/range, true);
+    checkOnePass(scene.frame());
+    REQUIRE(scene.inner->getY() == viewport.y-10);
+
+    // (getParent() is the logical parent: a row's is the ScrollControl)
+    auto isIn=[](controls::Base *hit, controls::Base *control)
+    {
+        for(; hit; hit=hit->getParent())
+        {
+            if(hit == control)
+                return true;
+        }
+        return false;
+    };
+    auto isContent=[&](controls::Base *hit)
+    {
+        return hit == scene.inner || std::find(rows.begin(), rows.end(), hit) != rows.end();
+    };
+
+    // the ScrollControl fills the canvas, so its coordinates are the canvas's
+    const int x=viewport.x+10;
+
+    // a row inside the viewport, and the part of the first row still in it
+    CHECK(scene.canvas->getControlAt(x, viewport.y+25) == rows[1]);
+    CHECK(scene.canvas->getControlAt(x, viewport.y+2) == rows[0]);
+
+    // the inset band over the first row's hidden half, and the band at the
+    // bottom over a row below the viewport: neither reaches a row, nor the
+    // inner panel
+    for(int y : {viewport.y-1, viewport.y-6, viewport.y+viewport.h, viewport.y+viewport.h+5})
+    {
+        CAPTURE(y);
+        CHECK_FALSE(isContent(scene.canvas->getControlAt(x, y)));
+        controls::Base *any=scene.canvas->getControlAt(x, y, false);
+        CHECK_FALSE(isContent(any));
+        CHECK(any == scene.scroll);
+    }
+
+    // and the bar still takes the mouse, its middle and its left edge
+    const Point barMiddle(scene.verticalBar->getX()+scene.verticalBar->getWidth()/2,
+        scene.verticalBar->getY()+scene.verticalBar->getHeight()/2);
+    CHECK(isIn(scene.canvas->getControlAt(barMiddle.x, barMiddle.y, false), scene.verticalBar));
+    CHECK(isIn(scene.canvas->getControlAt(scene.verticalBar->getX(), viewport.y+25, false),
+        scene.verticalBar));
 }

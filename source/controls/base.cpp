@@ -1421,7 +1421,24 @@ void Base::renderRecursive(skin::Base *skin, const Rect &cliprect)
         for(Base *child : m_children)
         {
             ++g_changeStats.childrenScanned;
-            child->doRender(skin);
+
+            // A child this control clips to a rect of its own (a
+            // ScrollControl's inner panel at its viewport) renders in this
+            // region narrowed to that rect; the child's own bounds narrow it
+            // further, as for any child.
+            if(const Rect *childClip=getChildClipRect(child))
+            {
+                const Point offset=baseRenderer->getRenderOffset();
+                const Rect region=baseRenderer->clipRegion();
+
+                baseRenderer->addRenderOffset(*childClip);
+                baseRenderer->addClipRegion(*childClip);
+                baseRenderer->setRenderOffset(offset);
+                child->doRender(skin);
+                baseRenderer->setClipRegion(region);
+            }
+            else
+                child->doRender(skin);
         }
     }
     baseRenderer->endClip();
@@ -1647,8 +1664,16 @@ Base *Base::getControlAtWalk(int x, int y, bool bOnlyIfMouseEnabled)
     for(Base::List::reverse_iterator iter=m_children.rbegin(); iter != m_children.rend(); ++iter)
     {
         Base *child=*iter;
-        Base *found=nullptr;
-        found=child->getControlAt(x-child->getX(), y-child->getY(), bOnlyIfMouseEnabled);
+
+        // outside the rect this control clips the child to, it is not there
+        if(const Rect *childClip=getChildClipRect(child))
+        {
+            if(x < childClip->x || y < childClip->y ||
+               x >= childClip->x+childClip->w || y >= childClip->y+childClip->h)
+                continue;
+        }
+
+        Base *found=child->getControlAt(x-child->getX(), y-child->getY(), bOnlyIfMouseEnabled);
 
         if(found)
             return found;

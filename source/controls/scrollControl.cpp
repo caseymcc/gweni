@@ -398,6 +398,10 @@ void ScrollControl::placeContents()
     }
 
     m_innerBounds=area;
+
+    const Rect oldViewport=m_viewport;
+    const Rect oldInner=m_innerPanel->getBounds();
+
     m_viewport=Rect(area.x+inset.left, area.y+inset.top, viewportWidth, viewportHeight);
 
     // Virtual content scrolls by its offset. A bar that is not where this
@@ -431,6 +435,14 @@ void ScrollControl::placeContents()
         scrollX=-(innerWidth-viewportWidth)*m_horizontalScrollBar->getScrolledAmount();
 
     placeChild(m_innerPanel, m_viewport.x+scrollX, m_viewport.y+scrollY, innerWidth, innerHeight);
+
+    // The content is clipped to the viewport (getChildClipRect). A new
+    // viewport mostly comes with new bounds for this control or the inner
+    // panel, which mark the content (onBoundsChanged); one that comes with
+    // neither (a larger bottom padding over taller, unscrolled content, say)
+    // has to mark it here, or its slots keep the old clip.
+    if(!(m_viewport == oldViewport) && m_innerPanel->getBounds() == oldInner)
+        m_innerPanel->addStateChangeRecursive(StateChange_Geometry);
 }
 
 void ScrollControl::updateScrollBars()

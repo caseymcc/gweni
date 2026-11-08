@@ -1288,11 +1288,19 @@ What exists today (the foundation) and what's still aspirational:
   `render()` runs before that, so it is clipped by its parent's region and its children by
   its own; `renderOver()`/`renderFocus()` get the parent's region back. A control that
   returns false (`TabStrip`, `TabButton`, and `Text`, whose children are its own wrapped
-  lines) hands its children its parent's region. OpenGLCore stamps the region into every
+  lines) hands its children its parent's region. A control can also narrow one child's
+  region to a rect of its own (`Base::getChildClipRect(child)`, none by default): a
+  ScrollControl gives its viewport for its inner panel, so content scrolled partly out of
+  view is cut at the viewport and never draws in the padding and margin band around it,
+  while its bars keep their own bounds. Hit-testing (`getControlAt`) skips a child outside
+  that rect the same way, so a click in the band over a row scrolled out of view does not
+  reach the row. OpenGLCore stamps the region into every
   slot drawn under it and the shaders discard outside it (see "Clip boxes" above). A
   region only changes when an ancestor's bounds do, and `onBoundsChanged` marks the whole
   subtree (`StateChange_Geometry`), so a moved ScrollControl panel or a dragged Window
-  re-stamps exactly its own subtree and an unchanged box costs no upload. An intersection
+  re-stamps exactly its own subtree and an unchanged box costs no upload. A new viewport
+  that moves neither the ScrollControl nor its inner panel (a larger bottom padding over
+  taller content) is marked by `placeContents` itself. An intersection
   with no overlap is an empty rect (never a negative size) and the walk goes on into it:
   dirty children are drawn again with the empty box, so nothing stale stays on screen.
   Clean, fully clipped subtrees are skipped like any clean subtree, not culled, and a

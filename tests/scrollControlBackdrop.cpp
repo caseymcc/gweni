@@ -11,6 +11,11 @@
  *  shown again keeps its slot and draws the same, and a deleted Menu gives
  *  every id back. ScrollControl::render used to be an empty override that
  *  skipped Base::render, so none of these backdrops was ever drawn.
+ *
+ *  A ListBox scrolled by half a row clips its rows at its viewport: every
+ *  pixel of the padding and margin band around the viewport, outside the
+ *  bar, is the backdrop (the border on the edge, the fill inside it), with a
+ *  selected row half above the viewport and rows below it.
  */
 #include <doctest/doctest.h>
 
@@ -20,6 +25,7 @@
 #include <gweni/controls/collapsibleList.h>
 #include <gweni/controls/listBox.h>
 #include <gweni/controls/menu.h>
+#include <gweni/controls/scrollBar.h>
 #include <gweni/primitiveIds.h>
 #include <gweni/skins/textured/texturedSkin.h>
 #include <gweni/skins/textured/tokyoNight.h>
@@ -330,4 +336,95 @@ TEST_CASE("ScrollControl subclasses: a Menu hidden and shown keeps its slot, and
     again->delayedDelete();
     scene.frame();
     CHECK(liveIds() == without);
+}
+
+TEST_CASE("ScrollControl subclasses: a ListBox scrolled by half a row draws only its backdrop around its viewport")
+{
+    SurfaceOverride panelDark(tokyonight::PanelDark);
+    Scene scene;
+    gweni::controls::ListBox *list=scene.listBox;
+
+    list->setSize(130, 100);
+    for(int i=0; i<12; ++i)
+        list->addItem("Row "+std::to_string(i));
+    // a selected row paints its highlight right up to the viewport's edge
+    list->setSelectedRow(list->getTable()->getRow(0));
+
+    scene.frame();
+    scene.frame();
+
+    gweni::controls::BaseScrollBar *bar=nullptr;
+
+    for(gweni::controls::Base *part : list->getActualChildren())
+    {
+        if(part != list->getInnerPanel() && part->getDock() == gweni::DockPosition::Right)
+            bar=static_cast<gweni::controls::BaseScrollBar *>(part);
+    }
+    REQUIRE(bar);
+    REQUIRE_FALSE(bar->hidden());
+
+    // the first row starts 2 into the inner panel (the ListBox's padding
+    // inside it): scrolled by that and half its height, its top half is
+    // above the viewport
+    const Rect &viewport=list->getViewport();
+    gweni::controls::Base *first=list->getTable()->getRow(0);
+    const int scrolled=first->getY()+first->getHeight()/2;
+    const int range=list->getInnerPanel()->getHeight()-viewport.h;
+
+    REQUIRE(range > scrolled);
+    bar->setScrolledAmount(static_cast<float>(scrolled)/range, true);
+    scene.frame();
+    const Frame shot=scene.frame();
+
+    REQUIRE(list->getInnerPanel()->getY() == viewport.y-scrolled);
+    // and a row reaches past the viewport's bottom too
+    REQUIRE(list->getInnerPanel()->getY()+list->getInnerPanel()->getHeight() > viewport.y+viewport.h);
+
+    const Rect r=canvasRect(list);
+    const Rect vp(r.x+viewport.x, r.y+viewport.y, viewport.w, viewport.h);
+    const Rect b=canvasRect(bar);
+    const std::vector<Rect> excluded={vp, Rect(b.x-1, b.y-1, b.w+2, b.h+2)};
+    const int corner=static_cast<int>(tokyonight::PanelDark.radius)+2;
+    size_t fillChecked=0;
+    size_t fillWrong=0;
+    size_t borderChecked=0;
+    size_t borderWrong=0;
+    size_t bandAboveChecked=0;
+
+    for(int y=r.y; y < r.y+r.h; ++y)
+    {
+        for(int x=r.x; x < r.x+r.w; ++x)
+        {
+            const int dx=std::min(x-r.x, r.x+r.w-1-x);
+            const int dy=std::min(y-r.y, r.y+r.h-1-y);
+
+            if((dx < corner && dy < corner) || inside(excluded, x, y))
+                continue;
+
+            const Color c=shot.at(x, y);
+
+            if(dx == 0 || dy == 0)
+            {
+                ++borderChecked;
+                borderWrong+=near(c, TestBorder) ? 0 : 1;
+            }
+            else if(dx >= 2 && dy >= 2)
+            {
+                ++fillChecked;
+                fillWrong+=near(c, TestFill) ? 0 : 1;
+                // the band over the selected row's hidden half
+                if(y < vp.y && x >= vp.x && x < vp.x+vp.w)
+                    ++bandAboveChecked;
+            }
+        }
+    }
+
+    CHECK(fillChecked >= 400);
+    CHECK(fillWrong == 0);
+    CHECK(borderChecked >= 200);
+    CHECK(borderWrong == 0);
+    CHECK(bandAboveChecked >= static_cast<size_t>(2*vp.w));
+
+    // the row's visible half is drawn, right down from the viewport's top
+    CHECK_FALSE(near(shot.at(vp.x+vp.w/2, vp.y), TestFill));
 }

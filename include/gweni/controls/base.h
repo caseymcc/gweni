@@ -395,7 +395,8 @@ public:
     virtual const Size getPreferredSize() const { return m_preferredSize; }
 
     //! The control under (x, y), in this control's coordinates: the last
-    //! child in child order holding the point, searched the same way, else
+    //! child in child order holding the point (inside its
+    //! getChildClipRect() too, if it has one), searched the same way, else
     //! this control (nullptr if it is hidden, the point is outside it, or
     //! bOnlyIfMouseEnabled and its mouse input is off). Every call is one
     //! hit-test visit (input::hitTestVisits()).
@@ -445,6 +446,16 @@ public:
     virtual void hideRecursive(skin::Base *skin);
 
     virtual bool shouldClip() { return true; }
+
+    //! A rect, in this control's coordinates, that \p child's subtree is
+    //! clipped to and hit-tested in on top of the child's own bounds, or
+    //! nullptr (the default) for none: the child is then clipped to its bounds
+    //! and this control's region, as every control is. A ScrollControl gives
+    //! its viewport for its inner panel, so content scrolled past the viewport
+    //! neither draws nor takes the mouse in the inset around it. A change of
+    //! the rect has to mark the child's subtree (StateChange_Geometry), as a
+    //! bounds change does, for the new region to reach slots already drawn.
+    virtual const gweni::Rect *getChildClipRect(const Base * /*child*/) const { return nullptr; }
 
     //! The skin's renderer object for this control, which owns its primitive and
     //! text ids; null until the control has been rendered once.

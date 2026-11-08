@@ -96,6 +96,13 @@ public:
     //! panel's top-left is the viewport's; it is at least the viewport's size.
     const Rect &getViewport() const { return m_viewport; }
 
+    //! The viewport, for the inner panel: the content is drawn and hit-tested
+    //! only inside it, never in the inset band around it. The bars have none.
+    const Rect *getChildClipRect(const Base *child) const override
+    {
+        return child == m_innerPanel?&m_viewport:nullptr;
+    }
+
     virtual void onVeritcalBarMoved(event::Info);
     virtual void onHorizontalBarMoved(event::Info);
 
