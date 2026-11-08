@@ -8,6 +8,8 @@
 #ifndef _gweni_userdata_h_
 #define _gweni_userdata_h_
 
+#include <gweni/platforms/platformTypes.h>
+
 #include <map>
 
 namespace gweni

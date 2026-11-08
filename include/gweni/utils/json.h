@@ -3,8 +3,12 @@
 
 #include <rapidjson/document.h>
 #include <rapidjson/error/en.h>
+#include <algorithm>
+#include <cassert>
 #include <iostream>
 #include <cstdint>
+#include <string>
+#include <vector>
 
 namespace rapidjson
 {

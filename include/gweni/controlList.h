@@ -9,6 +9,9 @@
 #define _gweni_controllist_h_
 
 #include <algorithm>
+#include <list>
+
+#include <gweni/platforms/platformTypes.h>
 
 namespace gweni
 {
