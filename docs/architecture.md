@@ -2141,6 +2141,84 @@ gaps are deliberate, so they are not a failure: `init` stays `true` and a captur
 `DefaultSkin.json` does not set it, and without it nothing changes. Like every theme
 value, it paints the process-global surfaces, which a later `init()` does not reset.
 
+## The theme editor
+
+`gweni::tools::ThemeEditor` (`include/gweni/tools/themeEditor.h`,
+`source/tools/themeEditor.cpp`) edits the textured skin's theme live, as imgui's style
+editor does: a `WindowControl` an app opens on its canvas (`ThemeEditor::open`/`close`/
+`toggle`; the library binds no key, the examples bind F11 and save to and load from
+`gweni-theme.json` in the current directory). Its body is a `PropertyTree` of
+`ThemeEditorNode`s, one per `tokyonight::surfaceRegistry()` surface sorted by name, then
+one for the skin's text colours (`TexturedSkin::textColorRegistry()`). A node's rows are
+made when it is first opened, so the closed tree is one row per node: a surface's `top`,
+`bottom` and `border` (`ThemeColorProperty`, a `ColorEdit` in hex mode with alpha) and
+its `radius` and `borderWidth` (`ThemeNumberProperty`, a `DragNumber`, 0-32 in tenths),
+and one `ThemeColorProperty` per text colour. Above them are Revert, Load and Save, and
+under them a status line saying what the last of those did. With any other skin the
+tree is empty and the status line says there is nothing to edit.
+
+**An edit applies at once, and once.** A row's change writes the value (the surface's
+field, a process global; the text colour, in the skin's `Colors`) and calls
+`ThemeEditor::applyToCanvas()` on the editor's canvas, which:
+- gives every `internal::Text` that follows a skin colour its new value
+  (`Text::refreshSkinTextColor()`);
+- calls every control's `updateColors()`, so a control that picks its text colour for
+  its state (a Button, a Selectable, a TextBox's placeholder, the ToolTip box, a
+  Slider's value text) reads the skin again;
+- marks the whole tree `StateChange_Background|StateChange_Text` once, so every
+  renderer paints its surface again on the next frame, and the frame after that writes
+  nothing. With a changed metric (a Load or Revert of `ScrollBarThickness`) it lays the
+  whole tree out again too.
+
+It runs once per edit, never on a frame without one: a drag on a radius edits once a
+frame it moves the value, and a settled editor writes nothing. An edit that sets the
+value a field already has redraws nothing. The surfaces are shared by every textured
+skin in the process, but only the editor's canvas is redrawn: another canvas shows the
+new values as its controls redraw, or at once if the app calls `applyToCanvas()` on it.
+
+**Which Text follows which colour.** A text colour is copied into the control that shows
+it, so a Label cannot tell the skin's default colour from one the app gave it. Each
+`internal::Text` records it (`internal::SkinTextColor`): a new one follows
+`Colors.Label.Default`, `Label::makeColorNormal/Bright/Dark/Highlight` and
+`Label::setSkinTextColor` make it follow that colour, a TextBox's text the label colour
+and its placeholder `PlaceholderText`, and any `setTextColor()` gives it a colour of its
+own, which it keeps. A control that picks its colour in `updateColors()` needs no
+record. So a theme change recolours what the skin coloured and nothing the app did.
+
+**Revert, Save and Load.** The editor keeps the values it was opened with
+(`TexturedSkin::captureTheme()`, a `ThemeValues` of every surface, text colour and
+metric by name), and Revert gives them all back (`applyTheme()`), shows them in the made
+rows, and redraws. Save is `TexturedSkin::saveThemeFile(getThemePath())`: it writes the
+**whole** theme (`themeJson()`), not what differs from the compiled defaults, so loading
+it sets every value whatever was set before. Surfaces, text colours and metrics each
+sorted by name, one a line, every value as rapidjson's `Writer` writes it (a colour
+`[r,g,b]`, `[r,g,b,a]` if not opaque, a whole number as an integer, any other float as
+the shortest double that reads back as the same float), so the same theme always gives
+the same bytes. Where it goes depends on what is at the path, found with rapidjson's
+SAX `Reader` and the stream's offsets:
+- a skin config with a `"theme"` object: that object is replaced, its lines indented as
+  its `{` is, and every other byte of the file is kept (CRLF files stay CRLF);
+- a skin config without one: a `"theme"` member is added after its last member;
+- nothing, or a standalone theme file (an object of only `surfaces`, `textColors`,
+  `metrics`, `strict` and `_` comments): the theme is the whole file.
+
+The theme's `"_comment"` is kept. A file that does not parse, or whose `"theme"` is not
+an object, is left as it was and the save fails with one stderr line. Load is
+`TexturedSkin::loadThemeFile()`: a skin config's `"theme"` or a standalone theme, applied
+by `loadTheme()`, so what the file does not set keeps its current value; it shows the
+loaded values in the rows and redraws if anything changed.
+
+`tests/unit/themeEditor.cpp` pins the nodes and rows, an edit redrawing once, Revert,
+Save and Load round trips and the file cases. `--scenario theme` (`controltest_theme`)
+changes several surfaces, text colours and the scroll bar thickness under the settled
+Demo and applies them live: the frame after the one drawing them writes nothing, and
+the pixels are a Demo built under that theme on a new canvas, byte for byte. Then it
+saves the theme, gives the defaults back live (the first Demo's pixels again) and loads
+the file (the changed values and pixels again). ThemeEditorDemo shows it beside a few
+controls, ButtonNormal's top and bottom edited; the first ThemeEditorDemo alive keeps the
+theme it found and the last one to go gives it back, so the demos after it draw as
+before.
+
 ## Missing resources: degraded, not fatal
 
 The library reports a resource it cannot load and goes on drawing; it never exits.

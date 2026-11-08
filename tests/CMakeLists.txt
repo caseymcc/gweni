@@ -380,6 +380,15 @@ Erm, and I think it comes down to a choice between "The League Against Salivatin
             --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/inspector@VARIANT@
         WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
 
+    # the textured skin's theme changed under the settled Demo and applied live
+    # (tools::ThemeEditor::applyToCanvas) draws what a Demo built under it
+    # draws; saved, the defaults given back and the file loaded, the first
+    # Demo and then the changed one again, byte for byte
+    gweni_whole_app_test(controltest_theme 120
+        COMMAND $<TARGET_FILE:ControlTest> --headless --scenario theme --require-one-pass
+            --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/theme@VARIANT@
+        WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
+
     # every entry of the shell's demo list fits its row at the README hero's
     # 1024x768, at scale 1 and 1.5: a label wider than its button's inner rect
     # (or running under the list's scrollbar) fails, naming the entry's key

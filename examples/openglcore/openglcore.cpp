@@ -17,7 +17,9 @@
  *                         context instead of trying a GLFW window first
  *
  *  With no options it opens the interactive window as before; there F12 opens and
- *  closes the inspector (gweni::tools::Inspector). A capture needs no
+ *  closes the inspector (gweni::tools::Inspector) and F11 the theme editor
+ *  (gweni::tools::ThemeEditor, saving to and loading from gweni-theme.json in
+ *  the current directory). A capture needs no
  *  display: it hides the window, and with no display at all it falls back to a
  *  surfaceless EGL context (--headless skips the window, so the capture takes the
  *  same path whether or not a display exists). For example:
@@ -46,6 +48,7 @@
 #include <gweni/platforms/input/glfw3.h>
 #include <gweni/controls/canvas.h>
 #include <gweni/tools/inspector.h>
+#include <gweni/tools/themeEditor.h>
 #include <iostream>
 
 #include <demo/demo.h>
@@ -75,11 +78,18 @@ static float g_manualScale=1.0f;        // --scale or GWENI_SCALE
 
 static void key_callback(GLFWwindow* window, int key, int scancode, int action, int mods)
 {
-    // F12 opens and closes the inspector; the library binds no key
+    // F12 opens and closes the inspector, F11 the theme editor; the library
+    // binds no key
     if(key == GLFW_KEY_F12)
     {
         if((action == GLFW_PRESS) && g_canvas)
             gweni::tools::Inspector::toggle(g_canvas);
+        return;
+    }
+    if(key == GLFW_KEY_F11)
+    {
+        if((action == GLFW_PRESS) && g_canvas && gweni::tools::ThemeEditor::toggle(g_canvas))
+            gweni::tools::ThemeEditor::find(g_canvas)->setThemePath("gweni-theme.json");
         return;
     }
 
@@ -251,7 +261,9 @@ static void printUsage(std::ostream &out)
          "                       the executable\n"
        <<gweni::capture::RendererHelp<<
          "\n"
-         "In the window, F12 opens and closes the inspector.\n"
+         "In the window, F12 opens and closes the inspector, and F11 the theme\n"
+         "editor, which saves to and loads from gweni-theme.json in the current\n"
+         "directory.\n"
          "\n"
          "Per-frame line fields:\n"
          "  frame      0-based frame index\n"

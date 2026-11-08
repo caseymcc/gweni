@@ -152,8 +152,10 @@
  *    --scroll DX,DY     mouse wheel (DX is ignored; gweni only takes the Y axis)
  *    --key <name>       a key: return, kp-enter, tab, space, escape, up, down,
  *                       left, right, home, end, backspace, delete, shift,
- *                       control, alt, command, f12 (which, as in the window,
- *                       opens and closes the inspector and is not passed on),
+ *                       control, alt, command, f11 and f12 (which, as in the
+ *                       window, open and close the theme editor, saving to and
+ *                       loading from gweni-theme.json in the cwd, and the
+ *                       inspector, and are not passed on),
  *                       or a single printable character. A named key is pressed and released as
  *                       synthesised GLFW key events and a character is typed
  *                       as a GLFW char event, both through the same
@@ -425,6 +427,20 @@
  *                 (inspector.png, with it open). One line
  *                   inspector settle_frames=2 settled_zero=yes ... ids_back=yes
  *                 Exits non-zero if any check is no.
+ *    theme        Demo, the clock frozen: the textured skin's theme changed
+ *                 (surface colours, a radius, a border width, text colours and
+ *                 the scroll bar thickness) and applied live
+ *                 (tools::ThemeEditor::applyToCanvas); the frame after the one
+ *                 drawing it writes nothing, and the pixels are those of a Demo
+ *                 built under the changed theme on a new canvas. Then the
+ *                 theme is saved (TexturedSkin::saveThemeFile, to
+ *                 theme-saved.json in the shot dir),
+ *                 the defaults given back live (the first Demo's pixels again)
+ *                 and the file loaded (loadThemeFile, the changed values and
+ *                 pixels again). Shots theme-00-default.png ...
+ *                 theme-04-loaded.png. One line
+ *                   theme edit_prim_slots=N ... load_matches=yes
+ *                 Exits non-zero if any check is no.
  *    scale        one control (default Demo) on a 640x480 canvas at scale 1,
  *                 then Canvas::setScale(2) with the framebuffer resized to
  *                 1280x960, then back to 1 (scale-01-1x.png, scale-02-2x.png,
@@ -646,6 +662,7 @@
 #include <gweni/controls/dataTable.h>
 #include <gweni/controls/properties.h>
 #include <gweni/tools/inspector.h>
+#include <gweni/tools/themeEditor.h>
 #include <GLFW/glfw3.h>
 #include <gweni/utils/filesystem.h>
 #include "capture.h"
@@ -718,6 +735,7 @@
 #include <demo/textBox.h>
 #include <demo/textDemo.h>
 #include <demo/textSizes.h>
+#include <demo/themeEditor.h>
 #include <demo/unicodeText.h>
 #include <demo/virtualList.h>
 #include <demo/window.h>
@@ -747,13 +765,17 @@ static gweni::controls::Canvas *g_canvas=nullptr;
 static float g_manualScale=1.0f;        // --scale or GWENI_SCALE
 
 // The app's own keys, before the canvas sees them: F12 opens and closes the
-// inspector (the library binds no key).
+// inspector, F11 the theme editor (the library binds no key).
 static bool appKey(int key, int action)
 {
-    if((key != GLFW_KEY_F12) || !g_canvas)
+    if(((key != GLFW_KEY_F12) && (key != GLFW_KEY_F11)) || !g_canvas)
         return false;
-    if(action == GLFW_PRESS)
+    if(action != GLFW_PRESS)
+        return true;
+    if(key == GLFW_KEY_F12)
         gweni::tools::Inspector::toggle(g_canvas);
+    else if(gweni::tools::ThemeEditor::toggle(g_canvas))
+        gweni::tools::ThemeEditor::find(g_canvas)->setThemePath("gweni-theme.json");
     return true;
 }
 
@@ -797,7 +819,7 @@ static void content_scale_callback(GLFWwindow *window, float, float)
     X(CheckBoxDemo) X(NumericDemo) X(SliderDemo) X(SliderTextDemo) X(DragNumberDemo) X(VectorFieldDemo) X(MenuStripDemo) \
     X(WindowDemo) X(WindowButtonsDemo) X(TreeControlDemo) X(PropertiesDemo) X(TabControlDemo) X(TabCloseDemo) X(TabOverflowDemo) \
     X(ScrollControlDemo) X(PageControlDemo) X(CollapsibleListDemo) X(ColorPickerDemo) X(ColorEditDemo) \
-    X(UnicodeTextDemo) X(TextSizesDemo) X(TextDemo) X(LayoutDemo) X(InspectorDemo)
+    X(UnicodeTextDemo) X(TextSizesDemo) X(TextDemo) X(LayoutDemo) X(InspectorDemo) X(ThemeEditorDemo)
 
 static const char *const g_controlNames[]=
 {
@@ -1406,7 +1428,7 @@ static const struct { const char *name; int key; } g_namedKeys[]=
     {"control", GLFW_KEY_LEFT_CONTROL},  {"up", GLFW_KEY_UP},
     {"down", GLFW_KEY_DOWN},             {"escape", GLFW_KEY_ESCAPE},
     {"alt", GLFW_KEY_LEFT_ALT},          {"command", GLFW_KEY_LEFT_SUPER},
-    {"kp-enter", GLFW_KEY_KP_ENTER},     {"f12", GLFW_KEY_F12},
+    {"kp-enter", GLFW_KEY_KP_ENTER},     {"f11", GLFW_KEY_F11},     {"f12", GLFW_KEY_F12},
 };
 
 // The modifiers a --key chord may hold, with the mods bit GLFW reports for them.
@@ -1773,7 +1795,7 @@ static bool runSteps(Session &s, const std::vector<Step> &steps, const std::stri
 //-----------------------------------------------------------------------------
 enum class Scenario { None, PerControl, Resize, Docked, Scroll, Interaction, Typing, Clip, TextSize, Scale,
     ToolTip, ContextMenu, Popup, VirtualList, DataTableVirtual, HideShow, DemoLabels, PlotHistogram,
-    PlotLines, Inspector };
+    PlotLines, Inspector, Theme };
 
 static bool parseScenario(const std::string &name, Scenario &scenario)
 {
@@ -1796,6 +1818,7 @@ static bool parseScenario(const std::string &name, Scenario &scenario)
     else if(name == "plot-histogram") scenario=Scenario::PlotHistogram;
     else if(name == "plot-lines") scenario=Scenario::PlotLines;
     else if(name == "inspector") scenario=Scenario::Inspector;
+    else if(name == "theme") scenario=Scenario::Theme;
     else return false;
     return true;
 }
@@ -2683,6 +2706,154 @@ static bool runInspectorScenario(Session &s, const std::string &shotDir, bool &p
                      : !back ? "it did not come back to 0 after the hover (\""+backLine+"\")"
                      : !closed ? "F12 did not close it"
                      : "the inspector did not give its primitive ids back")<<"\n";
+    return shot;
+}
+
+//-----------------------------------------------------------------------------
+// --scenario theme: the textured skin's theme changed live, saved and loaded
+//
+// tools::ThemeEditor::applyToCanvas() redraws a canvas with the theme as it is
+// now, so a theme changed under a laid-out Demo must draw what a Demo built
+// under it draws; giving the old values back must draw the first Demo again;
+// and the theme saved (TexturedSkin::saveThemeFile), the defaults restored and
+// the file loaded (loadThemeFile) must draw the changed theme again, byte for
+// byte (docs/architecture.md -> "The theme editor").
+//-----------------------------------------------------------------------------
+
+static bool runThemeScenario(Session &s, const std::string &shotDir, bool &passed)
+{
+    using gweni::skin::textured::TexturedSkin;
+    using gweni::tools::ThemeEditor;
+
+    s.freezeClock=true;
+
+    TexturedSkin *skin=dynamic_cast<TexturedSkin *>(s.canvas->getSkin());
+
+    if(!skin)
+    {
+        std::cerr<<"ControlTest: theme: the canvas's skin is not the textured skin\n";
+        return false;
+    }
+
+    const int settleFrames=std::max(s.frames, 5);
+    const TexturedSkin::ThemeValues defaults=skin->captureTheme();
+    const gweni::renderer::SlotRenderer::FrameStats &gpu=s.renderer->getFrameStats();
+    // next to the shots, where it is kept to be looked at
+    const fs::path themePath=fs::path(shotDir)/"theme-saved.json";
+
+    // several surfaces (colours, a radius, a border width), text colours and a
+    // metric, as a theme editor's rows would set them
+    TexturedSkin::ThemeValues changed=defaults;
+
+    changed.surfaces.at("ButtonNormal").top=gweni::Color(0x3d, 0x59, 0xa1);
+    changed.surfaces.at("ButtonNormal").bottom=gweni::Color(0x2c, 0x3d, 0x6b);
+    changed.surfaces.at("CategoryList").top=gweni::Color(0x24, 0x1b, 0x2e);
+    changed.surfaces.at("CategoryHeader").border=gweni::Color(0xe0, 0xaf, 0x68);
+    changed.surfaces.at("TabActive").radius=2.0f;
+    changed.surfaces.at("TextBox").borderWidth=2.0f;
+    changed.surfaces.at("ScrollThumb").top=gweni::Color(0x9e, 0xce, 0x6a, 200);
+    changed.textColors.at("LabelDefault")=gweni::Color(0xe0, 0xaf, 0x68);
+    changed.textColors.at("ButtonNormal")=gweni::Color(0x7d, 0xcf, 0xff);
+    changed.metrics.at("ScrollBarThickness")=16;
+
+    gweni::controls::Base *control=addControl(s, g_dockedControlName);
+
+    if(!control)
+        return false;
+    s.label="theme";
+    renderFrames(s, settleFrames);
+
+    std::vector<unsigned char> original, edited, fresh, reverted, loaded;
+
+    s.renderer->readPixels(s.pixels.x, s.pixels.y, original);
+    bool shot=shoot(s, shotDir+"/theme-00-default.png");
+
+    // a change applied live: one frame draws it, the next writes nothing
+    skin->applyTheme(changed);
+    ThemeEditor::applyToCanvas(s.canvas, true);
+    renderFrames(s, 1);
+    const size_t editPrim=gpu.primitiveSlotsWritten;
+    const size_t editText=gpu.textSlotsWritten;
+    renderFrames(s, 1);
+    const size_t settledSlots=gpu.primitiveSlotsWritten+gpu.textSlotsWritten;
+    s.renderer->readPixels(s.pixels.x, s.pixels.y, edited);
+    shot=shoot(s, shotDir+"/theme-01-edited.png") && shot;
+
+    // the theme saved, as the editor's Save writes it
+    const bool saved=ensureDirectory(shotDir) && skin->saveThemeFile(themePath.string());
+
+    // a Demo built under the changed theme on a new canvas
+    dropControl(s, control);
+    replaceCanvas(s);
+    control=addControl(s, g_dockedControlName);
+    if(!control)
+        return false;
+    renderFrames(s, settleFrames);
+    s.renderer->readPixels(s.pixels.x, s.pixels.y, fresh);
+    shot=shoot(s, shotDir+"/theme-02-fresh.png") && shot;
+
+    // the defaults given back live: the Demo built under them
+    skin->applyTheme(defaults);
+    ThemeEditor::applyToCanvas(s.canvas, true);
+    renderFrames(s, settleFrames);
+    const bool defaultsBack=skin->captureTheme() == defaults;
+    s.renderer->readPixels(s.pixels.x, s.pixels.y, reverted);
+    shot=shoot(s, shotDir+"/theme-03-reverted.png") && shot;
+
+    // the saved file loaded live: the changed theme again
+    const bool loadedFile=saved && skin->loadThemeFile(themePath.string());
+    const bool valuesBack=skin->captureTheme() == changed;
+
+    ThemeEditor::applyToCanvas(s.canvas, true);
+    renderFrames(s, settleFrames);
+    s.renderer->readPixels(s.pixels.x, s.pixels.y, loaded);
+    shot=shoot(s, shotDir+"/theme-04-loaded.png") && shot;
+
+    skin->applyTheme(defaults);
+    ThemeEditor::applyToCanvas(s.canvas, true);
+    dropControl(s, control);
+    renderFrames(s, 1);
+
+    auto same=[](const std::vector<unsigned char> &a, const std::vector<unsigned char> &b,
+        const char *what)
+    {
+        if(a == b)
+            return true;
+
+        size_t differing=0;
+
+        for(size_t i=0; i+3 < a.size() && i+3 < b.size(); i+=4)
+            if(std::memcmp(&a[i], &b[i], 4) != 0)
+                ++differing;
+        std::cerr<<"ControlTest: theme: "<<what<<" in "<<differing<<" pixels\n";
+        return false;
+    };
+
+    const bool editShows=edited != original;
+    const bool liveMatchesFresh=same(edited, fresh, "the theme changed live differs from a Demo built under it");
+    const bool revertMatches=same(reverted, original, "the defaults given back differ from the first Demo");
+    const bool loadMatches=same(loaded, edited, "the theme loaded from the file differs from the one saved");
+    const bool settles=settledSlots == 0;
+
+    passed=editShows && liveMatchesFresh && revertMatches && loadMatches && settles
+        && saved && loadedFile && valuesBack && defaultsBack;
+
+    std::cout<<"theme edit_prim_slots="<<editPrim<<" edit_text_slots="<<editText
+             <<" settled_slots="<<settledSlots<<" edit_shows="<<(editShows?"yes":"no")
+             <<" live_matches_fresh="<<(liveMatchesFresh?"yes":"no")
+             <<" revert_matches="<<(revertMatches?"yes":"no")
+             <<" saved="<<(saved?"yes":"no")<<" loaded="<<(loadedFile?"yes":"no")
+             <<" values_back="<<(valuesBack?"yes":"no")<<" defaults_back="<<(defaultsBack?"yes":"no")
+             <<" load_matches="<<(loadMatches?"yes":"no")<<"\n";
+    if(!passed)
+        std::cerr<<"ControlTest: theme: "
+                 <<(!editShows ? "the changed theme drew nothing new"
+                     : !settles ? "the frame after the change still wrote slots"
+                     : !saved ? "the theme could not be saved"
+                     : !loadedFile ? "the saved theme could not be loaded"
+                     : !valuesBack ? "the loaded theme's values are not the saved ones"
+                     : !defaultsBack ? "the defaults did not come back"
+                     : "a capture did not match (above)")<<"\n";
     return shot;
 }
 
@@ -7745,6 +7916,15 @@ int main(int argc, char *argv[])
             ok=runInspectorScenario(session, shotDir, passed);
             if(ok && !passed)
                 ok=false;   // the inspector did not settle or showed the wrong counts
+            break;
+        }
+
+        case Scenario::Theme:
+        {
+            bool passed=false;
+            ok=runThemeScenario(session, shotDir, passed);
+            if(ok && !passed)
+                ok=false;   // a live theme change did not draw what a fresh build does
             break;
         }
 

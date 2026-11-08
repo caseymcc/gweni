@@ -52,9 +52,9 @@ HERO_OUT=demo.png
 # in this order, each a link to its live page, so a change here needs a
 # matching change there (tools/check_site_links.py, run by tools/ci_site.sh,
 # checks both). The showcase pages (examples/demo/showcase*.cpp) hold many
-# controls each; InspectorDemo is gweni::tools::Inspector beside a few
-# controls; TextDemo is the one page of a single control, the text
-# sizes side by side.
+# controls each; InspectorDemo is gweni::tools::Inspector and
+# ThemeEditorDemo gweni::tools::ThemeEditor beside a few controls; TextDemo
+# is the one page of a single control, the text sizes side by side.
 #
 # Every other page of one control is left out (ControlTest --control still
 # shows each). Left off the showcase pages because they do not look right on
@@ -71,6 +71,7 @@ SAMPLES=(
     ShowcaseWindowsDemo
     TextDemo
     InspectorDemo
+    ThemeEditorDemo
 )
 
 # Each sample's canvas size: a showcase page at the size of the hero's centre

@@ -96,6 +96,8 @@ set(GWENI_DEMO_SOURCES
     demo/textDemo.h
     demo/textSizes.cpp
     demo/textSizes.h
+    demo/themeEditor.cpp
+    demo/themeEditor.h
     demo/treeControl.cpp
     demo/treeControl.h
     demo/unicodeText.cpp

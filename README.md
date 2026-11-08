@@ -67,6 +67,14 @@ examples): the control tree, the selected control's bounds, z, ids and pending s
 last frame's counters, the app's alone. Over a settled UI it shows 0 slots written, and the frames
 after it write nothing, its own included. The selected Save button is framed by its highlight box.
 
+[![The theme editor beside a few controls](docs/images/ThemeEditorDemo.png)](https://caseymcc.github.io/gweni/controltest.html?control=ThemeEditorDemo)
+
+**Theme editor**: `gweni::tools::ThemeEditor`, the textured skin's theme edited live (F11 in the
+examples): every surface's colours, radius and border width, and every text colour, in a PropertyTree
+of ColorEdits and DragNumbers. An edit redraws the whole canvas once, and Save writes the whole theme
+as the `"theme"` object `DefaultSkin.json` holds. Here ButtonNormal is edited to a deep blue, which the
+buttons and the editor's own node headers show.
+
 The showcase pages, the hero's *Containers & data* among them, are in the demo shell's "Showcase"
 category and in `ControlTest --control`, which also still shows every control on a page of its own
 (`ControlTest --list`). All of these images are rendered
