@@ -524,6 +524,7 @@
 #include <gweni/utils/filesystem.h>
 #include "capture.h"
 #include <cctype>
+#include <chrono>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -5647,6 +5648,222 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *gweni_web_focused_text()
 }
 #endif//GWENI_EXAMPLE_WEBGL
 
+//-----------------------------------------------------------------------------
+// --window-test: the interactive window, scripted (window_vulkan,
+// tests/windowVulkan.cmake). It drives the loop runWindowLoop runs one
+// iteration at a time (beginWindowFrame, a frame, presentWindowFrame, an event
+// poll), on the stepped clock and with no input callbacks, so what it shows
+// depends on the window's sizes alone and not on where the X pointer is.
+//-----------------------------------------------------------------------------
+
+#ifdef GWENI_HAS_VULKAN
+// frames drawn at a size before its image is read back, as a --shot settles
+static constexpr int kWindowSettleFrames=kSettleFrames;
+// how long the window system has to do a resize, an iconify or a restore
+static constexpr double kWindowDeadlineSeconds=10.0;
+
+static bool runWindowTest(gweni::capture::Device &device, gweni::controls::Canvas *canvas,
+    gweni::renderer::SlotRenderer *renderer, const gweni::Color &background,
+    const gweni::Point &size, const std::string &dir)
+{
+    typedef std::chrono::steady_clock Clock;
+
+    GLFWwindow *window=device.context().window;
+    const gweni::capture::Device::WindowStats *stats=device.windowStats();
+
+    if(!stats)
+    {
+        std::cerr<<"ControlTest: --window-test needs --renderer vulkan (a swapchain to count)\n";
+        return false;
+    }
+
+    // One iteration of the window's loop; \a readback reads back what it presents.
+    auto iteration=[&](std::vector<uint8_t> *readback, gweni::Point *readSize)
+    {
+        bool shown=false;
+
+        if(device.beginWindowFrame())
+        {
+            canvas->updateCanvas();
+            renderer->clearTarget(background);
+            canvas->renderCanvas();
+            g_clockSeconds+=g_frameStep;
+            shown=device.presentWindowFrame(readback, readSize);
+            glfwPollEvents();
+        }
+        else
+        {
+            // runWindowLoop waits for the next event; here with a timeout, so
+            // the script goes on to its next step
+            glfwWaitEventsTimeout(0.05);
+        }
+        return shown;
+    };
+
+    auto timedOut=[&](Clock::time_point start)
+    {
+        return std::chrono::duration<double>(Clock::now()-start).count() > kWindowDeadlineSeconds;
+    };
+
+    // Draws until the swapchain is \a wanted (the size callback has fitted the
+    // canvas, the target follows it), settles, and writes what the next present
+    // shows as \a name.
+    auto shootAt=[&](const gweni::Point &wanted, const std::string &name)
+    {
+        const Clock::time_point start=Clock::now();
+        int settled=0;
+
+        while(settled < kWindowSettleFrames)
+        {
+            if(timedOut(start))
+            {
+                std::cerr<<"ControlTest: --window-test: no "<<wanted.x<<"x"<<wanted.y
+                         <<" swapchain within "<<kWindowDeadlineSeconds<<" s (it is "
+                         <<stats->extent.x<<"x"<<stats->extent.y<<")\n";
+                return false;
+            }
+            if(iteration(nullptr, nullptr) && stats->extent.x == wanted.x && stats->extent.y == wanted.y)
+                ++settled;
+        }
+
+        std::vector<uint8_t> pixels;
+        gweni::Point shown;
+
+        while(!iteration(&pixels, &shown))
+        {
+            if(timedOut(start))
+            {
+                std::cerr<<"ControlTest: --window-test: nothing presented at "<<wanted.x<<"x"<<wanted.y<<"\n";
+                return false;
+            }
+        }
+
+        const std::string path=(fs::path(dir)/name).string();
+
+        if(shown.x != wanted.x || shown.y != wanted.y)
+        {
+            std::cerr<<"ControlTest: --window-test: "<<name<<" presented "<<shown.x<<"x"<<shown.y
+                     <<", not "<<wanted.x<<"x"<<wanted.y<<"\n";
+            return false;
+        }
+        if(!writeRgbaPng(pixels, shown.x, shown.y, path))
+            return false;
+        std::cout<<"window-test: presented "<<shown.x<<"x"<<shown.y<<" wrote "<<path<<"\n";
+        return true;
+    };
+
+    gweni::platform::setTimeSource(&steppedClock);
+    g_clockSeconds=0.0f;
+
+    if(!ensureDirectory(dir))
+        return false;
+    std::cout<<"window-test: content_scale="<<gweni::capture::contentScale(window)<<"\n";
+
+    // 1. the size it opened at; 2. two others and back, each a recreate
+    const gweni::Point sizes[]=
+    {
+        size,
+        gweni::Point(size.x*5/4, size.y*5/4),
+        gweni::Point(size.x*4/5, size.y*4/5),
+        size
+    };
+    long resizes=0;
+
+    for(size_t i=0; i<sizeof(sizes)/sizeof(sizes[0]); ++i)
+    {
+        const gweni::Point &wanted=sizes[i];
+
+        if(i > 0)
+        {
+            glfwSetWindowSize(window, wanted.x, wanted.y);
+            ++resizes;
+        }
+        if(!shootAt(wanted, "window_"+std::to_string(i)+"_"+std::to_string(wanted.x)+"x"
+            +std::to_string(wanted.y)+".png"))
+            return false;
+    }
+
+    // 3. iconified: nothing drawn or presented until it is restored
+    const gweni::Point last=sizes[sizeof(sizes)/sizeof(sizes[0])-1];
+    Clock::time_point start=Clock::now();
+
+    glfwIconifyWindow(window);
+    while(glfwGetWindowAttrib(window, GLFW_ICONIFIED) != GLFW_TRUE)
+    {
+        if(timedOut(start))
+        {
+            std::cerr<<"ControlTest: --window-test: the window was not iconified within "
+                     <<kWindowDeadlineSeconds<<" s (is a window manager running?)\n";
+            return false;
+        }
+        iteration(nullptr, nullptr);
+    }
+
+    const long framesIconified=stats->frames;
+    const long presentsIconified=stats->presents;
+    const long skippedIconified=stats->skipped;
+
+    start=Clock::now();
+    while(std::chrono::duration<double>(Clock::now()-start).count() < 0.5)
+        iteration(nullptr, nullptr);
+
+    const long framesWhileIconified=stats->frames-framesIconified;
+    const long presentsWhileIconified=stats->presents-presentsIconified;
+    const long skippedWhileIconified=stats->skipped-skippedIconified;
+
+    std::cout<<"window-test: iconified frames="<<framesWhileIconified
+             <<" presents="<<presentsWhileIconified<<" skipped="<<skippedWhileIconified<<"\n";
+
+    glfwRestoreWindow(window);
+    start=Clock::now();
+    while(glfwGetWindowAttrib(window, GLFW_ICONIFIED) == GLFW_TRUE)
+    {
+        if(timedOut(start))
+        {
+            std::cerr<<"ControlTest: --window-test: the window was not restored within "
+                     <<kWindowDeadlineSeconds<<" s\n";
+            return false;
+        }
+        iteration(nullptr, nullptr);
+    }
+    if(!shootAt(last, "window_restored_"+std::to_string(last.x)+"x"+std::to_string(last.y)+".png"))
+        return false;
+
+    // 4. what the swapchain did
+    std::cout<<"window-test: resizes="<<resizes
+             <<" swapchains="<<stats->swapchains
+             <<" recreates="<<(stats->swapchains-1)
+             <<" resize_recreates="<<stats->resizeRecreates
+             <<" out_of_date="<<stats->outOfDate
+             <<" suboptimal="<<stats->suboptimal
+             <<" frames="<<stats->frames
+             <<" skipped="<<stats->skipped
+             <<" presents="<<stats->presents
+             <<" dropped="<<stats->dropped<<"\n";
+
+    bool ok=true;
+
+    if(stats->resizeRecreates < resizes)
+    {
+        std::cerr<<"ControlTest: --window-test: "<<resizes<<" resizes but "<<stats->resizeRecreates
+                 <<" swapchain recreates for a new size\n";
+        ok=false;
+    }
+    if(presentsWhileIconified != 0 || framesWhileIconified != 0)
+    {
+        std::cerr<<"ControlTest: --window-test: "<<presentsWhileIconified<<" present(s) and "
+                 <<framesWhileIconified<<" frame(s) while the window was iconified\n";
+        ok=false;
+    }
+    if(skippedWhileIconified == 0)
+    {
+        std::cerr<<"ControlTest: --window-test: the loop did not wait while the window was iconified\n";
+        ok=false;
+    }
+    return ok;
+}
+#endif//GWENI_HAS_VULKAN
+
 int main(int argc, char *argv[])
 {
     gweni::capture::setToolName("ControlTest");
@@ -5657,6 +5874,7 @@ int main(int argc, char *argv[])
     std::string shotDir="/tmp";
     std::string resourceDir;
     std::string rendererName;
+    std::string windowTestDir;
     gweni::Point screenSize(640, 480);
     float scale=1.0f;
     bool scaleGiven=false;
@@ -5693,6 +5911,7 @@ int main(int argc, char *argv[])
         else if(arg == "--shot-dir" && hasValue) shotDir=argv[++i];
         else if(arg == "--resources" && hasValue) resourceDir=argv[++i];
         else if(arg == "--renderer" && hasValue) rendererName=argv[++i];
+        else if(arg == "--window-test" && hasValue) windowTestDir=argv[++i];
         else if(arg == "--frames" && hasValue)
         {
             frames=std::atoi(argv[++i]);
@@ -5889,6 +6108,13 @@ int main(int argc, char *argv[])
     {
         std::cerr<<"ControlTest: --headless has no window to show;"
                    " pass --shot, --shot-all, --stats, --require-one-pass or --check-teardown\n";
+        return EXIT_FAILURE;
+    }
+
+    if(!windowTestDir.empty() && (capturing || scale != 1.0f))
+    {
+        std::cerr<<"ControlTest: --window-test is the window, scripted at --scale 1;"
+                   " drop the capture switches and --scale\n";
         return EXIT_FAILURE;
     }
 
@@ -6153,30 +6379,48 @@ int main(int argc, char *argv[])
         g_windowLabel=which;
 #endif
 
-        g_glfwInput.initialize(canvas);
-        glfwSetKeyCallback(ctx.window, key_callback);
-        glfwSetCharCallback(ctx.window, char_callback);
-        glfwSetWindowFocusCallback(ctx.window, window_focus_callback);
-        glfwSetCursorPosCallback(ctx.window, cursor_pos_callback);
-        glfwSetCursorEnterCallback(ctx.window, cursor_enter_callback);
-        glfwSetMouseButtonCallback(ctx.window, mouse_button_callback);
-        glfwSetScrollCallback(ctx.window, scroll_callback);
+        // --window-test takes no input: the X pointer is wherever the server
+        // left it, maybe over a button
+        if(windowTestDir.empty())
+        {
+            g_glfwInput.initialize(canvas);
+            glfwSetKeyCallback(ctx.window, key_callback);
+            glfwSetCharCallback(ctx.window, char_callback);
+            glfwSetWindowFocusCallback(ctx.window, window_focus_callback);
+            glfwSetCursorPosCallback(ctx.window, cursor_pos_callback);
+            glfwSetCursorEnterCallback(ctx.window, cursor_enter_callback);
+            glfwSetMouseButtonCallback(ctx.window, mouse_button_callback);
+            glfwSetScrollCallback(ctx.window, scroll_callback);
+        }
         glfwSetFramebufferSizeCallback(ctx.window, framebuffer_size_callback);
         glfwSetWindowContentScaleCallback(ctx.window, content_scale_callback);
 
         // The window's own content scale, and its real framebuffer size.
         fitCanvas(ctx.window);
 
-        // One frame per displayed frame until the window closes (in the browser,
-        // per animation frame, never returning); the frame holds only the
-        // canvas and the renderer, heap objects, and the colour, a copy, as the
-        // browser's loop needs.
-        gweni::capture::runWindowLoop(ctx, [canvas, renderer, background]()
+        if(!windowTestDir.empty())
         {
-            canvas->updateCanvas();
-            renderer->clearTarget(background);
-            canvas->renderCanvas();
-        });
+#ifdef GWENI_HAS_VULKAN
+            if(!runWindowTest(*device, canvas, renderer, background, screenPixels, windowTestDir))
+                result=EXIT_FAILURE;
+#else
+            std::cerr<<"ControlTest: --window-test needs --renderer vulkan, which this build has not\n";
+            result=EXIT_FAILURE;
+#endif
+        }
+        else
+        {
+            // One frame per displayed frame until the window closes (in the
+            // browser, per animation frame, never returning); the frame holds
+            // only the canvas and the renderer, heap objects, and the colour, a
+            // copy, as the browser's loop needs.
+            device->runWindowLoop([canvas, renderer, background]()
+            {
+                canvas->updateCanvas();
+                renderer->clearTarget(background);
+                canvas->renderCanvas();
+            });
+        }
 
         delete control;
     }

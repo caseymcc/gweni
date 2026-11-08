@@ -649,6 +649,34 @@ if(GWENI_RENDER_VULKAN)
     gweni_vulkan_test_environment(vulkan_smoke)
 endif()
 
+# renderer::Vulkan in a window (windowVulkan.cmake, whose header says what it
+# runs): ControlTest --window-test under an Xvfb of its own and gweni_test_wm
+# (vulkan/testWindowManager.cpp), the window's presented images against headless
+# captures. Without Xvfb, or without the X11 headers the window manager is built
+# with, it fails rather than skips.
+if(GWENI_RENDER_VULKAN AND TARGET ControlTest AND NOT EMSCRIPTEN)
+    find_package(X11)
+    set(test_wm "")
+    if(X11_FOUND)
+        add_executable(gweni_test_wm vulkan/testWindowManager.cpp)
+        gweni_set_warnings(gweni_test_wm)
+        target_link_libraries(gweni_test_wm X11::X11)
+        set(test_wm $<TARGET_FILE:gweni_test_wm>)
+    else()
+        message(STATUS "tests: no X11 headers for gweni_test_wm; window_vulkan will fail")
+    endif()
+
+    add_test(NAME window_vulkan
+        COMMAND ${CMAKE_COMMAND}
+            -DCONTROLTEST=$<TARGET_FILE:ControlTest>
+            -DTEST_WM=${test_wm}
+            -DSCRATCH_DIR=${CMAKE_CURRENT_BINARY_DIR}/window_vulkan
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/windowVulkan.cmake
+        WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
+    set_tests_properties(window_vulkan PROPERTIES TIMEOUT 300)
+    gweni_vulkan_test_environment(window_vulkan)
+endif()
+
 # renderer::Vulkan held to OpenGLCore (backends.mjs, whose header says what each
 # mode runs): backend_counters, every counter of every gweni_bench scene and
 # ControlTest --stats run the same on both backends; backend_pixels[_scale200],

@@ -27,8 +27,10 @@ endif()
 
 # Offscreen capture plumbing (GL context with or without a display, offscreen
 # target, PNG readback), shared by both examples and the unit tests (tests/) so
-# capture.cpp is compiled once. EGL stays here, out of the gweni library.
-add_library(gweni_capture STATIC capture.cpp)
+# capture.cpp is compiled once. EGL stays here, out of the gweni library, and so
+# does the Vulkan window's swapchain (vulkanWindow.cpp, empty without
+# GWENI_RENDER_VULKAN).
+add_library(gweni_capture STATIC capture.cpp vulkanWindow.cpp)
 gweni_set_warnings(gweni_capture)
 target_include_directories(gweni_capture PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(gweni_capture PUBLIC

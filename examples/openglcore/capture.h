@@ -62,6 +62,8 @@ namespace capture
 
 //! Prefix for this binary's diagnostics, e.g. "ControlTest".
 void setToolName(const std::string &name);
+//! The prefix setToolName set ("capture" until it is called).
+const std::string &toolName();
 
 //! Report GLFW errors on stderr under the tool-name prefix. Call it before the
 //! first initGlfwContext(): the "no display" error is raised inside glfwInit().
@@ -239,6 +241,10 @@ const char *backendName(Backend backend);
 //! it.
 bool chooseBackend(const std::string &flag, Backend &backend);
 
+//! Whether GWENI_VULKAN_VALIDATION=1 asks for the validation layer (the Vulkan
+//! tests set it): a Vulkan device is then made with it, any message aborting.
+bool vulkanValidation();
+
 //! The --help text of --renderer, for each tool's usage
 extern const char *const RendererHelp;
 
@@ -252,8 +258,9 @@ public:
 
     virtual Backend backend() const=0;
 
-    //! The GL context, with its window when there is one (an interactive run, or
-    //! a capture's hidden window); empty for Vulkan, which has no window yet.
+    //! The context, with its window when there is one: on GL an interactive
+    //! run's window or a capture's hidden one (none on EGL); on Vulkan the
+    //! interactive window (a capture has none, and no GL context either).
     const Context &context() const { return m_context; }
 
     //! A new renderer drawing into the target at \a viewRect (device pixels),
@@ -273,6 +280,55 @@ public:
     //! The device's name: GL_RENDERER, or the Vulkan device's deviceName.
     virtual std::string deviceName() const=0;
 
+    //-------------------------------------------------------------------------
+    // The interactive window (context().window), what runWindowLoop runs
+
+    //! Runs \a frame once per displayed frame of the window until it is closed,
+    //! then waits for the device. GL: capture::runWindowLoop (a loop of \a frame,
+    //! a buffer swap, an event poll and a yield; in the browser one call per
+    //! animation frame, never returning). Vulkan: a loop of beginWindowFrame,
+    //! \a frame and presentWindowFrame, and while the window is minimised
+    //! (beginWindowFrame false) no frame, only glfwWaitEvents until it is
+    //! restored.
+    virtual void runWindowLoop(std::function<void()> frame);
+
+    //! Readies the window for a frame: on Vulkan the target and the swapchain
+    //! made again at the framebuffer's size if it changed or the last acquire or
+    //! present said so (out of date, suboptimal). False, with nothing to draw
+    //! or show, while the window is minimised (iconified, or a 0x0 framebuffer);
+    //! always true on GL, which draws into the window's own framebuffer.
+    virtual bool beginWindowFrame() { return true; }
+
+    //! Shows what the renderer drew since beginWindowFrame: glfwSwapBuffers, or
+    //! the target blitted into an acquired swapchain image (turned top-down, as
+    //! the window shows it) and presented. With \a pixels it is also read
+    //! back, top-down RGBA8 rows of \a size device pixels: on Vulkan the
+    //! swapchain image presented, copied after the blit. \return whether
+    //! anything was shown: false when an acquire found the swapchain out of
+    //! date (beginWindowFrame makes it again) or the window has been minimised
+    //! since beginWindowFrame (nothing is presented to a minimised window).
+    virtual bool presentWindowFrame(std::vector<uint8_t> *pixels=nullptr, Point *size=nullptr)=0;
+
+    //! What a Vulkan window's swapchain has done, for the scripted window test
+    //! (ControlTest --window-test); every count since the window opened.
+    struct WindowStats
+    {
+        long frames=0;          //!< beginWindowFrame calls that returned true
+        long skipped=0;         //!< beginWindowFrame calls that returned false: minimised
+        long presents=0;        //!< images presented
+        //! frames drawn but not shown: the window was minimised between
+        //! beginWindowFrame and presentWindowFrame, which then acquires nothing
+        long dropped=0;
+        long swapchains=0;      //!< swapchains made: the first, then one per recreate
+        long resizeRecreates=0; //!< recreates for a new framebuffer size
+        long outOfDate=0;       //!< VK_ERROR_OUT_OF_DATE_KHR from an acquire or a present
+        long suboptimal=0;      //!< VK_SUBOPTIMAL_KHR from an acquire or a present
+        Point extent;           //!< the swapchain's size, 0x0 before the first
+    };
+
+    //! The window's swapchain counts; null for GL, which has no swapchain of its own.
+    virtual const WindowStats *windowStats() const { return nullptr; }
+
 #ifdef GWENI_HAS_VULKAN
     //! The Vulkan device and target a renderer::Vulkan draws with, for a caller
     //! constructing its own (gweni_bench's timed one); null for GL.
@@ -291,7 +347,7 @@ struct DeviceOptions
     //! the window's title
     std::string title;
     //! a capture: draws into an offscreen target, shows no window; otherwise
-    //! the interactive window (GL only, for now)
+    //! the interactive window
     bool capturing=false;
     //! --headless: a GL capture goes straight to surfaceless EGL instead of
     //! trying a hidden GLFW window first (Vulkan is always headless)
@@ -306,11 +362,12 @@ struct DeviceOptions
 //! Framebuffer of \a options.size bound.
 //!
 //! Vulkan: a device made by renderer::createVulkanDevice and a VulkanTarget of
-//! \a options.size, with no GL or EGL context and no window, so a capture
-//! with or without --headless is the same. With GWENI_VULKAN_VALIDATION=1 (the
-//! Vulkan tests set it) the device has the validation layer, and any warning or
-//! error aborts; it fails without the layer. An interactive run (no capture)
-//! fails, after one line: there is no Vulkan window yet.
+//! \a options.size, with no GL or EGL context. A capture has no window, so with
+//! or without --headless it is the same. An interactive run (no capture) opens
+//! a GLFW window with no client API (GLFW_NO_API), a Vulkan surface on it and
+//! a FIFO swapchain (vulkanWindow.cpp), the target the framebuffer's size. With
+//! GWENI_VULKAN_VALIDATION=1 (the Vulkan tests set it) the device has the
+//! validation layer, and any warning or error aborts; it fails without the layer.
 //!
 //! \return null, after one line, if it cannot be made.
 std::unique_ptr<Device> openDevice(Backend backend, const DeviceOptions &options);

@@ -14,6 +14,7 @@
 #include <gweni/platforms/renderers/openglCore.h>
 #ifdef GWENI_HAS_VULKAN
 #include <gweni/platforms/renderers/vulkan.h>
+#include "vulkanWindow.h"
 #endif
 
 #if GWENI_EXAMPLE_WEBGL
@@ -546,6 +547,18 @@ bool writeRendererPng(renderer::SlotRenderer &renderer, int width, int height,
     return writeRgbaPng(pixels, width, height, path);
 }
 
+const std::string &toolName()
+{
+    return g_tool;
+}
+
+bool vulkanValidation()
+{
+    const char *validation=std::getenv("GWENI_VULKAN_VALIDATION");
+
+    return validation && std::strcmp(validation, "1") == 0;
+}
+
 const char *backendName(Backend backend)
 {
     return (backend == Backend::Vulkan) ? "vulkan" : "gl";
@@ -588,10 +601,15 @@ const char *const RendererHelp=
     "  --renderer <gl|vulkan>  the backend to draw with (default gl, or\n"
     "                       GWENI_RENDERER; the flag beats it): OpenGLCore on a\n"
     "                       GL context, or renderer::Vulkan on a Vulkan device\n"
-    "                       (no GL or EGL context; captures only, as if\n"
-    "                       --headless, there is no Vulkan window yet; with\n"
+    "                       (no GL or EGL context: a capture is always\n"
+    "                       headless, a window has a Vulkan swapchain; with\n"
     "                       GWENI_VULKAN_VALIDATION=1 the validation layer is on\n"
     "                       and any message aborts)\n";
+
+void Device::runWindowLoop(std::function<void()> frame)
+{
+    capture::runWindowLoop(m_context, std::move(frame));
+}
 
 namespace
 {
@@ -631,6 +649,24 @@ public:
         const GLubyte *name=glGetString(GL_RENDERER);
 
         return name ? reinterpret_cast<const char *>(name) : "";
+    }
+
+    bool presentWindowFrame(std::vector<uint8_t> *pixels, Point *size) override
+    {
+        if(!m_context.window)
+            return false;
+        if(pixels)
+        {
+            Point framebuffer;
+
+            glfwGetFramebufferSize(m_context.window, &framebuffer.x, &framebuffer.y);
+            // the back buffer, before the swap leaves it undefined
+            readFramebufferRgba(framebuffer.x, framebuffer.y, *pixels);
+            if(size)
+                *size=framebuffer;
+        }
+        glfwSwapBuffers(m_context.window);
+        return true;
     }
 
     bool open(const DeviceOptions &options);
@@ -725,6 +761,9 @@ public:
         return properties.deviceName;
     }
 
+    // a capture has no window to show anything in
+    bool presentWindowFrame(std::vector<uint8_t> *, Point *) override { return false; }
+
     renderer::VulkanDevice *vulkanDevice() override { return &m_device; }
     renderer::VulkanTarget *vulkanTarget() override { return m_target.get(); }
 
@@ -737,19 +776,11 @@ private:
 
 bool VulkanCaptureDevice::open(const DeviceOptions &options)
 {
-    if(!options.capturing)
-    {
-        std::cerr<<g_tool<<": --renderer vulkan has no window yet;"
-                   " it only captures (--shot, --screenshot, --frames, --stats, ...)\n";
-        return false;
-    }
-
     renderer::VulkanDeviceOptions deviceOptions;
-    const char *validation=std::getenv("GWENI_VULKAN_VALIDATION");
     std::string error;
 
     deviceOptions.applicationName=g_tool;
-    deviceOptions.validation=validation && std::strcmp(validation, "1") == 0;
+    deviceOptions.validation=vulkanValidation();
     if(!renderer::createVulkanDevice(m_device, deviceOptions, error))
     {
         std::cerr<<g_tool<<": "<<error<<"\n";
@@ -766,6 +797,8 @@ bool VulkanCaptureDevice::open(const DeviceOptions &options)
 std::unique_ptr<Device> openDevice(Backend backend, const DeviceOptions &options)
 {
 #ifdef GWENI_HAS_VULKAN
+    if(backend == Backend::Vulkan && !options.capturing)
+        return openVulkanWindowDevice(options);
     if(backend == Backend::Vulkan)
     {
         std::unique_ptr<VulkanCaptureDevice> device(new VulkanCaptureDevice);

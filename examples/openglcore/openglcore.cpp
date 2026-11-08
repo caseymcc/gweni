@@ -558,7 +558,7 @@ int main(int argc, char *argv[])
         // (in the browser, per animation frame, never returning). The frame
         // holds only the canvas and the renderer, heap objects, and the colour,
         // a copy, as the browser's loop needs.
-        gweni::capture::runWindowLoop(ctx, [canvas, renderer, background]()
+        device->runWindowLoop([canvas, renderer, background]()
         {
             canvas->updateCanvas();
             renderer->clearTarget(background);
