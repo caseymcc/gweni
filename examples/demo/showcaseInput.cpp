@@ -6,6 +6,7 @@
 #include "demo/showcaseInput.h"
 #include "gweni/controls/colorEdit.h"
 #include "gweni/controls/comboBox.h"
+#include "gweni/controls/dragNumber.h"
 #include "gweni/controls/groupBox.h"
 #include "gweni/controls/horizontalSlider.h"
 #include "gweni/controls/label.h"
@@ -139,6 +140,20 @@ GWENI_CONTROL_CONSTRUCTOR(ShowcaseInputDemo)
         number->setMax(100);
         number->setIntValue(42);
         m_notes.push_back("NumericUpDown: 42 of 0..100");
+    }
+    {
+        controls::GroupBox *section=showcase::addSection(middle, "DragNumber", false);
+        controls::DragNumber *integer=textRow<controls::DragNumber>(section);
+
+        integer->setInteger(true);
+        integer->setNumber(128);
+
+        controls::DragNumber *ranged=textRow<controls::DragNumber>(section);
+
+        ranged->setRange(0.0, 1.0);
+        ranged->setFormat("%.2f of 1");
+        ranged->setNumber(0.75);
+        m_notes.push_back("DragNumber: an integer, 128; a float in 0..1, 0.75");
     }
     {
         controls::GroupBox *section=showcase::addSection(right, "HorizontalSlider", false);

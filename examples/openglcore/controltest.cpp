@@ -304,10 +304,16 @@
  *                   changes no pixel outside it, moving off gives the frame
  *                   back, and a click on the Number header sorts the rows by
  *                   number in one layout pass; settled frames write nothing
- *                   (a line gives the hover's and the sort's counts). Exits
- *                   non-zero if any check is
- *                   no. The
- *                   clock is frozen as under --stats.
+ *                   (a line gives the hover's and the sort's counts).
+ *                   DragNumberDemo: every frame of a drag of the integer
+ *                   field (horizontal, vertical and Alt tenth-unit steps)
+ *                   leaves nothing pending outside the field, one that keeps
+ *                   the shown value writes no slot and one that changes it at
+ *                   most the field's slot and the new string's glyphs; the
+ *                   release and a settled frame write nothing; a double-click,
+ *                   "7" and Return set it to 7 (a line lists the drag
+ *                   frames). Exits non-zero if any check is no. The clock is
+ *                   frozen as under --stats.
  *    typing       the keyboard on TextBoxDemo, every key a synthesised GLFW
  *                 event through gweni::input::GLFW3: click into the first,
  *                 empty, box, type "a" and Backspace, each of which has to
@@ -653,6 +659,8 @@
 #include <demo/showcaseWindows.h>
 #include <demo/slider.h>
 #include <demo/sliderText.h>
+#include <demo/dragNumber.h>
+#include <gweni/controls/dragNumber.h>
 #include <demo/statusBar.h>
 #include <demo/tabClose.h>
 #include <demo/colorEdit.h>
@@ -724,7 +732,7 @@ static void content_scale_callback(GLFWwindow *window, float, float)
     X(ButtonDemo) X(LabelDemo) X(LabelMultilineDemo) X(ProgressBarDemo) \
     X(GroupBoxDemo) X(ImagePanelDemo) X(StatusBarDemo) X(SeparatorDemo) X(PlotHistogramDemo) X(ComboBoxDemo) \
     X(TextBoxDemo) X(ListBoxDemo) X(SelectableDemo) X(VirtualListDemo) X(DataTableDemo) X(DataTableVirtualDemo) X(ContextMenuDemo) X(PopupDemo) X(CrossSplitterDemo) X(RadioButtonDemo) \
-    X(CheckBoxDemo) X(NumericDemo) X(SliderDemo) X(SliderTextDemo) X(MenuStripDemo) \
+    X(CheckBoxDemo) X(NumericDemo) X(SliderDemo) X(SliderTextDemo) X(DragNumberDemo) X(MenuStripDemo) \
     X(WindowDemo) X(WindowButtonsDemo) X(TreeControlDemo) X(PropertiesDemo) X(TabControlDemo) X(TabCloseDemo) X(TabOverflowDemo) \
     X(ScrollControlDemo) X(PageControlDemo) X(CollapsibleListDemo) X(ColorPickerDemo) X(ColorEditDemo) \
     X(UnicodeTextDemo) X(TextSizesDemo) X(TextDemo) X(LayoutDemo)
@@ -4015,6 +4023,120 @@ static void checkDataTable(Session &s, const std::string &shotDir, InteractionCh
         +std::to_string(sortLayout.passes)+")");
 }
 
+// DragNumberDemo: the integer field pressed and dragged, a horizontal step at a
+// time (each changes its shown value), a vertical one (keeps it) and, with Alt
+// held, a tenth-unit one (changes the value's fraction only, the shown whole
+// number kept): every drag frame has nothing pending outside the field and its
+// Text, a frame that keeps the shown string writes no slot at all and one that
+// changes it at most the field's one primitive slot and the new string's
+// glyphs. The capture keeps the field hovered, so nothing the mouse crosses
+// repaints (#188 is about a Dragger re-marking controls on every move; this
+// field is no Dragger). The release and a settled frame write nothing; a
+// double-click opens its edit box, and "7" and Return set the value to 7.
+static void checkDragNumber(Session &s, const std::string &shotDir, InteractionChecks &checks, bool &ok)
+{
+    gweni::controls::Base *control=addControl(s, "DragNumberDemo");
+    auto *demo=gweni::gweni_cast<gweni::DragNumberDemo>(control);
+    renderFrames(s, s.frames);
+
+    if(!demo || !demo->integerField())
+    {
+        checks.check("drag_number_found", false, "DragNumberDemo has no integer field");
+        dropControl(s, control);
+        return;
+    }
+
+    gweni::controls::DragNumber *field=demo->integerField();
+    const gweni::Point grab=centreOf(field);
+    moveMouse(s, grab.x, grab.y);
+    renderFrames(s, s.frames);
+    mouseDown(s, grab.x, grab.y, true);
+    renderFrames(s, s.frames);
+
+    std::string frames;
+    int kept=0, changed=0;
+    bool alone=true, keptWroteNothing=true, changedBounded=true;
+    gweni::Point at=grab;
+
+    auto dragTo=[&](int x, int y)
+    {
+        const gweni::String shown=field->getText();
+        const double before=field->getNumber();
+        size_t outside=0;
+
+        moveMouse(s, x, y);
+        countPendingBesides(s.canvas, nullptr, field, outside);
+        renderFrames(s, 1);
+
+        const gweni::renderer::SlotRenderer::FrameStats &gpu=s.renderer->getFrameStats();
+        const gweni::String now=field->getText();
+
+        frames+=" "+std::to_string(field->getNumber())+":\""+now+"\",outside="+std::to_string(outside)
+            +",prim="+std::to_string(gpu.primitiveSlotsWritten)+",text="+std::to_string(gpu.textSlotsWritten);
+        if(outside != 0)
+            alone=false;
+        if(now == shown)
+        {
+            ++kept;
+            if(gpu.primitiveSlotsWritten != 0 || gpu.textSlotsWritten != 0)
+                keptWroteNothing=false;
+        }
+        else
+        {
+            ++changed;
+            if(field->getNumber() == before || gpu.primitiveSlotsWritten > 1 || gpu.textSlotsWritten == 0
+                || gpu.textSlotsWritten > now.size())
+                changedBounded=false;
+        }
+        at=gweni::Point(x, y);
+    };
+
+    for(int i=0; i < 4; ++i)
+    {
+        dragTo(at.x+1, at.y);
+        dragTo(at.x, at.y+3);
+    }
+    // Alt: a tenth of a unit per unit of motion, so the whole number shown
+    // stays for four steps and changes on the fifth
+    glfwKey(s, GLFW_KEY_LEFT_ALT, GLFW_PRESS, 0);
+    for(int i=0; i < 5; ++i)
+        dragTo(at.x+1, at.y);
+    glfwKey(s, GLFW_KEY_LEFT_ALT, GLFW_RELEASE, GLFW_MOD_ALT);
+    // far off the field, to the right
+    dragTo(at.x+200, at.y+40);
+
+    if(!shoot(s, shotDir+"/interaction-drag-number.png"))
+        ok=false;
+
+    mouseUp(s, s.mouse.x, s.mouse.y);
+    renderFrames(s, s.frames);
+    checkSteady(s, checks, "drag_number_steady");
+
+    doubleClickMouse(s, grab.x, grab.y);
+    renderFrames(s, s.frames);
+    const bool editing=field->isEditing();
+    sendKey(s, "7");
+    sendKey(s, "return");
+    renderFrames(s, s.frames);
+    const bool typed=!field->isEditing() && field->getNumber() == 7.0 && field->getText() == "7";
+    checkSteady(s, checks, "drag_number_steady_after_edit");
+
+    forgetMouse(s);
+    dropControl(s, control);
+
+    std::cout<<"drag_number_drag"<<frames<<"\n";
+    checks.check("drag_number_alone", alone,
+        "a drag frame had changes pending outside the field and its Text:"+frames);
+    checks.check("drag_number_kept", kept > 0 && keptWroteNothing,
+        "a drag frame that kept the shown value wrote slots:"+frames);
+    checks.check("drag_number_changed", changed > 0 && changedBounded,
+        "a drag frame that changed the shown value wrote more than the field's slot and the new"
+        " string's glyphs, or none:"+frames);
+    checks.check("drag_number_edit", editing && typed,
+        std::string(editing ? "" : "a double-click did not open the edit box; ")
+        +(typed ? "" : "typing 7 and Return did not set the value to 7"));
+}
+
 static bool runInteractionScenario(Session &s, const std::string &shotDir, bool &passed)
 {
     // Frozen like --stats, so a frame with no input is genuinely idle (no
@@ -4036,6 +4158,7 @@ static bool runInteractionScenario(Session &s, const std::string &shotDir, bool 
     checkPropertyRow(s, shotDir, checks, ok);
     checkColorEdit(s, shotDir, checks, ok);
     checkDataTable(s, shotDir, checks, ok);
+    checkDragNumber(s, shotDir, checks, ok);
 
     std::cout<<"interaction";
     for(const auto &result : checks.results)

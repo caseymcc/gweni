@@ -74,6 +74,8 @@ set(GWENI_DEMO_SOURCES
     demo/slider.h
     demo/sliderText.cpp
     demo/sliderText.h
+    demo/dragNumber.cpp
+    demo/dragNumber.h
     demo/statusBar.cpp
     demo/statusBar.h
     demo/tabClose.cpp

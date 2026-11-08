@@ -24,6 +24,7 @@
 #include "demo/comboBox.h"
 #include "demo/contextMenu.h"
 #include "demo/plotHistogram.h"
+#include "demo/dragNumber.h"
 #include "demo/popup.h"
 #include "demo/crossSplitter.h"
 #include "demo/dataTable.h"
@@ -175,6 +176,7 @@ void Demo::init(const String &name)
         addDemo<NumericDemo>(cat, "NumericDemo", "Numeric");
         addDemo<SliderDemo>(cat, "SliderDemo", "Slider");
         addDemo<SliderTextDemo>(cat, "SliderTextDemo", "Slider text");
+        addDemo<DragNumberDemo>(cat, "DragNumberDemo", "Drag number");
         addDemo<MenuStripDemo>(cat, "MenuStripDemo", "Menu strip");
     }
     {

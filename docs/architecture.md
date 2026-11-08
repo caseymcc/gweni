@@ -1693,6 +1693,42 @@ two programs and the draws. What follows describes both together:
   changes at once while shown; a move inside the same column changes nothing.
   PlotHistogramDemo has a 32-bar series in the automatic range and frame times in a fixed
   range with a caption; ShowcaseDisplayDemo has one.
+- **The drag number: scrubbed by the mouse, typed into in a box made once.**
+  `controls::DragNumber` (`include/gweni/controls/dragNumber.h`, imgui's DragFloat and
+  DragInt) is a `Label` whose text is its value, centred in a field of the size asked for
+  (Fixed, as a TextBox). The value is a double, `setNumber`/`getNumber`: `Base` already
+  has a virtual `getValue()` returning a String, which here is the edit text. It is
+  clamped to `setRange` (none by default) and, `setInteger(true)`, rounded to whole
+  numbers; `onValueChanged` fires once per real change, never for a value that stays.
+  **Scrub:** a press takes the mouse (`MouseFocus`, so the capture keeps the field
+  hovered and nothing the mouse crosses repaints) and a horizontal move changes the value
+  by the motion times `getSpeed()` (`setSpeed`; 0.1, or 1 for an integer field),
+  `ShiftFactor` (10) times as fast with Shift held and `AltFactor` (0.1) with Alt. The
+  motion is summed from the press in units of the mouse times those factors and the
+  value is `start + sum*speed`, so steps worth less than a whole unit of an integer field
+  add up, a drag back to its start gives the value at the press, and the sum is held at
+  the range's ends, so turning back moves the value at once. A press and release without
+  motion changes nothing. The cursor is `SizeWE`. **Text:** the value is shown through
+  `setFormat`, which takes one conversion of a double as the slider's value text does
+  (`Slider::validValueFormat`; "%.3f", or "%.0f" for an integer field, by default), and
+  `Label::setText` marks the Text, and lays it out again, only for a new string, so a drag
+  frame that keeps the string writes no slot at all. **Edit:** a double-click, a
+  Ctrl+click or Return on the focused field shows an `internal::DragNumberTextBox` (a
+  `TextBoxNumeric`, drawn by the TextBox renderer up its parent types) owner-placed over
+  the field, focused, holding the value at the format's precision with trailing zeros
+  dropped, all selected; the field's Text is hidden and the field's slot too. Return
+  commits it and gives the focus back to the field (a TextBox's Return would tab to the
+  next control), a lost focus commits it and leaves the focus where it went, Escape
+  cancels it; text that is no number (`parseNumber`: a whole finite `strtod`) leaves the
+  value as it was. The box is created by the first edit and only shown or hidden after
+  that, so it keeps its ids. While the field has the focus, Up and Right step the value
+  up by the speed and Down and Left down (the modifiers as for a drag, a whole unit at
+  least for an integer field); the box keeps Up and Down while editing. The textured
+  `DragNumber` renderer draws the field in one slot, `DragNumber` at rest,
+  `DragNumberHover`, `DragNumberFocus`, `DragNumberDown` while pressed and
+  `DragNumberDisabled`, so a hover, a press or the focus rewrites that slot and nothing
+  else. DragNumberDemo has an integer, a ranged float, a formatted one and a disabled
+  one; ShowcaseInputDemo has two.
 - **Scale and the device-pixel grid.** Controls lay out in logical units (integers);
   `renderer::Base::translate()` turns them into device pixels at `scale()` (set by
   `Canvas::setScale`). It snaps **edges**, not origin and size apart: a point is
