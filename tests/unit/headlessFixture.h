@@ -18,7 +18,9 @@
 #include <gweni/primitiveIds.h>
 #include <gweni/skin.h>
 #include <gweni/skins/textured/tokyoNight.h>
+#include <gweni/utility.h>
 
+#include <algorithm>
 #include <functional>
 #include <map>
 #include <memory>
@@ -91,6 +93,8 @@ public:
     {
         released(livePrimitives, Op::ReleasePrimitive, primitiveId);
         gweni::releasePrimitiveId(primitiveId);
+        //SlotRenderer clears a released slot, which its next flush writes
+        wrotePrimitive(primitiveId);
     }
 
     void generateTextPrimitive(size_t &primitiveId) override
@@ -122,7 +126,74 @@ public:
         int zIndex) override
     {
         lines.push_back({primitiveId, p0, p1, thickness, zIndex, drawColor});
+        wrotePrimitive(primitiveId);
     }
+
+    // The draws below draw nothing; each counts its slot as written in this
+    // frame (frameStats()). The stub compares no bytes, so every call is a write,
+    // unlike SlotRenderer, where a draw that changes nothing writes nothing. The
+    // renderer::Base defaults of drawBilinearRect, drawCheckerRect,
+    // drawMissingImage and the multi-rect draws come through these.
+    void drawFilledRect(size_t primitiveId, gweni::Rect, int) override { wrotePrimitive(primitiveId); }
+    void drawRoundedRect(size_t primitiveId, gweni::Rect, float, float, gweni::Color, gweni::Color,
+        gweni::Color, int) override
+    {
+        wrotePrimitive(primitiveId);
+    }
+    void drawIcon(size_t primitiveId, gweni::Rect, int, int, gweni::Color, int) override
+    {
+        wrotePrimitive(primitiveId);
+    }
+    void drawTexturedRect(const gweni::Texture &, size_t primitiveId, gweni::Rect, int, float, float,
+        float, float) override
+    {
+        wrotePrimitive(primitiveId);
+    }
+    void showPrimitive(int, size_t primitiveId) override { wrotePrimitive(primitiveId); }
+    void hidePrimitive(size_t primitiveId) override { wrotePrimitive(primitiveId); }
+
+    //! Counts the string's codepoints as the run's glyph slots, all written.
+    void renderText(size_t textId, const gweni::Font &, gweni::Point, int,
+        const gweni::String &text) override
+    {
+        size_t glyphs=0;
+
+        for(size_t pos=0; pos < text.size(); pos=gweni::utf8Next(text, pos))
+            ++glyphs;
+        textGlyphs[textId]=glyphs;
+        wroteText(textId, glyphs);
+    }
+    //! Write the glyph slots the text id's last renderText counted.
+    void showText(size_t textId) override { wroteText(textId, textGlyphs[textId]); }
+    void hideText(size_t textId) override { wroteText(textId, textGlyphs[textId]); }
+
+    //! Ends the frame the counts are for: what the draws since the last end()
+    //! wrote becomes frameStats(), writtenPrimitiveIds() and writtenTextIds().
+    void end() override
+    {
+        m_counts.counted=true;
+        ++m_counts.frameIndex;
+        m_writtenPrimitives.assign(m_pendingPrimitives.begin(), m_pendingPrimitives.end());
+        m_writtenTexts.clear();
+        m_counts.textSlotsWritten=0;
+        for(const auto &entry: m_pendingTexts)
+        {
+            if(entry.second == 0)
+                continue;
+            m_writtenTexts.push_back({entry.first, entry.second});
+            m_counts.textSlotsWritten+=entry.second;
+        }
+        m_counts.primitiveSlotsWritten=m_writtenPrimitives.size();
+        m_pendingPrimitives.clear();
+        m_pendingTexts.clear();
+    }
+
+    gweni::renderer::FrameCounts frameStats() const override { return m_counts; }
+    const std::vector<size_t> &writtenPrimitiveIds() const override { return m_writtenPrimitives; }
+    const std::vector<gweni::renderer::WrittenText> &writtenTextIds() const override { return m_writtenTexts; }
+
+    //! Each text id's glyph count at its last renderText
+    std::map<size_t, size_t> textGlyphs;
 
     //! Counted in `measures`, then measured as renderer::Base does.
     gweni::Point measureText(const gweni::Font &font, const gweni::String &text) override
@@ -216,6 +287,22 @@ private:
         static NoPaths paths;
         return paths;
     }
+
+    void wrotePrimitive(size_t id) { m_pendingPrimitives.insert(id); }
+
+    //! A run written twice in a frame counts its larger glyph count once.
+    void wroteText(size_t id, size_t glyphs)
+    {
+        size_t &pending=m_pendingTexts[id];
+
+        pending=std::max(pending, glyphs);
+    }
+
+    std::set<size_t> m_pendingPrimitives;
+    std::map<size_t, size_t> m_pendingTexts;
+    gweni::renderer::FrameCounts m_counts;
+    std::vector<size_t> m_writtenPrimitives;
+    std::vector<gweni::renderer::WrittenText> m_writtenTexts;
 
     void acquired(std::set<size_t> &live, Op op, size_t id)
     {

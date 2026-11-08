@@ -23,6 +23,32 @@ namespace renderer
 {
 class Base;
 
+//! What a renderer's last frame wrote and uploaded, in terms any backend can
+//! give (Base::frameStats()). A retained renderer counts a slot as written when
+//! the frame changed its bytes, so a settled frame writes 0; a renderer that
+//! does not count reports counted=false and every field 0.
+struct FrameCounts
+{
+    bool counted=false;             //!< false: this renderer does not count
+    size_t frameIndex=0;            //!< frames ended so far
+    size_t primitiveSlotsWritten=0; //!< primitive slots (ids) the frame wrote
+    size_t textSlotsWritten=0;      //!< glyph slots the frame wrote, every text id's together
+    size_t uploadCalls=0;           //!< transfers to the device, 0 for a renderer with none
+    size_t uploadBytes=0;           //!< bytes those transfers sent
+};
+
+//! A text id whose run had glyph slots written in the last frame, and how many
+struct WrittenText
+{
+    size_t textId=0;
+    size_t glyphSlots=0;
+
+    bool operator==(const WrittenText &other) const
+    {
+        return (textId == other.textId) && (glyphSlots == other.glyphSlots);
+    }
+};
+
 class ICacheToTexture
 {
 public:
@@ -68,6 +94,20 @@ public:
     //! (plus the control's depth and overlay layers) must stay in [0, maxZIndex()],
     //! where a higher z is drawn in front. The canvas numbers within it.
     virtual int maxZIndex() const { return 10000; }
+
+    //! What the last frame (the last end()) wrote. The default does not count:
+    //! counted is false and every field 0.
+    virtual FrameCounts frameStats() const { return FrameCounts(); }
+    //! The primitive ids whose slots the last frame wrote, ascending, each once:
+    //! frameStats().primitiveSlotsWritten of them. A released id the frame
+    //! cleared is among them. Empty when the renderer does not count.
+    virtual const std::vector<size_t> &writtenPrimitiveIds() const;
+    //! The text ids whose glyph slots the last frame wrote, ascending, each once,
+    //! with how many of its slots: their glyphSlots add up to
+    //! frameStats().textSlotsWritten. A slot is reported under the text id whose
+    //! run held it last, a released one's included (one no run ever held, under
+    //! ~size_t(0)). Empty when the renderer does not count.
+    virtual const std::vector<WrittenText> &writtenTextIds() const;
 
     //! Get ResourceLoader we are using for the renderer.
     IResourceLoader &getLoader() { return *reinterpret_cast<IResourceLoader *>(this); }

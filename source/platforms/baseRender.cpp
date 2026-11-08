@@ -31,6 +31,20 @@ Base::~Base()
         getCTT()->shutDown();
 }
 
+const std::vector<size_t> &Base::writtenPrimitiveIds() const
+{
+    static const std::vector<size_t> none;
+
+    return none;
+}
+
+const std::vector<WrittenText> &Base::writtenTextIds() const
+{
+    static const std::vector<WrittenText> none;
+
+    return none;
+}
+
 void Base::drawLinedRect(size_t *primitiveIds, gweni::Rect rect, int zIndex)
 {
     drawFilledRect(primitiveIds[0], gweni::Rect(rect.x, rect.y, rect.w, 1), zIndex);

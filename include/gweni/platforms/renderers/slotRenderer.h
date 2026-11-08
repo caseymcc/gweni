@@ -432,6 +432,13 @@ public:
 
     const FrameStats &getFrameStats() const { return m_frameStats; }
 
+    //! getFrameStats() as renderer::Base's backend-independent counts
+    FrameCounts frameStats() const override;
+    //! The primitive slots and text runs the last flush() uploaded: the slots
+    //! FrameStats::primitiveSlotsWritten and textSlotsWritten count, by id.
+    const std::vector<size_t> &writtenPrimitiveIds() const override { return m_writtenPrimitiveIds; }
+    const std::vector<WrittenText> &writtenTextIds() const override { return m_writtenTextIds; }
+
     //! The most slots one draw covers. Every primitive and glyph slot is a quad, 4
     //! vertexes and 6 indexes in a static 16-bit index buffer that every draw of its
     //! path shares (slot i of a chunk is vertexes i*4..i*4+3 from the chunk's first
@@ -880,7 +887,8 @@ private:
     //! layout gets exactly `glyphs`; a run that outgrew its slots gets slack, a
     //! quarter more rounded up to kTextRunSlackGranule, so it grows in place next
     //! time (the tail past `glyphs` is in no draw list).
-    void allocateTextRun(TextRun &run, size_t glyphs);
+    //! textId is the run's, the owner its slots are recorded under (m_textSlotOwner).
+    void allocateTextRun(size_t textId, TextRun &run, size_t glyphs);
     //! A growing run's capacity is a multiple of this many glyph slots
     static constexpr size_t kTextRunSlackGranule=8;
     //! Returns the run's slots to the free list, leaving them drawing nothing.
@@ -922,6 +930,20 @@ private:
     size_t m_textSlotsUsed=0; //!< glyph slots below which runs are handed out
     std::vector<ftgl::glyph_vertex_t> m_textVertexes;
     std::vector<Box> m_textClipBoxes; //!< one per glyph slot
+    //! The text id whose run was last given each glyph slot (kNoTextOwner: none
+    //! yet), so flush() reports a written slot by text id. Set when a run gets
+    //! new slots, and kept when it gives them back.
+    std::vector<size_t> m_textSlotOwner;
+    static constexpr size_t kNoTextOwner=~size_t(0);
+
+    //! What the last flush() wrote, by id (writtenPrimitiveIds/writtenTextIds), and
+    //! the per-text-id glyph counts it adds up, kept for their capacity
+    std::vector<size_t> m_writtenPrimitiveIds;
+    std::vector<WrittenText> m_writtenTextIds;
+    std::vector<size_t> m_writtenTextSlotOwners;
+    //! Fills m_writtenPrimitiveIds and m_writtenTextIds from the dirty sets, before
+    //! the upload clears them.
+    void recordWrittenIds();
 
     DirtySlots m_dirtyVertexSlots;
     DirtySlots m_dirtyClipSlots;

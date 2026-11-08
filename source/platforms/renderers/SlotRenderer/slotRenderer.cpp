@@ -1195,6 +1195,57 @@ void SlotRenderer::uploadDirtyAtlases()
     }
 }
 
+void SlotRenderer::recordWrittenIds()
+{
+    // The slots the counts above take, by id: a primitive id is its slot, and a
+    // glyph slot is reported under the text id whose run holds it, or held it
+    // last. Only the dirty slots are visited, so a settled frame costs nothing.
+    m_writtenPrimitiveIds=m_dirtyVertexSlots.slots();
+    for(size_t slot: m_dirtyClipSlots.slots())
+    {
+        if(!m_dirtyVertexSlots.marked(slot))
+            m_writtenPrimitiveIds.push_back(slot);
+    }
+    std::sort(m_writtenPrimitiveIds.begin(), m_writtenPrimitiveIds.end());
+
+    m_writtenTextSlotOwners.clear();
+
+    const auto owner=[this](size_t slot)
+    {
+        return (slot < m_textSlotOwner.size())?m_textSlotOwner[slot]:kNoTextOwner;
+    };
+
+    for(size_t slot: m_dirtyTextVertexSlots.slots())
+        m_writtenTextSlotOwners.push_back(owner(slot));
+    for(size_t slot: m_dirtyTextClipSlots.slots())
+    {
+        if(!m_dirtyTextVertexSlots.marked(slot))
+            m_writtenTextSlotOwners.push_back(owner(slot));
+    }
+    std::sort(m_writtenTextSlotOwners.begin(), m_writtenTextSlotOwners.end());
+
+    m_writtenTextIds.clear();
+    for(size_t textId: m_writtenTextSlotOwners)
+    {
+        if(m_writtenTextIds.empty() || (m_writtenTextIds.back().textId != textId))
+            m_writtenTextIds.push_back({textId, 0});
+        ++m_writtenTextIds.back().glyphSlots;
+    }
+}
+
+FrameCounts SlotRenderer::frameStats() const
+{
+    FrameCounts counts;
+
+    counts.counted=true;
+    counts.frameIndex=m_frameStats.frameIndex;
+    counts.primitiveSlotsWritten=m_frameStats.primitiveSlotsWritten;
+    counts.textSlotsWritten=m_frameStats.textSlotsWritten;
+    counts.uploadCalls=m_frameStats.uploadCalls+m_frameStats.atlasUploadCalls;
+    counts.uploadBytes=m_frameStats.uploadBytes+m_frameStats.atlasUploadBytes;
+    return counts;
+}
+
 void SlotRenderer::flush()
 {
     m_frameStats.uploadCalls=0;
@@ -1221,6 +1272,7 @@ void SlotRenderer::flush()
         if(!m_dirtyTextVertexSlots.marked(slot))
             ++m_frameStats.textSlotsWritten;
     }
+    recordWrittenIds();
     m_frameStats.mirrorBytes=
         m_vertexes.size()*sizeof(Vertex)
         +m_clippingBoxes.size()*sizeof(Box)
@@ -1875,6 +1927,8 @@ void SlotRenderer::ensureTextSlots(size_t glyphSlots)
         m_textVertexes.resize(glyphSlots*4);
     if(m_textClipBoxes.size() < glyphSlots)
         m_textClipBoxes.resize(glyphSlots);
+    if(m_textSlotOwner.size() < glyphSlots)
+        m_textSlotOwner.resize(glyphSlots, kNoTextOwner);
 }
 
 void SlotRenderer::addFreeTextRun(size_t start, size_t capacity)
@@ -1930,7 +1984,7 @@ void SlotRenderer::freeTextRun(TextRun &run)
     run.capacity=0;
 }
 
-void SlotRenderer::allocateTextRun(TextRun &run, size_t glyphs)
+void SlotRenderer::allocateTextRun(size_t textId, TextRun &run, size_t glyphs)
 {
     if(run.capacity >= glyphs)
     {
@@ -1985,6 +2039,7 @@ void SlotRenderer::allocateTextRun(TextRun &run, size_t glyphs)
 
     run.glyphs=glyphs;
     ensureTextSlots(run.start+run.capacity);
+    std::fill(m_textSlotOwner.begin()+run.start, m_textSlotOwner.begin()+run.start+run.capacity, textId);
 }
 
 std::pair<size_t, size_t> SlotRenderer::drawnRange(const TextRun &run)
@@ -2296,7 +2351,7 @@ void SlotRenderer::renderText(size_t textId, const gweni::Font &font, gweni::Poi
     run.px=px;
     run.color=color;
     setTextRunFont(textId, &fontData);
-    allocateTextRun(run, glyphCount);
+    allocateTextRun(textId, run, glyphCount);
 
     const float zDelta=1.0f/(glyphCount+1);
     float zOffset=zDelta;
