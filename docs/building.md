@@ -120,6 +120,10 @@ GL-only suite. The tests:
 - `controltest_text_size`: `ControlTest --scenario text-size`. A Label's font
   changed from 24 to 36 px at runtime, both drawn from the face's SDF atlas,
   uploads nothing to a font atlas and writes only that Label's glyph slots.
+- `controltest_script_first_frame`: a ControlTest script that starts with
+  input (`--move 30,5 --shot`) is settled first and renders a frame before the
+  shot, so its PNG matches `--frames 3 --move 30,5 --frames 1 --shot`, and
+  `--frames 0 --shot` exits 1 and writes nothing (`tests/scriptFirstFrame.cmake`).
 - `unittests`: doctest cases (`gweni_unittests`), e.g. the UTF-8 text-length
   guards in `tests/textLength.cpp`.
 - `vulkan_smoke` (labels `gpu`, `vulkan`): the Vulkan plumbing. It loads the

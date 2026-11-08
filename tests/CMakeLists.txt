@@ -281,6 +281,21 @@ Erm, and I think it comes down to a choice between "The League Against Salivatin
             TIMEOUT 60)
     endforeach()
 
+    # script mode settles a script that starts with input and renders a frame
+    # before a --shot that follows input, so --move 30,5 --shot matches the same
+    # with --frames 3 / --frames 1 around the move; a shot before any frame
+    # (--frames 0 --shot) fails and writes nothing
+    add_test(NAME controltest_script_first_frame
+        COMMAND ${CMAKE_COMMAND}
+            -DCONTROLTEST=$<TARGET_FILE:ControlTest>
+            -DSOURCE_DIR=${GWENI_SOURCE_DIR}
+            -DSCRATCH_DIR=${CMAKE_CURRENT_BINARY_DIR}/scriptFirstFrame
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/scriptFirstFrame.cmake
+        WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
+    set_tests_properties(controltest_script_first_frame PROPERTIES
+        LABELS gpu
+        TIMEOUT 120)
+
     # children are cut at their clipping parent's edges: content overflowing a
     # ScrollControl and a Window dragged past each edge of its parent leave the
     # pixels outside unchanged, and moved right out they leave nothing behind;

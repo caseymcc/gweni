@@ -17,7 +17,8 @@
  *                       listing is the same at any scale. The interactive
  *                       window draws at s times the OS content scale, and
  *                       --size is its canvas in logical units.
- *    --frames N         frames to render before capturing (default 3)
+ *    --frames N         frames to render before capturing (default 3); with
+ *                       --shot, 0 renders none and the shot fails
  *    --shot <path>      render offscreen and write one PNG, then exit
  *    --shot-all         write one PNG per control demo, in this one run
  *    --shot-dir <dir>   directory for shots, created if missing (default /tmp)
@@ -146,10 +147,14 @@
  *
  *  Any of those switches puts the run in script mode: --frames N then means
  *  "render N frames now" and --shot P means "capture the framebuffer now", both
- *  at the point they appear, e.g.
+ *  at the point they appear. A script that does not start with --frames is
+ *  settled first (3 frames), so its first input hits the laid-out controls, and
+ *  a --shot straight after input renders one frame first, so it shows that
+ *  input. A shot before any frame was rendered (--frames 0 --shot) is an error.
+ *  Hovering and pressing ButtonDemo's "Event Tester" (its top row, x 0..69):
  *
- *    --control ButtonDemo --move 60,40 --frames 2 --shot hover.png \
- *                         --press 60,40 --frames 2 --shot press.png
+ *    --control ButtonDemo --move 30,5 --shot hover.png \
+ *                         --press 30,5 --shot press.png
  *
  *  Use --press (not --click) to photograph a held-down button: a --click is down
  *  and up again, so by the next frame the control is only hovered.
@@ -622,7 +627,10 @@ static void printUsage(std::ostream &out)
          "                     to the working directory, or absolute) instead of\n"
          "                     the resources/ next to the executable\n"
          "  --list             print the control demo names and exit\n"
-         "Scripted input, applied in order:\n"
+         "Scripted input, applied in order; --frames N and --shot then render and\n"
+         "capture where they appear. A script not starting with --frames is settled\n"
+         "first (3 frames), a --shot straight after input renders one frame first,\n"
+         "and a shot before any frame was rendered is an error:\n"
          "  --move/--press/--release/--click/--double-click X,Y, --scroll DX,DY\n"
          "  --press-right/--release-right/--click-right X,Y  the right button\n"
          "  --key <name>       a named key (backspace, left, home, ...), a single\n"
@@ -747,6 +755,11 @@ static gweni::controls::Canvas *createCanvas(gweni::skin::Base *skin, const gwen
 //-----------------------------------------------------------------------------
 // Capture session: everything a scenario or a scripted run drives.
 //-----------------------------------------------------------------------------
+
+// --frames' default, and the frames a script that does not start with --frames
+// settles before its first step.
+static constexpr int kSettleFrames=3;
+
 struct Session
 {
     gweni::renderer::OpenGLCore *renderer=nullptr;
@@ -763,7 +776,7 @@ struct Session
     int expectFailures=0;               // --expect-text mismatches
     bool trace=false;
     bool writePng=true;
-    int frames=3;                       // --frames: the scenarios' settle count
+    int frames=kSettleFrames;           // --frames: the scenarios' settle count
     std::string label;                  // the control --stats lines name
     int frame=0;
     gweni::Point mouse=gweni::Point(-1, -1);
@@ -940,6 +953,12 @@ static void renderFrames(Session &s, int count)
 
 static bool shoot(Session &s, const std::string &path)
 {
+    // Nothing has drawn into the framebuffer yet: the PNG would be all zeros.
+    if(s.frame == 0)
+    {
+        std::cerr<<"ControlTest: --shot "<<path<<" before any frame was rendered\n";
+        return false;
+    }
     if(s.dumpBounds && s.dumpPerShot && !dumpBoundsTo(s, boundsPathFor(path)))
         return false;
     if(!s.writePng)
@@ -1377,10 +1396,24 @@ static std::string shotPathIn(const std::string &dir, const std::string &name)
     return dir.empty() ? name : dir+"/"+name;
 }
 
+// A script runs its steps as written, with two frames of its own: one settle
+// before a script that does not start with --frames, so its first input hits a
+// laid-out tree as it would in an app (one that does start with --frames is left
+// as it is, so its captures do not move), and one frame before a --shot that
+// follows input with none in between, so the shot shows that input. A shot
+// before any frame at all (--frames 0) is refused by shoot().
 static bool runSteps(Session &s, const std::vector<Step> &steps, const std::string &shotDir)
 {
+    if(!steps.empty() && steps.front().kind != StepKind::Frames)
+        renderFrames(s, kSettleFrames);
+
+    bool inputSinceFrame=false;     // --expect-text, --frames and --shot are not input
     for(const Step &step : steps)
     {
+        if(step.kind != StepKind::ExpectText && step.kind != StepKind::Frames
+            && step.kind != StepKind::Shot)
+            inputSinceFrame=true;
+
         switch(step.kind)
         {
         case StepKind::Move: moveMouse(s, step.x, step.y); break;
@@ -1395,8 +1428,17 @@ static bool runSteps(Session &s, const std::vector<Step> &steps, const std::stri
         case StepKind::Key: if(!sendKey(s, step.text)) return false; break;
         case StepKind::Type: typeText(s, step.text); break;
         case StepKind::ExpectText: (void)expectText(s, step.text); break;
-        case StepKind::Frames: renderFrames(s, step.x); break;
+        case StepKind::Frames:
+            renderFrames(s, step.x);
+            if(step.x > 0)
+                inputSinceFrame=false;
+            break;
         case StepKind::Shot:
+            if(inputSinceFrame)
+            {
+                renderFrames(s, 1);
+                inputSinceFrame=false;
+            }
             if(!shoot(s, shotPathIn(shotDir, step.text)))
                 return false;
             break;
@@ -4479,7 +4521,7 @@ int main(int argc, char *argv[])
     gweni::Point screenSize(640, 480);
     float scale=1.0f;
     bool scaleGiven=false;
-    int frames=3;
+    int frames=kSettleFrames;
     bool shotAll=false;
     bool forceHeadless=false;
     bool stats=false;
@@ -4616,6 +4658,9 @@ int main(int argc, char *argv[])
         }
     }
 
+    // The scenarios and a run with no --shot settle at least one frame; a
+    // single --shot after --frames 0 renders none, and shoot() refuses it.
+    const int framesBeforeShot=std::max(frames, 0);
     if(frames<1) frames=1;
 
     // The flag beats the environment.
@@ -4933,7 +4978,7 @@ int main(int argc, char *argv[])
                 }
                 else
                 {
-                    renderFrames(session, frames);
+                    renderFrames(session, writingPng ? framesBeforeShot : frames);
                     if(writingPng)
                         ok=shoot(session, shotPathIn(shotDir, shotPath));
                 }
