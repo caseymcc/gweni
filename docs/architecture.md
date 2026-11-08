@@ -592,7 +592,7 @@ sizes, ranges and the core's own data, never an API object:
 | `maxClipBoxRows()`, `allocateClipBoxes(path, rows)`, `uploadClipBoxRows(path, x, y, w, h, boxes)` | the device's row limit; (re)allocate a path's clip-box table, `kClipColumns` boxes a row; copy a block of boxes to it |
 | `createAtlasTexture(atlas)`, `uploadAtlasRows(texture, atlas, firstRow, rows)`, `destroyAtlasTexture(texture)` | a font atlas's texture (R8, or RGB8 for depth 3), its dirty rows, its end |
 | `createImageTexture(image, rgba)`, `destroyImageTexture(texture)`, `readTextureRgba(...)` | an image's texture with its mip levels, each uploaded from `imageMipChain`, its end, a read back (`pixelColor`, `readFontAtlas`) |
-| `beginPrimitiveDraws()`, `drawPrimitiveChunk(chunk, firstSlot, slots)`, `endPrimitiveDraws()` | one draw per chunk of slots, in slot order |
+| `beginPrimitiveDraws()`, `drawPrimitiveChunk(chunk, firstSlot, slots)`, `endPrimitiveDraws()` | one draw per chunk with a slot that can show, in slot order, up to its last such slot |
 | `beginTextDraws()`, `beginTextAtlas(font)`, `drawTextChunk(draw)`, `endTextDraws()` | per atlas with runs to draw: its texture and `TextMode` (an LCD one blended per channel), then one draw per `TextChunkDraw` |
 | `submitFrame()` | the end of `flush()`: the frame's commands go to the device |
 | `indexChunkSlotsChanged()` | `setIndexChunkSlots()` changed the chunk size |
@@ -967,6 +967,33 @@ two programs and the draws. What follows describes both together:
   `--shot-all` PNG and the hero `--screenshot` byte for byte at 64, and
   `tests/indexChunks.cpp` slots past 16383, chunks of 1 to 5 slots, and text runs
   split between chunks, hidden and shrunk.
+- **Only the slots that can show are drawn** (#431). A slot can show when its style
+  is not 0; `hidePrimitive` and `releasePrimitive` set it to 0, and a slot the mirror
+  grew by is 0 until drawn. The mirror never shrinks, so before, every frame drew every
+  slot up to its peak: a hidden page's slots and the ids a deleted tree gave back each
+  went through the vertex shader as 4 vertexes that made nothing. `SlotRenderer` keeps
+  a bit per slot (`m_visibleSlots`) and, per chunk, how many of its slots can show and
+  the last of them (`m_primitiveChunks`); `flush()` skips a chunk with none and ends a
+  chunk's draw at its last one, so the pixels are those of the whole chunk (a style-0
+  slot makes no fragment, and the order is unchanged). The bits are brought up to date
+  from the dirty slots alone, before the upload clears them (`updateSlotVisibility`):
+  every write that changes a slot's bytes (a `draw*`, a hide, a show, a release, a quad
+  collapsed out of range, a scale or font change redrawing it) marks it for the upload
+  anyway, so this costs O(slots changed), with no scan of the mirror. A chunk whose
+  last slot stops showing finds the one before by its bits, at most 256 words for
+  16383 slots; `setIndexChunkSlots()` recounts the chunks from the bits.
+  `FrameStats::primitiveSlotsDrawn` is the slots the draws covered (the sum of the
+  counts passed to `drawPrimitiveChunk`), `drawCalls` the chunks drawn, and
+  `GWENI_UPLOAD_STATS=1` prints it against the mirror's slots. A hidden slot below its
+  chunk's last shown one is still drawn: slots are not moved (see "free-slot
+  compaction" under "Not yet done"), and ids are handed out lowest first, so a control
+  that takes a slot after the rest (a hover surface, a newly shown page) can hold the
+  top one. At 1024x768, `ControlTest --control TabControlDemo` draws 44 of its 48
+  slots, the `Demo` shell 2298 of 2651; after the shell switched pages and back, the
+  last slots are live again and it draws all 2657. `tests/indexChunks.cpp` checks the
+  counts and that every frame draws the pixels of the whole mirror
+  (`setDrawEveryPrimitiveSlot`): a hidden middle chunk, a hidden tail, released top
+  ids, a regrow and a new chunk size.
 - Each `Vertex` is 16 16-bit fields, 32 bytes:
   `{ style, x, y, z, tx, ty, lx, ly, radius, border, cx, cy, bx, by, dx, dy }`.
   `x, y` are the corner's device-pixel position, **signed** (`int16_t`, read as an
@@ -1652,7 +1679,9 @@ What exists today (the foundation) and what's still aspirational:
   `gweni_bench` and `ControlTest --stats`), so a mirror growing by a slot a frame
   regrows O(log n) times over n frames. Every other frame sends the dirty slots and
   the slots the mirror gained since the last upload, never the slack past the mirror,
-  which nothing draws. Before (#323) a buffer grew to exactly the mirror, and growing
+  which nothing draws. The draws stop at each chunk's last slot that can show, and skip
+  a chunk with none ("Only the slots that can show are drawn" above,
+  `FrameStats::primitiveSlotsDrawn`). Before (#323) a buffer grew to exactly the mirror, and growing
   by one slot sent all of it: typing a character into `gweni_bench`'s `type`
   TextBoxMultiline sent 1.29 MB a frame at N=1000 and 12.7 MB at 10 000; now 15.9 KB
   at both, with no regrow in its measured frames.
@@ -1739,7 +1768,9 @@ What exists today (the foundation) and what's still aspirational:
   nothing culls them on the CPU. Clipping is rectangular only: a rounded parent does not
   cut its children at its corners.
 - **Cache-to-texture** (`ICacheToTexture`) and free-slot compaction/defragmentation of
-  the primitive buffers are stubbed.
+  the primitive buffers are stubbed. Without compaction a hidden or released slot below
+  its chunk's last shown one is still drawn, and the mirror and buffers keep their peak
+  size.
 
 **Vulkan (#368)**
 - `renderer::Vulkan` ("renderer::Vulkan (headless)" above) implements the hooks with

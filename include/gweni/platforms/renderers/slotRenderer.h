@@ -406,9 +406,16 @@ public:
         size_t uploadCalls=0;
         size_t uploadBytes=0;           //!< bytes those calls sent
         size_t mirrorBytes=0;           //!< size of the whole CPU mirror, for comparison
-        //! draws: one per primitive chunk, one per text chunk of an atlas (each a
-        //! drawTextChunk, however many ranges it holds)
+        //! draws: one per primitive chunk with a slot that can show, one per text
+        //! chunk of an atlas (each a drawTextChunk, however many ranges it holds)
         size_t drawCalls=0;
+        //! primitive slots the primitive draws covered: the sum of the counts passed
+        //! to drawPrimitiveChunk. A chunk with no slot whose style is not 0 is not
+        //! drawn, and a chunk's draw ends at its last such slot, so hidden and
+        //! released slots past a chunk's last shown one (a hidden page, the ids a
+        //! deleted tree gave back) cost no vertex work; hidden slots below it are
+        //! still drawn, as 4 vertexes that make nothing.
+        size_t primitiveSlotsDrawn=0;
         size_t textDraws=0;             //!< of those, the text draws: one per atlas with runs to draw
         size_t atlasUploadCalls=0;      //!< uploads of font atlas row bands (uploadAtlasRows)
         size_t atlasUploadBytes=0;      //!< bytes those calls sent
@@ -443,6 +450,10 @@ public:
     //! lists are made again as the next flush() needs them, and the backend is told
     //! (indexChunkSlotsChanged). A test hook.
     void setIndexChunkSlots(size_t slots);
+    //! Draws every primitive slot up to the mirror's end, each chunk whole and none
+    //! skipped, as flush() did before it drew only the slots that can show. A test
+    //! hook, to check the skip draws the same pixels; off by default.
+    void setDrawEveryPrimitiveSlot(bool every) { m_drawEveryPrimitiveSlot=every; }
 
     //! What every live id holds in the CPU mirrors, so two states of the UI can be
     //! compared id by id rather than as raw buffers.
@@ -795,6 +806,33 @@ private:
 
     std::vector<Vertex> m_vertexes; //argue about vertices all you want
     std::vector<Box> m_clippingBoxes; //!< one per primitive slot
+
+    //! Which primitive slots can show, one bit per slot: a slot can when any of its
+    //! vertexes' style is not 0 (hidePrimitive and releasePrimitive set them all to
+    //! 0, and a slot the mirror grew by is 0 until it is drawn). Every write that
+    //! changes a slot's bytes marks it in m_dirtyVertexSlots, which the upload has
+    //! to see anyway, so flush() brings the bits up to date from those slots alone
+    //! (updateSlotVisibility) before the upload clears them: every draw*, a hide, a
+    //! show, a release, a quad collapsed out of range, a scale or font change that
+    //! redraws a slot, in O(slots changed).
+    std::vector<uint64_t> m_visibleSlots;
+    //! Per primitive index chunk of m_chunkSlots slots: how many of its slots can
+    //! show, and the last of them (a slot number, meaningful while visible > 0)
+    struct PrimitiveChunkSlots
+    {
+        size_t visible=0;
+        size_t last=0;
+    };
+    std::vector<PrimitiveChunkSlots> m_primitiveChunks;
+    bool m_drawEveryPrimitiveSlot=false;
+    //! Sets the slot's bit from its vertexes, and its chunk's count and last slot;
+    //! a chunk whose last slot stops showing finds the one before by its bits, at
+    //! most m_chunkSlots/64 words.
+    void updateSlotVisibility(size_t slot);
+    //! The last slot that can show in [first, end), or end when there is none.
+    size_t lastVisibleSlot(size_t first, size_t end) const;
+    //! Recounts m_primitiveChunks from m_visibleSlots, for a new chunk size.
+    void recountPrimitiveChunks();
 
     //! One contiguous run of glyph quads in the text mirrors, owned by one text id.
     //

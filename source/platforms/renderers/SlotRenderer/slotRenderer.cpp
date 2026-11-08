@@ -850,6 +850,9 @@ void SlotRenderer::setIndexChunkSlots(size_t slots)
     // what the backend made per chunk starts at the old chunk size's slots
     indexChunkSlotsChanged();
 
+    // and each chunk's slots that can show are counted over the old chunks
+    recountPrimitiveChunks();
+
     // and the atlases' draws are split at the old chunks' edges
     for(auto &entry:m_fonts)
         entry.second.drawListStale=true;
@@ -862,6 +865,102 @@ void SlotRenderer::ensurePrimitiveSlots(size_t primitiveId)
 
     if(m_vertexes.size() < primitiveId*4+4)
         m_vertexes.resize(primitiveId*4+4);
+}
+
+//! The highest set bit of a word that is not 0
+static size_t highestBit(uint64_t word)
+{
+#if defined(__GNUC__) || defined(__clang__)
+    return 63-(size_t)__builtin_clzll(word);
+#else
+    size_t bit=63;
+
+    while((word>>bit) == 0)
+        --bit;
+    return bit;
+#endif
+}
+
+void SlotRenderer::updateSlotVisibility(size_t slot)
+{
+    if(m_vertexes.size() < slot*4+4)
+        return;
+
+    const Vertex *vertexes=&m_vertexes[slot*4];
+    const bool visible=(vertexes[0].style|vertexes[1].style|vertexes[2].style|vertexes[3].style) != 0;
+    const size_t word=slot/64;
+    const uint64_t bit=uint64_t(1)<<(slot%64);
+
+    if(m_visibleSlots.size() <= word)
+        m_visibleSlots.resize(word+1, 0);
+    if(((m_visibleSlots[word]&bit) != 0) == visible)
+        return;
+
+    const size_t chunk=slot/m_chunkSlots;
+
+    if(m_primitiveChunks.size() <= chunk)
+        m_primitiveChunks.resize(chunk+1);
+
+    PrimitiveChunkSlots &slots=m_primitiveChunks[chunk];
+
+    if(visible)
+    {
+        m_visibleSlots[word]|=bit;
+        slots.last=(slots.visible == 0)?slot:std::max(slots.last, slot);
+        ++slots.visible;
+        return;
+    }
+
+    m_visibleSlots[word]&=~bit;
+    --slots.visible;
+    if((slots.visible > 0) && (slots.last == slot))
+        slots.last=lastVisibleSlot(chunk*m_chunkSlots, slot);
+}
+
+size_t SlotRenderer::lastVisibleSlot(size_t first, size_t end) const
+{
+    size_t limit=std::min(end, m_visibleSlots.size()*64);
+
+    while(limit > first)
+    {
+        const size_t word=(limit-1)/64;
+        const size_t wordFirst=word*64;
+        uint64_t bits=m_visibleSlots[word];
+
+        // the bits of [max(first, wordFirst), limit)
+        if(limit-wordFirst < 64)
+            bits&=(uint64_t(1)<<(limit-wordFirst))-1;
+        if(first > wordFirst)
+            bits&=~((uint64_t(1)<<(first-wordFirst))-1);
+        if(bits != 0)
+            return wordFirst+highestBit(bits);
+        limit=wordFirst;
+    }
+    return end;
+}
+
+void SlotRenderer::recountPrimitiveChunks()
+{
+    m_primitiveChunks.clear();
+    for(size_t word=0; word<m_visibleSlots.size(); ++word)
+    {
+        for(uint64_t bits=m_visibleSlots[word]; bits != 0; bits&=bits-1)
+        {
+            // lowest first, so each chunk's last is the slot it saw last
+            size_t bit=0;
+
+            while(((bits>>bit)&1) == 0)
+                ++bit;
+
+            const size_t slot=word*64+bit;
+            const size_t chunk=slot/m_chunkSlots;
+
+            if(m_primitiveChunks.size() <= chunk)
+                m_primitiveChunks.resize(chunk+1);
+            ++m_primitiveChunks[chunk].visible;
+            m_primitiveChunks[chunk].last=slot;
+        }
+    }
 }
 
 void SlotRenderer::readPrimitiveSlot(size_t primitiveId, PrimitiveSlot &slot) const
@@ -1101,6 +1200,7 @@ void SlotRenderer::flush()
     m_frameStats.uploadCalls=0;
     m_frameStats.uploadBytes=0;
     m_frameStats.drawCalls=0;
+    m_frameStats.primitiveSlotsDrawn=0;
     m_frameStats.textDraws=0;
     m_frameStats.atlasUploadCalls=0;
     m_frameStats.atlasUploadBytes=0;
@@ -1133,6 +1233,11 @@ void SlotRenderer::flush()
 
     if(!m_vertexes.empty())
     {
+        //which slots can show changes only with a slot's bytes, so only in a dirty
+        //slot; the upload below clears them
+        for(size_t slot: m_dirtyVertexSlots.slots())
+            updateSlotVisibility(slot);
+
         //copy only the primitive slots that changed since the last frame
         uploadDirty(SlotPath::Primitives, m_vertexBufferCapacity, m_vertexBufferSent,
             m_vertexes.data(), sizeof(Vertex), m_vertexes.size(), m_dirtyVertexSlots, 4);
@@ -1141,19 +1246,31 @@ void SlotRenderer::flush()
 
         // One draw per chunk of m_chunkSlots slots, in slot order as a single draw
         // over the whole buffer would go, so blending and depth come out the same.
-        // Each draws its slots, hidden ones included, as 4 vertexes and 6 indexes
-        // (2 triangles) apiece from the start of the static quad index buffer, with
-        // the chunk's vertex input pointed at its first slot; the vertex shader's
-        // slot is then slotBase + (vertex index >> 2).
+        // Each draws its slots up to its last one that can show, hidden ones below
+        // that included, as 4 vertexes and 6 indexes (2 triangles) apiece from the
+        // start of the static quad index buffer, with the chunk's vertex input
+        // pointed at its first slot; the vertex shader's slot is then slotBase +
+        // (vertex index >> 2). A chunk with no slot that can show is not drawn: a
+        // style-0 slot makes no fragment, so leaving it out changes no pixel.
         const size_t slots=m_vertexes.size()/4;
 
         beginPrimitiveDraws();
-        for(size_t first=0; first<slots; first+=m_chunkSlots)
+        for(size_t chunk=0, first=0; first<slots; ++chunk, first+=m_chunkSlots)
         {
-            const size_t count=std::min(slots-first, m_chunkSlots);
+            size_t count=std::min(slots-first, m_chunkSlots);
 
-            drawPrimitiveChunk(first/m_chunkSlots, first, count);
+            if(!m_drawEveryPrimitiveSlot)
+            {
+                if(chunk >= m_primitiveChunks.size())
+                    break;
+                if(m_primitiveChunks[chunk].visible == 0)
+                    continue;
+                count=m_primitiveChunks[chunk].last-first+1;
+            }
+
+            drawPrimitiveChunk(chunk, first, count);
             ++m_frameStats.drawCalls;
+            m_frameStats.primitiveSlotsDrawn+=count;
         }
         endPrimitiveDraws();
     }
@@ -1204,10 +1321,11 @@ void SlotRenderer::flush()
     if(m_uploadStats)
     {
         //qualified: gweni::printf(String&, ...) would otherwise hide the C one
-        ::printf("[upload] frame %zu: %zu calls, %zu bytes (mirror %zu bytes, %zu regrows), atlas %zu calls, %zu bytes\n",
+        ::printf("[upload] frame %zu: %zu calls, %zu bytes (mirror %zu bytes, %zu regrows), atlas %zu calls, %zu bytes,"
+            " %zu of %zu primitive slots drawn\n",
             m_frameStats.frameIndex, m_frameStats.uploadCalls, m_frameStats.uploadBytes,
             m_frameStats.mirrorBytes, m_frameStats.bufferRegrows, m_frameStats.atlasUploadCalls,
-            m_frameStats.atlasUploadBytes);
+            m_frameStats.atlasUploadBytes, m_frameStats.primitiveSlotsDrawn, m_vertexes.size()/4);
         fflush(stdout);
     }
 }
