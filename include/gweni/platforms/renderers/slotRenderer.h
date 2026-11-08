@@ -297,6 +297,9 @@ public:
 
     //! In canvas units at any scale(), unlike the legacy renderers (see the definition)
     gweni::Point measureText(const gweni::Font &font, const gweni::String &text) override;
+    //! measureText's `y` for one line, read from the font's metrics: in canvas
+    //! units at any scale(), 0 for a font that does not load
+    int lineHeight(const gweni::Font &font) override;
 
     // Resource Loader
     gweni::Font::Status loadFont(const gweni::Font &font) override;
@@ -735,6 +738,10 @@ private:
     //! the size measureText reports. Rasterises the glyphs it has not seen yet.
     gweni::Point layoutSdfText(FontData &fontData, float px, const gweni::String &text,
         const gweni::Color &color, std::vector<ftgl::glyph_vertex_t> *vertexes);
+    //! The height of one line box in fontData at px, before measureText rounds it
+    //! up: ascender-descender, no line gap (font->height), scaled by px/baseSize in
+    //! an Sdf font. measureText, layoutSdfText and lineHeight all take it from here.
+    static float lineBoxHeight(const FontData &fontData, float px);
 
     void setVertex(Vertex &vertex, uint8_t type, int x, int y, int z, float u=0.0f, float v=0.0f);
     //! Called once primitiveId's four vertexes are written for the device-pixel

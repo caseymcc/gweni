@@ -243,5 +243,10 @@ gweni::Point Base::measureText(const gweni::Font &font, const gweni::String &tex
     return p;
 }
 
+int Base::lineHeight(const gweni::Font &font)
+{
+    return measureText(font, " ").y;
+}
+
 } // namespace renderer
 } // namespace gweni

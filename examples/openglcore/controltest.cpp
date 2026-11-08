@@ -42,9 +42,9 @@
  *                       layout_visited= the controls the frame's layout
  *                       passes entered, one per calculateSize() and one per
  *                       arrange(), each axis counted (0 with no pass);
- *                       measure_calls= the renderer measureText() calls the
- *                       controls made in the update phase and any
- *                       render-phase layout;
+ *                       measure_calls= the renderer measureText() and
+ *                       lineHeight() calls the controls made in the update
+ *                       phase and any render-phase layout;
  *                       z_visited= the controls updateCanvas()'s z renumber
  *                       entered (0 unless the tree order changed);
  *                       anims_run= the animations its update phase ran

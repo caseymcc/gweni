@@ -97,10 +97,13 @@ GWENI_EXPORT void resetChangeStats();
 //! harness to fail on.
 GWENI_EXPORT std::vector<std::string> typesWithoutSkinRenderer();
 
-//! The renderer::Base::measureText() calls the controls made since the process
-//! started, every one going through Base::measureText(). It is counted here, in
-//! the controls, rather than in a renderer, so it is the same whichever backend
-//! measures; a canvas takes its frame's share as LayoutStats::measureCalls.
+//! The renderer::Base::measureText() and lineHeight() calls the controls made
+//! since the process started, every one going through Base::measureText() or
+//! Base::measureLineHeight(); a renderer's default lineHeight() is one
+//! measureText(), so a renderer counting its measures sees the same number. It
+//! is counted here, in the controls, rather than in a renderer, so it is the
+//! same whichever backend measures; a canvas takes its frame's share as
+//! LayoutStats::measureCalls.
 GWENI_EXPORT size_t measureTextCalls();
 
 //! The tree changes made during a render walk: the render walk only draws, and
@@ -923,6 +926,10 @@ protected:
     //! Controls measure through this, never the renderer directly, so every
     //! measure is counted (measureTextCalls()).
     gweni::Point measureText(const gweni::Font &font, const gweni::String &text);
+    //! The height of one line box in `font`: the skin's renderer's lineHeight(),
+    //! which is measureText()'s `y` for a one-line string. Counted with the
+    //! measures (measureTextCalls()).
+    int measureLineHeight(const gweni::Font &font);
     //! The preferred width (Dim::X) or height (Dim::Y) this control's size
     //! flags make of `contentSize`, the size its children ask for, padding
     //! included. sizeOfChildren() ends with it.

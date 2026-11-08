@@ -130,8 +130,18 @@ public:
         return Base::measureText(font, text);
     }
 
+    //! Counted in `lineHeights`, then measured as renderer::Base does: one
+    //! measureText() of " ", which `measures` counts too.
+    int lineHeight(const gweni::Font &font) override
+    {
+        ++lineHeights;
+        return Base::lineHeight(font);
+    }
+
     //! measureText() calls so far. Tests take deltas.
     size_t measures=0;
+    //! lineHeight() calls so far, each also one of `measures`.
+    size_t lineHeights=0;
 
     //! What maxZIndex() reports: set it small to make the canvas run out of z.
     int maxZ=65535;

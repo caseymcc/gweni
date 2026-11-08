@@ -1137,6 +1137,12 @@ gweni::Point Base::measureText(const gweni::Font &font, const gweni::String &tex
     return getSkin()->getRenderer()->measureText(font, text);
 }
 
+int Base::measureLineHeight(const gweni::Font &font)
+{
+    ++g_measureTextCalls;
+    return getSkin()->getRenderer()->lineHeight(font);
+}
+
 void Base::render(skin::Base *skin)
 {
 //    update();

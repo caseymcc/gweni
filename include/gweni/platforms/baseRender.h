@@ -185,6 +185,13 @@ public:
     virtual gweni::Point measureText(const gweni::Font &font,
         const gweni::String &text);
 
+    //! The height of one line box in \a font, in the units of measureText:
+    //! its `y` for any one-line string, which does not depend on the string.
+    //! A renderer that measures in canvas units gives the same value at every
+    //! scale. The default measures " "; a renderer that can read the font's
+    //! metric instead should, since a control asks for it on every layout.
+    virtual int lineHeight(const gweni::Font &font);
+
     //! \sect{Render Specialisation}
     //!     No need to implement these functions in your derived class, but
     //!     if you can do them faster than the default implementation it's a

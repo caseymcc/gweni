@@ -142,10 +142,7 @@ gweni::Rect Text::getCharacterPosition(unsigned int value)
 gweni::Rect Text::characterPositionIn(const gweni::String &str, unsigned int value)
 {
     if(str.empty() || value == 0)
-    {
-        gweni::Point p=measureText(getFont(), " ");
-        return gweni::Rect(0, 0, 0, p.y);
-    }
+        return gweni::Rect(0, 0, 0, lineHeight());
 
     String sub=str.substr(0, value);
     gweni::Point p=measureText(getFont(), sub);
@@ -303,7 +300,7 @@ void Text::policyResize(const Size &preferred, Dim dim)
 
 int Text::lineHeight()
 {
-    return measureText(getFont(), " ").y;
+    return measureLineHeight(getFont());
 }
 
 int Text::wrapWidth()
@@ -324,11 +321,9 @@ Size Text::refreshSize(bool update)
 
     // An empty string is one caret wide and one line box high, as high as
     // any typed string: the first character typed or the last one deleted
-    // changes the width only, so the parent's layout does not move.
-    gweni::Point p(1, lineHeight());
-
-    if(length() > 0)
-        p=measureText(getFont(), m_string);
+    // changes the width only, so the parent's layout does not move. A string
+    // is measured alone: its height is that line box already.
+    gweni::Point p=(length() > 0)?measureText(getFont(), m_string):gweni::Point(1, lineHeight());
 
     p.x+=getPadding().left+getPadding().right;
     p.y+=getPadding().top+getPadding().bottom;

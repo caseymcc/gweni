@@ -2337,7 +2337,19 @@ gweni::Point SlotRenderer::layoutSdfText(FontData &fontData, float px, const gwe
     }
     width=std::max(width, pen);
 
-    return gweni::Point((int)ceil(width), (int)ceil(font->height*s+(lines-1)*lineStep));
+    return gweni::Point((int)ceil(width), (int)ceil(lineBoxHeight(fontData, px)+(lines-1)*lineStep));
+}
+
+float SlotRenderer::lineBoxHeight(const FontData &fontData, float px)
+{
+    if(fontData.mode == TextMode::Sdf)
+    {
+        const float s=px/fontData.baseSize;
+
+        return fontData.textureFont->height*s;
+    }
+
+    return fontData.markup.font->height;
 }
 
 void SlotRenderer::showText(size_t textId)
@@ -2417,7 +2429,7 @@ gweni::Point SlotRenderer::measureText(const gweni::Font &font, const gweni::Str
     // width the next string would start at. The right edge of the last glyph's
     // ink is a different and smaller quantity, and is not what a control laying
     // text out wants.
-    Point sz((int)ceil(pen.x), (int)ceil(fontData.markup.font->height));
+    Point sz((int)ceil(pen.x), (int)ceil(lineBoxHeight(fontData, font.size)));
 
     if(textDebugMatches(text))
     {
@@ -2466,6 +2478,16 @@ gweni::Point SlotRenderer::measureText(const gweni::Font &font, const gweni::Str
     text_buffer_delete(textBuffer);
 
     return sz;
+}
+
+// measureText's y for a one-line string, without laying one out: the font's line
+// box at font.size, in canvas units at any scale() as measureText is.
+int SlotRenderer::lineHeight(const gweni::Font &font)
+{
+    if(!ensureFont(font, font.size))
+        return 0;
+
+    return (int)ceil(lineBoxHeight(m_lastFont->second, font.size));
 }
 
 } // namespace renderer

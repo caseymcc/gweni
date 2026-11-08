@@ -57,10 +57,10 @@ struct LayoutStats
     //! a walk enters twice (a ScrollControl's Y arrange measures and arranges
     //! its children in X too). 0 on a frame with no pass.
     size_t visited=0;
-    //! The renderer::Base::measureText() calls the controls made from the
-    //! start of doThink() to the end of the frame's layout, the render phase's
-    //! pass included (see measureTextCalls()): nearly all from layout, the
-    //! rest from what the update phase itself measures.
+    //! The renderer::Base::measureText() and lineHeight() calls the controls
+    //! made from the start of doThink() to the end of the frame's layout, the
+    //! render phase's pass included (see measureTextCalls()): nearly all from
+    //! layout, the rest from what the update phase itself measures.
     size_t measureCalls=0;
 };
 

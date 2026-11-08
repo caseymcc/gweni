@@ -52,9 +52,12 @@ dirty controls themselves. A pure move does not dirty the moved control's subtre
 `LayoutStats::visited` (`layout_visited=` in `ControlTest --stats` and `gweni_bench`)
 counts the controls the frame's passes entered, one per `calculateSize()` and one per
 `arrange()` in each axis, so four per dirty control and 0 on a settled frame;
-`LayoutStats::measureCalls` (`measure_calls=`) counts the renderer `measureText()` calls
-the controls made, every one through `Base::measureText()` (`tests/unit/layoutVisited.cpp`,
-`tests/unit/layoutWalk.cpp`). `GWENI_LAYOUT_VERIFY=1` (ControlTest `--verify-layout`)
+`LayoutStats::measureCalls` (`measure_calls=`) counts the renderer `measureText()` and
+`lineHeight()` calls the controls made, every one through `Base::measureText()` or
+`Base::measureLineHeight()` (`tests/unit/layoutVisited.cpp`, `tests/unit/layoutWalk.cpp`).
+An unwrapped `Text` with a string measures it once per `calculateSize()`, its height
+being that line box; only an empty one asks for `lineHeight(font)`
+(`tests/unit/textLineHeight.cpp`). `GWENI_LAYOUT_VERIFY=1` (ControlTest `--verify-layout`)
 checks every frame's layout against a pass that enters every control.
 The animation registry (`source/anim.cpp`) holds only
 animations with work to do: a `TextBox`'s caret blink from the focus arriving until it
@@ -389,7 +392,7 @@ The core never makes API calls directly — it only calls this interface. Key me
 | Primitive lifetime | `generatePrimitive(id)`, `releasePrimitive(id)` |
 | Geometry | `drawFilledRect(id, rect, z)`, `drawTexturedRect(tex, id, rect, z, uv…)`, `drawRoundedRect(…)`, `drawBilinearRect(…)`, `drawCheckerRect(…)`, `drawIcon(…)` |
 | Visibility | `showPrimitive(style, id)`, `hidePrimitive(id)` |
-| Text | `generateTextPrimitive(id)`, `renderText(id, font, pos, z, text)`, `showText/hideText`, `measureText()` |
+| Text | `generateTextPrimitive(id)`, `renderText(id, font, pos, z, text)`, `showText/hideText`, `measureText()`, `lineHeight(font)` |
 | Color / clip | `setDrawColor()`, `startClip()/endClip()`, `setClipRegion()` |
 
 The unit of retained state is the **primitive id**: the core asks the renderer to
@@ -947,7 +950,11 @@ two programs and the draws. What follows describes both together:
   as its bitmap, so every pixel samples exactly one texel, and keeps the pen's
   fraction in the vertex's `shift` (zero while hinted).
   `measureText` and `renderText` both lay out through `text_buffer_add_text`, so the
-  measured width (the final `pen.x`) is the drawn advance. The text shader outputs
+  measured width (the final `pen.x`) is the drawn advance. The measured height is the
+  line box, `ceil(font->height)` (ascender-descender, no line gap) whatever the string;
+  in an SDF font `ceil(font->height*px/48)` for one line. `lineHeight(font)` reads that
+  same metric (`SlotRenderer::lineBoxHeight`) without laying a string out, so it is
+  `measureText(font, " ").y` exactly (`tests/lineHeight.cpp`). The text shader outputs
   `vec4(color.rgb, color.a * coverage)` under the `SRC_ALPHA, ONE_MINUS_SRC_ALPHA`
   blend, so coverage is applied once; no gamma or contrast curve is applied
   (`markup.gamma` is 1). `tests/textGrayscale.cpp` pins all of this.
