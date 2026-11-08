@@ -55,9 +55,13 @@ counts the controls the frame's passes entered, one per `calculateSize()` and on
 `LayoutStats::measureCalls` (`measure_calls=`) counts the renderer `measureText()` and
 `lineHeight()` calls the controls made, every one through `Base::measureText()` or
 `Base::measureLineHeight()` (`tests/unit/layoutVisited.cpp`, `tests/unit/layoutWalk.cpp`).
-An unwrapped `Text` with a string measures it once per `calculateSize()`, its height
-being that line box; only an empty one asks for `lineHeight(font)`
-(`tests/unit/textLineHeight.cpp`). A wrapped `Text` wraps an edit again by the
+An unwrapped `Text` with a string measures it once and keeps the size, its height
+being that line box; only an empty one asks for `lineHeight(font)`, also kept
+(`tests/unit/textLineHeight.cpp`). A `Text` measures again only when its string, its
+font (pointer or value), its renderer or the renderer's `textLayoutSerial()` changed,
+not for another `calculateSize()` and not for a new scale, `measureText()` being in
+canvas units, so a resize or `Canvas::setScale` relayout measures nothing
+(`docs/layout.md` → "Text", `tests/unit/textMeasure.cpp`). A wrapped `Text` wraps an edit again by the
 paragraph, from the bytes `setText` found changed, and syncs only the line children of
 the lines that changed, so typing into a long `TextBoxMultiline` measures and allocates
 for its paragraph, not the document (`docs/layout.md` → "Text"; a string with no `'\n'`

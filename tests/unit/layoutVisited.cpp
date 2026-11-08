@@ -138,7 +138,8 @@ TEST_CASE("layout_visited: one Label's setText enters only the way down to it")
     // steps; the other panels, Labels and the wrapped Text's lines are clean
     CHECK(scene.stats().visited == 4*4);
     CHECK(scene.stats().measureCalls == measured);
-    // Only the changed Text is measured: its string, once in each axis
-    // (its height is the string's line box, no Text::lineHeight() of its own)
-    CHECK(scene.stats().measureCalls == 2);
+    // Only the changed Text is measured: its string, once, kept for the
+    // other axis (its height is the string's line box, no Text::lineHeight()
+    // of its own)
+    CHECK(scene.stats().measureCalls == 1);
 }

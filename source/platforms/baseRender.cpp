@@ -237,9 +237,10 @@ void Base::renderText(size_t textId, const gweni::Font &font, gweni::Point pos, 
 
 gweni::Point Base::measureText(const gweni::Font &font, const gweni::String &text)
 {
+    // in canvas units, whatever the scale (measureText's contract)
     gweni::Point p;
-    p.x=font.size  *scale()  *text.length()  *0.4f;
-    p.y=font.size  *scale();
+    p.x=font.size*text.length()*0.4f;
+    p.y=font.size;
     return p;
 }
 

@@ -6,7 +6,7 @@
  *  How an unwrapped internal::Text sizes itself, counted on the StubRenderer.
  *  A Text with a string measures that string alone: its measureText y is the
  *  line box already, so it asks for no lineHeight() of its own, and a Label's
- *  first layout makes one measureText() per refreshSize, once in each axis,
+ *  first layout makes one measureText(), kept for both axes (textMeasure.cpp),
  *  with no " " measured. An empty Text measures no string: it asks the
  *  renderer's lineHeight(font) and is one caret (1 + padding) wide and that
  *  plus padding high (#268). Every call is in LayoutStats::measureCalls.
@@ -52,7 +52,7 @@ struct Scene
 
 }//namespace
 
-TEST_CASE("Text line height: a Label with a string measures it once per axis and no \" \"")
+TEST_CASE("Text line height: a Label with a string measures it once and no \" \"")
 {
     Scene scene;
     const int Labels=3;
@@ -71,10 +71,10 @@ TEST_CASE("Text line height: a Label with a string measures it once per axis and
     scene.frame();
 
     REQUIRE(scene.stats().passes == 1);
-    // one calculateSize, so one refreshSize, in X and in Y for each Text
-    CHECK(scene.renderer.measures-measures == 2*Labels);
+    // a refreshSize in X and in Y for each Text, the second one kept
+    CHECK(scene.renderer.measures-measures == Labels);
     CHECK(scene.renderer.lineHeights-lineHeights == 0);
-    CHECK(scene.stats().measureCalls == 2*Labels);
+    CHECK(scene.stats().measureCalls == Labels);
 }
 
 TEST_CASE("Text line height: an empty Text asks for lineHeight() and is that high plus padding")

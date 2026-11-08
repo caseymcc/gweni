@@ -182,14 +182,18 @@ public:
     virtual void showText(size_t textId) {}
     virtual void hideText(size_t textId) {}
 
+    //! The size \a text takes in \a font, in canvas units: the same at every
+    //! scale(), as the layout that uses it is. A control keeps what it measured
+    //! until its string or font changes or textLayoutSerial() is raised
+    //! (internal::Text), so a measure that changes for any other reason must
+    //! raise that serial.
     virtual gweni::Point measureText(const gweni::Font &font,
         const gweni::String &text);
 
     //! The height of one line box in \a font, in the units of measureText:
-    //! its `y` for any one-line string, which does not depend on the string.
-    //! A renderer that measures in canvas units gives the same value at every
-    //! scale. The default measures " "; a renderer that can read the font's
-    //! metric instead should, since a control asks for it on every layout.
+    //! its `y` for any one-line string, which does not depend on the string,
+    //! and the same at every scale. The default measures " "; a renderer that
+    //! can read the font's metric instead should.
     virtual int lineHeight(const gweni::Font &font);
 
     //! \sect{Render Specialisation}

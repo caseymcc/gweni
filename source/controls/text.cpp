@@ -60,6 +60,7 @@ void Text::setFont(const gweni::Font &font)
 
     m_font=&font;
     m_wrapStale=true;
+    dropMeasures();
     // Change the font of multilines too!
     for(auto &&line : m_lines)
     {
@@ -78,6 +79,9 @@ void Text::setText(const String &str)
 
     noteEdit(m_string, str);
     m_string=str;
+    // the line height is the font's alone
+    m_stringMeasured=false;
+    m_longestWordMeasured=false;
     // Its size, and wrapped its lines, come from the string: lay it out again.
     invalidate();
 }
@@ -205,7 +209,8 @@ gweni::Rect Text::getLineBox(int i)
     const int x=wrapped?0:getPadding().left;
     const int y=wrapped?i*lineHeight():getPadding().top;
 
-    gweni::Point p=measureText(getFont(), str);
+    // unwrapped, the whole string, which is kept
+    gweni::Point p=wrapped?measureText(getFont(), str):measuredString();
     return gweni::Rect(x, y, clamp(p.x, 1, p.x), clamp(p.y, 1, p.y));
 }
 
@@ -348,7 +353,58 @@ void Text::policyResize(const Size &preferred, Dim dim)
 
 int Text::lineHeight()
 {
-    return measureLineHeight(getFont());
+    renewMeasureKey();
+
+    if(!m_lineHeightMeasured)
+    {
+        m_lineHeight=measureLineHeight(getFont());
+        m_lineHeightMeasured=true;
+    }
+
+    return m_lineHeight;
+}
+
+gweni::Point Text::measuredString()
+{
+    renewMeasureKey();
+
+    if(!m_stringMeasured)
+    {
+        m_stringSize=measureText(getFont(), m_string);
+        m_stringMeasured=true;
+    }
+
+    return m_stringSize;
+}
+
+bool Text::measureKeyCurrent()
+{
+    const renderer::Base *renderer=getSkin()?getSkin()->getRenderer():nullptr;
+
+    return m_font == m_measureFont && *m_font == m_measureFontValue && renderer == m_measureRenderer
+        && renderer && renderer->textLayoutSerial() == m_measureSerial;
+}
+
+void Text::renewMeasureKey()
+{
+    if(measureKeyCurrent())
+        return;
+
+    dropMeasures();
+
+    const renderer::Base *renderer=getSkin()?getSkin()->getRenderer():nullptr;
+
+    m_measureFont=m_font;
+    m_measureFontValue=*m_font;
+    m_measureRenderer=renderer;
+    m_measureSerial=renderer?renderer->textLayoutSerial():0;
+}
+
+void Text::dropMeasures()
+{
+    m_stringMeasured=false;
+    m_lineHeightMeasured=false;
+    m_longestWordMeasured=false;
 }
 
 int Text::wrapWidth()
@@ -370,8 +426,10 @@ Size Text::refreshSize(bool update)
     // An empty string is one caret wide and one line box high, as high as
     // any typed string: the first character typed or the last one deleted
     // changes the width only, so the parent's layout does not move. A string
-    // is measured alone: its height is that line box already.
-    gweni::Point p=(length() > 0)?measureText(getFont(), m_string):gweni::Point(1, lineHeight());
+    // is measured alone: its height is that line box already. Both are kept
+    // (measuredString(), lineHeight()), so the passes that ask again, in each
+    // axis and from each ScrollControl above, measure nothing.
+    gweni::Point p=(length() > 0)?measuredString():gweni::Point(1, lineHeight());
 
     p.x+=getPadding().left+getPadding().right;
     p.y+=getPadding().top+getPadding().bottom;
@@ -392,6 +450,12 @@ int Text::longestWordWidth()
     if(!m_font)
         return 0;
 
+    // asked on every X pass of a wrapped Text whose parent has no width request
+    renewMeasureKey();
+
+    if(m_longestWordMeasured)
+        return m_longestWord;
+
     // Unbroken (no width): each word with the space after it, or a '\n'.
     std::vector<gweni::String> words;
     splitWords(getText(), 0, words);
@@ -411,6 +475,8 @@ int Text::longestWordWidth()
         width=std::max(width, measureText(getFont(), word.substr(0, end)).x);
     }
 
+    m_longestWord=width;
+    m_longestWordMeasured=true;
     return width;
 }
 

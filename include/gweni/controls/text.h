@@ -105,6 +105,7 @@ public:
     virtual void textChanged()
     {
         m_wrapStale=true;
+        dropMeasures();
     }
 
     virtual bool wrap()
@@ -117,7 +118,7 @@ public:
         if(m_wrap == b)
             return;
 
-        m_wrap=b; m_wrapStale=true; invalidate();
+        m_wrap=b; m_wrapStale=true; dropMeasures(); invalidate();
     }
 
     //! Wrapped lines are child Texts whose strings have no '\n'; character
@@ -218,8 +219,24 @@ private:
     //! never breaks inside one unless it is wider than the line): what a
     //! wrapped Text asks for when its parent has no width asked by the app.
     int longestWordWidth();
-    //! The height of a wrapped line, the row each one is placed on.
+    //! The height of a wrapped line, the row each one is placed on: the
+    //! renderer's lineHeight() of the font, kept as measureKeyCurrent() says.
     int lineHeight();
+
+    //! The measured size of the whole string, before padding: measureText()
+    //! of it, kept until setText or the key below changes.
+    gweni::Point measuredString();
+    //! Whether the measures kept below were made by this renderer, in this
+    //! font (the same object holding the same value: a Font can change size in
+    //! place, setDefaultFont) and before the renderer last said text measures
+    //! otherwise (textLayoutSerial(): a new text AA mode, textLayoutChanged()).
+    //! The scale is no part of it: measureText() and lineHeight() are in canvas
+    //! units at every scale, so a Canvas::setScale lays out without measuring.
+    bool measureKeyCurrent();
+    //! Records the key when it is not current, dropping every kept measure.
+    void renewMeasureKey();
+    //! Drops every kept measure: the next one asks the renderer.
+    void dropMeasures();
 
     //! An unwrapped string's caret rect at byte value, and the codepoint
     //! boundary closest to p; a line child's own helpers, read here from a
@@ -255,6 +272,23 @@ private:
     const gweni::Font *m_wrapFont=nullptr;
     gweni::Font m_wrapFontValue;
     size_t m_wrapCount=0;
+
+    //! The measures a layout pass asks for again and again (every
+    //! calculateSize, in both axes, and a ScrollControl's own re-measure of its
+    //! children), each kept with a flag saying it is of the current string (or
+    //! font alone, for the line height) under the key m_measure* records.
+    //! setText drops the string's two; setFont, setWrap and textChanged all of
+    //! them. Substring measures (caret places, wrap trials) are not kept.
+    const gweni::Font *m_measureFont=nullptr;
+    gweni::Font m_measureFontValue;
+    const renderer::Base *m_measureRenderer=nullptr;
+    unsigned m_measureSerial=0;
+    bool m_stringMeasured=false;
+    gweni::Point m_stringSize;
+    bool m_lineHeightMeasured=false;
+    int m_lineHeight=0;
+    bool m_longestWordMeasured=false;
+    int m_longestWord=0;
 
     //! The line children do not show m_wrapped (it was wrapped again since
     //! layout last made them). The width they were laid out at, -1 before

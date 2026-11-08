@@ -368,7 +368,20 @@ to the order a pass runs in.
   state (a window, a resized control) and where a popup was opened are
   requests.
 * **Text** never resizes itself: it is the size of its string, which its
-  parent gives it (`Text::policyResize`). Wrapped, it asks for the width the
+  parent gives it (`Text::policyResize`). It measures that string once and
+  keeps the size (`Text::measuredString`), as it keeps its font's line height
+  and, wrapped, its longest word, until `setText` gives it a new string or
+  the key changes: the font (the same object holding the same value: a Font
+  can change size in place), the renderer, and the renderer's
+  `textLayoutSerial()`, which a new text AA mode raises
+  (`Text::measureKeyCurrent`; `setFont`, `setWrap` and `textChanged()` drop
+  them all). The scale is not in the key: `measureText()` and `lineHeight()`
+  are in canvas units at every scale, so a `Canvas::setScale` or a resize lays
+  everything out again and measures nothing. So however many times a pass
+  asks (`calculateSize` in X and Y, a ScrollControl measuring its children
+  again), a Text costs one `measureText()` per change of its inputs
+  (`tests/unit/textMeasure.cpp`); substring measures (caret places, wrap
+  trials) are made each time. Wrapped, it asks for the width the
   app asked its parent to be, less the parent's padding, or with no such
   request for its longest word (`Text::longestWordWidth`), so a parent that
   sizes to its content shrinks around it; it is laid out at its parent's
