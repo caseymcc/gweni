@@ -170,6 +170,11 @@ public:
     //! removed when that Control's remove() runs.
     std::map<gweni::controls::Base *, const StubSkin *> generatedBy;
 
+    //! Each control's getZIndex() when a StubControl first generated it, the
+    //! z its first draw is at; removed with generatedBy. A generate() with no
+    //! control (a skin Control driven on its own) records nothing.
+    std::map<gweni::controls::Base *, int> firstDrawZ;
+
 private:
     //! Nothing is loaded, so no path is ever looked up.
     struct NoPaths: gweni::ResourcePaths
@@ -285,6 +290,8 @@ inline void StubControl::generate(gweni::renderer::Base *renderer, gweni::contro
         m_hasText=true;
     }
     m_skin->stubRenderer()->generatedBy[control]=m_skin;
+    if(control)
+        m_skin->stubRenderer()->firstDrawZ.emplace(control, control->getZIndex());
 }
 
 inline void StubControl::remove(gweni::renderer::Base *renderer, gweni::controls::Base *control)
@@ -297,6 +304,7 @@ inline void StubControl::remove(gweni::renderer::Base *renderer, gweni::controls
         m_hasText=false;
     }
     m_skin->stubRenderer()->generatedBy.erase(control);
+    m_skin->stubRenderer()->firstDrawZ.erase(control);
 }
 
 //! One renderer and two skins on it, A and B, for swapping between.

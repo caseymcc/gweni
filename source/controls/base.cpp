@@ -189,8 +189,7 @@ void Base::init(const String &name)
     setName(name);
 //    setParent(parent);
     m_hidden=false;
-    // Read by the skin when a control created by the render phase's layout is
-    // drawn before renumberZRecursive() has numbered it.
+    // not numbered yet: renumberZRecursive() gives it its z before it is drawn
     m_zIndex=0;
     m_bounds=Rect(0, 0, 10, 10);
     m_requestedBounds=m_bounds;
@@ -1204,20 +1203,21 @@ void Base::removeSkinControl()
     }
 }
 
-void Base::renumberZRecursive(int &zIndex, size_t &visited)
+void Base::renumberZRecursive(int &zIndex, UpdateStats &stats)
 {
-    ++visited;
+    ++stats.zVisited;
+    bool changed=false;
 
     if(m_zIndex != zIndex)
     {
         m_zIndex=zIndex;
-        addStateChange(StateChange_Geometry);
+        changed=true;
     }
     zIndex+=m_skinControl?(int)m_skinControl->depthLayers():1;
 
     for(auto &&child:m_children)
     {
-        child->renumberZRecursive(zIndex, visited);
+        child->renumberZRecursive(zIndex, stats);
     }
 
     const int overlay=m_skinControl?(int)m_skinControl->overlayLayers():0;
@@ -1226,9 +1226,15 @@ void Base::renumberZRecursive(int &zIndex, size_t &visited)
     if(m_overlayZIndex != overlayZIndex)
     {
         m_overlayZIndex=overlayZIndex;
-        addStateChange(StateChange_Geometry);
+        changed=true;
     }
     zIndex+=overlay;
+
+    if(changed)
+    {
+        ++stats.zChanged;
+        addStateChange(StateChange_Geometry);
+    }
 }
 
 void Base::zOrderChanged()

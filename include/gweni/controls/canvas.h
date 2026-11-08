@@ -92,6 +92,9 @@ struct UpdateStats
     //! Controls the z renumber entered, the canvas included: the whole tree on
     //! a frame after the tree order changed (Canvas::invalidateZOrder()), else 0.
     size_t zVisited=0;
+    //! Controls of those whose z index or overlay z index the renumber changed
+    //! (each counted once), every one marked StateChange_Geometry.
+    size_t zChanged=0;
     //! Animations anim::think() ran for this canvas: its controls' active ones
     //! (a focused TextBox's caret, a moving ProgressBar, a timed animation).
     size_t animsRun=0;
@@ -203,7 +206,8 @@ public:
     /// A renumber is pending.
     bool zOrderDirty() const { return m_zOrderDirty; }
 
-    /// This frame's updateCanvas() counts, reset as it starts.
+    /// This frame's counts, reset as updateCanvas() starts: its own, and those
+    /// of a renumber renderCanvas() ran after its layout pass.
     const UpdateStats &getUpdateStats() const { return m_updateStats; }
     /// \}
 
@@ -357,6 +361,11 @@ protected:
 
     /// renderCanvas's own pass, counted in LayoutStats::renderLayout.
     void renderPhaseLayout();
+    /// After a tree-order change (m_zOrderDirty), keepOverlaysLast() and the z
+    /// renumber, counted in m_updateStats; else nothing. Run by updateCanvas()
+    /// and again after renderPhaseLayout(), so a control that pass created is
+    /// drawn at its z in the same frame.
+    void renumberZOrder();
 
     /// The update phase's tooltip step (see setToolTipDelay()), run by
     /// doThink() before layout so a box it shows or moves is laid out in the

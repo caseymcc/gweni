@@ -32,7 +32,7 @@
 #    layout_passes, layout_capped,     yes      any increase
 #      render_layout
 #    layout_visited, measure_calls     yes      any increase
-#    z_visited                         yes      any increase
+#    z_visited, z_changed              yes      any increase
 #    anims_run                         yes      any increase
 #    hit_tests                         yes      any increase
 #    allocs_<phase> (input, update,    yes      any increase

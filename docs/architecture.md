@@ -79,9 +79,16 @@ reparent through `setParent` and a delete, delayed or not, too), `bringToFront`,
 whose new Control may report other `depthLayers()`). A control off any canvas reports
 nothing; attaching it is an `addChild` on the canvas's tree. A renumber is a full one and
 marks `StateChange_Geometry` on exactly the controls whose z index changed.
+`Canvas::renumberZOrder()` runs it at the end of `updateCanvas()` and again in
+`renderCanvas()` right after `renderPhaseLayout()`, so a control that pass created (a
+wrapped `Text`'s lines) is numbered before the walk draws it; it is not left at the
+constructor's z 0, which is the depth-clear value and draws nothing. When the order did
+not change both calls return at once.
 `UpdateStats::zVisited` (`Canvas::getUpdateStats()`, `ControlTest --stats` prints it as
 `z_visited=`) counts the controls it entered: Demo's first frame 2668, a settled one 0.
-`tests/unit/updateWalk.cpp` pins it.
+`UpdateStats::zChanged` (`z_changed=` in `gweni_bench`) counts those whose z or overlay
+z it changed: today every control after the first one moved or inserted.
+`tests/unit/updateWalk.cpp` and `tests/unit/renderPhaseZ.cpp` pin them.
 
 #### Hidden and visible
 

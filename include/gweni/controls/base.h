@@ -50,6 +50,7 @@ std::string getFullName(Base *base);
 
 class Canvas;
 class LayoutItem;
+struct UpdateStats;
 class Menu;
 
 constexpr int StateChange_Nothing=0x0000;
@@ -457,10 +458,10 @@ protected:
     //! Numbers this control and its subtree depth-first from \p zIndex, each
     //! control taking its skin Control's depthLayers() (and its
     //! overlayLayers() after its subtree), and marks StateChange_Geometry on
-    //! each one whose z index changed. \p visited
-    //! counts the controls entered. Canvas::updateCanvas() runs it only after
-    //! the tree order changed (Canvas::invalidateZOrder()).
-    void renumberZRecursive(int &zIndex, size_t &visited);
+    //! each one whose z index changed. \p stats counts the controls entered
+    //! (zVisited) and changed (zChanged). Canvas::renumberZOrder() runs it only
+    //! after the tree order changed (Canvas::invalidateZOrder()).
+    void renumberZRecursive(int &zIndex, UpdateStats &stats);
 
     //! The tree order below the canvas, or a control's depthLayers(), changed:
     //! tells this control's canvas to renumber the z indices.

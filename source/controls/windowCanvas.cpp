@@ -149,6 +149,8 @@ void WindowCanvas::renderCanvas()
     {
         render->begin();
         renderPhaseLayout();
+        // what that layout added is numbered before the walk draws it
+        renumberZOrder();
         render->setClipRegion(getRenderBounds());
         render->setRenderOffset(Point(-getX(), -getY()));
         render->setScale(scale());

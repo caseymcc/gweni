@@ -8,9 +8,10 @@
  *  Canvas::updateCanvas() renumbers the z indices only on a frame after the
  *  tree order changed: a child added, removed, reparented, deleted or moved
  *  among its siblings, or a skin Control replaced. UpdateStats::zVisited counts
- *  the controls the renumber entered. After each change the z indices are the
- *  ones a full depth-first numbering gives, and exactly the controls whose z
- *  index changed carry StateChange_Geometry.
+ *  the controls the renumber entered, UpdateStats::zChanged those whose z it
+ *  changed. After each change the z indices are the ones a full depth-first
+ *  numbering gives, and exactly the controls whose z index changed carry
+ *  StateChange_Geometry and are counted in zChanged.
  *
  *  The first frame's renumber enters every control; a settled frame, a state
  *  change, a layout and a scale change enter none. The tree changes checked
@@ -195,6 +196,8 @@ struct Scene
         }
         // every case moves something past something else
         CHECK(changed > 0);
+        // the fresh ones go from the constructor's 0 to their number
+        CHECK(canvas->getUpdateStats().zChanged == changed+fresh.size());
 
         canvas->renderCanvas();
         CHECK_FALSE(canvas->zOrderDirty());
@@ -209,11 +212,13 @@ TEST_CASE("the first frame numbers every control, a settled one enters none")
     Scene scene;
 
     CHECK(scene.frame().zVisited == Scene::Controls+1);
+    CHECK(scene.canvas->getUpdateStats().zChanged == Scene::Controls+1);
     CHECK(scene.zIndices() == scene.expected());
 
     scene.settle();
     CHECK(scene.frame().zVisited == 0);
     CHECK(scene.frame().zVisited == 0);
+    CHECK(scene.canvas->getUpdateStats().zChanged == 0);
 }
 
 TEST_CASE("a state change, a layout or a scale change does not renumber")

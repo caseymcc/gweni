@@ -80,7 +80,7 @@ const char *const g_counterNames[]=
     "visited", "children_scanned", "controls_changed", "created", "visibility", "geometry", "background", "text",
     "prim_slots_written", "text_slots_written", "upload_calls", "upload_bytes", "mirror_bytes",
     "draw_calls", "text_draws", "atlas_upload_calls", "atlas_upload_bytes", "buffer_regrows",
-    "layout_passes", "layout_capped", "render_layout", "layout_visited", "measure_calls", "z_visited", "anims_run", "hit_tests", "prim_ids", "text_ids",
+    "layout_passes", "layout_capped", "render_layout", "layout_visited", "measure_calls", "z_visited", "z_changed", "anims_run", "hit_tests", "prim_ids", "text_ids",
     "allocs", "alloc_bytes",
     "allocs_input", "allocs_update", "allocs_render", "allocs_flush", "allocs_gpu"
 };
@@ -116,7 +116,7 @@ void collectCounters(FrameRecord &record, const bench::PhaseTotals &phases,
         gpu.mirrorBytes, gpu.drawCalls, gpu.textDraws, gpu.atlasUploadCalls, gpu.atlasUploadBytes,
         gpu.bufferRegrows,
         size_t(layout.passes), layout.capped ? 1u : 0u, layout.renderLayout ? 1u : 0u,
-        layout.visited, layout.measureCalls, update.zVisited, update.animsRun,
+        layout.visited, layout.measureCalls, update.zVisited, update.zChanged, update.animsRun,
         gweni::input::hitTestVisits()-g_hitTestsAtFrame,
         gweni::primitiveIdCount()-gweni::releasedPrimitiveIdCount(),
         gweni::textIdCount()-gweni::releasedTextIdCount(),
@@ -398,6 +398,7 @@ void printUsage()
         "  measure_calls   controls::LayoutStats: renderer measureText() calls the controls\n"
         "             made in the update phase and any render-phase layout\n"
         "  z_visited  controls::UpdateStats: controls the z renumber entered\n"
+"  z_changed  controls::UpdateStats: controls of those whose z or overlay z it changed\n"
         "  anims_run  controls::UpdateStats: animations the update phase ran\n"
         "  hit_tests  input::hitTestVisits() over the frame: controls a hit test entered\n"
         "             (getControlAt calls), the hover's in the input phase included\n"

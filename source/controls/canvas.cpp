@@ -68,15 +68,19 @@ void Canvas::updateCanvas()
     }
 
     doThink();
+    renumberZOrder();
+}
 
+void Canvas::renumberZOrder()
+{
     // Only after the order changed: otherwise every control keeps its number.
-    if(m_zOrderDirty)
-    {
-        m_zOrderDirty=false;
-        keepOverlaysLast();
-        int zIndex=1;
-        renumberZRecursive(zIndex, m_updateStats.zVisited);
-    }
+    if(!m_zOrderDirty)
+        return;
+
+    m_zOrderDirty=false;
+    keepOverlaysLast();
+    int zIndex=1;
+    renumberZRecursive(zIndex, m_updateStats);
 }
 
 void Canvas::renderCanvas()
@@ -84,6 +88,8 @@ void Canvas::renderCanvas()
     renderer::Base *render=m_skin->getRenderer();
     render->begin();
     renderPhaseLayout();
+    // what that layout added is numbered before the walk draws it
+    renumberZOrder();
     render->setClipRegion(getBounds());
     render->setRenderOffset(Point(0, 0));
     render->setScale(scale());
