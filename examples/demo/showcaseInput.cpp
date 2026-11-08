@@ -12,6 +12,7 @@
 #include "gweni/controls/label.h"
 #include "gweni/controls/numericUpDown.h"
 #include "gweni/controls/textBox.h"
+#include "gweni/controls/vectorField.h"
 #include "gweni/controls/verticalSlider.h"
 
 namespace gweni
@@ -154,6 +155,15 @@ GWENI_CONTROL_CONSTRUCTOR(ShowcaseInputDemo)
         ranged->setFormat("%.2f of 1");
         ranged->setNumber(0.75);
         m_notes.push_back("DragNumber: an integer, 128; a float in 0..1, 0.75");
+    }
+    {
+        controls::GroupBox *section=showcase::addSection(middle, "VectorField", false);
+        controls::VectorField *position=textRow<controls::VectorField>(section);
+
+        position->setAxisTags(true);
+        position->setFormat("%.2f");
+        position->setValues({1.5, -0.25, 3.0, 0.0});
+        m_notes.push_back("VectorField: a tagged float3, (1.50, -0.25, 3.00)");
     }
     {
         controls::GroupBox *section=showcase::addSection(right, "HorizontalSlider", false);

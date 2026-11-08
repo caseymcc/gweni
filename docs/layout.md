@@ -133,6 +133,7 @@ its scrolled string). The children placed this way:
 | Slider | the thumb | `layout()`, a value change, a click |
 | PlotHistogram, PlotLines | its caption | `PlotBase::layout()` |
 | DragNumber | its edit box | `layout()` |
+| VectorField | its components' fields and axis tags | `layout()` |
 | ScrollBar | the arrow buttons; the thumb | `layout()`; `layout()`, a scroll |
 | ScrollControl | both bars and the inner panel | `placeContents()`, its Y arrange |
 | TreeNode | the toggle | sized in `arrange()`, centred in `postLayout()` |

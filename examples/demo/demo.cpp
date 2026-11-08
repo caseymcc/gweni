@@ -26,6 +26,7 @@
 #include "demo/plotHistogram.h"
 #include "demo/plotLines.h"
 #include "demo/dragNumber.h"
+#include "demo/vectorField.h"
 #include "demo/popup.h"
 #include "demo/crossSplitter.h"
 #include "demo/dataTable.h"
@@ -179,6 +180,7 @@ void Demo::init(const String &name)
         addDemo<SliderDemo>(cat, "SliderDemo", "Slider");
         addDemo<SliderTextDemo>(cat, "SliderTextDemo", "Slider text");
         addDemo<DragNumberDemo>(cat, "DragNumberDemo", "Drag number");
+        addDemo<VectorFieldDemo>(cat, "VectorFieldDemo", "Vector field");
         addDemo<MenuStripDemo>(cat, "MenuStripDemo", "Menu strip");
     }
     {

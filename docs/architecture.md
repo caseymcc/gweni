@@ -1760,6 +1760,34 @@ two programs and the draws. What follows describes both together:
   `DragNumberDisabled`, so a hover, a press or the focus rewrites that slot and nothing
   else. DragNumberDemo has an integer, a ranged float, a formatted one and a disabled
   one; ShowcaseInputDemo has two.
+- **The vector field: a row of DragNumbers, a change marking one component.**
+  `controls::VectorField` (`include/gweni/controls/vectorField.h`, imgui's DragFloat2/3/4
+  and DragInt2/3/4) holds 2 to 4 `DragNumber`s (`setComponentCount`, 3 by default),
+  `setValue(i, v)`/`getValue(i)` and `setValues`/`getValues` (a `std::array<double, 4>`).
+  The range, speed, format and rounding are set for every component at once
+  (`setRange`, `setSpeed`, `setFormat`, `setInteger`) and kept for components added
+  later; `setRange(i, ...)` and `getField(i)` reach one. The components split the row's
+  width in whole units with `Gap` (4) between them: each is `(width-Gap*(count-1))/count`
+  wide and the last takes the remainder (`componentSpan`), so the others keep their width
+  as the row grows by less than a unit per component. With `setAxisTags(true)` each
+  component starts with a `TagWidth` (14) unit `internal::VectorFieldTag`, a Label
+  showing X, Y, Z or W in the skin's `AxisTagText` colour on a block the textured
+  `VectorFieldTag` renderer fills with `VectorTagX`..`VectorTagW` (red, green, blue,
+  grey; `DragNumberDisabled` while disabled), its field taking the rest. The tag is a
+  control of its own before the field, not an overlay drawn over it, so it reserves no
+  depth layer and the field's text stays centred in its own rect. Tags and fields are
+  owner-placed (`VectorField::layout`), the row the size it was asked for (300x20 by
+  default, `sizedByRequest`), and they are its children in component order, tag before
+  field (`setAxisTags` moves each field after its new tag), so Tab and Shift+Tab step
+  through the components; the tags are not tabable. `onChanged` fires once per real
+  change of a component, from a drag, a typed edit, a key step or `setValue`, with the
+  component's index in `info.integer` and its field in `info.control` (an
+  `event::Packet` is the handler's own, given when it was added, so the index travels in
+  `event::Info` as a DataTable's column does). A change goes through that component's
+  `DragNumber` alone, so it marks that field and nothing else in the row. Adding a
+  component or the tags takes their ids and removing them gives them back.
+  VectorFieldDemo has a float2, a tagged float3, a tagged integer vector of four and a
+  disabled one; ShowcaseInputDemo has a tagged float3.
 - **Scale and the device-pixel grid.** Controls lay out in logical units (integers);
   `renderer::Base::translate()` turns them into device pixels at `scale()` (set by
   `Canvas::setScale`). It snaps **edges**, not origin and size apart: a point is
@@ -2079,7 +2107,7 @@ text colours are set by `TexturedSkin::setThemeColors()`. An optional `"theme"` 
 in `DefaultSkin.json` overrides them without recompiling: `"surfaces"` maps a surface
 name to any of `top`, `bottom`, `border` (`[r,g,b]` or `[r,g,b,a]`), `radius` and
 `borderWidth`, and `"textColors"` maps a name in `TexturedSkin::textColorRegistry()`
-(`LabelDefault`, `ButtonNormal`, ... 14 of them; the map points into that skin's
+(`LabelDefault`, `ButtonNormal`, ... 15 of them; the map points into that skin's
 `Colors`) to a colour. `"metrics"` maps a name in `skin::Base::Metrics` to an
 integer in logical units: `ScrollBarThickness`, 6-64 (Tokyo Night's compiled value is
 12, any other skin's 15), a scroll bar's thickness and the side of its square arrow
@@ -2100,11 +2128,11 @@ set by its bare name and one with some of them as `Name.field` per missing field
 
 ```
 theme strict: 65 of 67 surfaces not set: ButtonDisabled, ButtonDown, ButtonHover.border, ...
-theme strict: 12 of 14 text colors not set: ButtonDisabled, ButtonDown, ...
+theme strict: 13 of 15 text colors not set: AxisTagText, ButtonDisabled, ButtonDown, ...
 ```
 
 (`theme strict: all 67 surfaces set` for a kind with no gaps, and a single
-`theme strict: all 67 surfaces and 14 text colors set` when there are none at all). A
+`theme strict: all 67 surfaces and 15 text colors set` when there are none at all). A
 rejected value counts as not set. A surface that is transparent at rest on purpose
 (`WindowButton`, `SelectableHover`: a transparent fill hides the slot) is magenta too
 until the theme sets it to `[0,0,0,0]`; the theme has not said what it looks like. The

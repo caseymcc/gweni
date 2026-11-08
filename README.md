@@ -40,8 +40,8 @@ single-selection SelectableGroup, and the window buttons (maximised, disabled).
 **Text input**: TextBoxes (a placeholder, a password, a number, coloured text, read-only, one focused
 with its caret), ColorEdits (R, G, B, A fields on a translucent colour over a checkerboard, a hex
 field), a wrapped TextBoxMultiline, ComboBoxes, a NumericUpDown, DragNumbers (an integer and a
-formatted float in 0..1, each scrubbed by dragging), and horizontal and vertical Sliders, plain,
-notched, disabled and one showing its value.
+formatted float in 0..1, each scrubbed by dragging), a VectorField (a float3 with X, Y, Z tags), and
+horizontal and vertical Sliders, plain, notched, disabled and one showing its value.
 
 [![Display & feedback showcase page](docs/images/ShowcaseDisplayDemo.png)](https://caseymcc.github.io/gweni/controltest.html?control=ShowcaseDisplayDemo)
 

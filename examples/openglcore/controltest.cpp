@@ -317,8 +317,15 @@
  *                   most the field's slot and the new string's glyphs; the
  *                   release and a settled frame write nothing; a double-click,
  *                   "7" and Return set it to 7 (a line lists the drag
- *                   frames). Exits non-zero if any check is no. The clock is
- *                   frozen as under --stats.
+ *                   frames). VectorFieldDemo: every frame of a drag of the
+ *                   tagged float3's Y component leaves nothing pending and no
+ *                   pixel changed outside that field, writes at most its slot
+ *                   and the new string's glyphs (none when the string stays)
+ *                   and fires onChanged once, for component 1, per change;
+ *                   a settled frame writes nothing and Tab moves the focus to
+ *                   the Z field (a line lists the drag frames). Exits
+ *                   non-zero if any check is no. The clock is frozen as
+ *                   under --stats.
  *    typing       the keyboard on TextBoxDemo, every key a synthesised GLFW
  *                 event through gweni::input::GLFW3: click into the first,
  *                 empty, box, type "a" and Backspace, each of which has to
@@ -698,6 +705,8 @@
 #include <demo/sliderText.h>
 #include <demo/dragNumber.h>
 #include <gweni/controls/dragNumber.h>
+#include <demo/vectorField.h>
+#include <gweni/controls/vectorField.h>
 #include <demo/statusBar.h>
 #include <demo/tabClose.h>
 #include <demo/colorEdit.h>
@@ -785,7 +794,7 @@ static void content_scale_callback(GLFWwindow *window, float, float)
     X(ButtonDemo) X(LabelDemo) X(LabelMultilineDemo) X(ProgressBarDemo) \
     X(GroupBoxDemo) X(ImagePanelDemo) X(StatusBarDemo) X(SeparatorDemo) X(PlotHistogramDemo) X(PlotLinesDemo) X(ComboBoxDemo) \
     X(TextBoxDemo) X(ListBoxDemo) X(SelectableDemo) X(VirtualListDemo) X(DataTableDemo) X(DataTableVirtualDemo) X(ContextMenuDemo) X(PopupDemo) X(CrossSplitterDemo) X(RadioButtonDemo) \
-    X(CheckBoxDemo) X(NumericDemo) X(SliderDemo) X(SliderTextDemo) X(DragNumberDemo) X(MenuStripDemo) \
+    X(CheckBoxDemo) X(NumericDemo) X(SliderDemo) X(SliderTextDemo) X(DragNumberDemo) X(VectorFieldDemo) X(MenuStripDemo) \
     X(WindowDemo) X(WindowButtonsDemo) X(TreeControlDemo) X(PropertiesDemo) X(TabControlDemo) X(TabCloseDemo) X(TabOverflowDemo) \
     X(ScrollControlDemo) X(PageControlDemo) X(CollapsibleListDemo) X(ColorPickerDemo) X(ColorEditDemo) \
     X(UnicodeTextDemo) X(TextSizesDemo) X(TextDemo) X(LayoutDemo) X(InspectorDemo)
@@ -4503,6 +4512,108 @@ static void checkDragNumber(Session &s, const std::string &shotDir, InteractionC
         +(typed ? "" : "typing 7 and Return did not set the value to 7"));
 }
 
+// VectorFieldDemo: the tagged float3's Y component pressed and dragged a unit
+// at a time: every drag frame leaves nothing pending outside that component's
+// field (and its Text), writes no more than its one primitive slot and the new
+// string's glyphs, changes no pixel outside it and fires onChanged once, for
+// component 1, when the value changes. The release and a settled frame write
+// nothing, and Tab from the focused Y field focuses the Z field.
+static void checkVectorField(Session &s, const std::string &shotDir, InteractionChecks &checks, bool &ok)
+{
+    gweni::controls::Base *control=addControl(s, "VectorFieldDemo");
+    auto *demo=gweni::gweni_cast<gweni::VectorFieldDemo>(control);
+    renderFrames(s, s.frames);
+
+    gweni::controls::VectorField *vector=demo?demo->taggedField():nullptr;
+    if(!vector || vector->getComponentCount() < 3)
+    {
+        checks.check("vector_field_found", false, "VectorFieldDemo has no tagged float3");
+        dropControl(s, control);
+        return;
+    }
+
+    struct Changes: public gweni::event::Handler
+    {
+        std::vector<size_t> components;
+        void changed(gweni::event::Info info) { components.push_back(info.integer); }
+    } changes;
+    vector->onChanged.add(&changes, &Changes::changed);
+
+    gweni::controls::DragNumber *field=vector->getField(1);
+    const gweni::Point grab=centreOf(field);
+    moveMouse(s, grab.x, grab.y);
+    renderFrames(s, s.frames);
+    mouseDown(s, grab.x, grab.y, true);
+    renderFrames(s, s.frames);
+    const std::vector<uint8_t> pressed=framePixels(s);
+
+    std::string frames;
+    int changed=0;
+    bool alone=true, bounded=true, events=true;
+    gweni::Point at=grab;
+
+    for(int i=0; i < 6; ++i)
+    {
+        const gweni::String shown=field->getText();
+        const size_t eventsBefore=changes.components.size();
+        size_t outside=0;
+
+        at.x+=1;
+        moveMouse(s, at.x, at.y);
+        countPendingBesides(s.canvas, nullptr, field, outside);
+        renderFrames(s, 1);
+
+        const gweni::renderer::SlotRenderer::FrameStats &gpu=s.renderer->getFrameStats();
+        const gweni::String now=field->getText();
+
+        frames+=" "+std::to_string(field->getNumber())+":\""+now+"\",outside="+std::to_string(outside)
+            +",prim="+std::to_string(gpu.primitiveSlotsWritten)+",text="+std::to_string(gpu.textSlotsWritten);
+        if(outside != 0)
+            alone=false;
+        if(now != shown)
+            ++changed;
+        if(gpu.primitiveSlotsWritten > 1 || gpu.textSlotsWritten > now.size()
+            || (now == shown && (gpu.primitiveSlotsWritten != 0 || gpu.textSlotsWritten != 0)))
+            bounded=false;
+        const size_t fired=changes.components.size()-eventsBefore;
+        if(fired > 1 || (fired == 1 && changes.components.back() != 1))
+            events=false;
+    }
+
+    const SplitDifferences dragDiff=differencesSplit(s, pressed, framePixels(s), field, field);
+    if(!shoot(s, shotDir+"/interaction-vector-field.png"))
+        ok=false;
+
+    mouseUp(s, s.mouse.x, s.mouse.y);
+    renderFrames(s, s.frames);
+    checkSteady(s, checks, "vector_field_steady");
+
+    // the press focused the Y field; Tab steps to Z
+    const bool focused=gweni::KeyboardFocus == field;
+    sendKey(s, "tab");
+    renderFrames(s, s.frames);
+    const bool tabbed=gweni::KeyboardFocus == vector->getField(2);
+    gweni::KeyboardFocus=nullptr;
+
+    vector->onChanged.removeHandler(&changes);
+    forgetMouse(s);
+    dropControl(s, control);
+
+    std::cout<<"vector_field_drag"<<frames<<"\n";
+    checks.check("vector_field_alone", alone && dragDiff.outside == 0,
+        "a drag frame of the Y component had changes pending outside its field, or the drag changed "
+        +std::to_string(dragDiff.outside)+" pixels outside it:"+frames);
+    checks.check("vector_field_bounded", changed > 0 && bounded,
+        "a drag frame wrote more than the Y field's slot and its new string's glyphs, one keeping the"
+        " string wrote slots, or no frame changed it:"+frames);
+    checks.check("vector_field_changed", events && changes.components.size() == size_t(changed),
+        "onChanged fired "+std::to_string(changes.components.size())+" times for "+std::to_string(changed)
+        +" changes, or for another component than 1");
+    checks.check("vector_field_tab", focused && tabbed,
+        std::string(focused ? "" : "the press did not focus the Y field; ")
+        +(tabbed ? "" : "Tab did not move the focus to the Z field"));
+}
+
 static bool runInteractionScenario(Session &s, const std::string &shotDir, bool &passed)
 {
     // Frozen like --stats, so a frame with no input is genuinely idle (no
@@ -4525,6 +4636,7 @@ static bool runInteractionScenario(Session &s, const std::string &shotDir, bool 
     checkColorEdit(s, shotDir, checks, ok);
     checkDataTable(s, shotDir, checks, ok);
     checkDragNumber(s, shotDir, checks, ok);
+    checkVectorField(s, shotDir, checks, ok);
 
     std::cout<<"interaction";
     for(const auto &result : checks.results)

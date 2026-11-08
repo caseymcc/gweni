@@ -80,6 +80,8 @@ set(GWENI_DEMO_SOURCES
     demo/sliderText.h
     demo/dragNumber.cpp
     demo/dragNumber.h
+    demo/vectorField.cpp
+    demo/vectorField.h
     demo/statusBar.cpp
     demo/statusBar.h
     demo/tabClose.cpp
