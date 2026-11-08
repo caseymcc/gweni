@@ -1,0 +1,52 @@
+<!doctype html>
+<!--
+  Gweni
+  Copyright (c) 2010 Facepunch Studios
+  MIT License, see LICENSE
+
+  The hosted site's landing page (tools/build_site.sh). Every URL is relative,
+  so the site works under https://<user>.github.io/gweni/ and from a local
+  server alike.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>gweni: GUI Without Extravagant Nonsense</title>
+<link rel="stylesheet" href="site.css">
+<link rel="icon" href="data:,">
+</head>
+<body class="landing">
+<header>
+<a class="name" href="index.html">gweni</a>
+<nav>
+<a href="demo.html">Demo</a>
+<a href="controltest.html">Gallery</a>
+<a href="https://github.com/caseymcc/gweni">GitHub</a>
+</nav>
+</header>
+<main>
+<h1>gweni</h1>
+<p><b>GUI Without Extravagant Nonsense</b> is a C++17 retained-mode GUI library. Layout, hit-testing and
+change tracking run in an update phase that knows nothing of the rendering API, and the render phase
+touches only the controls that changed.</p>
+<p>These pages are that library compiled to WebAssembly, drawing on WebGL 2 through the same
+<code>OpenGLCore</code> renderer the desktop builds use. They take the mouse, the wheel and the keyboard;
+text is grayscale-antialiased (the desktop's LCD text needs a blend mode WebGL 2 lacks).</p>
+<div class="links">
+<a href="demo.html">Open the demo</a>
+<a href="controltest.html">Browse the control gallery</a>
+<a href="https://github.com/caseymcc/gweni">Source on GitHub</a>
+</div>
+<figure>
+<a href="demo.html"><img src="images/demo.png" width="1024" height="768" alt="The gweni demo: a list of demo pages beside the selected page's controls"></a>
+<figcaption>The demo, as the native build renders it (<code>docs/images/demo.png</code>). The live page above draws the same.</figcaption>
+</figure>
+<footer>
+MIT licensed (<a href="licenses/LICENSE.txt">license</a>), forked from Garry Newman's GWEN.
+The fonts: <a href="licenses/OpenSans-LICENSE.txt">Open Sans</a>,
+<a href="licenses/LiberationSans-LICENSE.txt">Liberation Sans</a>.
+</footer>
+</main>
+</body>
+</html>
