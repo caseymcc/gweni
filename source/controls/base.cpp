@@ -368,6 +368,14 @@ void Base::stampLayoutPass()
     stampLayoutPass(Dim::Y);
 }
 
+// The control stays dirty for the next pass, whatever this one still does to
+// it (see doArrange), and the canvas runs that pass.
+void Base::noteRedirty()
+{
+    m_redirtiedPass=Canvas::s_passSerial;
+    Canvas::s_layingOut->layoutInvalidated(this);
+}
+
 bool Base::inLayoutPass()
 {
     return Canvas::s_layingOut != nullptr;
@@ -389,8 +397,14 @@ void Base::invalidate(int state)
         m_needsLayout=true;
         m_updateLayout=true;
 
+        // A pass walks the children a control actually holds: a child of a
+        // control with an inner panel is held by the panel, which the
+        // invalidation of the logical parent below does not reach.
+        for(Base *holder=m_actualParent; holder && holder != m_parent; holder=holder->m_actualParent)
+            holder->m_updateLayout=true;
+
         if(Canvas::s_layingOut && !g_propagating && !g_placement)
-            Canvas::s_layingOut->layoutInvalidated(this);
+            noteRedirty();
     }
 
     m_cacheTextureDirty=true;
@@ -455,6 +469,7 @@ void Base::setDock(DockPosition dock)
     m_dock=dock;
     invalidate();
     invalidateParent();
+    invalidateParentReaders();
 }
 
 DockPosition Base::getDock() const
@@ -585,6 +600,15 @@ void Base::invalidateChildren(bool recursive)
             if(recursive)
                 innerchild->invalidateChildren(recursive);
         }
+    }
+}
+
+void Base::invalidateParentReaders()
+{
+    for(auto &&child : m_children)
+    {
+        if(child->readsParentLayout())
+            child->invalidate();
     }
 }
 
@@ -898,14 +922,18 @@ bool Base::setBounds(const Rect &bounds)
         m_widthRequested=m_widthRequested || (parts & RequestWidth);
         m_heightRequested=m_heightRequested || (parts & RequestHeight);
 
-        // A request the bounds already match leaves the size the rules give
-        // (dockNoneSize, layoutCellSize) at these bounds, but the position
-        // counts in the parent's preferred size, so an app's request is laid
-        // out again. From inside a pass it is layout code putting a control
-        // where it already is (TabStrip sizing itself, say): no re-dirty.
-        if(m_bounds == bounds && !inLayoutPass() &&
-            (newRequest || !(requested == m_requestedBounds)))
+        // A new request is laid out again: the requested size feeds the rules
+        // (dockNoneSize, layoutCellSize) and the position counts in the
+        // parent's preferred size, whether or not the bounds already match.
+        // From inside a pass it is layout code putting a control where it
+        // already is (TabStrip sizing itself, say): no re-dirty.
+        if(!inLayoutPass() && (newRequest || !(requested == m_requestedBounds)))
+        {
             invalidate();
+
+            if(newRequest || requested.w != m_requestedBounds.w || requested.h != m_requestedBounds.h)
+                invalidateParentReaders();
+        }
     }
 
     if(m_bounds == bounds)
@@ -915,12 +943,19 @@ bool Base::setBounds(const Rect &bounds)
     // (layout() runs again there if the height changed, see Base::arrange).
     if((m_bounds.w != bounds.w && laidOutThisPass(Dim::X)) ||
         (m_bounds.h != bounds.h && laidOutThisPass(Dim::Y)))
-        Canvas::s_layingOut->layoutInvalidated(this);
+        noteRedirty();
 
     {
         PlacementScope placement;
         invalidateChildren(true);
     }
+
+    // The pass arranges it again at its new bounds: the way down to it is
+    // marked (not invalidated: no layout() of an ancestor reads it), which the
+    // parent placing it in a pass already is.
+    for(Base *control=this; control;
+        control=control->m_actualParent?control->m_actualParent:control->m_parent)
+        control->m_updateLayout=true;
 
     const Rect oldBounds=getBounds();
     m_bounds=bounds;
@@ -1811,21 +1846,48 @@ void Base::policyResize(const Size &preferred, Dim dim)
 }
 
 // Counted only inside a pass: a calculateSize() made outside one (a
-// sizeToContents(), say) is no entry of a pass.
+// sizeToContents(), say) is no entry of a pass, and is never skipped.
 void Base::doCalculateSize(skin::Base *skin, Dim dim)
 {
     if(Canvas::s_layingOut)
+    {
+        if(!m_updateLayout && !Canvas::s_verifyingLayout)
+            return;
+
         ++Canvas::s_layingOut->m_layoutStats.visited;
+    }
 
     calculateSize(skin, dim);
 }
 
+// A control is dirty from its invalidation (or a new bounds) until the end of
+// its Y arrange, the last step a pass enters it in, so every step of the pass
+// in between enters it: a width the X arrange gave it is measured in Y. What
+// is dirtied under it after its children's own Y arrange (a child placed in a
+// postLayout) keeps it dirty, so the next pass finds the way down.
 void Base::doArrange(skin::Base *skin, Dim dim)
 {
-    if(Canvas::s_layingOut)
-        ++Canvas::s_layingOut->m_layoutStats.visited;
+    if(!Canvas::s_layingOut)
+    {
+        arrange(skin, dim);
+        return;
+    }
+
+    if(!m_updateLayout && !Canvas::s_verifyingLayout)
+        return;
+
+    ++Canvas::s_layingOut->m_layoutStats.visited;
 
     arrange(skin, dim);
+
+    if(dim == Dim::Y)
+    {
+        // re-dirtied in this pass, or a shown child still is: the next pass
+        // enters it again
+        m_updateLayout=(m_redirtiedPass == Canvas::s_passSerial) ||
+            std::any_of(m_children.begin(), m_children.end(), [](const Base *child)
+                { return !child->hidden() && child->m_updateLayout; });
+    }
 }
 
 void Base::arrange(skin::Base *skin, Dim dim)
@@ -2161,10 +2223,9 @@ void Base::recurseLayout(skin::Base *skin)
     if(!m_updateLayout)
         return;
 
-    // Cleared before the pass rather than after it, so an invalidate() raised
-    // while it runs is kept and Canvas::layoutCanvas runs another.
-    m_updateLayout=false;
-
+    // The root is entered like any dirty control; its Y arrange leaves it
+    // dirty only while a child is, and Canvas::layoutPass decides from what
+    // the pass re-dirtied whether another runs.
     doCalculateSize(skin, Dim::X);
     doArrange(skin, Dim::X);
     doCalculateSize(skin, Dim::Y);
@@ -2309,6 +2370,7 @@ void Base::setPadding(const Padding &padding)
     m_padding=padding;
     invalidate();
     invalidateParent();
+    invalidateParentReaders();
 }
 
 void Base::setMargin(const Margin &margin)

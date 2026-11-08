@@ -161,10 +161,11 @@ void Canvas::layoutPass()
     m_inLayout=false;
     s_layingOut=outer;
 
-    // recurseLayout cleared m_updateLayout as it started, and every layout
-    // invalidation since has set it again on its way up. Only the ones Base
-    // reported as re-dirtying ask for another pass; the rest were requests
-    // this pass consumed after they were raised (see Base::invalidate).
+    // Every layout invalidation during the pass set m_updateLayout again on
+    // its way up. Only the ones Base reported as re-dirtying ask for another
+    // pass; the rest were requests this pass consumed after they were raised
+    // (see Base::invalidate). What is still dirty below stays marked on the
+    // way down to it (Base::doArrange) for the next pass.
     m_updateLayout=m_passRedirtied;
 }
 

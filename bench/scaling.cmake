@@ -87,15 +87,9 @@ set(EXCLUDED
     # allocations per text index chunk, when one run changes
     set-text:allocs_flush
     type:allocs_flush
-    # #321 (task #357): a layout pass enters the whole tree, whatever
-    # invalidated it, and so measures every Text again; #324 (tasks #361,
-    # #362) measures a Text once per change of its string or font
-    set-text:layout_visited
-    set-text:measure_calls
-    type:layout_visited
+    # #323 and #324 (tasks #360, #361, #362): the edited TextBoxMultiline,
+    # which a pass enters, re-measures every one of its lines
     type:measure_calls
-    drag:layout_visited
-    drag:measure_calls
 )
 
 # Keys that are not work counters (see the table above).

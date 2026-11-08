@@ -25,6 +25,8 @@ public:
 public:
 //    void render(skin::Base *skin) override;
     void calculateSize(skin::Base *skin, Dim dim) override;
+    //! Its padding follows the dock of the strip it is in.
+    bool readsParentLayout() const override { return true; }
 
     void setPage(Base *page)
     {

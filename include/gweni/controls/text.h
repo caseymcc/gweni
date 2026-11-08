@@ -149,6 +149,9 @@ public:
 
     void calculateSize(skin::Base *skin, Dim dim) override;
     void arrange(skin::Base *skin, Dim dim) override;
+    //! Wrapped, it is as wide as its parent's requested inner width, and its
+    //! lines break at the parent's inner width.
+    bool readsParentLayout() const override { return m_wrap; }
     void policyResize(const Size &preferred, Dim dim) override;
 
 protected:

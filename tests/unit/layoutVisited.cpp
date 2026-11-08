@@ -4,16 +4,16 @@
  *  MIT License, see LICENSE
  *
  *  LayoutStats::visited and LayoutStats::measureCalls, on a real Canvas with
- *  the StubRenderer: what a layout pass enters and measures today.
+ *  the StubRenderer: what a layout pass enters and measures.
  *
- *  A pass enters every shown control, once per calculateSize() and once per
- *  arrange() in each axis, so 4 per control; a wrapped Text's lines are built
- *  in its X arrange, so on the frame they appear they miss the X
+ *  The first pass enters every shown control, once per calculateSize() and
+ *  once per arrange() in each axis, so 4 per control; a wrapped Text's lines
+ *  are built in its X arrange, so on the frame they appear they miss the X
  *  calculateSize and are entered 3 times. A settled frame enters and measures
- *  nothing, and one Label's setText lays out (and measures) the whole tree
- *  again: the baseline the incremental pass (#357) is to bring down to the
- *  dirty paths. measureCalls is every renderer measureText() the controls made
- *  in the frame, the same number the renderer saw.
+ *  nothing, and one Label's setText enters only the way down to it (the
+ *  canvas, its panel, the Label and its Text) and measures only that Text.
+ *  measureCalls is every renderer measureText() the controls made in the
+ *  frame, the same number the renderer saw.
  */
 #include "headlessFixture.h"
 
@@ -122,7 +122,7 @@ TEST_CASE("layout_visited: a settled frame enters and measures nothing")
     CHECK(measured == 0);
 }
 
-TEST_CASE("layout_visited: one Label's setText lays the whole tree out again")
+TEST_CASE("layout_visited: one Label's setText enters only the way down to it")
 {
     Scene scene;
 
@@ -134,12 +134,11 @@ TEST_CASE("layout_visited: one Label's setText lays the whole tree out again")
     const size_t measured=scene.frame();
 
     REQUIRE(scene.stats().passes == 1);
-    // the lines exist now, so they are entered in all four steps
-    CHECK(scene.stats().visited == 4*(Scene::Controls+Scene::Lines));
+    // the canvas, the Label's panel, the Label and its Text, in all four
+    // steps; the other panels, Labels and the wrapped Text's lines are clean
+    CHECK(scene.stats().visited == 4*4);
     CHECK(scene.stats().measureCalls == measured);
-    // Every Text is measured again, not only the changed one. An unwrapped
-    // Text measures twice in each axis (Text::lineHeight()'s " " and its
-    // string); the wrapped one measures its line height in Y twice (its own
-    // rows and RefreshSizeWrap) and each line twice in each axis.
-    CHECK(scene.stats().measureCalls == 4*Scene::Panels*Scene::Labels+2+4*Scene::Lines);
+    // Only the changed Text is measured: twice in each axis
+    // (Text::lineHeight()'s " " and its string).
+    CHECK(scene.stats().measureCalls == 4);
 }

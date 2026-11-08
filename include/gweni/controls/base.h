@@ -833,6 +833,9 @@ public:
     }
 
     void invalidateChildren(bool recursive=false);
+    //! Invalidates the children that readsParentLayout(): this control's
+    //! padding, dock or requested size changed.
+    void invalidateParentReaders();
 
     virtual bool hasAlignment() { return false; }
 
@@ -843,8 +846,25 @@ public:
     //! Each is one entry of the current layout pass (LayoutStats::visited)
     //! followed by the virtual. An override calling ParentClass::calculateSize
     //! or ParentClass::arrange stays in its own control: not another entry.
+    //!
+    //! A pass enters only what is dirty (layoutDirty()): a clean control keeps
+    //! its preferred size and bounds, and nothing under it is entered, which is
+    //! the same as running it, since a converged pass run again on the same
+    //! inputs changes nothing (docs/layout.md). Outside a pass, and in layout
+    //! verification's full pass (Canvas::verifyingLayout()), they always run.
     void doCalculateSize(skin::Base *skin, Dim dim);
     void doArrange(skin::Base *skin, Dim dim);
+    //! Whether the next layout pass enters this control: it, or something
+    //! under it, was invalidated, or its bounds changed, since a pass last
+    //! arranged it in Y. Cleared at the end of its Y arrange, unless a shown
+    //! child is still dirty then (placed after its own arrange, say), so the
+    //! path down to every dirty control stays dirty.
+    bool layoutDirty() const { return m_updateLayout; }
+    //! True for a control whose calculateSize() or arrange() reads its
+    //! parent's padding, dock or requested size, besides what reaches it as
+    //! its bounds (a wrapped Text breaks at its parent's requested inner
+    //! width): a change to those invalidates it as well as the parent.
+    virtual bool readsParentLayout() const { return false; }
     //! Sizes this dock-None control along `dim` for arrangeHorizontal/Vertical
     //! of its parent: `preferred` is its preferred size (see dockNoneSize).
     virtual void policyResize(const Size &preferred, Dim dim);
@@ -911,6 +931,11 @@ protected:
     //! in X (m_layoutPassX) and in Y (m_layoutPassY).
     unsigned m_layoutPassX=0;
     unsigned m_layoutPassY=0;
+    //! The Canvas::s_passSerial of the last pass this control re-dirtied
+    //! (noteRedirty()): it stays dirty past its Y arrange in that pass.
+    unsigned m_redirtiedPass=0;
+    //! Reports a re-dirty of this control to the running pass's canvas.
+    void noteRedirty();
 
     //! Whether the running pass has arranged this control along `dim` yet.
     bool laidOutThisPass(Dim dim) const;
