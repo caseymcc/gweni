@@ -627,6 +627,9 @@ if(EMSCRIPTEN)
                     TIMEOUT 300)
             endforeach()
         endforeach()
+
+        # the browser held to native: determinism, listings, counters, pixels
+        include(${CMAKE_CURRENT_SOURCE_DIR}/web/native.cmake)
     endif()
 
     # the interactive pages, driven with real input (web/interactive.cmake)

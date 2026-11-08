@@ -45,7 +45,7 @@ import { mkdirSync, readFileSync, statSync } from 'node:fs';
 import { extname, join, normalize, resolve, sep } from 'node:path';
 
 import { isSwiftShader, launchOptions, loadPlaywright } from './probe.mjs';
-import { decodePng } from './shot.mjs';
+import { decodePng } from './png.mjs';
 
 const usage = 'usage: node site.mjs [--out <dir>] <staged site dir> | --url <where a server serves it>';
 const viewport = { width: 1280, height: 800 };

@@ -19,6 +19,12 @@
 #  itself. That is how ListBoxDemo's over-read in text_buffer_add_text went
 #  unseen (fixed in cca344a).
 #
+#  In the web tree CONTROLTEST is the page (ControlTest.html) and
+#  -DRUNNER=<node;run.mjs> the browser runner (tests/web/run.mjs), as
+#  web_controltest_determinism passes them: each run is its own page load (a
+#  fresh browser, so a fresh wasm heap), writing under the page's /out, which the
+#  runner copies to the run's directory.
+#
 
 foreach(var CONTROLTEST SOURCE_DIR SCRATCH_DIR)
     if(NOT DEFINED ${var})
@@ -43,9 +49,15 @@ file(REMOVE_RECURSE "${SCRATCH_DIR}")
 file(MAKE_DIRECTORY "${SCRATCH_DIR}")
 
 foreach(run a b)
+    if(DEFINED RUNNER)
+        set(command ${RUNNER} --quiet --out "${SCRATCH_DIR}/${run}" "${CONTROLTEST}"
+            -- --headless --shot-all --dump-bounds ${scale_args} --shot-dir /out)
+    else()
+        set(command "${CONTROLTEST}" --headless --shot-all --dump-bounds ${scale_args}
+            --shot-dir "${SCRATCH_DIR}/${run}")
+    endif()
     execute_process(
-        COMMAND "${CONTROLTEST}" --headless --shot-all --dump-bounds ${scale_args}
-                --shot-dir "${SCRATCH_DIR}/${run}"
+        COMMAND ${command}
         WORKING_DIRECTORY "${SOURCE_DIR}"
         RESULT_VARIABLE result
         OUTPUT_FILE "${SCRATCH_DIR}/${run}.log"

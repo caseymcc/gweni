@@ -177,6 +177,10 @@ if [ "$platform" = "web" ]; then
         -DGWENI_RENDER_VULKAN=OFF \
         -DGWENI_BUILD_EXAMPLES=ON \
         -DCMAKE_CROSSCOMPILING_EMULATOR=$emsdk_node"
+    # the native GLES tree of the same build type, which the web_*_native tests
+    # compare the browser with (tests/web/native.cmake); a -D after it wins
+    cmake_options="$cmake_options \
+        -DGWENI_NATIVE_REFERENCE_DIR=$(pwd)/build_linux_x64_${build_type}_gles"
 fi
 
 # Always passed, empty or not, so a feature cached by an earlier configure of

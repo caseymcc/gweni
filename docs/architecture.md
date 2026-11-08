@@ -631,7 +631,7 @@ two programs and the draws. What follows describes both together:
   `OpenGLCore` does not use yet), so the text draws loop and LCD text is grayscale. In the
   build container the context is ANGLE on Chromium's SwiftShader, a CPU rasteriser
   like llvmpipe but another one, so its pixels are close to the native GLES tree's, not
-  the same: ButtonDemo differs by at most 2 per channel, on 0.56 % of its pixels.
+  the same (see "The browser against native" below).
   A capture is one blocking `main`: it renders into the offscreen framebuffer and
   reads it back with `glReadPixels`, which WebGL does synchronously, so it needs no
   main loop. The interactive window is emscripten-glfw's (Emscripten's
@@ -666,6 +666,50 @@ two programs and the draws. What follows describes both together:
   x86-64 by luck, both fixed: freetype-gl's `vertex_buffer_t` with and without
   `FREETYPE_GL_USE_VAO` (now a PUBLIC definition of the `freetype-gl` target), and
   `json.h`'s `returnValue<uint64_t>`, which on x86-64 was the `size_t` specialisation.
+- **The browser against native.** The web tree's `web_*_native` tests
+  (`tests/web/native.cmake`, run by `tests/web/native.mjs`) hold the browser to the
+  native GLES tree of the same build type, `GWENI_NATIVE_REFERENCE_DIR` (which
+  `./generate.sh web` sets): they run the native exes themselves, each under the
+  `render` lock through `mm` when it is on `PATH`, and fail, naming the path and the
+  commands, when the tree is not built. Layout and change tracking are the same code on
+  every backend, so they are held to identity: every `--dump-bounds` listing at scales
+  1, 1.5 and 2 (`web_bounds_native*`), and every `--stats` counter of every control and
+  of OpenGLCore, times left out (`web_stats_native`), the text draws' loop included,
+  since a loop of `glDrawElements` counts as the one multi-draw it replaces. Inside the
+  browser two page loads give the same bytes (`web_controltest_determinism`, through
+  `tests/determinism.cmake`). Pixels are held to a tolerance (`web_pixels_native` at
+  scales 1 and 2, `tests/web/pngdiff.mjs`): per PNG, no channel more than 2 off and at
+  most 0.1 % of the pixels more than 1 off. Pixels 1 off are not counted: two
+  rasterisers round a blend or a float-to-8-bit conversion differently, on a text or
+  gradient pixel near a rounding boundary, up to 10.5 % of a text-heavy page
+  (LabelMultilineDemo), and no shader can remove that. What is counted measured 0.021 %
+  at worst (`native.cmake` has the table), against a ceiling of 2 and 0.5 %: a PNG
+  over it is a bug to find, not a bound to widen. Getting there took four shader
+  changes, each something GL leaves to the implementation, which had put 14 demos up
+  to 82/255 apart at icon edges and 78/255 at SDF-text ones:
+  - the checkmark and chevron (icon kinds 0 and 1) take their anti-aliasing width as
+    one device pixel in the stroke's units, not `fwidth(d)`: a derivative of a value
+    that is not linear is computed fine or coarse, per 2x2 block, as the GL likes. Their
+    `vLocal` is rounded to the multiple of 0.5 it is at every pixel centre (the quad's
+    corners are whole px), so its interpolation error, which depends on the rasteriser
+    and on where the quad is, does not move a level at the stroke's edge either;
+  - SDF text's edge width is the field's change per texel (`1/(2*kSdfSpread)`) times
+    `texCoord`'s screen gradient in texels, not the sampled field's own gradient, for
+    the same reason; `texCoord` is linear over the quad;
+  - the SDF field is filtered in the shader, bilinearly in float from four
+    `texelFetch`es, not by the texture unit, whose weights keep a few bits of the
+    implementation's choosing, which the narrow edge multiplied by up to ten;
+  - text quads are put on a 1/16 px grid in the vertex shader, the coarsest sub-pixel
+    grid GL guarantees (`GL_SUBPIXEL_BITS` is at least 4), so no rasteriser snaps them
+    further: an SDF glyph's pen is fractional, and each rasteriser's own grid moved the
+    field by up to 1/32 px, 10/255 at an edge.
+
+  One case is left out until #418: ImagePanelDemo at scale 1, an image minified
+  through `glGenerateMipmap`'s levels, whose filter, LOD and trilinear weights are the
+  implementation's too (4 off on one pixel). The comparator is `pngdiff.mjs`, which
+  needs node alone, so another backend held to the first within a tolerance (the Vulkan
+  feature) can share it; a PNG over the bound gets an expected | actual | difference
+  image beside it.
 - **The shaders' dialect is chosen at run time.** Each stage is one body shared by
   every dialect, behind a header `OpenGLCore::shaderSource` puts in front:
   `#version 330 core`, or for an ES context `#version 300 es` with `precision highp`

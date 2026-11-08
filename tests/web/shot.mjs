@@ -15,71 +15,17 @@
 //  wrong buffer, is a single colour.
 //
 
-import { mkdtempSync, readFileSync, realpathSync } from 'node:fs';
+import { mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { pathToFileURL } from 'node:url';
-import { inflateSync } from 'node:zlib';
 
+import { decodePng } from './png.mjs';
 import { parseArgs, runPage } from './run.mjs';
 
 function fail(message)
 {
     console.error(`shot.mjs: FAIL: ${message}`);
     return 1;
-}
-
-// width, height, bytes per pixel and the unfiltered rows of an 8-bit RGB or
-// RGBA PNG (what capture::writeRgbaPng writes); throws on anything else
-export function decodePng(bytes)
-{
-    if(bytes.readUInt32BE(0) !== 0x89504e47)
-        throw new Error('not a PNG');
-    let offset = 8, width = 0, height = 0, channels = 0;
-    const idat = [];
-    while(offset < bytes.length)
-    {
-        const length = bytes.readUInt32BE(offset);
-        const type = bytes.toString('latin1', offset + 4, offset + 8);
-        const chunk = bytes.subarray(offset + 8, offset + 8 + length);
-        if(type === 'IHDR')
-        {
-            width = chunk.readUInt32BE(0);
-            height = chunk.readUInt32BE(4);
-            const depth = chunk[8], colourType = chunk[9];
-            channels = { 2: 3, 6: 4 }[colourType];
-            if(depth !== 8 || !channels || chunk[12] !== 0)
-                throw new Error(`unsupported PNG: depth ${depth}, colour type ${colourType}, interlace ${chunk[12]}`);
-        }
-        else if(type === 'IDAT')
-            idat.push(chunk);
-        offset += 12 + length;
-    }
-    const raw = inflateSync(Buffer.concat(idat));
-    const stride = width*channels;
-    const pixels = Buffer.alloc(stride*height);
-    for(let y = 0; y < height; ++y)
-    {
-        const filter = raw[y*(stride + 1)];
-        const line = raw.subarray(y*(stride + 1) + 1, (y + 1)*(stride + 1));
-        for(let x = 0; x < stride; ++x)
-        {
-            const a = x >= channels ? pixels[y*stride + x - channels] : 0;
-            const b = y > 0 ? pixels[(y - 1)*stride + x] : 0;
-            const c = (x >= channels && y > 0) ? pixels[(y - 1)*stride + x - channels] : 0;
-            let predictor = 0;
-            if(filter === 1) predictor = a;
-            else if(filter === 2) predictor = b;
-            else if(filter === 3) predictor = (a + b) >> 1;
-            else if(filter === 4)
-            {
-                const pa = Math.abs(b - c), pb = Math.abs(a - c), pc = Math.abs(a + b - 2*c);
-                predictor = (pa <= pb && pa <= pc) ? a : (pb <= pc ? b : c);
-            }
-            pixels[y*stride + x] = (line[x] + predictor) & 255;
-        }
-    }
-    return { width, height, channels, pixels };
 }
 
 async function main()
@@ -141,6 +87,4 @@ async function main()
     return 0;
 }
 
-// Only when run as a script (see run.mjs), so site.mjs can import decodePng.
-if(process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href)
-    process.exit(await main());
+process.exit(await main());

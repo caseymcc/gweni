@@ -65,6 +65,7 @@ falls back to grayscale with one warning.
 ```bash
 ./generate.sh web
 cmake --build build_web_wasm32_debug -j
+cmake --build build_linux_x64_debug_gles -j   # the native reference (./generate.sh linux gles)
 ctest --test-dir build_web_wasm32_debug -L web
 ```
 
@@ -184,7 +185,23 @@ Every test in the web tree has the label `web` and needs no GPU lock:
   header lists the checks): a button press and release, typing "abcé", a wheel
   notch, the CSS cursor, the canvas's size at `devicePixelRatio` 2, after a
   resize and with `?scale=1.5` (its layout the same as a capture's at that size
-  and scale), an unknown argument, and a click in the demo list.
+  and scale), an unknown argument, and a click in the demo list;
+- `web_controltest_determinism`: two page loads of `ControlTest --shot-all
+  --dump-bounds` write the same bytes;
+- `web_bounds_native*`, `web_stats_native` and `web_pixels_native*`, which hold
+  the browser to the native GLES tree: every `--dump-bounds` listing and every
+  `--stats` counter identical, every PNG within 2 per channel with at most 0.1 %
+  of its pixels more than 1 off (`tests/web/native.cmake` has the measured
+  values). They run the native tree's exes themselves, so build it first:
+
+  ```bash
+  ./generate.sh linux gles && cmake --build build_linux_x64_debug_gles -j
+  ```
+
+  Without it they fail and say so. `./generate.sh web` points them at the GLES
+  tree of the same build type (`GWENI_NATIVE_REFERENCE_DIR`). A PNG over the
+  bound is written beside its native one and the difference, as
+  `<test dir>/diff/<name>.diff.png`.
 
 - `web_site_smoke`, in the release web tree only: the hosted site, staged and
   loaded page by page (see "The hosted site").
