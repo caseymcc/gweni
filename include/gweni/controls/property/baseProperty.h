@@ -31,7 +31,7 @@ public:
     }
 
 public:
-    virtual String getPropertyValue() { return 0; }
+    virtual String getPropertyValue() { return String(); }
 
     virtual void setPropertyValue(const String &v,
     bool fireChangeEvents=false) {}
