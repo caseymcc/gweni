@@ -137,7 +137,7 @@ float pixelArea(float e, vec2 n)
 // texelFetch, which reads the same texel: llvmpipe runs every branch of a shader
 // for every pixel, masked, and skips a sample whose pixels are all masked off but
 // not a texelFetch, so with 8 of them here a page without an image took 5.7 %
-// more instructions a frame than with textureGrad (ButtonDemo), and 1.7 % now.
+// more instructions a frame than with textureGrad (ButtonDemo), and 2.4 % now.
 // GLSL 3.30 and ES 3.00 index a sampler array only with a constant, hence the
 // switches; the taps are one loop whose count is not a constant, so that no
 // compiler unrolls it into 8 switches.
