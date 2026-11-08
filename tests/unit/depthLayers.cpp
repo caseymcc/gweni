@@ -10,10 +10,16 @@
  *  ProgressBar is such a control (the fill over the track), and setProgress
  *  raises StateChange_Background only when the value changes.
  *
+ *  The canvas's first numbering leaves Canvas::ZGap free after each range,
+ *  and a later renumber moves a control only when the one before it now
+ *  reaches past it, so a count raised by more than the gap pushes the first
+ *  child out and the gap after the subtree absorbs it
+ *  (tests/unit/zRelabel.cpp pins the relabelling itself).
+ *
  *  The Control reporting depthLayers() 2 comes from StubSkin::depthLayers, by
- *  type name: it puts its first child at its z+2; controls at 1 step by 1. The
- *  value setProgress compares is the clamped one, and its animation goes
- *  through the same check.
+ *  type name: it puts its first child at or past its z+2. The value
+ *  setProgress compares is the clamped one, and its animation goes through
+ *  the same check.
  */
 #include "headlessFixture.h"
 
@@ -76,36 +82,46 @@ TEST_CASE("a skin Control's depthLayers() reserves z values before its children 
     scene.frame();
 
     const int canvasZ=scene.canvas->getZIndex();
+    // the first numbering leaves Canvas::ZGap free after each range
+    const int gap=controls::Canvas::ZGap;
 
-    // one layer each: +1 steps
-    CHECK(before->getZIndex() == canvasZ+1);
-    CHECK(layered->getZIndex() == before->getZIndex()+1);
+    // one layer each
+    CHECK(before->getZIndex() == canvasZ+1+gap);
+    CHECK(layered->getZIndex() == before->getZIndex()+1+gap);
     // two layers: the first child after both
-    CHECK(first->getZIndex() == layered->getZIndex()+2);
-    CHECK(grandchild->getZIndex() == first->getZIndex()+1);
-    CHECK(nested->getZIndex() == grandchild->getZIndex()+1);
-    CHECK(nestedChild->getZIndex() == nested->getZIndex()+2);
+    CHECK(first->getZIndex() == layered->getZIndex()+2+gap);
+    CHECK(grandchild->getZIndex() == first->getZIndex()+1+gap);
+    CHECK(nested->getZIndex() == grandchild->getZIndex()+1+gap);
+    CHECK(nestedChild->getZIndex() == nested->getZIndex()+2+gap);
     // the next sibling after the whole subtree
-    CHECK(after->getZIndex() == nestedChild->getZIndex()+1);
+    CHECK(after->getZIndex() == nestedChild->getZIndex()+1+gap);
 
     SUBCASE("a count changed after the first frame renumbers on the next update")
     {
         // the stub's count changes under its live Controls, which a real skin's
-        // never does, so the canvas has to be told
-        scene.skin.depthLayers[Layered::getTypeNameStatic()]=3;
+        // never does, so the canvas has to be told; more layers than the gap
+        // holds, so the first child has to make room
+        const int layers=2+gap+3;
+        scene.skin.depthLayers[Layered::getTypeNameStatic()]=layers;
         scene.canvas->invalidateZOrder();
         const int layeredZ=layered->getZIndex();
+        const int afterZ=after->getZIndex();
 
         scene.frame();
 
         CHECK(layered->getZIndex() == layeredZ);
-        CHECK(first->getZIndex() == layeredZ+3);
-        CHECK(nestedChild->getZIndex() == nested->getZIndex()+3);
-        CHECK(after->getZIndex() == nestedChild->getZIndex()+1);
+        // pushed out of the reserved layers, to the first z after them
+        CHECK(first->getZIndex() == layeredZ+layers);
+        CHECK(grandchild->getZIndex() > first->getZIndex());
+        CHECK(nested->getZIndex() > grandchild->getZIndex());
+        CHECK(nestedChild->getZIndex() >= nested->getZIndex()+layers);
+        CHECK(after->getZIndex() > nestedChild->getZIndex());
+        // the gap after the subtree took up the rest
+        CHECK(after->getZIndex() == afterZ);
     }
 }
 
-TEST_CASE("with every Control at one layer the numbering is one z per control, depth-first")
+TEST_CASE("the first numbering gives each control its layers plus Canvas::ZGap, depth-first")
 {
     Scene scene;
 
@@ -117,12 +133,13 @@ TEST_CASE("with every Control at one layer the numbering is one z per control, d
     scene.frame();
 
     const int canvasZ=scene.canvas->getZIndex();
+    const int stride=1+controls::Canvas::ZGap;
 
     CHECK(canvasZ == 1);
-    CHECK(a->getZIndex() == canvasZ+1);
-    CHECK(a1->getZIndex() == canvasZ+2);
-    CHECK(a2->getZIndex() == canvasZ+3);
-    CHECK(b->getZIndex() == canvasZ+4);
+    CHECK(a->getZIndex() == canvasZ+stride);
+    CHECK(a1->getZIndex() == canvasZ+2*stride);
+    CHECK(a2->getZIndex() == canvasZ+3*stride);
+    CHECK(b->getZIndex() == canvasZ+4*stride);
 }
 
 TEST_CASE("ProgressBar::setProgress raises StateChange_Background only for a new value")

@@ -198,10 +198,24 @@ public:
     /// \sect{Z order}
     /// The tree order changed (a child added, removed or moved among its
     /// siblings) or a control's skin Control, and with it its depthLayers(): the
-    /// next updateCanvas() numbers every z index again. Base calls it for each
+    /// next updateCanvas() renumbers the z indices, which gives a new z only to
+    /// the controls out of order (see ZGap). Base calls it for each
     /// of those; call it yourself only after making a skin Control's
     /// depthLayers() return something else.
     void invalidateZOrder() { m_zOrderDirty=true; }
+
+    /// The z values left free after each control's range (its depthLayers(),
+    /// or its overlayLayers()) where the canvas spreads the tree out: its
+    /// first numbering, a compaction (less when the range is short) and
+    /// controls added after the last numbered one. A control inserted before
+    /// a numbered one takes the next free z, and the controls after it keep
+    /// theirs as far as these gaps reach.
+    static constexpr int ZGap=7;
+    /// The gap a moved subtree leaves after each range where it is moved past
+    /// the last numbered control (a Window brought to the front): it takes new
+    /// z at the top of the range on every move, so a smaller gap there makes
+    /// compactions rarer, and one still takes a control added later.
+    static constexpr int MovedZGap=1;
 
     /// A renumber is pending.
     bool zOrderDirty() const { return m_zOrderDirty; }
@@ -410,6 +424,12 @@ protected:
     size_t m_measureCallsAtThink=0;
     /// A new tree has never been numbered.
     bool m_zOrderDirty=true;
+    /// renumberZOrder() has numbered the tree once (else the next pass is the
+    /// first, spread out), the highest z it used, and the gap of the last full
+    /// pass, ZGap unless a compaction had to make it smaller.
+    bool m_zNumbered=false;
+    int m_zHigh=0;
+    int m_zGap=ZGap;
     UpdateStats m_updateStats;
     /// The current pass re-dirtied layout, and the first control that did.
     bool m_passRedirtied=false;

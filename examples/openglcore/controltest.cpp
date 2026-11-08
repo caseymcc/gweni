@@ -188,6 +188,10 @@
  *                 differing pixel count. Exits non-zero if any check is no.
  *                 The clock is frozen as under --stats, so an animation (an
  *                 indeterminate ProgressBar) is at the same place in every shot.
+ *                 Every mirror comparison (here, scale and hide-show) takes
+ *                 each z by its rank among the z values drawn: the canvas's
+ *                 labels depend on the edits that led to a state (a Text line
+ *                 made again takes a z in a gap), its depth order does not.
  *    docked       the whole Demo (dock layout + status bar) at 1024x768
  *    demo-labels  the whole Demo at --size (the README hero's 1024x768 in its
  *                 CTest runs), shot as demo-labels.png. Each demo-list
@@ -484,6 +488,7 @@
 #include "capture.h"
 #include <cctype>
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -1591,12 +1596,102 @@ struct ResizeState
     IdOwners owners;                    // who held each id, to name a mismatch
 };
 
+// Replaces every z in the mirror, a primitive vertex's and a glyph vertex's,
+// by its rank among the z values drawn (slots and runs not hidden), so two
+// states compare equal when they draw in the same depth order. The canvas's z
+// labels depend on the order of past edits (Canvas::ZGap: a control added
+// between two others takes a z in the gap, one moved takes new ones), so a
+// state reached by a round trip draws the same at other z values. A z drawn
+// nowhere (a hidden slot's stale bytes) maps between the ranks around it.
+static void rankMirrorDepths(gweni::renderer::SlotRenderer::MirrorSnapshot &mirror)
+{
+    // SlotRenderer::Vertex: uint16_t style, int16_t x, y, then uint16_t z
+    const size_t primitiveZOffset=3*sizeof(uint16_t);
+    const size_t glyphZOffset=offsetof(ftgl::glyph_vertex_t, z);
+    const size_t glyphBytes=sizeof(ftgl::glyph_vertex_t);
+
+    auto primitiveHidden=[](const std::vector<uint8_t> &bytes)
+    {
+        const size_t vertexBytes=bytes.size()/4;
+        for(size_t vertex=0; vertex<4; ++vertex)
+        {
+            uint16_t style;
+            std::memcpy(&style, &bytes[vertex*vertexBytes], sizeof(style));
+            if(style != 0)
+                return false;
+        }
+        return true;
+    };
+
+    std::vector<double> drawn;
+    for(const auto &entry : mirror.primitives)
+    {
+        const std::vector<uint8_t> &bytes=entry.second;
+        if((bytes.size()%4 != 0) || primitiveHidden(bytes))
+            continue;
+        for(size_t vertex=0; vertex<4; ++vertex)
+        {
+            uint16_t z;
+            std::memcpy(&z, &bytes[vertex*(bytes.size()/4)+primitiveZOffset], sizeof(z));
+            drawn.push_back(z);
+        }
+    }
+    for(const auto &entry : mirror.texts)
+    {
+        const std::vector<uint8_t> &bytes=entry.second;
+        if(bytes.empty() || (bytes[0] != 0))
+            continue;
+        for(size_t offset=1; offset+glyphBytes <= bytes.size(); offset+=glyphBytes)
+        {
+            float z;
+            std::memcpy(&z, &bytes[offset+glyphZOffset], sizeof(z));
+            drawn.push_back(z);
+        }
+    }
+    std::sort(drawn.begin(), drawn.end());
+    drawn.erase(std::unique(drawn.begin(), drawn.end()), drawn.end());
+
+    auto rank=[&](double z)
+    {
+        const auto at=std::lower_bound(drawn.begin(), drawn.end(), z);
+        const size_t index=(size_t)(at-drawn.begin());
+        return 2*index+((at != drawn.end()) && (*at == z) ? 0 : 1);
+    };
+
+    for(auto &entry : mirror.primitives)
+    {
+        std::vector<uint8_t> &bytes=entry.second;
+        if(bytes.size()%4 != 0)
+            continue;
+        for(size_t vertex=0; vertex<4; ++vertex)
+        {
+            uint8_t *field=&bytes[vertex*(bytes.size()/4)+primitiveZOffset];
+            uint16_t z;
+            std::memcpy(&z, field, sizeof(z));
+            const uint16_t ranked=(uint16_t)rank(z);
+            std::memcpy(field, &ranked, sizeof(ranked));
+        }
+    }
+    for(auto &entry : mirror.texts)
+    {
+        std::vector<uint8_t> &bytes=entry.second;
+        for(size_t offset=1; offset+glyphBytes <= bytes.size(); offset+=glyphBytes)
+        {
+            float z;
+            std::memcpy(&z, &bytes[offset+glyphZOffset], sizeof(z));
+            const float ranked=(float)rank(z);
+            std::memcpy(&bytes[offset+glyphZOffset], &ranked, sizeof(ranked));
+        }
+    }
+}
+
 static void captureResizeState(Session &s, const std::string &path, ResizeState &state)
 {
     state.name=fs::path(path).filename().string();
     state.listing=boundsListing(s);
     readFramebufferRgba(s.pixels.x, s.pixels.y, state.pixels);
     state.mirror=s.renderer->snapshotMirror();
+    rankMirrorDepths(state.mirror);
     collectIdOwners(s.canvas, s.canvas->getTypeName(), state.owners);
 }
 

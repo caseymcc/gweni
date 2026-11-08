@@ -8,6 +8,8 @@
 #ifndef _gweni_controls_base_h_
 #define _gweni_controls_base_h_
 
+#include <limits>
+
 #include <gweni/config.h>
 #include <gweni/export.h>
 #include <gweni/platforms/baseRender.h>
@@ -458,13 +460,54 @@ protected:
 
     void removeSkinControl();
 
-    //! Numbers this control and its subtree depth-first from \p zIndex, each
-    //! control taking its skin Control's depthLayers() (and its
-    //! overlayLayers() after its subtree), and marks StateChange_Geometry on
-    //! each one whose z index changed. \p stats counts the controls entered
-    //! (zVisited) and changed (zChanged). Canvas::renumberZOrder() runs it only
-    //! after the tree order changed (Canvas::invalidateZOrder()).
-    void renumberZRecursive(int &zIndex, UpdateStats &stats);
+    //! One z renumber's state, carried through renumberZRecursive().
+    struct ZNumbering
+    {
+        //! The first z the next range (a control's depth layers, or its
+        //! overlay layers after its subtree) may take.
+        int cursor=1;
+        //! Every range takes the cursor, leaving `gap` free after it: the
+        //! canvas's first numbering, or a compaction.
+        bool full=false;
+        int gap=0;
+        //! The highest z the previous numbering used. A range taken with the
+        //! cursor past it has no kept label after it, so it leaves a gap free
+        //! instead of being packed: `tailGap` for a control numbered for the
+        //! first time, `movedTailGap` for one moved there (brought to the
+        //! front), which takes new z at the top of the range every time.
+        int high=0;
+        int tailGap=0;
+        int movedTailGap=0;
+        //! The largest z a range may end at; past it ranges are clamped and
+        //! tie (only a tree too large to number at all, packed).
+        int clampTo=std::numeric_limits<int>::max();
+        //! The highest z this pass used, the layers and the ranges it numbered.
+        int maxUsed=0;
+        size_t layers=0;
+        size_t ranges=0;
+        UpdateStats *stats=nullptr;
+    };
+
+    //! Numbers this control and its subtree depth-first against \p numbering's
+    //! cursor: each range (the control's depthLayers(), then its children, then
+    //! its overlayLayers()) keeps its z if that is still at or past the cursor,
+    //! and otherwise takes the cursor, so after an insert only the inserted
+    //! controls and the ones up to the next free gap get a new z. A control
+    //! moved since the last renumber (\p moved, or its own m_zMoved) takes the
+    //! cursor with its whole subtree. Marks StateChange_Geometry on each
+    //! control whose z or overlay z changed; the stats count the controls
+    //! entered (zVisited) and changed (zChanged). Canvas::renumberZOrder() runs
+    //! it only after the tree order changed (Canvas::invalidateZOrder()).
+    void renumberZRecursive(ZNumbering &numbering, bool moved=false);
+    //! Places one range of \p layers z values at \p z: keeps it where it is
+    //! if that is still at or past the cursor and \p take does not force a new
+    //! one, else gives it the cursor. Returns whether \p z changed.
+    static bool placeZRange(ZNumbering &numbering, int &z, int layers, bool take);
+
+    //! \p control moved in the tree order (or to another parent): its subtree
+    //! gives up its z labels, which are out of order where it is now, and
+    //! takes new ones at the next renumber. Reports the change to the canvas.
+    static void zOrderMoved(Base *control);
 
     //! The tree order below the canvas, or a control's depthLayers(), changed:
     //! tells this control's canvas to renumber the z indices.
@@ -805,6 +848,8 @@ protected:
     gweni::Rect m_renderBounds;
     int m_zIndex;
     int m_overlayZIndex=0;
+    //! Moved since the last renumber: see zOrderMoved().
+    bool m_zMoved=false;
 
     SizeFlags m_sizeFlags;
     Size m_preferredSize;

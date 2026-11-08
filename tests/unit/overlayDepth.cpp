@@ -5,9 +5,9 @@
  *
  *  A skin Control draws only at the z values it reserves: getZIndex() up to
  *  its depthLayers(), and getOverlayZIndex() up to its overlayLayers(). One it
- *  draws at but does not reserve is also the next control's in the numbering
- *  (Base::renumberZRecursive), where an overlay fights that control under
- *  GL_LESS. Each row of the table is a textured renderer that draws an overlay,
+ *  draws at but does not reserve can be the next control's in the numbering
+ *  (Base::renumberZRecursive hands the gaps between controls out to the ones
+ *  inserted there), where an overlay fights that control under GL_LESS. Each row of the table is a textured renderer that draws an overlay,
  *  run on a real control in the state that shows it; a new overlay renderer is
  *  one more row.
  *
@@ -18,8 +18,8 @@
  *  any draw into its slots is at a z outside [getZIndex(),
  *  getZIndex()+depthLayers()) and [getOverlayZIndex(),
  *  getOverlayZIndex()+overlayLayers()), if no draw is at the overlay's z, or
- *  unless its first child is numbered at getZIndex()+depthLayers() and its
- *  next sibling after its whole subtree.
+ *  unless its first child is numbered at or after getZIndex()+depthLayers()
+ *  and its next sibling after its whole subtree.
  */
 #include "headlessFixture.h"
 
@@ -370,7 +370,7 @@ TEST_CASE("a textured overlay renderer's first child and next sibling come after
         CAPTURE(z);
         CAPTURE(end);
         if(!children.empty())
-            CHECK(children.front()->getZIndex() == end);
+            CHECK(children.front()->getZIndex() >= end);
 
         // the next sibling: a control may move one of its own to the canvas
         // (a ComboBox's open menu), so it is not always the scene's "after"
@@ -384,6 +384,7 @@ TEST_CASE("a textured overlay renderer's first child and next sibling come after
         const std::string nextType=next->getTypeName();
         CAPTURE(nextType);
         CHECK(next->getZIndex() >= end);
-        CHECK(next->getZIndex() == subtreeEnd(scene.control));
+        // after everything the subtree reserves, its overlay included
+        CHECK(next->getZIndex() >= subtreeEnd(scene.control));
     }
 }

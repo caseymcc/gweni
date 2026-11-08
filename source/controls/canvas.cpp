@@ -22,6 +22,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <limits>
 #include <set>
 #include <string>
 #include <unordered_map>
@@ -77,10 +78,56 @@ void Canvas::renumberZOrder()
     if(!m_zOrderDirty)
         return;
 
-    m_zOrderDirty=false;
     keepOverlaysLast();
-    int zIndex=1;
-    renumberZRecursive(zIndex, m_updateStats);
+    // after it: what it moved is numbered in this pass
+    m_zOrderDirty=false;
+
+    renderer::Base *render=m_skin?m_skin->getRenderer():nullptr;
+    // with nothing to draw into, nothing limits the range
+    const int maxZ=render?render->maxZIndex():std::numeric_limits<int>::max();
+
+    // The first numbering spreads the tree out; after that a control keeps
+    // its z unless the ones before it now reach past it.
+    ZNumbering numbering;
+    numbering.full=!m_zNumbered;
+    numbering.gap=m_zGap;
+    numbering.high=m_zHigh;
+    numbering.tailGap=m_zGap;
+    numbering.movedTailGap=std::min(m_zGap, MovedZGap);
+    numbering.stats=&m_updateStats;
+    renumberZRecursive(numbering);
+
+    if(numbering.maxUsed > maxZ)
+    {
+        // Out of z: one full pass spreads the tree out again, over at most
+        // half of the range, so what is added or moved to the end after it
+        // (which takes new z at the top) has the other half before the next
+        // compaction; packed for a tree that barely fits at all.
+        const size_t spare=(numbering.layers < (size_t)maxZ)?(size_t)maxZ-numbering.layers:0;
+        m_zGap=(int)std::min<size_t>(ZGap, numbering.ranges?spare/(2*numbering.ranges):0);
+
+        if(numbering.layers > (size_t)maxZ)
+        {
+            static bool warned=false;
+
+            if(!warned)
+            {
+                warned=true;
+                std::fprintf(stderr, "gweni: %zu z layers do not fit the renderer's %d;"
+                    " the last controls share z values (warned once)\n", numbering.layers, maxZ);
+            }
+        }
+
+        ZNumbering compaction;
+        compaction.full=true;
+        compaction.gap=m_zGap;
+        compaction.clampTo=maxZ;
+        compaction.stats=&m_updateStats;
+        renumberZRecursive(compaction);
+        numbering=compaction;
+    }
+    m_zNumbered=true;
+    m_zHigh=numbering.maxUsed;
 }
 
 void Canvas::renderCanvas()
@@ -778,12 +825,14 @@ void Canvas::keepOverlaysLast()
     {
         // the Menus after it were opened over it (a ComboBox's list in it)
         Base::List after;
+        bool stays=false;
         Base::List::iterator iter=std::find(m_children.begin(), m_children.end(), m_popup);
 
         for(++iter; iter != m_children.end();)
         {
             if((*iter != m_toolTip) && !floatingMenu(*iter))
             {
+                stays=true;
                 ++iter;
                 continue;
             }
@@ -791,6 +840,14 @@ void Canvas::keepOverlaysLast()
             iter=m_children.erase(iter);
         }
 
+        // only what passed a control that stays gives up its z labels
+        if(stays)
+        {
+            zOrderMoved(m_popup);
+
+            for(Base *moved : after)
+                zOrderMoved(moved);
+        }
         m_children.remove(m_popup);
         m_children.push_back(m_popup);
         m_children.splice(m_children.end(), after);
@@ -801,6 +858,7 @@ void Canvas::keepOverlaysLast()
 
     m_children.remove(m_toolTip);
     m_children.push_back(m_toolTip);
+    zOrderMoved(m_toolTip);
 }
 
 void Canvas::popupControlDeleted(Base *control)

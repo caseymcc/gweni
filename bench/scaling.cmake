@@ -82,10 +82,15 @@ set(EXCLUDED
     type:children_scanned
     drag:children_scanned
     animate:children_scanned
+    add-remove:children_scanned
     # #404: buildTextDrawList rebuilds the font's whole draw list, two
     # allocations per text index chunk, when one run changes
     set-text:allocs_flush
     type:allocs_flush
+    add-remove:allocs_flush
+    # #419: the z renumber relabels only what an order change moved (#327),
+    # but its walk still enters every control
+    add-remove:z_visited
 )
 
 # Keys that are not work counters (see the table above).

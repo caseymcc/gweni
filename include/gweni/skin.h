@@ -58,7 +58,10 @@ public:
 
     // The number of consecutive z values this control's primitives use,
     // starting at the control's getZIndex(). Its first child is numbered
-    // after them, so an overlay drawn at getZIndex()+1 needs 2 here. Read
+    // after them, so an overlay drawn at getZIndex()+1 needs 2 here: the z
+    // values past them are not this control's even where they are free
+    // today, since the canvas hands its gaps out to controls inserted there
+    // (Canvas::ZGap). Read
     // when the canvas renumbers the z indices, which it does only after the
     // tree order or a control's skin Control changed: a Control whose count
     // changes on its own must call Canvas::invalidateZOrder().
@@ -70,7 +73,8 @@ public:
     // The number of z values this control's primitives use after its whole
     // subtree (controls::Base::getOverlayZIndex() is the first), for what it
     // draws in front of its own children, a TextBox's caret over its text.
-    // Read when the canvas renumbers, as depthLayers() is.
+    // Read when the canvas renumbers, as depthLayers() is; the range keeps
+    // its z while the subtree before it still ends below it.
     virtual size_t overlayLayers()
     {
         return 0;

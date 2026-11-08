@@ -562,8 +562,8 @@ private:
 // add-remove: N Labels in a grid filling the canvas width. Each measured frame
 // removes the oldest Label (deleted outright on even frames, delayedDelete()
 // on odd ones) and adds a new one in its cell, as the canvas's last child; both
-// change the tree order, so the next update phase renumbers z over the whole
-// tree.
+// change the tree order, so the next update phase renumbers z: its walk enters
+// the whole tree, and it relabels only the new Label (a removal leaves a gap).
 //-----------------------------------------------------------------------------
 class AddRemoveScene: public Scene
 {
@@ -740,8 +740,8 @@ const std::vector<SceneInfo> &scenes()
         {"tree-toggle", "collapse and expand a 50-leaf node near the top of an N-node TreeControl",
             true, 1000, 3, 20, Scaling::Linear,
             []{ return std::unique_ptr<Scene>(new TreeToggleScene()); }},
-        {"add-remove", "add one Label and delete another per frame among N (whole-tree z renumber)",
-            true, 1000, 3, 20, Scaling::Linear,
+        {"add-remove", "add one Label and delete another per frame among N",
+            true, 1000, 3, 20, Scaling::Local,
             []{ return std::unique_ptr<Scene>(new AddRemoveScene()); }},
         {"bring-to-front", "bring the next of 8 Windows holding N Labels to the front per frame",
             true, 1000, 3, 16, Scaling::Linear,

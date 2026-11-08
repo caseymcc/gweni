@@ -7,11 +7,12 @@
  *  renderPhaseLayout(), where a wrapped Text builds its lines) is numbered
  *  before the walk draws it: Canvas::renumberZOrder() runs again after that
  *  pass, so its first draw is at its z in the depth-first numbering, not at the
- *  constructor's 0 (the depth-clear value, which draws nothing). The controls
- *  after it are renumbered in the same frame, and the render-phase renumber's
- *  counts go into that frame's UpdateStats. UpdateStats::zChanged counts the
- *  controls whose z the renumber changed: on an insert, the inserted control
- *  and every control after it, today.
+ *  constructor's 0 (the depth-clear value, which draws nothing). It takes a z
+ *  in the gap before the next control, which keeps its own, and the
+ *  render-phase renumber's counts go into that frame's UpdateStats.
+ *  UpdateStats::zChanged counts the controls whose z the renumber changed: on
+ *  an insert, the inserted control and the controls after it up to the gap
+ *  that holds it.
  */
 #include "headlessFixture.h"
 
@@ -105,15 +106,15 @@ TEST_CASE("a control the render phase's layout creates is drawn at its z in that
     CHECK(first->second == grower->grown->getZIndex());
     CHECK(first->second > grower->getZIndex());
     CHECK(first->second > before->getZIndex());
-    // the next sibling made room for it in the same frame
+    // it took a z in the gap before the next sibling, which keeps its own
     CHECK(after->getZIndex() > first->second);
-    CHECK(after->getZIndex() != afterZ);
+    CHECK(after->getZIndex() == afterZ);
     CHECK(after->getStateChange() == controls::StateChange_Nothing);
 
     // the render-phase renumber counted into this frame's stats: the new
-    // control and the one after it
+    // control alone changed
     CHECK(scene.canvas->getUpdateStats().zVisited == 5);
-    CHECK(scene.canvas->getUpdateStats().zChanged == 2);
+    CHECK(scene.canvas->getUpdateStats().zChanged == 1);
 
     // and the next frame has nothing left to number
     scene.frame();

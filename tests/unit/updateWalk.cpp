@@ -9,9 +9,10 @@
  *  tree order changed: a child added, removed, reparented, deleted or moved
  *  among its siblings, or a skin Control replaced. UpdateStats::zVisited counts
  *  the controls the renumber entered, UpdateStats::zChanged those whose z it
- *  changed. After each change the z indices are the ones a full depth-first
- *  numbering gives, and exactly the controls whose z index changed carry
- *  StateChange_Geometry and are counted in zChanged.
+ *  changed. After each change the z ranges are in tree order
+ *  (test::zOrderViolation), exactly the controls whose z index changed carry
+ *  StateChange_Geometry and are counted in zChanged, and an add or a removal
+ *  changes the z of no control that was numbered before.
  *
  *  The first frame's renumber enters every control; a settled frame, a state
  *  change, a layout and a scale change enter none. The tree changes checked
@@ -48,19 +49,6 @@ public:
 
 //! z index by control id, so a failed comparison prints readably
 using ZMap=std::map<size_t, int>;
-
-//! The z index each control gets from the canvas's numbering: depth-first from
-//! 1, each control taking its skin Control's depthLayers(). The walk
-//! Canvas::updateCanvas() used to run every frame.
-void fullNumbering(controls::Base *control, int &zIndex, ZMap &result)
-{
-    result[control->getControlId()]=zIndex;
-    const skin::Control *skinControl=control->getSkinControl();
-    zIndex+=skinControl?(int)const_cast<skin::Control *>(skinControl)->depthLayers():1;
-
-    for(controls::Base *child : control->getActualChildren())
-        fullNumbering(child, zIndex, result);
-}
 
 //! A canvas with three branches of four children of two leaves each (36
 //! controls below the canvas); every second child is Layered.
@@ -159,26 +147,26 @@ struct Scene
         return result;
     }
 
-    ZMap expected() const
+    //! Empty if the z ranges are in tree order (test::zOrderViolation).
+    std::string zOrderViolation() const
     {
-        ZMap result;
-        int zIndex=1;
-        fullNumbering(canvas, zIndex, result);
-        return result;
+        return test::zOrderViolation(canvas, renderer.maxZ);
     }
 
     //! Runs the update phase after a tree-order change made on a settled scene
-    //! and checks it against a full numbering. \p before is zIndices() from
-    //! before the change; \p fresh are the controls the change created, which
-    //! carry StateChange_Created anyway.
-    void checkRenumber(const ZMap &before, const std::vector<controls::Base *> &fresh={})
+    //! and checks that the z ranges are in tree order again. \p before is
+    //! zIndices() from before the change; \p fresh are the controls the change
+    //! created, which carry StateChange_Created anyway; \p moved is false for
+    //! a change that moves no control that was numbered (an add, a removal).
+    void checkRenumber(const ZMap &before, const std::vector<controls::Base *> &fresh={},
+        bool moved=true)
     {
         CHECK(canvas->zOrderDirty());
         canvas->updateCanvas();
         const ZMap now=zIndices();
 
         CHECK(canvas->getUpdateStats().zVisited == now.size());
-        CHECK(now == expected());
+        CHECK(zOrderViolation() == "");
 
         size_t changed=0;
         for(controls::Base *control : all())
@@ -194,8 +182,12 @@ struct Scene
             CHECK(geometry == zChanged);
             changed+=zChanged?1:0;
         }
-        // every case moves something past something else
-        CHECK(changed > 0);
+        // a moved control takes a new z, and an add or a removal needs none
+        // of the numbered ones to
+        if(moved)
+            CHECK(changed > 0);
+        else
+            CHECK(changed == 0);
         // the fresh ones go from the constructor's 0 to their number
         CHECK(canvas->getUpdateStats().zChanged == changed+fresh.size());
 
@@ -213,7 +205,7 @@ TEST_CASE("the first frame numbers every control, a settled one enters none")
 
     CHECK(scene.frame().zVisited == Scene::Controls+1);
     CHECK(scene.canvas->getUpdateStats().zChanged == Scene::Controls+1);
-    CHECK(scene.zIndices() == scene.expected());
+    CHECK(scene.zOrderViolation() == "");
 
     scene.settle();
     CHECK(scene.frame().zVisited == 0);
@@ -234,7 +226,7 @@ TEST_CASE("a state change, a layout or a scale change does not renumber")
 
     scene.canvas->setScale(2.0f);
     CHECK(scene.frame().zVisited == 0);
-    CHECK(scene.zIndices() == scene.expected());
+    CHECK(scene.zOrderViolation() == "");
 }
 
 TEST_CASE("an order change renumbers once, as a full numbering does")
@@ -273,14 +265,14 @@ TEST_CASE("an order change renumbers once, as a full numbering does")
     SUBCASE("a child added in the middle")
     {
         controls::Base *added=Scene::add(scene.children[2], 2, true);
-        scene.checkRenumber(before, {added});
+        scene.checkRenumber(before, {added}, false);
     }
 
     SUBCASE("a child removed")
     {
         controls::Base *removed=scene.children[1];
         removed->setParent(nullptr);
-        scene.checkRenumber(before);
+        scene.checkRenumber(before, {}, false);
         // deleting it once it is off the canvas changes nothing there
         delete removed;
         CHECK_FALSE(scene.canvas->zOrderDirty());
@@ -300,7 +292,8 @@ TEST_CASE("an order change renumbers once, as a full numbering does")
         CHECK_FALSE(scene.canvas->zOrderDirty());
         scene.canvas->updateCanvas();
         CHECK(scene.canvas->getUpdateStats().zVisited == Scene::Controls+1-(1+Scene::Leaves));
-        CHECK(scene.zIndices() == scene.expected());
+        CHECK(scene.canvas->getUpdateStats().zChanged == 0);
+        CHECK(scene.zOrderViolation() == "");
         scene.canvas->renderCanvas();
         CHECK(scene.frame().zVisited == 0);
     }
@@ -317,13 +310,13 @@ TEST_CASE("a replaced skin Control renumbers, for its depthLayers() may differ")
     scene.children[6]->setSkin(&other, true);
     CHECK(scene.canvas->zOrderDirty());
     scene.frame();
-    CHECK(scene.zIndices() == scene.expected());
+    CHECK(scene.zOrderViolation() == "");
     CHECK(scene.frame().zVisited == 0);
 
     // given back before `other` goes
     scene.children[6]->setSkin(&scene.skin, true);
     scene.frame();
-    CHECK(scene.zIndices() == scene.expected());
+    CHECK(scene.zOrderViolation() == "");
 }
 
 TEST_CASE("an animated ProgressBar runs without a tree walk")

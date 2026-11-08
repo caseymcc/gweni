@@ -167,8 +167,8 @@ public:
 //! How a scene's per-frame work is meant to grow with N. A local scene changes
 //! a fixed part of the tree each frame, so its per-frame counters must be the
 //! same at any N; a linear one touches every control by design (the first
-//! frame, the whole-tree z renumber, a relayout of everything, every row of a
-//! scrolled list moving).
+//! frame, a moved Window's new z values, a relayout of everything, every row
+//! of a scrolled list moving).
 enum class Scaling
 {
     Local,

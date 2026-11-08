@@ -19,6 +19,7 @@
 #include <gweni/skin.h>
 #include <gweni/skins/textured/tokyoNight.h>
 
+#include <functional>
 #include <map>
 #include <memory>
 #include <set>
@@ -229,13 +230,15 @@ class StubControl: public gweni::skin::Control
 public:
     static constexpr size_t primitivesPerControl=2;
 
-    //! \p typeName picks the StubSkin::depthLayers entry it reports.
+    //! \p typeName picks the StubSkin::depthLayers and overlayLayers entries
+    //! it reports.
     StubControl(StubSkin *skin, bool takesText, std::string typeName={});
     ~StubControl() override;
 
     std::string getTypeName() override { return "Stub"; }
     size_t requiredPrimitives() override { return primitivesPerControl; }
     size_t depthLayers() override;
+    size_t overlayLayers() override;
 
     void generate(gweni::renderer::Base *renderer, gweni::controls::Base *control) override;
     void remove(gweni::renderer::Base *renderer, gweni::controls::Base *control) override;
@@ -271,6 +274,8 @@ public:
     //! depthLayers() of the StubControls handed out for a type name, read on
     //! every call; a type name not listed reports 1.
     std::map<std::string, size_t> depthLayers;
+    //! overlayLayers() likewise; a type name not listed reports 0.
+    std::map<std::string, size_t> overlayLayers;
 };
 
 inline StubControl::StubControl(StubSkin *skin, bool takesText, std::string typeName)
@@ -283,6 +288,12 @@ inline size_t StubControl::depthLayers()
 {
     auto layers=m_skin->depthLayers.find(m_typeName);
     return layers == m_skin->depthLayers.end()?1:layers->second;
+}
+
+inline size_t StubControl::overlayLayers()
+{
+    auto layers=m_skin->overlayLayers.find(m_typeName);
+    return layers == m_skin->overlayLayers.end()?0:layers->second;
 }
 
 inline StubControl::~StubControl()
@@ -332,6 +343,48 @@ void forEachControl(gweni::controls::Base *control, Func &&func)
     func(control);
     for(gweni::controls::Base *child : control->getChildren())
         forEachControl(child, func);
+}
+
+//! Empty if, walking \p canvas's tree in order (Base::getActualChildren(), as
+//! the z renumber does), every control's range [getZIndex(),
+//! getZIndex()+depthLayers()) and, after its subtree, its overlay range
+//! [getOverlayZIndex(), getOverlayZIndex()+overlayLayers()) come strictly after
+//! every range before them, every z is at least 1 and none ends past \p maxZ;
+//! else the first range that does not, named by its control's type and id.
+inline std::string zOrderViolation(gweni::controls::Base *canvas, int maxZ)
+{
+    int last=0;
+    std::string violation;
+
+    auto range=[&](gweni::controls::Base *control, const char *what, int z, int layers)
+    {
+        if(!violation.empty())
+            return;
+
+        if((z <= last) || (z < 1) || (z+layers-1 > maxZ))
+            violation=std::string(control->getTypeName())+"#"+std::to_string(control->getControlId())
+                +" "+what+" ["+std::to_string(z)+", "+std::to_string(z+layers)+") after "
+                +std::to_string(last)+" (max "+std::to_string(maxZ)+")";
+        last=z+layers-1;
+    };
+
+    std::function<void(gweni::controls::Base *)> walk=[&](gweni::controls::Base *control)
+    {
+        gweni::skin::Control *skinControl=const_cast<gweni::skin::Control *>(control->getSkinControl());
+        range(control, "z", control->getZIndex(), skinControl?(int)skinControl->depthLayers():1);
+
+        for(gweni::controls::Base *child : control->getActualChildren())
+            walk(child);
+
+        const int overlay=skinControl?(int)skinControl->overlayLayers():0;
+        if(overlay)
+            range(control, "overlay z", control->getOverlayZIndex(), overlay);
+        else if(violation.empty() && (control->getOverlayZIndex() != 0))
+            violation=std::string(control->getTypeName())+"#"+std::to_string(control->getControlId())
+                +" has an overlay z with no overlay layers";
+    };
+    walk(canvas);
+    return violation;
 }
 
 //! The tokyonight surfaces as they are when it is made, written back when it

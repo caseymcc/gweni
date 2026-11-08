@@ -627,7 +627,7 @@ void Base::sendToBack()
 
     m_actualParent->m_children.remove(this);
     m_actualParent->m_children.push_front(this);
-    zOrderChanged();
+    zOrderMoved(this);
     invalidateParent();
 }
 
@@ -643,7 +643,7 @@ void Base::bringToFront()
 
     m_actualParent->m_children.remove(this);
     m_actualParent->m_children.push_back(this);
-    zOrderChanged();
+    zOrderMoved(this);
     invalidateParent();
     redraw();
 }
@@ -690,7 +690,7 @@ void Base::bringNextToControl(controls::Base *child, bool bBehind)
     }
 
     m_actualParent->m_children.insert(it, this);
-    zOrderChanged();
+    zOrderMoved(this);
     invalidateParent();
 }
 
@@ -715,6 +715,8 @@ void Base::addChild(Base *child)
     // page that is hidden before its content is added; its own flag is kept.
     child->setAncestorHidden(!visible());
     markAttachedChanged(child);
+    // new, or moved here from another place: its old labels mean nothing here
+    child->m_zMoved=true;
     zOrderChanged();
 }
 
@@ -727,6 +729,8 @@ void Base::addChildOfLayout(Base *child)
     child->m_actualParent=this;
     child->setAncestorHidden(!visible());
     markAttachedChanged(child);
+    // new, or moved here from another place: its old labels mean nothing here
+    child->m_zMoved=true;
     zOrderChanged();
 }
 
@@ -1209,38 +1213,70 @@ void Base::removeSkinControl()
     }
 }
 
-void Base::renumberZRecursive(int &zIndex, UpdateStats &stats)
+bool Base::placeZRange(ZNumbering &numbering, int &z, int layers, bool take)
 {
-    ++stats.zVisited;
-    bool changed=false;
+    int placed=z;
+    int gap=0;
 
-    if(m_zIndex != zIndex)
+    if(take || numbering.full || (z < numbering.cursor))
     {
-        m_zIndex=zIndex;
-        changed=true;
+        placed=numbering.cursor;
+        // Packed when a kept label may follow (a short cascade); past every
+        // kept label nothing follows, so the gap costs nothing there but range.
+        if(numbering.full)
+            gap=numbering.gap;
+        else if(numbering.cursor > numbering.high)
+            gap=(z != 0)?numbering.movedTailGap:numbering.tailGap;
+
+        if(placed+layers-1 > numbering.clampTo)
+            placed=std::max(1, numbering.clampTo-layers+1);
     }
-    zIndex+=m_skinControl?(int)m_skinControl->depthLayers():1;
+    numbering.cursor=placed+layers+gap;
+    numbering.maxUsed=std::max(numbering.maxUsed, placed+layers-1);
+    numbering.layers+=(size_t)layers;
+    ++numbering.ranges;
+
+    const bool changed=(placed != z);
+    z=placed;
+    return changed;
+}
+
+void Base::renumberZRecursive(ZNumbering &numbering, bool moved)
+{
+    ++numbering.stats->zVisited;
+    // a moved control's subtree is out of order wherever it kept its labels
+    moved=moved || m_zMoved;
+    m_zMoved=false;
+
+    const int layers=m_skinControl?(int)m_skinControl->depthLayers():1;
+    bool changed=placeZRange(numbering, m_zIndex, layers, moved);
 
     for(auto &&child:m_children)
     {
-        child->renumberZRecursive(zIndex, stats);
+        child->renumberZRecursive(numbering, moved);
     }
 
     const int overlay=m_skinControl?(int)m_skinControl->overlayLayers():0;
-    const int overlayZIndex=overlay?zIndex:0;
 
-    if(m_overlayZIndex != overlayZIndex)
+    if(overlay)
+        changed|=placeZRange(numbering, m_overlayZIndex, overlay, moved);
+    else if(m_overlayZIndex != 0)
     {
-        m_overlayZIndex=overlayZIndex;
+        m_overlayZIndex=0;
         changed=true;
     }
-    zIndex+=overlay;
 
     if(changed)
     {
-        ++stats.zChanged;
+        ++numbering.stats->zChanged;
         addStateChange(StateChange_Geometry);
     }
+}
+
+void Base::zOrderMoved(Base *control)
+{
+    control->m_zMoved=true;
+    control->zOrderChanged();
 }
 
 void Base::zOrderChanged()

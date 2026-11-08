@@ -93,8 +93,9 @@ the canvas renumbers only on a frame after something called `Canvas::invalidateZ
 reparent through `setParent` and a delete, delayed or not, too), `bringToFront`,
 `sendToBack`, `bringNextToControl`, and a skin Control assigned or released (`setSkin`,
 whose new Control may report other `depthLayers()`). A control off any canvas reports
-nothing; attaching it is an `addChild` on the canvas's tree. A renumber is a full one and
-marks `StateChange_Geometry` on exactly the controls whose z index changed.
+nothing; attaching it is an `addChild` on the canvas's tree. A renumber walks the whole
+tree but relabels only what the change put out of order, and marks `StateChange_Geometry`
+on exactly the controls whose z index changed (see "Gapped z labels" below).
 `Canvas::renumberZOrder()` runs it at the end of `updateCanvas()` and again in
 `renderCanvas()` right after `renderPhaseLayout()`, so a control that pass created (a
 wrapped `Text`'s lines) is numbered before the walk draws it; it is not left at the
@@ -103,8 +104,42 @@ not change both calls return at once.
 `UpdateStats::zVisited` (`Canvas::getUpdateStats()`, `ControlTest --stats` prints it as
 `z_visited=`) counts the controls it entered: Demo's first frame 2668, a settled one 0.
 `UpdateStats::zChanged` (`z_changed=` in `gweni_bench`) counts those whose z or overlay
-z it changed: today every control after the first one moved or inserted.
+z it changed: the controls added or moved and the few after them up to a free gap.
 `tests/unit/updateWalk.cpp` and `tests/unit/renderPhaseZ.cpp` pin them.
+
+**Gapped z labels.** The numbering keeps tree order as draw order, but it hands z out
+with gaps, so an order change rewrites the slots of what it moved and not of every
+control after it (`Base::renumberZRecursive`, `Canvas::renumberZOrder()`). A cursor walks
+the tree depth-first; each range (a control's `depthLayers()`, then its subtree, then
+its `overlayLayers()`) keeps its z if that is still at or past the cursor, and otherwise
+takes the cursor, which then moves past the range. So:
+- the canvas's first numbering, and a compaction, give every range the cursor and leave
+  `Canvas::ZGap` (7) free after it: stride 8 for a one-layer control;
+- a control added between two numbered ones takes the next free z, packed; the ones
+  after it keep theirs as soon as the cascade reaches a gap, so adding k controls in the
+  middle changes about k z indices however large the tree (`tests/unit/zRelabel.cpp`);
+- a removal leaves a gap and changes none;
+- a moved subtree (`bringToFront`, `sendToBack`, `bringNextToControl`, a reparent through
+  `addChild`, `keepOverlaysLast()` moving the popup or the tooltip box) gives up its
+  labels (`Base::zOrderMoved`, a flag on its root) and takes new ones where it now is,
+  since keeping them would put it out of order with what it passed;
+- past the highest z the last numbering used no kept label can follow, so a range taken
+  there leaves a gap at no cost but range: `ZGap` for a control numbered for the first
+  time, `Canvas::MovedZGap` (1) for a moved one, which takes new z at the top of the
+  range on every move (a Window brought to the front);
+- a `depthLayers()` change (a skin swap) is absorbed by the cascade like an insert.
+
+The labels therefore depend on the edits that led to a tree, and two trees that look
+the same can draw at other z values in the same order; the determinism test still holds,
+since the same edits give the same labels. ControlTest's mirror comparisons rank each
+z among the drawn ones for that reason. When a pass runs past the renderer's
+`maxZIndex()` (65535 in `OpenGLCore`, `renderer::Base::maxZIndex()`), one full pass
+compacts the tree with the largest gap up to `ZGap` that spreads it over at most half
+the range, leaving the other half for what is added or moved to the end before the
+next compaction, packed when the tree barely fits, and clamped (with ties, one warning
+on stderr) when even packed it does not. That pass costs a whole-tree rewrite once:
+`gweni_bench --scene bring-to-front --n 2000` (4120 controls, a 515-control Window
+moved to the end per frame) compacts once in about 32 frames.
 
 #### Hidden and visible
 
@@ -270,8 +305,9 @@ Menus that were after it (a ComboBox list opened from inside it stays above it) 
 ToolTip box, which stays last: so the z renumber numbers the popup above the whole tree
 and under a tooltip, and a control added to the canvas after it opened still goes under
 it. Opening touches only the popup's subtree and the anchor (`controltest_popup`): a
-popup made on the canvas moves nothing else in the child order, while one made inside a
-page renumbers the page's later siblings the first time it is moved out.
+popup made on the canvas moves nothing else in the child order, and one made inside a
+page takes new z values when it is moved out, while the page's later siblings keep
+theirs.
 
 A popup holding a `ComboBox` shows it with its list closed: `Base::setHidden` sets the
 popup's own flag only, and the list the box keeps as a child until it first opens keeps
@@ -754,7 +790,9 @@ two programs and the draws. What follows describes both together:
   depth-first (`Base::renumberZRecursive`): a control takes its skin Control's
   `depthLayers()` z values from `getZIndex()` on, then its children are numbered, then
   it takes `overlayLayers()` more (0 by default) from `getOverlayZIndex()` on, for what
-  it draws in front of its whole subtree. A text run's glyph i is at
+  it draws in front of its whole subtree. The ranges are increasing in tree order but
+  not packed: gaps between them let an insert relabel only its neighbours ("Gapped z
+  labels"). A text run's glyph i is at
   `z+(i+1)/(glyphs+1)` (`SlotRenderer::renderText`, the move branch included), strictly
   between the Text control's z and the next one, so a rect drawn at the Text's z is
   behind every glyph and in front of everything numbered before it.
