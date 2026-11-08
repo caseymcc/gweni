@@ -465,6 +465,23 @@ endif()
 file(GLOB_RECURSE gweni_public_headers CONFIGURE_DEPENDS
     RELATIVE ${GWENI_SOURCE_DIR}/include
     ${GWENI_SOURCE_DIR}/include/gweni/*.h)
+# gweni/controls.h is the umbrella of the controls: configuring fails, naming
+# each one, if a header under include/gweni/controls/ is not one of its
+# #include lines. An edit of controls.h re-runs the check.
+set(gweni_umbrella ${GWENI_SOURCE_DIR}/include/gweni/controls.h)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${gweni_umbrella})
+file(STRINGS ${gweni_umbrella} gweni_umbrella_lines
+    REGEX "^#include <gweni/controls/[^>]+>")
+set(gweni_umbrella_includes)
+foreach(line IN LISTS gweni_umbrella_lines)
+    string(REGEX REPLACE "^#include <([^>]+)>.*" "\\1" included "${line}")
+    list(APPEND gweni_umbrella_includes ${included})
+endforeach()
+foreach(header IN LISTS gweni_public_headers)
+    if(header MATCHES "^gweni/controls/" AND NOT header IN_LIST gweni_umbrella_includes)
+        message(SEND_ERROR "controls.h does not include ${header}")
+    endif()
+endforeach()
 # A backend's headers are checked only in a tree that builds it, the one that
 # has its dependencies.
 set(gweni_header_check_excluded)
