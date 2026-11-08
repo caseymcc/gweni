@@ -11,6 +11,8 @@
 
 #include <gweni/platforms/platformTypes.h>
 
+#include <vector>
+
 namespace gweni
 {
 struct Font;
@@ -200,6 +202,15 @@ public:
     //!     No need to implement these functions in your derived class, but
     //!     if you can do them faster than the default implementation it's a
     //!     good idea to.
+
+    //! The x of every caret position in \a text, in the units of measureText:
+    //! \a xs gets one entry per codepoint boundary (utf8Next's walk), 0 and
+    //! text.size() included, so codepoint count + 1 entries. xs[0] is 0 and
+    //! xs[k] is measureText(font, text.substr(0, boundary k)).x. The default
+    //! is that definition, one measureText per prefix; a renderer that can lay
+    //! the string out once should.
+    virtual void measureCarets(const gweni::Font &font, const gweni::String &text,
+        std::vector<int> &xs);
     virtual void drawLinedRect(size_t *primitiveIds, gweni::Rect rect, int zIndex);
     virtual void drawPixel(size_t *primitiveIds, int x, int y, int zIndex);
     virtual void drawShavedCornerRect(size_t *primitiveIds, gweni::Rect rect, int zIndex, bool bSlight=false);

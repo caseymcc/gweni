@@ -239,5 +239,20 @@ int Base::lineHeight(const gweni::Font &font)
     return measureText(font, " ").y;
 }
 
+void Base::measureCarets(const gweni::Font &font, const gweni::String &text,
+    std::vector<int> &xs)
+{
+    xs.clear();
+    xs.push_back(0);
+
+    for(size_t i=utf8Next(text, 0); !text.empty(); i=utf8Next(text, i))
+    {
+        xs.push_back(measureText(font, text.substr(0, i)).x);
+
+        if(i >= text.size())
+            break;
+    }
+}
+
 } // namespace renderer
 } // namespace gweni
