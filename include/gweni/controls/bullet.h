@@ -33,6 +33,7 @@ public:
 
     void setTextColor(const gweni::Color &col) override;
     void setTextColorOverride(const gweni::Color &col) override;
+    void setSkinTextColor(internal::SkinTextColor which) override;
 
     //! Logical units between the bullet's column of font size and the text.
     void setColumnGap(int gap);

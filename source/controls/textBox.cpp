@@ -74,7 +74,7 @@ GWENI_CONTROL_CONSTRUCTOR(TextBox)
     m_editable=true;
     m_selectAll=false;
     m_maxTextLength=NO_MAX_LENGTH;
-    setTextColor(getSkin()->Colors.Label.Default);
+    setSkinTextColor(internal::SkinTextColor::LabelDefault);
     setTabable(true);
     addAccelerator("Ctrl + C", &TextBox::onCopy);
     addAccelerator("Ctrl + X", &TextBox::onCut);
@@ -174,7 +174,7 @@ void TextBox::setPlaceholder(const String &str)
         m_placeholder->setFont(m_text->getFont());
         m_placeholder->setPadding(m_text->getPadding());
         m_placeholder->setAlignment(getTextAlignment());
-        m_placeholder->setTextColor(getSkin()->Colors.PlaceholderText);
+        m_placeholder->setSkinTextColor(internal::SkinTextColor::Placeholder);
     }
 
     m_placeholder->setText(str);

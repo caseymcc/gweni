@@ -4,12 +4,19 @@
 #include "gweni/utils/json.h"
 #include "gweni/utils/filesystem.h"
 
+#include <rapidjson/reader.h>
+#include <rapidjson/stringbuffer.h>
+#include <rapidjson/writer.h>
+
 #include <imglib/imageIo.h>
 
 #include <algorithm>
 #include <cerrno>
+#include <cmath>
 #include <cstring>
+#include <fstream>
 #include <iostream>
+#include <sstream>
 #include <iterator>
 #include <set>
 #include <vector>
@@ -564,15 +571,7 @@ void TexturedSkin::loadTheme(const json::Value &jsonTheme)
         else
         {
             // name -> where it goes and the range it must be in.
-            struct MetricEntry
-            {
-                int *value;
-                int minimum;
-                int maximum;
-            };
-            const std::unordered_map<std::string, MetricEntry> metricMap={
-                {"ScrollBarThickness", {&Metrics.ScrollBarThickness, 6, 64}},
-            };
+            const std::unordered_map<std::string, MetricEntry> metricMap=metricRegistry();
 
             for(const auto &member:metrics.GetObject())
             {
@@ -683,6 +682,478 @@ void TexturedSkin::reportStrictTheme(const std::set<std::string> &surfaceFieldsS
 
     report("surfaces", surfacesNotSet, surfaceNames.size(), surfaceGaps);
     report("text colors", textGaps.size(), textNames.size(), textGaps);
+}
+
+std::unordered_map<std::string, TexturedSkin::MetricEntry> TexturedSkin::metricRegistry()
+{
+    return {
+        {"ScrollBarThickness", {&Metrics.ScrollBarThickness, 6, 64}},
+    };
+}
+
+bool TexturedSkin::ThemeValues::operator==(const ThemeValues &other) const
+{
+    if(surfaces.size() != other.surfaces.size())
+        return false;
+
+    for(auto a=surfaces.begin(), b=other.surfaces.begin(); a != surfaces.end(); ++a, ++b)
+    {
+        const tokyonight::Surface &s=a->second;
+        const tokyonight::Surface &t=b->second;
+
+        if((a->first != b->first) || !(s.top == t.top) || !(s.bottom == t.bottom)
+            || !(s.border == t.border) || (s.radius != t.radius) || (s.borderWidth != t.borderWidth))
+            return false;
+    }
+    return (textColors == other.textColors) && (metrics == other.metrics);
+}
+
+TexturedSkin::ThemeValues TexturedSkin::captureTheme()
+{
+    ThemeValues values;
+
+    for(const auto &entry:tokyonight::surfaceRegistry())
+        values.surfaces.emplace(entry.first, *entry.second);
+    for(const auto &entry:textColorRegistry())
+        values.textColors.emplace(entry.first, *entry.second);
+    for(const auto &entry:metricRegistry())
+        values.metrics.emplace(entry.first, *entry.second.value);
+    return values;
+}
+
+void TexturedSkin::applyTheme(const ThemeValues &values)
+{
+    std::unordered_map<std::string, tokyonight::Surface*> &surfaces=tokyonight::surfaceRegistry();
+    std::unordered_map<std::string, gweni::Color*> textColors=textColorRegistry();
+    std::unordered_map<std::string, MetricEntry> metrics=metricRegistry();
+
+    for(const auto &entry:values.surfaces)
+    {
+        auto iter=surfaces.find(entry.first);
+
+        if(iter != surfaces.end())
+            *iter->second=entry.second;
+    }
+    for(const auto &entry:values.textColors)
+    {
+        auto iter=textColors.find(entry.first);
+
+        if(iter != textColors.end())
+            *iter->second=entry.second;
+    }
+    for(const auto &entry:values.metrics)
+    {
+        auto iter=metrics.find(entry.first);
+
+        if(iter != metrics.end())
+            *iter->second.value=std::clamp(entry.second, iter->second.minimum, iter->second.maximum);
+    }
+}
+
+namespace
+{
+
+typedef rapidjson::Writer<rapidjson::StringBuffer> JsonWriter;
+
+//! One value written by rapidjson's Writer, compact: "[1,2,3]", "\"name\"".
+template<typename Write>
+std::string compactJson(Write write)
+{
+    rapidjson::StringBuffer buffer;
+    JsonWriter writer(buffer);
+
+    write(writer);
+    return buffer.GetString();
+}
+
+//! [r,g,b], or [r,g,b,a] when not opaque: what loadTheme()'s toColor reads.
+void writeColor(JsonWriter &writer, const gweni::Color &color)
+{
+    writer.StartArray();
+    writer.Int(color.r);
+    writer.Int(color.g);
+    writer.Int(color.b);
+    if(color.a != 255)
+        writer.Int(color.a);
+    writer.EndArray();
+}
+
+//! A whole number as an integer (6, not 6.0), anything else as the shortest
+//! double that reads back as the same float.
+void writeNumber(JsonWriter &writer, float value)
+{
+    if((value == std::floor(value)) && (std::fabs(value) < 1.0e9f))
+        writer.Int((int)value);
+    else
+        writer.Double(value);
+}
+
+std::string jsonString(const std::string &text)
+{
+    return compactJson([&](JsonWriter &writer) { writer.String(text.c_str(), (rapidjson::SizeType)text.size()); });
+}
+
+//! One section of a theme, "name": { "member": value, ... }, its members one
+//! a line, at the indents themeJson() writes.
+void writeSection(std::ostringstream &out, const char *name,
+    const std::vector<std::pair<std::string, std::string>> &members, bool last)
+{
+    out<<"    "<<jsonString(name)<<":\n    {\n";
+    for(size_t i=0; i < members.size(); ++i)
+        out<<"        "<<jsonString(members[i].first)<<": "<<members[i].second<<((i+1 < members.size())?",":"")<<"\n";
+    out<<"    }"<<(last?"":",")<<"\n";
+}
+
+//! Where a skin config's "theme" object is, read by rapidjson's SAX Reader
+//! with the stream's offsets: the object from its '{' to just past its '}',
+//! and the root's closing '}'.
+struct ThemeSpan: rapidjson::BaseReaderHandler<rapidjson::UTF8<>, ThemeSpan>
+{
+    explicit ThemeSpan(const rapidjson::StringStream &stream): m_stream(stream) {}
+
+    bool Default()
+    {
+        if((depth == 0) && !started)
+            rootIsObject=false;
+        started=true;
+        valueAtRoot();
+        return true;
+    }
+    bool StartObject()
+    {
+        if((depth == 0) && !started)
+            rootIsObject=true;
+        started=true;
+        if((depth == 1) && nextIsTheme)
+        {
+            themeStart=m_stream.Tell()-1;
+            inTheme=true;
+            nextIsTheme=false;
+        }
+        ++depth;
+        return true;
+    }
+    bool EndObject(rapidjson::SizeType)
+    {
+        --depth;
+        if(inTheme && (depth == 1))
+        {
+            themeEnd=m_stream.Tell();
+            inTheme=false;
+        }
+        if(depth == 0)
+            rootEnd=m_stream.Tell()-1;
+        return true;
+    }
+    bool StartArray()
+    {
+        Default();
+        ++depth;
+        return true;
+    }
+    bool EndArray(rapidjson::SizeType)
+    {
+        --depth;
+        return true;
+    }
+    bool Key(const char *str, rapidjson::SizeType length, bool)
+    {
+        if(depth == 1)
+        {
+            const std::string key(str, length);
+
+            rootKeys.insert(key);
+            nextIsTheme=(key == "theme");
+            if(nextIsTheme)
+                themeNotObject=false;
+        }
+        return true;
+    }
+
+    //! A value that is not an object in the "theme" member.
+    void valueAtRoot()
+    {
+        if((depth == 1) && nextIsTheme)
+        {
+            themeNotObject=true;
+            nextIsTheme=false;
+        }
+    }
+
+    const rapidjson::StringStream &m_stream;
+    int depth=0;
+    bool started=false;
+    bool rootIsObject=false;
+    bool nextIsTheme=false;
+    bool inTheme=false;
+    bool themeNotObject=false;
+    size_t themeStart=std::string::npos;
+    size_t themeEnd=std::string::npos;
+    size_t rootEnd=std::string::npos;
+    std::set<std::string> rootKeys;
+};
+
+//! \p text with every line after the first prefixed by \p indent, and its
+//! newlines \r\n when \p crlf.
+std::string indentLines(const std::string &text, const std::string &indent, bool crlf)
+{
+    std::string out;
+
+    for(char c:text)
+    {
+        if(c == '\n')
+        {
+            out+=crlf?"\r\n":"\n";
+            out+=indent;
+        }
+        else
+            out+=c;
+    }
+    return out;
+}
+
+//! The whole file at \p path in \p text. Returns false, setting \p error,
+//! if it cannot be read; \p exists says whether there is a file there.
+bool readWholeFile(const std::string &path, std::string &text, bool &exists, std::string &error)
+{
+    exists=false;
+
+    bool isDirectory=false;
+
+    try { isDirectory=fs::is_directory(path); } catch(...) {}
+
+    if(isDirectory)
+    {
+        exists=true;
+        error=strerror(EISDIR);
+        return false;
+    }
+
+    std::ifstream file(path, std::ios::binary);
+
+    if(!file)
+    {
+        error=strerror(errno);
+        return false;
+    }
+    exists=true;
+
+    std::ostringstream content;
+
+    content<<file.rdbuf();
+    if(file.bad())
+    {
+        error="read error";
+        return false;
+    }
+    text=content.str();
+    return true;
+}
+
+bool isStandaloneThemeKey(const std::string &key)
+{
+    return (key == "surfaces") || (key == "textColors") || (key == "metrics") || (key == "strict")
+        || (!key.empty() && (key[0] == '_'));
+}
+
+}//namespace
+
+std::string TexturedSkin::themeJson(const std::string &comment)
+{
+    const ThemeValues values=captureTheme();
+    std::vector<std::pair<std::string, std::string>> surfaces;
+    std::vector<std::pair<std::string, std::string>> textColors;
+    std::vector<std::pair<std::string, std::string>> metrics;
+
+    for(const auto &entry:values.surfaces)
+    {
+        const tokyonight::Surface &s=entry.second;
+
+        surfaces.emplace_back(entry.first, compactJson([&](JsonWriter &writer)
+        {
+            writer.StartObject();
+            writer.Key("top");
+            writeColor(writer, s.top);
+            writer.Key("bottom");
+            writeColor(writer, s.bottom);
+            writer.Key("border");
+            writeColor(writer, s.border);
+            writer.Key("radius");
+            writeNumber(writer, s.radius);
+            writer.Key("borderWidth");
+            writeNumber(writer, s.borderWidth);
+            writer.EndObject();
+        }));
+    }
+    for(const auto &entry:values.textColors)
+        textColors.emplace_back(entry.first, compactJson([&](JsonWriter &writer) { writeColor(writer, entry.second); }));
+    for(const auto &entry:values.metrics)
+        metrics.emplace_back(entry.first, compactJson([&](JsonWriter &writer) { writer.Int(entry.second); }));
+
+    std::ostringstream out;
+
+    out<<"{\n";
+    if(!comment.empty())
+        out<<"    \"_comment\": "<<jsonString(comment)<<",\n";
+    writeSection(out, "surfaces", surfaces, false);
+    writeSection(out, "textColors", textColors, false);
+    writeSection(out, "metrics", metrics, true);
+    out<<"}";
+    return out.str();
+}
+
+bool TexturedSkin::replaceTheme(const std::string &document, const std::string &theme,
+    std::string &result, std::string &error)
+{
+    if(document.find_first_not_of(" \t\r\n") == std::string::npos)
+    {
+        result=theme+"\n";
+        return true;
+    }
+
+    rapidjson::StringStream stream(document.c_str());
+    ThemeSpan span(stream);
+    rapidjson::Reader reader;
+
+    if(!reader.Parse(stream, span))
+    {
+        error=std::string("parse error at offset ")+std::to_string(reader.GetErrorOffset())+": "
+            +json::GetParseError_En(reader.GetParseErrorCode());
+        return false;
+    }
+    if(!span.rootIsObject)
+    {
+        error="not a JSON object";
+        return false;
+    }
+    if(span.themeNotObject && (span.themeStart == std::string::npos))
+    {
+        error="its \"theme\" is not an object";
+        return false;
+    }
+
+    const bool crlf=document.find("\r\n") != std::string::npos;
+    const bool standalone=(span.rootKeys.count("theme") == 0)
+        && std::all_of(span.rootKeys.begin(), span.rootKeys.end(), isStandaloneThemeKey);
+
+    if(standalone)
+    {
+        result=indentLines(theme, "", crlf)+(crlf?"\r\n":"\n");
+        return true;
+    }
+
+    if(span.themeStart != std::string::npos)
+    {
+        // the theme's lines take the indent of the line its '{' is on
+        const size_t lineStart=document.rfind('\n', span.themeStart);
+        const size_t from=(lineStart == std::string::npos)?0:lineStart+1;
+        const size_t indentEnd=document.find_first_not_of(" \t", from);
+        const std::string indent=document.substr(from, indentEnd-from);
+
+        result=document.substr(0, span.themeStart)+indentLines(theme, indent, crlf)
+            +document.substr(span.themeEnd);
+        return true;
+    }
+
+    // a skin config with no theme: one more member, after its last
+    const size_t lastValueEnd=document.find_last_not_of(" \t\r\n", span.rootEnd-1)+1;
+    const std::string newline=crlf?"\r\n":"\n";
+
+    result=document.substr(0, lastValueEnd)+(span.rootKeys.empty()?"":",")+newline
+        +"    \"theme\":"+newline+"    "+indentLines(theme, "    ", crlf)+newline
+        +document.substr(span.rootEnd);
+    return true;
+}
+
+bool TexturedSkin::loadThemeFile(const std::string &path)
+{
+    std::string text;
+    std::string error;
+    bool exists;
+
+    if(!readWholeFile(path, text, exists, error))
+    {
+        std::cerr<<"Unable to open theme file "<<path<<": "<<error<<"\n";
+        return false;
+    }
+
+    json::Document document;
+
+    document.Parse(text.c_str(), text.size());
+    if(document.HasParseError())
+    {
+        std::cerr<<"Theme parse error in "<<path<<" (offset "<<document.GetErrorOffset()<<"): "
+            <<json::GetParseError_En(document.GetParseError())<<"\n";
+        return false;
+    }
+    if(!document.IsObject())
+    {
+        std::cerr<<"Theme file "<<path<<" is not a JSON object\n";
+        return false;
+    }
+    if(document.HasMember("theme"))
+    {
+        if(!document["theme"].IsObject())
+        {
+            std::cerr<<"Theme file "<<path<<": its \"theme\" must be an object\n";
+            return false;
+        }
+        loadTheme(document["theme"]);
+    }
+    else
+        loadTheme(document);
+    return true;
+}
+
+bool TexturedSkin::saveThemeFile(const std::string &path)
+{
+    std::string document;
+    std::string error;
+    bool exists;
+
+    if(!readWholeFile(path, document, exists, error) && exists)
+    {
+        std::cerr<<"Unable to read theme file "<<path<<": "<<error<<"\n";
+        return false;
+    }
+
+    // the theme's own "_comment" is kept
+    std::string comment;
+
+    if(exists && (document.find_first_not_of(" \t\r\n") != std::string::npos))
+    {
+        json::Document parsed;
+
+        parsed.Parse(document.c_str(), document.size());
+        if(!parsed.HasParseError() && parsed.IsObject())
+        {
+            const json::Value *theme=&parsed;
+
+            if(parsed.HasMember("theme") && parsed["theme"].IsObject())
+                theme=&parsed["theme"];
+            if(theme->HasMember("_comment") && (*theme)["_comment"].IsString())
+                comment=(*theme)["_comment"].GetString();
+        }
+    }
+
+    std::string result;
+
+    if(!replaceTheme(exists?document:std::string(), themeJson(comment), result, error))
+    {
+        std::cerr<<"Unable to save the theme into "<<path<<": "<<error<<"\n";
+        return false;
+    }
+
+    std::ofstream file(path, std::ios::binary|std::ios::trunc);
+
+    file<<result;
+    file.close();
+    if(!file)
+    {
+        std::cerr<<"Unable to write theme file "<<path<<": "<<strerror(errno)<<"\n";
+        return false;
+    }
+    return true;
 }
 
 // Tokyo Night text/line colors. These drive the control text colors (controls

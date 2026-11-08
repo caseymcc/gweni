@@ -40,6 +40,42 @@ Text::~Text()
     // Because it's a pointer to another font somewhere.
 }
 
+void Text::applyTextColor(const gweni::Color &col)
+{
+    if(m_color == col)
+        return;
+
+    m_color=col;
+    addStateChange(controls::StateChange_Text);
+
+    for(auto &&line : m_lines)
+        line->setTextColor(col);
+}
+
+void Text::setSkinTextColor(SkinTextColor which)
+{
+    m_skinColor=which;
+    refreshSkinTextColor();
+}
+
+void Text::refreshSkinTextColor()
+{
+    const skin::Base *skin=getSkin();
+
+    if(!skin)
+        return;
+
+    switch(m_skinColor)
+    {
+    case SkinTextColor::None:           return;
+    case SkinTextColor::LabelDefault:   return applyTextColor(skin->Colors.Label.Default);
+    case SkinTextColor::LabelBright:    return applyTextColor(skin->Colors.Label.Bright);
+    case SkinTextColor::LabelDark:      return applyTextColor(skin->Colors.Label.Dark);
+    case SkinTextColor::LabelHighlight: return applyTextColor(skin->Colors.Label.Highlight);
+    case SkinTextColor::Placeholder:    return applyTextColor(skin->Colors.PlaceholderText);
+    }
+}
+
 // A Text is the size of its string: calculateSize measures it, and the parent
 // gives it that size when it places it (policyResize), so nothing here resizes
 // it after the parent has. Wrapped lines are built in arrange().

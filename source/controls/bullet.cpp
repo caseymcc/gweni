@@ -38,6 +38,12 @@ void Bullet::setTextColor(const Color &col)
     addStateChange(StateChange_Background);
 }
 
+void Bullet::setSkinTextColor(internal::SkinTextColor which)
+{
+    ParentClass::setSkinTextColor(which);
+    addStateChange(StateChange_Background);
+}
+
 void Bullet::setTextColorOverride(const Color &col)
 {
     ParentClass::setTextColorOverride(col);

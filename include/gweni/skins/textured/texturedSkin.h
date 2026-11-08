@@ -13,12 +13,14 @@
 #include <gweni/gweni.h>
 #include <gweni/controls/base.h>
 #include <gweni/skins/textured/texturedPrimitives.h>
+#include <gweni/skins/textured/tokyoNight.h>
 #include <gweni/utils/json.h>
 
 #include <glm/glm.hpp>
 #include <glm/detail/type_vec4.hpp>
 #include <imglib/simpleImage.h>
 
+#include <map>
 #include <set>
 #include <string>
 #include <unordered_map>
@@ -422,6 +424,68 @@ public:
     //! tokyonight::surfaceRegistry(). The pointers are into this skin, so the
     //! map is built for each call and is only valid while the skin lives.
     std::unordered_map<std::string, gweni::Color*> textColorRegistry();
+
+    //! One of the skin's sizes a theme's "metrics" can set, and its range.
+    struct MetricEntry
+    {
+        int *value;
+        int minimum;
+        int maximum;
+    };
+    //! Name -> size of this skin's Metrics a theme's "metrics" can set
+    //! (ScrollBarThickness), its pointers into this skin as for
+    //! textColorRegistry().
+    std::unordered_map<std::string, MetricEntry> metricRegistry();
+
+    //! Everything a theme sets, by name: every tokyonight surface (process
+    //! globals, shared by every skin), and this skin's text colours and
+    //! metrics. Sorted maps, so two are compared and written in one order.
+    struct ThemeValues
+    {
+        std::map<std::string, tokyonight::Surface> surfaces;
+        std::map<std::string, gweni::Color> textColors;
+        std::map<std::string, int> metrics;
+
+        bool operator==(const ThemeValues &other) const;
+        bool operator!=(const ThemeValues &other) const { return !(*this == other); }
+    };
+
+    //! The theme as it is now.
+    ThemeValues captureTheme();
+    //! Sets every value \p values names (an unknown name is ignored). Nothing
+    //! is redrawn: the controls read the new values when they draw again
+    //! (tools::ThemeEditor::applyToCanvas() makes a canvas do that).
+    void applyTheme(const ThemeValues &values);
+
+    //! The theme as it is now as a "theme" object loadTheme() reads: every
+    //! surface (top, bottom, border, radius, borderWidth), every text colour
+    //! and every metric, each sorted by name, a colour as [r,g,b] or, when not
+    //! opaque, [r,g,b,a]. All of them, not only what differs from the compiled
+    //! defaults, so loading it sets the whole theme whatever was set before.
+    //! The same theme always gives the same text. \p comment, if not empty,
+    //! is written first as its "_comment".
+    std::string themeJson(const std::string &comment=std::string());
+
+    //! Applies the theme in a file at \p path (as given, not through the
+    //! ResourcePaths): a skin config, whose "theme" object is applied, or a
+    //! standalone theme file, an object of "surfaces", "textColors" and
+    //! "metrics" itself, as loadTheme() reads them. What the file does not set
+    //! keeps its current value. Returns false, with one stderr line naming the
+    //! path, if the file cannot be read or parsed, or is no such object.
+    bool loadThemeFile(const std::string &path);
+    //! Writes themeJson() to \p path: replacing the "theme" object of a skin
+    //! config there (the rest of the file kept as it is, byte for byte),
+    //! adding one to a skin config that has none, or as the whole file when
+    //! there is none or it is a standalone theme file. Saving the same theme
+    //! again writes the same bytes. Returns false, with one stderr line, if
+    //! the file there cannot be parsed (it is left untouched) or written.
+    bool saveThemeFile(const std::string &path);
+    //! \p document (a skin config or a standalone theme, or empty) with its
+    //! theme replaced by \p theme (a themeJson()), as saveThemeFile() writes
+    //! it. Returns false, setting \p error, if \p document does not parse as
+    //! a JSON object or its "theme" is not an object.
+    static bool replaceTheme(const std::string &document, const std::string &theme,
+        std::string &result, std::string &error);
 
     std::unique_ptr<Control> getControlRenderer(std::string typeName) override;
 

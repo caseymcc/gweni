@@ -184,6 +184,8 @@ public:
     }
 
     void renderFocus(gweni::skin::Base *skin) override;
+    //! The value text's colour, for the slider's state.
+    void updateColors() override;
 
     gweni::event::Caller onValueChanged;
 

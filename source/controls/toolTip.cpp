@@ -25,6 +25,11 @@ GWENI_CONTROL_CONSTRUCTOR(ToolTip)
     setSizeFlags(SizeFlags(SizeFlag::Fixed, SizeFlag::Fixed));
 }
 
+void ToolTip::updateColors()
+{
+    setTextColorOverride(getSkin()->Colors.TooltipText);
+}
+
 ToolTip::~ToolTip()
 {
     releaseContent(false);

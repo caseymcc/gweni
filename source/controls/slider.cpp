@@ -49,7 +49,19 @@ void Slider::setDisabled(bool active)
     m_sliderBar->setDisabled(active);
 
     if(m_valueText)
-        m_valueText->setTextColor(active?getSkin()->Colors.Button.Disabled:getSkin()->Colors.Label.Default);
+        updateColors();
+}
+
+// The value text is the skin's label colour, the disabled button colour while
+// disabled; read again here, so a theme changed at run time reaches it.
+void Slider::updateColors()
+{
+    if(!m_valueText)
+        return;
+    if(isDisabled())
+        m_valueText->setTextColor(getSkin()->Colors.Button.Disabled);
+    else
+        m_valueText->setSkinTextColor(internal::SkinTextColor::LabelDefault);
 }
 
 void Slider::onMoved(event::Info)
@@ -226,7 +238,7 @@ bool Slider::setValueFormat(const String &format)
         // After the thumb, so it is numbered, and drawn, over it.
         m_valueText=newChild<internal::Text>();
         m_valueText->setPlacement(Placement::Owner);
-        m_valueText->setTextColor(isDisabled()?getSkin()->Colors.Button.Disabled:getSkin()->Colors.Label.Default);
+        updateColors();
     }
 
     updateValueText();

@@ -112,24 +112,31 @@ public:
 //        return m_align;
 //    }
 
+    //! Shows the skin's colour \p which and follows it when a theme changes
+    //! it (internal::SkinTextColor); setTextColor() gives it its own again.
+    virtual void setSkinTextColor(internal::SkinTextColor which)
+    {
+        m_text->setSkinTextColor(which);
+    }
+
     virtual void makeColorNormal()
     {
-        setTextColor(getSkin()->Colors.Label.Default);
+        setSkinTextColor(internal::SkinTextColor::LabelDefault);
     }
 
     virtual void makeColorBright()
     {
-        setTextColor(getSkin()->Colors.Label.Bright);
+        setSkinTextColor(internal::SkinTextColor::LabelBright);
     }
 
     virtual void makeColorDark()
     {
-        setTextColor(getSkin()->Colors.Label.Dark);
+        setSkinTextColor(internal::SkinTextColor::LabelDark);
     }
 
     virtual void makeColorHighlight()
     {
-        setTextColor(getSkin()->Colors.Label.Highlight);
+        setSkinTextColor(internal::SkinTextColor::LabelHighlight);
     }
 
     String getValue() override

@@ -18,6 +18,21 @@ namespace controls
 namespace internal
 {
 
+//! Which of the skin's text colours a Text shows, so that a theme changed at
+//! run time (tools::ThemeEditor) can give it the colour's new value: a Text
+//! follows one until something sets it a colour of its own (setTextColor).
+//! The colours a control picks for its state in updateColors() (a Button's,
+//! a Selectable's) need none: updateColors() reads the skin again.
+enum class SkinTextColor
+{
+    None,           //!< a colour of its own: nothing to follow
+    LabelDefault,   //!< Colors.Label.Default, what a new Text shows
+    LabelBright,    //!< Colors.Label.Bright
+    LabelDark,      //!< Colors.Label.Dark
+    LabelHighlight, //!< Colors.Label.Highlight
+    Placeholder     //!< Colors.PlaceholderText, a TextBox's hint
+};
+
 class GWENI_EXPORT Text: public controls::Base
 {
 public:
@@ -66,18 +81,21 @@ public:
         return static_cast<int>(m_string.size());
     }
 
-    //! Wrapped, the lines take the colour too: they draw the string.
+    //! Wrapped, the lines take the colour too: they draw the string. A colour
+    //! set here is the Text's own: it no longer follows a skin colour.
     virtual void setTextColor(const gweni::Color &col)
     {
-        if(m_color == col)
-            return;
-
-        m_color=col;
-        addStateChange(controls::StateChange_Text);
-
-        for(auto &&line : m_lines)
-            line->setTextColor(col);
+        m_skinColor=SkinTextColor::None;
+        applyTextColor(col);
     }
+
+    //! Shows the skin's colour \p which and follows it: refreshSkinTextColor()
+    //! reads it again. None only stops following, keeping the colour.
+    void setSkinTextColor(SkinTextColor which);
+    SkinTextColor getSkinTextColor() const { return m_skinColor; }
+    //! Takes the current value of the skin colour it follows, if it follows
+    //! one (marking StateChange_Text only if that is a new colour).
+    void refreshSkinTextColor();
 
     virtual const gweni::Color &getTextColor()
     {
@@ -248,6 +266,12 @@ private:
     const gweni::Font *m_font;
     gweni::Color m_color;
     gweni::Color m_colorOverride;
+    //! The skin colour m_color follows (setSkinTextColor), None for its own.
+    SkinTextColor m_skinColor=SkinTextColor::LabelDefault;
+
+    //! Sets m_color and the lines' colour, marking StateChange_Text for a new
+    //! one; which skin colour it follows is the caller's.
+    void applyTextColor(const gweni::Color &col);
 
     // Initialised here: the constructor's setWrap(false) reads m_wrap.
     bool m_wrap=false;

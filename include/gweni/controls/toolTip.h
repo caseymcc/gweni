@@ -30,6 +30,10 @@ public:
     //! Gives a setToolTip() control it holds back to its owner.
     ~ToolTip() override;
 
+    //! The skin's TooltipText, read again so a theme changed at run time
+    //! reaches the box.
+    void updateColors() override;
+
     //! The logical units between a control and its tooltip.
     static constexpr int Gap=2;
 

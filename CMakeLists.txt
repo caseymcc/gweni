@@ -143,6 +143,8 @@ set(GWENI_SOURCES
 set(GWENI_TOOL_SOURCES
     include/gweni/tools/inspector.h
     source/tools/inspector.cpp
+    include/gweni/tools/themeEditor.h
+    source/tools/themeEditor.cpp
 )
 
 set(GWENI_CONTROL_SOURCES
