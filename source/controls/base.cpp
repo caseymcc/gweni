@@ -1410,7 +1410,11 @@ void Base::zOrderChanged()
     // A control not on a canvas yet is numbered once it is: attaching it is an
     // addChild() on the canvas's tree, which reports there.
     if(Canvas *canvas=getCanvas())
+    {
         canvas->m_zOrderDirty=true;
+        if(!statsExcluded())
+            ++canvas->m_treeSerial;
+    }
 }
 
 void Base::zChildRemoved()
@@ -1427,7 +1431,11 @@ void Base::zChildRemoved()
     }
 
     if(Canvas *canvas=getCanvas())
+    {
         canvas->m_zOrderDirty=true;
+        if(!statsExcluded())
+            ++canvas->m_treeSerial;
+    }
 }
 
 // The drain's per-control step, inlined into both of its loops (GCC and

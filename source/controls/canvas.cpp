@@ -56,6 +56,11 @@ Canvas::~Canvas()
 
 void Canvas::updateCanvas()
 {
+    // the frame before this one is whole: its update and render phases
+    m_previousFrame.layout=m_layoutStats;
+    m_previousFrame.update=m_updateStats;
+    m_previousFrame.render=m_renderChange;
+    m_renderChange=ChangeStats();
     m_updateStats=UpdateStats();
 
     // The renderer's text draws or measures otherwise now (a new text AA mode):
@@ -174,11 +179,25 @@ void Canvas::renderCanvas()
 //        render->drawFilledRect(m_primitiveIds[0], getRenderBounds(), getZIndex());
     }
 
+    const ChangeStats before=getChangeStats();
+
     {
         // the walk only draws: a tree change from here on is reported
         RenderWalkScope walk;
         renderPendingControls();
     }
+
+    // this canvas's share, whoever resets the process-wide counts
+    const ChangeStats &after=getChangeStats();
+
+    m_renderChange.visited+=after.visited-before.visited;
+    m_renderChange.controls+=after.controls-before.controls;
+    m_renderChange.created+=after.created-before.created;
+    m_renderChange.visibility+=after.visibility-before.visibility;
+    m_renderChange.geometry+=after.geometry-before.geometry;
+    m_renderChange.background+=after.background-before.background;
+    m_renderChange.text+=after.text-before.text;
+    m_renderChange.renderCarried=after.renderCarried;
     render->end();
 }
 

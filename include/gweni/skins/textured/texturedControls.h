@@ -1263,6 +1263,11 @@ public:
     void generate(renderer::Base *renderer, controls::Base *baseControl) override;
     void update(renderer::Base *renderer, controls::Base *baseControl) override;
     void remove(renderer::Base *renderer, controls::Base *baseControl) override;
+    //! its one id is a text id
+    void appendIds(std::vector<size_t> &, std::vector<size_t> &textIds) const override
+    {
+        textIds.insert(textIds.end(), m_primitives.begin(), m_primitives.end());
+    }
 
     inline static const std::string_view name="Text";
 };

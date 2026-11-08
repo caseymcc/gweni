@@ -104,6 +104,17 @@ struct UpdateStats
     size_t animsRun=0;
 };
 
+//! What one whole frame of a canvas counted: its updateCanvas() and its
+//! renderCanvas() (Canvas::previousFrameStats()).
+struct CanvasFrameStats
+{
+    LayoutStats layout;
+    UpdateStats update;
+    //! what its renderCanvas() added to getChangeStats(), and the drain's
+    //! renderCarried
+    ChangeStats render;
+};
+
 class GWENI_EXPORT Canvas: public Base, public IInputEvent
 {
 public:
@@ -217,6 +228,7 @@ public:
     {
         m_zOrderDirty=true;
         m_zWalkAll=true;
+        ++m_treeSerial;
     }
 
     /// The z values left free after each control's range (its depthLayers(),
@@ -238,6 +250,18 @@ public:
     /// This frame's counts, reset as updateCanvas() starts: its own, and those
     /// of a renumber renderCanvas() ran after its layout pass.
     const UpdateStats &getUpdateStats() const { return m_updateStats; }
+    /// The counts of the last whole frame (updateCanvas() and renderCanvas()),
+    /// kept as the next updateCanvas() starts, so what runs in an update phase
+    /// (an animation's think(), a tool like gweni::tools::Inspector) can read
+    /// the frame before it: its LayoutStats, UpdateStats and the ChangeStats its
+    /// render phase counted. Zeros before the second updateCanvas().
+    const CanvasFrameStats &previousFrameStats() const { return m_previousFrame; }
+    /// Raised with every change of the tree's order that Base reports to the
+    /// canvas (a child added, removed or moved, a skin Control assigned or
+    /// released: what makes zOrderDirty()) and by invalidateZOrder(), but not
+    /// for changes inside a Base::setExcludedFromStats() subtree: a tool showing
+    /// the tree rebuilds its view when it changes.
+    unsigned treeSerial() const { return m_treeSerial; }
     /// \}
 
     /// \sect{Tooltip}
@@ -462,6 +486,11 @@ protected:
     bool m_zClamped=false;
     int m_zGap=ZGap;
     UpdateStats m_updateStats;
+    /// See previousFrameStats(); m_renderChange is this frame's render-phase
+    /// ChangeStats, kept for it.
+    CanvasFrameStats m_previousFrame;
+    ChangeStats m_renderChange;
+    unsigned m_treeSerial=0;
     /// The current pass re-dirtied layout, and the first control that did.
     bool m_passRedirtied=false;
     const char *m_passCulpritType=nullptr;

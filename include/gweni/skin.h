@@ -100,6 +100,17 @@ public:
         return m_primitives;
     }
 
+    //! Appends the renderer ids this Control holds, for a tool that tells its
+    //! own slots from the app's (gweni::tools::Inspector): primitive ids to
+    //! \p primitiveIds and text ids to \p textIds. By default every id in
+    //! getPrimitives() is a primitive id; a Control that takes text ids
+    //! (generateTextPrimitive) says which are.
+    virtual void appendIds(std::vector<size_t> &primitiveIds, std::vector<size_t> &textIds) const
+    {
+        (void)textIds;
+        primitiveIds.insert(primitiveIds.end(), m_primitives.begin(), m_primitives.end());
+    }
+
 protected:
     void generatePrimitives(renderer::Base *baseRenderer, size_t count)
     {

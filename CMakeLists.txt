@@ -140,6 +140,11 @@ set(GWENI_SOURCES
     source/utility.cpp
 )
 
+set(GWENI_TOOL_SOURCES
+    include/gweni/tools/inspector.h
+    source/tools/inspector.cpp
+)
+
 set(GWENI_CONTROL_SOURCES
     include/gweni/controls/base.h
     source/controls/base.cpp
@@ -517,6 +522,7 @@ set(GWENI_COMPILE_DEFINITIONS ${GWENI_COMPILE_DEFINITIONS} "GWENI_USE_FILESYSTEM
 # header folder groups
 source_group("" FILES ${GWENI_HEADERS} ${GWENI_SOURCES})
 source_group("controls" FILES ${GWENI_CONTROL_SOURCES})
+source_group("tools" FILES ${GWENI_TOOL_SOURCES})
 source_group("dialogs" FILES ${GWENI_DIALOG_SOURCES})
 source_group("layouts" FILES ${GWENI_LAYOUT_SOURCES})
 source_group("skins\\simple" FILES ${GWENI_SKIN_SIMPLE_SOURCES})
@@ -531,6 +537,7 @@ if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "MSVC")
 add_library(gweni STATIC
     ${GWENI_SOURCES}
     ${GWENI_CONTROL_SOURCES}
+    ${GWENI_TOOL_SOURCES}
     ${GWENI_LAYOUT_SOURCES}
     ${GWENI_DIALOG_SOURCES}
     ${GWENI_PROPERTY_SOURCES}
@@ -546,6 +553,7 @@ else()
 add_library(gweni OBJECT
     ${GWENI_SOURCES}
     ${GWENI_CONTROL_SOURCES}
+    ${GWENI_TOOL_SOURCES}
     ${GWENI_LAYOUT_SOURCES}
     ${GWENI_DIALOG_SOURCES}
     ${GWENI_PROPERTY_SOURCES}

@@ -347,6 +347,12 @@ public:
 
     void generate(gweni::renderer::Base *renderer, gweni::controls::Base *control) override;
     void remove(gweni::renderer::Base *renderer, gweni::controls::Base *control) override;
+    void appendIds(std::vector<size_t> &primitiveIds, std::vector<size_t> &textIds) const override
+    {
+        gweni::skin::Control::appendIds(primitiveIds, textIds);
+        if(m_hasText)
+            textIds.push_back(m_textId);
+    }
 
 private:
     StubSkin *m_skin;
