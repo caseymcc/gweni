@@ -23,9 +23,18 @@ GWENI_CONTROL_CONSTRUCTOR(LayoutDemo)
 
     controls::WindowControl *window=newChild<controls::WindowControl>();
 
+    //drawn one statement each: the order a call's arguments are evaluated in is
+    //unspecified (GCC right to left, Clang, so the web build, left to right), so
+    //setSize(pick(), pick()) swapped the window's width and height on the web.
+    //Drawn in the order GCC did, so the native captures are unchanged.
+    const int height=200+pick(rng, 100);
+    const int width=200+pick(rng, 100);
+    const int y=pick(rng, 400);
+    const int x=pick(rng, 700);
+
     window->setTitle("Layout Window");
-    window->setSize(200+pick(rng, 100), 200+pick(rng, 100));
-    window->setPos(pick(rng, 700), pick(rng, 400));
+    window->setSize(width, height);
+    window->setPos(x, y);
     window->setDeleteOnClose(true);
 
     controls::GroupBox *verticalGroupBox1=window->newChild<controls::GroupBox>();
