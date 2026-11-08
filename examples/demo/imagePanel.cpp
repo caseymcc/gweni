@@ -22,7 +22,8 @@ GWENI_CONTROL_CONSTRUCTOR(ImagePanelDemo)
     {
         controls::ImagePanel *img=newChild<controls::ImagePanel>();
 
-        img->setImage("missingimage.png");
+        // no image is set, so it draws the missing-image placeholder; a file
+        // that does not exist would draw the same but log an error
         img->setBounds(120, 10, 100, 100);
     }
 }
