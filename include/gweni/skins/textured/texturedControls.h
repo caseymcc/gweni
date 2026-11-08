@@ -510,9 +510,6 @@ GWENI_TRANSPARENT_RENDERER(Label)
 GWENI_TRANSPARENT_RENDERER(Resizer)
 GWENI_TRANSPARENT_RENDERER(Table)
 GWENI_TRANSPARENT_RENDERER(TabStrip)
-GWENI_TRANSPARENT_RENDERER(VerticalScrollBar)
-GWENI_TRANSPARENT_RENDERER(HorizontalScrollBar)
-GWENI_TRANSPARENT_RENDERER(ScrollBarBar)
 
 // Visual controls this skin does not draw yet. Each is an empty renderer on
 // purpose, so Base::setSkin() does not report the type as having none (#185),
@@ -619,10 +616,13 @@ public:
     static BorderedPrimitive NormalPrimitive;
 };
 
+// A scroll bar's arrow (and TabControl's overflow buttons): [0] the surface,
+// hidden at rest so the thumb is the one filled shape on the bar, [1] the
+// chevron at getZIndex()+1 pointing the way the button scrolls.
 class ScrollBarButton:public textured::ControlRegister<ScrollBarButton>
 {
 public:
-    static void staticInit(TexturedSkin *skin);
+    static void staticInit(TexturedSkin *) { m_staticInit=true; }
 
     size_t requiredPrimitives() override { return 2; }
     // the arrow is drawn at getZIndex()+1, over the button
@@ -631,19 +631,7 @@ public:
     void update(renderer::Base *renderer, controls::Base *baseControl) override;
 
     inline static const std::string_view name="ScrollBarButton";
-
-    static size_t Normal[4];
-    static size_t Hover[4];
-    static size_t Down[4];
-    static size_t Disable[4];
-
-    static BorderedPrimitive NormalPrimitive[4];
-    static BorderedPrimitive HoverPrimitive[4];
-    static BorderedPrimitive DownPrimitive[4];
-    static BorderedPrimitive DisablePrimitive[4];
 };
-
-
 
 // The window title-bar buttons (WindowControl's close button, WindowCanvas's
 // minimise and maximise): [0] the surface, hidden while it has nothing to show
@@ -717,41 +705,29 @@ public:
 };
 
 
-struct ScrollerButton
-{
-    inline static JoinConstExpr std::string_view value="Scroller";
-};
-
-struct ScrollerHorizontal
-{
-    inline static JoinConstExpr std::string_view value="Scroller.Horizontal";
-};
-
-struct ScrollerVertical
-{
-    inline static JoinConstExpr std::string_view value="Scroller.Vertical";
-};
-
-class Scroller:public textured::ControlRegister<Scroller>
+// The track of both bars (VerticalScrollBar and HorizontalScrollBar find it
+// through their parent type): one ScrollTrack surface the whole length of the
+// bar, under its arrows and thumb.
+class BaseScrollBar:public textured::ControlRegister<BaseScrollBar>
 {
 public:
-    static void staticInit(TexturedSkin *skin);
+    static void staticInit(TexturedSkin *) { m_staticInit=true; }
 
-
-    void generate(renderer::Base *renderer, controls::Base *baseControl) override;
     void update(renderer::Base *renderer, controls::Base *baseControl) override;
-    void remove(renderer::Base *renderer, controls::Base *baseControl) override;
 
-    inline static const std::string_view name="Scroller";
+    inline static const std::string_view name="BaseScrollBar";
+};
 
-    ButtonTemplate<ScrollerButton> m_button;
-    ButtonTemplate<ScrollerHorizontal> m_horizontalButton;
-    ButtonTemplate<ScrollerVertical> m_verticalButton;
+// A scroll bar's thumb: ScrollThumb, ScrollThumbHover while hovered and
+// ScrollThumbDown while it is dragged, in one slot.
+class ScrollBarBar:public textured::ControlRegister<ScrollBarBar>
+{
+public:
+    static void staticInit(TexturedSkin *) { m_staticInit=true; }
 
-    static size_t TrackV;
-    static size_t TrackH;
+    void update(renderer::Base *renderer, controls::Base *baseControl) override;
 
-    static BorderedPrimitive TrackPrimitive;
+    inline static const std::string_view name="ScrollBarBar";
 };
 
 class Shadow:public textured::ControlRegister<Shadow>

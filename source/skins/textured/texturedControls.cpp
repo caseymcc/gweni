@@ -6,6 +6,7 @@
 #include "gweni/controls/comboBox.h"
 #include "gweni/controls/checkBox.h"
 #include "gweni/controls/scrollBarButton.h"
+#include "gweni/controls/scrollBarBar.h"
 #include "gweni/controls/statusBar.h"
 #include "gweni/controls/tabControl.h"
 #include "gweni/controls/text.h"
@@ -849,56 +850,36 @@ void RadioButton::remove(renderer::Base *renderer, controls::Base *baseControl)
 
 ///////////////////////////////////////////////////////////////////////////
 //ScrollBarButton
-size_t ScrollBarButton::Normal[4];
-size_t ScrollBarButton::Hover[4];
-size_t ScrollBarButton::Down[4];
-size_t ScrollBarButton::Disable[4];
-
-BorderedPrimitive ScrollBarButton::NormalPrimitive[4];
-BorderedPrimitive ScrollBarButton::HoverPrimitive[4];
-BorderedPrimitive ScrollBarButton::DownPrimitive[4];
-BorderedPrimitive ScrollBarButton::DisablePrimitive[4];
-
-void ScrollBarButton::staticInit(TexturedSkin *skin)
-{
-    std::vector<std::string> direction{"Left", "Right", "Up", "Down"};
-
-    for(size_t i=0; i<4; ++i)
-    {
-        std::string name="ScrollBarButton."+direction[i];
-
-        Normal[i]=skin->getTextureEntryId(name+".Normal");
-        Hover[i]=skin->getTextureEntryId(name+".Hover");
-        Down[i]=skin->getTextureEntryId(name+".Down");
-        Disable[i]=skin->getTextureEntryId(name+".Disabled");
-
-        NormalPrimitive[i].init(skin, Normal[i]);
-        HoverPrimitive[i].init(skin, Hover[i]);
-        DownPrimitive[i].init(skin, Down[i]);
-        DisablePrimitive[i].init(skin, Disable[i]);
-    }
- 
-    m_staticInit=true;
-}
-
 void ScrollBarButton::update(renderer::Base *renderer, controls::Base *baseControl)
 {
+    if(m_primitives.size() < 2)
+        return;
+
     controls::internal::ScrollBarButton *control=static_cast<controls::internal::ScrollBarButton *>(baseControl);
+    const tokyonight::Surface *surface=nullptr;
+    gweni::Color glyph=tokyonight::FgDark;
 
-    const tokyonight::Surface *surface=&tokyonight::ScrollThumb;
-
-    if(control->isDepressed())
+    if(control->isDisabled())
+        glyph=tokyonight::Muted;
+    else if(control->isDepressed())
         surface=&tokyonight::ScrollThumbDown;
     else if(control->isHovered())
         surface=&tokyonight::ScrollThumbHover;
 
-    tokyonight::paintSurface(renderer, m_primitives.data(), baseControl, *surface);
+    const bool visible=baseControl->visible();
 
-    // Directional chevron centered on the button.
-    if(m_primitives.size() >= 2)
+    // at rest there is no surface: a hidden slot, not a transparent rect that
+    // would write depth over the track behind it
+    if(visible && surface)
+        tokyonight::paintSurface(renderer, &m_primitives[0], baseControl, *surface);
+    else
+        renderer->hidePrimitive(m_primitives[0]);
+
+    if(visible)
     {
+        // kind 1's directions: 0 down, 1 up, 2 left, 3 right
         const Alignment direction=control->getDirection();
-        int dir=0; // Bottom -> down
+        int dir=0;
         if(direction == Alignment::Left)       dir=2;
         else if(direction == Alignment::Right) dir=3;
         else if(direction == Alignment::Top)   dir=1;
@@ -906,39 +887,16 @@ void ScrollBarButton::update(renderer::Base *renderer, controls::Base *baseContr
         const gweni::Rect r=baseControl->getRenderBounds();
         const int sz=((r.w<r.h)?r.w:r.h)*6/10;
         const gweni::Rect arrow{ r.x+(r.w-sz)/2, r.y+(r.h-sz)/2, sz, sz };
-        if(baseControl->visible())
-            renderer->drawIcon(m_primitives[1], arrow, 1, dir, tokyonight::Fg, baseControl->getZIndex()+1);
-        else
-            renderer->hidePrimitive(m_primitives[1]);
+
+        renderer->drawIcon(m_primitives[1], arrow, 1, dir, glyph, baseControl->getZIndex()+1);
     }
+    else
+        renderer->hidePrimitive(m_primitives[1]);
 }
 
 ///////////////////////////////////////////////////////////////////////////
-//Scroller
-size_t Scroller::TrackV;
-size_t Scroller::TrackH;
-BorderedPrimitive Scroller::TrackPrimitive;
-
-void Scroller::staticInit(TexturedSkin *skin)
-{
-    ButtonTemplate<ScrollerButton>::staticInit(skin);
-    ButtonTemplate<ScrollerHorizontal>::staticInit(skin);
-    ButtonTemplate<ScrollerVertical>::staticInit(skin);
-
-    TrackV=skin->getTextureEntryId("Scroller.TrackV");
-    TrackH=skin->getTextureEntryId("Scroller.TrackH");
-
-    TrackPrimitive.init(skin, TrackV);
-
-    m_staticInit=true;
-}
-
-void Scroller::generate(renderer::Base *renderer, controls::Base *baseControl)
-{
-    generatePrimitives(renderer, requiredPrimitives());
-}
-
-void Scroller::update(renderer::Base *renderer, controls::Base *baseControl)
+//BaseScrollBar
+void BaseScrollBar::update(renderer::Base *renderer, controls::Base *baseControl)
 {
     if(m_primitives.empty())
         return;
@@ -946,9 +904,22 @@ void Scroller::update(renderer::Base *renderer, controls::Base *baseControl)
     tokyonight::paintSurface(renderer, m_primitives.data(), baseControl, tokyonight::ScrollTrack);
 }
 
-void Scroller::remove(renderer::Base *renderer, controls::Base *baseControl)
+///////////////////////////////////////////////////////////////////////////
+//ScrollBarBar
+void ScrollBarBar::update(renderer::Base *renderer, controls::Base *baseControl)
 {
-    releasePrimitives(renderer);
+    if(m_primitives.empty())
+        return;
+
+    controls::internal::ScrollBarBar *bar=static_cast<controls::internal::ScrollBarBar *>(baseControl);
+    const tokyonight::Surface *surface=&tokyonight::ScrollThumb;
+
+    if(bar->isDepressed())
+        surface=&tokyonight::ScrollThumbDown;
+    else if(bar->isHovered())
+        surface=&tokyonight::ScrollThumbHover;
+
+    tokyonight::paintSurface(renderer, m_primitives.data(), baseControl, *surface);
 }
 
 
@@ -1853,8 +1824,6 @@ template class ControlRegister<Label>;
 template class ControlRegister<Resizer>;
 template class ControlRegister<Table>;
 template class ControlRegister<TabStrip>;
-template class ControlRegister<VerticalScrollBar>;
-template class ControlRegister<HorizontalScrollBar>;
 template class ControlRegister<ScrollBarBar>;
 template class ControlRegister<ProgressBar>;
 template class ControlRegister<Selectable>;
@@ -1862,7 +1831,7 @@ template class ControlRegister<Separator>;
 template class ControlRegister<Bullet>;
 template class ControlRegister<RadioButton>;
 template class ControlRegister<ScrollBarButton>;
-template class ControlRegister<Scroller>;
+template class ControlRegister<BaseScrollBar>;
 template class ControlRegister<Shadow>;
 template class ControlRegister<Slider>;
 template class ControlRegister<SliderBar>;

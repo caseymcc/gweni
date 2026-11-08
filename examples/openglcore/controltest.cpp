@@ -347,8 +347,9 @@
  *                          rows_only=yes|no ids_back=yes|no
  *                 the checks: the pool, the subtree, the ids and the one-row
  *                 scroll's counters are the same at both counts (the wheel's
- *                 slots too; its three rows move the bar's thumb a pixel at
- *                 1 000 items only); settled frames write and change nothing;
+ *                 slots too, less the thumb's: its three rows move the bar's
+ *                 thumb a pixel at 1 000 items only, thumb_moved=1);
+ *                 settled frames write and change nothing;
  *                 each scroll writes no more than its shown rows' primitive
  *                 slots and glyphs, enters no more than the list's subtree
  *                 and the two controls above it, renumbers no z and lays out
@@ -3939,6 +3940,9 @@ struct VirtualListStep
     // slots and their strings' glyphs
     size_t rowPrims=0;
     size_t rowGlyphs=0;
+    // whether the step moved the vertical bar's thumb, which then rewrites its
+    // one primitive slot
+    bool thumbMoved=false;
 
     bool operator==(const VirtualListStep &o) const
     {
@@ -4011,7 +4015,8 @@ static void printVirtualListStep(const char *name, const VirtualListStep &step)
     std::cout<<" "<<name<<"_prim_slots="<<step.primSlots<<" "<<name<<"_text_slots="<<step.textSlots
              <<" "<<name<<"_visited="<<step.visited<<" "<<name<<"_z_visited="<<step.zVisited
              <<" "<<name<<"_changed="<<step.changed<<" "<<name<<"_passes="<<step.passes
-             <<" "<<name<<"_row_prims="<<step.rowPrims<<" "<<name<<"_row_glyphs="<<step.rowGlyphs;
+             <<" "<<name<<"_row_prims="<<step.rowPrims<<" "<<name<<"_row_glyphs="<<step.rowGlyphs
+             <<" "<<name<<"_thumb_moved="<<(step.thumbMoved?1:0);
 }
 
 // The frames after a step: nothing to do, so nothing written or changed.
@@ -4060,8 +4065,13 @@ static bool runVirtualList(Session &s, const std::string &shotDir, size_t items,
     moveMouse(s, origin.x+list->getWidth()/2, origin.y+list->getHeight()/2);
     renderFrames(s, 1);
     settleVirtualList(s, list, run);
+    gweni::controls::Base *bar=findControl(list, "VerticalScrollBar");
+    gweni::controls::Base *thumb=bar?findControl(bar, "ScrollBarBar"):nullptr;
+    const gweni::Rect thumbBefore=thumb?thumb->getBounds():gweni::Rect();
+
     scrollWheel(s, -60);
     run.wheel=virtualListFrame(s, list);
+    run.wheel.thumbMoved=thumb && !(thumb->getBounds() == thumbBefore);
     settleVirtualList(s, list, run);
 
     // the last item in view, for the picture
@@ -4096,11 +4106,15 @@ static bool runVirtualListScenario(Session &s, const std::string &shotDir, bool 
     };
 
     // The wheel's three rows move the bar's thumb a pixel at 1 000 items and
-    // not at 100 000, so that step's controls differ by the thumb; its slots
-    // (the thumb is one primitive, and moves inside the ones counted) do not.
+    // not at 100 000, so that step's controls differ by the thumb, and its
+    // primitive slots by the thumb's one slot; the rest of its slots do not.
+    auto wheelPrimSlots=[](const VirtualListRun &run)
+    {
+        return run.wheel.primSlots-(run.wheel.thumbMoved?1:0);
+    };
     const bool sameCost=small.rows == large.rows && small.subtree == large.subtree
         && small.primIds == large.primIds && small.row == large.row
-        && small.wheel.primSlots == large.wheel.primSlots
+        && wheelPrimSlots(small) == wheelPrimSlots(large)
         && small.wheel.textSlots == large.wheel.textSlots
         && small.wheel.rowPrims == large.wheel.rowPrims
         && small.wheel.rowGlyphs == large.wheel.rowGlyphs;
