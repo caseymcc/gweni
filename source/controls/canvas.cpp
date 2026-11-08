@@ -177,7 +177,8 @@ void Canvas::renderCanvas()
 
 void Canvas::renderPendingControls()
 {
-    drainRenderQueue(m_skin, m_zClamped);
+    // about one control per gapped range of the last numbering
+    drainRenderQueue(m_skin, m_zClamped, size_t(m_zHigh)/size_t(1+m_zGap));
 }
 
 void Canvas::render(skin::Base * /*render*/)

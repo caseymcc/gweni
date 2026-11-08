@@ -101,11 +101,6 @@ void Base::translate(gweni::Rect &rect)
     rect.y=y0;
 }
 
-void gweni::renderer::Base::setClipRegion(gweni::Rect const &rect)
-{
-    m_rectClipRegion=rect;
-}
-
 // The rect's size at the current render offset (its position is the offset,
 // i.e. the control's absolute origin), intersected with the current region. No
 // overlap gives an empty region at the overlap's corner, never a negative size.
@@ -118,11 +113,6 @@ void Base::addClipRegion(gweni::Rect rect)
     const int y1=std::min(m_renderOffset.y+rect.h, clip.y+clip.h);
 
     m_rectClipRegion=gweni::Rect(x0, y0, std::max(0, x1-x0), std::max(0, y1-y0));
-}
-
-const gweni::Rect &Base::clipRegion() const
-{
-    return m_rectClipRegion;
 }
 
 bool Base::clipRegionVisible()

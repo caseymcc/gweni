@@ -483,18 +483,20 @@ protected:
     virtual void renderFocus(gweni::skin::Base * /*skin*/);
 
     //! The render phase of the canvas this is (Canvas::renderPendingControls):
-    //! renders every queued control on this tree, in z order, which is the
-    //! tree's preorder, rebuilding each one's render offset and clip region
-    //! from this root's (read from the renderer, as the canvas just set them)
-    //! down its m_actualParent chain, and clears its state change. The chain
-    //! is kept as a stack from one control to the next, so a change over the
-    //! whole tree costs O(controls). \p zTied: the z renumber clamped and z
-    //! values tie (Canvas::m_zClamped), so the order is taken from a preorder
-    //! walk of the tree instead of a sort. A control queued during the drain
-    //! (a change raised on another control from a hook) is rendered after the
-    //! sorted ones, up to a cap; what is not on this tree, and what is past
-    //! the cap, stays queued (ChangeStats::renderCarried).
-    void drainRenderQueue(gweni::skin::Base *skin, bool zTied);
+    //! renders every queued control on this tree, in the tree's preorder, at
+    //! the render offset and clip region the recursive walk gave it, from this
+    //! root's (read from the renderer, as the canvas just set them), and clears
+    //! its state change. When the queue holds at least a quarter of \p treeSize
+    //! (an estimate of the controls on the tree; 0 for none), or \p zTied (the
+    //! z renumber clamped, Canvas::m_zClamped, so z values tie), it walks the
+    //! tree once, rendering the queued controls it meets. Otherwise it sorts
+    //! the entries by z, which is the preorder, and rebuilds each one's state
+    //! down its m_actualParent chain, kept as a stack from one entry to the
+    //! next. A control queued during the drain (a change raised on another
+    //! control from a hook) is rendered after the others, up to a cap; what is
+    //! not on this tree, and what is past the cap, stays queued
+    //! (ChangeStats::renderCarried).
+    void drainRenderQueue(gweni::skin::Base *skin, bool zTied, size_t treeSize);
 
     void removeSkinControl();
 

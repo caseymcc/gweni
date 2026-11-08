@@ -425,15 +425,27 @@ their ancestors. `ChangeStats::visited` counts the controls rendered (`visited=`
 one 0, and one changed row of a 10 000-row ListBox renders that row, with no
 sibling scanned. `tests/unit/renderWalk.cpp` pins it.
 
-**The drain** (`Base::drainRenderQueue(skin, zTied)`, shared by `Canvas` and
-`WindowCanvas`):
+**The drain** (`Base::drainRenderQueue(skin, zTied, treeSize)`, shared by `Canvas`
+and `WindowCanvas`):
 
 1. *Root state.* It reads the render offset and clip region the canvas has just set on
    the renderer, rather than assuming them: (0, 0) and `getBounds()` for a `Canvas`,
    (-x, -y) and `getRenderBounds()` for a `WindowCanvas`. It leaves the renderer at
    that state when it is done, as the recursive walk did, for whatever the canvas
    draws after.
-2. *Order.* It sorts the entries by `getZIndex()`, ties by queue order. z is the tree's
+2. *A dense frame walks the tree.* When the queue holds a quarter of the tree or more
+   (the first frame, a resize, a scale; `treeSize` is the canvas's estimate,
+   `m_zHigh / (1 + m_zGap)`, one control per gapped range of its last numbering), the
+   drain walks the tree once in preorder, as the recursive walk did but with no skip,
+   rendering the queued controls it meets with the state steps 4 and 5 describe: that
+   costs a few instructions per clean control where a sort and a chain per dirty one
+   would cost more (`tools/profile.sh resize --n 1000`: 30.29 M render instructions,
+   against 30.31 M for the recursive walk, where sorting every entry cost 34.3 M). A
+   tree change from a hook stops the walk at once, without stepping on through a list
+   the hook may have changed, and what it had not reached goes through steps 3 and 4.
+3. *Order.* Otherwise it sorts the entries by `getZIndex()`, ties by queue order: not
+   at all if they are in z order already, else a stable radix sort on the bytes z uses
+   (`sortRenderOrder`), O(entries). z is the tree's
    preorder (a parent before its children, each child's subtree before the next
    child's) and strictly increasing, because the renumber that has just run
    (`renumberZOrder()`, after `renderPhaseLayout()`) gives every control a range after
@@ -442,8 +454,8 @@ sibling scanned. `tests/unit/renderWalk.cpp` pins it.
    allocates ids, and the skin writes slots, in the same order as a walk of the tree,
    and the pixels are byte for byte the same. When the renumber clamped
    (`Canvas::m_zClamped`: a tree too large for the depth range, whose last ranges tie)
-   the drain takes the order from a preorder walk of the tree instead of the sort.
-3. *State.* For each entry it follows `m_actualParent` up to the nearest control on its
+   the drain walks the tree, as in step 2, instead of sorting.
+4. *State.* For each entry it follows `m_actualParent` up to the nearest control on its
    **ancestor stack**: the levels of the previous entry's chain, each holding the
    offset and region that control's children render in. The root is always the
    stack's first level. It pops back to that ancestor and pushes the levels below it,
@@ -451,12 +463,11 @@ sibling scanned. `tests/unit/renderWalk.cpp` pins it.
    offset, the region narrowed to its bounds if it `shouldClip()`, and a child's region
    narrowed further by its parent's `getChildClipRect()` (a ScrollControl's viewport).
    Since the entries come in preorder, a parent is usually on the stack, and the entry
-   is pushed after it renders, since the next one is often its child: a change over the
-   whole tree (the first frame, a resize, a scale) costs O(controls), not
-   O(controls × depth). A control's level is found from its `m_renderStackLevel`,
+   rendered last is pushed when the next one is its child (a leaf costs no level): a
+   change over many controls costs O(entries), not O(entries × depth). A control's level is found from its `m_renderStackLevel`,
    trusted only if that level still holds it, so the stack is never cleared control by
    control and holds pointers it compares but never dereferences.
-4. *Hooks.* `renderUnder()` and `render()` run at the parent's offset and region,
+5. *Hooks.* `renderUnder()` and `render()` run at the parent's offset and region,
    `renderOver()` and `renderFocus()` with the control's own offset added, in the
    parent's region, as in the recursive walk. They run one after the other, before the
    control's children: the walk ran `renderOver()` and `renderFocus()` after the
@@ -466,10 +477,10 @@ sibling scanned. `tests/unit/renderWalk.cpp` pins it.
    `PropertyRow`'s label, which follows its property's hover and focus, is redrawn
    from `onDescendantInteraction()`, which `Base` calls on every ancestor of a control
    whose hover or keyboard focus changed, in the update phase.
-5. *Clearing.* After the hooks have returned, the control's state and index are
+6. *Clearing.* After the hooks have returned, the control's state and index are
    cleared, so a change it raised on itself from its own hooks is cleared with it, as
    before.
-6. *Carried entries.* An entry whose chain ends somewhere else (detached, or on another
+7. *Carried entries.* An entry whose chain ends somewhere else (detached, or on another
    canvas) stays queued for a later drain, the one of the canvas it is on then. An
    entry queued during the drain (a hook raising a change on another control) is
    rendered after the sorted ones, in the order they came, up to a cap (the number of
@@ -478,8 +489,8 @@ sibling scanned. `tests/unit/renderWalk.cpp` pins it.
    (`render_carried=`) counts the entries left: 0 in every Demo frame, and constant at
    any N in every gweni_bench scene (`bench_scaling` checks both counters).
 
-The drain allocates nothing once its vectors (the queue, the order, the stack and the
-chain, kept from frame to frame) have grown.
+The drain allocates nothing once its vectors (the queue, the order and its radix
+scratch, the stack and the chain, kept from frame to frame) have grown.
 
 **The render walk only draws.** Adding, removing, reordering or deleting a control
 belongs to the update phase or to layout, never to a `render()`, `renderUnder()`,
@@ -503,8 +514,9 @@ non-zero when the record is not empty, as it does for `typesWithoutSkinRenderer(
 so `controltest_teardown` and `controltest_one_pass_each` fail on an offence in any
 demo.
 
-**The guard reports a tree change; the queue survives it.** The drain follows no list
-a hook could change under it: it holds queue slots, which a deleted control nulls,
+**The guard reports a tree change; the queue survives it.** Outside the dense walk
+(which stops at the change, step 2) the drain follows no list a hook could change
+under it: it holds queue slots, which a deleted control nulls,
 and checks its entry's slot after each hook, so a hook that deletes the control being
 rendered (with its parent, say) ends that control's turn without another call on it.
 Every reported change also bumps a counter the drain reads before each entry: if it

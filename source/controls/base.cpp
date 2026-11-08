@@ -110,6 +110,8 @@ unsigned g_renderWalkTreeChanges=0;
 // m_renderQueueIndex. A deleted control leaves a null slot, which the next
 // drain compacts away. One UI thread, as the id banks.
 std::vector<Base *> g_renderQueue;
+// Slots ~Base nulled since the last drain compacted the queue.
+size_t g_renderQueueHoles=0;
 // A drain is running: a canvas rendered from a hook drains nothing.
 bool g_draining=false;
 
@@ -317,7 +319,10 @@ Base::~Base()
     // hands out a deleted control, and a tree change reported from here on
     // does not name it.
     if(m_renderQueueIndex >= 0)
+    {
         g_renderQueue[m_renderQueueIndex]=nullptr;
+        ++g_renderQueueHoles;
+    }
     if(g_renderingControl == this)
         g_renderingControl=nullptr;
 }
@@ -1372,6 +1377,14 @@ void Base::zChildRemoved()
         canvas->m_zOrderDirty=true;
 }
 
+// The drain's per-control step, inlined into both of its loops (GCC and
+// Clang leave a lambda called twice out of line).
+#if defined(__GNUC__) || defined(__clang__)
+#define GWENI_RENDER_INLINE __attribute__((always_inline))
+#else
+#define GWENI_RENDER_INLINE
+#endif
+
 namespace
 {
 // One level of the drain's ancestor stack: a control of the drained tree, and
@@ -1402,14 +1415,68 @@ struct RenderOrder
 std::vector<RenderLevel> g_renderStack;
 std::vector<Base *> g_renderChain;
 std::vector<RenderOrder> g_renderOrder;
+std::vector<RenderOrder> g_renderOrderScratch;
 
 // Entries queued during a drain (by a hook, on another control) that it
 // renders after the sorted ones, at least: the rest waits for the next frame,
 // so a hook that keeps queueing cannot keep the drain going.
 constexpr size_t MinQueuedDuringDrain=256;
+
+// Sorts \p order, built in slot order, by z and then slot: nothing to do if it
+// is in z order already (a whole tree queued by a layout pass mostly is), else
+// a stable radix sort on the bytes z uses, which keeps the slot order of ties.
+void sortRenderOrder(std::vector<RenderOrder> &order)
+{
+    bool sorted=true;
+    bool negative=false;
+    unsigned highest=0;
+
+    for(size_t i=0; i < order.size(); ++i)
+    {
+        const int z=order[i].z;
+
+        if(z < 0)
+            negative=true;
+        else
+            highest=std::max(highest, (unsigned)z);
+        if((i > 0) && (z < order[i-1].z))
+            sorted=false;
+    }
+
+    if(sorted)
+        return;
+    if(negative)
+    {
+        std::sort(order.begin(), order.end());
+        return;
+    }
+
+    std::vector<RenderOrder> &scratch=g_renderOrderScratch;
+    scratch.resize(order.size());
+
+    for(unsigned shift=0; (shift < 32) && ((highest>>shift) != 0); shift+=8)
+    {
+        size_t counts[256]={};
+
+        for(const RenderOrder &entry : order)
+            ++counts[((unsigned)entry.z>>shift)&0xff];
+
+        size_t at=0;
+        for(size_t &count : counts)
+        {
+            const size_t n=count;
+            count=at;
+            at+=n;
+        }
+
+        for(const RenderOrder &entry : order)
+            scratch[counts[((unsigned)entry.z>>shift)&0xff]++]=entry;
+        order.swap(scratch);
+    }
+}
 }//namespace
 
-void Base::drainRenderQueue(skin::Base *skin, bool zTied)
+void Base::drainRenderQueue(skin::Base *skin, bool zTied, size_t treeSize)
 {
     if(g_draining)
         return;
@@ -1433,33 +1500,10 @@ void Base::drainRenderQueue(skin::Base *skin, bool zTied)
                 queue[kept++]=control;
             }
             queue.resize(kept);
+            g_renderQueueHoles=0;
         };
-    compact();
-
-    // The order: z is the tree's preorder (a parent before its children, a
-    // child before the next one's subtree), strictly increasing unless the
-    // renumber clamped. Entries off this tree sort in among them and are
-    // passed over below.
-    std::vector<RenderOrder> &order=g_renderOrder;
-    order.clear();
-
-    if(zTied)
-    {
-        const auto collect=[&order](const auto &self, Base *control) -> void
-            {
-                if(control->m_renderQueueIndex >= 0)
-                    order.push_back({0, (unsigned)control->m_renderQueueIndex});
-                for(Base *child : control->m_children)
-                    self(self, child);
-            };
-        collect(collect, this);
-    }
-    else
-    {
-        for(size_t slot=0; slot < queue.size(); ++slot)
-            order.push_back({queue[slot]->getZIndex(), (unsigned)slot});
-        std::sort(order.begin(), order.end());
-    }
+    if(g_renderQueueHoles != 0)
+        compact();
 
     const size_t queuedBefore=queue.size();
     const size_t appendCap=std::max(MinQueuedDuringDrain, queuedBefore);
@@ -1467,61 +1511,15 @@ void Base::drainRenderQueue(skin::Base *skin, bool zTied)
     // This root's own state, as the canvas set it on the renderer.
     const Point rootOffset=baseRenderer->getRenderOffset();
     const Rect rootClip=baseRenderer->clipRegion();
-
-    std::vector<RenderLevel> &stack=g_renderStack;
-    std::vector<Base *> &chain=g_renderChain;
     unsigned treeChanges=g_renderWalkTreeChanges;
 
-    // The state \p control's children render in, \p control rendering at
-    // (offset, clip): its bounds' origin added, and its bounds clipped to if
-    // it clips.
-    const auto pushLevel=[&](Base *control, const Point &offset, const Rect &clip)
+    // Runs the hooks of \p control, queued in \p slot, at (offset, clip), and
+    // clears its state; each hook but the first only if the ones before did not
+    // delete the control (~Base nulls its slot). Returns whether it is still
+    // there.
+    const auto renderQueued=[&](Base *control, size_t slot, const Point &offset, const Rect &clip)
+        GWENI_RENDER_INLINE
         {
-            RenderLevel level{control, offset, clip};
-            const Rect &bounds=control->getBounds();
-
-            level.offset.x+=bounds.x;
-            level.offset.y+=bounds.y;
-            if(control->shouldClip())
-            {
-                baseRenderer->setRenderOffset(level.offset);
-                baseRenderer->setClipRegion(clip);
-                baseRenderer->addClipRegion(bounds);
-                level.clip=baseRenderer->clipRegion();
-            }
-            control->m_renderStackLevel=(int)stack.size();
-            stack.push_back(level);
-        };
-    // The state \p control renders in, its parent at the top of the stack: the
-    // parent's children's, narrowed by the parent's getChildClipRect() for it.
-    const auto stateUnderTop=[&](Base *control, Point &offset, Rect &clip)
-        {
-            const RenderLevel &top=stack.back();
-
-            offset=top.offset;
-            clip=top.clip;
-            if(const Rect *childClip=control->m_actualParent->getChildClipRect(control))
-            {
-                baseRenderer->setRenderOffset(offset);
-                baseRenderer->setClipRegion(clip);
-                baseRenderer->addRenderOffset(*childClip);
-                baseRenderer->addClipRegion(*childClip);
-                clip=baseRenderer->clipRegion();
-            }
-        };
-    // The stack back to this root alone.
-    const auto resetStack=[&]()
-        {
-            stack.clear();
-            pushLevel(this, rootOffset, rootClip);
-        };
-
-    // Runs \p control's hooks at (offset, clip) and clears its state, unless a
-    // hook deleted it. Returns whether it is still there.
-    const auto renderOne=[&](Base *control, const Point &offset, const Rect &clip)
-        {
-            const int slot=control->m_renderQueueIndex;
-
             ++g_changeStats.visited;
             g_renderingControl=control;
 
@@ -1555,48 +1553,212 @@ void Base::drainRenderQueue(skin::Base *skin, bool zTied)
             queue[slot]=nullptr;
             return true;
         };
-
-    // Renders the control in \p slot if it is on this tree; leaves it queued
-    // if it is not.
-    const auto drainSlot=[&](size_t slot)
+    // The state \p control's children render in, \p control rendering at
+    // (offset, clip): its bounds' origin added, and its bounds clipped to if
+    // it clips (renderer::Base::addClipRegion).
+    const auto innerState=[&](Base *control, const Point &offset, const Rect &clip,
+        Point &innerOffset, Rect &innerClip)
         {
-            Base *control=queue[slot];
+            const Rect &bounds=control->getBounds();
 
-            if(!control)
-                return;
-
-            if(control->m_stateChange == StateChange_Nothing)
+            innerOffset.x=offset.x+bounds.x;
+            innerOffset.y=offset.y+bounds.y;
+            if(control->shouldClip())
             {
-                control->m_renderQueueIndex=-1;
-                queue[slot]=nullptr;
-                return;
+                baseRenderer->setRenderOffset(innerOffset);
+                baseRenderer->setClipRegion(clip);
+                baseRenderer->addClipRegion(bounds);
+                innerClip=baseRenderer->clipRegion();
             }
-
-            // a hook moved or deleted controls: the stack may name them
-            if(treeChanges != g_renderWalkTreeChanges)
+            else
+                innerClip=clip;
+        };
+    // The state \p child of \p parent renders in, \p parent's children's being
+    // (offset, clip): narrowed by the parent's getChildClipRect() for it.
+    const auto childState=[&](Base *parent, Base *child, const Point &offset, Rect &clip)
+        {
+            if(const Rect *childClip=parent->getChildClipRect(child))
             {
-                treeChanges=g_renderWalkTreeChanges;
-                resetStack();
+                baseRenderer->setRenderOffset(offset);
+                baseRenderer->setClipRegion(clip);
+                baseRenderer->addRenderOffset(*childClip);
+                baseRenderer->addClipRegion(*childClip);
+                clip=baseRenderer->clipRegion();
             }
+        };
 
-            if(control == this)
+    // A change over much of the tree (the first frame, a resize, a scale) is
+    // rendered by one walk of it, in preorder, as the recursive walk did: no
+    // sort, no ancestor chains. So is every frame of a tree whose z ties. It
+    // stops at a tree change made by a hook, without touching the lists it
+    // was in, and leaves the rest to the queue's order below.
+    // the queue's slots below queuedBefore the walk emptied
+    size_t walked=0;
+
+    if(zTied || ((treeSize != 0) && (queuedBefore*4 >= treeSize)))
+    {
+        bool stopped=false;
+        const auto walkTree=[&](const auto &self, Base *control, const Point &offset,
+            const Rect &clip) -> void
             {
-                renderOne(control, rootOffset, rootClip);
-                if(treeChanges == g_renderWalkTreeChanges)
-                    resetStack();
-                return;
-            }
+                const int slot=control->m_renderQueueIndex;
+
+                if(slot >= 0)
+                {
+                    if((size_t)slot < queuedBefore)
+                        ++walked;
+                    if(control->m_stateChange == StateChange_Nothing)
+                    {
+                        control->m_renderQueueIndex=-1;
+                        queue[slot]=nullptr;
+                    }
+                    else if(!renderQueued(control, (size_t)slot, offset, clip)
+                        || (treeChanges != g_renderWalkTreeChanges))
+                    {
+                        stopped=true;
+                        return;
+                    }
+                }
+
+                if(control->m_children.empty())
+                    return;
+
+                Point innerOffset;
+                Rect innerClip;
+
+                innerState(control, offset, clip, innerOffset, innerClip);
+                for(Base *child : control->m_children)
+                {
+                    Rect clipForChild=innerClip;
+
+                    childState(control, child, innerOffset, clipForChild);
+                    self(self, child, innerOffset, clipForChild);
+                    // before the loop steps on through a list a hook changed
+                    if(stopped)
+                        return;
+                }
+            };
+        walkTree(walkTree, this, rootOffset, rootClip);
+        treeChanges=g_renderWalkTreeChanges;
+        // stopped: what it had not reached yet goes through the queue's order
+        if(stopped)
+            walked=0;
+    }
+
+    // The queue's order for what is left: z is the tree's preorder (a parent
+    // before its children, a child before the next one's subtree), strictly
+    // increasing unless the renumber clamped. Entries off this tree sort in
+    // among them and are passed over below.
+    std::vector<RenderOrder> &order=g_renderOrder;
+    order.clear();
+    if(walked < queuedBefore)
+    {
+        for(size_t slot=0; slot < queuedBefore; ++slot)
+        {
+            if(Base *control=queue[slot])
+                order.push_back({control->getZIndex(), (unsigned)slot});
+        }
+        sortRenderOrder(order);
+    }
+
+    // The stack's levels are stack[0, depth): the vector only grows.
+    std::vector<RenderLevel> &stack=g_renderStack;
+    std::vector<Base *> &chain=g_renderChain;
+    size_t depth=0;
+
+    // Pushes \p control, rendering at (offset, clip), with the state its
+    // children render in.
+    const auto pushLevel=[&](Base *control, const Point &offset, const Rect &clip)
+        {
+            if(depth == stack.size())
+                stack.emplace_back();
+
+            RenderLevel &level=stack[depth];
+
+            level.control=control;
+            innerState(control, offset, clip, level.offset, level.clip);
+            control->m_renderStackLevel=(int)depth;
+            ++depth;
+        };
+    // The state \p control renders in, its parent at the top of the stack.
+    const auto stateUnderTop=[&](Base *control, Point &offset, Rect &clip)
+        {
+            const RenderLevel &top=stack[depth-1];
+
+            offset=top.offset;
+            clip=top.clip;
+            childState(control->m_actualParent, control, offset, clip);
+        };
+    // The stack back to this root alone.
+    const auto resetStack=[&]()
+        {
+            depth=0;
+            pushLevel(this, rootOffset, rootClip);
+        };
+    resetStack();
+
+    const size_t sorted=order.size();
+    size_t next=0;
+    size_t appended=queuedBefore;
+    // entries passed over, still queued
+    size_t carried=0;
+    // The control rendered last and the state it rendered in, pushed on the
+    // stack only if the next entry is its child: a leaf costs no level.
+    Base *last=nullptr;
+    Point lastOffset;
+    Rect lastClip;
+
+    for(;;)
+    {
+        // the sorted entries, then those queued since, in the order they came
+        size_t slot;
+
+        if(next < sorted)
+            slot=order[next++].slot;
+        else if((appended < queue.size()) && (appended-queuedBefore < appendCap))
+            slot=appended++;
+        else
+            break;
+
+        Base *control=queue[slot];
+
+        if(!control)
+            continue;
+
+        if(control->m_stateChange == StateChange_Nothing)
+        {
+            control->m_renderQueueIndex=-1;
+            queue[slot]=nullptr;
+            continue;
+        }
+
+        // a hook moved or deleted controls: the stack may name them
+        if(treeChanges != g_renderWalkTreeChanges)
+        {
+            treeChanges=g_renderWalkTreeChanges;
+            last=nullptr;
+            resetStack();
+        }
+
+        Point offset=rootOffset;
+        Rect clip=rootClip;
+
+        if(control != this)
+        {
+            Base *ancestor=control->m_actualParent;
+
+            // a child of the last one: its level goes on the stack
+            if(last && (ancestor == last))
+                pushLevel(last, lastOffset, lastClip);
+            last=nullptr;
 
             // up to the nearest ancestor on the stack, which this root always is
             chain.clear();
-            Base *ancestor=control->m_actualParent;
-
             while(ancestor)
             {
                 const int level=ancestor->m_renderStackLevel;
 
-                if((level >= 0) && ((size_t)level < stack.size())
-                    && (stack[level].control == ancestor))
+                if((level >= 0) && ((size_t)level < depth) && (stack[level].control == ancestor))
                     break;
                 chain.push_back(ancestor);
                 ancestor=ancestor->m_actualParent;
@@ -1604,39 +1766,51 @@ void Base::drainRenderQueue(skin::Base *skin, bool zTied)
 
             // detached, or on another canvas: rendered by a later drain
             if(!ancestor)
-                return;
+            {
+                ++carried;
+                continue;
+            }
 
-            stack.resize(ancestor->m_renderStackLevel+1);
-
-            Point offset;
-            Rect clip;
+            depth=ancestor->m_renderStackLevel+1;
 
             for(auto it=chain.rbegin(); it != chain.rend(); ++it)
             {
                 stateUnderTop(*it, offset, clip);
                 pushLevel(*it, offset, clip);
             }
-
             stateUnderTop(control, offset, clip);
-            if(renderOne(control, offset, clip) && (treeChanges == g_renderWalkTreeChanges))
-                // the next entry is often a child
-                pushLevel(control, offset, clip);
-        };
+        }
 
-    resetStack();
+        if(!renderQueued(control, slot, offset, clip)
+            || (treeChanges != g_renderWalkTreeChanges))
+            continue;
 
-    for(const RenderOrder &entry : order)
-        drainSlot(entry.slot);
-
-    // queued by the hooks, in the order they were, up to the cap
-    for(size_t slot=queuedBefore; (slot < queue.size()) && (slot-queuedBefore < appendCap); ++slot)
-        drainSlot(slot);
+        if(control == this)
+        {
+            resetStack();
+            last=nullptr;
+        }
+        else
+        {
+            // the next entry is often a child
+            last=control;
+            lastOffset=offset;
+            lastClip=clip;
+        }
+    }
 
     // as the canvas left them, for whatever it draws after
     baseRenderer->setRenderOffset(rootOffset);
     baseRenderer->setClipRegion(rootClip);
 
-    compact();
+    // every slot is null unless something was carried or left past the cap
+    if((carried == 0) && (appended == queue.size()))
+    {
+        queue.clear();
+        g_renderQueueHoles=0;
+    }
+    else
+        compact();
     g_changeStats.renderCarried=queue.size();
     g_draining=false;
 }

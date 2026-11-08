@@ -19,8 +19,11 @@
  *  renders, it renders in preorder, after bringToFront(), sendToBack() and
  *  moves between branches too.
  *
- *  It rebuilds each control's render offset and clip region from the root
- *  down: render() and renderUnder() at the parent's, renderOver() and
+ *  With a quarter of the tree or more queued it walks the tree instead of
+ *  sorting the queue, and the cases check both ways: the whole tree queued,
+ *  and a few controls.
+ *  Either way it gives each control the render offset and clip region from
+ *  the root down: render() and renderUnder() at the parent's, renderOver() and
  *  renderFocus() with the control's own offset added in the parent's region,
  *  a non-clipping control leaving its children its parent's region and a
  *  getChildClipRect() narrowing one child's, as the recursive walk it
@@ -48,7 +51,8 @@
  *  control, or deletes or detaches a queued one prints one stderr line naming
  *  both controls and is recorded in renderWalkMutations() once per
  *  (operation, type) pair, until the record is reset, and the drain survives
- *  it (no deleted control rendered; the ASAN tree checks the memory). A
+ *  it, walking the tree or not (no deleted control rendered; the ASAN tree
+ *  checks the memory). A
  *  render() that queues another control, whose render() queues it back, ends
  *  the frame anyway: the drain renders what is queued during it up to a cap.
  *  The same changes made between frames, a delayed delete processed in the
@@ -578,6 +582,19 @@ TEST_CASE("controls reordered between frames are rendered in their new preorder"
     CHECK(scene.log.entered.size() >= scene.leaves.size()+scene.branches.size());
     CHECK(scene.renderedInPreorder() == scene.log.entered);
 
+    // and a few, through the queue's sort: moved, then queued in reverse
+    scene.settle();
+    scene.leaves[20]->setParent(scene.children[0]);
+    scene.branches[0]->bringToFront();
+    scene.settle();
+    const std::vector<Probe *> few={scene.leaves[33], scene.leaves[20], scene.children[0],
+        scene.leaves[1], scene.branches[1]};
+    for(Probe *probe : few)
+        probe->addStateChange(controls::StateChange_Background);
+    scene.frame();
+    CHECK(scene.log.entered.size() == few.size());
+    CHECK(scene.renderedInPreorder() == scene.log.entered);
+
     scene.settle();
     checkSettled(scene.frame());
 }
@@ -732,23 +749,37 @@ void shapeForClipping(Scene &scene)
     scene.children[7]->setBounds(-10, 15, 40, 8);
 }
 
-void checkAgainstReference(Scene &scene, const RenderState &root)
+std::vector<Probe *> everyProbe(const Scene &scene)
+{
+    std::vector<Probe *> probes=scene.leaves;
+    probes.insert(probes.end(), scene.children.begin(), scene.children.end());
+    probes.insert(probes.end(), scene.branches.begin(), scene.branches.end());
+    return probes;
+}
+
+//! A few scattered controls, queued leaves first: few enough that the drain
+//! sorts the queue and rebuilds each one's state from the root or its stack,
+//! where the whole tree queued has it walk the tree.
+std::vector<Probe *> fewProbes(const Scene &scene)
+{
+    return {scene.leaves[35], scene.leaves[2], scene.children[5], scene.leaves[16],
+        scene.branches[2]};
+}
+
+//! Renders \p which and checks each hook's state against the reference walk.
+void checkAgainstReference(Scene &scene, const RenderState &root, const std::vector<Probe *> &which)
 {
     Reference reference;
     referenceWalk(scene.canvas, root, reference);
 
-    for(Probe *probe : scene.leaves)
-        probe->addStateChange(controls::StateChange_Background);
-    for(Probe *probe : scene.children)
-        probe->addStateChange(controls::StateChange_Background);
-    for(Probe *probe : scene.branches)
+    for(Probe *probe : which)
         probe->addStateChange(controls::StateChange_Background);
     scene.frame();
     // and the renderer is left as the canvas set it, for what it draws after
     CHECK(stateOf(&scene.skin) == root);
 
-    const size_t probes=scene.leaves.size()+scene.children.size()+scene.branches.size();
-    REQUIRE(scene.log.entered.size() == probes);
+    REQUIRE(scene.log.entered.size() == which.size());
+    CHECK(scene.renderedInPreorder() == scene.log.entered);
 
     for(controls::Base *control : scene.log.entered)
     {
@@ -768,25 +799,10 @@ TEST_CASE("every hook runs at the offset and clip region the recursive walk gave
     shapeForClipping(scene);
     scene.settle();
 
-    // the same frame, whole and then a few scattered controls, each rebuilt
+    // the whole tree, walked, then a few scattered controls, each rebuilt
     // from the root or from the stack
-    checkAgainstReference(scene, {Point(0, 0), scene.canvas->getBounds()});
-
-    Reference reference;
-    referenceWalk(scene.canvas, {Point(0, 0), scene.canvas->getBounds()}, reference);
-    const std::vector<Probe *> few={scene.leaves[35], scene.leaves[2], scene.children[5],
-        scene.leaves[16], scene.branches[2]};
-    for(Probe *probe : few)
-        probe->addStateChange(controls::StateChange_Background);
-    scene.frame();
-    REQUIRE(scene.log.entered.size() == few.size());
-    for(Probe *probe : few)
-    {
-        CAPTURE(probe->getControlId());
-        CHECK(scene.log.render[probe] == reference.render[probe]);
-        CHECK(scene.log.over[probe] == reference.over[probe]);
-        CHECK(scene.log.focus[probe] == reference.over[probe]);
-    }
+    checkAgainstReference(scene, {Point(0, 0), scene.canvas->getBounds()}, everyProbe(scene));
+    checkAgainstReference(scene, {Point(0, 0), scene.canvas->getBounds()}, fewProbes(scene));
 }
 
 TEST_CASE("a canvas rendering from (-x, -y) and its render bounds moves every control by it")
@@ -796,7 +812,8 @@ TEST_CASE("a canvas rendering from (-x, -y) and its render bounds moves every co
     shapeForClipping(scene);
     scene.settle();
 
-    checkAgainstReference(scene, {Point(-30, -20), scene.canvas->getRenderBounds()});
+    checkAgainstReference(scene, {Point(-30, -20), scene.canvas->getRenderBounds()}, everyProbe(scene));
+    checkAgainstReference(scene, {Point(-30, -20), scene.canvas->getRenderBounds()}, fewProbes(scene));
 }
 
 TEST_CASE("a canvas scale change lays out and renders every control once, then settles")
@@ -1088,7 +1105,13 @@ TEST_CASE("a render() that adds a child to another control is reported")
     controls::resetRenderWalkMutations();
 }
 
-TEST_CASE("a render() that deletes or detaches queued controls is reported and survived")
+namespace
+{
+
+//! A Builder's render() deletes a queued subtree and detaches another, with
+//! \p everything queued (the drain walks the tree) or a few controls (it
+//! takes the queue's order).
+void deleteAndDetachFromRender(bool everything)
 {
     controls::resetRenderWalkMutations();
     const size_t queued=controls::queuedRenderCount();
@@ -1122,6 +1145,10 @@ TEST_CASE("a render() that deletes or detaches queued controls is reported and s
             detached->setParent(nullptr);
         };
 
+    if(everything)
+        for(Probe *probe : everyProbe(scene))
+            probe->addStateChange(controls::StateChange_Background);
+
     CerrCapture cerr;
     builder->addStateChange(controls::StateChange_Background);
     scene.frame();
@@ -1153,6 +1180,14 @@ TEST_CASE("a render() that deletes or detaches queued controls is reported and s
     scene.canvas=nullptr;
     CHECK(controls::queuedRenderCount() == queued);
     controls::resetRenderWalkMutations();
+}
+
+}//namespace
+
+TEST_CASE("a render() that deletes or detaches queued controls is reported and survived")
+{
+    deleteAndDetachFromRender(false);
+    deleteAndDetachFromRender(true);
 }
 
 TEST_CASE("tree changes in the update phase and in renderPhaseLayout() are not reported")

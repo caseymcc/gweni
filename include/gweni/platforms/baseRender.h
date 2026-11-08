@@ -77,10 +77,10 @@ public:
     virtual void startClip() {}     //!< Start clipping the drawing. \see setClipRegion().
     virtual void endClip() {}       //!< Stop clipping the drawing.
 
-    void    setClipRegion(gweni::Rect const &rect);
+    void    setClipRegion(gweni::Rect const &rect) { m_rectClipRegion=rect; }
     void    addClipRegion(gweni::Rect rect);
     bool    clipRegionVisible();
-    const gweni::Rect &clipRegion() const;
+    const gweni::Rect &clipRegion() const { return m_rectClipRegion; }
 
     virtual void generatePrimitive(size_t &primitiveId) {}
     virtual void releasePrimitive(size_t primitiveId) {}
