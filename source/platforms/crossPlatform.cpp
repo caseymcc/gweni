@@ -64,8 +64,8 @@ static String gs_ClipboardEmulator;
 
 #if defined(__EMSCRIPTEN__)
 
-// What the web build does not have yet, said once per process on stderr, never
-// silently: the cursor, the file dialogs and the system clipboard.
+// What the web build does not have, said once per process on stderr, never
+// silently: the file dialogs and the system clipboard.
 static void reportMissingOnce(bool &reported, const char *what)
 {
     if(reported)
@@ -213,8 +213,28 @@ void setCursor(unsigned char iCursor)
 {
     // No platform independent way to do this
 #if defined(__EMSCRIPTEN__)
-    static bool reported=false;
-    reportMissingOnce(reported, "the web build does not set the cursor yet (platform::setCursor)");
+    // The web: the CSS cursor of the page's canvas (Module.canvas), by the CSS
+    // name of each cursor:: kind; anything else is the default.
+    static const char *const names[cursor::Cursor_Count]=
+    {
+        "default",      // Normal
+        "text",         // Beam
+        "ns-resize",    // SizeNS
+        "ew-resize",    // SizeWE
+        "nwse-resize",  // SizeNWSE
+        "nesw-resize",  // SizeNESW
+        "move",         // SizeAll
+        "not-allowed",  // No
+        "wait",         // Wait
+        "pointer",      // Finger
+    };
+    const char *name=(iCursor < cursor::Cursor_Count) ? names[iCursor] : names[cursor::Normal];
+
+    EM_ASM({
+        var canvas=(typeof Module !== 'undefined') && Module['canvas'];
+        if(canvas && canvas.style)
+            canvas.style.cursor=UTF8ToString($0);
+    }, name);
 #endif
 }
 

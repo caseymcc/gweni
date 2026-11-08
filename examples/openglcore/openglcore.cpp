@@ -583,18 +583,15 @@ int main(int argc, char *argv[])
         // framebuffer differs from the window size on high-DPI displays).
         fitCanvas(ctx.window);
 
-        // Begin the main game loop
-        while (!glfwWindowShouldClose(ctx.window))
+        // The main loop: one frame per displayed frame until the window closes
+        // (in the browser, per animation frame, never returning). The frame
+        // holds only the canvas, a heap object, as the browser's loop needs.
+        gweni::capture::runWindowLoop(ctx, [canvas]()
         {
             canvas->updateCanvas();
             glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
             canvas->renderCanvas();
-            glfwSwapBuffers(ctx.window);
-
-            glfwPollEvents();
-
-            gweni::platform::sleep(0);
-        }
+        });
     }
 
 #ifndef SINGLE_CONTROL

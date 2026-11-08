@@ -628,6 +628,9 @@ if(EMSCRIPTEN)
             endforeach()
         endforeach()
     endif()
+
+    # the interactive pages, driven with real input (web/interactive.cmake)
+    include(${CMAKE_CURRENT_SOURCE_DIR}/web/interactive.cmake)
 endif()
 
 # The Vulkan plumbing (GWENI_RENDER_VULKAN): loader, validation layer, a 1.3

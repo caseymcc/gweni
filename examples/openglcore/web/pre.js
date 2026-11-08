@@ -22,6 +22,9 @@
 //    webgl     the WebGL context the run made (capture::initEglContext reports
 //              it through Module.gweniWebGLContext): {webgl2, version, renderer,
 //              vendor, depthBits}, null if it made none
+//    frames    how many frames an interactive window has drawn
+//              (capture::runWindowLoop, one per animation frame), 0 for a
+//              capture, which draws offscreen in one blocking main
 //    files()   the paths of every file under /out (created before main), where
 //              a run writes what the runner copies back
 //  Before main it also writes window.gweniMounts, the files the runner copies
@@ -32,9 +35,15 @@
 //  for a page error).
 //
 
-var gweniRun = { done: false, exitCode: null, aborted: null, output: [], webgl: null };
+var gweniRun = { done: false, exitCode: null, aborted: null, output: [], webgl: null, frames: 0 };
 if(typeof window !== 'undefined')
     window.gweniRun = gweniRun;
+
+// The page's canvas, as Emscripten's own shell would set it: the canvas whose
+// CSS cursor platform::setCursor sets (source/platforms/crossPlatform.cpp). The
+// contexts are made on it by its selector, #canvas.
+if(typeof document !== 'undefined' && !Module['canvas'])
+    Module['canvas'] = document.getElementById('canvas');
 
 Module['arguments'] = (function()
 {

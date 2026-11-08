@@ -18,6 +18,7 @@
 #include <gweni/platforms/platformTypes.h>
 #include <gweni/utils/filesystem.h>
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <string>
 #include <vector>
@@ -148,7 +149,24 @@ struct Context
 //! content scale (GLFW_SCALE_TO_MONITOR), so on X11 and Windows a 150 % desktop
 //! gets a window 1.5 times as many pixels across, as macOS and Wayland do on
 //! their own. A hidden one (a capture) is \a size as it is.
+//!
+//! In the browser the window is emscripten-glfw's (the contrib.glfw3 port) on
+//! the page's #canvas, with a WebGL 2 context (depth, no antialiasing, no alpha,
+//! so nothing behind the page shows through). Its framebuffer is the canvas's
+//! CSS size times devicePixelRatio and its content scale devicePixelRatio
+//! (GLFW_SCALE_FRAMEBUFFER), both followed by GLFW's callbacks as on a desktop.
+//! A visible one fills the page's #canvas-container (web/shell.html) and
+//! follows its size, so \a size is only where it starts.
 bool initGlfwContext(Context &ctx, const Point &size, const std::string &title, bool visible);
+
+//! Runs \a frame once per displayed frame of \a ctx's window until it is
+//! closed: natively a loop of \a frame, a buffer swap, an event poll and a
+//! yield; in the browser one call per animation frame
+//! (emscripten_set_main_loop), between which the page handles input, resizes
+//! and draws. In the browser this never returns, and main's stack is unwound
+//! before the first frame: \a frame must hold only what outlives main's locals
+//! (heap objects, statics), never a reference to one.
+void runWindowLoop(const Context &ctx, std::function<void()> frame);
 
 #if GWENI_EXAMPLE_EGL
 //! The headless context, current: surfaceless EGL (GL 3.3 core, or GLES 3.0 in

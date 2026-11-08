@@ -10,6 +10,11 @@
 #include <gweni/controls/canvas.h>
 #include <gweni/platforms/baseRender.h>
 #include <gweni/platforms/commonPlatform.h>
+#include <gweni/platforms/platform.h>
+
+#if GWENI_EXAMPLE_WEBGL
+#include <GLFW/emscripten_glfw3.h>
+#endif
 
 #include <imglib/png.h>
 #include <imglib/simpleImage.h>
@@ -143,22 +148,51 @@ void fitCanvasToWindow(GLFWwindow *window, float manual, renderer::Base &rendere
     input.setWindowMetrics(windowSize, framebuffer, scale);
 }
 
+#if GWENI_EXAMPLE_WEBGL
+//! Tells the page (web/pre.js) what the current WebGL context is: the browser
+//! runner fails a run whose context is not WebGL 2.
+static void reportWebGLContext()
+{
+    EM_ASM({
+        if(Module['gweniWebGLContext'])
+            Module['gweniWebGLContext'](GLctx);
+    });
+}
+#endif
+
 bool initGlfwContext(Context &ctx, const Point &size, const std::string &title, bool visible)
 {
     if(!glfwInit())
         return false;
 
     glfwWindowHint(GLFW_VISIBLE, visible?GLFW_TRUE:GLFW_FALSE);
-    glfwWindowHint(GLFW_SCALE_TO_MONITOR, visible?GLFW_TRUE:GLFW_FALSE);
     // GLFW's default, asked for: OpenGLCore spreads its 65536 z values over the
     // depth buffer, 256 steps each in 24 bits, as in the EGL path's framebuffer
     // (initGL checks what the window got)
     glfwWindowHint(GLFW_DEPTH_BITS, 24);
+#if GWENI_EXAMPLE_WEBGL
+    // emscripten-glfw: the WebGL version is the context's major version, and the
+    // framebuffer is the canvas's CSS size times devicePixelRatio, the content
+    // scale (GLFW_SCALE_FRAMEBUFFER; GLFW_SCALE_TO_MONITOR is deprecated there).
+    // No alpha, so the page never shows through what the blend leaves
+    // translucent, no stencil and no multisampling, as in the EGL path's
+    // framebuffer.
+    emscripten_glfw_set_next_window_canvas_selector("#canvas");
+    glfwWindowHint(GLFW_CLIENT_API, GLFW_OPENGL_ES_API);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 2);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 0);
+    glfwWindowHint(GLFW_SCALE_FRAMEBUFFER, GLFW_TRUE);
+    glfwWindowHint(GLFW_ALPHA_BITS, 0);
+    glfwWindowHint(GLFW_STENCIL_BITS, 0);
+    glfwWindowHint(GLFW_SAMPLES, 0);
+#else
+    glfwWindowHint(GLFW_SCALE_TO_MONITOR, visible?GLFW_TRUE:GLFW_FALSE);
 #ifdef GWENI_GL_ES
     // the GLES tree's context is GLES 3.0, as the EGL path's is
     glfwWindowHint(GLFW_CLIENT_API, GLFW_OPENGL_ES_API);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 0);
+#endif
 #endif
     ctx.window=glfwCreateWindow(size.x, size.y, title.c_str(), NULL, NULL);
     if(!ctx.window)
@@ -167,7 +201,66 @@ bool initGlfwContext(Context &ctx, const Point &size, const std::string &title, 
         return false;
     }
     glfwMakeContextCurrent(ctx.window);
+#if GWENI_EXAMPLE_WEBGL
+    reportWebGLContext();
+    // a window on the page fills its container and follows its size: each
+    // change is a new framebuffer size through GLFW's callback
+    if(visible && emscripten_glfw_make_canvas_resizable(ctx.window, "#canvas-container", nullptr)
+        != EMSCRIPTEN_RESULT_SUCCESS)
+    {
+        std::cerr<<g_tool<<": the page has no #canvas-container to fit the canvas to;"
+                   " it stays "<<size.x<<"x"<<size.y<<"\n";
+    }
+#endif
     return true;
+}
+
+#if GWENI_EXAMPLE_WEBGL
+//! The frame run by emscripten_set_main_loop_arg, and how many have run.
+struct WebLoop
+{
+    std::function<void()> frame;
+    long frames=0;
+};
+
+static void webLoopFrame(void *arg)
+{
+    WebLoop &loop=*static_cast<WebLoop *>(arg);
+
+    // the input arrived since the last frame has been delivered already, but a
+    // size the canvas's container asked for is applied here
+    glfwPollEvents();
+    loop.frame();
+    ++loop.frames;
+    // how many frames the page has drawn, for whoever drives it (web/pre.js)
+    EM_ASM({
+        if(typeof gweniRun !== 'undefined')
+            gweniRun.frames=$0;
+    }, loop.frames);
+}
+#endif
+
+void runWindowLoop(const Context &ctx, std::function<void()> frame)
+{
+#if GWENI_EXAMPLE_WEBGL
+    // The browser swaps after each callback (emscripten-glfw's glfwSwapBuffers
+    // only logs that it is not implemented) and delivers the input between
+    // them; the poll that applies a resize opens each frame (webLoopFrame). Never deleted: the loop runs
+    // as long as the page. The rate is the browser's (0: requestAnimationFrame);
+    // simulating an infinite loop unwinds main, so nothing after this runs.
+    (void)ctx;
+    WebLoop *loop=new WebLoop;
+    loop->frame=std::move(frame);
+    emscripten_set_main_loop_arg(&webLoopFrame, loop, 0, 1);
+#else
+    while(!glfwWindowShouldClose(ctx.window))
+    {
+        frame();
+        glfwSwapBuffers(ctx.window);
+        glfwPollEvents();
+        platform::sleep(0);
+    }
+#endif
 }
 
 #if GWENI_EXAMPLE_WEBGL
@@ -206,12 +299,7 @@ bool initEglContext(Context &ctx)
         ctx.webgl=0;
         return false;
     }
-    // what the context is, for the page (web/pre.js): the browser runner fails a
-    // run whose context is not WebGL 2
-    EM_ASM({
-        if(Module['gweniWebGLContext'])
-            Module['gweniWebGLContext'](GLctx);
-    });
+    reportWebGLContext();
     return true;
 }
 #elif GWENI_EXAMPLE_EGL

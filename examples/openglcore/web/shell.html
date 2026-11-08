@@ -5,7 +5,13 @@
   MIT License, see LICENSE
 
   The shell of every web page (page.cmake): the #canvas the WebGL 2 context is
-  made on and an #output panel with the run's stdout and stderr (pre.js).
+  made on, in a #canvas-container that fills the page above an #output panel
+  with the run's stdout and stderr (pre.js). An interactive window
+  (capture::initGlfwContext) keeps the canvas at the container's size, so the
+  container is the page less the panel's fixed 96 CSS px: a script that sets
+  the viewport (tests/web/interactive.mjs) knows the canvas's size, and output
+  arriving never resizes it. A capture draws into a framebuffer of its own, so
+  the canvas's size does not matter to it.
 -->
 <html lang="en">
 <head>
@@ -13,13 +19,19 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>gweni</title>
 <style>
-  body { margin: 0; background: #1a1b26; color: #c0caf5; font: 13px monospace; }
-  canvas { display: block; }
-  #output { margin: 0; padding: 8px; max-height: 40vh; overflow: auto; white-space: pre-wrap; }
+  html, body { height: 100%; }
+  body { margin: 0; display: flex; flex-direction: column; overflow: hidden;
+         background: #1a1b26; color: #c0caf5; font: 13px monospace; }
+  #canvas-container { flex: 1 1 auto; min-height: 0; position: relative; overflow: hidden; }
+  canvas { display: block; outline: none; }
+  #output { flex: 0 0 96px; box-sizing: border-box; height: 96px; margin: 0; padding: 4px 8px;
+            overflow: auto; white-space: pre-wrap; border-top: 1px solid #292e42; }
 </style>
 </head>
 <body>
+<div id="canvas-container">
 <canvas id="canvas" width="64" height="64" oncontextmenu="event.preventDefault()" tabindex="-1"></canvas>
+</div>
 <pre id="output"></pre>
 {{{ SCRIPT }}}
 </body>

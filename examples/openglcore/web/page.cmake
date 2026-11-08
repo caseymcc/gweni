@@ -15,7 +15,12 @@
 #    link time;
 #  - WebGL 2 (from gweni), a heap that grows, a 4 MB stack (Emscripten's default
 #    is 64 KB; the layout and render walks recurse once per tree level) and the
-#    runtime exiting when main returns, so a capture run ends as natively.
+#    runtime exiting when main returns, so a capture run ends as natively (an
+#    interactive window's main loop, capture::runWindowLoop, keeps it alive);
+#  - Module.ccall, for a script reading what a page exports with
+#    EMSCRIPTEN_KEEPALIVE (ControlTest's gweni_web_* functions).
+#  An interactive window fills the shell's #canvas-container (capture.h's
+#  initGlfwContext), and runs one frame per animation frame.
 #  Defined once, for the examples here and gweni_unittests (tests/).
 #
 function(gweni_web_page target)
@@ -28,7 +33,8 @@ function(gweni_web_page target)
         "SHELL:--preload-file ${GWENI_SOURCE_DIR}/resources@/resources"
         -sALLOW_MEMORY_GROWTH=1
         -sSTACK_SIZE=4MB
-        -sEXIT_RUNTIME=1)
+        -sEXIT_RUNTIME=1
+        -sEXPORTED_RUNTIME_METHODS=ccall)
     set_property(TARGET ${target} APPEND PROPERTY LINK_DEPENDS
         ${page_dir}/shell.html
         ${page_dir}/pre.js

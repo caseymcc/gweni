@@ -5038,6 +5038,45 @@ static bool checkTeardown(Session &s, const std::vector<std::string> &controls,
     return false;
 }
 
+#if GWENI_EXAMPLE_WEBGL
+//-----------------------------------------------------------------------------
+// The interactive window in the browser: what a script driving the page reads
+// (tests/web/interactive.mjs), through Module.ccall(name, 'string'). Each
+// returns a string that stays valid until the next call of the same function.
+//-----------------------------------------------------------------------------
+
+static std::string g_windowLabel;   // the control the window shows
+
+//! The window's --dump-bounds listing as it is now: the canvas at its logical
+//! size, as a capture of the same size and scale lists it.
+extern "C" EMSCRIPTEN_KEEPALIVE const char *gweni_web_bounds_listing()
+{
+    static std::string listing;
+
+    listing.clear();
+    if(g_canvas)
+    {
+        Session s;
+        s.canvas=g_canvas;
+        s.label=g_windowLabel;
+        s.size=g_canvas->getSize();
+        listing=boundsListing(s);
+    }
+    return listing.c_str();
+}
+
+//! The keyboard-focused control's text (a Label, which every TextBox is), or
+//! an empty string if it has none.
+extern "C" EMSCRIPTEN_KEEPALIVE const char *gweni_web_focused_text()
+{
+    static std::string text;
+
+    text.clear();
+    focusedText(text);
+    return text.c_str();
+}
+#endif//GWENI_EXAMPLE_WEBGL
+
 int main(int argc, char *argv[])
 {
     gweni::capture::setToolName("ControlTest");
@@ -5562,6 +5601,9 @@ int main(int argc, char *argv[])
     {
         gweni::controls::Base *control=createControl(canvas, which);
         control->setDock(gweni::DockPosition::Center);
+#if GWENI_EXAMPLE_WEBGL
+        g_windowLabel=which;
+#endif
 
         g_glfwInput.initialize(canvas);
         glfwSetKeyCallback(ctx.window, key_callback);
@@ -5577,15 +5619,15 @@ int main(int argc, char *argv[])
         // The window's own content scale, and its real framebuffer size.
         fitCanvas(ctx.window);
 
-        while(!glfwWindowShouldClose(ctx.window))
+        // One frame per displayed frame until the window closes (in the browser,
+        // per animation frame, never returning); the frame holds only the
+        // canvas, a heap object, as the browser's loop needs.
+        gweni::capture::runWindowLoop(ctx, [canvas]()
         {
             canvas->updateCanvas();
             glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
             canvas->renderCanvas();
-            glfwSwapBuffers(ctx.window);
-            glfwPollEvents();
-            gweni::platform::sleep(0);
-        }
+        });
 
         delete control;
     }

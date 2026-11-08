@@ -76,10 +76,26 @@ three pages, each an `.html` with its `.js`, `.wasm` and a `.data` holding
 - `examples/openglcore/ControlTest.html` and `OpenGLCore.html`, the examples;
 - `tests/gweni_unittests.html`, the GPU unit tests.
 
-For now the pages run captures only (`--headless` with `--shot`, `--shot-all`,
-`--screenshot`, ...): a capture renders into an offscreen framebuffer and reads
-it back in one blocking call, so it needs no main loop. The interactive window
-modes come later.
+A page runs what the native exe runs. A capture (`--headless` with `--shot`,
+`--shot-all`, `--screenshot`, ...) renders into an offscreen framebuffer and
+reads it back in one blocking call. Without one, the page is the interactive
+window: ControlTest's control or the OpenGLCore demo, drawn once per browser
+animation frame, with the mouse (both buttons and the wheel) and the keyboard
+(keys, modifiers and typed text) as on a desktop. The canvas fills the page above
+a 96 px output panel and follows its size, and it draws at the browser's
+`devicePixelRatio` (a HiDPI display, or the page zoom) times `--scale`, as a
+desktop window draws at its monitor's content scale.
+
+What the browser does not have degrades, each said once on stderr (and in the
+output panel):
+
+- the file dialogs say they are unavailable and return cancelled;
+- the clipboard is in-process: copy and paste work inside the page, but not with
+  other programs;
+- LCD text needs dual-source blending, which WebGL 2 lacks, so text is grayscale.
+
+The mouse cursor is the canvas's CSS cursor (a text beam, a pointer, a resize
+arrow, ...), as the control under the mouse asks for it.
 
 The dependencies come from vcpkg's `wasm32-emscripten` triplet, with emsdk's own
 `Emscripten.cmake` chainloaded. `glew` and `glfw3` are left out on that
@@ -111,12 +127,24 @@ with its exit status. It fails with exit 1 and one `run.mjs: FAIL:` line if:
 - the run made no WebGL 2 context on ANGLE's SwiftShader, or one with fewer than
   24 depth bits.
 
-In a browser of your own, serve the build directory (e.g.
-`python3 -m http.server -d build_web_wasm32_debug/examples/openglcore`) and give
-the arguments as the URL query: `key=value` is `--key value`, a bare `key` is
-`--key`, and `argv=<text>` is one argument as it is. For example,
-`ControlTest.html?headless&control=ButtonDemo&shot=/out/x.png`. The page shows
-the output under its canvas.
+In a browser of your own, serve the build directory over HTTP (a page cannot
+load its `.wasm` and `.data` from `file://`). The build tree is in the repo, so
+on a host:
+
+```bash
+python3 -m http.server -d build_web_wasm32_debug/examples/openglcore 8000
+```
+
+and open `http://localhost:8000/ControlTest.html?control=ButtonDemo` or
+`http://localhost:8000/OpenGLCore.html`. The arguments are the URL query, in
+order and URL-decoded: `key=value` is `--key value`, a bare `key` is `--key`,
+and `argv=<text>` is one argument as it is. So
+`ControlTest.html?control=ButtonDemo&scale=2` runs
+`ControlTest --control ButtonDemo --scale 2`, the window at twice the display's
+scale, and `ControlTest.html?headless&control=ButtonDemo&shot=/out/x.png` a
+capture. An argument the program does not take ends the run as it does natively,
+with its usage in the output panel under the canvas, where the page shows
+everything the program prints.
 
 The build image has what it needs, pinned in the `Dockerfile`, about 2.1 GB
 more image in all:
@@ -148,7 +176,13 @@ Every test in the web tree has the label `web` and needs no GPU lock:
   PNG of the canvas's size that is not one flat colour (`tests/web/shot.mjs`);
 - `web_controltest_missing_resources*` and `web_openglcore_missing_resources*`:
   `tests/missingResources.cmake`'s cases, with the incomplete `resources/` copy
-  mounted into the page.
+  mounted into the page;
+- `web_input`: the interactive windows of ControlTest and the OpenGLCore demo,
+  driven with real mouse and keyboard input (`tests/web/interactive.mjs`, whose
+  header lists the checks): a button press and release, typing "abcé", a wheel
+  notch, the CSS cursor, the canvas's size at `devicePixelRatio` 2, after a
+  resize and with `?scale=1.5` (its layout the same as a capture's at that size
+  and scale), an unknown argument, and a click in the demo list.
 
 The browser tests take no lock because the runner keeps Chromium on its own
 SwiftShader. The image pins the Vulkan loader to Mesa's lavapipe

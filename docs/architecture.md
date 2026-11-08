@@ -566,7 +566,35 @@ two programs and the draws. What follows describes both together:
   the same: ButtonDemo differs by at most 2 per channel, on 0.56 % of its pixels.
   A capture is one blocking `main`: it renders into the offscreen framebuffer and
   reads it back with `glReadPixels`, which WebGL does synchronously, so it needs no
-  main loop. Building for wasm32 also showed two struct layouts that only agreed on
+  main loop. The interactive window is emscripten-glfw's (Emscripten's
+  `contrib.glfw3` port) on the same `#canvas`, with a WebGL 2 context of its own
+  (`capture::initGlfwContext`: `GLFW_CONTEXT_VERSION_MAJOR` is the WebGL version there;
+  24 depth bits, no alpha, so nothing behind the page shows through a translucent
+  blend, no stencil, no multisampling). A browser cannot run a blocking loop and still
+  draw or deliver input, so `capture::runWindowLoop`, the one loop both apps' windows
+  run, is `emscripten_set_main_loop_arg` there: one frame per animation frame, each a
+  `glfwPollEvents()` (where emscripten-glfw applies a resize; input arrives between
+  callbacks) and the frame (`updateCanvas`, `glClear`, `renderCanvas`, as natively,
+  where the loop adds the swap and the poll). It never returns, and simulating the
+  infinite loop unwinds `main`'s stack before the first frame, so the frame holds only
+  heap objects (the canvas) and statics (the GLFW translator). The browser presents
+  the canvas after each callback; emscripten-glfw's `glfwSwapBuffers` only logs that it
+  is not implemented, so the web frame does not call it.
+- **What the browser lacks, and what it maps to.** Each is said once on stderr (the
+  page's output panel), never silently, or maps to the browser's own equivalent
+  (`source/platforms/crossPlatform.cpp`):
+  - the cursor: `platform::setCursor` sets the CSS `cursor` of the page's canvas
+    (`Module.canvas`), `default`, `text`, `ns-resize`, `ew-resize`, `nwse-resize`,
+    `nesw-resize`, `move`, `not-allowed`, `wait` or `pointer` for each `cursor::` kind;
+  - the file dialogs: one line saying the web build has none, and `fileOpen`,
+    `fileSave` and `folderOpen` return cancelled;
+  - the clipboard: an in-process buffer, so copy and paste work inside the page but
+    not with other programs, said once when it is first used;
+  - LCD text: no dual-source blending, so grayscale, with the one warning of "GLES
+    tree" above.
+
+  Touch, pointer events and an IME are not handled: a page loads on a phone, but only
+  the mouse and the keyboard drive it. Building for wasm32 also showed two struct layouts that only agreed on
   x86-64 by luck, both fixed: freetype-gl's `vertex_buffer_t` with and without
   `FREETYPE_GL_USE_VAO` (now a PUBLIC definition of the `freetype-gl` target), and
   `json.h`'s `returnValue<uint64_t>`, which on x86-64 was the `size_t` specialisation.
@@ -881,7 +909,15 @@ two programs and the draws. What follows describes both together:
   truncating, so the deltas are logical as well) through the sizes and scale the same
   call sets with `setWindowMetrics`, and the canvas only sees logical units. That one
   formula is right where window coordinates are points (macOS, scaled Wayland) and
-  where they are pixels (X11, Windows). `Canvas::setScale` reaches
+  where they are pixels (X11, Windows). In the browser the window is
+  emscripten-glfw's with `GLFW_SCALE_FRAMEBUFFER`: its window coordinates are CSS
+  pixels, its framebuffer the canvas's CSS size times `devicePixelRatio` (floored) and
+  its content scale `devicePixelRatio`, and the canvas element follows the size of the
+  page's `#canvas-container`; a page resize and a change of `devicePixelRatio` (a
+  zoom, or a move to another display) come as the same two callbacks, so the same
+  `fitCanvasToWindow` and `windowToLogical` serve it (`web_input` checks a 640x480 CSS
+  container at `devicePixelRatio` 2: a 1280x960 framebuffer and a 640x480 canvas laid
+  out as a capture's at `--scale 2`). `Canvas::setScale` reaches
   `Base::onScaleChanged` on every control, which invalidates its layout and marks it
   `StateChange_Geometry` once, so the next frame lays the tree out again and re-emits
   every primitive and clip box at the new scale; the text runs re-lay themselves,
