@@ -115,8 +115,8 @@
  *    --scenario <name>  per-control | resize | docked | scroll | interaction |
  *                       typing | clip | text-size | scale | tooltip |
  *                       context-menu | popup | virtual-list |
- *                       data-table-virtual | hide-show | demo-labels
- *                       (see below)
+ *                       data-table-virtual | hide-show | demo-labels |
+ *                       plot-histogram (see below)
  *    --dump-bounds [<path>]
  *                       print the laid-out control tree as text: one line per
  *                       control, depth-first in child order, indented by depth,
@@ -366,6 +366,19 @@
  *                          text_slots_written=N run_glyphs=N ... same_atlas=yes
  *                 Exits non-zero if any of it fails, or if GWENI_SDF_TEXT_MIN puts
  *                 either size below the SDF threshold.
+ *    plot-histogram  PlotHistogramDemo's 32-bar series, the clock frozen: a
+ *                 sample given a new height (bar 4, to the middle of the
+ *                 range) has to write exactly that bar's primitive slot and
+ *                 change that control alone, a hair more (the same height)
+ *                 nothing, and the highest value doubled (a rescale of the
+ *                 automatic range) more than one bar's slot and no more than
+ *                 every bar's; the mouse onto bar 10 one slot (its hover look),
+ *                 a move inside it nothing, onto bar 11 the two bars' slots,
+ *                 with "11: <value>" as the tooltip; every settled frame
+ *                 nothing; the demo gives every primitive id back
+ *                 (plot-histogram-hover.png). One line
+ *                   plot-histogram bars=32 sample_prim_slots=1 ... ids_back=yes
+ *                 Exits non-zero if any check is no.
  *    scale        one control (default Demo) on a 640x480 canvas at scale 1,
  *                 then Canvas::setScale(2) with the framebuffer resized to
  *                 1280x960, then back to 1 (scale-01-1x.png, scale-02-2x.png,
@@ -625,6 +638,8 @@
 #include <demo/menuStrip.h>
 #include <demo/numeric.h>
 #include <demo/pageControl.h>
+#include <demo/plotHistogram.h>
+#include <gweni/controls/plotHistogram.h>
 #include <demo/progressBar.h>
 #include <demo/properties.h>
 #include <demo/radioButton.h>
@@ -707,7 +722,7 @@ static void content_scale_callback(GLFWwindow *window, float, float)
     X(ShowcaseContainersDemo) X(ShowcaseButtonsDemo) X(ShowcaseInputDemo) \
     X(ShowcaseDisplayDemo) X(ShowcaseWindowsDemo) \
     X(ButtonDemo) X(LabelDemo) X(LabelMultilineDemo) X(ProgressBarDemo) \
-    X(GroupBoxDemo) X(ImagePanelDemo) X(StatusBarDemo) X(SeparatorDemo) X(ComboBoxDemo) \
+    X(GroupBoxDemo) X(ImagePanelDemo) X(StatusBarDemo) X(SeparatorDemo) X(PlotHistogramDemo) X(ComboBoxDemo) \
     X(TextBoxDemo) X(ListBoxDemo) X(SelectableDemo) X(VirtualListDemo) X(DataTableDemo) X(DataTableVirtualDemo) X(ContextMenuDemo) X(PopupDemo) X(CrossSplitterDemo) X(RadioButtonDemo) \
     X(CheckBoxDemo) X(NumericDemo) X(SliderDemo) X(SliderTextDemo) X(MenuStripDemo) \
     X(WindowDemo) X(WindowButtonsDemo) X(TreeControlDemo) X(PropertiesDemo) X(TabControlDemo) X(TabCloseDemo) X(TabOverflowDemo) \
@@ -786,7 +801,8 @@ static void printUsage(std::ostream &out)
          "  --scenario <name>  per-control | resize | docked | scroll | interaction\n"
          "                     | typing | clip | text-size | scale | tooltip\n"
          "                     | context-menu | popup | virtual-list\n"
-         "                     | data-table-virtual | hide-show | demo-labels;\n"
+         "                     | data-table-virtual | hide-show | demo-labels\n"
+         "                     | plot-histogram;\n"
          "                     resize prints listing_settled, mirror_settled,\n"
          "                     shrink_settled and fresh_matches, interaction one\n"
          "                     yes/no per repaint check, typing its keyboard\n"
@@ -801,8 +817,9 @@ static void printUsage(std::ostream &out)
          "                     records (and a sort and a column drag in one pass),\n"
          "                     hide-show whether a demo hidden and shown again, and\n"
          "                     one built hidden and shown, are the one built shown,\n"
-         "                     demo-labels whether every demo-list label fits;\n"
-         "                     all thirteen fail on a no\n"
+         "                     demo-labels whether every demo-list label fits,\n"
+         "                     plot-histogram whether a changed sample wrote its\n"
+         "                     bar's slot alone; all fourteen fail on a no\n"
          "  --dump-bounds [<path>]  print the laid-out control tree as text,\n"
          "                     private children and hidden state included, an\n"
          "                     inner panel marked \" inner\", with each control's\n"
@@ -1681,7 +1698,7 @@ static bool runSteps(Session &s, const std::vector<Step> &steps, const std::stri
 // Scenarios
 //-----------------------------------------------------------------------------
 enum class Scenario { None, PerControl, Resize, Docked, Scroll, Interaction, Typing, Clip, TextSize, Scale,
-    ToolTip, ContextMenu, Popup, VirtualList, DataTableVirtual, HideShow, DemoLabels };
+    ToolTip, ContextMenu, Popup, VirtualList, DataTableVirtual, HideShow, DemoLabels, PlotHistogram };
 
 static bool parseScenario(const std::string &name, Scenario &scenario)
 {
@@ -1701,6 +1718,7 @@ static bool parseScenario(const std::string &name, Scenario &scenario)
     else if(name == "data-table-virtual") scenario=Scenario::DataTableVirtual;
     else if(name == "hide-show") scenario=Scenario::HideShow;
     else if(name == "demo-labels") scenario=Scenario::DemoLabels;
+    else if(name == "plot-histogram") scenario=Scenario::PlotHistogram;
     else return false;
     return true;
 }
@@ -2252,6 +2270,191 @@ static bool runScrollScenario(Session &s, const std::string &shotDir)
         dropControl(s, control);
     }
     return ok;
+}
+
+//-----------------------------------------------------------------------------
+// --scenario plot-histogram: PlotHistogramDemo's 32-bar series changed and
+// hovered
+//
+// One primitive slot per bar, redrawn only where a bar changed: a sample whose
+// bar gets a new height writes that bar's slot alone, one whose bar keeps its
+// height writes and changes nothing, and a rescale writes the bars that moved.
+// The hovered bar is drawn in its hover look: moving onto a bar writes its slot,
+// a move inside it nothing, a move to the next bar the two bars' slots.
+//-----------------------------------------------------------------------------
+
+namespace
+{
+
+struct PlotStep
+{
+    size_t primSlots=0;
+    size_t textSlots=0;
+    size_t changed=0;       // controls with a state change in the frame
+};
+
+}//namespace
+
+static size_t livePrimitiveIds();
+
+static PlotStep plotFrame(Session &s)
+{
+    renderFrames(s, 1);
+
+    PlotStep step;
+    const gweni::renderer::SlotRenderer::FrameStats &gpu=s.renderer->getFrameStats();
+
+    step.primSlots=gpu.primitiveSlotsWritten;
+    step.textSlots=gpu.textSlotsWritten;
+    step.changed=gweni::controls::getChangeStats().controls;
+    return step;
+}
+
+static void printPlotStep(const char *name, const PlotStep &step)
+{
+    std::cout<<" "<<name<<"_prim_slots="<<step.primSlots<<" "<<name<<"_text_slots="<<step.textSlots
+             <<" "<<name<<"_changed="<<step.changed;
+}
+
+static bool runPlotHistogramScenario(Session &s, const std::string &shotDir, bool &passed)
+{
+    s.freezeClock=true;
+
+    const size_t idsBefore=livePrimitiveIds();
+    gweni::controls::Base *control=addControl(s, "PlotHistogramDemo");
+    auto *demo=gweni::gweni_cast<gweni::PlotHistogramDemo>(control);
+
+    if(!demo || !demo->series())
+    {
+        std::cerr<<"ControlTest: plot-histogram: PlotHistogramDemo has no series\n";
+        return false;
+    }
+
+    gweni::controls::PlotHistogram *plot=demo->series();
+
+    s.label="plot-histogram";
+    renderFrames(s, s.frames);
+
+    const size_t bars=plot->getValueCount();
+    PlotStep idle=plotFrame(s);
+    size_t idleSlots=idle.primSlots+idle.textSlots;
+    size_t idleChanged=idle.changed;
+
+    auto settle=[&]()
+    {
+        const PlotStep step=plotFrame(s);
+
+        idleSlots+=step.primSlots+step.textSlots;
+        idleChanged+=step.changed;
+    };
+
+    // A sample inside the automatic range given a new height: bar 4, raised to
+    // the middle of the range, below the highest value.
+    const size_t bar=4;
+    const float middle=(plot->getScaleMin()+plot->getScaleMax())/2.0f;
+    const int heightBefore=plot->getBarRect(bar).h;
+
+    plot->setValue(bar, middle);
+
+    const bool newHeight=plot->getBarRect(bar).h != heightBefore;
+    const PlotStep sample=plotFrame(s);
+    settle();
+
+    // the same bar a hair higher, still the same height: nothing
+    const float range=plot->getScaleMax()-plot->getScaleMin();
+    const int heightAfter=plot->getBarRect(bar).h;
+
+    plot->setValue(bar, middle+range*0.001f);
+
+    const bool sameHeight=plot->getBarRect(bar).h == heightAfter;
+    const PlotStep keep=plotFrame(s);
+    settle();
+
+    // the highest value doubled: the automatic range rescales the bars
+    size_t highest=0;
+    for(size_t i=1; i < bars; ++i)
+    {
+        if(plot->getValues()[i] > plot->getValues()[highest])
+            highest=i;
+    }
+
+    const float top=plot->getValues()[highest];
+
+    plot->setValue(highest, top*2.0f);
+    const PlotStep rescale=plotFrame(s);
+    settle();
+    plot->setValue(highest, top);
+    renderFrames(s, 1);
+    settle();
+
+    // the mouse onto bar 10, inside it, then onto bar 11
+    const gweni::Rect area=plot->getPlotBounds();
+    const gweni::Point origin=plot->localPosToCanvas();
+    auto barPoint=[&](size_t index, int dx, int y)
+    {
+        return gweni::Point(origin.x+plot->getBarRect(index).x+dx, origin.y+y);
+    };
+
+    gweni::Point at=barPoint(10, 1, area.y+area.h-2);
+    moveMouse(s, at.x, at.y);
+    const PlotStep hover=plotFrame(s);
+    const int hoveredFirst=plot->getHoveredBar();
+    settle();
+
+    at=barPoint(10, 3, area.y+2);
+    moveMouse(s, at.x, at.y);
+    const PlotStep inside=plotFrame(s);
+    settle();
+
+    at=barPoint(11, 1, area.y+area.h-2);
+    moveMouse(s, at.x, at.y);
+    const PlotStep next=plotFrame(s);
+    const int hoveredNext=plot->getHoveredBar();
+    const std::string toolTip=plot->getToolTipText();
+    settle();
+
+    const bool shot=shoot(s, shotDir+"/plot-histogram-hover.png");
+
+    forgetMouse(s);
+    renderFrames(s, 1);
+    settle();
+
+    dropControl(s, control);
+    renderFrames(s, 1);
+
+    const size_t idsLeft=livePrimitiveIds()-idsBefore;
+
+    const bool oneSlot=newHeight && sample.primSlots == 1 && sample.textSlots == 0 && sample.changed == 1;
+    const bool nothingKept=sameHeight && keep.primSlots == 0 && keep.textSlots == 0 && keep.changed == 0;
+    const bool rescaled=rescale.primSlots > 1 && rescale.primSlots <= bars && rescale.textSlots == 0;
+    const bool hovered=hoveredFirst == 10 && hover.primSlots == 1 && hover.textSlots == 0
+        && inside.primSlots == 0 && inside.textSlots == 0 && inside.changed == 0
+        && hoveredNext == 11 && next.primSlots == 2 && next.textSlots == 0 && toolTip.rfind("11: ", 0) == 0;
+    const bool settled=idleSlots == 0 && idleChanged == 0;
+    const bool idsBack=idsLeft == 0;
+
+    passed=oneSlot && nothingKept && rescaled && hovered && settled && idsBack;
+
+    std::cout<<"plot-histogram bars="<<bars;
+    printPlotStep("sample", sample);
+    printPlotStep("same_height", keep);
+    printPlotStep("rescale", rescale);
+    printPlotStep("hover", hover);
+    printPlotStep("inside", inside);
+    printPlotStep("next", next);
+    std::cout<<" idle_slots="<<idleSlots<<" idle_changed="<<idleChanged<<" ids_left="<<idsLeft
+             <<" one_slot="<<(oneSlot?"yes":"no")<<" same_height_nothing="<<(nothingKept?"yes":"no")
+             <<" rescaled="<<(rescaled?"yes":"no")<<" hovered="<<(hovered?"yes":"no")
+             <<" settled="<<(settled?"yes":"no")<<" ids_back="<<(idsBack?"yes":"no")<<"\n";
+    if(!passed)
+        std::cerr<<"ControlTest: plot-histogram: "
+                 <<(!oneSlot ? "a sample with a new height did not write exactly its bar's slot"
+                     : !nothingKept ? "a sample that kept its height wrote or changed something"
+                     : !rescaled ? "a rescale did not redraw the bars that moved"
+                     : !hovered ? "the hover wrote other than the hovered bars' slots"
+                     : !settled ? "a settled frame wrote slots or changed controls"
+                     : "the demo did not give its primitive ids back")<<"\n";
+    return shot;
 }
 
 //-----------------------------------------------------------------------------
@@ -6644,7 +6847,7 @@ int main(int argc, char *argv[])
                 std::cerr<<"ControlTest: unknown scenario: "<<name
                          <<"; try per-control, resize, docked, scroll, interaction, typing, clip,"
                            " text-size, scale, tooltip, context-menu, popup, virtual-list,"
-                           " hide-show or demo-labels\n";
+                           " hide-show, demo-labels or plot-histogram\n";
                 return EXIT_FAILURE;
             }
         }
@@ -6914,6 +7117,15 @@ int main(int argc, char *argv[])
             ok=runClipScenario(session, shotDir, passed);
             if(ok && !passed)
                 ok=false;   // something drew past its parent: a failing assertion
+            break;
+        }
+
+        case Scenario::PlotHistogram:
+        {
+            bool passed=false;
+            ok=runPlotHistogramScenario(session, shotDir, passed);
+            if(ok && !passed)
+                ok=false;   // a change wrote more than its bars' slots: a failing assertion
             break;
         }
 

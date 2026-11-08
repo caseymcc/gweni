@@ -23,6 +23,7 @@
 #include "demo/colorPicker.h"
 #include "demo/comboBox.h"
 #include "demo/contextMenu.h"
+#include "demo/plotHistogram.h"
 #include "demo/popup.h"
 #include "demo/crossSplitter.h"
 #include "demo/dataTable.h"
@@ -150,6 +151,7 @@ void Demo::init(const String &name)
         addDemo<ImagePanelDemo>(cat, "ImagePanelDemo", "Image panel");
         addDemo<StatusBarDemo>(cat, "StatusBarDemo", "Status bar");
         addDemo<SeparatorDemo>(cat, "SeparatorDemo", "Separator");
+        addDemo<PlotHistogramDemo>(cat, "PlotHistogramDemo", "Plot histogram");
     }
     {
         controls::CollapsibleCategory *cat=list->add("Controls");

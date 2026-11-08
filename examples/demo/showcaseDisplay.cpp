@@ -9,12 +9,15 @@
 #include "gweni/controls/button.h"
 #include "gweni/controls/groupBox.h"
 #include "gweni/controls/label.h"
+#include "gweni/controls/plotHistogram.h"
 #include "gweni/controls/progressBar.h"
 #include "gweni/controls/separator.h"
 #include "gweni/controls/statusBar.h"
 #include "gweni/controls/virtualList.h"
 
+#include <cmath>
 #include <string>
+#include <vector>
 
 namespace gweni
 {
@@ -122,6 +125,24 @@ GWENI_CONTROL_CONSTRUCTOR(ShowcaseDisplayDemo)
         indeterminate->setHeight(20);
         indeterminate->setIndeterminate(true);
         m_notes.push_back("ProgressBar: 27 %, 66 %, full, custom text, one indeterminate");
+    }
+    {
+        controls::GroupBox *section=showcase::addSection(middle, "PlotHistogram", false);
+        controls::PlotHistogram *plot=showcase::addRow<controls::PlotHistogram>(section);
+
+        // a bell over a slow wave, in the automatic range
+        std::vector<float> values(32);
+
+        for(size_t i=0; i < values.size(); ++i)
+        {
+            const float x=(float(i)-15.5f)/6.0f;
+
+            values[i]=std::exp(-x*x)*8.0f+2.0f*std::sin(float(i)*0.6f)+2.0f;
+        }
+        plot->setHeight(70);
+        plot->setValues(values);
+        plot->setCaption("32 samples");
+        m_notes.push_back("PlotHistogram: 32 bars, automatic range, a caption");
     }
     {
         // side by side from the left, each the section's height

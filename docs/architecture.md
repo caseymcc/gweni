@@ -1660,6 +1660,39 @@ two programs and the draws. What follows describes both together:
   DataTableVirtualDemo 100 000 generated records in source mode, made into text only as
   a row binds them, sorted by any column on a vector of record numbers;
   ShowcaseContainersDemo has a two-column file table.
+- **The plot histogram: one slot per bar, redrawn where a bar changed.**
+  `controls::PlotHistogram` (`include/gweni/controls/plotHistogram.h`, imgui's
+  PlotHistogram) draws a series (`setValues`, `setValue(i, v)`) as bars from the bottom of
+  a frame. The plot is the control less its padding (2 units all round) and, with a
+  caption (`setCaption`, imgui's overlay_text), less the caption's line: the caption is an
+  owner-placed `internal::Text` at the top centre, created by the first non-empty caption,
+  and its line height, measured in the pass, is taken off the plot's top in `layout()`, so
+  no bar runs under its text (a new height marks `StateChange_Background`). **Bars:** bar
+  i takes the columns `[i*W/N, (i+1)*W/N)` of the plot's W units, rounded down, so the
+  remainder is spread a unit at a time and no bar is more than a unit wider than another
+  (a resize moves each edge by at most the change, never re-deals the widths); a column 2
+  units wide or more leaves its last unit as the gap to the next bar. A bar's height is
+  its value's share of the range times the plot's height, rounded and clamped: at or
+  below the minimum (or NaN) it draws nothing, past the maximum it fills the column.
+  `setScaleRange` fixes the range; the automatic one (`setAutoScale`, the default) is
+  `min(0, lowest)` to the highest value, worked out again on every change, so a value
+  past it, or the highest lowered, rescales every bar. **Change tracking:** `setValue`
+  marks `StateChange_Background` only when its bar's height or the automatic range
+  changes, so a sample that keeps its bar's height costs nothing. The textured
+  `PlotHistogram` renderer draws the frame (`PlotFrame`) at the control's z and one slot
+  per bar (`PlotBar`, `PlotBarHover` for the hovered one) at z+1 (`depthLayers()` 2),
+  resizes its slot list to the bar count in `update()` (as the Slider's notches do) and
+  keeps what it last drew in each slot: a frame marking the control's geometry,
+  visibility or creation (a move, a resize, a renumber, an ancestor's bounds, which also
+  re-stamp the clip box) draws every slot, any other only the slots whose rect, surface
+  or z is not the one drawn, and a bar with no rect is hidden. So a changed sample
+  rewrites its bar's slot alone, and a rescale the bars that moved. **Hover:** the hovered
+  bar is the one whose column holds the mouse inside the plot (`getBarAt`); moving to
+  another bar redraws the two, and sets the plot's tooltip text to `"<index>: <value>"`
+  (empty outside the plot), which the canvas's ToolTip box shows after its delay and
+  changes at once while shown; a move inside the same column changes nothing.
+  PlotHistogramDemo has a 32-bar series in the automatic range and frame times in a fixed
+  range with a caption; ShowcaseDisplayDemo has one.
 - **Scale and the device-pixel grid.** Controls lay out in logical units (integers);
   `renderer::Base::translate()` turns them into device pixels at `scale()` (set by
   `Canvas::setScale`). It snaps **edges**, not origin and size apart: a point is

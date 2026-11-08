@@ -161,10 +161,12 @@ String PlotHistogram::getCaption() const
 Rect PlotHistogram::getPlotBounds() const
 {
     const Padding &padding=getPadding();
+    // below the caption's line, so no bar runs under its text
+    const int top=padding.top+m_captionHeight;
 
-    return Rect(padding.left, padding.top,
+    return Rect(padding.left, top,
         std::max(0, getWidth()-padding.left-padding.right),
-        std::max(0, getHeight()-padding.top-padding.bottom));
+        std::max(0, getHeight()-top-padding.bottom));
 }
 
 int PlotHistogram::barHeight(size_t index, int plotHeight) const
@@ -268,14 +270,25 @@ void PlotHistogram::layout(skin::Base *skin)
 {
     ParentClass::layout(skin);
 
+    // The caption's line, measured by this pass, is taken off the plot's top:
+    // a new height moves the bars, which the renderer redraws.
+    const int captionHeight=m_caption?m_caption->getPreferredSize().height:0;
+
+    if(captionHeight != m_captionHeight)
+    {
+        m_captionHeight=captionHeight;
+        addStateChange(StateChange_Background);
+    }
+
     if(!m_caption)
         return;
 
-    // at the top centre of the plot, over the bars
-    const Rect plot=getPlotBounds();
+    // at the top centre, above the plot
+    const Padding &padding=getPadding();
     const Size &size=m_caption->getPreferredSize();
+    const int width=getWidth()-padding.left-padding.right;
 
-    placeChild(m_caption, plot.x+(plot.w-size.width)/2, plot.y, size.width, size.height);
+    placeChild(m_caption, padding.left+(width-size.width)/2, padding.top, size.width, size.height);
 }
 
 }//namespace controls

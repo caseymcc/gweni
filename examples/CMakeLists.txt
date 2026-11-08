@@ -16,6 +16,8 @@ set(GWENI_DEMO_SOURCES
     demo/comboBox.h
     demo/contextMenu.cpp
     demo/contextMenu.h
+    demo/plotHistogram.cpp
+    demo/plotHistogram.h
     demo/popup.cpp
     demo/popup.h
     demo/crossSplitter.cpp

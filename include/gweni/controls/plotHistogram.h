@@ -25,15 +25,17 @@ class Text;
 //! PlotHistogram), with an optional caption at the top centre (imgui's
 //! overlay_text) and a tooltip naming the hovered bar's index and value.
 //!
-//! The plot is the control less its padding (getPlotBounds()). Bar i
-//! takes the columns [i*W/N, (i+1)*W/N) of its W units, rounded down, so the
-//! remainder is spread one unit at a time across the row and no bar is more
-//! than one unit wider than another; a bar leaves its column's last unit
-//! empty as the gap to the next when the column is 2 units wide or more. A
-//! bar's height is its value's share of the scale range times the plot's
-//! height, rounded to a whole unit and clamped to the plot: a value at or
-//! below the range's minimum (or not a number) draws nothing, one past its
-//! maximum fills the column. A bar with no height or no width is hidden.
+//! The plot is the control less its padding and, with a caption, less the
+//! caption's line at the top, so no bar runs under its text
+//! (getPlotBounds()). Bar i takes the columns [i*W/N, (i+1)*W/N) of its W
+//! units, rounded down, so the remainder is spread one unit at a time across
+//! the row and no bar is more than one unit wider than another; a bar leaves
+//! its column's last unit empty as the gap to the next when the column is 2
+//! units wide or more. A bar's height is its value's share of the scale
+//! range times the plot's height, rounded to a whole unit and clamped to the
+//! plot: a value at or below the range's minimum (or not a number) draws
+//! nothing, one past its maximum fills the column. A bar with no height or no
+//! width is hidden.
 //!
 //! The textured skin draws the frame and one primitive slot per bar, and
 //! redraws only the bars whose rect or look changed: a setValue() whose bar
@@ -70,14 +72,17 @@ public:
     float getScaleMin() const { return m_scaleMin; }
     float getScaleMax() const { return m_scaleMax; }
 
-    //! A caption over the plot at its top centre; an empty string removes it.
+    //! A caption at the top centre, on a line of its own above the bars; an
+    //! empty string removes it. Its line height is taken off the plot when
+    //! it is laid out.
     virtual void setCaption(const String &caption);
     String getCaption() const;
     //! The caption's Text, or null without a caption.
     internal::Text *getCaptionControl() const { return m_caption; }
 
-    //! The control less its padding, where the bars are, in the control's
-    //! own coordinates (its top-left at 0,0), as the bar rects are.
+    //! The control less its padding and the caption's line, where the bars
+    //! are, in the control's own coordinates (its top-left at 0,0), as the
+    //! bar rects are.
     Rect getPlotBounds() const;
     //! Bar \p index's rect in this control's own coordinates: its column
     //! less the gap, as high as its value makes it, on the plot's bottom.
@@ -91,6 +96,11 @@ public:
 
     //! The tooltip shown over bar \p index: "<index>: <value>".
     String barToolTip(size_t index) const;
+
+    //! A plot asks for the size it was asked to be (its constructor's 200x80,
+    //! or the app's): its bars are drawn by its skin, and its caption is placed
+    //! by it (Placement::Owner).
+    bool sizedByRequest(Dim /*dim*/) const override { return true; }
 
     void onMouseMoved(int x, int y, int deltaX, int deltaY) override;
     void onMouseLeave() override;
@@ -111,6 +121,8 @@ protected:
     float m_scaleMax=1.0f;
     int m_hoveredBar=-1;
     internal::Text *m_caption=nullptr;
+    //! the caption's line height as last laid out, taken off the plot's top
+    int m_captionHeight=0;
 };
 
 }//namespace controls

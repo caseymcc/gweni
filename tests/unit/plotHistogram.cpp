@@ -28,7 +28,8 @@
  *    once, the text following the hovered bar's value, and no tooltip outside
  *    the plot;
  *  - hiding and showing the plot, and its caption, a Text child numbered
- *    after the bars and placed at the plot's top centre.
+ *    after the bars, at the top centre on a line of its own taken off the
+ *    plot (the bars that moved drawn again).
  */
 #include "headlessFixture.h"
 
@@ -558,7 +559,7 @@ TEST_CASE("PlotHistogram: the hovered bar's tooltip, unmoved by a move inside th
     CHECK(scene.plot->getToolTipText().empty());
 }
 
-TEST_CASE("PlotHistogram: hidden and shown, and its caption at the top centre over the bars")
+TEST_CASE("PlotHistogram: hidden and shown, and its caption on a line at the top centre")
 {
     Scene scene;
 
@@ -585,6 +586,8 @@ TEST_CASE("PlotHistogram: hidden and shown, and its caption at the top centre ov
     CHECK(scene.renderer.hidden == std::vector<size_t>{scene.barId(0)});
 
     // a caption: a Text child, numbered after the bars' z
+    const Rect full=scene.plot->getPlotBounds();
+
     CHECK(scene.plot->getCaptionControl() == nullptr);
     scene.plot->setCaption("frame time");
     scene.frame();
@@ -596,18 +599,29 @@ TEST_CASE("PlotHistogram: hidden and shown, and its caption at the top centre ov
     CHECK(caption->getParent() == scene.plot);
     CHECK(caption->getZIndex() >= scene.plot->getZIndex()+2);
 
-    // at the plot's top centre
+    // at the top centre, on a line of its own: the plot starts below it, and
+    // the bars that moved down with it are drawn again
     const Rect area=scene.plot->getPlotBounds();
     const Rect bounds=caption->getBounds();
 
-    CHECK(bounds.y == area.y);
-    CHECK(std::abs((bounds.x+bounds.w/2)-(area.x+area.w/2)) <= 1);
+    REQUIRE(bounds.h > 0);
+    CHECK(bounds.y == full.y);
+    CHECK(area.y == full.y+bounds.h);
+    CHECK(area.h == full.h-bounds.h);
+    CHECK(std::abs((bounds.x+bounds.w/2)-(full.x+full.w/2)) <= 1);
+    CHECK(scene.drawnSet() == std::set<size_t>{scene.barId(1), scene.barId(2)});
+    // the full bar is the new plot's height
+    CHECK(scene.plot->getBarRect(2).y == area.y);
+    CHECK(scene.plot->getBarRect(2).h == area.h);
 
-    // a new caption reuses the Text; an empty one removes it
+    // a new caption reuses the Text and moves no bar; an empty one removes it
     scene.plot->setCaption("other");
     CHECK(scene.plot->getCaptionControl() == caption);
+    scene.frame();
+    CHECK(scene.drawnSet().empty());
     scene.plot->setCaption("");
     CHECK(scene.plot->getCaptionControl() == nullptr);
     scene.frame();
     CHECK(scene.plot->getCaption().empty());
+    CHECK((scene.plot->getPlotBounds() == full));
 }
