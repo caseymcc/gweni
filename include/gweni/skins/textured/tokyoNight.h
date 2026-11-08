@@ -204,6 +204,14 @@ inline Surface DragNumberFocus   { Surf,                  Surf,                 
 inline Surface DragNumberDown    { SurfHi,                SurfHi,                Cyan,        RadiusSm, BorderW };
 inline Surface DragNumberDisabled{ Color(0x1f,0x22,0x33), Color(0x1f,0x22,0x33), BgHighlight, RadiusSm, BorderW };
 
+// A VectorField component's axis tag, a block of the axis's colour before its
+// field (its letter in the skin's AxisTagText): X red, Y green, Z blue and W
+// grey; a disabled row's tags are filled as a disabled field.
+inline Surface VectorTagX        { Red,                   Red,                   Red,         RadiusSm, 0.0f };
+inline Surface VectorTagY        { Green,                 Green,                 Green,       RadiusSm, 0.0f };
+inline Surface VectorTagZ        { Blue,                  Blue,                  Blue,        RadiusSm, 0.0f };
+inline Surface VectorTagW        { FgDark,                FgDark,                FgDark,      RadiusSm, 0.0f };
+
 // Window title-bar buttons: nothing at rest (a transparent fill hides its slot),
 // red under the close button while hovered, a deeper red while pressed. The
 // minimise and maximise buttons hover and press as ButtonHover/ButtonDown.
@@ -246,6 +254,8 @@ inline std::unordered_map<std::string, Surface*>& surfaceRegistry()
         {"PlotFrame",&PlotFrame},{"PlotBar",&PlotBar},{"PlotBarHover",&PlotBarHover},{"PlotLine",&PlotLine},
         {"DragNumber",&DragNumber},{"DragNumberHover",&DragNumberHover},{"DragNumberFocus",&DragNumberFocus},
         {"DragNumberDown",&DragNumberDown},{"DragNumberDisabled",&DragNumberDisabled},
+        {"VectorTagX",&VectorTagX},{"VectorTagY",&VectorTagY},{"VectorTagZ",&VectorTagZ},
+        {"VectorTagW",&VectorTagW},
         {"WindowButton",&WindowButton},{"WindowCloseHover",&WindowCloseHover},{"WindowCloseDown",&WindowCloseDown},
     };
     return m;

@@ -19,6 +19,7 @@
 #include "gweni/controls/colorPicker.h"
 #include "gweni/controls/colorButton.h"
 #include "gweni/controls/dragNumber.h"
+#include "gweni/controls/vectorField.h"
 #include "gweni/controls/textBox.h"
 #include "gweni/controls/separator.h"
 #include "gweni/controls/selectable.h"
@@ -1850,6 +1851,31 @@ void DragNumber::update(renderer::Base *renderer, controls::Base *baseControl)
 
 
 ///////////////////////////////////////////////////////////////////////////
+//VectorFieldTag
+void VectorFieldTag::update(renderer::Base *renderer, controls::Base *baseControl)
+{
+    if(m_primitives.empty())
+        return;
+
+    if(!baseControl->visible())
+    {
+        renderer->hidePrimitive(m_primitives[0]);
+        return;
+    }
+
+    static const tokyonight::Surface *const axes[]=
+    {
+        &tokyonight::VectorTagX, &tokyonight::VectorTagY, &tokyonight::VectorTagZ, &tokyonight::VectorTagW
+    };
+    controls::internal::VectorFieldTag *tag=static_cast<controls::internal::VectorFieldTag *>(baseControl);
+    const tokyonight::Surface *surface=tag->isDisabled()?&tokyonight::DragNumberDisabled:axes[tag->getAxis()];
+
+    renderer->drawRoundedRect(m_primitives[0], baseControl->getRenderBounds(), surface->radius,
+        surface->borderWidth, surface->top, surface->bottom, surface->border, baseControl->getZIndex());
+}
+
+
+///////////////////////////////////////////////////////////////////////////
 //StatusBar
 size_t StatusBar::Background;
 size_t StatusBar::Selection;
@@ -2568,6 +2594,7 @@ template class ControlRegister<ColorSlider>;
 template class ControlRegister<ColorDisplay>;
 template class ControlRegister<ColorButton>;
 template class ControlRegister<DragNumber>;
+template class ControlRegister<VectorFieldTag>;
 template class ControlRegister<StatusBar>;
 // NOTE: TabItem<_Type> is itself a class template (TabItem<TabTop>, <TabBottom>,
 // <TabLeft>, <TabRight>); register those specializations here if/when their

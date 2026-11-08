@@ -161,6 +161,8 @@ set(GWENI_CONTROL_SOURCES
     source/controls/colorButton.cpp
     include/gweni/controls/dragNumber.h
     source/controls/dragNumber.cpp
+    include/gweni/controls/vectorField.h
+    source/controls/vectorField.cpp
     include/gweni/controls/colorControls.h
     source/controls/colorControls.cpp
     include/gweni/controls/colorEdit.h

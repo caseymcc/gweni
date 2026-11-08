@@ -394,6 +394,7 @@ std::unordered_map<std::string, gweni::Color*> TexturedSkin::textColorRegistry()
         {"ButtonDown",&Colors.Button.Down},{"ButtonDisabled",&Colors.Button.Disabled},
         {"TooltipText",&Colors.TooltipText},
         {"PlaceholderText",&Colors.PlaceholderText},
+        {"AxisTagText",&Colors.AxisTagText},
         {"SelectableNormal",&Colors.Selectable.Normal},{"SelectableHover",&Colors.Selectable.Hover},
         {"SelectableSelected",&Colors.Selectable.Selected},{"SelectableDisabled",&Colors.Selectable.Disabled},
     };
@@ -752,6 +753,7 @@ void TexturedSkin::setThemeColors()
     Colors.ModalBackground=gweni::Color(0x0a, 0x0a, 0x10, 160);
     Colors.TooltipText=Fg;
     Colors.PlaceholderText=Muted;
+    Colors.AxisTagText=BgDark;
     // the hover is the background alone, so hovering writes no glyph slot
     Colors.Selectable.Normal=Fg;
     Colors.Selectable.Hover=Fg;

@@ -387,6 +387,8 @@ public:
         gweni::Color TooltipText;
         //! A TextBox's hint, drawn while it is empty and unfocused.
         gweni::Color PlaceholderText{0x80, 0x80, 0x80};
+        //! A VectorField's axis letter (X, Y, Z, W), drawn on its axis's colour.
+        gweni::Color AxisTagText{0, 0, 0};
 
         //! A Selectable row's text, by its state.
         struct Selectable_t

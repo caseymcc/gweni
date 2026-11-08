@@ -1120,6 +1120,21 @@ public:
     inline static const std::string_view name="DragNumber";
 };
 
+// controls::internal::VectorFieldTag: its block in one primitive, the axis's
+// VectorTagX..VectorTagW surface (DragNumberDisabled while disabled); the
+// label's Text draws the letter.
+class VectorFieldTag:public textured::ControlRegister<VectorFieldTag>
+{
+public:
+    static void staticInit(TexturedSkin *) { m_staticInit=true; }
+
+    size_t requiredPrimitives() override { return 1; }
+
+    void update(renderer::Base *renderer, controls::Base *baseControl) override;
+
+    inline static const std::string_view name="VectorFieldTag";
+};
+
 class StatusBar:public textured::ControlRegister<StatusBar>
 {
 public:
