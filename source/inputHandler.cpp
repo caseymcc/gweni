@@ -85,8 +85,9 @@ static void UpdateHoveredControl(controls::Base *inCanvas)
                 OldHover->onMouseLeave();
 
             // no enter for the captured control, but its ancestors still learn
-            // that the hover is now in it
-            if(HoveredControl == MouseFocus)
+            // that the hover is now in it (unless the leave deleted it: ~Base
+            // clears both pointers)
+            if(MouseFocus && HoveredControl == MouseFocus)
                 MouseFocus->notifyAncestorsOfInteraction();
         }
 
