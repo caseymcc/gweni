@@ -223,10 +223,69 @@ string is drawn inside it (`Text::textOrigin()`).
 ## One pass per frame
 
 A frame lays the canvas out in the update phase (`Canvas::doThink`, through
-`Canvas::layoutCanvas`) in four steps over the whole tree: `calculateSize(X)`,
-`arrange(X)`, `calculateSize(Y)`, `arrange(Y)`. **A control must converge in
-that one pass**, the frame it is created in included: once the pass is over,
+`Canvas::layoutCanvas`) in four steps: `calculateSize(X)`, `arrange(X)`,
+`calculateSize(Y)`, `arrange(Y)`. Each step enters only the controls that are
+dirty (see "Which controls a pass enters"). **A control must converge in that
+one pass**, the frame it is created in included: once the pass is over,
 running it again must change nothing.
+
+### Which controls a pass enters
+
+A pass enters the dirty paths and nothing else. A control is dirty
+(`Base::layoutDirty()`, its `m_updateLayout`) when it or something under it
+was invalidated, or when its bounds changed, since a pass last arranged it in
+Y. An invalidation marks the control and every control holding it up to the
+canvas, the inner panel a child is really held by included; a new bounds
+marks the same path without invalidating the ancestors. Every walk over
+children goes through `Base::doCalculateSize`/`Base::doArrange`, and they skip
+a clean control. A clean control keeps its preferred size and its bounds, and
+nothing under it is entered. So a dirty parent still loops over all its
+children, measuring and placing them from their cached preferred sizes, but
+enters only the dirty ones: one Label's new text enters the canvas, the
+Label's ancestors and the Label, and a Window dragged over 10 000 Labels
+enters the canvas and the Window (`tests/unit/layoutWalk.cpp`;
+`layout_visited=` in `ControlTest --stats` and `gweni_bench` counts the
+entries).
+
+A control stays dirty through all four steps, so a width the X arrange gives
+it is measured in Y, and is cleared at the end of its Y arrange. It stays
+dirty past that when it re-dirtied the pass, or when a shown child is still
+dirty (a child moved in a `postLayout()`), so the next pass finds its way
+down.
+
+A pure move does not dirty the moved control's subtree: its children are
+placed relative to it, and `onBoundsChanged` marks the subtree
+`StateChange_Geometry` for the render walk. A new size invalidates the
+subtree, which is laid out in it. The moved control's own `layout()` runs
+again, since one may correct where its parent put it (a Menu kept inside the
+canvas). A request (`setPos`, `setSize`, `setBounds`, `moveTo`) invalidates the
+control, and so its parent, whether or not the bounds already match it.
+
+Skipping a clean control is the same as running it only if its cached result
+is still the one it would compute, so **a `calculateSize()` may read only**:
+
+* the control's own state, every change of which invalidates it (its text,
+  font, padding, size flags, requested size, the children it has);
+* its children's preferred sizes, and whether they are hidden, which their
+  own invalidation reaches it through;
+* its parent's padding, dock or requested size, and only in a type whose
+  `readsParentLayout()` says so: a change to those invalidates such children
+  as well (`Base::invalidateParentReaders`). A wrapped `Text` (its parent's
+  requested inner width) and a `TabButton` (its strip's dock) do;
+* the canvas's size, which invalidates the whole tree when it changes, as a
+  scale change and a `textLayoutSerial()` bump do.
+
+It never reads its own current bounds or a sibling's. `arrange()` may read in
+addition the bounds its parent has just given it, which enter it again when
+they change. Anything else (an anchor elsewhere in the tree, as a Popup's
+placement reads) needs an invalidation of its own (`Canvas::updatePopup`).
+
+`GWENI_LAYOUT_VERIFY=1`, or ControlTest's `--verify-layout`, checks this:
+once a frame's layout has converged, the canvas runs one more pass that enters
+every shown control (`Canvas::verifyingLayout()`) and fails, naming the
+control, the axis, the field and both values, on any bounds or preferred size
+it changes. The `controltest_verify_layout_*` tests run every control and the
+scenarios that change layout at run time with it.
 
 ### What each step may read
 
@@ -245,7 +304,7 @@ running it again must change nothing.
 
 `Base::arrange` calls `layout()` at the start of the control's **X** arrange,
 when its width is final, before it places its children; it is skipped when
-nothing invalidated the control since the last pass. If the control is
+nothing invalidated or moved the control since the last pass. If the control is
 invalidated again before its Y arrange (a new height from the Y pass does
 that, as placement), `layout()` runs **again at the start of the Y arrange**,
 with both its width and its height final. So:
@@ -358,8 +417,8 @@ to children it lays out next count as placement too: bounds through
 
 ### The safety net
 
-An invalidation raised during a pass is not lost: `recurseLayout` clears the
-canvas's `m_updateLayout` before the pass, not after it, and a pass that
+An invalidation raised during a pass is not lost: the control it was raised
+on stays dirty past its Y arrange (`Base::noteRedirty`), and a pass that
 re-dirtied layout is followed by another in the same frame, at most
 `Canvas::MaxLayoutPasses` (4). When the cap is hit a one-line warning names the
 control (once per control type) and what is still dirty carries over:
