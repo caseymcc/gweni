@@ -829,9 +829,10 @@ edge), where a value lands on an 8-bit tie and the two drivers round it apart. S
 are the blend's: one pixel is `109,114,142` on GL and `109,115,141` on Vulkan, half
 coverage of `192,202,245` over `26,27,38`, so G and B are exactly 114.5 and 141.5 and
 come out rounded in opposite directions, which no alpha a level off would give.
-Others move every channel by 1, as a coverage a level apart would. Spelling `smoothstep` out as
-`mix()` is below changes none of them, so no shader change removes them. There are
-more at scale 2, where the skin's 11 px text is in the SDF range.
+Others move every channel by 1, as a coverage a level apart would. Spelling
+`smoothstep` out, as `mix()` is below, changes none of them, so no shader change
+removes them. There are more at scale 2, where the skin's 11 px text is in the SDF
+range.
 
 The first measurement was not within the ceiling: up to 0.875 % of a page differed
 (ShowcaseContainersDemo, TreeControlDemo 0.732 %, ShowcaseButtonsDemo 0.572 %), all
@@ -845,7 +846,8 @@ the value falls on an 8-bit tie the two round apart. Written out in either form,
 was bit-identical on both backends. The shared fragment bodies now spell it out as
 `a + (b - a)*t` (`lerp()` in `shaders/primitive.frag.glsl` and `text.frag.glsl`), so
 every backend computes the same, and GL's own pixels did not change (every
-`--shot-all` PNG and the hero, and `docs_samples`, byte for byte). A `mix()` in a shader body is a tie waiting to happen; use `lerp()`.
+`--shot-all` PNG and the hero, and `docs_samples`, byte for byte). A `mix()` in a
+shader body is a tie waiting to happen; use `lerp()`.
 
 ## OpenGLCore renderer (retained model)
 
