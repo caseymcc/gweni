@@ -15,7 +15,11 @@
 #    nodir     the directory itself (not created)
 #    noskin    DefaultSkin.json: every surface magenta, the text still drawn
 #    nofont    OpenSans.ttf, the default face: the text in the built-in one
-#    complete  nothing: exit 0 and no "resources incomplete" line
+#    complete  nothing: exit 0 and nothing on stderr
+#
+#  Both tools capture the demo shell (ControlTest's --control Demo), which
+#  builds every page up front, so a page that logs, as ImagePanelDemo did
+#  asking for a missing image, fails the complete case.
 #
 #  A degraded case passes only if the exe exits 2, writes the PNG, names the
 #  missing path on stderr and ends with "<TOOL>: resources incomplete, exiting 2".
@@ -63,7 +67,7 @@ endif()
 set(shot "${SCRATCH_DIR}/shot.png")
 
 if(TOOL STREQUAL "ControlTest")
-    set(args --headless --control ButtonDemo --shot "${shot}" --resources "${resources}")
+    set(args --headless --control Demo --shot "${shot}" --resources "${resources}")
 elseif(TOOL STREQUAL "OpenGLCore")
     set(args --headless --screenshot "${shot}" --resources "${resources}")
 else()
@@ -101,6 +105,11 @@ if(CASE STREQUAL "complete")
     endif()
     if(err MATCHES "resources incomplete")
         message(FATAL_ERROR "${CASE}: ${TOOL} reported incomplete resources\n${log}")
+    endif()
+    # the runner passes the page's stderr on and adds none of its own to a
+    # passing run, so this holds for the browser too
+    if(NOT err STREQUAL "")
+        message(FATAL_ERROR "${CASE}: ${TOOL} wrote to stderr\n${log}")
     endif()
     return()
 endif()
