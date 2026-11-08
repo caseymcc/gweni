@@ -945,14 +945,23 @@ bool Base::setBounds(const Rect &bounds)
         (m_bounds.h != bounds.h && laidOutThisPass(Dim::Y)))
         noteRedirty();
 
+    // A new size is what the subtree is laid out in. A move is not: children
+    // are placed relative to it, and onBoundsChanged marks the subtree for
+    // the render walk (absolute positions, clip boxes); the move is laid out
+    // as a request of it or as its parent's placement, below.
+    if(m_bounds.w != bounds.w || m_bounds.h != bounds.h)
     {
         PlacementScope placement;
         invalidateChildren(true);
     }
 
-    // The pass arranges it again at its new bounds: the way down to it is
-    // marked (not invalidated: no layout() of an ancestor reads it), which the
-    // parent placing it in a pass already is.
+    // The pass arranges it again at its new bounds, and its own layout() runs
+    // again: one may correct where its parent put it (Menu::layout keeps the
+    // menu inside the canvas). The way down to it is marked, not invalidated:
+    // no layout() of an ancestor reads it, and the parent placing it in a
+    // pass is on that way already.
+    m_needsLayout=true;
+
     for(Base *control=this; control;
         control=control->m_actualParent?control->m_actualParent:control->m_parent)
         control->m_updateLayout=true;
