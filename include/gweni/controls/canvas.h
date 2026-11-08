@@ -173,6 +173,10 @@ public:
 
     /// Delete all children (this is done called in the destructor too)
     virtual void releaseChildren();
+    /// releaseChildren() is deleting the tree, front to back: a control being
+    /// deleted then must not touch another canvas child it made (a Popup), which
+    /// may be gone already and is deleted by the canvas otherwise.
+    bool releasingChildren() const { return m_releasingChildren; }
 
     /// Delayed deletes
     virtual void addDelayedDelete(controls::Base *control);

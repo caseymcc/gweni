@@ -74,10 +74,21 @@ GWENI_CONTROL_CONSTRUCTOR(ColorEdit)
 
 ColorEdit::~ColorEdit()
 {
-    // Delayed, as the canvas deletes it with its other children when it is
-    // tearing down (PopupDemo).
-    if(m_popup)
-        m_popup->delayedDelete();
+    if(!m_popup)
+        return;
+
+    // A canvas releasing its children deletes the popup itself, before or
+    // after this control (opening it moved it to the end of the canvas's
+    // children, and bringing this control's window to the front afterwards
+    // puts the window after it), so the popup is not touched then (#436).
+    // Otherwise it is deleted delayed, as a Popup's creator does.
+    Canvas *canvas=getCanvas();
+
+    if(!canvas)
+        canvas=m_popup->getCanvas();
+    if(canvas && canvas->releasingChildren())
+        return;
+    m_popup->delayedDelete();
 }
 
 void ColorEdit::buildFields()

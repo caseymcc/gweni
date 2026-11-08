@@ -30,7 +30,11 @@
  *  field edit moves the picker, a picker change updates the swatch and the
  *  fields keeping the alpha, with no loop back; Escape, a click outside and
  *  a second click on the swatch close it. Deleting the ColorEdit gives its
- *  ids back, the popup's included.
+ *  ids back, the popup's included. A canvas deleted with a ColorEdit whose
+ *  popup was opened is safe in both orders its children can be in: the popup
+ *  after the ColorEdit's holder, and before it once the holder was brought to
+ *  the front (the canvas deleted the popup first, and ~ColorEdit touched it:
+ *  a heap-use-after-free in the ASAN tree), the popup open or closed.
  *
  *  HSVColorPicker::setColor before any layout leaves the picker on that
  *  colour (#413: RGBtoHSV gave al_color_rgb_to_hsv 0-255 channels where it
@@ -570,6 +574,52 @@ TEST_CASE("a click on ColorEdit's swatch opens an HSV picker in a Popup below it
         delete edit;
         scene.frame();
         CHECK(scene.canvas->shownPopup() == nullptr);
+    }
+    const test::IdBankCounts after=test::IdBankCounts::now();
+    CHECK(after.livePrimitives() == baseline.livePrimitives());
+    CHECK(after.liveTexts() == baseline.liveTexts());
+}
+
+TEST_CASE("a canvas deleted with a ColorEdit whose picker was opened deletes the popup once, in either order")
+{
+    const test::IdBankCounts baseline=test::IdBankCounts::now();
+
+    for(const bool front : {false, true})
+    {
+        for(const bool leaveOpen : {false, true})
+        {
+            CAPTURE(front);
+            CAPTURE(leaveOpen);
+            SwatchRecorder renderer;
+            skin::textured::TexturedSkin skin{&renderer};
+            controls::Canvas *canvas=new controls::Canvas(&skin);
+            canvas->setSize(640, 480);
+
+            // a holder, as a Window holding the field would be
+            controls::Base *holder=canvas->newChild<controls::Base>();
+            holder->setBounds(0, 0, 300, 200);
+            ColorEdit *edit=holder->newChild<ColorEdit>();
+            edit->setPos(10, 10);
+            canvas->updateCanvas();
+            canvas->renderCanvas();
+
+            edit->togglePicker();
+            REQUIRE(edit->getPopup() != nullptr);
+            if(!leaveOpen)
+                edit->togglePicker();
+            CHECK(edit->isPickerOpen() == leaveOpen);
+            // the popup is now after the holder; bringing the holder to the
+            // front puts it after the popup, which the canvas then deletes first
+            if(front)
+                holder->bringToFront();
+            canvas->updateCanvas();
+            canvas->renderCanvas();
+
+            HoveredControl=nullptr;
+            KeyboardFocus=nullptr;
+            MouseFocus=nullptr;
+            delete canvas;
+        }
     }
     const test::IdBankCounts after=test::IdBankCounts::now();
     CHECK(after.livePrimitives() == baseline.livePrimitives());

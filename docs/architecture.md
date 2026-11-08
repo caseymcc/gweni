@@ -1530,7 +1530,11 @@ two programs and the draws. What follows describes both together:
   (`m_settingPicker`) that drops the change events `HSVColorPicker::setColor` raises, so
   there is no picker, fields, picker loop. A second click, Escape or a click outside
   closes it, as for any popup; the ColorEdit `delayedDelete()`s the popup in its
-  destructor. ColorEditDemo has the two buttons and both modes; ShowcaseInputDemo has a
+  destructor, except while the canvas is releasing its children
+  (`Canvas::releasingChildren()`): the canvas deletes the popup itself then, and may
+  have done so already, since an open made it a later child than the ColorEdit's
+  window and a `bringToFront` of the window can put it earlier again (#436).
+  ColorEditDemo has the two buttons and both modes; ShowcaseInputDemo has a
   translucent RGBA field and a hex one.
 - **Scale and the device-pixel grid.** Controls lay out in logical units (integers);
   `renderer::Base::translate()` turns them into device pixels at `scale()` (set by

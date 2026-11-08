@@ -36,7 +36,9 @@ enum class ColorEditMode
 //! and kept inside the canvas like any popup); a second click, Escape or a
 //! click outside closes it.
 //!
-//! The swatch, the fields and the open picker always show the same colour:
+//! The swatch and the fields always show the same colour, and the open picker
+//! shows it as nearly as its HSV box can (its own R/G/B boxes may read a
+//! channel or two off after the round trip):
 //! - Typing applies a field as soon as it holds a whole valid value: a number
 //!   0-255 in an RGBA field, six hex digits (eight with alpha, the '#'
 //!   optional) in the hex field. Until then nothing else changes.
