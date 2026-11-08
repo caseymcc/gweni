@@ -1013,6 +1013,14 @@ two programs and the draws. What follows describes both together:
   hidden run, a freed one and a shrunk run's tail off the screen: no index is ever
   written for them, so hiding, showing or shrinking a run uploads no index (there are
   none to upload) and marks only its font's list for rebuilding (`markTextDrawList`).
+  A run marks it only when what it puts in the list changes (`drawnRange`: its first
+  slot and glyph count, or nothing while hidden or empty) or it moves to another font
+  (`setTextRunFont` marks both), so a string relaid in the same slots and length, a
+  Label given a new string as long as the old one, rebuilds nothing. A rebuild is
+  still O(runs in the font) and a sort, but refills the entries already in
+  `drawChunks` and a scratch vector of ranges, so in steady state it allocates
+  nothing; a debug build checks every list it did not rebuild against a rebuild
+  (`verifyTextDrawList`) and asserts that they match.
   The slots are never moved for this, so the dirty-slot upload is the same with one
   font or many.
 - **A font is held by its owners and by the runs laid out in it.** Every caller

@@ -14,6 +14,7 @@
 #include <gweni/primitiveIds.h>
 #include <gweni/utils/filesystem.h>
 
+#include <cassert>
 #include <iterator>
 
 #include <math.h>
@@ -1141,6 +1142,8 @@ void SlotRenderer::flush()
 
             if(fontData.drawListStale)
                 buildTextDrawList(fontData);
+            else
+                verifyTextDrawList(fontData);
             if(fontData.drawChunks.empty())
                 continue;
 
@@ -1760,8 +1763,10 @@ void SlotRenderer::freeTextRun(TextRun &run)
 
     // Out of its font's draw list before handing it back: a freed run must draw
     // nothing until somebody allocates its slots again.
+    const std::pair<size_t, size_t> drawn=drawnRange(run);
+
     run.glyphs=0;
-    markTextDrawList(run);
+    markTextDrawList(run, drawn);
     addFreeTextRun(run.start, run.capacity);
 
     run.start=0;
@@ -1825,10 +1830,19 @@ void SlotRenderer::allocateTextRun(TextRun &run, size_t glyphs)
     ensureTextSlots(run.start+run.capacity);
 }
 
-void SlotRenderer::markTextDrawList(const TextRun &run)
+std::pair<size_t, size_t> SlotRenderer::drawnRange(const TextRun &run)
 {
-    // what the run draws, glyphs [start, start+glyphs) unless hidden, changed
-    if(run.fontData)
+    if(run.hidden || (run.glyphs == 0))
+        return {0, 0};
+    return {run.start, run.glyphs};
+}
+
+void SlotRenderer::markTextDrawList(const TextRun &run, std::pair<size_t, size_t> before)
+{
+    // A string relaid in the slots and glyph count it had (a Label given a new
+    // string of the same length) leaves the list as it is: the rebuild would give
+    // the same chunks, at O(runs in the font) and a sort.
+    if(run.fontData && (drawnRange(run) != before))
         run.fontData->drawListStale=true;
 }
 
@@ -1892,22 +1906,32 @@ void SlotRenderer::setTextRunFont(size_t textId, FontData *fontData)
 
 void SlotRenderer::buildTextDrawList(FontData &fontData)
 {
-    // (first glyph slot, glyph count) of each run that draws something
-    std::vector<std::pair<size_t, size_t>> ranges;
+    fillTextDrawList(fontData, fontData.drawChunks);
+    fontData.drawListStale=false;
+}
 
+void SlotRenderer::fillTextDrawList(const FontData &fontData, std::vector<TextChunkDraw> &drawChunks)
+{
+    // (first glyph slot, glyph count) of each run that draws something, in a
+    // vector kept for its capacity
+    std::vector<std::pair<size_t, size_t>> &ranges=m_textDrawRanges;
+
+    ranges.clear();
     ranges.reserve(fontData.textRuns.size());
     for(size_t textId:fontData.textRuns)
     {
-        const TextRun &run=m_textRuns[textId];
+        const std::pair<size_t, size_t> range=drawnRange(m_textRuns[textId]);
 
-        if(!run.hidden && (run.glyphs > 0))
-            ranges.emplace_back(run.start, run.glyphs);
+        if(range.second > 0)
+            ranges.push_back(range);
     }
 
     // in slot order, as the single draw over the whole buffer went
     std::sort(ranges.begin(), ranges.end());
 
-    fontData.drawChunks.clear();
+    // The entries already there are refilled in order, their vectors cleared but
+    // not freed, so a rebuild into as many chunks as last time allocates nothing.
+    size_t used=0;
 
     // Only glyphs in use are listed, and a merge joins ranges that touch, so a
     // run's tail, a freed block or another font's run between two runs keeps them
@@ -1929,13 +1953,19 @@ void SlotRenderer::buildTextDrawList(FontData &fontData)
             const size_t chunkStart=chunk*m_chunkSlots;
             const size_t pieceEnd=std::min(end, chunkStart+m_chunkSlots);
 
-            if(fontData.drawChunks.empty() || (fontData.drawChunks.back().chunk != chunk))
+            if((used == 0) || (drawChunks[used-1].chunk != chunk))
             {
-                fontData.drawChunks.emplace_back();
-                fontData.drawChunks.back().chunk=chunk;
+                if(used == drawChunks.size())
+                    drawChunks.emplace_back();
+
+                TextChunkDraw &next=drawChunks[used++];
+
+                next.chunk=chunk;
+                next.counts.clear();
+                next.offsets.clear();
             }
 
-            TextChunkDraw &draw=fontData.drawChunks.back();
+            TextChunkDraw &draw=drawChunks[used-1];
 
             draw.counts.push_back(static_cast<int>((pieceEnd-start)*6));
             draw.offsets.push_back((start-chunkStart)*6*sizeof(uint16_t));
@@ -1943,7 +1973,30 @@ void SlotRenderer::buildTextDrawList(FontData &fontData)
         }
     }
 
-    fontData.drawListStale=false;
+    // the chunks the list no longer reaches
+    drawChunks.erase(drawChunks.begin()+used, drawChunks.end());
+}
+
+void SlotRenderer::verifyTextDrawList(const FontData &fontData)
+{
+#ifndef NDEBUG
+    fillTextDrawList(fontData, m_verifyDrawChunks);
+
+    bool same=(m_verifyDrawChunks.size() == fontData.drawChunks.size());
+
+    for(size_t i=0; same && (i < m_verifyDrawChunks.size()); ++i)
+    {
+        const TextChunkDraw &rebuilt=m_verifyDrawChunks[i];
+        const TextChunkDraw &kept=fontData.drawChunks[i];
+
+        same=(rebuilt.chunk == kept.chunk) && (rebuilt.counts == kept.counts) &&
+            (rebuilt.offsets == kept.offsets);
+    }
+    // a run's start, glyph count, hidden flag or font changed without markTextDrawList
+    assert(same && "a text run changed its font's draw list without marking it stale");
+#else
+    (void)fontData;
+#endif
 }
 
 void SlotRenderer::generateTextPrimitive(size_t &primitiveId)
@@ -2074,6 +2127,10 @@ void SlotRenderer::renderText(size_t textId, const gweni::Font &font, gweni::Poi
 
     measuredPenShifts(font, fontData, px, text, shifts);
 
+    // what the run drew before, in the font it was laid out in (a new font is
+    // setTextRunFont's to mark, in both fonts)
+    const std::pair<size_t, size_t> drawnBefore=drawnRange(run);
+
     // hidden is left as it is: a hidden run stays out of its font's draw list
     run.text=text;
     run.position=pos;
@@ -2127,7 +2184,7 @@ void SlotRenderer::renderText(size_t textId, const gweni::Font &font, gweni::Poi
         }
     }
 
-    markTextDrawList(run);
+    markTextDrawList(run, drawnBefore);
     markTextVertexes(run);
     writeTextClipBoxes(run, makeClipBox());
 
@@ -2366,8 +2423,10 @@ void SlotRenderer::showText(size_t textId)
     std::cout<<"Showing text: "<<run.text<<"\n";
 #endif//DEBUG_RENDER
 
+    const std::pair<size_t, size_t> drawn=drawnRange(run);
+
     run.hidden=false;
-    markTextDrawList(run);
+    markTextDrawList(run, drawn);
 }
 
 void SlotRenderer::hideText(size_t textId)
@@ -2384,8 +2443,10 @@ void SlotRenderer::hideText(size_t textId)
     std::cout<<"Hiding text: "<<run.text<<"\n";
 #endif//DEBUG_RENDER
 
+    const std::pair<size_t, size_t> drawn=drawnRange(run);
+
     run.hidden=true;
-    markTextDrawList(run);
+    markTextDrawList(run, drawn);
 }
 
 // The size is in canvas (unscaled) units at any scale(): the text is measured at

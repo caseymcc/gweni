@@ -192,7 +192,9 @@ struct FontData
     //! What flush() draws for this atlas, one draw per index chunk it touches, in
     //! slot order: the glyph slots in use of the runs in textRuns that draw
     //! something, adjacent ones merged, split at the chunks' edges. Rebuilt from
-    //! textRuns when drawListStale.
+    //! textRuns when drawListStale, which is set only when a run's part of it
+    //! (SlotRenderer::drawnRange) or its font changed; a rebuild reuses the
+    //! entries and their vectors, so in steady state it allocates nothing.
     std::vector<TextChunkDraw> drawChunks;
     bool drawListStale=true;
     //! Successful loadFont calls not yet matched by a freeFont. A font loaded only
@@ -818,9 +820,12 @@ private:
     void addFreeTextRun(size_t start, size_t capacity);
     //! Grows the text mirrors so the first `glyphSlots` glyph slots exist.
     void ensureTextSlots(size_t glyphSlots);
-    //! The run's glyph count, slots or hidden flag changed: its font's draw list is
-    //! rebuilt before the next draw.
-    void markTextDrawList(const TextRun &run);
+    //! What the run puts in its font's draw list: (first glyph slot, glyph count),
+    //! or (0, 0) for a hidden run and one with no glyphs, which draw nothing.
+    static std::pair<size_t, size_t> drawnRange(const TextRun &run);
+    //! The run's drawnRange was `before`: if it is not now, its font's draw list is
+    //! rebuilt before the next draw. A change of font is setTextRunFont's to mark.
+    void markTextDrawList(const TextRun &run, std::pair<size_t, size_t> before);
     void markTextVertexes(const TextRun &run);
     //! Writes box into the run's glyph slots in use, marking only the ones that change.
     void writeTextClipBoxes(const TextRun &run, const Box &box);
@@ -828,6 +833,18 @@ private:
     void setTextRunFont(size_t textId, FontData *fontData);
     //! Rebuilds fontData's drawChunks from its textRuns.
     void buildTextDrawList(FontData &fontData);
+    //! Fills drawChunks with fontData's draw list from its textRuns, reusing the
+    //! entries already there and their vectors, and dropping the surplus ones.
+    void fillTextDrawList(const FontData &fontData, std::vector<TextChunkDraw> &drawChunks);
+    //! In a debug build (no NDEBUG), asserts that fontData's drawChunks, not
+    //! stale, are what a rebuild gives, so a run change that did not mark them
+    //! really left them as they were. flush() calls it for every such font.
+    void verifyTextDrawList(const FontData &fontData);
+    //! verifyTextDrawList's rebuild, declared in every build so the layout of
+    //! the class does not depend on NDEBUG
+    std::vector<TextChunkDraw> m_verifyDrawChunks;
+    //! fillTextDrawList's (first glyph slot, glyph count) per run, kept for its capacity
+    std::vector<std::pair<size_t, size_t>> m_textDrawRanges;
 
     std::vector<TextRun> m_textRuns;
     std::map<size_t, size_t> m_freeTextRuns; //!< start -> capacity, never adjacent to another
