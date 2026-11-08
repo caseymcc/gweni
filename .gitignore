@@ -42,3 +42,7 @@ vcpkg_installed/
 
 # the hosted site, staged by tools/build_site.sh
 /site/
+
+# Python bytecode caches
+__pycache__/
+*.py[cod]
