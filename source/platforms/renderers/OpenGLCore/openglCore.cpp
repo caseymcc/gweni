@@ -907,7 +907,14 @@ void main()
         if(kind <= 1)
         {
             // Normalized local coords in [-1,1], so the stroke scales with the rect.
-            vec2 p = vLocal / max(vHalf, vec2(1.0));
+            // At a pixel's centre vLocal is a multiple of 0.5 exactly (the quad's
+            // corners are whole px, vLocal is from its centre), so it is rounded to
+            // that: interpolated, it carries a float error that depends on where the
+            // quad is and on the rasteriser, which the stroke's anti-aliased edge
+            // turned into a level of difference between the glyph drawn here and the
+            // same glyph moved, or drawn by another GL.
+            vec2 local = floor(vLocal*2.0 + 0.5)*0.5;
+            vec2 p = local / max(vHalf, vec2(1.0));
             int dir = int(vBorder + 0.5);
 
             // p is turned into the down-pointing shape's frame: its apex,
@@ -935,7 +942,15 @@ void main()
                 d = min(sdSegment(p, A, B), sdSegment(p, B, C)) - 0.13;
             }
 
-            float aa = fwidth(d) + 1e-4;
+            // aa is one device pixel in p's units: vLocal is in device px, so a
+            // pixel is 1 over the half size p is divided by. Not fwidth(d): a
+            // derivative of d is implementation-defined (fine or coarse, per 2x2
+            // block), so the stroke's edge differed by up to 82/255 between llvmpipe
+            // and the browser's SwiftShader; nor vLocal's own derivative, whose float
+            // rounding depends on where the quad is, which moved a pixel of a glyph
+            // drawn across the view's edge.
+            vec2 h = max(vHalf, vec2(1.0));
+            float aa = 0.5*(1.0/h.x + 1.0/h.y);
             a = 1.0 - smoothstep(0.0, aa, d);
         }
         else
@@ -1046,7 +1061,13 @@ void main()
     pixel=vertPosition.xy;
     slot=uint(slotBase)+(uint(gl_VertexID) >> 2);
 
-    gl_Position = projection * vec4(vertPosition, 1.0f);
+    // On a 1/16 px grid, the coarsest sub-pixel grid GL guarantees (GL_SUBPIXEL_BITS
+    // is at least 4), so no rasteriser snaps it further: an SDF glyph's pen is
+    // fractional, and llvmpipe and the browser's SwiftShader snapped its quad to
+    // grids of their own, which moved the field under the pixels by up to 1/32 px
+    // and its anti-aliased edge by up to 10/255. Coverage and LCD glyphs are on
+    // whole pixels already.
+    gl_Position = projection * vec4(floor(vertPosition.xy*16.0 + 0.5)/16.0, vertPosition.z, 1.0f);
 }
 )";
 
@@ -1130,11 +1151,29 @@ void main()
     }
     else
     {
-        // The field is 0.5 on the glyph's edge and changes by 1/(2*spread) per atlas
-        // texel; w is how much it changes over one screen pixel here, so the edge is
-        // anti-aliased over about a pixel at any size, as style 4's rounded rect is.
-        float d = texture(texture1, texCoord).r;
-        float w = max(SDF_AA*length(vec2(dFdx(d), dFdy(d))), 1e-4);
+        // The field is 0.5 on the glyph's edge and changes by 1/(2*SDF_SPREAD) per
+        // atlas texel; w is how much it changes over one screen pixel here, so the
+        // edge is anti-aliased over about a pixel at any size, as style 4's rounded
+        // rect is. Both are computed so that every GL gives the same value, which
+        // llvmpipe and the browser's SwiftShader did not, by up to 78/255 at an edge:
+        // - the field is filtered here, bilinearly in float from the four texels
+        //   around texCoord, as GL_LINEAR does: a texture unit keeps its filter's
+        //   weights to a few bits of its own, and smoothstep's narrow w multiplies
+        //   that difference by up to about ten at a large size;
+        // - w is the field's change per texel times texCoord's screen gradient in
+        //   texels, not d's own gradient: a derivative of the sampled field is
+        //   implementation-defined (fine or coarse, per 2x2 block), while texCoord
+        //   is linear over the glyph's quad, so its derivative is the same anywhere.
+        vec2 texels = vec2(textureSize(texture1, 0));
+        vec2 t = texCoord*texels - 0.5;
+        vec2 f = fract(t);
+        ivec2 last = ivec2(texels) - 1;
+        ivec2 i0 = clamp(ivec2(floor(t)), ivec2(0), last);
+        ivec2 i1 = clamp(ivec2(floor(t)) + 1, ivec2(0), last);
+        float d = mix(mix(texelFetch(texture1, i0, 0).r, texelFetch(texture1, ivec2(i1.x, i0.y), 0).r, f.x),
+                      mix(texelFetch(texture1, ivec2(i0.x, i1.y), 0).r, texelFetch(texture1, i1, 0).r, f.x), f.y);
+        float texelsPerPixel = 0.5*(length(dFdx(texCoord)*texels) + length(dFdy(texCoord)*texels));
+        float w = max(SDF_AA*texelsPerPixel/(2.0*SDF_SPREAD), 1e-4);
 
         a = smoothstep(0.5-w, 0.5+w, d);
         FragColor = vec4(color.rgb, color.a*a);
@@ -1182,6 +1221,9 @@ std::string OpenGLCore::shaderSource(GLShaderSource source, GLSLDialect dialect,
         text+="#define CLIP_COLUMNS_LOG2 "+std::to_string(kClipColumnsLog2)+"u\n";
         text+="#define CLIP_COLUMNS "+std::to_string(kClipColumns)+"u\n";
     }
+    // how far an SDF glyph's field reaches past each edge, in atlas texels
+    if(source == GLShaderSource::TextFragment)
+        text+="#define SDF_SPREAD "+std::to_string(kSdfSpread)+".0\n";
     if(secondOutput)
         text+="#define GWENI_DUAL_SOURCE 1\n";
 

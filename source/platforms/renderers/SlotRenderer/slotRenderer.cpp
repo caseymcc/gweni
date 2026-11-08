@@ -48,9 +48,8 @@ static constexpr size_t minClippingSize=minPrimitiveSize;
 
 // The SDF text atlas (TextMode::Sdf): one per (face, bold), shared by every size
 // at or above the threshold. Its glyphs are rasterised once, at sdfBaseSize px with
-// a distance field reaching sdfSpread px past each edge, into an R8 atlas.
+// a distance field reaching kSdfSpread px past each edge, into an R8 atlas.
 static constexpr float sdfBaseSize=48.0f;
-static constexpr int sdfSpread=6;
 static constexpr size_t sdfAtlasSize=1024;
 // GWENI_SDF_TEXT_MIN's default, in effective px
 static constexpr float defaultSdfTextMin=18.0f;
@@ -304,7 +303,7 @@ Font::Status SlotRenderer::loadFont(const Font &requested, float px)
 
     if(sdf && fontData.markup.font)
     {
-        fontData.markup.font->sdf_spread=sdfSpread;
+        fontData.markup.font->sdf_spread=kSdfSpread;
         // unhinted, so the kerning is not rounded to whole base-size pixels
         fontData.markup.font->hinting=0;
         ftgl::texture_font_load_glyphs(fontData.markup.font, fontCache);

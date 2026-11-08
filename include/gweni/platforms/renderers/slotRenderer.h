@@ -410,6 +410,12 @@ public:
     //! 65535. The largest index is 65531.
     static constexpr size_t kSlotsPerChunk=16383;
 
+    //! How far an SDF glyph's distance field reaches past each edge of its ink, in
+    //! px at the SDF atlas's base size (texels of the atlas). The field is 0.5 on
+    //! the edge and changes by about 1/(2*kSdfSpread) per texel, which the text
+    //! shader's anti-aliasing width is computed from.
+    static constexpr int kSdfSpread=6;
+
     //! The slots one draw covers, kSlotsPerChunk unless GWENI_INDEX_CHUNK_SLOTS=<n>
     //! (read at construction) or setIndexChunkSlots() made it smaller. A small value
     //! makes an ordinary scene span many chunks, which draws the same pixels.
