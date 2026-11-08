@@ -1006,13 +1006,29 @@ void Slider::update(renderer::Base *renderer, controls::Base *baseControl)
 
     resizePrimitives(renderer, 1+ticks);
 
-    // The track runs between the thumb's centre at either end of its travel.
-    const gweni::Rect r=baseControl->getRenderBounds();
+    // The track runs between the thumb's centre at either end of its travel,
+    // in the slider's track column (all of it but a vertical value text's).
+    const gweni::Rect r=slider->getTrackBounds();
     const gweni::Rect bar=slider->getSliderBar()->getBounds();
     const bool horizontal=slider->isHorizontal();
+    // With a value text a horizontal track is a field the thumb's height and
+    // the slider's length, the text centred in it (imgui's SliderFloat).
+    const bool field=horizontal && slider->getValueTextControl();
+    const int tickLength=4;
     gweni::Rect track;
 
-    if(horizontal)
+    if(field)
+    {
+        int h=std::min(r.h, ThumbThickness);
+
+        // the ticks go below the field, never at its depth inside it
+        if(ticks > 0)
+            h=std::min(h, r.h-2*(tickLength+1));
+
+        h=std::max(h, 0);
+        track=gweni::Rect(r.x, r.y+(r.h-h)/2, r.w, h);
+    }
+    else if(horizontal)
     {
         track=gweni::Rect(r.x+bar.w/2, r.y+(r.h-TrackThickness)/2, r.w-bar.w, TrackThickness);
         track.w=std::max(track.w, 0);
@@ -1030,10 +1046,13 @@ void Slider::update(renderer::Base *renderer, controls::Base *baseControl)
     const bool visible=baseControl->visible();
     const tokyonight::Surface &notch=tokyonight::SliderNotch;
     const int crossSize=horizontal?r.h:r.w;
-    const int tickLength=4;
     int offset=std::min(std::min(crossSize, ThumbThickness)/2+2, crossSize/2-tickLength);
 
     offset=std::max(offset, TrackThickness/2+1);
+
+    // In a field they run along the thumb's travel, its centre at either end.
+    const int tickStart=field?r.x+bar.w/2:(horizontal?track.x:track.y);
+    const int tickSpan=field?std::max(r.w-bar.w, 0):(horizontal?track.w:track.h);
 
     for(size_t i=0; i<ticks; ++i)
     {
@@ -1049,12 +1068,14 @@ void Slider::update(renderer::Base *renderer, controls::Base *baseControl)
 
         if(horizontal)
         {
-            const int x=track.x+int(i)*track.w/notches;
-            tick=gweni::Rect(x-1, r.y+r.h/2+offset, 2, tickLength);
+            const int x=tickStart+int(i)*tickSpan/notches;
+            const int y=field?track.y+track.h+1:r.y+r.h/2+offset;
+
+            tick=gweni::Rect(x-1, y, 2, tickLength);
         }
         else
         {
-            const int y=track.y+int(i)*track.h/notches;
+            const int y=tickStart+int(i)*tickSpan/notches;
             tick=gweni::Rect(r.x+r.w/2+offset, y-1, tickLength, 2);
         }
 

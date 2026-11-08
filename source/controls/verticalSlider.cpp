@@ -43,9 +43,11 @@ void VerticalSlider::onMouseClickLeft(int x, int y, bool down)
 
 void VerticalSlider::layout(skin::Base * /*skin*/)
 {
-    placeChildSize(m_sliderBar, getWidth(), 15);
+    // the track's column: the whole width, less a value text's column
+    placeChildSize(m_sliderBar, getTrackBounds().w, 15);
     // a resize moves the thumb's travel, so put it back at the value
     updateBarFromValue();
+    placeValueText();
 }
 
 //void VerticalSlider::render(skin::Base *skin)

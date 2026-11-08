@@ -747,7 +747,11 @@ public:
 };
 
 // The track and one tick per notch position (getNotchCount()+1 of them, only
-// while the slider clamps to its notches). The tick count can change after
+// while the slider clamps to its notches). With a value text
+// (controls::Slider::setValueFormat) a horizontal track is a field the
+// thumb's height and the slider's length, the ticks below it, and a vertical
+// one is drawn in the slider's track column (getTrackBounds()); the text is
+// the slider's own Text child. The tick count can change after
 // generate(), so update() grows or shrinks this control's own slot list to
 // 1+ticks itself; requiredPrimitives() is only the track.
 class Slider:public textured::ControlRegister<Slider>

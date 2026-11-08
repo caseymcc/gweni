@@ -45,6 +45,7 @@ void HorizontalSlider::layout(skin::Base * /*skin*/)
     placeChildSize(m_sliderBar, 15, getHeight());
     // a resize moves the thumb's travel, so put it back at the value
     updateBarFromValue();
+    placeValueText();
 }
 
 }//namespace controls
