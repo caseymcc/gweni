@@ -502,6 +502,7 @@ std::vector<int> caretXs(Text *text, int first, int last)
 //! and the midpoint to the caret after it, both sides of it when the gap is odd.
 void addRowXs(std::set<int> &probes, const std::vector<int> &xs, int pastEnd, size_t stride=1)
 {
+    stride=std::max<size_t>(stride, 1);
     probes.insert(-4);
     probes.insert(pastEnd);
     for(size_t k=0; k < xs.size(); k=(k+1 < xs.size())?std::min(k+stride, xs.size()-1):xs.size())
