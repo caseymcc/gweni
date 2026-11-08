@@ -93,7 +93,7 @@ foreach(name IN LISTS names)
         list(APPEND failed "${name}")
         # the --stats frame lines are noise here; the ControlTest: lines say
         # which frame or check failed
-        file(STRINGS "${log}" reasons REGEX "^(ControlTest:|resize |scale |gweni: layout verify)")
+        file(STRINGS "${log}" reasons REGEX "^(ControlTest:|resize |scale |hide-show |gweni: layout verify)")
         string(REPLACE ";" "\n    " reasons "${reasons}")
         message("FAILED: ${name} (exit '${result}', log ${log})\n    ${reasons}")
     endif()
