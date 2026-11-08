@@ -152,8 +152,12 @@ set(GWENI_CONTROL_SOURCES
     include/gweni/controls/collapsibleCategory.h
     source/controls/collapsibleCategory.cpp
     include/gweni/controls/collapsibleList.h
+    include/gweni/controls/colorButton.h
+    source/controls/colorButton.cpp
     include/gweni/controls/colorControls.h
     source/controls/colorControls.cpp
+    include/gweni/controls/colorEdit.h
+    source/controls/colorEdit.cpp
     include/gweni/controls/colorPicker.h
     source/controls/colorPicker.cpp
     include/gweni/controls/comboBox.h

@@ -15,6 +15,7 @@
 #include "gweni/controls/slider.h"
 #include "gweni/controls/colorControls.h"
 #include "gweni/controls/colorPicker.h"
+#include "gweni/controls/colorButton.h"
 #include "gweni/controls/textBox.h"
 #include "gweni/controls/separator.h"
 #include "gweni/controls/selectable.h"
@@ -1309,14 +1310,10 @@ void ColorSlider::update(renderer::Base *renderer, controls::Base *baseControl)
 
 ///////////////////////////////////////////////////////////////////////////
 //ColorDisplay
-void ColorDisplay::update(renderer::Base *renderer, controls::Base *baseControl)
+void ColorDisplay::paint(renderer::Base *renderer, size_t slot, controls::Base *baseControl,
+    const gweni::Color &color, bool checker, const tokyonight::Surface &frame)
 {
-    if(m_primitives.empty())
-        return;
-
-    controls::internal::ColorDisplay *display=static_cast<controls::internal::ColorDisplay *>(baseControl);
-    const gweni::Color color=display->getColor();
-    const bool checker=display->getDrawCheckers() && color.a < 255;
+    checker=checker && color.a < 255;
     const bool visible=baseControl->visible();
     // the two draws write styles 4 and 7 into the same slot, so a switch
     // between them changes the slot's style; showPrimitive below must give
@@ -1325,24 +1322,54 @@ void ColorDisplay::update(renderer::Base *renderer, controls::Base *baseControl)
 
     if(visible)
     {
-        const tokyonight::Surface &swatch=tokyonight::ColorSwatch;
         const gweni::Rect r=baseControl->getRenderBounds();
 
         if(checker)
         {
             const tokyonight::Surface &cells=tokyonight::ColorChecker;
 
-            renderer->drawCheckerRect(m_primitives[0], r, baseControl->getZIndex(), color,
-                cells.top, cells.bottom, swatch.radius, swatch.borderWidth, swatch.border);
+            renderer->drawCheckerRect(slot, r, baseControl->getZIndex(), color,
+                cells.top, cells.bottom, frame.radius, frame.borderWidth, frame.border);
         }
         else
-            renderer->drawRoundedRect(m_primitives[0], r, swatch.radius, swatch.borderWidth,
-                color, color, swatch.border, baseControl->getZIndex());
+            renderer->drawRoundedRect(slot, r, frame.radius, frame.borderWidth,
+                color, color, frame.border, baseControl->getZIndex());
     }
 
     const unsigned int sc=baseControl->getStateChange();
     if((sc&controls::StateChange_Visibility) || (sc&controls::StateChange_Created))
-        renderer->showPrimitive(visible?style:0, m_primitives[0]);
+        renderer->showPrimitive(visible?style:0, slot);
+}
+
+void ColorDisplay::update(renderer::Base *renderer, controls::Base *baseControl)
+{
+    if(m_primitives.empty())
+        return;
+
+    controls::internal::ColorDisplay *display=static_cast<controls::internal::ColorDisplay *>(baseControl);
+
+    paint(renderer, m_primitives[0], baseControl, display->getColor(), display->getDrawCheckers(),
+        tokyonight::ColorSwatch);
+}
+
+///////////////////////////////////////////////////////////////////////////
+//ColorButton
+void ColorButton::update(renderer::Base *renderer, controls::Base *baseControl)
+{
+    if(m_primitives.empty())
+        return;
+
+    controls::ColorButton *button=static_cast<controls::ColorButton *>(baseControl);
+    const tokyonight::Surface *frame=&tokyonight::ColorSwatch;
+
+    if(button->isDisabled())
+        frame=&tokyonight::ColorButtonDisabled;
+    else if(button->isDepressed())
+        frame=&tokyonight::ColorButtonDown;
+    else if(button->isHovered())
+        frame=&tokyonight::ColorButtonHover;
+
+    ColorDisplay::paint(renderer, m_primitives[0], baseControl, button->getColor(), true, *frame);
 }
 
 
@@ -1960,6 +1987,7 @@ template class ControlRegister<SliderBar>;
 template class ControlRegister<ColorLerpBox>;
 template class ControlRegister<ColorSlider>;
 template class ControlRegister<ColorDisplay>;
+template class ControlRegister<ColorButton>;
 template class ControlRegister<StatusBar>;
 // NOTE: TabItem<_Type> is itself a class template (TabItem<TabTop>, <TabBottom>,
 // <TabLeft>, <TabRight>); register those specializations here if/when their

@@ -12,50 +12,25 @@
 #include <gweni/controls/menu.h>
 #include <gweni/controls/hsvColorPicker.h>
 #include <gweni/controls/canvas.h>
+#include <gweni/controls/colorButton.h>
 #include <stdio.h>
+#include <algorithm>
 #include <gweni/utility.h>
 
 namespace gweni
 {
 namespace controls
 {
-namespace internal
-{
-class ColorButton: public Button
-{
-    GWENI_CONTROL_INLINE(ColorButton, Button)
-    {
-        setPrimitiveIdsSize(1);
-
-        m_color=colors::Black;
-        setText("");
-    }
-
-public:
-    void render(skin::Base *skin) override
-    {
-        skin->getRenderer()->setDrawColor(m_color);
-//        skin->getRenderer()->drawFilledRect(m_primitiveIds[0], getRenderBounds(), getZIndex());
-    }
-
-    void setColor(const gweni::Color &col)
-    {
-        m_color=col;
-    }
-
-    gweni::Color m_color;
-};
-
-
-}
-
 namespace property
 {
+//! A property whose value is "r,g,b" (or "r g b"), with a ColorButton swatch
+//! of that colour at the right of its text box: a click on it opens an
+//! HSVColorPicker in a Menu, which writes the value back as "r,g,b".
 class ColorSelector: public property::Text
 {
     GWENI_CONTROL_INLINE(ColorSelector, property::Text)
     {
-        m_button=m_textBox->newChild<controls::internal::ColorButton>();
+        m_button=m_textBox->newChild<controls::ColorButton>();
         m_button->setDock(DockPosition::Right);
         m_button->setWidth(20);
         m_button->setSizeFlags({SizeFlag::Fixed, SizeFlag::Elastic});
@@ -74,10 +49,8 @@ public:
         gweni::controls::HSVColorPicker *picker=menu->newChild<gweni::controls::HSVColorPicker>();
         picker->setDock(DockPosition::Center);
         picker->setSize(256, 128);
-        float defaultColor[3];
-        toFloats(m_textBox->getText(), defaultColor, 3);
-        picker->setColor(gweni::Color(defaultColor[0], defaultColor[1], defaultColor[2], 255),
-            false, true);
+        // the swatch holds the colour the text last stood for (updateSwatch)
+        picker->setColor(m_button->getColor(), false, true);
         picker->onColorChanged.add(this, &ColorSelector::colorChanged);
 
         menu->open(Alignment::Right |Alignment::Top);
@@ -100,6 +73,7 @@ public:
     void setPropertyValue(const String &v, bool fireChangeEvents) override
     {
         m_textBox->setText(v, fireChangeEvents);
+        updateSwatch();
     }
 
     bool isEditing() override
@@ -110,18 +84,28 @@ public:
     void doChanged() override
     {
         ParentClass::doChanged();
+        updateSwatch();
+    }
+
+    //! The swatch takes the colour the text holds, three numbers 0-255
+    //! separated by commas or spaces; other text leaves it as it was.
+    void updateSwatch()
+    {
         unsigned int r, g, b;
+        String text=m_textBox->getText();
+
+        std::replace(text.begin(), text.end(), ',', ' ');
 #if defined(_WIN32) && !defined(__MINGW32__)
-        if(sscanf_s(m_textBox->getText().c_str(), "%u,%u,%u", &r, &g, &b) == 3)
+        if(sscanf_s(text.c_str(), "%u %u %u", &r, &g, &b) == 3 && r < 256 && g < 256 && b < 256)
 #else
-        if(sscanf(m_textBox->getText().c_str(), "%u,%u,%u", &r, &g, &b) == 3)
+        if(sscanf(text.c_str(), "%u %u %u", &r, &g, &b) == 3 && r < 256 && g < 256 && b < 256)
 #endif
         {
             m_button->setColor(gweni::Color(r, g, b));
         }
     }
 
-    controls::internal::ColorButton *m_button;
+    controls::ColorButton *m_button;
 };
 
 

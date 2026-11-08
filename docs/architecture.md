@@ -1499,6 +1499,39 @@ two programs and the draws. What follows describes both together:
   next frame. `closeTab` closes without asking. TabCloseDemo has a pinned tab among
   closable ones and a Left strip; ShowcaseContainersDemo's TabControl has two closable
   tabs.
+- **The colour field: ColorButton and ColorEdit.** `controls::ColorButton`
+  (`colorButton.h`, imgui's ColorButton) is a Button with an empty caption drawn as a
+  swatch: the textured `ColorButton` renderer paints its colour in one slot, through the
+  same `ColorDisplay::paint` as the HSV picker's swatches (style 4 while opaque, style 7
+  over `ColorChecker` cells while translucent), in `ColorSwatch`'s radius and border at
+  rest and in `ColorButtonHover`, `ColorButtonDown` or `ColorButtonDisabled`'s border
+  otherwise, so a hover, a press or a new colour rewrites that one slot and nothing is
+  drawn at `z+1`. `setColor` marks `StateChange_Background` and sets the tooltip to the
+  hex value (`toHex`: `#RRGGBB`, `#RRGGBBAA` while translucent) only for a new colour.
+  It replaced `internal::ColorButton`, which had the same type name and drew as a plain
+  button (its swatch draw was commented out), so `property::ColorSelector`'s swatch is
+  drawn now, from its "r g b" or "r,g,b" value. `controls::ColorEdit` (`colorEdit.h`,
+  imgui's ColorEdit4) is a row docked Left: the swatch, then four `TextBoxNumeric` fields
+  R, G, B, A with a label each (`ColorEditMode::Rgba`), or one hex `TextBox` (`Hex`); the
+  fields are Fixed (a TextBox is), 34 and 84 units wide. **Applied as typed:** a field
+  that holds a whole value (a number 0-255, six hex digits or eight with alpha, the '#'
+  optional, `ColorButton::fromHex`) applies it on its `onTextChangedCaller`; when it
+  loses the focus (`TextBox::onLostFocusCaller`, so Return, Tab or a click elsewhere) a
+  number is clamped into 0-255 and applied, and the field is written as the colour it
+  holds, so text that is no value is reverted. Applying sets the swatch's colour and the
+  other fields' text (`Label::setText` returns for the same string), so an RGBA field
+  edit marks the swatch's Background and that field alone, and `onColorChanged` fires
+  once per change of the colour, never for the same colour or number again.
+  `setAlphaEnabled(false)` hides the A field, takes the hex field to six digits and makes
+  the colour opaque. **The picker:** a click on the swatch makes (the first time) a
+  `Popup` on the canvas holding an `HSVColorPicker`, gives it the colour and opens it
+  below the swatch; a picker change applies its red, green and blue, keeping the alpha,
+  and a colour applied from a field is given to the open picker under a guard
+  (`m_settingPicker`) that drops the change events `HSVColorPicker::setColor` raises, so
+  there is no picker, fields, picker loop. A second click, Escape or a click outside
+  closes it, as for any popup; the ColorEdit `delayedDelete()`s the popup in its
+  destructor. ColorEditDemo has the two buttons and both modes; ShowcaseInputDemo has a
+  translucent RGBA field and a hex one.
 - **Scale and the device-pixel grid.** Controls lay out in logical units (integers);
   `renderer::Base::translate()` turns them into device pixels at `scale()` (set by
   `Canvas::setScale`). It snaps **edges**, not origin and size apart: a point is
@@ -1761,12 +1794,12 @@ applying it prints one line per kind, names sorted, a surface with none of its c
 set by its bare name and one with some of them as `Name.field` per missing field:
 
 ```
-theme strict: 62 of 64 surfaces not set: ButtonDisabled, ButtonDown, ButtonHover.border, ...
+theme strict: 65 of 67 surfaces not set: ButtonDisabled, ButtonDown, ButtonHover.border, ...
 theme strict: 12 of 14 text colors not set: ButtonDisabled, ButtonDown, ...
 ```
 
-(`theme strict: all 64 surfaces set` for a kind with no gaps, and a single
-`theme strict: all 64 surfaces and 14 text colors set` when there are none at all). A
+(`theme strict: all 67 surfaces set` for a kind with no gaps, and a single
+`theme strict: all 67 surfaces and 14 text colors set` when there are none at all). A
 rejected value counts as not set. A surface that is transparent at rest on purpose
 (`WindowButton`, `SelectableHover`: a transparent fill hides the slot) is magenta too
 until the theme sets it to `[0,0,0,0]`; the theme has not said what it looks like. The

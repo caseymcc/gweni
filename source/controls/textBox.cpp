@@ -251,6 +251,7 @@ void TextBox::onLostKeyboardFocus()
 {
     ParentClass::onLostKeyboardFocus();
     stopCaretBlink();
+    onLostFocusCaller.call(this);
 }
 
 // Only a focused box blinks, so only it has an animation to run: an unfocused

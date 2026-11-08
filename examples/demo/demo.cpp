@@ -19,6 +19,7 @@
 #include "demo/button.h"
 #include "demo/checkBox.h"
 #include "demo/collapsibleList.h"
+#include "demo/colorEdit.h"
 #include "demo/colorPicker.h"
 #include "demo/comboBox.h"
 #include "demo/contextMenu.h"
@@ -188,6 +189,7 @@ void Demo::init(const String &name)
 
         addDemo<CollapsibleListDemo>(cat, "CollapsibleListDemo", "Collapsible list");
         addDemo<ColorPickerDemo>(cat, "ColorPickerDemo", "Color picker");
+        addDemo<ColorEditDemo>(cat, "ColorEditDemo", "Color edit");
     }
 //
 //    m_statusBar->sendToBack();

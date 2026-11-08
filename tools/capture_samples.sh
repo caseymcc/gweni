@@ -58,8 +58,6 @@ HERO_OUT=demo.png
 # one today:
 #   ImagePanel (ImagePanelDemo) - its VerticalLayout stacks the two images
 #     down the left edge, not side by side where they ask to be
-#   HSVColorPicker (ColorPickerDemo) - a colour set before its first layout
-#     puts its cursor at the top and its R/G/B boxes on another colour (#413)
 #   a checkable MenuItem (MenuStripDemo) - its check is not drawn (#414)
 #   Popup (PopupDemo) - the canvas shows one popup at a time, and the Windows &
 #     menus page's capture opens its context menu

@@ -877,6 +877,27 @@ public:
     void update(renderer::Base *renderer, controls::Base *baseControl) override;
 
     inline static const std::string_view name="ColorDisplay";
+
+    // The swatch in \p slot: \p color, over a ColorChecker checkerboard when
+    // \p checker and translucent, in \p frame's radius, border width and
+    // border colour. Shared with ColorButton.
+    static void paint(renderer::Base *renderer, size_t slot, controls::Base *baseControl,
+        const gweni::Color &color, bool checker, const tokyonight::Surface &frame);
+};
+
+// controls::ColorButton: ColorDisplay's swatch in one primitive, its border
+// ColorSwatch's at rest and ColorButtonHover/Down/Disabled's otherwise, so
+// a hover or a press rewrites that one slot.
+class ColorButton:public textured::ControlRegister<ColorButton>
+{
+public:
+    static void staticInit(TexturedSkin *skin) { m_staticInit=true; }
+
+    size_t requiredPrimitives() override { return 1; }
+
+    void update(renderer::Base *renderer, controls::Base *baseControl) override;
+
+    inline static const std::string_view name="ColorButton";
 };
 
 class StatusBar:public textured::ControlRegister<StatusBar>

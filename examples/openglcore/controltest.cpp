@@ -280,7 +280,15 @@
  *                   label marks nothing on the row; moving off gives its rest
  *                   look back; a click on the value shows the Editing look,
  *                   unlike the hover's, and dropping the focus gives the
- *                   rest look back. Exits non-zero if any check is no. The
+ *                   rest look back. ColorEditDemo: typing into the RGBA
+ *                   ColorEdit's R field (Backspace, then a digit) leaves
+ *                   nothing pending outside the swatch and that field and
+ *                   writes no more than their slots and the field's glyphs,
+ *                   the swatch taking the value; a settled frame writes
+ *                   nothing with the picker closed and open, a click on the
+ *                   swatch opening it below and Escape closing it (a line
+ *                   lists the edit frames). Exits non-zero if any check is
+ *                   no. The
  *                   clock is frozen as under --stats.
  *    typing       the keyboard on TextBoxDemo, every key a synthesised GLFW
  *                 event through gweni::input::GLFW3: click into the first,
@@ -583,6 +591,9 @@
 #include <demo/sliderText.h>
 #include <demo/statusBar.h>
 #include <demo/tabClose.h>
+#include <demo/colorEdit.h>
+#include <gweni/controls/colorButton.h>
+#include <gweni/controls/colorEdit.h>
 #include <demo/tabControl.h>
 #include <demo/treeControl.h>
 #include <demo/textBox.h>
@@ -650,7 +661,7 @@ static void content_scale_callback(GLFWwindow *window, float, float)
     X(TextBoxDemo) X(ListBoxDemo) X(SelectableDemo) X(VirtualListDemo) X(ContextMenuDemo) X(PopupDemo) X(CrossSplitterDemo) X(RadioButtonDemo) \
     X(CheckBoxDemo) X(NumericDemo) X(SliderDemo) X(SliderTextDemo) X(MenuStripDemo) \
     X(WindowDemo) X(WindowButtonsDemo) X(TreeControlDemo) X(PropertiesDemo) X(TabControlDemo) X(TabCloseDemo) \
-    X(ScrollControlDemo) X(PageControlDemo) X(CollapsibleListDemo) X(ColorPickerDemo) \
+    X(ScrollControlDemo) X(PageControlDemo) X(CollapsibleListDemo) X(ColorPickerDemo) X(ColorEditDemo) \
     X(UnicodeTextDemo) X(TextSizesDemo) X(TextDemo) X(LayoutDemo)
 
 static const char *const g_controlNames[]=
@@ -3385,6 +3396,115 @@ static void checkPropertyRow(Session &s, const std::string &shotDir, Interaction
         " focus did not give the rest look back");
 }
 
+static bool inSubtree(gweni::controls::Base *control, gweni::controls::Base *root)
+{
+    for(; control; control=control->getParent())
+    {
+        if(control == root)
+            return true;
+    }
+    return false;
+}
+
+// The controls under \p control with a change pending that are neither \p a
+// nor under \p b.
+static void countPendingBesides(gweni::controls::Base *control, gweni::controls::Base *a,
+    gweni::controls::Base *b, size_t &count)
+{
+    if(control->getStateChange() != gweni::controls::StateChange_Nothing && control != a
+        && !inSubtree(control, b))
+        ++count;
+    for(auto &&child : control->getActualChildren())
+        countPendingBesides(child, a, b, count);
+}
+
+// ColorEditDemo: the R, G, B, A ColorEdit's R field clicked into, End, then
+// Backspace and a digit typed, each leaving a whole value the field applies as
+// it is typed: each edit frame has nothing pending outside the swatch and that
+// field, writes no more primitive slots than they own and no more glyph slots
+// than the field's new text has, and changes the swatch's colour. A settled
+// frame writes nothing, with the picker closed and, after a click on the
+// swatch, open below it; Escape closes it.
+static void checkColorEdit(Session &s, const std::string &shotDir, InteractionChecks &checks, bool &ok)
+{
+    gweni::controls::Base *demo=addControl(s, "ColorEditDemo");
+    renderFrames(s, s.frames);
+
+    gweni::controls::ColorEdit *edit=nullptr;
+    for(gweni::controls::Base *child : demo->getChildren())
+    {
+        auto *candidate=gweni::gweni_cast<gweni::controls::ColorEdit>(child);
+        if(candidate && candidate->getMode() == gweni::controls::ColorEditMode::Rgba)
+            edit=candidate;
+    }
+    if(!edit)
+    {
+        checks.check("color_edit_found", false, "ColorEditDemo has no R, G, B, A ColorEdit");
+        dropControl(s, demo);
+        return;
+    }
+
+    gweni::controls::ColorButton *swatch=edit->getSwatch();
+    gweni::controls::TextBox *red=edit->getField(0);
+    const size_t ownSlots=ownedIds(swatch)+ownedIds(red);
+    const gweni::Point onRed=centreOf(red);
+
+    clickMouse(s, onRed.x, onRed.y);
+    renderFrames(s, s.frames);
+    sendKey(s, "end");
+    renderFrames(s, s.frames);
+
+    std::string frames;
+    bool alone=true, bounded=true, applied=true;
+    for(const char *key : {"backspace", "5"})
+    {
+        const gweni::Color before=swatch->getColor();
+        size_t outside=0;
+
+        sendKey(s, key);
+        countPendingBesides(s.canvas, swatch, red, outside);
+        renderFrames(s, 1);
+
+        const gweni::renderer::SlotRenderer::FrameStats &gpu=s.renderer->getFrameStats();
+        frames+=std::string(" ")+key+":\""+red->getText()+"\",outside="+std::to_string(outside)
+            +",prim="+std::to_string(gpu.primitiveSlotsWritten)+",text="+std::to_string(gpu.textSlotsWritten);
+        if(outside != 0)
+            alone=false;
+        if(gpu.primitiveSlotsWritten > ownSlots || gpu.textSlotsWritten > red->getText().size())
+            bounded=false;
+        if(swatch->getColor() == before || !(swatch->getColor() == edit->getColor()))
+            applied=false;
+    }
+    renderFrames(s, s.frames);
+    checkSteady(s, checks, "color_edit_steady_closed");
+
+    const gweni::Point onSwatch=centreOf(swatch);
+    clickMouse(s, onSwatch.x, onSwatch.y);
+    renderFrames(s, s.frames);
+    const bool opened=edit->isPickerOpen()
+        && edit->getPopup()->localPosToCanvas().y >= swatch->localPosToCanvas().y+swatch->getHeight();
+    if(!shoot(s, shotDir+"/interaction-color-edit-open.png"))
+        ok=false;
+    checkSteady(s, checks, "color_edit_steady_open");
+    sendKey(s, "escape");
+    renderFrames(s, s.frames);
+    const bool closed=!edit->isPickerOpen();
+
+    forgetMouse(s);
+    dropControl(s, demo);
+
+    std::cout<<"color_edit_typing"<<frames<<"\n";
+    checks.check("color_edit_field_alone", alone && applied,
+        "an edit frame had changes pending outside the swatch and the field, or did not apply the"
+        " typed value to the swatch:"+frames);
+    checks.check("color_edit_field_bounded", bounded,
+        "an edit frame wrote more primitive slots than the swatch's and the field's ("
+        +std::to_string(ownSlots)+") or more glyph slots than the field's text:"+frames);
+    checks.check("color_edit_picker", opened && closed,
+        std::string(opened ? "" : "a click on the swatch did not open its picker below it; ")
+        +(closed ? "" : "Escape did not close the picker"));
+}
+
 static bool runInteractionScenario(Session &s, const std::string &shotDir, bool &passed)
 {
     // Frozen like --stats, so a frame with no input is genuinely idle (no
@@ -3403,6 +3523,7 @@ static bool runInteractionScenario(Session &s, const std::string &shotDir, bool 
     checkSliderText(s, shotDir, checks, ok);
     checkTabClose(s, shotDir, checks, ok);
     checkPropertyRow(s, shotDir, checks, ok);
+    checkColorEdit(s, shotDir, checks, ok);
 
     std::cout<<"interaction";
     for(const auto &result : checks.results)

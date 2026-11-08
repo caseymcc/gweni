@@ -144,6 +144,9 @@ public:
 
     event::Caller onTextChangedCaller;
     event::Caller onReturnPressedCaller;
+    //! Fired when the box loses the keyboard focus, after its caret stopped:
+    //! Return (which moves the focus on), Tab, a click elsewhere, hiding it.
+    event::Caller onLostFocusCaller;
 
     static constexpr int NO_MAX_LENGTH=-1;
 

@@ -34,8 +34,9 @@ single-selection SelectableGroup, and the window buttons (maximised, disabled).
 ![Text input showcase page](docs/images/ShowcaseInputDemo.png)
 
 **Text input**: TextBoxes (a placeholder, a password, a number, coloured text, read-only, one focused
-with its caret), a wrapped TextBoxMultiline, ComboBoxes, a NumericUpDown, and horizontal and vertical
-Sliders, plain, notched, disabled and one showing its value.
+with its caret), ColorEdits (R, G, B, A fields on a translucent colour over a checkerboard, a hex
+field), a wrapped TextBoxMultiline, ComboBoxes, a NumericUpDown, and horizontal and vertical Sliders,
+plain, notched, disabled and one showing its value.
 
 ![Display & feedback showcase page](docs/images/ShowcaseDisplayDemo.png)
 

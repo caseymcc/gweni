@@ -4,6 +4,7 @@
  */
 
 #include "demo/showcaseInput.h"
+#include "gweni/controls/colorEdit.h"
 #include "gweni/controls/comboBox.h"
 #include "gweni/controls/groupBox.h"
 #include "gweni/controls/horizontalSlider.h"
@@ -87,6 +88,20 @@ GWENI_CONTROL_CONSTRUCTOR(ShowcaseInputDemo)
         m_focused->focus();
         m_focused->moveCaretToend();
         m_notes.push_back("TextBox: a placeholder, a password, a number, coloured text, read-only, one focused");
+    }
+    {
+        controls::GroupBox *section=showcase::addSection(left, "ColorEdit", false);
+
+        addCaption(section, "R, G, B, A, translucent");
+        showcase::addRow<controls::ColorEdit>(section)->setColor(Color(224, 175, 104, 200));
+
+        addCaption(section, "Hex, no alpha");
+        controls::ColorEdit *hex=showcase::addRow<controls::ColorEdit>(section);
+
+        hex->setMode(controls::ColorEditMode::Hex);
+        hex->setAlphaEnabled(false);
+        hex->setColor(Color(158, 206, 106, 255));
+        m_notes.push_back("ColorEdit: R, G, B, A fields on a translucent colour, a hex field");
     }
     {
         controls::GroupBox *section=showcase::addSection(middle, "TextBoxMultiline");

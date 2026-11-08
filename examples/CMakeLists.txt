@@ -8,6 +8,8 @@ set(GWENI_DEMO_SOURCES
     demo/demoControlRenderers.cpp
     demo/collapsibleList.cpp
     demo/collapsibleList.h
+    demo/colorEdit.cpp
+    demo/colorEdit.h
     demo/colorPicker.cpp
     demo/colorPicker.h
     demo/comboBox.cpp

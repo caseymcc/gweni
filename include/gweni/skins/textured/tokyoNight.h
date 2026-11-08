@@ -151,6 +151,12 @@ inline Surface ColorMarker    { Color(0xff,0xff,0xff), Color(0xff,0xff,0xff), Bg
 // ColorChecker's top (light) and bottom (dark) cells; only those two are read.
 inline Surface ColorSwatch    { Bg,                    Bg,                    Line,  2.0f,     BorderW };
 inline Surface ColorChecker   { Color(0xc8,0xc8,0xc8), Color(0x7a,0x7a,0x7a), Line,  0.0f,     0.0f };
+// A ColorButton is a swatch that is a button: at rest it is ColorSwatch, and
+// only the border (and radius and border width) of these is read, the fill
+// being its colour as for ColorSwatch.
+inline Surface ColorButtonHover   { Bg,                Bg,                    Blue,        2.0f, BorderW };
+inline Surface ColorButtonDown    { Bg,                Bg,                    Cyan,        2.0f, BorderW };
+inline Surface ColorButtonDisabled{ Bg,                Bg,                    BgHighlight, 2.0f, BorderW };
 
 // Separator rules (and menu dividers): flat, so only top is read, as the rule's
 // colour; the menu's border colour
@@ -202,6 +208,7 @@ inline std::unordered_map<std::string, Surface*>& surfaceRegistry()
         {"SplitterBarDisabled",&SplitterBarDisabled},
         {"CheckOff",&CheckOff},{"CheckOn",&CheckOn},{"CheckHover",&CheckHover},{"CheckDisabled",&CheckDisabled},
         {"ColorField",&ColorField},{"ColorMarker",&ColorMarker},{"ColorSwatch",&ColorSwatch},{"ColorChecker",&ColorChecker},
+        {"ColorButtonHover",&ColorButtonHover},{"ColorButtonDown",&ColorButtonDown},{"ColorButtonDisabled",&ColorButtonDisabled},
         {"Separator",&Separator},
         {"SelectableHover",&SelectableHover},{"SelectableDown",&SelectableDown},{"SelectableSelected",&SelectableSelected},
         {"SelectableSelectedHover",&SelectableSelectedHover},{"SelectableSelectedDisabled",&SelectableSelectedDisabled},

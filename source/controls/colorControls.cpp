@@ -93,7 +93,9 @@ static inline Color HSVToColor(float h, float s, float v)
 static inline HSV RGBtoHSV(int r, int g, int b)
 {
     HSV hsv;
-    al_color_rgb_to_hsv(r, g, b, &hsv.h, &hsv.s, &hsv.v);
+    // al_color_rgb_to_hsv takes channels in 0-1: given 0-255 its value was
+    // 255 times too large, which put the lerp box cursor on its top edge
+    al_color_rgb_to_hsv(r/255.f, g/255.f, b/255.f, &hsv.h, &hsv.s, &hsv.v);
     return hsv;
 }
 
