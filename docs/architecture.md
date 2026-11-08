@@ -539,6 +539,24 @@ two programs and the draws. What follows describes both together:
   trees and its tests, `docs_samples` byte for byte, pass as theirs do;
   `tests/glslDialects.cpp` compiles the ES bodies there natively and skips the
   `#version 330 core` ones a GLES context cannot compile.
+- **In the browser.** The web tree (`./generate.sh web`) compiles the same `OpenGLCore`
+  against Emscripten's `<GLES3/gl3.h>` (`glApi.h` defines `GWENI_GL_ES` under
+  `__EMSCRIPTEN__`) and links Emscripten's WebGL 2 library. A context there is WebGL 2
+  on the page's `#canvas`, made by `emscripten_webgl_create_context`
+  (`capture::initEglContext`, `GWENI_EXAMPLE_WEBGL`). Its `GL_VERSION` reads `OpenGL ES
+  3.0 (WebGL 2.0 ...)`, so `init()` takes the ES dialect as on the GLES tree. There is no
+  multi-draw (`OpenGLCore` resolves `glMultiDrawElementsEXT` only through EGL, in the GLES
+  tree) and no `GL_EXT_blend_func_extended` (WebGL's is `WEBGL_blend_func_extended`, which
+  `OpenGLCore` does not use yet), so the text draws loop and LCD text is grayscale. In the
+  build container the context is ANGLE on Chromium's SwiftShader, a CPU rasteriser
+  like llvmpipe but another one, so its pixels are close to the native GLES tree's, not
+  the same: ButtonDemo differs by at most 2 per channel, on 0.56 % of its pixels.
+  A capture is one blocking `main`: it renders into the offscreen framebuffer and
+  reads it back with `glReadPixels`, which WebGL does synchronously, so it needs no
+  main loop. Building for wasm32 also showed two struct layouts that only agreed on
+  x86-64 by luck, both fixed: freetype-gl's `vertex_buffer_t` with and without
+  `FREETYPE_GL_USE_VAO` (now a PUBLIC definition of the `freetype-gl` target), and
+  `json.h`'s `returnValue<uint64_t>`, which on x86-64 was the `size_t` specialisation.
 - **The shaders' dialect is chosen at run time.** Each stage is one body shared by
   every dialect, behind a header `OpenGLCore::shaderSource` puts in front:
   `#version 330 core`, or for an ES context `#version 300 es` with `precision highp`
