@@ -11,10 +11,11 @@
 #  and nothing else. A DST entry SRC does not have (or has as the other kind, a
 #  file for a directory or the reverse) is removed, with one "Removed stale
 #  <path>" line each; a file is copied only if its content differs, so an
-#  unchanged one keeps its mtime. The examples' build runs it on every build to
-#  keep the resources/ next to them in step with the repo's
-#  (examples/openglcore/CMakeLists.txt), which copy_directory_if_different
-#  alone does not: it never deletes. tests/mirrorDirectory.cmake checks it.
+#  unchanged one keeps its mtime. The build runs it on every build to keep the
+#  resources/ next to the examples (examples/openglcore/CMakeLists.txt) and
+#  next to gweni_bench (bench/CMakeLists.txt) in step with the repo's, which
+#  copy_directory_if_different alone does not: it never deletes.
+#  tests/mirrorDirectory.cmake checks it.
 #
 #  Plain file() and cmake -E copy_if_different, so it runs on the project's
 #  minimum CMake (3.12).

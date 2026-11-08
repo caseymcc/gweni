@@ -31,7 +31,10 @@ target_link_libraries(gweni_bench
 
 # The bench loads the resources/ next to it through
 # RelativeToExecutablePaths("resources"), as the examples do, so it runs from
-# any working directory.
+# any working directory. The copy is a mirror (cmake/mirrorDirectory.cmake), as
+# the examples' is: a file deleted or renamed in resources/ is removed from it
+# too, so an old tree measures what a fresh one would, and an unchanged file is
+# not rewritten.
 get_property(bench_multi_config GLOBAL PROPERTY GENERATOR_IS_MULTI_CONFIG)
 if(bench_multi_config)
     set(bench_resource_dir ${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/resources)
@@ -40,9 +43,10 @@ else()
 endif()
 
 add_custom_target(gweni_bench_resources
-    COMMAND ${CMAKE_COMMAND} -E copy_directory_if_different
-        ${GWENI_SOURCE_DIR}/resources ${bench_resource_dir}
-    COMMENT "Copying resources/ next to gweni_bench"
+    COMMAND ${CMAKE_COMMAND}
+        -DSRC=${GWENI_SOURCE_DIR}/resources -DDST=${bench_resource_dir}
+        -P ${GWENI_SOURCE_DIR}/cmake/mirrorDirectory.cmake
+    COMMENT "Mirroring resources/ next to gweni_bench"
     VERBATIM)
 add_dependencies(gweni_bench gweni_bench_resources)
 

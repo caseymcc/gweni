@@ -239,7 +239,7 @@ flock 9 || die "cannot lock /tmp/gweni-profile-run.lock"
 rm -rf "${stage:?}/gweni_bench" "$stage/resources"
 cp "$BENCH" "$stage/gweni_bench" || die "cannot copy $BENCH to $stage"
 if [[ ! -d "$BIN_DIR/resources" ]]; then
-    die "$BIN_DIR/resources is missing; cmake --build copies it next to gweni_bench"
+    die "$BIN_DIR/resources is missing; cmake --build mirrors resources/ next to gweni_bench"
 fi
 ln -s "$(cd "$BIN_DIR/resources" && pwd)" "$stage/resources"
 
