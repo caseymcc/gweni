@@ -2487,7 +2487,8 @@ void SlotRenderer::measuredPenShifts(const gweni::Font &font, FontData &drawn, f
 }
 
 gweni::Point SlotRenderer::layoutSdfText(FontData &fontData, float px, const gweni::String &text,
-    const gweni::Color &color, std::vector<ftgl::glyph_vertex_t> *vertexes)
+    const gweni::Color &color, std::vector<ftgl::glyph_vertex_t> *vertexes,
+    std::vector<int> *carets)
 {
     ftgl::texture_font_t *font=fontData.textureFont;
     const float s=px/fontData.baseSize;
@@ -2508,6 +2509,10 @@ gweni::Point SlotRenderer::layoutSdfText(FontData &fontData, float px, const gwe
     for(size_t i=0; i < text.size(); i+=std::max<size_t>(1, ftgl::utf8_surrogate_len(text.c_str()+i)))
     {
         const char *current=text.c_str()+i;
+
+        // the width of the prefix that ends here: the next glyph's kerning is not in it
+        if(carets)
+            carets->push_back((int)ceil(std::max(width, pen)));
 
         if(*current == '\n')
         {
@@ -2550,6 +2555,9 @@ gweni::Point SlotRenderer::layoutSdfText(FontData &fontData, float px, const gwe
         previous=current;
     }
     width=std::max(width, pen);
+
+    if(carets)
+        carets->push_back((int)ceil(width));
 
     return gweni::Point((int)ceil(width), (int)ceil(lineBoxHeight(fontData, px)+(lines-1)*lineStep));
 }
@@ -2696,6 +2704,70 @@ gweni::Point SlotRenderer::measureText(const gweni::Font &font, const gweni::Str
     text_buffer_delete(textBuffer);
 
     return sz;
+}
+
+// Whether freetype-gl's walk of text (utf8_surrogate_len's steps, as
+// text_buffer_add_text and layoutSdfText go) stops at exactly the boundaries
+// utf8Next gives, and so lays out each caret's prefix as measureText would. Not
+// for malformed UTF-8, nor for a NUL, where utf8_strlen ends a coverage measure.
+static bool ftglStepsAreCodepoints(const gweni::String &text)
+{
+    for(size_t i=0; i < text.size(); )
+    {
+        const size_t next=utf8Next(text, i);
+
+        if(text[i] == '\0' || ftgl::utf8_surrogate_len(text.c_str()+i) != next-i)
+            return false;
+        i=next;
+    }
+    return true;
+}
+
+// measureText of every caret's prefix from one layout: measureText(prefix) is the
+// same walk stopped at the prefix's end, so each x is equal by construction.
+void SlotRenderer::measureCarets(const gweni::Font &font, const gweni::String &text,
+    std::vector<int> &xs)
+{
+    if(!ftglStepsAreCodepoints(text) || !ensureFont(font, font.size))
+    {
+        renderer::Base::measureCarets(font, text, xs);
+        return;
+    }
+
+    FontData &fontData=m_lastFont->second;
+
+    xs.clear();
+
+    if(fontData.mode == TextMode::Sdf)
+    {
+        layoutSdfText(fontData, font.size, text, gweni::Color(), nullptr, &xs);
+        return;
+    }
+
+    // text_buffer_add_text's loop, read before each codepoint is added. Its first
+    // codepoint goes through text_buffer_add_text itself, which sets the buffer's
+    // origin and line up for the rest (a '\n' returns the pen to the origin).
+    xs.push_back(0);
+    if(text.empty())
+        return;
+
+    ftgl::text_buffer_t *textBuffer=ftgl::text_buffer_new();
+    ftgl::vec2 pen={0.f, 0.f};
+    const char *previous=text.c_str();
+
+    ftgl::text_buffer_add_text(textBuffer, &pen, &fontData.markup, previous, 1);
+
+    for(size_t i=utf8Next(text, 0); i < text.size(); i=utf8Next(text, i))
+    {
+        const char *current=text.c_str()+i;
+
+        xs.push_back((int)ceil(pen.x));
+        ftgl::text_buffer_add_char(textBuffer, &pen, &fontData.markup, current, previous);
+        previous=current;
+    }
+    xs.push_back((int)ceil(pen.x));
+
+    text_buffer_delete(textBuffer);
 }
 
 // measureText's y for a one-line string, without laying one out: the font's line
