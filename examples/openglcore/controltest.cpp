@@ -4793,8 +4793,9 @@ static void checkShellPage(Session &s, gweni::Demo *demo, const std::string &pag
 // A: the demo built shown and settled, the reference. B: its host hidden for
 // a frame (and settled hidden), then shown again. C: on a fresh canvas, the
 // demo built into a host that is hidden already, then shown. B and C have to
-// be A byte for byte (listing, renderer mirror id by id, pixels), the hidden
-// frames the empty canvas's, and each a few more checks, named on stderr.
+// be A byte for byte (listing, pixels, and the renderer mirror: B's id by id,
+// C's slot by owner), the hidden frames the empty canvas's, and each a few
+// more checks, named on stderr.
 static bool runHideShowScenario(Session &s, const std::string &controlName,
     const std::string &shotDir, bool &passed)
 {
