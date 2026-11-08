@@ -2761,6 +2761,27 @@ gweni::Point SlotRenderer::measureText(const gweni::Font &font, const gweni::Str
     return sz;
 }
 
+// The coverage measure as freetype-gl lays the run out for renderText: a whole
+// text_buffer_t built and thrown away for its pen. tests/measureTextPens.cpp holds
+// measureText to it.
+gweni::Point SlotRenderer::measureTextWithTextBuffer(const gweni::Font &font, const gweni::String &text)
+{
+    if(!ensureFont(font, font.size))
+        return gweni::Point(0, 0);
+
+    FontData &fontData=m_lastFont->second;
+
+    if(fontData.mode == TextMode::Sdf)
+        return layoutSdfText(fontData, font.size, text, gweni::Color(), nullptr);
+
+    ftgl::text_buffer_t *textBuffer=ftgl::text_buffer_new();
+    ftgl::vec2 pen={0.f, 0.f};
+
+    ftgl::text_buffer_add_text(textBuffer, &pen, &fontData.markup, text.c_str(), ftgl::utf8_strlen(text.c_str()));
+    text_buffer_delete(textBuffer);
+    return Point((int)ceil(pen.x), (int)ceil(lineBoxHeight(fontData, font.size)));
+}
+
 // Whether freetype-gl's walk of text (utf8_surrogate_len's steps, as
 // text_buffer_add_text and layoutSdfText go) stops at exactly the boundaries
 // utf8Next gives, and so lays out each caret's prefix as measureText would. Not
