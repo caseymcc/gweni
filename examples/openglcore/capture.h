@@ -1,7 +1,8 @@
 /*
  *  Gweni - shared offscreen capture plumbing for the examples' capture modes
  *  (ControlTest --shot, OpenGLCore --screenshot): a GL context with or without
- *  a display (desktop GL 3.3 core, or GLES 3.0 in the GLES tree, GWENI_GL_ES),
+ *  a display (desktop GL 3.3 core, GLES 3.0 in the GLES tree, GWENI_GL_ES, or
+ *  WebGL 2 in the browser),
  *  an offscreen target, and framebuffer readback to PNG. Also where
  *  both examples choose their resource directory, load their fonts and work
  *  out the scale they draw at.
@@ -21,7 +22,18 @@
 #include <string>
 #include <vector>
 
-#if defined(__linux__)
+// GWENI_EXAMPLE_EGL: the headless context path, the one --headless takes. On
+// Linux it is a surfaceless EGL context; in the browser (Emscripten) it is a
+// WebGL 2 context on the page's canvas (GWENI_EXAMPLE_WEBGL), which keeps the
+// EGL path's names (initEglContext) so the examples and the tests take it for
+// --headless as they are. Either way a capture draws into the offscreen
+// Framebuffer below, never into a window's.
+#if defined(__EMSCRIPTEN__)
+#define GWENI_EXAMPLE_EGL 1
+#define GWENI_EXAMPLE_WEBGL 1
+#include <emscripten/emscripten.h>
+#include <emscripten/html5.h>
+#elif defined(__linux__)
 #define GWENI_EXAMPLE_EGL 1
 #include <EGL/egl.h>
 #include <EGL/eglext.h>
@@ -124,7 +136,9 @@ void fitCanvasToWindow(GLFWwindow *window, float manual, renderer::Base &rendere
 struct Context
 {
     GLFWwindow *window=nullptr;     // null when running on EGL
-#if GWENI_EXAMPLE_EGL
+#if GWENI_EXAMPLE_WEBGL
+    EMSCRIPTEN_WEBGL_CONTEXT_HANDLE webgl=0;
+#elif GWENI_EXAMPLE_EGL
     EGLDisplay eglDisplay=EGL_NO_DISPLAY;
     EGLContext eglContext=EGL_NO_CONTEXT;
 #endif
@@ -137,6 +151,10 @@ struct Context
 bool initGlfwContext(Context &ctx, const Point &size, const std::string &title, bool visible);
 
 #if GWENI_EXAMPLE_EGL
+//! The headless context, current: surfaceless EGL (GL 3.3 core, or GLES 3.0 in
+//! the GLES tree), or in the browser WebGL 2 on the page's #canvas with a depth
+//! buffer and no antialiasing (the capture reads its own Framebuffer, never the
+//! canvas). \return false, after one line, if there is none.
 bool initEglContext(Context &ctx);
 #endif
 

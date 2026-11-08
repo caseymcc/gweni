@@ -6,9 +6,10 @@ set(freetype-gl_USE_VAO ON CACHE BOOL "Use a VAO to render a vertex_buffer insta
 set(freetype-gl_BUILD_DEMOS OFF CACHE BOOL "Build the freetype-gl example programs" FORCE)
 set(freetype-gl_BUILD_APIDOC OFF CACHE BOOL "Build the freetype-gl API documentation" FORCE)
 set(freetype-gl_BUILD_TESTS OFF CACHE BOOL "Build the tests" FORCE)
-# The GLES tree (GWENI_GL_ES): freetype-gl against <GLES3/gl3.h> and libGLESv2,
+# The GLES tree (GWENI_GL_ES) and the web tree: freetype-gl against
+# <GLES3/gl3.h> (libGLESv2 natively, Emscripten's WebGL 2 library on the web),
 # without glew (freetype-gl_WITH_GLES3 is a gweni patch)
-if(GWENI_GL_ES)
+if(GWENI_GL_ES OR EMSCRIPTEN)
     set(freetype-gl_WITH_GLEW OFF CACHE BOOL "Use the GLEW library to fetch OpenGL function pointers" FORCE)
     set(freetype-gl_WITH_GLES3 ON CACHE BOOL "Build against GLES 3.0 (<GLES3/gl3.h>, libGLESv2)" FORCE)
 else()
@@ -18,8 +19,8 @@ endif()
 
 # SYSTEM: freetype-gl keeps its own flags, and its headers must not be able to
 # raise a diagnostic inside a gweni translation unit. Only OpenGLCore uses it,
-# and it needs GL and glew to configure, so a tree without the renderer (the
-# web tree, for now) leaves it out.
+# and it needs GL headers to configure, so a tree without the renderer leaves it
+# out.
 if(GWENI_RENDER_OPENGL_CORE)
     add_subdirectory(freetype-gl SYSTEM)
 endif()

@@ -77,7 +77,11 @@ if(GWENI_RENDER_OPENGL_CORE)
 
     find_package(glm CONFIG REQUIRED)
 
-    if(GWENI_GL_ES)
+    if(EMSCRIPTEN)
+        # the web tree: Emscripten's GLES 3.0 headers and its WebGL 2 library,
+        # linked by the executables (-sMAX_WEBGL_VERSION=2), no loader
+        set(GWENI_RENDER_LIBRARIES glm::glm)
+    elseif(GWENI_GL_ES)
         # GLES 3.0 headers and libGLESv2, no loader (include/gweni/platforms/renderers/glApi.h)
         set(GWENI_RENDER_LIBRARIES glm::glm OpenGL::GLES3)
     else()
@@ -86,14 +90,15 @@ if(GWENI_RENDER_OPENGL_CORE)
         set(GWENI_RENDER_LIBRARIES glm::glm GLEW::GLEW)
     endif()
 
-    if(GWENI_USE_GLFW)
+    # on the web GLFW is Emscripten's contrib.glfw3 port, which the examples
+    # link through --use-port (examples/openglcore/CMakeLists.txt)
+    if(GWENI_USE_GLFW AND NOT EMSCRIPTEN)
         find_package(glfw3 CONFIG REQUIRED)
 
         set(GWENI_RENDER_LIBRARIES ${GWENI_RENDER_LIBRARIES} glfw)
     endif()
 else()
-    # No renderer: the library, the skins and the headless unit tests only, as
-    # the web tree builds them until OpenGLCore is on there.
+    # No renderer: the library, the skins and the headless unit tests only.
     set(GWENI_RENDER_NAME "None")
     set(GWENI_INPUT_NAME "None")
     set(GWENI_PLATFORM_NAME "Cross")

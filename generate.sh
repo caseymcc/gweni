@@ -164,16 +164,18 @@ if [ "$platform" = "web" ]; then
 
     # vcpkg's wasm32-emscripten triplet builds the dependencies with Emscripten
     # (finding it through EMSDK), and this project is configured with emsdk's
-    # own toolchain file chainloaded. No Vulkan and, for now, no OpenGLCore or
-    # examples: the library, the textured skin and the headless unit tests,
-    # which run under emsdk's node (CMAKE_CROSSCOMPILING_EMULATOR).
+    # own toolchain file chainloaded. No Vulkan: OpenGLCore on WebGL 2, the
+    # examples (ControlTest, OpenGLCore) and gweni_unittests as pages that the
+    # browser runner (tests/web/run.mjs) loads in headless Chromium, and the
+    # headless unit tests, which run under emsdk's node
+    # (CMAKE_CROSSCOMPILING_EMULATOR), as the runner does.
     cmake_options="$cmake_options \
         -DCMAKE_TOOLCHAIN_FILE=$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake \
         -DVCPKG_CHAINLOAD_TOOLCHAIN_FILE=$emscripten_toolchain \
         -DVCPKG_TARGET_TRIPLET=wasm32-emscripten \
-        -DGWENI_RENDER_OPENGL_CORE=OFF \
+        -DGWENI_RENDER_OPENGL_CORE=ON \
         -DGWENI_RENDER_VULKAN=OFF \
-        -DGWENI_BUILD_EXAMPLES=OFF \
+        -DGWENI_BUILD_EXAMPLES=ON \
         -DCMAKE_CROSSCOMPILING_EMULATOR=$emsdk_node"
 fi
 

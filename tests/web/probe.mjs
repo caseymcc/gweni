@@ -16,15 +16,16 @@
 //  and has at least 24 depth bits (the z layering's need, as capture.cpp's
 //  GL_DEPTH_COMPONENT24), or if the page logs a console error.
 //
-//  launchArgs() asks for ANGLE on SwiftShader explicitly. Recent desktop Chrome
+//  launchOptions() asks for ANGLE on SwiftShader explicitly, and launches it
+//  without the image's Vulkan driver pin, which would otherwise give ANGLE
+//  Mesa's lavapipe instead. Recent desktop Chrome
 //  no longer falls back to SwiftShader for WebGL on its own; the pinned
 //  headless shell (Chromium 158) still does, but the tests do not rely on a
 //  default that a later pin may drop. --no-swiftshader leaves those flags out
 //  (to see what the default gives); --no-webgl2 launches with
 //  --disable-webgl2, so getContext('webgl2') is null and the probe must fail
 //  (web_probe_fails_without_webgl2 runs it so, expecting failure). The browser
-//  runner of the later web tests starts from launchArgs() and webgl2Report()
-//  here.
+//  runner (run.mjs) launches Chromium through launchOptions() here.
 
 import { realpathSync } from 'node:fs';
 import { createRequire } from 'node:module';
@@ -50,6 +51,28 @@ export function loadPlaywright()
 export function launchArgs(swiftShader = true)
 {
     return swiftShader ? ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] : [];
+}
+
+// Whether a context's RENDERER string is ANGLE on SwiftShader, as launchArgs()
+// asks for: a run that asked for it and got another driver fails, rather than
+// measuring the wrong rasteriser.
+export function isSwiftShader(renderer)
+{
+    return /SwiftShader/i.test(renderer ?? '');
+}
+
+// chromium.launch()'s options: headless, launchArgs() plus extraArgs, and the
+// environment without the image's Vulkan driver pin. The Dockerfile pins the
+// Vulkan loader to Mesa's lavapipe (VK_DRIVER_FILES, VK_ICD_FILENAMES) for
+// gweni's own Vulkan tests, and the loader takes that pin over the SwiftShader
+// ICD ANGLE asks for, so with it ANGLE's "SwiftShader" context would be
+// lavapipe, the render pool's CPU driver, whose users take the render lock.
+export function launchOptions(swiftShader = true, extraArgs = [])
+{
+    const env = { ...process.env };
+    delete env.VK_DRIVER_FILES;
+    delete env.VK_ICD_FILENAMES;
+    return { headless: true, args: [...launchArgs(swiftShader), ...extraArgs], env };
 }
 
 // Runs in the page: what a WebGL 2 context on a fresh canvas reports, or null
@@ -79,11 +102,10 @@ export async function webgl2Report(page)
 async function main()
 {
     const swiftShader = !process.argv.includes('--no-swiftshader');
-    const args = launchArgs(swiftShader);
-    if(process.argv.includes('--no-webgl2'))
-        args.push('--disable-webgl2');
+    const options = launchOptions(swiftShader, process.argv.includes('--no-webgl2') ? ['--disable-webgl2'] : []);
+    const args = options.args;
     const { chromium } = loadPlaywright();
-    const browser = await chromium.launch({ headless: true, args });
+    const browser = await chromium.launch(options);
     const errors = [];
     try
     {
@@ -103,6 +125,11 @@ async function main()
         console.log(`web_probe: VERSION ${r.version}`);
         console.log(`web_probe: SHADING_LANGUAGE_VERSION ${r.glsl}`);
         console.log(`web_probe: DEPTH_BITS ${r.depthBits}`);
+        if(swiftShader && !isSwiftShader(r.renderer))
+        {
+            console.error(`web_probe: FAIL: asked for ANGLE on SwiftShader, got ${r.renderer}`);
+            return 1;
+        }
         if(!(r.depthBits >= 24))
         {
             console.error(`web_probe: FAIL: DEPTH_BITS ${r.depthBits}, the z layering needs at least 24`);

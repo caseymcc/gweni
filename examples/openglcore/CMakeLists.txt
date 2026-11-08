@@ -4,7 +4,17 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 set(example_name "OpenGLCore")
 
-find_package(glfw3 CONFIG REQUIRED)
+if(EMSCRIPTEN)
+    # The web tree: GLFW is Emscripten's contrib.glfw3 port (emscripten-glfw),
+    # compiled and linked with --use-port (vcpkg's glfw3 is not built for wasm32,
+    # vcpkg.json), behind an INTERFACE target named as vcpkg's, so the targets
+    # below link "glfw" as natively.
+    add_library(glfw INTERFACE)
+    target_compile_options(glfw INTERFACE --use-port=contrib.glfw3)
+    target_link_options(glfw INTERFACE --use-port=contrib.glfw3)
+else()
+    find_package(glfw3 CONFIG REQUIRED)
+endif()
 
 set(${example_name}_sources
     openglcore.cpp)
@@ -26,7 +36,7 @@ target_link_libraries(gweni_capture PUBLIC
     glfw
 )
 
-if(UNIX AND NOT APPLE)
+if(UNIX AND NOT APPLE AND NOT EMSCRIPTEN)
     # Surfaceless EGL is the offscreen path used when there is no display at all.
     find_package(OpenGL REQUIRED COMPONENTS EGL)
     target_link_libraries(gweni_capture PUBLIC OpenGL::EGL)
@@ -52,6 +62,18 @@ target_link_libraries(ControlTest
     gweni_capture
     glfw
 )
+
+# The web tree: each executable is a page (<exe>.html, .js, .wasm and the
+# preloaded .data) that the browser runner (tests/web/run.mjs) or a person
+# loads; gweni_web_page() (web/page.cmake) gives it the shell, the URL query as
+# argv and the run's hand-off to the runner (web/pre.js), resources/ preloaded at
+# /resources (platform::getExecutableDir() is "/" there), WebGL 2 and a heap
+# that grows.
+if(EMSCRIPTEN)
+    include(${CMAKE_CURRENT_SOURCE_DIR}/web/page.cmake)
+    gweni_web_page(${example_name})
+    gweni_web_page(ControlTest)
+endif()
 
 # Both examples default to RelativeToExecutablePaths("resources"), so the
 # resources/ they load sits next to them and they run from any working

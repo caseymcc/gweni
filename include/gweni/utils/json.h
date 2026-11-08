@@ -23,15 +23,37 @@ inline std::string returnValue<std::string>(const Value &value)
     return value.GetString(); 
 }
 
-template<> 
-inline size_t returnValue<size_t>(const Value &value)
-{ 
+// The unsigned integer types by their names, not size_t/uint64_t: on x86-64
+// those are both unsigned long, but on wasm32 size_t is unsigned long (32 bits)
+// and uint64_t unsigned long long, so a size_t specialisation left
+// returnValue<uint64_t> (the skin's bbox) to the assert above.
+template<typename _Type>
+inline _Type returnUnsignedValue(const Value &value)
+{
     if(!value.IsNumber())
     {
         std::cerr<<"is not a number\n";
         return 0;
     }
-    return value.GetInt(); 
+    return (_Type)value.GetInt();
+}
+
+template<> 
+inline unsigned int returnValue<unsigned int>(const Value &value)
+{ 
+    return returnUnsignedValue<unsigned int>(value);
+}
+
+template<> 
+inline unsigned long returnValue<unsigned long>(const Value &value)
+{ 
+    return returnUnsignedValue<unsigned long>(value);
+}
+
+template<> 
+inline unsigned long long returnValue<unsigned long long>(const Value &value)
+{ 
+    return returnUnsignedValue<unsigned long long>(value);
 }
 
 template<> 

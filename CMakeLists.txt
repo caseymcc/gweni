@@ -73,6 +73,18 @@ if(GWENI_FRAME_POINTERS)
     add_compile_options(-fno-omit-frame-pointer)
 endif()
 
+# The web tree: C++ exceptions as natively. Emscripten builds with catching
+# off by default, so a throw (std::filesystem's, say) aborts the page.
+# -fexceptions is Emscripten's JavaScript-based exception handling, the one
+# that links with the vcpkg ports as they are built (their C setjmp/longjmp,
+# libpng's and FreeType's, is Emscripten's JavaScript one, which native wasm
+# exceptions, -fwasm-exceptions, refuse to link with). Set before deps, like the
+# sanitizers, so everything built here agrees.
+if(EMSCRIPTEN)
+    add_compile_options(-fexceptions)
+    add_link_options(-fexceptions)
+endif()
+
 # add our projects
 #add_subdirectory(docs)
 add_subdirectory(deps)
@@ -371,6 +383,13 @@ if(GWENI_RENDER_OPENGL_CORE)
         # GLFW_INCLUDE_NONE: <GLFW/glfw3.h> would include the desktop <GL/gl.h>,
         # whose prototypes would let a call newer than GLES 3.0 compile
         set(GWENI_COMPILE_DEFINITIONS ${GWENI_COMPILE_DEFINITIONS} GWENI_GL_ES GLFW_INCLUDE_NONE)
+    elseif(EMSCRIPTEN)
+        # the web tree: Emscripten's <GLES3/gl3.h> (glApi.h defines GWENI_GL_ES
+        # under __EMSCRIPTEN__ too) and its WebGL 2 library, which everything
+        # linking OpenGLCore must link at version 2: without it a GLES 3.0 entry
+        # point such as glTexSubImage3D's family has no implementation
+        set(GWENI_COMPILE_DEFINITIONS ${GWENI_COMPILE_DEFINITIONS} GWENI_GL_ES GLFW_INCLUDE_NONE)
+        set(GWENI_WEB_LINK_OPTIONS -sMIN_WEBGL_VERSION=2 -sMAX_WEBGL_VERSION=2)
     endif()
 endif()
 
@@ -488,6 +507,9 @@ target_link_libraries(gweni
 #endif()
 
 target_compile_definitions(gweni PUBLIC ${GWENI_COMPILE_DEFINITIONS})
+if(GWENI_WEB_LINK_OPTIONS)
+    target_link_options(gweni INTERFACE ${GWENI_WEB_LINK_OPTIONS})
+endif()
 
 if(GWENI_BUILD_EXAMPLES)
     add_subdirectory(examples)
@@ -500,8 +522,9 @@ if(GWENI_BUILD_TESTS)
 endif(GWENI_BUILD_TESTS)
 
 # gweni_bench (bench/): needs gweni_capture from the examples, and registers its
-# smoke test with the tests
-if(GWENI_BUILD_TESTS AND GWENI_BUILD_EXAMPLES)
+# smoke test with the tests. Not in the web tree: the browser runs captures, not
+# timed scenes.
+if(GWENI_BUILD_TESTS AND GWENI_BUILD_EXAMPLES AND NOT EMSCRIPTEN)
     add_subdirectory(bench)
 endif()
 

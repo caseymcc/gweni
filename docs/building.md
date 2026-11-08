@@ -68,14 +68,55 @@ cmake --build build_web_wasm32_debug -j
 ctest --test-dir build_web_wasm32_debug -L web
 ```
 
-It builds the `gweni` library, the textured skin and the headless unit tests
-(`gweni_unit_tests.js`/`.wasm`, run under node). The renderer and the example
-apps are not in it yet. The dependencies come from vcpkg's `wasm32-emscripten`
-triplet, with emsdk's own `Emscripten.cmake` chainloaded. `glew` and `glfw3`
-are left out on that platform; the GLFW headers come from Emscripten's
-`contrib.glfw3` port instead. `asan` and `profile` do not combine with `web`.
-The vcpkg binary cache starts cold for this triplet: the first configure builds
-its dependencies, about 30 s on a 32-core host.
+It builds the `gweni` library with `OpenGLCore` on WebGL 2, the textured skin,
+the headless unit tests (`gweni_unit_tests.js`/`.wasm`, run under node) and
+three pages, each an `.html` with its `.js`, `.wasm` and a `.data` holding
+`resources/`:
+
+- `examples/openglcore/ControlTest.html` and `OpenGLCore.html`, the examples;
+- `tests/gweni_unittests.html`, the GPU unit tests.
+
+For now the pages run captures only (`--headless` with `--shot`, `--shot-all`,
+`--screenshot`, ...): a capture renders into an offscreen framebuffer and reads
+it back in one blocking call, so it needs no main loop. The interactive window
+modes come later.
+
+The dependencies come from vcpkg's `wasm32-emscripten` triplet, with emsdk's own
+`Emscripten.cmake` chainloaded. `glew` and `glfw3` are left out on that
+platform; GLFW comes from Emscripten's `contrib.glfw3` port instead. Everything
+is built with `-fexceptions`, so C++ exceptions are caught as natively.
+`gweni_bench` is not built. `asan` and `profile` do not combine with `web`. The
+vcpkg binary cache starts cold for this triplet: the first configure builds its
+dependencies, about 30 s on a 32-core host.
+
+### Running a page by hand
+
+`tests/web/run.mjs` runs one page in the image's headless Chromium, as you would
+run the executable natively:
+
+```bash
+node tests/web/run.mjs --out /tmp/shots build_web_wasm32_debug/examples/openglcore/ControlTest.html \
+    -- --headless --control ButtonDemo --shot /out/ButtonDemo.png
+```
+
+Everything after `--` is the program's argv. The page writes to an in-memory
+file system, and the runner copies whatever the run wrote under `/out` to the
+`--out` directory. `--mount <dir>:<path>` copies a host directory into the page's
+file system before `main` runs, e.g. a `resources/` to load with
+`--resources <path>`. The runner prints the run's stdout and stderr and exits
+with its exit status. It fails with exit 1 and one `run.mjs: FAIL:` line if:
+
+- the page logs a console error or throws;
+- the run aborts or times out (`--timeout <s>`, default 600);
+- the run made no WebGL 2 context on ANGLE's SwiftShader, or one with fewer than
+  24 depth bits.
+
+In a browser of your own, serve the build directory (e.g.
+`python3 -m http.server -d build_web_wasm32_debug/examples/openglcore`) and give
+the arguments as the URL query: `key=value` is `--key value`, a bare `key` is
+`--key`, and `argv=<text>` is one argument as it is. For example,
+`ControlTest.html?headless&control=ButtonDemo&shot=/out/x.png`. The page shows
+the output under its canvas.
 
 The build image has what it needs, pinned in the `Dockerfile`, about 2.1 GB
 more image in all:
@@ -90,12 +131,30 @@ Without emsdk (an older container: `echo $EMSDK` is empty), `./generate.sh web`
 prints one line saying so and exits 1. From a host, `./run_docker.sh -r`
 rebuilds the image.
 
-Every test in the web tree has the label `web` and needs no GPU lock: each
-`unit:` case, run by node, and `web_probe`, which opens a blank page in the
-headless Chromium (`tests/web/probe.mjs`). The probe fails unless the page gets
-a WebGL 2 context with at least 24 depth bits, which in the container is ANGLE
-on SwiftShader. `web_probe_fails_without_webgl2` checks that the probe fails
-when the browser has no WebGL 2.
+Every test in the web tree has the label `web` and needs no GPU lock:
+
+- each `unit:` case, run by node;
+- `web_probe`, which opens a blank page in the headless Chromium
+  (`tests/web/probe.mjs`) and fails unless it gets a WebGL 2 context on
+  ANGLE's SwiftShader with at least 24 depth bits;
+- `web_probe_fails_without_webgl2` and `web_run_fails_without_webgl2`, which
+  check that the probe and the runner fail when the browser has no WebGL 2;
+- `web_unittests`, the GPU unit tests in the browser. It leaves out the LCD
+  text cases (WebGL 2 has no dual-source blending, so LCD text is grayscale
+  there) and the one that compares the text draws' `glDrawElements` loop with a
+  multi-draw the web does not have. The list and its reasons are in
+  `tests/CMakeLists.txt`. Doctest counts the cases left out as skipped;
+- `web_controltest_shot` and `web_openglcore_screenshot`: a capture writes a
+  PNG of the canvas's size that is not one flat colour (`tests/web/shot.mjs`);
+- `web_controltest_missing_resources*` and `web_openglcore_missing_resources*`:
+  `tests/missingResources.cmake`'s cases, with the incomplete `resources/` copy
+  mounted into the page.
+
+The browser tests take no lock because the runner keeps Chromium on its own
+SwiftShader. The image pins the Vulkan loader to Mesa's lavapipe
+(`VK_DRIVER_FILES`) for gweni's Vulkan tests, and with that pin ANGLE would
+render on lavapipe instead. `probe.mjs` launches Chromium without the pin, and
+both scripts fail if the renderer is not SwiftShader.
 
 ## Tests
 

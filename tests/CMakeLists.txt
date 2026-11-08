@@ -12,8 +12,12 @@
 #  repo root, where relative --shot paths are meant. gweni_unittests loads
 #  resources/ relative to the working directory, so it must run there.
 #
+#  In the web tree (EMSCRIPTEN) the executables are pages, run in headless
+#  Chromium by web/run.mjs: none of the native registrations below apply there,
+#  and the web ones are in the if(EMSCRIPTEN) blocks.
+#
 
-if(TARGET ControlTest)
+if(TARGET ControlTest AND NOT EMSCRIPTEN)
     # every --shot-all PNG and --dump-bounds listing, byte-identical across two
     # separate ControlTest processes
     add_test(NAME controltest_determinism
@@ -400,7 +404,7 @@ Erm, and I think it comes down to a choice between "The League Against Salivatin
                 TIMEOUT 60)
         endforeach()
     endforeach()
-else()
+elseif(NOT EMSCRIPTEN)
     message(STATUS "tests: ControlTest tests skipped, GWENI_BUILD_EXAMPLES is off")
 endif()
 
@@ -484,14 +488,24 @@ if(TARGET gweni_capture)
         gweni_capture
         doctest::doctest)
 
-    add_test(NAME unittests
-        COMMAND $<TARGET_FILE:gweni_unittests>
-        WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
-    # every case in one process: about 57 s in the ASAN tree on its own, so 60
-    # timed out there as soon as another test ran beside it
-    set_tests_properties(unittests PROPERTIES
-        LABELS gpu
-        TIMEOUT 180)
+    if(EMSCRIPTEN)
+        # a page (gweni_unittests.html), run in the browser as web_unittests
+        # below, with resources/ preloaded where main.cpp's CurrentPath
+        # ("resources") finds it (the working directory is "/")
+        gweni_web_page(gweni_unittests)
+        # Emscripten's isatty() says yes in the page too, and the runner passes
+        # the output on to a log, not a terminal
+        target_compile_definitions(gweni_unittests PRIVATE DOCTEST_CONFIG_COLORS_NONE)
+    else()
+        add_test(NAME unittests
+            COMMAND $<TARGET_FILE:gweni_unittests>
+            WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
+        # every case in one process: about 57 s in the ASAN tree on its own, so 60
+        # timed out there as soon as another test ran beside it
+        set_tests_properties(unittests PROPERTIES
+            LABELS gpu
+            TIMEOUT 180)
+    endif()
 else()
     message(STATUS "tests: unit tests skipped, they need gweni_capture (GWENI_BUILD_EXAMPLES)")
 endif()
@@ -518,6 +532,102 @@ if(EMSCRIPTEN)
         PASS_REGULAR_EXPRESSION "web_probe: OK, WebGL 2")
     set_tests_properties(web_probe_fails_without_webgl2 PROPERTIES
         PASS_REGULAR_EXPRESSION "FAIL: canvas.getContext\\('webgl2'\\) gave no WebGL 2 context")
+
+    # The pages, run in the browser by web/run.mjs (no GPU lock: Chromium's
+    # SwiftShader is its own, run.mjs keeps it off Mesa's lavapipe). A run fails
+    # on a page error, an abort, or unless it made a WebGL 2 context on
+    # SwiftShader with 24 depth bits.
+    set(web_runner ${CMAKE_CROSSCOMPILING_EMULATOR} ${CMAKE_CURRENT_SOURCE_DIR}/web/run.mjs)
+
+    if(TARGET gweni_unittests)
+        # Every gweni_unittests case but those that cannot hold on WebGL 2, each
+        # with its reason (the doctest summary counts them as skipped):
+        # - "Text AA:*", "LCD text:*": LCD text needs dual-source blending, which
+        #   WebGL 2 does not have, so setTextAA(LcdRGB/LcdBGR) stays grayscale;
+        #   noDualSource.cpp, which runs here, checks that fallback.
+        # - "Text draws: a loop of glDrawElements draws what glMultiDrawElements
+        #   draws": OpenGLCore has no multi-draw on the web (no
+        #   GL_EXT_multi_draw_arrays), so the loop is every text draw here and
+        #   there is no multi-draw to compare it with.
+        set(web_unittests_excluded
+            "Text AA:*"
+            "LCD text:*"
+            "Text draws: a loop of glDrawElements draws what glMultiDrawElements draws")
+        string(REPLACE ";" "," web_unittests_excluded "${web_unittests_excluded}")
+        add_test(NAME web_unittests
+            COMMAND ${web_runner} --timeout 900 $<TARGET_FILE:gweni_unittests>
+                -- "--test-case-exclude=${web_unittests_excluded}")
+        set_tests_properties(web_unittests PROPERTIES
+            LABELS web
+            TIMEOUT 960)
+    endif()
+
+    if(TARGET ControlTest)
+        # a capture in the browser: the PNG is written, of the canvas's size
+        # (ControlTest's default 640x480, OpenGLCore's 1024x768), and is not one
+        # flat colour
+        add_test(NAME web_controltest_shot
+            COMMAND ${CMAKE_CROSSCOMPILING_EMULATOR} ${CMAKE_CURRENT_SOURCE_DIR}/web/shot.mjs
+                --size 640x480 --png ButtonDemo.png
+                --out ${CMAKE_CURRENT_BINARY_DIR}/web_controltest_shot
+                $<TARGET_FILE:ControlTest>
+                -- --headless --control ButtonDemo --shot /out/ButtonDemo.png)
+        set(web_shot_tests web_controltest_shot)
+        if(TARGET OpenGLCore)
+            add_test(NAME web_openglcore_screenshot
+                COMMAND ${CMAKE_CROSSCOMPILING_EMULATOR} ${CMAKE_CURRENT_SOURCE_DIR}/web/shot.mjs
+                    --size 1024x768 --png OpenGLCore.png
+                    --out ${CMAKE_CURRENT_BINARY_DIR}/web_openglcore_screenshot
+                    $<TARGET_FILE:OpenGLCore>
+                    -- --headless --screenshot /out/OpenGLCore.png)
+            list(APPEND web_shot_tests web_openglcore_screenshot)
+        endif()
+        set_tests_properties(${web_shot_tests} PROPERTIES
+            LABELS web
+            TIMEOUT 300
+            PASS_REGULAR_EXPRESSION "shot.mjs: OK")
+
+        # the runner fails a page that got no WebGL 2 context, whatever its exit
+        # status (ControlTest's own, once its context fails, is 1 too): passes
+        # only on the runner's line saying so
+        add_test(NAME web_run_fails_without_webgl2
+            COMMAND ${web_runner} --no-webgl2 $<TARGET_FILE:ControlTest>
+                -- --headless --control ButtonDemo --shot /out/ButtonDemo.png)
+        set_tests_properties(web_run_fails_without_webgl2 PROPERTIES
+            LABELS web
+            TIMEOUT 120
+            PASS_REGULAR_EXPRESSION "run.mjs: FAIL: ControlTest.html made no WebGL 2 context")
+
+        # missingResources.cmake's cases in the browser: the resources/ copy
+        # missing a file is mounted into the page's file system (run.mjs
+        # --mount), so one preloaded resources/ serves every case
+        set(web_missing_resources_tools ControlTest)
+        if(TARGET OpenGLCore)
+            list(APPEND web_missing_resources_tools OpenGLCore)
+        endif()
+        foreach(tool ${web_missing_resources_tools})
+            string(TOLOWER ${tool} tool_lower)
+            foreach(case nodir noskin nofont complete)
+                if(case STREQUAL "nodir")
+                    set(test_name web_${tool_lower}_missing_resources)
+                else()
+                    set(test_name web_${tool_lower}_missing_resources_${case})
+                endif()
+                add_test(NAME ${test_name}
+                    COMMAND ${CMAKE_COMMAND}
+                        -DEXE=$<TARGET_FILE:${tool}>
+                        -DTOOL=${tool}
+                        "-DRUNNER=${web_runner}"
+                        -DSOURCE_DIR=${GWENI_SOURCE_DIR}
+                        -DSCRATCH_DIR=${CMAKE_CURRENT_BINARY_DIR}/${test_name}
+                        -DCASE=${case}
+                        -P ${CMAKE_CURRENT_SOURCE_DIR}/missingResources.cmake)
+                set_tests_properties(${test_name} PROPERTIES
+                    LABELS web
+                    TIMEOUT 300)
+            endforeach()
+        endforeach()
+    endif()
 endif()
 
 # The Vulkan plumbing (GWENI_RENDER_VULKAN): loader, validation layer, a 1.3

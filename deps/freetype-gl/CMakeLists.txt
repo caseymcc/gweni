@@ -95,7 +95,11 @@ if(NOT MINGW AND (WIN32 OR WIN64) AND NOT freetype-gl_USE_HUNTER)
         ${CMAKE_CURRENT_SOURCE_DIR}/windows/freetype)
 endif()
 
-if(freetype-gl_WITH_GLES3)
+if(freetype-gl_WITH_GLES3 AND EMSCRIPTEN)
+    # gweni patch: the web tree, where <GLES3/gl3.h> is Emscripten's and WebGL 2
+    # is linked by the executable (-sMAX_WEBGL_VERSION=2), with nothing to find
+    set(OPENGL_TARGET_LIBS)
+elseif(freetype-gl_WITH_GLES3)
     find_package(OpenGL REQUIRED COMPONENTS GLES3)
     set(OPENGL_TARGET_LIBS OpenGL::GLES3)
 elseif(ANDROID)
@@ -211,6 +215,15 @@ target_link_libraries(freetype-gl
 # headers for freetype-gl and everything including it
 if(freetype-gl_WITH_GLES3)
     target_compile_definitions(freetype-gl PUBLIC FREETYPE_GL_GLES3)
+endif()
+
+# gweni patch: FREETYPE_GL_USE_VAO adds a field to vertex_buffer_t (VAO_id), so
+# everything including vertex-buffer.h must see it as freetype-gl was built
+# (the add_definitions above reaches only this directory). On x86-64 the field
+# fitted in the padding before `indices` and the mismatch went unseen; on wasm32
+# gweni read text_buffer_t's indices from the wrong offset.
+if(freetype-gl_USE_VAO)
+    target_compile_definitions(freetype-gl PUBLIC FREETYPE_GL_USE_VAO)
 endif()
 
 if(freetype-gl_BUILD_MAKEFONT)

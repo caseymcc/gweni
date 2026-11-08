@@ -20,6 +20,11 @@
 #  A degraded case passes only if the exe exits 2, writes the PNG, names the
 #  missing path on stderr and ends with "<TOOL>: resources incomplete, exiting 2".
 #
+#  In the web tree EXE is the page (<TOOL>.html) and -DRUNNER=<node;run.mjs> the
+#  browser runner (tests/web/run.mjs): the copy is mounted into the page's file
+#  system (--mount) at the same path, the shot written under its /out and copied
+#  back, and the runner exits with the page's status and passes its stderr on.
+#
 
 foreach(var EXE TOOL SOURCE_DIR SCRATCH_DIR CASE)
     if(NOT DEFINED ${var})
@@ -65,8 +70,20 @@ else()
     message(FATAL_ERROR "missingResources.cmake: unknown TOOL '${TOOL}'")
 endif()
 
+if(DEFINED RUNNER)
+    # the page sees the copy at the same absolute path and writes its shot to
+    # /out/shot.png, which the runner copies to SCRATCH_DIR/shot.png
+    set(mount)
+    if(NOT CASE STREQUAL "nodir")
+        set(mount --mount "${resources}:${resources}")
+    endif()
+    list(TRANSFORM args REPLACE "^${shot}$" "/out/shot.png")
+    set(command ${RUNNER} --out "${SCRATCH_DIR}" ${mount} "${EXE}" -- ${args})
+else()
+    set(command "${EXE}" ${args})
+endif()
 execute_process(
-    COMMAND "${EXE}" ${args}
+    COMMAND ${command}
     WORKING_DIRECTORY "${SCRATCH_DIR}"
     RESULT_VARIABLE result
     OUTPUT_VARIABLE out

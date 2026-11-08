@@ -1,0 +1,26 @@
+<!doctype html>
+<!--
+  Gweni
+  Copyright (c) 2010 Facepunch Studios
+  MIT License, see LICENSE
+
+  The shell of every web page (page.cmake): the #canvas the WebGL 2 context is
+  made on and an #output panel with the run's stdout and stderr (pre.js).
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>gweni</title>
+<style>
+  body { margin: 0; background: #1a1b26; color: #c0caf5; font: 13px monospace; }
+  canvas { display: block; }
+  #output { margin: 0; padding: 8px; max-height: 40vh; overflow: auto; white-space: pre-wrap; }
+</style>
+</head>
+<body>
+<canvas id="canvas" width="64" height="64" oncontextmenu="event.preventDefault()" tabindex="-1"></canvas>
+<pre id="output"></pre>
+{{{ SCRIPT }}}
+</body>
+</html>

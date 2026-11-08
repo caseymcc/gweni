@@ -170,7 +170,51 @@ bool initGlfwContext(Context &ctx, const Point &size, const std::string &title, 
     return true;
 }
 
-#if GWENI_EXAMPLE_EGL
+#if GWENI_EXAMPLE_WEBGL
+bool initEglContext(Context &ctx)
+{
+    EmscriptenWebGLContextAttributes attributes;
+
+    emscripten_webgl_init_context_attributes(&attributes);
+    attributes.majorVersion=2;
+    attributes.minorVersion=0;
+    // the default framebuffer is never drawn or read (a capture draws into its
+    // own Framebuffer, with its own 24-bit depth buffer): no multisampling, and
+    // the context must not be refused for running on SwiftShader, a CPU
+    // rasteriser
+    attributes.depth=EM_TRUE;
+    attributes.stencil=EM_FALSE;
+    attributes.antialias=EM_FALSE;
+    attributes.premultipliedAlpha=EM_FALSE;
+    attributes.preserveDrawingBuffer=EM_FALSE;
+    attributes.failIfMajorPerformanceCaveat=EM_FALSE;
+    // the extensions are asked for by name (glGetStringi), not enabled one by one
+    attributes.enableExtensionsByDefault=EM_TRUE;
+
+    ctx.webgl=emscripten_webgl_create_context("#canvas", &attributes);
+    if(ctx.webgl <= 0)
+    {
+        std::cerr<<g_tool<<": no WebGL 2 context on #canvas (emscripten_webgl_create_context: "
+                 <<ctx.webgl<<")\n";
+        ctx.webgl=0;
+        return false;
+    }
+    if(emscripten_webgl_make_context_current(ctx.webgl) != EMSCRIPTEN_RESULT_SUCCESS)
+    {
+        std::cerr<<g_tool<<": emscripten_webgl_make_context_current failed\n";
+        emscripten_webgl_destroy_context(ctx.webgl);
+        ctx.webgl=0;
+        return false;
+    }
+    // what the context is, for the page (web/pre.js): the browser runner fails a
+    // run whose context is not WebGL 2
+    EM_ASM({
+        if(Module['gweniWebGLContext'])
+            Module['gweniWebGLContext'](GLctx);
+    });
+    return true;
+}
+#elif GWENI_EXAMPLE_EGL
 bool initEglContext(Context &ctx)
 {
     ctx.eglDisplay=eglGetPlatformDisplay(EGL_PLATFORM_SURFACELESS_MESA, EGL_DEFAULT_DISPLAY, nullptr);
@@ -255,7 +299,14 @@ void destroyContext(Context &ctx)
         ctx.window=nullptr;
         return;
     }
-#if GWENI_EXAMPLE_EGL
+#if GWENI_EXAMPLE_WEBGL
+    if(ctx.webgl)
+    {
+        emscripten_webgl_make_context_current(0);
+        emscripten_webgl_destroy_context(ctx.webgl);
+        ctx.webgl=0;
+    }
+#elif GWENI_EXAMPLE_EGL
     if(ctx.eglDisplay != EGL_NO_DISPLAY)
     {
         eglMakeCurrent(ctx.eglDisplay, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
