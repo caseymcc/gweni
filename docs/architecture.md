@@ -129,6 +129,24 @@ control from one off it: `Button` tests the release point against its own bounds
 (`containsCanvasPoint`), so a press let go off the button is no click.
 `tests/unit/mouseCapture.cpp` pins it.
 
+The hit test itself is `Base::getControlAt`: the control's own hidden and bounds
+checks, then every child in reverse child order (the last one holding the point wins),
+then the control itself. That is one call per child of every control under the point,
+and each call is one hit-test visit, counted by the running `input::hitTestVisits()`
+(never reset; `gweni_bench` prints it per frame as `hit_tests=`, and `bench_scaling`
+holds it flat in the local scenes). A long list would make a move cost one visit per
+row, so `layout::Table` (a ListBox's rows) overrides it: while its children are all
+docked Top and the shown, non-empty ones lie in child order by y without overlapping
+the next, at most one row holds the point, and a binary search over a vector of those
+rows finds it, so a move over a ListBox costs the same few dozen visits at 1 000 rows
+as at 10 000. Anything else (before the first layout, a row moved over another, a child
+not docked Top) walks every child as `Base` does. The vector is rebuilt on the first
+hit test after a child is added, removed, moved, resized (`onChildBoundsChanged`),
+hidden or shown (`onChildHiddenChanged`, which `Base::setHidden` calls on the parent),
+so the answer is the walk's for the bounds as they are, whether the table is laid out
+or not. `tests/unit/tableHitTest.cpp` compares the two at every point over a table in
+each of those states.
+
 #### The tooltip: a canvas-level overlay
 
 A tooltip is a retained control like any other, decided in this phase. Each canvas owns

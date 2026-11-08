@@ -90,8 +90,6 @@ set(EXCLUDED
     # #323 and #324 (tasks #360, #361, #362): the edited TextBoxMultiline,
     # which a pass enters, re-measures every one of its lines
     type:measure_calls
-    # #358: a mouse move over a ListBox hit-tests every row of its Table
-    hover-sweep:hit_tests
 )
 
 # Keys that are not work counters (see the table above).

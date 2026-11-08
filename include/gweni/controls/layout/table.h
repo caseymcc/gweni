@@ -11,6 +11,8 @@
 #include <gweni/controls/button.h>
 #include <gweni/utility.h>
 
+#include <vector>
+
 namespace gweni
 {
 namespace controls
@@ -288,6 +290,17 @@ public:
         }
     }
 
+    //! What Base::getControlAt() finds, without trying every row: while the
+    //! rows are a stack (every child docked Top, the shown ones in child order
+    //! by y and none overlapping the next), at most one shown row holds the
+    //! point, and a binary search by y finds it, so a hit test costs O(log
+    //! rows) here and one visit of that row. Otherwise (before the first
+    //! layout, say, or with a row moved over another) it walks every child as
+    //! Base does. The stack is checked again after any child is added,
+    //! removed, moved, resized, hidden or shown, so the answer is the walk's
+    //! for the bounds as they are, laid out or not.
+    controls::Base *getControlAt(int x, int y, bool bOnlyIfMouseEnabled=true) override;
+
     void layout(skin::Base *skin) override
     {
         ParentClass::layout(skin);
@@ -381,13 +394,49 @@ public:
         invalidateParent();
     }
 
+protected:
+
+    void onChildAdded(controls::Base *child) override
+    {
+        m_hitRowsStale=true;
+        ParentClass::onChildAdded(child);
+    }
+
+    void onChildRemoved(controls::Base *child) override
+    {
+        m_hitRowsStale=true;
+        ParentClass::onChildRemoved(child);
+    }
+
+    void onChildBoundsChanged(gweni::Rect oldChildBounds, Base *child) override
+    {
+        m_hitRowsStale=true;
+        ParentClass::onChildBoundsChanged(oldChildBounds, child);
+    }
+
+    void onChildHiddenChanged(Base *child) override
+    {
+        m_hitRowsStale=true;
+        ParentClass::onChildHiddenChanged(child);
+    }
+
 private:
+
+    //! Rebuilds m_hitRows if a child was added, removed, moved, resized,
+    //! hidden or shown since the last build; whether the search holds.
+    bool hitRowsSearchable();
 
     bool m_sizeToContents;
     int m_columnCount;
     int m_defaultRowHeight;
 
     int m_columnWidth[TableRow::MaxColumns];
+
+    //! The shown rows that hold any point (not hidden, not empty), in child
+    //! order, which is ascending y with no overlap while m_hitRowsSorted.
+    std::vector<Base *> m_hitRows;
+    bool m_hitRowsStale=true;
+    bool m_hitRowsSorted=false;
 };
 
 

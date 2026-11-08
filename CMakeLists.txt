@@ -251,6 +251,7 @@ set(GWENI_LAYOUT_SOURCES
     source/controls/layout/layout.cpp
     include/gweni/controls/layout/position.h
     include/gweni/controls/layout/table.h
+    source/controls/layout/table.cpp
     include/gweni/controls/layout/tile.h
 )
 

@@ -388,12 +388,27 @@ public:
     virtual void setPreferredSize(const Size &size) { m_preferredSize=size; }
     virtual const Size getPreferredSize() const { return m_preferredSize; }
 
+    //! The control under (x, y), in this control's coordinates: the last
+    //! child in child order holding the point, searched the same way, else
+    //! this control (nullptr if it is hidden, the point is outside it, or
+    //! bOnlyIfMouseEnabled and its mouse input is off). Every call is one
+    //! hit-test visit (input::hitTestVisits()).
     virtual controls::Base *getControlAt(int x, int y, bool bOnlyIfMouseEnabled=true);
 
 protected:
 
+    //! Counts one hit-test visit: an override of getControlAt() calls it once,
+    //! on entry, whether it then searches its children itself or falls back
+    //! to getControlAtWalk(), which counts nothing.
+    static void countHitTestVisit();
+    //! Base::getControlAt() without counting the visit: the hidden and bounds
+    //! checks, every child in reverse child order, then this control.
+    controls::Base *getControlAtWalk(int x, int y, bool bOnlyIfMouseEnabled);
+
     virtual void onBoundsChanged(gweni::Rect oldBounds);
     virtual void onChildBoundsChanged(gweni::Rect oldChildBounds, Base *child);
+    //! A child's own hidden flag changed (its setHidden()).
+    virtual void onChildHiddenChanged(Base * /*child*/) {}
 
     virtual void onScaleChanged();
 

@@ -551,6 +551,9 @@ void Base::setHidden(bool hidden)
 
     m_hidden=hidden;
 
+    if(m_parent)
+        m_parent->onChildHiddenChanged(this);
+
     // Under a hidden ancestor it is not shown either way: only its own flag
     // changes, and nothing below it.
     if(!m_ancestorHidden)
@@ -1574,10 +1577,19 @@ void Base::onChildTouched(controls::Base * /*child*/)
 // input::hitTestVisits(), defined at the end of this file.
 static size_t g_hitTestVisits=0;
 
-Base *Base::getControlAt(int x, int y, bool bOnlyIfMouseEnabled)
+void Base::countHitTestVisit()
 {
     ++g_hitTestVisits;
+}
 
+Base *Base::getControlAt(int x, int y, bool bOnlyIfMouseEnabled)
+{
+    countHitTestVisit();
+    return getControlAtWalk(x, y, bOnlyIfMouseEnabled);
+}
+
+Base *Base::getControlAtWalk(int x, int y, bool bOnlyIfMouseEnabled)
+{
     if(hidden())
         return nullptr;
 
