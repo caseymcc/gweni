@@ -106,7 +106,6 @@ Frame drawFrame(Draw &&draw)
     const gweni::Point size=gweni::test::viewSize();
 
     glClearColor(background.r/255.0f, background.g/255.0f, background.b/255.0f, 1.0f);
-    glClearDepth(1.0);
     glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
 
     renderer.begin();

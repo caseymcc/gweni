@@ -60,7 +60,6 @@ Font sized(float size)
 void clearFrame(const Color &background)
 {
     glClearColor(background.r/255.0f, background.g/255.0f, background.b/255.0f, 1.0f);
-    glClearDepth(1.0);
     glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
 }
 
@@ -118,24 +117,26 @@ std::vector<GlyphQuad> glyphQuads(const TextId &textId)
 }
 
 //! A font's atlas as it is on the GPU: the coverage the text shader samples, one
-//! byte per texel.
+//! byte per texel, read back through a framebuffer (OpenGLCore::readTexture).
 std::vector<uint8_t> atlasCoverage(const Font &font, int &width)
 {
-    const unsigned int name=gweni::test::gpuRenderer().getFontAtlasName(font);
-    int height=0;
+    OpenGLCore &renderer=gweni::test::gpuRenderer();
+    const unsigned int name=renderer.getFontAtlasName(font);
+    const ftgl::texture_font_t *textureFont=renderer.getTextureFont(font);
 
     REQUIRE(name != 0);
-    glBindTexture(GL_TEXTURE_2D, name);
-    glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &width);
-    glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &height);
+    REQUIRE(textureFont != nullptr);
+    width=static_cast<int>(textureFont->atlas->width);
+
+    const int height=static_cast<int>(textureFont->atlas->height);
+    std::vector<uint8_t> rgba;
+
+    REQUIRE(OpenGLCore::readTexture(name, width, height, rgba));
 
     std::vector<uint8_t> coverage(static_cast<size_t>(width)*height);
 
-    glPixelStorei(GL_PACK_ALIGNMENT, 1);
-    glGetTexImage(GL_TEXTURE_2D, 0, GL_RED, GL_UNSIGNED_BYTE, coverage.data());
-    glPixelStorei(GL_PACK_ALIGNMENT, 4);
-    // the renderer rebinds what it needs; leave nothing bound behind it
-    glBindTexture(GL_TEXTURE_2D, 0);
+    for(size_t i=0; i<coverage.size(); ++i)
+        coverage[i]=rgba[i*4];
     return coverage;
 }
 
@@ -178,16 +179,15 @@ TEST_CASE("Grayscale text: the glyph atlas holds one coverage byte per texel")
         return;
     CHECK(renderer.getFontAtlasDepth(font) == 1);
 
-    GLint format=0;
-    GLint greenBits=-1;
+    // GL_R8: 8 bits of red and nothing else, as the framebuffer it is attached to
+    // reports it (GLES has no glGetTexLevelParameteriv)
+    int bits[4]={-1, -1, -1, -1};
 
-    glBindTexture(GL_TEXTURE_2D, renderer.getFontAtlasName(font));
-    glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_INTERNAL_FORMAT, &format);
-    glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_GREEN_SIZE, &greenBits);
-    glBindTexture(GL_TEXTURE_2D, 0);
-
-    CHECK(format == GL_R8);
-    CHECK(greenBits == 0);
+    REQUIRE(OpenGLCore::textureChannelBits(renderer.getFontAtlasName(font), bits));
+    CHECK(bits[0] == 8);
+    CHECK(bits[1] == 0);
+    CHECK(bits[2] == 0);
+    CHECK(bits[3] == 0);
 }
 
 TEST_CASE("Grayscale text: white text over mid-grey is neutral grey, with no colour fringe")

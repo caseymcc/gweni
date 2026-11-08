@@ -10,10 +10,10 @@
  *  missing-image placeholder, and a Button's setImage icon lands at its bounds in
  *  front of the button and is not re-emitted by a frame where nothing changed.
  *
- *  The expected colours come from pixelColor() (glGetTexImage of level 0), so
- *  they do not depend on the draw path under test. Each rect is drawn 1:1 with
- *  the texels, so a pixel centre is a texel centre and the linear filter returns
- *  that texel unblended.
+ *  The expected colours come from pixelColor() (level 0 read back through a
+ *  framebuffer), so they do not depend on the draw path under test. Each rect
+ *  is drawn 1:1 with the texels, so a pixel centre is a texel centre and the
+ *  linear filter returns that texel unblended.
  *
  *  Also: a UV sub-rect in the same frame as the two textures, and a ninth
  *  texture, past the 8 image units.
@@ -62,7 +62,6 @@ struct Frame
 void clear()
 {
     glClearColor(background.r/255.0f, background.g/255.0f, background.b/255.0f, 1.0f);
-    glClearDepth(1.0);
     glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
 }
 

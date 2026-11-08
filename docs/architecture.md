@@ -377,6 +377,38 @@ GPU buffer). The same control/skin code drives both.
 `source/platforms/renderers/OpenGLCore/openglCore.cpp` implements the retained model
 on an OpenGL 3.3 core profile:
 
+- **One GL subset.** Every GL call and every line of GLSL keeps to what GL 3.3 core,
+  GLES 3.0 and WebGL 2 all have, so one code path serves a desktop context, a GLES
+  one and the browser. That rules out what llvmpipe's 4.5 used to let through behind
+  the 3.3 request: no direct state access (`glCreate*`, `glProgramUniform*`,
+  `glVertexArray*`; objects are `glGen*`'d and bound to be edited, and a uniform is set
+  with `glUniform*` in the program in use), no buffer textures, no `gl_PrimitiveID`,
+  no `texture2D`, no `glGetTexImage` or `glGetTexLevelParameteriv` (a texture is read
+  back through a framebuffer it is attached to, `OpenGLCore::readTexture`, and its
+  format seen there, `textureChannelBits`), no `glClearDepth` (the tests leave the
+  clear depth at its default 1), `glReadPixels` only as `GL_RGBA`/`GL_UNSIGNED_BYTE`,
+  textures with a sized internal format that matches their data (`GL_RGB8` for RGB
+  images), and a buffer is only ever bound to one target (the vertex buffers to
+  `GL_ARRAY_BUFFER`, the quad index buffers to `GL_ELEMENT_ARRAY_BUFFER`), as WebGL
+  requires. Two things beyond it are used where the context has them, found by
+  `init()` (`OpenGLCore::glCapabilities()`, from `GL_VERSION` and the extension list):
+  `glMultiDrawElements` for the text (core in GL 3.3; without it, each range of a draw
+  is a `glDrawElements` of its own, which draws the same pixels and counts the same
+  `FrameStats`; `GWENI_NO_MULTI_DRAW=1` at construction, or `setMultiDrawText(false)`,
+  takes the loop on desktop too, `tests/textDrawLoop.cpp`), and dual-source blending
+  for LCD text (core in GL 3.3, `GL_EXT_blend_func_extended` on GLES; without it the
+  text program has no second output and an LCD atlas is blended by its mean coverage).
+- **The shaders' dialect is chosen at run time.** Each stage is one body shared by
+  every dialect, behind a header `OpenGLCore::shaderSource` puts in front:
+  `#version 330 core`, or for an ES context `#version 300 es` with `precision highp`
+  for `float`, `int`, `sampler2D` and `usampler2D` (ES's fragment defaults, mediump
+  int and lowp samplers, would not give the desktop bytes), plus the clip-box
+  texture's width (`CLIP_COLUMNS`) and, for the text program with dual-source
+  blending, `GWENI_DUAL_SOURCE` (and on ES `#extension GL_EXT_blend_func_extended`).
+  The bodies use no implicit conversion and nothing else GLSL ES 3.00 lacks:
+  `tests/glslDialects.cpp` compiles and links every program as ES 3.00 in the desktop
+  context (`GL_ARB_ES3_compatibility`), and without its dual-source output.
+
 - One vertex buffer (`m_vertexBuffer` / CPU mirror `m_vertexes`), drawn over one
   **static 16-bit quad index buffer** (`m_quadIndexBuffer`): `kSlotsPerChunk` (16383)
   quads of `v, v+1, v+2, v+1, v+3, v+2` with `v = i*4`, filled once by `init()`. A
@@ -687,24 +719,45 @@ on an OpenGL 3.3 core profile:
 - **Clip boxes.** Every primitive slot and every glyph slot carries the `clipRegion()`
   current when it was drawn, as a `Box` of four `uint16_t` corners (`m_clippingBoxes`,
   `m_textClipBoxes`), its edges snapped like the vertices' and clamped to `[0, 65535]` with
-  `x1 >= x0`, `y1 >= y0`, so an empty region is an empty box. Each list is uploaded
-  like the vertices (dirty slots only, compared by bytes) and read by the fragment
-  shaders as a `GL_RGBA16UI` buffer texture, then `discard` outside
-  `[x0,x1) x [y0,y1)`. The primitive shader fetches it at `slotBase + (gl_PrimitiveID >> 1)`:
-  each chunk is drawn from index 0 of its own slots and every slot is exactly 4
-  vertices / 6 indices (2 triangles), hidden and degenerate ones included, so
-  `gl_PrimitiveID >> 1` is the slot within the chunk, and the `slotBase` uniform, set
-  per chunk, its first slot. The text
-  shader takes the slot from the vertex instead (`slotBase + (gl_VertexID >> 2)`, flat),
-  because each of the text's draws covers only some of its chunk's slots (below). `startClip()`/`endClip()` do nothing in this
-  renderer. `GWENI_CLIP_DEBUG=<inset px>` shrinks every box by the inset on each side,
-  which shows the boxes on screen.
+  `x1 >= x0`, `y1 >= y0`, so an empty region is an empty box. Each list lives in a 2D
+  `GL_RGBA16UI` texture (`m_clipTexture`, `m_textClipTexture`, on texture unit 1),
+  one texel per slot, `OpenGLCore::kClipColumns` (2048) slots a row: slot `s` is
+  texel `(s % 2048, s / 2048)`, read with `texelFetch` (nearest filtering, as an
+  integer texture needs). The fragment shaders `discard` outside `[x0,x1) x [y0,y1)`.
+  Both programs take the slot from the vertex shader as a `flat uint`,
+  `slotBase + (gl_VertexID >> 2)`: each chunk is drawn from index 0 of its own slots
+  with its attributes pointed at its first slot (the `slotBase` uniform, set per
+  chunk), every slot exactly 4 vertices, and the four vertexes of a slot carry the
+  same value, so whichever is the provoking vertex gives it. (The primitive shader
+  read `gl_PrimitiveID >> 1` in its fragment stage before, which GLSL ES 3.00 lacks and
+  a Vulkan fragment shader has only with geometry shaders; the text shader always took
+  the slot from the vertex, since each of its draws covers only some of its chunk's
+  slots, below.) The boxes are uploaded like the vertices, dirty slots only, compared
+  by bytes (`uploadDirtyClipBoxes`): each dirty run is one `glTexSubImage2D` per row
+  piece it covers (its part of its first row, the whole rows between, its part of its
+  last), straight from the mirror, whose rows are consecutive. When the mirror has
+  outgrown what was sent, everything is sent again, as a vertex buffer's regrow does,
+  into a texture re-allocated first if its rows do not hold it. Its height is a power
+  of two (grow-only, doubling): llvmpipe compiles a shader variant per sampler shape,
+  power-of-two or not among it, so any other height compiled one more mid-frame (with
+  LLVM's C++ allocations in `gweni_bench`'s `allocs_flush`); 2048 wide and up to 2048
+  rows (GLES 3.0's least `GL_MAX_TEXTURE_SIZE`) holds 4 M slots. The bytes sent are
+  those the buffer textures were sent, and only `FrameStats::uploadCalls` changed: a
+  run that crosses a row boundary is two or three calls where it was one. Over
+  `gweni_bench`'s scenes at their default N (`upload_calls_total` before -> after, every
+  other counter, `upload_bytes` included, the same): `build` 4 -> 5, `drag` 140 -> 160,
+  `scroll` 60 -> 99, `type` 51 -> 62, `add-remove` 40 -> 50, `resize` 1630 -> 1640,
+  `scale` 7416 -> 7425, `tree-toggle` 38640 -> 38680; `idle`, `hover-sweep`,
+  `set-text`, `animate` and `bring-to-front` unchanged. `startClip()`/`endClip()` do
+  nothing in this renderer. `GWENI_CLIP_DEBUG=<inset px>` shrinks every box by the
+  inset on each side, which shows the boxes on screen.
 - **One text draw per font atlas.** Every loaded font has its own freetype-gl atlas
   texture: a coverage font per (face, px, bold) below the SDF threshold, one SDF font
   per (face, bold) at or above it (see "Hybrid text"). Each `TextRun` records the `GLFontData` it was laid out in,
   and each `GLFontData` keeps the text ids of its runs (`textRuns`). `flush()` binds
   each atlas in turn and draws its runs with one `glMultiDrawElements` per index chunk
-  they reach, one per atlas until the glyph slots outgrow a chunk
+  they reach (or, without multi-draw, that draw's ranges as a loop of `glDrawElements`,
+  counted as one draw; "One GL subset" above), one per atlas until the glyph slots outgrow a chunk
   (`GLFontData::drawChunks`, built by `buildTextDrawList`): the glyphs in use of each
   run that is not hidden, adjacent ones merged, split at the chunks' edges, in slot
   order, as index ranges of the static glyph-quad buffer from the chunk's first slot,
@@ -934,7 +987,7 @@ What exists today (the foundation) and what's still aspirational:
   everything for that one frame. A slot is marked dirty only when its bytes actually
   change, so a control that redraws itself identically (the skin re-emits unchanged
   controls every frame) costs nothing. `GWENI_UPLOAD_STATS=1` prints the per-frame
-  upload call/byte counts (the clip-box buffers included).
+  upload call/byte counts (the clip-box textures' row uploads included).
 - **Font atlas upload follows lazy glyph rasterisation.** `loadFont()` allocates the
   atlas texture and marks the whole atlas, with the printable-ASCII cache in it, as the
   dirty band, so the next `flush()` uploads it once and counts it like any other atlas

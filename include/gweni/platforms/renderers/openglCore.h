@@ -5,6 +5,7 @@
 #include <gweni/platforms/baseRender.h>
 #include <gweni/objectIdBank.h>
 
+#include <string>
 #include <vector>
 #include <glm/glm.hpp>
 #include <unordered_map>
@@ -61,6 +62,24 @@ enum class TextAA
     Grayscale, //!< one coverage value per pixel
     LcdRGB,    //!< one coverage value per subpixel, red on the left
     LcdBGR     //!< one coverage value per subpixel, blue on the left
+};
+
+//! The GLSL OpenGLCore's programs are compiled as: one shared body per stage
+//! behind a version (and, for ES, precision) header chosen by init() from the
+//! context it runs in.
+enum class GLSLDialect
+{
+    Glsl330,  //!< desktop GL 3.3 core: `#version 330 core`
+    Es300     //!< GLES 3.0 / WebGL 2: `#version 300 es`, every type highp
+};
+
+//! The shader stages OpenGLCore compiles, two per program (OpenGLCore::shaderSource)
+enum class GLShaderSource
+{
+    PrimitiveVertex,
+    PrimitiveFragment,
+    TextVertex,
+    TextFragment
 };
 
 //! How the text shader turns an atlas sample into alpha. Set per draw, so each
@@ -331,11 +350,56 @@ public:
     {
         std::vector<unsigned int> buffers;
         std::vector<unsigned int> vertexArrays;
-        std::vector<unsigned int> textures; //!< the clip-box buffer textures
+        std::vector<unsigned int> textures; //!< the clip-box textures
         std::vector<unsigned int> programs;
     };
 
     GLObjectNames getGLObjectNames() const;
+
+    //! The source of one of the programs' stages in a dialect: its version header
+    //! (`#version 330 core`, or `#version 300 es` with every float, int and sampler
+    //! type highp), then the body every dialect shares. With dualSource the text
+    //! fragment shader has the second output an LCD atlas is blended with
+    //! (GWENI_DUAL_SOURCE; ES adds `#extension GL_EXT_blend_func_extended`);
+    //! without it the shader writes only the colour. init() compiles the dialect
+    //! of its context; a test can compile the others.
+    static std::string shaderSource(GLShaderSource source, GLSLDialect dialect, bool dualSource);
+
+    //! What the context offers beyond the GL 3.3 / GLES 3.0 / WebGL 2 subset every
+    //! other call keeps to, found by init(): desktop GL 3.3 has both, an ES context
+    //! what its extensions say.
+    struct GLCapabilities
+    {
+        GLSLDialect dialect=GLSLDialect::Glsl330;
+        //! glMultiDrawElements, which the text draws use; without it each of a
+        //! draw's ranges is a glDrawElements of its own
+        bool multiDraw=true;
+        //! dual-source blending (GL_SRC1_COLOR), which LCD text is blended with
+        bool dualSourceBlend=true;
+    };
+
+    const GLCapabilities &glCapabilities() const { return m_glCapabilities; }
+    //! Whether the current context lists the extension (GL_NUM_EXTENSIONS, glGetStringi)
+    static bool hasExtension(const char *name);
+
+    //! Whether the text draws are glMultiDrawElements calls (true where the context
+    //! has it, unless GWENI_NO_MULTI_DRAW=1 was set at construction) or the same
+    //! ranges drawn one glDrawElements each. Either draws the same pixels and counts
+    //! the same FrameStats. A test hook: true asks for the multi-draw, which only a
+    //! context that has it gives.
+    bool multiDrawText() const { return m_multiDrawText; }
+    void setMultiDrawText(bool multiDraw);
+
+    //! Reads level 0 of a 2D texture (width x height texels) back as RGBA8 rows,
+    //! row 0 (the first uploaded) first, through a framebuffer it is attached to,
+    //! since GLES has no glGetTexImage.
+    //! The read framebuffer binding is put back. False, with rgba empty, if the
+    //! texture cannot be attached (its format is not colour-renderable).
+    static bool readTexture(unsigned int textureName, int width, int height, std::vector<uint8_t> &rgba);
+    //! The red, green, blue and alpha bits of a 2D texture's level 0, read from a
+    //! framebuffer it is attached to (GLES has no glGetTexLevelParameteriv): 8,0,0,0
+    //! for GL_R8, 8,8,8,0 for GL_RGB8. False if it cannot be attached.
+    static bool textureChannelBits(unsigned int textureName, int bits[4]);
 
 protected:// Resourses
 
@@ -382,10 +446,14 @@ public:
         size_t frameIndex=0;            //!< frames flushed so far
         size_t primitiveSlotsWritten=0; //!< primitive slots whose bytes changed this frame
         size_t textSlotsWritten=0;      //!< glyph slots whose vertexes or clip box changed this frame
-        size_t uploadCalls=0;           //!< glBufferData/glBufferSubData calls
+        //! glBufferData/glBufferSubData calls of the vertex buffers, and the clip
+        //! boxes' glTexSubImage2D calls (one per row piece a dirty run covers)
+        size_t uploadCalls=0;
         size_t uploadBytes=0;           //!< bytes those calls sent
         size_t mirrorBytes=0;           //!< size of the whole CPU mirror, for comparison
-        size_t drawCalls=0;             //!< glDrawElements and glMultiDrawElements calls
+        //! draws: one glDrawElements per primitive chunk, one per text chunk of an atlas
+        //! (a glMultiDrawElements, or the loop of glDrawElements that stands for it)
+        size_t drawCalls=0;
         size_t textDraws=0;             //!< of those, the text draws: one per atlas with runs to draw
         size_t atlasUploadCalls=0;      //!< glTexSubImage2D calls for font atlas row bands
         size_t atlasUploadBytes=0;      //!< bytes those calls sent
@@ -431,6 +499,8 @@ public:
 private:
 
     uint32_t loadShaders(const char *vertex, const char *fragment);
+    //! What the current context offers (GLCapabilities), from GL_VERSION and its extensions
+    static GLCapabilities detectCapabilities();
 
     /**
         * @brief Perform actual rendering.
@@ -468,14 +538,20 @@ private:
 
     //! A clip box in pixel space (the vertexes' space, snapped like translate()):
     //! the fragment shaders keep [x0,x1) x [y0,y1) of the slot it belongs to and
-    //! discard the rest. Read on the GPU as one RGBA16UI texel of a buffer texture.
+    //! discard the rest. Read on the GPU as one RGBA16UI texel of a 2D texture,
+    //! slot s at (s % kClipColumns, s / kClipColumns).
     struct Box
     {
         uint16_t x0, y0;
         uint16_t x1, y1;
     };
 
-    static_assert(sizeof(Box) == 8, "Box is one GL_RGBA16UI texel of the clip buffer textures");
+    static_assert(sizeof(Box) == 8, "Box is one GL_RGBA16UI texel of the clip-box textures");
+
+    //! The clip-box textures' width in texels, log2: 2048, so a texture holds 2048
+    //! slots per row and up to 2048 rows, GLES 3.0's least GL_MAX_TEXTURE_SIZE.
+    static constexpr unsigned int kClipColumnsLog2=11;
+    static constexpr size_t kClipColumns=size_t(1) << kClipColumnsLog2;
 
     //
     //! Set of primitive slots whose CPU-side data has diverged from the GPU buffer.
@@ -564,11 +640,24 @@ private:
     //! (an empty region gives an empty box, which discards everything).
     Box makeClipBox() const;
 
-    //! Uploads only the dirty slots of a buffer, growing (and fully re-uploading) it when the
+    //! Uploads only the dirty slots of a vertex buffer, growing (and fully re-uploading) it when the
     //! mirror has outgrown the device allocation. Clears dirty on return.
-    void uploadDirty(unsigned int target, uint32_t buffer, size_t &capacityElements,
+    void uploadDirty(uint32_t buffer, size_t &capacityElements,
         const void *data, size_t elementSize, size_t elementCount,
         DirtySlots &dirty, size_t elementsPerSlot);
+    //! The same for a clip-box texture, kClipColumns boxes per row, on texture unit 1
+    //! (where the draws read it; GL_TEXTURE0 is active again on return): the dirty
+    //! slots' runs as glTexSubImage2D calls, a run that crosses rows split at them
+    //! (its part in the first row, the whole rows between, its part in the last).
+    //! When the mirror has outgrown what was uploaded, every box is sent again, the
+    //! texture re-allocated first, a power of two rows high, if its rows do not hold
+    //! them. Clears dirty.
+    void uploadDirtyClipBoxes(uint32_t texture, size_t &rows, size_t &capacityBoxes,
+        const std::vector<Box> &boxes, DirtySlots &dirty);
+    //! Boxes [first, last) of a clip-box texture as glTexSubImage2D calls, one per row
+    //! piece (a partial first row, the whole rows, a partial last row), counted in
+    //! FrameStats::uploadCalls/uploadBytes
+    void uploadClipBoxRange(const std::vector<Box> &boxes, size_t first, size_t last);
     //! Uploads the rows of every font atlas that freetype-gl rasterised glyphs into since
     //! the last upload (renderText and measureText do so lazily), then empties the band.
     void uploadDirtyAtlases();
@@ -697,11 +786,22 @@ private:
     DirtySlots m_dirtyTextVertexSlots;
     DirtySlots m_dirtyTextClipSlots;
 
-    //element counts currently allocated on the device, per buffer
+    //element counts currently allocated on the device, per buffer; for the clip
+    //boxes, the boxes sent since the texture's last full upload, and its rows
     size_t m_vertexBufferCapacity=0;
     size_t m_clipBufferCapacity=0;
     size_t m_textVertexBufferCapacity=0;
     size_t m_textClipBufferCapacity=0;
+    size_t m_clipTextureRows=0;
+    size_t m_textClipTextureRows=0;
+
+    //! what init() found the context to offer
+    GLCapabilities m_glCapabilities;
+    //! the text draws are glMultiDrawElements calls (multiDrawText())
+    bool m_multiDrawText=true;
+    //! GWENI_NO_MULTI_DRAW=1 at construction: the text draws loop even where the
+    //! context has glMultiDrawElements
+    bool m_noMultiDraw=false;
 
     //per-frame counters; also reported to stdout when GWENI_UPLOAD_STATS is set
     bool m_uploadStats=false;
@@ -750,8 +850,8 @@ private:
     //! vertex c*m_chunkSlots*4.
     std::vector<uint32_t> m_vertexArrays;
     uint32_t m_vertexBuffer=0;
-    uint32_t m_clipBuffer=0;
-    uint32_t m_clipTexture=0; //!< GL_TEXTURE_BUFFER view of m_clipBuffer
+    //! GL_RGBA16UI, kClipColumns wide, m_clipTextureRows high: m_clippingBoxes
+    uint32_t m_clipTexture=0;
 
 //    ftgl::font_manager_t *m_fontManager;
 
@@ -770,8 +870,8 @@ private:
     //! One vertex array per chunk of m_chunkSlots glyph slots (textVertexArray()).
     std::vector<uint32_t> m_textVertexArrays;
     uint32_t m_textVertexBuffer=0;
-    uint32_t m_textClipBuffer=0;
-    uint32_t m_textClipTexture=0; //!< GL_TEXTURE_BUFFER view of m_textClipBuffer
+    //! as m_clipTexture, for m_textClipBoxes
+    uint32_t m_textClipTexture=0;
 
     uint16_t m_zIndex;
 };

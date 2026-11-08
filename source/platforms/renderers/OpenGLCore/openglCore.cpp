@@ -38,6 +38,7 @@
 #include <sys/stat.h>
 #include <stdio.h>
 #include <cstdlib>
+#include <cstring>
 #include <cmath>
 #include <algorithm>
 #include <fstream>
@@ -530,11 +531,20 @@ Texture::Status OpenGLCore::loadTexture(Texture &texture)
 
     imglib::Format imgFormat=imglib::format(texData);
     GLenum format;
+    GLint internalFormat;
 
+    // a sized internal format that matches the data, as GLES requires; an RGB one
+    // samples with alpha 1, as the RGBA texture desktop GL made of RGB data did
     if(imgFormat == imglib::Format::RGBA)
+    {
         format=GL_RGBA;
+        internalFormat=GL_RGBA8;
+    }
     else if(imgFormat == imglib::Format::RGB)
+    {
         format=GL_RGB;
+        internalFormat=GL_RGB8;
+    }
     else
     {
         glDeleteTextures(1, &texData.m_textureId);
@@ -547,7 +557,7 @@ Texture::Status OpenGLCore::loadTexture(Texture &texture)
 
     // RGB rows are not padded to 4 bytes
     glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, texData.width, texData.height, 0, format,
+    glTexImage2D(GL_TEXTURE_2D, 0, internalFormat, texData.width, texData.height, 0, format,
         GL_UNSIGNED_BYTE, (const GLvoid *)texData.m_readData.data());
     glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
     glGenerateMipmap(GL_TEXTURE_2D);
@@ -667,8 +677,7 @@ OpenGLCore::GLObjectNames OpenGLCore::getGLObjectNames() const
 {
     GLObjectNames names;
 
-    names.buffers={m_vertexBuffer, m_quadIndexBuffer, m_clipBuffer,
-        m_textVertexBuffer, m_textQuadIndexBuffer, m_textClipBuffer};
+    names.buffers={m_vertexBuffer, m_quadIndexBuffer, m_textVertexBuffer, m_textQuadIndexBuffer};
     names.vertexArrays=std::vector<unsigned int>(m_vertexArrays.begin(), m_vertexArrays.end());
     names.vertexArrays.insert(names.vertexArrays.end(), m_textVertexArrays.begin(), m_textVertexArrays.end());
     names.textures={m_clipTexture, m_textClipTexture};
@@ -737,6 +746,9 @@ OpenGLCore::OpenGLCore(ResourcePaths &paths, const Rect &viewRect)
     m_clippingBoxes.reserve(minClippingSize);
 
     m_uploadStats=(getenv("GWENI_UPLOAD_STATS") != nullptr);
+    // the text draws' loop of glDrawElements even where glMultiDrawElements exists
+    if(const char *noMultiDraw=getenv("GWENI_NO_MULTI_DRAW"))
+        m_noMultiDraw=(strcmp(noMultiDraw, "1") == 0);
 
     // set but empty, or not a number, keeps the default
     if(const char *chunkSlots=getenv("GWENI_INDEX_CHUNK_SLOTS"))
@@ -820,8 +832,7 @@ OpenGLCore::~OpenGLCore()
     // a program still in use is only flagged for deletion
     glUseProgram(0);
 
-    const GLuint buffers[]={m_vertexBuffer, m_quadIndexBuffer, m_clipBuffer,
-        m_textVertexBuffer, m_textQuadIndexBuffer, m_textClipBuffer};
+    const GLuint buffers[]={m_vertexBuffer, m_quadIndexBuffer, m_textVertexBuffer, m_textQuadIndexBuffer};
     const GLuint textures[]={m_clipTexture, m_textClipTexture};
 
     // deleting a bound object unbinds it, so another renderer in this context
@@ -830,7 +841,7 @@ OpenGLCore::~OpenGLCore()
         glDeleteVertexArrays((GLsizei)m_vertexArrays.size(), m_vertexArrays.data());
     if(!m_textVertexArrays.empty())
         glDeleteVertexArrays((GLsizei)m_textVertexArrays.size(), m_textVertexArrays.data());
-    glDeleteBuffers(6, buffers);
+    glDeleteBuffers(4, buffers);
     glDeleteTextures(2, textures);
     glDeleteProgram(m_program);
     glDeleteProgram(m_textProgram);
@@ -869,18 +880,27 @@ void OpenGLCore::init()
     m_clipBufferCapacity=0;
     m_textVertexBufferCapacity=0;
     m_textClipBufferCapacity=0;
+    m_clipTextureRows=0;
+    m_textClipTextureRows=0;
+
+    m_glCapabilities=detectCapabilities();
+    m_multiDrawText=m_glCapabilities.multiDraw && !m_noMultiDraw;
 
     // Until a canvas sets its region, the whole view is visible: the shaders discard
     // everything outside the clip box, and an unset region would be an empty one.
     setClipRegion(m_viewRect);
 
-    // Creating buffers
-    glCreateBuffers(1, &m_vertexBuffer);
-    glCreateBuffers(1, &m_quadIndexBuffer);
-    glCreateBuffers(1, &m_clipBuffer);
-    glCreateBuffers(1, &m_textVertexBuffer);
-    glCreateBuffers(1, &m_textQuadIndexBuffer);
-    glCreateBuffers(1, &m_textClipBuffer);
+    // Creating buffers. A name from glGenBuffers is a buffer once it is first bound,
+    // and that first target is the only one it is ever bound to (WebGL holds a buffer
+    // to it): the vertex buffers are GL_ARRAY_BUFFERs, bound here so they exist from
+    // init() on, and the quad index buffers GL_ELEMENT_ARRAY_BUFFERs, below.
+    glGenBuffers(1, &m_vertexBuffer);
+    glGenBuffers(1, &m_quadIndexBuffer);
+    glGenBuffers(1, &m_textVertexBuffer);
+    glGenBuffers(1, &m_textQuadIndexBuffer);
+    glBindBuffer(GL_ARRAY_BUFFER, m_vertexBuffer);
+    glBindBuffer(GL_ARRAY_BUFFER, m_textVertexBuffer);
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
 
     // Every chunk draws its slots from vertex 0 of its own attribute base, so one
     // pattern of kSlotsPerChunk quads per path serves every chunk and never changes.
@@ -915,14 +935,67 @@ void OpenGLCore::init()
     m_textVertexArrays.clear();
 
     // The clip boxes are not vertex attributes: each fragment shader reads its slot's
-    // Box from a buffer texture, one RGBA16UI texel per slot (see flush()).
+    // Box from a 2D texture, one RGBA16UI texel per slot, kClipColumns slots a row
+    // (see uploadDirtyClipBoxes()). An integer texture is only complete with nearest
+    // filtering, and is read with texelFetch alone. Made on unit 1, where the draws
+    // bind them, so unit 0's setTexture() binding stays as it is.
     glGenTextures(1, &m_clipTexture);
     glGenTextures(1, &m_textClipTexture);
+    glActiveTexture(GL_TEXTURE1);
+    for(GLuint texture:{ m_clipTexture, m_textClipTexture })
+    {
+        glBindTexture(GL_TEXTURE_2D, texture);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    }
+    glActiveTexture(GL_TEXTURE0);
 
-    // Loading shaders
-    auto vertexSource=R"(
-#version 330 core
+    // Loading shaders, in the dialect of the context
+    const GLSLDialect dialect=m_glCapabilities.dialect;
+    const bool dualSource=m_glCapabilities.dualSourceBlend;
 
+    m_program=loadShaders(shaderSource(GLShaderSource::PrimitiveVertex, dialect, dualSource).c_str(),
+        shaderSource(GLShaderSource::PrimitiveFragment, dialect, dualSource).c_str());
+    m_projectionUniform=glGetUniformLocation(m_program, "projection");
+    m_imagesUniform=glGetUniformLocation(m_program, "images");
+    m_clipBoxesUniform=glGetUniformLocation(m_program, "clipBoxes");
+    m_slotBaseUniform=glGetUniformLocation(m_program, "slotBase");
+
+    m_textProgram=loadShaders(shaderSource(GLShaderSource::TextVertex, dialect, dualSource).c_str(),
+        shaderSource(GLShaderSource::TextFragment, dialect, dualSource).c_str());
+    m_textProjectionUniform=glGetUniformLocation(m_textProgram, "projection");
+    m_textClipBoxesUniform=glGetUniformLocation(m_textProgram, "clipBoxes");
+    m_textModeUniform=glGetUniformLocation(m_textProgram, "textMode");
+    m_textContrastUniform=glGetUniformLocation(m_textProgram, "textContrast");
+    m_textSlotBaseUniform=glGetUniformLocation(m_textProgram, "slotBase");
+
+    // texture1 stays on unit 0; the clip boxes are on unit 1 for both programs, and
+    // the primitive program's images on FirstImageUnit on. A uniform is set in the
+    // program in use; flush() binds its own every frame.
+    GLint imageUnits[ImageUnits];
+
+    for(size_t i=0; i<ImageUnits; ++i)
+        imageUnits[i]=FirstImageUnit+(GLint)i;
+    glUseProgram(m_program);
+    glUniform1i(m_clipBoxesUniform, 1);
+    glUniform1iv(m_imagesUniform, (GLsizei)ImageUnits, imageUnits);
+    glUseProgram(m_textProgram);
+    glUniform1i(m_textClipBoxesUniform, 1);
+    glUseProgram(0);
+
+    glViewport(m_viewRect.x, m_viewRect.y, m_viewRect.w, m_viewRect.h);
+}
+
+namespace
+{
+
+// The bodies of the programs' stages, shared by every GLSLDialect: OpenGLCore::shaderSource
+// puts the dialect's #version (and, for ES, precision) header in front. They keep to
+// what GLSL 3.30 and GLSL ES 3.00 both have: no implicit conversions, texture() for
+// every sample, no buffer textures, no gl_PrimitiveID.
+const char *primitiveVertexBody=R"(
 //layout (location = 0) in vec3 inPosition;
 //layout (location = 1) in vec2 inTexCoords;
 //layout (location = 2) in vec4 inColor;
@@ -951,6 +1024,13 @@ flat out float vBehindDepth; // style 3: the depth half a layer behind this slot
 out vec2 vPixel;          // pixel-space position, the clip boxes' space
 
 uniform mat4 projection;
+// The slot this vertex's quad is, for the fragment shader's clip box. A chunk is
+// drawn from index 0 of its own slots, 4 vertexes apiece, with its attributes
+// pointed at its first slot (slotBase), so gl_VertexID >> 2 is the slot within the
+// chunk. Flat: the four vertexes of a slot carry the same value, so whichever is
+// the provoking vertex gives it.
+uniform int slotBase;
+flat out uint vSlot;
 
 vec4 unpackColor(uvec2 c)
 {
@@ -964,6 +1044,7 @@ vec4 unpackColor(uvec2 c)
 void main()
 {
     ShaderType = style;
+    vSlot = uint(slotBase) + (uint(gl_VertexID) >> 2);
 
     TexCoords = vec2(inTexCoords)/65535.0;
     VertexColor = unpackColor(inTexCoords);
@@ -991,9 +1072,7 @@ void main()
     vBehindDepth = behind.z*0.5 + 0.5;
 })";
 
-    auto fragmentTexturedSource=R"(
-#version 330 core
-
+const char *primitiveFragmentBody=R"(
 out vec4 FragColor;
 
 in vec2 TexCoords;
@@ -1010,14 +1089,18 @@ flat in vec4 vSegment;
 flat in float vBehindDepth;
 in vec2 vPixel;
 
-// Style 2's textures, one per image unit (vRadius picks it). GLSL 3.30 indexes a
-// sampler array only with a constant, hence the switch.
+// Style 2's textures, one per image unit (vRadius picks it). GLSL 3.30 and ES 3.00
+// index a sampler array only with a constant, hence the switch.
 uniform sampler2D images[8];
-// One Box (x0, y0, x1, y1) per primitive slot. A slot is 2 triangles, and the buffer
-// is drawn in chunks, each from index 0 of its own slots, so gl_PrimitiveID >> 1 is
-// the slot within the chunk and slotBase the chunk's first slot.
-uniform usamplerBuffer clipBoxes;
-uniform int slotBase;
+// One Box (x0, y0, x1, y1) per primitive slot, slot s at texel (s % CLIP_COLUMNS,
+// s / CLIP_COLUMNS); the vertex shader gives the slot.
+uniform usampler2D clipBoxes;
+flat in uint vSlot;
+
+uvec4 clipBox(uint slot)
+{
+    return texelFetch(clipBoxes, ivec2(int(slot & (CLIP_COLUMNS - 1u)), int(slot >> CLIP_COLUMNS_LOG2)), 0);
+}
 
 // Signed distance to a rounded box centered at the origin (negative inside).
 float sdRoundBox(vec2 p, vec2 b, float r)
@@ -1122,7 +1205,7 @@ void main()
 {
     // Tested here, discarded at the end: the derivatives below (dFdx/dFdy, fwidth)
     // want the whole quad alive.
-    uvec4 clip = texelFetch(clipBoxes, slotBase + (gl_PrimitiveID >> 1));
+    uvec4 clip = clipBox(vSlot);
     float depth = gl_FragCoord.z;
     bool clipped = any(lessThan(vPixel, vec2(clip.xy))) || any(greaterThanEqual(vPixel, vec2(clip.zw)));
     vec2 uvDx = dFdx(TexCoords);
@@ -1308,15 +1391,7 @@ void main()
     gl_FragDepth = depth;
 })";
 
-    m_program=loadShaders(vertexSource, fragmentTexturedSource);
-    m_projectionUniform=glGetUniformLocation(m_program, "projection");
-    m_imagesUniform=glGetUniformLocation(m_program, "images");
-    m_clipBoxesUniform=glGetUniformLocation(m_program, "clipBoxes");
-    m_slotBaseUniform=glGetUniformLocation(m_program, "slotBase");
-
-    auto textVertexSource=R"(
- #version 330 core
-
+const char *textVertexBody=R"(
 layout (location = 0) in vec3 vertPosition;
 layout (location = 1) in vec2 vertTexCoord;
 layout (location = 2) in vec4 vertColor;
@@ -1345,16 +1420,20 @@ void main()
 
     gl_Position = projection * vec4(vertPosition, 1.0f);
 }
-    )";
+)";
 
-    auto textFragSource=R"(
-#version 330 core
-
+const char *textFragmentBody=R"(
 // Dual-source: FragColor is the colour, Coverage what flush() blends an LCD
 // atlas's runs with (GL_SRC1_COLOR), one weight per channel. The other atlases'
-// SRC_ALPHA blend does not read Coverage.
+// SRC_ALPHA blend does not read Coverage. Without dual-source blending there is
+// no second output, and Coverage goes nowhere.
+#ifdef GWENI_DUAL_SOURCE
 layout(location = 0, index = 0) out vec4 FragColor;
 layout(location = 0, index = 1) out vec4 Coverage;
+#else
+layout(location = 0) out vec4 FragColor;
+vec4 Coverage;
+#endif
 
 in vec2 texCoord;
 in vec4 color;
@@ -1363,10 +1442,15 @@ in vec2 pixel;
 flat in uint slot;
 
 uniform sampler2D texture1;
-// One Box (x0, y0, x1, y1) per glyph slot. Each atlas draws its own runs, some of
-// the slots of each chunk, so gl_PrimitiveID does not give the slot; the vertex
-// shader does.
-uniform usamplerBuffer clipBoxes;
+// One Box (x0, y0, x1, y1) per glyph slot, slot s at texel (s % CLIP_COLUMNS,
+// s / CLIP_COLUMNS). Each atlas draws its own runs, some of the slots of each
+// chunk, so the vertex shader gives the slot.
+uniform usampler2D clipBoxes;
+
+uvec4 clipBox(uint slot)
+{
+    return texelFetch(clipBoxes, ivec2(int(slot & (CLIP_COLUMNS - 1u)), int(slot >> CLIP_COLUMNS_LOG2)), 0);
+}
 // GLTextMode of the atlas this draw samples: 0 coverage, 1 signed distance field,
 // 2 subpixel coverage in r, g, b order, 3 in b, g, r order
 uniform int textMode;
@@ -1376,14 +1460,14 @@ uniform float textContrast;
 const float SDF_AA = 0.7;
 void main()
 {
-    uvec4 clip = texelFetch(clipBoxes, int(slot));
+    uvec4 clip = clipBox(slot);
     bool clipped = any(lessThan(pixel, vec2(clip.xy))) || any(greaterThanEqual(pixel, vec2(clip.zw)));
 
     float a = 0.0;
 
     if(textMode == 0)
     {
-        a = texture2D(texture1, texCoord).r;
+        a = texture(texture1, texCoord).r;
 
         // Straight alpha: the coverage scales alpha only, and the SRC_ALPHA blend
         // applies it to the colour once. color * a here would apply it twice.
@@ -1440,27 +1524,91 @@ void main()
     if(a <= 0.0)
         discard;
 }
-    )";
+)";
 
-    m_textProgram=loadShaders(textVertexSource, textFragSource);
-    m_textProjectionUniform=glGetUniformLocation(m_textProgram, "projection");
-    m_textClipBoxesUniform=glGetUniformLocation(m_textProgram, "clipBoxes");
-    m_textModeUniform=glGetUniformLocation(m_textProgram, "textMode");
-    m_textContrastUniform=glGetUniformLocation(m_textProgram, "textContrast");
-    m_textSlotBaseUniform=glGetUniformLocation(m_textProgram, "slotBase");
+}//namespace
 
-    // texture1 stays on unit 0; the clip boxes are on unit 1 for both programs, and
-    // the primitive program's images on FirstImageUnit on
-    glProgramUniform1i(m_program, m_clipBoxesUniform, 1);
+std::string OpenGLCore::shaderSource(GLShaderSource source, GLSLDialect dialect, bool dualSource)
+{
+    const bool fragment=(source == GLShaderSource::PrimitiveFragment) || (source == GLShaderSource::TextFragment);
+    const bool secondOutput=dualSource && (source == GLShaderSource::TextFragment);
+    std::string text;
 
-    GLint imageUnits[ImageUnits];
+    if(dialect == GLSLDialect::Es300)
+    {
+        text="#version 300 es\n";
+        if(secondOutput)
+            text+="#extension GL_EXT_blend_func_extended : require\n";
+        // highp everywhere, as desktop GLSL computes: ES's fragment defaults (mediump
+        // int, lowp samplers) would not give the desktop trees' bytes
+        text+="precision highp float;\n"
+            "precision highp int;\n"
+            "precision highp sampler2D;\n"
+            "precision highp usampler2D;\n";
+    }
+    else
+        text="#version 330 core\n";
 
-    for(size_t i=0; i<ImageUnits; ++i)
-        imageUnits[i]=FirstImageUnit+(GLint)i;
-    glProgramUniform1iv(m_program, m_imagesUniform, (GLsizei)ImageUnits, imageUnits);
-    glProgramUniform1i(m_textProgram, m_textClipBoxesUniform, 1);
+    if(fragment)
+    {
+        text+="#define CLIP_COLUMNS_LOG2 "+std::to_string(kClipColumnsLog2)+"u\n";
+        text+="#define CLIP_COLUMNS "+std::to_string(kClipColumns)+"u\n";
+    }
+    if(secondOutput)
+        text+="#define GWENI_DUAL_SOURCE 1\n";
 
-    glViewport(m_viewRect.x, m_viewRect.y, m_viewRect.w, m_viewRect.h);
+    switch(source)
+    {
+    case GLShaderSource::PrimitiveVertex: text+=primitiveVertexBody; break;
+    case GLShaderSource::PrimitiveFragment: text+=primitiveFragmentBody; break;
+    case GLShaderSource::TextVertex: text+=textVertexBody; break;
+    case GLShaderSource::TextFragment: text+=textFragmentBody; break;
+    }
+    return text;
+}
+
+OpenGLCore::GLCapabilities OpenGLCore::detectCapabilities()
+{
+    GLCapabilities capabilities;
+    const GLubyte *version=glGetString(GL_VERSION);
+
+    // an ES context's GL_VERSION is "OpenGL ES N.M ..."
+    if(version && (strncmp(reinterpret_cast<const char *>(version), "OpenGL ES", 9) == 0))
+    {
+        capabilities.dialect=GLSLDialect::Es300;
+        // GLES 3.0 has neither; GL_EXT_multi_draw_arrays and GL_EXT_blend_func_extended
+        // would give them
+        capabilities.multiDraw=false;
+        capabilities.dualSourceBlend=hasExtension("GL_EXT_blend_func_extended");
+    }
+    else
+    {
+        // both are core in GL 3.3
+        capabilities.dialect=GLSLDialect::Glsl330;
+        capabilities.multiDraw=true;
+        capabilities.dualSourceBlend=true;
+    }
+    return capabilities;
+}
+
+bool OpenGLCore::hasExtension(const char *name)
+{
+    GLint count=0;
+
+    glGetIntegerv(GL_NUM_EXTENSIONS, &count);
+    for(GLint i=0; i<count; ++i)
+    {
+        const GLubyte *extension=glGetStringi(GL_EXTENSIONS, (GLuint)i);
+
+        if(extension && (strcmp(reinterpret_cast<const char *>(extension), name) == 0))
+            return true;
+    }
+    return false;
+}
+
+void OpenGLCore::setMultiDrawText(bool multiDraw)
+{
+    m_multiDrawText=multiDraw && m_glCapabilities.multiDraw;
 }
 
 void OpenGLCore::setViewRect(const gweni::Rect &viewRect)
@@ -1496,7 +1644,7 @@ uint32_t OpenGLCore::primitiveVertexArray(size_t chunk)
         auto at=[base](size_t offset){ return reinterpret_cast<const GLvoid *>(base+offset); };
         GLuint vertexArray=0;
 
-        glCreateVertexArrays(1, &vertexArray);
+        glGenVertexArrays(1, &vertexArray);
         glBindVertexArray(vertexArray);
 
         glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m_quadIndexBuffer);
@@ -1536,7 +1684,7 @@ uint32_t OpenGLCore::textVertexArray(size_t chunk)
         auto at=[base](size_t offset){ return reinterpret_cast<const GLvoid *>(base+offset); };
         GLuint vertexArray=0;
 
-        glCreateVertexArrays(1, &vertexArray);
+        glGenVertexArrays(1, &vertexArray);
         glBindVertexArray(vertexArray);
 
         glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m_textQuadIndexBuffer);
@@ -1656,7 +1804,7 @@ void OpenGLCore::markPrimitiveChanges(size_t primitiveId, const PrimitiveSlot &b
         ++m_frameStats.primitiveSlotsWritten;
 }
 
-void OpenGLCore::uploadDirty(unsigned int target, uint32_t buffer, size_t &capacityElements,
+void OpenGLCore::uploadDirty(uint32_t buffer, size_t &capacityElements,
     const void *data, size_t elementSize, size_t elementCount,
     DirtySlots &dirty, size_t elementsPerSlot)
 {
@@ -1666,12 +1814,14 @@ void OpenGLCore::uploadDirty(unsigned int target, uint32_t buffer, size_t &capac
     if((capacityElements >= elementCount) && dirty.empty())
         return; //device already holds the mirror
 
-    glBindBuffer((GLenum)target, buffer);
+    const GLenum target=GL_ARRAY_BUFFER;
+
+    glBindBuffer(target, buffer);
 
     if(capacityElements < elementCount)
     {
         //the mirror outgrew the allocation; resize it and resend everything
-        glBufferData((GLenum)target, elementCount*elementSize, data, GL_DYNAMIC_DRAW);
+        glBufferData(target, elementCount*elementSize, data, GL_DYNAMIC_DRAW);
         capacityElements=elementCount;
         dirty.clear();
 
@@ -1690,7 +1840,7 @@ void OpenGLCore::uploadDirty(unsigned int target, uint32_t buffer, size_t &capac
         if(last <= first)
             return;
 
-        glBufferSubData((GLenum)target, first*elementSize, (last-first)*elementSize,
+        glBufferSubData(target, first*elementSize, (last-first)*elementSize,
             bytes+(first*elementSize));
 
         ++m_frameStats.uploadCalls;
@@ -1698,6 +1848,106 @@ void OpenGLCore::uploadDirty(unsigned int target, uint32_t buffer, size_t &capac
     });
 
     dirty.clear();
+}
+
+void OpenGLCore::uploadDirtyClipBoxes(uint32_t texture, size_t &rows, size_t &capacityBoxes,
+    const std::vector<Box> &boxes, DirtySlots &dirty)
+{
+    const size_t count=boxes.size();
+
+    if(count == 0)
+        return;
+
+    if((capacityBoxes >= count) && dirty.empty())
+        return; //device already holds the mirror
+
+    glActiveTexture(GL_TEXTURE1);
+    glBindTexture(GL_TEXTURE_2D, texture);
+
+    if(capacityBoxes < count)
+    {
+        //the mirror outgrew what was sent: resend everything, as a vertex buffer's
+        //regrow does, into a texture with rows enough for it (grow-only)
+        const size_t needed=(count+kClipColumns-1)/kClipColumns;
+
+        if(rows < needed)
+        {
+            // a power of two rows, as the width is: llvmpipe compiles a shader
+            // variant per sampler shape, power-of-two or not among it, and a
+            // texture of any other height would compile one more, mid-frame
+            size_t height=std::max<size_t>(rows, 1);
+            GLint maxSize=0;
+
+            while(height < needed)
+                height*=2;
+            glGetIntegerv(GL_MAX_TEXTURE_SIZE, &maxSize);
+            if(height > (size_t)maxSize)
+            {
+                if(needed > (size_t)maxSize)
+                    gweni::log::write(log::Level::Error,
+                        "%zu clip boxes need %zu rows of %zu, past GL_MAX_TEXTURE_SIZE %d",
+                        count, needed, kClipColumns, (int)maxSize);
+                height=std::max(needed, (size_t)maxSize);
+            }
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16UI, (GLsizei)kClipColumns, (GLsizei)height, 0,
+                GL_RGBA_INTEGER, GL_UNSIGNED_SHORT, nullptr);
+            rows=height;
+        }
+        uploadClipBoxRange(boxes, 0, count);
+        capacityBoxes=count;
+    }
+    else
+    {
+        dirty.forEachRun([&](size_t firstSlot, size_t lastSlot)
+        {
+            const size_t last=std::min(lastSlot, count);
+
+            if(last > firstSlot)
+                uploadClipBoxRange(boxes, firstSlot, last);
+        });
+    }
+
+    dirty.clear();
+    glActiveTexture(GL_TEXTURE0);
+}
+
+void OpenGLCore::uploadClipBoxRange(const std::vector<Box> &boxes, size_t first, size_t last)
+{
+    // A row's boxes are consecutive in the mirror, and so are whole rows, so each
+    // piece is sent straight from it.
+    auto send=[&](size_t x, size_t y, size_t width, size_t height)
+    {
+        glTexSubImage2D(GL_TEXTURE_2D, 0, (GLint)x, (GLint)y, (GLsizei)width, (GLsizei)height,
+            GL_RGBA_INTEGER, GL_UNSIGNED_SHORT, &boxes[y*kClipColumns+x]);
+
+        ++m_frameStats.uploadCalls;
+        m_frameStats.uploadBytes+=width*height*sizeof(Box);
+    };
+
+    const size_t firstRow=first/kClipColumns;
+    const size_t lastRow=(last-1)/kClipColumns;
+
+    if(firstRow == lastRow)
+    {
+        send(first%kClipColumns, firstRow, last-first, 1);
+        return;
+    }
+
+    size_t wholeFirst=firstRow;
+
+    if(first%kClipColumns != 0)
+    {
+        send(first%kClipColumns, firstRow, kClipColumns-first%kClipColumns, 1);
+        ++wholeFirst;
+    }
+
+    const size_t lastWidth=last-lastRow*kClipColumns;
+    const size_t wholeEnd=(lastWidth == kClipColumns)?lastRow+1:lastRow;
+
+    if(wholeEnd > wholeFirst)
+        send(0, wholeFirst, kClipColumns, wholeEnd-wholeFirst);
+    if(lastWidth != kClipColumns)
+        send(0, lastRow, lastWidth, 1);
 }
 
 void OpenGLCore::uploadDirtyAtlases()
@@ -1767,26 +2017,15 @@ void OpenGLCore::flush()
     if(!m_vertexes.empty())
     {
         //copy only the primitive slots that changed since the last frame
-        uploadDirty(GL_ARRAY_BUFFER, m_vertexBuffer, m_vertexBufferCapacity,
+        uploadDirty(m_vertexBuffer, m_vertexBufferCapacity,
             m_vertexes.data(), sizeof(Vertex), m_vertexes.size(), m_dirtyVertexSlots, 4);
-
-        const size_t clipCapacity=m_clipBufferCapacity;
-
-        uploadDirty(GL_TEXTURE_BUFFER, m_clipBuffer, m_clipBufferCapacity,
-            m_clippingBoxes.data(), sizeof(Box), m_clippingBoxes.size(), m_dirtyClipSlots, 1);
-
-        //a regrow re-specified the data store; attach it again (cheap, and only then)
-        if(m_clipBufferCapacity != clipCapacity)
-        {
-            glBindTexture(GL_TEXTURE_BUFFER, m_clipTexture);
-            glTexBuffer(GL_TEXTURE_BUFFER, GL_RGBA16UI, m_clipBuffer);
-        }
+        uploadDirtyClipBoxes(m_clipTexture, m_clipTextureRows, m_clipBufferCapacity,
+            m_clippingBoxes, m_dirtyClipSlots);
 
         //draw primitives
         glUseProgram(m_program);
 
-        glProgramUniformMatrix4fv(
-            m_program,
+        glUniformMatrix4fv(
             m_projectionUniform,
             1,
             GL_FALSE,
@@ -1794,7 +2033,7 @@ void OpenGLCore::flush()
         );
 
         glActiveTexture(GL_TEXTURE1);
-        glBindTexture(GL_TEXTURE_BUFFER, m_clipTexture);
+        glBindTexture(GL_TEXTURE_2D, m_clipTexture);
         for(size_t i=0; i<ImageUnits; ++i)
         {
             glActiveTexture(GL_TEXTURE0+FirstImageUnit+(GLenum)i);
@@ -1808,7 +2047,7 @@ void OpenGLCore::flush()
         // Each draws its slots, hidden ones included, as 4 vertexes and 6 indexes
         // (2 triangles) apiece from the start of the static quad index buffer, with
         // the chunk's vertex array pointing the attributes at its first slot; the
-        // fragment shader's slot is then slotBase + (gl_PrimitiveID >> 1).
+        // vertex shader's slot is then slotBase + (gl_VertexID >> 2).
         const size_t slots=m_vertexes.size()/4;
 
         for(size_t first=0; first<slots; first+=m_chunkSlots)
@@ -1816,7 +2055,7 @@ void OpenGLCore::flush()
             const size_t count=std::min(slots-first, m_chunkSlots);
 
             glBindVertexArray(primitiveVertexArray(first/m_chunkSlots));
-            glProgramUniform1i(m_program, m_slotBaseUniform, (GLint)first);
+            glUniform1i(m_slotBaseUniform, (GLint)first);
             glDrawElements(GL_TRIANGLES, (GLsizei)(count*6), (GLenum)GL_UNSIGNED_SHORT, 0);
             ++m_frameStats.drawCalls;
         }
@@ -1827,25 +2066,15 @@ void OpenGLCore::flush()
     if(!m_textVertexes.empty())
     {
         //copy only the glyph slots that changed since the last frame
-        uploadDirty(GL_ARRAY_BUFFER, m_textVertexBuffer, m_textVertexBufferCapacity,
+        uploadDirty(m_textVertexBuffer, m_textVertexBufferCapacity,
             m_textVertexes.data(), sizeof(glyph_vertex_t), m_textVertexes.size(), m_dirtyTextVertexSlots, 4);
-
-        const size_t clipCapacity=m_textClipBufferCapacity;
-
-        uploadDirty(GL_TEXTURE_BUFFER, m_textClipBuffer, m_textClipBufferCapacity,
-            m_textClipBoxes.data(), sizeof(Box), m_textClipBoxes.size(), m_dirtyTextClipSlots, 1);
-
-        if(m_textClipBufferCapacity != clipCapacity)
-        {
-            glBindTexture(GL_TEXTURE_BUFFER, m_textClipTexture);
-            glTexBuffer(GL_TEXTURE_BUFFER, GL_RGBA16UI, m_textClipBuffer);
-        }
+        uploadDirtyClipBoxes(m_textClipTexture, m_textClipTextureRows, m_textClipBufferCapacity,
+            m_textClipBoxes, m_dirtyTextClipSlots);
 
         //draw text
         glUseProgram(m_textProgram);
 
-        glProgramUniformMatrix4fv(
-            m_textProgram,
+        glUniformMatrix4fv(
             m_textProjectionUniform,
             1,
             GL_FALSE,
@@ -1853,7 +2082,7 @@ void OpenGLCore::flush()
         );
 
         glActiveTexture(GL_TEXTURE1);
-        glBindTexture(GL_TEXTURE_BUFFER, m_textClipTexture);
+        glBindTexture(GL_TEXTURE_2D, m_textClipTexture);
         glActiveTexture(GL_TEXTURE0);
 
         // Each atlas draws the runs laid out in its font: one draw per index chunk
@@ -1871,7 +2100,7 @@ void OpenGLCore::flush()
         GLint blend[4]={0, 0, 0, 0};
         bool lcdBlend=false;
 
-        glProgramUniform1f(m_textProgram, m_textContrastUniform, m_textContrast);
+        glUniform1f(m_textContrastUniform, m_textContrast);
 
         for(auto &entry:m_fonts)
         {
@@ -1884,7 +2113,10 @@ void OpenGLCore::flush()
 
             const bool lcd=(fontData.mode == GLTextMode::LcdRGB) || (fontData.mode == GLTextMode::LcdBGR);
 
-            if(lcd && !lcdBlend)
+            // without dual-source blending an LCD atlas is blended by its mean
+            // coverage, as a grayscale one is (the text shader then has no second
+            // output); GLES contexts without it are the GLES tree's to fall back on
+            if(lcd && !lcdBlend && m_glCapabilities.dualSourceBlend)
             {
                 glGetIntegerv(GL_BLEND_SRC_RGB, &blend[0]);
                 glGetIntegerv(GL_BLEND_DST_RGB, &blend[1]);
@@ -1900,13 +2132,22 @@ void OpenGLCore::flush()
             }
 
             glBindTexture(GL_TEXTURE_2D, fontData.atlas->id);
-            glProgramUniform1i(m_textProgram, m_textModeUniform, (GLint)fontData.mode);
+            glUniform1i(m_textModeUniform, (GLint)fontData.mode);
             for(const GLTextChunkDraw &draw:fontData.drawChunks)
             {
                 glBindVertexArray(textVertexArray(draw.chunk));
-                glProgramUniform1i(m_textProgram, m_textSlotBaseUniform, (GLint)(draw.chunk*m_chunkSlots));
-                glMultiDrawElements(GL_TRIANGLES, draw.counts.data(), (GLenum)GL_UNSIGNED_SHORT,
-                    draw.offsets.data(), (GLsizei)draw.counts.size());
+                glUniform1i(m_textSlotBaseUniform, (GLint)(draw.chunk*m_chunkSlots));
+                // one draw of the chunk's ranges either way: GLES 3.0 has no
+                // glMultiDrawElements, and its loop draws the same
+                if(m_multiDrawText)
+                    glMultiDrawElements(GL_TRIANGLES, draw.counts.data(), (GLenum)GL_UNSIGNED_SHORT,
+                        draw.offsets.data(), (GLsizei)draw.counts.size());
+                else
+                {
+                    for(size_t range=0; range<draw.counts.size(); ++range)
+                        glDrawElements(GL_TRIANGLES, draw.counts[range], (GLenum)GL_UNSIGNED_SHORT,
+                            draw.offsets[range]);
+                }
                 ++m_frameStats.drawCalls;
                 ++m_frameStats.textDraws;
             }
@@ -1932,72 +2173,6 @@ void OpenGLCore::flush()
             m_frameStats.mirrorBytes, m_frameStats.atlasUploadCalls, m_frameStats.atlasUploadBytes);
         fflush(stdout);
     }
-
-//    // Binding VAO
-//    glBindVertexArray(m_vertexArray);
-//
-//    // Binding VBO
-//    glBindBuffer(GL_ARRAY_BUFFER, m_vertexBuffer);
-//
-//    // Loading data into VBO
-//    glNamedBufferData(
-//        m_vertexBuffer,
-//        m_vertexes.size() * sizeof(Vertex),
-//        m_vertexes.data(),
-//        GL_DYNAMIC_DRAW
-//    );
-//
-//    // Binding VBO to VAO
-//    glVertexArrayVertexBuffer(
-//        m_vertexArray,
-//        0,
-//        m_vertexBuffer,
-//        0,
-//        sizeof(Vertex)
-//    );
-//
-//    // Enabling attributes
-//    glEnableVertexArrayAttrib(m_vertexArray, 0); // Position
-//    glEnableVertexArrayAttrib(m_vertexArray, 1); // UV
-//    glEnableVertexArrayAttrib(m_vertexArray, 2); // Color
-//
-//    // Setting format
-//    glVertexArrayAttribFormat(m_vertexArray, 0, 3, GL_FLOAT, GL_FALSE, static_cast<GLuint>(offsetof(Vertex, pos)));
-//    glVertexArrayAttribFormat(m_vertexArray, 1, 2, GL_FLOAT, GL_FALSE, static_cast<GLuint>(offsetof(Vertex, uv)));
-//    glVertexArrayAttribFormat(m_vertexArray, 2, 4, GL_FLOAT, GL_FALSE, static_cast<GLuint>(offsetof(Vertex, color)));
-//
-//    // Binding vertex array to buffer
-//    glVertexArrayAttribBinding(m_vertexArray, 0, 0);
-//    glVertexArrayAttribBinding(m_vertexArray, 1, 0);
-//    glVertexArrayAttribBinding(m_vertexArray, 2, 0);
-//
-//    // Program
-//    glUseProgram(m_program);
-//
-//    // Loading matricies
-//    glProgramUniformMatrix4fv(
-//        m_program,
-//        glGetUniformLocation(m_program, "projection"),
-//        1,
-//        GL_FALSE,
-//        glm::value_ptr(m_projectionMatrix)
-//    );
-//
-//    // Drawing
-//    glDrawArrays(
-//        GL_TRIANGLES,
-//        0,
-//        static_cast<GLsizei>(m_vertexes.size())
-//    );
-//
-//    // Unbinding
-//    glBindVertexArray(0);
-//    glUseProgram(0);
-//
-//    // Clearing
-//    m_activeProgram=0;
-//    m_vertexes.clear();
-//    glFlush();
 }
 
 void OpenGLCore::setVertex(Vertex &vertex, uint8_t type, int x, int y, int z, float u, float v)
@@ -2581,15 +2756,73 @@ gweni::Color OpenGLCore::pixelColor(const gweni::Texture &texture, unsigned int 
         return gweni::Color(pPixel[0], pPixel[1], pPixel[2], pPixel[3]);
     }
 
-    setTexture(texData.m_textureId);
-    //    texData.m_readData = deleted_unique_ptr<unsigned char>(new unsigned char[texData.width * texData.height * iPixelSize], [](unsigned char* mem) { if (mem) delete[](mem); });
-    texData.m_readData.resize(texData.width * texData.height * iPixelSize);
+    // read back once, through a framebuffer (GLES has no glGetTexImage), then kept
+    if(!readTexture(texData.m_textureId, (int)texData.width, (int)texData.height, texData.m_readData))
+        return col_default;
     texData.readable=true;
-
-    glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_UNSIGNED_BYTE, texData.m_readData.data());
 
     unsigned char *pPixel=texData.m_readData.data() + (x + (y * static_cast<unsigned int>(texData.width))) * iPixelSize;
     return gweni::Color(pPixel[0], pPixel[1], pPixel[2], pPixel[3]);
+}
+
+bool OpenGLCore::readTexture(unsigned int textureName, int width, int height, std::vector<uint8_t> &rgba)
+{
+    GLint readFramebuffer=0;
+    GLint packAlignment=4;
+    GLuint framebuffer=0;
+
+    rgba.clear();
+    glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &readFramebuffer);
+    glGetIntegerv(GL_PACK_ALIGNMENT, &packAlignment);
+    glGenFramebuffers(1, &framebuffer);
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, framebuffer);
+    glFramebufferTexture2D(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, textureName, 0);
+
+    const bool complete=(glCheckFramebufferStatus(GL_READ_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE);
+
+    if(complete)
+    {
+        // RGBA8 rows are whole 4-byte words, so any pack alignment reads them tight
+        rgba.resize(static_cast<size_t>(width)*height*4);
+        glPixelStorei(GL_PACK_ALIGNMENT, 4);
+        glReadPixels(0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, rgba.data());
+        glPixelStorei(GL_PACK_ALIGNMENT, packAlignment);
+    }
+
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, (GLuint)readFramebuffer);
+    glDeleteFramebuffers(1, &framebuffer);
+    return complete;
+}
+
+bool OpenGLCore::textureChannelBits(unsigned int textureName, int bits[4])
+{
+    GLint readFramebuffer=0;
+    GLuint framebuffer=0;
+
+    glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &readFramebuffer);
+    glGenFramebuffers(1, &framebuffer);
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, framebuffer);
+    glFramebufferTexture2D(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, textureName, 0);
+
+    const bool complete=(glCheckFramebufferStatus(GL_READ_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE);
+
+    if(complete)
+    {
+        const GLenum channels[4]={ GL_FRAMEBUFFER_ATTACHMENT_RED_SIZE, GL_FRAMEBUFFER_ATTACHMENT_GREEN_SIZE,
+            GL_FRAMEBUFFER_ATTACHMENT_BLUE_SIZE, GL_FRAMEBUFFER_ATTACHMENT_ALPHA_SIZE };
+
+        for(size_t i=0; i<4; ++i)
+        {
+            GLint value=0;
+
+            glGetFramebufferAttachmentParameteriv(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, channels[i], &value);
+            bits[i]=value;
+        }
+    }
+
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, (GLuint)readFramebuffer);
+    glDeleteFramebuffers(1, &framebuffer);
+    return complete;
 }
 
 void OpenGLCore::ensureTextSlots(size_t glyphSlots)
@@ -3372,10 +3605,7 @@ bool OpenGLCore::initializeContext(gweni::WindowProvider *window)
 
     if(GetClientRect(hwnd, &r))
     {
-        glMatrixMode(GL_PROJECTION);
-        glLoadIdentity();
-        glOrtho(r.left, r.right, r.bottom, r.top, -1.0, 1.0);
-        glMatrixMode(GL_MODELVIEW);
+        // the programs project with their own uniform; only the viewport is GL state
         glViewport(0, 0, r.right-r.left, r.bottom-r.top);
     }
 
@@ -3421,10 +3651,7 @@ bool OpenGLCore::resizedContext(gweni::WindowProvider *window, int w, int h)
 
     if(GetClientRect((HWND)window->getWindow(), &r))
     {
-        glMatrixMode(GL_PROJECTION);
-        glLoadIdentity();
-        glOrtho(r.left, r.right, r.bottom, r.top, -1.0, 1.0);
-        glMatrixMode(GL_MODELVIEW);
+        // the programs project with their own uniform; only the viewport is GL state
         glViewport(0, 0, r.right-r.left, r.bottom-r.top);
     }
 

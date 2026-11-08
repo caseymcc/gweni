@@ -106,7 +106,6 @@ size_t inkedPixels(const std::vector<uint8_t> &frame)
 void clearFrame()
 {
     glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
-    glClearDepth(1.0);
     glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
 }
 
@@ -185,16 +184,18 @@ TEST_CASE("Text AA: an LCD mode loads a depth-3 GL_RGB8 atlas of its own, graysc
         REQUIRE(renderer.ensureFont(at12()));
 
         const bool lcd=(aa != TextAA::Grayscale);
-        GLint format=0;
+        int bits[4]={-1, -1, -1, -1};
 
         CHECK(renderer.getTextMode(at12()) == ((aa == TextAA::LcdRGB)?GLTextMode::LcdRGB:
             (aa == TextAA::LcdBGR)?GLTextMode::LcdBGR:GLTextMode::Coverage));
         CHECK(renderer.getFontAtlasDepth(at12()) == (lcd?3u:1u));
 
-        glBindTexture(GL_TEXTURE_2D, renderer.getFontAtlasName(at12()));
-        glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_INTERNAL_FORMAT, &format);
-        glBindTexture(GL_TEXTURE_2D, 0);
-        CHECK(format == (lcd?GL_RGB8:GL_R8));
+        // GL_RGB8 or GL_R8, as the framebuffer it is attached to reports its channels
+        REQUIRE(OpenGLCore::textureChannelBits(renderer.getFontAtlasName(at12()), bits));
+        CHECK(bits[0] == 8);
+        CHECK(bits[1] == (lcd?8:0));
+        CHECK(bits[2] == (lcd?8:0));
+        CHECK(bits[3] == 0);
         // the font loaded before the switch is loaded again in the new mode
         CHECK(renderer.getFontAtlasName(gweni::test::openSans()) != 0);
     }
