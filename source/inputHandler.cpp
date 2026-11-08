@@ -67,20 +67,27 @@ static Point g_pntLastClickPos;
 // hovered control: a move hit-tests nothing and sends no leave or enter, so a
 // drag repaints only what the captured control changes itself. Hover is
 // hit-tested again once the capture ends (onMouseClicked, onCanvasThink).
+//
+// The hover moves on before the old control hears its leave, as the keyboard
+// focus does in Base::focus(): an ancestor told of the leave
+// (onDescendantInteraction) then sees where the hover went, so a row whose
+// look covers both the old and the new control changes nothing.
 static void UpdateHoveredControl(controls::Base *inCanvas)
 {
     if(MouseFocus && MouseFocus->getCanvas() == inCanvas)
     {
         if(HoveredControl != MouseFocus)
         {
-            if(HoveredControl)
-            {
-                controls::Base *OldHover=HoveredControl;
-                HoveredControl=nullptr;
-                OldHover->onMouseLeave();
-            }
-
+            controls::Base *OldHover=HoveredControl;
             HoveredControl=MouseFocus;
+
+            if(OldHover)
+                OldHover->onMouseLeave();
+
+            // no enter for the captured control, but its ancestors still learn
+            // that the hover is now in it
+            if(HoveredControl == MouseFocus)
+                MouseFocus->notifyAncestorsOfInteraction();
         }
 
         return;
@@ -90,17 +97,15 @@ static void UpdateHoveredControl(controls::Base *inCanvas)
 
     if(hovered != HoveredControl)
     {
-        if(HoveredControl)
-        {
-            controls::Base *OldHover=HoveredControl;
-            HoveredControl=nullptr;
-            OldHover->onMouseLeave();
-        }
-
+        controls::Base *OldHover=HoveredControl;
         HoveredControl=hovered;
 
-        if(HoveredControl)
-            HoveredControl->onMouseEnter();
+        if(OldHover)
+            OldHover->onMouseLeave();
+
+        // unless the leave deleted it (~Base clears HoveredControl)
+        if(hovered && HoveredControl == hovered)
+            hovered->onMouseEnter();
     }
 }
 
@@ -159,6 +164,7 @@ void onCanvasThink(controls::Base *control)
         controls::Base *lost=KeyboardFocus;
         KeyboardFocus=nullptr;
         lost->redraw();
+        lost->notifyAncestorsOfInteraction();
     }
 
     if(!KeyboardFocus)

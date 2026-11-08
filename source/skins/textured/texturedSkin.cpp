@@ -735,9 +735,11 @@ void TexturedSkin::setThemeColors()
     Colors.Category.LineAlt.Button_Hover=SurfHover;
     Colors.Category.LineAlt.Button_Selected=Blue;
 
-    Colors.Properties.Line_Normal=Fg;
-    Colors.Properties.Line_Selected=White;
-    Colors.Properties.Line_Hover=Cyan;
+    // a PropertyRow's separator and bottom line: muted at rest, lifted while
+    // the row is hovered, blue while its value is edited
+    Colors.Properties.Line_Normal=BgHighlight;
+    Colors.Properties.Line_Selected=DarkBlue;
+    Colors.Properties.Line_Hover=tokyonight::Line;
     Colors.Properties.Column_Normal=FgDark;
     Colors.Properties.Column_Selected=Fg;
     Colors.Properties.Column_Hover=Cyan;

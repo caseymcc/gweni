@@ -884,7 +884,12 @@ private:
     //! The control's level in the drain's ancestor stack when it was last
     //! pushed there; trusted only if that level still holds this control.
     int m_renderStackLevel=-1;
-    //! Calls onDescendantInteraction(this) on each ancestor.
+
+public:
+    //! Calls onDescendantInteraction(this) on each ancestor. The input handler
+    //! calls it too, where it moves the hover or the focus without an enter,
+    //! a leave or a focus() (a capture taking the hover, a hidden control
+    //! losing the focus).
     void notifyAncestorsOfInteraction();
 
 protected:

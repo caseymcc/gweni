@@ -22,6 +22,7 @@
 #include "gweni/controls/menuItem.h"
 #include "gweni/controls/bullet.h"
 #include "gweni/controls/windowButtons.h"
+#include "gweni/controls/properties.h"
 
 #include <algorithm>
 
@@ -747,6 +748,60 @@ void Selectable::update(renderer::Base *renderer, controls::Base *baseControl)
             surface->borderWidth, surface->top, surface->bottom, surface->border, baseControl->getZIndex());
     else
         renderer->hidePrimitive(m_primitives[0]);
+}
+
+///////////////////////////////////////////////////////////////////////////
+//PropertyRow
+void PropertyRow::update(renderer::Base *renderer, controls::Base *baseControl)
+{
+    if(m_primitives.size() < 3)
+        return;
+
+    controls::PropertyRow *row=dynamic_cast<controls::PropertyRow *>(baseControl);
+    const gweni::Rect bounds=baseControl->getRenderBounds();
+
+    if(!row || !baseControl->visible() || bounds.w < 2 || bounds.h < 2)
+    {
+        for(size_t primitive : m_primitives)
+            renderer->hidePrimitive(primitive);
+        return;
+    }
+
+    const auto &colors=baseControl->getSkin()->Colors.Properties;
+    const tokyonight::Surface *surface=&tokyonight::PropertyColumn;
+    gweni::Color line=colors.Line_Normal;
+
+    if(row->isEditing())
+    {
+        surface=&tokyonight::PropertyColumnEditing;
+        line=colors.Line_Selected;
+    }
+    else if(row->isHovered())
+    {
+        surface=&tokyonight::PropertyColumnHover;
+        line=colors.Line_Hover;
+    }
+
+    // the label is placed in the row; its bounds are in the row's
+    const gweni::Rect label=row->getLabel()->getBounds();
+    const int separatorX=std::min(bounds.x+label.x+label.w, bounds.x+bounds.w)-1;
+    const int fillWidth=separatorX-bounds.x;
+    const int z=baseControl->getZIndex();
+
+    if(fillWidth > 0)
+        renderer->drawRoundedRect(m_primitives[0], gweni::Rect(bounds.x, bounds.y, fillWidth, bounds.h-1),
+            surface->radius, surface->borderWidth, surface->top, surface->bottom, surface->border, z);
+    else
+        renderer->hidePrimitive(m_primitives[0]);
+
+    // as a Separator's rule: each quad reaches one unit past its line on both
+    // sides across it, and the stroke is drawn through its middle
+    if(separatorX >= bounds.x)
+        renderer->drawIcon(m_primitives[1], gweni::Rect(separatorX-1, bounds.y, 3, bounds.h), 6, 1, line, z+1);
+    else
+        renderer->hidePrimitive(m_primitives[1]);
+
+    renderer->drawIcon(m_primitives[2], gweni::Rect(bounds.x, bounds.y+bounds.h-2, bounds.w, 3), 6, 0, line, z+1);
 }
 
 ///////////////////////////////////////////////////////////////////////////

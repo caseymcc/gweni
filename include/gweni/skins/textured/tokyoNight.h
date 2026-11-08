@@ -164,6 +164,13 @@ inline Surface SelectableSelected     { SurfHi,                Surf,            
 inline Surface SelectableSelectedHover{ SurfHover,             SurfHi,                Blue,    RadiusSm, BorderW };
 inline Surface SelectableSelectedDisabled{ BgStorm,            Color(0x1f,0x22,0x33), BgHighlight, RadiusSm, BorderW };
 
+// A PropertyRow's label column: flat and square, so only top is read. A dark
+// fill at rest, lifted while the row is hovered, blue-tinted while its value
+// is edited; the label's text (Properties.Label_*) reads over each.
+inline Surface PropertyColumn       { Color(0x1d,0x20,0x31), Color(0x1d,0x20,0x31), BgHighlight, 0.0f, 0.0f };
+inline Surface PropertyColumnHover  { BgStorm,               BgStorm,               BgHighlight, 0.0f, 0.0f };
+inline Surface PropertyColumnEditing{ Color(0x26,0x31,0x55), Color(0x26,0x31,0x55), BgHighlight, 0.0f, 0.0f };
+
 // Window title-bar buttons: nothing at rest (a transparent fill hides its slot),
 // red under the close button while hovered, a deeper red while pressed. The
 // minimise and maximise buttons hover and press as ButtonHover/ButtonDown.
@@ -198,6 +205,8 @@ inline std::unordered_map<std::string, Surface*>& surfaceRegistry()
         {"Separator",&Separator},
         {"SelectableHover",&SelectableHover},{"SelectableDown",&SelectableDown},{"SelectableSelected",&SelectableSelected},
         {"SelectableSelectedHover",&SelectableSelectedHover},{"SelectableSelectedDisabled",&SelectableSelectedDisabled},
+        {"PropertyColumn",&PropertyColumn},{"PropertyColumnHover",&PropertyColumnHover},
+        {"PropertyColumnEditing",&PropertyColumnEditing},
         {"WindowButton",&WindowButton},{"WindowCloseHover",&WindowCloseHover},{"WindowCloseDown",&WindowCloseDown},
     };
     return m;

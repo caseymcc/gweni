@@ -190,7 +190,7 @@ bool TabButton::onKeyLeft(bool down)
         {
             Base *nextTab=*it;
             getTabControl()->onTabPressed(nextTab);
-            gweni::KeyboardFocus=nextTab;
+            nextTab->focus();
         }
     }
 
@@ -208,7 +208,7 @@ bool TabButton::onKeyRight(bool down)
         {
             Base *nextTab=*it;
             getTabControl()->onTabPressed(nextTab);
-            gweni::KeyboardFocus=nextTab;
+            nextTab->focus();
         }
     }
 

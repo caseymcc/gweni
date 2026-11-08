@@ -256,7 +256,14 @@
  *                   writing at most the tab's and the button's slots, moving
  *                   off gives the frame back, and a click on the button
  *                   closes the tab, the selection kept and its ids given
- *                   back. Exits non-zero if any check is no. The
+ *                   back. PropertiesDemo: hovering the first PropertyRow's
+ *                   value changes the row's pixels (column fill, lines,
+ *                   label colour) and none outside it, every change of that
+ *                   frame in the row but the left control's; moving onto its
+ *                   label marks nothing on the row; moving off gives its rest
+ *                   look back; a click on the value shows the Editing look,
+ *                   unlike the hover's, and dropping the focus gives the
+ *                   rest look back. Exits non-zero if any check is no. The
  *                   clock is frozen as under --stats.
  *    typing       the keyboard on TextBoxDemo, every key a synthesised GLFW
  *                 event through gweni::input::GLFW3: click into the first,
@@ -506,6 +513,7 @@
 #include <gweni/controls/tabControl.h>
 #include <gweni/controls/comboBox.h>
 #include <gweni/controls/virtualList.h>
+#include <gweni/controls/properties.h>
 #include <GLFW/glfw3.h>
 #include <gweni/utils/filesystem.h>
 #include "capture.h"
@@ -3274,6 +3282,99 @@ static void checkTabClose(Session &s, const std::string &shotDir, InteractionChe
         +std::to_string(idsAfter)+" after, the tab and its page held "+std::to_string(owned));
 }
 
+static size_t differencesOutside(const Session &s, const std::vector<uint8_t> &a,
+    const std::vector<uint8_t> &b, gweni::controls::Base *control);
+static void countPending(gweni::controls::Base *control, size_t &count);
+static void renderInspectedFrame(Session &s, gweni::controls::Base *root,
+    size_t &pending, size_t &pendingUnderRoot);
+static void checkSteady(Session &s, InteractionChecks &checks, const std::string &name);
+
+// PropertiesDemo: the first PropertyRow's look follows its subtree. Hovering
+// its value's TextBox changes the row's pixels (the column fill, the lines and
+// the label's colour) and none outside it, in a frame whose changes are all in
+// the row; moving onto its label changes nothing and marks nothing on the
+// row; moving off gives the rest look back; a click on the value (its editor
+// focused) shows the Editing look, unlike the hover's, with the mouse off, and
+// the focus dropped gives the rest look back.
+static void checkPropertyRow(Session &s, const std::string &shotDir, InteractionChecks &checks, bool &ok)
+{
+    gweni::controls::Base *demo=addControl(s, "PropertiesDemo");
+    renderFrames(s, s.frames);
+
+    auto *row=gweni::gweni_cast<gweni::controls::PropertyRow>(findControl(demo, "PropertyRow"));
+    gweni::controls::Base *value=row?findControl(row, "TextBox"):nullptr;
+    if(!row || !value)
+    {
+        checks.check("property_row_found", false, "PropertiesDemo has no PropertyRow with a TextBox value");
+        dropControl(s, demo);
+        return;
+    }
+
+    const gweni::Point onValue=centreOf(value);
+    const gweni::Point onLabel=centreOf(row->getLabel());
+    const gweni::Point off(s.size.x-1, s.size.y-1);    // PropertiesDemo, no row
+
+    moveMouse(s, off.x, off.y);
+    const std::vector<uint8_t> idle=settledRegion(s, row, shotDir, "property-row-idle", ok);
+    const std::vector<uint8_t> idleFrame=framePixels(s);
+
+    // the hover frame alone: everything it changes is in the row, but for the
+    // control the mouse leaves (the demo page), which repaints on its leave
+    size_t leftOutside=gweni::HoveredControl ? 1 : 0;
+    for(gweni::controls::Base *at=gweni::HoveredControl; at; at=at->getParent())
+    {
+        if(at == row)
+            leftOutside=0;
+    }
+    moveMouse(s, onValue.x, onValue.y);
+    size_t pending=0;
+    size_t pendingInRow=0;
+    renderInspectedFrame(s, row, pending, pendingInRow);
+    const bool rowMarked=pendingInRow > 0;
+    const std::vector<uint8_t> hover=settledRegion(s, row, shotDir, "property-row-hover", ok);
+    const size_t hoverOutside=differencesOutside(s, idleFrame, framePixels(s), row);
+
+    // to the label of the same row: the row keeps its look and is not marked
+    moveMouse(s, onLabel.x, onLabel.y);
+    gweni::controls::resetChangeStats();
+    s.canvas->updateCanvas();
+    const bool labelMoveMarked=row->getStateChange() != gweni::controls::StateChange_Nothing
+        || row->getLabel()->getStateChange() != gweni::controls::StateChange_Nothing;
+    glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
+    s.canvas->renderCanvas();
+    ++s.frame;
+    const std::vector<uint8_t> labelHover=settledRegion(s, row, shotDir, "property-row-label-hover", ok);
+
+    moveMouse(s, off.x, off.y);
+    const std::vector<uint8_t> unhovered=settledRegion(s, row, shotDir, "property-row-unhover", ok);
+    checkSteady(s, checks, "property_row_steady");
+
+    // editing: a click focuses the value's TextBox
+    clickMouse(s, onValue.x, onValue.y);
+    moveMouse(s, off.x, off.y);
+    const bool editing=row->isEditing();
+    const std::vector<uint8_t> edited=settledRegion(s, row, shotDir, "property-row-editing", ok);
+
+    value->unfocus();
+    const std::vector<uint8_t> unfocused=settledRegion(s, row, shotDir, "property-row-unfocused", ok);
+
+    forgetMouse(s);
+    dropControl(s, demo);
+
+    checks.check("property_row_hover", rowMarked && hover != idle && hoverOutside == 0 && unhovered == idle,
+        "hovering the PropertyRow's value left the row's pixels as they were, changed "
+        +std::to_string(hoverOutside)+" pixels outside it, or moving off did not bring them back");
+    checks.check("property_row_hover_local", pendingInRow > 0 && pending <= pendingInRow+leftOutside,
+        "the hover frame had "+std::to_string(pending)+" controls with a change pending, "
+        +std::to_string(pendingInRow)+" of them in the row and "+std::to_string(leftOutside)
+        +" the control the mouse left");
+    checks.check("property_row_label", !labelMoveMarked && labelHover == hover,
+        "moving from the value to the label of the same row marked the row or its label, or changed its look");
+    checks.check("property_row_editing", editing && edited != idle && edited != hover && unfocused == idle,
+        "a click on the value did not give the row its Editing look, unlike its hover, or dropping the"
+        " focus did not give the rest look back");
+}
+
 static bool runInteractionScenario(Session &s, const std::string &shotDir, bool &passed)
 {
     // Frozen like --stats, so a frame with no input is genuinely idle (no
@@ -3291,6 +3392,7 @@ static bool runInteractionScenario(Session &s, const std::string &shotDir, bool 
     checkSliderDrag(s, shotDir, checks, ok);
     checkSliderText(s, shotDir, checks, ok);
     checkTabClose(s, shotDir, checks, ok);
+    checkPropertyRow(s, shotDir, checks, ok);
 
     std::cout<<"interaction";
     for(const auto &result : checks.results)

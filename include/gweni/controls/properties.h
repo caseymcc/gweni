@@ -84,24 +84,26 @@ public:
 
     void calculateSize(gweni::skin::Base *skin, Dim dim) override;
     void arrange(gweni::skin::Base *skin, Dim dim) override;
-    void render(gweni::skin::Base *skin) override;
 
     void onMouseEnter() override;
     void onMouseLeave() override;
-    //! The property (or a control in it) was hovered or focused: the label
-    //! takes the row's new look.
+    //! The property (or a control in it) was hovered or focused: the row and
+    //! its label take the row's new look, if it changed.
     void onDescendantInteraction(Base *control) override;
 
+    //! The property's editor has the keyboard focus. The row's Editing look,
+    //! which wins over Hover.
     virtual bool isEditing()
     {
         return m_property && m_property->isEditing();
     }
 
-    bool isHovered() const override
-    {
-        return ParentClass::isHovered() || (m_property && m_property->isHovered());
-    }
+    //! The mouse is over the row or any control in it: the label, the
+    //! property and whatever the property holds (a ColorSelector's button).
+    bool isHovered() const override;
 
+    //! Called in the update phase when isEditing() or isHovered() changed:
+    //! each repaints the row and its label.
     virtual void onEditingChanged();
     virtual void onHoverChanged();
 
@@ -111,7 +113,8 @@ protected:
 
     void onPropertyValueChanged(event::Info info);
     //! Calls onEditingChanged() and onHoverChanged() for what changed since
-    //! the last call, in the update phase.
+    //! the last call, in the update phase, so a move that keeps the row's look
+    //! (from its label to its property) repaints nothing.
     void pollInteraction();
 
     Label *m_label;

@@ -534,7 +534,6 @@ GWENI_TRANSPARENT_RENDERER(TabStrip)
 
 GWENI_PENDING_RENDERER(TreeNode)         // #219: tree lines
 GWENI_PENDING_RENDERER(PropertyTreeNode) // #219: category rail
-GWENI_PENDING_RENDERER(PropertyRow)      // #219: separators, hover and editing highlight
 #undef GWENI_PENDING_RENDERER
 #undef GWENI_TRANSPARENT_RENDERER
 
@@ -580,6 +579,30 @@ public:
     void update(renderer::Base *renderer, controls::Base *baseControl) override;
 
     inline static const std::string_view name="Separator";
+};
+
+// A PropertyRow: [0] the label column's fill, from the row's left to the
+// label's right edge, less its last unit column and the bottom unit row,
+// [1] the 1-unit separator in that last column, between the label and the
+// property, [2] the 1-unit line along the row's bottom (the property's own
+// frame covers it in the value column). The fill is a surface, PropertyColumn
+// at rest, PropertyColumnHover while the row or anything in it is hovered and
+// PropertyColumnEditing while its editor has the focus (Editing wins); the
+// lines are the skin's Properties.Line_Normal/Line_Hover/Line_Selected. Each
+// line is an icon of kind 6, as a Separator's rule, so every row's line is
+// equally thick at any scale, drawn at getZIndex()+1, in front of the fill.
+class PropertyRow:public textured::ControlRegister<PropertyRow>
+{
+public:
+    static void staticInit(TexturedSkin *) { m_staticInit=true; }
+
+    size_t requiredPrimitives() override { return 3; }
+    // the lines are drawn at getZIndex()+1, over the fill
+    size_t depthLayers() override { return 2; }
+
+    void update(renderer::Base *renderer, controls::Base *baseControl) override;
+
+    inline static const std::string_view name="PropertyRow";
 };
 
 // A Selectable's row: hidden while idle (or disabled and unselected), a

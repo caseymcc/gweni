@@ -139,7 +139,7 @@ protected:
 GWENI_CONTROL_CONSTRUCTOR(PropertyRow)
 {
     m_property=nullptr;
-    // render() compares against these on its first call
+    // pollInteraction() compares against these
     m_lastEditing=false;
     m_lastHover=false;
     // The row places its label and its property itself (Placement::Owner):
@@ -157,28 +157,48 @@ GWENI_CONTROL_CONSTRUCTOR(PropertyRow)
 // control that changed itself, never a clean row's for a change below it.
 void PropertyRow::pollInteraction()
 {
-    if(isEditing() != m_lastEditing)
+    const bool editing=isEditing();
+    const bool hovered=isHovered();
+
+    if(editing != m_lastEditing)
     {
+        m_lastEditing=editing;
         onEditingChanged();
-        m_lastEditing=isEditing();
     }
 
-    if(isHovered() != m_lastHover)
+    if(hovered != m_lastHover)
     {
+        m_lastHover=hovered;
         onHoverChanged();
-        m_lastHover=isHovered();
     }
 }
 
+bool PropertyRow::isHovered() const
+{
+    for(const Base *control=HoveredControl; control; control=control->getParent())
+    {
+        if(control == this)
+            return true;
+    }
+
+    return false;
+}
+
+// The row itself is hovered over its label (which takes no mouse input) and
+// its padding. Base's enter and leave repaint unconditionally; the row
+// repaints only if its look changed, so the mouse moving between the label
+// and the property marks nothing.
 void PropertyRow::onMouseEnter()
 {
-    ParentClass::onMouseEnter();
+    onHoverEnter.call(this);
+    notifyAncestorsOfInteraction();
     pollInteraction();
 }
 
 void PropertyRow::onMouseLeave()
 {
-    ParentClass::onMouseLeave();
+    onHoverLeave.call(this);
+    notifyAncestorsOfInteraction();
     pollInteraction();
 }
 
@@ -186,15 +206,6 @@ void PropertyRow::onDescendantInteraction(Base *control)
 {
     ParentClass::onDescendantInteraction(control);
     pollInteraction();
-}
-
-void PropertyRow::render(gweni::skin::Base *skin)
-{
-//    skin->drawPropertyRow(this, skin::Generate, m_label->right(), isEditing(), isHovered()|
-//        m_property->isHovered());
-    //skin->drawControl(this);
-    if(getStateChange() != StateChange_Nothing)
-        m_skinControl->update(skin->getRenderer(), this);
 }
 
 // The label column is the split and the property the rest of the row. The
@@ -293,11 +304,13 @@ void PropertyRow::onPropertyValueChanged(event::Info info)
 
 void PropertyRow::onEditingChanged()
 {
+    redraw();
     m_label->redraw();
 }
 
 void PropertyRow::onHoverChanged()
 {
+    redraw();
     m_label->redraw();
 }
 

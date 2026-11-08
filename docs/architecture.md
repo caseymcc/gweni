@@ -474,9 +474,14 @@ and `WindowCanvas`):
    subtree, which no override depends on (each draws only its own control, or nothing).
    A hook runs only for a control that is queued, never for a clean ancestor of one,
    so a look that depends on descendants' state cannot be picked in a hook: a
-   `PropertyRow`'s label, which follows its property's hover and focus, is redrawn
-   from `onDescendantInteraction()`, which `Base` calls on every ancestor of a control
-   whose hover or keyboard focus changed, in the update phase.
+   `PropertyRow` and its label, whose look (Normal, Hover, Editing) follows the hover
+   anywhere in the row and its property's keyboard focus, are redrawn from
+   `onDescendantInteraction()`, which `Base` calls on every ancestor of a control whose
+   hover or keyboard focus changed, in the update phase (the input handler too, where it
+   moves either without an enter, a leave or a `focus()`), and only when the look
+   changed. The hover moves on before the old control hears its leave, as the focus
+   does in `focus()`, so an ancestor told of the leave already sees where the hover
+   went, and the mouse moving between a row's label and its value marks nothing.
 6. *Clearing.* After the hooks have returned, the control's state and index are
    cleared, so a change it raised on itself from its own hooks is cleared with it, as
    before.
@@ -1610,12 +1615,12 @@ applying it prints one line per kind, names sorted, a surface with none of its c
 set by its bare name and one with some of them as `Name.field` per missing field:
 
 ```
-theme strict: 57 of 59 surfaces not set: ButtonDisabled, ButtonDown, ButtonHover.border, ...
+theme strict: 62 of 64 surfaces not set: ButtonDisabled, ButtonDown, ButtonHover.border, ...
 theme strict: 12 of 14 text colors not set: ButtonDisabled, ButtonDown, ...
 ```
 
-(`theme strict: all 59 surfaces set` for a kind with no gaps, and a single
-`theme strict: all 59 surfaces and 14 text colors set` when there are none at all). A
+(`theme strict: all 64 surfaces set` for a kind with no gaps, and a single
+`theme strict: all 64 surfaces and 14 text colors set` when there are none at all). A
 rejected value counts as not set. A surface that is transparent at rest on purpose
 (`WindowButton`, `SelectableHover`: a transparent fill hides the slot) is magenta too
 until the theme sets it to `[0,0,0,0]`; the theme has not said what it looks like. The
