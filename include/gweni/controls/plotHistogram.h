@@ -8,24 +8,19 @@
 #ifndef _gweni_controls_plothistogram_h_
 #define _gweni_controls_plothistogram_h_
 
-#include <gweni/controls/base.h>
-
-#include <vector>
+#include <gweni/controls/plotBase.h>
 
 namespace gweni
 {
 namespace controls
 {
-namespace internal
-{
-class Text;
-}
 
 //! A series of values drawn as bars from the bottom of a frame (imgui's
 //! PlotHistogram), with an optional caption at the top centre (imgui's
 //! overlay_text) and a tooltip naming the hovered bar's index and value.
 //!
-//! The plot is the control less its padding and, with a caption, less the
+//! The series, its range, its caption and its tooltip are PlotBase's. The
+//! plot is the control less its padding and, with a caption, less the
 //! caption's line at the top, so no bar runs under its text
 //! (getPlotBounds()). Bar i takes the columns [i*W/N, (i+1)*W/N) of its W
 //! units, rounded down, so the remainder is spread one unit at a time across
@@ -41,49 +36,14 @@ class Text;
 //! redraws only the bars whose rect or look changed: a setValue() whose bar
 //! keeps its height marks nothing, one that changes it rewrites that bar's
 //! slot alone, and a rescale redraws every bar that moved.
-class GWENI_EXPORT PlotHistogram: public Base
+class GWENI_EXPORT PlotHistogram: public PlotBase
 {
 public:
 
-    GWENI_CONTROL(PlotHistogram, Base);
+    GWENI_CONTROL(PlotHistogram, PlotBase);
 
 public:
 
-    //! The series, one bar per value. Marks StateChange_Background unless the
-    //! values are the ones it has.
-    virtual void setValues(const std::vector<float> &values);
-    //! One value; an index past the series is ignored. Marks
-    //! StateChange_Background only when the bar's height changes, or the
-    //! automatic range does.
-    virtual void setValue(size_t index, float value);
-    const std::vector<float> &getValues() const { return m_values; }
-    size_t getValueCount() const { return m_values.size(); }
-
-    //! A fixed range: \p min at the plot's bottom, \p max at its top (a \p max
-    //! not above \p min is taken as \p min+1).
-    virtual void setScaleRange(float min, float max);
-    //! Back to the automatic range: from min(0, the lowest value) to the
-    //! highest value (or the bottom plus 1 when they are equal). It is worked
-    //! out again on every change of the values, so a value past it, or the
-    //! highest value lowered, rescales every bar.
-    virtual void setAutoScale();
-    bool hasFixedScale() const { return m_fixedScale; }
-    //! The range the bars are drawn in, fixed or automatic.
-    float getScaleMin() const { return m_scaleMin; }
-    float getScaleMax() const { return m_scaleMax; }
-
-    //! A caption at the top centre, on a line of its own above the bars; an
-    //! empty string removes it. Its line height is taken off the plot when
-    //! it is laid out.
-    virtual void setCaption(const String &caption);
-    String getCaption() const;
-    //! The caption's Text, or null without a caption.
-    internal::Text *getCaptionControl() const { return m_caption; }
-
-    //! The control less its padding and the caption's line, where the bars
-    //! are, in the control's own coordinates (its top-left at 0,0), as the
-    //! bar rects are.
-    Rect getPlotBounds() const;
     //! Bar \p index's rect in this control's own coordinates: its column
     //! less the gap, as high as its value makes it, on the plot's bottom.
     //! Empty (no width or no height) when the bar draws nothing.
@@ -91,38 +51,22 @@ public:
     //! The bar whose column holds the point \p local (the control's own
     //! coordinates) inside the plot, or -1.
     int getBarAt(const Point &local) const;
+    int sampleAt(const Point &local) const override { return getBarAt(local); }
     //! The bar under the mouse, or -1. The skin draws it in its hover look.
-    int getHoveredBar() const { return m_hoveredBar; }
+    int getHoveredBar() const { return getHoveredSample(); }
 
     //! The tooltip shown over bar \p index: "<index>: <value>".
-    String barToolTip(size_t index) const;
-
-    //! A plot asks for the size it was asked to be (its constructor's 200x80,
-    //! or the app's): its bars are drawn by its skin, and its caption is placed
-    //! by it (Placement::Owner).
-    bool sizedByRequest(Dim /*dim*/) const override { return true; }
-
-    void onMouseMoved(int x, int y, int deltaX, int deltaY) override;
-    void onMouseLeave() override;
+    String barToolTip(size_t index) const { return sampleToolTip(index); }
 
 protected:
 
-    void layout(skin::Base *skin) override;
+    //! a bar is drawn as its height
+    float drawnKey(size_t index) const override;
+    //! the two bars' looks; the renderer redraws only those
+    void hoveredChanged() override { addStateChange(StateChange_Background); }
 
-    //! Works the automatic range out again; true if the range changed.
-    bool updateAutoScale();
     //! The height bar \p index has in a plot \p plotHeight high.
     int barHeight(size_t index, int plotHeight) const;
-    void setHoveredBar(int bar);
-
-    std::vector<float> m_values;
-    bool m_fixedScale=false;
-    float m_scaleMin=0.0f;
-    float m_scaleMax=1.0f;
-    int m_hoveredBar=-1;
-    internal::Text *m_caption=nullptr;
-    //! the caption's line height as last laid out, taken off the plot's top
-    int m_captionHeight=0;
 };
 
 }//namespace controls

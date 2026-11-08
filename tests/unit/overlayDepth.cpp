@@ -11,8 +11,8 @@
  *  run on a real control in the state that shows it; a new overlay renderer is
  *  one more row.
  *
- *  The rows: ProgressBar, PlotHistogram (its bars), ColorSlider, ColorLerpBox,
- *  CheckBox, RadioButton, ComboBox, ScrollBarButton, the three window buttons,
+ *  The rows: ProgressBar, PlotHistogram (its bars), PlotLines (its segments),
+ *  ColorSlider, ColorLerpBox, CheckBox, RadioButton, ComboBox, ScrollBarButton, the three window buttons,
  *  TreeNode's OpenToggleButton, a DataTable's header (its rule), header cell
  *  (a sorted column's chevron) and row (its rules), and TextBox's caret; every other
  *  type gets a StubControl. A part of another control is followed by its next
@@ -31,6 +31,7 @@
 #include <gweni/controls/comboBox.h>
 #include <gweni/controls/dataTable.h>
 #include <gweni/controls/plotHistogram.h>
+#include <gweni/controls/plotLines.h>
 #include <gweni/controls/progressBar.h>
 #include <gweni/controls/radioButton.h>
 #include <gweni/controls/scrollBarButton.h>
@@ -93,6 +94,11 @@ public:
 
     void drawTexturedRect(const Texture &, size_t primitiveId, Rect, int zIndex,
         float, float, float, float) override
+    {
+        drawn.push_back({primitiveId, zIndex});
+    }
+
+    void drawLine(size_t primitiveId, PointF, PointF, float, int zIndex) override
     {
         drawn.push_back({primitiveId, zIndex});
     }
@@ -172,6 +178,15 @@ const std::vector<Row> &rows()
             {
                 // the bars over the frame, and a caption child after them
                 auto *plot=canvas->newChild<controls::PlotHistogram>();
+                plot->setBounds(10, 10, 120, 60);
+                plot->setValues({1.0f, 3.0f, 2.0f});
+                plot->setCaption("caption");
+                return plot;
+            }},
+        {"PlotLines", Overlay::Above, [](controls::Canvas *canvas) -> controls::Base *
+            {
+                // the segments over the frame, and a caption child after them
+                auto *plot=canvas->newChild<controls::PlotLines>();
                 plot->setBounds(10, 10, 120, 60);
                 plot->setValues({1.0f, 3.0f, 2.0f});
                 plot->setCaption("caption");

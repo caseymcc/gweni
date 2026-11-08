@@ -192,6 +192,8 @@ inline Surface DataTableStripe     { Color(0x1f,0x21,0x30), Color(0x1f,0x21,0x30
 inline Surface PlotFrame      { BgDark,                BgDark,                Line,  RadiusSm, BorderW };
 inline Surface PlotBar        { Blue,                  Blue,                  Blue,  0.0f,     0.0f };
 inline Surface PlotBarHover   { Cyan,                  Cyan,                  Cyan,  0.0f,     0.0f };
+// A PlotLines: its frame is PlotFrame, its line is drawn in PlotLine's top.
+inline Surface PlotLine       { Blue,                  Blue,                  Blue,  0.0f,     0.0f };
 
 // A DragNumber: a field filled like a button, not inset like a TextBox (it is
 // dragged, not typed into, until its edit box comes up), lit while hovered,
@@ -241,7 +243,7 @@ inline std::unordered_map<std::string, Surface*>& surfaceRegistry()
         {"PropertyColumnEditing",&PropertyColumnEditing},
         {"DataTableHeader",&DataTableHeader},{"DataTableHeaderHover",&DataTableHeaderHover},
         {"DataTableHeaderDown",&DataTableHeaderDown},{"DataTableStripe",&DataTableStripe},
-        {"PlotFrame",&PlotFrame},{"PlotBar",&PlotBar},{"PlotBarHover",&PlotBarHover},
+        {"PlotFrame",&PlotFrame},{"PlotBar",&PlotBar},{"PlotBarHover",&PlotBarHover},{"PlotLine",&PlotLine},
         {"DragNumber",&DragNumber},{"DragNumberHover",&DragNumberHover},{"DragNumberFocus",&DragNumberFocus},
         {"DragNumberDown",&DragNumberDown},{"DragNumberDisabled",&DragNumberDisabled},
         {"WindowButton",&WindowButton},{"WindowCloseHover",&WindowCloseHover},{"WindowCloseDown",&WindowCloseDown},

@@ -14,6 +14,7 @@
 #include "gweni/controls/listBox.h"
 #include "gweni/controls/slider.h"
 #include "gweni/controls/plotHistogram.h"
+#include "gweni/controls/plotLines.h"
 #include "gweni/controls/colorControls.h"
 #include "gweni/controls/colorPicker.h"
 #include "gweni/controls/colorButton.h"
@@ -1366,21 +1367,28 @@ void Slider::update(renderer::Base *renderer, controls::Base *baseControl)
 
 ///////////////////////////////////////////////////////////////////////////
 //PlotHistogram
-void PlotHistogram::resizePrimitives(renderer::Base *renderer, size_t count)
+// A plot's slot list, grown or shrunk to \p count: the slots past it given
+// back, new ones taken (shared by PlotHistogram and PlotLines).
+static void resizePlotPrimitives(renderer::Base *renderer, std::vector<size_t> &primitives, size_t count)
 {
-    while(m_primitives.size() > count)
+    while(primitives.size() > count)
     {
-        renderer->releasePrimitive(m_primitives.back());
-        m_primitives.pop_back();
+        renderer->releasePrimitive(primitives.back());
+        primitives.pop_back();
     }
 
-    while(m_primitives.size() < count)
+    while(primitives.size() < count)
     {
         size_t id;
 
         renderer->generatePrimitive(id);
-        m_primitives.push_back(id);
+        primitives.push_back(id);
     }
+}
+
+void PlotHistogram::resizePrimitives(renderer::Base *renderer, size_t count)
+{
+    resizePlotPrimitives(renderer, m_primitives, count);
 
     // a slot new to the list holds nothing known
     m_drawn.resize(count);
@@ -1471,6 +1479,108 @@ void PlotHistogram::update(renderer::Base *renderer, controls::Base *baseControl
         }
 
         draw(1+i, rect, (int(i) == hovered)?tokyonight::PlotBarHover:tokyonight::PlotBar, z+1);
+    }
+}
+
+
+///////////////////////////////////////////////////////////////////////////
+//PlotLines
+void PlotLines::update(renderer::Base *renderer, controls::Base *baseControl)
+{
+    controls::PlotLines *plot=static_cast<controls::PlotLines *>(baseControl);
+    const size_t segments=plot->getSegmentCount();
+
+    resizePlotPrimitives(renderer, m_primitives, 1+segments);
+    // a slot new to the list holds nothing known
+    m_segments.resize(segments);
+
+    // As PlotHistogram's: a new rect, z, clip region or visibility reaches
+    // every slot, and such a frame marks the control's geometry, its
+    // visibility or its creation. Any other draws only what differs.
+    const unsigned int sc=baseControl->getStateChange();
+    const bool all=(sc&(controls::StateChange_Created|controls::StateChange_Visibility
+        |controls::StateChange_Geometry)) != 0;
+
+    if(!baseControl->visible())
+    {
+        if(all)
+        {
+            for(size_t id : m_primitives)
+                renderer->hidePrimitive(id);
+            m_frame.valid=true;
+            m_frame.shown=false;
+            for(Segment &segment : m_segments)
+            {
+                segment.valid=true;
+                segment.shown=false;
+            }
+        }
+        else
+        {
+            // drawn again once shown, which marks the visibility
+            m_frame.valid=false;
+            for(Segment &segment : m_segments)
+                segment.valid=false;
+        }
+        return;
+    }
+
+    const int z=baseControl->getZIndex();
+    const gweni::Rect &bounds=baseControl->getRenderBounds();
+    const tokyonight::Surface &frame=tokyonight::PlotFrame;
+
+    if(all || !m_frame.valid || !m_frame.shown || !(m_frame.rect == bounds) || (m_frame.zIndex != z)
+        || !sameSurface(m_frame.surface, frame))
+    {
+        renderer->drawRoundedRect(m_primitives[0], bounds, frame.radius, frame.borderWidth,
+            frame.top, frame.bottom, frame.border, z);
+        m_frame.valid=true;
+        m_frame.shown=true;
+        m_frame.rect=bounds;
+        m_frame.surface=frame;
+        m_frame.zIndex=z;
+    }
+
+    const Color color=tokyonight::PlotLine.top;
+    const float thickness=plot->getLineThickness();
+    // the points are in the plot's own coordinates, drawn at its render origin
+    const PointF origin(float(bounds.x), float(bounds.y));
+    bool colorSet=false;
+
+    for(size_t i=0; i<segments; ++i)
+    {
+        Segment &drawn=m_segments[i];
+        PointF p0, p1;
+
+        if(!plot->getSegment(i, p0, p1))
+        {
+            if(all || !drawn.valid || drawn.shown)
+                renderer->hidePrimitive(m_primitives[1+i]);
+            drawn.valid=true;
+            drawn.shown=false;
+            continue;
+        }
+
+        p0=PointF(origin.x+p0.x, origin.y+p0.y);
+        p1=PointF(origin.x+p1.x, origin.y+p1.y);
+
+        if(!all && drawn.valid && drawn.shown && (drawn.p0 == p0) && (drawn.p1 == p1)
+            && (drawn.thickness == thickness) && (drawn.color == color) && (drawn.zIndex == z+1))
+            continue;
+
+        if(!colorSet)
+        {
+            renderer->setDrawColor(color);
+            colorSet=true;
+        }
+        renderer->drawLine(m_primitives[1+i], p0, p1, thickness, z+1);
+        drawn.valid=true;
+        drawn.shown=true;
+        drawn.p0=p0;
+        drawn.p1=p1;
+        drawn.thickness=thickness;
+        drawn.color=color;
+        drawn.zIndex=z+1;
     }
 }
 
@@ -2426,6 +2536,7 @@ template class ControlRegister<Shadow>;
 template class ControlRegister<Slider>;
 template class ControlRegister<SliderBar>;
 template class ControlRegister<PlotHistogram>;
+template class ControlRegister<PlotLines>;
 template class ControlRegister<ColorLerpBox>;
 template class ControlRegister<ColorSlider>;
 template class ControlRegister<ColorDisplay>;

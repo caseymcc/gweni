@@ -609,6 +609,56 @@ private:
     std::vector<Drawn> m_drawn;
 };
 
+// A PlotLines: [0] its frame (PlotFrame, over the render bounds), then one
+// slot per segment (drawLine, from sample i to sample i+1, in PlotLine's top
+// colour and the plot's line thickness), each at getZIndex()+1, in front of
+// the frame. As PlotHistogram's, update() resizes the slot list to the
+// segment count itself and keeps what it last drew in each slot: on a frame
+// that marks the control's geometry, visibility or creation it draws
+// everything, otherwise only a segment whose endpoints, thickness, colour or
+// z are not the ones drawn, so a changed sample rewrites the two segments
+// next to it. A segment that is not drawn (a NaN endpoint) is hidden.
+class PlotLines:public textured::ControlRegister<PlotLines>
+{
+public:
+    static void staticInit(TexturedSkin *) { m_staticInit=true; }
+
+    size_t requiredPrimitives() override { return 1; }
+    // the segments are drawn at getZIndex()+1, over the frame
+    size_t depthLayers() override { return 2; }
+
+    void update(renderer::Base *renderer, controls::Base *baseControl) override;
+
+    inline static const std::string_view name="PlotLines";
+
+private:
+    //! What a segment's slot holds, as last drawn.
+    struct Segment
+    {
+        bool valid=false;   //!< false for a new slot, which holds nothing known
+        bool shown=false;
+        PointF p0;
+        PointF p1;
+        float thickness=0.0f;
+        Color color;
+        int zIndex=0;
+    };
+
+    //! What the frame's slot holds, as last drawn.
+    struct Frame
+    {
+        bool valid=false;
+        bool shown=false;
+        Rect rect;
+        tokyonight::Surface surface{};
+        int zIndex=0;
+    };
+
+    Frame m_frame;
+    //! [i] segment i, in slot [1+i]
+    std::vector<Segment> m_segments;
+};
+
 class ProgressBar:public textured::ControlRegister<ProgressBar>
 {
 public:

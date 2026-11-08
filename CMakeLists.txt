@@ -209,8 +209,12 @@ set(GWENI_CONTROL_SOURCES
     source/controls/numericUpDown.cpp
     include/gweni/controls/pageControl.h
     source/controls/pageControl.cpp
+    include/gweni/controls/plotBase.h
+    source/controls/plotBase.cpp
     include/gweni/controls/plotHistogram.h
     source/controls/plotHistogram.cpp
+    include/gweni/controls/plotLines.h
+    source/controls/plotLines.cpp
     include/gweni/controls/popup.h
     source/controls/popup.cpp
     include/gweni/controls/progressBar.h
