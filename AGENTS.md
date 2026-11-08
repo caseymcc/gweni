@@ -203,7 +203,7 @@ In the web tree every test has the label `web` and needs no lock (`ctest --test-
   - `Text AA:*` and `LCD text:*`: no dual-source blending, so LCD text is grayscale; `noDualSource.cpp`, which runs, checks that fallback;
   - `Text draws: a loop of glDrawElements draws what glMultiDrawElements draws`: no multi-draw on the web, so the loop is every text draw.
 
-  Doctest's summary counts the excluded cases as skipped (124 run, 9 skipped, of 133).
+  Doctest's summary counts the excluded cases as skipped (123 run, 10 skipped, of 133).
 - `web_controltest_shot` and `web_openglcore_screenshot` (`tests/web/shot.mjs`): a `--headless` capture of ButtonDemo and of the hero demo must write a PNG of the canvas's size (640x480, 1024x768) that is not one flat colour.
 - `web_run_fails_without_webgl2` runs the runner with `--no-webgl2` and passes only on its `made no WebGL 2 context` line.
 - `web_controltest_missing_resources*` and `web_openglcore_missing_resources*` are `missingResources.cmake`'s cases through the runner (`-DRUNNER=`): the incomplete `resources/` copy is mounted into the page at the same path.
