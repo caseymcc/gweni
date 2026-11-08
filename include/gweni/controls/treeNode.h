@@ -54,6 +54,28 @@ public:
         m_root=b;
     }
 
+    // What the skin's connector lines are drawn from, in this node's
+    // coordinates. A TreeControl has no toggle or title: empty bounds, 0.
+
+    //! A node of the TreeControl itself, which gets no stub.
+    bool isRoot() const { return m_root; }
+    //! Its child rows are shown (it may have none).
+    bool isOpen() const { return !m_innerPanel->hidden(); }
+    //! It has child nodes, so its toggle shows.
+    bool hasToggle() const { return m_toggleButton && !m_toggleButton->hidden(); }
+    const Rect &getToggleBounds() const;
+    const Rect &getTitleBounds() const;
+    //! The x of the line down to its children: its toggle's centre.
+    int lineX() const;
+    //! The y of its stub: its toggle's centre.
+    int stubY() const;
+    //! The left edge of its children's rows (its inner panel's content).
+    int childIndent() const;
+    //! The y of its inner panel, under its title.
+    int childPanelY() const { return m_innerPanel->getY(); }
+    //! Its last child node that is not hidden, or nullptr.
+    const TreeNode *lastChildNode() const;
+
     virtual void setTreeControl(TreeControl *ctrl)
     {
         m_treeControl=ctrl;

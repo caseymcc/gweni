@@ -532,13 +532,44 @@ GWENI_TRANSPARENT_RENDERER(DataTableVirtualBody)
 // purpose, so Base::setSkin() does not report the type as having none (#185),
 // and each names the idea that tracks its real renderer: drop the line when
 // that renderer lands. A drawsNothing() override is not the place for these,
-// since the controls are meant to draw.
+// since the controls are meant to draw. (None is waiting now.)
 #define GWENI_PENDING_RENDERER(Class) GWENI_TRANSPARENT_RENDERER(Class)
-
-GWENI_PENDING_RENDERER(TreeNode)         // #219: tree lines
-GWENI_PENDING_RENDERER(PropertyTreeNode) // #219: category rail
 #undef GWENI_PENDING_RENDERER
 #undef GWENI_TRANSPARENT_RENDERER
+
+// A TreeNode's connector lines, in the skin's Tree.Lines colour, at the node's
+// own z, under its rows: [0] the stub, on a node that is not a root, from its
+// parent's line across the indent to its toggle (to its title if it has no
+// toggle), [1] on an open node with child nodes, the line down from under its
+// toggle to its last child's stub. Each is an icon of kind 6, as a
+// Separator's rule, so every line is equally thick at any scale; a line that
+// is not drawn has its slot hidden.
+class TreeNode:public textured::ControlRegister<TreeNode>
+{
+public:
+    static void staticInit(TexturedSkin *) { m_staticInit=true; }
+
+    size_t requiredPrimitives() override { return 2; }
+
+    void update(renderer::Base *renderer, controls::Base *baseControl) override;
+
+    inline static const std::string_view name="TreeNode";
+};
+
+// A PropertyTree's category: no tree lines, but its rail in the skin's
+// Properties.Border colour, [0] the column down its left, as wide as its
+// properties are indented, [1] the band behind its title, right of the column.
+class PropertyTreeNode:public textured::ControlRegister<PropertyTreeNode>
+{
+public:
+    static void staticInit(TexturedSkin *) { m_staticInit=true; }
+
+    size_t requiredPrimitives() override { return 2; }
+
+    void update(renderer::Base *renderer, controls::Base *baseControl) override;
+
+    inline static const std::string_view name="PropertyTreeNode";
+};
 
 class ProgressBar:public textured::ControlRegister<ProgressBar>
 {

@@ -62,33 +62,66 @@ GWENI_CONTROL_CONSTRUCTOR(TreeNode)
     m_title->onDownCaller.add(this, &TreeNode::onClickName);
     m_title->onRightPressCaller.add(this, &TreeNode::onRightPress);
 
+    // The indent is the panel's padding, not its margin: the panel then spans
+    // the node's width, and a child's stub, which reaches left into the indent
+    // to this node's line, is inside the region the panel clips its children to.
     m_innerPanel=newChild<Base>();
     m_innerPanel->setDock(DockPosition::Top);
     m_innerPanel->setHeight(100);
-    m_innerPanel->setMargin(Margin(TreeIndentation, 1, 0, 0));
+    m_innerPanel->setMargin(Margin(0, 1, 0, 0));
+    m_innerPanel->setPadding(Padding(TreeIndentation, 0, 0, 0));
     m_innerPanel->hide();
     m_root=false;
     m_selected=false;
     m_selectable=true;
 }
 
-//void TreeNode::render(skin::Base *skin)
-//{
-//    int iBottom=0;
-//
-//    if(m_innerPanel->getChildren().size() > 0)
-//        iBottom=m_innerPanel->getChildren().back()->getY() + m_innerPanel->getY();
-//
-//    //skin->drawTreeNode(this, skin::Generate,
-//    //    m_innerPanel->visible(),
-//    //    isSelected(),
-//    //    m_title->getHeight(),
-//    //    m_title->textRight(),
-//    //    m_toggleButton->getY() + m_toggleButton->getHeight()/2,
-//    //    iBottom,
-//    //    getParent() == m_treeControl);
-//    skin->drawControl(this);
-//}
+const Rect &TreeNode::getToggleBounds() const
+{
+    static const Rect none;
+
+    return m_toggleButton?m_toggleButton->getBounds():none;
+}
+
+const Rect &TreeNode::getTitleBounds() const
+{
+    static const Rect none;
+
+    return m_title?m_title->getBounds():none;
+}
+
+int TreeNode::lineX() const
+{
+    const Rect &toggle=getToggleBounds();
+
+    return toggle.x+toggle.w/2;
+}
+
+int TreeNode::stubY() const
+{
+    const Rect &toggle=getToggleBounds();
+
+    return toggle.y+toggle.h/2;
+}
+
+int TreeNode::childIndent() const
+{
+    return m_innerPanel->getX()+m_innerPanel->getPadding().left;
+}
+
+const TreeNode *TreeNode::lastChildNode() const
+{
+    const Base::List &children=m_innerPanel->getChildren();
+
+    for(auto it=children.rbegin(); it != children.rend(); ++it)
+    {
+        const TreeNode *node=gweni_cast<TreeNode>(*it);
+
+        if(node && !node->hidden())
+            return node;
+    }
+    return nullptr;
+}
 
 TreeNode *TreeNode::addNode(const String &label)
 {
@@ -112,6 +145,7 @@ void TreeNode::calculateSize(skin::Base *skin, Dim dim)
     if(dim == Dim::X && m_toggleButton)
     {
         PlacementScope placement;
+        const bool hadToggle=hasToggle();
 
         if(m_innerPanel->numChildren() == 0)
         {
@@ -121,6 +155,11 @@ void TreeNode::calculateSize(skin::Base *skin, Dim dim)
         }
         else
             m_toggleButton->show();
+
+        // The skin's stub ends at the toggle, or at the title without one, and a
+        // node without one draws no line down: neither need change its size.
+        if(hasToggle() != hadToggle)
+            addStateChange(StateChange_Geometry);
     }
 
     ParentClass::calculateSize(skin, dim);

@@ -25,6 +25,8 @@
 #include "gweni/controls/windowButtons.h"
 #include "gweni/controls/properties.h"
 #include "gweni/controls/dataTable.h"
+#include "gweni/controls/treeNode.h"
+#include "gweni/controls/propertyTree.h"
 
 #include <algorithm>
 
@@ -1914,6 +1916,105 @@ void Tree::update(renderer::Base *renderer, controls::Base *baseControl)
 void Tree::remove(renderer::Base *renderer, controls::Base *baseControl)
 {
     releasePrimitives(renderer);
+}
+
+///////////////////////////////////////////////////////////////////////////
+//TreeNode
+void TreeNode::update(renderer::Base *renderer, controls::Base *baseControl)
+{
+    if(m_primitives.size() < 2)
+        return;
+
+    const controls::TreeNode *node=dynamic_cast<const controls::TreeNode *>(baseControl);
+
+    if(!node || !baseControl->visible())
+    {
+        for(size_t primitive : m_primitives)
+            renderer->hidePrimitive(primitive);
+        return;
+    }
+
+    // a render bounds is in the parent's coordinates, which for a child node is
+    // its parent node's inner panel: the panel spans that node's width
+    const gweni::Rect bounds=baseControl->getRenderBounds();
+    const gweni::Color line=baseControl->getSkin()->Colors.Tree.Lines;
+    const int z=baseControl->getZIndex();
+    // a node placed in the TreeControl without addNode() is a root too
+    const controls::TreeNode *parent=node->isRoot()?nullptr:gweni_cast<controls::TreeNode>(node->getParent());
+
+    if(parent && !gweni_cast<controls::TreeControl>(node->getParent()) && parent->getInnerPanel())
+    {
+        // from the parent's line, at its x in the panel, to one unit short of
+        // the toggle's chevron (OpenToggleButton draws it 6/10 of the square,
+        // centred), or of the title of a node with no toggle
+        const int start=parent->lineX()-parent->getInnerPanel()->getX();
+        const gweni::Rect &toggle=node->getToggleBounds();
+        const int end=bounds.x+(node->hasToggle()
+            ?toggle.x+(toggle.w-toggle.w*6/10)/2-1
+            :node->getTitleBounds().x-1);
+        const int y=bounds.y+node->stubY();
+
+        // as a Separator's rule: the quad reaches one unit past the line on
+        // both sides across it, and the stroke is drawn through its middle
+        if(end > start)
+            renderer->drawIcon(m_primitives[0], gweni::Rect(start, y-1, end-start, 3), 6, 0, line, z);
+        else
+            renderer->hidePrimitive(m_primitives[0]);
+    }
+    else
+        renderer->hidePrimitive(m_primitives[0]);
+
+    const controls::TreeNode *last=(node->isOpen() && node->hasToggle())?node->lastChildNode():nullptr;
+
+    if(last)
+    {
+        // down from under the toggle, through the last child's stub row
+        const gweni::Rect &toggle=node->getToggleBounds();
+        const int x=bounds.x+node->lineX();
+        const int top=bounds.y+toggle.y+toggle.h-2;
+        const int bottom=bounds.y+node->childPanelY()+last->getY()+last->stubY()+1;
+
+        if(bottom > top)
+            renderer->drawIcon(m_primitives[1], gweni::Rect(x-1, top, 3, bottom-top), 6, 1, line, z);
+        else
+            renderer->hidePrimitive(m_primitives[1]);
+    }
+    else
+        renderer->hidePrimitive(m_primitives[1]);
+}
+
+///////////////////////////////////////////////////////////////////////////
+//PropertyTreeNode
+void PropertyTreeNode::update(renderer::Base *renderer, controls::Base *baseControl)
+{
+    if(m_primitives.size() < 2)
+        return;
+
+    const controls::TreeNode *node=dynamic_cast<const controls::TreeNode *>(baseControl);
+    const gweni::Rect bounds=baseControl->getRenderBounds();
+
+    if(!node || !baseControl->visible() || bounds.w <= 0 || bounds.h <= 0)
+    {
+        for(size_t primitive : m_primitives)
+            renderer->hidePrimitive(primitive);
+        return;
+    }
+
+    const int column=std::min(node->childIndent(), bounds.w);
+    const int band=std::min(node->childPanelY(), bounds.h);
+    const int z=baseControl->getZIndex();
+
+    renderer->setDrawColor(baseControl->getSkin()->Colors.Properties.Border);
+
+    if(column > 0)
+        renderer->drawFilledRect(m_primitives[0], gweni::Rect(bounds.x, bounds.y, column, bounds.h), z);
+    else
+        renderer->hidePrimitive(m_primitives[0]);
+
+    if(band > 0 && bounds.w > column)
+        renderer->drawFilledRect(m_primitives[1], gweni::Rect(bounds.x+column, bounds.y, bounds.w-column, band), z);
+    else
+        renderer->hidePrimitive(m_primitives[1]);
 }
 
 ///////////////////////////////////////////////////////////////////////////
