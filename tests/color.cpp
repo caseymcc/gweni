@@ -3,7 +3,7 @@
  *  Copyright (c) 2010 Facepunch Studios
  *  MIT License, see LICENSE
  *
- *  Color is four plain bytes. OpenGLCore puts it into a vertex as the two
+ *  Color is four plain bytes. SlotRenderer puts it into a vertex as the two
  *  16-bit halves rg() and ba(), which the shader's unpackColor splits again,
  *  so those halves must be (r<<8)|g and (b<<8)|a whatever the byte order.
  */

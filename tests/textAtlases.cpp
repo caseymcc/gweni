@@ -3,7 +3,7 @@
  *  Copyright (c) 2010 Facepunch Studios
  *  MIT License, see LICENSE
  *
- *  Every font OpenGLCore loads has its own glyph atlas, and a text run must be
+ *  Every font SlotRenderer loads has its own glyph atlas, and a text run must be
  *  drawn with the atlas of the font it was laid out in, whatever else is on
  *  screen. Each case draws a run in the shared OpenSans 11 and a run in OpenSans
  *  24 in one frame, in separate bands of the view, and compares each band with
@@ -35,7 +35,7 @@ using gweni::Color;
 using gweni::Font;
 using gweni::Point;
 using gweni::String;
-using gweni::renderer::OpenGLCore;
+using gweni::renderer::SlotRenderer;
 
 const Color background(0, 0, 255, 255);
 const Color white(255, 255, 255, 255);
@@ -71,17 +71,15 @@ TextDraw largeDraw()
 
 void clearFrame()
 {
-    glClearColor(background.r/255.0f, background.g/255.0f, background.b/255.0f, 1.0f);
-    glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
+    gweni::test::clearView(background);
 }
 
 //! The offscreen framebuffer, top-down RGBA8.
 std::vector<uint8_t> readFrame()
 {
-    const Point size=gweni::test::viewSize();
     std::vector<uint8_t> pixels;
 
-    gweni::capture::readFramebufferRgba(size.x, size.y, pixels);
+    gweni::test::readView(pixels);
     return pixels;
 }
 
@@ -135,7 +133,7 @@ size_t differingPixels(const std::vector<uint8_t> &a, const std::vector<uint8_t>
 //! Renders the draws, in order, on the matching text ids in one frame and reads it back.
 std::vector<uint8_t> drawFrame(const std::vector<size_t> &textIds, const std::vector<TextDraw> &draws)
 {
-    OpenGLCore &renderer=gweni::test::gpuRenderer();
+    SlotRenderer &renderer=gweni::test::gpuRenderer();
 
     clearFrame();
     renderer.begin();
@@ -149,7 +147,7 @@ std::vector<uint8_t> drawFrame(const std::vector<size_t> &textIds, const std::ve
 //! The frame `draw` gives alone, on a text id of its own released afterwards.
 std::vector<uint8_t> drawAlone(const TextDraw &draw)
 {
-    OpenGLCore &renderer=gweni::test::gpuRenderer();
+    SlotRenderer &renderer=gweni::test::gpuRenderer();
     size_t textId=0;
 
     renderer.generateTextPrimitive(textId);
@@ -162,18 +160,18 @@ std::vector<uint8_t> drawAlone(const TextDraw &draw)
     return pixels;
 }
 
-void clearGlErrors()
+//! Forgets the errors the device reported so far, so a later deviceError() is this case's
+void clearDeviceErrors()
 {
-    while(glGetError() != GL_NO_ERROR)
-    {}
+    gweni::test::gpuRenderer().deviceError();
 }
 
 //! Whether the loaded large font and the shared OpenSans 11 have atlases of their own.
 bool twoAtlases(const Font &large)
 {
-    OpenGLCore &renderer=gweni::test::gpuRenderer();
+    SlotRenderer &renderer=gweni::test::gpuRenderer();
 
-    if(renderer.getFontAtlasName(large) != renderer.getFontAtlasName(gweni::test::openSans()))
+    if(renderer.getFontAtlasHandle(large) != renderer.getFontAtlasHandle(gweni::test::openSans()))
         return true;
     // not freed: that would free the shared font's atlas with it
     MESSAGE("skipped: GWENI_SDF_TEXT_MIN draws both sizes from the face's one SDF atlas");
@@ -184,7 +182,7 @@ bool twoAtlases(const Font &large)
 
 TEST_CASE("Text atlases: two fonts in one frame each draw as they do alone")
 {
-    OpenGLCore &renderer=gweni::test::gpuRenderer();
+    SlotRenderer &renderer=gweni::test::gpuRenderer();
     const Font large=largeFont();
 
     REQUIRE((renderer.loadFont(large) == Font::Status::Loaded));
@@ -246,7 +244,7 @@ TEST_CASE("Text atlases: two fonts in one frame each draw as they do alone")
 
 TEST_CASE("Text atlases: freeing a font with a run still allocated leaves both fonts drawing")
 {
-    OpenGLCore &renderer=gweni::test::gpuRenderer();
+    SlotRenderer &renderer=gweni::test::gpuRenderer();
     const Font large=largeFont();
 
     REQUIRE((renderer.loadFont(large) == Font::Status::Loaded));
@@ -269,18 +267,18 @@ TEST_CASE("Text atlases: freeing a font with a run still allocated leaves both f
 
     // The large run holds its font, coverage or SDF alike: its atlas stays under
     // the same name while the run is laid out in it, and the run draws on.
-    const unsigned int largeAtlas=renderer.getFontAtlasName(large);
+    const unsigned int largeAtlas=renderer.getFontAtlasHandle(large);
 
-    clearGlErrors();
+    clearDeviceErrors();
     renderer.freeFont(large);
-    CHECK(renderer.getFontAtlasName(large) == largeAtlas);
-    CHECK(glIsTexture(largeAtlas) == GL_TRUE);
+    CHECK(renderer.getFontAtlasHandle(large) == largeAtlas);
+    CHECK(renderer.textureExists(largeAtlas));
 
     SUBCASE("a frame that renders only the other run")
     {
         const std::vector<uint8_t> after=drawFrame({ smallId }, { smallDraw() });
 
-        CHECK(glGetError() == GL_NO_ERROR);
+        CHECK(!renderer.deviceError());
         CHECK(differingPixels(smallBand(after), smallBand(smallAlone)) == 0);
         CHECK(differingPixels(largeBand(after), largeBand(largeAlone)) == 0);
         CHECK(renderer.getFrameStats().textDraws == 2);
@@ -294,7 +292,7 @@ TEST_CASE("Text atlases: freeing a font with a run still allocated leaves both f
 
         const std::vector<uint8_t> after=readFrame();
 
-        CHECK(glGetError() == GL_NO_ERROR);
+        CHECK(!renderer.deviceError());
         CHECK(differingPixels(smallBand(after), smallBand(smallAlone)) == 0);
         CHECK(differingPixels(largeBand(after), largeBand(largeAlone)) == 0);
     }
@@ -303,7 +301,7 @@ TEST_CASE("Text atlases: freeing a font with a run still allocated leaves both f
     // slot written and nothing uploaded to an atlas
     const std::vector<uint8_t> again=drawFrame({ smallId, largeId }, { smallDraw(), largeDraw() });
 
-    CHECK(glGetError() == GL_NO_ERROR);
+    CHECK(!renderer.deviceError());
     CHECK(differingPixels(smallBand(again), smallBand(smallAlone)) == 0);
     CHECK(differingPixels(largeBand(again), largeBand(largeAlone)) == 0);
     CHECK(renderer.getFrameStats().textSlotsWritten == 0);
@@ -315,14 +313,14 @@ TEST_CASE("Text atlases: freeing a font with a run still allocated leaves both f
     renderer.releaseTextPrimitive(largeId);
     renderer.begin();
     renderer.end();
-    CHECK(renderer.getFontAtlasName(large) == largeAtlas);
+    CHECK(renderer.getFontAtlasHandle(large) == largeAtlas);
     renderer.freeFont(large);
-    CHECK(glIsTexture(largeAtlas) == GL_FALSE);
+    CHECK(!renderer.textureExists(largeAtlas));
 }
 
 TEST_CASE("Text atlases: a steady second frame with two fonts uploads no text")
 {
-    OpenGLCore &renderer=gweni::test::gpuRenderer();
+    SlotRenderer &renderer=gweni::test::gpuRenderer();
     const Font large=largeFont();
 
     REQUIRE((renderer.loadFont(large) == Font::Status::Loaded));

@@ -40,7 +40,7 @@ enum class Phase
     Input,      //!< Scene::step(): the frame's input events or edits
     Update,     //!< Canvas::updateCanvas()
     Render,     //!< Canvas::renderCanvas() without the renderer's end()
-    Flush,      //!< OpenGLCore::end(), which is OpenGLCore::flush()
+    Flush,      //!< the renderer's end(), which is SlotRenderer::flush()
     Gpu,        //!< glFinish() after the frame
     Count
 };

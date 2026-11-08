@@ -3,12 +3,13 @@
  *  Copyright (c) 2010 Facepunch Studios
  *  MIT License, see LICENSE
  *
- *  Text at a canvas scale() other than 1: OpenGLCore draws it at font.size*scale()
- *  px (coverage or SDF, whichever that size falls in), from the scaled origin,
- *  while measureText stays in canvas units, the same at every scale, so a layout
- *  does not depend on the scale. These cases pin both, that the drawn run fills
- *  the measured box scaled, and that a run drawn again after a scale change is
- *  laid out anew, even in an SDF atlas shared by both sizes.
+ *  Text at a canvas scale() other than 1: SlotRenderer draws it at
+ *  font.size*scale() px (coverage or SDF, whichever that size falls in), from
+ *  the scaled origin, while measureText stays in canvas units, the same at
+ *  every scale, so a layout does not depend on the scale. These cases pin both,
+ *  that the drawn run fills the measured box scaled, and that a run drawn again
+ *  after a scale change is laid out anew, even in an SDF atlas shared by both
+ *  sizes.
  *
  *  The renderer is shared with the other cases, so each case puts the scale back
  *  when it ends (ScaleGuard).
@@ -19,7 +20,6 @@
  */
 #include <doctest/doctest.h>
 
-#include "capture.h"
 #include "gpuRenderer.h"
 
 #include <algorithm>
@@ -33,7 +33,7 @@ using gweni::Color;
 using gweni::Font;
 using gweni::Point;
 using gweni::String;
-using gweni::renderer::OpenGLCore;
+using gweni::renderer::SlotRenderer;
 
 const Color background(0, 0, 255, 255);
 const Color white(255, 255, 255, 255);
@@ -92,18 +92,16 @@ Ink inkOf(const std::vector<uint8_t> &frame)
 //! Renders text on textId alone in one frame at the renderer's scale and reads it back.
 std::vector<uint8_t> drawFrame(size_t textId, const Font &font)
 {
-    OpenGLCore &renderer=gweni::test::gpuRenderer();
-    const Point size=gweni::test::viewSize();
+    SlotRenderer &renderer=gweni::test::gpuRenderer();
     std::vector<uint8_t> pixels;
 
-    glClearColor(background.r/255.0f, background.g/255.0f, background.b/255.0f, 1.0f);
-    glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
+    gweni::test::clearView(background);
     renderer.begin();
     renderer.setDrawColor(white);
     renderer.renderText(textId, font, pos, 1, text);
     renderer.end();
 
-    gweni::capture::readFramebufferRgba(size.x, size.y, pixels);
+    gweni::test::readView(pixels);
     return pixels;
 }
 
@@ -113,7 +111,7 @@ struct TextId
     TextId() { gweni::test::gpuRenderer().generateTextPrimitive(id); }
     ~TextId()
     {
-        OpenGLCore &renderer=gweni::test::gpuRenderer();
+        SlotRenderer &renderer=gweni::test::gpuRenderer();
 
         renderer.releaseTextPrimitive(id);
         renderer.begin();
@@ -137,7 +135,7 @@ std::vector<uint8_t> drawnAt(float scale, const Font &font)
 
 TEST_CASE("Scaled text: measureText is in canvas units at any scale")
 {
-    OpenGLCore &renderer=gweni::test::gpuRenderer();
+    SlotRenderer &renderer=gweni::test::gpuRenderer();
     ScaleGuard guard;
 
     // below the SDF threshold, across it at a scale, and above it
@@ -166,7 +164,7 @@ TEST_CASE("Scaled text: measureText is in canvas units at any scale")
 
 TEST_CASE("Scaled text: the run is drawn at size*scale in its measured box, scaled")
 {
-    OpenGLCore &renderer=gweni::test::gpuRenderer();
+    SlotRenderer &renderer=gweni::test::gpuRenderer();
     ScaleGuard guard;
     const float scale=2.0f;
 
@@ -186,25 +184,25 @@ TEST_CASE("Scaled text: the run is drawn at size*scale in its measured box, scal
         REQUIRE(scaled.pixels > 50);
 
         // inside the measured box at its scaled place
-        CHECK(scaled.x0 >= OpenGLCore::snap(float(pos.x), scale));
-        CHECK(scaled.y0 >= OpenGLCore::snap(float(pos.y), scale));
-        CHECK(scaled.x1 <= OpenGLCore::snap(float(pos.x+measured.x), scale));
-        CHECK(scaled.y1 <= OpenGLCore::snap(float(pos.y+measured.y), scale));
+        CHECK(scaled.x0 >= SlotRenderer::snap(float(pos.x), scale));
+        CHECK(scaled.y0 >= SlotRenderer::snap(float(pos.y), scale));
+        CHECK(scaled.x1 <= SlotRenderer::snap(float(pos.x+measured.x), scale));
+        CHECK(scaled.y1 <= SlotRenderer::snap(float(pos.y+measured.y), scale));
 
         // twice the ink of scale 1 in each direction, give or take the rounding of
         // the two sizes' metrics and anti-aliased edges
         CHECK(std::abs((scaled.x1-scaled.x0)-2*(unscaled.x1-unscaled.x0)) <= 4);
         CHECK(std::abs((scaled.y1-scaled.y0)-2*(unscaled.y1-unscaled.y0)) <= 4);
-        CHECK(std::abs((scaled.x0-OpenGLCore::snap(float(pos.x), scale))-2*(unscaled.x0-pos.x)) <= 2);
-        CHECK(std::abs((scaled.y0-OpenGLCore::snap(float(pos.y), scale))-2*(unscaled.y0-pos.y)) <= 3);
+        CHECK(std::abs((scaled.x0-SlotRenderer::snap(float(pos.x), scale))-2*(unscaled.x0-pos.x)) <= 2);
+        CHECK(std::abs((scaled.y0-SlotRenderer::snap(float(pos.y), scale))-2*(unscaled.y0-pos.y)) <= 3);
         // the last glyph ends where the measured width puts it, not short of it
-        CHECK(scaled.x1 >= OpenGLCore::snap(float(pos.x+measured.x), scale)-int(size*scale/4));
+        CHECK(scaled.x1 >= SlotRenderer::snap(float(pos.x+measured.x), scale)-int(size*scale/4));
     }
 }
 
 TEST_CASE("Scaled text: a run drawn again at a new scale is laid out anew")
 {
-    OpenGLCore &renderer=gweni::test::gpuRenderer();
+    SlotRenderer &renderer=gweni::test::gpuRenderer();
     ScaleGuard guard;
 
     // 11 px moves to another atlas at scale 2 (unless the threshold keeps both

@@ -41,7 +41,6 @@
 #include <cstring>
 #include <cmath>
 #include <algorithm>
-#include <fstream>
 #include <cassert>
 #include <limits>
 
@@ -60,27 +59,11 @@
 #include <imglib/imageIo.h>
 #include <imglib/simpleImage.h>
 
+
 namespace gweni
 {
 namespace renderer
 {
-
-static constexpr size_t minPrimitiveSize=512;
-static constexpr size_t minVertexSize=minPrimitiveSize*4;
-static constexpr size_t minClippingSize=minPrimitiveSize;
-
-// The SDF text atlas (GLTextMode::Sdf): one per (face, bold), shared by every size
-// at or above the threshold. Its glyphs are rasterised once, at sdfBaseSize px with
-// a distance field reaching sdfSpread px past each edge, into an R8 atlas.
-static constexpr float sdfBaseSize=48.0f;
-static constexpr int sdfSpread=6;
-static constexpr size_t sdfAtlasSize=1024;
-// GWENI_SDF_TEXT_MIN's default, in effective px
-static constexpr float defaultSdfTextMin=18.0f;
-// An LCD font's glyph positions per device pixel: one per subpixel
-static constexpr int lcdSubpixelPositions=3;
-// GWENI_TEXT_CONTRAST's default: the LCD coverage boost for white text
-static constexpr float defaultTextContrast=1.0f;
 
 // The view's projection: device px, y down, and z (a z index) from 0 at depth 1.0,
 // the depth-clear value, to OpenGLCore::kMaxZIndex at depth 0, so a higher z passes
@@ -97,430 +80,139 @@ static glm::mat4 viewProjection(const gweni::Rect &viewRect)
     );
 }
 
-// The built-in fallback font's file, resources/OpenSans.ttf, compiled in by
-// cmake/embedFile.cmake (generated/fallbackFont.cpp in the build tree)
-extern const unsigned char fallbackFontData[];
-extern const size_t fallbackFontDataSize;
-
-// The printable ASCII every font rasterises when it is loaded
-static const char *const fontCache=" !\"#$%&'()*+,-./0123456789:;<=>?"
-    "@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_"
-    "`abcdefghijklmnopqrstuvwxyz{|}~";
-
-GLTextureData::~GLTextureData()
+void OpenGLCore::clearTarget(const gweni::Color &color)
 {
-    glBindTexture(GL_TEXTURE_2D, 0);
-    glDeleteTextures(1, reinterpret_cast<GLuint *>(&m_textureId));
+    glClearColor(color.r/255.0f, color.g/255.0f, color.b/255.0f, color.a/255.0f);
+    glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
 }
 
-GLFontData::~GLFontData()
+void OpenGLCore::readPixels(int width, int height, std::vector<uint8_t> &pixels)
 {
-    // the atlas lives in memory the manager owns, so its texture goes first
-    if(atlas && atlas->id)
-        glDeleteTextures(1, &atlas->id);
-    // frees the texture_font_t, the atlas and the cache string loadFont strdup'd
-    if(fontManager)
-        ftgl::font_manager_delete(fontManager);
-    free(familyPath);
+    const size_t rowBytes=static_cast<size_t>(width)*4;
+    std::vector<uint8_t> raw(rowBytes*static_cast<size_t>(height));
+
+    glPixelStorei(GL_PACK_ALIGNMENT, 1);
+    glReadPixels(0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, raw.data());
+
+    // glReadPixels hands back bottom-up rows; the caller wants top-down.
+    pixels.assign(raw.size(), 0);
+    for(int y=0; y<height; ++y)
+        memcpy(&pixels[rowBytes*static_cast<size_t>(y)],
+               &raw[rowBytes*static_cast<size_t>(height-1-y)], rowBytes);
 }
 
-float OpenGLCore::textPx(const Font &font) const
+bool OpenGLCore::textureExists(TextureHandle handle) const
 {
-    return font.size*scale();
+    return glIsTexture(handle) == GL_TRUE;
 }
 
-GLFontKey OpenGLCore::resolveFont(const Font &font, float px) const
+bool OpenGLCore::textureChannelSizes(TextureHandle handle, int bits[4]) const
 {
-    GLFontKey key{font, GLTextMode::Coverage};
-
-    if(px >= m_sdfTextMin)
-    {
-        // LCD is for the coverage range only: an SDF atlas is grayscale in every mode
-        key.mode=GLTextMode::Sdf;
-        key.font.size=0.f;
-    }
-    else
-    {
-        if(m_textAA == TextAA::LcdRGB)
-            key.mode=GLTextMode::LcdRGB;
-        else if(m_textAA == TextAA::LcdBGR)
-            key.mode=GLTextMode::LcdBGR;
-        key.font.size=px;
-    }
-    return key;
+    return textureChannelBits(handle, bits);
 }
 
-GLTextMode OpenGLCore::getTextMode(const Font &font) const
+bool OpenGLCore::deviceError()
 {
-    return resolveFont(font, textPx(font)).mode;
+    bool error=false;
+
+    while(glGetError() != GL_NO_ERROR)
+        error=true;
+    return error;
 }
 
-void OpenGLCore::setTextAA(TextAA aa)
+void OpenGLCore::beginFrame()
 {
-    if(aa == m_textAA)
-        return;
-
-    m_textAA=aa;
-
-    // Every font of the coverage range is now resolved under another mode. Each is
-    // erased, its runs leaving every draw list (they draw nothing until renderText
-    // lays them out again, in the font of the new mode), and loaded again in the
-    // new mode with the owners it had, so what was loaded stays loaded and takes
-    // as many freeFont calls to go as before. An SDF atlas is the same in every
-    // mode and stays as it is, its runs drawing.
-    std::vector<std::pair<Font, int>> reload;
-
-    for(auto it=m_fonts.begin(); it != m_fonts.end();)
-    {
-        if(it->second.mode == GLTextMode::Sdf)
-        {
-            ++it;
-            continue;
-        }
-
-        reload.emplace_back(it->first.font, it->second.owners);
-        for(size_t textId:it->second.textRuns)
-            m_textRuns[textId].fontData=nullptr;
-        it=m_fonts.erase(it); // GLFontData's destructor deletes the atlas texture and the manager
-    }
-
-    m_lastFont=nullptr;
-    // a failure in another mode is tried again in this one
-    for(auto it=m_failedFonts.begin(); it != m_failedFonts.end();)
-    {
-        if(it->mode != GLTextMode::Sdf)
-            it=m_failedFonts.erase(it);
-        else
-            ++it;
-    }
-
-    // the key's size is the px the atlas is rasterised at, so it resolves to itself
-    for(const auto &[font, owners]:reload)
-    {
-        const Font::Status status=loadFont(font, font.size);
-
-        // the load counted one owner, which the old entry's count replaces
-        if((status == Font::Status::Loaded) || (status == Font::Status::LoadedFallback))
-            m_lastFont->second.owners+=owners-1;
-    }
-
-    textLayoutChanged();
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glEnable(GL_BLEND);
+    glEnable(GL_DEPTH_TEST);
+    glDepthFunc(GL_LESS);
 }
 
-Font::Status OpenGLCore::loadFont(const Font &requested)
+void OpenGLCore::allocateVertexBuffer(SlotPath path, size_t bytes)
 {
-    return loadFont(requested, textPx(requested));
+    // the buffer name stays, so the chunks' vertex arrays keep pointing at it
+    glBindBuffer(GL_ARRAY_BUFFER, (path == SlotPath::Primitives)?m_vertexBuffer:m_textVertexBuffer);
+    glBufferData(GL_ARRAY_BUFFER, bytes, nullptr, GL_DYNAMIC_DRAW);
 }
 
-Font::Status OpenGLCore::loadFont(const Font &requested, float px)
+void OpenGLCore::uploadVertexRange(SlotPath path, size_t offset, size_t bytes, const void *data)
 {
-    GLFontData fontData;
-    const GLFontKey key=resolveFont(requested, px);
-    const Font &font=key.font;
-    const GLTextMode mode=key.mode;
-    const bool sdf=(mode == GLTextMode::Sdf);
-    const bool lcd=(mode == GLTextMode::LcdRGB) || (mode == GLTextMode::LcdBGR);
+    glBindBuffer(GL_ARRAY_BUFFER, (path == SlotPath::Primitives)?m_vertexBuffer:m_textVertexBuffer);
+    glBufferSubData(GL_ARRAY_BUFFER, offset, bytes, data);
+}
 
-    // an explicit load is a fresh attempt; a failure is remembered again below,
-    // so ensureFont does not retry it
-    m_failedFonts.erase(key);
+size_t OpenGLCore::maxClipBoxRows() const
+{
+    GLint maxSize=0;
 
-    // already loaded: a second manager and atlas would only leak
-    auto loaded=m_fonts.find(key);
+    glGetIntegerv(GL_MAX_TEXTURE_SIZE, &maxSize);
+    return (size_t)maxSize;
+}
 
-    if(loaded != m_fonts.end())
-    {
-        ++loaded->second.owners;
-        loaded->second.freed=false;
-        m_lastFont=&(*loaded);
-        return loaded->second.fallback?Font::Status::LoadedFallback:Font::Status::Loaded;
-    }
+void OpenGLCore::allocateClipBoxes(SlotPath path, size_t rows)
+{
+    // on unit 1, where the draws read them, so unit 0's binding stays as it is
+    glActiveTexture(GL_TEXTURE1);
+    glBindTexture(GL_TEXTURE_2D, (path == SlotPath::Primitives)?m_clipTexture:m_textClipTexture);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16UI, (GLsizei)kClipColumns, (GLsizei)rows, 0,
+        GL_RGBA_INTEGER, GL_UNSIGNED_SHORT, nullptr);
+    glActiveTexture(GL_TEXTURE0);
+}
 
-    m_lastFont=nullptr;
+void OpenGLCore::uploadClipBoxRows(SlotPath path, size_t x, size_t y, size_t width, size_t height,
+    const Box *boxes)
+{
+    glActiveTexture(GL_TEXTURE1);
+    glBindTexture(GL_TEXTURE_2D, (path == SlotPath::Primitives)?m_clipTexture:m_textClipTexture);
+    glTexSubImage2D(GL_TEXTURE_2D, 0, (GLint)x, (GLint)y, (GLsizei)width, (GLsizei)height,
+        GL_RGBA_INTEGER, GL_UNSIGNED_SHORT, boxes);
+    glActiveTexture(GL_TEXTURE0);
+}
 
-    const String filename=getResourcePaths().getPath(ResourcePaths::Type::Font, font.facename);
-    const bool found=fs::exists(filename);
-    // what the face's own file gave; the built-in font may still draw it
-    Font::Status status=Font::Status::Loaded;
+TextureHandle OpenGLCore::createAtlasTexture(const texture_atlas_t &atlas)
+{
+    const bool lcd=(atlas.depth == 3);
+    GLuint texture=0;
 
-    if(!found)
-    {
-        gweni::log::write(log::Level::Error, "Font file not found: %s", filename.c_str());
-        status=Font::Status::ErrorFileNotFound;
-
-        if(!m_fallbackFont)
-        {
-            m_failedFonts.insert(key);
-            return status;
-        }
-    }
-
-    vec4 black={{0.0, 0.0, 0.0, 1.0}};
-    vec4 none={{1.0, 1.0, 1.0, 0.0}};
-
-    fontData.faceName=font.facename;
-    fontData.mode=mode;
-    fontData.baseSize=sdf?sdfBaseSize:font.size;
-    // markup_t keeps the family as a borrowed char*, and the markup outlives this
-    // function, so it cannot point at the local filename. A fallback keeps the
-    // requested path too: only font_manager_get_from_markup below opens it.
-    fontData.familyPath=strdup(filename.c_str());
-    fontData.markup.family=fontData.familyPath;
-    fontData.markup.size=fontData.baseSize;
-    fontData.markup.bold=0;
-    fontData.markup.italic=0;
-    fontData.markup.spacing=0.0;
-    fontData.markup.gamma=1.0;
-    fontData.markup.foreground_color=black;
-    fontData.markup.background_color=none;
-    fontData.markup.underline=0;
-    fontData.markup.underline_color=black;
-    fontData.markup.overline=0;
-    fontData.markup.overline_color=black;
-    fontData.markup.strikethrough=0;
-    fontData.markup.strikethrough_color=black;
-    fontData.markup.font=0;
-
-    // Depth 1 for a coverage atlas, one coverage byte per texel rasterised
-    // grayscale with light (vertical-only) hinting, and for an SDF one, one
-    // distance byte. Depth 3 for an LCD one: freetype-gl rasterises it with
-    // light hinting, FT_RENDER_MODE_LCD and the LCD filter, one coverage byte
-    // per subpixel, at up to lcdSubpixelPositions phases per glyph.
-    fontData.fontManager=sdf?ftgl::font_manager_new(sdfAtlasSize, sdfAtlasSize, LCD_FILTERING_OFF)
-        :ftgl::font_manager_new(1024, 1024, lcd?LCD_FILTERING_ON:LCD_FILTERING_OFF);
-
-    free(fontData.fontManager->cache); // font_manager_new strdup'd a default
-    // The manager rasterises its cache as soon as it opens the face, before an SDF
-    // font's spread or an LCD font's subpixel positions could be set, so those
-    // fonts load it themselves below.
-    fontData.fontManager->cache=strdup((sdf || lcd)?"":fontCache);
-
-    if(found)
-    {
-        fontData.markup.font=ftgl::font_manager_get_from_markup(fontData.fontManager, &fontData.markup);
-
-        if(fontData.markup.font == nullptr)
-        {
-            gweni::log::write(log::Level::Error, "Font file failed to load: %s", filename.c_str());
-            status=Font::Status::ErrorBadData;
-        }
-    }
-
-    if((fontData.markup.font == nullptr) && m_fallbackFont)
-    {
-        // The built-in font, from memory into this font's own atlas, so it is drawn
-        // like any face of this mode. The manager frees it with its atlas
-        // (font_manager_delete); it is never asked for a face again, whose lookup
-        // would compare this font's memory location as a filename. The manager
-        // rasterises its cache only for faces it opens itself, so every mode loads
-        // it below.
-        fontData.markup.font=ftgl::texture_font_new_from_memory(fontData.fontManager->atlas,
-            fontData.baseSize, fallbackFontData, fallbackFontDataSize);
-
-        if(fontData.markup.font != nullptr)
-        {
-            ftgl::vector_push_back(fontData.fontManager->fonts, &fontData.markup.font);
-            fontData.fallback=true;
-            gweni::log::write(log::Level::Error, "using built-in fallback for %s", font.facename.c_str());
-        }
-        else
-            gweni::log::write(log::Level::Error, "The built-in fallback font failed to load for %s", font.facename.c_str());
-    }
-
-    if(sdf && fontData.markup.font)
-    {
-        fontData.markup.font->sdf_spread=sdfSpread;
-        // unhinted, so the kerning is not rounded to whole base-size pixels
-        fontData.markup.font->hinting=0;
-        ftgl::texture_font_load_glyphs(fontData.markup.font, fontCache);
-    }
-    else if(lcd && fontData.markup.font)
-    {
-        // Pens at 1/3 device px with the unhinted advances and kerning, each glyph
-        // drawn from the image rasterised at its pen's phase. The cache is phase 0;
-        // the other phases are rasterised as a run first needs them.
-        fontData.markup.font->subpixel_positions=lcdSubpixelPositions;
-        ftgl::texture_font_load_glyphs(fontData.markup.font, fontCache);
-    }
-    else if(fontData.fallback)
-        ftgl::texture_font_load_glyphs(fontData.markup.font, fontCache);
-
-    if(fontData.markup.font == nullptr)
-    {
-        // Neither the face nor the fallback could be opened. fontData's destructor
-        // frees the manager and familyPath; no atlas texture exists yet.
-        m_failedFonts.insert(key);
-        return status;
-    }
-
-    fontData.textureFont=fontData.markup.font;
-
-    fontData.atlas=fontData.fontManager->atlas;
-
-    glGenTextures(1, &fontData.atlas->id);
-    glBindTexture(GL_TEXTURE_2D, fontData.atlas->id);
+    glGenTextures(1, &texture);
+    glBindTexture(GL_TEXTURE_2D, texture);
 
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     // one byte per texel, coverage or distance alike, or three of subpixel coverage
-    assert(fontData.atlas->depth == (lcd?3u:1u));
-    glTexImage2D(GL_TEXTURE_2D, 0, lcd?GL_RGB8:GL_R8, fontData.atlas->width,
-        fontData.atlas->height, 0, lcd?GL_RGB:GL_RED, GL_UNSIGNED_BYTE, nullptr);
-    //the next flush() uploads the whole atlas, cache included, as one dirty band, so
-    //a load shows in FrameStats::atlasUploadCalls; after that only later glyphs
-    fontData.atlas->dirty_y0=0;
-    fontData.atlas->dirty_y1=fontData.atlas->height;
-
-    const bool fallback=fontData.fallback;
-
-    fontData.owners=1;
-    m_lastFont=&(*m_fonts.insert(std::make_pair(key, std::move(fontData))).first);
-    return fallback?Font::Status::LoadedFallback:Font::Status::Loaded;
+    glTexImage2D(GL_TEXTURE_2D, 0, lcd?GL_RGB8:GL_R8, atlas.width,
+        atlas.height, 0, lcd?GL_RGB:GL_RED, GL_UNSIGNED_BYTE, nullptr);
+    return texture;
 }
 
-void OpenGLCore::freeFont(const gweni::Font &requested)
+void OpenGLCore::uploadAtlasRows(TextureHandle texture, const texture_atlas_t &atlas, size_t firstRow, size_t rows)
 {
-    const GLFontKey drawn=resolveFont(requested, textPx(requested));
-    const GLFontKey measured=resolveFont(requested, requested.size);
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, texture);
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, (GLint)firstRow, (GLsizei)atlas.width, (GLsizei)rows,
+        (atlas.depth == 3)?GL_RGB:GL_RED, GL_UNSIGNED_BYTE, atlas.data+firstRow*atlas.width*atlas.depth);
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
 
-    // The owner a loadFont took: on the drawn key, or on the measured one if the
-    // font was loaded at another scale() (scale 1, the measured size).
-    for(const GLFontKey &key:{ drawn, measured })
-    {
-        auto it=m_fonts.find(key);
-
-        if((it != m_fonts.end()) && (it->second.owners > 0))
-        {
-            --it->second.owners;
-            break;
-        }
-    }
-
-    freeFont(drawn, false);
-    // measureText's font, at another scale(): only measured by this font, unless
-    // another size is drawn in it
-    if(!(measured == drawn))
-        freeFont(measured, true);
+    //setTexture() skips the bind when m_currentTexture already matches
+    glBindTexture(GL_TEXTURE_2D, m_currentTexture);
 }
 
-void OpenGLCore::freeFont(const GLFontKey &font, bool onlyIfUnused)
+void OpenGLCore::destroyAtlasTexture(TextureHandle texture)
 {
-    if(m_lastFont != nullptr && m_lastFont->first == font)
-        m_lastFont=nullptr;
-
-    m_failedFonts.erase(font);
-
-    auto it=m_fonts.find(font);
-
-    if(it == m_fonts.end())
-        return;
-
-    // another caller loaded it too and has not freed it
-    if(it->second.owners > 0)
-        return;
-
-    if(!it->second.textRuns.empty())
-    {
-        // The runs laid out in it hold it: another caller's Text in an equal Font,
-        // or, in an SDF atlas shared by every size of its face, another size's. It
-        // stays, every run drawing, until its last run leaves it (setTextRunFont),
-        // unless it is used or loaded again before that.
-        if(!onlyIfUnused)
-            it->second.freed=true;
-        return;
-    }
-
-    m_fonts.erase(it); // GLFontData's destructor deletes the atlas texture and the manager
+    glDeleteTextures(1, &texture);
 }
 
-bool OpenGLCore::ensureFont(const Font &requested)
+TextureHandle OpenGLCore::createImageTexture(const SlotTextureData &image, bool rgba)
 {
-    return ensureFont(requested, textPx(requested));
-}
+    GLuint texture=0;
 
-bool OpenGLCore::ensureFont(const Font &requested, float px)
-{
-    const GLFontKey font=resolveFont(requested, px);
-
-    if(m_lastFont != nullptr)
-    {
-        if(m_lastFont->first == font)
-            return true;
-    }
-
-    // Was it loaded before?
-    auto it=m_fonts.find(font);
-    if(it != m_fonts.end())
-    {
-        it->second.freed=false;
-        m_lastFont=&(*it);
-        return true;
-    }
-
-    // Did it fail before? Then it is not tried (and reported) again for every
-    // text on every frame; freeFont or an explicit loadFont clears this.
-    if(m_failedFonts.count(font) != 0)
-        return false;
-
-    // No, try load to it
-
-    // LoadFont sets m_lastFont, if loaded, and adds the font to m_failedFonts if not
-    const Font::Status status=loadFont(requested, px);
-
-    if((status != Font::Status::Loaded) && (status != Font::Status::LoadedFallback))
-        return false;
-
-    // a use is no owner: the load made a new entry and counted its caller
-    m_lastFont->second.owners=0;
-    return true;
-}
-
-Texture::Status OpenGLCore::loadTexture(Texture &texture)
-{
-    freeTexture(texture);
-    // only a successful load hands out a slot; a failed one leaves the texture
-    // unloaded, so it is drawn as missing and freeing it does nothing
-    texture.dataIndex=std::numeric_limits<size_t>::max();
-    m_lastTexture=std::numeric_limits<size_t>::max();
-
-    const String filename=getResourcePaths().getPath(ResourcePaths::Type::Texture, texture.name);
-
-    GLTextureData &texData=*getFreeTextureData();
-
-    bool loaded=imglib::load(texData, filename.c_str());
-
-    //    int width, height, n;
-    //    {
-    //        unsigned char *image = stbi_load(filename.c_str(), &width, &height, &n, 4);
-    //        texData.m_readData = deleted_unique_ptr<unsigned char>(image, [](unsigned char* mem) { if (mem) stbi_image_free(mem); });
-    //    }
-
-    // Image failed to load. The loaders resize before reading pixels, so a late
-    // failure leaves a non-empty buffer; either way hand the slot back.
-    if(!loaded || texData.m_readData.empty())
-    {
-        bool notFound=texData.m_readData.empty();
-
-        texData.m_readData.clear();
-        m_freeTextureData.push_back(texData.m_index);
-
-        if(notFound)
-        {
-            gweni::log::write(log::Level::Error, "Texture file not found: %s", filename.c_str());
-            return Texture::Status::ErrorFileNotFound;
-        }
-        gweni::log::write(log::Level::Error, "Texture file failed to load: %s", filename.c_str());
-        return Texture::Status::ErrorBadData;
-    }
-
-
-    // Create the opengl texture
-    glGenTextures(1, &texData.m_textureId);
+    glGenTextures(1, &texture);
 
     glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, texData.m_textureId);
+    glBindTexture(GL_TEXTURE_2D, texture);
 
     // mipmapped, because an image is often drawn much smaller than it is; clamped,
     // so the linear filter does not wrap the opposite edge into the border texels
@@ -529,148 +221,178 @@ Texture::Status OpenGLCore::loadTexture(Texture &texture)
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 
-    imglib::Format imgFormat=imglib::format(texData);
-    GLenum format;
-    GLint internalFormat;
-
     // a sized internal format that matches the data, as GLES requires; an RGB one
     // samples with alpha 1, as the RGBA texture desktop GL made of RGB data did
-    if(imgFormat == imglib::Format::RGBA)
-    {
-        format=GL_RGBA;
-        internalFormat=GL_RGBA8;
-    }
-    else if(imgFormat == imglib::Format::RGB)
-    {
-        format=GL_RGB;
-        internalFormat=GL_RGB8;
-    }
-    else
-    {
-        glDeleteTextures(1, &texData.m_textureId);
-        texData.m_textureId=0;
-        texData.m_readData.clear();
-        m_freeTextureData.push_back(texData.m_index);
-        gweni::log::write(log::Level::Error, "Texture format not supported: %s", filename.c_str());
-        return Texture::Status::ErrorBadData;
-    }
+    const GLenum format=rgba?GL_RGBA:GL_RGB;
+    const GLint internalFormat=rgba?GL_RGBA8:GL_RGB8;
 
     // RGB rows are not padded to 4 bytes
     glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-    glTexImage2D(GL_TEXTURE_2D, 0, internalFormat, texData.width, texData.height, 0, format,
-        GL_UNSIGNED_BYTE, (const GLvoid *)texData.m_readData.data());
+    glTexImage2D(GL_TEXTURE_2D, 0, internalFormat, image.width, image.height, 0, format,
+        GL_UNSIGNED_BYTE, (const GLvoid *)image.m_readData.data());
     glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
     glGenerateMipmap(GL_TEXTURE_2D);
 
-    texData.readable=texture.readable;
-    if(!texture.readable)
-    {
-        texData.m_readData.clear();
-    }
+    if(texture >= m_textureSizes.size())
+        m_textureSizes.resize(texture+1);
 
-    //    texData.width = width;
-    //    texData.height = height;
-    if(texData.m_textureId >= m_textureSizes.size())
-        m_textureSizes.resize(texData.m_textureId+1);
+    m_textureSizes[texture].x=image.width;
+    m_textureSizes[texture].y=image.height;
 
-    m_textureSizes[texData.m_textureId].x=texData.width;
-    m_textureSizes[texData.m_textureId].y=texData.height;
-
-//    m_lastTexture=&(*m_textures.insert(std::make_pair(texture, std::move(texData))).first);
-    setTexture(texData.m_textureId);
-    m_lastTexture=texData.m_index;
-    texture.dataIndex=texData.m_index;
-    return Texture::Status::Loaded;
+    setTexture(texture);
+    return texture;
 }
 
-void OpenGLCore::freeTexture(const gweni::Texture &texture)
+void OpenGLCore::destroyImageTexture(TextureHandle texture)
 {
-//    if(m_lastTexture != nullptr && m_lastTexture->first == texture)
-//        m_lastTexture=nullptr;
-    if((m_lastTexture != std::numeric_limits<size_t>::max()) && (m_lastTexture == texture.dataIndex))
-        m_lastTexture=std::numeric_limits<size_t>::max();
-
-    if((texture.dataIndex < m_textureData.size()) && (m_textureData[texture.dataIndex]))
+    // setTexture() is skipped while m_currentTexture matches, and a later
+    // glGenTextures may hand the deleted name out again
+    if(texture == m_currentTexture)
     {
-        // setTexture() is skipped while m_currentTexture matches, and a later
-        // glGenTextures may hand the deleted name out again
-        if(m_textureData[texture.dataIndex]->m_textureId == m_currentTexture)
-        {
-            m_currentTexture=0;
-            m_currentTextureSize=glm::uvec2(0, 0);
-        }
-        // the name may be handed out again; slots still on its unit sample nothing
-        for(unsigned int &name:m_imageUnits)
-        {
-            if(name == m_textureData[texture.dataIndex]->m_textureId)
-                name=0;
-        }
-        m_freeTextureData.push_back(texture.dataIndex);
-        delete m_textureData[texture.dataIndex];
-        m_textureData[texture.dataIndex]=nullptr;
+        m_currentTexture=0;
+        m_currentTextureSize=glm::uvec2(0, 0);
     }
-    m_textures.erase(texture);
-//    m_textures.erase(texture); // calls GLTextureData destructor
+    glBindTexture(GL_TEXTURE_2D, 0);
+    glDeleteTextures(1, &texture);
 }
 
-GLTextureData *OpenGLCore::getFreeTextureData()
+bool OpenGLCore::readTextureRgba(TextureHandle texture, int width, int height, std::vector<uint8_t> &rgba)
 {
-    GLTextureData *textureData;
+    return readTexture(texture, width, height, rgba);
+}
 
-    if(!m_freeTextureData.empty())
+void OpenGLCore::beginPrimitiveDraws()
+{
+    glUseProgram(m_program);
+
+    glUniformMatrix4fv(
+        m_projectionUniform,
+        1,
+        GL_FALSE,
+        glm::value_ptr(m_projectionMatrix)
+    );
+
+    glActiveTexture(GL_TEXTURE1);
+    glBindTexture(GL_TEXTURE_2D, m_clipTexture);
+    for(size_t i=0; i<ImageUnits; ++i)
     {
-        size_t index=m_freeTextureData.back();
-        m_freeTextureData.pop_back();
-
-        // freeTexture() deletes the slot's data but keeps the index on the free
-        // list, so a recycled slot can be empty.
-        if(!m_textureData[index])
-        {
-            m_textureData[index]=new GLTextureData();
-            m_textureData[index]->m_index=index;
-        }
-        textureData=m_textureData[index];
+        glActiveTexture(GL_TEXTURE0+FirstImageUnit+(GLenum)i);
+        glBindTexture(GL_TEXTURE_2D, m_imageUnits[i]);
     }
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, m_currentTexture);
+}
+
+void OpenGLCore::drawPrimitiveChunk(size_t chunk, size_t firstSlot, size_t slots)
+{
+    // the chunk's vertex array points the attributes at its first slot
+    glBindVertexArray(primitiveVertexArray(chunk));
+    glUniform1i(m_slotBaseUniform, (GLint)firstSlot);
+    glDrawElements(GL_TRIANGLES, (GLsizei)(slots*6), (GLenum)GL_UNSIGNED_SHORT, 0);
+}
+
+void OpenGLCore::endPrimitiveDraws()
+{
+    glBindVertexArray(0);
+}
+
+void OpenGLCore::beginTextDraws()
+{
+    glUseProgram(m_textProgram);
+
+    glUniformMatrix4fv(
+        m_textProjectionUniform,
+        1,
+        GL_FALSE,
+        glm::value_ptr(m_projectionMatrix)
+    );
+
+    glActiveTexture(GL_TEXTURE1);
+    glBindTexture(GL_TEXTURE_2D, m_textClipTexture);
+    glActiveTexture(GL_TEXTURE0);
+
+    // An LCD atlas's runs blend each channel by its own coverage, the fragment
+    // shader's second output; the blend in place before the first of them is
+    // put back for the other atlases and after the pass.
+    std::fill(std::begin(m_textBlend), std::end(m_textBlend), 0);
+    m_lcdBlend=false;
+
+    glUniform1f(m_textContrastUniform, textContrast());
+}
+
+void OpenGLCore::beginTextAtlas(const FontData &fontData)
+{
+    const bool lcd=(fontData.mode == TextMode::LcdRGB) || (fontData.mode == TextMode::LcdBGR);
+
+    // without dual-source blending an LCD atlas is blended by its mean
+    // coverage, as a grayscale one is (the text shader then has no second
+    // output); GLES contexts without it are the GLES tree's to fall back on
+    if(lcd && !m_lcdBlend && m_glCapabilities.dualSourceBlend)
+    {
+        glGetIntegerv(GL_BLEND_SRC_RGB, &m_textBlend[0]);
+        glGetIntegerv(GL_BLEND_DST_RGB, &m_textBlend[1]);
+        glGetIntegerv(GL_BLEND_SRC_ALPHA, &m_textBlend[2]);
+        glGetIntegerv(GL_BLEND_DST_ALPHA, &m_textBlend[3]);
+        glBlendFunc(GL_SRC1_COLOR, GL_ONE_MINUS_SRC1_COLOR);
+        m_lcdBlend=true;
+    }
+    else if(!lcd && m_lcdBlend)
+    {
+        glBlendFuncSeparate(m_textBlend[0], m_textBlend[1], m_textBlend[2], m_textBlend[3]);
+        m_lcdBlend=false;
+    }
+
+    glBindTexture(GL_TEXTURE_2D, fontData.atlas->id);
+    glUniform1i(m_textModeUniform, (GLint)fontData.mode);
+}
+
+void OpenGLCore::drawTextChunk(const TextChunkDraw &draw)
+{
+    static_assert(sizeof(uintptr_t) == sizeof(const void *), "the offsets are handed to GL as pointers");
+
+    glBindVertexArray(textVertexArray(draw.chunk));
+    glUniform1i(m_textSlotBaseUniform, (GLint)(draw.chunk*indexChunkSlots()));
+    // one draw of the chunk's ranges either way: GLES 3.0 has no
+    // glMultiDrawElements, and its loop draws the same
+    if(m_multiDrawText)
+        glMultiDrawElements(GL_TRIANGLES, draw.counts.data(), (GLenum)GL_UNSIGNED_SHORT,
+            reinterpret_cast<const void *const *>(draw.offsets.data()), (GLsizei)draw.counts.size());
     else
     {
-        textureData=new GLTextureData();
-        textureData->m_index=m_textureData.size();
-        m_textureData.resize(m_textureData.size()+1);
-        m_textureData.back()=textureData;
+        for(size_t range=0; range<draw.counts.size(); ++range)
+            glDrawElements(GL_TRIANGLES, draw.counts[range], (GLenum)GL_UNSIGNED_SHORT,
+                reinterpret_cast<const void *>(draw.offsets[range]));
     }
-    return textureData;
 }
 
-unsigned int OpenGLCore::getTextureName(const Texture &texture) const
+void OpenGLCore::endTextDraws()
 {
-    if((texture.dataIndex < m_textureData.size()) && (m_textureData[texture.dataIndex]))
-        return m_textureData[texture.dataIndex]->m_textureId;
-    return 0;
+    if(m_lcdBlend)
+        glBlendFuncSeparate(m_textBlend[0], m_textBlend[1], m_textBlend[2], m_textBlend[3]);
+    m_lcdBlend=false;
+
+    glBindVertexArray(0);
 }
 
-unsigned int OpenGLCore::getFontAtlasName(const Font &requested) const
+void OpenGLCore::submitFrame()
 {
-    auto it=m_fonts.find(resolveFont(requested, textPx(requested)));
+    glBindVertexArray(0);
 
-    if((it != m_fonts.end()) && (it->second.atlas))
-        return it->second.atlas->id;
-    return 0;
+    glFlush();
 }
 
-size_t OpenGLCore::getFontAtlasDepth(const Font &requested) const
+void OpenGLCore::indexChunkSlotsChanged()
 {
-    auto it=m_fonts.find(resolveFont(requested, textPx(requested)));
-
-    if((it != m_fonts.end()) && (it->second.atlas))
-        return it->second.atlas->depth;
-    return 0;
-}
-
-ftgl::texture_font_t *OpenGLCore::getTextureFont(const Font &requested) const
-{
-    auto it=m_fonts.find(resolveFont(requested, textPx(requested)));
-
-    return (it != m_fonts.end())?it->second.textureFont:nullptr;
+    // their attributes start at the old chunk size's slots; made again as the next
+    // flush() needs them
+    glBindVertexArray(0);
+    for(std::vector<uint32_t> *vertexArrays:{ &m_vertexArrays, &m_textVertexArrays })
+    {
+        if(vertexArrays->empty())
+            continue;
+        glDeleteVertexArrays((GLsizei)vertexArrays->size(), vertexArrays->data());
+        vertexArrays->clear();
+    }
 }
 
 OpenGLCore::GLObjectNames OpenGLCore::getGLObjectNames() const
@@ -685,144 +407,23 @@ OpenGLCore::GLObjectNames OpenGLCore::getGLObjectNames() const
     return names;
 }
 
-TextureData OpenGLCore::getTextureData(const Texture &texture) const
-{
-//    if(m_lastTexture != nullptr && m_lastTexture->first == texture)
-//        return m_lastTexture->second;
-//
-//    auto it=m_textures.find(texture);
-//    if(it != m_textures.cend())
-//    {
-//        return it->second;
-//    }
-//    // Texture not loaded :(
-//    return TextureData();
-    return *m_textureData[texture.dataIndex];
-}
-
-bool OpenGLCore::ensureTexture(const gweni::Texture &texture)
-{
-//    if(m_lastTexture != nullptr)
-    if(m_lastTexture != std::numeric_limits<size_t>::max())
-    {
-        if(m_lastTexture == texture.dataIndex)
-            return true;
-    }
-
-    // Was it loaded before?
-//    auto it=m_textures.find(texture);
-//    if(it != m_textures.end())
-//    {
-//        m_lastTexture=&(*it);
-//        return true;
-//    }
-    if(texture.dataIndex != std::numeric_limits<size_t>::max())
-    {
-        m_lastTexture=texture.dataIndex;
-        return true;
-    }
-
-    // No, try load to it
-
-    // LoadTexture sets m_lastTexture, if exist
-//    return loadTexture(texture) == Texture::Status::Loaded;
-    return false;
-}
-
 //-------------------------------------------------------------------------------
 
 OpenGLCore::OpenGLCore(ResourcePaths &paths, const Rect &viewRect)
-    : Base(paths)
-    , m_lastFont(nullptr)
-    , m_lastTexture(std::numeric_limits<size_t>::max())
+    : SlotRenderer(paths, viewRect)
     , m_context(nullptr)
-    , m_viewRect(viewRect)
     , m_currentTexture(0)
-//    , m_vertexes(minVertexSize)
-//    , m_clippingBoxes(minClippingSize)
 {
-    m_vertexes.reserve(minVertexSize);
-
-    m_clippingBoxes.reserve(minClippingSize);
-
-    m_uploadStats=(getenv("GWENI_UPLOAD_STATS") != nullptr);
     // the text draws' loop of glDrawElements even where glMultiDrawElements exists
     if(const char *noMultiDraw=getenv("GWENI_NO_MULTI_DRAW"))
         m_noMultiDraw=(strcmp(noMultiDraw, "1") == 0);
-
-    // set but empty, or not a number, keeps the default
-    if(const char *chunkSlots=getenv("GWENI_INDEX_CHUNK_SLOTS"))
-    {
-        char *end=nullptr;
-        const unsigned long long value=strtoull(chunkSlots, &end, 10);
-
-        if((end != chunkSlots) && (*end == '\0') && (chunkSlots[0] != '-'))
-            m_chunkSlots=(size_t)std::min<unsigned long long>(std::max(value, 1ull), kSlotsPerChunk);
-        else if(chunkSlots[0] != '\0')
-            gweni::log::write(log::Level::Error,
-                "GWENI_INDEX_CHUNK_SLOTS=%s: not a slot count; draws keep %zu slots",
-                chunkSlots, kSlotsPerChunk);
-    }
-    m_sdfTextMin=defaultSdfTextMin;
-    const char *sdfTextMin=getenv("GWENI_SDF_TEXT_MIN");
-
-    // set but empty keeps the default, rather than reading as 0 (SDF everywhere)
-    if(sdfTextMin && (sdfTextMin[0] != '\0'))
-        m_sdfTextMin=std::max(0.0f, (float)atof(sdfTextMin));
-    m_textDebug=getenv("GWENI_TEXT_DEBUG");
-
-    if(const char *clipDebug=getenv("GWENI_CLIP_DEBUG"))
-        m_clipDebugInset=std::max(0, atoi(clipDebug));
-
-    m_textContrast=defaultTextContrast;
-    if(const char *textContrast=getenv("GWENI_TEXT_CONTRAST"))
-    {
-        if(textContrast[0] != '\0')
-            m_textContrast=std::max(0.0f, (float)atof(textContrast));
-    }
-
-    // set but empty keeps the default, as GWENI_SDF_TEXT_MIN does
-    if(const char *textAA=getenv("GWENI_TEXT_AA"))
-    {
-        const std::string value(textAA);
-
-        if(value == "gray")
-            m_textAA=TextAA::Grayscale;
-        else if(value == "rgb")
-            m_textAA=TextAA::LcdRGB;
-        else if(value == "bgr")
-            m_textAA=TextAA::LcdBGR;
-        else if(!value.empty())
-            gweni::log::write(log::Level::Error,
-                "GWENI_TEXT_AA=%s: not gray, rgb or bgr; text stays grayscale", textAA);
-    }
-}
-
-bool OpenGLCore::textDebugMatches(const gweni::String &text) const
-{
-    if(m_textDebug == nullptr)
-        return false;
-    if(m_textDebug[0] == '\0')
-        return true;
-    return text.find(m_textDebug) != gweni::String::npos;
 }
 
 OpenGLCore::~OpenGLCore()
 {
-    // each GLFontData deletes its atlas texture and its freetype-gl manager
-    m_lastFont=nullptr;
-    m_fonts.clear();
-    m_failedFonts.clear();
-    for(TextRun &run:m_textRuns)
-        run.fontData=nullptr;
-
-    for(GLTextureData *textureData:m_textureData)
-        delete textureData;
-    m_textureData.clear();
-    m_freeTextureData.clear();
-    m_textures.clear();
+    // each font's atlas texture and its freetype-gl manager, then each image's texture
+    releaseResources();
     m_currentTexture=0;
-    std::fill(std::begin(m_imageUnits), std::end(m_imageUnits), 0u);
 
     // nothing below exists before init()
     if(m_quadIndexBuffer == 0)
@@ -873,24 +474,15 @@ void checkErrors(unsigned int shader, std::string type)
 
 void OpenGLCore::init()
 {
-    m_projectionMatrix=viewProjection(m_viewRect);
+    const Rect &view=viewRect();
 
-    //the buffers below are freshly created, so nothing of the mirror is on the device yet
-    m_vertexBufferCapacity=0;
-    m_vertexBufferSent=0;
-    m_clipBoxesSent=0;
-    m_textVertexBufferCapacity=0;
-    m_textVertexBufferSent=0;
-    m_textClipBoxesSent=0;
-    m_clipTextureRows=0;
-    m_textClipTextureRows=0;
+    m_projectionMatrix=viewProjection(view);
+
+    // nothing of the mirror is on the buffers below yet, and the view is the clip region
+    SlotRenderer::init();
 
     m_glCapabilities=detectCapabilities();
     m_multiDrawText=m_glCapabilities.multiDraw && !m_noMultiDraw;
-
-    // Until a canvas sets its region, the whole view is visible: the shaders discard
-    // everything outside the clip box, and an unset region would be an empty one.
-    setClipRegion(m_viewRect);
 
     // Creating buffers. A name from glGenBuffers is a buffer once it is first bound,
     // and that first target is the only one it is ever bound to (WebGL holds a buffer
@@ -987,7 +579,7 @@ void OpenGLCore::init()
     glUniform1i(m_textClipBoxesUniform, 1);
     glUseProgram(0);
 
-    glViewport(m_viewRect.x, m_viewRect.y, m_viewRect.w, m_viewRect.h);
+    glViewport(view.x, view.y, view.w, view.h);
 }
 
 namespace
@@ -1455,7 +1047,7 @@ uvec4 clipBox(uint slot)
 {
     return texelFetch(clipBoxes, ivec2(int(slot & (CLIP_COLUMNS - 1u)), int(slot >> CLIP_COLUMNS_LOG2)), 0);
 }
-// GLTextMode of the atlas this draw samples: 0 coverage, 1 signed distance field,
+// TextMode of the atlas this draw samples: 0 coverage, 1 signed distance field,
 // 2 subpixel coverage in r, g, b order, 3 in b, g, r order
 uniform int textMode;
 // The LCD modes' contrast boost for white text (GWENI_TEXT_CONTRAST); 0 is none
@@ -1617,33 +1209,19 @@ void OpenGLCore::setMultiDrawText(bool multiDraw)
 
 void OpenGLCore::setViewRect(const gweni::Rect &viewRect)
 {
-    m_viewRect=viewRect;
+    SlotRenderer::setViewRect(viewRect);
 
-    m_projectionMatrix=viewProjection(m_viewRect);
+    m_projectionMatrix=viewProjection(viewRect);
 
-    glViewport(m_viewRect.x, m_viewRect.y, m_viewRect.w, m_viewRect.h);
-}
-
-void OpenGLCore::begin()
-{
-    m_zIndex=0;
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-    glEnable(GL_BLEND);
-    glEnable(GL_DEPTH_TEST);
-    glDepthFunc(GL_LESS);
-}
-
-void OpenGLCore::end()
-{
-    flush();
+    glViewport(viewRect.x, viewRect.y, viewRect.w, viewRect.h);
 }
 
 uint32_t OpenGLCore::primitiveVertexArray(size_t chunk)
 {
     while(m_vertexArrays.size() <= chunk)
     {
-        // chunk n's vertex 0 is slot n*m_chunkSlots's first vertex
-        const size_t base=m_vertexArrays.size()*m_chunkSlots*4*sizeof(Vertex);
+        // chunk n's vertex 0 is slot n*indexChunkSlots()'s first vertex
+        const size_t base=m_vertexArrays.size()*indexChunkSlots()*4*sizeof(Vertex);
         auto at=[base](size_t offset){ return reinterpret_cast<const GLvoid *>(base+offset); };
         GLuint vertexArray=0;
 
@@ -1682,8 +1260,8 @@ uint32_t OpenGLCore::textVertexArray(size_t chunk)
 {
     while(m_textVertexArrays.size() <= chunk)
     {
-        // chunk n's vertex 0 is glyph slot n*m_chunkSlots's first vertex
-        const size_t base=m_textVertexArrays.size()*m_chunkSlots*4*sizeof(glyph_vertex_t);
+        // chunk n's vertex 0 is glyph slot n*indexChunkSlots()'s first vertex
+        const size_t base=m_textVertexArrays.size()*indexChunkSlots()*4*sizeof(glyph_vertex_t);
         auto at=[base](size_t offset){ return reinterpret_cast<const GLvoid *>(base+offset); };
         GLuint vertexArray=0;
 
@@ -1708,565 +1286,6 @@ uint32_t OpenGLCore::textVertexArray(size_t chunk)
     }
 
     return m_textVertexArrays[chunk];
-}
-
-void OpenGLCore::setIndexChunkSlots(size_t slots)
-{
-    slots=std::min(std::max<size_t>(slots, 1), kSlotsPerChunk);
-
-    if(slots == m_chunkSlots)
-        return;
-
-    m_chunkSlots=slots;
-
-    // their attributes start at the old chunk size's slots
-    glBindVertexArray(0);
-    for(std::vector<uint32_t> *vertexArrays:{ &m_vertexArrays, &m_textVertexArrays })
-    {
-        if(vertexArrays->empty())
-            continue;
-        glDeleteVertexArrays((GLsizei)vertexArrays->size(), vertexArrays->data());
-        vertexArrays->clear();
-    }
-
-    // and the atlases' draws are split at the old chunks' edges
-    for(auto &entry:m_fonts)
-        entry.second.drawListStale=true;
-}
-
-void OpenGLCore::ensurePrimitiveSlots(size_t primitiveId)
-{
-    if(m_clippingBoxes.size() < primitiveId+1)
-        m_clippingBoxes.resize(primitiveId+1);
-
-    if(m_vertexes.size() < primitiveId*4+4)
-        m_vertexes.resize(primitiveId*4+4);
-}
-
-void OpenGLCore::readPrimitiveSlot(size_t primitiveId, PrimitiveSlot &slot) const
-{
-    memcpy(slot.vertexes, &m_vertexes[primitiveId*4], sizeof(slot.vertexes));
-    slot.box=m_clippingBoxes[primitiveId];
-}
-
-OpenGLCore::MirrorSnapshot OpenGLCore::snapshotMirror() const
-{
-    MirrorSnapshot snapshot;
-
-    const size_t primitiveLimit=std::min(primitiveIdCount(), m_vertexes.size()/4);
-
-    for(size_t id=0; id<primitiveLimit; ++id)
-    {
-        if(!isPrimitiveIdLive(id))
-            continue;
-
-        const uint8_t *vertexes=reinterpret_cast<const uint8_t *>(&m_vertexes[id*4]);
-
-        snapshot.primitives[id].assign(vertexes, vertexes+4*sizeof(Vertex));
-    }
-
-    const size_t textLimit=std::min(textIdCount(), m_textRuns.size());
-
-    for(size_t id=0; id<textLimit; ++id)
-    {
-        if(!isTextIdLive(id))
-            continue;
-
-        const TextRun &run=m_textRuns[id];
-        std::vector<uint8_t> &bytes=snapshot.texts[id];
-
-        bytes.push_back(run.hidden?1:0);
-        if(run.glyphs == 0)
-            continue;
-
-        const uint8_t *vertexes=reinterpret_cast<const uint8_t *>(&m_textVertexes[run.start*4]);
-
-        bytes.insert(bytes.end(), vertexes, vertexes+run.glyphs*4*sizeof(ftgl::glyph_vertex_t));
-    }
-
-    return snapshot;
-}
-
-void OpenGLCore::markPrimitiveChanges(size_t primitiveId, const PrimitiveSlot &before)
-{
-    if(memcmp(before.vertexes, &m_vertexes[primitiveId*4], sizeof(before.vertexes)) != 0)
-        m_dirtyVertexSlots.mark(primitiveId);
-
-    if(memcmp(&before.box, &m_clippingBoxes[primitiveId], sizeof(Box)) != 0)
-        m_dirtyClipSlots.mark(primitiveId);
-}
-
-void OpenGLCore::uploadDirty(uint32_t buffer, size_t &capacityElements, size_t &sentElements,
-    const void *data, size_t elementSize, size_t elementCount,
-    DirtySlots &dirty, size_t elementsPerSlot)
-{
-    if(elementCount == 0)
-        return;
-
-    if((sentElements >= elementCount) && dirty.empty())
-        return; //device already holds the mirror
-
-    const GLenum target=GL_ARRAY_BUFFER;
-
-    glBindBuffer(target, buffer);
-
-    if(capacityElements < elementCount)
-    {
-        // The mirror outgrew the allocation: allocate half as much again as it
-        // holds now (whole slots), more than 1.5 times the old capacity, so a
-        // mirror growing a slot at a time regrows O(log n) times, and one that has
-        // just grown a lot (a first frame) has room to grow before the next; then
-        // send all of it once. The slots past the mirror are undefined on the
-        // device, and nothing draws them: the draws stop at the mirror's slots, and
-        // a slot is sent when the mirror reaches it.
-        size_t capacity=elementCount+elementCount/2;
-
-        capacity=(capacity+elementsPerSlot-1)/elementsPerSlot*elementsPerSlot;
-        glBufferData(target, capacity*elementSize, nullptr, GL_DYNAMIC_DRAW);
-        glBufferSubData(target, 0, elementCount*elementSize, data);
-        capacityElements=capacity;
-        sentElements=elementCount;
-        dirty.clear();
-
-        ++m_frameStats.bufferRegrows;
-        ++m_frameStats.uploadCalls;
-        m_frameStats.uploadBytes+=elementCount*elementSize;
-        return;
-    }
-
-    // the slots the mirror gained since the last upload go up with the dirty runs
-    dirty.markRange(sentElements/elementsPerSlot, (elementCount+elementsPerSlot-1)/elementsPerSlot);
-    sentElements=elementCount;
-
-    const char *bytes=static_cast<const char *>(data);
-
-    dirty.forEachRun([&](size_t firstSlot, size_t lastSlot)
-    {
-        size_t first=firstSlot*elementsPerSlot;
-        size_t last=std::min(lastSlot*elementsPerSlot, elementCount);
-
-        if(last <= first)
-            return;
-
-        glBufferSubData(target, first*elementSize, (last-first)*elementSize,
-            bytes+(first*elementSize));
-
-        ++m_frameStats.uploadCalls;
-        m_frameStats.uploadBytes+=(last-first)*elementSize;
-    });
-
-    dirty.clear();
-}
-
-void OpenGLCore::uploadDirtyClipBoxes(uint32_t texture, size_t &rows, size_t &sentBoxes,
-    const std::vector<Box> &boxes, DirtySlots &dirty)
-{
-    const size_t count=boxes.size();
-
-    if(count == 0)
-        return;
-
-    if((sentBoxes >= count) && dirty.empty())
-        return; //device already holds the mirror
-
-    glActiveTexture(GL_TEXTURE1);
-    glBindTexture(GL_TEXTURE_2D, texture);
-
-    const size_t needed=(count+kClipColumns-1)/kClipColumns;
-
-    if(rows < needed)
-    {
-        // The mirror outgrew the texture's rows: re-allocate it with half as many
-        // rows again as the mirror needs, as a vertex buffer, rounded up to a power
-        // of two, as the width is (llvmpipe compiles a shader variant per sampler
-        // shape, power-of-two or not among it, and a texture of any other height
-        // would compile one more, mid-frame), so it regrows O(log n) times, and
-        // send every box again.
-        const size_t wanted=needed+needed/2;
-        size_t height=std::max<size_t>(rows, 1);
-        GLint maxSize=0;
-
-        while(height < wanted)
-            height*=2;
-        glGetIntegerv(GL_MAX_TEXTURE_SIZE, &maxSize);
-        if(height > (size_t)maxSize)
-        {
-            if(needed > (size_t)maxSize)
-                gweni::log::write(log::Level::Error,
-                    "%zu clip boxes need %zu rows of %zu, past GL_MAX_TEXTURE_SIZE %d",
-                    count, needed, kClipColumns, (int)maxSize);
-            height=std::max(needed, (size_t)maxSize);
-        }
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16UI, (GLsizei)kClipColumns, (GLsizei)height, 0,
-            GL_RGBA_INTEGER, GL_UNSIGNED_SHORT, nullptr);
-        rows=height;
-        uploadClipBoxRange(boxes, 0, count);
-        ++m_frameStats.bufferRegrows;
-    }
-    else
-    {
-        // the rows hold the mirror: its dirty boxes, and the ones it gained
-        dirty.markRange(sentBoxes, count);
-        dirty.forEachRun([&](size_t firstSlot, size_t lastSlot)
-        {
-            const size_t last=std::min(lastSlot, count);
-
-            if(last > firstSlot)
-                uploadClipBoxRange(boxes, firstSlot, last);
-        });
-    }
-
-    sentBoxes=count;
-    dirty.clear();
-    glActiveTexture(GL_TEXTURE0);
-}
-
-void OpenGLCore::uploadClipBoxRange(const std::vector<Box> &boxes, size_t first, size_t last)
-{
-    // A row's boxes are consecutive in the mirror, and so are whole rows, so each
-    // piece is sent straight from it.
-    auto send=[&](size_t x, size_t y, size_t width, size_t height)
-    {
-        glTexSubImage2D(GL_TEXTURE_2D, 0, (GLint)x, (GLint)y, (GLsizei)width, (GLsizei)height,
-            GL_RGBA_INTEGER, GL_UNSIGNED_SHORT, &boxes[y*kClipColumns+x]);
-
-        ++m_frameStats.uploadCalls;
-        m_frameStats.uploadBytes+=width*height*sizeof(Box);
-    };
-
-    const size_t firstRow=first/kClipColumns;
-    const size_t lastRow=(last-1)/kClipColumns;
-
-    if(firstRow == lastRow)
-    {
-        send(first%kClipColumns, firstRow, last-first, 1);
-        return;
-    }
-
-    size_t wholeFirst=firstRow;
-
-    if(first%kClipColumns != 0)
-    {
-        send(first%kClipColumns, firstRow, kClipColumns-first%kClipColumns, 1);
-        ++wholeFirst;
-    }
-
-    const size_t lastWidth=last-lastRow*kClipColumns;
-    const size_t wholeEnd=(lastWidth == kClipColumns)?lastRow+1:lastRow;
-
-    if(wholeEnd > wholeFirst)
-        send(0, wholeFirst, kClipColumns, wholeEnd-wholeFirst);
-    if(lastWidth != kClipColumns)
-        send(0, lastRow, lastWidth, 1);
-}
-
-void OpenGLCore::uploadDirtyAtlases()
-{
-    bool bound=false;
-
-    for(auto &entry:m_fonts)
-    {
-        texture_atlas_t *atlas=entry.second.atlas;
-
-        if(atlas->dirty_y0 >= atlas->dirty_y1)
-            continue;
-
-        //full-width rows are contiguous in atlas->data, depth bytes per texel
-        assert((atlas->depth == 1) || (atlas->depth == 3));
-
-        size_t rows=atlas->dirty_y1-atlas->dirty_y0;
-
-        if(!bound)
-        {
-            glActiveTexture(GL_TEXTURE0);
-            bound=true;
-        }
-        glBindTexture(GL_TEXTURE_2D, atlas->id);
-        glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, (GLint)atlas->dirty_y0, (GLsizei)atlas->width, (GLsizei)rows,
-            (atlas->depth == 3)?GL_RGB:GL_RED, GL_UNSIGNED_BYTE, atlas->data+atlas->dirty_y0*atlas->width*atlas->depth);
-        glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
-
-        ++m_frameStats.atlasUploadCalls;
-        m_frameStats.atlasUploadBytes+=rows*atlas->width*atlas->depth;
-
-        atlas->dirty_y0=0;
-        atlas->dirty_y1=0;
-    }
-
-    //setTexture() skips the bind when m_currentTexture already matches
-    if(bound)
-        glBindTexture(GL_TEXTURE_2D, m_currentTexture);
-}
-
-void OpenGLCore::flush()
-{
-    m_frameStats.uploadCalls=0;
-    m_frameStats.uploadBytes=0;
-    m_frameStats.drawCalls=0;
-    m_frameStats.textDraws=0;
-    m_frameStats.atlasUploadCalls=0;
-    m_frameStats.atlasUploadBytes=0;
-    m_frameStats.bufferRegrows=0;
-    //the slots this frame uploads: every draw, hide, show and release since the last
-    //flush, each slot once however many of them touched it
-    m_frameStats.primitiveSlotsWritten=m_dirtyVertexSlots.count();
-    //a slot whose clip box changed and its vertexes did not is written too
-    for(size_t slot: m_dirtyClipSlots.slots())
-    {
-        if(!m_dirtyVertexSlots.marked(slot))
-            ++m_frameStats.primitiveSlotsWritten;
-    }
-    m_frameStats.textSlotsWritten=m_dirtyTextVertexSlots.count();
-    //a glyph slot whose clip box changed and its vertexes did not is written too
-    for(size_t slot: m_dirtyTextClipSlots.slots())
-    {
-        if(!m_dirtyTextVertexSlots.marked(slot))
-            ++m_frameStats.textSlotsWritten;
-    }
-    m_frameStats.mirrorBytes=
-        m_vertexes.size()*sizeof(Vertex)
-        +m_clippingBoxes.size()*sizeof(Box)
-        +m_textVertexes.size()*sizeof(glyph_vertex_t)
-        +m_textClipBoxes.size()*sizeof(Box);
-
-    //glyphs measureText (logic phase) or renderText rasterised since the last frame; done
-    //even when nothing draws text this frame, so they are on the GPU before first use
-    uploadDirtyAtlases();
-
-    if(!m_vertexes.empty())
-    {
-        //copy only the primitive slots that changed since the last frame
-        uploadDirty(m_vertexBuffer, m_vertexBufferCapacity, m_vertexBufferSent,
-            m_vertexes.data(), sizeof(Vertex), m_vertexes.size(), m_dirtyVertexSlots, 4);
-        uploadDirtyClipBoxes(m_clipTexture, m_clipTextureRows, m_clipBoxesSent,
-            m_clippingBoxes, m_dirtyClipSlots);
-
-        //draw primitives
-        glUseProgram(m_program);
-
-        glUniformMatrix4fv(
-            m_projectionUniform,
-            1,
-            GL_FALSE,
-            glm::value_ptr(m_projectionMatrix)
-        );
-
-        glActiveTexture(GL_TEXTURE1);
-        glBindTexture(GL_TEXTURE_2D, m_clipTexture);
-        for(size_t i=0; i<ImageUnits; ++i)
-        {
-            glActiveTexture(GL_TEXTURE0+FirstImageUnit+(GLenum)i);
-            glBindTexture(GL_TEXTURE_2D, m_imageUnits[i]);
-        }
-        glActiveTexture(GL_TEXTURE0);
-        glBindTexture(GL_TEXTURE_2D, m_currentTexture);
-
-        // One draw per chunk of m_chunkSlots slots, in slot order as a single draw
-        // over the whole buffer would go, so blending and depth come out the same.
-        // Each draws its slots, hidden ones included, as 4 vertexes and 6 indexes
-        // (2 triangles) apiece from the start of the static quad index buffer, with
-        // the chunk's vertex array pointing the attributes at its first slot; the
-        // vertex shader's slot is then slotBase + (gl_VertexID >> 2).
-        const size_t slots=m_vertexes.size()/4;
-
-        for(size_t first=0; first<slots; first+=m_chunkSlots)
-        {
-            const size_t count=std::min(slots-first, m_chunkSlots);
-
-            glBindVertexArray(primitiveVertexArray(first/m_chunkSlots));
-            glUniform1i(m_slotBaseUniform, (GLint)first);
-            glDrawElements(GL_TRIANGLES, (GLsizei)(count*6), (GLenum)GL_UNSIGNED_SHORT, 0);
-            ++m_frameStats.drawCalls;
-        }
-
-        glBindVertexArray(0);
-    }
-
-    if(!m_textVertexes.empty())
-    {
-        //copy only the glyph slots that changed since the last frame
-        uploadDirty(m_textVertexBuffer, m_textVertexBufferCapacity, m_textVertexBufferSent,
-            m_textVertexes.data(), sizeof(glyph_vertex_t), m_textVertexes.size(), m_dirtyTextVertexSlots, 4);
-        uploadDirtyClipBoxes(m_textClipTexture, m_textClipTextureRows, m_textClipBoxesSent,
-            m_textClipBoxes, m_dirtyTextClipSlots);
-
-        //draw text
-        glUseProgram(m_textProgram);
-
-        glUniformMatrix4fv(
-            m_textProjectionUniform,
-            1,
-            GL_FALSE,
-            glm::value_ptr(m_projectionMatrix)
-        );
-
-        glActiveTexture(GL_TEXTURE1);
-        glBindTexture(GL_TEXTURE_2D, m_textClipTexture);
-        glActiveTexture(GL_TEXTURE0);
-
-        // Each atlas draws the runs laid out in its font: one draw per index chunk
-        // its runs reach (one per atlas until the glyph slots outgrow a chunk),
-        // none for an atlas with nothing to show. A chunk's draw reads the static
-        // quad indexes from its own first slot, through its vertex array, and the
-        // vertex shader's slot is slotBase plus the slot within the chunk. The
-        // atlases go in the same order, and each one's chunks in slot order, as the
-        // one draw per atlas over the whole buffer did. The slots are not moved, so
-        // the upload above stays per dirty slot.
-        //
-        // An LCD atlas's runs blend each channel by its own coverage, the fragment
-        // shader's second output; the blend in place before the first of them is
-        // put back for the other atlases and after the pass.
-        GLint blend[4]={0, 0, 0, 0};
-        bool lcdBlend=false;
-
-        glUniform1f(m_textContrastUniform, m_textContrast);
-
-        for(auto &entry:m_fonts)
-        {
-            GLFontData &fontData=entry.second;
-
-            if(fontData.drawListStale)
-                buildTextDrawList(fontData);
-            if(fontData.drawChunks.empty())
-                continue;
-
-            const bool lcd=(fontData.mode == GLTextMode::LcdRGB) || (fontData.mode == GLTextMode::LcdBGR);
-
-            // without dual-source blending an LCD atlas is blended by its mean
-            // coverage, as a grayscale one is (the text shader then has no second
-            // output); GLES contexts without it are the GLES tree's to fall back on
-            if(lcd && !lcdBlend && m_glCapabilities.dualSourceBlend)
-            {
-                glGetIntegerv(GL_BLEND_SRC_RGB, &blend[0]);
-                glGetIntegerv(GL_BLEND_DST_RGB, &blend[1]);
-                glGetIntegerv(GL_BLEND_SRC_ALPHA, &blend[2]);
-                glGetIntegerv(GL_BLEND_DST_ALPHA, &blend[3]);
-                glBlendFunc(GL_SRC1_COLOR, GL_ONE_MINUS_SRC1_COLOR);
-                lcdBlend=true;
-            }
-            else if(!lcd && lcdBlend)
-            {
-                glBlendFuncSeparate(blend[0], blend[1], blend[2], blend[3]);
-                lcdBlend=false;
-            }
-
-            glBindTexture(GL_TEXTURE_2D, fontData.atlas->id);
-            glUniform1i(m_textModeUniform, (GLint)fontData.mode);
-            for(const GLTextChunkDraw &draw:fontData.drawChunks)
-            {
-                glBindVertexArray(textVertexArray(draw.chunk));
-                glUniform1i(m_textSlotBaseUniform, (GLint)(draw.chunk*m_chunkSlots));
-                // one draw of the chunk's ranges either way: GLES 3.0 has no
-                // glMultiDrawElements, and its loop draws the same
-                if(m_multiDrawText)
-                    glMultiDrawElements(GL_TRIANGLES, draw.counts.data(), (GLenum)GL_UNSIGNED_SHORT,
-                        draw.offsets.data(), (GLsizei)draw.counts.size());
-                else
-                {
-                    for(size_t range=0; range<draw.counts.size(); ++range)
-                        glDrawElements(GL_TRIANGLES, draw.counts[range], (GLenum)GL_UNSIGNED_SHORT,
-                            draw.offsets[range]);
-                }
-                ++m_frameStats.drawCalls;
-                ++m_frameStats.textDraws;
-            }
-        }
-
-        if(lcdBlend)
-            glBlendFuncSeparate(blend[0], blend[1], blend[2], blend[3]);
-
-        glBindVertexArray(0);
-    }
-
-    glBindVertexArray(0);
-
-    glFlush();
-
-    ++m_frameStats.frameIndex;
-
-    if(m_uploadStats)
-    {
-        //qualified: gweni::printf(String&, ...) would otherwise hide the C one
-        ::printf("[upload] frame %zu: %zu calls, %zu bytes (mirror %zu bytes, %zu regrows), atlas %zu calls, %zu bytes\n",
-            m_frameStats.frameIndex, m_frameStats.uploadCalls, m_frameStats.uploadBytes,
-            m_frameStats.mirrorBytes, m_frameStats.bufferRegrows, m_frameStats.atlasUploadCalls,
-            m_frameStats.atlasUploadBytes);
-        fflush(stdout);
-    }
-}
-
-void OpenGLCore::setVertex(Vertex &vertex, uint8_t type, int x, int y, int z, float u, float v)
-{
-    vertex.style=type;
-
-    // a corner outside int16_t wraps here, and cullOutOfRangeQuad then collapses the quad
-    vertex.x=(int16_t)x;
-//    vertex.y=m_viewRect.h - y;
-    vertex.y=(int16_t)y;
-    vertex.z=(uint16_t)std::clamp(z, 0, kMaxZIndex);
-
-//    if(m_activeProgram == 1)
-    {
-        vertex.tx=u;
-        vertex.ty=v;
-    }
-
-    // SDF fields are only used by styles 3-7 (drawLine, writeRoundedQuad, drawIcon); keep them 0 otherwise.
-    vertex.lx=0;
-    vertex.ly=0;
-    vertex.radius=0;
-    vertex.border=0;
-    vertex.cx=0;
-    vertex.cy=0;
-    vertex.bx=0;
-    vertex.by=0;
-    vertex.dx=0;
-    vertex.dy=0;
-//    else
-//    {
-//        vertex.tx=(m_color.r<<8)&m_color.g;
-//        vertex.ty=(m_color.b<<8)&m_color.a;
-////        vertex.color=glm::vec4(
-////            m_color.r / 255.0f,
-////            m_color.g / 255.0f,
-////            m_color.b / 255.0f,
-////            m_color.a / 255.0f
-////        );
-//    }
-}
-
-void OpenGLCore::cullOutOfRangeQuad(size_t primitiveId, const gweni::Rect &rect)
-{
-    const int64_t low=std::numeric_limits<int16_t>::min();
-    const int64_t high=std::numeric_limits<int16_t>::max();
-    const int64_t x0=rect.x;
-    const int64_t y0=rect.y;
-    const int64_t x1=x0+rect.w;
-    const int64_t y1=y0+rect.h;
-
-    auto inRange=[&](int64_t v) { return v >= low && v <= high; };
-
-    if(inRange(x0) && inRange(y0) && inRange(x1) && inRange(y1))
-        return;
-
-    for(size_t i=0; i<4; ++i)
-    {
-        Vertex &vertex=m_vertexes[primitiveId*4+i];
-
-        vertex.x=0;
-        vertex.y=0;
-    }
-}
-
-void OpenGLCore::addVert(int x, int y, float u, float v)
-{
-    // OpenGL origin is bottom-left. Gweni origin is top-left.
-
-//    Vertex vertex;
-//
-//    setVertex(vertex, x, y, u, v);
-//    m_vertexes.emplace_back(vertex);
 }
 
 void OpenGLCore::setTexture(unsigned int texture)
@@ -2294,496 +1313,6 @@ void OpenGLCore::setTexture(unsigned int texture)
 
     m_currentTextureSize.x=textureSize.x;
     m_currentTextureSize.y=textureSize.y;
-}
-
-void OpenGLCore::drawFilledRect(size_t primitiveId, gweni::Rect rect, int zIndex)
-{
-    m_activeProgram=0;
-    m_zIndex++;
-
-    translate(rect);
-
-    size_t vertexIndex=primitiveId*4;
-
-    ensurePrimitiveSlots(primitiveId);
-
-    PrimitiveSlot before;
-
-    readPrimitiveSlot(primitiveId, before);
-
-    m_clippingBoxes[primitiveId]=makeClipBox();
-
-#ifdef DEBUG_RENDER
-    std::cout<<"Rendering Fill: "<<primitiveId<<"("<<rect.x<<", "<<rect.y<<", "<<rect.w<<", "<<rect.h<<" : "<<zIndex<<") color: "<<(int)m_color.r<<", "<<(int)m_color.g<<", "<<(int)m_color.b<<", "<<(int)m_color.a<<"\n";
-#endif//DEBUG_RENDER
-
-    setVertex(m_vertexes[vertexIndex++], 1, rect.x, rect.y, zIndex, m_color.rg(), m_color.ba());
-    setVertex(m_vertexes[vertexIndex++], 1, rect.x+rect.w, rect.y, zIndex, m_color.rg(), m_color.ba());
-    setVertex(m_vertexes[vertexIndex++], 1, rect.x, rect.y+rect.h, zIndex, m_color.rg(), m_color.ba());
-//    setVertex(m_vertexes[vertexIndex++], rect.x+rect.w, rect.y);
-    setVertex(m_vertexes[vertexIndex++], 1, rect.x+rect.w, rect.y+rect.h, zIndex, m_color.rg(), m_color.ba());
-//    setVertex(m_vertexes[vertexIndex++], rect.x, rect.y+rect.h);
-
-    cullOutOfRangeQuad(primitiveId, rect);
-    markPrimitiveChanges(primitiveId, before);
-
-//    addVert(rect.x, rect.y);
-//    addVert(rect.x+rect.w, rect.y);
-//    addVert(rect.x, rect.y+rect.h);
-//    addVert(rect.x+rect.w, rect.y);
-//    addVert(rect.x+rect.w, rect.y+rect.h);
-//    addVert(rect.x, rect.y+rect.h);
-}
-
-void OpenGLCore::drawRoundedRect(size_t primitiveId, gweni::Rect rect, float radius, float border,
-    gweni::Color fillTop, gweni::Color fillBottom, gweni::Color borderColor, int zIndex)
-{
-    writeRoundedQuad(primitiveId, rect, zIndex, 4, radius, border, fillTop, fillTop,
-        fillBottom, gweni::Color(0, 0, 0, 0), gweni::Color(0, 0, 0, 0), borderColor);
-}
-
-void OpenGLCore::drawBilinearRect(size_t primitiveId, gweni::Rect rect, int zIndex,
-    gweni::Color c00, gweni::Color c10, gweni::Color c01, gweni::Color c11,
-    float radius, float border, gweni::Color borderColor)
-{
-    // top edge in color0, bottom edge in color3, each per side
-    writeRoundedQuad(primitiveId, rect, zIndex, 6, radius, border, c00, c10,
-        gweni::Color(0, 0, 0, 0), c01, c11, borderColor);
-}
-
-void OpenGLCore::drawCheckerRect(size_t primitiveId, gweni::Rect rect, int zIndex,
-    gweni::Color fill, gweni::Color light, gweni::Color dark,
-    float radius, float border, gweni::Color borderColor)
-{
-    writeRoundedQuad(primitiveId, rect, zIndex, 7, radius, border, fill, fill,
-        light, dark, dark, borderColor);
-}
-
-//! A rect's size as its half-size in half-pixel units, the Vertex::lx/ly of its
-//! corners: the size itself, clamped to what an int16_t holds.
-static int halfPixelSize(int size)
-{
-    return std::min(std::max(size, 0), (int)std::numeric_limits<int16_t>::max());
-}
-
-void OpenGLCore::writeRoundedQuad(size_t primitiveId, gweni::Rect rect, int zIndex, uint8_t style,
-    float radius, float border, gweni::Color color0Left, gweni::Color color0Right,
-    gweni::Color color1, gweni::Color color3Left, gweni::Color color3Right,
-    gweni::Color borderColor)
-{
-    m_activeProgram=0;
-    m_zIndex++;
-
-    translate(rect);
-
-    size_t vertexIndex=primitiveId*4;
-
-    ensurePrimitiveSlots(primitiveId);
-
-    PrimitiveSlot before;
-
-    readPrimitiveSlot(primitiveId, before);
-
-    m_clippingBoxes[primitiveId]=makeClipBox();
-
-    // The quad is the rect, and the SDF's local position runs from -size/2 to
-    // +size/2 across it, so the drawn shape and the quad coincide exactly at any
-    // size. lx/ly are in half-pixel units (+/-w, +/-h), which keeps an odd size's
-    // half (3.5) exact.
-    const int x0=rect.x;
-    const int y0=rect.y;
-    const int x1=rect.x+rect.w;
-    const int y1=rect.y+rect.h;
-    const int hw=halfPixelSize(rect.w);
-    const int hh=halfPixelSize(rect.h);
-
-    // Scaled to device pixels. A border stays a whole number of them, and at
-    // least one, so it stays crisp at a fractional scale.
-    const long limit=std::numeric_limits<uint16_t>::max();
-    const uint16_t rad=(uint16_t)std::min(std::max((long)snap(radius), 0L), limit);
-    const uint16_t bor=(uint16_t)((border > 0.0f)
-        ? std::min(std::max((long)snap(border), 1L), limit) : 0L);
-
-    auto setRounded=[&](size_t vi, int px, int py, int lx, int ly, const gweni::Color &color0,
-        const gweni::Color &color3)
-    {
-        Vertex &v=m_vertexes[vi];
-        setVertex(v, style, px, py, zIndex, color0.rg(), color0.ba());
-        v.lx=(int16_t)lx;
-        v.ly=(int16_t)ly;
-        v.radius=rad;
-        v.border=bor;
-        v.cx=color1.rg(); v.cy=color1.ba();
-        v.bx=borderColor.rg(); v.by=borderColor.ba();
-        v.dx=color3.rg(); v.dy=color3.ba();
-    };
-
-    setRounded(vertexIndex++, x0, y0, -hw, -hh, color0Left, color3Left);
-    setRounded(vertexIndex++, x1, y0, +hw, -hh, color0Right, color3Right);
-    setRounded(vertexIndex++, x0, y1, -hw, +hh, color0Left, color3Left);
-    setRounded(vertexIndex++, x1, y1, +hw, +hh, color0Right, color3Right);
-
-    cullOutOfRangeQuad(primitiveId, rect);
-    markPrimitiveChanges(primitiveId, before);
-}
-
-void OpenGLCore::drawIcon(size_t primitiveId, gweni::Rect rect, int kind, int direction,
-    gweni::Color color, int zIndex)
-{
-    m_activeProgram=0;
-    m_zIndex++;
-
-    translate(rect);
-
-    size_t vertexIndex=primitiveId*4;
-
-    ensurePrimitiveSlots(primitiveId);
-
-    PrimitiveSlot before;
-
-    readPrimitiveSlot(primitiveId, before);
-
-    m_clippingBoxes[primitiveId]=makeClipBox();
-
-    // the quad is the rect, lx/ly in half-pixel units as in writeRoundedQuad
-    const int x0=rect.x;
-    const int y0=rect.y;
-    const int x1=rect.x+rect.w;
-    const int y1=rect.y+rect.h;
-    const int hw=halfPixelSize(rect.w);
-    const int hh=halfPixelSize(rect.h);
-    // whole device px, so every stroke of kinds 3-6 covers whole rows and columns
-    const int stroke=std::min(std::max(1, snap(1.0f)), 255);
-
-    auto setIcon=[&](size_t vi, int px, int py, int lx, int ly)
-    {
-        Vertex &v=m_vertexes[vi];
-        setVertex(v, 5, px, py, zIndex, color.rg(), color.ba());
-        v.lx=(int16_t)lx;
-        v.ly=(int16_t)ly;
-        v.radius=(uint16_t)kind;
-        v.border=(uint16_t)direction;
-        v.bx=(uint16_t)(stroke<<8);    // kinds 2-6: the stroke in px, the "red" byte
-    };
-
-    setIcon(vertexIndex++, x0, y0, -hw, -hh);
-    setIcon(vertexIndex++, x1, y0, +hw, -hh);
-    setIcon(vertexIndex++, x0, y1, -hw, +hh);
-    setIcon(vertexIndex++, x1, y1, +hw, +hh);
-
-    cullOutOfRangeQuad(primitiveId, rect);
-    markPrimitiveChanges(primitiveId, before);
-}
-
-void OpenGLCore::drawLine(size_t primitiveId, gweni::PointF p0, gweni::PointF p1,
-    float thickness, int zIndex)
-{
-    m_activeProgram=0;
-    m_zIndex++;
-
-    size_t vertexIndex=primitiveId*4;
-
-    ensurePrimitiveSlots(primitiveId);
-
-    PrimitiveSlot before;
-
-    readPrimitiveSlot(primitiveId, before);
-
-    m_clippingBoxes[primitiveId]=makeClipBox();
-
-    // Whole device px, like a border, so the stroke can sit on the pixel grid.
-    const int stroke=std::min(std::max(1, snap(thickness)), 4096);
-    const gweni::Point &offset=getRenderOffset();
-
-    // The device px where the stroke across an endpoint coordinate starts: its
-    // centre at v*scale, moved to put both its edges on pixel boundaries. For an
-    // even stroke that is snap(v)-stroke/2, the edge translate() snaps v to; for an
-    // odd one, the pixel v*scale falls in is its middle row (column).
-    auto strokeStart=[&](float v, int origin)
-    {
-        const double centre=(double(v)+origin)*scale();
-        const double start=std::floor(centre-0.5*stroke+0.5);
-
-        return (int64_t)std::max(std::min(start, 1e9), -1e9);
-    };
-    const int64_t ax=strokeStart(p0.x, offset.x);
-    const int64_t ay=strokeStart(p0.y, offset.y);
-    const int64_t bx=strokeStart(p1.x, offset.x);
-    const int64_t by=strokeStart(p1.y, offset.y);
-
-    // The quad: both endpoints' stroke squares, which hold the round caps, and 1 px
-    // around them for the anti-aliased edge of a slanted stroke.
-    const int64_t x0=std::min(ax, bx)-1;
-    const int64_t y0=std::min(ay, by)-1;
-    const int64_t x1=std::max(ax, bx)+stroke+1;
-    const int64_t y1=std::max(ay, by)+stroke+1;
-
-    // lx/ly and the endpoints in half-pixel units from the quad's centre, as in
-    // writeRoundedQuad: an endpoint (start+stroke/2) is a whole number of them.
-    const int64_t hw=x1-x0;
-    const int64_t hh=y1-y0;
-    const int64_t centreX=x0+x1;
-    const int64_t centreY=y0+y1;
-    const uint16_t a0=(uint16_t)(int16_t)(2*ax+stroke-centreX);
-    const uint16_t a1=(uint16_t)(int16_t)(2*ay+stroke-centreY);
-    const uint16_t b0=(uint16_t)(int16_t)(2*bx+stroke-centreX);
-    const uint16_t b1=(uint16_t)(int16_t)(2*by+stroke-centreY);
-
-    auto setLine=[&](size_t vi, int64_t px, int64_t py, int64_t lx, int64_t ly)
-    {
-        Vertex &v=m_vertexes[vi];
-
-        setVertex(v, 3, (int)px, (int)py, zIndex, m_color.rg(), m_color.ba());
-        v.lx=(int16_t)lx;
-        v.ly=(int16_t)ly;
-        v.border=(uint16_t)stroke;
-        v.cx=a0; v.cy=a1;
-        v.dx=b0; v.dy=b1;
-    };
-
-    setLine(vertexIndex++, x0, y0, -hw, -hh);
-    setLine(vertexIndex++, x1, y0, +hw, -hh);
-    setLine(vertexIndex++, x0, y1, -hw, +hh);
-    setLine(vertexIndex++, x1, y1, +hw, +hh);
-
-    cullOutOfRangeQuad(primitiveId, gweni::Rect((int)x0, (int)y0, (int)hw, (int)hh));
-
-    // A quad inside the vertex range can still be wider or higher than lx/ly hold
-    // (32767 half px); it is collapsed the same way.
-    const int64_t maxHalf=std::numeric_limits<int16_t>::max();
-
-    if(hw > maxHalf || hh > maxHalf)
-    {
-        for(size_t i=0; i<4; ++i)
-        {
-            m_vertexes[primitiveId*4+i].x=0;
-            m_vertexes[primitiveId*4+i].y=0;
-        }
-    }
-    markPrimitiveChanges(primitiveId, before);
-}
-
-void OpenGLCore::setDrawColor(gweni::Color color)
-{
-    m_color=color;
-}
-
-// Every primitive and glyph slot is stamped with the clipRegion() current when it is
-// drawn (makeClipBox), and the shaders discard outside it, so there is no clipping
-// state to switch on and off.
-void OpenGLCore::startClip()
-{}
-
-void OpenGLCore::endClip()
-{}
-
-OpenGLCore::Box OpenGLCore::makeClipBox() const
-{
-    const gweni::Rect &clip=clipRegion();
-
-    // snapped as translate() snaps a rect's edges, so a box edge lands where a quad
-    // drawn over the same rect has its edge
-    long x0=snap(float(clip.x));
-    long y0=snap(float(clip.y));
-    long x1=snap(float(clip.x+clip.w));
-    long y1=snap(float(clip.y+clip.h));
-
-    x0+=m_clipDebugInset;
-    y0+=m_clipDebugInset;
-    x1-=m_clipDebugInset;
-    y1-=m_clipDebugInset;
-
-    // a corner left or above the view must not wrap in uint16_t, and an empty (or
-    // inverted) region becomes an empty box
-    const long limit=std::numeric_limits<uint16_t>::max();
-
-    x0=std::min(std::max(x0, 0L), limit);
-    y0=std::min(std::max(y0, 0L), limit);
-    x1=std::min(std::max(x1, x0), limit);
-    y1=std::min(std::max(y1, y0), limit);
-
-    Box box;
-
-    box.x0=(uint16_t)x0;
-    box.y0=(uint16_t)y0;
-    box.x1=(uint16_t)x1;
-    box.y1=(uint16_t)y1;
-    return box;
-}
-
-void OpenGLCore::generatePrimitive(size_t &primitiveId)
-{
-    primitiveId=getPrimitiveId(nullptr);
-
-    //resize indexes/vertexes to cover the primitive
-    ensurePrimitiveSlots(primitiveId);
-}
-
-void OpenGLCore::releasePrimitive(size_t primitiveId)
-{
-    hidePrimitive(primitiveId);
-    releasePrimitiveId(primitiveId);
-}
-
-void OpenGLCore::drawTexturedRect(const gweni::Texture &texture, size_t primitiveId, gweni::Rect rect, int zIndex,
-    float u1, float v1, float u2, float v2)
-{
-    if(!ensureTexture(texture))
-        return drawMissingImage(primitiveId, rect, zIndex);
-
-    GLTextureData &texData=*m_textureData[m_lastTexture];
-    const size_t unit=imageUnit(texData.m_textureId);
-
-    if(unit == ImageUnits)
-    {
-        if(!m_imageUnitsFullLogged)
-        {
-            gweni::log::write(log::Level::Error, "drawTexturedRect: more than %zu textures in use, "
-                "drawing the missing image", ImageUnits);
-            m_imageUnitsFullLogged=true;
-        }
-        return drawMissingImage(primitiveId, rect, zIndex);
-    }
-
-    translate(rect);
-
-    m_activeProgram=1;
-
-    size_t vertexIndex=primitiveId*4;
-
-    ensurePrimitiveSlots(primitiveId);
-
-    PrimitiveSlot before;
-
-    readPrimitiveSlot(primitiveId, before);
-
-    m_clippingBoxes[primitiveId]=makeClipBox();
-
-#ifdef DEBUG_RENDER
-    std::cout<<"Rendering: "<<primitiveId<<"("<<rect.x<<", "<<rect.y<<", "<<rect.w<<", "<<rect.h<<" : "<<zIndex<<")\n";
-#endif//DEBUG_RENDER
-
-    // UVs as 0..65535 for 0..1, the image unit and the tint (the draw colour)
-    auto uv=[](float t)
-    {
-        return (float)std::lround(std::min(std::max(t, 0.0f), 1.0f)*65535.0f);
-    };
-    auto setImageVertex=[&](size_t vi, int x, int y, float u, float v)
-    {
-        Vertex &vertex=m_vertexes[vi];
-
-        setVertex(vertex, 2, x, y, zIndex, uv(u), uv(v));
-        vertex.radius=(uint16_t)unit;
-        vertex.cx=m_color.rg();
-        vertex.cy=m_color.ba();
-    };
-
-    setImageVertex(vertexIndex++, rect.x, rect.y, u1, v1);
-    setImageVertex(vertexIndex++, rect.x + rect.w, rect.y, u2, v1);
-    setImageVertex(vertexIndex++, rect.x, rect.y + rect.h, u1, v2);
-    setImageVertex(vertexIndex++, rect.x + rect.w, rect.y + rect.h, u2, v2);
-
-    cullOutOfRangeQuad(primitiveId, rect);
-    markPrimitiveChanges(primitiveId, before);
-
-//    addVert(rect.x, rect.y, u1, v1);
-//    addVert(rect.x + rect.w, rect.y, u2, v1);
-//    addVert(rect.x, rect.y + rect.h, u1, v2);
-//    addVert(rect.x + rect.w, rect.y, u2, v1);
-//    addVert(rect.x + rect.w, rect.y + rect.h, u2, v2);
-//    addVert(rect.x, rect.y + rect.h, u1, v2);
-}
-
-size_t OpenGLCore::imageUnit(unsigned int textureName)
-{
-    size_t freeUnit=ImageUnits;
-
-    for(size_t i=0; i<ImageUnits; ++i)
-    {
-        if(m_imageUnits[i] == textureName)
-            return i;
-        if((m_imageUnits[i] == 0) && (freeUnit == ImageUnits))
-            freeUnit=i;
-    }
-
-    if(freeUnit != ImageUnits)
-        m_imageUnits[freeUnit]=textureName;
-    return freeUnit;
-}
-
-void OpenGLCore::showPrimitive(int style, size_t primitiveId)
-{
-//    if(m_clippingBoxes.size() < primitiveId+1)
-//        m_clippingBoxes.resize(primitiveId+1);
-//
-//    Box &box=m_clippingBoxes[primitiveId];
-//
-//    box.state=style;
-    
-    size_t vertexIndex=primitiveId*4;
-
-    if(m_vertexes.size() < vertexIndex+4)
-        return;
-
-//    std::cout<<"Show: "<<primitiveId<<"\n";
-    for(size_t i=0; i<4; ++i)
-    {
-        if(m_vertexes[vertexIndex+i].style == style)
-            continue;
-
-        m_vertexes[vertexIndex+i].style=style;
-        m_dirtyVertexSlots.mark(primitiveId);
-    }
-}
-
-void OpenGLCore::hidePrimitive(size_t primitiveId)
-{
-//    if(m_clippingBoxes.size() < primitiveId+1)
-//        m_clippingBoxes.resize(primitiveId+1);
-//
-//    Box &box=m_clippingBoxes[primitiveId];
-//
-//    box.state=0;
-    
-    size_t vertexIndex=primitiveId*4;
-
-    if(m_vertexes.size() < vertexIndex+4)
-        return;
-
-//    std::cout<<"Hide: "<<primitiveId<<"\n";
-    for(size_t i=0; i<4; ++i)
-    {
-        if(m_vertexes[vertexIndex+i].style == 0)
-            continue;
-
-        m_vertexes[vertexIndex+i].style=0;
-        m_dirtyVertexSlots.mark(primitiveId);
-    }
-}
-
-gweni::Color OpenGLCore::pixelColor(const gweni::Texture &texture, unsigned int x, unsigned int y,
-    const gweni::Color &col_default)
-{
-    if(!ensureTexture(texture))
-        return col_default;
-
-    GLTextureData &texData=*m_textureData[m_lastTexture];
-
-    static const unsigned int iPixelSize=sizeof(unsigned char) * 4;
-
-    if(texData.readable)
-    {
-        unsigned char *pPixel=texData.m_readData.data() + (x + (y * static_cast<unsigned int>(texData.width))) * iPixelSize;
-        return gweni::Color(pPixel[0], pPixel[1], pPixel[2], pPixel[3]);
-    }
-
-    // read back once, through a framebuffer (GLES has no glGetTexImage), then kept
-    if(!readTexture(texData.m_textureId, (int)texData.width, (int)texData.height, texData.m_readData))
-        return col_default;
-    texData.readable=true;
-
-    unsigned char *pPixel=texData.m_readData.data() + (x + (y * static_cast<unsigned int>(texData.width))) * iPixelSize;
-    return gweni::Color(pPixel[0], pPixel[1], pPixel[2], pPixel[3]);
 }
 
 bool OpenGLCore::readTexture(unsigned int textureName, int width, int height, std::vector<uint8_t> &rgba)
@@ -2844,765 +1373,6 @@ bool OpenGLCore::textureChannelBits(unsigned int textureName, int bits[4])
     glBindFramebuffer(GL_READ_FRAMEBUFFER, (GLuint)readFramebuffer);
     glDeleteFramebuffers(1, &framebuffer);
     return complete;
-}
-
-void OpenGLCore::ensureTextSlots(size_t glyphSlots)
-{
-    if(m_textVertexes.size() < glyphSlots*4)
-        m_textVertexes.resize(glyphSlots*4);
-    if(m_textClipBoxes.size() < glyphSlots)
-        m_textClipBoxes.resize(glyphSlots);
-}
-
-void OpenGLCore::addFreeTextRun(size_t start, size_t capacity)
-{
-    if(capacity == 0)
-        return;
-
-    size_t end=start+capacity;
-
-    //merge with the free block that ends where this one starts
-    auto next=m_freeTextRuns.lower_bound(start);
-
-    if(next != m_freeTextRuns.begin())
-    {
-        auto previous=std::prev(next);
-
-        if(previous->first+previous->second == start)
-        {
-            start=previous->first;
-            m_freeTextRuns.erase(previous);
-        }
-    }
-
-    //and with the one that starts where this one ends
-    if((next != m_freeTextRuns.end()) && (next->first == end))
-    {
-        end+=next->second;
-        m_freeTextRuns.erase(next);
-    }
-
-    // A block reaching the end of the in-use slots goes back to the bump
-    // allocator rather than the list, so the last run can grow in place.
-    if(end == m_textSlotsUsed)
-        m_textSlotsUsed=start;
-    else
-        m_freeTextRuns.emplace(start, end-start);
-}
-
-void OpenGLCore::freeTextRun(TextRun &run)
-{
-    if(run.capacity == 0)
-        return;
-
-    // Out of its font's draw list before handing it back: a freed run must draw
-    // nothing until somebody allocates its slots again.
-    run.glyphs=0;
-    markTextDrawList(run);
-    addFreeTextRun(run.start, run.capacity);
-
-    run.start=0;
-    run.capacity=0;
-}
-
-void OpenGLCore::allocateTextRun(TextRun &run, size_t glyphs)
-{
-    if(run.capacity >= glyphs)
-    {
-        // Keeps the run where it is; the tail past `glyphs` is not in the draw
-        // list (markTextDrawList), so a string that shrinks leaves no ghost glyphs.
-        run.glyphs=glyphs;
-        return;
-    }
-
-    // A run that outgrew its slots (a line typed into, a counter gaining a digit)
-    // gets a quarter as many again, in whole groups of kTextRunSlackGranule, so
-    // the next characters fit where it lands: it moves O(log n) times growing to
-    // n glyphs, rather than once per glyph, each move leaving a hole and, at the
-    // end of the slots, growing the mirror. A first layout gets exactly its
-    // glyphs: most strings never change length.
-    const bool grows=(run.capacity > 0);
-    const size_t capacity=grows?
-        (glyphs+glyphs/4+kTextRunSlackGranule-1)/kTextRunSlackGranule*kTextRunSlackGranule:glyphs;
-
-    freeTextRun(run);
-
-    // Best fit: the smallest free block that holds the string, split if it is
-    // larger than the capacity (the slack kept). Blocks are merged as they are
-    // freed, so the list stays short and a linear scan is enough.
-    auto it=m_freeTextRuns.end();
-
-    for(auto block=m_freeTextRuns.begin(); block != m_freeTextRuns.end(); ++block)
-    {
-        if((block->second >= glyphs) &&
-            ((it == m_freeTextRuns.end()) || (block->second < it->second)))
-            it=block;
-    }
-
-    if(it != m_freeTextRuns.end())
-    {
-        run.start=it->first;
-        run.capacity=it->second;
-        m_freeTextRuns.erase(it);
-
-        if(run.capacity > capacity)
-        {
-            addFreeTextRun(run.start+capacity, run.capacity-capacity);
-            run.capacity=capacity;
-        }
-    }
-    else
-    {
-        run.start=m_textSlotsUsed;
-        run.capacity=capacity;
-        m_textSlotsUsed+=capacity;
-    }
-
-    run.glyphs=glyphs;
-    ensureTextSlots(run.start+run.capacity);
-}
-
-void OpenGLCore::markTextDrawList(const TextRun &run)
-{
-    // what the run draws, glyphs [start, start+glyphs) unless hidden, changed
-    if(run.fontData)
-        run.fontData->drawListStale=true;
-}
-
-void OpenGLCore::markTextVertexes(const TextRun &run)
-{
-    for(size_t i=0; i<run.glyphs; ++i)
-        m_dirtyTextVertexSlots.mark(run.start+i);
-}
-
-void OpenGLCore::writeTextClipBoxes(const TextRun &run, const Box &box)
-{
-    for(size_t i=0; i<run.glyphs; ++i)
-    {
-        Box &slotBox=m_textClipBoxes[run.start+i];
-
-        if(memcmp(&slotBox, &box, sizeof(Box)) == 0)
-            continue;
-
-        slotBox=box;
-        m_dirtyTextClipSlots.mark(run.start+i);
-    }
-}
-
-void OpenGLCore::setTextRunFont(size_t textId, GLFontData *fontData)
-{
-    TextRun &run=m_textRuns[textId];
-
-    if(run.fontData == fontData)
-        return;
-
-    GLFontData *previous=run.fontData;
-
-    if(previous)
-    {
-        previous->textRuns.erase(textId);
-        previous->drawListStale=true;
-    }
-
-    run.fontData=fontData;
-
-    // the last run has left a font freeFont kept for it, and nobody loaded it since
-    if(previous && previous->freed && (previous->owners == 0) && previous->textRuns.empty())
-    {
-        for(auto it=m_fonts.begin(); it != m_fonts.end(); ++it)
-        {
-            if(&it->second != previous)
-                continue;
-            if(m_lastFont == &(*it))
-                m_lastFont=nullptr;
-            m_fonts.erase(it);
-            break;
-        }
-    }
-
-    if(fontData)
-    {
-        fontData->textRuns.insert(textId);
-        fontData->drawListStale=true;
-    }
-}
-
-void OpenGLCore::buildTextDrawList(GLFontData &fontData)
-{
-    // (first glyph slot, glyph count) of each run that draws something
-    std::vector<std::pair<size_t, size_t>> ranges;
-
-    ranges.reserve(fontData.textRuns.size());
-    for(size_t textId:fontData.textRuns)
-    {
-        const TextRun &run=m_textRuns[textId];
-
-        if(!run.hidden && (run.glyphs > 0))
-            ranges.emplace_back(run.start, run.glyphs);
-    }
-
-    // in slot order, as the single draw over the whole buffer went
-    std::sort(ranges.begin(), ranges.end());
-
-    fontData.drawChunks.clear();
-
-    // Only glyphs in use are listed, and a merge joins ranges that touch, so a
-    // run's tail, a freed block or another font's run between two runs keeps them
-    // apart: nothing outside the listed runs' glyphs is drawn.
-    size_t i=0;
-
-    while(i < ranges.size())
-    {
-        size_t start=ranges[i].first;
-        size_t end=start+ranges[i].second;
-
-        for(++i; (i < ranges.size()) && (ranges[i].first == end); ++i)
-            end+=ranges[i].second;
-
-        // split at the chunks' edges, each piece indexed from its chunk's first slot
-        while(start < end)
-        {
-            const size_t chunk=start/m_chunkSlots;
-            const size_t chunkStart=chunk*m_chunkSlots;
-            const size_t pieceEnd=std::min(end, chunkStart+m_chunkSlots);
-
-            if(fontData.drawChunks.empty() || (fontData.drawChunks.back().chunk != chunk))
-            {
-                fontData.drawChunks.emplace_back();
-                fontData.drawChunks.back().chunk=chunk;
-            }
-
-            GLTextChunkDraw &draw=fontData.drawChunks.back();
-
-            draw.counts.push_back(static_cast<int>((pieceEnd-start)*6));
-            draw.offsets.push_back(reinterpret_cast<const void *>((start-chunkStart)*6*sizeof(uint16_t)));
-            start=pieceEnd;
-        }
-    }
-
-    fontData.drawListStale=false;
-}
-
-void OpenGLCore::generateTextPrimitive(size_t &primitiveId)
-{
-    primitiveId=getTextId(nullptr);
-
-    if(m_textRuns.size() < primitiveId+1)
-        m_textRuns.resize(primitiveId+1);
-}
-
-void OpenGLCore::releaseTextPrimitive(size_t primitiveId)
-{
-    if(primitiveId < m_textRuns.size())
-    {
-        TextRun &run=m_textRuns[primitiveId];
-
-        // The run goes back on the free list and the bookkeeping is reset, so a
-        // reused text id cannot take renderText's "string hasn't changed" path
-        // and inherit the dead control's glyphs.
-        freeTextRun(run);
-        setTextRunFont(primitiveId, nullptr);
-        run=TextRun();
-    }
-
-    releaseTextId(primitiveId);
-}
-
-void OpenGLCore::renderText(size_t textId, const gweni::Font &font, gweni::Point pos, int zIndex,
-    const gweni::String &text)
-{
-    // drawn at the effective size, in device pixels from the translated origin
-    const float px=textPx(font);
-
-    if(!ensureFont(font, px))
-        return;
-
-    if(m_textRuns.size() < textId+1)
-        m_textRuns.resize(textId+1);
-
-    TextRun &run=m_textRuns[textId];
-
-    translate(pos.x, pos.y);
-
-    // The colour the rebuild below bakes into the glyphs. Its alpha is always
-    // opaque, so the draw colour's alpha takes no part: a change in alpha alone
-    // would rebuild the run into the same bytes.
-    const gweni::Color color(m_color.r, m_color.g, m_color.b, 255);
-
-    GLFontData &fontData=m_lastFont->second;
-
-    // Same string, font, effective size and colour, laid out in this font's atlas
-    // (not one freed since): the glyphs are the ones already there, at most offset.
-    // Anything else falls through to the full rebuild; a new scale() is a new px, and
-    // in an SDF font the same atlas.
-    if((run.text == text) && (run.font == font) && (run.px == px) && (run.color == color)
-        && (run.fontData == &fontData))
-    {
-        if((pos.x != run.position.x) || (pos.y != run.position.y) || (zIndex != run.zIndex))
-        {
-            const gweni::Point delta=pos-run.position;
-            // the same offsets as the rebuild below gives
-            const float zDelta=1.0f/(run.glyphs+1);
-            float zOffset=zDelta;
-
-#ifdef DEBUG_RENDER
-            std::cout<<"Moving text run: ("<<pos.x<<", "<<pos.y<<" : "<<zIndex<<") "<<text<<"\n";
-#endif//DEBUG_RENDER
-
-            for(size_t i=0; i<run.glyphs; ++i)
-            {
-                const size_t vertIndex=(run.start+i)*4;
-                const float z=zIndex+zOffset;
-
-                zOffset+=zDelta;
-
-                for(size_t j=0; j<4; ++j)
-                {
-                    m_textVertexes[vertIndex+j].x+=delta.x;
-                    m_textVertexes[vertIndex+j].y+=delta.y;
-                    m_textVertexes[vertIndex+j].z=z;
-                }
-            }
-
-            markTextVertexes(run);
-            run.position=pos;
-            run.zIndex=zIndex;
-        }
-
-        // the region can change with or without a move; an unchanged box marks nothing
-        writeTextClipBoxes(run, makeClipBox());
-        return;
-    }
-
-    ftgl::text_buffer_t *textBuffer=nullptr;
-    std::vector<ftgl::glyph_vertex_t> sdfVertexes;
-    const ftgl::glyph_vertex_t *vertexBuffer;
-    size_t glyphCount;
-
-    if(fontData.mode == GLTextMode::Sdf)
-    {
-        layoutSdfText(fontData, px, text, color, &sdfVertexes);
-        vertexBuffer=sdfVertexes.data();
-        glyphCount=sdfVertexes.size()/4;
-    }
-    else
-    {
-        textBuffer=ftgl::text_buffer_new();
-        ftgl::vec2 pen={ 0.0f, 0.0f };
-
-        // Bake the current draw color (set by the control's text renderer from its
-        // text color) into the glyphs, so per-control text colors actually apply
-        // instead of the static black the markup was initialised with.
-        fontData.markup.foreground_color.r=color.r/255.0f;
-        fontData.markup.foreground_color.g=color.g/255.0f;
-        fontData.markup.foreground_color.b=color.b/255.0f;
-        fontData.markup.foreground_color.a=color.a/255.0f;
-
-        //the length is in codepoints, not bytes: text.length() overran the string for
-        //anything non-ASCII and drew whatever followed it in memory as glyphs
-        ftgl::text_buffer_add_text(textBuffer, &pen, &fontData.markup, text.c_str(), ftgl::utf8_strlen(text.c_str()));
-
-        //with every markup decoration off, freetype-gl emits exactly one quad per glyph
-        glyphCount=textBuffer->buffer->indices->size/6;
-        vertexBuffer=(const ftgl::glyph_vertex_t *)textBuffer->buffer->vertices->items;
-    }
-
-    std::vector<float> shifts;
-
-    measuredPenShifts(font, fontData, px, text, shifts);
-
-    // hidden is left as it is: a hidden run stays out of its font's draw list
-    run.text=text;
-    run.position=pos;
-    run.zIndex=zIndex;
-    run.font=font;
-    run.px=px;
-    run.color=color;
-    setTextRunFont(textId, &fontData);
-    allocateTextRun(run, glyphCount);
-
-    const float zDelta=1.0f/(glyphCount+1);
-    float zOffset=zDelta;
-
-#ifdef DEBUG_RENDER
-    std::cout<<"Regenerating text run: ("<<pos.x<<", "<<pos.y<<" : "<<zIndex<<") "<<text<<"\n";
-#endif//DEBUG_RENDER
-
-    for(size_t i=0; i<glyphCount; ++i)
-    {
-        const size_t vertIndex=(run.start+i)*4;
-        const float shift=shifts.empty()?0.0f:shifts[i];
-        // Each glyph of a run sits a fraction of a z unit in front of the one
-        // before it, so the GL_LESS depth test cannot reject the overlap between
-        // two neighbouring glyph boxes. Glyph i is at zIndex+(i+1)/(glyphs+1),
-        // strictly between zIndex and zIndex+1: a primitive drawn at the run's
-        // own z (a TextBox's selection) is behind every glyph, not tied with the
-        // first. Accumulated rather than (i+1)*zDelta, which rounds differently
-        // and would move a glyph by an ulp of depth.
-        const float z=zIndex+zOffset;
-
-        zOffset+=zDelta;
-
-        for(size_t j=0; j<4; ++j)
-        {
-            const ftgl::glyph_vertex_t &source=vertexBuffer[i*4+j];
-            ftgl::glyph_vertex_t &vertex=m_textVertexes[vertIndex+j];
-            // The corner's offset in the run, rounded to 1/256 device px before the
-            // run's whole-pixel position is added. An SDF quad sits at pen+offset
-            // times px/48, which a float holds only rounded, and the move above adds
-            // its delta to these vertexes: with a dyadic offset every such sum is
-            // exact (while |x| < 65536), so a run moved any number of times is
-            // exactly a fresh layout where it ends. Without it a drag there and
-            // back left the corners some ulps off and changed SDF edge pixels.
-            const float offsetX=std::round((source.x+shift)*256.0f)/256.0f;
-            const float offsetY=std::round(source.y*256.0f)/256.0f;
-
-            vertex=source;
-            vertex.x=pos.x+offsetX;
-            vertex.y=pos.y-offsetY;
-            vertex.z=z;
-        }
-    }
-
-    markTextDrawList(run);
-    markTextVertexes(run);
-    writeTextClipBoxes(run, makeClipBox());
-
-    if(textDebugMatches(text))
-    {
-        size_t freeSlots=0, liveGlyphs=0;
-
-        for(const auto &block:m_freeTextRuns)
-            freeSlots+=block.second;
-        for(const TextRun &textRun:m_textRuns)
-            liveGlyphs+=textRun.glyphs;
-
-        ::printf("[mirror] textId=%zu \"%s\" chars=%zu run=[%zu,%zu) capacity=%zu "
-            "%s vertices=%zu\n",
-            textId, text.c_str(), text.length(), run.start, run.start+run.glyphs,
-            run.capacity, textBuffer?"ftgl":"sdf", glyphCount*4);
-        ::printf("[mirror]   pos=(%d,%d) z=%d hidden=%s atlas=%zux%zu depth=%zu "
-            "mirror verts=%zu slots used=%zu free runs=%zu free slots=%zu "
-            "live glyphs=%zu chunk slots=%zu\n",
-            pos.x, pos.y, zIndex, run.hidden?"yes":"no",
-            fontData.atlas->width, fontData.atlas->height, fontData.atlas->depth,
-            m_textVertexes.size(), m_textSlotsUsed,
-            m_freeTextRuns.size(), freeSlots, liveGlyphs, m_chunkSlots);
-        for(size_t i=0; i<run.capacity; ++i)
-        {
-            const size_t slot=run.start+i;
-            const size_t vertIndex=slot*4;
-            float minX=m_textVertexes[vertIndex].x, maxX=minX;
-            float minY=m_textVertexes[vertIndex].y, maxY=minY;
-
-            // what buildTextDrawList lists for the run: its glyphs in use, unless hidden
-            const bool drawn=!run.hidden && (i < run.glyphs);
-
-            ::printf("[mirror]   slot %zu (glyph %zu, char '%c')%s verts %zu..%zu chunk %zu %s\n",
-                slot, i, i<text.length()?text[i]:'?', i<run.glyphs?"":" [unused tail]",
-                vertIndex, vertIndex+3, slot/m_chunkSlots, drawn?"drawn":"not drawn");
-            for(size_t j=0; j<4; ++j)
-            {
-                const ftgl::glyph_vertex_t &v=m_textVertexes[vertIndex+j];
-                minX=std::min(minX, v.x); maxX=std::max(maxX, v.x);
-                minY=std::min(minY, v.y); maxY=std::max(maxY, v.y);
-                ::printf("[mirror]     v%zu x=%9.3f y=%9.3f z=%9.3f u=%8.5f v=%8.5f "
-                    "rgba=%.2f,%.2f,%.2f,%.2f gamma=%.2f\n",
-                    j, (double)v.x, (double)v.y, (double)v.z, (double)v.u, (double)v.v,
-                    (double)v.r, (double)v.g, (double)v.b, (double)v.a, (double)v.gamma);
-            }
-            ::printf("[mirror]     box w=%.3f h=%.3f  x=[%.3f..%.3f] y=[%.3f..%.3f]\n",
-                (double)(maxX-minX), (double)(maxY-minY),
-                (double)minX, (double)maxX, (double)minY, (double)maxY);
-        }
-    }
-
-    if(textBuffer)
-        text_buffer_delete(textBuffer);
-}
-
-void OpenGLCore::textPens(GLFontData &fontData, float px, const gweni::String &text,
-    std::vector<float> &pens)
-{
-    ftgl::texture_font_t *font=fontData.textureFont;
-    const bool sdf=(fontData.mode == GLTextMode::Sdf);
-    const float s=sdf?px/fontData.baseSize:1.0f;
-    float pen=0.0f;
-    const char *previous=nullptr;
-
-    pens.clear();
-    // the walk of layoutSdfText, or of freetype-gl's text_buffer_add_text
-    for(size_t i=0; i < text.size(); i+=std::max<size_t>(1, ftgl::utf8_surrogate_len(text.c_str()+i)))
-    {
-        const char *current=text.c_str()+i;
-
-        if(*current == '\n')
-        {
-            pen=0.0f;
-            // text_buffer_add_text kerns the next glyph against the '\n'
-            previous=sdf?nullptr:current;
-            continue;
-        }
-
-        ftgl::texture_glyph_t *glyph=ftgl::texture_font_get_glyph(font, current);
-
-        if(glyph == nullptr)
-        {
-            if(!sdf)
-                previous=current;
-            continue;
-        }
-
-        if(previous && font->kerning)
-            pen+=ftgl::texture_glyph_get_kerning(glyph, previous)*s;
-
-        // a coverage glyph's quad sits at the pen rounded to a whole pixel
-        pens.push_back(sdf?pen:roundf(pen));
-        pen+=glyph->advance_x*s;
-        previous=current;
-    }
-}
-
-void OpenGLCore::measuredPenShifts(const gweni::Font &font, GLFontData &drawn, float px,
-    const gweni::String &text, std::vector<float> &shifts)
-{
-    shifts.clear();
-    if(px == font.size)
-        return;
-
-    // An SDF font lays a run out linearly in px, so measured at font.size and drawn
-    // at px its pens differ by the scale alone. So does an LCD font, whose pens are
-    // the unhinted advances and kerning, to within its 1/3 px quantisation.
-    if(resolveFont(font, font.size).mode == GLTextMode::Sdf)
-        return;
-    if((drawn.mode == GLTextMode::LcdRGB) || (drawn.mode == GLTextMode::LcdBGR))
-        return;
-
-    std::pair<const GLFontKey, GLFontData> *drawFont=m_lastFont;
-
-    if(!ensureFont(font, font.size))
-    {
-        m_lastFont=drawFont;
-        return;
-    }
-
-    GLFontData &measured=m_lastFont->second;
-    std::vector<float> measuredPens, drawnPens;
-
-    m_lastFont=drawFont;
-    textPens(measured, font.size, text, measuredPens);
-    textPens(drawn, px, text, drawnPens);
-
-    // a glyph one font has and the other has not: left as drawn
-    if(measuredPens.size() != drawnPens.size())
-        return;
-
-    const float scale=px/font.size;
-
-    shifts.resize(drawnPens.size());
-    for(size_t i=0; i < drawnPens.size(); ++i)
-    {
-        const float target=measuredPens[i]*scale;
-
-        // a coverage glyph stays on whole pixels
-        shifts[i]=((drawn.mode == GLTextMode::Sdf)?target:roundf(target))-drawnPens[i];
-    }
-}
-
-gweni::Point OpenGLCore::layoutSdfText(GLFontData &fontData, float px, const gweni::String &text,
-    const gweni::Color &color, std::vector<ftgl::glyph_vertex_t> *vertexes)
-{
-    ftgl::texture_font_t *font=fontData.textureFont;
-    const float s=px/fontData.baseSize;
-    const float r=color.r/255.0f, g=color.g/255.0f, b=color.b/255.0f, a=color.a/255.0f;
-
-    // The baseline sits a whole number of pixels below the line's top, and the run's
-    // origin is a whole pixel, so a run moved by a sub-pixel amount cannot shimmer.
-    // Within the line the glyphs keep their fractional, unhinted pen positions.
-    const float ascender=roundf(font->ascender*s);
-    const float lineStep=roundf((font->ascender-font->descender)*s);
-    float baseline=-ascender;
-    float pen=0.0f;
-    float width=0.0f;
-    int lines=1;
-    const char *previous=nullptr;
-
-    //one codepoint at a time, as text_buffer_add_text goes
-    for(size_t i=0; i < text.size(); i+=std::max<size_t>(1, ftgl::utf8_surrogate_len(text.c_str()+i)))
-    {
-        const char *current=text.c_str()+i;
-
-        if(*current == '\n')
-        {
-            width=std::max(width, pen);
-            pen=0.0f;
-            baseline-=lineStep;
-            ++lines;
-            previous=nullptr;
-            continue;
-        }
-
-        ftgl::texture_glyph_t *glyph=ftgl::texture_font_get_glyph(font, current);
-
-        if(glyph == nullptr)
-            continue;
-
-        if(previous && font->kerning)
-            pen+=ftgl::texture_glyph_get_kerning(glyph, previous)*s;
-
-        if(vertexes)
-        {
-            // the glyph's field, its spread padding included, scaled about the pen
-            const float x0=pen+glyph->offset_x*s;
-            const float x1=x0+glyph->width*s;
-            const float y0=baseline+glyph->offset_y*s;
-            const float y1=y0-glyph->height*s;
-            // in text_buffer_add_char's vertex order; shift is unused, gamma 1
-            const ftgl::glyph_vertex_t quad[4]=
-            {
-                {x0, y0, 0.0f, glyph->s0, glyph->t0, r, g, b, a, 0.0f, 1.0f},
-                {x0, y1, 0.0f, glyph->s0, glyph->t1, r, g, b, a, 0.0f, 1.0f},
-                {x1, y1, 0.0f, glyph->s1, glyph->t1, r, g, b, a, 0.0f, 1.0f},
-                {x1, y0, 0.0f, glyph->s1, glyph->t0, r, g, b, a, 0.0f, 1.0f}
-            };
-
-            vertexes->insert(vertexes->end(), quad, quad+4);
-        }
-
-        pen+=glyph->advance_x*s;
-        previous=current;
-    }
-    width=std::max(width, pen);
-
-    return gweni::Point((int)ceil(width), (int)ceil(font->height*s+(lines-1)*lineStep));
-}
-
-void OpenGLCore::showText(size_t textId)
-{
-    if(textId >= m_textRuns.size())
-        return;
-
-    TextRun &run=m_textRuns[textId];
-
-    if(!run.hidden)
-        return;
-
-#ifdef DEBUG_RENDER
-    std::cout<<"Showing text: "<<run.text<<"\n";
-#endif//DEBUG_RENDER
-
-    run.hidden=false;
-    markTextDrawList(run);
-}
-
-void OpenGLCore::hideText(size_t textId)
-{
-    if(textId >= m_textRuns.size())
-        return;
-
-    TextRun &run=m_textRuns[textId];
-
-    if(run.hidden)
-        return;
-
-#ifdef DEBUG_RENDER
-    std::cout<<"Hiding text: "<<run.text<<"\n";
-#endif//DEBUG_RENDER
-
-    run.hidden=true;
-    markTextDrawList(run);
-}
-
-// The size is in canvas (unscaled) units at any scale(): the text is measured at
-// font.size, in the font it is drawn in at scale 1, so a layout is the same at every
-// scale, and renderText draws it at font.size*scale() from the scaled origin. This
-// deliberately differs from the legacy OpenGL and Software renderers, whose
-// measureText returns scaled pixels (GWEN's long-standing inconsistency).
-gweni::Point OpenGLCore::measureText(const gweni::Font &font, const gweni::String &text)
-{
-    if(!ensureFont(font, font.size))
-        return gweni::Point(0, 0);
-
-    GLFontData &fontData=m_lastFont->second;
-
-    // In an SDF font: the same layout renderText draws, so sizeToContents fits it
-    if(fontData.mode == GLTextMode::Sdf)
-    {
-        const gweni::Point sz=layoutSdfText(fontData, font.size, text, gweni::Color(), nullptr);
-
-        if(textDebugMatches(text))
-            ::printf("[measure] \"%s\" sdf font.size=%f scale=%f base=%f => sz.x=%d sz.y=%d"
-                " (atlas %zux%zu used=%zu glyphs=%zu)\n",
-                text.c_str(), (double)font.size, (double)scale(), (double)fontData.baseSize, sz.x, sz.y,
-                fontData.atlas->width, fontData.atlas->height, fontData.atlas->used,
-                fontData.textureFont->glyphs->size);
-        return sz;
-    }
-
-    ftgl::text_buffer_t *textBuffer=ftgl::text_buffer_new();
-    ftgl::vec2 pen={0.f, 0.f};
-
-    //codepoints, as in renderText
-    ftgl::text_buffer_add_text(textBuffer, &pen, &fontData.markup, text.c_str(), ftgl::utf8_strlen(text.c_str()));
-
-    ftgl::vector_t *vertices=textBuffer->buffer->vertices;
-    float *verticesBuffer=(float *)vertices->items;
-
-    assert(vertices->item_size == sizeof(ftgl::glyph_vertex_t));
-
-    // The pen ends at the sum of the glyph advances (plus kerning), which is the
-    // width the next string would start at. The right edge of the last glyph's
-    // ink is a different and smaller quantity, and is not what a control laying
-    // text out wants.
-    Point sz((int)ceil(pen.x), (int)ceil(fontData.markup.font->height));
-
-    if(textDebugMatches(text))
-    {
-        ::printf("[measure] \"%s\" len=%zu font.size=%f scale=%f\n",
-            text.c_str(), text.length(), (double)font.size, (double)scale());
-        ::printf("[measure]   markup.size=%f font->size=%f height=%f ascender=%f descender=%f\n",
-            (double)fontData.markup.size, (double)fontData.markup.font->size,
-            (double)fontData.markup.font->height, (double)fontData.markup.font->ascender,
-            (double)fontData.markup.font->descender);
-        ::printf("[measure]   vertices->size=%zu item_size=%zu capacity=%zu floats_available=%zu "
-            "floats_read_max=%zu\n",
-            vertices->size, vertices->item_size, vertices->capacity,
-            (vertices->size*vertices->item_size)/sizeof(float),
-            vertices->size*11);
-        size_t dumpIndex=0;
-        for(size_t i=0; i<vertices->size; ++i)
-        {
-            ::printf("[measure]   v%-3zu x=%10.3f y=%10.3f z=%6.2f u=%8.5f v=%8.5f\n", i,
-                (double)verticesBuffer[dumpIndex], (double)verticesBuffer[dumpIndex+1],
-                (double)verticesBuffer[dumpIndex+2], (double)verticesBuffer[dumpIndex+3],
-                (double)verticesBuffer[dumpIndex+4]);
-            dumpIndex+=11;
-        }
-        ::printf("[measure]   => sz.x=%d sz.y=%d (pen advance=%f)\n",
-            sz.x, sz.y, (double)pen.x);
-        ::printf("[measure]   atlas %zux%zu depth=%zu used=%zu\n",
-            fontData.atlas->width, fontData.atlas->height, fontData.atlas->depth,
-            fontData.atlas->used);
-        for(size_t i=0; i<text.length(); ++i)
-        {
-            char cp[2]={text[i], '\0'};
-            ftgl::texture_glyph_t *g=ftgl::texture_font_find_glyph(fontData.markup.font, cp);
-            if(g == nullptr)
-            {
-                ::printf("[measure]   glyph '%c' NOT CACHED\n", cp[0]);
-                continue;
-            }
-            ::printf("[measure]   glyph '%c' w=%zu h=%zu off=(%d,%d) advance=(%.3f,%.3f) "
-                "st=(%.5f,%.5f)-(%.5f,%.5f)\n",
-                cp[0], g->width, g->height, g->offset_x, g->offset_y,
-                (double)g->advance_x, (double)g->advance_y,
-                (double)g->s0, (double)g->t0, (double)g->s1, (double)g->t1);
-        }
-    }
-
-    text_buffer_delete(textBuffer);
-
-    return sz;
 }
 
 bool OpenGLCore::initializeContext(gweni::WindowProvider *window)

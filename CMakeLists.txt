@@ -334,7 +334,11 @@ if(GWENI_RENDER_OPENGL_CORE)
         COMMENT "Embedding the fallback font ${GWENI_FALLBACK_FONT}"
         VERBATIM)
 
+    # SlotRenderer, the API-independent part of a retained renderer (the mirrors,
+    # the vertex packing, the text runs and fonts), and OpenGLCore, its GL backend
     list(APPEND GWENI_RENDER_SOURCES
+        include/gweni/platforms/renderers/slotRenderer.h
+        source/platforms/renderers/SlotRenderer/slotRenderer.cpp
         include/gweni/platforms/renderers/openglCore.h
         source/platforms/renderers/OpenGLCore/openglCore.cpp
         ${GWENI_FALLBACK_FONT_SOURCE}

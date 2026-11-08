@@ -3,7 +3,7 @@
  *  Copyright (c) 2010 Facepunch Studios
  *  MIT License, see LICENSE
  *
- *  OpenGLCore's text AA modes (setTextAA, GWENI_TEXT_AA): Grayscale draws one
+ *  SlotRenderer's text AA modes (setTextAA, GWENI_TEXT_AA): Grayscale draws one
  *  coverage per pixel from an R8 atlas, LcdRGB/LcdBGR one per subpixel from a
  *  depth-3 atlas, blended per channel through the text shader's second output.
  *
@@ -17,14 +17,13 @@
  *  This is the coverage path: when GWENI_SDF_TEXT_MIN puts 12 px in the SDF
  *  range, which stays grayscale, the cases are skipped.
  *
- *  The LCD modes' atlas is depth 3 / GL_RGB8. The runtime switch is checked as
+ *  The LCD modes' atlas is depth 3 / RGB8. The runtime switch is checked as
  *  gray -> rgb -> gray on the shared renderer and on a canvas switched at
  *  runtime, byte for byte against fresh renderers started in each mode. A case
  *  that changes the mode puts it back when it ends.
  */
 #include <doctest/doctest.h>
 
-#include "capture.h"
 #include "gpuRenderer.h"
 
 #include <gweni/controls/button.h>
@@ -33,6 +32,7 @@
 #include <gweni/platforms/commonPlatform.h>
 #include <gweni/skins/textured/texturedSkin.h>
 
+#include <memory>
 #include <vector>
 
 namespace
@@ -42,8 +42,8 @@ using gweni::Color;
 using gweni::Font;
 using gweni::Point;
 using gweni::String;
-using gweni::renderer::GLTextMode;
-using gweni::renderer::OpenGLCore;
+using gweni::renderer::TextMode;
+using gweni::renderer::SlotRenderer;
 using gweni::renderer::TextAA;
 
 const Color white(255, 255, 255, 255);
@@ -77,10 +77,9 @@ struct RestoreTextAA
 
 std::vector<uint8_t> readFrame()
 {
-    const Point size=gweni::test::viewSize();
     std::vector<uint8_t> pixels;
 
-    gweni::capture::readFramebufferRgba(size.x, size.y, pixels);
+    gweni::test::readView(pixels);
     return pixels;
 }
 
@@ -105,14 +104,13 @@ size_t inkedPixels(const std::vector<uint8_t> &frame)
 
 void clearFrame()
 {
-    glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
-    glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
+    gweni::test::clearView(gweni::Color(0, 0, 0, 255));
 }
 
 //! The two glyphs' text ids on one renderer, released (and that flushed) at the end.
 struct Glyphs
 {
-    explicit Glyphs(OpenGLCore &renderer): renderer(renderer)
+    explicit Glyphs(SlotRenderer &renderer): renderer(renderer)
     {
         for(size_t &id:ids)
             renderer.generateTextPrimitive(id);
@@ -138,7 +136,7 @@ struct Glyphs
         return readFrame();
     }
 
-    OpenGLCore &renderer;
+    SlotRenderer &renderer;
     size_t ids[2]={0, 0};
 };
 
@@ -147,7 +145,8 @@ struct FreshRenderer
 {
     explicit FreshRenderer(TextAA aa):
         paths("resources"),
-        renderer(paths, gweni::Rect(Point(0, 0), gweni::test::viewSize()))
+        owned(gweni::test::newRenderer(paths, gweni::Rect(Point(0, 0), gweni::test::viewSize()))),
+        renderer(*owned)
     {
         renderer.init();
         // explicitly, so GWENI_TEXT_AA in the environment takes no part
@@ -155,12 +154,13 @@ struct FreshRenderer
     }
 
     gweni::platform::CurrentPath paths;
-    OpenGLCore renderer;
+    std::unique_ptr<SlotRenderer> owned;
+    SlotRenderer &renderer;
 };
 
 bool coverageRange()
 {
-    if(gweni::test::gpuRenderer().getTextMode(at12()) != GLTextMode::Sdf)
+    if(gweni::test::gpuRenderer().getTextMode(at12()) != TextMode::Sdf)
         return true;
     MESSAGE("skipped: GWENI_SDF_TEXT_MIN draws 12 px from the SDF atlas, which is grayscale");
     return false;
@@ -168,9 +168,9 @@ bool coverageRange()
 
 }//namespace
 
-TEST_CASE("Text AA: an LCD mode loads a depth-3 GL_RGB8 atlas of its own, grayscale an R8 one")
+TEST_CASE("Text AA: an LCD mode loads a depth-3 RGB8 atlas of its own, grayscale an R8 one")
 {
-    OpenGLCore &renderer=gweni::test::gpuRenderer();
+    SlotRenderer &renderer=gweni::test::gpuRenderer();
     RestoreTextAA restore;
 
     if(!coverageRange())
@@ -186,25 +186,25 @@ TEST_CASE("Text AA: an LCD mode loads a depth-3 GL_RGB8 atlas of its own, graysc
         const bool lcd=(aa != TextAA::Grayscale);
         int bits[4]={-1, -1, -1, -1};
 
-        CHECK(renderer.getTextMode(at12()) == ((aa == TextAA::LcdRGB)?GLTextMode::LcdRGB:
-            (aa == TextAA::LcdBGR)?GLTextMode::LcdBGR:GLTextMode::Coverage));
+        CHECK(renderer.getTextMode(at12()) == ((aa == TextAA::LcdRGB)?TextMode::LcdRGB:
+            (aa == TextAA::LcdBGR)?TextMode::LcdBGR:TextMode::Coverage));
         CHECK(renderer.getFontAtlasDepth(at12()) == (lcd?3u:1u));
 
-        // GL_RGB8 or GL_R8, as the framebuffer it is attached to reports its channels
-        REQUIRE(OpenGLCore::textureChannelBits(renderer.getFontAtlasName(at12()), bits));
+        // RGB8 or R8, as the framebuffer it is attached to reports its channels
+        REQUIRE(renderer.textureChannelSizes(renderer.getFontAtlasHandle(at12()), bits));
         CHECK(bits[0] == 8);
         CHECK(bits[1] == (lcd?8:0));
         CHECK(bits[2] == (lcd?8:0));
         CHECK(bits[3] == 0);
         // the font loaded before the switch is loaded again in the new mode
-        CHECK(renderer.getFontAtlasName(gweni::test::openSans()) != 0);
+        CHECK(renderer.getFontAtlasHandle(gweni::test::openSans()) != 0);
     }
     renderer.freeFont(at12());
 }
 
 TEST_CASE("Text AA: a switch keeps each font's owners, so it takes as many freeFonts to go as before")
 {
-    OpenGLCore &renderer=gweni::test::gpuRenderer();
+    SlotRenderer &renderer=gweni::test::gpuRenderer();
     RestoreTextAA restore;
 
     if(!coverageRange())
@@ -222,38 +222,38 @@ TEST_CASE("Text AA: a switch keeps each font's owners, so it takes as many freeF
     {
         CAPTURE(name(aa));
         renderer.setTextAA(aa);
-        CHECK(renderer.getFontAtlasName(at12()) != 0);
+        CHECK(renderer.getFontAtlasHandle(at12()) != 0);
         CHECK(renderer.getLoadedFontCount() == fontsBefore+1);
     }
 
     // the first free leaves it to the second owner, in the new mode
     renderer.freeFont(at12());
 
-    const unsigned int atlas=renderer.getFontAtlasName(at12());
+    const unsigned int atlas=renderer.getFontAtlasHandle(at12());
 
     CHECK(atlas != 0);
     CHECK(renderer.getFontAtlasDepth(at12()) == 3u);
 
     // a switch with one owner left keeps that one
     renderer.setTextAA(TextAA::Grayscale);
-    CHECK(renderer.getFontAtlasName(at12()) != 0);
+    CHECK(renderer.getFontAtlasHandle(at12()) != 0);
     CHECK(renderer.getFontAtlasDepth(at12()) == 1u);
 
     renderer.freeFont(at12());
-    CHECK(renderer.getFontAtlasName(at12()) == 0);
+    CHECK(renderer.getFontAtlasHandle(at12()) == 0);
     CHECK(renderer.getLoadedFontCount() == fontsBefore);
 
     // a font only used, never loaded, has no owner to keep: one free takes it
     REQUIRE(renderer.ensureFont(at12()));
     renderer.setTextAA(TextAA::LcdRGB);
-    CHECK(renderer.getFontAtlasName(at12()) != 0);
+    CHECK(renderer.getFontAtlasHandle(at12()) != 0);
     renderer.freeFont(at12());
-    CHECK(renderer.getFontAtlasName(at12()) == 0);
+    CHECK(renderer.getFontAtlasHandle(at12()) == 0);
 }
 
 TEST_CASE("Text AA: a stem's edges fringe blue-left/red-right in rgb, mirrored in bgr, and not in gray")
 {
-    OpenGLCore &renderer=gweni::test::gpuRenderer();
+    SlotRenderer &renderer=gweni::test::gpuRenderer();
     RestoreTextAA restore;
 
     if(!coverageRange())
@@ -333,7 +333,7 @@ TEST_CASE("Text AA: a stem's edges fringe blue-left/red-right in rgb, mirrored i
 
 TEST_CASE("Text AA: gray -> rgb -> gray at runtime draws what fresh renderers in each mode draw")
 {
-    OpenGLCore &renderer=gweni::test::gpuRenderer();
+    SlotRenderer &renderer=gweni::test::gpuRenderer();
     RestoreTextAA restore;
 
     if(!coverageRange())
@@ -387,7 +387,7 @@ namespace
 //! A textured-skin canvas over the whole view: a Label sized to its text and a Button.
 struct CanvasScene
 {
-    explicit CanvasScene(OpenGLCore &renderer)
+    explicit CanvasScene(SlotRenderer &renderer)
     {
         skin=new gweni::skin::textured::TexturedSkin(&renderer);
         REQUIRE(skin->init("DefaultSkin.json"));

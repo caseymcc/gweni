@@ -3,7 +3,7 @@
  *  Copyright (c) 2010 Facepunch Studios
  *  MIT License, see LICENSE
  *
- *  OpenGLCore's shader clipping: every primitive and glyph slot carries the
+ *  SlotRenderer's shader clipping: every primitive and glyph slot carries the
  *  clipRegion() current when it was drawn, and the fragment shaders discard what
  *  lies outside it. Drawn offscreen and read back.
  *
@@ -27,7 +27,6 @@
  */
 #include <doctest/doctest.h>
 
-#include "capture.h"
 #include "gpuRenderer.h"
 
 #include <algorithm>
@@ -40,7 +39,7 @@ namespace
 using gweni::Color;
 using gweni::Point;
 using gweni::Rect;
-using gweni::renderer::OpenGLCore;
+using gweni::renderer::SlotRenderer;
 
 const Color background(0, 0, 255, 255);
 const Color white(255, 255, 255, 255);
@@ -89,11 +88,9 @@ struct Frame
 template<typename Draw>
 Frame drawFrame(Draw &&draw)
 {
-    OpenGLCore &renderer=gweni::test::gpuRenderer();
-    const Point size=gweni::test::viewSize();
+    SlotRenderer &renderer=gweni::test::gpuRenderer();
 
-    glClearColor(background.r/255.0f, background.g/255.0f, background.b/255.0f, 1.0f);
-    glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
+    gweni::test::clearView(background);
 
     renderer.begin();
     draw(renderer);
@@ -101,7 +98,7 @@ Frame drawFrame(Draw &&draw)
 
     Frame frame;
 
-    gweni::capture::readFramebufferRgba(size.x, size.y, frame.pixels);
+    gweni::test::readView(frame.pixels);
     return frame;
 }
 
@@ -123,7 +120,7 @@ struct ScaleGuard
 
     ~ScaleGuard()
     {
-        OpenGLCore &renderer=gweni::test::gpuRenderer();
+        SlotRenderer &renderer=gweni::test::gpuRenderer();
 
         renderer.setScale(1.0f);
         renderer.setRenderOffset(Point(0, 0));
@@ -145,7 +142,7 @@ struct Primitives
 
     ~Primitives()
     {
-        OpenGLCore &renderer=gweni::test::gpuRenderer();
+        SlotRenderer &renderer=gweni::test::gpuRenderer();
 
         for(size_t id:ids)
             renderer.releasePrimitive(id);
@@ -162,7 +159,7 @@ TEST_CASE("Clip boxes: a primitive is cut at the region it was drawn in, after a
 {
     ClipGuard guard;
     Primitives prims(3);
-    OpenGLCore &renderer=gweni::test::gpuRenderer();
+    SlotRenderer &renderer=gweni::test::gpuRenderer();
 
     // ids[0] is drawn unclipped and hidden: a hidden slot still counts in
     // gl_PrimitiveID, so the slots after it must still find their own boxes
@@ -171,7 +168,7 @@ TEST_CASE("Clip boxes: a primitive is cut at the region it was drawn in, after a
     renderer.drawFilledRect(prims.ids[0], wholeView(), 1);
     renderer.hidePrimitive(prims.ids[0]);
 
-    const Frame frame=drawFrame([&](OpenGLCore &renderer)
+    const Frame frame=drawFrame([&](SlotRenderer &renderer)
         {
             renderer.setDrawColor(white);
             renderer.setClipRegion(Rect(40, 30, 100, 50));
@@ -204,7 +201,7 @@ TEST_CASE("Clip boxes: a region past the top-left edge is clamped, an empty one 
     ClipGuard guard;
     Primitives prims(2);
 
-    const Frame frame=drawFrame([&](OpenGLCore &renderer)
+    const Frame frame=drawFrame([&](SlotRenderer &renderer)
         {
             renderer.setDrawColor(white);
             // a negative corner must not wrap in uint16_t: this keeps [0,40) x [0,30)
@@ -227,7 +224,7 @@ TEST_CASE("Clip boxes: a region past the top-left edge is clamped, an empty one 
 TEST_CASE("Clip boxes: text is cut, and follows a new region when moved or only re-clipped")
 {
     ClipGuard guard;
-    OpenGLCore &renderer=gweni::test::gpuRenderer();
+    SlotRenderer &renderer=gweni::test::gpuRenderer();
     const gweni::String text="MMMMMMMMMMMMMMMM";
     const int cut=30;
     const int width=gweni::test::viewSize().x;
@@ -237,7 +234,7 @@ TEST_CASE("Clip boxes: text is cut, and follows a new region when moved or only 
 
     auto drawText=[&](Point pos, Rect clip)
     {
-        return drawFrame([&](OpenGLCore &renderer)
+        return drawFrame([&](SlotRenderer &renderer)
             {
                 renderer.setDrawColor(white);
                 renderer.setClipRegion(clip);
@@ -296,7 +293,7 @@ const Style allStyles[]={Style::Fill, Style::Image, Style::Rounded, Style::Icon,
 
 //! Draws `rect` (canvas units) into `id` with `style`, in colours that make every
 //! part of it show: a gradient, a border, round corners, a texture.
-void drawStyled(OpenGLCore &renderer, Style style, size_t id, const Rect &rect,
+void drawStyled(SlotRenderer &renderer, Style style, size_t id, const Rect &rect,
     const gweni::Texture &texture)
 {
     const Color red(220, 40, 40, 255);
@@ -400,11 +397,11 @@ TEST_CASE("Clip boxes: a quad straddling the view's left or top edge draws exact
 
                 const Rect placed(edge.rect.x+edge.shift.x, edge.rect.y+edge.shift.y,
                     edge.rect.w, edge.rect.h);
-                const Frame whole=drawFrame([&](OpenGLCore &renderer)
+                const Frame whole=drawFrame([&](SlotRenderer &renderer)
                     {
                         drawStyled(renderer, style, prims.ids[0], placed, texture);
                     });
-                const Frame frame=drawFrame([&](OpenGLCore &renderer)
+                const Frame frame=drawFrame([&](SlotRenderer &renderer)
                     {
                         drawStyled(renderer, style, prims.ids[0], edge.rect, texture);
                     });
@@ -450,7 +447,7 @@ TEST_CASE("Clip boxes: a quad with a corner past +/-32767 device px draws nothin
 {
     ClipGuard guard;
     Primitives prims(1);
-    OpenGLCore &renderer=gweni::test::gpuRenderer();
+    SlotRenderer &renderer=gweni::test::gpuRenderer();
 
     gweni::Texture texture;
 
@@ -486,7 +483,7 @@ TEST_CASE("Clip boxes: a quad with a corner past +/-32767 device px draws nothin
             CAPTURE(c.name);
             CAPTURE(int(style));
 
-            const Frame frame=drawFrame([&](OpenGLCore &renderer)
+            const Frame frame=drawFrame([&](SlotRenderer &renderer)
                 {
                     drawStyled(renderer, style, prims.ids[0], c.rect, texture);
                 });
@@ -500,7 +497,7 @@ TEST_CASE("Clip boxes: a quad with a corner past +/-32767 device px draws nothin
         const Rect far(40, 40000, 40, 30);
         auto styleOf=[&](size_t id)
         {
-            const OpenGLCore::MirrorSnapshot mirror=renderer.snapshotMirror();
+            const SlotRenderer::MirrorSnapshot mirror=renderer.snapshotMirror();
             const std::vector<uint8_t> &bytes=mirror.primitives.at(id);
             uint16_t style=0;
 
@@ -508,13 +505,13 @@ TEST_CASE("Clip boxes: a quad with a corner past +/-32767 device px draws nothin
             return style;
         };
 
-        drawFrame([&](OpenGLCore &renderer)
+        drawFrame([&](SlotRenderer &renderer)
             {
                 drawStyled(renderer, Style::Rounded, prims.ids[0], far, texture);
             });
         CHECK(styleOf(prims.ids[0]) == 4);
 
-        const Frame again=drawFrame([&](OpenGLCore &renderer)
+        const Frame again=drawFrame([&](SlotRenderer &renderer)
             {
                 drawStyled(renderer, Style::Rounded, prims.ids[0], far, texture);
             });
@@ -527,7 +524,7 @@ TEST_CASE("Clip boxes: a quad with a corner past +/-32767 device px draws nothin
         renderer.showPrimitive(4, prims.ids[0]);
         CHECK(styleOf(prims.ids[0]) == 4);
 
-        const Frame shown=drawFrame([&](OpenGLCore &) {});
+        const Frame shown=drawFrame([&](SlotRenderer &) {});
 
         CHECK(notBackground(shown) == 0);
     }

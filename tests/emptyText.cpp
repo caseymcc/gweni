@@ -54,7 +54,7 @@ struct Scene
         delete canvas;
         delete skin;
 
-        gweni::renderer::OpenGLCore &renderer=gweni::test::gpuRenderer();
+        gweni::renderer::SlotRenderer &renderer=gweni::test::gpuRenderer();
 
         renderer.setScale(1.0f);
         renderer.begin();

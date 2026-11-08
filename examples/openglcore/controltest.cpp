@@ -1966,7 +1966,7 @@ static bool runTextSizeScenario(Session &s, const std::string &shotDir, bool &pa
 
     const gweni::Point fromSize=label->getSize();
     const std::vector<uint8_t> keptPixels=regionPixels(s, kept);
-    const unsigned int atlas=s.renderer->getFontAtlasName(openSansAt(g_textSizeKept));
+    const unsigned int atlas=s.renderer->getFontAtlasHandle(openSansAt(g_textSizeKept));
 
     label->setFont("OpenSans", g_textSizeTo, false);
     label->sizeToContents();
@@ -2011,14 +2011,14 @@ static bool runTextSizeScenario(Session &s, const std::string &shotDir, bool &pa
     ok=shoot(s, deletedShot) && ok;
 
     const bool keptAfterDelete=(regionPixels(s, kept) == keptPixels);
-    const bool sameAtlas=(atlas != 0) && (s.renderer->getFontAtlasName(openSansAt(g_textSizeKept)) == atlas);
+    const bool sameAtlas=(atlas != 0) && (s.renderer->getFontAtlasHandle(openSansAt(g_textSizeKept)) == atlas);
 
     // the sample is one glyph slot per codepoint, spaces included
     const size_t glyphs=std::strlen(sample);
 
-    const bool sdf=(s.renderer->getTextMode(openSansAt(g_textSizeFrom)) == gweni::renderer::GLTextMode::Sdf)
-        && (s.renderer->getTextMode(openSansAt(g_textSizeTo)) == gweni::renderer::GLTextMode::Sdf)
-        && (s.renderer->getTextMode(openSansAt(g_textSizeKept)) == gweni::renderer::GLTextMode::Sdf);
+    const bool sdf=(s.renderer->getTextMode(openSansAt(g_textSizeFrom)) == gweni::renderer::TextMode::Sdf)
+        && (s.renderer->getTextMode(openSansAt(g_textSizeTo)) == gweni::renderer::TextMode::Sdf)
+        && (s.renderer->getTextMode(openSansAt(g_textSizeKept)) == gweni::renderer::TextMode::Sdf);
     const bool noAtlasUpload=(atlasUploadCalls == 0);
     const bool onlyThatRun=(textSlotsWritten > 0) && (textSlotsWritten <= glyphs);
     const bool grew=(toSize.x > fromSize.x) && (toSize.y > fromSize.y);

@@ -3,7 +3,7 @@
  *  Copyright (c) 2010 Facepunch Studios
  *  MIT License, see LICENSE
  *
- *  OpenGLCore::loadFont reports a face it cannot load, then draws it in the
+ *  SlotRenderer::loadFont reports a face it cannot load, then draws it in the
  *  built-in fallback font (OpenSans, compiled into the library) and returns
  *  LoadedFallback. With the fallback off (setFallbackFont(false)) it fails
  *  instead of returning Loaded with a null texture_font_t behind it. Either
@@ -135,7 +135,7 @@ Font makeFont(const String &facename, float size=11)
 //! Draws `text` alone in one frame and returns how many glyph quads that wrote.
 size_t renderedGlyphs(const Font &font, const String &text)
 {
-    gweni::renderer::OpenGLCore &renderer=gweni::test::gpuRenderer();
+    gweni::renderer::SlotRenderer &renderer=gweni::test::gpuRenderer();
     size_t textId=0;
 
     renderer.generateTextPrimitive(textId);
@@ -156,7 +156,7 @@ size_t renderedGlyphs(const Font &font, const String &text)
 
 TEST_CASE("loadFont: a missing face is LoadedFallback, drawn in OpenSans, reported once and not retried")
 {
-    gweni::renderer::OpenGLCore &renderer=gweni::test::gpuRenderer();
+    gweni::renderer::SlotRenderer &renderer=gweni::test::gpuRenderer();
     const Font missing=makeFont("NoSuchFace");
     // not test::openSans() ("OpenSans.ttf"), so freeing it leaves the fixture alone
     const Font openSans=makeFont("OpenSans");
@@ -199,7 +199,7 @@ TEST_CASE("loadFont: a missing face is LoadedFallback, drawn in OpenSans, report
 
 TEST_CASE("loadFont: a file freetype-gl cannot read is LoadedFallback, reported once and not retried")
 {
-    gweni::renderer::OpenGLCore &renderer=gweni::test::gpuRenderer();
+    gweni::renderer::SlotRenderer &renderer=gweni::test::gpuRenderer();
     BadFontFile file;
     const Font bad=makeFont(file.path);
 
@@ -223,7 +223,7 @@ TEST_CASE("loadFont: a file freetype-gl cannot read is LoadedFallback, reported 
 
 TEST_CASE("loadFont: with the fallback off, a missing face is ErrorFileNotFound, reported once and not retried")
 {
-    gweni::renderer::OpenGLCore &renderer=gweni::test::gpuRenderer();
+    gweni::renderer::SlotRenderer &renderer=gweni::test::gpuRenderer();
     const Font missing=makeFont("NoSuchFace");
     NoFallback noFallback;
     ErrorLog log;
@@ -260,7 +260,7 @@ TEST_CASE("loadFont: with the fallback off, a missing face is ErrorFileNotFound,
 
 TEST_CASE("loadFont: with the fallback off, a file freetype-gl cannot read is ErrorBadData, reported once and not retried")
 {
-    gweni::renderer::OpenGLCore &renderer=gweni::test::gpuRenderer();
+    gweni::renderer::SlotRenderer &renderer=gweni::test::gpuRenderer();
     BadFontFile file;
     const Font bad=makeFont(file.path);
     NoFallback noFallback;
@@ -282,7 +282,7 @@ TEST_CASE("loadFont: with the fallback off, a file freetype-gl cannot read is Er
 
 TEST_CASE("loadFont: the fallback draws in every text mode, measuring as OpenSans does")
 {
-    gweni::renderer::OpenGLCore &renderer=gweni::test::gpuRenderer();
+    gweni::renderer::SlotRenderer &renderer=gweni::test::gpuRenderer();
     RestoreTextAA restore;
 
     struct Mode
@@ -290,15 +290,15 @@ TEST_CASE("loadFont: the fallback draws in every text mode, measuring as OpenSan
         String name;
         TextAA aa;
         float size;
-        gweni::renderer::GLTextMode expected;
+        gweni::renderer::TextMode expected;
     };
     // 11 is below GWENI_SDF_TEXT_MIN's default (18), 24 above it; a row whose
     // size another threshold puts in another mode is skipped
     const Mode modes[]={
-        {"coverage", TextAA::Grayscale, 11, gweni::renderer::GLTextMode::Coverage},
-        {"lcd rgb", TextAA::LcdRGB, 11, gweni::renderer::GLTextMode::LcdRGB},
-        {"lcd bgr", TextAA::LcdBGR, 11, gweni::renderer::GLTextMode::LcdBGR},
-        {"sdf", TextAA::Grayscale, 24, gweni::renderer::GLTextMode::Sdf},
+        {"coverage", TextAA::Grayscale, 11, gweni::renderer::TextMode::Coverage},
+        {"lcd rgb", TextAA::LcdRGB, 11, gweni::renderer::TextMode::LcdRGB},
+        {"lcd bgr", TextAA::LcdBGR, 11, gweni::renderer::TextMode::LcdBGR},
+        {"sdf", TextAA::Grayscale, 24, gweni::renderer::TextMode::Sdf},
     };
 
     for(const Mode &mode:modes)
@@ -335,7 +335,7 @@ TEST_CASE("loadFont: the fallback draws in every text mode, measuring as OpenSan
 
 TEST_CASE("loadFont: a fallback freed and loaded again, over and over, keeps drawing")
 {
-    gweni::renderer::OpenGLCore &renderer=gweni::test::gpuRenderer();
+    gweni::renderer::SlotRenderer &renderer=gweni::test::gpuRenderer();
     const Font missing=makeFont("NoSuchFace");
     const size_t fonts=renderer.getLoadedFontCount();
     ErrorLog log;
@@ -367,7 +367,7 @@ TEST_CASE("loadFont: the built-in fallback is resources/OpenSans.ttf byte for by
 
 TEST_CASE("loadFont: OpenSans loads and measures")
 {
-    gweni::renderer::OpenGLCore &renderer=gweni::test::gpuRenderer();
+    gweni::renderer::SlotRenderer &renderer=gweni::test::gpuRenderer();
     // not test::openSans() ("OpenSans.ttf"), so freeing it leaves the fixture alone
     const Font openSans=makeFont("OpenSans");
     ErrorLog log;

@@ -3,7 +3,7 @@
  *  Copyright (c) 2010 Facepunch Studios
  *  MIT License, see LICENSE
  *
- *  Text at or above OpenGLCore's SDF threshold (GWENI_SDF_TEXT_MIN, 18 px by
+ *  Text at or above SlotRenderer's SDF threshold (GWENI_SDF_TEXT_MIN, 18 px by
  *  default) is drawn from one signed distance field atlas per face, shared by
  *  every size, with its metrics scaled from the atlas's base size. These cases
  *  pin that sharing, that measureText scales with the size and fits the drawn
@@ -15,7 +15,6 @@
  */
 #include <doctest/doctest.h>
 
-#include "capture.h"
 #include "gpuRenderer.h"
 
 #include <algorithm>
@@ -29,8 +28,8 @@ using gweni::Color;
 using gweni::Font;
 using gweni::Point;
 using gweni::String;
-using gweni::renderer::GLTextMode;
-using gweni::renderer::OpenGLCore;
+using gweni::renderer::TextMode;
+using gweni::renderer::SlotRenderer;
 
 const Color background(0, 0, 255, 255);
 const Color white(255, 255, 255, 255);
@@ -48,7 +47,7 @@ bool allSdf(const std::vector<float> &sizes)
 {
     for(float size:sizes)
     {
-        if(gweni::test::gpuRenderer().getTextMode(openSansAt(size)) != GLTextMode::Sdf)
+        if(gweni::test::gpuRenderer().getTextMode(openSansAt(size)) != TextMode::Sdf)
         {
             MESSAGE("skipped: GWENI_SDF_TEXT_MIN puts ", size, " px below the SDF threshold");
             return false;
@@ -92,18 +91,16 @@ Ink inkOf(const std::vector<uint8_t> &frame)
 //! Renders text on textId alone in one frame and reads it back.
 std::vector<uint8_t> drawFrame(size_t textId, const Font &font, Point pos, const String &text)
 {
-    OpenGLCore &renderer=gweni::test::gpuRenderer();
-    const Point size=gweni::test::viewSize();
+    SlotRenderer &renderer=gweni::test::gpuRenderer();
     std::vector<uint8_t> pixels;
 
-    glClearColor(background.r/255.0f, background.g/255.0f, background.b/255.0f, 1.0f);
-    glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
+    gweni::test::clearView(background);
     renderer.begin();
     renderer.setDrawColor(white);
     renderer.renderText(textId, font, pos, 1, text);
     renderer.end();
 
-    gweni::capture::readFramebufferRgba(size.x, size.y, pixels);
+    gweni::test::readView(pixels);
     return pixels;
 }
 
@@ -111,7 +108,7 @@ std::vector<uint8_t> drawFrame(size_t textId, const Font &font, Point pos, const
 
 TEST_CASE("SDF text: every size of a face shares one atlas, apart from the coverage sizes")
 {
-    OpenGLCore &renderer=gweni::test::gpuRenderer();
+    SlotRenderer &renderer=gweni::test::gpuRenderer();
 
     if(!allSdf({ 24.0f, 36.0f, 72.0f }))
         return;
@@ -128,43 +125,43 @@ TEST_CASE("SDF text: every size of a face shares one atlas, apart from the cover
     REQUIRE((renderer.loadFont(at72) == Font::Status::Loaded));
 
     CHECK(renderer.getLoadedFontCount() == fonts);
-    CHECK(renderer.getFontAtlasName(at24) != 0);
-    CHECK(renderer.getFontAtlasName(at36) == renderer.getFontAtlasName(at24));
-    CHECK(renderer.getFontAtlasName(at72) == renderer.getFontAtlasName(at24));
+    CHECK(renderer.getFontAtlasHandle(at24) != 0);
+    CHECK(renderer.getFontAtlasHandle(at36) == renderer.getFontAtlasHandle(at24));
+    CHECK(renderer.getFontAtlasHandle(at72) == renderer.getFontAtlasHandle(at24));
     // the shared 11 px UI font keeps its own coverage atlas
-    if(renderer.getTextMode(gweni::test::openSans()) == GLTextMode::Coverage)
-        CHECK(renderer.getFontAtlasName(gweni::test::openSans()) != renderer.getFontAtlasName(at24));
+    if(renderer.getTextMode(gweni::test::openSans()) == TextMode::Coverage)
+        CHECK(renderer.getFontAtlasHandle(gweni::test::openSans()) != renderer.getFontAtlasHandle(at24));
 
     // each size's load holds the face's atlas: freeing one leaves it to the others
-    const unsigned int atlas=renderer.getFontAtlasName(at24);
+    const unsigned int atlas=renderer.getFontAtlasHandle(at24);
 
     renderer.freeFont(at36);
-    CHECK(renderer.getFontAtlasName(at24) == atlas);
-    CHECK(glIsTexture(atlas) == GL_TRUE);
+    CHECK(renderer.getFontAtlasHandle(at24) == atlas);
+    CHECK(renderer.textureExists(atlas));
     CHECK(renderer.getLoadedFontCount() == fonts);
     renderer.freeFont(at72);
-    CHECK(renderer.getFontAtlasName(at24) == atlas);
+    CHECK(renderer.getFontAtlasHandle(at24) == atlas);
 
     // the last owner's free, with no run laid out in it, frees it for every size;
     // unless GWENI_SDF_TEXT_MIN puts the shared fixture in it too, whose load holds it
-    const bool fixtureShares=(renderer.getFontAtlasName(gweni::test::openSans()) == atlas);
+    const bool fixtureShares=(renderer.getFontAtlasHandle(gweni::test::openSans()) == atlas);
 
     renderer.freeFont(at24);
     if(fixtureShares)
     {
-        CHECK(renderer.getFontAtlasName(at24) == atlas);
+        CHECK(renderer.getFontAtlasHandle(at24) == atlas);
         CHECK(renderer.getLoadedFontCount() == fonts);
         return;
     }
-    CHECK(renderer.getFontAtlasName(at24) == 0);
-    CHECK(renderer.getFontAtlasName(at36) == 0);
-    CHECK(glIsTexture(atlas) == GL_FALSE);
+    CHECK(renderer.getFontAtlasHandle(at24) == 0);
+    CHECK(renderer.getFontAtlasHandle(at36) == 0);
+    CHECK(!renderer.textureExists(atlas));
     CHECK(renderer.getLoadedFontCount() == fonts-1);
 }
 
 TEST_CASE("SDF text: measureText scales with the size")
 {
-    OpenGLCore &renderer=gweni::test::gpuRenderer();
+    SlotRenderer &renderer=gweni::test::gpuRenderer();
 
     if(!allSdf({ 18.0f, 36.0f, 72.0f }))
         return;
@@ -185,7 +182,7 @@ TEST_CASE("SDF text: measureText scales with the size")
 
 TEST_CASE("SDF text: the drawn run fits the box measureText gives")
 {
-    OpenGLCore &renderer=gweni::test::gpuRenderer();
+    SlotRenderer &renderer=gweni::test::gpuRenderer();
 
     if(!allSdf({ 24.0f, 36.0f, 48.0f }))
         return;
@@ -224,7 +221,7 @@ TEST_CASE("SDF text: the drawn run fits the box measureText gives")
 
 TEST_CASE("SDF text: changing a run's size rewrites its vertexes and uploads nothing to the atlas")
 {
-    OpenGLCore &renderer=gweni::test::gpuRenderer();
+    SlotRenderer &renderer=gweni::test::gpuRenderer();
 
     if(!allSdf({ 24.0f, 36.0f }))
         return;
@@ -236,7 +233,7 @@ TEST_CASE("SDF text: changing a run's size rewrites its vertexes and uploads not
 
     const std::vector<uint8_t> at24=drawFrame(textId, openSansAt(24.0f), Point(8, 20), text);
     const std::vector<uint8_t> at36=drawFrame(textId, openSansAt(36.0f), Point(8, 20), text);
-    const OpenGLCore::FrameStats stats=renderer.getFrameStats();
+    const SlotRenderer::FrameStats stats=renderer.getFrameStats();
 
     CHECK(at24 != at36);
     CHECK(stats.atlasUploadCalls == 0);
@@ -254,7 +251,7 @@ TEST_CASE("SDF text: changing a run's size rewrites its vertexes and uploads not
 
 TEST_CASE("SDF text: freeing one size while other sizes' runs use the atlas leaves them drawing")
 {
-    OpenGLCore &renderer=gweni::test::gpuRenderer();
+    SlotRenderer &renderer=gweni::test::gpuRenderer();
 
     if(!allSdf({ 24.0f, 48.0f }))
         return;
@@ -277,7 +274,7 @@ TEST_CASE("SDF text: freeing one size while other sizes' runs use the atlas leav
 
     REQUIRE(inkOf(alone48).pixels > 100);
 
-    const unsigned int atlas=renderer.getFontAtlasName(at48);
+    const unsigned int atlas=renderer.getFontAtlasHandle(at48);
     const size_t fonts=renderer.getLoadedFontCount();
 
     drawFrame(id24, at24, pos24, text);
@@ -285,32 +282,30 @@ TEST_CASE("SDF text: freeing one size while other sizes' runs use the atlas leav
     renderer.freeFont(at24);
 
     // the shared atlas stays, under the same GL name, and is not uploaded again
-    CHECK(renderer.getFontAtlasName(at48) == atlas);
-    CHECK(glIsTexture(atlas) == GL_TRUE);
+    CHECK(renderer.getFontAtlasHandle(at48) == atlas);
+    CHECK(renderer.textureExists(atlas));
     CHECK(renderer.getLoadedFontCount() == fonts);
 
     // the 24 px run goes; the 48 px run, untouched since, draws as it did alone
     renderer.releaseTextPrimitive(id24);
 
-    glClearColor(background.r/255.0f, background.g/255.0f, background.b/255.0f, 1.0f);
-    glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
+    gweni::test::clearView(background);
     renderer.begin();
     renderer.end();
 
     std::vector<uint8_t> after;
-    const Point size=gweni::test::viewSize();
 
-    gweni::capture::readFramebufferRgba(size.x, size.y, after);
+    gweni::test::readView(after);
     CHECK(after == alone48);
     CHECK(renderer.getFrameStats().atlasUploadCalls == 0);
-    CHECK(renderer.getFontAtlasName(at48) == atlas);
+    CHECK(renderer.getFontAtlasHandle(at48) == atlas);
 
     // freed, and its last run gone: the atlas goes with it
     renderer.freeFont(at48);
-    CHECK(renderer.getFontAtlasName(at48) == atlas);
+    CHECK(renderer.getFontAtlasHandle(at48) == atlas);
     renderer.releaseTextPrimitive(id48);
-    CHECK(renderer.getFontAtlasName(at48) == 0);
-    CHECK(glIsTexture(atlas) == GL_FALSE);
+    CHECK(renderer.getFontAtlasHandle(at48) == 0);
+    CHECK(!renderer.textureExists(atlas));
     CHECK(renderer.getLoadedFontCount() == fonts-1);
 
     // loading it anew uploads the whole atlas in the next frame, and that is counted
@@ -320,12 +315,12 @@ TEST_CASE("SDF text: freeing one size while other sizes' runs use the atlas leav
     CHECK(renderer.getFrameStats().atlasUploadCalls == 1);
     CHECK(renderer.getFrameStats().atlasUploadBytes >= 1024*1024);
     renderer.freeFont(at48);
-    CHECK(renderer.getFontAtlasName(at48) == 0);
+    CHECK(renderer.getFontAtlasHandle(at48) == 0);
 }
 
 TEST_CASE("SDF text: a freed atlas used again before its last run leaves is kept")
 {
-    OpenGLCore &renderer=gweni::test::gpuRenderer();
+    SlotRenderer &renderer=gweni::test::gpuRenderer();
 
     if(!allSdf({ 24.0f, 36.0f }))
         return;
@@ -337,7 +332,7 @@ TEST_CASE("SDF text: a freed atlas used again before its last run leaves is kept
     renderer.generateTextPrimitive(textId);
     drawFrame(textId, at24, Point(8, 20), "Sphinx");
 
-    const unsigned int atlas=renderer.getFontAtlasName(at24);
+    const unsigned int atlas=renderer.getFontAtlasHandle(at24);
 
     // Label::setFont(face, 36, bold): the 24 px font is freed first, then the run
     // is laid out at 36 px, which moves it within the same atlas
@@ -347,11 +342,11 @@ TEST_CASE("SDF text: a freed atlas used again before its last run leaves is kept
 
     // the run leaving it now does not free it: the 36 px use took it back
     renderer.releaseTextPrimitive(textId);
-    CHECK(renderer.getFontAtlasName(at36) == atlas);
-    CHECK(glIsTexture(atlas) == GL_TRUE);
+    CHECK(renderer.getFontAtlasHandle(at36) == atlas);
+    CHECK(renderer.textureExists(atlas));
 
     renderer.begin();
     renderer.end();
     renderer.freeFont(at36);
-    CHECK(renderer.getFontAtlasName(at36) == 0);
+    CHECK(renderer.getFontAtlasHandle(at36) == 0);
 }

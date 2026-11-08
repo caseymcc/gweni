@@ -3,7 +3,7 @@
  *  Copyright (c) 2010 Facepunch Studios
  *  MIT License, see LICENSE
  *
- *  OpenGLCore's window-button icon glyphs (style 5, drawIcon kinds 2-5), drawn
+ *  SlotRenderer's window-button icon glyphs (style 5, drawIcon kinds 2-5), drawn
  *  offscreen and read back pixel by pixel. The chevron (kind 1) points the way
  *  renderer::Base documents its direction, 0 down, 1 up, 2 left, 3 right, at
  *  scales 1, 1.5 and 2: the shader had 2 and 3 swapped, so a horizontal scroll
@@ -36,7 +36,6 @@
  */
 #include <doctest/doctest.h>
 
-#include "capture.h"
 #include "gpuRenderer.h"
 
 #include <algorithm>
@@ -51,7 +50,7 @@ namespace
 using gweni::Color;
 using gweni::Point;
 using gweni::Rect;
-using gweni::renderer::OpenGLCore;
+using gweni::renderer::SlotRenderer;
 
 const Color background(0, 0, 255, 255);
 const Color red(255, 0, 0, 255);
@@ -85,11 +84,9 @@ struct Frame
 template<typename Draw>
 Frame drawFrame(Draw &&draw)
 {
-    OpenGLCore &renderer=gweni::test::gpuRenderer();
-    const Point size=gweni::test::viewSize();
+    SlotRenderer &renderer=gweni::test::gpuRenderer();
 
-    glClearColor(background.r/255.0f, background.g/255.0f, background.b/255.0f, 1.0f);
-    glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
+    gweni::test::clearView(background);
 
     renderer.begin();
     draw(renderer);
@@ -97,7 +94,7 @@ Frame drawFrame(Draw &&draw)
 
     Frame frame;
 
-    gweni::capture::readFramebufferRgba(size.x, size.y, frame.pixels);
+    gweni::test::readView(frame.pixels);
     return frame;
 }
 
@@ -106,7 +103,7 @@ struct ScaleGuard
 {
     explicit ScaleGuard(float scale)
     {
-        OpenGLCore &renderer=gweni::test::gpuRenderer();
+        SlotRenderer &renderer=gweni::test::gpuRenderer();
 
         renderer.setScale(scale);
         renderer.setRenderOffset(offset);
@@ -114,7 +111,7 @@ struct ScaleGuard
 
     ~ScaleGuard()
     {
-        OpenGLCore &renderer=gweni::test::gpuRenderer();
+        SlotRenderer &renderer=gweni::test::gpuRenderer();
 
         renderer.setScale(1.0f);
         renderer.setRenderOffset(Point(0, 0));
@@ -135,7 +132,7 @@ struct Primitives
 
     ~Primitives()
     {
-        OpenGLCore &renderer=gweni::test::gpuRenderer();
+        SlotRenderer &renderer=gweni::test::gpuRenderer();
 
         for(size_t id:ids)
             renderer.releasePrimitive(id);
@@ -150,10 +147,10 @@ struct Primitives
 //! the render offset, as translate() does.
 Rect deviceRect(const Rect &logical, float scale)
 {
-    const int x0=OpenGLCore::snap(float(logical.x+offset.x), scale);
-    const int y0=OpenGLCore::snap(float(logical.y+offset.y), scale);
-    const int x1=OpenGLCore::snap(float(logical.x+logical.w+offset.x), scale);
-    const int y1=OpenGLCore::snap(float(logical.y+logical.h+offset.y), scale);
+    const int x0=SlotRenderer::snap(float(logical.x+offset.x), scale);
+    const int y0=SlotRenderer::snap(float(logical.y+offset.y), scale);
+    const int x1=SlotRenderer::snap(float(logical.x+logical.w+offset.x), scale);
+    const int y1=SlotRenderer::snap(float(logical.y+logical.h+offset.y), scale);
 
     return Rect(x0, y0, x1-x0, y1-y0);
 }
@@ -161,7 +158,7 @@ Rect deviceRect(const Rect &logical, float scale)
 //! The stroke drawIcon gives kinds 2-5 at `scale`, in device px.
 int strokeAt(float scale)
 {
-    return std::max(1, OpenGLCore::snap(1.0f, scale));
+    return std::max(1, SlotRenderer::snap(1.0f, scale));
 }
 
 bool isBackground(const Color &c)
@@ -301,7 +298,7 @@ TEST_CASE("Icon kind 1 (chevron) points the way its direction says: 0 down, 1 up
             CAPTURE(scale);
             CAPTURE(name);
 
-            const Frame frame=drawFrame([&](OpenGLCore &renderer)
+            const Frame frame=drawFrame([&](SlotRenderer &renderer)
                 {
                     renderer.drawIcon(prims.ids[0], logical, 1, direction, red, 1);
                 });
@@ -366,7 +363,7 @@ TEST_CASE("Icon kind 2 (cross): symmetric and centred in odd and even rects, at 
             CAPTURE(rect.w);
             CAPTURE(rect.h);
 
-            const Frame frame=drawFrame([&](OpenGLCore &renderer)
+            const Frame frame=drawFrame([&](SlotRenderer &renderer)
                 {
                     renderer.drawIcon(prims.ids[0], logical, 2, 0, red, 1);
                 });
@@ -439,7 +436,7 @@ TEST_CASE("Icon kinds 3-5 (dash, square, restore): whole fully covered rows and 
                 CAPTURE(rect.w);
                 CAPTURE(rect.h);
 
-                const Frame frame=drawFrame([&](OpenGLCore &renderer)
+                const Frame frame=drawFrame([&](SlotRenderer &renderer)
                     {
                         renderer.drawIcon(prims.ids[0], logical, kind, 0, red, 1);
                     });
@@ -540,7 +537,7 @@ TEST_CASE("Icon kind 6 (rule): s whole rows or columns the quad's length, wherev
                 CAPTURE(rect.w);
                 CAPTURE(rect.h);
 
-                const Frame frame=drawFrame([&](OpenGLCore &renderer)
+                const Frame frame=drawFrame([&](SlotRenderer &renderer)
                     {
                         renderer.drawIcon(prims.ids[0], logical, 6, direction, red, 1);
                     });
@@ -603,7 +600,7 @@ TEST_CASE("Icon pixels a glyph leaves uncovered write no depth: a rect behind a 
 
         CAPTURE(scale);
 
-        const Frame frame=drawFrame([&](OpenGLCore &renderer)
+        const Frame frame=drawFrame([&](SlotRenderer &renderer)
             {
                 renderer.drawIcon(prims.ids[0], rule, 6, 0, red, 2);
                 renderer.drawRoundedRect(prims.ids[1], behind, 0.0f, 0.0f, green, green, green, 1);

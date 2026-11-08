@@ -15,13 +15,18 @@
  *  ranges; at three slots a chunk every run is split between chunks too.
  *  Drawn offscreen and read back. The renderer is shared with the other cases,
  *  so each case puts the multi-draw, the clip region and the chunk size back.
+ *
+ *  GL only (the test suite "gl_only"): the two ways are GL's (glMultiDrawElements
+ *  or a loop of glDrawElements).
  */
 #include <doctest/doctest.h>
 
 #include "capture.h"
-#include "gpuRenderer.h"
+#include "glRenderer.h"
 
 #include <vector>
+
+TEST_SUITE_BEGIN("gl_only");
 
 namespace
 {
@@ -35,7 +40,7 @@ const Color background(0, 0, 64, 255);
 
 std::vector<uint8_t> drawFrame()
 {
-    OpenGLCore &renderer=gweni::test::gpuRenderer();
+    OpenGLCore &renderer=gweni::test::glRenderer();
     const Point size=gweni::test::viewSize();
     std::vector<uint8_t> pixels;
 
@@ -50,12 +55,12 @@ std::vector<uint8_t> drawFrame()
 //! Puts the multi-draw, the clip region and the chunk size back as they were.
 struct Guard
 {
-    bool multiDraw=gweni::test::gpuRenderer().multiDrawText();
-    size_t chunkSlots=gweni::test::gpuRenderer().indexChunkSlots();
+    bool multiDraw=gweni::test::glRenderer().multiDrawText();
+    size_t chunkSlots=gweni::test::glRenderer().indexChunkSlots();
 
     ~Guard()
     {
-        OpenGLCore &renderer=gweni::test::gpuRenderer();
+        OpenGLCore &renderer=gweni::test::glRenderer();
 
         renderer.setMultiDrawText(multiDraw);
         renderer.setIndexChunkSlots(chunkSlots);
@@ -68,7 +73,7 @@ struct Texts
 {
     ~Texts()
     {
-        OpenGLCore &renderer=gweni::test::gpuRenderer();
+        OpenGLCore &renderer=gweni::test::glRenderer();
 
         for(size_t id:ids)
             renderer.releaseTextPrimitive(id);
@@ -80,7 +85,7 @@ struct Texts
     {
         size_t id=0;
 
-        gweni::test::gpuRenderer().generateTextPrimitive(id);
+        gweni::test::glRenderer().generateTextPrimitive(id);
         ids.push_back(id);
         return id;
     }
@@ -102,7 +107,7 @@ TEST_CASE("Text draws: a loop of glDrawElements draws what glMultiDrawElements d
 {
     Guard guard;
     Texts texts;
-    OpenGLCore &renderer=gweni::test::gpuRenderer();
+    OpenGLCore &renderer=gweni::test::glRenderer();
     const Color white(255, 255, 255, 255);
     const gweni::Font small=openSansAt(11.0f);
     const gweni::Font large=openSansAt(24.0f);
@@ -165,3 +170,5 @@ TEST_CASE("Text draws: a loop of glDrawElements draws what glMultiDrawElements d
     }
     CHECK(ink > 100);
 }
+
+TEST_SUITE_END();

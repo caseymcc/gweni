@@ -3,7 +3,7 @@
  *  Copyright (c) 2010 Facepunch Studios
  *  MIT License, see LICENSE
  *
- *  OpenGLCore must hand freetype-gl's text_buffer_add_text a code-point count,
+ *  SlotRenderer must hand freetype-gl's text_buffer_add_text a code-point count,
  *  not the string's byte count. With bytes, a multi-byte UTF-8 string makes
  *  freetype-gl read past the terminating NUL and measure or draw whatever
  *  follows it as extra glyphs (fixed in cca344a; it showed as ListBoxDemo
@@ -39,7 +39,7 @@ String withTrailingBytes(char fill)
 //! and FrameStats counts exactly those.
 size_t renderedGlyphs(const String &text)
 {
-    gweni::renderer::OpenGLCore &renderer=gweni::test::gpuRenderer();
+    gweni::renderer::SlotRenderer &renderer=gweni::test::gpuRenderer();
     size_t textId=0;
 
     renderer.generateTextPrimitive(textId);
@@ -70,7 +70,7 @@ TEST_CASE("UTF-8 text: the bytes after the terminator do not change measureText 
     REQUIRE(trailingW.c_str()[8] == 'W');
     REQUIRE(trailingNul.c_str()[8] == '\0');
 
-    gweni::renderer::OpenGLCore &renderer=gweni::test::gpuRenderer();
+    gweni::renderer::SlotRenderer &renderer=gweni::test::gpuRenderer();
 
     SUBCASE("measureText")
     {

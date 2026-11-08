@@ -24,7 +24,6 @@
  */
 #include <doctest/doctest.h>
 
-#include "capture.h"
 #include "gpuRenderer.h"
 
 #include <algorithm>
@@ -37,7 +36,7 @@ namespace
 using gweni::Color;
 using gweni::Point;
 using gweni::Rect;
-using gweni::renderer::OpenGLCore;
+using gweni::renderer::SlotRenderer;
 
 const Color background(255, 255, 255, 255);
 const Color red(255, 0, 0, 255);
@@ -70,11 +69,9 @@ struct Frame
 template<typename Draw>
 Frame drawFrame(Draw &&draw)
 {
-    OpenGLCore &renderer=gweni::test::gpuRenderer();
-    const Point size=gweni::test::viewSize();
+    SlotRenderer &renderer=gweni::test::gpuRenderer();
 
-    glClearColor(background.r/255.0f, background.g/255.0f, background.b/255.0f, 1.0f);
-    glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
+    gweni::test::clearView(background);
 
     renderer.begin();
     draw(renderer);
@@ -82,7 +79,7 @@ Frame drawFrame(Draw &&draw)
 
     Frame frame;
 
-    gweni::capture::readFramebufferRgba(size.x, size.y, frame.pixels);
+    gweni::test::readView(frame.pixels);
     return frame;
 }
 
@@ -91,7 +88,7 @@ struct ScaleGuard
 {
     explicit ScaleGuard(float scale)
     {
-        OpenGLCore &renderer=gweni::test::gpuRenderer();
+        SlotRenderer &renderer=gweni::test::gpuRenderer();
 
         renderer.setScale(scale);
         renderer.setRenderOffset(offset);
@@ -99,7 +96,7 @@ struct ScaleGuard
 
     ~ScaleGuard()
     {
-        OpenGLCore &renderer=gweni::test::gpuRenderer();
+        SlotRenderer &renderer=gweni::test::gpuRenderer();
 
         renderer.setScale(1.0f);
         renderer.setRenderOffset(Point(0, 0));
@@ -121,7 +118,7 @@ struct Primitives
 
     ~Primitives()
     {
-        OpenGLCore &renderer=gweni::test::gpuRenderer();
+        SlotRenderer &renderer=gweni::test::gpuRenderer();
 
         for(size_t id:ids)
             renderer.releasePrimitive(id);
@@ -135,7 +132,7 @@ struct Primitives
 //! Device pixel of a logical coordinate, the rule the renderer must follow.
 int device(int logical, float scale)
 {
-    return OpenGLCore::snap(float(logical), scale);
+    return SlotRenderer::snap(float(logical), scale);
 }
 
 //! How the grid's cells are drawn.
@@ -158,7 +155,7 @@ const char *name(Cells cells)
 template<typename ColorOf>
 Frame drawGrid(const Primitives &primitives, Cells cells, ColorOf &&colorOf)
 {
-    return drawFrame([&](OpenGLCore &renderer)
+    return drawFrame([&](SlotRenderer &renderer)
     {
         for(int row=0; row<rows; ++row)
         {
@@ -349,7 +346,7 @@ TEST_CASE("Scaled rects: drawLinedRect stays closed, every edge at least 1 devic
 
         const ScaleGuard guard(scale);
         const Rect outline(0, 0, 41, 23);
-        const Frame frame=drawFrame([&](OpenGLCore &renderer)
+        const Frame frame=drawFrame([&](SlotRenderer &renderer)
         {
             renderer.setDrawColor(red);
             renderer.drawLinedRect(primitives.ids.data(), outline, 1);
@@ -385,7 +382,7 @@ TEST_CASE("Scaled rounded rect: the border is round(border*scale) device px, at 
         const ScaleGuard guard(scale);
         // radius 0, so the middle row crosses straight edges only
         const Rect rect(10, 10, 60, 20);
-        const Frame frame=drawFrame([&](OpenGLCore &renderer)
+        const Frame frame=drawFrame([&](SlotRenderer &renderer)
         {
             renderer.drawRoundedRect(primitives.ids[0], rect, 0.0f, 1.0f, fill, fill, border, 1);
         });

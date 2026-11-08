@@ -3,7 +3,7 @@
  *  Copyright (c) 2010 Facepunch Studios
  *  MIT License, see LICENSE
  *
- *  OpenGLCore's LCD text on the subpixel grid: in an LCD mode a glyph's pen is
+ *  SlotRenderer's LCD text on the subpixel grid: in an LCD mode a glyph's pen is
  *  the exact sum of the unhinted advances and kerning, quantised to 1/3 device
  *  px. The quad sits on the whole pixel below it, and the phase (0, 1 or 2
  *  thirds past it) picks the image freetype-gl rasterised that far right, which
@@ -24,7 +24,6 @@
  */
 #include <doctest/doctest.h>
 
-#include "capture.h"
 #include "gpuRenderer.h"
 
 #include <ft2build.h>
@@ -42,8 +41,8 @@ using gweni::Color;
 using gweni::Font;
 using gweni::Point;
 using gweni::String;
-using gweni::renderer::GLTextMode;
-using gweni::renderer::OpenGLCore;
+using gweni::renderer::TextMode;
+using gweni::renderer::SlotRenderer;
 using gweni::renderer::TextAA;
 
 const Color white(255, 255, 255, 255);
@@ -67,7 +66,7 @@ struct RestoreRenderer
 
     ~RestoreRenderer()
     {
-        OpenGLCore &renderer=gweni::test::gpuRenderer();
+        SlotRenderer &renderer=gweni::test::gpuRenderer();
 
         renderer.setScale(1.0f);
         renderer.setTextAA(aa);
@@ -85,7 +84,7 @@ struct TextId
 
     ~TextId()
     {
-        OpenGLCore &renderer=gweni::test::gpuRenderer();
+        SlotRenderer &renderer=gweni::test::gpuRenderer();
 
         renderer.releaseTextPrimitive(id);
         renderer.begin();
@@ -97,15 +96,13 @@ struct TextId
 
 void clearFrame(const Color &background)
 {
-    glClearColor(background.r/255.0f, background.g/255.0f, background.b/255.0f, 1.0f);
-    glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
+    gweni::test::clearView(background);
 }
 
 std::vector<uint8_t> drawText(const TextId &textId, const Font &font, Point pos, const String &text,
     const Color &color, const Color &background)
 {
-    OpenGLCore &renderer=gweni::test::gpuRenderer();
-    const Point size=gweni::test::viewSize();
+    SlotRenderer &renderer=gweni::test::gpuRenderer();
     std::vector<uint8_t> pixels;
 
     clearFrame(background);
@@ -113,7 +110,7 @@ std::vector<uint8_t> drawText(const TextId &textId, const Font &font, Point pos,
     renderer.setDrawColor(color);
     renderer.renderText(textId.id, font, pos, 1, text);
     renderer.end();
-    gweni::capture::readFramebufferRgba(size.x, size.y, pixels);
+    gweni::test::readView(pixels);
     return pixels;
 }
 
@@ -121,7 +118,7 @@ std::vector<uint8_t> drawText(const TextId &textId, const Font &font, Point pos,
 //! top-left corner, and the phase it was drawn at in shift.
 std::vector<ftgl::glyph_vertex_t> glyphCorners(const TextId &textId)
 {
-    const OpenGLCore::MirrorSnapshot snapshot=gweni::test::gpuRenderer().snapshotMirror();
+    const SlotRenderer::MirrorSnapshot snapshot=gweni::test::gpuRenderer().snapshotMirror();
     const std::vector<uint8_t> &bytes=snapshot.texts.at(textId.id);
     const size_t vertexSize=sizeof(ftgl::glyph_vertex_t);
     std::vector<ftgl::glyph_vertex_t> corners;
@@ -143,7 +140,7 @@ struct UnhintedFace
 {
     explicit UnhintedFace(float px)
     {
-        OpenGLCore &renderer=gweni::test::gpuRenderer();
+        SlotRenderer &renderer=gweni::test::gpuRenderer();
         const String path=renderer.getResourcePaths().getPath(gweni::ResourcePaths::Type::Font,
             gweni::test::openSans().facename);
 
@@ -205,7 +202,7 @@ bool isWhole(float v)
 void checkPens(const TextId &textId, const Font &font, float originX, float px, const String &text,
     std::set<int> &phases)
 {
-    OpenGLCore &renderer=gweni::test::gpuRenderer();
+    SlotRenderer &renderer=gweni::test::gpuRenderer();
     ftgl::texture_font_t *textureFont=renderer.getTextureFont(font);
 
     REQUIRE(textureFont != nullptr);
@@ -246,14 +243,14 @@ void checkPens(const TextId &textId, const Font &font, float originX, float px, 
 
 bool lcdRange(const Font &font)
 {
-    return gweni::test::gpuRenderer().getTextMode(font) == GLTextMode::LcdRGB;
+    return gweni::test::gpuRenderer().getTextMode(font) == TextMode::LcdRGB;
 }
 
 }//namespace
 
 TEST_CASE("LCD text: each glyph is drawn within 1/3 px of its unhinted pen, and the width is the advances'")
 {
-    OpenGLCore &renderer=gweni::test::gpuRenderer();
+    SlotRenderer &renderer=gweni::test::gpuRenderer();
     RestoreRenderer restore;
     std::set<int> phases;
 
@@ -292,7 +289,7 @@ TEST_CASE("LCD text: each glyph is drawn within 1/3 px of its unhinted pen, and 
 
 TEST_CASE("LCD text: at a canvas scale the glyphs sit within 1/3 device px of the unhinted pens at size*scale")
 {
-    OpenGLCore &renderer=gweni::test::gpuRenderer();
+    SlotRenderer &renderer=gweni::test::gpuRenderer();
     RestoreRenderer restore;
     std::set<int> phases;
 
@@ -321,7 +318,7 @@ TEST_CASE("LCD text: at a canvas scale the glyphs sit within 1/3 device px of th
 
 TEST_CASE("LCD text: three phases of 8-16 px ASCII fit their atlases with room to spare")
 {
-    OpenGLCore &renderer=gweni::test::gpuRenderer();
+    SlotRenderer &renderer=gweni::test::gpuRenderer();
     RestoreRenderer restore;
 
     renderer.setTextAA(TextAA::LcdRGB);
@@ -360,7 +357,7 @@ TEST_CASE("LCD text: three phases of 8-16 px ASCII fit their atlases with room t
 
 TEST_CASE("LCD text: the contrast curve raises white text's coverage, and leaves black text and grayscale as they are")
 {
-    OpenGLCore &renderer=gweni::test::gpuRenderer();
+    SlotRenderer &renderer=gweni::test::gpuRenderer();
     RestoreRenderer restore;
     const Font font=sized(11);
     const Color grey(128, 128, 128, 255);
@@ -379,7 +376,7 @@ TEST_CASE("LCD text: the contrast curve raises white text's coverage, and leaves
     for(TextAA aa:{TextAA::Grayscale, TextAA::LcdRGB})
     {
         renderer.setTextAA(aa);
-        if(renderer.getTextMode(font) == GLTextMode::Sdf)
+        if(renderer.getTextMode(font) == TextMode::Sdf)
             return;
 
         const bool lcd=(aa == TextAA::LcdRGB);

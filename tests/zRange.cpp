@@ -3,7 +3,7 @@
  *  Copyright (c) 2010 Facepunch Studios
  *  MIT License, see LICENSE
  *
- *  OpenGLCore's z range, drawn offscreen and read back: every z index up to
+ *  SlotRenderer's z range, drawn offscreen and read back: every z index up to
  *  maxZIndex() (65535, the 16 bits of Vertex::z) is drawn, and a higher one in
  *  front of a lower one whatever their draw order, at the top of the range
  *  too (z 60000/60001 and 65534/65535; the old -10000 projection clipped them
@@ -15,7 +15,6 @@
  */
 #include <doctest/doctest.h>
 
-#include "capture.h"
 #include "gpuRenderer.h"
 
 #include <algorithm>
@@ -29,8 +28,8 @@ using gweni::Font;
 using gweni::Point;
 using gweni::Rect;
 using gweni::String;
-using gweni::renderer::GLTextMode;
-using gweni::renderer::OpenGLCore;
+using gweni::renderer::TextMode;
+using gweni::renderer::SlotRenderer;
 
 const Color background(0, 0, 255, 255);
 const Color red(255, 0, 0, 255);
@@ -85,11 +84,9 @@ struct Frame
 template<typename Draw>
 Frame drawFrame(Draw &&draw)
 {
-    OpenGLCore &renderer=gweni::test::gpuRenderer();
-    const Point size=gweni::test::viewSize();
+    SlotRenderer &renderer=gweni::test::gpuRenderer();
 
-    glClearColor(background.r/255.0f, background.g/255.0f, background.b/255.0f, 1.0f);
-    glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
+    gweni::test::clearView(background);
 
     renderer.begin();
     draw(renderer);
@@ -97,7 +94,7 @@ Frame drawFrame(Draw &&draw)
 
     Frame frame;
 
-    gweni::capture::readFramebufferRgba(size.x, size.y, frame.pixels);
+    gweni::test::readView(frame.pixels);
     return frame;
 }
 
@@ -127,7 +124,7 @@ struct Primitives
 
     ~Primitives()
     {
-        OpenGLCore &renderer=gweni::test::gpuRenderer();
+        SlotRenderer &renderer=gweni::test::gpuRenderer();
 
         for(size_t id:ids)
             renderer.releasePrimitive(id);
@@ -150,7 +147,7 @@ struct Texts
 
     ~Texts()
     {
-        OpenGLCore &renderer=gweni::test::gpuRenderer();
+        SlotRenderer &renderer=gweni::test::gpuRenderer();
 
         for(size_t id:ids)
             renderer.releaseTextPrimitive(id);
@@ -163,27 +160,27 @@ struct Texts
 
 }//namespace
 
-TEST_CASE("z range: OpenGLCore reports 65535, the 16 bits of Vertex::z")
+TEST_CASE("z range: SlotRenderer reports 65535, the 16 bits of Vertex::z")
 {
     CHECK(gweni::test::gpuRenderer().maxZIndex() == 65535);
-    CHECK(OpenGLCore::kMaxZIndex == 65535);
+    CHECK(SlotRenderer::kMaxZIndex == 65535);
 }
 
 TEST_CASE("z range: at the top of the range a higher z is drawn in front, in either draw order")
 {
     ClipGuard guard;
     Primitives prims(4);
-    OpenGLCore &renderer=gweni::test::gpuRenderer();
+    SlotRenderer &renderer=gweni::test::gpuRenderer();
 
     renderer.setClipRegion(wholeView());
 
-    for(int top:{ 60001, OpenGLCore::kMaxZIndex })
+    for(int top:{ 60001, SlotRenderer::kMaxZIndex })
     {
         CAPTURE(top);
 
         // [20,120) x [20,100) and [70,170) x [50,130) overlap in [70,120) x [50,100);
         // the second pair the same, 200 px to the right
-        const Frame frame=drawFrame([&](OpenGLCore &renderer)
+        const Frame frame=drawFrame([&](SlotRenderer &renderer)
             {
                 // the higher z first: the lower one drawn after it must not cover it
                 renderer.setDrawColor(red);
@@ -213,11 +210,11 @@ TEST_CASE("z range: a long coverage run's tail draws as the same glyphs in a sho
 {
     ClipGuard guard;
     Texts texts(1);
-    OpenGLCore &renderer=gweni::test::gpuRenderer();
+    SlotRenderer &renderer=gweni::test::gpuRenderer();
     Font font=gweni::test::openSans();
 
     font.size=12.0f;
-    if(renderer.getTextMode(font) != GLTextMode::Coverage)
+    if(renderer.getTextMode(font) != TextMode::Coverage)
     {
         MESSAGE("skipped: GWENI_SDF_TEXT_MIN puts 12 px in the SDF range");
         return;
@@ -246,12 +243,12 @@ TEST_CASE("z range: a long coverage run's tail draws as the same glyphs in a sho
 
     REQUIRE(tailX > 0);
 
-    const Frame whole=drawFrame([&](OpenGLCore &renderer)
+    const Frame whole=drawFrame([&](SlotRenderer &renderer)
         {
             renderer.setDrawColor(white);
             renderer.renderText(texts.ids[0], font, Point(tailX-prefixWidth, y), z, run);
         });
-    const Frame alone=drawFrame([&](OpenGLCore &renderer)
+    const Frame alone=drawFrame([&](SlotRenderer &renderer)
         {
             renderer.setDrawColor(white);
             renderer.renderText(texts.ids[0], font, Point(tailX, y), z, tail);

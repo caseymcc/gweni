@@ -3,7 +3,7 @@
  *  Copyright (c) 2010 Facepunch Studios
  *  MIT License, see LICENSE
  *
- *  OpenGLCore's SDF rects, drawn offscreen and read back pixel by pixel: the
+ *  SlotRenderer's SDF rects, drawn offscreen and read back pixel by pixel: the
  *  rounded-rect mask all of styles 4, 6 and 7 share (edge coverage, border,
  *  corners, rects that abut), the bilinear fill (style 6, drawBilinearRect) and
  *  the checker composite (style 7, drawCheckerRect).
@@ -26,7 +26,6 @@
  */
 #include <doctest/doctest.h>
 
-#include "capture.h"
 #include "gpuRenderer.h"
 
 #include <algorithm>
@@ -40,7 +39,7 @@ namespace
 
 using gweni::Color;
 using gweni::Rect;
-using gweni::renderer::OpenGLCore;
+using gweni::renderer::SlotRenderer;
 
 const int rectX=16;
 const int rectY=16;
@@ -102,11 +101,9 @@ struct Frame
 template<typename Draw>
 Frame drawFrame(Draw &&draw)
 {
-    OpenGLCore &renderer=gweni::test::gpuRenderer();
-    const gweni::Point size=gweni::test::viewSize();
+    SlotRenderer &renderer=gweni::test::gpuRenderer();
 
-    glClearColor(background.r/255.0f, background.g/255.0f, background.b/255.0f, 1.0f);
-    glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
+    gweni::test::clearView(background);
 
     renderer.begin();
     draw(renderer);
@@ -114,7 +111,7 @@ Frame drawFrame(Draw &&draw)
 
     Frame frame;
 
-    gweni::capture::readFramebufferRgba(size.x, size.y, frame.pixels);
+    gweni::test::readView(frame.pixels);
     return frame;
 }
 
@@ -133,7 +130,7 @@ struct Primitives
 
     ~Primitives()
     {
-        OpenGLCore &renderer=gweni::test::gpuRenderer();
+        SlotRenderer &renderer=gweni::test::gpuRenderer();
 
         for(size_t id:ids)
             renderer.releasePrimitive(id);
@@ -233,7 +230,7 @@ TEST_CASE("Bilinear fill (style 6): four corners blend bilinearly, with no diago
 {
     Primitives prims(1);
 
-    const Frame frame=drawFrame([&](OpenGLCore &renderer)
+    const Frame frame=drawFrame([&](SlotRenderer &renderer)
         {
             renderer.drawBilinearRect(prims.ids[0], testRect, 1, white, red, black, black,
                 0.0f, 0.0f, black);
@@ -269,7 +266,7 @@ TEST_CASE("Bilinear fill (style 6): rounded and bordered like style 4")
 
     SUBCASE("radius 8, border 1")
     {
-        const Frame frame=drawFrame([&](OpenGLCore &renderer)
+        const Frame frame=drawFrame([&](SlotRenderer &renderer)
             {
                 renderer.drawBilinearRect(prims.ids[0], testRect, 1, white, red, black, black,
                     8.0f, 1.0f, green);
@@ -292,7 +289,7 @@ TEST_CASE("Bilinear fill (style 6): rounded and bordered like style 4")
 
     SUBCASE("radius 8, border 3: the pixel one row inside the edge is the border colour")
     {
-        const Frame frame=drawFrame([&](OpenGLCore &renderer)
+        const Frame frame=drawFrame([&](SlotRenderer &renderer)
             {
                 renderer.drawBilinearRect(prims.ids[0], testRect, 1, white, red, black, black,
                     8.0f, 3.0f, green);
@@ -332,7 +329,7 @@ TEST_CASE("Checker composite (style 7): translucent fill over a checker, drawn o
 
     auto drawWithFill=[&](const Color &fill)
     {
-        return drawFrame([&](OpenGLCore &renderer)
+        return drawFrame([&](SlotRenderer &renderer)
             {
                 renderer.setDrawColor(green);
                 renderer.drawFilledRect(behindId, testRect, 1);
@@ -393,7 +390,7 @@ TEST_CASE("SDF rects (styles 4, 6, 7): the straight edges are fully covered, not
         {
             CAPTURE(radius);
 
-            const Frame frame=drawFrame([&](OpenGLCore &renderer)
+            const Frame frame=drawFrame([&](SlotRenderer &renderer)
                 {
                     renderer.drawRoundedRect(prims.ids[0], testRect, float(radius), 0.0f, red, red,
                         black, 1);
@@ -412,7 +409,7 @@ TEST_CASE("SDF rects (styles 4, 6, 7): the straight edges are fully covered, not
         {
             CAPTURE(radius);
 
-            const Frame frame=drawFrame([&](OpenGLCore &renderer)
+            const Frame frame=drawFrame([&](SlotRenderer &renderer)
                 {
                     renderer.drawRoundedRect(prims.ids[0], testRect, float(radius), 0.0f, white,
                         black, black, 1);
@@ -434,7 +431,7 @@ TEST_CASE("SDF rects (styles 4, 6, 7): the straight edges are fully covered, not
         {
             CAPTURE(radius);
 
-            const Frame frame=drawFrame([&](OpenGLCore &renderer)
+            const Frame frame=drawFrame([&](SlotRenderer &renderer)
                 {
                     renderer.drawBilinearRect(prims.ids[0], testRect, 1, white, red, black, black,
                         float(radius), 0.0f, black);
@@ -459,7 +456,7 @@ TEST_CASE("SDF rects (styles 4, 6, 7): the straight edges are fully covered, not
         {
             CAPTURE(radius);
 
-            const Frame frame=drawFrame([&](OpenGLCore &renderer)
+            const Frame frame=drawFrame([&](SlotRenderer &renderer)
                 {
                     renderer.drawCheckerRect(prims.ids[0], testRect, 1, Color(255, 0, 0, 128),
                         light, dark, float(radius), 0.0f, black);
@@ -482,7 +479,7 @@ TEST_CASE("Rounded rect (style 4): a corner arc stays anti-aliased")
 {
     Primitives prims(1);
 
-    const Frame frame=drawFrame([&](OpenGLCore &renderer)
+    const Frame frame=drawFrame([&](SlotRenderer &renderer)
         {
             renderer.drawRoundedRect(prims.ids[0], testRect, 8.0f, 0.0f, red, red, black, 1);
         });
@@ -515,7 +512,7 @@ TEST_CASE("Rounded rects (style 4) that abut meet without a seam")
 
     SUBCASE("side by side")
     {
-        const Frame frame=drawFrame([&](OpenGLCore &renderer)
+        const Frame frame=drawFrame([&](SlotRenderer &renderer)
             {
                 renderer.drawRoundedRect(prims.ids[0], Rect(rectX, rectY, half, rectSize), 0.0f, 0.0f,
                     red, red, black, 1);
@@ -534,7 +531,7 @@ TEST_CASE("Rounded rects (style 4) that abut meet without a seam")
 
     SUBCASE("one above the other")
     {
-        const Frame frame=drawFrame([&](OpenGLCore &renderer)
+        const Frame frame=drawFrame([&](SlotRenderer &renderer)
             {
                 renderer.drawRoundedRect(prims.ids[0], Rect(rectX, rectY, rectSize, half), 0.0f, 0.0f,
                     red, red, black, 1);
@@ -560,7 +557,7 @@ TEST_CASE("Rounded rect (style 4) border: N px border is the outer N rows, then 
     {
         CAPTURE(border);
 
-        const Frame frame=drawFrame([&](OpenGLCore &renderer)
+        const Frame frame=drawFrame([&](SlotRenderer &renderer)
             {
                 renderer.drawRoundedRect(prims.ids[0], testRect, 6.0f, float(border), red, red, green, 1);
             });
@@ -630,7 +627,7 @@ TEST_CASE("SDF rects (styles 4, 6, 7) of odd size cover exactly their rect")
 
         {
             INFO("style 4, flat");
-            const Frame frame=drawFrame([&](OpenGLCore &renderer)
+            const Frame frame=drawFrame([&](SlotRenderer &renderer)
                 {
                     renderer.drawRoundedRect(prims.ids[0], rect, 0.0f, 0.0f, red, red, black, 1);
                 });
@@ -642,7 +639,7 @@ TEST_CASE("SDF rects (styles 4, 6, 7) of odd size cover exactly their rect")
             // the gradient is centred on the rect too: row y is at v(y), so the
             // first and last rows are equally far from the end colours
             INFO("style 4, gradient");
-            const Frame frame=drawFrame([&](OpenGLCore &renderer)
+            const Frame frame=drawFrame([&](SlotRenderer &renderer)
                 {
                     renderer.drawRoundedRect(prims.ids[0], rect, 0.0f, 0.0f, white, black, black, 1);
                 });
@@ -653,7 +650,7 @@ TEST_CASE("SDF rects (styles 4, 6, 7) of odd size cover exactly their rect")
         }
         {
             INFO("style 6");
-            const Frame frame=drawFrame([&](OpenGLCore &renderer)
+            const Frame frame=drawFrame([&](SlotRenderer &renderer)
                 {
                     renderer.drawBilinearRect(prims.ids[0], rect, 1, white, red, black, green,
                         0.0f, 0.0f, black);
@@ -668,7 +665,7 @@ TEST_CASE("SDF rects (styles 4, 6, 7) of odd size cover exactly their rect")
             INFO("style 7");
             const Color light(204, 204, 204, 255);
             const Color dark(102, 102, 102, 255);
-            const Frame frame=drawFrame([&](OpenGLCore &renderer)
+            const Frame frame=drawFrame([&](SlotRenderer &renderer)
                 {
                     renderer.drawCheckerRect(prims.ids[0], rect, 1, Color(255, 0, 0, 128), light, dark,
                         0.0f, 0.0f, black);
@@ -686,7 +683,7 @@ TEST_CASE("SDF rects (styles 4, 6, 7) of odd size cover exactly their rect")
         {
             // a 1 px border on all four sides, the fill inside it
             INFO("style 4, 1 px border");
-            const Frame frame=drawFrame([&](OpenGLCore &renderer)
+            const Frame frame=drawFrame([&](SlotRenderer &renderer)
                 {
                     renderer.drawRoundedRect(prims.ids[0], rect, 0.0f, 1.0f, red, red, green, 1);
                 });
@@ -727,7 +724,7 @@ TEST_CASE("Icon (style 5) of odd size: drawn inside its rect and centred in it")
         CAPTURE(rect.h);
         CAPTURE(c.direction);
 
-        const Frame frame=drawFrame([&](OpenGLCore &renderer)
+        const Frame frame=drawFrame([&](SlotRenderer &renderer)
             {
                 renderer.drawIcon(prims.ids[0], rect, 1, c.direction, red, 1);
             });

@@ -3,7 +3,7 @@
  *  Copyright (c) 2010 Facepunch Studios
  *  MIT License, see LICENSE
  *
- *  OpenGLCore's line segments (style 3, drawLine), drawn offscreen and read back
+ *  SlotRenderer's line segments (style 3, drawLine), drawn offscreen and read back
  *  pixel by pixel at scales 1, 1.5 and 2, against a model of what drawLine
  *  places: a stroke of T = max(1, snap(thickness)) whole device px, whose edges
  *  across a horizontal or vertical segment are on pixel boundaries, and a pixel's
@@ -65,7 +65,7 @@ using gweni::Color;
 using gweni::Point;
 using gweni::PointF;
 using gweni::Rect;
-using gweni::renderer::OpenGLCore;
+using gweni::renderer::SlotRenderer;
 
 const Color background(0, 0, 255, 255);
 const Color red(255, 0, 0, 255);
@@ -99,11 +99,9 @@ struct Frame
 template<typename Draw>
 Frame drawFrame(Draw &&draw)
 {
-    OpenGLCore &renderer=gweni::test::gpuRenderer();
-    const Point size=gweni::test::viewSize();
+    SlotRenderer &renderer=gweni::test::gpuRenderer();
 
-    glClearColor(background.r/255.0f, background.g/255.0f, background.b/255.0f, 1.0f);
-    glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
+    gweni::test::clearView(background);
 
     renderer.begin();
     draw(renderer);
@@ -111,7 +109,7 @@ Frame drawFrame(Draw &&draw)
 
     Frame frame;
 
-    gweni::capture::readFramebufferRgba(size.x, size.y, frame.pixels);
+    gweni::test::readView(frame.pixels);
     return frame;
 }
 
@@ -121,7 +119,7 @@ struct ScaleGuard
 {
     explicit ScaleGuard(float scale)
     {
-        OpenGLCore &renderer=gweni::test::gpuRenderer();
+        SlotRenderer &renderer=gweni::test::gpuRenderer();
 
         renderer.setScale(scale);
         renderer.setRenderOffset(offset);
@@ -129,7 +127,7 @@ struct ScaleGuard
 
     ~ScaleGuard()
     {
-        OpenGLCore &renderer=gweni::test::gpuRenderer();
+        SlotRenderer &renderer=gweni::test::gpuRenderer();
 
         renderer.setScale(1.0f);
         renderer.setRenderOffset(Point(0, 0));
@@ -151,7 +149,7 @@ struct Primitives
 
     ~Primitives()
     {
-        OpenGLCore &renderer=gweni::test::gpuRenderer();
+        SlotRenderer &renderer=gweni::test::gpuRenderer();
 
         for(size_t id:ids)
             renderer.releasePrimitive(id);
@@ -234,7 +232,7 @@ struct Segment
 //! The stroke drawLine gives `thickness` at `scale`.
 int strokeAt(float thickness, float scale)
 {
-    return std::max(1, OpenGLCore::snap(thickness, scale));
+    return std::max(1, SlotRenderer::snap(thickness, scale));
 }
 
 //! Where drawLine puts a segment: each endpoint coordinate's stroke starts on a
@@ -384,7 +382,7 @@ TEST_CASE("Line (style 3): a horizontal or vertical segment is max(1, round(t*s)
                     CAPTURE(vertical);
                     CHECK(s == std::max(1, int(std::lround(thickness*scale+0.001))));
 
-                    const Frame frame=drawFrame([&](OpenGLCore &renderer)
+                    const Frame frame=drawFrame([&](SlotRenderer &renderer)
                         {
                             renderer.setDrawColor(red);
                             renderer.drawLine(prims.ids[0], p0, p1, thickness, 1);
@@ -464,12 +462,12 @@ TEST_CASE("Line (style 3): a 45 degree segment covers t*s*sqrt(2) a row, and dra
             CAPTURE(scale);
             CAPTURE(thickness);
 
-            const Frame forward=drawFrame([&](OpenGLCore &renderer)
+            const Frame forward=drawFrame([&](SlotRenderer &renderer)
                 {
                     renderer.setDrawColor(red);
                     renderer.drawLine(prims.ids[0], p0, p1, thickness, 1);
                 });
-            const Frame backward=drawFrame([&](OpenGLCore &renderer)
+            const Frame backward=drawFrame([&](SlotRenderer &renderer)
                 {
                     renderer.setDrawColor(red);
                     renderer.drawLine(prims.ids[0], p1, p0, thickness, 1);
@@ -544,7 +542,7 @@ TEST_CASE("Line (style 3): the segments of a polyline join without a gap and ble
 
             auto draw=[&](const Color &color)
             {
-                return drawFrame([&](OpenGLCore &renderer)
+                return drawFrame([&](SlotRenderer &renderer)
                     {
                         size_t slot=0;
 
@@ -676,7 +674,7 @@ TEST_CASE("Line (style 3): pixels a line leaves uncovered write no depth, and th
 
         SUBCASE("a rect at a lower z drawn after the line shows wherever the line leaves a pixel uncovered")
         {
-            const Frame frame=drawFrame([&](OpenGLCore &renderer)
+            const Frame frame=drawFrame([&](SlotRenderer &renderer)
                 {
                     renderer.setDrawColor(red);
                     renderer.drawLine(prims.ids[0], p0, p1, 2.0f, 2);
@@ -702,14 +700,14 @@ TEST_CASE("Line (style 3): pixels a line leaves uncovered write no depth, and th
         SUBCASE("the clip region cuts it")
         {
             const Rect clip(40, 0, 30, 60);
-            const Frame frame=drawFrame([&](OpenGLCore &renderer)
+            const Frame frame=drawFrame([&](SlotRenderer &renderer)
                 {
                     renderer.setClipRegion(clip);
                     renderer.setDrawColor(red);
                     renderer.drawLine(prims.ids[0], p0, p1, 2.0f, 1);
                 });
-            const int x0=OpenGLCore::snap(float(clip.x), scale);
-            const int x1=OpenGLCore::snap(float(clip.x+clip.w), scale);
+            const int x0=SlotRenderer::snap(float(clip.x), scale);
+            const int x1=SlotRenderer::snap(float(clip.x+clip.w), scale);
             int outsideClip=0;
             int inside=0;
 
@@ -735,7 +733,7 @@ TEST_CASE("Line (style 3): pixels a line leaves uncovered write no depth, and th
 
         SUBCASE("an endpoint past +/-32767 device px draws nothing")
         {
-            const Frame frame=drawFrame([&](OpenGLCore &renderer)
+            const Frame frame=drawFrame([&](SlotRenderer &renderer)
                 {
                     renderer.setDrawColor(red);
                     renderer.drawLine(prims.ids[0], p0, PointF(90, 40000), 2.0f, 1);
@@ -749,13 +747,13 @@ TEST_CASE("Line (style 3): pixels a line leaves uncovered write no depth, and th
 TEST_CASE("Line (style 3): a segment drawn again writes nothing, a moved endpoint its slot only, and hide/show keeps style 3")
 {
     Primitives prims(3);
-    OpenGLCore &renderer=gweni::test::gpuRenderer();
+    SlotRenderer &renderer=gweni::test::gpuRenderer();
     ScaleGuard guard(1.5f);
     std::vector<PointF> points={PointF(15, 45), PointF(50, 10), PointF(85, 48), PointF(105, 12)};
 
     auto draw=[&]()
     {
-        return drawFrame([&](OpenGLCore &renderer)
+        return drawFrame([&](SlotRenderer &renderer)
             {
                 renderer.setDrawColor(red);
                 for(size_t i=0; i<3; ++i)
@@ -764,7 +762,7 @@ TEST_CASE("Line (style 3): a segment drawn again writes nothing, a moved endpoin
     };
     auto styleOf=[&](size_t id)
     {
-        const OpenGLCore::MirrorSnapshot mirror=renderer.snapshotMirror();
+        const SlotRenderer::MirrorSnapshot mirror=renderer.snapshotMirror();
         const std::vector<uint8_t> &bytes=mirror.primitives.at(id);
         uint16_t style=0;
 
@@ -797,14 +795,14 @@ TEST_CASE("Line (style 3): a segment drawn again writes nothing, a moved endpoin
     renderer.hidePrimitive(prims.ids[1]);
     CHECK(styleOf(prims.ids[1]) == 0);
 
-    const Frame hidden=drawFrame([](OpenGLCore &) {});
+    const Frame hidden=drawFrame([](SlotRenderer &) {});
 
     CHECK(hidden.pixels != first.pixels);
 
     renderer.showPrimitive(3, prims.ids[1]);
     CHECK(styleOf(prims.ids[1]) == 3);
 
-    const Frame shown=drawFrame([](OpenGLCore &) {});
+    const Frame shown=drawFrame([](SlotRenderer &) {});
 
     CHECK(shown.pixels == first.pixels);
 }

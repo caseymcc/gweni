@@ -47,20 +47,23 @@ float steppedClock()
     return g_clockSeconds;
 }
 
-//! OpenGLCore with its end(), which is only flush(), as a phase of its own: the
-//! render walk calls it last, so render and flush split without touching the
-//! renderer.
-class BenchRenderer: public gweni::renderer::OpenGLCore
+//! A renderer (a SlotRenderer backend) with its end(), which is only the core's
+//! flush(), as a phase of its own: the render walk calls it last, so render and
+//! flush split without touching the renderer.
+template<typename Renderer>
+class TimedFlush: public Renderer
 {
 public:
-    using OpenGLCore::OpenGLCore;
+    using Renderer::Renderer;
 
     void end() override
     {
-        bench::inPhase(Phase::Flush, [this]{ OpenGLCore::end(); });
+        bench::inPhase(Phase::Flush, [this]{ Renderer::end(); });
         bench::enterPhase(Phase::Render);
     }
 };
+
+using BenchRenderer=TimedFlush<gweni::renderer::OpenGLCore>;
 
 // The per-frame phases, in output order.
 const Phase g_framePhases[]={Phase::Input, Phase::Update, Phase::Render, Phase::Flush, Phase::Gpu};
@@ -86,10 +89,10 @@ struct FrameRecord
 };
 
 void collectCounters(FrameRecord &record, const bench::PhaseTotals &phases,
-    const gweni::renderer::OpenGLCore &renderer, const gweni::controls::Canvas &canvas)
+    const gweni::renderer::SlotRenderer &renderer, const gweni::controls::Canvas &canvas)
 {
     const gweni::controls::ChangeStats &changes=gweni::controls::getChangeStats();
-    const gweni::renderer::OpenGLCore::FrameStats &gpu=renderer.getFrameStats();
+    const gweni::renderer::SlotRenderer::FrameStats &gpu=renderer.getFrameStats();
     const gweni::controls::LayoutStats &layout=canvas.getLayoutStats();
     const gweni::controls::UpdateStats &update=canvas.getUpdateStats();
 
@@ -365,7 +368,7 @@ void printUsage()
         "  input      the scene's input events or edits for the frame\n"
         "  update     Canvas::updateCanvas()\n"
         "  render     Canvas::renderCanvas() without the renderer's end()\n"
-        "  flush      OpenGLCore::end(), i.e. flush(): slot diff, uploads, draw submission\n"
+        "  flush      the renderer's end(), i.e. SlotRenderer::flush(): slot diff, uploads, draws\n"
         "  gpu        glFinish() after the frame. On Mesa llvmpipe (the container) this is\n"
         "             the CPU rasteriser, not a GPU; gl_renderer= says which it was.\n"
         "\n"
@@ -376,7 +379,7 @@ void printUsage()
         "             found a state change on, by kind\n"
         "  prim_slots_written text_slots_written upload_calls upload_bytes mirror_bytes\n"
         "  draw_calls text_draws atlas_upload_calls atlas_upload_bytes buffer_regrows\n"
-        "             OpenGLCore::FrameStats of the frame's flush; the slots written are\n"
+        "             SlotRenderer::FrameStats of the frame's flush; the slots written are\n"
         "             the distinct primitive and glyph slots it uploads, each once, whether\n"
         "             a draw, a hide, a show or a release changed it; buffer_regrows the\n"
         "             vertex buffers and clip-box textures the mirror outgrew, each\n"

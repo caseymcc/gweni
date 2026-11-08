@@ -3,7 +3,7 @@
  *  Copyright (c) 2010 Facepunch Studios
  *  MIT License, see LICENSE
  *
- *  OpenGLCore keeps one glyph run per text id and skips the layout when the
+ *  SlotRenderer keeps one glyph run per text id and skips the layout when the
  *  string has not changed. Everything else the run was built from (zIndex,
  *  draw colour, font) must still reach the glyphs: each case here changes one
  *  of them with the same string and compares the run with a fresh layout of
@@ -24,7 +24,6 @@
  */
 #include <doctest/doctest.h>
 
-#include "capture.h"
 #include "gpuRenderer.h"
 
 #include <gweni/controls/button.h>
@@ -45,8 +44,8 @@ using gweni::Font;
 using gweni::Point;
 using gweni::Rect;
 using gweni::String;
-using gweni::renderer::GLTextMode;
-using gweni::renderer::OpenGLCore;
+using gweni::renderer::TextMode;
+using gweni::renderer::SlotRenderer;
 using gweni::renderer::TextAA;
 
 const Color background(0, 0, 255, 255);
@@ -70,14 +69,13 @@ TextDraw baseDraw()
 
 void clearFrame()
 {
-    glClearColor(background.r/255.0f, background.g/255.0f, background.b/255.0f, 1.0f);
-    glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
+    gweni::test::clearView(background);
 }
 
 //! One frame holding just this renderText.
 void drawFrame(size_t textId, const TextDraw &draw)
 {
-    OpenGLCore &renderer=gweni::test::gpuRenderer();
+    SlotRenderer &renderer=gweni::test::gpuRenderer();
 
     renderer.begin();
     renderer.setDrawColor(draw.color);
@@ -88,7 +86,7 @@ void drawFrame(size_t textId, const TextDraw &draw)
 //! An empty frame, so the next case starts from a flushed mirror.
 void emptyFrame()
 {
-    OpenGLCore &renderer=gweni::test::gpuRenderer();
+    SlotRenderer &renderer=gweni::test::gpuRenderer();
 
     renderer.begin();
     renderer.end();
@@ -96,7 +94,7 @@ void emptyFrame()
 
 std::vector<uint8_t> textBytes(size_t textId)
 {
-    const OpenGLCore::MirrorSnapshot snapshot=gweni::test::gpuRenderer().snapshotMirror();
+    const SlotRenderer::MirrorSnapshot snapshot=gweni::test::gpuRenderer().snapshotMirror();
     const auto it=snapshot.texts.find(textId);
 
     REQUIRE(it != snapshot.texts.end());
@@ -106,7 +104,7 @@ std::vector<uint8_t> textBytes(size_t textId)
 //! The bytes `draw` gives when laid out on a text id that has never been drawn.
 std::vector<uint8_t> freshLayout(const TextDraw &draw)
 {
-    OpenGLCore &renderer=gweni::test::gpuRenderer();
+    SlotRenderer &renderer=gweni::test::gpuRenderer();
     size_t textId=0;
 
     renderer.generateTextPrimitive(textId);
@@ -151,10 +149,9 @@ bool glyphsHaveColor(const std::vector<uint8_t> &bytes, const Color &color)
 //! The offscreen framebuffer, top-down RGBA8.
 std::vector<uint8_t> readFrame()
 {
-    const Point size=gweni::test::viewSize();
     std::vector<uint8_t> pixels;
 
-    gweni::capture::readFramebufferRgba(size.x, size.y, pixels);
+    gweni::test::readView(pixels);
     return pixels;
 }
 
@@ -183,7 +180,7 @@ size_t drawnPixelsOf(size_t textId, const TextDraw &draw)
 
 TEST_CASE("Text run: a same-string zIndex change re-offsets the glyphs to a fresh layout's depth")
 {
-    OpenGLCore &renderer=gweni::test::gpuRenderer();
+    SlotRenderer &renderer=gweni::test::gpuRenderer();
     TextDraw draw=baseDraw();
 
     const std::vector<uint8_t> atFive=freshLayout(draw);
@@ -226,7 +223,7 @@ TEST_CASE("Text run: a same-string zIndex change re-offsets the glyphs to a fres
 
 TEST_CASE("Text run: a same-string colour change rebuilds the glyphs with the new colour")
 {
-    OpenGLCore &renderer=gweni::test::gpuRenderer();
+    SlotRenderer &renderer=gweni::test::gpuRenderer();
     TextDraw draw=baseDraw();
 
     const std::vector<uint8_t> withA=freshLayout(draw);
@@ -269,7 +266,7 @@ TEST_CASE("Text run: a same-string colour change rebuilds the glyphs with the ne
 
 TEST_CASE("Text run: a same-string font change rebuilds the glyphs in the new font")
 {
-    OpenGLCore &renderer=gweni::test::gpuRenderer();
+    SlotRenderer &renderer=gweni::test::gpuRenderer();
     Font larger=gweni::test::openSans();
 
     larger.size=17;
@@ -305,7 +302,7 @@ TEST_CASE("Text run: a same-string font change rebuilds the glyphs in the new fo
 
 TEST_CASE("Text run: a hidden run stays hidden through a re-offset and a rebuild")
 {
-    OpenGLCore &renderer=gweni::test::gpuRenderer();
+    SlotRenderer &renderer=gweni::test::gpuRenderer();
     TextDraw draw=baseDraw();
     size_t textId=0;
 
@@ -348,7 +345,7 @@ TEST_CASE("Text run: a hidden run stays hidden through a re-offset and a rebuild
 
 TEST_CASE("Text run: the same call in the next frame writes and uploads nothing")
 {
-    OpenGLCore &renderer=gweni::test::gpuRenderer();
+    SlotRenderer &renderer=gweni::test::gpuRenderer();
     const TextDraw draw=baseDraw();
     size_t textId=0;
 
@@ -368,7 +365,7 @@ TEST_CASE("Text run: the same call in the next frame writes and uploads nothing"
 
 TEST_CASE("Text run: a Button's label takes the Disabled text colour and gives it back")
 {
-    OpenGLCore &renderer=gweni::test::gpuRenderer();
+    SlotRenderer &renderer=gweni::test::gpuRenderer();
     const Point viewSize=gweni::test::viewSize();
 
     std::set<size_t> textIdsBefore;
@@ -438,7 +435,7 @@ TEST_CASE("Text run: a Button's label takes the Disabled text colour and gives i
 
 TEST_CASE("Text run: a label brought to front re-depths its glyphs with the same string and position")
 {
-    OpenGLCore &renderer=gweni::test::gpuRenderer();
+    SlotRenderer &renderer=gweni::test::gpuRenderer();
     const Point viewSize=gweni::test::viewSize();
 
     std::set<size_t> textIdsBefore;
@@ -548,7 +545,7 @@ struct RestoreScaleAndAA
     RestoreScaleAndAA(): aa(gweni::test::gpuRenderer().textAA()) {}
     ~RestoreScaleAndAA()
     {
-        OpenGLCore &renderer=gweni::test::gpuRenderer();
+        SlotRenderer &renderer=gweni::test::gpuRenderer();
 
         renderer.setScale(1.0f);
         renderer.setTextAA(aa);
@@ -563,16 +560,16 @@ struct MoveSetup
     float size;
     float scale;
     TextAA aa;
-    GLTextMode mode;
+    TextMode mode;
 };
 
-const char *modeName(GLTextMode mode)
+const char *modeName(TextMode mode)
 {
     switch(mode)
     {
-    case GLTextMode::Sdf: return "sdf";
-    case GLTextMode::LcdRGB: return "rgb";
-    case GLTextMode::LcdBGR: return "bgr";
+    case TextMode::Sdf: return "sdf";
+    case TextMode::LcdRGB: return "rgb";
+    case TextMode::LcdBGR: return "bgr";
     default: return "coverage";
     }
 }
@@ -608,7 +605,7 @@ size_t differingFields(const std::vector<uint8_t> &a, const std::vector<uint8_t>
 //! is the same as a frame each, without a frame's cost per step under ASAN.
 std::vector<uint8_t> moveThrough(size_t textId, TextDraw &draw, const std::vector<Point> &steps)
 {
-    OpenGLCore &renderer=gweni::test::gpuRenderer();
+    SlotRenderer &renderer=gweni::test::gpuRenderer();
 
     renderer.begin();
     renderer.setDrawColor(draw.color);
@@ -625,7 +622,7 @@ std::vector<uint8_t> moveThrough(size_t textId, TextDraw &draw, const std::vecto
 
 TEST_CASE("Text run: a moved run is the bytes of a fresh layout where it ends, after any number of moves")
 {
-    OpenGLCore &renderer=gweni::test::gpuRenderer();
+    SlotRenderer &renderer=gweni::test::gpuRenderer();
     const RestoreScaleAndAA restore;
 
     // An SDF run is scaled by px/48 from the 48 px atlas, so its quad corners
@@ -635,14 +632,14 @@ TEST_CASE("Text run: a moved run is the bytes of a fresh layout where it ends, a
     // coverage text, on whole pixels, and the LCD modes shift its glyphs by
     // thirds of a pixel. Each move must land exactly where a fresh layout does.
     const MoveSetup setups[]={
-        { 22.0f, 1.0f, TextAA::Grayscale, GLTextMode::Sdf },
-        { 24.0f, 1.0f, TextAA::Grayscale, GLTextMode::Sdf },
-        { 20.0f, 1.25f, TextAA::Grayscale, GLTextMode::Sdf },
-        { 11.0f, 2.0f, TextAA::Grayscale, GLTextMode::Sdf },
-        { 11.0f, 1.0f, TextAA::Grayscale, GLTextMode::Coverage },
-        { 11.0f, 1.5f, TextAA::Grayscale, GLTextMode::Coverage },
-        { 11.0f, 1.0f, TextAA::LcdRGB, GLTextMode::LcdRGB },
-        { 11.0f, 1.5f, TextAA::LcdRGB, GLTextMode::LcdRGB },
+        { 22.0f, 1.0f, TextAA::Grayscale, TextMode::Sdf },
+        { 24.0f, 1.0f, TextAA::Grayscale, TextMode::Sdf },
+        { 20.0f, 1.25f, TextAA::Grayscale, TextMode::Sdf },
+        { 11.0f, 2.0f, TextAA::Grayscale, TextMode::Sdf },
+        { 11.0f, 1.0f, TextAA::Grayscale, TextMode::Coverage },
+        { 11.0f, 1.5f, TextAA::Grayscale, TextMode::Coverage },
+        { 11.0f, 1.0f, TextAA::LcdRGB, TextMode::LcdRGB },
+        { 11.0f, 1.5f, TextAA::LcdRGB, TextMode::LcdRGB },
     };
 
     for(const MoveSetup &setup:setups)

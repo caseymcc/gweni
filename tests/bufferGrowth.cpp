@@ -3,7 +3,7 @@
  *  Copyright (c) 2010 Facepunch Studios
  *  MIT License, see LICENSE
  *
- *  OpenGLCore's device buffers grow geometrically (#323). A mirror that grows
+ *  SlotRenderer's device buffers grow geometrically (#323). A mirror that grows
  *  by a slot a frame regrows its vertex buffer and clip-box texture
  *  (FrameStats::bufferRegrows) O(log K) times over K frames, each regrow
  *  sending the whole mirror once; every other frame sends only the slots that
@@ -23,7 +23,6 @@
  */
 #include <doctest/doctest.h>
 
-#include "capture.h"
 #include "gpuRenderer.h"
 
 #include <gweni/platforms/commonPlatform.h>
@@ -40,7 +39,7 @@ using gweni::Font;
 using gweni::Point;
 using gweni::Rect;
 using gweni::String;
-using gweni::renderer::OpenGLCore;
+using gweni::renderer::SlotRenderer;
 
 const Color background(0, 0, 0, 255);
 const Color white(255, 255, 255, 255);
@@ -50,26 +49,24 @@ const size_t K=200;
 
 void clearFrame()
 {
-    glClearColor(background.r/255.0f, background.g/255.0f, background.b/255.0f, 1.0f);
-    glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
+    gweni::test::clearView(background);
 }
 
 //! The offscreen framebuffer, top-down RGBA8.
 std::vector<uint8_t> readFrame()
 {
-    const Point size=gweni::test::viewSize();
     std::vector<uint8_t> pixels;
 
-    gweni::capture::readFramebufferRgba(size.x, size.y, pixels);
+    gweni::test::readView(pixels);
     return pixels;
 }
 
 //! A renderer of its own on the tests' context, drawing into their framebuffer.
-OpenGLCore *newRenderer()
+SlotRenderer *newRenderer()
 {
     // the renderer keeps a reference to its paths
     static gweni::platform::CurrentPath paths("resources");
-    OpenGLCore *renderer=new OpenGLCore(paths, Rect(Point(0, 0), gweni::test::viewSize()));
+    SlotRenderer *renderer=gweni::test::newRenderer(paths, Rect(Point(0, 0), gweni::test::viewSize()));
 
     renderer->init();
     return renderer;
@@ -82,9 +79,9 @@ size_t regrowBound(size_t slots)
     return 2+size_t(std::ceil(std::log(double(slots))/std::log(1.5)));
 }
 
-std::vector<uint8_t> textBytes(OpenGLCore &renderer, size_t textId)
+std::vector<uint8_t> textBytes(SlotRenderer &renderer, size_t textId)
 {
-    const OpenGLCore::MirrorSnapshot snapshot=renderer.snapshotMirror();
+    const SlotRenderer::MirrorSnapshot snapshot=renderer.snapshotMirror();
     const auto it=snapshot.texts.find(textId);
 
     REQUIRE(it != snapshot.texts.end());
@@ -95,10 +92,10 @@ std::vector<uint8_t> textBytes(OpenGLCore &renderer, size_t textId)
 
 TEST_CASE("Buffer growth: a text run grown a glyph a frame regrows O(log K) times and draws a fresh layout")
 {
-    OpenGLCore *renderer=newRenderer();
+    SlotRenderer *renderer=newRenderer();
     // the fresh layouts, on a renderer of their own so they leave the grown
     // run's mirror alone
-    OpenGLCore *freshRenderer=newRenderer();
+    SlotRenderer *freshRenderer=newRenderer();
     Font font=gweni::test::openSans();
 
     REQUIRE(renderer->loadFont(font) == Font::Status::Loaded);
@@ -129,7 +126,7 @@ TEST_CASE("Buffer growth: a text run grown a glyph a frame regrows O(log K) time
         renderer->renderText(textId, font, pos, 1, text);
         renderer->end();
 
-        const OpenGLCore::FrameStats stats=renderer->getFrameStats();
+        const SlotRenderer::FrameStats stats=renderer->getFrameStats();
         const std::vector<uint8_t> grown=readFrame();
         const std::vector<uint8_t> grownBytes=textBytes(*renderer, textId);
 
@@ -188,7 +185,7 @@ TEST_CASE("Buffer growth: a text run grown a glyph a frame regrows O(log K) time
 
 TEST_CASE("Buffer growth: one new primitive slot a frame regrows O(log K) times and every slot draws its rect")
 {
-    OpenGLCore *renderer=newRenderer();
+    SlotRenderer *renderer=newRenderer();
     const Point view=gweni::test::viewSize();
 
     // Ids are process-wide and released ones are handed out first: hold those,
@@ -227,7 +224,7 @@ TEST_CASE("Buffer growth: one new primitive slot a frame regrows O(log K) times 
         renderer->drawFilledRect(id, cellRect(frame), 1);
         renderer->end();
 
-        const OpenGLCore::FrameStats stats=renderer->getFrameStats();
+        const SlotRenderer::FrameStats stats=renderer->getFrameStats();
         const size_t slots=stats.mirrorBytes/(4*32+4*sizeof(uint16_t));
 
         if(frame == 0)

@@ -3,7 +3,7 @@
  *  Copyright (c) 2010 Facepunch Studios
  *  MIT License, see LICENSE
  *
- *  OpenGLCore's grayscale text: glyphs come from a one-channel coverage atlas,
+ *  SlotRenderer's grayscale text: glyphs come from a one-channel coverage atlas,
  *  are placed on whole pixels with whole-pixel advances, and their coverage is
  *  applied to the destination once. Each case draws offscreen and reads the
  *  framebuffer back, or reads the glyph quads out of the text mirror.
@@ -15,14 +15,13 @@
  *  This is the coverage path: a size that GWENI_SDF_TEXT_MIN puts in the SDF
  *  range is skipped.
  *
- *  The atlas is depth 1 / GL_R8. White text over mid-grey reads back with
+ *  The atlas is depth 1 / R8. White text over mid-grey reads back with
  *  R==G==B, white on black reads back as the atlas coverage texel for texel
  *  (applied once, not squared), and "IIIIIIII"/"nnnnnnnn" at 8-16 px step by
  *  one whole-pixel advance whose sum is measureText's width.
  */
 #include <doctest/doctest.h>
 
-#include "capture.h"
 #include "gpuRenderer.h"
 
 #include <cmath>
@@ -38,7 +37,7 @@ using gweni::Color;
 using gweni::Font;
 using gweni::Point;
 using gweni::String;
-using gweni::renderer::OpenGLCore;
+using gweni::renderer::SlotRenderer;
 
 const Color white(255, 255, 255, 255);
 
@@ -59,8 +58,7 @@ Font sized(float size)
 
 void clearFrame(const Color &background)
 {
-    glClearColor(background.r/255.0f, background.g/255.0f, background.b/255.0f, 1.0f);
-    glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
+    gweni::test::clearView(background);
 }
 
 //! A text id for one test case, released (and that flushed) when it ends, so the
@@ -74,7 +72,7 @@ struct TextId
 
     ~TextId()
     {
-        OpenGLCore &renderer=gweni::test::gpuRenderer();
+        SlotRenderer &renderer=gweni::test::gpuRenderer();
 
         renderer.releaseTextPrimitive(id);
         renderer.begin();
@@ -87,7 +85,7 @@ struct TextId
 //! Draws `text` in `font` and white at `pos` over `background`, in one frame.
 void drawText(const TextId &textId, const Font &font, Point pos, const String &text, const Color &background)
 {
-    OpenGLCore &renderer=gweni::test::gpuRenderer();
+    SlotRenderer &renderer=gweni::test::gpuRenderer();
 
     clearFrame(background);
     renderer.begin();
@@ -99,7 +97,7 @@ void drawText(const TextId &textId, const Font &font, Point pos, const String &t
 //! The glyph quads of a text id's run, in glyph order.
 std::vector<GlyphQuad> glyphQuads(const TextId &textId)
 {
-    const OpenGLCore::MirrorSnapshot snapshot=gweni::test::gpuRenderer().snapshotMirror();
+    const SlotRenderer::MirrorSnapshot snapshot=gweni::test::gpuRenderer().snapshotMirror();
     const std::vector<uint8_t> &bytes=snapshot.texts.at(textId.id);
     const size_t vertexSize=sizeof(ftgl::glyph_vertex_t);
     std::vector<GlyphQuad> quads;
@@ -117,21 +115,21 @@ std::vector<GlyphQuad> glyphQuads(const TextId &textId)
 }
 
 //! A font's atlas as it is on the GPU: the coverage the text shader samples, one
-//! byte per texel, read back through a framebuffer (OpenGLCore::readTexture).
+//! byte per texel, read back from the device (SlotRenderer::readFontAtlas).
 std::vector<uint8_t> atlasCoverage(const Font &font, int &width)
 {
-    OpenGLCore &renderer=gweni::test::gpuRenderer();
-    const unsigned int name=renderer.getFontAtlasName(font);
+    SlotRenderer &renderer=gweni::test::gpuRenderer();
     const ftgl::texture_font_t *textureFont=renderer.getTextureFont(font);
 
-    REQUIRE(name != 0);
+    REQUIRE(renderer.getFontAtlasHandle(font) != 0);
     REQUIRE(textureFont != nullptr);
     width=static_cast<int>(textureFont->atlas->width);
 
     const int height=static_cast<int>(textureFont->atlas->height);
     std::vector<uint8_t> rgba;
 
-    REQUIRE(OpenGLCore::readTexture(name, width, height, rgba));
+    REQUIRE(renderer.readFontAtlas(font, rgba));
+    REQUIRE(rgba.size() == static_cast<size_t>(width)*height*4);
 
     std::vector<uint8_t> coverage(static_cast<size_t>(width)*height);
 
@@ -142,10 +140,9 @@ std::vector<uint8_t> atlasCoverage(const Font &font, int &width)
 
 std::vector<uint8_t> readFrame()
 {
-    const Point size=gweni::test::viewSize();
     std::vector<uint8_t> pixels;
 
-    gweni::capture::readFramebufferRgba(size.x, size.y, pixels);
+    gweni::test::readView(pixels);
     return pixels;
 }
 
@@ -162,7 +159,7 @@ bool isWhole(float v)
 //! Whether font is drawn from a coverage atlas; says so when it is skipped.
 bool coverage(const Font &font)
 {
-    if(gweni::test::gpuRenderer().getTextMode(font) == gweni::renderer::GLTextMode::Coverage)
+    if(gweni::test::gpuRenderer().getTextMode(font) == gweni::renderer::TextMode::Coverage)
         return true;
     MESSAGE("skipped: GWENI_SDF_TEXT_MIN draws ", font.size, " px from the SDF atlas");
     return false;
@@ -172,18 +169,18 @@ bool coverage(const Font &font)
 
 TEST_CASE("Grayscale text: the glyph atlas holds one coverage byte per texel")
 {
-    OpenGLCore &renderer=gweni::test::gpuRenderer();
+    SlotRenderer &renderer=gweni::test::gpuRenderer();
     const Font &font=gweni::test::openSans();
 
     if(!coverage(font))
         return;
     CHECK(renderer.getFontAtlasDepth(font) == 1);
 
-    // GL_R8: 8 bits of red and nothing else, as the framebuffer it is attached to
+    // R8: 8 bits of red and nothing else, as the framebuffer it is attached to
     // reports it (GLES has no glGetTexLevelParameteriv)
     int bits[4]={-1, -1, -1, -1};
 
-    REQUIRE(OpenGLCore::textureChannelBits(renderer.getFontAtlasName(font), bits));
+    REQUIRE(renderer.textureChannelSizes(renderer.getFontAtlasHandle(font), bits));
     CHECK(bits[0] == 8);
     CHECK(bits[1] == 0);
     CHECK(bits[2] == 0);
@@ -276,7 +273,7 @@ TEST_CASE("Grayscale text: white on black is the atlas coverage, applied once")
 
 TEST_CASE("Grayscale text: identical glyphs sit at identical whole-pixel steps, and measureText is their sum")
 {
-    OpenGLCore &renderer=gweni::test::gpuRenderer();
+    SlotRenderer &renderer=gweni::test::gpuRenderer();
 
     for(float size:{8.0f, 9.0f, 10.0f, 11.0f, 12.0f, 14.0f, 16.0f})
         for(const String text:{"IIIIIIII", "nnnnnnnn"})

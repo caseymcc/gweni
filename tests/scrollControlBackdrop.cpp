@@ -14,7 +14,6 @@
  */
 #include <doctest/doctest.h>
 
-#include "capture.h"
 #include "gpuRenderer.h"
 
 #include <gweni/controls/canvas.h>
@@ -229,7 +228,7 @@ struct Scene
         delete canvas;
         delete skin;
 
-        gweni::renderer::OpenGLCore &renderer=gweni::test::gpuRenderer();
+        gweni::renderer::SlotRenderer &renderer=gweni::test::gpuRenderer();
 
         renderer.begin();
         renderer.end();
@@ -237,16 +236,13 @@ struct Scene
 
     Frame frame()
     {
-        const gweni::Point size=gweni::test::viewSize();
-
-        glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
-        glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
+        gweni::test::clearView(gweni::Color(0, 0, 0, 255));
         canvas->updateCanvas();
         canvas->renderCanvas();
 
         Frame shot;
 
-        gweni::capture::readFramebufferRgba(size.x, size.y, shot.pixels);
+        gweni::test::readView(shot.pixels);
         return shot;
     }
 

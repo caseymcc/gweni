@@ -3,7 +3,7 @@
  *  Copyright (c) 2010 Facepunch Studios
  *  MIT License, see LICENSE
  *
- *  OpenGLCore's image path (style 2, drawTexturedRect), drawn offscreen and read
+ *  SlotRenderer's image path (style 2, drawTexturedRect), drawn offscreen and read
  *  back pixel by pixel: a texture loaded on its own (not the skin atlas) samples
  *  its own texels, two textures share the one primitive draw, the draw colour
  *  tints, a hidden slot draws nothing, a texture that did not load draws the
@@ -20,7 +20,6 @@
  */
 #include <doctest/doctest.h>
 
-#include "capture.h"
 #include "gpuRenderer.h"
 
 #include <gweni/controls/button.h>
@@ -39,7 +38,7 @@ namespace
 using gweni::Color;
 using gweni::Rect;
 using gweni::Texture;
-using gweni::renderer::OpenGLCore;
+using gweni::renderer::SlotRenderer;
 
 const Color background(0, 0, 255, 255);
 const Color white(255, 255, 255, 255);
@@ -61,16 +60,14 @@ struct Frame
 
 void clear()
 {
-    glClearColor(background.r/255.0f, background.g/255.0f, background.b/255.0f, 1.0f);
-    glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
+    gweni::test::clearView(background);
 }
 
 Frame readBack()
 {
-    const gweni::Point size=gweni::test::viewSize();
     Frame frame;
 
-    gweni::capture::readFramebufferRgba(size.x, size.y, frame.pixels);
+    gweni::test::readView(frame.pixels);
     return frame;
 }
 
@@ -78,7 +75,7 @@ Frame readBack()
 template<typename Draw>
 Frame drawFrame(Draw &&draw)
 {
-    OpenGLCore &renderer=gweni::test::gpuRenderer();
+    SlotRenderer &renderer=gweni::test::gpuRenderer();
 
     clear();
     renderer.begin();
@@ -100,7 +97,7 @@ struct Primitives
 
     ~Primitives()
     {
-        OpenGLCore &renderer=gweni::test::gpuRenderer();
+        SlotRenderer &renderer=gweni::test::gpuRenderer();
 
         for(size_t id:ids)
             renderer.releasePrimitive(id);
@@ -136,7 +133,8 @@ struct LoadedTexture
     bool loaded() const { return status == Texture::Status::Loaded; }
 };
 
-//! texel with alpha a*tintAlpha over `background`, as GL_SRC_ALPHA/ONE_MINUS_SRC_ALPHA blends it
+//! texel with alpha a*tintAlpha over `background`, as the SRC_ALPHA/ONE_MINUS_SRC_ALPHA
+//! blend does
 Color over(const Color &texel, int tintAlpha=255)
 {
     const float a=texel.a/255.0f*tintAlpha/255.0f;
@@ -192,7 +190,7 @@ TEST_CASE("Image (style 2): a texture loaded on its own draws its texels, blende
 
     Primitives prims(1);
 
-    const Frame frame=drawFrame([&](OpenGLCore &renderer)
+    const Frame frame=drawFrame([&](SlotRenderer &renderer)
         {
             renderer.setDrawColor(white);
             renderer.drawTexturedRect(icon.texture, prims.ids[0], Rect(16, 16, 16, 16), 1);
@@ -221,7 +219,7 @@ TEST_CASE("Image (style 2): two textures in one frame each sample their own, UVs
     Primitives prims(2);
 
     // a 64x64 block of gwen.png from texel (400, 300), 1:1
-    const Frame frame=drawFrame([&](OpenGLCore &renderer)
+    const Frame frame=drawFrame([&](SlotRenderer &renderer)
         {
             renderer.setDrawColor(white);
             renderer.drawTexturedRect(icon.texture, prims.ids[0], Rect(16, 16, 16, 16), 1);
@@ -241,7 +239,7 @@ TEST_CASE("Image (style 2): the draw colour tints the texels, its alpha included
 
     Primitives prims(1);
 
-    const Frame frame=drawFrame([&](OpenGLCore &renderer)
+    const Frame frame=drawFrame([&](SlotRenderer &renderer)
         {
             renderer.setDrawColor(Color(255, 255, 255, 128));
             renderer.drawTexturedRect(icon.texture, prims.ids[0], Rect(16, 16, 16, 16), 1);
@@ -255,22 +253,22 @@ TEST_CASE("Image (style 2): a hidden slot draws nothing, and showing it draws it
     LoadedTexture icon("test16.png");
     REQUIRE(icon.loaded());
 
-    OpenGLCore &renderer=gweni::test::gpuRenderer();
+    SlotRenderer &renderer=gweni::test::gpuRenderer();
     Primitives prims(1);
 
-    drawFrame([&](OpenGLCore &r)
+    drawFrame([&](SlotRenderer &r)
         {
             r.setDrawColor(white);
             r.drawTexturedRect(icon.texture, prims.ids[0], Rect(16, 16, 16, 16), 1);
         });
 
     renderer.hidePrimitive(prims.ids[0]);
-    const Frame hidden=drawFrame([](OpenGLCore &) {});
+    const Frame hidden=drawFrame([](SlotRenderer &) {});
 
     CHECK(blockMismatches(hidden, 16, 16, 16, 16, [](int, int) { return background; }) == 0);
 
     renderer.showPrimitive(2, prims.ids[0]);
-    const Frame shown=drawFrame([](OpenGLCore &) {});
+    const Frame shown=drawFrame([](SlotRenderer &) {});
 
     CHECK(blockMismatches(shown, 16, 16, 16, 16, [&](int x, int y) { return over(icon.texel(x, y)); }) == 0);
 }
@@ -285,7 +283,7 @@ TEST_CASE("Image (style 2): a texture that did not load draws the missing-image 
 
     Primitives prims(1);
 
-    const Frame frame=drawFrame([&](OpenGLCore &renderer)
+    const Frame frame=drawFrame([&](SlotRenderer &renderer)
         {
             renderer.setDrawColor(white);
             renderer.drawTexturedRect(missing, prims.ids[0], Rect(16, 16, 16, 16), 1);
@@ -307,7 +305,7 @@ TEST_CASE("Image (style 2): past the image units in use, a new texture draws the
 
     Primitives prims(9);
 
-    const auto draw=[&](OpenGLCore &renderer)
+    const auto draw=[&](SlotRenderer &renderer)
     {
         renderer.setDrawColor(white);
         for(size_t i=0; i<9; ++i)
@@ -328,7 +326,7 @@ TEST_CASE("Image (style 2): past the image units in use, a new texture draws the
     textures[0].reset();
     gweni::test::gpuRenderer().hidePrimitive(prims.ids[0]);
 
-    const Frame freed=drawFrame([&](OpenGLCore &renderer)
+    const Frame freed=drawFrame([&](SlotRenderer &renderer)
         {
             renderer.setDrawColor(white);
             renderer.drawTexturedRect(textures[8]->texture, prims.ids[8], Rect(16+8*20, 16, 16, 16), 1);
@@ -340,7 +338,7 @@ TEST_CASE("Image (style 2): past the image units in use, a new texture draws the
 
 TEST_CASE("ImagePanel: a Button's setImage icon draws at its bounds in front of the button, once")
 {
-    OpenGLCore &renderer=gweni::test::gpuRenderer();
+    SlotRenderer &renderer=gweni::test::gpuRenderer();
     const gweni::Point viewSize=gweni::test::viewSize();
 
     // as in textRunCache.cpp: no setDefaultFont, so deleting the skin keeps test::openSans()

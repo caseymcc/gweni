@@ -60,7 +60,7 @@ const String paragraphs=
 //! take the line past the width. No word here is wider than the widths used.
 std::vector<String> greedyWrap(const gweni::Font &font, const String &text, int width)
 {
-    gweni::renderer::OpenGLCore &renderer=gweni::test::gpuRenderer();
+    gweni::renderer::SlotRenderer &renderer=gweni::test::gpuRenderer();
     std::vector<String> lines;
     String line;
     String word;
@@ -100,7 +100,7 @@ struct WrapScene
 {
     explicit WrapScene(int width)
     {
-        gweni::renderer::OpenGLCore &renderer=gweni::test::gpuRenderer();
+        gweni::renderer::SlotRenderer &renderer=gweni::test::gpuRenderer();
         const Point viewSize=gweni::test::viewSize();
 
         // No setDefaultFont here: the skin frees its default font when it is
@@ -124,7 +124,7 @@ struct WrapScene
         canvas.reset();
         skin.reset();
 
-        gweni::renderer::OpenGLCore &renderer=gweni::test::gpuRenderer();
+        gweni::renderer::SlotRenderer &renderer=gweni::test::gpuRenderer();
 
         renderer.begin();
         renderer.end();

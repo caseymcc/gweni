@@ -3,9 +3,9 @@
  *  Copyright (c) 2010 Facepunch Studios
  *  MIT License, see LICENSE
  *
- *  OpenGLCore's chunked draws: every primitive and glyph slot is a quad in a
+ *  SlotRenderer's chunked draws: every primitive and glyph slot is a quad in a
  *  static 16-bit index buffer, and the slots are drawn in chunks of at most
- *  OpenGLCore::kSlotsPerChunk, each with its vertex attributes pointed at its
+ *  SlotRenderer::kSlotsPerChunk, each with its vertex attributes pointed at its
  *  first slot. A slot past 16383 (which a 16-bit index of slot*4 cannot reach)
  *  draws its own vertexes, and a chunk size of a few slots draws exactly the
  *  pixels of one chunk, one draw per chunk, each slot clipped by its own box.
@@ -27,7 +27,6 @@
  */
 #include <doctest/doctest.h>
 
-#include "capture.h"
 #include "gpuRenderer.h"
 
 #include <algorithm>
@@ -39,7 +38,7 @@ namespace
 using gweni::Color;
 using gweni::Point;
 using gweni::Rect;
-using gweni::renderer::OpenGLCore;
+using gweni::renderer::SlotRenderer;
 
 const Color background(0, 0, 255, 255);
 constexpr size_t gridCells=12;
@@ -68,11 +67,9 @@ struct Frame
 template<typename Draw>
 Frame drawFrame(Draw &&draw)
 {
-    OpenGLCore &renderer=gweni::test::gpuRenderer();
-    const Point size=gweni::test::viewSize();
+    SlotRenderer &renderer=gweni::test::gpuRenderer();
 
-    glClearColor(background.r/255.0f, background.g/255.0f, background.b/255.0f, 1.0f);
-    glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
+    gweni::test::clearView(background);
 
     renderer.begin();
     draw(renderer);
@@ -80,7 +77,7 @@ Frame drawFrame(Draw &&draw)
 
     Frame frame;
 
-    gweni::capture::readFramebufferRgba(size.x, size.y, frame.pixels);
+    gweni::test::readView(frame.pixels);
     return frame;
 }
 
@@ -92,7 +89,7 @@ struct Guard
 
     ~Guard()
     {
-        OpenGLCore &renderer=gweni::test::gpuRenderer();
+        SlotRenderer &renderer=gweni::test::gpuRenderer();
 
         renderer.setClipRegion(Rect(Point(0, 0), gweni::test::viewSize()));
         renderer.setIndexChunkSlots(chunkSlots);
@@ -104,7 +101,7 @@ struct Primitives
 {
     ~Primitives()
     {
-        OpenGLCore &renderer=gweni::test::gpuRenderer();
+        SlotRenderer &renderer=gweni::test::gpuRenderer();
 
         for(size_t id:ids)
             renderer.releasePrimitive(id);
@@ -129,7 +126,7 @@ struct Texts
 {
     ~Texts()
     {
-        OpenGLCore &renderer=gweni::test::gpuRenderer();
+        SlotRenderer &renderer=gweni::test::gpuRenderer();
 
         for(size_t id:ids)
             renderer.releaseTextPrimitive(id);
@@ -170,7 +167,7 @@ Color cellColor(size_t i)
 
 //! Draws cell i into slot ids[i], the whole cell, clipped to its left half: a slot
 //! that took another's clip box would show its right half or lose its left.
-void drawGrid(OpenGLCore &renderer, const std::vector<size_t> &ids)
+void drawGrid(SlotRenderer &renderer, const std::vector<size_t> &ids)
 {
     for(size_t i=0; i<ids.size(); ++i)
     {
@@ -202,7 +199,7 @@ void checkGrid(const Frame &frame, size_t cells)
 //! The primitive draws of the last frame: its draws less its text draws.
 size_t primitiveDraws()
 {
-    const OpenGLCore::FrameStats &stats=gweni::test::gpuRenderer().getFrameStats();
+    const SlotRenderer::FrameStats &stats=gweni::test::gpuRenderer().getFrameStats();
 
     return stats.drawCalls-stats.textDraws;
 }
@@ -213,9 +210,9 @@ TEST_CASE("Index chunks: slots past 16383 draw their own vertexes and clip boxes
 {
     Guard guard;
     Primitives prims;
-    OpenGLCore &renderer=gweni::test::gpuRenderer();
+    SlotRenderer &renderer=gweni::test::gpuRenderer();
 
-    renderer.setIndexChunkSlots(OpenGLCore::kSlotsPerChunk);
+    renderer.setIndexChunkSlots(SlotRenderer::kSlotsPerChunk);
 
     // ids are handed out lowest first, so take them until gridCells of them lie
     // past the first chunk and past what a 16-bit slot*4 index reaches (16383)
@@ -229,7 +226,7 @@ TEST_CASE("Index chunks: slots past 16383 draw their own vertexes and clip boxes
             high.push_back(id);
     }
 
-    const Frame frame=drawFrame([&](OpenGLCore &renderer) { drawGrid(renderer, high); });
+    const Frame frame=drawFrame([&](SlotRenderer &renderer) { drawGrid(renderer, high); });
 
     checkGrid(frame, gridCells);
     // the slots reach into the second chunk
@@ -240,15 +237,15 @@ TEST_CASE("Index chunks: a few slots per chunk draw the same pixels, one draw pe
 {
     Guard guard;
     Primitives prims;
-    OpenGLCore &renderer=gweni::test::gpuRenderer();
+    SlotRenderer &renderer=gweni::test::gpuRenderer();
     std::vector<size_t> ids;
 
     for(size_t i=0; i<gridCells; ++i)
         ids.push_back(prims.generate());
     std::sort(ids.begin(), ids.end());
 
-    renderer.setIndexChunkSlots(OpenGLCore::kSlotsPerChunk);
-    const Frame whole=drawFrame([&](OpenGLCore &renderer) { drawGrid(renderer, ids); });
+    renderer.setIndexChunkSlots(SlotRenderer::kSlotsPerChunk);
+    const Frame whole=drawFrame([&](SlotRenderer &renderer) { drawGrid(renderer, ids); });
     const size_t wholeDraws=primitiveDraws();
 
     checkGrid(whole, gridCells);
@@ -257,16 +254,16 @@ TEST_CASE("Index chunks: a few slots per chunk draw the same pixels, one draw pe
     // (the one past 16383 above) may have grown past one chunk
     renderer.setIndexChunkSlots(1);
     CHECK(renderer.indexChunkSlots() == 1);
-    const Frame single=drawFrame([&](OpenGLCore &renderer) { drawGrid(renderer, ids); });
+    const Frame single=drawFrame([&](SlotRenderer &renderer) { drawGrid(renderer, ids); });
     const size_t slotCount=primitiveDraws();
 
     CHECK(single.pixels == whole.pixels);
     CHECK(slotCount > ids.back());
-    CHECK(wholeDraws == (slotCount+OpenGLCore::kSlotsPerChunk-1)/OpenGLCore::kSlotsPerChunk);
+    CHECK(wholeDraws == (slotCount+SlotRenderer::kSlotsPerChunk-1)/SlotRenderer::kSlotsPerChunk);
 
     // 5 slots per chunk splits the grid's slots between chunks
     renderer.setIndexChunkSlots(5);
-    const Frame five=drawFrame([&](OpenGLCore &renderer) { drawGrid(renderer, ids); });
+    const Frame five=drawFrame([&](SlotRenderer &renderer) { drawGrid(renderer, ids); });
 
     CHECK(five.pixels == whole.pixels);
     CHECK(primitiveDraws() == (slotCount+4)/5);
@@ -274,15 +271,15 @@ TEST_CASE("Index chunks: a few slots per chunk draw the same pixels, one draw pe
     // clamped to [1, kSlotsPerChunk]
     renderer.setIndexChunkSlots(0);
     CHECK(renderer.indexChunkSlots() == 1);
-    renderer.setIndexChunkSlots(OpenGLCore::kSlotsPerChunk+1);
-    CHECK(renderer.indexChunkSlots() == OpenGLCore::kSlotsPerChunk);
+    renderer.setIndexChunkSlots(SlotRenderer::kSlotsPerChunk+1);
+    CHECK(renderer.indexChunkSlots() == SlotRenderer::kSlotsPerChunk);
 }
 
 TEST_CASE("Index chunks: text split between chunks draws the same, hidden and shrunk runs nothing more")
 {
     Guard guard;
     Texts texts;
-    OpenGLCore &renderer=gweni::test::gpuRenderer();
+    SlotRenderer &renderer=gweni::test::gpuRenderer();
     const Color white(255, 255, 255, 255);
     // two atlases: a coverage size and (by default) an SDF one
     const gweni::Font small=openSansAt(11.0f);
@@ -299,16 +296,16 @@ TEST_CASE("Index chunks: text split between chunks draws the same, hidden and sh
 
     // what other cases left drawing, one draw per glyph slot at one slot a chunk
     renderer.setIndexChunkSlots(1);
-    drawFrame([](OpenGLCore &) {});
+    drawFrame([](SlotRenderer &) {});
     const size_t baseSingle=renderer.getFrameStats().textDraws;
 
-    renderer.setIndexChunkSlots(OpenGLCore::kSlotsPerChunk);
+    renderer.setIndexChunkSlots(SlotRenderer::kSlotsPerChunk);
 
     const size_t a=texts.generate();
     const size_t b=texts.generate();
     const size_t c=texts.generate();
 
-    drawFrame([&](OpenGLCore &renderer)
+    drawFrame([&](SlotRenderer &renderer)
     {
         renderer.setDrawColor(white);
         renderer.setClipRegion(clipA);
@@ -320,7 +317,7 @@ TEST_CASE("Index chunks: text split between chunks draws the same, hidden and sh
     });
 
     // b hidden and c shrunk in place: its tail keeps its old glyphs' vertexes
-    const Frame whole=drawFrame([&](OpenGLCore &renderer)
+    const Frame whole=drawFrame([&](SlotRenderer &renderer)
     {
         renderer.hideText(b);
         renderer.setDrawColor(white);
@@ -338,7 +335,7 @@ TEST_CASE("Index chunks: text split between chunks draws the same, hidden and sh
         const size_t d=fresh.generate();
         const size_t e=fresh.generate();
 
-        const Frame reference=drawFrame([&](OpenGLCore &renderer)
+        const Frame reference=drawFrame([&](SlotRenderer &renderer)
         {
             renderer.hideText(a);
             renderer.hideText(c);
@@ -363,7 +360,7 @@ TEST_CASE("Index chunks: text split between chunks draws the same, hidden and sh
     CHECK(ink);
 
     // hiding and showing writes nothing either
-    const Frame shown=drawFrame([&](OpenGLCore &renderer)
+    const Frame shown=drawFrame([&](SlotRenderer &renderer)
     {
         renderer.showText(a);
         renderer.showText(c);
@@ -375,7 +372,7 @@ TEST_CASE("Index chunks: text split between chunks draws the same, hidden and sh
     // three slots a chunk: every run of more than three glyphs is split between
     // chunks, and the draws between atlases and chunks
     renderer.setIndexChunkSlots(3);
-    const Frame three=drawFrame([](OpenGLCore &) {});
+    const Frame three=drawFrame([](SlotRenderer &) {});
 
     CHECK(three.pixels == whole.pixels);
     CHECK(renderer.getFrameStats().uploadCalls == 0);
@@ -383,7 +380,7 @@ TEST_CASE("Index chunks: text split between chunks draws the same, hidden and sh
     // one slot a chunk: one draw per (atlas, chunk) with something to draw is one
     // per glyph shown, b's and c's tail not among them
     renderer.setIndexChunkSlots(1);
-    const Frame single=drawFrame([](OpenGLCore &) {});
+    const Frame single=drawFrame([](SlotRenderer &) {});
 
     CHECK(single.pixels == whole.pixels);
     CHECK(renderer.getFrameStats().textDraws == baseSingle+straddling.size()+shrunk.size());

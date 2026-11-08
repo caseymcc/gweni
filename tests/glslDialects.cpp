@@ -17,13 +17,18 @@
  *  The ES text program with its dual-source output needs
  *  GL_EXT_blend_func_extended, an ES extension that desktop contexts do not list,
  *  so it is compiled only where the context lists it.
+ *
+ *  GL only (the test suite "gl_only"): it compiles OpenGLCore's GLSL sources in
+ *  the GL dialects.
  */
 #include <doctest/doctest.h>
 
-#include "gpuRenderer.h"
+#include "glRenderer.h"
 
 #include <string>
 #include <vector>
+
+TEST_SUITE_BEGIN("gl_only");
 
 namespace
 {
@@ -123,14 +128,14 @@ TEST_CASE("GLSL dialects: the headers in front of the shared bodies")
 
 TEST_CASE("GLSL dialects: the desktop programs compile and link without dual-source blending too")
 {
-    gweni::test::gpuRenderer();
+    gweni::test::glRenderer();
     checkPrograms(GLSLDialect::Glsl330, true);
     checkPrograms(GLSLDialect::Glsl330, false);
 }
 
 TEST_CASE("GLSL dialects: every program compiles and links as GLSL ES 3.00")
 {
-    gweni::test::gpuRenderer();
+    gweni::test::glRenderer();
 
     if(!OpenGLCore::hasExtension("GL_ARB_ES3_compatibility"))
     {
@@ -144,3 +149,5 @@ TEST_CASE("GLSL dialects: every program compiles and links as GLSL ES 3.00")
     else
         MESSAGE("the ES text program's dual-source output is not compiled: no GL_EXT_blend_func_extended");
 }
+
+TEST_SUITE_END();

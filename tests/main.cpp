@@ -6,13 +6,17 @@
  *  doctest main for gweni_unittests: sets up one GL context (the examples'
  *  surfaceless EGL path, gweni_capture) and one OpenGLCore renderer with
  *  OpenSans loaded, runs every test case against them, then tears them down.
- *  Run it from the repo root, as ctest does: the renderer loads resources/.
+ *  The tests see it as the SlotRenderer it is (gpuRenderer.h); this file is the
+ *  one place that knows the backend. Run it from the repo root, as ctest does:
+ *  the renderer loads resources/.
  */
 #define DOCTEST_CONFIG_IMPLEMENT
 #include <doctest/doctest.h>
 
 #include "capture.h"
 #include "gpuRenderer.h"
+
+#include <gweni/platforms/renderers/openglCore.h>
 
 #include <gweni/platforms/commonPlatform.h>
 
@@ -24,13 +28,18 @@ namespace gweni
 namespace test
 {
 
-static renderer::OpenGLCore *g_renderer=nullptr;
+static renderer::SlotRenderer *g_renderer=nullptr;
 static Font g_openSans;
 static const Point g_viewSize(448, 160);
 
-renderer::OpenGLCore &gpuRenderer()
+renderer::SlotRenderer &gpuRenderer()
 {
     return *g_renderer;
+}
+
+renderer::SlotRenderer *newRenderer(ResourcePaths &paths, const Rect &viewRect)
+{
+    return new renderer::OpenGLCore(paths, viewRect);
 }
 
 const Font &openSans()
