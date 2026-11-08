@@ -36,6 +36,24 @@ public:
     //! The demo names showDemo accepts, in list order.
     std::vector<String> getDemoNames() const;
 
+    //! One entry of the demo list as last laid out: its key and label, the
+    //! width of the label's Text, and the room it has, from the Text's left
+    //! edge to where the space it is drawn in ends. That is the button's inner
+    //! rect (its bounds less its padding), cut by each clipping control
+    //! between the button and the list, and by the list's vertical scrollbar
+    //! while it is shown. A label wider than its room is clipped.
+    struct ListEntryFit
+    {
+        String key;
+        String label;
+        int textWidth;
+        int room;
+    };
+
+    //! Every entry of the demo list, in list order (ControlTest's
+    //! --scenario demo-labels fails on any whose textWidth exceeds its room).
+    std::vector<ListEntryFit> listEntryFits();
+
     void render(skin::Base *skin);
 
     //! Add the page of \a _Type, with an entry in \a category of the demo list.
@@ -59,6 +77,7 @@ private:
 //    controls::layout::Center *m_center;
     controls::PageControl *m_center;
     controls::DockBase *m_dockBase;
+    controls::CollapsibleList *m_list;
 
     std::vector<controls::Base *> m_pages;
     //! the key of each page, in m_pages' order

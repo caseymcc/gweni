@@ -90,8 +90,8 @@
  *    --help, -h         print the option list and exit
  *    --scenario <name>  per-control | resize | docked | scroll | interaction |
  *                       typing | clip | text-size | scale | tooltip |
- *                       context-menu | popup | virtual-list | hide-show
- *                       (see below)
+ *                       context-menu | popup | virtual-list | hide-show |
+ *                       demo-labels (see below)
  *    --dump-bounds [<path>]
  *                       print the laid-out control tree as text: one line per
  *                       control, depth-first in child order, indented by depth,
@@ -186,6 +186,18 @@
  *                 The clock is frozen as under --stats, so an animation (an
  *                 indeterminate ProgressBar) is at the same place in every shot.
  *    docked       the whole Demo (dock layout + status bar) at 1024x768
+ *    demo-labels  the whole Demo at --size (the README hero's 1024x768 in its
+ *                 CTest runs), shot as demo-labels.png. Each demo-list
+ *                 entry's label Text has to fit its room
+ *                 (Demo::listEntryFits: from the Text's left edge to the
+ *                 button's inner right edge, cut by each clipping control up
+ *                 to the list and by the list's vertical scrollbar while it is
+ *                 shown). One line
+ *                   demo-labels entries=N clipped=N
+ *                 and one stderr line per clipped entry, by its key:
+ *                   ControlTest: demo list label clipped: <key> ("<label>"
+ *                   <width> wide, <room> room)
+ *                 Exits non-zero if any entry is clipped.
  *    scroll       the five overflowing demos, idle and after a scripted scroll
  *    interaction  hover, press, disabled and focus have to repaint, checked on
  *                 the pixels inside the control's own bounds, and one line
@@ -650,7 +662,8 @@ static void printUsage(std::ostream &out)
          "  --trace            log each scripted input on stderr\n"
          "  --scenario <name>  per-control | resize | docked | scroll | interaction\n"
          "                     | typing | clip | text-size | scale | tooltip\n"
-         "                     | context-menu | popup | virtual-list | hide-show;\n"
+         "                     | context-menu | popup | virtual-list | hide-show\n"
+         "                     | demo-labels;\n"
          "                     resize prints listing_settled, mirror_settled,\n"
          "                     shrink_settled and fresh_matches, interaction one\n"
          "                     yes/no per repaint check, typing its keyboard\n"
@@ -662,8 +675,9 @@ static void printUsage(std::ostream &out)
          "                     check, popup one per popup check, virtual-list\n"
          "                     whether 1 000 and 100 000 items cost the same,\n"
          "                     hide-show whether a demo hidden and shown again, and\n"
-         "                     one built hidden and shown, are the one built shown;\n"
-         "                     all eleven fail on a no\n"
+         "                     one built hidden and shown, are the one built shown,\n"
+         "                     demo-labels whether every demo-list label fits;\n"
+         "                     all twelve fail on a no\n"
          "  --dump-bounds [<path>]  print the laid-out control tree as text,\n"
          "                     private children and hidden state included, an\n"
          "                     inner panel marked \" inner\", with each control's\n"
@@ -1496,7 +1510,7 @@ static bool runSteps(Session &s, const std::vector<Step> &steps, const std::stri
 // Scenarios
 //-----------------------------------------------------------------------------
 enum class Scenario { None, PerControl, Resize, Docked, Scroll, Interaction, Typing, Clip, TextSize, Scale,
-    ToolTip, ContextMenu, Popup, VirtualList, HideShow };
+    ToolTip, ContextMenu, Popup, VirtualList, HideShow, DemoLabels };
 
 static bool parseScenario(const std::string &name, Scenario &scenario)
 {
@@ -1514,6 +1528,7 @@ static bool parseScenario(const std::string &name, Scenario &scenario)
     else if(name == "popup") scenario=Scenario::Popup;
     else if(name == "virtual-list") scenario=Scenario::VirtualList;
     else if(name == "hide-show") scenario=Scenario::HideShow;
+    else if(name == "demo-labels") scenario=Scenario::DemoLabels;
     else return false;
     return true;
 }
@@ -1843,6 +1858,41 @@ static bool runScaleScenario(Session &s, const std::string &controlName,
     if(!settled)
         std::cerr<<"ControlTest: the canvas did not come back from a 1 -> 2 -> 1 scale change\n";
     return true;
+}
+
+// The shell's demo list, laid out at --size: each entry's label has to fit
+// the room it is drawn in (Demo::listEntryFits), or it is clipped, as the
+// README hero's "ShowcaseContainersD" was.
+static bool runDemoLabelsScenario(Session &s, const std::string &shotDir, bool &passed)
+{
+    gweni::controls::Base *control=addControl(s, g_dockedControlName);
+    renderFrames(s, s.frames);
+    const bool ok=shoot(s, shotDir+"/demo-labels.png");
+
+    gweni::Demo *demo=gweni::gweni_cast<gweni::Demo>(control);
+    size_t entries=0;
+    size_t clipped=0;
+
+    if(demo)
+    {
+        for(const gweni::Demo::ListEntryFit &fit : demo->listEntryFits())
+        {
+            ++entries;
+            if(fit.textWidth <= fit.room)
+                continue;
+
+            ++clipped;
+            std::cerr<<"ControlTest: demo list label clipped: "<<fit.key<<" (\""<<fit.label<<"\" "
+                     <<fit.textWidth<<" wide, "<<fit.room<<" room)\n";
+        }
+    }
+    else
+        std::cerr<<"ControlTest: demo-labels: the "<<g_dockedControlName<<" control is not a gweni::Demo\n";
+
+    std::cout<<"demo-labels entries="<<entries<<" clipped="<<clipped<<"\n";
+    passed=demo && entries > 0 && clipped == 0;
+    dropControl(s, control);
+    return ok;
 }
 
 static bool runDockedScenario(Session &s, const std::string &shotDir)
@@ -5094,7 +5144,8 @@ int main(int argc, char *argv[])
             {
                 std::cerr<<"ControlTest: unknown scenario: "<<name
                          <<"; try per-control, resize, docked, scroll, interaction, typing, clip,"
-                           " text-size, scale, tooltip, context-menu, popup or virtual-list\n";
+                           " text-size, scale, tooltip, context-menu, popup, virtual-list,"
+                           " hide-show or demo-labels\n";
                 return EXIT_FAILURE;
             }
         }
@@ -5434,6 +5485,15 @@ int main(int argc, char *argv[])
             ok=runHideShowScenario(session, which, shotDir, passed);
             if(ok && !passed)
                 ok=false;   // a hide and show did not give the demo back: a failing assertion
+            break;
+        }
+
+        case Scenario::DemoLabels:
+        {
+            bool passed=false;
+            ok=runDemoLabelsScenario(session, shotDir, passed);
+            if(ok && !passed)
+                ok=false;   // a demo-list label is clipped: a failing assertion
             break;
         }
 

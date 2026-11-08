@@ -348,6 +348,21 @@ Erm, and I think it comes down to a choice between "The League Against Salivatin
         LABELS gpu
         TIMEOUT 60)
 
+    # every entry of the shell's demo list fits its row at the README hero's
+    # 1024x768, at scale 1 and 1.5: a label wider than its button's inner rect
+    # (or running under the list's scrollbar) fails, naming the entry's key
+    add_test(NAME controltest_demo_labels
+        COMMAND $<TARGET_FILE:ControlTest> --headless --scenario demo-labels --size 1024x768
+            --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/demo_labels
+        WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
+    add_test(NAME controltest_demo_labels_scale150
+        COMMAND $<TARGET_FILE:ControlTest> --headless --scenario demo-labels --size 1024x768
+            --scale 1.5 --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/demo_labels_scale150
+        WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
+    set_tests_properties(controltest_demo_labels controltest_demo_labels_scale150 PROPERTIES
+        LABELS gpu
+        TIMEOUT 60)
+
     # the resources/ next to the exe are found from a directory that has none
     add_test(NAME controltest_any_cwd
         COMMAND $<TARGET_FILE:ControlTest> --headless --control ButtonDemo

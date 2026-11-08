@@ -5,8 +5,13 @@
 */
 
 #include "demo/demo.h"
+
+#include <algorithm>
+#include <limits>
+
 #include "gweni/controls/dockedTabControl.h"
 #include "gweni/controls/tabControl.h"
+#include "gweni/controls/verticalScrollBar.h"
 #include "gweni/controls/windowControl.h"
 #include "gweni/controls/layout/position.h"
 #include "gweni/platforms/platform.h"
@@ -91,6 +96,7 @@ void Demo::init(const String &name)
     m_center->showControls(false);
 
     controls::CollapsibleList *list=m_dockBase->newChild<controls::CollapsibleList>("DemoList");
+    m_list=list;
     
     DockBase *leftDock=m_dockBase->getLeft();
     DockBase *bottomDock=m_dockBase->getBottom();
@@ -243,6 +249,46 @@ bool Demo::showDemo(const String &name)
 std::vector<String> Demo::getDemoNames() const
 {
     return m_names;
+}
+
+std::vector<Demo::ListEntryFit> Demo::listEntryFits()
+{
+    // The list's vertical scrollbar is drawn over the right of its inner
+    // panel, so a label running under it is as hidden as a clipped one.
+    int barLeft=std::numeric_limits<int>::max();
+
+    for(controls::Base *child : m_list->getActualChildren())
+    {
+        if(gweni_cast<controls::VerticalScrollBar>(child) && child->visible())
+            barLeft=child->localPosToCanvas().x;
+    }
+
+    std::vector<ListEntryFit> fits;
+
+    for(size_t i=0; i<m_pages.size(); ++i)
+    {
+        controls::Button *button=gweni_cast<controls::Button>(m_pages[i]);
+
+        if(!button)
+            continue;
+
+        const int buttonLeft=button->localPosToCanvas().x;
+        const int textLeft=buttonLeft+button->textX();
+        int right=std::min(barLeft, buttonLeft+button->getWidth()-button->getPadding().right);
+
+        // Each clipping control up to the list cuts the region the button's
+        // children are drawn in (Base::renderRecursive).
+        for(controls::Base *parent=button->getParent(); parent; parent=parent->getParent())
+        {
+            if(parent->shouldClip())
+                right=std::min(right, parent->localPosToCanvas().x+parent->getWidth());
+            if(parent == m_list)
+                break;
+        }
+
+        fits.push_back({m_names[i], button->getText(), button->textWidth(), right-textLeft});
+    }
+    return fits;
 }
 
 void Demo::printText(const String &str)
