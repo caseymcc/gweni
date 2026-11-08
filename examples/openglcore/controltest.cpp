@@ -247,9 +247,13 @@
  *                   the idle look back, setDisabled(true) changes it; the
  *                   hover frame writes 1..4 primitive slots and changes at
  *                   most 4 controls; a settled frame with no input changes
- *                   nothing. TextBoxDemo: clicking TextBox 1 changes it, and
- *                   once the mouse has moved on and clicked TextBox 2, TextBox
- *                   1 looks as it did before any click.
+ *                   nothing. ButtonDemo's toggle: a click turns it on and
+ *                   changes no pixel outside it, its release marking nothing
+ *                   outside it and writing its one slot; moved off, it still
+ *                   looks unlike off, and a second click gives the frame
+ *                   before the first back. TextBoxDemo: clicking TextBox 1
+ *                   changes it, and once the mouse has moved on and clicked
+ *                   TextBox 2, TextBox 1 looks as it did before any click.
  *                   TreeControlDemo: collapsing a node repaints and moves the
  *                   node below it up. SelectableDemo: hovering a free row
  *                   changes it and moving off gives its idle look back, a
@@ -3351,6 +3355,82 @@ static void checkButton(Session &s, const std::string &shotDir, InteractionCheck
         "setDisabled(true) did not change the Button, or setDisabled(false) did not restore it");
 }
 
+static size_t differencesOutside(const Session &s, const std::vector<uint8_t> &a,
+    const std::vector<uint8_t> &b, gweni::controls::Base *control);
+static std::vector<uint8_t> framePixels(const Session &s);
+static void countPendingOutside(gweni::controls::Base *control,
+    const std::vector<gweni::controls::Base *> &roots, size_t &count);
+
+// ButtonDemo's toggle ("Toggle Me"): a click turns it on, which changes its
+// pixels and no pixel outside it, the release leaving nothing pending outside
+// it and writing its one primitive slot; on, it looks unlike off with the
+// mouse moved away too, and a second click gives the whole frame before the
+// first back.
+static void checkToggle(Session &s, const std::string &shotDir, InteractionChecks &checks, bool &ok)
+{
+    gweni::controls::Base *demo=addControl(s, "ButtonDemo");
+    renderFrames(s, s.frames);
+
+    gweni::controls::Button *toggle=nullptr;
+    for(int i=0; !toggle; ++i)
+    {
+        gweni::controls::Base *found=findControl(demo, "Button", i);
+        if(!found)
+            break;
+        auto *button=gweni::gweni_cast<gweni::controls::Button>(found);
+        if(button && button->isToggle())
+            toggle=button;
+    }
+    if(!toggle || toggle->getToggleState())
+    {
+        checks.check("toggle_found", false, "ButtonDemo has no visible toggle Button that is off");
+        dropControl(s, demo);
+        return;
+    }
+
+    const gweni::Point on=centreOf(toggle);
+    const gweni::Point off(s.size.x-1, s.size.y-1);    // ButtonDemo, no button
+
+    moveMouse(s, off.x, off.y);
+    const std::vector<uint8_t> offLook=settledRegion(s, toggle, shotDir, "toggle-off", ok);
+    const std::vector<uint8_t> offFrame=framePixels(s);
+
+    mouseDown(s, on.x, on.y, true);
+    renderFrames(s, s.frames);
+    // the release alone: what it marks, then its frame's writes
+    mouseUp(s, on.x, on.y);
+    const bool turnedOn=toggle->getToggleState();
+    size_t pending=0;
+    countPendingOutside(s.canvas, {toggle}, pending);
+    renderFrames(s, 1);
+    const size_t releaseSlots=s.renderer->getFrameStats().primitiveSlotsWritten;
+
+    moveMouse(s, off.x, off.y);
+    const std::vector<uint8_t> onLook=settledRegion(s, toggle, shotDir, "toggle-on", ok);
+    const size_t onOutside=differencesOutside(s, offFrame, framePixels(s), toggle);
+
+    clickMouse(s, on.x, on.y);
+    renderFrames(s, s.frames);
+    moveMouse(s, off.x, off.y);
+    const std::vector<uint8_t> offAgain=settledRegion(s, toggle, shotDir, "toggle-off-again", ok);
+    const bool frameBack=framePixels(s) == offFrame;
+    const bool turnedOff=!toggle->getToggleState();
+
+    dropControl(s, demo);
+
+    checks.check("toggle_on", turnedOn && onLook != offLook && onOutside == 0,
+        std::string(turnedOn ? "" : "a click did not turn the toggle on; ")
+        +"on and moved off, the toggle "+(onLook != offLook ? "looks unlike off" : "looks as it did off")
+        +", with "+std::to_string(onOutside)+" pixels changed outside it");
+    checks.check("toggle_release_alone", pending == 0 && releaseSlots == 1,
+        "the release that turned the toggle on left "+std::to_string(pending)
+        +" controls pending outside it and wrote "+std::to_string(releaseSlots)
+        +" primitive slots; want 0 and 1");
+    checks.check("toggle_off", turnedOff && offAgain == offLook && frameBack,
+        std::string(turnedOff ? "" : "a second click did not turn the toggle off; ")
+        +(frameBack ? "" : "off again, the frame is not the one before the first click"));
+}
+
 static void checkFocusHandOff(Session &s, const std::string &shotDir, InteractionChecks &checks, bool &ok)
 {
     gweni::controls::Base *demo=addControl(s, "TextBoxDemo");
@@ -4801,6 +4881,7 @@ static bool runInteractionScenario(Session &s, const std::string &shotDir, bool 
     InteractionChecks checks;
     bool ok=true;
     checkButton(s, shotDir, checks, ok);
+    checkToggle(s, shotDir, checks, ok);
     checkFocusHandOff(s, shotDir, checks, ok);
     checkTreeCollapse(s, shotDir, checks, ok);
     checkSelectable(s, shotDir, checks, ok);
