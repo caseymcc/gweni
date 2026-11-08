@@ -6,7 +6,8 @@
 #  gweni tests, run with: ctest --test-dir build_linux_x64_debug
 #
 #  Tests labelled "gpu" open a GL context (the examples' surfaceless EGL path,
-#  --headless), so skip them with ctest -LE gpu. The examples load the
+#  --headless) or a Vulkan device, so skip them with ctest -LE gpu; the Vulkan
+#  ones are labelled "vulkan" too (ctest -LE vulkan runs the rest). The examples load the
 #  resources/ the build copies next to them, so they run from any working
 #  directory (controltest_any_cwd checks it); their tests still run from the
 #  repo root, where relative --shot paths are meant. gweni_unittests loads

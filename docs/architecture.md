@@ -771,6 +771,24 @@ blend, which both rasterisers do alike; the SDF path's `smoothstep` over a filte
 field and its screen-space gradient is where the two shader compilers' float code can
 round a value the other way.
 
+**The apps on either backend.** ControlTest, the OpenGLCore example and `gweni_bench`
+take `--renderer gl|vulkan` (or `GWENI_RENDERER`). What a run draws with is a
+`capture::Device` (`examples/openglcore/capture.h`), made by `capture::openDevice`:
+for GL the context the examples always made (a window, a hidden one for a capture,
+or surfaceless EGL) with the offscreen `Framebuffer` a capture draws into; for Vulkan
+a `VulkanDevice` from `createVulkanDevice` (validated with
+`GWENI_VULKAN_VALIDATION=1`) and a `VulkanTarget`, with no GL or EGL context and no
+window, so every capture is headless. The apps see only the `SlotRenderer` it makes
+(`Device::newRenderer`): a frame starts with `clearTarget` (on GL the `glClear` it
+replaces), a capture reads back with `readPixels` (`glReadPixels`), a resize remakes
+the target (`Device::resizeTarget`) and the bench waits for the device with
+`Device::finish()` (`glFinish`, `vkQueueWaitIdle`). So the whole-app checks run
+unchanged on Vulkan: each is registered again as `<name>_vulkan`
+(`gweni_whole_app_test` in `tests/CMakeLists.txt`), with `GWENI_RENDERER=vulkan`
+in its environment, which the exes and every child a script starts take as their
+`--renderer`. There is no Vulkan window yet (#375): a run on Vulkan without a
+capture says so and exits 1.
+
 ## OpenGLCore renderer (retained model)
 
 `source/platforms/renderers/OpenGLCore/openglCore.cpp` implements the retained model

@@ -29,6 +29,31 @@ loader, Mesa's lavapipe CPU driver (Vulkan 1.3), which the Vulkan tests run on,
 and Xvfb; an older container lacks them (`ls /usr/share/vulkan/icd.d` tells,
 and `vulkan_smoke` fails saying so).
 
+## Choosing the renderer
+
+`ControlTest`, `OpenGLCore` and `gweni_bench` draw with `OpenGLCore` by default.
+`--renderer vulkan` (or `GWENI_RENDERER=vulkan`; the flag wins) draws with
+`renderer::Vulkan` on a headless Vulkan device instead, with no GL or EGL
+context at all:
+
+```bash
+mm run --lock render -- build_linux_x64_debug/examples/openglcore/ControlTest \
+    --renderer vulkan --headless --control ButtonDemo --shot /tmp/button.png
+mm run --lock render -- build_linux_x64_debug/examples/openglcore/OpenGLCore \
+    --renderer vulkan --headless --screenshot /tmp/demo.png
+mm run --lock render -- build_linux_x64_release/bench/gweni_bench \
+    --renderer vulkan --scene hover-sweep --n 1000
+```
+
+Vulkan only captures for now (`--shot`, `--shot-all`, `--screenshot`, `--frames`,
+`--stats`, the scenarios, `--check-teardown`), with or without `--headless`;
+without a capture it prints one line saying there is no Vulkan window yet and
+exits 1, and so does `--renderer vulkan` in a tree built without Vulkan.
+`GWENI_VULKAN_VALIDATION=1` turns the validation layer on (any warning or error
+aborts the run); the Vulkan tests set it, with the layer's path
+(`VK_LAYER_PATH=<tree>/vulkan/explicit_layer.d`) and lavapipe's ICD
+(`VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.x86_64.json`).
+
 ## GLES tree
 
 `./generate.sh linux gles` configures `build_linux_x64_debug_gles/` (with
@@ -294,7 +319,12 @@ ctest --test-dir build_linux_x64_debug -LE gpu
 ```
 
 The Vulkan tests are also labelled `vulkan`, so `ctest -LE vulkan` runs the
-GL-only suite. The tests:
+GL-only suite. Each whole-app check below (the `controltest_*` and
+`openglcore_missing_resources*` tests, but `controltest_verify_layout_*`,
+`controltest_demo_labels*` and `controltest_any_cwd`, which check layout and
+paths, not drawing) and `bench_smoke` is registered twice: on GL, and as
+`<name>_vulkan` (labels `gpu`, `vulkan`), the same command with
+`GWENI_RENDERER=vulkan`, validated. `docs_samples` stays GL only. The tests:
 
 - `controltest_determinism`: two separate ControlTest processes must write
   byte-identical `--shot-all` PNGs and `--dump-bounds` listings.
@@ -376,7 +406,8 @@ an older container lacks them (`which valgrind` tells).
 ## Benchmarks
 
 `gweni_bench` (`bench/`) runs a fixed scene on the full path, gweni plus
-`OpenGLCore` on surfaceless EGL, and prints per measured frame the wall time of
+`OpenGLCore` on surfaceless EGL (or `renderer::Vulkan` with `--renderer vulkan`),
+and prints per measured frame the wall time of
 each phase (`input`, `update`, `render`, `flush`, `gpu`) and the work counters:
 controls rendered and changed (`visited`, the queued controls the render
 phase rendered, 0 on a settled frame, and `render_carried`, the entries it
@@ -386,7 +417,8 @@ and the controls they entered (`layout_visited`), text measures
 (`measure_calls`, and `measure_calls_<phase>` for the input, update and
 render phases), z renumbering, live ids and C++ allocations. The same
 arguments give the same counters every run. Times are only meaningful from a release tree, and `gpu` is
-Mesa llvmpipe on the CPU inside the container:
+Mesa llvmpipe (or lavapipe) on the CPU inside the container; the summary's
+`renderer=` and `device=` say which:
 
 ```bash
 build_linux_x64_release/bench/gweni_bench --list
@@ -398,7 +430,8 @@ dragged window, a tree node toggled, controls added, removed and brought to the
 front, a canvas resized and rescaled, and animations. `--list` marks each
 `scaling=local` (its per-frame counters must not grow with N) or `scaling=linear`
 (it touches every control by design). `--help` lists the options and every
-output key. `bench_smoke` (label `gpu`) only checks that every scene runs.
+output key. `bench_smoke` (label `gpu`) only checks that every scene runs, and
+`bench_smoke_vulkan` that it runs on Vulkan.
 `bench_scaling` (label `gpu`) is the one test on the bench's numbers: it fails
 if a `scaling=local` scene's per-frame work counters (never its times) are
 larger at N=10000 than at N=1000. See `AGENTS.md` → "Benchmarks and profiling".
