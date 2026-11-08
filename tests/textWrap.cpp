@@ -118,10 +118,9 @@ struct WrapScene
         gweni::renderer::SlotRenderer &renderer=gweni::test::gpuRenderer();
         const Point viewSize=gweni::test::viewSize();
 
-        // No setDefaultFont here: the skin frees its default font when it is
-        // deleted, which would free the shared test::openSans() with it.
         skin=std::make_unique<gweni::skin::textured::TexturedSkin>(&renderer);
         REQUIRE(skin->init("DefaultSkin.json"));
+        skin->setDefaultFont("OpenSans.ttf", 11);
 
         canvas=std::make_unique<gweni::controls::Canvas>(skin.get());
         canvas->setSize(viewSize.x, viewSize.y);

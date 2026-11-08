@@ -23,6 +23,10 @@ class GWENI_EXPORT Label: public controls::Base
     GWENI_CONTROL(Label, controls::Base);
 
 public:
+    //! Frees a setFont font that preDelete did not (a delete that was not a
+    //! delayedDelete, or the canvas deleting its children).
+    ~Label() override;
+
     void preDelete(gweni::skin::Base *skin) override;
 
     virtual void setText(const String &str, bool doEvents=true);

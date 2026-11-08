@@ -134,7 +134,17 @@ public:
 
     virtual ~Base()
     {
-        releaseFont(&m_defaultFont);
+        freeDefaultFont();
+    }
+
+    //! loadFont and releaseFont are a counted pair on the skin's renderer, as
+    //! IResourceLoader's loadFont/freeFont are: release only a font this
+    //! loaded, once for each load (a load that failed left nothing to free).
+    virtual gweni::Font::Status loadFont(gweni::Font *fnt)
+    {
+        if(fnt && m_render)
+            return m_render->getLoader().loadFont(*fnt);
+        return gweni::Font::Status::Unloaded;
     }
 
     virtual void releaseFont(gweni::Font *fnt)
@@ -221,9 +231,17 @@ public:
 //    virtual void drawCategoryInner(controls::Base *control, State state, bool collapsed)=0;
 
 
+    //! A default font the skin holds moves with it: freed on the old renderer
+    //! and loaded on the new one.
     virtual void setRender(gweni::renderer::Base *renderer)
     {
+        if(renderer == m_render)
+            return;
+
+        freeDefaultFont();
         m_render=renderer;
+        if(m_holdsDefaultFont)
+            loadDefaultFont();
     }
 
     virtual gweni::renderer::Base *getRenderer()
@@ -384,16 +402,68 @@ public:
     //! Call before building controls. Text and Label keep a pointer to
     //! m_defaultFont, so a later call changes their font in place without an
     //! addStateChange, and text already laid out does not relayout.
+    //! The skin holds the font it sets (loadFont) and gives back the one it
+    //! held before, after the new one is loaded, so an equal font is not freed
+    //! and loaded again.
     virtual void setDefaultFont(const gweni::String &strFacename, float fSize=11.0f)
     {
+        const gweni::Font previous=m_loadedDefaultFont;
+        gweni::renderer::Base *previousRender=m_defaultFontLoadedOn;
+
         m_defaultFont.facename=strFacename;
         m_defaultFont.size=fSize;
+        m_defaultFontLoadedOn=nullptr;
+        loadDefaultFont();
+
+        if(previousRender)
+            previousRender->getLoader().freeFont(previous);
     }
 
 protected:
 
+    //! Loads m_defaultFont on the skin's renderer, unless the skin holds it
+    //! already. A skin's init() calls it: the constructor can run before the
+    //! renderer can load anything.
+    void loadDefaultFont()
+    {
+        m_holdsDefaultFont=true;
+
+        if(m_defaultFontLoadedOn || !m_render)
+            return;
+
+        const gweni::Font::Status status=m_render->getLoader().loadFont(m_defaultFont);
+
+        if((status != gweni::Font::Status::Loaded) && (status != gweni::Font::Status::LoadedFallback))
+            return;
+
+        m_loadedDefaultFont=m_defaultFont;
+        m_defaultFontLoadedOn=m_render;
+    }
+
+    //! Gives back the default font the skin loaded, on the renderer it was
+    //! loaded on; nothing if it holds none.
+    void freeDefaultFont()
+    {
+        if(!m_defaultFontLoadedOn)
+            return;
+
+        gweni::renderer::Base *render=m_defaultFontLoadedOn;
+
+        m_defaultFontLoadedOn=nullptr;
+        render->getLoader().freeFont(m_loadedDefaultFont);
+    }
+
     gweni::Font m_defaultFont;
     gweni::renderer::Base *m_render;
+
+    //! The default font as it was loaded and the renderer that loaded it, or
+    //! nullptr while the skin holds none: what ~Base and setDefaultFont free,
+    //! whatever m_defaultFont has been set to since.
+    gweni::Font m_loadedDefaultFont;
+    gweni::renderer::Base *m_defaultFontLoadedOn=nullptr;
+    //! The skin has asked to hold its default font (init or setDefaultFont), so
+    //! a setRender loads it on the new renderer, even after a null one.
+    bool m_holdsDefaultFont=false;
 
 };
 

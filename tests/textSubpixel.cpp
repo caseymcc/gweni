@@ -331,7 +331,10 @@ TEST_CASE("LCD text: three phases of 8-16 px ASCII fit their atlases with room t
 
         if(!lcdRange(font))
             continue;
-        REQUIRE(renderer.ensureFont(font));
+        // loaded, not just used, so the freeFont below gives back this load: at
+        // 11 px the font is test::openSans(), and an unmatched free would take
+        // the fixture's
+        REQUIRE((renderer.loadFont(font) == Font::Status::Loaded));
 
         ftgl::texture_font_t *textureFont=renderer.getTextureFont(font);
 

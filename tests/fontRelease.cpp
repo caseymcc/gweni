@@ -9,6 +9,12 @@
  *  until that run leaves it, and deleting a renderer deletes every GL object it
  *  made without disturbing another renderer in the same context.
  *
+ *  The skin and Label hold the fonts they free: a skin set to test::openSans()'s
+ *  font gives back only its own load when it is deleted, so the fixture keeps
+ *  its atlas; deleting one of two Labels set to one font, or a Label set to the
+ *  font other Texts draw in, leaves the others drawing the same pixels from the
+ *  same atlas with no glyph rewritten, and the last Label to go takes its font.
+ *
  *  Every font here is a fresh Font (another size than test::openSans()), so
  *  freeing it leaves the shared fixture loaded. A case skips itself when
  *  GWENI_SDF_TEXT_MIN puts its font and the fixture in the face's one SDF atlas.
@@ -22,7 +28,10 @@
 #include "capture.h"
 #include "glRenderer.h"
 
+#include <gweni/controls/canvas.h>
+#include <gweni/controls/label.h>
 #include <gweni/platforms/commonPlatform.h>
+#include <gweni/skins/textured/texturedSkin.h>
 
 #include <vector>
 
@@ -125,6 +134,70 @@ void clearGlErrors()
     {}
 }
 
+//! The pixels of `rect` (device px, the canvas at scale 1) in a frame readFrame() read.
+std::vector<uint8_t> region(const std::vector<uint8_t> &pixels, const gweni::Rect &rect)
+{
+    const Point size=gweni::test::viewSize();
+    std::vector<uint8_t> out;
+
+    for(int y=rect.y; y < rect.y+rect.h; ++y)
+    {
+        const size_t row=(static_cast<size_t>(y)*size.x+rect.x)*4;
+
+        out.insert(out.end(), pixels.begin()+row, pixels.begin()+row+static_cast<size_t>(rect.w)*4);
+    }
+    return out;
+}
+
+//! A textured skin set to test::openSans()'s font and a canvas on the shared
+//! renderer; deleting it deletes the canvas, then the skin.
+struct SkinScene
+{
+    SkinScene()
+    {
+        const Point viewSize=gweni::test::viewSize();
+
+        skin=new gweni::skin::textured::TexturedSkin(&gweni::test::glRenderer());
+        REQUIRE(skin->init("DefaultSkin.json"));
+        skin->setDefaultFont("OpenSans.ttf", 11);
+
+        canvas=new gweni::controls::Canvas(skin);
+        canvas->setSize(viewSize.x, viewSize.y);
+    }
+
+    ~SkinScene()
+    {
+        delete canvas;
+        delete skin;
+
+        OpenGLCore &renderer=gweni::test::glRenderer();
+
+        renderer.begin();
+        renderer.end();
+    }
+
+    gweni::controls::Label *addLabel(const String &text, int y)
+    {
+        gweni::controls::Label *label=canvas->newChild<gweni::controls::Label>();
+
+        label->setText(text);
+        label->setBounds(10, y, 200, 24);
+        return label;
+    }
+
+    //! One frame, read back.
+    std::vector<uint8_t> frame()
+    {
+        clearFrame();
+        canvas->updateCanvas();
+        canvas->renderCanvas();
+        return readFrame();
+    }
+
+    gweni::skin::textured::TexturedSkin *skin=nullptr;
+    gweni::controls::Canvas *canvas=nullptr;
+};
+
 }//namespace
 
 TEST_CASE("freeFont deletes the font's atlas texture")
@@ -136,7 +209,7 @@ TEST_CASE("freeFont deletes the font's atlas texture")
         return;
     const size_t fontsBefore=renderer.getLoadedFontCount();
 
-    REQUIRE(renderer.loadFont(font) == Font::Status::Loaded);
+    REQUIRE((renderer.loadFont(font) == Font::Status::Loaded));
 
     const unsigned int atlas=renderer.getFontAtlasHandle(font);
 
@@ -166,7 +239,7 @@ TEST_CASE("loadFont of a font already loaded returns Loaded, makes nothing new, 
         return;
     const size_t fontsBefore=renderer.getLoadedFontCount();
 
-    REQUIRE(renderer.loadFont(font) == Font::Status::Loaded);
+    REQUIRE((renderer.loadFont(font) == Font::Status::Loaded));
 
     const unsigned int atlas=renderer.getFontAtlasHandle(font);
     const unsigned int sharedAtlas=renderer.getFontAtlasHandle(gweni::test::openSans());
@@ -176,7 +249,7 @@ TEST_CASE("loadFont of a font already loaded returns Loaded, makes nothing new, 
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, sharedAtlas);
 
-    CHECK(renderer.loadFont(font) == Font::Status::Loaded);
+    CHECK((renderer.loadFont(font) == Font::Status::Loaded));
     CHECK(boundTexture2D() == sharedAtlas);
     CHECK(renderer.getFontAtlasHandle(font) == atlas);
     CHECK(renderer.getLoadedFontCount() == fontsBefore+1);
@@ -213,7 +286,7 @@ void freeWhileARunUsesIt(const Font &font, Leave leave)
     OpenGLCore &renderer=gweni::test::glRenderer();
     const size_t fontsBefore=renderer.getLoadedFontCount();
 
-    REQUIRE(renderer.loadFont(font) == Font::Status::Loaded);
+    REQUIRE((renderer.loadFont(font) == Font::Status::Loaded));
 
     const unsigned int atlas=renderer.getFontAtlasHandle(font);
     size_t textId=0;
@@ -329,13 +402,13 @@ TEST_CASE("Load, free and load the same face again: the same text draws the same
         return;
     const String text="Hello gweni 0123";
 
-    REQUIRE(renderer.loadFont(font) == Font::Status::Loaded);
+    REQUIRE((renderer.loadFont(font) == Font::Status::Loaded));
 
     const std::vector<uint8_t> first=drawText(renderer, font, text);
 
     renderer.freeFont(font);
     REQUIRE(renderer.getFontAtlasHandle(font) == 0);
-    REQUIRE(renderer.loadFont(font) == Font::Status::Loaded);
+    REQUIRE((renderer.loadFont(font) == Font::Status::Loaded));
 
     const std::vector<uint8_t> second=drawText(renderer, font, text);
 
@@ -343,6 +416,140 @@ TEST_CASE("Load, free and load the same face again: the same text draws the same
     CHECK(first == second);
 
     renderer.freeFont(font);
+}
+
+TEST_CASE("A skin set to test::openSans()'s font gives back only its own load: the fixture keeps its atlas")
+{
+    OpenGLCore &renderer=gweni::test::glRenderer();
+    const Font &shared=gweni::test::openSans();
+    const unsigned int atlas=renderer.getFontAtlasHandle(shared);
+    const String text="Shared font 0123";
+
+    REQUIRE(atlas != 0);
+
+    const std::vector<uint8_t> before=drawText(renderer, shared, text);
+
+    REQUIRE(drawnPixels(before) > 20);
+
+    {
+        SkinScene scene;
+        gweni::controls::Label *label=scene.addLabel("In the skin's font", 10);
+
+        scene.frame();
+
+        const std::vector<uint8_t> pixels=scene.frame();
+
+        CHECK((label->getFont() == shared));
+        CHECK(drawnPixels(region(pixels, label->getBounds())) > 20);
+        // the skin's font is the fixture's entry, not one of its own
+        CHECK(renderer.getFontAtlasHandle(shared) == atlas);
+    }
+
+    CHECK(renderer.getFontAtlasHandle(shared) == atlas);
+    CHECK(glIsTexture(atlas) == GL_TRUE);
+    CHECK(drawText(renderer, shared, text) == before);
+    CHECK(renderer.getFrameStats().atlasUploadCalls == 0);
+}
+
+TEST_CASE("Deleting one of two Labels set to one font leaves the other drawing, and the last takes the font")
+{
+    OpenGLCore &renderer=gweni::test::glRenderer();
+    const Font font=makeFont(13);
+
+    if(!ownAtlas(font))
+        return;
+
+    SkinScene scene;
+    const size_t fontsBefore=renderer.getLoadedFontCount();
+    gweni::controls::Label *first=scene.addLabel("First label", 10);
+    gweni::controls::Label *second=scene.addLabel("Second label", 40);
+
+    first->setFont(font.facename, static_cast<int>(font.size), false);
+    second->setFont(font.facename, static_cast<int>(font.size), false);
+    scene.frame();
+
+    const std::vector<uint8_t> drawn=scene.frame();
+    const unsigned int atlas=renderer.getFontAtlasHandle(font);
+    const gweni::Rect firstBounds=first->getBounds();
+    const std::vector<uint8_t> secondPixels=region(drawn, second->getBounds());
+
+    REQUIRE(atlas != 0);
+    REQUIRE(drawnPixels(region(drawn, firstBounds)) > 20);
+    REQUIRE(drawnPixels(secondPixels) > 20);
+
+    first->delayedDelete();
+
+    const std::vector<uint8_t> afterDelete=scene.frame();
+
+    CHECK(renderer.getFontAtlasHandle(font) == atlas);
+    CHECK(renderer.getFrameStats().atlasUploadCalls == 0);
+    CHECK(drawnPixels(region(afterDelete, firstBounds)) == 0);
+    CHECK(region(afterDelete, second->getBounds()) == secondPixels);
+
+    for(int frame=0; frame < 2; ++frame)
+    {
+        CAPTURE(frame);
+
+        const std::vector<uint8_t> later=scene.frame();
+
+        CHECK(renderer.getFrameStats().textSlotsWritten == 0);
+        CHECK(renderer.getFontAtlasHandle(font) == atlas);
+        CHECK(region(later, second->getBounds()) == secondPixels);
+    }
+
+    // its load and the first Label's were each given back once
+    second->delayedDelete();
+    scene.frame();
+    CHECK(renderer.getFontAtlasHandle(font) == 0);
+    CHECK(glIsTexture(atlas) == GL_FALSE);
+    CHECK(renderer.getLoadedFontCount() == fontsBefore);
+}
+
+TEST_CASE("Deleting a Label set to the skin's default font leaves the Texts drawn in it drawing")
+{
+    OpenGLCore &renderer=gweni::test::glRenderer();
+    const Font &shared=gweni::test::openSans();
+    const unsigned int atlas=renderer.getFontAtlasHandle(shared);
+
+    REQUIRE(atlas != 0);
+
+    {
+        SkinScene scene;
+        gweni::controls::Label *set=scene.addLabel("Set to the default", 10);
+        gweni::controls::Label *other=scene.addLabel("In the default", 40);
+
+        set->setFont(shared.facename, static_cast<int>(shared.size), false);
+        scene.frame();
+
+        const std::vector<uint8_t> drawn=scene.frame();
+        const std::vector<uint8_t> otherPixels=region(drawn, other->getBounds());
+
+        REQUIRE((other->getFont() == shared));
+        REQUIRE(drawnPixels(region(drawn, set->getBounds())) > 20);
+        REQUIRE(drawnPixels(otherPixels) > 20);
+
+        set->delayedDelete();
+
+        const std::vector<uint8_t> afterDelete=scene.frame();
+
+        CHECK(renderer.getFontAtlasHandle(shared) == atlas);
+        CHECK(renderer.getFrameStats().atlasUploadCalls == 0);
+        CHECK(region(afterDelete, other->getBounds()) == otherPixels);
+
+        for(int frame=0; frame < 2; ++frame)
+        {
+            CAPTURE(frame);
+
+            const std::vector<uint8_t> later=scene.frame();
+
+            CHECK(renderer.getFrameStats().textSlotsWritten == 0);
+            CHECK(region(later, other->getBounds()) == otherPixels);
+        }
+    }
+
+    // the Label, the skin and the fixture each gave back only their own load
+    CHECK(renderer.getFontAtlasHandle(shared) == atlas);
+    CHECK(glIsTexture(atlas) == GL_TRUE);
 }
 
 TEST_CASE("Deleting a renderer deletes its GL objects and leaves another renderer drawing")
@@ -361,8 +568,8 @@ TEST_CASE("Deleting a renderer deletes its GL objects and leaves another rendere
     gweni::Texture texture;
 
     texture.name="test16.png";
-    REQUIRE(renderer->loadFont(font) == Font::Status::Loaded);
-    REQUIRE(renderer->loadTexture(texture) == gweni::Texture::Status::Loaded);
+    REQUIRE((renderer->loadFont(font) == Font::Status::Loaded));
+    REQUIRE((renderer->loadTexture(texture) == gweni::Texture::Status::Loaded));
 
     size_t primitiveId=0;
     size_t textId=0;

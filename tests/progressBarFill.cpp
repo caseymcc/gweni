@@ -55,9 +55,9 @@ struct Scene
     {
         const gweni::Point viewSize=gweni::test::viewSize();
 
-        // as in textRunCache.cpp: no setDefaultFont, so deleting the skin keeps test::openSans()
         skin=new gweni::skin::textured::TexturedSkin(&gweni::test::gpuRenderer());
         REQUIRE(skin->init("DefaultSkin.json"));
+        skin->setDefaultFont("OpenSans.ttf", 11);
 
         canvas=new gweni::controls::Canvas(skin);
         canvas->setSize(viewSize.x, viewSize.y);

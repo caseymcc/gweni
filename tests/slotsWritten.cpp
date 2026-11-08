@@ -213,11 +213,11 @@ TEST_CASE("Slots written: a release between frames counts in the next frame")
 TEST_CASE("Slots written: a Selectable's hover-off frame writes its one slot")
 {
     const gweni::Point viewSize=gweni::test::viewSize();
-    // as in textRunCache.cpp: no setDefaultFont, so deleting the skin keeps test::openSans()
     gweni::skin::textured::TexturedSkin *skin=
         new gweni::skin::textured::TexturedSkin(&gweni::test::gpuRenderer());
 
     REQUIRE(skin->init("DefaultSkin.json"));
+    skin->setDefaultFont("OpenSans.ttf", 11);
 
     gweni::controls::Canvas *canvas=new gweni::controls::Canvas(skin);
 

@@ -341,9 +341,9 @@ TEST_CASE("ImagePanel: a Button's setImage icon draws at its bounds in front of 
     SlotRenderer &renderer=gweni::test::gpuRenderer();
     const gweni::Point viewSize=gweni::test::viewSize();
 
-    // as in textRunCache.cpp: no setDefaultFont, so deleting the skin keeps test::openSans()
     gweni::skin::textured::TexturedSkin *skin=new gweni::skin::textured::TexturedSkin(&renderer);
     REQUIRE(skin->init("DefaultSkin.json"));
+    skin->setDefaultFont("OpenSans.ttf", 11);
 
     gweni::controls::Canvas *canvas=new gweni::controls::Canvas(skin);
 

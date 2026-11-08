@@ -23,8 +23,8 @@ namespace textured
 
 bool TexturedSkin::init(std::string fileName)
 {
-    m_defaultFont.facename="OpenSans";
-    m_defaultFont.size=11;
+    // skin::Base's default (OpenSans 11) or what setDefaultFont set before this
+    loadDefaultFont();
 
     const bool loaded=loadConfig(fileName);
 

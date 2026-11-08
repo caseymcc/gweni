@@ -28,14 +28,23 @@ GWENI_CONTROL_CONSTRUCTOR(Label)
     setSizeFlags(SizeFlags(SizeFlag::Elastic, SizeFlag::Elastic));
 }
 
+Label::~Label()
+{
+    if(m_createdFont)
+    {
+        getSkin()->releaseFont(m_createdFont);
+        delete m_createdFont;
+    }
+}
+
 void Label::preDelete(skin::Base *skin)
 {
     if(m_createdFont)
     {
+        setFont(skin->getDefaultFont());
         skin->releaseFont(m_createdFont);
         delete m_createdFont;
         m_createdFont=nullptr;
-        setFont(skin->getDefaultFont());
     }
 }
 
@@ -89,22 +98,27 @@ void Label::onBoundsChanged(Rect oldChildBounds)
     ParentClass::onBoundsChanged(oldChildBounds);
 }
 
+// The Label loads the font it creates and frees it in preDelete or the next
+// setFont. The new one is loaded before the old one is freed, so setting an
+// equal font does not free and load it again.
 void Label::setFont(String strFacename, int iSize, bool bBold)
 {
-    if(m_createdFont)
-    {
-        getSkin()->releaseFont(m_createdFont);
-        delete m_createdFont;
-        m_createdFont=nullptr;
-        setFont(getSkin()->getDefaultFont());
-    }
+    Font *previous=m_createdFont;
 
     m_createdFont=new Font();
     GWENI_ASSERT_MSG(m_createdFont != nullptr, "Couldn't Create Font!");
     m_createdFont->bold=bBold;
     m_createdFont->facename=strFacename;
     m_createdFont->size=iSize;
+    getSkin()->loadFont(m_createdFont);
     setFont(*m_createdFont);
+
+    if(previous)
+    {
+        getSkin()->releaseFont(previous);
+        delete previous;
+    }
+
     m_text->refreshSize();
 }
 
