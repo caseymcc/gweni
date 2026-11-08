@@ -164,7 +164,7 @@ void WindowCanvas::renderCanvas()
         {
             // the walk only draws: a tree change from here on is reported
             RenderWalkScope walk;
-            doRender(m_skin);
+            renderPendingControls();
         }
         render->end();
     }

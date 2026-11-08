@@ -36,9 +36,10 @@
  *                       prim_ids= counts the live primitive ids (handed out
  *                       and not released) after the frame; the id bank is
  *                       process-wide, so it covers every canvas;
- *                       children_scanned= the children the render walk's
- *                       loop passed over in the controls it entered
- *                       (visited=), pending or not;
+ *                       visited= the controls the render phase rendered,
+ *                       the queued ones alone (0 on a settled frame);
+ *                       render_carried= the entries its drain left queued
+ *                       for a later frame (controls off the canvas);
  *                       layout_visited= the controls the frame's layout
  *                       passes entered, one per calculateSize() and one per
  *                       arrange(), each axis counted (0 with no pass);
@@ -784,7 +785,7 @@ static void printFrameStats(int frame, const std::string &control,
         " atlas_upload_calls=%zu atlas_upload_bytes=%zu buffer_regrows=%zu"
         " layout_passes=%d redirtied_by=%s render_layout=%d layout_requests=%d requested_by=%s"
         " layout_visited=%zu measure_calls=%zu"
-        " visited=%zu children_scanned=%zu z_visited=%zu anims_run=%zu prim_ids=%zu\n",
+        " visited=%zu render_carried=%zu z_visited=%zu anims_run=%zu prim_ids=%zu\n",
         frame, control.c_str(),
         changes.controls, changes.created, changes.visibility,
         changes.geometry, changes.background, changes.text,
@@ -794,7 +795,7 @@ static void printFrameStats(int frame, const std::string &control,
         layout.passes, redirtiedBy(layout).c_str(), layout.renderLayout ? 1 : 0,
         layout.requests, requestedBy(layout).c_str(),
         layout.visited, measures,
-        changes.visited, changes.childrenScanned, update.zVisited, update.animsRun,
+        changes.visited, changes.renderCarried, update.zVisited, update.animsRun,
         gweni::primitiveIdCount()-gweni::releasedPrimitiveIdCount());
     std::fflush(stdout);
 }

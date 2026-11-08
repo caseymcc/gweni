@@ -152,9 +152,11 @@ GWENI_CONTROL_CONSTRUCTOR(PropertyRow)
     m_label=label;
 }
 
-void PropertyRow::render(gweni::skin::Base *skin)
+// The row's look follows its own hover and its property's hover and focus,
+// polled when one of them changes: the render phase calls only the hooks of a
+// control that changed itself, never a clean row's for a change below it.
+void PropertyRow::pollInteraction()
 {
-    /* SORRY */
     if(isEditing() != m_lastEditing)
     {
         onEditingChanged();
@@ -166,8 +168,28 @@ void PropertyRow::render(gweni::skin::Base *skin)
         onHoverChanged();
         m_lastHover=isHovered();
     }
+}
 
-    /* SORRY */
+void PropertyRow::onMouseEnter()
+{
+    ParentClass::onMouseEnter();
+    pollInteraction();
+}
+
+void PropertyRow::onMouseLeave()
+{
+    ParentClass::onMouseLeave();
+    pollInteraction();
+}
+
+void PropertyRow::onDescendantInteraction(Base *control)
+{
+    ParentClass::onDescendantInteraction(control);
+    pollInteraction();
+}
+
+void PropertyRow::render(gweni::skin::Base *skin)
+{
 //    skin->drawPropertyRow(this, skin::Generate, m_label->right(), isEditing(), isHovered()|
 //        m_property->isHovered());
     //skin->drawControl(this);

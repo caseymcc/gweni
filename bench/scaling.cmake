@@ -19,7 +19,7 @@
 #
 #    counter                           checked  grew means
 #    --------------------------------  -------  -------------------------------
-#    visited, children_scanned,        yes      any increase
+#    visited, render_carried,          yes      any increase
 #      controls_changed, created,
 #      visibility, geometry,
 #      background, text
@@ -75,14 +75,6 @@ endif()
 #       some-scene:visited     # issue #NN: <what grows>
 #   )
 set(EXCLUDED
-    # #407: the render walk passes over every child of each control it enters,
-    # dirty or not (no allocation since #320, but O(siblings) in time)
-    hover-sweep:children_scanned
-    set-text:children_scanned
-    type:children_scanned
-    drag:children_scanned
-    animate:children_scanned
-    add-remove:children_scanned
 )
 
 # Keys that are not work counters (see the table above).

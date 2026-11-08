@@ -19,7 +19,9 @@
 #include <gweni/controls/toolTip.h>
 #include <gweni/utility.h>
 #include <gweni/objectIdBank.h>
+#include <algorithm>
 #include <list>
+#include <vector>
 
 #if GWENI_ANIMATE
 #   include <gweni/anim.h>
@@ -95,10 +97,21 @@ ObjectIdBank<Base *, nullptr> g_controls;
 
 namespace
 {
-// Open RenderWalkScopes, and the control whose renderRecursive() is running in
-// the innermost one (the walk is single-threaded).
+// Open RenderWalkScopes, and the control whose hooks the drain is running in
+// the innermost one (the render phase is single-threaded).
 int g_renderWalkDepth=0;
 Base *g_renderingControl=nullptr;
+// Tree changes made inside a RenderWalkScope: a drain that sees this move
+// rebuilds its ancestor stack, which the change may have made stale.
+unsigned g_renderWalkTreeChanges=0;
+
+// The pending-render queue: every control with a state change the render
+// phase has not rendered yet, in the order they were queued, each at its
+// m_renderQueueIndex. A deleted control leaves a null slot, which the next
+// drain compacts away. One UI thread, as the id banks.
+std::vector<Base *> g_renderQueue;
+// A drain is running: a canvas rendered from a hook drains nothing.
+bool g_draining=false;
 
 // The (operation, type) pairs reported, each with its record entry.
 std::map<std::pair<std::string, std::string>, std::string> &renderWalkMutationRecord()
@@ -128,7 +141,10 @@ void reportRenderWalkMutation(Base *control, const char *operation)
 inline void noteRenderWalkMutation(Base *control, const char *operation)
 {
     if(g_renderWalkDepth != 0)
+    {
+        ++g_renderWalkTreeChanges;
         reportRenderWalkMutation(control, operation);
+    }
 }
 }//namespace
 
@@ -155,6 +171,17 @@ void resetRenderWalkMutations()
     renderWalkMutationRecord().clear();
 }
 
+size_t queuedRenderCount()
+{
+    return g_renderQueue.size()-std::count(g_renderQueue.begin(), g_renderQueue.end(), nullptr);
+}
+
+void Base::appendToRenderQueue()
+{
+    m_renderQueueIndex=(int)g_renderQueue.size();
+    g_renderQueue.push_back(this);
+}
+
 Base::Base(const String &name)
 {
 
@@ -162,7 +189,6 @@ Base::Base(const String &name)
 
     m_parent=nullptr;
     m_actualParent=nullptr;
-    m_childStateChanged=false;
     m_ancestorHidden=false;
     m_skin=nullptr;
 
@@ -286,6 +312,14 @@ Base::~Base()
     }
 
     removeSkinControl();
+
+    // Last, after everything above that may have queued it: the queue never
+    // hands out a deleted control, and a tree change reported from here on
+    // does not name it.
+    if(m_renderQueueIndex >= 0)
+        g_renderQueue[m_renderQueueIndex]=nullptr;
+    if(g_renderingControl == this)
+        g_renderingControl=nullptr;
 }
 
 namespace
@@ -714,7 +748,6 @@ void Base::addChild(Base *child)
     // Not visible under a hidden parent, e.g. content built into a PageControl
     // page that is hidden before its content is added; its own flag is kept.
     child->setAncestorHidden(!visible());
-    markAttachedChanged(child);
     // new, or moved here from another place: its old labels mean nothing here
     child->m_zMoved=true;
     child->markZDirty();
@@ -729,7 +762,6 @@ void Base::addChildOfLayout(Base *child)
     onChildAdded(child);
     child->m_actualParent=this;
     child->setAncestorHidden(!visible());
-    markAttachedChanged(child);
     // new, or moved here from another place: its old labels mean nothing here
     child->m_zMoved=true;
     child->markZDirty();
@@ -764,14 +796,6 @@ void Base::removeChild(Base *child)
 
     zChildRemoved();
     onChildRemoved(child);
-}
-
-void Base::markAttachedChanged(Base *child)
-{
-    // Created before it had a parent, or moved here from another branch: the
-    // walk has to reach it in its new place.
-    if(child->m_stateChange != StateChange_Nothing || child->m_childStateChanged)
-        child->markAncestorsChanged();
 }
 
 void Base::addStateChangeRecursive(int stateChange)
@@ -1348,175 +1372,273 @@ void Base::zChildRemoved()
         canvas->m_zOrderDirty=true;
 }
 
-void Base::doCacheRender(skin::Base *skin, controls::Base *master)
+namespace
 {
-    renderer::Base *baseRenderer=skin->getRenderer();
-    renderer::ICacheToTexture *cache=baseRenderer->getCTT();
+// One level of the drain's ancestor stack: a control of the drained tree, and
+// the render offset and clip region its children render in (before a
+// getChildClipRect() of its own narrows one child's). The control is only
+// compared, never dereferenced: a hook may have deleted it.
+struct RenderLevel
+{
+    Base *control;
+    Point offset;
+    Rect clip;
+};
 
-    if(!cache)
-        return;
+// A queue slot to render and its z, for the sort.
+struct RenderOrder
+{
+    int z;
+    unsigned slot;
 
-    Point oldRenderOffset=baseRenderer->getRenderOffset();
-    Rect rOldRegion=baseRenderer->clipRegion();
-
-    if(this != master)
+    bool operator<(const RenderOrder &other) const
     {
-        baseRenderer->addRenderOffset(getBounds());
-        baseRenderer->addClipRegion(getBounds());
+        return (z != other.z)?(z < other.z):(slot < other.slot);
+    }
+};
+
+// Kept from frame to frame, so the render phase allocates nothing once they
+// have grown.
+std::vector<RenderLevel> g_renderStack;
+std::vector<Base *> g_renderChain;
+std::vector<RenderOrder> g_renderOrder;
+
+// Entries queued during a drain (by a hook, on another control) that it
+// renders after the sorted ones, at least: the rest waits for the next frame,
+// so a hook that keeps queueing cannot keep the drain going.
+constexpr size_t MinQueuedDuringDrain=256;
+}//namespace
+
+void Base::drainRenderQueue(skin::Base *skin, bool zTied)
+{
+    if(g_draining)
+        return;
+    g_draining=true;
+    // a tree change from a hook is reported, and seen by this drain
+    RenderWalkScope walk;
+
+    renderer::Base *baseRenderer=skin->getRenderer();
+    std::vector<Base *> &queue=g_renderQueue;
+
+    // Drops the slots of deleted (and rendered) controls; the indices move.
+    const auto compact=[&queue]()
+        {
+            size_t kept=0;
+
+            for(Base *control : queue)
+            {
+                if(!control)
+                    continue;
+                control->m_renderQueueIndex=(int)kept;
+                queue[kept++]=control;
+            }
+            queue.resize(kept);
+        };
+    compact();
+
+    // The order: z is the tree's preorder (a parent before its children, a
+    // child before the next one's subtree), strictly increasing unless the
+    // renumber clamped. Entries off this tree sort in among them and are
+    // passed over below.
+    std::vector<RenderOrder> &order=g_renderOrder;
+    order.clear();
+
+    if(zTied)
+    {
+        const auto collect=[&order](const auto &self, Base *control) -> void
+            {
+                if(control->m_renderQueueIndex >= 0)
+                    order.push_back({0, (unsigned)control->m_renderQueueIndex});
+                for(Base *child : control->m_children)
+                    self(self, child);
+            };
+        collect(collect, this);
     }
     else
     {
-        baseRenderer->setRenderOffset(Point(0, 0));
-        baseRenderer->setClipRegion(getBounds());
+        for(size_t slot=0; slot < queue.size(); ++slot)
+            order.push_back({queue[slot]->getZIndex(), (unsigned)slot});
+        std::sort(order.begin(), order.end());
     }
 
-    // See if we need to update the cached texture. Dirty?
-    if(m_cacheTextureDirty && baseRenderer->clipRegionVisible())
-    {
-        baseRenderer->startClip();
+    const size_t queuedBefore=queue.size();
+    const size_t appendCap=std::max(MinQueuedDuringDrain, queuedBefore);
+
+    // This root's own state, as the canvas set it on the renderer.
+    const Point rootOffset=baseRenderer->getRenderOffset();
+    const Rect rootClip=baseRenderer->clipRegion();
+
+    std::vector<RenderLevel> &stack=g_renderStack;
+    std::vector<Base *> &chain=g_renderChain;
+    unsigned treeChanges=g_renderWalkTreeChanges;
+
+    // The state \p control's children render in, \p control rendering at
+    // (offset, clip): its bounds' origin added, and its bounds clipped to if
+    // it clips.
+    const auto pushLevel=[&](Base *control, const Point &offset, const Rect &clip)
         {
-            if(isCachedToTexture())
-                cache->setupCacheTexture(this);
+            RenderLevel level{control, offset, clip};
+            const Rect &bounds=control->getBounds();
 
-            // Render myself first
-            render(skin);
-
-            if(!m_children.empty())
+            level.offset.x+=bounds.x;
+            level.offset.y+=bounds.y;
+            if(control->shouldClip())
             {
-                // Now render my kids
-                for(auto &&child : m_children)
-                {
-//                    if(child->hidden())
-//                        child->doHide(skin);
-//                    else
-                    {
-                        // Draw child control using normal render. If it is cached it will
-                        // be handled in the same way as this one.
-                        child->doRender(skin);
-                    }
-                }
+                baseRenderer->setRenderOffset(level.offset);
+                baseRenderer->setClipRegion(clip);
+                baseRenderer->addClipRegion(bounds);
+                level.clip=baseRenderer->clipRegion();
             }
-
-            if(isCachedToTexture())
-            {
-                cache->finishCacheTexture(this);
-                m_cacheTextureDirty=false;
-            }
-        }
-        baseRenderer->endClip();
-    }
-
-    // Draw the cached texture.
-    baseRenderer->setClipRegion(rOldRegion);
-    baseRenderer->startClip();
-    {
-        baseRenderer->setRenderOffset(oldRenderOffset);
-        cache->drawCachedControlTexture(this);
-    }
-    baseRenderer->endClip();
-}
-
-void Base::doRender(skin::Base *skin)
-{
-    // If this control has a different skin,
-    // then so does its children.
-    if(m_skin)
-        skin=m_skin;
-
-//    if(baseRenderer->getCTT() && isCachedToTexture())
-//    {
-//        doCacheRender(skin, this);
-//        return;
-//    }
-    // Nothing pending here or below: the subtree's primitives are as they
-    // were, so skip it before any offset, clip or children work.
-    if(getStateChange() == StateChange_Nothing && !m_childStateChanged)
-        return;
-
-    renderRecursive(skin, getBounds());
-
-    //reset state change to capture anything that happens next iteration
-    m_stateChange=StateChange_Nothing;
-}
-
-void Base::renderRecursive(skin::Base *skin, const Rect &cliprect)
-{
-    renderer::Base *baseRenderer=skin->getRenderer();
-
-    ++g_changeStats.visited;
-    // who a tree change made from here is reported against
-    Base *outerRendering=g_renderingControl;
-    g_renderingControl=this;
-
-    //render current control
-    renderUnder(skin);
-    render(skin);
-
-    //set clipping to this control
-    Point oldRenderOffset=baseRenderer->getRenderOffset();
-    Rect rOldRegion=baseRenderer->clipRegion();
-
-    baseRenderer->addRenderOffset(cliprect);
-
-    // A clipping control narrows the region to itself for its children; one
-    // that does not leaves them its parent's. Its own render() above was
-    // clipped by the parent's region.
-    //
-    // An empty region still walks the children: a dirty one has to be drawn
-    // again with the empty box, or its primitives stay on screen with the box
-    // of the frame they were drawn in (and its state change stays pending). A
-    // clean one is skipped by doRender() as anywhere else.
-    if(shouldClip())
-        baseRenderer->addClipRegion(cliprect);
-
-    // Cleared before the children are visited, so a change raised on one of
-    // them from here on (a sibling's render(), say) marks this control again
-    // and is rendered next frame, if not this one.
-    m_childStateChanged=false;
-
-    // Render this child controls under current objects clip
-    baseRenderer->startClip();
-    {
-        // The live list, not a copy: the render walk only draws. A tree change
-        // made from it is reported (renderWalkMutations()), not survived.
-        for(Base *child : m_children)
+            control->m_renderStackLevel=(int)stack.size();
+            stack.push_back(level);
+        };
+    // The state \p control renders in, its parent at the top of the stack: the
+    // parent's children's, narrowed by the parent's getChildClipRect() for it.
+    const auto stateUnderTop=[&](Base *control, Point &offset, Rect &clip)
         {
-            ++g_changeStats.childrenScanned;
+            const RenderLevel &top=stack.back();
 
-            // A child this control clips to a rect of its own (a
-            // ScrollControl's inner panel at its viewport) renders in this
-            // region narrowed to that rect; the child's own bounds narrow it
-            // further, as for any child.
-            if(const Rect *childClip=getChildClipRect(child))
+            offset=top.offset;
+            clip=top.clip;
+            if(const Rect *childClip=control->m_actualParent->getChildClipRect(control))
             {
-                const Point offset=baseRenderer->getRenderOffset();
-                const Rect region=baseRenderer->clipRegion();
-
+                baseRenderer->setRenderOffset(offset);
+                baseRenderer->setClipRegion(clip);
                 baseRenderer->addRenderOffset(*childClip);
                 baseRenderer->addClipRegion(*childClip);
-                baseRenderer->setRenderOffset(offset);
-                child->doRender(skin);
-                baseRenderer->setClipRegion(region);
+                clip=baseRenderer->clipRegion();
             }
-            else
-                child->doRender(skin);
-        }
-    }
-    baseRenderer->endClip();
-
-    // Render overlay/focus
-    {
-        baseRenderer->setClipRegion(rOldRegion);
-        baseRenderer->startClip();
+        };
+    // The stack back to this root alone.
+    const auto resetStack=[&]()
         {
-            renderOver(skin);
-            renderFocus(skin);
-        }
-        baseRenderer->endClip();
-        baseRenderer->setRenderOffset(oldRenderOffset);
-    }
+            stack.clear();
+            pushLevel(this, rootOffset, rootClip);
+        };
 
-    g_renderingControl=outerRendering;
+    // Runs \p control's hooks at (offset, clip) and clears its state, unless a
+    // hook deleted it. Returns whether it is still there.
+    const auto renderOne=[&](Base *control, const Point &offset, const Rect &clip)
+        {
+            const int slot=control->m_renderQueueIndex;
+
+            ++g_changeStats.visited;
+            g_renderingControl=control;
+
+            baseRenderer->setRenderOffset(offset);
+            baseRenderer->setClipRegion(clip);
+            control->renderUnder(skin);
+            if(queue[slot] == control)
+                control->render(skin);
+
+            if(queue[slot] == control)
+            {
+                // its own offset, its parent's region
+                baseRenderer->setRenderOffset(offset);
+                baseRenderer->addRenderOffset(control->getBounds());
+                baseRenderer->setClipRegion(clip);
+                baseRenderer->startClip();
+                control->renderOver(skin);
+                if(queue[slot] == control)
+                    control->renderFocus(skin);
+                baseRenderer->endClip();
+            }
+
+            g_renderingControl=nullptr;
+
+            if(queue[slot] != control)
+                return false;
+
+            // after the hooks: a change it raised on itself is cleared too
+            control->m_stateChange=StateChange_Nothing;
+            control->m_renderQueueIndex=-1;
+            queue[slot]=nullptr;
+            return true;
+        };
+
+    // Renders the control in \p slot if it is on this tree; leaves it queued
+    // if it is not.
+    const auto drainSlot=[&](size_t slot)
+        {
+            Base *control=queue[slot];
+
+            if(!control)
+                return;
+
+            if(control->m_stateChange == StateChange_Nothing)
+            {
+                control->m_renderQueueIndex=-1;
+                queue[slot]=nullptr;
+                return;
+            }
+
+            // a hook moved or deleted controls: the stack may name them
+            if(treeChanges != g_renderWalkTreeChanges)
+            {
+                treeChanges=g_renderWalkTreeChanges;
+                resetStack();
+            }
+
+            if(control == this)
+            {
+                renderOne(control, rootOffset, rootClip);
+                if(treeChanges == g_renderWalkTreeChanges)
+                    resetStack();
+                return;
+            }
+
+            // up to the nearest ancestor on the stack, which this root always is
+            chain.clear();
+            Base *ancestor=control->m_actualParent;
+
+            while(ancestor)
+            {
+                const int level=ancestor->m_renderStackLevel;
+
+                if((level >= 0) && ((size_t)level < stack.size())
+                    && (stack[level].control == ancestor))
+                    break;
+                chain.push_back(ancestor);
+                ancestor=ancestor->m_actualParent;
+            }
+
+            // detached, or on another canvas: rendered by a later drain
+            if(!ancestor)
+                return;
+
+            stack.resize(ancestor->m_renderStackLevel+1);
+
+            Point offset;
+            Rect clip;
+
+            for(auto it=chain.rbegin(); it != chain.rend(); ++it)
+            {
+                stateUnderTop(*it, offset, clip);
+                pushLevel(*it, offset, clip);
+            }
+
+            stateUnderTop(control, offset, clip);
+            if(renderOne(control, offset, clip) && (treeChanges == g_renderWalkTreeChanges))
+                // the next entry is often a child
+                pushLevel(control, offset, clip);
+        };
+
+    resetStack();
+
+    for(const RenderOrder &entry : order)
+        drainSlot(entry.slot);
+
+    // queued by the hooks, in the order they were, up to the cap
+    for(size_t slot=queuedBefore; (slot < queue.size()) && (slot-queuedBefore < appendCap); ++slot)
+        drainSlot(slot);
+
+    // as the canvas left them, for whatever it draws after
+    baseRenderer->setRenderOffset(rootOffset);
+    baseRenderer->setClipRegion(rootClip);
+
+    compact();
+    g_changeStats.renderCarried=queue.size();
+    g_draining=false;
 }
 
 void Base::doHide(skin::Base *skin)
@@ -1587,7 +1709,7 @@ void Base::setSkin(skin::Base *skin, bool doChildren)
     onSkinChanged(skin);
 
     m_stateChange=StateChange_Created;
-    markAncestorsChanged();
+    queueForRender();
 
     if(doChildren)
     {
@@ -1622,12 +1744,20 @@ void Base::onMouseEnter()
 {
     onHoverEnter.call(this);
     redraw();
+    notifyAncestorsOfInteraction();
 }
 
 void Base::onMouseLeave()
 {
     onHoverLeave.call(this);
     redraw();
+    notifyAncestorsOfInteraction();
+}
+
+void Base::notifyAncestorsOfInteraction()
+{
+    for(Base *ancestor=getParent(); ancestor; ancestor=ancestor->getParent())
+        ancestor->onDescendantInteraction(this);
 }
 
 bool Base::isHovered() const
@@ -1659,10 +1789,14 @@ void Base::focus()
     // The outgoing holder repaints too, once KeyboardFocus has moved on, so its
     // skin stops picking the focused look.
     if(previous)
+    {
         previous->redraw();
+        previous->notifyAncestorsOfInteraction();
+    }
 
     onKeyboardFocus();
     redraw();
+    notifyAncestorsOfInteraction();
 }
 
 void Base::unfocus()
@@ -1673,6 +1807,7 @@ void Base::unfocus()
     KeyboardFocus=nullptr;
     onLostKeyboardFocus();
     redraw();
+    notifyAncestorsOfInteraction();
 }
 
 bool Base::isOnTop()

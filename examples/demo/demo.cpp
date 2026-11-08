@@ -279,7 +279,7 @@ std::vector<Demo::ListEntryFit> Demo::listEntryFits()
         int right=std::min(barLeft, buttonLeft+button->getWidth()-button->getPadding().right);
 
         // Each clipping control up to the list cuts the region the button's
-        // children are drawn in (Base::renderRecursive).
+        // children are drawn in (Base::drainRenderQueue).
         for(controls::Base *parent=button->getParent(); parent; parent=parent->getParent())
         {
             if(parent->shouldClip())

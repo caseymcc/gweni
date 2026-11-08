@@ -386,6 +386,11 @@ protected:
 
     /// renderCanvas's own pass, counted in LayoutStats::renderLayout.
     void renderPhaseLayout();
+    /// The render walk: renders the controls queued on this canvas
+    /// (Base::drainRenderQueue), from the render offset and clip region just
+    /// set on the renderer, which are this canvas's own. Called inside a
+    /// RenderWalkScope, after renderPhaseLayout() and the z renumber.
+    void renderPendingControls();
     /// After a tree-order change (m_zOrderDirty), keepOverlaysLast() and the z
     /// renumber, counted in m_updateStats; else nothing. Run by updateCanvas()
     /// and again after renderPhaseLayout(), so a control that pass created is

@@ -66,20 +66,20 @@ constexpr int StateChange_Text=0x0010;
 constexpr int StateChange_Caret=0x0020;
 
 //! Tally of the controls Base::render() found something to regenerate for,
-//! plus the controls the render walk entered at all. This is what "per-frame
+//! plus the controls the render phase rendered at all. This is what "per-frame
 //! cost scales with what changed" means, measured: on a settled frame every
-//! field is zero, except visited, which is at most 1 (the Canvas), and
-//! childrenScanned, then at most the Canvas's child count.
+//! field is zero, renderCarried aside, which counts what waits for another
+//! frame.
 struct ChangeStats
 {
-    //! controls Base::renderRecursive() entered: the changed ones and their
-    //! ancestors; doRender() skips a subtree with nothing pending in it
+    //! controls the render phase rendered: the entries of the pending-render
+    //! queue it took (each one queued by addStateChange()), not their
+    //! ancestors, which it passes no hook (see Base::drainRenderQueue())
     size_t visited=0;
-    //! children the walk's loop passed over in the controls it entered, each
-    //! handed to doRender() whether or not it had anything pending: the walk
-    //! is still O(siblings) of every entered control in time (it allocates
-    //! nothing for them)
-    size_t childrenScanned=0;
+    //! entries the last drain left in the queue for a later frame: controls
+    //! not on the drained canvas (detached, or on another canvas), and the
+    //! ones queued during the drain past its cap
+    size_t renderCarried=0;
     size_t controls=0;      //!< controls with getStateChange() != StateChange_Nothing
     size_t created=0;
     size_t visibility=0;
@@ -91,6 +91,11 @@ struct ChangeStats
 //! Changes counted since the last resetChangeStats().
 GWENI_EXPORT const ChangeStats &getChangeStats();
 GWENI_EXPORT void resetChangeStats();
+
+//! The controls in the process-global pending-render queue (see
+//! Base::isQueuedForRender()), on every canvas and off any. One UI thread, as
+//! the id banks in primitiveIds.h: a test compares it with a baseline.
+GWENI_EXPORT size_t queuedRenderCount();
 
 //! The control types setSkin() found no skin renderer for: its walk up the
 //! parent types reached the skin's Base entry, for a type that is not Base and
@@ -116,17 +121,19 @@ GWENI_EXPORT size_t measureTextCalls();
 //! std::cerr, "gweni: <Type>#<id> <operation> during the render walk
 //! (rendering <Type>#<id>)", the first time each (operation, type) pair is
 //! seen, in every build. ~Base sees the type as Base (the derived destructors
-//! have run). The walk carries on over the changed list, so what that frame
-//! does next is undefined. This is the set of the reported pairs, sorted, each
+//! have run). The drain survives the change (it never touches a deleted
+//! control, and rebuilds its ancestor stack), but what that frame draws for
+//! the moved controls is undefined. This is the set of the reported pairs, sorted, each
 //! "<Type> <operation> (rendering <Type>)", for a harness to fail on.
 GWENI_EXPORT std::vector<std::string> renderWalkMutations();
 //! Forgets the reported pairs, so the next of each is printed and recorded
 //! again (for tests).
 GWENI_EXPORT void resetRenderWalkMutations();
 
-//! Open while a canvas walks its tree to draw it (Canvas::renderCanvas() and
-//! WindowCanvas's render, around doRender() only: renderPhaseLayout() runs
-//! before it and may create controls, which is layout). Scopes nest.
+//! Open while a canvas renders its queued controls (Canvas::renderCanvas() and
+//! WindowCanvas's render, around Canvas::renderPendingControls() only:
+//! renderPhaseLayout() runs before it and may create controls, which is
+//! layout). Scopes nest.
 struct GWENI_EXPORT RenderWalkScope
 {
     RenderWalkScope();
@@ -295,14 +302,18 @@ protected:
 public:
     
     virtual int getStateChange() { return m_stateChange; }
-    //! Sets the bits and marks the path to the root (see
-    //! m_childStateChanged), so the render walk reaches this control.
-    virtual void addStateChange(int stateChange)
+    //! Sets the bits and queues the control for the render phase (once: see
+    //! m_renderQueueIndex), which renders the queued controls and nothing
+    //! else. Not virtual, so no subclass can set bits without queueing.
+    void addStateChange(int stateChange)
     {
         m_stateChange|=stateChange;
         if(stateChange != StateChange_Nothing)
-            markAncestorsChanged();
+            queueForRender();
     }
+    //! Whether the control is in the pending-render queue: it has a state
+    //! change the render phase has not rendered yet.
+    bool isQueuedForRender() const { return m_renderQueueIndex >= 0; }
     virtual void addStateChangeRecursive(int stateChange);
     virtual bool hasState(int state) { return m_stateChange&state; }
     
@@ -438,10 +449,6 @@ protected:
     virtual void updateRenderBounds();
 
 public:
-    virtual void doRender(gweni::skin::Base *skin);
-    virtual void doCacheRender(gweni::skin::Base *skin, gweni::controls::Base *master);
-    virtual void renderRecursive(gweni::skin::Base *skin, const gweni::Rect &cliprect);
-
     virtual void doHide(gweni::skin::Base *skin);
     virtual void hideRecursive(skin::Base *skin);
 
@@ -464,10 +471,30 @@ public:
 protected:
     void setPrimitiveIdsSize(size_t size);
 
+    //! The render phase's hooks, called by drainRenderQueue() for a queued
+    //! control only, in this order and before its children: renderUnder() and
+    //! render() at its parent's render offset and clip region, renderOver()
+    //! and renderFocus() with its own offset added, still in its parent's
+    //! region. A hook must only draw this control: the hooks of a control with
+    //! nothing queued are not called, whatever changed below it.
     virtual void render(gweni::skin::Base *skin);
     virtual void renderUnder(gweni::skin::Base * /*skin*/) {}
     virtual void renderOver(gweni::skin::Base * /*skin*/) {}
     virtual void renderFocus(gweni::skin::Base * /*skin*/);
+
+    //! The render phase of the canvas this is (Canvas::renderPendingControls):
+    //! renders every queued control on this tree, in z order, which is the
+    //! tree's preorder, rebuilding each one's render offset and clip region
+    //! from this root's (read from the renderer, as the canvas just set them)
+    //! down its m_actualParent chain, and clears its state change. The chain
+    //! is kept as a stack from one control to the next, so a change over the
+    //! whole tree costs O(controls). \p zTied: the z renumber clamped and z
+    //! values tie (Canvas::m_zClamped), so the order is taken from a preorder
+    //! walk of the tree instead of a sort. A control queued during the drain
+    //! (a change raised on another control from a hook) is rendered after the
+    //! sorted ones, up to a cap; what is not on this tree, and what is past
+    //! the cap, stays queued (ChangeStats::renderCarried).
+    void drainRenderQueue(gweni::skin::Base *skin, bool zTied);
 
     void removeSkinControl();
 
@@ -613,6 +640,12 @@ public:
 
     virtual void onMouseEnter();
     virtual void onMouseLeave();
+    //! A descendant (\p control) was hovered or left, or took or lost the
+    //! keyboard focus: called on each ancestor, in the update phase, for a
+    //! control whose look depends on its descendants' interaction state (a
+    //! PropertyRow's label on its property's). The render phase never calls a
+    //! clean ancestor's hooks, so that look cannot be picked there.
+    virtual void onDescendantInteraction(Base * /*control*/) {}
 
     virtual void onLostKeyboardFocus() {}
     virtual void onKeyboardFocus() {}
@@ -677,9 +710,9 @@ public:
     //! Repaints this control: re-picks its colors and marks its background
     //! dirty, so the skin's update() re-emits it on the next render. Only this
     //! control is marked, plus the canvas's needsRedraw() flag. Call it from
-    //! the update phase (input, animations, layout); doRender() clears the state
-    //! change once the subtree has rendered, so one issued while rendering is
-    //! lost.
+    //! the update phase (input, animations, layout); the render phase clears
+    //! the state change once the control has rendered, so one issued from its
+    //! own hooks is lost.
     virtual void redraw();
 
     virtual void updateColors() {}
@@ -830,25 +863,29 @@ protected:
     //! parent's InnerPanel (if it has one). You should rarely need this.
     Base *m_actualParent;
 
-    //! Some descendant has a pending state change, so doRender() has to walk
-    //! into this control even when its own m_stateChange is Nothing. Set on
-    //! the m_actualParent chain (the m_children lists the walk follows) by
-    //! addStateChange() and when a pending control is attached; cleared when
-    //! the walk enters the control, before it visits the children.
-    bool m_childStateChanged;
-
-    //! Sets m_childStateChanged on each m_actualParent up to the first that
-    //! already has it: O(depth), and amortised O(1) per frame.
-    void markAncestorsChanged()
+private:
+    //! This control's index in the pending-render queue, or -1 when it is not
+    //! queued. addStateChange() queues it once; the render phase's drain
+    //! clears it with the state change, after the control's hooks have
+    //! returned, so a change it raises on itself while rendering is cleared
+    //! too. ~Base takes it off the queue (its slot is nulled, and the next
+    //! drain compacts it away). A control off any canvas keeps its entry
+    //! until it is attached to one again and that canvas renders.
+    int m_renderQueueIndex=-1;
+    //! Puts the control at the end of the queue, unless it is in it already.
+    void queueForRender()
     {
-        for(Base *parent=m_actualParent; parent && !parent->m_childStateChanged;
-            parent=parent->m_actualParent)
-            parent->m_childStateChanged=true;
+        if(m_renderQueueIndex < 0)
+            appendToRenderQueue();
     }
+    void appendToRenderQueue();
+    //! The control's level in the drain's ancestor stack when it was last
+    //! pushed there; trusted only if that level still holds this control.
+    int m_renderStackLevel=-1;
+    //! Calls onDescendantInteraction(this) on each ancestor.
+    void notifyAncestorsOfInteraction();
 
-    //! Called once child is in our m_children: marks our chain if it has
-    //! anything pending.
-    void markAttachedChanged(Base *child);
+protected:
 
     //! An ancestor was hidden or shown, or it was attached to or detached from
     //! a parent: sets m_ancestorHidden and, if its visible() changed, marks
@@ -891,8 +928,8 @@ protected:
     bool m_zMoved=false;
     //! The renumber has to enter this control: its child list or its layer
     //! counts changed, or a descendant's did, since it was last entered (set on
-    //! the m_actualParent chain, as m_childStateChanged is for the render
-    //! walk). A control is created dirty: it was never numbered.
+    //! the m_actualParent chain). A control is created dirty: it was never
+    //! numbered.
     bool m_zDirty=true;
     //! zSubtreeEnd() when the renumber last entered this control (or a removal
     //! changed it), so a clean subtree is passed in O(1).

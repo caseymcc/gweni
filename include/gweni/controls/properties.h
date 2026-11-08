@@ -86,6 +86,12 @@ public:
     void arrange(gweni::skin::Base *skin, Dim dim) override;
     void render(gweni::skin::Base *skin) override;
 
+    void onMouseEnter() override;
+    void onMouseLeave() override;
+    //! The property (or a control in it) was hovered or focused: the label
+    //! takes the row's new look.
+    void onDescendantInteraction(Base *control) override;
+
     virtual bool isEditing()
     {
         return m_property && m_property->isEditing();
@@ -104,6 +110,9 @@ public:
 protected:
 
     void onPropertyValueChanged(event::Info info);
+    //! Calls onEditingChanged() and onHoverChanged() for what changed since
+    //! the last call, in the update phase.
+    void pollInteraction();
 
     Label *m_label;
     property::Base *m_property;
