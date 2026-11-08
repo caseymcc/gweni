@@ -91,7 +91,7 @@ public:
             return;
 
         m_columnWidth[i]=iWidth;
-        m_updateLayout=true;
+        markLayoutDirty();
         m_layoutDirtyCounted=true;
     }
 

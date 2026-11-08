@@ -63,6 +63,16 @@ struct LayoutStats
     //! render phase's pass included (see measureTextCalls()): nearly all from
     //! layout, the rest from what the update phase itself measures.
     size_t measureCalls=0;
+    //! Children the passes' generic layout loops went over, in either phase:
+    //! one per child (hidden ones included) each time Base::sizeOfChildren,
+    //! Base::arrangeHorizontal/arrangeVertical (each of their loops), the
+    //! child loop of Base::arrange or the dirty-child check that ends
+    //! Base::doArrange's Y step reaches it, entered or not, and likewise one
+    //! per item of each LayoutItem loop and per line of a wrapped Text's
+    //! measure. So it is what visited leaves out: a parent entered for one
+    //! dirty child still loops over all its siblings
+    //! (Base::countLayoutChildrenScanned). 0 on a frame with no pass.
+    size_t childrenScanned=0;
 };
 
 //! Layout verification (GWENI_LAYOUT_VERIFY=1, or setLayoutVerify(true)): after

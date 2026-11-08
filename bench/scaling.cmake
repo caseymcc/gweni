@@ -34,6 +34,7 @@
 #    layout_visited, measure_calls,    yes      any increase
 #      measure_calls_<phase> (input,
 #      update, render)
+#    layout_children_scanned           yes      any increase
 #    z_visited, z_changed              yes      any increase
 #    anims_run                         yes      any increase
 #    hit_tests                         yes      any increase

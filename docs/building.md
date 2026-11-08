@@ -545,7 +545,8 @@ controls rendered and changed (`visited`, the queued controls the render
 phase rendered, 0 on a settled frame, and `render_carried`, the entries it
 left queued for a later frame), slots written, uploads and buffer regrows
 (`buffer_regrows`), draw calls, layout passes
-and the controls they entered (`layout_visited`), text measures
+and the controls they entered (`layout_visited`), the children their loops
+went over, entered or not (`layout_children_scanned`), text measures
 (`measure_calls`, and `measure_calls_<phase>` for the input, update and
 render phases), z renumbering, live ids and C++ allocations. The same
 arguments give the same counters every run. Times are only meaningful from a release tree, and `gpu` is

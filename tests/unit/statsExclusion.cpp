@@ -13,9 +13,11 @@
  *  frame does the same to both app trees and, on the first canvas only,
  *  changes the flagged panel too: new strings, a move, an added Label, an
  *  added and removed child, a deleted one. Every ChangeStats count, the
- *  canvas's LayoutStats (passes, visited, measures, renderLayout, requests,
- *  capped) and UpdateStats (zVisited, zChanged, animsRun) and the
- *  measureTextCalls() delta must be the same on both canvases: on the first
+ *  canvas's LayoutStats (passes, visited, childrenScanned, measures,
+ *  renderLayout, requests, capped) and UpdateStats (zVisited, zChanged,
+ *  animsRun) and the measureTextCalls() delta must be the same on both
+ *  canvases (the flagged panel is not one of the children its app parent's
+ *  loops count, Base::countLayoutChildrenScanned): on the first
  *  frame, a settled one, frames that change the flagged panel alone (which
  *  then count nothing at all: no pass, no renumber), and frames that change
  *  both. statsExcluded() is true below the root, false elsewhere and once the
@@ -136,6 +138,7 @@ void checkSame(const char *what, const Counts &a, const Counts &b)
     CHECK(a.change.text == b.change.text);
     CHECK(a.layout.passes == b.layout.passes);
     CHECK(a.layout.visited == b.layout.visited);
+    CHECK(a.layout.childrenScanned == b.layout.childrenScanned);
     CHECK(a.layout.measureCalls == b.layout.measureCalls);
     CHECK(a.layout.renderLayout == b.layout.renderLayout);
     CHECK(a.layout.requests == b.layout.requests);

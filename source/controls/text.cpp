@@ -322,13 +322,40 @@ void Text::calculateSize(skin::Base *skin, Dim dim)
     // measure would be the font's size.
     const int rowHeight=(dim == Dim::Y && !m_lines.empty())?lineHeight():0;
 
-    for(auto &&line : m_lines)
+    // Every child is a line, and one that did not change keeps its preferred
+    // size and the row height it was given: with the rows as high as they
+    // were made, only the changed lines are measured and given it.
+    if(walkChangedChildren() && m_children.size() == m_lines.size()
+        && (dim == Dim::X || rowHeight == m_linesRowHeight))
     {
-        line->doCalculateSize(skin, dim);
+        countLayoutChildrenScanned(m_changedChildren);
+        for(size_t i=0; i < m_changedChildren.size(); ++i)
+        {
+            Text *line=static_cast<Text *>(m_changedChildren[i]);
 
-        if(dim == Dim::Y)
-            line->m_preferredSize.height=rowHeight;
+            if(!line)
+                continue;
+
+            line->doCalculateSize(skin, dim);
+
+            if(dim == Dim::Y)
+                line->m_preferredSize.height=rowHeight;
+        }
     }
+    else
+    {
+        countLayoutChildrenScanned(m_lines.size());
+        for(auto &&line : m_lines)
+        {
+            line->doCalculateSize(skin, dim);
+
+            if(dim == Dim::Y)
+                line->m_preferredSize.height=rowHeight;
+        }
+    }
+
+    if(dim == Dim::Y)
+        m_linesRowHeight=rowHeight;
 
     if(m_wrap && dim == Dim::X)
     {

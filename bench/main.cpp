@@ -102,7 +102,7 @@ const char *const g_counterNames[]=
     "visited", "render_carried", "controls_changed", "created", "visibility", "geometry", "background", "text",
     "prim_slots_written", "text_slots_written", "upload_calls", "upload_bytes", "mirror_bytes",
     "draw_calls", "text_draws", "atlas_upload_calls", "atlas_upload_bytes", "buffer_regrows",
-    "layout_passes", "layout_capped", "render_layout", "layout_visited",
+    "layout_passes", "layout_capped", "render_layout", "layout_visited", "layout_children_scanned",
     "measure_calls", "measure_calls_input", "measure_calls_update", "measure_calls_render", "z_visited", "z_changed", "anims_run", "hit_tests", "prim_ids", "text_ids",
     "allocs", "alloc_bytes",
     "allocs_input", "allocs_update", "allocs_render", "allocs_flush", "allocs_gpu"
@@ -140,7 +140,7 @@ void collectCounters(FrameRecord &record, const bench::PhaseTotals &phases,
         gpu.mirrorBytes, gpu.drawCalls, gpu.textDraws, gpu.atlasUploadCalls, gpu.atlasUploadBytes,
         gpu.bufferRegrows,
         size_t(layout.passes), layout.capped ? 1u : 0u, layout.renderLayout ? 1u : 0u,
-        layout.visited, measures, phases.measures[size_t(Phase::Input)],
+        layout.visited, layout.childrenScanned, measures, phases.measures[size_t(Phase::Input)],
         phases.measures[size_t(Phase::Update)], phases.measures[size_t(Phase::Render)], update.zVisited, update.zChanged, update.animsRun,
         gweni::input::hitTestVisits()-g_hitTestsAtFrame,
         gweni::primitiveIdCount()-gweni::releasedPrimitiveIdCount(),
@@ -428,6 +428,10 @@ void printUsage()
         "             the cap, whether the render phase laid out again\n"
         "  layout_visited  controls::LayoutStats: controls the frame's layout passes entered,\n"
         "             one per calculateSize() and one per arrange(), each axis counted\n"
+        "  layout_children_scanned  controls::LayoutStats: children those passes' generic\n"
+        "             loops (Base::sizeOfChildren, arrangeHorizontal/Vertical, arrange,\n"
+        "             doArrange) went over, entered or not: a parent entered for one dirty\n"
+        "             child counts all its siblings\n"
         "  measure_calls   renderer measureText(), lineHeight() and measureCarets() calls the\n"
         "             controls made in the frame (controls::measureTextCalls()), every phase, and\n"
         "             measure_calls_input/_update/_render in each: an edit wraps in the\n"

@@ -64,6 +64,10 @@
  *                       layout_visited= the controls the frame's layout
  *                       passes entered, one per calculateSize() and one per
  *                       arrange(), each axis counted (0 with no pass);
+ *                       layout_children_scanned= the children those
+ *                       passes' generic loops (Base::sizeOfChildren,
+ *                       arrangeHorizontal/Vertical, arrange, doArrange)
+ *                       went over, entered or not, hidden ones included;
  *                       measure_calls= the renderer measureText(),
  *                       lineHeight() and measureCarets() calls the
  *                       controls made since the last frame line (the
@@ -881,6 +885,9 @@ static void printUsage(std::ostream &out)
          "  --stats            print one key=value line per frame; prim_slots_written=\n"
          "                     and text_slots_written= are the distinct slots its\n"
          "                     flush uploads (a draw, hide, show or release each)\n"
+         "                     layout_visited= the controls the layout entered,\n"
+         "                     layout_children_scanned= the children its loops\n"
+         "                     went over, entered or not\n"
          "  --stats-clock frozen|step  under --stats, keep the clock still (the\n"
          "                     default) or step it 1/60 s per frame, so a\n"
          "                     tooltip's delay or an animation runs\n"
@@ -985,7 +992,7 @@ static void printFrameStats(int frame, const std::string &control,
         " upload_calls=%zu upload_bytes=%zu mirror_bytes=%zu draw_calls=%zu"
         " atlas_upload_calls=%zu atlas_upload_bytes=%zu buffer_regrows=%zu"
         " layout_passes=%d redirtied_by=%s render_layout=%d layout_requests=%d requested_by=%s"
-        " layout_visited=%zu measure_calls=%zu"
+        " layout_visited=%zu layout_children_scanned=%zu measure_calls=%zu"
         " visited=%zu render_carried=%zu z_visited=%zu anims_run=%zu prim_ids=%zu excluded_changed=%zu\n",
         frame, control.c_str(),
         changes.controls, changes.created, changes.visibility,
@@ -995,7 +1002,7 @@ static void printFrameStats(int frame, const std::string &control,
         gpu.atlasUploadCalls, gpu.atlasUploadBytes, gpu.bufferRegrows,
         layout.passes, redirtiedBy(layout).c_str(), layout.renderLayout ? 1 : 0,
         layout.requests, requestedBy(layout).c_str(),
-        layout.visited, measures,
+        layout.visited, layout.childrenScanned, measures,
         changes.visited, changes.renderCarried, update.zVisited, update.animsRun,
         gweni::primitiveIdCount()-gweni::releasedPrimitiveIdCount(), changes.excluded);
     std::fflush(stdout);

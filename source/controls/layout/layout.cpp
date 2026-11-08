@@ -248,6 +248,8 @@ void LayoutItem::calculateSize(skin::Base *skin, Dim dim)
 
     // A hidden control takes no space and no spacing, as in a dock layout
     // (Base::sizeOfChildren); a nested layout always counts.
+    if(m_parent)
+        m_parent->countLayoutChildrenScanned(m_children.size());
     for(LayoutItem *child:m_children)
     {
         if(!child->skipped())
@@ -272,6 +274,8 @@ void LayoutItem::calculateAlong(Dim dim)
     SizeFlag sizeFlag=SizeFlag::Fixed;
     bool addSpacing=false;
 
+    if(m_parent)
+        m_parent->countLayoutChildrenScanned(m_children.size());
     for(LayoutItem *child:m_children)
     {
         if(child->skipped())
@@ -306,6 +310,8 @@ void LayoutItem::calculateAcross(Dim dim)
     int maximum=std::numeric_limits<int>::max();
     SizeFlag sizeFlag=SizeFlag::Fixed;
 
+    if(m_parent)
+        m_parent->countLayoutChildrenScanned(m_children.size());
     for(LayoutItem *child:m_children)
     {
         if(child->skipped())
@@ -363,6 +369,8 @@ void LayoutItem::arrange(skin::Base *skin, Dim dim)
         arrangeAcross(dim);
 
     // a hidden control keeps the bounds it had, as in a dock layout
+    if(m_parent)
+        m_parent->countLayoutChildrenScanned(m_children.size());
     for(LayoutItem *child:m_children)
     {
         if(!child->skipped())
@@ -383,6 +391,8 @@ void LayoutItem::arrangeAlong(Dim dim)
     int expand=0;
     int bloat=0;
 
+    if(m_parent)
+        m_parent->countLayoutChildrenScanned(m_children.size());
     for(LayoutItem *child:m_children)
     {
         if(child->skipped())
@@ -415,6 +425,8 @@ void LayoutItem::arrangeAlong(Dim dim)
 
     int position=pos(m_bounds, dim)+lead(m_padding, dim);
 
+    if(m_parent)
+        m_parent->countLayoutChildrenScanned(m_children.size());
     for(LayoutItem *child:m_children)
     {
         if(child->skipped())
@@ -456,6 +468,8 @@ void LayoutItem::arrangeAcross(Dim dim)
     const int position=pos(m_bounds, dim)+lead(m_padding, dim);
     const int inner=length(m_bounds, dim)-sides(m_padding, dim);
 
+    if(m_parent)
+        m_parent->countLayoutChildrenScanned(m_children.size());
     for(LayoutItem *child:m_children)
     {
         if(child->skipped())

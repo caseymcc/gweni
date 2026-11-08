@@ -332,6 +332,8 @@ private:
     //! The line children, top to bottom: m_wrapped's lines after layout,
     //! updated in place.
     std::vector<Text *> m_lines;
+    //! The row height calculateSize last gave every line, -1 before it has.
+    int m_linesRowHeight=-1;
 };
 
 }//namespace internal

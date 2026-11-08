@@ -252,12 +252,21 @@ void Canvas::layoutPass()
     m_passCountedEntries=0;
 
     Canvas *outer=s_layingOut;
+    size_t *outerScanned=s_childrenScanned;
+    const bool outerWalk=s_walkChanged;
+    // Layout verification's full pass counts nothing and walks everything.
+    static size_t verifySink=0;
+
     s_layingOut=this;
+    s_childrenScanned=s_verifyingLayout?&verifySink:&m_layoutStats.childrenScanned;
+    s_walkChanged=!s_verifyingLayout;
     ++s_passSerial;
     m_inLayout=true;
     recurseLayout(m_skin);
     m_inLayout=false;
     s_layingOut=outer;
+    s_childrenScanned=outerScanned;
+    s_walkChanged=outerWalk;
 
     // Every layout invalidation during the pass set m_updateLayout again on
     // its way up. Only the ones Base reported as re-dirtying ask for another

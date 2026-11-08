@@ -428,6 +428,272 @@ bool Base::inLayoutPass()
     return Canvas::s_layingOut != nullptr;
 }
 
+// Out of line: the walks that mark controls dirty (invalidate() up to the
+// canvas, setBounds) pay for a test, not for a push's registers, on a control
+// already in its parent's list.
+#if defined(__GNUC__) || defined(__clang__)
+#define GWENI_LAYOUT_NOINLINE __attribute__((noinline))
+#else
+#define GWENI_LAYOUT_NOINLINE
+#endif
+
+// At one in ChangedShare of the children the walks take them all
+// (walkChangedChildren),
+// so the list stops there: the parent's next Y arrange looks at every child
+// instead (doArrange), as a first frame or a resize does.
+GWENI_LAYOUT_NOINLINE void Base::enlistLayoutChanged()
+{
+    Base *parent=m_actualParent;
+
+    if(!parent || parent->m_changedOverflow || parent->m_children.size() < MinChangedWalk)
+        return;
+
+    if((parent->m_changedChildren.size()+1)*ChangedShare >= parent->m_children.size())
+    {
+        parent->m_changedOverflow=true;
+        return;
+    }
+
+    m_changedIndex=static_cast<int>(parent->m_changedChildren.size());
+    parent->m_changedChildren.push_back(this);
+}
+
+// Once per count: the term the parent holds is the one its inputs give now.
+// A control measured since the count may hold another preferred size than
+// the one counted, so then it is not known, and the next count is full.
+GWENI_LAYOUT_NOINLINE void Base::noteSizeInputsChanging()
+{
+    Base *parent=m_actualParent;
+
+    if(!parent)
+        return;
+
+    for(size_t axis=0; axis < 2; ++axis)
+    {
+        ChildSizes &sizes=parent->m_childSizes[axis];
+
+        if(!sizes.valid || m_termSeq[axis] > parent->m_countSeq[axis])
+            continue;
+
+        if(m_measureSeq[axis] > parent->m_countSeq[axis])
+            sizes.valid=false;
+        else
+        {
+            m_sizeTerm[axis]=computeSizeTerm(parent, axis == 0 ? Dim::X : Dim::Y);
+            m_termSeq[axis]=++s_measureSeq;
+        }
+    }
+    noteLayoutChanged();
+}
+
+bool Base::countedSizeTerm(const Base *child, Dim dim, SizeTerm &term)
+{
+    const size_t axis=static_cast<size_t>(dim);
+
+    if(child->m_termSeq[axis] > m_countSeq[axis])
+    {
+        term=child->m_sizeTerm[axis];
+        return true;
+    }
+    if(child->m_measureSeq[axis] > m_countSeq[axis])
+        return false;
+
+    term=child->computeSizeTerm(this, dim);
+    return true;
+}
+
+void Base::dropLayoutChanged()
+{
+    if(m_changedIndex < 0)
+        return;
+
+    if(m_actualParent)
+        m_actualParent->m_changedChildren[static_cast<size_t>(m_changedIndex)]=nullptr;
+    m_changedIndex=-1;
+}
+
+// Not counted by its new parent yet: its term there is none.
+void Base::noteAdded()
+{
+    m_sizeTerm[0]=SizeTerm();
+    m_sizeTerm[1]=SizeTerm();
+    m_termSeq[0]=m_termSeq[1]=++s_measureSeq;
+    m_parentKeepsChanged=(m_actualParent->m_children.size() >= MinChangedWalk);
+    noteLayoutChanged();
+}
+
+void Base::noteChildLeaving(Base *child)
+{
+    child->dropLayoutChanged();
+    child->m_parentKeepsChanged=false;
+
+    for(size_t axis=0; axis < 2; ++axis)
+    {
+        const Dim dim=(axis == 0) ? Dim::X : Dim::Y;
+        SizeTerm term;
+
+        if(!m_childSizes[axis].valid)
+            continue;
+
+        if(countedSizeTerm(child, dim, term))
+            removeSizeTerm(dim, term);
+        else
+            m_childSizes[axis].valid=false;
+    }
+
+    if(child->getDock() != DockPosition::None)
+        m_arrangeAll[0]=m_arrangeAll[1]=true;
+}
+
+// Below MinChangedWalk children none was put in the list (noteLayoutChanged):
+// reaching it, the list is not every changed child yet, so it is taken as
+// stopped until the next Y arrange looks at them all.
+void Base::notedChildCount()
+{
+    if(m_children.size() != MinChangedWalk)
+        return;
+
+    m_changedOverflow=true;
+    for(Base *child:m_children)
+        child->m_parentKeepsChanged=true;
+}
+
+void Base::noteReordered()
+{
+    if(m_actualParent && getDock() != DockPosition::None)
+        m_actualParent->m_arrangeAll[0]=m_actualParent->m_arrangeAll[1]=true;
+}
+
+bool Base::changedChildDocked() const
+{
+    for(const Base *child:m_changedChildren)
+    {
+        if(child && child->getDock() != DockPosition::None)
+            return true;
+    }
+    return false;
+}
+
+// The same branches, in the same order, as sizeOfChildren's loop.
+Base::SizeTerm Base::computeSizeTerm(Base *parent, Dim dim) const
+{
+    SizeTerm term;
+
+    if(hidden() || !shouldIncludeInSize())
+        return term;
+
+    const DockPosition dock=getDock();
+    const Size preferred=getPreferredSize();
+    const Margin &margin=getMargin();
+
+    if(dim == Dim::X)
+    {
+        term.value=preferred.width+margin.left+margin.right;
+
+        if((dock & DockPosition::Top) || (dock & DockPosition::Bottom))
+            term.kind=MaxTerm;
+        else if((dock & DockPosition::Left) || (dock & DockPosition::Right))
+            term.kind=DockTerm;
+        else if(dock & DockPosition::Center)
+            term.kind=InnerTerm;
+        else
+        {
+            // Where the child asked to be, not where the last pass put it.
+            if(!parent->hasAlignment())
+                term.value+=m_requestedBounds.x;
+            term.kind=MaxTerm;
+        }
+    }
+    else
+    {
+        term.value=preferred.height+margin.top+margin.bottom;
+
+        if((dock & DockPosition::Top) || (dock & DockPosition::Bottom))
+            term.kind=DockTerm;
+        else if((dock & DockPosition::Left) || (dock & DockPosition::Right))
+            term.kind=MaxTerm;
+        else if(dock & DockPosition::Center)
+            term.kind=InnerTerm;
+        else
+        {
+            if(!parent->hasAlignment())
+                term.value+=m_requestedBounds.y;
+            term.kind=MaxTerm;
+        }
+    }
+    return term;
+}
+
+void Base::addSizeTerm(Dim dim, const SizeTerm &term)
+{
+    ChildSizes &sizes=m_childSizes[static_cast<size_t>(dim)];
+
+    switch(term.kind)
+    {
+    case MaxTerm:
+        if(sizes.maxCount == 0 || term.value > sizes.max)
+        {
+            sizes.max=term.value;
+            sizes.maxCount=1;
+        }
+        else if(term.value == sizes.max)
+            ++sizes.maxCount;
+        break;
+    case DockTerm:
+        sizes.dockSum+=term.value;
+        break;
+    case InnerTerm:
+        sizes.innerSum+=term.value;
+        break;
+    case NoTerm:
+        break;
+    }
+}
+
+// Taking away the last child holding the largest term leaves the largest of
+// the others unknown: the next count is a full one.
+void Base::removeSizeTerm(Dim dim, const SizeTerm &term)
+{
+    ChildSizes &sizes=m_childSizes[static_cast<size_t>(dim)];
+
+    switch(term.kind)
+    {
+    case MaxTerm:
+        if(term.value > sizes.max || sizes.maxCount == 0)
+            sizes.valid=false;
+        else if(term.value == sizes.max && --sizes.maxCount == 0)
+            sizes.valid=false;
+        break;
+    case DockTerm:
+        sizes.dockSum-=term.value;
+        break;
+    case InnerTerm:
+        sizes.innerSum-=term.value;
+        break;
+    case NoTerm:
+        break;
+    }
+}
+
+// The new term goes in before the old one comes out, so a holder of the
+// largest term that keeps it, or grows it, leaves the count valid.
+void Base::recountSizeTerm(Dim dim, const SizeTerm &counted, const SizeTerm &term)
+{
+    if(term.kind == counted.kind && term.value == counted.value)
+        return;
+
+    addSizeTerm(dim, term);
+    removeSizeTerm(dim, counted);
+}
+
+inline int Base::childSizesContent(Dim dim) const
+{
+    const ChildSizes &sizes=m_childSizes[static_cast<size_t>(dim)];
+    const int largest=(sizes.maxCount > 0) ? std::max(0, sizes.max) : 0;
+
+    return std::max(largest, sizes.dockSum+sizes.innerSum);
+}
+
 // During a layout pass (Canvas::layoutPass) a layout invalidation either feeds
 // the pass or re-dirties it. Placement feeds it: the pass reaches the control
 // later and lays it out with its new bounds. Anything else raised during the
@@ -447,7 +713,10 @@ void Base::invalidate(int state)
         (state & StateChange_Geometry))
     {
         m_needsLayout=true;
-        m_updateLayout=true;
+        // its parent places it again; a change to what the parent counts it
+        // by (its margin, dock, visibility, preferred size or request) marks
+        // its term stale where it is made
+        markLayoutDirty();
         if(g_invalidationCounted)
             m_layoutDirtyCounted=true;
 
@@ -456,7 +725,7 @@ void Base::invalidate(int state)
         // invalidation of the logical parent below does not reach.
         for(Base *holder=m_actualParent; holder && holder != m_parent; holder=holder->m_actualParent)
         {
-            holder->m_updateLayout=true;
+            holder->markLayoutDirty();
             if(g_invalidationCounted)
                 holder->m_layoutDirtyCounted=true;
         }
@@ -524,7 +793,11 @@ void Base::setDock(DockPosition dock)
     if(m_dock == dock)
         return;
 
+    noteSizeInputsChanging();
     m_dock=dock;
+    // docked or not, it moved the children after it, or did
+    if(m_actualParent)
+        m_actualParent->m_arrangeAll[0]=m_actualParent->m_arrangeAll[1]=true;
     invalidate();
     invalidateParent();
     invalidateParentReaders();
@@ -606,6 +879,7 @@ void Base::setHidden(bool hidden)
     if(m_hidden == hidden)
         return;
 
+    noteSizeInputsChanging();
     m_hidden=hidden;
 
     if(m_parent)
@@ -686,6 +960,7 @@ void Base::sendToBack()
     m_actualParent->m_children.remove(this);
     m_actualParent->m_children.push_front(this);
     zOrderMoved(this);
+    noteReordered();
     invalidateParent();
 }
 
@@ -702,6 +977,7 @@ void Base::bringToFront()
     m_actualParent->m_children.remove(this);
     m_actualParent->m_children.push_back(this);
     zOrderMoved(this);
+    noteReordered();
     invalidateParent();
     redraw();
 }
@@ -749,6 +1025,7 @@ void Base::bringNextToControl(controls::Base *child, bool bBehind)
 
     m_actualParent->m_children.insert(it, this);
     zOrderMoved(this);
+    noteReordered();
     invalidateParent();
 }
 
@@ -763,12 +1040,14 @@ void Base::addChild(Base *child)
     // the control whose list changes, not one forwarding to its inner panel
     noteRenderWalkMutation(this, "addChild");
     m_children.push_back(child);
+    notedChildCount();
 
     if(m_layoutItem)
         m_layoutItem->addControl(child);
 
     onChildAdded(child);
     child->m_actualParent=this;
+    child->noteAdded();
     // Not visible under a hidden parent, e.g. content built into a PageControl
     // page that is hidden before its content is added; its own flag is kept.
     child->setAncestorHidden(!visible());
@@ -782,9 +1061,11 @@ void Base::addChildOfLayout(Base *child)
 {
     noteRenderWalkMutation(this, "addChildOfLayout");
     m_children.push_back(child);
+    notedChildCount();
 
     onChildAdded(child);
     child->m_actualParent=this;
+    child->noteAdded();
     child->setAncestorHidden(!visible());
     // new, or moved here from another place: its old labels mean nothing here
     child->m_zMoved=true;
@@ -812,6 +1093,7 @@ void Base::removeChild(Base *child)
     // through a stale pointer once we are deleted)
     if(child->m_actualParent == this)
     {
+        noteChildLeaving(child);
         child->m_actualParent=nullptr;
         // On its own it is shown unless it hid itself; a new parent sets this
         // again as it is attached.
@@ -964,6 +1246,10 @@ bool Base::setBounds(const Rect &bounds)
 
         const Rect requested=m_requestedBounds;
 
+        // the requested position is in the term its parent counts for it
+        if(((parts & RequestX) && bounds.x != requested.x) || ((parts & RequestY) && bounds.y != requested.y))
+            noteSizeInputsChanging();
+
         if(parts & RequestX)
             m_requestedBounds.x=bounds.x;
         if(parts & RequestY)
@@ -978,6 +1264,10 @@ bool Base::setBounds(const Rect &bounds)
 
         m_widthRequested=m_widthRequested || (parts & RequestWidth);
         m_heightRequested=m_heightRequested || (parts & RequestHeight);
+
+        // The request is what its parent places it by, in a pass or not.
+        if(newRequest || !(requested == m_requestedBounds))
+            noteLayoutChanged();
 
         // A new request is laid out again: the requested size feeds the rules
         // (dockNoneSize, layoutCellSize) and the position counts in the
@@ -1010,6 +1300,12 @@ bool Base::setBounds(const Rect &bounds)
     {
         PlacementScope placement;
         invalidateChildren(true);
+        // its content box is another along that axis: every child is
+        // placed again there
+        if(m_bounds.w != bounds.w)
+            m_arrangeAll[0]=true;
+        if(m_bounds.h != bounds.h)
+            m_arrangeAll[1]=true;
     }
 
     // The pass arranges it again at its new bounds, and its own layout() runs
@@ -1024,7 +1320,7 @@ bool Base::setBounds(const Rect &bounds)
     for(Base *control=this; control;
         control=control->m_actualParent?control->m_actualParent:control->m_parent)
     {
-        control->m_updateLayout=true;
+        control->markLayoutDirty();
         if(counted)
             control->m_layoutDirtyCounted=true;
     }
@@ -1076,8 +1372,11 @@ void Base::setPlacement(Placement placement)
     if(m_placement == placement)
         return;
 
-    m_placement=placement;
     // The parent's size and arrange read it.
+    noteSizeInputsChanging();
+    m_placement=placement;
+    if(m_actualParent && getDock() != DockPosition::None)
+        m_actualParent->m_arrangeAll[0]=m_actualParent->m_arrangeAll[1]=true;
     invalidateParent();
 }
 
@@ -2215,13 +2514,33 @@ bool Base::processLayout(skin::Base *skin, Dim dim)
     return false;
 }
 
+// Each shown child is measured, and what it adds to the content size is its
+// term (computeSizeTerm): the largest dock-None child at its requested
+// position, or the docks' sum and the Center children's if larger. Every
+// count keeps the result in ChildSizes, so in a pass in which few children
+// changed (walkChangedChildren), once they have been counted in full, only
+// the changed children are measured and counted again, which is the same as
+// counting them all, since every child whose term may have changed is among
+// them. The term a count holds for a child is the one its inputs give until
+// they change, so it is kept only from then (noteSizeInputsChanging) and
+// nothing is stored per child by a count. Taking the largest term from its
+// last holder needs the largest of the rest, and so does a full count.
 Size Base::sizeOfChildren(skin::Base *skin, Dim dim)
 {
+    if(m_childSizes[static_cast<size_t>(dim)].valid && walkChangedChildren())
+        return sizeOfChangedChildren(skin, dim);
+
     Size preferredSize=m_preferredSize;
 
+    // computeSizeTerm's branches, counted as they come: the largest term (at
+    // least 0, as the content is) and how many children hold it, and the
+    // sums, kept for the walks of the changed children from MinChangedWalk
+    // children on.
+    countLayoutChildrenScanned(m_children);
     if(dim==Dim::X)
     {
         int width=0;
+        int holders=0;
         int dockWidth=0;
         int innerWidth=0;
 
@@ -2245,7 +2564,12 @@ Size Base::sizeOfChildren(skin::Base *skin, Dim dim)
             if((dock & DockPosition::Top) || (dock & DockPosition::Bottom))
             {
                 if(childWidth>width)
+                {
                     width=childWidth;
+                    holders=1;
+                }
+                else if(childWidth == width)
+                    ++holders;
             }
             else if((dock & DockPosition::Left) || (dock & DockPosition::Right))
             {
@@ -2262,9 +2586,17 @@ Size Base::sizeOfChildren(skin::Base *skin, Dim dim)
                     childWidth+=child->getRequestedBounds().x;
 
                 if(childWidth>width)
+                {
                     width=childWidth;
+                    holders=1;
+                }
+                else if(childWidth == width)
+                    ++holders;
             }
         }
+        if(m_children.size() >= MinChangedWalk)
+            keepChildSizes(dim, width, holders, dockWidth, innerWidth);
+
         dockWidth+=innerWidth;
         width=std::max(width, dockWidth);
         width+=m_padding.left+m_padding.right;
@@ -2274,6 +2606,7 @@ Size Base::sizeOfChildren(skin::Base *skin, Dim dim)
     else
     {
         int height=0;
+        int holders=0;
         int dockHeight=0;
         int innerHeight=0;
 
@@ -2302,7 +2635,12 @@ Size Base::sizeOfChildren(skin::Base *skin, Dim dim)
             else if((dock & DockPosition::Left)||(dock & DockPosition::Right))
             {
                 if(childHeight>height)
+                {
                     height=childHeight;
+                    holders=1;
+                }
+                else if(childHeight == height)
+                    ++holders;
             }
             else if(dock & DockPosition::Center)
             {
@@ -2314,9 +2652,16 @@ Size Base::sizeOfChildren(skin::Base *skin, Dim dim)
                     childHeight+=child->getRequestedBounds().y;
 
                 if(childHeight>height)
+                {
                     height=childHeight;
+                    holders=1;
+                }
+                else if(childHeight == height)
+                    ++holders;
             }
         }
+        if(m_children.size() >= MinChangedWalk)
+            keepChildSizes(dim, height, holders, dockHeight, innerHeight);
 
         dockHeight+=innerHeight;
         height=std::max(height, dockHeight);
@@ -2324,6 +2669,71 @@ Size Base::sizeOfChildren(skin::Base *skin, Dim dim)
 
         preferredSize.height=preferredFromContent(height, Dim::Y);
     }
+
+    return preferredSize;
+}
+
+// The largest is at least 0, as the content is: with every term below 0,
+// none holds it, and taking any term away makes the next count a full one.
+void Base::keepChildSizes(Dim dim, int largest, int holders, int dockSum, int innerSum)
+{
+    const size_t axis=static_cast<size_t>(dim);
+    ChildSizes &sizes=m_childSizes[axis];
+
+    sizes.max=largest;
+    sizes.maxCount=holders;
+    sizes.dockSum=dockSum;
+    sizes.innerSum=innerSum;
+    sizes.valid=true;
+    m_countSeq[axis]=s_measureSeq;
+}
+
+// The changed children are measured and counted again, which is the same as
+// counting them all (see sizeOfChildren).
+Size Base::sizeOfChangedChildren(skin::Base *skin, Dim dim)
+{
+    Size preferredSize=m_preferredSize;
+    const size_t axis=static_cast<size_t>(dim);
+    ChildSizes &sizes=m_childSizes[axis];
+
+    countLayoutChildrenScanned(m_changedChildren);
+    for(size_t i=0; i < m_changedChildren.size(); ++i)
+    {
+        Base *child=m_changedChildren[i];
+        SizeTerm counted;
+
+        if(!child)
+            continue;
+
+        // what the count holds, read before the measure changes it
+        const bool known=sizes.valid && countedSizeTerm(child, dim, counted);
+
+        if(!child->hidden())
+            child->doCalculateSize(skin, dim);
+
+        if(known)
+            recountSizeTerm(dim, counted, child->computeSizeTerm(this, dim));
+        else
+            sizes.valid=false;
+    }
+
+    if(!sizes.valid)
+    {
+        // the children are measured: only their terms are counted again
+        sizes=ChildSizes();
+        countLayoutChildrenScanned(m_children);
+        for(auto &&child:m_children)
+            addSizeTerm(dim, child->computeSizeTerm(this, dim));
+        sizes.valid=true;
+    }
+    m_countSeq[axis]=s_measureSeq;
+
+    const int content=childSizesContent(dim);
+
+    if(dim==Dim::X)
+        preferredSize.width=preferredFromContent(content+m_padding.left+m_padding.right, Dim::X);
+    else
+        preferredSize.height=preferredFromContent(content+m_padding.top+m_padding.bottom, Dim::Y);
 
     return preferredSize;
 }
@@ -2423,6 +2833,55 @@ void Base::policyResize(const Size &preferred, Dim dim)
         setArrangedBounds(bounds.x, bounds.y, bounds.w, dockNoneSize(dim, preferred.height));
 }
 
+namespace
+{
+size_t g_childrenScannedSink=0;
+}
+
+size_t *Base::s_childrenScanned=&g_childrenScannedSink;
+
+namespace
+{
+// The entries of `children` that are not a flagged root: a child of a control
+// whose entry is counted is in no flagged subtree unless it is one's root.
+template<typename Children>
+size_t childrenCounted(const Children &children)
+{
+    size_t counted=0;
+
+    for(const Base *child:children)
+    {
+        if(!child || !child->isExcludedFromStats())
+            ++counted;
+    }
+    return counted;
+}
+}
+
+void Base::countLayoutChildrenScanned(size_t children) const
+{
+    if(layoutEntryCounted())
+        *s_childrenScanned+=children;
+}
+
+void Base::countLayoutChildrenScanned(const List &children) const
+{
+    if(g_statsExcludedRoots == 0)
+        *s_childrenScanned+=children.size();
+    else if(layoutEntryCounted())
+        *s_childrenScanned+=childrenCounted(children);
+}
+
+void Base::countLayoutChildrenScanned(const std::vector<Base *> &children) const
+{
+    if(g_statsExcludedRoots == 0)
+        *s_childrenScanned+=children.size();
+    else if(layoutEntryCounted())
+        *s_childrenScanned+=childrenCounted(children);
+}
+bool Base::s_walkChanged=false;
+size_t Base::s_measureSeq=0;
+
 // Counted only inside a pass: a calculateSize() made outside one (a
 // sizeToContents(), say) is no entry of a pass, and is never skipped.
 void Base::doCalculateSize(skin::Base *skin, Dim dim)
@@ -2435,6 +2894,9 @@ void Base::doCalculateSize(skin::Base *skin, Dim dim)
         Canvas::s_layingOut->countLayoutEntry(this);
     }
 
+    // a measure after the parent counted this control may have changed its
+    // term (see doArrange)
+    m_measureSeq[static_cast<size_t>(dim)]=++s_measureSeq;
     calculateSize(skin, dim);
 }
 
@@ -2460,12 +2922,96 @@ void Base::doArrange(skin::Base *skin, Dim dim)
 
     if(dim == Dim::Y)
     {
-        // re-dirtied in this pass, or a shown child still is: the next pass
-        // enters it again
-        m_updateLayout=(m_redirtiedPass == Canvas::s_passSerial) ||
-            std::any_of(m_children.begin(), m_children.end(), [](const Base *child)
-                { return !child->hidden() && child->m_updateLayout; });
-        if(!m_updateLayout)
+        // Re-dirtied in this pass, or a shown child still is: the next pass
+        // enters it again. Every shown dirty child is among the changed ones
+        // (noteLayoutChanged), so they are all this looks at; the clean and
+        // hidden ones leave the list. One that leaves it with its term
+        // possibly out of date (an input changed, or it was measured, after
+        // sizeOfChildren last counted it, or never counted: a calculateSize
+        // that does not count its children) makes the next count a full one.
+        m_updateLayout=(m_redirtiedPass == Canvas::s_passSerial);
+
+        if(m_children.size() < MinChangedWalk)
+        {
+            // a few children keep no list: they are looked at
+            if(!m_updateLayout)
+            {
+                size_t scanned=0;
+
+                for(const Base *child:m_children)
+                {
+                    if(!child->m_excludeFromStats)
+                        ++scanned;
+                    if(!child->hidden() && child->m_updateLayout)
+                    {
+                        m_updateLayout=true;
+                        break;
+                    }
+                }
+                countLayoutChildrenScanned(scanned);
+            }
+        }
+        else if(m_changedOverflow)
+        {
+            // the list stopped: every child is looked at
+            const bool countedX=m_childSizes[0].valid;
+            const bool countedY=m_childSizes[1].valid;
+
+            for(Base *child:m_changedChildren)
+            {
+                if(child)
+                    child->m_changedIndex=-1;
+            }
+            m_changedChildren.clear();
+            m_changedOverflow=false;
+
+            countLayoutChildrenScanned(m_children);
+            for(Base *child:m_children)
+            {
+                if(countedX && std::max(child->m_termSeq[0], child->m_measureSeq[0]) > m_countSeq[0])
+                    m_childSizes[0].valid=false;
+                if(countedY && std::max(child->m_termSeq[1], child->m_measureSeq[1]) > m_countSeq[1])
+                    m_childSizes[1].valid=false;
+
+                if(child->m_updateLayout && !child->hidden())
+                {
+                    m_updateLayout=true;
+                    child->noteLayoutChanged();
+                }
+            }
+        }
+        else
+        {
+            size_t kept=0;
+
+            countLayoutChildrenScanned(m_changedChildren);
+            for(Base *child:m_changedChildren)
+            {
+                if(!child)
+                    continue;
+
+                if(child->m_updateLayout && !child->hidden())
+                {
+                    child->m_changedIndex=static_cast<int>(kept);
+                    m_changedChildren[kept++]=child;
+                    m_updateLayout=true;
+                    continue;
+                }
+
+                for(size_t axis=0; axis < 2; ++axis)
+                {
+                    if(std::max(child->m_termSeq[axis], child->m_measureSeq[axis]) > m_countSeq[axis])
+                        m_childSizes[axis].valid=false;
+                }
+                child->m_changedIndex=-1;
+            }
+            m_changedChildren.resize(kept);
+        }
+
+        // still dirty: its parent's walk finds it again
+        if(m_updateLayout)
+            noteLayoutChanged();
+        else
             m_layoutDirtyCounted=false;
     }
 }
@@ -2501,11 +3047,56 @@ void Base::arrange(skin::Base *skin, Dim dim)
         return;
     }
 
+    // A dock-None child is placed from its own inputs and the padded content
+    // box alone, so with no docked child changed and the box the same, the
+    // children that did not change are where a full walk would put them, and
+    // a clean one is not entered: the changed ones are all there is to do.
+    // m_arrangeAll is read after layout(), which may change what it says.
+    if(m_children.size() >= MinChangedWalk && !takeArrangeAll(dim) && walkChangedChildren())
+    {
+        countLayoutChildrenScanned(m_changedChildren);
+        if(!changedChildDocked())
+        {
+            const Rect &bounds=getBounds();
+            const int contentPos=(dim == Dim::X) ? m_padding.left : m_padding.top;
+            const int contentLength=(dim == Dim::X) ? bounds.w-m_padding.left-m_padding.right :
+                bounds.h-m_padding.top-m_padding.bottom;
+
+            countLayoutChildrenScanned(m_changedChildren);
+            for(size_t i=0; i < m_changedChildren.size(); ++i)
+            {
+                Base *child=m_changedChildren[i];
+
+                if(!child || child->hidden() || child->getPlacement() == Placement::Owner)
+                    continue;
+
+                placeDockNoneChild(child, dim, contentPos, contentLength,
+                    child->getPreferredSize(), child->getMargin());
+            }
+
+            countLayoutChildrenScanned(m_changedChildren);
+            for(size_t i=0; i < m_changedChildren.size(); ++i)
+            {
+                Base *child=m_changedChildren[i];
+
+                if(!child || child->hidden())
+                    continue;
+
+                child->doArrange(skin, dim);
+            }
+
+            if(dim == Dim::Y)
+                postLayout(skin);
+            return;
+        }
+    }
+
     if(dim==Dim::X)
         arrangeHorizontal(skin);
     else
         arrangeVertical(skin);
 
+    countLayoutChildrenScanned(m_children);
     for(auto &&child:m_children)
     {
         if(child->hidden())
@@ -2516,6 +3107,71 @@ void Base::arrange(skin::Base *skin, Dim dim)
 
     if(dim == Dim::Y)
         postLayout(skin);
+}
+
+bool Base::takeArrangeAll(Dim dim)
+{
+    const size_t axis=static_cast<size_t>(dim);
+    const bool arrangeAll=m_arrangeAll[axis];
+
+    m_arrangeAll[axis]=false;
+    return arrangeAll;
+}
+
+#if defined(__GNUC__) || defined(__clang__)
+__attribute__((always_inline)) inline
+#endif
+void Base::placeDockNoneChild(Base *child, Dim dim, int contentPos, int contentLength,
+    const Size &preferred, const Margin &margin)
+{
+    const Rect &bounds=child->getBounds();
+
+    if(dim == Dim::X)
+    {
+        const int contentX=contentPos;
+        const int contentW=contentLength;
+
+        child->policyResize(preferred, Dim::X);
+
+        Alignment alignment=child->getAlignment();
+
+        // Alignment is opt-in: an aligned child is placed in the padded
+        // content box, whatever the docked siblings took; an unaligned one
+        // stays at the position it asked for (setPos, setBounds, moveTo).
+        if(alignment & Alignment::Left)
+            child->setArrangedBounds(contentX+margin.left, bounds.y, bounds.w, bounds.h);
+        else if(alignment & Alignment::Right)
+            child->setArrangedBounds(contentX+contentW-bounds.w-margin.right, bounds.y, bounds.w, bounds.h);
+        else if(alignment & Alignment::CenterH)
+        {
+            int start=contentX+margin.left+(contentW-bounds.w-margin.left-margin.right)/2;
+            child->setArrangedBounds(start, bounds.y, bounds.w, bounds.h);
+        }
+        else //none/Absolute
+            child->setArrangedBounds(child->getRequestedBounds().x, bounds.y, bounds.w, bounds.h);
+    }
+    else
+    {
+        const int contentY=contentPos;
+        const int contentH=contentLength;
+
+        child->policyResize(preferred, Dim::Y);
+
+        Alignment alignment=child->getAlignment();
+
+        // As in X: the padded content box, or the requested position.
+        if(alignment & Alignment::Top)
+            child->setArrangedBounds(bounds.x, contentY+margin.top, bounds.w, bounds.h);
+        else if(alignment & Alignment::Bottom)
+            child->setArrangedBounds(bounds.x, contentY+contentH-bounds.h-margin.bottom, bounds.w, bounds.h);
+        else if(alignment & Alignment::CenterV)
+        {
+            int start=contentY+margin.top+(contentH-bounds.h-margin.top-margin.bottom)/2;
+            child->setArrangedBounds(bounds.x, start, bounds.w, bounds.h);
+        }
+        else //none/Absolute
+            child->setArrangedBounds(bounds.x, child->getRequestedBounds().y, bounds.w, bounds.h);
+    }
 }
 
 void Base::arrangeHorizontal(skin::Base *skin)
@@ -2530,6 +3186,7 @@ void Base::arrangeHorizontal(skin::Base *skin)
     const int contentX=innerBounds.x;
     const int contentW=innerBounds.w;
 
+    countLayoutChildrenScanned(m_children);
     for(auto &&child:m_children)
     {
         if(child->hidden() || child->getPlacement() == Placement::Owner)
@@ -2587,26 +3244,7 @@ void Base::arrangeHorizontal(skin::Base *skin)
                     bounds.h);
         }
         else if(dock == DockPosition::None)
-        {
-            child->policyResize(preferred, Dim::X);
-
-            Alignment alignment=child->getAlignment();
-
-            // Alignment is opt-in: an aligned child is placed in the padded
-            // content box, whatever the docked siblings took; an unaligned one
-            // stays at the position it asked for (setPos, setBounds, moveTo).
-            if(alignment & Alignment::Left)
-                child->setArrangedBounds(contentX+margin.left, bounds.y, bounds.w, bounds.h);
-            else if(alignment & Alignment::Right)
-                child->setArrangedBounds(contentX+contentW-bounds.w-margin.right, bounds.y, bounds.w, bounds.h);
-            else if(alignment & Alignment::CenterH)
-            {
-                int start=contentX+margin.left+(contentW-bounds.w-margin.left-margin.right)/2;
-                child->setArrangedBounds(start, bounds.y, bounds.w, bounds.h);
-            }
-            else //none/Absolute
-                child->setArrangedBounds(child->getRequestedBounds().x, bounds.y, bounds.w, bounds.h);
-        }
+            placeDockNoneChild(child, Dim::X, contentX, contentW, preferred, margin);
 
 #ifdef DEBUG_LAYOUT
         if(!(dock&DockPosition::Center))
@@ -2623,6 +3261,7 @@ void Base::arrangeHorizontal(skin::Base *skin)
     m_innerBounds.w=innerBounds.w;
 
     //now fill
+    countLayoutChildrenScanned(m_children);
     for(auto &&child:m_children)
     {
         DockPosition dock=child->getDock();
@@ -2659,6 +3298,7 @@ void Base::arrangeVertical(skin::Base *skin)
 
     int centerCount=0;
 
+    countLayoutChildrenScanned(m_children);
     for(auto &&child:m_children)
     {
         if(child->hidden() || child->getPlacement() == Placement::Owner)
@@ -2719,25 +3359,7 @@ void Base::arrangeVertical(skin::Base *skin)
             innerBounds.h-=preferred.height+margin.bottom+margin.top;
         }
         else if(dock == DockPosition::None)
-        {
-            child->policyResize(preferred, Dim::Y);
-
-            Alignment alignment=child->getAlignment();
-
-            // As in arrangeHorizontal: the padded content box, or the
-            // requested position.
-            if(alignment & Alignment::Top)
-                child->setArrangedBounds(bounds.x, contentY+margin.top, bounds.w, bounds.h);
-            else if(alignment & Alignment::Bottom)
-                child->setArrangedBounds(bounds.x, contentY+contentH-bounds.h-margin.bottom, bounds.w, bounds.h);
-            else if(alignment & Alignment::CenterV)
-            {
-                int start=contentY+margin.top+(contentH-bounds.h-margin.top-margin.bottom)/2;
-                child->setArrangedBounds(bounds.x, start, bounds.w, bounds.h);
-            }
-            else //none/Absolute
-                child->setArrangedBounds(bounds.x, child->getRequestedBounds().y, bounds.w, bounds.h);
-        }
+            placeDockNoneChild(child, Dim::Y, contentY, contentH, preferred, margin);
         else if(dock==DockPosition::Center)
             centerCount++;
 
@@ -2760,6 +3382,7 @@ void Base::arrangeVertical(skin::Base *skin)
         int centerH=innerBounds.h/centerCount;
 
         centerCount=0;
+        countLayoutChildrenScanned(m_children);
         for(auto &&child:m_children)
         {
             // Skip hidden children: they are excluded from centerCount above, so
@@ -2948,6 +3571,7 @@ void Base::setPadding(const Padding &padding)
         return;
 
     m_padding=padding;
+    m_arrangeAll[0]=m_arrangeAll[1]=true;
     invalidate();
     invalidateParent();
     invalidateParentReaders();
@@ -2961,6 +3585,7 @@ void Base::setMargin(const Margin &margin)
         m_margin.right == margin.right)
         return;
 
+    noteSizeInputsChanging();
     m_margin=margin;
     invalidate();
     invalidateParent();

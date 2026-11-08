@@ -433,7 +433,15 @@ public:
     virtual Size getMinimumSize();
     virtual Size getMaximumSize();
 
-    virtual void setPreferredSize(const Size &size) { m_preferredSize=size; }
+    //! Sets the preferred size as if a measure had given it (a TableRow
+    //! handing its columns their widths): the parent counts and places the
+    //! control from it the next time it lays its children out.
+    virtual void setPreferredSize(const Size &size)
+    {
+        if(size.width != m_preferredSize.width || size.height != m_preferredSize.height)
+            noteSizeInputsChanging();
+        m_preferredSize=size;
+    }
     virtual const Size getPreferredSize() const { return m_preferredSize; }
 
     //! The control under (x, y), in this control's coordinates: the last
@@ -1110,6 +1118,25 @@ protected:
     //! included. sizeOfChildren() ends with it.
     int preferredFromContent(int contentSize, Dim dim) const;
 
+    //! Adds the children a layout loop of this control went over to the
+    //! running pass's LayoutStats::childrenScanned: all of `children`, or
+    //! `children` of them. Nothing outside a pass, or in layout verification's
+    //! pass. As with the pass's entries, a control whose entry is not counted
+    //! (layoutEntryCounted()) counts nothing, and a child flagged with
+    //! setExcludedFromStats() is not counted in its parent's loops, so the
+    //! count leaves the flagged subtrees out (the overloads taking a list skip
+    //! the flagged; a loop counting `children` itself skips them).
+    void countLayoutChildrenScanned(size_t children) const;
+    void countLayoutChildrenScanned(const List &children) const;
+    void countLayoutChildrenScanned(const std::vector<Base *> &children) const;
+    //! Where countLayoutChildrenScanned counts: the running pass's
+    //! LayoutStats::childrenScanned, or a sink outside a pass and in layout
+    //! verification's (Canvas::layoutPass sets it).
+    static size_t *s_childrenScanned;
+    //! True while a pass that may walk the changed children alone runs (any
+    //! but layout verification's, which enters everything).
+    static bool s_walkChanged;
+
     //! Place the children along X and Y from their docks, alignments and
     //! sizes; Base::arrange calls them before arranging each child. They skip
     //! a child whose owner places it (Placement::Owner).
@@ -1148,6 +1175,147 @@ protected:
     void stampLayoutPass();
     //! True while a canvas runs a layout pass.
     static bool inLayoutPass();
+
+    //! \name Which children a pass measures and places (docs/layout.md →
+    //! "Which children a pass enters")
+    //! A control of MinChangedWalk children or more keeps the children whose
+    //! layout may have changed since it last laid them out
+    //! (m_changedChildren, each child's m_changedIndex): every child that was
+    //! dirtied, moved, or had an input of its size term changed since. Until
+    //! the list reaches one in ChangedShare of the children and stops
+    //! (m_changedOverflow), a shown dirty child is always in it, so the walks
+    //! over children need visit only those when the rest cannot have moved:
+    //! no child in the list is docked (a dock moves the children after it),
+    //! the control's own size along the axis and its padding did not change,
+    //! and no docked child was removed or reordered (m_arrangeAll). Otherwise,
+    //! and in layout verification's full pass, the walks take every child, as
+    //! a first frame or a resize does.
+    //! \{
+    //! Puts this control in its actual parent's m_changedChildren, once. A
+    //! parent of fewer than MinChangedWalk children keeps none: its walks
+    //! take them all.
+    void noteLayoutChanged()
+    {
+        if(m_parentKeepsChanged && m_changedIndex < 0)
+            enlistLayoutChanged();
+    }
+    void enlistLayoutChanged();
+    //! Marks this control dirty (layoutDirty()). A dirty control is already
+    //! among its parent's changed children (or hidden, and so out of every
+    //! walk), so only a clean one is put there.
+    void markLayoutDirty()
+    {
+        if(m_updateLayout)
+            return;
+        m_updateLayout=true;
+        noteLayoutChanged();
+    }
+    //! The same, called before an input of the term its parent counts for
+    //! it changes (its preferred size outside a measure, margin, dock,
+    //! visibility, placement, requested position): the term is kept as it was
+    //! counted, until the parent counts it again.
+    void noteSizeInputsChanging();
+    //! Takes this control out of its actual parent's m_changedChildren.
+    void dropLayoutChanged();
+    //! Just put among a parent's children: counted afresh, from no term.
+    void noteAdded();
+    //! `child` is leaving this control's children: its terms are taken out
+    //! of the counts, and a docked one moves the children after it.
+    void noteChildLeaving(Base *child);
+    //! This control moved among its parent's children: if it is docked, the
+    //! children after it move.
+    void noteReordered();
+    //! A child was added: from MinChangedWalk children on, changed children
+    //! are kept.
+    void notedChildCount();
+    //! Whether the changed children are few enough to walk them alone.
+    bool walkChangedChildren() const
+    {
+        return m_children.size() >= MinChangedWalk && s_walkChanged && !m_changedOverflow
+            && m_changedChildren.size()*ChangedShare < m_children.size();
+    }
+    //! The changed children are walked alone while they are fewer than one
+    //! in ChangedShare of the children; more, and the full walk is as cheap.
+    static constexpr size_t ChangedShare=16;
+    //! Below this many children the walks take them all: keeping their
+    //! terms would cost more than counting them.
+    static constexpr size_t MinChangedWalk=16;
+    //! What sizeOfChildren counts for this control along an axis in its
+    //! parent's ChildSizes: nothing (hidden, Owner, not included), a term of
+    //! the largest (dock None, and Top/Bottom in X, Left/Right in Y), of the
+    //! docks' sum (Left/Right in X, Top/Bottom in Y) or of the Center sum.
+    enum SizeTermKind : unsigned char { NoTerm=0, MaxTerm, DockTerm, InnerTerm };
+    struct SizeTerm
+    {
+        int value=0;
+        SizeTermKind kind=NoTerm;
+    };
+    //! The term this control's last count holds for `child` (the one kept
+    //! since an input changed, else the one its inputs give), or false when
+    //! it cannot be known: measured since the count.
+    bool countedSizeTerm(const Base *child, Dim dim, SizeTerm &term);
+    //! The children's terms along an axis, kept up to date term by term:
+    //! the largest MaxTerm and how many children have it, and the sums. Not
+    //! valid until a full count, and again after the largest term was taken
+    //! away from its last holder.
+    struct ChildSizes
+    {
+        int max=0;
+        int maxCount=0;
+        int dockSum=0;
+        int innerSum=0;
+        bool valid=false;
+    };
+    //! This control's term along `dim` in its parent's count.
+    SizeTerm computeSizeTerm(Base *parent, Dim dim) const;
+    void addSizeTerm(Dim dim, const SizeTerm &term);
+    void removeSizeTerm(Dim dim, const SizeTerm &term);
+    //! Counts a child again along `dim`: the term counted out, its new one in.
+    void recountSizeTerm(Dim dim, const SizeTerm &counted, const SizeTerm &term);
+    //! The content size along `dim` that ChildSizes adds up to, before
+    //! padding: what sizeOfChildren's loop computes.
+    int childSizesContent(Dim dim) const;
+    //! The full count's result along `dim`, kept for the walks of the
+    //! changed children.
+    void keepChildSizes(Dim dim, int largest, int holders, int dockSum, int innerSum);
+    //! sizeOfChildren counting the changed children alone.
+    Size sizeOfChangedChildren(skin::Base *skin, Dim dim);
+    //! m_arrangeAll along `dim`, cleared.
+    bool takeArrangeAll(Dim dim);
+    //! Places one dock-None child along X or Y, as arrangeHorizontal and
+    //! arrangeVertical do, in the padded content box.
+    void placeDockNoneChild(Base *child, Dim dim, int contentPos, int contentLength,
+        const Size &preferred, const Margin &margin);
+    //! A changed child is docked (or its dock is not None): the walk over
+    //! all children places them.
+    bool changedChildDocked() const;
+
+    std::vector<Base *> m_changedChildren;
+    int m_changedIndex=-1;
+    //! The actual parent has had MinChangedWalk children since this control
+    //! was added to it (notedChildCount), so it may keep changed children.
+    bool m_parentKeepsChanged=false;
+    //! The changed children reached one in ChangedShare of the children, or
+    //! the children reached MinChangedWalk, and the list stopped
+    //! (enlistLayoutChanged): until the next Y arrange, every child is walked.
+    bool m_changedOverflow=false;
+    //! s_measureSeq when this control was last measured along X and Y
+    //! (doCalculateSize), and when its sizeOfChildren last counted its
+    //! children: a child measured after its parent counted it may have
+    //! another term. One sequence of every measure, count and kept term.
+    size_t m_measureSeq[2]={0, 0};
+    size_t m_countSeq[2]={0, 0};
+    static size_t s_measureSeq;
+    //! The term the parent's count holds for this control, kept when one of
+    //! its inputs changed after the count (at s_measureSeq m_termSeq).
+    SizeTerm m_sizeTerm[2];
+    size_t m_termSeq[2]={0, 0};
+    ChildSizes m_childSizes[2];
+    //! The next arrange along X ([0]) or Y ([1]) places every child: this
+    //! control's size or padding changed, or a docked child was removed,
+    //! reordered or had its dock or placement changed.
+    bool m_arrangeAll[2]={true, true};
+    //! \}
 
     //! While one is alive, the layout invalidations raised are placement, not
     //! a re-dirty (see Base::invalidate): for a control handing the children
@@ -1265,7 +1433,7 @@ public:
     //! in the parent's size (TextBox's placeholder). Not a Placement: the
     //! parent places such a child; a child its owner places is
     //! Placement::Owner, which already leaves it out of the size.
-    void doNotIncludeInSize() { m_includeInSize=false; }
+    void doNotIncludeInSize() { noteSizeInputsChanging(); m_includeInSize=false; }
     //! Whether this control counts in its parent's size: not when it asked
     //! not to (doNotIncludeInSize), nor when its owner places it
     //! (Placement::Owner).

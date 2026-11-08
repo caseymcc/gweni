@@ -44,14 +44,20 @@ Like the render walk, it enters only what changed. There is no per-control `thin
 layout passes and `input::onCanvasThink`. A frame nothing invalidated runs no pass, and a
 pass enters only the dirty paths: the controls invalidated or given new bounds, and the
 way down to them. Every walk over children goes through `Base::doCalculateSize`/
-`doArrange`, which skip a clean control, keeping its preferred size and bounds; a dirty
-parent still loops over all its children, which is what such a pass costs beyond the
-dirty controls themselves. A pure move does not dirty the moved control's subtree
-(`docs/layout.md` → "Which controls a pass enters", which also says what a
-`calculateSize()` may read for its cached result to stay valid; issue #321).
+`doArrange`, which skip a clean control, keeping its preferred size and bounds. A parent
+of 16 children or more keeps the ones that changed since it last laid them out, and while
+they are few and none is docked, it measures, places and enters those alone: the rest
+cannot have moved (`docs/layout.md` → "Which children a pass enters", issue #430). A pure
+move does not dirty the moved control's subtree (`docs/layout.md` → "Which controls a
+pass enters", which also says what a `calculateSize()` may read for its cached result to
+stay valid; issue #321).
 `LayoutStats::visited` (`layout_visited=` in `ControlTest --stats` and `gweni_bench`)
 counts the controls the frame's passes entered, one per `calculateSize()` and one per
 `arrange()` in each axis, so four per dirty control and 0 on a settled frame;
+`LayoutStats::childrenScanned` (`layout_children_scanned=`) the children the generic
+layout loops (`Base::sizeOfChildren`, `arrangeHorizontal`/`arrangeVertical`, `arrange`,
+`doArrange`'s dirty-child check, `LayoutItem`'s, a wrapped `Text`'s lines) went over,
+entered or not;
 `LayoutStats::measureCalls` (`measure_calls=`) counts the renderer `measureText()` and
 `lineHeight()` calls the controls made, every one through `Base::measureText()` or
 `Base::measureLineHeight()` (`tests/unit/layoutVisited.cpp`, `tests/unit/layoutWalk.cpp`).

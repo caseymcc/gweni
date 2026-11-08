@@ -243,13 +243,14 @@ canvas, the inner panel a child is really held by included; a new bounds
 marks the same path without invalidating the ancestors. Every walk over
 children goes through `Base::doCalculateSize`/`Base::doArrange`, and they skip
 a clean control. A clean control keeps its preferred size and its bounds, and
-nothing under it is entered. So a dirty parent still loops over all its
-children, measuring and placing them from their cached preferred sizes, but
-enters only the dirty ones: one Label's new text enters the canvas, the
+nothing under it is entered: one Label's new text enters the canvas, the
 Label's ancestors and the Label, and a Window dragged over 10 000 Labels
 enters the canvas and the Window (`tests/unit/layoutWalk.cpp`;
 `layout_visited=` in `ControlTest --stats` and `gweni_bench` counts the
-entries).
+entries). A dirty parent does not even loop over its clean children when they
+cannot have moved (see "Which children a pass enters"), so neither of those
+looks at the other 10 000 Labels (`layout_children_scanned=` counts the
+children the loops went over, entered or not).
 
 A control stays dirty through all four steps, so a width the X arrange gives
 it is measured in Y, and is cleared at the end of its Y arrange. It stays
@@ -290,6 +291,106 @@ every shown control (`Canvas::verifyingLayout()`) and fails, naming the
 control, the axis, the field and both values, on any bounds or preferred size
 it changes. The `controltest_verify_layout_*` tests run every control and the
 scenarios that change layout at run time with it.
+
+### Which children a pass enters
+
+Before #430 a dirty parent looped over all its children in every step:
+`sizeOfChildren` measured them, `arrangeHorizontal`/`arrangeVertical` placed
+them, `arrange` entered them and `doArrange` looked for a dirty one. Only
+the dirty ones were entered, but the loops cost the parent's child count, so
+one Label changing among 10 000 cost 10 000 placements. Now a parent goes
+over only the children that may have changed, whenever the others cannot
+have moved, and the bounds are exactly those of the full walk.
+
+**The list.** A control of `Base::MinChangedWalk` (16) children or more keeps
+its changed children (`m_changedChildren`): every child that became dirty,
+moved, or had an input of its size term changed, since the control last
+laid them out. `Base::markLayoutDirty` puts a child there when it goes from
+clean to dirty, so a shown dirty child is always in it; the Y arrange's
+dirty-child check (`Base::doArrange`) looks only at the list, keeps the
+children still dirty and lets the others go. When the list reaches one in
+`Base::ChangedShare` (16) of the children it stops (`m_changedOverflow`): the
+walks then take every child, as before, and the next Y arrange looks at them
+all and starts the list again. So a first frame, a resize, a scale change or
+a whole page shown runs the full walk, and a pass that changes a few
+children among many runs the short one. Below 16 children there is no list
+and every walk is the full one.
+
+**Placing (`Base::arrange`).** A docked child is placed in what the docked
+children before it left of the parent, and a Center child in what they all
+left, so a docked child that changes moves the children after it. A
+dock-None child (free at its requested position, or aligned) is placed from
+its own inputs (preferred size, margin, alignment, size flags, request) and
+the parent's padded content box alone (`Base::placeDockNoneChild`, the same
+code `arrangeHorizontal`/`arrangeVertical` run for it). So when
+
+* no child in the list is docked,
+* the parent's size along the axis and its padding did not change, and
+* no docked child was removed, reordered, or had its dock or placement
+  changed (`m_arrangeAll`, per axis),
+
+every child outside the list is where the full walk would put it again, and
+a clean one would not be entered: the parent places and enters the listed
+children alone. Anything else places them all.
+
+**Measuring (`Base::sizeOfChildren`).** A child adds a *term* to its parent's
+content size (`Base::computeSizeTerm`, the full count's branches): a
+dock-None child its preferred size, margins and requested position, which
+counts towards the largest term, as Top/Bottom children do in X and
+Left/Right in Y; the other docks towards the docks' sum; Center children
+towards their own sum. A full count keeps the largest term, how many children
+hold it, and the sums (`ChildSizes`). A pass with few changed children
+measures only those and counts each again: its old term out, its new one in.
+The old term is the one the count holds, which is the one the child's inputs
+give until one of them changes, so a child keeps it only from then: the
+setters of every input (margin, dock, visibility, placement,
+`doNotIncludeInSize`, the requested position, `setPreferredSize`) call
+`noteSizeInputsChanging()` before they change it. A child measured after its
+parent counted it (`s_measureSeq` against the parent's count) may hold
+another preferred size than the counted one, and taking the largest term from
+its last holder leaves the largest of the rest unknown: either makes the next
+count a full one. The content is the largest term, or the sums if larger,
+with padding, as before.
+
+A wrapped `Text` measures its lines the same way: with the rows as high as
+they were made, only the changed lines are measured and given the row
+height.
+
+**The check.** Layout verification's full pass (`Canvas::verifyingLayout()`)
+always takes the full walk, entering and placing every child, so a shortcut
+that put any control elsewhere than the full walk does fails it. The
+`controltest_verify_layout_*` tests run it over every demo and the scenarios
+that change layout, and `tests/unit/layoutChangedChildren.cpp` checks each
+case against it and against a tree built in the changed state. That full
+pass also counts every parent's terms afresh and empties the lists, so with
+verification on every frame starts from a full walk's state, and a mistake
+in what the shortcut carries from frame to frame (the kept terms, the list,
+`m_arrangeAll`) would only show in a frame after one without it. The last
+case of `layoutChangedChildren.cpp` runs many frames of mixed edits (moves,
+sizes, visibility, margins, deletes and adds, reorders, docks, alignment,
+the parent's padding) with verification off and compares every frame with
+a tree built fresh in that state.
+
+**What it costs.** One Label changing among N (`gweni_bench --scene
+set-text`) and a Window dragged over N Labels (`drag`) now lay out in the
+same instructions at N=1000 and N=10000 (`tools/profile.sh`: set-text's
+update phase 22.2 M and 158.8 M before, 7.32 M at both; drag's 15.3 M and
+151.9 M before, 0.115 M at both). A pass that walks everything pays a few
+instructions per control for the list (marking dirty, the measure stamp, the
+decision in each arrange): 8 % of `resize --n 1000`'s and `scale --n 1000`'s
+update-phase instructions, 1.4 % of `build --n 10000`'s, within the noise of
+their timed runs.
+
+**Its counter and the flagged subtrees.** `layout_children_scanned`
+(`LayoutStats::childrenScanned`) counts what these loops go over, as
+`layout_visited` counts the entries, and like it leaves out what a
+`Base::setExcludedFromStats()` subtree (the inspector) costs: the loops of a
+control whose entry is not counted (`layoutEntryCounted()`) count nothing,
+and a flagged child is not one of the children its app parent's loops count
+(`Base::countLayoutChildrenScanned`, `tests/unit/statsExclusion.cpp`). It is
+still one of the parent's children for the walks' choices (`MinChangedWalk`,
+the one in `ChangedShare`): a parent of 15 app children keeps a list once a
+flagged panel is its 16th, and walks them all without one.
 
 ### What each step may read
 
