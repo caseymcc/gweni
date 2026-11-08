@@ -67,6 +67,12 @@ void GWENI_EXPORT onMouseLeft(controls::Base *canvas);
 bool GWENI_EXPORT onKeyEvent(controls::Base *canvas, int key, bool down);
 void GWENI_EXPORT onCanvasThink(controls::Base *control);
 
+//! A running count of hit-test visits: one per controls::Base::getControlAt
+//! call, on every control a hit test enters, whether it finds the point or
+//! rejects it. Never reset; diff it around what you measure (gweni_bench's
+//! hit_tests=). Input arrives between frames, so it is in no per-frame stats.
+size_t GWENI_EXPORT hitTestVisits();
+
 }//namespace input
 }//namespace gweni
 

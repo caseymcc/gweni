@@ -15,6 +15,7 @@
 #include <gweni/skin.h>
 #include <gweni/platforms/platform.h>
 #include <gweni/dragAndDrop.h>
+#include <gweni/inputHandler.h>
 #include <gweni/controls/toolTip.h>
 #include <gweni/utility.h>
 #include <gweni/objectIdBank.h>
@@ -1570,8 +1571,13 @@ void Base::onChildTouched(controls::Base * /*child*/)
     touch();
 }
 
+// input::hitTestVisits(), defined at the end of this file.
+static size_t g_hitTestVisits=0;
+
 Base *Base::getControlAt(int x, int y, bool bOnlyIfMouseEnabled)
 {
+    ++g_hitTestVisits;
+
     if(hidden())
         return nullptr;
 
@@ -2730,3 +2736,16 @@ void Base::anim_heightOut(float length, bool hide, float delay, float ease)
 
 } // namespace gweni
 } // namespace controls
+
+namespace gweni
+{
+namespace input
+{
+
+size_t hitTestVisits()
+{
+    return controls::g_hitTestVisits;
+}
+
+}//namespace input
+}//namespace gweni

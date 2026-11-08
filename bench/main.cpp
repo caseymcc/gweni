@@ -17,6 +17,7 @@
 #include <GL/glew.h>
 #include <gweni/controls/base.h>
 #include <gweni/controls/canvas.h>
+#include <gweni/inputHandler.h>
 #include <gweni/platforms/platform.h>
 #include <gweni/platforms/renderers/openglCore.h>
 #include <gweni/primitiveIds.h>
@@ -41,6 +42,9 @@ namespace
 
 const float g_frameStep=1.0f/60.0f;
 float g_clockSeconds=0.0f;
+
+// input::hitTestVisits() when the frame began: hit_tests is the difference.
+size_t g_hitTestsAtFrame=0;
 
 float steppedClock()
 {
@@ -76,7 +80,7 @@ const char *const g_counterNames[]=
     "visited", "children_scanned", "controls_changed", "created", "visibility", "geometry", "background", "text",
     "prim_slots_written", "text_slots_written", "upload_calls", "upload_bytes", "mirror_bytes",
     "draw_calls", "text_draws", "atlas_upload_calls", "atlas_upload_bytes", "buffer_regrows",
-    "layout_passes", "layout_capped", "render_layout", "layout_visited", "measure_calls", "z_visited", "anims_run", "prim_ids", "text_ids",
+    "layout_passes", "layout_capped", "render_layout", "layout_visited", "measure_calls", "z_visited", "anims_run", "hit_tests", "prim_ids", "text_ids",
     "allocs", "alloc_bytes",
     "allocs_input", "allocs_update", "allocs_render", "allocs_flush", "allocs_gpu"
 };
@@ -113,6 +117,7 @@ void collectCounters(FrameRecord &record, const bench::PhaseTotals &phases,
         gpu.bufferRegrows,
         size_t(layout.passes), layout.capped ? 1u : 0u, layout.renderLayout ? 1u : 0u,
         layout.visited, layout.measureCalls, update.zVisited, update.animsRun,
+        gweni::input::hitTestVisits()-g_hitTestsAtFrame,
         gweni::primitiveIdCount()-gweni::releasedPrimitiveIdCount(),
         gweni::textIdCount()-gweni::releasedTextIdCount(),
         allocs, allocBytes,
@@ -168,6 +173,7 @@ void primeShaders(gweni::skin::Base *skin, const gweni::Point &size)
 void runFrame(bench::Scene &scene, bench::SceneContext &ctx, int frame)
 {
     gweni::controls::resetChangeStats();
+    g_hitTestsAtFrame=gweni::input::hitTestVisits();
     bench::resetPhases();
 
     bench::inPhase(Phase::Input, [&]{ scene.step(ctx, frame); });
@@ -393,6 +399,8 @@ void printUsage()
         "             made in the update phase and any render-phase layout\n"
         "  z_visited  controls::UpdateStats: controls the z renumber entered\n"
         "  anims_run  controls::UpdateStats: animations the update phase ran\n"
+        "  hit_tests  input::hitTestVisits() over the frame: controls a hit test entered\n"
+        "             (getControlAt calls), the hover's in the input phase included\n"
         "  prim_ids text_ids   live primitive and text ids after the frame\n"
         "  allocs alloc_bytes  C++ heap allocations (operator new) in the frame's phases,\n"
         "             and allocs_<phase> for each phase; C malloc is not counted\n");
