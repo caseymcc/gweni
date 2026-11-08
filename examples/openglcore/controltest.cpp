@@ -88,7 +88,9 @@
  *                       Exits non-zero on a mismatch and writes
  *                       teardown-reference.png and teardown-after.png to
  *                       --shot-dir, so the ghost can be looked at.
- *    --trace            log each scripted input on stderr with what it hit
+ *    --trace            log each scripted input on stderr with what it hit:
+ *                       the hovered control as Type[child index], its
+ *                       canvas bounds and "disabled", then its ancestors
  *    --list             print the control demo names and exit
  *    --help, -h         print the option list and exit
  *    --scenario <name>  per-control | resize | docked | scroll | interaction |
@@ -225,7 +227,15 @@
  *                   B, the click on B changes pixels inside A and B only, and
  *                   that frame changes only A, B and their labels
  *                   (background=2), with at most 2 primitive slots and their
- *                   glyphs written (a line reports the counts). WindowDemo:
+ *                   glyphs written (a line reports the counts).
+ *                   CheckBoxDemo: hovering the first CheckBox changes it and
+ *                   moving off gives it back, a click checks it and a second
+ *                   one gives the unchecked look back; hovering the
+ *                   CheckBoxWithLabel's label lights its box, and two clicks
+ *                   on the label check and uncheck it; the disabled third box
+ *                   looks unlike the first, and hovering or clicking it
+ *                   changes nothing; each hover frame writes 1..4 primitive
+ *                   slots and changes at most 4 controls. WindowDemo:
  *                   the close button of the window "Normal Window" opens
  *                   draws something at rest, hover and press change its
  *                   pixels and moving off gives the rest look back, the hover
@@ -1090,16 +1100,54 @@ static bool rescaleSession(Session &s, float scale)
 // --trace, on stderr so stdout stays parseable. Scripted coordinates are blind
 // without it: this is how you tell "my 40,6 missed the button" from "the button
 // did not repaint".
+//
+// Each control on the hovered chain is named as its type and its index among
+// its parent's actual children (the order --dump-bounds lists them in), so two
+// same-type siblings are told apart: hovered=CheckBox[3] (0,38 15x15) disabled
+// < CheckBoxDemo[5] < Canvas. The hovered control also gets its canvas bounds,
+// and "disabled" when it ignores input.
+static std::string traceName(gweni::controls::Base *control)
+{
+    std::string name=control->getTypeName();
+    const gweni::controls::Base *parent=control->getParent();
+
+    if(parent)
+    {
+        size_t index=0;
+
+        for(const gweni::controls::Base *child : parent->getActualChildren())
+        {
+            if(child == control)
+                break;
+            index++;
+        }
+        name+="["+std::to_string(index)+"]";
+    }
+    return name;
+}
+
 static void trace(const Session &s, const std::string &what)
 {
     if(!s.trace)
         return;
+    gweni::controls::Base *hovered=gweni::HoveredControl;
+
     std::cerr<<"trace "<<what
              <<" clock="<<g_clockSeconds
-             <<" hovered="<<(gweni::HoveredControl
-                 ? gweni::HoveredControl->getTypeName() : "(none)");
-    for(gweni::controls::Base *p=gweni::HoveredControl?gweni::HoveredControl->getParent():nullptr; p; p=p->getParent())
-        std::cerr<<" < "<<p->getTypeName();
+             <<" hovered=";
+    if(hovered)
+    {
+        const gweni::Point at=hovered->localPosToCanvas();
+
+        std::cerr<<traceName(hovered)
+                 <<" ("<<at.x<<","<<at.y<<" "<<hovered->getWidth()<<"x"<<hovered->getHeight()<<")";
+        if(hovered->isDisabled())
+            std::cerr<<" disabled";
+    }
+    else
+        std::cerr<<"(none)";
+    for(gweni::controls::Base *p=hovered?hovered->getParent():nullptr; p; p=p->getParent())
+        std::cerr<<" < "<<traceName(p);
     std::cerr<<" focus="<<(gweni::KeyboardFocus
         ? gweni::KeyboardFocus->getTypeName() : "(none)")<<"\n";
 }
@@ -2708,6 +2756,133 @@ static void checkSelectable(Session &s, const std::string &shotDir, InteractionC
         +std::to_string(groupGpu.textSlotsWritten)+" (want at most "+std::to_string(glyphs)+")");
 }
 
+// CheckBoxDemo: its first CheckBox, its CheckBoxWithLabel and its disabled
+// third CheckBox, in that order. Hovering the first box changes its pixels and
+// leaving gives them back; a click checks it (the tick changes them) and a
+// second click gives the unchecked look back. Hovering the labelled row's label
+// lights its box, as a click there toggles it. The disabled box looks unlike
+// the enabled one, the same hovered and clicked, and stays unchecked. Each hover frame stays inside
+// g_hoverBound.
+static void checkCheckBox(Session &s, const std::string &shotDir, InteractionChecks &checks, bool &ok)
+{
+    gweni::controls::Base *demo=addControl(s, "CheckBoxDemo");
+    renderFrames(s, s.frames);
+
+    auto *box=gweni::gweni_cast<gweni::controls::CheckBox>(findControl(demo, "CheckBox"));
+    auto *row=gweni::gweni_cast<gweni::controls::CheckBoxWithLabel>(findControl(demo, "CheckBoxWithLabel"));
+    auto *disabled=gweni::gweni_cast<gweni::controls::CheckBox>(findControl(demo, "CheckBox", 2));
+    if(!box || !row || !disabled || box->isDisabled() || !disabled->isDisabled()
+        || box->isChecked() || row->checkBox()->isChecked() || disabled->isChecked())
+    {
+        checks.check("checkbox_found", false,
+            "CheckBoxDemo has no unchecked enabled CheckBox, CheckBoxWithLabel and disabled CheckBox in that order");
+        dropControl(s, demo);
+        return;
+    }
+    gweni::controls::CheckBox *labelled=row->checkBox();
+
+    const gweni::Point on=centreOf(box);
+    const gweni::Point label=centreOf(row->label());
+    const gweni::Point onDisabled=centreOf(disabled);
+    const gweni::Point off(s.size.x-1, s.size.y-1);    // CheckBoxDemo, no box
+
+    // the hover frame alone, so its counters are the transition's
+    const auto hoverFrame=[&](const gweni::Point &at, gweni::controls::ChangeStats &changes, size_t &slots)
+    {
+        moveMouse(s, at.x, at.y);
+        renderFrames(s, 1);
+        changes=gweni::controls::getChangeStats();
+        slots=s.renderer->getFrameStats().primitiveSlotsWritten;
+    };
+    const auto bounded=[&](const gweni::controls::ChangeStats &changes, size_t slots)
+    {
+        return changes.background >= 1 && changes.background <= g_hoverBound
+            && slots >= 1 && slots <= g_hoverBound && changes.controls <= g_hoverBound;
+    };
+    const auto counters=[](const gweni::controls::ChangeStats &changes, size_t slots)
+    {
+        return "controls_changed="+std::to_string(changes.controls)
+            +" background="+std::to_string(changes.background)
+            +" prim_slots_written="+std::to_string(slots);
+    };
+
+    moveMouse(s, off.x, off.y);
+    const std::vector<uint8_t> idle=settledRegion(s, box, shotDir, "checkbox-idle", ok);
+    const std::vector<uint8_t> labelledIdle=regionPixels(s, labelled);
+    const std::vector<uint8_t> disabledIdle=regionPixels(s, disabled);
+
+    gweni::controls::ChangeStats hoverChanges;
+    size_t hoverSlots=0;
+    hoverFrame(on, hoverChanges, hoverSlots);
+    const std::vector<uint8_t> hover=settledRegion(s, box, shotDir, "checkbox-hover", ok);
+
+    moveMouse(s, off.x, off.y);
+    const std::vector<uint8_t> unhovered=settledRegion(s, box, shotDir, "checkbox-unhover", ok);
+
+    clickMouse(s, on.x, on.y);
+    moveMouse(s, off.x, off.y);
+    const bool checkedByClick=box->isChecked();
+    const std::vector<uint8_t> checked=settledRegion(s, box, shotDir, "checkbox-checked", ok);
+
+    clickMouse(s, on.x, on.y);
+    moveMouse(s, off.x, off.y);
+    const bool uncheckedByClick=!box->isChecked();
+    const std::vector<uint8_t> unchecked=settledRegion(s, box, shotDir, "checkbox-unchecked", ok);
+
+    // the label lights its box, and a click on it toggles the box
+    gweni::controls::ChangeStats labelChanges;
+    size_t labelSlots=0;
+    hoverFrame(label, labelChanges, labelSlots);
+    const std::vector<uint8_t> labelHover=settledRegion(s, labelled, shotDir, "checkbox-label-hover", ok);
+
+    moveMouse(s, off.x, off.y);
+    const std::vector<uint8_t> labelUnhovered=settledRegion(s, labelled, shotDir, "checkbox-label-unhover", ok);
+
+    clickMouse(s, label.x, label.y);
+    moveMouse(s, off.x, off.y);
+    const bool labelChecked=labelled->isChecked();
+    const std::vector<uint8_t> labelCheckedPixels=settledRegion(s, labelled, shotDir, "checkbox-label-checked", ok);
+
+    clickMouse(s, label.x, label.y);
+    moveMouse(s, off.x, off.y);
+    const bool labelUnchecked=!labelled->isChecked();
+    const std::vector<uint8_t> labelUncheckedPixels=settledRegion(s, labelled, shotDir, "checkbox-label-unchecked", ok);
+
+    // the disabled box: no hover, no toggle
+    moveMouse(s, onDisabled.x, onDisabled.y);
+    const std::vector<uint8_t> disabledHover=settledRegion(s, disabled, shotDir, "checkbox-disabled-hover", ok);
+
+    clickMouse(s, onDisabled.x, onDisabled.y);
+    moveMouse(s, off.x, off.y);
+    const bool disabledStayed=!disabled->isChecked();
+    const std::vector<uint8_t> disabledClicked=settledRegion(s, disabled, shotDir, "checkbox-disabled-clicked", ok);
+
+    forgetMouse(s);
+    dropControl(s, demo);
+
+    checks.check("checkbox_hover", hover != idle && unhovered == idle,
+        "hovering the CheckBox left its pixels as they were, or moving off did not bring them back");
+    checks.check("checkbox_hover_bounded", bounded(hoverChanges, hoverSlots),
+        "the CheckBox hover frame had "+counters(hoverChanges, hoverSlots));
+    checks.check("checkbox_check", checkedByClick && checked != idle,
+        "a click did not check the CheckBox, or left its pixels as they were unchecked");
+    checks.check("checkbox_uncheck", uncheckedByClick && unchecked == idle,
+        "a second click did not uncheck the CheckBox back to its first look");
+    checks.check("checkbox_label_hover", labelHover != labelledIdle && labelUnhovered == labelledIdle,
+        "hovering the CheckBoxWithLabel's label did not light its box, or moving off did not bring it back");
+    checks.check("checkbox_label_hover_bounded", bounded(labelChanges, labelSlots),
+        "the label hover frame had "+counters(labelChanges, labelSlots));
+    checks.check("checkbox_label_toggle",
+        labelChecked && labelCheckedPixels != labelledIdle && labelUnchecked && labelUncheckedPixels == labelledIdle,
+        "two clicks on the label did not check and then uncheck its box back to its first look");
+    // both boxes are 15x15, unchecked and at rest, so their pixels compare
+    checks.check("checkbox_disabled_look", disabledIdle != idle,
+        "the disabled CheckBox looks like the enabled one at rest");
+    checks.check("checkbox_disabled",
+        disabledStayed && disabledHover == disabledIdle && disabledClicked == disabledIdle,
+        "hovering or clicking the disabled CheckBox changed its pixels, or the click checked it");
+}
+
 static size_t livePrimitiveIds()
 {
     return gweni::primitiveIdCount()-gweni::releasedPrimitiveIdCount();
@@ -2912,6 +3087,7 @@ static bool runInteractionScenario(Session &s, const std::string &shotDir, bool 
     checkFocusHandOff(s, shotDir, checks, ok);
     checkTreeCollapse(s, shotDir, checks, ok);
     checkSelectable(s, shotDir, checks, ok);
+    checkCheckBox(s, shotDir, checks, ok);
     checkWindowClose(s, shotDir, checks, ok);
     checkSliderDrag(s, shotDir, checks, ok);
 

@@ -238,7 +238,9 @@ GL-only suite. The tests:
 - `controltest_interaction`: `ControlTest --scenario interaction`. Hover, press,
   disabled and a focus hand-off repaint the control, a hover touches only a few
   slots, an idle frame changes nothing, and collapsing a tree node moves the
-  nodes below it.
+  nodes below it. In CheckBoxDemo a box lights when it or its label is hovered,
+  a click checks it and a second unchecks it, and the disabled box looks
+  muted and ignores hover and clicks.
 - `controltest_text_size`: `ControlTest --scenario text-size`. A Label's font
   changed from 24 to 36 px at runtime, both drawn from the face's SDF atlas,
   uploads nothing to a font atlas and writes only that Label's glyph slots.
