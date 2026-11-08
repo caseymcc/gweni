@@ -1102,26 +1102,37 @@ static bool rescaleSession(Session &s, float scale)
 // did not repaint".
 //
 // Each control on the hovered chain is named as its type and its index among
-// its parent's actual children (the order --dump-bounds lists them in), so two
-// same-type siblings are told apart: hovered=CheckBox[3] (0,38 15x15) disabled
-// < CheckBoxDemo[5] < Canvas. The hovered control also gets its canvas bounds,
+// its parent's actual children, or among its parent's inner panel's children
+// when it was placed there (the order --dump-bounds lists them in), so two
+// same-type siblings are told apart: hovered=CheckBox[2] (0,38 15x15) disabled
+// < CheckBoxDemo[0] < Canvas. The hovered control also gets its canvas bounds,
 // and "disabled" when it ignores input.
 static std::string traceName(gweni::controls::Base *control)
 {
     std::string name=control->getTypeName();
     const gweni::controls::Base *parent=control->getParent();
 
-    if(parent)
+    const auto indexIn=[control](const gweni::controls::Base *holder)
     {
         size_t index=0;
 
-        for(const gweni::controls::Base *child : parent->getActualChildren())
+        for(const gweni::controls::Base *child : holder->getActualChildren())
         {
             if(child == control)
-                break;
+                return std::to_string(index);
             index++;
         }
-        name+="["+std::to_string(index)+"]";
+        return std::string();
+    };
+
+    if(parent)
+    {
+        std::string index=indexIn(parent);
+
+        if(index.empty() && parent->getInnerPanel())
+            index=indexIn(parent->getInnerPanel());
+        if(!index.empty())
+            name+="["+index+"]";
     }
     return name;
 }
