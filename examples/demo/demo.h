@@ -41,8 +41,10 @@ public:
     //! Add the page of \a _Type, with an entry in \a category of the demo list.
     //! \a name is the page's key, its class name: what --demo, HERO_DEMO in
     //! tools/capture_samples.sh and ControlTest's list use. \a label is what the
-    //! list entry and the Output pane show (the key if empty). A Showcase page
-    //! gets a short label, since its category header already says "Showcase".
+    //! list entry and the Output pane show (the key if empty). Every page in
+    //! Demo::init gets a short label with no "Demo" suffix ("Window buttons"),
+    //! since the list is the demo list and its category headers group the
+    //! pages, and a class name is too wide for the list's rows.
     template<typename _Type>
     void addDemo(controls::CollapsibleCategory *category, const std::string &name,
         const std::string &label=std::string());

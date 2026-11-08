@@ -117,59 +117,59 @@ void Demo::init(const String &name)
         controls::CollapsibleCategory *cat=list->add("Basic");
 
         cat->setName("Basic");
-        addDemo<ButtonDemo>(cat, "ButtonDemo");
-        addDemo<LabelDemo>(cat, "LabelDemo");
-        addDemo<LabelMultilineDemo>(cat, "LabelMultilineDemo");
+        addDemo<ButtonDemo>(cat, "ButtonDemo", "Button");
+        addDemo<LabelDemo>(cat, "LabelDemo", "Label");
+        addDemo<LabelMultilineDemo>(cat, "LabelMultilineDemo", "Multiline label");
     }
     {
         controls::CollapsibleCategory *cat=list->add("Non-Interactive");
         cat->setName("Non-Interactive");
 
-        addDemo<ProgressBarDemo>(cat, "ProgressBarDemo");
-        addDemo<GroupBoxDemo>(cat, "GroupBoxDemo");
-        addDemo<ImagePanelDemo>(cat, "ImagePanelDemo");
-        addDemo<StatusBarDemo>(cat, "StatusBarDemo");
-        addDemo<SeparatorDemo>(cat, "SeparatorDemo");
+        addDemo<ProgressBarDemo>(cat, "ProgressBarDemo", "Progress bar");
+        addDemo<GroupBoxDemo>(cat, "GroupBoxDemo", "Group box");
+        addDemo<ImagePanelDemo>(cat, "ImagePanelDemo", "Image panel");
+        addDemo<StatusBarDemo>(cat, "StatusBarDemo", "Status bar");
+        addDemo<SeparatorDemo>(cat, "SeparatorDemo", "Separator");
     }
     {
         controls::CollapsibleCategory *cat=list->add("Controls");
         cat->setName("Controls");
 
-        addDemo<ComboBoxDemo>(cat, "ComboBoxDemo");
-        addDemo<TextBoxDemo>(cat, "TextBoxDemo");
-        addDemo<ListBoxDemo>(cat, "ListBoxDemo");
-        addDemo<SelectableDemo>(cat, "SelectableDemo");
-        addDemo<VirtualListDemo>(cat, "VirtualListDemo");
-        addDemo<ContextMenuDemo>(cat, "ContextMenuDemo");
-        addDemo<PopupDemo>(cat, "PopupDemo");
-        addDemo<UnicodeTextDemo>(cat, "UnicodeTextDemo");
-        addDemo<TextSizesDemo>(cat, "TextSizesDemo");
-        addDemo<TextDemo>(cat, "TextDemo");
-        addDemo<CrossSplitterDemo>(cat, "CrossSplitterDemo");
-        addDemo<RadioButtonDemo>(cat, "RadioButtonDemo");
-        addDemo<CheckBoxDemo>(cat, "CheckBoxDemo");
-        addDemo<NumericDemo>(cat, "NumericDemo");
-        addDemo<SliderDemo>(cat, "SliderDemo");
-        addDemo<MenuStripDemo>(cat, "MenuStripDemo");
+        addDemo<ComboBoxDemo>(cat, "ComboBoxDemo", "Combo box");
+        addDemo<TextBoxDemo>(cat, "TextBoxDemo", "Text box");
+        addDemo<ListBoxDemo>(cat, "ListBoxDemo", "List box");
+        addDemo<SelectableDemo>(cat, "SelectableDemo", "Selectable");
+        addDemo<VirtualListDemo>(cat, "VirtualListDemo", "Virtual list");
+        addDemo<ContextMenuDemo>(cat, "ContextMenuDemo", "Context menu");
+        addDemo<PopupDemo>(cat, "PopupDemo", "Popup");
+        addDemo<UnicodeTextDemo>(cat, "UnicodeTextDemo", "Unicode text");
+        addDemo<TextSizesDemo>(cat, "TextSizesDemo", "Text sizes");
+        addDemo<TextDemo>(cat, "TextDemo", "Text");
+        addDemo<CrossSplitterDemo>(cat, "CrossSplitterDemo", "Cross splitter");
+        addDemo<RadioButtonDemo>(cat, "RadioButtonDemo", "Radio button");
+        addDemo<CheckBoxDemo>(cat, "CheckBoxDemo", "Check box");
+        addDemo<NumericDemo>(cat, "NumericDemo", "Numeric");
+        addDemo<SliderDemo>(cat, "SliderDemo", "Slider");
+        addDemo<MenuStripDemo>(cat, "MenuStripDemo", "Menu strip");
     }
     {
         controls::CollapsibleCategory *cat=list->add("Containers");
         cat->setName("Containers");
 
-        addDemo<WindowDemo>(cat, "WindowDemo");
-        addDemo<WindowButtonsDemo>(cat, "WindowButtonsDemo");
-        addDemo<TreeControlDemo>(cat, "TreeControlDemo");
-        addDemo<PropertiesDemo>(cat, "PropertiesDemo");
-        addDemo<TabControlDemo>(cat, "TabControlDemo");
-        addDemo<ScrollControlDemo>(cat, "ScrollControlDemo");
-        addDemo<PageControlDemo>(cat, "PageControlDemo");
+        addDemo<WindowDemo>(cat, "WindowDemo", "Window");
+        addDemo<WindowButtonsDemo>(cat, "WindowButtonsDemo", "Window buttons");
+        addDemo<TreeControlDemo>(cat, "TreeControlDemo", "Tree control");
+        addDemo<PropertiesDemo>(cat, "PropertiesDemo", "Properties");
+        addDemo<TabControlDemo>(cat, "TabControlDemo", "Tab control");
+        addDemo<ScrollControlDemo>(cat, "ScrollControlDemo", "Scroll control");
+        addDemo<PageControlDemo>(cat, "PageControlDemo", "Page control");
     }
     {
         controls::CollapsibleCategory *cat=list->add("Non-Standard");
         cat->setName("Non-Standard");
 
-        addDemo<CollapsibleListDemo>(cat, "CollapsibleListDemo");
-        addDemo<ColorPickerDemo>(cat, "ColorPickerDemo");
+        addDemo<CollapsibleListDemo>(cat, "CollapsibleListDemo", "Collapsible list");
+        addDemo<ColorPickerDemo>(cat, "ColorPickerDemo", "Color picker");
     }
 //
 //    m_statusBar->sendToBack();
