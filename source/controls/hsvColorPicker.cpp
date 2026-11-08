@@ -113,8 +113,12 @@ void HSVColorPicker::onNumericTyped(event::Info info)
     else if(box->getName().find("Alpha") != String::npos)
         newColor.a=textValue;
 
+    // no change, but the field may hold text clamped to the value it had
     if(newColor == m_color)
+    {
+        updateControls(m_color);
         return;
+    }
 
     // typing is the user's change, setColor a programmatic one
     setColor(newColor);

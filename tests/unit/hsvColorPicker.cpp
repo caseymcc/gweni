@@ -412,4 +412,11 @@ TEST_CASE("HSVColorPicker: a value typed into R, G or B fires onColorChanged onc
     CHECK(parts.box->getCursorPos().x == static_cast<int>(std::lround(hsv.s*parts.box->getWidth())));
     CHECK(parts.box->getCursorPos().y == static_cast<int>(std::lround((1-hsv.v)*parts.box->getHeight())));
     CHECK(parts.box->getHue() == static_cast<int>(hsv.h));
+
+    // a value clamped to the channel it already has changes nothing, and
+    // the field shows the clamped value
+    scene.type(parts.red, "2550");
+    CHECK(counter.count == 6);
+    CHECK(sameColor(picker->getColor(), Color(255, 9, 5, 255)));
+    CHECK(parts.red->getText() == "255");
 }
