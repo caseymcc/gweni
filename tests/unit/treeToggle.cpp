@@ -23,9 +23,10 @@
  *  glyph pointing down and the toggle still hovered (the release hit-tests
  *  the hover before the layout has moved the shown child rows out from under
  *  the mouse, so TreeNode::open asks the canvas to hit-test it again after),
- *  and once the mouse has left, a settled frame draws nothing. TreeNode::open() / close() from code draw no surface and redraw
- *  that toggle's glyph alone among the toggles above it. A disabled toggle
- *  hides its surface and draws a Muted glyph.
+ *  and once the mouse has left, a settled frame draws nothing.
+ *  TreeNode::open() / close() from code draw no surface and redraw that
+ *  toggle's glyph alone among the toggles above it. A disabled toggle hides
+ *  its surface and draws a Muted glyph.
  */
 #include "headlessFixture.h"
 
