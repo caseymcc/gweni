@@ -38,8 +38,14 @@ public:
 
     void render(skin::Base *skin);
 
+    //! Add the page of \a _Type, with an entry in \a category of the demo list.
+    //! \a name is the page's key, its class name: what --demo, HERO_DEMO in
+    //! tools/capture_samples.sh and ControlTest's list use. \a label is what the
+    //! list entry and the Output pane show (the key if empty). A Showcase page
+    //! gets a short label, since its category header already says "Showcase".
     template<typename _Type>
-    void addDemo(controls::CollapsibleCategory *category, const std::string &name);
+    void addDemo(controls::CollapsibleCategory *category, const std::string &name,
+        const std::string &label=std::string());
 
 private:
     void onCategorySelect(event::Info info);
@@ -53,14 +59,17 @@ private:
     controls::DockBase *m_dockBase;
 
     std::vector<controls::Base *> m_pages;
+    //! the key of each page, in m_pages' order
+    std::vector<String> m_names;
     //! the demo control on each page, in m_pages' order
     std::vector<controls::Base *> m_demoControls;
 };
 
 template<typename _Type>
-void Demo::addDemo(controls::CollapsibleCategory *category, const std::string &name)
+void Demo::addDemo(controls::CollapsibleCategory *category, const std::string &name,
+    const std::string &label)
 {
-    controls::Button *button = category->add(name);
+    controls::Button *button = category->add(label.empty() ? name : label);
 
     size_t index=m_pages.size();
 
@@ -74,6 +83,7 @@ void Demo::addDemo(controls::CollapsibleCategory *category, const std::string &n
 
     control->setAlignment(Alignment::Center);
     m_pages.push_back(button);
+    m_names.push_back(name);
     m_demoControls.push_back(control);
 
 //    event::Packet packet(control);

@@ -111,7 +111,7 @@ void Demo::init(const String &name)
         controls::CollapsibleCategory *cat=list->add("Showcase");
 
         cat->setName("Showcase");
-        addDemo<ShowcaseContainersDemo>(cat, "ShowcaseContainersDemo");
+        addDemo<ShowcaseContainersDemo>(cat, "ShowcaseContainersDemo", "Containers & data");
     }
     {
         controls::CollapsibleCategory *cat=list->add("Basic");
@@ -215,11 +215,11 @@ void Demo::onCategorySelect(event::Info info)
 
 bool Demo::showDemo(const String &name)
 {
-    for(controls::Base *entry : m_pages)
+    for(size_t i=0; i<m_pages.size(); ++i)
     {
-        controls::Button *button=gweni_cast<controls::Button>(entry);
+        controls::Button *button=gweni_cast<controls::Button>(m_pages[i]);
 
-        if(!button || button->getText() != name)
+        if(!button || m_names[i] != name)
             continue;
 
         // The list button's own press path: it shows the page through
@@ -232,14 +232,7 @@ bool Demo::showDemo(const String &name)
 
 std::vector<String> Demo::getDemoNames() const
 {
-    std::vector<String> names;
-
-    for(controls::Base *entry : m_pages)
-    {
-        if(controls::Button *button=gweni_cast<controls::Button>(entry))
-            names.push_back(button->getText());
-    }
-    return names;
+    return m_names;
 }
 
 void Demo::printText(const String &str)
