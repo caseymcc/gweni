@@ -90,7 +90,8 @@
  *    --help, -h         print the option list and exit
  *    --scenario <name>  per-control | resize | docked | scroll | interaction |
  *                       typing | clip | text-size | scale | tooltip |
- *                       context-menu | popup | virtual-list (see below)
+ *                       context-menu | popup | virtual-list | hide-show
+ *                       (see below)
  *    --dump-bounds [<path>]
  *                       print the laid-out control tree as text: one line per
  *                       control, depth-first in child order, indented by depth,
@@ -360,6 +361,40 @@
  *                 and the two controls above it, renumbers no z and lays out
  *                 in one pass with no request; the demo gives every primitive
  *                 id back. Exits non-zero if any check is no.
+ *    hide-show    one control (default ButtonDemo) built into a host page, a
+ *                 plain Base docked to fill the canvas as PageControl::addPage
+ *                 makes the shell's pages, the clock frozen. On a new canvas
+ *                 the empty host (hide-show-00-empty.png), the
+ *                 demo built shown, the reference (hide-show-01-shown.png),
+ *                 the host hidden (hide-show-02-hidden.png) and shown again
+ *                 (hide-show-03-shown-again.png); then, on another new
+ *                 canvas, the demo built into a host hidden already, as every
+ *                 shell page from index 1 on is
+ *                 (hide-show-04-built-hidden.png), and the host shown
+ *                 (hide-show-05-built-hidden-shown.png). A hidden control
+ *                 loses the keyboard focus, so the control that held it in
+ *                 the reference gets it back once shown, as the shell's
+ *                 showcaseShown() gives it. One line
+ *                   hide-show control=X hide_local=yes|no hide_marks=yes|no
+ *                          ... round_trip=yes|no built_hidden=yes|no
+ *                          hidden_empty=yes|no
+ *                 reports the checks: each hide or show frame has nothing
+ *                 pending outside the host (_local) and marks
+ *                 StateChange_Visibility on exactly the controls whose
+ *                 visible() changed, besides what that frame's layout hid or
+ *                 showed itself (_marks); every settled frame, hidden or
+ *                 shown, changes and writes nothing (_settles); the live
+ *                 primitive and text ids are back after the round trip
+ *                 (ids_kept); shot 3 is shot 1 (round_trip: listing, renderer
+ *                 mirror id by id, pixels) and so is shot 5 (built_hidden:
+ *                 listing, pixels and the mirror slot by owner, since a demo
+ *                 built hidden may take its ids in another order, a hidden
+ *                 slot counting as hidden whatever else it holds); shots 2
+ *                 and 4 are shot 0 (hidden_empty). For Demo it then selects
+ *                 PropertiesDemo and ComboBoxDemo in the shell, pages built
+ *                 hidden (hide-show-shell-<page>.png): at least 1 and 3
+ *                 ComboBoxes drawn, inside the canvas, none with its list
+ *                 open (shell_<page>). Exits non-zero if any check is no.
  *
  *  Every scenario (and --shot-all) takes a listing per shot when
  *  --dump-bounds is on, named after that shot with a .txt extension, so the
@@ -559,10 +594,12 @@ static const char *const g_controlNames[]=
 // so --shot-all and --scenario per-control stay the single-control shots.
 static const char *const g_dockedControlName="Demo";
 
-static gweni::controls::Base *createControl(gweni::controls::Canvas *canvas, const std::string &which)
+// Builds the demo as a child of `parent`: the canvas, or (hide-show) a page
+// that may be hidden already, as PageControl::addPage builds the shell's.
+static gweni::controls::Base *createControl(gweni::controls::Base *parent, const std::string &which)
 {
-    if(which == g_dockedControlName) return canvas->newChild<gweni::Demo>();
-#define TRY(N) if(which==#N) return canvas->newChild<gweni::N>();
+    if(which == g_dockedControlName) return parent->newChild<gweni::Demo>();
+#define TRY(N) if(which==#N) return parent->newChild<gweni::N>();
     GWENI_CONTROL_DEMOS(TRY)
 #undef TRY
     return nullptr;
@@ -613,17 +650,20 @@ static void printUsage(std::ostream &out)
          "  --trace            log each scripted input on stderr\n"
          "  --scenario <name>  per-control | resize | docked | scroll | interaction\n"
          "                     | typing | clip | text-size | scale | tooltip\n"
-         "                     | context-menu | popup | virtual-list; resize prints\n"
-         "                     listing_settled, mirror_settled, shrink_settled and\n"
-         "                     fresh_matches, interaction one yes/no per repaint\n"
-         "                     check, typing its keyboard checks, clip one yes/no\n"
-         "                     per clipping check, text-size what a 24 -> 36 px\n"
+         "                     | context-menu | popup | virtual-list | hide-show;\n"
+         "                     resize prints listing_settled, mirror_settled,\n"
+         "                     shrink_settled and fresh_matches, interaction one\n"
+         "                     yes/no per repaint check, typing its keyboard\n"
+         "                     checks, clip one yes/no per clipping check,\n"
+         "                     text-size what a 24 -> 36 px\n"
          "                     Label font change wrote, scale whether a 1 -> 2 -> 1\n"
          "                     setScale round trip came back, tooltip one yes/no per\n"
          "                     tooltip check, context-menu one per context-menu\n"
          "                     check, popup one per popup check, virtual-list\n"
-         "                     whether 1 000 and 100 000 items cost the same; all\n"
-         "                     ten fail on a no\n"
+         "                     whether 1 000 and 100 000 items cost the same,\n"
+         "                     hide-show whether a demo hidden and shown again, and\n"
+         "                     one built hidden and shown, are the one built shown;\n"
+         "                     all eleven fail on a no\n"
          "  --dump-bounds [<path>]  print the laid-out control tree as text,\n"
          "                     private children and hidden state included, an\n"
          "                     inner panel marked \" inner\", with each control's\n"
@@ -1456,7 +1496,7 @@ static bool runSteps(Session &s, const std::vector<Step> &steps, const std::stri
 // Scenarios
 //-----------------------------------------------------------------------------
 enum class Scenario { None, PerControl, Resize, Docked, Scroll, Interaction, Typing, Clip, TextSize, Scale,
-    ToolTip, ContextMenu, Popup, VirtualList };
+    ToolTip, ContextMenu, Popup, VirtualList, HideShow };
 
 static bool parseScenario(const std::string &name, Scenario &scenario)
 {
@@ -1473,6 +1513,7 @@ static bool parseScenario(const std::string &name, Scenario &scenario)
     else if(name == "context-menu") scenario=Scenario::ContextMenu;
     else if(name == "popup") scenario=Scenario::Popup;
     else if(name == "virtual-list") scenario=Scenario::VirtualList;
+    else if(name == "hide-show") scenario=Scenario::HideShow;
     else return false;
     return true;
 }
@@ -4443,6 +4484,424 @@ static bool runTypingScenario(Session &s, const std::string &shotDir, bool &pass
 }
 
 //-----------------------------------------------------------------------------
+// --scenario hide-show: a demo hidden and shown again, and one built hidden
+//
+// The demo is built into a host page: a plain Base docked to fill the canvas,
+// as PageControl::addPage makes the shell's pages. Showing the host must give
+// back exactly what was there before it was hidden, and a demo built into a
+// host that is hidden already (every shell page from index 1 on) must come
+// out as one built shown: the parts a control hid itself (a ComboBox's list, a
+// TabControl's other pages, a collapsed node, an unneeded scroll bar) stay
+// hidden, since hiding or showing a control never writes its descendants' own
+// flags (docs/architecture.md -> "Hidden and visible").
+//-----------------------------------------------------------------------------
+
+// A fresh host page on the canvas, from addControl()'s starting point: no
+// hover, clock and frame counter at zero.
+static gweni::controls::Base *addHost(Session &s, const std::string &name, bool hidden)
+{
+    forgetMouse(s);
+    g_clockSeconds=0.0f;
+    s.frame=0;
+    s.label=name;
+
+    gweni::controls::Base *host=s.canvas->newChild<gweni::controls::Base>("HideShowHost");
+    host->setDock(gweni::DockPosition::Center);
+    if(hidden)
+        host->hide();
+    return host;
+}
+
+static gweni::controls::Base *addHostedControl(gweni::controls::Base *host, const std::string &name)
+{
+    gweni::controls::Base *control=createControl(host, name);
+    if(control)
+        control->setDock(gweni::DockPosition::Center);
+    return control;
+}
+
+static size_t liveTextIds()
+{
+    return gweni::textIdCount()-gweni::releasedTextIdCount();
+}
+
+// What a control under the host showed before a hide or show.
+struct VisibleBefore
+{
+    gweni::controls::Base *control;
+    bool visible;
+    bool hidden;
+};
+
+static void collectVisible(gweni::controls::Base *control, std::vector<VisibleBefore> &controls)
+{
+    controls.push_back({control, control->visible(), control->hidden()});
+    for(auto &&child : control->getActualChildren())
+        collectVisible(child, controls);
+}
+
+// Whether the frame's layout changed the own hidden flag of `control` or of an
+// ancestor below `host` (a TabControl hiding its unneeded scroll buttons when
+// it is first laid out, once shown): that marks StateChange_Visibility on
+// what it reaches, as it should, even where visible() ends the frame as it was.
+static bool hiddenFlagMoved(gweni::controls::Base *control, gweni::controls::Base *host,
+    const std::map<gweni::controls::Base *, bool> &hiddenBefore)
+{
+    for(gweni::controls::Base *at=control; at && at != host; at=at->getParent())
+    {
+        const auto was=hiddenBefore.find(at);
+        if(was != hiddenBefore.end() && was->second != at->hidden())
+            return true;
+    }
+    return false;
+}
+
+// The host hidden or shown and one frame rendered, its update phase inspected
+// before it renders: nothing outside the host's subtree has a change pending,
+// and exactly the controls whose visible() changed are marked
+// StateChange_Visibility (a show does not enter a subtree that hid itself).
+static void toggleHost(Session &s, gweni::controls::Base *host, bool show,
+    InteractionChecks &checks, const std::string &name)
+{
+    std::vector<VisibleBefore> before;
+    collectVisible(host, before);
+    std::map<gweni::controls::Base *, bool> hiddenBefore;
+    for(const VisibleBefore &entry : before)
+        hiddenBefore[entry.control]=entry.hidden;
+
+    host->setHidden(!show);
+
+    gweni::controls::resetChangeStats();
+    s.canvas->updateCanvas();
+
+    std::vector<std::string> strays;
+    pendingOutside(s.canvas, {host}, strays);
+
+    size_t changed=0;
+    std::string wrong;
+    for(const VisibleBefore &entry : before)
+    {
+        gweni::controls::Base *control=entry.control;
+        const bool flipped=control->visible() != entry.visible;
+        const bool marked=(control->getStateChange() & gweni::controls::StateChange_Visibility) != 0;
+        if(flipped)
+            ++changed;
+        if(flipped == marked || (marked && hiddenFlagMoved(control, host, hiddenBefore)))
+            continue;
+        wrong+=std::string(" ")+control->getTypeName()+"#"+std::to_string(control->getControlId())
+            +(flipped ? " (changed, not marked)" : " (marked, not changed)");
+    }
+
+    glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
+    s.canvas->renderCanvas();
+    if(s.stats)
+        printFrameStats(s.frame, s.label, gweni::controls::getChangeStats(),
+            s.renderer->getFrameStats(), s.canvas->getLayoutStats(),
+            s.canvas->getUpdateStats());
+    checkOnePass(s, std::to_string(s.frame));
+    ++s.frame;
+
+    std::string strayList;
+    for(const std::string &stray : strays)
+        strayList+=" "+stray;
+    checks.check(name+"_local", strays.empty(),
+        "controls outside the host had a change pending:"+strayList);
+    checks.check(name+"_marks", wrong.empty() && changed > 0,
+        std::to_string(changed)+" controls changed visible(); wrongly marked:"+wrong);
+}
+
+// The renderer mirror keyed by who holds each slot: a control's listing path
+// and the place of the id among its skin Control's ids. A demo built hidden
+// can take its ids in another order than one built shown (a wrapped Label's
+// lines are made by its first layout, which waits for the show), so the
+// built-hidden state is compared with the reference by owner, not by id.
+static void collectMirrorByOwner(gweni::controls::Base *control, const std::string &path,
+    const gweni::renderer::SlotRenderer::MirrorSnapshot &mirror,
+    std::map<std::string, std::vector<uint8_t>> &slots)
+{
+    if(const gweni::skin::Control *skinControl=control->getSkinControl())
+    {
+        const bool text=dynamic_cast<const gweni::skin::textured::Text *>(skinControl) != nullptr;
+        const auto &ids=text ? mirror.texts : mirror.primitives;
+        size_t index=0;
+        for(size_t id : skinControl->getPrimitives())
+        {
+            const auto found=ids.find(id);
+            const std::string key=path+(text ? " text[" : " primitive[")+std::to_string(index++)+"]";
+            std::vector<uint8_t> bytes=(found != ids.end()) ? found->second : std::vector<uint8_t>();
+            // A hidden slot (style 0 in all four vertexes) draws nothing, and
+            // the rest of it is whatever was last written there, by this
+            // owner or an earlier one of a reused id: only "hidden" counts.
+            // A slot is a quad: four vertexes, each starting with its style.
+            if(!text && !bytes.empty() && bytes.size()%4 == 0)
+            {
+                const size_t vertexBytes=bytes.size()/4;
+                bool hidden=true;
+                for(size_t vertex=0; vertex<4; ++vertex)
+                {
+                    uint16_t style;
+                    std::memcpy(&style, &bytes[vertex*vertexBytes], sizeof(style));
+                    hidden=hidden && style == 0;
+                }
+                if(hidden)
+                    bytes.assign(1, 0);
+            }
+            slots[key]=bytes;
+        }
+    }
+
+    size_t index=0;
+    for(auto &&child : control->getActualChildren())
+        collectMirrorByOwner(child, childPath(path, child, index++), mirror, slots);
+}
+
+static bool mirrorsMatchByOwner(Session &s, const ResizeState &before,
+    const std::map<std::string, std::vector<uint8_t>> &beforeSlots, const ResizeState &after)
+{
+    std::map<std::string, std::vector<uint8_t>> afterSlots;
+    collectMirrorByOwner(s.canvas, s.canvas->getTypeName(), after.mirror, afterSlots);
+    if(beforeSlots == afterSlots)
+        return true;
+
+    static const size_t maxReported=10;
+    size_t differing=0;
+    std::cerr<<"ControlTest: renderer mirror of "<<after.name<<" differs from "<<before.name
+             <<", slot by owner:\n";
+    for(const auto &entry : beforeSlots)
+    {
+        const auto now=afterSlots.find(entry.first);
+        const char *how=(now == afterSlots.end()) ? "held only in the first"
+            : (now->second != entry.second) ? "bytes differ" : nullptr;
+        if(!how)
+            continue;
+        if(differing++ < maxReported)
+            std::cerr<<"  "<<entry.first<<" "<<how<<"\n";
+    }
+    for(const auto &entry : afterSlots)
+        if(beforeSlots.find(entry.first) == beforeSlots.end() && differing++ < maxReported)
+            std::cerr<<"  "<<entry.first<<" held only in the second\n";
+    std::cerr<<"  "<<differing<<" slots differ\n";
+    return false;
+}
+
+// The listing path of `target` under `control` (at `path`), or empty.
+static std::string pathOf(gweni::controls::Base *control, const std::string &path,
+    gweni::controls::Base *target)
+{
+    if(control == target)
+        return path;
+
+    size_t index=0;
+    for(auto &&child : control->getActualChildren())
+    {
+        const std::string found=pathOf(child, childPath(path, child, index++), target);
+        if(!found.empty())
+            return found;
+    }
+    return std::string();
+}
+
+static gweni::controls::Base *controlAtPath(gweni::controls::Base *control, const std::string &path,
+    const std::string &want)
+{
+    if(path == want)
+        return control;
+    if(want.compare(0, path.size(), path) != 0)
+        return nullptr;
+
+    size_t index=0;
+    for(auto &&child : control->getActualChildren())
+        if(gweni::controls::Base *found=controlAtPath(child, childPath(path, child, index++), want))
+            return found;
+    return nullptr;
+}
+
+// A hidden control loses the keyboard focus (input::onCanvasThink drops it)
+// and showing it does not give it back: an app does that, as the shell's
+// showcaseShown() does. So once shown, the control that held the focus in
+// the reference gets it again, before the state is compared.
+static void giveFocusBack(Session &s, const std::string &focusPath)
+{
+    if(focusPath.empty())
+        return;
+    if(gweni::controls::Base *control=controlAtPath(s.canvas, s.canvas->getTypeName(), focusPath))
+    {
+        control->focus();
+        renderFrames(s, s.frames);
+    }
+}
+
+static bool shootState(Session &s, const std::string &path, ResizeState &state)
+{
+    if(!shoot(s, path))
+        return false;
+    captureResizeState(s, path, state);
+    return true;
+}
+
+// Every ComboBox under `root`, the property grid's included.
+static void collectComboBoxes(gweni::controls::Base *control,
+    std::vector<gweni::controls::ComboBox *> &boxes)
+{
+    if(gweni::controls::ComboBox *box=dynamic_cast<gweni::controls::ComboBox *>(control))
+        boxes.push_back(box);
+    for(auto &&child : control->getActualChildren())
+        collectComboBoxes(child, boxes);
+}
+
+// The shell (Demo) with one of its pages selected, as OpenGLCore --demo does:
+// the page was built hidden and is shown now. At least `minimum` ComboBoxes are
+// drawn, inside the canvas, and none of them has its list open.
+static void checkShellPage(Session &s, gweni::Demo *demo, const std::string &page, size_t minimum,
+    const std::string &shotDir, InteractionChecks &checks, bool &ok)
+{
+    if(!demo->showDemo(page))
+    {
+        checks.check("shell_"+page, false, "the shell has no page "+page);
+        return;
+    }
+    renderFrames(s, s.frames);
+    if(!shoot(s, shotDir+"/hide-show-shell-"+page+".png"))
+        ok=false;
+
+    std::vector<gweni::controls::ComboBox *> boxes;
+    collectComboBoxes(demo, boxes);
+
+    const gweni::Rect canvasRect(0, 0, s.size.x, s.size.y);
+    size_t shown=0;
+    std::string problems;
+    for(gweni::controls::ComboBox *box : boxes)
+    {
+        if(!box->visible())
+            continue;
+        ++shown;
+
+        const gweni::Rect rect=canvasRectOf(box);
+        if(rect.w <= 0 || rect.h <= 0 || !insideRect(rect, canvasRect))
+            problems+=" ComboBox#"+std::to_string(box->getControlId())+" at "+rectText(rect)
+                +" is not inside the canvas;";
+
+        for(auto &&child : box->getActualChildren())
+            if(dynamic_cast<gweni::controls::Menu *>(child) && child->visible())
+                problems+=" ComboBox#"+std::to_string(box->getControlId())+" draws its list;";
+    }
+    if(shown < minimum)
+        problems+=" "+std::to_string(shown)+" ComboBoxes drawn, want at least "+std::to_string(minimum)+";";
+    checks.check("shell_"+page, problems.empty(), page+":"+problems);
+}
+
+// A: the demo built shown and settled, the reference. B: its host hidden for
+// a frame (and settled hidden), then shown again. C: on a fresh canvas, the
+// demo built into a host that is hidden already, then shown. B and C have to
+// be A byte for byte (listing, renderer mirror id by id, pixels), the hidden
+// frames the empty canvas's, and each a few more checks, named on stderr.
+static bool runHideShowScenario(Session &s, const std::string &controlName,
+    const std::string &shotDir, bool &passed)
+{
+    const std::string emptyShot=shotDir+"/hide-show-00-empty.png";
+    const std::string shownShot=shotDir+"/hide-show-01-shown.png";
+    const std::string hiddenShot=shotDir+"/hide-show-02-hidden.png";
+    const std::string againShot=shotDir+"/hide-show-03-shown-again.png";
+    const std::string builtHiddenShot=shotDir+"/hide-show-04-built-hidden.png";
+    const std::string builtShownShot=shotDir+"/hide-show-05-built-hidden-shown.png";
+
+    ResizeState emptyState, shownState, hiddenState, againState, builtHiddenState, builtShownState;
+    InteractionChecks checks;
+    checks.scenario="hide-show control="+controlName;
+    bool ok=true;
+
+    // the shots are compared with each other: an animation stands still
+    s.freezeClock=true;
+
+    // A, on a new canvas as C is, so both hand out their ids alike
+    replaceCanvas(s);
+    gweni::controls::Base *host=addHost(s, controlName, false);
+    renderFrames(s, s.frames);
+    if(!shootState(s, emptyShot, emptyState)) return false;
+
+    gweni::controls::Base *control=addHostedControl(host, controlName);
+    if(!control) return false;
+    renderFrames(s, s.frames);
+    if(!shootState(s, shownShot, shownState)) return false;
+    const size_t primitiveIds=livePrimitiveIds();
+    const size_t textIds=liveTextIds();
+    std::map<std::string, std::vector<uint8_t>> shownSlots;
+    collectMirrorByOwner(s.canvas, s.canvas->getTypeName(), shownState.mirror, shownSlots);
+    const std::string focusPath=(gweni::KeyboardFocus && isUnder(gweni::KeyboardFocus, host))
+        ? pathOf(s.canvas, s.canvas->getTypeName(), gweni::KeyboardFocus) : std::string();
+
+    // B
+    toggleHost(s, host, false, checks, "hide");
+    renderFrames(s, s.frames);
+    if(!shootState(s, hiddenShot, hiddenState)) return false;
+    checkSteady(s, checks, "hidden_settles");
+
+    toggleHost(s, host, true, checks, "show");
+    renderFrames(s, s.frames);
+    giveFocusBack(s, focusPath);
+    checkSteady(s, checks, "shown_settles");
+    if(!shootState(s, againShot, againState)) return false;
+    checks.check("ids_kept", livePrimitiveIds() == primitiveIds && liveTextIds() == textIds,
+        "live primitive ids "+std::to_string(primitiveIds)+" -> "+std::to_string(livePrimitiveIds())
+        +", text ids "+std::to_string(textIds)+" -> "+std::to_string(liveTextIds()));
+    dropControl(s, host);
+
+    // C
+    replaceCanvas(s);
+    host=addHost(s, controlName, true);
+    renderFrames(s, s.frames);
+    control=addHostedControl(host, controlName);
+    if(!control) return false;
+    renderFrames(s, s.frames);
+    if(!shootState(s, builtHiddenShot, builtHiddenState)) return false;
+    checkSteady(s, checks, "built_hidden_settles");
+
+    toggleHost(s, host, true, checks, "built_hidden_show");
+    renderFrames(s, s.frames);
+    giveFocusBack(s, focusPath);
+    checkSteady(s, checks, "built_hidden_shown_settles");
+    if(!shootState(s, builtShownShot, builtShownState)) return false;
+    bool builtHidden=mirrorsMatchByOwner(s, shownState, shownSlots, builtShownState);
+    dropControl(s, host);
+
+    // Every comparison runs, so a failing run names all that differs.
+    bool roundTrip=listingsMatch(shownState, againState);
+    roundTrip=mirrorsMatch(shownState, againState) && roundTrip;
+    roundTrip=pixelsMatch(shownState, againState) && roundTrip;
+    checks.check("round_trip", roundTrip, "the demo did not come back from a hide and show (above)");
+
+    builtHidden=listingsMatch(shownState, builtShownState) && builtHidden;
+    builtHidden=pixelsMatch(shownState, builtShownState) && builtHidden;
+    checks.check("built_hidden", builtHidden, "the demo built hidden and shown differs from one built shown (above)");
+
+    bool hiddenEmpty=pixelsMatch(emptyState, hiddenState);
+    hiddenEmpty=pixelsMatch(emptyState, builtHiddenState) && hiddenEmpty;
+    checks.check("hidden_empty", hiddenEmpty, "a hidden demo drew something (above)");
+
+    // The shell: its pages are built hidden and shown when selected.
+    if(controlName == g_dockedControlName)
+    {
+        replaceCanvas(s);
+        gweni::controls::Base *shell=addControl(s, controlName);
+        renderFrames(s, s.frames);
+        if(gweni::Demo *demo=dynamic_cast<gweni::Demo *>(shell))
+        {
+            checkShellPage(s, demo, "PropertiesDemo", 1, shotDir, checks, ok);
+            checkShellPage(s, demo, "ComboBoxDemo", 3, shotDir, checks, ok);
+        }
+        dropControl(s, shell);
+    }
+
+    std::cout<<"hide-show control="<<controlName;
+    for(const auto &result : checks.results)
+        std::cout<<" "<<result.first<<"="<<(result.second ? "yes" : "no");
+    std::cout<<"\n";
+
+    passed=checks.allPassed();
+    return ok;
+}
+
+//-----------------------------------------------------------------------------
 // --check-teardown: teardown identity
 //
 // In a retained renderer a control's primitives are a persistent slot in the
@@ -4965,6 +5424,15 @@ int main(int argc, char *argv[])
             ok=runVirtualListScenario(session, shotDir, passed);
             if(ok && !passed)
                 ok=false;   // a frame cost more at 100 000 items, or more than its rows: a failing assertion
+            break;
+        }
+
+        case Scenario::HideShow:
+        {
+            bool passed=false;
+            ok=runHideShowScenario(session, which, shotDir, passed);
+            if(ok && !passed)
+                ok=false;   // a hide and show did not give the demo back: a failing assertion
             break;
         }
 

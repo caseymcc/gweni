@@ -6,10 +6,11 @@
 #  Runs one ControlTest check for every control in ControlTest --list, one
 #  process per control, as a cmake -P script (tests/CMakeLists.txt registers it
 #  as controltest_resize_each, controltest_one_pass_each,
-#  controltest_scale_roundtrip and controltest_verify_layout_each):
+#  controltest_scale_roundtrip, controltest_verify_layout_each and
+#  controltest_hide_show_each):
 #
 #      cmake -DCONTROLTEST=<ControlTest> -DSOURCE_DIR=<repo root> \
-#            -DSCRATCH_DIR=<dir> -DMODE=resize|one-pass|scale|verify [-DSKIP=<names>] \
+#            -DSCRATCH_DIR=<dir> -DMODE=resize|one-pass|scale|verify|hide-show [-DSKIP=<names>] \
 #            -P eachControl.cmake
 #
 #  MODE resize:   --scenario resize --require-one-pass, the 640->1024->640
@@ -25,6 +26,11 @@
 #                 layout checked against a full pass that enters every control
 #                 (Canvas::verifyLayout): no bounds or preferred size may
 #                 differ, and the full pass must change nothing.
+#  MODE hide-show: --scenario hide-show --require-one-pass, the demo's host
+#                 page hidden and shown again, and the demo built into a host
+#                 that is hidden already (as the shell's pages are) and shown:
+#                 both have to come back byte for byte as the demo built
+#                 shown, every frame in one layout pass.
 #
 #  Every control is run, and the failing ones are named together at the end,
 #  each with the lines ControlTest printed on stderr. SKIP leaves controls out
@@ -45,8 +51,10 @@ elseif(MODE STREQUAL "scale")
     set(mode_args --scenario scale --require-one-pass)
 elseif(MODE STREQUAL "verify")
     set(mode_args --stats --verify-layout)
+elseif(MODE STREQUAL "hide-show")
+    set(mode_args --scenario hide-show --require-one-pass)
 else()
-    message(FATAL_ERROR "eachControl.cmake: MODE is resize, one-pass, scale or verify, not '${MODE}'")
+    message(FATAL_ERROR "eachControl.cmake: MODE is resize, one-pass, scale, verify or hide-show, not '${MODE}'")
 endif()
 
 # a stale run must not be able to pass

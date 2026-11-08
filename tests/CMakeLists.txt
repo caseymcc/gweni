@@ -156,6 +156,25 @@ if(TARGET ControlTest)
         LABELS gpu
         TIMEOUT 600)
 
+    # every control in --list (Demo included), one process each, built into a
+    # host page: the host hidden and shown again, and on a fresh canvas the
+    # demo built into a host that is hidden already, as the shell builds every
+    # page from index 1 on, then shown. Both have to be the demo built shown
+    # (listing, renderer mirror, pixels), the parts a control hid itself still
+    # hidden, and Demo's shell has to show PropertiesDemo and ComboBoxDemo
+    # with every ComboBox's list closed
+    add_test(NAME controltest_hide_show_each
+        COMMAND ${CMAKE_COMMAND}
+            -DCONTROLTEST=$<TARGET_FILE:ControlTest>
+            -DSOURCE_DIR=${GWENI_SOURCE_DIR}
+            -DSCRATCH_DIR=${CMAKE_CURRENT_BINARY_DIR}/hide_show_each
+            -DMODE=hide-show
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/eachControl.cmake
+        WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
+    set_tests_properties(controltest_hide_show_each PROPERTIES
+        LABELS gpu
+        TIMEOUT 600)
+
     # the plain run of every control in --list (Demo included) with every
     # frame's layout checked against a full pass (--verify-layout): a pass may
     # skip only what running would leave as it is, and a full pass over a
