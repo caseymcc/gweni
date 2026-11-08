@@ -156,6 +156,37 @@ if(TARGET ControlTest)
         LABELS gpu
         TIMEOUT 600)
 
+    # the plain run of every control in --list (Demo included) with every
+    # frame's layout checked against a full pass (--verify-layout): a pass may
+    # skip only what running would leave as it is, and a full pass over a
+    # converged tree must change nothing
+    add_test(NAME controltest_verify_layout_each
+        COMMAND ${CMAKE_COMMAND}
+            -DCONTROLTEST=$<TARGET_FILE:ControlTest>
+            -DSOURCE_DIR=${GWENI_SOURCE_DIR}
+            -DSCRATCH_DIR=${CMAKE_CURRENT_BINARY_DIR}/verify_layout_each
+            -DMODE=verify
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/eachControl.cmake
+        WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
+    set_tests_properties(controltest_verify_layout_each PROPERTIES
+        LABELS gpu
+        TIMEOUT 600)
+
+    # the same check through the scenarios that change layout at run time:
+    # input, a canvas resize and a scale round trip (both on Demo), a Window
+    # dragged past its parent's edges, the tooltip box and the context menu
+    foreach(verify_scenario interaction resize scale clip tooltip context-menu)
+        string(REPLACE "-" "_" verify_name "${verify_scenario}")
+        add_test(NAME controltest_verify_layout_${verify_name}
+            COMMAND $<TARGET_FILE:ControlTest> --headless --scenario ${verify_scenario}
+                --verify-layout
+                --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/verify_layout_${verify_name}
+            WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
+        set_tests_properties(controltest_verify_layout_${verify_name} PROPERTIES
+            LABELS gpu
+            TIMEOUT 300)
+    endforeach()
+
     # hover, press, disabled and focus repaint the control (and only it), a
     # settled frame does nothing, and collapsing a tree node still moves the
     # nodes below; exits non-zero on any failed check

@@ -5,11 +5,11 @@
 #
 #  Runs one ControlTest check for every control in ControlTest --list, one
 #  process per control, as a cmake -P script (tests/CMakeLists.txt registers it
-#  as controltest_resize_each, controltest_one_pass_each and
-#  controltest_scale_roundtrip):
+#  as controltest_resize_each, controltest_one_pass_each,
+#  controltest_scale_roundtrip and controltest_verify_layout_each):
 #
 #      cmake -DCONTROLTEST=<ControlTest> -DSOURCE_DIR=<repo root> \
-#            -DSCRATCH_DIR=<dir> -DMODE=resize|one-pass|scale [-DSKIP=<names>] \
+#            -DSCRATCH_DIR=<dir> -DMODE=resize|one-pass|scale|verify [-DSKIP=<names>] \
 #            -P eachControl.cmake
 #
 #  MODE resize:   --scenario resize --require-one-pass, the 640->1024->640
@@ -21,6 +21,10 @@
 #                 Canvas::setScale round trip, which has to come back byte for
 #                 byte and match a canvas built at scale 2, every frame in one
 #                 layout pass.
+#  MODE verify:   --stats --verify-layout, the plain run with every frame's
+#                 layout checked against a full pass that enters every control
+#                 (Canvas::verifyLayout): no bounds or preferred size may
+#                 differ, and the full pass must change nothing.
 #
 #  Every control is run, and the failing ones are named together at the end,
 #  each with the lines ControlTest printed on stderr. SKIP leaves controls out
@@ -39,8 +43,10 @@ elseif(MODE STREQUAL "one-pass")
     set(mode_args --stats --require-one-pass)
 elseif(MODE STREQUAL "scale")
     set(mode_args --scenario scale --require-one-pass)
+elseif(MODE STREQUAL "verify")
+    set(mode_args --stats --verify-layout)
 else()
-    message(FATAL_ERROR "eachControl.cmake: MODE is resize, one-pass or scale, not '${MODE}'")
+    message(FATAL_ERROR "eachControl.cmake: MODE is resize, one-pass, scale or verify, not '${MODE}'")
 endif()
 
 # a stale run must not be able to pass
@@ -79,7 +85,7 @@ foreach(name IN LISTS names)
         list(APPEND failed "${name}")
         # the --stats frame lines are noise here; the ControlTest: lines say
         # which frame or check failed
-        file(STRINGS "${log}" reasons REGEX "^(ControlTest:|resize |scale )")
+        file(STRINGS "${log}" reasons REGEX "^(ControlTest:|resize |scale |gweni: layout verify)")
         string(REPLACE ";" "\n    " reasons "${reasons}")
         message("FAILED: ${name} (exit '${result}', log ${log})\n    ${reasons}")
     endif()

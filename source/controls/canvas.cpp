@@ -20,8 +20,12 @@
 
 #include <algorithm>
 #include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include <set>
 #include <string>
+#include <unordered_map>
+#include <vector>
 
 namespace gweni
 {
@@ -164,6 +168,144 @@ void Canvas::layoutPass()
     m_updateLayout=m_passRedirtied;
 }
 
+namespace
+{
+
+// -1 until GWENI_LAYOUT_VERIFY has been read or setLayoutVerify() called.
+int g_layoutVerify=-1;
+size_t g_layoutVerifyFailures=0;
+
+// What verifyLayout() compares, per control.
+struct LayoutSnapshot
+{
+    Base *control;
+    size_t id;
+    const char *type;
+    Rect bounds;
+    Size preferred;
+};
+
+void snapshotLayout(Base *control, std::vector<LayoutSnapshot> &out)
+{
+    out.push_back({control, control->getControlId(), control->getTypeName(),
+        control->getBounds(), control->getPreferredSize()});
+
+    for(Base *child : control->getActualChildren())
+        snapshotLayout(child, out);
+}
+
+// Prints at most this many differences per verification; every one counts.
+constexpr size_t MaxVerifyLines=20;
+
+}//namespace
+
+bool layoutVerifyEnabled()
+{
+    if(g_layoutVerify < 0)
+    {
+        const char *env=std::getenv("GWENI_LAYOUT_VERIFY");
+        g_layoutVerify=(env && *env && std::strcmp(env, "0") != 0)?1:0;
+    }
+    return g_layoutVerify == 1;
+}
+
+void setLayoutVerify(bool verify)
+{
+    g_layoutVerify=verify?1:0;
+}
+
+size_t layoutVerifyFailures()
+{
+    return g_layoutVerifyFailures;
+}
+
+bool Canvas::s_verifyingLayout=false;
+
+void Canvas::verifyLayout()
+{
+    std::vector<LayoutSnapshot> before;
+    snapshotLayout(this, before);
+
+    // The full pass is no part of the frame's layout: its stats and its
+    // measures are put back or left out.
+    const LayoutStats stats=m_layoutStats;
+    const size_t measures=measureTextCalls();
+
+    s_verifyingLayout=true;
+    m_updateLayout=true;
+    layoutPass();
+    s_verifyingLayout=false;
+
+    m_measureCallsAtThink+=measureTextCalls()-measures;
+    m_layoutStats=stats;
+
+    std::vector<LayoutSnapshot> after;
+    snapshotLayout(this, after);
+
+    std::unordered_map<const Base *, const LayoutSnapshot *> now;
+    for(const LayoutSnapshot &entry : after)
+        now.emplace(entry.control, &entry);
+
+    size_t failures=0;
+    auto report=[&](const char *type, size_t id, const char *what)
+    {
+        if(++failures <= MaxVerifyLines)
+            std::fprintf(stderr, "gweni: layout verify: %s#%zu %s\n", type, id, what);
+    };
+    auto compare=[&](const LayoutSnapshot &a, const char *axis, const char *field,
+        int pass, int full)
+    {
+        if(pass == full)
+            return;
+
+        char what[128];
+        std::snprintf(what, sizeof(what), "%s %s: pass %d, full pass %d", axis, field, pass, full);
+        report(a.type, a.id, what);
+    };
+
+    for(const LayoutSnapshot &a : before)
+    {
+        // An id is handed out again once released, so a control the full pass
+        // deleted may have a successor at its address under another id.
+        auto found=now.find(a.control);
+
+        if(found == now.end() || found->second->id != a.id)
+        {
+            report(a.type, a.id, "was deleted by the full pass");
+            continue;
+        }
+
+        const LayoutSnapshot &b=*found->second;
+
+        compare(a, "X", "bounds.x", a.bounds.x, b.bounds.x);
+        compare(a, "X", "bounds.w", a.bounds.w, b.bounds.w);
+        compare(a, "X", "preferred.width", a.preferred.width, b.preferred.width);
+        compare(a, "Y", "bounds.y", a.bounds.y, b.bounds.y);
+        compare(a, "Y", "bounds.h", a.bounds.h, b.bounds.h);
+        compare(a, "Y", "preferred.height", a.preferred.height, b.preferred.height);
+        now.erase(found);
+    }
+
+    for(const LayoutSnapshot &b : after)
+    {
+        if(now.count(b.control))
+            report(b.type, b.id, "was created by the full pass");
+    }
+
+    if(m_updateLayout)
+    {
+        char what[160];
+        std::snprintf(what, sizeof(what), "re-dirtied layout during the full pass (by %s#%zu)",
+            m_passCulpritType, m_passCulpritId);
+        report(getTypeName(), getControlId(), what);
+    }
+
+    if(failures > MaxVerifyLines)
+        std::fprintf(stderr, "gweni: layout verify: ... and %zu more\n", failures-MaxVerifyLines);
+
+    g_layoutVerifyFailures+=failures;
+}
+
 void Canvas::layoutCanvas()
 {
     static std::set<std::string> warnedCapped;
@@ -190,6 +332,9 @@ void Canvas::layoutCanvas()
             m_layoutStats.redirtiedId=m_passCulpritId;
         }
     }
+
+    if(!hidden() && !m_updateLayout && layoutVerifyEnabled())
+        verifyLayout();
 }
 
 void Canvas::renderPhaseLayout()
@@ -199,6 +344,9 @@ void Canvas::renderPhaseLayout()
 
     m_layoutStats.renderLayout=true;
     layoutPass();
+
+    if(!m_updateLayout && layoutVerifyEnabled())
+        verifyLayout();
     noteMeasureCalls();
 }
 

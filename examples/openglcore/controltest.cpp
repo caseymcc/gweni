@@ -62,6 +62,13 @@
  *                       with its control and the control that re-dirtied
  *                       layout. Works with any run that renders frames
  *                       (--control, --scenario, --check-teardown).
+ *    --verify-layout    after every frame's layout, run one more pass that
+ *                       enters every control and fail the run (exit non-zero)
+ *                       if it moves, resizes or re-measures anything; each
+ *                       difference is printed on stderr as
+ *                         gweni: layout verify: <Type>#<id> <X|Y> <field>: ...
+ *                       (the library's GWENI_LAYOUT_VERIFY=1 does the same in
+ *                       any app; see gweni::controls::layoutVerifyEnabled()).
  *    --check-teardown   build, render and destroy every control (or only
  *                       --control's), then check that the canvas renders
  *                       byte-identical to the empty canvas it started as.
@@ -577,6 +584,8 @@ static void printUsage(std::ostream &out)
          "                     default) or step it 1/60 s per frame, so a\n"
          "                     tooltip's delay or an animation runs\n"
          "  --require-one-pass fail if a frame's layout takes more than one pass\n"
+         "  --verify-layout    check every frame's layout against a full pass\n"
+         "                     (also GWENI_LAYOUT_VERIFY=1)\n"
          "  --check-teardown   check the canvas renders empty again once every\n"
          "                     control has been destroyed; --control narrows it\n"
          "  --trace            log each scripted input on stderr\n"
@@ -4497,6 +4506,7 @@ int main(int argc, char *argv[])
             }
         }
         else if(arg == "--require-one-pass") requireOnePass=true;
+        else if(arg == "--verify-layout") gweni::controls::setLayoutVerify(true);
         else if(arg == "--check-teardown") checkTeardownMode=true;
         else if(arg == "--trace") traceInput=true;
         else if(arg == "--list"){ printControlNames(std::cout); return EXIT_SUCCESS; }
@@ -4989,6 +4999,14 @@ int main(int argc, char *argv[])
         for(const std::string &mutation : mutations)
             std::cerr<<" ["<<mutation<<"]";
         std::cerr<<"\n";
+        result=EXIT_FAILURE;
+    }
+
+    // Canvas printed each one as it found it.
+    if(gweni::controls::layoutVerifyFailures())
+    {
+        std::cerr<<"ControlTest: "<<gweni::controls::layoutVerifyFailures()
+                 <<" layout verify difference(s) against a full pass\n";
         result=EXIT_FAILURE;
     }
     return capturing?gweni::capture::exitStatus(result, degraded):result;

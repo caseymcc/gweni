@@ -64,6 +64,26 @@ struct LayoutStats
     size_t measureCalls=0;
 };
 
+//! Layout verification (GWENI_LAYOUT_VERIFY=1, or setLayoutVerify(true)): after
+//! a frame's layout has converged, in either phase, the canvas snapshots every
+//! control's bounds and preferred size, runs one more pass that enters every
+//! shown control (Canvas::verifyingLayout()) and compares. A pass may skip what
+//! it finds clean only if that is the same as running it, and running a pass
+//! again on a converged tree must change nothing, so any difference is a bug:
+//! each one is printed on std::cerr as
+//!   gweni: layout verify: <Type>#<id> <X|Y> <field>: pass <value>, full pass <value>
+//! and counted in layoutVerifyFailures(), for a harness to fail on. So is a
+//! control the full pass created or deleted, and a full pass that re-dirtied
+//! layout. The full pass counts in no LayoutStats field and its measures in no
+//! LayoutStats::measureCalls. Off by default; the environment variable is read
+//! once, the first time a canvas asks.
+GWENI_EXPORT bool layoutVerifyEnabled();
+//! Turns layout verification on or off for every canvas, whatever
+//! GWENI_LAYOUT_VERIFY said.
+GWENI_EXPORT void setLayoutVerify(bool verify);
+//! The differences layout verification found since the process started.
+GWENI_EXPORT size_t layoutVerifyFailures();
+
 //! What updateCanvas() did below the canvas in one frame, outside layout
 //! (LayoutStats). There is no per-control think() walk; a settled frame
 //! enters no control.
@@ -163,6 +183,10 @@ public:
 
     /// True while one of this canvas's layout passes runs.
     bool inLayout() const { return m_inLayout; }
+
+    /// True while the pass running is layout verification's full pass (see
+    /// layoutVerifyEnabled()), which must enter every shown control.
+    static bool verifyingLayout() { return s_verifyingLayout; }
 
     /// This frame's layout passes, reset at the start of doThink().
     const LayoutStats &getLayoutStats() const { return m_layoutStats; }
@@ -352,6 +376,9 @@ protected:
     void keepOverlaysLast();
     /// One recurseLayout with m_inLayout set.
     void layoutPass();
+    /// With layoutVerifyEnabled(), after a converged layout: the full pass and
+    /// the comparison (see layoutVerifyEnabled()).
+    void verifyLayout();
     /// Sets LayoutStats::measureCalls to the measures made since doThink() began.
     void noteMeasureCalls();
     /// Base's report that `control` re-dirtied layout during the current pass.
@@ -365,6 +392,8 @@ protected:
     /// Numbers every pass of every canvas; Base::arrange stamps it on each
     /// control it lays out, so a pass can tell what it has already laid out.
     static unsigned s_passSerial;
+    /// verifyLayout()'s full pass is running.
+    static bool s_verifyingLayout;
 
     bool m_inLayout=false;
     LayoutStats m_layoutStats;
