@@ -139,10 +139,28 @@ public:
         return Base::lineHeight(font);
     }
 
-    //! measureText() calls so far. Tests take deltas.
+    //! Counted in `caretMeasures`, then measured as renderer::Base does: one
+    //! measureText() per prefix, counted in `caretPrefixMeasures` rather than
+    //! in `measures`, so `measures` holds only the measures made from outside.
+    void measureCarets(const gweni::Font &font, const gweni::String &text,
+        std::vector<int> &xs) override
+    {
+        const size_t outside=measures;
+
+        ++caretMeasures;
+        Base::measureCarets(font, text, xs);
+        caretPrefixMeasures+=measures-outside;
+        measures=outside;
+    }
+
+    //! measureText() calls so far, but those inside a measureCarets(). Tests
+    //! take deltas.
     size_t measures=0;
     //! lineHeight() calls so far, each also one of `measures`.
     size_t lineHeights=0;
+    //! measureCarets() calls so far, and the measureText() calls made inside them.
+    size_t caretMeasures=0;
+    size_t caretPrefixMeasures=0;
 
     //! What maxZIndex() reports: set it small to make the canvas run out of z.
     int maxZ=65535;

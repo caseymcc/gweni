@@ -247,12 +247,18 @@ int Text::closestCharacterIn(const gweni::String &str, gweni::Point p)
 {
     int iDistance=4096;
     size_t value=0;
+    // characterPositionIn's x of every caret, from one layout of the string
+    std::vector<int> xs;
+
+    measureCarets(getFont(), str, xs);
 
     // Only codepoint boundaries: the caret never goes inside a UTF-8 sequence.
-    for(size_t i=0; ; i=utf8Next(str, i))
+    // Each caret is at y 0, as characterPositionIn puts it.
+    size_t k=0;
+
+    for(size_t i=0; ; i=utf8Next(str, i), ++k)
     {
-        gweni::Rect cp=characterPositionIn(str, static_cast<unsigned int>(i));
-        const int iDist=std::abs(cp.x-p.x) + std::abs(cp.y-p.y);  // this isn't proper
+        const int iDist=std::abs(xs[k]-p.x) + std::abs(p.y);  // this isn't proper
 
         if(iDist <= iDistance)
         {

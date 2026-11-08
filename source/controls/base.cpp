@@ -1178,6 +1178,12 @@ int Base::measureLineHeight(const gweni::Font &font)
     return getSkin()->getRenderer()->lineHeight(font);
 }
 
+void Base::measureCarets(const gweni::Font &font, const gweni::String &text, std::vector<int> &xs)
+{
+    ++g_measureTextCalls;
+    getSkin()->getRenderer()->measureCarets(font, text, xs);
+}
+
 void Base::render(skin::Base *skin)
 {
 //    update();

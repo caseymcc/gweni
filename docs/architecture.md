@@ -1810,6 +1810,25 @@ two programs and the draws. What follows describes both together:
   11 px text drawn as 22 px SDF, came back a few ulps off and changed SDF edge
   pixels (`controltest_clip_scale200`). `tests/textRunCache.cpp` moves SDF, coverage
   and LCD runs away and back and in steps and compares each with a fresh layout.
+- **Every caret from one layout: `measureCarets`.** `renderer::Base::measureCarets(font,
+  text, xs)` gives the x of each caret position of `text`, one per codepoint boundary
+  of `utf8Next`'s walk with 0 and `text.size()` included, so the codepoint count + 1
+  entries: `xs[k]` is by definition `measureText(font, prefix to boundary k).x`, 0 for
+  the empty prefix. The base class's default is that definition, one `measureText` per
+  prefix, so a backend that does not override it answers as before. `SlotRenderer`'s
+  override lays the string out once and reads the pen before each codepoint: in a
+  coverage font (grayscale or LCD) one `text_buffer` and `text_buffer_add_text`'s
+  `text_buffer_add_char` loop, `ceil(pen.x)` (not `textPens()`, whose pens are rounded
+  and skip LCD's 1/3 px phases); in an SDF font `layoutSdfText`, `ceil(max(width,
+  pen))`. A `measureText` of a prefix is the same walk stopped there, so each x equals it
+  by construction. Where freetype-gl's codepoint steps (`utf8_surrogate_len`) are not
+  `utf8Next`'s (malformed UTF-8) or the string holds a NUL, it falls back to the
+  default. `Text::closestCharacterIn`, under every TextBox click and drag-select move,
+  makes one such call per probe instead of a `measureText` per caret, so it costs
+  O(L) glyph layouts for a line of L codepoints, not O(L²); `controls::Base::measureCarets`
+  counts it as one measure (`measureTextCalls()`). `tests/measureCarets.cpp` pins the
+  equality and `getClosestCharacter`'s answers against the old per-prefix walk in every
+  mode and at scale 1.5; `tests/unit/closestCharacter.cpp` the one call per probe.
 
 ## The theme file and strict mode
 

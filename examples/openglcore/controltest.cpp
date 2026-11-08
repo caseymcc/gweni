@@ -60,10 +60,11 @@
  *                       layout_visited= the controls the frame's layout
  *                       passes entered, one per calculateSize() and one per
  *                       arrange(), each axis counted (0 with no pass);
- *                       measure_calls= the renderer measureText() and
- *                       lineHeight() calls the controls made since the
- *                       last frame line (the first: since the control was
- *                       built), so the frame's total: the scripted input
+ *                       measure_calls= the renderer measureText(),
+ *                       lineHeight() and measureCarets() calls the
+ *                       controls made since the last frame line (the
+ *                       first: since the control was built), so the
+ *                       frame's total: the scripted input
  *                       before it (a typed key re-wraps there), the update
  *                       phase and any render-phase layout;
  *                       z_visited= the controls updateCanvas()'s z renumber
