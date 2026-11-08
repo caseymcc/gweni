@@ -36,7 +36,7 @@
  */
 
 #include <gweni/platforms/renderers/glApi.h>
-#include <gweni/platforms/renderers/openglCore.h>
+#include <gweni/platforms/renderers/slotRenderer.h>
 #include <gweni/gweni.h>
 #include <gweni/platforms/platform.h>
 #include <gweni/skins/simple/simple.h>
@@ -218,6 +218,7 @@ static void printUsage(std::ostream &out)
     out<<"Usage: OpenGLCore [--demo <Name>] [--screenshot <out.png>]"
          " [--frames <N>] [--stats]\n"
          "                  [--scale <s>] [--headless] [--resources <dir>]\n"
+         "                  [--renderer <gl|vulkan>]\n"
          "\n"
          "  --demo <Name>        show that demo page at startup\n"
          "  --screenshot <path>  render offscreen, write one PNG and exit\n"
@@ -238,6 +239,7 @@ static void printUsage(std::ostream &out)
          "                       (relative to the working directory, or\n"
          "                       absolute) instead of the resources/ next to\n"
          "                       the executable\n"
+       <<gweni::capture::RendererHelp<<
          "\n"
          "Per-frame line fields:\n"
          "  frame      0-based frame index\n"
@@ -266,6 +268,7 @@ int main(int argc, char *argv[])
     std::string demoName;
     std::string shotPath;
     std::string resourceDir;
+    std::string rendererName;
     int frameCount=0;
     bool stats=false;
     bool scaleGiven=false;
@@ -305,6 +308,8 @@ int main(int argc, char *argv[])
             forceHeadless=true;
         else if(arg == "--resources" && hasValue)
             resourceDir=argv[++i];
+        else if(arg == "--renderer" && hasValue)
+            rendererName=argv[++i];
         else if(arg == "--help" || arg == "-h")
         {
             printUsage(std::cout);
@@ -319,6 +324,11 @@ int main(int argc, char *argv[])
     }
 
     if(!gweni::capture::manualScale(scaleGiven, g_manualScale))
+        return EXIT_FAILURE;
+
+    gweni::capture::Backend backend;
+
+    if(!gweni::capture::chooseBackend(rendererName, backend))
         return EXIT_FAILURE;
 
     const bool writingPng=!shotPath.empty();
@@ -352,64 +362,27 @@ int main(int argc, char *argv[])
 
     gweni::capture::installGlfwErrorHandler();
 
-//    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
-//    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 2);
-//    glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
-//    glfwWindowHint(GLFW_OPENGL_DEBUG_CONTEXT, GL_TRUE);%
+    // A capture draws into an offscreen target and needs no display (GL falls
+    // back to a surfaceless EGL context without one, Vulkan has no window at
+    // all), so the demo can be photographed in the build container as it
+    // stands; anything else is the window.
+    gweni::capture::DeviceOptions deviceOptions;
 
-    // A capture does not need the window on screen, and on a machine with no
-    // display at all it falls back to a surfaceless EGL context, so the demo can
-    // be photographed in the build container as it stands.
-    gweni::capture::Context ctx;
+    deviceOptions.size=screenSize;
+    deviceOptions.title="Gweni OpenGL Core Profile Sample";
+    deviceOptions.capturing=capturing;
+    deviceOptions.headless=forceHeadless;
 
-    if(forceHeadless)
-    {
-#if GWENI_EXAMPLE_EGL
-        if(!gweni::capture::initEglContext(ctx))
-            return EXIT_FAILURE;
-#else
-        std::cerr<<"OpenGLCore: --headless needs the EGL path, which this platform lacks\n";
+    std::unique_ptr<gweni::capture::Device> device=gweni::capture::openDevice(backend, deviceOptions);
+
+    if(!device)
         return EXIT_FAILURE;
-#endif
-    }
-    else if(!gweni::capture::initGlfwContext(ctx, screenSize,
-        "Gweni OpenGL Core Profile Sample", !capturing))
-    {
-        if(!capturing)
-        {
-            std::cerr<<"OpenGLCore: GLFW could not open a window;"
-                       " interactive mode needs a display\n";
-            return EXIT_FAILURE;
-        }
-#if GWENI_EXAMPLE_EGL
-        std::cerr<<"OpenGLCore: GLFW could not open a window"
-                   " (no display?); falling back to surfaceless EGL\n";
-        if(!gweni::capture::initEglContext(ctx))
-            return EXIT_FAILURE;
-#else
-        return EXIT_FAILURE;
-#endif
-    }
 
-//    glfwSwapInterval(0); //removes fps limiter
+    const gweni::capture::Context &ctx=device->context();
 
-    if(!gweni::capture::initGL(ctx))
-    {
-        gweni::capture::destroyContext(ctx);
-        return EXIT_FAILURE;
-    }
-
-    gweni::capture::Framebuffer fb;
-
-    if(capturing && !gweni::capture::createFramebuffer(fb, screenSize.x, screenSize.y))
-    {
-        gweni::capture::destroyContext(ctx);
-        return EXIT_FAILURE;
-    }
-
-    // Create a Gweni OpenGL Renderer
-    gweni::renderer::OpenGLCore* renderer =
-        new gweni::renderer::OpenGLCore(*paths, gweni::Rect(gweni::Point(0,0), screenSize));
+    // Create a Gweni renderer: OpenGLCore, or renderer::Vulkan
+    gweni::renderer::SlotRenderer *renderer=
+        device->newRenderer(*paths, gweni::Rect(gweni::Point(0,0), screenSize));
     renderer->init();
 
     // Create a Gweni skin
@@ -430,9 +403,9 @@ int main(int argc, char *argv[])
     // The canvas fill comes from the theme, so a "theme" block in
     // resources/DefaultSkin.json moves it too. Canvas::renderCanvas does not
     // currently paint its own background (the draw call there is commented
-    // out), so the clear color is what actually shows.
+    // out), so the colour each frame clears the target to is what actually
+    // shows.
     const gweni::Color background=gweni::skin::textured::tokyonight::Canvas.top;
-    glClearColor(background.r/255.0f, background.g/255.0f, background.b/255.0f, background.a/255.0f);
 
     // The framebuffer is screenSize device pixels and the canvas that in logical
     // units. An offscreen capture has no OS content scale, so only the manual
@@ -462,8 +435,6 @@ int main(int argc, char *argv[])
         delete canvas;
         delete skin;
         delete renderer;
-        if(capturing) gweni::capture::destroyFramebuffer(fb);
-        gweni::capture::destroyContext(ctx);
         return EXIT_FAILURE;
     }
 #else//SINGLE_CONTROL
@@ -502,7 +473,7 @@ int main(int argc, char *argv[])
             if(stats)
                 countChanges(canvas, sample.counts);
 
-            glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
+            renderer->clearTarget(background);
 
             const Clock::time_point renderBegin=Clock::now();
             canvas->renderCanvas();
@@ -559,7 +530,7 @@ int main(int argc, char *argv[])
 
         if(writingPng)
         {
-            if(gweni::capture::writeFramebufferPng(screenSize.x, screenSize.y, shotPath))
+            if(gweni::capture::writeRendererPng(*renderer, screenSize.x, screenSize.y, shotPath))
                 std::cout<<"wrote "<<shotPath<<"\n";
             else
                 result=EXIT_FAILURE;
@@ -585,11 +556,12 @@ int main(int argc, char *argv[])
 
         // The main loop: one frame per displayed frame until the window closes
         // (in the browser, per animation frame, never returning). The frame
-        // holds only the canvas, a heap object, as the browser's loop needs.
-        gweni::capture::runWindowLoop(ctx, [canvas]()
+        // holds only the canvas and the renderer, heap objects, and the colour,
+        // a copy, as the browser's loop needs.
+        gweni::capture::runWindowLoop(ctx, [canvas, renderer, background]()
         {
             canvas->updateCanvas();
-            glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
+            renderer->clearTarget(background);
             canvas->renderCanvas();
         });
     }
@@ -603,11 +575,7 @@ int main(int argc, char *argv[])
     delete canvas;
     delete skin;
     delete renderer;
-
-    // Clean up OpenGL
-    if(capturing)
-        gweni::capture::destroyFramebuffer(fb);
-    gweni::capture::destroyContext(ctx);
+    device.reset();
 
     return capturing?gweni::capture::exitStatus(result, degraded):result;
 }

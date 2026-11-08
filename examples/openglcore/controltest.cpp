@@ -23,6 +23,12 @@
  *    --shot-all         write one PNG per control demo, in this one run
  *    --shot-dir <dir>   directory for shots, created if missing (default /tmp)
  *    --headless         force the surfaceless EGL context (no display needed)
+ *    --renderer gl|vulkan  the backend (default gl, or GWENI_RENDERER; the
+ *                       flag beats it): OpenGLCore, or renderer::Vulkan on a
+ *                       headless Vulkan device with no GL or EGL context. Vulkan
+ *                       only captures (with or without --headless, the same),
+ *                       there is no Vulkan window yet; GWENI_VULKAN_VALIDATION=1
+ *                       turns the validation layer on, any message aborting
  *    --stats            print one key=value line per frame; freezes the clock.
  *                       prim_slots_written= and text_slots_written= count
  *                       the distinct primitive and glyph slots the frame's
@@ -491,7 +497,7 @@
  */
 
 #include <gweni/platforms/renderers/glApi.h>
-#include <gweni/platforms/renderers/openglCore.h>
+#include <gweni/platforms/renderers/slotRenderer.h>
 #include <gweni/gweni.h>
 #include <gweni/platforms/platform.h>
 #include <gweni/skins/textured/texturedSkin.h>
@@ -689,6 +695,7 @@ static void printUsage(std::ostream &out)
          "  --shot-all         write one PNG per control demo, in this one run\n"
          "  --shot-dir <dir>   directory for shots (default /tmp)\n"
          "  --headless         force the surfaceless EGL context\n"
+       <<gweni::capture::RendererHelp<<
          "  --stats            print one key=value line per frame; prim_slots_written=\n"
          "                     and text_slots_written= are the distinct slots its\n"
          "                     flush uploads (a draw, hide, show or release each)\n"
@@ -748,18 +755,8 @@ static void printUsage(std::ostream &out)
 
 //-----------------------------------------------------------------------------
 
-using gweni::capture::Context;
-using gweni::capture::Framebuffer;
-using gweni::capture::createFramebuffer;
-using gweni::capture::destroyContext;
-using gweni::capture::destroyFramebuffer;
 using gweni::capture::ensureDirectory;
-using gweni::capture::initGlfwContext;
-#if GWENI_EXAMPLE_EGL
-using gweni::capture::initEglContext;
-#endif
-using gweni::capture::readFramebufferRgba;
-using gweni::capture::writeFramebufferPng;
+using gweni::capture::writeRendererPng;
 using gweni::capture::writeRgbaPng;
 
 // The control that first re-dirtied layout in a frame, as Type#id, or "none".
@@ -869,9 +866,10 @@ static constexpr int kSettleFrames=3;
 
 struct Session
 {
-    gweni::renderer::OpenGLCore *renderer=nullptr;
+    gweni::renderer::SlotRenderer *renderer=nullptr;
     gweni::controls::Canvas *canvas=nullptr;
-    Framebuffer *fb=nullptr;
+    gweni::capture::Device *device=nullptr; // the offscreen target's
+    gweni::Color background;            // what each frame clears it to
     gweni::Point size;                  // the canvas, logical units
     float scale=1.0f;                   // --scale
     gweni::Point pixels;                // the framebuffer, device pixels
@@ -1039,7 +1037,7 @@ static void renderFrames(Session &s, int count)
         gweni::controls::resetChangeStats();
 
         s.canvas->updateCanvas();
-        glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
+        s.renderer->clearTarget(s.background);
         s.canvas->renderCanvas();
 
         if(s.stats)
@@ -1072,7 +1070,7 @@ static bool shoot(Session &s, const std::string &path)
         return true;
     if(!ensureDirectory(fs::path(path).parent_path()))
         return false;
-    if(!writeFramebufferPng(s.pixels.x, s.pixels.y, path))
+    if(!writeRendererPng(*s.renderer, s.pixels.x, s.pixels.y, path))
         return false;
 
     std::cout<<"wrote "<<path<<"\n";
@@ -1087,8 +1085,7 @@ static bool resizeSession(Session &s, int width, int height)
     s.size=gweni::Point(width, height);
     s.pixels=devicePixels(s.size, s.scale);
 
-    destroyFramebuffer(*s.fb);
-    if(!createFramebuffer(*s.fb, s.pixels.x, s.pixels.y))
+    if(!s.device->resizeTarget(s.pixels))
         return false;
 
     s.renderer->setViewRect(gweni::Rect(gweni::Point(0, 0), s.pixels));
@@ -1103,8 +1100,7 @@ static bool rescaleSession(Session &s, float scale)
     s.scale=scale;
     s.pixels=devicePixels(s.size, s.scale);
 
-    destroyFramebuffer(*s.fb);
-    if(!createFramebuffer(*s.fb, s.pixels.x, s.pixels.y))
+    if(!s.device->resizeTarget(s.pixels))
         return false;
 
     s.renderer->setViewRect(gweni::Rect(gweni::Point(0, 0), s.pixels));
@@ -1771,7 +1767,7 @@ static void captureResizeState(Session &s, const std::string &path, ResizeState 
 {
     state.name=fs::path(path).filename().string();
     state.listing=boundsListing(s);
-    readFramebufferRgba(s.pixels.x, s.pixels.y, state.pixels);
+    s.renderer->readPixels(s.pixels.x, s.pixels.y, state.pixels);
     state.mirror=s.renderer->snapshotMirror();
     rankMirrorDepths(state.mirror);
     collectIdOwners(s.canvas, s.canvas->getTypeName(), state.owners);
@@ -2247,7 +2243,7 @@ static bool runTextSizeScenario(Session &s, const std::string &shotDir, bool &pa
     std::vector<uint8_t> fromPixels, toPixels;
 
     bool ok=shoot(s, fromShot);
-    readFramebufferRgba(s.size.x, s.size.y, fromPixels);
+    s.renderer->readPixels(s.size.x, s.size.y, fromPixels);
 
     const gweni::Point fromSize=label->getSize();
     const std::vector<uint8_t> keptPixels=regionPixels(s, kept);
@@ -2279,7 +2275,7 @@ static bool runTextSizeScenario(Session &s, const std::string &shotDir, bool &pa
         +s.renderer->getFrameStats().primitiveSlotsWritten;
 
     ok=shoot(s, toShot) && ok;
-    readFramebufferRgba(s.size.x, s.size.y, toPixels);
+    s.renderer->readPixels(s.size.x, s.size.y, toPixels);
 
     const gweni::Point toSize=label->getSize();
     const bool keptAfterChange=(regionPixels(s, kept) == keptPixels);
@@ -2384,7 +2380,7 @@ static gweni::Point centreOf(gweni::controls::Base *control)
 static std::vector<uint8_t> regionPixels(const Session &s, gweni::controls::Base *control)
 {
     std::vector<uint8_t> frame;
-    readFramebufferRgba(s.pixels.x, s.pixels.y, frame);
+    s.renderer->readPixels(s.pixels.x, s.pixels.y, frame);
 
     const gweni::Point origin=control->localPosToCanvas();
     const gweni::Point topLeft=devicePixels(origin, s.scale);
@@ -2601,7 +2597,7 @@ static void checkTreeCollapse(Session &s, const std::string &shotDir, Interactio
     renderFrames(s, s.frames);
     if(!shoot(s, shotDir+"/interaction-tree-expanded.png"))
         ok=false;
-    readFramebufferRgba(s.pixels.x, s.pixels.y, before);
+    s.renderer->readPixels(s.pixels.x, s.pixels.y, before);
     const gweni::Rect belowBefore=below->getBounds();
 
     const gweni::Point at=centreOf(toggle);
@@ -2609,7 +2605,7 @@ static void checkTreeCollapse(Session &s, const std::string &shotDir, Interactio
     renderFrames(s, s.frames);
     if(!shoot(s, shotDir+"/interaction-tree-collapsed.png"))
         ok=false;
-    readFramebufferRgba(s.pixels.x, s.pixels.y, after);
+    s.renderer->readPixels(s.pixels.x, s.pixels.y, after);
     const gweni::Rect belowAfter=below->getBounds();
 
     dropControl(s, demo);
@@ -2733,7 +2729,7 @@ static void checkSelectable(Session &s, const std::string &shotDir, InteractionC
     countPending(s.canvas, pending);
     countPending(first, pendingFirst);
     countPending(second, pendingSecond);
-    glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
+    s.renderer->clearTarget(s.background);
     s.canvas->renderCanvas();
     const gweni::controls::ChangeStats groupChanges=gweni::controls::getChangeStats();
     const gweni::renderer::SlotRenderer::FrameStats groupGpu=s.renderer->getFrameStats();
@@ -3340,7 +3336,7 @@ static void checkPropertyRow(Session &s, const std::string &shotDir, Interaction
     s.canvas->updateCanvas();
     const bool labelMoveMarked=row->getStateChange() != gweni::controls::StateChange_Nothing
         || row->getLabel()->getStateChange() != gweni::controls::StateChange_Nothing;
-    glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
+    s.renderer->clearTarget(s.background);
     s.canvas->renderCanvas();
     ++s.frame;
     const std::vector<uint8_t> labelHover=settledRegion(s, row, shotDir, "property-row-label-hover", ok);
@@ -3415,7 +3411,7 @@ static bool runInteractionScenario(Session &s, const std::string &shotDir, bool 
 static std::vector<uint8_t> framePixels(const Session &s)
 {
     std::vector<uint8_t> frame;
-    readFramebufferRgba(s.pixels.x, s.pixels.y, frame);
+    s.renderer->readPixels(s.pixels.x, s.pixels.y, frame);
     return frame;
 }
 
@@ -3464,7 +3460,7 @@ static void renderInspectedFrame(Session &s, gweni::controls::Base *root,
     countPending(s.canvas, pending);
     countPending(root, pendingUnderRoot);
 
-    glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
+    s.renderer->clearTarget(s.background);
     s.canvas->renderCanvas();
 
     if(s.stats)
@@ -3865,7 +3861,7 @@ static void frameCheckingStrays(Session &s, const std::vector<gweni::controls::B
     s.canvas->updateCanvas();
     pendingOutside(s.canvas, allowed, strays, visibleOnly);
 
-    glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
+    s.renderer->clearTarget(s.background);
     s.canvas->renderCanvas();
 
     if(s.stats)
@@ -5229,7 +5225,7 @@ static void toggleHost(Session &s, gweni::controls::Base *host, bool show,
             +(flipped ? " (changed, not marked)" : " (marked, not changed)");
     }
 
-    glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
+    s.renderer->clearTarget(s.background);
     s.canvas->renderCanvas();
     if(s.stats)
         printFrameStats(s.frame, s.label, gweni::controls::getChangeStats(),
@@ -5561,7 +5557,7 @@ static void renderEmptyCanvas(Session &s, std::vector<uint8_t> &pixels)
     s.label="(empty)";
 
     renderFrames(s, s.frames);
-    readFramebufferRgba(s.pixels.x, s.pixels.y, pixels);
+    s.renderer->readPixels(s.pixels.x, s.pixels.y, pixels);
 }
 
 static bool checkTeardown(Session &s, const std::vector<std::string> &controls,
@@ -5660,6 +5656,7 @@ int main(int argc, char *argv[])
     std::string shotPath;
     std::string shotDir="/tmp";
     std::string resourceDir;
+    std::string rendererName;
     gweni::Point screenSize(640, 480);
     float scale=1.0f;
     bool scaleGiven=false;
@@ -5695,6 +5692,7 @@ int main(int argc, char *argv[])
         }
         else if(arg == "--shot-dir" && hasValue) shotDir=argv[++i];
         else if(arg == "--resources" && hasValue) resourceDir=argv[++i];
+        else if(arg == "--renderer" && hasValue) rendererName=argv[++i];
         else if(arg == "--frames" && hasValue)
         {
             frames=std::atoi(argv[++i]);
@@ -5810,6 +5808,10 @@ int main(int argc, char *argv[])
     if(!gweni::capture::manualScale(scaleGiven, scale))
         return EXIT_FAILURE;
 
+    gweni::capture::Backend backend;
+    if(!gweni::capture::chooseBackend(rendererName, backend))
+        return EXIT_FAILURE;
+
     // The scale scenario sets both of its scales itself.
     if(scenario == Scenario::Scale)
         scale=1.0f;
@@ -5896,49 +5898,20 @@ int main(int argc, char *argv[])
     bool resourcesFound=true;
     const std::unique_ptr<gweni::ResourcePaths> paths=gweni::capture::resourcePaths(resourceDir, resourcesFound);
 
-    Context ctx;
-    if(forceHeadless)
-    {
-#if GWENI_EXAMPLE_EGL
-        if(!initEglContext(ctx)) return EXIT_FAILURE;
-#else
-        std::cerr<<"ControlTest: --headless needs the EGL path, which this platform lacks\n";
-        return EXIT_FAILURE;
-#endif
-    }
-    else if(!initGlfwContext(ctx, screenPixels, "Gweni ControlTest - "+which, !capturing))
-    {
-        if(!capturing)
-        {
-            std::cerr<<"ControlTest: GLFW could not open a window;"
-                       " interactive mode needs a display\n";
-            return EXIT_FAILURE;
-        }
-#if GWENI_EXAMPLE_EGL
-        std::cerr<<"ControlTest: GLFW could not open a window"
-                   " (no display?); falling back to surfaceless EGL\n";
-        if(!initEglContext(ctx)) return EXIT_FAILURE;
-#else
-        std::cerr<<"ControlTest: GLFW could not open a window\n";
-        return EXIT_FAILURE;
-#endif
-    }
+    gweni::capture::DeviceOptions deviceOptions;
+    deviceOptions.size=screenPixels;
+    deviceOptions.title="Gweni ControlTest - "+which;
+    deviceOptions.capturing=capturing;
+    deviceOptions.headless=forceHeadless;
 
-    if(!gweni::capture::initGL(ctx))
-    {
-        destroyContext(ctx);
+    std::unique_ptr<gweni::capture::Device> device=gweni::capture::openDevice(backend, deviceOptions);
+    if(!device)
         return EXIT_FAILURE;
-    }
 
-    Framebuffer fb;
-    if(capturing && !createFramebuffer(fb, screenPixels.x, screenPixels.y))
-    {
-        destroyContext(ctx);
-        return EXIT_FAILURE;
-    }
+    const gweni::capture::Context &ctx=device->context();
 
-    gweni::renderer::OpenGLCore *renderer=
-        new gweni::renderer::OpenGLCore(*paths, gweni::Rect(gweni::Point(0,0), screenPixels));
+    gweni::renderer::SlotRenderer *renderer=
+        device->newRenderer(*paths, gweni::Rect(gweni::Point(0,0), screenPixels));
     renderer->init();
 
     gweni::skin::textured::TexturedSkin *skin=new gweni::skin::textured::TexturedSkin(renderer);
@@ -5954,9 +5927,9 @@ int main(int argc, char *argv[])
     // The canvas fill comes from the theme, so a "theme" block in
     // resources/DefaultSkin.json moves it too. Canvas::renderCanvas does not
     // currently paint its own background (the draw call there is commented
-    // out), so the clear color is what actually shows.
+    // out), so the colour each frame clears the target to is what actually
+    // shows.
     const gweni::Color background=gweni::skin::textured::tokyonight::Canvas.top;
-    glClearColor(background.r/255.0f, background.g/255.0f, background.b/255.0f, background.a/255.0f);
 
     gweni::controls::Canvas *canvas=createCanvas(skin, screenSize, scale);
 
@@ -5975,7 +5948,8 @@ int main(int argc, char *argv[])
         Session session;
         session.renderer=renderer;
         session.canvas=canvas;
-        session.fb=&fb;
+        session.device=device.get();
+        session.background=background;
         session.size=screenSize;
         session.scale=scale;
         session.pixels=screenPixels;
@@ -6195,11 +6169,12 @@ int main(int argc, char *argv[])
 
         // One frame per displayed frame until the window closes (in the browser,
         // per animation frame, never returning); the frame holds only the
-        // canvas, a heap object, as the browser's loop needs.
-        gweni::capture::runWindowLoop(ctx, [canvas]()
+        // canvas and the renderer, heap objects, and the colour, a copy, as the
+        // browser's loop needs.
+        gweni::capture::runWindowLoop(ctx, [canvas, renderer, background]()
         {
             canvas->updateCanvas();
-            glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
+            renderer->clearTarget(background);
             canvas->renderCanvas();
         });
 
@@ -6209,8 +6184,7 @@ int main(int argc, char *argv[])
     delete canvas;
     delete skin;
     delete renderer;
-    if(capturing) destroyFramebuffer(fb);
-    destroyContext(ctx);
+    device.reset();
 
     // setSkin() printed each of these when it first met it; the run fails on
     // them whatever the mode, so a control that draws nothing is not silent.

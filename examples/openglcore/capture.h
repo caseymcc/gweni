@@ -1,9 +1,10 @@
 /*
  *  Gweni - shared offscreen capture plumbing for the examples' capture modes
- *  (ControlTest --shot, OpenGLCore --screenshot): a GL context with or without
- *  a display (desktop GL 3.3 core, GLES 3.0 in the GLES tree, GWENI_GL_ES, or
- *  WebGL 2 in the browser),
- *  an offscreen target, and framebuffer readback to PNG. Also where
+ *  (ControlTest --shot, OpenGLCore --screenshot, gweni_bench): the device a run
+ *  draws with, of either backend (--renderer gl|vulkan, Device below): a GL
+ *  context with or without a display (desktop GL 3.3 core, GLES 3.0 in the GLES
+ *  tree, GWENI_GL_ES, or WebGL 2 in the browser) or a headless Vulkan device,
+ *  an offscreen target, and readback to PNG. Also where
  *  both examples choose their resource directory, load their fonts and work
  *  out the scale they draw at.
  *
@@ -49,6 +50,11 @@ class Canvas;
 namespace renderer
 {
 class Base;
+class SlotRenderer;
+#ifdef GWENI_HAS_VULKAN
+struct VulkanDevice;
+class VulkanTarget;
+#endif
 }
 
 namespace capture
@@ -206,6 +212,108 @@ bool writeRgbaPng(const std::vector<uint8_t> &pixels, int width, int height,
 
 //! Read the bound framebuffer and write it as a top-down RGBA PNG.
 bool writeFramebufferPng(int width, int height, const std::string &path);
+
+//! Read \a renderer's target (SlotRenderer::readPixels) and write it as a top-down
+//! RGBA PNG: what a capture of either backend writes.
+bool writeRendererPng(renderer::SlotRenderer &renderer, int width, int height,
+    const std::string &path);
+
+//-----------------------------------------------------------------------------
+// The backend a run draws with, and the device it draws on
+//-----------------------------------------------------------------------------
+
+//! The renderer backends: OpenGLCore on a GL context, renderer::Vulkan on a
+//! Vulkan device (in a tree built with GWENI_RENDER_VULKAN).
+enum class Backend
+{
+    GL,
+    Vulkan
+};
+
+//! "gl" or "vulkan", as --renderer takes it
+const char *backendName(Backend backend);
+
+//! The backend a run draws with: \a flag (--renderer's value) when it is not
+//! empty, otherwise GWENI_RENDERER when it is set, otherwise gl. \return false,
+//! after one line, for a name that is neither, or vulkan in a tree built without
+//! it.
+bool chooseBackend(const std::string &flag, Backend &backend);
+
+//! The --help text of --renderer, for each tool's usage
+extern const char *const RendererHelp;
+
+//! What a run draws with: a device of one backend and, for a capture, the
+//! offscreen target its renderer draws into (for a GL window, the window's
+//! framebuffer). Made by openDevice; delete every renderer on it first.
+class Device
+{
+public:
+    virtual ~Device()=default;
+
+    virtual Backend backend() const=0;
+
+    //! The GL context, with its window when there is one (an interactive run, or
+    //! a capture's hidden window); empty for Vulkan, which has no window yet.
+    const Context &context() const { return m_context; }
+
+    //! A new renderer drawing into the target at \a viewRect (device pixels),
+    //! not init()'d: an OpenGLCore, or a renderer::Vulkan on the device. It
+    //! keeps a reference to \a paths; the caller deletes it.
+    virtual renderer::SlotRenderer *newRenderer(ResourcePaths &paths, const Rect &viewRect)=0;
+
+    //! The offscreen target made again at \a size device pixels, what a capture's
+    //! resize does (its contents are undefined until the next frame). Between
+    //! frames only. \return false, after one line, if it cannot be made.
+    virtual bool resizeTarget(const Point &size)=0;
+
+    //! Waits until the device has done every frame sent to it: glFinish, or
+    //! vkQueueWaitIdle.
+    virtual void finish()=0;
+
+    //! The device's name: GL_RENDERER, or the Vulkan device's deviceName.
+    virtual std::string deviceName() const=0;
+
+#ifdef GWENI_HAS_VULKAN
+    //! The Vulkan device and target a renderer::Vulkan draws with, for a caller
+    //! constructing its own (gweni_bench's timed one); null for GL.
+    virtual renderer::VulkanDevice *vulkanDevice() { return nullptr; }
+    virtual renderer::VulkanTarget *vulkanTarget() { return nullptr; }
+#endif
+
+protected:
+    Context m_context;
+};
+
+struct DeviceOptions
+{
+    //! the window's size, or the offscreen target's, in device pixels
+    Point size;
+    //! the window's title
+    std::string title;
+    //! a capture: draws into an offscreen target, shows no window; otherwise
+    //! the interactive window (GL only, for now)
+    bool capturing=false;
+    //! --headless: a GL capture goes straight to surfaceless EGL instead of
+    //! trying a hidden GLFW window first (Vulkan is always headless)
+    bool headless=false;
+};
+
+//! The device a run draws with, ready for newRenderer().
+//!
+//! GL: a GLFW window (visible unless \a options.capturing), or, with
+//! \a options.headless, or for a capture when no window opens (no display),
+//! the surfaceless EGL context; initGL()'d, and for a capture an offscreen
+//! Framebuffer of \a options.size bound.
+//!
+//! Vulkan: a device made by renderer::createVulkanDevice and a VulkanTarget of
+//! \a options.size, with no GL or EGL context and no window, so a capture
+//! with or without --headless is the same. With GWENI_VULKAN_VALIDATION=1 (the
+//! Vulkan tests set it) the device has the validation layer, and any warning or
+//! error aborts; it fails without the layer. An interactive run (no capture)
+//! fails, after one line: there is no Vulkan window yet.
+//!
+//! \return null, after one line, if it cannot be made.
+std::unique_ptr<Device> openDevice(Backend backend, const DeviceOptions &options);
 
 //! Create \a dir (and parents) if it is not there yet.
 bool ensureDirectory(const fs::path &dir);

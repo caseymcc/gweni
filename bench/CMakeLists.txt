@@ -4,8 +4,9 @@
 #  MIT License, see LICENSE
 #
 #  gweni_bench: fixed scenes run on the full path (gweni + OpenGLCore on
-#  surfaceless EGL), printing per-frame phase times and work counters. Built
-#  with the tests and the examples, for gweni_capture.
+#  surfaceless EGL, or renderer::Vulkan headless with --renderer vulkan),
+#  printing per-frame phase times and work counters. Built with the tests and
+#  the examples, for gweni_capture.
 #
 
 add_executable(gweni_bench
@@ -54,7 +55,25 @@ add_test(NAME bench_smoke
     WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
 set_tests_properties(bench_smoke PROPERTIES
     LABELS gpu
+    ENVIRONMENT GWENI_RENDERER=gl
     TIMEOUT 300)
+
+# The same on renderer::Vulkan (GWENI_RENDERER, the bench's --renderer
+# default), in the Vulkan test environment: validated, on lavapipe, labels gpu
+# and vulkan
+set(bench_tests bench_smoke bench_scaling)
+if(GWENI_RENDER_VULKAN)
+    add_test(NAME bench_smoke_vulkan
+        COMMAND ${CMAKE_COMMAND}
+            -DBENCH=$<TARGET_FILE:gweni_bench>
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/smoke.cmake
+        WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
+    set_tests_properties(bench_smoke_vulkan PROPERTIES
+        ENVIRONMENT GWENI_RENDERER=vulkan
+        TIMEOUT 600)
+    gweni_vulkan_test_environment(bench_smoke_vulkan)
+    list(APPEND bench_tests bench_smoke_vulkan)
+endif()
 
 # The one check on the bench's numbers: every scaling=local scene's per-frame
 # work counters must be no larger at N=10000 than at N=1000 (scaling.cmake's
@@ -75,11 +94,12 @@ add_test(NAME bench_scaling
     WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
 set_tests_properties(bench_scaling PROPERTIES
     LABELS gpu
+    ENVIRONMENT GWENI_RENDERER=gl
     TIMEOUT 300)
 
 # ASAN tree: the same environment tests/CMakeLists.txt gives its tests, for the
 # same reasons (Mesa/EGL leak at exit; a report must abort).
 if(GWENI_SANITIZE MATCHES "address")
-    set_tests_properties(bench_smoke bench_scaling PROPERTIES
+    set_property(TEST ${bench_tests} APPEND PROPERTY
         ENVIRONMENT "ASAN_OPTIONS=detect_leaks=0:abort_on_error=1")
 endif()

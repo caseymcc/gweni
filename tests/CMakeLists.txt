@@ -17,46 +17,83 @@
 #  and the web ones are in the if(EMSCRIPTEN) blocks.
 #
 
+# gweni_whole_app_test(<name> <timeout> COMMAND ... [WORKING_DIRECTORY ...])
+#
+# A whole-app check (ControlTest, OpenGLCore, a script running them), label
+# gpu, registered once per backend: <name> on GL, and with GWENI_RENDER_VULKAN
+# <name>_vulkan, the same command on renderer::Vulkan in the Vulkan test
+# environment (cmake/Vulkan.cmake: the validation layer on, any message
+# aborting; lavapipe; labels gpu and vulkan). The backend is chosen by
+# GWENI_RENDERER, which the exes read as their --renderer default, so a script's
+# own ControlTest and OpenGLCore children (two runs of determinism.cmake, one
+# per control in eachControl.cmake) take it too and no script needs an argument
+# for it; the GL run sets it to gl, so a GWENI_RENDERER of the caller's own
+# changes neither. In the arguments, @VARIANT@ is "" for <name> and "_vulkan"
+# for <name>_vulkan: every scratch and --shot-dir directory carries it, so the
+# two can run side by side (ctest -j).
+function(gweni_whole_app_test name timeout)
+    set(variants "-")
+    if(GWENI_RENDER_VULKAN)
+        list(APPEND variants "_vulkan")
+    endif()
+
+    foreach(variant IN LISTS variants)
+        if(variant STREQUAL "-")
+            set(suffix "")
+            set(backend gl)
+        else()
+            set(suffix "${variant}")
+            set(backend vulkan)
+        endif()
+        string(REPLACE "@VARIANT@" "${suffix}" arguments "${ARGN}")
+        add_test(NAME ${name}${suffix} ${arguments})
+        set_tests_properties(${name}${suffix} PROPERTIES
+            ENVIRONMENT GWENI_RENDERER=${backend})
+        if(backend STREQUAL "gl")
+            set_tests_properties(${name}${suffix} PROPERTIES
+                LABELS gpu
+                TIMEOUT ${timeout})
+        else()
+            # lavapipe under the validation layer: each process starts slower
+            math(EXPR vulkan_timeout "${timeout}*2")
+            set_tests_properties(${name}${suffix} PROPERTIES
+                TIMEOUT ${vulkan_timeout})
+            gweni_vulkan_test_environment(${name}${suffix})
+        endif()
+    endforeach()
+endfunction()
+
 if(TARGET ControlTest AND NOT EMSCRIPTEN)
     # every --shot-all PNG and --dump-bounds listing, byte-identical across two
     # separate ControlTest processes
-    add_test(NAME controltest_determinism
+    gweni_whole_app_test(controltest_determinism 600
         COMMAND ${CMAKE_COMMAND}
             -DCONTROLTEST=$<TARGET_FILE:ControlTest>
             -DSOURCE_DIR=${GWENI_SOURCE_DIR}
-            -DSCRATCH_DIR=${CMAKE_CURRENT_BINARY_DIR}/determinism
+            -DSCRATCH_DIR=${CMAKE_CURRENT_BINARY_DIR}/determinism@VARIANT@
             -P ${CMAKE_CURRENT_SOURCE_DIR}/determinism.cmake
         WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
-    set_tests_properties(controltest_determinism PROPERTIES
-        LABELS gpu
-        TIMEOUT 600)
 
     # the same at --scale 1.5, where every edge is rounded to the device-pixel
     # grid, so a rounding that depends on anything but the input shows here
-    add_test(NAME controltest_determinism_scale150
+    gweni_whole_app_test(controltest_determinism_scale150 600
         COMMAND ${CMAKE_COMMAND}
             -DCONTROLTEST=$<TARGET_FILE:ControlTest>
             -DSOURCE_DIR=${GWENI_SOURCE_DIR}
-            -DSCRATCH_DIR=${CMAKE_CURRENT_BINARY_DIR}/determinism_scale150
+            -DSCRATCH_DIR=${CMAKE_CURRENT_BINARY_DIR}/determinism_scale150@VARIANT@
             -DSCALE=1.5
             -P ${CMAKE_CURRENT_SOURCE_DIR}/determinism.cmake
         WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
-    set_tests_properties(controltest_determinism_scale150 PROPERTIES
-        LABELS gpu
-        TIMEOUT 600)
 
     # --shot-all --dump-bounds at --scale 1 and 2: the listings (logical units)
     # are identical and every PNG (device pixels) is exactly twice the size
-    add_test(NAME controltest_scale_bounds
+    gweni_whole_app_test(controltest_scale_bounds 600
         COMMAND ${CMAKE_COMMAND}
             -DCONTROLTEST=$<TARGET_FILE:ControlTest>
             -DSOURCE_DIR=${GWENI_SOURCE_DIR}
-            -DSCRATCH_DIR=${CMAKE_CURRENT_BINARY_DIR}/scale_bounds
+            -DSCRATCH_DIR=${CMAKE_CURRENT_BINARY_DIR}/scale_bounds@VARIANT@
             -P ${CMAKE_CURRENT_SOURCE_DIR}/scaleBounds.cmake
         WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
-    set_tests_properties(controltest_scale_bounds PROPERTIES
-        LABELS gpu
-        TIMEOUT 600)
 
     # every --shot-all PNG (and OpenGLCore's --screenshot) byte-identical with the
     # draws split into chunks of 64 slots (GWENI_INDEX_CHUNK_SLOTS) and without
@@ -64,18 +101,15 @@ if(TARGET ControlTest AND NOT EMSCRIPTEN)
     if(TARGET OpenGLCore)
         set(index_chunks_opengl -DOPENGLCORE=$<TARGET_FILE:OpenGLCore>)
     endif()
-    add_test(NAME controltest_index_chunks
+    gweni_whole_app_test(controltest_index_chunks 600
         COMMAND ${CMAKE_COMMAND}
             -DCONTROLTEST=$<TARGET_FILE:ControlTest>
             ${index_chunks_opengl}
             -DSOURCE_DIR=${GWENI_SOURCE_DIR}
-            -DSCRATCH_DIR=${CMAKE_CURRENT_BINARY_DIR}/index_chunks
+            -DSCRATCH_DIR=${CMAKE_CURRENT_BINARY_DIR}/index_chunks@VARIANT@
             -DCHUNK_SLOTS=64
             -P ${CMAKE_CURRENT_SOURCE_DIR}/indexChunks.cmake
         WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
-    set_tests_properties(controltest_index_chunks PROPERTIES
-        LABELS gpu
-        TIMEOUT 600)
 
     # the README samples in docs/images/, byte-identical to a fresh capture
     # (tools/capture_samples.sh --check; regenerate them in the same commit)
@@ -94,71 +128,56 @@ if(TARGET ControlTest AND NOT EMSCRIPTEN)
     # one layout pass. Since it builds every demo in --list, it is also the
     # test that fails when a control type has no skin renderer (ControlTest
     # exits non-zero after "gweni: no skin renderer for <TypeName>")
-    add_test(NAME controltest_teardown
+    gweni_whole_app_test(controltest_teardown 300
         COMMAND $<TARGET_FILE:ControlTest> --headless --check-teardown
             --require-one-pass
-            --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/teardown
+            --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/teardown@VARIANT@
         WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
-    set_tests_properties(controltest_teardown PROPERTIES
-        LABELS gpu
-        TIMEOUT 300)
 
     # the whole Demo at 640x480, 1024x768 and 640x480 again: the listing, the
     # renderer mirror (per id) and the pixels of the last shot match the first
     # and a canvas built directly at 640x480, and every frame takes one layout
     # pass (issue #58)
-    add_test(NAME controltest_resize
+    gweni_whole_app_test(controltest_resize 120
         COMMAND $<TARGET_FILE:ControlTest> --headless --scenario resize
             --require-one-pass
-            --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/resize
+            --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/resize@VARIANT@
         WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
-    set_tests_properties(controltest_resize PROPERTIES
-        LABELS gpu
-        TIMEOUT 120)
 
     # the same round trip for every other control in --list, one process each
-    add_test(NAME controltest_resize_each
+    gweni_whole_app_test(controltest_resize_each 600
         COMMAND ${CMAKE_COMMAND}
             -DCONTROLTEST=$<TARGET_FILE:ControlTest>
             -DSOURCE_DIR=${GWENI_SOURCE_DIR}
-            -DSCRATCH_DIR=${CMAKE_CURRENT_BINARY_DIR}/resize_each
+            -DSCRATCH_DIR=${CMAKE_CURRENT_BINARY_DIR}/resize_each@VARIANT@
             -DMODE=resize
             -DSKIP=Demo
             -P ${CMAKE_CURRENT_SOURCE_DIR}/eachControl.cmake
         WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
-    set_tests_properties(controltest_resize_each PROPERTIES
-        LABELS gpu
-        TIMEOUT 600)
 
     # the plain run of every control in --list (Demo included): every frame
     # takes one layout pass and the render phase lays out nothing
-    add_test(NAME controltest_one_pass_each
+    gweni_whole_app_test(controltest_one_pass_each 600
         COMMAND ${CMAKE_COMMAND}
             -DCONTROLTEST=$<TARGET_FILE:ControlTest>
             -DSOURCE_DIR=${GWENI_SOURCE_DIR}
-            -DSCRATCH_DIR=${CMAKE_CURRENT_BINARY_DIR}/one_pass_each
+            -DSCRATCH_DIR=${CMAKE_CURRENT_BINARY_DIR}/one_pass_each@VARIANT@
             -DMODE=one-pass
             -P ${CMAKE_CURRENT_SOURCE_DIR}/eachControl.cmake
         WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
-    set_tests_properties(controltest_one_pass_each PROPERTIES
-        LABELS gpu
-        TIMEOUT 600)
 
     # Canvas::setScale 1 -> 2 -> 1 for every control in --list (Demo included),
     # one process each: the last 1x shot, its listing and the renderer mirror
     # are the first one's, the 2x shot is a canvas built at scale 2, and every
     # frame takes one layout pass
-    add_test(NAME controltest_scale_roundtrip
+    gweni_whole_app_test(controltest_scale_roundtrip 600
         COMMAND ${CMAKE_COMMAND}
             -DCONTROLTEST=$<TARGET_FILE:ControlTest>
             -DSOURCE_DIR=${GWENI_SOURCE_DIR}
-            -DSCRATCH_DIR=${CMAKE_CURRENT_BINARY_DIR}/scale_roundtrip
+            -DSCRATCH_DIR=${CMAKE_CURRENT_BINARY_DIR}/scale_roundtrip@VARIANT@
             -DMODE=scale
             -P ${CMAKE_CURRENT_SOURCE_DIR}/eachControl.cmake
         WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
-    set_tests_properties(controltest_scale_roundtrip PROPERTIES
-        LABELS gpu
-        TIMEOUT 600)
 
     # every control in --list (Demo included), one process each, built into a
     # host page: the host hidden and shown again, and on a fresh canvas the
@@ -167,17 +186,14 @@ if(TARGET ControlTest AND NOT EMSCRIPTEN)
     # (listing, renderer mirror, pixels), the parts a control hid itself still
     # hidden, and Demo's shell has to show PropertiesDemo and ComboBoxDemo
     # with every ComboBox's list closed
-    add_test(NAME controltest_hide_show_each
+    gweni_whole_app_test(controltest_hide_show_each 600
         COMMAND ${CMAKE_COMMAND}
             -DCONTROLTEST=$<TARGET_FILE:ControlTest>
             -DSOURCE_DIR=${GWENI_SOURCE_DIR}
-            -DSCRATCH_DIR=${CMAKE_CURRENT_BINARY_DIR}/hide_show_each
+            -DSCRATCH_DIR=${CMAKE_CURRENT_BINARY_DIR}/hide_show_each@VARIANT@
             -DMODE=hide-show
             -P ${CMAKE_CURRENT_SOURCE_DIR}/eachControl.cmake
         WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
-    set_tests_properties(controltest_hide_show_each PROPERTIES
-        LABELS gpu
-        TIMEOUT 600)
 
     # the plain run of every control in --list (Demo included) with every
     # frame's layout checked against a full pass (--verify-layout): a pass may
@@ -213,13 +229,10 @@ if(TARGET ControlTest AND NOT EMSCRIPTEN)
     # hover, press, disabled and focus repaint the control (and only it), a
     # settled frame does nothing, and collapsing a tree node still moves the
     # nodes below; exits non-zero on any failed check
-    add_test(NAME controltest_interaction
+    gweni_whole_app_test(controltest_interaction 300
         COMMAND $<TARGET_FILE:ControlTest> --headless --scenario interaction
-            --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/interaction
+            --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/interaction@VARIANT@
         WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
-    set_tests_properties(controltest_interaction PROPERTIES
-        LABELS gpu
-        TIMEOUT 300)
 
     # the canvas's tooltip on ButtonDemo, on the stepped clock: it waits for
     # its delay, shows below the button above every other control (an open
@@ -227,13 +240,10 @@ if(TARGET ControlTest AND NOT EMSCRIPTEN)
     # button, moves the same box straight to the next button, hides on leaving
     # (the frame as before hovering) and on a press, and goes above a button in
     # the bottom-right corner; exits non-zero on any failed check
-    add_test(NAME controltest_tooltip
+    gweni_whole_app_test(controltest_tooltip 300
         COMMAND $<TARGET_FILE:ControlTest> --headless --scenario tooltip --require-one-pass
-            --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/tooltip
+            --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/tooltip@VARIANT@
         WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
-    set_tests_properties(controltest_tooltip PROPERTIES
-        LABELS gpu
-        TIMEOUT 300)
 
     # right-clicks on ContextMenuDemo (Base::setContextMenu): the menu opens with
     # its top-left at the cursor changing nothing visible outside it and its box,
@@ -243,13 +253,10 @@ if(TARGET ControlTest AND NOT EMSCRIPTEN)
     # does nothing and an enabled one is chosen, the Help tooltip draws over an
     # open menu, and hiding or deleting the box closes it; exits non-zero on any
     # failed check
-    add_test(NAME controltest_context_menu
+    gweni_whole_app_test(controltest_context_menu 300
         COMMAND $<TARGET_FILE:ControlTest> --headless --scenario context-menu --require-one-pass
-            --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/context-menu
+            --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/context-menu@VARIANT@
         WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
-    set_tests_properties(controltest_context_menu PROPERTIES
-        LABELS gpu
-        TIMEOUT 300)
 
     # PopupDemo: a click on Options opens its popup below it, changing nothing
     # outside the popup and the button; a settled frame with it open writes
@@ -258,26 +265,20 @@ if(TARGET ControlTest AND NOT EMSCRIPTEN)
     # inside the canvas; one popup at a time; a ComboBox list opens over it;
     # a tooltip draws over it; hiding its button closes it; exits non-zero on
     # any failed check
-    add_test(NAME controltest_popup
+    gweni_whole_app_test(controltest_popup 300
         COMMAND $<TARGET_FILE:ControlTest> --headless --scenario popup --require-one-pass
-            --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/popup
+            --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/popup@VARIANT@
         WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
-    set_tests_properties(controltest_popup PROPERTIES
-        LABELS gpu
-        TIMEOUT 300)
 
     # VirtualListDemo at 1 000 and 100 000 items: the same pool, ids and
     # per-frame counters at both, a settled frame writing nothing, and a
     # one-row scroll and a wheel notch writing no more than the shown rows'
     # slots, entering only the list's subtree in one layout pass with no z
     # renumber; exits non-zero on any failed check
-    add_test(NAME controltest_virtual_list
+    gweni_whole_app_test(controltest_virtual_list 120
         COMMAND $<TARGET_FILE:ControlTest> --headless --scenario virtual-list --require-one-pass
-            --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/virtual-list
+            --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/virtual-list@VARIANT@
         WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
-    set_tests_properties(controltest_virtual_list PROPERTIES
-        LABELS gpu
-        TIMEOUT 120)
 
     # keys handled in one frame, after an edit and before the layout that
     # re-wraps it, move the caret through the edited text's lines (#209): the
@@ -293,64 +294,49 @@ Erm, and I think it comes down to a choice between "The League Against Salivatin
         else()
             set(between --frames 1)
         endif()
-        add_test(NAME controltest_multiline_keys_${variant}
+        gweni_whole_app_test(controltest_multiline_keys_${variant} 60
             COMMAND $<TARGET_FILE:ControlTest> --headless --control TextBoxDemo
                 --frames 3 --click 5,261 --frames 2
                 --key home --type X ${between} --key up --type Y ${between}
                 --key up --type Z ${between} --expect-text "${SAME_FRAME_TEXT}"
             WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
-        set_tests_properties(controltest_multiline_keys_${variant} PROPERTIES
-            LABELS gpu
-            TIMEOUT 60)
     endforeach()
 
     # script mode settles a script that starts with input and renders a frame
     # before a --shot that follows input, so --move 30,5 --shot matches the same
     # with --frames 3 / --frames 1 around the move; a shot before any frame
     # (--frames 0 --shot) fails and writes nothing
-    add_test(NAME controltest_script_first_frame
+    gweni_whole_app_test(controltest_script_first_frame 120
         COMMAND ${CMAKE_COMMAND}
             -DCONTROLTEST=$<TARGET_FILE:ControlTest>
             -DSOURCE_DIR=${GWENI_SOURCE_DIR}
-            -DSCRATCH_DIR=${CMAKE_CURRENT_BINARY_DIR}/scriptFirstFrame
+            -DSCRATCH_DIR=${CMAKE_CURRENT_BINARY_DIR}/scriptFirstFrame@VARIANT@
             -P ${CMAKE_CURRENT_SOURCE_DIR}/scriptFirstFrame.cmake
         WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
-    set_tests_properties(controltest_script_first_frame PROPERTIES
-        LABELS gpu
-        TIMEOUT 120)
 
     # children are cut at their clipping parent's edges: content overflowing a
     # ScrollControl and a Window dragged past each edge of its parent leave the
     # pixels outside unchanged, and moved right out they leave nothing behind;
     # exits non-zero on any failed check
-    add_test(NAME controltest_clip
+    gweni_whole_app_test(controltest_clip 300
         COMMAND $<TARGET_FILE:ControlTest> --headless --scenario clip --require-one-pass
-            --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/clip
+            --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/clip@VARIANT@
         WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
-    set_tests_properties(controltest_clip PROPERTIES
-        LABELS gpu
-        TIMEOUT 300)
 
     # the same at --scale 2, where the skin's 11 px text is 22 device px and so
     # SDF text: the Window dragged around and back must still look as it did,
     # which holds only if a moved text run is exactly a fresh layout
-    add_test(NAME controltest_clip_scale200
+    gweni_whole_app_test(controltest_clip_scale200 300
         COMMAND $<TARGET_FILE:ControlTest> --headless --scale 2 --scenario clip --require-one-pass
-            --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/clip_scale200
+            --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/clip_scale200@VARIANT@
         WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
-    set_tests_properties(controltest_clip_scale200 PROPERTIES
-        LABELS gpu
-        TIMEOUT 300)
 
     # a Label's font changed from 24 to 36 px, both drawn from the face's SDF
     # atlas, uploads nothing to an atlas and writes only that Label's glyph slots
-    add_test(NAME controltest_text_size
+    gweni_whole_app_test(controltest_text_size 60
         COMMAND $<TARGET_FILE:ControlTest> --headless --scenario text-size
-            --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/text_size
+            --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/text_size@VARIANT@
         WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
-    set_tests_properties(controltest_text_size PROPERTIES
-        LABELS gpu
-        TIMEOUT 60)
 
     # every entry of the shell's demo list fits its row at the README hero's
     # 1024x768, at scale 1 and 1.5: a label wider than its button's inner rect
@@ -391,17 +377,14 @@ Erm, and I think it comes down to a choice between "The League Against Salivatin
             else()
                 set(test_name ${tool_lower}_missing_resources_${case})
             endif()
-            add_test(NAME ${test_name}
+            gweni_whole_app_test(${test_name} 60
                 COMMAND ${CMAKE_COMMAND}
                     -DEXE=$<TARGET_FILE:${tool}>
                     -DTOOL=${tool}
                     -DSOURCE_DIR=${GWENI_SOURCE_DIR}
-                    -DSCRATCH_DIR=${CMAKE_CURRENT_BINARY_DIR}/${test_name}
+                    -DSCRATCH_DIR=${CMAKE_CURRENT_BINARY_DIR}/${test_name}@VARIANT@
                     -DCASE=${case}
                     -P ${CMAKE_CURRENT_SOURCE_DIR}/missingResources.cmake)
-            set_tests_properties(${test_name} PROPERTIES
-                LABELS gpu
-                TIMEOUT 60)
         endforeach()
     endforeach()
 elseif(NOT EMSCRIPTEN)

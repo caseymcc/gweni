@@ -4,8 +4,10 @@
  *  MIT License, see LICENSE
  *
  *  gweni_bench: runs one scene on the full path (gweni, the textured skin and
- *  OpenGLCore on a surfaceless EGL context) and prints, per measured frame,
- *  what each phase cost and how much work it did. See --help for the output.
+ *  OpenGLCore on a surfaceless EGL context, or with --renderer vulkan
+ *  renderer::Vulkan on a headless Vulkan device) and prints, per measured
+ *  frame, what each phase cost and how much work it did. See --help for the
+ *  output.
  *
  *  Every run is deterministic: the scene builds its tree in code, the clock is
  *  stepped 1/60 s per frame (platform::setTimeSource), and the input is the
@@ -14,12 +16,14 @@
  */
 #include "bench.h"
 
-#include <gweni/platforms/renderers/glApi.h>
 #include <gweni/controls/base.h>
 #include <gweni/controls/canvas.h>
 #include <gweni/inputHandler.h>
 #include <gweni/platforms/platform.h>
 #include <gweni/platforms/renderers/openglCore.h>
+#ifdef GWENI_HAS_VULKAN
+#include <gweni/platforms/renderers/vulkan.h>
+#endif
 #include <gweni/primitiveIds.h>
 #include <gweni/skins/textured/texturedSkin.h>
 #include <gweni/skins/textured/tokyoNight.h>
@@ -67,7 +71,25 @@ public:
     }
 };
 
-using BenchRenderer=TimedFlush<gweni::renderer::OpenGLCore>;
+//! The renderer the bench times, of \a device's backend, drawing into its target.
+gweni::renderer::SlotRenderer *newBenchRenderer(gweni::capture::Device &device, gweni::ResourcePaths &paths,
+    const gweni::Rect &viewRect)
+{
+#ifdef GWENI_HAS_VULKAN
+    if(device.backend() == gweni::capture::Backend::Vulkan)
+        return new TimedFlush<gweni::renderer::Vulkan>(paths, viewRect, *device.vulkanDevice(),
+            *device.vulkanTarget());
+#else
+    (void)device;
+#endif
+    return new TimedFlush<gweni::renderer::OpenGLCore>(paths, viewRect);
+}
+
+//! What every frame clears the target to, and how it waits for the device (a
+//! glFinish, a vkQueueWaitIdle): set once both are made.
+gweni::renderer::SlotRenderer *g_renderer=nullptr;
+gweni::capture::Device *g_device=nullptr;
+gweni::Color g_background;
 
 // The per-frame phases, in output order.
 const Phase g_framePhases[]={Phase::Input, Phase::Update, Phase::Render, Phase::Flush, Phase::Gpu};
@@ -162,9 +184,9 @@ void primeShaders(gweni::skin::Base *skin, const gweni::Point &size)
     for(int frame=0; frame<2; ++frame)
     {
         primer->updateCanvas();
-        glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
+        g_renderer->clearTarget(g_background);
         primer->renderCanvas();
-        glFinish();
+        g_device->finish();
     }
 
     scene.reset();
@@ -172,7 +194,7 @@ void primeShaders(gweni::skin::Base *skin, const gweni::Point &size)
 }
 
 // One frame: the scene's input, the two phases of the canvas and a fenced
-// finish, each a phase of its own. glClear belongs to none of them.
+// finish, each a phase of its own. The clear belongs to none of them.
 void runFrame(bench::Scene &scene, bench::SceneContext &ctx, int frame)
 {
     gweni::controls::resetChangeStats();
@@ -183,10 +205,10 @@ void runFrame(bench::Scene &scene, bench::SceneContext &ctx, int frame)
     bench::inPhase(Phase::Update, [&]{ ctx.canvas->updateCanvas(); });
 
     bench::enterPhase(Phase::None);
-    glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
+    g_renderer->clearTarget(g_background);
 
     bench::inPhase(Phase::Render, [&]{ ctx.canvas->renderCanvas(); });
-    bench::inPhase(Phase::Gpu, []{ glFinish(); });
+    bench::inPhase(Phase::Gpu, []{ g_device->finish(); });
 
     bench::enterPhase(Phase::None);
     g_clockSeconds+=g_frameStep;
@@ -207,7 +229,8 @@ struct Summary
     double constructUs=0.0;
     size_t constructAllocs=0;
     size_t constructAllocBytes=0;
-    std::string glRenderer;
+    std::string renderer;   // the backend, gl or vulkan
+    std::string device;     // GL_RENDERER, or the Vulkan device's name
 };
 
 // A string as one token: spaces and '=' become '_', so a key=value line splits
@@ -273,7 +296,8 @@ std::vector<std::pair<std::string, std::string>> summaryFields(const Summary &su
         add(std::string(g_counterNames[c])+"_max", std::to_string(max));
     }
 
-    add("gl_renderer", token(summary.glRenderer));
+    add("renderer", summary.renderer);
+    add("device", token(summary.device));
     return fields;
 }
 
@@ -300,7 +324,7 @@ void printLines(const Summary &summary, const std::vector<FrameRecord> &frames)
 // Numbers stay JSON numbers; the few string fields are quoted.
 bool isStringField(const std::string &key)
 {
-    return key == "scene" || key == "scaling" || key == "size" || key == "gl_renderer";
+    return key == "scene" || key == "scaling" || key == "size" || key == "renderer" || key == "device";
 }
 
 void printJson(const Summary &summary, const std::vector<FrameRecord> &frames)
@@ -341,7 +365,8 @@ void printUsage()
         "Usage: gweni_bench --scene <name> [options]\n"
         "       gweni_bench --list\n"
         "\n"
-        "Runs one scene on gweni + OpenGLCore on a surfaceless EGL context, with\n"
+        "Runs one scene on gweni + OpenGLCore on a surfaceless EGL context (or\n"
+        "renderer::Vulkan on a headless Vulkan device, --renderer vulkan), with\n"
         "the clock stepped 1/60 s per frame, and prints what each measured frame\n"
         "cost. The same arguments always give the same counters; only the times\n"
         "vary.\n"
@@ -355,6 +380,9 @@ void printUsage()
         "  --size <WxH>       canvas size in logical units, at scale 1 (default 1280x800)\n"
         "  --resources <dir>  load the skin and fonts from <dir> (relative to the cwd,\n"
         "                     or absolute) instead of the resources/ next to the exe\n"
+        "  --renderer <gl|vulkan>  the backend (default gl, or GWENI_RENDERER; the\n"
+        "                     flag beats it); with GWENI_VULKAN_VALIDATION=1 a Vulkan\n"
+        "                     run has the validation layer on, which slows it\n"
         "  --json             print one JSON object instead of the key=value lines\n"
         "  --list             print the scenes, one per line:\n"
         "                       <name> takes_n=<0|1> default_n=<N> warmup=<W> frames=<F>\n"
@@ -370,7 +398,7 @@ void printUsage()
         "  summary scene= n= k= frames= warmup= scaling= size= controls= construct_us=\n"
         "    construct_allocs= construct_alloc_bytes=\n"
         "    <phase>_us_min= <phase>_us_median= <phase>_us_max= (each frame phase)\n"
-        "    <counter>_total= <counter>_max= (each counter) gl_renderer=\n"
+        "    <counter>_total= <counter>_max= (each counter) renderer= device=\n"
         "\n"
         "Phases (wall time, microseconds):\n"
         "  construct  Scene::build(), creating the tree before the first frame (summary only)\n"
@@ -378,8 +406,9 @@ void printUsage()
         "  update     Canvas::updateCanvas()\n"
         "  render     Canvas::renderCanvas() without the renderer's end()\n"
         "  flush      the renderer's end(), i.e. SlotRenderer::flush(): slot diff, uploads, draws\n"
-        "  gpu        glFinish() after the frame. On Mesa llvmpipe (the container) this is\n"
-        "             the CPU rasteriser, not a GPU; gl_renderer= says which it was.\n"
+        "  gpu        glFinish() (Vulkan: vkQueueWaitIdle) after the frame. On Mesa's\n"
+        "             llvmpipe or lavapipe (the container) this is the CPU rasteriser, not\n"
+        "             a GPU; renderer= says which backend it was, device= which device.\n"
         "\n"
         "Counters (per frame):\n"
         "  visited render_carried controls_changed created visibility geometry background text\n"
@@ -455,6 +484,7 @@ int main(int argc, char *argv[])
 
     std::string sceneName;
     std::string resourceDir;
+    std::string rendererName;
     gweni::Point size(1280, 800);
     int n=-1, k=10, frames=-1, warmup=-1;
     bool json=false;
@@ -470,6 +500,7 @@ int main(int argc, char *argv[])
         else if(arg == "--json") json=true;
         else if(arg == "--scene" && hasValue) sceneName=argv[++i];
         else if(arg == "--resources" && hasValue) resourceDir=argv[++i];
+        else if(arg == "--renderer" && hasValue) rendererName=argv[++i];
         else if(arg == "--n" && hasValue) ok=parseInt(argv[++i], n, 1);
         else if(arg == "--k" && hasValue) ok=parseInt(argv[++i], k, 1);
         else if(arg == "--frames" && hasValue) ok=parseInt(argv[++i], frames, 1);
@@ -504,6 +535,10 @@ int main(int argc, char *argv[])
         return EXIT_FAILURE;
     }
 
+    gweni::capture::Backend backend;
+    if(!gweni::capture::chooseBackend(rendererName, backend))
+        return EXIT_FAILURE;
+
     if(n < 0) n=info->defaultN;
     if(frames < 0) frames=info->defaultFrames;
     if(warmup < 0) warmup=info->defaultWarmup;
@@ -520,23 +555,18 @@ int main(int argc, char *argv[])
     if(!resourcesFound)
         return EXIT_FAILURE;
 
-    gweni::capture::Context ctx;
-    if(!gweni::capture::initEglContext(ctx))
-        return EXIT_FAILURE;
-    if(!gweni::capture::initGL(ctx))
-    {
-        gweni::capture::destroyContext(ctx);
-        return EXIT_FAILURE;
-    }
+    // always headless: surfaceless EGL, or a Vulkan device with no window
+    gweni::capture::DeviceOptions deviceOptions;
+    deviceOptions.size=size;
+    deviceOptions.capturing=true;
+    deviceOptions.headless=true;
 
-    gweni::capture::Framebuffer fb;
-    if(!gweni::capture::createFramebuffer(fb, size.x, size.y))
-    {
-        gweni::capture::destroyContext(ctx);
+    std::unique_ptr<gweni::capture::Device> device=gweni::capture::openDevice(backend, deviceOptions);
+    if(!device)
         return EXIT_FAILURE;
-    }
 
-    BenchRenderer *renderer=new BenchRenderer(*paths, gweni::Rect(gweni::Point(0, 0), size));
+    gweni::renderer::SlotRenderer *renderer=newBenchRenderer(*device, *paths,
+        gweni::Rect(gweni::Point(0, 0), size));
     renderer->init();
 
     gweni::skin::textured::TexturedSkin *skin=new gweni::skin::textured::TexturedSkin(renderer);
@@ -546,7 +576,10 @@ int main(int argc, char *argv[])
         return EXIT_FAILURE;
 
     const gweni::Color background=gweni::skin::textured::tokyonight::Canvas.top;
-    glClearColor(background.r/255.0f, background.g/255.0f, background.b/255.0f, background.a/255.0f);
+
+    g_renderer=renderer;
+    g_device=device.get();
+    g_background=background;
 
     gweni::platform::setTimeSource(&steppedClock);
 
@@ -567,13 +600,12 @@ int main(int argc, char *argv[])
     // A window's framebuffer-size and content-scale callbacks, called directly:
     // a new offscreen target and the renderer's view at the device size, and
     // the canvas's logical size and scale.
-    sceneCtx.setTarget=[&fb, renderer, canvas](const gweni::Point &logical, float scale)
+    sceneCtx.setTarget=[&device, renderer, canvas](const gweni::Point &logical, float scale)
     {
         const gweni::Point pixels(gweni::renderer::Base::snap(float(logical.x), scale),
             gweni::renderer::Base::snap(float(logical.y), scale));
 
-        gweni::capture::destroyFramebuffer(fb);
-        if(!gweni::capture::createFramebuffer(fb, pixels.x, pixels.y))
+        if(!device->resizeTarget(pixels))
             return false;
 
         renderer->setViewRect(gweni::Rect(gweni::Point(0, 0), pixels));
@@ -591,8 +623,8 @@ int main(int argc, char *argv[])
     summary.warmup=warmup;
     summary.scaling=bench::scalingName(info->scaling);
     summary.size=size;
-    if(const GLubyte *name=glGetString(GL_RENDERER))
-        summary.glRenderer=reinterpret_cast<const char *>(name);
+    summary.renderer=gweni::capture::backendName(backend);
+    summary.device=device->deviceName();
 
     // Under callgrind only the measured work is collected: the build scene's
     // construction and the measured frames, not the warm-up.
@@ -629,8 +661,9 @@ int main(int argc, char *argv[])
     delete canvas;
     delete skin;
     delete renderer;
-    gweni::capture::destroyFramebuffer(fb);
-    gweni::capture::destroyContext(ctx);
+    g_renderer=nullptr;
+    g_device=nullptr;
+    device.reset();
     return EXIT_SUCCESS;
 #endif
 }

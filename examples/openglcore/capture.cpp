@@ -11,6 +11,10 @@
 #include <gweni/platforms/baseRender.h>
 #include <gweni/platforms/commonPlatform.h>
 #include <gweni/platforms/platform.h>
+#include <gweni/platforms/renderers/openglCore.h>
+#ifdef GWENI_HAS_VULKAN
+#include <gweni/platforms/renderers/vulkan.h>
+#endif
 
 #if GWENI_EXAMPLE_WEBGL
 #include <GLFW/emscripten_glfw3.h>
@@ -532,6 +536,253 @@ bool writeFramebufferPng(int width, int height, const std::string &path)
     std::vector<uint8_t> pixels;
     readFramebufferRgba(width, height, pixels);
     return writeRgbaPng(pixels, width, height, path);
+}
+
+bool writeRendererPng(renderer::SlotRenderer &renderer, int width, int height,
+    const std::string &path)
+{
+    std::vector<uint8_t> pixels;
+    renderer.readPixels(width, height, pixels);
+    return writeRgbaPng(pixels, width, height, path);
+}
+
+const char *backendName(Backend backend)
+{
+    return (backend == Backend::Vulkan) ? "vulkan" : "gl";
+}
+
+bool chooseBackend(const std::string &flag, Backend &backend)
+{
+    std::string name=flag;
+    const char *source="--renderer";
+
+    if(name.empty())
+    {
+        const char *env=std::getenv("GWENI_RENDERER");
+
+        name=(env && *env) ? env : "gl";
+        source="GWENI_RENDERER";
+    }
+
+    if(name == "gl")
+    {
+        backend=Backend::GL;
+        return true;
+    }
+    if(name == "vulkan")
+    {
+#ifdef GWENI_HAS_VULKAN
+        backend=Backend::Vulkan;
+        return true;
+#else
+        std::cerr<<g_tool<<": "<<source<<" vulkan: this build has no Vulkan renderer"
+                   " (configure with -DGWENI_RENDER_VULKAN=ON, as ./generate.sh does)\n";
+        return false;
+#endif
+    }
+    std::cerr<<g_tool<<": "<<source<<" wants gl or vulkan, not '"<<name<<"'\n";
+    return false;
+}
+
+const char *const RendererHelp=
+    "  --renderer <gl|vulkan>  the backend to draw with (default gl, or\n"
+    "                       GWENI_RENDERER; the flag beats it): OpenGLCore on a\n"
+    "                       GL context, or renderer::Vulkan on a Vulkan device\n"
+    "                       (no GL or EGL context; captures only, as if\n"
+    "                       --headless, there is no Vulkan window yet; with\n"
+    "                       GWENI_VULKAN_VALIDATION=1 the validation layer is on\n"
+    "                       and any message aborts)\n";
+
+namespace
+{
+
+//! A GL context (a window or surfaceless EGL) and, for a capture, the offscreen
+//! framebuffer bound on it
+class GlDevice: public Device
+{
+public:
+    ~GlDevice() override
+    {
+        if(m_offscreen)
+            destroyFramebuffer(m_framebuffer);
+        destroyContext(m_context);
+    }
+
+    Backend backend() const override { return Backend::GL; }
+
+    renderer::SlotRenderer *newRenderer(ResourcePaths &paths, const Rect &viewRect) override
+    {
+        return new renderer::OpenGLCore(paths, viewRect);
+    }
+
+    bool resizeTarget(const Point &size) override
+    {
+        destroyFramebuffer(m_framebuffer);
+        return createFramebuffer(m_framebuffer, size.x, size.y);
+    }
+
+    void finish() override
+    {
+        glFinish();
+    }
+
+    std::string deviceName() const override
+    {
+        const GLubyte *name=glGetString(GL_RENDERER);
+
+        return name ? reinterpret_cast<const char *>(name) : "";
+    }
+
+    bool open(const DeviceOptions &options);
+
+private:
+    Framebuffer m_framebuffer;
+    bool m_offscreen=false;
+};
+
+bool GlDevice::open(const DeviceOptions &options)
+{
+    // A capture does not need the window on screen, and on a machine with no
+    // display at all it falls back to a surfaceless EGL context, so it can run in
+    // the build container as it stands.
+    if(options.headless)
+    {
+#if GWENI_EXAMPLE_EGL
+        if(!initEglContext(m_context))
+            return false;
+#else
+        std::cerr<<g_tool<<": --headless needs the EGL path, which this platform lacks\n";
+        return false;
+#endif
+    }
+    else if(!initGlfwContext(m_context, options.size, options.title, !options.capturing))
+    {
+        if(!options.capturing)
+        {
+            std::cerr<<g_tool<<": GLFW could not open a window;"
+                       " interactive mode needs a display\n";
+            return false;
+        }
+#if GWENI_EXAMPLE_EGL
+        std::cerr<<g_tool<<": GLFW could not open a window"
+                   " (no display?); falling back to surfaceless EGL\n";
+        if(!initEglContext(m_context))
+            return false;
+#else
+        std::cerr<<g_tool<<": GLFW could not open a window\n";
+        return false;
+#endif
+    }
+
+    if(!initGL(m_context))
+        return false;
+
+    if(options.capturing)
+    {
+        if(!createFramebuffer(m_framebuffer, options.size.x, options.size.y))
+            return false;
+        m_offscreen=true;
+    }
+    return true;
+}
+
+#ifdef GWENI_HAS_VULKAN
+//! A Vulkan device with no window, and the target a capture draws into
+class VulkanCaptureDevice: public Device
+{
+public:
+    ~VulkanCaptureDevice() override
+    {
+        m_target.reset();
+        renderer::destroyVulkanDevice(m_device);
+    }
+
+    Backend backend() const override { return Backend::Vulkan; }
+
+    renderer::SlotRenderer *newRenderer(ResourcePaths &paths, const Rect &viewRect) override
+    {
+        return new renderer::Vulkan(paths, viewRect, m_device, *m_target);
+    }
+
+    bool resizeTarget(const Point &size) override
+    {
+        if(m_target->create(size.x, size.y))
+            return true;
+        std::cerr<<g_tool<<": could not make a "<<size.x<<"x"<<size.y<<" Vulkan target\n";
+        return false;
+    }
+
+    void finish() override
+    {
+        vkQueueWaitIdle(m_device.queue);
+    }
+
+    std::string deviceName() const override
+    {
+        VkPhysicalDeviceProperties properties{};
+
+        vkGetPhysicalDeviceProperties(m_device.physicalDevice, &properties);
+        return properties.deviceName;
+    }
+
+    renderer::VulkanDevice *vulkanDevice() override { return &m_device; }
+    renderer::VulkanTarget *vulkanTarget() override { return m_target.get(); }
+
+    bool open(const DeviceOptions &options);
+
+private:
+    renderer::VulkanDevice m_device;
+    std::unique_ptr<renderer::VulkanTarget> m_target;
+};
+
+bool VulkanCaptureDevice::open(const DeviceOptions &options)
+{
+    if(!options.capturing)
+    {
+        std::cerr<<g_tool<<": --renderer vulkan has no window yet;"
+                   " it only captures (--shot, --screenshot, --frames, --stats, ...)\n";
+        return false;
+    }
+
+    renderer::VulkanDeviceOptions deviceOptions;
+    const char *validation=std::getenv("GWENI_VULKAN_VALIDATION");
+    std::string error;
+
+    deviceOptions.applicationName=g_tool;
+    deviceOptions.validation=validation && std::strcmp(validation, "1") == 0;
+    if(!renderer::createVulkanDevice(m_device, deviceOptions, error))
+    {
+        std::cerr<<g_tool<<": "<<error<<"\n";
+        return false;
+    }
+
+    m_target.reset(new renderer::VulkanTarget(m_device));
+    return resizeTarget(options.size);
+}
+#endif//GWENI_HAS_VULKAN
+
+}//namespace
+
+std::unique_ptr<Device> openDevice(Backend backend, const DeviceOptions &options)
+{
+#ifdef GWENI_HAS_VULKAN
+    if(backend == Backend::Vulkan)
+    {
+        std::unique_ptr<VulkanCaptureDevice> device(new VulkanCaptureDevice);
+
+        if(!device->open(options))
+            return nullptr;
+        return std::move(device);
+    }
+#else
+    (void)backend;
+#endif
+
+    std::unique_ptr<GlDevice> device(new GlDevice);
+
+    if(!device->open(options))
+        return nullptr;
+    return std::move(device);
 }
 
 bool ensureDirectory(const fs::path &dir)

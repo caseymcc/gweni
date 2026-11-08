@@ -25,9 +25,12 @@
 #    gweni_vulkan_test_environment(<test>...)
 #                                  the environment every Vulkan test runs in:
 #                                  the vcpkg validation layer alone on the
-#                                  loader's layer path, and the device pinned to Mesa's
-#                                  lavapipe (GWENI_VULKAN_TEST_ICD); also the
-#                                  labels gpu and vulkan
+#                                  loader's layer path, enabled in the examples
+#                                  and the bench (GWENI_VULKAN_VALIDATION=1, which
+#                                  capture::openDevice reads), and the device
+#                                  pinned to Mesa's lavapipe
+#                                  (GWENI_VULKAN_TEST_ICD); also the labels gpu
+#                                  and vulkan
 #
 
 find_package(VulkanHeaders CONFIG QUIET)
@@ -140,7 +143,9 @@ function(gweni_vulkan_test_environment)
     # layer, the one built with the headers, can be the one enabled.
     # VK_ICD_FILENAMES is what the container's loader (1.3.204) reads; newer
     # loaders read VK_DRIVER_FILES and still take the old name.
-    set(environment "VK_LAYER_PATH=${GWENI_VULKAN_LAYER_DIR}")
+    # GWENI_VULKAN_VALIDATION=1 makes ControlTest, OpenGLCore and gweni_bench
+    # enable the layer (and fail without it), as gweni_unittests always does.
+    set(environment "VK_LAYER_PATH=${GWENI_VULKAN_LAYER_DIR}" "GWENI_VULKAN_VALIDATION=1")
     if(GWENI_VULKAN_TEST_ICD)
         list(APPEND environment
             "VK_ICD_FILENAMES=${GWENI_VULKAN_TEST_ICD}"
