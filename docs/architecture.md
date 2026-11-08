@@ -1586,7 +1586,11 @@ two programs and the draws. What follows describes both together:
   least `setColumnMinWidth`, 40 by default, room for a short caption and the chevron) and,
   with `setLastColumnStretch` (on by default), the last column grown to fill the body's
   width (never shrunk below its own). The stretch is the last column's so that a column's
-  new width moves only it and the columns after it. `columnSpans(width)` gives every
+  new width moves only it and the columns after it, while the columns fit the body: once
+  they overflow it, every row is as wide as the columns, so a new width changes every
+  row's bounds, and `Base::onBoundsChanged` marks each row's whole subtree, the cells
+  before the column included (the header's cells are placed one by one and stay
+  bounded). `columnSpans(width)` gives every
   column's x and width across a width, and the header and every row place their cells
   (owner-placed) with it across the same width, the body's content width (its inner
   panel's), so a row's cells sit exactly under the header's. A row's preferred width is
@@ -1600,12 +1604,15 @@ two programs and the draws. What follows describes both together:
   lays it out X then Y. The header clips its cells to the body's viewport
   (`getChildClipRect`), so they never draw over the vertical bar. **Resize and sort:**
   each header cell (a `Button`) has a `DataTableColumnGrip` along its right edge, 5 units
-  wide with the resize cursor: a drag there sets the column's width from the press's
-  width and the mouse's travel, and does not reach the cell, so it never sorts. A click
+  wide with the resize cursor: a drag there sets the column's width from the width it was
+  laid out at when pressed and the mouse's travel, and does not reach the cell, so it
+  never sorts. Starting from the laid-out width is what makes the stretched last
+  column's edge follow the mouse from the first unit (its asked width is less); dragged
+  left, it asks for less and still fills the body. A click
   elsewhere on the cell sorts by its column, ascending first, then alternating
   (`setSortColumn(-1, SortDirection::None)` clears it), fires `onSortChanged` once per
-  change (`point` is the column and 1, -1 or 0) and redraws only the two cells whose
-  chevron changed; the chevron's column is always kept in the cell's right text padding,
+  change (`point` is the column and 1, -1 or 0) and marks only the two cells whose
+  chevron changed (`StateChange_Background`); the chevron's column is always kept in the cell's right text padding,
   so sorting changes no size. The table never sorts: the app orders its records and
   either sets the rows' cells again or puts the rows in the new order (`setRowOrder`,
   each row brought to the inner panel's end in turn; the inner panel is invalidated
@@ -1621,7 +1628,10 @@ two programs and the draws. What follows describes both together:
   renderer resizes its slot list to its rules, and a row whose cells moved marks itself
   for its column rules. `removeRow` takes a row out of the group (firing the change if
   it was selected), hides it and deletes it with the canvas; a row deleted outright
-  leaves the table too. There is no virtualisation yet: every row is a control.
+  leaves the table too. `setCellContents` puts a control in a cell; the cell takes no
+  mouse, the control as its own flag says, so a Button there takes its click and
+  selects nothing, while a click on a Label or elsewhere on the cell selects the row.
+  There is no virtualisation yet: every row is a control.
   DataTableDemo has the first 40 elements, sortable by any column; ShowcaseContainersDemo
   has a two-column file table.
 - **Scale and the device-pixel grid.** Controls lay out in logical units (integers);

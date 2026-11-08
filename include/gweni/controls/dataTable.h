@@ -174,9 +174,12 @@ public:
     //! The cell's text. Out of range does nothing (an empty string).
     void setCellText(int column, const String &text);
     const String &getCellText(int column) const;
-    //! Puts a control in the cell (its parent becomes the cell's Label); the
-    //! cell takes the mouse only with mouseInput, so a click selects the row.
-    void setCellContents(int column, Base *control, bool mouseInput=false);
+    //! Puts a control in the cell (its parent becomes the cell's Label). The
+    //! cell never takes the mouse, the control does as its own
+    //! setMouseInputEnabled says: a click on a Button in a cell presses the
+    //! Button and does not select the row, while a click on a control with no
+    //! mouse input (a Label, an ImagePanel) or elsewhere on the cell does.
+    void setCellContents(int column, Base *control);
     //! The cell's Label, or null out of range.
     Label *getCell(int column) const;
     int getCellCount() const { return static_cast<int>(m_cells.size()); }
@@ -214,8 +217,13 @@ private:
 //! caption. With setLastColumnStretch (the default) the last column takes what
 //! the others leave of the body's width, at least its own width; the stretch is
 //! the last column's so that a column's new width moves only it and the columns
-//! after it. Dragging a header cell's right edge (its grip) resizes the column;
-//! a click elsewhere on the cell sorts by it, ascending first and then
+//! after it, while the columns fit the body (once they overflow it, every row
+//! is as wide as the columns, so a new width changes every row's bounds and
+//! marks its whole subtree). Dragging a header cell's right edge (its grip)
+//! resizes the column from the width it is laid out at, so the stretched last
+//! column's edge follows the mouse (dragged left, the column still fills the
+//! body, at the narrower width it then asks for). A click elsewhere on the
+//! cell sorts by it, ascending first and then
 //! alternating, shows its chevron and fires onSortChanged. The table does not
 //! sort: the app orders its records and shows them, by setting the rows' cells
 //! again or by putting the rows in the new order (setRowOrder).

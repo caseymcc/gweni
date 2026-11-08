@@ -9,7 +9,7 @@ to its live page.
 
 [![The OpenGLCore demo shell showing the Containers & data showcase page (a TreeControl, ListBox, TabControl with closable tabs and a Properties grid, ScrollControl, CollapsibleList and a sorted, striped DataTable), Tokyo Night theme](docs/images/demo.png)](https://caseymcc.github.io/gweni/demo.html?demo=ShowcaseContainersDemo)
 
-*The `OpenGLCore` demo on the OpenGL 3.0+ core renderer with the textured skin's Tokyo Night theme, showing the Containers & data showcase page: a TreeControl, a ListBox, a TabControl with closable tabs holding a Properties grid, a ScrollControl and a CollapsibleList.*
+*The `OpenGLCore` demo on the OpenGL 3.0+ core renderer with the textured skin's Tokyo Night theme, showing the Containers & data showcase page: a TreeControl, a ListBox, a TabControl with closable tabs holding a Properties grid, a ScrollControl, a CollapsibleList and a striped DataTable sorted by file name, with one row selected.*
 
 ## Goals
 

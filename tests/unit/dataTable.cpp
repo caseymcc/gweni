@@ -7,12 +7,18 @@
  *  their widths, clamped to their minimums, and the last one stretches to the
  *  body's width (or not, setLastColumnStretch(false)); every row's cells sit
  *  exactly under their header cells. Dragging a header cell's right edge (its
- *  grip) resizes that column and does not sort; a click elsewhere on the cell
- *  sorts by it, ascending and then descending, its chevron alone showing, and
- *  onSortChanged fires once per click and never for a no-op. A column drag
- *  moves only that column's cells and the following columns' (header and body):
- *  every other control keeps its bounds and has no StateChange_Geometry
- *  pending. A sort click with the app re-ordering its rows, or setting their
+ *  grip) resizes that column and does not sort, from the width it is laid out
+ *  at, so the stretched last column's edge moves with the first unit of a drag;
+ *  a click elsewhere on the cell sorts by it, ascending and then descending,
+ *  its chevron alone showing, and onSortChanged fires once per click and never
+ *  for a no-op. While the columns fit the body, a column drag moves only that
+ *  column's cells and the following columns' (header and body): every other
+ *  control keeps its bounds and has no StateChange_Geometry pending. (Once
+ *  they overflow it, every row is as wide as the columns, so a drag changes
+ *  every row's bounds and Base::onBoundsChanged marks its whole subtree; that
+ *  case is not pinned here.) A control put in a cell takes the mouse as its own
+ *  flag says: a Button's click presses it and selects nothing, a click on a
+ *  Label or elsewhere on the cell selects the row. A sort click with the app re-ordering its rows, or setting their
  *  cells again, is laid out in one update-phase pass. The stripes follow the
  *  row order (setRowOrder, removeRow, setStriped) and a re-bind keeps them;
  *  selection goes through the table's SelectableGroup, one row at a time, and a
@@ -371,6 +377,35 @@ TEST_CASE("DataTable: a drag at a header cell's edge resizes, a click inside it 
     CHECK(scene.cell(0)->getSortDirection() == controls::SortDirection::None);
 }
 
+TEST_CASE("DataTable: the stretched last column's edge follows the mouse from its laid-out width")
+{
+    Scene scene(2, 4);
+    controls::DataTable *table=scene.table;
+
+    // 100 asked for, the rest of the 398-unit body given
+    const int laidOut=398-controls::DataTable::DefaultColumnWidth;
+
+    REQUIRE(table->getColumnWidth(1) == controls::DataTable::DefaultColumnWidth);
+    REQUIRE(table->getColumnLaidOutWidth(1) == laidOut);
+
+    // dragged left of the body's edge it asks for less and still fills the body
+    scene.dragGrip(1, -50);
+    scene.frame();
+    scene.frame();
+    CHECK(table->getColumnWidth(1) == laidOut-50);
+    CHECK(table->getColumnLaidOutWidth(1) == laidOut);
+
+    // the first unit of a drag to the right widens it: no dead zone of the
+    // width the stretch adds to what it asks for
+    scene.dragGrip(1, 1);
+    scene.frame();
+    scene.frame();
+    CHECK(table->getColumnWidth(1) == laidOut+1);
+    CHECK(table->getColumnLaidOutWidth(1) == laidOut+1);
+    CHECK(table->getRow(0)->getCell(1)->getWidth() == laidOut+1);
+    CHECK(table->getSortColumn() == -1);
+}
+
 TEST_CASE("DataTable: a column drag changes only that column's and the following columns' geometry")
 {
     Scene scene(4, 5);
@@ -651,6 +686,52 @@ TEST_CASE("DataTable: one row selected through the group, a removed or deleted o
     CHECK(table->rowCount() == 0);
     CHECK(table->getSelectedRow() == nullptr);
     scene.frame();
+}
+
+TEST_CASE("DataTable: a control in a cell takes the mouse as its own flag says")
+{
+    Scene scene(2, 4);
+    controls::DataTable *table=scene.table;
+    controls::DataTableRow *withButton=table->getRow(1);
+    controls::DataTableRow *withLabel=table->getRow(2);
+    Counter presses;
+
+    controls::Button *button=scene.canvas->newChild<controls::Button>();
+    button->setBounds(4, 2, 40, 12);
+    withButton->setCellContents(0, button);
+    presses.listen(button->onPressCaller);
+
+    controls::Label *label=scene.canvas->newChild<controls::Label>();
+    label->setText("x");
+    label->setBounds(4, 2, 40, 12);
+    withLabel->setCellContents(1, label);
+    scene.frame();
+    scene.frame();
+
+    REQUIRE(button->getParent() == withButton->getCell(0));
+    REQUIRE(label->getParent() == withLabel->getCell(1));
+
+    // the Button takes its click: pressed, and the row is not selected
+    scene.click(button);
+    CHECK(presses.calls == 1);
+    CHECK(table->getSelectedRow() == nullptr);
+
+    // elsewhere on that cell, the row's
+    {
+        const Rect cell=Scene::canvasBounds(withButton->getCell(0));
+
+        scene.clock+=1.0f;
+        scene.moveTo(Point(cell.x+cell.w-8, cell.y+cell.h/2));
+        scene.canvas->inputMouseButton(0, true);
+        scene.canvas->inputMouseButton(0, false);
+        scene.frame();
+    }
+    CHECK(presses.calls == 1);
+    CHECK(table->getSelectedRow() == withButton);
+
+    // a Label takes no mouse: a click on it selects its row
+    scene.click(label);
+    CHECK(table->getSelectedRow() == withLabel);
 }
 
 TEST_CASE("DataTable: the header stays put while the body scrolls down, and follows it sideways")

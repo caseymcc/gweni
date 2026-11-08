@@ -45,7 +45,9 @@ GWENI_CONTROL_CONSTRUCTOR(DataTableColumnGrip)
 }
 
 // A press holds the mouse and takes the column's width as the drag's start;
-// each move gives the column that width plus how far the mouse went.
+// each move gives the column that width plus how far the mouse went. The start
+// is the width the column is laid out at, which for the stretched last column
+// is more than it asks for: its edge follows the mouse from where it is drawn.
 void DataTableColumnGrip::onMouseClickLeft(int x, int /*y*/, bool down)
 {
     if(isDisabled() || !m_table)
@@ -57,7 +59,7 @@ void DataTableColumnGrip::onMouseClickLeft(int x, int /*y*/, bool down)
     {
         m_dragging=true;
         m_startX=x;
-        m_startWidth=m_table->getColumnWidth(m_column);
+        m_startWidth=m_table->getColumnLaidOutWidth(m_column);
         MouseFocus=this;
     }
     else
@@ -107,7 +109,7 @@ void DataTableHeaderCell::setSortDirection(SortDirection direction)
 
     m_sort=direction;
     // the chevron, this cell only
-    redraw();
+    addStateChange(StateChange_Background);
 }
 
 // The grip is the cell's right edge: placed in X at the width the header just
@@ -299,7 +301,7 @@ const String &DataTableRow::getCellText(int column) const
     return empty;
 }
 
-void DataTableRow::setCellContents(int column, Base *control, bool mouseInput)
+void DataTableRow::setCellContents(int column, Base *control)
 {
     Label *cell=getCell(column);
 
@@ -307,7 +309,6 @@ void DataTableRow::setCellContents(int column, Base *control, bool mouseInput)
         return;
 
     control->setParent(cell);
-    cell->setMouseInputEnabled(mouseInput);
 }
 
 Label *DataTableRow::getCell(int column) const
@@ -324,7 +325,7 @@ void DataTableRow::setStriped(bool striped)
 
     m_striped=striped;
     // the fill, this row only
-    redraw();
+    addStateChange(StateChange_Background);
 }
 
 // As wide as the table's columns ask for together (the body scrolls sideways
@@ -650,7 +651,7 @@ void DataTable::setBorders(DataTableBorders borders)
     m_borders=borders;
 
     for(DataTableRow *row : m_rows)
-        row->redraw();
+        row->addStateChange(StateChange_Background);
 }
 
 bool DataTable::hasRowBorders() const
