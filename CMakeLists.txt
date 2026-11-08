@@ -183,9 +183,6 @@ set(GWENI_CONTROL_SOURCES
     source/controls/dockedTabControl.cpp
     include/gweni/controls/dragger.h
     source/controls/dragger.cpp
-    include/gweni/controls/fieldLabel.h
-    include/gweni/controls/filePicker.h
-    include/gweni/controls/folderPicker.h
     include/gweni/controls/groupBox.h
     source/controls/groupBox.cpp
     include/gweni/controls/highlight.h
@@ -260,7 +257,6 @@ set(GWENI_CONTROL_SOURCES
     source/controls/slider.cpp
     include/gweni/controls/splitterBar.h
     source/controls/splitterBar.cpp
-    include/gweni/controls/splitters.h
     include/gweni/controls/statusBar.h
     include/gweni/controls/tabButton.h
     source/controls/tabButton.cpp
@@ -274,7 +270,6 @@ set(GWENI_CONTROL_SOURCES
     include/gweni/controls/textBox.h
     source/controls/textBox.cpp
     source/controls/textBoxNumeric.cpp
-    include/gweni/controls/toolBar.h
     include/gweni/controls/treeControl.h
     source/controls/treeControl.cpp
     include/gweni/controls/treeNode.h
@@ -347,8 +342,6 @@ set(GWENI_PROPERTY_SOURCES
     include/gweni/controls/property/checkBox.h
     include/gweni/controls/property/colorSelector.h
     include/gweni/controls/property/comboBox.h
-    include/gweni/controls/property/file.h
-    include/gweni/controls/property/folder.h
     include/gweni/controls/property/text.h
 )
 

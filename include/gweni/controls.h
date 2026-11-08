@@ -10,17 +10,12 @@
 
 #include <gweni/controls/button.h>
 #include <gweni/controls/dockBase.h>
-#include <gweni/controls/fieldLabel.h>
-#include <gweni/controls/folderPicker.h>
-#include <gweni/controls/filePicker.h>
 #include <gweni/controls/groupBox.h>
 #include <gweni/controls/imagePanel.h>
 #include <gweni/controls/listBox.h>
 #include <gweni/controls/propertyTree.h>
 #include <gweni/controls/property/checkBox.h>
 #include <gweni/controls/property/colorSelector.h>
-#include <gweni/controls/property/folder.h>
-#include <gweni/controls/property/file.h>
 #include <gweni/controls/property/text.h>
 #include <gweni/controls/property/comboBox.h>
 #include <gweni/controls/statusBar.h>
@@ -29,8 +24,6 @@
 #include <gweni/controls/textBox.h>
 #include <gweni/controls/windowCanvas.h>
 #include <gweni/controls/menuStrip.h>
-#include <gweni/controls/toolBar.h>
-#include <gweni/controls/splitters.h>
 #include <gweni/controls/pageControl.h>
 #include <gweni/controls/progressBar.h>
 #include <gweni/controls/labelClickable.h>

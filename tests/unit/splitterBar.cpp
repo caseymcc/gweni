@@ -12,9 +12,8 @@
  *  release each mark the bar (Dragger repaints on both). A CrossSplitter's
  *  three bars start off; setSplittersVisible() turns all three on and off,
  *  splittersVisible() reads it back, and the setter asks the canvas for a
- *  frame. A bar draws by default (SplitterVertical/SplitterHorizontal rely on
- *  that). No frame writes a slot the bars do not own, and deleting the
- *  controls gives the slots back.
+ *  frame. A bar draws by default. No frame writes a slot the bars do not own,
+ *  and deleting the controls gives the slots back.
  */
 #include "headlessFixture.h"
 
