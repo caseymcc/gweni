@@ -664,8 +664,10 @@ Vulkan, and so (the line style's half-layer depth deciding which segment of a
 polyline blends over a joint) 1 or 2 joint pixels blended twice on one and once on
 the other, up to 64 per channel. Both pass the model the test checks; the
 difference is the float code GL's GLSL compiler and the SPIR-V path make of the same
-line arithmetic, not a different algorithm, and no control draws a line yet. The
-pixel test of the apps (#374) measures its tolerance on the ControlTest shots.
+line arithmetic, not a different algorithm, and no control draws a line yet. It is
+above the feature's T = 2 ceiling, so it is an open issue (#427) rather than a
+tolerance: the pixel test of the apps (#374) measures its own on the ControlTest
+shots.
 
 ## OpenGLCore renderer (retained model)
 

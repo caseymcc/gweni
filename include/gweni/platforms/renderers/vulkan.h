@@ -65,7 +65,7 @@ GWENI_EXPORT void destroyVulkanDevice(VulkanDevice &device);
 //! of one size. It is the application's, as an EGL context's framebuffer is: any
 //! renderer on the device may draw into it, one after another, and read it back.
 //! Between frames the colour image is in COLOR_ATTACHMENT_OPTIMAL and the depth
-//! in DEPTH_ATTACHMENT_OPTIMAL; every renderer keeps them so.
+//! in DEPTH_STENCIL_ATTACHMENT_OPTIMAL; every renderer keeps them so.
 //!
 //! Its rows are bottom-up, as a GL framebuffer's are: the view's top row is the
 //! image's last. The renderers draw in GL's window coordinates (no y flip), so
