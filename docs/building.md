@@ -65,7 +65,8 @@ window"). The build container has no display, so there it is tried under
 Xvfb (`window_vulkan` does that for you, see "Tests"):
 
 ```bash
-xvfb-run -a -s "-screen 0 1280x1024x24"     build_linux_x64_debug/examples/openglcore/ControlTest --renderer vulkan --control ButtonDemo
+xvfb-run -a -s "-screen 0 1280x1024x24" \
+    build_linux_x64_debug/examples/openglcore/ControlTest --renderer vulkan --control ButtonDemo
 ```
 
 To try it on a host with a real Vulkan driver (not part of any check; on a
