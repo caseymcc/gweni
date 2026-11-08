@@ -1053,6 +1053,23 @@ public:
     inline static const std::string_view name="ColorButton";
 };
 
+// controls::DragNumber: its field in one primitive (DragNumber at rest,
+// DragNumberHover hovered, DragNumberFocus with the keyboard focus,
+// DragNumberDown while pressed, DragNumberDisabled), hidden while its edit
+// box covers it; the label's Text draws the value. A hover, a press or the
+// focus rewrites that one slot.
+class DragNumber:public textured::ControlRegister<DragNumber>
+{
+public:
+    static void staticInit(TexturedSkin *) { m_staticInit=true; }
+
+    size_t requiredPrimitives() override { return 1; }
+
+    void update(renderer::Base *renderer, controls::Base *baseControl) override;
+
+    inline static const std::string_view name="DragNumber";
+};
+
 class StatusBar:public textured::ControlRegister<StatusBar>
 {
 public:

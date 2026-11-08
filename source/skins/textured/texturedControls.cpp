@@ -17,6 +17,7 @@
 #include "gweni/controls/colorControls.h"
 #include "gweni/controls/colorPicker.h"
 #include "gweni/controls/colorButton.h"
+#include "gweni/controls/dragNumber.h"
 #include "gweni/controls/textBox.h"
 #include "gweni/controls/separator.h"
 #include "gweni/controls/selectable.h"
@@ -1682,6 +1683,38 @@ void ColorButton::update(renderer::Base *renderer, controls::Base *baseControl)
 
 
 ///////////////////////////////////////////////////////////////////////////
+//DragNumber
+void DragNumber::update(renderer::Base *renderer, controls::Base *baseControl)
+{
+    if(m_primitives.empty())
+        return;
+
+    controls::DragNumber *field=static_cast<controls::DragNumber *>(baseControl);
+
+    // the edit box draws its own field over this one
+    if(!baseControl->visible() || field->isEditing())
+    {
+        renderer->hidePrimitive(m_primitives[0]);
+        return;
+    }
+
+    const tokyonight::Surface *surface=&tokyonight::DragNumber;
+
+    if(field->isDisabled())
+        surface=&tokyonight::DragNumberDisabled;
+    else if(field->isDepressed())
+        surface=&tokyonight::DragNumberDown;
+    else if(field->isFocussed())
+        surface=&tokyonight::DragNumberFocus;
+    else if(field->isHovered())
+        surface=&tokyonight::DragNumberHover;
+
+    renderer->drawRoundedRect(m_primitives[0], baseControl->getRenderBounds(), surface->radius,
+        surface->borderWidth, surface->top, surface->bottom, surface->border, baseControl->getZIndex());
+}
+
+
+///////////////////////////////////////////////////////////////////////////
 //StatusBar
 size_t StatusBar::Background;
 size_t StatusBar::Selection;
@@ -2397,6 +2430,7 @@ template class ControlRegister<ColorLerpBox>;
 template class ControlRegister<ColorSlider>;
 template class ControlRegister<ColorDisplay>;
 template class ControlRegister<ColorButton>;
+template class ControlRegister<DragNumber>;
 template class ControlRegister<StatusBar>;
 // NOTE: TabItem<_Type> is itself a class template (TabItem<TabTop>, <TabBottom>,
 // <TabLeft>, <TabRight>); register those specializations here if/when their

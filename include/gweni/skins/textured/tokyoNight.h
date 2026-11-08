@@ -193,6 +193,15 @@ inline Surface PlotFrame      { BgDark,                BgDark,                Li
 inline Surface PlotBar        { Blue,                  Blue,                  Blue,  0.0f,     0.0f };
 inline Surface PlotBarHover   { Cyan,                  Cyan,                  Cyan,  0.0f,     0.0f };
 
+// A DragNumber: a field filled like a button, not inset like a TextBox (it is
+// dragged, not typed into, until its edit box comes up), lit while hovered,
+// its border blue with the focus and cyan while it is being dragged.
+inline Surface DragNumber        { Surf,                  Surf,                  Line,        RadiusSm, BorderW };
+inline Surface DragNumberHover   { SurfHi,                SurfHi,                Line,        RadiusSm, BorderW };
+inline Surface DragNumberFocus   { Surf,                  Surf,                  Blue,        RadiusSm, BorderW };
+inline Surface DragNumberDown    { SurfHi,                SurfHi,                Cyan,        RadiusSm, BorderW };
+inline Surface DragNumberDisabled{ Color(0x1f,0x22,0x33), Color(0x1f,0x22,0x33), BgHighlight, RadiusSm, BorderW };
+
 // Window title-bar buttons: nothing at rest (a transparent fill hides its slot),
 // red under the close button while hovered, a deeper red while pressed. The
 // minimise and maximise buttons hover and press as ButtonHover/ButtonDown.
@@ -233,6 +242,8 @@ inline std::unordered_map<std::string, Surface*>& surfaceRegistry()
         {"DataTableHeader",&DataTableHeader},{"DataTableHeaderHover",&DataTableHeaderHover},
         {"DataTableHeaderDown",&DataTableHeaderDown},{"DataTableStripe",&DataTableStripe},
         {"PlotFrame",&PlotFrame},{"PlotBar",&PlotBar},{"PlotBarHover",&PlotBarHover},
+        {"DragNumber",&DragNumber},{"DragNumberHover",&DragNumberHover},{"DragNumberFocus",&DragNumberFocus},
+        {"DragNumberDown",&DragNumberDown},{"DragNumberDisabled",&DragNumberDisabled},
         {"WindowButton",&WindowButton},{"WindowCloseHover",&WindowCloseHover},{"WindowCloseDown",&WindowCloseDown},
     };
     return m;

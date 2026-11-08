@@ -173,7 +173,7 @@ bool Slider::validValueFormat(const String &format)
     return conversions == 1;
 }
 
-String Slider::formatValue(const String &format, float value)
+String Slider::formatValue(const String &format, double value)
 {
     if(!validValueFormat(format))
         return String();

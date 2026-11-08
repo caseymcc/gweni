@@ -82,7 +82,7 @@ public:
     //! Whether setValueFormat() takes `format`.
     static bool validValueFormat(const String &format);
     //! `value` formatted by a valid `format` (validValueFormat()), else "".
-    static String formatValue(const String &format, float value);
+    static String formatValue(const String &format, double value);
 
     //! Where the track and thumb are, in this control's own coordinates: the
     //! whole control, but for a vertical slider with a value text the column

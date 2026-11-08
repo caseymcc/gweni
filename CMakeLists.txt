@@ -154,6 +154,8 @@ set(GWENI_CONTROL_SOURCES
     include/gweni/controls/collapsibleList.h
     include/gweni/controls/colorButton.h
     source/controls/colorButton.cpp
+    include/gweni/controls/dragNumber.h
+    source/controls/dragNumber.cpp
     include/gweni/controls/colorControls.h
     source/controls/colorControls.cpp
     include/gweni/controls/colorEdit.h
