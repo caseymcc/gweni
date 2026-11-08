@@ -1352,6 +1352,19 @@ two programs and the draws. What follows describes both together:
   change reaches through `redraw()` once `KeyboardFocus` has moved; `onLostKeyboardFocus`
   runs before it has (`Base::focus`), and a hidden box loses the focus with no call at
   all (`input::onCanvasThink`).
+- **Toggle buttons.** The textured `Button` renderer (`ButtonTemplate<>`, which also
+  draws `LabelClickable` and the input buttons) paints one slot and picks its surface
+  in this order: disabled (`ButtonOnDisabled` for a toggle that is on, else
+  `ButtonDisabled`), pressed (`ButtonDown`, whatever the toggle state, so a press reads
+  as a press), on (`ButtonOnHover` while hovered, else `ButtonOn`), hovered
+  (`ButtonHover`), `ButtonNormal`. "On" is `isToggle() && getToggleState()`, so a
+  Button that is no toggle never shows a toggle state. The on surfaces are an
+  accent-tinted fill with a `Blue` border, unlike `ButtonDown`'s grey, and the disabled
+  one stays a dim blue, unlike `ButtonDisabled`. A flip (`setToggleState`, or the
+  release of a click) goes through `redraw()`, so it marks that button alone and
+  rewrites its slot; the text keeps `Colors.Button.Down`, which an on toggle already
+  had. `tests/unit/buttonToggle.cpp` pins the choice and the marks, and
+  `--scenario interaction` the pixels of ButtonDemo's "Toggle Me".
 - **Selectable rows.** `controls::Selectable` (`include/gweni/controls/selectable.h`) is a
   `Button` (for its press handling: the click lands on release over the row, Space
   presses it, Return too) that draws through its own textured renderer, docked Top with
@@ -2130,15 +2143,16 @@ field by field: a surface entry that gives only `top` and `bottom` keeps a magen
 border. `radius`, `borderWidth` and the `"metrics"` sizes are not colours: strict mode
 leaves them at their compiled values or the file's. After
 applying it prints one line per kind, names sorted, a surface with none of its colours
-set by its bare name and one with some of them as `Name.field` per missing field:
+set by its bare name and one with some of them as `Name.field` per missing field (here
+the shipped theme with `"strict": true` added):
 
 ```
-theme strict: 65 of 67 surfaces not set: ButtonDisabled, ButtonDown, ButtonHover.border, ...
+theme strict: 83 of 87 surfaces not set: ButtonDisabled, ButtonDown, ButtonOn, ...
 theme strict: 13 of 15 text colors not set: AxisTagText, ButtonDisabled, ButtonDown, ...
 ```
 
-(`theme strict: all 67 surfaces set` for a kind with no gaps, and a single
-`theme strict: all 67 surfaces and 15 text colors set` when there are none at all). A
+(`theme strict: all 87 surfaces set` for a kind with no gaps, and a single
+`theme strict: all 87 surfaces and 15 text colors set` when there are none at all). A
 rejected value counts as not set. A surface that is transparent at rest on purpose
 (`WindowButton`, `SelectableHover`: a transparent fill hides the slot) is magenta too
 until the theme sets it to `[0,0,0,0]`; the theme has not said what it looks like. The
