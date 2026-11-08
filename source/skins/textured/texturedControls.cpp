@@ -1774,6 +1774,53 @@ void WindowMinimizeButton::update(renderer::Base *renderer, controls::Base *base
         tokyonight::ButtonDown, tokyonight::Fg, 3);
 }
 
+///////////////////////////////////////////////////////////////////////////
+//OpenToggleButton
+void OpenToggleButton::update(renderer::Base *renderer, controls::Base *baseControl)
+{
+    if(m_primitives.size() < 2)
+        return;
+
+    controls::Button *button=static_cast<controls::Button *>(baseControl);
+    const tokyonight::Surface *surface=nullptr;
+    gweni::Color glyph=tokyonight::FgDark;
+
+    if(button->isDisabled())
+        glyph=tokyonight::Muted;
+    else if(button->isDepressed())
+    {
+        surface=&tokyonight::ButtonDown;
+        glyph=tokyonight::Fg;
+    }
+    else if(button->isHovered())
+    {
+        surface=&tokyonight::ButtonHover;
+        glyph=tokyonight::Fg;
+    }
+
+    const bool visible=baseControl->visible();
+
+    // at rest there is no surface: a hidden slot, not a transparent rect that
+    // would write depth over the node behind it
+    if(visible && surface)
+        tokyonight::paintSurface(renderer, &m_primitives[0], baseControl, *surface);
+    else
+        renderer->hidePrimitive(m_primitives[0]);
+
+    if(visible)
+    {
+        // kind 1's directions: 0 down, 3 right
+        const int dir=button->getToggleState()?0:3;
+        const gweni::Rect r=baseControl->getRenderBounds();
+        const int sz=((r.w<r.h)?r.w:r.h)*6/10;
+        const gweni::Rect chevron{ r.x+(r.w-sz)/2, r.y+(r.h-sz)/2, sz, sz };
+
+        renderer->drawIcon(m_primitives[1], chevron, 1, dir, glyph, baseControl->getZIndex()+1);
+    }
+    else
+        renderer->hidePrimitive(m_primitives[1]);
+}
+
 // Force every ControlRegister<> specialization to instantiate so its static
 // self-registration initializer actually runs at startup. Without this, the
 // `forceInit`/m_forceTypeName trick never gets odr-used under modern toolchains
@@ -1840,6 +1887,7 @@ template class ControlRegister<Window>;
 template class ControlRegister<WindowCloseButton>;
 template class ControlRegister<WindowMaximizeButton>;
 template class ControlRegister<WindowMinimizeButton>;
+template class ControlRegister<OpenToggleButton>;
 template class ControlRegister<TreeControl>;
 template class ControlRegister<TreeNode>;
 template class ControlRegister<PropertyTreeNode>;

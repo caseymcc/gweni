@@ -700,6 +700,22 @@ public:
     inline static const std::string_view name="WindowMinimizeButton";
 };
 
+// A TreeNode's expand toggle: a surface only on hover or press, and a chevron
+// pointing right while the node is closed and down while it is open.
+class OpenToggleButton:public textured::ControlRegister<OpenToggleButton>
+{
+public:
+    static void staticInit(TexturedSkin *) { m_staticInit=true; }
+
+    size_t requiredPrimitives() override { return 2; }
+    // the chevron is drawn at getZIndex()+1, its Text child after it
+    size_t depthLayers() override { return 2; }
+
+    void update(renderer::Base *renderer, controls::Base *baseControl) override;
+
+    inline static const std::string_view name="OpenToggleButton";
+};
+
 
 struct ScrollerButton
 {

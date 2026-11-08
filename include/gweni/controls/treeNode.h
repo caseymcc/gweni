@@ -27,6 +27,9 @@ public:
     GWENI_CONTROL(TreeNode, Base);
 
 public:
+    //! The side of the square expand/collapse toggle, in logical units.
+    static constexpr int ToggleSize=15;
+
     virtual TreeNode *addNode(const String &label);
 
     virtual void            setText(const String &text);
@@ -86,6 +89,9 @@ public:
     void onClickName(event::Info);
 
 protected:
+    //! The rows below this node's children move: the canvas hit-tests the
+    //! hover again after the layout.
+    void childRowsMoved();
 
     TreeControl *m_treeControl;
     Button *m_toggleButton;
@@ -94,6 +100,24 @@ protected:
     bool m_root;
     bool m_selected;
     bool m_selectable;
+};
+
+//! A TreeNode's expand/collapse toggle: a ToggleSize square whose toggle
+//! state is whether the node is open. Its skin renderer draws that state.
+class GWENI_EXPORT OpenToggleButton: public Button
+{
+    GWENI_CONTROL_INLINE(OpenToggleButton, Button)
+    {
+        setIsToggle(true);
+        setTabable(false);
+        // A glyph with no caption: the node's square, not an empty Text's size.
+        setSizeFlags({SizeFlag::Fixed, SizeFlag::Fixed});
+        setSize(TreeNode::ToggleSize, TreeNode::ToggleSize);
+    }
+
+public:
+    void renderFocus(skin::Base * /*skin*/) override
+    {}
 };
 
 

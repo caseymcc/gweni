@@ -12,8 +12,9 @@
  *  one more row.
  *
  *  The rows: ProgressBar, ColorSlider, ColorLerpBox, CheckBox, RadioButton,
- *  ComboBox, ScrollBarButton, the three window buttons, and TextBox's caret;
- *  every other type gets a StubControl. A row fails, naming the renderer, if
+ *  ComboBox, ScrollBarButton, the three window buttons, TreeNode's
+ *  OpenToggleButton, and TextBox's caret; every other type gets a
+ *  StubControl. A row fails, naming the renderer, if
  *  any draw into its slots is at a z outside [getZIndex(),
  *  getZIndex()+depthLayers()) and [getOverlayZIndex(),
  *  getOverlayZIndex()+overlayLayers()), if no draw is at the overlay's z, or
@@ -30,6 +31,7 @@
 #include <gweni/controls/radioButton.h>
 #include <gweni/controls/scrollBarButton.h>
 #include <gweni/controls/textBox.h>
+#include <gweni/controls/treeNode.h>
 #include <gweni/controls/windowButtons.h>
 #include <gweni/platforms/platform.h>
 #include <gweni/skins/textured/texturedSkin.h>
@@ -200,6 +202,12 @@ const std::vector<Row> &rows()
                 auto *button=canvas->newChild<controls::WindowMinimizeButton>();
                 button->setBounds(10, 10, 29, 24);
                 return button;
+            }},
+        {"OpenToggleButton", Overlay::Above, [](controls::Canvas *canvas) -> controls::Base *
+            {
+                auto *toggle=canvas->newChild<controls::OpenToggleButton>();
+                toggle->setPos(10, 10);
+                return toggle;
             }},
         // the caret, drawn in front of the box's text
         {"TextBox", Overlay::AfterSubtree, [](controls::Canvas *canvas) -> controls::Base *

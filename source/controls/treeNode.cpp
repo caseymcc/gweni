@@ -7,26 +7,13 @@
 
 #include <gweni/controls/treeNode.h>
 #include <gweni/controls/treeControl.h>
+#include <gweni/controls/canvas.h>
 #include <gweni/utility.h>
 
 namespace gweni
 {
 namespace controls
 {
-
-class OpenToggleButton: public Button
-{
-    GWENI_CONTROL_INLINE(OpenToggleButton, Button)
-    {
-        setIsToggle(true);
-        setTabable(false);
-    }
-
-public:
-    void renderFocus(skin::Base * /*skin*/) override
-    {}
-};
-
 
 class TreeNodeText: public Button
 {
@@ -63,7 +50,6 @@ GWENI_CONTROL_CONSTRUCTOR(TreeNode)
     m_treeControl=nullptr;
 
     m_toggleButton=newChild<OpenToggleButton>();
-    m_toggleButton->setBounds(0, 0, 15, 15);
     // Placed by this node: sized in arrange(), centred on the title in
     // postLayout().
     m_toggleButton->setPlacement(Placement::Owner);
@@ -140,18 +126,16 @@ void TreeNode::calculateSize(skin::Base *skin, Dim dim)
     ParentClass::calculateSize(skin, dim);
 }
 
-// The toggle is as big as it measures, given along each axis before this
-// node arranges it.
+// The toggle is a ToggleSize square, given along each axis before this node
+// arranges it.
 void TreeNode::arrange(skin::Base *skin, Dim dim)
 {
     if(m_toggleButton && !m_toggleButton->hidden())
     {
-        const Size &preferred=m_toggleButton->getPreferredSize();
-
         if(dim == Dim::X)
-            placeChildSize(m_toggleButton, preferred.width, m_toggleButton->getHeight());
+            placeChildSize(m_toggleButton, ToggleSize, m_toggleButton->getHeight());
         else
-            placeChildSize(m_toggleButton, m_toggleButton->getWidth(), preferred.height);
+            placeChildSize(m_toggleButton, m_toggleButton->getWidth(), ToggleSize);
     }
 
     ParentClass::arrange(skin, dim);
@@ -189,6 +173,9 @@ void TreeNode::setImage(const String &text)
 
 void TreeNode::open()
 {
+    if(m_innerPanel->hidden())
+        childRowsMoved();
+
     m_innerPanel->show();
 
     if(m_toggleButton)
@@ -199,12 +186,25 @@ void TreeNode::open()
 
 void TreeNode::close()
 {
+    if(!m_innerPanel->hidden())
+        childRowsMoved();
+
     m_innerPanel->hide();
 
     if(m_toggleButton)
         m_toggleButton->setToggleState(false);
 
     invalidate();
+}
+
+// Showing or hiding the child rows moves every row below them, and a click on
+// the toggle is hit-tested again before the layout (the capture ends with the
+// release), against the rows where they were: the hover goes to what is under
+// the mouse once the layout is done.
+void TreeNode::childRowsMoved()
+{
+    if(Canvas *canvas=getCanvas())
+        canvas->hoverMayHaveMoved();
 }
 
 void TreeNode::expandAll()
