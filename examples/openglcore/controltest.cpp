@@ -408,7 +408,7 @@
  *  the counters settle to zero; --stats-clock step keeps it moving.
  */
 
-#include <GL/glew.h>
+#include <gweni/platforms/renderers/glApi.h>
 #include <gweni/platforms/renderers/openglCore.h>
 #include <gweni/gweni.h>
 #include <gweni/platforms/platform.h>
@@ -4783,7 +4783,7 @@ int main(int argc, char *argv[])
 #endif
     }
 
-    if(!gweni::capture::initGlew())
+    if(!gweni::capture::initGL(ctx))
     {
         destroyContext(ctx);
         return EXIT_FAILURE;

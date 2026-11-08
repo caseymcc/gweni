@@ -14,7 +14,7 @@
  */
 #include "bench.h"
 
-#include <GL/glew.h>
+#include <gweni/platforms/renderers/glApi.h>
 #include <gweni/controls/base.h>
 #include <gweni/controls/canvas.h>
 #include <gweni/inputHandler.h>
@@ -515,7 +515,7 @@ int main(int argc, char *argv[])
     gweni::capture::Context ctx;
     if(!gweni::capture::initEglContext(ctx))
         return EXIT_FAILURE;
-    if(!gweni::capture::initGlew())
+    if(!gweni::capture::initGL(ctx))
     {
         gweni::capture::destroyContext(ctx);
         return EXIT_FAILURE;

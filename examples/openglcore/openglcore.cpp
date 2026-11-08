@@ -35,7 +35,7 @@
  *  See license in Gweni.h
  */
 
-#include <GL/glew.h>
+#include <gweni/platforms/renderers/glApi.h>
 #include <gweni/platforms/renderers/openglCore.h>
 #include <gweni/gweni.h>
 #include <gweni/platforms/platform.h>
@@ -393,7 +393,7 @@ int main(int argc, char *argv[])
 
 //    glfwSwapInterval(0); //removes fps limiter
 
-    if(!gweni::capture::initGlew())
+    if(!gweni::capture::initGL(ctx))
     {
         gweni::capture::destroyContext(ctx);
         return EXIT_FAILURE;

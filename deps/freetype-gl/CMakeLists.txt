@@ -37,6 +37,8 @@ option(freetype-gl_WITH_GLEW
     "Use the GLEW library to fetch OpenGL function pointers"
     ${freetype-gl_WITH_GLEW_DEFAULT})
 option(freetype-gl_WITH_GLAD "Use the GLAD gl loader" OFF)
+# gweni patch: GLES 3.0 headers and libGLESv2 (FREETYPE_GL_GLES3, opengl.h)
+option(freetype-gl_WITH_GLES3 "Build against GLES 3.0 (<GLES3/gl3.h>, libGLESv2)" OFF)
 option(freetype-gl_USE_VAO "Use a VAO to render a vertex_buffer instance (required for forward compatible OpenGL 3.0 contexts)" OFF)
 option(freetype-gl_BUILD_DEMOS "Build the freetype-gl example programs" ON)
 option(freetype-gl_BUILD_APIDOC "Build the freetype-gl API documentation" ON)
@@ -93,11 +95,15 @@ if(NOT MINGW AND (WIN32 OR WIN64) AND NOT freetype-gl_USE_HUNTER)
         ${CMAKE_CURRENT_SOURCE_DIR}/windows/freetype)
 endif()
 
-find_package(OpenGL REQUIRED)
-if(ANDROID)
+if(freetype-gl_WITH_GLES3)
+    find_package(OpenGL REQUIRED COMPONENTS GLES3)
+    set(OPENGL_TARGET_LIBS OpenGL::GLES3)
+elseif(ANDROID)
+    find_package(OpenGL REQUIRED)
     find_package(gles3 REQUIRED)
     set(OPENGL_TARGET_LIBS gles3::gles3)
 elseif(IOS)
+    find_package(OpenGL REQUIRED)
     find_package(opengles REQUIRED)
     set(OPENGL_TARGET_LIBS opengles::opengles)
 else()
@@ -200,6 +206,12 @@ target_link_libraries(freetype-gl
     ${GLEW_TARGET_LIBS}
     ${OPENGL_TARGET_LIBS}
 )
+
+# gweni patch: opengl.h, which the public headers include, picks the GLES 3.0
+# headers for freetype-gl and everything including it
+if(freetype-gl_WITH_GLES3)
+    target_compile_definitions(freetype-gl PUBLIC FREETYPE_GL_GLES3)
+endif()
 
 if(freetype-gl_BUILD_MAKEFONT)
     add_executable(makefont makefont.c)

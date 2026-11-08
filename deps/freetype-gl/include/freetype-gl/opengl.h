@@ -8,6 +8,9 @@
 
 #if defined(GL_WITH_GLAD)
 #   include <glad/glad.h>
+#elif defined(FREETYPE_GL_GLES3) || defined(__EMSCRIPTEN__)
+/* gweni patch: GLES 3.0 / WebGL 2 (freetype-gl_WITH_GLES3), no loader */
+#   include <GLES3/gl3.h>
 #else
 #if defined(__APPLE__)
 #   include "TargetConditionals.h"

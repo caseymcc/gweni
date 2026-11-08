@@ -327,8 +327,18 @@ public:
     //! coverage font with one in the new mode, lays no run out again by itself
     //! (each draws nothing until its next renderText) and raises
     //! textLayoutSerial(), so a canvas lays out and renders its whole tree again.
+    //! Where the device cannot blend LCD text (lcdTextAvailable()), LcdRGB and
+    //! LcdBGR are Grayscale, and the first time either is asked for (here or by
+    //! GWENI_TEXT_AA) the renderer logs one warning saying why.
     void setTextAA(TextAA aa);
     TextAA textAA() const { return m_textAA; }
+
+    //! Why the LCD modes are not available on this device, or nullptr when they
+    //! are: they blend each channel by its own coverage, which needs dual-source
+    //! blending. A backend that has it everywhere keeps this default; one that
+    //! finds out in init() answers from then on and calls applyLcdTextSupport().
+    virtual const char *lcdTextUnavailable() const { return nullptr; }
+    bool lcdTextAvailable() const { return lcdTextUnavailable() == nullptr; }
 
     //! The LCD modes' contrast correction: the subpixel coverage of text of
     //! luminance L is raised through c*(k+1)/(c*k+1), k=contrast*L, so light text
@@ -491,6 +501,11 @@ protected:
         Primitives,
         Text
     };
+
+    //! A backend's init(), once it knows lcdTextUnavailable(): an LCD mode already
+    //! set (GWENI_TEXT_AA at construction, a setTextAA before init()) falls back
+    //! to Grayscale as setTextAA would.
+    void applyLcdTextSupport();
 
     // ---- The backend's hooks, in the order flush() calls them ----
 
@@ -849,6 +864,8 @@ private:
     float m_sdfTextMin;
     //! How coverage-range text is anti-aliased (setTextAA, GWENI_TEXT_AA)
     TextAA m_textAA=TextAA::Grayscale;
+    //! The LCD modes' fallback to Grayscale has been logged (setTextAA)
+    bool m_lcdFallbackLogged=false;
     //! The LCD modes' coverage boost for light text (setTextContrast, GWENI_TEXT_CONTRAST)
     float m_textContrast;
     //! A missing or unreadable face is drawn in the built-in font (setFallbackFont)

@@ -113,8 +113,9 @@ TEST_CASE("Text draws: a loop of glDrawElements draws what glMultiDrawElements d
     const gweni::Font large=openSansAt(24.0f);
     const Rect view(Point(0, 0), gweni::test::viewSize());
 
-    // desktop GL 3.3 has glMultiDrawElements, so the shared renderer uses it
-    // unless GWENI_NO_MULTI_DRAW asked for the loop
+    // desktop GL 3.3 has glMultiDrawElements, and the GLES tree's llvmpipe
+    // context GL_EXT_multi_draw_arrays, so the shared renderer uses it unless
+    // GWENI_NO_MULTI_DRAW asked for the loop
     REQUIRE(renderer.glCapabilities().multiDraw);
     renderer.setMultiDrawText(true);
     REQUIRE(renderer.multiDrawText());

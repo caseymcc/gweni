@@ -8,13 +8,7 @@
 #endif
 
 #include <gweni/platforms/renderers/openglCore.h>
-#if defined(__APPLE__)
-#   include <GL/glew.h>
-#   include <OpenGL/gl.h>
-#else
-#   include <GL/glew.h>
-#   include <GL/gl.h>
-#endif
+#include <gweni/platforms/renderers/glApi.h>
 #include <gweni/platforms/platformTypes.h>
 #include <gweni/platforms/windowProvider.h>
 #include <gweni/platforms/commonPlatform.h>
@@ -59,11 +53,33 @@
 #include <imglib/imageIo.h>
 #include <imglib/simpleImage.h>
 
+#ifdef GWENI_GL_ES
+// GLES names the dual-source blend factors after GL_EXT_blend_func_extended
+#   ifndef GL_SRC1_COLOR
+#       define GL_SRC1_COLOR GL_SRC1_COLOR_EXT
+#       define GL_ONE_MINUS_SRC1_COLOR GL_ONE_MINUS_SRC1_COLOR_EXT
+#   endif
+#   if !defined(__EMSCRIPTEN__)
+// libGLESv2 exports the core entry points only: an extension's comes from EGL
+#       include <EGL/egl.h>
+#   endif
+#endif
+
 
 namespace gweni
 {
 namespace renderer
 {
+
+#ifdef GWENI_GL_ES
+namespace
+{
+// GL_EXT_multi_draw_arrays' glMultiDrawElementsEXT, which the text draws use in a
+// GLES context listing it; detectCapabilities resolves it (on the web it stays
+// null, and the text draws loop)
+PFNGLMULTIDRAWELEMENTSEXTPROC multiDrawElementsEXT=nullptr;
+}//namespace
+#endif
 
 // The view's projection: device px, y down, and z (a z index) from 0 at depth 1.0,
 // the depth-clear value, to OpenGLCore::kMaxZIndex at depth 0, so a higher z passes
@@ -355,8 +371,15 @@ void OpenGLCore::drawTextChunk(const TextChunkDraw &draw)
     // one draw of the chunk's ranges either way: GLES 3.0 has no
     // glMultiDrawElements, and its loop draws the same
     if(m_multiDrawText)
+    {
+#ifdef GWENI_GL_ES
+        multiDrawElementsEXT(GL_TRIANGLES, draw.counts.data(), (GLenum)GL_UNSIGNED_SHORT,
+            reinterpret_cast<const void *const *>(draw.offsets.data()), (GLsizei)draw.counts.size());
+#else
         glMultiDrawElements(GL_TRIANGLES, draw.counts.data(), (GLenum)GL_UNSIGNED_SHORT,
             reinterpret_cast<const void *const *>(draw.offsets.data()), (GLsizei)draw.counts.size());
+#endif
+    }
     else
     {
         for(size_t range=0; range<draw.counts.size(); ++range)
@@ -417,6 +440,10 @@ OpenGLCore::OpenGLCore(ResourcePaths &paths, const Rect &viewRect)
     // the text draws' loop of glDrawElements even where glMultiDrawElements exists
     if(const char *noMultiDraw=getenv("GWENI_NO_MULTI_DRAW"))
         m_noMultiDraw=(strcmp(noMultiDraw, "1") == 0);
+    // the context taken to have no dual-source blending, as a GLES one without
+    // GL_EXT_blend_func_extended has none: LCD text falls back to grayscale
+    if(const char *noDualSource=getenv("GWENI_GL_NO_DUAL_SOURCE"))
+        m_noDualSource=(strcmp(noDualSource, "1") == 0);
 }
 
 OpenGLCore::~OpenGLCore()
@@ -482,7 +509,12 @@ void OpenGLCore::init()
     SlotRenderer::init();
 
     m_glCapabilities=detectCapabilities();
+    if(m_noDualSource)
+        m_glCapabilities.dualSourceBlend=false;
     m_multiDrawText=m_glCapabilities.multiDraw && !m_noMultiDraw;
+    // GWENI_TEXT_AA=rgb|bgr, read at construction, falls back to grayscale here
+    // if the context cannot blend it
+    applyLcdTextSupport();
 
     // Creating buffers. A name from glGenBuffers is a buffer once it is first bound,
     // and that first target is the only one it is ever bound to (WebGL holds a buffer
@@ -1173,8 +1205,17 @@ OpenGLCore::GLCapabilities OpenGLCore::detectCapabilities()
     {
         capabilities.dialect=GLSLDialect::Es300;
         // GLES 3.0 has neither; GL_EXT_multi_draw_arrays and GL_EXT_blend_func_extended
-        // would give them
+        // give them. The multi-draw's entry point is EGL's to hand out, so only the
+        // GLES tree, which links EGL, draws through it.
         capabilities.multiDraw=false;
+#if defined(GWENI_GL_ES) && !defined(__EMSCRIPTEN__)
+        if(hasExtension("GL_EXT_multi_draw_arrays"))
+        {
+            multiDrawElementsEXT=reinterpret_cast<PFNGLMULTIDRAWELEMENTSEXTPROC>(
+                eglGetProcAddress("glMultiDrawElementsEXT"));
+            capabilities.multiDraw=(multiDrawElementsEXT != nullptr);
+        }
+#endif
         capabilities.dualSourceBlend=hasExtension("GL_EXT_blend_func_extended");
     }
     else
@@ -1200,6 +1241,15 @@ bool OpenGLCore::hasExtension(const char *name)
             return true;
     }
     return false;
+}
+
+const char *OpenGLCore::lcdTextUnavailable() const
+{
+    if(m_glCapabilities.dualSourceBlend)
+        return nullptr;
+    if(m_noDualSource)
+        return "LCD text needs dual-source blending, which GWENI_GL_NO_DUAL_SOURCE=1 turned off";
+    return "LCD text needs dual-source blending (GL_EXT_blend_func_extended), which this context does not have";
 }
 
 void OpenGLCore::setMultiDrawText(bool multiDraw)

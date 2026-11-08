@@ -90,11 +90,15 @@ public:
         //! glMultiDrawElements, which the text draws use; without it each of a
         //! draw's ranges is a glDrawElements of its own
         bool multiDraw=true;
-        //! dual-source blending (GL_SRC1_COLOR), which LCD text is blended with
+        //! dual-source blending (GL_SRC1_COLOR), which LCD text is blended with;
+        //! false also when GWENI_GL_NO_DUAL_SOURCE=1 was set at construction
         bool dualSourceBlend=true;
     };
 
     const GLCapabilities &glCapabilities() const { return m_glCapabilities; }
+    //! Without dual-source blending (GLCapabilities::dualSourceBlend, after init())
+    //! the LCD text modes are grayscale: why, as SlotRenderer::setTextAA logs it.
+    const char *lcdTextUnavailable() const override;
     //! Whether the current context lists the extension (GL_NUM_EXTENSIONS, glGetStringi)
     static bool hasExtension(const char *name);
 
@@ -183,6 +187,10 @@ private:
     //! GWENI_NO_MULTI_DRAW=1 at construction: the text draws loop even where the
     //! context has glMultiDrawElements
     bool m_noMultiDraw=false;
+    //! GWENI_GL_NO_DUAL_SOURCE=1 at construction: init() takes the context to have
+    //! no dual-source blending, as a GLES one without GL_EXT_blend_func_extended
+    //! (or WebGL 2) has none, so LCD text falls back to grayscale
+    bool m_noDualSource=false;
 
     //! The view's orthographic projection, z from 0 (depth 1.0) to kMaxZIndex (depth 0).
     glm::mat4 m_projectionMatrix;

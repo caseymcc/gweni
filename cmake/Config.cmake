@@ -77,9 +77,14 @@ if(GWENI_RENDER_OPENGL_CORE)
 
     find_package(glm CONFIG REQUIRED)
 
-    find_package(GLEW REQUIRED)
+    if(GWENI_GL_ES)
+        # GLES 3.0 headers and libGLESv2, no loader (include/gweni/platforms/renderers/glApi.h)
+        set(GWENI_RENDER_LIBRARIES glm::glm OpenGL::GLES3)
+    else()
+        find_package(GLEW REQUIRED)
 
-    set(GWENI_RENDER_LIBRARIES glm::glm GLEW::GLEW)
+        set(GWENI_RENDER_LIBRARIES glm::glm GLEW::GLEW)
+    endif()
 
     if(GWENI_USE_GLFW)
         find_package(glfw3 CONFIG REQUIRED)

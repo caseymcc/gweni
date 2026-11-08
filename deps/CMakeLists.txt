@@ -6,6 +6,15 @@ set(freetype-gl_USE_VAO ON CACHE BOOL "Use a VAO to render a vertex_buffer insta
 set(freetype-gl_BUILD_DEMOS OFF CACHE BOOL "Build the freetype-gl example programs" FORCE)
 set(freetype-gl_BUILD_APIDOC OFF CACHE BOOL "Build the freetype-gl API documentation" FORCE)
 set(freetype-gl_BUILD_TESTS OFF CACHE BOOL "Build the tests" FORCE)
+# The GLES tree (GWENI_GL_ES): freetype-gl against <GLES3/gl3.h> and libGLESv2,
+# without glew (freetype-gl_WITH_GLES3 is a gweni patch)
+if(GWENI_GL_ES)
+    set(freetype-gl_WITH_GLEW OFF CACHE BOOL "Use the GLEW library to fetch OpenGL function pointers" FORCE)
+    set(freetype-gl_WITH_GLES3 ON CACHE BOOL "Build against GLES 3.0 (<GLES3/gl3.h>, libGLESv2)" FORCE)
+else()
+    set(freetype-gl_WITH_GLEW ON CACHE BOOL "Use the GLEW library to fetch OpenGL function pointers" FORCE)
+    set(freetype-gl_WITH_GLES3 OFF CACHE BOOL "Build against GLES 3.0 (<GLES3/gl3.h>, libGLESv2)" FORCE)
+endif()
 
 # SYSTEM: freetype-gl keeps its own flags, and its headers must not be able to
 # raise a diagnostic inside a gweni translation unit. Only OpenGLCore uses it,

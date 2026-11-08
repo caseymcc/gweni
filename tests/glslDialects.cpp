@@ -16,7 +16,9 @@
  *  (Mesa's llvmpipe has it); without it the ES cases are skipped with a message.
  *  The ES text program with its dual-source output needs
  *  GL_EXT_blend_func_extended, an ES extension that desktop contexts do not list,
- *  so it is compiled only where the context lists it.
+ *  so it is compiled only where the context lists it. In the GLES tree the
+ *  context is GLES 3.0: it compiles the ES bodies natively, and cannot compile
+ *  `#version 330 core`, so the desktop case is skipped with a message there.
  *
  *  GL only (the test suite "gl_only"): it compiles OpenGLCore's GLSL sources in
  *  the GL dialects.
@@ -128,16 +130,20 @@ TEST_CASE("GLSL dialects: the headers in front of the shared bodies")
 
 TEST_CASE("GLSL dialects: the desktop programs compile and link without dual-source blending too")
 {
-    gweni::test::glRenderer();
+    if(gweni::test::glRenderer().glCapabilities().dialect == GLSLDialect::Es300)
+    {
+        MESSAGE("skipped: a GLES context does not compile #version 330 core");
+        return;
+    }
     checkPrograms(GLSLDialect::Glsl330, true);
     checkPrograms(GLSLDialect::Glsl330, false);
 }
 
 TEST_CASE("GLSL dialects: every program compiles and links as GLSL ES 3.00")
 {
-    gweni::test::glRenderer();
+    const bool esContext=(gweni::test::glRenderer().glCapabilities().dialect == GLSLDialect::Es300);
 
-    if(!OpenGLCore::hasExtension("GL_ARB_ES3_compatibility"))
+    if(!esContext && !OpenGLCore::hasExtension("GL_ARB_ES3_compatibility"))
     {
         MESSAGE("skipped: this context has no GL_ARB_ES3_compatibility to compile #version 300 es with");
         return;

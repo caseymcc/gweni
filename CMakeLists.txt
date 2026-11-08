@@ -15,6 +15,10 @@ endif()
 cmake_policy(SET CMP0074 NEW)
 
 option(GWENI_RENDER_OPENGL_CORE "Opengl 3.0+ Renderer" ON)
+# OpenGLCore, the examples, the tests and the bench against <GLES3/gl3.h> and
+# libGLESv2 instead of glew, on a GLES 3.0 context (./generate.sh linux gles):
+# a call newer than GLES 3.0 does not compile. Emscripten is GLES without it.
+option(GWENI_GL_ES "Build the GL renderer against GLES 3.0 instead of desktop GL" OFF)
 # Off by default, so a build without the Vulkan headers and tools works;
 # ./generate.sh turns it on in every tree it configures (with the vcpkg
 # manifest feature "vulkan").
@@ -340,6 +344,7 @@ if(GWENI_RENDER_OPENGL_CORE)
     list(APPEND GWENI_RENDER_SOURCES
         include/gweni/platforms/renderers/slotRenderer.h
         source/platforms/renderers/SlotRenderer/slotRenderer.cpp
+        include/gweni/platforms/renderers/glApi.h
         include/gweni/platforms/renderers/openglCore.h
         source/platforms/renderers/OpenGLCore/openglCore.cpp
         ${GWENI_FALLBACK_FONT_SOURCE}
@@ -353,6 +358,20 @@ if(GWENI_RENDER_OPENGL_CORE)
     set(GWENI_COMPILE_DEFINITIONS ${GWENI_COMPILE_DEFINITIONS}
         GLM_HAS_TEMPLATE_ALIASES
     )
+
+    if(GWENI_GL_ES)
+        # glApi.h's switch to the GLES headers, for the library and everything
+        # linking it; EGL resolves the GLES extensions' entry points
+        # (glMultiDrawElementsEXT), which libGLESv2 does not export
+        find_package(OpenGL REQUIRED COMPONENTS GLES3 EGL)
+        set(GWENI_ADDITIONAL_LIBRARIES ${GWENI_ADDITIONAL_LIBRARIES}
+            OpenGL::GLES3
+            OpenGL::EGL
+        )
+        # GLFW_INCLUDE_NONE: <GLFW/glfw3.h> would include the desktop <GL/gl.h>,
+        # whose prototypes would let a call newer than GLES 3.0 compile
+        set(GWENI_COMPILE_DEFINITIONS ${GWENI_COMPILE_DEFINITIONS} GWENI_GL_ES GLFW_INCLUDE_NONE)
+    endif()
 endif()
 
 if(GWENI_RENDER_VULKAN)

@@ -1,7 +1,8 @@
 /*
  *  Gweni - shared offscreen capture plumbing for the examples' capture modes
  *  (ControlTest --shot, OpenGLCore --screenshot): a GL context with or without
- *  a display, an offscreen target, and framebuffer readback to PNG. Also where
+ *  a display (desktop GL 3.3 core, or GLES 3.0 in the GLES tree, GWENI_GL_ES),
+ *  an offscreen target, and framebuffer readback to PNG. Also where
  *  both examples choose their resource directory, load their fonts and work
  *  out the scale they draw at.
  *
@@ -10,7 +11,7 @@
 #ifndef _gweni_example_capture_h_
 #define _gweni_example_capture_h_
 
-#include <GL/glew.h>
+#include <gweni/platforms/renderers/glApi.h>
 #include <GLFW/glfw3.h>
 #include <gweni/platforms/input/glfw3.h>
 #include <gweni/platforms/platformTypes.h>
@@ -141,8 +142,11 @@ bool initEglContext(Context &ctx);
 
 void destroyContext(Context &ctx);
 
-//! glewInit, tolerating the EGL path's GLX complaint. \return false if fatal.
-bool initGlew();
+//! Readies \a ctx, current: glewInit on desktop GL (tolerating the EGL path's
+//! GLX complaint), nothing to load on GLES, whose entry points are linked; then,
+//! for a window, checks that its framebuffer has a 24-bit depth buffer (one line
+//! if not). \return false if fatal.
+bool initGL(const Context &ctx);
 
 //-----------------------------------------------------------------------------
 // Offscreen target + PNG readback

@@ -7,6 +7,7 @@ cmake_options=""
 cmake_custom_options=""
 sanitize=""
 profile=""
+gles=""
 manifest_features=""
 vulkan="ON"
 
@@ -42,6 +43,9 @@ for var in "$@"; do
     if [ "$var" = "profile" ]; then
         profile="profile"
     fi
+    if [ "$var" = "gles" ]; then
+        gles="gles"
+    fi
     if [[ $var = -DVCPKG_MANIFEST_FEATURES=* || $var = -DVCPKG_MANIFEST_FEATURES:*=* ]]; then
         # merged with the features this script adds, below
         manifest_features="${var#*=}"
@@ -68,6 +72,21 @@ if [ -n "$profile" ]; then
         exit 1
     fi
     build_type="profile"
+fi
+
+if [ -n "$gles" ]; then
+    # The GLES tree: OpenGLCore, the examples, the tests and the bench against
+    # <GLES3/gl3.h> on a GLES 3.0 context, next to the desktop GL tree. It
+    # combines with release and asan, not with profile or web (which is GLES
+    # by itself).
+    if [ -n "$profile" ]; then
+        echo "ERROR: gles does not combine with profile; use ./generate.sh linux gles [release] [asan]"
+        exit 1
+    fi
+    if [ "$platform" != "linux" ]; then
+        echo "ERROR: gles is a linux tree; use ./generate.sh linux gles [release] [asan]"
+        exit 1
+    fi
 fi
 
 if [ "$platform" = "web" ]; then
@@ -163,6 +182,12 @@ fi
 cmake_custom_options+="-DVCPKG_MANIFEST_FEATURES=$manifest_features"
 
 build_dir="build_${platform}_${arch}_${build_type}"
+
+if [ -n "$gles" ]; then
+    # build_linux_x64_debug_gles, beside the desktop GL tree
+    cmake_options="$cmake_options -DGWENI_GL_ES=ON"
+    build_dir="${build_dir}_gles"
+fi
 
 if [ "$sanitize" = "asan" ]; then
     # AddressSanitizer tree, next to the plain one: build_linux_x64_debug_asan

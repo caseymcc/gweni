@@ -492,12 +492,43 @@ two programs and the draws. What follows describes both together:
   `GL_ARRAY_BUFFER`, the quad index buffers to `GL_ELEMENT_ARRAY_BUFFER`), as WebGL
   requires. Two things beyond it are used where the context has them, found by
   `init()` (`OpenGLCore::glCapabilities()`, from `GL_VERSION` and the extension list):
-  `glMultiDrawElements` for the text (core in GL 3.3; without it, each range of a draw
-  is a `glDrawElements` of its own, which draws the same pixels and counts the same
-  `FrameStats`; `GWENI_NO_MULTI_DRAW=1` at construction, or `setMultiDrawText(false)`,
-  takes the loop on desktop too, `tests/textDrawLoop.cpp`), and dual-source blending
-  for LCD text (core in GL 3.3, `GL_EXT_blend_func_extended` on GLES; without it the
-  text program has no second output and an LCD atlas is blended by its mean coverage).
+  `glMultiDrawElements` for the text (core in GL 3.3; on GLES the
+  `GL_EXT_multi_draw_arrays` one, `glMultiDrawElementsEXT`, whose entry point the GLES
+  tree gets from `eglGetProcAddress`, since `libGLESv2` exports only the core ones;
+  without it, each range of a draw is a `glDrawElements` of its own, which draws the
+  same pixels and counts the same `FrameStats`; `GWENI_NO_MULTI_DRAW=1` at
+  construction, or `setMultiDrawText(false)`, takes the loop where the context has it
+  too, `tests/textDrawLoop.cpp`), and dual-source blending for LCD text (core in GL
+  3.3, `GL_EXT_blend_func_extended` on GLES). Without dual-source blending the text
+  program has no second output and the LCD modes are grayscale: `OpenGLCore` answers
+  `SlotRenderer::lcdTextUnavailable()` with why, `setTextAA(LcdRGB/LcdBGR)` (and a
+  `GWENI_TEXT_AA=rgb|bgr` read at construction, which `init()` re-applies through
+  `applyLcdTextSupport()`) leaves the mode `Grayscale`, and the renderer logs one
+  warning the first time an LCD mode is asked for (`LCD text needs dual-source
+  blending (GL_EXT_blend_func_extended), which this context does not have, using
+  grayscale`), never again from that renderer. `GWENI_GL_NO_DUAL_SOURCE=1` at
+  construction makes `init()` take any context to have none, so the fallback is
+  checked in every tree (`tests/noDualSource.cpp`).
+- **The GLES tree.** `./generate.sh linux gles` (`GWENI_GL_ES=ON`) builds `OpenGLCore`,
+  the examples, the tests and the bench against `<GLES3/gl3.h>` (with
+  `<GLES2/gl2ext.h>` for the extensions' enums) and `libGLESv2`, with no glew, so a
+  call newer than GLES 3.0 does not compile. The choice is made in one header,
+  `include/gweni/platforms/renderers/glApi.h`, which every file calling GL includes
+  (`GWENI_GL_ES` is a public compile definition of `gweni`, and Emscripten defines it
+  by itself there); freetype-gl gets the same switch from a gweni patch
+  (`freetype-gl_WITH_GLES3`, `FREETYPE_GL_GLES3` in its `opengl.h`), and
+  `GLFW_INCLUDE_NONE` keeps `<GLFW/glfw3.h>` from bringing the desktop `<GL/gl.h>`
+  back. The examples' context (`examples/openglcore/capture.cpp`) is GLES 3.0 there: the
+  surfaceless EGL one binds `EGL_OPENGL_ES_API` with an `EGL_OPENGL_ES3_BIT` config,
+  and a window asks GLFW for `GLFW_OPENGL_ES_API` 3.0; `capture::initGL` loads
+  nothing (glewInit on desktop). In every tree `initGL` checks a window's framebuffer,
+  and `createFramebuffer` the offscreen one, for a 24-bit depth buffer, failing with one
+  line if it has less: `OpenGLCore` spreads its 65536 z values over the depth range. On
+  Mesa's llvmpipe the GLES 3.0 context has both `GL_EXT_multi_draw_arrays` and
+  `GL_EXT_blend_func_extended`, so it draws through the same calls as the desktop
+  trees and its tests, `docs_samples` byte for byte, pass as theirs do;
+  `tests/glslDialects.cpp` compiles the ES bodies there natively and skips the
+  `#version 330 core` ones a GLES context cannot compile.
 - **The shaders' dialect is chosen at run time.** Each stage is one body shared by
   every dialect, behind a header `OpenGLCore::shaderSource` puts in front:
   `#version 330 core`, or for an ES context `#version 300 es` with `precision highp`
@@ -948,7 +979,9 @@ two programs and the draws. What follows describes both together:
   `setTextContrast()`, `GWENI_TEXT_CONTRAST=<f>` at construction, default 1 (mid
   coverage 0.5 becomes 0.67 for white); 0 turns it off. Grayscale and SDF text do not
   use it. The SDF range stays
-  grayscale in every mode. `setTextAA` at runtime replaces every coverage-range font with
+  grayscale in every mode. **Without dual-source blending** (a GLES context without
+  `GL_EXT_blend_func_extended`, WebGL 2, `GWENI_GL_NO_DUAL_SOURCE=1`) the LCD modes fall
+  back to grayscale with one warning per renderer ("One GL subset" above). `setTextAA` at runtime replaces every coverage-range font with
   one in the new mode (its runs drop out of the draw lists and draw nothing until laid out
   again) and raises `renderer::Base::textLayoutSerial()`; `Canvas::updateCanvas` sees the
   new serial and calls `onScaleChanged()`, the whole-tree re-layout a scale change uses, so

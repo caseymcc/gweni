@@ -152,7 +152,14 @@ bool initGlfwContext(Context &ctx, const Point &size, const std::string &title, 
     glfwWindowHint(GLFW_SCALE_TO_MONITOR, visible?GLFW_TRUE:GLFW_FALSE);
     // GLFW's default, asked for: OpenGLCore spreads its 65536 z values over the
     // depth buffer, 256 steps each in 24 bits, as in the EGL path's framebuffer
+    // (initGL checks what the window got)
     glfwWindowHint(GLFW_DEPTH_BITS, 24);
+#ifdef GWENI_GL_ES
+    // the GLES tree's context is GLES 3.0, as the EGL path's is
+    glfwWindowHint(GLFW_CLIENT_API, GLFW_OPENGL_ES_API);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 0);
+#endif
     ctx.window=glfwCreateWindow(size.x, size.y, title.c_str(), NULL, NULL);
     if(!ctx.window)
     {
@@ -180,10 +187,22 @@ bool initEglContext(Context &ctx)
         return false;
     }
 
+#ifdef GWENI_GL_ES
+    // the GLES tree: a GLES 3.0 context
+    const EGLint renderableType=EGL_OPENGL_ES3_BIT;
+    const EGLenum api=EGL_OPENGL_ES_API;
+    const char *const apiName="EGL_OPENGL_ES_API";
+#else
+    // desktop GL 3.3 core
+    const EGLint renderableType=EGL_OPENGL_BIT;
+    const EGLenum api=EGL_OPENGL_API;
+    const char *const apiName="EGL_OPENGL_API";
+#endif
+
     const EGLint configAttribs[]=
     {
         EGL_SURFACE_TYPE, EGL_PBUFFER_BIT,
-        EGL_RENDERABLE_TYPE, EGL_OPENGL_BIT,
+        EGL_RENDERABLE_TYPE, renderableType,
         EGL_RED_SIZE, 8, EGL_GREEN_SIZE, 8, EGL_BLUE_SIZE, 8, EGL_ALPHA_SIZE, 8,
         EGL_NONE
     };
@@ -195,17 +214,21 @@ bool initEglContext(Context &ctx)
         return false;
     }
 
-    if(!eglBindAPI(EGL_OPENGL_API))
+    if(!eglBindAPI(api))
     {
-        std::cerr<<g_tool<<": eglBindAPI(EGL_OPENGL_API) failed\n";
+        std::cerr<<g_tool<<": eglBindAPI("<<apiName<<") failed\n";
         return false;
     }
 
     const EGLint contextAttribs[]=
     {
         EGL_CONTEXT_MAJOR_VERSION, 3,
+#ifdef GWENI_GL_ES
+        EGL_CONTEXT_MINOR_VERSION, 0,
+#else
         EGL_CONTEXT_MINOR_VERSION, 3,
         EGL_CONTEXT_OPENGL_PROFILE_MASK, EGL_CONTEXT_OPENGL_CORE_PROFILE_BIT,
+#endif
         EGL_NONE
     };
     ctx.eglContext=eglCreateContext(ctx.eglDisplay, config, EGL_NO_CONTEXT, contextAttribs);
@@ -245,8 +268,24 @@ void destroyContext(Context &ctx)
 #endif
 }
 
-bool initGlew()
+//! Whether the bound framebuffer's depth attachment (GL_DEPTH for a window's,
+//! GL_DEPTH_ATTACHMENT for an FBO's) has at least the 24 bits OpenGLCore's z
+//! layering needs; one line naming \a what if not.
+static bool hasDepth24(GLenum attachment, const char *what)
 {
+    GLint bits=0;
+
+    glGetFramebufferAttachmentParameteriv(GL_FRAMEBUFFER, attachment,
+        GL_FRAMEBUFFER_ATTACHMENT_DEPTH_SIZE, &bits);
+    if(bits >= 24)
+        return true;
+    std::cerr<<g_tool<<": "<<what<<" has a "<<bits<<"-bit depth buffer, 24 bits are needed\n";
+    return false;
+}
+
+bool initGL(const Context &ctx)
+{
+#ifndef GWENI_GL_ES
     glewExperimental=GL_TRUE;
     const GLenum status=glewInit();
 
@@ -258,6 +297,15 @@ bool initGlew()
         return false;
     }
     glGetError(); // GLEW's probing can leave an error flagged behind
+#endif
+    // a window draws into its own framebuffer; the EGL path has none, and its
+    // offscreen one is checked by createFramebuffer
+    if(ctx.window)
+    {
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        if(!hasDepth24(GL_DEPTH, "the window"))
+            return false;
+    }
     return true;
 }
 
@@ -290,6 +338,11 @@ bool createFramebuffer(Framebuffer &fb, int width, int height)
     if(glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
     {
         std::cerr<<g_tool<<": offscreen framebuffer incomplete\n";
+        destroyFramebuffer(fb);
+        return false;
+    }
+    if(!hasDepth24(GL_DEPTH_ATTACHMENT, "the offscreen framebuffer"))
+    {
         destroyFramebuffer(fb);
         return false;
     }

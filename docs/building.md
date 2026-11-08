@@ -9,6 +9,7 @@ Builds run inside the build container (`./run_docker.sh` from a host; see
 ./generate.sh linux release               # build_linux_x64_release/
 ./generate.sh linux asan                  # build_linux_x64_debug_asan/, AddressSanitizer
 ./generate.sh linux profile               # build_linux_x64_profile/, for profiling
+./generate.sh linux gles                  # build_linux_x64_debug_gles/, GLES 3.0 (see "GLES tree")
 cmake --build build_linux_x64_debug -j
 ```
 
@@ -27,6 +28,34 @@ A `-DVCPKG_MANIFEST_FEATURES=...` given to `generate.sh` (e.g.
 loader, Mesa's lavapipe CPU driver (Vulkan 1.3), which the Vulkan tests run on,
 and Xvfb; an older container lacks them (`ls /usr/share/vulkan/icd.d` tells,
 and `vulkan_smoke` fails saying so).
+
+## GLES tree
+
+`./generate.sh linux gles` configures `build_linux_x64_debug_gles/` (with
+`release`: `build_linux_x64_release_gles/`; with `asan`:
+`build_linux_x64_debug_gles_asan/`; `profile` does not combine with it), the
+GL renderer, the examples, the tests and the bench built against GLES 3.0
+(`-DGWENI_GL_ES=ON`):
+
+```bash
+./generate.sh linux gles
+cmake --build build_linux_x64_debug_gles -j
+mm run --lock render -- ctest --test-dir build_linux_x64_debug_gles -L gpu
+ctest --test-dir build_linux_x64_debug_gles -LE gpu
+```
+
+It compiles against `<GLES3/gl3.h>` and links `libGLESv2` (and `libEGL`), with
+no glew, so a GL call newer than GLES 3.0 does not compile there, and the
+examples and tests run on a GLES 3.0 context: the surfaceless EGL one is
+`EGL_OPENGL_ES_API` 3.0, and a window asks GLFW for a GLES 3.0 context (there is
+no display in the container, so only the EGL path is exercised there). It is
+the browser's API without the browser: every test passes as in the desktop
+trees, `docs_samples` byte for byte included, and `gweni_bench`'s counters are
+the desktop tree's. Mesa's llvmpipe GLES context has
+`GL_EXT_multi_draw_arrays` and `GL_EXT_blend_func_extended`, so the text draws
+and LCD text work as on desktop GL. Without dual-source blending (WebGL 2, or
+`GWENI_GL_NO_DUAL_SOURCE=1` in any tree) LCD text (`GWENI_TEXT_AA=rgb|bgr`)
+falls back to grayscale with one warning.
 
 ## Web tree
 

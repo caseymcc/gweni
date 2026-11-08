@@ -77,7 +77,7 @@ int main(int argc, char **argv)
     return EXIT_FAILURE;
 #endif
 
-    if(!capture::initGlew())
+    if(!capture::initGL(ctx))
     {
         capture::destroyContext(ctx);
         return EXIT_FAILURE;

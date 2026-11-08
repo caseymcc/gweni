@@ -105,6 +105,12 @@ FontKey SlotRenderer::resolveFont(const Font &font, float px) const
     return key;
 }
 
+void SlotRenderer::applyLcdTextSupport()
+{
+    if((m_textAA != TextAA::Grayscale) && !lcdTextAvailable())
+        setTextAA(m_textAA);
+}
+
 TextMode SlotRenderer::getTextMode(const Font &font) const
 {
     return resolveFont(font, textPx(font)).mode;
@@ -112,6 +118,19 @@ TextMode SlotRenderer::getTextMode(const Font &font) const
 
 void SlotRenderer::setTextAA(TextAA aa)
 {
+    // an LCD atlas needs dual-source blending to be drawn as LCD text; without it
+    // the coverage fonts stay grayscale
+    if((aa == TextAA::LcdRGB) || (aa == TextAA::LcdBGR))
+    {
+        if(const char *why=lcdTextUnavailable())
+        {
+            if(!m_lcdFallbackLogged)
+                gweni::log::write(log::Level::Warning, "%s, using grayscale", why);
+            m_lcdFallbackLogged=true;
+            aa=TextAA::Grayscale;
+        }
+    }
+
     if(aa == m_textAA)
         return;
 
