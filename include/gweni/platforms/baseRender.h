@@ -231,7 +231,7 @@ public:
     float scale() const { return m_scale; }
 
     //! Raised whenever text drawn or measured before may draw or measure otherwise
-    //! now, for a reason other than the scale (OpenGLCore::setTextAA). A canvas that
+    //! now, for a reason other than the scale (SlotRenderer::setTextAA). A canvas that
     //! sees it change lays out and renders its whole tree again, as for a new scale.
     unsigned textLayoutSerial() const { return m_textLayoutSerial; }
 

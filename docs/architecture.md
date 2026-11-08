@@ -376,10 +376,87 @@ A backend can be **immediate** (just draw in each `drawFilledRect` call; ignore 
 retained-update benefit) or **retained** (the primitive id indexes into a persistent
 GPU buffer). The same control/skin code drives both.
 
+## The shared core: `SlotRenderer` and its backend hooks
+
+A retained renderer is mostly API-independent, so that part is one class,
+`renderer::SlotRenderer` (`include/gweni/platforms/renderers/slotRenderer.h`,
+`source/platforms/renderers/SlotRenderer/slotRenderer.cpp`), deriving from
+`renderer::Base`, and a backend derives from it and implements a narrow set of
+pure-virtual hooks. `OpenGLCore` is the GL backend; a Vulkan one (#368) and a WebGL one
+(#338) are meant to be others. The core holds, with no API call and no GL header of its
+own:
+
+- the CPU mirrors: the primitive `Vertex` slots and their clip `Box`es, the glyph
+  slots (`ftgl::glyph_vertex_t`) and theirs, and the per-slot byte diff that marks only
+  a slot whose bytes changed (`markPrimitiveChanges`, the `DirtySlots` sets,
+  `snapshotMirror`);
+- the vertex packing of every style: `setVertex`, `writeRoundedQuad`, `drawIcon`,
+  `drawLine`'s stroke placement, `drawTexturedRect`'s image units (`imageUnit`) and
+  `cullOutOfRangeQuad`;
+- the text runs and their slot allocator (`allocateTextRun`), and each atlas's draw list
+  (`buildTextDrawList`, `setTextRunFont`), as `TextChunkDraw`s of index ranges;
+- font resolution and layout: `resolveFont` (coverage, LCD or SDF by size and
+  `TextAA`), `loadFont`/`freeFont`/`ensureFont` with their owners, `layoutSdfText`,
+  `measuredPenShifts`, `measureText`, over freetype-gl's CPU-side atlases and their
+  dirty row band;
+- the loaded images (`SlotTextureData`, their pixels while readable);
+- the upload policy: which ranges are sent (coalesced dirty runs, the slots the mirror
+  gained), when a buffer or clip-box table regrows (1.5 times, a power of two of rows),
+  how a run of clip boxes is cut into row pieces;
+- `FrameStats`, every count of it made here from what it asks the hooks to do, so two
+  backends count alike by construction.
+
+The hooks (`SlotRenderer`'s protected section, in the order `flush()` calls them) take
+sizes, ranges and the core's own data, never an API object:
+
+| Hook | What the backend does |
+| --- | --- |
+| `beginFrame()` | the frame's state: blending, the depth test `LESS` (from `begin()`) |
+| `allocateVertexBuffer(path, bytes)`, `uploadVertexRange(path, offset, bytes, data)` | (re)allocate a path's vertex buffer, copy a byte range of its mirror to it |
+| `maxClipBoxRows()`, `allocateClipBoxes(path, rows)`, `uploadClipBoxRows(path, x, y, w, h, boxes)` | the device's row limit; (re)allocate a path's clip-box table, `kClipColumns` boxes a row; copy a block of boxes to it |
+| `createAtlasTexture(atlas)`, `uploadAtlasRows(texture, atlas, firstRow, rows)`, `destroyAtlasTexture(texture)` | a font atlas's texture (R8, or RGB8 for depth 3), its dirty rows, its end |
+| `createImageTexture(image, rgba)`, `destroyImageTexture(texture)`, `readTextureRgba(...)` | an image's mipmapped texture, its end, a read back (`pixelColor`, `readFontAtlas`) |
+| `beginPrimitiveDraws()`, `drawPrimitiveChunk(chunk, firstSlot, slots)`, `endPrimitiveDraws()` | one draw per chunk of slots, in slot order |
+| `beginTextDraws()`, `beginTextAtlas(font)`, `drawTextChunk(draw)`, `endTextDraws()` | per atlas with runs to draw: its texture and `TextMode` (an LCD one blended per channel), then one draw per `TextChunkDraw` |
+| `submitFrame()` | the end of `flush()`: the frame's commands go to the device |
+| `indexChunkSlotsChanged()` | `setIndexChunkSlots()` changed the chunk size |
+
+`path` is `SlotPath::Primitives` or `SlotPath::Text`. A `TextureHandle` is the
+backend's name for a texture (OpenGLCore's GL texture name; 0 is none): an atlas's is
+kept in freetype-gl's `texture_atlas_t::id`, an image's in `SlotTextureData::m_handle`.
+A `TextChunkDraw` is the ranges of one chunk's draw: an index count and the first
+index's byte offset, from the chunk's first slot, per range (the form
+`glMultiDrawElements` takes; a first index is the offset over `sizeof(uint16_t)`).
+Five public pure-virtual methods serve the tests and the apps on any backend:
+`clearTarget(color)` and `readPixels(width, height, pixels)` (top row first),
+`textureExists`, `textureChannelSizes` and `deviceError`.
+
+`init()` and `setViewRect()` are the core's too (it forgets what the device holds and
+keeps the view); a backend's own call the core's and then make or resize its objects.
+A backend's destructor calls `releaseResources()` first, while its device is still
+there: it destroys every atlas and image texture through the hooks and frees the CPU
+side (`eraseFont`, `deleteTextureData`). The core's `end()` is `flush()`, so a
+wrapper such as `gweni_bench`'s `TimedFlush<Renderer>` times the flush of any backend
+by overriding `end()`.
+
+The vendored freetype-gl's `text-buffer.h` (which the core lays coverage text out
+with, `text_buffer_add_text` into a CPU vector) includes its `opengl.h` for the GL
+names in `vertex_buffer_t`, so the GL headers are still on the core's include path
+through it; the core uses only freetype-gl's CPU side.
+
+The GPU unit tests (`tests/`) take the shared renderer as a `SlotRenderer`
+(`test::gpuRenderer()`, `test::newRenderer()`, `test::clearView()`,
+`test::readView()`), so they are written once for every backend; `tests/main.cpp` is
+the one place that picks it. The three that check GL itself (`fontRelease.cpp`,
+`glslDialects.cpp`, `textDrawLoop.cpp`) are the doctest test suite `gl_only`
+(`tests/glRenderer.h`), which a run on another backend leaves out (`-tse=gl_only`).
+
 ## OpenGLCore renderer (retained model)
 
 `source/platforms/renderers/OpenGLCore/openglCore.cpp` implements the retained model
-on an OpenGL 3.3 core profile:
+on an OpenGL 3.3 core profile, as `SlotRenderer`'s GL backend: the core above packs
+and diffs the slots, and OpenGLCore holds the buffers, textures, vertex arrays, the
+two programs and the draws. What follows describes both together:
 
 - **One GL subset.** Every GL call and every line of GLSL keeps to what GL 3.3 core,
   GLES 3.0 and WebGL 2 all have, so one code path serves a desktop context, a GLES
@@ -444,7 +521,7 @@ on an OpenGL 3.3 core profile:
   `x, y` are the corner's device-pixel position, **signed** (`int16_t`, read as an
   `ivec3` with `z`), so a rect that straddles the view's left or top edge keeps its
   negative corner and draws exactly its on-view part; `z` is `uint16_t`, 0..65535
-  (`OpenGLCore::kMaxZIndex`, what `maxZIndex()` reports; the shader takes its low 16
+  (`SlotRenderer::kMaxZIndex`, what `maxZIndex()` reports; the shader takes its low 16
   bits, `inPosition.z & 0xffff`, since `GL_SHORT` sign-extends it), the projection's
   depth range: z=0 is depth 1.0, the clear value, and 65535 is depth 0. In a 24-bit
   depth buffer (the capture framebuffer's `GL_DEPTH_COMPONENT24`, and the window's
@@ -541,7 +618,7 @@ on an OpenGL 3.3 core profile:
   own (`loadTexture`, e.g. an `ImagePanel`'s `gwen.png`), not a region of the skin atlas.
   Its UVs are 0..1 and stored in `tx/ty` as 0..65535; the draw colour is its tint (color1,
   alpha included), and `radius` holds the slot's **image unit**: one of 8 texture units
-  (`GL_TEXTURE2` on, `OpenGLCore::ImageUnits`), all bound for the primitive draw, which
+  (`GL_TEXTURE2` on, `SlotRenderer::ImageUnits`), all bound for the primitive draw, which
   the fragment shader picks with a constant-indexed switch over `images[8]`. A texture
   takes a unit on its first draw and keeps it until `freeTexture`, because a slot keeps
   its unit across frames. With all 8 in use, a further texture draws the missing image
@@ -559,7 +636,7 @@ on an OpenGL 3.3 core profile:
   `depthLayers()` z values from `getZIndex()` on, then its children are numbered, then
   it takes `overlayLayers()` more (0 by default) from `getOverlayZIndex()` on, for what
   it draws in front of its whole subtree. A text run's glyph i is at
-  `z+(i+1)/(glyphs+1)` (`OpenGLCore::renderText`, the move branch included), strictly
+  `z+(i+1)/(glyphs+1)` (`SlotRenderer::renderText`, the move branch included), strictly
   between the Text control's z and the next one, so a rect drawn at the Text's z is
   behind every glyph and in front of everything numbered before it.
 - **The TextBox caret and selection.** The textured skin's `TextBox` renderer (shared by
@@ -725,7 +802,7 @@ on an OpenGL 3.3 core profile:
   `m_textClipBoxes`), its edges snapped like the vertices' and clamped to `[0, 65535]` with
   `x1 >= x0`, `y1 >= y0`, so an empty region is an empty box. Each list lives in a 2D
   `GL_RGBA16UI` texture (`m_clipTexture`, `m_textClipTexture`, on texture unit 1),
-  one texel per slot, `OpenGLCore::kClipColumns` (2048) slots a row: slot `s` is
+  one texel per slot, `SlotRenderer::kClipColumns` (2048) slots a row: slot `s` is
   texel `(s % 2048, s / 2048)`, read with `texelFetch` (nearest filtering, as an
   integer texture needs). The fragment shaders `discard` outside `[x0,x1) x [y0,y1)`.
   Both programs take the slot from the vertex shader as a `flat uint`,
@@ -759,15 +836,15 @@ on an OpenGL 3.3 core profile:
   inset on each side, which shows the boxes on screen.
 - **One text draw per font atlas.** Every loaded font has its own freetype-gl atlas
   texture: a coverage font per (face, px, bold) below the SDF threshold, one SDF font
-  per (face, bold) at or above it (see "Hybrid text"). Each `TextRun` records the `GLFontData` it was laid out in,
-  and each `GLFontData` keeps the text ids of its runs (`textRuns`). `flush()` binds
+  per (face, bold) at or above it (see "Hybrid text"). Each `TextRun` records the `FontData` it was laid out in,
+  and each `FontData` keeps the text ids of its runs (`textRuns`). `flush()` binds
   each atlas in turn and draws its runs with one `glMultiDrawElements` per index chunk
   they reach (or, without multi-draw, that draw's ranges as a loop of `glDrawElements`,
   counted as one draw; "One GL subset" above), one per atlas until the glyph slots outgrow a chunk
-  (`GLFontData::drawChunks`, built by `buildTextDrawList`): the glyphs in use of each
+  (`FontData::drawChunks`, built by `buildTextDrawList`): the glyphs in use of each
   run that is not hidden, adjacent ones merged, split at the chunks' edges, in slot
   order, as index ranges of the static glyph-quad buffer from the chunk's first slot,
-  with the atlas's `GLTextMode` in the `textMode` uniform. That list is what keeps a
+  with the atlas's `TextMode` in the `textMode` uniform. That list is what keeps a
   hidden run, a freed one and a shrunk run's tail off the screen: no index is ever
   written for them, so hiding, showing or shrinking a run uploads no index (there are
   none to upload) and marks only its font's list for rebuilding (`markTextDrawList`).
@@ -776,7 +853,7 @@ on an OpenGL 3.3 core profile:
 - **A font is held by its owners and by the runs laid out in it.** Every caller
   holding an equal `Font` shares one entry (two Labels in the same font, a skin's
   default font and the Texts drawn in it), so `loadFont`/`freeFont` are a counted
-  pair: each successful load adds one to `GLFontData::owners`, each `freeFont` takes
+  pair: each successful load adds one to `FontData::owners`, each `freeFont` takes
   one back, and a font is freed only when none is left. Even then it is deleted only
   if no run is laid out in it; otherwise it is marked `freed`, every run keeps
   drawing from the same atlas, and it goes when its last run leaves it
@@ -796,7 +873,7 @@ on an OpenGL 3.3 core profile:
   `loadFont` logs that error, then loads this font from memory
   (`texture_font_new_from_memory`) into that key's own manager and atlas, set up for
   its mode like any face, logs `using built-in fallback for <face>` and returns
-  `Font::Status::LoadedFallback` (`GLFontData::fallback`, so a second `loadFont`
+  `Font::Status::LoadedFallback` (`FontData::fallback`, so a second `loadFont`
   says so again). It is in `m_fonts` like a loaded face, so it is loaded and
   reported once per key, and `ensureFont` counts it as loaded. Only if that fails
   too, or with `setFallbackFont(false)` (a test hook), does the key go into
@@ -817,10 +894,10 @@ on an OpenGL 3.3 core profile:
   `vec4(color.rgb, color.a * coverage)` under the `SRC_ALPHA, ONE_MINUS_SRC_ALPHA`
   blend, so coverage is applied once; no gamma or contrast curve is applied
   (`markup.gamma` is 1). `tests/textGrayscale.cpp` pins all of this.
-- **LCD subpixel text (opt-in).** `OpenGLCore::setTextAA(TextAA::{Grayscale, LcdRGB,
+- **LCD subpixel text (opt-in).** `SlotRenderer::setTextAA(TextAA::{Grayscale, LcdRGB,
   LcdBGR})`, or `GWENI_TEXT_AA=gray|rgb|bgr` at construction; Grayscale by default, and
   then every output is the grayscale path's byte for byte. In an LCD mode a coverage-range
-  font resolves to `GLTextMode::LcdRGB`/`LcdBGR` (the mode is part of the `GLFontKey`, so
+  font resolves to `TextMode::LcdRGB`/`LcdBGR` (the mode is part of the `FontKey`, so
   grayscale and LCD fonts never share an atlas) and loads a depth-3 atlas
   (`LCD_FILTERING_ON`): freetype-gl rasterises it with FreeType's LCD filter
   (`FT_RENDER_MODE_LCD`), one coverage byte per subpixel, uploaded
@@ -956,7 +1033,7 @@ The library reports a resource it cannot load and goes on drawing; it never exit
 - **Atlas texture** (`textureFileName`): reported and `init` returns `false`, but the
   rest of the config, the theme included, applies. A texture that cannot be drawn is
   `drawMissingImage`, the same magenta.
-- **Font**: `OpenGLCore::loadFont` draws a missing or unreadable face in the built-in
+- **Font**: `SlotRenderer::loadFont` draws a missing or unreadable face in the built-in
   OpenSans and returns `Font::Status::LoadedFallback` (see "A missing face is drawn in a
   built-in font"); only if that fails too is the text drawn as nothing.
 
@@ -975,7 +1052,8 @@ worth having.
 What exists today (the foundation) and what's still aspirational:
 
 **Implemented**
-- Decoupled core ↔ renderer via `renderer::Base`; OpenGLCore is the only backend.
+- Decoupled core ↔ renderer via `renderer::Base`; OpenGLCore is the only backend, the
+  GL implementation of `SlotRenderer`'s hooks.
   `StubRenderer` (`tests/unit/headlessFixture.h`) is a second implementation, compiled
   in every build with tests on (the default), so the interface stays implementable
   outside OpenGL.
@@ -986,7 +1064,7 @@ What exists today (the foundation) and what's still aspirational:
 - Persistent primitive-id-indexed CPU vertex buffers in OpenGLCore, drawn in chunks
   over one static 16-bit quad index buffer; per-control
   primitive ownership via `skin::Control`.
-- **Incremental GPU upload.** `OpenGLCore::flush()` tracks which primitive slots were
+- **Incremental GPU upload.** `SlotRenderer::flush()` tracks which primitive slots were
   written and uploads only those, coalesced into contiguous `glBufferSubData` ranges;
   when nothing changed it skips the transfer and just draws the buffer already on the
   device. The buffers grow geometrically (`uploadDirty`): when the mirror outgrows a
@@ -1077,10 +1155,12 @@ What exists today (the foundation) and what's still aspirational:
 - **Cache-to-texture** (`ICacheToTexture`) and free-slot compaction/defragmentation of
   the primitive buffers are stubbed.
 
-**Vulkan (planned)**
-- Implements the same `renderer::Base` interface: own device-local vertex/index buffers
-  indexed by primitive id, push dirty ranges through a staging buffer, and record/submit
-  a command buffer that draws the index range. No control/skin/layout changes required.
+**Vulkan (planned, #368)**
+- A second `SlotRenderer` backend: it implements the hooks ("The shared core") with
+  device-local vertex buffers indexed by primitive id, the dirty ranges pushed through a
+  staging buffer, and a command buffer recording one draw per chunk. The mirrors, the
+  packing, the text and the counts are the core's, so no control/skin/layout change is
+  required and `FrameStats` counts the same.
 
 See also [layout.md](layout.md) for the docking/layout system, and the skin/primitive
 registration notes in `source/skins/textured/`.

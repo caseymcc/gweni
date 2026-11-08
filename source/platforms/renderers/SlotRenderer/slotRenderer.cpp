@@ -2077,7 +2077,7 @@ void SlotRenderer::renderText(size_t textId, const gweni::Font &font, gweni::Poi
         const size_t vertIndex=(run.start+i)*4;
         const float shift=shifts.empty()?0.0f:shifts[i];
         // Each glyph of a run sits a fraction of a z unit in front of the one
-        // before it, so the GL_LESS depth test cannot reject the overlap between
+        // before it, so the LESS depth test cannot reject the overlap between
         // two neighbouring glyph boxes. Glyph i is at zIndex+(i+1)/(glyphs+1),
         // strictly between zIndex and zIndex+1: a primitive drawn at the run's
         // own z (a TextBox's selection) is behind every glyph, not tied with the

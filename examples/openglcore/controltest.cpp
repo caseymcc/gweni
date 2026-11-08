@@ -683,7 +683,7 @@ static std::string requestedBy(const gweni::controls::LayoutStats &layout)
 // after renderCanvas(), so they describe the frame just flushed.
 static void printFrameStats(int frame, const std::string &control,
     const gweni::controls::ChangeStats &changes,
-    const gweni::renderer::OpenGLCore::FrameStats &gpu,
+    const gweni::renderer::SlotRenderer::FrameStats &gpu,
     const gweni::controls::LayoutStats &layout,
     const gweni::controls::UpdateStats &update)
 {
@@ -1515,7 +1515,7 @@ struct ResizeState
     std::string name;                   // the shot's file name, for messages
     std::string listing;                // --dump-bounds' listing, always taken
     std::vector<uint8_t> pixels;
-    gweni::renderer::OpenGLCore::MirrorSnapshot mirror;
+    gweni::renderer::SlotRenderer::MirrorSnapshot mirror;
     IdOwners owners;                    // who held each id, to name a mismatch
 };
 
@@ -1980,7 +1980,7 @@ static bool runTextSizeScenario(Session &s, const std::string &shotDir, bool &pa
     {
         renderFrames(s, 1);
 
-        const gweni::renderer::OpenGLCore::FrameStats &gpu=s.renderer->getFrameStats();
+        const gweni::renderer::SlotRenderer::FrameStats &gpu=s.renderer->getFrameStats();
         atlasUploadCalls+=gpu.atlasUploadCalls;
         atlasUploadBytes+=gpu.atlasUploadBytes;
         textSlotsWritten=std::max(textSlotsWritten, gpu.textSlotsWritten);
@@ -2197,7 +2197,7 @@ static void checkButton(Session &s, const std::string &shotDir, InteractionCheck
     // A frame with no input once everything has settled must do nothing.
     renderFrames(s, 1);
     const gweni::controls::ChangeStats idleChanges=gweni::controls::getChangeStats();
-    const gweni::renderer::OpenGLCore::FrameStats idleGpu=s.renderer->getFrameStats();
+    const gweni::renderer::SlotRenderer::FrameStats idleGpu=s.renderer->getFrameStats();
 
     button->setDisabled(true);
     const std::vector<uint8_t> disabled=settledRegion(s, button, shotDir, "button-disabled", ok);
@@ -2451,7 +2451,7 @@ static void checkSelectable(Session &s, const std::string &shotDir, InteractionC
     glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
     s.canvas->renderCanvas();
     const gweni::controls::ChangeStats groupChanges=gweni::controls::getChangeStats();
-    const gweni::renderer::OpenGLCore::FrameStats groupGpu=s.renderer->getFrameStats();
+    const gweni::renderer::SlotRenderer::FrameStats groupGpu=s.renderer->getFrameStats();
     if(s.stats)
         printFrameStats(s.frame, s.label, groupChanges, groupGpu, s.canvas->getLayoutStats(),
             s.canvas->getUpdateStats());
@@ -2799,7 +2799,7 @@ static void checkSteady(Session &s, InteractionChecks &checks, const std::string
 {
     renderFrames(s, 1);
     const gweni::controls::ChangeStats changes=gweni::controls::getChangeStats();
-    const gweni::renderer::OpenGLCore::FrameStats gpu=s.renderer->getFrameStats();
+    const gweni::renderer::SlotRenderer::FrameStats gpu=s.renderer->getFrameStats();
 
     checks.check(name, changes.controls == 0 && gpu.uploadBytes == 0
         && gpu.primitiveSlotsWritten == 0 && gpu.textSlotsWritten == 0,
@@ -3290,11 +3290,11 @@ static void checkToolTip(Session &s, const std::string &shotDir, InteractionChec
 
     // Shown and settled, a frame and a move inside the button write nothing.
     renderFrames(s, 1);
-    const gweni::renderer::OpenGLCore::FrameStats settled=s.renderer->getFrameStats();
+    const gweni::renderer::SlotRenderer::FrameStats settled=s.renderer->getFrameStats();
     const size_t settledControls=gweni::controls::getChangeStats().controls;
     moveMouse(s, button.x+3, button.y+3);
     renderFrames(s, 1);
-    const gweni::renderer::OpenGLCore::FrameStats moved=s.renderer->getFrameStats();
+    const gweni::renderer::SlotRenderer::FrameStats moved=s.renderer->getFrameStats();
     const size_t movedControls=gweni::controls::getChangeStats().controls;
     checks.check("settled_zero", settledControls == 0 && settled.primitiveSlotsWritten == 0
         && settled.textSlotsWritten == 0 && movedControls == 0 && moved.primitiveSlotsWritten == 0
@@ -3312,7 +3312,7 @@ static void checkToolTip(Session &s, const std::string &shotDir, InteractionChec
     moveMouse(s, otherRect.x+otherRect.w/2, otherRect.y+otherRect.h/2);
     std::vector<std::string> strays;
     frameCheckingStrays(s, {box, withToolTip, other}, strays);
-    const gweni::renderer::OpenGLCore::FrameStats handOver=s.renderer->getFrameStats();
+    const gweni::renderer::SlotRenderer::FrameStats handOver=s.renderer->getFrameStats();
     const gweni::Rect moveTip=canvasRectOf(box);
     std::string strayList;
     for(const std::string &stray : strays)
@@ -3480,7 +3480,7 @@ static std::vector<uint8_t> contextMenuShot(Session &s, const std::string &shotD
 static bool settledFrame(Session &s, std::string &why)
 {
     renderFrames(s, 1);
-    const gweni::renderer::OpenGLCore::FrameStats stats=s.renderer->getFrameStats();
+    const gweni::renderer::SlotRenderer::FrameStats stats=s.renderer->getFrameStats();
     const size_t controls=gweni::controls::getChangeStats().controls;
     why="controls_changed="+std::to_string(controls)+" prim_slots_written="
         +std::to_string(stats.primitiveSlotsWritten)+" text_slots_written="+std::to_string(stats.textSlotsWritten);
@@ -4033,7 +4033,7 @@ static VirtualListStep virtualListFrame(Session &s, gweni::controls::VirtualList
     renderFrames(s, 1);
 
     VirtualListStep step;
-    const gweni::renderer::OpenGLCore::FrameStats &gpu=s.renderer->getFrameStats();
+    const gweni::renderer::SlotRenderer::FrameStats &gpu=s.renderer->getFrameStats();
     const gweni::controls::ChangeStats &changes=gweni::controls::getChangeStats();
 
     step.primSlots=gpu.primitiveSlotsWritten;
@@ -4338,7 +4338,7 @@ static bool runTypingScenario(Session &s, const std::string &shotDir, bool &pass
             std::vector<std::string> strays;
             frameCheckingStrays(s, {empty}, strays, true);
             const gweni::controls::ChangeStats changes=gweni::controls::getChangeStats();
-            const gweni::renderer::OpenGLCore::FrameStats gpu=s.renderer->getFrameStats();
+            const gweni::renderer::SlotRenderer::FrameStats gpu=s.renderer->getFrameStats();
             const std::string name=typing ? "empty_box_first_char" : "empty_box_last_char";
 
             std::cout<<"typing "<<(typing ? "first-char" : "last-char")
@@ -4403,11 +4403,11 @@ static bool runTypingScenario(Session &s, const std::string &shotDir, bool &pass
         typeText(s, "z");
         renderFrames(s, 1);
         const gweni::controls::ChangeStats keyChanges=gweni::controls::getChangeStats();
-        const gweni::renderer::OpenGLCore::FrameStats keyGpu=s.renderer->getFrameStats();
+        const gweni::renderer::SlotRenderer::FrameStats keyGpu=s.renderer->getFrameStats();
 
         renderFrames(s, 1);
         const gweni::controls::ChangeStats idleChanges=gweni::controls::getChangeStats();
-        const gweni::renderer::OpenGLCore::FrameStats idleGpu=s.renderer->getFrameStats();
+        const gweni::renderer::SlotRenderer::FrameStats idleGpu=s.renderer->getFrameStats();
 
         std::cout<<"typing keystroke controls_changed="<<keyChanges.controls
                  <<" text="<<keyChanges.text
