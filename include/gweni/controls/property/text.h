@@ -26,6 +26,8 @@ public:
     {
         m_textBox=newChild<TextBox>();
         m_textBox->setDock(DockPosition::Center);
+        // the row is as high as the text line, not a TextBox's 20 (it is Fixed)
+        m_textBox->setSizeFlags({SizeFlag::Elastic, SizeFlag::Elastic});
         m_textBox->setShouldDrawBackground(false);
         m_textBox->onTextChangedCaller.add(this, &ParentClass::onPropertyValueChanged);
     }

@@ -28,14 +28,15 @@ void addCaption(controls::Base *parent, const String &text)
     caption->setMargin(Margin(0, 0, 0, 2));
 }
 
-//! A text box row, as wide as its section: a TextBox is Fixed, and a Top dock
-//! leaves a Fixed width as it was asked for (200, a NumericUpDown's 100).
+//! A text box row, as wide as its section and as high as its text line: a
+//! TextBox is Fixed, and a Top dock leaves a Fixed width as it was asked for
+//! (200, a NumericUpDown's 100).
 template<typename T>
 T *textRow(controls::Base *parent)
 {
     T *row=showcase::addRow<T>(parent);
 
-    row->setSizeFlags({SizeFlag::Elastic, SizeFlag::Fixed});
+    row->setSizeFlags({SizeFlag::Elastic, SizeFlag::Elastic});
     return row;
 }
 

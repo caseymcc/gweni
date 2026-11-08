@@ -32,6 +32,8 @@ public:
         m_button->onPressCaller.add(this, &FilePicker::OnBrowse);
         m_textBox=new controls::TextBox(this);
         m_textBox->setDock(DockPosition::Center);
+        // as high as the text line, not a TextBox's 20 (it is Fixed)
+        m_textBox->setSizeFlags({SizeFlag::Elastic, SizeFlag::Elastic});
         this->setSize(100, 20);
         setFileType("Any Type | *.*");
     }
