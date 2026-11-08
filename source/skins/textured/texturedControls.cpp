@@ -13,6 +13,7 @@
 #include "gweni/controls/collapsibleCategory.h"
 #include "gweni/controls/listBox.h"
 #include "gweni/controls/slider.h"
+#include "gweni/controls/plotHistogram.h"
 #include "gweni/controls/colorControls.h"
 #include "gweni/controls/colorPicker.h"
 #include "gweni/controls/colorButton.h"
@@ -1363,6 +1364,117 @@ void Slider::update(renderer::Base *renderer, controls::Base *baseControl)
 
 
 ///////////////////////////////////////////////////////////////////////////
+//PlotHistogram
+void PlotHistogram::resizePrimitives(renderer::Base *renderer, size_t count)
+{
+    while(m_primitives.size() > count)
+    {
+        renderer->releasePrimitive(m_primitives.back());
+        m_primitives.pop_back();
+    }
+
+    while(m_primitives.size() < count)
+    {
+        size_t id;
+
+        renderer->generatePrimitive(id);
+        m_primitives.push_back(id);
+    }
+
+    // a slot new to the list holds nothing known
+    m_drawn.resize(count);
+}
+
+static bool sameSurface(const tokyonight::Surface &a, const tokyonight::Surface &b)
+{
+    return (a.top == b.top) && (a.bottom == b.bottom) && (a.border == b.border)
+        && (a.radius == b.radius) && (a.borderWidth == b.borderWidth);
+}
+
+void PlotHistogram::update(renderer::Base *renderer, controls::Base *baseControl)
+{
+    controls::PlotHistogram *plot=static_cast<controls::PlotHistogram *>(baseControl);
+    const size_t bars=plot->getValueCount();
+
+    resizePrimitives(renderer, 1+bars);
+
+    // A new rect, z, clip region or visibility reaches every slot: such a
+    // frame marks the control's geometry (a move, a resize, a renumber or an
+    // ancestor's bounds), its visibility or its creation. Any other draws only
+    // what differs from what the slot holds.
+    const unsigned int sc=baseControl->getStateChange();
+    const bool all=(sc&(controls::StateChange_Created|controls::StateChange_Visibility
+        |controls::StateChange_Geometry)) != 0;
+
+    if(!baseControl->visible())
+    {
+        if(all)
+        {
+            for(size_t i=0; i<m_primitives.size(); ++i)
+            {
+                renderer->hidePrimitive(m_primitives[i]);
+                m_drawn[i].valid=true;
+                m_drawn[i].shown=false;
+            }
+        }
+        else
+        {
+            // drawn again once shown, which marks the visibility
+            for(Drawn &drawn : m_drawn)
+                drawn.valid=false;
+        }
+        return;
+    }
+
+    const int z=baseControl->getZIndex();
+    // a slot is drawn again unless it holds this already
+    auto draw=[&](size_t i, const gweni::Rect &rect, const tokyonight::Surface &surface, int zIndex)
+    {
+        Drawn &drawn=m_drawn[i];
+
+        if(!all && drawn.valid && drawn.shown && (drawn.rect == rect) && (drawn.zIndex == zIndex)
+            && sameSurface(drawn.surface, surface))
+            return;
+
+        renderer->drawRoundedRect(m_primitives[i], rect, surface.radius, surface.borderWidth,
+            surface.top, surface.bottom, surface.border, zIndex);
+        drawn.valid=true;
+        drawn.shown=true;
+        drawn.rect=rect;
+        drawn.surface=surface;
+        drawn.zIndex=zIndex;
+    };
+
+    draw(0, baseControl->getRenderBounds(), tokyonight::PlotFrame, z);
+
+    const int hovered=plot->getHoveredBar();
+    // the bars are in the plot's own coordinates, drawn at its render origin
+    const gweni::Rect &origin=baseControl->getRenderBounds();
+
+    for(size_t i=0; i<bars; ++i)
+    {
+        gweni::Rect rect=plot->getBarRect(i);
+
+        rect.x+=origin.x;
+        rect.y+=origin.y;
+
+        if((rect.w <= 0) || (rect.h <= 0))
+        {
+            Drawn &drawn=m_drawn[1+i];
+
+            if(all || !drawn.valid || drawn.shown)
+                renderer->hidePrimitive(m_primitives[1+i]);
+            drawn.valid=true;
+            drawn.shown=false;
+            continue;
+        }
+
+        draw(1+i, rect, (int(i) == hovered)?tokyonight::PlotBarHover:tokyonight::PlotBar, z+1);
+    }
+}
+
+
+///////////////////////////////////////////////////////////////////////////
 //SliderBar
 void SliderBar::update(renderer::Base *renderer, controls::Base *baseControl)
 {
@@ -2280,6 +2392,7 @@ template class ControlRegister<BaseScrollBar>;
 template class ControlRegister<Shadow>;
 template class ControlRegister<Slider>;
 template class ControlRegister<SliderBar>;
+template class ControlRegister<PlotHistogram>;
 template class ControlRegister<ColorLerpBox>;
 template class ControlRegister<ColorSlider>;
 template class ControlRegister<ColorDisplay>;

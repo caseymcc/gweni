@@ -11,10 +11,10 @@
  *  run on a real control in the state that shows it; a new overlay renderer is
  *  one more row.
  *
- *  The rows: ProgressBar, ColorSlider, ColorLerpBox, CheckBox, RadioButton,
- *  ComboBox, ScrollBarButton, the three window buttons, TreeNode's
- *  OpenToggleButton, a DataTable's header (its rule), header cell (a sorted
- *  column's chevron) and row (its rules), and TextBox's caret; every other
+ *  The rows: ProgressBar, PlotHistogram (its bars), ColorSlider, ColorLerpBox,
+ *  CheckBox, RadioButton, ComboBox, ScrollBarButton, the three window buttons,
+ *  TreeNode's OpenToggleButton, a DataTable's header (its rule), header cell
+ *  (a sorted column's chevron) and row (its rules), and TextBox's caret; every other
  *  type gets a StubControl. A part of another control is followed by its next
  *  sibling in that control. A row fails, naming the renderer, if
  *  any draw into its slots is at a z outside [getZIndex(),
@@ -30,6 +30,7 @@
 #include <gweni/controls/colorControls.h>
 #include <gweni/controls/comboBox.h>
 #include <gweni/controls/dataTable.h>
+#include <gweni/controls/plotHistogram.h>
 #include <gweni/controls/progressBar.h>
 #include <gweni/controls/radioButton.h>
 #include <gweni/controls/scrollBarButton.h>
@@ -166,6 +167,15 @@ const std::vector<Row> &rows()
                 bar->setBounds(10, 10, 120, 20);
                 bar->setProgress(0.5f);
                 return bar;
+            }},
+        {"PlotHistogram", Overlay::Above, [](controls::Canvas *canvas) -> controls::Base *
+            {
+                // the bars over the frame, and a caption child after them
+                auto *plot=canvas->newChild<controls::PlotHistogram>();
+                plot->setBounds(10, 10, 120, 60);
+                plot->setValues({1.0f, 3.0f, 2.0f});
+                plot->setCaption("caption");
+                return plot;
             }},
         {"ColorSlider", Overlay::Above, [](controls::Canvas *canvas) -> controls::Base *
             {

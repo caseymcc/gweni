@@ -187,6 +187,12 @@ inline Surface DataTableHeaderHover{ BgHighlight,           BgHighlight,        
 inline Surface DataTableHeaderDown { Surf,                  Surf,                  Surf,        0.0f, 0.0f };
 inline Surface DataTableStripe     { Color(0x1f,0x21,0x30), Color(0x1f,0x21,0x30), BgDark,      0.0f, 0.0f };
 
+// A PlotHistogram: its frame (an inset, like a TextBox's) and its bars, flat
+// and square, so only top is read; the hovered bar is lifted.
+inline Surface PlotFrame      { BgDark,                BgDark,                Line,  RadiusSm, BorderW };
+inline Surface PlotBar        { Blue,                  Blue,                  Blue,  0.0f,     0.0f };
+inline Surface PlotBarHover   { Cyan,                  Cyan,                  Cyan,  0.0f,     0.0f };
+
 // Window title-bar buttons: nothing at rest (a transparent fill hides its slot),
 // red under the close button while hovered, a deeper red while pressed. The
 // minimise and maximise buttons hover and press as ButtonHover/ButtonDown.
@@ -226,6 +232,7 @@ inline std::unordered_map<std::string, Surface*>& surfaceRegistry()
         {"PropertyColumnEditing",&PropertyColumnEditing},
         {"DataTableHeader",&DataTableHeader},{"DataTableHeaderHover",&DataTableHeaderHover},
         {"DataTableHeaderDown",&DataTableHeaderDown},{"DataTableStripe",&DataTableStripe},
+        {"PlotFrame",&PlotFrame},{"PlotBar",&PlotBar},{"PlotBarHover",&PlotBarHover},
         {"WindowButton",&WindowButton},{"WindowCloseHover",&WindowCloseHover},{"WindowCloseDown",&WindowCloseDown},
     };
     return m;

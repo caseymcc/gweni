@@ -571,6 +571,44 @@ public:
     inline static const std::string_view name="PropertyTreeNode";
 };
 
+// A PlotHistogram: [0] its frame (PlotFrame, over the render bounds), then one
+// slot per bar (PlotBar, PlotBarHover for the hovered one), each at
+// getZIndex()+1, in front of the frame. update() resizes the slot list to the
+// bar count itself (requiredPrimitives() only sizes the first generate()), and
+// keeps what it last drew in each slot: on a frame that marks the control's
+// geometry, visibility or creation it draws everything, otherwise only a bar
+// whose rect, colour or z is not the one drawn, so a changed value rewrites its
+// bar's slot alone. A bar with no rect is hidden.
+class PlotHistogram:public textured::ControlRegister<PlotHistogram>
+{
+public:
+    static void staticInit(TexturedSkin *) { m_staticInit=true; }
+
+    size_t requiredPrimitives() override { return 1; }
+    // the bars are drawn at getZIndex()+1, over the frame
+    size_t depthLayers() override { return 2; }
+
+    void update(renderer::Base *renderer, controls::Base *baseControl) override;
+
+    inline static const std::string_view name="PlotHistogram";
+
+private:
+    //! What a slot holds, as last drawn.
+    struct Drawn
+    {
+        bool valid=false;   //!< false for a new slot, which holds nothing known
+        bool shown=false;
+        Rect rect;
+        tokyonight::Surface surface{};
+        int zIndex=0;
+    };
+
+    void resizePrimitives(renderer::Base *renderer, size_t count);
+
+    //! [0] the frame, [1+i] bar i
+    std::vector<Drawn> m_drawn;
+};
+
 class ProgressBar:public textured::ControlRegister<ProgressBar>
 {
 public:
