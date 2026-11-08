@@ -4,7 +4,10 @@
  *  MIT License, see LICENSE
  *
  *  OpenGLCore's window-button icon glyphs (style 5, drawIcon kinds 2-5), drawn
- *  offscreen and read back pixel by pixel. Kinds 2-5 are measured in device px
+ *  offscreen and read back pixel by pixel. The chevron (kind 1) points the way
+ *  renderer::Base documents its direction, 0 down, 1 up, 2 left, 3 right, at
+ *  scales 1, 1.5 and 2: the shader had 2 and 3 swapped, so a horizontal scroll
+ *  bar's left arrow pointed right. Kinds 2-5 are measured in device px
  *  and fill the square centred in their rect, stroked max(1, snap(1)) px wide:
  *
  *    2 cross    both diagonals of the square, anti-aliased; mirror-symmetric
@@ -39,6 +42,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdlib>
+#include <string>
 #include <vector>
 
 namespace
@@ -273,6 +277,75 @@ std::vector<int> runs(const Frame &frame, int x, int y, int dx, int dy, int coun
 }
 
 }//namespace
+
+TEST_CASE("Icon kind 1 (chevron) points the way its direction says: 0 down, 1 up, 2 left, 3 right")
+{
+    Primitives prims(1);
+    const Rect logical(21, 33, 15, 15);
+    const char *names[]={"down", "up", "left", "right"};
+    // the way each direction points, in device px
+    const int pointX[]={0, 0, -1, 1};
+    const int pointY[]={1, -1, 0, 0};
+
+    for(float scale:scales)
+    {
+        ScaleGuard guard(scale);
+        const Rect rect=deviceRect(logical, scale);
+        const double centreX=rect.x+rect.w/2.0;
+        const double centreY=rect.y+rect.h/2.0;
+
+        for(int direction=0; direction < 4; ++direction)
+        {
+            const std::string name=names[direction];
+
+            CAPTURE(scale);
+            CAPTURE(name);
+
+            const Frame frame=drawFrame([&](OpenGLCore &renderer)
+                {
+                    renderer.drawIcon(prims.ids[0], logical, 1, direction, red, 1);
+                });
+
+            CHECK(outsideRingMismatches(frame, rect) == 0);
+
+            // The apex is on the centre line across the pointing axis, the arms'
+            // ends off it: the ink on that line lies further along the pointing
+            // axis than the glyph's ink as a whole.
+            double ink=0.0;
+            double along=0.0;
+            double lineInk=0.0;
+            double lineAlong=0.0;
+
+            for(int y=rect.y; y<rect.y+rect.h; ++y)
+            {
+                for(int x=rect.x; x<rect.x+rect.w; ++x)
+                {
+                    const double a=frame.coverage(x, y);
+                    const double t=(x+0.5-centreX)*pointX[direction]+(y+0.5-centreY)*pointY[direction];
+                    const double across=(x+0.5-centreX)*pointY[direction]-(y+0.5-centreY)*pointX[direction];
+
+                    ink+=a;
+                    along+=a*t;
+                    if(std::fabs(across) <= scale)
+                    {
+                        lineInk+=a;
+                        lineAlong+=a*t;
+                    }
+                }
+            }
+            REQUIRE(ink > 1.0);
+            REQUIRE(lineInk > 0.5);
+
+            const double glyph=along/ink;
+            const double apex=lineAlong/lineInk;
+
+            CAPTURE(glyph);
+            CAPTURE(apex);
+            CHECK(apex > glyph+scale);
+            CHECK(apex > 0.0);
+        }
+    }
+}
 
 TEST_CASE("Icon kind 2 (cross): symmetric and centred in odd and even rects, at scales 1, 1.5 and 2")
 {

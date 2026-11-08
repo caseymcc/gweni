@@ -1284,9 +1284,11 @@ void main()
             vec2 p = vLocal / max(vHalf, vec2(1.0));
             int dir = int(vBorder + 0.5);
 
+            // p is turned into the down-pointing shape's frame: its apex,
+            // at +y there, lands at -x for left and +x for right.
             if(dir == 1) p = vec2(p.x, -p.y);       // up
-            else if(dir == 2) p = vec2(-p.y, p.x);  // left
-            else if(dir == 3) p = vec2(p.y, -p.x);  // right
+            else if(dir == 2) p = vec2(p.y, -p.x);  // left
+            else if(dir == 3) p = vec2(-p.y, p.x);  // right
             // dir 0 == down / as-authored
 
             float d;
