@@ -575,7 +575,7 @@ bool chooseBackend(const std::string &flag, Backend &backend)
         backend=Backend::Vulkan;
         return true;
 #else
-        std::cerr<<g_tool<<": "<<source<<" vulkan: this build has no Vulkan renderer"
+        std::cerr<<g_tool<<": "<<source<<(flag.empty() ? "=" : " ")<<"vulkan: this build has no Vulkan renderer"
                    " (configure with -DGWENI_RENDER_VULKAN=ON, as ./generate.sh does)\n";
         return false;
 #endif
