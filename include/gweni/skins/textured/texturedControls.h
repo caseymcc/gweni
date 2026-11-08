@@ -90,11 +90,16 @@ public:
 
         controls::Button *control=static_cast<controls::Button *>(baseControl);
         const tokyonight::Surface *surface;
+        // a toggle that is on keeps its look until a press or disabling it;
+        // a plain button (LabelClickable included) is never on
+        bool on=control->isToggle() && control->getToggleState();
 
         if(control->isDisabled())
-            surface=&tokyonight::ButtonDisabled;
+            surface=on?&tokyonight::ButtonOnDisabled:&tokyonight::ButtonDisabled;
         else if(control->isDepressed())
             surface=&tokyonight::ButtonDown;
+        else if(on)
+            surface=control->isHovered()?&tokyonight::ButtonOnHover:&tokyonight::ButtonOn;
         else if(control->isHovered())
             surface=&tokyonight::ButtonHover;
         else

@@ -84,6 +84,11 @@ inline Surface ButtonNormal   { SurfHi,                Surf,                  Li
 inline Surface ButtonHover    { SurfHover,             SurfHi,                Blue,  Radius, BorderW };
 inline Surface ButtonDown     { Surf,                  BgStorm,               Blue,  Radius, BorderW };
 inline Surface ButtonDisabled { BgStorm,               Color(0x1f,0x22,0x33), BgHighlight, Radius, BorderW };
+// A toggle Button that is on: an accent-tinted fill, so it reads unlike a
+// momentary press (ButtonDown); disabled, it stays on, dimmed
+inline Surface ButtonOn         { Color(0x33,0x46,0x7a), Color(0x28,0x34,0x57), Blue,  Radius, BorderW };
+inline Surface ButtonOnHover    { Color(0x3d,0x55,0x94), Color(0x31,0x42,0x6e), Blue,  Radius, BorderW };
+inline Surface ButtonOnDisabled { Color(0x2a,0x35,0x5a), Color(0x22,0x2b,0x47), Color(0x3a,0x4d,0x85), Radius, BorderW };
 
 // Text entry
 inline Surface TextBox        { BgDark,                BgDark,                Line,  RadiusSm, BorderW };
@@ -230,6 +235,7 @@ inline std::unordered_map<std::string, Surface*>& surfaceRegistry()
         {"Window",&Window},{"WindowInact",&WindowInact},{"Panel",&Panel},{"PanelDark",&PanelDark},
         {"GroupBox",&GroupBox},{"Tooltip",&Tooltip},{"StatusBar",&StatusBar},{"Canvas",&Canvas},
         {"ButtonNormal",&ButtonNormal},{"ButtonHover",&ButtonHover},{"ButtonDown",&ButtonDown},{"ButtonDisabled",&ButtonDisabled},
+        {"ButtonOn",&ButtonOn},{"ButtonOnHover",&ButtonOnHover},{"ButtonOnDisabled",&ButtonOnDisabled},
         {"TextBox",&TextBox},{"TextBoxFocus",&TextBoxFocus},{"TextBoxDisabled",&TextBoxDisabled},{"TextSelection",&TextSelection},
         {"Menu",&Menu},{"MenuStrip",&MenuStrip},{"MenuHover",&MenuHover},
         {"TabActive",&TabActive},{"TabInactive",&TabInactive},{"TabControl",&TabControl},
