@@ -71,7 +71,7 @@ ctest --test-dir build_web_wasm32_debug -L web
 It builds the `gweni` library with `OpenGLCore` on WebGL 2, the textured skin,
 the headless unit tests (`gweni_unit_tests.js`/`.wasm`, run under node) and
 three pages, each an `.html` with its `.js`, `.wasm` and a `.data` holding
-`resources/`:
+`resources/` (all of it but the fonts' license texts, which nothing loads):
 
 - `examples/openglcore/ControlTest.html` and `OpenGLCore.html`, the examples;
 - `tests/gweni_unittests.html`, the GPU unit tests.
@@ -101,6 +101,8 @@ The dependencies come from vcpkg's `wasm32-emscripten` triplet, with emsdk's own
 `Emscripten.cmake` chainloaded. `glew` and `glfw3` are left out on that
 platform; GLFW comes from Emscripten's `contrib.glfw3` port instead. Everything
 is built with `-fexceptions`, so C++ exceptions are caught as natively.
+The release web tree is built with `-Oz` instead of CMake's `-O3`, because it is
+what the hosted site sends to every visitor (see "The hosted site").
 `gweni_bench` is not built. `asan` and `profile` do not combine with `web`. The
 vcpkg binary cache starts cold for this triplet: the first configure builds its
 dependencies, about 30 s on a 32-core host.
@@ -184,11 +186,75 @@ Every test in the web tree has the label `web` and needs no GPU lock:
   resize and with `?scale=1.5` (its layout the same as a capture's at that size
   and scale), an unknown argument, and a click in the demo list.
 
+- `web_site_smoke`, in the release web tree only: the hosted site, staged and
+  loaded page by page (see "The hosted site").
+
 The browser tests take no lock because the runner keeps Chromium on its own
 SwiftShader. The image pins the Vulkan loader to Mesa's lavapipe
 (`VK_DRIVER_FILES`) for gweni's Vulkan tests, and with that pin ANGLE would
 render on lavapipe instead. `probe.mjs` launches Chromium without the pin, and
 both scripts fail if the renderer is not SwiftShader.
+
+### The hosted site
+
+`tools/build_site.sh` builds the release web tree (configuring it with
+`./generate.sh web release` if it is not yet) and stages the live demo as one
+static directory, `site/` in the repo (git-ignored), that GitHub Pages or any
+static server serves as it is:
+
+```bash
+./tools/build_site.sh                    # stage site/
+./tools/build_site.sh --out /tmp/site    # stage it elsewhere
+./tools/build_site.sh --build-dir DIR    # take the pages from another web tree
+python3 -m http.server -d site 8000      # then http://localhost:8000/
+```
+
+It holds three pages, their files and nothing else:
+
+- `index.html`, the landing page: what gweni is, links to the demo, the gallery
+  and the GitHub repo, and the hero sample (`docs/images/demo.png`) as a preview;
+- `demo.html`, the OpenGLCore demo's window;
+- `controltest.html`, ControlTest's window with a control picker. Its entries
+  are `ControlTest --list`, written in when the site is staged. The URL query is
+  ControlTest's argv, so `controltest.html?control=ButtonDemo&scale=2` is a link
+  to one control at 2x, and choosing a control loads its page with every other
+  parameter kept.
+
+They are written in `tools/site/` (the pages, `site.css`), dark like the Tokyo
+Night skin, with no framework and nothing loaded from elsewhere. Every URL is
+relative, so the site works under `https://<user>.github.io/gweni/` as from a
+local server. It needs no COOP/COEP headers, since nothing in the build uses
+threads or SharedArrayBuffer. A non-empty `--out` directory is cleared only if
+it holds a site staged by the script (its `.gweni-site` marker).
+
+The script then prints what each page sends, every file raw, gzip and brotli,
+with nothing taken to be cached (`tools/site/sizes.mjs`). It exits 1 if the
+gallery page's gzip total is over its `BUDGET_BYTES`, 8 MB. Measured at this
+change:
+
+| page | raw | gzip | brotli |
+|---|---|---|---|
+| `controltest.html` (`ControlTest.wasm` 2566 kB, `.data` 715 kB, `.js` 146 kB) | 3.43 MB | 1.41 MB | 1.07 MB |
+| `demo.html` (`OpenGLCore.wasm` 2360 kB, `.data` 715 kB, `.js` 146 kB) | 3.22 MB | 1.35 MB | 1.03 MB |
+| `index.html` (with the 152 kB preview) | 0.16 MB | 0.15 MB | 0.15 MB |
+
+The release web tree is `-Oz` for this: at CMake's `-O3`, `ControlTest.wasm` is
+3041 kB (1080 kB gzip), against `-Oz`'s 2566 kB (975 kB gzip), and a
+browser run (`--check-teardown`, Demo's resize scenario) is no slower within
+3 %. `-Os` lies between them (2854 kB).
+
+`web_site_smoke` (`tests/web/site.cmake`, release web tree) runs the script into
+the build tree and then `tests/web/site.mjs`, which serves the staged site and
+loads every page in the headless Chromium: the landing page with its image, the
+demo, and the gallery at ButtonDemo, TextBoxDemo and ShowcaseButtonsDemo at
+`?scale=2`, where it also picks SliderDemo and must get
+`controltest.html?control=SliderDemo&scale=2`. It fails on a console error, an
+uncaught exception, a failed request or an HTTP error (a file missing from the
+site), a page without a WebGL 2 context on SwiftShader with 24 depth bits, a
+window that draws no frames or whose canvas is one colour after 5 of them, a
+picker not showing its control, a link into the site that is not there, and,
+through the script, a gallery page over the budget. `node tests/web/site.mjs
+--url http://localhost:8000/` checks a site some other server serves.
 
 ## Tests
 

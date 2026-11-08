@@ -631,6 +631,8 @@ if(EMSCRIPTEN)
 
     # the interactive pages, driven with real input (web/interactive.cmake)
     include(${CMAKE_CURRENT_SOURCE_DIR}/web/interactive.cmake)
+    # the hosted site, staged by tools/build_site.sh and loaded (web/site.cmake)
+    include(${CMAKE_CURRENT_SOURCE_DIR}/web/site.cmake)
 endif()
 
 # The Vulkan plumbing (GWENI_RENDER_VULKAN): loader, validation layer, a 1.3

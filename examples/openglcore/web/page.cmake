@@ -12,7 +12,8 @@
 #  - resources/ preloaded at /resources, where RelativeToExecutablePaths
 #    ("resources") looks on the web (platform::getExecutableDir() is "/"), and
 #    relinked when a file under resources/ changes, since the .data is made at
-#    link time;
+#    link time; the fonts' license texts are left out (nothing loads them, and
+#    the hosted site, tools/build_site.sh, ships them as files of their own);
 #  - WebGL 2 (from gweni), a heap that grows, a 4 MB stack (Emscripten's default
 #    is 64 KB; the layout and render walks recurse once per tree level) and the
 #    runtime exiting when main returns, so a capture run ends as natively (an
@@ -31,6 +32,7 @@ function(gweni_web_page target)
         "SHELL:--shell-file ${page_dir}/shell.html"
         "SHELL:--pre-js ${page_dir}/pre.js"
         "SHELL:--preload-file ${GWENI_SOURCE_DIR}/resources@/resources"
+        "SHELL:--exclude-file *-LICENSE.txt"
         -sALLOW_MEMORY_GROWTH=1
         -sSTACK_SIZE=4MB
         -sEXIT_RUNTIME=1

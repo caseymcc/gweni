@@ -39,3 +39,6 @@ vcpkg_installed/
 
 #Visual Studio Code
 .vscode/
+
+# the hosted site, staged by tools/build_site.sh
+/site/

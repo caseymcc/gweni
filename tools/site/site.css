@@ -1,0 +1,47 @@
+/*
+ *  Gweni
+ *  Copyright (c) 2010 Facepunch Studios
+ *  MIT License, see LICENSE
+ *
+ *  The hosted site's one stylesheet (tools/build_site.sh copies it beside the
+ *  pages): Tokyo Night colours, as the textured skin's default theme, no
+ *  framework and nothing loaded from elsewhere.
+ */
+
+html, body { height: 100%; }
+body { margin: 0; background: #1a1b26; color: #c0caf5;
+       font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+a { color: #7aa2f7; }
+a:hover { color: #7dcfff; }
+code { font: 13px monospace; color: #9ece6a; }
+
+header { display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+         padding: 8px 16px; background: #16161e; border-bottom: 1px solid #292e42; }
+header .name { font-weight: 600; color: #c0caf5; text-decoration: none; }
+header nav { display: flex; gap: 16px; margin-left: auto; }
+header label { color: #a9b1d6; }
+select { background: #24283b; color: #c0caf5; border: 1px solid #414868; border-radius: 4px;
+         padding: 3px 6px; font: inherit; }
+
+/* the landing page */
+.landing main { max-width: 960px; margin: 0 auto; padding: 24px 16px 48px; }
+.landing h1 { margin: 8px 0 4px; font-size: 28px; }
+.landing .links { display: flex; gap: 12px; flex-wrap: wrap; margin: 20px 0; }
+.landing .links a { padding: 8px 14px; border: 1px solid #414868; border-radius: 6px;
+                    background: #24283b; text-decoration: none; }
+.landing .links a:hover { border-color: #7aa2f7; }
+.landing figure { margin: 24px 0 0; }
+.landing figure img { display: block; max-width: 100%; height: auto; border: 1px solid #292e42; }
+.landing figcaption { color: #565f89; font-size: 13px; margin-top: 6px; }
+.landing footer { margin-top: 32px; color: #565f89; font-size: 13px; }
+
+/* a page running one of the apps: the header, the #canvas-container the
+   window keeps its canvas at (capture::initGlfwContext), the #output panel
+   with the run's stdout and stderr (web/pre.js) */
+.app { display: flex; flex-direction: column; overflow: hidden; }
+.app header { flex: 0 0 auto; }
+#canvas-container { flex: 1 1 auto; min-height: 0; position: relative; overflow: hidden; }
+canvas { display: block; outline: none; }
+#output { flex: 0 0 64px; box-sizing: border-box; height: 64px; margin: 0; padding: 4px 16px;
+          overflow: auto; white-space: pre-wrap; font: 12px monospace; color: #565f89;
+          border-top: 1px solid #292e42; }

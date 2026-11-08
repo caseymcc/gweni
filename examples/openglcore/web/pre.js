@@ -45,24 +45,27 @@ if(typeof window !== 'undefined')
 if(typeof document !== 'undefined' && !Module['canvas'])
     Module['canvas'] = document.getElementById('canvas');
 
-Module['arguments'] = (function()
+// Under node (no location) Emscripten's own argv is kept, so tools/build_site.sh
+// can run "node ControlTest.js --list".
+if(typeof location !== 'undefined')
 {
-    var args = [];
-    if(typeof location === 'undefined')
-        return args;
-    new URLSearchParams(location.search).forEach(function(value, key)
+    Module['arguments'] = (function()
     {
-        if(key === 'argv')
-            args.push(value);
-        else
+        var args = [];
+        new URLSearchParams(location.search).forEach(function(value, key)
         {
-            args.push('--' + key);
-            if(value !== '')
+            if(key === 'argv')
                 args.push(value);
-        }
-    });
-    return args;
-})();
+            else
+            {
+                args.push('--' + key);
+                if(value !== '')
+                    args.push(value);
+            }
+        });
+        return args;
+    })();
+}
 
 function gweniOutput(stream, text)
 {

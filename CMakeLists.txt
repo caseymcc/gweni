@@ -83,6 +83,14 @@ endif()
 if(EMSCRIPTEN)
     add_compile_options(-fexceptions)
     add_link_options(-fexceptions)
+    # The release web tree is the hosted site (tools/build_site.sh), which is
+    # sent over the network on every visit: -Oz, not CMake's -O3. Measured on
+    # ControlTest.wasm: 2566 kB (975 kB gzip) against 3041 kB (1080 kB gzip),
+    # with no difference in run time that a browser run shows (its
+    # --check-teardown and the resize scenario within 3 %). CMake puts these on
+    # the link line too, where emcc runs wasm-opt at the same level.
+    set(CMAKE_C_FLAGS_RELEASE "-Oz -DNDEBUG")
+    set(CMAKE_CXX_FLAGS_RELEASE "-Oz -DNDEBUG")
 endif()
 
 # add our projects

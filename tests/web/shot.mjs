@@ -15,9 +15,10 @@
 //  wrong buffer, is a single colour.
 //
 
-import { mkdtempSync, readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, realpathSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { inflateSync } from 'node:zlib';
 
 import { parseArgs, runPage } from './run.mjs';
@@ -140,4 +141,6 @@ async function main()
     return 0;
 }
 
-process.exit(await main());
+// Only when run as a script (see run.mjs), so site.mjs can import decodePng.
+if(process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href)
+    process.exit(await main());

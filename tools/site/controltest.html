@@ -1,0 +1,56 @@
+<!doctype html>
+<!--
+  Gweni
+  Copyright (c) 2010 Facepunch Studios
+  MIT License, see LICENSE
+
+  The hosted site's control gallery (tools/build_site.sh): ControlTest's
+  interactive window (ControlTest.js, with web/pre.js inside it) in the
+  #canvas-container below the header. The URL query is ControlTest's argv, so
+  controltest.html?control=ButtonDemo&scale=2 is "ControlTest --control
+  ButtonDemo --scale 2" and every control has a link of its own. The picker's
+  entries are ControlTest --list, written in at build time where the
+  gweni:controls comment is; choosing one loads the page again with that
+  control, every other parameter (scale) kept.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>gweni control gallery</title>
+<link rel="stylesheet" href="site.css">
+<link rel="icon" href="data:,">
+</head>
+<body class="app">
+<header>
+<a class="name" href="index.html">gweni</a>
+<label for="control">Control</label>
+<select id="control">
+<!-- gweni:controls -->
+</select>
+<nav>
+<a href="demo.html">Demo</a>
+<a href="https://github.com/caseymcc/gweni">GitHub</a>
+</nav>
+</header>
+<div id="canvas-container">
+<canvas id="canvas" width="64" height="64" oncontextmenu="event.preventDefault()" tabindex="-1"></canvas>
+</div>
+<pre id="output"></pre>
+<script>
+(function()
+{
+    var picker = document.getElementById('control');
+    var params = new URLSearchParams(location.search);
+    // ControlTest's own default when the query names none
+    picker.value = params.get('control') || 'ButtonDemo';
+    picker.addEventListener('change', function()
+    {
+        params.set('control', picker.value);
+        location.search = params.toString();
+    });
+})();
+</script>
+<script async src="ControlTest.js"></script>
+</body>
+</html>
