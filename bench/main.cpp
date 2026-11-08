@@ -398,7 +398,7 @@ void printUsage()
         "  measure_calls   controls::LayoutStats: renderer measureText() calls the controls\n"
         "             made in the update phase and any render-phase layout\n"
         "  z_visited  controls::UpdateStats: controls the z renumber entered\n"
-"  z_changed  controls::UpdateStats: controls of those whose z or overlay z it changed\n"
+        "  z_changed  controls::UpdateStats: of those, the controls whose z or overlay z it changed\n"
         "  anims_run  controls::UpdateStats: animations the update phase ran\n"
         "  hit_tests  input::hitTestVisits() over the frame: controls a hit test entered\n"
         "             (getControlAt calls), the hover's in the input phase included\n"
