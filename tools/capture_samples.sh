@@ -49,9 +49,11 @@ HERO_SIZE=1024x768
 HERO_OUT=demo.png
 
 # The gallery: one ControlTest demo per line. README.md embeds each of these,
-# in this order, so a change here needs a matching change there. The showcase
-# pages (examples/demo/showcase*.cpp) hold many controls each; TextDemo is the
-# one page of a single control, the text sizes side by side.
+# in this order, each a link to its live page, so a change here needs a
+# matching change there (tools/check_site_links.py, run by tools/ci_site.sh,
+# checks both). The showcase pages (examples/demo/showcase*.cpp) hold many
+# controls each; TextDemo is the one page of a single control, the text
+# sizes side by side.
 #
 # Every other page of one control is left out (ControlTest --control still
 # shows each). Left off the showcase pages because they do not look right on

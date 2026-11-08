@@ -1,0 +1,144 @@
+#
+#  Gweni
+#  Copyright (c) 2010 Facepunch Studios
+#  MIT License, see LICENSE
+#
+#  The hosted site (https://caseymcc.github.io/gweni/): on each push to main, and
+#  by hand (Actions -> pages -> Run workflow), build the repo's own build image,
+#  run tools/ci_site.sh in it (the native GLES and web release trees, ctest -L
+#  web, tools/build_site.sh, the README's live links), and deploy the staged
+#  site/ to GitHub Pages. If any of that fails, nothing is deployed.
+#
+#  Every build step is in tools/ci_site.sh, so a run can be repeated by hand in
+#  the container (./run_docker.sh ./tools/ci_site.sh); this file only gets the
+#  image and the caches ready, and deploys.
+#
+#  Caches (GitHub's Actions cache, 10 GB a repository):
+#  - the image's layers, through buildx's gha cache: a Dockerfile change
+#    rebuilds from the first changed layer;
+#  - vcpkg's binary cache and downloads, mounted at /vcpkg-cache as
+#    run_docker.sh mounts them, keyed on the image's vcpkg commit (the Dockerfile
+#    clones vcpkg unpinned, so the commit is fixed by the cached layer) and
+#    vcpkg.json. It is saved even when a later step fails, so a failed first
+#    run still leaves the dependencies built.
+#
+#  Once, by the repository's owner: Settings -> Pages -> Build and deployment ->
+#  Source: GitHub Actions. The first run is slow: a cold image build and cold
+#  vcpkg builds for both triplets (x64-linux and wasm32-emscripten).
+#
+#  Every action is pinned to a full commit SHA, its version in the comment.
+
+name: pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# no job gets more than it asks for below
+permissions: {}
+
+# one deployment at a time; a run in progress finishes rather than being
+# cancelled half-deployed
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    permissions:
+      contents: read
+    env:
+      IMAGE: gweni_build
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # The image (about 6 GB with emsdk, Playwright and the build tools), its
+      # build cache and the two release trees need more than the runner's free
+      # disk. These are toolchains the build never uses.
+      - name: Free disk space
+        run: |
+          df -h /
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup \
+              /usr/share/swift /usr/local/share/powershell /usr/local/share/chromium \
+              /opt/hostedtoolcache/CodeQL
+          df -h /
+
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      # the runner's UID/GID, as run_docker.sh passes the host's, so the files
+      # the container writes into the checkout are the runner's
+      - name: Runner UID/GID
+        id: ids
+        run: |
+          echo "uid=$(id -u)" >> "$GITHUB_OUTPUT"
+          echo "gid=$(id -g)" >> "$GITHUB_OUTPUT"
+
+      - name: Build the image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          load: true
+          tags: ${{ env.IMAGE }}
+          build-args: |
+            USER_ID=${{ steps.ids.outputs.uid }}
+            GROUP_ID=${{ steps.ids.outputs.gid }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: vcpkg cache key
+        id: vcpkg
+        run: |
+          commit="$(docker run --rm --entrypoint git "$IMAGE" -C /opt/vcpkg rev-parse HEAD)"
+          echo "key=vcpkg-${commit}-${{ hashFiles('vcpkg.json') }}" >> "$GITHUB_OUTPUT"
+          echo "prefix=vcpkg-${commit}-" >> "$GITHUB_OUTPUT"
+          mkdir -p "$RUNNER_TEMP/vcpkg-cache/binary" "$RUNNER_TEMP/vcpkg-cache/downloads"
+
+      - name: Restore the vcpkg cache
+        id: vcpkg-restore
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/vcpkg-cache
+          key: ${{ steps.vcpkg.outputs.key }}
+          restore-keys: ${{ steps.vcpkg.outputs.prefix }}
+
+      # Everything is in the script. --ipc=host as Playwright asks for Chromium
+      # in a container (the default 64 MB /dev/shm is too small for it).
+      - name: Build, test and stage the site (tools/ci_site.sh)
+        run: |
+          docker run --rm --ipc=host \
+              -e VCPKG_DEFAULT_BINARY_CACHE=/vcpkg-cache/binary \
+              -e VCPKG_DOWNLOADS=/vcpkg-cache/downloads \
+              -v "$GITHUB_WORKSPACE:/home/developer/gweni" \
+              -v "$RUNNER_TEMP/vcpkg-cache:/vcpkg-cache" \
+              -w /home/developer/gweni \
+              "$IMAGE" ./tools/ci_site.sh
+
+      # saved whatever the build did, unless this exact key was restored
+      - name: Save the vcpkg cache
+        if: always() && steps.vcpkg-restore.outputs.cache-hit != 'true' && steps.vcpkg.outputs.key != ''
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/vcpkg-cache
+          key: ${{ steps.vcpkg.outputs.key }}
+
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1

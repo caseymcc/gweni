@@ -332,6 +332,85 @@ picker not showing its control, a link into the site that is not there, and,
 through the script, a gallery page over the budget. `node tests/web/site.mjs
 --url http://localhost:8000/` checks a site some other server serves.
 
+### Publishing the site
+
+The site is live at <https://caseymcc.github.io/gweni/>. The GitHub Actions
+workflow `.github/workflows/pages.yml` (the repo's only CI) publishes it on
+every push to `main`, and on demand from *Actions → pages → Run workflow*. Its
+`build` job:
+
+1. builds the build image from the repo's `Dockerfile`, with the runner's
+   UID/GID as `run_docker.sh` passes the host's;
+2. runs `tools/ci_site.sh` in a container from it, with the checkout mounted at
+   `/home/developer/gweni` and the vcpkg cache at `/vcpkg-cache`, as
+   `run_docker.sh` mounts them;
+3. uploads the staged `site/` as the Pages artifact.
+
+Then its `deploy` job deploys that artifact to the `github-pages` environment.
+If any step fails, a web test included, nothing is deployed and the site stays
+as the last good run left it.
+
+`tools/ci_site.sh` is every build step, so the YAML holds none and a run can be
+repeated by hand in the container:
+
+```bash
+./tools/ci_site.sh                 # in the container; ./run_docker.sh ./tools/ci_site.sh from a host
+./tools/ci_site.sh --out /tmp/site # stage the site elsewhere
+```
+
+It stops at the first step that fails:
+
+1. the native GLES release tree, `build_linux_x64_release_gles/`, with Vulkan
+   off (`-DGWENI_RENDER_VULKAN=OFF`): only its `ControlTest` and `OpenGLCore`,
+   which the `web_*_native` tests compare with. Nothing here uses Vulkan, and
+   its vcpkg ports (glslang, the validation layers) would double a cold
+   dependency build. A tree of that name configured with Vulkan on is
+   reconfigured without it;
+2. the whole release web tree, `build_web_wasm32_release/`;
+3. `ctest -L web` in it, `web_site_smoke` and the comparisons with native
+   included. On a runner, without `mm`, their native runs take no lock and say
+   so;
+4. `tools/build_site.sh`, the site and its size against the budget;
+5. `tools/check_site_links.py README.md site/`, which fails unless:
+   - every link in `README.md` to `https://caseymcc.github.io/gweni/` is a page
+     of the staged site, and any `control=`/`demo=` in it is one of the
+     gallery's picker entries;
+   - the README links to the site itself;
+   - every `docs/images/` image is a link to its live page: the hero to
+     `demo.html`, a gallery image `<Name>.png` to
+     `controltest.html?control=<Name>`;
+   - the gallery images are `tools/capture_samples.sh`'s `SAMPLES`, in order.
+
+   So a sample added to `SAMPLES` needs its linked image in the README, and a
+   page renamed in `tools/site/` needs the README's links changed with it.
+
+Two caches keep later runs short. Both live in GitHub's Actions cache (10 GB
+per repository; the oldest entries are evicted beyond that):
+
+- the image's layers, through buildx's `gha` cache, so a run rebuilds from the
+  first `Dockerfile` layer that changed;
+- vcpkg's binary cache and downloads, keyed on the image's vcpkg commit and on
+  `vcpkg.json`. The `Dockerfile` clones vcpkg unpinned, so the commit is the one
+  in the cached layer. A new key starts from the newest older entry. The cache
+  is saved even when a later step fails, so a failed run still keeps the
+  dependencies it built.
+
+Every action is pinned to a full commit SHA, its version beside it. Each job
+gets only the permissions it needs: `contents: read` to build, and `pages:
+write` and `id-token: write` to deploy. Runs take turns (the `pages`
+concurrency group), and a run in progress is never cancelled half-deployed.
+
+Done once, by the repository's owner (no agent changes repository settings or
+pushes):
+
+- *Settings → Pages → Build and deployment → Source: **GitHub Actions***.
+- Expect the first run to be slow: a cold image build (emsdk, Playwright and
+  Chromium) and cold vcpkg builds for both triplets, `x64-linux` and
+  `wasm32-emscripten`, on a 4-core runner. Later runs reuse both caches.
+
+`node tests/web/site.mjs --url https://caseymcc.github.io/gweni/`, in the
+container, runs the `web_site_smoke` checks against the deployed site.
+
 ## Tests
 
 The suite is CTest, under `tests/`, run from the repo root:

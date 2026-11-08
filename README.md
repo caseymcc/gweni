@@ -3,7 +3,11 @@ gweni - GUI Without Extravagant Nonsense (plus i for breaking changes)
 
 This is an attempt to make GWEN a more opengl aware ui. The expectation is to build it to provide better performance with the way modern opengl works (and later vulkan)
 
-![The OpenGLCore demo shell showing the Containers & data showcase page (a TreeControl, ListBox, TabControl with closable tabs and a Properties grid, ScrollControl and CollapsibleList), Tokyo Night theme](docs/images/demo.png)
+**[Try it live](https://caseymcc.github.io/gweni/)**: the demo and the control gallery, compiled to WebAssembly and drawn on
+WebGL 2 by the same `OpenGLCore` renderer, in any recent desktop browser. Every image below links
+to its live page.
+
+[![The OpenGLCore demo shell showing the Containers & data showcase page (a TreeControl, ListBox, TabControl with closable tabs and a Properties grid, ScrollControl and CollapsibleList), Tokyo Night theme](docs/images/demo.png)](https://caseymcc.github.io/gweni/demo.html?demo=ShowcaseContainersDemo)
 
 *The `OpenGLCore` demo on the OpenGL 3.0+ core renderer with the textured skin's Tokyo Night theme, showing the Containers & data showcase page: a TreeControl, a ListBox, a TabControl with closable tabs holding a Properties grid, a ScrollControl and a CollapsibleList.*
 
@@ -25,32 +29,32 @@ implemented-vs-planned status, and [docs/layout.md](docs/layout.md) for the layo
 
 ## Samples
 
-![Buttons & toggles showcase page](docs/images/ShowcaseButtonsDemo.png)
+[![Buttons & toggles showcase page](docs/images/ShowcaseButtonsDemo.png)](https://caseymcc.github.io/gweni/controltest.html?control=ShowcaseButtonsDemo)
 
 **Buttons & toggles**: Buttons (disabled, with an image, a toolbar of icon-only ones, a dialog row),
 CheckBoxes (checked, unchecked, disabled labels), three RadioButton groups, Selectable rows and a
 single-selection SelectableGroup, and the window buttons (maximised, disabled).
 
-![Text input showcase page](docs/images/ShowcaseInputDemo.png)
+[![Text input showcase page](docs/images/ShowcaseInputDemo.png)](https://caseymcc.github.io/gweni/controltest.html?control=ShowcaseInputDemo)
 
 **Text input**: TextBoxes (a placeholder, a password, a number, coloured text, read-only, one focused
 with its caret), ColorEdits (R, G, B, A fields on a translucent colour over a checkerboard, a hex
 field), a wrapped TextBoxMultiline, ComboBoxes, a NumericUpDown, and horizontal and vertical Sliders,
 plain, notched, disabled and one showing its value.
 
-![Display & feedback showcase page](docs/images/ShowcaseDisplayDemo.png)
+[![Display & feedback showcase page](docs/images/ShowcaseDisplayDemo.png)](https://caseymcc.github.io/gweni/controltest.html?control=ShowcaseDisplayDemo)
 
 **Display & feedback**: Labels from 14 to 32 px (coverage and SDF text) and in four colours, Bullets,
 a wrapped Label, ProgressBars (labelled, custom text, vertical, indeterminate), Separators (plain,
 captioned, vertical), a VirtualList of 100 000 items scrolled to the middle, and a StatusBar.
 
-![Windows & menus showcase page](docs/images/ShowcaseWindowsDemo.png)
+[![Windows & menus showcase page](docs/images/ShowcaseWindowsDemo.png)](https://caseymcc.github.io/gweni/controltest.html?control=ShowcaseWindowsDemo)
 
 **Windows & menus**: a MenuStrip with a disabled menu, a ColorPicker, a context menu opened with a
 right-click (accelerators, a divider, a disabled item, one hovered), and two WindowControls over the
 page's content, one with no close button.
 
-![Text](docs/images/TextDemo.png)
+[![Text](docs/images/TextDemo.png)](https://caseymcc.github.io/gweni/controltest.html?control=TextDemo)
 
 **Text**: OpenSans from 8 to 16 px, on the pixel grid.
 
