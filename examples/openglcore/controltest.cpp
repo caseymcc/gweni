@@ -23,6 +23,11 @@
  *    --shot-dir <dir>   directory for shots, created if missing (default /tmp)
  *    --headless         force the surfaceless EGL context (no display needed)
  *    --stats            print one key=value line per frame; freezes the clock.
+ *                       prim_slots_written= and text_slots_written= count
+ *                       the distinct primitive and glyph slots the frame's
+ *                       flush uploads (vertexes or clip box): every draw,
+ *                       hide, show or release that changed one since the
+ *                       last flush, each slot once;
  *                       prim_ids= counts the live primitive ids (handed out
  *                       and not released) after the frame; the id bank is
  *                       process-wide, so it covers every canvas;
@@ -579,7 +584,9 @@ static void printUsage(std::ostream &out)
          "  --shot-all         write one PNG per control demo, in this one run\n"
          "  --shot-dir <dir>   directory for shots (default /tmp)\n"
          "  --headless         force the surfaceless EGL context\n"
-         "  --stats            print one key=value line per frame\n"
+         "  --stats            print one key=value line per frame; prim_slots_written=\n"
+         "                     and text_slots_written= are the distinct slots its\n"
+         "                     flush uploads (a draw, hide, show or release each)\n"
          "  --stats-clock frozen|step  under --stats, keep the clock still (the\n"
          "                     default) or step it 1/60 s per frame, so a\n"
          "                     tooltip's delay or an animation runs\n"

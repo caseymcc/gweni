@@ -444,8 +444,12 @@ public:
     struct FrameStats
     {
         size_t frameIndex=0;            //!< frames flushed so far
-        size_t primitiveSlotsWritten=0; //!< primitive slots whose bytes changed this frame
-        size_t textSlotsWritten=0;      //!< glyph slots whose vertexes or clip box changed this frame
+        //! distinct primitive slots this frame uploads (vertexes or clip box): those a draw,
+        //! hide, show or release changed since the last flush, each once. A slot changed and
+        //! put back within the frame is uploaded and counted; a buffer regrow re-sends every
+        //! slot but counts only these.
+        size_t primitiveSlotsWritten=0;
+        size_t textSlotsWritten=0;      //!< distinct glyph slots this frame uploads (vertexes or clip box)
         //! glBufferData/glBufferSubData calls of the vertex buffers, and the clip
         //! boxes' glTexSubImage2D calls (one per row piece a dirty run covers)
         size_t uploadCalls=0;

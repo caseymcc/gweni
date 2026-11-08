@@ -1622,7 +1622,6 @@ void OpenGLCore::setViewRect(const gweni::Rect &viewRect)
 
 void OpenGLCore::begin()
 {
-    m_frameStats.primitiveSlotsWritten=0;
     m_zIndex=0;
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     glEnable(GL_BLEND);
@@ -1786,22 +1785,11 @@ OpenGLCore::MirrorSnapshot OpenGLCore::snapshotMirror() const
 
 void OpenGLCore::markPrimitiveChanges(size_t primitiveId, const PrimitiveSlot &before)
 {
-    bool written=false;
-
     if(memcmp(before.vertexes, &m_vertexes[primitiveId*4], sizeof(before.vertexes)) != 0)
-    {
         m_dirtyVertexSlots.mark(primitiveId);
-        written=true;
-    }
 
     if(memcmp(&before.box, &m_clippingBoxes[primitiveId], sizeof(Box)) != 0)
-    {
         m_dirtyClipSlots.mark(primitiveId);
-        written=true;
-    }
-
-    if(written)
-        ++m_frameStats.primitiveSlotsWritten;
 }
 
 void OpenGLCore::uploadDirty(uint32_t buffer, size_t &capacityElements,
@@ -1997,6 +1985,15 @@ void OpenGLCore::flush()
     m_frameStats.textDraws=0;
     m_frameStats.atlasUploadCalls=0;
     m_frameStats.atlasUploadBytes=0;
+    //the slots this frame uploads: every draw, hide, show and release since the last
+    //flush, each slot once however many of them touched it
+    m_frameStats.primitiveSlotsWritten=m_dirtyVertexSlots.count();
+    //a slot whose clip box changed and its vertexes did not is written too
+    for(size_t slot: m_dirtyClipSlots.slots())
+    {
+        if(!m_dirtyVertexSlots.marked(slot))
+            ++m_frameStats.primitiveSlotsWritten;
+    }
     m_frameStats.textSlotsWritten=m_dirtyTextVertexSlots.count();
     //a glyph slot whose clip box changed and its vertexes did not is written too
     for(size_t slot: m_dirtyTextClipSlots.slots())
