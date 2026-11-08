@@ -439,10 +439,11 @@ side (`eraseFont`, `deleteTextureData`). The core's `end()` is `flush()`, so a
 wrapper such as `gweni_bench`'s `TimedFlush<Renderer>` times the flush of any backend
 by overriding `end()`.
 
-The vendored freetype-gl's `text-buffer.h` (which the core lays coverage text out
-with, `text_buffer_add_text` into a CPU vector) includes its `opengl.h` for the GL
-names in `vertex_buffer_t`, so the GL headers are still on the core's include path
-through it; the core uses only freetype-gl's CPU side.
+The vendored freetype-gl's headers include its `opengl.h` (`freetype-gl.h` does
+directly, and `text-buffer.h`, which the core lays coverage text out with,
+`text_buffer_add_text` into a CPU vector, through `vertex_buffer_t`'s GL names), so
+the GL headers are still on the core's include path, and on that of everything
+including `slotRenderer.h`, through them; the core calls only freetype-gl's CPU side.
 
 The GPU unit tests (`tests/`) take the shared renderer as a `SlotRenderer`
 (`test::gpuRenderer()`, `test::newRenderer()`, `test::clearView()`,
