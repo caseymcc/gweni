@@ -14,18 +14,23 @@
  *    last samples' strokes on the plot's first and last units, every point
  *    inside the plot; the recorded segments N-1 of them, each from sample i
  *    to sample i+1 at the plot's render origin, consecutive ones sharing
- *    their endpoint, in PlotLine's colour, the line's thickness and the
- *    plot's z+1 (the frame at its z); a NaN sample leaving a gap, a single
- *    sample drawing no segment;
- *  - a setValue(i) that moves its point drawing exactly segments i-1 and i
- *    (one at either end), one that keeps its y (clamped at the range's edge)
- *    marking and drawing nothing, and a settled frame drawing nothing;
+ *    their endpoint, each drawn with its neighbours (samples i-1 and i+2,
+ *    none past the ends), in PlotLine's colour, the line's thickness and the
+ *    plot's z+1 (the frame at its z); a NaN sample leaving a gap, the
+ *    segments beside it drawn without a neighbour across it, a single sample
+ *    drawing no segment;
+ *  - a setValue(i) that moves its point drawing exactly segments i-2..i+1,
+ *    the two it ends and the two that hold it as a neighbour (fewer at the
+ *    ends), one that keeps its y (clamped at the range's edge) marking and
+ *    drawing nothing, and a settled frame drawing nothing; a sample set to
+ *    NaN hiding segments i-1 and i and drawing i-2 and i+1 again without it,
+ *    and set back drawing i-2..i+1 with it;
  *  - a new range (fixed, or the automatic one moved by a value) and a new
  *    thickness redrawing every segment and not the frame;
  *  - push() moving every value one sample left with no layout pass, every
  *    segment of a series of distinct values redrawn, only the segments whose
- *    endpoints moved of one with runs of equal values, and a push that changes
- *    no value marking nothing;
+ *    endpoints or neighbours moved of one with runs of equal values, and a
+ *    push that changes no value marking nothing;
  *  - a new sample count resizing the slot list and drawing into no slot it
  *    does not own, the slots given back when it shrinks and when the plot goes;
  *  - the nearest sample's tooltip ("<index>: <value>"), a hover drawing no
@@ -304,9 +309,18 @@ TEST_CASE("PlotLines: N samples spread across the plot, drawn as N-1 segments sh
                     CHECK(line.zIndex == scene.plot->getZIndex()+1);
                     CHECK((line.color == skin::textured::tokyonight::PlotLine.top));
 
-                    // the next segment starts where this one ends
+                    // the next segment starts where this one ends, and each is
+                    // drawn with the samples before and after it
                     if(i+2 < count)
                         CHECK((scene.renderer.lines[i+1].p0 == line.p1));
+                    if(i > 0)
+                        CHECK((line.prev == scene.renderer.lines[i-1].p0));
+                    else
+                        CHECK(!line.prev);
+                    if(i+2 < count)
+                        CHECK((line.next == scene.renderer.lines[i+1].p1));
+                    else
+                        CHECK(!line.next);
                 }
                 CHECK(scene.renderer.zIndices[scene.ids()[0]] == scene.plot->getZIndex());
             }
@@ -349,6 +363,13 @@ TEST_CASE("PlotLines: N samples spread across the plot, drawn as N-1 segments sh
     CHECK(scene.linesDrawn() == std::set<size_t>{scene.segmentId(0), scene.segmentId(3)});
     CHECK(std::set<size_t>(scene.renderer.hidden.begin(), scene.renderer.hidden.end())
         == std::set<size_t>{scene.segmentId(1), scene.segmentId(2)});
+    // with no neighbour across the gap or past the ends: 0 (the first) has
+    // none, nor has 3 (the last)
+    REQUIRE(scene.renderer.lines.size() == 2);
+    CHECK(!scene.renderer.lines[0].prev);
+    CHECK(!scene.renderer.lines[0].next);
+    CHECK(!scene.renderer.lines[1].prev);
+    CHECK(!scene.renderer.lines[1].next);
 
     // one sample: at the middle, no segment
     scene.plot->setValues({1.0f});
@@ -359,7 +380,7 @@ TEST_CASE("PlotLines: N samples spread across the plot, drawn as N-1 segments sh
     CHECK(scene.renderer.lines.empty());
 }
 
-TEST_CASE("PlotLines: a setValue draws only the two segments next to it, and nothing when its y stays")
+TEST_CASE("PlotLines: a setValue draws only the four segments around it, and nothing when its y stays")
 {
     Scene scene;
 
@@ -378,29 +399,39 @@ TEST_CASE("PlotLines: a setValue draws only the two segments next to it, and not
     CHECK(scene.renderer.rects.empty());
     CHECK(scene.renderer.hidden.empty());
 
-    // a sample in the middle moved: the segments on either side of it
+    // a sample in the middle moved: the two segments it ends, and the two
+    // beyond them that hold it as their neighbour
     scene.plot->setValue(20, 0.75f);
     CHECK((scene.plot->getStateChange() & controls::StateChange_Background) != 0);
     scene.frame();
-    CHECK(scene.renderer.lines.size() == 2);
-    CHECK(scene.linesDrawn() == std::set<size_t>{scene.segmentId(19), scene.segmentId(20)});
+    CHECK(scene.renderer.lines.size() == 4);
+    CHECK(scene.linesDrawn() == scene.segmentIds(18, 22));
     CHECK(scene.renderer.rects.empty());
     CHECK(scene.renderer.hidden.empty());
+    for(const test::StubRenderer::LineDraw &line : scene.renderer.lines)
+    {
+        const PointF moved=line.id == scene.segmentId(18) ? *line.next
+            : line.id == scene.segmentId(19) ? line.p1
+            : line.id == scene.segmentId(20) ? line.p0 : *line.prev;
+        const Rect origin=scene.plot->getRenderBounds();
 
-    // the first and the last sample: one segment each
+        CHECK(moved.y == doctest::Approx(float(origin.y)+scene.plot->getSamplePoint(20).y));
+    }
+
+    // the first and the last sample: two segments each
     scene.plot->setValue(0, 0.5f);
     scene.frame();
-    CHECK(scene.linesDrawn() == std::set<size_t>{scene.segmentId(0)});
+    CHECK(scene.linesDrawn() == scene.segmentIds(0, 2));
 
     scene.plot->setValue(63, -0.5f);
     scene.frame();
-    CHECK(scene.linesDrawn() == std::set<size_t>{scene.segmentId(62)});
+    CHECK(scene.linesDrawn() == scene.segmentIds(61, 63));
 
     // past the range's top, then further past it: the point stays on the
     // plot's top edge, so the second marks and draws nothing
     scene.plot->setValue(30, 2.0f);
     scene.frame();
-    CHECK(scene.linesDrawn() == std::set<size_t>{scene.segmentId(29), scene.segmentId(30)});
+    CHECK(scene.linesDrawn() == scene.segmentIds(28, 32));
     scene.plot->setValue(30, 3.0f);
     CHECK(scene.plot->getStateChange() == controls::StateChange_Nothing);
     scene.frame();
@@ -412,18 +443,37 @@ TEST_CASE("PlotLines: a setValue draws only the two segments next to it, and not
     CHECK(scene.plot->getStateChange() == controls::StateChange_Nothing);
     CHECK(scene.plot->getValueCount() == 64);
 
-    // to NaN: the two segments hidden, nothing drawn; and back
+    // to NaN: the two segments it ends hidden, the two beyond them drawn again
+    // without it as their neighbour; and back, all four drawn with it
     scene.plot->setValue(40, std::nanf(""));
     scene.frame();
-    CHECK(scene.renderer.lines.empty());
     CHECK(std::set<size_t>(scene.renderer.hidden.begin(), scene.renderer.hidden.end())
         == std::set<size_t>{scene.segmentId(39), scene.segmentId(40)});
+    CHECK(scene.linesDrawn() == std::set<size_t>{scene.segmentId(38), scene.segmentId(41)});
+    for(const test::StubRenderer::LineDraw &line : scene.renderer.lines)
+    {
+        if(line.id == scene.segmentId(38))
+        {
+            CHECK(line.prev.has_value());
+            CHECK(!line.next);
+        }
+        else
+        {
+            CHECK(!line.prev);
+            CHECK(line.next.has_value());
+        }
+    }
     scene.plot->setValue(40, std::nanf(""));
     CHECK(scene.plot->getStateChange() == controls::StateChange_Nothing);
     scene.plot->setValue(40, 0.0f);
     scene.frame();
-    CHECK(scene.linesDrawn() == std::set<size_t>{scene.segmentId(39), scene.segmentId(40)});
+    CHECK(scene.linesDrawn() == scene.segmentIds(38, 42));
     CHECK(scene.renderer.hidden.empty());
+    for(const test::StubRenderer::LineDraw &line : scene.renderer.lines)
+    {
+        CHECK(line.prev.has_value());
+        CHECK(line.next.has_value());
+    }
 }
 
 TEST_CASE("PlotLines: a new range or thickness redraws every segment, not the frame")
@@ -490,15 +540,15 @@ TEST_CASE("PlotLines: push scrolls the series left, redrawing the segments that 
     CHECK(scene.plot->getValues().back() == 33.4f);
     scene.frame();
     CHECK(scene.canvas->getLayoutStats().passes == 0);
-    // the 30 segments of equal samples stay where they were; the last one
-    // rises to the new sample
-    CHECK(scene.linesDrawn() == std::set<size_t>{scene.segmentId(30)});
+    // the segments of equal samples stay where they were; the last one rises
+    // to the new sample, and the one before it holds it as its next
+    CHECK(scene.linesDrawn() == scene.segmentIds(29, 31));
 
     scene.plot->push(16.6f);
     scene.frame();
     CHECK(scene.canvas->getLayoutStats().passes == 0);
-    // the peak moved left: the segments next to its old and new places
-    CHECK(scene.linesDrawn() == std::set<size_t>{scene.segmentId(29), scene.segmentId(30)});
+    // the peak moved left: the segments around its old and new places
+    CHECK(scene.linesDrawn() == scene.segmentIds(28, 31));
 
     // a series of different values: every point moves, every segment drawn
     std::vector<float> ramp(32);

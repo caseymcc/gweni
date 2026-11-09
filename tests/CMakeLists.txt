@@ -364,9 +364,9 @@ Erm, and I think it comes down to a choice between "The League Against Salivatin
             --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/plot_histogram@VARIANT@
         WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
 
-    # PlotLinesDemo's series: a moved sample writes at most the two segments
-    # next to it, one that keeps its point nothing, a push no layout, a hover
-    # nothing
+    # PlotLinesDemo's series: a moved sample writes at most the four segments
+    # around it (the two it ends and the two holding it as a neighbour), one
+    # that keeps its point nothing, a push no layout, a hover nothing
     gweni_whole_app_test(controltest_plot_lines 60
         COMMAND $<TARGET_FILE:ControlTest> --headless --scenario plot-lines --require-one-pass
             --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/plot_lines@VARIANT@

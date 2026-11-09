@@ -411,17 +411,18 @@
  *                 Exits non-zero if any check is no.
  *    plot-lines   PlotLinesDemo's two series, the clock frozen: a sample of
  *                 the 64-sample sine moved (sample 20, to 0) has to write at
- *                 least one and at most 2 primitive slots (the two segments
- *                 next to it) and change that control alone; a frame time
+ *                 least one and at most 4 primitive slots (segments 18..21,
+ *                 the two it ends and the two drawn with it as their
+ *                 neighbour) and change that control alone; a frame time
  *                 past the fixed range raised further (still on its top edge)
  *                 nothing; the sine's highest value doubled (a rescale of the
- *                 automatic range) more than 2 slots and no more than every
+ *                 automatic range) more than 4 slots and no more than every
  *                 segment's; a push() onto the frame times no more than every
  *                 segment's, with no layout pass; the mouse near sample 10
  *                 no slot, with "10: <value>" as the tooltip; every settled
  *                 frame nothing; the demo gives every primitive id back
  *                 (plot-lines.png). One line
- *                   plot-lines segments=63 sample_prim_slots=2 ... ids_back=yes
+ *                   plot-lines segments=63 sample_prim_slots=4 ... ids_back=yes
  *                 Exits non-zero if any check is no.
  *    inspector    Demo, the clock frozen, settled; F12 (scripted, through the
  *                 same key handler as the window's) opens the inspector
@@ -925,7 +926,7 @@ static void printUsage(std::ostream &out)
          "                     demo-labels whether every demo-list label fits,\n"
          "                     plot-histogram whether a changed sample wrote its\n"
          "                     bar's slot alone, plot-lines whether it wrote the\n"
-         "                     two segments next to it, inspector whether the\n"
+         "                     four segments around it, inspector whether the\n"
          "                     inspector over Demo settles to 0 and shows a hover's\n"
          "                     slots; all sixteen fail on a no\n"
          "  --dump-bounds [<path>]  print the laid-out control tree as text,\n"
@@ -2873,9 +2874,10 @@ static bool runThemeScenario(Session &s, const std::string &shotDir, bool &passe
 //-----------------------------------------------------------------------------
 // --scenario plot-lines: PlotLinesDemo's two series changed and hovered
 //
-// One primitive slot per segment, redrawn only where a segment's endpoints
-// moved: a sample whose point moves writes the two segments next to it (at
-// most; the renderer counts a slot only if its bytes differ), one whose point
+// One primitive slot per segment, redrawn only where a segment's endpoints or
+// neighbours moved: a sample whose point moves writes the four segments around
+// it, the two it ends and the two drawn with it as their neighbour (at most;
+// the renderer counts a slot only if its bytes differ), one whose point
 // stays (clamped to the range's edge) nothing, a rescale every segment that
 // moved, and a push() onto a scrolling series no more than every segment,
 // with no layout. A hover has no look of its own: it writes nothing and sets
@@ -2988,10 +2990,10 @@ static bool runPlotLinesScenario(Session &s, const std::string &shotDir, bool &p
 
     const size_t idsLeft=livePrimitiveIds()-idsBefore;
 
-    const bool twoSegments=moved && change.primSlots >= 1 && change.primSlots <= 2 && change.textSlots == 0
+    const bool fourSegments=moved && change.primSlots >= 1 && change.primSlots <= 4 && change.textSlots == 0
         && change.changed == 1;
     const bool nothingKept=hasPast && keep.primSlots == 0 && keep.textSlots == 0 && keep.changed == 0;
-    const bool rescaled=rescale.primSlots > 2 && rescale.primSlots <= segments && rescale.textSlots == 0;
+    const bool rescaled=rescale.primSlots > 4 && rescale.primSlots <= segments && rescale.textSlots == 0;
     const bool pushed=push.primSlots >= 1 && push.primSlots <= frameSegments && push.textSlots == 0
         && push.changed == 1 && pushPasses == 0;
     const bool hoverNothing=hovered == 10 && hover.primSlots == 0 && hover.textSlots == 0
@@ -2999,7 +3001,7 @@ static bool runPlotLinesScenario(Session &s, const std::string &shotDir, bool &p
     const bool settled=idleSlots == 0 && idleChanged == 0;
     const bool idsBack=idsLeft == 0;
 
-    passed=twoSegments && nothingKept && rescaled && pushed && hoverNothing && settled && idsBack;
+    passed=fourSegments && nothingKept && rescaled && pushed && hoverNothing && settled && idsBack;
 
     std::cout<<"plot-lines segments="<<segments;
     printPlotStep("sample", change);
@@ -3008,13 +3010,13 @@ static bool runPlotLinesScenario(Session &s, const std::string &shotDir, bool &p
     printPlotStep("push", push);
     printPlotStep("hover", hover);
     std::cout<<" push_layout_passes="<<pushPasses<<" idle_slots="<<idleSlots<<" idle_changed="<<idleChanged
-             <<" ids_left="<<idsLeft<<" two_segments="<<(twoSegments?"yes":"no")
+             <<" ids_left="<<idsLeft<<" four_segments="<<(fourSegments?"yes":"no")
              <<" same_y_nothing="<<(nothingKept?"yes":"no")<<" rescaled="<<(rescaled?"yes":"no")
              <<" pushed="<<(pushed?"yes":"no")<<" hover_nothing="<<(hoverNothing?"yes":"no")
              <<" settled="<<(settled?"yes":"no")<<" ids_back="<<(idsBack?"yes":"no")<<"\n";
     if(!passed)
         std::cerr<<"ControlTest: plot-lines: "
-                 <<(!twoSegments ? "a moved sample did not write at most the two segments next to it"
+                 <<(!fourSegments ? "a moved sample did not write at most the four segments around it"
                      : !nothingKept ? "a sample that kept its point wrote or changed something"
                      : !rescaled ? "a rescale did not redraw the segments that moved"
                      : !pushed ? "a push wrote more than the series' segments, or laid out"

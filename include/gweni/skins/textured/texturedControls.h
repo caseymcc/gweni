@@ -636,9 +636,13 @@ private:
 // the frame. As PlotHistogram's, update() resizes the slot list to the
 // segment count itself and keeps what it last drew in each slot: on a frame
 // that marks the control's geometry, visibility or creation it draws
-// everything, otherwise only a segment whose endpoints, thickness, colour or
-// z are not the ones drawn, so a changed sample rewrites the two segments
-// next to it. A segment that is not drawn (a NaN endpoint) is hidden.
+// everything, otherwise only a segment whose endpoints, neighbours, thickness,
+// colour or z are not the ones drawn. Each segment is drawn with its
+// neighbours (drawLine's prev and next: samples i-1 and i+2, none past the
+// series or across a gap), so a joint's pixels are blended once, and a changed
+// sample rewrites the four segments around it (i-2..i+1). A segment that is not
+// drawn (a NaN endpoint) is hidden, and the ones next to it are drawn again
+// without that neighbour.
 class PlotLines:public textured::ControlRegister<PlotLines>
 {
 public:
@@ -660,6 +664,10 @@ private:
         bool shown=false;
         PointF p0;
         PointF p1;
+        bool hasPrev=false; //!< drawn with the point before p0 (prev)
+        bool hasNext=false; //!< and the one after p1 (next)
+        PointF prev;
+        PointF next;
         float thickness=0.0f;
         Color color;
         int zIndex=0;

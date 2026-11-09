@@ -34,6 +34,7 @@
 #include "gweni/tools/inspector.h"
 
 #include <algorithm>
+#include <cmath>
 
 
 namespace gweni
@@ -1588,12 +1589,23 @@ void PlotLines::update(renderer::Base *renderer, controls::Base *baseControl)
     const PointF origin(float(bounds.x), float(bounds.y));
     bool colorSet=false;
 
+    // the sample points at the render origin, a NaN one a gap
+    std::vector<PointF> points(segments > 0 ? segments+1 : 0);
+    std::vector<char> shown(points.size());
+
+    for(size_t i=0; i<points.size(); ++i)
+    {
+        const PointF point=plot->getSamplePoint(i);
+
+        points[i]=PointF(origin.x+point.x, origin.y+point.y);
+        shown[i]=!std::isnan(point.y);
+    }
+
     for(size_t i=0; i<segments; ++i)
     {
         Segment &drawn=m_segments[i];
-        PointF p0, p1;
 
-        if(!plot->getSegment(i, p0, p1))
+        if(!shown[i] || !shown[i+1])
         {
             if(all || !drawn.valid || drawn.shown)
                 renderer->hidePrimitive(m_primitives[1+i]);
@@ -1602,11 +1614,18 @@ void PlotLines::update(renderer::Base *renderer, controls::Base *baseControl)
             continue;
         }
 
-        p0=PointF(origin.x+p0.x, origin.y+p0.y);
-        p1=PointF(origin.x+p1.x, origin.y+p1.y);
+        const PointF &p0=points[i];
+        const PointF &p1=points[i+1];
+        // the segments before and after it, where they are drawn
+        const bool hasPrev=(i > 0) && shown[i-1];
+        const bool hasNext=(i+2 < points.size()) && shown[i+2];
+        const PointF prev=hasPrev ? points[i-1] : PointF();
+        const PointF next=hasNext ? points[i+2] : PointF();
 
         if(!all && drawn.valid && drawn.shown && (drawn.p0 == p0) && (drawn.p1 == p1)
-            && (drawn.thickness == thickness) && (drawn.color == color) && (drawn.zIndex == z+1))
+            && (drawn.hasPrev == hasPrev) && (drawn.prev == prev) && (drawn.hasNext == hasNext)
+            && (drawn.next == next) && (drawn.thickness == thickness) && (drawn.color == color)
+            && (drawn.zIndex == z+1))
             continue;
 
         if(!colorSet)
@@ -1614,11 +1633,16 @@ void PlotLines::update(renderer::Base *renderer, controls::Base *baseControl)
             renderer->setDrawColor(color);
             colorSet=true;
         }
-        renderer->drawLine(m_primitives[1+i], p0, p1, thickness, z+1);
+        renderer->drawLine(m_primitives[1+i], p0, p1, thickness, z+1, hasPrev ? &prev : nullptr,
+            hasNext ? &next : nullptr);
         drawn.valid=true;
         drawn.shown=true;
         drawn.p0=p0;
         drawn.p1=p1;
+        drawn.hasPrev=hasPrev;
+        drawn.prev=prev;
+        drawn.hasNext=hasNext;
+        drawn.next=next;
         drawn.thickness=thickness;
         drawn.color=color;
         drawn.zIndex=z+1;

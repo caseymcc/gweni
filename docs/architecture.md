@@ -1807,8 +1807,13 @@ two programs and the draws. What follows describes both together:
   in `PlotLine`'s colour, resizes its slot list with the sample count, and, as
   `PlotHistogram`'s, keeps what it last drew in each slot: a frame marking geometry,
   visibility or creation draws every slot, any other only the segments whose endpoints,
-  thickness, colour or z changed. So a changed sample rewrites the two segments next to
-  it (one at either end), and a rescale or a new thickness every segment. `push(v)`, for
+  neighbours, thickness, colour or z changed. Each segment is drawn with its neighbours
+  (`drawLine`'s `prev` and `next`: samples i-1 and i+2, none past the ends or across a
+  gap), so its joints are blended once at any alpha ("Line segments (style 3)"). So a
+  changed sample rewrites the four segments around it, i-2..i+1 (the two it ends and the
+  two holding it as a neighbour; fewer at the ends and next to a gap), a sample set to
+  NaN hides the two it ends and draws the two beyond them again without it, and a
+  rescale or a new thickness rewrites every segment. `push(v)`, for
   a scrolling series such as a frame-time graph, drops the oldest value and appends `v`:
   every value moves one sample left, so a series of distinct values redraws every
   segment, with no layout. A hover has no look: it sets the tooltip to the nearest
