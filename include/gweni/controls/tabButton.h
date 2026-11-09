@@ -115,7 +115,6 @@ public:
     bool isTabHovered() const;
 
     void arrange(skin::Base *skin, Dim dim) override;
-    void postLayout(skin::Base *skin) override;
     void onDescendantInteraction(Base *control) override;
 
 private:

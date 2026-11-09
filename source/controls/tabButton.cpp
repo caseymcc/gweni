@@ -39,22 +39,21 @@ void TabButton::calculateSize(skin::Base *skin, Dim dim)
     {
         PlacementScope placement;
         DockPosition parentDock=m_control->getTabStrip()->getDock();
+        Padding padding(3, 2, 5, 2);
 
         if(parentDock == DockPosition::Bottom)
-            setPadding(Padding(3, 1, 5, 4));
+            padding=Padding(3, 1, 5, 4);
         else if(parentDock == DockPosition::Top)
-            setPadding(Padding(3, 3, 5, 2));
-        else
-            setPadding(Padding(3, 2, 5, 2));
+            padding=Padding(3, 3, 5, 2);
 
         // a closable tab's close square sits between its text and its right
-        // padding, so the text is laid out clear of it on every side
+        // padding, so the text is laid out clear of it on every side; set
+        // once, so a measure that keeps the padding changes nothing (set in
+        // two steps, a closable tab's went to the plain one and back in every
+        // pass, invalidating it and the way up each time)
         if(m_closeButton)
-        {
-            Padding padding=getPadding();
             padding.right+=CloseButtonSize;
-            setPadding(padding);
-        }
+        setPadding(padding);
     }
 
     ParentClass::calculateSize(skin, dim);
@@ -87,38 +86,29 @@ bool TabButton::isTabHovered() const
     return isHovered() || (m_closeButton && m_closeButton->isHovered());
 }
 
-// The close button is a CloseButtonSize square along each axis, given before
-// this tab arranges it (the TreeNode toggle's pattern).
+// The close button is a CloseButtonSize square, placed along each axis before
+// this tab arranges it (the TreeNode toggle's pattern), once that axis's size is
+// final: at the trailing end of the content, in the right padding
+// calculateSize() added, centred between the top and bottom padding. Placed
+// before the tab's own children are arranged, so a first placement leaves no
+// part of the way down to it dirty after the pass (from postLayout() it did,
+// for the next pass to find, whatever made that pass).
 void TabButton::arrange(skin::Base *skin, Dim dim)
 {
     if(m_closeButton)
     {
+        const Padding &padding=getPadding();
+        const Rect &bounds=m_closeButton->getBounds();
+
         if(dim == Dim::X)
-            placeChildSize(m_closeButton, CloseButtonSize, m_closeButton->getHeight());
+            placeChild(m_closeButton, Rect(getWidth()-padding.right, bounds.y, CloseButtonSize, bounds.h));
         else
-            placeChildSize(m_closeButton, m_closeButton->getWidth(), CloseButtonSize);
+            placeChild(m_closeButton, Rect(bounds.x,
+                padding.top+(getHeight()-padding.top-padding.bottom-CloseButtonSize)/2,
+                bounds.w, CloseButtonSize));
     }
 
     ParentClass::arrange(skin, dim);
-}
-
-// Placed once the tab has both its width and height: at the trailing end of
-// the content, in the right padding calculateSize() added, centred between
-// the top and bottom padding. Only its position changes, which nothing laid
-// out in this pass has read.
-void TabButton::postLayout(skin::Base *skin)
-{
-    ParentClass::postLayout(skin);
-
-    if(!m_closeButton)
-        return;
-
-    const Padding &padding=getPadding();
-    // the square is the first CloseButtonSize units of the right padding
-    const int x=getWidth()-padding.right;
-    const int y=padding.top+(getHeight()-padding.top-padding.bottom-CloseButtonSize)/2;
-
-    placeChildPos(m_closeButton, x, y);
 }
 
 // The mouse moving onto or off the close button keeps or ends this tab's
