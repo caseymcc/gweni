@@ -155,8 +155,9 @@ protected:
     void onTextChanged() override;
 
     //! Every focus change repaints the box through redraw(), once the focus
-    //! has moved (Base::focus, unfocus, and a hidden control's focus dropped
-    //! by the canvas): the hint's visibility follows it there.
+    //! has moved (Base::focus and unfocus, which the canvas drops a hidden or
+    //! input-disabled control's focus through): the hint's visibility follows
+    //! it there.
     void updateColors() override;
     //! Shows the hint if there is one, the box is visible and empty and does
     //! not have the focus; hides it otherwise. Only ever toggles its

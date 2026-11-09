@@ -132,8 +132,8 @@ void TextBox::insertText(const gweni::String &strInsert)
 // blink edge is one StateChange_Caret, which only shows or hides the caret.
 void TextBox::updateCaretBlink()
 {
-    // the focus went without onLostKeyboardFocus (the canvas dropping a
-    // hidden holder's, a direct KeyboardFocus assignment): stop here
+    // the focus went without onLostKeyboardFocus (~Base clearing it, a
+    // direct KeyboardFocus assignment): stop here
     if(!isFocussed())
     {
         stopCaretBlink();

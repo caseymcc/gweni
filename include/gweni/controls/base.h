@@ -932,9 +932,8 @@ private:
 
 public:
     //! Calls onDescendantInteraction(this) on each ancestor. The input handler
-    //! calls it too, where it moves the hover or the focus without an enter,
-    //! a leave or a focus() (a capture taking the hover, a hidden control
-    //! losing the focus).
+    //! calls it too, where it moves the hover without an enter or a leave (a
+    //! capture taking the hover).
     void notifyAncestorsOfInteraction();
 
 protected:

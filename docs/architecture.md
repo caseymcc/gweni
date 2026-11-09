@@ -1407,8 +1407,8 @@ two programs and the draws. What follows describes both together:
   runs from `setText` (`PasswordTextBox`'s too, which shows the hint unmasked) and
   `updateColors()`, which the box's own `setHidden` (through `redraw()`) and every focus
   change reaches through `redraw()` once `KeyboardFocus` has moved; `onLostKeyboardFocus`
-  runs before it has (`Base::focus`), and a hidden box loses the focus with no call at
-  all (`input::onCanvasThink`).
+  runs before it has (`Base::focus`), and after it has in `Base::unfocus`, which is how the
+  canvas drops the focus of a hidden or input-disabled box (`input::dropLostKeyboardFocus`).
 - **Toggle buttons.** The textured `Button` renderer (`ButtonTemplate<>`, which also
   draws `LabelClickable` and the input buttons) paints one slot and picks its surface
   in this order: disabled (`ButtonOnDisabled` for a toggle that is on, else
