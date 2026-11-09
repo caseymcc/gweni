@@ -603,7 +603,7 @@ own:
   `drawLine`'s stroke placement, `drawTexturedRect`'s image units (`imageUnit`) and
   `cullOutOfRangeQuad`;
 - the text runs and their slot allocator (`allocateTextRun`), and each atlas's draw list
-  (`buildTextDrawList`, `setTextRunFont`), as `TextChunkDraw`s of index ranges;
+  (`buildTextDrawList`, `setTextRunFont`), as `ChunkDraw`s of index ranges;
 - font resolution and layout: `resolveFont` (coverage, LCD or SDF by size and
   `TextAA`), `loadFont`/`freeFont`/`ensureFont` with their owners, `layoutSdfText`,
   `measuredPenShifts`, `measureText`, over freetype-gl's CPU-side atlases and their
@@ -626,14 +626,14 @@ sizes, ranges and the core's own data, never an API object:
 | `createAtlasTexture(atlas)`, `uploadAtlasRows(texture, atlas, firstRow, rows)`, `destroyAtlasTexture(texture)` | a font atlas's texture (R8, or RGB8 for depth 3), its dirty rows, its end |
 | `createImageTexture(image, rgba)`, `destroyImageTexture(texture)`, `readTextureRgba(...)` | an image's texture with its mip levels, each uploaded from `imageMipChain`, its end, a read back (`pixelColor`, `readFontAtlas`) |
 | `beginPrimitiveDraws()`, `drawPrimitiveChunk(chunk, firstSlot, slots)`, `endPrimitiveDraws()` | one draw per chunk with a slot that can show, in slot order, up to its last such slot |
-| `beginTextDraws()`, `beginTextAtlas(font)`, `drawTextChunk(draw)`, `endTextDraws()` | per atlas with runs to draw: its texture and `TextMode` (an LCD one blended per channel), then one draw per `TextChunkDraw` |
+| `beginTextDraws()`, `beginTextAtlas(font)`, `drawTextChunk(draw)`, `endTextDraws()` | per atlas with runs to draw: its texture and `TextMode` (an LCD one blended per channel), then one draw per `ChunkDraw` |
 | `submitFrame()` | the end of `flush()`: the frame's commands go to the device |
 | `indexChunkSlotsChanged()` | `setIndexChunkSlots()` changed the chunk size |
 
 `path` is `SlotPath::Primitives` or `SlotPath::Text`. A `TextureHandle` is the
 backend's name for a texture (OpenGLCore's GL texture name; 0 is none): an atlas's is
 kept in freetype-gl's `texture_atlas_t::id`, an image's in `SlotTextureData::m_handle`.
-A `TextChunkDraw` is the ranges of one chunk's draw: an index count and the first
+A `ChunkDraw` is the ranges of one chunk's draw: an index count and the first
 index's byte offset, from the chunk's first slot, per range (the form
 `glMultiDrawElements` takes; a first index is the offset over `sizeof(uint16_t)`).
 Five public pure-virtual methods serve the tests and the apps on any backend:
