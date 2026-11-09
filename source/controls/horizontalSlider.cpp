@@ -8,6 +8,9 @@
 #include <gweni/controls/slider.h>
 #include <gweni/controls/horizontalSlider.h>
 
+#include <algorithm>
+#include <cmath>
+
 namespace gweni
 {
 namespace controls
@@ -23,9 +26,13 @@ float HorizontalSlider::calculateValue()
     return static_cast<float>(m_sliderBar->getX()) / (getWidth() - m_sliderBar->getWidth());
 }
 
+// Rounded, so a thumb the mouse put at x, read back as x/travel, lands at x
+// again (a truncating cast left it a unit short on some positions, #466).
 void HorizontalSlider::updateBarFromValue()
 {
-    placeChildPos(m_sliderBar, static_cast<int>((getWidth()-m_sliderBar->getWidth())*m_value),
+    const int travel=std::max(0, getWidth()-m_sliderBar->getWidth());
+
+    placeChildPos(m_sliderBar, std::clamp(static_cast<int>(std::lround(travel*m_value)), 0, travel),
         m_sliderBar->getY());
 }
 

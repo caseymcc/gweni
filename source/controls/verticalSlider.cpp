@@ -8,6 +8,9 @@
 #include <gweni/controls/slider.h>
 #include <gweni/controls/verticalSlider.h>
 
+#include <algorithm>
+#include <cmath>
+
 namespace gweni
 {
 namespace controls
@@ -24,10 +27,14 @@ float VerticalSlider::calculateValue()
     return 1.f - static_cast<float>(m_sliderBar->getY()) / (getHeight() - m_sliderBar->getHeight());
 }
 
+// Rounded, so a thumb the mouse put at y, read back as 1-y/travel, lands at y
+// again (a truncating cast left it a unit short on some positions, #466).
 void VerticalSlider::updateBarFromValue()
 {
+    const int travel=std::max(0, getHeight()-m_sliderBar->getHeight());
+
     placeChildPos(m_sliderBar, m_sliderBar->getX(),
-        static_cast<int>((getHeight()-m_sliderBar->getHeight())*(1.f-m_value)));
+        std::clamp(static_cast<int>(std::lround(travel*(1.f-m_value))), 0, travel));
 }
 
 // The thumb jumps to the click, kept on the track: computed, like the value.
