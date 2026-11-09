@@ -912,12 +912,13 @@ Two tests hold a Vulkan run of the apps to the GL run of the same tree
   for each PNG over the bound.
 
 **The bound is measured.** The feature's ceiling is 2 and 0.5 %; the bound is the
-measurement rounded up (2026-11-08, lavapipe against llvmpipe, Mesa 23.2.1, the 41
+measurement rounded up (2026-11-09, lavapipe against llvmpipe, Mesa 23.2.1, the 51
 `--shot-all` PNGs and the hero): at scale 1 two PNGs differ, in 9 pixels (the worst
-TextSizesDemo, 0.003 %), at 1.5 four, at most 0.002 %, at 2 25 of the 42 in 1 to 82
+TextSizesDemo, 0.003 %), at 1.5 five, at most 0.002 %, at 2 36 of the 52 in 1 to 82
 pixels, at most 0.007 % (LabelMultilineDemo); every one by 1. They are edge pixels
-of SDF glyphs (all of them at scale 1; at 1.5 one is a rounded rect's anti-aliased
-edge), where a value lands on an 8-bit tie and the two drivers round it apart. Some
+of SDF glyphs (at scale 2 up to 8 pixels of a glyph's horizontal stroke on one row),
+where a value lands on an 8-bit tie and the two drivers round it apart; no gradient
+row differs. Some
 are the blend's: one pixel is `109,114,142` on GL and `109,115,141` on Vulkan, half
 coverage of `192,202,245` over `26,27,38`, so G and B are exactly 114.5 and 141.5 and
 come out rounded in opposite directions, which no alpha a level off would give.
@@ -940,6 +941,39 @@ was bit-identical on both backends. The shared fragment bodies now spell it out 
 every backend computes the same, and GL's own pixels did not change (every
 `--shot-all` PNG and the hero, and `docs_samples`, byte for byte). A `mix()` in a
 shader body is a tie waiting to happen; use `lerp()`.
+
+**Style 4's gradient is an exact integer level per row.** `lerp()` made both backends
+compute the same expression, not the same operands. Row r of an H-device-px rect
+(counted from the top colour's edge) has its centre at `t = (2r+1)/(2H)`, so its exact
+value is a tie, x.5 of a level, wherever `(bottom-top)*(2r+1)/(2H)` is a half-integer:
+an odd difference over an odd height on the middle row, a difference of 3 at H 3 or
+16 at H 16 on every row. A float gradient handed to the framebuffer's UNORM conversion
+lands exactly on such a tie, and there one ulp decides the level. #289's first
+ThemeEditorDemo showed it: ButtonNormal `#3D59A1 -> #2C3D6B` over 15-unit headers puts
+their middle row's red on 52.5, and 1 950 pixels of it (0.635 %, `backend_pixels`
+failed) were 53 on GL and 52 on Vulkan, not even whole rows, since the error moved
+along x. The ulp was the interpolated `vLocal`'s, which llvmpipe and lavapipe
+interpolate a little differently: the top colour made exact changed nothing, `t`
+made exact from the row took the difference to 1 pixel. So `primitive.frag.glsl`
+(`gradientRow()`, `gradientLevel()`) works the level out in ints: the row is
+`floor(vLocal.y + vHalf.y)` (r + 0.5 at a pixel centre, so an interpolation error
+under half a pixel cannot move it), H is `int(2*vHalf.y + 0.5)`, the colours' bytes
+are `ivec4(c*255 + 0.5)` (exact: the vertex shader unpacks byte/255), and each channel,
+alpha included, is
+
+    (top*2H + (bottom-top)*(2r+1) + H) / (2H)
+
+the row centre's value rounded half up, every term non-negative and under 2^31. The
+level then goes through `roundedRect()` (border, edge coverage) and the blend as
+before, so every backend, GL, GLES, Vulkan and WebGL, writes the same level on every
+interior pixel of a gradient whatever its float arithmetic (`tests/gradientRows.cpp`
+holds every row of heights 1 to 100 to the formula, at scales 1 and 1.5). GL's own
+pixels moved by 1 where its float had rounded a tie down (about half of them), where
+it had left a row uneven along x, and where a pixel blends the fill (a corner arc, a
+translucent surface), whose fill is now its exact level rather than a fraction off
+it; `docs/images/` was regenerated with it. Style 6 (`drawBilinearRect`) takes the
+row's exact `t` (`gradientT()`) for its y direction; its x direction is still
+interpolated, since an exact one needs all four corner colours passed flat.
 
 ## OpenGLCore renderer (retained model)
 
