@@ -14,7 +14,13 @@
 //  python3 -m http.server -d site), and opens, each in a fresh browser context
 //  at 1280x800 CSS px:
 //    index.html       the landing page: every image it shows loads
-//    demo.html        the OpenGLCore demo's window
+//    demo.html        the OpenGLCore demo's window, with the stats overlay:
+//                     its argv starts with the page's default --stats-overlay
+//                     (Module.gweniDefaultArgs, web/pre.js) and the app says
+//                     on stdout that the overlay is open
+//    demo.html?stats-overlay=off
+//                     the same window without it: the default and then
+//                     --stats-overlay off, and no such line
 //    controltest.html?control=ButtonDemo, ?control=TextBoxDemo and
 //    ?control=ShowcaseButtonsDemo&scale=2
 //                     ControlTest's window; the picker shows the control the
@@ -265,10 +271,34 @@ class Visit
         await visit.context.close();
     }
 
-    async app(path, name, control)
+    // The demo page's stats overlay: its argv and what the app said on stdout
+    // (the stderr check is checkWindow's).
+    async checkOverlay(visit, open)
+    {
+        const run = await visit.page.evaluate(() => ({ argv: Module.arguments,
+            stdout: gweniRun.output.filter(l => l.stream === 'stdout').map(l => l.text) }));
+        const said = run.stdout.some(line => line.startsWith('OpenGLCore: the stats overlay is open'));
+        const argv = JSON.stringify(run.argv);
+        if(run.argv[0] !== '--stats-overlay')
+        {
+            fail(visit.label, `its argv ${argv} does not start with the page's default --stats-overlay`);
+            return false;
+        }
+        if(said !== open)
+        {
+            fail(visit.label, `argv ${argv}, and the stats overlay is ${said ? 'open' : 'not open'}`);
+            return false;
+        }
+        this.detail += `, argv ${argv}, stats overlay ${open ? 'open' : 'closed'}`;
+        return true;
+    }
+
+    async app(path, name, control, overlay)
     {
         const visit = await this.open(path, path);
         let ok = await this.checkWindow(visit, name);
+        if(ok && overlay !== undefined)
+            ok = await this.checkOverlay(visit, overlay);
         const detail = this.detail;
         if(control !== undefined)
         {
@@ -344,7 +374,8 @@ async function main()
     {
         const s = new Visit(browser, url ?? `http://127.0.0.1:${server.address().port}`, out);
         await s.landing();
-        await (await s.app('demo.html', 'demo')).context.close();
+        await (await s.app('demo.html', 'demo', undefined, true)).context.close();
+        await (await s.app('demo.html?stats-overlay=off', 'demo-overlay-off', undefined, false)).context.close();
         await (await s.app('controltest.html?control=ButtonDemo', 'ButtonDemo', 'ButtonDemo')).context.close();
         await (await s.app('controltest.html?control=TextBoxDemo', 'TextBoxDemo', 'TextBoxDemo')).context.close();
         const scaled = await s.app('controltest.html?control=ShowcaseButtonsDemo&scale=2', 'ShowcaseButtonsDemo-scale2', 'ShowcaseButtonsDemo');

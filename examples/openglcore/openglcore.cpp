@@ -486,7 +486,11 @@ int main(int argc, char *argv[])
 #endif//SINGLE_CONTROL
 
     if(statsOverlay)
+    {
         gweni::tools::StatsOverlay::open(canvas);
+        // one line, so a page (and tests/web/site.mjs) can tell it was asked for
+        std::cout<<"OpenGLCore: the stats overlay is open; F10 toggles it\n";
+    }
 
     int result=EXIT_SUCCESS;
 

@@ -8,7 +8,10 @@
   interactive window (OpenGLCore.js, with web/pre.js inside it) in the
   #canvas-container below the header. The URL query is the program's argv, as
   on every page: demo.html?demo=ColorPickerDemo opens that page of the demo,
-  demo.html?scale=1.5 draws it 1.5 times as large.
+  demo.html?scale=1.5 draws it 1.5 times as large. Its default argument
+  (Module.gweniDefaultArgs, before the URL's, web/pre.js) opens the stats
+  overlay (gweni::tools::StatsOverlay, F10 toggles it); demo.html?stats-overlay=off
+  leaves it closed.
 -->
 <html lang="en">
 <head>
@@ -31,6 +34,7 @@
 <canvas id="canvas" width="64" height="64" oncontextmenu="event.preventDefault()" tabindex="-1"></canvas>
 </div>
 <pre id="output"></pre>
+<script>var Module = { gweniDefaultArgs: ['--stats-overlay'] };</script>
 <script async src="OpenGLCore.js"></script>
 </body>
 </html>

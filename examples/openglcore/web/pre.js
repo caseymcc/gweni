@@ -13,6 +13,12 @@
 //  ControlTest --control ButtonDemo --scale 2, and the runner (tests/web/run.mjs)
 //  passes every argument as argv=, exactly.
 //
+//  A page may set Module.gweniDefaultArgs (a global Module defined before the
+//  Emscripten script): its arguments come first, the URL's after them, so the
+//  URL's can override them. tools/site/demo.html sets ['--stats-overlay'], so
+//  demo.html opens the stats overlay and demo.html?stats-overlay=off (a later
+//  --stats-overlay off) does not.
+//
 //  window.gweniRun, what the runner reads once done is true:
 //    done      true once main has returned, exit() was called or the run aborted
 //    exitCode  the exit status (null if it aborted)
@@ -51,7 +57,7 @@ if(typeof location !== 'undefined')
 {
     Module['arguments'] = (function()
     {
-        var args = [];
+        var args = (Module['gweniDefaultArgs'] || []).slice();
         new URLSearchParams(location.search).forEach(function(value, key)
         {
             if(key === 'argv')
