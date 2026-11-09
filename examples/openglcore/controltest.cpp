@@ -131,7 +131,8 @@
  *                       typing | clip | text-size | scale | tooltip |
  *                       context-menu | popup | virtual-list |
  *                       data-table-virtual | hide-show | demo-labels |
- *                       plot-histogram | plot-lines | inspector (see below)
+ *                       plot-histogram | plot-lines | inspector |
+ *                       stats-overlay (see below)
  *    --dump-bounds [<path>]
  *                       print the laid-out control tree as text: one line per
  *                       control, depth-first in child order, indented by depth,
@@ -460,6 +461,28 @@
  *                 theme-04-loaded.png. One line
  *                   theme edit_prim_slots=N ... load_matches=yes
  *                 Exits non-zero if any check is no.
+ *    stats-overlay  Demo, the clock stepping, with a toggle Button of its own
+ *                 on the canvas under where the overlay goes; F10 (scripted,
+ *                 through the window's key handler) opens the stats overlay
+ *                 (gweni::tools::StatsOverlay) over it. Once it has refreshed
+ *                 twice, over the next two refresh windows: every frame between
+ *                 two refreshes writes no slot, a refresh frame writes only
+ *                 slots under the overlay's own ids, and each refresh shows
+ *                 what this harness counted for the frames of its window
+ *                 (previousFrameStats() and the renderer's frameStats(), the
+ *                 overlay's own slots taken out: the times, the most
+ *                 rendered, changed, layout passes and entries, z visited,
+ *                 animations, app slots, upload bytes and draws). The mouse onto
+ *                 a demo-list entry: the next refresh shows that frame's
+ *                 rendered controls and slots, the one after it 0 again. The
+ *                 mouse onto the Button through the overlay hovers it, and a
+ *                 click toggles it. F10 again closes it, giving back every
+ *                 primitive and text id it took (stats-overlay.png, with it
+ *                 open). One line
+ *                   stats-overlay quiet_frames=N quiet_written=0 ... ids_back=yes
+ *                 Exits non-zero if any check is no. controltest_stats_overlay
+ *                 (tests/statsOverlay.cmake) also holds the --stats lines of
+ *                 Demo with --stats-overlay to the ones without it.
  *    scale        one control (default Demo) on a 640x480 canvas at scale 1,
  *                 then Canvas::setScale(2) with the framebuffer resized to
  *                 1280x960, then back to 1 (scale-01-1x.png, scale-02-2x.png,
@@ -929,7 +952,8 @@ static void printUsage(std::ostream &out)
          "                     | typing | clip | text-size | scale | tooltip\n"
          "                     | context-menu | popup | virtual-list\n"
          "                     | data-table-virtual | hide-show | demo-labels\n"
-         "                     | plot-histogram | plot-lines | inspector;\n"
+         "                     | plot-histogram | plot-lines | inspector\n"
+         "                     | stats-overlay;\n"
          "                     resize prints listing_settled, mirror_settled,\n"
          "                     shrink_settled and fresh_matches, interaction one\n"
          "                     yes/no per repaint check, typing its keyboard\n"
@@ -949,7 +973,9 @@ static void printUsage(std::ostream &out)
          "                     bar's slot alone, plot-lines whether it wrote the\n"
          "                     four segments around it, inspector whether the\n"
          "                     inspector over Demo settles to 0 and shows a hover's\n"
-         "                     slots; all sixteen fail on a no\n"
+         "                     slots, stats-overlay whether the stats overlay\n"
+         "                     writes only its own slots, on a refresh, and shows\n"
+         "                     what the frames did; all seventeen fail on a no\n"
          "  --dump-bounds [<path>]  print the laid-out control tree as text,\n"
          "                     private children and hidden state included, an\n"
          "                     inner panel marked \" inner\", with each control's\n"
@@ -1833,7 +1859,7 @@ static bool runSteps(Session &s, const std::vector<Step> &steps, const std::stri
 //-----------------------------------------------------------------------------
 enum class Scenario { None, PerControl, Resize, Docked, Scroll, Interaction, Typing, Clip, TextSize, Scale,
     ToolTip, ContextMenu, Popup, VirtualList, DataTableVirtual, HideShow, DemoLabels, PlotHistogram,
-    PlotLines, Inspector, Theme };
+    PlotLines, Inspector, Theme, StatsOverlay };
 
 static bool parseScenario(const std::string &name, Scenario &scenario)
 {
@@ -1857,6 +1883,7 @@ static bool parseScenario(const std::string &name, Scenario &scenario)
     else if(name == "plot-lines") scenario=Scenario::PlotLines;
     else if(name == "inspector") scenario=Scenario::Inspector;
     else if(name == "theme") scenario=Scenario::Theme;
+    else if(name == "stats-overlay") scenario=Scenario::StatsOverlay;
     else return false;
     return true;
 }
@@ -2744,6 +2771,319 @@ static bool runInspectorScenario(Session &s, const std::string &shotDir, bool &p
                      : !back ? "it did not come back to 0 after the hover (\""+backLine+"\")"
                      : !closed ? "F12 did not close it"
                      : "the inspector did not give its primitive ids back")<<"\n";
+    return shot;
+}
+
+//-----------------------------------------------------------------------------
+// --scenario stats-overlay: gweni::tools::StatsOverlay over the settled Demo
+//
+// The overlay gathers every frame and refreshes what it shows every
+// StatsOverlay::RefreshSeconds, setting only labels whose text changed, with
+// its own controls' work and slots left out, so over a settled app only its
+// refreshes write, and only its own slots; what it shows is what the frames of
+// its window counted (docs/architecture.md -> "The stats overlay").
+//-----------------------------------------------------------------------------
+
+// What one frame left behind, read after it: the canvas's counts of the frame
+// before it (what the overlay gathered in this frame's update phase), and the
+// renderer's of this one.
+struct OverlayFrame
+{
+    gweni::controls::CanvasFrameStats previous;
+    gweni::renderer::FrameCounts counts;
+    std::vector<size_t> primitives;
+    std::vector<gweni::renderer::WrittenText> texts;
+    size_t refreshes=0;
+    gweni::tools::StatsOverlay::Window shown;
+};
+
+// The window a refresh in frame `refresh` showed, from the frames recorded
+// since the refresh in frame `start`: the overlay's thinks in frames
+// start+1..refresh, each gathering the canvas's counts of the frame before it
+// and that frame's renderer counts, its own slots (by id) taken out.
+static gweni::tools::StatsOverlay::Window expectedWindow(const std::vector<OverlayFrame> &frames,
+    size_t start, size_t refresh, const std::vector<size_t> &ownPrimitives, const std::vector<size_t> &ownTexts)
+{
+    gweni::tools::StatsOverlay::Window window;
+
+    for(size_t k=start+1; k <= refresh; ++k)
+    {
+        const gweni::controls::CanvasFrameStats &frame=frames[k].previous;
+        const gweni::controls::FrameTimes &times=frame.times;
+        const OverlayFrame &drawn=frames[k-1];
+
+        window.frame.add(times.startMicros-frames[k-1].previous.times.startMicros);
+        window.update.add(times.updateMicros);
+        window.render.add(times.renderMicros-times.flushMicros);
+        window.flush.add(times.flushMicros);
+        window.cpu.add(times.updateMicros+times.renderMicros);
+        window.rendered=std::max(window.rendered, frame.render.visited);
+        window.changed=std::max(window.changed, frame.render.controls);
+        window.layoutPasses=std::max(window.layoutPasses, size_t(std::max(0, frame.layout.passes)));
+        window.layoutEntries=std::max(window.layoutEntries, frame.layout.visited);
+        window.zVisited=std::max(window.zVisited, frame.update.zVisited);
+        window.animsRun=std::max(window.animsRun, frame.update.animsRun);
+
+        size_t primitives=0;
+        size_t glyphs=0;
+
+        for(size_t id : drawn.primitives)
+        {
+            if(!std::binary_search(ownPrimitives.begin(), ownPrimitives.end(), id))
+                ++primitives;
+        }
+        for(const gweni::renderer::WrittenText &text : drawn.texts)
+        {
+            if(!std::binary_search(ownTexts.begin(), ownTexts.end(), text.textId))
+                glyphs+=text.glyphSlots;
+        }
+        window.primitiveSlots=std::max(window.primitiveSlots, primitives);
+        window.glyphSlots=std::max(window.glyphSlots, glyphs);
+        window.slots=std::max(window.slots, primitives+glyphs);
+        if(primitives+glyphs != 0)
+            window.uploadBytes=std::max(window.uploadBytes, drawn.counts.uploadBytes);
+        window.drawCalls=std::max(window.drawCalls, drawn.counts.drawCalls);
+        window.counted=drawn.counts.counted;
+        ++window.frames;
+    }
+    return window;
+}
+
+static bool sameRange(const gweni::tools::StatsOverlay::TimeRange &a, const gweni::tools::StatsOverlay::TimeRange &b)
+{
+    return a.min == b.min && a.max == b.max && a.sum == b.sum && a.count == b.count;
+}
+
+// The first field two windows differ in, or empty.
+static std::string windowDifference(const gweni::tools::StatsOverlay::Window &a,
+    const gweni::tools::StatsOverlay::Window &b)
+{
+    if(a.frames != b.frames) return "frames "+std::to_string(a.frames)+" vs "+std::to_string(b.frames);
+    if(!sameRange(a.frame, b.frame)) return "frame time";
+    if(!sameRange(a.cpu, b.cpu)) return "cpu time";
+    if(!sameRange(a.update, b.update)) return "update time";
+    if(!sameRange(a.render, b.render)) return "render time";
+    if(!sameRange(a.flush, b.flush)) return "flush time";
+
+    const struct { const char *name; size_t a, b; } counts[]=
+    {
+        {"rendered", a.rendered, b.rendered}, {"changed", a.changed, b.changed},
+        {"layout passes", a.layoutPasses, b.layoutPasses}, {"layout entries", a.layoutEntries, b.layoutEntries},
+        {"z visited", a.zVisited, b.zVisited}, {"anims", a.animsRun, b.animsRun},
+        {"primitive slots", a.primitiveSlots, b.primitiveSlots}, {"glyph slots", a.glyphSlots, b.glyphSlots},
+        {"slots", a.slots, b.slots}, {"upload bytes", a.uploadBytes, b.uploadBytes},
+        {"draws", a.drawCalls, b.drawCalls},
+    };
+
+    for(const auto &count : counts)
+    {
+        if(count.a != count.b)
+            return std::string(count.name)+" "+std::to_string(count.a)+" vs "+std::to_string(count.b);
+    }
+    return a.counted == b.counted ? "" : "counted";
+}
+
+static size_t liveTextIds();
+
+static bool runStatsOverlayScenario(Session &s, const std::string &shotDir, bool &passed)
+{
+    using gweni::tools::StatsOverlay;
+
+    gweni::controls::Base *control=addControl(s, g_dockedControlName);
+
+    if(!control)
+        return false;
+    s.label="stats-overlay";
+
+    // an app control where the overlay goes, in the canvas's bottom-right corner
+    gweni::controls::Button *target=s.canvas->newChild<gweni::controls::Button>("under-overlay");
+
+    target->setText("Under");
+    target->setIsToggle(true);
+    target->setBounds(s.size.x-StatsOverlay::Inset-120, s.size.y-StatsOverlay::Inset-60, 80, 24);
+    renderFrames(s, std::max(s.frames, 5));
+
+    // Demo leaves canvas-level Menus behind when it goes: the overlay's ids
+    // are counted from here to its close
+    const size_t idsBefore=livePrimitiveIds();
+    const size_t textIdsBefore=liveTextIds();
+
+    // F10, as the window's key callback would deliver it
+    glfwKey(s, GLFW_KEY_F10, GLFW_PRESS, 0);
+    glfwKey(s, GLFW_KEY_F10, GLFW_RELEASE, 0);
+
+    StatsOverlay *overlay=StatsOverlay::find(s.canvas);
+
+    if(!overlay)
+    {
+        std::cerr<<"ControlTest: stats-overlay: F10 opened no stats overlay\n";
+        return false;
+    }
+
+    std::vector<OverlayFrame> frames;
+    auto frame=[&]()
+    {
+        renderFrames(s, 1);
+
+        OverlayFrame record;
+
+        record.previous=s.canvas->previousFrameStats();
+        record.counts=s.renderer->frameStats();
+        record.primitives=s.renderer->writtenPrimitiveIds();
+        record.texts=s.renderer->writtenTextIds();
+        record.refreshes=overlay->refreshes();
+        record.shown=overlay->shownWindow();
+        frames.push_back(record);
+    };
+    // frames until the next refresh has run; the index of its frame
+    auto untilRefresh=[&]()
+    {
+        const size_t refreshes=overlay->refreshes();
+
+        for(int i=0; i < 100 && overlay->refreshes() == refreshes; ++i)
+            frame();
+        return frames.size()-1;
+    };
+
+    std::vector<size_t> ownPrimitives;
+    std::vector<size_t> ownTexts;
+
+    // past the windows its opening is in
+    frame();
+    untilRefresh();
+    size_t start=untilRefresh();
+    overlay->ownIds(ownPrimitives, ownTexts);
+    std::sort(ownPrimitives.begin(), ownPrimitives.end());
+    std::sort(ownTexts.begin(), ownTexts.end());
+
+    // two whole windows, every frame checked
+    int quietFrames=0;
+    size_t quietWritten=0;
+    int refreshFrames=0;
+    size_t foreignWritten=0;
+    std::string shownDiff;
+
+    for(int window=0; window < 2; ++window)
+    {
+        const size_t refresh=untilRefresh();
+
+        for(size_t k=start+1; k <= refresh; ++k)
+        {
+            const OverlayFrame &f=frames[k];
+
+            if(k < refresh)
+            {
+                ++quietFrames;
+                quietWritten+=f.counts.primitiveSlotsWritten+f.counts.textSlotsWritten;
+                continue;
+            }
+            ++refreshFrames;
+            for(size_t id : f.primitives)
+            {
+                if(!std::binary_search(ownPrimitives.begin(), ownPrimitives.end(), id))
+                    ++foreignWritten;
+            }
+            for(const gweni::renderer::WrittenText &text : f.texts)
+            {
+                if(!std::binary_search(ownTexts.begin(), ownTexts.end(), text.textId))
+                    foreignWritten+=text.glyphSlots;
+            }
+        }
+
+        const std::string diff=windowDifference(frames[refresh].shown,
+            expectedWindow(frames, start, refresh, ownPrimitives, ownTexts));
+
+        if(shownDiff.empty() && !diff.empty())
+            shownDiff="window "+std::to_string(window)+": "+diff;
+        start=refresh;
+    }
+
+    const bool shot=shoot(s, shotDir+"/stats-overlay.png");
+
+    // a hover in the app, in the middle of a window: on the next refresh, then 0
+    const gweni::Point at=overlay->localPosToCanvas();
+    const gweni::Rect overlayRect(at.x, at.y, overlay->getWidth(), overlay->getHeight());
+    gweni::controls::Base *entry=findListEntry(control, overlayRect);
+    size_t hoverSlots=0;
+    StatsOverlay::Window hoverShown;
+    StatsOverlay::Window backShown;
+    std::string hoverDiff;
+
+    if(entry)
+    {
+        const gweni::Point origin=entry->localPosToCanvas();
+
+        for(int i=0; i < 4; ++i)
+            frame();
+        moveMouse(s, origin.x+entry->getWidth()/2, origin.y+entry->getHeight()/2);
+        frame();
+        hoverSlots=frames.back().counts.primitiveSlotsWritten+frames.back().counts.textSlotsWritten;
+
+        const size_t refresh=untilRefresh();
+
+        hoverShown=overlay->shownWindow();
+        hoverDiff=windowDifference(hoverShown, expectedWindow(frames, start, refresh, ownPrimitives, ownTexts));
+        untilRefresh();
+        backShown=overlay->shownWindow();
+    }
+
+    // through the overlay onto the Button under it: hovered, and a click toggles it
+    const gweni::Point targetAt=target->localPosToCanvas();
+    const gweni::Point targetCentre(targetAt.x+target->getWidth()/2, targetAt.y+target->getHeight()/2);
+    const bool underOverlay=targetCentre.x >= overlayRect.x && targetCentre.x < overlayRect.x+overlayRect.w
+        && targetCentre.y >= overlayRect.y && targetCentre.y < overlayRect.y+overlayRect.h;
+
+    moveMouse(s, targetCentre.x, targetCentre.y);
+    frame();
+
+    const bool hoveredThrough=gweni::HoveredControl == target;
+
+    clickMouse(s, targetCentre.x, targetCentre.y);
+    frame();
+
+    const bool clickedThrough=underOverlay && hoveredThrough && target->getToggleState();
+
+    // F10 again closes it
+    forgetMouse(s);
+    glfwKey(s, GLFW_KEY_F10, GLFW_PRESS, 0);
+    glfwKey(s, GLFW_KEY_F10, GLFW_RELEASE, 0);
+    renderFrames(s, 2);
+
+    const bool closed=StatsOverlay::find(s.canvas) == nullptr;
+    const size_t idsLeft=livePrimitiveIds()-idsBefore;
+    const size_t textIdsLeft=liveTextIds()-textIdsBefore;
+
+    target->delayedDelete();
+    dropControl(s, control);
+    renderFrames(s, 1);
+
+    const bool quiet=quietFrames > 0 && quietWritten == 0;
+    const bool ownOnly=refreshFrames == 2 && foreignWritten == 0;
+    const bool shownMatch=shownDiff.empty();
+    const bool hoverShownOk=entry && hoverSlots > 0 && hoverDiff.empty() && hoverShown.rendered > 0
+        && hoverShown.slots > 0;
+    const bool hoverBack=entry && backShown.rendered == 0 && backShown.slots == 0;
+    const bool idsBack=idsLeft == 0 && textIdsLeft == 0;
+
+    passed=quiet && ownOnly && shownMatch && hoverShownOk && hoverBack && clickedThrough && closed && idsBack;
+
+    std::cout<<"stats-overlay quiet_frames="<<quietFrames<<" quiet_written="<<quietWritten
+             <<" refresh_frames="<<refreshFrames<<" foreign_written="<<foreignWritten
+             <<" shown_match="<<(shownMatch?"yes":"no")<<" hover_slots="<<hoverSlots
+             <<" hover_shown="<<(hoverShownOk?"yes":"no")<<" hover_back="<<(hoverBack?"yes":"no")
+             <<" click_through="<<(clickedThrough?"yes":"no")<<" closed="<<(closed?"yes":"no")
+             <<" ids_left="<<idsLeft<<" text_ids_left="<<textIdsLeft<<" ids_back="<<(idsBack?"yes":"no")<<"\n";
+    if(!passed)
+        std::cerr<<"ControlTest: stats-overlay: "
+                 <<(!quiet ? "a frame between two refreshes wrote "+std::to_string(quietWritten)+" slots"
+                     : !ownOnly ? "a refresh frame wrote "+std::to_string(foreignWritten)+" slots not its own"
+                     : !shownMatch ? "it showed other counts than its window's ("+shownDiff+")"
+                     : !hoverShownOk ? "the hover was not shown on the next refresh ("
+                        +(hoverDiff.empty() ? std::string("no entry or nothing shown") : hoverDiff)+")"
+                     : !hoverBack ? "it did not show 0 again on the refresh after the hover"
+                     : !clickedThrough ? "the mouse did not reach the Button under it"
+                     : !closed ? "F10 did not close it"
+                     : "it did not give its ids back")<<"\n";
     return shot;
 }
 
@@ -8090,6 +8430,15 @@ int main(int argc, char *argv[])
             ok=runInspectorScenario(session, shotDir, passed);
             if(ok && !passed)
                 ok=false;   // the inspector did not settle or showed the wrong counts
+            break;
+        }
+
+        case Scenario::StatsOverlay:
+        {
+            bool passed=false;
+            ok=runStatsOverlayScenario(session, shotDir, passed);
+            if(ok && !passed)
+                ok=false;   // the overlay wrote outside its refreshes or showed the wrong counts
             break;
         }
 

@@ -223,8 +223,9 @@ if(TARGET ControlTest AND NOT EMSCRIPTEN)
 
     # the same check through the scenarios that change layout at run time:
     # input, a canvas resize and a scale round trip (both on Demo), a Window
-    # dragged past its parent's edges, the tooltip box and the context menu
-    foreach(verify_scenario interaction resize scale clip tooltip context-menu)
+    # dragged past its parent's edges, the tooltip box, the context menu and
+    # the stats overlay
+    foreach(verify_scenario interaction resize scale clip tooltip context-menu stats-overlay)
         string(REPLACE "-" "_" verify_name "${verify_scenario}")
         add_test(NAME controltest_verify_layout_${verify_name}
             COMMAND $<TARGET_FILE:ControlTest> --headless --scenario ${verify_scenario}
@@ -380,6 +381,19 @@ Erm, and I think it comes down to a choice between "The League Against Salivatin
     gweni_whole_app_test(controltest_inspector 120
         COMMAND $<TARGET_FILE:ControlTest> --headless --scenario inspector --require-one-pass
             --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/inspector@VARIANT@
+        WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
+
+    # gweni::tools::StatsOverlay over the settled Demo, the clock stepping,
+    # opened and closed by F10: it writes nothing between its refreshes and
+    # only its own slots on one, shows what each window's frames counted and a
+    # hover on the next refresh, lets the mouse through to a Button under it,
+    # gives its ids back, and Demo's --stats counters are the same with it
+    gweni_whole_app_test(controltest_stats_overlay 240
+        COMMAND ${CMAKE_COMMAND}
+            -DCONTROLTEST=$<TARGET_FILE:ControlTest>
+            -DSOURCE_DIR=${GWENI_SOURCE_DIR}
+            -DSCRATCH_DIR=${CMAKE_CURRENT_BINARY_DIR}/stats_overlay@VARIANT@
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/statsOverlay.cmake
         WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
 
     # the textured skin's theme changed under the settled Demo and applied live
