@@ -36,6 +36,15 @@
  *  back. Deleting the list gives back every id; a pressed default row fires
  *  onItemPressed with its item and stays unselected; and every frame lays out
  *  in one pass with no layout request.
+ *
+ *  A list docked to follow its parent's height, grown and shrunk back with no
+ *  scroll in between (at the top, at a whole-row and at a part-row offset),
+ *  holds the pool a list built at the small size holds after the same scroll:
+ *  the same rows in the same child order, each with the same item, bounds,
+ *  preferred size, hidden flag and label text, and the same for every control
+ *  under it; so after the shrink the spare row is a fresh one, never bound,
+ *  measured or placed, not one shown at the larger size (issue #479). A frame
+ *  whose pool size is unchanged creates and deletes no row.
  */
 #include "headlessFixture.h"
 
@@ -48,6 +57,7 @@
 
 #include <map>
 #include <set>
+#include <string>
 #include <vector>
 
 using namespace gweni;
@@ -825,4 +835,158 @@ TEST_CASE("VirtualList: a pressed default row fires onItemPressed with its item"
 
     input::onMouseClicked(s.canvas, 0, false);
     platform::setTimeSource(nullptr);
+}
+
+namespace
+{
+
+//! A list docked Left in a canvas of the given height, as VirtualListDemo's,
+//! its rows' labels set to "Item <index>" by the binder.
+struct DockedScene
+{
+    test::StubRenderer renderer;
+    test::StubSkin skin{&renderer};
+    controls::Canvas *canvas=nullptr;
+    controls::VirtualList *list=nullptr;
+    size_t binds=0;
+
+    explicit DockedScene(int height)
+    {
+        canvas=new controls::Canvas(&skin);
+        canvas->setSize(400, height);
+
+        list=canvas->newChild<controls::VirtualList>();
+        list->setDock(DockPosition::Left);
+        list->setWidth(200);
+        list->setMargin(Margin(10, 34, 0, 10));
+        list->setRowHeight(RowHeight);
+        list->setRowBinder([this](controls::Base *row, size_t index)
+            {
+                ++binds;
+                if(auto *label=gweni_cast<controls::Label>(row))
+                    label->setText("Item "+std::to_string(index));
+            });
+        list->setItemCount(1000);
+        frame();
+    }
+
+    DockedScene(const DockedScene &)=delete;
+    DockedScene &operator=(const DockedScene &)=delete;
+
+    ~DockedScene()
+    {
+        HoveredControl=nullptr;
+        KeyboardFocus=nullptr;
+        MouseFocus=nullptr;
+        delete canvas;
+    }
+
+    void frame()
+    {
+        canvas->updateCanvas();
+        canvas->renderCanvas();
+    }
+
+    void resize(int height)
+    {
+        canvas->setSize(400, height);
+        frame();
+    }
+};
+
+void listControl(std::vector<std::string> &lines, controls::Base *control, const std::string &indent)
+{
+    const Rect &bounds=control->getBounds();
+    const Size pref=control->getPreferredSize();
+    std::string line=indent+control->getTypeName()+" bounds=("+std::to_string(bounds.x)+", "+
+        std::to_string(bounds.y)+", "+std::to_string(bounds.w)+", "+std::to_string(bounds.h)+") pref=("+
+        std::to_string(pref.width)+", "+std::to_string(pref.height)+") hidden="+(control->hidden()?"yes":"no");
+
+    if(auto *label=gweni_cast<controls::Label>(control))
+        line+=" text=\""+label->getText()+"\"";
+    lines.push_back(line);
+
+    for(controls::Base *child : control->getActualChildren())
+        listControl(lines, child, indent+"  ");
+}
+
+//! The list's rows in child order, each with its item, and every control under
+//! each with its bounds, preferred size, hidden flag and label text.
+std::vector<std::string> rowListing(controls::VirtualList *list)
+{
+    std::vector<std::string> lines;
+
+    for(controls::Base *row : list->getChildren())
+    {
+        const size_t item=list->itemForRow(row);
+
+        lines.push_back("row item="+(item == controls::VirtualList::NoItem?std::string("none"):std::to_string(item)));
+        listControl(lines, row, "  ");
+    }
+    return lines;
+}
+
+void checkSameListing(const std::vector<std::string> &actual, const std::vector<std::string> &fresh)
+{
+    CHECK(actual.size() == fresh.size());
+    for(size_t i=0; i < std::min(actual.size(), fresh.size()); ++i)
+    {
+        INFO("line ", i, "\n  resized: ", actual[i], "\n  fresh:   ", fresh[i]);
+        CHECK(actual[i] == fresh[i]);
+    }
+}
+
+}//namespace
+
+TEST_CASE("VirtualList: a pool grown and shrunk back is the pool of a list built at the small size")
+{
+    // 330 high: a 286-unit viewport, so the last row in view is a part one
+    const int small=330;
+    const int large=600;
+
+    struct Offset
+    {
+        const char *name;
+        int offset;
+    };
+
+    for(const Offset &start : {Offset{"top", 0}, Offset{"whole row", 37*RowHeight}, Offset{"part row", 37*RowHeight+7}})
+    {
+        INFO("offset: ", std::string(start.name));
+
+        DockedScene resized(small);
+
+        resized.list->setVerticalScrollOffset(start.offset);
+        resized.frame();
+        REQUIRE(resized.list->getVerticalScrollOffset() == start.offset);
+
+        const size_t smallPool=resized.list->getRows().size();
+        const std::vector<std::string> before=rowListing(resized.list);
+
+        CHECK(smallPool == 16);
+
+        // a frame with the pool's size unchanged creates and deletes nothing
+        {
+            const std::vector<controls::Base *> rows=resized.list->getRows();
+
+            resized.frame();
+            CHECK(resized.list->getRows() == rows);
+        }
+
+        resized.resize(large);
+        CHECK(resized.list->getRows().size() > smallPool);
+        resized.resize(small);
+        CHECK(resized.list->getRows().size() == smallPool);
+
+        DockedScene fresh(small);
+
+        fresh.list->setVerticalScrollOffset(start.offset);
+        fresh.frame();
+
+        const std::vector<std::string> after=rowListing(resized.list);
+
+        checkSameListing(after, rowListing(fresh.list));
+        // and it is the listing it had before the grow
+        checkSameListing(after, before);
+    }
 }
