@@ -47,6 +47,14 @@ public:
     //! does not depend on the width an earlier pass gave this control.
     int getRequestedSplitWidth() const { return m_splitWidth; }
 
+    //! The least width a row asks for its value column, in logical units
+    //! (default 100). A row asks for the wider of this and its property's
+    //! preferred width with its margins, so this control's preferred width is
+    //! one its values can be used at; an app's own setWidth() on a property
+    //! does not count. Setting it lays the rows out again.
+    void setValueWidth(int width);
+    int getValueWidth() const { return m_valueWidth; }
+
     virtual void clear();
 
 protected:
@@ -60,6 +68,7 @@ protected:
     // The requested split, independent of the bar's clamped position: a layout
     // pass against a not-yet-sized parent must not be able to lose it.
     int m_splitWidth;
+    int m_valueWidth;
 
 };
 

@@ -27,7 +27,13 @@
  *  LayoutStats::requests / requestedType. The CrossSplitter holds wrapped
  *  Labels, and of the two Properties one is docked and one in an unsized box:
  *  they list the same bounds and preferred sizes after a trip to 1024x768 as
- *  before it and as a fresh canvas, recording no request. A VerticalSlider
+ *  before it and as a fresh canvas, recording no request. A Properties row
+ *  asks for the label's margin, the split and a value column, the wider of
+ *  Properties::getValueWidth() (100, changed by setValueWidth) and its
+ *  property's preferred width, so one in an unsized box gives every value that
+ *  width and an app's setWidth() on a property is no minimum; a ColorSelector
+ *  row fits its "255 0 0" beside its swatch (a TextBox's string counts beside
+ *  its children docked Left or Right). A VerticalSlider
  *  asks for its request at value 0 and 1 and takes a smaller layout cell in
  *  one pass.
  */
@@ -37,6 +43,7 @@
 #include <gweni/controls/label.h>
 #include <gweni/controls/layout/layout.h>
 #include <gweni/controls/properties.h>
+#include <gweni/controls/property/colorSelector.h>
 #include <gweni/controls/text.h>
 #include <gweni/controls/verticalSlider.h>
 #include <gweni/controls/windowControl.h>
@@ -327,7 +334,8 @@ TEST_CASE("Properties' preferred sizes do not depend on the widths it had before
     CHECK(trip.requests == 0);
     CHECK(fresh.requests == 0);
 
-    // A row asks for its label's margin, the split (80) and its property.
+    // A row asks for its label's margin, the split (80) and its value column:
+    // the value width (100) or its property's preferred width, the wider.
     for(auto &&child : fresh.canvas->getChildren())
     {
         for(auto &&grandChild : child->getChildren())
@@ -345,12 +353,117 @@ TEST_CASE("Properties' preferred sizes do not depend on the widths it had before
                     continue;
 
                 const int expected=propertyRow->getLabel()->getMargin().left+80+
-                    propertyRow->getProperty()->getPreferredSize().width;
+                    std::max(100, propertyRow->getProperty()->getPreferredSize().width);
 
                 CHECK(propertyRow->getPreferredSize().width == expected);
             }
         }
     }
+}
+
+TEST_CASE("a Properties in an unsized box gives every value its value width")
+{
+    // Laid out at its preferred size, as a centred page or a Popup lays it out:
+    // the value column is the value width, whatever the property's own width.
+    Scene scene;
+    controls::Base *box=scene.canvas->newChild<controls::Base>("box");
+    box->setPos(10, 10);
+
+    controls::Properties *properties=box->newChild<controls::Properties>();
+    properties->setDock(DockPosition::Top);
+    REQUIRE(properties->getValueWidth() == 100);
+
+    std::vector<controls::PropertyRow *> rows;
+
+    rows.push_back(properties->add("First Name"));
+    rows.push_back(properties->add("Middle Name", "Ann"));
+    // An app's own width on a property is not a minimum: the row places it.
+    controls::property::Text *wide=properties->newChild<controls::property::Text>();
+    wide->setWidth(300);
+    rows.push_back(properties->add("Last Name", wide));
+    scene.settle();
+
+    const int split=properties->getRequestedSplitWidth();
+
+    CHECK(box->getWidth() == properties->getWidth());
+    CHECK(properties->getWidth() == rows[0]->getLabel()->getMargin().left+split+100);
+
+    for(auto *row : rows)
+    {
+        controls::property::Base *property=row->getProperty();
+
+        CHECK(row->getWidth() == properties->getWidth());
+        CHECK(property->getWidth() >= properties->getValueWidth());
+        CHECK(property->getWidth() == 100);
+        CHECK(property->getX() == row->getLabel()->getMargin().left+split);
+    }
+
+    // The value width is the preferred width's: setting it lays the rows out
+    // again, in one frame, and the box follows.
+    const int before=properties->getPreferredSize().width;
+
+    properties->setValueWidth(160);
+    scene.settle();
+
+    CHECK(properties->getPreferredSize().width == before+60);
+    CHECK(box->getWidth() == before+60);
+
+    for(auto *row : rows)
+        CHECK(row->getProperty()->getWidth() == 160);
+
+    properties->setValueWidth(10);
+    scene.settle();
+
+    // Below the properties' own preferred widths, theirs is the column's.
+    for(auto *row : rows)
+    {
+        controls::property::Base *property=row->getProperty();
+
+        CHECK(row->getPreferredSize().width == row->getLabel()->getMargin().left+split+
+            std::max(10, property->getPreferredSize().width));
+    }
+
+    CHECK(scene.requests == 0);
+}
+
+TEST_CASE("a ColorSelector row fits its value's text and its swatch")
+{
+    Scene scene;
+    controls::Base *box=scene.canvas->newChild<controls::Base>("box");
+
+    controls::Properties *properties=box->newChild<controls::Properties>();
+    properties->setDock(DockPosition::Top);
+    // Narrower than the value, so the property's own width decides.
+    properties->setValueWidth(0);
+
+    auto *selector=properties->newChild<controls::property::ColorSelector>();
+    controls::PropertyRow *row=properties->add("Colour", selector, "255 0 0");
+
+    scene.settle();
+
+    controls::TextBox *textBox=selector->m_textBox;
+    controls::Base *swatch=selector->m_button;
+    const Margin &swatchMargin=swatch->getMargin();
+    controls::Base *text=nullptr;
+
+    for(auto &&child : textBox->getChildren())
+    {
+        if(gweni_cast<controls::internal::Text>(child))
+            text=child;
+    }
+
+    REQUIRE(text);
+    const int textWidth=text->getPreferredSize().width;
+
+    REQUIRE(textWidth > 0);
+    CHECK(selector->getWidth() == selector->getPreferredSize().width);
+    CHECK(selector->getWidth() >= textWidth+swatch->getWidth()+swatchMargin.left+swatchMargin.right);
+    // The text ends left of the swatch, which is inside the box.
+    CHECK(text->getX()+textWidth <= swatch->getX()-swatchMargin.left);
+    CHECK(swatch->getX()+swatch->getWidth()+swatchMargin.right <= textBox->getWidth());
+    CHECK(swatch->getWidth() == 20);
+    CHECK(row->getPreferredSize().width == row->getLabel()->getMargin().left+
+        properties->getRequestedSplitWidth()+selector->getPreferredSize().width);
 }
 
 TEST_CASE("a VerticalSlider asks for its request whatever its value, and fits a smaller layout cell in one pass")

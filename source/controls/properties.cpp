@@ -18,6 +18,7 @@ namespace controls
 GWENI_CONTROL_CONSTRUCTOR(Properties)
 {
     m_splitWidth=80;
+    m_valueWidth=100;
     m_splitterBar=newChild<SplitterBar>();
     m_splitterBar->setPos(m_splitWidth, 0);
     m_splitterBar->setCursor(gweni::cursor::SizeWE);
@@ -43,6 +44,17 @@ void Properties::arrange(gweni::skin::Base *skin, Dim dim)
 void Properties::onSplitterMoved(event::Info)
 {
     m_splitWidth=m_splitterBar->getX();
+    invalidateChildren();
+}
+
+void Properties::setValueWidth(int width)
+{
+    width=std::max(0, width);
+
+    if(width == m_valueWidth)
+        return;
+
+    m_valueWidth=width;
     invalidateChildren();
 }
 
@@ -211,8 +223,11 @@ void PropertyRow::onDescendantInteraction(Base *control)
 // The label column is the split and the property the rest of the row. The
 // width asked for is the split as set, not as clamped to the Properties'
 // current width, which an earlier pass gave it: the label's margins, the split
-// and the property's preferred width. The height is the taller of the two.
-// Both are still measured, for their own subtrees.
+// and the value column, the wider of the Properties' value width and the
+// property's preferred width with its margins. Neither depends on an earlier
+// pass either: the property is Elastic in X, so its preferred width is its
+// content's, never its bounds or a request. The height is the taller of the
+// two. Both are still measured, for their own subtrees.
 void PropertyRow::calculateSize(gweni::skin::Base *skin, Dim dim)
 {
     ParentClass::calculateSize(skin, dim);
@@ -225,9 +240,13 @@ void PropertyRow::calculateSize(gweni::skin::Base *skin, Dim dim)
         int width=m_padding.left+m_padding.right+labelMargin.left+labelMargin.right
             +(parent?parent->getRequestedSplitWidth():m_label->getPreferredSize().width);
 
+        int valueWidth=parent?parent->getValueWidth():0;
+
         if(m_property)
-            width+=m_property->getPreferredSize().width+m_property->getMargin().left
-                +m_property->getMargin().right;
+            valueWidth=std::max(valueWidth, m_property->getPreferredSize().width
+                +m_property->getMargin().left+m_property->getMargin().right);
+
+        width+=valueWidth;
 
         m_preferredSize.width=preferredFromContent(width, Dim::X);
     }
@@ -291,7 +310,9 @@ void PropertyRow::setProperty(property::Base *prop)
     m_property=prop;
     m_property->setPlacement(Placement::Owner);
     m_property->setParent(this);
-    m_property->setSizeFlags({SizeFlag::Fixed, SizeFlag::Elastic});
+    // Its preferred width is its content's, which the row counts in its value
+    // column; the row places it (Placement::Owner) at the rest of its width.
+    m_property->setSizeFlags({SizeFlag::Elastic, SizeFlag::Elastic});
     m_property->onChange.add(this, &ThisClass::onPropertyValueChanged);
 }
 

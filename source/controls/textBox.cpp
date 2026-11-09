@@ -659,21 +659,38 @@ void TextBox::placeScrolledText(int x, int y, const Size &text)
 
 // A scrolled string is placed by this box (Placement::Owner), which leaves it
 // out of sizeOfChildren; it counts as it does aligned, at its preferred size,
-// so the box's size does not depend on whether it is scrolled.
+// so the box's size does not depend on whether it is scrolled. In X it counts
+// beside the children docked Left or Right (a ColorSelector's swatch, a
+// NumericUpDown's buttons), which sizeOfChildren takes the wider of with an
+// aligned child: the string is aligned in the whole box, so it would run
+// under them.
 void TextBox::calculateSize(skin::Base *skin, Dim dim)
 {
     ParentClass::calculateSize(skin, dim);
 
-    if(m_text->hidden() || m_text->getPlacement() != Placement::Owner)
+    if(m_text->hidden())
         return;
 
     const Size &text=m_text->getPreferredSize();
     const Margin &margin=m_text->getMargin();
 
     if(dim == Dim::X)
+    {
+        int docked=0;
+
+        for(auto &&child : getChildren())
+        {
+            if(child == m_text || child->hidden() || !child->shouldIncludeInSize())
+                continue;
+
+            if(child->getDock() & (DockPosition::Left|DockPosition::Right))
+                docked+=child->getPreferredSize().width+child->getMargin().left+child->getMargin().right;
+        }
+
         m_preferredSize.width=std::max(m_preferredSize.width, preferredFromContent(
-            text.width+margin.left+margin.right+m_padding.left+m_padding.right, Dim::X));
-    else
+            text.width+margin.left+margin.right+m_padding.left+m_padding.right+docked, Dim::X));
+    }
+    else if(m_text->getPlacement() == Placement::Owner)
         m_preferredSize.height=std::max(m_preferredSize.height, preferredFromContent(
             text.height+margin.top+margin.bottom+m_padding.top+m_padding.bottom, Dim::Y));
 }
