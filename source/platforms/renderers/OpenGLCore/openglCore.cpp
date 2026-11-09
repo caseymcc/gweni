@@ -327,6 +327,29 @@ void OpenGLCore::drawPrimitiveChunk(size_t chunk, size_t firstSlot, size_t slots
     glDrawElements(GL_TRIANGLES, (GLsizei)(slots*6), (GLenum)GL_UNSIGNED_SHORT, 0);
 }
 
+void OpenGLCore::drawPrimitiveRuns(const TextChunkDraw &draw)
+{
+    // PROTOTYPE (#508): the chunk's runs, as the text chunks' ranges are drawn
+    glBindVertexArray(primitiveVertexArray(draw.chunk));
+    glUniform1i(m_slotBaseUniform, (GLint)(draw.chunk*indexChunkSlots()));
+    if(m_multiDrawText)
+    {
+#ifdef GWENI_GL_ES
+        multiDrawElementsEXT(GL_TRIANGLES, draw.counts.data(), (GLenum)GL_UNSIGNED_SHORT,
+            reinterpret_cast<const void *const *>(draw.offsets.data()), (GLsizei)draw.counts.size());
+#else
+        glMultiDrawElements(GL_TRIANGLES, draw.counts.data(), (GLenum)GL_UNSIGNED_SHORT,
+            reinterpret_cast<const void *const *>(draw.offsets.data()), (GLsizei)draw.counts.size());
+#endif
+    }
+    else
+    {
+        for(size_t range=0; range<draw.counts.size(); ++range)
+            glDrawElements(GL_TRIANGLES, draw.counts[range], (GLenum)GL_UNSIGNED_SHORT,
+                reinterpret_cast<const void *>(draw.offsets[range]));
+    }
+}
+
 void OpenGLCore::endPrimitiveDraws()
 {
     glBindVertexArray(0);

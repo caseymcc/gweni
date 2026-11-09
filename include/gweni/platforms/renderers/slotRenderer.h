@@ -495,6 +495,12 @@ public:
     //! skipped, as flush() did before it drew only the slots that can show. A test
     //! hook, to check the skip draws the same pixels; off by default.
     void setDrawEveryPrimitiveSlot(bool every) { m_drawEveryPrimitiveSlot=every; }
+    //! PROTOTYPE (#508's measurement): draws each chunk's runs of slots that can
+    //! show, gaps under kPrimitiveRunGap slots merged, built from m_visibleSlots
+    //! every frame, through drawPrimitiveRuns. Off by default, or
+    //! GWENI_PRIMITIVE_RUNS=1 at construction.
+    void setDrawPrimitiveRuns(bool runs) { m_drawPrimitiveRuns=runs; }
+    static constexpr size_t kPrimitiveRunGap=8;
 
     //! What every live id holds in the CPU mirrors, so two states of the UI can be
     //! compared id by id rather than as raw buffers.
@@ -637,6 +643,10 @@ protected:
     //! firstSlot*4, every slot 2 triangles of the static quad indexes), end
     virtual void beginPrimitiveDraws()=0;
     virtual void drawPrimitiveChunk(size_t chunk, size_t firstSlot, size_t slots)=0;
+    //! PROTOTYPE (#508): a chunk's runs, each a count of indexes and a byte offset
+    //! from the chunk's first slot's; by default the chunk up to its last run's end
+    //! through drawPrimitiveChunk
+    virtual void drawPrimitiveRuns(const TextChunkDraw &draw);
     virtual void endPrimitiveDraws()=0;
     //! The text draws: begin, then for each atlas with runs to draw a
     //! beginTextAtlas (its texture and TextMode, an LCD one blended per channel)
@@ -888,6 +898,10 @@ private:
     };
     std::vector<PrimitiveChunkSlots> m_primitiveChunks;
     bool m_drawEveryPrimitiveSlot=false;
+    bool m_drawPrimitiveRuns=false;
+    TextChunkDraw m_primitiveRuns; //!< PROTOTYPE: the chunk being drawn's runs
+    //! PROTOTYPE: m_primitiveRuns from the bits of [first, end); \return the slots they cover
+    size_t buildPrimitiveRuns(size_t chunk, size_t first, size_t end);
     //! Sets the slot's bit from its vertexes, and its chunk's count and last slot;
     //! a chunk whose last slot stops showing finds the one before by its bits, at
     //! most m_chunkSlots/64 words.

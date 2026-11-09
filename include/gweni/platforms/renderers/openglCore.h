@@ -148,6 +148,7 @@ protected:
     bool readTextureRgba(TextureHandle texture, int width, int height, std::vector<uint8_t> &rgba) override;
     void beginPrimitiveDraws() override;
     void drawPrimitiveChunk(size_t chunk, size_t firstSlot, size_t slots) override;
+    void drawPrimitiveRuns(const TextChunkDraw &draw) override;
     void endPrimitiveDraws() override;
     void beginTextDraws() override;
     void beginTextAtlas(const FontData &font) override;

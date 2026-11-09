@@ -745,6 +745,8 @@ SlotRenderer::SlotRenderer(ResourcePaths &paths, const Rect &viewRect)
 
     m_uploadStats=(getenv("GWENI_UPLOAD_STATS") != nullptr);
 
+    if(const char *runs=getenv("GWENI_PRIMITIVE_RUNS"))
+        m_drawPrimitiveRuns=(strcmp(runs, "1") == 0);
     // set but empty, or not a number, keeps the default
     if(const char *chunkSlots=getenv("GWENI_INDEX_CHUNK_SLOTS"))
     {
@@ -963,6 +965,95 @@ size_t SlotRenderer::lastVisibleSlot(size_t first, size_t end) const
         limit=wordFirst;
     }
     return end;
+}
+
+//! The lowest set bit of a word that is not 0
+static size_t lowestBit(uint64_t word)
+{
+#if defined(__GNUC__) || defined(__clang__)
+    return (size_t)__builtin_ctzll(word);
+#else
+    size_t bit=0;
+
+    while(((word>>bit)&1) == 0)
+        ++bit;
+    return bit;
+#endif
+}
+
+size_t SlotRenderer::buildPrimitiveRuns(size_t chunk, size_t first, size_t end)
+{
+    TextChunkDraw &draw=m_primitiveRuns;
+    const size_t limit=std::min(end, m_visibleSlots.size()*64);
+    size_t slot=first, runFirst=0, runEnd=0, covered=0;
+    bool open=false;
+
+    draw.chunk=chunk;
+    draw.counts.clear();
+    draw.offsets.clear();
+
+    auto closeRun=[&]()
+    {
+        draw.counts.push_back(int((runEnd-runFirst)*6));
+        draw.offsets.push_back(uintptr_t((runFirst-first)*6*sizeof(uint16_t)));
+        covered+=runEnd-runFirst;
+    };
+
+    while(slot < limit)
+    {
+        // the next slot that can show, from slot on
+        const uint64_t shown=m_visibleSlots[slot/64]>>(slot%64);
+
+        if(shown == 0)
+        {
+            slot=(slot/64+1)*64;
+            continue;
+        }
+
+        const size_t start=slot+lowestBit(shown);
+        size_t stop=start;
+
+        // the first slot from start on that cannot show
+        while(stop < limit)
+        {
+            const uint64_t hidden=(~m_visibleSlots[stop/64])>>(stop%64);
+
+            if(hidden == 0)
+            {
+                stop=(stop/64+1)*64;
+                continue;
+            }
+            stop+=lowestBit(hidden);
+            break;
+        }
+        stop=std::min(stop, limit);
+
+        if(open && (start-runEnd < kPrimitiveRunGap))
+            runEnd=stop;
+        else
+        {
+            if(open)
+                closeRun();
+            runFirst=start;
+            runEnd=stop;
+            open=true;
+        }
+        slot=stop;
+    }
+    if(open)
+        closeRun();
+    return covered;
+}
+
+void SlotRenderer::drawPrimitiveRuns(const TextChunkDraw &draw)
+{
+    if(draw.counts.empty())
+        return;
+
+    const size_t first=draw.chunk*m_chunkSlots;
+    const size_t end=(draw.offsets.back()/sizeof(uint16_t)+size_t(draw.counts.back()))/6;
+
+    drawPrimitiveChunk(draw.chunk, first, end);
 }
 
 void SlotRenderer::recountPrimitiveChunks()
@@ -1350,7 +1441,13 @@ void SlotRenderer::flush()
                 count=m_primitiveChunks[chunk].last-first+1;
             }
 
-            drawPrimitiveChunk(chunk, first, count);
+            if(m_drawPrimitiveRuns && !m_drawEveryPrimitiveSlot)
+            {
+                count=buildPrimitiveRuns(chunk, first, first+count);
+                drawPrimitiveRuns(m_primitiveRuns);
+            }
+            else
+                drawPrimitiveChunk(chunk, first, count);
             ++m_frameStats.drawCalls;
             m_frameStats.primitiveSlotsDrawn+=count;
         }
