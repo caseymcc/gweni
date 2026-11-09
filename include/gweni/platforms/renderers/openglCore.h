@@ -87,8 +87,8 @@ public:
     struct GLCapabilities
     {
         GLSLDialect dialect=GLSLDialect::Glsl330;
-        //! glMultiDrawElements, which the text draws use; without it each of a
-        //! draw's ranges is a glDrawElements of its own
+        //! glMultiDrawElements, which the primitive and text draws use; without it
+        //! each of a draw's ranges is a glDrawElements of its own
         bool multiDraw=true;
         //! dual-source blending (GL_SRC1_COLOR), which LCD text is blended with;
         //! false also when GWENI_GL_NO_DUAL_SOURCE=1 was set at construction
@@ -102,13 +102,14 @@ public:
     //! Whether the current context lists the extension (GL_NUM_EXTENSIONS, glGetStringi)
     static bool hasExtension(const char *name);
 
-    //! Whether the text draws are glMultiDrawElements calls (true where the context
-    //! has it, unless GWENI_NO_MULTI_DRAW=1 was set at construction) or the same
-    //! ranges drawn one glDrawElements each. Either draws the same pixels and counts
+    //! Whether a chunk's draw (a primitive chunk's ranges, an atlas's text runs in a
+    //! chunk) is one glMultiDrawElements call (true where the context has it, unless
+    //! GWENI_NO_MULTI_DRAW=1 was set at construction) or its ranges drawn one
+    //! glDrawElements each. Either draws the same pixels and counts
     //! the same FrameStats. A test hook: true asks for the multi-draw, which only a
     //! context that has it gives.
-    bool multiDrawText() const { return m_multiDrawText; }
-    void setMultiDrawText(bool multiDraw);
+    bool useMultiDraw() const { return m_useMultiDraw; }
+    void setUseMultiDraw(bool multiDraw);
 
     //! Reads level 0 of a 2D texture (width x height texels) back as RGBA8 rows,
     //! row 0 (the first uploaded) first, through a framebuffer it is attached to,
@@ -169,7 +170,7 @@ private:
     //! m_textQuadIndexBuffer.
     uint32_t textVertexArray(size_t chunk);
     //! A chunk's ranges as one glMultiDrawElements, or a loop of glDrawElements
-    //! where the context has none (multiDrawText()), its vertex array bound
+    //! where the context has none (useMultiDraw()), its vertex array bound
     void drawRanges(const ChunkDraw &draw);
 
     void setTexture(unsigned int texture);
@@ -185,9 +186,9 @@ private:
 
     //! what init() found the context to offer
     GLCapabilities m_glCapabilities;
-    //! the text draws are glMultiDrawElements calls (multiDrawText())
-    bool m_multiDrawText=true;
-    //! GWENI_NO_MULTI_DRAW=1 at construction: the text draws loop even where the
+    //! the chunks' draws are glMultiDrawElements calls (useMultiDraw())
+    bool m_useMultiDraw=true;
+    //! GWENI_NO_MULTI_DRAW=1 at construction: the draws loop even where the
     //! context has glMultiDrawElements
     bool m_noMultiDraw=false;
     //! GWENI_GL_NO_DUAL_SOURCE=1 at construction: init() takes the context to have

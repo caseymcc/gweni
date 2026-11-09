@@ -6,7 +6,7 @@
  *  OpenGLCore's two ways of drawing an atlas's text: one glMultiDrawElements per
  *  chunk of its runs (desktop GL), or, where the context has no multi-draw
  *  (GLES 3.0, WebGL 2), the same ranges drawn one glDrawElements each
- *  (setMultiDrawText(false), GWENI_NO_MULTI_DRAW=1). Both must draw the same
+ *  (setUseMultiDraw(false), GWENI_NO_MULTI_DRAW=1). Both must draw the same
  *  pixels and count the same FrameStats: the draws are one per (atlas, chunk)
  *  either way, and switching uploads nothing.
  *
@@ -55,14 +55,14 @@ std::vector<uint8_t> drawFrame()
 //! Puts the multi-draw, the clip region and the chunk size back as they were.
 struct Guard
 {
-    bool multiDraw=gweni::test::glRenderer().multiDrawText();
+    bool multiDraw=gweni::test::glRenderer().useMultiDraw();
     size_t chunkSlots=gweni::test::glRenderer().indexChunkSlots();
 
     ~Guard()
     {
         OpenGLCore &renderer=gweni::test::glRenderer();
 
-        renderer.setMultiDrawText(multiDraw);
+        renderer.setUseMultiDraw(multiDraw);
         renderer.setIndexChunkSlots(chunkSlots);
         renderer.setClipRegion(Rect(Point(0, 0), gweni::test::viewSize()));
     }
@@ -117,8 +117,8 @@ TEST_CASE("Text draws: a loop of glDrawElements draws what glMultiDrawElements d
     // context GL_EXT_multi_draw_arrays, so the shared renderer uses it unless
     // GWENI_NO_MULTI_DRAW asked for the loop
     REQUIRE(renderer.glCapabilities().multiDraw);
-    renderer.setMultiDrawText(true);
-    REQUIRE(renderer.multiDrawText());
+    renderer.setUseMultiDraw(true);
+    REQUIRE(renderer.useMultiDraw());
 
     const size_t first=texts.generate();
     const size_t hidden=texts.generate();
@@ -141,13 +141,13 @@ TEST_CASE("Text draws: a loop of glDrawElements draws what glMultiDrawElements d
     {
         CAPTURE(chunkSlots);
         renderer.setIndexChunkSlots(chunkSlots);
-        renderer.setMultiDrawText(true);
+        renderer.setUseMultiDraw(true);
 
         const std::vector<uint8_t> multi=drawFrame();
         const OpenGLCore::FrameStats multiStats=renderer.getFrameStats();
 
-        renderer.setMultiDrawText(false);
-        CHECK_FALSE(renderer.multiDrawText());
+        renderer.setUseMultiDraw(false);
+        CHECK_FALSE(renderer.useMultiDraw());
 
         const std::vector<uint8_t> loop=drawFrame();
         const OpenGLCore::FrameStats &loopStats=renderer.getFrameStats();

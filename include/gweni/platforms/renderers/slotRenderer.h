@@ -514,7 +514,8 @@ public:
     size_t primitiveRangeGap() const { return m_primitiveRangeGap; }
     size_t maxPrimitiveRanges() const { return m_maxPrimitiveRanges; }
     //! Sets primitiveRangeGap() and maxPrimitiveRanges() (at least 1), every
-    //! chunk's ranges built again at the next flush(). A test and measurement hook.
+    //! chunk's ranges built again at the next flush(). A test and measurement hook;
+    //! GWENI_PRIMITIVE_RANGES=<gap>,<cap> sets them at construction.
     void setPrimitiveRangeLimits(size_t gap, size_t maxRanges);
 
     //! What every live id holds in the CPU mirrors, so two states of the UI can be

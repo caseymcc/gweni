@@ -745,6 +745,22 @@ SlotRenderer::SlotRenderer(ResourcePaths &paths, const Rect &viewRect)
 
     m_uploadStats=(getenv("GWENI_UPLOAD_STATS") != nullptr);
 
+    // <gap>,<cap>; anything else keeps the defaults
+    if(const char *ranges=getenv("GWENI_PRIMITIVE_RANGES"))
+    {
+        unsigned long long gap=0, cap=0;
+        char tail=0;
+
+        if((ranges[0] != '-') && (sscanf(ranges, "%llu,%llu%c", &gap, &cap, &tail) == 2) && (cap > 0))
+        {
+            m_primitiveRangeGap=(size_t)gap;
+            m_maxPrimitiveRanges=(size_t)cap;
+        }
+        else if(ranges[0] != '\0')
+            gweni::log::write(log::Level::Error,
+                "GWENI_PRIMITIVE_RANGES=%s: not <gap>,<cap>; the ranges keep %zu,%zu",
+                ranges, kPrimitiveRangeGap, kMaxPrimitiveRanges);
+    }
     // set but empty, or not a number, keeps the default
     if(const char *chunkSlots=getenv("GWENI_INDEX_CHUNK_SLOTS"))
     {

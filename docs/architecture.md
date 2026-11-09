@@ -1011,12 +1011,12 @@ two programs and the draws. What follows describes both together:
   `GL_ARRAY_BUFFER`, the quad index buffers to `GL_ELEMENT_ARRAY_BUFFER`), as WebGL
   requires. Two things beyond it are used where the context has them, found by
   `init()` (`OpenGLCore::glCapabilities()`, from `GL_VERSION` and the extension list):
-  `glMultiDrawElements` for the text (core in GL 3.3; on GLES the
+  `glMultiDrawElements` for a chunk's ranges, the text's and the primitives' (core in GL 3.3; on GLES the
   `GL_EXT_multi_draw_arrays` one, `glMultiDrawElementsEXT`, whose entry point the GLES
   tree gets from `eglGetProcAddress`, since `libGLESv2` exports only the core ones;
   without it, each range of a draw is a `glDrawElements` of its own, which draws the
   same pixels and counts the same `FrameStats`; `GWENI_NO_MULTI_DRAW=1` at
-  construction, or `setMultiDrawText(false)`, takes the loop where the context has it
+  construction, or `setUseMultiDraw(false)`, takes the loop where the context has it
   too, `tests/textDrawLoop.cpp`), and dual-source blending for LCD text (core in GL
   3.3, `GL_EXT_blend_func_extended` on GLES). Without dual-source blending the text
   program has no second output and the LCD modes are grayscale: `OpenGLCore` answers

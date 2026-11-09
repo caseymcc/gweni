@@ -84,9 +84,9 @@ extern const size_t textFragmentGlslSize;
 #ifdef GWENI_GL_ES
 namespace
 {
-// GL_EXT_multi_draw_arrays' glMultiDrawElementsEXT, which the text draws use in a
-// GLES context listing it; detectCapabilities resolves it (on the web it stays
-// null, and the text draws loop)
+// GL_EXT_multi_draw_arrays' glMultiDrawElementsEXT, which the chunks' draws use in
+// a GLES context listing it; detectCapabilities resolves it (on the web it stays
+// null, and the draws loop)
 PFNGLMULTIDRAWELEMENTSEXTPROC multiDrawElementsEXT=nullptr;
 }//namespace
 #endif
@@ -325,7 +325,7 @@ void OpenGLCore::drawRanges(const ChunkDraw &draw)
 
     // one draw of the chunk's ranges either way: GLES 3.0 has no
     // glMultiDrawElements, and its loop draws the same
-    if(m_multiDrawText)
+    if(m_useMultiDraw)
     {
 #ifdef GWENI_GL_ES
         multiDrawElementsEXT(GL_TRIANGLES, draw.counts.data(), (GLenum)GL_UNSIGNED_SHORT,
@@ -462,7 +462,7 @@ OpenGLCore::OpenGLCore(ResourcePaths &paths, const Rect &viewRect)
     , m_context(nullptr)
     , m_currentTexture(0)
 {
-    // the text draws' loop of glDrawElements even where glMultiDrawElements exists
+    // the draws' loop of glDrawElements even where glMultiDrawElements exists
     if(const char *noMultiDraw=getenv("GWENI_NO_MULTI_DRAW"))
         m_noMultiDraw=(strcmp(noMultiDraw, "1") == 0);
     // the context taken to have no dual-source blending, as a GLES one without
@@ -536,7 +536,7 @@ void OpenGLCore::init()
     m_glCapabilities=detectCapabilities();
     if(m_noDualSource)
         m_glCapabilities.dualSourceBlend=false;
-    m_multiDrawText=m_glCapabilities.multiDraw && !m_noMultiDraw;
+    m_useMultiDraw=m_glCapabilities.multiDraw && !m_noMultiDraw;
     // GWENI_TEXT_AA=rgb|bgr, read at construction, falls back to grayscale here
     // if the context cannot blend it
     applyLcdTextSupport();
@@ -789,9 +789,9 @@ const char *OpenGLCore::lcdTextUnavailable() const
     return "LCD text needs dual-source blending (GL_EXT_blend_func_extended), which this context does not have";
 }
 
-void OpenGLCore::setMultiDrawText(bool multiDraw)
+void OpenGLCore::setUseMultiDraw(bool multiDraw)
 {
-    m_multiDrawText=multiDraw && m_glCapabilities.multiDraw;
+    m_useMultiDraw=multiDraw && m_glCapabilities.multiDraw;
 }
 
 void OpenGLCore::setViewRect(const gweni::Rect &viewRect)

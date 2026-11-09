@@ -849,6 +849,50 @@ private:
     Point m_mouse=Point(-1, -1);
 };
 
+//-----------------------------------------------------------------------------
+// hidden-gaps: N Buttons in a grid of 60x20-unit cells over the canvas (rows
+// past its bottom clipped but still drawn), all drawn shown in the first frame;
+// the second hides every one but each (K+1)-th, so the primitive slots are runs
+// of one shown slot between gaps of K hidden ones, N/(K+1) runs in all. No
+// input after that. What a range costs against what a hidden slot in a merged
+// gap costs is measured here, with --range-gap and --range-cap (#508).
+//-----------------------------------------------------------------------------
+class HiddenGapsScene: public Scene
+{
+public:
+    void build(SceneContext &ctx) override
+    {
+        const int cellW=60, cellH=20;
+        const int columns=std::max(ctx.size.x/cellW, 1);
+
+        m_gap=std::max(ctx.k, 1);
+        for(int i=0; i<ctx.n; ++i)
+        {
+            controls::Button *button=ctx.canvas->newChild<controls::Button>();
+            place(button, (i%columns)*cellW, (i/columns)*cellH, cellW-4, cellH-2);
+            button->setText(format("G%05d", i));
+            m_buttons.push_back(button);
+        }
+    }
+
+    void step(SceneContext &/*ctx*/, int /*frame*/) override
+    {
+        // the first frame draws every Button shown; the second hides the gaps
+        if(m_steps++ != 1)
+            return;
+        for(size_t i=0; i<m_buttons.size(); ++i)
+        {
+            if(i%size_t(m_gap+1) != 0)
+                m_buttons[i]->hide();
+        }
+    }
+
+private:
+    std::vector<controls::Base *> m_buttons;
+    int m_gap=1;
+    int m_steps=0;
+};
+
 }//namespace
 
 const char *scalingName(Scaling scaling)
@@ -905,6 +949,9 @@ const std::vector<SceneInfo> &scenes()
         {"hidden-pages", "hover a header Button above K hidden pages of N Buttons, shown slots at both ends",
             true, 1000, 3, 20, Scaling::Local,
             []{ return std::unique_ptr<Scene>(new HiddenPagesScene()); }},
+        {"hidden-gaps", "N Buttons, all hidden but every K+1-th: runs of one shown slot between gaps of K",
+            true, 1000, 3, 20, Scaling::Linear,
+            []{ return std::unique_ptr<Scene>(new HiddenGapsScene()); }},
     };
     return list;
 }
