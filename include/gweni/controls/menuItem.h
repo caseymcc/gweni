@@ -55,16 +55,24 @@ public:
         return m_onStrip;
     }
 
-    virtual void setCheckable(bool check)
+    //! Whether a click toggles the item's check. A change redraws the item.
+    virtual void setCheckable(bool check);
+    bool isCheckable() const
     {
-        m_checkable=check;
+        return m_checkable;
     }
 
+    //! A change redraws the item and fires onCheckChange, then onChecked or
+    //! onUnChecked.
     virtual void setChecked(bool check);
-    virtual bool cetChecked()
+    bool isChecked() const
     {
         return m_checked;
     }
+
+    //! Button's image; it is hidden while the item is checkable and checked,
+    //! where the check takes its place in the icon column.
+    void setImage(const String &name, bool center=false) override;
 
     template <typename T>
     MenuItem *setAction(gweni::event::Handler *handler, T fn)
@@ -86,6 +94,9 @@ public:
 private:
     //! Its submenu was shown or hidden: the open highlight (isMenuOpen()) changed.
     void onMenuVisibilityChanged(event::Info);
+    //! The image, if any, is hidden while checkable and checked, whatever order
+    //! setImage, setCheckable and setChecked came in.
+    void updateImageVisibility();
 
     Menu *m_menu=nullptr;
     bool m_onStrip=false;

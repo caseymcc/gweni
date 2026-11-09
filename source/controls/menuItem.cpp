@@ -9,6 +9,7 @@
 #include <gweni/controls/menuItem.h>
 #include <gweni/skin.h>
 #include <gweni/controls/canvas.h>
+#include <gweni/controls/imagePanel.h>
 
 namespace gweni
 {
@@ -95,18 +96,42 @@ void MenuItem::onMenuVisibilityChanged(event::Info)
     redraw();
 }
 
+void MenuItem::setCheckable(bool check)
+{
+    if(check == m_checkable)
+        return;
+
+    m_checkable=check;
+    updateImageVisibility();
+    redraw();
+}
+
 void MenuItem::setChecked(bool check)
 {
     if(check == m_checked)
         return;
 
     m_checked=check;
+    updateImageVisibility();
+    redraw();
     onCheckChange.call(this);
 
     if(check)
         onChecked.call(this);
     else
         onUnChecked.call(this);
+}
+
+void MenuItem::setImage(const String &name, bool center)
+{
+    ParentClass::setImage(name, center);
+    updateImageVisibility();
+}
+
+void MenuItem::updateImageVisibility()
+{
+    if(m_image)
+        m_image->setHidden(m_checkable && m_checked);
 }
 
 void MenuItem::onPress(event::Info info)
@@ -117,7 +142,8 @@ void MenuItem::onPress(event::Info info)
     }
     else if(!m_onStrip)
     {
-        setChecked(!cetChecked());
+        if(m_checkable)
+            setChecked(!m_checked);
         onMenuItemSelected.call(this);
         getCanvas()->closeMenus();
     }
