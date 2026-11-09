@@ -30,7 +30,12 @@
  *  fully into view and closes the popup; a second press on the button,
  *  Escape and a press outside close it too, and a tab closed while it is open
  *  is not selected from it. Deleting the TabControl with the list open closes
- *  and deletes the popup; a canvas deleted with it open deletes both.
+ *  and deletes the popup; a canvas deleted with it open deletes both. The
+ *  popup is the TabControl's (Base::createPopup, #490), so a canvas deleted
+ *  with the list opened (open or closed again) and the TabControl in a
+ *  WindowControl brought to the front after it deletes each once, and a
+ *  TabControl taken off the canvas and deleted after it touches nothing of
+ *  the popup the canvas deleted.
  */
 #include "headlessFixture.h"
 
@@ -39,6 +44,7 @@
 #include <gweni/controls/scrollBarButton.h>
 #include <gweni/controls/selectable.h>
 #include <gweni/controls/tabControl.h>
+#include <gweni/controls/windowControl.h>
 #include <gweni/inputHandler.h>
 #include <gweni/platforms/platform.h>
 #include <gweni/skins/textured/texturedSkin.h>
@@ -710,4 +716,57 @@ TEST_CASE("TabControl tab list: deleting the control, or the canvas, with the li
         scene.frame();
         REQUIRE(control->getTabListPopup()->isOpen());
     }
+}
+
+TEST_CASE("TabControl tab list: a canvas deleted with the control in a WindowControl brought to the front, or detached first (#490)")
+{
+    const test::IdBankCounts baseline=test::IdBankCounts::now();
+
+    for(const bool leaveOpen : {false, true})
+    {
+        for(const bool detach : {false, true})
+        {
+            CAPTURE(leaveOpen);
+            CAPTURE(detach);
+            SlotRecorder renderer;
+            skin::textured::TexturedSkin skin{&renderer};
+            controls::Canvas *canvas=new controls::Canvas(&skin);
+            canvas->setSize(500, 400);
+
+            auto *window=canvas->newChild<controls::WindowControl>();
+            window->setBounds(20, 20, 400, 300);
+            controls::TabControl *control=window->newChild<controls::TabControl>();
+            control->setDock(DockPosition::Center);
+            for(int i=0; i < 4; ++i)
+                control->addPage(g_captions[i]);
+            control->setTabListButton(true);
+            for(int i=0; i < 3; ++i)
+            {
+                canvas->updateCanvas();
+                canvas->renderCanvas();
+            }
+
+            control->toggleTabList();
+            REQUIRE(control->getTabListPopup() != nullptr);
+            CHECK(control->getTabListPopup()->getOwner() == control);
+            REQUIRE(control->getTabListPopup()->isOpen());
+            if(!leaveOpen)
+                control->toggleTabList();
+            window->bringToFront();
+            canvas->updateCanvas();
+            canvas->renderCanvas();
+            if(detach)
+                control->setParent(nullptr);
+
+            HoveredControl=nullptr;
+            KeyboardFocus=nullptr;
+            MouseFocus=nullptr;
+            delete canvas;
+            if(detach)
+                delete control;
+        }
+    }
+    const test::IdBankCounts after=test::IdBankCounts::now();
+    CHECK(after.livePrimitives() == baseline.livePrimitives());
+    CHECK(after.liveTexts() == baseline.liveTexts());
 }

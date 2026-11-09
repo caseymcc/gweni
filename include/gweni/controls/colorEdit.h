@@ -68,11 +68,6 @@ public:
 
 public:
 
-    //! Deletes the popup it made on the canvas.
-    ~ColorEdit() override;
-
-public:
-
     //! Shows \p color in the swatch, the fields and the open picker; with
     //! \p doEvents, onColorChanged fires if it is not the colour it had.
     //! Without alpha (setAlphaEnabled(false)) the alpha is taken as 255.

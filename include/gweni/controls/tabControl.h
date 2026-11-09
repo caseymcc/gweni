@@ -49,8 +49,6 @@ class GWENI_EXPORT TabControl: public Base
     GWENI_CONTROL(TabControl, Base);
 
 public:
-    ~TabControl() override;
-
     //! The side of each overflow and list button.
     static constexpr int ButtonSize=14;
     //! The units between two buttons of the column.

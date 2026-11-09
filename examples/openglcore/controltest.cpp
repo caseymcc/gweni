@@ -6146,8 +6146,47 @@ static bool runPopupScenario(Session &s, const std::string &shotDir, bool &passe
     options->setHidden(false);
     renderFrames(s, s.frames);
 
+    // The popups are the page's (Base::createPopup): deleting it deletes them.
     forgetMouse(s);
     dropControl(s, demo);
+    size_t popupsLeft=0;
+    for(gweni::controls::Base *child : canvas->getActualChildren())
+    {
+        if(gweni::gweni_cast<gweni::controls::Popup>(child))
+            ++popupsLeft;
+    }
+    checks.check("deleted_with_demo", popupsLeft == 0 && !canvas->shownPopup(),
+        "deleting the page left "+std::to_string(popupsLeft)+" popups on the canvas");
+
+    // A canvas deleted with the page after its popups among its children (a
+    // popup opened and closed, then the page brought to the front) deletes
+    // them first; the page touches neither (#490: it did, a heap-use-after-free
+    // in the ASAN tree).
+    gweni::controls::Base *second=addControl(s, "PopupDemo");
+    renderFrames(s, s.frames);
+    auto *secondPage=gweni::gweni_cast<gweni::PopupDemo>(second);
+    bool popupsFirst=false;
+    if(secondPage && secondPage->m_options && secondPage->m_optionsPopup)
+    {
+        const gweni::Point onSecond=centreOf(secondPage->m_options);
+        clickMouse(s, onSecond.x, onSecond.y);
+        renderFrames(s, s.frames);
+        sendKey(s, "escape");
+        renderFrames(s, s.frames);
+        second->bringToFront();
+        renderFrames(s, s.frames);
+
+        const auto &children=canvas->getActualChildren();
+        const auto at=[&](gweni::controls::Base *control)
+        {
+            return std::distance(children.begin(), std::find(children.begin(), children.end(), control));
+        };
+        popupsFirst=at(secondPage->m_optionsPopup) < at(second) && at(secondPage->m_cornerPopup) < at(second);
+    }
+    forgetMouse(s);
+    replaceCanvas(s);
+    checks.check("teardown_popups_first", popupsFirst,
+        "the second page's popups were not before it among the canvas's children");
 
     std::cout<<"popup";
     for(const auto &result : checks.results)

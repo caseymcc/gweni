@@ -32,9 +32,9 @@ GWENI_CONTROL_CONSTRUCTOR(PopupDemo)
     help->setPos(120, 10);
 
     // Made on the canvas, where opening would move them: so the first open
-    // touches nothing in this page. Its rows are docked Top, inside the
-    // popup's padding, 4 units apart.
-    m_optionsPopup=getCanvas()->newChild<controls::Popup>();
+    // touches nothing in this page. This page's, so deleting it deletes them.
+    // Its rows are docked Top, inside the popup's padding, 4 units apart.
+    m_optionsPopup=createPopup();
     {
         controls::Label *title=m_optionsPopup->newChild<controls::Label>();
 
@@ -78,7 +78,7 @@ GWENI_CONTROL_CONSTRUCTOR(PopupDemo)
     m_corner->setAlignment(Alignment::Right|Alignment::Bottom);
     m_corner->onPressCaller.add(this, &PopupDemo::onToggle);
 
-    m_cornerPopup=getCanvas()->newChild<controls::Popup>();
+    m_cornerPopup=createPopup();
     {
         controls::Label *title=m_cornerPopup->newChild<controls::Label>();
 
@@ -95,14 +95,6 @@ GWENI_CONTROL_CONSTRUCTOR(PopupDemo)
             button->setMargin(Margin(0, 0, 0, 2));
         }
     }
-}
-
-PopupDemo::~PopupDemo()
-{
-    // Delayed, as the canvas deletes them with its other children when it is
-    // tearing down.
-    for(controls::Popup *popup : {m_optionsPopup, m_cornerPopup})
-        popup->delayedDelete();
 }
 
 void PopupDemo::onToggle(event::Info info)

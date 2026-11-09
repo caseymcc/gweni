@@ -67,24 +67,6 @@ GWENI_CONTROL_CONSTRUCTOR(TabControl)
     setTabable(false);
 }
 
-TabControl::~TabControl()
-{
-    if(!m_listPopup)
-        return;
-
-    // Made on the canvas, which deletes it with its other children when it is
-    // tearing down, before or after this control, so it is not touched then
-    // (as ColorEdit's picker); otherwise it goes delayed, as a Popup's creator
-    // does.
-    Canvas *canvas=getCanvas();
-
-    if(!canvas)
-        canvas=m_listPopup->getCanvas();
-    if(canvas && canvas->releasingChildren())
-        return;
-    m_listPopup->delayedDelete();
-}
-
 TabButton *TabControl::addPage(String text, controls::Base *page)
 {
     if(!page)
@@ -506,13 +488,12 @@ void TabControl::toggleTabList()
         return;
     }
 
-    Canvas *canvas=getCanvas();
-
-    if(!canvas || m_list->hidden())
+    if(!getCanvas() || m_list->hidden())
         return;
 
+    // this control's: deleted with it, wherever it is then
     if(!m_listPopup)
-        m_listPopup=canvas->newChild<Popup>();
+        m_listPopup=createPopup();
 
     // One row per tab, in strip order, made again only here: the rows of an
     // earlier opening are reused, the surplus deleted.

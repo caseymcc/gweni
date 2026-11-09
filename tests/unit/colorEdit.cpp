@@ -35,7 +35,11 @@
  *  popup was opened is safe in both orders its children can be in: the popup
  *  after the ColorEdit's holder, and before it once the holder was brought to
  *  the front (the canvas deleted the popup first, and ~ColorEdit touched it:
- *  a heap-use-after-free in the ASAN tree), the popup open or closed.
+ *  a heap-use-after-free in the ASAN tree), the popup open or closed. The
+ *  popup is the ColorEdit's (Base::createPopup, #490): so it is in a
+ *  WindowControl brought to the front after the popup was opened, or never
+ *  opened at all; and a ColorEdit taken off the canvas and deleted after it
+ *  touches nothing of the popup the canvas deleted.
  *
  *  HSVColorPicker::setColor before any layout leaves the picker on exactly
  *  that colour (#413: RGBtoHSV gave al_color_rgb_to_hsv 0-255 channels where it
@@ -53,6 +57,7 @@
 #include <gweni/controls/popup.h>
 #include <gweni/controls/property/colorSelector.h>
 #include <gweni/controls/textBox.h>
+#include <gweni/controls/windowControl.h>
 #include <gweni/inputHandler.h>
 #include <gweni/platforms/platform.h>
 #include <gweni/skins/textured/texturedControls.h>
@@ -613,6 +618,58 @@ TEST_CASE("a canvas deleted with a ColorEdit whose picker was opened deletes the
             KeyboardFocus=nullptr;
             MouseFocus=nullptr;
             delete canvas;
+        }
+    }
+    const test::IdBankCounts after=test::IdBankCounts::now();
+    CHECK(after.livePrimitives() == baseline.livePrimitives());
+    CHECK(after.liveTexts() == baseline.liveTexts());
+}
+
+TEST_CASE("a canvas deleted with a ColorEdit in a WindowControl brought to the front, or detached first (#490)")
+{
+    const test::IdBankCounts baseline=test::IdBankCounts::now();
+
+    // 0: never opened, 1: opened and closed, 2: open
+    for(const int opened : {0, 1, 2})
+    {
+        for(const bool detach : {false, true})
+        {
+            CAPTURE(opened);
+            CAPTURE(detach);
+            SwatchRecorder renderer;
+            skin::textured::TexturedSkin skin{&renderer};
+            controls::Canvas *canvas=new controls::Canvas(&skin);
+            canvas->setSize(640, 480);
+
+            auto *window=canvas->newChild<controls::WindowControl>();
+            window->setBounds(20, 20, 320, 240);
+            ColorEdit *edit=window->newChild<ColorEdit>();
+            edit->setPos(10, 10);
+            canvas->updateCanvas();
+            canvas->renderCanvas();
+
+            if(opened > 0)
+            {
+                edit->togglePicker();
+                REQUIRE(edit->getPopup() != nullptr);
+                CHECK(edit->getPopup()->getOwner() == edit);
+            }
+            if(opened == 1)
+                edit->togglePicker();
+            window->bringToFront();
+            canvas->updateCanvas();
+            canvas->renderCanvas();
+            // taken off the canvas, its popup stays there: the canvas deletes
+            // it, and the ColorEdit is deleted after the canvas
+            if(detach)
+                edit->setParent(nullptr);
+
+            HoveredControl=nullptr;
+            KeyboardFocus=nullptr;
+            MouseFocus=nullptr;
+            delete canvas;
+            if(detach)
+                delete edit;
         }
     }
     const test::IdBankCounts after=test::IdBankCounts::now();

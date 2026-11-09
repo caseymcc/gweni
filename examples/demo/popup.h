@@ -16,9 +16,6 @@ class PopupDemo: public controls::Base
 public:
     GWENI_CONTROL(PopupDemo, controls::Base);
 
-    //! Deletes the popups it made on the canvas.
-    ~PopupDemo() override;
-
 public:
     //! A button was pressed: opens its popup, or closes it when it is open.
     void onToggle(event::Info info);
