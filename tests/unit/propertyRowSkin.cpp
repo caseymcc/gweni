@@ -277,7 +277,7 @@ TEST_CASE("a PropertyRow gets the textured PropertyRow renderer: a column fill a
     CHECK(test::IdBankCounts::now().livePrimitives() == baseline.livePrimitives());
 }
 
-TEST_CASE("hovering a PropertyRow's value marks the row and its label in the update phase; label to value marks nothing")
+TEST_CASE("hovering a PropertyRow's value marks the row and its label in the update phase, label to value marks nothing")
 {
     RowScene scene;
     controls::TextBox *value=RowScene::editor(scene.first);

@@ -522,7 +522,7 @@ TEST_CASE("Popup: deleting it leaves no shown popup")
     }
 }
 
-TEST_CASE("Popup: a press on its anchor, in it or on an open Menu keeps it; a button toggles it")
+TEST_CASE("Popup: a press on its anchor, in it or on an open Menu keeps it, a button toggles it")
 {
     Scene scene;
     controls::Base *anchor=scene.box(10, 10, 60, 20);
@@ -723,7 +723,7 @@ TEST_CASE("Popup: a ComboBox in it keeps its list closed when it opens, and its 
     CHECK(combo->getSelectedItem()->getText() == "Two");
 }
 
-TEST_CASE("Popup: Escape closes a ComboBox list open over it first; closing it closes the list")
+TEST_CASE("Popup: Escape closes a ComboBox list open over it first, closing it closes the list")
 {
     Scene scene;
     controls::Base *anchor=scene.box(10, 10, 60, 20);

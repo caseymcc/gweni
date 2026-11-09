@@ -369,7 +369,7 @@ TEST_CASE("Context menu: onContextMenu fires once per open, before it opens")
     CHECK(filler.calls == 2);
 }
 
-TEST_CASE("Context menu: a disabled or hidden control opens nothing; hiding its owner closes it")
+TEST_CASE("Context menu: a disabled or hidden control opens nothing, hiding its owner closes it")
 {
     Scene scene;
     controls::Base *parent=scene.box(10, 10, 200, 150);

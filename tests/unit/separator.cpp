@@ -195,7 +195,7 @@ TEST_CASE("Separator: one unit across, the length its dock gives it, drawn one u
     CHECK(scene.renderer.hidden.empty());
 }
 
-TEST_CASE("Separator: a caption interrupts the rule; a caption of another width moves the rule after it")
+TEST_CASE("Separator: a caption interrupts the rule, a caption of another width moves the rule after it")
 {
     Scene scene;
     controls::Separator *separator=scene.canvas->newChild<controls::Separator>();
