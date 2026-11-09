@@ -110,8 +110,20 @@ public:
         return m_label->getText();
     }
 
+    //! Disables the radio and the label with the row, so neither a click on
+    //! them nor Space selects it, and both draw their disabled look.
+    void setDisabled(bool active) override
+    {
+        ParentClass::setDisabled(active);
+        m_radioButton->setDisabled(active);
+        m_label->setDisabled(active);
+    }
+
     bool onKeySpace(bool down) override
     {
+        if(isDisabled())
+            return true;
+
         if(down)
             m_radioButton->setChecked(!m_radioButton->isChecked());
 

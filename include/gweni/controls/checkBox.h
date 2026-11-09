@@ -119,8 +119,20 @@ public:
                                        : (Alignment::Left|Alignment::CenterV));
     }
 
+    //! Disables the box and the label with the row, so neither a click on
+    //! them nor Space toggles it, and both draw their disabled look.
+    void setDisabled(bool active) override
+    {
+        ParentClass::setDisabled(active);
+        m_checkbox->setDisabled(active);
+        m_label->setDisabled(active);
+    }
+
     bool onKeySpace(bool down) override
     {
+        if(isDisabled())
+            return true;
+
         if(!down)
             m_checkbox->setChecked(!m_checkbox->isChecked());
 
