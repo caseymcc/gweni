@@ -560,8 +560,11 @@
  *                          rows_only=yes|no ids_back=yes|no
  *                 the checks: the pool, the subtree, the ids and the one-row
  *                 scroll's counters are the same at both counts (the wheel's
- *                 slots too, less the thumb's: its three rows move the bar's
- *                 thumb a pixel at 1 000 items only, thumb_moved=1);
+ *                 slots too, less the thumb's: in the list, which fills the
+ *                 canvas's height (a 436-unit viewport at 640x480), its three
+ *                 rows move the bar's 8 px thumb one pixel at 1 000 items
+ *                 and the 6 px one not at all at 100 000, thumb_moved=1
+ *                 and 0);
  *                 settled frames write and change nothing;
  *                 each scroll writes no more than its shown rows' primitive
  *                 slots and glyphs, enters no more than the list's subtree
@@ -6754,9 +6757,12 @@ static bool runVirtualListScenario(Session &s, const std::string &shotDir, bool 
             && step.primSlots <= step.rowPrims && step.textSlots <= step.rowGlyphs;
     };
 
-    // The wheel's three rows move the bar's thumb a pixel at 1 000 items and
-    // not at 100 000, so that step's controls differ by the thumb, and its
-    // primitive slots by the thumb's one slot; the rest of its slots do not.
+    // The wheel's three rows (60 units) move the bar's thumb one pixel at
+    // 1 000 items and not at all at 100 000 (in the demo's list, which fills
+    // the canvas's height: a 436-unit viewport at 640x480), so that step's
+    // controls differ by the thumb, and its primitive slots by the thumb's one
+    // slot; the rest of its slots do not. thumbMoved takes either case, so a
+    // height where the thumb moves at both counts or neither passes too.
     auto wheelPrimSlots=[](const VirtualListRun &run)
     {
         return run.wheel.primSlots-(run.wheel.thumbMoved?1:0);

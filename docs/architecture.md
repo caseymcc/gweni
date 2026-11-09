@@ -1538,6 +1538,19 @@ two programs and the draws. What follows describes both together:
   binder (`setRowBinder(row, index)`). The pool is created or deleted only when the
   viewport's height changes, so 100 000 items have the controls, primitive ids and text
   ids of the dozen or so rows on screen, and a frame costs what those rows cost.
+  **A resized pool gets fresh rows:** in the frame its size changes, `contentsPlaced`
+  first works out which rows keep their item, then deletes the rows the items in view
+  do not reach, wherever they are (each giving up its press and focus first), and
+  appends fresh rows up to the new size; it does not keep the back ones. So a list
+  grown and shrunk back with no scroll between holds the pool a list built at that
+  size does: the same rows in the same child order, and a spare that was never bound,
+  measured, placed or drawn, not one shown at the larger size with its bounds, text,
+  slots and run (issue #479). A released primitive slot's vertexes are zeroed
+  (`SlotRenderer::releasePrimitive`), so a fresh row given a deleted row's ids reads as
+  a never-written slot too, and `ControlTest --scenario resize` holds on
+  VirtualListDemo, whose list fills the canvas's height. The cost is at most one row made and
+  one deleted more than needed in a frame that shrinks the pool, a frame that already
+  makes or deletes rows and renumbers z.
   **Positions stay small:** nothing is `n*rowHeight` high. The list is a `ScrollControl`
   with *virtual content* (`ScrollControl::setVirtualContentHeight`): the vertical bar is
   decided and ranged from that height, but the inner panel is the viewport, not scrolled,
