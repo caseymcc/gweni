@@ -289,7 +289,14 @@ It holds three pages, their files and nothing else:
 
 - `index.html`, the landing page: what gweni is, links to the demo, the gallery
   and the GitHub repo, and the hero sample (`docs/images/demo.png`) as a preview;
-- `demo.html`, the OpenGLCore demo's window;
+- `demo.html`, the OpenGLCore demo's window, with the stats overlay
+  (`gweni::tools::StatsOverlay`, `docs/architecture.md` → "The stats overlay")
+  open in its bottom-right corner: the page sets `Module.gweniDefaultArgs` to
+  `['--stats-overlay']`, which `web/pre.js` puts before the URL's arguments, so
+  `demo.html?stats-overlay=off` leaves it closed and F10 toggles it. Its times
+  are the browser's `performance.now()`, which Chromium coarsens to about
+  100 µs on a page without COOP/COEP headers, so a settled frame's phases read
+  0.0 to 0.1 ms;
 - `controltest.html`, ControlTest's window with a control picker. Its entries
   are `ControlTest --list`, written in when the site is staged. The URL query is
   ControlTest's argv, so `controltest.html?control=ButtonDemo&scale=2` is a link
@@ -305,14 +312,14 @@ it holds a site staged by the script (its `.gweni-site` marker).
 
 The script then prints what each page sends, every file raw, gzip and brotli,
 with nothing taken to be cached (`tools/site/sizes.mjs`). It exits 1 if the
-gallery page's gzip total is over its `BUDGET_BYTES`, 8 MB. Measured at this
-change:
+gallery page's gzip total is over its `BUDGET_BYTES`, 8 MB. Measured with the stats overlay
+(#478):
 
 | page | raw | gzip | brotli |
 |---|---|---|---|
-| `controltest.html` (`ControlTest.wasm` 2566 kB, `.data` 715 kB, `.js` 146 kB) | 3.43 MB | 1.41 MB | 1.07 MB |
-| `demo.html` (`OpenGLCore.wasm` 2360 kB, `.data` 715 kB, `.js` 146 kB) | 3.22 MB | 1.35 MB | 1.03 MB |
-| `index.html` (with the 152 kB preview) | 0.16 MB | 0.15 MB | 0.15 MB |
+| `controltest.html` (`ControlTest.wasm` 2933 kB, `.data` 715 kB, `.js` 148 kB) | 3.80 MB | 1.52 MB | 1.16 MB |
+| `demo.html` (`OpenGLCore.wasm` 2611 kB, `.data` 715 kB, `.js` 147 kB) | 3.48 MB | 1.44 MB | 1.09 MB |
+| `index.html` (with the 171 kB preview) | 0.18 MB | 0.17 MB | 0.16 MB |
 
 The release web tree is `-Oz` for this: at CMake's `-O3`, `ControlTest.wasm` is
 3041 kB (1080 kB gzip), against `-Oz`'s 2566 kB (975 kB gzip), and a
@@ -322,7 +329,9 @@ browser run (`--check-teardown`, Demo's resize scenario) is no slower within
 `web_site_smoke` (`tests/web/site.cmake`, release web tree) runs the script into
 the build tree and then `tests/web/site.mjs`, which serves the staged site and
 loads every page in the headless Chromium: the landing page with its image, the
-demo, and the gallery at ButtonDemo, TextBoxDemo and ShowcaseButtonsDemo at
+demo (its argv starting with the default `--stats-overlay` and OpenGLCore saying
+on stdout that the overlay is open) and `demo.html?stats-overlay=off` (without
+that line), and the gallery at ButtonDemo, TextBoxDemo and ShowcaseButtonsDemo at
 `?scale=2`, where it also picks SliderDemo and must get
 `controltest.html?control=SliderDemo&scale=2`. It fails on a console error, an
 uncaught exception, a failed request or an HTTP error (a file missing from the

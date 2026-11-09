@@ -75,6 +75,13 @@ of ColorEdits and DragNumbers. An edit redraws the whole canvas once, and Save w
 as the `"theme"` object `DefaultSkin.json` holds. Here ButtonNormal is edited to a deep blue, which the
 buttons and the editor's own node headers show.
 
+**Stats overlay**: `gweni::tools::StatsOverlay`, a read-only panel in the canvas's bottom-right corner
+(F10 in the examples, `--stats-overlay` to open it at start-up, and open by default in the
+[live demo](https://caseymcc.github.io/gweni/demo.html)): fps, each phase's time (min/avg/max), the
+tree's size, the most the last frames did (controls rendered, layout passes, slots written, ...) and
+plots of the cpu time and the slots per frame. Hover a row and `rendered` and `prim slots` blip and
+drop back to 0, while the frame time stays flat. The mouse passes through it to the app under it.
+
 The showcase pages, the hero's *Containers & data* among them, are in the demo shell's "Showcase"
 category and in `ControlTest --control`, which also still shows every control on a page of its own
 (`ControlTest --list`). All of these images are rendered

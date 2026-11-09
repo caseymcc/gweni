@@ -151,7 +151,7 @@ if(TARGET ControlTest AND NOT EMSCRIPTEN)
     # reused, so the second build's captions are other strings, and the stats
     # overlay shows the process's live ids and the frames before it, which the
     # second build sees otherwise. determinism (two processes), one_pass_each,
-    # teardown, controltest_inspector and controltest_stats-overlay cover them.
+    # teardown, controltest_inspector and controltest_stats_overlay cover them.
     # the same round trip for every other control in --list, one process each
     gweni_whole_app_test(controltest_resize_each 600
         COMMAND ${CMAKE_COMMAND}

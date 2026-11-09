@@ -1608,8 +1608,11 @@ two programs and the draws. What follows describes both together:
   the start of the tab's right padding: `calculateSize(X)` adds the square to the padding
   it sets for the strip's side, so the text is laid out clear of it on every side (on a
   Left/Right strip, where a tab fills the strip, the square is at the tab's right end),
-  `arrange` sizes it and `postLayout` places it, centred between the top and bottom
-  padding. The square is reserved whether or not the button shows, so a hover never
+  and the padding is set once, final, so a measure that keeps it changes nothing.
+  `arrange` sizes and places it, one axis at a time, centred between the top and bottom
+  padding, once that axis's size is final and before the tab's children are arranged
+  (placed in `postLayout`, after the tab's own arrange, its first placement left the way
+  down to it dirty after the pass, for the next pass to enter and count). The square is reserved whether or not the button shows, so a hover never
   changes a tab's width or moves its neighbours. **Shown like imgui's:** on the selected
   tab and on the hovered one, the tab or the button itself under the mouse
   (`isTabHovered()`, which the tab's text colour follows too), and on no disabled tab.
@@ -2271,12 +2274,12 @@ set by its bare name and one with some of them as `Name.field` per missing field
 the shipped theme with `"strict": true` added):
 
 ```
-theme strict: 83 of 87 surfaces not set: ButtonDisabled, ButtonDown, ButtonOn, ...
+theme strict: 84 of 88 surfaces not set: ButtonDisabled, ButtonDown, ButtonOn, ...
 theme strict: 13 of 15 text colors not set: AxisTagText, ButtonDisabled, ButtonDown, ...
 ```
 
-(`theme strict: all 87 surfaces set` for a kind with no gaps, and a single
-`theme strict: all 87 surfaces and 15 text colors set` when there are none at all). A
+(`theme strict: all 88 surfaces set` for a kind with no gaps, and a single
+`theme strict: all 88 surfaces and 15 text colors set` when there are none at all). A
 rejected value counts as not set. A surface that is transparent at rest on purpose
 (`WindowButton`, `SelectableHover`: a transparent fill hides the slot) is magenta too
 until the theme sets it to `[0,0,0,0]`; the theme has not said what it looks like. The
@@ -2362,6 +2365,120 @@ the file (the changed values and pixels again). ThemeEditorDemo shows it beside 
 controls, ButtonNormal's top and bottom edited; the first ThemeEditorDemo alive keeps the
 theme it found and the last one to go gives it back, so the demos after it draw as
 before.
+
+## The stats overlay
+
+`gweni::tools::StatsOverlay` (`include/gweni/tools/statsOverlay.h`,
+`source/tools/statsOverlay.cpp`) is the third library tool: a compact, read-only panel
+in the canvas's bottom-right corner that shows, live, what the frames cost, so the claim
+that a frame costs what changed can be watched holding: hover a row and `rendered` and
+`prim slots` blip and drop back to 0 while the frame time stays flat. An app opens it
+(`StatsOverlay::open`/`close`/`toggle`/`find`, the Inspector's shape; the library binds
+no key, the examples bind F10 and take `--stats-overlay [on|off]`), and the hosted
+`demo.html` opens it by default.
+
+**What it shows.** Rows of Labels, each value in a fixed-width right-aligned cell:
+- a time table, min, avg and max in ms to one decimal, of `frame` (one `updateCanvas()`
+  start to the next), `cpu` (update + render, the flush included), `update`, `render`
+  without the flush and `flush`;
+- `fps`, the frames of the last second of the canvas's clock, and `controls`, the app's
+  controls on the canvas (the tools' excluded subtrees left out);
+- `prim ids` and `text ids`, the live primitive and text ids less the overlay's own;
+- under "most in one frame", the largest value one frame of the window had of `rendered`
+  (`ChangeStats::visited`) and `changed`, layout `passes` and `entered`
+  (`LayoutStats::visited`), `z visited`, `anims` run, the app's `prim slots` and
+  `glyphs` written, `upload B` and `draws` (`renderer::FrameCounts::drawCalls`); the
+  slot and upload rows read `-` with a renderer that does not count them;
+- two `PlotLines` of the last 60 refreshes (15 s): `cpu ms`, the most cpu time one frame
+  of each refresh window took, and `slots / frame`, the most primitive and glyph slots
+  one frame of it wrote. A point is its window's **max**, so a one-frame spike shows.
+
+**The windows.** An animation of its own (`tools::RefreshAnimation`, shared with the
+Inspector through `include/gweni/tools/toolSupport.h`) runs at the start of every update
+phase and gathers the frame before (`Canvas::previousFrameStats()`, whose `times` are
+that frame's, and the renderer's `frameStats()`) into the current window. Every
+`RefreshSeconds` (250 ms) of the canvas's clock (`platform::getTimeInSeconds()`) it
+shows that window and starts the next: the time table and the "most in one frame" rows
+cover the frames since the last refresh, the plots the last 60 refreshes, fps the last
+second. A clock that goes back (a capture installing its stepped clock after the overlay
+opened on the platform's) starts the second and the window again. The control count is a
+walk of the tree, made on a refresh only when `Canvas::treeSerial()` has moved since the
+last one, so it costs O(N) at most four times a second and only after the tree changed;
+nothing is kept per control. Hidden (on a hidden page, or closed until its delayed
+delete), it neither gathers nor shows.
+
+**It settles.** A label is set only when its string changes (`tools::setLabelText`), and
+every row and cell has a fixed size, so a refresh changes text and never re-lays the
+panel: over a settled app the frames between refreshes write nothing, and a refresh
+frame writes only the overlay's own slots, those of the labels whose strings changed and
+the plots' moved segments (the plots hold their 60 points from the start, so a push
+moves segments and creates none).
+
+**What is excluded and what is not.** As with the Inspector, what it shows is the app's
+work: the panel is `Base::setExcludedFromStats()`, so none of its controls, layout
+entries, z entries, measures or its animation count in the canvas's counters
+(`animsRun` included), and its own slots are taken out of the renderer's
+`writtenPrimitiveIds()`/`writtenTextIds()` (`tools::OwnSlots`, also the Inspector's), so
+`prim slots` and `glyphs` are the app's; uploads cannot be split by id, so `upload B` is
+the frame's whole uploads in a frame where the app wrote and 0 in one where only the
+overlay did. Three things cannot be split per control and include the overlay: the
+**times** (its gathering every frame and its refreshes every 250 ms are in `update`,
+`render` and `flush`), `draws` (its own primitive and text draws), and the `--stats`
+keys that are whole-frame renderer counts (`prim_slots_written`, `upload_bytes`,
+`draw_calls`, ...). `controltest_stats_overlay` holds Demo's `--stats` lines with
+`--stats-overlay` to those without it, all but those renderer keys and
+`excluded_changed`.
+
+**It takes no input.** `StatsOverlay::getControlAt()` returns null, so a hit test passes
+through the panel and its children as if they were not there, counting no visit: the app
+under it keeps its hover and clicks, and the plots' hover tooltip never fires. It is
+owner-placed (`Placement::Owner`) and places itself `Inset` (8) units in from its
+parent's bottom-right corner in its own arrange, one axis at a time as a `Popup` does
+next to its anchor, so it follows a resize and a scale change. `open()` makes it on the
+canvas as a canvas overlay (`Canvas::addOverlay`), numbered above the app; made as any
+other control's child (StatsOverlayDemo's page) it is that control's. The panel is the
+textured skin's `StatsOverlay` renderer painting the theme surface `StatsOverlay`
+(`tokyonight::surfaceRegistry()`, so the ThemeEditor and a theme file's `"surfaces"`
+reach it, and strict mode counts it), a dark fill at alpha 0xe0: the app's fills show
+dimly through it, but the app's text under it does not, since every primitive slot is
+drawn before every glyph and the panel's depth rejects the glyphs behind it.
+
+**Phase timing in the library.** The times come from `platform::profileTimeMicros()`
+(`include/gweni/platforms/platform.h`), steady_clock by default, which
+`platform::setProfileClock()` replaces. `Canvas::updateCanvas()` and `renderCanvas()`
+record their durations and the frame's start in `CanvasFrameStats::times`
+(`controls::FrameTimes`), and `SlotRenderer::flush()` its own in
+`FrameStats::flushMicros`, reported as `renderer::FrameCounts::flushMicros`; the render
+phase without the flush is `renderMicros - flushMicros`, since `renderCanvas()` calls the
+renderer's `end()` itself. The reads change no counter (`tools/bench.sh compare` against
+the base shows every counter of every scene unchanged). `ControlTest --stats` keeps
+printing its own `std::chrono` times and `gweni_bench` its `TimedFlush`.
+
+**Captures read a fixed clock.** A ControlTest or OpenGLCore capture (and
+`--window-test`) installs `capture::installFixedProfileClock()`, which advances
+`FixedProfileStepMicros` (100 µs) per read. The reads a frame makes are fixed, so the
+times shown are fixed and nonzero, and a shot of the overlay is the same in every run,
+on every backend and in the browser: StatsOverlayDemo is in `--shot-all`,
+`controltest_determinism` and the backend and browser-against-native comparisons. Its
+`draws` row is the one count that depends on the index chunk size, so
+`controltest_index_chunks` leaves StatsOverlayDemo.png out. A capture never shows the
+overlay unless `--stats-overlay` or a scenario opens it, so no sample changes. A window
+keeps steady_clock.
+
+**In the browser** the profile clock is Emscripten's steady_clock, `performance.now()`,
+which Chromium coarsens to about 100 µs on a page that is not cross-origin isolated
+(the site sends no COOP/COEP headers), so a settled frame's phases read 0.0 to 0.1 ms
+there and only their averages over many frames mean much.
+
+`tests/unit/profileClock.cpp` pins the clock and the times under a fixed one,
+`tests/unit/statsOverlay.cpp` the rows, the windows, the settling, the pass-through and
+the ids given back on close. `--scenario stats-overlay` (`controltest_stats_overlay`,
+`_vulkan`, and `controltest_verify_layout_stats_overlay`) opens it with F10 over the
+settled Demo, the clock stepping: frames between refreshes write nothing, a refresh only
+the overlay's ids, each refresh shows what the harness counted for the frames of its
+window, a hover over the demo list shows on the next refresh and 0 on the one after, a
+click through the panel toggles the Button under it, and F10 again gives back every id
+it took.
 
 ## Missing resources: degraded, not fatal
 
