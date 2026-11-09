@@ -185,6 +185,7 @@ public:
             return &firstChildClip;
         return nullptr;
     }
+    bool hasChildClipRects() const override { return true; }
 
     void renderUnder(skin::Base *skin) override
     {

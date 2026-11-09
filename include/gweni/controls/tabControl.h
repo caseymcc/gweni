@@ -149,6 +149,7 @@ public:
     //! While a button shows, the strip is clipped to the row from its origin
     //! (the strip's left padding) to where the visible tabs end.
     const Rect *getChildClipRect(const Base *child) const override;
+    bool hasChildClipRects() const override { return true; }
 
 protected:
 

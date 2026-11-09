@@ -102,6 +102,7 @@ public:
     {
         return child == m_innerPanel?&m_viewport:nullptr;
     }
+    bool hasChildClipRects() const override { return true; }
 
     virtual void onVeritcalBarMoved(event::Info);
     virtual void onHorizontalBarMoved(event::Info);

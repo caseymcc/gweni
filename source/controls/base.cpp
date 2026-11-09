@@ -1437,6 +1437,98 @@ Size Base::getMaximumSize()
     return maximumSize;
 }
 
+namespace
+{
+// renderer::Base::addClipRegion's intersection: \p clip narrowed to a w x h
+// rect at \p at; no overlap gives an empty region at the overlap's corner.
+Rect clipRegionAt(const Rect &clip, const Point &at, int w, int h)
+{
+    const int x0=std::max(at.x, clip.x);
+    const int y0=std::max(at.y, clip.y);
+    const int x1=std::min(at.x+w, clip.x+clip.w);
+    const int y1=std::min(at.y+h, clip.y+clip.h);
+
+    return Rect(x0, y0, std::max(0, x1-x0), std::max(0, y1-y0));
+}
+
+// The render offset and clip region \p control's children render in, \p
+// control rendering at (offset, clip): its bounds' origin added, and its
+// bounds clipped to if it clips.
+void innerRenderState(Base *control, const Point &offset, const Rect &clip, Point &innerOffset,
+    Rect &innerClip)
+{
+    const Rect &bounds=control->getBounds();
+    const Point at(offset.x+bounds.x, offset.y+bounds.y);
+
+    innerClip=control->shouldClip()?clipRegionAt(clip, at, bounds.w, bounds.h):clip;
+    innerOffset=at;
+}
+
+// The clip region \p child of \p parent renders in, \p parent's children's
+// being (offset, clip): narrowed by the parent's getChildClipRect() for it.
+void childRenderState(const Base *parent, const Base *child, const Point &offset, Rect &clip)
+{
+    if(const Rect *childClip=parent->getChildClipRect(child))
+        clip=clipRegionAt(clip, Point(offset.x+childClip->x, offset.y+childClip->y), childClip->w,
+            childClip->h);
+}
+
+// The render offset and clip region the render drain gives \p control
+// (Base::drainRenderQueue), from its canvas rendering at (0, 0) in its own
+// bounds (Canvas::renderCanvas; a WindowCanvas's state is this one shifted),
+// down the m_actualParent chain. False if the chain ends at no canvas.
+bool renderStateOf(Base *control, Point &offset, Rect &clip)
+{
+    Base *parent=control->getActualParent();
+
+    if(!parent)
+    {
+        if(control->getCanvas() != control)
+            return false;
+        offset=Point(0, 0);
+        clip=control->getBounds();
+        return true;
+    }
+
+    Point parentOffset;
+    Rect parentClip;
+
+    if(!renderStateOf(parent, parentOffset, parentClip))
+        return false;
+    innerRenderState(parent, parentOffset, parentClip, offset, clip);
+    childRenderState(parent, control, offset, clip);
+    return true;
+}
+}//namespace
+
+bool Base::childRegionChanged(const Rect &oldBounds)
+{
+    // every absolute position below it moved
+    if((m_bounds.x != oldBounds.x) || (m_bounds.y != oldBounds.y))
+        return true;
+    if((m_bounds.w == oldBounds.w) && (m_bounds.h == oldBounds.h))
+        return false;
+    // its children's clip rects follow its size
+    if(hasChildClipRects())
+        return true;
+    // they render in its own region
+    if(!shouldClip())
+        return false;
+
+    Point offset;
+    Rect clip;
+
+    // a canvas's children render in its bounds; off any canvas, nothing is
+    // known about the region it will be in
+    if(!m_actualParent || !renderStateOf(this, offset, clip))
+        return true;
+
+    const Point at(offset.x+m_bounds.x, offset.y+m_bounds.y);
+
+    return !(clipRegionAt(clip, at, oldBounds.w, oldBounds.h) ==
+        clipRegionAt(clip, at, m_bounds.w, m_bounds.h));
+}
+
 void Base::onBoundsChanged(Rect oldBounds)
 {
     // Anything that needs to update on size changes
@@ -1452,9 +1544,13 @@ void Base::onBoundsChanged(Rect oldBounds)
         invalidate();
     }
 
-    //notify children that we moved
-    addStateChangeRecursive(StateChange_Geometry);
-    
+    // The subtree is rendered again where its absolute positions or the
+    // region it is clipped to changed. A new size alone changes neither: what
+    // the arrange moves or resizes below is marked by its own setBounds. In a
+    // top-down arrange the region this control is in is already the new one:
+    // an ancestor whose region changed has marked this subtree, or will.
+    if(childRegionChanged(oldBounds))
+        addStateChangeRecursive(StateChange_Geometry);
 
 //    redraw();
     updateRenderBounds();
@@ -1984,39 +2080,6 @@ void Base::drainRenderQueue(skin::Base *skin, bool zTied, size_t treeSize)
             queue[slot]=nullptr;
             return true;
         };
-    // The state \p control's children render in, \p control rendering at
-    // (offset, clip): its bounds' origin added, and its bounds clipped to if
-    // it clips (renderer::Base::addClipRegion).
-    const auto innerState=[&](Base *control, const Point &offset, const Rect &clip,
-        Point &innerOffset, Rect &innerClip)
-        {
-            const Rect &bounds=control->getBounds();
-
-            innerOffset.x=offset.x+bounds.x;
-            innerOffset.y=offset.y+bounds.y;
-            if(control->shouldClip())
-            {
-                baseRenderer->setRenderOffset(innerOffset);
-                baseRenderer->setClipRegion(clip);
-                baseRenderer->addClipRegion(bounds);
-                innerClip=baseRenderer->clipRegion();
-            }
-            else
-                innerClip=clip;
-        };
-    // The state \p child of \p parent renders in, \p parent's children's being
-    // (offset, clip): narrowed by the parent's getChildClipRect() for it.
-    const auto childState=[&](Base *parent, Base *child, const Point &offset, Rect &clip)
-        {
-            if(const Rect *childClip=parent->getChildClipRect(child))
-            {
-                baseRenderer->setRenderOffset(offset);
-                baseRenderer->setClipRegion(clip);
-                baseRenderer->addRenderOffset(*childClip);
-                baseRenderer->addClipRegion(*childClip);
-                clip=baseRenderer->clipRegion();
-            }
-        };
 
     // A change over much of the tree (the first frame, a resize, a scale) is
     // rendered by one walk of it, in preorder, as the recursive walk did: no
@@ -2057,12 +2120,12 @@ void Base::drainRenderQueue(skin::Base *skin, bool zTied, size_t treeSize)
                 Point innerOffset;
                 Rect innerClip;
 
-                innerState(control, offset, clip, innerOffset, innerClip);
+                innerRenderState(control, offset, clip, innerOffset, innerClip);
                 for(Base *child : control->m_children)
                 {
                     Rect clipForChild=innerClip;
 
-                    childState(control, child, innerOffset, clipForChild);
+                    childRenderState(control, child, innerOffset, clipForChild);
                     self(self, child, innerOffset, clipForChild);
                     // before the loop steps on through a list a hook changed
                     if(stopped)
@@ -2107,7 +2170,7 @@ void Base::drainRenderQueue(skin::Base *skin, bool zTied, size_t treeSize)
             RenderLevel &level=stack[depth];
 
             level.control=control;
-            innerState(control, offset, clip, level.offset, level.clip);
+            innerRenderState(control, offset, clip, level.offset, level.clip);
             control->m_renderStackLevel=(int)depth;
             ++depth;
         };
@@ -2118,7 +2181,7 @@ void Base::drainRenderQueue(skin::Base *skin, bool zTied, size_t treeSize)
 
             offset=top.offset;
             clip=top.clip;
-            childState(control->m_actualParent, control, offset, clip);
+            childRenderState(control->m_actualParent, control, offset, clip);
         };
     // The stack back to this root alone.
     const auto resetStack=[&]()

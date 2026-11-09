@@ -464,6 +464,13 @@ protected:
     controls::Base *getControlAtWalk(int x, int y, bool bOnlyIfMouseEnabled);
 
     virtual void onBoundsChanged(gweni::Rect oldBounds);
+    //! Whether the bounds' change from \p oldBounds changes what this
+    //! control's subtree renders at: a move (every absolute position), or a
+    //! new size of a control with getChildClipRect() rects
+    //! (hasChildClipRects()) or of one that clips whose bounds within the
+    //! region it renders in (its parent's, as the render drain works it out)
+    //! changed. onBoundsChanged() marks the subtree then.
+    bool childRegionChanged(const gweni::Rect &oldBounds);
     virtual void onChildBoundsChanged(gweni::Rect oldChildBounds, Base *child);
     //! A child's own hidden flag changed (its setHidden()).
     virtual void onChildHiddenChanged(Base * /*child*/) {}
@@ -503,6 +510,12 @@ public:
     //! the rect has to mark the child's subtree (StateChange_Geometry), as a
     //! bounds change does, for the new region to reach slots already drawn.
     virtual const gweni::Rect *getChildClipRect(const Base * /*child*/) const { return nullptr; }
+    //! Whether this control overrides getChildClipRect(). Such a rect is
+    //! worked out from the control's size (a viewport, a strip's row), so a
+    //! new size marks the whole subtree for the render walk (onBoundsChanged),
+    //! where any other control's marks it only if its children's region
+    //! changed.
+    virtual bool hasChildClipRects() const { return false; }
 
     //! The skin's renderer object for this control, which owns its primitive and
     //! text ids; null until the control has been rendered once.

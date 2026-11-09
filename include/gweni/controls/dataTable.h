@@ -121,6 +121,7 @@ public:
 
     //! The cells are drawn and hit-tested only above the body's viewport.
     const Rect *getChildClipRect(const Base *child) const override;
+    bool hasChildClipRects() const override { return true; }
 
     const std::vector<DataTableHeaderCell *> &getCells() const { return m_cells; }
 
