@@ -162,10 +162,7 @@ void onCanvasThink(controls::Base *control)
         && (!KeyboardFocus->visible() || !KeyboardFocus->getKeyboardInputEnabled()))
     {
         // Repainted like any other unfocus, so it does not keep the focused look.
-        controls::Base *lost=KeyboardFocus;
-        KeyboardFocus=nullptr;
-        lost->redraw();
-        lost->notifyAncestorsOfInteraction();
+        KeyboardFocus->unfocus();
     }
 
     if(!KeyboardFocus)

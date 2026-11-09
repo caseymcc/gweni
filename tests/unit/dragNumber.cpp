@@ -24,7 +24,9 @@
  *  trailing zeros dropped) selected, and the field's slot hidden; Return
  *  commits and gives the focus back to the field, a click on another control
  *  (the focus lost) commits, Escape cancels, and text that is no number leaves
- *  the value and the shown text as they were. The box is made once: its ids
+ *  the value and the shown text as they were; a field whose page is hidden
+ *  while it is typed into commits too, laid out in that frame's update phase
+ *  in one pass. The box is made once: its ids
  *  are taken by the first edit only. Up/Right and Down/Left step the focused
  *  field. The format is refused unless it holds one conversion of a double.
  *  The textured renderer draws the field DragNumber at rest, DragNumberHover
@@ -570,6 +572,46 @@ TEST_CASE("DragNumber: Return and a lost focus commit, Escape cancels, text that
         CHECK(field->getText() == "7.000");
     }
     CHECK(counter.count == 3);
+}
+
+// may_fail until the canvas drops a lost focus before its layout as well as
+// after it (#484): the edit ends after the frame's layout, which the render
+// phase then runs again
+TEST_CASE("DragNumber: hidden while being typed into, the edit ends and commits in that frame's update phase"
+    * doctest::may_fail())
+{
+    Scene scene;
+    controls::Base *host=scene.canvas->newChild<controls::Base>();
+    host->setBounds(0, 0, 640, 480);
+    DragNumber *field=host->newChild<DragNumber>();
+    field->setPos(20, 20);
+    field->setRange(0.0, 100.0);
+    field->setNumber(5.0);
+    scene.frame();
+
+    Counter counter;
+    field->onValueChanged.add(&counter, &Counter::changed);
+
+    scene.doubleClick(field);
+    REQUIRE(field->isEditing());
+    controls::internal::DragNumberTextBox *box=field->getEditBox();
+    scene.type("7");
+
+    // the page hidden, as a tab switch does
+    host->setHidden(true);
+    scene.frame();
+
+    const controls::LayoutStats &stats=scene.canvas->getLayoutStats();
+
+    CHECK(KeyboardFocus == nullptr);
+    CHECK_FALSE(field->isEditing());
+    CHECK(field->getNumber() == 7.0);
+    CHECK(counter.count == 1);
+    CHECK(box->hidden());
+    CHECK_FALSE(textOf(field)->hidden());
+    // laid out in the update phase, in one pass
+    CHECK(stats.passes == 1);
+    CHECK_FALSE(stats.renderLayout);
 }
 
 TEST_CASE("DragNumber: the edit box's ids are taken by the first edit only")
