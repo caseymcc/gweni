@@ -27,10 +27,7 @@
 
 #include <doctest/doctest.h>
 
-#if __has_include(<freetype-gl/freetype-gl.h>)
-#include <gweni/platforms/renderers/slotRenderer.h>
-#define GWENI_TEST_SLOT_RENDERER 1
-#endif
+#include "mirrorOnlyRenderer.h"
 
 #include <cstdint>
 #include <cstring>
@@ -190,23 +187,10 @@ TEST_CASE("StubRenderer records every drawLine call with the draw colour it was 
 namespace
 {
 
-struct NoPaths: ResourcePaths
-{
-    String getPath(Type, String const &name) override { return name; }
-};
-
-//! A SlotRenderer whose backend hooks do nothing: its mirror and its frame counts
-//! are all there is.
-class MirrorOnly: public renderer::SlotRenderer
+//! The mirror of a SlotRenderer whose backend hooks do nothing, read field by field.
+class MirrorOnly: public test::MirrorOnlyRenderer
 {
 public:
-    using TextureHandle=renderer::TextureHandle;
-    using FontData=renderer::FontData;
-    using TextChunkDraw=renderer::TextChunkDraw;
-    using SlotTextureData=renderer::SlotTextureData;
-
-    explicit MirrorOnly(ResourcePaths &paths): SlotRenderer(paths, Rect(0, 0, 640, 480)) {}
-
     //! A slot's vertex i as the mirror holds it (snapshotMirror(), a live id): the
     //! 16-bit fields from lx on, in Vertex's order.
     struct Fields
@@ -241,39 +225,6 @@ public:
         end();
         return getFrameStats().primitiveSlotsWritten;
     }
-
-    void clearTarget(const Color &) override {}
-    void readPixels(int, int, std::vector<uint8_t> &pixels) override { pixels.clear(); }
-    bool textureExists(TextureHandle) const override { return false; }
-    bool textureChannelSizes(TextureHandle, int[4]) const override { return false; }
-    bool deviceError() override { return false; }
-
-protected:
-    void beginFrame() override {}
-    void allocateVertexBuffer(SlotPath, size_t) override {}
-    void uploadVertexRange(SlotPath, size_t, size_t, const void *) override {}
-    size_t maxClipBoxRows() const override { return 2048; }
-    void allocateClipBoxes(SlotPath, size_t) override {}
-    void uploadClipBoxRows(SlotPath, size_t, size_t, size_t, size_t, const Box *) override {}
-    TextureHandle createAtlasTexture(const texture_atlas_t &) override { return 0; }
-    void uploadAtlasRows(TextureHandle, const texture_atlas_t &, size_t, size_t) override {}
-    void destroyAtlasTexture(TextureHandle) override {}
-    TextureHandle createImageTexture(const SlotTextureData &, bool) override { return 0; }
-    void destroyImageTexture(TextureHandle) override {}
-    bool readTextureRgba(TextureHandle, int, int, std::vector<uint8_t> &rgba) override
-    {
-        rgba.clear();
-        return false;
-    }
-    void beginPrimitiveDraws() override {}
-    void drawPrimitiveChunk(size_t, size_t, size_t) override {}
-    void endPrimitiveDraws() override {}
-    void beginTextDraws() override {}
-    void beginTextAtlas(const FontData &) override {}
-    void drawTextChunk(const TextChunkDraw &) override {}
-    void endTextDraws() override {}
-    void submitFrame() override {}
-    void indexChunkSlotsChanged() override {}
 };
 
 //! Primitive ids taken from the process's bank for one case, and given back.
@@ -300,8 +251,7 @@ struct LiveIds
 
 TEST_CASE("SlotRenderer::drawLine packs the neighbours beside the segment, and without them the slot is as before")
 {
-    NoPaths paths;
-    MirrorOnly renderer(paths);
+    MirrorOnly renderer;
     LiveIds ids(1);
     const size_t id=ids[0];
 
@@ -424,8 +374,7 @@ TEST_CASE("SlotRenderer::drawLine packs the neighbours beside the segment, and w
 
 TEST_CASE("SlotRenderer::drawLine: the same neighbours write nothing, another neighbour rewrites the slot")
 {
-    NoPaths paths;
-    MirrorOnly renderer(paths);
+    MirrorOnly renderer;
     LiveIds ids(3);
     const PointF points[]={PointF(15, 45), PointF(50, 10), PointF(85, 48), PointF(105, 12)};
     PointF prev=points[0];

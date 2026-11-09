@@ -454,6 +454,9 @@ public:
         //! mirror outgrew them, each sending its whole mirror once; capacity grows
         //! geometrically, so over K slots added that is O(log K) frames
         size_t bufferRegrows=0;
+        //! how long this flush took, from its start to the end of submitFrame(), on
+        //! platform::profileTimeMicros(): two reads of that clock per frame
+        uint64_t flushMicros=0;
     };
 
     const FrameStats &getFrameStats() const { return m_frameStats; }

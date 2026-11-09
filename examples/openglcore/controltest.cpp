@@ -641,7 +641,9 @@
  *  (exit 1 wins); a clean run exits 0.
  *
  *  Captures install a stepped clock (gweni::platform::setTimeSource), so a shot
- *  depends on the frame number and not on how fast the process ran. --stats
+ *  depends on the frame number and not on how fast the process ran, and a fixed
+ *  profile clock (gweni::capture::installFixedProfileClock), so the frame times
+ *  the library records are the same in every run too. --stats
  *  freezes the per-frame step instead, so an idle frame is genuinely idle and
  *  the counters settle to zero; --stats-clock step keeps it moving.
  */
@@ -7529,6 +7531,7 @@ static bool runWindowTest(gweni::capture::Device &device, gweni::controls::Canva
     };
 
     gweni::platform::setTimeSource(&steppedClock);
+    gweni::capture::installFixedProfileClock();
     g_clockSeconds=0.0f;
 
     if(!ensureDirectory(dir))
@@ -7946,6 +7949,8 @@ int main(int argc, char *argv[])
         // platform clock; --stats leaves the per-frame step out so time only
         // moves when a scripted press moves it.
         gweni::platform::setTimeSource(&steppedClock);
+        // and the library's frame times count clock reads instead
+        gweni::capture::installFixedProfileClock();
 
         Session session;
         session.renderer=renderer;

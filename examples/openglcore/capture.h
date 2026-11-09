@@ -100,6 +100,15 @@ constexpr int ExitDegraded=2;
 //! has printed its own line already). A failure (EXIT_FAILURE) wins over it.
 int exitStatus(int result, bool degraded);
 
+//! What a capture's profile clock (platform::profileTimeMicros()) advances per
+//! read: installFixedProfileClock() makes it count reads, from 0, so the times
+//! a frame records (CanvasFrameStats::times, the flush's) depend on how many
+//! reads the frame makes and not on how fast it ran, and a shot showing them
+//! (a tools::StatsOverlay's) is the same in every run. A window keeps the
+//! default steady_clock.
+constexpr uint64_t FixedProfileStepMicros=100;
+void installFixedProfileClock();
+
 //-----------------------------------------------------------------------------
 // Scale: device pixels per logical unit. The canvas is laid out in logical
 // units and the renderer draws it at framebuffer pixels; the effective scale is

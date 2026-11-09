@@ -28,7 +28,9 @@
  *        --demo ColorPickerDemo --screenshot /tmp/hero.png
  *
  *  A capture installs a stepped clock (gweni::platform::setTimeSource), so the
- *  image depends on the frame number and not on how fast the process ran.
+ *  image depends on the frame number and not on how fast the process ran, and a
+ *  fixed profile clock (gweni::capture::installFixedProfileClock), so the frame
+ *  times the library records are the same in every run too.
  *
  *  A missing resource directory, skin config (DefaultSkin.json) or default font
  *  is reported on stderr and drawn degraded: every surface magenta, the text in
@@ -474,6 +476,8 @@ int main(int argc, char *argv[])
         // Everything time-dependent in the library reads this instead of the
         // platform clock, so the shot depends only on the frame number.
         gweni::platform::setTimeSource(&steppedClock);
+        // and the library's frame times count clock reads instead
+        gweni::capture::installFixedProfileClock();
 
         const int frames=(frameCount>0)?frameCount:g_captureFrames;
 

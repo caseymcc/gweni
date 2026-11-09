@@ -10,6 +10,7 @@
 #include <gweni/platforms/renderers/slotRenderer.h>
 #include <gweni/platforms/platformTypes.h>
 #include <gweni/platforms/commonPlatform.h>
+#include <gweni/platforms/platform.h>
 #include <gweni/utility.h>
 #include <gweni/primitiveIds.h>
 #include <gweni/utils/filesystem.h>
@@ -1268,11 +1269,14 @@ FrameCounts SlotRenderer::frameStats() const
     counts.textSlotsWritten=m_frameStats.textSlotsWritten;
     counts.uploadCalls=m_frameStats.uploadCalls+m_frameStats.atlasUploadCalls;
     counts.uploadBytes=m_frameStats.uploadBytes+m_frameStats.atlasUploadBytes;
+    counts.flushMicros=m_frameStats.flushMicros;
     return counts;
 }
 
 void SlotRenderer::flush()
 {
+    const uint64_t flushStart=platform::profileTimeMicros();
+
     m_frameStats.uploadCalls=0;
     m_frameStats.uploadBytes=0;
     m_frameStats.drawCalls=0;
@@ -1394,6 +1398,7 @@ void SlotRenderer::flush()
     submitFrame();
 
     ++m_frameStats.frameIndex;
+    m_frameStats.flushMicros=platform::profileTimeMicros()-flushStart;
 
     if(m_uploadStats)
     {

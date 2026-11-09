@@ -85,6 +85,14 @@ int exitStatus(int result, bool degraded)
     return ExitDegraded;
 }
 
+void installFixedProfileClock()
+{
+    static uint64_t reads=0;
+
+    reads=0;
+    platform::setProfileClock([]() { return (++reads)*FixedProfileStepMicros; });
+}
+
 bool parseScale(const char *value, float &scale)
 {
     char *end=nullptr;

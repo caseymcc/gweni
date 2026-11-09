@@ -9,6 +9,7 @@
 #include <gweni/utility.h>
 #include <gweni/utils/filesystem.h>
 
+#include <chrono>
 #include <cstdlib>
 #include <map>
 #include <iostream>
@@ -73,6 +74,22 @@ float getTimeInSeconds()
         return g_timeSource();
 
     return platformTimeInSeconds();
+}
+
+static std::function<uint64_t()> g_profileClock;
+
+void setProfileClock(std::function<uint64_t()> clock)
+{
+    g_profileClock=std::move(clock);
+}
+
+uint64_t profileTimeMicros()
+{
+    if(g_profileClock)
+        return g_profileClock();
+
+    return (uint64_t)std::chrono::duration_cast<std::chrono::microseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count();
 }
 
 //------------------------------------------------------------------------------

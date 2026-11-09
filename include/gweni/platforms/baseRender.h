@@ -11,6 +11,7 @@
 
 #include <gweni/platforms/platformTypes.h>
 
+#include <cstdint>
 #include <vector>
 
 namespace gweni
@@ -35,6 +36,10 @@ struct FrameCounts
     size_t textSlotsWritten=0;      //!< glyph slots the frame wrote, every text id's together
     size_t uploadCalls=0;           //!< transfers to the device, 0 for a renderer with none
     size_t uploadBytes=0;           //!< bytes those transfers sent
+    //! how long its end() (a retained renderer's flush: the diff, the uploads,
+    //! the draws and the submit) took, on platform::profileTimeMicros(); 0 for a
+    //! renderer that does not time it
+    uint64_t flushMicros=0;
 };
 
 //! A text id whose run had glyph slots written in the last frame, and how many

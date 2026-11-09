@@ -10,6 +10,7 @@
 
 #include <gweni/platforms/commonPlatform.h>
 
+#include <cstdint>
 #include <functional>
 
 namespace gweni
@@ -31,6 +32,19 @@ GWENI_EXPORT float getTimeInSeconds();
 //! makes a capture or a scripted input sequence reproducible.
 //! @param source : The clock, in seconds. An empty function restores the platform clock.
 GWENI_EXPORT void setTimeSource(std::function<float()> source);
+
+//! The profiling clock, in microseconds: what the library times its own work
+//! with (Canvas::updateCanvas() and renderCanvas() in CanvasFrameStats::times,
+//! SlotRenderer::flush() in its frame counts), apart from getTimeInSeconds(),
+//! which a capture steps a frame at a time. The default is std::chrono's
+//! steady_clock; only differences between two reads mean anything.
+GWENI_EXPORT uint64_t profileTimeMicros();
+
+//! Install a clock for profileTimeMicros() to read instead of steady_clock. A
+//! capture installs one that advances a fixed step per read, so the times it
+//! shows depend on the reads a frame makes and not on how fast it ran.
+//! @param clock : The clock, in microseconds. An empty function restores steady_clock.
+GWENI_EXPORT void setProfileClock(std::function<uint64_t()> clock);
 
 //! Get the directory of the running executable.
 //! \return Path string, blank if not known.

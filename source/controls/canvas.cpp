@@ -56,12 +56,17 @@ Canvas::~Canvas()
 
 void Canvas::updateCanvas()
 {
+    const uint64_t start=platform::profileTimeMicros();
+
     // the frame before this one is whole: its update and render phases
     m_previousFrame.layout=m_layoutStats;
     m_previousFrame.update=m_updateStats;
     m_previousFrame.render=m_renderChange;
+    m_previousFrame.times=m_frameTimes;
     m_renderChange=ChangeStats();
     m_updateStats=UpdateStats();
+    m_frameTimes=FrameTimes();
+    m_frameTimes.startMicros=start;
 
     // The renderer's text draws or measures otherwise now (a new text AA mode):
     // every control is laid out and re-emitted again, as for a new scale.
@@ -75,6 +80,7 @@ void Canvas::updateCanvas()
 
     doThink();
     renumberZOrder();
+    m_frameTimes.updateMicros=platform::profileTimeMicros()-start;
 }
 
 void Canvas::renumberZOrder()
@@ -154,6 +160,7 @@ void Canvas::renumberZOrder()
 
 void Canvas::renderCanvas()
 {
+    const uint64_t start=platform::profileTimeMicros();
     renderer::Base *render=m_skin->getRenderer();
     render->begin();
     renderPhaseLayout();
@@ -193,6 +200,9 @@ void Canvas::renderCanvas()
     m_renderChange.excluded+=after.excluded-before.excluded;
     m_renderChange.renderCarried=after.renderCarried;
     render->end();
+    // the renderer's flush timed itself, inside this phase's time
+    m_frameTimes.flushMicros=render->frameStats().flushMicros;
+    m_frameTimes.renderMicros=platform::profileTimeMicros()-start;
 }
 
 void Canvas::renderPendingControls()

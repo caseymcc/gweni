@@ -11,6 +11,7 @@
 #include <gweni/controls/base.h>
 #include <gweni/inputHandler.h>
 #include <gweni/platforms/inputEvent.h>
+#include <cstdint>
 #include <set>
 #include <vector>
 
@@ -115,6 +116,24 @@ struct UpdateStats
     size_t animsRun=0;
 };
 
+//! How long one frame of a canvas took, on platform::profileTimeMicros()
+//! (CanvasFrameStats::times): four reads of that clock per frame, and the
+//! renderer's own in its end().
+struct FrameTimes
+{
+    //! the clock as updateCanvas() started: the interval from one frame to the
+    //! next is the difference of their starts
+    uint64_t startMicros=0;
+    //! updateCanvas(), whole
+    uint64_t updateMicros=0;
+    //! renderCanvas(), whole, the renderer's end() included
+    uint64_t renderMicros=0;
+    //! of renderMicros, the renderer's end() (renderer::FrameCounts::flushMicros,
+    //! 0 for a renderer that does not time it): the render phase without the
+    //! flush is renderMicros-flushMicros
+    uint64_t flushMicros=0;
+};
+
 //! What one whole frame of a canvas counted: its updateCanvas() and its
 //! renderCanvas() (Canvas::previousFrameStats()).
 struct CanvasFrameStats
@@ -124,6 +143,8 @@ struct CanvasFrameStats
     //! what its renderCanvas() added to getChangeStats(), and the drain's
     //! renderCarried
     ChangeStats render;
+    //! how long its updateCanvas(), renderCanvas() and the renderer's end() took
+    FrameTimes times;
 };
 
 class GWENI_EXPORT Canvas: public Base, public IInputEvent
@@ -266,7 +287,8 @@ public:
     /// kept as the next updateCanvas() starts, so what runs in an update phase
     /// (an animation's think(), a tool like gweni::tools::Inspector) can read
     /// the frame before it: its LayoutStats, UpdateStats and the ChangeStats its
-    /// render phase counted. Zeros before the second updateCanvas().
+    /// render phase counted, and its times. Zeros before the second
+    /// updateCanvas().
     const CanvasFrameStats &previousFrameStats() const { return m_previousFrame; }
     /// Raised with every change of the tree's order that Base reports to the
     /// canvas (a child added, removed or moved, a skin Control assigned or
@@ -515,6 +537,8 @@ protected:
     /// ChangeStats, kept for it.
     CanvasFrameStats m_previousFrame;
     ChangeStats m_renderChange;
+    /// This frame's times, kept for previousFrameStats() like m_renderChange.
+    FrameTimes m_frameTimes;
     unsigned m_treeSerial=0;
     /// See addOverlay().
     std::vector<Base *> m_overlays;
