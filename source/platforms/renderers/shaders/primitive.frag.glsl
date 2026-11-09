@@ -48,6 +48,41 @@ uvec4 clipBox(uint slot)
     return texelFetch(clipBoxes, ivec2(int(slot & (CLIP_COLUMNS - 1u)), int(slot >> CLIP_COLUMNS_LOG2)), 0);
 }
 
+// The pixel's row of a rect and the rect's height, in device px: local y runs
+// -half (top) .. +half (bottom), so at a pixel centre vLocal.y + vHalf.y is
+// row + 0.5, and an interpolation error under half a pixel leaves the row as it is.
+ivec2 gradientRow()
+{
+    int h = max(int(2.0*vHalf.y + 0.5), 1);
+    int r = clamp(int(floor(vLocal.y + vHalf.y)), 0, h - 1);
+    return ivec2(r, h);
+}
+
+// The row centre's place from the top edge to the bottom, (2r+1)/(2h), exactly.
+float gradientT()
+{
+    ivec2 row = gradientRow();
+    return float(2*row.x + 1)/float(2*row.y);
+}
+
+// Style 4's vertical gradient from top to bottom as the 8-bit level of each
+// channel, alpha included, at the row's centre rounded half up:
+// (top*2h + (bottom-top)*(2r+1) + h) / (2h), in ints. The colours are bytes/255
+// from the vertex shader, so their bytes come back exactly, and every backend
+// writes the same level. A float lerp landed exactly on x.5 of a level on some
+// rows (an odd difference over an odd height, on the middle row), where one ulp
+// of the interpolated position decided the level and llvmpipe and lavapipe
+// rounded a level apart (#492; docs/architecture.md -> "Vulkan's counters and
+// pixels against GL's"). Every term is non-negative and under 2^31 (255*4*32767).
+vec4 gradientLevel(vec4 top, vec4 bottom)
+{
+    ivec2 row = gradientRow();
+    ivec4 a = ivec4(top*255.0 + 0.5);
+    ivec4 b = ivec4(bottom*255.0 + 0.5);
+    ivec4 level = (a*(2*row.y) + (b - a)*(2*row.x + 1) + row.y)/(2*row.y);
+    return vec4(level)/255.0;
+}
+
 // Signed distance to a rounded box centered at the origin (negative inside).
 float sdRoundBox(vec2 p, vec2 b, float r)
 {
@@ -272,17 +307,14 @@ void main()
     else if (ShaderType == 4u)
     {
         // SDF rounded rect: vertical gradient fill + optional border, analytic AA.
-        // Vertical gradient: local y runs -half (top) .. +half (bottom).
-        float t = clamp(vLocal.y/max(vHalf.y, 1.0)*0.5 + 0.5, 0.0, 1.0);
-        FragColor = roundedRect(lerp(VertexColor, vColor1, t));
+        FragColor = roundedRect(gradientLevel(VertexColor, vColor1));
     }
     else if (ShaderType == 6u)
     {
         // Bilinear fill: VertexColor and vColor3 are the top and bottom edge colours
         // at this x (each linear in x, so exact across the triangle split), blended
-        // along y as style 4's gradient is.
-        float t = clamp(vLocal.y/max(vHalf.y, 1.0)*0.5 + 0.5, 0.0, 1.0);
-        FragColor = roundedRect(lerp(VertexColor, vColor3, t));
+        // along y at the row's exact place, as style 4's gradient is.
+        FragColor = roundedRect(lerp(VertexColor, vColor3, gradientT()));
     }
     else if (ShaderType == 7u)
     {
