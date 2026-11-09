@@ -1548,9 +1548,11 @@ two programs and the draws. What follows describes both together:
   slots and run (issue #479). A released primitive slot's vertexes are zeroed
   (`SlotRenderer::releasePrimitive`), so a fresh row given a deleted row's ids reads as
   a never-written slot too, and `ControlTest --scenario resize` holds on
-  VirtualListDemo, whose list fills the canvas's height. The cost is at most one row made and
-  one deleted more than needed in a frame that shrinks the pool, a frame that already
-  makes or deletes rows and renumbers z.
+  VirtualListDemo, whose list fills the canvas's height. The cost, only in a frame whose
+  pool size changes (one that already makes or deletes rows and renumbers z), is one
+  row made and one deleted more than needed while the items fill the viewport; when
+  they end inside it (a short list, an empty one), every hidden row past the last item
+  is deleted and made again, on a grow as on a shrink.
   **Positions stay small:** nothing is `n*rowHeight` high. The list is a `ScrollControl`
   with *virtual content* (`ScrollControl::setVirtualContentHeight`): the vertical bar is
   decided and ranged from that height, but the inner panel is the viewport, not scrolled,
