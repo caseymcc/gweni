@@ -64,6 +64,9 @@ public:
 
 public:
 
+    //! Takes itself off its owner's list.
+    ~Popup() override;
+
     //! The logical units between the anchor and the popup.
     static constexpr int Gap=2;
 
@@ -79,6 +82,14 @@ public:
     //! The control it is open next to, or null.
     Base *getAnchor() const { return m_anchor; }
     PopupPlacement getPlacement() const { return m_side; }
+
+    //! Makes it \p owner's: deleting \p owner closes it if it is open and
+    //! deletes it, on the popup's own canvas, wherever \p owner is then
+    //! (Base::createPopup() makes one owned). It moves off the list of the
+    //! control that owned it before; null leaves it owned by none.
+    void setOwner(Base *owner);
+    //! The control that owns it, or null.
+    Base *getOwner() const { return m_owner; }
 
     //! Hiding an open popup closes it (onClose).
     void setHidden(bool hidden) override;
@@ -117,6 +128,11 @@ protected:
     PopupPlacement m_side=PopupPlacement::Below;
     //! The anchor rect arrange() last placed it by.
     Rect m_placedFor;
+
+    friend class Base;
+    Base *m_owner=nullptr;
+    //! The next popup on m_owner's list (Base::m_ownedPopups).
+    Popup *m_nextOwned=nullptr;
 };
 
 }

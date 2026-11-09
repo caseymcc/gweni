@@ -31,6 +31,36 @@ GWENI_CONTROL_CONSTRUCTOR(Popup)
     setHidden(true);
 }
 
+Popup::~Popup()
+{
+    // a canvas closes it in ~Base (Canvas::popupControlDeleted)
+    setOwner(nullptr);
+}
+
+void Popup::setOwner(Base *owner)
+{
+    if(owner == m_owner)
+        return;
+
+    if(m_owner)
+    {
+        Popup **link=&m_owner->m_ownedPopups;
+
+        while(*link != this)
+            link=&(*link)->m_nextOwned;
+        *link=m_nextOwned;
+    }
+
+    m_owner=owner;
+    m_nextOwned=nullptr;
+
+    if(owner)
+    {
+        m_nextOwned=owner->m_ownedPopups;
+        owner->m_ownedPopups=this;
+    }
+}
+
 void Popup::open(Base *anchor, PopupPlacement side)
 {
     Canvas *canvas=anchor ? anchor->getCanvas() : nullptr;

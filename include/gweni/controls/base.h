@@ -54,6 +54,7 @@ class Canvas;
 class LayoutItem;
 struct UpdateStats;
 class Menu;
+class Popup;
 
 constexpr int StateChange_Nothing=0x0000;
 constexpr int StateChange_Created=0x0001;
@@ -819,6 +820,11 @@ public:
     Menu *createContextMenu();
     //! The control createContextMenu() made getContextMenu() for owns it.
     bool ownsContextMenu() const { return m_ownsContextMenu; }
+
+    //! A new empty, hidden Popup on this control's canvas, owned by this
+    //! control (Popup::setOwner): deleting the control closes it if it is
+    //! open and deletes it. Null when the control is not on a canvas.
+    Popup *createPopup();
     //! \}
 
     virtual bool isMenuComponent();
@@ -954,6 +960,13 @@ protected:
         m_ownsContextMenu=false;
     }
     friend class Menu;
+
+    //! The popups this control owns (Popup::setOwner), a list threaded
+    //! through Popup::m_nextOwned; ~Popup takes one off it.
+    Popup *m_ownedPopups=nullptr;
+    //! Closes and deletes the popups it owns, on their own canvas.
+    void dropOwnedPopups();
+    friend class Popup;
 
     skin::Base *m_skin;
     std::unique_ptr<skin::Control> m_skinControl;

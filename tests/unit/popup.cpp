@@ -32,6 +32,22 @@
  *  before the popup, and the popup closing closes it too. A MenuStrip on the
  *  canvas (a menu bar, which never closes) is outside the popup like any
  *  control: Escape still closes the popup, and a press on the strip does.
+ *
+ *  Owned popups (Base::createPopup, Popup::setOwner): a canvas deleted with an
+ *  owned popup and its owner deletes each once, whichever comes first among
+ *  its children (the owner's ancestor brought to the front puts it after the
+ *  popup, a WindowControl's included) and whether the popup was never opened,
+ *  opened and closed, or is open; in the ASAN tree a second delete or a read
+ *  of the freed popup is a report. The owner deleted with the canvas alive,
+ *  delayed or outright, closes its open popup (whatever it is anchored to)
+ *  and deletes it on the next processDelayedDeletes, every id back in the
+ *  banks; so does a delayedDelete() of the owner from a click on a button in
+ *  the popup, and the owner and the popup in one delete batch, either first.
+ *  An owner taken off the canvas and deleted closes and deletes its popup on
+ *  the popup's canvas, and one deleted after the canvas touches nothing
+ *  (~Popup took the popup off its list). setOwner moves a popup between
+ *  owners and null leaves it owned by none, and createPopup is null with no
+ *  canvas.
  */
 #include "headlessFixture.h"
 
@@ -41,6 +57,7 @@
 #include <gweni/controls/menuStrip.h>
 #include <gweni/controls/popup.h>
 #include <gweni/controls/toolTip.h>
+#include <gweni/controls/windowControl.h>
 #include <gweni/inputHandler.h>
 #include <gweni/platforms/platform.h>
 
@@ -790,4 +807,324 @@ TEST_CASE("Popup: a MenuStrip on the canvas is outside it: Escape and a press on
     scene.frame();
     scene.clickOn(strip->getChildren().front());
     CHECK(!popup->isOpen());
+}
+
+namespace
+{
+
+//! A handler that delayedDelete()s a control.
+class Deleter: public event::Handler
+{
+public:
+    void remove(event::Info)
+    {
+        target->delayedDelete();
+    }
+
+    controls::Base *target=nullptr;
+};
+
+enum class Opened { Never, Closed, Open };
+
+const char *openedName(Opened opened)
+{
+    switch(opened)
+    {
+    case Opened::Never: return "never opened";
+    case Opened::Closed: return "opened and closed";
+    default: return "open";
+    }
+}
+
+}//namespace
+
+TEST_CASE("Popup: owned, deleted once with the canvas in any order, opened or not")
+{
+    for(Opened opened : {Opened::Never, Opened::Closed, Opened::Open})
+    {
+        for(bool popupFirst : {false, true})
+        {
+            INFO(openedName(opened) << (popupFirst ? ", popup first" : ", owner first"));
+            Scene scene;
+            controls::Base *holder=scene.box(10, 10, 200, 100);
+            controls::Base *owner=scene.box(10, 10, 60, 20, holder);
+            Popup *popup=owner->createPopup();
+
+            REQUIRE(popup);
+            CHECK(popup->getOwner() == owner);
+            CHECK(popup->getParent() == static_cast<controls::Base *>(scene.canvas));
+            scene.box(0, 0, 20, 20, popup);
+            scene.frame();
+
+            if(opened != Opened::Never)
+            {
+                popup->open(owner);
+                scene.frame();
+                REQUIRE(scene.canvas->shownPopup() == popup);
+            }
+            if(opened == Opened::Closed)
+            {
+                popup->close();
+                scene.frame();
+            }
+            if(popupFirst)
+            {
+                holder->bringToFront();
+                scene.frame();
+            }
+
+            const auto &children=scene.canvas->getActualChildren();
+            const auto holderAt=std::find(children.begin(), children.end(), holder);
+            const auto popupAt=std::find(children.begin(), children.end(), popup);
+            REQUIRE(holderAt != children.end());
+            REQUIRE(popupAt != children.end());
+            // an open popup is kept after every other control
+            const bool expectFirst=popupFirst && (opened != Opened::Open);
+            CHECK((std::distance(children.begin(), popupAt) < std::distance(children.begin(), holderAt)) == expectFirst);
+            // ~Scene deletes the canvas, the owner and the popup
+        }
+    }
+}
+
+TEST_CASE("Popup: owned by a control in a WindowControl brought to the front, deleted with the canvas")
+{
+    for(Opened opened : {Opened::Never, Opened::Closed, Opened::Open})
+    {
+        INFO(openedName(opened));
+        Scene scene;
+        auto *window=scene.canvas->newChild<controls::WindowControl>();
+
+        window->setBounds(20, 20, 200, 150);
+        controls::Base *owner=scene.box(10, 10, 60, 20, window);
+        Popup *popup=owner->createPopup();
+
+        REQUIRE(popup);
+        scene.frame();
+
+        if(opened != Opened::Never)
+        {
+            popup->open(owner);
+            scene.frame();
+        }
+        if(opened == Opened::Closed)
+        {
+            popup->close();
+            scene.frame();
+        }
+        window->bringToFront();
+        scene.frame();
+
+        // after the popup, unless it is open (kept after every other control)
+        const auto &children=scene.canvas->getActualChildren();
+        const auto windowAt=std::find(children.begin(), children.end(), window);
+        const auto popupAt=std::find(children.begin(), children.end(), popup);
+        REQUIRE(windowAt != children.end());
+        REQUIRE(popupAt != children.end());
+        CHECK((std::distance(children.begin(), popupAt) < std::distance(children.begin(), windowAt)) == (opened != Opened::Open));
+    }
+}
+
+TEST_CASE("Popup: deleting its owner closes and deletes it, its ids back in the banks")
+{
+    Scene scene;
+    controls::Base *other=scene.box(200, 10, 60, 20);
+    scene.frame();
+    const test::IdBankCounts baseline=test::IdBankCounts::now();
+
+    controls::Base *owner=scene.box(10, 10, 60, 20);
+    Popup *popup=owner->createPopup();
+    scene.box(0, 0, 40, 20, popup);
+    scene.frame();
+
+    Counter closed;
+    closed.listen(popup->onClose);
+
+    SUBCASE("delayed, open on itself")
+    {
+        popup->open(owner);
+        scene.frame();
+        owner->delayedDelete();
+        scene.frame();
+        CHECK(closed.calls == 1);
+    }
+
+    SUBCASE("delayed, open on another control")
+    {
+        popup->open(other);
+        scene.frame();
+        owner->delayedDelete();
+        scene.frame();
+        CHECK(closed.calls == 1);
+    }
+
+    SUBCASE("outright, open on another control")
+    {
+        popup->open(other);
+        scene.frame();
+        delete owner;
+        CHECK(!scene.canvas->shownPopup());
+        CHECK(closed.calls == 1);
+        // deleted on the next processDelayedDeletes
+        CHECK(scene.onCanvas(popup));
+        scene.frame();
+    }
+
+    SUBCASE("delayed, never opened")
+    {
+        owner->delayedDelete();
+        scene.frame();
+        CHECK(closed.calls == 0);
+    }
+
+    CHECK(!scene.canvas->shownPopup());
+    CHECK(!scene.canvas->popupAnchor());
+    CHECK(!scene.onCanvas(owner));
+    CHECK(!scene.onCanvas(popup));
+
+    const test::IdBankCounts after=test::IdBankCounts::now();
+    CHECK(after.livePrimitives() == baseline.livePrimitives());
+    CHECK(after.liveTexts() == baseline.liveTexts());
+}
+
+TEST_CASE("Popup: its owner deleted from its own button's click, or with it in one delete batch")
+{
+    Scene scene;
+    scene.frame();
+    const test::IdBankCounts baseline=test::IdBankCounts::now();
+
+    controls::Base *owner=scene.box(10, 10, 60, 20);
+    Popup *popup=owner->createPopup();
+    scene.frame();
+
+    SUBCASE("from a click on a button in the popup")
+    {
+        auto *button=popup->newChild<controls::Button>();
+        button->setSizeFlags({SizeFlag::Fixed, SizeFlag::Fixed});
+        button->setBounds(0, 0, 60, 20);
+
+        Deleter deleter;
+        deleter.target=owner;
+        button->onPressCaller.add(&deleter, &Deleter::remove);
+        popup->open(owner);
+        scene.frame();
+        REQUIRE(popup->isOpen());
+        scene.clickOn(button);
+        scene.frame();
+    }
+
+    SUBCASE("the owner then the popup")
+    {
+        popup->open(owner);
+        scene.frame();
+        owner->delayedDelete();
+        popup->delayedDelete();
+        scene.frame();
+    }
+
+    SUBCASE("the popup then the owner")
+    {
+        popup->open(owner);
+        scene.frame();
+        popup->delayedDelete();
+        owner->delayedDelete();
+        scene.frame();
+    }
+
+    CHECK(!scene.canvas->shownPopup());
+    CHECK(!scene.canvas->popupAnchor());
+    CHECK(!scene.onCanvas(owner));
+    CHECK(!scene.onCanvas(popup));
+
+    const test::IdBankCounts after=test::IdBankCounts::now();
+    CHECK(after.livePrimitives() == baseline.livePrimitives());
+    CHECK(after.liveTexts() == baseline.liveTexts());
+}
+
+TEST_CASE("Popup: an owner taken off the canvas deletes its popup on the popup's canvas")
+{
+    Scene scene;
+    controls::Base *other=scene.box(200, 10, 60, 20);
+    scene.frame();
+    const test::IdBankCounts baseline=test::IdBankCounts::now();
+
+    controls::Base *owner=scene.box(10, 10, 60, 20);
+    Popup *popup=owner->createPopup();
+    scene.box(0, 0, 40, 20, popup);
+    scene.frame();
+    popup->open(other);
+    scene.frame();
+
+    owner->setParent(nullptr);
+    scene.frame();
+    REQUIRE(scene.canvas->shownPopup() == popup);
+    delete owner;
+    CHECK(!scene.canvas->shownPopup());
+    CHECK(!scene.canvas->popupAnchor());
+    scene.frame();
+    CHECK(!scene.onCanvas(popup));
+
+    const test::IdBankCounts after=test::IdBankCounts::now();
+    CHECK(after.livePrimitives() == baseline.livePrimitives());
+    CHECK(after.liveTexts() == baseline.liveTexts());
+}
+
+TEST_CASE("Popup: an owner taken off the canvas and deleted after it touches nothing")
+{
+    for(Opened opened : {Opened::Never, Opened::Open})
+    {
+        INFO(openedName(opened));
+        test::StubRenderer renderer;
+        test::StubSkin skin{&renderer};
+        auto *canvas=new controls::Canvas(&skin);
+
+        canvas->setSize(400, 300);
+        controls::Base *owner=canvas->newChild<controls::Base>();
+        controls::Base *anchor=canvas->newChild<controls::Base>();
+        Popup *popup=owner->createPopup();
+
+        REQUIRE(popup);
+        if(opened == Opened::Open)
+            popup->open(anchor);
+        canvas->updateCanvas();
+        canvas->renderCanvas();
+        owner->setParent(nullptr);
+        // the canvas deletes the popup, which takes itself off the owner's list
+        delete canvas;
+        HoveredControl=nullptr;
+        KeyboardFocus=nullptr;
+        MouseFocus=nullptr;
+        delete owner;
+    }
+}
+
+TEST_CASE("Popup: setOwner moves it between owners, null owns it by none")
+{
+    Scene scene;
+    controls::Base *first=scene.box(10, 10, 60, 20);
+    controls::Base *second=scene.box(100, 10, 60, 20);
+    Popup *a=first->createPopup();
+    Popup *b=first->createPopup();
+    Popup *c=first->createPopup();
+    scene.frame();
+
+    b->setOwner(second);
+    CHECK(b->getOwner() == second);
+    c->setOwner(nullptr);
+    CHECK(!c->getOwner());
+
+    // first's deletion takes a alone, second's b, and c stays
+    first->delayedDelete();
+    scene.frame();
+    CHECK(!scene.onCanvas(a));
+    CHECK(scene.onCanvas(b));
+    CHECK(scene.onCanvas(c));
+    second->delayedDelete();
+    scene.frame();
+    CHECK(!scene.onCanvas(b));
+    CHECK(scene.onCanvas(c));
+
+    controls::Base *detached=scene.box(0, 0, 10, 10);
+    detached->setParent(nullptr);
+    CHECK(!detached->createPopup());
+    delete detached;
 }

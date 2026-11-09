@@ -9,6 +9,7 @@
 #include <gweni/controls/label.h>
 #include <gweni/controls/canvas.h>
 #include <gweni/controls/menu.h>
+#include <gweni/controls/popup.h>
 #include <gweni/controls/layout/layout.h>
 #include <gweni/gweni.h>
 #include <gweni/platforms/baseRender.h>
@@ -272,6 +273,8 @@ Base::~Base()
 
         // after the canvas has closed it: a menu this control owns goes too
         dropContextMenu();
+        // and so do its popups, on their own canvas, wherever this control is
+        dropOwnedPopups();
 
         if(shownOn && (shownOn != canvas))
             shownOn->toolTipControlDeleted(this);
@@ -3817,6 +3820,48 @@ Menu *Base::createContextMenu()
     setContextMenu(menu);
     m_ownsContextMenu=true;
     return menu;
+}
+
+Popup *Base::createPopup()
+{
+    Canvas *canvas=getCanvas();
+
+    if(!canvas)
+        return nullptr;
+
+    Popup *popup=canvas->newChild<Popup>();
+
+    popup->setOwner(this);
+    return popup;
+}
+
+void Base::dropOwnedPopups()
+{
+    while(Popup *popup=m_ownedPopups)
+    {
+        m_ownedPopups=popup->m_nextOwned;
+        popup->m_owner=nullptr;
+        popup->m_nextOwned=nullptr;
+
+        // The popup's canvas, not this control's: this control may have been
+        // taken off the canvas the popup is on.
+        Canvas *canvas=popup->getCanvas();
+
+        // A canvas tearing down deletes it with its other children, and what
+        // an onClose handler reads may already be gone.
+        if(canvas && canvas->releasingChildren())
+            continue;
+
+        if(canvas && (canvas->shownPopup() == popup))
+            canvas->closePopup();
+
+        // Delayed, as a context menu is: this may run from an event of one of
+        // the popup's own controls.
+        if(canvas)
+            popup->delayedDelete();
+        else
+            delete popup;
+    }
 }
 
 void Base::dropContextMenu()
