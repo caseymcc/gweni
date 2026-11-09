@@ -312,12 +312,28 @@ disabled (`Canvas::updatePopup`, the step that also forgets a context menu close
 menus close), when the anchor is deleted (`Canvas::popupControlDeleted` from `~Base`, a
 delayed delete included), and when it is deleted itself (no `onClose` then). A press on
 the anchor is the anchor's, so a button toggles its popup (`isOpen() ? close() :
-open(this)`). Closing a popup closes the Menus open over it. **Ownership:** a popup is
-its creator's: closing only hides it, and the canvas deletes it with its other children.
-Once opened it is a child of the canvas, not of the control that made it, so it is not
-deleted with that control: a control that makes a popup makes it on the canvas and
-`delayedDelete()`s it in its destructor (`PopupDemo`), delayed so that a canvas tearing
-down, which deletes it as one of its children, deletes it once.
+open(this)`). Closing a popup closes the Menus open over it. **Ownership: a popup has an
+owner.** It is a child of the canvas (opening one made elsewhere moves it there), so
+closing only hides it and the canvas deletes it with its other children; it is not a
+child of the control that made it, and that control owns it instead, as
+`createContextMenu()`'s control owns its menu. `Base::createPopup()` makes a popup on the
+control's canvas owned by the control (null with no canvas), and `Popup::setOwner(owner)`
+makes any popup a control's (null: no owner's), `getOwner()` says whose. The owner keeps
+one pointer, `Base::m_ownedPopups`, the head of a list threaded through the popups'
+`m_nextOwned`, so the cost per control is that of `m_contextMenu`; `~Popup` takes a popup
+off it. `~Base`, right after `dropContextMenu()`, empties the list
+(`Base::dropOwnedPopups`) and goes by each popup's own canvas, not the owner's, so an
+owner taken off the canvas (`setParent(nullptr)`) behaves the same: while that canvas is
+deleting its children (`Canvas::releasingChildren()`) it does nothing, the canvas
+deleting the popup, before or after the owner's window, whichever it came to first;
+otherwise it closes the popup if the canvas shows it and `delayedDelete()`s it, delayed
+because this can run from an event of one of the popup's own controls (an owner and its
+popup in one delete batch, either first, are each deleted once: `PreDeleteCanvas` takes a
+deleted control off the list); with no canvas it deletes it outright. So a control that
+makes a popup has no cleanup of its own (ColorEdit, TabControl's tab list and `PopupDemo`,
+which once `delayedDelete()`d their popups in their destructors: a canvas tearing down
+had freed the popup first whenever a `bringToFront` had put the creator's window after it,
+#490).
 
 **It places itself, in its own arrange.** A popup is owner-placed
 (`Placement::Owner`), so the canvas's arrange neither moves nor sizes it, and its own
@@ -1565,10 +1581,11 @@ two programs and the draws. What follows describes both together:
   and reused, the surplus deleted, each time it opens, never per frame. A row's click
   selects its tab, if it is still in the strip, scrolls it into view and closes the
   popup; Escape, a press outside and the button hidden close it as they close any popup.
-  The popup is made on the canvas and deleted with the TabControl (delayed, as a Popup's
-  creator does). TabOverflowDemo has twelve tabs in a Top strip with the list and in a
-  Bottom one opened on its eighth tab; ShowcaseContainersDemo's TabControl has six tabs in
-  a strip too short for them, with the list.
+  The popup is the TabControl's (`createPopup()`), so it is deleted with it, with no
+  cleanup in `TabControl` (see "The popup"). TabOverflowDemo has twelve tabs in a Top
+  strip with the list and in a Bottom one opened on its eighth tab;
+  ShowcaseContainersDemo's TabControl has six tabs in a strip too short for them, with
+  the list.
 - **The colour field: ColorButton and ColorEdit.** `controls::ColorButton`
   (`colorButton.h`, imgui's ColorButton) is a Button with an empty caption drawn as a
   swatch: the textured `ColorButton` renderer paints its colour in one slot, through the
@@ -1599,11 +1616,11 @@ two programs and the draws. What follows describes both together:
   and a colour applied from a field is given to the open picker under a guard
   (`m_settingPicker`) that drops the change events `HSVColorPicker::setColor` raises, so
   there is no picker, fields, picker loop. A second click, Escape or a click outside
-  closes it, as for any popup; the ColorEdit `delayedDelete()`s the popup in its
-  destructor, except while the canvas is releasing its children
-  (`Canvas::releasingChildren()`): the canvas deletes the popup itself then, and may
-  have done so already, since an open made it a later child than the ColorEdit's
-  window and a `bringToFront` of the window can put it earlier again (#436).
+  closes it, as for any popup. The popup is the ColorEdit's (`createPopup()`): deleting
+  the ColorEdit deletes it, and a canvas tearing down deletes it once, whichever of the
+  two comes first among its children (an open makes the popup a later child than the
+  ColorEdit's window, and a `bringToFront` of the window can put it earlier again, #436),
+  with no cleanup in `ColorEdit` (see "The popup", #490).
   ColorEditDemo has the two buttons and both modes; ShowcaseInputDemo has a
   translucent RGBA field and a hex one.
 - **The data table: a frozen header over scrolled rows.** `controls::DataTable`

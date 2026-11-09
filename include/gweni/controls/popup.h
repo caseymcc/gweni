@@ -44,13 +44,18 @@ enum class PopupPlacement
 //! anchor hidden, disabled or deleted, and its own deletion. A press on the anchor is left to the anchor, so a button can
 //! toggle the popup it opened.
 //!
-//! Ownership: a popup is its creator's. Opening it moves it onto the canvas
-//! (as a context menu set from outside is), and the canvas deletes it with
-//! its other children; closing it only hides it. Once opened it is not a
-//! child of the control that made it, so it is not deleted with that
-//! control: a control that makes a popup makes it on the canvas
-//! (getCanvas()->newChild<Popup>()) and deletes it in its destructor, with
-//! delayedDelete() so a canvas tearing down deletes it once (PopupDemo).
+//! Ownership: a popup is a child of the canvas (opening one made elsewhere
+//! moves it there), so the canvas deletes it with its other children, and
+//! closing it only hides it. It is not a child of the control that made it,
+//! so a control that makes one owns it instead: Base::createPopup() makes
+//! one on the control's canvas owned by that control, and setOwner() makes
+//! any popup a control's. Deleting the owner closes the popup if it is open
+//! and deletes it on the popup's own canvas (delayed, as this can run from
+//! an event of one of its controls; outright with no canvas; not at all
+//! while that canvas is deleting its children, which deletes it then),
+//! wherever the owner is, on that canvas or taken off it; deleting the
+//! popup first takes it off its owner. So a control that makes a popup has
+//! no cleanup of its own to do (ColorEdit, TabControl, PopupDemo).
 //!
 //! While open it is kept after every other child of the canvas but the open
 //! Menus (one a ComboBox in it opened draws over it) and the ToolTip box, so
