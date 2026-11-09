@@ -140,6 +140,11 @@ TreeNode *TreeNode::addNode(const String &label)
 // A node with no child nodes shows neither its toggle nor its inner panel.
 // Settled before the pass measures this node, so the sizes it takes count
 // them as they will be drawn; nothing has read them yet.
+//
+// A closed node's child rows still count in its width, measured in X as if
+// it were open (only the height leaves them out), so a tree laid out at its
+// preferred width keeps it when a node is toggled, and a tree built with its
+// nodes closed is as wide as one opened and closed again.
 void TreeNode::calculateSize(skin::Base *skin, Dim dim)
 {
     if(dim == Dim::X && m_toggleButton)
@@ -163,6 +168,18 @@ void TreeNode::calculateSize(skin::Base *skin, Dim dim)
     }
 
     ParentClass::calculateSize(skin, dim);
+
+    if(dim == Dim::X && m_innerPanel->hidden() && m_innerPanel->numChildren() != 0
+        && m_innerPanel->shouldIncludeInSize())
+    {
+        m_innerPanel->doCalculateSize(skin, dim);
+
+        const Margin &margin=m_innerPanel->getMargin();
+
+        m_preferredSize.width=std::max(m_preferredSize.width, preferredFromContent(
+            m_innerPanel->getPreferredSize().width+margin.left+margin.right+m_padding.left+m_padding.right,
+            Dim::X));
+    }
 }
 
 // The toggle is a ToggleSize square, given along each axis before this node

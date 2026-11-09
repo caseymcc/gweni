@@ -36,7 +36,10 @@
  *  its children docked Left or Right). A ComboBox asks for its widest item's
  *  text with the text padding and the chevron column, measured again when an
  *  item is added, deleted, renamed or cleared and never when one is selected,
- *  and a property::ComboBox row's value column fits it. A VerticalSlider
+ *  and a property::ComboBox row's value column fits it. A PropertyTree at its
+ *  preferred width fits every node's Properties, and keeps that width when a
+ *  node is closed: a closed TreeNode's rows still count in its width, so a
+ *  tree built closed is as wide as one opened and closed. A VerticalSlider
  *  asks for its request at value 0 and 1 and takes a smaller layout cell in
  *  one pass.
  */
@@ -49,6 +52,7 @@
 #include <gweni/controls/properties.h>
 #include <gweni/controls/property/colorSelector.h>
 #include <gweni/controls/property/comboBox.h>
+#include <gweni/controls/propertyTree.h>
 #include <gweni/controls/text.h>
 #include <gweni/controls/verticalSlider.h>
 #include <gweni/controls/windowControl.h>
@@ -618,6 +622,114 @@ TEST_CASE("a property::ComboBox row's value column fits the widest item and the 
     CHECK(row->getPreferredSize().width ==
         labelMargin+split+std::max(100, property->getPreferredSize().width));
     CHECK(scene.requests == 0);
+}
+
+TEST_CASE("a PropertyTree at its preferred width fits its nodes' Properties, open or closed")
+{
+    // The first node's Properties is the wider: its ComboBox's widest item
+    // is wider than the value width.
+    struct Tree
+    {
+        controls::Base *box;
+        controls::PropertyTree *tree;
+        controls::Properties *wide;
+        controls::Properties *narrow;
+        controls::TreeNode *wideNode;
+        controls::TreeNode *narrowNode;
+    };
+    auto build=[](Scene &scene)
+    {
+        Tree t;
+
+        t.box=scene.canvas->newChild<controls::Base>("box");
+        t.tree=t.box->newChild<controls::PropertyTree>();
+
+        t.wide=t.tree->add("Item One");
+        t.wide->add("Name");
+        auto *property=t.wide->newChild<controls::property::ComboBox>();
+        property->getComboBox()->addItem("A much, much longer option than the value width", "long");
+        t.wide->add("Mode", property, "long");
+
+        t.narrow=t.tree->add("Item Two");
+        t.narrow->add("Name");
+        t.narrow->add("Colour", t.narrow->newChild<controls::property::ColorSelector>(), "255 0 0");
+
+        // A Properties' getParent() is its node (the panel holding it is the
+        // node's inner panel).
+        t.wideNode=gweni_cast<controls::TreeNode>(t.wide->getParent());
+        t.narrowNode=gweni_cast<controls::TreeNode>(t.narrow->getParent());
+        REQUIRE(t.wideNode);
+        REQUIRE(t.narrowNode);
+        return t;
+    };
+
+    Scene scene;
+    Tree t=build(scene);
+
+    t.tree->expandAll();
+    scene.settle();
+
+    REQUIRE(t.wide->getPreferredSize().width > t.narrow->getPreferredSize().width);
+
+    // Laid out at its preferred size, every Properties gets at least its own
+    // (indent + split + value column) and ends inside the tree.
+    CHECK(t.tree->getWidth() == t.tree->getPreferredSize().width);
+
+    const int treeRight=t.tree->localPosToCanvas(gweni::Point(t.tree->getWidth(), 0)).x;
+
+    for(controls::Properties *properties : {t.wide, t.narrow})
+    {
+        const int x=properties->localPosToCanvas(gweni::Point(0, 0)).x;
+
+        CHECK(properties->getWidth() >= properties->getPreferredSize().width);
+        CHECK(x+properties->getWidth() <= treeRight);
+
+        for(auto &&child : properties->getChildren())
+        {
+            if(auto *row=gweni_cast<controls::PropertyRow>(child))
+            {
+                CHECK(row->getProperty()->getWidth() >= properties->getValueWidth());
+                CHECK(row->getProperty()->getWidth() >= row->getProperty()->getPreferredSize().width);
+            }
+        }
+    }
+
+    const int open=t.tree->getWidth();
+
+    // Collapsing the wider node keeps the tree's width: a closed node's rows
+    // still count in its width (TreeNode::calculateSize), so the tree does
+    // not jump on a toggle.
+    t.wideNode->close();
+    scene.settle();
+    CHECK(t.tree->getWidth() == open);
+    CHECK(t.narrow->getWidth() >= t.narrow->getPreferredSize().width);
+
+    t.wideNode->open();
+    scene.settle();
+    CHECK(t.tree->getWidth() == open);
+
+    // Every node closed, the tree is as wide still.
+    t.wideNode->close();
+    t.narrowNode->close();
+    scene.settle();
+    CHECK(t.tree->getWidth() == open);
+    CHECK(scene.requests == 0);
+
+    // So is one built with its wide node closed, never opened.
+    Scene fresh;
+    Tree f=build(fresh);
+
+    f.narrowNode->open();
+    fresh.settle();
+    CHECK(f.wideNode->isOpen() == false);
+    CHECK(f.tree->getWidth() == open);
+
+    // Opened, the rows are laid out at that width.
+    f.wideNode->open();
+    fresh.settle();
+    CHECK(f.tree->getWidth() == open);
+    CHECK(f.wide->getWidth() == t.wide->getWidth());
+    CHECK(fresh.requests == 0);
 }
 
 TEST_CASE("a VerticalSlider asks for its request whatever its value, and fits a smaller layout cell in one pass")
