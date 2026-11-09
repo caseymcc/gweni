@@ -91,6 +91,8 @@ public:
     void calculateSize(skin::Base *skin, Dim dim) override;
     void updateColors() override;
 
+    //! Selects \p item, an item of this box's list; any other (null, one
+    //! that left the list, another box's) is refused.
     virtual void selectItem(MenuItem *item, bool fireChangeEvents=
         true);
     virtual void selectItemByName(const gweni::String &name,

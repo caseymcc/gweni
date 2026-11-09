@@ -291,6 +291,12 @@ void ComboBox::clearItems()
 
 void ComboBox::selectItem(MenuItem *item, bool fireChangeEvents)
 {
+    // Only an item of this box's own list: one that left it (given another
+    // parent, still connected to this box) or another box's would never be
+    // dropped by itemRemoved() and would dangle once deleted.
+    if(!item || !m_menu || (item->getParent() != m_menu))
+        return;
+
     if(m_selectedItem == item)
         return;
 

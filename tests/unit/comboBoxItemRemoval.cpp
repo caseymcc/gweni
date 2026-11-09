@@ -16,6 +16,9 @@
  *  default selection again. Until the canvas deletes a delayedDelete()d item it
  *  is still selected and shown. An item that is not selected leaving keeps the
  *  selection and its text, and the width is measured again, opened list or not.
+ *  An item that left the list, clicked in another box's list it was given to,
+ *  is not selected, nor is another box's item handed to selectItem(), so no
+ *  selection outlives an item deleted outside the box's list.
  *
  *  Deleting a ComboBox deletes its list, whether the list was never opened (it
  *  is the box's child), opened and closed or open (it is the canvas's child):
@@ -321,6 +324,59 @@ TEST_CASE("a ComboBox's selected item given another parent drops the selection")
 {
     SUBCASE("list never opened") { runRemoval(Removal::Reparent, false); }
     SUBCASE("list opened and closed") { runRemoval(Removal::Reparent, true); }
+}
+
+TEST_CASE("a ComboBox selects no item outside its own list")
+{
+    Scene scene;
+    Box box(scene, false);
+    controls::ComboBox *second=box.host->newChild<controls::ComboBox>();
+
+    second->setPos(0, 40);
+    controls::MenuItem *secondsOwn=second->addItem("Second's own", "own");
+    scene.settle();
+
+    // The first box's selected item given to the second box's list: still
+    // connected to the first box, whose selection it left.
+    box.one->setParent(listOf(secondsOwn));
+    scene.settle();
+    REQUIRE(box.combo->getSelectedItem() == nullptr);
+
+    second->openList();
+    scene.settle();
+    REQUIRE(second->isMenuOpen());
+
+    const Point at=box.one->localPosToCanvas(
+        Point(box.one->getWidth()/2, box.one->getHeight()/2));
+
+    // a click on it there reaches the first box, which refuses it
+    scene.click(at);
+    scene.settle();
+    CHECK(box.combo->getSelectedItem() == nullptr);
+    CHECK(box.combo->getText() == "");
+    CHECK(box.listener.calls == 0);
+
+    // and so it does another box's item, or none, handed in directly
+    box.combo->selectItem(secondsOwn);
+    box.combo->selectItem(nullptr);
+    scene.settle();
+    CHECK(box.combo->getSelectedItem() == nullptr);
+    CHECK(box.listener.calls == 0);
+    CHECK(second->getSelectedItem() == secondsOwn);
+
+    // deleted there, it leaves the first box nothing to read (ASAN)
+    delete box.one;
+    scene.settle();
+    CHECK(box.combo->getSelectedItem() == nullptr);
+    box.combo->onKeyDown(true);
+    box.combo->onKeyUp(true);
+    CHECK(box.combo->getSelectedItem() == nullptr);
+
+    // its own items it still selects
+    box.combo->selectItem(box.middle);
+    CHECK(box.combo->getSelectedItem() == box.middle);
+    CHECK(box.combo->getText() == "Middle one");
+    CHECK(box.listener.calls == 1);
 }
 
 TEST_CASE("a property::ComboBox's value is empty once its selected item is deleted")
