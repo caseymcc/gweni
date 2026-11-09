@@ -943,15 +943,19 @@ private:
     void setTextRunFont(size_t textId, FontData *fontData);
     //! Rebuilds fontData's drawChunks from its textRuns.
     void buildTextDrawList(FontData &fontData);
-    //! Fills drawChunks with fontData's draw list from its textRuns, reusing the
-    //! entries already there and their vectors, and dropping the surplus ones.
-    void fillTextDrawList(const FontData &fontData, std::vector<TextChunkDraw> &drawChunks);
+    //! Fills the first entries of drawChunks with fontData's draw list from its
+    //! textRuns, reusing the entries already there and their vectors, and returns
+    //! how many it filled; the entries past those are left as they were, for the
+    //! caller to drop (buildTextDrawList) or keep (verifyTextDrawList).
+    size_t fillTextDrawList(const FontData &fontData, std::vector<TextChunkDraw> &drawChunks);
     //! In a debug build (no NDEBUG), asserts that fontData's drawChunks, not
     //! stale, are what a rebuild gives, so a run change that did not mark them
     //! really left them as they were. flush() calls it for every such font.
     void verifyTextDrawList(const FontData &fontData);
-    //! verifyTextDrawList's rebuild, declared in every build so the layout of
-    //! the class does not depend on NDEBUG
+    //! verifyTextDrawList's rebuild, one scratch for every font, declared in every
+    //! build so the layout of the class does not depend on NDEBUG. It is never
+    //! shrunk: it keeps the largest list it has held, so verifying fonts with
+    //! different chunk counts one after the other allocates nothing.
     std::vector<TextChunkDraw> m_verifyDrawChunks;
     //! fillTextDrawList's (first glyph slot, glyph count) per run, kept for its capacity
     std::vector<std::pair<size_t, size_t>> m_textDrawRanges;

@@ -2143,11 +2143,14 @@ void SlotRenderer::setTextRunFont(size_t textId, FontData *fontData)
 
 void SlotRenderer::buildTextDrawList(FontData &fontData)
 {
-    fillTextDrawList(fontData, fontData.drawChunks);
+    const size_t used=fillTextDrawList(fontData, fontData.drawChunks);
+
+    // the chunks the list no longer reaches: flush() draws every entry
+    fontData.drawChunks.erase(fontData.drawChunks.begin()+used, fontData.drawChunks.end());
     fontData.drawListStale=false;
 }
 
-void SlotRenderer::fillTextDrawList(const FontData &fontData, std::vector<TextChunkDraw> &drawChunks)
+size_t SlotRenderer::fillTextDrawList(const FontData &fontData, std::vector<TextChunkDraw> &drawChunks)
 {
     // (first glyph slot, glyph count) of each run that draws something, in a
     // vector kept for its capacity
@@ -2209,19 +2212,19 @@ void SlotRenderer::fillTextDrawList(const FontData &fontData, std::vector<TextCh
             start=pieceEnd;
         }
     }
-
-    // the chunks the list no longer reaches
-    drawChunks.erase(drawChunks.begin()+used, drawChunks.end());
+    return used;
 }
 
 void SlotRenderer::verifyTextDrawList(const FontData &fontData)
 {
 #ifndef NDEBUG
-    fillTextDrawList(fontData, m_verifyDrawChunks);
+    // the scratch is every font's, so it keeps the entries past this font's
+    // list, with their vectors, for the next font with more chunks
+    const size_t used=fillTextDrawList(fontData, m_verifyDrawChunks);
 
-    bool same=(m_verifyDrawChunks.size() == fontData.drawChunks.size());
+    bool same=(used == fontData.drawChunks.size());
 
-    for(size_t i=0; same && (i < m_verifyDrawChunks.size()); ++i)
+    for(size_t i=0; same && (i < used); ++i)
     {
         const TextChunkDraw &rebuilt=m_verifyDrawChunks[i];
         const TextChunkDraw &kept=fontData.drawChunks[i];
