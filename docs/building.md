@@ -511,6 +511,15 @@ paths, not drawing) and `bench_smoke` is registered twice: on GL, and as
   in `tests/unit/`), one CTest test per case, e.g. the id-bank checks across
   skin swaps in `tests/unit/skinSwap.cpp`. No GL context, no `gpu` label.
 
+Two checks of the public headers run in the build itself, not in `ctest`.
+Every header under `include/gweni/` is compiled as the only include of its own
+translation unit (the target `gweni_header_check`, part of `all`; a backend's
+headers only in a tree that builds that backend), so a header that does not
+include what it uses fails `cmake --build`, naming its
+`tests/header_check/gweni/<rel>.cpp`. And `gweni/controls.h` includes every
+header under `include/gweni/controls/`: a new control header must be added to
+it, or configuring fails with `controls.h does not include gweni/controls/<x>.h`.
+
 ## ASAN tree
 
 `./generate.sh linux asan` sets `GWENI_SANITIZE=address`. That instruments gweni,
