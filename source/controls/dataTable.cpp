@@ -233,11 +233,6 @@ GWENI_CONTROL_CONSTRUCTOR(DataTableBody)
     m_innerPanel->setMargin(Margin(0, 0, 0, 0));
 }
 
-void DataTableBody::rowOrderChanged()
-{
-    m_innerPanel->invalidate();
-}
-
 ///////////////////////////////////////////////////////////////////////////
 //DataTableVirtualBody
 
@@ -808,7 +803,6 @@ void DataTable::setRowOrder(const std::vector<DataTableRow *> &rows)
     for(DataTableRow *row : rows)
         row->bringToFront();
 
-    m_rowBody->rowOrderChanged();
     m_rows=rows;
     restripe();
 }

@@ -152,11 +152,6 @@ public:
 public:
     //! A container, as a ScrollControl: its rows and its bars draw.
     GWENI_DRAWS_NOTHING
-
-    //! The rows were put in another order: the inner panel docks them again.
-    //! (A child's bringToFront() invalidates its logical parent, this control,
-    //! and not the inner panel that holds it.)
-    void rowOrderChanged();
 };
 
 //! The body of a DataTable in source mode: a VirtualList of pooled

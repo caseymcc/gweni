@@ -1661,8 +1661,8 @@ two programs and the draws. What follows describes both together:
   chevron changed (`StateChange_Background`); the chevron's column is always kept in the cell's right text padding,
   so sorting changes no size. The table never sorts: the app orders its records and
   either sets the rows' cells again or puts the rows in the new order (`setRowOrder`,
-  each row brought to the inner panel's end in turn; the inner panel is invalidated
-  itself, since a child's `bringToFront` invalidates only its logical parent). Either is
+  each row brought to the inner panel's end in turn; a `bringToFront` re-lays the
+  control holding the row, here the inner panel, #486). Either is
   laid out in one pass. **Rows** are `Selectable`s in the table's `SelectableGroup`: one
   selected at a time (`getSelectedRow`, `onSelectionChange`), hover and selection drawn
   as a Selectable's. `setStriped` (on by default) fills every odd row of the row order
