@@ -936,6 +936,7 @@ void Base::setAncestorHidden(bool ancestorHidden)
 
 void Base::invalidateChildren(bool recursive)
 {
+    overflowChangedChildren();
     for(auto &&child : m_children)
     {
         child->invalidate();
@@ -946,6 +947,7 @@ void Base::invalidateChildren(bool recursive)
 
     if(m_innerPanel)
     {
+        m_innerPanel->overflowChangedChildren();
         for(auto &&innerchild : m_innerPanel->getChildren())
         {
             innerchild->invalidate();
@@ -1464,6 +1466,7 @@ void Base::onScaleChanged()
     invalidate();
     addStateChange(StateChange_Geometry);
 
+    overflowChangedChildren();
     for(auto &&child : m_children)
     {
         child->onScaleChanged();

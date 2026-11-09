@@ -22,6 +22,12 @@
  *  panel places all of its children again, the aligned ones moving with its
  *  content box.
  *
+ *  A resize, of the panel or of a control holding the children in an inner
+ *  panel (as a ScrollControl does), and a canvas scale change dirty every
+ *  child, so the list is stopped before they are (overflowChangedChildren,
+ *  #485); a one-child edit on the next frame still goes over the same few
+ *  children as on a panel that never had one.
+ *
  *  Layout verification's full pass counts and places every child again, so
  *  with it on each frame starts from a full walk's state. The last case runs
  *  many frames of mixed edits with it off and compares every frame with a
@@ -66,6 +72,20 @@ public:
     }
 };
 
+//! A control holding its children in an inner panel filling it, as a
+//! GroupBox does: they are added to it and held by the panel.
+class InnerPanelHost: public controls::Base
+{
+public:
+    GWENI_CONTROL_INLINE(InnerPanelHost, controls::Base)
+    {
+        m_innerPanel=newChild<controls::Base>();
+        m_innerPanel->setDock(DockPosition::Center);
+    }
+
+    controls::Base *innerPanel() { return m_innerPanel; }
+};
+
 //! How one child of the panel is set up.
 struct Spec
 {
@@ -101,20 +121,32 @@ struct Scene
     test::StubRenderer renderer;
     test::StubSkin skin{&renderer};
     controls::Canvas *canvas;
+    //! The control the children are added to and sized by: the panel, or
+    //! the InnerPanelHost holding them in its inner panel.
+    controls::Base *owner;
+    //! The control holding the children.
     controls::Base *panel;
     std::vector<Leaf *> children;
 
     explicit Scene(const std::vector<Spec> &specs, Size panelSize=Size(0, 0),
-        const Padding &padding=Padding(2, 3, 4, 5))
+        const Padding &padding=Padding(2, 3, 4, 5), bool innerPanel=false)
     {
         canvas=new controls::Canvas(&skin);
         canvas->setSize(800, 600);
 
-        panel=canvas->newChild<controls::Base>();
-        panel->setPos(5, 5);
-        panel->setPadding(padding);
+        if(innerPanel)
+        {
+            InnerPanelHost *host=canvas->newChild<InnerPanelHost>();
+
+            owner=host;
+            panel=host->innerPanel();
+        }
+        else
+            owner=panel=canvas->newChild<controls::Base>();
+        owner->setPos(5, 5);
+        owner->setPadding(padding);
         if(panelSize.width > 0)
-            panel->setSize(panelSize.width, panelSize.height);
+            owner->setSize(panelSize.width, panelSize.height);
 
         for(const Spec &spec : specs)
             add(spec);
@@ -129,7 +161,7 @@ struct Scene
 
     Leaf *add(const Spec &spec)
     {
-        Leaf *child=panel->newChild<Leaf>();
+        Leaf *child=owner->newChild<Leaf>();
 
         child->want=spec.want;
         child->setPos(spec.pos.x, spec.pos.y);
@@ -388,6 +420,88 @@ TEST_CASE("changed children: a resized panel places all of its children again")
             CHECK((scene.children[i]->getBounds() == before[i]));
         else
             CHECK_FALSE((scene.children[i]->getBounds() == before[i]));
+    }
+}
+
+namespace
+{
+
+const Size wholeSize(700, 500);
+const Size resized(640, 420);
+
+//! Child 57 of a grid of 200 moved on a settled scene at `size`: the
+//! children that frame goes over on a panel that saw no whole-subtree change.
+size_t moveOneScanned(Size size, bool innerPanel)
+{
+    Scene scene(grid(200), size, Padding(2, 3, 4, 5), innerPanel);
+
+    return changedFrame(scene, [&]{ scene.children[57]->setPos(123, 45); });
+}
+
+//! A grid of 200 resized from wholeSize, then child 57 moved: the move goes
+//! over what it does on a scene built at the new size, and both frames lay
+//! out as a fresh build does.
+void resizeThenMoveOne(bool innerPanel)
+{
+    std::vector<Spec> specs=grid(200);
+    Scene scene(specs, wholeSize, Padding(2, 3, 4, 5), innerPanel);
+
+    CHECK(changedFrame(scene, [&]{ scene.owner->setSize(resized.width, resized.height); }) >= specs.size());
+    {
+        Scene fresh(specs, resized, Padding(2, 3, 4, 5), innerPanel);
+        checkSameAs(scene, fresh);
+    }
+
+    const size_t scanned=changedFrame(scene, [&]{ scene.children[57]->setPos(123, 45); });
+
+    CHECK(scanned == moveOneScanned(resized, innerPanel));
+    CHECK(scanned < 40);
+
+    specs[57].pos=Point(123, 45);
+    Scene fresh(specs, resized, Padding(2, 3, 4, 5), innerPanel);
+    checkSameAs(scene, fresh);
+}
+
+}//namespace
+
+TEST_CASE("changed children: after a resize, one moved child is walked alone")
+{
+    resizeThenMoveOne(false);
+}
+
+TEST_CASE("changed children: after a resize of an inner panel's host, one moved child is walked alone")
+{
+    std::vector<Spec> specs=grid(200);
+    Scene scene(specs, wholeSize, Padding(2, 3, 4, 5), true);
+
+    // held by the inner panel, not by the control they were added to
+    REQUIRE(scene.children[0]->getParent() == scene.owner);
+    REQUIRE(scene.panel->getChildren().size() == specs.size());
+
+    resizeThenMoveOne(true);
+}
+
+TEST_CASE("changed children: after a scale change, one moved child is walked alone")
+{
+    for(bool innerPanel : {false, true})
+    {
+        CAPTURE(innerPanel);
+        std::vector<Spec> specs=grid(200);
+        Scene scene(specs, wholeSize, Padding(2, 3, 4, 5), innerPanel);
+
+        CHECK(changedFrame(scene, [&]{ scene.canvas->setScale(2.0f); }) >= specs.size());
+
+        const size_t scanned=changedFrame(scene, [&]{ scene.children[57]->setPos(123, 45); });
+
+        CHECK(scanned == moveOneScanned(wholeSize, innerPanel));
+        CHECK(scanned < 40);
+
+        // laid out in canvas units, as at scale 1
+        specs[57].pos=Point(123, 45);
+        Scene fresh(specs, wholeSize, Padding(2, 3, 4, 5), innerPanel);
+        fresh.canvas->setScale(2.0f);
+        fresh.settle();
+        checkSameAs(scene, fresh);
     }
 }
 

@@ -1249,6 +1249,15 @@ protected:
     //! A child was added: from MinChangedWalk children on, changed children
     //! are kept.
     void notedChildCount();
+    //! Every child is about to be dirtied (invalidateChildren,
+    //! onScaleChanged): the list would reach one in ChangedShare of them and
+    //! stop anyway, so it is stopped first, and each child's enlist returns
+    //! at its first test.
+    void overflowChangedChildren()
+    {
+        if(m_children.size() >= MinChangedWalk)
+            m_changedOverflow=true;
+    }
     //! Whether the changed children are few enough to walk them alone.
     bool walkChangedChildren() const
     {
