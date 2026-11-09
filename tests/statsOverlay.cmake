@@ -79,6 +79,11 @@ if(count EQUAL 0)
     message(FATAL_ERROR "no --stats frame lines from Demo (${SCRATCH_DIR}/without.out)")
 endif()
 
+list(LENGTH lines_with count_with)
+if(NOT count_with EQUAL count)
+    message(FATAL_ERROR "${count} --stats frame lines without the overlay, ${count_with} with it")
+endif()
+
 foreach(i RANGE 1 ${count})
     math(EXPR index "${i}-1")
     list(GET lines_without ${index} a)
@@ -88,10 +93,5 @@ foreach(i RANGE 1 ${count})
             "  without: ${a}\n  with:    ${b}")
     endif()
 endforeach()
-
-list(LENGTH lines_with count_with)
-if(NOT count_with EQUAL count)
-    message(FATAL_ERROR "${count} --stats frame lines without the overlay, ${count_with} with it")
-endif()
 
 message("${count} --stats frame lines of Demo: the app's counters the same with --stats-overlay")

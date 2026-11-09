@@ -58,7 +58,7 @@ String count(size_t n)
 {
     if(n < 100000)
         return format("%zu", n);
-    if(n < 100000000)
+    if(n < 10000000)
         return format("%zuk", n/1000);
     return format("%zuM", n/1000000);
 }
@@ -319,8 +319,12 @@ void StatsOverlay::refresh()
     }
     if(now < m_nextRefresh)
         return;
-    while(m_nextRefresh <= now)
-        m_nextRefresh+=RefreshSeconds;
+    // one step, not a loop: once the float clock is coarser than a step (days
+    // in, or an app's time source counting from an epoch) adding one changes
+    // nothing, and after a stall the next refresh is a step from now
+    m_nextRefresh+=RefreshSeconds;
+    if(m_nextRefresh <= now)
+        m_nextRefresh=now+RefreshSeconds;
     show(canvas);
 }
 
