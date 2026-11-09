@@ -979,7 +979,9 @@ void Base::sendToBack()
     m_actualParent->m_children.push_front(this);
     zOrderMoved(this);
     noteReordered();
-    invalidateParent();
+    // the holder docks its children in this order: re-lay it, not only the
+    // logical parent (a control with an inner panel holds them in the panel)
+    m_actualParent->invalidate();
 }
 
 void Base::bringToFront()
@@ -996,7 +998,7 @@ void Base::bringToFront()
     m_actualParent->m_children.push_back(this);
     zOrderMoved(this);
     noteReordered();
-    invalidateParent();
+    m_actualParent->invalidate();
     redraw();
 }
 
@@ -1044,7 +1046,7 @@ void Base::bringNextToControl(controls::Base *child, bool bBehind)
     m_actualParent->m_children.insert(it, this);
     zOrderMoved(this);
     noteReordered();
-    invalidateParent();
+    m_actualParent->invalidate();
 }
 
 void Base::addChild(Base *child)
@@ -1391,12 +1393,14 @@ void Base::setPlacement(Placement placement)
     if(m_placement == placement)
         return;
 
-    // The parent's size and arrange read it.
+    // The holder's size and arrange read it: the control holding this one,
+    // which for a child of a control with an inner panel is the panel.
     noteSizeInputsChanging();
     m_placement=placement;
     if(m_actualParent && getDock() != DockPosition::None)
         m_actualParent->m_arrangeAll[0]=m_actualParent->m_arrangeAll[1]=true;
-    invalidateParent();
+    if(m_actualParent)
+        m_actualParent->invalidate();
 }
 
 Size Base::getMinimumSize()
