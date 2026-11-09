@@ -25,13 +25,15 @@
  *  commits and gives the focus back to the field, a click on another control
  *  (the focus lost) commits, Escape cancels, and text that is no number leaves
  *  the value and the shown text as they were; a field whose page is hidden
- *  while it is typed into commits too, laid out in that frame's update phase
- *  in one pass. The box is made once: its ids
- *  are taken by the first edit only. Up/Right and Down/Left step the focused
- *  field. The format is refused unless it holds one conversion of a double.
- *  The textured renderer draws the field DragNumber at rest, DragNumberHover
- *  hovered, DragNumberDown pressed, DragNumberFocus focused and
- *  DragNumberDisabled disabled, one slot, and a disabled field takes no drag.
+ *  while it is typed into, or whose box stops taking keyboard input, commits
+ *  too (the box's onLostKeyboardFocus() runs once), laid out in that frame's
+ *  update phase in one pass, and shown again it is an unedited field at rest.
+ *  The box is made once: its ids are taken by the first edit only. Up/Right
+ *  and Down/Left step the focused field. The format is refused unless it
+ *  holds one conversion of a double. The textured renderer draws the field
+ *  DragNumber at rest, DragNumberHover hovered, DragNumberDown pressed,
+ *  DragNumberFocus focused and DragNumberDisabled disabled, one slot, and a
+ *  disabled field takes no drag.
  */
 #include "headlessFixture.h"
 
@@ -574,11 +576,7 @@ TEST_CASE("DragNumber: Return and a lost focus commit, Escape cancels, text that
     CHECK(counter.count == 3);
 }
 
-// may_fail until the canvas drops a lost focus before its layout as well as
-// after it (#484): the edit ends after the frame's layout, which the render
-// phase then runs again
-TEST_CASE("DragNumber: hidden while being typed into, the edit ends and commits in that frame's update phase"
-    * doctest::may_fail())
+TEST_CASE("DragNumber: hidden while being typed into, the edit ends and commits in that frame's update phase")
 {
     Scene scene;
     controls::Base *host=scene.canvas->newChild<controls::Base>();
@@ -595,6 +593,8 @@ TEST_CASE("DragNumber: hidden while being typed into, the edit ends and commits 
     scene.doubleClick(field);
     REQUIRE(field->isEditing());
     controls::internal::DragNumberTextBox *box=field->getEditBox();
+    Counter lostFocus;
+    box->onLostFocusCaller.add(&lostFocus, &Counter::changed);
     scene.type("7");
 
     // the page hidden, as a tab switch does
@@ -612,6 +612,66 @@ TEST_CASE("DragNumber: hidden while being typed into, the edit ends and commits 
     // laid out in the update phase, in one pass
     CHECK(stats.passes == 1);
     CHECK_FALSE(stats.renderLayout);
+    // the box's onLostKeyboardFocus() ran, once
+    CHECK(lostFocus.count == 1);
+
+    // shown again, away from the mouse: an unedited field, at rest
+    scene.move(400, 400);
+    host->setHidden(false);
+    scene.frame();
+    CHECK_FALSE(field->isEditing());
+    CHECK(box->hidden());
+    CHECK_FALSE(textOf(field)->hidden());
+    CHECK(textOf(field)->getText() == "7.000");
+    const size_t slot=field->getSkinControl()->getPrimitives()[0];
+    const FieldRecorder::Draw *draw=scene.renderer.last(slot);
+    REQUIRE(draw != nullptr);
+    CHECK_FALSE(draw->hidden);
+    CHECK(sameColor(draw->fill, tokyonight::DragNumber.top));
+    CHECK(sameColor(draw->border, tokyonight::DragNumber.border));
+    CHECK(scene.canvas->getLayoutStats().passes == 1);
+    CHECK_FALSE(scene.canvas->getLayoutStats().renderLayout);
+    CHECK(lostFocus.count == 1);
+    CHECK(counter.count == 1);
+
+    // a settled frame draws nothing
+    scene.frame();
+    CHECK(scene.renderer.draws.empty());
+}
+
+TEST_CASE("DragNumber: its edit box made input-disabled while typed into loses the focus and commits")
+{
+    Scene scene;
+    DragNumber *field=scene.field();
+    field->setRange(0.0, 100.0);
+    field->setNumber(5.0);
+    scene.frame();
+
+    scene.doubleClick(field);
+    REQUIRE(field->isEditing());
+    controls::internal::DragNumberTextBox *box=field->getEditBox();
+    Counter lostFocus;
+    box->onLostFocusCaller.add(&lostFocus, &Counter::changed);
+    scene.type("12");
+
+    box->setKeyboardInputEnabled(false);
+    scene.frame();
+
+    const controls::LayoutStats &stats=scene.canvas->getLayoutStats();
+
+    CHECK(KeyboardFocus == nullptr);
+    CHECK(lostFocus.count == 1);
+    CHECK_FALSE(field->isEditing());
+    CHECK(field->getNumber() == 12.0);
+    CHECK(box->hidden());
+    CHECK_FALSE(textOf(field)->hidden());
+    CHECK(stats.passes == 1);
+    CHECK_FALSE(stats.renderLayout);
+
+    // once
+    scene.frame();
+    CHECK(lostFocus.count == 1);
+    CHECK(scene.renderer.draws.empty());
 }
 
 TEST_CASE("DragNumber: the edit box's ids are taken by the first edit only")

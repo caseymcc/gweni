@@ -228,8 +228,15 @@ void Canvas::doThink()
     processDelayedDeletes();
     updatePopup();
     updateToolTip();
-    // Check has focus etc..
+    // A focus hidden or turned off before the frame is dropped before its
+    // layout, so what its onLostKeyboardFocus() changes (a DragNumber ending
+    // its edit) is laid out in this pass; one the layout hid is dropped after
+    // it, and laid out again here only if that dirtied layout, rather than in
+    // the render phase.
+    input::dropLostKeyboardFocus();
     layoutCanvas();
+    if(input::dropLostKeyboardFocus() && m_updateLayout)
+        layoutCanvas();
 
     input::onCanvasThink(this);
     noteMeasureCalls();

@@ -7124,7 +7124,7 @@ static gweni::controls::Base *controlAtPath(gweni::controls::Base *control, cons
     return nullptr;
 }
 
-// A hidden control loses the keyboard focus (input::onCanvasThink drops it)
+// A hidden control loses the keyboard focus (input::dropLostKeyboardFocus)
 // and showing it does not give it back: an app does that, as the shell's
 // showcaseShown() does. So once shown, the control that held the focus in
 // the reference gets it again, before the state is compared.

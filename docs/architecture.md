@@ -41,7 +41,11 @@ No rendering-API calls happen here.
 
 Like the render walk, it enters only what changed. There is no per-control `think()`:
 `Canvas::doThink()` runs the delayed deletes, `anim::think(this)` (the animations), the
-layout passes and `input::onCanvasThink`. A frame nothing invalidated runs no pass, and a
+layout passes and `input::onCanvasThink`. A keyboard focus that is hidden or takes no keyboard
+input is unfocused (`input::dropLostKeyboardFocus`, through `Base::unfocus()`) before the
+passes, so what its `onLostKeyboardFocus()` changes (a `DragNumber` ending its edit) is laid
+out in them, and again after them, for a holder the layout hid, laying out once more if that
+dirtied layout. A frame nothing invalidated runs no pass, and a
 pass enters only the dirty paths: the controls invalidated or given new bounds, and the
 way down to them. Every walk over children goes through `Base::doCalculateSize`/
 `doArrange`, which skip a clean control, keeping its preferred size and bounds. A parent

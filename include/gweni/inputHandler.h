@@ -66,6 +66,12 @@ bool GWENI_EXPORT onMouseClicked(controls::Base *canvas, int button, bool down);
 void GWENI_EXPORT onMouseLeft(controls::Base *canvas);
 bool GWENI_EXPORT onKeyEvent(controls::Base *canvas, int key, bool down);
 void GWENI_EXPORT onCanvasThink(controls::Base *control);
+//! Unfocuses (Base::unfocus(), so onLostKeyboardFocus() runs) a keyboard
+//! focus that is no longer visible() or no longer takes keyboard input.
+//! Returns whether it did. The canvas calls it before its update-phase layout,
+//! so what the hook changes is laid out in the frame's pass, and after it, for
+//! a holder that layout hid.
+bool GWENI_EXPORT dropLostKeyboardFocus();
 
 //! A running count of hit-test visits: one per controls::Base::getControlAt
 //! call, on every control a hit test enters, whether it finds the point or

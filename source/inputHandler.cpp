@@ -137,6 +137,19 @@ Point getMousePosition()
     return g_mousePosition;
 }
 
+bool dropLostKeyboardFocus()
+{
+    if(!KeyboardFocus
+        || (KeyboardFocus->visible() && KeyboardFocus->getKeyboardInputEnabled()))
+        return false;
+
+    // Like any other unfocus: its onLostKeyboardFocus() runs (a TextBox's
+    // onLostFocusCaller, so a DragNumber's edit ends), and it is repainted, so
+    // it does not keep the focused look.
+    KeyboardFocus->unfocus();
+    return true;
+}
+
 void onCanvasThink(controls::Base *control)
 {
     if(MouseFocus && !MouseFocus->visible())
@@ -158,12 +171,7 @@ void onCanvasThink(controls::Base *control)
             UpdateHoveredControl(control);
     }
 
-    if(KeyboardFocus
-        && (!KeyboardFocus->visible() || !KeyboardFocus->getKeyboardInputEnabled()))
-    {
-        // Repainted like any other unfocus, so it does not keep the focused look.
-        KeyboardFocus->unfocus();
-    }
+    dropLostKeyboardFocus();
 
     if(!KeyboardFocus)
         return;
