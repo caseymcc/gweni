@@ -202,7 +202,9 @@ public:
 
     Fields fields(size_t id, size_t i) const
     {
-        const std::vector<uint8_t> &bytes=snapshotMirror().primitives.at(id);
+        // the snapshot is kept: a reference into the temporary's map would dangle
+        const MirrorSnapshot snapshot=snapshotMirror();
+        const std::vector<uint8_t> &bytes=snapshot.primitives.at(id);
         uint16_t field[16];
 
         REQUIRE(bytes.size() == 4*sizeof(field));

@@ -275,7 +275,7 @@ class Visit
     // (the stderr check is checkWindow's).
     async checkOverlay(visit, open)
     {
-        const run = await visit.page.evaluate(() => ({ argv: Module.arguments,
+        const run = await visit.page.evaluate(() => ({ argv: gweniRun.argv,
             stdout: gweniRun.output.filter(l => l.stream === 'stdout').map(l => l.text) }));
         const said = run.stdout.some(line => line.startsWith('OpenGLCore: the stats overlay is open'));
         const argv = JSON.stringify(run.argv);

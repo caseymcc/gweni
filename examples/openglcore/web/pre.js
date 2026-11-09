@@ -28,6 +28,8 @@
 //    webgl     the WebGL context the run made (capture::initEglContext reports
 //              it through Module.gweniWebGLContext): {webgl2, version, renderer,
 //              vendor, depthBits}, null if it made none
+//    argv      the arguments pre.js gave main (gweniDefaultArgs, then the
+//              URL's), without argv[0]; null under node
 //    frames    how many frames an interactive window has drawn
 //              (capture::runWindowLoop, one per animation frame), 0 for a
 //              capture, which draws offscreen in one blocking main
@@ -41,7 +43,7 @@
 //  for a page error).
 //
 
-var gweniRun = { done: false, exitCode: null, aborted: null, output: [], webgl: null, frames: 0 };
+var gweniRun = { done: false, exitCode: null, aborted: null, output: [], webgl: null, frames: 0, argv: null };
 if(typeof window !== 'undefined')
     window.gweniRun = gweniRun;
 
@@ -71,6 +73,8 @@ if(typeof location !== 'undefined')
         });
         return args;
     })();
+    // a copy: callMain puts argv[0] in front of Module.arguments itself
+    gweniRun.argv = Module['arguments'].slice();
 }
 
 function gweniOutput(stream, text)
