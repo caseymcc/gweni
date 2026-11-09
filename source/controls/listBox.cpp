@@ -9,6 +9,8 @@
 #include <gweni/controls/scrollControl.h>
 #include <gweni/inputHandler.h>
 
+#include <algorithm>
+
 namespace gweni
 {
 namespace controls
@@ -38,9 +40,10 @@ layout::TableRow *ListBox::addItem(const String &label, const String &name)
     return row;
 }
 
-void ListBox::RemoveItem(layout::TableRow *row)
+void ListBox::removeItem(layout::TableRow *row)
 {
-    m_selectedRows.erase(std::find(m_selectedRows.begin(), m_selectedRows.end(), row));
+    // every copy, and nothing when it is not selected
+    m_selectedRows.remove(row);
     m_table->remove(row);
 }
 
@@ -107,7 +110,10 @@ void ListBox::setSelectedRow(gweni::controls::Base *control, bool clearOthers)
 
     // TODO: make sure this is one of our rows!
     row->setSelected(true);
-    m_selectedRows.push_back(row);
+
+    if(std::find(m_selectedRows.begin(), m_selectedRows.end(), row) == m_selectedRows.end())
+        m_selectedRows.push_back(row);
+
     onRowSelectedCaller.call(this);
 }
 

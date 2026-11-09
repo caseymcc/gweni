@@ -4,14 +4,14 @@
  *  MIT License, see LICENSE
  *
  *  ListBox keeps its selection in m_selectedRows, and taking a row out or
- *  selecting one again must keep that list true (#489): RemoveItem of a row
+ *  selecting one again must keep that list true (#489): removeItem of a row
  *  that is not selected removes it from the table and leaves the selection as
  *  it was (it erased the list's end(), freeing its sentinel, and aborted);
- *  RemoveItem of a selected row in a multi-selection takes it out of
+ *  removeItem of a selected row in a multi-selection takes it out of
  *  getSelectedRows(), getSelectedRow() then being the next selected row, or
  *  nullptr once none is left; and setSelectedRow(row, false) or
  *  selectByString(name, false) on a row already selected keeps it in the
- *  selection once (it was pushed again, and a RemoveItem left the copy behind,
+ *  selection once (it was pushed again, and a removeItem left the copy behind,
  *  pointing at the deleted row), still firing onRowSelectedCaller.
  */
 #include "headlessFixture.h"
@@ -96,7 +96,7 @@ TEST_CASE("ListBox removeItem: a row that is not selected leaves the selection a
     scene.list->setSelectedRow(scene.rows[1]);
     REQUIRE(scene.selected() == std::vector<TableRow *>{scene.rows[1]});
 
-    scene.list->RemoveItem(scene.rows[2]);
+    scene.list->removeItem(scene.rows[2]);
     CHECK(scene.selected() == std::vector<TableRow *>{scene.rows[1]});
 
     scene.frame();
@@ -106,7 +106,7 @@ TEST_CASE("ListBox removeItem: a row that is not selected leaves the selection a
 
     // with nothing selected at all
     scene.list->unselectAll();
-    scene.list->RemoveItem(scene.rows[0]);
+    scene.list->removeItem(scene.rows[0]);
     scene.frame();
     CHECK_FALSE(scene.inTable(scene.rows[0]));
     CHECK(scene.list->getSelectedRows().empty());
@@ -121,15 +121,15 @@ TEST_CASE("ListBox removeItem: a selected row leaves a multi-selection")
     scene.list->setSelectedRow(scene.rows[3], false);
     REQUIRE(scene.selected() == std::vector<TableRow *>{scene.rows[0], scene.rows[2], scene.rows[3]});
 
-    scene.list->RemoveItem(scene.rows[0]);
+    scene.list->removeItem(scene.rows[0]);
     CHECK(scene.selected() == std::vector<TableRow *>{scene.rows[2], scene.rows[3]});
     CHECK(scene.list->getSelectedRow() == scene.rows[2]);
     scene.frame();
     CHECK_FALSE(scene.inTable(scene.rows[0]));
 
-    scene.list->RemoveItem(scene.rows[2]);
+    scene.list->removeItem(scene.rows[2]);
     CHECK(scene.list->getSelectedRow() == scene.rows[3]);
-    scene.list->RemoveItem(scene.rows[3]);
+    scene.list->removeItem(scene.rows[3]);
     CHECK(scene.list->getSelectedRows().empty());
     CHECK(scene.list->getSelectedRow() == nullptr);
 
@@ -166,7 +166,7 @@ TEST_CASE("ListBox selection: a row selected again is in it once")
     CHECK(scene.list->getSelectedRows().size() == 2);
     CHECK(static_cast<controls::ListBoxRow *>(scene.rows[1])->isSelected());
 
-    scene.list->RemoveItem(scene.rows[1]);
+    scene.list->removeItem(scene.rows[1]);
     CHECK(scene.timesSelected(scene.rows[1]) == 0);
     CHECK(scene.selected() == std::vector<TableRow *>{scene.rows[2]});
 

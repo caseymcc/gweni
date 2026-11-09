@@ -72,7 +72,7 @@ public:
 
     layout::TableRow *addItem(const String &label, const String &name="");
 
-    void RemoveItem(layout::TableRow *row);
+    void removeItem(layout::TableRow *row);
 
     //void render(skin::Base *skin) override;
     void layout(skin::Base *skin) override;
