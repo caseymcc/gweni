@@ -15,7 +15,6 @@ GWENI_CONTROL_CONSTRUCTOR(PropertiesDemo)
 
     {
         controls::Properties *props=newChild<controls::Properties>();
-        props->setBounds(10, 10, 150, 300);
         {
             {
                 controls::PropertyRow *row=props->add("First Name");
@@ -27,7 +26,6 @@ GWENI_CONTROL_CONSTRUCTOR(PropertiesDemo)
     }
     {
         controls::PropertyTree *ptree=newChild<controls::PropertyTree>();
-        ptree->setBounds(200, 10, 200, 200);
         {
             controls::Properties *props=ptree->add("Item One");
             props->add("Middle Name");

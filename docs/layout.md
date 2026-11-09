@@ -122,9 +122,17 @@ out. The generic `arrangeHorizontal`/`arrangeVertical` skip an Owner child
 `childrenSize` do not count it: neither its position nor its size is part of
 the parent's preferred size. It is still measured, and still arranged in turn
 for its own subtree. A control that needs content size from an Owner child asks
-for it in its own `calculateSize` (PropertyRow adds the split and its
-property's preferred width; ColorPicker its Result box at x 180; a TextBox
-its scrolled string). The children placed this way:
+for it in its own `calculateSize` (PropertyRow adds the split and its value
+column, the wider of `Properties::getValueWidth()`, 100 by default, and its
+property's preferred width, so a Properties laid out at its preferred size
+has values that can be used; ColorPicker its Result box at x 180; a TextBox
+its scrolled string). A property's preferred width is its content's (it is
+Elastic in X): an app's `setWidth()` on it is no minimum, since the row
+places it. Content that is not a child counts the same way: a ComboBox asks
+for its widest item's text, with the text padding and the chevron column, so
+choosing another item does not change its width, and a closed TreeNode's rows
+still count in its width, so a tree keeps its width when a node is toggled.
+The children placed this way:
 
 | owner | Owner children | placed in |
 |---|---|---|

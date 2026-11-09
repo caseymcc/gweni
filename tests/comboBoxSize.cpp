@@ -3,11 +3,13 @@
  *  Copyright (c) 2010 Facepunch Studios
  *  MIT License, see LICENSE
  *
- *  ComboBox's content size, measured with the real renderer: a Shrink box is
- *  its selected text, the text padding and the chevron's column wide, so the
- *  chevron the textured skin paints at the right never covers the text; it
- *  is a line high plus its padding with or without an item; its hidden menu
- *  (however wide its items) is not counted; Fixed takes the requested width.
+ *  ComboBox's content size, measured with the real renderer: a Shrink box
+ *  asks for its widest item's text, the text padding and the chevron's column,
+ *  whichever item is selected, so the chevron the textured skin paints at the
+ *  right never covers the text and choosing another item does not change the
+ *  width; dock None, it is cut to its requested width (100 from the
+ *  constructor) when the widest item asks for more. It is a line high plus
+ *  its padding with or without an item; Fixed takes the requested width.
  *  The first item added is selected, and Up/Down step the selection.
  *
  *  The chevron's column is ComboBox::ChevronSize+ChevronInset, kept as the
@@ -87,29 +89,46 @@ int chevronLeft(ComboBox *box)
 
 }//namespace
 
-TEST_CASE("ComboBox: a Shrink box is its text, text padding and chevron wide, and the chevron clears the text")
+TEST_CASE("ComboBox: a Shrink box is its widest item, text padding and chevron wide, and the chevron clears the text")
 {
     Scene scene;
     ComboBox *box=scene.combo();
 
+    box->addItem("Two", "two");
     box->addItem("Option One", "one");
-    // the hidden menu, as wide as this item, takes no part in the box's size
-    box->addItem("A menu item much wider than the selected one", "two");
     scene.frame();
 
     REQUIRE((box->getSizeFlags().horizontal == gweni::SizeFlag::Shrink));
     REQUIRE(box->getSelectedItem() != nullptr);
-    CHECK(box->getText() == "Option One");
+    CHECK(box->getText() == "Two");
 
     const gweni::Padding textPadding=box->getTextPadding();
-    const int text=textWidth(box, "Option One");
+    const int widest=textWidth(box, "Option One");
+    const int width=widest+textPadding.left+textPadding.right+
+        ComboBox::ChevronSize+ComboBox::ChevronInset;
 
-    CHECK(box->getWidth() == text+textPadding.left+textPadding.right+
-        ComboBox::ChevronSize+ComboBox::ChevronInset);
-    // the glyphs end before the chevron starts, with the text's right padding between
-    CHECK(box->textX()+textPadding.left+text+textPadding.right <= chevronLeft(box));
+    // inside the requested 100, so not cut to it
+    REQUIRE(width < 100);
+    CHECK(box->getPreferredSize().width == width);
+    CHECK(box->getWidth() == width);
+
+    // selecting the widest item changes no width, and its glyphs end before
+    // the chevron starts, with the text's right padding between
+    box->selectItemByName("one");
+    scene.frame();
+    CHECK(box->getText() == "Option One");
+    CHECK(box->getWidth() == width);
+    CHECK(box->textX()+textPadding.left+widest+textPadding.right <= chevronLeft(box));
     CHECK(box->getHeight() >= lineHeight(box)+2*ComboBox::VerticalPadding);
     CHECK(box->getHeight() >= ComboBox::ChevronSize);
+
+    // An item wider than the request: the box asks for it, and dock None it
+    // is cut to the request (Base::dockNoneSize).
+    box->addItem("A menu item much wider than the selected one", "wide");
+    scene.frame();
+    CHECK(box->getPreferredSize().width == textWidth(box, "A menu item much wider than the selected one")+
+        textPadding.left+textPadding.right+ComboBox::ChevronSize+ComboBox::ChevronInset);
+    CHECK(box->getWidth() == 100);
 }
 
 TEST_CASE("ComboBox: an empty box is as high as one with an item, and Fixed takes the requested width")
