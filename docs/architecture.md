@@ -2451,7 +2451,9 @@ record their durations and the frame's start in `CanvasFrameStats::times`
 `FrameStats::flushMicros`, reported as `renderer::FrameCounts::flushMicros`; the render
 phase without the flush is `renderMicros - flushMicros`, since `renderCanvas()` calls the
 renderer's `end()` itself. The reads change no counter (`tools/bench.sh compare` against
-the base shows every counter of every scene unchanged). `ControlTest --stats` keeps
+the base shows every counter of every scene unchanged) and cost a fixed amount a frame,
+whatever N: under callgrind 108 instructions in `update` and 129 in `render` (`idle` and
+`hover-sweep` at N=1000 alike), about 55 per read. `ControlTest --stats` keeps
 printing its own `std::chrono` times and `gweni_bench` its `TimedFlush`.
 
 **Captures read a fixed clock.** A ControlTest or OpenGLCore capture (and
