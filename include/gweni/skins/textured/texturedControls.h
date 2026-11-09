@@ -1446,6 +1446,20 @@ public:
     inline static const std::string_view name="InspectorHighlight";
 };
 
+//! gweni::tools::StatsOverlay, the stats panel in the canvas's corner: one
+//! tokyonight::StatsOverlay surface.
+class StatsOverlay:public textured::ControlRegister<StatsOverlay>
+{
+public:
+    static void staticInit(TexturedSkin *) { m_staticInit=true; }
+
+    void generate(renderer::Base *renderer, controls::Base *baseControl) override;
+    void update(renderer::Base *renderer, controls::Base *baseControl) override;
+    void remove(renderer::Base *renderer, controls::Base *baseControl) override;
+
+    inline static const std::string_view name="StatsOverlay";
+};
+
 class Window:public textured::ControlRegister<Window>
 {
 public:

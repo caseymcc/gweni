@@ -200,6 +200,10 @@ inline Surface PlotBarHover   { Cyan,                  Cyan,                  Cy
 // A PlotLines: its frame is PlotFrame, its line is drawn in PlotLine's top.
 inline Surface PlotLine       { Blue,                  Blue,                  Blue,  0.0f,     0.0f };
 
+// gweni::tools::StatsOverlay's panel, in the canvas's corner: translucent, so
+// the app's fills show dimly through it.
+inline Surface StatsOverlay   { Color(0x16,0x16,0x1e,0xe0), Color(0x16,0x16,0x1e,0xe0), BgHighlight, Radius, BorderW };
+
 // A DragNumber: a field filled like a button, not inset like a TextBox (it is
 // dragged, not typed into, until its edit box comes up), lit while hovered,
 // its border blue with the focus and cyan while it is being dragged.
@@ -258,6 +262,7 @@ inline std::unordered_map<std::string, Surface*>& surfaceRegistry()
         {"DataTableHeader",&DataTableHeader},{"DataTableHeaderHover",&DataTableHeaderHover},
         {"DataTableHeaderDown",&DataTableHeaderDown},{"DataTableStripe",&DataTableStripe},
         {"PlotFrame",&PlotFrame},{"PlotBar",&PlotBar},{"PlotBarHover",&PlotBarHover},{"PlotLine",&PlotLine},
+        {"StatsOverlay",&StatsOverlay},
         {"DragNumber",&DragNumber},{"DragNumberHover",&DragNumberHover},{"DragNumberFocus",&DragNumberFocus},
         {"DragNumberDown",&DragNumberDown},{"DragNumberDisabled",&DragNumberDisabled},
         {"VectorTagX",&VectorTagX},{"VectorTagY",&VectorTagY},{"VectorTagZ",&VectorTagZ},

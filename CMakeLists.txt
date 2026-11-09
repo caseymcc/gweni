@@ -145,6 +145,8 @@ set(GWENI_TOOL_SOURCES
     source/tools/inspector.cpp
     include/gweni/tools/themeEditor.h
     source/tools/themeEditor.cpp
+    include/gweni/tools/statsOverlay.h
+    source/tools/statsOverlay.cpp
     include/gweni/tools/toolSupport.h
     source/tools/toolSupport.cpp
 )

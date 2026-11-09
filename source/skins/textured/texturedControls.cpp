@@ -1103,6 +1103,26 @@ void InspectorHighlight::update(renderer::Base *renderer, controls::Base *baseCo
     renderer->drawFilledRect(m_primitives[3], gweni::Rect(r.x+r.w-e, r.y+e, e, r.h-2*e), z);
 }
 
+///////////////////////////////////////////////////////////////////////////
+//StatsOverlay
+void StatsOverlay::generate(renderer::Base *renderer, controls::Base *baseControl)
+{
+    generatePrimitives(renderer, requiredPrimitives());
+}
+
+void StatsOverlay::update(renderer::Base *renderer, controls::Base *baseControl)
+{
+    if(m_primitives.empty())
+        return;
+
+    tokyonight::paintSurface(renderer, m_primitives.data(), baseControl, tokyonight::StatsOverlay);
+}
+
+void StatsOverlay::remove(renderer::Base *renderer, controls::Base *baseControl)
+{
+    releasePrimitives(renderer);
+}
+
 //Bullet
 void Bullet::update(renderer::Base *renderer, controls::Base *baseControl)
 {
@@ -2620,6 +2640,7 @@ template class ControlRegister<Selectable>;
 template class ControlRegister<Separator>;
 template class ControlRegister<Bullet>;
 template class ControlRegister<InspectorHighlight>;
+template class ControlRegister<StatsOverlay>;
 template class ControlRegister<RadioButton>;
 template class ControlRegister<ScrollBarButton>;
 template class ControlRegister<BaseScrollBar>;

@@ -1269,6 +1269,7 @@ FrameCounts SlotRenderer::frameStats() const
     counts.textSlotsWritten=m_frameStats.textSlotsWritten;
     counts.uploadCalls=m_frameStats.uploadCalls+m_frameStats.atlasUploadCalls;
     counts.uploadBytes=m_frameStats.uploadBytes+m_frameStats.atlasUploadBytes;
+    counts.drawCalls=m_frameStats.drawCalls;
     counts.flushMicros=m_frameStats.flushMicros;
     return counts;
 }
