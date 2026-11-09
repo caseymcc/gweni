@@ -835,19 +835,26 @@ if(GWENI_RENDER_VULKAN AND TARGET ControlTest AND TARGET OpenGLCore AND NOT EMSC
     # The pixel bound, per PNG (web/pngdiff.mjs): no channel of any pixel more
     # than backend_pixels_max_delta from GL, and at most backend_pixels_max_fraction
     # percent of the pixels differing from it at all.
-    # Measured 2026-11-08 over the 41 --shot-all PNGs and the hero, lavapipe
-    # against llvmpipe (Mesa 23.2.1), debug tree:
+    # Measured 2026-11-09 over the 51 --shot-all PNGs and the hero, lavapipe
+    # against llvmpipe (Mesa 23.2.1), debug tree, after style 4's gradient became
+    # an exact integer level per row (#492):
     #   scale  max |delta|  pixels that differ, worst
     #   1      1            0.003 % (TextSizesDemo: 8 pixels; ShowcaseDisplayDemo 1)
-    #   1.5    1            0.002 % (TextSizesDemo)
-    #   2      1            0.007 % (LabelMultilineDemo; 25 of the 42 differ, in 1 to 82 pixels)
-    # They are SDF glyphs' edge pixels (and at 1.5 one rounded rect's edge) where
-    # a blend or a coverage lands on an 8-bit tie, which the two drivers round
-    # apart. The rest is exact: the shared fragment bodies spell mix() out
-    # (lerp()), which the GLSL compiler and glslang otherwise hand Mesa as two
-    # different lerps, a level apart on a gradient's tie rows, up to 0.875 % of a
-    # page (docs/architecture.md -> "Vulkan's counters and pixels against GL's").
-    # So 1 and 0.01 %, the worst rounded up.
+    #   1.5    1            0.002 % (TextSizesDemo; 5 of the 52 differ, ThemeEditorDemo 14 pixels)
+    #   2      1            0.007 % (LabelMultilineDemo; 36 of the 52 differ, in 1 to 82 pixels)
+    # They are SDF glyphs' edge pixels (at 2 a glyph's horizontal stroke, up to
+    # 8 pixels of one row) where a blend or a coverage lands on an 8-bit tie,
+    # which the two drivers round apart; no gradient row differs. The rest is
+    # exact: the shared fragment bodies spell mix() out (lerp()), which the GLSL
+    # compiler and glslang otherwise hand Mesa as two different lerps, and style
+    # 4's gradient level is computed in ints from the row, since a float one
+    # landed on a tie on some rows and an ulp of the interpolated position decided
+    # it, a level apart on whole rows: up to 0.875 % of a page before lerp(), and
+    # 0.635 % of ThemeEditorDemo with #289's colours before #492
+    # (docs/architecture.md -> "Vulkan's counters and pixels against GL's").
+    # The worst case did not move with #492 (the gradient rows that differed
+    # were in colours the theme then avoided), so 1 and 0.01 %, the worst
+    # rounded up, as before.
     # The ceiling is max |delta| 2 and 0.5 %: a PNG above it is a bug to find,
     # never a reason to widen the bound.
     set(backend_pixels_max_delta 1)

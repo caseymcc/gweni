@@ -23,10 +23,10 @@ std::unique_ptr<skin::textured::TexturedSkin::ThemeValues> g_found;
 
 const char *const ThemeEditorDemo::EditedSurface="ButtonNormal";
 const gweni::Color ThemeEditorDemo::EditedTop(0x3d, 0x59, 0xa1);
-// Each channel's top-to-bottom difference a multiple of 32: then no row of the
-// rects drawn in it (up to 48 device px high at scale 2) is an exact x.5 value,
-// which GL and Vulkan round apart (#458).
-const gweni::Color ThemeEditorDemo::EditedBottom(0x1d, 0x39, 0x61);
+// Red 61 -> 44 over the 15-unit headers puts their middle row on 52.5, an exact
+// tie, which GL and Vulkan once rounded a level apart (#289, #458); style 4's
+// gradient is an exact integer level per row now (#492), so this colour stays.
+const gweni::Color ThemeEditorDemo::EditedBottom(0x2c, 0x3d, 0x6b);
 
 // The controls on the left, the editor on the right. The editor is the demo's
 // own child here, not the canvas's, so the page shows and hides it with the
