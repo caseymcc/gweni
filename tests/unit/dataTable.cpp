@@ -13,10 +13,13 @@
  *  its chevron alone showing, and onSortChanged fires once per click and never
  *  for a no-op. While the columns fit the body, a column drag moves only that
  *  column's cells and the following columns' (header and body): every other
- *  control keeps its bounds and has no StateChange_Geometry pending. (Once
- *  they overflow it, every row is as wide as the columns, so a drag changes
- *  every row's bounds and Base::onBoundsChanged marks its whole subtree; that
- *  case is not pinned here.) A control put in a cell takes the mouse as its own
+ *  control keeps its bounds and has no StateChange_Geometry pending. Once
+ *  they overflow it (scrolled to x=0), every row and the inner panel are as
+ *  wide as the columns, so a new width changes their size at the same origin;
+ *  the region they clip to within the viewport stays, so they are marked
+ *  themselves and nothing in the cells left of the column is (Base::
+ *  onBoundsChanged marks a size-only change's subtree only when that region
+ *  changes). A control put in a cell takes the mouse as its own
  *  flag says: a Button's click presses it and selects nothing, a click on a
  *  Label or elsewhere on the cell selects the row. A sort click with the app re-ordering its rows, or setting their
  *  cells again, is laid out in one update-phase pass. The stripes follow the
@@ -32,6 +35,7 @@
 #include "headlessFixture.h"
 
 #include <gweni/controls/dataTable.h>
+#include <gweni/controls/scrollControl.h>
 #include <gweni/inputHandler.h>
 #include <gweni/platforms/platform.h>
 #include <gweni/skins/textured/texturedControls.h>
@@ -477,6 +481,104 @@ TEST_CASE("DataTable: a column drag changes only that column's and the following
         CHECK(row->getCell(3)->getWidth() == before[row->getCell(3)].w-20);
     }
     CHECK(scene.cell(1)->getWidth() == before[scene.cell(1)].w+20);
+}
+
+// The columns overflow the body (4 x 150 in a 400-wide table, scrolled to x=0):
+// a column's new width gives every row and the inner panel new bounds at the
+// same origin, and the region each clips its children to (its bounds within
+// the viewport) stays, so nothing but what the new width moved or resized is
+// marked: the rows, the panel, the column's cells and the following columns'
+// (with their subtrees once moved), header and body. The cells left of the
+// column, and everything in them, keep their slots.
+TEST_CASE("DataTable: an overflowing column drag marks nothing left of the column")
+{
+    for(int column : {1, 2})
+    {
+        CAPTURE(column);
+        Scene scene(4, 10);
+        controls::DataTable *table=scene.table;
+
+        for(int c=0; c < 4; ++c)
+            table->setColumnWidth(c, 150);
+        scene.frame();
+        scene.frame();
+
+        controls::ScrollControl *body=table->getBody();
+        REQUIRE(body != nullptr);
+        REQUIRE(body->getInnerPanel()->getX() == 0);
+        REQUIRE(table->contentWidth() > body->getViewport().w);
+
+        std::vector<controls::Base *> all;
+        collect(table, all);
+
+        std::map<controls::Base *, Rect> before;
+        for(controls::Base *control : all)
+            before[control]=Scene::canvasBounds(control);
+
+        // the cells of the columns left of it, header and body
+        std::vector<controls::Base *> kept;
+        // the cells the new width moves, header and body: they and their
+        // subtrees are marked
+        std::vector<controls::Base *> moved;
+        // the column's own cells: marked themselves
+        std::vector<controls::Base *> resized;
+        for(int c=0; c < 4; ++c)
+        {
+            std::vector<controls::Base *> &cells=(c < column)?kept:(c == column)?resized:moved;
+
+            cells.push_back(scene.cell(c));
+            for(controls::DataTableRow *row : table->getRows())
+                cells.push_back(row->getCell(c));
+        }
+
+        table->setColumnWidth(column, 170);
+        scene.canvas->updateCanvas();
+
+        CHECK(table->getColumnWidth(column) == 170);
+        // still scrolled to the left edge
+        CHECK(body->getInnerPanel()->getX() == 0);
+
+        size_t marked=0;
+        std::vector<std::string> wrong;
+        for(controls::Base *control : all)
+        {
+            const bool geometry=(control->getStateChange() & controls::StateChange_Geometry) != 0;
+
+            if(geometry)
+                ++marked;
+
+            bool inKept=false;
+            bool inMoved=false;
+            for(controls::Base *root : kept)
+                inKept=inKept || under(control, root);
+            for(controls::Base *root : moved)
+                inMoved=inMoved || under(control, root);
+
+            const bool isRow=std::find(table->getRows().begin(), table->getRows().end(), control)
+                != table->getRows().end();
+            const bool isResized=std::find(resized.begin(), resized.end(), control) != resized.end();
+
+            if(inKept && geometry)
+                wrong.push_back(std::string("marked left of the column: ")+control->getTypeName());
+            if((inMoved || isRow || isResized) && !geometry)
+                wrong.push_back(std::string("not marked: ")+control->getTypeName());
+        }
+        // 102 controls of them, when a size change marked a whole subtree
+        MESSAGE("column ", column, ": ", marked, " of ", all.size(), " controls marked");
+        CHECK(wrong.empty());
+        for(const std::string &line : wrong)
+            MESSAGE(line);
+
+        scene.canvas->renderCanvas();
+
+        for(controls::DataTableRow *row : table->getRows())
+        {
+            CHECK((Scene::canvasBounds(row->getCell(0)) == before[row->getCell(0)]));
+            CHECK(row->getCell(column)->getWidth() == 170);
+            CHECK(Scene::canvasBounds(row->getCell(3)).x == before[row->getCell(3)].x+20);
+            CHECK(row->getWidth() == before[row].w+20);
+        }
+    }
 }
 
 TEST_CASE("DataTable: a sort click and the app's re-bind are laid out in one pass")

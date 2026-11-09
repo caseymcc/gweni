@@ -15,7 +15,9 @@
  *  the item), the selection is shown on no row while the item is scrolled out
  *  and on the row that shows it once it is back, and a stripe never moves with
  *  a pooled row. A column drag reaches every pooled row (shown and spare) and
- *  changes only that column's cells and the following columns'; a sort click
+ *  changes only that column's cells and the following columns'; with the
+ *  columns overflowing the body (scrolled to x=0) the rows grow at the same
+ *  origin and nothing in the cells left of the column is marked; a sort click
  *  with the app's rebind() binds only the rows on screen, once each, in one
  *  update-phase pass. A count that shrinks while scrolled to the end keeps the
  *  view full and valid and drops a selection past the new end (with its
@@ -27,6 +29,7 @@
 #include "headlessFixture.h"
 
 #include <gweni/controls/dataTable.h>
+#include <gweni/controls/virtualList.h>
 #include <gweni/inputHandler.h>
 #include <gweni/platforms/platform.h>
 
@@ -604,6 +607,103 @@ TEST_CASE("DataTable source mode: a column drag reaches every pooled row and mov
     checkView(s);
 
     s.checkOnePass();
+}
+
+// The columns overflow the body (4 x 150 in a 400-wide table, scrolled to x=0):
+// a column's new width gives every pooled row and the inner panel new bounds
+// at the same origin, the region each clips its children to (its bounds
+// within the viewport) staying, so what is marked is the rows, the column's
+// cells and the following columns' (with their subtrees once moved), header
+// and body, and nothing in the cells left of the column: a drag frame does not
+// re-stamp the whole pool.
+TEST_CASE("DataTable source mode: an overflowing column drag marks nothing left of the column")
+{
+    for(int column : {1, 2})
+    {
+        CAPTURE(column);
+        Scene s(1000, 4);
+        controls::DataTable *table=s.table;
+
+        for(int c=0; c < 4; ++c)
+            table->setColumnWidth(c, 150);
+        s.frame();
+        s.frame();
+
+        controls::VirtualList *list=s.list();
+        REQUIRE(list->getInnerPanel()->getX() == 0);
+        REQUIRE(table->contentWidth() > list->getViewport().w);
+        REQUIRE(!s.shownRows().empty());
+
+        std::vector<controls::Base *> all;
+        collect(table, all);
+
+        std::map<controls::Base *, Rect> before;
+        for(controls::Base *control : all)
+            before[control]=Scene::canvasBounds(control);
+
+        // the spare row, hidden, is laid out once it shows
+        const std::vector<controls::DataTableRow *> rows=s.shownRows();
+        std::vector<controls::Base *> kept, moved, resized;
+        for(int c=0; c < 4; ++c)
+        {
+            std::vector<controls::Base *> &cells=(c < column)?kept:(c == column)?resized:moved;
+
+            cells.push_back(s.cell(c));
+            for(controls::DataTableRow *row : s.pooledRows())
+            {
+                if((c < column) || !row->hidden())
+                    cells.push_back(row->getCell(c));
+            }
+        }
+
+        s.binds.clear();
+        table->setColumnWidth(column, 170);
+        s.canvas->updateCanvas();
+
+        CHECK(table->getColumnWidth(column) == 170);
+        CHECK(list->getInnerPanel()->getX() == 0);
+
+        size_t marked=0;
+        std::vector<std::string> wrong;
+        for(controls::Base *control : all)
+        {
+            const bool geometry=(control->getStateChange() & controls::StateChange_Geometry) != 0;
+
+            if(geometry)
+                ++marked;
+
+            bool inKept=false;
+            bool inMoved=false;
+            for(controls::Base *root : kept)
+                inKept=inKept || under(control, root);
+            for(controls::Base *root : moved)
+                inMoved=inMoved || under(control, root);
+
+            const bool isRow=std::find(rows.begin(), rows.end(), control) != rows.end();
+            const bool isResized=std::find(resized.begin(), resized.end(), control) != resized.end();
+
+            if(inKept && geometry)
+                wrong.push_back(std::string("marked left of the column: ")+control->getTypeName());
+            if((inMoved || isRow || isResized) && !geometry)
+                wrong.push_back(std::string("not marked: ")+control->getTypeName());
+        }
+        MESSAGE("column ", column, ": ", marked, " of ", all.size(), " controls marked");
+        CHECK(wrong.empty());
+        for(const std::string &line : wrong)
+            MESSAGE(line);
+
+        s.canvas->renderCanvas();
+        // a drag binds nothing
+        CHECK(s.binds.empty());
+
+        for(controls::DataTableRow *row : rows)
+        {
+            CHECK((Scene::canvasBounds(row->getCell(0)) == before[row->getCell(0)]));
+            CHECK(row->getCell(column)->getWidth() == 170);
+            CHECK(Scene::canvasBounds(row->getCell(3)).x == before[row->getCell(3)].x+20);
+        }
+        checkView(s);
+    }
 }
 
 TEST_CASE("DataTable source mode: a sort click and rebind() bind only the rows on screen, in one pass")
