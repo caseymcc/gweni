@@ -73,13 +73,22 @@ float gradientT()
 // rows (an odd difference over an odd height, on the middle row), where one ulp
 // of the interpolated position decided the level and llvmpipe and lavapipe
 // rounded a level apart (#492; docs/architecture.md -> "Vulkan's counters and
-// pixels against GL's"). Every term is non-negative and under 2^31 (255*4*32767).
+// pixels against GL's"). The dividend is non-negative and under 2^24: h is at
+// most 32767, so it is at most 255*2h + h.
 vec4 gradientLevel(vec4 top, vec4 bottom)
 {
     ivec2 row = gradientRow();
     ivec4 a = ivec4(top*255.0 + 0.5);
     ivec4 b = ivec4(bottom*255.0 + 0.5);
-    ivec4 level = (a*(2*row.y) + (b - a)*(2*row.x + 1) + row.y)/(2*row.y);
+    int den = 2*row.y;
+    ivec4 num = a*den + (b - a)*(2*row.x + 1) + row.y;
+    // num/den as a float quotient of two exact floats, at most 1 off whatever the
+    // division's precision, then set right in ints: an int division of each
+    // channel cost llvmpipe 6.4 % more instructions in a frame of gweni_bench's
+    // idle scene, this 2.9 %
+    ivec4 level = ivec4(floor(vec4(num)/float(den)));
+    level -= ivec4(lessThan(num, level*den));
+    level += ivec4(greaterThanEqual(num, (level + 1)*den));
     return vec4(level)/255.0;
 }
 

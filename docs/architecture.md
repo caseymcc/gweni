@@ -963,7 +963,10 @@ alpha included, is
 
     (top*2H + (bottom-top)*(2r+1) + H) / (2H)
 
-the row centre's value rounded half up, every term non-negative and under 2^31. The
+the row centre's value rounded half up, the dividend non-negative and under 2^24. The
+division is a float quotient of the two exact operands, at most a level off, put right
+with two integer compares: an integer division of each channel took llvmpipe 6.4 %
+more instructions in a frame of `gweni_bench`'s `idle` scene, this takes 2.9 %. The
 level then goes through `roundedRect()` (border, edge coverage) and the blend as
 before, so every backend, GL, GLES, Vulkan and WebGL, writes the same level on every
 interior pixel of a gradient whatever its float arithmetic (`tests/gradientRows.cpp`
