@@ -25,7 +25,12 @@
  *  the dead box, and a box delayedDelete()d from its own onSelection handler
  *  (a click on an item of its open list) takes its list with it. A canvas
  *  deleted with the list opened deletes each once, whichever of the list and
- *  the box comes first among the canvas's children.
+ *  the box comes first among the canvas's children. An opened list taken off
+ *  every canvas is deleted with the box at once.
+ *
+ *  A list deleted from outside takes its items, the selection and the shown
+ *  text with it; the box then opens, steps and selects nothing until an item
+ *  is added, which makes it a new list.
  */
 #include "headlessFixture.h"
 
@@ -502,4 +507,92 @@ TEST_CASE("a canvas deleted with a ComboBox's list opened deletes each once")
 
     // ASAN (in that tree) reports a control deleted twice or touched after
     scene.deleteCanvas();
+}
+
+TEST_CASE("a ComboBox's opened list taken off the canvas is deleted with the box")
+{
+    Scene scene;
+
+    scene.settle();
+
+    const test::IdBankCounts baseline=test::IdBankCounts::now();
+    controls::ComboBox *combo=scene.canvas->newChild<controls::ComboBox>();
+    controls::MenuItem *one=combo->addItem("One", "one");
+
+    combo->addItem("Two", "two");
+    combo->openList();
+    scene.settle();
+
+    controls::Menu *list=listOf(one);
+
+    REQUIRE(list);
+    // off every canvas, so no canvas could delete it later
+    list->setParent(nullptr);
+    const bool offCanvas=list->getCanvas() == nullptr;
+
+    REQUIRE(offCanvas);
+
+    delete combo;
+    scene.settle();
+
+    const test::IdBankCounts after=test::IdBankCounts::now();
+
+    CHECK(scene.menusOnCanvas() == 0);
+    CHECK(after.livePrimitives() == baseline.livePrimitives());
+    CHECK(after.liveTexts() == baseline.liveTexts());
+}
+
+TEST_CASE("a ComboBox whose list is deleted from outside holds nothing of it and makes a new one")
+{
+    bool opened=false;
+
+    SUBCASE("list never opened") { opened=false; }
+    SUBCASE("list opened and closed") { opened=true; }
+
+    Scene scene;
+
+    scene.settle();
+
+    const size_t menus=scene.menusOnCanvas();
+    const test::IdBankCounts baseline=test::IdBankCounts::now();
+    Box box(scene, opened);
+    controls::ComboBox *combo=box.combo;
+
+    delete static_cast<controls::Base *>(listOf(box.one));
+    scene.settle();
+
+    CHECK(combo->getSelectedItem() == nullptr);
+    CHECK(combo->getText() == "");
+    CHECK(combo->isMenuOpen() == false);
+
+    // with no list, nothing to open, step through or select
+    combo->openList();
+    combo->closeList();
+    combo->onKeyDown(true);
+    combo->onKeyUp(true);
+    combo->selectItemByName("middle");
+    scene.settle();
+    CHECK(combo->getSelectedItem() == nullptr);
+    CHECK(box.listener.calls == 0);
+
+    controls::MenuItem *again=combo->addItem("Again", "again");
+
+    scene.settle();
+    CHECK(combo->getSelectedItem() == again);
+    CHECK(combo->getText() == "Again");
+    REQUIRE(listOf(again));
+    CHECK(listOf(again)->getParent() == static_cast<controls::Base *>(combo));
+
+    combo->openList();
+    scene.settle();
+    CHECK(combo->isMenuOpen());
+
+    delete box.host;
+    scene.settle();
+
+    const test::IdBankCounts after=test::IdBankCounts::now();
+
+    CHECK(scene.menusOnCanvas() == menus);
+    CHECK(after.livePrimitives() == baseline.livePrimitives());
+    CHECK(after.liveTexts() == baseline.liveTexts());
 }

@@ -66,8 +66,10 @@ public:
     GWENI_CONTROL(ComboBox, Button);
 
 public:
-    //! The list is not its child once it has been opened: clears the list's
-    //! pointer back to it.
+    //! Deletes the list with the box. Never opened, it is the box's child and
+    //! goes with it; once opened it is the canvas's, and is closed and
+    //! delayedDelete()d (deleted at once off any canvas, left to a canvas
+    //! tearing down). Either way it no longer points at the box.
     ~ComboBox() override;
 
     //! The down chevron the skin paints on the right, ChevronInset from the
@@ -127,8 +129,11 @@ protected:
     //! dropped if it was the selected item, with no onSelection, as
     //! clearItems() drops it, and the box is measured again.
     void itemRemoved(controls::Base *child);
-    //! The list is being deleted (before this box): it is no longer held.
+    //! The list is being deleted (before this box): neither it nor its items
+    //! are held any more, and nothing is shown, as after clearItems().
     void listDeleted();
+    //! A new hidden list as this box's child.
+    void makeList();
 
     //! The widest of the items' texts in this box's font, measured again only
     //! for the texts (or the font, the renderer's text layout) that changed

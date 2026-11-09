@@ -45,13 +45,7 @@ GWENI_CONTROL_CONSTRUCTOR(ComboBox)
 {
     setSize(100, 20);
 
-//    m_menu=new Menu(this);
-    m_menu=newChild<internal::ComboBoxList>();
-    m_menu->setComboBox(this);
-
-    m_menu->setHidden(true);
-    m_menu->setDisableIconMargin(true);
-    m_menu->setTabable(false);
+    makeList();
 
 //    DownArrow *arrow=new DownArrow(this);
     DownArrow *arrow=newChild<DownArrow>();
@@ -75,8 +69,22 @@ GWENI_CONTROL_CONSTRUCTOR(ComboBox)
     setKeyboardInputEnabled(true);
 }
 
+void ComboBox::makeList()
+{
+    m_menu=newChild<internal::ComboBoxList>();
+    m_menu->setComboBox(this);
+
+    m_menu->setHidden(true);
+    m_menu->setDisableIconMargin(true);
+    m_menu->setTabable(false);
+}
+
 MenuItem *ComboBox::addItem(const String &strLabel, const String &strName)
 {
+    // the list was deleted from outside: a new one, as the box had at first
+    if(!m_menu)
+        makeList();
+
     MenuItem *item=m_menu->addItem(strLabel, "");
     item->setName(strName);
     item->onMenuItemSelected.add(this, &ComboBox::onItemSelected);
@@ -136,6 +144,14 @@ int ComboBox::itemsTextWidth()
     const unsigned serial=renderer?renderer->textLayoutSerial():0;
     const gweni::Font &font=getFont();
     const bool sameLayout=font == m_itemsFont && renderer == m_itemsRenderer && serial == m_itemsSerial;
+
+    if(!m_menu)
+    {
+        m_itemTexts.clear();
+        m_itemWidths.clear();
+        return 0;
+    }
+
     Base::List &children=m_menu->getChildren();
     size_t count=0;
     int widest=0;
@@ -185,6 +201,9 @@ void ComboBox::onPress(event::Info)
     if(isMenuOpen())
         return getCanvas()->closeMenus();
 
+    if(!m_menu)
+        return;
+
     const bool wasMenuHidden=m_menu->hidden();
     getCanvas()->closeMenus();
 
@@ -194,8 +213,36 @@ void ComboBox::onPress(event::Info)
 
 ComboBox::~ComboBox()
 {
-    if(m_menu)
-        m_menu->setComboBox(nullptr);
+    internal::ComboBoxList *list=m_menu;
+
+    if(!list)
+        return;
+
+    // A list waiting for its delete must not reach this box.
+    m_menu=nullptr;
+    list->setComboBox(nullptr);
+
+    // Never opened, it is still this box's child: ~Base deletes it.
+    if(list->getParent() == this)
+        return;
+
+    // Opened, it is the canvas's child.
+    Canvas *canvas=list->getCanvas();
+
+    // A canvas tearing down deletes it with its other children, and deleting
+    // it here would take a sibling out of the list that canvas is walking.
+    if(canvas && canvas->releasingChildren())
+        return;
+
+    if(!list->hidden())
+        list->hide();
+
+    // Delayed, as a context menu or a popup is: this may run from one of its
+    // own items' events (an onSelection handler deleting the box).
+    if(canvas)
+        list->delayedDelete();
+    else
+        delete list;
 }
 
 void ComboBox::itemRemoved(Base *child)
@@ -213,7 +260,19 @@ void ComboBox::itemRemoved(Base *child)
 
 void ComboBox::listDeleted()
 {
+    // Its items go with it, past onChildRemoved (the list is in its ~Base
+    // then).
     m_menu=nullptr;
+    m_selectedItem=nullptr;
+
+    // A canvas tearing down deletes this box next: nothing to show.
+    Canvas *canvas=getCanvas();
+
+    if(canvas && canvas->releasingChildren())
+        return;
+
+    setText("");
+    invalidate();
 }
 
 void ComboBox::clearItems()
@@ -237,7 +296,8 @@ void ComboBox::selectItem(MenuItem *item, bool fireChangeEvents)
 
     m_selectedItem=item;
     setText(m_selectedItem->getText());
-    m_menu->setHidden(true);
+    if(m_menu)
+        m_menu->setHidden(true);
     invalidate();
 
     if(fireChangeEvents)
@@ -260,6 +320,9 @@ void ComboBox::onItemSelected(event::Info info)
 
 void ComboBox::selectItemByName(const gweni::String &name, bool fireChangeEvents)
 {
+    if(!m_menu)
+        return;
+
     for(auto &&control : m_menu->getChildren())
     {
         MenuItem *child=gweni_cast<MenuItem>(control);
@@ -316,7 +379,7 @@ void ComboBox::closeList()
 
 bool ComboBox::onKeyUp(bool down)
 {
-    if(down)
+    if(down && m_menu)
     {
         Base::List &children=m_menu->getChildren();
         Base::List::reverse_iterator it=std::find(children.rbegin(),
@@ -334,7 +397,7 @@ bool ComboBox::onKeyUp(bool down)
 
 bool ComboBox::onKeyDown(bool down)
 {
-    if(down)
+    if(down && m_menu)
     {
         Base::List &children=m_menu->getChildren();
         Base::List::iterator it=std::find(children.begin(), children.end(), m_selectedItem);
