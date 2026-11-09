@@ -39,6 +39,7 @@ flat out vec4 vColor1;    // gradient bottom color
 flat out vec4 vBorderColor;
 out vec4 vColor3;         // smooth: style 6 interpolates it along x
 flat out vec4 vSegment;   // style 3: the line's endpoints (xy, zw), px from the quad centre
+flat out vec4 vJoints;    // style 3: its previous (xy) and next (zw) neighbour points, as vSegment
 flat out float vBehindDepth; // style 3: the depth half a layer behind this slot's z
 out vec2 vPixel;          // pixel-space position, the clip boxes' space
 
@@ -79,6 +80,9 @@ void main()
     // it, or the next neighbour), negated as an integer so a 0 stays +0.0
     ivec2 lineStart = (ivec2(inColor1) << 16) >> 16;
     vSegment = vec4(vec2(lineStart), vec2(-lineStart))*0.5;
+    // and the neighbour points drawLine was given, in border colour (previous) and
+    // color3 (next), which radius's bits say it holds (vRadius)
+    vJoints = vec4((ivec4(uvec4(inBorderColor, inColor3)) << 16) >> 16)*0.5;
     vPixel = vec2(inPosition.xy);
     // GL_SHORT sign-extends z; its low 16 bits are Vertex::z, 0..65535
     float z = float(inPosition.z & 0xffff);

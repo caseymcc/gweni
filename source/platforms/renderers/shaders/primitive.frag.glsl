@@ -23,6 +23,7 @@ flat in vec4 vColor1;
 flat in vec4 vBorderColor;
 in vec4 vColor3;
 flat in vec4 vSegment;
+flat in vec4 vJoints;
 flat in float vBehindDepth;
 in vec2 vPixel;
 
@@ -174,6 +175,28 @@ float pixelArea(float e, vec2 n)
     return 0.5 + e/a;
 }
 
+// Style 3: the vector from the nearest point of the segment from s to e to a pixel's
+// centre (pa the centre less s, ba e less s), and h, where that point is along it
+// (0 at s, 1 at e).
+vec2 lineOffset(vec2 pa, vec2 ba, out float h)
+{
+    h = clamp(dot(pa, ba)/max(dot(ba, ba), 1e-8), 0.0, 1.0);
+    return pa - ba*h;
+}
+
+// Style 3's coverage of a pixel by the capsule radius px around a segment (ba its
+// end less its start), v the pixel's offset from its nearest point (lineOffset): the
+// part of the pixel between the stroke's two edges, each taken as a straight edge
+// across the pixel normal to n, the direction of v (radial in a cap).
+float lineOffsetCoverage(vec2 v, vec2 ba, float radius, out vec2 n)
+{
+    float d = length(v);
+
+    n = d > 1e-4 ? v/d
+        : (dot(ba, ba) > 1e-8 ? normalize(vec2(-ba.y, ba.x)) : vec2(0.0, 1.0));
+    return clamp(pixelArea(radius - d, n) + pixelArea(radius + d, n) - 1.0, 0.0, 1.0);
+}
+
 // Image unit `unit` at uv as GL_LINEAR_MIPMAP_LINEAR with GL_CLAMP_TO_EDGE samples
 // it, with uv's screen gradients dx and dy (taken in uniform control flow),
 // computed so that every GL gives the same value, which textureGrad did not
@@ -271,6 +294,7 @@ void main()
     // want the whole quad alive.
     uvec4 clip = clipBox(vSlot);
     float depth = gl_FragCoord.z;
+    bool lineDeferred = false;  // style 3: an adjacent segment of its polyline draws this pixel
     bool clipped = any(lessThan(vPixel, vec2(clip.xy))) || any(greaterThanEqual(vPixel, vec2(clip.zw)));
     vec2 uvDx = dFdx(TexCoords);
     vec2 uvDy = dFdy(TexCoords);
@@ -287,30 +311,105 @@ void main()
     else if (ShaderType == 3u)
     {
         // Line: a capsule vBorder px thick around the segment vSegment.xy-vSegment.zw
-        // (vLocal is in device px). A pixel is covered by the part of it between the
-        // stroke's two edges, each taken as a straight edge across the pixel along
+        // (px from the quad's centre). A pixel is covered by the part of it between
+        // the stroke's two edges, each taken as a straight edge across the pixel along
         // the normal from the nearest point of the segment (radial in a cap): the
         // pixel's exact area for the body of the stroke, so a thin slanted line is
         // as bright on every row. drawLine puts the stroke's edges of a horizontal
         // or vertical segment on pixel boundaries, where this is style 4's box
         // filter: whole fully covered rows (columns) and nothing beside them.
-        vec2 pa = vLocal - vSegment.xy;
-        vec2 ba = vSegment.zw - vSegment.xy;
-        float h = clamp(dot(pa, ba)/max(dot(ba, ba), 1e-8), 0.0, 1.0);
-        vec2 v = pa - ba*h;
-        float d = length(v);
-        vec2 n = d > 1e-4 ? v/d
-            : (dot(ba, ba) > 1e-8 ? normalize(vec2(-ba.y, ba.x)) : vec2(0.0, 1.0));
         float radius = 0.5*vBorder;
-        float a = clamp(pixelArea(radius - d, n) + pixelArea(radius + d, n) - 1.0, 0.0, 1.0);
+        float h;
+        vec2 n;
+        vec2 ba = vSegment.zw - vSegment.xy;
+        float a = lineOffsetCoverage(lineOffset(vLocal - vSegment.xy, ba, h), ba, radius, n);
+
+        // The neighbours drawLine was given (the bits of vRadius, the points in
+        // vJoints) are the polyline's segments before this one (k = 0, its previous
+        // point to this one's start) and after it (k = 2, this one's end to its next
+        // point), drawn at the same thickness and z in slots of their own. Each pixel
+        // two of them reach is drawn by one, so it is blended once: the segment
+        // nearest to its centre, ties (the disc at a joint, which both end at) going
+        // to the earlier one. Every slot reaching the pixel must agree on that to the
+        // bit, so the centre is taken exactly (at a pixel centre vLocal is a multiple
+        // of 0.5, from the quad's whole-px corners) and each distance is a function of
+        // the centre less the segment's start and its end less its start, whole half
+        // px whichever slot's centre they are taken from, through the one lineOffset
+        // call in the loop. (Ownership by distance rather than by coverage: llvmpipe
+        // runs every branch of the shader for every pixel, masked, so what is added
+        // here every primitive's pixels pay for.)
+        int joints = int(vRadius + 0.5);
+        bool present[3];
+        vec2 starts[3];
+        vec2 ends[3];
+
+        present[0] = (joints & 1) != 0;
+        present[1] = true;
+        present[2] = (joints & 2) != 0;
+        starts[0] = vJoints.xy;
+        ends[0] = vSegment.xy;
+        starts[1] = vSegment.xy;
+        ends[1] = vSegment.zw;
+        starts[2] = vSegment.zw;
+        ends[2] = vJoints.zw;
+
+        vec2 p = floor(vLocal*2.0 + 0.5)*0.5;
+        vec2 offset[3];
+        float dist[3];
+        float along[3];
+
+        for(int k = 0; k < 3; ++k)
+        {
+            along[k] = 0.0;
+            offset[k] = lineOffset(p - starts[k], ends[k] - starts[k], along[k]);
+            dist[k] = present[k] ? dot(offset[k], offset[k]) : 1e30;
+        }
+        if(dist[0] <= dist[1] || dist[2] < dist[1])
+            lineDeferred = true;
+
+        // This segment draws the pixel at the part of it that its stroke and its
+        // nearer neighbour's cover together. Where both nearest points are the
+        // joint, the strokes there are the same disc: the larger of the two (equal
+        // but for vLocal's rounding). Elsewhere, the two coverages a and ak less
+        // their overlap: the product a*ak where their edges cross at right angles,
+        // the smaller where they are parallel and cover the same side of the pixel,
+        // and a + ak - 1 (or nothing) where they cover opposite sides, mixed by the
+        // cosine between the two normals. That is the union of the two strips over
+        // the pixel to within a few levels (a cap's strip against the other's body,
+        // a bend's inner crotch, a sharp bend's tip), and continuous: at the line
+        // where one nearest point leaves the joint the two normals are one, and both
+        // owners of a boundary compute it alike.
+        bool before = dist[0] <= dist[2];
+        vec2 nk;
+        float ak = lineOffsetCoverage(before ? offset[0] : offset[2],
+            before ? ends[0] - starts[0] : ends[2] - starts[2], radius, nk);
+        bool disc = before ? (along[0] >= 1.0 && along[1] <= 0.0) : (along[1] >= 1.0 && along[2] <= 0.0);
+
+        if(!(before ? present[0] : present[2]))
+            ak = 0.0;
+        if(ak > 0.0)
+        {
+            if(disc)
+                a = max(a, ak);
+            else
+            {
+                float both = a*ak;
+                float c = dot(n, nk);
+                float overlap = c >= 0.0 ? lerp(both, min(a, ak), c)
+                    : lerp(both, max(a + ak - 1.0, 0.0), -c);
+
+                a = clamp(a + ak - overlap, max(a, ak), 1.0);
+            }
+        }
         FragColor = vec4(VertexColor.rgb, VertexColor.a * a);
         // A partly covered pixel's depth is moved toward the layer behind, up to half
-        // a layer as its coverage goes to 0. The segments of a polyline share a z, and
-        // with GL_LESS the first one's anti-aliased cap rim would otherwise keep the
-        // next one off pixels it covers fully; this way a later segment draws over the
-        // pixels an earlier one covers less, still in front of every lower z, while
-        // a fully covered pixel keeps its z, so a translucent polyline is blended once
-        // there however many of its segments cover it.
+        // a layer as its coverage goes to 0. Adjacent segments no longer both draw a
+        // pixel, but segments farther apart along a polyline at one z can (one shorter
+        // than the stroke, or a zigzag crossing itself), and with GL_LESS the first
+        // one's anti-aliased rim would otherwise keep a later one off pixels it covers
+        // fully; this way a later segment draws over the pixels an earlier one covers
+        // less, still in front of every lower z, while a fully covered pixel keeps its
+        // z, so it is blended once there however many of them cover it.
         depth = lerp(vBehindDepth, gl_FragCoord.z, a);
     }
     else if (ShaderType == 4u)
@@ -462,7 +561,7 @@ void main()
     // its control, over its neighbours, and a line's quad is its bounding box), whose
     // coverage beside a stroke's edge is 0 give or take rounding: less than half a
     // step of 8-bit alpha changes no pixel
-    if(clipped || (ShaderType == 2u && FragColor.a <= 0.0)
+    if(clipped || lineDeferred || (ShaderType == 2u && FragColor.a <= 0.0)
         || ((ShaderType == 3u || ShaderType == 5u) && FragColor.a < 0.5/255.0))
         discard;
     // every other style writes the depth the fixed function would
