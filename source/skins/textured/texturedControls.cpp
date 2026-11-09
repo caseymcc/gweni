@@ -210,20 +210,14 @@ void Canvas::update(renderer::Base *renderer, controls::Base *baseControl)
 //CheckBox
 size_t CheckBox::ActiveNormal;
 size_t CheckBox::ActiveChecked;
-size_t CheckBox::DisabledNormal;
-size_t CheckBox::DisabledChecked;
 
 BorderedPrimitive CheckBox::ActiveNormalPrimitive;
 BorderedPrimitive CheckBox::ActiveCheckedPrimitive;
-BorderedPrimitive CheckBox::DisabledNormalPrimitive;
-BorderedPrimitive CheckBox::DisabledCheckedPrimitive;
 
 void CheckBox::staticInit(TexturedSkin *skin)
 {
     ActiveNormal=skin->getTextureEntryId("CheckBox.Active.Normal");
     ActiveChecked=skin->getTextureEntryId("CheckBox.Active.Checked");
-    DisabledNormal=skin->getTextureEntryId("CheckBox.Disabled.Normal");
-    DisabledChecked=skin->getTextureEntryId("CheckBox.Disabled.Checked");
 }
 
 // The frame of a CheckBox or RadioButton: disabled first, then hovered (the
@@ -1117,17 +1111,13 @@ void Bullet::update(renderer::Base *renderer, controls::Base *baseControl)
 //RadioButton
 size_t RadioButton::ActiveNormal;
 size_t RadioButton::ActiveChecked;
-size_t RadioButton::DisabledNormal;
-size_t RadioButton::DisabledChecked;
 
 BorderedPrimitive RadioButton::NormalPrimitive;
 
 void RadioButton::staticInit(TexturedSkin *skin)
 {
     ActiveNormal=skin->getTextureEntryId("RadioButton.Active.Normal");
-    DisabledNormal=skin->getTextureEntryId("RadioButton.Disabled.Normal");
     ActiveChecked=skin->getTextureEntryId("RadioButton.Active.Checked");
-    DisabledChecked=skin->getTextureEntryId("RadioButton.Disabled.Checked");
 
     m_staticInit=true;
 }

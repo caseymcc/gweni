@@ -101,10 +101,7 @@ GWENI_CONTROL_CONSTRUCTOR(ShowcaseButtonsDemo)
 
             check->label()->setText(row.text);
             check->checkBox()->setChecked(row.checked);
-            // the box and the label, which setDisabled on the pair does not
-            // reach (issue #411); the box still draws as an enabled one
-            check->checkBox()->setDisabled(row.disabled);
-            check->label()->setDisabled(row.disabled);
+            check->setDisabled(row.disabled);
         }
         // CheckBoxes with no label, as in a table's row
         controls::Base *boxes=showcase::addRow<controls::Base>(section);

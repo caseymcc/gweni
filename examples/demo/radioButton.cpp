@@ -18,14 +18,12 @@ GWENI_CONTROL_CONSTRUCTOR(RadioButtonDemo)
     rc->onSelectionChange.add(this, &RadioButtonDemo::onChange);
 
     // a disabled group, "Option B" chosen: the disabled look, checked and
-    // unchecked (the radio and its label are disabled each, as for a
-    // CheckBoxWithLabel)
+    // unchecked
     controls::RadioButtonController *disabled=newChild<controls::RadioButtonController>();
     for(const char *text:{"Option A", "Option B"})
     {
         controls::LabeledRadioButton *option=disabled->addOption(text);
-        option->getRadioButton()->setDisabled(true);
-        option->getLabel()->setDisabled(true);
+        option->setDisabled(true);
         if(String(text) == "Option B")
             option->select();
     }

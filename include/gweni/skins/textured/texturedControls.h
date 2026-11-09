@@ -242,13 +242,9 @@ public:
 
     static size_t ActiveNormal;
     static size_t ActiveChecked;
-    static size_t DisabledNormal;
-    static size_t DisabledChecked;
 
     static BorderedPrimitive ActiveNormalPrimitive;
     static BorderedPrimitive ActiveCheckedPrimitive;
-    static BorderedPrimitive DisabledNormalPrimitive;
-    static BorderedPrimitive DisabledCheckedPrimitive;
 };
 
 class ComboBox:public textured::ControlRegister<ComboBox>
@@ -853,8 +849,6 @@ public:
 
     static size_t ActiveNormal;
     static size_t ActiveChecked;
-    static size_t DisabledNormal;
-    static size_t DisabledChecked;
 
     static BorderedPrimitive NormalPrimitive;
 };
