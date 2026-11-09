@@ -303,9 +303,13 @@ public:
     void drawIcon(size_t primitiveId, gweni::Rect rect, int kind, int direction,
         gweni::Color color, int zIndex) override;
     //! Style 3: the capsule's distance evaluated in the fragment shader, over a quad
-    //! of the two endpoints' stroke squares and 1 px around them.
+    //! of the two endpoints' stroke squares and 1 px around them. The neighbours go
+    //! in the slot's vertexes (Vertex: radius, bx/by, dx/dy); one farther than
+    //! 16383.5 device px from the quad's centre on either axis is left out, and that
+    //! joint is blended as one without neighbours is.
     void drawLine(size_t primitiveId, gweni::PointF p0, gweni::PointF p1,
-        float thickness, int zIndex) override;
+        float thickness, int zIndex, const gweni::PointF *prev=nullptr,
+        const gweni::PointF *next=nullptr) override;
 
     void startClip() override;
     void endClip() override;
@@ -533,13 +537,23 @@ protected:
         uint16_t tx, ty; //color0 (top fill) packed rg/ba, or UV for texture (style 2, 0..65535 = 0..1)
         // SDF fields (styles 3-7); left 0 for all other styles.
         int16_t  lx, ly; //local position relative to rect center, in half-pixel units (= +/-size at the four corners, so an odd size is exact)
-        uint16_t radius; //corner radius in px; icon kind (style 5); image unit (style 2)
+        uint16_t radius; //corner radius in px; icon kind (style 5); image unit (style 2);
+                         //line (style 3): LineHasPrev | LineHasNext, the neighbours it holds
         uint16_t border; //border thickness in px; line thickness in px (style 3)
         uint16_t cx, cy; //color1 (bottom fill for vertical gradient, image tint for style 2) packed rg/ba;
                          //line (style 3): its first endpoint, int16_t bits, in lx/ly's units
-        uint16_t bx, by; //border color packed rg/ba; icon stroke px in bx's high byte (style 5)
+        uint16_t bx, by; //border color packed rg/ba; icon stroke px in bx's high byte (style 5);
+                         //line (style 3): its previous point with LineHasPrev, as cx/cy, else 0
         uint16_t dx, dy; //color3 packed rg/ba: bottom edge (style 6) or checker dark (style 7);
-                         //line (style 3): its second endpoint, as cx/cy
+                         //line (style 3): its next point with LineHasNext, as cx/cy, else its
+                         //second endpoint (-cx/-cy: the quad is centred on the segment)
+    };
+
+    //! Style 3's radius bits: which neighbours of the segment its vertexes hold.
+    enum : uint16_t
+    {
+        LineHasPrev=1,
+        LineHasNext=2
     };
 
     static_assert(sizeof(Vertex) == 32, "Vertex is 16 16-bit fields; the GPU attribute layout depends on it");

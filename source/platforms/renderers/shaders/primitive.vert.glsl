@@ -74,8 +74,11 @@ void main()
     vColor1 = unpackColor(inColor1);
     vBorderColor = unpackColor(inBorderColor);
     vColor3 = unpackColor(inColor3);
-    // style 3 keeps its endpoints in color1 and color3, int16 bits in half-pixel units
-    vSegment = vec4((ivec4(uvec4(inColor1, inColor3)) << 16) >> 16)*0.5;
+    // style 3 keeps its first endpoint in color1, int16 bits in half-pixel units; the
+    // quad is centred on the segment, so the second is its negation (color3 holds
+    // it, or the next neighbour), negated as an integer so a 0 stays +0.0
+    ivec2 lineStart = (ivec2(inColor1) << 16) >> 16;
+    vSegment = vec4(vec2(lineStart), vec2(-lineStart))*0.5;
     vPixel = vec2(inPosition.xy);
     // GL_SHORT sign-extends z; its low 16 bits are Vertex::z, 0..65535
     float z = float(inPosition.z & 0xffff);

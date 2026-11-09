@@ -1641,7 +1641,7 @@ void SlotRenderer::drawIcon(size_t primitiveId, gweni::Rect rect, int kind, int 
 }
 
 void SlotRenderer::drawLine(size_t primitiveId, gweni::PointF p0, gweni::PointF p1,
-    float thickness, int zIndex)
+    float thickness, int zIndex, const gweni::PointF *prev, const gweni::PointF *next)
 {
     size_t vertexIndex=primitiveId*4;
 
@@ -1691,6 +1691,30 @@ void SlotRenderer::drawLine(size_t primitiveId, gweni::PointF p0, gweni::PointF 
     const uint16_t b0=(uint16_t)(int16_t)(2*bx+stroke-centreX);
     const uint16_t b1=(uint16_t)(int16_t)(2*by+stroke-centreY);
 
+    // A neighbour point is placed as an endpoint is, at this segment's stroke, so it
+    // is where the neighbour's own slot has that endpoint, in this quad's half px.
+    // One that int16_t cannot hold (16383.5 px from the centre) is left out.
+    uint16_t joints=0;
+    uint16_t neighbour[2][2]={{0, 0}, {b0, b1}};
+
+    for(int i=0; i<2; ++i)
+    {
+        const gweni::PointF *point=(i == 0) ? prev : next;
+
+        if(!point)
+            continue;
+
+        const int64_t px=2*strokeStart(point->x, offset.x)+stroke-centreX;
+        const int64_t py=2*strokeStart(point->y, offset.y)+stroke-centreY;
+        const int64_t limit=std::numeric_limits<int16_t>::max();
+
+        if(std::abs(px) > limit || std::abs(py) > limit)
+            continue;
+        neighbour[i][0]=(uint16_t)(int16_t)px;
+        neighbour[i][1]=(uint16_t)(int16_t)py;
+        joints=(uint16_t)(joints | ((i == 0) ? LineHasPrev : LineHasNext));
+    }
+
     auto setLine=[&](size_t vi, int64_t px, int64_t py, int64_t lx, int64_t ly)
     {
         Vertex &v=m_vertexes[vi];
@@ -1698,9 +1722,11 @@ void SlotRenderer::drawLine(size_t primitiveId, gweni::PointF p0, gweni::PointF 
         setVertex(v, 3, (int)px, (int)py, zIndex, m_color.rg(), m_color.ba());
         v.lx=(int16_t)lx;
         v.ly=(int16_t)ly;
+        v.radius=joints;
         v.border=(uint16_t)stroke;
         v.cx=a0; v.cy=a1;
-        v.dx=b0; v.dy=b1;
+        v.bx=neighbour[0][0]; v.by=neighbour[0][1];
+        v.dx=neighbour[1][0]; v.dy=neighbour[1][1];
     };
 
     setLine(vertexIndex++, x0, y0, -hw, -hh);

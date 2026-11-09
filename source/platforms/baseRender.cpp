@@ -164,9 +164,9 @@ void Base::drawBilinearRect(size_t primitiveId, gweni::Rect rect, int zIndex,
 
 // A rect along the longer axis, from the nearer whole unit of one end to the other's,
 // and round(thickness) units across, starting where OpenGLCore's stroke of that many
-// device px does at scale 1.
+// device px does at scale 1. The neighbours change nothing in one rect.
 void Base::drawLine(size_t primitiveId, gweni::PointF p0, gweni::PointF p1,
-    float thickness, int zIndex)
+    float thickness, int zIndex, const gweni::PointF *, const gweni::PointF *)
 {
     const int across=std::max(1, static_cast<int>(std::lround(thickness)));
     const bool horizontal=std::abs(p1.x-p0.x) >= std::abs(p1.y-p0.y);

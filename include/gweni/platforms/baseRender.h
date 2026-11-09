@@ -178,13 +178,24 @@ public:
     //! is placed so a horizontal or vertical segment covers whole rows (columns)
     //! fully and nothing beside them. A pixel the line does not cover writes nothing,
     //! depth included. Segments that share an endpoint join without a gap (their caps
-    //! overlap, so a translucent polyline is darker at its joints). p0 == p1 draws
-    //! a disc. The default is an approximation for a backend without it: a filled
-    //! rect along the segment's longer axis, its extent on that axis and \a thickness
-    //! across, centred on the segment's middle; exact only for an axis-aligned
-    //! segment (without the caps).
+    //! overlap). p0 == p1 draws a disc.
+    //!
+    //! \a prev and \a next, when given, are the polyline's points before p0 and
+    //! after p1: the segments prev-p0 and p1-next are its neighbours, drawn with the
+    //! same thickness, z and colour. A backend that knows them blends each pixel
+    //! where neighbours overlap once, so a translucent polyline is no darker at its
+    //! joints; without them, or for segments farther apart, the overlap is blended
+    //! as the depth test lets it (a translucent joint can be darker). A caller that
+    //! hides or removes a neighbour draws this segment again without it. A segment
+    //! drawn again with other neighbours is a changed slot.
+    //!
+    //! The default is an approximation for a backend without it: a filled rect along
+    //! the segment's longer axis, its extent on that axis and \a thickness across,
+    //! centred on the segment's middle; exact only for an axis-aligned segment
+    //! (without the caps). It ignores the neighbours.
     virtual void drawLine(size_t primitiveId, gweni::PointF p0, gweni::PointF p1,
-        float thickness, int zIndex);
+        float thickness, int zIndex, const gweni::PointF *prev=nullptr,
+        const gweni::PointF *next=nullptr);
 
     virtual void drawTexturedRect(const gweni::Texture &texture, size_t primitiveId, gweni::Rect targetRect, int zIndex,
         float u1=0.0f, float v1=0.0f,float u2=1.0f, float v2=1.0f)

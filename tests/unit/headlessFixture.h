@@ -24,6 +24,7 @@
 #include <functional>
 #include <map>
 #include <memory>
+#include <optional>
 #include <set>
 #include <string>
 #include <utility>
@@ -117,15 +118,19 @@ public:
         float thickness;
         int zIndex;
         gweni::Color color;     //!< the draw colour when it was made
+        std::optional<gweni::PointF> prev;  //!< the neighbour point before p0, if given
+        std::optional<gweni::PointF> next;  //!< the neighbour point after p1, if given
     };
 
     void setDrawColor(gweni::Color color) override { drawColor=color; }
 
     //! Recorded in `lines`, not drawn: a control test checks its segments there.
     void drawLine(size_t primitiveId, gweni::PointF p0, gweni::PointF p1, float thickness,
-        int zIndex) override
+        int zIndex, const gweni::PointF *prev=nullptr, const gweni::PointF *next=nullptr) override
     {
-        lines.push_back({primitiveId, p0, p1, thickness, zIndex, drawColor});
+        lines.push_back({primitiveId, p0, p1, thickness, zIndex, drawColor,
+            prev ? std::optional<gweni::PointF>(*prev) : std::nullopt,
+            next ? std::optional<gweni::PointF>(*next) : std::nullopt});
         wrotePrimitive(primitiveId);
     }
 

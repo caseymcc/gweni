@@ -1280,10 +1280,16 @@ two programs and the draws. What follows describes both together:
   `floor(v*scale - T/2 + 0.5)` (for an even `T` that is `snap(v) - T/2`), so a
   horizontal or vertical segment is `T` whole fully covered rows (columns), like a
   rule. The quad is both endpoints' stroke squares and 1 px around them. `lx/ly` run
-  over it in half-pixel units as for style 4, the two endpoints are stored the same way
-  relative to the quad's centre in color1 (`cx/cy`) and color3 (`dx/dy`) as `int16_t`
-  bits (the vertex shader sign-extends them into the flat `vSegment`), and `border` is
-  `T`. The fragment shader covers a pixel by the part of it between the stroke's two
+  over it in half-pixel units as for style 4, the first endpoint is stored the same way
+  relative to the quad's centre in color1 (`cx/cy`) as `int16_t` bits (the vertex
+  shader sign-extends it into the flat `vSegment`, whose second endpoint is its
+  negation: the quad is centred on the segment), and `border` is `T`. The neighbour
+  points a caller gives (`drawLine`'s `prev` and `next`, the polyline's points before
+  `p0` and after `p1`) are placed as endpoints are, at this segment's `T`, and stored
+  the same way in `bx/by` (previous) and `dx/dy` (next; without one, `dx/dy` holds the
+  second endpoint, as before neighbours existed), with `radius` saying which it holds
+  (`LineHasPrev`, `LineHasNext`); a neighbour 16383.5 px or more from the quad's centre
+  on either axis, which `int16_t` half px cannot hold, is left out. The fragment shader covers a pixel by the part of it between the stroke's two
   edges, each a straight edge across the pixel normal to the direction from the
   segment's nearest point (`pixelArea()`: the exact area of a unit square on one side
   of a line, linear in the middle of its `|nx|+|ny|` wide projection and quadratic at

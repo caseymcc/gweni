@@ -98,7 +98,8 @@ public:
         drawn.push_back({primitiveId, zIndex});
     }
 
-    void drawLine(size_t primitiveId, PointF, PointF, float, int zIndex) override
+    void drawLine(size_t primitiveId, PointF, PointF, float, int zIndex, const PointF *,
+        const PointF *) override
     {
         drawn.push_back({primitiveId, zIndex});
     }
