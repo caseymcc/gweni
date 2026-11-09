@@ -24,9 +24,9 @@
  *
  *  A resize, of the panel or of a control holding the children in an inner
  *  panel (as a ScrollControl does), and a canvas scale change dirty every
- *  child, so the list is stopped before they are (overflowChangedChildren,
- *  #485); a one-child edit on the next frame still goes over the same few
- *  children as on a panel that never had one.
+ *  child and overflow the changed-children list; a one-child edit on the
+ *  next frame still goes over the same few children as on a panel that
+ *  never had one (#485).
  *
  *  Layout verification's full pass counts and places every child again, so
  *  with it on each frame starts from a full walk's state. The last case runs
