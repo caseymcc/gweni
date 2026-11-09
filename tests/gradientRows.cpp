@@ -24,9 +24,10 @@
  *  (a rect's place moves the interpolation's float error, not the level), as
  *  narrow rects and as rects as wide as the view, at scales 1 and 1.5. The
  *  report counts the rows with a tie and splits the wrong values into ties and
- *  the rest: the float gradient only ever missed a tie, by 1. Opaque pairs are drawn over white; an alpha gradient is
- *  white over black, so the blend (1*a + 0*(1-a)) gives each channel the alpha
- *  level itself, with no blend rounding of its own.
+ *  the rest: the float gradient only ever missed a tie, by 1. Opaque pairs are
+ *  drawn over white; an alpha gradient is white over black, so the blend
+ *  (1*a + 0*(1-a)) gives each channel the alpha level itself, with no blend
+ *  rounding of its own.
  */
 #include <doctest/doctest.h>
 
