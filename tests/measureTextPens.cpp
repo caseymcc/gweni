@@ -16,7 +16,10 @@
  *  LCD mode the device cannot blend is skipped), at scales 1, 1.25, 1.5 and 2:
  *  measureText measures at font.size, so the scale must change nothing. Each
  *  size is checked to be in the coverage range, so the SDF path is not what
- *  is compared. The case puts the text AA mode and the scale back when it ends.
+ *  is compared. A second case measures a font again after it was freed (its
+ *  glyphs, and FontData::glyph's table of them, go with it) and after a text AA
+ *  switch and back, which replace it, the ASAN tree catching a glyph kept past
+ *  its font. The cases put the text AA mode and the scale back when they end.
  */
 #include <doctest/doctest.h>
 
@@ -174,4 +177,49 @@ TEST_CASE("measureText: a coverage font's pen walk gives the text_buffer_t measu
     MESSAGE(compared, " measures compared, ", mismatches, " differ");
     CHECK(compared > 0);
     CHECK(mismatches == 0);
+}
+
+TEST_CASE("measureText: the glyph table follows a font freed and loaded again, and a text AA switch")
+{
+    SlotRenderer &renderer=gweni::test::gpuRenderer();
+    Restore restore;
+
+    const std::vector<String> strings=corpus();
+    const Font font=openSansAt(9.0f, true);
+    const auto check=[&]()
+    {
+        for(const String &text:strings)
+        {
+            CAPTURE(text);
+            const Point walked=renderer.measureText(font, text);
+            const Point reference=renderer.measureTextWithTextBuffer(font, text);
+
+            CHECK(walked.x == reference.x);
+            CHECK(walked.y == reference.y);
+        }
+    };
+
+    renderer.setTextAA(TextAA::Grayscale);
+    renderer.setScale(1.0f);
+    if(renderer.getTextMode(font) == TextMode::Sdf)
+    {
+        MESSAGE("skipped: GWENI_SDF_TEXT_MIN puts 9 px in the SDF range");
+        return;
+    }
+
+    // a font loaded and freed: its FontData, glyphs and table go, a use loads a new one
+    REQUIRE(renderer.loadFont(font) == Font::Status::Loaded);
+    check();
+
+    const size_t loaded=renderer.getLoadedFontCount();
+
+    renderer.freeFont(font);
+    REQUIRE(renderer.getLoadedFontCount() == loaded-1);
+    check();
+
+    // a switch of mode replaces every coverage font, and switching back again
+    renderer.setTextAA(TextAA::LcdRGB);
+    check();
+    renderer.setTextAA(TextAA::Grayscale);
+    check();
 }

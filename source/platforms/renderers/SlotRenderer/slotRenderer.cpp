@@ -79,6 +79,31 @@ FontData::~FontData()
     free(familyPath);
 }
 
+ftgl::texture_glyph_t *FontData::glyph(const char *codepoint)
+{
+    const uint32_t key=ftgl::utf8_to_utf32(codepoint);
+
+    if(key < asciiGlyphs.size())
+    {
+        ftgl::texture_glyph_t *&known=asciiGlyphs[key];
+
+        if(known == nullptr)
+            known=ftgl::texture_font_get_glyph(textureFont, codepoint);
+        return known;
+    }
+
+    const auto found=otherGlyphs.find(key);
+
+    if(found != otherGlyphs.end())
+        return found->second;
+
+    ftgl::texture_glyph_t *loaded=ftgl::texture_font_get_glyph(textureFont, codepoint);
+
+    if(loaded != nullptr)
+        otherGlyphs.emplace(key, loaded);
+    return loaded;
+}
+
 float SlotRenderer::textPx(const Font &font) const
 {
     return font.size*scale();
@@ -2493,7 +2518,7 @@ float SlotRenderer::walkPens(FontData &fontData, float px, const gweni::String &
             continue;
         }
 
-        ftgl::texture_glyph_t *glyph=ftgl::texture_font_get_glyph(font, current);
+        ftgl::texture_glyph_t *glyph=fontData.glyph(current);
 
         if(glyph == nullptr)
         {
@@ -2598,7 +2623,7 @@ gweni::Point SlotRenderer::layoutSdfText(FontData &fontData, float px, const gwe
             continue;
         }
 
-        ftgl::texture_glyph_t *glyph=ftgl::texture_font_get_glyph(font, current);
+        ftgl::texture_glyph_t *glyph=fontData.glyph(current);
 
         if(glyph == nullptr)
             continue;

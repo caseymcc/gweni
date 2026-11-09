@@ -18,6 +18,7 @@
 #include <memory>
 #include <functional>
 #include <algorithm>
+#include <array>
 #include <cstdint>
 #include <cstdlib>
 #include <limits>
@@ -174,6 +175,10 @@ struct FontData
         owners=other.owners;
         freed=other.freed;
         fallback=other.fallback;
+        asciiGlyphs=other.asciiGlyphs;
+        other.asciiGlyphs.fill(nullptr);
+        otherGlyphs=std::move(other.otherGlyphs);
+        other.otherGlyphs.clear();
     }
 
     //! Deletes the manager (which owns the atlas, the texture_font_t and the cache
@@ -181,6 +186,14 @@ struct FontData
     //! before this runs (SlotRenderer::eraseFont). A moved-from one holds nothing
     //! and frees nothing.
     ~FontData();
+
+    //! texture_font_get_glyph(textureFont, codepoint), which rasterises a glyph it
+    //! has not seen yet, from a table instead of its linear search of every glyph
+    //! once the codepoint has a glyph. freetype-gl only appends to a font's glyphs
+    //! and frees them with the font, so a glyph's pointer holds for textureFont's
+    //! life, and its first match (the one it would find) stays the first. A
+    //! codepoint with no glyph is not kept, so it is asked for again, as before.
+    ftgl::texture_glyph_t *glyph(const char *codepoint);
 
     std::string faceName;
     ftgl::markup_t markup;
@@ -227,6 +240,10 @@ struct FontData
     //! fallback font (SlotRenderer::setFallbackFont), loaded from memory into this
     //! manager's atlas; loadFont reports it as Font::Status::LoadedFallback.
     bool fallback=false;
+    //! glyph()'s table of textureFont's glyphs, by utf8_to_utf32's codepoint as
+    //! freetype-gl keys them: the ASCII ones in place, the rest in otherGlyphs
+    std::array<ftgl::texture_glyph_t *, 128> asciiGlyphs{};
+    std::unordered_map<uint32_t, ftgl::texture_glyph_t *> otherGlyphs;
 };
 
 //
