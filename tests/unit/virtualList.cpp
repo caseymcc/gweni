@@ -848,7 +848,6 @@ struct DockedScene
     test::StubSkin skin{&renderer};
     controls::Canvas *canvas=nullptr;
     controls::VirtualList *list=nullptr;
-    size_t binds=0;
 
     explicit DockedScene(int height)
     {
@@ -860,9 +859,8 @@ struct DockedScene
         list->setWidth(200);
         list->setMargin(Margin(10, 34, 0, 10));
         list->setRowHeight(RowHeight);
-        list->setRowBinder([this](controls::Base *row, size_t index)
+        list->setRowBinder([](controls::Base *row, size_t index)
             {
-                ++binds;
                 if(auto *label=gweni_cast<controls::Label>(row))
                     label->setText("Item "+std::to_string(index));
             });
