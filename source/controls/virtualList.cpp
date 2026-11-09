@@ -283,17 +283,24 @@ void VirtualList::releaseRow(Base *control)
 
 // The viewport and the offset are final here (placeContents), and nothing in
 // the inner panel has been laid out yet. A pending scrollToItem is resolved
-// first, with the viewport now known. The pool is resized to the viewport,
-// and each item the viewport shows any of gets a row: a row already showing an
-// item that is still in view keeps it, unbound; the rows left over take the
-// items that came into view and are bound, and the rest (the spare row while
-// the offset is a whole number of rows, the rows past the last item) are
-// hidden. Every shown row is placed at its item's place.
+// first, with the viewport now known. Each item the viewport shows any of gets
+// a row: a row already showing an item that is still in view keeps it,
+// unbound; the rows left over take the items that came into view, in order,
+// and are bound, and the rest (the spare row while the offset is a whole
+// number of rows, the rows past the last item) are hidden. Every shown row is
+// placed at its item's place.
+// The pool is ceil(viewport/rowHeight)+1 rows. In a frame where that changes
+// (a resize), the rows the items do not reach, left with no item, are deleted,
+// whichever they are, and fresh rows are appended up to the new size, so after
+// a shrink the spare is a row that was never bound, measured, placed or drawn,
+// as a list built at that size has, not one shown at the larger size (issue
+// #479); the kept rows stay in their order. A frame with the pool's size
+// unchanged creates and deletes nothing.
 // What is bound was measured in X with its old content, so it is measured
-// again. A row given another item gives up its press and focus. When a shown
-// row moved, was bound to another item, or was shown or hidden, what is under
-// the resting mouse may be another row: the canvas hit-tests the hover again
-// once the layout is done.
+// again. A row given another item, or deleted, gives up its press and focus.
+// When a shown row moved, was bound to another item, or was shown, hidden or
+// deleted, what is under the resting mouse may be another row: the canvas
+// hit-tests the hover again once the layout is done.
 void VirtualList::contentsPlaced(skin::Base *skin)
 {
     const int viewport=getViewportHeight();
@@ -310,31 +317,6 @@ void VirtualList::contentsPlaced(skin::Base *skin)
         showVirtualOffset();
     }
 
-    while(m_rows.size() > poolSize)
-    {
-        delete m_rows.back().control;
-        m_rows.pop_back();
-        moved=true;
-    }
-
-    while(m_rows.size() < poolSize)
-    {
-        Base *control=nullptr;
-
-        {
-            // a row's constructor sets its defaults, as anywhere
-            PartScope part;
-
-            control=m_factory?m_factory(m_innerPanel):m_innerPanel->newChild<internal::VirtualListRow>();
-        }
-
-        if(control->getParent() != m_innerPanel)
-            control->setParent(m_innerPanel);
-
-        control->setPlacement(Placement::Owner);
-        m_rows.push_back({control, NoItem, true});
-    }
-
     const int offset=getVerticalScrollOffset();
     const size_t first=static_cast<size_t>(offset/m_rowHeight);
     // the items the viewport shows any of: the pool's size at most
@@ -342,18 +324,76 @@ void VirtualList::contentsPlaced(skin::Base *skin)
         static_cast<size_t>((static_cast<int64_t>(offset)+viewport+m_rowHeight-1)/m_rowHeight)));
     const size_t inView=end > first?end-first:0;
     std::vector<bool> held(inView, false);
+    std::vector<bool> keeps(m_rows.size(), false);
+    size_t kept=0;
+
+    // Rows still showing an item in view keep it.
+    for(size_t i=0; i < m_rows.size(); ++i)
+    {
+        const size_t item=m_rows[i].item;
+
+        if(item != NoItem && item >= first && item < end && !held[item-first])
+        {
+            held[item-first]=true;
+            keeps[i]=true;
+            ++kept;
+        }
+    }
+
+    if(m_rows.size() != poolSize)
+    {
+        // The items that came into view go to the first free rows; the free
+        // rows past those are left with no item and deleted. What is left is
+        // kept+min(free, incoming), which is inView at most, so the pool is
+        // only ever topped up after.
+        const size_t incoming=inView-kept;
+        size_t freeSeen=0;
+        size_t to=0;
+
+        for(size_t i=0; i < m_rows.size(); ++i)
+        {
+            if(!keeps[i] && freeSeen++ >= incoming)
+            {
+                releaseRow(m_rows[i].control);
+                delete m_rows[i].control;    // ~Base takes it out of the children, gives its ids back
+                moved=true;
+                continue;
+            }
+
+            m_rows[to]=m_rows[i];
+            keeps[to]=keeps[i];
+            ++to;
+        }
+        m_rows.resize(to);
+        keeps.resize(to);
+
+        while(m_rows.size() < poolSize)
+        {
+            Base *control=nullptr;
+
+            {
+                // a row's constructor sets its defaults, as anywhere
+                PartScope part;
+
+                control=m_factory?m_factory(m_innerPanel):m_innerPanel->newChild<internal::VirtualListRow>();
+            }
+
+            if(control->getParent() != m_innerPanel)
+                control->setParent(m_innerPanel);
+
+            control->setPlacement(Placement::Owner);
+            m_rows.push_back({control, NoItem, true});
+            keeps.push_back(false);
+        }
+    }
+
     std::vector<size_t> previous(m_rows.size());
 
     for(size_t i=0; i < m_rows.size(); ++i)
-        previous[i]=m_rows[i].item;
-
-    // Rows still showing an item in view keep it.
-    for(Row &row : m_rows)
     {
-        if(row.item != NoItem && row.item >= first && row.item < end && !held[row.item-first])
-            held[row.item-first]=true;
-        else
-            row.item=NoItem;
+        previous[i]=m_rows[i].item;
+        if(!keeps[i])
+            m_rows[i].item=NoItem;
     }
 
     // The items that came into view go to the free rows.

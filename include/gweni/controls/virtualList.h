@@ -54,6 +54,9 @@ public:
 //! and once the rows moved the hover is hit-tested again
 //! (Canvas::hoverMayHaveMoved), so the row under a resting mouse is the
 //! hovered one and a click without a move presses the item under it.
+//! A resize that changes the pool's size deletes the rows the items do not
+//! reach and appends fresh ones, so a list grown and shrunk back holds the
+//! pool a list built at that size does (issue #479).
 //!
 //! Rows are bound in the layout pass that places them (the Y arrange), so the
 //! binder must only set the row's content (its text, colours, children), not
