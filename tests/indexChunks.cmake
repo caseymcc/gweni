@@ -20,6 +20,9 @@
 #  slot's clip box, changes pixels. It also requires the small chunks to have
 #  taken effect, as more draw calls in Demo's ControlTest --stats line.
 #
+#  StatsOverlayDemo.png is left out of the comparison: its stats overlay shows
+#  the frame's draw calls, which the small chunks raise by design.
+#
 
 foreach(var CONTROLTEST SOURCE_DIR SCRATCH_DIR)
     if(NOT DEFINED ${var})
@@ -101,8 +104,15 @@ if(total EQUAL 0)
     message(FATAL_ERROR "nothing was written to ${SCRATCH_DIR}/default")
 endif()
 
+# the PNGs that show the draw count (see the header)
+set(EXCLUDED StatsOverlayDemo.png)
+
 set(differing)
 foreach(file IN LISTS files_a)
+    if(file IN_LIST EXCLUDED)
+        continue()
+    endif()
+
     execute_process(
         COMMAND "${CMAKE_COMMAND}" -E compare_files
                 "${SCRATCH_DIR}/default/${file}" "${SCRATCH_DIR}/chunked/${file}"

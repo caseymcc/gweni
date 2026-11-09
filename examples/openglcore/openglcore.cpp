@@ -15,11 +15,14 @@
  *                         units, so the UI is drawn s times as large
  *    --headless           with a capture, go straight to the surfaceless EGL
  *                         context instead of trying a GLFW window first
+ *    --stats-overlay [on|off]  open the stats overlay (gweni::tools::StatsOverlay)
+ *                         at start-up, in the window or a capture; a later
+ *                         --stats-overlay off overrides an earlier one
  *
  *  With no options it opens the interactive window as before; there F12 opens and
- *  closes the inspector (gweni::tools::Inspector) and F11 the theme editor
+ *  closes the inspector (gweni::tools::Inspector), F11 the theme editor
  *  (gweni::tools::ThemeEditor, saving to and loading from gweni-theme.json in
- *  the current directory). A capture needs no
+ *  the current directory) and F10 the stats overlay. A capture needs no
  *  display: it hides the window, and with no display at all it falls back to a
  *  surfaceless EGL context (--headless skips the window, so the capture takes the
  *  same path whether or not a display exists). For example:
@@ -50,6 +53,7 @@
 #include <gweni/platforms/input/glfw3.h>
 #include <gweni/controls/canvas.h>
 #include <gweni/tools/inspector.h>
+#include <gweni/tools/statsOverlay.h>
 #include <gweni/tools/themeEditor.h>
 #include <iostream>
 
@@ -80,8 +84,14 @@ static float g_manualScale=1.0f;        // --scale or GWENI_SCALE
 
 static void key_callback(GLFWwindow* window, int key, int scancode, int action, int mods)
 {
-    // F12 opens and closes the inspector, F11 the theme editor; the library
-    // binds no key
+    // F12 opens and closes the inspector, F11 the theme editor, F10 the stats
+    // overlay; the library binds no key
+    if(key == GLFW_KEY_F10)
+    {
+        if((action == GLFW_PRESS) && g_canvas)
+            gweni::tools::StatsOverlay::toggle(g_canvas);
+        return;
+    }
     if(key == GLFW_KEY_F12)
     {
         if((action == GLFW_PRESS) && g_canvas)
@@ -240,7 +250,7 @@ static void printUsage(std::ostream &out)
     out<<"Usage: OpenGLCore [--demo <Name>] [--screenshot <out.png>]"
          " [--frames <N>] [--stats]\n"
          "                  [--scale <s>] [--headless] [--resources <dir>]\n"
-         "                  [--renderer <gl|vulkan>]\n"
+         "                  [--renderer <gl|vulkan>] [--stats-overlay [on|off]]\n"
          "\n"
          "  --demo <Name>        show that demo page at startup\n"
          "  --screenshot <path>  render offscreen, write one PNG and exit\n"
@@ -261,11 +271,14 @@ static void printUsage(std::ostream &out)
          "                       (relative to the working directory, or\n"
          "                       absolute) instead of the resources/ next to\n"
          "                       the executable\n"
+         "  --stats-overlay [on|off]  open the stats overlay at start-up, in the\n"
+         "                       window or a capture (on if neither follows);\n"
+         "                       a later --stats-overlay off overrides it\n"
        <<gweni::capture::RendererHelp<<
          "\n"
-         "In the window, F12 opens and closes the inspector, and F11 the theme\n"
+         "In the window, F12 opens and closes the inspector, F11 the theme\n"
          "editor, which saves to and loads from gweni-theme.json in the current\n"
-         "directory.\n"
+         "directory, and F10 the stats overlay.\n"
          "\n"
          "Per-frame line fields:\n"
          "  frame      0-based frame index\n"
@@ -299,6 +312,7 @@ int main(int argc, char *argv[])
     bool stats=false;
     bool scaleGiven=false;
     bool forceHeadless=false;
+    bool statsOverlay=false;
 
     for(int i=1; i<argc; ++i)
     {
@@ -332,6 +346,8 @@ int main(int argc, char *argv[])
         }
         else if(arg == "--headless")
             forceHeadless=true;
+        else if(arg == "--stats-overlay")
+            statsOverlay=gweni::capture::statsOverlayArgument(argc, argv, i);
         else if(arg == "--resources" && hasValue)
             resourceDir=argv[++i];
         else if(arg == "--renderer" && hasValue)
@@ -468,6 +484,9 @@ int main(int argc, char *argv[])
 
     button->setText("ButtonTest");
 #endif//SINGLE_CONTROL
+
+    if(statsOverlay)
+        gweni::tools::StatsOverlay::open(canvas);
 
     int result=EXIT_SUCCESS;
 

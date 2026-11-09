@@ -51,9 +51,11 @@ namespace tools
 //! It takes no input: a hit test passes through it and its children
 //! (getControlAt() finds nothing, and counts no visit), so the app under it
 //! keeps its hover and clicks. It places itself (Placement::Owner) Inset units
-//! in from the canvas's bottom-right corner on every layout pass, and is a
-//! canvas overlay (Canvas::addOverlay), numbered above the app. The library
-//! binds no key: an app opens and closes it (open(), close(), toggle()).
+//! in from its parent's bottom-right corner on every layout pass; open() makes
+//! it on the canvas, as a canvas overlay (Canvas::addOverlay), numbered above
+//! the app. Made as any other control's child (a demo page's), it is that
+//! control's. Hidden, it neither gathers nor shows. The library binds no key:
+//! an app opens and closes it (open(), close(), toggle()).
 class GWENI_EXPORT StatsOverlay: public controls::Base
 {
 public:
@@ -142,7 +144,7 @@ public:
     bool sizedByRequest(Dim /*dim*/) const override { return true; }
 
 protected:
-    //! Takes its size, and the place Inset in from the canvas's bottom-right
+    //! Takes its size, and the place Inset in from its parent's bottom-right
     //! corner, one axis per arrange, as a Popup does next to its anchor.
     void arrange(skin::Base *skin, Dim dim) override;
 

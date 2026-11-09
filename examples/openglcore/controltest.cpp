@@ -23,6 +23,13 @@
  *    --shot-all         write one PNG per control demo, in this one run
  *    --shot-dir <dir>   directory for shots, created if missing (default /tmp)
  *    --headless         force the surfaceless EGL context (no display needed)
+ *    --stats-overlay [on|off]  open the stats overlay (gweni::tools::StatsOverlay)
+ *                       on the canvas at start-up, in the window or a capture
+ *                       (on if neither word follows); a later
+ *                       --stats-overlay off overrides an earlier one. A
+ *                       capture shows it only when asked: its times are a
+ *                       fixed clock's (capture::installFixedProfileClock),
+ *                       so a shot of it is the same in every run
  *    --renderer gl|vulkan  the backend (default gl, or GWENI_RENDERER; the
  *                       flag beats it): OpenGLCore, or renderer::Vulkan on a
  *                       Vulkan device with no GL or EGL context. A Vulkan
@@ -156,10 +163,11 @@
  *    --scroll DX,DY     mouse wheel (DX is ignored; gweni only takes the Y axis)
  *    --key <name>       a key: return, kp-enter, tab, space, escape, up, down,
  *                       left, right, home, end, backspace, delete, shift,
- *                       control, alt, command, f11 and f12 (which, as in the
- *                       window, open and close the theme editor, saving to and
- *                       loading from gweni-theme.json in the cwd, and the
- *                       inspector, and are not passed on),
+ *                       control, alt, command, f10, f11 and f12 (which, as in
+ *                       the window, open and close the stats overlay, the
+ *                       theme editor, saving to and loading from
+ *                       gweni-theme.json in the cwd, and the inspector, and
+ *                       are not passed on),
  *                       or a single printable character. A named key is pressed and released as
  *                       synthesised GLFW key events and a character is typed
  *                       as a GLFW char event, both through the same
@@ -675,6 +683,7 @@
 #include <gweni/controls/dataTable.h>
 #include <gweni/controls/properties.h>
 #include <gweni/tools/inspector.h>
+#include <gweni/tools/statsOverlay.h>
 #include <gweni/tools/themeEditor.h>
 #include <GLFW/glfw3.h>
 #include <gweni/utils/filesystem.h>
@@ -737,6 +746,7 @@
 #include <gweni/controls/dragNumber.h>
 #include <demo/vectorField.h>
 #include <gweni/controls/vectorField.h>
+#include <demo/statsOverlay.h>
 #include <demo/statusBar.h>
 #include <demo/tabClose.h>
 #include <demo/colorEdit.h>
@@ -777,16 +787,22 @@ static gweni::renderer::Base *g_renderer=nullptr;
 static gweni::controls::Canvas *g_canvas=nullptr;
 static float g_manualScale=1.0f;        // --scale or GWENI_SCALE
 
+// --stats-overlay: every canvas createCanvas() makes opens the stats overlay.
+static bool g_statsOverlay=false;
+
 // The app's own keys, before the canvas sees them: F12 opens and closes the
-// inspector, F11 the theme editor (the library binds no key).
+// inspector, F11 the theme editor, F10 the stats overlay (the library binds no
+// key).
 static bool appKey(int key, int action)
 {
-    if(((key != GLFW_KEY_F12) && (key != GLFW_KEY_F11)) || !g_canvas)
+    if(((key != GLFW_KEY_F12) && (key != GLFW_KEY_F11) && (key != GLFW_KEY_F10)) || !g_canvas)
         return false;
     if(action != GLFW_PRESS)
         return true;
     if(key == GLFW_KEY_F12)
         gweni::tools::Inspector::toggle(g_canvas);
+    else if(key == GLFW_KEY_F10)
+        gweni::tools::StatsOverlay::toggle(g_canvas);
     else if(gweni::tools::ThemeEditor::toggle(g_canvas))
         gweni::tools::ThemeEditor::find(g_canvas)->setThemePath("gweni-theme.json");
     return true;
@@ -832,7 +848,8 @@ static void content_scale_callback(GLFWwindow *window, float, float)
     X(CheckBoxDemo) X(NumericDemo) X(SliderDemo) X(SliderTextDemo) X(DragNumberDemo) X(VectorFieldDemo) X(MenuStripDemo) \
     X(WindowDemo) X(WindowButtonsDemo) X(TreeControlDemo) X(PropertiesDemo) X(TabControlDemo) X(TabCloseDemo) X(TabOverflowDemo) \
     X(ScrollControlDemo) X(PageControlDemo) X(CollapsibleListDemo) X(ColorPickerDemo) X(ColorEditDemo) \
-    X(UnicodeTextDemo) X(TextSizesDemo) X(TextDemo) X(LayoutDemo) X(InspectorDemo) X(ThemeEditorDemo)
+    X(UnicodeTextDemo) X(TextSizesDemo) X(TextDemo) X(LayoutDemo) X(InspectorDemo) X(ThemeEditorDemo) \
+    X(StatsOverlayDemo)
 
 static const char *const g_controlNames[]=
 {
@@ -888,6 +905,8 @@ static void printUsage(std::ostream &out)
          "  --shot-all         write one PNG per control demo, in this one run\n"
          "  --shot-dir <dir>   directory for shots (default /tmp)\n"
          "  --headless         force the surfaceless EGL context\n"
+         "  --stats-overlay [on|off]  open the stats overlay at start-up (on if\n"
+         "                     neither follows; a later one overrides it)\n"
        <<gweni::capture::RendererHelp<<
          "  --window-test <dir>  the Vulkan window, scripted: resized, iconified and\n"
          "                     restored, each presented image written to <dir>\n"
@@ -1058,6 +1077,8 @@ static gweni::controls::Canvas *createCanvas(gweni::skin::Base *skin, const gwen
     canvas->setSize(size.x, size.y);
     canvas->setDrawBackground(true);
     canvas->setBackgroundColor(gweni::skin::textured::tokyonight::Canvas.top);
+    if(g_statsOverlay)
+        gweni::tools::StatsOverlay::open(canvas);
     return canvas;
 }
 
@@ -1444,7 +1465,8 @@ static const struct { const char *name; int key; } g_namedKeys[]=
     {"control", GLFW_KEY_LEFT_CONTROL},  {"up", GLFW_KEY_UP},
     {"down", GLFW_KEY_DOWN},             {"escape", GLFW_KEY_ESCAPE},
     {"alt", GLFW_KEY_LEFT_ALT},          {"command", GLFW_KEY_LEFT_SUPER},
-    {"kp-enter", GLFW_KEY_KP_ENTER},     {"f11", GLFW_KEY_F11},     {"f12", GLFW_KEY_F12},
+    {"kp-enter", GLFW_KEY_KP_ENTER},     {"f10", GLFW_KEY_F10},     {"f11", GLFW_KEY_F11},
+    {"f12", GLFW_KEY_F12},
 };
 
 // The modifiers a --key chord may hold, with the mods bit GLFW reports for them.
@@ -7698,6 +7720,7 @@ int main(int argc, char *argv[])
         }
         else if(arg == "--shot-all") shotAll=true;
         else if(arg == "--headless") forceHeadless=true;
+        else if(arg == "--stats-overlay") g_statsOverlay=gweni::capture::statsOverlayArgument(argc, argv, i);
         else if(arg == "--stats") stats=true;
         else if(arg == "--stats-clock" && hasValue)
         {

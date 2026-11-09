@@ -146,10 +146,12 @@ if(TARGET ControlTest AND NOT EMSCRIPTEN)
         WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
 
     # The modes that build a control again in the same process and compare the
-    # two (resize, scale, hide-show) leave InspectorDemo out: its inspector
-    # shows control ids, which are process-wide and never reused, so the second
-    # build's captions are other strings. determinism (two processes),
-    # one_pass_each, teardown and controltest_inspector cover it.
+    # two (resize, scale, hide-show) leave InspectorDemo and StatsOverlayDemo
+    # out: the inspector shows control ids, which are process-wide and never
+    # reused, so the second build's captions are other strings, and the stats
+    # overlay shows the process's live ids and the frames before it, which the
+    # second build sees otherwise. determinism (two processes), one_pass_each,
+    # teardown, controltest_inspector and controltest_stats-overlay cover them.
     # the same round trip for every other control in --list, one process each
     gweni_whole_app_test(controltest_resize_each 600
         COMMAND ${CMAKE_COMMAND}
@@ -157,7 +159,7 @@ if(TARGET ControlTest AND NOT EMSCRIPTEN)
             -DSOURCE_DIR=${GWENI_SOURCE_DIR}
             -DSCRATCH_DIR=${CMAKE_CURRENT_BINARY_DIR}/resize_each@VARIANT@
             -DMODE=resize
-            -DSKIP=Demo,InspectorDemo
+            -DSKIP=Demo,InspectorDemo,StatsOverlayDemo
             -P ${CMAKE_CURRENT_SOURCE_DIR}/eachControl.cmake
         WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
 
@@ -182,7 +184,7 @@ if(TARGET ControlTest AND NOT EMSCRIPTEN)
             -DSOURCE_DIR=${GWENI_SOURCE_DIR}
             -DSCRATCH_DIR=${CMAKE_CURRENT_BINARY_DIR}/scale_roundtrip@VARIANT@
             -DMODE=scale
-            -DSKIP=InspectorDemo
+            -DSKIP=InspectorDemo,StatsOverlayDemo
             -P ${CMAKE_CURRENT_SOURCE_DIR}/eachControl.cmake
         WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
 
@@ -199,7 +201,7 @@ if(TARGET ControlTest AND NOT EMSCRIPTEN)
             -DSOURCE_DIR=${GWENI_SOURCE_DIR}
             -DSCRATCH_DIR=${CMAKE_CURRENT_BINARY_DIR}/hide_show_each@VARIANT@
             -DMODE=hide-show
-            -DSKIP=InspectorDemo
+            -DSKIP=InspectorDemo,StatsOverlayDemo
             -P ${CMAKE_CURRENT_SOURCE_DIR}/eachControl.cmake
         WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
 

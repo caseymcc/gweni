@@ -93,6 +93,21 @@ void installFixedProfileClock()
     platform::setProfileClock([]() { return (++reads)*FixedProfileStepMicros; });
 }
 
+bool statsOverlayArgument(int argc, char *argv[], int &i)
+{
+    if(i+1 < argc)
+    {
+        const std::string value=argv[i+1];
+
+        if(value == "on" || value == "off")
+        {
+            ++i;
+            return value == "on";
+        }
+    }
+    return true;
+}
+
 bool parseScale(const char *value, float &scale)
 {
     char *end=nullptr;

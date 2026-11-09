@@ -230,16 +230,14 @@ controls::Base *StatsOverlay::getControlAt(int /*x*/, int /*y*/, bool /*bOnlyIfM
 
 void StatsOverlay::arrange(skin::Base *skin, Dim dim)
 {
-    controls::Canvas *canvas=getCanvas();
-
-    if(canvas && (getParent() == canvas))
+    if(controls::Base *parent=getParent())
     {
         policyResize(getPreferredSize(), dim);
 
         if(dim == Dim::X)
-            setArrangedBounds(std::max(0, canvas->getWidth()-getWidth()-Inset), getY(), getWidth(), getHeight());
+            setArrangedBounds(std::max(0, parent->getWidth()-getWidth()-Inset), getY(), getWidth(), getHeight());
         else
-            setArrangedBounds(getX(), std::max(0, canvas->getHeight()-getHeight()-Inset), getWidth(), getHeight());
+            setArrangedBounds(getX(), std::max(0, parent->getHeight()-getHeight()-Inset), getWidth(), getHeight());
     }
 
     ParentClass::arrange(skin, dim);
@@ -289,6 +287,16 @@ void StatsOverlay::refresh()
 
     if(!canvas)
         return;
+    // hidden (on a hidden page, or closed until its delayed delete), it neither
+    // gathers nor shows, and starts again from the frame it is shown in
+    if(!visible())
+    {
+        m_window=Window();
+        m_haveLastStart=false;
+        m_frameClock.clear();
+        m_started=false;
+        return;
+    }
 
     gather(canvas);
 

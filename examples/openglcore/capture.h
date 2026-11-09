@@ -109,6 +109,12 @@ int exitStatus(int result, bool degraded);
 constexpr uint64_t FixedProfileStepMicros=100;
 void installFixedProfileClock();
 
+//! --stats-overlay [on|off], the switch at argv[i]: whether it asks for the
+//! overlay (gweni::tools::StatsOverlay) to be open at start-up. On, unless the
+//! word after it is "off"; an "on" or "off" there is taken (i moves past it),
+//! so a later --stats-overlay off overrides an earlier one.
+bool statsOverlayArgument(int argc, char *argv[], int &i);
+
 //-----------------------------------------------------------------------------
 // Scale: device pixels per logical unit. The canvas is laid out in logical
 // units and the renderer draws it at framebuffer pixels; the effective scale is
