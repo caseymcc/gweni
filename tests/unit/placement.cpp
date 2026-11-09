@@ -33,17 +33,22 @@
  *  property's preferred width, so one in an unsized box gives every value that
  *  width and an app's setWidth() on a property is no minimum; a ColorSelector
  *  row fits its "255 0 0" beside its swatch (a TextBox's string counts beside
- *  its children docked Left or Right). A VerticalSlider
+ *  its children docked Left or Right). A ComboBox asks for its widest item's
+ *  text with the text padding and the chevron column, measured again when an
+ *  item is added, deleted, renamed or cleared and never when one is selected,
+ *  and a property::ComboBox row's value column fits it. A VerticalSlider
  *  asks for its request at value 0 and 1 and takes a smaller layout cell in
  *  one pass.
  */
 #include "headlessFixture.h"
 
+#include <gweni/controls/comboBox.h>
 #include <gweni/controls/crossSplitter.h>
 #include <gweni/controls/label.h>
 #include <gweni/controls/layout/layout.h>
 #include <gweni/controls/properties.h>
 #include <gweni/controls/property/colorSelector.h>
+#include <gweni/controls/property/comboBox.h>
 #include <gweni/controls/text.h>
 #include <gweni/controls/verticalSlider.h>
 #include <gweni/controls/windowControl.h>
@@ -464,6 +469,155 @@ TEST_CASE("a ColorSelector row fits its value's text and its swatch")
     CHECK(swatch->getWidth() == 20);
     CHECK(row->getPreferredSize().width == row->getLabel()->getMargin().left+
         properties->getRequestedSplitWidth()+selector->getPreferredSize().width);
+}
+
+TEST_CASE("a ComboBox asks for its widest item, whatever is selected")
+{
+    Scene scene;
+    controls::Base *box=scene.canvas->newChild<controls::Base>("box");
+    controls::ComboBox *combo=box->newChild<controls::ComboBox>();
+
+    scene.settle();
+
+    // With no items, the Button's width from the shown (empty) text.
+    const int empty=combo->getPreferredSize().width;
+    const Padding &textPadding=combo->getTextPadding();
+    const Padding &padding=combo->getPadding();
+    auto widthFor=[&](const String &widest)
+    {
+        return scene.renderer.measureText(combo->getFont(), widest).x+
+            textPadding.left+textPadding.right+padding.left+padding.right;
+    };
+
+    combo->addItem("One", "one");
+    controls::MenuItem *longest=combo->addItem("The longest item", "longest");
+    combo->addItem("Middle one", "middle");
+    scene.settle();
+
+    // The chevron column is the right padding.
+    CHECK(padding.right == controls::ComboBox::ChevronSize+controls::ComboBox::ChevronInset);
+    CHECK(combo->getText() == "One");
+    CHECK(combo->getPreferredSize().width == widthFor("The longest item"));
+    CHECK(combo->getWidth() == combo->getPreferredSize().width);
+
+    // Selecting measures no item and changes neither width.
+    const int width=combo->getPreferredSize().width;
+
+    for(const char *name : {"longest", "middle", "one"})
+    {
+        const size_t measures=scene.renderer.measures;
+
+        combo->selectItemByName(name);
+        scene.settle();
+
+        CHECK(combo->getPreferredSize().width == width);
+        CHECK(combo->getWidth() == width);
+        // the shown text's own measure, no more
+        CHECK(scene.renderer.measures-measures <= 1);
+    }
+
+    // An item added or taken away counts at once.
+    combo->addItem("An even longer item than that", "longer");
+    scene.settle();
+    CHECK(combo->getPreferredSize().width == widthFor("An even longer item than that"));
+
+    combo->selectItemByName("longer");
+    scene.settle();
+    CHECK(combo->getPreferredSize().width == widthFor("An even longer item than that"));
+    combo->selectItemByName("one");
+
+    for(auto &&child : combo->getChildren())
+    {
+        if(auto *menu=gweni_cast<controls::Menu>(child))
+        {
+            for(auto &&item : menu->getChildren())
+            {
+                if(item->getName() == "longer")
+                {
+                    item->delayedDelete();
+                    break;
+                }
+            }
+        }
+    }
+
+    // A deleted item leaves the menu: the box is laid out again because the
+    // menu, its child, lost a child.
+    scene.settle();
+    CHECK(combo->getPreferredSize().width == widthFor("The longest item"));
+
+    // A renamed item: its text is measured again.
+    longest->setText("Short");
+    scene.settle();
+    CHECK(combo->getPreferredSize().width == widthFor("Middle one"));
+
+    // Cleared, nothing is selected and the width is the empty box's; the next
+    // item added is selected again.
+    combo->clearItems();
+    scene.settle();
+    CHECK(combo->getText() == "");
+    CHECK(combo->getSelectedItem() == nullptr);
+    CHECK(combo->getPreferredSize().width == empty);
+
+    combo->addItem("Again", "again");
+    scene.settle();
+    CHECK(combo->getText() == "Again");
+    CHECK(combo->getPreferredSize().width == widthFor("Again"));
+    CHECK(scene.requests == 0);
+}
+
+TEST_CASE("a property::ComboBox row's value column fits the widest item and the chevron")
+{
+    Scene scene;
+    controls::Base *box=scene.canvas->newChild<controls::Base>("box");
+    controls::Properties *properties=box->newChild<controls::Properties>();
+
+    properties->setDock(DockPosition::Top);
+    // Narrower than the items, so the ComboBox's width decides.
+    properties->setValueWidth(0);
+
+    auto *property=properties->newChild<controls::property::ComboBox>();
+    controls::ComboBox *combo=property->getComboBox();
+
+    combo->addItem("Option One", "one");
+    combo->addItem("A much longer option", "long");
+    combo->addItem("Two", "two");
+
+    controls::PropertyRow *row=properties->add("ComboBox", property, "one");
+
+    scene.settle();
+
+    const Padding &textPadding=combo->getTextPadding();
+    const Padding &padding=combo->getPadding();
+    const int comboWidth=scene.renderer.measureText(combo->getFont(), "A much longer option").x+
+        textPadding.left+textPadding.right+padding.left+padding.right;
+    const Margin &comboMargin=combo->getMargin();
+    const int split=properties->getRequestedSplitWidth();
+    const int labelMargin=row->getLabel()->getMargin().left;
+
+    CHECK(combo->getPreferredSize().width == comboWidth);
+    CHECK(property->getPreferredSize().width == comboWidth+comboMargin.left+comboMargin.right);
+    CHECK(row->getPreferredSize().width == labelMargin+split+property->getPreferredSize().width);
+    CHECK(combo->getWidth() == comboWidth);
+
+    const int rowWidth=row->getWidth();
+
+    combo->selectItemByName("long");
+    scene.settle();
+    CHECK(row->getWidth() == rowWidth);
+    CHECK(combo->getWidth() == comboWidth);
+
+    combo->selectItemByName("two");
+    scene.settle();
+    CHECK(row->getWidth() == rowWidth);
+    CHECK(combo->getWidth() == comboWidth);
+
+    // At the default value width the column is the wider of the two.
+    properties->setValueWidth(100);
+    scene.settle();
+    CHECK(row->getPreferredSize().width ==
+        labelMargin+split+std::max(100, property->getPreferredSize().width));
+    CHECK(scene.requests == 0);
 }
 
 TEST_CASE("a VerticalSlider asks for its request whatever its value, and fits a smaller layout cell in one pass")

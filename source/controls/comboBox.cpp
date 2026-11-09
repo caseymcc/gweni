@@ -79,6 +79,8 @@ MenuItem *ComboBox::addItem(const String &strLabel, const String &strName)
     MenuItem *item=m_menu->addItem(strLabel, "");
     item->setName(strName);
     item->onMenuItemSelected.add(this, &ComboBox::onItemSelected);
+    // a new text to count in this box's width
+    invalidate();
 
     // Default. Not through onItemSelected, which takes the item from the
     // event's caller, and there is none here.
@@ -109,6 +111,66 @@ void ComboBox::layout(skin::Base *skin)
     ParentClass::layout(skin);
 }
 
+void ComboBox::calculateSize(skin::Base *skin, Dim dim)
+{
+    ParentClass::calculateSize(skin, dim);
+
+    if(dim != Dim::X)
+        return;
+
+    const int items=itemsTextWidth();
+
+    if(m_itemTexts.empty())
+        return;
+
+    const Padding &textPadding=getTextPadding();
+
+    m_preferredSize.width=std::max(m_preferredSize.width, preferredFromContent(
+        items+textPadding.left+textPadding.right+m_padding.left+m_padding.right, Dim::X));
+}
+
+int ComboBox::itemsTextWidth()
+{
+    const renderer::Base *renderer=getSkin()?getSkin()->getRenderer():nullptr;
+    const unsigned serial=renderer?renderer->textLayoutSerial():0;
+    const gweni::Font &font=getFont();
+    const bool sameLayout=font == m_itemsFont && renderer == m_itemsRenderer && serial == m_itemsSerial;
+    Base::List &children=m_menu->getChildren();
+    size_t count=0;
+    int widest=0;
+
+    for(auto &&child : children)
+    {
+        MenuItem *item=gweni_cast<MenuItem>(child);
+
+        if(!item)
+            continue;
+
+        const String &text=item->getText();
+
+        if(count == m_itemTexts.size())
+        {
+            m_itemTexts.push_back(text);
+            m_itemWidths.push_back(measureText(font, text).x);
+        }
+        else if(!sameLayout || m_itemTexts[count] != text)
+        {
+            m_itemTexts[count]=text;
+            m_itemWidths[count]=measureText(font, text).x;
+        }
+
+        widest=std::max(widest, m_itemWidths[count]);
+        ++count;
+    }
+
+    m_itemTexts.resize(count);
+    m_itemWidths.resize(count);
+    m_itemsFont=font;
+    m_itemsRenderer=renderer;
+    m_itemsSerial=serial;
+    return widest;
+}
+
 void ComboBox::updateColors()
 {
     if(!shouldDrawBackground())
@@ -133,6 +195,14 @@ void ComboBox::clearItems()
 {
     if(m_menu)
         m_menu->clearItems();
+
+    // Nothing is selected: the items are deleted before the next frame, and
+    // the next one added is the default again.
+    m_selectedItem=nullptr;
+    setText("");
+
+    // the items leave this box's width once deleted, before the next layout
+    invalidate();
 }
 
 void ComboBox::selectItem(MenuItem *item, bool fireChangeEvents)
