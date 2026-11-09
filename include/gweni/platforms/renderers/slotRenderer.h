@@ -327,7 +327,7 @@ public:
     //! units at any scale(), 0 for a font that does not load
     int lineHeight(const gweni::Font &font) override;
     //! One layout of the whole string, the one measureText makes of each prefix
-    //! (the coverage text_buffer, or layoutSdfText), read at each boundary; the
+    //! (the coverage walkPens, or layoutSdfText), read at each boundary; the
     //! default where freetype-gl's codepoint steps are not utf8Next's
     void measureCarets(const gweni::Font &font, const gweni::String &text,
         std::vector<int> &xs) override;
@@ -778,6 +778,15 @@ private:
     //! The pen x of each glyph a run lays out in fontData at px (one per glyph
     //! quad, in quad order), from the start of its line.
     void textPens(FontData &fontData, float px, const gweni::String &text, std::vector<float> &pens);
+    //! The one pen walk of a run in fontData at px, which textPens, a coverage
+    //! measureText and measureCarets read: the codepoints as text_buffer_add_text
+    //! steps through them (to a NUL in a coverage font), each glyph's kerning
+    //! against the codepoint before and its advance, with no text_buffer_t. Gives
+    //! the pen after the last glyph, unrounded; appends textPens' pen of each glyph
+    //! to `pens` and the pen rounded up before each codepoint to `carets`, where
+    //! they are not null.
+    float walkPens(FontData &fontData, float px, const gweni::String &text,
+        std::vector<float> *pens, std::vector<int> *carets);
     //! At a scale() other than 1, a run measured in a coverage font (font.size below
     //! the threshold) is drawn in another font, whose advances are not the measured
     //! ones scaled: hinted, whole-pixel at font.size. shifts gets, for each drawn glyph,

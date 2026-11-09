@@ -2456,17 +2456,34 @@ void SlotRenderer::renderText(size_t textId, const gweni::Font &font, gweni::Poi
 void SlotRenderer::textPens(FontData &fontData, float px, const gweni::String &text,
     std::vector<float> &pens)
 {
+    pens.clear();
+    walkPens(fontData, px, text, &pens, nullptr);
+}
+
+// The walk of layoutSdfText, or of freetype-gl's text_buffer_add_text with only the
+// pen kept: text_buffer_add_char adds the kerning against the previous codepoint,
+// then the advance (markup.spacing is 0), and a '\n' takes the pen back to the
+// origin, 0 in a run's own buffer. Its LCD quads sit on 1/3 px phases of the pen,
+// which moves the quad, not the pen.
+float SlotRenderer::walkPens(FontData &fontData, float px, const gweni::String &text,
+    std::vector<float> *pens, std::vector<int> *carets)
+{
     ftgl::texture_font_t *font=fontData.textureFont;
     const bool sdf=(fontData.mode == TextMode::Sdf);
     const float s=sdf?px/fontData.baseSize:1.0f;
     float pen=0.0f;
     const char *previous=nullptr;
 
-    pens.clear();
-    // the walk of layoutSdfText, or of freetype-gl's text_buffer_add_text
     for(size_t i=0; i < text.size(); i+=std::max<size_t>(1, ftgl::utf8_surrogate_len(text.c_str()+i)))
     {
         const char *current=text.c_str()+i;
+
+        // utf8_strlen, which gives text_buffer_add_text its length, ends at a NUL
+        if(!sdf && (*current == '\0'))
+            break;
+
+        if(carets)
+            carets->push_back((int)ceil(pen));
 
         if(*current == '\n')
         {
@@ -2489,10 +2506,12 @@ void SlotRenderer::textPens(FontData &fontData, float px, const gweni::String &t
             pen+=ftgl::texture_glyph_get_kerning(glyph, previous)*s;
 
         // a coverage glyph's quad sits at the pen rounded to a whole pixel
-        pens.push_back(sdf?pen:roundf(pen));
+        if(pens)
+            pens->push_back(sdf?pen:roundf(pen));
         pen+=glyph->advance_x*s;
         previous=current;
     }
+    return pen;
 }
 
 void SlotRenderer::measuredPenShifts(const gweni::Font &font, FontData &drawn, float px,
@@ -2695,24 +2714,17 @@ gweni::Point SlotRenderer::measureText(const gweni::Font &font, const gweni::Str
         return sz;
     }
 
-    ftgl::text_buffer_t *textBuffer=ftgl::text_buffer_new();
-    ftgl::vec2 pen={0.f, 0.f};
-
-    //codepoints, as in renderText
-    ftgl::text_buffer_add_text(textBuffer, &pen, &fontData.markup, text.c_str(), ftgl::utf8_strlen(text.c_str()));
-
-    ftgl::vector_t *vertices=textBuffer->buffer->vertices;
-    float *verticesBuffer=(float *)vertices->items;
-
-    assert(vertices->item_size == sizeof(ftgl::glyph_vertex_t));
+    const bool debug=textDebugMatches(text);
+    std::vector<float> pens;
+    const float pen=walkPens(fontData, font.size, text, debug?&pens:nullptr, nullptr);
 
     // The pen ends at the sum of the glyph advances (plus kerning), which is the
     // width the next string would start at. The right edge of the last glyph's
     // ink is a different and smaller quantity, and is not what a control laying
     // text out wants.
-    Point sz((int)ceil(pen.x), (int)ceil(lineBoxHeight(fontData, font.size)));
+    Point sz((int)ceil(pen), (int)ceil(lineBoxHeight(fontData, font.size)));
 
-    if(textDebugMatches(text))
+    if(debug)
     {
         ::printf("[measure] \"%s\" len=%zu font.size=%f scale=%f\n",
             text.c_str(), text.length(), (double)font.size, (double)scale());
@@ -2720,22 +2732,10 @@ gweni::Point SlotRenderer::measureText(const gweni::Font &font, const gweni::Str
             (double)fontData.markup.size, (double)fontData.markup.font->size,
             (double)fontData.markup.font->height, (double)fontData.markup.font->ascender,
             (double)fontData.markup.font->descender);
-        ::printf("[measure]   vertices->size=%zu item_size=%zu capacity=%zu floats_available=%zu "
-            "floats_read_max=%zu\n",
-            vertices->size, vertices->item_size, vertices->capacity,
-            (vertices->size*vertices->item_size)/sizeof(float),
-            vertices->size*11);
-        size_t dumpIndex=0;
-        for(size_t i=0; i<vertices->size; ++i)
-        {
-            ::printf("[measure]   v%-3zu x=%10.3f y=%10.3f z=%6.2f u=%8.5f v=%8.5f\n", i,
-                (double)verticesBuffer[dumpIndex], (double)verticesBuffer[dumpIndex+1],
-                (double)verticesBuffer[dumpIndex+2], (double)verticesBuffer[dumpIndex+3],
-                (double)verticesBuffer[dumpIndex+4]);
-            dumpIndex+=11;
-        }
+        for(size_t i=0; i<pens.size(); ++i)
+            ::printf("[measure]   glyph %-3zu pen x=%10.3f\n", i, (double)pens[i]);
         ::printf("[measure]   => sz.x=%d sz.y=%d (pen advance=%f)\n",
-            sz.x, sz.y, (double)pen.x);
+            sz.x, sz.y, (double)pen);
         ::printf("[measure]   atlas %zux%zu depth=%zu used=%zu\n",
             fontData.atlas->width, fontData.atlas->height, fontData.atlas->depth,
             fontData.atlas->used);
@@ -2755,8 +2755,6 @@ gweni::Point SlotRenderer::measureText(const gweni::Font &font, const gweni::Str
                 (double)g->s0, (double)g->t0, (double)g->s1, (double)g->t1);
         }
     }
-
-    text_buffer_delete(textBuffer);
 
     return sz;
 }
@@ -2820,30 +2818,10 @@ void SlotRenderer::measureCarets(const gweni::Font &font, const gweni::String &t
         return;
     }
 
-    // text_buffer_add_text's loop, read before each codepoint is added. Its first
-    // codepoint goes through text_buffer_add_text itself, which sets the buffer's
-    // origin and line up for the rest (a '\n' returns the pen to the origin).
-    xs.push_back(0);
-    if(text.empty())
-        return;
+    // the pen walk measureText makes, read before each codepoint and at the end
+    const float pen=walkPens(fontData, font.size, text, nullptr, &xs);
 
-    ftgl::text_buffer_t *textBuffer=ftgl::text_buffer_new();
-    ftgl::vec2 pen={0.f, 0.f};
-    const char *previous=text.c_str();
-
-    ftgl::text_buffer_add_text(textBuffer, &pen, &fontData.markup, previous, 1);
-
-    for(size_t i=utf8Next(text, 0); i < text.size(); i=utf8Next(text, i))
-    {
-        const char *current=text.c_str()+i;
-
-        xs.push_back((int)ceil(pen.x));
-        ftgl::text_buffer_add_char(textBuffer, &pen, &fontData.markup, current, previous);
-        previous=current;
-    }
-    xs.push_back((int)ceil(pen.x));
-
-    text_buffer_delete(textBuffer);
+    xs.push_back((int)ceil(pen));
 }
 
 // measureText's y for a one-line string, without laying one out: the font's line
