@@ -281,9 +281,9 @@
  *                   of a thumb drag, a unit at a time along the track, then
  *                   in larger steps along it and off it, changes the thumb
  *                   only and moves it by exactly the mouse's step, and the
- *                   release off it takes its hover away.
- *                   SliderTextDemo: dragging the first
- *                   slider's thumb a unit at a time, a frame that keeps the
+ *                   release off it takes its hover away. SliderTextDemo:
+ *                   dragging the first slider's thumb a unit at a time, a
+ *                   frame that keeps the
  *                   "%.0f" value text writes no glyph slot and at most the
  *                   thumb's primitive slot, and one that changes it no more
  *                   glyph slots than the new string's (a line lists them).
@@ -3962,10 +3962,11 @@ static void checkWindowClose(Session &s, const std::string &shotDir, Interaction
 }
 
 // SliderDemo: dragging the first slider's thumb, a unit at a time along the
-// track and then in larger steps along it and off it, changes the thumb alone on every drag frame (the mouse is held, so the
-// controls it crosses get no hover), each frame moves the thumb by exactly the
-// mouse's step (its position is rounded from the value read off it, #466), and
-// the release off the thumb takes its hover away.
+// track and then in larger steps along it and off it, changes the thumb alone
+// on every drag frame (the mouse is held, so the controls it crosses get no
+// hover), each frame moves the thumb by exactly the mouse's step (its position
+// is rounded from the value read off it, #466), and the release off the thumb
+// takes its hover away.
 static void checkSliderDrag(Session &s, const std::string &shotDir, InteractionChecks &checks, bool &ok)
 {
     gweni::controls::Base *demo=addControl(s, "SliderDemo");
