@@ -11,6 +11,7 @@
 #include <gweni/controls/treeControl.h>
 #include <gweni/controls/treeNode.h>
 #include <gweni/controls/windowControl.h>
+#include <gweni/tools/toolSupport.h>
 
 #include <vector>
 
@@ -199,9 +200,9 @@ private:
     unsigned m_treeSerial=0;
     bool m_treeBuilt=false;
     size_t m_textSets=0;
-    //! ids of its controls deleted since the last refreshCounters()
-    std::vector<size_t> m_ownPrimitives;
-    std::vector<size_t> m_ownTexts;
+    //! its own slots, taken out of the renderer's, and the ids of its controls
+    //! deleted since the last refreshCounters()
+    OwnSlots m_ownSlots;
 };
 
 }//namespace tools

@@ -4,6 +4,7 @@
  *  MIT License, see LICENSE
  */
 #include <gweni/tools/inspector.h>
+#include <gweni/tools/toolSupport.h>
 
 #include <gweni/anim.h>
 #include <gweni/gweni.h>
@@ -21,19 +22,6 @@ namespace tools
 
 namespace
 {
-
-#if GWENI_ANIMATE
-//! Runs Inspector::refresh() once a frame, at the start of the canvas's update
-//! phase. Its control is the inspector, so it is counted in no animsRun.
-class RefreshAnimation: public anim::Animation
-{
-public:
-    void think() override
-    {
-        static_cast<Inspector *>(m_control)->refresh();
-    }
-};
-#endif
 
 //! A node's caption: the control's type, its name if it has one, its id.
 String caption(controls::Base *control)
@@ -63,16 +51,6 @@ String idList(const char *what, const std::vector<size_t> &ids)
 const char *yesNo(bool b)
 {
     return b?"yes":"no";
-}
-
-//! The ids every skin Control of control's subtree holds.
-void appendSubtreeIds(const controls::Base *control, std::vector<size_t> &primitiveIds,
-    std::vector<size_t> &textIds)
-{
-    if(const skin::Control *skinControl=control->getSkinControl())
-        skinControl->appendIds(primitiveIds, textIds);
-    for(const controls::Base *child : control->getActualChildren())
-        appendSubtreeIds(child, primitiveIds, textIds);
 }
 
 //! The InspectorNodes directly under node (a placeholder is none).
@@ -181,7 +159,7 @@ GWENI_CONTROL_CONSTRUCTOR(Inspector)
     }
 
 #if GWENI_ANIMATE
-    anim::add(this, new RefreshAnimation());
+    anim::add(this, new RefreshAnimation<Inspector>());
 #endif
 }
 
@@ -272,10 +250,8 @@ bool Inspector::toggle(controls::Canvas *canvas)
 
 void Inspector::setLine(controls::Label *label, const String &text)
 {
-    if(label->getText() == text)
-        return;
-    label->setText(text);
-    ++m_textSets;
+    if(setLabelText(label, text))
+        ++m_textSets;
 }
 
 void Inspector::refresh()
@@ -372,53 +348,19 @@ void Inspector::refreshCounters()
         frame.render.text));
 
     renderer::Base *render=getSkin()?getSkin()->getRenderer():nullptr;
-    const renderer::FrameCounts counts=render?render->frameStats():renderer::FrameCounts();
+    const AppFrameWrites writes=m_ownSlots.appWrites(render, {this, m_highlight});
 
-    if(!counts.counted)
+    if(!writes.counted)
     {
         setLine(m_counters[SlotsLine], "slots written: not counted");
         setLine(m_counters[UploadsLine], "uploads: not counted");
         return;
     }
-
-    const std::vector<size_t> &primitives=render->writtenPrimitiveIds();
-    const std::vector<renderer::WrittenText> &texts=render->writtenTextIds();
-    size_t appPrimitives=0;
-    size_t appGlyphs=0;
-
-    if(!primitives.empty() || !texts.empty())
-    {
-        // the ids its own controls hold now, and those it gave back since the
-        // last frame (a node deleted clears its slots in the next flush)
-        std::vector<size_t> ownPrimitives=m_ownPrimitives;
-        std::vector<size_t> ownTexts=m_ownTexts;
-
-        ownIds(ownPrimitives, ownTexts);
-        std::sort(ownPrimitives.begin(), ownPrimitives.end());
-        std::sort(ownTexts.begin(), ownTexts.end());
-
-        for(size_t id : primitives)
-        {
-            if(!std::binary_search(ownPrimitives.begin(), ownPrimitives.end(), id))
-                ++appPrimitives;
-        }
-        for(const renderer::WrittenText &text : texts)
-        {
-            if(!std::binary_search(ownTexts.begin(), ownTexts.end(), text.textId))
-                appGlyphs+=text.glyphSlots;
-        }
-    }
-    m_ownPrimitives.clear();
-    m_ownTexts.clear();
-
-    setLine(m_counters[SlotsLine], format("slots written: %zu primitive, %zu text", appPrimitives, appGlyphs));
-
-    // uploads cannot be told apart by id: a frame only the inspector wrote in
-    // uploaded nothing of the app's
-    const bool appWrote=(appPrimitives != 0) || (appGlyphs != 0);
-
-    setLine(m_counters[UploadsLine], format("uploads: %zu calls, %zu bytes",
-        appWrote?counts.uploadCalls:size_t(0), appWrote?counts.uploadBytes:size_t(0)));
+    setLine(m_counters[SlotsLine], format("slots written: %zu primitive, %zu text", writes.primitiveSlots,
+        writes.glyphSlots));
+    // a frame only the inspector wrote in uploaded nothing of the app's
+    setLine(m_counters[UploadsLine], format("uploads: %zu calls, %zu bytes", writes.uploadCalls,
+        writes.uploadBytes));
 }
 
 void Inspector::refreshDetails()
@@ -637,7 +579,7 @@ void Inspector::deleteChildNodes(controls::TreeNode *node)
     for(controls::Base *child : children)
     {
         // its slots are cleared in the next flush, under ids it no longer holds
-        appendSubtreeIds(child, m_ownPrimitives, m_ownTexts);
+        m_ownSlots.released(child);
         delete child;
     }
 }
