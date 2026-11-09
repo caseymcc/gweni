@@ -26,16 +26,20 @@
  *  and shrinking upload no index, chunks of 3 and 1 glyph slots draw the same
  *  pixels, and at 1 there is one text draw per glyph shown.
  *
- *  Only the primitive slots that can show are drawn (#431): a chunk none of
- *  whose slots has a style other than 0 is not drawn, and a chunk's draw ends
- *  at its last slot that can show, FrameStats::primitiveSlotsDrawn being the
- *  sum of the slots drawn. On a renderer of its own, whose mirror holds only
- *  the case's slots: three chunks of 1x1 rects with the middle chunk hidden
- *  draw two chunks, and one slot shown again brings it back; a chunk's hidden
- *  tail is left out of its draw; the top ids of a large set released draw the
+ *  Only the primitive slots that can show are drawn (#431, #508): a chunk none
+ *  of whose slots has a style other than 0 is not drawn, and a drawn chunk's
+ *  draw is its runs of slots that can show, a gap of fewer than
+ *  primitiveRangeGap() slots merged and at most maxPrimitiveRanges() ranges,
+ *  FrameStats::primitiveSlotsDrawn and primitiveRanges being the slots and the
+ *  ranges drawn, as expectedDraws works them out apart from the renderer. On a
+ *  renderer of its own, whose mirror holds only the case's slots: three chunks
+ *  of 1x1 rects with the middle chunk hidden draw two chunks, and one slot
+ *  shown again brings it back as one slot in one range; a chunk's hidden tail
+ *  is left out of its draw; the top ids of a large set released draw the
  *  remaining live extent, not the peak; the counts follow a buffer regrow and
- *  a new chunk size; a settled frame uploads nothing. Every frame draws the
- *  pixels of the same mirror drawn whole (setDrawEveryPrimitiveSlot).
+ *  a new chunk size; a settled frame uploads nothing and builds no chunk's
+ *  ranges. Every frame draws the pixels of the same mirror drawn whole
+ *  (setDrawEveryPrimitiveSlot).
  */
 #include <doctest/doctest.h>
 
@@ -244,18 +248,18 @@ TEST_CASE("Index chunks: slots past 16383 draw their own vertexes and clip boxes
     const Frame frame=drawFrame([&](SlotRenderer &renderer) { drawGrid(renderer, high); });
 
     checkGrid(frame, gridCells);
-    // the slots reach into the second chunk, which draws up to the highest of
-    // them; the first holds the ids taken on the way, never drawn, so it draws
-    // only if an earlier case left a slot showing there
-    const size_t secondDrawn=*std::max_element(high.begin(), high.end())-SlotRenderer::kSlotsPerChunk+1;
+    // the slots reach into the second chunk, which draws them (and what an
+    // earlier case left showing there) in ranges ending at the highest of them;
+    // the first holds the ids taken on the way, never drawn, so it draws only if
+    // an earlier case left a slot showing there
+    const size_t secondReach=*std::max_element(high.begin(), high.end())-SlotRenderer::kSlotsPerChunk+1;
     const size_t slotsDrawn=renderer.getFrameStats().primitiveSlotsDrawn;
 
     CHECK(primitiveDraws() >= 1);
     CHECK(primitiveDraws() <= 2);
+    CHECK(slotsDrawn >= gridCells);
     if(primitiveDraws() == 1)
-        CHECK(slotsDrawn == secondDrawn);
-    else
-        CHECK(slotsDrawn > secondDrawn);
+        CHECK(slotsDrawn <= secondReach);
 }
 
 TEST_CASE("Index chunks: a few slots per chunk draw the same pixels, one draw per chunk")
@@ -451,33 +455,61 @@ Color pixelColor(size_t slot)
 }
 
 //! The primitive draws a mirror whose shown slots are `shown` makes: the
-//! chunks holding one, and the slots from each one's first up to its last
-//! shown one.
+//! chunks holding one, and in each its runs of shown slots, a gap of fewer than
+//! `gap` hidden slots merged, then the smallest gaps (the leftmost of equal
+//! ones) merged until at most `maxRanges` are left; worked out here one gap at
+//! a time, apart from the renderer's way.
 struct Expected
 {
     size_t draws=0;
+    size_t ranges=0;
     size_t slots=0;
 };
 
-Expected expectedDraws(const std::set<size_t> &shown, size_t chunkSlots)
+Expected expectedDraws(const std::set<size_t> &shown, size_t chunkSlots,
+    size_t gap=SlotRenderer::kPrimitiveRangeGap, size_t maxRanges=SlotRenderer::kMaxPrimitiveRanges)
 {
     Expected expected;
+    // each chunk's runs [first, end)
+    std::vector<std::pair<size_t, size_t>> runs;
     size_t chunk=SIZE_MAX;
 
-    // ascending: a chunk's last shown slot is the last one seen in it
-    for(auto it=shown.begin(); it != shown.end(); ++it)
+    auto finishChunk=[&]()
     {
-        if(*it/chunkSlots != chunk)
+        if(runs.empty())
+            return;
+        while(runs.size() > maxRanges)
         {
-            chunk=*it/chunkSlots;
-            ++expected.draws;
+            size_t smallest=0;
+
+            for(size_t i=1; i+1 < runs.size(); ++i)
+            {
+                if(runs[i+1].first-runs[i].second < runs[smallest+1].first-runs[smallest].second)
+                    smallest=i;
+            }
+            runs[smallest].second=runs[smallest+1].second;
+            runs.erase(runs.begin()+std::ptrdiff_t(smallest+1));
         }
+        ++expected.draws;
+        expected.ranges+=runs.size();
+        for(const auto &run:runs)
+            expected.slots+=run.second-run.first;
+        runs.clear();
+    };
 
-        const auto next=std::next(it);
-
-        if((next == shown.end()) || (*next/chunkSlots != chunk))
-            expected.slots+=*it-chunk*chunkSlots+1;
+    for(size_t slot:shown)
+    {
+        if(slot/chunkSlots != chunk)
+        {
+            finishChunk();
+            chunk=slot/chunkSlots;
+        }
+        if(!runs.empty() && (slot-runs.back().second < gap))
+            runs.back().second=slot+1;
+        else
+            runs.emplace_back(slot, slot+1);
     }
+    finishChunk();
     return expected;
 }
 
@@ -514,6 +546,7 @@ SlotRenderer::FrameStats drawChecked(SlotRenderer &renderer, Draw &&draw, size_t
     CHECK(wholeStats.uploadCalls == 0);
     CHECK(wholeStats.primitiveSlotsDrawn == mirrorSlots);
     CHECK(wholeStats.drawCalls-wholeStats.textDraws == (mirrorSlots+chunkSlots-1)/chunkSlots);
+    CHECK(wholeStats.primitiveRanges == wholeStats.drawCalls-wholeStats.textDraws);
     return stats;
 }
 
@@ -522,6 +555,7 @@ void checkDraws(const SlotRenderer::FrameStats &stats, const std::set<size_t> &s
     const Expected expected=expectedDraws(shown, chunkSlots);
 
     CHECK(stats.drawCalls-stats.textDraws == expected.draws);
+    CHECK(stats.primitiveRanges == expected.ranges);
     CHECK(stats.primitiveSlotsDrawn == expected.slots);
 }
 
@@ -533,7 +567,7 @@ size_t mirrorSlotsFor(const std::vector<size_t> &ids)
 
 }//namespace
 
-TEST_CASE("Index chunks: a chunk with nothing shown is not drawn, and a draw ends at its last shown slot")
+TEST_CASE("Index chunks: a chunk with nothing shown is not drawn, and a drawn one draws its runs of shown slots")
 {
     SlotRenderer *renderer=newOwnRenderer();
     const size_t chunkSlots=SlotRenderer::kSlotsPerChunk;
@@ -597,19 +631,22 @@ TEST_CASE("Index chunks: a chunk with nothing shown is not drawn, and a draw end
     for(size_t id:middle)
         shown.erase(id);
     CHECK(stats.drawCalls-stats.textDraws == 2);
-    CHECK(stats.primitiveSlotsDrawn == allDrawn-(middle.back()-chunkSlots+1));
+    CHECK(stats.primitiveSlotsDrawn <= allDrawn-middle.size());
     checkDraws(stats, shown, chunkSlots);
 
-    // one slot shown again brings its chunk back, drawn up to that slot
+    // one slot shown again brings its chunk back, as that one slot in one range
     const size_t again=middle[100];
+    const size_t middleHiddenDrawn=stats.primitiveSlotsDrawn;
+    const size_t middleHiddenRanges=stats.primitiveRanges;
 
     stats=drawChecked(*renderer, [&](SlotRenderer &renderer) { renderer.showPrimitive(1, again); }, mirrorSlots);
     shown.insert(again);
     CHECK(stats.drawCalls-stats.textDraws == 3);
-    CHECK(stats.primitiveSlotsDrawn == allDrawn-(middle.back()-chunkSlots+1)+(again-chunkSlots+1));
+    CHECK(stats.primitiveSlotsDrawn == middleHiddenDrawn+1);
+    CHECK(stats.primitiveRanges == middleHiddenRanges+1);
     checkDraws(stats, shown, chunkSlots);
 
-    // the last slots of the first chunk hidden: its draw ends at its last shown one
+    // the last slots of the first chunk hidden: its ranges end at its last shown one
     std::vector<size_t> tail;
 
     for(size_t id:ids)
@@ -632,17 +669,18 @@ TEST_CASE("Index chunks: a chunk with nothing shown is not drawn, and a draw end
     CHECK(stats.primitiveSlotsDrawn <= tailBefore-50);
     checkDraws(stats, shown, chunkSlots);
 
-    // so does the middle chunk's, hidden from the top down to its one shown slot
+    // the middle chunk's one shown slot hidden again: it is not drawn
     stats=drawChecked(*renderer, [&](SlotRenderer &renderer) { renderer.hidePrimitive(again); }, mirrorSlots);
     shown.erase(again);
     CHECK(stats.drawCalls-stats.textDraws == 2);
     checkDraws(stats, shown, chunkSlots);
 
-    // a settled frame uploads nothing and draws the same
+    // a settled frame uploads nothing, builds no chunk's ranges and draws the same
     renderer->begin();
     renderer->end();
     CHECK(renderer->getFrameStats().primitiveSlotsWritten == 0);
     CHECK(renderer->getFrameStats().uploadCalls == 0);
+    CHECK(renderer->getFrameStats().primitiveRangeBuilds == 0);
     checkDraws(renderer->getFrameStats(), shown, chunkSlots);
 
     // another chunk size counts the same shown slots in its own chunks
@@ -744,11 +782,12 @@ TEST_CASE("Index chunks: releasing the top slots draws the live extent, not the 
     CHECK(stats.primitiveSlotsDrawn <= ids.back()+1);
     CHECK(stats.primitiveSlotsDrawn < peak);
 
-    // a settled frame uploads nothing and draws the same
+    // a settled frame uploads nothing, builds no chunk's ranges and draws the same
     renderer->begin();
     renderer->end();
     CHECK(renderer->getFrameStats().primitiveSlotsWritten == 0);
     CHECK(renderer->getFrameStats().uploadCalls == 0);
+    CHECK(renderer->getFrameStats().primitiveRangeBuilds == 0);
     checkDraws(renderer->getFrameStats(), shown, chunkSlots);
 
     for(size_t id:ids)

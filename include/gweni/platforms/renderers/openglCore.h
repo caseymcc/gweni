@@ -147,12 +147,11 @@ protected:
     void destroyImageTexture(TextureHandle texture) override;
     bool readTextureRgba(TextureHandle texture, int width, int height, std::vector<uint8_t> &rgba) override;
     void beginPrimitiveDraws() override;
-    void drawPrimitiveChunk(size_t chunk, size_t firstSlot, size_t slots) override;
-    void drawPrimitiveRuns(const TextChunkDraw &draw) override;
+    void drawPrimitiveChunk(const ChunkDraw &draw) override;
     void endPrimitiveDraws() override;
     void beginTextDraws() override;
     void beginTextAtlas(const FontData &font) override;
-    void drawTextChunk(const TextChunkDraw &draw) override;
+    void drawTextChunk(const ChunkDraw &draw) override;
     void endTextDraws() override;
     void submitFrame() override;
     void indexChunkSlotsChanged() override;
@@ -169,6 +168,9 @@ private:
     //! The same for the text: chunk `chunk`'s glyph vertex array, its element buffer
     //! m_textQuadIndexBuffer.
     uint32_t textVertexArray(size_t chunk);
+    //! A chunk's ranges as one glMultiDrawElements, or a loop of glDrawElements
+    //! where the context has none (multiDrawText()), its vertex array bound
+    void drawRanges(const ChunkDraw &draw);
 
     void setTexture(unsigned int texture);
 

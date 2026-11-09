@@ -125,13 +125,14 @@ struct FontKeyHash
     }
 };
 
-//! One draw of an atlas's text: the runs it draws inside one index chunk
-//! (SlotRenderer::indexChunkSlots() glyph slots), as ranges of the static 16-bit
-//! quad index buffer, which every chunk reads from its own first slot.
-struct TextChunkDraw
+//! One draw inside one index chunk (SlotRenderer::indexChunkSlots() slots) as
+//! ranges of the static 16-bit quad index buffer, which every chunk reads from
+//! its own first slot: an atlas's text runs there, or the runs of a primitive
+//! chunk's slots that can show.
+struct ChunkDraw
 {
     size_t chunk=0; //!< the chunk's first slot is chunk*indexChunkSlots()
-    //! each range's index count: 6 per glyph slot
+    //! each range's index count: 6 per slot
     std::vector<int> counts;
     //! each range's first index as a byte offset (sizeof(uint16_t) per index) from
     //! the chunk's first slot's, as glMultiDrawElements takes it; a backend that
@@ -227,7 +228,7 @@ struct FontData
     //! textRuns when drawListStale, which is set only when a run's part of it
     //! (SlotRenderer::drawnRange) or its font changed; a rebuild reuses the
     //! entries and their vectors, so in steady state it allocates nothing.
-    std::vector<TextChunkDraw> drawChunks;
+    std::vector<ChunkDraw> drawChunks;
     bool drawListStale=true;
     //! Successful loadFont calls not yet matched by a freeFont. A font loaded only
     //! by a use (ensureFont, from renderText or measureText) has none.
@@ -440,13 +441,22 @@ public:
         //! draws: one per primitive chunk with a slot that can show, one per text
         //! chunk of an atlas (each a drawTextChunk, however many ranges it holds)
         size_t drawCalls=0;
-        //! primitive slots the primitive draws covered: the sum of the counts passed
-        //! to drawPrimitiveChunk. A chunk with no slot whose style is not 0 is not
-        //! drawn, and a chunk's draw ends at its last such slot, so hidden and
-        //! released slots past a chunk's last shown one (a hidden page, the ids a
-        //! deleted tree gave back) cost no vertex work; hidden slots below it are
-        //! still drawn, as 4 vertexes that make nothing.
+        //! primitive slots the primitive draws covered: the slots of the ranges
+        //! passed to drawPrimitiveChunk. A chunk with no slot whose style is not 0
+        //! is not drawn, and a drawn chunk's ranges are its runs of such slots, a
+        //! gap of fewer than primitiveRangeGap() hidden slots merged into the runs
+        //! around it and at most maxPrimitiveRanges() ranges (the smallest gaps
+        //! merged past that), so hidden and released slots (a hidden page, the ids a
+        //! deleted tree gave back) cost no vertex work but in a merged gap, where
+        //! each is 4 vertexes that make nothing.
         size_t primitiveSlotsDrawn=0;
+        //! the ranges of those draws: one per run of drawn slots
+        size_t primitiveRanges=0;
+        //! primitive chunks whose ranges this flush built again from the slots that
+        //! can show: those where a slot's visibility changed since their last
+        //! draw (or every one, after a chunk size or range limit change), so a
+        //! frame that shows and hides nothing builds none
+        size_t primitiveRangeBuilds=0;
         size_t textDraws=0;             //!< of those, the text draws: one per atlas with runs to draw
         size_t atlasUploadCalls=0;      //!< uploads of font atlas row bands (uploadAtlasRows)
         size_t atlasUploadBytes=0;      //!< bytes those calls sent
@@ -495,12 +505,17 @@ public:
     //! skipped, as flush() did before it drew only the slots that can show. A test
     //! hook, to check the skip draws the same pixels; off by default.
     void setDrawEveryPrimitiveSlot(bool every) { m_drawEveryPrimitiveSlot=every; }
-    //! PROTOTYPE (#508's measurement): draws each chunk's runs of slots that can
-    //! show, gaps under kPrimitiveRunGap slots merged, built from m_visibleSlots
-    //! every frame, through drawPrimitiveRuns. Off by default, or
-    //! GWENI_PRIMITIVE_RUNS=1 at construction.
-    void setDrawPrimitiveRuns(bool runs) { m_drawPrimitiveRuns=runs; }
-    static constexpr size_t kPrimitiveRunGap=8;
+    //! A primitive chunk's ranges: a gap of fewer than kPrimitiveRangeGap hidden
+    //! slots between two runs of slots that can show is drawn with them, and a
+    //! chunk draws at most kMaxPrimitiveRanges ranges, the smallest gaps (the
+    //! leftmost of equal ones) merged past that.
+    static constexpr size_t kPrimitiveRangeGap=8;
+    static constexpr size_t kMaxPrimitiveRanges=16;
+    size_t primitiveRangeGap() const { return m_primitiveRangeGap; }
+    size_t maxPrimitiveRanges() const { return m_maxPrimitiveRanges; }
+    //! Sets primitiveRangeGap() and maxPrimitiveRanges() (at least 1), every
+    //! chunk's ranges built again at the next flush(). A test and measurement hook.
+    void setPrimitiveRangeLimits(size_t gap, size_t maxRanges);
 
     //! What every live id holds in the CPU mirrors, so two states of the UI can be
     //! compared id by id rather than as raw buffers.
@@ -638,22 +653,19 @@ protected:
     //! Reads a texture's level 0 back as RGBA8 rows, row 0 first; false (rgba
     //! empty) if it cannot be read.
     virtual bool readTextureRgba(TextureHandle texture, int width, int height, std::vector<uint8_t> &rgba)=0;
-    //! The primitive draws: begin, one drawPrimitiveChunk per chunk in slot order
-    //! (the chunk's slots [firstSlot, firstSlot+slots), its vertexes from
-    //! firstSlot*4, every slot 2 triangles of the static quad indexes), end
+    //! The primitive draws: begin, one drawPrimitiveChunk per drawn chunk in slot
+    //! order, end. A chunk's draw is its ranges, in slot order, as one draw: its
+    //! vertexes from its first slot's (draw.chunk*indexChunkSlots()*4), each range
+    //! 2 triangles of the static quad indexes per slot from its offset.
     virtual void beginPrimitiveDraws()=0;
-    virtual void drawPrimitiveChunk(size_t chunk, size_t firstSlot, size_t slots)=0;
-    //! PROTOTYPE (#508): a chunk's runs, each a count of indexes and a byte offset
-    //! from the chunk's first slot's; by default the chunk up to its last run's end
-    //! through drawPrimitiveChunk
-    virtual void drawPrimitiveRuns(const TextChunkDraw &draw);
+    virtual void drawPrimitiveChunk(const ChunkDraw &draw)=0;
     virtual void endPrimitiveDraws()=0;
     //! The text draws: begin, then for each atlas with runs to draw a
     //! beginTextAtlas (its texture and TextMode, an LCD one blended per channel)
-    //! and one drawTextChunk per TextChunkDraw of its list, then end
+    //! and one drawTextChunk per ChunkDraw of its list, then end
     virtual void beginTextDraws()=0;
     virtual void beginTextAtlas(const FontData &font)=0;
-    virtual void drawTextChunk(const TextChunkDraw &draw)=0;
+    virtual void drawTextChunk(const ChunkDraw &draw)=0;
     virtual void endTextDraws()=0;
     //! The end of flush(): the frame's commands go to the device
     virtual void submitFrame()=0;
@@ -890,25 +902,33 @@ private:
     //! redraws a slot, in O(slots changed).
     std::vector<uint64_t> m_visibleSlots;
     //! Per primitive index chunk of m_chunkSlots slots: how many of its slots can
-    //! show, and the last of them (a slot number, meaningful while visible > 0)
+    //! show, and its draw's ranges, built from its bits when it is drawn after a
+    //! change of them (stale) and kept until the next
     struct PrimitiveChunkSlots
     {
         size_t visible=0;
-        size_t last=0;
+        bool stale=true;
+        size_t slots=0;     //!< the slots draw's ranges cover
+        ChunkDraw draw;
     };
     std::vector<PrimitiveChunkSlots> m_primitiveChunks;
     bool m_drawEveryPrimitiveSlot=false;
-    bool m_drawPrimitiveRuns=false;
-    TextChunkDraw m_primitiveRuns; //!< PROTOTYPE: the chunk being drawn's runs
-    //! PROTOTYPE: m_primitiveRuns from the bits of [first, end); \return the slots they cover
-    size_t buildPrimitiveRuns(size_t chunk, size_t first, size_t end);
-    //! Sets the slot's bit from its vertexes, and its chunk's count and last slot;
-    //! a chunk whose last slot stops showing finds the one before by its bits, at
-    //! most m_chunkSlots/64 words.
+    size_t m_primitiveRangeGap=kPrimitiveRangeGap;
+    size_t m_maxPrimitiveRanges=kMaxPrimitiveRanges;
+    //! setDrawEveryPrimitiveSlot's draw: one range over the whole chunk
+    ChunkDraw m_wholeChunkDraw;
+    //! buildPrimitiveRanges' scratch: the runs [first, end) found, and the gaps
+    //! between them as (size, index) when they are too many
+    std::vector<std::pair<size_t, size_t>> m_primitiveRuns;
+    std::vector<std::pair<size_t, size_t>> m_primitiveGaps;
+    //! Sets the slot's bit from its vertexes, and its chunk's count; a change
+    //! marks the chunk's ranges stale.
     void updateSlotVisibility(size_t slot);
-    //! The last slot that can show in [first, end), or end when there is none.
-    size_t lastVisibleSlot(size_t first, size_t end) const;
-    //! Recounts m_primitiveChunks from m_visibleSlots, for a new chunk size.
+    //! Builds a chunk's ranges from its bits: m_chunkSlots/64 words, and the runs
+    //! they hold.
+    void buildPrimitiveRanges(size_t chunk);
+    //! Recounts m_primitiveChunks from m_visibleSlots, for a new chunk size, every
+    //! chunk's ranges stale.
     void recountPrimitiveChunks();
 
     //! One contiguous run of glyph quads in the text mirrors, owned by one text id.
@@ -978,7 +998,7 @@ private:
     //! textRuns, reusing the entries already there and their vectors, and returns
     //! how many it filled; the entries past those are left as they were, for the
     //! caller to drop (buildTextDrawList) or keep (verifyTextDrawList).
-    size_t fillTextDrawList(const FontData &fontData, std::vector<TextChunkDraw> &drawChunks);
+    size_t fillTextDrawList(const FontData &fontData, std::vector<ChunkDraw> &drawChunks);
     //! In a debug build (no NDEBUG), asserts that fontData's drawChunks, not
     //! stale, are what a rebuild gives, so a run change that did not mark them
     //! really left them as they were. flush() calls it for every such font.
@@ -987,7 +1007,7 @@ private:
     //! build so the layout of the class does not depend on NDEBUG. It is never
     //! shrunk: it keeps the largest list it has held, so verifying fonts with
     //! different chunk counts one after the other allocates nothing.
-    std::vector<TextChunkDraw> m_verifyDrawChunks;
+    std::vector<ChunkDraw> m_verifyDrawChunks;
     //! fillTextDrawList's (first glyph slot, glyph count) per run, kept for its capacity
     std::vector<std::pair<size_t, size_t>> m_textDrawRanges;
 

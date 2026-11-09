@@ -745,8 +745,6 @@ SlotRenderer::SlotRenderer(ResourcePaths &paths, const Rect &viewRect)
 
     m_uploadStats=(getenv("GWENI_UPLOAD_STATS") != nullptr);
 
-    if(const char *runs=getenv("GWENI_PRIMITIVE_RUNS"))
-        m_drawPrimitiveRuns=(strcmp(runs, "1") == 0);
     // set but empty, or not a number, keeps the default
     if(const char *chunkSlots=getenv("GWENI_INDEX_CHUNK_SLOTS"))
     {
@@ -895,16 +893,16 @@ void SlotRenderer::ensurePrimitiveSlots(size_t primitiveId)
         m_vertexes.resize(primitiveId*4+4);
 }
 
-//! The highest set bit of a word that is not 0
-static size_t highestBit(uint64_t word)
+//! The lowest set bit of a word that is not 0
+static size_t lowestBit(uint64_t word)
 {
 #if defined(__GNUC__) || defined(__clang__)
-    return 63-(size_t)__builtin_clzll(word);
+    return (size_t)__builtin_ctzll(word);
 #else
-    size_t bit=63;
+    size_t bit=0;
 
-    while((word>>bit) == 0)
-        --bit;
+    while(((word>>bit)&1) == 0)
+        ++bit;
     return bit;
 #endif
 }
@@ -931,77 +929,31 @@ void SlotRenderer::updateSlotVisibility(size_t slot)
 
     PrimitiveChunkSlots &slots=m_primitiveChunks[chunk];
 
+    slots.stale=true;
     if(visible)
     {
         m_visibleSlots[word]|=bit;
-        slots.last=(slots.visible == 0)?slot:std::max(slots.last, slot);
         ++slots.visible;
-        return;
     }
-
-    m_visibleSlots[word]&=~bit;
-    --slots.visible;
-    if((slots.visible > 0) && (slots.last == slot))
-        slots.last=lastVisibleSlot(chunk*m_chunkSlots, slot);
-}
-
-size_t SlotRenderer::lastVisibleSlot(size_t first, size_t end) const
-{
-    size_t limit=std::min(end, m_visibleSlots.size()*64);
-
-    while(limit > first)
+    else
     {
-        const size_t word=(limit-1)/64;
-        const size_t wordFirst=word*64;
-        uint64_t bits=m_visibleSlots[word];
-
-        // the bits of [max(first, wordFirst), limit)
-        if(limit-wordFirst < 64)
-            bits&=(uint64_t(1)<<(limit-wordFirst))-1;
-        if(first > wordFirst)
-            bits&=~((uint64_t(1)<<(first-wordFirst))-1);
-        if(bits != 0)
-            return wordFirst+highestBit(bits);
-        limit=wordFirst;
+        m_visibleSlots[word]&=~bit;
+        --slots.visible;
     }
-    return end;
 }
 
-//! The lowest set bit of a word that is not 0
-static size_t lowestBit(uint64_t word)
+void SlotRenderer::buildPrimitiveRanges(size_t chunk)
 {
-#if defined(__GNUC__) || defined(__clang__)
-    return (size_t)__builtin_ctzll(word);
-#else
-    size_t bit=0;
+    PrimitiveChunkSlots &slots=m_primitiveChunks[chunk];
+    const size_t first=chunk*m_chunkSlots;
+    const size_t limit=std::min(first+m_chunkSlots, m_visibleSlots.size()*64);
+    std::vector<std::pair<size_t, size_t>> &runs=m_primitiveRuns;
 
-    while(((word>>bit)&1) == 0)
-        ++bit;
-    return bit;
-#endif
-}
-
-size_t SlotRenderer::buildPrimitiveRuns(size_t chunk, size_t first, size_t end)
-{
-    TextChunkDraw &draw=m_primitiveRuns;
-    const size_t limit=std::min(end, m_visibleSlots.size()*64);
-    size_t slot=first, runFirst=0, runEnd=0, covered=0;
-    bool open=false;
-
-    draw.chunk=chunk;
-    draw.counts.clear();
-    draw.offsets.clear();
-
-    auto closeRun=[&]()
+    // the runs of set bits in [first, limit), a run less than the gap after the
+    // one before it joined to it
+    runs.clear();
+    for(size_t slot=first; slot < limit;)
     {
-        draw.counts.push_back(int((runEnd-runFirst)*6));
-        draw.offsets.push_back(uintptr_t((runFirst-first)*6*sizeof(uint16_t)));
-        covered+=runEnd-runFirst;
-    };
-
-    while(slot < limit)
-    {
-        // the next slot that can show, from slot on
         const uint64_t shown=m_visibleSlots[slot/64]>>(slot%64);
 
         if(shown == 0)
@@ -1011,9 +963,15 @@ size_t SlotRenderer::buildPrimitiveRuns(size_t chunk, size_t first, size_t end)
         }
 
         const size_t start=slot+lowestBit(shown);
+
+        // the word's bits past the chunk are the next chunk's
+        if(start >= limit)
+            break;
+
         size_t stop=start;
 
-        // the first slot from start on that cannot show
+        // the first slot from start on that cannot show; the shift brings in
+        // zeros, which read as slots that can
         while(stop < limit)
         {
             const uint64_t hidden=(~m_visibleSlots[stop/64])>>(stop%64);
@@ -1028,32 +986,58 @@ size_t SlotRenderer::buildPrimitiveRuns(size_t chunk, size_t first, size_t end)
         }
         stop=std::min(stop, limit);
 
-        if(open && (start-runEnd < kPrimitiveRunGap))
-            runEnd=stop;
+        if(!runs.empty() && (start-runs.back().second < m_primitiveRangeGap))
+            runs.back().second=stop;
         else
-        {
-            if(open)
-                closeRun();
-            runFirst=start;
-            runEnd=stop;
-            open=true;
-        }
+            runs.emplace_back(start, stop);
         slot=stop;
     }
-    if(open)
-        closeRun();
-    return covered;
-}
 
-void SlotRenderer::drawPrimitiveRuns(const TextChunkDraw &draw)
-{
-    if(draw.counts.empty())
-        return;
+    // too many: the smallest gaps merged, the leftmost first among equal ones,
+    // until the cap is met
+    if(runs.size() > m_maxPrimitiveRanges)
+    {
+        std::vector<std::pair<size_t, size_t>> &gaps=m_primitiveGaps;
+        const size_t merges=runs.size()-m_maxPrimitiveRanges;
 
-    const size_t first=draw.chunk*m_chunkSlots;
-    const size_t end=(draw.offsets.back()/sizeof(uint16_t)+size_t(draw.counts.back()))/6;
+        gaps.clear();
+        for(size_t i=0; i+1 < runs.size(); ++i)
+            gaps.emplace_back(runs[i+1].first-runs[i].second, i);
+        std::nth_element(gaps.begin(), gaps.begin()+(merges-1), gaps.end());
+        // gaps[0..merges) are the gaps to close; mark each by emptying the run
+        // after it into the one before
+        std::sort(gaps.begin(), gaps.begin()+merges,
+            [](const std::pair<size_t, size_t> &a, const std::pair<size_t, size_t> &b) { return a.second < b.second; });
 
-    drawPrimitiveChunk(draw.chunk, first, end);
+        size_t kept=0;
+
+        for(size_t i=0, merge=0; i < runs.size(); ++i)
+        {
+            if((i > 0) && (merge < merges) && (gaps[merge].second == i-1))
+            {
+                runs[kept-1].second=runs[i].second;
+                ++merge;
+            }
+            else
+                runs[kept++]=runs[i];
+        }
+        runs.resize(kept);
+    }
+
+    ChunkDraw &draw=slots.draw;
+
+    draw.chunk=chunk;
+    draw.counts.clear();
+    draw.offsets.clear();
+    slots.slots=0;
+    for(const std::pair<size_t, size_t> &run:runs)
+    {
+        draw.counts.push_back(int((run.second-run.first)*6));
+        draw.offsets.push_back(uintptr_t((run.first-first)*6*sizeof(uint16_t)));
+        slots.slots+=run.second-run.first;
+    }
+    slots.stale=false;
+    ++m_frameStats.primitiveRangeBuilds;
 }
 
 void SlotRenderer::recountPrimitiveChunks()
@@ -1063,21 +1047,22 @@ void SlotRenderer::recountPrimitiveChunks()
     {
         for(uint64_t bits=m_visibleSlots[word]; bits != 0; bits&=bits-1)
         {
-            // lowest first, so each chunk's last is the slot it saw last
-            size_t bit=0;
-
-            while(((bits>>bit)&1) == 0)
-                ++bit;
-
-            const size_t slot=word*64+bit;
+            const size_t slot=word*64+lowestBit(bits);
             const size_t chunk=slot/m_chunkSlots;
 
             if(m_primitiveChunks.size() <= chunk)
                 m_primitiveChunks.resize(chunk+1);
             ++m_primitiveChunks[chunk].visible;
-            m_primitiveChunks[chunk].last=slot;
         }
     }
+}
+
+void SlotRenderer::setPrimitiveRangeLimits(size_t gap, size_t maxRanges)
+{
+    m_primitiveRangeGap=gap;
+    m_maxPrimitiveRanges=std::max<size_t>(maxRanges, 1);
+    for(PrimitiveChunkSlots &slots:m_primitiveChunks)
+        slots.stale=true;
 }
 
 void SlotRenderer::readPrimitiveSlot(size_t primitiveId, PrimitiveSlot &slot) const
@@ -1373,6 +1358,8 @@ void SlotRenderer::flush()
     m_frameStats.uploadBytes=0;
     m_frameStats.drawCalls=0;
     m_frameStats.primitiveSlotsDrawn=0;
+    m_frameStats.primitiveRanges=0;
+    m_frameStats.primitiveRangeBuilds=0;
     m_frameStats.textDraws=0;
     m_frameStats.atlasUploadCalls=0;
     m_frameStats.atlasUploadBytes=0;
@@ -1419,37 +1406,47 @@ void SlotRenderer::flush()
 
         // One draw per chunk of m_chunkSlots slots, in slot order as a single draw
         // over the whole buffer would go, so blending and depth come out the same.
-        // Each draws its slots up to its last one that can show, hidden ones below
-        // that included, as 4 vertexes and 6 indexes (2 triangles) apiece from the
-        // start of the static quad index buffer, with the chunk's vertex input
-        // pointed at its first slot; the vertex shader's slot is then slotBase +
-        // (vertex index >> 2). A chunk with no slot that can show is not drawn: a
-        // style-0 slot makes no fragment, so leaving it out changes no pixel.
+        // Each draws its runs of slots that can show (small gaps between them
+        // included, as 4 vertexes and 6 indexes that make nothing apiece), every
+        // slot 2 triangles of the static quad index buffer from the run's offset,
+        // with the chunk's vertex input pointed at its first slot; the vertex
+        // shader's slot is then slotBase + (vertex index >> 2). A chunk with no
+        // slot that can show is not drawn: a style-0 slot makes no fragment, so
+        // leaving it out changes no pixel. A chunk's ranges are built again only
+        // when its bits changed.
         const size_t slots=m_vertexes.size()/4;
 
         beginPrimitiveDraws();
         for(size_t chunk=0, first=0; first<slots; ++chunk, first+=m_chunkSlots)
         {
-            size_t count=std::min(slots-first, m_chunkSlots);
-
-            if(!m_drawEveryPrimitiveSlot)
+            if(m_drawEveryPrimitiveSlot)
             {
-                if(chunk >= m_primitiveChunks.size())
-                    break;
-                if(m_primitiveChunks[chunk].visible == 0)
-                    continue;
-                count=m_primitiveChunks[chunk].last-first+1;
+                const size_t count=std::min(slots-first, m_chunkSlots);
+
+                m_wholeChunkDraw.chunk=chunk;
+                m_wholeChunkDraw.counts.assign(1, int(count*6));
+                m_wholeChunkDraw.offsets.assign(1, 0);
+                drawPrimitiveChunk(m_wholeChunkDraw);
+                ++m_frameStats.drawCalls;
+                ++m_frameStats.primitiveRanges;
+                m_frameStats.primitiveSlotsDrawn+=count;
+                continue;
             }
 
-            if(m_drawPrimitiveRuns && !m_drawEveryPrimitiveSlot)
-            {
-                count=buildPrimitiveRuns(chunk, first, first+count);
-                drawPrimitiveRuns(m_primitiveRuns);
-            }
-            else
-                drawPrimitiveChunk(chunk, first, count);
+            if(chunk >= m_primitiveChunks.size())
+                break;
+
+            PrimitiveChunkSlots &chunkSlots=m_primitiveChunks[chunk];
+
+            if(chunkSlots.visible == 0)
+                continue;
+            if(chunkSlots.stale)
+                buildPrimitiveRanges(chunk);
+
+            drawPrimitiveChunk(chunkSlots.draw);
             ++m_frameStats.drawCalls;
-            m_frameStats.primitiveSlotsDrawn+=count;
+            m_frameStats.primitiveRanges+=chunkSlots.draw.counts.size();
+            m_frameStats.primitiveSlotsDrawn+=chunkSlots.slots;
         }
         endPrimitiveDraws();
     }
@@ -1483,7 +1480,7 @@ void SlotRenderer::flush()
                 continue;
 
             beginTextAtlas(fontData);
-            for(const TextChunkDraw &draw:fontData.drawChunks)
+            for(const ChunkDraw &draw:fontData.drawChunks)
             {
                 drawTextChunk(draw);
                 ++m_frameStats.drawCalls;
@@ -1502,10 +1499,11 @@ void SlotRenderer::flush()
     {
         //qualified: gweni::printf(String&, ...) would otherwise hide the C one
         ::printf("[upload] frame %zu: %zu calls, %zu bytes (mirror %zu bytes, %zu regrows), atlas %zu calls, %zu bytes,"
-            " %zu of %zu primitive slots drawn\n",
+            " %zu of %zu primitive slots drawn in %zu ranges (%zu chunks' ranges built)\n",
             m_frameStats.frameIndex, m_frameStats.uploadCalls, m_frameStats.uploadBytes,
             m_frameStats.mirrorBytes, m_frameStats.bufferRegrows, m_frameStats.atlasUploadCalls,
-            m_frameStats.atlasUploadBytes, m_frameStats.primitiveSlotsDrawn, m_vertexes.size()/4);
+            m_frameStats.atlasUploadBytes, m_frameStats.primitiveSlotsDrawn, m_vertexes.size()/4,
+            m_frameStats.primitiveRanges, m_frameStats.primitiveRangeBuilds);
         fflush(stdout);
     }
 }
@@ -2298,7 +2296,7 @@ void SlotRenderer::buildTextDrawList(FontData &fontData)
     fontData.drawListStale=false;
 }
 
-size_t SlotRenderer::fillTextDrawList(const FontData &fontData, std::vector<TextChunkDraw> &drawChunks)
+size_t SlotRenderer::fillTextDrawList(const FontData &fontData, std::vector<ChunkDraw> &drawChunks)
 {
     // (first glyph slot, glyph count) of each run that draws something, in a
     // vector kept for its capacity
@@ -2346,14 +2344,14 @@ size_t SlotRenderer::fillTextDrawList(const FontData &fontData, std::vector<Text
                 if(used == drawChunks.size())
                     drawChunks.emplace_back();
 
-                TextChunkDraw &next=drawChunks[used++];
+                ChunkDraw &next=drawChunks[used++];
 
                 next.chunk=chunk;
                 next.counts.clear();
                 next.offsets.clear();
             }
 
-            TextChunkDraw &draw=drawChunks[used-1];
+            ChunkDraw &draw=drawChunks[used-1];
 
             draw.counts.push_back(static_cast<int>((pieceEnd-start)*6));
             draw.offsets.push_back((start-chunkStart)*6*sizeof(uint16_t));
@@ -2374,8 +2372,8 @@ void SlotRenderer::verifyTextDrawList(const FontData &fontData)
 
     for(size_t i=0; same && (i < used); ++i)
     {
-        const TextChunkDraw &rebuilt=m_verifyDrawChunks[i];
-        const TextChunkDraw &kept=fontData.drawChunks[i];
+        const ChunkDraw &rebuilt=m_verifyDrawChunks[i];
+        const ChunkDraw &kept=fontData.drawChunks[i];
 
         same=(rebuilt.chunk == kept.chunk) && (rebuilt.counts == kept.counts) &&
             (rebuilt.offsets == kept.offsets);

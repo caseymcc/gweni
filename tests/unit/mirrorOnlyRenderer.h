@@ -30,7 +30,7 @@ class MirrorOnlyRenderer: public gweni::renderer::SlotRenderer
 public:
     using TextureHandle=gweni::renderer::TextureHandle;
     using FontData=gweni::renderer::FontData;
-    using TextChunkDraw=gweni::renderer::TextChunkDraw;
+    using ChunkDraw=gweni::renderer::ChunkDraw;
     using SlotTextureData=gweni::renderer::SlotTextureData;
 
     MirrorOnlyRenderer(): SlotRenderer(paths(), gweni::Rect(0, 0, 640, 480)) {}
@@ -59,11 +59,11 @@ protected:
         return false;
     }
     void beginPrimitiveDraws() override {}
-    void drawPrimitiveChunk(size_t, size_t, size_t) override {}
+    void drawPrimitiveChunk(const ChunkDraw &) override {}
     void endPrimitiveDraws() override {}
     void beginTextDraws() override {}
     void beginTextAtlas(const FontData &) override {}
-    void drawTextChunk(const TextChunkDraw &) override {}
+    void drawTextChunk(const ChunkDraw &) override {}
     void endTextDraws() override {}
     void submitFrame() override {}
     void indexChunkSlotsChanged() override {}

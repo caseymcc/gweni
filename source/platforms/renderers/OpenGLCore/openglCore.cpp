@@ -319,19 +319,12 @@ void OpenGLCore::beginPrimitiveDraws()
     glBindTexture(GL_TEXTURE_2D, m_currentTexture);
 }
 
-void OpenGLCore::drawPrimitiveChunk(size_t chunk, size_t firstSlot, size_t slots)
+void OpenGLCore::drawRanges(const ChunkDraw &draw)
 {
-    // the chunk's vertex array points the attributes at its first slot
-    glBindVertexArray(primitiveVertexArray(chunk));
-    glUniform1i(m_slotBaseUniform, (GLint)firstSlot);
-    glDrawElements(GL_TRIANGLES, (GLsizei)(slots*6), (GLenum)GL_UNSIGNED_SHORT, 0);
-}
+    static_assert(sizeof(uintptr_t) == sizeof(const void *), "the offsets are handed to GL as pointers");
 
-void OpenGLCore::drawPrimitiveRuns(const TextChunkDraw &draw)
-{
-    // PROTOTYPE (#508): the chunk's runs, as the text chunks' ranges are drawn
-    glBindVertexArray(primitiveVertexArray(draw.chunk));
-    glUniform1i(m_slotBaseUniform, (GLint)(draw.chunk*indexChunkSlots()));
+    // one draw of the chunk's ranges either way: GLES 3.0 has no
+    // glMultiDrawElements, and its loop draws the same
     if(m_multiDrawText)
     {
 #ifdef GWENI_GL_ES
@@ -348,6 +341,14 @@ void OpenGLCore::drawPrimitiveRuns(const TextChunkDraw &draw)
             glDrawElements(GL_TRIANGLES, draw.counts[range], (GLenum)GL_UNSIGNED_SHORT,
                 reinterpret_cast<const void *>(draw.offsets[range]));
     }
+}
+
+void OpenGLCore::drawPrimitiveChunk(const ChunkDraw &draw)
+{
+    // the chunk's vertex array points the attributes at its first slot
+    glBindVertexArray(primitiveVertexArray(draw.chunk));
+    glUniform1i(m_slotBaseUniform, (GLint)(draw.chunk*indexChunkSlots()));
+    drawRanges(draw);
 }
 
 void OpenGLCore::endPrimitiveDraws()
@@ -405,30 +406,11 @@ void OpenGLCore::beginTextAtlas(const FontData &fontData)
     glUniform1i(m_textModeUniform, (GLint)fontData.mode);
 }
 
-void OpenGLCore::drawTextChunk(const TextChunkDraw &draw)
+void OpenGLCore::drawTextChunk(const ChunkDraw &draw)
 {
-    static_assert(sizeof(uintptr_t) == sizeof(const void *), "the offsets are handed to GL as pointers");
-
     glBindVertexArray(textVertexArray(draw.chunk));
     glUniform1i(m_textSlotBaseUniform, (GLint)(draw.chunk*indexChunkSlots()));
-    // one draw of the chunk's ranges either way: GLES 3.0 has no
-    // glMultiDrawElements, and its loop draws the same
-    if(m_multiDrawText)
-    {
-#ifdef GWENI_GL_ES
-        multiDrawElementsEXT(GL_TRIANGLES, draw.counts.data(), (GLenum)GL_UNSIGNED_SHORT,
-            reinterpret_cast<const void *const *>(draw.offsets.data()), (GLsizei)draw.counts.size());
-#else
-        glMultiDrawElements(GL_TRIANGLES, draw.counts.data(), (GLenum)GL_UNSIGNED_SHORT,
-            reinterpret_cast<const void *const *>(draw.offsets.data()), (GLsizei)draw.counts.size());
-#endif
-    }
-    else
-    {
-        for(size_t range=0; range<draw.counts.size(); ++range)
-            glDrawElements(GL_TRIANGLES, draw.counts[range], (GLenum)GL_UNSIGNED_SHORT,
-                reinterpret_cast<const void *>(draw.offsets[range]));
-    }
+    drawRanges(draw);
 }
 
 void OpenGLCore::endTextDraws()

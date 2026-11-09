@@ -1960,10 +1960,10 @@ void Vulkan::beginPrimitiveDraws()
     vkCmdBindIndexBuffer(current.draw, m_quadIndexBuffer.buffer, 0, VK_INDEX_TYPE_UINT16);
 }
 
-void Vulkan::drawPrimitiveChunk(size_t /*chunk*/, size_t firstSlot, size_t slots)
+void Vulkan::drawPrimitiveChunk(const ChunkDraw &draw)
 {
     Frame &current=frame();
-
+    const size_t firstSlot=draw.chunk*indexChunkSlots();
     // the chunk's vertexes from its first slot's, as its GL vertex array points
     const VkDeviceSize offset=firstSlot*4*sizeof(Vertex);
 
@@ -1971,7 +1971,10 @@ void Vulkan::drawPrimitiveChunk(size_t /*chunk*/, size_t firstSlot, size_t slots
     vkCmdBindVertexBuffers(current.draw, 0, 1, &m_vertexBuffer.buffer, &offset);
     vkCmdPushConstants(current.draw, m_primitiveLayout, VK_SHADER_STAGE_VERTEX_BIT, 0,
         sizeof(PrimitivePush), &m_push);
-    vkCmdDrawIndexed(current.draw, (uint32_t)(slots*6), 1, 0, 0, 0);
+    // glMultiDrawElements' ranges, one draw each; the offsets are bytes of 16-bit indexes
+    for(size_t range=0; range<draw.counts.size(); ++range)
+        vkCmdDrawIndexed(current.draw, (uint32_t)draw.counts[range], 1,
+            (uint32_t)(draw.offsets[range]/sizeof(uint16_t)), 0, 0);
 }
 
 void Vulkan::endPrimitiveDraws()
@@ -2043,7 +2046,7 @@ void Vulkan::beginTextAtlas(const FontData &fontData)
     m_textPush.textMode=(int32_t)fontData.mode;
 }
 
-void Vulkan::drawTextChunk(const TextChunkDraw &draw)
+void Vulkan::drawTextChunk(const ChunkDraw &draw)
 {
     if(!m_drawingAtlas)
         return;
