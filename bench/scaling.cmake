@@ -50,6 +50,10 @@
 #                                               chunk of 16383 slots (per font
 #                                               atlas for text), so they follow
 #                                               the slot count, not the change
+#    primitive_slots_drawn             no       the slots the primitive draws
+#                                               cover follow the shown slots
+#                                               (and the hidden ones among
+#                                               them), not the change
 #    mirror_bytes, prim_ids, text_ids  no       sizes of the tree, not work
 #    *_us                              no       times
 #
@@ -79,7 +83,7 @@ set(EXCLUDED
 )
 
 # Keys that are not work counters (see the table above).
-set(UNCHECKED scene n frame allocs alloc_bytes draw_calls text_draws mirror_bytes prim_ids text_ids)
+set(UNCHECKED scene n frame allocs alloc_bytes draw_calls primitive_slots_drawn text_draws mirror_bytes prim_ids text_ids)
 
 execute_process(COMMAND ${BENCH} --list
     OUTPUT_VARIABLE list_output

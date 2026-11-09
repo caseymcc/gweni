@@ -101,7 +101,7 @@ const char *const g_counterNames[]=
 {
     "visited", "render_carried", "controls_changed", "created", "visibility", "geometry", "background", "text",
     "prim_slots_written", "text_slots_written", "upload_calls", "upload_bytes", "mirror_bytes",
-    "draw_calls", "text_draws", "atlas_upload_calls", "atlas_upload_bytes", "buffer_regrows",
+    "draw_calls", "primitive_slots_drawn", "text_draws", "atlas_upload_calls", "atlas_upload_bytes", "buffer_regrows",
     "layout_passes", "layout_capped", "render_layout", "layout_visited", "layout_children_scanned",
     "measure_calls", "measure_calls_input", "measure_calls_update", "measure_calls_render", "z_visited", "z_changed", "anims_run", "hit_tests", "prim_ids", "text_ids",
     "allocs", "alloc_bytes",
@@ -137,7 +137,7 @@ void collectCounters(FrameRecord &record, const bench::PhaseTotals &phases,
         changes.visited, changes.renderCarried, changes.controls, changes.created, changes.visibility,
         changes.geometry, changes.background, changes.text,
         gpu.primitiveSlotsWritten, gpu.textSlotsWritten, gpu.uploadCalls, gpu.uploadBytes,
-        gpu.mirrorBytes, gpu.drawCalls, gpu.textDraws, gpu.atlasUploadCalls, gpu.atlasUploadBytes,
+        gpu.mirrorBytes, gpu.drawCalls, gpu.primitiveSlotsDrawn, gpu.textDraws, gpu.atlasUploadCalls, gpu.atlasUploadBytes,
         gpu.bufferRegrows,
         size_t(layout.passes), layout.capped ? 1u : 0u, layout.renderLayout ? 1u : 0u,
         layout.visited, layout.childrenScanned, measures, phases.measures[size_t(Phase::Input)],
@@ -383,6 +383,10 @@ void printUsage()
         "  --renderer <gl|vulkan>  the backend (default gl, or GWENI_RENDERER; the\n"
         "                     flag beats it); with GWENI_VULKAN_VALIDATION=1 a Vulkan\n"
         "                     run has the validation layer on, which slows it\n"
+        "  --draw-slots <every|last|runs>  which primitive slots each index chunk draws:\n"
+        "                     every slot of the mirror (SlotRenderer::setDrawEveryPrimitiveSlot),\n"
+        "                     up to its last shown one (the default), or its runs of shown\n"
+        "                     slots (setDrawPrimitiveRuns, #508's prototype)\n"
         "  --json             print one JSON object instead of the key=value lines\n"
         "  --list             print the scenes, one per line:\n"
         "                       <name> takes_n=<0|1> default_n=<N> warmup=<W> frames=<F>\n"
@@ -417,12 +421,14 @@ void printUsage()
         "             frame (controls off the canvas), and the controls it found a state\n"
         "             change on, by kind\n"
         "  prim_slots_written text_slots_written upload_calls upload_bytes mirror_bytes\n"
-        "  draw_calls text_draws atlas_upload_calls atlas_upload_bytes buffer_regrows\n"
+        "  draw_calls primitive_slots_drawn text_draws atlas_upload_calls atlas_upload_bytes\n"
+        "  buffer_regrows\n"
         "             SlotRenderer::FrameStats of the frame's flush; the slots written are\n"
         "             the distinct primitive and glyph slots it uploads, each once, whether\n"
         "             a draw, a hide, a show or a release changed it; buffer_regrows the\n"
         "             vertex buffers and clip-box textures the mirror outgrew, each\n"
-        "             re-allocated (geometrically) and sent whole once\n"
+        "             re-allocated (geometrically) and sent whole once; primitive_slots_drawn\n"
+        "             the primitive slots the draws covered, hidden ones among them\n"
         "  layout_passes layout_capped render_layout\n"
         "             controls::LayoutStats: update-phase layout passes, whether they hit\n"
         "             the cap, whether the render phase laid out again\n"
@@ -492,6 +498,7 @@ int main(int argc, char *argv[])
     gweni::Point size(1280, 800);
     int n=-1, k=10, frames=-1, warmup=-1;
     bool json=false;
+    std::string drawSlots="last";
 
     for(int i=1; i<argc; ++i)
     {
@@ -505,6 +512,11 @@ int main(int argc, char *argv[])
         else if(arg == "--scene" && hasValue) sceneName=argv[++i];
         else if(arg == "--resources" && hasValue) resourceDir=argv[++i];
         else if(arg == "--renderer" && hasValue) rendererName=argv[++i];
+        else if(arg == "--draw-slots" && hasValue)
+        {
+            drawSlots=argv[++i];
+            ok=(drawSlots == "every" || drawSlots == "last" || drawSlots == "runs");
+        }
         else if(arg == "--n" && hasValue) ok=parseInt(argv[++i], n, 1);
         else if(arg == "--k" && hasValue) ok=parseInt(argv[++i], k, 1);
         else if(arg == "--frames" && hasValue) ok=parseInt(argv[++i], frames, 1);
@@ -572,6 +584,9 @@ int main(int argc, char *argv[])
     gweni::renderer::SlotRenderer *renderer=newBenchRenderer(*device, *paths,
         gweni::Rect(gweni::Point(0, 0), size));
     renderer->init();
+    renderer->setDrawEveryPrimitiveSlot(drawSlots == "every");
+    if(drawSlots == "runs")
+        renderer->setDrawPrimitiveRuns(true);
 
     gweni::skin::textured::TexturedSkin *skin=new gweni::skin::textured::TexturedSkin(renderer);
     if(!skin->init("DefaultSkin.json"))

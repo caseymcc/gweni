@@ -774,6 +774,81 @@ public:
     }
 };
 
+//-----------------------------------------------------------------------------
+// hidden-pages: a fixed header row of 20 Buttons built first, K pages holding N
+// Buttons between them (the first N%K pages one more), and a fixed footer row of
+// 20 Buttons built last, each page filling the canvas between the rows with its
+// Buttons in a grid of 60x20-unit cells (rows past the page's bottom are
+// clipped but still drawn). Every control is drawn shown in the first frame, so
+// the pages' primitive slots lie between the header's and the footer's, and the
+// second frame hides the pages, as a TabControl leaves the pages switched away
+// from. Each frame then hovers the next header Button. The shown slots are at
+// both ends of the mirror, so a chunk drawn up to its last shown slot covers
+// every hidden one below it (#508).
+//-----------------------------------------------------------------------------
+class HiddenPagesScene: public Scene
+{
+public:
+    void build(SceneContext &ctx) override
+    {
+        const int rowH=30, cellW=60, cellH=20;
+        const int pages=std::max(ctx.k, 1);
+        const int columns=std::max(ctx.size.x/cellW, 1);
+
+        m_header=buttonRow(ctx, 5, "H");
+        for(int page=0, built=0; page<pages; ++page)
+        {
+            const int count=ctx.n/pages+((page < ctx.n%pages) ? 1 : 0);
+            controls::Base *host=ctx.canvas->newChild<controls::Base>();
+
+            place(host, 0, rowH+5, ctx.size.x, ctx.size.y-2*(rowH+5));
+            for(int i=0; i<count; ++i, ++built)
+            {
+                controls::Button *button=host->newChild<controls::Button>();
+                place(button, (i%columns)*cellW, (i/columns)*cellH, cellW-4, cellH-2);
+                button->setText(format("P%05d", built));
+            }
+            m_pages.push_back(host);
+        }
+        buttonRow(ctx, ctx.size.y-rowH, "F");
+    }
+
+    void step(SceneContext &ctx, int /*frame*/) override
+    {
+        // the first frame draws the pages shown; the second hides them
+        if(m_steps++ == 1)
+        {
+            for(controls::Base *page : m_pages)
+                page->hide();
+        }
+
+        controls::Base *button=m_header[m_hovered++%m_header.size()];
+        moveMouse(ctx, m_mouse, button->localPosToCanvas(Point(button->getWidth()/2, button->getHeight()/2)));
+    }
+
+private:
+    std::vector<controls::Base *> buttonRow(SceneContext &ctx, int y, const char *prefix)
+    {
+        const int count=20, w=std::max(ctx.size.x/count, 8);
+        std::vector<controls::Base *> row;
+
+        for(int i=0; i<count; ++i)
+        {
+            controls::Button *button=ctx.canvas->newChild<controls::Button>();
+            place(button, i*w, y, w-4, 24);
+            button->setText(prefix+format("%02d", i));
+            row.push_back(button);
+        }
+        return row;
+    }
+
+    std::vector<controls::Base *> m_header;
+    std::vector<controls::Base *> m_pages;
+    int m_steps=0;
+    size_t m_hovered=0;
+    Point m_mouse=Point(-1, -1);
+};
+
 }//namespace
 
 const char *scalingName(Scaling scaling)
@@ -827,6 +902,9 @@ const std::vector<SceneInfo> &scenes()
         {"animate", "K indeterminate ProgressBars and a blinking caret among N idle Labels",
             true, 1000, 90, 60, Scaling::Local,
             []{ return std::unique_ptr<Scene>(new AnimateScene()); }},
+        {"hidden-pages", "hover a header Button above K hidden pages of N Buttons, shown slots at both ends",
+            true, 1000, 3, 20, Scaling::Local,
+            []{ return std::unique_ptr<Scene>(new HiddenPagesScene()); }},
     };
     return list;
 }
