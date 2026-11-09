@@ -38,8 +38,9 @@
  *  The renderer is shared with the other cases, so each case puts the scale, the
  *  render offset and the clip region back when it ends.
  *
- *  GWENI_LINES_DUMP=<dir> writes the polyline frame at scale 1.5 to
- *  <dir>/lines_1.5x.png, to look at.
+ *  GWENI_LINES_DUMP=<dir> writes every polyline frame, opaque and at 50 %, to
+ *  <dir>/polyline_<scale>x_t<thickness>_<opaque|half>.png, to look at or to
+ *  compare between backends.
  *
  *  The horizontal and vertical cases run thicknesses 1, 1.5, 2 and 3 at four
  *  phases of the grid. The joints are two 3-segment polylines at one z, which
@@ -54,6 +55,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <cstdlib>
 #include <string>
 #include <vector>
@@ -559,11 +561,17 @@ TEST_CASE("Line (style 3): the segments of a polyline join without a gap and ble
             const Frame opaque=draw(red);
             const Frame half=draw(translucent);
 
-            if(scale == 1.5f && thickness == 2.0f)
+            if(const char *dir=std::getenv("GWENI_LINES_DUMP"))
             {
-                if(const char *dir=std::getenv("GWENI_LINES_DUMP"))
-                    gweni::capture::writeRgbaPng(opaque.pixels, gweni::test::viewSize().x,
-                        gweni::test::viewSize().y, std::string(dir)+"/lines_1.5x.png");
+                char name[64];
+
+                for(const Frame *frame : {&opaque, &half})
+                {
+                    std::snprintf(name, sizeof(name), "/polyline_%gx_t%g_%s.png", scale, thickness,
+                        frame == &opaque ? "opaque" : "half");
+                    gweni::capture::writeRgbaPng(frame->pixels, gweni::test::viewSize().x,
+                        gweni::test::viewSize().y, std::string(dir)+name);
+                }
             }
 
             // the colour of one 50 % blend of red over the background
