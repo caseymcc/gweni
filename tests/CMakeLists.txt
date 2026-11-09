@@ -578,6 +578,15 @@ endif()
 doctest_discover_tests(gweni_unit_tests
     TEST_PREFIX "unit:"
     PROPERTIES ${gweni_unit_tests_properties})
+# a run that matches no case fails (tests/unit/main.cpp): a ';' in a case name
+# splits it into two discovered tests above, and each must fail, not pass
+# without running the case; the script needs the exit status and the message
+add_test(NAME unit_tests_zero_match_fails
+    COMMAND ${CMAKE_COMMAND}
+        -DUNIT_TESTS=$<TARGET_FILE:gweni_unit_tests>
+        "-DEMULATOR=${CMAKE_CROSSCOMPILING_EMULATOR}"
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/unitZeroMatch.cmake)
+set_tests_properties(unit_tests_zero_match_fails PROPERTIES ${gweni_unit_tests_properties})
 
 # C++ unit tests (doctest) that need a GL context, one executable. They get it
 # from the examples' surfaceless EGL code (gweni_capture), so they are only
