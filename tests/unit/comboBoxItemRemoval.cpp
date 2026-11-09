@@ -203,8 +203,8 @@ enum class Removal
 };
 
 //! Removes \p box's selected item ("One") by \p how (Reparent moves it to
-//! \p other), then runs the update phase alone.
-void removeSelected(Scene &scene, Box &box, Removal how, controls::Base *other)
+//! \p other).
+void removeSelected(Box &box, Removal how, controls::Base *other)
 {
     switch(how)
     {
@@ -221,11 +221,11 @@ void removeSelected(Scene &scene, Box &box, Removal how, controls::Base *other)
         box.one->setParent(other);
         break;
     }
-
-    scene.canvas->updateCanvas();
 }
 
-void checkSelectionDropped(Scene &scene, Box &box, Removal how)
+//! After the update phase that removed the selected item. \p empty is a
+//! ComboBox with no items, for the width a box left with none has.
+void checkSelectionDropped(Scene &scene, Box &box, Removal how, controls::ComboBox *empty)
 {
     controls::ComboBox *combo=box.combo;
 
@@ -243,7 +243,7 @@ void checkSelectionDropped(Scene &scene, Box &box, Removal how)
     if(how == Removal::MenuClearItems)
     {
         // every item went, so the width is the empty box's
-        CHECK(combo->getPreferredSize().width == scene.width(combo, ""));
+        CHECK(combo->getPreferredSize().width == empty->getPreferredSize().width);
     }
     else
     {
@@ -271,25 +271,25 @@ void runRemoval(Removal how, bool opened)
 {
     Scene scene;
     controls::Base *other=scene.canvas->newChild<controls::Base>("other");
+    controls::ComboBox *empty=other->newChild<controls::ComboBox>();
     Box box(scene, opened);
 
     REQUIRE(box.combo->getSelectedItem() == box.one);
     REQUIRE(listOf(box.one));
     REQUIRE(box.combo->getPreferredSize().width == scene.width(box.combo, "The longest item"));
 
-    removeSelected(scene, box, how, other);
+    removeSelected(box, how, other);
 
     if((how == Removal::DelayedDelete) || (how == Removal::MenuClearItems))
     {
-        // alive until the canvas deletes it: still selected and shown
+        // alive until the canvas deletes it, at the top of the next update
+        // phase: still selected and shown
         CHECK(box.combo->getSelectedItem() == box.one);
         CHECK(box.combo->getText() == "One");
-        scene.canvas->renderCanvas();
-        // the next frame's update phase deletes it
-        scene.canvas->updateCanvas();
     }
 
-    checkSelectionDropped(scene, box, how);
+    scene.canvas->updateCanvas();
+    checkSelectionDropped(scene, box, how, empty);
 }
 
 } // namespace

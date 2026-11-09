@@ -224,7 +224,7 @@ std::vector<Case> cases()
                 combo->addItem("Two");
                 combo->addItem("Three");
                 return combo;
-            }, "Menu"},
+            }, "ComboBoxList"},
         {"TabControl", [](controls::Base *host)
             {
                 auto *tabs=host->newChild<controls::TabControl>();
@@ -516,7 +516,7 @@ TEST_CASE("a child added to a hidden parent is visible once the parent is shown,
     bool menuVisible=false;
     forEachActual(made, [&](controls::Base *at)
         {
-            if(std::string(at->getTypeName()) == "Menu" && at->visible())
+            if(gweni_cast<controls::Menu>(at) && at->visible())
                 menuVisible=true;
         });
     CHECK_FALSE(menuVisible);

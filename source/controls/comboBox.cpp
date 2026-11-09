@@ -46,7 +46,8 @@ GWENI_CONTROL_CONSTRUCTOR(ComboBox)
     setSize(100, 20);
 
 //    m_menu=new Menu(this);
-    m_menu=newChild<Menu>();
+    m_menu=newChild<internal::ComboBoxList>();
+    m_menu->setComboBox(this);
 
     m_menu->setHidden(true);
     m_menu->setDisableIconMargin(true);
@@ -191,6 +192,30 @@ void ComboBox::onPress(event::Info)
         openList();
 }
 
+ComboBox::~ComboBox()
+{
+    if(m_menu)
+        m_menu->setComboBox(nullptr);
+}
+
+void ComboBox::itemRemoved(Base *child)
+{
+    // a pointer compare: the item may be inside its ~Base
+    if(child == m_selectedItem)
+    {
+        m_selectedItem=nullptr;
+        setText("");
+    }
+
+    // the item leaves this box's width, whether or not the list is its child
+    invalidate();
+}
+
+void ComboBox::listDeleted()
+{
+    m_menu=nullptr;
+}
+
 void ComboBox::clearItems()
 {
     if(m_menu)
@@ -326,6 +351,29 @@ bool ComboBox::onKeyDown(bool down)
 
 void ComboBox::renderFocus(gweni::skin::Base * /*skin*/)
 {}
+
+namespace internal
+{
+
+GWENI_CONTROL_CONSTRUCTOR(ComboBoxList)
+{
+}
+
+ComboBoxList::~ComboBoxList()
+{
+    if(m_comboBox)
+        m_comboBox->listDeleted();
+}
+
+void ComboBoxList::onChildRemoved(controls::Base *child)
+{
+    ParentClass::onChildRemoved(child);
+
+    if(m_comboBox)
+        m_comboBox->itemRemoved(child);
+}
+
+}//namespace internal
 
 }//namespace controls
 }//namespace gweni
