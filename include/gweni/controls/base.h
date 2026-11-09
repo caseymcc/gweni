@@ -469,7 +469,9 @@ protected:
     //! new size of a control with getChildClipRect() rects
     //! (hasChildClipRects()) or of one that clips whose bounds within the
     //! region it renders in (its parent's, as the render drain works it out)
-    //! changed. onBoundsChanged() marks the subtree then.
+    //! changed. onBoundsChanged() marks the subtree then. So nothing below
+    //! a control may draw from that control's size unless its arrange gives
+    //! it new bounds: a descendant's look follows its own bounds and state.
     bool childRegionChanged(const gweni::Rect &oldBounds);
     virtual void onChildBoundsChanged(gweni::Rect oldChildBounds, Base *child);
     //! A child's own hidden flag changed (its setHidden()).
