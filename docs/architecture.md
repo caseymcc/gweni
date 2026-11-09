@@ -776,17 +776,24 @@ lands on GL's window coordinates, so its coverage, its interpolated values and i
 2x2 derivatives are GL's. A window will show the target through a flipping blit
 (#375), not by drawing it the other way up. Flipping y in the projection (the first
 way this was written) gave 405 of the 422 frames the primitive cases read back
-byte-identical to GL's; not flipping gives 415. Of the 7 that differ, 4 differ by 1
-in 1 or 2 pixels (a 50 % blend rounding to 127 or 128), and 3 are the polyline
+byte-identical to GL's; not flipping gave 415. Of the 7 that differed, 4 differed by
+1 in 1 or 2 pixels (a 50 % blend rounding to 127 or 128), and 3 were the polyline
 frames of `lines.cpp`: a cap or joint pixel's coverage 1.0 on GL and 254/255 on
 Vulkan, and so (the line style's half-layer depth deciding which segment of a
 polyline blends over a joint) 1 or 2 joint pixels blended twice on one and once on
-the other, up to 64 per channel. Both pass the model the test checks; the
-difference is the float code GL's GLSL compiler and the SPIR-V path make of the same
-line arithmetic, not a different algorithm, and no control draws a line yet. It is
-above the feature's T = 2 ceiling, so it is an open issue (#427) rather than a
-tolerance: the pixel test of the apps, `backend_pixels`, has its own bound, measured
-on the ControlTest shots ("Vulkan's counters and pixels against GL's" below).
+the other, up to 64 per channel. That was the float code GL's GLSL compiler and the
+SPIR-V path made of `mix()` (#427). With the shared bodies on `lerp()` (#374) it is
+gone: measured before #483 changed anything, all 18 polyline frames of `lines.cpp`
+(scales 1, 1.5 and 2, thicknesses 1, 2 and 3, opaque and at 50 %) read back byte for
+byte the same on both backends, joint pixels included. Since #483 a polyline drawn
+with its neighbours no longer leaves a joint to the depth test at all: the segment
+nearest a pixel draws it and its neighbour leaves it ("Line segments (style 3)"), so
+neither the depth format (Vulkan's D24 or D32F) nor its rounding reaches a joint, and
+`lines.cpp` checks that model on both backends, on a 24-bit and a 32-bit float depth
+buffer, every frame of it byte-identical between the backends and between the two
+depth buffers. The pixel test of the apps,
+`backend_pixels`, has its own bound, measured on the ControlTest shots ("Vulkan's
+counters and pixels against GL's" below).
 
 Text is as near. Three runs of 12 to 40 px OpenSans (white, blue and black, on
 Tokyo Night's dark ground) and a skinned canvas (a Label, a Button and a TextBox in
@@ -1272,7 +1279,7 @@ two programs and the draws. What follows describes both together:
   `renderer::Base`'s defaults for `drawBilinearRect`/`drawCheckerRect` approximate
   them with `drawRoundedRect`. `hidePrimitive()`/`showPrimitive()` just set `style`,
   leaving geometry in place.
-- **Line segments (style 3).** `drawLine(id, p0, p1, thickness, z)` draws a segment
+- **Line segments (style 3).** `drawLine(id, p0, p1, thickness, z, prev, next)` draws a segment
   with round caps (a capsule) in the draw colour, its endpoints in canvas units as
   `PointF`s, so a plot's samples can fall between whole units. The thickness is
   snapped like a border, `max(1, snap(thickness))` whole device px, and each endpoint
@@ -1289,8 +1296,9 @@ two programs and the draws. What follows describes both together:
   the same way in `bx/by` (previous) and `dx/dy` (next; without one, `dx/dy` holds the
   second endpoint, as before neighbours existed), with `radius` saying which it holds
   (`LineHasPrev`, `LineHasNext`); a neighbour 16383.5 px or more from the quad's centre
-  on either axis, which `int16_t` half px cannot hold, is left out. The fragment shader covers a pixel by the part of it between the stroke's two
-  edges, each a straight edge across the pixel normal to the direction from the
+  on either axis, which `int16_t` half px cannot hold, is left out, and that joint is
+  left to the depth rule below, as one without neighbours is. The fragment shader
+  covers a pixel by the part of it between the stroke's two edges, each a straight edge across the pixel normal to the direction from the
   segment's nearest point (`pixelArea()`: the exact area of a unit square on one side
   of a line, linear in the middle of its `|nx|+|ny|` wide projection and quadratic at
   its corners). That is the pixel's exact area along the body of the stroke, so a thin
@@ -1306,12 +1314,43 @@ two programs and the draws. What follows describes both together:
   `gl_FragCoord.z`): a later segment at the same z draws over the pixels an earlier
   one covers less, and nothing at a lower z does. A fully covered pixel keeps its z,
   so a translucent polyline is blended once there however many of its segments cover
-  it, and only the rim of a cap's disc can be blended twice. A quad wider or higher
+  it, and only the rim of a cap's disc can be blended twice: where the first segment's
+  coverage is just under full, by an amount the depth buffer's format and rounding
+  decide (about 0.996 with D24). **Joints drawn with neighbours:** a segment given its neighbours decides
+  each pixel they reach with them, so it is blended once whatever the depth buffer,
+  compiler or backend. The segment nearest the pixel's centre draws it, ties (the disc
+  both segments end at) going to the earlier one, and the others discard it. Every slot
+  must agree on that to the bit, so the centre is `vLocal` rounded to its half-px grid
+  (exact at a pixel centre) and each squared distance is a function of the centre less
+  a segment's start and its end less its start, whole half px whichever slot's centre
+  they are taken from, all three through the one `lineOffset()` call in a loop (GLSL
+  3.30 and ES 3.00 have no `precise`). The owner draws its stroke and its nearer
+  neighbour's together: where both nearest points are the joint, the larger of the
+  two coverages (the same disc); elsewhere `a + ak - overlap`, the overlap mixed by
+  the cosine `c` between the two edge normals from the product `a*ak` (edges crossing
+  at right angles) to the smaller (parallel, covering the same side) or to
+  `max(a + ak - 1, 0)` (parallel, opposite sides, a sharp bend's tip). That is the
+  union of the two strips over the pixel within a few levels (against a 16x16
+  supersampled union at joint pixels: rms 0.6 to 2.2, max 3.5 to 10.5 levels, the
+  single segment's own model error; the plain product `1 - (1-a)(1-ak)` was rms
+  about 3 with a max of 22 to 31 on a joint's outer rim, where one segment's disc lies
+  inside the other's capsule), and it is continuous where one nearest point leaves
+  the joint, the two normals being one there. A pixel no neighbour reaches takes its
+  coverage at `vLocal` as interpolated, so a segment without neighbours draws byte for
+  byte as before. Ownership is by distance rather than by coverage because llvmpipe
+  runs every branch of the shader for every pixel, masked: the three distances and
+  the neighbour's coverage add about 10 % to its rasterising of every frame (an idle
+  scene's `flush`), where three coverages and a clipped strip union added 250 %. The
+  rule covers adjacent segments only: segments two or more apart along a polyline (one
+  shorter than the stroke between them, or a zigzag crossing itself) both draw a pixel
+  they reach and keep the depth rule above, and a caller that hides a segment draws
+  its neighbours again without it (`PlotLines` does, at a NaN). A quad wider or higher
   than `lx/ly` hold (32767 half px) is collapsed like one past the vertex range.
   `renderer::Base`'s default draws a filled rect along the segment's longer axis, its
   extent there and `round(thickness)` across, centred on its middle: exact only for an
-  axis-aligned segment without its caps. `tests/lines.cpp` checks style 3 pixel by
-  pixel against a model of the placement and the coverage.
+  axis-aligned segment without its caps, and ignores the neighbours. `tests/lines.cpp`
+  checks style 3 pixel by pixel against a model of the placement, the coverage and a
+  joint's owner and union.
 - `drawFilledRect()`/`drawTexturedRect()` write the 4 vertices + 6 indices for a quad
   into that id's slot in the CPU mirror.
 - **Images (style 2) in the one draw.** `drawTexturedRect` takes a texture loaded on its
