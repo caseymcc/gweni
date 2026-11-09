@@ -1815,7 +1815,26 @@ void SlotRenderer::generatePrimitive(size_t &primitiveId)
 
 void SlotRenderer::releasePrimitive(size_t primitiveId)
 {
-    hidePrimitive(primitiveId);
+    // A released slot's vertexes go back to what a never-written slot holds, all
+    // zero bytes, not only a hidden style: the id bank hands the lowest free id
+    // out first, so a control made after another is deleted gets its ids, and a
+    // skin that hides a slot and shows it again later (showPrimitive) would
+    // otherwise start from the dead control's bytes (issue #479). Nothing shows a
+    // released slot again. The clip box is left: every draw writes it, and a slot
+    // whose vertexes are 0 draws nothing whatever its box. So the release uploads
+    // the slot's vertexes alone, as the hide of a shown slot did; a hidden slot
+    // still holding its bytes is uploaded too, one already all 0 is not.
+    if(m_vertexes.size() >= primitiveId*4+4)
+    {
+        Vertex *vertexes=&m_vertexes[primitiveId*4];
+        const Vertex never[4]={};
+
+        if(memcmp(vertexes, never, sizeof(never)) != 0)
+        {
+            std::fill_n(vertexes, 4, Vertex());
+            m_dirtyVertexSlots.mark(primitiveId);
+        }
+    }
     releasePrimitiveId(primitiveId);
 }
 
