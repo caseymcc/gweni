@@ -278,9 +278,11 @@
  *                   leaves the window open and the button at rest, and a
  *                   click closes the window with the live primitive ids back
  *                   where they were before it opened. SliderDemo: each frame
- *                   of a thumb drag, along the track and off it, changes the
- *                   thumb only and moves it, and the release off it takes
- *                   its hover away. SliderTextDemo: dragging the first
+ *                   of a thumb drag, a unit at a time along the track, then
+ *                   in larger steps along it and off it, changes the thumb
+ *                   only and moves it by exactly the mouse's step, and the
+ *                   release off it takes its hover away.
+ *                   SliderTextDemo: dragging the first
  *                   slider's thumb a unit at a time, a frame that keeps the
  *                   "%.0f" value text writes no glyph slot and at most the
  *                   thumb's primitive slot, and one that changes it no more
@@ -3959,10 +3961,11 @@ static void checkWindowClose(Session &s, const std::string &shotDir, Interaction
         +std::to_string(idsAfter)+" after it closed");
 }
 
-// SliderDemo: dragging the first slider's thumb, along the track and off it,
-// changes the thumb alone on every drag frame (the mouse is held, so the
-// controls it crosses get no hover), the thumb follows the mouse, and the
-// release off the thumb takes its hover away.
+// SliderDemo: dragging the first slider's thumb, a unit at a time along the
+// track and then in larger steps along it and off it, changes the thumb alone on every drag frame (the mouse is held, so the
+// controls it crosses get no hover), each frame moves the thumb by exactly the
+// mouse's step (its position is rounded from the value read off it, #466), and
+// the release off the thumb takes its hover away.
 static void checkSliderDrag(Session &s, const std::string &shotDir, InteractionChecks &checks, bool &ok)
 {
     gweni::controls::Base *demo=addControl(s, "SliderDemo");
@@ -3983,30 +3986,43 @@ static void checkSliderDrag(Session &s, const std::string &shotDir, InteractionC
     mouseDown(s, grab.x, grab.y, true);
     renderFrames(s, s.frames);
 
-    // towards the track's far end, in steps that stay inside it; the second
-    // half of the steps runs below the track, off the slider
+    // towards the track's far end, in steps that stay inside it: 32 of one
+    // unit along the track (from the thumb's rest at 34 they pass 56, which a
+    // truncated position left at 55, #466), then two of a tenth of the slider
+    // along it and two more of those below the track, off the slider
     const gweni::Point sliderAt=slider->localPosToCanvas();
     const int direction=(grab.x < sliderAt.x+slider->getWidth()/2) ? 1 : -1;
-    const int step=std::max(1, slider->getWidth()/10);
+    const int coarse=std::max(1, slider->getWidth()/10);
     const int below=sliderAt.y+slider->getHeight()+5;
+    const int unitSteps=32;
 
     std::string frames;
+    std::string missed;
     bool onlyThumb=true;
-    bool followed=true;
-    for(int i=1; i <= 4; ++i)
+    int mouseX=grab.x;
+    for(int i=1; i <= unitSteps+4; ++i)
     {
-        const int thumbX=thumb->getX();
-        moveMouse(s, grab.x+direction*step*i, i <= 2 ? grab.y : below);
+        const int step=direction*(i <= unitSteps ? 1 : coarse);
+        const bool alongTrack=(i <= unitSteps+2);
+        const int expectedX=thumb->getX()+step;
+
+        mouseX+=step;
+        moveMouse(s, mouseX, alongTrack ? grab.y : below);
         renderFrames(s, 1);
         const gweni::controls::ChangeStats changes=gweni::controls::getChangeStats();
 
-        frames+=" controls_changed="+std::to_string(changes.controls)
-            +" background="+std::to_string(changes.background);
         if(changes.controls != 1)
+        {
             onlyThumb=false;
-        if(thumb->getX() == thumbX)
-            followed=false;
+            frames+=" step "+std::to_string(i)+": controls_changed="+std::to_string(changes.controls)
+                +" background="+std::to_string(changes.background)+";";
+        }
+        if(thumb->getX() != expectedX)
+            missed+=" step "+std::to_string(i)+(alongTrack ? " (along the track)" : " (below it)")
+                +": mouse moved "+std::to_string(step)+", thumb x "
+                +std::to_string(thumb->getX())+", expected "+std::to_string(expectedX)+";";
     }
+    const bool followed=missed.empty();
     const bool hoveredWhileHeld=thumb->isHovered();
     if(!shoot(s, shotDir+"/interaction-slider-drag.png"))
         ok=false;
@@ -4019,9 +4035,9 @@ static void checkSliderDrag(Session &s, const std::string &shotDir, InteractionC
     dropControl(s, demo);
 
     checks.check("slider_drag_one_control", onlyThumb,
-        "a drag frame changed other controls than the thumb:"+frames+"; want controls_changed=1 each");
+        "a drag frame changed other controls than the thumb:"+frames+" want controls_changed=1 each");
     checks.check("slider_drag_follows", followed && hoveredWhileHeld,
-        std::string(followed ? "" : "the thumb did not move with every drag step; ")
+        std::string(followed ? "" : "the thumb did not move by the mouse's step:"+missed+" ")
         +(hoveredWhileHeld ? "" : "the held thumb was not hovered"));
     checks.check("slider_drag_release", unhovered,
         "the thumb let go off itself kept the hover or the mouse");
