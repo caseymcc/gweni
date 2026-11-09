@@ -10,7 +10,10 @@ namespace gweni
 
 // A list of 100 000 items "Item 0" to "Item 99999", of which only the rows on
 // screen exist, two buttons that scroll it to the middle and to the end, and a
-// label naming the last item pressed.
+// label naming the last item pressed. The list is docked Left, 260 wide, so it
+// fills the demo's height (the canvas's in ControlTest) and its pool follows a
+// resize (ControlTest --scenario resize, issue #479); at 640x480 its last row
+// is a part one.
 GWENI_CONTROL_CONSTRUCTOR(VirtualListDemo)
 {
     setDock(DockPosition::Center);
@@ -21,7 +24,9 @@ GWENI_CONTROL_CONSTRUCTOR(VirtualListDemo)
     title->setPos(10, 10);
 
     m_list=newChild<controls::VirtualList>();
-    m_list->setBounds(10, 34, 260, 400);
+    m_list->setDock(DockPosition::Left);
+    m_list->setWidth(260);
+    m_list->setMargin(Margin(10, 34, 0, 10));
     m_list->setRowBinder([](controls::Base *row, size_t index)
         {
             if(controls::Label *label=gweni_cast<controls::Label>(row))
