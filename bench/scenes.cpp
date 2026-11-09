@@ -588,6 +588,45 @@ private:
 };
 
 //-----------------------------------------------------------------------------
+// tree-relabel: a TreeControl with an open node of 10 leaves and a closed node
+// holding N leaves. Measured frames give the closed node a new label of the
+// same length. Its rows count in its width though it is closed, and are
+// measured again only when one of them changed, so a frame enters the same
+// controls at any N.
+//-----------------------------------------------------------------------------
+class TreeRelabelScene: public Scene
+{
+public:
+    void build(SceneContext &ctx) override
+    {
+        m_tree=ctx.canvas->newChild<controls::TreeControl>();
+        place(m_tree, 10, 10, 500, ctx.size.y-20);
+
+        controls::TreeNode *open=m_tree->addNode("Open");
+
+        for(int l=0; l<10; ++l)
+            open->addNode(format("Leaf %05d", l));
+        open->open();
+
+        m_closed=m_tree->addNode(format("Closed %05d", 0));
+        for(int l=0; l<ctx.n; ++l)
+            m_closed->addNode(format("Row %05d", l));
+    }
+
+    void step(SceneContext &/*ctx*/, int frame) override
+    {
+        if(frame < 0)
+            return;
+
+        m_closed->setText(format("Closed %05d", frame+1));
+    }
+
+private:
+    controls::TreeControl *m_tree=nullptr;
+    controls::TreeNode *m_closed=nullptr;
+};
+
+//-----------------------------------------------------------------------------
 // add-remove: N Labels in a grid filling the canvas width. Each measured frame
 // removes the oldest Label (deleted outright on even frames, delayedDelete()
 // on odd ones) and adds a new one in its cell, as the canvas's last child; both
@@ -770,6 +809,9 @@ const std::vector<SceneInfo> &scenes()
         {"tree-toggle", "collapse and expand a 50-leaf node near the top of an N-node TreeControl",
             true, 1000, 3, 20, Scaling::Linear,
             []{ return std::unique_ptr<Scene>(new TreeToggleScene()); }},
+        {"tree-relabel", "relabel a closed TreeControl node holding N rows per frame",
+            true, 1000, 3, 20, Scaling::Local,
+            []{ return std::unique_ptr<Scene>(new TreeRelabelScene()); }},
         {"add-remove", "add one Label and delete another per frame among N",
             true, 1000, 3, 20, Scaling::Local,
             []{ return std::unique_ptr<Scene>(new AddRemoveScene()); }},

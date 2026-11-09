@@ -709,7 +709,18 @@ void Base::invalidate(int state)
     // where the invalidation started decides, all the way up, whether the
     // entries it causes are counted (layoutEntryCounted)
     if(!g_propagating)
+    {
         g_invalidationCounted=(g_statsExcludedRoots == 0) || !statsExcluded();
+
+        // the hidden controls it is under may be measured anyway; a shown
+        // one has no width kept (m_hiddenWidthCurrent)
+        if(!s_boundsInvalidation && !visible())
+        {
+            for(Base *control=this; control && !control->visible();
+                control=control->m_actualParent?control->m_actualParent:control->m_parent)
+                control->m_hiddenWidthCurrent=false;
+        }
+    }
 
     if((state & StateChange_Created) || 
         (state & StateChange_Visibility) ||
@@ -884,6 +895,8 @@ void Base::setHidden(bool hidden)
 
     noteSizeInputsChanging();
     m_hidden=hidden;
+    if(visible())
+        m_hiddenWidthCurrent=false;
 
     if(m_parent)
         m_parent->onChildHiddenChanged(this);
@@ -912,6 +925,8 @@ void Base::setAncestorHidden(bool ancestorHidden)
     // It hid itself: neither it nor anything under it changes.
     if(m_hidden)
         return;
+    if(!ancestorHidden)
+        m_hiddenWidthCurrent=false;
 
     addStateChange(StateChange_Visibility);
 
@@ -1302,6 +1317,7 @@ bool Base::setBounds(const Rect &bounds)
     if(m_bounds.w != bounds.w || m_bounds.h != bounds.h)
     {
         PlacementScope placement;
+        BoundsInvalidationScope boundsOnly;
         invalidateChildren(true);
         // its content box is another along that axis: every child is
         // placed again there
@@ -1428,6 +1444,7 @@ void Base::onBoundsChanged(Rect oldBounds)
     if(m_bounds.w != oldBounds.w || m_bounds.h != oldBounds.h)
     {
         PlacementScope placement;
+        BoundsInvalidationScope boundsOnly;
         invalidate();
     }
 
@@ -2883,6 +2900,7 @@ void Base::countLayoutChildrenScanned(const std::vector<Base *> &children) const
         *s_childrenScanned+=childrenCounted(children);
 }
 bool Base::s_walkChanged=false;
+bool Base::s_boundsInvalidation=false;
 size_t Base::s_measureSeq=0;
 
 // Counted only inside a pass: a calculateSize() made outside one (a
@@ -2893,6 +2911,9 @@ void Base::doCalculateSize(skin::Base *skin, Dim dim)
     {
         if(!m_updateLayout && !Canvas::s_verifyingLayout)
             return;
+        // dirty only for want of an arrange (see m_hiddenWidthCurrent)
+        if(dim == Dim::X && m_hiddenWidthCurrent && !visible() && !Canvas::s_verifyingLayout)
+            return;
 
         Canvas::s_layingOut->countLayoutEntry(this);
     }
@@ -2901,6 +2922,9 @@ void Base::doCalculateSize(skin::Base *skin, Dim dim)
     // term (see doArrange)
     m_measureSeq[static_cast<size_t>(dim)]=++s_measureSeq;
     calculateSize(skin, dim);
+    // what the measure changed below it, it read after the change
+    if(dim == Dim::X && Canvas::s_layingOut && !visible())
+        m_hiddenWidthCurrent=true;
 }
 
 // A control is dirty from its invalidation (or a new bounds) until the end of

@@ -39,7 +39,11 @@
  *  and a property::ComboBox row's value column fits it. A PropertyTree at its
  *  preferred width fits every node's Properties, and keeps that width when a
  *  node is closed: a closed TreeNode's rows still count in its width, so a
- *  tree built closed is as wide as one opened and closed. A VerticalSlider
+ *  tree built closed is as wide as one opened and closed. Its rows are
+ *  measured again only when one changed: relabelling a closed node enters as
+ *  many controls at 100 rows as at 2000, and a row changed, added or deleted
+ *  under it widens or narrows the tree as layout verification's full pass
+ *  finds. A VerticalSlider
  *  asks for its request at value 0 and 1 and takes a smaller layout cell in
  *  one pass.
  */
@@ -54,6 +58,7 @@
 #include <gweni/controls/property/comboBox.h>
 #include <gweni/controls/propertyTree.h>
 #include <gweni/controls/text.h>
+#include <gweni/controls/treeControl.h>
 #include <gweni/controls/verticalSlider.h>
 #include <gweni/controls/windowControl.h>
 
@@ -730,6 +735,83 @@ TEST_CASE("a PropertyTree at its preferred width fits its nodes' Properties, ope
     CHECK(f.tree->getWidth() == open);
     CHECK(f.wide->getWidth() == t.wide->getWidth());
     CHECK(fresh.requests == 0);
+}
+
+TEST_CASE("a closed TreeNode measures its rows again only when one of them changed")
+{
+    // A closed node's panel is never arranged, so it stays layout-dirty: what
+    // keeps a pass that enters the node from measuring the rows again is
+    // that their width is current (Base::m_hiddenWidthCurrent). Relabelling
+    // the closed node enters as many controls whatever its row count.
+    auto relabelVisits=[](int rows)
+    {
+        Scene scene;
+        auto *tree=scene.canvas->newChild<controls::TreeControl>();
+        controls::TreeNode *root=tree->addNode("Root");
+
+        for(int i=0; i < rows; ++i)
+            root->addNode("Row "+std::to_string(i));
+        scene.settle();
+        REQUIRE_FALSE(root->isOpen());
+
+        std::vector<size_t> visits;
+
+        for(int frame=0; frame < 4; ++frame)
+        {
+            root->setText("Root "+std::to_string(frame));
+            visits.push_back(scene.frame().visited);
+        }
+        return visits;
+    };
+
+    const std::vector<size_t> small=relabelVisits(100);
+
+    CHECK(small == relabelVisits(2000));
+    CHECK(small.front() < 100);
+
+    // A row of a closed node that changes is measured again, and only it:
+    // the tree widens to fit it, as a full pass finds (layout verification).
+    Scene scene;
+    auto *tree=scene.canvas->newChild<controls::TreeControl>();
+    controls::TreeNode *root=tree->addNode("Root");
+    std::vector<controls::TreeNode *> rows;
+
+    for(int i=0; i < 2000; ++i)
+        rows.push_back(root->addNode("Row "+std::to_string(i)));
+    scene.settle();
+
+    const int closed=tree->getPreferredSize().width;
+    const size_t failures=controls::layoutVerifyFailures();
+    const bool verify=controls::layoutVerifyEnabled();
+
+    controls::setLayoutVerify(true);
+    rows[1000]->setText("A row label much wider than every other row of the tree");
+    const size_t widened=scene.frame().visited;
+    scene.settle();
+    CHECK(tree->getPreferredSize().width > closed);
+    CHECK(widened < 100);
+
+    rows[1000]->setText("Row 1000");
+    scene.settle();
+    CHECK(tree->getPreferredSize().width == closed);
+
+    // So does a row added to it, and the tree narrows again once it is gone.
+    controls::TreeNode *added=root->addNode("An added row label much wider than every other row");
+    scene.settle();
+    CHECK(tree->getPreferredSize().width > closed);
+    delete added;
+    scene.settle();
+    CHECK(tree->getPreferredSize().width == closed);
+    controls::setLayoutVerify(verify);
+    CHECK(controls::layoutVerifyFailures() == failures);
+
+    // Opened, every row is laid out: their heights were never measured
+    // while the node was closed.
+    root->open();
+    scene.settle();
+    CHECK(rows.back()->getHeight() == rows.front()->getHeight());
+    CHECK(rows.back()->getY() > rows.front()->getY());
+    CHECK(rows.back()->getHeight() > 0);
 }
 
 TEST_CASE("a VerticalSlider asks for its request whatever its value, and fits a smaller layout cell in one pass")

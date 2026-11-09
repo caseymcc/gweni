@@ -266,6 +266,19 @@ dirty past that when it re-dirtied the pass, or when a shown child is still
 dirty (a child moved in a `postLayout()`), so the next pass finds its way
 down.
 
+A hidden control is never arranged, so one its parent measures anyway (a
+closed TreeNode's inner panel, whose rows count in the node's width; a
+TabControl's hidden scroll buttons) stays dirty. What keeps every pass that
+enters the parent from measuring it again is that its width is current
+(`Base::m_hiddenWidthCurrent`): set by an X measure in a pass while it is not
+`visible()`, and cleared when it is shown or something under it is
+invalidated, but for a new size, which no preferred width reads. An
+invalidation of a hidden control clears it on the way up to the first shown
+one, so a shown control's own invalidations cost nothing more. Relabelling a
+closed node enters as many controls whatever its row count, and a row
+changed, added or deleted under it is measured again with the path up to it
+alone (`tests/unit/placement.cpp`, the `tree-relabel` bench scene).
+
 A pure move does not dirty the moved control's subtree: its children are
 placed relative to it, and `onBoundsChanged` marks the subtree
 `StateChange_Geometry` for the render walk. A new size invalidates the

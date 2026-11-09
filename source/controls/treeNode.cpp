@@ -145,6 +145,8 @@ TreeNode *TreeNode::addNode(const String &label)
 // it were open (only the height leaves them out), so a tree laid out at its
 // preferred width keeps it when a node is toggled, and a tree built with its
 // nodes closed is as wide as one opened and closed again.
+// The panel, never arranged while closed, stays dirty; it is measured again
+// only when something under it changed (Base::m_hiddenWidthCurrent).
 void TreeNode::calculateSize(skin::Base *skin, Dim dim)
 {
     if(dim == Dim::X && m_toggleButton)

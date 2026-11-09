@@ -1168,6 +1168,14 @@ protected:
     //! m_updateLayout was set from outside every setExcludedFromStats()
     //! subtree (or the control is new): see layoutEntryCounted().
     bool m_layoutDirtyCounted=true;
+    //! The preferred width is what an X measure would give now: one ran in a
+    //! pass while the control was not visible(), and since then nothing under
+    //! it was invalidated (but for a new size, which no preferred width reads)
+    //! and it was not shown. Only a control that is not visible() has it set: a
+    //! hidden control a parent measures anyway (a closed TreeNode's panel) is
+    //! never arranged, so it stays dirty, and this is what keeps every pass
+    //! from measuring it again.
+    bool m_hiddenWidthCurrent=false;
     //! The Canvas::s_passSerial of the last pass that arranged this control
     //! in X (m_layoutPassX) and in Y (m_layoutPassY).
     unsigned m_layoutPassX=0;
@@ -1319,6 +1327,18 @@ protected:
     size_t m_measureSeq[2]={0, 0};
     size_t m_countSeq[2]={0, 0};
     static size_t s_measureSeq;
+    //! Set while a new size invalidates the control and its subtree
+    //! (setBounds, onBoundsChanged): no preferred width reads bounds, so those
+    //! leave m_hiddenWidthCurrent as it is.
+    static bool s_boundsInvalidation;
+    struct BoundsInvalidationScope
+    {
+        BoundsInvalidationScope(): m_outer(s_boundsInvalidation) { s_boundsInvalidation=true; }
+        ~BoundsInvalidationScope() { s_boundsInvalidation=m_outer; }
+        BoundsInvalidationScope(const BoundsInvalidationScope &)=delete;
+        BoundsInvalidationScope &operator=(const BoundsInvalidationScope &)=delete;
+        bool m_outer;
+    };
     //! The term the parent's count holds for this control, kept when one of
     //! its inputs changed after the count (at s_measureSeq m_termSeq).
     SizeTerm m_sizeTerm[2];
