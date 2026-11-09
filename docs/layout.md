@@ -400,7 +400,17 @@ update phase 22.2 M and 158.8 M before, 7.32 M at both; drag's 15.3 M and
 instructions per control for the list (marking dirty, the measure stamp, the
 decision in each arrange): 8 % of `resize --n 1000`'s and `scale --n 1000`'s
 update-phase instructions, 1.4 % of `build --n 10000`'s, within the noise of
-their timed runs.
+their timed runs. Stopping the list before a resize or a scale change dirties
+every child does not take any of it back (#485): the enlists of
+`resize --n 1000` cost 174 K instructions in all, nearly every one returning
+at its first test once a sibling has stopped the list, and they run where the
+invalidation does, in the bench's input phase; a size test in each
+`invalidateChildren` call to skip them cost 0.57 M (the input phase +0.37 %,
+`build --n 10000`'s update +0.32 %, the update of resize and scale -0.007 %),
+so it was left out. What a whole-subtree change pays per control is the
+invalidation itself: each `Base::invalidate()` invalidates every ancestor up
+to the canvas (about 50 M of resize's input phase, about 157 M of
+`build --n 10000`'s instructions).
 
 **Its counter and the flagged subtrees.** `layout_children_scanned`
 (`LayoutStats::childrenScanned`) counts what these loops go over, as
