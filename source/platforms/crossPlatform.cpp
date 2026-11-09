@@ -201,10 +201,17 @@ float platformTimeInSeconds()
 
 #else
 
+// Wall time since the first call, from steady_clock. Not clock(), which is the
+// process's CPU time over all its threads: with a rasteriser on several threads
+// it ran many times faster than wall time (and slower with an idle GPU driver),
+// so a window's caret blink, tooltip delay, animations and the stats overlay's
+// fps and refresh ran on it.
 float platformTimeInSeconds()
 {
-    const float seconds=static_cast<float>(clock()) / CLOCKS_PER_SEC;
-    return seconds;
+    using Clock=std::chrono::steady_clock;
+    static const Clock::time_point start=Clock::now();
+
+    return static_cast<float>(std::chrono::duration<double>(Clock::now()-start).count());
 }
 
 #endif

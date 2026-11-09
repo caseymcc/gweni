@@ -175,7 +175,9 @@ StatsOverlay *StatsOverlay::find(controls::Canvas *canvas)
         return nullptr;
     for(controls::Base *child : canvas->getActualChildren())
     {
-        if(StatsOverlay *overlay=gweni_cast<StatsOverlay>(child))
+        StatsOverlay *overlay=gweni_cast<StatsOverlay>(child);
+
+        if(overlay && !overlay->m_closing)
             return overlay;
     }
     return nullptr;
@@ -199,6 +201,7 @@ void StatsOverlay::close(controls::Canvas *canvas)
 {
     if(StatsOverlay *overlay=find(canvas))
     {
+        overlay->m_closing=true;
         overlay->hide();
         overlay->delayedDelete();
     }
@@ -206,18 +209,10 @@ void StatsOverlay::close(controls::Canvas *canvas)
 
 bool StatsOverlay::toggle(controls::Canvas *canvas)
 {
-    StatsOverlay *overlay=find(canvas);
-
-    // one closed is hidden until its delayed delete
-    if(overlay && overlay->visible())
+    if(find(canvas))
     {
         close(canvas);
         return false;
-    }
-    if(overlay)
-    {
-        overlay->setHidden(false);
-        return true;
     }
     return open(canvas) != nullptr;
 }

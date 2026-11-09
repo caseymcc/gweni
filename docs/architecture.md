@@ -2397,7 +2397,10 @@ no key, the examples bind F10 and take `--stats-overlay [on|off]`), and the host
 Inspector through `include/gweni/tools/toolSupport.h`) runs at the start of every update
 phase and gathers the frame before (`Canvas::previousFrameStats()`, whose `times` are
 that frame's, and the renderer's `frameStats()`) into the current window. Every
-`RefreshSeconds` (250 ms) of the canvas's clock (`platform::getTimeInSeconds()`) it
+`RefreshSeconds` (250 ms) of the canvas's clock (`platform::getTimeInSeconds()`, wall
+time in a window: `steady_clock` from the first read on Linux, where it used to be
+`clock()`, the process's CPU time over all its threads, and a window rasterising on
+llvmpipe's threads read fps 6 at 130 frames a second; `tests/unit/platformClock.cpp`) it
 shows that window and starts the next: the time table and the "most in one frame" rows
 cover the frames since the last refresh, the plots the last 60 refreshes, fps the last
 second. A clock that goes back (a capture installing its stepped clock after the overlay
@@ -2405,7 +2408,8 @@ opened on the platform's) starts the second and the window again. The control co
 walk of the tree, made on a refresh only when `Canvas::treeSerial()` has moved since the
 last one, so it costs O(N) at most four times a second and only after the tree changed;
 nothing is kept per control. Hidden (on a hidden page, or closed until its delayed
-delete), it neither gathers nor shows.
+delete), it neither gathers nor shows; a closed one is not `find()`'s any more, so a
+second `toggle()` in the same frame opens a new one.
 
 **It settles.** A label is set only when its string changes (`tools::setLabelText`), and
 every row and cell has a fixed size, so a refresh changes text and never re-lays the

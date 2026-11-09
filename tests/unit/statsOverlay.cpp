@@ -8,7 +8,8 @@
  *  changes, under a stepped canvas clock (1/64 s a frame, so a refresh is
  *  every 16 frames exactly) and a profile clock that advances 100 us per read:
  *  - open() makes one overlay, the canvas's overlay, which find() finds;
- *    toggle() closes and opens it, close() deletes it;
+ *    toggle() closes and opens it, close() deletes it; two toggles in one
+ *    frame leave it open, a new one, the closed one deleted;
  *  - it sits StatsOverlay::Inset units in from the canvas's bottom-right
  *    corner, and follows the canvas to a new size and a new scale;
  *  - a hit test passes through it: the control under it is found, with the
@@ -169,6 +170,26 @@ TEST_CASE("StatsOverlay: open, find, toggle and close")
     CHECK(StatsOverlay::find(scene.canvas) == nullptr);
     CHECK(StatsOverlay::toggle(scene.canvas));
     REQUIRE(StatsOverlay::find(scene.canvas));
+    StatsOverlay::close(scene.canvas);
+    scene.frames(2);
+    CHECK(StatsOverlay::find(scene.canvas) == nullptr);
+
+    // closed and opened again before the closed one's delayed delete
+    REQUIRE(StatsOverlay::toggle(scene.canvas));
+    CHECK_FALSE(StatsOverlay::toggle(scene.canvas));
+    CHECK(StatsOverlay::find(scene.canvas) == nullptr);
+    CHECK(StatsOverlay::toggle(scene.canvas));
+    scene.frames(2);
+
+    StatsOverlay *reopened=StatsOverlay::find(scene.canvas);
+
+    REQUIRE(reopened);
+    CHECK(reopened->visible());
+    size_t overlays=0;
+
+    for(controls::Base *child : scene.canvas->getActualChildren())
+        overlays+=gweni_cast<StatsOverlay>(child) ? 1 : 0;
+    CHECK(overlays == 1);
     StatsOverlay::close(scene.canvas);
     scene.frames(2);
     CHECK(StatsOverlay::find(scene.canvas) == nullptr);

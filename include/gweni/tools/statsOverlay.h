@@ -63,11 +63,13 @@ public:
 public:
     //! The canvas's overlay, made and shown if it has none.
     static StatsOverlay *open(controls::Canvas *canvas);
-    //! Deletes the canvas's overlay (delayed), if it has one.
+    //! Hides the canvas's overlay and deletes it (delayed), if it has one;
+    //! from then on find() no longer finds it.
     static void close(controls::Canvas *canvas);
     //! Opens the overlay, or closes it if it is open. Returns whether it is open.
     static bool toggle(controls::Canvas *canvas);
-    //! The canvas's overlay, or null.
+    //! The canvas's overlay, or null; one closed and waiting for its delayed
+    //! delete is not found, so open() after close() in one frame makes a new one.
     static StatsOverlay *find(controls::Canvas *canvas);
 
     //! How often what it shows is refreshed, in seconds of the canvas's clock.
@@ -190,6 +192,8 @@ private:
     size_t m_shownTextIds=0;
     size_t m_refreshes=0;
     size_t m_textSets=0;
+    //! close()d, waiting for its delayed delete.
+    bool m_closing=false;
 };
 
 }//namespace tools
