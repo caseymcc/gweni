@@ -13,9 +13,9 @@
  *  menu.x+pad+24 to right-pad-4 with backdrop on both sides of it and 3 units
  *  of backdrop above and below. A label is left-aligned after the icon column
  *  and clear of its accelerator. A MenuStrip is square, in its own surface.
- *  Each MenuItem, Menu and MenuStrip holds one slot, a settled frame writes
- *  none, and a hover move from one item to the next changes only those two
- *  items' pixels.
+ *  Each Menu and MenuStrip holds one slot and each MenuItem two (its highlight
+ *  and its check), a settled frame writes none, and a hover move from one item
+ *  to the next changes only those two items' pixels.
  *
  *  The menu's padding is 2 units. A disabled item keeps the Disabled text
  *  colour. An item stays highlighted while its submenu is open with the mouse
@@ -24,6 +24,20 @@
  *  before the accelerator with no ink between. A MenuStrip's items are flat
  *  until hovered or open. Opening and closing a submenu leaves the live ids as
  *  they were.
+ *
+ *  A checkable, checked item draws a check in its icon column (the 24-unit left
+ *  text padding): ink inside the check's rect alone, centred in the column,
+ *  some of it the item's text colour, idle and hovered, and in place of an
+ *  image the item has; an unchecked item, a checked one that is not checkable
+ *  and a plain one leave the column the backdrop's (#464). setChecked and
+ *  setCheckable on a shown item change its pixels alone on the next frame,
+ *  which counts one changed control and writes at most its 2 slots (more
+ *  controls with an image, which shows or hides), and give the frame before
+ *  back when undone; a settled frame writes nothing. A click toggles a
+ *  checkable item in a MenuStrip's menu and in a context menu, closing it, and
+ *  reopening shows the new state; a click on a plain item checks nothing.
+ *  Opening and closing a menu holding a checked item leaves the live ids as
+ *  they were, and deleting it gives every id back.
  */
 #include <doctest/doctest.h>
 
@@ -34,7 +48,9 @@
 #include <gweni/controls/menuItem.h>
 #include <gweni/controls/menuStrip.h>
 #include <gweni/inputHandler.h>
+#include <gweni/platforms/platform.h>
 #include <gweni/primitiveIds.h>
+#include <gweni/skins/textured/texturedControls.h>
 #include <gweni/skins/textured/texturedSkin.h>
 #include <gweni/skins/textured/tokyoNight.h>
 
@@ -425,8 +441,8 @@ TEST_CASE("Menu rows: idle items are flat on the backdrop, a hovered one draws M
         CHECK(scene.slotsWritten() == 0);
 
         CHECK(slots(file.menu) == 1);
-        CHECK(slots(file.saveAs) == 1);
-        CHECK(slots(file.quit) == 1);
+        CHECK(slots(file.saveAs) == 2);
+        CHECK(slots(file.quit) == 2);
 
         const Backdrop clip=backdropOf(file.menu, tokyonight::Menu.radius, scale, MenuFill);
 
@@ -703,7 +719,7 @@ TEST_CASE("Menu rows: a MenuStrip is square in its own surface, its items flat u
         Frame idle=scene.settle();
 
         CHECK(slots(strip) == 1);
-        CHECK(slots(file) == 1);
+        CHECK(slots(file) == 2);
 
         // square: the corner pixels are the border's
         const DeviceRect r=device(canvasRect(strip), scale);
@@ -744,5 +760,508 @@ TEST_CASE("Menu rows: a MenuStrip is square in its own surface, its items flat u
 
         CHECK_FALSE(file->isMenuOpen());
         CHECK(closed.pixels == idle.pixels);
+    }
+}
+
+namespace
+{
+
+//! \p item's icon column in device pixels: its left text padding, its height.
+DeviceRect columnOf(MenuItem *item, float scale)
+{
+    const Rect r=canvasRect(item);
+    const DeviceRect column=device(Rect(r.x, r.y, item->getTextPadding().left, r.h), scale);
+    const gweni::Point view=gweni::test::viewSize();
+
+    // the view is small (448x160): an item must be on it to be looked at
+    REQUIRE(column.x0 >= 0);
+    REQUIRE(column.y0 >= 0);
+    REQUIRE(column.x1 <= view.x);
+    REQUIRE(column.y1 <= view.y);
+    return column;
+}
+
+//! The rect the textured renderer draws \p item's check in, on the canvas.
+Rect checkRectOf(MenuItem *item)
+{
+    const Rect local=gweni::skin::textured::MenuItem::checkRect(item);
+    const Rect r=canvasRect(item);
+
+    // (a render bounds is in the parent's coordinates)
+    return Rect(r.x+local.x-item->getX(), r.y+local.y-item->getY(), local.w, local.h);
+}
+
+//! What a column check leaves out of \p item's column: a visible image (the
+//! Text child spans the column but draws nothing in it), and with \p hovered
+//! the MenuHover highlight's border ring and rounded corners.
+std::vector<DeviceRect> columnExclusions(MenuItem *item, float scale, bool hovered)
+{
+    std::vector<DeviceRect> excluded;
+
+    for(Base *child : item->getChildren())
+    {
+        if(child->getTypeName() == std::string("ImagePanel") && child->visible())
+        {
+            const DeviceRect r=device(canvasRect(child), scale);
+
+            excluded.push_back(DeviceRect{r.x0-1, r.y0-1, r.x1+1, r.y1+1});
+        }
+    }
+
+    if(hovered)
+    {
+        const DeviceRect r=device(canvasRect(item), scale);
+        const int ring=std::max(1, snap(1.0f, scale))+1;
+
+        excluded.push_back(DeviceRect{r.x0, r.y0, r.x1, r.y0+ring});
+        excluded.push_back(DeviceRect{r.x0, r.y1-ring, r.x1, r.y1});
+        excluded.push_back(DeviceRect{r.x0, r.y0, r.x0+ring, r.y1});
+        cornerSquares(item, tokyonight::MenuHover.radius, scale, excluded);
+    }
+    return excluded;
+}
+
+//! An item's column holds nothing of its own: every pixel of it, outside a
+//! visible image and the backdrop's corners, is \p fill.
+void checkColumnEmpty(const Frame &shot, MenuItem *item, float scale, const Color &fill,
+    const std::vector<DeviceRect> &corners={})
+{
+    std::vector<DeviceRect> excluded=columnExclusions(item, scale, false);
+
+    excluded.insert(excluded.end(), corners.begin(), corners.end());
+    checkSolid(shot, columnOf(item, scale), excluded, fill, "empty column of "+item->getText());
+}
+
+//! An item's column holds its check: the check's rect is a square centred in
+//! the column and in the item, every pixel unlike \p fill (outside the
+//! backdrop's \p corners) is inside it (grown a pixel for its anti-aliased
+//! edge), and some are the item's text colour.
+void checkColumnChecked(const Frame &shot, MenuItem *item, float scale, const Color &fill,
+    const std::vector<DeviceRect> &corners={}, bool hovered=false)
+{
+    const std::string what="check of "+item->getText();
+
+    CAPTURE(what);
+    const DeviceRect column=columnOf(item, scale);
+    const DeviceRect r=device(canvasRect(item), scale);
+    const Rect check=checkRectOf(item);
+    const DeviceRect allowed=device(check, scale);
+    const Color ink=item->getTextColor();
+    std::vector<DeviceRect> excluded=columnExclusions(item, scale, hovered);
+
+    excluded.insert(excluded.end(), corners.begin(), corners.end());
+
+    REQUIRE(check.w > 0);
+    CHECK(check.w == check.h);
+    CHECK(allowed.x0 >= column.x0);
+    CHECK(allowed.x1 <= column.x1);
+    CHECK(std::abs((allowed.x0+allowed.x1)-(column.x0+column.x1)) <= 2);
+    CHECK(std::abs((allowed.y0+allowed.y1)-(r.y0+r.y1)) <= 2);
+
+    size_t checked=0, drawn=0, outside=0, full=0;
+
+    for(int y=column.y0; y < column.y1; ++y)
+    {
+        for(int x=column.x0; x < column.x1; ++x)
+        {
+            if(inside(excluded, x, y))
+                continue;
+
+            ++checked;
+            const Color c=shot.at(x, y);
+
+            if(near(c, fill))
+                continue;
+
+            ++drawn;
+            if(x < allowed.x0-1 || x >= allowed.x1+1 || y < allowed.y0-1 || y >= allowed.y1+1)
+            {
+                if(outside == 0)
+                    MESSAGE(what<<": first pixel outside the check at "<<x<<","<<y<<": "<<int(c.r)<<","<<int(c.g)<<","<<int(c.b));
+                ++outside;
+            }
+            if(near(c, ink, 8))
+                ++full;
+        }
+    }
+
+    CHECK(checked >= 20);
+    // a stroke across the square: at least its side's worth of pixels
+    CHECK(drawn >= static_cast<size_t>(allowed.x1-allowed.x0));
+    CHECK(outside == 0);
+    CHECK(full >= 1);
+}
+
+//! The number of pixels that differ between two frames outside \p rect.
+size_t changedOutside(const Frame &a, const Frame &b, const DeviceRect &rect)
+{
+    const gweni::Point view=gweni::test::viewSize();
+    size_t changed=0;
+
+    for(int y=0; y < view.y; ++y)
+    {
+        for(int x=0; x < view.x; ++x)
+        {
+            if(!rect.contains(x, y) && !near(a.at(x, y), b.at(x, y), 0))
+                ++changed;
+        }
+    }
+    return changed;
+}
+
+Base *imageOf(MenuItem *item)
+{
+    for(Base *child : item->getChildren())
+    {
+        if(child->getTypeName() == std::string("ImagePanel"))
+            return child;
+    }
+    return nullptr;
+}
+
+//! A stepped clock, so two clicks are never a double click; the real one back after.
+struct SteppedClock
+{
+    float now=100.0f;
+
+    SteppedClock() { gweni::platform::setTimeSource([this]() { return now; }); }
+    ~SteppedClock() { gweni::platform::setTimeSource(nullptr); }
+};
+
+void click(Scene &scene, const Rect &target, int button, SteppedClock &clock)
+{
+    clock.now+=1.0f;
+    scene.move(target);
+    scene.frame();
+    gweni::input::onMouseClicked(scene.canvas, button, true);
+    gweni::input::onMouseClicked(scene.canvas, button, false);
+    scene.frame();
+}
+
+}//namespace
+
+TEST_CASE("Menu rows: a checkable, checked item draws a check in its icon column, the others leave it empty")
+{
+    SurfaceOverride menuSurface(tokyonight::Menu, MenuFill, MenuBorder);
+    SurfaceOverride hoverSurface(tokyonight::MenuHover, HoverFill, HoverBorder);
+
+    for(float scale : Scales)
+    {
+        CAPTURE(scale);
+        Scene scene(scale);
+        // three rows are all that fit at 2x: the second menu is shown, at the
+        // same place, once the first is hidden
+        Menu *menu=scene.canvas->newChild<Menu>();
+        Menu *second=scene.canvas->newChild<Menu>();
+
+        menu->setPos(2, 2);
+        second->setPos(2, 2);
+        second->setHidden(true);
+        MenuItem *plain=menu->addItem("Plain");
+        MenuItem *unchecked=menu->addItem("Unchecked");
+        MenuItem *checked=menu->addItem("Checked", "", "Ctrl+K");
+        MenuItem *notCheckable=second->addItem("Not checkable");
+        MenuItem *imaged=second->addItem("Imaged", "test16.png");
+
+        unchecked->setCheckable(true);
+        checked->setCheckable(true);
+        checked->setChecked(true);
+        notCheckable->setChecked(true);
+        imaged->setCheckable(true);
+        imaged->setChecked(true);
+
+        scene.moveAway();
+        Frame idle=scene.settle();
+        CHECK(scene.slotsWritten() == 0);
+
+        const Backdrop clip=backdropOf(menu, tokyonight::Menu.radius, scale, MenuFill);
+
+        for(MenuItem *item : {plain, unchecked, checked, notCheckable, imaged})
+            CHECK(slots(item) == 2);
+
+        checkColumnChecked(idle, checked, scale, MenuFill, clip.corners);
+        for(MenuItem *item : {plain, unchecked})
+        {
+            checkColumnEmpty(idle, item, scale, MenuFill, clip.corners);
+            checkIdle(idle, item, scale, clip);
+        }
+
+        menu->setHidden(true);
+        second->setHidden(false);
+        Frame secondShot=scene.settle();
+        const Backdrop secondClip=backdropOf(second, tokyonight::Menu.radius, scale, MenuFill);
+
+        checkColumnEmpty(secondShot, notCheckable, scale, MenuFill, secondClip.corners);
+        checkIdle(secondShot, notCheckable, scale, secondClip);
+
+        // the image hidden, the check in its place
+        Base *image=imageOf(imaged);
+
+        REQUIRE(image != nullptr);
+        CHECK_FALSE(image->visible());
+        checkColumnChecked(secondShot, imaged, scale, MenuFill, secondClip.corners);
+
+        second->setHidden(true);
+        menu->setHidden(false);
+        scene.settle();
+
+        // hovered: the check is drawn over MenuHover, in the hover text colour
+        scene.move(canvasRect(checked));
+        Frame hovered=scene.settle();
+
+        REQUIRE(checked->isHovered());
+        CHECK((checked->getTextColor() == scene.skin->Colors.Button.Hover));
+        checkColumnChecked(hovered, checked, scale, HoverFill, clip.corners, true);
+        CHECK(scene.slotsWritten() == 0);
+    }
+}
+
+TEST_CASE("Menu rows: setChecked and setCheckable on a shown item change its pixels alone on the next frame")
+{
+    SurfaceOverride menuSurface(tokyonight::Menu, MenuFill, MenuBorder);
+
+    for(float scale : Scales)
+    {
+        CAPTURE(scale);
+        Scene scene(scale);
+        // the item with an image is in a second menu at the same place, shown
+        // once the first is hidden: three rows are all that fit at 2x
+        Menu *menu=scene.canvas->newChild<Menu>();
+        Menu *second=scene.canvas->newChild<Menu>();
+
+        menu->setPos(2, 2);
+        second->setPos(2, 2);
+        second->setHidden(true);
+        MenuItem *above=menu->addItem("Above");
+        MenuItem *item=menu->addItem("Toggled", "", "Ctrl+T");
+        MenuItem *below=menu->addItem("Below");
+        MenuItem *imaged=second->addItem("Imaged", "test16.png");
+
+        second->addItem("After");
+        item->setCheckable(true);
+        item->setChecked(true);
+        imaged->setCheckable(true);
+
+        scene.moveAway();
+        Frame checkedShot=scene.settle();
+        const Backdrop clip=backdropOf(menu, tokyonight::Menu.radius, scale, MenuFill);
+        const DeviceRect itemRect=device(canvasRect(item), scale);
+        const size_t live=liveIds();
+
+        checkColumnChecked(checkedShot, item, scale, MenuFill, clip.corners);
+
+        // unchecked: the column empties on the very next frame, nothing else changes
+        item->setChecked(false);
+        gweni::controls::resetChangeStats();
+        Frame uncheckedShot=scene.frame();
+
+        CHECK(gweni::controls::getChangeStats().controls == 1);
+        CHECK(scene.slotsWritten() >= 1);
+        CHECK(scene.slotsWritten() <= 2);
+        checkColumnEmpty(uncheckedShot, item, scale, MenuFill, clip.corners);
+        CHECK(changedOutside(checkedShot, uncheckedShot, itemRect) == 0);
+        CHECK(uncheckedShot.pixels != checkedShot.pixels);
+        checkIdle(uncheckedShot, above, scale, clip);
+        checkIdle(uncheckedShot, below, scale, clip);
+
+        scene.frame();
+        CHECK(scene.slotsWritten() == 0);
+
+        // checked again: the frame before back
+        item->setChecked(true);
+        gweni::controls::resetChangeStats();
+        Frame rechecked=scene.frame();
+
+        CHECK(gweni::controls::getChangeStats().controls == 1);
+        CHECK(scene.slotsWritten() <= 2);
+        CHECK(rechecked.pixels == checkedShot.pixels);
+
+        // no longer checkable: drawn as unchecked
+        item->setCheckable(false);
+        gweni::controls::resetChangeStats();
+        Frame notCheckable=scene.frame();
+
+        CHECK(gweni::controls::getChangeStats().controls == 1);
+        CHECK(scene.slotsWritten() <= 2);
+        CHECK(notCheckable.pixels == uncheckedShot.pixels);
+
+        item->setCheckable(true);
+        gweni::controls::resetChangeStats();
+        Frame checkableAgain=scene.frame();
+
+        CHECK(gweni::controls::getChangeStats().controls == 1);
+        CHECK(checkableAgain.pixels == checkedShot.pixels);
+
+        scene.frame();
+        CHECK(scene.slotsWritten() == 0);
+
+        // no slot taken or given back by the toggles
+        CHECK(liveIds() == live);
+
+        // with an image: checking hides it, the check in its place, and only
+        // that item's pixels change
+        menu->setHidden(true);
+        second->setHidden(false);
+        Frame imageShown=scene.settle();
+        const Backdrop secondClip=backdropOf(second, tokyonight::Menu.radius, scale, MenuFill);
+        Base *image=imageOf(imaged);
+
+        REQUIRE(image != nullptr);
+        CHECK(image->visible());
+        const DeviceRect imagedRect=device(canvasRect(imaged), scale);
+        const size_t secondLive=liveIds();
+
+        imaged->setChecked(true);
+        gweni::controls::resetChangeStats();
+        Frame imageChecked=scene.settle();
+
+        CHECK_FALSE(image->visible());
+        checkColumnChecked(imageChecked, imaged, scale, MenuFill, secondClip.corners);
+        CHECK(changedOutside(imageShown, imageChecked, imagedRect) == 0);
+        CHECK(gweni::controls::getChangeStats().controls >= 2);
+
+        imaged->setChecked(false);
+        Frame imageBack=scene.settle();
+
+        CHECK(image->visible());
+        CHECK(imageBack.pixels == imageShown.pixels);
+        CHECK(liveIds() == secondLive);
+    }
+}
+
+TEST_CASE("Menu rows: a click toggles a checkable item in a MenuStrip's menu and a context menu")
+{
+    SurfaceOverride menuSurface(tokyonight::Menu, MenuFill, MenuBorder);
+
+    for(float scale : Scales)
+    {
+        CAPTURE(scale);
+        SteppedClock clock;
+        Scene scene(scale);
+        MenuStrip *strip=scene.canvas->newChild<MenuStrip>();
+        MenuItem *view=strip->addItem("View");
+        MenuItem *wrap=view->getMenu()->addItem("Wrap");
+        MenuItem *save=view->getMenu()->addItem("Save");
+
+        wrap->setCheckable(true);
+        wrap->setChecked(true);
+
+        view->openMenu();
+        scene.moveAway();
+        Frame open=scene.settle();
+        // (where the menu opens can differ between openings: its corners are
+        // taken from where it is each time)
+        auto corners=[&](Menu *m) { return backdropOf(m, tokyonight::Menu.radius, scale, MenuFill).corners; };
+
+        checkColumnChecked(open, wrap, scale, MenuFill, corners(view->getMenu()));
+        checkColumnEmpty(open, save, scale, MenuFill, corners(view->getMenu()));
+
+        // a plain item: selected, the menu closed, nothing checked
+        click(scene, canvasRect(save), 0, clock);
+        CHECK_FALSE(save->isChecked());
+        CHECK_FALSE(view->isMenuOpen());
+
+        view->openMenu();
+        scene.moveAway();
+        Frame reopened=scene.settle();
+
+        checkColumnEmpty(reopened, save, scale, MenuFill, corners(view->getMenu()));
+        checkColumnChecked(reopened, wrap, scale, MenuFill, corners(view->getMenu()));
+
+        // the checkable one: unchecked, the menu closed; reopened without its check
+        click(scene, canvasRect(wrap), 0, clock);
+        CHECK_FALSE(wrap->isChecked());
+        CHECK_FALSE(view->isMenuOpen());
+
+        view->openMenu();
+        scene.moveAway();
+        Frame unchecked=scene.settle();
+
+        checkColumnEmpty(unchecked, wrap, scale, MenuFill, corners(view->getMenu()));
+        scene.canvas->closeMenus();
+        scene.settle();
+
+        // a context menu
+        Base *box=scene.canvas->newChild<Base>();
+
+        box->setSizeFlags({gweni::SizeFlag::Fixed, gweni::SizeFlag::Fixed});
+        // at the canvas's right, away from the strip's menu (the canvas is
+        // 224x80 at 2x)
+        box->setBounds(scene.canvas->getWidth()-70, 4, 60, 20);
+        Menu *context=box->createContextMenu();
+        MenuItem *pin=context->addItem("Pin");
+
+        context->addItem("Other");
+        pin->setCheckable(true);
+        pin->setChecked(true);
+
+        click(scene, canvasRect(box), 1, clock);
+        REQUIRE(context->visible());
+        scene.moveAway();
+        Frame menuShown=scene.settle();
+
+        checkColumnChecked(menuShown, pin, scale, MenuFill, corners(context));
+
+        click(scene, canvasRect(pin), 0, clock);
+        CHECK_FALSE(pin->isChecked());
+        CHECK_FALSE(context->visible());
+
+        click(scene, canvasRect(box), 1, clock);
+        REQUIRE(context->visible());
+        scene.moveAway();
+        Frame shownAgain=scene.settle();
+
+        checkColumnEmpty(shownAgain, pin, scale, MenuFill, corners(context));
+        scene.canvas->closeMenus();
+        scene.settle();
+    }
+}
+
+TEST_CASE("Menu rows: a menu holding a checked item keeps its ids over open and close and gives them all back")
+{
+    SurfaceOverride menuSurface(tokyonight::Menu, MenuFill, MenuBorder);
+
+    for(float scale : Scales)
+    {
+        CAPTURE(scale);
+        Scene scene(scale);
+        scene.moveAway();
+        scene.settle();
+        const size_t before=liveIds();
+
+        Menu *menu=scene.canvas->newChild<Menu>();
+
+        menu->setPos(2, 2);
+        MenuItem *checked=menu->addItem("Checked");
+        MenuItem *imaged=menu->addItem("Imaged", "test16.png");
+
+        menu->addItem("Plain");
+        checked->setCheckable(true);
+        checked->setChecked(true);
+        imaged->setCheckable(true);
+        imaged->setChecked(true);
+
+        Frame shown=scene.settle();
+        const size_t live=liveIds();
+
+        CHECK(live > before);
+        checkColumnChecked(shown, checked, scale, MenuFill,
+            backdropOf(menu, tokyonight::Menu.radius, scale, MenuFill).corners);
+
+        menu->setHidden(true);
+        scene.settle();
+        CHECK(scene.slotsWritten() == 0);
+        CHECK(liveIds() == live);
+
+        menu->setHidden(false);
+        Frame again=scene.settle();
+
+        CHECK(scene.slotsWritten() == 0);
+        CHECK(liveIds() == live);
+        CHECK(again.pixels == shown.pixels);
+
+        menu->delayedDelete();
+        scene.settle();
+        CHECK(liveIds() == before);
     }
 }

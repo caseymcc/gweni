@@ -37,16 +37,9 @@ MenuItem::~MenuItem()
 
 void MenuItem::render(skin::Base *skin)
 {
-//    skin->drawMenuItem(this, skin::Generate, isMenuOpen(), m_checkable?m_checked:false);
-//    skin->drawControl(this);
-    if(m_skinControl && getStateChange() != StateChange_Nothing)
-    {
-        // Generate primitives on first render, otherwise update() draws into an
-        // empty primitive buffer (mirrors Base::render).
-        if(getStateChange() & StateChange_Created)
-            m_skinControl->generate(skin->getRenderer(), this);
-        m_skinControl->update(skin->getRenderer(), this);
-    }
+    // Base::render: generate on the first render, update, and count the change
+    // (ChangeStats); the textured renderer draws the highlight and the check
+    ParentClass::render(skin);
 
     // HACK!
     if(m_accelerator)
