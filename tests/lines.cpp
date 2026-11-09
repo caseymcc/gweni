@@ -16,16 +16,34 @@
  *               them, and its round caps reach T/2 past its endpoints;
  *    diagonal   a 45 degree segment's coverage summed across a row is within
  *               5 % of T*sqrt(2), and swapping its endpoints draws the same;
- *    joints     the segments of a polyline at one z leave no pixel any of them
- *               covers fully less than fully covered, and a pixel several of
- *               them cover is between the most covering one and all of them
- *               blended (a partly covered pixel writes its depth up to half a
- *               layer behind, see the style 3 branch of the fragment shader).
- *               At 50 % alpha, a pixel the first segment drawn over it covers
- *               fully is blended once however many others cover it; where the
- *               first covers it partly (the anti-aliased rim of a cap's disc), a
- *               later one blends over it too, so a translucent joint can be
- *               darker on that rim, never more than all of them blended;
+ *    joints     segments drawn without their neighbours, at one z, leave no
+ *               pixel any of them covers fully less than fully covered, and a
+ *               pixel several of them cover is between the most covering one and
+ *               all of them blended (a partly covered pixel writes its depth up
+ *               to half a layer behind, see the style 3 branch of the fragment
+ *               shader). At 50 % alpha, a pixel the first segment drawn over it
+ *               covers fully is blended once however many others cover it; where
+ *               the first covers it partly (the anti-aliased rim of a cap's
+ *               disc), a later one blends over it too, so such a translucent
+ *               joint can be darker on that rim, never more than all of them
+ *               blended;
+ *    neighbours a polyline whose segments are drawn with their neighbours
+ *               (drawLine's prev and next) blends every pixel its adjacent
+ *               segments reach once, at 50 % alpha as opaque, on every depth
+ *               buffer (24-bit and 32-bit float): the slot nearest the pixel's
+ *               centre draws it (ties, the disc both end at, going to the
+ *               earlier segment) and the other leaves it. It is drawn at u, the
+ *               larger coverage where both nearest points are the joint (the
+ *               same disc), else the two coverages less their overlap: the
+ *               product where the edges cross at right angles, the smaller where
+ *               they are parallel on the same side, a + b - 1 on opposite sides,
+ *               mixed by the cosine between their normals (the shader's union,
+ *               against the true union within a few levels). Each pixel is
+ *               checked against that model, which segment draws it included, and
+ *               a hole (a pixel the strokes reach that no slot drew) or a pixel
+ *               blended twice is named. Segments two or more apart along it (one
+ *               shorter than the stroke between them) keep the depth rule and its
+ *               bound, between the most covering and all of them blended;
  *    outside    every pixel farther than T/2 + sqrt(2)/2 (half a pixel's diagonal)
  *               from the segment, T/2 + 0.5 for a horizontal or vertical one, is
  *               untouched,
@@ -39,14 +57,18 @@
  *  render offset and the clip region back when it ends.
  *
  *  GWENI_LINES_DUMP=<dir> writes every polyline frame, opaque and at 50 %, to
- *  <dir>/polyline_<scale>x_t<thickness>_<opaque|half>.png, to look at or to
- *  compare between backends.
+ *  <dir>/polyline_<scale>x_t<thickness>_<opaque|half>.png, and those with their
+ *  neighbours to <dir>/neighbours_<scale>x_t<thickness>_<depth>_<opaque|half>.png
+ *  (depth d24 or d32f), to look at or to compare between backends.
  *
  *  The horizontal and vertical cases run thicknesses 1, 1.5, 2 and 3 at four
  *  phases of the grid. The joints are two 3-segment polylines at one z, which
- *  also leave no centre-line pixel uncovered. A rect at a lower z drawn after
- *  a line shows wherever the line leaves a pixel uncovered, the clip region
- *  cuts a line, and an endpoint past +/-32767 device px draws nothing.
+ *  also leave no centre-line pixel uncovered; with their neighbours, those two,
+ *  a sharp bend, a sharper one turning into a bend, one with a 1-unit middle
+ *  segment (its first and last segments overlap) and a gentle one. A rect at
+ *  a lower z drawn after a line shows wherever the line leaves a pixel
+ *  uncovered, the clip region cuts a line, and an endpoint past +/-32767 device
+ *  px draws nothing.
  */
 #include <doctest/doctest.h>
 
@@ -192,6 +214,27 @@ struct Segment
                 *nx=0.0, *ny=1.0;
         }
         return d;
+    }
+
+    //! Where the nearest point of the segment to the centre of pixel (x,y) is
+    //! along it, 0 at a and 1 at b.
+    double along(int x, int y) const
+    {
+        const double dx=bx-ax;
+        const double dy=by-ay;
+        const double length2=dx*dx+dy*dy;
+
+        return length2 > 0.0 ? std::min(std::max(((x+0.5-ax)*dx+(y+0.5-ay)*dy)/length2, 0.0), 1.0) : 0.0;
+    }
+
+    //! Whether the centre of pixel (x,y) is inside the slot's quad: both endpoints'
+    //! stroke squares and 1 px around them.
+    bool inQuad(int x, int y) const
+    {
+        const double r=0.5*stroke+1.0;
+
+        return x+0.5 >= std::min(ax, bx)-r && x+0.5 < std::max(ax, bx)+r
+            && y+0.5 >= std::min(ay, by)-r && y+0.5 < std::max(ay, by)+r;
     }
 
     //! The part of pixel (x,y) between the stroke's edges.
@@ -352,6 +395,106 @@ std::vector<int> runs(const Frame &frame, int x, int y, int dx, int dy, int coun
     if(run > 0)
         lengths.push_back(run);
     return lengths;
+}
+
+//! What the style 3 shader draws at pixel (x,y) of a polyline whose segments are
+//! drawn with their neighbours, as the model has it.
+struct JointPixel
+{
+    int drawers=0;          //!< the slots that draw it (more than one only for segments two or more apart)
+    int owner=-1;           //!< the one that draws it, if only one does
+    double u=0.0;           //!< the coverage that one draws it at
+    bool disc=false;        //!< both nearest points are its joint: u is the larger coverage
+    bool apart=false;       //!< segments two or more apart reach it
+    int reaching=0;         //!< the segments that reach it
+    double most=0.0;        //!< the largest coverage of any of them
+    double all=0.0;         //!< all of them blended at full alpha, 1 - prod(1 - a)
+    double halfAll=0.0;     //!< and at 50 %, 1 - prod(1 - a/2)
+};
+
+//! The union the owner of a pixel draws: the larger coverage where both nearest
+//! points are the joint, else a + b less their overlap, mixed by the cosine c
+//! between their normals from a*b (crossing at right angles) to the smaller
+//! (parallel, the same side) or to a + b - 1 (parallel, opposite sides).
+double jointUnion(double a, double b, double c, bool disc)
+{
+    if(b <= 0.0)
+        return a;
+    if(disc)
+        return std::max(a, b);
+
+    const double both=a*b;
+    const double overlap=c >= 0.0 ? both+(std::min(a, b)-both)*c
+        : both+(std::max(a+b-1.0, 0.0)-both)*(-c);
+
+    return std::min(std::max(a+b-overlap, std::max(a, b)), 1.0);
+}
+
+//! The shader's rule at pixel (x,y) for one polyline's segments (in order): slot i
+//! draws a pixel inside its quad if it is the nearest of i-1, i, i+1 to its centre
+//! (ties to the earlier), at the union of its coverage and its nearer neighbour's,
+//! unless that is under half a step of 8-bit alpha at `alpha`.
+JointPixel jointPixel(const std::vector<Segment> &line, int x, int y, double alpha)
+{
+    const size_t count=line.size();
+    std::vector<double> cover(count), dist(count), along(count), nx(count), ny(count);
+    JointPixel pixel;
+    double uncovered=1.0;
+    double halfUncovered=1.0;
+    int first=-1;
+    int last=-1;
+
+    for(size_t k=0; k<count; ++k)
+    {
+        const double d=line[k].distance(x, y, &nx[k], &ny[k]);
+
+        dist[k]=d*d;
+        along[k]=line[k].along(x, y);
+        cover[k]=line[k].coverage(x, y);
+        if(cover[k] > 0.0)
+        {
+            ++pixel.reaching;
+            if(first < 0)
+                first=int(k);
+            last=int(k);
+        }
+        pixel.most=std::max(pixel.most, cover[k]);
+        uncovered*=1.0-cover[k];
+        halfUncovered*=1.0-0.5*cover[k];
+    }
+    pixel.all=1.0-uncovered;
+    pixel.halfAll=1.0-halfUncovered;
+    pixel.apart=first >= 0 && last-first >= 2;
+
+    for(size_t i=0; i<count; ++i)
+    {
+        const bool hasPrev=i > 0;
+        const bool hasNext=i+1 < count;
+
+        if(!line[i].inQuad(x, y))
+            continue;
+        if((hasPrev && dist[i-1] <= dist[i]) || (hasNext && dist[i+1] < dist[i]))
+            continue;
+
+        // the nearer neighbour, and whether both nearest points are the joint with it
+        const bool before=hasPrev && (!hasNext || dist[i-1] <= dist[i+1]);
+        const size_t k=before ? i-1 : i+1;
+        double u=cover[i];
+        bool disc=false;
+
+        if(hasPrev || hasNext)
+        {
+            disc=before ? (along[k] >= 1.0 && along[i] <= 0.0) : (along[i] >= 1.0 && along[k] <= 0.0);
+            u=jointUnion(cover[i], cover[k], nx[i]*nx[k]+ny[i]*ny[k], disc);
+        }
+        if(alpha*u < 0.5/255.0)
+            continue;
+        ++pixel.drawers;
+        pixel.owner=int(i);
+        pixel.u=u;
+        pixel.disc=disc && cover[k] > 0.0;
+    }
+    return pixel;
 }
 
 }//namespace
@@ -518,7 +661,7 @@ TEST_CASE("Line (style 3): a 45 degree segment covers t*s*sqrt(2) a row, and dra
     }
 }
 
-TEST_CASE("Line (style 3): the segments of a polyline join without a gap and blend once where they overlap")
+TEST_CASE("Line (style 3): segments drawn without their neighbours join without a gap, and their overlaps keep the depth rule")
 {
     // a gentle and a sharp zigzag, each of three segments sharing their endpoints
     const std::vector<std::vector<PointF>> polylines=
@@ -663,6 +806,189 @@ TEST_CASE("Line (style 3): the segments of a polyline join without a gap and ble
             CHECK(unbounded == 0);
         }
     }
+}
+
+TEST_CASE("Line (style 3): a polyline drawn with its neighbours blends every pixel of its joints once, on any depth buffer")
+{
+    // the two polylines above; a sharp bend; a sharper one turning into a bend; one
+    // whose 1-unit middle segment lets its first and last overlap; a gentle one
+    const std::vector<std::vector<PointF>> polylines=
+    {
+        {PointF(15, 45), PointF(50, 10), PointF(85, 48), PointF(105, 12)},
+        {PointF(120, 10), PointF(150, 50), PointF(160, 12), PointF(205, 40)},
+        {PointF(20, 75), PointF(32, 55), PointF(44, 75)},
+        {PointF(56, 75), PointF(62, 55), PointF(68, 75), PointF(96, 60)},
+        {PointF(106, 58), PointF(126, 70), PointF(127, 70), PointF(147, 58)},
+        {PointF(158, 66), PointF(185, 68), PointF(214, 66)},
+    };
+    const float thicknesses[]={1.0f, 2.0f, 3.0f};
+    const Color translucent(255, 0, 0, 128);
+    const double halfAlpha=128.0/255.0;
+    size_t slots=0;
+
+    for(const std::vector<PointF> &points : polylines)
+        slots+=points.size()-1;
+
+    Primitives prims(slots);
+    int apartPixels=0;
+    int discPixels=0;
+    int unionPixels=0;
+
+    for(bool floatDepth : {false, true})
+    {
+        if(floatDepth && !gweni::test::setFloatDepth(true))
+        {
+            MESSAGE("no 32-bit float depth buffer on this device: that run is left out");
+            continue;
+        }
+
+        for(float scale : scales)
+        {
+            ScaleGuard guard(scale);
+
+            for(float thickness : thicknesses)
+            {
+                std::vector<std::vector<Segment>> lines;
+                std::vector<Segment> segments;
+
+                for(const std::vector<PointF> &points : polylines)
+                {
+                    lines.emplace_back();
+                    for(size_t i=0; i+1<points.size(); ++i)
+                        lines.back().push_back(deviceSegment(points[i], points[i+1], thickness, scale));
+                    segments.insert(segments.end(), lines.back().begin(), lines.back().end());
+                }
+
+                auto draw=[&](const Color &color)
+                {
+                    return drawFrame([&](SlotRenderer &renderer)
+                        {
+                            size_t slot=0;
+
+                            renderer.setDrawColor(color);
+                            for(const std::vector<PointF> &points : polylines)
+                                for(size_t i=0; i+1<points.size(); ++i)
+                                    renderer.drawLine(prims.ids[slot++], points[i], points[i+1], thickness, 1,
+                                        i > 0 ? &points[i-1] : nullptr,
+                                        i+2 < points.size() ? &points[i+2] : nullptr);
+                        });
+                };
+
+                CAPTURE(floatDepth);
+                CAPTURE(scale);
+                CAPTURE(thickness);
+
+                const Frame opaque=draw(red);
+                const Frame half=draw(translucent);
+
+                if(const char *dir=std::getenv("GWENI_LINES_DUMP"))
+                {
+                    char name[96];
+
+                    for(const Frame *frame : {&opaque, &half})
+                    {
+                        std::snprintf(name, sizeof(name), "/neighbours_%gx_t%g_%s_%s.png", scale, thickness,
+                            floatDepth ? "d32f" : "d24", frame == &opaque ? "opaque" : "half");
+                        gweni::capture::writeRgbaPng(frame->pixels, gweni::test::viewSize().x,
+                            gweni::test::viewSize().y, std::string(dir)+name);
+                    }
+                }
+
+                // each kind of failure, with the first few pixels it was seen at
+                struct Failures
+                {
+                    int count=0;
+                    std::string where;
+
+                    void add(int x, int y, const char *what)
+                    {
+                        if(count++ < 6)
+                            where+=" ("+std::to_string(x)+","+std::to_string(y)+") "+what;
+                    }
+                };
+                Failures holes, twice, model, disc, outside, apart;
+                const Area area=areaOf(segments);
+
+                for(int y=area.y0; y<area.y1; ++y)
+                {
+                    for(int x=area.x0; x<area.x1; ++x)
+                    {
+                        const Color pixel=opaque.at(x, y);
+                        const Color blended=half.at(x, y);
+                        // one 50 % blend of red over blue at the opaque frame's coverage
+                        const double once=pixel.r*halfAlpha;
+
+                        if(std::abs(blended.r-once) > 1.01 || std::abs(blended.b-(255.0-once)) > 1.01)
+                            twice.add(x, y, "50 % is not one blend at the opaque coverage");
+
+                        bool beyond=true;
+
+                        for(const Segment &segment : segments)
+                            beyond=beyond && segment.beyond(x, y);
+                        if(beyond)
+                        {
+                            if(!isBackground(pixel) || !isBackground(blended))
+                                outside.add(x, y, "drawn outside every stroke");
+                            continue;
+                        }
+
+                        for(const std::vector<Segment> &line : lines)
+                        {
+                            const JointPixel joint=jointPixel(line, x, y, 1.0);
+
+                            if(joint.most <= 0.0)
+                                continue;
+                            if(joint.apart)
+                            {
+                                // segments two apart: the depth rule's bound, opaque and at 50 %
+                                ++apartPixels;
+                                if(pixel.r/255.0 < joint.most-3.0/255.0 || pixel.r/255.0 > joint.all+3.0/255.0
+                                    || blended.r/255.0 > joint.halfAll+3.0/255.0)
+                                    apart.add(x, y, "outside the depth rule's bound");
+                                continue;
+                            }
+                            if(joint.drawers == 0)
+                            {
+                                if(joint.all > 1.0/255.0)
+                                    holes.add(x, y, "no slot draws it");
+                                continue;
+                            }
+                            if(joint.disc)
+                                ++discPixels;
+                            else if(joint.reaching == 2)
+                                ++unionPixels;
+
+                            const double error=std::abs(pixel.r-255.0*joint.u);
+
+                            if(pixel.r == 0 && joint.u > 1.0/255.0)
+                                holes.add(x, y, "the strokes reach it, nothing drew it");
+                            else if(joint.disc ? error > 1.01 : error > 2.01)
+                                (joint.disc ? disc : model).add(x, y, "not the model's coverage");
+                        }
+                    }
+                }
+
+                INFO("blended twice:", twice.where);
+                CHECK(twice.count == 0);
+                INFO("holes:", holes.where);
+                CHECK(holes.count == 0);
+                INFO("not the disc's coverage:", disc.where);
+                CHECK(disc.count == 0);
+                INFO("not the union's coverage:", model.where);
+                CHECK(model.count == 0);
+                INFO("segments two apart:", apart.where);
+                CHECK(apart.count == 0);
+                INFO("outside:", outside.where);
+                CHECK(outside.count == 0);
+            }
+        }
+        if(floatDepth)
+            REQUIRE(gweni::test::setFloatDepth(false));
+    }
+    // the cases above were met, not only passed through
+    CHECK(apartPixels > 0);
+    CHECK(discPixels > 0);
+    CHECK(unionPixels > 0);
 }
 
 TEST_CASE("Line (style 3): pixels a line leaves uncovered write no depth, and the clip region and the 32 K cull apply")

@@ -362,16 +362,19 @@ void VulkanTarget::destroy()
     m_height=0;
 }
 
-bool VulkanTarget::create(int width, int height)
+bool VulkanTarget::create(int width, int height, VkFormat depthFormat)
 {
     destroy();
 
-    // the depth format nearest GL's 24-bit depth buffer that the device renders to
+    // the depth format nearest GL's 24-bit depth buffer that the device renders to,
+    // or the one asked for
     m_depthFormat=VK_FORMAT_UNDEFINED;
     for(VkFormat format:{ VK_FORMAT_X8_D24_UNORM_PACK32, VK_FORMAT_D24_UNORM_S8_UINT, VK_FORMAT_D32_SFLOAT })
     {
         VkFormatProperties properties;
 
+        if(depthFormat != VK_FORMAT_UNDEFINED && format != depthFormat)
+            continue;
         vkGetPhysicalDeviceFormatProperties(m_device.physicalDevice, format, &properties);
         if(properties.optimalTilingFeatures&VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT)
         {

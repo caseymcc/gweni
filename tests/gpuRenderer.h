@@ -46,6 +46,11 @@ const Font &openSans();
 //! Size of the offscreen target, which is bound while the tests run.
 Point viewSize();
 
+//! Gives the target a 32-bit float depth buffer (GL_DEPTH_COMPONENT32F,
+//! VK_FORMAT_D32_SFLOAT) or, with \a on false, its usual one (24-bit), its
+//! contents undefined until the next clearView(); false if the device cannot.
+bool setFloatDepth(bool on);
+
 //! Clears the target to color, opaque whatever its alpha, and its depth.
 inline void clearView(const Color &color)
 {

@@ -39,6 +39,8 @@ namespace test
 static renderer::SlotRenderer *g_renderer=nullptr;
 static Font g_openSans;
 static const Point g_viewSize(448, 160);
+// set in a GL run: the offscreen framebuffer every renderer draws into
+static capture::Framebuffer *g_framebuffer=nullptr;
 #ifdef GWENI_HAS_VULKAN
 // set in a Vulkan run: the device and the target every renderer draws into
 static renderer::VulkanDevice *g_vulkanDevice=nullptr;
@@ -105,6 +107,38 @@ Point viewSize()
     return g_viewSize;
 }
 
+bool setFloatDepth(bool on)
+{
+#ifdef GWENI_HAS_VULKAN
+    if(g_vulkanDevice)
+    {
+        if(!g_vulkanTarget->create(g_viewSize.x, g_viewSize.y, on ? VK_FORMAT_D32_SFLOAT : VK_FORMAT_UNDEFINED))
+        {
+            // give the renderer a target whatever happens
+            g_vulkanTarget->create(g_viewSize.x, g_viewSize.y);
+            dynamic_cast<renderer::Vulkan &>(*g_renderer).setTarget(*g_vulkanTarget);
+            return false;
+        }
+        dynamic_cast<renderer::Vulkan &>(*g_renderer).setTarget(*g_vulkanTarget);
+        return true;
+    }
+#endif
+    if(!g_framebuffer)
+        return false;
+
+    GLuint depth=0;
+
+    glGenRenderbuffers(1, &depth);
+    glBindRenderbuffer(GL_RENDERBUFFER, depth);
+    glRenderbufferStorage(GL_RENDERBUFFER, on ? GL_DEPTH_COMPONENT32F : GL_DEPTH_COMPONENT24,
+        g_viewSize.x, g_viewSize.y);
+    glBindFramebuffer(GL_FRAMEBUFFER, g_framebuffer->fbo);
+    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, depth);
+    glDeleteRenderbuffers(1, &g_framebuffer->depth);
+    g_framebuffer->depth=depth;
+    return glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE && glGetError() == GL_NO_ERROR;
+}
+
 }//namespace test
 }//namespace gweni
 
@@ -166,7 +200,11 @@ int runGl(doctest::Context &context)
     renderer::OpenGLCore *renderer=new renderer::OpenGLCore(paths, Rect(Point(0, 0), viewSize));
     renderer->init();
 
+    test::g_framebuffer=&fb;
+
     const int result=runCases(context, renderer);
+
+    test::g_framebuffer=nullptr;
 
     delete renderer;
     capture::destroyFramebuffer(fb);

@@ -84,7 +84,11 @@ public:
 
     //! (Re)makes the images at width x height (RGBA8, and a 24- or 32-bit depth),
     //! the colour cleared to transparent black and the depth to the far plane.
-    bool create(int width, int height);
+    //! The depth format is the one nearest GL's 24-bit depth buffer that the device
+    //! renders to (X8_D24, D24S8, then D32_SFLOAT), or \a depthFormat when given,
+    //! false if the device cannot render to it. A renderer drawing into the target
+    //! takes a new format through setTarget().
+    bool create(int width, int height, VkFormat depthFormat=VK_FORMAT_UNDEFINED);
 
     int width() const { return m_width; }
     int height() const { return m_height; }
