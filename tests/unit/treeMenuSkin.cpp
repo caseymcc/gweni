@@ -17,11 +17,22 @@
  *    MenuItem::updateColors repaints the chevron in it in the next frame; a
  *    settled frame draws nothing. Hidden, the chevron's slot is hidden.
  *  A frame in which only one of them is dirty touches no slot but its own.
+ *
+ *  A MenuItem's renderer holds two slots (#464): [0] its highlight, [1] the
+ *  check of a checkable, checked item, a style 5 checkmark (kind 0) at the
+ *  item's z+1, in its text colour, centred in the 24-unit icon column, with the
+ *  item's first child numbered after it (depthLayers() 2). An unchecked item, a
+ *  checked one that is not checkable, one on a MenuStrip itself and one in a
+ *  menu with the icon margin disabled have slot [1] hidden; so does a hidden
+ *  menu's. A checked item's image is hidden, the check in its place. A toggle
+ *  or a change of checkable writes the item's slots alone, the check follows
+ *  the hover and disabled colours, and a settled frame writes nothing.
  */
 #include "headlessFixture.h"
 
 #include <gweni/controls/menu.h>
 #include <gweni/controls/menuItem.h>
+#include <gweni/controls/menuStrip.h>
 #include <gweni/controls/propertyTree.h>
 #include <gweni/controls/treeControl.h>
 #include <gweni/inputHandler.h>
@@ -32,6 +43,7 @@
 #include <doctest/doctest.h>
 
 #include <algorithm>
+#include <cstdlib>
 #include <vector>
 
 using namespace gweni;
@@ -375,4 +387,247 @@ TEST_CASE("a hidden menu hides its chevron's slot")
     scene.menu->setHidden(false);
     scene.frame();
     CHECK(scene.renderer.lastIcon(slot) != nullptr);
+}
+
+namespace
+{
+
+//! A menu of four rows: not checkable, checkable and unchecked, checkable and
+//! checked, and checked but not checkable.
+struct CheckScene: Scene
+{
+    controls::Menu *menu=nullptr;
+    controls::MenuItem *plain=nullptr;
+    controls::MenuItem *unchecked=nullptr;
+    controls::MenuItem *checked=nullptr;
+    controls::MenuItem *notCheckable=nullptr;
+
+    CheckScene()
+    {
+        menu=canvas->newChild<controls::Menu>();
+        menu->setPos(20, 20);
+        plain=menu->addItem("Plain");
+        unchecked=menu->addItem("Unchecked");
+        unchecked->setCheckable(true);
+        checked=menu->addItem("Checked");
+        checked->setCheckable(true);
+        checked->setChecked(true);
+        notCheckable=menu->addItem("Not checkable");
+        notCheckable->setChecked(true);
+        menu->setHidden(false);
+    }
+
+    static size_t checkSlot(const controls::Base *item)
+    {
+        return ids(item)[1];
+    }
+};
+
+//! The check drawn for \p item is a kind-0 icon at its z+1, centred in its
+//! left text padding (the icon column) and vertically, inside its bounds.
+void checkCheckIcon(const SlotRecorder::Icon *icon, controls::MenuItem *item)
+{
+    REQUIRE(icon != nullptr);
+    CHECK(icon->kind == 0);
+    CHECK(icon->direction == 0);
+    CHECK(icon->zIndex == item->getZIndex()+1);
+
+    // (a render bounds is in the parent's coordinates)
+    const int column=item->getTextPadding().left;
+    REQUIRE(column > 0);
+    CHECK(icon->rect.w > 0);
+    CHECK(icon->rect.w == icon->rect.h);
+    CHECK(icon->rect.x >= item->getX());
+    CHECK(icon->rect.x+icon->rect.w <= item->getX()+column);
+    CHECK(std::abs(2*(icon->rect.x-item->getX())+icon->rect.w-column) <= 1);
+    CHECK(icon->rect.y >= item->getY());
+    CHECK(icon->rect.y+icon->rect.h <= item->getY()+item->getHeight());
+    CHECK(std::abs(2*(icon->rect.y-item->getY())+icon->rect.h-item->getHeight()) <= 1);
+}
+
+}//namespace
+
+TEST_CASE("a checkable, checked MenuItem draws a check in its second slot, in the icon column, at z+1")
+{
+    const test::IdBankCounts baseline=test::IdBankCounts::now();
+    {
+        CheckScene scene;
+        scene.frame();
+
+        for(controls::MenuItem *item : {scene.plain, scene.unchecked, scene.checked, scene.notCheckable})
+        {
+            REQUIRE(item->getSkinControl() != nullptr);
+            CHECK(dynamic_cast<const skin::textured::MenuItem *>(item->getSkinControl()) != nullptr);
+            REQUIRE(Scene::ids(item).size() == 2);
+            CHECK(const_cast<skin::Control *>(item->getSkinControl())->depthLayers() == 2);
+            // the item's own children are numbered after the check
+            for(controls::Base *child : item->getChildren())
+                CHECK(child->getZIndex() >= item->getZIndex()+2);
+        }
+
+        const SlotRecorder::Icon *icon=scene.renderer.lastIcon(CheckScene::checkSlot(scene.checked));
+        checkCheckIcon(icon, scene.checked);
+        CHECK((icon->color == scene.checked->getTextColor()));
+        CHECK((icon->color == scene.skin.Colors.Button.Normal));
+
+        for(controls::MenuItem *item : {scene.plain, scene.unchecked, scene.notCheckable})
+        {
+            CHECK(scene.renderer.hid(CheckScene::checkSlot(item)));
+            CHECK(scene.renderer.lastIcon(CheckScene::checkSlot(item)) == nullptr);
+        }
+
+        // settled: nothing drawn
+        scene.frame();
+        CHECK(scene.renderer.touched().empty());
+    }
+
+    CHECK(test::IdBankCounts::now().livePrimitives() == baseline.livePrimitives());
+    CHECK(test::IdBankCounts::now().liveTexts() == baseline.liveTexts());
+}
+
+TEST_CASE("toggling a MenuItem's check or checkable writes that item's slots alone")
+{
+    CheckScene scene;
+    scene.frame();
+
+    // unchecked
+    scene.checked->setChecked(false);
+    scene.frame();
+    CHECK(scene.renderer.hid(CheckScene::checkSlot(scene.checked)));
+    CHECK(scene.renderer.lastIcon(CheckScene::checkSlot(scene.checked)) == nullptr);
+    CHECK(scene.touchedOnly({scene.checked}));
+
+    scene.frame();
+    CHECK(scene.renderer.touched().empty());
+
+    // checked again
+    scene.checked->setChecked(true);
+    scene.frame();
+    checkCheckIcon(scene.renderer.lastIcon(CheckScene::checkSlot(scene.checked)), scene.checked);
+    CHECK(scene.touchedOnly({scene.checked}));
+
+    // made checkable: the checked item that was not shows its check
+    scene.notCheckable->setCheckable(true);
+    scene.frame();
+    checkCheckIcon(scene.renderer.lastIcon(CheckScene::checkSlot(scene.notCheckable)), scene.notCheckable);
+    CHECK(scene.touchedOnly({scene.notCheckable}));
+
+    // and not checkable again: hidden
+    scene.notCheckable->setCheckable(false);
+    scene.frame();
+    CHECK(scene.renderer.hid(CheckScene::checkSlot(scene.notCheckable)));
+    CHECK(scene.renderer.lastIcon(CheckScene::checkSlot(scene.notCheckable)) == nullptr);
+    CHECK(scene.touchedOnly({scene.notCheckable}));
+
+    // a click on a checkable row toggles it; the menu closes
+    scene.unchecked->doAction();
+    CHECK(scene.unchecked->isChecked());
+    scene.frame();
+    scene.menu->setHidden(false);
+    scene.frame();
+    checkCheckIcon(scene.renderer.lastIcon(CheckScene::checkSlot(scene.unchecked)), scene.unchecked);
+}
+
+TEST_CASE("a MenuItem's check follows its hover and disabled text colours")
+{
+    CheckScene scene;
+    scene.frame();
+    const size_t slot=CheckScene::checkSlot(scene.checked);
+
+    scene.moveOnto(scene.checked);
+    REQUIRE(scene.checked->isHovered());
+    const SlotRecorder::Icon *icon=scene.renderer.lastIcon(slot);
+    checkCheckIcon(icon, scene.checked);
+    CHECK((icon->color == scene.skin.Colors.Button.Hover));
+    CHECK((icon->color == scene.checked->getTextColor()));
+
+    scene.moveOnto(scene.plain);
+    REQUIRE_FALSE(scene.checked->isHovered());
+    icon=scene.renderer.lastIcon(slot);
+    REQUIRE(icon != nullptr);
+    CHECK((icon->color == scene.skin.Colors.Button.Normal));
+
+    scene.checked->setDisabled(true);
+    scene.frame();
+    icon=scene.renderer.lastIcon(slot);
+    checkCheckIcon(icon, scene.checked);
+    CHECK((icon->color == scene.skin.Colors.Button.Disabled));
+}
+
+TEST_CASE("a hidden menu hides its items' checks")
+{
+    CheckScene scene;
+    scene.frame();
+    const size_t slot=CheckScene::checkSlot(scene.checked);
+
+    scene.menu->setHidden(true);
+    scene.frame();
+    CHECK(scene.renderer.hid(slot));
+    CHECK(scene.renderer.lastIcon(slot) == nullptr);
+
+    scene.menu->setHidden(false);
+    scene.frame();
+    checkCheckIcon(scene.renderer.lastIcon(slot), scene.checked);
+}
+
+TEST_CASE("a checked item's image gives its place to the check")
+{
+    Scene scene;
+    controls::Menu *menu=scene.canvas->newChild<controls::Menu>();
+    menu->setPos(20, 20);
+    controls::MenuItem *item=menu->addItem("With image", "icon.png");
+    item->setCheckable(true);
+    item->setChecked(true);
+    menu->setHidden(false);
+    scene.frame();
+
+    controls::Base *image=nullptr;
+    for(controls::Base *child : item->getChildren())
+    {
+        if(child->getTypeName() == std::string("ImagePanel"))
+            image=child;
+    }
+    REQUIRE(image != nullptr);
+    CHECK_FALSE(image->visible());
+    checkCheckIcon(scene.renderer.lastIcon(Scene::ids(item)[1]), item);
+
+    item->setChecked(false);
+    scene.frame();
+    CHECK(image->visible());
+    CHECK(scene.renderer.hid(Scene::ids(item)[1]));
+}
+
+TEST_CASE("an item on a MenuStrip, or in a menu with no icon margin, has no column and draws no check")
+{
+    Scene scene;
+    controls::MenuStrip *strip=scene.canvas->newChild<controls::MenuStrip>();
+    controls::MenuItem *onStrip=strip->addItem("Strip");
+    onStrip->setCheckable(true);
+    onStrip->setChecked(true);
+    REQUIRE(onStrip->onStrip());
+
+    controls::Menu *menu=scene.canvas->newChild<controls::Menu>();
+    menu->setPos(20, 60);
+    menu->setDisableIconMargin(true);
+    controls::MenuItem *noMargin=menu->addItem("No margin");
+    noMargin->setCheckable(true);
+    noMargin->setChecked(true);
+    REQUIRE(noMargin->getTextPadding().left == 0);
+    menu->setHidden(false);
+    scene.frame();
+
+    for(controls::MenuItem *item : {onStrip, noMargin})
+    {
+        REQUIRE(Scene::ids(item).size() == 2);
+        CHECK(scene.renderer.hid(Scene::ids(item)[1]));
+        CHECK(scene.renderer.lastIcon(Scene::ids(item)[1]) == nullptr);
+    }
+
+    // and the checked strip item's submenu items draw theirs
+    controls::MenuItem *inSubmenu=onStrip->getMenu()->addItem("Inside");
+    inSubmenu->setCheckable(true);
+    inSubmenu->setChecked(true);
+    onStrip->openMenu();
+    scene.frame();
+    checkCheckIcon(scene.renderer.lastIcon(Scene::ids(inSubmenu)[1]), inSubmenu);
 }

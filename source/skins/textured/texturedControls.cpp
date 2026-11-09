@@ -552,6 +552,31 @@ void MenuItem::update(renderer::Base *renderer, controls::Base *baseControl)
     }
     else
         renderer->hidePrimitive(m_primitives[0]);
+
+    if(m_primitives.size() < 2)
+        return;
+
+    const gweni::Rect check=checkRect(item);
+
+    if(baseControl->visible() && item->isCheckable() && item->isChecked() && check.w > 0)
+        renderer->drawIcon(m_primitives[1], check, 0, 0, item->getTextColor(), baseControl->getZIndex()+1);
+    else
+        renderer->hidePrimitive(m_primitives[1]);
+}
+
+gweni::Rect MenuItem::checkRect(controls::MenuItem *item)
+{
+    if(item->onStrip())
+        return gweni::Rect(0, 0, 0, 0);
+
+    const gweni::Rect r=item->getRenderBounds();
+    const int column=item->getTextPadding().left;
+    const int sz=((column<r.h)?column:r.h)*6/10;
+
+    if(sz <= 0)
+        return gweni::Rect(0, 0, 0, 0);
+
+    return gweni::Rect(r.x+(column-sz)/2, r.y+(r.h-sz)/2, sz, sz);
 }
 
 ///////////////////////////////////////////////////////////////////////////

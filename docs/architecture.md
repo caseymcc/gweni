@@ -1386,8 +1386,16 @@ two programs and the draws. What follows describes both together:
   `Menu` surface) with flat rows on it; a `MenuStrip` has its own renderer, found
   before `Menu`'s by the type walk, painting the flat, square `MenuStrip` surface. A
   `MenuItem` has its own renderer too, found before `Button`'s: like a `Selectable` row
-  its one slot is **hidden** while idle or disabled, and paints `MenuHover` over the
-  item while it is hovered, pressed or has its submenu open (`isMenuOpen()`). The
+  its first slot is **hidden** while idle or disabled, and paints `MenuHover` over the
+  item while it is hovered, pressed or has its submenu open (`isMenuOpen()`). Its
+  second slot is the check of a checkable, checked item (`isCheckable()`,
+  `isChecked()`; a click toggles only a checkable item): a checkmark (style 5, kind
+  0) at the item's z+1 (`depthLayers()` 2), in its text colour, so it follows the
+  hover and dims when disabled, centred in the icon column (the item's left text
+  padding), where it hides the item's image; otherwise that slot is hidden.
+  `setChecked` and `setCheckable` redraw the item on a real change. An item on a
+  `MenuStrip` itself or in a menu with `setDisableIconMargin(true)` has no column and
+  draws no check. The
   submenu opening and closing marks the item: `Menu::setHidden` fires
   `onVisibilityChanged` on a real change, and the item's handler calls `redraw()`, so
   the highlight follows the submenu however it closes (`Menu::closeAll`, the canvas

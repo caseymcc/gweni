@@ -9,6 +9,11 @@
 
 namespace gweni
 {
+namespace controls
+{
+class MenuItem;
+}
+
 namespace skin
 {
 namespace textured
@@ -419,13 +424,28 @@ public:
     inline static const std::string_view name="MenuStrip";
 };
 
-// A menu row: nothing of its own while idle or disabled (the slot hidden, so the
+// A menu row: nothing of its own while idle or disabled (slot [0] hidden, so the
 // menu's backdrop shows), tokyonight::MenuHover while hovered, pressed or with
 // its submenu open. Found before Button's by the type walk.
+// Slot [1] is the check of a checkable, checked item: a style 5 checkmark
+// (kind 0) at getZIndex()+1, in the item's text colour (so it follows hover and
+// dims when disabled), centred in the icon column, the item's left text padding
+// (Menu::onAddItem's 24, or Button::setImage's, where the image it hides was).
+// Otherwise the slot is hidden. Two items have no column and so draw no check:
+// those on a MenuStrip itself (onStrip()) and those in a menu with
+// iconMarginDisabled() (a left text padding of 0).
 class MenuItem:public textured::ControlRegister<MenuItem>
 {
 public:
     static void staticInit(TexturedSkin *) { m_staticInit=true; }
+
+    size_t requiredPrimitives() override { return 2; }
+    // the check is drawn at getZIndex()+1, over the highlight
+    size_t depthLayers() override { return 2; }
+
+    //! The check's rect in the item's render bounds: a square of 6/10 of the
+    //! icon column's smaller side, centred in it; empty when there is no column.
+    static gweni::Rect checkRect(controls::MenuItem *item);
 
     void update(renderer::Base *renderer, controls::Base *baseControl) override;
 
