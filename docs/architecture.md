@@ -1946,8 +1946,16 @@ two programs and the draws. What follows describes both together:
   identical gaps; `text_buffer` places each quad at `round(pen.x) + offset_x`, as wide
   as its bitmap, so every pixel samples exactly one texel, and keeps the pen's
   fraction in the vertex's `shift` (zero while hinted).
-  `measureText` and `renderText` both lay out through `text_buffer_add_text`, so the
-  measured width (the final `pen.x`) is the drawn advance. The measured height is the
+  `renderText` lays out through `text_buffer_add_text`, and `measureText` walks the same
+  pens without building a `text_buffer_t`: `SlotRenderer::walkPens` is the one pen walk
+  that `textPens` (so `measuredPenShifts`), a coverage `measureText` and `measureCarets`
+  read, stepping through the codepoints as `text_buffer_add_text` does and adding each
+  glyph's kerning against the codepoint before it and its advance, so the measured width
+  (the final pen) is the drawn advance. It finds each glyph in its `FontData`'s table
+  (`FontData::glyph`: an array for ASCII, a map above, filled on first lookup and freed
+  with the font, which `layoutSdfText` looks its glyphs up in too) instead of
+  freetype-gl's linear search over the font's glyphs; `tests/measureTextPens.cpp` holds it to a `text_buffer_t`'s pen
+  (`measureTextWithTextBuffer`) in every coverage size, mode and scale. The measured height is the
   line box, `ceil(font->height)` (ascender-descender, no line gap) whatever the string;
   in an SDF font `ceil(font->height*px/48)` for one line. `lineHeight(font)` reads that
   same metric (`SlotRenderer::lineBoxHeight`) without laying a string out, so it is
@@ -1980,8 +1988,9 @@ two programs and the draws. What follows describes both together:
   glyph of its own in the atlas, keyed by `texture_glyph_t::phase`. The cache is
   rasterised at phase 0 and the other phases as runs first need them; three phases of
   8-16 px ASCII take 1-3 % of the 1024x1024 atlas. The vertex's `shift` is `phase/3`.
-  `measureText` lays out through the same `text_buffer_add_text`, so its width (the
-  final pen, rounded up) is the drawn one; at a canvas scale an LCD run gets no
+  `measureText` walks the same pens (`walkPens`; the phase moves the quad, not the pen),
+  so its width (the final pen, rounded up) is the drawn one, and it rasterises no phase
+  variant: `renderText` does on the run's first draw; at a canvas scale an LCD run gets no
   `measuredPenShifts`, since unhinted pens scale linearly. **Contrast:** blending sRGB
   values, light text over a dark background comes out thinner than dark over light, so
   the LCD branch of the text shader raises each subpixel's coverage through
@@ -2047,9 +2056,8 @@ two programs and the draws. What follows describes both together:
   the empty prefix. The base class's default is that definition, one `measureText` per
   prefix, so a backend that does not override it answers as before. `SlotRenderer`'s
   override lays the string out once and reads the pen before each codepoint: in a
-  coverage font (grayscale or LCD) one `text_buffer` and `text_buffer_add_text`'s
-  `text_buffer_add_char` loop, `ceil(pen.x)` (not `textPens()`, whose pens are rounded
-  and skip LCD's 1/3 px phases); in an SDF font `layoutSdfText`, `ceil(max(width,
+  coverage font (grayscale or LCD) `walkPens`, the walk `measureText` makes,
+  `ceil(pen)` before each codepoint; in an SDF font `layoutSdfText`, `ceil(max(width,
   pen))`. A `measureText` of a prefix is the same walk stopped there, so each x equals it
   by construction. Where freetype-gl's codepoint steps (`utf8_surrogate_len`) are not
   `utf8Next`'s (malformed UTF-8) or the string holds a NUL, it falls back to the
@@ -2327,7 +2335,7 @@ What exists today (the foundation) and what's still aspirational:
   to the whole atlas. Counted separately from the buffer uploads, as
   `FrameStats::atlasUploadCalls`/`atlasUploadBytes`.
 - **Text-path diagnostics.** `GWENI_TEXT_DEBUG=<substring>` (empty matches everything)
-  makes `measureText` print its freetype-gl vertex run, the resolved
+  makes `measureText` print each glyph's pen, the resolved
   `texture_glyph_t` metrics and the size it returns, and `renderText` dump the
   `m_textVertexes` slots it wrote for each matching string, with each slot's index
   chunk and whether its font's draw list draws it. Off unless
