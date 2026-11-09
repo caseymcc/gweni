@@ -21,6 +21,7 @@
 #include <gweni/controls/verticalScrollBar.h>
 #include <gweni/controls/windowControl.h>
 #include <gweni/platforms/inputEvent.h>
+#include <gweni/skin.h>
 
 #include <algorithm>
 #include <cstdio>
@@ -100,10 +101,28 @@ void setTarget(SceneContext &ctx, const Point &size, float scale)
 // each page scrolls), each page an inner ScrollControl stacked in one outer
 // ScrollControl on the left; the ListBox and the TreeControl (every 8th node a
 // top-level node, the others its children, all expanded) sit on the right.
+// Above them a bold title Label is the tree's second font (the skin's face and
+// size, bold: below the SDF threshold, so an atlas of its own): its one run stays
+// in one index chunk while the main font's runs take one chunk per 16383 glyph
+// slots (1, 2 and 7 at N=1000, 3000 and 10000), so idle holds the debug text
+// draw-list verify, which rebuilds each font's list into one shared scratch, to
+// fonts whose chunk counts differ by more at a larger N (#481).
 // N counts the items; the summary's controls= counts every control in the
 // tree, their parts included.
 //-----------------------------------------------------------------------------
 enum class Item { Label, Button, TextBox, CheckBox, ListRow, TreeNode };
+
+// The title's font. A Label keeps a pointer to its font and the scene is deleted
+// before its canvas, so it lives as long as the process. Label::setFont(const
+// Font &) loads nothing: the renderer makes its atlas when the title is first
+// laid out, in a frame (the primer canvas's, which leaves it loaded, as it does
+// the skin's font), not in Scene::build(), where the backends' own allocations
+// for a new atlas would differ (backend_counters compares construct_allocs).
+Font &titleFont()
+{
+    static Font font;
+    return font;
+}
 
 const Item g_itemMix[20]=
 {
@@ -122,12 +141,22 @@ public:
         const int columns=4;
         const int cellW=150, cellH=26;
         const int rightX=920;
+        const int top=30;
+
+        Font &font=titleFont();
+        font=ctx.canvas->getSkin()->getDefaultFont();
+        font.bold=true;
+
+        controls::Label *title=ctx.canvas->newChild<controls::Label>();
+        title->setFont(font);
+        title->setText(format("Mixed controls: %d items", ctx.n));
+        title->setBounds(10, 6, 400, top-10);
 
         controls::ScrollControl *outer=ctx.canvas->newChild<controls::ScrollControl>();
-        outer->setBounds(10, 10, rightX-20, ctx.size.y-20);
+        outer->setBounds(10, top, rightX-20, ctx.size.y-top-10);
 
         controls::ListBox *list=ctx.canvas->newChild<controls::ListBox>();
-        list->setBounds(rightX, 10, ctx.size.x-rightX-10, ctx.size.y/2-15);
+        list->setBounds(rightX, top, ctx.size.x-rightX-10, ctx.size.y/2-top-5);
 
         controls::TreeControl *tree=ctx.canvas->newChild<controls::TreeControl>();
         tree->setBounds(rightX, ctx.size.y/2+5, ctx.size.x-rightX-10, ctx.size.y/2-15);
@@ -717,7 +746,7 @@ const std::vector<SceneInfo> &scenes()
 {
     static const std::vector<SceneInfo> list=
     {
-        {"build", "construct an N-item tree of mixed controls and run its first frame",
+        {"build", "construct an N-item tree of mixed controls under a bold title and run its first frame",
             true, 1000, 0, 1, Scaling::Linear,
             []{ return std::unique_ptr<Scene>(new MixedTreeScene()); }, true},
         {"idle", "the build tree, settled, with no input",
