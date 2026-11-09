@@ -61,7 +61,6 @@ HERO_OUT=demo.png
 # one today:
 #   ImagePanel (ImagePanelDemo) - its VerticalLayout stacks the two images
 #     down the left edge, not side by side where they ask to be
-#   a checkable MenuItem (MenuStripDemo) - its check is not drawn (#414)
 #   Popup (PopupDemo) - the canvas shows one popup at a time, and the Windows &
 #     menus page's capture opens its context menu
 SAMPLES=(

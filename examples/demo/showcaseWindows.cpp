@@ -89,8 +89,6 @@ GWENI_CONTROL_CONSTRUCTOR(ShowcaseWindowsDemo)
             menu->addItem("Copy", "", "Ctrl+C");
             menu->addItem("Paste", "", "Ctrl+V");
             menu->addDivider();
-            // a MenuItem's check is not drawn yet (issue #414), so there is no
-            // checkable item
             menu->addItem("Select all", "", "Ctrl+A");
             menu->addItem("Find...", "", "Ctrl+F");
             menu->addItem("Delete")->setDisabled(true);
