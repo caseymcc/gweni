@@ -58,6 +58,12 @@
  *  The same changes made between frames, a delayed delete processed in the
  *  update phase, and the line children a wrapped Text builds in
  *  renderPhaseLayout() (layout, before the drain) record nothing.
+ *
+ *  A PropertyRow's label, which the render phase never reaches through its
+ *  row, is queued by the update phase when its property is focused, hovered
+ *  or unfocused, and when the focused property's page is hidden: the canvas
+ *  drops that focus through Base::unfocus() (the TextBox's onLostFocusCaller
+ *  fires once), and the label, shown again, is in its Normal look.
  */
 #include "headlessFixture.h"
 
@@ -973,6 +979,69 @@ TEST_CASE("a PropertyRow's label takes the row's look when its property is focus
     CHECK(label->isQueuedForRender());
     HoveredControl=hoveredBefore;
     scene.settle();
+    checkSettled(scene.frame());
+}
+
+namespace
+{
+
+//! Counts the events it is given.
+struct EventCounter: public event::Handler
+{
+    int count=0;
+    void fired(event::Info) { ++count; }
+};
+
+}//namespace
+
+TEST_CASE("a PropertyRow's focused property hidden with its page loses the focus through unfocus()")
+{
+    // The canvas drops a focus that is no longer visible through
+    // Base::unfocus(), in the update phase: the TextBox's
+    // onLostKeyboardFocus() runs (onLostFocusCaller) and the row is told, so
+    // its label is queued and, shown again, back in its Normal look.
+    Scene scene;
+    auto &colors=scene.skin.Colors;
+    colors.Properties.Label_Normal=Color(10, 20, 30, 255);
+    colors.Properties.Label_Hover=Color(40, 50, 60, 255);
+    colors.Properties.Label_Selected=Color(70, 80, 90, 255);
+
+    // a page above the Properties, as a tab switch hides
+    controls::Base *page=scene.canvas->newChild<controls::Base>();
+    page->setBounds(0, 0, 200, 100);
+    auto *properties=page->newChild<controls::Properties>();
+    properties->setBounds(0, 0, 200, 100);
+    controls::PropertyRow *row=properties->add("Name", "value");
+    scene.settle();
+
+    auto *text=gweni_cast<controls::property::Text>(row->getProperty());
+    REQUIRE(text);
+    controls::Label *label=row->getLabel();
+    EventCounter lostFocus;
+    text->m_textBox->onLostFocusCaller.add(&lostFocus, &EventCounter::fired);
+
+    text->m_textBox->focus();
+    scene.settle();
+    REQUIRE(KeyboardFocus == text->m_textBox);
+    CHECK((label->getTextColor() == colors.Properties.Label_Selected));
+    REQUIRE_FALSE(label->isQueuedForRender());
+
+    page->setHidden(true);
+    controls::resetChangeStats();
+    scene.canvas->updateCanvas();
+    CHECK(KeyboardFocus == nullptr);
+    CHECK(lostFocus.count == 1);
+    CHECK_FALSE(row->isEditing());
+    CHECK(label->isQueuedForRender());
+    scene.canvas->renderCanvas();
+    scene.settle();
+    CHECK(lostFocus.count == 1);
+
+    page->setHidden(false);
+    scene.settle();
+    CHECK(KeyboardFocus == nullptr);
+    CHECK((label->getTextColor() == colors.Properties.Label_Normal));
+    CHECK(lostFocus.count == 1);
     checkSettled(scene.frame());
 }
 
