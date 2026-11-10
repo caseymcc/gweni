@@ -8,11 +8,19 @@
  *  (a parent, then its child and grandchild, all delayedDelete()d before the
  *  frame) is deleted with the ancestor and never again; a control queued and
  *  then deleted outright before the frame is not deleted again; a control
- *  that a queued control's destructor queues goes in the same frame. The
+ *  that a queued control's destructor queues goes in the same frame, and one
+ *  queued after it that the destructor deletes outright (not its descendant)
+ *  is deleted once and never touched again (#532). A ComboBox whose list was
+ *  never opened, delayedDelete()d and then cleared (clearItems() queues every
+ *  item of the list, the box's child, behind the box) leaves no Menu on the
+ *  canvas and gives back every primitive and text id it took (#532). The
  *  double deletes are real checks only in the ASAN tree; the counts hold in
  *  every tree.
  */
 #include "headlessFixture.h"
+
+#include <gweni/controls/comboBox.h>
+#include <gweni/controls/menu.h>
 
 #include <doctest/doctest.h>
 
@@ -34,10 +42,13 @@ public:
             ++*m_deletes;
         if(m_queueOnDelete)
             m_queueOnDelete->delayedDelete();
+        if(m_deleteOnDelete)
+            delete m_deleteOnDelete;
     }
 
     int *m_deletes=nullptr;
     controls::Base *m_queueOnDelete=nullptr;
+    controls::Base *m_deleteOnDelete=nullptr;
 };
 
 struct Scene
@@ -148,4 +159,86 @@ TEST_CASE("a control a queued control's destructor queues goes in the same frame
     CHECK(secondDeletes == 1);
     CHECK(thirdDeletes == 1);
     CHECK(scene.canvas->getActualChildren().size() == baseline);
+}
+
+TEST_CASE("a queued control a queued control's destructor deletes outright is deleted once")
+{
+    Scene scene;
+    scene.frame();
+    const size_t baseline=scene.canvas->getActualChildren().size();
+
+    int firstDeletes=0, secondDeletes=0, thirdDeletes=0;
+    Tracked *first=scene.add(scene.canvas, &firstDeletes);
+    Tracked *second=scene.add(scene.canvas, &secondDeletes);
+    Tracked *third=scene.add(scene.canvas, &thirdDeletes);
+    scene.frame();
+
+    SUBCASE("a sibling queued after it")
+    {
+        first->m_deleteOnDelete=second;
+        first->delayedDelete();
+        second->delayedDelete();
+        third->delayedDelete();
+    }
+    SUBCASE("a sibling queued after it, the sibling deleting the next")
+    {
+        first->m_deleteOnDelete=second;
+        second->m_deleteOnDelete=third;
+        first->delayedDelete();
+        third->delayedDelete();
+        second->delayedDelete();
+    }
+    SUBCASE("a child of another control, queued after it")
+    {
+        int childDeletes=0;
+        Tracked *child=scene.add(third, &childDeletes);
+        scene.frame();
+
+        first->m_deleteOnDelete=child;
+        first->delayedDelete();
+        second->delayedDelete();
+        child->delayedDelete();
+        third->delayedDelete();
+        scene.frame();
+        CHECK(childDeletes == 1);
+    }
+    scene.frame();
+
+    CHECK(firstDeletes == 1);
+    CHECK(secondDeletes == 1);
+    CHECK(thirdDeletes == 1);
+    CHECK(scene.canvas->getActualChildren().size() == baseline);
+}
+
+TEST_CASE("a ComboBox delayedDelete()d and then cleared, its list never opened, goes once with its items")
+{
+    Scene scene;
+    scene.frame();
+    const size_t baseline=scene.canvas->getActualChildren().size();
+    const test::IdBankCounts before=test::IdBankCounts::now();
+
+    controls::ComboBox *combo=scene.canvas->newChild<controls::ComboBox>();
+    combo->addItem("One");
+    combo->addItem("Two");
+    combo->addItem("Three");
+    scene.frame();
+    CHECK(test::IdBankCounts::now().livePrimitives() > before.livePrimitives());
+
+    combo->delayedDelete();
+    combo->clearItems();
+    scene.frame();
+
+    size_t menus=0;
+
+    for(auto &&child : scene.canvas->getActualChildren())
+    {
+        if(gweni_cast<controls::Menu>(child))
+            ++menus;
+    }
+    CHECK(menus == 0);
+    CHECK(scene.canvas->getActualChildren().size() == baseline);
+
+    const test::IdBankCounts after=test::IdBankCounts::now();
+    CHECK(after.livePrimitives() == before.livePrimitives());
+    CHECK(after.liveTexts() == before.liveTexts());
 }
