@@ -1380,11 +1380,16 @@ two programs and the draws. What follows describes both together:
   the whole field). Bits 0-3 are the top-left, top-right, bottom-left and bottom-right
   corners square, bits 4-7 the top, right, bottom and left sides without a border.
   `roundedRect()` takes the radius of the pixel's quadrant (`cornerRadius()`, by the
-  signs of `vLocal`, 0 where the corner is square), and measures the border against
-  the box with each borderless side pushed out by `border + aa`, so no pixel inside is
-  within the border of that side, the other corners keep their arcs where they were,
-  and the borders of the sides next to it run straight to its edge. With no bit set
-  every step is the one before the mask, so an unmasked rect draws the same bytes.
+  signs of `vLocal`, 0 where the corner is square), and in a quadrant bounded by a
+  borderless side measures the border to the nearer of the shape and the straight box
+  with that side pushed out by `border + aa`, so no pixel inside is within the border
+  of that side and the borders of the sides next to it run straight to its edge; a
+  quadrant with no such side keeps the shape's distance, its arc included. That is
+  selects, not a branch: a branch around a second `sdRoundBox()` cost llvmpipe 4.6 % of
+  `gweni_bench idle`'s flush instructions with no rect masked, and the selects 2.6 %
+  fewer than before the mask (5,180 M before the mask, 5,417 M with the branch,
+  5,046 M with the selects, at N=1000). With no bit set every step gives the value it
+  gave before the mask, so an unmasked rect draws the same bytes.
   `renderer::Base`'s default for the masked call draws the unmasked rect, the mask
   dropped, so a backend without it still draws a rounded rect in the right place;
   `drawBilinearRect`/`drawCheckerRect` take no mask (yet). `tests/roundedEdges.cpp`

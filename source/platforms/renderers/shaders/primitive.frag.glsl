@@ -104,10 +104,6 @@ float sdRoundBox(vec2 p, vec2 b, float r)
 // The edge mask's bits (renderer::RoundedEdge, Vertex::radius's high byte):
 // bit 0..3 the top-left, top-right, bottom-left and bottom-right corner square,
 // bit 4..7 the top, right, bottom and left side without a border.
-const uint NoBorderTop = 0x10u;
-const uint NoBorderRight = 0x20u;
-const uint NoBorderBottom = 0x40u;
-const uint NoBorderLeft = 0x80u;
 
 // The radius of p's corner, p from the box's centre (y down): r, or 0 where the
 // mask makes that corner square. Every corner's arc is within r of it, so the
@@ -143,22 +139,18 @@ vec4 roundedRect(vec4 fill)
     if(vBorder > 0.0)
     {
         // -d is the inward distance from the edge; border occupies [0, vBorder].
-        float db = d;
-        if((vEdges & 0xf0u) != 0u)
-        {
-            // The distance to the sides that keep their border: the box with each
-            // side without one pushed out past the border's reach (vBorder and a
-            // pixel), so no pixel inside the rect is within vBorder of it. Its
-            // corners on the other sides stay where they are, so their arcs and
-            // the straight border keep their places.
-            float e = vBorder + aa;
-            vec2 lo = -vHalf - e*vec2((vEdges & NoBorderLeft) != 0u ? 1.0 : 0.0,
-                (vEdges & NoBorderTop) != 0u ? 1.0 : 0.0);
-            vec2 hi = vHalf + e*vec2((vEdges & NoBorderRight) != 0u ? 1.0 : 0.0,
-                (vEdges & NoBorderBottom) != 0u ? 1.0 : 0.0);
-            vec2 q = vLocal - 0.5*(lo + hi);
-            db = sdRoundBox(q, 0.5*(hi - lo), cornerRadius(q, r));
-        }
+        // A side without a border (the mask's high nibble) is pushed out past the
+        // border's reach (vBorder and a pixel) in the quadrants it bounds, and
+        // there the border is measured to the straight box with it pushed, the
+        // nearer of that and d: the borders of the sides next to it run straight
+        // to its edge, and no pixel is within vBorder of it. Selects, not a
+        // branch around a second sdRoundBox(): that branch cost llvmpipe 4.6 %
+        // of gweni_bench idle's flush with no rect masked. A quadrant with no
+        // such side keeps d, so an unmasked rect draws the same bytes.
+        float sideX = float((vEdges >> (vLocal.x < 0.0 ? 7u : 5u)) & 1u);
+        float sideY = float((vEdges >> (vLocal.y < 0.0 ? 4u : 6u)) & 1u);
+        vec2 qb = abs(vLocal) - vHalf - vec2(sideX, sideY)*(vBorder + aa);
+        float db = (sideX + sideY > 0.0) ? min(d, max(qb.x, qb.y)) : d;
         float bMix = clamp(0.5 + (vBorder + db)/aa, 0.0, 1.0);
         rgb = lerp(fill.rgb, vBorderColor.rgb, bMix);
     }
