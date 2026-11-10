@@ -677,7 +677,10 @@ void TextBox::setSizedByText(bool sizedByText)
 // On an axis sized by its request (sizedByRequest: a size was asked for, as
 // the constructor's 200x20 is) Base::calculateSize has made the request the
 // preferred size, whatever the flags, and the string adds nothing: it
-// scrolls inside the box. Otherwise the box asks for its string.
+// scrolls inside the box. On any other axis (no request, setSizedByText's X,
+// the Y of a box whose text does not wrap) the box asks for its string, and
+// its flags make the preferred size of it as of any content.
+//
 // A scrolled string is placed by this box (Placement::Owner), which leaves it
 // out of sizeOfChildren; it counts as it does aligned, at its preferred size,
 // so the box's size does not depend on whether it is scrolled. In X it counts

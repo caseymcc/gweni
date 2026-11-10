@@ -92,7 +92,26 @@ no height (a ComboBox opening its list sets the position and width only). A
 subclass that never scrolls an axis opts out with `sizedByRequest()`: a
 MenuStrip is as high as its items, its 200x22 only the least it gets.
 
-Docked children keep the size their dock gives them.
+A child docked Top or Bottom is its preferred height, and Left or Right its
+preferred width, along the dock (`Base::arrangeHorizontal`/`arrangeVertical`).
+Across it, the dock's cross axis, it fills the dock rect inside its margins
+unless it is Fixed on that axis, when it keeps its own size, which for Fixed is
+its request: a CheckBox's and a RadioButton's 15x15 docked Left in their
+labelled rows, a window's close button docked Right, a NumericUpDown's up
+button docked Top. Docked Center it fills what the edge docks left, whatever
+its flags. So a Fixed control that should span a Top dock is given a non-Fixed
+flag on that axis (`{Elastic, Fixed}`, say).
+
+A TextBox is Fixed, the size it asks for (200x20, a NumericUpDown 100x20), and
+sized by its request on every flag in X, like a ScrollControl: its string
+scrolls inside it, so a spanning box's preferred width is its request, never
+its text, and typing into it never resizes a parent that sizes to its
+children. Give a spanning box the least width it should ask of its parent
+(ShowcaseInputDemo's rows ask for 80). In Y only a box whose text wraps (a
+TextBoxMultiline) is sized by its request: one line's height does not change
+with the string, so an Elastic height is the text line's (a property row's
+box). `TextBox::setSizedByText(true)` makes a box ask for its string's width
+instead, for a parent that fits the text: a property row fits its value.
 
 ## Requested and computed bounds
 
@@ -177,7 +196,7 @@ What still counts as a request, besides the app's own calls:
 A control whose content along an axis is the size it was asked to be says so
 with `sizedByRequest(dim)`: `Base::calculateSize` then takes the request as its
 content, not its children (a Slider, whose track its skin draws; a
-ScrollControl, see above).
+ScrollControl and a TextBox, see above).
 
 `doNotIncludeInSize()` is the one other way out of the parent's size, kept for
 exactly one case: a child the generic arrange still places, by its alignment
