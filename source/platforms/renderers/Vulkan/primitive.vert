@@ -14,9 +14,9 @@
 //  GL's gl_VertexID does from its vertex array's.
 //
 //  The projection is OpenGLCore's matrix, into GL's clip space, and
-//  CLIP_SPACE_TO_API maps its z from [-1, 1] to Vulkan's [0, 1] as GL's
-//  viewport transform does (w is 1), so each fragment's depth is computed as
-//  on GL. y is not flipped: the target holds its rows bottom-up, as GL's
+//  CLIP_SPACE_TO_API maps its z from [-w, w] to Vulkan's [0, w], so after the
+//  divide by w (1 in the front view, anything under a view transform's camera)
+//  each fragment's depth is GL's viewport transform of its z, as on GL. y is not flipped: the target holds its rows bottom-up, as GL's
 //  framebuffer does (renderer::Vulkan::readPixels turns them over, as
 //  OpenGLCore's does), so every triangle lands on the same window coordinates
 //  as on GL, and its coverage, interpolation and derivatives are GL's.
@@ -30,6 +30,6 @@ layout(push_constant) uniform PrimitivePush
 #define projection push.projection
 #define slotBase push.slotBase
 #define VERTEX_ID gl_VertexIndex
-#define CLIP_SPACE_TO_API(p) p = vec4((p).x, (p).y, (p).z*0.5 + 0.5, (p).w)
+#define CLIP_SPACE_TO_API(p) p = vec4((p).x, (p).y, (p).z*0.5 + (p).w*0.5, (p).w)
 
 #include "../shaders/primitive.vert.glsl"

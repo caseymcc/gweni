@@ -25,6 +25,7 @@
 #include <cerrno>
 #include <cmath>
 #include <algorithm>
+#include <algorithm>
 #include <cassert>
 #include <limits>
 
@@ -882,6 +883,28 @@ void SlotRenderer::init()
 void SlotRenderer::setViewRect(const gweni::Rect &viewRect)
 {
     m_viewRect=viewRect;
+}
+
+void SlotRenderer::setViewTransform(const float matrix[16])
+{
+    if(m_hasViewTransform && std::equal(matrix, matrix+16, m_viewTransform))
+        return;
+
+    std::copy(matrix, matrix+16, m_viewTransform);
+    m_hasViewTransform=true;
+    viewTransformChanged();
+}
+
+void SlotRenderer::clearViewTransform()
+{
+    if(!m_hasViewTransform)
+        return;
+
+    static const float identity[16]={ 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1 };
+
+    std::copy(identity, identity+16, m_viewTransform);
+    m_hasViewTransform=false;
+    viewTransformChanged();
 }
 
 void SlotRenderer::begin()

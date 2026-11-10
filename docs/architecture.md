@@ -812,9 +812,10 @@ a device that has not (whose LCD modes fall back to grayscale, as on GLES withou
 too, with a renderer on the device claiming no `dualSrcBlend`).
 
 **GL's pixels.** The projection is OpenGLCore's matrix, into GL's clip space, and
-`CLIP_SPACE_TO_API` maps its z from [-1, 1] to [0, 1] in the vertex shader as GL's
-viewport transform does (`z*0.5 + 0.5`, w being 1), so every depth is computed as on
-GL. y is not flipped: the target holds its rows bottom-up, as a GL framebuffer does,
+`CLIP_SPACE_TO_API` maps its z from [-w, w] to [0, w] in the vertex shader as GL's
+viewport transform does (`z*0.5 + w*0.5`; w is 1 in the front view, anything under
+a view transform's camera, `SlotRenderer::setViewTransform`), so every depth is
+computed as on GL. y is not flipped: the target holds its rows bottom-up, as a GL framebuffer does,
 and `readPixels` turns them over as `OpenGLCore::readPixels` does. Every triangle then
 lands on GL's window coordinates, so its coverage, its interpolated values and its
 2x2 derivatives are GL's. A window will show the target through a flipping blit

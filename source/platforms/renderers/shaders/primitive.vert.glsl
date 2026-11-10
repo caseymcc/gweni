@@ -8,15 +8,16 @@
 //  and declares what differs between the APIs:
 //
 //    projection        mat4: device px, y down, z index -> GL's clip space
-//                      (y up, z in [-1, 1], w = 1), the same matrix for every API
+//                      (y up, z in [-w, w]; w = 1 but under a view transform,
+//                      SlotRenderer::setViewTransform), the same matrix for every API
 //    slotBase          int: the first slot of the chunk being drawn
 //    VERTEX_ID         the vertex's index from the chunk's first vertex
 //                      (gl_VertexID; gl_VertexIndex with the chunk's vertex
 //                      buffer bound at its first slot)
 //    CLIP_SPACE_TO_API(p)
 //                      a statement turning GL's clip-space position into the
-//                      API's (nothing for GL; Vulkan maps z to [0, 1] as GL's
-//                      viewport transform does, z*0.5 + 0.5, so every depth is
+//                      API's (nothing for GL; Vulkan maps z to [0, w] as GL's
+//                      viewport transform does, z*0.5 + w*0.5, so every depth is
 //                      computed as on GL)
 //
 layout (location = 0) in uint style;
@@ -99,6 +100,9 @@ void main()
         gl_Position = projection * vec4(float(inPosition.x), float(inPosition.y), z, 1.0f);
     CLIP_SPACE_TO_API(gl_Position);
 
+    // GL's window depth of a point half a layer behind; w is exactly 1.0 in the
+    // front view, and a view transform's camera (SlotRenderer::setViewTransform)
+    // can make it anything
     vec4 behind = projection * vec4(float(inPosition.x), float(inPosition.y), z - 0.5, 1.0);
-    vBehindDepth = behind.z*0.5 + 0.5;
+    vBehindDepth = behind.z/behind.w*0.5 + 0.5;
 }

@@ -188,11 +188,13 @@ void targetBarrier(VkCommandBuffer commands, VkPipelineStageFlags dstStages, VkA
 }
 
 //! The view's projection: OpenGLCore's matrix (device px, y down, and z, a z
-//! index, from 0 at depth 1.0 to kMaxZIndex at depth 0), into GL's clip space;
-//! primitive.vert turns that into Vulkan's.
-glm::mat4 viewProjection(const gweni::Rect &viewRect)
+//! index, from 0 at depth 1.0 to kMaxZIndex at depth 0), into GL's clip space,
+//! after the renderer's view transform when it has one; primitive.vert turns that
+//! into Vulkan's.
+glm::mat4 viewProjection(const SlotRenderer &renderer)
 {
-    return glm::ortho(
+    const gweni::Rect &viewRect=renderer.viewRect();
+    const glm::mat4 ortho=glm::ortho(
         static_cast<float>(viewRect.x),
         static_cast<float>(viewRect.x + viewRect.w),
         static_cast<float>(viewRect.y + viewRect.h),
@@ -200,6 +202,10 @@ glm::mat4 viewProjection(const gweni::Rect &viewRect)
         -static_cast<float>(SlotRenderer::kMaxZIndex),
         0.0f
     );
+
+    if(!renderer.hasViewTransform())
+        return ortho;
+    return ortho*glm::make_mat4(renderer.viewTransform());
 }
 
 }//namespace
@@ -1019,7 +1025,12 @@ void Vulkan::setViewRect(const gweni::Rect &viewRect)
 {
     SlotRenderer::setViewRect(viewRect);
 
-    const glm::mat4 projection=viewProjection(viewRect);
+    viewTransformChanged();
+}
+
+void Vulkan::viewTransformChanged()
+{
+    const glm::mat4 projection=viewProjection(*this);
 
     memcpy(m_push.projection, glm::value_ptr(projection), sizeof(m_push.projection));
 }

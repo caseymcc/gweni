@@ -67,6 +67,7 @@ protected:
     void endTextDraws() override {}
     void submitFrame() override {}
     void indexChunkSlotsChanged() override {}
+    void viewTransformChanged() override {}
 
 private:
     //! Nothing is loaded, so no path is ever looked up.

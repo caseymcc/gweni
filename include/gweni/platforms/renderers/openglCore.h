@@ -156,6 +156,7 @@ protected:
     void endTextDraws() override;
     void submitFrame() override;
     void indexChunkSlotsChanged() override;
+    void viewTransformChanged() override;
 
 private:
 

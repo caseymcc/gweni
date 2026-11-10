@@ -282,6 +282,20 @@ public:
     void setViewRect(const gweni::Rect &viewRect) override;
     const gweni::Rect &viewRect() const { return m_viewRect; }
 
+    //! A projective transform of the view's own space (device px, y down, z a z
+    //! index), applied to every vertex before the backend's projection: 16 floats,
+    //! column-major (glm's layout). What it maps a point to must stay inside the
+    //! view's z range, 0..kMaxZIndex, or is clipped. The identity, and no transform
+    //! at all, draw the front view; tools::DepthView sets a camera. The backend
+    //! multiplies it into its projection here and at setViewRect, never per frame,
+    //! and nothing of the mirrors changes, so a frame after it uploads nothing.
+    void setViewTransform(const float matrix[16]);
+    //! Back to the front view, the backend's projection alone
+    void clearViewTransform();
+    bool hasViewTransform() const { return m_hasViewTransform; }
+    //! The transform set, column-major; the identity when there is none
+    const float *viewTransform() const { return m_viewTransform; }
+
     //! Vertex::z is 16 bits unsigned, so a z index is 0..65535. A backend's
     //! projection maps z=0 to the depth-clear value, and kMaxZIndex to the front.
     static constexpr int kMaxZIndex=65535;
@@ -692,6 +706,9 @@ protected:
     //! setIndexChunkSlots() changed the chunk size: what a backend made per chunk
     //! points at the old chunks' slots
     virtual void indexChunkSlotsChanged()=0;
+    //! setViewTransform() or clearViewTransform() changed the view transform: the
+    //! backend builds its projection again (viewTransform() times its own)
+    virtual void viewTransformChanged()=0;
 
     //! Destroys every font atlas's and image's texture through the hooks and frees
     //! them. A backend's destructor calls it while its device is still there.
@@ -934,6 +951,9 @@ private:
     bool m_imageUnitsFullLogged=false;
 
     Rect m_viewRect;
+    //! setViewTransform's matrix, column-major, the identity when there is none
+    float m_viewTransform[16]={ 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1 };
+    bool m_hasViewTransform=false;
     Color m_color;
 
     std::vector<Vertex> m_vertexes; //argue about vertices all you want

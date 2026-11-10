@@ -93,10 +93,12 @@ PFNGLMULTIDRAWELEMENTSEXTPROC multiDrawElementsEXT=nullptr;
 
 // The view's projection: device px, y down, and z (a z index) from 0 at depth 1.0,
 // the depth-clear value, to OpenGLCore::kMaxZIndex at depth 0, so a higher z passes
-// GL_LESS in front of a lower one.
-static glm::mat4 viewProjection(const gweni::Rect &viewRect)
+// GL_LESS in front of a lower one; after the renderer's view transform, when it has
+// one (SlotRenderer::setViewTransform), which maps that space into itself.
+static glm::mat4 viewProjection(const SlotRenderer &renderer)
 {
-    return glm::ortho(
+    const gweni::Rect &viewRect=renderer.viewRect();
+    const glm::mat4 ortho=glm::ortho(
         static_cast<float>(viewRect.x),
         static_cast<float>(viewRect.x + viewRect.w),
         static_cast<float>(viewRect.y + viewRect.h),
@@ -104,6 +106,10 @@ static glm::mat4 viewProjection(const gweni::Rect &viewRect)
         -static_cast<float>(OpenGLCore::kMaxZIndex),
         0.0f
     );
+
+    if(!renderer.hasViewTransform())
+        return ortho;
+    return ortho*glm::make_mat4(renderer.viewTransform());
 }
 
 void OpenGLCore::clearTarget(const gweni::Color &color)
@@ -152,6 +158,8 @@ void OpenGLCore::beginFrame()
     glEnable(GL_BLEND);
     glEnable(GL_DEPTH_TEST);
     glDepthFunc(GL_LESS);
+    // GL_CULL_FACE stays off (GL's default; nothing here enables it): the y flip
+    // turns every triangle over, and a view transform can show the back
 }
 
 void OpenGLCore::allocateVertexBuffer(SlotPath path, size_t bytes)
@@ -443,6 +451,12 @@ void OpenGLCore::indexChunkSlotsChanged()
     }
 }
 
+void OpenGLCore::viewTransformChanged()
+{
+    // the draws set it as their uniform
+    m_projectionMatrix=viewProjection(*this);
+}
+
 OpenGLCore::GLObjectNames OpenGLCore::getGLObjectNames() const
 {
     GLObjectNames names;
@@ -528,7 +542,7 @@ void OpenGLCore::init()
 {
     const Rect &view=viewRect();
 
-    m_projectionMatrix=viewProjection(view);
+    m_projectionMatrix=viewProjection(*this);
 
     // nothing of the mirror is on the buffers below yet, and the view is the clip region
     SlotRenderer::init();
@@ -798,7 +812,7 @@ void OpenGLCore::setViewRect(const gweni::Rect &viewRect)
 {
     SlotRenderer::setViewRect(viewRect);
 
-    m_projectionMatrix=viewProjection(viewRect);
+    m_projectionMatrix=viewProjection(*this);
 
     glViewport(viewRect.x, viewRect.y, viewRect.w, viewRect.h);
 }
