@@ -21,6 +21,7 @@
 #include <gweni/utility.h>
 #include <gweni/objectIdBank.h>
 #include <algorithm>
+#include <limits>
 #include <list>
 #include <vector>
 
@@ -1437,10 +1438,19 @@ Size Base::getMaximumSize()
     return maximumSize;
 }
 
+// The render drain's helpers, inlined into each of its loops (GCC and Clang
+// leave a function or lambda called from several places out of line).
+#if defined(__GNUC__) || defined(__clang__)
+#define GWENI_RENDER_INLINE __attribute__((always_inline))
+#else
+#define GWENI_RENDER_INLINE
+#endif
+
 namespace
 {
 // renderer::Base::addClipRegion's intersection: \p clip narrowed to a w x h
 // rect at \p at; no overlap gives an empty region at the overlap's corner.
+GWENI_RENDER_INLINE inline
 Rect clipRegionAt(const Rect &clip, const Point &at, int w, int h)
 {
     const int x0=std::max(at.x, clip.x);
@@ -1454,6 +1464,7 @@ Rect clipRegionAt(const Rect &clip, const Point &at, int w, int h)
 // The render offset and clip region \p control's children render in, \p
 // control rendering at (offset, clip): its bounds' origin added, and its
 // bounds clipped to if it clips.
+GWENI_RENDER_INLINE inline
 void innerRenderState(Base *control, const Point &offset, const Rect &clip, Point &innerOffset,
     Rect &innerClip)
 {
@@ -1466,6 +1477,7 @@ void innerRenderState(Base *control, const Point &offset, const Rect &clip, Poin
 
 // The clip region \p child of \p parent renders in, \p parent's children's
 // being (offset, clip): narrowed by the parent's getChildClipRect() for it.
+GWENI_RENDER_INLINE inline
 void childRenderState(const Base *parent, const Base *child, const Point &offset, Rect &clip)
 {
     if(const Rect *childClip=parent->getChildClipRect(child))
@@ -1473,32 +1485,50 @@ void childRenderState(const Base *parent, const Base *child, const Point &offset
             childClip->h);
 }
 
-// The render offset and clip region the render drain gives \p control
-// (Base::drainRenderQueue), from its canvas rendering at (0, 0) in its own
-// bounds (Canvas::renderCanvas; a WindowCanvas's state is this one shifted),
-// down the m_actualParent chain. False if the chain ends at no canvas.
-bool renderStateOf(Base *control, Point &offset, Rect &clip)
+// One axis of the clip region a control's children are stamped with, worked
+// out up its ancestor chain in the coordinates of the ancestor reached. Each
+// clipRegionAt() of the drain keeps, on each axis, the largest lower edge and
+// the smallest upper edge it was given (an empty region at the largest lower
+// edge), so the order the ancestors narrow it in does not matter: \p low and
+// \p high are those edges so far, \p at the control's own lower edge, and
+// the control's two sizes give its two upper edges.
+struct ClipAxis
 {
-    Base *parent=control->getActualParent();
+    long long low;
+    long long high;
+    long long at;
+    int oldSize;
+    int newSize;
 
-    if(!parent)
+    void narrow(long long from, long long to)
     {
-        if(control->getCanvas() != control)
-            return false;
-        offset=Point(0, 0);
-        clip=control->getBounds();
-        return true;
+        low=std::max(low, from);
+        high=std::min(high, to);
     }
 
-    Point parentOffset;
-    Rect parentClip;
+    void shift(int by)
+    {
+        low+=by;
+        high+=by;
+        at+=by;
+    }
 
-    if(!renderStateOf(parent, parentOffset, parentClip))
-        return false;
-    innerRenderState(parent, parentOffset, parentClip, offset, clip);
-    childRenderState(parent, control, offset, clip);
-    return true;
-}
+    // Whether both sizes give the region the same extent on this axis, and
+    // will whatever the ancestors further up narrow it to: the upper edge so
+    // far is at or before the nearer of the control's two (it cuts both), or
+    // the farther one, cut, is at or before the lower edge (both empty).
+    bool same() const
+    {
+        if(oldSize == newSize)
+            return true;
+
+        const long long lower=std::max(low, at);
+        const long long nearer=at+std::min(oldSize, newSize);
+        const long long farther=at+std::max(oldSize, newSize);
+
+        return (high <= nearer) || (std::min(high, farther) <= lower);
+    }
+};
 }//namespace
 
 bool Base::childRegionChanged(const Rect &oldBounds)
@@ -1515,18 +1545,34 @@ bool Base::childRegionChanged(const Rect &oldBounds)
     if(!shouldClip())
         return false;
 
-    Point offset;
-    Rect clip;
+    // The region it renders in narrowed as the render drain narrows it
+    // (innerRenderState, childRenderState), from its parent up, stopping as
+    // soon as both sizes give the same region: no ancestor further up can
+    // make them differ again. Its canvas's children render in the canvas's
+    // bounds; off any canvas, a region not settled by then is not known.
+    const long long unbounded=std::numeric_limits<long long>::max()/4;
+    ClipAxis x{-unbounded, unbounded, m_bounds.x, oldBounds.w, m_bounds.w};
+    ClipAxis y{-unbounded, unbounded, m_bounds.y, oldBounds.h, m_bounds.h};
+    const Base *child=this;
 
-    // a canvas's children render in its bounds; off any canvas, nothing is
-    // known about the region it will be in
-    if(!m_actualParent || !renderStateOf(this, offset, clip))
-        return true;
-
-    const Point at(offset.x+m_bounds.x, offset.y+m_bounds.y);
-
-    return !(clipRegionAt(clip, at, oldBounds.w, oldBounds.h) ==
-        clipRegionAt(clip, at, m_bounds.w, m_bounds.h));
+    for(Base *parent=m_actualParent; parent; child=parent, parent=parent->m_actualParent)
+    {
+        if(const Rect *childClip=parent->getChildClipRect(child))
+        {
+            x.narrow(childClip->x, static_cast<long long>(childClip->x)+childClip->w);
+            y.narrow(childClip->y, static_cast<long long>(childClip->y)+childClip->h);
+        }
+        if(parent->shouldClip() || (!parent->m_actualParent && parent->getCanvas() == parent))
+        {
+            x.narrow(0, parent->m_bounds.w);
+            y.narrow(0, parent->m_bounds.h);
+        }
+        if(x.same() && y.same())
+            return false;
+        x.shift(parent->m_bounds.x);
+        y.shift(parent->m_bounds.y);
+    }
+    return true;
 }
 
 void Base::onBoundsChanged(Rect oldBounds)
@@ -1549,7 +1595,9 @@ void Base::onBoundsChanged(Rect oldBounds)
     // the arrange moves or resizes below is marked by its own setBounds. In a
     // top-down arrange the region this control is in is already the new one:
     // an ancestor whose region changed has marked this subtree, or will.
-    if(childRegionChanged(oldBounds))
+    // A control with no children has nothing below it to mark, and no
+    // region to work out.
+    if(!m_children.empty() && childRegionChanged(oldBounds))
         addStateChangeRecursive(StateChange_Geometry);
 
 //    redraw();
@@ -1902,14 +1950,6 @@ void Base::zChildRemoved()
             ++canvas->m_treeSerial;
     }
 }
-
-// The drain's per-control step, inlined into both of its loops (GCC and
-// Clang leave a lambda called twice out of line).
-#if defined(__GNUC__) || defined(__clang__)
-#define GWENI_RENDER_INLINE __attribute__((always_inline))
-#else
-#define GWENI_RENDER_INLINE
-#endif
 
 namespace
 {
