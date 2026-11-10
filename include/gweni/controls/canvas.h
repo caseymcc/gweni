@@ -473,11 +473,13 @@ public:
 protected:
 
     bool m_needsRedraw;
-    bool m_anyDelete;
     float m_scale;
     /// The renderer's textLayoutSerial() the tree was last laid out for
     unsigned m_textLayoutSerial=0;
 
+    /// The delayed deletes: the set holds what is still queued, the list the
+    /// order they go in, with entries the set no longer holds (controls
+    /// already deleted) skipped as they come up (processDelayedDeletes).
     controls::Base::List m_deleteList;
     std::set<controls::Base *> m_deleteSet;
     friend class controls::Base;

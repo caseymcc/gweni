@@ -33,7 +33,7 @@ namespace gweni
 namespace controls
 {
 
-Canvas::Canvas(skin::Base *skin): ParentClass(), m_anyDelete(false)
+Canvas::Canvas(skin::Base *skin): ParentClass()
 {
 //    enlargePrimitiveIds(this, m_primitiveIds, 1);
 
@@ -569,33 +569,25 @@ void Canvas::setScale(float f)
 
 void Canvas::addDelayedDelete(controls::Base *control)
 {
-    if(!m_anyDelete || m_deleteSet.find(control) == m_deleteSet.end())
-    {
-        m_anyDelete=true;
-        m_deleteSet.insert(control);
+    if(m_deleteSet.insert(control).second)
         m_deleteList.push_back(control);
-    }
 }
 
+// A control deleted before its turn (by an ancestor, a destructor or the app)
+// leaves the set only; its list entry is skipped when it comes up.
 void Canvas::PreDeleteCanvas(controls::Base *control)
 {
-    if(m_anyDelete)
-    {
-        std::set<controls::Base *>::iterator itFind;
-
-        if((itFind=m_deleteSet.find(control)) != m_deleteSet.end())
-        {
-            m_deleteList.remove(control);
-            m_deleteSet.erase(control);
-            m_anyDelete=!m_deleteSet.empty();
-        }
-    }
+    m_deleteSet.erase(control);
 }
 
-// From the live queue, front first: a control deleting a descendant queued
-// after it (or one deleted outright from a destructor) takes it out of the
-// queue (PreDeleteCanvas), so nothing is deleted twice, and what a destructor
-// queues goes in this frame too.
+// The list front first, until it is empty: what a destructor queues is
+// appended and goes in this call too. An entry is deleted only if the set
+// still holds it, so a control deleted with an ancestor queued before it, or
+// by another queued control's destructor, is skipped, and a stale entry (a
+// control already freed) is never dereferenced. If a freed control's address
+// is reused by a control queued later, the stale entry deletes that control
+// at the stale position, still once and in this batch, and its own entry is
+// skipped.
 void Canvas::processDelayedDeletes()
 {
     while(!m_deleteList.empty())
@@ -603,8 +595,9 @@ void Canvas::processDelayedDeletes()
         controls::Base *control=m_deleteList.front();
 
         m_deleteList.pop_front();
-        m_deleteSet.erase(control);
-        m_anyDelete=!m_deleteSet.empty();
+
+        if(m_deleteSet.erase(control) == 0)
+            continue;
 
         control->preDelete(getSkin());
         delete control;
