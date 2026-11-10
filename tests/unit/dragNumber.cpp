@@ -28,7 +28,12 @@
  *  while it is typed into, or whose box stops taking keyboard input, commits
  *  too (the box's onLostKeyboardFocus() runs once), laid out in that frame's
  *  update phase in one pass, and shown again it is an unedited field at rest.
- *  The box is made once: its ids are taken by the first edit only. Up/Right
+ *  The box is made once: its ids are taken by the first edit only. Opening
+ *  and closing the box each way moves no control and keeps the field's
+ *  preferred size, in one update-phase pass, whatever its size flags: docked
+ *  Top and Elastic, Elastic in a HorizontalLayout cell, Elastic in X docked
+ *  Left; the box covers the field, 0,0,w,h; and a value the app sets while it
+ *  is open still widens an Elastic field (#521). Up/Right
  *  and Down/Left step the focused field. The format is refused unless it
  *  holds one conversion of a double. The textured renderer draws the field
  *  DragNumber at rest, DragNumberHover hovered, DragNumberDown pressed,
@@ -38,6 +43,7 @@
 #include "headlessFixture.h"
 
 #include <gweni/controls/dragNumber.h>
+#include <gweni/controls/layout/layout.h>
 #include <gweni/controls/text.h>
 #include <gweni/controls/textBox.h>
 #include <gweni/inputHandler.h>
@@ -840,4 +846,212 @@ TEST_CASE("DragNumber: the textured renderer draws one slot by state, and a disa
     CHECK_FALSE(field->isDepressed());
     scene.doubleClick(field);
     CHECK_FALSE(field->isEditing());
+}
+
+namespace
+{
+
+using BoundsList=std::vector<std::pair<const controls::Base *, Rect>>;
+
+//! Every control's bounds under \p control, but \p skip's subtree.
+void collectBounds(const controls::Base *control, const controls::Base *skip, BoundsList &out)
+{
+    if(control == skip)
+        return;
+    out.push_back({control, control->getBounds()});
+    for(const controls::Base *child : control->getActualChildren())
+        collectBounds(child, skip, out);
+}
+
+//! Every control's bounds and the field's preferred size, as they were when
+//! taken: the edit box opening or closing must leave them so.
+struct LayoutSnapshot
+{
+    Scene &scene;
+    DragNumber *field;
+    BoundsList bounds;
+    Size preferred;
+
+    LayoutSnapshot(Scene &scene, DragNumber *field):
+        scene(scene),
+        field(field)
+    {
+        collectBounds(scene.canvas, field->getEditBox(), bounds);
+        preferred=field->getPreferredSize();
+    }
+
+    void check(const char *step) const
+    {
+        const String when=step;
+
+        CAPTURE(when);
+
+        BoundsList now;
+
+        collectBounds(scene.canvas, field->getEditBox(), now);
+        REQUIRE(now.size() == bounds.size());
+        for(size_t i=0; i < now.size(); ++i)
+        {
+            const String type=now[i].first->getTypeName();
+            const Rect &was=bounds[i].second;
+            const Rect &is=now[i].second;
+
+            CAPTURE(type);
+            CAPTURE(i);
+            CHECK(now[i].first == bounds[i].first);
+            CHECK(is.x == was.x);
+            CHECK(is.y == was.y);
+            CHECK(is.w == was.w);
+            CHECK(is.h == was.h);
+        }
+        CHECK(field->getPreferredSize().width == preferred.width);
+        CHECK(field->getPreferredSize().height == preferred.height);
+        // one pass, in the update phase
+        CHECK(scene.canvas->getLayoutStats().passes == 1);
+        CHECK_FALSE(scene.canvas->getLayoutStats().renderLayout);
+        if(field->isEditing())
+        {
+            const Rect box=field->getEditBox()->getBounds();
+
+            CHECK(box.x == 0);
+            CHECK(box.y == 0);
+            CHECK(box.w == field->getWidth());
+            CHECK(box.h == field->getHeight());
+        }
+    }
+};
+
+//! Lays the scene out until a frame runs no pass.
+void settle(Scene &scene)
+{
+    for(int i=0; i < 10; ++i)
+    {
+        scene.frame();
+        if(scene.canvas->getLayoutStats().passes == 0)
+            break;
+    }
+}
+
+//! Opens \p field's edit box each way (a double-click, a Ctrl+click, Return)
+//! and closes it each way (Return, Escape, a click on \p elsewhere), the value
+//! left as it was, and checks the layout after every open and close frame.
+void checkEditKeepsLayout(Scene &scene, DragNumber *field, controls::Base *elsewhere)
+{
+    settle(scene);
+    const double value=field->getNumber();
+    const LayoutSnapshot before(scene, field);
+    REQUIRE(field->getWidth() > 0);
+    REQUIRE(field->getHeight() > 0);
+
+    // a double-click, Return committing the value it shows
+    scene.doubleClick(field);
+    REQUIRE(field->isEditing());
+    before.check("opened by a double-click");
+    scene.key(keys::Return);
+    REQUIRE_FALSE(field->isEditing());
+    before.check("committed by Return");
+
+    // a Ctrl+click, typed into, Escape
+    scene.hold(keys::Control, true);
+    scene.click(field);
+    scene.hold(keys::Control, false);
+    REQUIRE(field->isEditing());
+    before.check("opened by a Ctrl+click");
+    scene.type("42");
+    scene.frame();
+    before.check("typed into");
+    scene.key(keys::Escape);
+    REQUIRE_FALSE(field->isEditing());
+    before.check("cancelled by Escape");
+
+    // Return on the focused field, the focus then lost
+    REQUIRE(KeyboardFocus == field);
+    scene.key(keys::Return);
+    REQUIRE(field->isEditing());
+    before.check("opened by Return");
+    scene.click(elsewhere);
+    REQUIRE_FALSE(field->isEditing());
+    before.check("committed by a lost focus");
+
+    CHECK(field->getNumber() == value);
+}
+
+}//namespace
+
+TEST_CASE("DragNumber: docked Top, Elastic, the edit box opening and closing moves nothing and keeps its size")
+{
+    Scene scene;
+    controls::Base *parent=scene.canvas->newChild<controls::Base>();
+    parent->setBounds(0, 0, 300, 200);
+    DragNumber *field=parent->newChild<DragNumber>();
+    field->setDock(DockPosition::Top);
+    field->setSizeFlags({SizeFlag::Elastic, SizeFlag::Elastic});
+    field->setNumber(128.0);
+    controls::Base *below=parent->newChild<controls::Base>();
+    below->setDock(DockPosition::Top);
+    below->setHeight(30);
+    controls::TextBox *elsewhere=scene.canvas->newChild<controls::TextBox>();
+    elsewhere->setPos(20, 300);
+
+    checkEditKeepsLayout(scene, field, elsewhere);
+}
+
+TEST_CASE("DragNumber: Elastic in a HorizontalLayout cell, the edit box opening and closing moves nothing")
+{
+    Scene scene;
+    // a row as high as its cells, above a block docked Top
+    controls::Base *row=scene.canvas->newChild<controls::Base>();
+    row->setDock(DockPosition::Top);
+    controls::HorizontalLayout *layout=new controls::HorizontalLayout();
+    row->setLayout(layout);
+    DragNumber *field=row->newChild<DragNumber>();
+    field->setSizeFlags({SizeFlag::Elastic, SizeFlag::Elastic});
+    field->setNumber(128.0);
+    layout->addControl(field);
+    controls::Base *next=row->newChild<controls::Base>();
+    next->setSizeFlags({SizeFlag::Fixed, SizeFlag::Fixed});
+    next->setSize(10, 4);
+    layout->addControl(next);
+    controls::Base *below=scene.canvas->newChild<controls::Base>();
+    below->setDock(DockPosition::Top);
+    below->setHeight(30);
+    controls::TextBox *elsewhere=scene.canvas->newChild<controls::TextBox>();
+    elsewhere->setPos(20, 300);
+
+    checkEditKeepsLayout(scene, field, elsewhere);
+}
+
+TEST_CASE("DragNumber: Elastic in X, docked Left, the edit box keeps its width, and a new value still widens it")
+{
+    Scene scene;
+    controls::Base *parent=scene.canvas->newChild<controls::Base>();
+    parent->setBounds(0, 0, 400, 40);
+    DragNumber *field=parent->newChild<DragNumber>();
+    field->setDock(DockPosition::Left);
+    field->setSizeFlags({SizeFlag::Elastic, SizeFlag::Fixed});
+    field->setNumber(5.0);
+    controls::Base *next=parent->newChild<controls::Base>();
+    next->setDock(DockPosition::Left);
+    next->setWidth(30);
+    controls::TextBox *elsewhere=scene.canvas->newChild<controls::TextBox>();
+    elsewhere->setPos(20, 300);
+
+    checkEditKeepsLayout(scene, field, elsewhere);
+
+    // the app sets a longer value while the box is open: the field widens to
+    // it, the box with it, and the block after it moves
+    scene.doubleClick(field);
+    REQUIRE(field->isEditing());
+    settle(scene);
+    const int width=field->getWidth();
+    const int nextX=next->getX();
+    field->setNumber(123456789.0);
+    settle(scene);
+    CHECK(field->getWidth() > width);
+    CHECK(next->getX() > nextX);
+    CHECK((field->getEditBox()->getBounds() == Rect(0, 0, field->getWidth(), field->getHeight())));
+    const int wide=field->getWidth();
+    scene.key(keys::Escape);
+    CHECK(field->getWidth() == wide);
+    CHECK(field->getText() == "123456789.000");
 }
