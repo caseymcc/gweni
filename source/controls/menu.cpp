@@ -23,6 +23,11 @@ bool samePoint(const Point &a, const Point &b)
 {
     return (a.x == b.x) && (a.y == b.y);
 }
+
+bool sameRect(const Rect &a, const Rect &b)
+{
+    return (a.x == b.x) && (a.y == b.y) && (a.w == b.w) && (a.h == b.h);
+}
 }
 
 
@@ -42,6 +47,9 @@ GWENI_CONTROL_CONSTRUCTOR(Menu)
 
 Menu::~Menu()
 {
+    if(m_followedBy)
+        m_followedBy->anchoredMenuDeleted(this);
+
     for(Base *owner : m_contextOwners)
         owner->contextMenuDeleted();
 
@@ -136,6 +144,7 @@ Point Menu::canvasPosition(const Rect &area)
         const Point origin=m_anchor->localPosToCanvas();
 
         m_placedFor=Rect(origin.x, origin.y, m_anchor->getWidth(), m_anchor->getHeight());
+        m_placedIn=area;
         return Popup::placement(m_placedFor, size, area, m_anchorSide, m_anchorGap);
     }
 
@@ -280,6 +289,38 @@ void Menu::openNextTo(Base *anchor, PopupPlacement side, int gap)
     m_anchorRequest=Point(getRequestedBounds().x, getRequestedBounds().y);
     m_placedFor=Rect();
     invalidate();
+    canvas->followAnchoredMenu(this);
+}
+
+bool Menu::followAnchor(Canvas *canvas)
+{
+    if(!m_anchor || hidden() || (getParent() != canvas))
+        return false;
+
+    if(!m_anchor->visible() || (m_anchor->getCanvas() != canvas))
+    {
+        // as its item closes it, with every submenu open under it
+        close();
+        closeAll();
+        return false;
+    }
+
+    const Point origin=m_anchor->localPosToCanvas();
+    bool place=!sameRect(Rect(origin.x, origin.y, m_anchor->getWidth(), m_anchor->getHeight()),
+        m_placedFor) || !sameRect(Rect(0, 0, canvas->getWidth(), canvas->getHeight()), m_placedIn);
+
+    // What this frame's pass lays out may move the anchor: the menu comes
+    // after the anchor's top-level ancestor among the canvas's children, so
+    // laid out too it is placed from where the pass puts the anchor. A
+    // submenu's anchor is in its parent menu, which comes before it in the
+    // list, so it is laid out with the menu that moves it.
+    for(Base *control=m_anchor; !place && control && (control != canvas); control=control->getParent())
+        place=control->layoutDirty();
+
+    if(place)
+        invalidate();
+
+    return true;
 }
 
 void Menu::setHidden(bool hidden)

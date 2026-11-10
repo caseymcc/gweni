@@ -237,6 +237,7 @@ void Canvas::doThink()
 #endif
     processDelayedDeletes();
     updatePopup();
+    updateAnchoredMenus();
     updateToolTip();
     // A focus hidden or turned off before the frame is dropped before its
     // layout, so what its onLostKeyboardFocus() changes (a DragNumber ending
@@ -624,6 +625,11 @@ void Canvas::releaseChildren()
         delete child;
     }
 
+    // the menus left are off the canvas, and outlive it
+    for(Menu *menu : m_anchoredMenus)
+        menu->m_followedBy=nullptr;
+    m_anchoredMenus.clear();
+
     m_releasingChildren=false;
 }
 
@@ -924,6 +930,66 @@ void Canvas::updatePopup()
         closePopup();
     else if(!m_popupIsMenu)
         static_cast<Popup *>(m_popup)->followAnchor();
+}
+
+void Canvas::followAnchoredMenu(Menu *menu)
+{
+    if(menu->m_followedBy == this)
+        return;
+
+    if(menu->m_followedBy)
+        menu->m_followedBy->anchoredMenuDeleted(menu);
+
+    menu->m_followedBy=this;
+    m_anchoredMenus.push_back(menu);
+}
+
+void Canvas::anchoredMenuDeleted(Menu *menu)
+{
+    std::vector<Menu *>::iterator iter=std::find(m_anchoredMenus.begin(), m_anchoredMenus.end(), menu);
+
+    if(iter != m_anchoredMenus.end())
+        m_anchoredMenus.erase(iter);
+    menu->m_followedBy=nullptr;
+}
+
+void Canvas::menuAnchorDeleted(Base *control)
+{
+    // Closing changes no entry: a closed menu leaves in the next update phase.
+    // A canvas tearing down only forgets the anchor: what a close redraws (the
+    // item a submenu belongs to) may be gone.
+    for(Menu *menu : m_anchoredMenus)
+    {
+        if(menu->m_anchor != control)
+            continue;
+
+        menu->m_anchor=nullptr;
+
+        if(!m_releasingChildren)
+        {
+            menu->close();
+            menu->closeAll();
+        }
+    }
+}
+
+// A menu closed or placed some other way since the last frame leaves the
+// list here; Menu::followAnchor closes one whose anchor is hidden.
+void Canvas::updateAnchoredMenus()
+{
+    for(size_t i=0; i < m_anchoredMenus.size();)
+    {
+        Menu *menu=m_anchoredMenus[i];
+
+        if(menu->followAnchor(this))
+        {
+            ++i;
+            continue;
+        }
+
+        menu->m_followedBy=nullptr;
+        m_anchoredMenus.erase(m_anchoredMenus.begin()+i);
+    }
 }
 
 void Canvas::keepOverlaysLast()

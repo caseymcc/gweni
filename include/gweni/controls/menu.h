@@ -65,7 +65,9 @@ public:
     //! laid out, not where it was at the call. From the first call on it is
     //! self-placed (Placement::Owner) on the canvas. A setPos()/setBounds()
     //! after it places it there instead, kept inside the canvas; hiding it or
-    //! openAt() forgets the anchor. The anchor must outlive its being open.
+    //! openAt() forgets the anchor. While it is open the canvas follows it
+    //! (Canvas::anchoredMenus()): it is laid out again when the anchor moves,
+    //! and closed when the anchor is hidden or deleted.
     virtual void openNextTo(Base *anchor, PopupPlacement side, int gap);
     //! What openNextTo() placed it next to, while it does; null otherwise.
     Base *getAnchor() const
@@ -146,6 +148,18 @@ protected:
     int m_anchorGap=0;
     Point m_anchorRequest;
     Rect m_placedFor;
+    //! The canvas area it was last placed in next to its anchor.
+    Rect m_placedIn;
+    //! The canvas following it (Canvas::followAnchoredMenu), which has it in
+    //! its anchoredMenus(); null for none.
+    Canvas *m_followedBy=nullptr;
+
+    //! Canvas::updateAnchoredMenus, for a menu \p canvas follows: false once
+    //! it is no longer open next to an anchor on that canvas, which it closes
+    //! when the anchor is no longer visible() there; invalidated when the
+    //! anchor's canvas rect is not m_placedFor, the canvas's not m_placedIn,
+    //! or the anchor or an ancestor below the canvas is laid out this frame.
+    bool followAnchor(Canvas *canvas);
 
     //! The controls it is the context menu of (Base::setContextMenu).
     std::vector<Base *> m_contextOwners;
@@ -153,6 +167,7 @@ protected:
     //! for any other menu, and once that item is being deleted.
     MenuItem *m_parentItem=nullptr;
     friend class Base;
+    friend class Canvas;
     friend class MenuItem;
 };
 

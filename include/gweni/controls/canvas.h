@@ -382,6 +382,29 @@ public:
     void popupControlDeleted(Base *control);
     /// \}
 
+    /// \sect{Anchored menus}
+    /// A Menu opened next to a control (Menu::openNextTo: a MenuItem's menu, a
+    /// strip menu or a submenu) is followed by the canvas while it is open:
+    /// the update phase lays it out again when its anchor's canvas rect or the
+    /// canvas's size is not the one it was last placed for, or when the
+    /// frame's pass lays out the anchor or an ancestor of it below the canvas
+    /// (so it is placed in that same pass, after the anchor), and closes it
+    /// when its anchor is no longer visible(). Only the menus open so are looked at, so the cost is
+    /// the open strip menu and its open submenus, and a frame where no anchor
+    /// moved lays out nothing. A menu leaves the list when it closes, when it
+    /// is placed some other way and when it is deleted; deleting its anchor
+    /// closes it.
+
+    /// The menus followed now, in the order they opened.
+    const std::vector<Menu *> &anchoredMenus() const { return m_anchoredMenus; }
+    /// Menu::openNextTo: follow \p menu.
+    void followAnchoredMenu(Menu *menu);
+    /// ~Menu: \p menu is being deleted.
+    void anchoredMenuDeleted(Menu *menu);
+    /// Base: \p control is being deleted; a menu open next to it closes.
+    void menuAnchorDeleted(Base *control);
+    /// \}
+
     /// \sect{Context menu}
     /// A right-button press opens the context menu (Base::setContextMenu) of
     /// the control under the mouse, or of its nearest ancestor with one
@@ -485,6 +508,8 @@ protected:
     /// way, closes the popup whose anchor is hidden or disabled, and lays a
     /// Popup out again when its anchor moved.
     void updatePopup();
+    /// The update phase's step for the anchored menus (see above).
+    void updateAnchoredMenus();
     /// Puts a shown Popup after every other child but the Menus that were
     /// after it, and the ToolTip box at the end of the child list; run before
     /// the z renumber, which every change of the list's order asks for.
@@ -561,6 +586,8 @@ protected:
     Base *m_popupAnchor=nullptr;
     bool m_popupIsMenu=false;
     Menu *m_contextMenu=nullptr;
+    /// The menus open next to an anchor (anchoredMenus()).
+    std::vector<Menu *> m_anchoredMenus;
     /// releaseChildren() is deleting the tree.
     bool m_releasingChildren=false;
 

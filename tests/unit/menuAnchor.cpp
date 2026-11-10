@@ -21,6 +21,18 @@
  *  is hidden, a setPos() after it (which then wins, kept inside the canvas,
  *  the item's moves taking it nowhere) or an openAt() (at the cursor, flipped
  *  at the right edge as a context menu).
+ *
+ *  The canvas follows the open anchored menus (Canvas::anchoredMenus(): the
+ *  open strip menu and its open submenus, nothing else): a frame whose pass
+ *  lays out the strip places the menu in that pass, at the item's new place;
+ *  three levels of submenus, opened before any frame and moved with the
+ *  strip, each follow their item; a menu numbered before its strip (the strip
+ *  brought to the front after it opened) still ends at its item, each frame
+ *  in one pass. Hiding the strip closes its menu and the submenu
+ *  open under it; deleting the strip, delayed or outright, or a control a menu
+ *  was opened next to closes the menu, and the list holds no deleted menu or
+ *  closed one after the next frame, a canvas deleted with menus open
+ *  included.
  */
 #include "headlessFixture.h"
 
@@ -29,6 +41,9 @@
 #include <gweni/controls/menuStrip.h>
 
 #include <doctest/doctest.h>
+
+#include <algorithm>
+#include <vector>
 
 using namespace gweni;
 
@@ -231,6 +246,10 @@ TEST_CASE("Menu anchor: an open strip menu follows its item when an earlier item
 
         scene.file->setText("File with a much longer caption");
         scene.file->sizeToContents();
+        // the strip laid out, the menu is placed in the same pass, after it
+        scene.frame();
+        CHECK(scene.canvas->getLayoutStats().passes == 1);
+        CHECK_AT(menu, belowItem(scene.edit));
         scene.settle();
 
         REQUIRE(canvasRect(scene.edit).x > before.x);
@@ -402,4 +421,229 @@ TEST_CASE("Menu anchor: a menu opened next to its item is the size the canvas ga
     CHECK(anchored->getWidth() == placed->getWidth());
     CHECK(anchored->getHeight() == placed->getHeight());
     CHECK(anchored->getHeight() > 0);
+}
+
+namespace
+{
+
+//! Whether \p menu is in the canvas's followed menus.
+bool followed(Scene &scene, controls::Menu *menu)
+{
+    const std::vector<controls::Menu *> &menus=scene.canvas->anchoredMenus();
+    return std::find(menus.begin(), menus.end(), menu) != menus.end();
+}
+
+}//namespace
+
+TEST_CASE("Menu anchor: the canvas follows only the open anchored menus")
+{
+    Scene scene;
+    controls::Menu *fileMenu=scene.file->getMenu();
+    controls::Menu *submenu=scene.recent->getMenu();
+    // a context menu is the canvas's popup, not followed
+    controls::Base *box=scene.canvas->newChild<controls::Base>();
+
+    box->setSizeFlags({SizeFlag::Fixed, SizeFlag::Fixed});
+    box->setBounds(250, 200, 40, 20);
+
+    controls::Menu *context=box->createContextMenu();
+
+    context->addItem("Pin");
+    scene.settle();
+    CHECK(scene.canvas->anchoredMenus().empty());
+
+    scene.file->openMenu();
+    scene.recent->openMenu();
+    CHECK(scene.canvas->anchoredMenus().size() == 2);
+    CHECK(followed(scene, fileMenu));
+    CHECK(followed(scene, submenu));
+    // opened again: once in the list
+    scene.recent->openMenu();
+    CHECK(scene.canvas->anchoredMenus().size() == 2);
+    scene.settle();
+    checkSettled(scene);
+
+    context->openAt(Point(250, 200));
+    CHECK_FALSE(followed(scene, context));
+
+    scene.recent->closeMenu();
+    scene.frame();
+    CHECK(scene.canvas->anchoredMenus().size() == 1);
+    CHECK(followed(scene, fileMenu));
+
+    scene.canvas->closeMenus();
+    scene.frame();
+    CHECK(scene.canvas->anchoredMenus().empty());
+}
+
+TEST_CASE("Menu anchor: three levels of submenus each follow their item")
+{
+    for(float scale : {1.0f, 1.5f, 2.0f})
+    {
+        CAPTURE(scale);
+
+        Scene scene(scale);
+        controls::MenuItem *deeper=scene.recent->getMenu()->addItem("Deeper");
+        controls::MenuItem *deepest=deeper->getMenu()->addItem("Deepest");
+
+        deepest->getMenu()->addItem("Leaf");
+
+        // all opened before any frame
+        scene.file->openMenu();
+        scene.recent->openMenu();
+        deeper->openMenu();
+        deepest->openMenu();
+        CHECK(scene.canvas->anchoredMenus().size() == 4);
+        scene.settle();
+
+        auto check=[&]()
+        {
+            CHECK_AT(scene.file->getMenu(), belowItem(scene.file));
+
+            for(controls::MenuItem *item : {scene.recent, deeper, deepest})
+            {
+                const Rect r=canvasRect(item);
+                controls::Menu *menu=item->getMenu();
+
+                CHECK(menu->visible());
+                CHECK(menu->getY() == r.y);
+                // right of the item, or on its left at the canvas's edge
+                CHECK(((menu->getX() == r.x+r.w) || (menu->getX()+menu->getWidth() == r.x)));
+            }
+        };
+
+        check();
+        checkSettled(scene);
+
+        // the strip's first item moves the whole chain
+        controls::Base *spacer=scene.strip->getParent()->newChild<controls::Base>();
+
+        spacer->setDock(DockPosition::Top);
+        spacer->setSizeFlags({SizeFlag::Expand, SizeFlag::Fixed});
+        spacer->setHeight(20);
+        // above the strip
+        spacer->sendToBack();
+        scene.settle();
+
+        CHECK(canvasRect(scene.file).y >= 20);
+        check();
+        checkSettled(scene);
+    }
+}
+
+TEST_CASE("Menu anchor: a menu numbered before its strip still ends at its item")
+{
+    Scene scene;
+    controls::Menu *menu=scene.edit->getMenu();
+
+    scene.settle();
+    scene.edit->openMenu();
+    scene.settle();
+    // the strip after its menu among the canvas's children
+    scene.strip->bringToFront();
+    scene.settle();
+
+    const controls::Base::List &children=scene.canvas->getChildren();
+
+    REQUIRE(std::find(children.begin(), children.end(), menu)
+        == std::find_if(children.begin(), children.end(),
+            [&](controls::Base *c) { return c == menu || c == scene.strip; }));
+    CHECK_AT(menu, belowItem(scene.edit));
+
+    scene.file->setText("File with a much longer caption");
+    scene.file->sizeToContents();
+    scene.settle();
+    CHECK_AT(menu, belowItem(scene.edit));
+    checkSettled(scene);
+}
+
+TEST_CASE("Menu anchor: hiding the strip closes its menu and the submenu under it")
+{
+    Scene scene;
+    controls::Menu *fileMenu=scene.file->getMenu();
+    controls::Menu *submenu=scene.recent->getMenu();
+
+    scene.settle();
+    scene.file->openMenu();
+    scene.recent->openMenu();
+    scene.settle();
+    REQUIRE(submenu->visible());
+
+    scene.strip->setHidden(true);
+    scene.settle();
+    CHECK_FALSE(fileMenu->visible());
+    CHECK_FALSE(submenu->visible());
+    CHECK_FALSE(scene.file->isMenuOpen());
+    CHECK(scene.canvas->anchoredMenus().empty());
+
+    // shown again, it opens its menus where they belong
+    scene.strip->setHidden(false);
+    scene.settle();
+    CHECK_FALSE(fileMenu->visible());
+    scene.file->openMenu();
+    scene.settle();
+    CHECK_AT(fileMenu, belowItem(scene.file));
+}
+
+TEST_CASE("Menu anchor: deleting the anchor closes the menu and leaves nothing in the list")
+{
+    SUBCASE("the strip, delayed")
+    {
+        Scene scene;
+        scene.file->openMenu();
+        scene.recent->openMenu();
+        scene.settle();
+        scene.strip->delayedDelete();
+        scene.settle();
+        CHECK(scene.canvas->anchoredMenus().empty());
+        CHECK(scene.renderer.doubleReleased == 0);
+    }
+
+    SUBCASE("the strip, outright")
+    {
+        Scene scene;
+        scene.file->openMenu();
+        scene.recent->openMenu();
+        scene.settle();
+        delete scene.strip;
+        scene.settle();
+        CHECK(scene.canvas->anchoredMenus().empty());
+    }
+
+    SUBCASE("a control a menu was opened next to")
+    {
+        Scene scene;
+        controls::Base *box=scene.canvas->newChild<controls::Base>();
+
+        box->setSizeFlags({SizeFlag::Fixed, SizeFlag::Fixed});
+        box->setBounds(100, 100, 50, 20);
+
+        controls::Menu *menu=scene.canvas->newChild<controls::Menu>();
+
+        menu->addItem("One");
+        menu->openNextTo(box, controls::PopupPlacement::Below, 1);
+        scene.settle();
+        CHECK_AT(menu, Point(100, 121));
+
+        // moved, then deleted
+        box->setPos(120, 100);
+        scene.settle();
+        CHECK_AT(menu, Point(120, 121));
+
+        delete box;
+        CHECK(menu->hidden());
+        CHECK(menu->getAnchor() == nullptr);
+        scene.settle();
+        CHECK(scene.canvas->anchoredMenus().empty());
+    }
+
+    SUBCASE("the canvas, with its menus open")
+    {
+        // ~Scene deletes the canvas: no entry outlives a menu
+        Scene scene;
+        scene.file->openMenu();
+        scene.recent->openMenu();
+        scene.settle();
+        REQUIRE(scene.canvas->anchoredMenus().size() == 2);
+    }
 }

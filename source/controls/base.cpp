@@ -269,6 +269,7 @@ Base::~Base()
             canvas->PreDeleteCanvas(this);
             canvas->toolTipControlDeleted(this);
             canvas->popupControlDeleted(this);
+            canvas->menuAnchorDeleted(this);
             canvas->overlayDeleted(this);
         }
 
