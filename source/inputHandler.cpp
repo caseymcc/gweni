@@ -162,16 +162,27 @@ void onCanvasThink(controls::Base *control)
             UpdateHoveredControl(control);
     }
 
+    controls::Canvas *canvas=control->getCanvas();
+
+    // While an input capture has the canvas's input (a tools::DepthView), the
+    // hover stays and no key repeats: a stale hover waits for the capture to
+    // end, and a key held from before it goes up when it is released
+    // (Canvas::inputModifierKey).
+    const bool inputCaptured=(canvas && canvas->inputCapture());
+
     // Content moved under the resting mouse this frame, and the layout that
     // moved it is done: the hover goes to what is under the mouse now. A
     // capture keeps its holder hovered, as for a move.
-    if(controls::Canvas *canvas=control->getCanvas())
+    if(canvas && !inputCaptured)
     {
         if(canvas->takeHoverStale() && g_mouseCanvas == control)
             UpdateHoveredControl(control);
     }
 
     dropLostKeyboardFocus();
+
+    if(inputCaptured)
+        return;
 
     if(!KeyboardFocus)
         return;

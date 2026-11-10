@@ -12,7 +12,12 @@
  *  click is not pressed, a focused TextBox gets no text, and the frame after
  *  draws nothing. Without one (before, and once it is cleared) the same events
  *  reach the controls as ever, the first move hit-testing from where the mouse
- *  is.
+ *  is. A key or a button the canvas had down when the capture was set does not
+ *  stay down there: a held Backspace does not repeat into the focused TextBox
+ *  while the capture is set, its release goes up on the canvas as well as to
+ *  the capture (so it does not repeat once the capture is gone), and a held
+ *  Button's release ends its press where the canvas had the mouse, its mouse
+ *  focus let go.
  */
 #include "headlessFixture.h"
 
@@ -237,4 +242,97 @@ TEST_CASE("Input capture: typed text reaches the focused TextBox only without a 
     scene.frame();
     CHECK(scene.textBox->getText() == "abcd");
     CHECK(recorder.events.size() == 3);
+}
+
+TEST_CASE("Input capture: a key held when the capture is set does not repeat, and goes up")
+{
+    Scene scene;
+    controls::Canvas *canvas=scene.canvas;
+    Recorder recorder;
+
+    scene.click(20, 60);
+    REQUIRE(KeyboardFocus == scene.textBox);
+    scene.textBox->moveCaretToend();
+
+    // Backspace held: its press deletes one character (a frame now would
+    // repeat it, each frame being a second)
+    canvas->inputModifierKey(keys::Backspace, true);
+    REQUIRE(scene.textBox->getText() == "ab");
+    REQUIRE(input::isKeyDown(keys::Backspace));
+
+    // held on while the capture is set, frames well past the repeat delay
+    canvas->setInputCapture(&recorder);
+
+    for(int i=0; i < 5; ++i)
+        scene.frame();
+
+    CHECK(scene.textBox->getText() == "ab");
+    CHECK(scene.renderer.frameStats().textSlotsWritten == 0);
+
+    // its release reaches the capture and lets the key go on the canvas
+    CHECK(canvas->inputModifierKey(keys::Backspace, false));
+    CHECK_FALSE(input::isKeyDown(keys::Backspace));
+    CHECK(recorder.events == std::vector<std::string>{
+        "key "+std::to_string(keys::Backspace)+" up" });
+    CHECK(KeyboardFocus == scene.textBox);
+
+    canvas->setInputCapture(nullptr);
+
+    for(int i=0; i < 5; ++i)
+        scene.frame();
+
+    CHECK(scene.textBox->getText() == "ab");
+
+    // a key pressed while the capture was set was never down on the canvas
+    canvas->setInputCapture(&recorder);
+    canvas->inputModifierKey(keys::Delete, true);
+    canvas->setInputCapture(nullptr);
+    CHECK_FALSE(input::isKeyDown(keys::Delete));
+    canvas->inputModifierKey(keys::Delete, false);
+    scene.frame();
+    CHECK(scene.textBox->getText() == "ab");
+}
+
+TEST_CASE("Input capture: a button held when the capture is set is let go by its release")
+{
+    Scene scene;
+    controls::Canvas *canvas=scene.canvas;
+    Recorder recorder;
+
+    canvas->inputMouseMoved(30, 20, 0, 0);
+    canvas->inputMouseButton(0, true);
+    scene.frame();
+    REQUIRE(scene.button->isDepressed());
+    REQUIRE(MouseFocus == scene.button);
+    REQUIRE(input::isLeftMouseDown());
+
+    canvas->setInputCapture(&recorder);
+
+    // the capture's moves leave the press and the mouse where they were
+    canvas->inputMouseMoved(200, 150, 170, 130);
+    scene.frame();
+    CHECK(scene.button->isDepressed());
+    CHECK(MouseFocus == scene.button);
+
+    // the release ends the press where the canvas has the mouse, on the Button
+    CHECK(canvas->inputMouseButton(0, false));
+    CHECK_FALSE(input::isLeftMouseDown());
+    CHECK(MouseFocus == nullptr);
+    CHECK_FALSE(scene.button->isDepressed());
+    CHECK(scene.presses == 1);
+    CHECK(recorder.events == std::vector<std::string>{
+        "move 200,150 170,130", "button 0 up" });
+
+    // a press and release while the capture is set reach the capture alone
+    CHECK(canvas->inputMouseButton(0, true));
+    CHECK(canvas->inputMouseButton(0, false));
+    CHECK_FALSE(scene.button->isDepressed());
+    CHECK(scene.presses == 1);
+    CHECK(recorder.events.size() == 4);
+
+    canvas->setInputCapture(nullptr);
+    scene.frame();
+    CHECK(HoveredControl == scene.button);
+    scene.click(30, 20);
+    CHECK(scene.presses == 2);
 }

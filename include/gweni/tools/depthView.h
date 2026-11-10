@@ -49,7 +49,9 @@ namespace tools
 //! when the renderer's view rect changes (a resize), since the camera is built
 //! from it. One renderer draws one canvas's depth view at a time. It needs a
 //! SlotRenderer (OpenGLCore, renderer::Vulkan); on another renderer open()
-//! prints one line and opens nothing.
+//! prints one line and opens nothing. It holds that renderer by pointer and
+//! gives it the front view back as it closes, so close the view, or delete its
+//! canvas (which closes it), before deleting the renderer.
 class GWENI_EXPORT DepthView: public controls::InputCapture
 {
 public:

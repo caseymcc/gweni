@@ -775,10 +775,28 @@ bool Canvas::inputMouseMoved(int x, int y, int deltaX, int deltaY)
     return true;
 }
 
+// A button the canvas pressed before its input capture was set and has not
+// let go yet (input:: tracks the left and right ones).
+static bool heldBeforeCapture(int button)
+{
+    if(button == 0)
+        return input::isLeftMouseDown();
+
+    if(button == 1)
+        return input::isRightMouseDown();
+
+    return false;
+}
+
 bool Canvas::inputMouseButton(int button, bool down)
 {
     if(m_inputCapture)
     {
+        // A press the canvas took before the capture was set ends on the
+        // canvas, where the canvas has the mouse, so nothing stays held there.
+        if(!down && heldBeforeCapture(button))
+            input::onMouseClicked(this, button, false);
+
         m_inputCapture->captureMouseButton(button, down);
         return true;
     }
@@ -1329,6 +1347,12 @@ bool Canvas::inputModifierKey(int key, bool down)
 {
     if(m_inputCapture)
     {
+        // As for a press: a key the canvas has down goes up there, so it does
+        // not repeat once the capture is gone.
+        if(!down && (key > keys::Invalid) && (key < keys::KeysCount)
+            && input::isKeyDown(key))
+            input::onKeyEvent(this, key, false);
+
         m_inputCapture->captureKey(key, down);
         return true;
     }

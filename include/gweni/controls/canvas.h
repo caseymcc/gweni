@@ -30,8 +30,9 @@ class Popup;
 /// arrive as the canvas got them, in logical units, keys as gweni::keys codes
 /// and text as characters (Canvas::inputCharacter's filter not applied), and
 /// go nowhere else: no control and none of input::'s state (the hover, the
-/// focus, the mouse position, the keys held) sees them. Each has a default
-/// that ignores it.
+/// focus, the mouse position, the keys held) sees them, but for the release of
+/// a key or button the canvas had down before (Canvas::setInputCapture). Each
+/// has a default that ignores it.
 class GWENI_EXPORT InputCapture
 {
 public:
@@ -529,10 +530,13 @@ public:
     /// hit-tested, hovered, focused or pressed by it, and input::'s state stays
     /// as it was: the hovered control stays hovered, the focused one focused,
     /// and once the capture is gone the next move hit-tests from the position
-    /// the canvas had. A press or a key held across setting or clearing it
-    /// is not let go on the canvas, which the next release or key event sorts
-    /// out (input::GLFW3 syncs the modifiers before each key). The update and
-    /// render phases go on as without it. The capture is not owned; clear it
+    /// the canvas had (a stale hover, takeHoverStale, waits for that too).
+    /// What the canvas has down when it is set does not stay down: no key
+    /// repeats while it is set, and the release of a key or a left or right
+    /// button input:: has down goes up on the canvas as well as to the
+    /// capture, so a held press ends where the canvas has the mouse (a Button
+    /// held under it is clicked). The update and render phases go on as
+    /// without it. The capture is not owned; clear it
     /// (nullptr) before deleting it. One test per event, nothing per frame.
     /// A canvas deleted with a capture set tells it (captureCanvasDeleted).
     void setInputCapture(InputCapture *capture) { m_inputCapture=capture; }

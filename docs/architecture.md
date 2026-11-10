@@ -2911,9 +2911,13 @@ byte-identical):
 Nothing else depends on the orthographic projection: the SDF anti-aliasing is
 `dFdx/dFdy` of `vLocal`, text's of the atlas coordinates, depth is `gl_FragCoord.z`, and
 clipping compares the interpolated pre-transform pixel position (`vPixel`) with the
-slot's clip box, so a clipped slot is clipped in its own plane however it is seen. A
-polyline joint's half-layer depth is interpolated in screen space, a hair off under
-perspective, which a debug view can live with.
+slot's clip box, so a clipped slot is clipped in its own plane however it is seen. One
+thing is a little off when the view is turned: `vBehindDepth` is a `flat` varying, so a
+line's partly covered pixel lerps its own depth towards the half-layer-behind depth of
+the segment's provoking vertex, not of its own point, and along a segment that runs in
+depth that rim depth is off by up to the segment's depth change. Only the order of a
+polyline's anti-aliased rims against what lies at nearly their depth can change, which
+a debug view can live with (a line sits at z+1 over its frame).
 
 **The input: a canvas capture, not an overlay control.** A covering control would change
 the UI it shows: adding it moves `treeSerial` and renumbers z, taking the mouse un-hovers
@@ -2925,9 +2929,16 @@ while one is set, each of the canvas's `input*` calls (move, button, wheel,
 `input::`'s state (the hover, the focus, the mouse position, the keys held) stays as it
 was. One pointer test per event, none per frame. The UI keeps running: animations, the
 caret blink, a tooltip's delay. When the capture goes the canvas has the mouse position
-it had, and the next real move hit-tests from there; a press or key held across setting
-or clearing it is not let go on the canvas, which the next release or key event sorts
-out. A canvas deleted with a capture set tells it (`captureCanvasDeleted`). The apps'
+it had, and the next real move hit-tests from there, and a hover made stale by content
+moving under the mouse (`Canvas::takeHoverStale`) waits for that too. A key or a
+mouse button the canvas has down when the capture is set does not stay down there: no
+key repeats while a capture is set (`input::onCanvasThink`), and the release of a key
+`input::` has down, or of a left or right button it has down, goes up on the canvas as
+well as to the capture, so a held Backspace does not go on deleting once the view is
+closed, and a held press (a Button, a slider's thumb, a Window's title bar) ends where
+the canvas has the mouse, its mouse focus let go: a Button held under it is clicked, as
+a release there would click it. A key or button pressed while the capture is set was
+never down on the canvas, so its release after the capture is gone goes nowhere. A canvas deleted with a capture set tells it (`captureCanvasDeleted`). The apps'
 F9-F12 are handled in their key callbacks before the canvas, so the other tools still
 toggle while the view is open. The web reaches the canvas through `input::GLFW3` as
 native does, so it needs nothing of its own.
