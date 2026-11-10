@@ -158,6 +158,10 @@ public:
     size_t textSets() const { return m_textSets; }
     //! Every row's text, its cells joined with " | ", in order.
     std::vector<String> lines() const;
+    //! A byte count in at most 5 characters, as the upload row shows it: as it
+    //! is below 1000 ("512B"), else in kB, MB, ... of 1000, with its tenths
+    //! below 10 ("1.2MB", "12kB"), truncated.
+    static String bytes(size_t n);
 
     controls::PlotLines *cpuPlot() const { return m_cpuPlot; }
     controls::PlotLines *slotsPlot() const { return m_slotsPlot; }

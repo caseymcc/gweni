@@ -18,7 +18,10 @@
  *    no label and write no slot, and a refresh sets only labels whose text
  *    changed, in a frame with no layout pass counted and no animation run;
  *  - it shows the window's times (each phase one profile-clock step, the
- *    frame interval every read between two starts) and fps;
+ *    frame interval every read between two starts) and fps, under a
+ *    "time (ms)" corner, and the upload row's bytes with their unit;
+ *  - bytes() gives at most 5 characters at every unit's edge (B below 1000,
+ *    then kB, MB, ... of 1000, with tenths below 10, truncated);
  *  - an app change shows on the next refresh as the most one frame did
  *    (rendered, changed, the app's slots alone), and 0 on the one after;
  *  - it counts the app's controls, the tools' subtrees left out, and the
@@ -318,16 +321,38 @@ TEST_CASE("StatsOverlay: it shows the window's times and fps")
 
     const std::vector<String> lines=overlay->lines();
 
-    CHECK(lines[HeaderLine] == "ms | min | avg | max");
-    CHECK(lines[FrameLine] == "frame | 0.4 | 0.4 | 0.4");
+    CHECK(lines[HeaderLine] == "time (ms) | min | avg | max");
+    CHECK(lines[FrameLine] == "interval | 0.4 | 0.4 | 0.4");
     CHECK(lines[CpuLine] == "cpu | 0.2 | 0.2 | 0.2");
     CHECK(lines[UpdateLine] == "update | 0.1 | 0.1 | 0.1");
     CHECK(lines[RenderLine] == "render | 0.1 | 0.1 | 0.1");
     CHECK(lines[FlushLine] == "flush | 0.0 | 0.0 | 0.0");
     CHECK(lines[FpsLine] == format("fps | 64.0 | controls | %zu", overlay->shownControls()));
+    // the upload row's value carries its unit
+    CHECK(lines[UploadsLine].substr(0, 9) == "upload | ");
+    CHECK(lines[UploadsLine].find("B | draws | ") != String::npos);
     // the plot's last point is the window's most cpu time
     CHECK(overlay->cpuPlot()->getValues().back() == doctest::Approx(0.2f));
     CHECK(overlay->cpuPlot()->getValueCount() == StatsOverlay::PlotSamples);
+}
+
+TEST_CASE("StatsOverlay: bytes() fits 5 characters at every unit's edge")
+{
+    const struct { size_t n; const char *text; } cases[]=
+    {
+        {0, "0B"}, {512, "512B"}, {999, "999B"},
+        {1000, "1.0kB"}, {1023, "1.0kB"}, {1999, "1.9kB"}, {9999, "9.9kB"},
+        {10000, "10kB"}, {12345, "12kB"}, {99999, "99kB"}, {999999, "999kB"},
+        {1000000, "1.0MB"}, {1250000, "1.2MB"}, {999999999, "999MB"},
+        {1000000000, "1.0GB"}, {size_t(-1), "18EB"},
+    };
+
+    for(const auto &c : cases)
+    {
+        CAPTURE(c.n);
+        CHECK(StatsOverlay::bytes(c.n) == c.text);
+        CHECK(StatsOverlay::bytes(c.n).size() <= 5);
+    }
 }
 
 TEST_CASE("StatsOverlay: an app change shows on the next refresh, then 0")

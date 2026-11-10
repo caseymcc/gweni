@@ -80,6 +80,30 @@ String count(size_t n)
 
 }//namespace
 
+String StatsOverlay::bytes(size_t n)
+{
+    if(n < 1000)
+        return format("%zuB", n);
+
+    // 1000 to the unit's power, the unit the one that leaves 1 to 999 of it
+    const char *const units[]={"kB", "MB", "GB", "TB", "PB", "EB"};
+    size_t unit=0;
+    size_t scale=1000;
+
+    while((n/scale >= 1000) && (unit+1 < sizeof(units)/sizeof(units[0])))
+    {
+        scale*=1000;
+        ++unit;
+    }
+
+    const size_t whole=n/scale;
+
+    // below 10 of it with its tenths, truncated as count() truncates
+    if(whole < 10)
+        return format("%zu.%zu%s", whole, (n/(scale/10))%10, units[unit]);
+    return format("%zu%s", whole, units[unit]);
+}
+
 event::Caller StatsOverlay::onOpenChangedCaller;
 
 void StatsOverlay::TimeRange::add(uint64_t micros)
@@ -111,14 +135,14 @@ GWENI_CONTROL_CONSTRUCTOR(StatsOverlay)
 
     m_rows.resize(Rows);
 
-    addCell(HeaderRow, 0, TimeName, false, "ms", true);
+    addCell(HeaderRow, 0, TimeName, false, "time (ms)", false);
     addCell(HeaderRow, TimeName, TimeColumn, true, "min", true);
     addCell(HeaderRow, TimeName+TimeColumn, TimeColumn, true, "avg", true);
     addCell(HeaderRow, TimeName+2*TimeColumn, TimeColumn, true, "max", true);
 
     const struct { Row row; const char *name; } times[]=
     {
-        {FrameRow, "frame"}, {CpuRow, "cpu"}, {UpdateRow, "update"}, {RenderRow, "render"},
+        {FrameRow, "interval"}, {CpuRow, "cpu"}, {UpdateRow, "update"}, {RenderRow, "render"},
         {FlushRow, "flush"},
     };
 
@@ -134,7 +158,7 @@ GWENI_CONTROL_CONSTRUCTOR(StatsOverlay)
         {FpsRow, "fps", "controls"}, {IdsRow, "prim ids", "text ids"},
         {RenderedRow, "rendered", "changed"}, {LayoutRow, "passes", "entered"},
         {ZRow, "z visited", "anims"}, {SlotsRow, "prim slots", "glyphs"},
-        {UploadsRow, "upload B", "draws"},
+        {UploadsRow, "upload", "draws"},
     };
 
     for(const auto &counter : counters)
@@ -526,7 +550,7 @@ void StatsOverlay::show(controls::Canvas *canvas)
     pair(LayoutRow, count(shown.layoutPasses), count(shown.layoutEntries));
     pair(ZRow, count(shown.zVisited), count(shown.animsRun));
     pair(SlotsRow, counted?count(shown.primitiveSlots):none, counted?count(shown.glyphSlots):none);
-    pair(UploadsRow, counted?count(shown.uploadBytes):none, counted?count(shown.drawCalls):none);
+    pair(UploadsRow, counted?bytes(shown.uploadBytes):none, counted?count(shown.drawCalls):none);
 
     m_cpuPlot->push(float(double(shown.cpu.max)/1000.0));
     m_slotsPlot->push(float(shown.slots));
