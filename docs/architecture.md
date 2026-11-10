@@ -2655,11 +2655,12 @@ moves segments and creates none).
 **What is excluded and what is not.** As with the Inspector, what it shows is the app's
 work: the panel is `Base::setExcludedFromStats()`, so none of its controls, layout
 entries, z entries, measures or its animation count in the canvas's counters
-(`animsRun` included), and its own slots are taken out of the renderer's
-`writtenPrimitiveIds()`/`writtenTextIds()` (`tools::OwnSlots`, also the Inspector's), so
-`prim slots` and `glyphs` are the app's; uploads cannot be split by id, so `upload` is
-the frame's whole uploads in a frame where the app wrote and 0 in one where only the
-overlay did. Three things cannot be split per control and include the overlay: the
+(`animsRun` included), and every tool's slots (its own, an open Inspector's) are taken
+out of the renderer's `writtenPrimitiveIds()`/`writtenTextIds()` through the canvas's
+one record of them (`Canvas::excludedSlots()`, read by `tools::appFrameWrites()`, also
+the Inspector's), so `prim slots` and `glyphs` are the app's; uploads cannot be split by
+id, so `upload` is the frame's whole uploads in a frame where the app wrote and 0 in
+one where only the tools did. Three things cannot be split per control and include the overlay: the
 **times** (its gathering every frame and its refreshes every 250 ms are in `update`,
 `render` and `flush`), `draws` (its own primitive and text draws), and the `--stats`
 keys that are whole-frame renderer counts (`prim_slots_written`, `upload_bytes`,
