@@ -1614,6 +1614,27 @@ two programs and the draws. What follows describes both together:
   label is set only when the whole percentage changes. An `Elastic` bar is as high as
   its label, so a bar whose label comes and goes is given a `Fixed` height if that must
   not move its neighbours (ProgressBarDemo does).
+- **The scroll position: a whole-unit offset per axis.** A `ScrollControl` keeps how
+  far its content is scrolled as an offset in units per axis (`m_scrollOffset`,
+  `get/setHorizontalScrollOffset`, `get/setVerticalScrollOffset`, 0 to
+  `getMax*ScrollOffset()`, the content less the viewport), not as its bars' fraction:
+  `placeContents` places the inner panel at the viewport's origin less the offset, clamps
+  it to the content and viewport that pass gives and sets each bar to show it as a
+  fraction (inside its `PlacementScope`, so that does not re-dirty the pass). So content
+  that grows keeps the offset, the inner panel stays where it is and the bar's amount and
+  thumb follow the new size; content that shrinks keeps it while it fits and clamps it to
+  the new end otherwise; a bar no longer required takes it back to 0. There is no
+  sticking to the end: scrolled to the bottom, a grown content leaves the new end below
+  the viewport. A bar not where the control last put it (`m_shownAmount`) was moved by
+  the user (its thumb, its buttons, the wheel, a ListBox's arrow keys), and its amount is
+  converted at the range of the last pass (`m_scrollRange`), the content it was moved
+  against, rounded to a whole unit. `scrollToTop/Bottom/Left/Right` are a pending edge per
+  axis, resolved to 0 or the range by the next pass, so an `addItem` then `scrollToBottom`
+  before any layout (`Demo::printText`) ends on the new last row; a `set*ScrollOffset` on
+  the axis cancels it. Before this (issue #512) the panel was placed at `-(content -
+  viewport)*amount`, so a DataTable column drag while scrolled sideways slid the body
+  under the cursor and a ListBox append moved, and re-stamped, every row
+  (`tests/unit/scrollOffset.cpp`, `dataTableScrolledResize.cpp`).
 - **The virtual list: a pool of the rows on screen.** `controls::VirtualList`
   (`include/gweni/controls/virtualList.h`) shows `setItemCount(n)` fixed-height rows
   (`setRowHeight`, 20 by default) through a pool of row controls: `ceil(viewport/rowHeight)+1`,
@@ -1640,11 +1661,11 @@ two programs and the draws. What follows describes both together:
   is deleted and made again, on a grow as on a shrink.
   **Positions stay small:** nothing is `n*rowHeight` high. The list is a `ScrollControl`
   with *virtual content* (`ScrollControl::setVirtualContentHeight`): the vertical bar is
-  decided and ranged from that height, but the inner panel is the viewport, not scrolled,
-  and the scroll position is a whole-unit offset (`getVerticalScrollOffset`, 0 to
-  `getMaxVerticalScrollOffset()`), which the bar shows as a fraction and which a bar the
-  user moves (thumb, buttons, wheel) sets, as `placeContents` finds the bar where it did
-  not put it. Each row is placed in the viewport at `index*rowHeight-offset`, so every
+  decided and ranged from that height, but the inner panel is the viewport, not scrolled
+  vertically, and the scroll position is the control's vertical offset
+  (`getVerticalScrollOffset`, 0 to `getMaxVerticalScrollOffset()`, see "The scroll
+  position" above), which the bar shows as a fraction and which a bar the user moves
+  (thumb, buttons, wheel) sets. Each row is placed in the viewport at `index*rowHeight-offset`, so every
   rect drawn is on screen: a list of millions of rows never comes near the int16 device
   range (`cullOutOfRangeQuad`) or the slot ceiling. The content height is capped at
   `INT_MAX` units. **Binding** happens in the Y arrange, in `contentsPlaced` (called by
@@ -1823,8 +1844,9 @@ two programs and the draws. What follows describes both together:
   width (never shrunk below its own). The stretch is the last column's so that a column's
   new width moves only it and the columns after it, while the columns fit the body: once
   they overflow it, every row is as wide as the columns, so a new width changes every
-  row's width (and the body's inner panel's), but, with the body scrolled to its left
-  edge, at the same origin and with the same region within the viewport, so `Base::onBoundsChanged` marks the row alone and the cells
+  row's width (and the body's inner panel's), but, the body keeping its horizontal
+  scroll offset wherever it is scrolled (so the dragged grip moves by exactly the width
+  change, issue #512), at the same origin and with the same region within the viewport, so `Base::onBoundsChanged` marks the row alone and the cells
   before the column are not marked (the header's cells are placed one by one and stay
   bounded; issue #511, `tests/unit/dataTable.cpp`, `dataTableVirtual.cpp`). `columnSpans(width)` gives every
   column's x and width across a width, and the header and every row place their cells
@@ -2770,9 +2792,8 @@ What exists today (the foundation) and what's still aspirational:
   the drain's rule, `shouldClip` and `getChildClipRect`, an axis at a time, stopping once
   both sizes give the same region);
   otherwise only the control is marked, and whatever its arrange moves is marked by its
-  own `setBounds`. So an overflowing ScrollControl or ListBox scrolled to its start
-  (scrolled anywhere else, its inner panel moves and marks its subtree) given one more item marks
-  that item, the inner panel and the thumb (4 and 6 controls, 64 and 96 before), and an
+  own `setBounds`. So an overflowing ScrollControl or ListBox, wherever it is scrolled
+  (its inner panel keeps its origin, issue #512), given one more item marks that item, the inner panel and the thumb (4 and 6 controls, 64 and 96 before), and an
   overflowing DataTable's column drag leaves the cells before the column unmarked; a
   Window resized inside the canvas, or a CrossSplitter's clipping panel resized, still
   marks its subtree, since its edge moves inside its parent's region and every slot under

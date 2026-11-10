@@ -14,9 +14,9 @@
  *  wheel notch) sets the offset at the content size it was moved against,
  *  even when the content changes in the same frame, and the offset it set is
  *  kept when the content grows after. A ListBox scrolled part-way keeps its
- *  rows where they are when one is appended, and an addItem followed by
- *  scrollToBottom before any layout (Demo::printText) ends on the new last
- *  row; scrollToRight likewise lands on the new right edge. The offsets are
+ *  rows where they are, and marks none of them, when one is appended, and an
+ *  addItem followed by scrollToBottom before any layout (Demo::printText)
+ *  ends on the new last row; scrollToRight likewise lands on the new right edge. The offsets are
  *  public (get/set*ScrollOffset, getMax*ScrollOffset) for non-virtual content
  *  too: one set before any layout is clamped by the first pass, a set after
  *  a scrollTo*() cancels it, and an axis that cannot scroll has none.
@@ -474,6 +474,20 @@ TEST_CASE("ScrollControl offset: a ListBox scrolled part-way keeps its rows wher
     REQUIRE(offset > 0);
 
     list->addItem("Row 30");
+
+    // the update phase of that frame: the rows already there are not marked
+    // (the inner panel does not move, so its subtree is not re-stamped)
+    scene.canvas->updateCanvas();
+
+    int marked=0;
+
+    for(controls::Base *each : rows)
+    {
+        if(each != rows.back() && (each->getStateChange() & controls::StateChange_Geometry))
+            ++marked;
+    }
+    CHECK(marked == 0);
+    scene.canvas->renderCanvas();
     scene.settle();
 
     CHECK(scene.offsetY() == offset);

@@ -9,7 +9,8 @@
  *  keeps its horizontal scroll offset, so the dragged grip moves on the canvas
  *  by exactly the width change, the cells left of the column (header and
  *  body) keep their canvas bounds, the inner panel and the header keep their
- *  x, and every header cell stays over its body cells. Scrolled all the way
+ *  x, and every header cell stays over its body cells; nothing left of the
+ *  column is marked in that frame. Scrolled all the way
  *  right, that leaves the new right end past the viewport (no sticking to
  *  the end); the bar's amount follows the wider content.
  */
@@ -247,6 +248,20 @@ void checkWidened(Mode mode, Scrolled scrolled, int column, bool drag)
         scene.dragGrip(column, 20);
     else
         table->setColumnWidth(column, width+20);
+
+    // the update phase of that frame: nothing left of the column is marked
+    // (the inner panel does not move, so its subtree is not re-stamped)
+    scene.canvas->updateCanvas();
+
+    int marked=0;
+
+    for(const auto &entry : kept)
+    {
+        if(entry.first->getStateChange() & controls::StateChange_Geometry)
+            ++marked;
+    }
+    CHECK(marked == 0);
+    scene.canvas->renderCanvas();
     scene.settle();
 
     const int change=table->getColumnLaidOutWidth(column)-width;
