@@ -341,10 +341,16 @@ public:
     //! In canvas units at any scale(), unlike the legacy renderers (see the definition)
     gweni::Point measureText(const gweni::Font &font, const gweni::String &text) override;
     //! For tests: measureText as freetype-gl's text_buffer_add_text measures a
-    //! coverage font, the run laid out in a text_buffer_t and its pen read, the
-    //! reference measureText's pen walk must equal (tests/measureTextPens.cpp).
-    //! An Sdf font is measured as measureText measures it.
-    gweni::Point measureTextWithTextBuffer(const gweni::Font &font, const gweni::String &text);
+    //! coverage font, the run laid out in a text_buffer_t and its pen read: the
+    //! pen after the last line rounded up, and one line box. It is the reference
+    //! measureText's pen walk must equal for a run of one line, and of each line
+    //! of a longer one (tests/measureTextPens.cpp). Where they are not null, penY
+    //! gets the pen's y after the run (y up, from 0: a line's baseline is its
+    //! ascender below the one before, and each '\n' moves it down again) and
+    //! lineBox the line box unrounded. An Sdf font is measured as measureText
+    //! measures it, and leaves penY and lineBox as they are.
+    gweni::Point measureTextWithTextBuffer(const gweni::Font &font, const gweni::String &text,
+        float *penY=nullptr, float *lineBox=nullptr);
     //! measureText's `y` for one line, read from the font's metrics: in canvas
     //! units at any scale(), 0 for a font that does not load
     int lineHeight(const gweni::Font &font) override;

@@ -4,12 +4,17 @@
  *  MIT License, see LICENSE
  *
  *  SlotRenderer::measureText of a coverage font (every size below the SDF
- *  threshold) is exactly the Point measureTextWithTextBuffer gives, the measure
- *  freetype-gl's text_buffer_add_text makes of the run renderText lays out: the
- *  last pen rounded up and one line box. The corpus is every printable ASCII
+ *  threshold) is exactly the Point measureTextWithTextBuffer gives of a run of
+ *  one line, the measure freetype-gl's text_buffer_add_text makes of the run
+ *  renderText lays out: the pen rounded up and one line box. Of a run with
+ *  '\n's, which renderText draws on as many lines, it is the widest line's
+ *  measureTextWithTextBuffer width, and the line box plus one line step per
+ *  '\n' rounded up (a trailing '\n' is an empty last line), the step being how
+ *  far freetype-gl's pen moves down from one baseline to the next ("x" against
+ *  "x\nx"), as an SDF run is measured. The corpus is every printable ASCII
  *  character alone, the printable ASCII string, kerning words, the empty string,
- *  strings with a '\n' (the last line's pen and one line box, as freetype-gl
- *  measures them), multi-byte UTF-8 with codepoints OpenSans lacks, a stray
+ *  strings with '\n's (leading, trailing, doubled, and kerning pairs on either
+ *  side of one), multi-byte UTF-8 with codepoints OpenSans lacks, a stray
  *  continuation byte and a NUL inside the string (where utf8_strlen ends the
  *  run). It is checked at every whole size from 8 px to the threshold and at
  *  two fractional ones, regular and bold, in Grayscale, LcdRGB and LcdBGR (an
@@ -25,6 +30,8 @@
 
 #include "gpuRenderer.h"
 
+#include <algorithm>
+#include <cmath>
 #include <vector>
 
 namespace
@@ -67,7 +74,7 @@ std::vector<String> corpus()
     for(const char *word:{"AV", "To", "Wa", "LT", "Yo", "AVAWAY To Ty. LT Yo", "Hello, world"})
         list.push_back(word);
     list.push_back("");
-    for(const char *lines:{"\n", "AV\n", "\nAV", "two\nlines AV\nT", "Wa\n\nTo"})
+    for(const char *lines:{"\n", "AV\n", "\nAV", "two\nlines AV\nT", "Wa\n\nTo", "VA\nAV\nTo\nWa\n\n"})
         list.push_back(lines);
     list.push_back("na\xc3\xafve caf\xc3\xa9 \xe2\x80\x94 \xc3\xbc\xc3\x9f");  // naïve café — üß
     list.push_back("a\xe4\xb8\xad\xe6\x96\x87" "b\xf0\x9f\x98\x80" "c");       // a中文b😀c, glyphs OpenSans lacks
@@ -86,9 +93,41 @@ Font openSansAt(float size, bool bold)
     return font;
 }
 
+//! What measureText must give of text in a coverage font: freetype-gl's measure
+//! of a run of one line; of a longer one, the widest line's measure and the
+//! line box plus one line step per further line, the step being how far
+//! freetype-gl's pen moves down from one line's baseline to the next.
+Point expectedMeasure(SlotRenderer &renderer, const Font &font, const String &text)
+{
+    if(text.find('\n') == String::npos)
+        return renderer.measureTextWithTextBuffer(font, text);
+
+    float oneLine=0.0f, twoLines=0.0f, lineBox=0.0f;
+
+    renderer.measureTextWithTextBuffer(font, "x", &oneLine, &lineBox);
+    renderer.measureTextWithTextBuffer(font, "x\nx", &twoLines);
+
+    const float step=oneLine-twoLines;
+    int width=0;
+    int lines=0;
+
+    for(size_t start=0; ; )
+    {
+        const size_t end=text.find('\n', start);
+        const String line=text.substr(start, (end == String::npos)?String::npos:end-start);
+
+        width=std::max(width, renderer.measureTextWithTextBuffer(font, line).x);
+        ++lines;
+        if(end == String::npos)
+            break;
+        start=end+1;
+    }
+    return Point(width, (int)ceil(lineBox+(lines-1)*step));
+}
+
 }//namespace
 
-TEST_CASE("measureText: a coverage font's pen walk gives the text_buffer_t measure, in every size, weight, mode and scale")
+TEST_CASE("measureText: a coverage font's pen walk gives the text_buffer_t measure of its lines, in every size, weight, mode and scale")
 {
     SlotRenderer &renderer=gweni::test::gpuRenderer();
     Restore restore;
@@ -153,7 +192,7 @@ TEST_CASE("measureText: a coverage font's pen walk gives the text_buffer_t measu
                     for(const String &text:strings)
                     {
                         const Point walked=renderer.measureText(font, text);
-                        const Point reference=renderer.measureTextWithTextBuffer(font, text);
+                        const Point reference=expectedMeasure(renderer, font, text);
 
                         ++compared;
                         if(walked.x == reference.x && walked.y == reference.y)
@@ -166,7 +205,7 @@ TEST_CASE("measureText: a coverage font's pen walk gives the text_buffer_t measu
                             CAPTURE(walked.y);
                             CAPTURE(reference.x);
                             CAPTURE(reference.y);
-                            FAIL_CHECK("measureText differs from the text_buffer_t measure");
+                            FAIL_CHECK("measureText differs from the text_buffer_t measure of its lines");
                         }
                     }
                 }
@@ -192,7 +231,7 @@ TEST_CASE("measureText: the glyph table follows a font freed and loaded again, a
         {
             CAPTURE(text);
             const Point walked=renderer.measureText(font, text);
-            const Point reference=renderer.measureTextWithTextBuffer(font, text);
+            const Point reference=expectedMeasure(renderer, font, text);
 
             CHECK(walked.x == reference.x);
             CHECK(walked.y == reference.y);

@@ -3008,8 +3008,9 @@ gweni::Point SlotRenderer::measureText(const gweni::Font &font, const gweni::Str
 
 // The coverage measure as freetype-gl lays the run out for renderText: a whole
 // text_buffer_t built and thrown away for its pen. tests/measureTextPens.cpp holds
-// measureText to it.
-gweni::Point SlotRenderer::measureTextWithTextBuffer(const gweni::Font &font, const gweni::String &text)
+// measureText to it, line by line.
+gweni::Point SlotRenderer::measureTextWithTextBuffer(const gweni::Font &font, const gweni::String &text,
+    float *penY, float *lineBox)
 {
     if(!ensureFont(font, font.size))
         return gweni::Point(0, 0);
@@ -3024,6 +3025,10 @@ gweni::Point SlotRenderer::measureTextWithTextBuffer(const gweni::Font &font, co
 
     ftgl::text_buffer_add_text(textBuffer, &pen, &fontData.markup, text.c_str(), ftgl::utf8_strlen(text.c_str()));
     text_buffer_delete(textBuffer);
+    if(penY)
+        *penY=pen.y;
+    if(lineBox)
+        *lineBox=lineBoxHeight(fontData, font.size);
     return Point((int)ceil(pen.x), (int)ceil(lineBoxHeight(fontData, font.size)));
 }
 
