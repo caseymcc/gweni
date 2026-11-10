@@ -24,6 +24,7 @@ class Canvas;
 class ToolTip;
 class Menu;
 class Popup;
+enum class PopupPlacement;
 
 /// What takes every input event a Canvas gets while it is the canvas's input
 /// capture (Canvas::setInputCapture): tools::DepthView's camera. The events
@@ -51,7 +52,6 @@ public:
     /// anything and must not be used after this returns
     virtual void captureCanvasDeleted(Canvas *canvas) {}
 };
-enum class PopupPlacement;
 
 //! What the canvas's layout did in one frame: the update phase (doThink) and
 //! the render phase (renderCanvas). A frame whose layout converges runs at most
