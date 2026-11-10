@@ -110,7 +110,7 @@ TEST_CASE("Primitive draws: a loop of glDrawElements draws what glMultiDrawEleme
     // others ranges of their own, past the cap of a chunk
     for(int i=0, gap=1; i+3 < cells; i+=3+gap, gap=gap%5+1)
     {
-        for(int j=0; j<gap; ++j)
+        for(int j=0; (j<gap) && (i+3+j < cells); ++j)
             renderer.hidePrimitive(guard.ids[size_t(i+3+j)]);
     }
     renderer.end();
