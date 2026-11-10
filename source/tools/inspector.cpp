@@ -348,7 +348,7 @@ void Inspector::refreshCounters()
         frame.render.text));
 
     renderer::Base *render=getSkin()?getSkin()->getRenderer():nullptr;
-    const AppFrameWrites writes=m_ownSlots.appWrites(render, {this, m_highlight});
+    const AppFrameWrites writes=appFrameWrites(m_canvas, render);
 
     if(!writes.counted)
     {
@@ -578,8 +578,8 @@ void Inspector::deleteChildNodes(controls::TreeNode *node)
 
     for(controls::Base *child : children)
     {
-        // its slots are cleared in the next flush, under ids it no longer holds
-        m_ownSlots.released(child);
+        // its slots are cleared in the next flush, under ids it no longer
+        // holds: the canvas keeps them as a tool's (Canvas::excludedSlots())
         delete child;
     }
 }

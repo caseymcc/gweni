@@ -28,7 +28,8 @@ namespace tools
 //!   interval (one updateCanvas() to the next), cpu (update + render + flush),
 //!   update, render without the flush, and the flush (CanvasFrameStats::times);
 //! - the tree: the app's controls (the tools' subtrees left out), and its live
-//!   primitive and text ids;
+//!   primitive and text ids (the live ids less those every tool on the canvas
+//!   holds, Canvas::excludedSlots());
 //! - the most one frame since the last refresh did: controls rendered and
 //!   changed, layout passes and entries, z visited, animations run, the app's
 //!   primitive and glyph slots written, upload bytes (with their unit,
@@ -45,8 +46,9 @@ namespace tools
 //!
 //! Like the Inspector it shows the app's work alone: it is
 //! setExcludedFromStats(), so none of its controls, entries or animations
-//! count in the canvas's counters, and the slots it wrote are taken out of the
-//! renderer's (OwnSlots). The times cannot be split per control: they include
+//! count in the canvas's counters, and the slots every tool on the canvas (an
+//! Inspector too) wrote are taken out of the renderer's (appFrameWrites(),
+//! over Canvas::excludedSlots()). The times cannot be split per control: they include
 //! its own refreshes, and the draw calls include its own draws.
 //!
 //! Only its name cells take the mouse, for their tooltips: each row and
@@ -139,10 +141,10 @@ public:
         size_t layoutEntries=0;     //!< LayoutStats::visited
         size_t zVisited=0;
         size_t animsRun=0;
-        size_t primitiveSlots=0;    //!< the app's (OwnSlots::appWrites())
+        size_t primitiveSlots=0;    //!< the app's (appFrameWrites())
         size_t glyphSlots=0;
         size_t slots=0;             //!< primitive + glyph slots in one frame
-        size_t uploadBytes=0;       //!< the app's (OwnSlots::appWrites())
+        size_t uploadBytes=0;       //!< the app's (appFrameWrites())
         size_t drawCalls=0;         //!< renderer::FrameCounts::drawCalls
         bool counted=false;         //!< the renderer counts its slots
     };
@@ -227,7 +229,6 @@ private:
 
     Window m_window;
     Window m_shown;
-    OwnSlots m_ownSlots;
     //! The previous frame's start, to time the interval to the next.
     uint64_t m_lastStart=0;
     bool m_haveLastStart=false;

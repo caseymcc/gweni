@@ -167,6 +167,8 @@ void WindowCanvas::renderCanvas()
             renderPendingControls();
         }
         render->end();
+        // the tools' released ids, kept to the frame after the flush that cleared them
+        rollExcludedReleases();
     }
 
     render->endContext(this);

@@ -82,12 +82,13 @@ private:
 //!   state changes) and the renderer's slots written and uploaded.
 //!
 //! It shows the app's work alone. Its window is setExcludedFromStats(), so
-//! none of its own controls count in the canvas's counters, and the slots it
-//! wrote itself are taken out of renderer::Base::writtenPrimitiveIds() and
-//! writtenTextIds() by the ids its controls hold (skin::Control::appendIds).
+//! none of its own controls count in the canvas's counters, and the slots
+//! every tool on the canvas wrote (its own, a StatsOverlay's) are taken out of
+//! renderer::Base::writtenPrimitiveIds() and writtenTextIds() by the ids their
+//! controls hold or gave back (Canvas::excludedSlots(), appFrameWrites()).
 //! Uploads cannot be split by id: they are shown for a frame the app wrote
 //! slots in, as that frame's whole uploads, and as 0 for a frame only the
-//! inspector wrote in. It refreshes in the update phase, from an animation of
+//! tools wrote in. It refreshes in the update phase, from an animation of
 //! its own (excluded too), and sets a label only when its string changes, so
 //! over a settled app it settles: it shows 0, and the frames after write 0.
 //!
@@ -179,8 +180,8 @@ private:
     void populate(controls::TreeNode *node, controls::Base *parent,
         const std::vector<const controls::Base *> &open);
     void syncChildren(InspectorNode *node);
-    //! Deletes node's child nodes, keeping the ids they held for the next
-    //! refreshCounters() (their slots are cleared in the next flush).
+    //! Deletes node's child nodes; the canvas keeps the ids they held as a
+    //! tool's (Canvas::excludedSlots()) until their slots are cleared.
     void deleteChildNodes(controls::TreeNode *node);
     //! The controls a node of parent lists: its actual children, less the
     //! inspector itself.
@@ -200,9 +201,6 @@ private:
     unsigned m_treeSerial=0;
     bool m_treeBuilt=false;
     size_t m_textSets=0;
-    //! its own slots, taken out of the renderer's, and the ids of its controls
-    //! deleted since the last refreshCounters()
-    OwnSlots m_ownSlots;
 };
 
 }//namespace tools

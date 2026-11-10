@@ -1035,6 +1035,9 @@ protected:
     int m_overlayZIndex=0;
     //! See setExcludedFromStats().
     bool m_excludeFromStats=false;
+    //! Every control setExcludedFromStats() flagged, in the order flagged, on
+    //! any canvas or none (Canvas::excludedSlots() walks those on its own).
+    static const std::vector<Base *> &statsExcludedRoots();
     //! Moved since the last renumber: see zOrderMoved().
     bool m_zMoved=false;
     //! The renumber has to enter this control: its child list or its layer

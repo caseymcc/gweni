@@ -11,7 +11,6 @@
 #include <gweni/controls/label.h>
 #include <gweni/platforms/baseRender.h>
 
-#include <initializer_list>
 #include <vector>
 
 namespace gweni
@@ -21,8 +20,10 @@ namespace tools
 
 // What the tools that show a canvas's frame counts share (Inspector,
 // StatsOverlay). Each is setExcludedFromStats(), so none of its controls count
-// in the canvas's counters; what is left is to keep its own slots out of the
-// renderer's, and to change nothing on a frame nothing it shows changed.
+// in the canvas's counters; what is left is to keep the tools' slots out of
+// the renderer's (every tool's, through the canvas's one record,
+// controls::Canvas::excludedSlots()), and to change nothing on a frame nothing
+// it shows changed.
 
 //! Sets label's text to text unless it shows it already, so a tool that sets
 //! every line on every refresh writes only the lines that changed. \return
@@ -34,40 +35,26 @@ GWENI_EXPORT void appendSubtreeIds(const controls::Base *control, std::vector<si
     std::vector<size_t> &textIds);
 
 //! What the renderer's last frame wrote of the app's: its slots written, less
-//! those under a tool's own ids (OwnSlots::appWrites()).
+//! those under the ids of the canvas's tools (appFrameWrites()).
 struct AppFrameWrites
 {
     //! false: the renderer does not count (FrameCounts::counted), and every
     //! field is 0
     bool counted=false;
-    size_t primitiveSlots=0;    //!< primitive slots written under no id of the tool's
-    size_t glyphSlots=0;        //!< glyph slots written under no text id of the tool's
+    size_t primitiveSlots=0;    //!< primitive slots written under no id of a tool's
+    size_t glyphSlots=0;        //!< glyph slots written under no text id of a tool's
     //! Uploads cannot be told apart by id: the frame's whole uploads when the app
-    //! wrote a slot in it, 0 for a frame only the tool wrote in.
+    //! wrote a slot in it, 0 for a frame only the tools wrote in.
     size_t uploadCalls=0;
     size_t uploadBytes=0;
 };
 
-//! A tool's own ids, taken out of renderer::Base::writtenPrimitiveIds() and
-//! writtenTextIds(): those its controls hold when it counts, and those its
-//! deleted controls held, whose slots the next flush clears.
-class GWENI_EXPORT OwnSlots
-{
-public:
-    //! control's subtree is about to be deleted: the ids it holds now are the
-    //! tool's for the next appWrites() (their slots are cleared in the next
-    //! flush, under ids nobody holds).
-    void released(const controls::Base *control);
-
-    //! The renderer's last frame (render->frameStats() and its written ids)
-    //! less the slots under the ids the subtrees in own hold (a null entry is
-    //! none) or released() gave since the last call, which it forgets.
-    AppFrameWrites appWrites(renderer::Base *render, std::initializer_list<const controls::Base *> own);
-
-private:
-    std::vector<size_t> m_primitives;
-    std::vector<size_t> m_texts;
-};
+//! The renderer's last frame (render->frameStats() and its written ids), read
+//! in the update phase of the frame after it, less the slots under the ids
+//! canvas->excludedSlots() has: those every setExcludedFromStats() subtree on
+//! the canvas holds, and those they gave back for that frame's flush to clear.
+//! Any number of tools may call it in a frame and get the same answer.
+GWENI_EXPORT AppFrameWrites appFrameWrites(controls::Canvas *canvas, renderer::Base *render);
 
 #if GWENI_ANIMATE
 //! Runs Tool::refresh() once a frame, at the start of the canvas's update

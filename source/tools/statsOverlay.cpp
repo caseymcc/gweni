@@ -563,7 +563,7 @@ void StatsOverlay::gather(controls::Canvas *canvas)
     window.animsRun=std::max(window.animsRun, frame.update.animsRun);
 
     renderer::Base *render=getSkin()?getSkin()->getRenderer():nullptr;
-    const AppFrameWrites writes=m_ownSlots.appWrites(render, {this, ownToolTipBox()});
+    const AppFrameWrites writes=appFrameWrites(canvas, render);
     const renderer::FrameCounts counts=render?render->frameStats():renderer::FrameCounts();
 
     window.counted=writes.counted;
@@ -598,16 +598,13 @@ void StatsOverlay::show(controls::Canvas *canvas)
         m_controls=countControls(canvas);
     }
 
-    std::vector<size_t> ownPrimitives;
-    std::vector<size_t> ownTexts;
-
-    ownIds(ownPrimitives, ownTexts);
-
+    // less every tool's on the canvas, an Inspector's too
+    const controls::ExcludedSlots &tools=canvas->excludedSlots();
     const size_t livePrimitives=primitiveIdCount()-releasedPrimitiveIdCount();
     const size_t liveTexts=textIdCount()-releasedTextIdCount();
 
-    m_shownPrimitiveIds=(livePrimitives > ownPrimitives.size())?livePrimitives-ownPrimitives.size():0;
-    m_shownTextIds=(liveTexts > ownTexts.size())?liveTexts-ownTexts.size():0;
+    m_shownPrimitiveIds=(livePrimitives > tools.heldPrimitives())?livePrimitives-tools.heldPrimitives():0;
+    m_shownTextIds=(liveTexts > tools.heldTexts())?liveTexts-tools.heldTexts():0;
 
     const Window &shown=m_shown;
     const struct { Row row; const TimeRange &range; } times[]=

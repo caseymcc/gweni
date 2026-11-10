@@ -5,9 +5,8 @@
  */
 #include <gweni/tools/toolSupport.h>
 
+#include <gweni/controls/canvas.h>
 #include <gweni/skin.h>
-
-#include <algorithm>
 
 namespace gweni
 {
@@ -31,22 +30,13 @@ void appendSubtreeIds(const controls::Base *control, std::vector<size_t> &primit
         appendSubtreeIds(child, primitiveIds, textIds);
 }
 
-void OwnSlots::released(const controls::Base *control)
-{
-    appendSubtreeIds(control, m_primitives, m_texts);
-}
-
-AppFrameWrites OwnSlots::appWrites(renderer::Base *render, std::initializer_list<const controls::Base *> own)
+AppFrameWrites appFrameWrites(controls::Canvas *canvas, renderer::Base *render)
 {
     AppFrameWrites writes;
     const renderer::FrameCounts counts=render?render->frameStats():renderer::FrameCounts();
 
     if(!counts.counted)
-    {
-        m_primitives.clear();
-        m_texts.clear();
         return writes;
-    }
     writes.counted=true;
 
     const std::vector<size_t> &primitives=render->writtenPrimitiveIds();
@@ -54,32 +44,20 @@ AppFrameWrites OwnSlots::appWrites(renderer::Base *render, std::initializer_list
 
     if(!primitives.empty() || !texts.empty())
     {
-        // the ids its controls hold now, and those it gave back since the last
-        // count
-        std::vector<size_t> ownPrimitives=m_primitives;
-        std::vector<size_t> ownTexts=m_texts;
-
-        for(const controls::Base *control : own)
-        {
-            if(control)
-                appendSubtreeIds(control, ownPrimitives, ownTexts);
-        }
-        std::sort(ownPrimitives.begin(), ownPrimitives.end());
-        std::sort(ownTexts.begin(), ownTexts.end());
+        // built once a frame, whoever reads it first
+        const controls::ExcludedSlots *excluded=canvas?&canvas->excludedSlots():nullptr;
 
         for(size_t id : primitives)
         {
-            if(!std::binary_search(ownPrimitives.begin(), ownPrimitives.end(), id))
+            if(!excluded || !excluded->primitive(id))
                 ++writes.primitiveSlots;
         }
         for(const renderer::WrittenText &text : texts)
         {
-            if(!std::binary_search(ownTexts.begin(), ownTexts.end(), text.textId))
+            if(!excluded || !excluded->text(text.textId))
                 writes.glyphSlots+=text.glyphSlots;
         }
     }
-    m_primitives.clear();
-    m_texts.clear();
 
     if((writes.primitiveSlots != 0) || (writes.glyphSlots != 0))
     {

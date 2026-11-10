@@ -203,6 +203,7 @@ void Canvas::renderCanvas()
     // the renderer's flush timed itself, inside this phase's time
     m_frameTimes.flushMicros=render->frameStats().flushMicros;
     m_frameTimes.renderMicros=platform::profileTimeMicros()-start;
+    rollExcludedReleases();
 }
 
 void Canvas::renderPendingControls()
@@ -595,6 +596,89 @@ void Canvas::setScale(float f)
 
     scaleChangedSubtree();
     redraw();
+}
+
+bool ExcludedSlots::primitive(size_t id) const
+{
+    return std::binary_search(m_heldPrimitives.begin(), m_heldPrimitives.end(), id)
+        || std::binary_search(m_releasedPrimitives.begin(), m_releasedPrimitives.end(), id);
+}
+
+bool ExcludedSlots::text(size_t id) const
+{
+    return std::binary_search(m_heldTexts.begin(), m_heldTexts.end(), id)
+        || std::binary_search(m_releasedTexts.begin(), m_releasedTexts.end(), id);
+}
+
+namespace
+{
+
+void appendHeldIds(const Base *control, std::vector<size_t> &primitives, std::vector<size_t> &texts)
+{
+    if(const skin::Control *skinControl=control->getSkinControl())
+        skinControl->appendIds(primitives, texts);
+    for(const Base *child : control->getActualChildren())
+        appendHeldIds(child, primitives, texts);
+}
+
+void sortUnique(std::vector<size_t> &ids)
+{
+    std::sort(ids.begin(), ids.end());
+    ids.erase(std::unique(ids.begin(), ids.end()), ids.end());
+}
+
+}//namespace
+
+const ExcludedSlots &Canvas::excludedSlots()
+{
+    if(m_excludedSlotsValid)
+        return m_excludedSlots;
+    m_excludedSlotsValid=true;
+
+    ExcludedSlots &slots=m_excludedSlots;
+
+    slots.m_heldPrimitives.clear();
+    slots.m_heldTexts.clear();
+    // a flagged subtree inside another is walked twice; sortUnique drops the
+    // repeats
+    for(Base *root : statsExcludedRoots())
+    {
+        if(root->getCanvas() == this)
+            appendHeldIds(root, slots.m_heldPrimitives, slots.m_heldTexts);
+    }
+    sortUnique(slots.m_heldPrimitives);
+    sortUnique(slots.m_heldTexts);
+
+    slots.m_releasedPrimitives=m_excludedReleasedPrimitives;
+    slots.m_releasedTexts=m_excludedReleasedTexts;
+    sortUnique(slots.m_releasedPrimitives);
+    sortUnique(slots.m_releasedTexts);
+    return slots;
+}
+
+void Canvas::excludedIdsReleased(const skin::Control *control)
+{
+    const size_t primitives=m_excludedReleasedPrimitives.size();
+    const size_t texts=m_excludedReleasedTexts.size();
+
+    control->appendIds(m_excludedReleasedPrimitives, m_excludedReleasedTexts);
+    if((m_excludedReleasedPrimitives.size() != primitives) || (m_excludedReleasedTexts.size() != texts))
+        m_excludedSlotsValid=false;
+}
+
+void Canvas::rollExcludedReleases()
+{
+    // the held ids too: the render phase gave the subtrees new ones
+    m_excludedSlotsValid=false;
+    if(m_excludedReleasedPrimitives.empty() && m_excludedReleasedTexts.empty())
+        return;
+
+    m_excludedReleasedPrimitives.erase(m_excludedReleasedPrimitives.begin(),
+        m_excludedReleasedPrimitives.begin()+m_releasedBeforePrimitives);
+    m_excludedReleasedTexts.erase(m_excludedReleasedTexts.begin(),
+        m_excludedReleasedTexts.begin()+m_releasedBeforeTexts);
+    m_releasedBeforePrimitives=m_excludedReleasedPrimitives.size();
+    m_releasedBeforeTexts=m_excludedReleasedTexts.size();
 }
 
 void Canvas::addDelayedDelete(controls::Base *control)
