@@ -17,10 +17,10 @@
  *  unmarked and, while the box keeps its width, writes no glyph slot under the
  *  box's text id; the box's preferred width follows a rename of either, which
  *  lays out in one pass too. Renamed to the string it already has, the
- *  selected item marks nothing and the frame writes nothing. No rename fires onSelection, moves the keyboard focus, changes the
- *  selection or a property::ComboBox's value (its item's name). All of it with
- *  the list never opened (the box's child) and opened and closed (the
- *  canvas's).
+ *  selected item marks nothing and the frame writes nothing. No rename fires
+ *  onSelection, moves the keyboard focus, changes the selection or a
+ *  property::ComboBox's value (its item's name). All of it with the list
+ *  never opened (the box's child) and opened and closed (the canvas's).
  *
  *  An item that left the list, given another parent or another box's list, is
  *  renamed without reaching the box it left; renamed in another box's list it
