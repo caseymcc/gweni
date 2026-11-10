@@ -1645,10 +1645,11 @@ void SlotRenderer::drawRoundedRect(size_t primitiveId, gweni::Rect rect, float r
 }
 
 void SlotRenderer::drawRoundedRect(size_t primitiveId, gweni::Rect rect, float radius, float border,
-    gweni::Color fillTop, gweni::Color fillBottom, gweni::Color borderColor, int zIndex, uint8_t edges)
+    gweni::Color fillTop, gweni::Color fillBottom, gweni::Color borderColor, int zIndex, uint8_t edges,
+    float reach)
 {
     writeRoundedQuad(primitiveId, rect, zIndex, 4, radius, border, fillTop, fillTop,
-        fillBottom, gweni::Color(0, 0, 0, 0), gweni::Color(0, 0, 0, 0), borderColor, edges);
+        fillBottom, gweni::Color(0, 0, 0, 0), gweni::Color(0, 0, 0, 0), borderColor, edges, reach);
 }
 
 void SlotRenderer::drawBilinearRect(size_t primitiveId, gweni::Rect rect, int zIndex,
@@ -1678,9 +1679,31 @@ static int halfPixelSize(int size)
 void SlotRenderer::writeRoundedQuad(size_t primitiveId, gweni::Rect rect, int zIndex, uint8_t style,
     float radius, float border, gweni::Color color0Left, gweni::Color color0Right,
     gweni::Color color1, gweni::Color color3Left, gweni::Color color3Right,
-    gweni::Color borderColor, uint8_t edges)
+    gweni::Color borderColor, uint8_t edges, float reach)
 {
     translate(rect);
+
+    // A side without a border reaches over a neighbour's border of `reach`, as
+    // wide as that border is drawn (below), whatever its edge snapped to.
+    if(reach > 0.0f)
+    {
+        const int over=std::max(snap(reach), 1);
+
+        if(edges&NoBorderLeft)
+        {
+            rect.x-=over;
+            rect.w+=over;
+        }
+        if(edges&NoBorderRight)
+            rect.w+=over;
+        if(edges&NoBorderTop)
+        {
+            rect.y-=over;
+            rect.h+=over;
+        }
+        if(edges&NoBorderBottom)
+            rect.h+=over;
+    }
 
     size_t vertexIndex=primitiveId*4;
 

@@ -144,17 +144,19 @@ public:
         gweni::Color, int) override
     {
         roundedEdges[primitiveId]=0;
+        roundedReach[primitiveId]=0.0f;
         wrotePrimitive(primitiveId);
     }
-    //! Records the edge mask in `roundedEdges` and draws through the call without
-    //! one, which a test's subclass may override to record the rest; a call
-    //! without a mask records 0.
+    //! Records the edge mask in `roundedEdges` and the reach in `roundedReach`
+    //! and draws through the call without one, which a test's subclass may
+    //! override to record the rest; a call without a mask records 0 for both.
     void drawRoundedRect(size_t primitiveId, gweni::Rect rect, float radius, float border,
         gweni::Color fillTop, gweni::Color fillBottom, gweni::Color borderColor, int zIndex,
-        uint8_t edges) override
+        uint8_t edges, float reach=0.0f) override
     {
         drawRoundedRect(primitiveId, rect, radius, border, fillTop, fillBottom, borderColor, zIndex);
         roundedEdges[primitiveId]=edges;
+        roundedReach[primitiveId]=reach;
     }
     void drawIcon(size_t primitiveId, gweni::Rect, int, int, gweni::Color, int) override
     {
@@ -212,6 +214,8 @@ public:
     std::map<size_t, size_t> textGlyphs;
     //! Each primitive id's edge mask at its last drawRoundedRect (0 without one)
     std::map<size_t, uint8_t> roundedEdges;
+    //! Each primitive id's reach at its last drawRoundedRect (0 without one)
+    std::map<size_t, float> roundedReach;
 
     //! Counted in `measures`, then measured as renderer::Base does.
     gweni::Point measureText(const gweni::Font &font, const gweni::String &text) override

@@ -1384,12 +1384,20 @@ two programs and the draws. What follows describes both together:
   borderless side measures the border to the nearer of the shape and the straight box
   with that side pushed out by `border + aa`, so no pixel inside is within the border
   of that side and the borders of the sides next to it run straight to its edge; a
-  quadrant with no such side keeps the shape's distance, its arc included. That is
+  quadrant with no such side keeps the shape's distance, its arc included (so a
+  borderless side next to a corner that stays rounded loses the border along that arc
+  too, a combination nothing draws). That is
   selects, not a branch: a branch around a second `sdRoundBox()` cost llvmpipe 4.6 % of
   `gweni_bench idle`'s flush instructions with no rect masked, and the selects 2.6 %
   fewer than before the mask (5,180 M before the mask, 5,417 M with the branch,
   5,046 M with the selects, at N=1000). With no bit set every step gives the value it
-  gave before the mask, so an unmasked rect draws the same bytes.
+  gave before the mask, so an unmasked rect draws the same bytes. **The reach**: the
+  masked overload's `reach` (0 by default) widens the quad, after `translate()`, by
+  `max(1, snap(reach))` device px on each borderless side, the width a border of
+  `reach` is drawn, so a rect drawn up to a neighbour's outer edge covers exactly that
+  neighbour's border rows at any scale: a logical unit of overlap snaps to 1 or 2 px by
+  its position at 1.25, 1.5 or 1.75, while a border is the same whole px everywhere.
+  `renderer::Base`'s default drops it with the mask.
   `renderer::Base`'s default for the masked call draws the unmasked rect, the mask
   dropped, so a backend without it still draws a rounded rect in the right place;
   `drawBilinearRect`/`drawCheckerRect` take no mask (yet). `tests/roundedEdges.cpp`
@@ -1765,15 +1773,23 @@ two programs and the draws. What follows describes both together:
   `TabStrip::PageOverlap` (1) unit into the page on the side facing it (a negative margin
   there, set by `setTabPosition`), so each tab's last row (a Left or Right strip: column)
   is the frame's border row, and its row starts `TabStrip::LeadingPadding` (6, the frame's
-  corner radius) units in, so a first tab meets the frame's straight border and not its
-  corner arc. Every tab is drawn with the edge mask (`paintSurface`'s overload taking a
+  compiled corner radius) units in, so a first tab meets the frame's straight border and
+  not its corner arc (at 1.25, where `snap(6)` is 8 px against 7.5, its corner is on the
+  arc's last px, a twentieth of a px off the straight edge; a theme with a larger
+  `TabControl` radius puts it on the arc). Every tab is drawn with the edge mask (`paintSurface`'s overload taking a
   rect and a `RoundedEdge` mask): square on the two corners facing the page, no border on
-  that side. The selected tab is its whole bounds in `TabActive`, the frame's fill and
-  border, drawn over the frame (the frame is sent to the back), so tab and page are one
-  outline with no accent; an unselected one is `TabInactive` (darker than the page),
-  `TabHover` while hovered, drawn `TabButton::UnselectedOuterInset` (2) shorter on the
-  outer side and `PageOverlap` short of the page, so the frame's border runs on under it,
-  and `UnselectedEndInset` (1) in at each end along the row. That last inset is what keeps
+  that side, and drawn `PageOverlap` short of the page, up to the frame's outer edge.
+  The selected tab is the rest of its bounds in `TabActive`, the frame's fill and border,
+  drawn over the frame (the frame is sent to the back) and reaching over the frame's
+  border from there by that border's width (`drawRoundedRect`'s reach, the `TabControl`
+  surface's `borderWidth`), so it covers exactly the frame's border rows and tab and page
+  are one outline with no accent at any scale: its bounds alone would cover 1 or 2 device
+  px of a 2 px border at 1.5 by their position, leaving a border line across its opening
+  or its side borders a px into the page (`tests/tabJoin.cpp` checks the pixels at 1,
+  1.25, 1.5, 1.75 and 2 on the four sides). An unselected one is `TabInactive` (darker
+  than the page), `TabHover` while hovered, with no reach, so the frame's border runs on
+  under it, drawn `TabButton::UnselectedOuterInset` (2) shorter on the outer side and
+  `UnselectedEndInset` (1) in at each end along the row. That last inset is what keeps
   a selection to the two tabs: tabs overlap their neighbours by a unit and a later tab is
   in front, so one drawn whole would cover the selected tab's end border, and drawing it
   to suit its neighbour would make a selection rewrite the neighbours too. What a tab draws

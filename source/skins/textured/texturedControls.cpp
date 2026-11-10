@@ -1964,15 +1964,19 @@ void TabButton::staticInit(TexturedSkin *skin)
 
 // A notebook tab (tokyoNight.h, "Tabs"). Every tab is square on the corners
 // facing the page and has no border on that side. The strip reaches into the
-// page by TabStrip::PageOverlap, so a tab's last row (column) on that side is the
-// page frame's border row: the selected tab draws its whole bounds there in the
-// frame's fill, over the frame, and opens into the page. An unselected tab is
-// drawn UnselectedOuterInset shorter on the outer side, PageOverlap short of the
-// page, so the frame's border runs on under it, and UnselectedEndInset in at
-// each end along the row, so a tab after the selected one (drawn over it: tabs
-// overlap by a unit and the later one is in front) leaves its border alone; only
-// its own state picks what it draws, so a selection writes the two tabs alone.
-// A disabled tab looks unselected and does not hover.
+// page by TabStrip::PageOverlap, so every tab is drawn PageOverlap short of the
+// page, up to the frame's outer edge. The selected tab draws the rest of its
+// bounds in the frame's fill and reaches over the frame's border from there by
+// that border's width in device px (drawRoundedRect's reach), so it covers
+// exactly the frame's border rows (columns) and opens into the page at any
+// scale: a logical unit of overlap snaps to 1 or 2 px by its position at a
+// fractional one, while the border is max(1, snap(width)) px everywhere. An
+// unselected tab is also drawn UnselectedOuterInset shorter on the outer side,
+// so the frame's border runs on under it, and UnselectedEndInset in at each end
+// along the row, so a tab after the selected one (drawn over it: tabs overlap by
+// a unit and the later one is in front) leaves its border alone; only its own
+// state picks what it draws, so a selection writes the two tabs alone. A
+// disabled tab looks unselected and does not hover.
 void TabButton::update(renderer::Base *renderer, controls::Base *baseControl)
 {
     controls::TabButton *control=static_cast<controls::TabButton *>(baseControl);
@@ -1983,7 +1987,8 @@ void TabButton::update(renderer::Base *renderer, controls::Base *baseControl)
     const tokyonight::Surface &surface=selected?tokyonight::TabActive
         :(!disabled && control->isTabHovered())?tokyonight::TabHover:tokyonight::TabInactive;
     const int outer=selected?0:UnselectedOuterInset;
-    const int inner=selected?0:controls::TabStrip::PageOverlap;
+    const int inner=controls::TabStrip::PageOverlap;
+    const float reach=selected?tokyonight::TabControl.borderWidth:0.0f;
     const int end=selected?0:UnselectedEndInset;
     Rect rect=control->getRenderBounds();
     uint8_t edges=0;
@@ -2008,7 +2013,7 @@ void TabButton::update(renderer::Base *renderer, controls::Base *baseControl)
         break;
     }
 
-    tokyonight::paintSurface(renderer, m_primitives.data(), baseControl, surface, rect, edges);
+    tokyonight::paintSurface(renderer, m_primitives.data(), baseControl, surface, rect, edges, reach);
 }
 
 ///////////////////////////////////////////////////////////////////////////

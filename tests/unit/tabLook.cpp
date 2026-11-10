@@ -8,11 +8,13 @@
  *  for a strip on each of the four sides.
  *
  *  Every tab is drawn square on the corners facing the page and without a
- *  border on that side (the RoundedEdge mask). The selected tab is its whole
- *  bounds in TabActive, the page frame's flat fill and border, with no accent;
- *  an unselected one is TabInactive, drawn UnselectedOuterInset shorter on the
- *  side away from the page, PageOverlap short of the page and UnselectedEndInset
- *  in at each end along the row, and hovered it is TabHover in the same rect.
+ *  border on that side (the RoundedEdge mask), and drawn PageOverlap short of
+ *  the page. The selected tab is the rest of its bounds in TabActive, the page
+ *  frame's flat fill and border, with no accent, reaching over the frame's
+ *  border by its width (drawRoundedRect's reach); an unselected one is
+ *  TabInactive, with no reach, drawn UnselectedOuterInset shorter on the side
+ *  away from the page and UnselectedEndInset in at each end along the row, and
+ *  hovered it is TabHover in the same rect.
  *  A selected tab does not change as it is hovered, a disabled one draws as an
  *  unselected one and does not hover, and the tab's text does not move with its
  *  state. The page frame (TabControlInner) is drawn in the TabControl surface,
@@ -55,22 +57,24 @@ public:
         Color top, bottom, border;
         float radius, borderWidth;
         uint8_t edges;
+        float reach;
     };
 
     void drawRoundedRect(size_t primitiveId, Rect rect, float radius, float border, Color top,
         Color bottom, Color borderColor, int zIndex) override
     {
-        draws[primitiveId]={rect, top, bottom, borderColor, radius, border, 0};
+        draws[primitiveId]={rect, top, bottom, borderColor, radius, border, 0, 0.0f};
         touched.push_back(primitiveId);
         test::StubRenderer::drawRoundedRect(primitiveId, rect, radius, border, top, bottom,
             borderColor, zIndex);
     }
 
     void drawRoundedRect(size_t primitiveId, Rect rect, float radius, float border, Color top,
-        Color bottom, Color borderColor, int zIndex, uint8_t edges) override
+        Color bottom, Color borderColor, int zIndex, uint8_t edges, float reach) override
     {
         drawRoundedRect(primitiveId, rect, radius, border, top, bottom, borderColor, zIndex);
         draws[primitiveId].edges=edges;
+        draws[primitiveId].reach=reach;
     }
 
     std::map<size_t, Draw> draws;
@@ -205,12 +209,14 @@ const struct
         renderer::SquareTopLeft | renderer::SquareBottomLeft | renderer::NoBorderLeft}
 };
 
-//! An unselected tab's drawn rect within its bounds \p b, for a strip on \p dock.
-Rect unselectedRect(const Rect &b, DockPosition dock)
+//! A tab's drawn rect within its bounds \p b, for a strip on \p dock: PageOverlap
+//! short of the page, and an unselected one's insets on the outer side and at
+//! the ends.
+Rect drawnRect(const Rect &b, DockPosition dock, bool selected)
 {
-    const int outer=skin::textured::TabButton::UnselectedOuterInset;
+    const int outer=selected?0:skin::textured::TabButton::UnselectedOuterInset;
     const int inner=controls::TabStrip::PageOverlap;
-    const int end=skin::textured::TabButton::UnselectedEndInset;
+    const int end=selected?0:skin::textured::TabButton::UnselectedEndInset;
 
     switch(dock)
     {
@@ -227,7 +233,7 @@ Rect unselectedRect(const Rect &b, DockPosition dock)
 
 }//namespace
 
-TEST_CASE("Textured tabs: the selected tab is its bounds in TabActive, the others shorter, square and borderless on the page's side")
+TEST_CASE("Textured tabs: the selected tab is TabActive reaching over the frame's border, the others shorter, square and borderless on the page's side")
 {
     for(const auto &side : g_sides)
     {
@@ -245,14 +251,16 @@ TEST_CASE("Textured tabs: the selected tab is its bounds in TabActive, the other
 
             CAPTURE(i);
             CHECK(draw.edges == side.edges);
+            CHECK(sameRect(draw.rect, drawnRect(tab->getRenderBounds(), side.dock, tab->isActive())));
             if(tab->isActive())
             {
-                CHECK(sameRect(draw.rect, tab->getRenderBounds()));
+                // up to the frame's outer edge, then over its border as it is drawn
+                CHECK(draw.reach == tn::TabControl.borderWidth);
                 checkSurface(draw, tn::TabActive);
             }
             else
             {
-                CHECK(sameRect(draw.rect, unselectedRect(tab->getRenderBounds(), side.dock)));
+                CHECK(draw.reach == 0.0f);
                 checkSurface(draw, tn::TabInactive);
             }
         }
@@ -304,12 +312,13 @@ TEST_CASE("Textured tabs: hover gives an unselected tab TabHover in the same rec
 
     scene.moveTo(selected);
     checkSurface(scene.drawOf(selected), tn::TabActive);
-    CHECK(sameRect(scene.drawOf(selected).rect, selected->getRenderBounds()));
+    CHECK(sameRect(scene.drawOf(selected).rect,
+        drawnRect(selected->getRenderBounds(), DockPosition::Top, true)));
 
     scene.moveTo(disabled);
     checkSurface(scene.drawOf(disabled), tn::TabInactive);
     CHECK(sameRect(scene.drawOf(disabled).rect,
-        unselectedRect(disabled->getRenderBounds(), DockPosition::Top)));
+        drawnRect(disabled->getRenderBounds(), DockPosition::Top, false)));
 }
 
 TEST_CASE("Textured tabs: selecting another tab draws into the two tabs' slots alone")
@@ -335,7 +344,7 @@ TEST_CASE("Textured tabs: selecting another tab draws into the two tabs' slots a
     CHECK(touched == expected);
     CHECK(std::find(touched.begin(), touched.end(), frameSlot) == touched.end());
     checkSurface(scene.drawOf(second), tn::TabActive);
-    CHECK(sameRect(scene.drawOf(second).rect, second->getRenderBounds()));
+    CHECK(sameRect(scene.drawOf(second).rect, drawnRect(second->getRenderBounds(), DockPosition::Top, true)));
     checkSurface(scene.drawOf(first), tn::TabInactive);
     CHECK(sameRect(second->getChild(0)->getBounds(), secondText));
 }
@@ -351,5 +360,5 @@ TEST_CASE("Textured tabs: a strip moved Top to Bottom at run time draws its tabs
     // the same bounds in the strip, drawn for the other side
     CHECK(sameRect(tab->getRenderBounds(), bounds));
     CHECK(scene.drawOf(tab).edges == g_sides[1].edges);
-    CHECK(sameRect(scene.drawOf(tab).rect, unselectedRect(bounds, DockPosition::Bottom)));
+    CHECK(sameRect(scene.drawOf(tab).rect, drawnRect(bounds, DockPosition::Bottom, false)));
 }

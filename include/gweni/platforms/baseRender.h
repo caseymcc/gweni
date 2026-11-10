@@ -164,12 +164,17 @@ public:
         gweni::Color fillTop, gweni::Color fillBottom, gweni::Color borderColor, int zIndex) {}
 
     //! drawRoundedRect with an edge mask, \a edges a combination of RoundedEdge:
-    //! the corners it names square, the sides it names without a border. The
-    //! default ignores the mask and draws the rect drawRoundedRect does, so a
-    //! backend without it still draws a rounded rect in the right place.
+    //! the corners it names square, the sides it names without a border. With
+    //! \a reach above 0, each side without a border reaches past \a rect by the
+    //! device pixels a border of \a reach is drawn (max(1, snap(reach))), so a
+    //! tab drawn up to its page frame's outer edge covers exactly the frame's
+    //! border rows at any scale, where a logical unit of overlap snaps to 1 or 2
+    //! px by its position. The default ignores the mask and the reach and draws
+    //! the rect drawRoundedRect does, so a backend without them still draws a
+    //! rounded rect in the right place.
     virtual void drawRoundedRect(size_t primitiveId, gweni::Rect rect, float radius, float border,
         gweni::Color fillTop, gweni::Color fillBottom, gweni::Color borderColor, int zIndex,
-        uint8_t edges)
+        uint8_t edges, float reach=0.0f)
     {
         drawRoundedRect(primitiveId, rect, radius, border, fillTop, fillBottom, borderColor, zIndex);
     }

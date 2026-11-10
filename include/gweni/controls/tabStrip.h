@@ -44,7 +44,8 @@ public:
 
     //! Where the row starts along the strip, past the page frame's corner
     //! radius (6 in the textured skin), so a selected first tab meets the
-    //! frame's straight edge, not its corner arc.
+    //! frame's straight edge, not its corner arc. It is the compiled radius: a
+    //! theme with a larger TabControl radius puts that corner on the arc.
     static constexpr int LeadingPadding=6;
     //! How far the strip reaches into the page on the side facing it.
     static constexpr int PageOverlap=1;

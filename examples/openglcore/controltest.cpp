@@ -4971,11 +4971,12 @@ static void checkTabOverflow(Session &s, const std::string &shotDir, Interaction
 // one's pages are all empty and nothing comes after it, so a selection there
 // changes nothing else. Hovering "Can", an unselected tab, writes its one
 // primitive slot and glyphs of its own alone, changes no pixel outside it, and
-// moving off gives the frame before back. A click on it selects it: no frame from the click until settled
-// writes a primitive or glyph slot outside the two tabs' and the two pages'
-// subtrees (the old page's controls are hidden, the new one's shown), the page
-// frame's (TabControlInner's) slot is never written, and no pixel outside the
-// TabControl changes. Selecting the first tab again gives the frame before back.
+// moving off gives the frame before back. A click on it selects it: no frame
+// from the click until settled writes a primitive or glyph slot outside the two
+// tabs' and the two pages' subtrees (the old page's controls are hidden, the new
+// one's shown), the page frame's (TabControlInner's) slot is never written, and
+// no pixel outside the TabControl changes. Selecting the first tab again gives
+// the frame before back.
 static void checkTabControlSelect(Session &s, const std::string &shotDir, InteractionChecks &checks,
     bool &ok)
 {

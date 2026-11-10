@@ -297,10 +297,11 @@ public:
         gweni::Color fillTop, gweni::Color fillBottom, gweni::Color borderColor, int zIndex) override;
     //! Style 4 with the edge mask in Vertex::radius's high byte; the radius, in its
     //! low byte, is at most 255 device px (a larger one is that, which draws the
-    //! same in a rect no more than 510 px across on its shorter side).
+    //! same in a rect no more than 510 px across on its shorter side). \a reach
+    //! widens the quad on the borderless sides (renderer::Base's).
     void drawRoundedRect(size_t primitiveId, gweni::Rect rect, float radius, float border,
         gweni::Color fillTop, gweni::Color fillBottom, gweni::Color borderColor, int zIndex,
-        uint8_t edges) override;
+        uint8_t edges, float reach=0.0f) override;
     void drawBilinearRect(size_t primitiveId, gweni::Rect rect, int zIndex,
         gweni::Color c00, gweni::Color c10, gweni::Color c01, gweni::Color c11,
         float radius, float border, gweni::Color borderColor) override;
@@ -919,11 +920,13 @@ private:
     //! Writes primitiveId's slot as one of the SDF rounded-rect quads (styles 4, 6, 7),
     //! centred in rect. color0 and color3 are given per side (left, right), because
     //! style 6 interpolates them along x; color1 and the border colour are per quad.
-    //! \a edges is the RoundedEdge mask, packed over the radius (Vertex::radius).
+    //! \a edges is the RoundedEdge mask, packed over the radius (Vertex::radius);
+    //! with \a reach above 0 the device rect is widened by max(1, snap(reach))
+    //! px on each side \a edges leaves without a border.
     void writeRoundedQuad(size_t primitiveId, gweni::Rect rect, int zIndex, uint8_t style,
         float radius, float border, gweni::Color color0Left, gweni::Color color0Right,
         gweni::Color color1, gweni::Color color3Left, gweni::Color color3Right,
-        gweni::Color borderColor, uint8_t edges=0);
+        gweni::Color borderColor, uint8_t edges=0, float reach=0.0f);
     //! The image unit (0..ImageUnits-1) a style-2 slot samples \a texture from,
     //! taking a free one the first time; ImageUnits when all are taken.
     size_t imageUnit(TextureHandle texture);

@@ -16,8 +16,10 @@
  *  high byte, on all four vertexes. A call without a mask, a mask of 0 and
  *  drawBilinearRect/drawCheckerRect leave the high byte 0, and a mask of 0 is the
  *  unmasked call's slot byte for byte. Drawing the same mask again writes
- *  nothing; changing only the mask rewrites that slot alone. The pixels are
- *  checked on every backend in tests/roundedEdges.cpp.
+ *  nothing; changing only the mask rewrites that slot alone. A reach widens
+ *  the quad (and the SDF's size with it) by max(1, snap(reach)) device px on
+ *  each borderless side and nowhere else, and no reach is the call without
+ *  one. The pixels are checked on every backend in tests/roundedEdges.cpp.
  */
 #include "headlessFixture.h"
 
@@ -129,15 +131,32 @@ public:
         return snapshot.primitives.at(id);
     }
 
-    //! Vertex i's radius field (the 9th of its 16 16-bit fields).
-    unsigned radius(size_t id, size_t i) const
+    //! Vertex i's 16-bit field f (Vertex: style, x, y, z, tx, ty, lx, ly, radius, ...).
+    uint16_t field(size_t id, size_t i, size_t f) const
     {
         const std::vector<uint8_t> bytes=slotBytes(id);
-        uint16_t field[16];
+        uint16_t fields[16];
 
-        REQUIRE(bytes.size() == 4*sizeof(field));
-        std::memcpy(field, bytes.data()+i*sizeof(field), sizeof(field));
-        return field[8];
+        REQUIRE(bytes.size() == 4*sizeof(fields));
+        std::memcpy(fields, bytes.data()+i*sizeof(fields), sizeof(fields));
+        return fields[f];
+    }
+
+    //! Vertex i's radius field (the 9th of its 16 16-bit fields).
+    unsigned radius(size_t id, size_t i) const { return field(id, i, 8); }
+
+    //! The slot's quad in device px, from its top-left and bottom-right vertexes.
+    Rect quad(size_t id) const
+    {
+        const int x0=int16_t(field(id, 0, 1));
+        const int y0=int16_t(field(id, 0, 2));
+        const int x1=int16_t(field(id, 3, 1));
+        const int y1=int16_t(field(id, 3, 2));
+
+        // the SDF's half-size in half-pixel units is the quad's size
+        CHECK(int16_t(field(id, 3, 6)) == x1-x0);
+        CHECK(int16_t(field(id, 3, 7)) == y1-y0);
+        return Rect(x0, y0, x1-x0, y1-y0);
     }
 
     //! One frame drawing `draw`, and the slots it wrote.
@@ -256,6 +275,69 @@ TEST_CASE("SlotRenderer packs the edge mask in Vertex::radius's high byte, over 
         CHECK(renderer.frame([&] { draw(edges); }) == 0);
         CHECK(renderer.frame([&] { draw(gweni::renderer::NoBorderTop); }) == 1);
         CHECK(renderer.writtenPrimitiveIds() == std::vector<size_t>{ids[0]});
+    }
+}
+
+TEST_CASE("SlotRenderer widens a masked quad by the reach on its borderless sides alone, as a border of it is drawn")
+{
+    MirrorOnly renderer;
+    LiveIds ids(2);
+    const Rect rect(10, 10, 60, 30);
+    const Color fill(30, 40, 50, 255);
+    const Color border(90, 100, 110, 255);
+    namespace edge=gweni::renderer;
+
+    // the quad of `edges` with `reach` at `scale`
+    auto quad=[&](float scale, uint8_t edges, float reach)
+    {
+        renderer.setScale(scale);
+        renderer.frame([&] { renderer.drawRoundedRect(ids[0], rect, 6.0f, 1.0f, fill, fill, border, 1,
+            edges, reach); });
+        return renderer.quad(ids[0]);
+    };
+    auto same=[](const Rect &a, const Rect &b)
+    {
+        return a.x == b.x && a.y == b.y && a.w == b.w && a.h == b.h;
+    };
+
+    SUBCASE("no reach is the snapped rect")
+    {
+        CHECK(same(quad(1.0f, edge::NoBorderBottom, 0.0f), Rect(10, 10, 60, 30)));
+        // 1.5: edges at floor(v*1.5+0.5)
+        CHECK(same(quad(1.5f, edge::NoBorderBottom, 0.0f), Rect(15, 15, 90, 45)));
+    }
+
+    SUBCASE("a reach of 1 is max(1, snap(1)) px past each borderless side")
+    {
+        CHECK(same(quad(1.0f, edge::NoBorderBottom, 1.0f), Rect(10, 10, 60, 31)));
+        CHECK(same(quad(1.25f, edge::NoBorderBottom, 1.0f), Rect(13, 13, 75, 38)));
+        CHECK(same(quad(1.5f, edge::NoBorderBottom, 1.0f), Rect(15, 15, 90, 47)));
+        CHECK(same(quad(2.0f, edge::NoBorderBottom, 1.0f), Rect(20, 20, 120, 62)));
+        CHECK(same(quad(1.5f, edge::NoBorderTop, 1.0f), Rect(15, 13, 90, 47)));
+        CHECK(same(quad(1.5f, edge::NoBorderLeft, 1.0f), Rect(13, 15, 92, 45)));
+        CHECK(same(quad(1.5f, edge::NoBorderRight, 1.0f), Rect(15, 15, 92, 45)));
+        CHECK(same(quad(1.5f, edge::NoBorderLeft|edge::NoBorderRight, 1.0f), Rect(13, 15, 94, 45)));
+        // a reach below one unit is still a whole px
+        CHECK(same(quad(1.0f, edge::NoBorderBottom, 0.25f), Rect(10, 10, 60, 31)));
+    }
+
+    SUBCASE("square corners and bordered sides take no reach")
+    {
+        const uint8_t square=edge::SquareTopLeft|edge::SquareTopRight|edge::SquareBottomLeft
+            |edge::SquareBottomRight;
+
+        CHECK(same(quad(1.5f, square, 1.0f), Rect(15, 15, 90, 45)));
+    }
+
+    SUBCASE("no reach is the masked call without one, byte for byte")
+    {
+        renderer.setScale(1.5f);
+        renderer.frame([&]
+        {
+            renderer.drawRoundedRect(ids[0], rect, 6.0f, 1.0f, fill, fill, border, 1, edge::NoBorderTop);
+            renderer.drawRoundedRect(ids[1], rect, 6.0f, 1.0f, fill, fill, border, 1, edge::NoBorderTop, 0.0f);
+        });
+        CHECK(renderer.slotBytes(ids[0]) == renderer.slotBytes(ids[1]));
     }
 }
 

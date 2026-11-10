@@ -296,9 +296,12 @@ inline void setAllSurfacesMissing()
 // ---- paint helper ---------------------------------------------------------
 // Standard "draw if visible, toggle on visibility/created change" flow used by
 // almost every control renderer. ids must point at >=1 primitive id.
-// The overload taking a rect paints it in place of the control's render bounds.
+// The overload taking a rect paints it in place of the control's render bounds,
+// with an edge mask (renderer::RoundedEdge: the corners it names square, the
+// sides it names without a border) and the reach of those sides over a
+// neighbour's border (renderer::Base::drawRoundedRect) when given.
 inline void paintSurface(renderer::Base *render, size_t *ids, controls::Base *c, const Surface &s,
-    const Rect &rect)
+    const Rect &rect, uint8_t edges=0, float reach=0.0f)
 {
     if(!ids)
         return;
@@ -306,8 +309,14 @@ inline void paintSurface(renderer::Base *render, size_t *ids, controls::Base *c,
     const bool visible=c->visible();
 
     if(visible)
-        render->drawRoundedRect(ids[0], rect, s.radius, s.borderWidth,
-            s.top, s.bottom, s.border, c->getZIndex());
+    {
+        if(edges || (reach > 0.0f))
+            render->drawRoundedRect(ids[0], rect, s.radius, s.borderWidth,
+                s.top, s.bottom, s.border, c->getZIndex(), edges, reach);
+        else
+            render->drawRoundedRect(ids[0], rect, s.radius, s.borderWidth,
+                s.top, s.bottom, s.border, c->getZIndex());
+    }
 
     const unsigned int sc=c->getStateChange();
     if((sc&controls::StateChange_Visibility) || (sc&controls::StateChange_Created))
@@ -317,25 +326,6 @@ inline void paintSurface(renderer::Base *render, size_t *ids, controls::Base *c,
 inline void paintSurface(renderer::Base *render, size_t *ids, controls::Base *c, const Surface &s)
 {
     paintSurface(render, ids, c, s, c->getRenderBounds());
-}
-
-// The rect painted with an edge mask (renderer::RoundedEdge): the corners it
-// names square, the sides it names without a border.
-inline void paintSurface(renderer::Base *render, size_t *ids, controls::Base *c, const Surface &s,
-    const Rect &rect, uint8_t edges)
-{
-    if(!ids)
-        return;
-
-    const bool visible=c->visible();
-
-    if(visible)
-        render->drawRoundedRect(ids[0], rect, s.radius, s.borderWidth,
-            s.top, s.bottom, s.border, c->getZIndex(), edges);
-
-    const unsigned int sc=c->getStateChange();
-    if((sc&controls::StateChange_Visibility) || (sc&controls::StateChange_Created))
-        render->showPrimitive(visible?4:0, ids[0]);
 }
 
 }//namespace tokyonight
