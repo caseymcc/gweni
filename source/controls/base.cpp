@@ -3795,8 +3795,8 @@ void Base::recurseLayout(skin::Base *skin)
         return;
 
     // The root is entered like any dirty control; its Y arrange leaves it
-    // dirty only while a child is, and Canvas::layoutPass decides from what
-    // the pass re-dirtied whether another runs.
+    // dirty only while a child is, and Canvas::layoutPass runs another while
+    // the pass re-dirtied layout or left it so.
     doCalculateSize(skin, Dim::X);
     doArrange(skin, Dim::X);
     doCalculateSize(skin, Dim::Y);
