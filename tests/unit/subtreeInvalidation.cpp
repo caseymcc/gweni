@@ -14,9 +14,11 @@
  *  TreeNode's), and:
  *
  *  - each control's needsLayout() / layoutDirty() after it is what main
- *    (cb8b545) gives, recorded below as one character per control of the
- *    canvas's tree in pre-order over getActualChildren(): the walk dirties
- *    its subtree and the way up from the root, and nothing else;
+ *    (cb8b545) gives, but for the way down to each TreeNode's toggle, which
+ *    main's settled canvas still had dirty (#522), recorded below as one
+ *    character per control of the canvas's tree in pre-order over
+ *    getActualChildren(): the walk dirties its subtree and the way up from
+ *    the root, and nothing else;
  *  - it enters each control of the subtree exactly once, and its upward
  *    work is done once, for the walk's root, not by every entry:
  *    invalidateCalls() goes up by the subtree's size plus the controls on
@@ -238,15 +240,17 @@ const Walk Walks[]=
     {"a TreeNode's inner panel", [](Scene &s) { return innerPanelOf(s.nodes[3]); }},
 };
 
-//! main's state (cb8b545) of the settled canvas (hidden subtrees, which no
-//! pass enters, stay dirty, and needsLayout() stays set on controls whose
-//! layout() did not run), and after each walk, in Walks' order.
+//! The settled canvas's state (hidden subtrees, which no pass enters, stay
+//! dirty, and needsLayout() stays set on controls whose layout() did not run),
+//! and after each walk, in Walks' order: main's (cb8b545), but for the way
+//! down to each TreeNode's toggle, which main left dirty after the pass that
+//! placed it (#522).
 const char *const SettledState=
-    "nn.n..n.n..n.n..n.n.n.BBBBBBBBBBBBn.n.BBBBBBBBBBBBn.n.BBBBBBBBBB"
-    "BBn.BBdBB.n.dnBBn.BBB.n.BBBBBBBBBBBBBBB.n.dnBBn.BBB.n.BBBBBBBBBB"
-    "BBBBB.n.dnBBn.BBB.n.BBBBBBBBBBBBBBB.n.dnBBn.BBB.n.BBBBBBBBBBBBBB"
-    "B.n.dnBBn.BBB.n.BBBBBBBBBBBBBBB.n.dnBBn.BBB.n.BBBBBBBBBBBBBBB.n."
-    "dnBBn.BBB.n.BBBBBBBBBBBBBBB.n.BBBBBBBnn.n..BBBBBB";
+    ".n.n..n.n..n.n..n.n.n.BBBBBBBBBBBBn.n.BBBBBBBBBBBBn.n.BBBBBBBBBB"
+    "BBn.......n..nBBn.B...n.BBBBBBBBBBBBB...n..nBBn.B...n.BBBBBBBBBB"
+    "BBB...n..nBBn.B...n.BBBBBBBBBBBBB...n..nBBn.B...n.BBBBBBBBBBBBB."
+    "..n..nBBn.B...n.BBBBBBBBBBBBB...n..nBBn.B...n.BBBBBBBBBBBBB...n."
+    ".nBBn.B...n.BBBBBBBBBBBBB...n.BBBBBBBnn.n..BBBBBB";
 const char *const WalkState[]=
 {
     // the canvas
@@ -257,26 +261,26 @@ const char *const WalkState[]=
     "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
     // the deep inner-panel owner
     "BBdB.dBdB.dBBBBBBBBBBBBBBBBBBBBBBBn.n.BBBBBBBBBBBBn.n.BBBBBBBBBB"
-    "BBn.BBdBB.n.dnBBn.BBB.n.BBBBBBBBBBBBBBB.n.dnBBn.BBB.n.BBBBBBBBBB"
-    "BBBBB.n.dnBBn.BBB.n.BBBBBBBBBBBBBBB.n.dnBBn.BBB.n.BBBBBBBBBBBBBB"
-    "B.n.dnBBn.BBB.n.BBBBBBBBBBBBBBB.n.dnBBn.BBB.n.BBBBBBBBBBBBBBB.n."
-    "dnBBn.BBB.n.BBBBBBBBBBBBBBB.n.BBBBBBBnn.n..BBBBBB",
+    "BBn.......n..nBBn.B...n.BBBBBBBBBBBBB...n..nBBn.B...n.BBBBBBBBBB"
+    "BBB...n..nBBn.B...n.BBBBBBBBBBBBB...n..nBBn.B...n.BBBBBBBBBBBBB."
+    "..n..nBBn.B...n.BBBBBBBBBBBBB...n..nBBn.B...n.BBBBBBBBBBBBB...n."
+    ".nBBn.B...n.BBBBBBBBBBBBB...n.BBBBBBBnn.n..BBBBBB",
     // the deep TreeNode
     "Bn.n..n.n..n.n..n.n.n.BBBBBBBBBBBBn.n.BBBBBBBBBBBBn.n.BBBBBBBBBB"
-    "BBn.BBdBB.n.dnBBn.BBB.n.BBBBBBBBBBBBBBB.n.dnBBn.BBB.n.BBBBBBBBBB"
-    "BBBBB.n.dnBBn.BBB.n.BBBBBBBBBBBBBBB.n.dnBBn.BBB.n.BBBBBBBBBBBBBB"
+    "BBn.BddB..n.dnBBn.B...n.BBBBBBBBBBBBBB..n.dnBBn.B...n.BBBBBBBBBB"
+    "BBBB..n.dnBBn.B...n.BBBBBBBBBBBBBB..n.dnBBn.B...n.BBBBBBBBBBBBBB"
     "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB"
     "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBnn.n..BBBBBB",
     // the ScrollControl's inner panel
     "BBdB.dBdB.dBdBBBBBBBBBBBBBBBBBBBBBn.n.BBBBBBBBBBBBn.n.BBBBBBBBBB"
-    "BBn.BBdBB.n.dnBBn.BBB.n.BBBBBBBBBBBBBBB.n.dnBBn.BBB.n.BBBBBBBBBB"
-    "BBBBB.n.dnBBn.BBB.n.BBBBBBBBBBBBBBB.n.dnBBn.BBB.n.BBBBBBBBBBBBBB"
-    "B.n.dnBBn.BBB.n.BBBBBBBBBBBBBBB.n.dnBBn.BBB.n.BBBBBBBBBBBBBBB.n."
-    "dnBBn.BBB.n.BBBBBBBBBBBBBBB.n.BBBBBBBnn.n..BBBBBB",
+    "BBn.......n..nBBn.B...n.BBBBBBBBBBBBB...n..nBBn.B...n.BBBBBBBBBB"
+    "BBB...n..nBBn.B...n.BBBBBBBBBBBBB...n..nBBn.B...n.BBBBBBBBBBBBB."
+    "..n..nBBn.B...n.BBBBBBBBBBBBB...n..nBBn.B...n.BBBBBBBBBBBBB...n."
+    ".nBBn.B...n.BBBBBBBBBBBBB...n.BBBBBBBnn.n..BBBBBB",
     // the TreeNode's inner panel
     "Bn.n..n.n..n.n..n.n.n.BBBBBBBBBBBBn.n.BBBBBBBBBBBBn.n.BBBBBBBBBB"
-    "BBn.BBdBB.n.dnBBn.BBB.n.BBBBBBBBBBBBBBB.n.dnBBn.BBB.n.BBBBBBBBBB"
-    "BBBBB.n.dnBBn.BBB.n.BBBBBBBBBBBBBBB.n.dBBBBBBBBBBBBBBBBBBBBBBBBB"
+    "BBn.BddB..n.dnBBn.B...n.BBBBBBBBBBBBBB..n.dnBBn.B...n.BBBBBBBBBB"
+    "BBBB..n.dnBBn.B...n.BBBBBBBBBBBBBB..n.dBBBBBBBBBBBBBBBBBBBBBBBBB"
     "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB"
     "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBnn.n..BBBBBB",
 };

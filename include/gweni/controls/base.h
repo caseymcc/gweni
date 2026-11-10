@@ -1205,6 +1205,10 @@ protected:
     //! m_updateLayout was set from outside every setExcludedFromStats()
     //! subtree (or the control is new): see layoutEntryCounted().
     bool m_layoutDirtyCounted=true;
+    //! A shown dirty child of \p children has m_layoutDirtyCounted and is no
+    //! setExcludedFromStats() root (doArrange).
+    template<typename Children>
+    static bool dirtyChildCounted(const Children &children);
     //! The preferred width is what an X measure would give now: one ran in a
     //! pass while the control was not visible(), and since then nothing under
     //! it was invalidated (but for a new size, which no preferred width reads)

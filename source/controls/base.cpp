@@ -3195,6 +3195,20 @@ size_t childrenCounted(const Children &children)
 }
 }
 
+// Whether a shown dirty child among `children` was dirtied from outside every
+// setExcludedFromStats() subtree.
+template<typename Children>
+bool Base::dirtyChildCounted(const Children &children)
+{
+    for(const Base *child:children)
+    {
+        if(child && !child->hidden() && child->m_updateLayout && child->m_layoutDirtyCounted &&
+            !child->m_excludeFromStats)
+            return true;
+    }
+    return false;
+}
+
 void Base::countLayoutChildrenScanned(size_t children) const
 {
     if(layoutEntryCounted())
@@ -3248,7 +3262,10 @@ void Base::doCalculateSize(skin::Base *skin, Dim dim)
 // its Y arrange, the last step a pass enters it in, so every step of the pass
 // in between enters it: a width the X arrange gave it is measured in Y. What
 // is dirtied under it after its children's own Y arrange (a child placed in a
-// postLayout) keeps it dirty, so the next pass finds the way down.
+// postLayout(), not in arrange() before its ParentClass::arrange) keeps it
+// dirty, and so every control up to the canvas, whose own Y arrange ends the
+// pass: Canvas::layoutPass then runs another in the same frame, which enters
+// only that way down.
 void Base::doArrange(skin::Base *skin, Dim dim)
 {
     if(!Canvas::s_layingOut)
@@ -3352,9 +3369,16 @@ void Base::doArrange(skin::Base *skin, Dim dim)
             m_changedChildren.resize(kept);
         }
 
-        // still dirty: its parent's walk finds it again
+        // still dirty: its parent's walk finds it again, and the next pass
+        // enters it as counted only for a dirty child that is (an excluded
+        // subtree's leftover alone makes a pass passOnlyExcluded)
         if(m_updateLayout)
+        {
             noteLayoutChanged();
+            if((g_statsExcludedRoots != 0) && (m_redirtiedPass != Canvas::s_passSerial))
+                m_layoutDirtyCounted=((m_children.size() < MinChangedWalk) || m_changedOverflow)?
+                    dirtyChildCounted(m_children):dirtyChildCounted(m_changedChildren);
+        }
         else
             m_layoutDirtyCounted=false;
     }

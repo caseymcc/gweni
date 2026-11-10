@@ -31,13 +31,16 @@ enum class PopupPlacement;
 struct LayoutStats
 {
     //! Update-phase passes. 0 on a frame nothing invalidated, 1 when the first
-    //! pass converged, more when a pass re-dirtied layout.
+    //! pass converged, more when a pass re-dirtied layout or left it dirty (a
+    //! child placed in a postLayout(), after its own arrange).
     int passes=0;
-    //! The first control that re-dirtied layout during an update-phase pass:
-    //! its type name and control id. Null when no pass re-dirtied.
+    //! The first control that re-dirtied layout during a pass, in either
+    //! phase, or, for a pass that left layout dirty with nothing re-dirtied,
+    //! the control under which it did (see Canvas::layoutPass): its type name
+    //! and control id. Null when every pass converged.
     const char *redirtiedType=nullptr;
     size_t redirtiedId=0;
-    //! The update phase stopped at Canvas::MaxLayoutPasses still dirty.
+    //! A phase stopped at Canvas::MaxLayoutPasses still dirty.
     bool capped=false;
     //! renderCanvas's own recurseLayout found layout dirty and ran a pass.
     bool renderLayout=false;
@@ -514,8 +517,16 @@ protected:
     /// after it, and the ToolTip box at the end of the child list; run before
     /// the z renumber, which every change of the list's order asks for.
     void keepOverlaysLast();
-    /// One recurseLayout with m_inLayout set.
+    /// One recurseLayout with m_inLayout set. The canvas is left dirty when
+    /// the pass re-dirtied layout or its own Y arrange ended dirty (a shown
+    /// control under it still is), so the caller runs another.
     void layoutPass();
+    /// Passes until the layout is clean, at most MaxLayoutPasses, counted in
+    /// LayoutStats::passes (\p updatePhase) or as LayoutStats::renderLayout.
+    void layoutUntilClean(bool updatePhase);
+    /// Names the control the pass left dirty under (see layoutPass()) as the
+    /// pass's culprit, when nothing re-dirtied layout.
+    void nameLeftDirty();
     /// With layoutVerifyEnabled(), after a converged layout: the full pass and
     /// the comparison (see layoutVerifyEnabled()).
     void verifyLayout();

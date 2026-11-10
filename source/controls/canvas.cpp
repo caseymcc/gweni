@@ -285,12 +285,45 @@ void Canvas::layoutPass()
     s_childrenScanned=outerScanned;
     s_walkChanged=outerWalk;
 
-    // Every layout invalidation during the pass set m_updateLayout again on
-    // its way up. Only the ones Base reported as re-dirtying ask for another
-    // pass; the rest were requests this pass consumed after they were raised
-    // (see Base::invalidate). What is still dirty below stays marked on the
-    // way down to it (Base::doArrange) for the next pass.
-    m_updateLayout=m_passRedirtied;
+    // The canvas's own Y arrange, the pass's last step, left it dirty exactly
+    // while a shown child still is (Base::doArrange): something placed after
+    // its arrange (a child moved in a postLayout()) or re-dirtied. Either
+    // asks for another pass, which the caller runs in the same frame and
+    // which enters only that way down. An invalidation the pass consumed
+    // after it was raised (see Base::invalidate) left nothing dirty.
+    const bool leftDirty=m_updateLayout;
+
+    if(leftDirty && !m_passRedirtied)
+        nameLeftDirty();
+    m_updateLayout=m_passRedirtied || leftDirty;
+}
+
+// The way down the pass left dirty is short: the first shown dirty child of
+// each control, to the deepest. Its parent is named, the control whose arrange
+// ended with it dirty (it placed the child after the child's own arrange, or
+// never entered it).
+void Canvas::nameLeftDirty()
+{
+    Base *deepest=this;
+
+    for(bool deeper=true; deeper;)
+    {
+        deeper=false;
+        for(Base *child:deepest->getActualChildren())
+        {
+            if(!child->hidden() && child->layoutDirty())
+            {
+                deepest=child;
+                deeper=true;
+                break;
+            }
+        }
+    }
+
+    Base *culprit=deepest->getActualParent()?deepest->getActualParent():deepest;
+
+    m_passCulpritType=culprit->getTypeName();
+    m_passCulpritId=culprit->getControlId();
 }
 
 namespace
@@ -444,6 +477,14 @@ void Canvas::countLayoutEntry(controls::Base *control)
 
 void Canvas::layoutCanvas()
 {
+    layoutUntilClean(true);
+}
+
+// The update phase's passes and the render phase's run the same loop, so a
+// pass the render phase leaves dirty is laid out in that frame too rather
+// than left to the next (counted as LayoutStats::renderLayout, not passes).
+void Canvas::layoutUntilClean(bool updatePhase)
+{
     static std::set<std::string> warnedCapped;
     // every pass run, counted or not (passOnlyExcluded), for the cap
     int passesRun=0;
@@ -473,9 +514,13 @@ void Canvas::layoutCanvas()
             m_layoutStats.visited=visitedBefore;
             continue;
         }
-        ++m_layoutStats.passes;
+        if(updatePhase)
+            ++m_layoutStats.passes;
+        else
+            m_layoutStats.renderLayout=true;
 
-        if(m_passRedirtied && !m_layoutStats.redirtiedType)
+        // re-dirtied, or left dirty under the culprit (layoutPass)
+        if(m_updateLayout && !m_layoutStats.redirtiedType)
         {
             m_layoutStats.redirtiedType=m_passCulpritType;
             m_layoutStats.redirtiedId=m_passCulpritId;
@@ -491,16 +536,7 @@ void Canvas::renderPhaseLayout()
     if(!m_updateLayout || hidden())
         return;
 
-    const size_t visitedBefore=m_layoutStats.visited;
-
-    layoutPass();
-    if(passOnlyExcluded())
-        m_layoutStats.visited=visitedBefore;
-    else
-        m_layoutStats.renderLayout=true;
-
-    if(!m_updateLayout && layoutVerifyEnabled())
-        verifyLayout();
+    layoutUntilClean(false);
     noteMeasureCalls();
 }
 
