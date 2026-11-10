@@ -338,7 +338,14 @@
  *                   most the field's slot and the new string's glyphs; the
  *                   release and a settled frame write nothing; a double-click,
  *                   "7" and Return set it to 7 (a line lists the drag
- *                   frames). VectorFieldDemo: every frame of a drag of the
+ *                   frames). ShowcaseInputDemo: its first DragNumber
+ *                   (docked Top, Elastic) double-clicked, "42" typed and
+ *                   Escape, then Return and Return: the box covers the field,
+ *                   no other control moves, and each open and close frame
+ *                   lays out in one pass entering only the field's subtree
+ *                   and its ancestors, changing no pixel outside the field
+ *                   and the control that had the focus (a line per frame).
+ *                   VectorFieldDemo: every frame of a drag of the
  *                   tagged float3's Y component leaves nothing pending and no
  *                   pixel changed outside that field, writes at most its slot
  *                   and the new string's glyphs (none when the string stays)
@@ -724,6 +731,7 @@
 #include <algorithm>
 #include <cstring>
 #include <fstream>
+#include <functional>
 #include <iostream>
 #include <map>
 #include <sstream>
@@ -5347,6 +5355,164 @@ static void checkDragNumber(Session &s, const std::string &shotDir, InteractionC
         +(typed ? "" : "typing 7 and Return did not set the value to 7"));
 }
 
+// Showcase -> Text input: its DragNumber rows are docked Top and Elastic, so
+// the field is as high as its text. The first one ("128") double-clicked, "42"
+// typed and Escape, then Return on the focused field and Return again: the box
+// covers the field at its full size, and no other control moves with it open
+// or closed (#521: the hidden Text counted for nothing, the field shrank to
+// its padding under the box, clipping the typed text, and the sections below
+// it moved). Each open and close frame lays out in one update-phase pass that
+// enters no more than the field's subtree and its ancestors, and changes no
+// pixel outside the field and the control that had the focus.
+static void checkShowcaseDragNumber(Session &s, const std::string &shotDir, InteractionChecks &checks, bool &ok)
+{
+    gweni::controls::Base *control=addControl(s, "ShowcaseInputDemo");
+    renderFrames(s, s.frames);
+
+    gweni::controls::DragNumber *field=nullptr;
+    std::function<void(gweni::controls::Base *)> find=[&](gweni::controls::Base *at)
+    {
+        if(!field)
+            field=gweni::gweni_cast<gweni::controls::DragNumber>(at);
+        for(gweni::controls::Base *child : at->getActualChildren())
+            find(child);
+    };
+    if(control)
+        find(control);
+    if(!field)
+    {
+        checks.check("showcase_drag_number_found", false, "ShowcaseInputDemo has no DragNumber");
+        if(control)
+            dropControl(s, control);
+        return;
+    }
+
+    using BoundsList=std::vector<std::pair<gweni::controls::Base *, gweni::Rect>>;
+    std::function<void(gweni::controls::Base *, BoundsList &)> collect=
+        [&](gweni::controls::Base *at, BoundsList &out)
+    {
+        if(field->getEditBox() && at == field->getEditBox())
+            return;
+        out.push_back({at, at->getBounds()});
+        for(gweni::controls::Base *child : at->getActualChildren())
+            collect(child, out);
+    };
+    // the entries a pass that stops at the field makes: its ancestors' and
+    // its subtree's (its hidden Text measured too), each measured and
+    // arranged in X and Y
+    std::function<size_t(gweni::controls::Base *)> subtreeSize=[&](gweni::controls::Base *at)
+    {
+        size_t count=1;
+        for(gweni::controls::Base *child : at->getActualChildren())
+            count+=subtreeSize(child);
+        return count;
+    };
+
+    const BoundsList rest=[&]() { BoundsList out; collect(s.canvas, out); return out; }();
+    const gweni::Rect fieldRest=field->getBounds();
+    const gweni::String shown=field->getText();
+    std::string failures;
+
+    // after a frame that opened or closed the box
+    auto checkFrame=[&](const std::string &step, const std::vector<uint8_t> &before,
+        gweni::controls::Base *focusedBefore)
+    {
+        const gweni::controls::LayoutStats &layout=s.canvas->getLayoutStats();
+        size_t ancestors=0;
+        for(gweni::controls::Base *at=field->getActualParent(); at; at=at->getActualParent())
+            ++ancestors;
+        const size_t bound=4*(ancestors+subtreeSize(field));
+
+        BoundsList now;
+        collect(s.canvas, now);
+        std::string moved;
+        if(now.size() != rest.size())
+            moved=" the tree changed";
+        for(size_t i=0; i < now.size() && i < rest.size(); ++i)
+        {
+            const gweni::Rect &a=rest[i].second;
+            const gweni::Rect &b=now[i].second;
+            if(now[i].first != rest[i].first || a.x != b.x || a.y != b.y || a.w != b.w || a.h != b.h)
+            {
+                moved+=std::string(" ")+now[i].first->getTypeName()+"#"+std::to_string(now[i].first->getControlId())
+                    +" "+std::to_string(a.x)+","+std::to_string(a.y)+","+std::to_string(a.w)+"x"+std::to_string(a.h)
+                    +"->"+std::to_string(b.x)+","+std::to_string(b.y)+","+std::to_string(b.w)+"x"+std::to_string(b.h);
+            }
+        }
+        if(!moved.empty())
+            failures+="; "+step+": moved"+moved;
+
+        if(field->isEditing())
+        {
+            const gweni::Rect box=field->getEditBox()->getBounds();
+            if(box.x != 0 || box.y != 0 || box.w != fieldRest.w || box.h != fieldRest.h)
+                failures+="; "+step+": the box is "+std::to_string(box.x)+","+std::to_string(box.y)+","
+                    +std::to_string(box.w)+"x"+std::to_string(box.h)+", not 0,0,"+std::to_string(fieldRest.w)
+                    +"x"+std::to_string(fieldRest.h);
+        }
+        if(layout.passes != 1 || layout.renderLayout || layout.visited > bound)
+            failures+="; "+step+": "+std::to_string(layout.passes)+" update-phase passes"
+                +(layout.renderLayout ? " and a render-phase one" : "")+", "+std::to_string(layout.visited)
+                +" entries (at most "+std::to_string(bound)+": the field's subtree and ancestors)";
+        const SplitDifferences diff=differencesSplit(s, before, framePixels(s), field,
+            focusedBefore ? focusedBefore : field);
+        if(diff.outside != 0)
+            failures+="; "+step+": "+std::to_string(diff.outside)+" pixels changed outside the field"
+                " and the control that had the focus";
+        std::cout<<"showcase_drag_number "<<step<<" passes="<<layout.passes<<" layout_visited="<<layout.visited
+            <<" bound="<<bound<<" outside="<<diff.outside<<"\n";
+    };
+
+    const gweni::Point at=centreOf(field);
+    std::vector<uint8_t> before=framePixels(s);
+    gweni::controls::Base *focused=gweni::KeyboardFocus;
+    doubleClickMouse(s, at.x, at.y);
+    renderFrames(s, 1);
+    const bool opened=field->isEditing();
+    checkFrame("double-click", before, focused);
+    for(const char *key : {"4", "2"})
+        sendKey(s, key);
+    renderFrames(s, s.frames);
+    const bool typed=field->isEditing() && field->getEditBox()->getText() == "42";
+    if(!shoot(s, shotDir+"/interaction-showcase-drag-number.png"))
+        ok=false;
+
+    before=framePixels(s);
+    sendKey(s, "escape");
+    renderFrames(s, 1);
+    const bool cancelled=!field->isEditing() && field->getText() == shown;
+    checkFrame("escape", before, nullptr);
+    renderFrames(s, s.frames);
+
+    before=framePixels(s);
+    sendKey(s, "return");
+    renderFrames(s, 1);
+    const bool reopened=field->isEditing();
+    checkFrame("return-open", before, nullptr);
+    renderFrames(s, s.frames);
+
+    before=framePixels(s);
+    sendKey(s, "return");
+    renderFrames(s, 1);
+    const bool committed=!field->isEditing() && field->getText() == shown;
+    checkFrame("return-commit", before, nullptr);
+    renderFrames(s, s.frames);
+    checkSteady(s, checks, "showcase_drag_number_steady");
+
+    gweni::KeyboardFocus=nullptr;
+    forgetMouse(s);
+    dropControl(s, control);
+
+    checks.check("showcase_drag_number_edit", opened && typed && cancelled && reopened && committed,
+        std::string(opened ? "" : "a double-click did not open the edit box; ")
+        +(typed ? "" : "typing 42 did not reach the box; ")
+        +(cancelled ? "" : "Escape did not close it with the value kept; ")
+        +(reopened ? "" : "Return on the focused field did not open it; ")
+        +(committed ? "" : "Return did not commit the shown value"));
+    checks.check("showcase_drag_number_layout", failures.empty(),
+        "the edit box opening or closing changed the layout outside the field"+failures);
+}
+
 // VectorFieldDemo: the tagged float3's Y component pressed and dragged a unit
 // at a time: every drag frame leaves nothing pending outside that component's
 // field (and its Text), writes no more than its one primitive slot and the new
@@ -5472,6 +5638,7 @@ static bool runInteractionScenario(Session &s, const std::string &shotDir, bool 
     checkColorEdit(s, shotDir, checks, ok);
     checkDataTable(s, shotDir, checks, ok);
     checkDragNumber(s, shotDir, checks, ok);
+    checkShowcaseDragNumber(s, shotDir, checks, ok);
     checkVectorField(s, shotDir, checks, ok);
 
     std::cout<<"interaction";
