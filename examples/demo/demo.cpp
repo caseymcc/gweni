@@ -15,6 +15,7 @@
 #include "gweni/controls/windowControl.h"
 #include "gweni/controls/layout/position.h"
 #include "gweni/platforms/platform.h"
+#include "gweni/tools/depthView.h"
 #include "gweni/tools/statsOverlay.h"
 
 #include "demo/button.h"
@@ -141,6 +142,19 @@ void Demo::init(const String &name)
     m_statsButton->onToggleOffCaller.add(this, &Demo::onStatsToggleOff);
     m_statusBar->addControl(m_statsButton, true);
     tools::StatsOverlay::onOpenChangedCaller.add(this, &Demo::onStatsOverlayChanged);
+
+    // The depth view's toggle, docked Right after Stats so it sits left of
+    // it, on while the view is open however it was opened (F9, --depth-view).
+    m_depthButton=m_statusBar->newChild<controls::Button>("DepthButton");
+    m_depthButton->setText("Depth");
+    m_depthButton->setTextPadding(Padding(8, 0, 8, 0));
+    m_depthButton->setIsToggle(true);
+    m_depthButton->setToolTipText("Depth view (F9, Esc leaves)");
+    m_depthButton->setToggleState(tools::DepthView::find(m_statsCanvas) != nullptr);
+    m_depthButton->onToggleOnCaller.add(this, &Demo::onDepthToggleOn);
+    m_depthButton->onToggleOffCaller.add(this, &Demo::onDepthToggleOff);
+    m_statusBar->addControl(m_depthButton, true);
+    tools::DepthView::onOpenChangedCaller.add(this, &Demo::onDepthViewChanged);
 
     // First, so the selected page shows at the top of the list (the list runs
     // past the dock's bottom edge).
@@ -269,6 +283,26 @@ void Demo::onStatsOverlayChanged(event::Info info)
     if(info.control != m_statsCanvas)
         return;
     m_statsButton->setToggleState(tools::StatsOverlay::find(m_statsCanvas) != nullptr);
+}
+
+void Demo::onDepthToggleOn(event::Info /*info*/)
+{
+    // a renderer the view cannot draw on opens nothing: the button goes off
+    if(!tools::DepthView::find(m_statsCanvas) && !tools::DepthView::open(m_statsCanvas))
+        m_depthButton->setToggleState(false);
+}
+
+void Demo::onDepthToggleOff(event::Info /*info*/)
+{
+    if(tools::DepthView::find(m_statsCanvas))
+        tools::DepthView::close(m_statsCanvas);
+}
+
+void Demo::onDepthViewChanged(event::Info info)
+{
+    if(info.control != m_statsCanvas)
+        return;
+    m_depthButton->setToggleState(tools::DepthView::find(m_statsCanvas) != nullptr);
 }
 
 void Demo::onCategorySelect(event::Info info)

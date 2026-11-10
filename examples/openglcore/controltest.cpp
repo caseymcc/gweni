@@ -542,8 +542,16 @@
  *                 is still hovered, the focus, tree serial and live ids as they
  *                 were; and the frame after the close is the one before the
  *                 open, byte for byte. Shots depth-view-before.png,
- *                 -perspective.png, -ortho.png and -after.png. One line
- *                   depth-view open=visited:0,... idle=yes ... camera_drawn=yes
+ *                 -perspective.png, -ortho.png and -after.png. Then the demo
+ *                 shell's Depth button (Demo built on the canvas): an off
+ *                 toggle docked Right in the status bar left of Stats, tooltip
+ *                 "Depth view (F9, Esc leaves)", on exactly while the view is
+ *                 open after F9, Escape, a click on it, a click on it with the
+ *                 view open (which has the mouse, so nothing changes), F9, and
+ *                 a shell built with the view open, then Escape; the view told
+ *                 (DepthView::onOpenChangedCaller) once per open and close.
+ *                 One line
+ *                   depth-view open=visited:0,... camera_drawn=yes shell_button=yes
  *                 Exits non-zero if any check is no. controltest_depth_view
  *                 (tests/depthView.cmake) runs it twice and requires the same
  *                 PNGs.
@@ -2880,6 +2888,9 @@ static bool runInspectorScenario(Session &s, const std::string &shotDir, bool &p
 // is open presses nothing, and the hovered control, the focus, the tree and
 // the live ids are as they were. Closed, the canvas draws the frame before it
 // opened again, byte for byte (docs/architecture.md -> "The depth view").
+//
+// Then the demo shell's Depth button follows the view: on exactly while it is
+// open, however it was opened or closed.
 //-----------------------------------------------------------------------------
 
 // What one frame did, of the work the view must not cause
@@ -3052,11 +3063,102 @@ static bool runDepthViewScenario(Session &s, const std::string &shotDir, bool &p
     dropControl(s, demo);
     renderFrames(s, 1);
 
+    // The demo shell's Depth button: in the status bar, docked Right left of
+    // Stats, on exactly while the view is open, whether F9, a click on it or a
+    // view opened before the shell was built (as --depth-view can) opened it,
+    // and off once F9 or Escape closed it. While the view is open it has the
+    // mouse, so a click on the button does nothing.
+    std::string shellFailure;
+    {
+        gweni::controls::Base *shellControl=addControl(s, "Demo");
+        gweni::Demo *shell=gweni::gweni_cast<gweni::Demo>(shellControl);
+
+        if(!shell || !shell->depthButton() || !shell->statsButton())
+        {
+            std::cerr<<"ControlTest: depth-view: the shell has no Depth or Stats button\n";
+            return false;
+        }
+        renderFrames(s, 3);
+
+        gweni::controls::Button *depthButton=shell->depthButton();
+        gweni::controls::Button *statsButton=shell->statsButton();
+        const gweni::Point depthAt=depthButton->localPosToCanvas();
+        const gweni::Point statsAt=statsButton->localPosToCanvas();
+
+        if(!(depthButton->getText() == "Depth" && depthButton->isToggle()
+            && depthButton->getToolTipText() == "Depth view (F9, Esc leaves)"
+            && depthButton->getParent() == shell->statusBar()
+            && depthButton->getDock() == gweni::DockPosition::Right
+            && statsButton->getDock() == gweni::DockPosition::Right
+            && depthAt.x+depthButton->getWidth() <= statsAt.x && !depthButton->getToggleState()))
+            shellFailure="the Depth button is not an off toggle docked Right left of Stats";
+
+        int told=0;
+        struct Counter: public gweni::event::Handler
+        {
+            int *told;
+            void onOpenChanged(gweni::event::Info) { ++*told; }
+        } counter;
+
+        counter.told=&told;
+        DepthView::onOpenChangedCaller.add(&counter, &Counter::onOpenChanged);
+
+        // after `what`: the view is open as `open` says, the button with it,
+        // and the view was told `calls` times
+        auto step=[&](const char *what, bool open, int calls)
+        {
+            renderFrames(s, 1);
+
+            const bool found=DepthView::find(s.canvas) != nullptr;
+
+            if(shellFailure.empty() && (found != open || depthButton->getToggleState() != open
+                || told != calls))
+                shellFailure=std::string(what)+": the view "+(found?"open":"closed")+", the button "
+                    +(depthButton->getToggleState()?"on":"off")+", told "+std::to_string(told)
+                    +" time(s) in all";
+            told=0;
+        };
+        const gweni::Point depthCentre=centreOf(depthButton);
+
+        glfwKey(s, GLFW_KEY_F9, GLFW_PRESS, 0);
+        glfwKey(s, GLFW_KEY_F9, GLFW_RELEASE, 0);
+        step("F9", true, 1);
+        glfwKey(s, GLFW_KEY_ESCAPE, GLFW_PRESS, 0);
+        glfwKey(s, GLFW_KEY_ESCAPE, GLFW_RELEASE, 0);
+        step("Escape", false, 1);
+        clickMouse(s, depthCentre.x, depthCentre.y);
+        step("a click on the button", true, 1);
+        clickMouse(s, depthCentre.x, depthCentre.y);
+        step("a click on the button with the view open", true, 0);
+        glfwKey(s, GLFW_KEY_F9, GLFW_PRESS, 0);
+        glfwKey(s, GLFW_KEY_F9, GLFW_RELEASE, 0);
+        step("F9 again", false, 1);
+
+        // the view open when a shell is built
+        forgetMouse(s);
+        dropControl(s, shellControl);
+        DepthView::open(s.canvas);
+        told=0;
+        shellControl=addControl(s, "Demo");
+        shell=gweni::gweni_cast<gweni::Demo>(shellControl);
+        depthButton=shell->depthButton();
+        step("a shell built with the view open", true, 0);
+        glfwKey(s, GLFW_KEY_ESCAPE, GLFW_PRESS, 0);
+        glfwKey(s, GLFW_KEY_ESCAPE, GLFW_RELEASE, 0);
+        step("Escape in that shell", false, 1);
+
+        DepthView::onOpenChangedCaller.removeHandler(&counter);
+        forgetMouse(s);
+        dropControl(s, shellControl);
+        renderFrames(s, 1);
+    }
+    const bool shellFollows=shellFailure.empty();
+
     bool idle=true;
 
     for(const DepthViewFrame &f : frames)
         idle=idle && f.idle();
-    passed=idle && clickIgnored && closed && kept && same && drawn;
+    passed=idle && clickIgnored && closed && kept && same && drawn && shellFollows;
 
     std::cout<<"depth-view";
     for(const DepthViewFrame &f : frames)
@@ -3066,7 +3168,8 @@ static bool runDepthViewScenario(Session &s, const std::string &shotDir, bool &p
                  <<",hit:"<<f.hitTests;
     std::cout<<" idle="<<(idle?"yes":"no")<<" click_ignored="<<(clickIgnored?"yes":"no")
              <<" closed="<<(closed?"yes":"no")<<" kept="<<(kept?"yes":"no")
-             <<" same_after="<<(same?"yes":"no")<<" camera_drawn="<<(drawn?"yes":"no")<<"\n";
+             <<" same_after="<<(same?"yes":"no")<<" camera_drawn="<<(drawn?"yes":"no")
+             <<" shell_button="<<(shellFollows?"yes":"no")<<"\n";
     if(!passed)
         std::cerr<<"ControlTest: depth-view: "
                  <<(!idle ? "a frame that opened, moved or closed the view did work in the UI"
@@ -3074,7 +3177,8 @@ static bool runDepthViewScenario(Session &s, const std::string &shotDir, bool &p
                      : !closed ? "F9 did not close it, or the renderer kept its view transform"
                      : !kept ? "the hover, the focus, the tree or the live ids changed"
                      : !same ? "closed, it did not draw the frame before it opened"
-                     : "a camera move did not change what was drawn as it should")<<"\n";
+                     : !drawn ? "a camera move did not change what was drawn as it should"
+                     : "the shell's Depth button: "+shellFailure)<<"\n";
     return shotBefore && shotTurned && shotOrtho && shotAfter;
 }
 

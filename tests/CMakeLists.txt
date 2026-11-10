@@ -400,8 +400,9 @@ Erm, and I think it comes down to a choice between "The League Against Salivatin
     # gweni::tools::DepthView over ButtonDemo, the clock frozen, opened and
     # closed by F9: opening it, moving its camera, a click while it is open and
     # closing it do no work in the UI and change no hover, focus, tree or id,
-    # the frame after it closes is the one before it opened, and two runs'
-    # shots through its cameras are byte-identical
+    # the frame after it closes is the one before it opened, two runs'
+    # shots through its cameras are byte-identical, and the demo shell's Depth
+    # button is on exactly while the view is open
     gweni_whole_app_test(controltest_depth_view 120
         COMMAND ${CMAKE_COMMAND}
             -DCONTROLTEST=$<TARGET_FILE:ControlTest>

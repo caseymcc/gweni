@@ -2952,6 +2952,11 @@ renderer draws one canvas's view at a time. It sets the canvas's `needsRedraw()`
 camera move, for a loop that waits for one. The camera is built from the renderer's view
 rect, so an app calls `DepthView::viewChanged(canvas)` after a resize
 (`capture::fitCanvasToWindow` does).
+The demo shell's **Depth** toggle (`Demo::depthButton()`, left of Stats in its status
+bar) is such a button: a click opens the view on the skin's renderer, and it follows
+F9, Escape and `--depth-view` through `onOpenChangedCaller` (and `find()` when the
+shell is built with the view open). The view takes the mouse, so a click on the button
+while it is open does nothing; Escape or F9 leaves.
 
 **The camera** (`DepthView::Camera`), in the view's device px with x right, y down and z
 towards the camera:

@@ -76,6 +76,9 @@ public:
     //! The status bar's "Stats" toggle, on exactly while the canvas's
     //! tools::StatsOverlay is open.
     controls::Button *statsButton() const { return m_statsButton; }
+    //! The status bar's "Depth" toggle, left of Stats, on exactly while the
+    //! canvas's tools::DepthView is open.
+    controls::Button *depthButton() const { return m_depthButton; }
     controls::StatusBar *statusBar() const { return m_statusBar; }
 
 private:
@@ -87,12 +90,20 @@ private:
     //! tools::StatsOverlay::onOpenChangedCaller: the button follows its canvas's
     //! overlay, however it was opened or closed (F10, --stats-overlay).
     void onStatsOverlayChanged(event::Info info);
+    //! The same for the Depth button and the canvas's depth view, opened on
+    //! the canvas skin's renderer. While the view is open it takes the mouse,
+    //! so the way out is Escape or F9, which the button follows.
+    void onDepthToggleOn(event::Info info);
+    void onDepthToggleOff(event::Info info);
+    void onDepthViewChanged(event::Info info);
 
     controls::TabControl *m_tabControl;
     controls::ListBox *m_textOutput;
     controls::StatusBar *m_statusBar;
     controls::Button *m_statsButton=nullptr;
-    //! the canvas the Stats button and the overlay's bottom reserve are for
+    controls::Button *m_depthButton=nullptr;
+    //! the canvas the Stats and Depth buttons and the overlay's bottom reserve
+    //! are for
     controls::Canvas *m_statsCanvas=nullptr;
     controls::Base *m_lastControl;
 //    controls::layout::Center *m_center;

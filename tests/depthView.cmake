@@ -18,7 +18,9 @@
 #  click while it is open and F9 closing it enter no control, write and upload
 #  nothing, lay out nothing and renumber no z, the click presses nothing, the
 #  hover, focus, tree and live ids are kept, and the frame after it closes is
-#  the frame before it opened, byte for byte.
+#  the frame before it opened, byte for byte; and unless the demo shell's
+#  Depth button is on exactly while the view is open, after F9, Escape, a click
+#  on it and a shell built with the view open.
 #
 
 foreach(var CONTROLTEST SOURCE_DIR SCRATCH_DIR)
