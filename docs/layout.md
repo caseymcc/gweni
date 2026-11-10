@@ -183,10 +183,12 @@ What still counts as a request, besides the app's own calls:
   arrow in `MenuItem::getMenu`). They run once, outside any pass, and are the
   defaults the app overrides. A part created during a pass is Owner (a wrapped
   Text's lines), so its constructor's default is not read.
-* **Where a popup was opened**: `Menu::openAt`, a ComboBox's list, a submenu,
-  the tooltip box. That is the popup's state while it is open, like a window's
+* **Where a popup was opened**: `Menu::openAt`, a ComboBox's list, the
+  tooltip box. That is the popup's state while it is open, like a window's
   position; keeping it inside the canvas is computed (`Menu::layout`, from
-  that request each pass, so a canvas that grows again gives it back).
+  that request each pass, so a canvas that grows again gives it back). A
+  MenuItem's menu (`Menu::openNextTo`) asks for nothing: it is placed from its
+  item in each pass, as a Popup is.
 * **App-facing helpers**: `sizeToContents()`, `sizeToChildren()`,
   `ScrollControl::setInnerSize()` ask for the size they compute, as if the app
   had passed it. Library code does not call them from a pass: the parent

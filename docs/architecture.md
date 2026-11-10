@@ -400,11 +400,35 @@ it would run past the right edge, above it where it would run past the bottom, t
 `Menu::keepInside`. `layout()` runs at the start of the X arrange, with the height of the
 pass before, and again in the Y arrange once a new height is set (see
 `docs/layout.md`), so the second run puts it right, in the frame's one pass. Every other
-menu on the canvas (a ComboBox list, a strip or submenu placed by `setPos`/`setBounds`,
-and a position asked for after `openAt`) is only kept inside the canvas by `keepInside`,
-never flipped. `Menu::open(pos)` opens at the mouse through `openAt`, so a popup opened
+menu the canvas places (a ComboBox list, and a position asked for with
+`setPos`/`setBounds` after `openAt` or `openNextTo`) is only kept inside the canvas by
+`keepInside`, never flipped. `Menu::open(pos)` opens at the mouse through `openAt`, so a popup opened
 that way (the Properties colour selector) now flips up near the bottom instead of
 running past it.
+
+**A MenuItem's menu is placed from its item** (#517). `MenuItem::openMenu` opens a strip
+item's menu below the item, 1 unit off it, and a submenu on its item's right, top to top,
+through `Menu::openNextTo(anchor, side, gap)`, which records the anchor instead of a
+point and makes the menu self-placed on the canvas (`Placement::Owner`, as a Popup is).
+`Menu::arrange` places it with `Popup::placement` from the anchor's canvas rect, flipped
+(above the item, on its left) and kept inside the canvas: in X in the X arrange and in both
+axes in the Y arrange, since a ScrollControl, a `MenuStrip` or a `Menu` included, arranges
+its items in X in its own Y arrange, so the item's x is final only then. A menu opened
+before the first layout therefore opens where the item is laid out, and every opening at
+the same place. While it is open the canvas follows it (`Canvas::anchoredMenus()`, the
+open strip menu and its open submenus, in the order they opened, checked by
+`Canvas::updateAnchoredMenus` after the popup step): it is invalidated when the anchor's
+canvas rect or the canvas's size is not what it was last placed for, or when the frame's
+pass lays out the anchor or an ancestor of it below the canvas, so it is placed in that
+same pass, after the item (it was brought to the front when it opened); a submenu's item
+is in its parent menu, earlier in the list, so a chain of submenus follows a moved strip
+in one frame. A frame with nothing laid out looks at those few pointers and invalidates
+nothing. A menu whose anchor is no longer `visible()` closes, with the submenus under it;
+deleting the anchor closes it (`Canvas::menuAnchorDeleted`, from `~Base`); a closed menu,
+or one placed some other way, leaves the list in the next update phase and a deleted one
+at once (`~Menu`). A menu numbered before its strip (the strip brought to the front after
+it opened) is placed from where the item was in that pass and put right on the next
+frame, each frame in one pass.
 
 **Its z** is the one every opened menu gets: `bringToFront` makes it the canvas's last
 child but one, and the tooltip box stays last (`keepOverlaysLast`), so a tooltip draws
