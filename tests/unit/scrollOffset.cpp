@@ -16,7 +16,10 @@
  *  kept when the content grows after. A ListBox scrolled part-way keeps its
  *  rows where they are when one is appended, and an addItem followed by
  *  scrollToBottom before any layout (Demo::printText) ends on the new last
- *  row; scrollToRight likewise lands on the new right edge.
+ *  row; scrollToRight likewise lands on the new right edge. The offsets are
+ *  public (get/set*ScrollOffset, getMax*ScrollOffset) for non-virtual content
+ *  too: one set before any layout is clamped by the first pass, a set after
+ *  a scrollTo*() cancels it, and an axis that cannot scroll has none.
  */
 #include "headlessFixture.h"
 
@@ -166,7 +169,8 @@ TEST_CASE("ScrollControl offset: content that grows keeps the vertical offset")
 
     CHECK(scene.offsetY() == 55);
     CHECK(onCanvas(scene.inner).y == panel.y);
-    CHECK((onCanvas(first) == row));
+    CHECK(onCanvas(first).y == row.y);
+    CHECK(onCanvas(first).x == row.x);
     CHECK(scene.inner->getHeight() == 500);
     // the bar shows the offset against the new content: 55 of 210
     CHECK(scene.verticalBar->getScrolledAmount() == doctest::Approx(55.0/210.0));
@@ -549,4 +553,47 @@ TEST_CASE("ScrollControl offset: scrollToRight in the frame the content widens l
     scene.scroll->scrollToLeft();
     scene.settle();
     CHECK(scene.offsetX() == 0);
+}
+
+TEST_CASE("ScrollControl offset: set*ScrollOffset place non-virtual content, clamped by the next pass")
+{
+    Scene scene;
+    scene.addRow(600, 400);
+
+    // before any layout: kept until the first pass, which clamps it
+    scene.scroll->setHorizontalScrollOffset(1000);
+    scene.scroll->setVerticalScrollOffset(40);
+    CHECK(scene.scroll->getHorizontalScrollOffset() == 1000);
+    scene.settle();
+
+    const Rect &viewport=scene.scroll->getViewport();
+
+    CHECK(scene.scroll->getMaxHorizontalScrollOffset() == 600-viewport.w);
+    CHECK(scene.scroll->getMaxVerticalScrollOffset() == 400-viewport.h);
+    CHECK(scene.scroll->getHorizontalScrollOffset() == 600-viewport.w);
+    CHECK(scene.offsetX() == 600-viewport.w);
+    CHECK(scene.scroll->getVerticalScrollOffset() == 40);
+    CHECK(scene.offsetY() == 40);
+    CHECK(scene.verticalBar->getScrolledAmount() == doctest::Approx(40.0/(400-viewport.h)));
+
+    // the getters follow a bar the user moved once a pass has read it
+    scene.horizontalBar->setScrolledAmount(0.f, true);
+    scene.settle();
+    CHECK(scene.scroll->getHorizontalScrollOffset() == 0);
+
+    // an offset set after a scrollTo*() cancels it; one before is overridden
+    scene.scroll->scrollToBottom();
+    scene.scroll->setVerticalScrollOffset(10);
+    scene.scroll->setHorizontalScrollOffset(20);
+    scene.scroll->scrollToRight();
+    scene.settle();
+    CHECK(scene.scroll->getVerticalScrollOffset() == 10);
+    CHECK(scene.scroll->getHorizontalScrollOffset() == 600-viewport.w);
+
+    // an axis that cannot scroll has no offset
+    scene.scroll->setScroll(false, true);
+    scene.settle();
+    CHECK(scene.scroll->getHorizontalScrollOffset() == 0);
+    CHECK(scene.scroll->getMaxHorizontalScrollOffset() == 0);
+    CHECK(scene.inner->getX() == viewport.x);
 }

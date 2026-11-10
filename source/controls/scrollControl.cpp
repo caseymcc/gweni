@@ -82,30 +82,51 @@ Size ScrollControl::contentSize() const
 
 int ScrollControl::getMaxVerticalScrollOffset() const
 {
-    return std::max(0, m_virtualHeight-m_viewportHeight);
+    if(hasVirtualContent())
+        return std::max(0, m_virtualHeight-m_viewportHeight);
+    return m_scrollRange[1];
 }
 
 void ScrollControl::setVerticalScrollOffset(int offset)
 {
-    offset=gweni::clamp(offset, 0, getMaxVerticalScrollOffset());
+    offset=std::max(offset, 0);
 
-    if(offset == m_virtualOffset)
+    if(hasVirtualContent())
+        offset=std::min(offset, getMaxVerticalScrollOffset());
+
+    if(offset == m_scrollOffset[1])
         return;
 
-    m_virtualOffset=offset;
-    showVirtualOffset();
+    m_scrollOffset[1]=offset;
+    m_pendingEdge[1]=ScrollEdge::None;
+    showScrollOffset(Dim::Y);
     invalidate();
 }
 
-void ScrollControl::showVirtualOffset()
+void ScrollControl::setHorizontalScrollOffset(int offset)
 {
-    const int maxOffset=getMaxVerticalScrollOffset();
-    const float amount=maxOffset > 0?static_cast<float>(m_virtualOffset)/maxOffset:0.f;
+    offset=std::max(offset, 0);
 
-    if(m_verticalScrollBar->getScrolledAmount() != amount)
-        m_verticalScrollBar->setScrolledAmount(amount, true);
+    if(offset == m_scrollOffset[0])
+        return;
 
-    m_shownVirtualAmount=m_verticalScrollBar->getScrolledAmount();
+    m_scrollOffset[0]=offset;
+    m_pendingEdge[0]=ScrollEdge::None;
+    showScrollOffset(Dim::X);
+    invalidate();
+}
+
+void ScrollControl::showScrollOffset(Dim dim)
+{
+    BaseScrollBar *bar=scrollBar(dim);
+    const int maxOffset=getMaxScrollOffset(dim);
+    const float amount=maxOffset > 0?
+        std::min(1.f, static_cast<float>(m_scrollOffset[axis(dim)])/maxOffset):0.f;
+
+    if(bar->getScrolledAmount() != amount)
+        bar->setScrolledAmount(amount, true);
+
+    m_shownAmount[axis(dim)]=bar->getScrolledAmount();
 }
 
 void ScrollControl::onVeritcalBarMoved(event::Info)
@@ -407,35 +428,44 @@ void ScrollControl::placeContents()
 
     m_viewport=Rect(area.x+inset.left, area.y+inset.top, viewportWidth, viewportHeight);
 
-    // Virtual content scrolls by its offset. A bar that is not where this
-    // control last put it was moved by the user (its thumb, its buttons, the
-    // wheel; a bar no longer required was scrolled back to the start above),
-    // so the offset is taken from it, at the viewport it was moved in. The
-    // offset is then kept inside the viewport this pass gives, and the bar
-    // shows it.
-    if(virtualContent)
+    m_viewportHeight=viewportHeight;
+
+    // The scroll offsets. A bar that is not where this control last put it
+    // was moved by the user (its thumb, its buttons, the wheel; a bar no
+    // longer required was scrolled back to the start above), so the offset
+    // is taken from it, at the content it was moved against: the last pass's.
+    // The offset is then kept inside the content and viewport this pass
+    // gives, so content that grows keeps it and content that shrinks clamps
+    // it, and the bar shows it.
+    const int range[2]={
+        horizontalRequired?std::max(0, innerWidth-viewportWidth):0,
+        verticalRequired?std::max(0, (virtualContent?m_virtualHeight:innerHeight)-viewportHeight):0};
+
+    for(Dim dim : {Dim::X, Dim::Y})
     {
-        const float amount=m_verticalScrollBar->getScrolledAmount();
+        const int index=axis(dim);
+        const float amount=scrollBar(dim)->getScrolledAmount();
 
-        if(amount != m_shownVirtualAmount)
-            m_virtualOffset=static_cast<int>(std::lround(
-                static_cast<double>(amount)*getMaxVerticalScrollOffset()));
+        if(amount != m_shownAmount[index])
+            m_scrollOffset[index]=static_cast<int>(std::lround(
+                static_cast<double>(amount)*m_scrollRange[index]));
 
-        m_viewportHeight=viewportHeight;
-        m_virtualOffset=gweni::clamp(m_virtualOffset, 0, getMaxVerticalScrollOffset());
-        showVirtualOffset();
+        // a scrollTo*() since the last pass, at this pass's content
+        if(m_pendingEdge[index] != ScrollEdge::None)
+        {
+            m_scrollOffset[index]=(m_pendingEdge[index] == ScrollEdge::End)?range[index]:0;
+            m_pendingEdge[index]=ScrollEdge::None;
+        }
+
+        m_scrollRange[index]=range[index];
+        m_scrollOffset[index]=gweni::clamp(m_scrollOffset[index], 0, range[index]);
+        showScrollOffset(dim);
     }
 
-    // The scroll position, from the amount each shown bar is scrolled by: at
-    // 0 the content's top-left is the viewport's, at 1 its bottom-right is.
-    int scrollX=0;
-    int scrollY=0;
-
-    if(verticalShown && !virtualContent)
-        scrollY=-(innerHeight-viewportHeight)*m_verticalScrollBar->getScrolledAmount();
-
-    if(horizontalShown)
-        scrollX=-(innerWidth-viewportWidth)*m_horizontalScrollBar->getScrolledAmount();
+    // At offset 0 the content's top-left is the viewport's, at the range its
+    // bottom-right is. Virtual content is not scrolled vertically.
+    const int scrollX=-m_scrollOffset[0];
+    const int scrollY=virtualContent?0:-m_scrollOffset[1];
 
     placeChild(m_innerPanel, m_viewport.x+scrollX, m_viewport.y+scrollY, innerWidth, innerHeight);
 
@@ -499,40 +529,33 @@ void ScrollControl::setHorizontalScrollRequired(bool required)
     }
 }
 
-void ScrollControl::scrollToBottom()
+void ScrollControl::scrollToEdge(Dim dim, ScrollEdge edge)
 {
-    if(!canScrollVertical())
+    if(!(dim == Dim::X?canScrollHorizontal():canScrollVertical()))
         return;
 
-    updateScrollBars();
-    m_verticalScrollBar->scrollToBottom();
+    m_pendingEdge[axis(dim)]=edge;
+    invalidate();
+}
+
+void ScrollControl::scrollToBottom()
+{
+    scrollToEdge(Dim::Y, ScrollEdge::End);
 }
 
 void ScrollControl::scrollToTop()
 {
-    if(canScrollVertical())
-    {
-        updateScrollBars();
-        m_verticalScrollBar->scrollToTop();
-    }
+    scrollToEdge(Dim::Y, ScrollEdge::Start);
 }
 
 void ScrollControl::scrollToLeft()
 {
-    if(canScrollHorizontal())
-    {
-        updateScrollBars();
-        m_horizontalScrollBar->scrollToLeft();
-    }
+    scrollToEdge(Dim::X, ScrollEdge::Start);
 }
 
 void ScrollControl::scrollToRight()
 {
-    if(canScrollHorizontal())
-    {
-        updateScrollBars();
-        m_horizontalScrollBar->scrollToRight();
-    }
+    scrollToEdge(Dim::X, ScrollEdge::End);
 }
 
 void ScrollControl::clear()

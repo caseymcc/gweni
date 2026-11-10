@@ -310,11 +310,11 @@ void VirtualList::contentsPlaced(skin::Base *skin)
     if(m_pendingItem != NoItem)
     {
         const size_t item=std::min(m_pendingItem, m_itemCount > 0?m_itemCount-1:0);
-        const int64_t offset=offsetShowing(item, m_rowHeight, m_virtualOffset, viewport);
+        const int64_t offset=offsetShowing(item, m_rowHeight, m_scrollOffset[1], viewport);
 
         m_pendingItem=NoItem;
-        m_virtualOffset=static_cast<int>(gweni::clamp<int64_t>(offset, 0, getMaxVerticalScrollOffset()));
-        showVirtualOffset();
+        m_scrollOffset[1]=static_cast<int>(gweni::clamp<int64_t>(offset, 0, getMaxVerticalScrollOffset()));
+        showScrollOffset(Dim::Y);
     }
 
     const int offset=getVerticalScrollOffset();

@@ -77,17 +77,30 @@ public:
     int getVirtualContentHeight() const { return m_virtualHeight; }
     bool hasVirtualContent() const { return m_virtualHeight >= 0; }
 
-    //! With virtual content, how far the content is scrolled, in units: from
-    //! 0 to getMaxVerticalScrollOffset(). It is kept as a whole number, and the
-    //! bar shows it as a fraction; a bar the user moves sets it (read by the
-    //! next layout). A new offset
-    //! is laid out by the next pass, which clamps it to the viewport it gives.
-    int getVerticalScrollOffset() const { return m_virtualOffset; }
+    //! How far the content is scrolled on each axis, in whole units, from 0
+    //! to getMax*ScrollOffset(): the scroll position is this offset, and the
+    //! bars show it as a fraction of the content less the viewport. A bar the
+    //! user moves (its thumb, its arrow buttons, the wheel) sets it, at the
+    //! content size it was moved against, when the next layout reads it.
+    //! Content that grows keeps the offset (the bar's amount and thumb follow
+    //! the new size); each pass clamps it to the content and viewport it
+    //! gives, and a bar no longer required takes it back to 0. A new offset
+    //! is laid out by the next pass. With virtual content the inner panel is
+    //! not scrolled vertically: the subclass places its children by
+    //! getVerticalScrollOffset() in contentsPlaced(), and
+    //! setVerticalScrollOffset() clamps to getMaxVerticalScrollOffset() at
+    //! once.
+    int getVerticalScrollOffset() const { return m_scrollOffset[1]; }
     void setVerticalScrollOffset(int offset);
-    //! The virtual content height less the viewport's, never negative.
+    int getHorizontalScrollOffset() const { return m_scrollOffset[0]; }
+    void setHorizontalScrollOffset(int offset);
+    //! The content's size less the viewport's, never negative, as the last
+    //! layout pass gave it (0 before one, or on an axis that cannot scroll);
+    //! with virtual content, its height less the last pass's viewport height.
     int getMaxVerticalScrollOffset() const;
-    //! With virtual content, the viewport's height (see getViewport()), as
-    //! the last layout pass gave it; 0 before one.
+    int getMaxHorizontalScrollOffset() const { return m_scrollRange[0]; }
+    //! The viewport's height (see getViewport()), as the last layout pass
+    //! gave it; 0 before one.
     int getViewportHeight() const { return m_viewportHeight; }
 
     //! The area the content is seen through, in this control's coordinates,
@@ -109,6 +122,10 @@ public:
 
     bool onMouseWheeled(int iDelta) override;
 
+    //! Scroll to an edge of the content: resolved by the next layout, to 0
+    //! or getMax*ScrollOffset() of the content that layout gives, so a call
+    //! right after adding content (ListBox::addItem) lands on its new end. A
+    //! set*ScrollOffset() on that axis before then cancels it.
     virtual void scrollToBottom();
     virtual void scrollToTop();
     virtual void scrollToLeft();
@@ -139,8 +156,20 @@ protected:
     //! before it returns, since the X measuring is over.
     virtual void contentsPlaced(skin::Base * /*skin*/) {}
 
-    //! Sets the vertical bar to show m_virtualOffset.
-    void showVirtualOffset();
+    //! m_scrollOffset's index for an axis.
+    static int axis(Dim dim) { return dim == Dim::X?0:1; }
+    BaseScrollBar *scrollBar(Dim dim) const
+    {
+        return dim == Dim::X?m_horizontalScrollBar:m_verticalScrollBar;
+    }
+    int getMaxScrollOffset(Dim dim) const
+    {
+        return dim == Dim::X?getMaxHorizontalScrollOffset():getMaxVerticalScrollOffset();
+    }
+
+    //! Sets dim's bar to show m_scrollOffset as a fraction of
+    //! getMaxScrollOffset(dim), and records that amount in m_shownAmount.
+    void showScrollOffset(Dim dim);
 
     //! The content's size, which the size asked for with no request, the bars
     //! and the inner panel's size are worked out from: the inner panel's
@@ -165,12 +194,28 @@ protected:
     Size m_barSize=Size(15, 15);
 
     int m_virtualHeight=-1;
-    int m_virtualOffset=0;
     int m_viewportHeight=0;
     Rect m_viewport;
-    //! The vertical bar's scrolled amount when this control last set it from
-    //! m_virtualOffset: a bar found elsewhere was moved by the user.
-    float m_shownVirtualAmount=0.f;
+    //! The scroll offset per axis (X, Y; see axis()), in units.
+    int m_scrollOffset[2]={0, 0};
+    //! The content less the viewport per axis, as the last pass placed it:
+    //! a bar the user moved since is converted against it.
+    int m_scrollRange[2]={0, 0};
+    //! Each bar's scrolled amount when this control last set it from
+    //! m_scrollOffset: a bar found elsewhere was moved by the user.
+    float m_shownAmount[2]={0.f, 0.f};
+
+    //! An edge a scrollTo*() asked for per axis, resolved by the next pass.
+    enum class ScrollEdge
+    {
+        None,
+        Start,
+        End
+    };
+
+    ScrollEdge m_pendingEdge[2]={ScrollEdge::None, ScrollEdge::None};
+
+    void scrollToEdge(Dim dim, ScrollEdge edge);
 };
 
 }//namespace controls
