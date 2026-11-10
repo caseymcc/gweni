@@ -314,14 +314,17 @@
  *                   nothing, with the tab list closed and open; the list
  *                   button opens one row per tab, and choosing the tenth
  *                   selects it, closes the list and shows the whole tab.
- *                   PropertiesDemo: hovering the first PropertyRow's
- *                   value changes the row's pixels (column fill, lines,
- *                   label colour) and none outside it, every change of that
- *                   frame in the row but the left control's; moving onto its
- *                   label marks nothing on the row; moving off gives its rest
- *                   look back; a click on the value shows the Editing look,
- *                   unlike the hover's, and dropping the focus gives the
- *                   rest look back. ColorEditDemo: typing into the RGBA
+ *                   PropertiesDemo: the top Properties is its rows'
+ *                   height and the PropertyTree runs from one layout
+ *                   spacing below it to the demo's bottom; hovering the
+ *                   first PropertyRow's value changes the row's pixels
+ *                   (column fill, lines, label colour) and none outside it,
+ *                   every change of that frame in the row but the left
+ *                   control's; moving onto its label marks nothing on the
+ *                   row; moving off gives its rest look back; a click on the
+ *                   value shows the Editing look, unlike the hover's, and
+ *                   dropping the focus gives the rest look back.
+ *                   ColorEditDemo: typing into the RGBA
  *                   ColorEdit's R field (Backspace, then a digit) leaves
  *                   nothing pending outside the swatch and that field and
  *                   writes no more than their slots and the field's glyphs,
