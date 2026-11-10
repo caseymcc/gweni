@@ -625,7 +625,7 @@ sizes, ranges and the core's own data, never an API object:
 | `maxClipBoxRows()`, `allocateClipBoxes(path, rows)`, `uploadClipBoxRows(path, x, y, w, h, boxes)` | the device's row limit; (re)allocate a path's clip-box table, `kClipColumns` boxes a row; copy a block of boxes to it |
 | `createAtlasTexture(atlas)`, `uploadAtlasRows(texture, atlas, firstRow, rows)`, `destroyAtlasTexture(texture)` | a font atlas's texture (R8, or RGB8 for depth 3), its dirty rows, its end |
 | `createImageTexture(image, rgba)`, `destroyImageTexture(texture)`, `readTextureRgba(...)` | an image's texture with its mip levels, each uploaded from `imageMipChain`, its end, a read back (`pixelColor`, `readFontAtlas`) |
-| `beginPrimitiveDraws()`, `drawPrimitiveChunk(chunk, firstSlot, slots)`, `endPrimitiveDraws()` | one draw per chunk with a slot that can show, in slot order, up to its last such slot |
+| `beginPrimitiveDraws()`, `drawPrimitiveChunk(draw)`, `endPrimitiveDraws()` | one draw per chunk with a slot that can show, in slot order, of the chunk's `ChunkDraw`: its runs of such slots ("Only the slots that can show are drawn") |
 | `beginTextDraws()`, `beginTextAtlas(font)`, `drawTextChunk(draw)`, `endTextDraws()` | per atlas with runs to draw: its texture and `TextMode` (an LCD one blended per channel), then one draw per `ChunkDraw` |
 | `submitFrame()` | the end of `flush()`: the frame's commands go to the device |
 | `indexChunkSlotsChanged()` | `setIndexChunkSlots()` changed the chunk size |
@@ -633,9 +633,13 @@ sizes, ranges and the core's own data, never an API object:
 `path` is `SlotPath::Primitives` or `SlotPath::Text`. A `TextureHandle` is the
 backend's name for a texture (OpenGLCore's GL texture name; 0 is none): an atlas's is
 kept in freetype-gl's `texture_atlas_t::id`, an image's in `SlotTextureData::m_handle`.
-A `ChunkDraw` is the ranges of one chunk's draw: an index count and the first
-index's byte offset, from the chunk's first slot, per range (the form
-`glMultiDrawElements` takes; a first index is the offset over `sizeof(uint16_t)`).
+A `ChunkDraw` is the ranges of one chunk's draw, a primitive chunk's or an atlas's
+text in a chunk: an index count and the first index's byte offset, from the chunk's
+first slot, per range (the form `glMultiDrawElements` takes; a first index is the
+offset over `sizeof(uint16_t)`). `OpenGLCore` draws one as a `glMultiDrawElements`
+where the context has it (`useMultiDraw()`) and as a loop of `glDrawElements`
+otherwise, `renderer::Vulkan` as one `vkCmdDrawIndexed` per range; either way it is
+one of `FrameStats::drawCalls`.
 Five public pure-virtual methods serve the tests and the apps on any backend:
 `clearTarget(color)` and `readPixels(width, height, pixels)` (top row first),
 `textureExists`, `textureChannelSizes` and `deviceError`.
@@ -706,7 +710,7 @@ How each GL feature maps:
 | GL context, offscreen framebuffer | `VulkanDevice`, `VulkanTarget` |
 | `glBufferData` (a regrow) | a new device-local buffer, after `vkQueueWaitIdle` (a frame in flight may draw from the old one) |
 | `glBufferSubData` per dirty range | the range copied into the frame's host-visible staging memory, one `vkCmdCopyBuffer` per range |
-| per-chunk vertex array, `glDrawElements` | `vkCmdBindVertexBuffers` at the chunk's first slot, `slotBase` pushed, one `vkCmdDrawIndexed(slots*6)` from index 0 |
+| per-chunk vertex array, `glMultiDrawElements` of the chunk's ranges | `vkCmdBindVertexBuffers` at the chunk's first slot, `slotBase` pushed, one `vkCmdDrawIndexed` per range (`offsets/2` the first index); `draw_calls` counts the chunk once, as on GL |
 | the static 16-bit quad index buffers | the same patterns, device-local, uploaded once by `init()` |
 | clip boxes: 2D `GL_RGBA16UI` texture, `glTexSubImage2D` per row piece | 2D `R16G16B16A16_UINT` image, `kClipColumns` texels a row, one `vkCmdCopyBufferToImage` per row piece, sampled `NEAREST` |
 | 8 image units, `uniform sampler2D images[8]` | one array of 8 combined image samplers in set 0 (an empty unit samples a 1x1 opaque black image, as GL samples texture 0) |
@@ -1017,7 +1021,7 @@ two programs and the draws. What follows describes both together:
   without it, each range of a draw is a `glDrawElements` of its own, which draws the
   same pixels and counts the same `FrameStats`; `GWENI_NO_MULTI_DRAW=1` at
   construction, or `setUseMultiDraw(false)`, takes the loop where the context has it
-  too, `tests/textDrawLoop.cpp`), and dual-source blending for LCD text (core in GL
+  too, `tests/textDrawLoop.cpp` and `tests/primitiveDrawLoop.cpp`), and dual-source blending for LCD text (core in GL
   3.3, `GL_EXT_blend_func_extended` on GLES). Without dual-source blending the text
   program has no second output and the LCD modes are grayscale: `OpenGLCore` answers
   `SlotRenderer::lcdTextUnavailable()` with why, `setTextAA(LcdRGB/LcdBGR)` (and a
@@ -1056,7 +1060,7 @@ two programs and the draws. What follows describes both together:
   3.0 (WebGL 2.0 ...)`, so `init()` takes the ES dialect as on the GLES tree. There is no
   multi-draw (`OpenGLCore` resolves `glMultiDrawElementsEXT` only through EGL, in the GLES
   tree) and no `GL_EXT_blend_func_extended` (WebGL's is `WEBGL_blend_func_extended`, which
-  `OpenGLCore` does not use yet), so the text draws loop and LCD text is grayscale. In the
+  `OpenGLCore` does not use yet), so the primitive and text draws loop and LCD text is grayscale. In the
   build container the context is ANGLE on Chromium's SwiftShader, a CPU rasteriser
   like llvmpipe but another one, so its pixels are close to the native GLES tree's, not
   the same (see "The browser against native" below).
@@ -1102,8 +1106,9 @@ two programs and the draws. What follows describes both together:
   commands, when the tree is not built. Layout and change tracking are the same code on
   every backend, so they are held to identity: every `--dump-bounds` listing at scales
   1, 1.5 and 2 (`web_bounds_native*`), and every `--stats` counter of every control and
-  of OpenGLCore, times left out (`web_stats_native`), the text draws' loop included,
-  since a loop of `glDrawElements` counts as the one multi-draw it replaces. Inside the
+  of OpenGLCore, times left out (`web_stats_native`), the draws' loops included,
+  since a loop of `glDrawElements` counts as the one multi-draw it replaces (and both
+  paths build the same ranges, with one gap and cap). Inside the
   browser two page loads give the same bytes (`web_controltest_determinism`, through
   `tests/determinism.cmake`). Pixels are held to a tolerance (`web_pixels_native` at
   scales 1 and 2, `tests/web/pngdiff.mjs`): per PNG, no channel more than 2 off and at
@@ -1190,33 +1195,86 @@ two programs and the draws. What follows describes both together:
   `--shot-all` PNG and the hero `--screenshot` byte for byte at 64, and
   `tests/indexChunks.cpp` slots past 16383, chunks of 1 to 5 slots, and text runs
   split between chunks, hidden and shrunk.
-- **Only the slots that can show are drawn** (#431). A slot can show when its style
-  is not 0; `hidePrimitive` and `releasePrimitive` set it to 0, and a slot the mirror
-  grew by is 0 until drawn. The mirror never shrinks, so before, every frame drew every
-  slot up to its peak: a hidden page's slots and the ids a deleted tree gave back each
-  went through the vertex shader as 4 vertexes that made nothing. `SlotRenderer` keeps
-  a bit per slot (`m_visibleSlots`) and, per chunk, how many of its slots can show and
-  the last of them (`m_primitiveChunks`); `flush()` skips a chunk with none and ends a
-  chunk's draw at its last one, so the pixels are those of the whole chunk (a style-0
-  slot makes no fragment, and the order is unchanged). The bits are brought up to date
-  from the dirty slots alone, before the upload clears them (`updateSlotVisibility`):
-  every write that changes a slot's bytes (a `draw*`, a hide, a show, a release, a quad
-  collapsed out of range, a scale or font change redrawing it) marks it for the upload
-  anyway, so this costs O(slots changed), with no scan of the mirror. A chunk whose
-  last slot stops showing finds the one before by its bits, at most 256 words for
-  16383 slots; `setIndexChunkSlots()` recounts the chunks from the bits.
-  `FrameStats::primitiveSlotsDrawn` is the slots the draws covered (the sum of the
-  counts passed to `drawPrimitiveChunk`), `drawCalls` the chunks drawn, and
-  `GWENI_UPLOAD_STATS=1` prints it against the mirror's slots. A hidden slot below its
-  chunk's last shown one is still drawn: slots are not moved (see "free-slot
-  compaction" under "Not yet done"), and ids are handed out lowest first, so a control
-  that takes a slot after the rest (a hover surface, a newly shown page) can hold the
-  top one. At 1024x768, `ControlTest --control TabControlDemo` draws 44 of its 48
-  slots, the `Demo` shell 2298 of 2651; after the shell switched pages and back, the
-  last slots are live again and it draws all 2657. `tests/indexChunks.cpp` checks the
-  counts and that every frame draws the pixels of the whole mirror
-  (`setDrawEveryPrimitiveSlot`): a hidden middle chunk, a hidden tail, released top
-  ids, a regrow and a new chunk size.
+- **Only the slots that can show are drawn** (#431, #508). A slot can show when its
+  style is not 0; `hidePrimitive` and `releasePrimitive` set it to 0, and a slot the
+  mirror grew by is 0 until drawn. The mirror never shrinks, so before, every frame
+  drew every slot up to its peak: a hidden page's slots and the ids a deleted tree gave
+  back each went through the vertex shader as 4 vertexes that made nothing.
+  `SlotRenderer` keeps a bit per slot (`m_visibleSlots`) and, per chunk
+  (`m_primitiveChunks`, a `PrimitiveChunkSlots`), how many of its slots can show and
+  the `ChunkDraw` it is drawn with: its **runs** of slots that can show, a gap of
+  fewer than `primitiveRangeGap()` (`kPrimitiveRangeGap`, 2) hidden slots drawn with
+  the runs around it, and at most `maxPrimitiveRanges()` (`kMaxPrimitiveRanges`, 16)
+  ranges, the smallest gaps (the leftmost of equal ones) merged past that.
+  `flush()` skips a chunk with none, and the pixels are those of the whole chunk (a
+  style-0 slot makes no fragment, the ranges are in slot order, and each index is
+  still `slot*4+k` from the chunk's first slot, so `gl_VertexID >> 2` and `slotBase`
+  are unchanged). The bits are brought up to date from the dirty slots alone, before
+  the upload clears them (`updateSlotVisibility`): every write that changes a slot's
+  bytes (a `draw*`, a hide, a show, a release, a quad collapsed out of range, a scale
+  or font change redrawing it) marks it for the upload anyway, so this costs O(slots
+  changed), with no scan of the mirror. A bit that changes marks its chunk's ranges
+  stale, and a stale chunk's are built again (`buildPrimitiveRanges`, a word at a
+  time over its at most 256 words) only when it is drawn; `setIndexChunkSlots()`
+  recounts the chunks from the bits and `setPrimitiveRangeLimits()` (or
+  `GWENI_PRIMITIVE_RANGES=<gap>,<cap>` at construction) marks them all stale. So a
+  frame that shows or hides nothing builds no range list
+  (`FrameStats::primitiveRangeBuilds`), whatever else it writes.
+  `FrameStats::primitiveSlotsDrawn` is the slots the ranges cover,
+  `primitiveRanges` the ranges, `drawCalls` the chunks drawn (one each, multi-draw or
+  loop), and `GWENI_UPLOAD_STATS=1` prints `N of M primitive slots drawn in R ranges
+  (B chunks' ranges built)`; `gweni_bench` reports them as `primitive_slots_drawn`
+  and `primitive_ranges`. Slots are not moved (see "free-slot compaction" under "Not
+  yet done") and ids are handed out lowest first, so before the runs, when a chunk's
+  draw ended at its last shown slot, a control that took a slot after the rest (a
+  hover surface, a newly shown page) held every hidden slot below it in the draw.
+  At 1024x768 (`GWENI_UPLOAD_STATS=1`; the slots that can show counted with
+  `GWENI_PRIMITIVE_RANGES=1,100000`, which merges and caps nothing):
+
+  | | up to the last shown slot (#431) | the runs (#508) | slots that can show |
+  | --- | --- | --- | --- |
+  | `ControlTest --control TabControlDemo` | 46 of 52 | 30 of 52, 5 ranges | 23, in 12 runs |
+  | `--control Demo` | 3726 of 4158 | 311 of 4158, 16 ranges | 240, in 67 runs |
+  | `Demo`, after `--click 72,85` (Buttons & toggles) and `--click 70,66` (back to Containers & data) | 4174 of 4174 | 337 of 4174, 16 ranges | 260, in 71 runs |
+
+  The limits were measured, not guessed, in the release tree under `render` and
+  `quiet` with `gweni_bench --scene hidden-gaps` (N Buttons, all hidden but every
+  (K+1)-th, so its slots are runs of 1 between gaps of K), N=16000, each gap left a
+  range of its own (`--range-gap 0`) or every gap merged into one range, with
+  multi-draw and with the loop (`GWENI_NO_MULTI_DRAW=1`); `flush_us` medians of the
+  quietest paired run:
+
+  | gap K | ranges kept: loop / multi-draw | gaps merged, one range: loop / multi-draw |
+  | --- | --- | --- |
+  | 1 (8000 ranges) | 7035 / 4714 | 6519 / 4730 |
+  | 2 (5334 ranges) | 4674 / 3566 | 5951 / 5093 |
+  | 3 (4000 ranges) | 2913 / 1776 | 3780 / 3369 |
+
+  A hidden slot drawn costs about 0.15 µs on llvmpipe, a range about 0.02-0.07 µs
+  with multi-draw and 0.1-0.3 µs more in the loop, so merging pays only for a gap of
+  1, and only in the loop: `kPrimitiveRangeGap` is 2. The cap of 16 bounds a chunk's
+  loop of `glDrawElements` (the web's draw, which has no multi-draw: one G and R for
+  every path, so `web_stats_native`'s counters match the GLES tree's) and costs
+  little where it bites: Demo draws 337 slots in 16 ranges against 300 in 31
+  uncapped. With K=15 the cap of 16 drew 15760 of 16000 slots in about 2670 µs,
+  against 1000 slots in 1000 ranges in about 490 µs uncapped (multi-draw), a case no
+  UI makes. `gweni_bench --scene hidden-pages --n 10000` (K=10 hidden pages of N
+  Buttons between a header and a footer row built before and after them, 40 shown)
+  is the case the runs are for: in the release tree, 6 runs each (pooled medians,
+  `render` and `quiet`), the whole mirror (`--draw-slots every`) drew 10050 slots in
+  `flush_us` 593 + `gpu_us` 242, the runs 40 slots in 2 ranges in 104 + 244, 57 %
+  less; the draw up to the last shown slot drew the same 10050 as the whole mirror
+  and, in #508's go/no-go measurement on a busier host, took about as long (`flush_us`
+  + `gpu_us` 1833 µs, the whole mirror 2042, the runs 1030). The saving is all in `flush`: llvmpipe runs the vertex work of
+  the draw on the calling thread. `bench_scaling` pins both counters for
+  `hidden-pages`, whose shown part is fixed (they follow the shown slots, so in the
+  other scenes they grow with N). `tests/indexChunks.cpp` checks the counts against a
+  model of its own and that every frame draws the pixels of the whole mirror
+  (`setDrawEveryPrimitiveSlot`): a hidden middle chunk, a hidden tail, a hidden run
+  inside a chunk whose last slot shows (800 of 1000 slots in 2 ranges), a 1-slot gap
+  merged, 22 runs capped to 16, released top ids, a regrow, a new chunk size, and no
+  range list built by a settled frame or one that only recolours a slot;
+  `tests/primitiveDrawLoop.cpp` (`gl_only`) that the loop draws what multi-draw draws.
 - Each `Vertex` is 16 16-bit fields, 32 bytes:
   `{ style, x, y, z, tx, ty, lx, ly, radius, border, cx, cy, bx, by, dx, dy }`.
   `x, y` are the corner's device-pixel position, **signed** (`int16_t`, read as an
@@ -2556,9 +2614,9 @@ What exists today (the foundation) and what's still aspirational:
   `gweni_bench` and `ControlTest --stats`), so a mirror growing by a slot a frame
   regrows O(log n) times over n frames. Every other frame sends the dirty slots and
   the slots the mirror gained since the last upload, never the slack past the mirror,
-  which nothing draws. The draws stop at each chunk's last slot that can show, and skip
+  which nothing draws. The draws are each chunk's runs of slots that can show, and skip
   a chunk with none ("Only the slots that can show are drawn" above,
-  `FrameStats::primitiveSlotsDrawn`). Before (#323) a buffer grew to exactly the mirror, and growing
+  `FrameStats::primitiveSlotsDrawn`, `primitiveRanges`). Before (#323) a buffer grew to exactly the mirror, and growing
   by one slot sent all of it: typing a character into `gweni_bench`'s `type`
   TextBoxMultiline sent 1.29 MB a frame at N=1000 and 12.7 MB at 10 000; now 15.9 KB
   at both, with no regrow in its measured frames.
@@ -2645,9 +2703,14 @@ What exists today (the foundation) and what's still aspirational:
   nothing culls them on the CPU. Clipping is rectangular only: a rounded parent does not
   cut its children at its corners.
 - **Cache-to-texture** (`ICacheToTexture`) and free-slot compaction/defragmentation of
-  the primitive buffers are stubbed. Without compaction a hidden or released slot below
-  its chunk's last shown one is still drawn, and the mirror and buffers keep their peak
-  size.
+  the primitive buffers are stubbed. Without compaction the mirror and buffers keep
+  their peak size, and a hidden or released slot is still drawn where its gap is merged
+  into a chunk's ranges: a 1-slot gap, or the smallest gaps of a chunk with more than
+  16 runs ("Only the slots that can show are drawn"). The web draws a chunk's ranges
+  as a loop of `glDrawElements` (no `WEBGL_multi_draw`); if a measurement there shows
+  the loop costs something, multi-draw or a tighter cap for the web is the next step.
+  Ids are not contiguous per subtree, so a page's slots interleave with others' and
+  make more runs than the page has controls.
 
 **Vulkan (#368)**
 - `renderer::Vulkan` ("renderer::Vulkan (headless)" above) implements the hooks with
