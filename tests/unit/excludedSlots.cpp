@@ -25,10 +25,18 @@
  *  - the overlay's ids row is the same with the Inspector open as without:
  *    the live ids less every tool's;
  *  - an app change shows in both, on the next refresh (the overlay) or frame
- *    (the Inspector), and then 0.
+ *    (the Inspector), and then 0;
+ *  - the held ids follow, in the same update phase, a flag set or cleared,
+ *    an app control moved into a flagged subtree and out again, and a
+ *    flagged subtree taken off the canvas and put back;
+ *  - the canvas's ToolTip box showing an overlay name's tooltip is every
+ *    tool's: both read 0 over the frames that show it and hide it, and the
+ *    overlay's ids row leaves its ids out; moved straight on to an app
+ *    control's tooltip, it is the app's, counted in both, its ids too.
  */
 #include "headlessFixture.h"
 
+#include <gweni/controls/toolTip.h>
 #include <gweni/gweni.h>
 #include <gweni/platforms/platform.h>
 #include <gweni/tools/inspector.h>
@@ -411,4 +419,147 @@ TEST_CASE("Excluded slots: the overlay's live ids are the same with the Inspecto
     scene.untilRefresh(overlay);
     CHECK(overlay->shownPrimitiveIds() == primitives);
     CHECK(overlay->shownTextIds() == texts);
+}
+
+TEST_CASE("Excluded slots: the held ids follow a flag and the tree within a frame")
+{
+    Scene scene;
+    controls::Base *tool=newTool(scene.canvas);
+    controls::Base *moved=scene.app->getActualChildren().front();
+
+    scene.frames(2);
+
+    const std::vector<size_t> toolIds=primitiveIdsOf(tool);
+    const std::vector<size_t> movedIds=primitiveIdsOf(moved);
+
+    REQUIRE(allExcluded(scene.canvas, toolIds));
+    REQUIRE(noneExcluded(scene.canvas, movedIds));
+
+    // each read below comes in the same update phase as the one before it,
+    // after the change, with no frame between
+    SUBCASE("a flag changed")
+    {
+        tool->setExcludedFromStats(false);
+        CHECK(noneExcluded(scene.canvas, toolIds));
+        CHECK(scene.canvas->excludedSlots().heldPrimitives() == 0);
+        tool->setExcludedFromStats(true);
+        CHECK(allExcluded(scene.canvas, toolIds));
+        moved->setExcludedFromStats(true);
+        CHECK(allExcluded(scene.canvas, movedIds));
+        moved->setExcludedFromStats(false);
+        CHECK(noneExcluded(scene.canvas, movedIds));
+    }
+    SUBCASE("an app control moved into a flagged subtree and out again")
+    {
+        moved->setParent(tool);
+        CHECK(allExcluded(scene.canvas, movedIds));
+        CHECK(scene.canvas->excludedSlots().heldPrimitives() == toolIds.size()+movedIds.size());
+        moved->setParent(scene.app);
+        CHECK(noneExcluded(scene.canvas, movedIds));
+        CHECK(scene.canvas->excludedSlots().heldPrimitives() == toolIds.size());
+    }
+    SUBCASE("a flagged subtree taken off the canvas and put back")
+    {
+        tool->setParent(nullptr);
+        CHECK(noneExcluded(scene.canvas, toolIds));
+        CHECK(scene.canvas->excludedSlots().heldPrimitives() == 0);
+        tool->setParent(scene.canvas);
+        CHECK(allExcluded(scene.canvas, toolIds));
+    }
+}
+
+TEST_CASE("Excluded slots: a tool's tooltip is every tool's, the app's tooltip the app's")
+{
+    Scene scene;
+    // an app control with a tooltip, clear of both tools
+    controls::Base *tipped=scene.canvas->newChild<controls::Base>("tipped");
+
+    tipped->setBounds(10, 400, 100, 40);
+    tipped->setToolTipText("the app's");
+
+    StatsOverlay *overlay=StatsOverlay::open(scene.canvas);
+    Inspector *inspector=Inspector::open(scene.canvas);
+
+    scene.untilRefresh(overlay);
+    scene.untilRefresh(overlay);
+
+    controls::Label *interval=overlay->nameCells()[4];
+
+    REQUIRE(interval->getText() == "interval");
+
+    const Point onName=overlay->getPos()+interval->getPos()
+        +Point(interval->getWidth()/2, interval->getHeight()/2);
+    const size_t idsBefore=overlay->shownPrimitiveIds();
+    const size_t textIdsBefore=overlay->shownTextIds();
+
+    // the slots of the frame before, in the Inspector, and of the window shown
+    // last, in the overlay, are 0
+    auto bothZero=[&]()
+    {
+        return inspector->counterLines()[Inspector::SlotsLine] == InspectorNoSlots
+            && overlay->shownWindow().primitiveSlots == 0 && overlay->shownWindow().glyphSlots == 0;
+    };
+    // every frame until the overlay's next refresh reads 0 in the Inspector,
+    // and so does that refresh
+    auto zeroUntilRefresh=[&]()
+    {
+        const size_t refreshes=overlay->refreshes();
+        bool zero=true;
+
+        for(int i=0; (i < 100) && (overlay->refreshes() == refreshes); ++i)
+        {
+            scene.frame();
+            zero=zero && (inspector->counterLines()[Inspector::SlotsLine] == InspectorNoSlots);
+        }
+        return zero && bothZero();
+    };
+
+    // onto the name, until its tooltip shows
+    scene.canvas->inputMouseMoved(onName.x, onName.y, 0, 0);
+    for(int i=0; (i < 100) && !scene.canvas->toolTipShown(); ++i)
+        scene.frame();
+    REQUIRE(scene.canvas->toolTipOwner() == interval);
+
+    controls::ToolTip *box=scene.canvas->toolTipControl();
+
+    REQUIRE(box);
+    REQUIRE(box->isExcludedFromStats());
+
+    const std::vector<size_t> boxIds=primitiveIdsOf(box);
+
+    REQUIRE(!boxIds.empty());
+    // the box is a tool's for every tool: the frames that showed it and the
+    // ones after
+    CHECK(allExcluded(scene.canvas, boxIds));
+    CHECK(zeroUntilRefresh());
+    CHECK(zeroUntilRefresh());
+    // and its ids are not the app's
+    CHECK(overlay->shownPrimitiveIds() == idsBefore);
+    CHECK(overlay->shownTextIds() == textIdsBefore);
+
+    // a press hides it: that frame is the tools' too
+    scene.canvas->inputMouseButton(0, true);
+    scene.frame();
+    REQUIRE(!scene.canvas->toolTipShown());
+    scene.canvas->inputMouseButton(0, false);
+    CHECK(zeroUntilRefresh());
+    CHECK(zeroUntilRefresh());
+    CHECK(box->isExcludedFromStats());
+    CHECK(overlay->shownPrimitiveIds() == idsBefore);
+
+    // straight to the app control's tooltip: the box is the app's, counted
+    // in both, and its ids are the app's
+    scene.canvas->inputMouseMoved(60, 420, 0, 0);
+    for(int i=0; (i < 100) && !scene.canvas->toolTipShown(); ++i)
+        scene.frame();
+    REQUIRE(scene.canvas->toolTipOwner() == tipped);
+    CHECK_FALSE(box->isExcludedFromStats());
+    CHECK(noneExcluded(scene.canvas, boxIds));
+    // the frame after the show reads the show's writes
+    scene.frame();
+    CHECK(inspector->counterLines()[Inspector::SlotsLine] != InspectorNoSlots);
+    scene.untilRefresh(overlay);
+    CHECK(overlay->shownWindow().primitiveSlots > 0);
+    scene.untilRefresh(overlay);
+    CHECK(overlay->shownPrimitiveIds() == idsBefore+boxIds.size());
 }

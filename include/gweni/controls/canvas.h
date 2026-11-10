@@ -333,16 +333,20 @@ public:
     /// setExcludedFromStats() change on a control on the canvas: a tool showing
     /// the tree rebuilds its view when it changes.
     unsigned treeSerial() const { return m_treeSerial; }
-    /// The ids of every setExcludedFromStats() subtree on this canvas, for a
-    /// tool reading the renderer's written ids of the last frame in this
-    /// frame's update phase: those its subtrees hold now (a walk of each
-    /// flagged subtree, made by the first call in a frame and kept until the
-    /// frame's flush or a release), and those any of them gave back (a control
-    /// of one deleted, or its skin Control removed) since the flush before the
-    /// last one, whose slots that last flush, or the next, clears under ids
-    /// nobody holds. The releases are rolled as renderCanvas() ends, so every
-    /// reader of a frame sees the same record: reading it uses nothing up.
-    /// With no flagged control nothing is walked or kept.
+    /// The ids of every setExcludedFromStats() subtree on this canvas (the
+    /// tools, and the ToolTip box while it is a tool's), for a tool reading
+    /// the renderer's written ids of the last frame in this frame's update
+    /// phase: those its subtrees hold now (a walk of each flagged subtree, made
+    /// by the first call in a frame and kept until the frame's flush, a
+    /// release, a setExcludedFromStats() change or a change of the tree on the
+    /// canvas: a control added, removed or moved, into or out of a flagged
+    /// subtree too, or a skin Control assigned or released), and those any of
+    /// them gave back (a control of one deleted, or its skin Control removed)
+    /// since the flush before the last one, whose slots that last flush, or
+    /// the next, clears under ids nobody holds. The releases are rolled as
+    /// renderCanvas() ends, so every reader of a frame sees the same record:
+    /// reading it uses nothing up. With no flagged control nothing is walked
+    /// or kept.
     const ExcludedSlots &excludedSlots();
     /// \}
 
@@ -549,7 +553,8 @@ protected:
     /// read in the next frame, those before the one before are forgotten.
     void rollExcludedReleases();
     ExcludedSlots m_excludedSlots;
-    /// m_excludedSlots was built in this frame and nothing was released since.
+    /// m_excludedSlots was built in this frame, and nothing was released, no
+    /// flag changed and the tree did not change since.
     bool m_excludedSlotsValid=false;
     /// What excludedIdsReleased() got, in order; the first m_releasedBefore*
     /// entries came before the last flush.

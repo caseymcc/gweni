@@ -1910,9 +1910,13 @@ void Base::setExcludedFromStats(bool exclude)
         g_statsExcludedRootList.erase(std::find(g_statsExcludedRootList.begin(),
             g_statsExcludedRootList.end(), this));
     }
-    // what a tool counts of the tree (StatsOverlay's controls) changed with it
+    // what a tool counts of the tree (StatsOverlay's controls) changed with
+    // it, and which ids are the tools'
     if(Canvas *canvas=getCanvas())
+    {
         ++canvas->m_treeSerial;
+        canvas->m_excludedSlotsValid=false;
+    }
 }
 
 const std::vector<Base *> &Base::statsExcludedRoots()
@@ -2192,6 +2196,9 @@ void Base::zOrderChanged()
     if(Canvas *canvas=getCanvas())
     {
         canvas->m_zOrderDirty=true;
+        // a control (or a skin Control) taken into, out of or onto a flagged
+        // subtree: the tools' held ids are walked again at the next read
+        canvas->m_excludedSlotsValid=false;
         if(!statsExcluded())
             ++canvas->m_treeSerial;
     }
@@ -2213,6 +2220,9 @@ void Base::zChildRemoved()
     if(Canvas *canvas=getCanvas())
     {
         canvas->m_zOrderDirty=true;
+        // a control (or a skin Control) taken into, out of or onto a flagged
+        // subtree: the tools' held ids are walked again at the next read
+        canvas->m_excludedSlotsValid=false;
         if(!statsExcluded())
             ++canvas->m_treeSerial;
     }
