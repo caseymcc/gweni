@@ -168,7 +168,8 @@ public:
     controls::PlotLines *cpuPlot() const { return m_cpuPlot; }
     controls::PlotLines *slotsPlot() const { return m_slotsPlot; }
 
-    //! The primitive and text ids its own controls hold.
+    //! The primitive and text ids its own controls hold, and the canvas's
+    //! ToolTip box's while that shows (or last showed) a name cell's tooltip.
     void ownIds(std::vector<size_t> &primitiveIds, std::vector<size_t> &textIds) const;
 
     //! Only its name cells take the mouse, for their tooltips: the visible
@@ -208,6 +209,9 @@ private:
     void show(controls::Canvas *canvas);
     //! The canvas's controls but the tools' (setExcludedFromStats()) subtrees.
     static size_t countControls(const controls::Base *control);
+    //! The canvas's ToolTip box while it shows (or last showed, until it shows
+    //! another control's) a name cell's tooltip, else null.
+    const controls::Base *ownToolTipBox() const;
 
     //! Each row's cells, left to right.
     std::vector<std::vector<controls::Label *>> m_rows;

@@ -349,6 +349,8 @@ bool g_propagating=false;
 size_t g_statsExcludedRoots=0;
 // The invalidation now going up started outside every flagged subtree.
 bool g_invalidationCounted=true;
+// Open ExcludedFromStatsScopes: what is marked counts as a flagged subtree's.
+size_t g_excludedScopes=0;
 // The counted invalidate() calls since the process started (invalidateCalls()).
 size_t g_invalidateCalls=0;
 // Set while a walk invalidates a whole subtree (invalidateChildren(true),
@@ -749,7 +751,7 @@ void Base::invalidate(int state)
     // entries it causes are counted (layoutEntryCounted)
     if(!g_propagating)
     {
-        g_invalidationCounted=(g_statsExcludedRoots == 0) || !statsExcluded();
+        g_invalidationCounted=(g_statsExcludedRoots == 0) || ((g_excludedScopes == 0) && !statsExcluded());
 
         // the hidden controls it is under may be measured anyway; a shown
         // one has no width kept (m_hiddenWidthCurrent). In a walk each hidden
@@ -1859,6 +1861,18 @@ std::vector<std::string> typesWithoutSkinRenderer()
 static size_t g_measureTextCalls=0;
 
 
+ExcludedFromStatsScope::ExcludedFromStatsScope(bool active): m_active(active)
+{
+    if(m_active)
+        ++g_excludedScopes;
+}
+
+ExcludedFromStatsScope::~ExcludedFromStatsScope()
+{
+    if(m_active)
+        --g_excludedScopes;
+}
+
 void Base::setExcludedFromStats(bool exclude)
 {
     if(m_excludeFromStats == exclude)
@@ -1868,6 +1882,9 @@ void Base::setExcludedFromStats(bool exclude)
         ++g_statsExcludedRoots;
     else
         --g_statsExcludedRoots;
+    // what a tool counts of the tree (StatsOverlay's controls) changed with it
+    if(Canvas *canvas=getCanvas())
+        ++canvas->m_treeSerial;
 }
 
 bool Base::layoutEntryCounted() const
@@ -1879,7 +1896,7 @@ void Base::markZDirty()
 {
     // a mark from a flagged subtree makes the way up dirty but not counted; a
     // counted one goes on up through what is dirty uncounted
-    const bool counted=(g_statsExcludedRoots == 0) || !statsExcluded();
+    const bool counted=(g_statsExcludedRoots == 0) || ((g_excludedScopes == 0) && !statsExcluded());
 
     for(Base *control=this; control; control=control->m_actualParent)
     {

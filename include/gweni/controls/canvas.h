@@ -294,7 +294,8 @@ public:
     /// Raised with every change of the tree's order that Base reports to the
     /// canvas (a child added, removed or moved, a skin Control assigned or
     /// released: what makes zOrderDirty()) and by invalidateZOrder(), but not
-    /// for changes inside a Base::setExcludedFromStats() subtree: a tool showing
+    /// for changes inside a Base::setExcludedFromStats() subtree, and by a
+    /// setExcludedFromStats() change on a control on the canvas: a tool showing
     /// the tree rebuilds its view when it changes.
     unsigned treeSerial() const { return m_treeSerial; }
     /// \}
@@ -324,7 +325,12 @@ public:
     /// mouse is on another control), and when the control is hidden,
     /// disabled, deleted or loses its tooltip. The box is kept as the canvas's
     /// last child, so the z renumber puts it above everything else, an open
-    /// Menu included, and it is clipped only to the canvas.
+    /// Menu included, and it is clipped only to the canvas. The box is
+    /// setExcludedFromStats() while the control it shows a tooltip for is
+    /// statsExcluded() (a tool's, as a StatsOverlay name cell is): from its
+    /// creation, or from a show for such a control, to the next show for one
+    /// that is not, so the frames that show, change and hide a tool's tooltip
+    /// are counted as the tool's, and the app's count again from its own.
 
     /// Seconds the mouse has to rest on a control before its tooltip shows;
     /// 0.5 by default.
@@ -337,6 +343,11 @@ public:
     Base *toolTipOwner() const { return m_toolTipOwner; }
     /// The box is showing toolTipOwner()'s tooltip.
     bool toolTipShown() const { return m_toolTipShown; }
+    /// The control id (Base::getControlId()) of the control the box last
+    /// showed a tooltip for, kept once it is hidden until it shows another's;
+    /// 0 before any. A tool whose controls' tooltips the box shows takes the
+    /// box's slots for its own while this is one of them.
+    size_t toolTipShownForId() const { return m_toolTipShownForId; }
 
     /// Base: \p control's tooltip text or control changed; one shown is
     /// filled in again in the next update phase.
@@ -608,6 +619,7 @@ protected:
     float m_toolTipSince=0.0f;
     float m_toolTipDelay=0.5f;
     bool m_toolTipShown=false;
+    size_t m_toolTipShownForId=0;
     /// The owner's tooltip changed while shown.
     bool m_toolTipDirty=false;
     /// Pressed on: shows no tooltip until the mouse is on another control.

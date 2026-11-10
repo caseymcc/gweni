@@ -27,6 +27,13 @@
  *    then kB, MB, ... of 1000, with tenths below 10, truncated);
  *  - an app change shows on the next refresh as the most one frame did
  *    (rendered, changed, the app's slots alone), and 0 on the one after;
+ *  - a name's tooltip is the overlay's work: on a settled app the frame
+ *    that shows it counts nothing, the next refresh shows 0 (rendered,
+ *    changed, slots, layout, z) with the app's controls and ids as before,
+ *    the frames after write nothing, and a press that hides it counts nothing
+ *    either; the box is above the overlay, inside the canvas and above the
+ *    name; moving straight on to an app control's tooltip makes the box the
+ *    app's again, counted, and one of its controls;
  *  - it counts the app's controls, the tools' subtrees left out, and the
  *    app's live ids;
  *  - closed, it gives back every primitive and text id it took;
@@ -46,6 +53,7 @@
 #include "headlessFixture.h"
 
 #include <gweni/gweni.h>
+#include <gweni/controls/toolTip.h>
 #include <gweni/inputHandler.h>
 #include <gweni/platforms/platform.h>
 #include <gweni/tools/inspector.h>
@@ -541,6 +549,137 @@ TEST_CASE("StatsOverlay: an app change shows on the next refresh, then 0")
     scene.untilRefresh(overlay);
     CHECK(overlay->lines()[RenderedLine] == "rendered | 0 | changed | 0");
     CHECK(overlay->lines()[SlotsLine] == "prim slots | 0 | glyphs | 0");
+}
+
+TEST_CASE("StatsOverlay: a name's tooltip is the overlay's work, not the app's")
+{
+    Scene scene;
+    // an app control with a tooltip of its own, away from the overlay
+    controls::Base *tipped=scene.canvas->newChild<controls::Base>("tipped");
+
+    tipped->setBounds(400, 10, 100, 40);
+    tipped->setToolTipText("the app's");
+
+    StatsOverlay *overlay=StatsOverlay::open(scene.canvas);
+
+    scene.untilRefresh(overlay);
+    scene.untilRefresh(overlay);
+
+    controls::Label *interval=overlay->nameCells()[4];
+
+    REQUIRE(interval->getText() == "interval");
+
+    const Point at=overlay->getPos()+interval->getPos()+Point(interval->getWidth()/2, interval->getHeight()/2);
+    const size_t controlsBefore=overlay->shownControls();
+    const size_t idsBefore=overlay->shownPrimitiveIds();
+
+    // onto the name: the corner under the overlay loses the hover (the app's),
+    // and the tooltip waits for its delay, two refreshes away
+    scene.canvas->inputMouseMoved(at.x, at.y, 0, 0);
+    scene.frame();
+    REQUIRE(HoveredControl == interval);
+    REQUIRE(!scene.canvas->toolTipShown());
+    scene.untilRefresh(overlay);
+
+    int waited=0;
+
+    while(!scene.canvas->toolTipShown() && (waited < 100))
+    {
+        controls::resetChangeStats();
+        scene.frame();
+        ++waited;
+    }
+    REQUIRE(scene.canvas->toolTipShown());
+    REQUIRE(scene.canvas->toolTipOwner() == interval);
+
+    controls::ToolTip *box=scene.canvas->toolTipControl();
+
+    REQUIRE(box);
+    CHECK(box->isExcludedFromStats());
+    CHECK(scene.canvas->toolTipShownForId() == interval->getControlId());
+    // the frame that showed it counts nothing of it: its changes are the
+    // excluded ones
+    CHECK(controls::getChangeStats().controls == 0);
+    CHECK(controls::getChangeStats().visited == 0);
+    CHECK(controls::getChangeStats().excluded > 0);
+    CHECK(scene.canvas->getLayoutStats().passes == 0);
+    CHECK(scene.canvas->getUpdateStats().zVisited == 0);
+
+    // above the overlay, inside the canvas, clear of the name
+    const Rect boxRect=box->getBounds();
+
+    CHECK(box->getZIndex() > interval->getZIndex());
+    CHECK(scene.canvas->getChildren().back() == box);
+    CHECK(boxRect.x >= 0);
+    CHECK(boxRect.y >= 0);
+    CHECK(boxRect.right() <= scene.canvas->getWidth());
+    CHECK(boxRect.bottom() <= scene.canvas->getHeight());
+    const Point name=overlay->getPos()+interval->getPos();
+
+    CHECK(((boxRect.y >= name.y+interval->getHeight()) || (boxRect.bottom() <= name.y)));
+
+    // the next refresh shows none of it: the window the box was shown in
+    scene.untilRefresh(overlay);
+    CHECK(overlay->lines()[RenderedLine] == "rendered | 0 | changed | 0");
+    CHECK(overlay->lines()[SlotsLine] == "prim slots | 0 | glyphs | 0");
+    CHECK(overlay->lines()[LayoutLine] == "passes | 0 | entered | 0");
+    CHECK(overlay->lines()[ZLine] == "z visited | 0 | anims | 0");
+    // the box and its ids are not the app's either
+    CHECK(overlay->shownControls() == controlsBefore);
+    CHECK(overlay->shownPrimitiveIds() == idsBefore);
+
+    // and the frames between refreshes write nothing
+    for(int i=0; i < 5; ++i)
+    {
+        controls::resetChangeStats();
+        scene.frame();
+        CHECK(scene.renderer.frameStats().primitiveSlotsWritten == 0);
+        CHECK(controls::getChangeStats().visited == 0);
+        CHECK(controls::getChangeStats().excluded == 0);
+    }
+
+    // a press hides it: that frame is the overlay's too
+    scene.canvas->inputMouseButton(0, true);
+    scene.frame();
+    REQUIRE(!scene.canvas->toolTipShown());
+    scene.canvas->inputMouseButton(0, false);
+    scene.frame();
+    CHECK(box->isExcludedFromStats());
+    scene.untilRefresh(overlay);
+    scene.untilRefresh(overlay);
+    CHECK(overlay->lines()[RenderedLine] == "rendered | 0 | changed | 0");
+    CHECK(overlay->lines()[SlotsLine] == "prim slots | 0 | glyphs | 0");
+
+    // shown again (the press keeps it hidden until the mouse has left the
+    // name), then straight to the app control's tooltip: the box is the app's
+    // again, and its frames count
+    scene.canvas->inputMouseMoved(10, 10, 0, 0);
+    scene.frame();
+    scene.canvas->inputMouseMoved(at.x, at.y, 0, 0);
+    scene.frame();
+    waited=0;
+    while(!scene.canvas->toolTipShown() && (waited < 100))
+    {
+        scene.frame();
+        ++waited;
+    }
+    REQUIRE(scene.canvas->toolTipOwner() == interval);
+    scene.untilRefresh(overlay);
+    scene.untilRefresh(overlay);
+
+    scene.canvas->inputMouseMoved(450, 30, 0, 0);
+    scene.frame();
+    REQUIRE(scene.canvas->toolTipShown());
+    REQUIRE(scene.canvas->toolTipOwner() == tipped);
+    CHECK(!box->isExcludedFromStats());
+    CHECK(scene.canvas->toolTipShownForId() == tipped->getControlId());
+
+    scene.untilRefresh(overlay);
+    CHECK(overlay->shownWindow().changed > 0);
+    CHECK(overlay->shownWindow().primitiveSlots > 0);
+    // the box, with its text, is the app's now
+    scene.untilRefresh(overlay);
+    CHECK(overlay->shownControls() == controlsBefore+1+box->getActualChildren().size());
 }
 
 TEST_CASE("StatsOverlay: the tree's controls and ids are the app's")

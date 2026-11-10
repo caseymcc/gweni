@@ -768,8 +768,28 @@ void Canvas::updateToolTip()
 
 void Canvas::showToolTipFor(Base *owner)
 {
+    // A tool's tooltip (its owner in a setExcludedFromStats() subtree) is the
+    // tool's work: the box is flagged before it changes, from its creation on,
+    // and stays so through the hide, until it shows an app control's.
+    const bool excluded=owner->statsExcluded();
+
     if(!m_toolTip)
-        m_toolTip=newChild<ToolTip>();
+    {
+        // as newChild(), but flagged before it is attached, and for a tool's
+        // tooltip with this canvas's share of the attach (its own invalidate
+        // and z mark) counted as the tool's too
+        m_toolTip=newControl<ToolTip>();
+        m_toolTip->setExcludedFromStats(excluded);
+
+        const ExcludedFromStatsScope scope(excluded);
+
+        m_toolTip->setParent(this);
+        m_toolTip->recursiveInit("");
+        m_toolTip->setSkin(m_skin);
+    }
+    else
+        m_toolTip->setExcludedFromStats(excluded);
+    m_toolTipShownForId=owner->getControlId();
 
     m_toolTip->setContentFor(owner, Rect(0, 0, getWidth(), getHeight()));
     m_toolTip->setHidden(false);

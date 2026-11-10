@@ -128,6 +128,24 @@ GWENI_EXPORT size_t measureTextCalls();
 //! root of a detached subtree), which mark only that control.
 GWENI_EXPORT size_t invalidateCalls();
 
+//! While one is open, the layout invalidations and z-order marks made are
+//! counted as a setExcludedFromStats() subtree's (layoutEntryCounted(), the z
+//! renumber's zVisited, invalidateCalls()), whichever control they are made
+//! on: for a parent's own share of attaching a flagged child, which addChild()
+//! makes on the parent (Canvas showing a tool's tooltip in a new ToolTip box).
+//! It changes nothing while no control is flagged, nor when made with \p
+//! active false. Nests.
+struct GWENI_EXPORT ExcludedFromStatsScope
+{
+    explicit ExcludedFromStatsScope(bool active=true);
+    ~ExcludedFromStatsScope();
+    ExcludedFromStatsScope(const ExcludedFromStatsScope &)=delete;
+    ExcludedFromStatsScope &operator=(const ExcludedFromStatsScope &)=delete;
+
+private:
+    bool m_active;
+};
+
 //! The tree changes made during a render walk: the render walk only draws, and
 //! adding, removing, reordering or deleting a control belongs to the update
 //! phase or to layout. Base's addChild(), addChildOfLayout(), removeChild()
