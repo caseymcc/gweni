@@ -295,7 +295,9 @@ enters the parent from measuring it again is that its width is current
 `visible()`, and cleared when it is shown or something under it is
 invalidated, but for a new size, which no preferred width reads. An
 invalidation of a hidden control clears it on the way up to the first shown
-one, so a shown control's own invalidations cost nothing more. Relabelling a
+one, so a shown control's own invalidations cost nothing more; in a walk that
+invalidates a whole subtree (below), each hidden control clears its own, and
+the walk clears the way up from its root once. Relabelling a
 closed node enters as many controls whatever its row count, and a row
 changed, added or deleted under it is measured again with the path up to it
 alone (`tests/unit/placement.cpp`, the `tree-relabel` bench scene).
@@ -431,10 +433,42 @@ at its first test once a sibling has stopped the list, and they run where the
 invalidation does, in the bench's input phase; a size test in each
 `invalidateChildren` call to skip them cost 0.57 M (the input phase +0.37 %,
 `build --n 10000`'s update +0.32 %, the update of resize and scale -0.007 %),
-so it was left out. What a whole-subtree change pays per control is the
-invalidation itself: each `Base::invalidate()` invalidates every ancestor up
-to the canvas (about 50 M of resize's input phase, about 157 M of
-`build --n 10000`'s instructions).
+so it was left out. What a whole-subtree change paid per control was the
+invalidation itself, until #519 made it one call per control (below).
+
+**Invalidating a whole subtree.** `Base::invalidate()` marks the control
+(`needsLayout()`, `layoutDirty()`, the holders between it and its logical
+parent, `m_cacheTextureDirty`) and then each of its logical parents up to the
+canvas, so one control's invalidation costs its depth. A new size
+(`setBounds` -> `invalidateChildren(true)`; a canvas resize is the canvas's
+own) and a new scale (`Canvas::setScale` and a `textLayoutSerial()` bump, both
+through `Base::scaleChangedSubtree()`, which runs `onScaleChanged()` over the
+tree) invalidate every control of a subtree. That walk enters each control
+under its root once, through `m_children` (an inner panel is one of its
+owner's children, so its contents are reached through it, not walked again
+from the owner), and a control it enters marks itself only: the walk reaches
+every ancestor it has in the subtree. The way up out of the subtree is taken
+once, when `invalidateChildren` is done: from each logical parent outside the
+subtree that one of its controls has, which is the root itself, or for an
+inner panel the panel's owner (the panel getting only the dirty mark its
+children's holder loop gives it, as before); a scale walk's root is the canvas,
+whose own invalidation walks up. So a walk costs the subtree's size in
+`invalidate()` calls plus the root's depth. Before #519 every control it
+entered walked up to the canvas, an inner panel's contents were walked again
+from the panel's owner (doubling at each level of nesting), and a canvas
+resize walked the whole tree a second time (`Canvas::onBoundsChanged`, now
+gone).
+`controls::invalidateCalls()` counts the calls, each step up one
+(`invalidations=` in `ControlTest --stats` and `gweni_bench`, checked by
+`bench_scaling`; `tests/unit/subtreeInvalidation.cpp` pins one walk at the
+canvas, at a deep ScrollControl and TreeNode and at their inner panels, over
+inner panels and TreeNodes nested 6 and 7 deep, with each control's layout
+state as before). Per frame at N=1000: `resize` 3 111 calls for 3 109 controls
+(120 908 before), `scale` 3 109 (15 014); the canvas resize's part of
+`resize --n 1000`'s input phase went from 78.7 M instructions to 6.0 M, and
+`build --n 10000`'s update phase from 208.5 M to 148.0 M. A first layout
+still walks each level's subtree again from its own `setBounds`, about 15
+calls per control in `build`'s first frame (#538).
 
 **Its counter and the flagged subtrees.** `layout_children_scanned`
 (`LayoutStats::childrenScanned`) counts what these loops go over, as

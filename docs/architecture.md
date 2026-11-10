@@ -80,6 +80,14 @@ phase (`TextBox::insertText` asks for the caret's place), so `gweni_bench` split
 `measure_calls` by phase (`measure_calls_input`, `_update`, `_render`), and
 `ControlTest --stats`'s `measure_calls=` counts everything since the last frame line;
 `LayoutStats::measureCalls` holds the update phase's and a render-phase layout's.
+An invalidation (`Base::invalidate()`) marks the control and its logical parents up to
+the canvas; a new size or scale invalidates a whole subtree in one walk that enters each
+control once, with no walk up from each, and takes the way out of the subtree once
+(`docs/layout.md` → "Which children a pass enters", **Invalidating a whole subtree**;
+issue #519). `controls::invalidateCalls()` counts the calls (`invalidations=` in
+`ControlTest --stats`, `invalidations` and its `_input`/`_update`/`_render` shares in
+`gweni_bench`), none from a `Base::setExcludedFromStats()` subtree or a control with no
+parent that is not a canvas (one being made).
 `GWENI_LAYOUT_VERIFY=1` (ControlTest `--verify-layout`)
 checks every frame's layout against a pass that enters every control.
 The animation registry (`source/anim.cpp`) holds only
@@ -2091,7 +2099,8 @@ two programs and the draws. What follows describes both together:
   `fitCanvasToWindow` and `windowToLogical` serve it (`web_input` checks a 640x480 CSS
   container at `devicePixelRatio` 2: a 1280x960 framebuffer and a 640x480 canvas laid
   out as a capture's at `--scale 2`). `Canvas::setScale` reaches
-  `Base::onScaleChanged` on every control, which invalidates its layout and marks it
+  `Base::onScaleChanged` on every control, in one walk (`Base::scaleChangedSubtree`,
+  each control invalidated once without walking up), which invalidates its layout and marks it
   `StateChange_Geometry` once, so the next frame lays the tree out again and re-emits
   every primitive and clip box at the new scale; the text runs re-lay themselves,
   their `px` being in the run cache key. `ControlTest --scenario scale`

@@ -1076,6 +1076,11 @@ public:
             m_parent->invalidate(state);
     }
 
+    //! Invalidates this control's children (and the children its inner panel
+    //! hands out). Recursive, it invalidates its whole subtree in one walk:
+    //! each control under it once, none walking up to the canvas, and the way
+    //! up from the subtree once at the end (docs/layout.md, "Invalidating a
+    //! whole subtree").
     void invalidateChildren(bool recursive=false);
     //! Invalidates the children that readsParentLayout(): this control's
     //! padding, dock or requested size changed.
