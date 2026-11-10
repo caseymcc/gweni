@@ -1644,6 +1644,13 @@ void SlotRenderer::drawRoundedRect(size_t primitiveId, gweni::Rect rect, float r
         fillBottom, gweni::Color(0, 0, 0, 0), gweni::Color(0, 0, 0, 0), borderColor);
 }
 
+void SlotRenderer::drawRoundedRect(size_t primitiveId, gweni::Rect rect, float radius, float border,
+    gweni::Color fillTop, gweni::Color fillBottom, gweni::Color borderColor, int zIndex, uint8_t edges)
+{
+    writeRoundedQuad(primitiveId, rect, zIndex, 4, radius, border, fillTop, fillTop,
+        fillBottom, gweni::Color(0, 0, 0, 0), gweni::Color(0, 0, 0, 0), borderColor, edges);
+}
+
 void SlotRenderer::drawBilinearRect(size_t primitiveId, gweni::Rect rect, int zIndex,
     gweni::Color c00, gweni::Color c10, gweni::Color c01, gweni::Color c11,
     float radius, float border, gweni::Color borderColor)
@@ -1671,7 +1678,7 @@ static int halfPixelSize(int size)
 void SlotRenderer::writeRoundedQuad(size_t primitiveId, gweni::Rect rect, int zIndex, uint8_t style,
     float radius, float border, gweni::Color color0Left, gweni::Color color0Right,
     gweni::Color color1, gweni::Color color3Left, gweni::Color color3Right,
-    gweni::Color borderColor)
+    gweni::Color borderColor, uint8_t edges)
 {
     translate(rect);
 
@@ -1697,9 +1704,13 @@ void SlotRenderer::writeRoundedQuad(size_t primitiveId, gweni::Rect rect, int zI
     const int hh=halfPixelSize(rect.h);
 
     // Scaled to device pixels. A border stays a whole number of them, and at
-    // least one, so it stays crisp at a fractional scale.
+    // least one, so it stays crisp at a fractional scale. The radius is the low
+    // byte and the edge mask the high one: a radius over 255 px is 255, which the
+    // shader cuts to the rect's half-size anyway, so it draws the same unless the
+    // rect is over 510 px on its shorter side.
     const long limit=std::numeric_limits<uint16_t>::max();
-    const uint16_t rad=(uint16_t)std::min(std::max((long)snap(radius), 0L), limit);
+    const uint16_t rad=(uint16_t)(std::min(std::max((long)snap(radius), 0L), 255L)
+        | ((uint16_t)edges << 8));
     const uint16_t bor=(uint16_t)((border > 0.0f)
         ? std::min(std::max((long)snap(border), 1L), limit) : 0L);
 

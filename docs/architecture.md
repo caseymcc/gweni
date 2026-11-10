@@ -1369,6 +1369,26 @@ two programs and the draws. What follows describes both together:
   square corner's kink). A pixel-aligned straight edge is therefore 1 inside and 0
   outside: the outermost pixel is fully covered, two rects that abut meet with no
   seam, and an N px border is exactly N rows; only a corner arc is partly covered.
+  **The edge mask**: `drawRoundedRect`'s overload with an `edges` argument (a
+  combination of `renderer::RoundedEdge`) makes each corner it names square and keeps
+  the border off each side it names, as a tab joined to its page is square and
+  unbordered on the page's side. `writeRoundedQuad` packs it in `Vertex::radius`'s high
+  byte, so the vertex stays 32 bytes and the radius is its low byte, at most 255 device
+  px (the shader cuts a radius to the rect's half-size anyway, so a larger one draws the
+  same unless the rect is over 510 px on its shorter side); the vertex shader splits
+  the field for styles 4, 6 and 7 only (`vEdges`, 0 for every other style, which keep
+  the whole field). Bits 0-3 are the top-left, top-right, bottom-left and bottom-right
+  corners square, bits 4-7 the top, right, bottom and left sides without a border.
+  `roundedRect()` takes the radius of the pixel's quadrant (`cornerRadius()`, by the
+  signs of `vLocal`, 0 where the corner is square), and measures the border against
+  the box with each borderless side pushed out by `border + aa`, so no pixel inside is
+  within the border of that side, the other corners keep their arcs where they were,
+  and the borders of the sides next to it run straight to its edge. With no bit set
+  every step is the one before the mask, so an unmasked rect draws the same bytes.
+  `renderer::Base`'s default for the masked call draws the unmasked rect, the mask
+  dropped, so a backend without it still draws a rounded rect in the right place;
+  `drawBilinearRect`/`drawCheckerRect` take no mask (yet). `tests/roundedEdges.cpp`
+  checks the pixels on every backend, `tests/unit/roundedEdges.cpp` the packing.
   `renderer::Base`'s defaults for `drawBilinearRect`/`drawCheckerRect` approximate
   them with `drawRoundedRect`. `hidePrimitive()`/`showPrimitive()` just set `style`,
   leaving geometry in place.

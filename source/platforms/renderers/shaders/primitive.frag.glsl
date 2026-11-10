@@ -18,6 +18,7 @@ flat in uint ShaderType;
 in vec2 vLocal;
 flat in vec2 vHalf;
 flat in float vRadius;
+flat in uint vEdges;
 flat in float vBorder;
 flat in vec4 vColor1;
 flat in vec4 vBorderColor;
@@ -100,17 +101,36 @@ float sdRoundBox(vec2 p, vec2 b, float r)
     return min(max(q.x, q.y), 0.0) + length(max(q, vec2(0.0))) - r;
 }
 
+// The edge mask's bits (renderer::RoundedEdge, Vertex::radius's high byte):
+// bit 0..3 the top-left, top-right, bottom-left and bottom-right corner square,
+// bit 4..7 the top, right, bottom and left side without a border.
+const uint NoBorderTop = 0x10u;
+const uint NoBorderRight = 0x20u;
+const uint NoBorderBottom = 0x40u;
+const uint NoBorderLeft = 0x80u;
+
+// The radius of p's corner, p from the box's centre (y down): r, or 0 where the
+// mask makes that corner square. Every corner's arc is within r of it, so the
+// quadrant p is in names the corner whose arc it can be near.
+float cornerRadius(vec2 p, float r)
+{
+    uint corner = (p.y < 0.0 ? 0u : 2u) + (p.x < 0.0 ? 0u : 1u);
+    return ((vEdges >> corner) & 1u) != 0u ? 0.0 : r;
+}
+
 // Rounded-rect mask of styles 4, 6 and 7: applies the border to fill and the
 // anti-aliased outer edge to its alpha. Both are a 1 px box filter: the part of
 // the pixel on the inner side of the edge, with aa the size of a pixel in units
 // of d. A pixel-aligned straight edge is then exactly 1 inside and 0 outside, so
 // the outermost pixel is fully covered, two rects that abut meet without a seam
 // and an N px border is N whole rows; only a curved edge (a corner arc) gets
-// partial coverage.
+// partial coverage. The edge mask (vEdges) makes a corner square (its radius 0)
+// and keeps the border off a side; with none of its bits set every step is the
+// one it was without a mask, so an unmasked rect draws the same bytes.
 vec4 roundedRect(vec4 fill)
 {
     float r = clamp(vRadius, 0.0, min(vHalf.x, vHalf.y));
-    float d = sdRoundBox(vLocal, vHalf, r);
+    float d = sdRoundBox(vLocal, vHalf, cornerRadius(vLocal, r));
     // d is a true distance in vLocal's units, so a pixel is aa of it: vLocal's
     // screen gradient (1 while vLocal is in device px). Not d's own gradient:
     // fwidth(d) is sqrt(2) too wide across a corner diagonal, and at a square
@@ -123,7 +143,23 @@ vec4 roundedRect(vec4 fill)
     if(vBorder > 0.0)
     {
         // -d is the inward distance from the edge; border occupies [0, vBorder].
-        float bMix = clamp(0.5 + (vBorder + d)/aa, 0.0, 1.0);
+        float db = d;
+        if((vEdges & 0xf0u) != 0u)
+        {
+            // The distance to the sides that keep their border: the box with each
+            // side without one pushed out past the border's reach (vBorder and a
+            // pixel), so no pixel inside the rect is within vBorder of it. Its
+            // corners on the other sides stay where they are, so their arcs and
+            // the straight border keep their places.
+            float e = vBorder + aa;
+            vec2 lo = -vHalf - e*vec2((vEdges & NoBorderLeft) != 0u ? 1.0 : 0.0,
+                (vEdges & NoBorderTop) != 0u ? 1.0 : 0.0);
+            vec2 hi = vHalf + e*vec2((vEdges & NoBorderRight) != 0u ? 1.0 : 0.0,
+                (vEdges & NoBorderBottom) != 0u ? 1.0 : 0.0);
+            vec2 q = vLocal - 0.5*(lo + hi);
+            db = sdRoundBox(q, 0.5*(hi - lo), cornerRadius(q, r));
+        }
+        float bMix = clamp(0.5 + (vBorder + db)/aa, 0.0, 1.0);
         rgb = lerp(fill.rgb, vBorderColor.rgb, bMix);
     }
     return vec4(rgb, fill.a * shapeA);

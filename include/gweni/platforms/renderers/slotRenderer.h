@@ -295,6 +295,12 @@ public:
     void drawFilledRect(size_t primitiveId, gweni::Rect rect, int zIndex) override;
     void drawRoundedRect(size_t primitiveId, gweni::Rect rect, float radius, float border,
         gweni::Color fillTop, gweni::Color fillBottom, gweni::Color borderColor, int zIndex) override;
+    //! Style 4 with the edge mask in Vertex::radius's high byte; the radius, in its
+    //! low byte, is at most 255 device px (a larger one is that, which draws the
+    //! same in a rect no more than 510 px across on its shorter side).
+    void drawRoundedRect(size_t primitiveId, gweni::Rect rect, float radius, float border,
+        gweni::Color fillTop, gweni::Color fillBottom, gweni::Color borderColor, int zIndex,
+        uint8_t edges) override;
     void drawBilinearRect(size_t primitiveId, gweni::Rect rect, int zIndex,
         gweni::Color c00, gweni::Color c10, gweni::Color c01, gweni::Color c11,
         float radius, float border, gweni::Color borderColor) override;
@@ -572,7 +578,9 @@ protected:
         uint16_t tx, ty; //color0 (top fill) packed rg/ba, or UV for texture (style 2, 0..65535 = 0..1)
         // SDF fields (styles 3-7); left 0 for all other styles.
         int16_t  lx, ly; //local position relative to rect center, in half-pixel units (= +/-size at the four corners, so an odd size is exact)
-        uint16_t radius; //corner radius in px; icon kind (style 5); image unit (style 2);
+        uint16_t radius; //styles 4, 6, 7: corner radius in px (0..255) in the low byte, the
+                         //edge mask (RoundedEdge) in the high byte; icon kind (style 5);
+                         //image unit (style 2);
                          //line (style 3): LineHasPrev | LineHasNext, the neighbours it holds
         uint16_t border; //border thickness in px; line thickness in px (style 3)
         uint16_t cx, cy; //color1 (bottom fill for vertical gradient, image tint for style 2) packed rg/ba;
@@ -911,10 +919,11 @@ private:
     //! Writes primitiveId's slot as one of the SDF rounded-rect quads (styles 4, 6, 7),
     //! centred in rect. color0 and color3 are given per side (left, right), because
     //! style 6 interpolates them along x; color1 and the border colour are per quad.
+    //! \a edges is the RoundedEdge mask, packed over the radius (Vertex::radius).
     void writeRoundedQuad(size_t primitiveId, gweni::Rect rect, int zIndex, uint8_t style,
         float radius, float border, gweni::Color color0Left, gweni::Color color0Right,
         gweni::Color color1, gweni::Color color3Left, gweni::Color color3Right,
-        gweni::Color borderColor);
+        gweni::Color borderColor, uint8_t edges=0);
     //! The image unit (0..ImageUnits-1) a style-2 slot samples \a texture from,
     //! taking a free one the first time; ImageUnits when all are taken.
     size_t imageUnit(TextureHandle texture);

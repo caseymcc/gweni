@@ -23,7 +23,7 @@ layout (location = 0) in uint style;
 layout (location = 1) in ivec3 inPosition;   // device px (signed) and z (16 bits unsigned, read as GL_SHORT with x and y)
 layout (location = 2) in uvec2 inTexCoords;    // color0 (top fill) or UV
 layout (location = 3) in ivec2 inLocal;        // SDF local position (rel to rect center)
-layout (location = 4) in uvec2 inRadiusBorder; // SDF .x=radius .y=border (px)
+layout (location = 4) in uvec2 inRadiusBorder; // SDF .x=radius (styles 4, 6, 7: the edge mask in its high byte) .y=border (px)
 layout (location = 5) in uvec2 inColor1;       // SDF gradient bottom color
 layout (location = 6) in uvec2 inBorderColor;  // SDF border color
 layout (location = 7) in uvec2 inColor3;       // bilinear bottom edge (6) / checker dark (7)
@@ -34,6 +34,7 @@ flat out uint ShaderType;
 out vec2 vLocal;          // interpolated local position (px)
 flat out vec2 vHalf;      // rect half-size (px)
 flat out float vRadius;
+flat out uint vEdges;     // styles 4, 6, 7: the edge mask (renderer::RoundedEdge), else 0
 flat out float vBorder;
 flat out vec4 vColor1;    // gradient bottom color
 flat out vec4 vBorderColor;
@@ -70,7 +71,12 @@ void main()
     // inLocal is in half-pixel units, so an odd-sized rect's half-size (3.5) is exact
     vLocal = vec2(inLocal)*0.5;
     vHalf = abs(vLocal);
-    vRadius = float(inRadiusBorder.x);
+    // the rounded styles keep their radius in the low byte and the edge mask in
+    // the high one; the others (an image unit, an icon kind, a line's neighbour
+    // bits) the whole field
+    bool rounded = style == 4u || style == 6u || style == 7u;
+    vRadius = float(rounded ? (inRadiusBorder.x & 0xffu) : inRadiusBorder.x);
+    vEdges = rounded ? (inRadiusBorder.x >> 8) & 0xffu : 0u;
     vBorder = float(inRadiusBorder.y);
     vColor1 = unpackColor(inColor1);
     vBorderColor = unpackColor(inBorderColor);

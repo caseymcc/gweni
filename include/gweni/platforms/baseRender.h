@@ -55,6 +55,24 @@ struct WrittenText
     }
 };
 
+//! drawRoundedRect's edge mask: which corners are square and which sides have no
+//! border. 0, the default, is a rect rounded at all four corners with a border on
+//! all four sides. A square corner is the corner of the rect itself (its
+//! quadrant's radius 0); a side without a border is the fill up to that edge, the
+//! border of the sides next to it ending on it. A tab joined to its page is
+//! square on the page's side and has no border there.
+enum RoundedEdge: uint8_t
+{
+    SquareTopLeft=0x01,
+    SquareTopRight=0x02,
+    SquareBottomLeft=0x04,
+    SquareBottomRight=0x08,
+    NoBorderTop=0x10,
+    NoBorderRight=0x20,
+    NoBorderBottom=0x40,
+    NoBorderLeft=0x80
+};
+
 class ICacheToTexture
 {
 public:
@@ -144,6 +162,17 @@ public:
     //! colors for a flat fill); \a borderColor is ignored when \a border<=0.
     virtual void drawRoundedRect(size_t primitiveId, gweni::Rect rect, float radius, float border,
         gweni::Color fillTop, gweni::Color fillBottom, gweni::Color borderColor, int zIndex) {}
+
+    //! drawRoundedRect with an edge mask, \a edges a combination of RoundedEdge:
+    //! the corners it names square, the sides it names without a border. The
+    //! default ignores the mask and draws the rect drawRoundedRect does, so a
+    //! backend without it still draws a rounded rect in the right place.
+    virtual void drawRoundedRect(size_t primitiveId, gweni::Rect rect, float radius, float border,
+        gweni::Color fillTop, gweni::Color fillBottom, gweni::Color borderColor, int zIndex,
+        uint8_t edges)
+    {
+        drawRoundedRect(primitiveId, rect, radius, border, fillTop, fillBottom, borderColor, zIndex);
+    }
 
     //! Draw a rounded rectangle like drawRoundedRect, but filled with a four-corner
     //! bilinear blend: \a c00 top-left, \a c10 top-right, \a c01 bottom-left, \a c11
