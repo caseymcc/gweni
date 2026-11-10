@@ -509,7 +509,19 @@
  *                 value or a plot, no name) hovers it, and a click toggles it.
  *                 F10 again closes it, giving back every primitive and text
  *                 id it took, the canvas's ToolTip box's left out
- *                 (stats-overlay.png, with it open). One line
+ *                 (stats-overlay.png, with it open). Then the overlay and the
+ *                 Inspector (F12) open together, the overlay first: after
+ *                 every frame the harness counts the app's slots of it (those
+ *                 under no id a tool held after the frame before or after
+ *                 it), and the Inspector must show exactly the frame before's
+ *                 and each overlay refresh the most of its window's, frames
+ *                 only a tool wrote in included (the Inspector opening, its
+ *                 node for Demo opened, the mouse over its nodes, the overlay
+ *                 closed and opened again under it, the Inspector closed under
+ *                 the overlay); the overlay's ids row is the same with the
+ *                 Inspector open as without; a hover on a demo-list entry
+ *                 shows in both, then 0; and closing both gives back every id
+ *                 they took. One line
  *                   stats-overlay quiet_frames=N quiet_written=0 ... ids_back=yes
  *                 Exits non-zero if any check is no. controltest_stats_overlay
  *                 (tests/statsOverlay.cmake) also holds the --stats lines of
@@ -2834,6 +2846,10 @@ static bool runInspectorScenario(Session &s, const std::string &shotDir, bool &p
 // exactly while it is open and it was told once (StatsOverlay::
 // onOpenChangedCaller); a click frame writes only the button's slots and the
 // overlay's and lays out the canvas alone, and the close gives back its ids.
+//
+// Then the Inspector and the overlay open together: each leaves out every
+// tool's slots, the other's and those either gave back included
+// (Canvas::excludedSlots()), so a frame only a tool wrote in reads 0 in both.
 //-----------------------------------------------------------------------------
 
 // What one frame left behind, read after it: the canvas's counts of the frame
@@ -3399,6 +3415,288 @@ static bool runStatsOverlayScenario(Session &s, const std::string &shotDir, bool
     StatsOverlay::onOpenChangedCaller.removeHandler(&counter);
     forgetMouse(s);
 
+    // The Inspector (F12) and the overlay (F10) open together over the
+    // settled Demo: each takes every tool's slots out of the renderer's, the
+    // other's too, and the ids they give back (the canvas's one record of
+    // them, Canvas::excludedSlots()). After every frame k this harness counts
+    // the app's slots of frame k: those written under no id a tool held after
+    // frame k-1 (so ids a tool gave back before or during k) or after k (ids
+    // made in k). The Inspector open in frame k+1 must show exactly frame k's,
+    // and each overlay refresh the most of its window's frames, so a frame
+    // only a tool wrote in reads 0 in the other.
+    using gweni::tools::Inspector;
+    using gweni::tools::InspectorNode;
+
+    renderFrames(s, 3);
+
+    const size_t bothIdsBefore=livePrimitiveIds();
+    const size_t bothTextIdsBefore=liveTextIds();
+
+    struct BothFrame
+    {
+        size_t appPrimitives=0;
+        size_t appGlyphs=0;
+        bool toolOnly=false;     //!< a tool wrote slots in it, the app none
+    };
+    std::vector<BothFrame> both;
+    std::vector<size_t> heldPrimitives;
+    std::vector<size_t> heldTexts;
+    // the tools' ids now: those of the ones open, none closing (each close
+    // below is a key pressed after this was read, deleted in the next frame)
+    auto toolIds=[&](std::vector<size_t> &primitives, std::vector<size_t> &texts)
+    {
+        primitives.clear();
+        texts.clear();
+        if(StatsOverlay *open=StatsOverlay::find(s.canvas))
+            open->ownIds(primitives, texts);
+        if(Inspector *open=Inspector::find(s.canvas))
+            open->ownIds(primitives, texts);
+    };
+    toolIds(heldPrimitives, heldTexts);
+
+    // the overlay checked: its refreshes so far, the frame of its last one
+    // (none since it opened: its first window is not checked)
+    StatsOverlay *bothOverlay=nullptr;
+    size_t bothRefreshes=0;
+    long windowStart=-1;
+    // what the checks saw
+    int inspectorChecked=0;
+    int inspectorToolOnly=0;
+    int windowsChecked=0;
+    int windowsToolOnly=0;
+    std::string bothFailure;
+    auto failBoth=[&](const std::string &what) { if(bothFailure.empty()) bothFailure=what; };
+    auto slotsLine=[](size_t primitives, size_t glyphs)
+    {
+        return "slots written: "+std::to_string(primitives)+" primitive, "+std::to_string(glyphs)+" text";
+    };
+
+    auto bothFrame=[&]()
+    {
+        // the Inspector's refresh in this frame's update phase reads the last one's
+        Inspector *inspector=Inspector::find(s.canvas);
+
+        renderFrames(s, 1);
+
+        std::vector<size_t> nowPrimitives;
+        std::vector<size_t> nowTexts;
+
+        toolIds(nowPrimitives, nowTexts);
+
+        std::vector<size_t> primitives=heldPrimitives;
+        std::vector<size_t> texts=heldTexts;
+
+        primitives.insert(primitives.end(), nowPrimitives.begin(), nowPrimitives.end());
+        texts.insert(texts.end(), nowTexts.begin(), nowTexts.end());
+        std::sort(primitives.begin(), primitives.end());
+        std::sort(texts.begin(), texts.end());
+
+        BothFrame record;
+        size_t written=0;
+
+        for(size_t id : s.renderer->writtenPrimitiveIds())
+        {
+            ++written;
+            if(!std::binary_search(primitives.begin(), primitives.end(), id))
+                ++record.appPrimitives;
+        }
+        for(const gweni::renderer::WrittenText &text : s.renderer->writtenTextIds())
+        {
+            written+=text.glyphSlots;
+            if(!std::binary_search(texts.begin(), texts.end(), text.textId))
+                record.appGlyphs+=text.glyphSlots;
+        }
+        record.toolOnly=written > 0 && record.appPrimitives+record.appGlyphs == 0;
+        heldPrimitives=nowPrimitives;
+        heldTexts=nowTexts;
+
+        const size_t k=both.size();
+
+        if(inspector && inspector == Inspector::find(s.canvas) && k > 0)
+        {
+            const BothFrame &last=both[k-1];
+            const std::string expect=slotsLine(last.appPrimitives, last.appGlyphs);
+            const std::string shown=inspector->counterLines()[Inspector::SlotsLine];
+
+            ++inspectorChecked;
+            if(last.toolOnly)
+                ++inspectorToolOnly;
+            if(shown != expect)
+                failBoth("frame "+std::to_string(k)+": the Inspector showed \""+shown+"\", the app wrote \""
+                    +expect+"\" in the frame before");
+        }
+
+        StatsOverlay *overlay=StatsOverlay::find(s.canvas);
+
+        if(overlay != bothOverlay)
+        {
+            bothOverlay=overlay;
+            bothRefreshes=overlay ? overlay->refreshes() : 0;
+            windowStart=-1;
+        }
+        else if(overlay && overlay->refreshes() != bothRefreshes)
+        {
+            bothRefreshes=overlay->refreshes();
+            if(windowStart >= 0)
+            {
+                size_t most[2]={0, 0};
+                bool toolOnly=false;
+
+                for(size_t j=size_t(windowStart); j < k; ++j)
+                {
+                    most[0]=std::max(most[0], both[j].appPrimitives);
+                    most[1]=std::max(most[1], both[j].appGlyphs);
+                    toolOnly=toolOnly || both[j].toolOnly;
+                }
+                ++windowsChecked;
+                if(toolOnly)
+                    ++windowsToolOnly;
+
+                const StatsOverlay::Window &shown=overlay->shownWindow();
+
+                if(shown.primitiveSlots != most[0] || shown.glyphSlots != most[1])
+                    failBoth("frame "+std::to_string(k)+": the overlay showed "+std::to_string(shown.primitiveSlots)
+                        +" primitive and "+std::to_string(shown.glyphSlots)+" glyph slots, its window's app most "
+                        +std::to_string(most[0])+" and "+std::to_string(most[1]));
+            }
+            windowStart=long(k);
+        }
+        both.push_back(record);
+    };
+    // frames until the overlay's next refresh
+    auto bothRefresh=[&]()
+    {
+        StatsOverlay *overlay=StatsOverlay::find(s.canvas);
+        const size_t refreshes=overlay ? overlay->refreshes() : 0;
+
+        for(int i=0; i < 100 && overlay && overlay->refreshes() == refreshes; ++i)
+            bothFrame();
+    };
+    auto key=[&](int glfwKeyCode)
+    {
+        glfwKey(s, glfwKeyCode, GLFW_PRESS, 0);
+        glfwKey(s, glfwKeyCode, GLFW_RELEASE, 0);
+    };
+
+    // the overlay alone: its ids row
+    key(GLFW_KEY_F10);
+    bothFrame();
+    bothRefresh();
+    bothRefresh();
+
+    const size_t aloneIds=StatsOverlay::find(s.canvas) ? StatsOverlay::find(s.canvas)->shownPrimitiveIds() : 0;
+    const size_t aloneTextIds=StatsOverlay::find(s.canvas) ? StatsOverlay::find(s.canvas)->shownTextIds() : 0;
+
+    // the Inspector too: its opening frames are the Inspector's writes alone
+    key(GLFW_KEY_F12);
+
+    Inspector *bothInspector=Inspector::find(s.canvas);
+
+    bothFrame();
+    bothRefresh();
+    bothRefresh();
+
+    StatsOverlay *withOverlay=StatsOverlay::find(s.canvas);
+    const size_t withIds=withOverlay ? withOverlay->shownPrimitiveIds() : 0;
+    const size_t withTextIds=withOverlay ? withOverlay->shownTextIds() : 0;
+
+    // the Inspector writes alone: Demo's node opened (its placeholder node
+    // deleted, the ids given back), the mouse over its node and a child's
+    if(InspectorNode *node=bothInspector ? bothInspector->nodeFor(control) : nullptr)
+    {
+        node->open();
+        bothFrame();
+        bothFrame();
+        moveMouse(s, rectOf(node->GetButton()).x+8, rectOf(node->GetButton()).y+rectOf(node->GetButton()).h/2);
+        bothFrame();
+        for(gweni::controls::Base *child : control->getActualChildren())
+        {
+            if(InspectorNode *childNode=bothInspector->nodeFor(child))
+            {
+                const gweni::Rect title=rectOf(childNode->GetButton());
+
+                moveMouse(s, title.x+8, title.y+title.h/2);
+                bothFrame();
+                break;
+            }
+        }
+        // and closed again
+        node->close();
+        bothFrame();
+        forgetMouse(s);
+        bothFrame();
+    }
+    else
+        failBoth("the Inspector has no node for the demo");
+    bothRefresh();
+    bothRefresh();
+
+    // a hover in the app, in the middle of a window: in the Inspector on the
+    // next frame and the overlay on its next refresh (both by the checks
+    // above), then 0 in both
+    bool bothHoverShown=false;
+    bool bothHoverBack=false;
+
+    if(bothInspector && withOverlay)
+    {
+        const gweni::Rect inspectorRect=rectOf(bothInspector);
+        const gweni::Rect overlayRect=rectOf(withOverlay);
+        gweni::controls::Base *entry=findListEntry(control, inspectorRect);
+
+        if(entry && !overlaps(rectOf(entry), overlayRect))
+        {
+            const gweni::Rect at=rectOf(entry);
+
+            for(int i=0; i < 4; ++i)
+                bothFrame();
+            moveMouse(s, at.x+at.w/2, at.y+at.h/2);
+            bothFrame();
+
+            const BothFrame hover=both.back();
+
+            bothFrame();
+
+            const std::string inspectorHover=bothInspector->counterLines()[Inspector::SlotsLine];
+
+            bothRefresh();
+
+            const StatsOverlay::Window overlayHover=withOverlay->shownWindow();
+
+            bothRefresh();
+            bothHoverShown=hover.appPrimitives+hover.appGlyphs > 0
+                && inspectorHover == slotsLine(hover.appPrimitives, hover.appGlyphs)
+                && overlayHover.slots > 0;
+            bothHoverBack=withOverlay->shownWindow().slots == 0
+                && bothInspector->counterLines()[Inspector::SlotsLine] == slotsLine(0, 0);
+            forgetMouse(s);
+            bothRefresh();
+            bothRefresh();
+        }
+    }
+
+    // the overlay closed and opened again under the Inspector, then the
+    // Inspector closed under the overlay, then the overlay closed
+    key(GLFW_KEY_F10);
+    for(int i=0; i < 4; ++i)
+        bothFrame();
+    key(GLFW_KEY_F10);
+    bothFrame();
+    bothRefresh();
+    bothRefresh();
+    key(GLFW_KEY_F12);
+    bothFrame();
+    bothRefresh();
+    bothRefresh();
+
+    const bool bothInspectorClosed=Inspector::find(s.canvas) == nullptr;
+
+    key(GLFW_KEY_F10);
+    renderFrames(s, 2);
+
+    const bool bothClosed=bothInspectorClosed && StatsOverlay::find(s.canvas) == nullptr;
+    const size_t bothIdsLeft=livePrimitiveIds()-bothIdsBefore;
+    const size_t bothTextIdsLeft=liveTextIds()-bothTextIdsBefore;
+
     target->delayedDelete();
     dropControl(s, control);
     renderFrames(s, 1);
@@ -3416,9 +3714,14 @@ static bool runStatsOverlayScenario(Session &s, const std::string &shotDir, bool
     const bool clickOwnOnly=clickForeign == 0 && clickWritten > 0 && clickLayoutEntries <= 4;
     const bool buttonIdsBack=buttonIdsLeft == 0 && buttonTextIdsLeft == 0;
 
-    passed=quiet && ownOnly && shownMatch && hoverShownOk && hoverBack && nameTipOk && clickedThrough && closed
-        && idsBack
-        && aboveBar && buttonSynced && buttonSteps && clickOwnOnly && buttonIdsBack;
+    const bool bothIdsRow=withOverlay && aloneIds == withIds && aloneTextIds == withTextIds;
+    // each check ran, on frames only a tool wrote in too
+    const bool bothCounted=bothFailure.empty() && inspectorToolOnly > 0 && windowsToolOnly > 0;
+    const bool bothIdsBack=bothClosed && bothIdsLeft == 0 && bothTextIdsLeft == 0;
+
+    passed=quiet && ownOnly && shownMatch && hoverShownOk && hoverBack && nameTipOk && clickedThrough && closed && idsBack
+        && aboveBar && buttonSynced && buttonSteps && clickOwnOnly && buttonIdsBack
+        && bothCounted && bothIdsRow && bothHoverShown && bothHoverBack && bothIdsBack;
 
     std::cout<<"stats-overlay quiet_frames="<<quietFrames<<" quiet_written="<<quietWritten
              <<" refresh_frames="<<refreshFrames<<" foreign_written="<<foreignWritten
@@ -3432,7 +3735,12 @@ static bool runStatsOverlayScenario(Session &s, const std::string &shotDir, bool
              <<" above_bar="<<(aboveBar?"yes":"no")<<" button_synced="<<(buttonSynced?"yes":"no")
              <<" button_steps="<<stepsInStep<<" click_written="<<clickWritten<<" click_foreign="<<clickForeign
              <<" click_layout_entries="<<clickLayoutEntries
-             <<" button_ids_back="<<(buttonIdsBack?"yes":"no")<<"\n";
+             <<" button_ids_back="<<(buttonIdsBack?"yes":"no")
+             <<" both_inspector_frames="<<inspectorChecked<<" both_inspector_tool_only="<<inspectorToolOnly
+             <<" both_windows="<<windowsChecked<<" both_windows_tool_only="<<windowsToolOnly
+             <<" both_counted="<<(bothCounted?"yes":"no")<<" both_ids_row="<<(bothIdsRow?"yes":"no")
+             <<" both_hover_shown="<<(bothHoverShown?"yes":"no")<<" both_hover_back="<<(bothHoverBack?"yes":"no")
+             <<" both_ids_back="<<(bothIdsBack?"yes":"no")<<"\n";
     if(!passed)
         std::cerr<<"ControlTest: stats-overlay: "
                  <<(!quiet ? "a frame between two refreshes wrote "+std::to_string(quietWritten)+" slots"
@@ -3475,7 +3783,16 @@ static bool runStatsOverlayScenario(Session &s, const std::string &shotDir, bool
                         +" slots not the button's or the overlay's ("+std::to_string(clickWritten)
                         +" in all), or its layout entered more than the canvas ("
                         +std::to_string(clickLayoutEntries)+" entries)"
-                     : "the overlay the Stats button opened did not give its ids back")<<"\n";
+                     : !buttonIdsBack ? "the overlay the Stats button opened did not give its ids back"
+                     : !bothCounted ? "with the Inspector open too: "+(!bothFailure.empty() ? bothFailure
+                        : "no frame only a tool wrote in was checked ("+std::to_string(inspectorToolOnly)
+                            +" in the Inspector, "+std::to_string(windowsToolOnly)+" overlay windows)")
+                     : !bothIdsRow ? "the overlay's ids row changed with the Inspector open ("+std::to_string(aloneIds)
+                        +"/"+std::to_string(aloneTextIds)+" alone, "+std::to_string(withIds)+"/"
+                        +std::to_string(withTextIds)+" with it)"
+                     : !bothHoverShown ? std::string("with both open, a hover was not shown in both")
+                     : !bothHoverBack ? std::string("with both open, they did not show 0 again after the hover")
+                     : std::string("with both open, closing them did not give their ids back"))<<"\n";
     return shot;
 }
 

@@ -19,7 +19,9 @@
 #     its ids back; the demo shell's Stats
 #     button follows F10, the overlay sits Inset above the shell's status bar,
 #     and clicks on the button open and close it, writing only the button's
-#     slots and the overlay's (its header in examples/openglcore/controltest.cpp).
+#     slots and the overlay's; and with the Inspector open too, each shows the
+#     app's slots alone, a frame only a tool wrote in as 0 (its header in
+#     examples/openglcore/controltest.cpp).
 #  2. The app's counters do not see it: Demo's --stats lines, the clock
 #     stepping so the overlay refreshes, are the same with --stats-overlay as
 #     without, but for the renderer's whole-frame counts, which hold its slots,
