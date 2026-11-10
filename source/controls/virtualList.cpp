@@ -78,10 +78,8 @@ void VirtualList::setItemCount(size_t count)
         return;
 
     m_itemCount=count;
+    // which keeps the offset inside the new content
     updateContentHeight();
-    // kept inside the new content with the viewport the last layout gave;
-    // the next layout clamps it again to the one it gives
-    setVerticalScrollOffset(getVerticalScrollOffset());
     invalidate();
 }
 

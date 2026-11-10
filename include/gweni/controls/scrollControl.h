@@ -81,7 +81,9 @@ public:
     //! to getMax*ScrollOffset(): the scroll position is this offset, and the
     //! bars show it as a fraction of the content less the viewport. A bar the
     //! user moves (its thumb, its arrow buttons, the wheel) sets it, at the
-    //! content size it was moved against, when the next layout reads it.
+    //! content size it was moved against, when the next layout reads it,
+    //! rounded to a whole unit; a bar moved by under half a unit keeps its
+    //! amount while it shows that offset, so small moves add up.
     //! Content that grows keeps the offset (the bar's amount and thumb follow
     //! the new size); each pass clamps it to the content and viewport it
     //! gives, and a bar no longer required takes it back to 0. A new offset
@@ -125,7 +127,8 @@ public:
     //! Scroll to an edge of the content: resolved by the next layout, to 0
     //! or getMax*ScrollOffset() of the content that layout gives, so a call
     //! right after adding content (ListBox::addItem) lands on its new end. A
-    //! set*ScrollOffset() on that axis before then cancels it.
+    //! set*ScrollOffset() on that axis before then cancels it, even one that
+    //! keeps the offset; a new virtual content height does not.
     virtual void scrollToBottom();
     virtual void scrollToTop();
     virtual void scrollToLeft();

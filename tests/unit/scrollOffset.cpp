@@ -19,13 +19,19 @@
  *  ends on the new last row; scrollToRight likewise lands on the new right edge. The offsets are
  *  public (get/set*ScrollOffset, getMax*ScrollOffset) for non-virtual content
  *  too: one set before any layout is clamped by the first pass, a set after
- *  a scrollTo*() cancels it, and an axis that cannot scroll has none.
+ *  a scrollTo*() cancels it (one that keeps the offset too), and an axis that
+ *  cannot scroll has none. On content that overflows by a few units, arrow
+ *  nudges and wheel notches of under half a unit each add up rather than
+ *  being put back, both ways, to both ends. A VirtualList's scrollToBottom
+ *  followed by a new item count lands on the new end, and a count that
+ *  shrinks under the offset clamps it.
  */
 #include "headlessFixture.h"
 
 #include <gweni/controls/scrollControl.h>
 #include <gweni/controls/listBox.h>
 #include <gweni/controls/scrollBarBar.h>
+#include <gweni/controls/virtualList.h>
 
 #include <doctest/doctest.h>
 
@@ -449,6 +455,84 @@ TEST_CASE("ScrollControl offset: a bar the user moves sets the offset at the con
     }
 }
 
+TEST_CASE("ScrollControl offset: moves under half a unit add up on content that overflows by a few units")
+{
+    // 294 tall in the 290 viewport: a range of 4, so a nudge (30 of 294) or
+    // a wheel notch moves the bar by under half a unit of it
+    Scene scene;
+    scene.scroll->setScroll(false, true);
+    Block *row=scene.addRow(10, 294);
+    scene.settle();
+    REQUIRE(scene.scroll->getMaxVerticalScrollOffset() == 4);
+    REQUIRE(scene.offsetY() == 0);
+
+    SUBCASE("the arrow buttons")
+    {
+        auto *vertical=gweni_cast<controls::VerticalScrollBar>(scene.verticalBar);
+
+        REQUIRE(vertical != nullptr);
+
+        int last=0;
+        bool moved=false;
+
+        for(int i=0; i < 20 && scene.offsetY() < 4; ++i)
+        {
+            vertical->nudgeDown(vertical);
+            scene.settle();
+            CHECK(scene.offsetY() >= last);
+            moved=moved || scene.offsetY() > last;
+            last=scene.offsetY();
+            CHECK(scene.scroll->getVerticalScrollOffset() == last);
+        }
+        CHECK(moved);
+        CHECK(scene.offsetY() == 4);
+
+        for(int i=0; i < 20 && scene.offsetY() > 0; ++i)
+        {
+            vertical->nudgeUp(vertical);
+            scene.settle();
+            CHECK(scene.offsetY() <= last);
+            last=scene.offsetY();
+        }
+        CHECK(scene.offsetY() == 0);
+    }
+
+    SUBCASE("the wheel")
+    {
+        for(int i=0; i < 20 && scene.offsetY() < 4; ++i)
+        {
+            REQUIRE(row->onMouseWheeled(-60));
+            scene.settle();
+        }
+        CHECK(scene.offsetY() == 4);
+
+        for(int i=0; i < 20 && scene.offsetY() > 0; ++i)
+        {
+            REQUIRE(row->onMouseWheeled(60));
+            scene.settle();
+        }
+        CHECK(scene.offsetY() == 0);
+    }
+
+    SUBCASE("a bar left between two units still follows the content")
+    {
+        auto *vertical=gweni_cast<controls::VerticalScrollBar>(scene.verticalBar);
+
+        REQUIRE(vertical != nullptr);
+        vertical->nudgeDown(vertical);
+        scene.settle();
+
+        const int nudged=scene.offsetY();
+
+        // the content grows: the offset is kept, the bar shows it exactly
+        row->want.height=590;
+        row->invalidate();
+        scene.settle();
+        CHECK(scene.offsetY() == nudged);
+        CHECK(scene.verticalBar->getScrolledAmount() == doctest::Approx(nudged/300.0));
+    }
+}
+
 TEST_CASE("ScrollControl offset: a ListBox scrolled part-way keeps its rows where they are when one is appended")
 {
     Scene scene;
@@ -604,10 +688,53 @@ TEST_CASE("ScrollControl offset: set*ScrollOffset place non-virtual content, cla
     CHECK(scene.scroll->getVerticalScrollOffset() == 10);
     CHECK(scene.scroll->getHorizontalScrollOffset() == 600-viewport.w);
 
+    // even one that sets the offset it already has
+    scene.scroll->scrollToBottom();
+    scene.scroll->setVerticalScrollOffset(10);
+    scene.scroll->scrollToLeft();
+    scene.scroll->setHorizontalScrollOffset(600-viewport.w);
+    scene.settle();
+    CHECK(scene.scroll->getVerticalScrollOffset() == 10);
+    CHECK(scene.scroll->getHorizontalScrollOffset() == 600-viewport.w);
+
     // an axis that cannot scroll has no offset
     scene.scroll->setScroll(false, true);
     scene.settle();
     CHECK(scene.scroll->getHorizontalScrollOffset() == 0);
     CHECK(scene.scroll->getMaxHorizontalScrollOffset() == 0);
     CHECK(scene.inner->getX() == viewport.x);
+}
+
+TEST_CASE("ScrollControl offset: a VirtualList's scrollToBottom before a count change lands on the new end")
+{
+    test::StubRenderer renderer;
+    test::StubSkin skin{&renderer};
+    controls::Canvas *canvas=new controls::Canvas(&skin);
+
+    canvas->setSize(400, 400);
+
+    controls::VirtualList *list=canvas->newChild<controls::VirtualList>();
+
+    list->setPos(0, 0);
+    list->setSize(200, 160);
+    list->setRowHeight(20);
+    list->setItemCount(100);
+    canvas->updateCanvas();
+    canvas->renderCanvas();
+    REQUIRE(list->getVerticalScrollOffset() == 0);
+
+    // a log view: scroll to the end, then append
+    list->scrollToBottom();
+    list->setItemCount(101);
+    canvas->updateCanvas();
+    canvas->renderCanvas();
+    CHECK(list->getVerticalScrollOffset() == 101*20-160);
+
+    // a count that shrinks under the offset clamps it at once
+    list->setItemCount(50);
+    CHECK(list->getVerticalScrollOffset() == 50*20-160);
+    canvas->updateCanvas();
+    canvas->renderCanvas();
+    CHECK(list->getVerticalScrollOffset() == 50*20-160);
+    delete canvas;
 }

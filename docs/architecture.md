@@ -1628,10 +1628,14 @@ two programs and the draws. What follows describes both together:
   the viewport. A bar not where the control last put it (`m_shownAmount`) was moved by
   the user (its thumb, its buttons, the wheel, a ListBox's arrow keys), and its amount is
   converted at the range of the last pass (`m_scrollRange`), the content it was moved
-  against, rounded to a whole unit. `scrollToTop/Bottom/Left/Right` are a pending edge per
-  axis, resolved to 0 or the range by the next pass, so an `addItem` then `scrollToBottom`
-  before any layout (`Demo::printText`) ends on the new last row; a `set*ScrollOffset` on
-  the axis cancels it. Before this (issue #512) the panel was placed at `-(content -
+  against, rounded to a whole unit; a bar moved to between two units keeps its amount
+  while it rounds to that offset at the same content, so nudges and wheel notches of
+  under half a unit (content overflowing by a few units) add up instead of being put
+  back. `scrollToTop/Bottom/Left/Right` are a pending edge per axis, resolved to 0 or
+  the range by the next pass, so an `addItem` then `scrollToBottom` before any layout
+  (`Demo::printText`) ends on the new last row; any `set*ScrollOffset` on the axis
+  cancels it, even one that keeps the offset, while a new virtual content height
+  (`VirtualList::setItemCount`) clamps the offset without the setter and keeps it. Before this (issue #512) the panel was placed at `-(content -
   viewport)*amount`, so a DataTable column drag while scrolled sideways slid the body
   under the cursor and a ListBox append moved, and re-stamped, every row
   (`tests/unit/scrollOffset.cpp`, `dataTableScrolledResize.cpp`).

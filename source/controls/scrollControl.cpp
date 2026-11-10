@@ -68,6 +68,14 @@ void ScrollControl::setVirtualContentHeight(int height)
         return;
 
     m_virtualHeight=height;
+
+    // kept inside the new content at the viewport the last layout gave; the
+    // next layout clamps it again to the one it gives
+    if(hasVirtualContent() && m_scrollOffset[1] > getMaxVerticalScrollOffset())
+    {
+        m_scrollOffset[1]=getMaxVerticalScrollOffset();
+        showScrollOffset(Dim::Y);
+    }
     invalidate();
 }
 
@@ -94,11 +102,12 @@ void ScrollControl::setVerticalScrollOffset(int offset)
     if(hasVirtualContent())
         offset=std::min(offset, getMaxVerticalScrollOffset());
 
+    m_pendingEdge[1]=ScrollEdge::None;
+
     if(offset == m_scrollOffset[1])
         return;
 
     m_scrollOffset[1]=offset;
-    m_pendingEdge[1]=ScrollEdge::None;
     showScrollOffset(Dim::Y);
     invalidate();
 }
@@ -106,12 +115,12 @@ void ScrollControl::setVerticalScrollOffset(int offset)
 void ScrollControl::setHorizontalScrollOffset(int offset)
 {
     offset=std::max(offset, 0);
+    m_pendingEdge[0]=ScrollEdge::None;
 
     if(offset == m_scrollOffset[0])
         return;
 
     m_scrollOffset[0]=offset;
-    m_pendingEdge[0]=ScrollEdge::None;
     showScrollOffset(Dim::X);
     invalidate();
 }
@@ -445,8 +454,9 @@ void ScrollControl::placeContents()
     {
         const int index=axis(dim);
         const float amount=scrollBar(dim)->getScrolledAmount();
+        bool userMoved=amount != m_shownAmount[index];
 
-        if(amount != m_shownAmount[index])
+        if(userMoved)
             m_scrollOffset[index]=static_cast<int>(std::lround(
                 static_cast<double>(amount)*m_scrollRange[index]));
 
@@ -455,11 +465,24 @@ void ScrollControl::placeContents()
         {
             m_scrollOffset[index]=(m_pendingEdge[index] == ScrollEdge::End)?range[index]:0;
             m_pendingEdge[index]=ScrollEdge::None;
+            userMoved=false;
         }
+
+        if(range[index] != m_scrollRange[index])
+            userMoved=false;
 
         m_scrollRange[index]=range[index];
         m_scrollOffset[index]=gweni::clamp(m_scrollOffset[index], 0, range[index]);
-        showScrollOffset(dim);
+
+        // A bar the user moved to between two units keeps its amount while
+        // it still rounds to the offset at the same content, so moves of
+        // under half a unit add up (a nudge or a wheel notch on content that
+        // overflows by a few units) instead of being put back each pass.
+        if(userMoved && static_cast<int>(std::lround(
+            static_cast<double>(amount)*range[index])) == m_scrollOffset[index])
+            m_shownAmount[index]=amount;
+        else
+            showScrollOffset(dim);
     }
 
     // At offset 0 the content's top-left is the viewport's, at the range its
