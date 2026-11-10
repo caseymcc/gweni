@@ -74,7 +74,7 @@ void Canvas::updateCanvas()
         && (m_skin->getRenderer()->textLayoutSerial() != m_textLayoutSerial))
     {
         m_textLayoutSerial=m_skin->getRenderer()->textLayoutSerial();
-        onScaleChanged();
+        scaleChangedSubtree();
         redraw();
     }
 
@@ -557,7 +557,7 @@ void Canvas::setScale(float f)
     if(m_skin && m_skin->getRenderer())
         m_skin->getRenderer()->setScale(m_scale);
 
-    onScaleChanged();
+    scaleChangedSubtree();
     redraw();
 }
 

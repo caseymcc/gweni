@@ -487,6 +487,12 @@ protected:
     virtual void onChildHiddenChanged(Base * /*child*/) {}
 
     virtual void onScaleChanged();
+    //! Runs onScaleChanged() on this control's subtree as one walk (see
+    //! SubtreeWalk in base.cpp): the controls under it skip their own walks up
+    //! to the canvas, which this control's invalidate() takes once. So it is
+    //! for a root whose subtree holds every logical parent its controls have
+    //! but its own (the canvas, the one caller).
+    void scaleChangedSubtree();
 
 public:
 
@@ -1357,6 +1363,18 @@ protected:
     //! (setBounds, onBoundsChanged): no preferred width reads bounds, so those
     //! leave m_hiddenWidthCurrent as it is.
     static bool s_boundsInvalidation;
+    //! The way out of a subtree walk (invalidateChildren(true)): a logical
+    //! parent outside the subtree that one of its controls has, invalidated
+    //! once when the walk ends, and whether a counted control had it.
+    struct WalkExit
+    {
+        Base *parent;
+        bool counted;
+    };
+    //! invalidateChildren(true)'s walk below this control, `depth` actual
+    //! levels under the walk's root; the exits it finds go into `exits`
+    //! (`exitCount` of `exitCapacity` used; one more is invalidated at once).
+    void invalidateSubtree(int depth, WalkExit *exits, size_t &exitCount, size_t exitCapacity);
     struct BoundsInvalidationScope
     {
         BoundsInvalidationScope(): m_outer(s_boundsInvalidation) { s_boundsInvalidation=true; }

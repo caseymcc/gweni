@@ -17,18 +17,18 @@
  *    (cb8b545) gives, recorded below as one character per control of the
  *    canvas's tree in pre-order over getActualChildren(): the walk dirties
  *    its subtree and the way up from the root, and nothing else;
- *  - it enters each control of the subtree exactly once: invalidateCalls()
- *    goes up by one entry per control plus, for each entry, its own walk up
- *    to the canvas (Base::invalidate()'s invalidateParent()). On main it is
- *    more: an inner panel's subtree is walked twice, once from the panel and
- *    once from its owner, which compounded per level: 528 600 calls for
- *    the canvas's 304 controls, 2 404 entered once (#519);
- *  - its upward work is done once, for the walk's root, not by every entry:
+ *  - it enters each control of the subtree exactly once, and its upward
+ *    work is done once, for the walk's root, not by every entry:
  *    invalidateCalls() goes up by the subtree's size plus the controls on
  *    the way up from the root's children's logical parent (the root, or for
- *    an inner panel its owner) to the canvas, O(depth of the root). On main
- *    every entry walks up to the canvas (should_fail until the walk-scoped
- *    flag, #519).
+ *    an inner panel its owner) to the canvas, no more than the root's depth
+ *    and one. Main walked an inner panel's subtree twice, once from the
+ *    panel and once from its owner, which compounded per level, and every
+ *    entry walked up to the canvas (Base::invalidate()'s invalidateParent()):
+ *    528 600 calls for the canvas's 304 controls, where it is now 305 (#519).
+ *
+ *  Canvas::setScale's walk (onScaleChanged over the whole tree) likewise
+ *  makes one call per control, the canvas's own included.
  */
 #include "headlessFixture.h"
 
@@ -99,31 +99,6 @@ std::string differences(controls::Base *root, const std::string &expected)
     return out;
 }
 
-//! The controls the logical-parent walk up from `control` invalidates: its
-//! getParent() chain, the canvas included.
-size_t logicalAncestors(controls::Base *control)
-{
-    size_t count=0;
-    for(controls::Base *parent=control->getParent(); parent; parent=parent->getParent())
-        ++count;
-    return count;
-}
-
-//! What invalidateCalls() goes up by when `root`'s walk enters each control
-//! under it once and each entry walks up to the canvas.
-size_t onceEach(controls::Base *root)
-{
-    size_t calls=0;
-    for(controls::Base *child : root->getActualChildren())
-    {
-        forEachActual(child, [&](controls::Base *control)
-            {
-                calls+=1+logicalAncestors(control);
-            });
-    }
-    return calls;
-}
-
 size_t subtreeSize(controls::Base *root)
 {
     size_t count=0;
@@ -131,11 +106,10 @@ size_t subtreeSize(controls::Base *root)
     return count-1;
 }
 
-//! What invalidateCalls() goes up by when `root`'s walk enters each control
-//! under it once and walks up from it once: the logical parents of its
-//! children (the root itself, or an inner panel's owner) and their getParent()
-//! chains, each control once.
-size_t onceEachAndUpOnce(controls::Base *root)
+//! The controls a walk from `root` invalidates above its subtree, once each:
+//! the logical parents of its children (the root itself, or an inner panel's
+//! owner) and their getParent() chains up to the canvas.
+size_t upOnce(controls::Base *root)
 {
     std::set<controls::Base *> up;
     for(controls::Base *child : root->getActualChildren())
@@ -143,7 +117,16 @@ size_t onceEachAndUpOnce(controls::Base *root)
         for(controls::Base *parent=child->getParent(); parent; parent=parent->getParent())
             up.insert(parent);
     }
-    return subtreeSize(root)+up.size();
+    return up.size();
+}
+
+//! The actual ancestors of `control`, up to the canvas.
+size_t depthOf(controls::Base *control)
+{
+    size_t depth=0;
+    for(const controls::Base *parent=control->getActualParent(); parent; parent=parent->getActualParent())
+        ++depth;
+    return depth;
 }
 
 struct Scene
@@ -331,7 +314,7 @@ TEST_CASE("Subtree invalidation: the walk leaves each control's layout state as 
     }
 }
 
-TEST_CASE("Subtree invalidation: one walk enters each control of the subtree once")
+TEST_CASE("Subtree invalidation: one walk enters each control of the subtree once and walks up once")
 {
     for(const Walk &walk : Walks)
     {
@@ -342,22 +325,18 @@ TEST_CASE("Subtree invalidation: one walk enters each control of the subtree onc
         CAPTURE(std::string(walk.name));
         CAPTURE(subtreeSize(root));
         root->invalidateChildren(true);
-        CHECK(controls::invalidateCalls()-calls == onceEach(root));
+        CHECK(controls::invalidateCalls()-calls == subtreeSize(root)+upOnce(root));
+        CHECK(upOnce(root) <= depthOf(root)+1);
     }
 }
 
-TEST_CASE("Subtree invalidation: one walk does its upward work once, not per control"
-    * doctest::should_fail())
+TEST_CASE("Subtree invalidation: a new canvas scale invalidates each control once")
 {
-    for(const Walk &walk : Walks)
-    {
-        Scene scene;
-        controls::Base *root=walk.root(scene);
-        const size_t calls=controls::invalidateCalls();
+    Scene scene;
+    const size_t calls=controls::invalidateCalls();
 
-        CAPTURE(std::string(walk.name));
-        CAPTURE(subtreeSize(root));
-        root->invalidateChildren(true);
-        CHECK(controls::invalidateCalls()-calls == onceEachAndUpOnce(root));
-    }
+    scene.canvas->setScale(2.0f);
+    CHECK(controls::invalidateCalls()-calls == subtreeSize(scene.canvas)+1);
+    // and the tree is laid out again from it, as from any scale change
+    CHECK(differences(scene.canvas, WalkState[0]) == "");
 }
