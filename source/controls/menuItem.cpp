@@ -32,11 +32,36 @@ GWENI_CONTROL_CONSTRUCTOR(MenuItem)
     setTabable(false);
 }
 
+// Its submenu is a canvas child, not its own: it goes delayed, as a menu is
+// deleted (this may run from one of its items' events), hidden first with
+// every submenu open under it. The canvas is the submenu's: this item's own
+// parent chain may be half destroyed (its Menu's ~Base deleting it). A canvas
+// tearing down deletes the submenu with its other children, before or after
+// this item.
 MenuItem::~MenuItem()
 {
-    // its submenu, a canvas child, outlives it: it must not call back
-    if(m_menu)
-        m_menu->m_parentItem=nullptr;
+    Menu *menu=m_menu;
+
+    if(!menu)
+        return;
+
+    m_menu=nullptr;
+    menu->m_parentItem=nullptr;
+
+    Canvas *canvas=menu->getCanvas();
+
+    if(canvas && canvas->releasingChildren())
+        return;
+
+    // unhooked before the hide, which would redraw this item
+    menu->onVisibilityChanged.removeHandler(this);
+    menu->close();
+    menu->closeAll();
+
+    if(canvas)
+        menu->delayedDelete();
+    else
+        delete static_cast<Base *>(menu);
 }
 
 void MenuItem::render(skin::Base *skin)
