@@ -2476,8 +2476,11 @@ and neither would ever read 0. So the canvas keeps the record (`controls::Exclud
 - **held**: the ids every `setExcludedFromStats()` subtree on the canvas holds now
   (`Base::statsExcludedRoots()`, each flagged root's subtree walked through
   `skin::Control::appendIds`), sorted, built by the first `excludedSlots()` of a frame
-  and kept until the frame's render phase ends or a release, so every reader in a frame
-  shares one walk;
+  and kept until the frame's render phase ends, a release, a `setExcludedFromStats()`
+  change or a change of the tree on the canvas (`Base::zOrderChanged()`,
+  `zChildRemoved()`: a control added, removed or moved, into or out of a flagged subtree
+  or onto or off the canvas, a skin Control assigned or released), so the readers of a
+  settled frame share one walk and a read after such a change sees it;
 - **released**: the ids any such subtree gave back, reported to the canvas by `~Base` (a
   control of a flagged subtree, its children included though the root has already
   stopped being flagged) and by `Base::removeSkinControl` (a new skin Control for a
@@ -2492,8 +2495,11 @@ and neither would ever read 0. So the canvas keeps the record (`controls::Exclud
 The overlay's `prim ids` and `text ids` rows subtract the held counts
 (`heldPrimitives()`, `heldTexts()`), so they read the same with the Inspector open as
 without. With no flagged control on any canvas nothing is walked, kept or reported, and
-every counter is as it was. `tests/unit/excludedSlots.cpp` pins the record, the roll and
-two tools reading one frame, and `--scenario stats-overlay` holds both tools open over
+every counter is as it was. The canvas's ToolTip box is one of the flagged subtrees
+while it shows, or last showed, a tool's tooltip ("The stats overlay"), so a name's
+tooltip is left out by every tool. `tests/unit/excludedSlots.cpp` pins the record, the
+roll, the held ids following a flag and the tree within a frame, two tools reading one
+frame and the box as every tool's, and `--scenario stats-overlay` holds both tools open over
 the settled Demo ("The stats overlay").
 
 **Open, close, toggle.** `open()` makes the canvas's inspector and its tree at once, so
@@ -2750,11 +2756,16 @@ canvas's changed children) is made inside a `controls::ExcludedFromStatsScope`, 
 counts the invalidations and z marks made while it is open as a flagged subtree's;
 without it the first show counted one layout pass entering the canvas and one z entry.
 `Canvas::toolTipShownForId()` keeps the control id of the control the box last showed a
-tooltip for, through the hide, and while that is one of its name cells the overlay takes
-the box's ids for its own (`ownIds()`, and `OwnSlots` over them), so its `prim slots`,
-`glyphs`, `prim ids` and `text ids` leave the box out. A `setExcludedFromStats()` change
-on a control on a canvas raises `Canvas::treeSerial()`, so the overlay's `controls`
-count follows the box out of and back into the app. Over a settled app the refresh after
+tooltip for, through the hide. While the box is flagged it is one of the canvas's
+flagged subtrees, so the canvas's record of the tools' ids (`Canvas::excludedSlots()`,
+"The inspector") holds its ids for every tool: the overlay's `prim slots`, `glyphs`,
+`prim ids` and `text ids` leave the box out, and so does an open Inspector's `slots
+written`. A `setExcludedFromStats()` change on a control on a canvas raises
+`Canvas::treeSerial()`, so the overlay's `controls` count follows the box out of and
+back into the app, and makes the record walk the flagged subtrees again at its next
+read, as a change of the tree on the canvas does (a control moved into or out of a
+flagged subtree), so a read later in the update phase that flipped the box's flag sees
+the change. Over a settled app the refresh after
 a name's tooltip shows reads 0 rendered, changed, slots, passes and z. The box is the
 canvas's last child, after its overlays, so it is numbered and drawn above the panel; it
 goes below the name, over the panel, where there is room, and flips above it near the
