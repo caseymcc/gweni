@@ -22,6 +22,12 @@ namespace gweni
 namespace controls
 {
 
+//! A canvas that is its own OS window (platform::createPlatformWindow), with a
+//! title bar, sizer and window buttons drawn on it. Each doThink() runs
+//! Canvas::doThink() and its own renderCanvas(), never Canvas::updateCanvas():
+//! previousFrameStats() and the phase times are never recorded, so the tools
+//! reading them (gweni::tools::Inspector's counter lines, StatsOverlay) show
+//! '-' and 0 on it.
 class GWENI_EXPORT WindowCanvas: public Canvas, public WindowProvider
 {
 public:

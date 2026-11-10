@@ -94,6 +94,10 @@ private:
 //!
 //! The library binds no key: an app opens and closes it (open(), close(),
 //! toggle()). Its close button deletes it.
+//!
+//! Its counters need Canvas::updateCanvas() and renderCanvas(), which record
+//! previousFrameStats(): on a controls::WindowCanvas, which runs neither, they
+//! read '-' and 0.
 class GWENI_EXPORT Inspector: public controls::WindowControl
 {
 public:

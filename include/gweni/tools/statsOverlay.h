@@ -69,6 +69,10 @@ namespace tools
 //! open and close through onOpenChangedCaller (a toggle button kept in step).
 //! An app with a bar along the canvas's bottom keeps the canvas's overlay
 //! above it with setBottomReserve().
+//!
+//! Its counters and times need Canvas::updateCanvas() and renderCanvas(),
+//! which record previousFrameStats() and its times: on a
+//! controls::WindowCanvas, which runs neither, it shows '-' and 0.
 class GWENI_EXPORT StatsOverlay: public controls::Base
 {
 public:

@@ -2463,10 +2463,56 @@ when its string changes. Two things keep what it shows the app's alone:
   bytes, so no snapshot around its subtree in the walk could separate them. The
   renderer reports which ids it wrote instead (`writtenPrimitiveIds()`, and
   `writtenTextIds()` per text id with its glyph slots, a glyph slot under the text id
-  whose run last held it), and the inspector takes out the ids its controls hold now and
-  those of the nodes it deleted since the frame before (their slots are cleared in the
-  next flush). Uploads cannot be told apart by id: a frame in which only it wrote shows
-  0 uploads, one in which the app wrote shows the frame's whole uploads.
+  whose run last held it), and the inspector takes out every tool's ids through the
+  canvas's one record of them, `Canvas::excludedSlots()` (below). Uploads cannot be told
+  apart by id: a frame in which only the tools wrote shows 0 uploads, one in which the
+  app wrote shows the frame's whole uploads.
+
+**One record of the tools' slots, per canvas.** With the Inspector and a `StatsOverlay`
+both open, a tool that left out only its own ids would count the other's as the app's,
+and neither would ever read 0. So the canvas keeps the record (`controls::ExcludedSlots`,
+`include/gweni/controls/canvas.h`) and both tools read it through
+`tools::appFrameWrites()` (`include/gweni/tools/toolSupport.h`):
+- **held**: the ids every `setExcludedFromStats()` subtree on the canvas holds now
+  (`Base::statsExcludedRoots()`, each flagged root's subtree walked through
+  `skin::Control::appendIds`), sorted, built by the first `excludedSlots()` of a frame
+  and kept until the frame's render phase ends or a release, so every reader in a frame
+  shares one walk;
+- **released**: the ids any such subtree gave back, reported to the canvas by `~Base` (a
+  control of a flagged subtree, its children included though the root has already
+  stopped being flagged) and by `Base::removeSkinControl` (a new skin Control for a
+  tool's control). Ids released in frame N's update or render are cleared in frame N's
+  flush, which a tool reads in frame N+1's update phase, so `renderCanvas()` rolls the
+  list as it ends (`rollExcludedReleases()`, `WindowCanvas`'s render too): the releases
+  before the flush it just ran stay for the next frame, those before the flush before
+  are dropped. Reading the record uses nothing up, so it does not matter which tool reads
+  first, and an id one tool gave back (an Inspector node collapsed, a tool closed) is
+  left out by every tool.
+
+The overlay's `prim ids` and `text ids` rows subtract the held counts
+(`heldPrimitives()`, `heldTexts()`), so they read the same with the Inspector open as
+without. With no flagged control on any canvas nothing is walked, kept or reported, and
+every counter is as it was. `tests/unit/excludedSlots.cpp` pins the record, the roll and
+two tools reading one frame, and `--scenario stats-overlay` holds both tools open over
+the settled Demo ("The stats overlay").
+
+**Open, close, toggle.** `open()` makes the canvas's inspector and its tree at once, so
+nodes can be opened and selected straight away; its counter lines are first set by its
+first refresh, in the next update phase. `open()` is usually called from a key callback,
+between two frames, where `previousFrameStats()` is still frame N-2 while the renderer's
+writes are frame N-1's, so a refresh there would show two frames as one. `close()` and
+the window's close button hide it and `delayedDelete()` it; from then on `find()` no
+longer finds it (`Canvas::isPendingDelete()`, a lookup in the canvas's delayed-delete
+set), and `toggle()` is `close()` when `find()` finds one, else `open()`, so a second
+toggle in the same frame, or one after the close button, makes a new, shown inspector
+instead of showing the doomed one again (#502). The ThemeEditor and the StatsOverlay
+`find()` and `toggle()` the same way (`tests/unit/toolToggle.cpp`).
+
+**On a `WindowCanvas` it shows nothing.** The counters are `previousFrameStats()` and
+the times `CanvasFrameStats::times`, which `Canvas::updateCanvas()` and
+`Canvas::renderCanvas()` record. A `WindowCanvas` runs `Canvas::doThink()` and its own
+render instead, so neither is ever filled: there the Inspector's counter lines and the
+overlay read `-` and 0. Nothing in the repository uses a `WindowCanvas`.
 
 After an app change it converges in two frames: frame k writes the app's slots; frame
 k+1 shows them and writes its own labels' (taken out); frame k+2 shows 0 again and
@@ -2646,8 +2692,15 @@ them, and once the clock moves again fps comes from the frames it saw. The contr
 walk of the tree, made on a refresh only when `Canvas::treeSerial()` has moved since the
 last one, so it costs O(N) at most four times a second and only after the tree changed;
 nothing is kept per control. Hidden (on a hidden page, or closed until its delayed
-delete), it neither gathers nor shows; a closed one is not `find()`'s any more, so a
-second `toggle()` in the same frame opens a new one.
+delete), it neither gathers nor shows; a closed one is not `find()`'s any more
+(`Canvas::isPendingDelete()`), so a second `toggle()` in the same frame opens a new one
+("The inspector" → "Open, close, toggle"). `open()` gathers nothing: called between two
+frames (from a key callback), the canvas's previous frame there is N-2 while the
+renderer's writes are N-1's, and the next update phase would gather N-1 again. Its first
+gather and refresh are its animation's, in the next update phase, before the layout that
+first places it, so the first window shows one frame, N-1, counted once
+(`tests/unit/statsOverlay.cpp`). Like the Inspector, it reads `-` and 0 on a
+`WindowCanvas`, which never runs `Canvas::updateCanvas()`.
 
 **It settles.** A label is set only when its string changes (`tools::setLabelText`), and
 every row and cell has a fixed size, so a refresh changes text and never re-lays the
@@ -2803,7 +2856,10 @@ it took; then the shell's Stats button follows F10, the overlay sits `Inset` abo
 status bar, right-aligned and clear of the button, and a click, F10, F10 and a click
 keep the button on exactly while it is open, each telling the handlers once, each click
 frame writing only the button's and the overlay's slots and laying out the canvas alone,
-and the overlay giving its ids back.
+and the overlay giving its ids back; and with the Inspector open too (F12), each tool
+shows exactly the app's slots (a frame only a tool wrote in, the other opening, closing
+or giving ids back, reads 0), the overlay's ids row is the same as without the
+Inspector, a hover shows in both and then 0, and closing both gives every id back.
 
 ## Missing resources: degraded, not fatal
 
