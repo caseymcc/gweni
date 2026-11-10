@@ -47,7 +47,6 @@ public:
     void calculateSize(skin::Base *skin, Dim dim) override;
     void arrange(skin::Base *skin, Dim dim) override;
     void layout(skin::Base *skin) override;
-    void postLayout(skin::Base *skin) override;
 
     virtual void setRoot(bool b)
     {

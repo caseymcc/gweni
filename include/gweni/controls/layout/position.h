@@ -31,15 +31,21 @@ public:
     //! Layout only: it positions its children.
     GWENI_DRAWS_NOTHING
 
-    void postLayout(skin::Base *skin) override
+    //! Its undocked children are aligned in it: the alignment is handed to
+    //! them before they are arranged, as placement (no preferred size reads
+    //! a child's alignment), and the generic arrange places them by it.
+    void arrange(skin::Base *skin, Dim dim) override
     {
-        for(auto &&child : getChildren())
         {
-            if(child->getDock() != DockPosition::None)
-                continue;
+            PlacementScope placement;
 
-            child->setAlignment(m_position);
+            for(auto &&child : getChildren())
+            {
+                if(child->getDock() == DockPosition::None)
+                    child->setAlignment(m_position);
+            }
         }
+        ParentClass::arrange(skin, dim);
     }
 
     void setPositionAlignment(Alignment p)

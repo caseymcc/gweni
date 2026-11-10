@@ -15,8 +15,8 @@
  *
  *  - each control's needsLayout() / layoutDirty() after it is what main
  *    (cb8b545) gives, but for the way down to each TreeNode's toggle, which
- *    main's settled canvas still had dirty (#522), recorded below as one
- *    character per control of the canvas's tree in pre-order over
+ *    main's settled canvas still had layoutDirty() (#522), recorded below as
+ *    one character per control of the canvas's tree in pre-order over
  *    getActualChildren(): the walk dirties its subtree and the way up from
  *    the root, and nothing else;
  *  - it enters each control of the subtree exactly once, and its upward
@@ -242,15 +242,15 @@ const Walk Walks[]=
 
 //! The settled canvas's state (hidden subtrees, which no pass enters, stay
 //! dirty, and needsLayout() stays set on controls whose layout() did not run),
-//! and after each walk, in Walks' order: main's (cb8b545), but for the way
-//! down to each TreeNode's toggle, which main left dirty after the pass that
-//! placed it (#522).
+//! and after each walk, in Walks' order: main's (cb8b545), but with nothing
+//! on the way down to each TreeNode's toggle layoutDirty(), which main left
+//! dirty after the pass that placed it in postLayout() (#522).
 const char *const SettledState=
-    ".n.n..n.n..n.n..n.n.n.BBBBBBBBBBBBn.n.BBBBBBBBBBBBn.n.BBBBBBBBBB"
-    "BBn.......n..nBBn.B...n.BBBBBBBBBBBBB...n..nBBn.B...n.BBBBBBBBBB"
-    "BBB...n..nBBn.B...n.BBBBBBBBBBBBB...n..nBBn.B...n.BBBBBBBBBBBBB."
-    "..n..nBBn.B...n.BBBBBBBBBBBBB...n..nBBn.B...n.BBBBBBBBBBBBB...n."
-    ".nBBn.B...n.BBBBBBBBBBBBB...n.BBBBBBBnn.n..BBBBBB";
+    "nn.n..n.n..n.n..n.n.n.BBBBBBBBBBBBn.n.BBBBBBBBBBBBn.n.BBBBBBBBBB"
+    "BBn.nn.nn.n..nBBn.Bnn.n.BBBBBBBBBBBBBnn.n..nBBn.Bnn.n.BBBBBBBBBB"
+    "BBBnn.n..nBBn.Bnn.n.BBBBBBBBBBBBBnn.n..nBBn.Bnn.n.BBBBBBBBBBBBBn"
+    "n.n..nBBn.Bnn.n.BBBBBBBBBBBBBnn.n..nBBn.Bnn.n.BBBBBBBBBBBBBnn.n."
+    ".nBBn.Bnn.n.BBBBBBBBBBBBBnn.n.BBBBBBBnn.n..BBBBBB";
 const char *const WalkState[]=
 {
     // the canvas
@@ -261,26 +261,26 @@ const char *const WalkState[]=
     "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
     // the deep inner-panel owner
     "BBdB.dBdB.dBBBBBBBBBBBBBBBBBBBBBBBn.n.BBBBBBBBBBBBn.n.BBBBBBBBBB"
-    "BBn.......n..nBBn.B...n.BBBBBBBBBBBBB...n..nBBn.B...n.BBBBBBBBBB"
-    "BBB...n..nBBn.B...n.BBBBBBBBBBBBB...n..nBBn.B...n.BBBBBBBBBBBBB."
-    "..n..nBBn.B...n.BBBBBBBBBBBBB...n..nBBn.B...n.BBBBBBBBBBBBB...n."
-    ".nBBn.B...n.BBBBBBBBBBBBB...n.BBBBBBBnn.n..BBBBBB",
+    "BBn.nn.nn.n..nBBn.Bnn.n.BBBBBBBBBBBBBnn.n..nBBn.Bnn.n.BBBBBBBBBB"
+    "BBBnn.n..nBBn.Bnn.n.BBBBBBBBBBBBBnn.n..nBBn.Bnn.n.BBBBBBBBBBBBBn"
+    "n.n..nBBn.Bnn.n.BBBBBBBBBBBBBnn.n..nBBn.Bnn.n.BBBBBBBBBBBBBnn.n."
+    ".nBBn.Bnn.n.BBBBBBBBBBBBBnn.n.BBBBBBBnn.n..BBBBBB",
     // the deep TreeNode
     "Bn.n..n.n..n.n..n.n.n.BBBBBBBBBBBBn.n.BBBBBBBBBBBBn.n.BBBBBBBBBB"
-    "BBn.BddB..n.dnBBn.B...n.BBBBBBBBBBBBBB..n.dnBBn.B...n.BBBBBBBBBB"
-    "BBBB..n.dnBBn.B...n.BBBBBBBBBBBBBB..n.dnBBn.B...n.BBBBBBBBBBBBBB"
+    "BBn.BBdBn.n.dnBBn.Bnn.n.BBBBBBBBBBBBBBn.n.dnBBn.Bnn.n.BBBBBBBBBB"
+    "BBBBn.n.dnBBn.Bnn.n.BBBBBBBBBBBBBBn.n.dnBBn.Bnn.n.BBBBBBBBBBBBBB"
     "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB"
     "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBnn.n..BBBBBB",
     // the ScrollControl's inner panel
     "BBdB.dBdB.dBdBBBBBBBBBBBBBBBBBBBBBn.n.BBBBBBBBBBBBn.n.BBBBBBBBBB"
-    "BBn.......n..nBBn.B...n.BBBBBBBBBBBBB...n..nBBn.B...n.BBBBBBBBBB"
-    "BBB...n..nBBn.B...n.BBBBBBBBBBBBB...n..nBBn.B...n.BBBBBBBBBBBBB."
-    "..n..nBBn.B...n.BBBBBBBBBBBBB...n..nBBn.B...n.BBBBBBBBBBBBB...n."
-    ".nBBn.B...n.BBBBBBBBBBBBB...n.BBBBBBBnn.n..BBBBBB",
+    "BBn.nn.nn.n..nBBn.Bnn.n.BBBBBBBBBBBBBnn.n..nBBn.Bnn.n.BBBBBBBBBB"
+    "BBBnn.n..nBBn.Bnn.n.BBBBBBBBBBBBBnn.n..nBBn.Bnn.n.BBBBBBBBBBBBBn"
+    "n.n..nBBn.Bnn.n.BBBBBBBBBBBBBnn.n..nBBn.Bnn.n.BBBBBBBBBBBBBnn.n."
+    ".nBBn.Bnn.n.BBBBBBBBBBBBBnn.n.BBBBBBBnn.n..BBBBBB",
     // the TreeNode's inner panel
     "Bn.n..n.n..n.n..n.n.n.BBBBBBBBBBBBn.n.BBBBBBBBBBBBn.n.BBBBBBBBBB"
-    "BBn.BddB..n.dnBBn.B...n.BBBBBBBBBBBBBB..n.dnBBn.B...n.BBBBBBBBBB"
-    "BBBB..n.dnBBn.B...n.BBBBBBBBBBBBBB..n.dBBBBBBBBBBBBBBBBBBBBBBBBB"
+    "BBn.BBdBn.n.dnBBn.Bnn.n.BBBBBBBBBBBBBBn.n.dnBBn.Bnn.n.BBBBBBBBBB"
+    "BBBBn.n.dnBBn.Bnn.n.BBBBBBBBBBBBBBn.n.dBBBBBBBBBBBBBBBBBBBBBBBBB"
     "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB"
     "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBnn.n..BBBBBB",
 };

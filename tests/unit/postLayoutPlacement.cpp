@@ -20,9 +20,14 @@
  *  is not the toggle's height, so the toggle moves on the first layout),
  *  places it in arrange(): its tree's first frame takes one pass and leaves
  *  nothing dirty, and an unrelated invalidation then enters only its own way.
+ *  layout::Tile, which places its children in cells, and layout::Center, which
+ *  aligns them, did so in postLayout() too; they now place in arrange(), and
+ *  lay out in one pass.
  */
 #include "headlessFixture.h"
 
+#include <gweni/controls/layout/position.h>
+#include <gweni/controls/layout/tile.h>
 #include <gweni/controls/treeControl.h>
 #include <gweni/controls/treeNode.h>
 
@@ -98,6 +103,13 @@ std::string dirtyShown(controls::Base *root)
                 dirty+=std::string(control->getTypeName())+"#"+std::to_string(control->getControlId())+" ";
         });
     return dirty;
+}
+
+//! A control's bounds as "x,y,w,h".
+std::string boundsOf(const controls::Base *control)
+{
+    const Rect &b=control->getBounds();
+    return std::to_string(b.x)+","+std::to_string(b.y)+","+std::to_string(b.w)+","+std::to_string(b.h);
 }
 
 struct Scene
@@ -265,4 +277,42 @@ TEST_CASE("postLayout placement: a TreeNode's toggle is placed in its first pass
     CHECK(scene.frame().passes == 0);
 
     CHECK(scene.touchLeaf().visited == LeafWay);
+}
+
+TEST_CASE("postLayout placement: layout::Tile and layout::Center place their children in one pass")
+{
+    Scene scene;
+    auto *tile=scene.canvas->newChild<controls::layout::Tile>("tile");
+    tile->setDock(DockPosition::None);
+    tile->setBounds(0, 0, 50, 100);
+    controls::Base *tiles[3];
+    for(controls::Base *&child : tiles)
+    {
+        child=tile->newChild<controls::Base>();
+        child->setSize(10, 10);
+    }
+
+    auto *center=scene.canvas->newChild<controls::layout::Center>("center");
+    center->setBounds(100, 0, 100, 100);
+    controls::Base *centred=center->newChild<controls::Base>();
+    centred->setSize(10, 10);
+
+    const controls::LayoutStats &first=scene.frame();
+    CHECK(first.passes == 1);
+    CHECK(first.redirtiedType == nullptr);
+    CHECK(first.requests == 0);
+    CHECK(dirtyShown(scene.canvas) == "");
+
+    // 22-unit cells, two to a 50-unit row, each child centred in its cell
+    CHECK(boundsOf(tiles[0]) == "6,6,10,10");
+    CHECK(boundsOf(tiles[1]) == "28,6,10,10");
+    CHECK(boundsOf(tiles[2]) == "6,28,10,10");
+    CHECK(boundsOf(centred) == "45,45,10,10");
+
+    CHECK(scene.frame().passes == 0);
+    CHECK(scene.touchLeaf().visited == LeafWay);
+
+    // a child taken out of the Tile is its new parent's to place again
+    tiles[2]->setParent(scene.canvas);
+    CHECK(tiles[2]->getPlacement() == controls::Placement::Parent);
 }

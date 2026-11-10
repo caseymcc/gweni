@@ -50,8 +50,7 @@ GWENI_CONTROL_CONSTRUCTOR(TreeNode)
     m_treeControl=nullptr;
 
     m_toggleButton=newChild<OpenToggleButton>();
-    // Placed by this node: sized in arrange(), centred on the title in
-    // postLayout().
+    // Placed by this node: sized, and centred on the title, in arrange().
     m_toggleButton->setPlacement(Placement::Owner);
     m_toggleButton->onToggleCaller.add(this, &TreeNode::onToggleButtonPress);
 
@@ -184,16 +183,23 @@ void TreeNode::calculateSize(skin::Base *skin, Dim dim)
     }
 }
 
-// The toggle is a ToggleSize square, given along each axis before this node
-// arranges it.
+// The toggle is a ToggleSize square at the node's left edge, placed along
+// each axis before this node arranges it, and centred on the title in Y: the
+// title is docked Top at its preferred height, measured by then. Placed before
+// the node's own children are arranged, so a new place leaves no part of the
+// way down to it dirty after the pass (from postLayout() it did, and cost the
+// canvas a second pass).
 void TreeNode::arrange(skin::Base *skin, Dim dim)
 {
     if(m_toggleButton && !m_toggleButton->hidden())
     {
+        const Rect &bounds=m_toggleButton->getBounds();
+
         if(dim == Dim::X)
-            placeChildSize(m_toggleButton, ToggleSize, m_toggleButton->getHeight());
+            placeChild(m_toggleButton, Rect(0, bounds.y, ToggleSize, bounds.h));
         else
-            placeChildSize(m_toggleButton, m_toggleButton->getWidth(), ToggleSize);
+            placeChild(m_toggleButton, Rect(bounds.x,
+                (m_title->getPreferredSize().height-ToggleSize)/2, bounds.w, ToggleSize));
     }
 
     ParentClass::arrange(skin, dim);
@@ -204,14 +210,6 @@ void TreeNode::arrange(skin::Base *skin, Dim dim)
 void TreeNode::layout(skin::Base *skin)
 {
     ParentClass::layout(skin);
-}
-
-// The toggle is centred on the title once the title has its height. Only its
-// position changes, which nothing laid out in this pass has read.
-void TreeNode::postLayout(skin::Base * /*skin*/)
-{
-    if(m_toggleButton && m_title)
-        placeChildPos(m_toggleButton, 0, (m_title->getHeight()-m_toggleButton->getHeight()) / 2);
 }
 
 void TreeNode::setText(const String &text)
