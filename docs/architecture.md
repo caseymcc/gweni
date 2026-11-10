@@ -2146,13 +2146,20 @@ two programs and the draws. What follows describes both together:
   that `textPens` (so `measuredPenShifts`), a coverage `measureText` and `measureCarets`
   read, stepping through the codepoints as `text_buffer_add_text` does and adding each
   glyph's kerning against the codepoint before it and its advance, so the measured width
-  (the final pen) is the drawn advance. It finds each glyph in its `FontData`'s table
+  (the widest line's final pen) is the drawn advance. It finds each glyph in its `FontData`'s table
   (`FontData::glyph`: an array for ASCII, a map above, filled on first lookup and freed
   with the font, which `layoutSdfText` looks its glyphs up in too) instead of
   freetype-gl's linear search over the font's glyphs; `tests/measureTextPens.cpp` holds it to a `text_buffer_t`'s pen
-  (`measureTextWithTextBuffer`) in every coverage size, mode and scale. The measured height is the
-  line box, `ceil(font->height)` (ascender-descender, no line gap) whatever the string;
-  in an SDF font `ceil(font->height*px/48)` for one line. `lineHeight(font)` reads that
+  (`measureTextWithTextBuffer`, line by line) in every coverage size, mode and scale. The
+  measured height of one line is the line box, `ceil(font->height)` (ascender-descender, no
+  line gap) whatever the string; in an SDF font `ceil(font->height*px/48)`. A string with
+  `'\n'`s, which `renderText` draws on as many lines (an unwrapped `Text`, a tooltip), is
+  measured as an SDF one is: the widest line, and `ceil(lineBox + (lines-1)*lineStep)`, a
+  trailing `'\n'` an empty last line. `SlotRenderer::lineStep` is the distance freetype-gl
+  draws lines apart, `ascender - (int)descender` (`text_buffer_finish_line` moves the pen
+  down by the truncated descender, the next glyph by the ascender), less than the line box
+  (14.76 against 14.98 at 11 px); in an SDF font `round((ascender-descender)*px/48)`.
+  `lineHeight(font)` reads that
   same metric (`SlotRenderer::lineBoxHeight`) without laying a string out, so it is
   `measureText(font, " ").y` exactly (`tests/lineHeight.cpp`). The text shader outputs
   `vec4(color.rgb, color.a * coverage)` under the `SRC_ALPHA, ONE_MINUS_SRC_ALPHA`
@@ -2230,9 +2237,14 @@ two programs and the draws. What follows describes both together:
   coverage size, its hinted whole-pixel advances are not the drawn font's scaled, so
   `measuredPenShifts` moves each drawn glyph to its measured pen position times the
   scale (rounded to a whole pixel for a coverage draw): the run ends where the layout
-  sized it, and a caret placed from `measureText` falls between the glyphs it means. An
-  SDF `font.size` needs no shift, its layout being linear in px. At scale 1 nothing
-  of this changes a byte. `tests/scaledText.cpp` pins it.
+  sized it, and a caret placed from `measureText` falls between the glyphs it means. Nor
+  is the drawn font's line step the measured one scaled, each truncating its descender to
+  a whole pixel: at 10 px times 1.5 it is a pixel longer per line, so the lines of a run
+  with `'\n'`s would end below its box. `measuredPenShifts` also moves each of its glyphs
+  down by whole pixels, to within half a pixel of the measured line's baseline scaled
+  (relative to the first line, so a one-line run moves nothing), in grayscale and LCD alike.
+  An SDF `font.size` needs no shift, its layout being linear in px. At scale 1 nothing
+  of this changes a byte. `tests/scaledText.cpp` and `tests/multiLineText.cpp` pin it.
 - **A moved run is a fresh layout.** A same-string run that only moved is not laid
   out again: `renderText` adds the whole-device-pixel delta to its glyph vertexes.
   That equals a fresh layout at the new place only if each sum is exact, and an SDF
@@ -2251,9 +2263,9 @@ two programs and the draws. What follows describes both together:
   the empty prefix. The base class's default is that definition, one `measureText` per
   prefix, so a backend that does not override it answers as before. `SlotRenderer`'s
   override lays the string out once and reads the pen before each codepoint: in a
-  coverage font (grayscale or LCD) `walkPens`, the walk `measureText` makes,
-  `ceil(pen)` before each codepoint; in an SDF font `layoutSdfText`, `ceil(max(width,
-  pen))`. A `measureText` of a prefix is the same walk stopped there, so each x equals it
+  coverage font (grayscale or LCD) `walkPens`, the walk `measureText` makes; in an SDF
+  font `layoutSdfText`; both `ceil(max(width, pen))` before each codepoint, the widest
+  line so far. A `measureText` of a prefix is the same walk stopped there, so each x equals it
   by construction. Where freetype-gl's codepoint steps (`utf8_surrogate_len`) are not
   `utf8Next`'s (malformed UTF-8) or the string holds a NUL, it falls back to the
   default. `Text::closestCharacterIn`, under every TextBox click and drag-select move,

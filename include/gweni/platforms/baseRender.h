@@ -227,13 +227,14 @@ public:
     virtual void generateTextPrimitive(size_t &primitiveId) {}
     virtual void releaseTextPrimitive(size_t primitiveId) {}
 
-    //! Draw \a text as one line into the run of \a textId, in front of
-    //! \a zIndex and behind \a zIndex+1: a rect drawn at \a zIndex is
-    //! behind every glyph. \a pos is the top-left of the line box, in canvas units
-    //! like the rects: the box is measureText(font, text) wide and
-    //! ceil(font->height) high (ascender-descender, no line gap), and the
-    //! baseline is at pos.y+ascender. A control puts \a pos where it wants
-    //! the box; the renderer adds no ascent of its own.
+    //! Draw \a text into the run of \a textId, in front of \a zIndex and
+    //! behind \a zIndex+1: a rect drawn at \a zIndex is behind every glyph.
+    //! \a pos is the top-left of the first line's box, in canvas units like
+    //! the rects: a line box is ceil(font->height) high (ascender-descender,
+    //! no line gap), and the first baseline is at pos.y+ascender. Each '\n'
+    //! starts a line one line step below the one before, at pos.x; the whole
+    //! run is the box measureText(font, text) gives. A control puts \a pos
+    //! where it wants the box; the renderer adds no ascent of its own.
     virtual void renderText(size_t textId, const gweni::Font &font,
         gweni::Point pos, int zIndex,
         const gweni::String &text);
@@ -242,7 +243,13 @@ public:
     virtual void hideText(size_t textId) {}
 
     //! The size \a text takes in \a font, in canvas units: the same at every
-    //! scale(), as the layout that uses it is. A control keeps what it measured
+    //! scale(), as the layout that uses it is. A string with '\n's is measured
+    //! as renderText draws it, on as many lines: its widest line's width,
+    //! rounded up, and one line box plus one line step (the distance from one
+    //! baseline to the next) per further line, rounded up; a trailing '\n'
+    //! is an empty last line. A one-line string is lineHeight() high. The
+    //! default here, a rough estimate, is one line whatever the string.
+    //! A control keeps what it measured
     //! until its string or font changes or textLayoutSerial() is raised
     //! (internal::Text), so a measure that changes for any other reason must
     //! raise that serial.
