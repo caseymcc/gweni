@@ -17,7 +17,8 @@
  *  open submenu, and its own open submenu, are hidden in the call that deletes
  *  their item. A submenu deleted on its own (outright or delayed) leaves its
  *  item a plain item: isMenuOpen() false, openMenu()/closeMenu()/
- *  Menu::closeAll() no-ops, no submenu arrow after the next frame, and a press
+ *  Menu::closeAll() no-ops, the row marked to be drawn again (an open
+ *  submenu's highlight goes), no submenu arrow after the next frame, and a press
  *  checks a checkable item and fires onMenuItemSelected. A submenu item's own
  *  onMenuItemSelected handler may delete the submenu's parent item, outright
  *  or delayed: the submenu is only queued while the handler is on the stack.
@@ -327,12 +328,18 @@ TEST_CASE("a submenu deleted on its own leaves its item a plain item")
     SUBCASE("outright")
     {
         delete static_cast<controls::Base *>(sub);
+        // the open highlight goes: the row is drawn again, as a plain one
+        CHECK((item->getStateChange() & controls::StateChange_Background) != 0);
+        scene.frame();
     }
     SUBCASE("delayed")
     {
         sub->delayedDelete();
-        scene.frame();
+        scene.canvas->updateCanvas();
+        CHECK((item->getStateChange() & controls::StateChange_Background) != 0);
+        scene.canvas->renderCanvas();
     }
+    CHECK_FALSE(hasArrow(item));
     CHECK_FALSE(item->isMenuOpen());
     item->openMenu();
     item->closeMenu();

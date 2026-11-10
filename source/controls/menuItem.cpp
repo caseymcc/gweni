@@ -47,14 +47,14 @@ MenuItem::~MenuItem()
 
     m_menu=nullptr;
     menu->m_parentItem=nullptr;
+    // unhooked before the hide, which would redraw this item
+    menu->onVisibilityChanged.removeHandler(this);
 
     Canvas *canvas=menu->getCanvas();
 
     if(canvas && canvas->releasingChildren())
         return;
 
-    // unhooked before the hide, which would redraw this item
-    menu->onVisibilityChanged.removeHandler(this);
     menu->close();
     menu->closeAll();
 
@@ -126,6 +126,10 @@ void MenuItem::submenuDeleted()
 
     if(m_submenuArrow)
     {
+        // hidden now, so a frame before the delete neither lays it out nor
+        // draws it
+        m_submenuArrow->setHidden(true);
+
         if(canvas)
             m_submenuArrow->delayedDelete();
         else
@@ -134,6 +138,8 @@ void MenuItem::submenuDeleted()
     }
 
     invalidate();
+    // an open submenu's highlight goes: no visibility change tells the row
+    redraw();
 }
 
 // However the submenu opens or closes (openMenu(), Menu::closeAll(), the
