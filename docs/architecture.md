@@ -2536,6 +2536,48 @@ reach it, and strict mode counts it), a dark fill at alpha 0xe0: the app's fills
 dimly through it, but the app's text under it does not, since every primitive slot is
 drawn before every glyph and the panel's depth rejects the glyphs behind it.
 
+**Open and closed: the notification.** `StatsOverlay::onOpenChangedCaller`, a static
+`event::Caller`, is called when `open()` makes a canvas's overlay and when `close()`
+closes it (so on every real `toggle()`), after `find()` already gives the new answer,
+never for an overlay made as another control's child or for an `open()`/`close()` with
+nothing to do. The info's `control` is the canvas (Canvas has no `gweni_cast`
+identifier: compare the pointer, or `info.control->getCanvas()`), `integer` 1 for open
+and 0 for closed, `controlCaller` the overlay. A handler sees every canvas's, so it
+compares the canvas; a deleted handler is dropped (`event::Handler`'s destructor takes
+itself off every caller). Nothing polls `find()`: a settled frame does no work for it.
+The demo shell's **Stats** button is the user: a toggle `Button` docked Right in its
+status bar, tooltip "Stats overlay (F10)", whose `onToggleOn`/`onToggleOff` open or
+close the overlay only when it is not already so, and which, told of a change (F10,
+`--stats-overlay`) or built while one is open (ControlTest opens it before the Demo),
+sets its toggle state from `find()`. A click on it then a sync is a no-op, so the
+overlay is never opened or closed twice. A click writes the button's slots and the
+overlay's only; its layout pass enters the canvas alone, as an F10 open does (the
+overlay is a new child of the canvas).
+
+**Keeping clear of a bar: the bottom reserve.** `StatsOverlay::setBottomReserve(canvas,
+units)` keeps `units` clear below the canvas's overlay, above its `Inset`: its bottom is
+`Inset+units` up from the canvas's. The value is the canvas's, kept in a map keyed by the
+canvas pointer together with its control id (ids are never reused), so it survives a
+`close()` and the next `open()`, which makes a new overlay, and a canvas made later at a
+deleted one's address reads 0; setting 0 erases the entry, and the shell does that when
+it goes. Only the canvas's own overlay reads it (StatsOverlayDemo's, on a page, keeps to
+its parent's corner), and a change invalidates that overlay alone, owner-placed, so
+nothing else re-lays. The shell sets it from its own Y arrange, once its status bar is
+placed, to the distance from the canvas's bottom to the bar's top (20 units: the bar
+lays out 19 high, its preferred size, not the 22 it requests, inside the shell's 1-unit
+padding), so the overlay's bottom is `Inset` above the bar and never covers the Stats
+button; the distance is the same at every canvas size and scale, so only the shell's
+first pass changes it. For that to take effect in the same pass the overlay must be
+arranged after the shell: `Canvas::doThink` keeps the overlays last before the layout as
+well as at the z renumber after it (`keepOverlaysLast()`, when the order is dirty), since
+a control added after an overlay (ControlTest's Demo, built after `--stats-overlay` opened
+it) otherwise comes before it in frame 0's walk. Set from a layout pass, the reserve
+invalidates the overlay under a `PlacementScope` (the pass reaches it later and arranges
+it with the new value), unless the pass has already arranged it in Y, when it is an
+ordinary invalidation and the next pass places it. On the web OpenGLCore exports
+`gweni_web_stats_overlay()` (`"overlay=open button=on rect=x,y,w,h"`) for `web_input`'s
+`stats` check, which clicks the button in the browser.
+
 **Phase timing in the library.** The times come from `platform::profileTimeMicros()`
 (`include/gweni/platforms/platform.h`), steady_clock by default, which
 `platform::setProfileClock()` replaces. `Canvas::updateCanvas()` and `renderCanvas()`
@@ -2573,7 +2615,11 @@ settled Demo, the clock stepping: frames between refreshes write nothing, a refr
 the overlay's ids, each refresh shows what the harness counted for the frames of its
 window, a hover over the demo list shows on the next refresh and 0 on the one after, a
 click through the panel toggles the Button under it, and F10 again gives back every id
-it took.
+it took; then the shell's Stats button follows F10, the overlay sits `Inset` above the
+status bar, right-aligned and clear of the button, and a click, F10, F10 and a click
+keep the button on exactly while it is open, each telling the handlers once, each click
+frame writing only the button's and the overlay's slots and laying out the canvas alone,
+and the overlay giving its ids back.
 
 ## Missing resources: degraded, not fatal
 

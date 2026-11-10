@@ -301,7 +301,9 @@ public:
     /// \sect{Overlays}
     /// Keeps control, a child of this canvas, after every other child but a
     /// shown Popup's Menus and the ToolTip box, so the z renumber numbers it
-    /// above the tree, the Popup included (an inspector's highlight box). The
+    /// above the tree, the Popup included (an inspector's highlight box), and
+    /// the layout reaches it after the app (a child added after it is moved
+    /// before it ahead of the next layout, doThink). The
     /// overlays stay in the order they were added. A deleted overlay is
     /// forgotten.
     void addOverlay(Base *control);
