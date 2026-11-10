@@ -34,7 +34,20 @@ public:
     void dragAndDrop_hoverLeave(gweni::draganddrop::Package *package) override;
     void dragAndDrop_hover(gweni::draganddrop::Package *package, int x, int y) override;
 
+    //! Docks the strip on \a pos of its TabControl. The row starts LeadingPadding
+    //! units in, and the strip reaches PageOverlap units into the page on the
+    //! side facing it (a negative margin there), so a tab's last row lies on the
+    //! page frame's border row: the selected tab, drawn over the frame, opens
+    //! into the page inside its own bounds, and the frame's slot is the same
+    //! whichever tab is selected.
     virtual void setTabPosition(DockPosition pos);
+
+    //! Where the row starts along the strip, past the page frame's corner
+    //! radius (6 in the textured skin), so a selected first tab meets the
+    //! frame's straight edge, not its corner arc.
+    static constexpr int LeadingPadding=6;
+    //! How far the strip reaches into the page on the side facing it.
+    static constexpr int PageOverlap=1;
 
     virtual void setAllowReorder(bool b)
     {

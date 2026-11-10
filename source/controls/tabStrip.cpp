@@ -196,17 +196,31 @@ void TabStrip::setTabPosition(DockPosition pos)
 {
     setDock(pos);
 
+    // the row starts LeadingPadding in along the strip, and the side facing the
+    // page reaches PageOverlap into it
     if(m_dock == DockPosition::Top)
-        setPadding(Padding(5, 0, 0, 0));
+    {
+        setPadding(Padding(LeadingPadding, 0, 0, 0));
+        setMargin(Margin(0, 0, 0, -PageOverlap));
+    }
 
     if(m_dock == DockPosition::Left)
-        setPadding(Padding(0, 5, 0, 0));
+    {
+        setPadding(Padding(0, LeadingPadding, 0, 0));
+        setMargin(Margin(0, 0, -PageOverlap, 0));
+    }
 
     if(m_dock == DockPosition::Right)
-        setPadding(Padding(0, 5, 0, 0));
+    {
+        setPadding(Padding(0, LeadingPadding, 0, 0));
+        setMargin(Margin(-PageOverlap, 0, 0, 0));
+    }
 
     if(m_dock == DockPosition::Bottom)
-        setPadding(Padding(5, 0, 0, 0));
+    {
+        setPadding(Padding(LeadingPadding, 0, 0, 0));
+        setMargin(Margin(0, -PageOverlap, 0, 0));
+    }
 
     invalidateChildren(true);
 }
