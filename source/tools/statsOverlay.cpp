@@ -249,7 +249,8 @@ StatsOverlay *StatsOverlay::find(controls::Canvas *canvas)
     {
         StatsOverlay *overlay=gweni_cast<StatsOverlay>(child);
 
-        if(overlay && !overlay->m_closing)
+        // one close() left for its delayed delete is gone already
+        if(overlay && !canvas->isPendingDelete(overlay))
             return overlay;
     }
     return nullptr;
@@ -278,7 +279,6 @@ void StatsOverlay::close(controls::Canvas *canvas)
 {
     if(StatsOverlay *overlay=find(canvas))
     {
-        overlay->m_closing=true;
         overlay->hide();
         overlay->delayedDelete();
 

@@ -201,7 +201,11 @@ Inspector *Inspector::find(controls::Canvas *canvas)
         return nullptr;
     for(controls::Base *child : canvas->getActualChildren())
     {
-        if(Inspector *inspector=gweni_cast<Inspector>(child))
+        Inspector *inspector=gweni_cast<Inspector>(child);
+
+        // one closed (close() or its button) and left for its delayed delete
+        // is gone already
+        if(inspector && !canvas->isPendingDelete(inspector))
             return inspector;
     }
     return nullptr;
@@ -232,18 +236,10 @@ void Inspector::close(controls::Canvas *canvas)
 
 bool Inspector::toggle(controls::Canvas *canvas)
 {
-    Inspector *inspector=find(canvas);
-
-    // one closed by its button is hidden until its delayed delete
-    if(inspector && inspector->visible())
+    if(find(canvas))
     {
         close(canvas);
         return false;
-    }
-    if(inspector)
-    {
-        inspector->setHidden(false);
-        return true;
     }
     return open(canvas) != nullptr;
 }

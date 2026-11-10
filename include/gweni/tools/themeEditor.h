@@ -159,11 +159,15 @@ public:
 
     //! The canvas's theme editor, made and shown if it has none.
     static ThemeEditor *open(controls::Canvas *canvas);
-    //! Deletes the canvas's theme editor (delayed), if it has one.
+    //! Hides the canvas's theme editor and deletes it (delayed), if it has one;
+    //! from then on find() no longer finds it.
     static void close(controls::Canvas *canvas);
-    //! Opens the editor, or closes it if it is open. Returns whether it is open.
+    //! close() if find() finds one, else open(). Returns whether it is open.
     static bool toggle(controls::Canvas *canvas);
-    //! The canvas's theme editor, or null.
+    //! The canvas's theme editor, or null; one closed (close() or its close
+    //! button) and waiting for its delayed delete is not found
+    //! (Canvas::isPendingDelete()), so toggle() or open() after a close in
+    //! one frame makes a new one.
     static ThemeEditor *find(controls::Canvas *canvas);
 
     //! Redraws every control of \p canvas with the theme as it is now: a

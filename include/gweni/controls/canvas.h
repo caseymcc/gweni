@@ -252,6 +252,15 @@ public:
     /// Delayed deletes
     virtual void addDelayedDelete(controls::Base *control);
     virtual void processDelayedDeletes();
+    /// Whether control is queued for a delayed delete (Base::delayedDelete())
+    /// that has not run yet: it is still on the canvas, but gone at the next
+    /// processDelayedDeletes(). A tool's find() skips such an instance, so a
+    /// toggle() after a close() opens a new one instead of showing the doomed
+    /// one again.
+    bool isPendingDelete(const controls::Base *control) const
+    {
+        return m_deleteSet.count(const_cast<controls::Base *>(control)) != 0;
+    }
 
     /// \sect{Layout}
     /// A layout pass that re-dirties layout (an invalidate() raised while it

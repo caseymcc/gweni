@@ -287,7 +287,11 @@ ThemeEditor *ThemeEditor::find(controls::Canvas *canvas)
         return nullptr;
     for(controls::Base *child : canvas->getActualChildren())
     {
-        if(ThemeEditor *editor=gweni_cast<ThemeEditor>(child))
+        ThemeEditor *editor=gweni_cast<ThemeEditor>(child);
+
+        // one closed (close() or its button) and left for its delayed delete
+        // is gone already
+        if(editor && !canvas->isPendingDelete(editor))
             return editor;
     }
     return nullptr;
@@ -317,18 +321,10 @@ void ThemeEditor::close(controls::Canvas *canvas)
 
 bool ThemeEditor::toggle(controls::Canvas *canvas)
 {
-    ThemeEditor *editor=find(canvas);
-
-    // one closed by its button is hidden until its delayed delete
-    if(editor && editor->visible())
+    if(find(canvas))
     {
         close(canvas);
         return false;
-    }
-    if(editor)
-    {
-        editor->setHidden(false);
-        return true;
     }
     return open(canvas) != nullptr;
 }

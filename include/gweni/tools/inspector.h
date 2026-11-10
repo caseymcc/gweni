@@ -103,11 +103,15 @@ public:
 
     //! The canvas's inspector, made and shown if it has none.
     static Inspector *open(controls::Canvas *canvas);
-    //! Deletes the canvas's inspector (delayed), if it has one.
+    //! Hides the canvas's inspector and deletes it (delayed), if it has one;
+    //! from then on find() no longer finds it.
     static void close(controls::Canvas *canvas);
-    //! Opens the inspector, or closes it if it is open. Returns whether it is open.
+    //! close() if find() finds one, else open(). Returns whether it is open.
     static bool toggle(controls::Canvas *canvas);
-    //! The canvas's inspector, or null.
+    //! The canvas's inspector, or null; one closed (close() or its close
+    //! button) and waiting for its delayed delete is not found
+    //! (Canvas::isPendingDelete()), so toggle() or open() after a close in
+    //! one frame makes a new one.
     static Inspector *find(controls::Canvas *canvas);
 
     //! Shows control's details and selects its node, opening the nodes of its
