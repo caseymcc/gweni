@@ -1986,7 +1986,12 @@ two programs and the draws. What follows describes both together:
   Ctrl+click or Return on the focused field shows an `internal::DragNumberTextBox` (a
   `TextBoxNumeric`, drawn by the TextBox renderer up its parent types) owner-placed over
   the field, focused, holding the value at the format's precision with trailing zeros
-  dropped, all selected; the field's Text is hidden and the field's slot too. Return
+  dropped, all selected; the field's Text is hidden and the field's slot too. The hidden
+  Text would count for nothing in `sizeOfChildren`, and the owner-placed box neither, so a
+  field with any flag but Fixed would shrink to its padding under the box (#521): while
+  it is open, `DragNumber::calculateSize` measures the Text afresh (`doCalculateSize`, so a
+  value set during the edit still resizes the field) and counts it as a shown Text, so
+  opening or closing the edit changes no size and its layout stops at the field. Return
   commits it and gives the focus back to the field (a TextBox's Return would tab to the
   next control), a lost focus commits it and leaves the focus where it went, Escape
   cancels it; text that is no number (`parseNumber`: a whole finite `strtod`) leaves the
