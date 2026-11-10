@@ -11,6 +11,7 @@
 #include <gweni/inputHandler.h>
 #include <gweni/skin.h>
 
+#include <algorithm>
 #include <cerrno>
 #include <cmath>
 #include <cstdio>
@@ -496,6 +497,33 @@ void DragNumber::endEdit(bool commit, EditFocus after)
 void DragNumber::onEditLostFocus(event::Info)
 {
     endEdit(true, EditFocus::Leave);
+}
+
+// The box is owner-placed and the hidden Text counts for nothing in
+// sizeOfChildren, so with the box open the field's content would be its
+// padding alone, and any flag but Fixed would shrink it to that. The Text is
+// counted as sizeOfChildren counts it shown (a Label's dock-None child: its
+// size and margin), its string measured afresh (the app may set a value while
+// the box is open): opening or closing the edit changes no size, and the
+// layout stops at the field.
+void DragNumber::calculateSize(skin::Base *skin, Dim dim)
+{
+    ParentClass::calculateSize(skin, dim);
+
+    if(!m_editing || !m_text->hidden() || !m_text->shouldIncludeInSize())
+        return;
+
+    m_text->doCalculateSize(skin, dim);
+
+    const Size &text=m_text->getPreferredSize();
+    const Margin &margin=m_text->getMargin();
+
+    if(dim == Dim::X)
+        m_preferredSize.width=std::max(m_preferredSize.width, preferredFromContent(
+            text.width+margin.left+margin.right+m_padding.left+m_padding.right, Dim::X));
+    else
+        m_preferredSize.height=std::max(m_preferredSize.height, preferredFromContent(
+            text.height+margin.top+margin.bottom+m_padding.top+m_padding.bottom, Dim::Y));
 }
 
 void DragNumber::layout(skin::Base *skin)

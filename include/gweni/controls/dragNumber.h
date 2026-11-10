@@ -161,6 +161,9 @@ public:
     bool onKeyReturn(bool down) override;
 
     void updateColors() override;
+    //! While the edit box is open the field's own Text is hidden, and it is
+    //! measured as if it showed, so the field keeps its size.
+    void calculateSize(skin::Base *skin, Dim dim) override;
     void layout(skin::Base *skin) override;
 
     event::Caller onValueChanged;
