@@ -67,12 +67,33 @@ public:
     void addDemo(controls::CollapsibleCategory *category, const std::string &name,
         const std::string &label=std::string());
 
+    virtual ~Demo();
+
+    //! Places its children, then keeps the canvas's stats overlay above the
+    //! status bar (tools::StatsOverlay::setBottomReserve).
+    void arrange(skin::Base *skin, Dim dim) override;
+
+    //! The status bar's "Stats" toggle, on exactly while the canvas's
+    //! tools::StatsOverlay is open.
+    controls::Button *statsButton() const { return m_statsButton; }
+    controls::StatusBar *statusBar() const { return m_statusBar; }
+
 private:
     void onCategorySelect(event::Info info);
+    //! The Stats button turned on or off: opens or closes the overlay, unless
+    //! it already is so (the button following the overlay).
+    void onStatsToggleOn(event::Info info);
+    void onStatsToggleOff(event::Info info);
+    //! tools::StatsOverlay::onOpenChangedCaller: the button follows its canvas's
+    //! overlay, however it was opened or closed (F10, --stats-overlay).
+    void onStatsOverlayChanged(event::Info info);
 
     controls::TabControl *m_tabControl;
     controls::ListBox *m_textOutput;
     controls::StatusBar *m_statusBar;
+    controls::Button *m_statsButton=nullptr;
+    //! the canvas the Stats button and the overlay's bottom reserve are for
+    controls::Canvas *m_statsCanvas=nullptr;
     controls::Base *m_lastControl;
 //    controls::layout::Center *m_center;
     controls::PageControl *m_center;

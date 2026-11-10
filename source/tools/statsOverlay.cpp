@@ -248,9 +248,21 @@ void StatsOverlay::setBottomReserve(controls::Canvas *canvas, int units)
         bottomReserves()[canvas]={canvas->getControlId(), units};
 
     // the overlay alone places itself again: it is owner-placed, so nothing
-    // else's layout reads where it is
+    // else's layout reads where it is. Set from the app's layout (where its
+    // bar was placed), the pass has yet to reach the overlay, an overlay
+    // coming after the app in the walk (Canvas::doThink), and arranges it with
+    // the new value: no second pass.
     if(StatsOverlay *overlay=find(canvas))
-        overlay->invalidate();
+    {
+        if(!inLayoutPass() || overlay->laidOutThisPass(Dim::Y))
+            overlay->invalidate();
+        else
+        {
+            PlacementScope placement;
+
+            overlay->invalidate();
+        }
+    }
 }
 
 int StatsOverlay::bottomReserve(controls::Canvas *canvas)
@@ -297,18 +309,25 @@ void StatsOverlay::arrange(skin::Base *skin, Dim dim)
         if(dim == Dim::X)
             setArrangedBounds(std::max(0, parent->getWidth()-getWidth()-Inset), getY(), getWidth(), getHeight());
         else
-        {
-            // the reserve is the canvas's, for its own overlay: not one on a
-            // page of the app's
-            controls::Canvas *canvas=getCanvas();
-            const int reserve=(parent == canvas)?bottomReserve(canvas):0;
-
-            setArrangedBounds(getX(), std::max(0, parent->getHeight()-getHeight()-Inset-reserve),
-                getWidth(), getHeight());
-        }
+            setArrangedBounds(getX(), cornerY(), getWidth(), getHeight());
     }
 
     ParentClass::arrange(skin, dim);
+}
+
+int StatsOverlay::cornerY()
+{
+    controls::Base *parent=getParent();
+
+    if(!parent)
+        return getY();
+
+    // the reserve is the canvas's, for its own overlay: not one on a page of
+    // the app's
+    controls::Canvas *canvas=getCanvas();
+    const int reserve=(parent == canvas)?bottomReserve(canvas):0;
+
+    return std::max(0, parent->getHeight()-getHeight()-Inset-reserve);
 }
 
 void StatsOverlay::ownIds(std::vector<size_t> &primitiveIds, std::vector<size_t> &textIds) const

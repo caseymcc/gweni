@@ -15,6 +15,7 @@
 #include "gweni/controls/windowControl.h"
 #include "gweni/controls/layout/position.h"
 #include "gweni/platforms/platform.h"
+#include "gweni/tools/statsOverlay.h"
 
 #include "demo/button.h"
 #include "demo/checkBox.h"
@@ -125,6 +126,22 @@ void Demo::init(const String &name)
 
     m_statusBar=newChild<controls::StatusBar>();
 
+    // The stats overlay's toggle, on while the overlay is open however it was
+    // opened (F10, --stats-overlay, before this shell was built included), and
+    // the overlay kept above the bar (arrange), so it never covers the button.
+    m_statsCanvas=getCanvas();
+    m_statsButton=m_statusBar->newChild<controls::Button>("StatsButton");
+    m_statsButton->setText("Stats");
+    // room around the word, which the bar's height leaves none above or below
+    m_statsButton->setTextPadding(Padding(8, 0, 8, 0));
+    m_statsButton->setIsToggle(true);
+    m_statsButton->setToolTipText("Stats overlay (F10)");
+    m_statsButton->setToggleState(tools::StatsOverlay::find(m_statsCanvas) != nullptr);
+    m_statsButton->onToggleOnCaller.add(this, &Demo::onStatsToggleOn);
+    m_statsButton->onToggleOffCaller.add(this, &Demo::onStatsToggleOff);
+    m_statusBar->addControl(m_statsButton, true);
+    tools::StatsOverlay::onOpenChangedCaller.add(this, &Demo::onStatsOverlayChanged);
+
     // First, so the selected page shows at the top of the list (the list runs
     // past the dock's bottom edge).
     {
@@ -211,6 +228,47 @@ void Demo::init(const String &name)
 //    m_lastSecond=platform::getTimeInSeconds();
 //    m_frames=0;
 //    list->getNamedChildren("MenuStrip").doAction();
+}
+
+Demo::~Demo()
+{
+    // the bar the overlay kept clear of goes with this shell
+    tools::StatsOverlay::setBottomReserve(m_statsCanvas, 0);
+}
+
+void Demo::arrange(skin::Base *skin, Dim dim)
+{
+    ParentClass::arrange(skin, dim);
+
+    // The bar has its place now: the canvas's stats overlay keeps clear of
+    // the canvas's bottom up to the bar's top edge. It is the same at every
+    // canvas size and scale, so only the first pass changes it, before the
+    // overlay (after this shell among the canvas's children) is arranged.
+    if((dim == Dim::Y) && m_statsCanvas && m_statusBar->visible())
+    {
+        const int barTop=m_statusBar->localPosToCanvas().y;
+
+        tools::StatsOverlay::setBottomReserve(m_statsCanvas, m_statsCanvas->getHeight()-barTop);
+    }
+}
+
+void Demo::onStatsToggleOn(event::Info /*info*/)
+{
+    if(!tools::StatsOverlay::find(m_statsCanvas))
+        tools::StatsOverlay::open(m_statsCanvas);
+}
+
+void Demo::onStatsToggleOff(event::Info /*info*/)
+{
+    if(tools::StatsOverlay::find(m_statsCanvas))
+        tools::StatsOverlay::close(m_statsCanvas);
+}
+
+void Demo::onStatsOverlayChanged(event::Info info)
+{
+    if(info.control != m_statsCanvas)
+        return;
+    m_statsButton->setToggleState(tools::StatsOverlay::find(m_statsCanvas) != nullptr);
 }
 
 void Demo::onCategorySelect(event::Info info)

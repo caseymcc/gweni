@@ -244,6 +244,11 @@ void Canvas::doThink()
     // it, and laid out again here only if that dirtied layout, rather than in
     // the render phase.
     input::dropLostKeyboardFocus();
+    // The overlays are last in the layout's walk too, not only in z, so what
+    // the app's layout sets for one (StatsOverlay::setBottomReserve) is read
+    // when the pass reaches it, a control added after one included.
+    if(m_zOrderDirty)
+        keepOverlaysLast();
     layoutCanvas();
     if(input::dropLostKeyboardFocus() && m_updateLayout)
         layoutCanvas();

@@ -88,7 +88,9 @@ public:
     //! status bar's height): its bottom edge is Inset+units in from the
     //! canvas's. Kept for the canvas, so an overlay opened later takes it too;
     //! 0, the default, forgets it. Only an overlay on the canvas itself
-    //! (open()'s) reads it, and a change lays out that overlay alone. The
+    //! (open()'s) reads it, and a change lays out that overlay alone; set
+    //! from the app's layout (an arrange placing its bar), it is in effect in
+    //! that pass, which reaches the overlay after the app's controls. The
     //! canvas is told apart by its control id, never reused, so a canvas made
     //! later at a deleted one's address starts at 0; an app that sets it
     //! gives it back (0) when it goes.
@@ -175,6 +177,10 @@ protected:
     void arrange(skin::Base *skin, Dim dim) override;
 
 private:
+    //! Its top edge in its parent: Inset up from the bottom, and the canvas's
+    //! bottomReserve() more on the canvas.
+    int cornerY();
+
     //! The rows: a time row has a name and min, avg and max columns, a counter
     //! row two name/value pairs.
     enum Row

@@ -31,7 +31,11 @@
  *  - setBottomReserve() raises the canvas's overlay by that many units, laying
  *    out the overlay alone, kept across a close and an open and at a new
  *    canvas size; an overlay on a page ignores it, and a canvas made after a
- *    deleted one with a reserve starts at 0.
+ *    deleted one with a reserve starts at 0;
+ *  - a reserve set from a control's Y arrange (as the demo shell sets it from
+ *    its status bar) is in effect in that same pass, with the overlay
+ *    arranged before the control or settled and clean: one pass, and what a
+ *    full layout pass gives (layout verification).
  */
 #include "headlessFixture.h"
 
@@ -583,4 +587,82 @@ TEST_CASE("StatsOverlay: a canvas made after one with a reserve starts at 0")
         CHECK(StatsOverlay::bottomReserve(scene.canvas) == 30);
     }
     CHECK(StatsOverlay::bottomReserve(nullptr) == 0);
+}
+
+namespace
+{
+
+//! A bar along its parent's bottom that, as the demo shell does, keeps the
+//! canvas's overlay clear of it from its parent's Y arrange.
+class ReservingPanel: public controls::Base
+{
+public:
+    GWENI_CONTROL_INLINE(ReservingPanel, controls::Base)
+    {
+        setDock(DockPosition::Center);
+        m_bar=newChild<controls::Base>("bar");
+        m_bar->setDock(DockPosition::Bottom);
+        m_bar->setSizeFlags({SizeFlag::Expand, SizeFlag::Fixed});
+        m_bar->setHeight(BarHeight);
+    }
+
+    static constexpr int BarHeight=19;
+
+protected:
+    void arrange(skin::Base *skin, Dim dim) override
+    {
+        ParentClass::arrange(skin, dim);
+        if(dim == Dim::Y)
+        {
+            controls::Canvas *canvas=getCanvas();
+
+            StatsOverlay::setBottomReserve(canvas, canvas->getHeight()-m_bar->localPosToCanvas().y);
+        }
+    }
+
+private:
+    controls::Base *m_bar=nullptr;
+};
+
+}//namespace
+
+TEST_CASE("StatsOverlay: a reserve set from a layout pass is in effect in that pass")
+{
+    controls::setLayoutVerify(true);
+
+    const size_t verifyFailures=controls::layoutVerifyFailures();
+
+    // opened before the panel, so arranged before it in the first pass; then
+    // a panel made over a settled overlay; then the reserve given back
+    for(bool settledFirst : {false, true})
+    {
+        CAPTURE(settledFirst);
+        Scene scene;
+        StatsOverlay *overlay=StatsOverlay::open(scene.canvas);
+
+        if(settledFirst)
+        {
+            scene.frames(3);
+            REQUIRE(overlay->getY()+overlay->getHeight() == scene.canvas->getHeight()-StatsOverlay::Inset);
+        }
+
+        ReservingPanel *panel=scene.canvas->newChild<ReservingPanel>();
+
+        scene.frame();
+        CHECK(scene.canvas->getLayoutStats().passes == 1);
+        CHECK(StatsOverlay::bottomReserve(scene.canvas) == ReservingPanel::BarHeight);
+        CHECK(overlay->getY()+overlay->getHeight()
+            == scene.canvas->getHeight()-StatsOverlay::Inset-ReservingPanel::BarHeight);
+        scene.frames(2);
+        CHECK(scene.canvas->getLayoutStats().passes == 0);
+
+        delete panel;
+        StatsOverlay::setBottomReserve(scene.canvas, 0);
+        scene.frame();
+        CHECK(overlay->getY()+overlay->getHeight() == scene.canvas->getHeight()-StatsOverlay::Inset);
+        StatsOverlay::close(scene.canvas);
+        scene.frames(2);
+    }
+    CHECK(controls::layoutVerifyFailures() == verifyFailures);
+    controls::setLayoutVerify(false);
 }
