@@ -20,6 +20,7 @@ namespace gweni
 namespace controls
 {
 
+class Canvas;
 class ToolTip;
 class Menu;
 class Popup;
@@ -45,6 +46,9 @@ public:
     virtual void captureCharacter(gweni::UnicodeChar chr) {}
     /// The cursor left the window
     virtual void captureMouseLeave() {}
+    /// \p canvas, whose capture this is, is being deleted: it no longer calls
+    /// anything and must not be used after this returns
+    virtual void captureCanvasDeleted(Canvas *canvas) {}
 };
 enum class PopupPlacement;
 
@@ -371,6 +375,9 @@ public:
     /// reading it uses nothing up. With no flagged control nothing is walked
     /// or kept.
     const ExcludedSlots &excludedSlots();
+    /// The highest z index the last renumber gave a control's range (its
+    /// depth and overlay layers included), 0 before the first
+    int highestZIndex() const { return m_zHigh; }
     /// \}
 
     /// \sect{Overlays}
@@ -527,6 +534,7 @@ public:
     /// out (input::GLFW3 syncs the modifiers before each key). The update and
     /// render phases go on as without it. The capture is not owned; clear it
     /// (nullptr) before deleting it. One test per event, nothing per frame.
+    /// A canvas deleted with a capture set tells it (captureCanvasDeleted).
     void setInputCapture(InputCapture *capture) { m_inputCapture=capture; }
     InputCapture *inputCapture() const { return m_inputCapture; }
     /// \}

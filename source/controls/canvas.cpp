@@ -51,6 +51,11 @@ Canvas::Canvas(skin::Base *skin): ParentClass()
 
 Canvas::~Canvas()
 {
+    if(InputCapture *capture=m_inputCapture)
+    {
+        m_inputCapture=nullptr;
+        capture->captureCanvasDeleted(this);
+    }
     releaseChildren();
 }
 

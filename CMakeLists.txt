@@ -409,6 +409,9 @@ if(GWENI_RENDER_OPENGL_CORE)
         include/gweni/platforms/renderers/glApi.h
         include/gweni/platforms/renderers/openglCore.h
         source/platforms/renderers/OpenGLCore/openglCore.cpp
+        # the depth view draws through SlotRenderer's view transform
+        include/gweni/tools/depthView.h
+        source/tools/depthView.cpp
         ${GWENI_FALLBACK_FONT_SOURCE}
         ${GWENI_SHADER_SOURCES}
     )
