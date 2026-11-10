@@ -509,8 +509,11 @@ public:
     //! and this control's region, as every control is. A ScrollControl gives
     //! its viewport for its inner panel, so content scrolled past the viewport
     //! neither draws nor takes the mouse in the inset around it. A change of
-    //! the rect has to mark the child's subtree (StateChange_Geometry), as a
-    //! bounds change does, for the new region to reach slots already drawn.
+    //! the rect has to mark the child's subtree (StateChange_Geometry) for
+    //! the new region to reach slots already drawn, unless the child moved:
+    //! a child resized at the same origin works out its region against the
+    //! new rect alone (childRegionChanged()), so its own new size need not
+    //! mark it.
     virtual const gweni::Rect *getChildClipRect(const Base * /*child*/) const { return nullptr; }
     //! Whether this control overrides getChildClipRect(). Such a rect is
     //! worked out from the control's size (a viewport, a strip's row), so a

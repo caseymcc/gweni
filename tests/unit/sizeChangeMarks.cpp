@@ -18,7 +18,9 @@
  *  marks its subtree on any size change. So an overflowing ScrollControl or
  *  ListBox given one more item marks the new item, its inner panel and the
  *  bar's thumb, not the items already there (on main before #511: 64 of 77
- *  and 96 of 109 controls).
+ *  and 96 of 109 controls). A ScrollControl whose viewport changes (a bar
+ *  showing or hiding) marks its content even when the inner panel keeps its
+ *  origin and its region, as the content's clip box is the new viewport.
  */
 #include "headlessFixture.h"
 
@@ -414,5 +416,89 @@ TEST_CASE("Size change: an overflowing scroll area given one more item marks tha
         // the added row's subtree, the table, the inner panel and the thumb
         CHECK(controls::getChangeStats().controls <= subtreeSize(added)+3);
         CHECK(controls::getChangeStats().visited <= subtreeSize(added)+3);
+    }
+}
+
+TEST_CASE("Size change: a ScrollControl's new viewport marks its content when the inner panel only changes size")
+{
+    // The content is clipped to the viewport, so a bar that shows or hides
+    // gives every slot below the inner panel a new clip box, also when the
+    // panel keeps its origin and its own region (the old and the new panel
+    // both cover the new viewport) and the content keeps its bounds.
+    SUBCASE("the horizontal bar hides")
+    {
+        Scene scene;
+        controls::ScrollControl *scroll=scene.canvas->newChild<controls::ScrollControl>();
+        scroll->setBounds(10, 10, 300, 200);
+        scroll->setScroll(true, true);
+        scroll->setAutoHideBars(true);
+
+        controls::Label *wide=scroll->newChild<controls::Label>();
+        wide->setText(std::string(120, 'W'));
+        wide->setDock(DockPosition::Top);
+
+        std::vector<controls::Label *> labels;
+        for(int i=0; i<30; ++i)
+        {
+            controls::Label *label=scroll->newChild<controls::Label>();
+            label->setText("Label "+std::to_string(i));
+            label->setDock(DockPosition::Top);
+            labels.push_back(label);
+        }
+        scene.settle();
+        controls::Base *inner=wide->getActualParent();
+        const Rect viewport=scroll->getViewport();
+        const Rect innerBounds=inner->getBounds();
+
+        wide->setText("W");
+        scene.canvas->updateCanvas();
+
+        REQUIRE(scroll->getViewport().h > viewport.h);
+        REQUIRE(inner->getX() == innerBounds.x);
+        REQUIRE(inner->getY() == innerBounds.y);
+        REQUIRE(inner->getWidth() < innerBounds.w);
+        for(controls::Label *label : labels)
+            for(controls::Base *child : label->getActualChildren())
+                CHECK(geometry(child));
+        scene.canvas->renderCanvas();
+    }
+
+    SUBCASE("the vertical bar shows over content that does not fill the width")
+    {
+        Scene scene;
+        controls::ScrollControl *scroll=scene.canvas->newChild<controls::ScrollControl>();
+        scroll->setBounds(10, 10, 300, 200);
+        scroll->setScroll(false, true);
+        scroll->setAutoHideBars(true);
+
+        std::vector<controls::Base *> items;
+        for(int i=0; i<5; ++i)
+        {
+            controls::Base *item=scroll->newChild<controls::Base>();
+            item->setBounds(0, i*30, 100, 20);
+            controls::Base *itemInner=item->newChild<controls::Base>();
+            itemInner->setBounds(2, 2, 5, 5);
+            items.push_back(item);
+        }
+        scene.settle();
+        controls::Base *inner=items.front()->getActualParent();
+        const Rect viewport=scroll->getViewport();
+        const Rect innerBounds=inner->getBounds();
+
+        controls::Base *added=scroll->newChild<controls::Base>();
+        added->setBounds(0, 400, 100, 20);
+        scene.canvas->updateCanvas();
+
+        REQUIRE(scroll->getViewport().w < viewport.w);
+        REQUIRE(inner->getX() == innerBounds.x);
+        REQUIRE(inner->getY() == innerBounds.y);
+        for(controls::Base *item : items)
+        {
+            REQUIRE((item->getBounds() == Rect(item->getX(), item->getY(), 100, 20)));
+            CHECK(geometry(item));
+            for(controls::Base *child : item->getActualChildren())
+                CHECK(geometry(child));
+        }
+        scene.canvas->renderCanvas();
     }
 }

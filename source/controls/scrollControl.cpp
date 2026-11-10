@@ -439,12 +439,17 @@ void ScrollControl::placeContents()
 
     placeChild(m_innerPanel, m_viewport.x+scrollX, m_viewport.y+scrollY, innerWidth, innerHeight);
 
-    // The content is clipped to the viewport (getChildClipRect). A new
-    // viewport mostly comes with new bounds for this control or the inner
-    // panel, which mark the content (onBoundsChanged); one that comes with
-    // neither (a larger bottom padding over taller, unscrolled content, say)
-    // has to mark it here, or its slots keep the old clip.
-    if(!(m_viewport == oldViewport) && m_innerPanel->getBounds() == oldInner)
+    // The content is clipped to the viewport (getChildClipRect), so a new
+    // viewport gives every slot below the inner panel a new clip box. The
+    // panel's onBoundsChanged marks its subtree only when it moved: a panel
+    // resized at the same origin measures its region against the new
+    // viewport alone (a bar hiding: both the old and the new panel cover
+    // it), and one that kept its bounds marks nothing. Either way the
+    // content is marked here, or its slots keep the old clip.
+    const bool innerMoved=m_innerPanel->getX() != oldInner.x
+        || m_innerPanel->getY() != oldInner.y;
+
+    if(!(m_viewport == oldViewport) && !innerMoved)
         m_innerPanel->addStateChangeRecursive(StateChange_Geometry);
 }
 

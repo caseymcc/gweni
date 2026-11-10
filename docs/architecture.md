@@ -2701,8 +2701,10 @@ What exists today (the foundation) and what's still aspirational:
   it gets a new box. Nothing may read an ancestor's size at render time outside layout,
   or it would miss that mark (`base.h`, `childRegionChanged`; `tests/unit/sizeChangeMarks.cpp`,
   issue #511). A new viewport
-  that moves neither the ScrollControl nor its inner panel (a larger bottom padding over
-  taller content) is marked by `placeContents` itself. An intersection
+  that does not move the inner panel is marked by `ScrollControl::placeContents` itself: a
+  larger bottom padding over taller content, which changes neither bounds, and a bar
+  showing or hiding, where the panel resized at the same origin measures its region against
+  the new viewport alone and so does not mark its content. An intersection
   with no overlap is an empty rect (never a negative size) and the walk goes on into it:
   dirty children are drawn again with the empty box, so nothing stale stays on screen.
   Clean, fully clipped subtrees are skipped like any clean subtree, not culled, and a
