@@ -23,6 +23,29 @@ namespace controls
 class ToolTip;
 class Menu;
 class Popup;
+
+/// What takes every input event a Canvas gets while it is the canvas's input
+/// capture (Canvas::setInputCapture): tools::DepthView's camera. The events
+/// arrive as the canvas got them, in logical units, keys as gweni::keys codes
+/// and text as characters (Canvas::inputCharacter's filter not applied), and
+/// go nowhere else: no control and none of input::'s state (the hover, the
+/// focus, the mouse position, the keys held) sees them. Each has a default
+/// that ignores it.
+class GWENI_EXPORT InputCapture
+{
+public:
+    virtual ~InputCapture() {}
+
+    virtual void captureMouseMoved(int x, int y, int deltaX, int deltaY) {}
+    virtual void captureMouseButton(int button, bool down) {}
+    /// 60 a wheel notch, positive away from the user (IInputEvent's)
+    virtual void captureMouseWheel(int delta) {}
+    /// A key (gweni::keys) pressed or released: inputModifierKey's
+    virtual void captureKey(int key, bool down) {}
+    virtual void captureCharacter(gweni::UnicodeChar chr) {}
+    /// The cursor left the window
+    virtual void captureMouseLeave() {}
+};
 enum class PopupPlacement;
 
 //! What the canvas's layout did in one frame: the update phase (doThink) and
@@ -493,6 +516,21 @@ public:
     void closeContextMenu();
     /// \}
 
+    /// \sect{Input capture}
+    /// While a capture is set, every input* call below hands its event to it and
+    /// returns true without doing anything else, so nothing on the canvas is
+    /// hit-tested, hovered, focused or pressed by it, and input::'s state stays
+    /// as it was: the hovered control stays hovered, the focused one focused,
+    /// and once the capture is gone the next move hit-tests from the position
+    /// the canvas had. A press or a key held across setting or clearing it
+    /// is not let go on the canvas, which the next release or key event sorts
+    /// out (input::GLFW3 syncs the modifiers before each key). The update and
+    /// render phases go on as without it. The capture is not owned; clear it
+    /// (nullptr) before deleting it. One test per event, nothing per frame.
+    void setInputCapture(InputCapture *capture) { m_inputCapture=capture; }
+    InputCapture *inputCapture() const { return m_inputCapture; }
+    /// \}
+
     /// \sect{Input}
     bool inputMouseMoved(int x, int y, int deltaX, int deltaY) override;
     bool inputMouseButton(int button, bool down) override;
@@ -684,6 +722,8 @@ protected:
     /// When m_toolTipOwner was first hovered.
     float m_toolTipSince=0.0f;
     float m_toolTipDelay=0.5f;
+    //! setInputCapture's, or null
+    InputCapture *m_inputCapture=nullptr;
     bool m_toolTipShown=false;
     size_t m_toolTipShownForId=0;
     /// The owner's tooltip changed while shown.

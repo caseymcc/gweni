@@ -742,6 +742,12 @@ void Canvas::releaseChildren()
 
 bool Canvas::inputMouseMoved(int x, int y, int deltaX, int deltaY)
 {
+    if(m_inputCapture)
+    {
+        m_inputCapture->captureMouseMoved(x, y, deltaX, deltaY);
+        return true;
+    }
+
     if(hidden())
         return false;
 
@@ -766,6 +772,12 @@ bool Canvas::inputMouseMoved(int x, int y, int deltaX, int deltaY)
 
 bool Canvas::inputMouseButton(int button, bool down)
 {
+    if(m_inputCapture)
+    {
+        m_inputCapture->captureMouseButton(button, down);
+        return true;
+    }
+
     if(hidden())
         return false;
 
@@ -1310,6 +1322,12 @@ void Canvas::closeContextMenu()
 
 bool Canvas::inputModifierKey(int key, bool down)
 {
+    if(m_inputCapture)
+    {
+        m_inputCapture->captureKey(key, down);
+        return true;
+    }
+
     if(hidden())
         return false;
 
@@ -1324,6 +1342,12 @@ bool Canvas::inputModifierKey(int key, bool down)
 
 bool Canvas::inputCharacter(UnicodeChar chr)
 {
+    if(m_inputCapture)
+    {
+        m_inputCapture->captureCharacter(chr);
+        return true;
+    }
+
     if(hidden())
         return false;
 
@@ -1356,6 +1380,12 @@ bool Canvas::inputCharacter(UnicodeChar chr)
 
 bool Canvas::inputMouseLeave()
 {
+    if(m_inputCapture)
+    {
+        m_inputCapture->captureMouseLeave();
+        return true;
+    }
+
     if(hidden())
         return false;
 
@@ -1365,6 +1395,12 @@ bool Canvas::inputMouseLeave()
 
 bool Canvas::inputMouseWheel(int val)
 {
+    if(m_inputCapture)
+    {
+        m_inputCapture->captureMouseWheel(val);
+        return true;
+    }
+
     if(hidden())
         return false;
 
