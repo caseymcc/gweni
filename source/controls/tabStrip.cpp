@@ -194,7 +194,20 @@ void TabStrip::dragAndDrop_hover(gweni::draganddrop::Package * /*package*/, int 
 
 void TabStrip::setTabPosition(DockPosition pos)
 {
+    const bool moved=m_dock != pos;
+
     setDock(pos);
+
+    // a tab's look follows the side (its square corners face the page), and its
+    // bounds may not change with it (Top and Bottom place it alike)
+    if(moved)
+    {
+        for(auto &&control : getChildren())
+        {
+            if(gweni_cast<TabButton>(control))
+                control->addStateChange(StateChange_Background);
+        }
+    }
 
     // the row starts LeadingPadding in along the strip, and the side facing the
     // page reaches PageOverlap into it

@@ -1753,6 +1753,32 @@ two programs and the draws. What follows describes both together:
   and re-measures the column. With no format every path is as before: the same track,
   thumb and ticks, byte for byte. SliderTextDemo shows `%.0f`, `%.2f`, a percentage, a
   notched and a disabled slider and a vertical one; ShowcaseInputDemo has one.
+- **Notebook tabs.** In the textured skin a TabControl's tabs show which page is open by
+  their shape (#540). The page frame is the `TabControlInner` panel, the `TabControl`
+  surface in one flat fill; the `TabControl` itself has no primitive and draws nothing, so
+  the strip and the row past its last tab show the parent's background. The strip reaches
+  `TabStrip::PageOverlap` (1) unit into the page on the side facing it (a negative margin
+  there, set by `setTabPosition`), so each tab's last row (a Left or Right strip: column)
+  is the frame's border row, and its row starts `TabStrip::LeadingPadding` (6, the frame's
+  corner radius) units in, so a first tab meets the frame's straight border and not its
+  corner arc. Every tab is drawn with the edge mask (`paintSurface`'s overload taking a
+  rect and a `RoundedEdge` mask): square on the two corners facing the page, no border on
+  that side. The selected tab is its whole bounds in `TabActive`, the frame's fill and
+  border, drawn over the frame (the frame is sent to the back), so tab and page are one
+  outline with no accent; an unselected one is `TabInactive` (darker than the page),
+  `TabHover` while hovered, drawn `TabButton::UnselectedOuterInset` (2) shorter on the
+  outer side and `PageOverlap` short of the page, so the frame's border runs on under it,
+  and `UnselectedEndInset` (1) in at each end along the row. That last inset is what keeps
+  a selection to the two tabs: tabs overlap their neighbours by a unit and a later tab is
+  in front, so one drawn whole would cover the selected tab's end border, and drawing it
+  to suit its neighbour would make a selection rewrite the neighbours too. What a tab draws
+  follows only its own state (selected, hovered, disabled, which looks unselected and does
+  not hover) and its strip's side, so a selection writes the old and new tabs' slots and
+  their glyphs, never the frame's, and a hover one slot; `setTabPosition` marks the tabs
+  `StateChange_Background` when the side changes, since a tab's bounds can stay as they
+  were (Top and Bottom place it alike). The text and the bounds are the same in every
+  state. `tests/unit/tabStripPlacement.cpp` checks the placement on the four sides,
+  `tests/unit/tabLook.cpp` the rects, masks, surfaces and slots.
 - **Closable tabs.** `TabButton::setClosable(true)` gives a tab a `TabCloseButton` child
   (imgui's `BeginTabItem(..., &open)`), a `WindowCloseButton` subclass, so it draws with
   the window close button's renderer, found up its parent types: the cross (icon kind 2)
@@ -2448,12 +2474,12 @@ set by its bare name and one with some of them as `Name.field` per missing field
 the shipped theme with `"strict": true` added):
 
 ```
-theme strict: 84 of 88 surfaces not set: ButtonDisabled, ButtonDown, ButtonOn, ...
+theme strict: 85 of 89 surfaces not set: ButtonDisabled, ButtonDown, ButtonOn, ...
 theme strict: 13 of 15 text colors not set: AxisTagText, ButtonDisabled, ButtonDown, ...
 ```
 
-(`theme strict: all 88 surfaces set` for a kind with no gaps, and a single
-`theme strict: all 88 surfaces and 15 text colors set` when there are none at all). A
+(`theme strict: all 89 surfaces set` for a kind with no gaps, and a single
+`theme strict: all 89 surfaces and 15 text colors set` when there are none at all). A
 rejected value counts as not set. A surface that is transparent at rest on purpose
 (`WindowButton`, `SelectableHover`: a transparent fill hides the slot) is magenta too
 until the theme sets it to `[0,0,0,0]`; the theme has not said what it looks like. The

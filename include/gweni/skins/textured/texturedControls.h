@@ -1244,6 +1244,11 @@ public:
 
     inline static const std::string_view name="TabButton";
 
+    //! How much shorter an unselected tab is drawn on the side away from the
+    //! page, and how far in at each end along the row.
+    static constexpr int UnselectedOuterInset=2;
+    static constexpr int UnselectedEndInset=1;
+
     static size_t Button;
     static BorderedPrimitive ButtonPrimitive;
 };
@@ -1258,6 +1263,7 @@ public:
 //    void generate(renderer::Base *renderer, controls::Base *baseControl) override;
     void update(renderer::Base *renderer, controls::Base *baseControl) override;
 //    void remove(renderer::Base *renderer, controls::Base *baseControl) override;
+    size_t requiredPrimitives() override { return 0; }
 
     inline static const std::string_view name="TabControl";
 

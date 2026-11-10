@@ -103,10 +103,16 @@ inline Surface Menu           { Color(0x1f,0x22,0x33), Bg,                    Li
 inline Surface MenuStrip      { Color(0x1f,0x22,0x33), Bg,                    BgHighlight, 0.0f, BorderW };
 inline Surface MenuHover      { SurfHi,                SurfHi,                Blue,  RadiusSm, BorderW };
 
-// Tabs
-inline Surface TabActive      { SurfHi,                Surf,                  Blue,  Radius, BorderW };
-inline Surface TabInactive    { Color(0x20,0x23,0x36), Bg,                    BgHighlight, Radius, BorderW };
-inline Surface TabControl     { Color(0x1d,0x20,0x31), Bg,                    BgHighlight, Radius, BorderW };
+// Tabs, drawn as a notebook's: the page frame (TabControl, painted by the
+// TabControlInner panel; the TabControl itself draws nothing, so the strip shows
+// its parent's background) is one flat fill, and the selected tab is that fill
+// with the frame's border, square and borderless on the page's side, so the two
+// are one outline. An unselected tab (TabInactive, hovered TabHover) is a darker
+// box drawn shorter, behind the frame's border line.
+inline Surface TabControl     { Color(0x1f,0x22,0x33), Color(0x1f,0x22,0x33), BgHighlight, Radius, BorderW };
+inline Surface TabActive      { Color(0x1f,0x22,0x33), Color(0x1f,0x22,0x33), BgHighlight, Radius, BorderW };
+inline Surface TabInactive    { Color(0x1b,0x1d,0x2a), Color(0x1b,0x1d,0x2a), BgHighlight, Radius, BorderW };
+inline Surface TabHover       { BgStorm,               BgStorm,               Line,        Radius, BorderW };
 
 // Category list (the left collapsible panel)
 inline Surface CategoryList   { BgDark,                BgDark,                BgHighlight, Radius, BorderW };
@@ -242,7 +248,7 @@ inline std::unordered_map<std::string, Surface*>& surfaceRegistry()
         {"ButtonOn",&ButtonOn},{"ButtonOnHover",&ButtonOnHover},{"ButtonOnDisabled",&ButtonOnDisabled},
         {"TextBox",&TextBox},{"TextBoxFocus",&TextBoxFocus},{"TextBoxDisabled",&TextBoxDisabled},{"TextSelection",&TextSelection},
         {"Menu",&Menu},{"MenuStrip",&MenuStrip},{"MenuHover",&MenuHover},
-        {"TabActive",&TabActive},{"TabInactive",&TabInactive},{"TabControl",&TabControl},
+        {"TabActive",&TabActive},{"TabInactive",&TabInactive},{"TabHover",&TabHover},{"TabControl",&TabControl},
         {"CategoryList",&CategoryList},{"CategoryInner",&CategoryInner},{"CategoryHeader",&CategoryHeader},
         {"ListItem",&ListItem},{"ListItemSel",&ListItemSel},{"ListItemHover",&ListItemHover},
         {"ScrollTrack",&ScrollTrack},{"ScrollThumb",&ScrollThumb},{"ScrollThumbHover",&ScrollThumbHover},{"ScrollThumbDown",&ScrollThumbDown},
@@ -311,6 +317,25 @@ inline void paintSurface(renderer::Base *render, size_t *ids, controls::Base *c,
 inline void paintSurface(renderer::Base *render, size_t *ids, controls::Base *c, const Surface &s)
 {
     paintSurface(render, ids, c, s, c->getRenderBounds());
+}
+
+// The rect painted with an edge mask (renderer::RoundedEdge): the corners it
+// names square, the sides it names without a border.
+inline void paintSurface(renderer::Base *render, size_t *ids, controls::Base *c, const Surface &s,
+    const Rect &rect, uint8_t edges)
+{
+    if(!ids)
+        return;
+
+    const bool visible=c->visible();
+
+    if(visible)
+        render->drawRoundedRect(ids[0], rect, s.radius, s.borderWidth,
+            s.top, s.bottom, s.border, c->getZIndex(), edges);
+
+    const unsigned int sc=c->getStateChange();
+    if((sc&controls::StateChange_Visibility) || (sc&controls::StateChange_Created))
+        render->showPrimitive(visible?4:0, ids[0]);
 }
 
 }//namespace tokyonight

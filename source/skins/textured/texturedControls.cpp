@@ -1962,12 +1962,53 @@ void TabButton::staticInit(TexturedSkin *skin)
     m_staticInit=true;
 }
 
+// A notebook tab (tokyoNight.h, "Tabs"). Every tab is square on the corners
+// facing the page and has no border on that side. The strip reaches into the
+// page by TabStrip::PageOverlap, so a tab's last row (column) on that side is the
+// page frame's border row: the selected tab draws its whole bounds there in the
+// frame's fill, over the frame, and opens into the page. An unselected tab is
+// drawn UnselectedOuterInset shorter on the outer side, PageOverlap short of the
+// page, so the frame's border runs on under it, and UnselectedEndInset in at
+// each end along the row, so a tab after the selected one (drawn over it: tabs
+// overlap by a unit and the later one is in front) leaves its border alone; only
+// its own state picks what it draws, so a selection writes the two tabs alone.
+// A disabled tab looks unselected and does not hover.
 void TabButton::update(renderer::Base *renderer, controls::Base *baseControl)
 {
     controls::TabButton *control=static_cast<controls::TabButton *>(baseControl);
+    controls::TabControl *tabControl=control->getTabControl();
+    const DockPosition side=tabControl?tabControl->getTabStrip()->getDock():DockPosition::Top;
+    const bool disabled=control->isDisabled();
+    const bool selected=control->isActive() && !disabled;
+    const tokyonight::Surface &surface=selected?tokyonight::TabActive
+        :(!disabled && control->isTabHovered())?tokyonight::TabHover:tokyonight::TabInactive;
+    const int outer=selected?0:UnselectedOuterInset;
+    const int inner=selected?0:controls::TabStrip::PageOverlap;
+    const int end=selected?0:UnselectedEndInset;
+    Rect rect=control->getRenderBounds();
+    uint8_t edges=0;
 
-    tokyonight::paintSurface(renderer, m_primitives.data(), baseControl,
-        control->isActive()?tokyonight::TabActive:tokyonight::TabInactive);
+    switch(side)
+    {
+    case DockPosition::Bottom:
+        edges=renderer::SquareTopLeft|renderer::SquareTopRight|renderer::NoBorderTop;
+        rect=Rect(rect.x+end, rect.y+inner, rect.w-2*end, rect.h-inner-outer);
+        break;
+    case DockPosition::Left:
+        edges=renderer::SquareTopRight|renderer::SquareBottomRight|renderer::NoBorderRight;
+        rect=Rect(rect.x+outer, rect.y+end, rect.w-outer-inner, rect.h-2*end);
+        break;
+    case DockPosition::Right:
+        edges=renderer::SquareTopLeft|renderer::SquareBottomLeft|renderer::NoBorderLeft;
+        rect=Rect(rect.x+inner, rect.y+end, rect.w-inner-outer, rect.h-2*end);
+        break;
+    default:
+        edges=renderer::SquareBottomLeft|renderer::SquareBottomRight|renderer::NoBorderBottom;
+        rect=Rect(rect.x+end, rect.y+outer, rect.w-2*end, rect.h-outer-inner);
+        break;
+    }
+
+    tokyonight::paintSurface(renderer, m_primitives.data(), baseControl, surface, rect, edges);
 }
 
 ///////////////////////////////////////////////////////////////////////////
@@ -1993,9 +2034,10 @@ void TabControl::staticInit(TexturedSkin *skin)
     m_staticInit=true;
 }
 
-void TabControl::update(renderer::Base *renderer, controls::Base *baseControl)
+// Draws nothing: the strip shows the parent's background, and the page frame
+// (TabControlInner) is the only frame (requiredPrimitives() is 0).
+void TabControl::update(renderer::Base * /*renderer*/, controls::Base * /*baseControl*/)
 {
-    tokyonight::paintSurface(renderer, m_primitives.data(), baseControl, tokyonight::TabControl);
 }
 
 ///////////////////////////////////////////////////////////////////////////
