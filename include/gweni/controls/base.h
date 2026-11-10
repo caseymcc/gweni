@@ -1363,18 +1363,31 @@ protected:
     //! (setBounds, onBoundsChanged): no preferred width reads bounds, so those
     //! leave m_hiddenWidthCurrent as it is.
     static bool s_boundsInvalidation;
-    //! The way out of a subtree walk (invalidateChildren(true)): a logical
-    //! parent outside the subtree that one of its controls has, invalidated
-    //! once when the walk ends, and whether a counted control had it.
-    struct WalkExit
+    //! The ways out of a subtree walk (invalidateChildren(true)): the logical
+    //! parents outside the subtree that its controls have, each invalidated
+    //! once when the walk ends, and whether a counted control had it. One
+    //! past the few kept is invalidated as it is found.
+    struct WalkExits
     {
-        Base *parent;
-        bool counted;
+        static const size_t Capacity=4;
+        struct Exit
+        {
+            Base *parent;
+            bool counted;
+        };
+        Exit exits[Capacity];
+        size_t count=0;
+        //! The walk's root itself, the usual exit: the logical parent of its
+        //! children (but an inner panel's), and whether a counted one had it.
+        Base *rootControl=nullptr;
+        bool root=false;
+        bool rootCounted=false;
+
+        void add(Base *parent, bool counted);
     };
     //! invalidateChildren(true)'s walk below this control, `depth` actual
-    //! levels under the walk's root; the exits it finds go into `exits`
-    //! (`exitCount` of `exitCapacity` used; one more is invalidated at once).
-    void invalidateSubtree(int depth, WalkExit *exits, size_t &exitCount, size_t exitCapacity);
+    //! levels under the walk's root.
+    void invalidateSubtree(int depth, WalkExits &exits);
     struct BoundsInvalidationScope
     {
         BoundsInvalidationScope(): m_outer(s_boundsInvalidation) { s_boundsInvalidation=true; }
