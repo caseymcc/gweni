@@ -50,9 +50,15 @@
 #                                               chunk of 16383 slots (per font
 #                                               atlas for text), so they follow
 #                                               the slot count, not the change
-#    primitive_slots_drawn,            no       the slots the primitive draws
-#      primitive_ranges                         cover, and their ranges, follow
-#                                               the shown slots, not the change
+#    primitive_slots_drawn,            only in  the slots the primitive draws
+#      primitive_ranges                PINNED   cover, and their ranges, follow
+#                                      scenes   the shown slots, not the change,
+#                                               so they grow with N wherever
+#                                               the shown part does; a PINNED
+#                                               scene's shown part is fixed,
+#                                               and there "grew" means any
+#                                               change (hidden-pages: N hidden
+#                                               controls, 40 shown)
 #    mirror_bytes, prim_ids, text_ids  no       sizes of the tree, not work
 #    *_us                              no       times
 #
@@ -79,6 +85,13 @@ endif()
 #       some-scene:visited     # issue #NN: <what grows>
 #   )
 set(EXCLUDED
+)
+
+# Counters checked in the named scenes only, "<scene>:<counter>", each failing on
+# any change from N=SMALL_N to N=LARGE_N (see the table above).
+set(PINNED
+    hidden-pages:primitive_slots_drawn
+    hidden-pages:primitive_ranges
 )
 
 # Keys that are not work counters (see the table above).
@@ -151,10 +164,20 @@ foreach(scene IN LISTS scenes)
             " ${large_frames} at N=${LARGE_N}")
     endif()
 
+    foreach(entry IN LISTS PINNED)
+        string(REGEX MATCH "^([^:]+):(.+)$" unused "${entry}")
+        if(CMAKE_MATCH_1 STREQUAL scene AND NOT CMAKE_MATCH_2 IN_LIST small_keys)
+            message(FATAL_ERROR "bench_scaling: PINNED ${entry}: its frame lines have no ${CMAKE_MATCH_2}=")
+        endif()
+    endforeach()
+
     set(scene_failures 0)
     set(grew_keys "")
     foreach(key IN LISTS small_keys)
-        if(key IN_LIST UNCHECKED OR key MATCHES "_us$")
+        set(pinned OFF)
+        if("${scene}:${key}" IN_LIST PINNED)
+            set(pinned ON)
+        elseif(key IN_LIST UNCHECKED OR key MATCHES "_us$")
             continue()
         endif()
         foreach(frame IN LISTS small_frames)
@@ -163,12 +186,17 @@ foreach(scene IN LISTS scenes)
             if(b STREQUAL "")
                 message(FATAL_ERROR "bench_scaling: ${scene}: frame ${frame} has no ${key}= at N=${LARGE_N}")
             endif()
-            if(b GREATER a)
+            if(b GREATER a OR (pinned AND NOT b EQUAL a))
                 if(NOT key IN_LIST grew_keys)
                     list(APPEND grew_keys ${key})
                 endif()
                 if(NOT "${scene}:${key}" IN_LIST EXCLUDED)
-                    message("GREW: ${scene} ${key} frame ${frame}: ${a} at N=${SMALL_N},"
+                    if(pinned)
+                        set(verb CHANGED)
+                    else()
+                        set(verb GREW)
+                    endif()
+                    message("${verb}: ${scene} ${key} frame ${frame}: ${a} at N=${SMALL_N},"
                         " ${b} at N=${LARGE_N}")
                     math(EXPR scene_failures "${scene_failures} + 1")
                     if(NOT "${scene}:${key}" IN_LIST failures)
@@ -194,6 +222,14 @@ foreach(scene IN LISTS scenes)
     endif()
 endforeach()
 
+# a pinned counter of a scene that is not local or not listed
+foreach(entry IN LISTS PINNED)
+    string(REGEX MATCH "^([^:]+):(.+)$" unused "${entry}")
+    if(NOT CMAKE_MATCH_1 IN_LIST scenes)
+        message(FATAL_ERROR "bench_scaling: PINNED ${entry}: ${CMAKE_MATCH_1} is not a scaling=local scene")
+    endif()
+endforeach()
+
 # an entry for a scene that is no longer local, or no longer listed, is stale too
 foreach(entry IN LISTS EXCLUDED)
     string(REGEX MATCH "^([^:]+):" unused "${entry}")
@@ -206,7 +242,7 @@ if(failures OR stale)
     set(why "")
     if(failures)
         string(REPLACE ";" ", " failure_list "${failures}")
-        string(APPEND why "\n  grew from N=${SMALL_N} to N=${LARGE_N}: ${failure_list}")
+        string(APPEND why "\n  grew (or, pinned, changed) from N=${SMALL_N} to N=${LARGE_N}: ${failure_list}")
     endif()
     if(stale)
         string(REPLACE ";" ", " stale_list "${stale}")

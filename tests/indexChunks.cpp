@@ -797,3 +797,138 @@ TEST_CASE("Index chunks: releasing the top slots draws the live extent, not the 
     CHECK(renderer->getFrameStats().primitiveSlotsDrawn == 0);
     delete renderer;
 }
+
+TEST_CASE("Index chunks: a hidden run inside a chunk whose last slot shows is left out of its draw")
+{
+    SlotRenderer *renderer=newOwnRenderer();
+    const size_t chunkSlots=SlotRenderer::kSlotsPerChunk;
+    constexpr size_t window=1000;
+
+    renderer->setIndexChunkSlots(chunkSlots);
+    REQUIRE(renderer->primitiveRangeGap() == 2);
+    REQUIRE(renderer->maxPrimitiveRanges() == 16);
+
+    // ids are process-wide, so some may be held elsewhere: take them until the
+    // last `window` are consecutive and inside one chunk; those alone are drawn,
+    // every other slot of this mirror staying style 0
+    std::vector<size_t> ids;
+    size_t first=0;
+
+    for(;;)
+    {
+        size_t id=0;
+
+        renderer->generatePrimitive(id);
+        ids.push_back(id);
+        if((ids.size() >= window) && (ids.back()-ids[ids.size()-window] == window-1)
+            && (ids[ids.size()-window]/chunkSlots == ids.back()/chunkSlots))
+        {
+            first=ids[ids.size()-window];
+            break;
+        }
+        REQUIRE(ids.size() < 4*chunkSlots);
+    }
+    std::sort(ids.begin(), ids.end());
+
+    const size_t mirrorSlots=mirrorSlotsFor(ids);
+    std::set<size_t> shown;
+
+    SlotRenderer::FrameStats stats=drawChecked(*renderer, [&](SlotRenderer &renderer)
+    {
+        for(size_t slot=first; slot<first+window; ++slot)
+        {
+            renderer.setDrawColor(pixelColor(slot));
+            renderer.drawFilledRect(slot, pixelRect(slot), 1);
+        }
+    }, mirrorSlots);
+    for(size_t slot=first; slot<first+window; ++slot)
+        shown.insert(slot);
+    CHECK(stats.drawCalls-stats.textDraws == 1);
+    CHECK(stats.primitiveRanges == 1);
+    CHECK(stats.primitiveSlotsDrawn == window);
+    CHECK(stats.primitiveRangeBuilds == 1);
+
+    // 200 slots hidden in the middle, the last one still shown: two ranges
+    // around them, where the draw up to the last shown slot drew all 1000
+    stats=drawChecked(*renderer, [&](SlotRenderer &renderer)
+    {
+        for(size_t slot=first+300; slot<first+500; ++slot)
+            renderer.hidePrimitive(slot);
+    }, mirrorSlots);
+    for(size_t slot=first+300; slot<first+500; ++slot)
+        shown.erase(slot);
+    CHECK(stats.drawCalls-stats.textDraws == 1);
+    CHECK(stats.primitiveRanges == 2);
+    CHECK(stats.primitiveSlotsDrawn == window-200);
+    checkDraws(stats, shown, chunkSlots);
+
+    // a gap of one slot (fewer than primitiveRangeGap()) is drawn with its runs
+    stats=drawChecked(*renderer, [&](SlotRenderer &renderer) { renderer.hidePrimitive(first+100); }, mirrorSlots);
+    shown.erase(first+100);
+    CHECK(stats.primitiveRanges == 2);
+    CHECK(stats.primitiveSlotsDrawn == window-200);
+    CHECK(stats.primitiveRangeBuilds == 1);
+    checkDraws(stats, shown, chunkSlots);
+
+    // 20 more gaps, of 2 to 21 slots, each followed by 5 shown: 22 runs, past
+    // maxPrimitiveRanges(), so the 6 smallest gaps (2..7) are drawn with their
+    // runs and 16 ranges are left, the gaps of 8..21 and the 200 not drawn
+    stats=drawChecked(*renderer, [&](SlotRenderer &renderer)
+    {
+        size_t slot=first+520;
+
+        for(size_t gap=2; gap<=21; ++gap)
+        {
+            for(size_t i=0; i<gap; ++i, ++slot)
+            {
+                renderer.hidePrimitive(slot);
+                shown.erase(slot);
+            }
+            slot+=5;
+        }
+        REQUIRE(slot == first+850);
+    }, mirrorSlots);
+    CHECK(stats.drawCalls-stats.textDraws == 1);
+    CHECK(stats.primitiveRanges == 16);
+    CHECK(stats.primitiveSlotsDrawn == window-200-(8+21)*14/2);
+    CHECK(stats.primitiveRangeBuilds == 1);
+    checkDraws(stats, shown, chunkSlots);
+
+    const SlotRenderer::FrameStats capped=stats;
+
+    // a settled frame builds no range list and draws the same
+    renderer->begin();
+    renderer->end();
+    CHECK(renderer->getFrameStats().uploadCalls == 0);
+    CHECK(renderer->getFrameStats().primitiveRangeBuilds == 0);
+    CHECK(renderer->getFrameStats().primitiveRanges == capped.primitiveRanges);
+    CHECK(renderer->getFrameStats().primitiveSlotsDrawn == capped.primitiveSlotsDrawn);
+
+    // nor does a frame that redraws a shown slot in another colour, which
+    // changes no slot's visibility
+    stats=drawChecked(*renderer, [&](SlotRenderer &renderer)
+    {
+        renderer.setDrawColor(Color(255, 255, 255, 255));
+        renderer.drawFilledRect(first+10, pixelRect(first+10), 1);
+    }, mirrorSlots);
+    CHECK(stats.primitiveSlotsWritten == 1);
+    CHECK(stats.primitiveRangeBuilds == 0);
+    CHECK(stats.primitiveRanges == capped.primitiveRanges);
+    CHECK(stats.primitiveSlotsDrawn == capped.primitiveSlotsDrawn);
+
+    // showing the merged one-slot gap again builds the chunk's ranges again,
+    // the same ones
+    stats=drawChecked(*renderer, [&](SlotRenderer &renderer) { renderer.showPrimitive(1, first+100); }, mirrorSlots);
+    shown.insert(first+100);
+    CHECK(stats.primitiveRangeBuilds == 1);
+    CHECK(stats.primitiveRanges == capped.primitiveRanges);
+    CHECK(stats.primitiveSlotsDrawn == capped.primitiveSlotsDrawn);
+    checkDraws(stats, shown, chunkSlots);
+
+    for(size_t id:ids)
+        renderer->releasePrimitive(id);
+    renderer->begin();
+    renderer->end();
+    CHECK(renderer->getFrameStats().primitiveSlotsDrawn == 0);
+    delete renderer;
+}

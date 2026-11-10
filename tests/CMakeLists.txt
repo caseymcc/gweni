@@ -693,10 +693,13 @@ if(EMSCRIPTEN)
         #   draws": OpenGLCore has no multi-draw on the web (no
         #   GL_EXT_multi_draw_arrays), so the loop is every text draw here and
         #   there is no multi-draw to compare it with.
+        # - "Primitive draws: a loop of glDrawElements draws what
+        #   glMultiDrawElements draws": the same for a primitive chunk's ranges.
         set(web_unittests_excluded
             "Text AA:*"
             "LCD text:*"
-            "Text draws: a loop of glDrawElements draws what glMultiDrawElements draws")
+            "Text draws: a loop of glDrawElements draws what glMultiDrawElements draws"
+            "Primitive draws: a loop of glDrawElements draws what glMultiDrawElements draws")
         string(REPLACE ";" "," web_unittests_excluded "${web_unittests_excluded}")
         add_test(NAME web_unittests
             COMMAND ${web_runner} --timeout 900 $<TARGET_FILE:gweni_unittests>
