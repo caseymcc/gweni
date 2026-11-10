@@ -953,7 +953,11 @@ void Base::invalidateChildren(bool recursive)
             child->invalidateChildren(recursive);
     }
 
-    if(m_innerPanel)
+    // The children it hands out (getChildren()) are the inner panel's. A
+    // recursive walk has already been through them when the panel is one of
+    // its own children, as every inner panel is today; walking them again
+    // doubled the walk at each level of nested panels.
+    if(m_innerPanel && !(recursive && m_innerPanel->m_actualParent == this))
     {
         for(auto &&innerchild : m_innerPanel->getChildren())
         {

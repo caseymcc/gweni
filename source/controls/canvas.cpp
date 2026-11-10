@@ -215,12 +215,6 @@ void Canvas::render(skin::Base * /*render*/)
 {
 }
 
-void Canvas::onBoundsChanged(Rect oldBounds)
-{
-    ParentClass::onBoundsChanged(oldBounds);
-    invalidateChildren(true);
-}
-
 void Canvas::doThink()
 {
     m_layoutStats=LayoutStats();

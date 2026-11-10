@@ -21,8 +21,8 @@
  *    goes up by one entry per control plus, for each entry, its own walk up
  *    to the canvas (Base::invalidate()'s invalidateParent()). On main it is
  *    more: an inner panel's subtree is walked twice, once from the panel and
- *    once from its owner, which compounds per level (should_fail until the
- *    double walk is gone, #519);
+ *    once from its owner, which compounded per level: 528 600 calls for
+ *    the canvas's 304 controls, 2 404 entered once (#519);
  *  - its upward work is done once, for the walk's root, not by every entry:
  *    invalidateCalls() goes up by the subtree's size plus the controls on
  *    the way up from the root's children's logical parent (the root, or for
@@ -331,8 +331,7 @@ TEST_CASE("Subtree invalidation: the walk leaves each control's layout state as 
     }
 }
 
-TEST_CASE("Subtree invalidation: one walk enters each control of the subtree once"
-    * doctest::should_fail())
+TEST_CASE("Subtree invalidation: one walk enters each control of the subtree once")
 {
     for(const Walk &walk : Walks)
     {

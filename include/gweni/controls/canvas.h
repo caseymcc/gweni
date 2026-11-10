@@ -212,8 +212,6 @@ public:
         return m_scale;
     }
 
-    void onBoundsChanged(gweni::Rect oldBounds) override;
-
     /// Delete all children (this is done called in the destructor too)
     virtual void releaseChildren();
     /// releaseChildren() is deleting the tree, front to back: a control being
