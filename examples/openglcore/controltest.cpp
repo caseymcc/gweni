@@ -4957,17 +4957,48 @@ static void renderInspectedFrame(Session &s, gweni::controls::Base *root,
     size_t &pending, size_t &pendingUnderRoot);
 static void checkSteady(Session &s, InteractionChecks &checks, const std::string &name);
 
-// PropertiesDemo: the first PropertyRow's look follows its subtree. Hovering
-// its value's TextBox changes the row's pixels (the column fill, the lines and
-// the label's colour) and none outside it, in a frame whose changes are all in
-// the row; moving onto its label changes nothing and marks nothing on the
-// row; moving off gives the rest look back; a click on the value (its editor
+// PropertiesDemo: the top Properties is its rows' height (its preferred one)
+// and the PropertyTree runs from one layout spacing below it to the demo's
+// bottom, so the spare height is all inside the tree. The first PropertyRow's
+// look follows its subtree. Hovering its value's TextBox changes the row's
+// pixels (the column fill, the lines and the label's colour) and none outside
+// it, in a frame whose changes are all in the row; moving onto its label
+// changes nothing and marks nothing on the row; moving off (onto the tree's
+// empty area) gives the rest look back; a click on the value (its editor
 // focused) shows the Editing look, unlike the hover's, with the mouse off, and
 // the focus dropped gives the rest look back.
 static void checkPropertyRow(Session &s, const std::string &shotDir, InteractionChecks &checks, bool &ok)
 {
     gweni::controls::Base *demo=addControl(s, "PropertiesDemo");
     renderFrames(s, s.frames);
+
+    // the layout's spare height is the tree's alone (#516): the Properties is
+    // its rows' height and the tree runs from one spacing below it to the
+    // demo's bottom
+    gweni::controls::Base *props=findControl(demo, "Properties");
+    gweni::controls::Base *tree=findControl(demo, "PropertyTree");
+    gweni::controls::LayoutItem *layout=demo->getLayout();
+    if(!props || !tree || !layout || props->getParent() != demo || tree->getParent() != demo)
+    {
+        checks.check("property_layout_found", false,
+            "PropertiesDemo has no layout with a Properties and a PropertyTree as its children");
+    }
+    else
+    {
+        const gweni::Rect &p=props->getBounds();
+        const gweni::Rect &t=tree->getBounds();
+        const std::string bounds="Properties ("+std::to_string(p.x)+", "+std::to_string(p.y)+", "
+            +std::to_string(p.w)+", "+std::to_string(p.h)+") pref height "
+            +std::to_string(props->getPreferredSize().height)+", PropertyTree ("+std::to_string(t.x)+", "
+            +std::to_string(t.y)+", "+std::to_string(t.w)+", "+std::to_string(t.h)+"), demo height "
+            +std::to_string(demo->getHeight())+", spacing "+std::to_string(layout->getSpacing());
+        checks.check("property_layout_rows_height", p.h == props->getPreferredSize().height,
+            "the top Properties is not its rows' height: "+bounds);
+        checks.check("property_layout_tree_top", t.y == p.y+p.h+layout->getSpacing(),
+            "the PropertyTree does not start one spacing below the Properties: "+bounds);
+        checks.check("property_layout_tree_bottom", t.y+t.h == demo->getHeight(),
+            "the PropertyTree does not reach the demo's bottom: "+bounds);
+    }
 
     auto *row=gweni::gweni_cast<gweni::controls::PropertyRow>(findControl(demo, "PropertyRow"));
     gweni::controls::Base *value=row?findControl(row, "TextBox"):nullptr;
@@ -4980,7 +5011,7 @@ static void checkPropertyRow(Session &s, const std::string &shotDir, Interaction
 
     const gweni::Point onValue=centreOf(value);
     const gweni::Point onLabel=centreOf(row->getLabel());
-    const gweni::Point off(s.size.x-1, s.size.y-1);    // PropertiesDemo, no row
+    const gweni::Point off(s.size.x-1, s.size.y-1);    // the tree's empty area, no row
 
     moveMouse(s, off.x, off.y);
     const std::vector<uint8_t> idle=settledRegion(s, row, shotDir, "property-row-idle", ok);
