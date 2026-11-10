@@ -35,7 +35,9 @@
  *  controls with an image, which shows or hides), and give the frame before
  *  back when undone; a settled frame writes nothing. A click toggles a
  *  checkable item in a MenuStrip's menu and in a context menu, closing it, and
- *  reopening shows the new state; a click on a plain item checks nothing.
+ *  reopening shows the new state, the strip's menu at the place it first
+ *  opened at (opened before any frame, #517); a click on a plain item checks
+ *  nothing.
  *  Opening and closing a menu holding a checked item leaves the live ids as
  *  they were, and deleting it gives every id back.
  */
@@ -1151,12 +1153,19 @@ TEST_CASE("Menu rows: a click toggles a checkable item in a MenuStrip's menu and
         view->openMenu();
         scene.moveAway();
         Frame open=scene.settle();
-        // (where the menu opens can differ between openings: its corners are
-        // taken from where it is each time)
         auto corners=[&](Menu *m) { return backdropOf(m, tokyonight::Menu.radius, scale, MenuFill).corners; };
+        // the menu opens at one place every time (placed from its item, #517)
+        const gweni::Rect placed=canvasRect(view->getMenu());
+        const auto viewCorners=corners(view->getMenu());
+        auto samePlace=[&]()
+        {
+            const gweni::Rect now=canvasRect(view->getMenu());
 
-        checkColumnChecked(open, wrap, scale, MenuFill, corners(view->getMenu()));
-        checkColumnEmpty(open, save, scale, MenuFill, corners(view->getMenu()));
+            return now.x == placed.x && now.y == placed.y && now.w == placed.w && now.h == placed.h;
+        };
+
+        checkColumnChecked(open, wrap, scale, MenuFill, viewCorners);
+        checkColumnEmpty(open, save, scale, MenuFill, viewCorners);
 
         // a plain item: selected, the menu closed, nothing checked
         click(scene, canvasRect(save), 0, clock);
@@ -1167,8 +1176,9 @@ TEST_CASE("Menu rows: a click toggles a checkable item in a MenuStrip's menu and
         scene.moveAway();
         Frame reopened=scene.settle();
 
-        checkColumnEmpty(reopened, save, scale, MenuFill, corners(view->getMenu()));
-        checkColumnChecked(reopened, wrap, scale, MenuFill, corners(view->getMenu()));
+        CHECK(samePlace());
+        checkColumnEmpty(reopened, save, scale, MenuFill, viewCorners);
+        checkColumnChecked(reopened, wrap, scale, MenuFill, viewCorners);
 
         // the checkable one: unchecked, the menu closed; reopened without its check
         click(scene, canvasRect(wrap), 0, clock);
@@ -1179,7 +1189,8 @@ TEST_CASE("Menu rows: a click toggles a checkable item in a MenuStrip's menu and
         scene.moveAway();
         Frame unchecked=scene.settle();
 
-        checkColumnEmpty(unchecked, wrap, scale, MenuFill, corners(view->getMenu()));
+        CHECK(samePlace());
+        checkColumnEmpty(unchecked, wrap, scale, MenuFill, viewCorners);
         scene.canvas->closeMenus();
         scene.settle();
 
