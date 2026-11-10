@@ -240,9 +240,10 @@ private:
 //! the others leave of the body's width, at least its own width; the stretch is
 //! the last column's so that a column's new width moves only it and the columns
 //! after it, while the columns fit the body (once they overflow it, every row
-//! is as wide as the columns, so a new width changes every row's bounds and
-//! marks its whole subtree). Dragging a header cell's right edge (its grip)
-//! resizes the column from the width it is laid out at, so the stretched last
+//! is as wide as the columns, so a new width changes every row's size, which
+//! marks the row alone, not the cells before the column). Dragging a header
+//! cell's right edge (its grip) resizes the column from the width it is laid
+//! out at, so the stretched last
 //! column's edge follows the mouse (dragged left, the column still fills the
 //! body, at the narrower width it then asks for). A click elsewhere on the
 //! cell sorts by it, ascending first and then
