@@ -26,6 +26,9 @@ GWENI_CONTROL_CONSTRUCTOR(PropertiesDemo)
     }
     {
         controls::PropertyTree *ptree=newChild<controls::PropertyTree>();
+        // the tree takes the layout's spare height (and any shortfall), the
+        // Properties above it keeps its rows' height
+        ptree->setSizeFlags({SizeFlag::Expand, SizeFlag::Bloat});
         {
             controls::Properties *props=ptree->add("Item One");
             props->add("Middle Name");
