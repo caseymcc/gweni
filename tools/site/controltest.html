@@ -11,7 +11,16 @@
   ButtonDemo --scale 2" and every control has a link of its own. The picker's
   entries are ControlTest --list, written in at build time where the
   gweni:controls comment is; choosing one loads the page again with that
-  control, every other parameter (scale) kept.
+  control, every other parameter (scale, depth-view) kept.
+
+  The "Depth view" checkbox opens and closes ControlTest's depth view
+  (gweni::tools::DepthView) live, through its gweni_web_depth_view(on) export,
+  and keeps depth-view in the URL as it is. It starts as ?depth-view says
+  (--depth-view, which opens the view after the first frame; depth-view=off
+  leaves it closed) and follows the view however it opens or closes (F9,
+  Escape in the view), which ControlTest tells the page through
+  Module.gweniDepthViewChanged. Before the window has drawn a frame a change
+  loads the page again with the new parameter.
 -->
 <html lang="en">
 <head>
@@ -28,6 +37,7 @@
 <select id="control">
 <!-- gweni:controls -->
 </select>
+<label><input type="checkbox" id="depth-view"> Depth view</label>
 <nav>
 <a href="demo.html">Demo</a>
 <a href="https://github.com/caseymcc/gweni">GitHub</a>
@@ -38,9 +48,12 @@
 </div>
 <pre id="output"></pre>
 <script>
+var Module = {};
 (function()
 {
     var picker = document.getElementById('control');
+    var depth = document.getElementById('depth-view');
+    var canvas = document.getElementById('canvas');
     var params = new URLSearchParams(location.search);
     // ControlTest's own default when the query names none
     picker.value = params.get('control') || 'ButtonDemo';
@@ -49,6 +62,37 @@
         params.set('control', picker.value);
         location.search = params.toString();
     });
+
+    // a bare depth-view (or =on) is --depth-view, depth-view=off --depth-view off
+    depth.checked = params.has('depth-view') && params.get('depth-view') !== 'off';
+    // the URL says what the view is, so a reload (the picker's) keeps it
+    function keepInUrl(open)
+    {
+        if(open)
+            params.set('depth-view', '');
+        else
+            params.delete('depth-view');
+        history.replaceState(null, '', '?' + params.toString().replace(/=(&|$)/g, '$1'));
+    }
+    depth.addEventListener('change', function()
+    {
+        keepInUrl(depth.checked);
+        if(!(window.gweniRun && gweniRun.frames > 0))
+        {
+            location.reload();
+            return;
+        }
+        var state = Module.ccall('gweni_web_depth_view', 'string', ['number'], [depth.checked ? 1 : 0]);
+        depth.checked = state === 'view=open';
+        keepInUrl(depth.checked);
+        // the view's keys (Escape, the camera's) go to the canvas
+        canvas.focus();
+    });
+    Module.gweniDepthViewChanged = function(open)
+    {
+        depth.checked = open;
+        keepInUrl(open);
+    };
 })();
 </script>
 <script async src="ControlTest.js"></script>

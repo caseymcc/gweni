@@ -115,6 +115,34 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *gweni_web_stats_overlay()
     }
     return state.c_str();
 }
+
+//! The same for the depth view and the shell's Depth button, after opening the
+//! view (\p on 1) or closing it (0); any other value leaves it as it is:
+//! "view=open button=on rect=x,y,w,h".
+extern "C" EMSCRIPTEN_KEEPALIVE const char *gweni_web_depth_view(int on)
+{
+    using gweni::tools::DepthView;
+
+    static std::string state;
+
+    state.clear();
+    if(g_canvas && g_demo && g_demo->depthButton())
+    {
+        if(on == 1 && !DepthView::find(g_canvas))
+            DepthView::open(g_canvas);
+        else if(on == 0 && DepthView::find(g_canvas))
+            DepthView::close(g_canvas);
+
+        gweni::controls::Button *button=g_demo->depthButton();
+        const gweni::Point at=button->localPosToCanvas();
+
+        state=std::string("view=")+(DepthView::find(g_canvas)?"open":"closed")
+            +" button="+(button->getToggleState()?"on":"off")
+            +" rect="+std::to_string(at.x)+","+std::to_string(at.y)+","
+            +std::to_string(button->getWidth())+","+std::to_string(button->getHeight());
+    }
+    return state.c_str();
+}
 #endif//GWENI_EXAMPLE_WEBGL
 
 static void key_callback(GLFWwindow* window, int key, int scancode, int action, int mods)

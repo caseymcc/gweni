@@ -20,6 +20,7 @@ header { display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
 header .name { font-weight: 600; color: #c0caf5; text-decoration: none; }
 header nav { display: flex; gap: 16px; margin-left: auto; }
 header label { color: #a9b1d6; }
+header input[type=checkbox] { accent-color: #7aa2f7; vertical-align: middle; margin: 0 4px 0 0; }
 select { background: #24283b; color: #c0caf5; border: 1px solid #414868; border-radius: 4px;
          padding: 3px 6px; font: inherit; }
 

@@ -9195,6 +9195,43 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *gweni_web_focused_text()
     focusedText(text);
     return text.c_str();
 }
+
+//! Opens the window canvas's depth view (\p on 1) or closes it (0); any other
+//! value leaves it as it is. Returns "view=open" or "view=closed", after. The
+//! gallery page's "Depth view" checkbox calls it (tools/site/controltest.html).
+extern "C" EMSCRIPTEN_KEEPALIVE const char *gweni_web_depth_view(int on)
+{
+    using gweni::tools::DepthView;
+
+    static std::string state;
+
+    if(g_canvas)
+    {
+        if(on == 1 && !DepthView::find(g_canvas))
+            DepthView::open(g_canvas);
+        else if(on == 0 && DepthView::find(g_canvas))
+            DepthView::close(g_canvas);
+    }
+    state=std::string("view=")+(g_canvas && DepthView::find(g_canvas) ? "open" : "closed");
+    return state.c_str();
+}
+
+//! Tells the page when the window canvas's depth view opens or closes, however
+//! (F9, Escape, --depth-view, gweni_web_depth_view), by calling
+//! Module.gweniDepthViewChanged(open) if the page set one, so its checkbox
+//! follows the view.
+struct WebDepthViewNotice: public gweni::event::Handler
+{
+    void onOpenChanged(gweni::event::Info info)
+    {
+        if(info.control != g_canvas)
+            return;
+        EM_ASM({
+            if(Module['gweniDepthViewChanged'])
+                Module['gweniDepthViewChanged']($0 != 0);
+        }, (int)info.integer);
+    }
+};
 #endif//GWENI_EXAMPLE_WEBGL
 
 //-----------------------------------------------------------------------------
@@ -9994,6 +10031,9 @@ int main(int argc, char *argv[])
         control->setDock(gweni::DockPosition::Center);
 #if GWENI_EXAMPLE_WEBGL
         g_windowLabel=which;
+        // never deleted: the window loop does not return in the browser
+        gweni::tools::DepthView::onOpenChangedCaller.add(new WebDepthViewNotice,
+            &WebDepthViewNotice::onOpenChanged);
 #endif
 
         // --window-test takes no input: the X pointer is wherever the server
