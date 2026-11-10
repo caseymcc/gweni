@@ -24,14 +24,15 @@ namespace tools
 //! canvas's frames cost (docs/architecture.md, "The stats overlay"):
 //! - fps, over the last second of the canvas's clock;
 //! - each phase's time on platform::profileTimeMicros(), min/avg/max in ms
-//!   over the frames since the last refresh: the frame (one updateCanvas() to
-//!   the next), cpu (update + render + flush), update, render without the
-//!   flush, and the flush (CanvasFrameStats::times);
+//!   (the "time (ms)" corner) over the frames since the last refresh: the
+//!   interval (one updateCanvas() to the next), cpu (update + render + flush),
+//!   update, render without the flush, and the flush (CanvasFrameStats::times);
 //! - the tree: the app's controls (the tools' subtrees left out), and its live
 //!   primitive and text ids;
 //! - the most one frame since the last refresh did: controls rendered and
 //!   changed, layout passes and entries, z visited, animations run, the app's
-//!   primitive and glyph slots written, upload bytes and draw calls;
+//!   primitive and glyph slots written, upload bytes (with their unit,
+//!   bytes()) and draw calls;
 //! - two plots of the last PlotSamples refreshes: the most cpu time one frame
 //!   of each took, and the most slots (primitive and glyph) one frame wrote.
 //!
@@ -48,9 +49,15 @@ namespace tools
 //! renderer's (OwnSlots). The times cannot be split per control: they include
 //! its own refreshes, and the draw calls include its own draws.
 //!
-//! It takes no input: a hit test passes through it and its children
-//! (getControlAt() finds nothing, and counts no visit), so the app under it
-//! keeps its hover and clicks. It places itself (Placement::Owner) Inset units
+//! Only its name cells take the mouse, for their tooltips: each row and
+//! column name (nameCells()) has one saying what it shows, and getControlAt()
+//! finds the name cell under the point over the cells' fixed rects, counting
+//! no visit. Everywhere else (the values, the plots, the gaps, the
+//! background) a hit test passes through it, so the app under it keeps its
+//! hover and clicks; a click on a name does nothing. The canvas shows a
+//! name's tooltip in its ToolTip box, excluded from the counts as a tool's
+//! (Canvas, "Tooltip"), and the box's slots are taken out as its own while it
+//! holds one of them (ownIds()). It places itself (Placement::Owner) Inset units
 //! in from its parent's bottom-right corner on every layout pass; open() makes
 //! it on the canvas, as a canvas overlay (Canvas::addOverlay), numbered above
 //! the app. Made as any other control's child (a demo page's), it is that

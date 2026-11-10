@@ -300,6 +300,14 @@ preview, which re-rendered the dragged control after the walk at the mouse offse
 deleted rather than moved here: the only drag that set it hid that control first, so it
 never drew anything.
 
+**A tool's tooltip is the tool's work.** While the box shows the tooltip of a control in
+a `setExcludedFromStats()` subtree (a stats overlay's name cell), the box is flagged
+too, from before the show changes it, through its hide, to the next show for a control
+that is not, so a tool's tooltip counts in none of the frame's counters and an app's
+counts as always; `Canvas::toolTipShownForId()` names the control the box last showed a
+tooltip for, for the tool to take the box's slots out ("The stats overlay" → "Only its
+names take the mouse").
+
 #### The popup: a panel next to an anchor, one per canvas
 
 `controls::Popup` (`include/gweni/controls/popup.h`) is imgui's `BeginPopup`: a panel of
@@ -2598,18 +2606,23 @@ that a frame costs what changed can be watched holding: hover a row and `rendere
 no key, the examples bind F10 and take `--stats-overlay [on|off]`), and the hosted
 `demo.html` opens it by default.
 
-**What it shows.** Rows of Labels, each value in a fixed-width right-aligned cell:
-- a time table, min, avg and max in ms to one decimal, of `frame` (one `updateCanvas()`
-  start to the next), `cpu` (update + render, the flush included), `update`, `render`
-  without the flush and `flush`;
+**What it shows.** Rows of Labels, each value in a fixed-width right-aligned cell, each
+row and column name with a tooltip saying what it shows:
+- a time table under a `time (ms)` corner (drawn in the normal text colour, the column
+  and row names dim), min, avg and max in ms to one decimal, of `interval` (one
+  `updateCanvas()` start to the next), `cpu` (update + render, the flush included),
+  `update`, `render` without the flush and `flush`;
 - `fps`, the frames of the last second of the canvas's clock, and `controls`, the app's
   controls on the canvas (the tools' excluded subtrees left out);
 - `prim ids` and `text ids`, the live primitive and text ids less the overlay's own;
 - under "most in one frame", the largest value one frame of the window had of `rendered`
   (`ChangeStats::visited`) and `changed`, layout `passes` and `entered`
   (`LayoutStats::visited`), `z visited`, `anims` run, the app's `prim slots` and
-  `glyphs` written, `upload B` and `draws` (`renderer::FrameCounts::drawCalls`); the
-  slot and upload rows read `-` with a renderer that does not count them;
+  `glyphs` written, `upload` and `draws` (`renderer::FrameCounts::drawCalls`); the
+  upload value carries its unit (`StatsOverlay::bytes()`: bytes below 1000, then kB, MB,
+  ... of 1000 with one decimal below 10, truncated as the counts are, so `512B`, `1.2kB`,
+  `12kB`, `1.0MB`, never more than 5 characters); the slot and upload rows read `-` with
+  a renderer that does not count them;
 - two `PlotLines` of the last 60 refreshes (15 s): `cpu ms`, the most cpu time one frame
   of each refresh window took, and `slots / frame`, the most primitive and glyph slots
   one frame of it wrote. A point is its window's **max**, so a one-frame spike shows.
@@ -2644,7 +2657,7 @@ work: the panel is `Base::setExcludedFromStats()`, so none of its controls, layo
 entries, z entries, measures or its animation count in the canvas's counters
 (`animsRun` included), and its own slots are taken out of the renderer's
 `writtenPrimitiveIds()`/`writtenTextIds()` (`tools::OwnSlots`, also the Inspector's), so
-`prim slots` and `glyphs` are the app's; uploads cannot be split by id, so `upload B` is
+`prim slots` and `glyphs` are the app's; uploads cannot be split by id, so `upload` is
 the frame's whole uploads in a frame where the app wrote and 0 in one where only the
 overlay did. Three things cannot be split per control and include the overlay: the
 **times** (its gathering every frame and its refreshes every 250 ms are in `update`,
@@ -2654,10 +2667,44 @@ keys that are whole-frame renderer counts (`prim_slots_written`, `upload_bytes`,
 `--stats-overlay` to those without it, all but those renderer keys and
 `excluded_changed`.
 
-**It takes no input.** `StatsOverlay::getControlAt()` returns null, so a hit test passes
-through the panel and its children as if they were not there, counting no visit: the app
-under it keeps its hover and clicks, and the plots' hover tooltip never fires. It is
-owner-placed (`Placement::Owner`) and places itself `Inset` (8) units in from its
+**Only its names take the mouse.** Each of the 24 name cells (the corner, `min`/`avg`/
+`max`, the five time rows, "most in one frame" and the 14 counter names;
+`StatsOverlay::nameCells()`) has a tooltip and takes the mouse, for it; the value cells,
+the plots, the gaps and the panel take none. `StatsOverlay::getControlAt()` finds the
+visible name cell under the point over the cells' fixed rects and returns null anywhere
+else, counting no hit-test visit either way, so a hit test there passes through the
+panel as if it were not there: the app under a value or a plot keeps its hover and
+clicks (and the plots' own hover tooltip never fires). A click on a name does nothing
+but what a click on empty canvas does (it closes the open menus and the shown popup,
+and takes the keyboard focus away).
+
+A name's tooltip is the canvas's, shown in its one `ToolTip` box like any other, and it
+is the overlay's work, not the app's: the rule is the canvas's and general. While the
+control the box shows a tooltip for is `statsExcluded()`, the box is
+`setExcludedFromStats()` too: `Canvas::showToolTipFor` sets the flag from the owner
+before it fills the box in, the flag stays through the hide, and the next show for an
+app control clears it, so the frames that show, change and hide a tool's tooltip count
+nothing of it and an app's tooltip after it counts as always (straight from a name to
+the shell's Stats button, the box is the app's in that frame). A box made for a tool's
+tooltip (the first tooltip of the canvas) is flagged before it is attached, and the
+canvas's own share of attaching it (`onChildAdded`'s invalidate and the z mark of the
+canvas's changed children) is made inside a `controls::ExcludedFromStatsScope`, which
+counts the invalidations and z marks made while it is open as a flagged subtree's;
+without it the first show counted one layout pass entering the canvas and one z entry.
+`Canvas::toolTipShownForId()` keeps the control id of the control the box last showed a
+tooltip for, through the hide, and while that is one of its name cells the overlay takes
+the box's ids for its own (`ownIds()`, and `OwnSlots` over them), so its `prim slots`,
+`glyphs`, `prim ids` and `text ids` leave the box out. A `setExcludedFromStats()` change
+on a control on a canvas raises `Canvas::treeSerial()`, so the overlay's `controls`
+count follows the box out of and back into the app. Over a settled app the refresh after
+a name's tooltip shows reads 0 rendered, changed, slots, passes and z. The box is the
+canvas's last child, after its overlays, so it is numbered and drawn above the panel; it
+goes below the name, over the panel, where there is room, and flips above it near the
+canvas's bottom (`ToolTip::placement`). It stays the canvas's after the overlay closes:
+an overlay opened later is kept before it, which moves its z, so that frame writes the
+hidden box's glyphs again.
+
+The panel is owner-placed (`Placement::Owner`) and places itself `Inset` (8) units in from its
 parent's bottom-right corner in its own arrange, one axis at a time as a `Popup` does
 next to its anchor, so it follows a resize and a scale change. `open()` makes it on the
 canvas as a canvas overlay (`Canvas::addOverlay`), numbered above the app; made as any
