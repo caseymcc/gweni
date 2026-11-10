@@ -1433,6 +1433,8 @@ static bool resizeSession(Session &s, int width, int height)
 
     s.renderer->setViewRect(gweni::Rect(gweni::Point(0, 0), s.pixels));
     s.canvas->setSize(width, height);
+    // the depth view's camera is built from the view (as in fitCanvasToWindow)
+    gweni::tools::DepthView::viewChanged(s.canvas);
     return true;
 }
 
@@ -1448,6 +1450,7 @@ static bool rescaleSession(Session &s, float scale)
 
     s.renderer->setViewRect(gweni::Rect(gweni::Point(0, 0), s.pixels));
     s.canvas->setScale(scale);
+    gweni::tools::DepthView::viewChanged(s.canvas);
     return true;
 }
 
