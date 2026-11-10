@@ -508,8 +508,12 @@ public:
     //! A primitive chunk's ranges: a gap of fewer than kPrimitiveRangeGap hidden
     //! slots between two runs of slots that can show is drawn with them, and a
     //! chunk draws at most kMaxPrimitiveRanges ranges, the smallest gaps (the
-    //! leftmost of equal ones) merged past that.
-    static constexpr size_t kPrimitiveRangeGap=8;
+    //! leftmost of equal ones) merged past that. Measured with gweni_bench's
+    //! hidden-gaps scene (docs/architecture.md, "Only the slots that can show are
+    //! drawn"): merging a gap of 1 is a gain for the glDrawElements loop
+    //! and costs nothing with multi-draw, one of 2 or more a loss for both, so
+    //! only 1-slot gaps are merged; the cap bounds a chunk's loop (the web's) to 16 draws.
+    static constexpr size_t kPrimitiveRangeGap=2;
     static constexpr size_t kMaxPrimitiveRanges=16;
     size_t primitiveRangeGap() const { return m_primitiveRangeGap; }
     size_t maxPrimitiveRanges() const { return m_maxPrimitiveRanges; }
