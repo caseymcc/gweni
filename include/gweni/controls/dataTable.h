@@ -243,10 +243,9 @@ private:
 //! is as wide as the columns, so a new width changes every row's size, which
 //! marks the row alone, not the cells before the column). Dragging a header
 //! cell's right edge (its grip) resizes the column from the width it is laid
-//! out at, so the stretched last
-//! column's edge follows the mouse (dragged left, the column still fills the
-//! body, at the narrower width it then asks for). A click elsewhere on the
-//! cell sorts by it, ascending first and then
+//! out at, so the stretched last column's edge follows the mouse (dragged
+//! left, the column still fills the body, at the narrower width it then asks
+//! for). A click elsewhere on the cell sorts by it, ascending first and then
 //! alternating, shows its chevron and fires onSortChanged. The table does not
 //! sort: the app orders its records and shows them, by setting the rows' cells
 //! again or by putting the rows in the new order (setRowOrder).
