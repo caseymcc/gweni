@@ -314,6 +314,14 @@
  *                   nothing, with the tab list closed and open; the list
  *                   button opens one row per tab, and choosing the tenth
  *                   selects it, closes the list and shows the whole tab.
+ *                   TabControlDemo, its last TabControl: hovering an
+ *                   unselected tab writes its one primitive slot and its own
+ *                   glyphs alone, changing no pixel outside it, and moving off
+ *                   gives the frame back; a click on it selects it, every
+ *                   frame until settled writing no slot outside the two tabs
+ *                   and their pages, never the page frame's, and changing no
+ *                   pixel outside the TabControl; selecting the first again
+ *                   gives the frame back.
  *                   PropertiesDemo: the top Properties is its rows'
  *                   height and the PropertyTree runs from one layout
  *                   spacing below it to the demo's bottom; hovering the
@@ -4956,6 +4964,152 @@ static void checkTabOverflow(Session &s, const std::string &shotDir, Interaction
         " and show the whole tab"));
 }
 
+// TabControlDemo: the tabs of its last TabControl ("You", "Can", ...), drawn
+// as a notebook's (#540). The first TabControl's preferred height follows its
+// shown page (its "Controls" page holds the radio buttons, the others nothing),
+// so selecting there lays the demo out again and moves the last one; the last
+// one's pages are all empty and nothing comes after it, so a selection there
+// changes nothing else. Hovering "Can", an unselected tab, writes its one
+// primitive slot and glyphs of its own alone, changes no pixel outside it, and
+// moving off gives the frame before back. A click on it selects it: no frame from the click until settled
+// writes a primitive or glyph slot outside the two tabs' and the two pages'
+// subtrees (the old page's controls are hidden, the new one's shown), the page
+// frame's (TabControlInner's) slot is never written, and no pixel outside the
+// TabControl changes. Selecting the first tab again gives the frame before back.
+static void checkTabControlSelect(Session &s, const std::string &shotDir, InteractionChecks &checks,
+    bool &ok)
+{
+    gweni::controls::Base *demo=addControl(s, "TabControlDemo");
+    renderFrames(s, s.frames);
+
+    gweni::controls::TabControl *control=nullptr;
+    for(gweni::controls::Base *child : demo->getChildren())
+    {
+        if(auto *tabs=gweni::gweni_cast<gweni::controls::TabControl>(child))
+            control=tabs;
+    }
+    if(!control || control->tabCount() < 2 || control->getCurrentButton() != control->getTab(0)
+       || !control->getTab(0)->getPage() || !control->getTab(1)->getPage()
+       || static_cast<const gweni::controls::TabControl *>(control)->getInnerPanel()->getSkinControl()
+            ->getPrimitives().size() != 1
+       || control->getTab(0)->getSkinControl()->getPrimitives().size() != 1
+       || control->getTab(1)->getSkinControl()->getPrimitives().size() != 1)
+    {
+        checks.check("tab_select_found", false,
+            "TabControlDemo has no TabControl of two tabs or more with its first selected, its"
+            " page frame and tabs of one primitive slot each");
+        dropControl(s, demo);
+        return;
+    }
+
+    gweni::controls::TabButton *first=control->getTab(0);
+    gweni::controls::TabButton *second=control->getTab(1);
+    const std::vector<size_t> &frameSlots=
+        static_cast<const gweni::controls::TabControl *>(control)->getInnerPanel()
+            ->getSkinControl()->getPrimitives();
+    std::vector<size_t> secondPrimitives, secondTexts;
+    gweni::tools::appendSubtreeIds(second, secondPrimitives, secondTexts);
+    std::vector<size_t> allowedPrimitives, allowedTexts;
+    for(gweni::controls::Base *c : {static_cast<gweni::controls::Base *>(first),
+        static_cast<gweni::controls::Base *>(second), first->getPage(), second->getPage()})
+        gweni::tools::appendSubtreeIds(c, allowedPrimitives, allowedTexts);
+    std::sort(allowedPrimitives.begin(), allowedPrimitives.end());
+    std::sort(allowedTexts.begin(), allowedTexts.end());
+
+    const std::vector<size_t> secondSlot=second->getSkinControl()->getPrimitives();
+    const gweni::Point on=centreOf(second);
+    const gweni::Point off(s.size.x-1, s.size.y-1);
+
+    moveMouse(s, off.x, off.y);
+    renderFrames(s, s.frames);
+    const std::vector<uint8_t> rest=framePixels(s);
+
+    // the hover: the tab's one slot, and only its own glyphs
+    moveMouse(s, on.x, on.y);
+    renderFrames(s, 1);
+    const std::vector<size_t> hoverPrimitives=s.renderer->writtenPrimitiveIds();
+    size_t hoverForeignTexts=0;
+    for(const gweni::renderer::WrittenText &text : s.renderer->writtenTextIds())
+    {
+        if(std::find(secondTexts.begin(), secondTexts.end(), text.textId) == secondTexts.end())
+            hoverForeignTexts+=text.glyphSlots;
+    }
+    renderFrames(s, s.frames);
+    if(!shoot(s, shotDir+"/interaction-tab-select-hover.png"))
+        ok=false;
+    const std::vector<uint8_t> hover=framePixels(s);
+    const SplitDifferences hoverDiff=differencesSplit(s, rest, hover, second, second);
+
+    moveMouse(s, off.x, off.y);
+    renderFrames(s, s.frames);
+    const std::vector<uint8_t> unhovered=framePixels(s);
+
+    // the selection, from a settled hover
+    moveMouse(s, on.x, on.y);
+    renderFrames(s, s.frames);
+    const std::vector<uint8_t> beforeClick=framePixels(s);
+    size_t foreignPrimitives=0;
+    size_t foreignGlyphs=0;
+    size_t written=0;
+    bool frameWritten=false;
+    std::vector<size_t> tabSlotsWritten;
+    const size_t firstSlot=first->getSkinControl()->getPrimitives().front();
+    clickMouse(s, on.x, on.y);
+    for(int i=0; i < s.frames; ++i)
+    {
+        renderFrames(s, 1);
+        for(size_t id : s.renderer->writtenPrimitiveIds())
+        {
+            ++written;
+            if(id == firstSlot || id == secondSlot.front())
+                tabSlotsWritten.push_back(id);
+            if(!std::binary_search(allowedPrimitives.begin(), allowedPrimitives.end(), id))
+                ++foreignPrimitives;
+            if(std::find(frameSlots.begin(), frameSlots.end(), id) != frameSlots.end())
+                frameWritten=true;
+        }
+        for(const gweni::renderer::WrittenText &text : s.renderer->writtenTextIds())
+        {
+            if(!std::binary_search(allowedTexts.begin(), allowedTexts.end(), text.textId))
+                foreignGlyphs+=text.glyphSlots;
+        }
+    }
+    if(!shoot(s, shotDir+"/interaction-tab-selected.png"))
+        ok=false;
+    const bool selected=control->getCurrentButton() == second && second->isActive() && !first->isActive();
+    const bool bothTabs=std::find(tabSlotsWritten.begin(), tabSlotsWritten.end(), firstSlot)
+        != tabSlotsWritten.end() && std::find(tabSlotsWritten.begin(), tabSlotsWritten.end(),
+        secondSlot.front()) != tabSlotsWritten.end();
+    const size_t outside=differencesOutside(s, beforeClick, framePixels(s), control);
+
+    // and back
+    const gweni::Point firstOn=centreOf(first);
+    clickMouse(s, firstOn.x, firstOn.y);
+    moveMouse(s, off.x, off.y);
+    renderFrames(s, s.frames);
+    const bool back=framePixels(s) == rest && control->getCurrentButton() == first;
+
+    forgetMouse(s);
+    dropControl(s, demo);
+
+    checks.check("tab_select_hover", hoverPrimitives == secondSlot && hoverForeignTexts == 0
+        && hover != rest && hoverDiff.outside == 0 && unhovered == rest,
+        "hovering the unselected tab wrote "+std::to_string(hoverPrimitives.size())
+        +" primitive slots (want its one) and "+std::to_string(hoverForeignTexts)
+        +" glyph slots of other text ids, changed "+std::to_string(hoverDiff.outside)
+        +" pixels outside it, or moving off did not give the frame before back");
+    checks.check("tab_select_local", selected && bothTabs && written > 0 && foreignPrimitives == 0
+        && foreignGlyphs == 0 && !frameWritten && outside == 0,
+        std::string(selected ? "" : "a click on the second tab did not select it; ")
+        +(bothTabs ? "" : "the selection did not rewrite both tabs' slots; ")
+        +std::to_string(foreignPrimitives)+" primitive slots and "+std::to_string(foreignGlyphs)
+        +" glyph slots written outside the two tabs and their pages, the page frame's slot "
+        +(frameWritten ? "written" : "not written")+", "+std::to_string(outside)
+        +" pixels changed outside the TabControl");
+    checks.check("tab_select_back", back,
+        "selecting the first tab again and moving off did not give the frame before back");
+}
+
 static void renderInspectedFrame(Session &s, gweni::controls::Base *root,
     size_t &pending, size_t &pendingUnderRoot);
 static void checkSteady(Session &s, InteractionChecks &checks, const std::string &name);
@@ -5681,6 +5835,7 @@ static bool runInteractionScenario(Session &s, const std::string &shotDir, bool 
     checkSliderText(s, shotDir, checks, ok);
     checkTabClose(s, shotDir, checks, ok);
     checkTabOverflow(s, shotDir, checks, ok);
+    checkTabControlSelect(s, shotDir, checks, ok);
     checkPropertyRow(s, shotDir, checks, ok);
     checkColorEdit(s, shotDir, checks, ok);
     checkDataTable(s, shotDir, checks, ok);
