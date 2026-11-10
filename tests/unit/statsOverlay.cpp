@@ -23,7 +23,15 @@
  *    (rendered, changed, the app's slots alone), and 0 on the one after;
  *  - it counts the app's controls, the tools' subtrees left out, and the
  *    app's live ids;
- *  - closed, it gives back every primitive and text id it took.
+ *  - closed, it gives back every primitive and text id it took;
+ *  - onOpenChangedCaller is called once for each open() that makes an
+ *    overlay and each close() that closes one (toggle() included), with the
+ *    canvas and 1 or 0, after find() gives the new answer; not for an overlay
+ *    made as another control's child, nor for a handler deleted;
+ *  - setBottomReserve() raises the canvas's overlay by that many units, laying
+ *    out the overlay alone, kept across a close and an open and at a new
+ *    canvas size; an overlay on a page ignores it, and a canvas made after a
+ *    deleted one with a reserve starts at 0.
  */
 #include "headlessFixture.h"
 
@@ -392,4 +400,187 @@ TEST_CASE("StatsOverlay: closed, it gives back every id it took")
     CHECK(scene.renderer.liveTexts.size() == liveTexts);
     CHECK(test::IdBankCounts::now().livePrimitives() == before.livePrimitives());
     CHECK(test::IdBankCounts::now().liveTexts() == before.liveTexts());
+}
+
+namespace
+{
+
+//! What StatsOverlay::onOpenChangedCaller told it, in order.
+class OpenListener: public event::Handler
+{
+public:
+    struct Call
+    {
+        controls::Base *canvas;
+        size_t open;
+        controls::Base *overlay;
+    };
+
+    OpenListener()
+    {
+        StatsOverlay::onOpenChangedCaller.add(this, &OpenListener::onOpenChanged);
+    }
+
+    void onOpenChanged(event::Info info)
+    {
+        calls.push_back({info.control, info.integer, info.controlCaller});
+    }
+
+    std::vector<Call> calls;
+};
+
+}//namespace
+
+TEST_CASE("StatsOverlay: onOpenChangedCaller tells of every open and close")
+{
+    Scene scene;
+    OpenListener listener;
+
+    StatsOverlay *overlay=StatsOverlay::open(scene.canvas);
+
+    REQUIRE(listener.calls.size() == 1);
+    CHECK((listener.calls[0].canvas == scene.canvas));
+    CHECK(listener.calls[0].open == 1);
+    CHECK((listener.calls[0].overlay == overlay));
+    // open already: nothing to tell
+    StatsOverlay::open(scene.canvas);
+    CHECK(listener.calls.size() == 1);
+
+    StatsOverlay::close(scene.canvas);
+    REQUIRE(listener.calls.size() == 2);
+    CHECK((listener.calls[1].canvas == scene.canvas));
+    CHECK(listener.calls[1].open == 0);
+    CHECK((listener.calls[1].overlay == overlay));
+    StatsOverlay::close(scene.canvas);
+    CHECK(listener.calls.size() == 2);
+
+    // toggle() tells too, each time, and find() already gives the new answer
+    // when a handler is called
+    bool foundOnOpen=false;
+    bool foundOnClose=true;
+    struct Checker: public event::Handler {} checker;
+
+    StatsOverlay::onOpenChangedCaller.addCallback(&checker, [&](event::Handler &, event::Info info)
+    {
+        controls::Canvas *canvas=info.control->getCanvas();
+
+        (info.integer ? foundOnOpen : foundOnClose)=(StatsOverlay::find(canvas) != nullptr);
+    });
+    CHECK(StatsOverlay::toggle(scene.canvas));
+    CHECK_FALSE(StatsOverlay::toggle(scene.canvas));
+    CHECK(listener.calls.size() == 4);
+    CHECK(listener.calls[2].open == 1);
+    CHECK(listener.calls[3].open == 0);
+    CHECK(foundOnOpen);
+    CHECK_FALSE(foundOnClose);
+    scene.frames(2);
+
+    // an overlay made as another control's child is not the canvas's
+    scene.other->newChild<StatsOverlay>();
+    scene.frames(2);
+    CHECK(listener.calls.size() == 4);
+
+    // another canvas's carry that canvas
+    {
+        controls::Canvas *second=new controls::Canvas(&scene.skin);
+
+        second->setSize(320, 240);
+        StatsOverlay::open(second);
+        REQUIRE(listener.calls.size() == 5);
+        CHECK((listener.calls[4].canvas == second));
+        StatsOverlay::close(second);
+        CHECK((listener.calls[5].canvas == second));
+        delete second;
+    }
+    CHECK(listener.calls.size() == 6);
+
+    // a handler deleted is called no more
+    {
+        OpenListener gone;
+
+        StatsOverlay::open(scene.canvas);
+        CHECK(gone.calls.size() == 1);
+    }
+    StatsOverlay::close(scene.canvas);
+    CHECK(listener.calls.size() == 8);
+    scene.frames(2);
+}
+
+TEST_CASE("StatsOverlay: setBottomReserve keeps the canvas's overlay above a bar")
+{
+    Scene scene;
+    constexpr int Bar=22;
+
+    CHECK(StatsOverlay::bottomReserve(scene.canvas) == 0);
+
+    StatsOverlay *overlay=StatsOverlay::open(scene.canvas);
+
+    scene.frames(2);
+
+    const Rect atRest=overlay->getBounds();
+    const Rect corner=scene.corner->getBounds();
+    const Rect other=scene.other->getBounds();
+
+    CHECK(atRest.y+atRest.h == scene.canvas->getHeight()-StatsOverlay::Inset);
+
+    StatsOverlay::setBottomReserve(scene.canvas, Bar);
+    CHECK(StatsOverlay::bottomReserve(scene.canvas) == Bar);
+    // the overlay alone is laid out again
+    CHECK(overlay->needsLayout());
+    CHECK_FALSE(scene.corner->needsLayout());
+    CHECK_FALSE(scene.other->needsLayout());
+    scene.frame();
+    CHECK(scene.canvas->getLayoutStats().visited == 0);
+    CHECK(scene.canvas->previousFrameStats().layout.visited == 0);
+    CHECK(overlay->getX() == atRest.x);
+    CHECK(overlay->getY()+overlay->getHeight() == scene.canvas->getHeight()-StatsOverlay::Inset-Bar);
+    CHECK(overlay->getWidth() == atRest.w);
+    CHECK(overlay->getHeight() == atRest.h);
+    CHECK((scene.corner->getBounds() == corner));
+    CHECK((scene.other->getBounds() == other));
+    // the same again changes nothing
+    StatsOverlay::setBottomReserve(scene.canvas, Bar);
+    CHECK_FALSE(overlay->needsLayout());
+
+    // kept for the canvas: an overlay opened later takes it, at a new size too
+    StatsOverlay::close(scene.canvas);
+    scene.frames(2);
+    overlay=StatsOverlay::open(scene.canvas);
+    scene.canvas->setSize(640, 480);
+    scene.frames(2);
+    CHECK(overlay->getY()+overlay->getHeight() == 480-StatsOverlay::Inset-Bar);
+    CHECK(overlay->getX()+overlay->getWidth() == 640-StatsOverlay::Inset);
+
+    // an overlay on a page of the app's keeps to its parent's corner
+    controls::Base *page=scene.canvas->newChild<controls::Base>("page");
+
+    page->setBounds(0, 0, 500, 400);
+
+    StatsOverlay *onPage=page->newChild<StatsOverlay>();
+
+    scene.frames(2);
+    CHECK(onPage->getY()+onPage->getHeight() == 400-StatsOverlay::Inset);
+
+    // a negative reserve is none, and 0 forgets it
+    StatsOverlay::setBottomReserve(scene.canvas, -5);
+    CHECK(StatsOverlay::bottomReserve(scene.canvas) == 0);
+    scene.frames(2);
+    CHECK(overlay->getY()+overlay->getHeight() == 480-StatsOverlay::Inset);
+    StatsOverlay::close(scene.canvas);
+    scene.frames(2);
+}
+
+TEST_CASE("StatsOverlay: a canvas made after one with a reserve starts at 0")
+{
+    for(int round=0; round < 4; ++round)
+    {
+        Scene scene;
+
+        CAPTURE(round);
+        // the last round's canvas may be at this address: its reserve is not this one's
+        CHECK(StatsOverlay::bottomReserve(scene.canvas) == 0);
+        StatsOverlay::setBottomReserve(scene.canvas, 30);
+        CHECK(StatsOverlay::bottomReserve(scene.canvas) == 30);
+    }
+    CHECK(StatsOverlay::bottomReserve(nullptr) == 0);
 }

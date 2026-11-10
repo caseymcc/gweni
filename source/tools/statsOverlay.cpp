@@ -14,6 +14,7 @@
 #include <gweni/utility.h>
 
 #include <algorithm>
+#include <unordered_map>
 
 namespace gweni
 {
@@ -47,6 +48,20 @@ constexpr int Value2=ContentWidth-Value2X;
 
 static_assert(RowCount == 14, "a row per StatsOverlay::Row");
 
+//! setBottomReserve()'s units per canvas, with the canvas's control id: a
+//! canvas made at a deleted one's address has another, so it reads 0.
+struct BottomReserve
+{
+    size_t canvasId;
+    int units;
+};
+
+std::unordered_map<const controls::Canvas *, BottomReserve> &bottomReserves()
+{
+    static std::unordered_map<const controls::Canvas *, BottomReserve> reserves;
+    return reserves;
+}
+
 String ms(uint64_t micros)
 {
     return format("%.1f", double(micros)/1000.0);
@@ -64,6 +79,8 @@ String count(size_t n)
 }
 
 }//namespace
+
+event::Caller StatsOverlay::onOpenChangedCaller;
 
 void StatsOverlay::TimeRange::add(uint64_t micros)
 {
@@ -194,6 +211,11 @@ StatsOverlay *StatsOverlay::open(controls::Canvas *canvas)
 
     canvas->addOverlay(overlay);
     overlay->refresh();
+
+    event::Info info(canvas);
+
+    info.integer=1;
+    onOpenChangedCaller.call(overlay, info);
     return overlay;
 }
 
@@ -204,7 +226,50 @@ void StatsOverlay::close(controls::Canvas *canvas)
         overlay->m_closing=true;
         overlay->hide();
         overlay->delayedDelete();
+
+        event::Info info(canvas);
+
+        info.integer=0;
+        onOpenChangedCaller.call(overlay, info);
     }
+}
+
+void StatsOverlay::setBottomReserve(controls::Canvas *canvas, int units)
+{
+    if(!canvas)
+        return;
+    units=std::max(0, units);
+    if(bottomReserve(canvas) == units)
+        return;
+
+    if(units == 0)
+        bottomReserves().erase(canvas);
+    else
+        bottomReserves()[canvas]={canvas->getControlId(), units};
+
+    // the overlay alone places itself again: it is owner-placed, so nothing
+    // else's layout reads where it is
+    if(StatsOverlay *overlay=find(canvas))
+        overlay->invalidate();
+}
+
+int StatsOverlay::bottomReserve(controls::Canvas *canvas)
+{
+    if(!canvas)
+        return 0;
+
+    auto &reserves=bottomReserves();
+    const auto entry=reserves.find(canvas);
+
+    if(entry == reserves.end())
+        return 0;
+    // left by a deleted canvas at this address
+    if(entry->second.canvasId != canvas->getControlId())
+    {
+        reserves.erase(entry);
+        return 0;
+    }
+    return entry->second.units;
 }
 
 bool StatsOverlay::toggle(controls::Canvas *canvas)
@@ -232,7 +297,15 @@ void StatsOverlay::arrange(skin::Base *skin, Dim dim)
         if(dim == Dim::X)
             setArrangedBounds(std::max(0, parent->getWidth()-getWidth()-Inset), getY(), getWidth(), getHeight());
         else
-            setArrangedBounds(getX(), std::max(0, parent->getHeight()-getHeight()-Inset), getWidth(), getHeight());
+        {
+            // the reserve is the canvas's, for its own overlay: not one on a
+            // page of the app's
+            controls::Canvas *canvas=getCanvas();
+            const int reserve=(parent == canvas)?bottomReserve(canvas):0;
+
+            setArrangedBounds(getX(), std::max(0, parent->getHeight()-getHeight()-Inset-reserve),
+                getWidth(), getHeight());
+        }
     }
 
     ParentClass::arrange(skin, dim);

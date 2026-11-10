@@ -55,7 +55,10 @@ namespace tools
 //! it on the canvas, as a canvas overlay (Canvas::addOverlay), numbered above
 //! the app. Made as any other control's child (a demo page's), it is that
 //! control's. Hidden, it neither gathers nor shows. The library binds no key:
-//! an app opens and closes it (open(), close(), toggle()).
+//! an app opens and closes it (open(), close(), toggle()), and hears of every
+//! open and close through onOpenChangedCaller (a toggle button kept in step).
+//! An app with a bar along the canvas's bottom keeps the canvas's overlay
+//! above it with setBottomReserve().
 class GWENI_EXPORT StatsOverlay: public controls::Base
 {
 public:
@@ -71,6 +74,26 @@ public:
     //! The canvas's overlay, or null; one closed and waiting for its delayed
     //! delete is not found, so open() after close() in one frame makes a new one.
     static StatsOverlay *find(controls::Canvas *canvas);
+
+    //! Called when a canvas's overlay opens or closes: by open() when it makes
+    //! one and by close() when it closes one (so by toggle() too), after
+    //! find() gives the new answer; never for an overlay made as another
+    //! control's child, nor by open() or close() when there was nothing to do.
+    //! The info's control is the canvas (info.control->getCanvas() is it) and
+    //! its integer 1 for an open, 0 for a close; the caller is the overlay. A handler sees every canvas's, and
+    //! one deleted is dropped (event::Handler).
+    static event::Caller onOpenChangedCaller;
+
+    //! Keeps \p units clear below the canvas's overlay, above its Inset (a
+    //! status bar's height): its bottom edge is Inset+units in from the
+    //! canvas's. Kept for the canvas, so an overlay opened later takes it too;
+    //! 0, the default, forgets it. Only an overlay on the canvas itself
+    //! (open()'s) reads it, and a change lays out that overlay alone. The
+    //! canvas is told apart by its control id, never reused, so a canvas made
+    //! later at a deleted one's address starts at 0; an app that sets it
+    //! gives it back (0) when it goes.
+    static void setBottomReserve(controls::Canvas *canvas, int units);
+    static int bottomReserve(controls::Canvas *canvas);
 
     //! How often what it shows is refreshed, in seconds of the canvas's clock.
     static constexpr float RefreshSeconds=0.25f;
@@ -147,7 +170,8 @@ public:
 
 protected:
     //! Takes its size, and the place Inset in from its parent's bottom-right
-    //! corner, one axis per arrange, as a Popup does next to its anchor.
+    //! corner (and bottomReserve() more from the bottom on the canvas), one
+    //! axis per arrange, as a Popup does next to its anchor.
     void arrange(skin::Base *skin, Dim dim) override;
 
 private:
