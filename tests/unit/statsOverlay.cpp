@@ -12,8 +12,11 @@
  *    frame leave it open, a new one, the closed one deleted;
  *  - it sits StatsOverlay::Inset units in from the canvas's bottom-right
  *    corner, and follows the canvas to a new size and a new scale;
- *  - a hit test passes through it: the control under it is found, with the
- *    same hit-test visits as without it;
+ *  - only its 24 name cells are hit, each with a tooltip, and the overlay's
+ *    own getControlAt() makes no hit-test visit; everywhere else (a value,
+ *    the plots, a gap, the padding) a hit test passes through it: the control
+ *    under it is found, with the same visits as without it; a click on a name
+ *    does nothing, one on a value reaches the button under it;
  *  - it refreshes every RefreshSeconds: the frames between two refreshes set
  *    no label and write no slot, and a refresh sets only labels whose text
  *    changed, in a frame with no layout pass counted and no animation run;
@@ -50,6 +53,7 @@
 
 #include <doctest/doctest.h>
 
+#include <algorithm>
 #include <cstdint>
 #include <memory>
 #include <string>
@@ -159,6 +163,11 @@ struct Scene
     }
 };
 
+bool contains(const Rect &rect, const Point &at)
+{
+    return at.x >= rect.x && at.y >= rect.y && at.x < rect.right() && at.y < rect.bottom();
+}
+
 }//namespace
 
 TEST_CASE("StatsOverlay: open, find, toggle and close")
@@ -242,27 +251,174 @@ TEST_CASE("StatsOverlay: in the canvas's bottom-right corner, at any size and sc
     CHECK(overlay->getHeight() == size.y);
 }
 
-TEST_CASE("StatsOverlay: hit tests pass through it")
+TEST_CASE("StatsOverlay: only its name cells are hit, everything else passes through")
 {
     Scene scene;
-    const Point at(scene.canvas->getWidth()-20, scene.canvas->getHeight()-20);
-
-    const size_t visitsBefore=input::hitTestVisits();
-
-    CHECK(scene.canvas->getControlAt(at.x, at.y, false) == scene.corner);
-
-    const size_t visitsWithout=input::hitTestVisits()-visitsBefore;
     StatsOverlay *overlay=StatsOverlay::open(scene.canvas);
 
     scene.frames(2);
-    REQUIRE(overlay->getBounds().x < at.x);
-    REQUIRE(overlay->getBounds().y < at.y);
 
-    const size_t visitsOpen=input::hitTestVisits();
+    const Point origin=overlay->getPos();
+    const std::vector<controls::Label *> names=overlay->nameCells();
 
-    CHECK(scene.canvas->getControlAt(at.x, at.y) == scene.corner);
-    CHECK(scene.canvas->getControlAt(at.x, at.y, false) == scene.corner);
-    CHECK((input::hitTestVisits()-visitsOpen) == 2*visitsWithout);
+    REQUIRE(names.size() == 24);
+
+    // the points of the overlay under no name cell, in its own units: a value
+    // cell, both plots, the gap between a counter row's two pairs, the padding
+    // and the strip between the plots
+    std::vector<Point> through;
+
+    for(controls::Base *child : overlay->getChildren())
+    {
+        if(std::find(names.begin(), names.end(), child) != names.end())
+            continue;
+        through.push_back(child->getPos()+Point(child->getWidth()/2, child->getHeight()/2));
+    }
+    REQUIRE(through.size() == 29+2);
+
+    const controls::Label *controlsName=nullptr;
+
+    for(controls::Label *name : names)
+    {
+        if(name->getText() == "controls")
+            controlsName=name;
+    }
+    REQUIRE(controlsName);
+    through.push_back(controlsName->getPos()+Point(-4, 7));
+    through.push_back(Point(2, 2));
+    through.push_back(Point(overlay->getWidth()/2, overlay->cpuPlot()->getBounds().bottom()+1));
+
+    for(const Point &local : through)
+    {
+        CAPTURE(local.x);
+        CAPTURE(local.y);
+
+        const Point at=origin+local;
+
+        REQUIRE(contains(scene.corner->getBounds(), at));
+
+        // through the overlay to the control under it, as if it were not there
+        overlay->setHidden(true);
+
+        const size_t visitsBefore=input::hitTestVisits();
+
+        CHECK(scene.canvas->getControlAt(at.x, at.y, false) == scene.corner);
+
+        const size_t visitsWithout=input::hitTestVisits()-visitsBefore;
+
+        overlay->setHidden(false);
+
+        const size_t visitsOpen=input::hitTestVisits();
+
+        CHECK(scene.canvas->getControlAt(at.x, at.y) == scene.corner);
+        CHECK(scene.canvas->getControlAt(at.x, at.y, false) == scene.corner);
+        CHECK((input::hitTestVisits()-visitsOpen) == 2*visitsWithout);
+    }
+
+    for(controls::Label *name : names)
+    {
+        CAPTURE(name->getText());
+
+        const Point local=name->getPos()+Point(name->getWidth()/2, name->getHeight()/2);
+        const Point at=origin+local;
+
+        CHECK(scene.canvas->getControlAt(at.x, at.y) == name);
+        CHECK(scene.canvas->getControlAt(at.x, at.y, false) == name);
+
+        // the overlay finds it over its cells' fixed rects, with no visit
+        const size_t visits=input::hitTestVisits();
+
+        CHECK(overlay->getControlAt(local.x, local.y) == name);
+        CHECK(input::hitTestVisits() == visits);
+    }
+
+    // and none for a point under no name cell either
+    const size_t visits=input::hitTestVisits();
+
+    for(const Point &local : through)
+        CHECK(overlay->getControlAt(local.x, local.y) == nullptr);
+    CHECK(input::hitTestVisits() == visits);
+
+    // hidden, nothing of it is hit
+    overlay->setHidden(true);
+    for(controls::Label *name : names)
+    {
+        const Point local=name->getPos()+Point(1, 1);
+
+        CHECK(overlay->getControlAt(local.x, local.y) == nullptr);
+    }
+    overlay->setHidden(false);
+}
+
+TEST_CASE("StatsOverlay: every name cell has a tooltip, and a click on one does nothing")
+{
+    Scene scene;
+    StatsOverlay *overlay=StatsOverlay::open(scene.canvas);
+
+    scene.frames(2);
+
+    const std::vector<controls::Label *> names=overlay->nameCells();
+    std::vector<String> texts;
+
+    for(controls::Label *name : names)
+    {
+        CAPTURE(name->getText());
+        CHECK(name->getMouseInputEnabled());
+        CHECK(!name->getToolTipText().empty());
+        texts.push_back(name->getText());
+    }
+    CHECK(texts == std::vector<String>{
+        "time (ms)", "min", "avg", "max", "interval", "cpu", "update", "render", "flush",
+        "fps", "controls", "prim ids", "text ids", "most in one frame", "rendered", "changed",
+        "passes", "entered", "z visited", "anims", "prim slots", "glyphs", "upload", "draws"});
+
+    // the value cells take no mouse and have no tooltip
+    for(controls::Base *child : overlay->getChildren())
+    {
+        if(std::find(names.begin(), names.end(), child) != names.end())
+            continue;
+        CHECK(!child->getMouseInputEnabled());
+        CHECK(!child->hasToolTip());
+    }
+
+    // a toggle under the "interval" name and its first value: a click on the
+    // name does nothing, one on the value reaches the toggle
+    const Point origin=overlay->getPos();
+    controls::Label *interval=names[4];
+    const Point rowAt=origin+interval->getPos();
+    const Rect row(rowAt.x, rowAt.y, overlay->getWidth()/2, interval->getHeight());
+    controls::Button *toggle=scene.canvas->newChild<controls::Button>("toggle");
+
+    REQUIRE(interval->getText() == "interval");
+    toggle->setIsToggle(true);
+    toggle->setSizeFlags({SizeFlag::Fixed, SizeFlag::Fixed});
+    toggle->setBounds(row);
+    // the overlay stays above it
+    StatsOverlay::close(scene.canvas);
+    scene.frames(1);
+    overlay=StatsOverlay::open(scene.canvas);
+    scene.frames(2);
+    interval=overlay->nameCells()[4];
+
+    const Point onName=origin+interval->getPos()+Point(4, 7);
+    const Point onValue=origin+interval->getPos()+Point(interval->getWidth()+20, 7);
+
+    scene.canvas->inputMouseMoved(onName.x, onName.y, 0, 0);
+    scene.frame();
+    CHECK(HoveredControl == interval);
+    scene.canvas->inputMouseButton(0, true);
+    scene.canvas->inputMouseButton(0, false);
+    scene.frame();
+    CHECK(!toggle->getToggleState());
+    CHECK(StatsOverlay::find(scene.canvas) == overlay);
+
+    scene.canvas->inputMouseMoved(onValue.x, onValue.y, 0, 0);
+    scene.frame();
+    CHECK(HoveredControl == toggle);
+    scene.canvas->inputMouseButton(0, true);
+    scene.canvas->inputMouseButton(0, false);
+    scene.frame();
+    CHECK(toggle->getToggleState());
 }
 
 TEST_CASE("StatsOverlay: it refreshes every RefreshSeconds and settles in between")

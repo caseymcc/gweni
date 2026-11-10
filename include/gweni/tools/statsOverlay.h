@@ -158,6 +158,8 @@ public:
     size_t textSets() const { return m_textSets; }
     //! Every row's text, its cells joined with " | ", in order.
     std::vector<String> lines() const;
+    //! The name cells (every cell with a tooltip), row by row, in order.
+    std::vector<controls::Label *> nameCells() const;
     //! A byte count in at most 5 characters, as the upload row shows it: as it
     //! is below 1000 ("512B"), else in kB, MB, ... of 1000, with its tenths
     //! below 10 ("1.2MB", "12kB"), truncated.
@@ -169,7 +171,8 @@ public:
     //! The primitive and text ids its own controls hold.
     void ownIds(std::vector<size_t> &primitiveIds, std::vector<size_t> &textIds) const;
 
-    //! It takes no input: nothing of it is ever under the mouse.
+    //! Only its name cells take the mouse, for their tooltips: the visible
+    //! name cell under the point, else null, with no hit-test visit.
     controls::Base *getControlAt(int x, int y, bool bOnlyIfMouseEnabled=true) override;
     //! Its size is the one its rows make, set when it is made.
     bool sizedByRequest(Dim /*dim*/) const override { return true; }
@@ -194,7 +197,10 @@ private:
         Rows
     };
 
-    controls::Label *addCell(int row, int x, int width, bool right, const String &text, bool dark);
+    //! A cell of \p row; one with a \p toolTip is a name cell, which alone
+    //! takes the mouse.
+    controls::Label *addCell(int row, int x, int width, bool right, const String &text, bool dark,
+                             const String &toolTip=String());
     void setCell(controls::Label *label, const String &text);
     //! The frame before this one, into m_window.
     void gather(controls::Canvas *canvas);

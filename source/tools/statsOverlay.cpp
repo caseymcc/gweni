@@ -135,40 +135,66 @@ GWENI_CONTROL_CONSTRUCTOR(StatsOverlay)
 
     m_rows.resize(Rows);
 
-    addCell(HeaderRow, 0, TimeName, false, "time (ms)", false);
-    addCell(HeaderRow, TimeName, TimeColumn, true, "min", true);
-    addCell(HeaderRow, TimeName+TimeColumn, TimeColumn, true, "avg", true);
-    addCell(HeaderRow, TimeName+2*TimeColumn, TimeColumn, true, "max", true);
+    // a name cell has a tooltip saying what it shows; a value cell has none
+    addCell(HeaderRow, 0, TimeName, false, "time (ms)", false,
+            "Times in milliseconds over the frames since the last refresh (every 0.25 s).");
+    addCell(HeaderRow, TimeName, TimeColumn, true, "min", true,
+            "The shortest of those frames.");
+    addCell(HeaderRow, TimeName+TimeColumn, TimeColumn, true, "avg", true,
+            "The mean of those frames.");
+    addCell(HeaderRow, TimeName+2*TimeColumn, TimeColumn, true, "max", true,
+            "The longest of those frames.");
 
-    const struct { Row row; const char *name; } times[]=
+    const struct { Row row; const char *name; const char *tip; } times[]=
     {
-        {FrameRow, "interval"}, {CpuRow, "cpu"}, {UpdateRow, "update"}, {RenderRow, "render"},
-        {FlushRow, "flush"},
+        {FrameRow, "interval", "Time from one frame's start to the next's: 1000 / fps."},
+        {CpuRow, "cpu", "gweni's CPU time for the frame: update + render + flush."},
+        {UpdateRow, "update", "updateCanvas(): input, animations, layout and z order."},
+        {RenderRow, "render", "renderCanvas() without the flush: the changed controls drawn into the renderer."},
+        {FlushRow, "flush", "The renderer's end(): the slot diff, the uploads and the draw calls."},
     };
 
     for(const auto &time : times)
     {
-        addCell(time.row, 0, TimeName, false, time.name, true);
+        addCell(time.row, 0, TimeName, false, time.name, true, time.tip);
         for(int column=0; column < 3; ++column)
             addCell(time.row, TimeName+column*TimeColumn, TimeColumn, true, "-", false);
     }
 
-    const struct { Row row; const char *first; const char *second; } counters[]=
+    const struct
     {
-        {FpsRow, "fps", "controls"}, {IdsRow, "prim ids", "text ids"},
-        {RenderedRow, "rendered", "changed"}, {LayoutRow, "passes", "entered"},
-        {ZRow, "z visited", "anims"}, {SlotsRow, "prim slots", "glyphs"},
-        {UploadsRow, "upload", "draws"},
+        Row row;
+        const char *first;
+        const char *firstTip;
+        const char *second;
+        const char *secondTip;
+    } counters[]=
+    {
+        {FpsRow, "fps", "Frames in the last second.",
+         "controls", "Controls in the app's tree (the overlay and inspector left out)."},
+        {IdsRow, "prim ids", "The app's live primitive ids (renderer slots).",
+         "text ids", "The app's live text ids (text runs)."},
+        {RenderedRow, "rendered", "Controls the render phase drew.",
+         "changed", "Controls with a pending change (geometry, background, text, ...)."},
+        {LayoutRow, "passes", "Layout passes run.",
+         "entered", "Controls the layout passes entered."},
+        {ZRow, "z visited", "Controls the z-order renumber entered.",
+         "anims", "Animations run."},
+        {SlotsRow, "prim slots", "Primitive slots the app wrote.",
+         "glyphs", "Glyph slots the app wrote."},
+        {UploadsRow, "upload", "Vertex data sent to the GPU in the frame, font atlases not counted.",
+         "draws", "Draw calls, the overlay's own included."},
     };
 
     for(const auto &counter : counters)
     {
-        addCell(counter.row, 0, Name1, false, counter.first, true);
+        addCell(counter.row, 0, Name1, false, counter.first, true, counter.firstTip);
         addCell(counter.row, Name1, Value1, true, "-", false);
-        addCell(counter.row, Name2X, Name2, false, counter.second, true);
+        addCell(counter.row, Name2X, Name2, false, counter.second, true, counter.secondTip);
         addCell(counter.row, Value2X, Value2, true, "-", false);
     }
-    addCell(MaxHeaderRow, 0, ContentWidth, false, "most in one frame", true);
+    addCell(MaxHeaderRow, 0, ContentWidth, false, "most in one frame", true,
+            "The rows below show the largest value of any one frame since the last refresh.");
 
     int y=Pad+RowCount*RowHeight+PlotGap;
 
@@ -192,13 +218,17 @@ GWENI_CONTROL_CONSTRUCTOR(StatsOverlay)
 #endif
 }
 
-controls::Label *StatsOverlay::addCell(int row, int x, int width, bool right, const String &text, bool dark)
+controls::Label *StatsOverlay::addCell(int row, int x, int width, bool right, const String &text, bool dark,
+                                       const String &toolTip)
 {
     controls::Label *label=newChild<controls::Label>();
 
     label->setBounds(Pad+x, Pad+row*RowHeight, width, RowHeight);
     label->setSizeFlags({SizeFlag::Fixed, SizeFlag::Fixed});
-    label->setMouseInputEnabled(false);
+    // only a name cell takes the mouse, for its tooltip (getControlAt())
+    label->setMouseInputEnabled(!toolTip.empty());
+    if(!toolTip.empty())
+        label->setToolTipText(toolTip);
     label->setKeyboardInputEnabled(false);
     label->setTabable(false);
     if(right)
@@ -318,9 +348,43 @@ bool StatsOverlay::toggle(controls::Canvas *canvas)
     return open(canvas) != nullptr;
 }
 
-controls::Base *StatsOverlay::getControlAt(int /*x*/, int /*y*/, bool /*bOnlyIfMouseEnabled*/)
+std::vector<controls::Label *> StatsOverlay::nameCells() const
 {
-    // the app's hit tests pass through it as if it were not there: no visit
+    std::vector<controls::Label *> cells;
+
+    for(const std::vector<controls::Label *> &row : m_rows)
+    {
+        for(controls::Label *cell : row)
+        {
+            if(cell->hasToolTip())
+                cells.push_back(cell);
+        }
+    }
+    return cells;
+}
+
+controls::Base *StatsOverlay::getControlAt(int x, int y, bool /*bOnlyIfMouseEnabled*/)
+{
+    // Only a name cell is hit, for its tooltip: everywhere else (the values,
+    // the plots, the gaps, the background) the app's hit tests pass through it
+    // as if it were not there. The cells' rects are fixed, so this is a walk
+    // over them and no hit-test visit, in or out of a cell.
+    if(hidden())
+        return nullptr;
+
+    for(const std::vector<controls::Label *> &row : m_rows)
+    {
+        for(controls::Label *cell : row)
+        {
+            if(!cell->getMouseInputEnabled() || cell->hidden())
+                continue;
+
+            const Rect &bounds=cell->getBounds();
+
+            if(x >= bounds.x && y >= bounds.y && x < bounds.x+bounds.w && y < bounds.y+bounds.h)
+                return cell;
+        }
+    }
     return nullptr;
 }
 
