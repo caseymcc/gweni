@@ -30,6 +30,10 @@
  *                       capture shows it only when asked: its times are a
  *                       fixed clock's (capture::installFixedProfileClock),
  *                       so a shot of it is the same in every run
+ *    --depth-view [on|off]  open the depth view (gweni::tools::DepthView) on
+ *                       the canvas once its first frame has numbered the z
+ *                       labels, in the window or a script's frames (on if
+ *                       neither word follows; a later one overrides it)
  *    --renderer gl|vulkan  the backend (default gl, or GWENI_RENDERER; the
  *                       flag beats it): OpenGLCore, or renderer::Vulkan on a
  *                       Vulkan device with no GL or EGL context. A Vulkan
@@ -168,11 +172,11 @@
  *    --scroll DX,DY     mouse wheel (DX is ignored; gweni only takes the Y axis)
  *    --key <name>       a key: return, kp-enter, tab, space, escape, up, down,
  *                       left, right, home, end, backspace, delete, shift,
- *                       control, alt, command, f10, f11 and f12 (which, as in
- *                       the window, open and close the stats overlay, the
- *                       theme editor, saving to and loading from
- *                       gweni-theme.json in the cwd, and the inspector, and
- *                       are not passed on),
+ *                       control, alt, command, f9, f10, f11 and f12 (which,
+ *                       as in the window, open and close the depth view, the
+ *                       stats overlay, the theme editor, saving to and
+ *                       loading from gweni-theme.json in the cwd, and the
+ *                       inspector, and are not passed on),
  *                       or a single printable character. A named key is pressed and released as
  *                       synthesised GLFW key events and a character is typed
  *                       as a GLFW char event, both through the same
@@ -751,6 +755,7 @@
 #include <gweni/controls/virtualList.h>
 #include <gweni/controls/dataTable.h>
 #include <gweni/controls/properties.h>
+#include <gweni/tools/depthView.h>
 #include <gweni/tools/inspector.h>
 #include <gweni/tools/statsOverlay.h>
 #include <gweni/tools/themeEditor.h>
@@ -859,17 +864,24 @@ static float g_manualScale=1.0f;        // --scale or GWENI_SCALE
 
 // --stats-overlay: every canvas createCanvas() makes opens the stats overlay.
 static bool g_statsOverlay=false;
+// --depth-view: renderFrames and the window open the depth view on the canvas
+// after its first update phase (capture::openDepthViewOnce).
+static bool g_depthView=false;
 
 // The app's own keys, before the canvas sees them: F12 opens and closes the
-// inspector, F11 the theme editor, F10 the stats overlay (the library binds no
-// key).
+// inspector, F11 the theme editor, F10 the stats overlay, F9 the depth view
+// (the library binds no key). Coming first, they work while the depth view
+// takes the canvas's input.
 static bool appKey(int key, int action)
 {
-    if(((key != GLFW_KEY_F12) && (key != GLFW_KEY_F11) && (key != GLFW_KEY_F10)) || !g_canvas)
+    if(((key != GLFW_KEY_F12) && (key != GLFW_KEY_F11) && (key != GLFW_KEY_F10)
+        && (key != GLFW_KEY_F9)) || !g_canvas)
         return false;
     if(action != GLFW_PRESS)
         return true;
-    if(key == GLFW_KEY_F12)
+    if(key == GLFW_KEY_F9)
+        gweni::tools::DepthView::toggle(g_canvas);
+    else if(key == GLFW_KEY_F12)
         gweni::tools::Inspector::toggle(g_canvas);
     else if(key == GLFW_KEY_F10)
         gweni::tools::StatsOverlay::toggle(g_canvas);
@@ -977,6 +989,9 @@ static void printUsage(std::ostream &out)
          "  --headless         force the surfaceless EGL context\n"
          "  --stats-overlay [on|off]  open the stats overlay at start-up (on if\n"
          "                     neither follows; a later one overrides it)\n"
+         "  --depth-view [on|off]  open the depth view after the first frame (in\n"
+         "                     the window or a script; on if neither follows);\n"
+         "                     F9 toggles it in the window, Escape closes it\n"
        <<gweni::capture::RendererHelp<<
          "  --window-test <dir>  the Vulkan window, scripted: resized, iconified and\n"
          "                     restored, each presented image written to <dir>\n"
@@ -1345,6 +1360,8 @@ static void renderFrames(Session &s, int count)
         gweni::controls::resetChangeStats();
 
         s.canvas->updateCanvas();
+        if(g_depthView)
+            gweni::capture::openDepthViewOnce(*s.canvas);
         s.renderer->clearTarget(s.background);
         s.canvas->renderCanvas();
 
@@ -1547,7 +1564,8 @@ static const struct { const char *name; int key; } g_namedKeys[]=
     {"control", GLFW_KEY_LEFT_CONTROL},  {"up", GLFW_KEY_UP},
     {"down", GLFW_KEY_DOWN},             {"escape", GLFW_KEY_ESCAPE},
     {"alt", GLFW_KEY_LEFT_ALT},          {"command", GLFW_KEY_LEFT_SUPER},
-    {"kp-enter", GLFW_KEY_KP_ENTER},     {"f10", GLFW_KEY_F10},     {"f11", GLFW_KEY_F11},
+    {"kp-enter", GLFW_KEY_KP_ENTER},     {"f9", GLFW_KEY_F9},
+    {"f10", GLFW_KEY_F10},               {"f11", GLFW_KEY_F11},
     {"f12", GLFW_KEY_F12},
 };
 
@@ -9118,6 +9136,7 @@ int main(int argc, char *argv[])
         else if(arg == "--shot-all") shotAll=true;
         else if(arg == "--headless") forceHeadless=true;
         else if(arg == "--stats-overlay") g_statsOverlay=gweni::capture::statsOverlayArgument(argc, argv, i);
+        else if(arg == "--depth-view") g_depthView=gweni::capture::statsOverlayArgument(argc, argv, i);
         else if(arg == "--stats") stats=true;
         else if(arg == "--stats-clock" && hasValue)
         {
@@ -9672,6 +9691,8 @@ int main(int argc, char *argv[])
             device->runWindowLoop([canvas, renderer, background]()
             {
                 canvas->updateCanvas();
+                if(g_depthView)
+                    gweni::capture::openDepthViewOnce(*canvas);
                 renderer->clearTarget(background);
                 canvas->renderCanvas();
             });

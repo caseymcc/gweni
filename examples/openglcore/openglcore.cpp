@@ -18,12 +18,19 @@
  *    --stats-overlay [on|off]  open the stats overlay (gweni::tools::StatsOverlay)
  *                         at start-up, in the window or a capture; a later
  *                         --stats-overlay off overrides an earlier one
+ *    --depth-view [on|off]  open the depth view (gweni::tools::DepthView) once
+ *                         the first frame has numbered the z labels, in the
+ *                         window or a capture; a later --depth-view off
+ *                         overrides an earlier one
  *
  *  With no options it opens the interactive window as before; there F12 opens and
  *  closes the inspector (gweni::tools::Inspector), F11 the theme editor
  *  (gweni::tools::ThemeEditor, saving to and loading from gweni-theme.json in
- *  the current directory) and F10 the stats overlay. A capture needs no
- *  display: it hides the window, and with no display at all it falls back to a
+ *  the current directory), F10 the stats overlay and F9 the depth view, which
+ *  takes the mouse and the keys for its camera while open (left-drag orbits,
+ *  right-drag pans, the wheel dollies, P switches the projection, Escape
+ *  closes it; see gweni/tools/depthView.h). A capture needs no display: it
+ *  hides the window, and with no display at all it falls back to a
  *  surfaceless EGL context (--headless skips the window, so the capture takes the
  *  same path whether or not a display exists). For example:
  *
@@ -52,6 +59,7 @@
 #include <gweni/skins/textured/tokyoNight.h>
 #include <gweni/platforms/input/glfw3.h>
 #include <gweni/controls/canvas.h>
+#include <gweni/tools/depthView.h>
 #include <gweni/tools/inspector.h>
 #include <gweni/tools/statsOverlay.h>
 #include <gweni/tools/themeEditor.h>
@@ -112,7 +120,14 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *gweni_web_stats_overlay()
 static void key_callback(GLFWwindow* window, int key, int scancode, int action, int mods)
 {
     // F12 opens and closes the inspector, F11 the theme editor, F10 the stats
-    // overlay; the library binds no key
+    // overlay, F9 the depth view; the library binds no key. They come before
+    // the canvas, so they work while the depth view takes its input.
+    if(key == GLFW_KEY_F9)
+    {
+        if((action == GLFW_PRESS) && g_canvas)
+            gweni::tools::DepthView::toggle(g_canvas);
+        return;
+    }
     if(key == GLFW_KEY_F10)
     {
         if((action == GLFW_PRESS) && g_canvas)
@@ -278,6 +293,7 @@ static void printUsage(std::ostream &out)
          " [--frames <N>] [--stats]\n"
          "                  [--scale <s>] [--headless] [--resources <dir>]\n"
          "                  [--renderer <gl|vulkan>] [--stats-overlay [on|off]]\n"
+         "                  [--depth-view [on|off]]\n"
          "\n"
          "  --demo <Name>        show that demo page at startup\n"
          "  --screenshot <path>  render offscreen, write one PNG and exit\n"
@@ -301,11 +317,20 @@ static void printUsage(std::ostream &out)
          "  --stats-overlay [on|off]  open the stats overlay at start-up, in the\n"
          "                       window or a capture (on if neither follows);\n"
          "                       a later --stats-overlay off overrides it\n"
+         "  --depth-view [on|off]  open the depth view once the first frame has\n"
+         "                       numbered the z labels, in the window or a\n"
+         "                       capture (on if neither follows); a later\n"
+         "                       --depth-view off overrides it\n"
        <<gweni::capture::RendererHelp<<
          "\n"
          "In the window, F12 opens and closes the inspector, F11 the theme\n"
          "editor, which saves to and loads from gweni-theme.json in the current\n"
-         "directory, and F10 the stats overlay.\n"
+         "directory, F10 the stats overlay and F9 the depth view: the UI seen\n"
+         "in 3D along its z, which takes the mouse and keys while open\n"
+         "(left-drag orbits, right- or middle-drag pans, the wheel and W/S\n"
+         "dolly, the arrows and A/D move, P switches perspective and\n"
+         "orthographic, + and - space the z labels, R resets, Escape or F9\n"
+         "closes it).\n"
          "\n"
          "Per-frame line fields:\n"
          "  frame      0-based frame index\n"
@@ -340,6 +365,7 @@ int main(int argc, char *argv[])
     bool scaleGiven=false;
     bool forceHeadless=false;
     bool statsOverlay=false;
+    bool depthView=false;
 
     for(int i=1; i<argc; ++i)
     {
@@ -375,6 +401,8 @@ int main(int argc, char *argv[])
             forceHeadless=true;
         else if(arg == "--stats-overlay")
             statsOverlay=gweni::capture::statsOverlayArgument(argc, argv, i);
+        else if(arg == "--depth-view")
+            depthView=gweni::capture::statsOverlayArgument(argc, argv, i);
         else if(arg == "--resources" && hasValue)
             resourceDir=argv[++i];
         else if(arg == "--renderer" && hasValue)
@@ -548,6 +576,9 @@ int main(int argc, char *argv[])
             canvas->updateCanvas();
             const Clock::time_point updateEnd=Clock::now();
 
+            if(depthView)
+                gweni::capture::openDepthViewOnce(*canvas);
+
             // Between the two phases: renderCanvas() clears the masks.
             FrameSample sample;
 
@@ -639,9 +670,11 @@ int main(int argc, char *argv[])
         // (in the browser, per animation frame, never returning). The frame
         // holds only the canvas and the renderer, heap objects, and the colour,
         // a copy, as the browser's loop needs.
-        device->runWindowLoop([canvas, renderer, background]()
+        device->runWindowLoop([canvas, renderer, background, depthView]()
         {
             canvas->updateCanvas();
+            if(depthView)
+                gweni::capture::openDepthViewOnce(*canvas);
             renderer->clearTarget(background);
             canvas->renderCanvas();
         });

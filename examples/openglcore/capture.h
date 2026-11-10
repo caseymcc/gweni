@@ -112,8 +112,17 @@ void installFixedProfileClock();
 //! --stats-overlay [on|off], the switch at argv[i]: whether it asks for the
 //! overlay (gweni::tools::StatsOverlay) to be open at start-up. On, unless the
 //! word after it is "off"; an "on" or "off" there is taken (i moves past it),
-//! so a later --stats-overlay off overrides an earlier one.
+//! so a later --stats-overlay off overrides an earlier one. --depth-view
+//! [on|off] reads the same way.
 bool statsOverlayArgument(int argc, char *argv[], int &i);
+
+//! --depth-view: opens the canvas's depth view (gweni::tools::DepthView) the
+//! first time it is called for that canvas once its z labels are numbered
+//! (Canvas::highestZIndex(), after an updateCanvas()), so the view's default
+//! spacing fits them; call it after each frame's updateCanvas(), before the
+//! render. A canvas whose view it opened is not opened again, so Escape or F9
+//! closes it for good.
+void openDepthViewOnce(controls::Canvas &canvas);
 
 //-----------------------------------------------------------------------------
 // Scale: device pixels per logical unit. The canvas is laid out in logical

@@ -118,7 +118,7 @@ public:
 
     //! The focal length, in the view's longer side: how far the camera is
     //! from the back plane at reset, so the perspective's strength
-    static constexpr float FocalViews=2.0f;
+    static constexpr float FocalViews=4.0f;
     //! What the mouse and the keys do (see the class comment)
     static constexpr float OrbitDegreesPerUnit=0.4f;
     static constexpr float KeyMoveUnits=24.0f;

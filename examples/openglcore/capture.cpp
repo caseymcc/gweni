@@ -12,6 +12,7 @@
 #include <gweni/platforms/commonPlatform.h>
 #include <gweni/platforms/platform.h>
 #include <gweni/platforms/renderers/openglCore.h>
+#include <gweni/tools/depthView.h>
 #ifdef GWENI_HAS_VULKAN
 #include <gweni/platforms/renderers/vulkan.h>
 #include "vulkanWindow.h"
@@ -27,6 +28,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
+#include <unordered_set>
 #include <vector>
 
 namespace gweni
@@ -108,6 +110,19 @@ bool statsOverlayArgument(int argc, char *argv[], int &i)
     return true;
 }
 
+void openDepthViewOnce(controls::Canvas &canvas)
+{
+    // by control id, never reused, so a canvas made at a deleted one's address
+    // is opened too
+    static std::unordered_set<size_t> opened;
+
+    if(canvas.highestZIndex() <= 0 || opened.count(canvas.getControlId()))
+        return;
+    opened.insert(canvas.getControlId());
+    if(tools::DepthView::open(&canvas))
+        std::cout<<"the depth view is open; F9 or Escape closes it\n";
+}
+
 bool parseScale(const char *value, float &scale)
 {
     char *end=nullptr;
@@ -174,6 +189,8 @@ void fitCanvasToWindow(GLFWwindow *window, float manual, renderer::Base &rendere
     canvas.setScale(scale);
     canvas.setSize(size.x, size.y);
     input.setWindowMetrics(windowSize, framebuffer, scale);
+    // its camera is built from the view
+    tools::DepthView::viewChanged(&canvas);
 }
 
 #if GWENI_EXAMPLE_WEBGL
