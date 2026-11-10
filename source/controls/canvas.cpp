@@ -794,10 +794,15 @@ bool Canvas::inputMouseButton(int button, bool down)
     {
         // A press the canvas took before the capture was set ends on the
         // canvas, where the canvas has the mouse, so nothing stays held there.
+        InputCapture *capture=m_inputCapture;
+
         if(!down && heldBeforeCapture(button))
             input::onMouseClicked(this, button, false);
 
-        m_inputCapture->captureMouseButton(button, down);
+        // The release's handler may have cleared or replaced the capture (a
+        // button that closes the depth view deletes it).
+        if(m_inputCapture == capture)
+            capture->captureMouseButton(button, down);
         return true;
     }
 
@@ -1349,11 +1354,14 @@ bool Canvas::inputModifierKey(int key, bool down)
     {
         // As for a press: a key the canvas has down goes up there, so it does
         // not repeat once the capture is gone.
+        InputCapture *capture=m_inputCapture;
+
         if(!down && (key > keys::Invalid) && (key < keys::KeysCount)
             && input::isKeyDown(key))
             input::onKeyEvent(this, key, false);
 
-        m_inputCapture->captureKey(key, down);
+        if(m_inputCapture == capture)
+            capture->captureKey(key, down);
         return true;
     }
 

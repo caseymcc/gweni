@@ -17,7 +17,8 @@
  *  while the capture is set, its release goes up on the canvas as well as to
  *  the capture (so it does not repeat once the capture is gone), and a held
  *  Button's release ends its press where the canvas had the mouse, its mouse
- *  focus let go.
+ *  focus let go. A handler of that release that clears or replaces the capture
+ *  (a button closing the depth view) is safe: neither capture gets it.
  */
 #include "headlessFixture.h"
 
@@ -335,4 +336,50 @@ TEST_CASE("Input capture: a button held when the capture is set is let go by its
     CHECK(HoveredControl == scene.button);
     scene.click(30, 20);
     CHECK(scene.presses == 2);
+}
+
+TEST_CASE("Input capture: a held release whose handler clears the capture gives it nothing")
+{
+    Scene scene;
+    controls::Canvas *canvas=scene.canvas;
+    Recorder recorder;
+    Recorder replacement;
+
+    struct Closer: public event::Handler
+    {
+        controls::Canvas *canvas=nullptr;
+        controls::InputCapture *next=nullptr;
+
+        void pressed(event::Info) { canvas->setInputCapture(next); }
+    } closer;
+
+    closer.canvas=canvas;
+    scene.button->onPressCaller.add(&closer, &Closer::pressed);
+
+    // the press is held when the capture is set; its release clicks the
+    // Button, whose handler clears the capture (as a button closing the
+    // depth view deletes it)
+    canvas->inputMouseMoved(30, 20, 0, 0);
+    canvas->inputMouseButton(0, true);
+    scene.frame();
+    canvas->setInputCapture(&recorder);
+
+    CHECK(canvas->inputMouseButton(0, false));
+    CHECK(scene.presses == 1);
+    CHECK(canvas->inputCapture() == nullptr);
+    CHECK(recorder.events.empty());
+    CHECK(MouseFocus == nullptr);
+
+    // replaced instead: neither the old capture nor the new one gets the
+    // release of a press it never saw
+    closer.next=&replacement;
+    canvas->inputMouseButton(0, true);
+    scene.frame();
+    canvas->setInputCapture(&recorder);
+
+    CHECK(canvas->inputMouseButton(0, false));
+    CHECK(scene.presses == 2);
+    CHECK(canvas->inputCapture() == &replacement);
+    CHECK(recorder.events.empty());
+    CHECK(replacement.events.empty());
 }
