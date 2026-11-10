@@ -94,6 +94,9 @@ public:
 private:
     //! Its submenu was shown or hidden: the open highlight (isMenuOpen()) changed.
     void onMenuVisibilityChanged(event::Info);
+    //! Its submenu is being deleted (Menu::~Menu) before it: it is a plain item
+    //! again, with no submenu arrow, so a press checks and selects it.
+    void submenuDeleted();
     //! The image, if any, is hidden while checkable and checked, whatever order
     //! setImage, setCheckable and setChecked came in.
     void updateImageVisibility();
@@ -107,6 +110,8 @@ private:
 
 
     controls::Base *m_submenuArrow=nullptr;
+
+    friend class Menu;
 };
 
 

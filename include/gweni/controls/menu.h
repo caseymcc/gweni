@@ -25,7 +25,8 @@ class GWENI_EXPORT Menu: public ScrollControl
 public:
 
     GWENI_CONTROL(Menu, ScrollControl);
-    //! Clears it from every control it is the context menu of.
+    //! Clears it from every control it is the context menu of, and from the
+    //! MenuItem it is the submenu of (MenuItem::submenuDeleted).
     ~Menu() override;
 
 public:
@@ -115,7 +116,11 @@ protected:
 
     //! The controls it is the context menu of (Base::setContextMenu).
     std::vector<Base *> m_contextOwners;
+    //! The item it is the submenu of (MenuItem::getMenu), which owns it; null
+    //! for any other menu, and once that item is being deleted.
+    MenuItem *m_parentItem=nullptr;
     friend class Base;
+    friend class MenuItem;
 };
 
 

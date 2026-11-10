@@ -33,7 +33,11 @@ GWENI_CONTROL_CONSTRUCTOR(MenuItem)
 }
 
 MenuItem::~MenuItem()
-{}
+{
+    // its submenu, a canvas child, outlives it: it must not call back
+    if(m_menu)
+        m_menu->m_parentItem=nullptr;
+}
 
 void MenuItem::render(skin::Base *skin)
 {
@@ -66,6 +70,7 @@ Menu *MenuItem::getMenu()
     if(!m_menu)
     {
         m_menu=getCanvas()->newChild<Menu>();
+        m_menu->m_parentItem=this;
         m_menu->setHidden(true);
         m_menu->onVisibilityChanged.add(this, &MenuItem::onMenuVisibilityChanged);
 
@@ -80,6 +85,30 @@ Menu *MenuItem::getMenu()
     }
 
     return m_menu;
+}
+
+// The arrow goes delayed: the submenu may be deleted from an event of this
+// item's own menu, inside a walk of its tree. A canvas tearing down deletes it
+// with the item.
+void MenuItem::submenuDeleted()
+{
+    m_menu=nullptr;
+
+    Canvas *canvas=getCanvas();
+
+    if(canvas && canvas->releasingChildren())
+        return;
+
+    if(m_submenuArrow)
+    {
+        if(canvas)
+            m_submenuArrow->delayedDelete();
+        else
+            delete m_submenuArrow;
+        m_submenuArrow=nullptr;
+    }
+
+    invalidate();
 }
 
 // However the submenu opens or closes (openMenu(), Menu::closeAll(), the

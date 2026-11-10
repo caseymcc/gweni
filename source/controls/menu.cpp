@@ -44,6 +44,9 @@ Menu::~Menu()
 {
     for(Base *owner : m_contextOwners)
         owner->contextMenuDeleted();
+
+    if(m_parentItem)
+        m_parentItem->submenuDeleted();
 }
 
 void Menu::renderUnder(skin::Base *skin)
