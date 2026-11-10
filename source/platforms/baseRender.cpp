@@ -19,8 +19,7 @@ namespace renderer
 {
 
 Base::Base(ResourcePaths &paths)
-    : m_scale(1.0f)
-    , m_paths(paths)
+    : m_paths(paths)
     , m_renderOffset(gweni::Point(0, 0))
     , m_RTT(nullptr)
 {}
@@ -86,7 +85,7 @@ void Base::drawShavedCornerRect(size_t *primitiveIds, gweni::Rect rect, int zInd
 
 int Base::snap(float value) const
 {
-    return snap(value, m_scale);
+    return snap(value, m_transform.scale);
 }
 
 int Base::snap(float value, float scale)
@@ -96,21 +95,22 @@ int Base::snap(float value, float scale)
 
 void Base::translate(int &x, int &y)
 {
-    x=snap(float(x+m_renderOffset.x));
-    y=snap(float(y+m_renderOffset.y));
+    x=m_transform.deviceX(float(x+m_renderOffset.x));
+    y=m_transform.deviceY(float(y+m_renderOffset.y));
 }
 
-// Both edges are snapped and the size is what lies between them, so a rect that
-// ends where the next one starts shares its device-pixel edge at any scale.
+// Both edges are translated and the size is what lies between them, so a rect
+// that ends where the next one starts shares its device-pixel edge at any scale
+// and in any space.
 void Base::translate(gweni::Rect &rect)
 {
     const int x=rect.x+m_renderOffset.x;
     const int y=rect.y+m_renderOffset.y;
-    const int x0=snap(float(x));
-    const int y0=snap(float(y));
+    const int x0=m_transform.deviceX(float(x));
+    const int y0=m_transform.deviceY(float(y));
 
-    rect.w=snap(float(x+rect.w))-x0;
-    rect.h=snap(float(y+rect.h))-y0;
+    rect.w=m_transform.deviceX(float(x+rect.w))-x0;
+    rect.h=m_transform.deviceY(float(y+rect.h))-y0;
     rect.x=x0;
     rect.y=y0;
 }

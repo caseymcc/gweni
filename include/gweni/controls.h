@@ -92,6 +92,7 @@
 #include <gweni/controls/windowButtons.h>
 #include <gweni/controls/windowCanvas.h>
 #include <gweni/controls/windowControl.h>
+#include <gweni/controls/zoomPanel.h>
 
 #include <gweni/anim.h>
 

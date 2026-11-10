@@ -284,6 +284,8 @@ set(GWENI_CONTROL_SOURCES
     source/controls/verticalSlider.cpp
     include/gweni/controls/virtualList.h
     source/controls/virtualList.cpp
+    include/gweni/controls/zoomPanel.h
+    source/controls/zoomPanel.cpp
     include/gweni/controls/windowButtons.h
     include/gweni/controls/windowCanvas.h
     source/controls/windowCanvas.cpp

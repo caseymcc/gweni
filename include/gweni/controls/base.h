@@ -555,6 +555,19 @@ public:
     //! changed.
     virtual bool hasChildClipRects() const { return false; }
 
+    //! Whether this control's children draw in a space of its own
+    //! (childRenderTransform(), a ZoomPanel): they render at offset 0 in it,
+    //! clipped to the device px of the region this control renders in (its
+    //! bounds too if it clips) through the transform's device clip.
+    bool transformsChildren() const { return m_transformsChildren; }
+    //! For a control that transformsChildren(): the origin and scale of the
+    //! space its children draw in, \p outer being the one it renders in and
+    //! \p at its bounds' origin there, in outer's units. The render drain
+    //! sets the device clip; this sets the rest of \p inner, which starts as
+    //! \p outer.
+    virtual void childRenderTransform(const renderer::RenderTransform & /*outer*/,
+        const Point & /*at*/, renderer::RenderTransform & /*inner*/) const {}
+
     //! The skin's renderer object for this control, which owns its primitive and
     //! text ids; null until the control has been rendered once.
     const skin::Control *getSkinControl() const { return m_skinControl.get(); }
@@ -1066,6 +1079,8 @@ protected:
 
     int m_stateChange;
     bool m_restrictToParent;
+    //! transformsChildren(), set by such a control's constructor
+    bool m_transformsChildren=false;
     bool m_disabled;
     //! Its own hidden flag (hidden()).
     bool m_hidden;

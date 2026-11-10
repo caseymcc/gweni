@@ -11,6 +11,7 @@
 
 #include <gweni/platforms/platformTypes.h>
 
+#include <cmath>
 #include <cstdint>
 #include <vector>
 
@@ -41,6 +42,40 @@ struct FrameCounts
     //! the draws and the submit) took, on platform::profileTimeMicros(); 0 for a
     //! renderer that does not time it
     uint64_t flushMicros=0;
+};
+
+//! Where the units of the space being drawn in land in device px: a canvas
+//! point v of it is at origin+fraction+v*scale, rounded half up (Base::translate).
+//! A canvas sets the identity at its scale (Base::setScale); a control whose
+//! children draw in a space of their own (a ZoomPanel) gives them another, and
+//! the render drain sets it as it sets the render offset and the clip region.
+struct RenderTransform
+{
+    //! the device px the space's origin is at: a whole px and a fraction of one
+    //! in [0, 1), kept apart so a whole-px origin adds nothing to the rounding
+    int originX=0;
+    int originY=0;
+    float fractionX=0.0f;
+    float fractionY=0.0f;
+    //! device px per unit: the canvas's scale times every zoom the space is in
+    float scale=1.0f;
+    //! whether everything drawn in the space is also clipped to deviceClip, in
+    //! device px, as well as to the clip region: the region of the space it
+    //! was entered from, which its own units cannot hold
+    bool bounded=false;
+    gweni::Rect deviceClip;
+
+    //! The device px of the space's point \a v on the x (y) axis. With no
+    //! fraction it is the origin plus Base::snap(v): the same rounding as at
+    //! the origin, so a space at a whole px draws as one at 0 does, shifted.
+    int deviceX(float v) const
+    {
+        return originX+static_cast<int>(std::floor(fractionX+v*scale+0.5f));
+    }
+    int deviceY(float v) const
+    {
+        return originY+static_cast<int>(std::floor(fractionY+v*scale+0.5f));
+    }
 };
 
 //! A text id whose run had glyph slots written in the last frame, and how many
@@ -317,13 +352,14 @@ public:
     //! \sect{Translate}
     //!     Translate a panel's local drawing coordinate
     //!     into view space, taking Offsets into account.
-    //!     A point becomes snap(x+offset.x); a rect has both of its edges
-    //!     snapped, and its size is the distance between them.
+    //!     A point becomes renderTransform()'s device px of x+offset.x
+    //!     (snap(x+offset.x) in a canvas's own space); a rect has both of its
+    //!     edges translated, and its size is the distance between them.
     void translate(int &x, int &y);
     void translate(gweni::Rect &rect);
-    //! A canvas coordinate (or length) in device pixels: value*scale(),
-    //! rounded half up. Every scaled edge goes through it, so edges that meet
-    //! in canvas units meet on the device-pixel grid too.
+    //! A length (or, in a canvas's own space, a coordinate) in device pixels:
+    //! value*scale(), rounded half up. Every scaled edge goes through it, so
+    //! edges that meet in canvas units meet on the device-pixel grid too.
     int snap(float value) const;
     //! snap() at a given scale, for code that sizes a framebuffer to match.
     static int snap(float value, float scale);
@@ -347,8 +383,17 @@ public:
     }
 
 
-    void setScale(float fScale) { m_scale=fScale; }
-    float scale() const { return m_scale; }
+    //! The canvas's scale: the transform becomes the identity at it (origin 0,
+    //! no device clip), as a canvas sets it before it renders.
+    void setScale(float fScale) { m_transform=RenderTransform(); m_transform.scale=fScale; }
+    //! The scale of the space being drawn in, in device px per unit: the
+    //! canvas's, times every zoom the space is in (renderTransform()).
+    float scale() const { return m_transform.scale; }
+
+    //! The space being drawn in: the render offset and the clip region are in
+    //! its units. The render drain sets it for each control it renders.
+    void setRenderTransform(const RenderTransform &transform) { m_transform=transform; }
+    const RenderTransform &renderTransform() const { return m_transform; }
 
     //! Raised whenever text drawn or measured before may draw or measure otherwise
     //! now, for a reason other than the scale (SlotRenderer::setTextAA). A canvas that
@@ -396,7 +441,7 @@ protected:
     //! Every text run laid out so far is stale: raises textLayoutSerial()
     void textLayoutChanged() { ++m_textLayoutSerial; }
 
-    float m_scale;
+    RenderTransform m_transform;
 
 private:
 

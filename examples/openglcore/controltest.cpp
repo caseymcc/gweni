@@ -781,6 +781,7 @@
 #include <gweni/controls/virtualList.h>
 #include <gweni/controls/dataTable.h>
 #include <gweni/controls/properties.h>
+#include <gweni/controls/zoomPanel.h>
 #include <gweni/tools/depthView.h>
 #include <gweni/tools/inspector.h>
 #include <gweni/tools/statsOverlay.h>
@@ -1041,7 +1042,7 @@ static void printUsage(std::ostream &out)
          "                     | context-menu | popup | virtual-list\n"
          "                     | data-table-virtual | hide-show | demo-labels\n"
          "                     | plot-histogram | plot-lines | inspector\n"
-         "                     | stats-overlay | depth-view;\n"
+         "                     | stats-overlay | depth-view | zoom-panel;\n"
          "                     resize prints listing_settled, mirror_settled,\n"
          "                     shrink_settled and fresh_matches, interaction one\n"
          "                     yes/no per repaint check, typing its keyboard\n"
@@ -1962,7 +1963,7 @@ static bool runSteps(Session &s, const std::vector<Step> &steps, const std::stri
 //-----------------------------------------------------------------------------
 enum class Scenario { None, PerControl, Resize, Docked, Scroll, Interaction, Typing, Clip, TextSize, Scale,
     ToolTip, ContextMenu, Popup, VirtualList, DataTableVirtual, HideShow, DemoLabels, PlotHistogram,
-    PlotLines, Inspector, Theme, StatsOverlay, DepthView };
+    PlotLines, Inspector, Theme, StatsOverlay, DepthView, ZoomPanel };
 
 static bool parseScenario(const std::string &name, Scenario &scenario)
 {
@@ -1988,6 +1989,7 @@ static bool parseScenario(const std::string &name, Scenario &scenario)
     else if(name == "theme") scenario=Scenario::Theme;
     else if(name == "stats-overlay") scenario=Scenario::StatsOverlay;
     else if(name == "depth-view") scenario=Scenario::DepthView;
+    else if(name == "zoom-panel") scenario=Scenario::ZoomPanel;
     else return false;
     return true;
 }
@@ -2406,6 +2408,72 @@ static bool runScaleScenario(Session &s, const std::string &controlName,
              <<" fresh_matches="<<(freshMatches?"yes":"no")<<"\n";
     if(!settled)
         std::cerr<<"ControlTest: the canvas did not come back from a 1 -> 2 -> 1 scale change\n";
+    return true;
+}
+
+// --scenario zoom-panel: controls::ZoomPanel against Canvas::setScale
+//
+// ButtonDemo inside a ZoomPanel filling a scale-1 canvas, its content 640x480
+// at zoom z (pan 0, so its origin is the canvas's whole px 0,0), must draw the
+// very pixels ButtonDemo does on a 640x480 canvas at setScale(z), each built on
+// a fresh canvas onto a target of round(640x480*z), for z = 1, 1.5, 1.37, 2.
+static bool runZoomPanelScenario(Session &s, const std::string &shotDir, bool &passed)
+{
+    static const float zooms[]={1.0f, 1.5f, 1.37f, 2.0f};
+    const std::string controlName="ButtonDemo";
+
+    passed=true;
+    // an animation stands still between the shots
+    s.freezeClock=true;
+
+    for(float zoom : zooms)
+    {
+        char tag[32];
+
+        std::snprintf(tag, sizeof(tag), "%.2f", zoom);
+
+        ResizeState scaled, zoomed;
+
+        // ButtonDemo on a canvas at setScale(zoom)
+        if(!rescaleSession(s, zoom) || !resizeSession(s, 640, 480))
+            return false;
+        replaceCanvas(s);
+
+        gweni::controls::Base *control=addControl(s, controlName);
+
+        renderFrames(s, s.frames);
+        scaled.name=std::string("zoom-")+tag+"-canvas.png";
+        if(!shoot(s, shotDir+"/"+scaled.name)) return false;
+        s.renderer->readPixels(s.pixels.x, s.pixels.y, scaled.pixels);
+        dropControl(s, control);
+
+        // the same in a ZoomPanel at zoom, on a canvas at scale 1 of that target
+        const gweni::Point target=s.pixels;
+
+        if(!rescaleSession(s, 1.0f) || !resizeSession(s, target.x, target.y))
+            return false;
+        replaceCanvas(s);
+
+        gweni::controls::ZoomPanel *panel=s.canvas->newChild<gweni::controls::ZoomPanel>();
+
+        panel->setDock(gweni::DockPosition::Center);
+        panel->setContentSize(gweni::Point(640, 480));
+        panel->setZoom(zoom);
+        control=addControl(s, controlName);
+        control->setParent(panel);
+
+        renderFrames(s, s.frames);
+        zoomed.name=std::string("zoom-")+tag+"-panel.png";
+        if(!shoot(s, shotDir+"/"+zoomed.name)) return false;
+        s.renderer->readPixels(s.pixels.x, s.pixels.y, zoomed.pixels);
+
+        const bool same=pixelsMatch(scaled, zoomed);
+
+        std::cout<<"zoom-panel zoom="<<tag<<" pixels_match="<<(same?"yes":"no")<<"\n";
+        passed=same && passed;
+        panel->delayedDelete();
+        s.canvas->updateCanvas();
+    }
     return true;
 }
 
@@ -9886,6 +9954,15 @@ int main(int argc, char *argv[])
             ok=runStatsOverlayScenario(session, shotDir, passed);
             if(ok && !passed)
                 ok=false;   // the overlay wrote outside its refreshes or showed the wrong counts
+            break;
+        }
+
+        case Scenario::ZoomPanel:
+        {
+            bool passed=false;
+            ok=runZoomPanelScenario(session, shotDir, passed);
+            if(ok && !passed)
+                ok=false;   // a zoomed panel did not draw as a scaled canvas
             break;
         }
 

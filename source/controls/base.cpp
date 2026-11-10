@@ -1682,18 +1682,64 @@ Rect clipRegionAt(const Rect &clip, const Point &at, int w, int h)
     return Rect(x0, y0, std::max(0, x1-x0), std::max(0, y1-y0));
 }
 
-// The render offset and clip region \p control's children render in, \p
-// control rendering at (offset, clip): its bounds' origin added, and its
-// bounds clipped to if it clips.
+// What the render drain sets on the renderer for a control: the render
+// offset and clip region, in the units of the space the transform maps to
+// device px.
+struct RenderState
+{
+    Point offset;
+    Rect clip;
+    renderer::RenderTransform transform;
+};
+
+// The clip region of a space a control's children enter (a ZoomPanel's): as
+// good as none, since the region they were entered from is the transform's
+// device clip, and small enough that a corner of it in device px fits an int
+// at any scale.
+constexpr int SpaceClipReach=1<<24;
+
+// \p inner, the state \p control's children render in so far, moved into the
+// space of their own the control gives them (\p at: its origin in the space it
+// renders in): the region they were entered from in device px, cut to the one
+// that space was entered from, becomes the transform's device clip.
+void enterChildSpace(const Base *control, const Point &at, RenderState &inner)
+{
+    const renderer::RenderTransform outer=inner.transform;
+    const Rect &clip=inner.clip;
+    int x0=outer.deviceX(float(clip.x));
+    int y0=outer.deviceY(float(clip.y));
+    int x1=outer.deviceX(float(clip.x+clip.w));
+    int y1=outer.deviceY(float(clip.y+clip.h));
+
+    if(outer.bounded)
+    {
+        x0=std::max(x0, outer.deviceClip.x);
+        y0=std::max(y0, outer.deviceClip.y);
+        x1=std::min(x1, outer.deviceClip.x+outer.deviceClip.w);
+        y1=std::min(y1, outer.deviceClip.y+outer.deviceClip.h);
+    }
+
+    control->childRenderTransform(outer, at, inner.transform);
+    inner.transform.bounded=true;
+    inner.transform.deviceClip=Rect(x0, y0, std::max(0, x1-x0), std::max(0, y1-y0));
+    inner.offset=Point(0, 0);
+    inner.clip=Rect(-SpaceClipReach, -SpaceClipReach, 2*SpaceClipReach, 2*SpaceClipReach);
+}
+
+// The state \p control's children render in, \p control rendering in \p
+// state: its bounds' origin added, its bounds clipped to if it clips, and the
+// space it gives them if it has one of its own.
 GWENI_RENDER_INLINE inline
-void innerRenderState(Base *control, const Point &offset, const Rect &clip, Point &innerOffset,
-    Rect &innerClip)
+void innerRenderState(Base *control, const RenderState &state, RenderState &inner)
 {
     const Rect &bounds=control->getBounds();
-    const Point at(offset.x+bounds.x, offset.y+bounds.y);
+    const Point at(state.offset.x+bounds.x, state.offset.y+bounds.y);
 
-    innerClip=control->shouldClip()?clipRegionAt(clip, at, bounds.w, bounds.h):clip;
-    innerOffset=at;
+    inner.clip=control->shouldClip()?clipRegionAt(state.clip, at, bounds.w, bounds.h):state.clip;
+    inner.offset=at;
+    inner.transform=state.transform;
+    if(control->transformsChildren())
+        enterChildSpace(control, at, inner);
 }
 
 // The clip region \p child of \p parent renders in, \p parent's children's
@@ -1778,6 +1824,9 @@ bool Base::childRegionChanged(const Rect &oldBounds)
 
     for(Base *parent=m_actualParent; parent; child=parent, parent=parent->m_actualParent)
     {
+        // its children's region is in device px from there up (enterChildSpace)
+        if(parent->transformsChildren())
+            return true;
         if(const Rect *childClip=parent->getChildClipRect(child))
         {
             x.narrow(childClip->x, static_cast<long long>(childClip->x)+childClip->w);
@@ -2237,8 +2286,7 @@ namespace
 struct RenderLevel
 {
     Base *control;
-    Point offset;
-    Rect clip;
+    RenderState state;
 };
 
 // A queue slot to render and its z, for the sort.
@@ -2352,21 +2400,25 @@ void Base::drainRenderQueue(skin::Base *skin, bool zTied, size_t treeSize)
     const size_t appendCap=std::max(MinQueuedDuringDrain, queuedBefore);
 
     // This root's own state, as the canvas set it on the renderer.
-    const Point rootOffset=baseRenderer->getRenderOffset();
-    const Rect rootClip=baseRenderer->clipRegion();
+    const RenderState root{baseRenderer->getRenderOffset(), baseRenderer->clipRegion(),
+        baseRenderer->renderTransform()};
     unsigned treeChanges=g_renderWalkTreeChanges;
 
-    // Runs the hooks of \p control, queued in \p slot, at (offset, clip), and
+    // Runs the hooks of \p control, queued in \p slot, in \p state, and
     // clears its state; each hook but the first only if the ones before did not
     // delete the control (~Base nulls its slot). Returns whether it is still
     // there.
-    const auto renderQueued=[&](Base *control, size_t slot, const Point &offset, const Rect &clip)
+    const auto renderQueued=[&](Base *control, size_t slot, const RenderState &state)
         GWENI_RENDER_INLINE
         {
+            const Point &offset=state.offset;
+            const Rect &clip=state.clip;
+
             if(!control->statsExcluded())
                 ++g_changeStats.visited;
             g_renderingControl=control;
 
+            baseRenderer->setRenderTransform(state.transform);
             baseRenderer->setRenderOffset(offset);
             baseRenderer->setClipRegion(clip);
             control->renderUnder(skin);
@@ -2409,8 +2461,7 @@ void Base::drainRenderQueue(skin::Base *skin, bool zTied, size_t treeSize)
     if(zTied || ((treeSize != 0) && (queuedBefore*4 >= treeSize)))
     {
         bool stopped=false;
-        const auto walkTree=[&](const auto &self, Base *control, const Point &offset,
-            const Rect &clip) -> void
+        const auto walkTree=[&](const auto &self, Base *control, const RenderState &state) -> void
             {
                 const int slot=control->m_renderQueueIndex;
 
@@ -2423,7 +2474,7 @@ void Base::drainRenderQueue(skin::Base *skin, bool zTied, size_t treeSize)
                         control->m_renderQueueIndex=-1;
                         queue[slot]=nullptr;
                     }
-                    else if(!renderQueued(control, (size_t)slot, offset, clip)
+                    else if(!renderQueued(control, (size_t)slot, state)
                         || (treeChanges != g_renderWalkTreeChanges))
                     {
                         stopped=true;
@@ -2434,22 +2485,29 @@ void Base::drainRenderQueue(skin::Base *skin, bool zTied, size_t treeSize)
                 if(control->m_children.empty())
                     return;
 
-                Point innerOffset;
-                Rect innerClip;
+                RenderState inner;
 
-                innerRenderState(control, offset, clip, innerOffset, innerClip);
+                innerRenderState(control, state, inner);
                 for(Base *child : control->m_children)
                 {
-                    Rect clipForChild=innerClip;
+                    // a copy only for a child clipped to a rect of its own
+                    // (childRenderState)
+                    if(const Rect *childClip=control->getChildClipRect(child))
+                    {
+                        RenderState forChild=inner;
 
-                    childRenderState(control, child, innerOffset, clipForChild);
-                    self(self, child, innerOffset, clipForChild);
+                        forChild.clip=clipRegionAt(inner.clip, Point(inner.offset.x+childClip->x,
+                            inner.offset.y+childClip->y), childClip->w, childClip->h);
+                        self(self, child, forChild);
+                    }
+                    else
+                        self(self, child, inner);
                     // before the loop steps on through a list a hook changed
                     if(stopped)
                         return;
                 }
             };
-        walkTree(walkTree, this, rootOffset, rootClip);
+        walkTree(walkTree, this, root);
         treeChanges=g_renderWalkTreeChanges;
         // stopped: what it had not reached yet goes through the queue's order
         if(stopped)
@@ -2477,9 +2535,9 @@ void Base::drainRenderQueue(skin::Base *skin, bool zTied, size_t treeSize)
     std::vector<Base *> &chain=g_renderChain;
     size_t depth=0;
 
-    // Pushes \p control, rendering at (offset, clip), with the state its
-    // children render in.
-    const auto pushLevel=[&](Base *control, const Point &offset, const Rect &clip)
+    // Pushes \p control, rendering in \p state, with the state its children
+    // render in.
+    const auto pushLevel=[&](Base *control, const RenderState &state)
         {
             if(depth == stack.size())
                 stack.emplace_back();
@@ -2487,24 +2545,23 @@ void Base::drainRenderQueue(skin::Base *skin, bool zTied, size_t treeSize)
             RenderLevel &level=stack[depth];
 
             level.control=control;
-            innerRenderState(control, offset, clip, level.offset, level.clip);
+            innerRenderState(control, state, level.state);
             control->m_renderStackLevel=(int)depth;
             ++depth;
         };
     // The state \p control renders in, its parent at the top of the stack.
-    const auto stateUnderTop=[&](Base *control, Point &offset, Rect &clip)
+    const auto stateUnderTop=[&](Base *control, RenderState &state)
         {
             const RenderLevel &top=stack[depth-1];
 
-            offset=top.offset;
-            clip=top.clip;
-            childRenderState(control->m_actualParent, control, offset, clip);
+            state=top.state;
+            childRenderState(control->m_actualParent, control, state.offset, state.clip);
         };
     // The stack back to this root alone.
     const auto resetStack=[&]()
         {
             depth=0;
-            pushLevel(this, rootOffset, rootClip);
+            pushLevel(this, root);
         };
     resetStack();
 
@@ -2516,8 +2573,7 @@ void Base::drainRenderQueue(skin::Base *skin, bool zTied, size_t treeSize)
     // The control rendered last and the state it rendered in, pushed on the
     // stack only if the next entry is its child: a leaf costs no level.
     Base *last=nullptr;
-    Point lastOffset;
-    Rect lastClip;
+    RenderState lastState;
 
     for(;;)
     {
@@ -2551,8 +2607,7 @@ void Base::drainRenderQueue(skin::Base *skin, bool zTied, size_t treeSize)
             resetStack();
         }
 
-        Point offset=rootOffset;
-        Rect clip=rootClip;
+        RenderState state=root;
 
         if(control != this)
         {
@@ -2560,7 +2615,7 @@ void Base::drainRenderQueue(skin::Base *skin, bool zTied, size_t treeSize)
 
             // a child of the last one: its level goes on the stack
             if(last && (ancestor == last))
-                pushLevel(last, lastOffset, lastClip);
+                pushLevel(last, lastState);
             last=nullptr;
 
             // up to the nearest ancestor on the stack, which this root always is
@@ -2586,13 +2641,13 @@ void Base::drainRenderQueue(skin::Base *skin, bool zTied, size_t treeSize)
 
             for(auto it=chain.rbegin(); it != chain.rend(); ++it)
             {
-                stateUnderTop(*it, offset, clip);
-                pushLevel(*it, offset, clip);
+                stateUnderTop(*it, state);
+                pushLevel(*it, state);
             }
-            stateUnderTop(control, offset, clip);
+            stateUnderTop(control, state);
         }
 
-        if(!renderQueued(control, slot, offset, clip)
+        if(!renderQueued(control, slot, state)
             || (treeChanges != g_renderWalkTreeChanges))
             continue;
 
@@ -2605,14 +2660,14 @@ void Base::drainRenderQueue(skin::Base *skin, bool zTied, size_t treeSize)
         {
             // the next entry is often a child
             last=control;
-            lastOffset=offset;
-            lastClip=clip;
+            lastState=state;
         }
     }
 
     // as the canvas left them, for whatever it draws after
-    baseRenderer->setRenderOffset(rootOffset);
-    baseRenderer->setClipRegion(rootClip);
+    baseRenderer->setRenderTransform(root.transform);
+    baseRenderer->setRenderOffset(root.offset);
+    baseRenderer->setClipRegion(root.clip);
 
     // every slot is null unless something was carried or left past the cap
     if((carried == 0) && (appended == queue.size()))

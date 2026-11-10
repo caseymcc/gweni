@@ -1843,22 +1843,32 @@ void SlotRenderer::drawLine(size_t primitiveId, gweni::PointF p0, gweni::PointF 
     // Whole device px, like a border, so the stroke can sit on the pixel grid.
     const int stroke=std::min(std::max(1, snap(thickness)), 4096);
     const gweni::Point &offset=getRenderOffset();
+    const RenderTransform &transform=renderTransform();
 
     // The device px where the stroke across an endpoint coordinate starts: its
-    // centre at v*scale, moved to put both its edges on pixel boundaries. For an
-    // even stroke that is snap(v)-stroke/2, the edge translate() snaps v to; for an
-    // odd one, the pixel v*scale falls in is its middle row (column).
-    auto strokeStart=[&](float v, int origin)
+    // centre at v*scale (from the space's origin), moved to put both its edges on
+    // pixel boundaries. For an even stroke that is snap(v)-stroke/2, the edge
+    // translate() snaps v to; for an odd one, the pixel v*scale falls in is its
+    // middle row (column).
+    auto strokeStart=[&](float v, int offset, int origin, float fraction)
     {
-        const double centre=(double(v)+origin)*scale();
-        const double start=std::floor(centre-0.5*stroke+0.5);
+        const double centre=(double(v)+offset)*scale()+fraction;
+        const double start=origin+std::floor(centre-0.5*stroke+0.5);
 
         return (int64_t)std::max(std::min(start, 1e9), -1e9);
     };
-    const int64_t ax=strokeStart(p0.x, offset.x);
-    const int64_t ay=strokeStart(p0.y, offset.y);
-    const int64_t bx=strokeStart(p1.x, offset.x);
-    const int64_t by=strokeStart(p1.y, offset.y);
+    auto strokeStartX=[&](float v)
+    {
+        return strokeStart(v, offset.x, transform.originX, transform.fractionX);
+    };
+    auto strokeStartY=[&](float v)
+    {
+        return strokeStart(v, offset.y, transform.originY, transform.fractionY);
+    };
+    const int64_t ax=strokeStartX(p0.x);
+    const int64_t ay=strokeStartY(p0.y);
+    const int64_t bx=strokeStartX(p1.x);
+    const int64_t by=strokeStartY(p1.y);
 
     // The quad: both endpoints' stroke squares, which hold the round caps, and 1 px
     // around them for the anti-aliased edge of a slanted stroke.
@@ -1891,8 +1901,8 @@ void SlotRenderer::drawLine(size_t primitiveId, gweni::PointF p0, gweni::PointF 
         if(!point)
             continue;
 
-        const int64_t px=2*strokeStart(point->x, offset.x)+stroke-centreX;
-        const int64_t py=2*strokeStart(point->y, offset.y)+stroke-centreY;
+        const int64_t px=2*strokeStartX(point->x)+stroke-centreX;
+        const int64_t py=2*strokeStartY(point->y)+stroke-centreY;
         const int64_t limit=std::numeric_limits<int16_t>::max();
 
         if(std::abs(px) > limit || std::abs(py) > limit)
@@ -1955,13 +1965,25 @@ void SlotRenderer::endClip()
 SlotRenderer::Box SlotRenderer::makeClipBox() const
 {
     const gweni::Rect &clip=clipRegion();
+    const RenderTransform &transform=renderTransform();
 
-    // snapped as translate() snaps a rect's edges, so a box edge lands where a quad
-    // drawn over the same rect has its edge
-    long x0=snap(float(clip.x));
-    long y0=snap(float(clip.y));
-    long x1=snap(float(clip.x+clip.w));
-    long y1=snap(float(clip.y+clip.h));
+    // translated as translate() translates a rect's edges, so a box edge lands where
+    // a quad drawn over the same rect has its edge
+    long x0=transform.deviceX(float(clip.x));
+    long y0=transform.deviceY(float(clip.y));
+    long x1=transform.deviceX(float(clip.x+clip.w));
+    long y1=transform.deviceY(float(clip.y+clip.h));
+
+    // inside a space of its own (a ZoomPanel), cut to the region it was entered from
+    if(transform.bounded)
+    {
+        const gweni::Rect &outer=transform.deviceClip;
+
+        x0=std::max(x0, (long)outer.x);
+        y0=std::max(y0, (long)outer.y);
+        x1=std::min(x1, (long)outer.x+outer.w);
+        y1=std::min(y1, (long)outer.y+outer.h);
+    }
 
     x0+=m_clipDebugInset;
     y0+=m_clipDebugInset;
