@@ -15,6 +15,12 @@
  *  moved runs no layout pass and writes no slot. A submenu opens to the right
  *  of its item, its top at the item's top, and on the item's left where the
  *  canvas's right edge leaves it no room.
+ *
+ *  openMenu() anchors the menu to its item (Menu::openNextTo, self-placed on
+ *  the canvas at the size the canvas gives a menu it places) until the menu
+ *  is hidden, a setPos() after it (which then wins, kept inside the canvas,
+ *  the item's moves taking it nowhere) or an openAt() (at the cursor, flipped
+ *  at the right edge as a context menu).
  */
 #include "headlessFixture.h"
 
@@ -321,4 +327,79 @@ TEST_CASE("Menu anchor: a submenu opens on its item's left where the canvas's ri
         CHECK(submenu->getX() < scene.file->getMenu()->getX());
         checkSettled(scene);
     }
+}
+
+TEST_CASE("Menu anchor: openMenu anchors the menu to its item until it is hidden, a request or openAt")
+{
+    Scene scene;
+    controls::Menu *menu=scene.edit->getMenu();
+
+    scene.settle();
+    CHECK(menu->getAnchor() == nullptr);
+
+    scene.edit->openMenu();
+    CHECK(menu->getAnchor() == scene.edit);
+    CHECK(menu->getPlacement() == controls::Placement::Owner);
+    scene.settle();
+    CHECK_AT(menu, belowItem(scene.edit));
+
+    SUBCASE("hidden")
+    {
+        scene.edit->closeMenu();
+        CHECK(menu->getAnchor() == nullptr);
+        scene.edit->openMenu();
+        CHECK(menu->getAnchor() == scene.edit);
+    }
+
+    SUBCASE("a setPos after it wins, kept inside the canvas")
+    {
+        menu->setPos(200, 150);
+        scene.settle();
+        CHECK(menu->getAnchor() == nullptr);
+        CHECK_AT(menu, Point(200, 150));
+
+        // the item moving takes it nowhere
+        scene.file->setText("File with a much longer caption");
+        scene.file->sizeToContents();
+        scene.settle();
+        CHECK_AT(menu, Point(200, 150));
+
+        menu->setPos(390, 150);
+        scene.settle();
+        CHECK_AT(menu, Point(400-menu->getWidth(), 150));
+    }
+
+    SUBCASE("openAt places it at the cursor instead")
+    {
+        menu->openAt(Point(100, 120));
+        CHECK(menu->getAnchor() == nullptr);
+        scene.settle();
+        CHECK_AT(menu, Point(100, 120));
+
+        // flipped to the cursor's left at the right edge, as a context menu
+        menu->openAt(Point(390, 120));
+        scene.settle();
+        CHECK_AT(menu, Point(390-menu->getWidth(), 120));
+    }
+}
+
+TEST_CASE("Menu anchor: a menu opened next to its item is the size the canvas gave it before")
+{
+    Scene scene;
+    controls::Menu *anchored=scene.edit->getMenu();
+    // the same items in a menu the canvas places
+    controls::Menu *placed=scene.canvas->newChild<controls::Menu>();
+
+    placed->addItem("Undo");
+    placed->addItem("Redo");
+    scene.settle();
+    scene.edit->openMenu();
+    placed->openAt(Point(200, 100));
+    scene.settle();
+
+    CHECK(anchored->getPlacement() == controls::Placement::Owner);
+    CHECK(placed->getPlacement() == controls::Placement::Parent);
+    CHECK(anchored->getWidth() == placed->getWidth());
+    CHECK(anchored->getHeight() == placed->getHeight());
+    CHECK(anchored->getHeight() > 0);
 }

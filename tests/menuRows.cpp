@@ -740,7 +740,9 @@ TEST_CASE("Menu rows: a MenuStrip is square in its own surface, its items flat u
         checkHighlighted(hovered, file, scale);
         checkIdle(hovered, edit, scale, clip);
 
+        // laid out first: the menu is placed from the item in layout
         file->openMenu();
+        scene.settle();
         scene.move(canvasRect(file->getMenu()));
         Frame open=scene.settle();
 

@@ -47,6 +47,8 @@ MenuItem::~MenuItem()
 
     m_menu=nullptr;
     menu->m_parentItem=nullptr;
+    if(menu->m_anchor == this)
+        menu->m_anchor=nullptr;
     // unhooked before the hide, which would redraw this item
     menu->onVisibilityChanged.removeHandler(this);
 
@@ -225,20 +227,13 @@ void MenuItem::openMenu()
     if(!m_menu)
         return;
 
-    m_menu->setHidden(false);
-    m_menu->bringToFront();
-    gweni::Point p=localPosToCanvas(gweni::Point(0, 0));
-
-    // Strip menus open downwards
+    // A strip menu below the item, 1 unit off it, a submenu on its right, top
+    // to top: placed from the item in every layout pass, flipped (above it,
+    // on its left) and kept inside the canvas.
     if(m_onStrip)
-        m_menu->setPos(p.x, p.y+getHeight()+1);
-    // Submenus open sidewards
+        m_menu->openNextTo(this, PopupPlacement::Below, 1);
     else
-        m_menu->setPos(p.x+getWidth(), p.y);
-
-    // TODO: Option this.
-    // TODO: Make sure on screen, open the other side of the
-    // parent if it's better...
+        m_menu->openNextTo(this, PopupPlacement::Right, 0);
 }
 
 void MenuItem::closeMenu()

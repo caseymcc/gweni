@@ -66,32 +66,83 @@ void Menu::calculateSize(skin::Base *skin, Dim dim)
         m_preferredSize.height=std::min(m_preferredSize.height, getCanvas()->getHeight());
 }
 
-void Menu::layout(skin::Base *skin)
+// Self-placed (openNextTo()): the canvas's arrange skips it, so it takes the
+// size the canvas would give a dock-None child (policyResize) and the
+// position canvasPosition() gives it, before the subtree is arranged.
+// Popup::placement, keepInside and placement() each work an axis on its own,
+// so the X arrange places it in X from the widths, and the Y arrange in both
+// axes: the anchor was arranged before it in this pass, as the menu comes
+// after the anchor's top-level ancestor among the canvas's children
+// (openNextTo brings it to the front), but a ScrollControl arranges its
+// children in X in its Y arrange (a MenuStrip's items, a Menu's), so the
+// anchor's x is final only then. A move needs no arrange of the subtree.
+void Menu::arrange(skin::Base *skin, Dim dim)
 {
-    // Kept inside the canvas, flipped from the cursor when openAt() placed it.
-    // Only the position changes, which nothing laid out in this pass has read;
-    // layout() runs again in the Y arrange once the height is final. Where it
-    // was asked to open is the request; where it is kept is computed, from
-    // the request each pass, so a canvas that grows again gets it back.
     Canvas *canvas=getCanvas();
 
-    if(canvas && (getParent() == canvas))
+    if(canvas && (getParent() == canvas) && (getPlacement() == Placement::Owner))
+    {
+        policyResize(getPreferredSize(), dim);
+
+        const Rect area(0, 0, canvas->getWidth(), canvas->getHeight());
+        const Point pos=canvasPosition(area);
+
+        if(dim == Dim::X)
+            setArrangedBounds(pos.x, getY(), getWidth(), getHeight());
+        else
+            setArrangedBounds(pos.x, pos.y, getWidth(), getHeight());
+    }
+
+    ParentClass::arrange(skin, dim);
+}
+
+void Menu::layout(skin::Base *skin)
+{
+    // Kept inside the canvas, flipped from the cursor when openAt() placed it,
+    // when the canvas places it (a self-placed one places itself in
+    // arrange()). Only the position changes, which nothing laid out in this
+    // pass has read; layout() runs again in the Y arrange once the height is
+    // final. Where it was asked to open is the request; where it is kept is
+    // computed, from the request each pass, so a canvas that grows again gets
+    // it back.
+    Canvas *canvas=getCanvas();
+
+    if(canvas && (getParent() == canvas) && (getPlacement() != Placement::Owner))
     {
         const Rect area(0, 0, canvas->getWidth(), canvas->getHeight());
-        const Point size(getWidth(), getHeight());
-        const Point at(getRequestedBounds().x, getRequestedBounds().y);
-
-        // a position requested since openAt() wins over the cursor
-        if(m_atCursor && !samePoint(at, m_cursor))
-            m_atCursor=false;
-
-        const Point pos=m_atCursor ? placement(m_cursor, size, area) : keepInside(at, size, area);
+        const Point pos=canvasPosition(area);
 
         if(!samePoint(pos, Point(getX(), getY())))
             setArrangedBounds(pos.x, pos.y, getWidth(), getHeight());
     }
 
     ParentClass::layout(skin);
+}
+
+Point Menu::canvasPosition(const Rect &area)
+{
+    const Point size(getWidth(), getHeight());
+    const Point at(getRequestedBounds().x, getRequestedBounds().y);
+
+    // a position requested since openAt() or openNextTo() wins
+    if(m_atCursor && !samePoint(at, m_cursor))
+        m_atCursor=false;
+
+    if(m_anchor && !samePoint(at, m_anchorRequest))
+        m_anchor=nullptr;
+
+    if(m_anchor)
+    {
+        const Point origin=m_anchor->localPosToCanvas();
+
+        m_placedFor=Rect(origin.x, origin.y, m_anchor->getWidth(), m_anchor->getHeight());
+        return Popup::placement(m_placedFor, size, area, m_anchorSide, m_anchorGap);
+    }
+
+    if(m_atCursor)
+        return placement(m_cursor, size, area);
+
+    return keepInside(at, size, area);
 }
 
 // The cursor is a zero-size anchor: below it, flipped to its left and above
@@ -203,15 +254,41 @@ void Menu::openAt(const Point &cursor)
 {
     setHidden(false);
     bringToFront();
+    m_anchor=nullptr;
     m_atCursor=true;
     m_cursor=cursor;
     setPos(cursor.x, cursor.y);
 }
 
+void Menu::openNextTo(Base *anchor, PopupPlacement side, int gap)
+{
+    Canvas *canvas=anchor ? anchor->getCanvas() : nullptr;
+
+    if(!canvas)
+        return;
+
+    if(getParent() != canvas)
+        setParent(canvas);
+
+    setPlacement(Placement::Owner);
+    setHidden(false);
+    bringToFront();
+    m_atCursor=false;
+    m_anchor=anchor;
+    m_anchorSide=side;
+    m_anchorGap=gap;
+    m_anchorRequest=Point(getRequestedBounds().x, getRequestedBounds().y);
+    m_placedFor=Rect();
+    invalidate();
+}
+
 void Menu::setHidden(bool hidden)
 {
     if(hidden)
+    {
         m_atCursor=false;
+        m_anchor=nullptr;
+    }
 
     const bool changed=(hidden != this->hidden());
 
