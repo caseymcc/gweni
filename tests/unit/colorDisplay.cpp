@@ -6,7 +6,10 @@
  *  The textured skin's ColorDisplay renderer: a swatch is one primitive, a flat
  *  fill when the colour is opaque (or checkers are off) and a checker composite
  *  when it is translucent, and it repaints only when its value changes. Also
- *  checks that ColorPicker's setters reach its swatches.
+ *  checks that ColorPicker's setters reach its swatches, and that its R, G, B
+ *  and A rows keep their requested 160 width (Fixed width, Elastic height) at
+ *  x=10, 10 units left of the Result box at x=180, with the picker's preferred
+ *  height shrinking when the Alpha row is hidden (#509).
  */
 #include "headlessFixture.h"
 
@@ -258,6 +261,58 @@ TEST_CASE("ColorPicker's setters reach its channel swatches and Result")
 
     picker->setColor(Color(1, 2, 3, 4));
     CHECK((swatch("Result") == Color(1, 2, 3, 4)));
+
+    delete canvas;
+}
+
+TEST_CASE("ColorPicker's channel rows are 160 wide at x=10, left of the Result box at x=180")
+{
+    test::StubRenderer renderer;
+    test::StubSkin skin(&renderer);
+    controls::Canvas *canvas=new controls::Canvas(&skin);
+
+    canvas->setSize(640, 480);
+
+    controls::ColorPicker *picker=canvas->newChild<controls::ColorPicker>();
+
+    canvas->updateCanvas();
+
+    auto child=[&](const char *name)
+    {
+        controls::Base *control=picker->findChildByName(name, true);
+
+        REQUIRE(control != nullptr);
+        return control;
+    };
+
+    int y=-1;
+
+    for(const char *name:{"Redgroupbox", "Greengroupbox", "Bluegroupbox", "Alphagroupbox"})
+    {
+        INFO(name);
+        controls::Base *row=child(name);
+
+        // the requested width is kept; the height is the content's
+        CHECK(row->getX() == 10);
+        CHECK(row->getWidth() == 160);
+        CHECK(row->getHeight() == row->getPreferredSize().height);
+        CHECK(row->getY() > y);
+        y=row->getY();
+    }
+
+    controls::Base *result=child("ResultGroupBox");
+
+    CHECK(result->getX() == 180);
+    CHECK(result->getX() == child("Redgroupbox")->getBounds().right()+10);
+
+    const int height=picker->getPreferredSize().height;
+    const int width=picker->getPreferredSize().width;
+
+    picker->setAlphaVisible(false);
+    canvas->updateCanvas();
+    CHECK(child("Alphagroupbox")->hidden());
+    CHECK(picker->getPreferredSize().height < height);
+    CHECK(picker->getPreferredSize().width == width);
 
     delete canvas;
 }

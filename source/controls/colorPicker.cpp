@@ -110,6 +110,7 @@ void ColorPicker::createColorControl(gweni::String name, int y)
     colorGroup->setPos(10, y);
     colorGroup->setText(name);
     colorGroup->setSize(160, gc_pickChannelHeight);
+    colorGroup->setSizeFlags({SizeFlag::Fixed, SizeFlag::Elastic});
     colorGroup->setName(name+"groupbox");
 
 //    internal::ColorDisplay *disp=new internal::ColorDisplay(colorGroup);
