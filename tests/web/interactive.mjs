@@ -16,8 +16,9 @@
 //  ControlTest's state through what it exports (Module.ccall:
 //  gweni_web_bounds_listing, the --dump-bounds listing of the window's canvas
 //  as it is; gweni_web_focused_text) and OpenGLCore's (gweni_web_stats_overlay,
-//  its stats overlay's state). The checks, each one "interactive.mjs:
-//  <check>: ok" line or a "interactive.mjs: FAIL: <check>: ..." one:
+//  its stats overlay's state; gweni_web_depth_view, its depth view's). The
+//  checks, each one "interactive.mjs: <check>: ok" line or a
+//  "interactive.mjs: FAIL: <check>: ..." one:
 //    button     ButtonDemo: a press on the "Text" button changes the pixels in
 //               its bounds, and the release with the mouse moved off gives the
 //               idle pixels back
@@ -53,6 +54,11 @@
 //               closes it and turns the button off, changing the canvas, and a
 //               second click opens it and turns the button on again (read
 //               through OpenGLCore's gweni_web_stats_overlay export)
+//    depth      OpenGLCore.html at 1024x768 CSS: the depth view is closed and
+//               the shell's Depth button off; a click on the button opens the
+//               view and turns the button on, changing the canvas, and Escape
+//               (the view has the mouse) closes it and turns the button off
+//               (read through OpenGLCore's gweni_web_depth_view export)
 //  It also fails on any console error or uncaught exception in any page, and
 //  unless every page made a WebGL 2 context on ANGLE's SwiftShader with at
 //  least 24 depth bits (run.mjs' conditions). The page's container is the
@@ -502,6 +508,57 @@ async function checkStatsButton(s)
     await context.close();
 }
 
+// gweni_web_depth_view(on): -1 only reads, "view=open button=on rect=x,y,w,h"
+const depthViewState = page => page.evaluate(() => Module.ccall('gweni_web_depth_view', 'string', ['number'], [-1]));
+
+function parseDepthState(text)
+{
+    const match = /^view=(\w+) button=(\w+) rect=(-?\d+),(-?\d+),(\d+),(\d+)$/.exec(text);
+    if(!match)
+        return null;
+    const [x, y, w, h] = match.slice(3).map(Number);
+    return { view: match[1], button: match[2], rect: { x, y, width: w, height: h } };
+}
+
+async function checkDepthButton(s)
+{
+    const opened = await s.open('depth', 'OpenGLCore.html', { width: 1024, height: 768 + outputPanel });
+    if(!opened)
+        return;
+    const { page, context } = opened;
+    const whole = { x: 0, y: 0, width: 1024, height: 768 };
+    const first = parseDepthState(await depthViewState(page));
+    if(!first)
+    {
+        fail('depth', `gweni_web_depth_view gave no state`);
+        await context.close();
+        return;
+    }
+    const at = centre(first.rect);
+    const before = await s.shot(page, whole, 'depth-before');
+    await page.mouse.click(at.x, at.y);
+    await s.frames(page, 5);
+    const second = parseDepthState(await depthViewState(page));
+    const open = await s.shot(page, whole, 'depth-open');
+    // the view has the mouse: the way out is Escape
+    await page.keyboard.press('Escape');
+    await s.frames(page, 5);
+    const third = parseDepthState(await depthViewState(page));
+    const describe = state => state ? `view ${state.view}, button ${state.button}` : 'no state';
+
+    if(first.view !== 'closed' || first.button !== 'off')
+        fail('depth', `the demo started with ${describe(first)}, not view closed, button off`);
+    else if(!second || second.view !== 'open' || second.button !== 'on')
+        fail('depth', `a click on the Depth button left ${describe(second)}, not view open, button on`);
+    else if(before.equals(open))
+        fail('depth', 'opening the depth view with the Depth button changed nothing on the canvas');
+    else if(!third || third.view !== 'closed' || third.button !== 'off')
+        fail('depth', `Escape left ${describe(third)}, not view closed, button off`);
+    else
+        pass('depth', `the Depth button at (${first.rect.x}, ${first.rect.y}) opens the view and Escape closes it, the button following`);
+    await context.close();
+}
+
 async function main()
 {
     const argv = process.argv.slice(2);
@@ -543,6 +600,7 @@ async function main()
         await checkUsage(s);
         await checkOpenGLCore(s);
         await checkStatsButton(s);
+        await checkDepthButton(s);
     }
     finally
     {

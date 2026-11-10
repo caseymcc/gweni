@@ -57,10 +57,15 @@ var Module = {};
     var params = new URLSearchParams(location.search);
     // ControlTest's own default when the query names none
     picker.value = params.get('control') || 'ButtonDemo';
+    // the query with a flag bare ("depth-view", not "depth-view=")
+    function query()
+    {
+        return '?' + params.toString().replace(/=(&|$)/g, '$1');
+    }
     picker.addEventListener('change', function()
     {
         params.set('control', picker.value);
-        location.search = params.toString();
+        location.search = query();
     });
 
     // a bare depth-view (or =on) is --depth-view, depth-view=off --depth-view off
@@ -72,7 +77,7 @@ var Module = {};
             params.set('depth-view', '');
         else
             params.delete('depth-view');
-        history.replaceState(null, '', '?' + params.toString().replace(/=(&|$)/g, '$1'));
+        history.replaceState(null, '', query());
     }
     depth.addEventListener('change', function()
     {

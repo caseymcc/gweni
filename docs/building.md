@@ -244,7 +244,9 @@ Every test in the web tree has the label `web` and needs no GPU lock:
   header lists the checks): a button press and release, typing "abcé", a wheel
   notch, the CSS cursor, the canvas's size at `devicePixelRatio` 2, after a
   resize and with `?scale=1.5` (its layout the same as a capture's at that size
-  and scale), an unknown argument, and a click in the demo list;
+  and scale), an unknown argument, a click in the demo list, the shell's Stats
+  button closing and opening the stats overlay, and its Depth button opening
+  the depth view, which Escape closes, the button following;
 - `web_controltest_determinism`: two page loads of `ControlTest --shot-all
   --dump-bounds` write the same bytes;
 - `web_bounds_native*`, `web_stats_native` and `web_pixels_native*`, which hold
@@ -293,7 +295,12 @@ It holds three pages, their files and nothing else:
   (`gweni::tools::StatsOverlay`, `docs/architecture.md` → "The stats overlay")
   open in its bottom-right corner: the page sets `Module.gweniDefaultArgs` to
   `['--stats-overlay']`, which `web/pre.js` puts before the URL's arguments, so
-  `demo.html?stats-overlay=off` leaves it closed and F10 toggles it. Its times
+  `demo.html?stats-overlay=off` leaves it closed and F10 toggles it.
+  `demo.html?depth-view` opens the depth view (`gweni::tools::DepthView`,
+  `docs/architecture.md` → "The depth view") as well, once the first frame is
+  drawn; the shell's **Depth** button, left of Stats in its status bar, opens it
+  as F9 does, and since the view takes the mouse, Escape or F9 closes it again,
+  the button following. The overlay's times
   are the browser's `performance.now()`, which Chromium coarsens to about
   100 µs on a page without COOP/COEP headers, so a settled frame's phases read
   0.0 to 0.1 ms;
@@ -301,7 +308,12 @@ It holds three pages, their files and nothing else:
   are `ControlTest --list`, written in when the site is staged. The URL query is
   ControlTest's argv, so `controltest.html?control=ButtonDemo&scale=2` is a link
   to one control at 2x, and choosing a control loads its page with every other
-  parameter kept.
+  parameter kept. Its **Depth view** checkbox opens and closes the depth view
+  live (ControlTest's `gweni_web_depth_view(on)` export: 1 opens, 0 closes,
+  anything else only reads); it starts as `?depth-view` says, follows F9 and
+  Escape in the view (ControlTest calls the page's
+  `Module.gweniDepthViewChanged`), and keeps `depth-view` in the URL as it is,
+  so a control picked next opens with the view as it was.
 
 They are written in `tools/site/` (the pages, `site.css`), dark like the Tokyo
 Night skin, with no framework and nothing loaded from elsewhere. Every URL is
@@ -312,13 +324,13 @@ it holds a site staged by the script (its `.gweni-site` marker).
 
 The script then prints what each page sends, every file raw, gzip and brotli,
 with nothing taken to be cached (`tools/site/sizes.mjs`). It exits 1 if the
-gallery page's gzip total is over its `BUDGET_BYTES`, 8 MB. Measured with the stats overlay
-(#478):
+gallery page's gzip total is over its `BUDGET_BYTES`, 8 MB. Measured with the depth view
+and its toggles (#546):
 
 | page | raw | gzip | brotli |
 |---|---|---|---|
-| `controltest.html` (`ControlTest.wasm` 2933 kB, `.data` 715 kB, `.js` 148 kB) | 3.80 MB | 1.52 MB | 1.16 MB |
-| `demo.html` (`OpenGLCore.wasm` 2611 kB, `.data` 715 kB, `.js` 147 kB) | 3.48 MB | 1.44 MB | 1.09 MB |
+| `controltest.html` (`ControlTest.wasm` 3043 kB, `.data` 715 kB, `.js` 148 kB) | 3.92 MB | 1.56 MB | 1.19 MB |
+| `demo.html` (`OpenGLCore.wasm` 2652 kB, `.data` 715 kB, `.js` 147 kB) | 3.52 MB | 1.45 MB | 1.10 MB |
 | `index.html` (with the 171 kB preview) | 0.18 MB | 0.17 MB | 0.16 MB |
 
 The release web tree is `-Oz` for this: at CMake's `-O3`, `ControlTest.wasm` is
@@ -333,7 +345,13 @@ demo (its argv starting with the default `--stats-overlay` and OpenGLCore saying
 on stdout that the overlay is open) and `demo.html?stats-overlay=off` (without
 that line), and the gallery at ButtonDemo, TextBoxDemo and ShowcaseButtonsDemo at
 `?scale=2`, where it also picks SliderDemo and must get
-`controltest.html?control=SliderDemo&scale=2`. It fails on a console error, an
+`controltest.html?control=SliderDemo&scale=2`. Then `demo.html?depth-view` must
+open with the overlay, the depth view and the Depth button on (read through
+OpenGLCore's `gweni_web_depth_view`), and `controltest.html?control=ButtonDemo&depth-view`
+with the view open and the checkbox checked; unchecking and checking it must
+close and open the view, `depth-view` leaving the URL and coming back, and
+picking SliderDemo must load `?control=SliderDemo&depth-view` with the view open
+again, none of them writing to stderr. It fails on a console error, an
 uncaught exception, a failed request or an HTTP error (a file missing from the
 site), a page without a WebGL 2 context on SwiftShader with 24 depth bits, a
 window that draws no frames or whose canvas is one colour after 5 of them, a

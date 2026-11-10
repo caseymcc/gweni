@@ -25,6 +25,19 @@
 //    ?control=ShowcaseButtonsDemo&scale=2
 //                     ControlTest's window; the picker shows the control the
 //                     URL names
+//    demo.html?depth-view
+//                     the demo with the stats overlay and the depth view:
+//                     --depth-view after the default --stats-overlay in its
+//                     argv, the app saying on stdout that both are open, and
+//                     its gweni_web_depth_view export reading the view open
+//                     and the shell's Depth button on
+//    controltest.html?control=ButtonDemo&depth-view
+//                     the gallery with the view open (the export) and its
+//                     "Depth view" checkbox checked; unchecking it closes the
+//                     view and takes depth-view out of the URL, checking it
+//                     again opens the view and puts it back, and picking
+//                     SliderDemo then loads ?control=SliderDemo&depth-view,
+//                     the view open and the checkbox checked again
 //  A page with a window must draw frames (gweniRun.frames, web/pre.js) on a
 //  WebGL 2 context on ANGLE's SwiftShader with at least 24 depth bits
 //  (run.mjs' conditions, through probe.mjs' launchOptions), write nothing to
@@ -293,12 +306,85 @@ class Visit
         return true;
     }
 
-    async app(path, name, control, overlay)
+    // The depth view on a page opened with ?depth-view: open (the app's
+    // gweni_web_depth_view export, -1 only reads), --depth-view in its argv
+    // and the app saying so on stdout; on the demo the shell's Depth button
+    // on. On the gallery the "Depth view" checkbox is checked, a click on it
+    // closes the view, unchecks it and takes depth-view out of the URL, and a
+    // second opens the view, checks it and puts depth-view back; nothing
+    // written to stderr meanwhile.
+    async checkDepthView(visit, gallery)
+    {
+        const { page } = visit;
+        const state = () => page.evaluate(() => Module.ccall('gweni_web_depth_view', 'string', ['number'], [-1]));
+        const inUrl = () => new URL(page.url()).searchParams.has('depth-view');
+        const frames = async () =>
+        {
+            const now = await page.evaluate(() => gweniRun.frames);
+            await page.waitForFunction(target => gweniRun.frames >= target, now + 3, { timeout: 60000, polling: 16 });
+        };
+        const run = await page.evaluate(() => ({ argv: gweniRun.argv,
+            stdout: gweniRun.output.filter(l => l.stream === 'stdout').map(l => l.text) }));
+        const first = await state();
+        if(!run.argv.includes('--depth-view'))
+        {
+            fail(visit.label, `its argv ${JSON.stringify(run.argv)} has no --depth-view`);
+            return false;
+        }
+        if(!run.stdout.some(line => line.startsWith('the depth view is open')) || !first.startsWith('view=open')
+            || (!gallery && !first.includes(' button=on')))
+        {
+            fail(visit.label, `the depth view did not open as ?depth-view asks: ${first}`);
+            return false;
+        }
+        let detail = `depth view open (${first.split(' rect=')[0]})`;
+        if(gallery)
+        {
+            const box = page.locator('#depth-view');
+            const checkedAtLoad = await box.isChecked();
+            await box.click();
+            await frames();
+            const off = { state: await state(), checked: await box.isChecked(), url: inUrl() };
+            await box.click();
+            await frames();
+            const on = { state: await state(), checked: await box.isChecked(), url: inUrl() };
+            if(!checkedAtLoad)
+            {
+                fail(visit.label, 'the "Depth view" checkbox is not checked with ?depth-view');
+                return false;
+            }
+            if(off.state !== 'view=closed' || off.checked || off.url)
+            {
+                fail(visit.label, `unchecking "Depth view" left ${off.state}, checked ${off.checked}, depth-view in the URL ${off.url}`);
+                return false;
+            }
+            if(on.state !== 'view=open' || !on.checked || !on.url)
+            {
+                fail(visit.label, `checking "Depth view" again left ${on.state}, checked ${on.checked}, depth-view in the URL ${on.url}`);
+                return false;
+            }
+            detail += ', the checkbox closes and opens it, the URL following';
+        }
+        const stderr = await page.evaluate(() => gweniRun.output.filter(l => l.stream === 'stderr').map(l => l.text));
+        if(stderr.length)
+        {
+            fail(visit.label, `wrote ${stderr.length} line(s) to stderr, shown in #output: ${stderr.join(' | ')}`);
+            return false;
+        }
+        this.detail += `, ${detail}`;
+        return true;
+    }
+
+    // \a depth: undefined, or 'demo' or 'gallery' for a page opened with
+    // ?depth-view (checkDepthView)
+    async app(path, name, control, overlay, depth)
     {
         const visit = await this.open(path, path);
         let ok = await this.checkWindow(visit, name);
         if(ok && overlay !== undefined)
             ok = await this.checkOverlay(visit, overlay);
+        if(ok && depth !== undefined)
+            ok = await this.checkDepthView(visit, depth === 'gallery');
         const detail = this.detail;
         if(control !== undefined)
         {
@@ -319,7 +405,7 @@ class Visit
 
     // The picker on an open gallery page: choosing a control loads its page,
     // the other parameters kept.
-    async pick(visit, control, expected)
+    async pick(visit, control, expected, depthView = false)
     {
         const label = `${visit.label} -> ${control}`;
         visit.label = label;
@@ -334,6 +420,19 @@ class Visit
         }
         else
             ok = await this.checkWindow(visit, `pick-${control}`);
+        // the view opened again from the URL, the checkbox showing it
+        if(ok && depthView)
+        {
+            const state = await visit.page.evaluate(() => Module.ccall('gweni_web_depth_view', 'string', ['number'], [-1]));
+            const checked = await visit.page.locator('#depth-view').isChecked();
+            if(state !== 'view=open' || !checked)
+            {
+                fail(label, `after the reload the depth view is ${state}, the checkbox checked ${checked}`);
+                ok = false;
+            }
+            else
+                this.detail += ', depth view open, the checkbox checked';
+        }
         const clean = visit.errors.length === 0;
         this.report(visit);
         if(ok && clean)
@@ -381,6 +480,10 @@ async function main()
         const scaled = await s.app('controltest.html?control=ShowcaseButtonsDemo&scale=2', 'ShowcaseButtonsDemo-scale2', 'ShowcaseButtonsDemo');
         await s.pick(scaled, 'SliderDemo', '?control=SliderDemo&scale=2');
         await scaled.context.close();
+        await (await s.app('demo.html?depth-view', 'demo-depth-view', undefined, true, 'demo')).context.close();
+        const depth = await s.app('controltest.html?control=ButtonDemo&depth-view', 'ButtonDemo-depth-view', 'ButtonDemo', undefined, 'gallery');
+        await s.pick(depth, 'SliderDemo', '?control=SliderDemo&depth-view', true);
+        await depth.context.close();
     }
     finally
     {
