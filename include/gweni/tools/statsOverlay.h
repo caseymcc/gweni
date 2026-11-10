@@ -74,7 +74,10 @@ class GWENI_EXPORT StatsOverlay: public controls::Base
 public:
     GWENI_CONTROL(StatsOverlay, controls::Base);
 public:
-    //! The canvas's overlay, made and shown if it has none.
+    //! The canvas's overlay, made and shown if it has none. It first gathers
+    //! and shows in the next update phase (its first refresh, a window of the
+    //! frame before it), where the canvas's previous frame and the renderer's
+    //! writes are one frame's.
     static StatsOverlay *open(controls::Canvas *canvas);
     //! Hides the canvas's overlay and deletes it (delayed), if it has one;
     //! from then on find() no longer finds it.

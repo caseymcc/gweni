@@ -20,6 +20,10 @@
  *  - it refreshes every RefreshSeconds: the frames between two refreshes set
  *    no label and write no slot, and a refresh sets only labels whose text
  *    changed, in a frame with no layout pass counted and no animation run;
+ *  - opened between two frames it has not refreshed; its first refresh, in
+ *    the next update phase, shows a window of one frame, the canvas's
+ *    previous frame with the renderer's writes of that same frame, and the
+ *    next window does not count that frame again;
  *  - it shows the window's times (each phase one profile-clock step, the
  *    frame interval every read between two starts) and fps, under a
  *    "time (ms)" corner, and the upload row's bytes with their unit;
@@ -521,6 +525,50 @@ TEST_CASE("StatsOverlay: bytes() fits 5 characters at every unit's edge")
         CHECK(StatsOverlay::bytes(c.n) == c.text);
         CHECK(StatsOverlay::bytes(c.n).size() <= 5);
     }
+}
+
+TEST_CASE("StatsOverlay: its first refresh shows one frame, counted once")
+{
+    Scene scene;
+
+    // frame N-1: the app writes a control's slots
+    scene.other->addStateChange(controls::StateChange_Background);
+    scene.frame();
+
+    const size_t appWritten=scene.renderer.frameStats().primitiveSlotsWritten;
+
+    REQUIRE(appWritten > 0);
+
+    // opened from a key callback, between frames N-1 and N
+    StatsOverlay *overlay=StatsOverlay::open(scene.canvas);
+
+    REQUIRE(overlay);
+    CHECK(overlay->refreshes() == 0);
+    CHECK(overlay->textSets() == 0);
+
+    // frame N: its first refresh, a window of frame N-1 alone
+    scene.frame();
+    REQUIRE(overlay->refreshes() == 1);
+
+    const controls::CanvasFrameStats &previous=scene.canvas->previousFrameStats();
+    const StatsOverlay::Window &first=overlay->shownWindow();
+
+    CHECK(first.frames == 1);
+    CHECK(previous.render.visited == 1);
+    CHECK(first.rendered == previous.render.visited);
+    CHECK(first.changed == previous.render.controls);
+    CHECK(first.primitiveSlots == appWritten);
+    CHECK(first.slots == appWritten);
+
+    // the next window: the frames after N-1, which wrote the overlay's slots
+    // alone, so N-1's are not in it again
+    const int frames=scene.untilRefresh(overlay);
+    const StatsOverlay::Window &next=overlay->shownWindow();
+
+    CHECK(next.frames == size_t(frames));
+    CHECK(next.rendered == 0);
+    CHECK(next.primitiveSlots == 0);
+    CHECK(next.slots == 0);
 }
 
 TEST_CASE("StatsOverlay: fps counts the frames the clock saw, a frozen clock none")

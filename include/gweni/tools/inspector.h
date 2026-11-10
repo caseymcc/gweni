@@ -101,7 +101,10 @@ public:
 public:
     ~Inspector() override;
 
-    //! The canvas's inspector, made and shown if it has none.
+    //! The canvas's inspector, made and shown if it has none. Its tree is
+    //! made at once; its counters are first set by its first refresh, in the
+    //! next update phase, where the canvas's previous frame and the
+    //! renderer's writes are one frame's.
     static Inspector *open(controls::Canvas *canvas);
     //! Hides the canvas's inspector and deletes it (delayed), if it has one;
     //! from then on find() no longer finds it.
@@ -172,6 +175,8 @@ private:
     friend class InspectorHighlight;
 
     void setLine(controls::Label *label, const String &text);
+    //! Brings the tree in line with the canvas's, when treeSerial() moved.
+    void refreshTree();
     void refreshCounters();
     void refreshDetails();
     //! Points the highlight box at the hovered node's control, else the

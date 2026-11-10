@@ -266,7 +266,10 @@ StatsOverlay *StatsOverlay::open(controls::Canvas *canvas)
     StatsOverlay *overlay=canvas->newChild<StatsOverlay>();
 
     canvas->addOverlay(overlay);
-    overlay->refresh();
+    // no refresh here, between two frames, where the canvas's previous frame
+    // and the renderer's last one are not the same frame: its animation's
+    // first, in the next update phase, gathers the frame before it and shows
+    // it before the overlay is first laid out and drawn
 
     event::Info info(canvas);
 

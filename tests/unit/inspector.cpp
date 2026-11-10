@@ -24,6 +24,9 @@
  *    InspectorHighlight::Edge), follows the hovered node's control and goes
  *    back to the selected one, hides when its target is hidden, and is drawn
  *    only on a frame its rect or visibility changed;
+ *  - opened between two frames it sets no line until its first refresh, in
+ *    the next update phase, which shows one frame: the canvas's previous
+ *    frame with the renderer's writes of that same frame, each line set once;
  *  - a control selected whose node was never made opens the way down to it;
  *  - closed, it gives back every primitive and text id it took.
  */
@@ -224,6 +227,45 @@ TEST_CASE("Inspector: the tree follows the canvas's tree")
         CHECK(inspector->nodeFor(scene.panel)->isOpen());
         CHECK(targets(inspector, inspector->nodeFor(scene.panel)) == childrenLessInspector(scene.panel));
     }
+}
+
+TEST_CASE("Inspector: its first refresh shows one frame")
+{
+    Scene scene;
+
+    scene.frames(3);
+    // frame N-1: the app writes a label's slots
+    scene.labels[0]->addStateChange(controls::StateChange_Background);
+    scene.frame();
+
+    const size_t appWritten=scene.renderer.frameStats().primitiveSlotsWritten;
+
+    REQUIRE(appWritten > 0);
+
+    // opened from a key callback, between frames N-1 and N: no counter yet
+    Inspector *inspector=Inspector::open(scene.canvas);
+
+    REQUIRE(inspector);
+    CHECK(inspector->textSets() == 0);
+    // its tree is there at once
+    CHECK(inspector->nodeFor(scene.panel) != nullptr);
+
+    // frame N: frame N-1's canvas counts with frame N-1's writes
+    scene.frame();
+
+    const controls::CanvasFrameStats &previous=scene.canvas->previousFrameStats();
+
+    CHECK(previous.render.visited == 1);
+    CHECK(inspector->counterLines()[Inspector::RenderLine]
+        == format("render: %zu rendered, %zu changed", previous.render.visited, previous.render.controls));
+    CHECK(inspector->counterLines()[Inspector::SlotsLine]
+        == format("slots written: %zu primitive, 0 text", appWritten));
+    // every line set once, by that one refresh
+    CHECK(inspector->textSets() <= size_t(Inspector::CounterLines+Inspector::DetailLines));
+
+    // frame N+1 shows frame N's: the inspector's own writes, so 0
+    scene.frame();
+    CHECK(inspector->counterLines()[Inspector::SlotsLine] == "slots written: 0 primitive, 0 text");
 }
 
 TEST_CASE("Inspector: a selected control's details")

@@ -221,7 +221,10 @@ Inspector *Inspector::open(controls::Canvas *canvas)
     Inspector *inspector=canvas->newChild<Inspector>();
 
     inspector->setPos(std::max(0, canvas->getWidth()-inspector->getWidth()-10), 10);
-    inspector->refresh();
+    // the tree now, so its nodes can be opened and selected at once; the
+    // counters wait for the first refresh, in the next update phase, where
+    // the previous frame's canvas and renderer counts are one frame's
+    inspector->refreshTree();
     return inspector;
 }
 
@@ -257,6 +260,18 @@ void Inspector::refresh()
     if(!m_canvas)
         return;
 
+    refreshTree();
+    refreshCounters();
+    refreshDetails();
+    refreshHighlight();
+}
+
+void Inspector::refreshTree()
+{
+    if(!m_canvas)
+        m_canvas=getCanvas();
+    if(!m_canvas)
+        return;
     if(!m_treeBuilt || (m_canvas->treeSerial() != m_treeSerial))
     {
         m_treeSerial=m_canvas->treeSerial();
@@ -265,10 +280,6 @@ void Inspector::refresh()
         syncTree();
         m_treeBuilt=true;
     }
-
-    refreshCounters();
-    refreshDetails();
-    refreshHighlight();
 }
 
 void Inspector::refreshHighlight()
