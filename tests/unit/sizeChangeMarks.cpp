@@ -15,11 +15,16 @@
  *  crosses its edge) the whole subtree is marked, so every slot below it is
  *  stamped with the new clip box. A control that narrows its children's
  *  clip itself (getChildClipRect: ScrollControl, TabControl, DataTableHeader)
- *  marks its subtree on any size change.
+ *  marks its subtree on any size change. So an overflowing ScrollControl or
+ *  ListBox given one more item marks the new item, its inner panel and the
+ *  bar's thumb, not the items already there (on main before #511: 64 of 77
+ *  and 96 of 109 controls).
  */
 #include "headlessFixture.h"
 
 #include <gweni/controls/dataTable.h>
+#include <gweni/controls/label.h>
+#include <gweni/controls/listBox.h>
 #include <gweni/controls/scrollControl.h>
 #include <gweni/controls/tabButton.h>
 #include <gweni/controls/tabControl.h>
@@ -318,5 +323,96 @@ TEST_CASE("Size change: a control with child clip rects marks its subtree")
         for(controls::Base *child : cell->getActualChildren())
             CHECK(geometry(child));
         scene.canvas->renderCanvas();
+    }
+}
+
+namespace
+{
+
+//! The controls in \p control's subtree, \p control included.
+size_t subtreeSize(controls::Base *control)
+{
+    size_t count=1;
+
+    for(controls::Base *child : control->getActualChildren())
+        count+=subtreeSize(child);
+    return count;
+}
+
+//! Whether anything in \p control's subtree, \p control included, is marked.
+bool subtreeMarked(controls::Base *control)
+{
+    if(control->getStateChange() != controls::StateChange_Nothing)
+        return true;
+    for(controls::Base *child : control->getActualChildren())
+        if(subtreeMarked(child))
+            return true;
+    return false;
+}
+
+}//namespace
+
+TEST_CASE("Size change: an overflowing scroll area given one more item marks that item, not the others")
+{
+    SUBCASE("ScrollControl")
+    {
+        Scene scene;
+        controls::ScrollControl *scroll=scene.canvas->newChild<controls::ScrollControl>();
+        scroll->setBounds(10, 10, 300, 200);
+
+        std::vector<controls::Label *> labels;
+        for(int i=0; i<30; ++i)
+        {
+            controls::Label *label=scroll->newChild<controls::Label>();
+            label->setText("Label "+std::to_string(i));
+            label->setDock(DockPosition::Top);
+            labels.push_back(label);
+        }
+        scene.settle();
+        controls::Base *inner=labels.front()->getActualParent();
+        const int innerHeight=inner->getHeight();
+
+        REQUIRE(innerHeight > 200);
+
+        controls::Label *added=scroll->newChild<controls::Label>();
+        added->setText("Added");
+        added->setDock(DockPosition::Top);
+        controls::resetChangeStats();
+        scene.canvas->updateCanvas();
+
+        // the inner panel grew at the same origin, its region the viewport's
+        REQUIRE(inner->getHeight() > innerHeight);
+        CHECK(geometry(inner));
+        for(controls::Label *label : labels)
+            CHECK_FALSE(subtreeMarked(label));
+
+        scene.canvas->renderCanvas();
+        // the added Label's subtree, the inner panel and the thumb
+        CHECK(controls::getChangeStats().controls <= subtreeSize(added)+2);
+        CHECK(controls::getChangeStats().visited <= subtreeSize(added)+2);
+    }
+
+    SUBCASE("ListBox")
+    {
+        Scene scene;
+        controls::ListBox *list=scene.canvas->newChild<controls::ListBox>();
+        list->setBounds(10, 10, 300, 200);
+
+        std::vector<controls::Base *> rows;
+        for(int i=0; i<30; ++i)
+            rows.push_back(list->addItem("Item "+std::to_string(i)));
+        scene.settle();
+
+        controls::Base *added=list->addItem("Added");
+        controls::resetChangeStats();
+        scene.canvas->updateCanvas();
+
+        for(controls::Base *row : rows)
+            CHECK_FALSE(subtreeMarked(row));
+
+        scene.canvas->renderCanvas();
+        // the added row's subtree, the table, the inner panel and the thumb
+        CHECK(controls::getChangeStats().controls <= subtreeSize(added)+3);
+        CHECK(controls::getChangeStats().visited <= subtreeSize(added)+3);
     }
 }

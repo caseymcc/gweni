@@ -301,8 +301,11 @@ alone (`tests/unit/placement.cpp`, the `tree-relabel` bench scene).
 A pure move does not dirty the moved control's subtree: its children are
 placed relative to it, and `onBoundsChanged` marks the subtree
 `StateChange_Geometry` for the render walk. A new size invalidates the
-subtree, which is laid out in it. The moved control's own `layout()` runs
-again, since one may correct where its parent put it (a Menu kept inside the
+subtree, which is laid out in it; at the same origin it marks only the control
+for the render walk, and below it only what its arrange gives new bounds,
+unless its children's clip region changes (`docs/architecture.md` → "Current
+state vs. goals", its **Clipping** item; issue #511). The moved control's
+own `layout()` runs again, since one may correct where its parent put it (a Menu kept inside the
 canvas). A request (`setPos`, `setSize`, `setBounds`, `moveTo`) invalidates the
 control, and so its parent, whether or not the bounds already match it.
 
