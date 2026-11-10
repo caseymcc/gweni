@@ -2612,9 +2612,10 @@ row and column name with a tooltip saying what it shows:
   and row names dim), min, avg and max in ms to one decimal, of `interval` (one
   `updateCanvas()` start to the next), `cpu` (update + render, the flush included),
   `update`, `render` without the flush and `flush`;
-- `fps`, the frames of the last second of the canvas's clock, and `controls`, the app's
-  controls on the canvas (the tools' excluded subtrees left out);
-- `prim ids` and `text ids`, the live primitive and text ids less the overlay's own;
+- `fps`, the frames of the last second of the canvas's clock that it saw move on, and
+  `controls`, the app's controls on the canvas (the tools' excluded subtrees left out);
+- `prim ids` and `text ids`, the live primitive and text ids less those every tool on the
+  canvas holds (`Canvas::excludedSlots()`, an open Inspector's too);
 - under "most in one frame", the largest value one frame of the window had of `rendered`
   (`ChangeStats::visited`) and `changed`, layout `passes` and `entered`
   (`LayoutStats::visited`), `z visited`, `anims` run, the app's `prim slots` and
@@ -2638,7 +2639,10 @@ llvmpipe's threads read fps 6 at 130 frames a second; `tests/unit/platformClock.
 shows that window and starts the next: the time table and the "most in one frame" rows
 cover the frames since the last refresh, the plots the last 60 refreshes, fps the last
 second. A clock that goes back (a capture installing its stepped clock after the overlay
-opened on the platform's) starts the second and the window again. The control count is a
+opened on the platform's) starts the second and the window again; one that stands still
+(paused, or a capture's frozen clock) saw no new frame, so a frame keeps a time for fps
+only when the clock moved on since the last one kept, at most `MaxFrameClock` (1024) of
+them, and once the clock moves again fps comes from the frames it saw. The control count is a
 walk of the tree, made on a refresh only when `Canvas::treeSerial()` has moved since the
 last one, so it costs O(N) at most four times a second and only after the tree changed;
 nothing is kept per control. Hidden (on a hidden page, or closed until its delayed

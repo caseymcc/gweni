@@ -22,7 +22,8 @@ namespace tools
 
 //! A read-only panel in the canvas's bottom-right corner showing what the
 //! canvas's frames cost (docs/architecture.md, "The stats overlay"):
-//! - fps, over the last second of the canvas's clock;
+//! - fps, over the last second of the canvas's clock, from the frames it saw
+//!   move on (a clock that stands still counts no frame);
 //! - each phase's time on platform::profileTimeMicros(), min/avg/max in ms
 //!   (the "time (ms)" corner) over the frames since the last refresh: the
 //!   interval (one updateCanvas() to the next), cpu (update + render + flush),
@@ -113,6 +114,8 @@ public:
     static constexpr size_t PlotSamples=60;
     //! Its distance from the canvas's right and bottom edges, in units.
     static constexpr int Inset=8;
+    //! The most frame times fps is counted from (frameClockSize()).
+    static constexpr size_t MaxFrameClock=1024;
 
     //! One time over a window of frames, in microseconds.
     struct TimeRange
@@ -163,6 +166,9 @@ public:
     size_t shownControls() const { return m_controls; }
     size_t shownPrimitiveIds() const { return m_shownPrimitiveIds; }
     size_t shownTextIds() const { return m_shownTextIds; }
+    //! The canvas-clock times fps is counted from: one per frame whose clock
+    //! moved on in the last second, at most MaxFrameClock.
+    size_t frameClockSize() const { return m_frameClock.size(); }
     //! The refreshes so far, and the Label setText() calls they made.
     size_t refreshes() const { return m_refreshes; }
     size_t textSets() const { return m_textSets; }
@@ -233,7 +239,8 @@ private:
     //! The previous frame's start, to time the interval to the next.
     uint64_t m_lastStart=0;
     bool m_haveLastStart=false;
-    //! The canvas's clock at each frame gathered in the last second, for fps.
+    //! The canvas's clock at each frame gathered in the last second whose
+    //! clock moved on from the one before, for fps (at most MaxFrameClock).
     std::deque<float> m_frameClock;
     float m_shownFps=0.0f;
     float m_nextRefresh=0.0f;

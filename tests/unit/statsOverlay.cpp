@@ -25,6 +25,10 @@
  *    "time (ms)" corner, and the upload row's bytes with their unit;
  *  - bytes() gives at most 5 characters at every unit's edge (B below 1000,
  *    then kB, MB, ... of 1000, with tenths below 10, truncated);
+ *  - fps counts the frames the clock saw move on: over many frames of a
+ *    clock that stands still the frame times it keeps do not grow, and once
+ *    it moves again fps is the stepped clock's; a clock stepping finer than
+ *    MaxFrameClock frames a second keeps at most MaxFrameClock;
  *  - an app change shows on the next refresh as the most one frame did
  *    (rendered, changed, the app's slots alone), and 0 on the one after;
  *  - a name's tooltip is the overlay's work: on a settled app the frame
@@ -517,6 +521,48 @@ TEST_CASE("StatsOverlay: bytes() fits 5 characters at every unit's edge")
         CHECK(StatsOverlay::bytes(c.n) == c.text);
         CHECK(StatsOverlay::bytes(c.n).size() <= 5);
     }
+}
+
+TEST_CASE("StatsOverlay: fps counts the frames the clock saw, a frozen clock none")
+{
+    Scene scene;
+    StatsOverlay *overlay=StatsOverlay::open(scene.canvas);
+
+    for(int i=0; i < 6; ++i)
+        scene.untilRefresh(overlay);
+    REQUIRE(overlay->shownFps() == doctest::Approx(64.0f));
+
+    const size_t kept=overlay->frameClockSize();
+    const size_t refreshes=overlay->refreshes();
+
+    // a second at 64 frames, the first and last each a second apart
+    CHECK(kept == 64);
+    // the clock stands still: frames, but no time, so no frame time kept and
+    // no refresh
+    for(int i=0; i < 2000; ++i)
+    {
+        scene.canvas->updateCanvas();
+        scene.canvas->renderCanvas();
+    }
+    CHECK(overlay->frameClockSize() == kept);
+    CHECK(overlay->refreshes() == refreshes);
+
+    // it moves again: fps is the stepped clock's, from the first refresh on
+    scene.untilRefresh(overlay);
+    CHECK(overlay->shownFps() == doctest::Approx(64.0f));
+    scene.untilRefresh(overlay);
+    CHECK(overlay->shownFps() == doctest::Approx(64.0f));
+    CHECK(overlay->frameClockSize() == 64);
+
+    // a clock stepping 4096 times a second: no more than the cap kept
+    for(int i=0; i < 3000; ++i)
+    {
+        scene.clock+=1.0f/4096.0f;
+        scene.canvas->updateCanvas();
+        scene.canvas->renderCanvas();
+        REQUIRE(overlay->frameClockSize() <= StatsOverlay::MaxFrameClock);
+    }
+    CHECK(overlay->frameClockSize() == StatsOverlay::MaxFrameClock);
 }
 
 TEST_CASE("StatsOverlay: an app change shows on the next refresh, then 0")

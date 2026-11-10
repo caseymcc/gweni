@@ -511,9 +511,14 @@ void StatsOverlay::refresh()
     if(m_started && (m_nextRefresh > now+RefreshSeconds))
         m_nextRefresh=now+RefreshSeconds;
 
-    // the frames of the last second, by the canvas's clock
-    m_frameClock.push_back(now);
+    // the frames of the last second, by the canvas's clock: a clock that
+    // stands still (paused, or a capture's frozen one) saw no new frame, and
+    // the cap is a backstop for a clock too coarse to tell frames apart
+    if(m_frameClock.empty() || (now > m_frameClock.back()))
+        m_frameClock.push_back(now);
     while(!m_frameClock.empty() && (m_frameClock.front() <= now-1.0f))
+        m_frameClock.pop_front();
+    while(m_frameClock.size() > MaxFrameClock)
         m_frameClock.pop_front();
 
     if(!m_started)
