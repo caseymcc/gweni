@@ -28,6 +28,8 @@ public:
         m_textBox->setDock(DockPosition::Center);
         // the row is as high as the text line, not a TextBox's 20 (it is Fixed)
         m_textBox->setSizeFlags({SizeFlag::Elastic, SizeFlag::Elastic});
+        // the row fits its value's text (a TextBox's width is its request)
+        m_textBox->setSizedByText(true);
         m_textBox->setShouldDrawBackground(false);
         m_textBox->onTextChangedCaller.add(this, &ParentClass::onPropertyValueChanged);
     }

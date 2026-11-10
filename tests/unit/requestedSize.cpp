@@ -15,16 +15,32 @@
  *
  *  A TextBox is Fixed: it is the size it asked for whatever its text, in a
  *  Base parent and in a layout cell (it scrolls its text, it is no Label that
- *  sizes to it), while docked Center it still fills its dock rect.
+ *  sizes to it), while docked Center it still fills its dock rect. So is
+ *  every subclass with its default flags, at dock None and on each edge dock,
+ *  whatever its text; a TextBoxMultiline docked Center fills it too.
+ *
+ *  A TextBox is sized by its request (sizedByRequest) on every flag: given a
+ *  non-Fixed width it spans a Top dock, and its preferred width stays its
+ *  request whatever is set or typed into it, so a parent sizing to its
+ *  children does not follow the text. In Y only a wrapped box is: a one-line
+ *  box with an Elastic height is as high as its text line. Base's dock
+ *  branches leave a control Fixed on the dock's cross axis at its size: a
+ *  CheckBox's and a RadioButton's 15x15 docked Left, a window's close button
+ *  docked Right and a NumericUpDown's up button docked Top.
  */
 #include "headlessFixture.h"
 
+#include <gweni/controls/checkBox.h>
 #include <gweni/controls/comboBox.h>
+#include <gweni/controls/dragNumber.h>
 #include <gweni/controls/layout/layout.h>
 #include <gweni/controls/menu.h>
 #include <gweni/controls/menuItem.h>
 #include <gweni/controls/menuStrip.h>
+#include <gweni/controls/numericUpDown.h>
+#include <gweni/controls/radioButton.h>
 #include <gweni/controls/textBox.h>
+#include <gweni/controls/windowControl.h>
 
 #include <doctest/doctest.h>
 
@@ -701,4 +717,268 @@ TEST_CASE("a TextBox docked Center fills its dock rect")
     box->setText(String(100, 'w'));
     scene.settle();
     CHECK(text(box->getBounds()) == text(Rect(0, 0, 300, 40)));
+}
+
+namespace
+{
+
+//! A string `font` measures at least `width` wide.
+String atLeastWide(Scene &scene, const Font &font, int width)
+{
+    String s;
+    while(scene.renderer.measureText(font, s).x < width)
+        s+="w";
+    return s;
+}
+
+//! A control of type T with its default flags, in a 300x100 Fixed panel at
+//! dock `dock`, settled with a text far wider than it; its bounds must be
+//! its request (`wantSize`), at the dock's edge, whichever the dock.
+template<typename T>
+void checkKeepsRequestDocked(Scene &scene, DockPosition dock, const Size &wantSize)
+{
+    controls::Base *panel=scene.canvas->newChild<controls::Base>("panel");
+    panel->setAlignment(Alignment::Absolute);
+    panel->setSizeFlags({SizeFlag::Fixed, SizeFlag::Fixed});
+    panel->setBounds(0, 0, 300, 100);
+
+    T *box=panel->newChild<T>("box");
+    box->setDock(dock);
+    scene.settle();
+
+    const Size request(box->getRequestedBounds().w, box->getRequestedBounds().h);
+    CHECK(request.width == wantSize.width);
+    CHECK(request.height == wantSize.height);
+
+    const String wide=atLeastWide(scene, box->getFont(), 600);
+    for(const String &s:{String(), wide, String("x")})
+    {
+        box->setText(s);
+        scene.settle();
+        CHECK(box->getWidth() == wantSize.width);
+        CHECK(box->getHeight() == wantSize.height);
+    }
+
+    if(dock == DockPosition::Right)
+        CHECK(box->getX() == 300-wantSize.width);
+    if(dock == DockPosition::Bottom)
+        CHECK(box->getY() == 100-wantSize.height);
+
+    delete panel;
+}
+
+template<typename T>
+void checkKeepsRequestOnEveryDock(const Size &wantSize)
+{
+    for(const DockPosition dock:{DockPosition::None, DockPosition::Top, DockPosition::Bottom,
+        DockPosition::Left, DockPosition::Right})
+    {
+        CAPTURE(static_cast<int>(dock));
+        Scene scene;
+        checkKeepsRequestDocked<T>(scene, dock, wantSize);
+    }
+}
+
+}//namespace
+
+TEST_CASE("a TextBox and each subclass with its default flags keeps its request at dock None and on each edge dock")
+{
+    SUBCASE("TextBox") { checkKeepsRequestOnEveryDock<controls::TextBox>(Size(200, 20)); }
+    SUBCASE("TextBoxNumeric") { checkKeepsRequestOnEveryDock<controls::TextBoxNumeric>(Size(200, 20)); }
+    SUBCASE("PasswordTextBox") { checkKeepsRequestOnEveryDock<controls::PasswordTextBox>(Size(200, 20)); }
+    SUBCASE("TextBoxMultiline") { checkKeepsRequestOnEveryDock<controls::TextBoxMultiline>(Size(200, 20)); }
+    SUBCASE("NumericUpDown") { checkKeepsRequestOnEveryDock<controls::NumericUpDown>(Size(100, 20)); }
+    SUBCASE("DragNumberTextBox") { checkKeepsRequestOnEveryDock<controls::internal::DragNumberTextBox>(Size(200, 20)); }
+}
+
+TEST_CASE("a TextBoxMultiline docked Center fills its dock rect, whatever its text")
+{
+    Scene scene;
+    controls::Base *panel=scene.canvas->newChild<controls::Base>("panel");
+    panel->setAlignment(Alignment::Absolute);
+    panel->setSizeFlags({SizeFlag::Fixed, SizeFlag::Fixed});
+    panel->setBounds(10, 10, 300, 120);
+    controls::TextBoxMultiline *box=panel->newChild<controls::TextBoxMultiline>("box");
+    box->setDock(DockPosition::Center);
+
+    String lines;
+    for(int i=0; i<30; ++i)
+        lines+="line "+std::to_string(i)+"\n";
+
+    for(const String &s:{String(), atLeastWide(scene, box->getFont(), 600), lines})
+    {
+        box->setText(s);
+        scene.settle();
+        CHECK(text(box->getBounds()) == text(Rect(0, 0, 300, 120)));
+    }
+}
+
+TEST_CASE("an {Elastic, Fixed} TextBox docked Top spans its parent, whose width does not follow the text")
+{
+    Scene scene;
+    // sizes to its children: no request, Elastic
+    controls::Base *parent=scene.canvas->newChild<controls::Base>("parent");
+    parent->setAlignment(Alignment::Absolute);
+    parent->setSizeFlags({SizeFlag::Elastic, SizeFlag::Elastic});
+    REQUIRE_FALSE(parent->hasRequestedSize(Dim::X));
+
+    // a wider sibling, so the parent is wider than the box's 200
+    Block *wider=parent->newChild<Block>("wider");
+    wider->setDock(DockPosition::Top);
+    wider->want=Size(350, 10);
+
+    controls::TextBox *box=parent->newChild<controls::TextBox>("box");
+    box->setDock(DockPosition::Top);
+    box->setSizeFlags({SizeFlag::Elastic, SizeFlag::Fixed});
+    box->setText("");
+    scene.settle();
+
+    REQUIRE(parent->getWidth() == 350);
+    CHECK(text(box->getBounds()) == text(Rect(0, 10, 350, 20)));
+    CHECK(box->getPreferredSize().width == 200);
+    const Rect parentBefore=parent->getBounds();
+    const Size parentPreferred=parent->getPreferredSize();
+
+    const String wide=atLeastWide(scene, box->getFont(), 600);
+    box->setText(wide);
+    scene.settle();
+    CHECK(box->getPreferredSize().width == 200);
+    CHECK(parent->getPreferredSize().width == parentPreferred.width);
+    CHECK(text(parent->getBounds()) == text(parentBefore));
+    CHECK(text(box->getBounds()) == text(Rect(0, 10, 350, 20)));
+
+    // typing it, a character a frame, neither
+    box->setText("");
+    scene.settle();
+    box->focus();
+    for(const char c:wide)
+    {
+        box->onChar(static_cast<UnicodeChar>(c));
+        scene.settle();
+    }
+    REQUIRE(box->getText() == wide);
+    CHECK(box->getPreferredSize().width == 200);
+    CHECK(parent->getPreferredSize().width == parentPreferred.width);
+    CHECK(text(parent->getBounds()) == text(parentBefore));
+    CHECK(text(box->getBounds()) == text(Rect(0, 10, 350, 20)));
+
+    // with nothing wider, the parent is the box's request
+    wider->want=Size(0, 10);
+    wider->invalidate();
+    scene.settle();
+    CHECK(parent->getWidth() == 200);
+    CHECK(box->getWidth() == 200);
+}
+
+TEST_CASE("a Fixed control docked Left or Right keeps its size: a CheckBox, a RadioButton, a window's close button")
+{
+    Scene scene;
+    controls::Base *panel=scene.centerPanel();
+    panel->setLayout(new controls::VerticalLayout());
+
+    controls::CheckBoxWithLabel *check=panel->newChild<controls::CheckBoxWithLabel>("check");
+    check->label()->setText("A check box with a label");
+    controls::LabeledRadioButton *radio=panel->newChild<controls::LabeledRadioButton>("radio");
+    radio->getLabel()->setText("A radio button with a label");
+
+    // a plain Fixed 15x15 docked Left in a taller parent
+    controls::Base *tall=panel->newChild<controls::Base>("tall");
+    tall->setSizeFlags({SizeFlag::Fixed, SizeFlag::Fixed});
+    tall->setSize(300, 60);
+    controls::Base *square=tall->newChild<controls::Base>("square");
+    square->setSizeFlags({SizeFlag::Fixed, SizeFlag::Fixed});
+    square->setSize(15, 15);
+    square->setDock(DockPosition::Left);
+
+    controls::WindowControl *window=scene.canvas->newChild<controls::WindowControl>("window");
+    window->setBounds(50, 50, 300, 200);
+    scene.settle();
+
+    CHECK(check->checkBox()->getWidth() == 15);
+    CHECK(check->checkBox()->getHeight() == 15);
+    CHECK(radio->getRadioButton()->getWidth() == 15);
+    CHECK(radio->getRadioButton()->getHeight() == 15);
+    CHECK(text(square->getBounds()) == text(Rect(0, 0, 15, 15)));
+
+    controls::Base *close=window->findChildByName("closeButton", true);
+    REQUIRE(close != nullptr);
+    CHECK(close->getWidth() == 29);
+    CHECK(close->getHeight() == 24);
+    CHECK(close->getX()+close->getWidth() == close->getParent()->getWidth()-close->getParent()->getPadding().right);
+}
+
+TEST_CASE("a NumericUpDown's up button docked Top keeps its height, with default and with spanning flags")
+{
+    for(const bool spanning:{false, true})
+    {
+        CAPTURE(spanning);
+        Scene scene;
+        controls::Base *panel=scene.canvas->newChild<controls::Base>("panel");
+        panel->setAlignment(Alignment::Absolute);
+        panel->setSizeFlags({SizeFlag::Fixed, SizeFlag::Fixed});
+        panel->setBounds(0, 0, 300, 100);
+        controls::NumericUpDown *number=panel->newChild<controls::NumericUpDown>("number");
+        number->setDock(DockPosition::Top);
+        if(spanning)
+            number->setSizeFlags({SizeFlag::Elastic, SizeFlag::Fixed});
+        number->setText("12345678901234567890");
+        scene.settle();
+
+        CHECK(number->getWidth() == (spanning?300:100));
+        CHECK(number->getHeight() == 20);
+        CHECK(number->getPreferredSize().width == 100);
+
+        controls::Base *up=nullptr;
+        controls::Base *down=nullptr;
+        for(controls::Base *child:number->getChildren())
+            for(controls::Base *button:child->getChildren())
+            {
+                if(gweni_cast<controls::NumericUpDownButton_Up>(button))
+                    up=button;
+                else if(gweni_cast<controls::NumericUpDownButton_Down>(button))
+                    down=button;
+            }
+        REQUIRE(up != nullptr);
+        REQUIRE(down != nullptr);
+        CHECK(up->getY() == 0);
+        CHECK(up->getHeight() == 8);
+        CHECK(down->getY() == 8);
+        CHECK(down->getHeight() == 8);
+        CHECK(up->getWidth() == up->getParent()->getWidth());
+        // the splitter at the box's right, inside its padding
+        CHECK(up->getParent()->getX()+up->getParent()->getWidth()
+            == number->getWidth()-number->getPadding().right);
+    }
+}
+
+TEST_CASE("an Elastic height on a one-line TextBox is its text line's, a wrapped one's its request")
+{
+    Scene scene;
+    controls::Base *panel=scene.canvas->newChild<controls::Base>("panel");
+    panel->setAlignment(Alignment::Absolute);
+    panel->setSizeFlags({SizeFlag::Fixed, SizeFlag::Fixed});
+    panel->setBounds(0, 0, 300, 200);
+
+    controls::TextBox *line=panel->newChild<controls::TextBox>("line");
+    line->setDock(DockPosition::Top);
+    line->setSizeFlags({SizeFlag::Elastic, SizeFlag::Elastic});
+    line->setText("one line");
+
+    controls::TextBoxMultiline *wrapped=panel->newChild<controls::TextBoxMultiline>("wrapped");
+    wrapped->setDock(DockPosition::Top);
+    wrapped->setSizeFlags({SizeFlag::Elastic, SizeFlag::Elastic});
+    String lines;
+    for(int i=0; i<30; ++i)
+        lines+="line "+std::to_string(i)+"\n";
+    wrapped->setText(lines);
+    scene.settle();
+
+    // a property row's box: as high as its line, not the 20 it asked for
+    const int lineHeight=scene.renderer.lineHeight(line->getFont())
+        +line->getPadding().top+line->getPadding().bottom;
+    REQUIRE(lineHeight != 20);
+    CHECK(line->getHeight() == lineHeight);
+    // thirty lines scroll inside the 20 it asked for
+    CHECK(wrapped->getHeight() == 20);
+    CHECK(wrapped->getPreferredSize().height == 20);
 }

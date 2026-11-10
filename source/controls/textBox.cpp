@@ -657,6 +657,27 @@ void TextBox::placeScrolledText(int x, int y, const Size &text)
     placeChild(m_text, x, y, width, text.height);
 }
 
+bool TextBox::sizedByRequest(Dim dim) const
+{
+    if(!hasRequestedSize(dim))
+        return false;
+
+    return dim == Dim::X?!m_sizedByText:m_text->wrap();
+}
+
+void TextBox::setSizedByText(bool sizedByText)
+{
+    if(m_sizedByText == sizedByText)
+        return;
+
+    m_sizedByText=sizedByText;
+    invalidate();
+}
+
+// On an axis sized by its request (sizedByRequest: a size was asked for, as
+// the constructor's 200x20 is) Base::calculateSize has made the request the
+// preferred size, whatever the flags, and the string adds nothing: it
+// scrolls inside the box. Otherwise the box asks for its string.
 // A scrolled string is placed by this box (Placement::Owner), which leaves it
 // out of sizeOfChildren; it counts as it does aligned, at its preferred size,
 // so the box's size does not depend on whether it is scrolled. In X it counts
@@ -668,7 +689,7 @@ void TextBox::calculateSize(skin::Base *skin, Dim dim)
 {
     ParentClass::calculateSize(skin, dim);
 
-    if(m_text->hidden())
+    if(sizedByRequest(dim) || m_text->hidden())
         return;
 
     const Size &text=m_text->getPreferredSize();

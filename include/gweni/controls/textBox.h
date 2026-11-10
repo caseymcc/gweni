@@ -115,6 +115,13 @@ public:
 
     virtual void setEditable(bool b) { m_editable=b; }
 
+    //! Makes this box ask for its string's width instead of its request,
+    //! however it is flagged (see sizedByRequest): for a box whose parent
+    //! fits its text, as a property row fits its value, so the string is no
+    //! longer scrolled in a box of a fixed width. Off by default.
+    void setSizedByText(bool sizedByText);
+    bool sizedByText() const { return m_sizedByText; }
+
     virtual void setSelectAllOnFocus(bool b)
     {
         m_selectAll=b;
@@ -127,6 +134,16 @@ public:
     virtual void onEnter();
 
 protected:
+    //! A box's content is the size it was asked for, on every size flag, as
+    //! a ScrollControl's is: its string scrolls inside it, so typing never
+    //! changes its preferred size, and a box with a non-Fixed flag fills what
+    //! its parent gives it on that axis (a Top dock's width, say) without
+    //! growing with its text. In X unless setSizedByText(); in Y only when
+    //! its text wraps (a TextBoxMultiline), since one line's height does not
+    //! change with the string, so an Elastic height is still the text line's
+    //! (a property row's box). With no request it asks for its string.
+    bool sizedByRequest(Dim dim) const override;
+
     //! A string that fits is placed by the text alignment in this box's
     //! padded content box, like any Label's (Placement::Parent).
     void alignText(Alignment textAlignment);
@@ -186,6 +203,7 @@ protected:
 
     float m_nextCaretBlink=0.0f;
     bool m_caretVisible=true;
+    bool m_sizedByText=false;
     //! The caret's blink animation, registered from the focus arriving until
     //! it leaves (or the blink finds the box unfocused); null meanwhile.
     anim::Animation *m_caretBlink=nullptr;
