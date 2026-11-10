@@ -1799,8 +1799,8 @@ two programs and the draws. What follows describes both together:
   width (never shrunk below its own). The stretch is the last column's so that a column's
   new width moves only it and the columns after it, while the columns fit the body: once
   they overflow it, every row is as wide as the columns, so a new width changes every
-  row's width (and the body's inner panel's), but at the same origin and with the same
-  region within the viewport, so `Base::onBoundsChanged` marks the row alone and the cells
+  row's width (and the body's inner panel's), but, with the body scrolled to its left
+  edge, at the same origin and with the same region within the viewport, so `Base::onBoundsChanged` marks the row alone and the cells
   before the column are not marked (the header's cells are placed one by one and stay
   bounded; issue #511, `tests/unit/dataTable.cpp`, `dataTableVirtual.cpp`). `columnSpans(width)` gives every
   column's x and width across a width, and the header and every row place their cells
@@ -2683,17 +2683,20 @@ What exists today (the foundation) and what's still aspirational:
   that rect the same way, so a click in the band over a row scrolled out of view does not
   reach the row. OpenGLCore stamps the region into every
   slot drawn under it and the shaders discard outside it (see "Clip boxes" above). A
-  region only changes when an ancestor's bounds do, and `onBoundsChanged` marks the whole
+  region only changes when an ancestor's bounds or a `getChildClipRect` rect do (its owner
+  marks what is under a rect it changed), and `onBoundsChanged` marks the whole
   subtree (`StateChange_Geometry`) when the children's region can have changed, so a moved
   ScrollControl panel or a dragged Window re-stamps exactly its own subtree and an
   unchanged box costs no upload. A move always marks it (every absolute position changed).
   A new size at the same origin marks it only when the control has child clip rects
   (`Base::hasChildClipRects()`: ScrollControl, TabControl, DataTableHeader, whose rects
   follow their size), or clips and its region, its bounds within its parent's region, is
-  not the one it had (`Base::childRegionChanged`, which works the parent's region out up
-  the chain with the same `innerRenderState`/`childRenderState` the drain stamps with);
+  not the one it had (`Base::childRegionChanged`, which narrows the region up the chain by
+  the drain's rule, `shouldClip` and `getChildClipRect`, an axis at a time, stopping once
+  both sizes give the same region);
   otherwise only the control is marked, and whatever its arrange moves is marked by its
-  own `setBounds`. So an overflowing ScrollControl or ListBox given one more item marks
+  own `setBounds`. So an overflowing ScrollControl or ListBox scrolled to its start
+  (scrolled anywhere else, its inner panel moves and marks its subtree) given one more item marks
   that item, the inner panel and the thumb (4 and 6 controls, 64 and 96 before), and an
   overflowing DataTable's column drag leaves the cells before the column unmarked; a
   Window resized inside the canvas, or a CrossSplitter's clipping panel resized, still

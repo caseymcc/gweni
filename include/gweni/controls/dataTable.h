@@ -241,7 +241,8 @@ private:
 //! the last column's so that a column's new width moves only it and the columns
 //! after it, while the columns fit the body (once they overflow it, every row
 //! is as wide as the columns, so a new width changes every row's size, which
-//! marks the row alone, not the cells before the column). Dragging a header
+//! marks the row alone, not the cells before the column, while the body is
+//! scrolled to its left edge). Dragging a header
 //! cell's right edge (its grip) resizes the column from the width it is laid
 //! out at, so the stretched last column's edge follows the mouse (dragged
 //! left, the column still fills the body, at the narrower width it then asks
