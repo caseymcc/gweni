@@ -120,7 +120,7 @@ GWENI_EXPORT std::vector<std::string> typesWithoutSkinRenderer();
 GWENI_EXPORT size_t measureTextCalls();
 
 //! The Base::invalidate() calls made since the process started, each step of
-//! its walk up to the canvas (invalidateParent()) one call: the work a layout
+//! its walk up its logical parents to the canvas one call: the work a layout
 //! invalidation costs before any pass runs. Only those that started outside
 //! every setExcludedFromStats() subtree are counted (layoutEntryCounted()'s
 //! rule), so an inspector or stats overlay adds none, and neither do those of

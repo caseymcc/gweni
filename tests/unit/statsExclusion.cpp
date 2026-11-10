@@ -18,10 +18,11 @@
  *  animsRun), the measureTextCalls() delta and the invalidateCalls() delta
  *  (over the frame's edits and the frame) must be the same on both canvases
  *  (the flagged panel is not one of the children its app parent's loops
- *  count, Base::countLayoutChildrenScanned): on the first frame, a settled one, frames that change the flagged panel alone (which
- *  then count nothing at all: no pass, no renumber), and frames that change
- *  both. statsExcluded() is true below the root, false elsewhere and once the
- *  root is unflagged or deleted.
+ *  count, Base::countLayoutChildrenScanned): on the first frame, a settled
+ *  one, frames that change the flagged panel alone (which then count nothing
+ *  at all: no pass, no renumber), and frames that change both.
+ *  statsExcluded() is true below the root, false elsewhere and once the root
+ *  is unflagged or deleted.
  */
 #include "headlessFixture.h"
 
