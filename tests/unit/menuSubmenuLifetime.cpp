@@ -19,7 +19,10 @@
  *  item a plain item: isMenuOpen() false, openMenu()/closeMenu()/
  *  Menu::closeAll() no-ops, the row marked to be drawn again (an open
  *  submenu's highlight goes), no submenu arrow after the next frame, and a press
- *  checks a checkable item and fires onMenuItemSelected. A submenu item's own
+ *  checks a checkable item and fires onMenuItemSelected. A submenu deleted
+ *  outright after its item, or its menu, was queued for a delayed delete
+ *  (clearItems() included) queues the item's arrow behind it, and the next
+ *  frame deletes each control once. A submenu item's own
  *  onMenuItemSelected handler may delete the submenu's parent item, outright
  *  or delayed: the submenu is only queued while the handler is on the stack.
  *  A canvas deleted with a MenuStrip and a Menu holding nested submenus, open
@@ -363,6 +366,43 @@ TEST_CASE("a submenu deleted on its own leaves its item a plain item")
     CHECK(now.ids.livePrimitives() < withItem.ids.livePrimitives());
 
     delete item;
+    scene.frame();
+    checkBack(scene, baseline);
+}
+
+TEST_CASE("a submenu deleted outright after its item was queued for delete")
+{
+    Scene scene;
+    const Counts baseline=Counts::of(scene);
+
+    Menu *menu=scene.canvas->newChild<Menu>();
+    MenuItem *item=menu->addItem("Item");
+    Menu *sub=item->getMenu();
+    sub->addItem("Inner")->getMenu()->addItem("Leaf");
+    menu->openAt(Point(10, 10));
+    item->openMenu();
+    scene.frame();
+    REQUIRE(hasArrow(item));
+
+    // the item's arrow, queued by the submenu's delete, is queued after the
+    // item (or its menu): deleting that deletes the arrow with it
+    SUBCASE("Menu::clearItems()")
+    {
+        menu->clearItems();
+    }
+    SUBCASE("the item delayed")
+    {
+        item->delayedDelete();
+    }
+    SUBCASE("the menu delayed")
+    {
+        menu->delayedDelete();
+        menu=nullptr;
+    }
+    delete static_cast<controls::Base *>(sub);
+    scene.frame();
+
+    delete static_cast<controls::Base *>(menu);
     scene.frame();
     checkBack(scene, baseline);
 }

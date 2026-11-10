@@ -586,21 +586,23 @@ void Canvas::PreDeleteCanvas(controls::Base *control)
     }
 }
 
+// From the live queue, front first: a control deleting a descendant queued
+// after it (or one deleted outright from a destructor) takes it out of the
+// queue (PreDeleteCanvas), so nothing is deleted twice, and what a destructor
+// queues goes in this frame too.
 void Canvas::processDelayedDeletes()
 {
-    while(m_anyDelete)
+    while(!m_deleteList.empty())
     {
-        m_anyDelete=false;
-        controls::Base::List deleteList=m_deleteList;
-        m_deleteList.clear();
-        m_deleteSet.clear();
+        controls::Base *control=m_deleteList.front();
 
-        for(auto &&control : deleteList)
-        {
-            control->preDelete(getSkin());
-            delete control;
-            redraw();
-        }
+        m_deleteList.pop_front();
+        m_deleteSet.erase(control);
+        m_anyDelete=!m_deleteSet.empty();
+
+        control->preDelete(getSkin());
+        delete control;
+        redraw();
     }
 }
 
