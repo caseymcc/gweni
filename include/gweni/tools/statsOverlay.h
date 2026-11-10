@@ -59,8 +59,9 @@ namespace tools
 //! background) a hit test passes through it, so the app under it keeps its
 //! hover and clicks; a click on a name does nothing. The canvas shows a
 //! name's tooltip in its ToolTip box, excluded from the counts as a tool's
-//! (Canvas, "Tooltip"), and the box's slots are taken out as its own while it
-//! holds one of them (ownIds()). It places itself (Placement::Owner) Inset units
+//! (Canvas, "Tooltip"): while it shows or last showed one, the box is a
+//! flagged subtree on the canvas, whose ids every tool takes out
+//! (Canvas::excludedSlots()). It places itself (Placement::Owner) Inset units
 //! in from its parent's bottom-right corner on every layout pass; open() makes
 //! it on the canvas, as a canvas overlay (Canvas::addOverlay), numbered above
 //! the app. Made as any other control's child (a demo page's), it is that
@@ -191,8 +192,9 @@ public:
     controls::PlotLines *cpuPlot() const { return m_cpuPlot; }
     controls::PlotLines *slotsPlot() const { return m_slotsPlot; }
 
-    //! The primitive and text ids its own controls hold, and the canvas's
-    //! ToolTip box's while that shows (or last showed) a name cell's tooltip.
+    //! The primitive and text ids its own controls hold (not the canvas's
+    //! ToolTip box's, which Canvas::excludedSlots() holds while it is a
+    //! tool's).
     void ownIds(std::vector<size_t> &primitiveIds, std::vector<size_t> &textIds) const;
 
     //! Only its name cells take the mouse, for their tooltips: the visible
@@ -232,9 +234,6 @@ private:
     void show(controls::Canvas *canvas);
     //! The canvas's controls but the tools' (setExcludedFromStats()) subtrees.
     static size_t countControls(const controls::Base *control);
-    //! The canvas's ToolTip box while it shows (or last showed, until it shows
-    //! another control's) a name cell's tooltip, else null.
-    const controls::Base *ownToolTipBox() const;
 
     //! Each row's cells, left to right.
     std::vector<std::vector<controls::Label *>> m_rows;

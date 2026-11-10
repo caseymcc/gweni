@@ -6,7 +6,6 @@
 #include <gweni/tools/statsOverlay.h>
 
 #include <gweni/anim.h>
-#include <gweni/controls/toolTip.h>
 #include <gweni/gweni.h>
 #include <gweni/platforms/baseRender.h>
 #include <gweni/platforms/platform.h>
@@ -425,31 +424,6 @@ int StatsOverlay::cornerY()
 void StatsOverlay::ownIds(std::vector<size_t> &primitiveIds, std::vector<size_t> &textIds) const
 {
     appendSubtreeIds(this, primitiveIds, textIds);
-    if(const controls::Base *box=ownToolTipBox())
-        appendSubtreeIds(box, primitiveIds, textIds);
-}
-
-const controls::Base *StatsOverlay::ownToolTipBox() const
-{
-    controls::Canvas *canvas=const_cast<StatsOverlay *>(this)->getCanvas();
-    controls::Base *box=canvas?canvas->toolTipControl():nullptr;
-
-    if(!box)
-        return nullptr;
-
-    // the box shows, or last showed, one of the name cells' tooltips: its
-    // show, its changes and its hide are this overlay's
-    const size_t shownFor=canvas->toolTipShownForId();
-
-    for(const std::vector<controls::Label *> &row : m_rows)
-    {
-        for(controls::Label *cell : row)
-        {
-            if(cell->getControlId() == shownFor)
-                return box;
-        }
-    }
-    return nullptr;
 }
 
 std::vector<String> StatsOverlay::lines() const

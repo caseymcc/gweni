@@ -3209,11 +3209,12 @@ static bool runStatsOverlayScenario(Session &s, const std::string &shotDir, bool
                 +", box z "+std::to_string(box->getZIndex())+", overlay's highest "
                 +std::to_string(highestZOutside(overlay, nullptr));
 
-            // the overlay's ids, the box's included now
+            // the overlay's ids and the box's, a tool's now
             std::vector<size_t> tipPrimitives;
             std::vector<size_t> tipTexts;
 
             overlay->ownIds(tipPrimitives, tipTexts);
+            gweni::tools::appendSubtreeIds(box, tipPrimitives, tipTexts);
             std::sort(tipPrimitives.begin(), tipPrimitives.end());
             std::sort(tipTexts.begin(), tipTexts.end());
             for(size_t id : frames.back().primitives)
@@ -3451,6 +3452,12 @@ static bool runStatsOverlayScenario(Session &s, const std::string &shotDir, bool
             open->ownIds(primitives, texts);
         if(Inspector *open=Inspector::find(s.canvas))
             open->ownIds(primitives, texts);
+        // the canvas's ToolTip box while it is a tool's (the "interval"
+        // tooltip above left it so)
+        gweni::controls::ToolTip *box=s.canvas->toolTipControl();
+
+        if(box && box->isExcludedFromStats())
+            gweni::tools::appendSubtreeIds(box, primitives, texts);
     };
     toolIds(heldPrimitives, heldTexts);
 
