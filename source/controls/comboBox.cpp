@@ -256,6 +256,16 @@ void ComboBox::itemRemoved(Base *child)
     invalidate();
 }
 
+void ComboBox::itemTextChanged(MenuItem *item)
+{
+    if(item == m_selectedItem)
+        setText(item->getText());
+
+    // the box's width counts every item's text, whether or not the list is
+    // its child
+    invalidate();
+}
+
 void ComboBox::listDeleted()
 {
     // Its items go with it, past onChildRemoved (the list is in its ~Base
@@ -437,6 +447,12 @@ void ComboBoxList::onChildRemoved(controls::Base *child)
 
     if(m_comboBox)
         m_comboBox->itemRemoved(child);
+}
+
+void ComboBoxList::itemTextChanged(MenuItem *item)
+{
+    if(m_comboBox)
+        m_comboBox->itemTextChanged(item);
 }
 
 }//namespace internal

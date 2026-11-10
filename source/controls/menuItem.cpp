@@ -7,6 +7,7 @@
 
 #include <gweni/gweni.h>
 #include <gweni/controls/menuItem.h>
+#include <gweni/controls/comboBox.h>
 #include <gweni/skin.h>
 #include <gweni/controls/canvas.h>
 #include <gweni/controls/imagePanel.h>
@@ -261,6 +262,20 @@ void MenuItem::setAccelerator(const String &strAccelerator)
     m_accelerator->setText(strAccelerator);
     m_accelerator->setMargin(Margin(0, 0, 16, 0));
     // TODO.
+}
+
+void MenuItem::setText(const String &str, bool doEvents)
+{
+    // Label's returns early on the same string, which reaches nothing.
+    const String before=getText();
+
+    ParentClass::setText(str, doEvents);
+    if(getText() == before)
+        return;
+
+    // read after the events, which may have moved the item
+    if(auto *list=gweni_cast<internal::ComboBoxList>(getParent()))
+        list->itemTextChanged(this);
 }
 
 void MenuItem::sizeToContents()

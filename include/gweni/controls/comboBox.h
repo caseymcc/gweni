@@ -47,6 +47,9 @@ public:
         m_comboBox=comboBox;
     }
 
+    //! \p item, one of this list's, was given a new text (MenuItem::setText).
+    void itemTextChanged(MenuItem *item);
+
 protected:
 
     //! Runs from inside the item's ~Base when it is deleted, so the item is
@@ -131,6 +134,10 @@ protected:
     //! dropped if it was the selected item, with no onSelection, as
     //! clearItems() drops it, and the box is measured again.
     void itemRemoved(controls::Base *child);
+    //! \p item, an item of the list, was renamed, in the app's phase: the box
+    //! shows the new text if it is the selected item, with no onSelection,
+    //! and is measured again either way (the list may be the canvas's child).
+    void itemTextChanged(MenuItem *item);
     //! The list is being deleted (before this box): neither it nor its items
     //! are held any more, and nothing is shown, as after clearItems().
     void listDeleted();

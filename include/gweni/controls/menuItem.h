@@ -36,6 +36,10 @@ public:
 
     void sizeToContents() override;
 
+    //! Label's, and on a real change, an item of a ComboBox's list tells the
+    //! list, so the box shows the new text if the item is its selection.
+    void setText(const String &str, bool doEvents=true) override;
+
     virtual void onPress(event::Info) override;
 
     Menu *getMenu();
