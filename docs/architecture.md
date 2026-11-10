@@ -2873,6 +2873,138 @@ shows exactly the app's slots (a frame only a tool wrote in, the other opening, 
 or giving ids back, reads 0), the overlay's ids row is the same as without the
 Inspector, a hover shows in both and then 0, and closing both gives every id back.
 
+## The depth view
+
+`gweni::tools::DepthView` (`include/gweni/tools/depthView.h`,
+`source/tools/depthView.cpp`) draws a canvas's UI in 3D, each slot at its own
+`Vertex::z` as depth, through a camera that orbits, pans and dollies round it. The depth
+buffer is gweni's draw order (gapped z labels, glyph *i* of a run at
+`z+(i+1)/(glyphs+1)`, overlays at `getZIndex()+1`, a caret at `getOverlayZIndex()`), so
+a z that is wrong (a child sharing its parent's depth, a layer a skin Control did not
+report through `depthLayers()`, a popup numbered under something) shows as a stack out
+of order instead of only as its symptom. It is also the retained model at work: the
+camera spins while the renderer writes and uploads nothing. The examples bind F9 and
+take `--depth-view [on|off]` (so `?depth-view` on a web page); the library binds no key.
+
+**The renderer hook.** `SlotRenderer::setViewTransform(const float[16])` (column-major,
+glm's layout, so glm stays out of `slotRenderer.h`) and `clearViewTransform()`. Both
+backends' projection becomes `ortho * T` (`viewProjection()` in `openglCore.cpp` and
+`vulkan.cpp`): `T` maps the view's own space (device px, y down, z a z index) into
+itself, projectively, so a camera is built in pixels and the existing ortho turns its
+output into clip space. The backend rebuilds the matrix in its `viewTransformChanged()`
+hook and at `setViewRect`, never per frame, and nothing of the mirrors changes, so a
+frame after a camera move writes no slot and uploads no byte. Unset, the projection is
+the ortho alone, as before. Neither backend culls faces (GL never enables
+`GL_CULL_FACE`; Vulkan's pipelines are `VK_CULL_MODE_NONE`), so a turned view shows the
+UI's back.
+
+**`w` is not 1 any more.** Two places assumed it, and both now divide by it, the same
+arithmetic exactly when it is 1 (so `docs_samples` and `backend_pixels` are
+byte-identical):
+- the line style's half-layer-behind depth (`primitive.vert.glsl`):
+  `vBehindDepth = behind.z/behind.w*0.5 + 0.5`;
+- Vulkan's `CLIP_SPACE_TO_API` (`Vulkan/primitive.vert`, `text.vert`), which maps GL's
+  clip-space z to Vulkan's: `z*0.5 + w*0.5`, [-w, w] to [0, w]. With `z*0.5 + 0.5` a
+  nearer layer's depth after the divide passes 1 and it is clipped away
+  (`tests/viewTransform.cpp` fails on it).
+
+Nothing else depends on the orthographic projection: the SDF anti-aliasing is
+`dFdx/dFdy` of `vLocal`, text's of the atlas coordinates, depth is `gl_FragCoord.z`, and
+clipping compares the interpolated pre-transform pixel position (`vPixel`) with the
+slot's clip box, so a clipped slot is clipped in its own plane however it is seen. A
+polyline joint's half-layer depth is interpolated in screen space, a hair off under
+perspective, which a debug view can live with.
+
+**The input: a canvas capture, not an overlay control.** A covering control would change
+the UI it shows: adding it moves `treeSerial` and renumbers z, taking the mouse un-hovers
+the control under it, and taking the keyboard focus ends a caret's blink and commits a
+half-typed `ColorEdit` or `DragNumber`. Instead `Canvas::setInputCapture(InputCapture *)`:
+while one is set, each of the canvas's `input*` calls (move, button, wheel,
+`inputModifierKey`'s keys, characters, the cursor leaving) hands the event to it
+(`controls::InputCapture`, `canvas.h`) and returns, so nothing is hit-tested and
+`input::`'s state (the hover, the focus, the mouse position, the keys held) stays as it
+was. One pointer test per event, none per frame. The UI keeps running: animations, the
+caret blink, a tooltip's delay. When the capture goes the canvas has the mouse position
+it had, and the next real move hit-tests from there; a press or key held across setting
+or clearing it is not let go on the canvas, which the next release or key event sorts
+out. A canvas deleted with a capture set tells it (`captureCanvasDeleted`). The apps'
+F9-F12 are handled in their key callbacks before the canvas, so the other tools still
+toggle while the view is open. The web reaches the canvas through `input::GLFW3` as
+native does, so it needs nothing of its own.
+
+**The tool.** A plain object, not a control: `DepthView::open(canvas, renderer)` (the
+canvas skin's renderer by default; a `dynamic_cast` to `SlotRenderer`, and on any other
+one line on stderr and nothing opened), `close`, `toggle`, `find`, and
+`onOpenChangedCaller`, called after each open and close with the canvas and 1 or 0 (for
+a toggle button kept in step; not for a view whose canvas is deleted under it). One
+renderer draws one canvas's view at a time. It sets the canvas's `needsRedraw()` on each
+camera move, for a loop that waits for one. The camera is built from the renderer's view
+rect, so an app calls `DepthView::viewChanged(canvas)` after a resize
+(`capture::fitCanvasToWindow` does).
+
+**The camera** (`DepthView::Camera`), in the view's device px with x right, y down and z
+towards the camera:
+- the model: the canvas centre on z 0 at the origin, each z label `zSpacing` px towards
+  the camera (raw z, its gaps as they are); by default (`defaultZSpacing()`) the
+  canvas's highest z (`Canvas::highestZIndex()`, the last renumber's) half the view's
+  width in front, clamped to 0.01..64 px a label;
+- turned by `yaw` (about the vertical axis) then `pitch` (clamped to ±90°) round that
+  centre, and panned across the view;
+- perspective: a camera `distance` focal lengths from z 0, the focal length
+  `FocalViews` (4) times the view's longer side. A point at depth d from it is drawn at
+  `c + (x, y)*focal/d`, so at distance 1 the plane z 0 is drawn exactly as in the front
+  view and a nearer layer larger (the reset view's nearest, half a width in front, 1.14
+  times); orthographic: the same size at z 0, scaled by `1/distance`;
+- the z index out is fitted to the scene: everything is within the radius of the view's
+  half-diagonal and its highest z from the centre, so perspective maps the nearest and
+  farthest distances that radius allows to `kMaxZIndex` and 0 (`a + b/d`, which as
+  `Z = w*(a + b/d)` is linear in the point), and orthographic maps the radius linearly;
+  a 24-bit depth buffer has 256 steps a z index out, so two labels of the Demo shell at
+  its default spacing (0.01 px) are still about a hundred steps apart, and ButtonDemo's
+  (2.6 px) tens of thousands.
+
+The mouse and the keys: left-drag orbits (0.4° a unit), right- or middle-drag pans by
+the mouse's device px, the wheel and W/S dolly (0.85 a notch, away from the user is in),
+the arrows and A/D move the camera 24 units, P switches perspective and orthographic, +
+and - space the labels 1.25 times further or closer, R resets (straight on, perspective,
+distance 1, the default spacing) and Escape closes it, as F9 does in the examples. The
+view opens at reset.
+
+**`--depth-view`** opens it once the first frame has numbered the z labels
+(`capture::openDepthViewOnce`, after each `updateCanvas()` in the apps' loops), so the
+default spacing fits them: before the first renumber `highestZIndex()` is 0. Raw z
+spacing shows what the numbering does: the demo shell numbers every page, the hidden
+ones too, so its highest z is about 42700 and the page shown sits near the back
+while the demo list and the status bar, numbered after the pages, stand near the camera.
+
+**Its cost.** Off, nothing: no shader change in the hot path and no per-frame CPU work
+(`tools/bench.sh compare` moves no counter). On, a camera move is a matrix built on the
+CPU and handed to the backend; the frame after it, like the frames opening and closing
+the view, enters no control, writes and uploads nothing, lays out nothing and renumbers
+no z.
+
+**Backends.** GL and Vulkan draw the same picture for the same camera, held to
+`backend_pixels`' bound (max |Δ| 1, 0.001 % of the pixels of a turned perspective shot);
+desktop GL and GLES byte for byte. WebGL 2 (ANGLE's SwiftShader) differs from native
+along the edges of turned quads and glyphs (up to 64 levels on 0.17 % of ButtonDemo's
+pixels; interiors equal): the two rasterisers place a sub-pixel edge differently, which
+the axis-aligned front view never shows, so the web's comparisons are not run on it.
+
+`tests/viewTransform.cpp` pins the hook on every backend (the identity and none draw the
+front view uploading nothing, a whole-pixel translation moves every pixel by exactly
+that much, a view from behind is mirrored with the far layer in front, a perspective
+camera draws its reference layer as the front view and a nearer one larger and in
+front), `tests/unit/inputCapture.cpp` the capture and `tests/unit/depthView.cpp` the tool
+on a `MirrorOnlyRenderer`. `--scenario depth-view` (`controltest_depth_view`, `_vulkan`,
+through `tests/depthView.cmake`, which runs it twice and requires byte-identical PNGs,
+and `controltest_verify_layout_depth_view`) opens it with F9 on ButtonDemo, the clock
+frozen and the mouse resting on "Toggle Me", sets a turned perspective camera, moves it
+with a left-drag, the wheel, Left, P and +, clicks on the toggle and closes it with F9:
+every one of those frames enters no control, changes, writes and uploads nothing, lays
+out nothing, renumbers no z and hit-tests nothing, the click presses nothing, the
+hover, focus, tree serial and live ids are kept, and the frame after the close is the
+one before the open, byte for byte. `backend_pixels` holds its shots on Vulkan to GL's.
+
 ## Missing resources: degraded, not fatal
 
 The library reports a resource it cannot load and goes on drawing; it never exits.
