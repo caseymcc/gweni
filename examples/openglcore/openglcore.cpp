@@ -82,6 +82,33 @@ static gweni::renderer::Base *g_renderer=nullptr;
 static gweni::controls::Canvas *g_canvas=nullptr;
 static float g_manualScale=1.0f;        // --scale or GWENI_SCALE
 
+#if GWENI_EXAMPLE_WEBGL
+static gweni::Demo *g_demo=nullptr;
+
+//! For a script driving the page (tests/web/interactive.mjs, through
+//! Module.ccall(name, 'string')): whether the canvas's stats overlay is open,
+//! whether the shell's Stats button is on, and the button's rect on the canvas
+//! in logical units, as "overlay=open button=on rect=x,y,w,h". Valid until the
+//! next call.
+extern "C" EMSCRIPTEN_KEEPALIVE const char *gweni_web_stats_overlay()
+{
+    static std::string state;
+
+    state.clear();
+    if(g_canvas && g_demo && g_demo->statsButton())
+    {
+        gweni::controls::Button *button=g_demo->statsButton();
+        const gweni::Point at=button->localPosToCanvas();
+
+        state=std::string("overlay=")+(gweni::tools::StatsOverlay::find(g_canvas)?"open":"closed")
+            +" button="+(button->getToggleState()?"on":"off")
+            +" rect="+std::to_string(at.x)+","+std::to_string(at.y)+","
+            +std::to_string(button->getWidth())+","+std::to_string(button->getHeight());
+    }
+    return state.c_str();
+}
+#endif//GWENI_EXAMPLE_WEBGL
+
 static void key_callback(GLFWwindow* window, int key, int scancode, int action, int mods)
 {
     // F12 opens and closes the inspector, F11 the theme editor, F10 the stats
@@ -466,6 +493,9 @@ int main(int argc, char *argv[])
 
 #ifndef SINGLE_CONTROL
     gweni::Demo *demo=canvas->newChild<gweni::Demo>();
+#if GWENI_EXAMPLE_WEBGL
+    g_demo=demo;
+#endif
 
     if(!demoName.empty() && !demo->showDemo(demoName))
     {

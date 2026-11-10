@@ -15,7 +15,8 @@
 //  reads the page's pixels as a screenshot of the canvas, and reads
 //  ControlTest's state through what it exports (Module.ccall:
 //  gweni_web_bounds_listing, the --dump-bounds listing of the window's canvas
-//  as it is; gweni_web_focused_text). The checks, each one "interactive.mjs:
+//  as it is; gweni_web_focused_text) and OpenGLCore's (gweni_web_stats_overlay,
+//  its stats overlay's state). The checks, each one "interactive.mjs:
 //  <check>: ok" line or a "interactive.mjs: FAIL: <check>: ..." one:
 //    button     ButtonDemo: a press on the "Text" button changes the pixels in
 //               its bounds, and the release with the mouse moved off gives the
@@ -47,6 +48,11 @@
 //    opengl     the OpenGLCore demo at 1024x768 CSS: a 1024x768 backing
 //               store, and a click on the demo list's "Label" entry changes
 //               the canvas
+//    stats      OpenGLCore.html?stats-overlay at 1024x768 CSS: the overlay is
+//               open and the shell's Stats button on; a click on the button
+//               closes it and turns the button off, changing the canvas, and a
+//               second click opens it and turns the button on again (read
+//               through OpenGLCore's gweni_web_stats_overlay export)
 //  It also fails on any console error or uncaught exception in any page, and
 //  unless every page made a WebGL 2 context on ANGLE's SwiftShader with at
 //  least 24 depth bits (run.mjs' conditions). The page's container is the
@@ -445,6 +451,57 @@ async function checkOpenGLCore(s)
     await context.close();
 }
 
+const statsOverlayState = page => page.evaluate(() => Module.ccall('gweni_web_stats_overlay', 'string', [], []));
+
+// "overlay=open button=on rect=x,y,w,h" -> { overlay, button, rect }
+function parseStatsState(text)
+{
+    const match = /^overlay=(\w+) button=(\w+) rect=(-?\d+),(-?\d+),(\d+),(\d+)$/.exec(text);
+    if(!match)
+        return null;
+    const [x, y, w, h] = match.slice(3).map(Number);
+    return { overlay: match[1], button: match[2], rect: { x, y, width: w, height: h } };
+}
+
+async function checkStatsButton(s)
+{
+    const opened = await s.open('stats', 'OpenGLCore.html?stats-overlay', { width: 1024, height: 768 + outputPanel });
+    if(!opened)
+        return;
+    const { page, context } = opened;
+    const whole = { x: 0, y: 0, width: 1024, height: 768 };
+    const first = parseStatsState(await statsOverlayState(page));
+    if(!first)
+    {
+        fail('stats', `gweni_web_stats_overlay gave no state`);
+        await context.close();
+        return;
+    }
+    // the canvas is 1024x768 logical at devicePixelRatio 1: a unit is a CSS px
+    const at = centre(first.rect);
+    const open = await s.shot(page, whole, 'stats-open');
+    await page.mouse.click(at.x, at.y);
+    await s.frames(page, 5);
+    const second = parseStatsState(await statsOverlayState(page));
+    const closed = await s.shot(page, whole, 'stats-closed');
+    await page.mouse.click(at.x, at.y);
+    await s.frames(page, 5);
+    const third = parseStatsState(await statsOverlayState(page));
+    const describe = state => state ? `overlay ${state.overlay}, button ${state.button}` : 'no state';
+
+    if(first.overlay !== 'open' || first.button !== 'on')
+        fail('stats', `?stats-overlay started with ${describe(first)}, not overlay open, button on`);
+    else if(!second || second.overlay !== 'closed' || second.button !== 'off')
+        fail('stats', `a click on the Stats button left ${describe(second)}, not overlay closed, button off`);
+    else if(open.equals(closed))
+        fail('stats', 'closing the overlay with the Stats button changed nothing on the canvas');
+    else if(!third || third.overlay !== 'open' || third.button !== 'on')
+        fail('stats', `a second click left ${describe(third)}, not overlay open, button on`);
+    else
+        pass('stats', `the Stats button at (${first.rect.x}, ${first.rect.y}) closes the overlay and opens it again`);
+    await context.close();
+}
+
 async function main()
 {
     const argv = process.argv.slice(2);
@@ -485,6 +542,7 @@ async function main()
         await checkScale(s, controlPage);
         await checkUsage(s);
         await checkOpenGLCore(s);
+        await checkStatsButton(s);
     }
     finally
     {
