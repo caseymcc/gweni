@@ -15,6 +15,8 @@
 #include "gweni/controls/vectorField.h"
 #include "gweni/controls/verticalSlider.h"
 
+#include <type_traits>
+
 namespace gweni
 {
 
@@ -31,15 +33,19 @@ void addCaption(controls::Base *parent, const String &text)
     caption->setMargin(Margin(0, 0, 0, 2));
 }
 
-//! A text box row, as wide as its section and as high as its text line: a
-//! TextBox is Fixed, and a Top dock leaves a Fixed width as it was asked for
-//! (200, a NumericUpDown's 100).
+//! A row as wide as its section and as high as its text line: a TextBox (a
+//! DragNumber, a VectorField) is Fixed, and a Top dock leaves a Fixed width as
+//! it was asked for. A TextBox's width is its request on every flag, so a
+//! text box row asks its section for 80, less than its captions, and typing
+//! into it never widens the column; the dock gives it the rest.
 template<typename T>
 T *textRow(controls::Base *parent)
 {
     T *row=showcase::addRow<T>(parent);
 
     row->setSizeFlags({SizeFlag::Elastic, SizeFlag::Elastic});
+    if constexpr(std::is_base_of_v<controls::TextBox, T>)
+        row->setWidth(80);
     return row;
 }
 
