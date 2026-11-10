@@ -22,7 +22,8 @@
  *  a scrollTo*() cancels it (one that keeps the offset too), and an axis that
  *  cannot scroll has none. On content that overflows by a few units, arrow
  *  nudges and wheel notches of under half a unit each add up rather than
- *  being put back, both ways, to both ends. A VirtualList's scrollToBottom
+ *  being put back, both ways, to both ends, by their own pass or a later
+ *  one at the same content. A VirtualList's scrollToBottom
  *  followed by a new item count lands on the new end, and a count that
  *  shrinks under the offset clamps it.
  */
@@ -512,6 +513,30 @@ TEST_CASE("ScrollControl offset: moves under half a unit add up on content that 
             scene.settle();
         }
         CHECK(scene.offsetY() == 0);
+    }
+
+    SUBCASE("a bar left between two units keeps its amount through a pass it did not cause")
+    {
+        auto *vertical=gweni_cast<controls::VerticalScrollBar>(scene.verticalBar);
+
+        REQUIRE(vertical != nullptr);
+        vertical->nudgeDown(vertical);
+        scene.settle();
+
+        const float nudged=scene.verticalBar->getScrolledAmount();
+
+        REQUIRE(nudged > 0.f);
+        REQUIRE(scene.offsetY() == 0);
+
+        // a relayout at the same content, by something else
+        row->invalidate();
+        scene.settle();
+        CHECK(scene.verticalBar->getScrolledAmount() == nudged);
+        CHECK(scene.offsetY() == 0);
+
+        vertical->nudgeDown(vertical);
+        scene.settle();
+        CHECK(scene.offsetY() > 0);
     }
 
     SUBCASE("a bar left between two units still follows the content")

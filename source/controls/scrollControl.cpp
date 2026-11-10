@@ -454,9 +454,9 @@ void ScrollControl::placeContents()
     {
         const int index=axis(dim);
         const float amount=scrollBar(dim)->getScrolledAmount();
-        bool userMoved=amount != m_shownAmount[index];
+        bool keepAmount=range[index] == m_scrollRange[index];
 
-        if(userMoved)
+        if(amount != m_shownAmount[index])
             m_scrollOffset[index]=static_cast<int>(std::lround(
                 static_cast<double>(amount)*m_scrollRange[index]));
 
@@ -465,20 +465,18 @@ void ScrollControl::placeContents()
         {
             m_scrollOffset[index]=(m_pendingEdge[index] == ScrollEdge::End)?range[index]:0;
             m_pendingEdge[index]=ScrollEdge::None;
-            userMoved=false;
+            keepAmount=false;
         }
-
-        if(range[index] != m_scrollRange[index])
-            userMoved=false;
 
         m_scrollRange[index]=range[index];
         m_scrollOffset[index]=gweni::clamp(m_scrollOffset[index], 0, range[index]);
 
-        // A bar the user moved to between two units keeps its amount while
-        // it still rounds to the offset at the same content, so moves of
-        // under half a unit add up (a nudge or a wheel notch on content that
-        // overflows by a few units) instead of being put back each pass.
-        if(userMoved && static_cast<int>(std::lround(
+        // A bar the user moved to between two units keeps its amount, on
+        // this pass and any later one, while it still rounds to the offset
+        // at the same content, so moves of under half a unit add up (a nudge
+        // or a wheel notch on content that overflows by a few units) instead
+        // of being put back by the next pass.
+        if(keepAmount && static_cast<int>(std::lround(
             static_cast<double>(amount)*range[index])) == m_scrollOffset[index])
             m_shownAmount[index]=amount;
         else
