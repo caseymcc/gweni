@@ -95,7 +95,7 @@ void installFixedProfileClock()
     platform::setProfileClock([]() { return (++reads)*FixedProfileStepMicros; });
 }
 
-bool statsOverlayArgument(int argc, char *argv[], int &i)
+bool onOffArgument(int argc, char *argv[], int &i)
 {
     if(i+1 < argc)
     {

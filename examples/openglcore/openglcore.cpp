@@ -400,9 +400,9 @@ int main(int argc, char *argv[])
         else if(arg == "--headless")
             forceHeadless=true;
         else if(arg == "--stats-overlay")
-            statsOverlay=gweni::capture::statsOverlayArgument(argc, argv, i);
+            statsOverlay=gweni::capture::onOffArgument(argc, argv, i);
         else if(arg == "--depth-view")
-            depthView=gweni::capture::statsOverlayArgument(argc, argv, i);
+            depthView=gweni::capture::onOffArgument(argc, argv, i);
         else if(arg == "--resources" && hasValue)
             resourceDir=argv[++i];
         else if(arg == "--renderer" && hasValue)

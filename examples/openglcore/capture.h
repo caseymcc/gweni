@@ -109,12 +109,11 @@ int exitStatus(int result, bool degraded);
 constexpr uint64_t FixedProfileStepMicros=100;
 void installFixedProfileClock();
 
-//! --stats-overlay [on|off], the switch at argv[i]: whether it asks for the
-//! overlay (gweni::tools::StatsOverlay) to be open at start-up. On, unless the
-//! word after it is "off"; an "on" or "off" there is taken (i moves past it),
-//! so a later --stats-overlay off overrides an earlier one. --depth-view
-//! [on|off] reads the same way.
-bool statsOverlayArgument(int argc, char *argv[], int &i);
+//! A switch taking an optional on|off, at argv[i] (--stats-overlay, whether
+//! gweni::tools::StatsOverlay is open at start-up, and --depth-view): on, unless
+//! the word after it is "off"; an "on" or "off" there is taken (i moves past
+//! it), so a later --stats-overlay off overrides an earlier one.
+bool onOffArgument(int argc, char *argv[], int &i);
 
 //! --depth-view: opens the canvas's depth view (gweni::tools::DepthView) the
 //! first time it is called for that canvas once its z labels are numbered

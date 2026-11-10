@@ -9365,8 +9365,8 @@ int main(int argc, char *argv[])
         }
         else if(arg == "--shot-all") shotAll=true;
         else if(arg == "--headless") forceHeadless=true;
-        else if(arg == "--stats-overlay") g_statsOverlay=gweni::capture::statsOverlayArgument(argc, argv, i);
-        else if(arg == "--depth-view") g_depthView=gweni::capture::statsOverlayArgument(argc, argv, i);
+        else if(arg == "--stats-overlay") g_statsOverlay=gweni::capture::onOffArgument(argc, argv, i);
+        else if(arg == "--depth-view") g_depthView=gweni::capture::onOffArgument(argc, argv, i);
         else if(arg == "--stats") stats=true;
         else if(arg == "--stats-clock" && hasValue)
         {
