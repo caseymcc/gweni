@@ -1745,7 +1745,8 @@ two programs and the draws. What follows describes both together:
   `arrange` sizes and places it, one axis at a time, centred between the top and bottom
   padding, once that axis's size is final and before the tab's children are arranged
   (placed in `postLayout`, after the tab's own arrange, its first placement left the way
-  down to it dirty after the pass, for the next pass to enter and count). The square is reserved whether or not the button shows, so a hover never
+  down to it dirty after the pass, for whatever next pass to enter and count; the canvas
+  now lays such a leftover out in a second pass of the same frame, `docs/layout.md`). The square is reserved whether or not the button shows, so a hover never
   changes a tab's width or moves its neighbours. **Shown like imgui's:** on the selected
   tab and on the hovered one, the tab or the button itself under the mouse
   (`isTabHovered()`, which the tab's text colour follows too), and on no disabled tab.

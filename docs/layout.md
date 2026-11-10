@@ -163,7 +163,8 @@ The children placed this way:
 | VectorField | its components' fields and axis tags | `layout()` |
 | ScrollBar | the arrow buttons; the thumb | `layout()`; `layout()`, a scroll |
 | ScrollControl | both bars and the inner panel | `placeContents()`, its Y arrange |
-| TreeNode | the toggle | sized in `arrange()`, centred in `postLayout()` |
+| TreeNode | the toggle | sized and centred on the title in `arrange()` |
+| layout::Tile | its children, in cells | `arrange()` |
 | ColorPicker | the Result box | `arrange()` |
 | TextBox | its Text while the string is scrolled | `makeCaretVisible()` |
 | TabControl, TabStrip | the overflow and tab-list buttons; the drop marker over a tab | `arrange()`, x in X and y in Y; a drag hover |
@@ -284,8 +285,14 @@ children the loops went over, entered or not).
 A control stays dirty through all four steps, so a width the X arrange gives
 it is measured in Y, and is cleared at the end of its Y arrange. It stays
 dirty past that when it re-dirtied the pass, or when a shown child is still
-dirty (a child moved in a `postLayout()`), so the next pass finds its way
-down.
+dirty (a child placed after its own arrange, in a `postLayout()`), and so does
+every control up to the canvas, whose Y arrange ends the pass. The canvas then
+runs another pass in the same frame (`Canvas::layoutPass`), which enters only
+that way down and counts in that frame, so a pass never leaves a shown control
+dirty once the frame's layout has converged (`tests/unit/postLayoutPlacement.cpp`).
+A placement left for `postLayout()` therefore costs a second pass, which
+`--require-one-pass` fails on and names (see "What re-dirties a pass"); place
+in `arrange()` before `ParentClass::arrange` instead.
 
 A hidden control is never arranged, so one its parent measures anyway (a
 closed TreeNode's inner panel, whose rows count in the node's width; a
@@ -512,8 +519,10 @@ with both its width and its height final. So:
   (`Text::refreshSize(false)`), instead.
 
 `postLayout()` runs at the end of the control's Y arrange, once its children
-are placed. It may move a child (a position read by nothing else this pass,
-TreeNode's toggle), not resize one.
+are arranged. It is for what reads the finished layout and changes none of it
+(a TextBox's caret rects, a category's alternating colours). It must not move
+or resize a child: the child was arranged already, so the way down to it is
+left dirty, and the canvas lays it out in a second pass.
 
 ### Patterns that keep a control to one pass
 
@@ -536,10 +545,13 @@ to the order a pass runs in.
   along an axis before the pass arranges the child along it: in `layout()`
   (the start of the owner's X arrange, and again in Y when the height
   changed) or in an `arrange(dim)` override before `ParentClass::arrange`
-  (TreeNode's toggle, ColorPicker's Result box, Properties' bar). A size
-  given after the child was arranged re-dirties the pass. A position may be
-  set later, in `postLayout()`, when nothing laid out in this pass read it
-  (TreeNode centring its toggle on the title).
+  (TreeNode's toggle, ColorPicker's Result box, Properties' bar). Its
+  position goes there too, from what is final by then: TreeNode centres its
+  toggle on the title from the title's preferred height (it is docked Top at
+  it), a TabButton places its close button in its padding, a `layout::Tile`
+  its children in cells. A size given after the child was arranged re-dirties
+  the pass, and a position given then (in `postLayout()`) leaves the way down
+  to it dirty, which costs a second pass too.
 * **A preferred size instead of a resize.** A control that wants to be as big
   as its content says so in `calculateSize` (ColorPicker, Menu, Properties,
   CollapsibleCategory, the Table under a ListBox), and its parent gives it that
@@ -566,8 +578,10 @@ to the order a pass runs in.
   measured them (TabStrip, TabButton, GroupBox, DockedTabControl, TreeNode).
   These are not bounds, so they are written under a `PlacementScope`, which is
   what it is still for: the invalidations they raise are placement, not a
-  re-dirty. Settings that never change go in the constructor (ComboBox's
-  arrow).
+  re-dirty. An input no preferred size reads may wait for the control's
+  `arrange()`, before `ParentClass::arrange` (`layout::CalcPosition` hands its
+  undocked children their alignment there). Settings that never change go in
+  the constructor (ComboBox's arrow).
 * **Outside a pass, the same rule.** A value change, a click or a drag on a
   part writes computed bounds (a slider's thumb, a splitter bar, a scrollbar
   thumb, a TabStrip's drop marker); only what the user moves as their own
@@ -644,6 +658,12 @@ Base tells the canvas when a control re-dirties layout while the pass runs:
   **height** for one it has already arranged in Y, e.g. a control resizing
   itself from its own `layout()` or `postLayout()`.
 
+A pass also runs again, in the same frame, when it **left** layout dirty with
+nothing re-dirtied: a control moved after its own arrange (a `postLayout()`
+placement), or a shown dirty child its parent's arrange never entered. Then
+`LayoutStats::redirtiedType` names the control the dirty way down ends under,
+the parent that placed the child or skipped it (`Canvas::nameLeftDirty`).
+
 Placement does not count: the bounds a pass gives a control it has not reached
 yet along that axis (the height the Y pass gives a control arranged in X
 only), and the invalidations `setBounds()` raises for that control's children,
@@ -657,9 +677,11 @@ to children it lays out next count as placement too: bounds through
 An invalidation raised during a pass is not lost: the control it was raised
 on stays dirty past its Y arrange (`Base::noteRedirty`), and a pass that
 re-dirtied layout is followed by another in the same frame, at most
-`Canvas::MaxLayoutPasses` (4). When the cap is hit a one-line warning names the
-control (once per control type) and what is still dirty carries over:
-`renderCanvas`'s own `recurseLayout` picks it up. Debug builds also print, once
+`Canvas::MaxLayoutPasses` (4); so is a pass that left layout dirty. When the
+cap is hit a one-line warning names the control (once per control type) and
+what is still dirty carries over: `renderCanvas`'s own layout picks it up, with
+the same loop and cap (`Canvas::layoutUntilClean`), so what a pass of the
+render phase leaves dirty is laid out in that frame too. Debug builds also print, once
 per control type, every control that re-dirtied layout, so an app author sees
 which of their controls lean on the loop.
 
