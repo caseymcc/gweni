@@ -12,8 +12,11 @@
 #  1. ControlTest --scenario stats-overlay --require-one-pass must pass: over
 #     the settled Demo, the overlay writes nothing between its refreshes and
 #     only its own slots on one, shows what the frames of each window counted,
-#     a hover on the next refresh and 0 on the one after, lets the mouse through
-#     to a Button under it and gives its ids back; the demo shell's Stats
+#     a hover on the next refresh and 0 on the one after, shows its
+#     "interval" name's tooltip above it with none of it counted as the app's
+#     (0 on the next refresh) and the frame before back once the mouse moves
+#     off, lets the mouse through to a Button under a value or a plot and gives
+#     its ids back; the demo shell's Stats
 #     button follows F10, the overlay sits Inset above the shell's status bar,
 #     and clicks on the button open and close it, writing only the button's
 #     slots and the overlay's (its header in examples/openglcore/controltest.cpp).

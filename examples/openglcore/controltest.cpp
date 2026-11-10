@@ -497,10 +497,19 @@
  *                 animations, app slots, upload bytes and draws). The mouse onto
  *                 a demo-list entry: the next refresh shows that frame's
  *                 rendered controls and slots, the one after it 0 again. The
- *                 mouse onto the Button through the overlay hovers it, and a
- *                 click toggles it. F10 again closes it, giving back every
- *                 primitive and text id it took (stats-overlay.png, with it
- *                 open). One line
+ *                 mouse onto its "interval" name (from its value, which the
+ *                 mouse passes through): after the canvas's tooltip delay its
+ *                 tooltip shows as the canvas's last child, above the
+ *                 overlay, inside the canvas and clear of the name, the frame
+ *                 writing only the overlay's and the box's slots; the next
+ *                 refresh shows 0 rendered, changed, slots, passes and z, the
+ *                 frames until the one after write nothing, and back on the
+ *                 value the frame before is given back (the plots left out).
+ *                 The mouse onto the Button through the overlay (under a
+ *                 value or a plot, no name) hovers it, and a click toggles it.
+ *                 F10 again closes it, giving back every primitive and text
+ *                 id it took, the canvas's ToolTip box's left out
+ *                 (stats-overlay.png, with it open). One line
  *                   stats-overlay quiet_frames=N quiet_written=0 ... ids_back=yes
  *                 Exits non-zero if any check is no. controltest_stats_overlay
  *                 (tests/statsOverlay.cmake) also holds the --stats lines of
@@ -2927,6 +2936,14 @@ static std::string windowDifference(const gweni::tools::StatsOverlay::Window &a,
 }
 
 static size_t liveTextIds();
+static std::vector<uint8_t> framePixels(const Session &s);
+static size_t differencesIn(const Session &s, const std::vector<uint8_t> &a,
+    const std::vector<uint8_t> &b, const gweni::Rect &rect);
+static size_t differencesOutsideRects(const Session &s, const std::vector<uint8_t> &a,
+    const std::vector<uint8_t> &b, const std::vector<gweni::Rect> &rects);
+static int highestZOutside(gweni::controls::Base *control, gweni::controls::Base *box);
+static bool insideRect(const gweni::Rect &inner, const gweni::Rect &outer);
+static std::string rectText(const gweni::Rect &r);
 
 static bool runStatsOverlayScenario(Session &s, const std::string &shotDir, bool &passed)
 {
@@ -3109,12 +3126,126 @@ static bool runStatsOverlayScenario(Session &s, const std::string &shotDir, bool
         backShown=overlay->shownWindow();
     }
 
+    // A name cell's tooltip: from a point under the "interval" row's first
+    // value, which passes through to the app, onto the name. After the
+    // canvas's delay the box shows the name's tooltip, as the canvas's last
+    // child, numbered above the overlay and inside the canvas, clear of the
+    // name; the frame that shows it writes the overlay's and the box's slots
+    // alone; the refresh after it shows 0 (none of it is the app's), and the
+    // frames until the next write nothing; and back on the point, the frame
+    // before the hover is given back, but for the plots, whose history has
+    // moved on.
+    gweni::controls::Label *intervalName=nullptr;
+
+    for(gweni::controls::Label *name : overlay->nameCells())
+    {
+        if(name->getText() == "interval")
+            intervalName=name;
+    }
+
+    bool nameValuePasses=false;
+    bool nameHovered=false;
+    bool nameTipShown=false;
+    std::string nameTipPlace;
+    size_t nameTipForeign=0;
+    size_t nameTipDrawn=0;
+    StatsOverlay::Window nameTipWindow;
+    bool nameTipZero=false;
+    size_t nameTipQuiet=0;
+    bool nameTipHidden=false;
+    size_t nameTipBack=0;
+
+    if(intervalName)
+    {
+        const gweni::Rect nameRect=rectOf(intervalName);
+        const gweni::Point onName(nameRect.x+nameRect.w/2, nameRect.y+nameRect.h/2);
+        const gweni::Point onValue(nameRect.x+nameRect.w+20, onName.y);
+
+        nameValuePasses=overlay->getControlAt(onValue.x-at.x, onValue.y-at.y) == nullptr
+            && overlay->getControlAt(onName.x-at.x, onName.y-at.y) == intervalName;
+
+        // settled on the value, the overlay showing it
+        moveMouse(s, onValue.x, onValue.y);
+        frame();
+        for(int i=0; i < 3; ++i)
+            untilRefresh();
+
+        const std::vector<uint8_t> before=framePixels(s);
+
+        moveMouse(s, onName.x, onName.y);
+        frame();
+        nameHovered=gweni::HoveredControl == intervalName;
+        for(int i=0; i < 120 && !s.canvas->toolTipShown(); ++i)
+            frame();
+
+        gweni::controls::ToolTip *box=s.canvas->toolTipControl();
+
+        if(box && s.canvas->toolTipShown() && s.canvas->toolTipOwner() == intervalName)
+        {
+            const gweni::Rect boxRect=rectOf(box);
+
+            nameTipShown=s.canvas->getChildren().back() == box
+                && box->getZIndex() > highestZOutside(overlay, nullptr)
+                && insideRect(boxRect, gweni::Rect(0, 0, s.canvas->getWidth(), s.canvas->getHeight()))
+                && !overlaps(boxRect, nameRect) && overlaps(boxRect, overlayRect)
+                && box->isExcludedFromStats();
+            nameTipPlace="box "+rectText(boxRect)+", name "+rectText(nameRect)+", overlay "+rectText(overlayRect)
+                +", box z "+std::to_string(box->getZIndex())+", overlay's highest "
+                +std::to_string(highestZOutside(overlay, nullptr));
+
+            // the overlay's ids, the box's included now
+            std::vector<size_t> tipPrimitives;
+            std::vector<size_t> tipTexts;
+
+            overlay->ownIds(tipPrimitives, tipTexts);
+            std::sort(tipPrimitives.begin(), tipPrimitives.end());
+            std::sort(tipTexts.begin(), tipTexts.end());
+            for(size_t id : frames.back().primitives)
+            {
+                if(!std::binary_search(tipPrimitives.begin(), tipPrimitives.end(), id))
+                    ++nameTipForeign;
+            }
+            for(const gweni::renderer::WrittenText &text : frames.back().texts)
+            {
+                if(!std::binary_search(tipTexts.begin(), tipTexts.end(), text.textId))
+                    nameTipForeign+=text.glyphSlots;
+            }
+            nameTipDrawn=differencesIn(s, before, framePixels(s), boxRect);
+
+            // the window the box was shown in, then the one after it
+            const size_t shownAt=untilRefresh();
+
+            nameTipWindow=overlay->shownWindow();
+            nameTipZero=nameTipWindow.rendered == 0 && nameTipWindow.changed == 0
+                && nameTipWindow.slots == 0 && nameTipWindow.layoutPasses == 0
+                && nameTipWindow.zVisited == 0;
+
+            const size_t next=untilRefresh();
+
+            for(size_t k=shownAt+1; k < next; ++k)
+                nameTipQuiet+=frames[k].counts.primitiveSlotsWritten+frames[k].counts.textSlotsWritten;
+        }
+
+        moveMouse(s, onValue.x, onValue.y);
+        frame();
+        nameTipHidden=!s.canvas->toolTipShown();
+        for(int i=0; i < 3; ++i)
+            untilRefresh();
+        nameTipBack=differencesOutsideRects(s, before, framePixels(s),
+            {rectOf(overlay->cpuPlot()), rectOf(overlay->slotsPlot())});
+    }
+
+    const bool nameTipOk=intervalName && nameValuePasses && nameHovered && nameTipShown && nameTipForeign == 0
+        && nameTipDrawn > 0 && nameTipZero && nameTipQuiet == 0 && nameTipHidden && nameTipBack == 0;
+
     // through the overlay onto the Button under it: hovered, and a click toggles it
     const gweni::Point targetAt=target->localPosToCanvas();
     const gweni::Point targetCentre(targetAt.x+target->getWidth()/2, targetAt.y+target->getHeight()/2);
-    // under the raised overlay, and clear of the status bar under it
+    // under the raised overlay but under none of its name cells (a value or a
+    // plot), and clear of the status bar under it
     const bool underOverlay=targetCentre.x >= overlayRect.x && targetCentre.x < overlayRect.x+overlayRect.w
         && targetCentre.y >= overlayRect.y && targetCentre.y < overlayRect.y+overlayRect.h
+        && overlay->getControlAt(targetCentre.x-at.x, targetCentre.y-at.y) == nullptr
         && !overlaps(rectOf(target), rectOf(statusBar));
 
     moveMouse(s, targetCentre.x, targetCentre.y);
@@ -3135,13 +3266,21 @@ static bool runStatsOverlayScenario(Session &s, const std::string &shotDir, bool
 
     const bool closed=StatsOverlay::find(s.canvas) == nullptr;
     const bool buttonOffF10=!statsButton->getToggleState();
-    const size_t idsLeft=livePrimitiveIds()-idsBefore;
-    const size_t textIdsLeft=liveTextIds()-textIdsBefore;
+    // the ToolTip box the name's tooltip made is the canvas's, and stays
+    std::vector<size_t> boxPrimitives;
+    std::vector<size_t> boxTexts;
+
+    if(gweni::controls::ToolTip *box=s.canvas->toolTipControl())
+        gweni::tools::appendSubtreeIds(box, boxPrimitives, boxTexts);
+
+    const size_t idsLeft=livePrimitiveIds()-idsBefore-boxPrimitives.size();
+    const size_t textIdsLeft=liveTextIds()-textIdsBefore-boxTexts.size();
 
     // The Stats button: a click opens it, F10 closes and opens it again, a
     // click closes it. After each, the button is on exactly while the overlay
     // is open, the overlay was told once (it never opens or closes twice), and
-    // a click frame writes only the button's slots and the overlay's, and
+    // a click frame writes only the button's slots and the overlay's (and the
+    // ToolTip box's, renumbered after the overlay), and
     // its layout pass enters the canvas alone (its four entries, X and Y,
     // counted as the canvas's: the overlay added or taken out is a change of
     // the canvas's children, as for F10), not the shell.
@@ -3195,6 +3334,11 @@ static bool runStatsOverlayScenario(Session &s, const std::string &shotDir, bool
         allowedPrimitives.clear();
         allowedTexts.clear();
         allow(statsButton);
+        // the canvas's ToolTip box (made by the "interval" tooltip above),
+        // which the canvas keeps after its overlays: an overlay added or taken
+        // out moves its z, and its text's glyphs are written again
+        if(gweni::controls::ToolTip *box=s.canvas->toolTipControl())
+            allow(box);
         if(StatsOverlay *open=StatsOverlay::find(s.canvas))
             allow(open);
         clickMouse(s, buttonCentre.x, buttonCentre.y);
@@ -3272,13 +3416,17 @@ static bool runStatsOverlayScenario(Session &s, const std::string &shotDir, bool
     const bool clickOwnOnly=clickForeign == 0 && clickWritten > 0 && clickLayoutEntries <= 4;
     const bool buttonIdsBack=buttonIdsLeft == 0 && buttonTextIdsLeft == 0;
 
-    passed=quiet && ownOnly && shownMatch && hoverShownOk && hoverBack && clickedThrough && closed && idsBack
+    passed=quiet && ownOnly && shownMatch && hoverShownOk && hoverBack && nameTipOk && clickedThrough && closed
+        && idsBack
         && aboveBar && buttonSynced && buttonSteps && clickOwnOnly && buttonIdsBack;
 
     std::cout<<"stats-overlay quiet_frames="<<quietFrames<<" quiet_written="<<quietWritten
              <<" refresh_frames="<<refreshFrames<<" foreign_written="<<foreignWritten
              <<" shown_match="<<(shownMatch?"yes":"no")<<" hover_slots="<<hoverSlots
              <<" hover_shown="<<(hoverShownOk?"yes":"no")<<" hover_back="<<(hoverBack?"yes":"no")
+             <<" name_tip_drawn="<<nameTipDrawn<<" name_tip_foreign="<<nameTipForeign
+             <<" name_tip_window="<<nameTipWindow.rendered<<"/"<<nameTipWindow.changed<<"/"<<nameTipWindow.slots
+             <<" name_tip_back="<<nameTipBack<<" name_tip="<<(nameTipOk?"yes":"no")
              <<" click_through="<<(clickedThrough?"yes":"no")<<" closed="<<(closed?"yes":"no")
              <<" ids_left="<<idsLeft<<" text_ids_left="<<textIdsLeft<<" ids_back="<<(idsBack?"yes":"no")
              <<" above_bar="<<(aboveBar?"yes":"no")<<" button_synced="<<(buttonSynced?"yes":"no")
@@ -3293,7 +3441,25 @@ static bool runStatsOverlayScenario(Session &s, const std::string &shotDir, bool
                      : !hoverShownOk ? "the hover was not shown on the next refresh ("
                         +(hoverDiff.empty() ? std::string("no entry or nothing shown") : hoverDiff)+")"
                      : !hoverBack ? "it did not show 0 again on the refresh after the hover"
-                     : !clickedThrough ? "the mouse did not reach the Button under it"
+                     : !nameTipOk ? (!intervalName ? std::string("it has no \"interval\" name cell")
+                        : !nameValuePasses ? std::string("its \"interval\" name is not hit, or its value is")
+                        : !nameHovered ? std::string("the mouse on \"interval\" did not hover it")
+                        : !nameTipShown ? "the \"interval\" tooltip is not the canvas's last child above the"
+                            " overlay, inside the canvas and clear of the name, excluded from the counts ("
+                            +(nameTipPlace.empty() ? std::string("not shown") : nameTipPlace)+")"
+                        : nameTipForeign != 0 ? "the frame that showed the \"interval\" tooltip wrote "
+                            +std::to_string(nameTipForeign)+" slots not the overlay's or the box's"
+                        : nameTipDrawn == 0 ? std::string("the \"interval\" tooltip drew nothing")
+                        : !nameTipZero ? "the refresh after the \"interval\" tooltip showed it (rendered "
+                            +std::to_string(nameTipWindow.rendered)+", changed "+std::to_string(nameTipWindow.changed)
+                            +", slots "+std::to_string(nameTipWindow.slots)+", passes "
+                            +std::to_string(nameTipWindow.layoutPasses)+", z "+std::to_string(nameTipWindow.zVisited)+")"
+                        : nameTipQuiet != 0 ? "a frame with the \"interval\" tooltip shown wrote "
+                            +std::to_string(nameTipQuiet)+" slots"
+                        : !nameTipHidden ? std::string("moving off \"interval\" did not hide its tooltip")
+                        : "moving off \"interval\" changed "+std::to_string(nameTipBack)
+                            +" pixels from the frame before its hover, outside the plots")
+                     : !clickedThrough ? "the mouse did not reach the Button under it (under a value or a plot)"
                      : !closed ? "F10 did not close it"
                      : !idsBack ? "it did not give its ids back"
                      : !aboveBar ? "it is not Inset above the status bar, right-aligned, clear of the Stats button ("
