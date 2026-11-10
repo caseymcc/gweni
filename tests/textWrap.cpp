@@ -650,8 +650,9 @@ TEST_CASE("Wrapped text: before the first layout the helpers read the string unw
 {
     WrapScene scene(200);
     Text *text=scene.text;
-    // the same string, never wrapped
-    Text *plain=scene.container->newChild<Text>();
+    // the same string, never wrapped, outside the container, which it would
+    // widen to its widest paragraph
+    Text *plain=scene.canvas->newChild<Text>();
 
     plain->setText(paragraphs);
 

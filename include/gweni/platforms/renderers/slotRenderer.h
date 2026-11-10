@@ -837,25 +837,41 @@ private:
     void uploadDirtyAtlases();
 
     //! The pen x of each glyph a run lays out in fontData at px (one per glyph
-    //! quad, in quad order), from the start of its line.
-    void textPens(FontData &fontData, float px, const gweni::String &text, std::vector<float> &pens);
+    //! quad, in quad order), from the start of its line, and the line it is on in
+    //! `lines` (0 for the first).
+    void textPens(FontData &fontData, float px, const gweni::String &text, std::vector<float> &pens,
+        std::vector<int> &lines);
+    //! What walkPens measures of a run: its widest line's pen, unrounded, and its
+    //! lines, one more than its '\n's (a trailing one is an empty last line).
+    struct PenWalk
+    {
+        float width;
+        int lines;
+    };
     //! The one pen walk of a run in fontData at px, which textPens, a coverage
     //! measureText and measureCarets read: the codepoints as text_buffer_add_text
     //! steps through them (to a NUL in a coverage font), each glyph's kerning
-    //! against the codepoint before and its advance, with no text_buffer_t. Gives
-    //! the pen after the last glyph, unrounded; appends textPens' pen of each glyph
-    //! to `pens` and the pen rounded up before each codepoint to `carets`, where
-    //! they are not null.
-    float walkPens(FontData &fontData, float px, const gweni::String &text,
-        std::vector<float> *pens, std::vector<int> *carets);
+    //! against the codepoint before and its advance, with no text_buffer_t, a '\n'
+    //! taking the pen back to the line's start. Gives the widest line and the line
+    //! count; appends textPens' pen of each glyph to `pens` and its line to
+    //! `glyphLines`, and the width measureText gives the prefix before each
+    //! codepoint (the widest line so far, rounded up) to `carets`, where they are
+    //! not null.
+    PenWalk walkPens(FontData &fontData, float px, const gweni::String &text,
+        std::vector<float> *pens, std::vector<int> *carets, std::vector<int> *glyphLines=nullptr);
     //! At a scale() other than 1, a run measured in a coverage font (font.size below
     //! the threshold) is drawn in another font, whose advances are not the measured
     //! ones scaled: hinted, whole-pixel at font.size. shifts gets, for each drawn glyph,
     //! the x that puts it at its measured pen position scaled, so the run ends where
     //! measureText sized it and a caret placed from measureText falls between the
-    //! glyphs it means; it is left empty where nothing moves.
+    //! glyphs it means; it is left empty where nothing moves. Nor is the drawn
+    //! font's lineStep the measured one scaled (a coverage font truncates its
+    //! descender to a whole pixel, an Sdf one rounds its step), so lineShifts gets, for each drawn glyph of a run with a '\n',
+    //! the whole device px down that puts its line's baseline within half a pixel of
+    //! the measured line's, scaled, relative to the first line; it is left empty
+    //! where no line moves, and always for a run of one line.
     void measuredPenShifts(const gweni::Font &font, FontData &drawn, float px,
-        const gweni::String &text, std::vector<float> &shifts);
+        const gweni::String &text, std::vector<float> &shifts, std::vector<float> &lineShifts);
     //! Lays text out in an Sdf font at px, in freetype-gl's convention (y up, the
     //! line's top at 0), as text_buffer_add_text does for a coverage font: metrics
     //! scaled by px/baseSize, unhinted advances, the baseline on a whole pixel.
@@ -870,6 +886,14 @@ private:
     //! up: ascender-descender, no line gap (font->height), scaled by px/baseSize in
     //! an Sdf font. measureText, layoutSdfText and lineHeight all take it from here.
     static float lineBoxHeight(const FontData &fontData, float px);
+    //! The distance from one line's baseline to the next in fontData at px, as the
+    //! run is drawn: in a coverage font text_buffer_add_text's, ascender less the
+    //! descender truncated to a whole pixel (text_buffer_finish_line moves the pen
+    //! down by (int)descender, the next glyph by ascender), so less than
+    //! lineBoxHeight; in an Sdf font layoutSdfText's, ascender-descender scaled by
+    //! px/baseSize and rounded to a whole pixel. measureText's y is lineBoxHeight
+    //! plus one lineStep per line after the first.
+    static float lineStep(const FontData &fontData, float px);
 
     void setVertex(Vertex &vertex, uint8_t type, int x, int y, int z, float u=0.0f, float v=0.0f);
     //! Called once primitiveId's four vertexes are written for the device-pixel

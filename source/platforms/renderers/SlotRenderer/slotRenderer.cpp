@@ -2539,9 +2539,9 @@ void SlotRenderer::renderText(size_t textId, const gweni::Font &font, gweni::Poi
         vertexBuffer=(const ftgl::glyph_vertex_t *)textBuffer->buffer->vertices->items;
     }
 
-    std::vector<float> shifts;
+    std::vector<float> shifts, lineShifts;
 
-    measuredPenShifts(font, fontData, px, text, shifts);
+    measuredPenShifts(font, fontData, px, text, shifts, lineShifts);
 
     // what the run drew before, in the font it was laid out in (a new font is
     // setTextRunFont's to mark, in both fonts)
@@ -2568,6 +2568,7 @@ void SlotRenderer::renderText(size_t textId, const gweni::Font &font, gweni::Poi
     {
         const size_t vertIndex=(run.start+i)*4;
         const float shift=shifts.empty()?0.0f:shifts[i];
+        const float lineShift=lineShifts.empty()?0.0f:lineShifts[i];
         // Each glyph of a run sits a fraction of a z unit in front of the one
         // before it, so the LESS depth test cannot reject the overlap between
         // two neighbouring glyph boxes. Glyph i is at zIndex+(i+1)/(glyphs+1),
@@ -2595,7 +2596,7 @@ void SlotRenderer::renderText(size_t textId, const gweni::Font &font, gweni::Poi
 
             vertex=source;
             vertex.x=pos.x+offsetX;
-            vertex.y=pos.y-offsetY;
+            vertex.y=pos.y-offsetY+lineShift;
             vertex.z=z;
         }
     }
@@ -2658,24 +2659,27 @@ void SlotRenderer::renderText(size_t textId, const gweni::Font &font, gweni::Poi
 }
 
 void SlotRenderer::textPens(FontData &fontData, float px, const gweni::String &text,
-    std::vector<float> &pens)
+    std::vector<float> &pens, std::vector<int> &lines)
 {
     pens.clear();
-    walkPens(fontData, px, text, &pens, nullptr);
+    lines.clear();
+    walkPens(fontData, px, text, &pens, nullptr, &lines);
 }
 
 // The walk of layoutSdfText, or of freetype-gl's text_buffer_add_text with only the
 // pen kept: text_buffer_add_char adds the kerning against the previous codepoint,
 // then the advance (markup.spacing is 0), and a '\n' takes the pen back to the
-// origin, 0 in a run's own buffer. Its LCD quads sit on 1/3 px phases of the pen,
-// which moves the quad, not the pen.
-float SlotRenderer::walkPens(FontData &fontData, float px, const gweni::String &text,
-    std::vector<float> *pens, std::vector<int> *carets)
+// origin, 0 in a run's own buffer, and starts the next line. Its LCD quads sit on
+// 1/3 px phases of the pen, which moves the quad, not the pen.
+SlotRenderer::PenWalk SlotRenderer::walkPens(FontData &fontData, float px, const gweni::String &text,
+    std::vector<float> *pens, std::vector<int> *carets, std::vector<int> *glyphLines)
 {
     ftgl::texture_font_t *font=fontData.textureFont;
     const bool sdf=(fontData.mode == TextMode::Sdf);
     const float s=sdf?px/fontData.baseSize:1.0f;
     float pen=0.0f;
+    float width=0.0f;
+    int lines=1;
     const char *previous=nullptr;
 
     for(size_t i=0; i < text.size(); i+=std::max<size_t>(1, ftgl::utf8_surrogate_len(text.c_str()+i)))
@@ -2686,12 +2690,15 @@ float SlotRenderer::walkPens(FontData &fontData, float px, const gweni::String &
         if(!sdf && (*current == '\0'))
             break;
 
+        // the width of the prefix that ends here, as layoutSdfText gives it
         if(carets)
-            carets->push_back((int)ceil(pen));
+            carets->push_back((int)ceil(std::max(width, pen)));
 
         if(*current == '\n')
         {
+            width=std::max(width, pen);
             pen=0.0f;
+            ++lines;
             // text_buffer_add_text kerns the next glyph against the '\n'
             previous=sdf?nullptr:current;
             continue;
@@ -2712,25 +2719,25 @@ float SlotRenderer::walkPens(FontData &fontData, float px, const gweni::String &
         // a coverage glyph's quad sits at the pen rounded to a whole pixel
         if(pens)
             pens->push_back(sdf?pen:roundf(pen));
+        if(glyphLines)
+            glyphLines->push_back(lines-1);
         pen+=glyph->advance_x*s;
         previous=current;
     }
-    return pen;
+    return PenWalk{ std::max(width, pen), lines };
 }
 
 void SlotRenderer::measuredPenShifts(const gweni::Font &font, FontData &drawn, float px,
-    const gweni::String &text, std::vector<float> &shifts)
+    const gweni::String &text, std::vector<float> &shifts, std::vector<float> &lineShifts)
 {
     shifts.clear();
+    lineShifts.clear();
     if(px == font.size)
         return;
 
     // An SDF font lays a run out linearly in px, so measured at font.size and drawn
-    // at px its pens differ by the scale alone. So does an LCD font, whose pens are
-    // the unhinted advances and kerning, to within its 1/3 px quantisation.
+    // at px its pens differ by the scale alone.
     if(resolveFont(font, font.size).mode == TextMode::Sdf)
-        return;
-    if((drawn.mode == TextMode::LcdRGB) || (drawn.mode == TextMode::LcdBGR))
         return;
 
     std::pair<const FontKey, FontData> *drawFont=m_lastFont;
@@ -2743,16 +2750,35 @@ void SlotRenderer::measuredPenShifts(const gweni::Font &font, FontData &drawn, f
 
     FontData &measured=m_lastFont->second;
     std::vector<float> measuredPens, drawnPens;
+    std::vector<int> measuredLines, drawnLines;
+    const float scale=px/font.size;
 
     m_lastFont=drawFont;
-    textPens(measured, font.size, text, measuredPens);
-    textPens(drawn, px, text, drawnPens);
+    textPens(drawn, px, text, drawnPens, drawnLines);
+
+    // Line L of the run is drawn L*lineStep(drawn) below the first and measured
+    // L*lineStep(measured) below it, which scaled is not the same distance: each
+    // line is moved by whole pixels to within half a pixel of the measured one.
+    // A run of one line moves nothing.
+    if(!drawnLines.empty() && (drawnLines.back() > 0))
+    {
+        const float lineError=scale*lineStep(measured, font.size)-lineStep(drawn, px);
+
+        lineShifts.resize(drawnLines.size());
+        for(size_t i=0; i < drawnLines.size(); ++i)
+            lineShifts[i]=roundf(drawnLines[i]*lineError);
+    }
+
+    // So does an LCD font's pens, the unhinted advances and kerning, to within its
+    // 1/3 px quantisation.
+    if((drawn.mode == TextMode::LcdRGB) || (drawn.mode == TextMode::LcdBGR))
+        return;
+
+    textPens(measured, font.size, text, measuredPens, measuredLines);
 
     // a glyph one font has and the other has not: left as drawn
     if(measuredPens.size() != drawnPens.size())
         return;
-
-    const float scale=px/font.size;
 
     shifts.resize(drawnPens.size());
     for(size_t i=0; i < drawnPens.size(); ++i)
@@ -2776,7 +2802,7 @@ gweni::Point SlotRenderer::layoutSdfText(FontData &fontData, float px, const gwe
     // origin is a whole pixel, so a run moved by a sub-pixel amount cannot shimmer.
     // Within the line the glyphs keep their fractional, unhinted pen positions.
     const float ascender=roundf(font->ascender*s);
-    const float lineStep=roundf((font->ascender-font->descender)*s);
+    const float step=lineStep(fontData, px);
     float baseline=-ascender;
     float pen=0.0f;
     float width=0.0f;
@@ -2796,7 +2822,7 @@ gweni::Point SlotRenderer::layoutSdfText(FontData &fontData, float px, const gwe
         {
             width=std::max(width, pen);
             pen=0.0f;
-            baseline-=lineStep;
+            baseline-=step;
             ++lines;
             previous=nullptr;
             continue;
@@ -2837,7 +2863,7 @@ gweni::Point SlotRenderer::layoutSdfText(FontData &fontData, float px, const gwe
     if(carets)
         carets->push_back((int)ceil(width));
 
-    return gweni::Point((int)ceil(width), (int)ceil(lineBoxHeight(fontData, px)+(lines-1)*lineStep));
+    return gweni::Point((int)ceil(width), (int)ceil(lineBoxHeight(fontData, px)+(lines-1)*step));
 }
 
 float SlotRenderer::lineBoxHeight(const FontData &fontData, float px)
@@ -2850,6 +2876,21 @@ float SlotRenderer::lineBoxHeight(const FontData &fontData, float px)
     }
 
     return fontData.markup.font->height;
+}
+
+float SlotRenderer::lineStep(const FontData &fontData, float px)
+{
+    if(fontData.mode == TextMode::Sdf)
+    {
+        const ftgl::texture_font_t *font=fontData.textureFont;
+        const float s=px/fontData.baseSize;
+
+        return roundf((font->ascender-font->descender)*s);
+    }
+
+    const ftgl::texture_font_t *font=fontData.markup.font;
+
+    return font->ascender-(int)font->descender;
 }
 
 void SlotRenderer::showText(size_t textId)
@@ -2920,13 +2961,15 @@ gweni::Point SlotRenderer::measureText(const gweni::Font &font, const gweni::Str
 
     const bool debug=textDebugMatches(text);
     std::vector<float> pens;
-    const float pen=walkPens(fontData, font.size, text, debug?&pens:nullptr, nullptr);
+    const PenWalk walk=walkPens(fontData, font.size, text, debug?&pens:nullptr, nullptr);
 
-    // The pen ends at the sum of the glyph advances (plus kerning), which is the
-    // width the next string would start at. The right edge of the last glyph's
+    // A line's pen ends at the sum of its glyph advances (plus kerning), which is
+    // the width the next string would start at. The right edge of the last glyph's
     // ink is a different and smaller quantity, and is not what a control laying
-    // text out wants.
-    Point sz((int)ceil(pen), (int)ceil(lineBoxHeight(fontData, font.size)));
+    // text out wants. renderText draws every line, so the size is the widest one
+    // and every line, as layoutSdfText measures an Sdf run.
+    Point sz((int)ceil(walk.width),
+        (int)ceil(lineBoxHeight(fontData, font.size)+(walk.lines-1)*lineStep(fontData, font.size)));
 
     if(debug)
     {
@@ -2938,8 +2981,8 @@ gweni::Point SlotRenderer::measureText(const gweni::Font &font, const gweni::Str
             (double)fontData.markup.font->descender);
         for(size_t i=0; i<pens.size(); ++i)
             ::printf("[measure]   glyph %-3zu pen x=%10.3f\n", i, (double)pens[i]);
-        ::printf("[measure]   => sz.x=%d sz.y=%d (pen advance=%f)\n",
-            sz.x, sz.y, (double)pen);
+        ::printf("[measure]   => sz.x=%d sz.y=%d (widest line=%f, lines=%d)\n",
+            sz.x, sz.y, (double)walk.width, walk.lines);
         ::printf("[measure]   atlas %zux%zu depth=%zu used=%zu\n",
             fontData.atlas->width, fontData.atlas->height, fontData.atlas->depth,
             fontData.atlas->used);
@@ -3023,9 +3066,9 @@ void SlotRenderer::measureCarets(const gweni::Font &font, const gweni::String &t
     }
 
     // the pen walk measureText makes, read before each codepoint and at the end
-    const float pen=walkPens(fontData, font.size, text, nullptr, &xs);
+    const PenWalk walk=walkPens(fontData, font.size, text, nullptr, &xs);
 
-    xs.push_back((int)ceil(pen));
+    xs.push_back((int)ceil(walk.width));
 }
 
 // measureText's y for a one-line string, without laying one out: the font's line
