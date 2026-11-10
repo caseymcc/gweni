@@ -318,7 +318,7 @@ TEST_CASE("SDF text: freeing one size while other sizes' runs use the atlas leav
     CHECK(renderer.getFontAtlasHandle(at48) == 0);
 }
 
-TEST_CASE("SDF text: a freed atlas used again before its last run leaves is kept")
+TEST_CASE("SDF text: a freed atlas used again draws on until its last run leaves")
 {
     SlotRenderer &renderer=gweni::test::gpuRenderer();
 
@@ -340,10 +340,12 @@ TEST_CASE("SDF text: a freed atlas used again before its last run leaves is kept
     drawFrame(textId, at36, Point(8, 20), "Sphinx");
     CHECK(renderer.getFrameStats().atlasUploadCalls == 0);
 
-    // the run leaving it now does not free it: the 36 px use took it back
-    renderer.releaseTextPrimitive(textId);
     CHECK(renderer.getFontAtlasHandle(at36) == atlas);
-    CHECK(renderer.textureExists(atlas));
+
+    // a use is no owner: the run leaving it takes the atlas with it
+    renderer.releaseTextPrimitive(textId);
+    CHECK(renderer.getFontAtlasHandle(at36) == 0);
+    CHECK(!renderer.textureExists(atlas));
 
     renderer.begin();
     renderer.end();

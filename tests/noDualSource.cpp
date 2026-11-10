@@ -187,7 +187,10 @@ TEST_CASE("No dual-source blending: GWENI_TEXT_AA=rgb falls back to grayscale wi
     const std::vector<uint8_t> drawn=fallback.draw();
 
     CHECK(fallback.owned->getTextMode(at12()) == TextMode::Coverage);
+    // the font a use loaded went with its run; loaded again, it is grayscale
+    REQUIRE(fallback.owned->loadFont(at12()) == Font::Status::Loaded);
     CHECK(fallback.owned->getFontAtlasDepth(at12()) == 1);
+    fallback.owned->freeFont(at12());
 
     // what a renderer started in grayscale, with dual-source blending or not, draws
     OwnRenderer gray(false, nullptr);

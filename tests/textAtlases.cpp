@@ -307,15 +307,14 @@ TEST_CASE("Text atlases: freeing a font with a run still allocated leaves both f
     CHECK(renderer.getFrameStats().textSlotsWritten == 0);
     CHECK(renderer.getFrameStats().atlasUploadCalls == 0);
 
-    // used again, so the run leaving it no longer takes the font with it; the
-    // freeFont after that does
+    // a use is no owner: the run leaving it takes the font with it
     renderer.releaseTextPrimitive(smallId);
     renderer.releaseTextPrimitive(largeId);
+    CHECK(renderer.getFontAtlasHandle(large) == 0);
+    CHECK(!renderer.textureExists(largeAtlas));
     renderer.begin();
     renderer.end();
-    CHECK(renderer.getFontAtlasHandle(large) == largeAtlas);
     renderer.freeFont(large);
-    CHECK(!renderer.textureExists(largeAtlas));
 }
 
 TEST_CASE("Text atlases: a steady second frame with two fonts uploads no text")

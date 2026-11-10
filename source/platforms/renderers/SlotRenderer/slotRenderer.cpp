@@ -111,6 +111,11 @@ float SlotRenderer::textPx(const Font &font) const
     return font.size*scale();
 }
 
+float SlotRenderer::coverageSize(float px)
+{
+    return std::max(1.0f, std::floor(px+0.5f));
+}
+
 FontKey SlotRenderer::resolveFont(const Font &font, float px) const
 {
     FontKey key{font, TextMode::Coverage};
@@ -127,7 +132,13 @@ FontKey SlotRenderer::resolveFont(const Font &font, float px) const
             key.mode=TextMode::LcdRGB;
         else if(m_textAA == TextAA::LcdBGR)
             key.mode=TextMode::LcdBGR;
-        key.font.size=px;
+        // A grayscale atlas is rasterised at a whole device px, so a continuous zoom
+        // (or a fractional canvas scale) uses one of the few whole sizes below the
+        // SDF range; measuredPenShifts puts its glyphs at the pens of the size
+        // asked for, so a run still ends where the layout sized it. An LCD atlas
+        // keeps the exact px: its glyph images are rasterised at the phases of the
+        // unhinted pens at that size, which a whole-px shift would not keep.
+        key.font.size=(key.mode == TextMode::Coverage)?coverageSize(px):px;
     }
     return key;
 }
@@ -2374,8 +2385,10 @@ void SlotRenderer::setTextRunFont(size_t textId, FontData *fontData)
 
     run.fontData=fontData;
 
-    // the last run has left a font freeFont kept for it, and nobody loaded it since
-    if(previous && previous->freed && (previous->owners == 0) && previous->textRuns.empty())
+    // The last run has left a font no loadFont holds: one freeFont kept for it, or
+    // one only a use loaded (the whole px sizes, and the SDF atlas, a zoom or a
+    // canvas scale passes through). It goes, so they do not pile up.
+    if(previous && (previous->owners == 0) && previous->textRuns.empty())
     {
         for(auto it=m_fonts.begin(); it != m_fonts.end(); ++it)
         {

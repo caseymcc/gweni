@@ -231,11 +231,14 @@ struct FontData
     std::vector<ChunkDraw> drawChunks;
     bool drawListStale=true;
     //! Successful loadFont calls not yet matched by a freeFont. A font loaded only
-    //! by a use (ensureFont, from renderText or measureText) has none.
+    //! by a use (ensureFont, from renderText or measureText) has none, and is
+    //! erased when its last run leaves it (setTextRunFont), so the sizes a zoom
+    //! or a canvas scale passes through do not stay.
     int owners=0;
     //! Freed by its last owner (or by a freeFont with none) while runs are still
     //! laid out in it: the atlas is kept, every run drawing, until its last run
-    //! leaves it (setTextRunFont), and a use or load before then keeps it for good.
+    //! leaves it (setTextRunFont), unless a load before then gives it an owner (a
+    //! use does not: it goes with its last run all the same).
     bool freed=false;
     //! The face's file was missing or unreadable, so textureFont is the built-in
     //! fallback font (SlotRenderer::setFallbackFont), loaded from memory into this
@@ -404,6 +407,9 @@ public:
     //! The TextMode a font is drawn in: Sdf at or above the GWENI_SDF_TEXT_MIN
     //! threshold (effective px); below it Coverage, or LcdRGB/LcdBGR as textAA() says
     TextMode getTextMode(const gweni::Font &font) const;
+    //! The whole device px a grayscale coverage atlas for text drawn at \a px is
+    //! rasterised at: px rounded half up, at least 1 (an LCD one is at px).
+    static float coverageSize(float px);
 
     //! How text below the SDF threshold is anti-aliased; GWENI_TEXT_AA=gray|rgb|bgr
     //! sets it at construction, Grayscale otherwise. A change replaces every
