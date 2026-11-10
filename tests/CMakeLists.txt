@@ -223,9 +223,10 @@ if(TARGET ControlTest AND NOT EMSCRIPTEN)
 
     # the same check through the scenarios that change layout at run time:
     # input, a canvas resize and a scale round trip (both on Demo), a Window
-    # dragged past its parent's edges, the tooltip box, the context menu and
-    # the stats overlay
-    foreach(verify_scenario interaction resize scale clip tooltip context-menu stats-overlay)
+    # dragged past its parent's edges, the tooltip box, the context menu, the
+    # stats overlay and the depth view
+    foreach(verify_scenario interaction resize scale clip tooltip context-menu stats-overlay
+            depth-view)
         string(REPLACE "-" "_" verify_name "${verify_scenario}")
         add_test(NAME controltest_verify_layout_${verify_name}
             COMMAND $<TARGET_FILE:ControlTest> --headless --scenario ${verify_scenario}
@@ -394,6 +395,19 @@ Erm, and I think it comes down to a choice between "The League Against Salivatin
             -DSOURCE_DIR=${GWENI_SOURCE_DIR}
             -DSCRATCH_DIR=${CMAKE_CURRENT_BINARY_DIR}/stats_overlay@VARIANT@
             -P ${CMAKE_CURRENT_SOURCE_DIR}/statsOverlay.cmake
+        WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
+
+    # gweni::tools::DepthView over ButtonDemo, the clock frozen, opened and
+    # closed by F9: opening it, moving its camera, a click while it is open and
+    # closing it do no work in the UI and change no hover, focus, tree or id,
+    # the frame after it closes is the one before it opened, and two runs'
+    # shots through its cameras are byte-identical
+    gweni_whole_app_test(controltest_depth_view 120
+        COMMAND ${CMAKE_COMMAND}
+            -DCONTROLTEST=$<TARGET_FILE:ControlTest>
+            -DSOURCE_DIR=${GWENI_SOURCE_DIR}
+            -DSCRATCH_DIR=${CMAKE_CURRENT_BINARY_DIR}/depth_view@VARIANT@
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/depthView.cmake
         WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
 
     # the textured skin's theme changed under the settled Demo and applied live

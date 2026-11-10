@@ -30,7 +30,9 @@
 //              nothing.
 //    pixels    ControlTest --headless --shot-all and the hero (OpenGLCore
 //              --headless --demo ShowcaseContainersDemo --screenshot, as
-//              tools/capture_samples.sh takes it), [--scale s], on both
+//              tools/capture_samples.sh takes it) and the depth view's shots
+//              through its turned cameras (ControlTest --scenario depth-view,
+//              depth-view-*.png), [--scale s], on both
 //              backends: every PNG within the bound (web/pngdiff.mjs: no channel
 //              of any pixel more than T off, at most F % of the pixels differing
 //              at all). The bound and the measurement it comes from are in
@@ -290,6 +292,8 @@ function pixels(options, exes)
         checkRun(run(exes.controlTest, ['--renderer', backend, '--headless', '--shot-all', '--shot-dir', dir, ...scaleArgs]));
         checkRun(run(exes.openGLCore, ['--renderer', backend, '--headless', ...scaleArgs,
             '--demo', 'ShowcaseContainersDemo', '--screenshot', join(dir, 'OpenGLCore.png')]));
+        checkRun(run(exes.controlTest, ['--renderer', backend, '--headless', '--scenario', 'depth-view',
+            '--shot-dir', dir, ...scaleArgs]));
     }
     if(failures)
         return;

@@ -140,7 +140,7 @@
  *                       context-menu | popup | virtual-list |
  *                       data-table-virtual | hide-show | demo-labels |
  *                       plot-histogram | plot-lines | inspector |
- *                       stats-overlay (see below)
+ *                       stats-overlay | depth-view (see below)
  *    --dump-bounds [<path>]
  *                       print the laid-out control tree as text: one line per
  *                       control, depth-first in child order, indented by depth,
@@ -530,6 +530,23 @@
  *                 Exits non-zero if any check is no. controltest_stats_overlay
  *                 (tests/statsOverlay.cmake) also holds the --stats lines of
  *                 Demo with --stats-overlay to the ones without it.
+ *    depth-view   ButtonDemo, the clock frozen, the mouse resting on "Toggle
+ *                 Me": F9 (scripted, through the window's key handler) opens
+ *                 the depth view (gweni::tools::DepthView), a fixed camera
+ *                 (perspective, turned and dollied out) is set, then the mouse
+ *                 and keys move it (a left-drag, the wheel, Left, P and +), a
+ *                 click lands on the toggle and F9 closes it. Every one of
+ *                 those frames must enter no control, change, write and upload
+ *                 nothing, lay out nothing, renumber no z and hit-test nothing
+ *                 (its input included); the click presses nothing; the toggle
+ *                 is still hovered, the focus, tree serial and live ids as they
+ *                 were; and the frame after the close is the one before the
+ *                 open, byte for byte. Shots depth-view-before.png,
+ *                 -perspective.png, -ortho.png and -after.png. One line
+ *                   depth-view open=visited:0,... idle=yes ... camera_drawn=yes
+ *                 Exits non-zero if any check is no. controltest_depth_view
+ *                 (tests/depthView.cmake) runs it twice and requires the same
+ *                 PNGs.
  *    scale        one control (default Demo) on a 640x480 canvas at scale 1,
  *                 then Canvas::setScale(2) with the framebuffer resized to
  *                 1280x960, then back to 1 (scale-01-1x.png, scale-02-2x.png,
@@ -732,6 +749,7 @@
 #include <gweni/platforms/renderers/glApi.h>
 #include <gweni/platforms/renderers/slotRenderer.h>
 #include <gweni/gweni.h>
+#include <gweni/inputHandler.h>
 #include <gweni/platforms/platform.h>
 #include <gweni/skins/textured/texturedSkin.h>
 #include <gweni/skins/textured/tokyoNight.h>
@@ -1015,7 +1033,7 @@ static void printUsage(std::ostream &out)
          "                     | context-menu | popup | virtual-list\n"
          "                     | data-table-virtual | hide-show | demo-labels\n"
          "                     | plot-histogram | plot-lines | inspector\n"
-         "                     | stats-overlay;\n"
+         "                     | stats-overlay | depth-view;\n"
          "                     resize prints listing_settled, mirror_settled,\n"
          "                     shrink_settled and fresh_matches, interaction one\n"
          "                     yes/no per repaint check, typing its keyboard\n"
@@ -1933,7 +1951,7 @@ static bool runSteps(Session &s, const std::vector<Step> &steps, const std::stri
 //-----------------------------------------------------------------------------
 enum class Scenario { None, PerControl, Resize, Docked, Scroll, Interaction, Typing, Clip, TextSize, Scale,
     ToolTip, ContextMenu, Popup, VirtualList, DataTableVirtual, HideShow, DemoLabels, PlotHistogram,
-    PlotLines, Inspector, Theme, StatsOverlay };
+    PlotLines, Inspector, Theme, StatsOverlay, DepthView };
 
 static bool parseScenario(const std::string &name, Scenario &scenario)
 {
@@ -1958,6 +1976,7 @@ static bool parseScenario(const std::string &name, Scenario &scenario)
     else if(name == "inspector") scenario=Scenario::Inspector;
     else if(name == "theme") scenario=Scenario::Theme;
     else if(name == "stats-overlay") scenario=Scenario::StatsOverlay;
+    else if(name == "depth-view") scenario=Scenario::DepthView;
     else return false;
     return true;
 }
@@ -2846,6 +2865,214 @@ static bool runInspectorScenario(Session &s, const std::string &shotDir, bool &p
                      : !closed ? "F12 did not close it"
                      : "the inspector did not give its primitive ids back")<<"\n";
     return shot;
+}
+
+//-----------------------------------------------------------------------------
+// --scenario depth-view: gweni::tools::DepthView over ButtonDemo
+//
+// The view only swaps the matrix the renderer projects through and takes the
+// canvas's input, so the frame opening it, every frame that only moves its
+// camera and the frame closing it do no work in the UI: they enter no control,
+// write and upload nothing, lay out nothing and renumber no z; a click while it
+// is open presses nothing, and the hovered control, the focus, the tree and
+// the live ids are as they were. Closed, the canvas draws the frame before it
+// opened again, byte for byte (docs/architecture.md -> "The depth view").
+//-----------------------------------------------------------------------------
+
+// What one frame did, of the work the view must not cause
+struct DepthViewFrame
+{
+    std::string name;
+    size_t visited=0, changed=0, primSlots=0, textSlots=0, uploadBytes=0, atlasBytes=0;
+    size_t layoutPasses=0, layoutVisited=0, zVisited=0, hitTests=0;
+
+    bool idle() const
+    {
+        return visited == 0 && changed == 0 && primSlots == 0 && textSlots == 0 && uploadBytes == 0
+            && atlasBytes == 0 && layoutPasses == 0 && layoutVisited == 0 && zVisited == 0
+            && hitTests == 0;
+    }
+};
+
+static gweni::controls::Base *findControl(gweni::controls::Base *control, const char *type, int skip);
+static gweni::Point centreOf(gweni::controls::Base *control);
+static std::vector<uint8_t> framePixels(const Session &s);
+static size_t liveTextIds();
+
+static bool runDepthViewScenario(Session &s, const std::string &shotDir, bool &passed)
+{
+    using gweni::tools::DepthView;
+
+    s.freezeClock=true;
+
+    gweni::controls::Base *demo=addControl(s, "ButtonDemo");
+
+    if(!demo)
+        return false;
+    s.label="depth-view";
+    renderFrames(s, std::max(s.frames, 3));
+
+    // the toggle, which a click would turn on
+    gweni::controls::Button *toggle=nullptr;
+
+    for(int i=0; !toggle; ++i)
+    {
+        gweni::controls::Base *found=findControl(demo, "Button", i);
+
+        if(!found)
+            break;
+        auto *button=static_cast<gweni::controls::Button *>(found);
+
+        if(button->getText() == "Toggle Me")
+            toggle=button;
+    }
+    if(!toggle)
+    {
+        std::cerr<<"ControlTest: depth-view: ButtonDemo has no \"Toggle Me\" button\n";
+        return false;
+    }
+
+    // rest on it, settled
+    const gweni::Point on=centreOf(toggle);
+
+    moveMouse(s, on.x, on.y);
+    renderFrames(s, 3);
+
+    const std::vector<uint8_t> before=framePixels(s);
+    const bool shotBefore=shoot(s, shotDir+"/depth-view-before.png");
+    gweni::controls::Base *hovered=gweni::HoveredControl;
+    gweni::controls::Base *focused=gweni::KeyboardFocus;
+    const unsigned serial=s.canvas->treeSerial();
+    const size_t primIds=livePrimitiveIds();
+    const size_t textIds=liveTextIds();
+    const bool toggleState=toggle->getToggleState();
+
+    const gweni::renderer::SlotRenderer::FrameStats &gpu=s.renderer->getFrameStats();
+    std::vector<DepthViewFrame> frames;
+    // the hit tests since the last frame: its input's and its own
+    size_t hitTests=gweni::input::hitTestVisits();
+    auto frame=[&](const std::string &name)
+    {
+        renderFrames(s, 1);
+
+        DepthViewFrame f;
+        const gweni::controls::ChangeStats changes=gweni::controls::getChangeStats();
+        const gweni::controls::LayoutStats &layout=s.canvas->getLayoutStats();
+
+        f.name=name;
+        f.visited=changes.visited;
+        f.changed=changes.controls;
+        f.primSlots=gpu.primitiveSlotsWritten;
+        f.textSlots=gpu.textSlotsWritten;
+        f.uploadBytes=gpu.uploadBytes;
+        f.atlasBytes=gpu.atlasUploadBytes;
+        f.layoutPasses=(size_t)layout.passes;
+        f.layoutVisited=layout.visited;
+        f.zVisited=s.canvas->getUpdateStats().zVisited;
+        f.hitTests=gweni::input::hitTestVisits()-hitTests;
+        hitTests=gweni::input::hitTestVisits();
+        frames.push_back(f);
+    };
+
+    // F9, as the window's key callback delivers it
+    glfwKey(s, GLFW_KEY_F9, GLFW_PRESS, 0);
+    glfwKey(s, GLFW_KEY_F9, GLFW_RELEASE, 0);
+
+    DepthView *view=DepthView::find(s.canvas);
+
+    if(!view)
+    {
+        std::cerr<<"ControlTest: depth-view: F9 opened no depth view\n";
+        return false;
+    }
+    frame("open");
+
+    // a fixed camera: perspective, turned and dollied out
+    DepthView::Camera camera=view->resetCamera();
+
+    camera.yaw=-35.0f;
+    camera.pitch=20.0f;
+    camera.distance=1.6f;
+    view->setCamera(camera);
+    frame("camera");
+
+    const std::vector<uint8_t> turned=framePixels(s);
+    const bool shotTurned=shoot(s, shotDir+"/depth-view-perspective.png");
+
+    // moved by the mouse and the keys: a left-drag (an orbit), the wheel, an
+    // arrow, then P (orthographic) and + (wider spacing)
+    mouseDown(s, on.x, on.y, false);
+    moveMouse(s, on.x+30, on.y+12);
+    mouseUp(s, on.x+30, on.y+12);
+    frame("orbit");
+    const DepthView::Camera orbited=view->camera();
+    const std::vector<uint8_t> orbit=framePixels(s);
+
+    scrollWheel(s, -60);
+    frame("dolly");
+    glfwKey(s, GLFW_KEY_LEFT, GLFW_PRESS, 0);
+    glfwKey(s, GLFW_KEY_LEFT, GLFW_RELEASE, 0);
+    frame("move");
+    glfwChar(s, 'p');
+    glfwChar(s, '+');
+    frame("ortho");
+
+    const std::vector<uint8_t> ortho=framePixels(s);
+    const bool shotOrtho=shoot(s, shotDir+"/depth-view-ortho.png");
+    const DepthView::Camera moved=view->camera();
+
+    // a click on the toggle, while the view has the input: nothing is pressed
+    mouseDown(s, on.x, on.y, false);
+    mouseUp(s, on.x, on.y);
+    frame("click");
+
+    const bool clickIgnored=toggle->getToggleState() == toggleState && view->camera() == moved;
+
+    // F9 again closes it
+    glfwKey(s, GLFW_KEY_F9, GLFW_PRESS, 0);
+    glfwKey(s, GLFW_KEY_F9, GLFW_RELEASE, 0);
+    const bool closed=DepthView::find(s.canvas) == nullptr && !s.renderer->hasViewTransform();
+    frame("close");
+
+    const std::vector<uint8_t> after=framePixels(s);
+    const bool shotAfter=shoot(s, shotDir+"/depth-view-after.png");
+    const bool kept=gweni::HoveredControl == hovered && hovered == toggle
+        && gweni::KeyboardFocus == focused && s.canvas->treeSerial() == serial
+        && livePrimitiveIds() == primIds && liveTextIds() == textIds
+        && toggle->getToggleState() == toggleState;
+    const bool same=after == before;
+    const bool drawn=turned != before && orbit != turned && ortho != orbit
+        && orbited != camera && moved.panX != orbited.panX && !moved.perspective
+        && moved.zSpacing > orbited.zSpacing && moved.distance > orbited.distance;
+
+    forgetMouse(s);
+    dropControl(s, demo);
+    renderFrames(s, 1);
+
+    bool idle=true;
+
+    for(const DepthViewFrame &f : frames)
+        idle=idle && f.idle();
+    passed=idle && clickIgnored && closed && kept && same && drawn;
+
+    std::cout<<"depth-view";
+    for(const DepthViewFrame &f : frames)
+        std::cout<<" "<<f.name<<"=visited:"<<f.visited<<",changed:"<<f.changed
+                 <<",prim:"<<f.primSlots<<",text:"<<f.textSlots<<",upload:"<<f.uploadBytes+f.atlasBytes
+                 <<",layout:"<<f.layoutPasses<<"/"<<f.layoutVisited<<",z:"<<f.zVisited
+                 <<",hit:"<<f.hitTests;
+    std::cout<<" idle="<<(idle?"yes":"no")<<" click_ignored="<<(clickIgnored?"yes":"no")
+             <<" closed="<<(closed?"yes":"no")<<" kept="<<(kept?"yes":"no")
+             <<" same_after="<<(same?"yes":"no")<<" camera_drawn="<<(drawn?"yes":"no")<<"\n";
+    if(!passed)
+        std::cerr<<"ControlTest: depth-view: "
+                 <<(!idle ? "a frame that opened, moved or closed the view did work in the UI"
+                     : !clickIgnored ? "a click while the view was open reached the canvas"
+                     : !closed ? "F9 did not close it, or the renderer kept its view transform"
+                     : !kept ? "the hover, the focus, the tree or the live ids changed"
+                     : !same ? "closed, it did not draw the frame before it opened"
+                     : "a camera move did not change what was drawn as it should")<<"\n";
+    return shotBefore && shotTurned && shotOrtho && shotAfter;
 }
 
 //-----------------------------------------------------------------------------
@@ -9515,6 +9742,15 @@ int main(int argc, char *argv[])
             ok=runStatsOverlayScenario(session, shotDir, passed);
             if(ok && !passed)
                 ok=false;   // the overlay wrote outside its refreshes or showed the wrong counts
+            break;
+        }
+
+        case Scenario::DepthView:
+        {
+            bool passed=false;
+            ok=runDepthViewScenario(session, shotDir, passed);
+            if(ok && !passed)
+                ok=false;   // the view did work in the UI or changed what it shows
             break;
         }
 
