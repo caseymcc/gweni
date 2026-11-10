@@ -844,9 +844,9 @@ private:
 
     //! The pen x of each glyph a run lays out in fontData at px (one per glyph
     //! quad, in quad order), from the start of its line, and the line it is on in
-    //! `lines` (0 for the first).
+    //! `lines` (0 for the first) where that is not null.
     void textPens(FontData &fontData, float px, const gweni::String &text, std::vector<float> &pens,
-        std::vector<int> &lines);
+        std::vector<int> *lines);
     //! What walkPens measures of a run: its widest line's pen, unrounded, and its
     //! lines, one more than its '\n's (a trailing one is an empty last line).
     struct PenWalk

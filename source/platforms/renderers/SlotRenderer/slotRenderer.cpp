@@ -2659,11 +2659,12 @@ void SlotRenderer::renderText(size_t textId, const gweni::Font &font, gweni::Poi
 }
 
 void SlotRenderer::textPens(FontData &fontData, float px, const gweni::String &text,
-    std::vector<float> &pens, std::vector<int> &lines)
+    std::vector<float> &pens, std::vector<int> *lines)
 {
     pens.clear();
-    lines.clear();
-    walkPens(fontData, px, text, &pens, nullptr, &lines);
+    if(lines)
+        lines->clear();
+    walkPens(fontData, px, text, &pens, nullptr, lines);
 }
 
 // The walk of layoutSdfText, or of freetype-gl's text_buffer_add_text with only the
@@ -2736,8 +2737,15 @@ void SlotRenderer::measuredPenShifts(const gweni::Font &font, FontData &drawn, f
         return;
 
     // An SDF font lays a run out linearly in px, so measured at font.size and drawn
-    // at px its pens differ by the scale alone.
+    // at px its pens differ by the scale alone. So does an LCD font's, the unhinted
+    // advances and kerning, to within its 1/3 px quantisation: only its lines move.
     if(resolveFont(font, font.size).mode == TextMode::Sdf)
+        return;
+
+    const bool lcd=(drawn.mode == TextMode::LcdRGB) || (drawn.mode == TextMode::LcdBGR);
+    const bool multiLine=(text.find('\n') != gweni::String::npos);
+
+    if(lcd && !multiLine)
         return;
 
     std::pair<const FontKey, FontData> *drawFont=m_lastFont;
@@ -2750,11 +2758,11 @@ void SlotRenderer::measuredPenShifts(const gweni::Font &font, FontData &drawn, f
 
     FontData &measured=m_lastFont->second;
     std::vector<float> measuredPens, drawnPens;
-    std::vector<int> measuredLines, drawnLines;
+    std::vector<int> drawnLines;
     const float scale=px/font.size;
 
     m_lastFont=drawFont;
-    textPens(drawn, px, text, drawnPens, drawnLines);
+    textPens(drawn, px, text, drawnPens, multiLine?&drawnLines:nullptr);
 
     // Line L of the run is drawn L*lineStep(drawn) below the first and measured
     // L*lineStep(measured) below it, which scaled is not the same distance: each
@@ -2769,12 +2777,10 @@ void SlotRenderer::measuredPenShifts(const gweni::Font &font, FontData &drawn, f
             lineShifts[i]=roundf(drawnLines[i]*lineError);
     }
 
-    // So does an LCD font's pens, the unhinted advances and kerning, to within its
-    // 1/3 px quantisation.
-    if((drawn.mode == TextMode::LcdRGB) || (drawn.mode == TextMode::LcdBGR))
+    if(lcd)
         return;
 
-    textPens(measured, font.size, text, measuredPens, measuredLines);
+    textPens(measured, font.size, text, measuredPens, nullptr);
 
     // a glyph one font has and the other has not: left as drawn
     if(measuredPens.size() != drawnPens.size())
