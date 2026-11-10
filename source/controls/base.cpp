@@ -349,6 +349,8 @@ bool g_propagating=false;
 size_t g_statsExcludedRoots=0;
 // The invalidation now going up started outside every flagged subtree.
 bool g_invalidationCounted=true;
+// The counted invalidate() calls since the process started (invalidateCalls()).
+size_t g_invalidateCalls=0;
 // Set while a part is made during a layout pass (Base::PartScope): its
 // constructor's requests are not counted as layout code's.
 bool g_makingPart=false;
@@ -723,6 +725,11 @@ void Base::invalidate(int state)
                 control->m_hiddenWidthCurrent=false;
         }
     }
+
+    // a control with no parent that is not a canvas marks only itself: one
+    // being made (Base's constructor), or the root of a detached subtree
+    if(g_invalidationCounted && (m_parent || getCanvas() == this))
+        ++g_invalidateCalls;
 
     if((state & StateChange_Created) || 
         (state & StateChange_Visibility) ||
@@ -1703,6 +1710,11 @@ bool Base::statsExcluded() const
 size_t measureTextCalls()
 {
     return g_measureTextCalls;
+}
+
+size_t invalidateCalls()
+{
+    return g_invalidateCalls;
 }
 
 gweni::Point Base::measureText(const gweni::Font &font, const gweni::String &text)

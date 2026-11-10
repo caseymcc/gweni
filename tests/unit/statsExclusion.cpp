@@ -15,10 +15,10 @@
  *  added and removed child, a deleted one. Every ChangeStats count, the
  *  canvas's LayoutStats (passes, visited, childrenScanned, measures,
  *  renderLayout, requests, capped) and UpdateStats (zVisited, zChanged,
- *  animsRun) and the measureTextCalls() delta must be the same on both
- *  canvases (the flagged panel is not one of the children its app parent's
- *  loops count, Base::countLayoutChildrenScanned): on the first
- *  frame, a settled one, frames that change the flagged panel alone (which
+ *  animsRun), the measureTextCalls() delta and the invalidateCalls() delta
+ *  (over the frame's edits and the frame) must be the same on both canvases
+ *  (the flagged panel is not one of the children its app parent's loops
+ *  count, Base::countLayoutChildrenScanned): on the first frame, a settled one, frames that change the flagged panel alone (which
  *  then count nothing at all: no pass, no renumber), and frames that change
  *  both. statsExcluded() is true below the root, false elsewhere and once the
  *  root is unflagged or deleted.
@@ -46,6 +46,7 @@ struct Counts
     controls::LayoutStats layout;
     controls::UpdateStats update;
     size_t measures=0;
+    size_t invalidations=0;     //!< the edits' and the frame's
 };
 
 //! A canvas with two panels of three Labels (the app), and with `flagged` one
@@ -91,7 +92,12 @@ struct Scene
         excluded->setExcludedFromStats(true);
         // its size is its own: what it holds does not resize the app around it
         excluded->setSizeFlags({SizeFlag::Fixed, SizeFlag::Fixed});
-        excluded->setBounds(0, 150, 300, 100);
+        // and inside an app panel it lies within the panel's bounds, so the
+        // panel is the size it would be without it
+        if(nested)
+            excluded->setBounds(0, 0, 300, 60);
+        else
+            excluded->setBounds(0, 150, 300, 100);
         for(int l=0; l<3; ++l)
         {
             controls::Label *label=excluded->newChild<controls::Label>();
@@ -147,6 +153,7 @@ void checkSame(const char *what, const Counts &a, const Counts &b)
     CHECK(a.update.zChanged == b.update.zChanged);
     CHECK(a.update.animsRun == b.update.animsRun);
     CHECK(a.measures == b.measures);
+    CHECK(a.invalidations == b.invalidations);
 }
 
 //! A frame of both scenes: `app` on each, then `tool` on the flagged one's
@@ -155,17 +162,25 @@ void checkSame(const char *what, const Counts &a, const Counts &b)
 void frameBoth(const char *what, Scene &flagged, Scene &plain, const std::function<void(Scene &)> &app,
     const std::function<void(Scene &)> &tool, Counts *out=nullptr)
 {
+    const size_t flaggedInvalidations=controls::invalidateCalls();
+
     if(app)
         app(flagged);
     if(tool)
         tool(flagged);
 
-    const Counts a=flagged.frame();
+    Counts a=flagged.frame();
+
+    a.invalidations=controls::invalidateCalls()-flaggedInvalidations;
+
+    const size_t plainInvalidations=controls::invalidateCalls();
 
     if(app)
         app(plain);
 
-    const Counts b=plain.frame();
+    Counts b=plain.frame();
+
+    b.invalidations=controls::invalidateCalls()-plainInvalidations;
 
     checkSame(what, a, b);
     if(out)

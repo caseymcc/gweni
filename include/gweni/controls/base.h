@@ -119,6 +119,15 @@ GWENI_EXPORT std::vector<std::string> typesWithoutSkinRenderer();
 //! LayoutStats::measureCalls.
 GWENI_EXPORT size_t measureTextCalls();
 
+//! The Base::invalidate() calls made since the process started, each step of
+//! its walk up to the canvas (invalidateParent()) one call: the work a layout
+//! invalidation costs before any pass runs. Only those that started outside
+//! every setExcludedFromStats() subtree are counted (layoutEntryCounted()'s
+//! rule), so an inspector or stats overlay adds none, and neither do those of
+//! a control with no parent that is not a canvas (one being constructed, the
+//! root of a detached subtree), which mark only that control.
+GWENI_EXPORT size_t invalidateCalls();
+
 //! The tree changes made during a render walk: the render walk only draws, and
 //! adding, removing, reordering or deleting a control belongs to the update
 //! phase or to layout. Base's addChild(), addChildOfLayout(), removeChild()

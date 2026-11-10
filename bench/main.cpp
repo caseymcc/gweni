@@ -103,7 +103,8 @@ const char *const g_counterNames[]=
     "prim_slots_written", "text_slots_written", "upload_calls", "upload_bytes", "mirror_bytes",
     "draw_calls", "primitive_slots_drawn", "primitive_ranges", "text_draws", "atlas_upload_calls", "atlas_upload_bytes", "buffer_regrows",
     "layout_passes", "layout_capped", "render_layout", "layout_visited", "layout_children_scanned",
-    "measure_calls", "measure_calls_input", "measure_calls_update", "measure_calls_render", "z_visited", "z_changed", "anims_run", "hit_tests", "prim_ids", "text_ids",
+    "measure_calls", "measure_calls_input", "measure_calls_update", "measure_calls_render",
+    "invalidations", "invalidations_input", "invalidations_update", "invalidations_render", "z_visited", "z_changed", "anims_run", "hit_tests", "prim_ids", "text_ids",
     "allocs", "alloc_bytes",
     "allocs_input", "allocs_update", "allocs_render", "allocs_flush", "allocs_gpu"
 };
@@ -123,13 +124,14 @@ void collectCounters(FrameRecord &record, const bench::PhaseTotals &phases,
     const gweni::controls::LayoutStats &layout=canvas.getLayoutStats();
     const gweni::controls::UpdateStats &update=canvas.getUpdateStats();
 
-    size_t allocs=0, allocBytes=0, measures=0;
+    size_t allocs=0, allocBytes=0, measures=0, invalidations=0;
     for(size_t i=0; i<g_framePhaseCount; ++i)
     {
         record.us[i]=phases.us[size_t(g_framePhases[i])];
         allocs+=phases.allocs[size_t(g_framePhases[i])];
         allocBytes+=phases.allocBytes[size_t(g_framePhases[i])];
         measures+=phases.measures[size_t(g_framePhases[i])];
+        invalidations+=phases.invalidations[size_t(g_framePhases[i])];
     }
 
     const size_t values[g_counterCount]=
@@ -141,7 +143,9 @@ void collectCounters(FrameRecord &record, const bench::PhaseTotals &phases,
         gpu.bufferRegrows,
         size_t(layout.passes), layout.capped ? 1u : 0u, layout.renderLayout ? 1u : 0u,
         layout.visited, layout.childrenScanned, measures, phases.measures[size_t(Phase::Input)],
-        phases.measures[size_t(Phase::Update)], phases.measures[size_t(Phase::Render)], update.zVisited, update.zChanged, update.animsRun,
+        phases.measures[size_t(Phase::Update)], phases.measures[size_t(Phase::Render)],
+        invalidations, phases.invalidations[size_t(Phase::Input)],
+        phases.invalidations[size_t(Phase::Update)], phases.invalidations[size_t(Phase::Render)], update.zVisited, update.zChanged, update.animsRun,
         gweni::input::hitTestVisits()-g_hitTestsAtFrame,
         gweni::primitiveIdCount()-gweni::releasedPrimitiveIdCount(),
         gweni::textIdCount()-gweni::releasedTextIdCount(),
@@ -229,6 +233,7 @@ struct Summary
     double constructUs=0.0;
     size_t constructAllocs=0;
     size_t constructAllocBytes=0;
+    size_t constructInvalidations=0;
     std::string renderer;   // the backend, gl or vulkan
     std::string device;     // GL_RENDERER, or the Vulkan device's name
 };
@@ -271,6 +276,7 @@ std::vector<std::pair<std::string, std::string>> summaryFields(const Summary &su
     add("construct_us", number(summary.constructUs));
     add("construct_allocs", std::to_string(summary.constructAllocs));
     add("construct_alloc_bytes", std::to_string(summary.constructAllocBytes));
+    add("construct_invalidations", std::to_string(summary.constructInvalidations));
 
     for(size_t p=0; p<g_framePhaseCount; ++p)
     {
@@ -404,7 +410,7 @@ void printUsage()
         "pairs separated by spaces:\n"
         "  scene=<name> n=<N> frame=<i> <phase>_us=<t>... <counter>=<v>...\n"
         "  summary scene= n= k= frames= warmup= scaling= size= controls= construct_us=\n"
-        "    construct_allocs= construct_alloc_bytes=\n"
+        "    construct_allocs= construct_alloc_bytes= construct_invalidations=\n"
         "    <phase>_us_min= <phase>_us_median= <phase>_us_max= (each frame phase)\n"
         "    <counter>_total= <counter>_max= (each counter) renderer= device=\n"
         "\n"
@@ -448,6 +454,10 @@ void printUsage()
         "             measure_calls_input/_update/_render in each: an edit wraps in the\n"
         "             input phase, layout in the update phase and any render-phase layout\n"
         "             in the render phase (LayoutStats::measureCalls holds the last two)\n"
+        "  invalidations   Base::invalidate() calls in the frame (controls::invalidateCalls()),\n"
+        "             each step of one's walk up to the canvas a call, every phase, and\n"
+        "             invalidations_input/_update/_render in each: what marking layout dirty\n"
+        "             cost before any pass ran (a resize or scale walks the whole tree)\n"
         "  z_visited  controls::UpdateStats: controls the z renumber entered\n"
         "  z_changed  controls::UpdateStats: of those, the controls whose z or overlay z it changed\n"
         "  anims_run  controls::UpdateStats: animations the update phase ran\n"
@@ -667,6 +677,7 @@ int main(int argc, char *argv[])
     summary.constructUs=bench::phaseTotals().us[size_t(Phase::Construct)];
     summary.constructAllocs=bench::phaseTotals().allocs[size_t(Phase::Construct)];
     summary.constructAllocBytes=bench::phaseTotals().allocBytes[size_t(Phase::Construct)];
+    summary.constructInvalidations=bench::phaseTotals().invalidations[size_t(Phase::Construct)];
 
     for(int frame=-warmup; frame<0; ++frame)
         runFrame(*scene, sceneCtx, frame);

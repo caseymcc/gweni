@@ -59,7 +59,8 @@ SHOWN_COUNTERS = {"primitive_slots_drawn", "primitive_ranges"}
 # fixed, so any change between the sizes, up or down, is a finding.
 PINNED = {("hidden-pages", "primitive_slots_drawn"), ("hidden-pages", "primitive_ranges")}
 # Of the summary's own fields, the ones that are counts of work.
-SUMMARY_COUNTERS = ["controls", "construct_allocs", "construct_alloc_bytes"]
+SUMMARY_COUNTERS = ["controls", "construct_allocs", "construct_alloc_bytes",
+                    "construct_invalidations"]
 PHASES = ["construct", "input", "update", "render", "flush", "gpu"]
 IR_PHASES = PHASES + ["other"]
 # The counters a linear scene's growth factor is given for.
