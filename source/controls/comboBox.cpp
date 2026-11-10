@@ -201,10 +201,8 @@ void ComboBox::onPress(event::Info)
     if(isMenuOpen())
         return getCanvas()->closeMenus();
 
-    if(!m_menu)
-        return;
-
-    const bool wasMenuHidden=m_menu->hidden();
+    // no list (deleted from outside): the press still closes the open menus
+    const bool wasMenuHidden=m_menu && m_menu->hidden();
     getCanvas()->closeMenus();
 
     if(wasMenuHidden)
@@ -302,8 +300,7 @@ void ComboBox::selectItem(MenuItem *item, bool fireChangeEvents)
 
     m_selectedItem=item;
     setText(m_selectedItem->getText());
-    if(m_menu)
-        m_menu->setHidden(true);
+    m_menu->setHidden(true);
     invalidate();
 
     if(fireChangeEvents)
