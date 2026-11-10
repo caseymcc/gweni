@@ -13,8 +13,10 @@
 #     the settled Demo, the overlay writes nothing between its refreshes and
 #     only its own slots on one, shows what the frames of each window counted,
 #     a hover on the next refresh and 0 on the one after, lets the mouse through
-#     to a Button under it and gives its ids back (its header in
-#     examples/openglcore/controltest.cpp).
+#     to a Button under it and gives its ids back; the demo shell's Stats
+#     button follows F10, the overlay sits Inset above the shell's status bar,
+#     and clicks on the button open and close it, writing only the button's
+#     slots and the overlay's (its header in examples/openglcore/controltest.cpp).
 #  2. The app's counters do not see it: Demo's --stats lines, the clock
 #     stepping so the overlay refreshes, are the same with --stats-overlay as
 #     without, but for the renderer's whole-frame counts, which hold its slots,

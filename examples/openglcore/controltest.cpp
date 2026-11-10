@@ -2785,6 +2785,14 @@ static bool runInspectorScenario(Session &s, const std::string &shotDir, bool &p
 // its own controls' work and slots left out, so over a settled app only its
 // refreshes write, and only its own slots; what it shows is what the frames of
 // its window counted (docs/architecture.md -> "The stats overlay").
+//
+// The demo shell's "Stats" button follows it: on once F10 has opened it and
+// off once F10 has closed it, the overlay sitting Inset above the shell's
+// status bar, clear of the button. Then a click on the button opens it, F10
+// closes and opens it, and a click closes it: after each the button is on
+// exactly while it is open and it was told once (StatsOverlay::
+// onOpenChangedCaller); a click frame writes only the button's slots and the
+// overlay's and lays out the canvas alone, and the close gives back its ids.
 //-----------------------------------------------------------------------------
 
 // What one frame left behind, read after it: the canvas's counts of the frame
@@ -2923,6 +2931,35 @@ static bool runStatsOverlayScenario(Session &s, const std::string &shotDir, bool
         return false;
     }
 
+    // The demo shell's Stats button and its status bar: the overlay opened by
+    // F10 shows on the button, and sits Inset above the bar, right-aligned.
+    gweni::Demo *shell=gweni::gweni_cast<gweni::Demo>(control);
+    gweni::controls::Button *statsButton=shell ? shell->statsButton() : nullptr;
+    gweni::controls::Base *statusBar=shell ? shell->statusBar() : nullptr;
+
+    if(!statsButton || !statusBar)
+    {
+        std::cerr<<"ControlTest: stats-overlay: the shell has no Stats button\n";
+        return false;
+    }
+
+    const bool buttonMade=statsButton->getText() == "Stats" && statsButton->isToggle()
+        && statsButton->getToolTipText() == "Stats overlay (F10)"
+        && statsButton->getParent() == statusBar && statsButton->getDock() == gweni::DockPosition::Right;
+    bool buttonOnF10=false;
+    bool aboveBar=false;
+    std::string overlayPlace;
+    auto barTop=[&]() { return statusBar->localPosToCanvas().y; };
+    auto rectOf=[](gweni::controls::Base *c)
+    {
+        const gweni::Point at=c->localPosToCanvas();
+        return gweni::Rect(at.x, at.y, c->getWidth(), c->getHeight());
+    };
+    auto overlaps=[](const gweni::Rect &a, const gweni::Rect &b)
+    {
+        return a.x < b.x+b.w && b.x < a.x+a.w && a.y < b.y+b.h && b.y < a.y+a.h;
+    };
+
     std::vector<OverlayFrame> frames;
     auto frame=[&]()
     {
@@ -2953,6 +2990,16 @@ static bool runStatsOverlayScenario(Session &s, const std::string &shotDir, bool
 
     // past the windows its opening is in
     frame();
+    buttonOnF10=statsButton->getToggleState();
+    {
+        const gweni::Rect placed=rectOf(overlay);
+
+        aboveBar=placed.y+placed.h == barTop()-StatsOverlay::Inset
+            && placed.x+placed.w == s.canvas->getWidth()-StatsOverlay::Inset
+            && !overlaps(placed, rectOf(statsButton));
+        overlayPlace="overlay ("+std::to_string(placed.x)+", "+std::to_string(placed.y)+", "
+            +std::to_string(placed.w)+", "+std::to_string(placed.h)+"), bar top "+std::to_string(barTop());
+    }
     untilRefresh();
     size_t start=untilRefresh();
     overlay->ownIds(ownPrimitives, ownTexts);
@@ -3033,8 +3080,10 @@ static bool runStatsOverlayScenario(Session &s, const std::string &shotDir, bool
     // through the overlay onto the Button under it: hovered, and a click toggles it
     const gweni::Point targetAt=target->localPosToCanvas();
     const gweni::Point targetCentre(targetAt.x+target->getWidth()/2, targetAt.y+target->getHeight()/2);
+    // under the raised overlay, and clear of the status bar under it
     const bool underOverlay=targetCentre.x >= overlayRect.x && targetCentre.x < overlayRect.x+overlayRect.w
-        && targetCentre.y >= overlayRect.y && targetCentre.y < overlayRect.y+overlayRect.h;
+        && targetCentre.y >= overlayRect.y && targetCentre.y < overlayRect.y+overlayRect.h
+        && !overlaps(rectOf(target), rectOf(statusBar));
 
     moveMouse(s, targetCentre.x, targetCentre.y);
     frame();
@@ -3053,8 +3102,126 @@ static bool runStatsOverlayScenario(Session &s, const std::string &shotDir, bool
     renderFrames(s, 2);
 
     const bool closed=StatsOverlay::find(s.canvas) == nullptr;
+    const bool buttonOffF10=!statsButton->getToggleState();
     const size_t idsLeft=livePrimitiveIds()-idsBefore;
     const size_t textIdsLeft=liveTextIds()-textIdsBefore;
+
+    // The Stats button: a click opens it, F10 closes and opens it again, a
+    // click closes it. After each, the button is on exactly while the overlay
+    // is open, the overlay was told once (it never opens or closes twice), and
+    // a click frame writes only the button's slots and the overlay's, and
+    // its layout pass enters the canvas alone (its four entries, X and Y,
+    // counted as the canvas's: the overlay added or taken out is a change of
+    // the canvas's children, as for F10), not the shell.
+    struct OpenCounter: public gweni::event::Handler
+    {
+        void onOpenChanged(gweni::event::Info info) { if(info.control == canvas) ++calls; }
+        gweni::controls::Canvas *canvas=nullptr;
+        int calls=0;
+    } counter;
+
+    counter.canvas=s.canvas;
+    StatsOverlay::onOpenChangedCaller.add(&counter, &OpenCounter::onOpenChanged);
+
+    const gweni::Rect buttonRect=rectOf(statsButton);
+    const gweni::Point buttonCentre(buttonRect.x+buttonRect.w/2, buttonRect.y+buttonRect.h/2);
+    // the button's own ids, and the overlay's while one is open
+    std::vector<size_t> allowedPrimitives;
+    std::vector<size_t> allowedTexts;
+    auto allow=[&](gweni::controls::Base *c)
+    {
+        if(StatsOverlay *open=gweni::gweni_cast<StatsOverlay>(c))
+            open->ownIds(allowedPrimitives, allowedTexts);
+        else
+            gweni::tools::appendSubtreeIds(c, allowedPrimitives, allowedTexts);
+        std::sort(allowedPrimitives.begin(), allowedPrimitives.end());
+        std::sort(allowedTexts.begin(), allowedTexts.end());
+    };
+    size_t clickForeign=0;
+    // the most entries one click frame's layout counted
+    size_t clickLayoutEntries=0;
+    size_t clickWritten=0;
+    int stepsInStep=0;
+    std::string stepFailure;
+    // after `what`: the button follows the overlay, and the overlay was told once
+    auto inStep=[&](const char *what, bool open, int callsBefore)
+    {
+        const bool found=StatsOverlay::find(s.canvas) != nullptr;
+
+        if(found == open && statsButton->getToggleState() == open && counter.calls == callsBefore+1)
+            ++stepsInStep;
+        else if(stepFailure.empty())
+            stepFailure=std::string(what)+": overlay "+(found?"open":"closed")+", button "
+                +(statsButton->getToggleState()?"on":"off")+", told "
+                +std::to_string(counter.calls-callsBefore)+" time(s)";
+    };
+    // a click on the Stats button, its frame's writes checked
+    auto clickStats=[&](const char *what, bool opens)
+    {
+        const int callsBefore=counter.calls;
+
+        allowedPrimitives.clear();
+        allowedTexts.clear();
+        allow(statsButton);
+        if(StatsOverlay *open=StatsOverlay::find(s.canvas))
+            allow(open);
+        clickMouse(s, buttonCentre.x, buttonCentre.y);
+        renderFrames(s, 1);
+        if(StatsOverlay *open=StatsOverlay::find(s.canvas))
+            allow(open);
+        clickLayoutEntries=std::max(clickLayoutEntries, s.canvas->getLayoutStats().visited);
+
+        const gweni::renderer::FrameCounts counts=s.renderer->frameStats();
+
+        clickWritten+=counts.primitiveSlotsWritten+counts.textSlotsWritten;
+        for(size_t id : s.renderer->writtenPrimitiveIds())
+        {
+            if(!std::binary_search(allowedPrimitives.begin(), allowedPrimitives.end(), id))
+                ++clickForeign;
+        }
+        for(const gweni::renderer::WrittenText &text : s.renderer->writtenTextIds())
+        {
+            if(!std::binary_search(allowedTexts.begin(), allowedTexts.end(), text.textId))
+                clickForeign+=text.glyphSlots;
+        }
+        inStep(what, opens, callsBefore);
+    };
+    auto pressF10=[&](const char *what, bool opens)
+    {
+        const int callsBefore=counter.calls;
+
+        glfwKey(s, GLFW_KEY_F10, GLFW_PRESS, 0);
+        glfwKey(s, GLFW_KEY_F10, GLFW_RELEASE, 0);
+        renderFrames(s, 1);
+        inStep(what, opens, callsBefore);
+    };
+
+    const size_t buttonIdsBefore=livePrimitiveIds();
+    const size_t buttonTextIdsBefore=liveTextIds();
+
+    // onto the button first: the hover is its own frame, not the click's
+    moveMouse(s, buttonCentre.x, buttonCentre.y);
+    renderFrames(s, 1);
+
+    const bool buttonHovered=gweni::HoveredControl == statsButton;
+
+    clickStats("the first click", true);
+    // the overlay opened by the click is placed as F10's was
+    const bool clickAboveBar=StatsOverlay::find(s.canvas)
+        && rectOf(StatsOverlay::find(s.canvas)).y+rectOf(StatsOverlay::find(s.canvas)).h
+            == barTop()-StatsOverlay::Inset;
+    pressF10("F10 after the click", false);
+    pressF10("F10 again", true);
+    // the mouse never left the button: still hovered, through the overlay
+    const bool hoveredOpen=gweni::HoveredControl == statsButton;
+    clickStats("the second click", false);
+    renderFrames(s, 2);
+
+    const size_t buttonIdsLeft=livePrimitiveIds()-buttonIdsBefore;
+    const size_t buttonTextIdsLeft=liveTextIds()-buttonTextIdsBefore;
+
+    StatsOverlay::onOpenChangedCaller.removeHandler(&counter);
+    forgetMouse(s);
 
     target->delayedDelete();
     dropControl(s, control);
@@ -3068,14 +3235,24 @@ static bool runStatsOverlayScenario(Session &s, const std::string &shotDir, bool
     const bool hoverBack=entry && backShown.rendered == 0 && backShown.slots == 0;
     const bool idsBack=idsLeft == 0 && textIdsLeft == 0;
 
-    passed=quiet && ownOnly && shownMatch && hoverShownOk && hoverBack && clickedThrough && closed && idsBack;
+    const bool buttonSynced=buttonMade && buttonOnF10 && buttonOffF10;
+    const bool buttonSteps=buttonHovered && hoveredOpen && stepsInStep == 4 && clickAboveBar;
+    const bool clickOwnOnly=clickForeign == 0 && clickWritten > 0 && clickLayoutEntries <= 4;
+    const bool buttonIdsBack=buttonIdsLeft == 0 && buttonTextIdsLeft == 0;
+
+    passed=quiet && ownOnly && shownMatch && hoverShownOk && hoverBack && clickedThrough && closed && idsBack
+        && aboveBar && buttonSynced && buttonSteps && clickOwnOnly && buttonIdsBack;
 
     std::cout<<"stats-overlay quiet_frames="<<quietFrames<<" quiet_written="<<quietWritten
              <<" refresh_frames="<<refreshFrames<<" foreign_written="<<foreignWritten
              <<" shown_match="<<(shownMatch?"yes":"no")<<" hover_slots="<<hoverSlots
              <<" hover_shown="<<(hoverShownOk?"yes":"no")<<" hover_back="<<(hoverBack?"yes":"no")
              <<" click_through="<<(clickedThrough?"yes":"no")<<" closed="<<(closed?"yes":"no")
-             <<" ids_left="<<idsLeft<<" text_ids_left="<<textIdsLeft<<" ids_back="<<(idsBack?"yes":"no")<<"\n";
+             <<" ids_left="<<idsLeft<<" text_ids_left="<<textIdsLeft<<" ids_back="<<(idsBack?"yes":"no")
+             <<" above_bar="<<(aboveBar?"yes":"no")<<" button_synced="<<(buttonSynced?"yes":"no")
+             <<" button_steps="<<stepsInStep<<" click_written="<<clickWritten<<" click_foreign="<<clickForeign
+             <<" click_layout_entries="<<clickLayoutEntries
+             <<" button_ids_back="<<(buttonIdsBack?"yes":"no")<<"\n";
     if(!passed)
         std::cerr<<"ControlTest: stats-overlay: "
                  <<(!quiet ? "a frame between two refreshes wrote "+std::to_string(quietWritten)+" slots"
@@ -3086,7 +3263,21 @@ static bool runStatsOverlayScenario(Session &s, const std::string &shotDir, bool
                      : !hoverBack ? "it did not show 0 again on the refresh after the hover"
                      : !clickedThrough ? "the mouse did not reach the Button under it"
                      : !closed ? "F10 did not close it"
-                     : "it did not give its ids back")<<"\n";
+                     : !idsBack ? "it did not give its ids back"
+                     : !aboveBar ? "it is not Inset above the status bar, right-aligned, clear of the Stats button ("
+                        +overlayPlace+")"
+                     : !buttonMade ? "the Stats button is not a toggle labelled \"Stats\" with the tooltip"
+                        " \"Stats overlay (F10)\", docked Right in the status bar"
+                     : !buttonSynced ? "the Stats button did not follow F10 (on "+std::string(buttonOnF10?"yes":"no")
+                        +", off "+(buttonOffF10?"yes":"no")+")"
+                     : !buttonSteps ? (!stepFailure.empty() ? stepFailure
+                        : !buttonHovered || !hoveredOpen ? std::string("the Stats button was not hovered")
+                        : std::string("the overlay a click opened is not above the status bar"))
+                     : !clickOwnOnly ? "a click on the Stats button wrote "+std::to_string(clickForeign)
+                        +" slots not the button's or the overlay's ("+std::to_string(clickWritten)
+                        +" in all), or its layout entered more than the canvas ("
+                        +std::to_string(clickLayoutEntries)+" entries)"
+                     : "the overlay the Stats button opened did not give its ids back")<<"\n";
     return shot;
 }
 
