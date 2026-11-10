@@ -69,7 +69,10 @@ public:
     static std::unique_ptr<Control> create(TexturedSkin *skin)
     {
         if(!m_staticInit)
+        {
             _Class::staticInit(skin);
+            m_staticInit=true;
+        }
 
         return std::unique_ptr<Control>(new _Class);
     }

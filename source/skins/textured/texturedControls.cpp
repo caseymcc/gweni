@@ -209,18 +209,6 @@ void Canvas::update(renderer::Base *renderer, controls::Base *baseControl)
 
 ///////////////////////////////////////////////////////////////////////////
 //CheckBox
-size_t CheckBox::ActiveNormal;
-size_t CheckBox::ActiveChecked;
-
-BorderedPrimitive CheckBox::ActiveNormalPrimitive;
-BorderedPrimitive CheckBox::ActiveCheckedPrimitive;
-
-void CheckBox::staticInit(TexturedSkin *skin)
-{
-    ActiveNormal=skin->getTextureEntryId("CheckBox.Active.Normal");
-    ActiveChecked=skin->getTextureEntryId("CheckBox.Active.Checked");
-}
-
 // The frame of a CheckBox or RadioButton: disabled first, then hovered (the
 // box itself or the label of its row), then at rest.
 static const tokyonight::Surface &checkSurface(controls::CheckBox *control)

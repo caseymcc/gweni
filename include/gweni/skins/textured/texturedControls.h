@@ -235,7 +235,7 @@ public:
 class CheckBox:public textured::ControlRegister<CheckBox>
 {
 public:
-    static void staticInit(TexturedSkin *skin);
+    static void staticInit(TexturedSkin *skin) {}
 
     size_t requiredPrimitives() override { return 2; }
     // the check icon is drawn at getZIndex()+1, over the box
@@ -244,12 +244,6 @@ public:
     void update(renderer::Base *renderer, controls::Base *baseControl) override;
 
     inline static const std::string_view name="CheckBox";
-
-    static size_t ActiveNormal;
-    static size_t ActiveChecked;
-
-    static BorderedPrimitive ActiveNormalPrimitive;
-    static BorderedPrimitive ActiveCheckedPrimitive;
 };
 
 class ComboBox:public textured::ControlRegister<ComboBox>
