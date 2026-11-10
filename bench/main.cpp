@@ -388,7 +388,9 @@ void printUsage()
         "                     mirror (SlotRenderer::setDrawEveryPrimitiveSlot)\n"
         "  --range-gap <G> --range-cap <R>  the ranges' limits (setPrimitiveRangeLimits): a\n"
         "                     gap of fewer than G hidden slots merged, at most R ranges a\n"
-        "                     chunk (defaults kPrimitiveRangeGap, kMaxPrimitiveRanges)\n"
+        "                     chunk; one not given keeps the renderer's own\n"
+        "                     (GWENI_PRIMITIVE_RANGES, else kPrimitiveRangeGap and\n"
+        "                     kMaxPrimitiveRanges)\n"
         "  --json             print one JSON object instead of the key=value lines\n"
         "  --list             print the scenes, one per line:\n"
         "                       <name> takes_n=<0|1> default_n=<N> warmup=<W> frames=<F>\n"
@@ -502,8 +504,9 @@ int main(int argc, char *argv[])
     int n=-1, k=10, frames=-1, warmup=-1;
     bool json=false;
     std::string drawSlots="ranges";
-    int rangeGap=int(gweni::renderer::SlotRenderer::kPrimitiveRangeGap);
-    int rangeCap=int(gweni::renderer::SlotRenderer::kMaxPrimitiveRanges);
+    // -1: not given, the renderer keeps its own (GWENI_PRIMITIVE_RANGES, else
+    // the compiled defaults)
+    int rangeGap=-1, rangeCap=-1;
 
     for(int i=1; i<argc; ++i)
     {
@@ -592,7 +595,10 @@ int main(int argc, char *argv[])
         gweni::Rect(gweni::Point(0, 0), size));
     renderer->init();
     renderer->setDrawEveryPrimitiveSlot(drawSlots == "every");
-    renderer->setPrimitiveRangeLimits(size_t(rangeGap), size_t(rangeCap));
+    if(rangeGap >= 0 || rangeCap >= 0)
+        renderer->setPrimitiveRangeLimits(
+            rangeGap >= 0 ? size_t(rangeGap) : renderer->primitiveRangeGap(),
+            rangeCap >= 0 ? size_t(rangeCap) : renderer->maxPrimitiveRanges());
 
     gweni::skin::textured::TexturedSkin *skin=new gweni::skin::textured::TexturedSkin(renderer);
     if(!skin->init("DefaultSkin.json"))

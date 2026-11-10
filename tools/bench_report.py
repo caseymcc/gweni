@@ -25,6 +25,8 @@
 #                    that phase is at least IR_MIN_SHARE of the scene's total
 #      scaling       a per-frame counter of a local scene larger at the large
 #                    N than at the small N on rev, where it was not on base
+#                    (a PINNED one: different at all); CHUNK_COUNTERS and
+#                    SHOWN_COUNTERS (but where PINNED) grow by design
 #      wall time     a phase TIME_FLAG_PERCENT % slower, slower by more than
 #                    twice the larger side's MAD and by at least TIME_MIN_US
 
@@ -50,6 +52,12 @@ SIZE_COUNTERS = {"prim_ids", "text_ids", "mirror_bytes"}
 # One draw per index chunk of 16383 slots (and per atlas for text), so they
 # grow with the slot count in every scene.
 CHUNK_COUNTERS = {"draw_calls", "text_draws"}
+# The primitive slots the draws cover and their ranges follow the shown slots,
+# which grow with N in every scene but those PINNED for them.
+SHOWN_COUNTERS = {"primitive_slots_drawn", "primitive_ranges"}
+# bench/scaling.cmake's PINNED: (scene, counter) pairs whose shown part is
+# fixed, so any change between the sizes, up or down, is a finding.
+PINNED = {("hidden-pages", "primitive_slots_drawn"), ("hidden-pages", "primitive_ranges")}
 # Of the summary's own fields, the ones that are counts of work.
 SUMMARY_COUNTERS = ["controls", "construct_allocs", "construct_alloc_bytes"]
 PHASES = ["construct", "input", "update", "render", "flush", "gpu"]
@@ -389,6 +397,24 @@ class Report:
         small_median, small_max, large_median, large_max = values
         return large_median > small_median or large_max > small_max
 
+    @staticmethod
+    def moved(scene, name, values):
+        """Whether a counter is O(N) at the large size: grew, or for a PINNED
+        one changed at all."""
+        if (scene, name) in PINNED:
+            small_median, small_max, large_median, large_max = values
+            return large_median != small_median or large_max != small_max
+        return Report.grew(values)
+
+    @staticmethod
+    def by_design(scene, name):
+        """Why a counter grows with N in a local scene by design, or None."""
+        if name in CHUNK_COUNTERS:
+            return "chunks"
+        if name in SHOWN_COUNTERS and (scene, name) not in PINNED:
+            return "shown slots"
+        return None
+
     def scaling(self):
         self.emit("## Scaling")
         self.emit()
@@ -397,8 +423,12 @@ class Report:
                   "counter whose per-frame median or max grew is O(N). Flagged ⚠ when it grows on "
                   "rev and did not on base: a **new O(N)**. One that grows on both is listed as "
                   "known, unflagged. `%s` are sizes and left out; `%s` grow with the slot count by "
-                  "design (one draw per index chunk of 16383 slots)." %
-                  ("`, `".join(sorted(SIZE_COUNTERS)), "`, `".join(sorted(CHUNK_COUNTERS))))
+                  "design (one draw per index chunk of 16383 slots), and `%s` with the shown "
+                  "slots (the primitive slots the draws cover and their ranges), never flagged "
+                  "but in %s, where any change is (bench_scaling's PINNED)." %
+                  ("`, `".join(sorted(SIZE_COUNTERS)), "`, `".join(sorted(CHUNK_COUNTERS)),
+                   "`, `".join(sorted(SHOWN_COUNTERS)),
+                   ", ".join("`%s` `%s`" % pair for pair in sorted(PINNED))))
         self.emit()
         new_rows, known_rows, fixed_rows, clean = [], [], [], []
         linear = []
@@ -416,21 +446,22 @@ class Report:
             for name, values in rev.items():
                 if name in SIZE_COUNTERS:
                     continue
-                grows = self.grew(values)
-                base_grows = base is not None and name in base and self.grew(base[name])
+                grows = self.moved(scene, name, values)
+                base_grows = base is not None and name in base and self.moved(scene, name, base[name])
+                design = self.by_design(scene, name)
                 row = "| `%s` | `%s` | %s / %s | %s / %s |" % (
                     scene, name, fmt(values[0]), fmt(values[1]), fmt(values[2]), fmt(values[3]))
-                if grows and base is not None and not base_grows and name not in CHUNK_COUNTERS:
+                if grows and base is not None and not base_grows and design is None:
                     new_rows.append(row + " **new O(N)** ⚠ |")
                     self.flags["scaling"].append((scene, name, values))
                     any_row = True
                 elif grows:
-                    note = "chunks" if name in CHUNK_COUNTERS else (
+                    note = design or (
                         "known (grows on base too)" if base is not None
                         else "grows (base has no such scene, so nothing to compare with)")
                     known_rows.append(row + " %s |" % note)
                     any_row = True
-                elif base_grows and name not in CHUNK_COUNTERS:
+                elif base_grows and design is None:
                     fixed_rows.append(row + " fixed (grew on base) |")
                     any_row = True
             if not any_row:

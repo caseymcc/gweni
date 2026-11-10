@@ -22,6 +22,7 @@
 #include <stdio.h>
 #include <cstdlib>
 #include <cstring>
+#include <cerrno>
 #include <cmath>
 #include <algorithm>
 #include <cassert>
@@ -745,17 +746,30 @@ SlotRenderer::SlotRenderer(ResourcePaths &paths, const Rect &viewRect)
 
     m_uploadStats=(getenv("GWENI_UPLOAD_STATS") != nullptr);
 
-    // <gap>,<cap>; anything else keeps the defaults
+    // <gap>,<cap>, two decimal counts that fit a size_t, the cap at least 1;
+    // anything else (a sign, a space, a count past size_t) keeps the defaults
     if(const char *ranges=getenv("GWENI_PRIMITIVE_RANGES"))
     {
-        unsigned long long gap=0, cap=0;
-        char tail=0;
-
-        if((ranges[0] != '-') && (sscanf(ranges, "%llu,%llu%c", &gap, &cap, &tail) == 2) && (cap > 0))
+        auto parseCount=[](const char *&text, size_t &value)
         {
-            m_primitiveRangeGap=(size_t)gap;
-            m_maxPrimitiveRanges=(size_t)cap;
-        }
+            if((*text < '0') || (*text > '9'))
+                return false;
+            char *end=nullptr;
+
+            errno=0;
+            const unsigned long long parsed=strtoull(text, &end, 10);
+
+            if((errno == ERANGE) || (parsed > std::numeric_limits<size_t>::max()))
+                return false;
+            value=(size_t)parsed;
+            text=end;
+            return true;
+        };
+        const char *text=ranges;
+        size_t gap=0, cap=0;
+
+        if(parseCount(text, gap) && (*text++ == ',') && parseCount(text, cap) && (*text == '\0') && (cap > 0))
+            setPrimitiveRangeLimits(gap, cap);
         else if(ranges[0] != '\0')
             gweni::log::write(log::Level::Error,
                 "GWENI_PRIMITIVE_RANGES=%s: not <gap>,<cap>; the ranges keep %zu,%zu",

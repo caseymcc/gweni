@@ -1217,7 +1217,10 @@ two programs and the draws. What follows describes both together:
   stale, and a stale chunk's are built again (`buildPrimitiveRanges`, a word at a
   time over its at most 256 words) only when it is drawn; `setIndexChunkSlots()`
   recounts the chunks from the bits and `setPrimitiveRangeLimits()` (or
-  `GWENI_PRIMITIVE_RANGES=<gap>,<cap>` at construction) marks them all stale. So a
+  `GWENI_PRIMITIVE_RANGES=<gap>,<cap>` at construction: two unsigned decimal counts
+  that fit a `size_t`, the cap at least 1, anything else reported on stderr and left
+  out; `gweni_bench --range-gap/--range-cap` override it one limit at a time) marks
+  them all stale. So a
   frame that shows or hides nothing builds no range list
   (`FrameStats::primitiveRangeBuilds`), whatever else it writes.
   `FrameStats::primitiveSlotsDrawn` is the slots the ranges cover,
