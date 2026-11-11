@@ -1696,6 +1696,214 @@ void NodeGraph::update(renderer::Base *renderer, controls::Base *baseControl)
 
 
 ///////////////////////////////////////////////////////////////////////////
+//Link
+size_t Link::slotsFor(controls::LinkStyle style)
+{
+    switch(style)
+    {
+    case controls::LinkStyle::Straight:
+        return 1;
+    case controls::LinkStyle::Orthogonal:
+        return 5;
+    case controls::LinkStyle::Bezier:
+        break;
+    }
+    return controls::Link::MaxSegments;
+}
+
+void Link::generate(renderer::Base *renderer, controls::Base *baseControl)
+{
+    const controls::Link *link=static_cast<const controls::Link *>(baseControl);
+
+    generatePrimitives(renderer, slotsFor(link->getStyle()));
+    m_segments.assign(m_primitives.size(), Segment());
+}
+
+namespace
+{
+//! A rect in fractional units: a link's view.
+struct ViewBox
+{
+    float x, y, w, h;
+};
+}
+
+// The part of the segment a-b inside \p box (Liang-Barsky): false if none, else
+// the parameters t0 <= t1 of its ends, 0 and 1 where it is not cut.
+static bool clipSegment(const PointF &a, const PointF &b, const ViewBox &box, float &t0, float &t1)
+{
+    const float dx=b.x-a.x;
+    const float dy=b.y-a.y;
+    const float p[4]={-dx, dx, -dy, dy};
+    const float q[4]={a.x-box.x, box.x+box.w-a.x, a.y-box.y, box.y+box.h-a.y};
+
+    t0=0.0f;
+    t1=1.0f;
+    for(int i=0; i<4; ++i)
+    {
+        if(p[i] == 0.0f)
+        {
+            if(q[i] < 0.0f)
+                return false;
+            continue;
+        }
+
+        const float t=q[i]/p[i];
+
+        if(p[i] < 0.0f)
+            t0=std::max(t0, t);
+        else
+            t1=std::min(t1, t);
+    }
+    return t0 <= t1;
+}
+
+void Link::update(renderer::Base *renderer, controls::Base *baseControl)
+{
+    if(baseControl->getStateChange() == controls::StateChange_Nothing)
+        return;
+
+    controls::Link *link=static_cast<controls::Link *>(baseControl);
+    const size_t slots=slotsFor(link->getStyle());
+
+    resizePlotPrimitives(renderer, m_primitives, slots);
+    m_segments.resize(slots);
+
+    const unsigned int sc=baseControl->getStateChange();
+    const bool all=(sc&(controls::StateChange_Created|controls::StateChange_Visibility
+        |controls::StateChange_Geometry)) != 0;
+    auto hide=[&](size_t i)
+    {
+        Segment &drawn=m_segments[i];
+
+        if(all || !drawn.valid || drawn.shown)
+            renderer->hidePrimitive(m_primitives[i]);
+        drawn.valid=true;
+        drawn.shown=false;
+    };
+
+    controls::NodeGraph *graph=link->getGraph();
+    std::vector<PointF> points;
+
+    if(baseControl->visible() && graph)
+        link->getPoints(points);
+
+    if(points.size() < 2)
+    {
+        for(size_t i=0; i<slots; ++i)
+            hide(i);
+        return;
+    }
+
+    // graph units to the link's own: the link's top-left in the graph, whose
+    // content space the graph's inner panel is placed in
+    PointF origin(0.0f, 0.0f);
+
+    for(const controls::Base *control=link; control && (control != graph);
+        control=control->getActualParent())
+    {
+        origin.x+=float(control->getX());
+        origin.y+=float(control->getY());
+    }
+
+    const gweni::Rect &bounds=baseControl->getRenderBounds();
+    const float thickness=link->getThickness();
+    const float zoom=graph->zoom();
+
+    // the graph's view in the link's units, wider by the stroke and a few
+    // canvas units, so a cut end is off screen
+    const PointF viewMin=graph->localToGraph(PointF(0.0f, 0.0f));
+    const PointF viewMax=graph->localToGraph(PointF(float(graph->getWidth()), float(graph->getHeight())));
+    const float margin=thickness+4.0f/std::max(zoom, controls::ZoomPanel::MinZoomLimit);
+    const ViewBox view{viewMin.x-origin.x-margin, viewMin.y-origin.y-margin,
+        viewMax.x-viewMin.x+2.0f*margin, viewMax.y-viewMin.y+2.0f*margin};
+
+    for(PointF &point : points)
+        point=PointF(point.x-origin.x, point.y-origin.y);
+
+    const size_t segments=std::min(points.size()-1, slots);
+
+    struct Cut
+    {
+        bool shown=false;
+        float t0=0.0f;
+        float t1=1.0f;
+        PointF p0;
+        PointF p1;
+    };
+    std::vector<Cut> cuts(segments);
+
+    for(size_t i=0; i<segments; ++i)
+    {
+        Cut &cut=cuts[i];
+        const PointF &a=points[i];
+        const PointF &b=points[i+1];
+
+        cut.shown=clipSegment(a, b, view, cut.t0, cut.t1);
+        // the original points where it is not cut, so joints are exact
+        cut.p0=(cut.t0 == 0.0f)?a:PointF(a.x+(b.x-a.x)*cut.t0, a.y+(b.y-a.y)*cut.t0);
+        cut.p1=(cut.t1 == 1.0f)?b:PointF(a.x+(b.x-a.x)*cut.t1, a.y+(b.y-a.y)*cut.t1);
+    }
+
+    Color color;
+
+    if(link->hasColor())
+        color=link->getColor();
+    else if(controls::Pin *from=link->getFrom())
+        color=from->hasColor()?from->getColor():((from->getDirection() == controls::PinDirection::Input)?
+            tokyonight::PinIn.top:tokyonight::PinOut.top);
+
+    const int z=baseControl->getZIndex();
+    const PointF at(float(bounds.x), float(bounds.y));
+    bool colorSet=false;
+
+    for(size_t i=0; i<slots; ++i)
+    {
+        if((i >= segments) || !cuts[i].shown)
+        {
+            hide(i);
+            continue;
+        }
+
+        const Cut &cut=cuts[i];
+        // a neighbour shares the joint only where neither is cut there
+        const bool hasPrev=(i > 0) && cuts[i-1].shown && (cuts[i-1].t1 == 1.0f) && (cut.t0 == 0.0f);
+        const bool hasNext=(i+1 < segments) && cuts[i+1].shown && (cuts[i+1].t0 == 0.0f) && (cut.t1 == 1.0f);
+        const PointF p0(at.x+cut.p0.x, at.y+cut.p0.y);
+        const PointF p1(at.x+cut.p1.x, at.y+cut.p1.y);
+        const PointF prev=hasPrev?PointF(at.x+cuts[i-1].p0.x, at.y+cuts[i-1].p0.y):PointF();
+        const PointF next=hasNext?PointF(at.x+cuts[i+1].p1.x, at.y+cuts[i+1].p1.y):PointF();
+        Segment &drawn=m_segments[i];
+
+        if(!all && drawn.valid && drawn.shown && (drawn.p0 == p0) && (drawn.p1 == p1)
+            && (drawn.hasPrev == hasPrev) && (drawn.prev == prev) && (drawn.hasNext == hasNext)
+            && (drawn.next == next) && (drawn.thickness == thickness) && (drawn.color == color)
+            && (drawn.zIndex == z))
+            continue;
+
+        if(!colorSet)
+        {
+            renderer->setDrawColor(color);
+            colorSet=true;
+        }
+        renderer->drawLine(m_primitives[i], p0, p1, thickness, z, hasPrev?&prev:nullptr,
+            hasNext?&next:nullptr);
+        drawn.valid=true;
+        drawn.shown=true;
+        drawn.p0=p0;
+        drawn.p1=p1;
+        drawn.hasPrev=hasPrev;
+        drawn.prev=prev;
+        drawn.hasNext=hasNext;
+        drawn.next=next;
+        drawn.thickness=thickness;
+        drawn.color=color;
+        drawn.zIndex=z;
+    }
+}
+
+
+///////////////////////////////////////////////////////////////////////////
 //Node
 void Node::update(renderer::Base *renderer, controls::Base *baseControl)
 {

@@ -20,6 +20,7 @@ namespace controls
 {
 
 class Label;
+class Link;
 class Node;
 class NodeGraph;
 class Pin;
@@ -29,6 +30,19 @@ enum class PinDirection
 {
     Input,
     Output
+};
+
+//! The way a Link runs from one pin to the other.
+enum class LinkStyle
+{
+    //! one segment
+    Straight,
+    //! a cubic leaving and entering each pin along its side's outward
+    //! direction, LinkCurveMin..LinkCurveMax segments by its length on screen
+    Bezier,
+    //! horizontal and vertical runs, 3 segments (5 when the pins do not face
+    //! each other with room between them)
+    Orthogonal
 };
 
 //! The marker drawn for a pin on its node's edge.
@@ -75,6 +89,10 @@ class GWENI_EXPORT NodePinColumn: public controls::Base
 public:
 
     GWENI_CONTROL(NodePinColumn, controls::Base);
+
+    //! A column (or the row) moved in its node moves the pins in it: their
+    //! links are drawn again.
+    void onBoundsChanged(gweni::Rect oldBounds) override;
 };
 
 //! A Node's body, where the app's controls go (Node::getBody()); the Node's
@@ -137,6 +155,8 @@ public:
     PinSide getSide() const { return m_side; }
 
     //! Whether a link ends on it: the marker is filled, and a ring otherwise.
+    //! A link made or removed sets it (on while the pin has a link); the app may
+    //! set it too.
     void setConnected(bool connected);
     bool isConnected() const { return m_connected; }
 
@@ -153,10 +173,24 @@ public:
     Rect getMarkerRect() const;
     //! The marker's centre in graph units, where a link to the pin ends.
     PointF getAnchor() const;
+    //! The way out of the pin, along x: +1 on the right side, -1 on the left.
+    float outward() const { return (m_side == PinSide::Right)?1.0f:-1.0f; }
+
+    //! The links ending on the pin, oldest first.
+    const std::vector<Link *> &getLinks() const { return m_links; }
+
+    ~Pin() override;
+
+    void onBoundsChanged(gweni::Rect oldBounds) override;
 
 protected:
 
     friend class Node;
+    friend class Link;
+    friend class NodeGraph;
+
+    //! The links ending on the pin are drawn again: it moved.
+    void linksMoved();
 
     //! Puts the name on the side away from the marker.
     void placeName();
@@ -171,6 +205,90 @@ protected:
     void *m_userData=nullptr;
     Node *m_node=nullptr;
     Label *m_label=nullptr;
+    std::vector<Link *> m_links;
+};
+
+//! A link from one Pin to another, drawn as a polyline of drawLine segments
+//! (Straight, Bezier or Orthogonal, getPoints()) from the one's anchor to the
+//! other's, in its colour (the from pin's unless the app gives it one) and its
+//! thickness in graph units, so it zooms with the graph. It is in its graph's
+//! link layer, under every node, and covers that whole layer, so moving a
+//! node moves no link: the link only draws its segments again, and its
+//! renderer rewrites only the slots of the segments that moved.
+//!
+//! Made and removed through its NodeGraph (addLink(), removeLink()); deleting
+//! a pin, or its node, deletes its links. It holds the app's id and pointer.
+class GWENI_EXPORT Link: public Base
+{
+public:
+
+    GWENI_CONTROL(Link, Base);
+
+public:
+
+    //! A Bezier's least and most segments: the count follows its control
+    //! polygon's length on screen, one segment per LinkCurveStep units.
+    static constexpr int LinkCurveMin=16;
+    static constexpr int LinkCurveMax=24;
+    static constexpr float LinkCurveStep=16.0f;
+    //! An Orthogonal link's run straight out of a pin before it turns, and a
+    //! Bezier's least handle, in graph units.
+    static constexpr float LinkStub=20.0f;
+    //! The most segments any style draws (the renderer's slots).
+    static constexpr int MaxSegments=LinkCurveMax;
+
+    ~Link() override;
+
+    //! The pins it joins; a pin deleted leaves it with null there (it is
+    //! deleted with it).
+    Pin *getFrom() const { return m_from; }
+    Pin *getTo() const { return m_to; }
+
+    void setStyle(LinkStyle style);
+    LinkStyle getStyle() const { return m_style; }
+
+    //! The colour; resetColor() goes back to the from pin's.
+    void setColor(const Color &color);
+    void resetColor();
+    bool hasColor() const { return m_hasColor; }
+    const Color &getColor() const { return m_color; }
+
+    //! The thickness in graph units (2 by default).
+    void setThickness(float thickness);
+    float getThickness() const { return m_thickness; }
+
+    void setUserId(uint64_t id) { m_userId=id; }
+    uint64_t getUserId() const { return m_userId; }
+    void setUserData(void *data) { m_userData=data; }
+    void *getUserData() const { return m_userData; }
+
+    //! The graph the link is in, or null.
+    NodeGraph *getGraph() const;
+
+    //! The polyline from the from pin's anchor to the to pin's, in graph
+    //! units, at the graph's zoom (a Bezier's segment count), with no two
+    //! points the same; empty while a pin is missing.
+    void getPoints(std::vector<PointF> &points) const;
+
+    //! An end moved: the segments are drawn again.
+    void endpointsMoved();
+
+protected:
+
+    friend class NodeGraph;
+    friend class Pin;
+
+    //! The link leaves \p pin (deleted, or the link removed).
+    void detach(Pin *pin);
+
+    Pin *m_from=nullptr;
+    Pin *m_to=nullptr;
+    LinkStyle m_style=LinkStyle::Bezier;
+    bool m_hasColor=false;
+    Color m_color;
+    float m_thickness=2.0f;
+    uint64_t m_userId=0;
+    void *m_userData=nullptr;
 };
 
 //! A node of a NodeGraph: a title bar, a row of pins, inputs down the left
@@ -245,12 +363,21 @@ public:
     void setUserData(void *data) { m_userData=data; }
     void *getUserData() const { return m_userData; }
 
+    //! A move (or a new size) of the node moves its pins: their links are
+    //! drawn again.
+    void onBoundsChanged(gweni::Rect oldBounds) override;
+    //! Every link ending on one of the node's pins.
+    std::vector<Link *> getLinks() const;
+
 protected:
 
     friend class Pin;
+    friend class internal::NodePinColumn;
 
     //! The column holding \p side's pins.
     internal::NodePinColumn *column(PinSide side) const;
+    //! The links of every pin are drawn again.
+    void linksMoved();
 
     internal::NodeTitleBar *m_titleBar=nullptr;
     Label *m_title=nullptr;
@@ -300,11 +427,23 @@ public:
     //! A new node at \p position (its top-left, graph units), in front of the
     //! others.
     Node *addNode(const String &title, const Point &position);
-    //! Takes the node off the graph and deletes it before the next frame's
-    //! layout (delayedDelete()), so a handler of its own may call it.
+    //! Takes the node off the graph, its links with it (removeLink()), and
+    //! deletes it before the next frame's layout (delayedDelete()), so a
+    //! handler of its own may call it.
     void removeNode(Node *node);
     //! The nodes, back to front, without one removeNode() has taken off.
     std::vector<Node *> getNodes() const;
+
+    //! A new link from \p from to \p to, both pins of nodes in this graph,
+    //! marking both connected; null for a pin that is not, or the same pin
+    //! twice. It is in the link layer, under every node.
+    Link *addLink(Pin *from, Pin *to, LinkStyle style=LinkStyle::Bezier);
+    //! Takes the link off its pins at once (setting each one's connected to
+    //! whether it has another link) and deletes it before the next frame's
+    //! layout.
+    void removeLink(Link *link);
+    //! The links, oldest first, without one removeLink() has taken off.
+    std::vector<Link *> getLinks() const;
 
     //! The graph's step between two grid lines at the current zoom.
     float gridStep() const;

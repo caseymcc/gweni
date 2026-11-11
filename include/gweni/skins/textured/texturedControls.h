@@ -6,6 +6,7 @@
 #include "gweni/skins/textured/tokyoNight.h"
 
 #include "gweni/controls/button.h"
+#include "gweni/controls/nodeGraph.h"
 
 namespace gweni
 {
@@ -707,6 +708,53 @@ public:
     void update(renderer::Base *renderer, controls::Base *baseControl) override;
 
     inline static const std::string_view name="NodeGraph";
+};
+
+// A Link: one slot per segment of its polyline (Link::getPoints()), a drawLine
+// at the link's z in its colour (the from pin's unless it has one) and its
+// thickness, each drawn with its neighbours, so its joints are blended once. The
+// slots are taken when the link is first drawn, as many as its style can draw
+// (Link::MaxSegments for a Bezier, 5 for an Orthogonal link, 1 for a Straight
+// one), so the count a zoom picks for a Bezier never takes a slot after its
+// nodes'; those it does not use are hidden. Before drawLine, each segment is cut
+// on the CPU to the graph's visible rect (its view in graph units, a few units
+// wider), so no quad reaches past the +/-32 K device px a vertex holds and a
+// link to a node far off screen still draws its visible part; a segment wholly
+// outside is hidden, and a cut joint is drawn without that neighbour. As
+// PlotLines', only a segment whose endpoints, neighbours, thickness, colour or z
+// are not the ones its slot holds is drawn, unless the frame marks the link's
+// geometry, visibility or creation.
+class Link:public textured::ControlRegister<Link>
+{
+public:
+    static void staticInit(TexturedSkin *) { m_staticInit=true; }
+
+    void generate(renderer::Base *renderer, controls::Base *baseControl) override;
+    void update(renderer::Base *renderer, controls::Base *baseControl) override;
+
+    inline static const std::string_view name="Link";
+
+    //! The slots a link of \p style draws its segments in.
+    static size_t slotsFor(controls::LinkStyle style);
+
+private:
+    //! What a segment's slot holds, as last drawn.
+    struct Segment
+    {
+        bool valid=false;   //!< false for a new slot, which holds nothing known
+        bool shown=false;
+        PointF p0;
+        PointF p1;
+        bool hasPrev=false;
+        bool hasNext=false;
+        PointF prev;
+        PointF next;
+        float thickness=0.0f;
+        Color color;
+        int zIndex=0;
+    };
+
+    std::vector<Segment> m_segments;
 };
 
 // A Node: [0] its frame (NodeBody, over Node::getFrameRect()), [1] its title

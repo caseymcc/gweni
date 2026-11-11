@@ -2155,6 +2155,35 @@ static void rankMirrorDepths(gweni::renderer::SlotRenderer::MirrorSnapshot &mirr
     }
 }
 
+// A primitive slot hidden in all four vertexes (style 0) draws nothing, and the
+// rest of it is whatever was last written there: only "hidden" counts, as in
+// collectMirrorByOwner(). So a slot its owner drew in one state and hid in
+// another (a node graph's link segment cut away by the view) compares equal to
+// one never drawn.
+static void blankHiddenSlots(gweni::renderer::SlotRenderer::MirrorSnapshot &mirror)
+{
+    for(auto &entry : mirror.primitives)
+    {
+        std::vector<uint8_t> &bytes=entry.second;
+
+        if(bytes.empty() || (bytes.size()%4 != 0))
+            continue;
+
+        const size_t vertexBytes=bytes.size()/4;
+        bool hidden=true;
+
+        for(size_t vertex=0; vertex<4; ++vertex)
+        {
+            uint16_t style;
+
+            std::memcpy(&style, &bytes[vertex*vertexBytes], sizeof(style));
+            hidden=hidden && style == 0;
+        }
+        if(hidden)
+            bytes.assign(1, 0);
+    }
+}
+
 static void captureResizeState(Session &s, const std::string &path, ResizeState &state)
 {
     state.name=fs::path(path).filename().string();
@@ -2162,6 +2191,7 @@ static void captureResizeState(Session &s, const std::string &path, ResizeState 
     s.renderer->readPixels(s.pixels.x, s.pixels.y, state.pixels);
     state.mirror=s.renderer->snapshotMirror();
     rankMirrorDepths(state.mirror);
+    blankHiddenSlots(state.mirror);
     collectIdOwners(s.canvas, s.canvas->getTypeName(), state.owners);
 }
 

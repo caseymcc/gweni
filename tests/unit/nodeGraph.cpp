@@ -3,8 +3,8 @@
  *  Copyright (c) 2010 Facepunch Studios
  *  MIT License, see LICENSE
  *
- *  NodeGraph, Node and Pin: the node graph's view skeleton, on the textured
- *  skin's real NodeGraph, Node and Pin renderers over a recording StubRenderer
+ *  NodeGraph, Node, Pin and Link: the node graph's view, on the textured skin's
+ *  real NodeGraph, Node, Pin and Link renderers over a recording StubRenderer
  *  (a StubControl for every other type). It checks:
  *  - a node's place: getGraphPosition() is what setGraphPosition() asked,
  *    negative points included, its content point drawn at pan()+p*zoom() in
@@ -27,7 +27,22 @@
  *    would be under MinGridGap apart; a pan or zoom rewriting the grid's slot
  *    (and the nodes') with no layout pass, a settled frame writing nothing;
  *  - the app's edits: a node moved writes only its own subtree's slots and
- *    no grid line's; a node or pin added and removed gives every id back.
+ *    no grid line's; a node or pin added and removed gives every id back;
+ *  - links: a Straight link one segment, an Orthogonal one 3 (pins facing with
+ *    room) or 5 (not), all horizontal or vertical, a Bezier LinkCurveMin..Max
+ *    by its length on screen (more zoomed in), each from the from pin's
+ *    anchor to the to pin's at the link's z in its thickness and colour (the
+ *    from pin's by default), consecutive segments sharing their points and
+ *    drawn with each other as neighbours; the slots taken once, the style's
+ *    most, the unused hidden, so a zoom takes none;
+ *  - a node moved writes its own subtree's slots and its links' alone, no
+ *    other link's, and lays out nothing but its place;
+ *  - a link to a node far off screen (beyond what a vertex holds at the
+ *    zoom) drawn cut to the graph's view: every segment drawn inside it,
+ *    one reaching its edge, the ones wholly outside hidden, a cut joint
+ *    drawn without that neighbour;
+ *  - pins connected while they have a link, removeLink(), removePin() and
+ *    removeNode() taking the links with them and giving every id back.
  */
 #include "headlessFixture.h"
 
@@ -117,6 +132,25 @@ public:
     std::map<size_t, RoundedDraw> rounded;
     std::map<size_t, IconDraw> icons;
     std::map<size_t, GridDraw> grids;
+
+    void drawLine(size_t primitiveId, PointF p0, PointF p1, float thickness, int zIndex,
+        const PointF *prev=nullptr, const PointF *next=nullptr) override
+    {
+        StubRenderer::drawLine(primitiveId, p0, p1, thickness, zIndex, prev, next);
+        lastLine[primitiveId]=lines.back();
+        hiddenSlots.erase(primitiveId);
+    }
+
+    void hidePrimitive(size_t primitiveId) override
+    {
+        StubRenderer::hidePrimitive(primitiveId);
+        hiddenSlots.insert(primitiveId);
+    }
+
+    //! What each slot's last drawLine drew
+    std::map<size_t, LineDraw> lastLine;
+    //! The slots hidden since they were last drawn
+    std::set<size_t> hiddenSlots;
 };
 
 //! The textured skin's node-graph renderers, a StubControl for the rest.
@@ -133,6 +167,8 @@ public:
             return std::make_unique<skin::textured::Node>();
         if(typeName == "Pin")
             return std::make_unique<skin::textured::Pin>();
+        if(typeName == "Link")
+            return std::make_unique<skin::textured::Link>();
         return StubSkin::getControlRenderer(typeName);
     }
 };
@@ -581,4 +617,367 @@ TEST_CASE("NodeGraph: nodes and pins added and removed from code give their ids 
     CHECK(scene.renderer.liveTexts.size() == texts);
     CHECK(scene.renderer.doubleAcquired == 0);
     CHECK(scene.renderer.doubleReleased == 0);
+}
+
+namespace
+{
+
+//! The primitive ids of \p control's own skin Control.
+std::vector<size_t> ownIds(const controls::Base *control)
+{
+    std::vector<size_t> ids, texts;
+
+    if(const skin::Control *skinControl=control->getSkinControl())
+        skinControl->appendIds(ids, texts);
+    return ids;
+}
+
+//! A link's segments as its slots hold them, in order: the shown ones.
+std::vector<test::StubRenderer::LineDraw> shownSegments(const DrawRecorder &renderer,
+    const controls::Link *link)
+{
+    std::vector<test::StubRenderer::LineDraw> segments;
+
+    for(size_t id : ownIds(link))
+    {
+        if(renderer.hiddenSlots.count(id) || !renderer.lastLine.count(id))
+            continue;
+        segments.push_back(renderer.lastLine.at(id));
+    }
+    return segments;
+}
+
+//! Where a graph point is in the link's render units: the link covers the
+//! link layer, GraphExtent up and left of the graph's origin.
+PointF linkPoint(const PointF &graph)
+{
+    return PointF(graph.x+controls::NodeGraph::GraphExtent, graph.y+controls::NodeGraph::GraphExtent);
+}
+
+struct LinkScene: Scene
+{
+    LinkScene()
+    {
+        a=graph->addNode("A", Point(20, 40));
+        b=graph->addNode("B", Point(320, 140));
+        out=a->addPin(controls::PinDirection::Output, "Out");
+        in=b->addPin(controls::PinDirection::Input, "In");
+    }
+
+    controls::Node *a=nullptr;
+    controls::Node *b=nullptr;
+    controls::Pin *out=nullptr;
+    controls::Pin *in=nullptr;
+};
+
+bool near(const PointF &p, const PointF &q)
+{
+    return (std::fabs(p.x-q.x) < 1e-3f) && (std::fabs(p.y-q.y) < 1e-3f);
+}
+
+}//namespace
+
+TEST_CASE("NodeGraph: a link's segments run from pin to pin in its style, neighbours joined")
+{
+    for(controls::LinkStyle style : {controls::LinkStyle::Straight, controls::LinkStyle::Orthogonal,
+        controls::LinkStyle::Bezier})
+    {
+        LinkScene scene;
+        controls::Link *link=scene.graph->addLink(scene.out, scene.in, style);
+
+        REQUIRE(link);
+        CAPTURE(int(style));
+        scene.frame();
+
+        CHECK(link->getFrom() == scene.out);
+        CHECK(link->getTo() == scene.in);
+        CHECK(link->getGraph() == scene.graph);
+        CHECK(scene.out->isConnected());
+        CHECK(scene.in->isConnected());
+        CHECK(scene.graph->getLinks() == std::vector<controls::Link *>{link});
+        CHECK(scene.a->getLinks() == std::vector<controls::Link *>{link});
+
+        // the slots the style can draw, taken at once
+        const std::vector<size_t> ids=ownIds(link);
+        CHECK(ids.size() == skin::textured::Link::slotsFor(style));
+
+        std::vector<PointF> points;
+        link->getPoints(points);
+        REQUIRE(points.size() >= 2);
+        CHECK(near(points.front(), scene.out->getAnchor()));
+        CHECK(near(points.back(), scene.in->getAnchor()));
+
+        const size_t expected=(style == controls::LinkStyle::Straight)?1:
+            (style == controls::LinkStyle::Orthogonal)?3:points.size()-1;
+
+        CHECK(points.size()-1 == expected);
+        if(style == controls::LinkStyle::Bezier)
+        {
+            CHECK(expected >= size_t(controls::Link::LinkCurveMin));
+            CHECK(expected <= size_t(controls::Link::LinkCurveMax));
+        }
+
+        const auto segments=shownSegments(scene.renderer, link);
+
+        REQUIRE(segments.size() == expected);
+        for(size_t i=0; i < segments.size(); ++i)
+        {
+            const auto &segment=segments[i];
+
+            CAPTURE(i);
+            CHECK(near(segment.p0, linkPoint(points[i])));
+            CHECK(near(segment.p1, linkPoint(points[i+1])));
+            CHECK(segment.thickness == link->getThickness());
+            CHECK(segment.zIndex == link->getZIndex());
+            CHECK((segment.color == tokyonight::PinOut.top));
+            CHECK(segment.prev.has_value() == (i > 0));
+            CHECK(segment.next.has_value() == (i+1 < segments.size()));
+            if(segment.prev)
+                CHECK(near(*segment.prev, segments[i-1].p0));
+            if(segment.next)
+                CHECK(near(*segment.next, segments[i+1].p1));
+            if(style == controls::LinkStyle::Orthogonal)
+                CHECK(((segment.p0.x == segment.p1.x) || (segment.p0.y == segment.p1.y)));
+        }
+
+        // under every node
+        CHECK(link->getZIndex() < scene.a->getZIndex());
+        CHECK(link->getZIndex() < scene.b->getZIndex());
+
+        // a colour of its own, its slots alone
+        link->setColor(Color(1, 2, 3));
+        scene.frame();
+        for(size_t id : scene.written())
+            CHECK(std::find(ids.begin(), ids.end(), id) != ids.end());
+        CHECK((shownSegments(scene.renderer, link).front().color == Color(1, 2, 3)));
+        scene.frame();
+        CHECK(scene.written().empty());
+    }
+}
+
+TEST_CASE("NodeGraph: an Orthogonal link between pins that do not face each other goes round in 5")
+{
+    LinkScene scene;
+    // B to the left of A: A's output leaves rightward, B's input enters from the left
+    scene.a->setGraphPosition(Point(300, 40));
+    scene.b->setGraphPosition(Point(20, 200));
+    controls::Link *link=scene.graph->addLink(scene.out, scene.in, controls::LinkStyle::Orthogonal);
+
+    scene.frame();
+
+    std::vector<PointF> points;
+    link->getPoints(points);
+    REQUIRE(points.size() == 6);
+    CHECK(points[1].x == doctest::Approx(points[0].x+controls::Link::LinkStub));
+    CHECK(points[4].x == doctest::Approx(points[5].x-controls::Link::LinkStub));
+    for(size_t i=0; i+1 < points.size(); ++i)
+        CHECK(((points[i].x == points[i+1].x) || (points[i].y == points[i+1].y)));
+    CHECK(shownSegments(scene.renderer, link).size() == 5);
+}
+
+TEST_CASE("NodeGraph: a Bezier takes more segments zoomed in, in the slots it took at first")
+{
+    LinkScene scene;
+    controls::Link *link=scene.graph->addLink(scene.out, scene.in, controls::LinkStyle::Bezier);
+
+    std::vector<PointF> points;
+
+    scene.graph->setZoom(0.25f);
+    scene.frame();
+
+    const std::vector<size_t> ids=ownIds(link);
+    const size_t low=shownSegments(scene.renderer, link).size();
+
+    link->getPoints(points);
+    CHECK(points.size()-1 == low);
+
+    // zoomed in about the from pin, so the link starts in view
+    scene.graph->zoomAt(4.0f, scene.graph->graphToLocal(scene.out->getAnchor()));
+    scene.frame();
+    link->getPoints(points);
+
+    const size_t high=points.size()-1;
+
+    CHECK(low == size_t(controls::Link::LinkCurveMin));
+    CHECK(high == size_t(controls::Link::LinkCurveMax));
+    // the same slots: a zoom takes and gives back none
+    CHECK(ownIds(link) == ids);
+    CHECK(scene.canvas->getLayoutStats().passes == 0);
+}
+
+TEST_CASE("NodeGraph: a node moved writes its own slots and its links' alone")
+{
+    LinkScene scene;
+    controls::Node *c=scene.graph->addNode("C", Point(20, 300));
+    controls::Pin *other=c->addPin(controls::PinDirection::Output, "Other");
+    controls::Pin *second=scene.b->addPin(controls::PinDirection::Input, "Second");
+    controls::Link *moving=scene.graph->addLink(scene.out, scene.in, controls::LinkStyle::Bezier);
+    controls::Link *still=scene.graph->addLink(other, second, controls::LinkStyle::Straight);
+
+    scene.frame();
+    scene.frame();
+    CHECK(scene.written().empty());
+
+    std::set<size_t> allowed=scene.subtreeIds(scene.a);
+    const std::vector<size_t> linkIds=ownIds(moving);
+    allowed.insert(linkIds.begin(), linkIds.end());
+    const std::vector<size_t> stillIds=ownIds(still);
+
+    for(int step=1; step <= 3; ++step)
+    {
+        scene.a->setGraphPosition(Point(20+step*9, 40+step*5));
+        controls::resetChangeStats();
+        scene.frame();
+        CAPTURE(step);
+
+        const std::set<size_t> written=scene.written();
+        bool wroteLink=false;
+
+        for(size_t id : written)
+        {
+            CHECK(allowed.count(id) == 1);
+            CHECK(std::find(stillIds.begin(), stillIds.end(), id) == stillIds.end());
+            if(std::find(linkIds.begin(), linkIds.end(), id) != linkIds.end())
+                wroteLink=true;
+        }
+        CHECK(wroteLink);
+        CHECK(scene.canvas->getLayoutStats().passes == 1);
+
+        // the moved link ends at the moved pin
+        const auto segments=shownSegments(scene.renderer, moving);
+        REQUIRE(!segments.empty());
+        CHECK(near(segments.front().p0, linkPoint(scene.out->getAnchor())));
+    }
+
+    // moving the node with the still link's to pin moves both links, and
+    // only them besides its own subtree
+    scene.b->setGraphPosition(Point(330, 150));
+    scene.frame();
+    std::set<size_t> both=scene.subtreeIds(scene.b);
+    both.insert(linkIds.begin(), linkIds.end());
+    both.insert(stillIds.begin(), stillIds.end());
+    for(size_t id : scene.written())
+        CHECK(both.count(id) == 1);
+}
+
+TEST_CASE("NodeGraph: a link to a node far off screen is drawn cut to the graph's view")
+{
+    LinkScene scene;
+
+    // at zoom 4, 30 000 graph units are 120 000 device px: past what a vertex holds
+    scene.b->setGraphPosition(Point(30000, 9000));
+    controls::Link *straight=scene.graph->addLink(scene.out, scene.in, controls::LinkStyle::Straight);
+    controls::Link *curve=scene.graph->addLink(scene.out, scene.in, controls::LinkStyle::Bezier);
+
+    scene.frame();
+    // zoomed in about the from pin, which stays in view
+    scene.graph->zoomAt(4.0f, scene.graph->graphToLocal(scene.out->getAnchor()));
+    scene.frame();
+
+    // the graph's view in the links' units
+    const PointF viewMin=linkPoint(scene.graph->localToGraph(PointF(0.0f, 0.0f)));
+    const PointF viewMax=linkPoint(scene.graph->localToGraph(
+        PointF(float(scene.graph->getWidth()), float(scene.graph->getHeight()))));
+    // the margin a cut end may be outside it: the thickness and 4 canvas units
+    const float margin=straight->getThickness()+4.0f/scene.graph->zoom()+0.01f;
+    auto inView=[&](const PointF &p)
+    {
+        return (p.x >= viewMin.x-margin) && (p.x <= viewMax.x+margin) && (p.y >= viewMin.y-margin)
+            && (p.y <= viewMax.y+margin);
+    };
+
+    for(controls::Link *link : {straight, curve})
+    {
+        const auto segments=shownSegments(scene.renderer, link);
+
+        REQUIRE(!segments.empty());
+        bool reachesEdge=false;
+
+        for(const auto &segment : segments)
+        {
+            CHECK(inView(segment.p0));
+            CHECK(inView(segment.p1));
+            // a cut end is past the view's edge, within the margin
+            if((segment.p1.x > viewMax.x) || (segment.p1.y > viewMax.y))
+                reachesEdge=true;
+        }
+        CHECK(reachesEdge);
+        // it starts at its from pin, which is in view
+        CHECK(near(segments.front().p0, linkPoint(scene.out->getAnchor())));
+        // the last shown segment is cut: it has no next neighbour
+        CHECK(!segments.back().next.has_value());
+    }
+
+    // the curve's segments wholly outside the view are hidden
+    CHECK(shownSegments(scene.renderer, curve).size() < ownIds(curve).size());
+}
+
+TEST_CASE("NodeGraph: removing a link, a pin or a node takes its links and gives every id back")
+{
+    LinkScene scene;
+
+    scene.frame();
+
+    const size_t primitives=scene.renderer.livePrimitives.size();
+    const size_t texts=scene.renderer.liveTexts.size();
+    controls::Pin *second=scene.a->addPin(controls::PinDirection::Output, "Second");
+    controls::Link *one=scene.graph->addLink(scene.out, scene.in);
+    controls::Link *two=scene.graph->addLink(second, scene.in, controls::LinkStyle::Orthogonal);
+
+    CHECK(scene.graph->addLink(scene.out, scene.out) == nullptr);
+    CHECK(scene.graph->addLink(scene.out, nullptr) == nullptr);
+    scene.frame();
+    CHECK(scene.in->getLinks() == std::vector<controls::Link *>{one, two});
+
+    // the to pin keeps its other link
+    scene.graph->removeLink(one);
+    CHECK(!scene.out->isConnected());
+    CHECK(scene.in->isConnected());
+    CHECK(scene.graph->getLinks() == std::vector<controls::Link *>{two});
+    scene.frame();
+
+    // a pin removed takes its link
+    scene.a->removePin(second);
+    CHECK(!scene.in->isConnected());
+    CHECK(scene.in->getLinks().empty());
+    scene.frame();
+    CHECK(scene.graph->getLinks().empty());
+
+    // a node removed takes its links at once
+    scene.a->removePin(scene.out);
+    controls::Pin *fresh=scene.a->addPin(controls::PinDirection::Output, "Fresh");
+    scene.graph->addLink(fresh, scene.in, controls::LinkStyle::Straight);
+    scene.frame();
+    scene.graph->removeNode(scene.a);
+    CHECK(scene.graph->getLinks().empty());
+    CHECK(!scene.in->isConnected());
+    scene.frame();
+
+    // back to the graph with node B alone: A's ids and its pins' and links'
+    // gone, B's pin given back what it had
+    controls::Node *a=scene.graph->addNode("A", Point(20, 40));
+    controls::Pin *out=a->addPin(controls::PinDirection::Output, "Out");
+    (void)out;
+    scene.frame();
+    CHECK(scene.renderer.livePrimitives.size() == primitives);
+    CHECK(scene.renderer.liveTexts.size() == texts);
+    CHECK(scene.renderer.doubleAcquired == 0);
+    CHECK(scene.renderer.doubleReleased == 0);
+}
+
+TEST_CASE("NodeGraph: a graph deleted with links on it, its nodes going first or last")
+{
+    for(bool nodesFirst : {false, true})
+    {
+        LinkScene scene;
+        scene.graph->addLink(scene.out, scene.in);
+        scene.frame();
+        if(nodesFirst)
+        {
+            delete scene.a;
+            CHECK(!scene.in->isConnected());
+            scene.frame();
+        }
+        // the Scene deletes the canvas, the links and the nodes with it
+    }
 }
