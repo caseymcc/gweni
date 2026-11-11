@@ -23,6 +23,20 @@
  *  them to the same checks, in grayscale and, where the device blends it, LCD
  *  text, whose filter fringe a pixel left of the first glyph leaves the box
  *  with any number of lines, so there only the rows are checked.
+ *
+ *  A size measured as SDF (18 px and up) has a line step rounded to a whole
+ *  pixel at each px, so drawn at size*scale its lines are off the measured
+ *  step scaled too, whether drawn as SDF or, below the threshold, as
+ *  coverage. The third case draws 20 lines of "H" at 20 px times 1.5 (41 px a
+ *  line against 40.5), at the sizes times 2 whose drawn step is a pixel longer
+ *  and a pixel shorter than the measured one doubled (found from measureText,
+ *  not named), at 20 px times 4 and at 20 px times 0.75 (drawn as 15 px
+ *  coverage, 20 px a line against 20.25). The view is too short for the run,
+ *  so it is drawn a page at a time, moved by whole device px, and stitched.
+ *  Every line's ink must be inside the measured box, with less than a line
+ *  step of empty rows below the last, and each line's ink top within a device
+ *  px of line 0's plus L times the measured step scaled; without the line
+ *  shifts line 19 is 4.75 to 19 px off.
  */
 #include <doctest/doctest.h>
 

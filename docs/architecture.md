@@ -2415,8 +2415,11 @@ two programs and the draws. What follows describes both together:
   with `'\n'`s would end below its box. `measuredPenShifts` also moves each of its glyphs
   down by whole pixels, to within half a pixel of the measured line's baseline scaled
   (relative to the first line, so a one-line run moves nothing), in grayscale and LCD alike.
-  An SDF `font.size` needs no shift, its layout being linear in px. At scale 1 nothing
-  of this changes a byte. `tests/scaledText.cpp` and `tests/multiLineText.cpp` pin it.
+  An SDF `font.size` needs no x shift, its pens being linear in px, but its line step
+  is rounded to a whole pixel at each px (20 px at 1.5 steps 41 px against 27 times
+  1.5), so the line correction applies whatever the measured mode, drawn as SDF or as
+  coverage (20 px at 0.75 is drawn at 15), at a canvas scale and in a `ZoomPanel` alike.
+  At scale 1 nothing of this changes a byte. `tests/scaledText.cpp` and `tests/multiLineText.cpp` pin it.
 - **A moved run is a fresh layout.** A same-string run that only moved is not laid
   out again: `renderText` adds the whole-device-pixel delta to its glyph vertexes.
   That equals a fresh layout at the new place only if each sum is exact, and an SDF
