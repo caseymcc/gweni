@@ -96,9 +96,16 @@ bool TextBox::onChar(gweni::UnicodeChar c)
     return true;
 }
 
-void TextBox::insertText(const gweni::String &strInsert)
+void TextBox::insertText(const gweni::String &strIn)
 {
     if(!m_editable)
+        return;
+
+    // converted first, so the checks and the cap see what goes in; nothing
+    // left (a paste of "\n") keeps the selection
+    const String strInsert=normalizeText(strIn);
+
+    if(strInsert.empty())
         return;
 
     if(hasSelection())
@@ -155,8 +162,32 @@ void TextBox::updateCaretBlink()
 
 void TextBox::setText(const String &str, bool doEvents)
 {
-    ParentClass::setText(str, doEvents);
+    ParentClass::setText(normalizeText(str), doEvents);
     updatePlaceholder();
+}
+
+String TextBox::normalizeText(const String &str) const
+{
+    // '\r', '\n' and '\t' never occur inside a UTF-8 sequence, so a byte
+    // pass keeps every codepoint whole
+    size_t end=str.size();
+
+    while(end > 0 && (str[end-1] == '\n' || str[end-1] == '\r'))
+        --end;
+
+    String text;
+    text.reserve(end);
+
+    for(size_t i=0; i < end; ++i)
+    {
+        const char c=str[i];
+
+        if(c == '\r' && i+1 < end && str[i+1] == '\n')
+            continue;   // the "\n" after it is the one space
+
+        text+=(c == '\r' || c == '\n' || c == '\t')?' ':c;
+    }
+    return text;
 }
 
 // The hint is a Text of its own rather than a text id of the skin's: it is
@@ -788,6 +819,24 @@ bool TextBoxMultiline::onKeyReturn(bool down)
     return true;
 }
 
+String TextBoxMultiline::normalizeText(const String &str) const
+{
+    if(str.find('\r') == String::npos)
+        return str;
+
+    String text;
+    text.reserve(str.size());
+
+    for(size_t i=0; i < str.size(); ++i)
+    {
+        if(str[i] != '\r')
+            text+=str[i];
+        else if(i+1 >= str.size() || str[i+1] != '\n')
+            text+='\n';     // a lone "\r"; "\r\n"'s "\n" comes next
+    }
+    return text;
+}
+
 void TextBoxMultiline::makeCaretVisible()
 {
     const Size text=m_text->refreshSize(false);
@@ -957,8 +1006,10 @@ GWENI_CONTROL_CONSTRUCTOR(PasswordTextBox)
     m_passwordChar='*';
 }
 
-void PasswordTextBox::setText(const String &str, bool doEvents)
+void PasswordTextBox::setText(const String &strIn, bool doEvents)
 {
+    const String str=normalizeText(strIn);
+
     if(m_realText == str)
         return;
 

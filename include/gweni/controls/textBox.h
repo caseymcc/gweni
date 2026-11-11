@@ -186,6 +186,13 @@ protected:
         return true;
     }
 
+    //! The text this box holds for \p str, applied by insertText (before the
+    //! selection is erased, isTextAllowed and the length cap) and setText.
+    //! One line: the trailing line breaks dropped, every other one ("\r\n",
+    //! a lone "\r", "\n") and every "\t" one space. A text it gave back is
+    //! given back unchanged.
+    virtual String normalizeText(const String &str) const;
+
     bool m_editable;
     bool m_selectAll;
 
@@ -249,6 +256,9 @@ public:
     virtual int getCurrentLine();
 
 protected:
+
+    //! Lines: "\r\n" and a lone "\r" become "\n"; "\n" and "\t" are kept.
+    String normalizeText(const String &str) const override;
 
     //! How many codepoints pos is from the start of its line.
     int columnOf(int pos);
