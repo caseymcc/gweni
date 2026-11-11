@@ -542,6 +542,11 @@ GWENI_TRANSPARENT_RENDERER(TabStrip)
 // a source-mode DataTable's body, a VirtualList the table's backdrop shows
 // through, as through the row-mode DataTableBody (which draws nothing)
 GWENI_TRANSPARENT_RENDERER(DataTableVirtualBody)
+// a NodeGraph's layers and a Node's parts, which the Node's renderer draws
+GWENI_TRANSPARENT_RENDERER(NodeGraphLayer)
+GWENI_TRANSPARENT_RENDERER(NodeTitleBar)
+GWENI_TRANSPARENT_RENDERER(NodePinColumn)
+GWENI_TRANSPARENT_RENDERER(NodeBody)
 
 // Visual controls this skin does not draw yet. Each is an empty renderer on
 // purpose, so Base::setSkin() does not report the type as having none (#185),
@@ -680,6 +685,63 @@ private:
     Frame m_frame;
     //! [i] segment i, in slot [1+i]
     std::vector<Segment> m_segments;
+};
+
+// A NodeGraph: [0] its backdrop (GraphGrid's fill, over the render bounds) and
+// [1] its grid at getZIndex()+1 over it, one drawGrid over the render bounds: a
+// line every NodeGraph::gridStep() graph units from the graph's origin on each
+// axis, 1 unit thick at the canvas's scale whatever the zoom, in GraphGrid's
+// border colour or, every NodeGraph::GridMajorEvery-th line, GraphGridMajor's
+// top. Both slots are taken when the graph is made, before any of its
+// content's, so they are drawn first: a node's anti-aliased edge drawn over a
+// line blends with it whatever the zoom has made of the grid.
+class NodeGraph:public textured::ControlRegister<NodeGraph>
+{
+public:
+    static void staticInit(TexturedSkin *) { m_staticInit=true; }
+
+    size_t requiredPrimitives() override { return 2; }
+    // the grid is drawn at getZIndex()+1, over the backdrop
+    size_t depthLayers() override { return 2; }
+
+    void update(renderer::Base *renderer, controls::Base *baseControl) override;
+
+    inline static const std::string_view name="NodeGraph";
+};
+
+// A Node: [0] its frame (NodeBody, over Node::getFrameRect()), [1] its title
+// bar at getZIndex()+1 over the frame's top, NodeTitle's fill or the node's
+// title colour (its bottom a shade darker), with the frame's border, radius and
+// border width, square and borderless at its bottom, so frame and title are one
+// outline.
+class Node:public textured::ControlRegister<Node>
+{
+public:
+    static void staticInit(TexturedSkin *) { m_staticInit=true; }
+
+    size_t requiredPrimitives() override { return 2; }
+    // the title bar is drawn at getZIndex()+1, over the frame
+    size_t depthLayers() override { return 2; }
+
+    void update(renderer::Base *renderer, controls::Base *baseControl) override;
+
+    inline static const std::string_view name="Node";
+};
+
+// A Pin: [0] its marker over Pin::getMarkerRect(), in the pin's colour (PinIn's
+// or PinOut's top unless the app gave it one): a circle (a rounded rect of half
+// its side's radius) or a square (PinIn's or PinOut's radius), filled while
+// connected and otherwise a ring of their borderWidth around their bottom
+// fill; a triangle pointing right (icon kind 7, or 8, its outline, until it is
+// connected).
+class Pin:public textured::ControlRegister<Pin>
+{
+public:
+    static void staticInit(TexturedSkin *) { m_staticInit=true; }
+
+    void update(renderer::Base *renderer, controls::Base *baseControl) override;
+
+    inline static const std::string_view name="Pin";
 };
 
 class ProgressBar:public textured::ControlRegister<ProgressBar>

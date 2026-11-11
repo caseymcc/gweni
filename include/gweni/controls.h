@@ -47,6 +47,7 @@
 #include <gweni/controls/menuItem.h>
 #include <gweni/controls/menuStrip.h>
 #include <gweni/controls/modal.h>
+#include <gweni/controls/nodeGraph.h>
 #include <gweni/controls/numericUpDown.h>
 #include <gweni/controls/pageControl.h>
 #include <gweni/controls/plotBase.h>

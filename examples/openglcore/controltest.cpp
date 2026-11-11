@@ -869,6 +869,7 @@
 #include <gweni/controls/dragNumber.h>
 #include <demo/vectorField.h>
 #include <demo/zoomPanel.h>
+#include <demo/nodeGraph.h>
 #include <gweni/controls/vectorField.h>
 #include <demo/statsOverlay.h>
 #include <demo/statusBar.h>
@@ -980,7 +981,7 @@ static void content_scale_callback(GLFWwindow *window, float, float)
     X(WindowDemo) X(WindowButtonsDemo) X(TreeControlDemo) X(PropertiesDemo) X(TabControlDemo) X(TabCloseDemo) X(TabOverflowDemo) \
     X(ScrollControlDemo) X(PageControlDemo) X(CollapsibleListDemo) X(ColorPickerDemo) X(ColorEditDemo) \
     X(UnicodeTextDemo) X(TextSizesDemo) X(TextDemo) X(LayoutDemo) X(InspectorDemo) X(ThemeEditorDemo) \
-    X(StatsOverlayDemo) X(ZoomPanelDemo)
+    X(StatsOverlayDemo) X(ZoomPanelDemo) X(NodeGraphDemo)
 
 static const char *const g_controlNames[]=
 {

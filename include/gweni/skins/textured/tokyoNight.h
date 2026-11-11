@@ -227,6 +227,24 @@ inline Surface VectorTagY        { Green,                 Green,                
 inline Surface VectorTagZ        { Blue,                  Blue,                  Blue,        RadiusSm, 0.0f };
 inline Surface VectorTagW        { FgDark,                FgDark,                FgDark,      RadiusSm, 0.0f };
 
+// A NodeGraph and its nodes. The graph's backdrop is GraphGrid's top and
+// bottom, its grid lines GraphGrid's border colour, every GridMajorEvery-th one
+// GraphGridMajor's top. A node's frame is NodeBody (NodeSelected while it is
+// selected), its title bar NodeTitle's fill (an app's title colour instead)
+// joined to the frame's border. A pin's marker is PinIn's or PinOut's top
+// colour (an app's instead), a ring of their borderWidth around their bottom
+// fill until it is connected. A hovered link is drawn in LinkHover's top; the
+// marquee is Marquee, translucent, over everything in the graph.
+inline Surface GraphGrid      { Color(0x15,0x16,0x20),  Color(0x15,0x16,0x20), Color(0x1f,0x22,0x31), 0.0f, 0.0f };
+inline Surface GraphGridMajor { Color(0x29,0x2d,0x40),  Color(0x29,0x2d,0x40), Color(0x29,0x2d,0x40), 0.0f, 0.0f };
+inline Surface NodeBody       { Color(0x22,0x25,0x37),  Color(0x1d,0x20,0x30), Line,        Radius, BorderW };
+inline Surface NodeSelected   { Color(0x24,0x29,0x3f),  Color(0x1f,0x23,0x36), Blue,        Radius, 2.0f };
+inline Surface NodeTitle      { SurfHi,                 Surf,                  Line,        Radius, BorderW };
+inline Surface PinIn          { Cyan,                   BgDark,                Cyan,        2.0f,   1.5f };
+inline Surface PinOut         { Green,                  BgDark,                Green,       2.0f,   1.5f };
+inline Surface LinkHover      { Cyan,                   Cyan,                  Cyan,        0.0f,   0.0f };
+inline Surface Marquee        { Color(0x7a,0xa2,0xf7,0x30), Color(0x7a,0xa2,0xf7,0x30), Blue, 0.0f, BorderW };
+
 // Window title-bar buttons: nothing at rest (a transparent fill hides its slot),
 // red under the close button while hovered, a deeper red while pressed. The
 // minimise and maximise buttons hover and press as ButtonHover/ButtonDown.
@@ -273,6 +291,9 @@ inline std::unordered_map<std::string, Surface*>& surfaceRegistry()
         {"DragNumberDown",&DragNumberDown},{"DragNumberDisabled",&DragNumberDisabled},
         {"VectorTagX",&VectorTagX},{"VectorTagY",&VectorTagY},{"VectorTagZ",&VectorTagZ},
         {"VectorTagW",&VectorTagW},
+        {"GraphGrid",&GraphGrid},{"GraphGridMajor",&GraphGridMajor},{"NodeBody",&NodeBody},
+        {"NodeSelected",&NodeSelected},{"NodeTitle",&NodeTitle},{"PinIn",&PinIn},{"PinOut",&PinOut},
+        {"LinkHover",&LinkHover},{"Marquee",&Marquee},
         {"WindowButton",&WindowButton},{"WindowCloseHover",&WindowCloseHover},{"WindowCloseDown",&WindowCloseDown},
     };
     return m;

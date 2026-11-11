@@ -215,6 +215,8 @@ set(GWENI_CONTROL_SOURCES
     include/gweni/controls/menuStrip.h
     source/controls/menuStrip.cpp
     include/gweni/controls/modal.h
+    include/gweni/controls/nodeGraph.h
+    source/controls/nodeGraph.cpp
     include/gweni/controls/numericUpDown.h
     source/controls/numericUpDown.cpp
     include/gweni/controls/pageControl.h

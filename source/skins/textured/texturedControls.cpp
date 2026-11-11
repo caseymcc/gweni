@@ -15,6 +15,7 @@
 #include "gweni/controls/slider.h"
 #include "gweni/controls/plotHistogram.h"
 #include "gweni/controls/plotLines.h"
+#include "gweni/controls/nodeGraph.h"
 #include "gweni/controls/colorControls.h"
 #include "gweni/controls/colorPicker.h"
 #include "gweni/controls/colorButton.h"
@@ -1655,6 +1656,137 @@ void PlotLines::update(renderer::Base *renderer, controls::Base *baseControl)
         drawn.color=color;
         drawn.zIndex=z+1;
     }
+}
+
+
+///////////////////////////////////////////////////////////////////////////
+//NodeGraph
+void NodeGraph::update(renderer::Base *renderer, controls::Base *baseControl)
+{
+    if(baseControl->getStateChange() == controls::StateChange_Nothing)
+        return;
+
+    controls::NodeGraph *graph=static_cast<controls::NodeGraph *>(baseControl);
+    const unsigned int sc=baseControl->getStateChange();
+
+    if(!baseControl->visible())
+    {
+        if((sc&controls::StateChange_Visibility) || (sc&controls::StateChange_Created))
+        {
+            renderer->hidePrimitive(m_primitives[0]);
+            renderer->hidePrimitive(m_primitives[1]);
+        }
+        return;
+    }
+
+    const gweni::Rect &bounds=baseControl->getRenderBounds();
+    const tokyonight::Surface &backdrop=tokyonight::GraphGrid;
+    const int z=baseControl->getZIndex();
+
+    renderer->drawRoundedRect(m_primitives[0], bounds, 0.0f, 0.0f, backdrop.top, backdrop.bottom,
+        backdrop.border, z);
+
+    // the graph's origin is drawn at pan() from the graph's, the lines a step apart
+    const PointF &pan=graph->pan();
+
+    renderer->drawGrid(m_primitives[1], bounds, PointF(bounds.x+pan.x, bounds.y+pan.y),
+        graph->gridStep()*graph->zoom(), controls::NodeGraph::GridMajorEvery, backdrop.border,
+        tokyonight::GraphGridMajor.top, z+1);
+}
+
+
+///////////////////////////////////////////////////////////////////////////
+//Node
+void Node::update(renderer::Base *renderer, controls::Base *baseControl)
+{
+    if(baseControl->getStateChange() == controls::StateChange_Nothing)
+        return;
+
+    controls::Node *node=static_cast<controls::Node *>(baseControl);
+    const unsigned int sc=baseControl->getStateChange();
+
+    if(!baseControl->visible())
+    {
+        if((sc&controls::StateChange_Visibility) || (sc&controls::StateChange_Created))
+        {
+            renderer->hidePrimitive(m_primitives[0]);
+            renderer->hidePrimitive(m_primitives[1]);
+        }
+        return;
+    }
+
+    const gweni::Rect &origin=baseControl->getRenderBounds();
+    gweni::Rect frame=node->getFrameRect();
+
+    frame.x+=origin.x;
+    frame.y+=origin.y;
+
+    const tokyonight::Surface &body=tokyonight::NodeBody;
+    const int z=baseControl->getZIndex();
+
+    renderer->drawRoundedRect(m_primitives[0], frame, body.radius, body.borderWidth,
+        body.top, body.bottom, body.border, z);
+
+    Color top=tokyonight::NodeTitle.top;
+    Color bottom=tokyonight::NodeTitle.bottom;
+
+    if(node->hasTitleColor())
+    {
+        top=node->getTitleColor();
+        bottom=top;
+        bottom.r=static_cast<unsigned char>(bottom.r*0.8f);
+        bottom.g=static_cast<unsigned char>(bottom.g*0.8f);
+        bottom.b=static_cast<unsigned char>(bottom.b*0.8f);
+    }
+
+    const gweni::Rect title(frame.x, frame.y, frame.w, std::min(frame.h, controls::Node::TitleHeight));
+
+    renderer->drawRoundedRect(m_primitives[1], title, body.radius, body.borderWidth, top, bottom,
+        body.border, z+1, renderer::SquareBottomLeft|renderer::SquareBottomRight|renderer::NoBorderBottom);
+}
+
+
+///////////////////////////////////////////////////////////////////////////
+//Pin
+void Pin::update(renderer::Base *renderer, controls::Base *baseControl)
+{
+    if(baseControl->getStateChange() == controls::StateChange_Nothing)
+        return;
+
+    controls::Pin *pin=static_cast<controls::Pin *>(baseControl);
+    const unsigned int sc=baseControl->getStateChange();
+
+    if(!baseControl->visible())
+    {
+        if((sc&controls::StateChange_Visibility) || (sc&controls::StateChange_Created))
+            renderer->hidePrimitive(m_primitives[0]);
+        return;
+    }
+
+    const tokyonight::Surface &surface=(pin->getDirection() == controls::PinDirection::Input)?
+        tokyonight::PinIn:tokyonight::PinOut;
+    const Color color=pin->hasColor()?pin->getColor():surface.top;
+    const gweni::Rect &origin=baseControl->getRenderBounds();
+    gweni::Rect marker=pin->getMarkerRect();
+    const int z=baseControl->getZIndex();
+
+    marker.x+=origin.x;
+    marker.y+=origin.y;
+
+    if(pin->getShape() == controls::PinShape::Triangle)
+    {
+        // pointing right, the way a graph flows
+        renderer->drawIcon(m_primitives[0], marker, pin->isConnected()?7:8, 3, color, z);
+        return;
+    }
+
+    const float radius=(pin->getShape() == controls::PinShape::Circle)?marker.w*0.5f:surface.radius;
+
+    if(pin->isConnected())
+        renderer->drawRoundedRect(m_primitives[0], marker, radius, 0.0f, color, color, color, z);
+    else
+        renderer->drawRoundedRect(m_primitives[0], marker, radius, surface.borderWidth,
+            surface.bottom, surface.bottom, color, z);
 }
 
 

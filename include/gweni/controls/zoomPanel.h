@@ -109,8 +109,9 @@ protected:
 
     //! The content draws in a new space: every control under the inner
     //! panel draws again (its text at a new size too when \p zoomed), and
-    //! nothing is laid out.
-    void spaceChanged(bool zoomed);
+    //! nothing is laid out. A subclass that draws something of its own that
+    //! follows the zoom or the pan (a NodeGraph's grid) marks it here too.
+    virtual void spaceChanged(bool zoomed);
 
     float m_zoom=1.0f;
     float m_minZoom=0.25f;
