@@ -34,8 +34,15 @@
 #       of the staged site.
 #
 #  It takes no lock itself: building takes none, and the tests take their own.
+#
+#  Every cmake --build runs at most CMAKE_BUILD_PARALLEL_LEVEL jobs, nproc
+#  unless the environment sets it: a bare -j is make's unlimited jobs, which ran
+#  the 4-core, 16 GB GitHub runner out of memory (#579).
 
 set -euo pipefail
+
+: "${CMAKE_BUILD_PARALLEL_LEVEL:=$(nproc)}"
+export CMAKE_BUILD_PARALLEL_LEVEL
 
 repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 out="$repo/site"
@@ -75,11 +82,11 @@ cd "$repo"
 
 step "1/5 native GLES release tree (the web tests' reference)"
 ./generate.sh linux gles release -DGWENI_RENDER_VULKAN=OFF
-cmake --build build_linux_x64_release_gles -j --target ControlTest OpenGLCore
+cmake --build build_linux_x64_release_gles --target ControlTest OpenGLCore
 
 step "2/5 release web tree"
 ./generate.sh web release
-cmake --build build_web_wasm32_release -j
+cmake --build build_web_wasm32_release
 
 step "3/5 the web tests"
 ctest --test-dir build_web_wasm32_release -L web --output-on-failure

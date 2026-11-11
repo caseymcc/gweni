@@ -43,8 +43,13 @@
 #  (tests/web/site.cmake) runs it and loads every page in headless Chromium.
 #
 #  It takes no lock: building takes none, and node --list opens no context.
+#  The build runs at most CMAKE_BUILD_PARALLEL_LEVEL jobs, nproc unless the
+#  environment sets it.
 
 set -euo pipefail
+
+: "${CMAKE_BUILD_PARALLEL_LEVEL:=$(nproc)}"
+export CMAKE_BUILD_PARALLEL_LEVEL
 
 # What the gallery page (controltest.html and everything it loads) may send, gzip.
 BUDGET_BYTES=8000000
@@ -91,7 +96,7 @@ if [ ! -f "$build_dir/CMakeCache.txt" ]; then
     fi
     (cd "$repo" && ./generate.sh web release)
 fi
-cmake --build "$build_dir" -j --target ControlTest OpenGLCore
+cmake --build "$build_dir" --target ControlTest OpenGLCore
 
 bin="$build_dir/examples/openglcore"
 for file in ControlTest.js ControlTest.wasm ControlTest.data OpenGLCore.js OpenGLCore.wasm OpenGLCore.data; do
