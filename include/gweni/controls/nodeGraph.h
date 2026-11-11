@@ -581,8 +581,38 @@ public:
     void getMarqueeRect(PointF &min, PointF &max) const;
 
     //! A left press on empty space (no node, link or pin under it, Space not
-    //! held) is the marquee; any other press is the ZoomPanel's.
+    //! held) is the marquee; any other press is the ZoomPanel's. A right press
+    //! anywhere on the graph sets getContextMenuPosition().
     InputCapture *pressGesture(int button) override;
+
+    //! Removes the selection as Delete does: for each selected node,
+    //! onNodeRemoveRequested (\p info.control the node; vetoRemove() keeps it),
+    //! then the node and its links go, onLinkRemoved firing for each of them
+    //! and onNodeRemoved for the node; then for each selected link still
+    //! there, onLinkRemoveRequested and, unless vetoed, onLinkRemoved. An
+    //! item's pointer stays good until the next frame's layout deletes it.
+    //! onSelectionChanged fires once if anything went.
+    void removeSelection();
+    //! From an onNodeRemoveRequested or onLinkRemoveRequested handler: the
+    //! item stays.
+    void vetoRemove() { m_removeVetoed=true; }
+    event::Caller onNodeRemoveRequested;
+    event::Caller onLinkRemoveRequested;
+    event::Caller onNodeRemoved;
+    event::Caller onLinkRemoved;
+
+    //! Delete with the graph focused (a press on it focuses it, unless a
+    //! control in a node's body takes the keys): removeSelection().
+    bool onKeyDelete(bool down) override;
+
+    //! Where, in graph units, the last right press on the graph was, or the
+    //! point openContextMenuAt() opened the menu at: what a context menu's
+    //! handler places a new node at.
+    const PointF &getContextMenuPosition() const { return m_contextPosition; }
+    //! Opens the graph's own context menu (setContextMenu()) at the graph
+    //! point \p at, as a right-click there would (a link dropped where no node
+    //! is, offering nodes to add); getContextMenuPosition() is \p at.
+    void openContextMenuAt(const PointF &at);
 
     //! Whether a title-bar drag is moving nodes (a press held on a title bar).
     bool draggingNodes() const { return !m_dragged.empty(); }
@@ -687,6 +717,8 @@ protected:
     void restoreSnapshot();
 
     std::unique_ptr<MarqueeDrag> m_marquee;
+    bool m_removeVetoed=false;
+    PointF m_contextPosition;
     //! the title-bar press: its node, whether it was selected, a Ctrl or Shift
     Node *m_pressedNode=nullptr;
     bool m_pressedWasSelected=false;

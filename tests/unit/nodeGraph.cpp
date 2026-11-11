@@ -76,13 +76,25 @@
  *    selection under Shift) and writing no slot but the marquee's and those
  *    of the items whose selection changed; the release firing
  *    onSelectionChanged once; Escape giving the earlier selection back with
- *    no event; the marquee's ids given back.
+ *    no event; the marquee's ids given back;
+ *  - Delete with the graph focused (a press on it focuses it): each selected
+ *    node's onNodeRemoveRequested, then (unless vetoed) the node and its links
+ *    gone with onLinkRemoved for each and onNodeRemoved, each selected link
+ *    left its onLinkRemoveRequested and onLinkRemoved, onSelectionChanged
+ *    once, every id given back; a body control holding the keys keeps
+ *    Delete;
+ *  - context menus: a right click on empty space opens the graph's menu,
+ *    getContextMenuPosition() the click's graph point, on a node (its body
+ *    included) the node's, on a link the link's; a right drag pans and opens
+ *    none; openContextMenuAt() opens the graph's at a graph point.
  */
 #include "headlessFixture.h"
 
 #include <gweni/gweni.h>
 #include <gweni/controls/label.h>
 #include <gweni/controls/nodeGraph.h>
+#include <gweni/controls/menu.h>
+#include <gweni/controls/textBox.h>
 #include <gweni/inputHandler.h>
 #include <gweni/skins/textured/texturedControls.h>
 #include <gweni/tools/toolSupport.h>
@@ -1853,4 +1865,177 @@ TEST_CASE("NodeGraph: a marquee selects what it touches, each frame writing only
     CHECK(scene.selectionEvents == 1);
     scene.frame();
     CHECK(scene.renderer.livePrimitives.size() == primitives);
+}
+
+namespace
+{
+
+struct RemoveScene: SelectScene
+{
+    RemoveScene()
+    {
+        graph->onNodeRemoveRequested.add(this, &RemoveScene::nodeRequested);
+        graph->onLinkRemoveRequested.add(this, &RemoveScene::linkRequested);
+        graph->onNodeRemoved.add(this, &RemoveScene::nodeRemoved);
+        graph->onLinkRemoved.add(this, &RemoveScene::linkRemoved);
+    }
+
+    void nodeRequested(event::Info info)
+    {
+        nodeRequests.push_back(info.control);
+        if(info.control == vetoed)
+            graph->vetoRemove();
+    }
+
+    void linkRequested(event::Info info)
+    {
+        linkRequests.push_back(info.control);
+        if(info.control == vetoed)
+            graph->vetoRemove();
+    }
+
+    void nodeRemoved(event::Info info) { nodesRemoved.push_back(info.control); }
+    void linkRemoved(event::Info info) { linksRemoved.push_back(info.control); }
+
+    void pressDelete()
+    {
+        canvas->inputModifierKey(keys::Delete, true);
+        canvas->inputModifierKey(keys::Delete, false);
+        frame();
+    }
+
+    void rightClick(const Point &at)
+    {
+        move(at);
+        frame();
+        canvas->inputMouseButton(1, true);
+        canvas->inputMouseButton(1, false);
+        frame();
+    }
+
+    controls::Base *vetoed=nullptr;
+    std::vector<controls::Base *> nodeRequests;
+    std::vector<controls::Base *> linkRequests;
+    std::vector<controls::Base *> nodesRemoved;
+    std::vector<controls::Base *> linksRemoved;
+};
+
+}//namespace
+
+TEST_CASE("NodeGraph: Delete removes the selection, each item asked first and told after")
+{
+    RemoveScene scene;
+    const size_t primitives=scene.renderer.livePrimitives.size();
+
+    // node 1 (links 0->1 and 1->2), node 4 (vetoed, link 3->4 stays) and
+    // the link 3->4 too, which its request may remove on its own
+    controls::Node *one=scene.nodes[1];
+    controls::Node *four=scene.nodes[4];
+    controls::Link *threeFour=scene.links[2];
+
+    scene.click(scene.titleOf(one));
+    CHECK(KeyboardFocus == scene.graph);
+    scene.modifier(keys::Shift, true);
+    scene.click(scene.titleOf(four));
+    scene.modifier(keys::Shift, false);
+    scene.graph->selectLink(threeFour);
+    scene.vetoed=four;
+    const int events=scene.selectionEvents;
+
+    scene.pressDelete();
+    CHECK(scene.nodeRequests == std::vector<controls::Base *>{one, four});
+    CHECK(scene.nodesRemoved == std::vector<controls::Base *>{one});
+    CHECK(scene.linkRequests == std::vector<controls::Base *>{threeFour});
+    CHECK(scene.linksRemoved == std::vector<controls::Base *>{scene.links[0], scene.links[1], threeFour});
+    CHECK(scene.selectionEvents == events+1);
+    CHECK(scene.graph->getLinks().empty());
+    CHECK(scene.graph->getNodes().size() == 5);
+    CHECK(four->isSelected());
+    CHECK(!scene.out[0]->isConnected());
+    CHECK(!scene.in[2]->isConnected());
+    scene.frame();
+
+    // a body's TextBox holding the keys keeps Delete
+    controls::TextBox *box=scene.nodes[0]->newChild<controls::TextBox>();
+    box->setDock(DockPosition::Top);
+    scene.frame();
+    box->focus();
+    scene.pressDelete();
+    CHECK(scene.graph->getNodes().size() == 5);
+    CHECK(scene.nodeRequests.size() == 2);
+
+    // everything gone gives every id back
+    scene.graph->focus();
+    scene.vetoed=nullptr;
+    for(controls::Node *node : scene.graph->getNodes())
+        scene.graph->selectNode(node);
+    scene.pressDelete();
+    scene.frame();
+    CHECK(scene.graph->getNodes().empty());
+    CHECK(scene.renderer.livePrimitives.size() < primitives);
+    const size_t emptyGraph=scene.renderer.livePrimitives.size();
+    scene.graph->addNode("X", Point(0, 0));
+    scene.frame();
+    scene.graph->removeNode(scene.graph->getNodes().front());
+    scene.frame();
+    CHECK(scene.renderer.livePrimitives.size() == emptyGraph);
+    CHECK(scene.renderer.doubleReleased == 0);
+}
+
+TEST_CASE("NodeGraph: a right click opens the menu of what it is on, with its graph position")
+{
+    RemoveScene scene;
+    controls::Menu *graphMenu=scene.graph->createContextMenu();
+    controls::Menu *nodeMenu=scene.nodes[0]->createContextMenu();
+    controls::Menu *linkMenu=scene.links[2]->createContextMenu();
+
+    graphMenu->addItem("Add");
+    nodeMenu->addItem("Delete node");
+    linkMenu->addItem("Delete link");
+    scene.graph->setZoom(1.5f);
+    scene.frame();
+
+    // empty space: the graph's, at the click's graph point
+    scene.rightClick(scene.empty());
+    CHECK(scene.canvas->shownContextMenu() == graphMenu);
+    const PointF expected=scene.graph->canvasToGraph(PointF(scene.empty()));
+    CHECK(scene.graph->getContextMenuPosition().x == doctest::Approx(expected.x));
+    CHECK(scene.graph->getContextMenuPosition().y == doctest::Approx(expected.y));
+    scene.canvas->closeContextMenu();
+    scene.frame();
+
+    // a node's body: the node's
+    controls::Base *body=scene.nodes[0]->getBody();
+    scene.rightClick(body->localPosToCanvas(Point(body->getWidth()/2, body->getHeight()/2)));
+    CHECK(scene.canvas->shownContextMenu() == nodeMenu);
+    scene.canvas->closeContextMenu();
+    scene.frame();
+
+    // a link: the link's
+    std::vector<PointF> points;
+    scene.links[2]->getPoints(points);
+    scene.rightClick(scene.at(PointF((points.front().x+points.back().x)*0.5f,
+        (points.front().y+points.back().y)*0.5f)));
+    CHECK(scene.canvas->shownContextMenu() == linkMenu);
+    scene.canvas->closeContextMenu();
+    scene.frame();
+
+    // a right drag pans and opens none
+    const PointF pan=scene.graph->pan();
+    const Point from=scene.empty();
+    scene.move(from);
+    scene.frame();
+    scene.canvas->inputMouseButton(1, true);
+    scene.move(Point(from.x-40, from.y-30));
+    scene.frame();
+    scene.canvas->inputMouseButton(1, false);
+    scene.frame();
+    CHECK(scene.canvas->shownContextMenu() == nullptr);
+    CHECK(scene.graph->pan().x == doctest::Approx(pan.x-40.0f));
+
+    // from code, at a graph point
+    scene.graph->openContextMenuAt(PointF(123.0f, 45.0f));
+    scene.frame();
+    CHECK(scene.canvas->shownContextMenu() == graphMenu);
+    CHECK(scene.graph->getContextMenuPosition().x == 123.0f);
 }

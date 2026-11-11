@@ -1150,6 +1150,10 @@ GWENI_CONTROL_CONSTRUCTOR(NodeGraph)
 
     m_linkDrag=std::make_unique<LinkDrag>(this);
     m_marquee=std::make_unique<MarqueeDrag>(this);
+
+    // a press on it takes the keys (Delete), unless a control under it does
+    setKeyboardInputEnabled(true);
+    setTabable(false);
 }
 
 // The drag's preview goes with the overlay layer, after this; the drag gives
@@ -1166,13 +1170,92 @@ InputCapture *NodeGraph::pressGesture(int button)
 {
     Canvas *canvas=getCanvas();
 
+    // where a context menu opened by this press places what it adds; the
+    // ZoomPanel gives an unmoved right press back as a click, which opens it
+    if(button == 1)
+        m_contextPosition=canvasToGraph(PointF(input::getMousePosition()));
+
     if((button == 0) && canvas && !isDisabled() && !input::isKeyDown(keys::Space) && !m_marquee->active()
         && !m_linkDrag->active() && emptyAt(input::getMousePosition()))
     {
         m_marquee->start(canvas);
+        // the press goes to the capture, not to the canvas's focus search
+        focus();
         return m_marquee.get();
     }
     return ParentClass::pressGesture(button);
+}
+
+void NodeGraph::removeSelection()
+{
+    snapshotSelection();
+
+    for(Node *node : getSelectedNodes())
+    {
+        m_removeVetoed=false;
+        onNodeRemoveRequested.call(this, event::Info(node));
+        if(m_removeVetoed)
+            continue;
+
+        const std::vector<Link *> links=node->getLinks();
+
+        removeNode(node);
+        for(Link *link : links)
+            onLinkRemoved.call(this, event::Info(link));
+        onNodeRemoved.call(this, event::Info(node));
+    }
+    for(Link *link : getSelectedLinks())
+    {
+        m_removeVetoed=false;
+        onLinkRemoveRequested.call(this, event::Info(link));
+        if(m_removeVetoed)
+            continue;
+
+        removeLink(link);
+        onLinkRemoved.call(this, event::Info(link));
+    }
+    m_removeVetoed=false;
+
+    // what went is no longer in the selection
+    bool changed=false;
+
+    for(Base *child : m_nodeLayer->getChildren())
+    {
+        Node *node=gweni_cast<Node>(child);
+
+        if(node && node->m_selectedBefore && getCanvas() && getCanvas()->isPendingDelete(node))
+            changed=true;
+    }
+    for(Base *child : m_linkLayer->getChildren())
+    {
+        Link *link=gweni_cast<Link>(child);
+
+        if(link && link->m_selectedBefore && getCanvas() && getCanvas()->isPendingDelete(link))
+            changed=true;
+    }
+    if(changed)
+        onSelectionChanged.call(this);
+}
+
+bool NodeGraph::onKeyDelete(bool down)
+{
+    if(down && !isDisabled() && !m_linkDrag->active() && !m_marquee->active() && m_dragged.empty())
+        removeSelection();
+    return true;
+}
+
+void NodeGraph::openContextMenuAt(const PointF &at)
+{
+    Canvas *canvas=getCanvas();
+
+    if(!canvas || !getContextMenu())
+        return;
+
+    m_contextPosition=at;
+
+    const PointF local=graphToLocal(at);
+
+    canvas->showContextMenu(this, localPosToCanvas(Point(int(std::floor(local.x)), int(std::floor(local.y)))));
 }
 
 bool NodeGraph::marqueeActive() const
