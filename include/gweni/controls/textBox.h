@@ -189,9 +189,11 @@ protected:
     //! The text this box holds for \p str, applied by insertText (before the
     //! selection is erased, isTextAllowed and the length cap) and setText.
     //! One line: the trailing line breaks dropped, every other one ("\r\n",
-    //! a lone "\r", "\n") and every "\t" one space. A text it gave back is
-    //! given back unchanged.
-    virtual String normalizeText(const String &str) const;
+    //! a lone "\r", "\n") and every "\t" one space. Returns false, leaving
+    //! \p converted alone, when \p str needs no conversion (so the common
+    //! case copies nothing); true with the result in \p converted otherwise.
+    //! A result needs no conversion again.
+    virtual bool normalizeText(const String &str, String &converted) const;
 
     bool m_editable;
     bool m_selectAll;
@@ -258,7 +260,7 @@ public:
 protected:
 
     //! Lines: "\r\n" and a lone "\r" become "\n"; "\n" and "\t" are kept.
-    String normalizeText(const String &str) const override;
+    bool normalizeText(const String &str, String &converted) const override;
 
     //! How many codepoints pos is from the start of its line.
     int columnOf(int pos);

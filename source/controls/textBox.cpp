@@ -103,7 +103,8 @@ void TextBox::insertText(const gweni::String &strIn)
 
     // converted first, so the checks and the cap see what goes in; nothing
     // left (a paste of "\n") keeps the selection
-    const String strInsert=normalizeText(strIn);
+    String converted;
+    const String &strInsert=normalizeText(strIn, converted)?converted:strIn;
 
     if(strInsert.empty())
         return;
@@ -162,21 +163,25 @@ void TextBox::updateCaretBlink()
 
 void TextBox::setText(const String &str, bool doEvents)
 {
-    ParentClass::setText(normalizeText(str), doEvents);
+    String converted;
+    ParentClass::setText(normalizeText(str, converted)?converted:str, doEvents);
     updatePlaceholder();
 }
 
-String TextBox::normalizeText(const String &str) const
+bool TextBox::normalizeText(const String &str, String &converted) const
 {
     // '\r', '\n' and '\t' never occur inside a UTF-8 sequence, so a byte
     // pass keeps every codepoint whole
+    if(str.find_first_of("\r\n\t") == String::npos)
+        return false;
+
     size_t end=str.size();
 
     while(end > 0 && (str[end-1] == '\n' || str[end-1] == '\r'))
         --end;
 
-    String text;
-    text.reserve(end);
+    converted.clear();
+    converted.reserve(end);
 
     for(size_t i=0; i < end; ++i)
     {
@@ -185,9 +190,9 @@ String TextBox::normalizeText(const String &str) const
         if(c == '\r' && i+1 < end && str[i+1] == '\n')
             continue;   // the "\n" after it is the one space
 
-        text+=(c == '\r' || c == '\n' || c == '\t')?' ':c;
+        converted+=(c == '\r' || c == '\n' || c == '\t')?' ':c;
     }
-    return text;
+    return true;
 }
 
 // The hint is a Text of its own rather than a text id of the skin's: it is
@@ -819,22 +824,22 @@ bool TextBoxMultiline::onKeyReturn(bool down)
     return true;
 }
 
-String TextBoxMultiline::normalizeText(const String &str) const
+bool TextBoxMultiline::normalizeText(const String &str, String &converted) const
 {
     if(str.find('\r') == String::npos)
-        return str;
+        return false;
 
-    String text;
-    text.reserve(str.size());
+    converted.clear();
+    converted.reserve(str.size());
 
     for(size_t i=0; i < str.size(); ++i)
     {
         if(str[i] != '\r')
-            text+=str[i];
+            converted+=str[i];
         else if(i+1 >= str.size() || str[i+1] != '\n')
-            text+='\n';     // a lone "\r"; "\r\n"'s "\n" comes next
+            converted+='\n';    // a lone "\r"; "\r\n"'s "\n" comes next
     }
-    return text;
+    return true;
 }
 
 void TextBoxMultiline::makeCaretVisible()
@@ -1008,7 +1013,8 @@ GWENI_CONTROL_CONSTRUCTOR(PasswordTextBox)
 
 void PasswordTextBox::setText(const String &strIn, bool doEvents)
 {
-    const String str=normalizeText(strIn);
+    String converted;
+    const String &str=normalizeText(strIn, converted)?converted:strIn;
 
     if(m_realText == str)
         return;
