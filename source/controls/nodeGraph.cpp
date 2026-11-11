@@ -179,6 +179,7 @@ void Pin::setColor(const Color &color)
     m_hasColor=true;
     m_color=color;
     addStateChange(StateChange_Background);
+    colorChanged();
 }
 
 void Pin::resetColor()
@@ -189,6 +190,17 @@ void Pin::resetColor()
     m_hasColor=false;
     m_color=Color();
     addStateChange(StateChange_Background);
+    colorChanged();
+}
+
+// A link with no colour of its own is drawn in its from pin's.
+void Pin::colorChanged()
+{
+    for(Link *link : m_links)
+    {
+        if((link->getFrom() == this) && !link->hasColor())
+            link->addStateChange(StateChange_Background);
+    }
 }
 
 void Pin::setShape(PinShape shape)
@@ -866,6 +878,9 @@ public:
 
     void start(Canvas *canvas, Pin *pin)
     {
+        // a drag whose capture something else took (the depth view) never
+        // got its release: its preview goes now, before its pin can
+        end();
         m_canvas=canvas;
         m_pin=pin;
         m_mouse=input::getMousePosition();

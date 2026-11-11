@@ -239,6 +239,8 @@ protected:
 
     //! The links ending on the pin are drawn again: it moved.
     void linksMoved();
+    //! The links drawn in the pin's colour are drawn again.
+    void colorChanged();
 
     //! Puts the name on the side away from the marker.
     void placeName();

@@ -1,3 +1,9 @@
+/*
+  * Gweni
+  * Copyright (c) 2010 Facepunch Studios
+  * See license in gweni.h
+ */
+
 #include "demo/nodeGraph.h"
 #include "gweni/controls/comboBox.h"
 #include "gweni/controls/dragNumber.h"

@@ -41,6 +41,8 @@
  *    zoom) drawn cut to the graph's view: every segment drawn inside it,
  *    one reaching its edge, the ones wholly outside hidden, a cut joint
  *    drawn without that neighbour;
+ *  - a pin's new colour (setColor(), resetColor()) redrawing the links drawn
+ *    in it (those from it with no colour of their own) and no others;
  *  - pins connected while they have a link (a Link deleted directly too),
  *    removeLink(), removePin() and removeNode() taking the links with them
  *    and giving every id back;
@@ -61,7 +63,9 @@
  *    the link made and onLinkCreated, unless a handler vetoed; a drop on an
  *    unfit pin or a node's body making nothing and firing nothing; a drop
  *    where no node is firing onLinkDroppedOnEmpty with the graph position;
- *    Escape ending it with nothing made; the preview's ids given back;
+ *    Escape ending it with nothing made; the preview's ids given back; a
+ *    drag whose capture something else took (the depth view) leaving no
+ *    preview once the next drag starts, none left reading a deleted pin;
  *  - hover: a link hit within Link::HoverDistance on screen of its curve and
  *    not beyond, measured from the exact point at every zoom (1, 2.5 and 4,
  *    where a graph unit is 4 on-screen units), drawn in LinkHover's colour; a pin's marker
@@ -913,6 +917,55 @@ TEST_CASE("NodeGraph: a node moved writes its own slots and its links' alone")
         CHECK(both.count(id) == 1);
 }
 
+TEST_CASE("NodeGraph: a pin's new colour reaches the links drawn in it, and no others")
+{
+    LinkScene scene;
+    controls::Link *link=scene.graph->addLink(scene.out, scene.in, controls::LinkStyle::Straight);
+
+    scene.frame();
+    scene.frame();
+    REQUIRE(scene.written().empty());
+
+    std::vector<size_t> outIds, inIds, linkIds, texts;
+    scene.out->getSkinControl()->appendIds(outIds, texts);
+    scene.in->getSkinControl()->appendIds(inIds, texts);
+    link->getSkinControl()->appendIds(linkIds, texts);
+    REQUIRE(outIds.size() == 1);
+    REQUIRE(inIds.size() == 1);
+
+    // the frame's lines, each in \p color, and the slots it wrote
+    auto drawn=[&](const Color &color, std::set<size_t> expected)
+    {
+        scene.frame();
+        CHECK(scene.written() == expected);
+        for(const auto &line : scene.renderer.lines)
+            CHECK((line.color == color));
+    };
+    std::set<size_t> outAndLink(linkIds.begin(), linkIds.end());
+    outAndLink.insert(outIds[0]);
+
+    // the from pin's colour is the link's
+    scene.out->setColor(Color(200, 40, 40));
+    drawn(Color(200, 40, 40), outAndLink);
+    CHECK(!scene.renderer.lines.empty());
+    // the to pin's is not
+    scene.in->setColor(Color(40, 40, 200));
+    drawn(Color(), {inIds[0]});
+    CHECK(scene.renderer.lines.empty());
+    // the theme's again
+    scene.out->resetColor();
+    drawn(tokyonight::PinOut.top, outAndLink);
+    CHECK(!scene.renderer.lines.empty());
+    // a link with a colour of its own keeps it
+    link->setColor(Color(40, 200, 40));
+    scene.frame();
+    scene.out->setColor(Color(200, 40, 40));
+    drawn(Color(), {outIds[0]});
+    CHECK(scene.renderer.lines.empty());
+    scene.frame();
+    CHECK(scene.written().empty());
+}
+
 TEST_CASE("NodeGraph: a link to a node far off screen is drawn cut to the graph's view")
 {
     LinkScene scene;
@@ -1712,6 +1765,46 @@ TEST_CASE("NodeGraph: a link drag ends when its pin is deleted, and with its gra
         CHECK(scene.canvas->inputCapture() == nullptr);
         scene.frame();
     }
+}
+
+TEST_CASE("NodeGraph: a link drag whose capture was taken leaves no preview behind")
+{
+    LinkDragScene scene;
+
+    // something else (the depth view) takes the canvas's input mid-drag, so
+    // the drag never gets its release
+    controls::InputCapture other;
+    auto previews=[&]()
+    {
+        size_t count=0;
+
+        for(controls::Base *child : scene.graph->getOverlayLayer()->getChildren())
+        {
+            if(gweni_cast<controls::Link>(child))
+                ++count;
+        }
+        return count;
+    };
+
+    scene.dragFrom(scene.out, scene.anchorOf(scene.in));
+    REQUIRE(previews() == 1);
+    scene.canvas->setInputCapture(&other);
+    scene.release();
+    scene.canvas->setInputCapture(nullptr);
+    CHECK(!scene.graph->draggingLink());
+
+    // the next drag takes the earlier preview away with it
+    scene.dragFrom(scene.otherOut, scene.anchorOf(scene.in));
+    REQUIRE(scene.graph->draggingLink());
+    CHECK(previews() == 1);
+    scene.release();
+    CHECK(previews() == 0);
+    CHECK(scene.creations == 1);
+
+    // the first pin gone and the graph panned: no preview reads it
+    scene.a->removePin(scene.out);
+    scene.graph->setPan(PointF(scene.graph->pan().x+10.0f, scene.graph->pan().y));
+    scene.frame();
 }
 
 namespace
