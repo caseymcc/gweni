@@ -819,6 +819,9 @@ bool Canvas::inputMouseButton(int button, bool down)
         {
             if(InputCapture *gesture=control->pressGesture(button))
             {
+                // a press all the same: it closes what one there closes
+                closeMenus();
+                popupPressed(HoveredControl);
                 setInputCapture(gesture);
                 gesture->captureMouseButton(button, true);
                 return true;

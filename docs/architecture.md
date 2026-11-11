@@ -2493,7 +2493,12 @@ and every device px hits the same control (`controltest_zoom_panel`).
   chain through them (nested panels multiply); `localPosToCanvas` rounds to the
   nearest unit and `canvasPosToLocal` floors. A new zoom or pan calls
   `Canvas::hoverMayHaveMoved`, so the control under a resting mouse is hovered.
-  Drag motion stays in canvas units (a DragNumber scrubs per screen unit).
+  A `Dragger` (a scroll bar or slider thumb, a splitter, a window's title bar) and a
+  `Resizer` move their target by the mouse taken into the target's parent's units
+  (`canvasPosToLocal` of the mouse, less the hold in the target's own units), so
+  the grabbed point stays under the cursor at any zoom (at zoom 1 the same integer
+  arithmetic as before). A DragNumber's scrub stays in canvas units (a value step per
+  screen unit).
 - **On-screen rects.** `Base::getCanvasBounds()` is a control's rect as it is drawn,
   its size zoomed too, each edge rounded to a canvas unit. The tooltip box
   (`ToolTip::setContentFor`/`placeFor`), `Popup::anchorRect`, a Menu's anchor
@@ -2512,8 +2517,19 @@ and every device px hits the same control (`controltest_zoom_panel`).
   canvas's input until the release, so the hover and the focus stay. Once the mouse
   is `PanThreshold` (3) units from the press the content follows it; let go before,
   the press and the release are given to the canvas as they would have been, so a
-  right click opens the control's context menu and a click presses. The release
-  moves the canvas to where the mouse is; keys during a pan go to the capture.
+  right click opens the control's context menu and a click presses. The press that
+  starts a pan closes the open menus and the popup as any press there does
+  (`closeMenus`, `popupPressed`). A wheel notch during a pan zooms about the cursor
+  and the drag goes on from there (the gesture takes the mouse and the pan anew),
+  so the content point under the cursor stays under it. The release moves the
+  canvas to where the mouse is; keys during a pan go to the capture. A disabled
+  panel neither zooms nor pans, and `setZoomRange` keeps its low end at
+  `MinZoomLimit` (1/1024) or above.
+- **Known limits.** Space is a key like any other before it is a pan's modifier: held
+  over a focused TextBox it types a space, over a focused Button it presses it. A
+  ComboBox's list and a context menu are placed once, when they open, so a wheel
+  zoom over the panel with one open leaves it where it was (scrolling a
+  ScrollControl under an open list does the same); a pan's press closes them.
 - **Cost.** A zoom marks the inner panel's subtree `StateChange_Geometry |
   StateChange_Text`, a pan `StateChange_Geometry`, and neither invalidates: the frame
   runs no layout pass, calls `invalidate()` nowhere and renders the subtree alone,

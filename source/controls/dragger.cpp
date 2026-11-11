@@ -61,11 +61,14 @@ void Dragger::onMouseMoved(int x, int y, int deltaX, int deltaY)
 
     if(m_doMove && m_target)
     {
-        gweni::Point p=gweni::Point(x-m_holdPos.x, y-m_holdPos.y);
+        // The mouse in the parent's units, less the hold in the target's
+        // (the same units, a ZoomPanel's zoom applied to both)
+        gweni::Point p=gweni::Point(x, y);
 
-        // Translate to parent
         if(m_target->getParent())
             p=m_target->getParent()->canvasPosToLocal(p);
+        p.x-=m_holdPos.x;
+        p.y-=m_holdPos.y;
 
         // A part its owner places (a splitter bar, a slider or scrollbar
         // thumb) is moved as computed bounds; the owner reads the new

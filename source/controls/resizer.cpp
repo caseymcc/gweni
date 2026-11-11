@@ -36,9 +36,9 @@ void Resizer::onMouseMoved(int x, int y, int /*deltaX*/, int /*deltaY*/)
     gweni::Rect bounds=m_target->getBounds();
     Size pntMin=m_target->getMinimumSize();
     gweni::Point cursorPos=m_target->canvasPosToLocal(gweni::Point(x, y));
-    gweni::Point delta=m_target->localPosToCanvas(m_holdPos);
-    delta.x-=x;
-    delta.y-=y;
+    // how far the mouse is from the hold, in the target's units (its
+    // bounds' units, a ZoomPanel's zoom applied)
+    gweni::Point delta(m_holdPos.x-cursorPos.x, m_holdPos.y-cursorPos.y);
 
     if(m_resizeDirection  &Alignment::Left)
     {

@@ -74,10 +74,16 @@ public:
             release();
     }
 
+    // A zoom mid-drag moves the pan about the cursor, so the drag goes on
+    // from there: from where the mouse and the pan are now.
     void captureMouseWheel(int delta) override
     {
-        if(m_panel->visible())
-            m_panel->wheelAt(delta, m_mouse);
+        if(!m_panel->visible() || m_panel->isDisabled())
+            return;
+
+        m_panel->wheelAt(delta, m_mouse);
+        m_press=m_mouse;
+        m_startPan=m_panel->pan();
     }
 
     void captureCanvasDeleted(Canvas * /*canvas*/) override { m_canvas=nullptr; }
@@ -192,6 +198,9 @@ void ZoomPanel::wheelAt(int delta, const Point &mouse)
 // of the range too, so nothing above it scrolls instead.
 bool ZoomPanel::onMouseWheeled(int delta)
 {
+    if(isDisabled())
+        return false;
+
     wheelAt(delta, input::getMousePosition());
     return true;
 }
@@ -201,7 +210,7 @@ InputCapture *ZoomPanel::pressGesture(int button)
     const bool pans=(button == 1) || (button == 2) || ((button == 0) && input::isKeyDown(keys::Space));
     Canvas *canvas=getCanvas();
 
-    if(!pans || !canvas || m_gesture->replaying() || m_gesture->active())
+    if(!pans || !canvas || isDisabled() || m_gesture->replaying() || m_gesture->active())
         return nullptr;
 
     m_gesture->start(canvas, button);
@@ -210,6 +219,8 @@ InputCapture *ZoomPanel::pressGesture(int button)
 
 void ZoomPanel::setZoomRange(float lowest, float highest)
 {
+    // a content point is (p-pan)/zoom: no zoom of 0
+    lowest=std::max(lowest, MinZoomLimit);
     m_minZoom=lowest;
     m_maxZoom=std::max(lowest, highest);
     setZoom(m_zoom);

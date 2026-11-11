@@ -36,7 +36,9 @@ namespace controls
 //! button is let go, and once the mouse is PanThreshold units from the press
 //! the content follows it. Let go before that, the press and the release go
 //! to the canvas as if they had just happened, so a click (a right click's
-//! context menu) still reaches the control under the mouse.
+//! context menu) still reaches the control under the mouse. A pan's press
+//! closes the open menus and popup as any other press there does. A
+//! disabled panel neither zooms nor pans.
 class GWENI_EXPORT ZoomPanel: public Base
 {
 public:
@@ -52,6 +54,8 @@ public:
     static constexpr int PanThreshold=3;
     //! The zoom factor of one wheel notch (60), towards the user zooming out
     static constexpr float WheelStep=1.1f;
+    //! The lowest zoom setZoomRange() takes
+    static constexpr float MinZoomLimit=1.0f/1024.0f;
 
     ~ZoomPanel() override;
 
@@ -65,7 +69,7 @@ public:
     const gweni::PointF &pan() const { return m_pan; }
 
     //! The zooms setZoom() keeps to, 0.25..4 by default; the zoom is clamped
-    //! to a new range at once.
+    //! to a new range at once, and \p lowest to MinZoomLimit.
     void setZoomRange(float lowest, float highest);
 
     //! Zooms to \p zoom (clamped to the range) about \p at, a point in the

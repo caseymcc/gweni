@@ -15,12 +15,21 @@
  *  menu, a left one presses a Button), and a plain left drag is no pan. A
  *  zoom and a pan frame run no layout pass and call Base::invalidate()
  *  nowhere, a frame after them lays nothing out either, and a panel deleted
- *  while a pan holds the canvas's input gives it back.
+ *  while a pan holds the canvas's input gives it back. A wheel notch during
+ *  a pan zooms about the cursor and the drag goes on from there, the content
+ *  point under the cursor staying under it; a pan's press closes an open
+ *  context menu as a press there would; a disabled panel neither zooms nor
+ *  pans; the zoom range has a positive floor. Inside a zoomed panel a
+ *  Dragger (a ScrollControl's thumb) and a Resizer keep the grabbed point
+ *  under the cursor: their motion is in the panel's content units.
  */
 #include "headlessFixture.h"
 
 #include <gweni/controls/button.h>
 #include <gweni/controls/menu.h>
+#include <gweni/controls/resizableControl.h>
+#include <gweni/controls/resizer.h>
+#include <gweni/controls/scrollBarBar.h>
 #include <gweni/controls/scrollControl.h>
 #include <gweni/controls/zoomPanel.h>
 #include <gweni/inputHandler.h>
@@ -114,6 +123,21 @@ struct Scene: public event::Handler
         return panel->getInnerPanel()->localPosToCanvasF(p);
     }
 };
+
+//! The first shown vertical scroll bar thumb under \p control.
+controls::internal::ScrollBarBar *verticalThumb(controls::Base *control)
+{
+    for(controls::Base *child : control->getActualChildren())
+    {
+        controls::internal::ScrollBarBar *bar=gweni_cast<controls::internal::ScrollBarBar>(child);
+
+        if(bar && bar->visible() && bar->isVertical())
+            return bar;
+        if(controls::internal::ScrollBarBar *found=verticalThumb(child))
+            return found;
+    }
+    return nullptr;
+}
 
 } // namespace
 
@@ -366,4 +390,197 @@ TEST_CASE("ZoomPanel gestures: a zoom and a pan mark the panel's subtree for ren
     CHECK(text->getStateChange() == controls::StateChange_Nothing);
     CHECK(scene.button->getStateChange() == controls::StateChange_Nothing);
     scene.canvas->renderCanvas();
+}
+
+TEST_CASE("ZoomPanel gestures: a wheel notch mid-pan zooms about the cursor and the pan goes on from there")
+{
+    Scene scene;
+
+    scene.move(250, 200);
+    scene.frame();
+    scene.press(1, true);
+    scene.move(270, 210);
+    REQUIRE(scene.panel->panning());
+    scene.frame();
+
+    // the content point under the cursor stays under it through the zoom
+    // and every move after it
+    const PointF under=scene.contentAt(270, 210);
+
+    scene.canvas->inputMouseWheel(60);
+    scene.frame();
+    CHECK(scene.panel->zoom() == doctest::Approx(controls::ZoomPanel::WheelStep));
+
+    PointF at=scene.canvasOf(under);
+
+    CHECK(at.x == doctest::Approx(270.0f).epsilon(1e-4));
+    CHECK(at.y == doctest::Approx(210.0f).epsilon(1e-4));
+
+    scene.move(290, 230);
+    scene.frame();
+    at=scene.canvasOf(under);
+    CHECK(at.x == doctest::Approx(290.0f).epsilon(1e-4));
+    CHECK(at.y == doctest::Approx(230.0f).epsilon(1e-4));
+
+    scene.canvas->inputMouseWheel(-120);
+    scene.move(250, 190);
+    scene.frame();
+    at=scene.canvasOf(under);
+    CHECK(at.x == doctest::Approx(250.0f).epsilon(1e-4));
+    CHECK(at.y == doctest::Approx(190.0f).epsilon(1e-4));
+
+    scene.press(1, false);
+    scene.frame();
+    CHECK((scene.canvas->inputCapture() == nullptr));
+}
+
+TEST_CASE("ZoomPanel gestures: a pan's press closes an open context menu")
+{
+    Scene scene;
+
+    scene.move(80, 60);
+    scene.frame();
+    scene.press(1, true);
+    scene.press(1, false);
+    scene.frame();
+    REQUIRE((scene.canvas->shownContextMenu() == scene.menu));
+
+    // a middle drag over the content, off the menu
+    scene.move(300, 250);
+    scene.frame();
+    scene.press(2, true);
+    CHECK(scene.menu->hidden());
+    scene.move(320, 270);
+    CHECK(scene.panel->panning());
+    scene.press(2, false);
+    scene.frame();
+    CHECK((scene.canvas->shownContextMenu() == nullptr));
+}
+
+TEST_CASE("ZoomPanel gestures: a disabled panel neither zooms nor pans, and the range stays positive")
+{
+    Scene scene;
+
+    scene.panel->setDisabled(true);
+    scene.move(250, 200);
+    scene.frame();
+    scene.canvas->inputMouseWheel(60);
+    scene.frame();
+    CHECK(scene.panel->zoom() == 1.0f);
+    scene.press(1, true);
+    CHECK((scene.canvas->inputCapture() == nullptr));
+    scene.move(290, 230);
+    scene.press(1, false);
+    scene.frame();
+    CHECK(scene.panel->pan().x == 0.0f);
+
+    scene.panel->setDisabled(false);
+    scene.panel->setZoomRange(0.0f, 2.0f);
+    CHECK(scene.panel->minZoom() == controls::ZoomPanel::MinZoomLimit);
+    scene.panel->setZoom(0.0f);
+    CHECK(scene.panel->zoom() == controls::ZoomPanel::MinZoomLimit);
+    scene.panel->setZoomRange(-1.0f, -2.0f);
+    CHECK(scene.panel->zoom() > 0.0f);
+    CHECK(scene.panel->maxZoom() >= scene.panel->minZoom());
+}
+
+TEST_CASE("ZoomPanel gestures: a scroll bar thumb dragged in a zoomed panel keeps the grabbed point under the cursor")
+{
+    for(float zoom : {1.0f, 1.25f, 2.0f})
+    {
+        CAPTURE(zoom);
+
+        Scene scene;
+        controls::ScrollControl *scroll=scene.panel->newChild<controls::ScrollControl>();
+
+        scroll->setSizeFlags({SizeFlag::Fixed, SizeFlag::Fixed});
+        // inside the panel at every zoom: canvas 60..300 x 50..250 at 2
+        scroll->setBounds(20, 20, 120, 100);
+        scroll->setScroll(false, true);
+        controls::Base *tall=scroll->newChild<controls::Base>();
+
+        tall->setSizeFlags({SizeFlag::Fixed, SizeFlag::Fixed});
+        tall->setBounds(0, 0, 100, 1200);
+        scene.panel->setZoom(zoom);
+        scene.frame();
+        scene.frame();
+
+        controls::internal::ScrollBarBar *thumb=verticalThumb(scroll);
+
+        REQUIRE(thumb);
+
+        const Rect drawn=thumb->getCanvasBounds();
+        const Point press(drawn.x+drawn.w/2, drawn.y+2*int(zoom)+1);
+
+        scene.move(press.x, press.y);
+        scene.frame();
+        REQUIRE((HoveredControl == thumb));
+
+        const PointF grabbed=thumb->canvasPosToLocalF(PointF(press));
+
+        scene.press(0, true);
+        for(int step=1; step <= 4; ++step)
+        {
+            CAPTURE(step);
+            const Point to(press.x, press.y+step*7);
+
+            scene.move(to.x, to.y);
+            scene.frame();
+
+            const PointF held=thumb->canvasPosToLocalF(PointF(to));
+
+            // to within the unit the hold was floored to
+            CHECK(std::fabs(held.y-grabbed.y) < 1.0f);
+            CHECK(scroll->getVerticalScrollOffset() > 0);
+        }
+        scene.press(0, false);
+        scene.frame();
+    }
+}
+
+TEST_CASE("ZoomPanel gestures: a Resizer dragged in a zoomed panel keeps the grabbed edge under the cursor")
+{
+    for(float zoom : {1.0f, 1.5f, 2.0f})
+    {
+        CAPTURE(zoom);
+
+        Scene scene;
+        controls::ResizableControl *box=scene.panel->newChild<controls::ResizableControl>();
+
+        box->setSizeFlags({SizeFlag::Fixed, SizeFlag::Fixed});
+        // inside the panel at every zoom: canvas 80..280 x 90..250 at 2
+        box->setBounds(30, 40, 100, 80);
+        scene.panel->setZoom(zoom);
+        scene.frame();
+        scene.frame();
+
+        // the top edge's resizer (index 3), at its middle
+        controls::internal::Resizer *top=box->getResizer(3);
+
+        REQUIRE(top);
+        const Rect drawn=top->getCanvasBounds();
+        const Point press(drawn.x+drawn.w/2, drawn.y+drawn.h/2);
+
+        scene.move(press.x, press.y);
+        scene.frame();
+        REQUIRE((HoveredControl == top));
+
+        const PointF grabbed=top->canvasPosToLocalF(PointF(press));
+
+        scene.press(0, true);
+        // up 12 canvas units: 12/zoom content units
+        const Point to(press.x, press.y-12);
+
+        scene.move(to.x, to.y);
+        scene.frame();
+        CHECK(std::abs(box->getY()-(40-int(std::lround(12.0f/zoom)))) <= 1);
+        CHECK(std::abs(box->getHeight()-(80+int(std::lround(12.0f/zoom)))) <= 1);
+        CHECK(box->getY()+box->getHeight() == 120);
+
+        const PointF held=top->canvasPosToLocalF(PointF(to));
+
+        CHECK(std::fabs(held.y-grabbed.y) < 1.0f);
+        scene.press(0, false);
+        scene.frame();
+    }
 }
