@@ -69,6 +69,7 @@ GWENI_DEMO_TRANSPARENT(SelectableDemo)
 GWENI_DEMO_TRANSPARENT(SliderTextDemo)
 GWENI_DEMO_TRANSPARENT(DragNumberDemo)
 GWENI_DEMO_TRANSPARENT(VectorFieldDemo)
+GWENI_DEMO_TRANSPARENT(ZoomPanelDemo)
 GWENI_DEMO_TRANSPARENT(SeparatorDemo)
 GWENI_DEMO_TRANSPARENT(ShowcaseContainersDemo)
 GWENI_DEMO_TRANSPARENT(ShowcaseButtonsDemo)
@@ -154,6 +155,7 @@ template class ControlRegister<SelectableDemo>;
 template class ControlRegister<SliderTextDemo>;
 template class ControlRegister<DragNumberDemo>;
 template class ControlRegister<VectorFieldDemo>;
+template class ControlRegister<ZoomPanelDemo>;
 template class ControlRegister<SeparatorDemo>;
 template class ControlRegister<ShowcaseContainersDemo>;
 template class ControlRegister<ShowcaseButtonsDemo>;

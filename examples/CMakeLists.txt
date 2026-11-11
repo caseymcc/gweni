@@ -82,6 +82,8 @@ set(GWENI_DEMO_SOURCES
     demo/dragNumber.h
     demo/vectorField.cpp
     demo/vectorField.h
+    demo/zoomPanel.cpp
+    demo/zoomPanel.h
     demo/statsOverlay.cpp
     demo/statsOverlay.h
     demo/statusBar.cpp
