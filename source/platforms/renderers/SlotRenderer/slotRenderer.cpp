@@ -2878,14 +2878,14 @@ void SlotRenderer::measuredPenShifts(const gweni::Font &font, FontData &drawn, f
 
     // An SDF font lays a run out linearly in px, so measured at font.size and drawn
     // at px its pens differ by the scale alone. So does an LCD font's, the unhinted
-    // advances and kerning, to within its 1/3 px quantisation: only its lines move.
-    if(resolveFont(font, font.size).mode == TextMode::Sdf)
-        return;
-
-    const bool lcd=(drawn.mode == TextMode::LcdRGB) || (drawn.mode == TextMode::LcdBGR);
+    // advances and kerning, to within its 1/3 px quantisation. Their lines are not
+    // linear in px (an SDF step is rounded to a whole pixel), so only a run with a
+    // '\n' walks its lines, and only they move.
     const bool multiLine=(text.find('\n') != gweni::String::npos);
+    const bool measuredSdf=(resolveFont(font, font.size).mode == TextMode::Sdf);
+    const bool lcd=(drawn.mode == TextMode::LcdRGB) || (drawn.mode == TextMode::LcdBGR);
 
-    if(lcd && !multiLine)
+    if((measuredSdf || lcd) && !multiLine)
         return;
 
     std::pair<const FontKey, FontData> *drawFont=m_lastFont;
@@ -2906,8 +2906,10 @@ void SlotRenderer::measuredPenShifts(const gweni::Font &font, FontData &drawn, f
 
     // Line L of the run is drawn L*lineStep(drawn) below the first and measured
     // L*lineStep(measured) below it, which scaled is not the same distance: each
-    // line is moved by whole pixels to within half a pixel of the measured one.
-    // A run of one line moves nothing.
+    // line is moved by whole pixels to within half a pixel of the measured one,
+    // whichever mode either font is in. Whole pixels keep an SDF run's baselines on
+    // whole pixels, as layoutSdfText puts them, so a moved run is still a fresh
+    // layout. A run of one line moves nothing.
     if(!drawnLines.empty() && (drawnLines.back() > 0))
     {
         const float lineError=scale*lineStep(measured, font.size)-lineStep(drawn, px);
@@ -2917,7 +2919,8 @@ void SlotRenderer::measuredPenShifts(const gweni::Font &font, FontData &drawn, f
             lineShifts[i]=roundf(drawnLines[i]*lineError);
     }
 
-    if(lcd)
+    // the x pens of an SDF-measured or LCD run are the measured ones scaled
+    if(measuredSdf || lcd)
         return;
 
     textPens(measured, font.size, text, measuredPens, nullptr);

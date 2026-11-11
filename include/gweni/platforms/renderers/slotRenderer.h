@@ -917,12 +917,16 @@ private:
     //! ones scaled: hinted, whole-pixel at font.size. shifts gets, for each drawn glyph,
     //! the x that puts it at its measured pen position scaled, so the run ends where
     //! measureText sized it and a caret placed from measureText falls between the
-    //! glyphs it means; it is left empty where nothing moves. Nor is the drawn
-    //! font's lineStep the measured one scaled (a coverage font truncates its
-    //! descender to a whole pixel, an Sdf one rounds its step), so lineShifts gets, for each drawn glyph of a run with a '\n',
-    //! the whole device px down that puts its line's baseline within half a pixel of
-    //! the measured line's, scaled, relative to the first line; it is left empty
-    //! where no line moves, and always for a run of one line.
+    //! glyphs it means; it is left empty where nothing moves, and always for a run
+    //! measured in an Sdf font or drawn in an LCD one, whose pens are the measured
+    //! ones scaled. Nor is the drawn font's lineStep the measured one scaled (a
+    //! coverage font truncates its descender to a whole pixel, an Sdf one rounds its
+    //! step), so lineShifts gets, for each drawn glyph of a run with a '\n', measured
+    //! in any mode (an Sdf-measured run drawn as Sdf, or as coverage where px is
+    //! below the threshold, included), the whole device px down that puts its line's
+    //! baseline within half a pixel of the measured line's, scaled, relative to the
+    //! first line; it is left empty where no line moves, and always for a run of one
+    //! line.
     void measuredPenShifts(const gweni::Font &font, FontData &drawn, float px,
         const gweni::String &text, std::vector<float> &shifts, std::vector<float> &lineShifts);
     //! Lays text out in an Sdf font at px, in freetype-gl's convention (y up, the
