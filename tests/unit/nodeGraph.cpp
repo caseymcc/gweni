@@ -51,7 +51,19 @@
  *    more controls than they hold, runs one layout pass entering no more
  *    controls than they hold and their ancestors; onNodesMoved fires once, on
  *    the release, with getMovedNodes() the selection, and not at all for a
- *    press let go where it was.
+ *    press let go where it was;
+ *  - a link dragged out of a pin: the preview, a Link in the overlay layer
+ *    from the pin to the mouse in graph units, over every node; a drop on a
+ *    pin it may end on (an Input and an Output of two nodes, or what
+ *    setLinkFilter() says) firing onLinkRequested with the Output first, then
+ *    the link made and onLinkCreated, unless a handler vetoed; a drop on an
+ *    unfit pin or a node's body making nothing and firing nothing; a drop
+ *    where no node is firing onLinkDroppedOnEmpty with the graph position;
+ *    Escape ending it with nothing made; the preview's ids given back;
+ *  - hover: a link hit within Link::HoverDistance on screen of its curve and
+ *    not beyond (at zoom 1 and 2), drawn in LinkHover's colour; a pin's marker
+ *    a unit larger each way; a hover frame writing only the hovered item's
+ *    slots and the one it left.
  */
 #include "headlessFixture.h"
 
@@ -1230,4 +1242,346 @@ TEST_CASE("NodeGraph: a node deleted while it is dragged leaves the drag")
     scene.frame();
     CHECK(scene.movedCalls == 1);
     CHECK(scene.graph->getMovedNodes() == std::vector<controls::Node *>{scene.nodes[0]});
+}
+
+namespace
+{
+
+struct LinkDragScene: Scene, event::Handler
+{
+    LinkDragScene()
+    {
+        a=graph->addNode("A", Point(20, 40));
+        b=graph->addNode("B", Point(320, 60));
+        out=a->addPin(controls::PinDirection::Output, "Out");
+        otherOut=a->addPin(controls::PinDirection::Output, "Other");
+        in=b->addPin(controls::PinDirection::Input, "In");
+        graph->onLinkRequested.add(this, &LinkDragScene::requested);
+        graph->onLinkCreated.add(this, &LinkDragScene::created);
+        graph->onLinkDroppedOnEmpty.add(this, &LinkDragScene::droppedOnEmpty);
+        frame();
+        frame();
+    }
+
+    void requested(event::Info)
+    {
+        ++requests;
+        requestedFrom=graph->getRequestedFrom();
+        requestedTo=graph->getRequestedTo();
+        if(veto)
+            graph->vetoLink();
+    }
+
+    void created(event::Info info)
+    {
+        ++creations;
+        createdLink=gweni_cast<controls::Link>(info.control);
+    }
+
+    void droppedOnEmpty(event::Info info)
+    {
+        ++emptyDrops;
+        emptyPoint=info.point;
+        emptyPosition=graph->getDropPosition();
+        emptyPin=graph->getDropPin();
+    }
+
+    Point canvasOf(const PointF &graphPoint) const
+    {
+        const PointF at=graphToCanvas(graphPoint);
+
+        return Point(int(std::floor(at.x)), int(std::floor(at.y)));
+    }
+
+    Point anchorOf(controls::Pin *pin) const
+    {
+        return canvasOf(pin->getAnchor());
+    }
+
+    void move(const Point &at)
+    {
+        canvas->inputMouseMoved(at.x, at.y, 0, 0);
+    }
+
+    //! A drag out of \p pin to \p to, in a few steps, a frame each, held.
+    void dragFrom(controls::Pin *pin, const Point &to)
+    {
+        const Point from=anchorOf(pin);
+
+        move(from);
+        frame();
+        canvas->inputMouseButton(0, true);
+        frame();
+        for(int step=1; step <= 4; ++step)
+        {
+            move(Point(from.x+(to.x-from.x)*step/4, from.y+(to.y-from.y)*step/4));
+            frame();
+        }
+    }
+
+    void release()
+    {
+        canvas->inputMouseButton(0, false);
+        frame();
+    }
+
+    controls::Node *a=nullptr;
+    controls::Node *b=nullptr;
+    controls::Pin *out=nullptr;
+    controls::Pin *otherOut=nullptr;
+    controls::Pin *in=nullptr;
+    bool veto=false;
+    int requests=0;
+    int creations=0;
+    int emptyDrops=0;
+    controls::Pin *requestedFrom=nullptr;
+    controls::Pin *requestedTo=nullptr;
+    controls::Link *createdLink=nullptr;
+    Point emptyPoint;
+    PointF emptyPosition;
+    controls::Pin *emptyPin=nullptr;
+};
+
+}//namespace
+
+TEST_CASE("NodeGraph: a link dragged out of a pin and dropped on another is requested and made")
+{
+    LinkDragScene scene;
+    const size_t primitives=scene.renderer.livePrimitives.size();
+    const Point target=scene.anchorOf(scene.in);
+
+    scene.dragFrom(scene.out, target);
+
+    // the preview, over every node, ending at the mouse
+    controls::Link *preview=scene.graph->getPreviewLink();
+    REQUIRE(preview);
+    CHECK(scene.graph->draggingLink());
+    CHECK(preview->isPreview());
+    CHECK(preview->getParent() == scene.graph->getOverlayLayer());
+    CHECK(preview->getFrom() == scene.out);
+    CHECK(preview->getZIndex() > scene.b->getZIndex());
+    CHECK(scene.out->getLinks().empty());
+    CHECK(scene.graph->getLinks().empty());
+    const PointF end=scene.graph->canvasToGraph(PointF(target));
+    CHECK(preview->getFreeEnd().x == doctest::Approx(end.x));
+    CHECK(preview->getFreeEnd().y == doctest::Approx(end.y));
+    const auto segments=shownSegments(scene.renderer, preview);
+    REQUIRE(!segments.empty());
+    CHECK(near(segments.front().p0, linkPoint(scene.out->getAnchor())));
+    CHECK(near(segments.back().p1, linkPoint(end)));
+
+    scene.release();
+    CHECK(scene.requests == 1);
+    CHECK(scene.requestedFrom == scene.out);
+    CHECK(scene.requestedTo == scene.in);
+    CHECK(scene.creations == 1);
+    REQUIRE(scene.createdLink);
+    CHECK(scene.createdLink->getFrom() == scene.out);
+    CHECK(scene.createdLink->getTo() == scene.in);
+    CHECK(scene.createdLink->getStyle() == scene.graph->getNewLinkStyle());
+    CHECK(scene.graph->getLinks() == std::vector<controls::Link *>{scene.createdLink});
+    CHECK(scene.out->isConnected());
+    CHECK(scene.in->isConnected());
+    CHECK(!scene.graph->draggingLink());
+    CHECK(scene.graph->getPreviewLink() == nullptr);
+
+    // the preview's ids back: what is live now is the new link's
+    scene.frame();
+    CHECK(scene.renderer.livePrimitives.size() == primitives+ownIds(scene.createdLink).size());
+
+    // dragged from the input, the link still runs from the output
+    scene.graph->removeLink(scene.createdLink);
+    scene.frame();
+    scene.dragFrom(scene.in, scene.anchorOf(scene.otherOut));
+    scene.release();
+    CHECK(scene.requests == 2);
+    CHECK(scene.requestedFrom == scene.otherOut);
+    CHECK(scene.requestedTo == scene.in);
+    CHECK(scene.creations == 2);
+}
+
+TEST_CASE("NodeGraph: a vetoed or unfit link is not made")
+{
+    LinkDragScene scene;
+
+    scene.veto=true;
+    scene.dragFrom(scene.out, scene.anchorOf(scene.in));
+    scene.release();
+    CHECK(scene.requests == 1);
+    CHECK(scene.creations == 0);
+    CHECK(scene.graph->getLinks().empty());
+    CHECK(!scene.out->isConnected());
+
+    // two outputs may not be linked without a filter that says so
+    scene.veto=false;
+    scene.dragFrom(scene.out, scene.anchorOf(scene.otherOut));
+    scene.release();
+    CHECK(scene.requests == 1);
+    CHECK(scene.graph->getLinks().empty());
+
+    // a filter that refuses every pair
+    scene.graph->setLinkFilter([](controls::Pin *, controls::Pin *) { return false; });
+    scene.dragFrom(scene.out, scene.anchorOf(scene.in));
+    scene.release();
+    CHECK(scene.requests == 1);
+    CHECK(scene.graph->getLinks().empty());
+
+    // one that takes the pins in the order dragged when they are alike
+    scene.graph->setLinkFilter([](controls::Pin *from, controls::Pin *to) { return from != to; });
+    scene.dragFrom(scene.otherOut, scene.anchorOf(scene.out));
+    scene.release();
+    CHECK(scene.requests == 2);
+    CHECK(scene.requestedFrom == scene.otherOut);
+    CHECK(scene.requestedTo == scene.out);
+    CHECK(scene.creations == 1);
+
+    // a drop on a node's body, off its pins, makes and fires nothing
+    const int emptyDrops=scene.emptyDrops;
+    controls::Base *body=scene.b->getBody();
+    scene.dragFrom(scene.out, body->localPosToCanvas(Point(body->getWidth()/2, body->getHeight()/2)));
+    scene.release();
+    CHECK(scene.requests == 2);
+    CHECK(scene.emptyDrops == emptyDrops);
+}
+
+TEST_CASE("NodeGraph: a link dropped where no node is fires onLinkDroppedOnEmpty, Escape ends a drag")
+{
+    LinkDragScene scene;
+    const size_t primitives=scene.renderer.livePrimitives.size();
+
+    scene.graph->setZoom(1.5f);
+    scene.frame();
+
+    const PointF spot(200.0f, 150.0f);
+
+    scene.dragFrom(scene.out, scene.canvasOf(spot));
+    scene.release();
+    CHECK(scene.emptyDrops == 1);
+    CHECK(scene.emptyPin == scene.out);
+    CHECK(scene.emptyPosition.x == doctest::Approx(spot.x).epsilon(0.01));
+    CHECK(scene.emptyPosition.y == doctest::Approx(spot.y).epsilon(0.01));
+    CHECK(scene.emptyPoint.x == int(std::lround(scene.emptyPosition.x)));
+    CHECK(scene.emptyPoint.y == int(std::lround(scene.emptyPosition.y)));
+    CHECK(scene.graph->getLinks().empty());
+    CHECK(scene.requests == 0);
+
+    // Escape: no link, no event, the canvas's input back
+    scene.dragFrom(scene.out, scene.anchorOf(scene.in));
+    CHECK(scene.graph->draggingLink());
+    scene.canvas->inputModifierKey(keys::Escape, true);
+    scene.canvas->inputModifierKey(keys::Escape, false);
+    scene.frame();
+    CHECK(!scene.graph->draggingLink());
+    CHECK(scene.canvas->inputCapture() == nullptr);
+    scene.release();
+    CHECK(scene.requests == 0);
+    CHECK(scene.emptyDrops == 1);
+    CHECK(scene.graph->getLinks().empty());
+    scene.frame();
+    CHECK(scene.renderer.livePrimitives.size() == primitives);
+}
+
+TEST_CASE("NodeGraph: a link is hovered within HoverDistance of its curve, a hover frame writing it alone")
+{
+    LinkDragScene scene;
+    controls::Link *link=scene.graph->addLink(scene.out, scene.in, controls::LinkStyle::Straight);
+
+    for(float zoom : {1.0f, 2.0f})
+    {
+        CAPTURE(zoom);
+        scene.graph->setZoom(zoom);
+        scene.graph->setPan(PointF(0.0f, 0.0f));
+        scene.move(Point(0, 0));
+        scene.frame();
+        scene.frame();
+
+        // the middle of the link, and the way across it, on screen
+        const PointF p0=scene.graphToCanvas(scene.out->getAnchor());
+        const PointF p1=scene.graphToCanvas(scene.in->getAnchor());
+        const PointF middle((p0.x+p1.x)*0.5f, (p0.y+p1.y)*0.5f);
+        const float length=std::hypot(p1.x-p0.x, p1.y-p0.y);
+        const PointF across(-(p1.y-p0.y)/length, (p1.x-p0.x)/length);
+        auto at=[&](float off)
+        {
+            return Point(int(std::lround(middle.x+across.x*off-0.5f)), int(std::lround(middle.y+across.y*off-0.5f)));
+        };
+
+        scene.move(at(0.0f));
+        scene.frame();
+        CHECK(HoveredControl == link);
+        // its slots alone, in LinkHover's colour
+        const std::vector<size_t> ids=ownIds(link);
+        for(size_t id : scene.written())
+            CHECK(std::find(ids.begin(), ids.end(), id) != ids.end());
+        CHECK((shownSegments(scene.renderer, link).front().color == tokyonight::LinkHover.top));
+
+        scene.move(at(2.5f));
+        scene.frame();
+        CHECK(HoveredControl == link);
+        CHECK(scene.written().empty());
+
+        // past the distance it is the graph's
+        scene.move(at(6.0f));
+        scene.frame();
+        CHECK(HoveredControl != link);
+        for(size_t id : scene.written())
+            CHECK(std::find(ids.begin(), ids.end(), id) != ids.end());
+        CHECK((shownSegments(scene.renderer, link).front().color == tokyonight::PinOut.top));
+    }
+}
+
+TEST_CASE("NodeGraph: a hovered pin's marker grows, writing its slot and the left item's")
+{
+    LinkDragScene scene;
+    controls::Link *link=scene.graph->addLink(scene.out, scene.in, controls::LinkStyle::Straight);
+
+    scene.frame();
+
+    const std::vector<size_t> pinIds=ownIds(scene.out);
+    const Rect rest=scene.renderer.rounded[pinIds[0]].rect;
+
+    scene.move(scene.anchorOf(scene.out));
+    scene.frame();
+    CHECK(HoveredControl == scene.out);
+    CHECK(scene.written() == std::set<size_t>(pinIds.begin(), pinIds.end()));
+    const Rect hovered=scene.renderer.rounded[pinIds[0]].rect;
+    CHECK((hovered == Rect(rest.x-1, rest.y-1, rest.w+2, rest.h+2)));
+
+    // from the pin onto its link: the pin's slot and the link's
+    const PointF p0=scene.graphToCanvas(scene.out->getAnchor());
+    const PointF p1=scene.graphToCanvas(scene.in->getAnchor());
+    scene.move(Point(int((p0.x+p1.x)*0.5f), int((p0.y+p1.y)*0.5f)));
+    scene.frame();
+    CHECK(HoveredControl == link);
+    std::set<size_t> allowed(pinIds.begin(), pinIds.end());
+    const std::vector<size_t> linkIds=ownIds(link);
+    allowed.insert(linkIds.begin(), linkIds.end());
+    for(size_t id : scene.written())
+        CHECK(allowed.count(id) == 1);
+    CHECK((scene.renderer.rounded[pinIds[0]].rect == rest));
+}
+
+TEST_CASE("NodeGraph: a link drag ends when its pin is deleted, and with its graph")
+{
+    {
+        LinkDragScene scene;
+
+        scene.dragFrom(scene.out, scene.anchorOf(scene.in));
+        REQUIRE(scene.graph->draggingLink());
+        scene.a->removePin(scene.out);
+        CHECK(!scene.graph->draggingLink());
+        CHECK(scene.canvas->inputCapture() == nullptr);
+        scene.release();
+        CHECK(scene.requests == 0);
+    }
+    {
+        LinkDragScene scene;
+
+        scene.dragFrom(scene.out, scene.anchorOf(scene.in));
+        REQUIRE(scene.graph->draggingLink());
+        delete scene.graph;
+        scene.graph=nullptr;
+        CHECK(scene.canvas->inputCapture() == nullptr);
+        scene.frame();
+    }
 }

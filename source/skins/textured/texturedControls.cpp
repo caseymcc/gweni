@@ -1847,7 +1847,9 @@ void Link::update(renderer::Base *renderer, controls::Base *baseControl)
 
     Color color;
 
-    if(link->hasColor())
+    if(link->isHovered())
+        color=tokyonight::LinkHover.top;
+    else if(link->hasColor())
         color=link->getColor();
     else if(controls::Pin *from=link->getFrom())
         color=from->hasColor()?from->getColor():((from->getDirection() == controls::PinDirection::Input)?
@@ -1973,13 +1975,22 @@ void Pin::update(renderer::Base *renderer, controls::Base *baseControl)
 
     const tokyonight::Surface &surface=(pin->getDirection() == controls::PinDirection::Input)?
         tokyonight::PinIn:tokyonight::PinOut;
-    const Color color=pin->hasColor()?pin->getColor():surface.top;
+    Color color=pin->hasColor()?pin->getColor():surface.top;
     const gweni::Rect &origin=baseControl->getRenderBounds();
     gweni::Rect marker=pin->getMarkerRect();
     const int z=baseControl->getZIndex();
 
     marker.x+=origin.x;
     marker.y+=origin.y;
+
+    // hovered: a unit larger each way, a third of the way to white
+    if(pin->isHovered())
+    {
+        marker=gweni::Rect(marker.x-1, marker.y-1, marker.w+2, marker.h+2);
+        color=Color(static_cast<unsigned char>(color.r+(255-color.r)/3),
+            static_cast<unsigned char>(color.g+(255-color.g)/3),
+            static_cast<unsigned char>(color.b+(255-color.b)/3), color.a);
+    }
 
     if(pin->getShape() == controls::PinShape::Triangle)
     {

@@ -9,9 +9,11 @@
 #include <gweni/controls/canvas.h>
 #include <gweni/controls/label.h>
 #include <gweni/gweni.h>
+#include <gweni/inputHandler.h>
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 
 namespace gweni
 {
@@ -181,6 +183,17 @@ void Pin::setSide(PinSide side)
 // none points at this one while it goes.
 Pin::~Pin()
 {
+    // the graph found by its type alone: the node may be going already, and
+    // a graph that is going is no NodeGraph any more
+    for(Base *parent=getParent(); parent; parent=parent->getParent())
+    {
+        if(NodeGraph *graph=gweni_cast<NodeGraph>(parent))
+        {
+            graph->forgetPin(this);
+            break;
+        }
+    }
+
     std::vector<Link *> links;
 
     links.swap(m_links);
@@ -200,6 +213,17 @@ void Pin::onBoundsChanged(Rect oldBounds)
 {
     ParentClass::onBoundsChanged(oldBounds);
     linksMoved();
+}
+
+InputCapture *Pin::pressGesture(int button)
+{
+    // Space and a left drag pan the graph, as anywhere on it
+    if((button != 0) || isDisabled() || input::isKeyDown(keys::Space) || !m_node)
+        return nullptr;
+
+    NodeGraph *graph=m_node->getGraph();
+
+    return graph?graph->beginLinkDrag(this):nullptr;
 }
 
 void Pin::linksMoved()
@@ -461,7 +485,8 @@ Rect Node::getFrameRect() const
 GWENI_CONTROL_CONSTRUCTOR(Link)
 {
     setPlacement(Placement::Owner);
-    setMouseInputEnabled(false);
+    // hit near its curve only (getControlAt())
+    setMouseInputEnabled(true);
     setBounds(0, 0, 2*NodeGraph::GraphExtent, 2*NodeGraph::GraphExtent);
 }
 
@@ -483,6 +508,7 @@ void Link::detach(Pin *pin)
         m_from=nullptr;
     if(m_to == pin)
         m_to=nullptr;
+    m_pointsValid=false;
     addStateChange(StateChange_Background);
 }
 
@@ -492,6 +518,7 @@ void Link::setStyle(LinkStyle style)
         return;
 
     m_style=style;
+    m_pointsValid=false;
     addStateChange(StateChange_Background);
 }
 
@@ -526,7 +553,74 @@ void Link::setThickness(float thickness)
 
 void Link::endpointsMoved()
 {
+    m_pointsValid=false;
     addStateChange(StateChange_Background);
+}
+
+void Link::setFreeEnd(const PointF &point)
+{
+    if(m_freeEnd == point)
+        return;
+
+    m_freeEnd=point;
+    endpointsMoved();
+}
+
+// The link in its layer, the layer in the inner panel, the inner panel in
+// the graph's content, whose origin is the graph's
+PointF Link::graphOrigin() const
+{
+    PointF origin(0.0f, 0.0f);
+    const NodeGraph *graph=getGraph();
+
+    for(const Base *control=this; control && (control != graph); control=control->getActualParent())
+    {
+        origin.x+=float(control->getX());
+        origin.y+=float(control->getY());
+    }
+    return origin;
+}
+
+// The nearest point of each segment, as the line style measures it
+float Link::distanceTo(const PointF &point) const
+{
+    std::vector<PointF> points;
+
+    getPoints(points);
+
+    float nearest=std::numeric_limits<float>::max();
+
+    for(size_t i=0; i+1 < points.size(); ++i)
+    {
+        const PointF &a=points[i];
+        const PointF &b=points[i+1];
+        const float dx=b.x-a.x;
+        const float dy=b.y-a.y;
+        const float length=dx*dx+dy*dy;
+        float t=(length > 0.0f)?((point.x-a.x)*dx+(point.y-a.y)*dy)/length:0.0f;
+
+        t=std::min(std::max(t, 0.0f), 1.0f);
+        nearest=std::min(nearest, std::hypot(a.x+dx*t-point.x, a.y+dy*t-point.y));
+    }
+    return nearest;
+}
+
+Base *Link::getControlAt(int x, int y, bool bOnlyIfMouseEnabled)
+{
+    countHitTestVisit();
+    if(hidden() || m_preview || (bOnlyIfMouseEnabled && !getMouseInputEnabled()))
+        return nullptr;
+
+    const NodeGraph *graph=getGraph();
+
+    if(!graph)
+        return nullptr;
+
+    // the middle of the unit the point is in, in graph units
+    const PointF origin=graphOrigin();
+    const PointF point(float(x)+0.5f+origin.x, float(y)+0.5f+origin.y);
+
+    return (distanceTo(point)*graph->zoom() <= HoverDistance)?this:nullptr;
 }
 
 NodeGraph *Link::getGraph() const
@@ -539,17 +633,32 @@ NodeGraph *Link::getGraph() const
     return nullptr;
 }
 
+// A pin's end is its anchor, leaving it along its side's way out; a
+// preview's free end is approached as an opposite pin would be.
 void Link::getPoints(std::vector<PointF> &points) const
 {
     points.clear();
-    if(!m_from || !m_to)
+
+    const Pin *pinA=m_from?m_from:m_to;
+    const Pin *pinB=m_from?m_to:nullptr;
+
+    if(!pinA || (!pinB && !m_preview))
         return;
 
-    const PointF a=m_from->getAnchor();
-    const PointF b=m_to->getAnchor();
+    const PointF a=pinA->getAnchor();
+    const PointF b=pinB?pinB->getAnchor():m_freeEnd;
     // each end's way out of its pin
-    const float outA=m_from->outward();
-    const float outB=m_to->outward();
+    const float outA=pinA->outward();
+    const float outB=pinB?pinB->outward():-outA;
+    const NodeGraph *graph=getGraph();
+    const float zoom=graph?graph->zoom():1.0f;
+
+    if(m_pointsValid && (m_pointsFrom == a) && (m_pointsTo == b) && (m_pointsZoom == zoom))
+    {
+        points=m_points;
+        return;
+    }
+
     auto add=[&](const PointF &point)
     {
         if(points.empty() || !(points.back() == point))
@@ -569,8 +678,6 @@ void Link::getPoints(std::vector<PointF> &points) const
         const float handle=std::max(LinkStub, 0.5f*std::fabs(b.x-a.x));
         const PointF c0(a.x+outA*handle, a.y);
         const PointF c1(b.x+outB*handle, b.y);
-        const NodeGraph *graph=getGraph();
-        const float zoom=graph?graph->zoom():1.0f;
         auto distance=[](const PointF &p, const PointF &q) { return std::hypot(q.x-p.x, q.y-p.y); };
         const float length=(distance(a, c0)+distance(c0, c1)+distance(c1, b))*zoom;
         const int segments=std::min(std::max(int(std::lround(length/LinkCurveStep)), LinkCurveMin),
@@ -619,11 +726,141 @@ void Link::getPoints(std::vector<PointF> &points) const
     }
     }
     add(b);
+
+    m_points=points;
+    m_pointsValid=true;
+    m_pointsFrom=a;
+    m_pointsTo=b;
+    m_pointsZoom=zoom;
 }
 
 
 ///////////////////////////////////////////////////////////////////////////
 // NodeGraph
+
+// A link dragged out of a pin, from the press to its release, with the
+// canvas's input: the preview, a Link in the overlay layer, follows the
+// mouse; the release drops it (NodeGraph::dropLink()), Escape ends it with
+// nothing made, and the wheel zooms about the mouse as over the graph.
+class NodeGraph::LinkDrag: public InputCapture
+{
+public:
+
+    explicit LinkDrag(NodeGraph *graph): m_graph(graph) {}
+
+    ~LinkDrag() override { end(); }
+
+    void start(Canvas *canvas, Pin *pin)
+    {
+        m_canvas=canvas;
+        m_pin=pin;
+        m_mouse=input::getMousePosition();
+
+        Link *preview=m_graph->m_overlayLayer->newChild<Link>();
+
+        preview->m_from=pin;
+        preview->m_preview=true;
+        preview->m_style=m_graph->m_newLinkStyle;
+        preview->setMouseInputEnabled(false);
+        preview->setFreeEnd(m_graph->canvasToGraph(PointF(m_mouse)));
+        m_preview=preview;
+    }
+
+    bool active() const { return m_canvas && (m_canvas->inputCapture() == this); }
+    Link *preview() const { return m_preview; }
+
+    void captureMouseMoved(int x, int y, int /*deltaX*/, int /*deltaY*/) override
+    {
+        m_mouse=Point(x, y);
+        follow();
+    }
+
+    void captureMouseButton(int button, bool down) override
+    {
+        if((button != 0) || down)
+            return;
+
+        Canvas *canvas=m_canvas;
+        Pin *pin=m_pin;
+        const Point mouse=m_mouse;
+        const Point at=input::getMousePosition();
+
+        end();
+        if(pin)
+            m_graph->dropLink(pin, mouse);
+        // the hover follows the mouse again, from where it was at the press
+        if(canvas && ((at.x != mouse.x) || (at.y != mouse.y)))
+            canvas->inputMouseMoved(mouse.x, mouse.y, mouse.x-at.x, mouse.y-at.y);
+    }
+
+    void captureMouseWheel(int delta) override
+    {
+        if(m_graph->isDisabled())
+            return;
+
+        m_graph->wheelAt(delta, m_mouse);
+        follow();
+    }
+
+    void captureKey(int key, bool down) override
+    {
+        if(down && (key == keys::Escape))
+            end();
+    }
+
+    void captureCanvasDeleted(Canvas * /*canvas*/) override { m_canvas=nullptr; }
+
+    //! The graph is going: the canvas's input back, the preview going with
+    //! the overlay layer.
+    void abandon()
+    {
+        if(active())
+            m_canvas->setInputCapture(nullptr);
+        m_canvas=nullptr;
+        m_pin=nullptr;
+        // the pin may go before it, and never had it as a link
+        if(m_preview)
+            m_preview->m_from=nullptr;
+        m_preview=nullptr;
+    }
+
+    //! A pin deleted mid-drag ends it.
+    void forget(Pin *pin)
+    {
+        if(pin == m_pin)
+            end();
+    }
+
+    //! Gives the canvas its input back and the preview's ids.
+    void end()
+    {
+        if(active())
+            m_canvas->setInputCapture(nullptr);
+        m_canvas=nullptr;
+        m_pin=nullptr;
+        if(m_preview)
+        {
+            // it never was the pin's link
+            m_preview->m_from=nullptr;
+            m_preview->delayedDelete();
+            m_preview=nullptr;
+        }
+    }
+
+private:
+
+    void follow()
+    {
+        if(m_preview)
+            m_preview->setFreeEnd(m_graph->canvasToGraph(PointF(m_mouse)));
+    }
+
+    NodeGraph *m_graph;
+    Canvas *m_canvas=nullptr;
+    Pin *m_pin=nullptr;
+    Link *m_preview=nullptr;
+    Point m_mouse;
+};
 
 // The layers fill the inner panel, each owner-placed at its top-left; the
 // inner panel is placed GraphExtent up and left of the content's origin
@@ -637,6 +874,143 @@ GWENI_CONTROL_CONSTRUCTOR(NodeGraph)
     for(Base *layer : {static_cast<Base *>(m_linkLayer), static_cast<Base *>(m_nodeLayer),
         static_cast<Base *>(m_overlayLayer)})
         layer->setPlacement(Placement::Owner);
+
+    m_linkDrag=std::make_unique<LinkDrag>(this);
+}
+
+// The drag's preview goes with the overlay layer, after this; the drag gives
+// the canvas's input back first.
+NodeGraph::~NodeGraph()
+{
+    if(m_linkDrag)
+        m_linkDrag->abandon();
+}
+
+void NodeGraph::setLinkFilter(std::function<bool(Pin *from, Pin *to)> filter)
+{
+    m_linkFilter=std::move(filter);
+}
+
+bool NodeGraph::canLink(Pin *a, Pin *b, Pin **from, Pin **to) const
+{
+    if(!a || !b || (a == b) || !a->getNode() || !b->getNode() || (a->getNode()->getGraph() != this)
+        || (b->getNode()->getGraph() != this))
+        return false;
+
+    // the Output first; two of one direction in the order dragged
+    Pin *first=a;
+    Pin *second=b;
+
+    if((a->getDirection() == PinDirection::Input) && (b->getDirection() == PinDirection::Output))
+        std::swap(first, second);
+
+    const bool allowed=m_linkFilter?m_linkFilter(first, second)
+        :((first->getDirection() != second->getDirection()) && (first->getNode() != second->getNode()));
+
+    if(allowed)
+    {
+        if(from)
+            *from=first;
+        if(to)
+            *to=second;
+    }
+    return allowed;
+}
+
+bool NodeGraph::draggingLink() const
+{
+    return m_linkDrag->active();
+}
+
+Link *NodeGraph::getPreviewLink() const
+{
+    return m_linkDrag->active()?m_linkDrag->preview():nullptr;
+}
+
+void NodeGraph::cancelLinkDrag()
+{
+    m_linkDrag->end();
+}
+
+void NodeGraph::forgetPin(Pin *pin)
+{
+    m_linkDrag->forget(pin);
+}
+
+InputCapture *NodeGraph::beginLinkDrag(Pin *pin)
+{
+    Canvas *canvas=getCanvas();
+
+    if(!canvas || isDisabled() || m_linkDrag->active() || !pin->getNode() || (pin->getNode()->getGraph() != this))
+        return nullptr;
+
+    m_linkDrag->start(canvas, pin);
+    return m_linkDrag.get();
+}
+
+Pin *NodeGraph::pinAt(const Point &at)
+{
+    Canvas *canvas=getCanvas();
+
+    for(Base *control=canvas?canvas->getControlAt(at.x, at.y):nullptr; control; control=control->getParent())
+    {
+        if(Pin *pin=gweni_cast<Pin>(control))
+            return (pin->getNode() && (pin->getNode()->getGraph() == this))?pin:nullptr;
+        if(control == this)
+            break;
+    }
+    return nullptr;
+}
+
+bool NodeGraph::emptyAt(const Point &at)
+{
+    Canvas *canvas=getCanvas();
+
+    for(Base *control=canvas?canvas->getControlAt(at.x, at.y):nullptr; control; control=control->getParent())
+    {
+        if(gweni_cast<Node>(control))
+            return false;
+        if(control == this)
+            return true;
+    }
+    return false;
+}
+
+void NodeGraph::dropLink(Pin *pin, const Point &at)
+{
+    if(Pin *target=pinAt(at))
+    {
+        Pin *from=nullptr;
+        Pin *to=nullptr;
+
+        if(!canLink(pin, target, &from, &to))
+            return;
+
+        m_linkVetoed=false;
+        m_requestedFrom=from;
+        m_requestedTo=to;
+        onLinkRequested.call(this);
+        m_requestedFrom=nullptr;
+        m_requestedTo=nullptr;
+        if(m_linkVetoed)
+            return;
+
+        if(Link *link=addLink(from, to, m_newLinkStyle))
+            onLinkCreated.call(this, event::Info(link));
+        return;
+    }
+
+    if(!emptyAt(at))
+        return;
+
+    m_dropPosition=canvasToGraph(PointF(at));
+    m_dropPin=pin;
+
+    event::Info info(this);
+
+    info.point=Point(int(std::lround(m_dropPosition.x)), int(std::lround(m_dropPosition.y)));
+    onLinkDroppedOnEmpty.call(this, info);
+    m_dropPin=nullptr;
 }
 
 Node *NodeGraph::addNode(const String &title, const Point &position)

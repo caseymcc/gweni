@@ -12,6 +12,8 @@
 #include <gweni/controls/zoomPanel.h>
 
 #include <cstdint>
+#include <functional>
+#include <memory>
 #include <vector>
 
 namespace gweni
@@ -191,6 +193,9 @@ public:
     ~Pin() override;
 
     void onBoundsChanged(gweni::Rect oldBounds) override;
+    //! A left press (without Space held, which pans) drags a new link out of
+    //! the pin: the graph's link drag (NodeGraph::draggingLink()).
+    InputCapture *pressGesture(int button) override;
 
 protected:
 
@@ -245,6 +250,8 @@ public:
     static constexpr float LinkStub=20.0f;
     //! The most segments any style draws (the renderer's slots).
     static constexpr int MaxSegments=LinkCurveMax;
+    //! How near its curve, in canvas units on screen, the mouse hovers a link.
+    static constexpr float HoverDistance=4.0f;
 
     ~Link() override;
 
@@ -282,6 +289,23 @@ public:
     //! An end moved: the segments are drawn again.
     void endpointsMoved();
 
+    //! The link's own top-left in graph units: a point p of the link's own
+    //! coordinates is the graph point p plus this.
+    PointF graphOrigin() const;
+    //! The distance from the graph point \p point to the link's curve, in
+    //! graph units; a huge value for a link with no curve.
+    float distanceTo(const PointF &point) const;
+
+    //! A link being dragged out of a pin: it ends at a free point, not a pin,
+    //! takes no mouse input and is no pin's link (NodeGraph::getPreviewLink()).
+    bool isPreview() const { return m_preview; }
+    //! The preview's free end, in graph units.
+    const PointF &getFreeEnd() const { return m_freeEnd; }
+
+    //! Hit only within HoverDistance on screen of the curve: the link covers
+    //! its whole layer, and anywhere else is the graph's, or another link's.
+    Base *getControlAt(int x, int y, bool bOnlyIfMouseEnabled=true) override;
+
 protected:
 
     friend class NodeGraph;
@@ -289,6 +313,8 @@ protected:
 
     //! The link leaves \p pin (deleted, or the link removed).
     void detach(Pin *pin);
+    //! The preview's free end moved (graph units).
+    void setFreeEnd(const PointF &point);
 
     Pin *m_from=nullptr;
     Pin *m_to=nullptr;
@@ -298,6 +324,17 @@ protected:
     float m_thickness=2.0f;
     uint64_t m_userId=0;
     void *m_userData=nullptr;
+    bool m_preview=false;
+    PointF m_freeEnd;
+
+    //! getPoints()'s last polyline and what it was worked out from, so a
+    //! hit-test and the renderer share it until an end, the style or the zoom
+    //! moves
+    mutable std::vector<PointF> m_points;
+    mutable bool m_pointsValid=false;
+    mutable PointF m_pointsFrom;
+    mutable PointF m_pointsTo;
+    mutable float m_pointsZoom=0.0f;
 };
 
 //! A node of a NodeGraph: a title bar, a row of pins, inputs down the left
@@ -431,6 +468,8 @@ public:
 
 public:
 
+    ~NodeGraph() override;
+
     //! How far, in graph units, the graph reaches from its origin each way.
     static constexpr int GraphExtent=1<<16;
     //! The grid's finest step, in graph units.
@@ -483,6 +522,44 @@ public:
     //! nothing. An app's own setGraphPosition() fires nothing.
     event::Caller onNodesMoved;
 
+    //! Which pins a link dragged out of one may end on: \p filter(from, to)
+    //! with \p from the Output end (the pin dragged from when both are of one
+    //! direction). Without one, an Input and an Output of two nodes.
+    void setLinkFilter(std::function<bool(Pin *from, Pin *to)> filter);
+    //! Whether a link dragged from \p a may end on \p b, and the ends it would
+    //! have: \p from and \p to, the Output first.
+    bool canLink(Pin *a, Pin *b, Pin **from=nullptr, Pin **to=nullptr) const;
+
+    //! The style of a link the user drags out (Bezier by default).
+    void setNewLinkStyle(LinkStyle style) { m_newLinkStyle=style; }
+    LinkStyle getNewLinkStyle() const { return m_newLinkStyle; }
+
+    //! Whether a link is being dragged out of a pin, and its preview (in the
+    //! overlay layer, ending at the mouse), or null.
+    bool draggingLink() const;
+    Link *getPreviewLink() const;
+    //! Ends a link drag as Escape does: no link, no event.
+    void cancelLinkDrag();
+
+    //! Fired when a dragged link is dropped on a pin it may end on
+    //! (canLink()), before the link is made: getRequestedFrom() and
+    //! getRequestedTo() are its ends, and a handler that calls vetoLink()
+    //! keeps it from being made.
+    event::Caller onLinkRequested;
+    void vetoLink() { m_linkVetoed=true; }
+    Pin *getRequestedFrom() const { return m_requestedFrom; }
+    Pin *getRequestedTo() const { return m_requestedTo; }
+    //! Fired after a link the user dragged out is made, \p info.control the
+    //! Link.
+    event::Caller onLinkCreated;
+    //! Fired when a dragged link is dropped on the graph where no node is,
+    //! \p info.point the drop in whole graph units: getDropPosition() is the
+    //! exact point and getDropPin() the pin it was dragged from. Nothing is
+    //! made.
+    event::Caller onLinkDroppedOnEmpty;
+    const PointF &getDropPosition() const { return m_dropPosition; }
+    Pin *getDropPin() const { return m_dropPin; }
+
     //! The graph's step between two grid lines at the current zoom.
     float gridStep() const;
 
@@ -518,6 +595,30 @@ protected:
     void endNodeDrag();
     //! A node deleted is dropped from the drag and the moved nodes.
     void forgetNode(Node *node);
+
+    friend class Pin;
+    class LinkDrag;
+
+    //! A pin deleted ends a link drag out of it.
+    void forgetPin(Pin *pin);
+    //! A left press on \p pin: the link drag, or null if the pin is not this
+    //! graph's.
+    InputCapture *beginLinkDrag(Pin *pin);
+    //! The pin under the canvas point \p at, or null.
+    Pin *pinAt(const Point &at);
+    //! Whether the canvas point \p at is on the graph where no node is.
+    bool emptyAt(const Point &at);
+    //! The drop of a link dragged out of \p pin at the canvas point \p at.
+    void dropLink(Pin *pin, const Point &at);
+
+    std::unique_ptr<LinkDrag> m_linkDrag;
+    std::function<bool(Pin *, Pin *)> m_linkFilter;
+    LinkStyle m_newLinkStyle=LinkStyle::Bezier;
+    bool m_linkVetoed=false;
+    Pin *m_requestedFrom=nullptr;
+    Pin *m_requestedTo=nullptr;
+    PointF m_dropPosition;
+    Pin *m_dropPin=nullptr;
 
     struct DraggedNode
     {

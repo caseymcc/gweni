@@ -711,8 +711,8 @@ public:
 };
 
 // A Link: one slot per segment of its polyline (Link::getPoints()), a drawLine
-// at the link's z in its colour (the from pin's unless it has one) and its
-// thickness, each drawn with its neighbours, so its joints are blended once. The
+// at the link's z in its colour (LinkHover's top while hovered, else the link's
+// own or the from pin's) and its thickness, each drawn with its neighbours, so its joints are blended once. The
 // slots are taken when the link is first drawn, as many as its style can draw
 // (Link::MaxSegments for a Bezier, 5 for an Orthogonal link, 1 for a Straight
 // one), so the count a zoom picks for a Bezier never takes a slot after its
@@ -781,7 +781,8 @@ public:
 // its side's radius) or a square (PinIn's or PinOut's radius), filled while
 // connected and otherwise a ring of their borderWidth around their bottom
 // fill; a triangle pointing right (icon kind 7, or 8, its outline, until it is
-// connected).
+// connected). Hovered, the marker is a unit larger each way and its colour a
+// third of the way to white.
 class Pin:public textured::ControlRegister<Pin>
 {
 public:
