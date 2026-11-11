@@ -96,9 +96,12 @@ struct Scene
 
         gweni::renderer::SlotRenderer &renderer=gweni::test::gpuRenderer();
 
-        // flush the released slots; the canvas's clip, offset and scale are
-        // reset before the next case (test::resetDrawState), and the next
-        // Scene's canvas sets its own
+        // scale 1 for the next Scene in this case: its skin loads its font at the
+        // renderer's scale, and it must be the one the skin above loaded at, or
+        // freeFont at the canvas's scale takes the owner from the fixture's
+        // OpenSans 11 (test::resetDrawState puts the clip and offset back, and
+        // the scale, before the next case)
+        renderer.setScale(1.0f);
         renderer.begin();
         renderer.end();
     }
