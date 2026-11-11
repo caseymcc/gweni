@@ -1378,6 +1378,11 @@ two programs and the draws. What follows describes both together:
   square corner's kink). A pixel-aligned straight edge is therefore 1 inside and 0
   outside: the outermost pixel is fully covered, two rects that abut meet with no
   seam, and an N px border is exactly N rows; only a corner arc is partly covered.
+  A pixel the shape leaves uncovered (outside a corner arc, less than half an 8-bit
+  step of alpha) is discarded and writes no depth, so a slot behind it drawn after
+  it still shows there (a node graph's link made after the pin whose circle it ends
+  in, `tests/uncoveredDepth.cpp`); a partly covered arc pixel still writes it, so
+  there the result depends on slot order, as for an image's partly transparent texel.
   **The edge mask**: `drawRoundedRect`'s overload with an `edges` argument (a
   combination of `renderer::RoundedEdge`) makes each corner it names square and keeps
   the border off each side it names, as a tab joined to its page is square and

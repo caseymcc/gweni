@@ -602,7 +602,9 @@
  *                 press in one frame) included; a button in the canvas's
  *                 bottom-right corner gets its tooltip above it, inside the
  *                 canvas; and with a Menu open over where the box goes, the
- *                 box's pixels are the ones it has with no Menu. One line
+ *                 box's pixels (all but its corners outside the rounded
+ *                 arcs, where the Menu shows) are the ones it has with no
+ *                 Menu. One line
  *                   tooltip waits=yes|no shown=yes|no ... over_menu=yes|no
  *                 reports the checks. Exits non-zero if any check is no.
  *    context-menu Base::setContextMenu on ContextMenuDemo, right-clicks
@@ -7952,7 +7954,15 @@ static void checkToolTip(Session &s, const std::string &shotDir, InteractionChec
     const gweni::Rect tipRect=canvasRectOf(box);
     const bool overlaps=menu->visible() && menuRect.x < tipRect.x+tipRect.w && tipRect.x < menuRect.x+menuRect.w
         && menuRect.y < tipRect.y+tipRect.h && tipRect.y < menuRect.y+menuRect.h;
-    const size_t covered=differencesIn(s, alone, overMenu, tipRect);
+    // the box's own pixels: what is under it shows in its corners, outside
+    // its rounded arcs, which write nothing
+    const int radius=static_cast<int>(std::ceil(gweni::skin::textured::tokyonight::Tooltip.radius));
+    size_t covered=differencesIn(s, alone, overMenu, tipRect);
+
+    for(const gweni::Point &corner : {gweni::Point(tipRect.x, tipRect.y),
+        gweni::Point(tipRect.x+tipRect.w-radius, tipRect.y), gweni::Point(tipRect.x, tipRect.y+tipRect.h-radius),
+        gweni::Point(tipRect.x+tipRect.w-radius, tipRect.y+tipRect.h-radius)})
+        covered-=differencesIn(s, alone, overMenu, gweni::Rect(corner.x, corner.y, radius, radius));
     const size_t menuDrawn=differencesIn(s, alone, overMenu, menuRect);
     checks.check("over_menu", canvas->toolTipShown() && overlaps && covered == 0 && menuDrawn > 0
         && box->getZIndex() > highestZOutside(canvas, box),

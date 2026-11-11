@@ -651,9 +651,11 @@ void main()
     // nor does a pixel an icon or a line leaves uncovered (a rule's quad reaches past
     // its control, over its neighbours, and a line's quad is its bounding box), whose
     // coverage beside a stroke's edge is 0 give or take rounding: less than half a
-    // step of 8-bit alpha changes no pixel
+    // step of 8-bit alpha changes no pixel; nor one a rounded rect (styles 4, 6, 7)
+    // leaves uncovered, outside its corner arcs, so a slot behind it drawn after it (a
+    // node graph's link made after the pin it ends on) still shows around the arcs
     if(clipped || lineDeferred || offGrid || (ShaderType == 2u && FragColor.a <= 0.0)
-        || ((ShaderType == 3u || ShaderType == 5u) && FragColor.a < 0.5/255.0))
+        || (ShaderType >= 3u && ShaderType <= 7u && FragColor.a < 0.5/255.0))
         discard;
     // every other style writes the depth the fixed function would
     gl_FragDepth = depth;
