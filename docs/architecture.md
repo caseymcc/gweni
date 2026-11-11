@@ -2256,10 +2256,18 @@ two programs and the draws. What follows describes both together:
   (`setTextRunFont`), unless a `loadFont` gives it an owner again first. That
   matters most for an SDF atlas, which every size of the face shares, but holds in
   every mode. A font loaded only by a use (`ensureFont`, from `renderText` or
-  `measureText`) has no owner, and it too goes when its last run leaves it, so the
-  sizes a zoom or a canvas scale passes through do not stay (a use is no owner: a
-  freed font used again still goes with its last run). One no run was ever laid out
-  in (a measure-only font) stays cached until a `freeFont` asks for it.
+  `measureText`) has no owner. Once its last run has left it, it is kept for
+  `SlotRenderer::kIdleFontFlushes` (60) flushes, about a second, and then erased by
+  the next `flush()` (`FontData::idleSince`, `eraseIdleFonts`) unless a run is laid
+  out in it or a `loadFont` owns it before then: so the sizes a zoom or a canvas
+  scale passes through do not stay, while a size a zoom wiggles back across, a
+  scale cycled through, or a font a dialog closed and opened again draws in is not
+  rasterised again. (Erased at once, as a freed one, it cost the bench's `build`
+  scene its primer's bold font, rasterised again in the measured frame, 19 times the
+  update phase's instructions, and its `scale` scene a re-rasterised atlas at every
+  scale change, three times the render phase's.) A freed font used again is a use's
+  from then on. One no run was ever laid out in (a measure-only font) stays cached
+  until a `freeFont` asks for it.
   `setTextAA` is the one place a font goes with runs in it: it takes the coverage
   fonts' runs off every list (they keep their slots and draw nothing until their next
   `renderText` lays them out in the new mode) and loads each again with the owners it
@@ -2381,13 +2389,15 @@ two programs and the draws. What follows describes both together:
   ends where the layout sized it. So 11 px text at 1.5 is drawn from the 17 px atlas,
   not a 16.5 px one, and a continuous zoom (a ZoomPanel) on coverage text passes
   through whole sizes only, at most one atlas per size below the SDF threshold per
-  face, each erased when its last run leaves it (above). An LCD atlas keeps the exact
+  face, each erased `kIdleFontFlushes` flushes after its last run left it (above). An LCD atlas keeps the exact
   `px`: its glyph images are rasterised at the 1/3 px phases of the unhinted pens at
   that size, which a whole-px shift would not keep. Positions, rects, lines and SDF
   text stay continuous. At a whole canvas scale nothing changes; at 1.25 and 1.5 the
   coverage text's pixels moved (no checked-in sample is at a fractional scale).
   `tests/zoomTextAtlases.cpp` sweeps a ZoomPanel 0.25 -> 4 -> 0.25 in 200 steps (16
-  whole sizes and the SDF atlas, at most one font more at once, none after).
+  whole sizes and the SDF atlas, never more than one font more per size passed
+  through, none left once 60 frames have passed, and a size come back to a few frames
+  later uploading nothing).
 - **Text at a canvas scale.** `renderText` resolves and lays a run out at
   `px = font.size*scale()` (11 px UI text at scale 2 is 22 px, in the SDF range), from
   its origin snapped to a whole device pixel by `translate()`; a `TextRun` keeps the
@@ -2511,8 +2521,9 @@ and every device px hits the same control (`controltest_zoom_panel`).
   and every text run re-laid at the new px on a zoom (`renderText`'s run cache keys
   on px), so it writes the subtree's slots and nothing outside it, and the next frame
   writes nothing. A zoom inside the SDF range uploads nothing to an atlas; one that
-  crosses coverage sizes rasterises the whole-px size it reaches, and the size it
-  left goes (see "Coverage sizes are whole device px"). So a frame is O(the panel's
+  crosses coverage sizes rasterises the whole-px size it reaches (unless it was
+  drawn in the last second), and the size it left goes a second later (see
+  "Coverage sizes are whole device px"). So a frame is O(the panel's
   subtree), not O(the change): a pan moves every slot on the CPU, which a backend
   per-region transform would make free (not done). `tests/unit/zoomPanelRender.cpp`,
   `zoomPanelInput.cpp`, `zoomPanelGestures.cpp`, `tests/zoomTextAtlases.cpp` and

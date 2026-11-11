@@ -342,13 +342,21 @@ TEST_CASE("SDF text: a freed atlas used again draws on until its last run leaves
 
     CHECK(renderer.getFontAtlasHandle(at36) == atlas);
 
-    // a use is no owner: the run leaving it takes the atlas with it
+    // a use is no owner: the run leaving it, the atlas stays for
+    // kIdleFontFlushes flushes and then goes
     renderer.releaseTextPrimitive(textId);
-    CHECK(renderer.getFontAtlasHandle(at36) == 0);
-    CHECK(!renderer.textureExists(atlas));
-
+    for(uint64_t flush=0; flush+1 < SlotRenderer::kIdleFontFlushes; ++flush)
+    {
+        renderer.begin();
+        renderer.end();
+    }
+    CHECK(renderer.getFontAtlasHandle(at36) == atlas);
     renderer.begin();
     renderer.end();
+    renderer.begin();
+    renderer.end();
+    CHECK(renderer.getFontAtlasHandle(at36) == 0);
+    CHECK(!renderer.textureExists(atlas));
     renderer.freeFont(at36);
     CHECK(renderer.getFontAtlasHandle(at36) == 0);
 }

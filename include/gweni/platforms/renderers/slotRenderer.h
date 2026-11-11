@@ -232,14 +232,20 @@ struct FontData
     bool drawListStale=true;
     //! Successful loadFont calls not yet matched by a freeFont. A font loaded only
     //! by a use (ensureFont, from renderText or measureText) has none, and is
-    //! erased when its last run leaves it (setTextRunFont), so the sizes a zoom
-    //! or a canvas scale passes through do not stay.
+    //! erased once it has had no run for SlotRenderer::kIdleFontFlushes flushes
+    //! (idleSince), so the sizes a zoom or a canvas scale passes through do not
+    //! stay, while one used again soon is not rasterised again.
     int owners=0;
     //! Freed by its last owner (or by a freeFont with none) while runs are still
-    //! laid out in it: the atlas is kept, every run drawing, until its last run
-    //! leaves it (setTextRunFont), unless a load before then gives it an owner (a
-    //! use does not: it goes with its last run all the same).
+    //! laid out in it: the atlas is kept, every run drawing, and it is erased when
+    //! its last run leaves it (setTextRunFont), unless a use or a load before then
+    //! takes it back (a use leaves it to idleSince's rule).
     bool freed=false;
+    //! For a font no loadFont holds whose last run left it: the flush count
+    //! (SlotRenderer's, plus one) then, so flush() erases it once
+    //! kIdleFontFlushes have passed with no run or owner taking it back; 0
+    //! while it has a run or an owner, or never had a run (a measure-only font).
+    uint64_t idleSince=0;
     //! The face's file was missing or unreadable, so textureFont is the built-in
     //! fallback font (SlotRenderer::setFallbackFont), loaded from memory into this
     //! manager's atlas; loadFont reports it as Font::Status::LoadedFallback.
@@ -402,8 +408,13 @@ public:
     //! Bytes per texel of a loaded font's glyph atlas (1: coverage or distance,
     //! 3: subpixel coverage), 0 if the font is not loaded
     size_t getFontAtlasDepth(const gweni::Font &font) const;
-    //! Fonts loaded and not freed yet
+    //! Fonts loaded and not freed yet, those waiting out kIdleFontFlushes included
     size_t getLoadedFontCount() const { return m_fonts.size(); }
+    //! How many flushes a font no loadFont holds is kept after its last run left
+    //! it (FontData::idleSince), about a second at 60 frames a second: a size a
+    //! zoom wiggles across, or a font a dialog closed and opened again uses, is
+    //! not rasterised again, and none of them stays for long.
+    static constexpr uint64_t kIdleFontFlushes=60;
     //! The TextMode a font is drawn in: Sdf at or above the GWENI_SDF_TEXT_MIN
     //! threshold (effective px); below it Coverage, or LcdRGB/LcdBGR as textAA() says
     TextMode getTextMode(const gweni::Font &font) const;
@@ -744,10 +755,14 @@ protected:
 
     //! Destroys a font's atlas texture and erases it; the iterator after it
     FontMap::iterator eraseFont(FontMap::iterator it);
+    //! flush()'s: erases the fonts idle for kIdleFontFlushes (FontData::idleSince)
+    void eraseIdleFonts();
     //! Destroys an image's texture and deletes its data
     void deleteTextureData(SlotTextureData *textureData);
 
     FontMap m_fonts; //!< keyed by resolveFont()
+    uint64_t m_flushes=0; //!< flush() calls, for FontData::idleSince
+    size_t m_idleFonts=0; //!< fonts with an idleSince, at most (eraseIdleFonts)
     //! Faces whose last load failed: ensureFont does not retry them
     std::unordered_set<FontKey, FontKeyHash> m_failedFonts;
     std::vector<SlotTextureData *> m_textureData;

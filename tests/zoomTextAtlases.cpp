@@ -7,13 +7,18 @@
  *  zoom must not leave a font atlas behind per size it passed through: a
  *  grayscale coverage atlas is rasterised at the whole device px nearest
  *  (SlotRenderer::coverageSize), and a font only a use loaded (renderText at a
- *  zoomed size, with no loadFont of its own) is erased when its last run
- *  leaves it. So a Label of the skin's 11 px font in a ZoomPanel swept from
- *  zoom 1 down to 0.25, up to 4 and back to 0.25 in 200 steps, then back to 1,
- *  has at most one font more loaded than at the start on every frame (the size
- *  it is drawn at now), whole sizes only, and as many as at the start once
- *  back at 1; a zoom inside the SDF range uploads nothing to an atlas; and
- *  deleting the panel while it is zoomed leaves no font of its own.
+ *  zoomed size, with no loadFont of its own) is erased once it has had no run
+ *  for SlotRenderer::kIdleFontFlushes flushes. So a Label of the skin's 11 px
+ *  font in a ZoomPanel swept from zoom 1 down to 0.25, up to 4 and back to
+ *  0.25 in 200 steps, then back to 1, never has more fonts loaded than at the
+ *  start plus one per whole size (and the SDF atlas) passed through, and no
+ *  more than at the start once kIdleFontFlushes frames have passed at 1 (an
+ *  owner-less font an earlier case left at a size the sweep drew in goes the
+ *  same way); a zoom
+ *  inside the SDF range uploads nothing to an atlas; a zoom back to a size
+ *  left a few frames before uploads nothing either; and deleting the panel
+ *  while it is zoomed leaves no font of its own once those frames have
+ *  passed.
  */
 #include <doctest/doctest.h>
 
@@ -98,8 +103,13 @@ TEST_CASE("Zoomed text: a zoom sweep leaves no font atlas behind")
 
     ZoomScene scene;
 
-    scene.frame();
-    scene.frame();
+    // what earlier cases left waiting out kIdleFontFlushes goes first
+    auto settle=[&]() {
+        for(uint64_t flush=0; flush <= SlotRenderer::kIdleFontFlushes; ++flush)
+            scene.frame();
+    };
+
+    settle();
 
     const size_t start=renderer.getLoadedFontCount();
     std::vector<float> zooms;
@@ -128,8 +138,6 @@ TEST_CASE("Zoomed text: a zoom sweep leaves no font atlas behind")
         else
             coverageSizes.insert(SlotRenderer::coverageSize(font.size));
 
-        CAPTURE(zoom);
-        CHECK(renderer.getLoadedFontCount() <= start+1);
         peak=std::max(peak, renderer.getLoadedFontCount());
     }
 
@@ -137,7 +145,14 @@ TEST_CASE("Zoomed text: a zoom sweep leaves no font atlas behind")
         " SDF atlas passed through, at most ", peak-start, " font more loaded at once");
     CHECK(coverageSizes.size() <= 18);
     CHECK(peak <= start+coverageSizes.size()+(sdf?1:0));
-    CHECK(renderer.getLoadedFontCount() == start);
+
+    // the sizes left wait out kIdleFontFlushes, then go
+    settle();
+    // none left behind: an owner-less font an earlier case left at a size the
+    // sweep drew in goes the same way
+    CHECK(renderer.getLoadedFontCount() <= start);
+
+    const size_t settled=renderer.getLoadedFontCount();
 
     // a zoom inside the SDF range uploads nothing to an atlas
     if(renderer.getTextMode(drawnAt(2.5f)) == TextMode::Sdf)
@@ -151,11 +166,25 @@ TEST_CASE("Zoomed text: a zoom sweep leaves no font atlas behind")
         CHECK(renderer.getFrameStats().textSlotsWritten > 0);
     }
 
-    // deleted while drawn at a size of its own: that font goes with it
+    scene.panel->setZoom(1.0f);
+    settle();
+    REQUIRE(renderer.getLoadedFontCount() == settled);
+
+    // a size left and come back to a few frames later is not rasterised again
     scene.panel->setZoom(1.5f);
     scene.frame();
-    REQUIRE(renderer.getLoadedFontCount() == start+1);
+    REQUIRE(renderer.getLoadedFontCount() == settled+1);
+    scene.panel->setZoom(1.0f);
+    scene.frame();
+    scene.frame();
+    scene.panel->setZoom(1.5f);
+    scene.frame();
+    CHECK(renderer.getFrameStats().atlasUploadCalls == 0);
+    CHECK(renderer.getLoadedFontCount() == settled+1);
+
+    // deleted while drawn at a size of its own: that font goes after it
     scene.panel->delayedDelete();
     scene.frame();
-    CHECK(renderer.getLoadedFontCount() == start);
+    settle();
+    CHECK(renderer.getLoadedFontCount() == settled);
 }

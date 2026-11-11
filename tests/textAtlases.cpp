@@ -307,13 +307,18 @@ TEST_CASE("Text atlases: freeing a font with a run still allocated leaves both f
     CHECK(renderer.getFrameStats().textSlotsWritten == 0);
     CHECK(renderer.getFrameStats().atlasUploadCalls == 0);
 
-    // a use is no owner: the run leaving it takes the font with it
+    // a use is no owner: the runs leaving it, the font stays for
+    // kIdleFontFlushes flushes and then goes
     renderer.releaseTextPrimitive(smallId);
     renderer.releaseTextPrimitive(largeId);
+    CHECK(renderer.getFontAtlasHandle(large) == largeAtlas);
+    for(uint64_t flush=0; flush <= SlotRenderer::kIdleFontFlushes; ++flush)
+    {
+        renderer.begin();
+        renderer.end();
+    }
     CHECK(renderer.getFontAtlasHandle(large) == 0);
     CHECK(!renderer.textureExists(largeAtlas));
-    renderer.begin();
-    renderer.end();
     renderer.freeFont(large);
 }
 

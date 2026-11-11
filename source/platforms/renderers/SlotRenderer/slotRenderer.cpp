@@ -244,6 +244,7 @@ Font::Status SlotRenderer::loadFont(const Font &requested, float px)
     {
         ++loaded->second.owners;
         loaded->second.freed=false;
+        loaded->second.idleSince=0;
         m_lastFont=&(*loaded);
         return loaded->second.fallback?Font::Status::LoadedFallback:Font::Status::Loaded;
     }
@@ -1413,9 +1414,47 @@ FrameCounts SlotRenderer::frameStats() const
     return counts;
 }
 
+void SlotRenderer::eraseIdleFonts()
+{
+    size_t waiting=0;
+
+    for(auto it=m_fonts.begin(); it != m_fonts.end();)
+    {
+        FontData &fontData=it->second;
+
+        if(fontData.idleSince == 0)
+        {
+            ++it;
+            continue;
+        }
+        // a run or an owner took it back
+        if((fontData.owners > 0) || !fontData.textRuns.empty())
+        {
+            fontData.idleSince=0;
+            ++it;
+            continue;
+        }
+        if(m_flushes+1-fontData.idleSince < kIdleFontFlushes)
+        {
+            ++waiting;
+            ++it;
+            continue;
+        }
+        if(m_lastFont == &(*it))
+            m_lastFont=nullptr;
+        it=eraseFont(it);
+    }
+    m_idleFonts=waiting;
+}
+
 void SlotRenderer::flush()
 {
     const uint64_t flushStart=platform::profileTimeMicros();
+
+    // no run is laid out in them, so nothing this flush draws uses them
+    if(m_idleFonts > 0)
+        eraseIdleFonts();
+    ++m_flushes;
 
     m_frameStats.uploadCalls=0;
     m_frameStats.uploadBytes=0;
@@ -2385,19 +2424,28 @@ void SlotRenderer::setTextRunFont(size_t textId, FontData *fontData)
 
     run.fontData=fontData;
 
-    // The last run has left a font no loadFont holds: one freeFont kept for it, or
-    // one only a use loaded (the whole px sizes, and the SDF atlas, a zoom or a
-    // canvas scale passes through). It goes, so they do not pile up.
+    // The last run has left a font no loadFont holds. One freeFont kept for it
+    // goes now; one only a use loaded (the whole px sizes, and the SDF atlas, a
+    // zoom or a canvas scale passes through) waits out kIdleFontFlushes, so they
+    // do not pile up and one used again soon is not rasterised again.
     if(previous && (previous->owners == 0) && previous->textRuns.empty())
     {
-        for(auto it=m_fonts.begin(); it != m_fonts.end(); ++it)
+        if(previous->freed)
         {
-            if(&it->second != previous)
-                continue;
-            if(m_lastFont == &(*it))
-                m_lastFont=nullptr;
-            eraseFont(it);
-            break;
+            for(auto it=m_fonts.begin(); it != m_fonts.end(); ++it)
+            {
+                if(&it->second != previous)
+                    continue;
+                if(m_lastFont == &(*it))
+                    m_lastFont=nullptr;
+                eraseFont(it);
+                break;
+            }
+        }
+        else
+        {
+            previous->idleSince=m_flushes+1;
+            ++m_idleFonts;
         }
     }
 
@@ -2405,6 +2453,7 @@ void SlotRenderer::setTextRunFont(size_t textId, FontData *fontData)
     {
         fontData->textRuns.insert(textId);
         fontData->drawListStale=true;
+        fontData->idleSince=0;
     }
 }
 
