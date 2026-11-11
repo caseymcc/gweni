@@ -319,8 +319,22 @@ public:
     virtual void bringToFront(void);
     virtual void bringNextToControl(controls::Base *child, bool bBehind);
 
+    //! A point in this control's coordinates on the canvas and back, through
+    //! every control it is in that transformsChildren() (a ZoomPanel), in
+    //! canvas units: localPosToCanvas() rounds to the nearest unit, and
+    //! canvasPosToLocal() gives the unit the canvas point's unit starts in
+    //! (floor), as the input layer gives a device px's canvas unit.
     virtual gweni::Point localPosToCanvas(const gweni::Point &in=Point(0, 0));
     virtual gweni::Point canvasPosToLocal(const gweni::Point &in);
+    //! localPosToCanvas() and canvasPosToLocal() unrounded.
+    gweni::PointF localPosToCanvasF(const gweni::PointF &in) const;
+    gweni::PointF canvasPosToLocalF(const gweni::PointF &in) const;
+    //! This control's bounds as they are on the canvas, in canvas units: its
+    //! origin and its size through every zoom it is in, each edge rounded to
+    //! the nearest unit; outside any, its origin on the canvas and its size.
+    //! What places a canvas child next to it (a tooltip, a popup, a menu, a
+    //! ComboBox's list) reads, so that opens at the control as it is drawn.
+    gweni::Rect getCanvasBounds() const;
 
 //Attributes
 
@@ -567,6 +581,13 @@ public:
     //! \p outer.
     virtual void childRenderTransform(const renderer::RenderTransform & /*outer*/,
         const Point & /*at*/, renderer::RenderTransform & /*inner*/) const {}
+    //! For a control that transformsChildren(): its point \p local (its own
+    //! units) in the space its children are placed in, and back. The input
+    //! side's half of childRenderTransform(): hit-testing
+    //! (getControlAtWalk()), localPosToCanvas() and canvasPosToLocal() go
+    //! through them.
+    virtual gweni::PointF toChildSpace(const gweni::PointF &local) const { return local; }
+    virtual gweni::PointF fromChildSpace(const gweni::PointF &child) const { return child; }
 
     //! The skin's renderer object for this control, which owns its primitive and
     //! text ids; null until the control has been rendered once.

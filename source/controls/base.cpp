@@ -2897,6 +2897,19 @@ Base *Base::getControlAtWalk(int x, int y, bool bOnlyIfMouseEnabled)
     if(x < 0 || y < 0 || x >= getWidth() || y >= getHeight())
         return nullptr;
 
+    // the children's coordinates: the unit the point's unit starts in, in the
+    // space they are placed in (canvasPosToLocal()'s rule)
+    int childX=x;
+    int childY=y;
+
+    if(m_transformsChildren)
+    {
+        const PointF inChildSpace=toChildSpace(PointF(float(x), float(y)));
+
+        childX=static_cast<int>(std::floor(inChildSpace.x));
+        childY=static_cast<int>(std::floor(inChildSpace.y));
+    }
+
     for(Base::List::reverse_iterator iter=m_children.rbegin(); iter != m_children.rend(); ++iter)
     {
         Base *child=*iter;
@@ -2904,12 +2917,12 @@ Base *Base::getControlAtWalk(int x, int y, bool bOnlyIfMouseEnabled)
         // outside the rect this control clips the child to, it is not there
         if(const Rect *childClip=getChildClipRect(child))
         {
-            if(x < childClip->x || y < childClip->y ||
-               x >= childClip->x+childClip->w || y >= childClip->y+childClip->h)
+            if(childX < childClip->x || childY < childClip->y ||
+               childX >= childClip->x+childClip->w || childY >= childClip->y+childClip->h)
                 continue;
         }
 
-        Base *found=child->getControlAt(x-child->getX(), y-child->getY(), bOnlyIfMouseEnabled);
+        Base *found=child->getControlAt(childX-child->getX(), childY-child->getY(), bOnlyIfMouseEnabled);
 
         if(found)
             return found;
@@ -3943,28 +3956,59 @@ bool Base::isChild(controls::Base *possiblechild)
 // may itself be another control's inner panel (a TreeNode is in its
 // TreeControl's ScrollControl's panel), so the logical parent chain would
 // miss an offset.
+// A control that transformsChildren() maps between its own units and the
+// space its children are placed in on the way.
+PointF Base::localPosToCanvasF(const PointF &pnt) const
+{
+    const Base *placedIn=m_actualParent?m_actualParent:m_parent;
+
+    if(!placedIn)
+        return pnt;
+
+    PointF inParent(pnt.x+getX(), pnt.y+getY());
+
+    if(placedIn->transformsChildren())
+        inParent=placedIn->fromChildSpace(inParent);
+    return placedIn->localPosToCanvasF(inParent);
+}
+
+PointF Base::canvasPosToLocalF(const PointF &pnt) const
+{
+    const Base *placedIn=m_actualParent?m_actualParent:m_parent;
+
+    if(!placedIn)
+        return pnt;
+
+    PointF local=placedIn->canvasPosToLocalF(pnt);
+
+    if(placedIn->transformsChildren())
+        local=placedIn->toChildSpace(local);
+    return PointF(local.x-getX(), local.y-getY());
+}
+
 Point Base::localPosToCanvas(const Point &pnt)
 {
-    Base *placedIn=m_actualParent?m_actualParent:m_parent;
+    const PointF onCanvas=localPosToCanvasF(PointF(pnt));
 
-    if(placedIn)
-        return placedIn->localPosToCanvas(Point(pnt.x+getX(), pnt.y+getY()));
-
-    return pnt;
+    return Point(static_cast<int>(std::floor(onCanvas.x+0.5f)), static_cast<int>(std::floor(onCanvas.y+0.5f)));
 }
 
 Point Base::canvasPosToLocal(const Point &pnt)
 {
-    Base *placedIn=m_actualParent?m_actualParent:m_parent;
+    const PointF local=canvasPosToLocalF(PointF(pnt));
 
-    if(placedIn)
-    {
-        const Point local=placedIn->canvasPosToLocal(pnt);
+    return Point(static_cast<int>(std::floor(local.x)), static_cast<int>(std::floor(local.y)));
+}
 
-        return Point(local.x-getX(), local.y-getY());
-    }
+Rect Base::getCanvasBounds() const
+{
+    const PointF topLeft=localPosToCanvasF(PointF(0.0f, 0.0f));
+    const PointF bottomRight=localPosToCanvasF(PointF(float(getWidth()), float(getHeight())));
+    const int left=static_cast<int>(std::floor(topLeft.x+0.5f));
+    const int top=static_cast<int>(std::floor(topLeft.y+0.5f));
 
-    return pnt;
+    return Rect(left, top, static_cast<int>(std::floor(bottomRight.x+0.5f))-left,
+        static_cast<int>(std::floor(bottomRight.y+0.5f))-top);
 }
 
 bool Base::isMenuComponent()

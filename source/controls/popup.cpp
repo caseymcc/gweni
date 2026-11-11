@@ -106,8 +106,8 @@ Rect Popup::anchorRect() const
     if(!m_anchor)
         return Rect();
 
-    const Point origin=m_anchor->localPosToCanvas();
-    return Rect(origin.x, origin.y, m_anchor->getWidth(), m_anchor->getHeight());
+    // as it is drawn: in a ZoomPanel, its size zoomed too
+    return m_anchor->getCanvasBounds();
 }
 
 void Popup::followAnchor()

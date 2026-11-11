@@ -57,6 +57,11 @@ public:
 
     void childRenderTransform(const renderer::RenderTransform &outer, const Point &at,
         renderer::RenderTransform &inner) const override;
+    //! A content point p is at pan()+p*zoom() in the panel's units: hit-tests,
+    //! localPosToCanvas() and canvasPosToLocal() go through the zoom as the
+    //! drawing does.
+    gweni::PointF toChildSpace(const gweni::PointF &local) const override;
+    gweni::PointF fromChildSpace(const gweni::PointF &child) const override;
 
     void arrange(skin::Base *skin, Dim dim) override;
 

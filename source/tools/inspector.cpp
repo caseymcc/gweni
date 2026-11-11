@@ -316,9 +316,10 @@ void Inspector::refreshHighlight()
     }
 
     controls::Base *parent=m_highlight->getParent();
-    const Point at=parent?parent->canvasPosToLocal(target->localPosToCanvas()):target->localPosToCanvas();
+    const Rect onCanvas=target->getCanvasBounds();
+    const Point at=parent?parent->canvasPosToLocal(Point(onCanvas.x, onCanvas.y)):Point(onCanvas.x, onCanvas.y);
     const int edge=InspectorHighlight::Edge;
-    const Rect rect(at.x-edge, at.y-edge, target->getWidth()+2*edge, target->getHeight()+2*edge);
+    const Rect rect(at.x-edge, at.y-edge, onCanvas.w+2*edge, onCanvas.h+2*edge);
     const Rect &bounds=m_highlight->getBounds();
 
     if((bounds.x != rect.x) || (bounds.y != rect.y) || (bounds.w != rect.w) || (bounds.h != rect.h))

@@ -54,10 +54,10 @@ Point ToolTip::placement(const Rect &anchor, const Point &size, const Rect &area
     return pos;
 }
 
+// the owner as it is drawn: in a ZoomPanel, its size zoomed too
 static Rect canvasRect(Base *control)
 {
-    const Point origin=control->localPosToCanvas();
-    return Rect(origin.x, origin.y, control->getWidth(), control->getHeight());
+    return control->getCanvasBounds();
 }
 
 void ToolTip::setContentFor(Base *owner, const Rect &area)

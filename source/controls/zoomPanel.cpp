@@ -6,6 +6,7 @@
 
 
 #include <gweni/controls/zoomPanel.h>
+#include <gweni/controls/canvas.h>
 
 #include <algorithm>
 #include <cmath>
@@ -69,6 +70,10 @@ void ZoomPanel::spaceChanged()
 {
     if(m_innerPanel)
         m_innerPanel->addStateChangeRecursive(StateChange_Geometry);
+
+    // what is under a resting mouse may be another control now
+    if(Canvas *canvas=getCanvas())
+        canvas->hoverMayHaveMoved();
 }
 
 // The panel's origin on the whole device px translate() puts it at, then the
@@ -86,6 +91,18 @@ void ZoomPanel::childRenderTransform(const renderer::RenderTransform &outer, con
     inner.fractionX=static_cast<float>(x-wholeX);
     inner.fractionY=static_cast<float>(y-wholeY);
     inner.scale=outer.scale*m_zoom;
+}
+
+PointF ZoomPanel::toChildSpace(const PointF &local) const
+{
+    return PointF(static_cast<float>((double(local.x)-m_pan.x)/m_zoom),
+        static_cast<float>((double(local.y)-m_pan.y)/m_zoom));
+}
+
+PointF ZoomPanel::fromChildSpace(const PointF &child) const
+{
+    return PointF(static_cast<float>(m_pan.x+double(child.x)*m_zoom),
+        static_cast<float>(m_pan.y+double(child.y)*m_zoom));
 }
 
 // The inner panel is placed at the origin at contentSize(), an axis at a time

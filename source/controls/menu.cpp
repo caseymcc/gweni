@@ -141,9 +141,7 @@ Point Menu::canvasPosition(const Rect &area)
 
     if(m_anchor)
     {
-        const Point origin=m_anchor->localPosToCanvas();
-
-        m_placedFor=Rect(origin.x, origin.y, m_anchor->getWidth(), m_anchor->getHeight());
+        m_placedFor=m_anchor->getCanvasBounds();
         m_placedIn=area;
         return Popup::placement(m_placedFor, size, area, m_anchorSide, m_anchorGap);
     }
@@ -305,9 +303,7 @@ bool Menu::followAnchor(Canvas *canvas)
         return false;
     }
 
-    const Point origin=m_anchor->localPosToCanvas();
-    bool place=!sameRect(Rect(origin.x, origin.y, m_anchor->getWidth(), m_anchor->getHeight()),
-        m_placedFor) || !sameRect(Rect(0, 0, canvas->getWidth(), canvas->getHeight()), m_placedIn);
+    bool place=!sameRect(m_anchor->getCanvasBounds(), m_placedFor) || !sameRect(Rect(0, 0, canvas->getWidth(), canvas->getHeight()), m_placedIn);
 
     // What this frame's pass lays out may move the anchor: the menu comes
     // after the anchor's top-level ancestor among the canvas's children, so

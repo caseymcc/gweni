@@ -375,11 +375,13 @@ void ComboBox::openList()
     m_menu->setParent(getCanvas());
     m_menu->setHidden(false);
     m_menu->bringToFront();
-    gweni::Point p=localPosToCanvas(gweni::Point(0, 0));
-    // Its position and width, never a height: a height asked for would cap
-    // the list (ScrollControl), which is as high as its items.
-    m_menu->setPos(p.x, p.y+getHeight());
-    m_menu->setWidth(getWidth());
+    // Below the box as it is drawn (in a ZoomPanel, zoomed), as wide: its
+    // position and width, never a height, which would cap the list
+    // (ScrollControl), as high as its items.
+    const Rect onCanvas=getCanvasBounds();
+
+    m_menu->setPos(onCanvas.x, onCanvas.y+onCanvas.h);
+    m_menu->setWidth(onCanvas.w);
 }
 
 void ComboBox::closeList()
