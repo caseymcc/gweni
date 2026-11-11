@@ -1004,6 +1004,10 @@ SlotRenderer::SlotRenderer(ResourcePaths &paths, const Rect &viewRect)
     if(const char *clipDebug=getenv("GWENI_CLIP_DEBUG"))
         m_clipDebugInset=std::max(0, atoi(clipDebug));
 
+    // only "0" turns it off; set but empty, or anything else, keeps it on
+    if(const char *clipCull=getenv("GWENI_CLIP_CULL"))
+        m_clipCulling=(strcmp(clipCull, "0") != 0);
+
     m_textContrast=defaultTextContrast;
     if(const char *textContrast=getenv("GWENI_TEXT_CONTRAST"))
     {

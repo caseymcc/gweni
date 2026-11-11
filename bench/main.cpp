@@ -393,6 +393,9 @@ void printUsage()
         "  --draw-slots <ranges|every>  which primitive slots each index chunk draws: its\n"
         "                     ranges of shown slots (the default), or every slot of the\n"
         "                     mirror (SlotRenderer::setDrawEveryPrimitiveSlot)\n"
+        "  --clip-cull <on|off>  whether a primitive quad or text run drawn wholly outside\n"
+        "                     its clip box is left out of the draws (the default on,\n"
+        "                     unless GWENI_CLIP_CULL=0; SlotRenderer::setClipCulling)\n"
         "  --range-gap <G> --range-cap <R>  the ranges' limits (setPrimitiveRangeLimits): a\n"
         "                     gap of fewer than G hidden slots merged, at most R ranges a\n"
         "                     chunk; one not given keeps the renderer's own\n"
@@ -515,6 +518,8 @@ int main(int argc, char *argv[])
     int n=-1, k=10, frames=-1, warmup=-1;
     bool json=false;
     std::string drawSlots="ranges";
+    // empty: not given, the renderer keeps its own (GWENI_CLIP_CULL, else on)
+    std::string clipCull;
     // -1: not given, the renderer keeps its own (GWENI_PRIMITIVE_RANGES, else
     // the compiled defaults)
     int rangeGap=-1, rangeCap=-1;
@@ -535,6 +540,11 @@ int main(int argc, char *argv[])
         {
             drawSlots=argv[++i];
             ok=(drawSlots == "every" || drawSlots == "ranges");
+        }
+        else if(arg == "--clip-cull" && hasValue)
+        {
+            clipCull=argv[++i];
+            ok=(clipCull == "on" || clipCull == "off");
         }
         else if(arg == "--range-gap" && hasValue) ok=parseInt(argv[++i], rangeGap, 0);
         else if(arg == "--range-cap" && hasValue) ok=parseInt(argv[++i], rangeCap, 1);
@@ -606,6 +616,8 @@ int main(int argc, char *argv[])
         gweni::Rect(gweni::Point(0, 0), size));
     renderer->init();
     renderer->setDrawEveryPrimitiveSlot(drawSlots == "every");
+    if(!clipCull.empty())
+        renderer->setClipCulling(clipCull == "on");
     if(rangeGap >= 0 || rangeCap >= 0)
         renderer->setPrimitiveRangeLimits(
             rangeGap >= 0 ? size_t(rangeGap) : renderer->primitiveRangeGap(),

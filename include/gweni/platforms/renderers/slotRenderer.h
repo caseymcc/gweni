@@ -625,6 +625,13 @@ public:
     //! skipped, as flush() did before it drew only the slots that can show. A test
     //! hook, to check the skip draws the same pixels; off by default.
     void setDrawEveryPrimitiveSlot(bool every) { m_drawEveryPrimitiveSlot=every; }
+    //! Whether a primitive quad or a text run drawn wholly outside its clip box is
+    //! left out of the draws, which would rasterise it only for the fragment
+    //! shaders' clip test to discard every pixel of it. On by default;
+    //! GWENI_CLIP_CULL=0 at construction turns it off. A measurement and test
+    //! hook: either way draws the same pixels.
+    bool clipCulling() const { return m_clipCulling; }
+    void setClipCulling(bool cull) { m_clipCulling=cull; }
     //! A primitive chunk's ranges: a gap of fewer than kPrimitiveRangeGap hidden
     //! slots between two runs of slots that can show is drawn with them, and a
     //! chunk draws at most kMaxPrimitiveRanges ranges, the smallest gaps (the
@@ -1115,6 +1122,7 @@ private:
     };
     std::vector<PrimitiveChunkSlots> m_primitiveChunks;
     bool m_drawEveryPrimitiveSlot=false;
+    bool m_clipCulling=true;
     size_t m_primitiveRangeGap=kPrimitiveRangeGap;
     size_t m_maxPrimitiveRanges=kMaxPrimitiveRanges;
     //! setDrawEveryPrimitiveSlot's draw: one range over the whole chunk

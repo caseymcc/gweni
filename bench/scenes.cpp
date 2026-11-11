@@ -970,6 +970,45 @@ private:
     int m_steps=0;
 };
 
+//-----------------------------------------------------------------------------
+// clipped-scroll: six fixed 400x200 ScrollControls tiled 3x2 in the middle of
+// the canvas, holding N 30-unit Button rows between them, each scrolled to its
+// content's middle, so the rows above and below each viewport reach the
+// canvas's edges: on the framebuffer, but outside their clip box. No input:
+// the measured frames are settled, and what they cost is the draws alone,
+// which rasterise those rows only for the fragment shaders' clip test to
+// discard them (#570; --clip-cull off and on).
+//-----------------------------------------------------------------------------
+class ClippedScrollScene: public Scene
+{
+public:
+    void build(SceneContext &ctx) override
+    {
+        const int columns=3, rows=2, boxW=400, boxH=200, gap=20, rowH=30;
+        const int count=columns*rows;
+        const int left=(ctx.size.x-(columns*boxW+(columns-1)*gap))/2;
+        const int top=(ctx.size.y-(rows*boxH+(rows-1)*gap))/2;
+
+        for(int box=0; box<count; ++box)
+        {
+            controls::ScrollControl *scroll=ctx.canvas->newChild<controls::ScrollControl>();
+            place(scroll, left+(box%columns)*(boxW+gap), top+(box/columns)*(boxH+gap), boxW, boxH);
+            scroll->setScroll(false, true);
+
+            // N rows between them, the first boxes taking the remainder
+            const int boxRows=ctx.n/count+((box < ctx.n%count) ? 1 : 0);
+            for(int i=0; i<boxRows; ++i)
+            {
+                controls::Button *button=scroll->newChild<controls::Button>();
+                button->setText(format("Row %05d", i));
+                button->setBounds(0, i*rowH, 360, rowH-2);
+            }
+            // clamped to the content by the first pass
+            scroll->setVerticalScrollOffset((boxRows*rowH-boxH)/2);
+        }
+    }
+};
+
 }//namespace
 
 const char *scalingName(Scaling scaling)
@@ -1600,6 +1639,9 @@ const std::vector<SceneInfo> &scenes()
         {"log-append-capped", "append 17 rows a frame to a following LogView of N rows capped at 2000",
             true, 1000, 3, 20, Scaling::Local,
             []{ return std::unique_ptr<Scene>(new LogAppendScene(LogAppendScene::Mode::Capped)); }},
+        {"clipped-scroll", "six 400x200 ScrollControls of N Button rows between them, scrolled to the middle, settled",
+            true, 1000, 3, 20, Scaling::Local,
+            []{ return std::unique_ptr<Scene>(new ClippedScrollScene()); }},
         {"graph-drag", "drag the first of N linked nodes in a NodeGraph by its title bar",
             true, 300, 3, 20, Scaling::Local,
             []{ return std::unique_ptr<Scene>(new GraphDragScene()); }},
