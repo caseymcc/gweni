@@ -103,12 +103,6 @@ Rect wholeView()
     return Rect(Point(0, 0), gweni::test::viewSize());
 }
 
-//! Puts the clip region back to the whole view, so the next case draws unclipped.
-struct ClipGuard
-{
-    ~ClipGuard() { gweni::test::gpuRenderer().setClipRegion(wholeView()); }
-};
-
 //! Primitive ids for one test case, released (and that flushed) when it ends, so the
 //! next case's frame starts empty.
 struct Primitives
@@ -168,7 +162,6 @@ TEST_CASE("z range: SlotRenderer reports 65535, the 16 bits of Vertex::z")
 
 TEST_CASE("z range: at the top of the range a higher z is drawn in front, in either draw order")
 {
-    ClipGuard guard;
     Primitives prims(4);
     SlotRenderer &renderer=gweni::test::gpuRenderer();
 
@@ -208,7 +201,6 @@ TEST_CASE("z range: at the top of the range a higher z is drawn in front, in eit
 
 TEST_CASE("z range: a long coverage run's tail draws as the same glyphs in a short run")
 {
-    ClipGuard guard;
     Texts texts(1);
     SlotRenderer &renderer=gweni::test::gpuRenderer();
     Font font=gweni::test::openSans();

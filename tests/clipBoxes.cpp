@@ -7,9 +7,10 @@
  *  clipRegion() current when it was drawn, and the fragment shaders discard what
  *  lies outside it. Drawn offscreen and read back.
  *
- *  The renderer is shared with the other cases, so each case puts the clip
- *  region back to the whole view when it ends (ClipGuard), and the scale and
- *  render offset back to 1x and 0,0 (ScaleGuard).
+ *  The renderer is shared with the other cases; every case starts with the clip
+ *  region at the whole view, the offset at 0,0 and the scale at 1x
+ *  (test::resetDrawState, before each case and subcase), and a case that draws
+ *  at a scale puts 1x back for what follows it in that case (ScaleGuard).
  *
  *  The last cases draw quads past the view's top-left edge and past what the
  *  signed 16-bit vertex position holds: a straddling quad draws exactly its
@@ -107,24 +108,12 @@ Rect wholeView()
     return Rect(Point(0, 0), gweni::test::viewSize());
 }
 
-//! Puts the clip region back to the whole view, so the next case draws unclipped.
-struct ClipGuard
-{
-    ~ClipGuard() { gweni::test::gpuRenderer().setClipRegion(wholeView()); }
-};
-
-//! Puts the scale and the render offset back, so the next case draws at 1x.
+//! Draws at a scale while it lives and puts 1x back, so what follows in the
+//! case (the subcase after a loop over scales) draws at 1x.
 struct ScaleGuard
 {
     explicit ScaleGuard(float scale) { gweni::test::gpuRenderer().setScale(scale); }
-
-    ~ScaleGuard()
-    {
-        SlotRenderer &renderer=gweni::test::gpuRenderer();
-
-        renderer.setScale(1.0f);
-        renderer.setRenderOffset(Point(0, 0));
-    }
+    ~ScaleGuard() { gweni::test::gpuRenderer().setScale(1.0f); }
 };
 
 //! Primitive ids for one test case, released (and that flushed) when it ends, so the
@@ -157,7 +146,6 @@ struct Primitives
 
 TEST_CASE("Clip boxes: a primitive is cut at the region it was drawn in, after a hidden slot")
 {
-    ClipGuard guard;
     Primitives prims(3);
     SlotRenderer &renderer=gweni::test::gpuRenderer();
 
@@ -198,7 +186,6 @@ TEST_CASE("Clip boxes: a primitive is cut at the region it was drawn in, after a
 
 TEST_CASE("Clip boxes: a region past the top-left edge is clamped, an empty one draws nothing")
 {
-    ClipGuard guard;
     Primitives prims(2);
 
     const Frame frame=drawFrame([&](SlotRenderer &renderer)
@@ -223,7 +210,6 @@ TEST_CASE("Clip boxes: a region past the top-left edge is clamped, an empty one 
 
 TEST_CASE("Clip boxes: text is cut, and follows a new region when moved or only re-clipped")
 {
-    ClipGuard guard;
     SlotRenderer &renderer=gweni::test::gpuRenderer();
     const gweni::String text="MMMMMMMMMMMMMMMM";
     const int cut=30;
@@ -358,7 +344,6 @@ int notBackground(const Frame &frame)
 
 TEST_CASE("Clip boxes: a quad straddling the view's left or top edge draws exactly its on-view part")
 {
-    ClipGuard guard;
     Primitives prims(1);
     const Point size=gweni::test::viewSize();
 
@@ -445,7 +430,6 @@ TEST_CASE("Clip boxes: a quad straddling the view's left or top edge draws exact
 
 TEST_CASE("Clip boxes: a quad with a corner past +/-32767 device px draws nothing, nor does one wholly left of and above the view")
 {
-    ClipGuard guard;
     Primitives prims(1);
     SlotRenderer &renderer=gweni::test::gpuRenderer();
 

@@ -96,11 +96,9 @@ struct Scene
 
         gweni::renderer::SlotRenderer &renderer=gweni::test::gpuRenderer();
 
-        // the canvas left its own clip region, in its units at this scale: the
-        // next case draws over the whole view at scale 1
-        renderer.setScale(1.0f);
-        renderer.setRenderOffset(Point(0, 0));
-        renderer.setClipRegion(gweni::Rect(Point(0, 0), gweni::test::viewSize()));
+        // flush the released slots; the canvas's clip, offset and scale are
+        // reset before the next case (test::resetDrawState), and the next
+        // Scene's canvas sets its own
         renderer.begin();
         renderer.end();
     }
