@@ -113,6 +113,40 @@ class GWENI_EXPORT NodeBody: public controls::Base
 public:
 
     GWENI_CONTROL(NodeBody, controls::Base);
+
+    //! A left press on the body where none of its controls is selects its
+    //! node as a press on the node does (NodeGraph::pressNode()).
+    void onMouseClickLeft(int x, int y, bool down) override;
+};
+
+//! The marquee a left drag on a NodeGraph's empty space draws: its outline,
+//! in the overlay layer over every node, and its fill (NodeGraphMarqueeFill),
+//! in the link layer under them, so the nodes' text, drawn after every slot,
+//! shows through it. Each covers its whole layer, as a Link does, and draws
+//! the rect setRect() gives it (its own coordinates), so its moves lay
+//! nothing out.
+class GWENI_EXPORT NodeGraphMarquee: public controls::Base
+{
+public:
+
+    GWENI_CONTROL(NodeGraphMarquee, controls::Base);
+
+public:
+
+    void setRect(const gweni::Rect &rect);
+    const gweni::Rect &getRect() const { return m_rect; }
+
+protected:
+
+    gweni::Rect m_rect;
+};
+
+//! The marquee's fill, under the nodes (NodeGraphMarquee).
+class GWENI_EXPORT NodeGraphMarqueeFill: public NodeGraphMarquee
+{
+public:
+
+    GWENI_CONTROL(NodeGraphMarqueeFill, NodeGraphMarquee);
 };
 
 }//namespace internal
@@ -296,6 +330,17 @@ public:
     //! graph units; a huge value for a link with no curve.
     float distanceTo(const PointF &point) const;
 
+    //! Whether the link is in its graph's selection (NodeGraph::selectLink()),
+    //! drawn in NodeSelected's border colour.
+    bool isSelected() const { return m_selected; }
+
+    //! Whether some part of the curve is in the graph rect from \p min to
+    //! \p max (graph units).
+    bool touches(const PointF &min, const PointF &max) const;
+
+    //! A left press on the link selects it (NodeGraph::pressLink()).
+    void onMouseClickLeft(int x, int y, bool down) override;
+
     //! A link being dragged out of a pin: it ends at a free point, not a pin,
     //! takes no mouse input and is no pin's link (NodeGraph::getPreviewLink()).
     bool isPreview() const { return m_preview; }
@@ -326,6 +371,9 @@ protected:
     void *m_userData=nullptr;
     bool m_preview=false;
     PointF m_freeEnd;
+    bool m_selected=false;
+    //! the selection as a gesture found it (NodeGraph::snapshotSelection())
+    bool m_selectedBefore=false;
 
     //! getPoints()'s last polyline and what it was worked out from, so a
     //! hit-test and the renderer share it until an end, the style or the zoom
@@ -420,6 +468,11 @@ public:
     void onBoundsChanged(gweni::Rect oldBounds) override;
     //! Every link ending on one of the node's pins.
     std::vector<Link *> getLinks() const;
+    //! The node's frame in graph units, from its top-left \p min to \p max.
+    void getGraphFrame(PointF &min, PointF &max) const;
+    //! A left press where no part of the node takes it (its pin row's gaps)
+    //! selects it (NodeGraph::pressNode()).
+    void onMouseClickLeft(int x, int y, bool down) override;
 
 protected:
 
@@ -439,6 +492,8 @@ protected:
     bool m_hasTitleColor=false;
     Color m_titleColor;
     bool m_selected=false;
+    //! the selection as a gesture found it (NodeGraph::snapshotSelection())
+    bool m_selectedBefore=false;
     uint64_t m_userId=0;
     void *m_userData=nullptr;
 };
@@ -501,15 +556,33 @@ public:
     //! The links, oldest first, without one removeLink() has taken off.
     std::vector<Link *> getLinks() const;
 
-    //! The selection's nodes: each is drawn selected (Node::isSelected()).
-    //! \p selected adds \p node to it or takes it off; selectOnly() makes it
-    //! the selection's one node; clearSelection() empties it. Each marks only
-    //! the nodes whose state changes.
+    //! The selection, nodes and links: each is drawn selected
+    //! (Node::isSelected(), Link::isSelected()). \p selected adds \p node (or
+    //! \p link) to it or takes it off; selectOnly() makes it the selection's
+    //! one item; clearSelection() empties it. Each marks only the items whose
+    //! state changes, and none fires onSelectionChanged: an app's edits fire
+    //! nothing.
     void selectNode(Node *node, bool selected=true);
+    void selectLink(Link *link, bool selected=true);
     void selectOnly(Node *node);
+    void selectOnly(Link *link);
     void clearSelection();
-    //! The selected nodes, back to front.
+    //! The selected nodes, back to front, and links, oldest first.
     std::vector<Node *> getSelectedNodes() const;
+    std::vector<Link *> getSelectedLinks() const;
+
+    //! Fired once when a user's click or marquee has changed the selection,
+    //! when it ends (a title-bar press on its release).
+    event::Caller onSelectionChanged;
+
+    //! Whether a marquee drag is going on, and its rect in graph units (empty
+    //! until the mouse has moved PanThreshold units from the press).
+    bool marqueeActive() const;
+    void getMarqueeRect(PointF &min, PointF &max) const;
+
+    //! A left press on empty space (no node, link or pin under it, Space not
+    //! held) is the marquee; any other press is the ZoomPanel's.
+    InputCapture *pressGesture(int button) override;
 
     //! Whether a title-bar drag is moving nodes (a press held on a title bar).
     bool draggingNodes() const { return !m_dragged.empty(); }
@@ -595,6 +668,29 @@ protected:
     void endNodeDrag();
     //! A node deleted is dropped from the drag and the moved nodes.
     void forgetNode(Node *node);
+
+    friend class Link;
+    friend class internal::NodeBody;
+    class MarqueeDrag;
+
+    //! A left press on \p node with no drag (its body, its pin row): Ctrl
+    //! toggles it, Shift adds it, a plain press makes it the selection's one
+    //! node; it goes to the front either way.
+    void pressNode(Node *node);
+    //! A left press on \p link: Ctrl toggles it, Shift adds it, a plain press
+    //! makes it the selection's one item.
+    void pressLink(Link *link);
+    //! Every node's and link's selection as it is now, for
+    //! selectionChangedSinceSnapshot() and an Escape's restore.
+    void snapshotSelection();
+    bool selectionChangedSinceSnapshot() const;
+    void restoreSnapshot();
+
+    std::unique_ptr<MarqueeDrag> m_marquee;
+    //! the title-bar press: its node, whether it was selected, a Ctrl or Shift
+    Node *m_pressedNode=nullptr;
+    bool m_pressedWasSelected=false;
+    bool m_pressModified=false;
 
     friend class Pin;
     class LinkDrag;

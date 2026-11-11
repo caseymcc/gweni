@@ -63,7 +63,20 @@
  *  - hover: a link hit within Link::HoverDistance on screen of its curve and
  *    not beyond (at zoom 1 and 2), drawn in LinkHover's colour; a pin's marker
  *    a unit larger each way; a hover frame writing only the hovered item's
- *    slots and the one it left.
+ *    slots and the one it left;
+ *  - selection by click: a title bar, a body or a link selects its item
+ *    alone, Shift adds, Ctrl toggles (a node Ctrl takes off is not dragged),
+ *    a plain click on a node of a selection makes it the selection, a click
+ *    on empty space clears it (not under Ctrl), onSelectionChanged firing
+ *    once per click that changed it and not otherwise; a selected link drawn
+ *    in NodeSelected's border colour;
+ *  - the marquee: nothing drawn until the mouse is PanThreshold from the
+ *    press, then its outline over the nodes and its fill under them; each
+ *    move frame selecting the nodes and links it touches (with the earlier
+ *    selection under Shift) and writing no slot but the marquee's and those
+ *    of the items whose selection changed; the release firing
+ *    onSelectionChanged once; Escape giving the earlier selection back with
+ *    no event; the marquee's ids given back.
  */
 #include "headlessFixture.h"
 
@@ -190,6 +203,10 @@ public:
             return std::make_unique<skin::textured::Pin>();
         if(typeName == "Link")
             return std::make_unique<skin::textured::Link>();
+        if(typeName == "NodeGraphMarquee")
+            return std::make_unique<skin::textured::NodeGraphMarquee>();
+        if(typeName == "NodeGraphMarqueeFill")
+            return std::make_unique<skin::textured::NodeGraphMarqueeFill>();
         return StubSkin::getControlRenderer(typeName);
     }
 };
@@ -1584,4 +1601,256 @@ TEST_CASE("NodeGraph: a link drag ends when its pin is deleted, and with its gra
         CHECK(scene.canvas->inputCapture() == nullptr);
         scene.frame();
     }
+}
+
+namespace
+{
+
+struct SelectScene: DragScene
+{
+    SelectScene()
+    {
+        graph->onSelectionChanged.add(this, &SelectScene::selectionChanged);
+    }
+
+    void selectionChanged(event::Info)
+    {
+        ++selectionEvents;
+    }
+
+    void click(const Point &at)
+    {
+        press(at);
+        frame();
+        release();
+        frame();
+    }
+
+    void modifier(int key, bool down)
+    {
+        canvas->inputModifierKey(key, down);
+    }
+
+    //! A canvas point on the graph where no node or link is.
+    Point empty() const
+    {
+        const Point origin=graph->localPosToCanvas(Point(0, 0));
+
+        return Point(origin.x+graph->getWidth()-8, origin.y+graph->getHeight()-8);
+    }
+
+    //! The canvas point at a graph point.
+    Point at(const PointF &graphPoint) const
+    {
+        const PointF p=graphToCanvas(graphPoint);
+
+        return Point(int(std::floor(p.x)), int(std::floor(p.y)));
+    }
+
+    int selectionEvents=0;
+};
+
+}//namespace
+
+TEST_CASE("NodeGraph: a click selects, Shift adds, Ctrl toggles, empty space clears")
+{
+    SelectScene scene;
+    controls::Node *a=scene.nodes[0];
+    controls::Node *b=scene.nodes[1];
+
+    scene.click(scene.titleOf(a));
+    CHECK(scene.graph->getSelectedNodes() == std::vector<controls::Node *>{a});
+    CHECK(scene.selectionEvents == 1);
+
+    // again: nothing changes, no event
+    scene.click(scene.titleOf(a));
+    CHECK(scene.selectionEvents == 1);
+
+    // Shift adds, by the body too
+    scene.modifier(keys::Shift, true);
+    controls::Base *body=b->getBody();
+    scene.click(body->localPosToCanvas(Point(body->getWidth()/2, body->getHeight()/2)));
+    scene.modifier(keys::Shift, false);
+    CHECK(a->isSelected());
+    CHECK(b->isSelected());
+    CHECK(scene.selectionEvents == 2);
+
+    // a plain click on one of a selection makes it the selection
+    scene.click(scene.titleOf(b));
+    CHECK(scene.graph->getSelectedNodes() == std::vector<controls::Node *>{b});
+    CHECK(scene.selectionEvents == 3);
+
+    // Ctrl toggles: on, then off, and a node Ctrl takes off is not dragged
+    scene.modifier(keys::Control, true);
+    scene.click(scene.titleOf(a));
+    CHECK(a->isSelected());
+    const Point start=a->getGraphPosition();
+    scene.press(scene.titleOf(a));
+    scene.frame();
+    CHECK(!a->isSelected());
+    CHECK(!scene.graph->draggingNodes());
+    scene.move(Point(scene.titleOf(a).x+30, scene.titleOf(a).y));
+    scene.frame();
+    scene.release();
+    scene.frame();
+    scene.modifier(keys::Control, false);
+    CHECK(a->getGraphPosition().x == start.x);
+    CHECK(scene.selectionEvents == 5);
+
+    // a link: alone, then Shift adds a node to it
+    controls::Link *link=scene.links[2];
+    std::vector<PointF> points;
+    link->getPoints(points);
+    const PointF middle((points.front().x+points.back().x)*0.5f, (points.front().y+points.back().y)*0.5f);
+    scene.move(scene.at(middle));
+    scene.frame();
+    REQUIRE(HoveredControl == link);
+    scene.click(scene.at(middle));
+    CHECK(scene.graph->getSelectedLinks() == std::vector<controls::Link *>{link});
+    CHECK(scene.graph->getSelectedNodes().empty());
+    CHECK((shownSegments(scene.renderer, link).front().color == tokyonight::LinkHover.top));
+    scene.move(scene.empty());
+    scene.frame();
+    CHECK((shownSegments(scene.renderer, link).front().color == tokyonight::NodeSelected.border));
+    scene.modifier(keys::Shift, true);
+    scene.click(scene.titleOf(a));
+    scene.modifier(keys::Shift, false);
+    CHECK(link->isSelected());
+    CHECK(a->isSelected());
+    const int events=scene.selectionEvents;
+
+    // a click on empty space clears, but not under Ctrl
+    scene.modifier(keys::Control, true);
+    scene.click(scene.empty());
+    scene.modifier(keys::Control, false);
+    CHECK(a->isSelected());
+    CHECK(scene.selectionEvents == events);
+    scene.click(scene.empty());
+    CHECK(scene.graph->getSelectedNodes().empty());
+    CHECK(scene.graph->getSelectedLinks().empty());
+    CHECK(scene.selectionEvents == events+1);
+    CHECK(!scene.graph->marqueeActive());
+}
+
+TEST_CASE("NodeGraph: a marquee selects what it touches, each frame writing only what changed")
+{
+    SelectScene scene;
+    const size_t primitives=scene.renderer.livePrimitives.size();
+    controls::Node *first=scene.nodes[0];
+
+    // a node selected before, which the marquee does not touch
+    scene.graph->selectNode(scene.nodes[3]);
+    scene.frame();
+
+    // from the empty point left of node 1, down and right in steps
+    PointF frameMin, frameMax;
+    scene.nodes[1]->getGraphFrame(frameMin, frameMax);
+    const PointF from(frameMin.x-15.0f, frameMin.y-15.0f);
+
+    scene.move(scene.at(from));
+    scene.frame();
+    scene.press(scene.at(from));
+    scene.frame();
+    CHECK(scene.graph->marqueeActive());
+    // under the threshold nothing is drawn yet
+    scene.move(Point(scene.at(from).x+1, scene.at(from).y+1));
+    scene.frame();
+    CHECK(scene.written().empty());
+
+    std::map<controls::Base *, bool> before;
+    auto selection=[&]()
+    {
+        std::map<controls::Base *, bool> state;
+
+        for(controls::Node *node : scene.nodes)
+            state[node]=node->isSelected();
+        for(controls::Link *link : scene.links)
+            state[link]=link->isSelected();
+        return state;
+    };
+
+    bool sawNode=false, sawLink=false;
+
+    for(int step=1; step <= 8; ++step)
+    {
+        before=selection();
+        scene.move(scene.at(PointF(from.x+step*40.0f, from.y+step*25.0f)));
+        scene.frame();
+        CAPTURE(step);
+
+        // the marquee's slots and those of the items that changed
+        std::set<size_t> allowed;
+        for(controls::Base *part : scene.graph->getOverlayLayer()->getChildren())
+            if(gweni_cast<controls::internal::NodeGraphMarquee>(part))
+                for(size_t id : ownIds(part))
+                    allowed.insert(id);
+        for(controls::Base *part : scene.graph->getLinkLayer()->getChildren())
+            if(gweni_cast<controls::internal::NodeGraphMarqueeFill>(part))
+                for(size_t id : ownIds(part))
+                    allowed.insert(id);
+        CHECK(allowed.size() == 5);
+        const std::map<controls::Base *, bool> after=selection();
+        for(const auto &entry : after)
+        {
+            if(entry.second == before[entry.first])
+                continue;
+            const std::set<size_t> ids=scene.subtreeIds(entry.first);
+            allowed.insert(ids.begin(), ids.end());
+            if(gweni_cast<controls::Node>(entry.first))
+                sawNode=true;
+            else
+                sawLink=true;
+        }
+        for(size_t id : scene.written())
+            CHECK(allowed.count(id) == 1);
+
+        // what it touches, and nothing it does not
+        PointF min, max;
+        scene.graph->getMarqueeRect(min, max);
+        for(controls::Node *node : scene.nodes)
+        {
+            PointF nodeMin, nodeMax;
+            node->getGraphFrame(nodeMin, nodeMax);
+            const bool touched=(nodeMin.x <= max.x) && (nodeMax.x >= min.x) && (nodeMin.y <= max.y)
+                && (nodeMax.y >= min.y);
+            CHECK(node->isSelected() == touched);
+        }
+        for(controls::Link *link : scene.links)
+            CHECK(link->isSelected() == link->touches(min, max));
+    }
+    CHECK(sawNode);
+    CHECK(sawLink);
+    CHECK(!first->isSelected());
+    // the one selected before, untouched, is off: a plain marquee replaces
+    CHECK(!scene.nodes[3]->isSelected());
+
+    scene.release();
+    scene.frame();
+    CHECK(scene.selectionEvents == 1);
+    CHECK(!scene.graph->marqueeActive());
+    scene.frame();
+    CHECK(scene.renderer.livePrimitives.size() == primitives);
+
+    // under Shift the earlier selection stays; Escape gives it back
+    scene.graph->clearSelection();
+    scene.graph->selectNode(scene.nodes[5]);
+    scene.frame();
+    scene.modifier(keys::Shift, true);
+    scene.press(scene.at(from));
+    scene.frame();
+    scene.move(scene.at(PointF(from.x+200.0f, from.y+120.0f)));
+    scene.frame();
+    CHECK(scene.nodes[5]->isSelected());
+    CHECK(scene.nodes[1]->isSelected());
+    scene.modifier(keys::Shift, false);
+    scene.canvas->inputModifierKey(keys::Escape, true);
+    scene.canvas->inputModifierKey(keys::Escape, false);
+    scene.frame();
+    CHECK(!scene.graph->marqueeActive());
+    CHECK(scene.graph->getSelectedNodes() == std::vector<controls::Node *>{scene.nodes[5]});
+    scene.release();
+    scene.frame();
+    CHECK(scene.selectionEvents == 1);
+    scene.frame();
+    CHECK(scene.renderer.livePrimitives.size() == primitives);
 }

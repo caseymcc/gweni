@@ -1849,6 +1849,8 @@ void Link::update(renderer::Base *renderer, controls::Base *baseControl)
 
     if(link->isHovered())
         color=tokyonight::LinkHover.top;
+    else if(link->isSelected())
+        color=tokyonight::NodeSelected.border;
     else if(link->hasColor())
         color=link->getColor();
     else if(controls::Pin *from=link->getFrom())
@@ -1902,6 +1904,77 @@ void Link::update(renderer::Base *renderer, controls::Base *baseControl)
         drawn.color=color;
         drawn.zIndex=z;
     }
+}
+
+
+///////////////////////////////////////////////////////////////////////////
+//NodeGraphMarquee
+void NodeGraphMarquee::update(renderer::Base *renderer, controls::Base *baseControl)
+{
+    if(baseControl->getStateChange() == controls::StateChange_Nothing)
+        return;
+
+    const controls::internal::NodeGraphMarquee *marquee=
+        static_cast<const controls::internal::NodeGraphMarquee *>(baseControl);
+    const gweni::Rect &rect=marquee->getRect();
+    const controls::NodeGraph *graph=nullptr;
+
+    for(controls::Base *parent=baseControl->getParent(); parent && !graph; parent=parent->getParent())
+        graph=gweni_cast<controls::NodeGraph>(parent);
+
+    if(!baseControl->visible() || !graph || (rect.w <= 0) || (rect.h <= 0))
+    {
+        for(size_t id : m_primitives)
+            renderer->hidePrimitive(id);
+        return;
+    }
+
+    const gweni::Rect &origin=baseControl->getRenderBounds();
+    const float x0=float(origin.x+rect.x);
+    const float y0=float(origin.y+rect.y);
+    const float x1=x0+float(rect.w);
+    const float y1=y0+float(rect.h);
+    // the corners round the rect, each side drawn with the ones it meets
+    const PointF corners[4]={PointF(x0, y0), PointF(x1, y0), PointF(x1, y1), PointF(x0, y1)};
+    // a canvas unit on screen at the graph's zoom
+    const float thickness=1.0f/graph->zoom();
+    const int z=baseControl->getZIndex();
+
+    renderer->setDrawColor(tokyonight::Marquee.border);
+    for(size_t i=0; i<4; ++i)
+    {
+        const PointF &prev=corners[(i+3)%4];
+        const PointF &next=corners[(i+2)%4];
+
+        renderer->drawLine(m_primitives[i], corners[i], corners[(i+1)%4], thickness, z, &prev, &next);
+    }
+}
+
+
+///////////////////////////////////////////////////////////////////////////
+//NodeGraphMarqueeFill
+void NodeGraphMarqueeFill::update(renderer::Base *renderer, controls::Base *baseControl)
+{
+    if(baseControl->getStateChange() == controls::StateChange_Nothing)
+        return;
+
+    const controls::internal::NodeGraphMarquee *marquee=
+        static_cast<const controls::internal::NodeGraphMarquee *>(baseControl);
+    gweni::Rect rect=marquee->getRect();
+
+    if(!baseControl->visible() || (rect.w <= 0) || (rect.h <= 0))
+    {
+        renderer->hidePrimitive(m_primitives[0]);
+        return;
+    }
+
+    const gweni::Rect &origin=baseControl->getRenderBounds();
+    const tokyonight::Surface &surface=tokyonight::Marquee;
+
+    rect.x+=origin.x;
+    rect.y+=origin.y;
+    renderer->drawRoundedRect(m_primitives[0], rect, 0.0f, 0.0f, surface.top, surface.bottom, surface.border,
+        baseControl->getZIndex());
 }
 
 

@@ -91,6 +91,37 @@ GWENI_CONTROL_CONSTRUCTOR(NodeBody)
 {
 }
 
+void NodeBody::onMouseClickLeft(int /*x*/, int /*y*/, bool down)
+{
+    Node *node=gweni_cast<Node>(getActualParent());
+    NodeGraph *graph=node?node->getGraph():nullptr;
+
+    if(down && graph && !isDisabled())
+        graph->pressNode(node);
+}
+
+// The whole overlay layer, at its top-left, as a Link covers its own: a new
+// rect draws again with nothing laid out.
+GWENI_CONTROL_CONSTRUCTOR(NodeGraphMarquee)
+{
+    setPlacement(Placement::Owner);
+    setMouseInputEnabled(false);
+    setBounds(0, 0, 2*NodeGraph::GraphExtent, 2*NodeGraph::GraphExtent);
+}
+
+GWENI_CONTROL_CONSTRUCTOR(NodeGraphMarqueeFill)
+{
+}
+
+void NodeGraphMarquee::setRect(const Rect &rect)
+{
+    if(m_rect == rect)
+        return;
+
+    m_rect=rect;
+    addStateChange(StateChange_Background);
+}
+
 }//namespace internal
 
 
@@ -471,6 +502,23 @@ NodeGraph *Node::getGraph() const
     return nullptr;
 }
 
+void Node::getGraphFrame(PointF &min, PointF &max) const
+{
+    const Point position=getGraphPosition();
+    const Rect frame=getFrameRect();
+
+    min=PointF(float(position.x+frame.x), float(position.y+frame.y));
+    max=PointF(min.x+float(frame.w), min.y+float(frame.h));
+}
+
+void Node::onMouseClickLeft(int /*x*/, int /*y*/, bool down)
+{
+    NodeGraph *graph=getGraph();
+
+    if(down && graph && !isDisabled())
+        graph->pressNode(this);
+}
+
 Rect Node::getFrameRect() const
 {
     return Rect(PinOverhang, 0, std::max(getWidth()-2*PinOverhang, 0), getHeight());
@@ -603,6 +651,56 @@ float Link::distanceTo(const PointF &point) const
         nearest=std::min(nearest, std::hypot(a.x+dx*t-point.x, a.y+dy*t-point.y));
     }
     return nearest;
+}
+
+// A segment meets the rect where the part of it between the rect's sides on
+// both axes is not empty (Liang-Barsky)
+bool Link::touches(const PointF &min, const PointF &max) const
+{
+    std::vector<PointF> points;
+
+    getPoints(points);
+    for(size_t i=0; i+1 < points.size(); ++i)
+    {
+        const PointF &a=points[i];
+        const PointF &b=points[i+1];
+        const float d[2]={b.x-a.x, b.y-a.y};
+        const float start[2]={a.x, a.y};
+        const float lo[2]={min.x, min.y};
+        const float hi[2]={max.x, max.y};
+        float t0=0.0f;
+        float t1=1.0f;
+        bool inside=true;
+
+        for(int axis=0; (axis < 2) && inside; ++axis)
+        {
+            if(d[axis] == 0.0f)
+            {
+                inside=(start[axis] >= lo[axis]) && (start[axis] <= hi[axis]);
+                continue;
+            }
+
+            float enter=(lo[axis]-start[axis])/d[axis];
+            float leave=(hi[axis]-start[axis])/d[axis];
+
+            if(enter > leave)
+                std::swap(enter, leave);
+            t0=std::max(t0, enter);
+            t1=std::min(t1, leave);
+            inside=t0 <= t1;
+        }
+        if(inside)
+            return true;
+    }
+    return false;
+}
+
+void Link::onMouseClickLeft(int /*x*/, int /*y*/, bool down)
+{
+    NodeGraph *graph=getGraph();
+
+    if(down && graph && !m_preview && !isDisabled())
+        graph->pressLink(this);
 }
 
 Base *Link::getControlAt(int x, int y, bool bOnlyIfMouseEnabled)
@@ -862,6 +960,181 @@ private:
     Point m_mouse;
 };
 
+// A left drag on the graph's empty space, from the press to its release, with
+// the canvas's input. Once the mouse is PanThreshold units from the press it
+// draws the marquee (a NodeGraphMarquee in the overlay layer, made then) and
+// every move selects the nodes and links it touches, with the selection from
+// before the press kept under a Ctrl or Shift press; a release that never got
+// that far is a click on empty space, which clears the selection (but under
+// Ctrl or Shift). Escape gives back the selection from before the press.
+class NodeGraph::MarqueeDrag: public InputCapture
+{
+public:
+
+    explicit MarqueeDrag(NodeGraph *graph): m_graph(graph) {}
+
+    ~MarqueeDrag() override { end(); }
+
+    void start(Canvas *canvas)
+    {
+        m_canvas=canvas;
+        m_press=input::getMousePosition();
+        m_mouse=m_press;
+        m_from=m_graph->canvasToGraph(PointF(m_press));
+        m_additive=input::isControlDown() || input::isShiftDown();
+        m_moved=false;
+        m_graph->snapshotSelection();
+    }
+
+    bool active() const { return m_canvas && (m_canvas->inputCapture() == this); }
+    bool moved() const { return m_moved; }
+    const PointF &min() const { return m_min; }
+    const PointF &max() const { return m_max; }
+
+    void captureMouseMoved(int x, int y, int /*deltaX*/, int /*deltaY*/) override
+    {
+        m_mouse=Point(x, y);
+        if(!m_moved && (std::abs(x-m_press.x) < PanThreshold) && (std::abs(y-m_press.y) < PanThreshold))
+            return;
+
+        m_moved=true;
+        update();
+    }
+
+    void captureMouseButton(int button, bool down) override
+    {
+        if((button != 0) || down)
+            return;
+
+        Canvas *canvas=m_canvas;
+        const bool moved=m_moved;
+        const bool additive=m_additive;
+        const Point mouse=m_mouse;
+        const Point at=input::getMousePosition();
+
+        end();
+        // a click on empty space
+        if(!moved && !additive)
+            m_graph->clearSelection();
+        if(m_graph->selectionChangedSinceSnapshot())
+            m_graph->onSelectionChanged.call(m_graph);
+        if(canvas && ((at.x != mouse.x) || (at.y != mouse.y)))
+            canvas->inputMouseMoved(mouse.x, mouse.y, mouse.x-at.x, mouse.y-at.y);
+    }
+
+    void captureMouseWheel(int delta) override
+    {
+        if(m_graph->isDisabled())
+            return;
+
+        // the press stays at its graph point, the mouse's moves with the zoom
+        m_graph->wheelAt(delta, m_mouse);
+        if(m_moved)
+            update();
+    }
+
+    void captureKey(int key, bool down) override
+    {
+        if(down && (key == keys::Escape))
+        {
+            end();
+            m_graph->restoreSnapshot();
+        }
+    }
+
+    void captureCanvasDeleted(Canvas * /*canvas*/) override { m_canvas=nullptr; }
+
+    //! Gives the canvas its input back and the marquee's ids.
+    void end()
+    {
+        if(active())
+            m_canvas->setInputCapture(nullptr);
+        m_canvas=nullptr;
+        if(m_marquee)
+        {
+            m_marquee->delayedDelete();
+            m_fill->delayedDelete();
+            m_marquee=nullptr;
+            m_fill=nullptr;
+        }
+    }
+
+    //! The graph is going: its input back, the marquee going with the layer.
+    void abandon()
+    {
+        if(active())
+            m_canvas->setInputCapture(nullptr);
+        m_canvas=nullptr;
+        m_marquee=nullptr;
+        m_fill=nullptr;
+    }
+
+private:
+
+    // The rect from the press to the mouse, drawn on whole graph units, and
+    // the selection it makes: what it touches, and what was selected before
+    // under Ctrl or Shift. Only an item whose state changes is marked.
+    void update()
+    {
+        const PointF to=m_graph->canvasToGraph(PointF(m_mouse));
+
+        m_min=PointF(std::min(m_from.x, to.x), std::min(m_from.y, to.y));
+        m_max=PointF(std::max(m_from.x, to.x), std::max(m_from.y, to.y));
+
+        if(!m_marquee)
+        {
+            m_marquee=m_graph->m_overlayLayer->newChild<internal::NodeGraphMarquee>();
+            m_fill=m_graph->m_linkLayer->newChild<internal::NodeGraphMarqueeFill>();
+        }
+
+        // the marquee's own units are the graph's, GraphExtent from its origin
+        const int x0=int(std::floor(m_min.x))+GraphExtent;
+        const int y0=int(std::floor(m_min.y))+GraphExtent;
+        const int x1=int(std::ceil(m_max.x))+GraphExtent;
+        const int y1=int(std::ceil(m_max.y))+GraphExtent;
+
+        m_marquee->setRect(Rect(x0, y0, x1-x0, y1-y0));
+        m_fill->setRect(Rect(x0, y0, x1-x0, y1-y0));
+
+        for(Base *child : m_graph->m_nodeLayer->getChildren())
+        {
+            Node *node=gweni_cast<Node>(child);
+
+            if(!node || m_graph->getCanvas()->isPendingDelete(node))
+                continue;
+
+            PointF frameMin, frameMax;
+
+            node->getGraphFrame(frameMin, frameMax);
+
+            const bool touched=(frameMin.x <= m_max.x) && (frameMax.x >= m_min.x)
+                && (frameMin.y <= m_max.y) && (frameMax.y >= m_min.y);
+
+            m_graph->selectNode(node, touched || (m_additive && node->m_selectedBefore));
+        }
+        for(Base *child : m_graph->m_linkLayer->getChildren())
+        {
+            Link *link=gweni_cast<Link>(child);
+
+            if(!link || m_graph->getCanvas()->isPendingDelete(link))
+                continue;
+            m_graph->selectLink(link, link->touches(m_min, m_max) || (m_additive && link->m_selectedBefore));
+        }
+    }
+
+    NodeGraph *m_graph;
+    Canvas *m_canvas=nullptr;
+    internal::NodeGraphMarquee *m_marquee=nullptr;
+    internal::NodeGraphMarqueeFill *m_fill=nullptr;
+    Point m_press;
+    Point m_mouse;
+    PointF m_from;
+    PointF m_min;
+    PointF m_max;
+    bool m_additive=false;
+    bool m_moved=false;
+};
+
 // The layers fill the inner panel, each owner-placed at its top-left; the
 // inner panel is placed GraphExtent up and left of the content's origin
 // (arrange()), so the graph's origin is the panel's content origin.
@@ -876,6 +1149,7 @@ GWENI_CONTROL_CONSTRUCTOR(NodeGraph)
         layer->setPlacement(Placement::Owner);
 
     m_linkDrag=std::make_unique<LinkDrag>(this);
+    m_marquee=std::make_unique<MarqueeDrag>(this);
 }
 
 // The drag's preview goes with the overlay layer, after this; the drag gives
@@ -884,6 +1158,37 @@ NodeGraph::~NodeGraph()
 {
     if(m_linkDrag)
         m_linkDrag->abandon();
+    if(m_marquee)
+        m_marquee->abandon();
+}
+
+InputCapture *NodeGraph::pressGesture(int button)
+{
+    Canvas *canvas=getCanvas();
+
+    if((button == 0) && canvas && !isDisabled() && !input::isKeyDown(keys::Space) && !m_marquee->active()
+        && !m_linkDrag->active() && emptyAt(input::getMousePosition()))
+    {
+        m_marquee->start(canvas);
+        return m_marquee.get();
+    }
+    return ParentClass::pressGesture(button);
+}
+
+bool NodeGraph::marqueeActive() const
+{
+    return m_marquee->active();
+}
+
+void NodeGraph::getMarqueeRect(PointF &min, PointF &max) const
+{
+    if(m_marquee->active() && m_marquee->moved())
+    {
+        min=m_marquee->min();
+        max=m_marquee->max();
+    }
+    else
+        min=max=PointF(0.0f, 0.0f);
 }
 
 void NodeGraph::setLinkFilter(std::function<bool(Pin *from, Pin *to)> filter)
@@ -968,7 +1273,7 @@ bool NodeGraph::emptyAt(const Point &at)
 
     for(Base *control=canvas?canvas->getControlAt(at.x, at.y):nullptr; control; control=control->getParent())
     {
-        if(gweni_cast<Node>(control))
+        if(gweni_cast<Node>(control) || gweni_cast<Link>(control))
             return false;
         if(control == this)
             return true;
@@ -1074,6 +1379,15 @@ void NodeGraph::selectNode(Node *node, bool selected)
     node->addStateChange(StateChange_Background);
 }
 
+void NodeGraph::selectLink(Link *link, bool selected)
+{
+    if(!link || (link->getParent() != m_linkLayer) || (link->m_selected == selected))
+        return;
+
+    link->m_selected=selected;
+    link->addStateChange(StateChange_Background);
+}
+
 void NodeGraph::selectOnly(Node *node)
 {
     for(Node *other : getSelectedNodes())
@@ -1081,13 +1395,117 @@ void NodeGraph::selectOnly(Node *node)
         if(other != node)
             selectNode(other, false);
     }
+    for(Link *link : getSelectedLinks())
+        selectLink(link, false);
     selectNode(node, true);
+}
+
+void NodeGraph::selectOnly(Link *link)
+{
+    for(Node *node : getSelectedNodes())
+        selectNode(node, false);
+    for(Link *other : getSelectedLinks())
+    {
+        if(other != link)
+            selectLink(other, false);
+    }
+    selectLink(link, true);
 }
 
 void NodeGraph::clearSelection()
 {
     for(Node *node : getSelectedNodes())
         selectNode(node, false);
+    for(Link *link : getSelectedLinks())
+        selectLink(link, false);
+}
+
+std::vector<Link *> NodeGraph::getSelectedLinks() const
+{
+    std::vector<Link *> selected;
+
+    for(Link *link : getLinks())
+    {
+        if(link->isSelected())
+            selected.push_back(link);
+    }
+    return selected;
+}
+
+// Walks the layers' children themselves, with nothing allocated: a marquee
+// frame takes a snapshot only at its press, but compares at its end.
+void NodeGraph::snapshotSelection()
+{
+    for(Base *child : m_nodeLayer->getChildren())
+    {
+        if(Node *node=gweni_cast<Node>(child))
+            node->m_selectedBefore=node->m_selected;
+    }
+    for(Base *child : m_linkLayer->getChildren())
+    {
+        if(Link *link=gweni_cast<Link>(child))
+            link->m_selectedBefore=link->m_selected;
+    }
+}
+
+bool NodeGraph::selectionChangedSinceSnapshot() const
+{
+    for(Base *child : m_nodeLayer->getChildren())
+    {
+        Node *node=gweni_cast<Node>(child);
+
+        if(node && (node->m_selectedBefore != node->m_selected))
+            return true;
+    }
+    for(Base *child : m_linkLayer->getChildren())
+    {
+        Link *link=gweni_cast<Link>(child);
+
+        if(link && (link->m_selectedBefore != link->m_selected))
+            return true;
+    }
+    return false;
+}
+
+void NodeGraph::restoreSnapshot()
+{
+    for(Base *child : m_nodeLayer->getChildren())
+    {
+        if(Node *node=gweni_cast<Node>(child))
+            selectNode(node, node->m_selectedBefore);
+    }
+    for(Base *child : m_linkLayer->getChildren())
+    {
+        if(Link *link=gweni_cast<Link>(child))
+            selectLink(link, link->m_selectedBefore);
+    }
+}
+
+void NodeGraph::pressNode(Node *node)
+{
+    snapshotSelection();
+    if(input::isControlDown())
+        selectNode(node, !node->isSelected());
+    else if(input::isShiftDown())
+        selectNode(node, true);
+    else
+        selectOnly(node);
+    node->bringToFront();
+    if(selectionChangedSinceSnapshot())
+        onSelectionChanged.call(this);
+}
+
+void NodeGraph::pressLink(Link *link)
+{
+    snapshotSelection();
+    if(input::isControlDown())
+        selectLink(link, !link->isSelected());
+    else if(input::isShiftDown())
+        selectLink(link, true);
+    else
+        selectOnly(link);
+    if(selectionChangedSinceSnapshot())
+        onSelectionChanged.call(this);
 }
 
 std::vector<Node *> NodeGraph::getSelectedNodes() const
@@ -1102,9 +1520,22 @@ std::vector<Node *> NodeGraph::getSelectedNodes() const
     return selected;
 }
 
+// Ctrl toggles the node, Shift adds it, and a plain press keeps a selected
+// node's selection so it moves whole (a click that does not move makes it the
+// one selected node at the release) or makes an unselected one the only one.
+// A node Ctrl takes off is not dragged.
 void NodeGraph::beginNodeDrag(Node *node, const Point &at)
 {
-    if(!node->isSelected())
+    snapshotSelection();
+    m_pressedNode=node;
+    m_pressedWasSelected=node->isSelected();
+    m_pressModified=input::isControlDown() || input::isShiftDown();
+
+    if(input::isControlDown())
+        selectNode(node, !node->isSelected());
+    else if(input::isShiftDown())
+        selectNode(node, true);
+    else if(!node->isSelected())
         selectOnly(node);
 
     // only the pressed node's subtree takes new z
@@ -1113,8 +1544,11 @@ void NodeGraph::beginNodeDrag(Node *node, const Point &at)
     m_dragged.clear();
     m_moved.clear();
     m_dragMoved=false;
-    for(Node *selected : getSelectedNodes())
-        m_dragged.push_back({selected, selected->getGraphPosition()});
+    if(node->isSelected())
+    {
+        for(Node *selected : getSelectedNodes())
+            m_dragged.push_back({selected, selected->getGraphPosition()});
+    }
     m_dragFrom=canvasToGraph(PointF(at));
 }
 
@@ -1143,6 +1577,11 @@ void NodeGraph::endNodeDrag()
 {
     const bool moved=m_dragMoved;
 
+    // a plain click on a node of a selection makes it the selection
+    if(!moved && m_pressedNode && m_pressedWasSelected && !m_pressModified)
+        selectOnly(m_pressedNode);
+    m_pressedNode=nullptr;
+
     m_moved.clear();
     for(const DraggedNode &dragged : m_dragged)
         m_moved.push_back(dragged.node);
@@ -1151,10 +1590,14 @@ void NodeGraph::endNodeDrag()
 
     if(moved)
         onNodesMoved.call(this);
+    if(selectionChangedSinceSnapshot())
+        onSelectionChanged.call(this);
 }
 
 void NodeGraph::forgetNode(Node *node)
 {
+    if(m_pressedNode == node)
+        m_pressedNode=nullptr;
     m_dragged.erase(std::remove_if(m_dragged.begin(), m_dragged.end(),
         [node](const DraggedNode &dragged) { return dragged.node == node; }), m_dragged.end());
     m_moved.erase(std::remove(m_moved.begin(), m_moved.end(), node), m_moved.end());

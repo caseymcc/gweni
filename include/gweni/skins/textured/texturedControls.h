@@ -711,8 +711,9 @@ public:
 };
 
 // A Link: one slot per segment of its polyline (Link::getPoints()), a drawLine
-// at the link's z in its colour (LinkHover's top while hovered, else the link's
-// own or the from pin's) and its thickness, each drawn with its neighbours, so its joints are blended once. The
+// at the link's z in its colour (LinkHover's top while hovered, NodeSelected's
+// border while selected, else the link's own or the from pin's) and its
+// thickness, each drawn with its neighbours, so its joints are blended once. The
 // slots are taken when the link is first drawn, as many as its style can draw
 // (Link::MaxSegments for a Bezier, 5 for an Orthogonal link, 1 for a Straight
 // one), so the count a zoom picks for a Bezier never takes a slot after its
@@ -755,6 +756,34 @@ private:
     };
 
     std::vector<Segment> m_segments;
+};
+
+// A NodeGraph's marquee outline: [0..3] the rect's sides
+// (NodeGraphMarquee::getRect()), drawLines in Marquee's border colour at the
+// marquee's z over everything in the graph, each other's neighbours, 1 canvas
+// unit thick on screen at any zoom; hidden while the rect is empty.
+class NodeGraphMarquee:public textured::ControlRegister<NodeGraphMarquee>
+{
+public:
+    static void staticInit(TexturedSkin *) { m_staticInit=true; }
+
+    size_t requiredPrimitives() override { return 4; }
+
+    void update(renderer::Base *renderer, controls::Base *baseControl) override;
+
+    inline static const std::string_view name="NodeGraphMarquee";
+};
+
+// The marquee's fill: [0] its rect in Marquee's top and bottom, translucent,
+// with no border, under the nodes; hidden while the rect is empty.
+class NodeGraphMarqueeFill:public textured::ControlRegister<NodeGraphMarqueeFill>
+{
+public:
+    static void staticInit(TexturedSkin *) { m_staticInit=true; }
+
+    void update(renderer::Base *renderer, controls::Base *baseControl) override;
+
+    inline static const std::string_view name="NodeGraphMarqueeFill";
 };
 
 // A Node: [0] its frame (NodeBody, NodeSelected while it is selected, over
