@@ -46,14 +46,17 @@
 //  picks SliderDemo, which must load controltest.html?control=SliderDemo&scale=2
 //  and draw it. Every link and image of every page that points into the site
 //  (relative URLs: the site is served from a subdirectory on GitHub Pages)
-//  must be there.
+//  must be there. Every page says which commit it was built from: one
+//  "built from <short sha>[-dirty] (<YYYY-MM-DD>)" stamp (or "built from
+//  unknown"), the sha a link to its commit, in index.html's footer and in the
+//  app pages' header (build_site.sh fills it in).
 //
 //  It fails, one "site.mjs: FAIL: <page>: ..." line each, on any console error,
 //  uncaught exception, failed request or HTTP error status (a 404 for a file
 //  the site lacks), a page that ends its run (the window exits) or draws no
 //  frames, a missing or wrong WebGL context, a window that writes to stderr, a
-//  blank canvas, a picker that does not show its control, and a link into the
-//  site that is not there. It ends with "site.mjs: OK, every page loaded" when
+//  blank canvas, a picker that does not show its control, a page without its
+//  built-from stamp, and a link into the site that is not there. It ends with "site.mjs: OK, every page loaded" when
 //  everything passed. --out keeps a screenshot of each page there, as a
 //  visitor sees it.
 //
@@ -192,6 +195,42 @@ class Visit
         return missing === 0;
     }
 
+    // The page's one "built from ..." stamp (build_site.sh's), inside \a where
+    // (the landing page's footer, an app page's header), its sha a link to the
+    // commit; true if it is there.
+    async checkStamp(visit, where)
+    {
+        const stamps = await visit.page.evaluate(where => [...document.querySelectorAll('.built-from')].map(e => ({
+            text: e.textContent.trim(), inside: e.closest(where) !== null,
+            links: [...e.querySelectorAll('a[href]')].map(a => ({ href: a.href, text: a.textContent }))})), where);
+        if(stamps.length !== 1)
+        {
+            fail(visit.label, `has ${stamps.length} built-from stamps, not one (tools/build_site.sh fills the page's gweni:built-from comment)`);
+            return false;
+        }
+        const [stamp] = stamps;
+        const match = /^built from (?:([0-9a-f]{7})(?:-dirty)? \(\d{4}-\d{2}-\d{2}\)|unknown)$/.exec(stamp.text);
+        if(!match)
+        {
+            fail(visit.label, `its built-from stamp reads "${stamp.text}", not "built from <short sha> (<YYYY-MM-DD>)"`);
+            return false;
+        }
+        if(!stamp.inside)
+        {
+            fail(visit.label, `its built-from stamp is not in its ${where}`);
+            return false;
+        }
+        const sha = match[1];
+        const commit = 'https://github.com/caseymcc/gweni/commit/';
+        if(sha !== undefined && !(stamp.links.length === 1 && stamp.links[0].href.startsWith(commit + sha)
+            && /^[0-9a-f]{40,64}$/.test(stamp.links[0].href.slice(commit.length))))
+        {
+            fail(visit.label, `its built-from stamp's ${sha} is not one link to its commit: ${JSON.stringify(stamp.links)}`);
+            return false;
+        }
+        return true;
+    }
+
     // Waits for an app page's window to draw a few frames and checks its
     // context and canvas; true if it all held.
     async checkWindow(visit, name)
@@ -266,7 +305,8 @@ class Visit
         await visit.page.waitForLoadState('load');
         const images = await visit.page.evaluate(() =>
             [...document.images].map(img => ({ src: img.getAttribute('src'), loaded: img.complete && img.naturalWidth > 0 })));
-        let ok = await this.checkLinks(visit);
+        let ok = await this.checkStamp(visit, 'footer');
+        ok = (await this.checkLinks(visit)) && ok;
         for(const img of images)
         {
             if(!img.loaded)
@@ -395,6 +435,7 @@ class Visit
                 ok = false;
             }
         }
+        ok = (await this.checkStamp(visit, 'header')) && ok;
         ok = (await this.checkLinks(visit)) && ok;
         const clean = visit.errors.length === 0;
         this.report(visit);
