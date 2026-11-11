@@ -51,6 +51,14 @@ Point viewSize();
 //! contents undefined until the next clearView(); false if the device cannot.
 bool setFloatDepth(bool on);
 
+//! Puts the renderer's render offset at (0,0), its clip region at the whole
+//! view and its scale at 1 (the identity transform). A listener in main.cpp
+//! calls it before every case and every re-entry for its next subcase, so a
+//! case draws from that state whatever the one before it left (a canvas's
+//! renderCanvas() leaves its own bounds as the clip); a case need not restore
+//! them. Nothing without a renderer.
+void resetDrawState();
+
 //! Clears the target to color, opaque whatever its alpha, and its depth.
 inline void clearView(const Color &color)
 {

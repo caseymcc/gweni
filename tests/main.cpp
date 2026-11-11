@@ -11,8 +11,10 @@
  *  (any warning or error aborts) and a renderer::Vulkan drawing into a
  *  VulkanTarget, with no GL or EGL context at all. The tests see either as the
  *  SlotRenderer it is (gpuRenderer.h); this file is the one place that knows the
- *  backend. Run it from the repo root, as ctest does: the renderer loads
- *  resources/.
+ *  backend. Before every case, and every re-entry of a case for its next
+ *  subcase, a listener resets the renderer's offset, clip and scale
+ *  (test::resetDrawState). Run it from the repo root, as ctest does: the
+ *  renderer loads resources/.
  */
 #define DOCTEST_CONFIG_IMPLEMENT
 #include <doctest/doctest.h>
@@ -139,6 +141,15 @@ bool setFloatDepth(bool on)
     return glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE && glGetError() == GL_NO_ERROR;
 }
 
+void resetDrawState()
+{
+    if(!g_renderer)
+        return;
+    g_renderer->setRenderOffset(Point(0, 0));
+    g_renderer->setClipRegion(Rect(Point(0, 0), g_viewSize));
+    g_renderer->setScale(1.0f);
+}
+
 }//namespace test
 }//namespace gweni
 
@@ -146,6 +157,28 @@ namespace
 {
 
 using namespace gweni;
+
+//! Resets the shared renderer's draw state (test::resetDrawState) before each
+//! case, and again on each re-entry doctest makes for a case's next subcase.
+struct DrawStateListener: doctest::IReporter
+{
+    explicit DrawStateListener(const doctest::ContextOptions &) {}
+
+    void report_query(const doctest::QueryData &) override {}
+    void test_run_start() override {}
+    void test_run_end(const doctest::TestRunStats &) override {}
+    void test_case_start(const doctest::TestCaseData &) override { test::resetDrawState(); }
+    void test_case_reenter(const doctest::TestCaseData &) override { test::resetDrawState(); }
+    void test_case_end(const doctest::CurrentTestCaseStats &) override {}
+    void test_case_exception(const doctest::TestCaseException &) override {}
+    void subcase_start(const doctest::SubcaseSignature &) override {}
+    void subcase_end() override {}
+    void log_assert(const doctest::AssertData &) override {}
+    void log_message(const doctest::MessageData &) override {}
+    void test_case_skipped(const doctest::TestCaseData &) override {}
+};
+
+REGISTER_LISTENER("gweni_draw_state", 1, DrawStateListener);
 
 //! Loads OpenSans into the shared renderer and runs every case, then frees it.
 int runCases(doctest::Context &context, renderer::SlotRenderer *renderer)
