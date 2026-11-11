@@ -2153,7 +2153,9 @@ two programs and the draws. What follows describes both together:
   `max(1, snap(border))`, so a border stays a whole number of device pixels; icon
   strokes are relative to their rect and scale with it. At scale 1 all of this is
   the identity. Text is drawn at `font.size*scale()` px from its snapped origin
-  (see "Hybrid text"), while `measureText` stays in canvas units.
+  (see "Hybrid text"), while `measureText` stays in canvas units. `scale()` is the
+  scale of the space being drawn in: the canvas's, times every ZoomPanel's zoom the
+  control is in (see "The zoom panel").
 - **Where the scale comes from, and a change of it.** The GLFW examples size the
   canvas in logical units: `capture::fitCanvasToWindow` (`examples/openglcore/capture.cpp`,
   run once when the window is made and from the framebuffer-size and content-scale
@@ -2221,7 +2223,7 @@ two programs and the draws. What follows describes both together:
   nothing in this renderer. `GWENI_CLIP_DEBUG=<inset px>` shrinks every box by the
   inset on each side, which shows the boxes on screen.
 - **One text draw per font atlas.** Every loaded font has its own freetype-gl atlas
-  texture: a coverage font per (face, px, bold) below the SDF threshold, one SDF font
+  texture: a coverage font per (face, `coverageSize(px)`, bold) below the SDF threshold, one SDF font
   per (face, bold) at or above it (see "Hybrid text"). Each `TextRun` records the `FontData` it was laid out in,
   and each `FontData` keeps the text ids of its runs (`textRuns`). `flush()` binds
   each atlas in turn and draws its runs with one `glMultiDrawElements` per index chunk
@@ -2251,10 +2253,13 @@ two programs and the draws. What follows describes both together:
   one back, and a font is freed only when none is left. Even then it is deleted only
   if no run is laid out in it; otherwise it is marked `freed`, every run keeps
   drawing from the same atlas, and it goes when its last run leaves it
-  (`setTextRunFont`), unless an `ensureFont`/`loadFont` uses it again first. That
+  (`setTextRunFont`), unless a `loadFont` gives it an owner again first. That
   matters most for an SDF atlas, which every size of the face shares, but holds in
   every mode. A font loaded only by a use (`ensureFont`, from `renderText` or
-  `measureText`) has no owner and stays cached until a `freeFont` asks for it.
+  `measureText`) has no owner, and it too goes when its last run leaves it, so the
+  sizes a zoom or a canvas scale passes through do not stay (a use is no owner: a
+  freed font used again still goes with its last run). One no run was ever laid out
+  in (a measure-only font) stays cached until a `freeFont` asks for it.
   `setTextAA` is the one place a font goes with runs in it: it takes the coverage
   fonts' runs off every list (they keep their slots and draw nothing until their next
   `renderText` lays them out in the new mode) and loads each again with the owners it
@@ -2358,7 +2363,7 @@ two programs and the draws. What follows describes both together:
 - **Hybrid text.** With the effective size `px = textPx(font) = font.size*scale()`,
   text below `GWENI_SDF_TEXT_MIN`
   (default 18 px; `0` = SDF everywhere, a large value = coverage everywhere) keeps the
-  hinted grayscale coverage atlas (above) of its (face, px, bold), byte for byte as before. At or
+  hinted grayscale coverage atlas (above) of its (face, `coverageSize(px)`, bold). At or
   above it, a font resolves to its face's one R8 signed-distance-field atlas (1024²,
   rasterised by FreeType's `FT_RENDER_MODE_SDF` at 48 px with a 6 px spread, unhinted),
   shared by every size. `layoutSdfText` scales that atlas's metrics and unhinted
@@ -2368,6 +2373,21 @@ two programs and the draws. What follows describes both together:
   draws nothing, so a glyph's padded quad writes no depth. A size change inside the SDF
   range therefore re-lays only that run: its vertex slots are uploaded and nothing else
   (the glyph indices are static).
+- **Coverage sizes are whole device px.** A grayscale coverage atlas is rasterised at
+  `SlotRenderer::coverageSize(px)`, `px` rounded half up to a whole device px (at
+  least 1), in every tree and at every canvas scale: `resolveFont` keys it so, while
+  the run keeps its exact `px` (`TextRun::px`) and `measuredPenShifts` puts each glyph
+  at its measured pen times the scale, rounded to a whole pixel, so the run still
+  ends where the layout sized it. So 11 px text at 1.5 is drawn from the 17 px atlas,
+  not a 16.5 px one, and a continuous zoom (a ZoomPanel) on coverage text passes
+  through whole sizes only, at most one atlas per size below the SDF threshold per
+  face, each erased when its last run leaves it (above). An LCD atlas keeps the exact
+  `px`: its glyph images are rasterised at the 1/3 px phases of the unhinted pens at
+  that size, which a whole-px shift would not keep. Positions, rects, lines and SDF
+  text stay continuous. At a whole canvas scale nothing changes; at 1.25 and 1.5 the
+  coverage text's pixels moved (no checked-in sample is at a fractional scale).
+  `tests/zoomTextAtlases.cpp` sweeps a ZoomPanel 0.25 -> 4 -> 0.25 in 200 steps (16
+  whole sizes and the SDF atlas, at most one font more at once, none after).
 - **Text at a canvas scale.** `renderText` resolves and lays a run out at
   `px = font.size*scale()` (11 px UI text at scale 2 is 22 px, in the SDF range), from
   its origin snapped to a whole device pixel by `translate()`; a `TextRun` keeps the
@@ -2416,6 +2436,89 @@ two programs and the draws. What follows describes both together:
   counts it as one measure (`measureTextCalls()`). `tests/measureCarets.cpp` pins the
   equality and `getClosestCharacter`'s answers against the old per-prefix walk in every
   mode and at scale 1.5; `tests/unit/closestCharacter.cpp` the one call per probe.
+
+## The zoom panel
+
+`controls::ZoomPanel` (`include/gweni/controls/zoomPanel.h`) shows its subtree at a
+continuous zoom and a pan: a content point `p` is drawn at the panel's origin plus
+`pan() + p*zoom()` canvas units. Its children go into an inner panel
+(`getInnerPanel()`, owner-placed at the panel's top left, `contentSize()` units large:
+`setContentSize`, or the panel's own size on an axis given a negative one), which lays
+out in its own units as always: a zoom or a pan only moves the content on screen. The
+zoom is clamped to `setZoomRange` (0.25..4 by default). Everything inside draws,
+clips, hit-tests and sizes its text as it would on a canvas at
+`Canvas::setScale(canvasScale*zoom)`: ButtonDemo in a panel filling a scale-1 canvas
+at 2, 1.5 and 1.37 draws the very pixels ButtonDemo draws on a canvas at that scale,
+and every device px hits the same control (`controltest_zoom_panel`).
+
+- **The transform stack.** `renderer::Base` draws through a `renderer::RenderTransform`
+  (`baseRender.h`): the device px the space's origin is at, a whole px
+  (`originX/Y`) and a fraction in [0, 1) kept apart (`fractionX/Y`), its scale in
+  device px per unit (the canvas's times every zoom the space is in), and an optional
+  device-px clip (`bounded`, `deviceClip`). `setScale()` resets it to the identity at
+  that scale and `scale()` is the transform's, so `translate()` (a rect's edges
+  snapped as `deviceX(v) = originX + floor(fractionX + v*scale + 0.5)`), the clip
+  boxes (`makeClipBox`, cut to `deviceClip` when bounded), the SDF radius and border,
+  `drawLine`'s thickness and stroke start, the icon strokes and `SlotRenderer::textPx`
+  all work at the effective scale, and with no fraction a space at a whole px draws
+  as one at 0 does, shifted. The render drain (`Base::drainRenderQueue`) carries a
+  `RenderState` (offset, clip region, transform) on both of its paths, the whole-tree
+  walk and the sorted queue that rebuilds each entry's state down its `m_actualParent`
+  chain: at a control that `transformsChildren()` (`innerRenderState` →
+  `enterChildSpace`) the children's state becomes offset 0, a clip region that is as
+  good as none (`SpaceClipReach`), and the transform the control makes
+  (`childRenderTransform`: for a ZoomPanel its origin on the whole device px
+  `translate()` put it at, plus the pan in device px, at the outer scale times the
+  zoom) with, as its device clip, the region it was entered from in device px (cut
+  to any outer one). After the drain the renderer is back at the canvas's own
+  transform. `childRegionChanged()` answers yes above a transforming parent, so a
+  resized control under a panel re-stamps its children's clip boxes.
+- **The input mapping.** Two hooks on `Base`, `toChildSpace`/`fromChildSpace`, map a
+  transforming control's own units to the space its children are placed in and back
+  (identity by default; a ZoomPanel's `(p - pan)/zoom` and `pan + c*zoom`).
+  `getControlAtWalk` maps the point through them before it searches the children,
+  taking the unit the point's unit starts in (floor), as the input layer turns a
+  device px into the canvas unit `floor(px/scale)`, so a hit lands where it does on a
+  `setScale` canvas. `localPosToCanvasF`/`canvasPosToLocalF` walk the actual-parent
+  chain through them (nested panels multiply); `localPosToCanvas` rounds to the
+  nearest unit and `canvasPosToLocal` floors. A new zoom or pan calls
+  `Canvas::hoverMayHaveMoved`, so the control under a resting mouse is hovered.
+  Drag motion stays in canvas units (a DragNumber scrubs per screen unit).
+- **On-screen rects.** `Base::getCanvasBounds()` is a control's rect as it is drawn,
+  its size zoomed too, each edge rounded to a canvas unit. The tooltip box
+  (`ToolTip::setContentFor`/`placeFor`), `Popup::anchorRect`, a Menu's anchor
+  (`Menu::canvasPosition`, `followAnchor`), a ComboBox's list (below the box, as
+  wide) and the inspector's highlight are placed from it. They are canvas children,
+  so they draw at canvas scale, not zoomed. A popup or menu anchored in a panel
+  follows its anchor, so with one open a zoom or pan frame lays it out again.
+- **The wheel and the pan.** The wheel bubbles up from the hovered control
+  (`Base::onMouseWheeled`), so a ScrollControl under the cursor that can scroll takes
+  it; otherwise `ZoomPanel::onMouseWheeled` zooms by `WheelStep` (1.1) a notch about
+  the cursor (`zoomAt(zoom, at)`: the content point under `at` stays there), and takes
+  the wheel at the range's ends too. A press goes first to `Base::pressGesture` of the
+  hovered control and its ancestors (`Canvas::inputMouseButton`, on a press with no
+  button down and no mouse capture): a ZoomPanel takes a middle or right press, or a
+  left one with Space held, with its `PanGesture`, an `InputCapture` that has the
+  canvas's input until the release, so the hover and the focus stay. Once the mouse
+  is `PanThreshold` (3) units from the press the content follows it; let go before,
+  the press and the release are given to the canvas as they would have been, so a
+  right click opens the control's context menu and a click presses. The release
+  moves the canvas to where the mouse is; keys during a pan go to the capture.
+- **Cost.** A zoom marks the inner panel's subtree `StateChange_Geometry |
+  StateChange_Text`, a pan `StateChange_Geometry`, and neither invalidates: the frame
+  runs no layout pass, calls `invalidate()` nowhere and renders the subtree alone,
+  every control re-emitting its slots at the new transform (its clip boxes re-stamped)
+  and every text run re-laid at the new px on a zoom (`renderText`'s run cache keys
+  on px), so it writes the subtree's slots and nothing outside it, and the next frame
+  writes nothing. A zoom inside the SDF range uploads nothing to an atlas; one that
+  crosses coverage sizes rasterises the whole-px size it reaches, and the size it
+  left goes (see "Coverage sizes are whole device px"). So a frame is O(the panel's
+  subtree), not O(the change): a pan moves every slot on the CPU, which a backend
+  per-region transform would make free (not done). `tests/unit/zoomPanelRender.cpp`,
+  `zoomPanelInput.cpp`, `zoomPanelGestures.cpp`, `tests/zoomTextAtlases.cpp` and
+  `--scenario zoom-panel` pin it; ZoomPanelDemo (in ControlTest's `--list`, not in the
+  shell) holds a Button with a tooltip, a ComboBox, a DragNumber, a TextBox and a
+  ScrollControl at 1.25x.
 
 ## The inspector
 
