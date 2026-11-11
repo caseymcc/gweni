@@ -27,6 +27,8 @@ public:
     GWENI_CONTROL_INLINE(PropertyTreeNode, TreeNode)
     {
         m_title->setTextColorOverride(getSkin()->Colors.Properties.Title);
+        // a category's selection means nothing: its title only hovers
+        setSelectable(false);
     }
 };
 

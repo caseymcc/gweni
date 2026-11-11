@@ -902,6 +902,19 @@ public:
     inline static const std::string_view name="Selectable";
 };
 
+// A TreeNode's label, a flat list row as a ListBox's: hidden at rest (and while
+// disabled), ListItemHover while hovered, ListItemSel while selected (the
+// title's toggle state); the Button's Text draws the string.
+class TreeNodeText:public textured::ControlRegister<TreeNodeText>
+{
+public:
+    static void staticInit(TexturedSkin *) { m_staticInit=true; }
+
+    void update(renderer::Base *renderer, controls::Base *baseControl) override;
+
+    inline static const std::string_view name="TreeNodeText";
+};
+
 // A DataTable's backdrop, the ListBox's; its header and rows draw themselves.
 class DataTable:public textured::ControlRegister<DataTable>
 {

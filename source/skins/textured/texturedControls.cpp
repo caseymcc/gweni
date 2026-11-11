@@ -769,6 +769,35 @@ void Selectable::update(renderer::Base *renderer, controls::Base *baseControl)
 }
 
 ///////////////////////////////////////////////////////////////////////////
+//TreeNodeText
+void TreeNodeText::update(renderer::Base *renderer, controls::Base *baseControl)
+{
+    if(m_primitives.empty())
+        return;
+
+    // the label is a private Button subclass in treeNode.cpp
+    controls::Button *label=static_cast<controls::Button *>(baseControl);
+    const tokyonight::Surface *surface=nullptr;
+
+    // a press selects at once (TreeNode::onClickName), so there is no pressed look
+    if(!label->isDisabled())
+    {
+        if(label->getToggleState())
+            surface=&tokyonight::ListItemSel;
+        else if(label->isHovered())
+            surface=&tokyonight::ListItemHover;
+    }
+
+    // at rest the slot is hidden, as a Selectable's: a transparent rect would
+    // still write depth over the tree's lines and the band behind it
+    if(surface && baseControl->visible())
+        renderer->drawRoundedRect(m_primitives[0], baseControl->getRenderBounds(), surface->radius,
+            surface->borderWidth, surface->top, surface->bottom, surface->border, baseControl->getZIndex());
+    else
+        renderer->hidePrimitive(m_primitives[0]);
+}
+
+///////////////////////////////////////////////////////////////////////////
 //PropertyRow
 void PropertyRow::update(renderer::Base *renderer, controls::Base *baseControl)
 {

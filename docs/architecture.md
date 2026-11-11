@@ -1632,6 +1632,20 @@ two programs and the draws. What follows describes both together:
   previous one through its own `setSelected`, members are untoggleable, and a member
   that is deleted, or the group itself, lets the other go without an event. A selection
   change in a group therefore marks the two rows (and their labels) alone.
+- **Tree labels.** A `TreeNode`'s label (`TreeNodeText`, a private `Button` subclass in
+  `source/controls/treeNode.cpp`) draws as a flat list row, not a button: the textured
+  `TreeNodeText` renderer, found by its type name before `Button`'s, has one slot,
+  **hidden** at rest and while disabled (selected or not), painting ListBox's
+  `ListItemHover` while hovered and `ListItemSel` while selected (the title's toggle
+  state, which `TreeNode::setSelected` sets), hovered or not. A press selects at once
+  (`onDownCaller`), so there is no pressed look. The fill is the label's bounds, from
+  its 16-unit margin past the toggle to the tree's right edge; the connector lines and
+  the chevron are the `TreeNode`'s and the toggle's, and the text colours are
+  `TreeNodeText::updateColors`' (`Colors.Tree`). Hover and selection go through
+  `redraw()`, so moving the selection marks the two labels alone. A `PropertyTreeNode`'s
+  title takes the same renderer and is not selectable (`setSelectable(false)`): at rest
+  the category's `Properties.Border` band shows through, and a hover paints
+  `ListItemHover`, a little darker than the band.
 - **Menu rows.** A `Menu` is one rounded backdrop (the textured `Menu` renderer, the
   `Menu` surface) with flat rows on it; a `MenuStrip` has its own renderer, found
   before `Menu`'s by the type walk, painting the flat, square `MenuStrip` surface. A
