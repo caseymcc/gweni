@@ -918,8 +918,8 @@ private:
     //! the x that puts it at its measured pen position scaled, so the run ends where
     //! measureText sized it and a caret placed from measureText falls between the
     //! glyphs it means; it is left empty where nothing moves, and always for a run
-    //! measured in an Sdf font or drawn in an LCD one, whose pens are the measured
-    //! ones scaled. Nor is the drawn font's lineStep the measured one scaled (a
+    //! drawn in an LCD font or measured in an Sdf one (drawn as Sdf, its pens are the
+    //! measured ones scaled; drawn as coverage, its hinted pens are left, issue #576). Nor is the drawn font's lineStep the measured one scaled (a
     //! coverage font truncates its descender to a whole pixel, an Sdf one rounds its
     //! step), so lineShifts gets, for each drawn glyph of a run with a '\n', measured
     //! in any mode (an Sdf-measured run drawn as Sdf, or as coverage where px is

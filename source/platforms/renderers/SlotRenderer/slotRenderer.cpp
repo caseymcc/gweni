@@ -2919,7 +2919,9 @@ void SlotRenderer::measuredPenShifts(const gweni::Font &font, FontData &drawn, f
             lineShifts[i]=roundf(drawnLines[i]*lineError);
     }
 
-    // the x pens of an SDF-measured or LCD run are the measured ones scaled
+    // the x pens of an SDF run drawn as SDF, or of an LCD run, are the measured ones
+    // scaled; an SDF-measured run drawn as coverage (px below the threshold) keeps
+    // its hinted pens, not corrected here (issue #576)
     if(measuredSdf || lcd)
         return;
 

@@ -2415,7 +2415,8 @@ two programs and the draws. What follows describes both together:
   with `'\n'`s would end below its box. `measuredPenShifts` also moves each of its glyphs
   down by whole pixels, to within half a pixel of the measured line's baseline scaled
   (relative to the first line, so a one-line run moves nothing), in grayscale and LCD alike.
-  An SDF `font.size` needs no x shift, its pens being linear in px, but its line step
+  An SDF `font.size` drawn as SDF needs no x shift, its pens being linear in px (drawn
+  as coverage below the threshold it keeps its hinted pens, #576), but its line step
   is rounded to a whole pixel at each px (20 px at 1.5 steps 41 px against 27 times
   1.5), so the line correction applies whatever the measured mode, drawn as SDF or as
   coverage (20 px at 0.75 is drawn at 15), at a canvas scale and in a `ZoomPanel` alike.
