@@ -1626,7 +1626,7 @@ void SlotRenderer::setVertex(Vertex &vertex, uint8_t type, int x, int y, int z, 
         vertex.ty=v;
     }
 
-    // SDF fields are only used by styles 3-7 (drawLine, writeRoundedQuad, drawIcon); keep them 0 otherwise.
+    // SDF fields are only used by styles 3-8 (drawLine, writeRoundedQuad, drawIcon, drawGrid); keep them 0 otherwise.
     vertex.lx=0;
     vertex.ly=0;
     vertex.radius=0;
@@ -1865,13 +1865,89 @@ void SlotRenderer::drawIcon(size_t primitiveId, gweni::Rect rect, int kind, int 
         v.ly=(int16_t)ly;
         v.radius=(uint16_t)kind;
         v.border=(uint16_t)direction;
-        v.bx=(uint16_t)(stroke<<8);    // kinds 2-6: the stroke in px, the "red" byte
+        v.bx=(uint16_t)(stroke<<8);    // kinds 2-6 and 8: the stroke in px, the "red" byte
     };
 
     setIcon(vertexIndex++, x0, y0, -hw, -hh);
     setIcon(vertexIndex++, x1, y0, +hw, -hh);
     setIcon(vertexIndex++, x0, y1, -hw, +hh);
     setIcon(vertexIndex++, x1, y1, +hw, +hh);
+
+    cullOutOfRangeQuad(primitiveId, rect);
+    markPrimitiveChanges(primitiveId, before);
+}
+
+void SlotRenderer::drawGrid(size_t primitiveId, gweni::Rect rect, gweni::PointF origin, float spacing,
+    int majorEvery, gweni::Color minor, gweni::Color major, int zIndex)
+{
+    // the origin's device px, as drawLine places an endpoint coordinate, before
+    // translate() moves the rect into device px
+    const gweni::Point &offset=getRenderOffset();
+    const RenderTransform &transform=renderTransform();
+    const double originX=transform.originX+(double(origin.x)+offset.x)*scale()+transform.fractionX;
+    const double originY=transform.originY+(double(origin.y)+offset.y)*scale()+transform.fractionY;
+
+    translate(rect);
+
+    size_t vertexIndex=primitiveId*4;
+
+    ensurePrimitiveSlots(primitiveId);
+
+    PrimitiveSlot before;
+
+    readPrimitiveSlot(primitiveId, before);
+
+    m_clippingBoxes[primitiveId]=makeClipBox();
+
+    const int stroke=std::min(std::max(1, snap(1.0f)), 255);
+
+    majorEvery=std::min(std::max(majorEvery, 1), 255);
+
+    // a phase of 1/16 px in 16 bits holds a period up to 4095 px
+    const double maxPitch=4095.0/majorEvery;
+    const float pitch=float(std::min(std::max(double(spacing)*scale(), 1.0), maxPitch));
+    const double period=double(pitch)*majorEvery;
+    // where a major line is from the quad's left (top) edge, within one period
+    auto phase=[&](double at, int edge)
+    {
+        double p=std::fmod(at-edge, period);
+
+        if(p < 0.0)
+            p+=period;
+        return (uint16_t)std::min(std::lround(p*16.0), 65535L);
+    };
+    const uint16_t phaseX=phase(originX, rect.x);
+    const uint16_t phaseY=phase(originY, rect.y);
+    uint32_t pitchBits;
+
+    std::memcpy(&pitchBits, &pitch, sizeof(pitchBits));
+
+    const int x0=rect.x;
+    const int y0=rect.y;
+    const int x1=rect.x+rect.w;
+    const int y1=rect.y+rect.h;
+    const int hw=halfPixelSize(rect.w);
+    const int hh=halfPixelSize(rect.h);
+
+    auto setGrid=[&](size_t vi, int px, int py, int lx, int ly)
+    {
+        Vertex &v=m_vertexes[vi];
+
+        setVertex(v, 8, px, py, zIndex, 0.0f, 0.0f);
+        v.tx=(uint16_t)(pitchBits >> 16);
+        v.ty=(uint16_t)(pitchBits & 0xffff);
+        v.lx=(int16_t)lx;
+        v.ly=(int16_t)ly;
+        v.border=(uint16_t)(majorEvery | (stroke << 8));
+        v.cx=minor.rg(); v.cy=minor.ba();
+        v.bx=phaseX; v.by=phaseY;
+        v.dx=major.rg(); v.dy=major.ba();
+    };
+
+    setGrid(vertexIndex++, x0, y0, -hw, -hh);
+    setGrid(vertexIndex++, x1, y0, +hw, -hh);
+    setGrid(vertexIndex++, x0, y1, -hw, +hh);
+    setGrid(vertexIndex++, x1, y1, +hw, +hh);
 
     cullOutOfRangeQuad(primitiveId, rect);
     markPrimitiveChanges(primitiveId, before);

@@ -179,6 +179,26 @@ float sdSegment(vec2 p, vec2 a, vec2 b)
     return length(pa - ba*h);
 }
 
+// Signed distance to the triangle p0-p1-p2 (negative inside), for the pin
+// markers (icon kinds 7 and 8).
+float sdTriangle(vec2 p, vec2 p0, vec2 p1, vec2 p2)
+{
+    vec2 e0 = p1 - p0;
+    vec2 e1 = p2 - p1;
+    vec2 e2 = p0 - p2;
+    vec2 v0 = p - p0;
+    vec2 v1 = p - p1;
+    vec2 v2 = p - p2;
+    vec2 pq0 = v0 - e0*clamp(dot(v0, e0)/dot(e0, e0), 0.0, 1.0);
+    vec2 pq1 = v1 - e1*clamp(dot(v1, e1)/dot(e1, e1), 0.0, 1.0);
+    vec2 pq2 = v2 - e2*clamp(dot(v2, e2)/dot(e2, e2), 0.0, 1.0);
+    float s = sign(e0.x*e2.y - e0.y*e2.x);
+    vec2 d = min(min(vec2(dot(pq0, pq0), s*(v0.x*e0.y - v0.y*e0.x)),
+                     vec2(dot(pq1, pq1), s*(v1.x*e1.y - v1.y*e1.x))),
+                     vec2(dot(pq2, pq2), s*(v2.x*e2.y - v2.y*e2.x)));
+    return -sqrt(d.x)*sign(d.y);
+}
+
 // The part of a pixel (a unit square of device px) on the inner side of a straight
 // edge e px from its centre, n the edge's unit normal: exact for a half-plane. Its
 // projection on n is |n.x|+|n.y| wide: the corners give the quadratic ends, the
@@ -323,6 +343,7 @@ void main()
     uvec4 clip = clipBox(vSlot);
     float depth = gl_FragCoord.z;
     bool lineDeferred = false;  // style 3: an adjacent segment of its polyline draws this pixel
+    bool offGrid = false;       // style 8: the pixel is on no grid line
     bool clipped = any(lessThan(vPixel, vec2(clip.xy))) || any(greaterThanEqual(vPixel, vec2(clip.zw)));
     vec2 uvDx = dFdx(TexCoords);
     vec2 uvDy = dFdy(TexCoords);
@@ -460,13 +481,40 @@ void main()
         vec3 checker = ((cell.x + cell.y) & 1) == 0 ? vColor1.rgb : vColor3.rgb;
         FragColor = roundedRect(vec4(lerp(checker, VertexColor.rgb, VertexColor.a), 1.0));
     }
+    else if (ShaderType == 8u)
+    {
+        // Grid lines (drawGrid): one every spacing px from a phase on each axis,
+        // stroke whole px wide where drawLine would put a stroke across that
+        // coordinate, those a whole number of majorEvery spacings from the phase in
+        // vColor3 and the rest in vColor1. The spacing is a float's bits in the two
+        // halves of tx/ty, constant over the quad, so rounding recovers them; the
+        // phases are 1/16 px in the border colour's bytes. The pixel is found from
+        // vLocal rounded to its half px, as the icons' is.
+        uvec2 bits = uvec2(floor(TexCoords*65535.0 + 0.5));
+        float spacing = uintBitsToFloat((bits.x << 16) | bits.y);
+        int params = int(vBorder + 0.5);
+        float majorEvery = float(params & 0xff);
+        float stroke = float((params >> 8) & 0xff);
+        vec4 phaseBytes = floor(vBorderColor*255.0 + 0.5);
+        vec2 phase = vec2(phaseBytes.x*256.0 + phaseBytes.y, phaseBytes.z*256.0 + phaseBytes.w)/16.0;
+        vec2 q = floor(floor(vLocal*2.0 + 0.5)*0.5 + vHalf);
+        // the nearest line on each axis, and where its stroke starts
+        vec2 k = floor((q + 0.5 - phase)/spacing + 0.5);
+        vec2 start = floor(phase + k*spacing + 0.5 - 0.5*stroke);
+        bool onX = q.x >= start.x && q.x < start.x + stroke;
+        bool onY = q.y >= start.y && q.y < start.y + stroke;
+        bool major = (onX && mod(k.x, majorEvery) == 0.0) || (onY && mod(k.y, majorEvery) == 0.0);
+
+        offGrid = !(onX || onY);
+        FragColor = major ? vColor3 : vColor1;
+    }
     else if (ShaderType == 5u)
     {
-        // Icon glyph: vRadius=kind, vBorder=dir (the chevron only).
+        // Icon glyph: vRadius=kind, vBorder=dir (the chevron and the triangles).
         int kind = int(vRadius + 0.5);
         float a;
 
-        if(kind <= 1)
+        if(kind <= 1 || kind >= 7)
         {
             // Normalized local coords in [-1,1], so the stroke scales with the rect.
             // At a pixel's centre vLocal is a multiple of 0.5 exactly (the quad's
@@ -495,13 +543,28 @@ void main()
                 vec2 C = vec2(0.55, -0.45);
                 d = min(sdSegment(p, A, B), sdSegment(p, B, C)) - 0.14;
             }
-            else
+            else if(kind == 1)
             {
                 // chevron "v" pointing down (rotated by dir above).
                 vec2 A = vec2(-0.5, -0.2);
                 vec2 B = vec2(0.0, 0.28);
                 vec2 C = vec2(0.5, -0.2);
                 d = min(sdSegment(p, A, B), sdSegment(p, B, C)) - 0.13;
+            }
+            else
+            {
+                // triangle pointing down (rotated by dir above), its base along the
+                // top of the rect and its apex at the bottom: filled (7), or its
+                // outline (8), the stroke drawIcon packs into the border colour's
+                // red byte thick, inside its edge
+                d = sdTriangle(p, vec2(-0.9, -0.8), vec2(0.9, -0.8), vec2(0.0, 0.9));
+                if(kind == 8)
+                {
+                    vec2 hp = max(vHalf, vec2(1.0));
+                    float t = 0.5*floor(vBorderColor.r*255.0 + 0.5)*(1.0/hp.x + 1.0/hp.y);
+
+                    d = abs(d + 0.5*t) - 0.5*t;
+                }
             }
 
             // aa is one device pixel in p's units: vLocal is in device px, so a
@@ -589,7 +652,7 @@ void main()
     // its control, over its neighbours, and a line's quad is its bounding box), whose
     // coverage beside a stroke's edge is 0 give or take rounding: less than half a
     // step of 8-bit alpha changes no pixel
-    if(clipped || lineDeferred || (ShaderType == 2u && FragColor.a <= 0.0)
+    if(clipped || lineDeferred || offGrid || (ShaderType == 2u && FragColor.a <= 0.0)
         || ((ShaderType == 3u || ShaderType == 5u) && FragColor.a < 0.5/255.0))
         discard;
     // every other style writes the depth the fixed function would

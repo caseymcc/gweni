@@ -162,6 +162,11 @@ public:
     {
         wrotePrimitive(primitiveId);
     }
+    void drawGrid(size_t primitiveId, gweni::Rect, gweni::PointF, float, int, gweni::Color,
+        gweni::Color, int) override
+    {
+        wrotePrimitive(primitiveId);
+    }
     void drawTexturedRect(const gweni::Texture &, size_t primitiveId, gweni::Rect, int, float, float,
         float, float) override
     {

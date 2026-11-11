@@ -236,9 +236,11 @@ public:
 
     //! Draw a stroked icon glyph (anti-aliased, SDF) in \a color: \a kind 0=checkmark,
     //! 1=chevron, 2=cross (x), 3=dash, 4=square outline, 5=restore (a square outline
-    //! with a second one behind it, offset up and right), 6=rule (a separator line);
-    //! \a direction 0=down 1=up 2=left 3=right (chevron only), and for the rule
-    //! 0=horizontal 1=vertical. Kinds 2-5 fill the square centred in \a rect, and the
+    //! with a second one behind it, offset up and right), 6=rule (a separator line),
+    //! 7=triangle (filled, a node graph's pin), 8=triangle outline (the stroke
+    //! thick); \a direction 0=down 1=up 2=left 3=right (the chevron and the
+    //! triangles, which fill \a rect and point their apex that way), and for the
+    //! rule 0=horizontal 1=vertical. Kinds 2-5 fill the square centred in \a rect, and the
     //! rule runs the whole length of \a rect through its middle; all are stroked
     //! max(1, snap(1)) device px wide, and the strokes of 3-6 are whole rows and
     //! columns of fully covered pixels, so a rule is as thick wherever it lands on the
@@ -271,6 +273,20 @@ public:
     virtual void drawLine(size_t primitiveId, gweni::PointF p0, gweni::PointF p1,
         float thickness, int zIndex, const gweni::PointF *prev=nullptr,
         const gweni::PointF *next=nullptr);
+
+    //! Draw grid lines over \a rect in one primitive: a vertical line every \a spacing
+    //! canvas units from \a origin (a canvas point, which may be outside the rect)
+    //! along x and a horizontal one likewise along y, each max(1, snap(1)) whole
+    //! device px wide, placed as drawLine places a stroke across a coordinate, the
+    //! lines a whole number of \a majorEvery spacings from \a origin in \a major and
+    //! the rest in \a minor; a pixel on no line is left as it was, depth included.
+    //! The spacing is at least 1 device px and at most 4095 device px over
+    //! \a majorEvery (1..255). For a NodeGraph's grid: one slot however many lines,
+    //! which a pan or zoom rewrites alone. The default draws nothing.
+    virtual void drawGrid(size_t /*primitiveId*/, gweni::Rect /*rect*/, gweni::PointF /*origin*/,
+        float /*spacing*/, int /*majorEvery*/, gweni::Color /*minor*/, gweni::Color /*major*/,
+        int /*zIndex*/)
+    {}
 
     virtual void drawTexturedRect(const gweni::Texture &texture, size_t primitiveId, gweni::Rect targetRect, int zIndex,
         float u1=0.0f, float v1=0.0f,float u2=1.0f, float v2=1.0f)

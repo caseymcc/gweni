@@ -342,6 +342,13 @@ public:
         float thickness, int zIndex, const gweni::PointF *prev=nullptr,
         const gweni::PointF *next=nullptr) override;
 
+    //! Style 8: the lines evaluated in the fragment shader over the rect's quad,
+    //! the spacing in tx/ty (a float's bits), the two phases in bx/by (1/16 device
+    //! px from the quad's top-left, the origin's place in its major period), the
+    //! major count and the stroke in border, minor and major in cx/cy and dx/dy.
+    void drawGrid(size_t primitiveId, gweni::Rect rect, gweni::PointF origin, float spacing,
+        int majorEvery, gweni::Color minor, gweni::Color major, int zIndex) override;
+
     void startClip() override;
     void endClip() override;
 
@@ -607,18 +614,22 @@ protected:
         uint16_t style;
         int16_t  x, y;   //device px, signed: a quad must fit in +/-32 K (cullOutOfRangeQuad)
         uint16_t z;      //0..kMaxZIndex, the projection's depth range (read in the shader as inPosition.z & 0xFFFF)
-        uint16_t tx, ty; //color0 (top fill) packed rg/ba, or UV for texture (style 2, 0..65535 = 0..1)
-        // SDF fields (styles 3-7); left 0 for all other styles.
+        uint16_t tx, ty; //color0 (top fill) packed rg/ba, or UV for texture (style 2, 0..65535 = 0..1);
+                         //grid (style 8): its spacing in device px, a float's high and low bits
+        // SDF fields (styles 3-8); left 0 for all other styles.
         int16_t  lx, ly; //local position relative to rect center, in half-pixel units (= +/-size at the four corners, so an odd size is exact)
         uint16_t radius; //styles 4, 6, 7: corner radius in px (0..255) in the low byte, the
                          //edge mask (RoundedEdge) in the high byte; icon kind (style 5);
                          //image unit (style 2);
                          //line (style 3): LineHasPrev | LineHasNext, the neighbours it holds
-        uint16_t border; //border thickness in px; line thickness in px (style 3)
+        uint16_t border; //border thickness in px; line thickness in px (style 3); grid (style 8):
+                         //its major count in the low byte, its stroke px in the high one
         uint16_t cx, cy; //color1 (bottom fill for vertical gradient, image tint for style 2) packed rg/ba;
                          //line (style 3): its first endpoint, int16_t bits, in lx/ly's units
         uint16_t bx, by; //border color packed rg/ba; icon stroke px in bx's high byte (style 5);
-                         //line (style 3): its previous point with LineHasPrev, as cx/cy, else 0
+                         //line (style 3): its previous point with LineHasPrev, as cx/cy, else 0;
+                         //grid (style 8): its x and y phases, 1/16 px from the quad's top-left
+                         //(cx/cy its minor colour, dx/dy its major one)
         uint16_t dx, dy; //color3 packed rg/ba: bottom edge (style 6) or checker dark (style 7);
                          //line (style 3): its next point with LineHasNext, as cx/cy, else its
                          //second endpoint (-cx/-cy: the quad is centred on the segment)
