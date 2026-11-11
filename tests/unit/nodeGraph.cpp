@@ -42,7 +42,16 @@
  *    one reaching its edge, the ones wholly outside hidden, a cut joint
  *    drawn without that neighbour;
  *  - pins connected while they have a link, removeLink(), removePin() and
- *    removeNode() taking the links with them and giving every id back.
+ *    removeNode() taking the links with them and giving every id back;
+ *  - a title-bar drag, through the canvas's mouse input: the press selects an
+ *    unselected node alone (drawn NodeSelected), brings it to the front and
+ *    takes the selection; every move frame moves each selected node by the
+ *    mouse's motion in graph units (half the canvas motion at zoom 2), writes
+ *    no slot outside the moved nodes' subtrees and their links', changes no
+ *    more controls than they hold, runs one layout pass entering no more
+ *    controls than they hold and their ancestors; onNodesMoved fires once, on
+ *    the release, with getMovedNodes() the selection, and not at all for a
+ *    press let go where it was.
  */
 #include "headlessFixture.h"
 
@@ -980,4 +989,245 @@ TEST_CASE("NodeGraph: a graph deleted with links on it, its nodes going first or
         }
         // the Scene deletes the canvas, the links and the nodes with it
     }
+}
+
+namespace
+{
+
+struct DragScene: Scene, event::Handler
+{
+    DragScene()
+    {
+        for(int i=0; i < 6; ++i)
+        {
+            controls::Node *node=graph->addNode("Node "+std::to_string(i), Point(20+(i%3)*190, 20+(i/3)*160));
+
+            in.push_back(node->addPin(controls::PinDirection::Input, "In"));
+            out.push_back(node->addPin(controls::PinDirection::Output, "Out"));
+            nodes.push_back(node);
+        }
+        // 0 -> 1 -> 2, and 3 -> 4 on their own
+        links.push_back(graph->addLink(out[0], in[1]));
+        links.push_back(graph->addLink(out[1], in[2], controls::LinkStyle::Orthogonal));
+        links.push_back(graph->addLink(out[3], in[4], controls::LinkStyle::Straight));
+        graph->onNodesMoved.add(this, &DragScene::moved);
+        frame();
+        frame();
+    }
+
+    void moved(event::Info)
+    {
+        ++movedCalls;
+    }
+
+    //! The canvas point at the middle of \p node's title bar.
+    Point titleOf(controls::Node *node)
+    {
+        controls::Base *bar=node->getTitleBar();
+
+        return bar->localPosToCanvas(Point(bar->getWidth()/2, bar->getHeight()/2));
+    }
+
+    void move(const Point &at)
+    {
+        canvas->inputMouseMoved(at.x, at.y, 0, 0);
+    }
+
+    void press(const Point &at)
+    {
+        move(at);
+        canvas->inputMouseButton(0, true);
+    }
+
+    void release()
+    {
+        canvas->inputMouseButton(0, false);
+    }
+
+    //! Every control in \p node's subtree, the node included.
+    static size_t subtreeSize(controls::Base *node)
+    {
+        std::vector<controls::Base *> subtree{node};
+
+        for(size_t i=0; i < subtree.size(); ++i)
+            for(controls::Base *child : subtree[i]->getActualChildren())
+                subtree.push_back(child);
+        return subtree.size();
+    }
+
+    //! How many controls are above \p control, up to the canvas.
+    static size_t depthOf(controls::Base *control)
+    {
+        size_t depth=0;
+
+        for(controls::Base *parent=control->getActualParent(); parent; parent=parent->getActualParent())
+            ++depth;
+        return depth;
+    }
+
+    std::vector<controls::Node *> nodes;
+    std::vector<controls::Pin *> in;
+    std::vector<controls::Pin *> out;
+    std::vector<controls::Link *> links;
+    int movedCalls=0;
+};
+
+}//namespace
+
+TEST_CASE("NodeGraph: a title-bar drag moves the node, writing its slots and its links' alone")
+{
+    DragScene scene;
+    controls::Node *node=scene.nodes[1];
+    const Point start=node->getGraphPosition();
+
+    // the press selects it alone and brings it to the front
+    scene.graph->selectNode(scene.nodes[4]);
+    scene.press(scene.titleOf(node));
+    scene.frame();
+    CHECK(node->isSelected());
+    CHECK(!scene.nodes[4]->isSelected());
+    CHECK(scene.graph->getSelectedNodes() == std::vector<controls::Node *>{node});
+    CHECK(scene.graph->getNodeLayer()->getChildren().back() == node);
+    CHECK(scene.graph->draggingNodes());
+    CHECK((scene.renderer.rounded[ownIds(node)[0]].borderColor == tokyonight::NodeSelected.border));
+    scene.frame();
+
+    // what a move may write: the node's subtree and its two links
+    std::set<size_t> allowed=scene.subtreeIds(node);
+    for(controls::Link *link : {scene.links[0], scene.links[1]})
+    {
+        const std::vector<size_t> ids=ownIds(link);
+        allowed.insert(ids.begin(), ids.end());
+    }
+    const size_t subtree=DragScene::subtreeSize(node);
+    const Point from=scene.titleOf(node);
+
+    for(int step=1; step <= 6; ++step)
+    {
+        controls::resetChangeStats();
+        scene.move(Point(from.x+step*7, from.y+step*3));
+        scene.frame();
+        CAPTURE(step);
+        CHECK(node->getGraphPosition().x == start.x+step*7);
+        CHECK(node->getGraphPosition().y == start.y+step*3);
+
+        const std::set<size_t> written=scene.written();
+        CHECK(!written.empty());
+        for(size_t id : written)
+            CHECK(allowed.count(id) == 1);
+        CHECK(controls::getChangeStats().controls <= subtree+2);
+        CHECK(scene.canvas->getLayoutStats().passes == 1);
+        CHECK(scene.canvas->getLayoutStats().visited <= 2*(subtree+DragScene::depthOf(node))+8);
+        CHECK(scene.movedCalls == 0);
+    }
+
+    scene.release();
+    scene.frame();
+    CHECK(scene.movedCalls == 1);
+    CHECK(scene.graph->getMovedNodes() == std::vector<controls::Node *>{node});
+    CHECK(!scene.graph->draggingNodes());
+
+    // moves after the release move nothing
+    scene.move(Point(from.x+100, from.y+100));
+    scene.frame();
+    CHECK(node->getGraphPosition().x == start.x+42);
+    CHECK(scene.movedCalls == 1);
+}
+
+TEST_CASE("NodeGraph: a drag on a selected node moves the whole selection")
+{
+    DragScene scene;
+
+    scene.graph->selectNode(scene.nodes[0]);
+    scene.graph->selectNode(scene.nodes[2]);
+    scene.frame();
+
+    const Point start0=scene.nodes[0]->getGraphPosition();
+    const Point start2=scene.nodes[2]->getGraphPosition();
+    const Point still=scene.nodes[1]->getGraphPosition();
+    // the moved nodes, their links (0->1, 1->2) and nothing of 3, 4 and 5
+    std::set<size_t> allowed=scene.subtreeIds(scene.nodes[0]);
+    const std::set<size_t> other=scene.subtreeIds(scene.nodes[2]);
+    allowed.insert(other.begin(), other.end());
+    for(controls::Link *link : {scene.links[0], scene.links[1]})
+    {
+        const std::vector<size_t> ids=ownIds(link);
+        allowed.insert(ids.begin(), ids.end());
+    }
+
+    const Point from=scene.titleOf(scene.nodes[2]);
+
+    scene.press(from);
+    scene.frame();
+    for(int step=1; step <= 3; ++step)
+    {
+        scene.move(Point(from.x-step*11, from.y+step*5));
+        scene.frame();
+        CAPTURE(step);
+        CHECK(scene.nodes[0]->getGraphPosition().x == start0.x-step*11);
+        CHECK(scene.nodes[2]->getGraphPosition().x == start2.x-step*11);
+        CHECK(scene.nodes[0]->getGraphPosition().y == start0.y+step*5);
+        CHECK(scene.nodes[1]->getGraphPosition().x == still.x);
+        for(size_t id : scene.written())
+            CHECK(allowed.count(id) == 1);
+    }
+    scene.release();
+    scene.frame();
+    CHECK(scene.movedCalls == 1);
+    CHECK(scene.graph->getMovedNodes() == std::vector<controls::Node *>{scene.nodes[0], scene.nodes[2]});
+    // the selection stays
+    CHECK(scene.nodes[0]->isSelected());
+    CHECK(scene.nodes[2]->isSelected());
+}
+
+TEST_CASE("NodeGraph: a drag at zoom 2 moves by the mouse's motion in graph units, a still press fires nothing")
+{
+    DragScene scene;
+    controls::Node *node=scene.nodes[3];
+
+    scene.graph->setZoom(2.0f);
+    scene.frame();
+
+    const Point start=node->getGraphPosition();
+    const Point from=scene.titleOf(node);
+
+    scene.press(from);
+    scene.frame();
+    scene.move(Point(from.x+20, from.y-10));
+    scene.frame();
+    CHECK(node->getGraphPosition().x == start.x+10);
+    CHECK(node->getGraphPosition().y == start.y-5);
+    // back where it started: the drag has still moved
+    scene.move(from);
+    scene.frame();
+    scene.release();
+    scene.frame();
+    CHECK(scene.movedCalls == 1);
+
+    // a press let go where it was moves nothing and fires nothing
+    scene.press(scene.titleOf(node));
+    scene.frame();
+    scene.release();
+    scene.frame();
+    CHECK(scene.movedCalls == 1);
+    CHECK(node->getGraphPosition().x == start.x);
+}
+
+TEST_CASE("NodeGraph: a node deleted while it is dragged leaves the drag")
+{
+    DragScene scene;
+    controls::Node *node=scene.nodes[5];
+
+    scene.graph->selectNode(scene.nodes[0]);
+    scene.graph->selectNode(node);
+    scene.press(scene.titleOf(scene.nodes[0]));
+    scene.frame();
+    scene.graph->removeNode(node);
+    scene.frame();
+    scene.move(Point(scene.titleOf(scene.nodes[0]).x+5, scene.titleOf(scene.nodes[0]).y));
+    scene.frame();
+    scene.release();
+    scene.frame();
+    CHECK(scene.movedCalls == 1);
+    CHECK(scene.graph->getMovedNodes() == std::vector<controls::Node *>{scene.nodes[0]});
 }

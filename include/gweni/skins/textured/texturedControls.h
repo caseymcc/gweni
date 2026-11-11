@@ -757,11 +757,11 @@ private:
     std::vector<Segment> m_segments;
 };
 
-// A Node: [0] its frame (NodeBody, over Node::getFrameRect()), [1] its title
-// bar at getZIndex()+1 over the frame's top, NodeTitle's fill or the node's
-// title colour (its bottom a shade darker), with the frame's border, radius and
-// border width, square and borderless at its bottom, so frame and title are one
-// outline.
+// A Node: [0] its frame (NodeBody, NodeSelected while it is selected, over
+// Node::getFrameRect()), [1] its title bar at getZIndex()+1 over the frame's
+// top, NodeTitle's fill or the node's title colour (its bottom a shade darker),
+// with the frame's border, radius and border width, square and borderless at
+// its bottom, so frame and title are one outline.
 class Node:public textured::ControlRegister<Node>
 {
 public:

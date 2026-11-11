@@ -1929,7 +1929,7 @@ void Node::update(renderer::Base *renderer, controls::Base *baseControl)
     frame.x+=origin.x;
     frame.y+=origin.y;
 
-    const tokyonight::Surface &body=tokyonight::NodeBody;
+    const tokyonight::Surface &body=node->isSelected()?tokyonight::NodeSelected:tokyonight::NodeBody;
     const int z=baseControl->getZIndex();
 
     renderer->drawRoundedRect(m_primitives[0], frame, body.radius, body.borderWidth,

@@ -8,6 +8,7 @@
 #include <gweni/controls/nodeGraph.h>
 #include <gweni/controls/canvas.h>
 #include <gweni/controls/label.h>
+#include <gweni/gweni.h>
 
 #include <algorithm>
 #include <cmath>
@@ -26,6 +27,42 @@ GWENI_CONTROL_CONSTRUCTOR(NodeGraphLayer)
 
 GWENI_CONTROL_CONSTRUCTOR(NodeTitleBar)
 {
+}
+
+// The bar's node is its parent, and the node's graph does the moving, so a
+// drag moves the whole selection.
+void NodeTitleBar::onMouseClickLeft(int x, int y, bool down)
+{
+    Node *node=gweni_cast<Node>(getActualParent());
+    NodeGraph *graph=node?node->getGraph():nullptr;
+
+    if(!graph || isDisabled())
+        return;
+
+    if(down)
+    {
+        m_pressed=true;
+        gweni::MouseFocus=this;
+        graph->beginNodeDrag(node, Point(x, y));
+    }
+    else if(m_pressed)
+    {
+        m_pressed=false;
+        if(gweni::MouseFocus == this)
+            gweni::MouseFocus=nullptr;
+        graph->endNodeDrag();
+    }
+}
+
+void NodeTitleBar::onMouseMoved(int x, int y, int /*deltaX*/, int /*deltaY*/)
+{
+    if(!m_pressed)
+        return;
+
+    Node *node=gweni_cast<Node>(getActualParent());
+
+    if(NodeGraph *graph=node?node->getGraph():nullptr)
+        graph->dragNodes(Point(x, y));
 }
 
 GWENI_CONTROL_CONSTRUCTOR(NodePinColumn)
@@ -303,6 +340,14 @@ Point Node::getGraphPosition() const
     const Rect &requested=getRequestedBounds();
 
     return Point(requested.x-offset, requested.y-offset);
+}
+
+// Out of its graph's drag; a graph being deleted is no NodeGraph any more
+// (getGraph() is null), and has nothing to drop.
+Node::~Node()
+{
+    if(NodeGraph *graph=getGraph())
+        graph->forgetNode(this);
 }
 
 void Node::onBoundsChanged(Rect oldBounds)
@@ -644,6 +689,101 @@ void NodeGraph::removeLink(Link *link)
         pin->setConnected(!pin->m_links.empty());
     }
     link->delayedDelete();
+}
+
+void NodeGraph::selectNode(Node *node, bool selected)
+{
+    if(!node || (node->getParent() != m_nodeLayer) || (node->m_selected == selected))
+        return;
+
+    node->m_selected=selected;
+    node->addStateChange(StateChange_Background);
+}
+
+void NodeGraph::selectOnly(Node *node)
+{
+    for(Node *other : getSelectedNodes())
+    {
+        if(other != node)
+            selectNode(other, false);
+    }
+    selectNode(node, true);
+}
+
+void NodeGraph::clearSelection()
+{
+    for(Node *node : getSelectedNodes())
+        selectNode(node, false);
+}
+
+std::vector<Node *> NodeGraph::getSelectedNodes() const
+{
+    std::vector<Node *> selected;
+
+    for(Node *node : getNodes())
+    {
+        if(node->isSelected())
+            selected.push_back(node);
+    }
+    return selected;
+}
+
+void NodeGraph::beginNodeDrag(Node *node, const Point &at)
+{
+    if(!node->isSelected())
+        selectOnly(node);
+
+    // only the pressed node's subtree takes new z
+    node->bringToFront();
+
+    m_dragged.clear();
+    m_moved.clear();
+    m_dragMoved=false;
+    for(Node *selected : getSelectedNodes())
+        m_dragged.push_back({selected, selected->getGraphPosition()});
+    m_dragFrom=canvasToGraph(PointF(at));
+}
+
+void NodeGraph::dragNodes(const Point &at)
+{
+    if(m_dragged.empty())
+        return;
+
+    const PointF to=canvasToGraph(PointF(at));
+    const Point delta(int(std::lround(to.x-m_dragFrom.x)), int(std::lround(to.y-m_dragFrom.y)));
+
+    for(const DraggedNode &dragged : m_dragged)
+    {
+        const Point position(dragged.start.x+delta.x, dragged.start.y+delta.y);
+        const Point now=dragged.node->getGraphPosition();
+
+        if((now.x == position.x) && (now.y == position.y))
+            continue;
+
+        dragged.node->setGraphPosition(position);
+        m_dragMoved=true;
+    }
+}
+
+void NodeGraph::endNodeDrag()
+{
+    const bool moved=m_dragMoved;
+
+    m_moved.clear();
+    for(const DraggedNode &dragged : m_dragged)
+        m_moved.push_back(dragged.node);
+    m_dragged.clear();
+    m_dragMoved=false;
+
+    if(moved)
+        onNodesMoved.call(this);
+}
+
+void NodeGraph::forgetNode(Node *node)
+{
+    m_dragged.erase(std::remove_if(m_dragged.begin(), m_dragged.end(),
+        [node](const DraggedNode &dragged) { return dragged.node == node; }), m_dragged.end());
+    m_moved.erase(std::remove(m_moved.begin(), m_moved.end(), node), m_moved.end());
 }
 
 std::vector<Link *> NodeGraph::getLinks() const

@@ -74,12 +74,21 @@ public:
     GWENI_CONTROL(NodeGraphLayer, controls::Base);
 };
 
-//! A Node's title bar: its title Label, drawn by the Node's renderer.
+//! A Node's title bar: its title Label, drawn by the Node's renderer. A left
+//! press on it starts its graph's node drag (NodeGraph::onNodesMoved), the
+//! moves go on with it while the mouse is held, and the release ends it.
 class GWENI_EXPORT NodeTitleBar: public controls::Base
 {
 public:
 
     GWENI_CONTROL(NodeTitleBar, controls::Base);
+
+    void onMouseClickLeft(int x, int y, bool down) override;
+    void onMouseMoved(int x, int y, int deltaX, int deltaY) override;
+
+protected:
+
+    bool m_pressed=false;
 };
 
 //! A Node's column of pins on one side, and the row holding both columns: they
@@ -358,6 +367,12 @@ public:
     //! PinOverhang on either side.
     Rect getFrameRect() const;
 
+    ~Node() override;
+
+    //! Whether the node is in its graph's selection (NodeGraph::selectNode()),
+    //! drawn in the theme's NodeSelected.
+    bool isSelected() const { return m_selected; }
+
     void setUserId(uint64_t id) { m_userId=id; }
     uint64_t getUserId() const { return m_userId; }
     void setUserData(void *data) { m_userData=data; }
@@ -373,6 +388,7 @@ protected:
 
     friend class Pin;
     friend class internal::NodePinColumn;
+    friend class NodeGraph;
 
     //! The column holding \p side's pins.
     internal::NodePinColumn *column(PinSide side) const;
@@ -385,6 +401,7 @@ protected:
     internal::NodePinColumn *m_columns[2]={nullptr, nullptr};
     bool m_hasTitleColor=false;
     Color m_titleColor;
+    bool m_selected=false;
     uint64_t m_userId=0;
     void *m_userData=nullptr;
 };
@@ -445,6 +462,27 @@ public:
     //! The links, oldest first, without one removeLink() has taken off.
     std::vector<Link *> getLinks() const;
 
+    //! The selection's nodes: each is drawn selected (Node::isSelected()).
+    //! \p selected adds \p node to it or takes it off; selectOnly() makes it
+    //! the selection's one node; clearSelection() empties it. Each marks only
+    //! the nodes whose state changes.
+    void selectNode(Node *node, bool selected=true);
+    void selectOnly(Node *node);
+    void clearSelection();
+    //! The selected nodes, back to front.
+    std::vector<Node *> getSelectedNodes() const;
+
+    //! Whether a title-bar drag is moving nodes (a press held on a title bar).
+    bool draggingNodes() const { return !m_dragged.empty(); }
+    //! The nodes the last drag moved, while onNodesMoved runs and after it,
+    //! until the next drag starts.
+    const std::vector<Node *> &getMovedNodes() const { return m_moved; }
+
+    //! Fired once when a title-bar drag that moved its nodes is let go, after
+    //! the move (getMovedNodes() has them); a drag that moved nothing fires
+    //! nothing. An app's own setGraphPosition() fires nothing.
+    event::Caller onNodesMoved;
+
     //! The graph's step between two grid lines at the current zoom.
     float gridStep() const;
 
@@ -465,6 +503,34 @@ protected:
 
     //! The grid follows the zoom and the pan: the graph draws its lines again.
     void spaceChanged(bool zoomed) override;
+
+    friend class Node;
+    friend class internal::NodeTitleBar;
+
+    //! A left press on \p node's title bar at the canvas point \p at: an
+    //! unselected node becomes the selection's one node, the pressed node goes
+    //! to the front of the node layer, and the selection is taken to move.
+    void beginNodeDrag(Node *node, const Point &at);
+    //! The mouse at the canvas point \p at: every node taken moves by the
+    //! mouse's motion from the press, in whole graph units.
+    void dragNodes(const Point &at);
+    //! The release: onNodesMoved if anything moved.
+    void endNodeDrag();
+    //! A node deleted is dropped from the drag and the moved nodes.
+    void forgetNode(Node *node);
+
+    struct DraggedNode
+    {
+        Node *node;
+        Point start;
+    };
+
+    //! the nodes a drag moves, with where each started
+    std::vector<DraggedNode> m_dragged;
+    //! the press in graph units
+    PointF m_dragFrom;
+    bool m_dragMoved=false;
+    std::vector<Node *> m_moved;
 
     internal::NodeGraphLayer *m_linkLayer=nullptr;
     internal::NodeGraphLayer *m_nodeLayer=nullptr;
