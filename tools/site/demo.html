@@ -17,7 +17,9 @@
   after that default, which opens the depth view (gweni::tools::DepthView)
   once the first frame is drawn, with the overlay open too; the "Depth"
   button left of "Stats" opens it as F9 does, and the view takes the mouse,
-  so Escape or F9 closes it again, the button following.
+  so Escape or F9 closes it again, the button following. The header's
+  built-from comment becomes the commit the site was built from, linked to it,
+  on the header's one row, so the canvas keeps its height.
 -->
 <html lang="en">
 <head>
@@ -32,6 +34,7 @@
 <a class="name" href="index.html">gweni</a>
 <span>Demo</span>
 <nav>
+<span class="built-from"><!-- gweni:built-from --></span>
 <a href="controltest.html">Gallery</a>
 <a href="https://github.com/caseymcc/gweni">GitHub</a>
 </nav>

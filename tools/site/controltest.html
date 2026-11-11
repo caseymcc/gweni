@@ -20,7 +20,9 @@
   leaves it closed) and follows the view however it opens or closes (F9,
   Escape in the view), which ControlTest tells the page through
   Module.gweniDepthViewChanged. Before the window has drawn a frame a change
-  loads the page again with the new parameter.
+  loads the page again with the new parameter. The header's built-from comment
+  becomes the commit the site was built from, linked to it, on the header's
+  one row, so the canvas keeps its height.
 -->
 <html lang="en">
 <head>
@@ -39,6 +41,7 @@
 </select>
 <label><input type="checkbox" id="depth-view"> Depth view</label>
 <nav>
+<span class="built-from"><!-- gweni:built-from --></span>
 <a href="demo.html">Demo</a>
 <a href="https://github.com/caseymcc/gweni">GitHub</a>
 </nav>

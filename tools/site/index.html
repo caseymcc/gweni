@@ -6,7 +6,8 @@
 
   The hosted site's landing page (tools/build_site.sh). Every URL is relative,
   so the site works under https://<user>.github.io/gweni/ and from a local
-  server alike.
+  server alike. The footer's built-from comment becomes the commit the site
+  was built from, linked to it.
 -->
 <html lang="en">
 <head>
@@ -46,6 +47,7 @@ text is grayscale-antialiased (the desktop's LCD text needs a blend mode WebGL 2
 MIT licensed (<a href="licenses/LICENSE.txt">license</a>), forked from Garry Newman's GWEN.
 The fonts: <a href="licenses/OpenSans-LICENSE.txt">Open Sans</a>,
 <a href="licenses/LiberationSans-LICENSE.txt">Liberation Sans</a>.
+<br><span class="built-from"><!-- gweni:built-from --></span>
 </footer>
 </main>
 </body>

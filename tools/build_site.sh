@@ -21,7 +21,11 @@
 #                     must be configured already.
 #    --help           this text.
 #
-#  It builds ControlTest and OpenGLCore in that tree (cmake --build) and stages:
+#  It builds ControlTest and OpenGLCore in that tree (cmake --build) and stages
+#  these, each page saying which commit it was built from ("built from <short
+#  sha> (<commit date>)", a link to the commit: GITHUB_SHA when it is set, else
+#  the checkout's HEAD, with -dirty when the checkout has changes; "unknown"
+#  without git):
 #    index.html         the landing page, with docs/images/demo.png as a preview
 #    demo.html          the OpenGLCore demo's interactive window
 #    controltest.html   ControlTest's window with a control picker, whose
@@ -123,16 +127,50 @@ find "$out" -mindepth 1 -delete
 touch "$out/.gweni-site" "$out/.nojekyll"
 
 site="$repo/tools/site"
-cp "$site/index.html" "$site/demo.html" "$site/site.css" "$out/"
+cp "$site/site.css" "$out/"
 cp "$bin"/ControlTest.{js,wasm,data} "$bin"/OpenGLCore.{js,wasm,data} "$out/"
 mkdir -p "$out/images" "$out/licenses"
 cp "$repo/docs/images/demo.png" "$out/images/"
 cp "$repo/LICENSE" "$out/licenses/LICENSE.txt"
 cp "$repo"/resources/*-LICENSE.txt "$out/licenses/"
 
-# controltest.html with one <option> per control where its gweni:controls comment is
-GWENI_CONTROLS="$controls" python3 -I - "$site/controltest.html" "$out/controltest.html" <<'EOF'
-import html, os, sys
+# the commit the site is built from: GITHUB_SHA in a workflow, else the checkout's
+# HEAD, with -dirty when the checkout has changes git does not ignore; its
+# commit date, not the build's, so two builds of one commit stage the same bytes
+sha="${GITHUB_SHA:-}"
+if [ -z "$sha" ]; then
+    sha="$(git -C "$repo" rev-parse HEAD 2>/dev/null)" || sha=
+fi
+date=
+dirty=
+if [ -n "$sha" ]; then
+    date="$(git -C "$repo" show -s --format=%cs "$sha" 2>/dev/null)" || date=
+    if [ "$(git -C "$repo" rev-parse HEAD 2>/dev/null)" = "$sha" ] &&
+       [ -n "$(git -C "$repo" status --porcelain 2>/dev/null)" ]; then
+        dirty=-dirty
+    fi
+fi
+
+# every page with its gweni:built-from comment filled in, and controltest.html
+# with one <option> per control where its gweni:controls comment is
+GWENI_CONTROLS="$controls" GWENI_SHA="$sha" GWENI_DATE="$date" GWENI_DIRTY="$dirty" \
+python3 -I - "$site" "$out" index.html demo.html controltest.html <<'EOF'
+import html, os, re, sys
+site, out, pages = sys.argv[1], sys.argv[2], sys.argv[3:]
+
+def fill(page, name, marker, text):
+    if page.count(marker) != 1:
+        sys.exit('build_site.sh: %s has no single %s' % (os.path.join(site, name), marker))
+    return page.replace(marker, text)
+
+sha, date, dirty = os.environ['GWENI_SHA'], os.environ['GWENI_DATE'], os.environ['GWENI_DIRTY']
+if re.fullmatch('[0-9a-f]{7,64}', sha):
+    stamp = 'built from <a href="https://github.com/caseymcc/gweni/commit/%s">%s%s</a>' % (sha, sha[:7], dirty)
+    if date:
+        stamp += ' (%s)' % html.escape(date)
+else:
+    stamp = 'built from unknown'
+
 options = []
 for line in os.environ['GWENI_CONTROLS'].splitlines():
     if not line.startswith('  ') or not line.strip():
@@ -141,11 +179,13 @@ for line in os.environ['GWENI_CONTROLS'].splitlines():
     options.append('<option value="%s">%s</option>' % (html.escape(name), html.escape(line.strip())))
 if not options:
     sys.exit('build_site.sh: ControlTest --list listed no controls')
-page = open(sys.argv[1]).read()
-marker = '<!-- gweni:controls -->'
-if page.count(marker) != 1:
-    sys.exit('build_site.sh: %s has no single %s' % (sys.argv[1], marker))
-open(sys.argv[2], 'w').write(page.replace(marker, '\n'.join(options)))
+
+for name in pages:
+    page = open(os.path.join(site, name)).read()
+    page = fill(page, name, '<!-- gweni:built-from -->', stamp)
+    if name == 'controltest.html':
+        page = fill(page, name, '<!-- gweni:controls -->', '\n'.join(options))
+    open(os.path.join(out, name), 'w').write(page)
 EOF
 
 echo "build_site.sh: staged $out ($(echo "$controls" | grep -c '^  ') controls in the picker)"
