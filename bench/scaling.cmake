@@ -78,6 +78,9 @@
 #                                               change (hidden-pages: N hidden
 #                                               controls, 40 shown)
 #    mirror_bytes, prim_ids, text_ids  no       sizes of the tree, not work
+#    primitive_slots_culled            no       a size: the shown slots culled
+#                                               now, which follow N where the
+#                                               clipped part does
 #    *_us                              no       times
 #
 #  Any other key a frame line carries is checked as "any increase", so a new
@@ -131,7 +134,7 @@ set(LARGE_N_FOR
 )
 
 # Keys that are not work counters (see the table above).
-set(UNCHECKED scene n frame allocs alloc_bytes draw_calls primitive_slots_drawn primitive_ranges text_draws mirror_bytes prim_ids text_ids)
+set(UNCHECKED scene n frame allocs alloc_bytes draw_calls primitive_slots_drawn primitive_ranges primitive_slots_culled text_draws mirror_bytes prim_ids text_ids)
 
 execute_process(COMMAND ${BENCH} --list
     OUTPUT_VARIABLE list_output
