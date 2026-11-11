@@ -809,6 +809,23 @@ bool Canvas::inputMouseButton(int button, bool down)
     if(hidden())
         return false;
 
+    // A control that takes the press as a gesture of its own (a ZoomPanel's
+    // pan) gets it, and the canvas's input with it, before anything under it.
+    if(down && !input::isLeftMouseDown() && !input::isRightMouseDown()
+        && (!MouseFocus || (MouseFocus->getCanvas() != this))
+        && HoveredControl && (HoveredControl->getCanvas() == this))
+    {
+        for(Base *control=HoveredControl; control; control=control->getParent())
+        {
+            if(InputCapture *gesture=control->pressGesture(button))
+            {
+                setInputCapture(gesture);
+                gesture->captureMouseButton(button, true);
+                return true;
+            }
+        }
+    }
+
     // The next update phase hides it, and shows none for this control again
     // until the mouse has been on another one. The control is the one under
     // the mouse now (input::onMouseMoved keeps HoveredControl current), not

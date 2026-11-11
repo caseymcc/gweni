@@ -51,6 +51,7 @@ size_t getControlType(std::string name);
 std::string getFullName(Base *base);
 
 class Canvas;
+class InputCapture;
 class LayoutItem;
 struct UpdateStats;
 class Menu;
@@ -751,6 +752,16 @@ public:
 
     virtual void onMouseMoved(int x, int y, int deltaX, int deltaY);
     virtual bool onMouseWheeled(int iDelta);
+
+    //! A press of mouse \p button (0 left, 1 right, 2 middle) on this control
+    //! or under it that this control takes as the start of a gesture of its
+    //! own (a ZoomPanel's pan), before any control under it sees the press:
+    //! the capture the canvas hands its input to (Canvas::setInputCapture),
+    //! which gives it back when the gesture ends, or null (the default) to let
+    //! the press go on. The canvas asks the hovered control and its ancestors,
+    //! nearest first, on a press with no button down and no control holding
+    //! the mouse.
+    virtual InputCapture *pressGesture(int /*button*/) { return nullptr; }
 
     virtual void onMouseClickLeft(int /*x*/, int /*y*/, bool /*down*/) {}
     virtual void onMouseClickRight(int /*x*/, int /*y*/, bool /*down*/) {}

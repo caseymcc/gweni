@@ -7,18 +7,133 @@
 
 #include <gweni/controls/zoomPanel.h>
 #include <gweni/controls/canvas.h>
+#include <gweni/inputHandler.h>
+#include <gweni/platforms/inputEvent.h>
 
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
 
 namespace gweni
 {
 namespace controls
 {
 
+// A pan from a press until its release, with the canvas's input. Under the
+// threshold it is only held: let go, the press and the release are given to
+// the canvas then, where the mouse still is for the canvas (the capture kept
+// input::'s position at the press), and a move to where the mouse went
+// after. Past it the content follows the mouse, by the motion in the panel's
+// own units, and the release ends it with a move to where the mouse is.
+class ZoomPanel::PanGesture: public InputCapture
+{
+public:
+
+    explicit PanGesture(ZoomPanel *panel): m_panel(panel) {}
+
+    ~PanGesture() override { end(); }
+
+    void start(Canvas *canvas, int button)
+    {
+        m_canvas=canvas;
+        m_button=button;
+        m_press=input::getMousePosition();
+        m_mouse=m_press;
+        m_startPan=m_panel->pan();
+        m_panning=false;
+    }
+
+    bool active() const { return m_canvas && (m_canvas->inputCapture() == this); }
+    bool panning() const { return active() && m_panning; }
+    //! giving a held press to the canvas: the panel takes no press then
+    bool replaying() const { return m_replaying; }
+
+    void captureMouseMoved(int x, int y, int /*deltaX*/, int /*deltaY*/) override
+    {
+        m_mouse=Point(x, y);
+        if(!m_panel->visible())
+        {
+            end();
+            return;
+        }
+
+        if(!m_panning && (std::abs(x-m_press.x) < PanThreshold) && (std::abs(y-m_press.y) < PanThreshold))
+            return;
+
+        // the motion in the panel's units, which a zoom it is in scales
+        const PointF from=m_panel->canvasPosToLocalF(PointF(m_press));
+        const PointF to=m_panel->canvasPosToLocalF(PointF(m_mouse));
+
+        m_panning=true;
+        m_panel->setPan(PointF(m_startPan.x+(to.x-from.x), m_startPan.y+(to.y-from.y)));
+    }
+
+    void captureMouseButton(int button, bool down) override
+    {
+        if(!down && (button == m_button))
+            release();
+    }
+
+    void captureMouseWheel(int delta) override
+    {
+        if(m_panel->visible())
+            m_panel->wheelAt(delta, m_mouse);
+    }
+
+    void captureCanvasDeleted(Canvas * /*canvas*/) override { m_canvas=nullptr; }
+
+    //! Gives the canvas its input back, with nothing replayed.
+    void end()
+    {
+        if(active())
+            m_canvas->setInputCapture(nullptr);
+        m_canvas=nullptr;
+        m_panning=false;
+    }
+
+private:
+
+    void release()
+    {
+        Canvas *canvas=m_canvas;
+        const bool panned=m_panning;
+        const int button=m_button;
+        const Point mouse=m_mouse;
+
+        end();
+        if(!canvas)
+            return;
+
+        if(!panned)
+        {
+            m_replaying=true;
+            canvas->inputMouseButton(button, true);
+            canvas->inputMouseButton(button, false);
+            m_replaying=false;
+        }
+
+        const Point at=input::getMousePosition();
+
+        if((at.x != mouse.x) || (at.y != mouse.y))
+            canvas->inputMouseMoved(mouse.x, mouse.y, mouse.x-at.x, mouse.y-at.y);
+    }
+
+    ZoomPanel *m_panel;
+    Canvas *m_canvas=nullptr;
+    int m_button=0;
+    Point m_press;
+    Point m_mouse;
+    PointF m_startPan;
+    bool m_panning=false;
+    bool m_replaying=false;
+};
+
 GWENI_CONTROL_CONSTRUCTOR(ZoomPanel)
 {
     m_transformsChildren=true;
+    // it takes the wheel and the presses over it that its content leaves
+    setMouseInputEnabled(true);
+    m_gesture=std::make_unique<PanGesture>(this);
 
     m_innerPanel=newChild<Base>();
     m_innerPanel->setPlacement(Placement::Owner);
@@ -32,7 +147,7 @@ void ZoomPanel::setZoom(float zoom)
         return;
 
     m_zoom=zoom;
-    spaceChanged();
+    spaceChanged(true);
 }
 
 void ZoomPanel::setPan(const PointF &pan)
@@ -41,7 +156,56 @@ void ZoomPanel::setPan(const PointF &pan)
         return;
 
     m_pan=pan;
-    spaceChanged();
+    spaceChanged(false);
+}
+
+ZoomPanel::~ZoomPanel()
+{
+}
+
+void ZoomPanel::zoomAt(float zoom, const PointF &at)
+{
+    zoom=std::min(std::max(zoom, m_minZoom), m_maxZoom);
+    if(zoom == m_zoom)
+        return;
+
+    // the content point under at, (at-pan)/zoom, is at at again
+    const double contentX=(double(at.x)-m_pan.x)/m_zoom;
+    const double contentY=(double(at.y)-m_pan.y)/m_zoom;
+
+    m_zoom=zoom;
+    m_pan=PointF(static_cast<float>(at.x-contentX*zoom), static_cast<float>(at.y-contentY*zoom));
+    spaceChanged(true);
+}
+
+bool ZoomPanel::panning() const
+{
+    return m_gesture->panning();
+}
+
+void ZoomPanel::wheelAt(int delta, const Point &mouse)
+{
+    zoomAt(m_zoom*std::pow(WheelStep, delta/60.0f), canvasPosToLocalF(PointF(mouse)));
+}
+
+// Whatever under the cursor did not take the wheel, the panel does: at a limit
+// of the range too, so nothing above it scrolls instead.
+bool ZoomPanel::onMouseWheeled(int delta)
+{
+    wheelAt(delta, input::getMousePosition());
+    return true;
+}
+
+InputCapture *ZoomPanel::pressGesture(int button)
+{
+    const bool pans=(button == 1) || (button == 2) || ((button == 0) && input::isKeyDown(keys::Space));
+    Canvas *canvas=getCanvas();
+
+    if(!pans || !canvas || m_gesture->replaying() || m_gesture->active())
+        return nullptr;
+
+    m_gesture->start(canvas, button);
+    return m_gesture.get();
 }
 
 void ZoomPanel::setZoomRange(float lowest, float highest)
@@ -66,10 +230,11 @@ Point ZoomPanel::contentSize() const
         (m_contentSize.y < 0)?getHeight():m_contentSize.y);
 }
 
-void ZoomPanel::spaceChanged()
+void ZoomPanel::spaceChanged(bool zoomed)
 {
+    // every rect moves, and on a zoom every text run is drawn at a new size
     if(m_innerPanel)
-        m_innerPanel->addStateChangeRecursive(StateChange_Geometry);
+        m_innerPanel->addStateChangeRecursive(StateChange_Geometry|(zoomed?StateChange_Text:0));
 
     // what is under a resting mouse may be another control now
     if(Canvas *canvas=getCanvas())
