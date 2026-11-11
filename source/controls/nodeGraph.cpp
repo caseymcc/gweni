@@ -38,11 +38,13 @@ void NodeTitleBar::onMouseClickLeft(int x, int y, bool down)
     Node *node=gweni_cast<Node>(getActualParent());
     NodeGraph *graph=node?node->getGraph():nullptr;
 
-    if(!graph || isDisabled())
-        return;
-
+    // Disabled refuses a press only: a release always ends the drag, so a bar
+    // disabled mid-drag does not leave it stuck.
     if(down)
     {
+        if(!graph || isDisabled())
+            return;
+
         m_pressed=true;
         gweni::MouseFocus=this;
         graph->beginNodeDrag(node, Point(x, y));
@@ -52,7 +54,8 @@ void NodeTitleBar::onMouseClickLeft(int x, int y, bool down)
         m_pressed=false;
         if(gweni::MouseFocus == this)
             gweni::MouseFocus=nullptr;
-        graph->endNodeDrag();
+        if(graph)
+            graph->endNodeDrag();
     }
 }
 
@@ -538,12 +541,15 @@ GWENI_CONTROL_CONSTRUCTOR(Link)
     setBounds(0, 0, 2*NodeGraph::GraphExtent, 2*NodeGraph::GraphExtent);
 }
 
+// Deleted directly, not through removeLink(): its pins are still there.
 Link::~Link()
 {
     for(Pin *pin : {m_from, m_to})
     {
-        if(pin)
-            detach(pin);
+        if(!pin)
+            continue;
+        detach(pin);
+        pin->setConnected(!pin->m_links.empty());
     }
 }
 
@@ -710,10 +716,16 @@ Base *Link::getControlAt(int x, int y, bool bOnlyIfMouseEnabled)
     if(!graph)
         return nullptr;
 
-    // the middle of the unit the point is in, in graph units
-    const PointF origin=graphOrigin();
-    const PointF point(float(x)+0.5f+origin.x, float(y)+0.5f+origin.y);
+    // the graph's exact point while it walks; called on its own, the middle
+    // of the graph unit the point is in
+    PointF point=graph->m_hitPoint;
 
+    if(!graph->m_hitTesting)
+    {
+        const PointF origin=graphOrigin();
+
+        point=PointF(float(x)+0.5f+origin.x, float(y)+0.5f+origin.y);
+    }
     return (distanceTo(point)*graph->zoom() <= HoverDistance)?this:nullptr;
 }
 
@@ -1733,6 +1745,17 @@ float NodeGraph::gridStep() const
     while(step*zoom() < MinGridGap)
         step*=float(GridMajorEvery);
     return step;
+}
+
+Base *NodeGraph::getControlAt(int x, int y, bool bOnlyIfMouseEnabled)
+{
+    m_hitPoint=toChildSpace(PointF(float(x)+0.5f, float(y)+0.5f));
+    m_hitTesting=true;
+
+    Base *found=ParentClass::getControlAt(x, y, bOnlyIfMouseEnabled);
+
+    m_hitTesting=false;
+    return found;
 }
 
 PointF NodeGraph::canvasToGraph(const PointF &canvas) const

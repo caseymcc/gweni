@@ -2636,7 +2636,10 @@ pointer (`setUserId`, `setUserData`), and nothing in it knows what a pin carries
   translucent fill in the link layer, under the nodes: text is drawn after every
   slot, and a translucent box over it would hide it (as the stats overlay does). A
   link is hovered within `Link::HoverDistance` (4) canvas units on screen of its
-  curve (`Link::getControlAt`, `distanceTo`) and drawn in `LinkHover`; a hovered
+  curve (`Link::getControlAt`, `distanceTo`) and drawn in `LinkHover`, measured
+  from the exact graph point of the tested canvas unit's centre, which
+  `NodeGraph::getControlAt` keeps while the hit-test walks (the walk hands its
+  children whole graph units, at zoom 4 four canvas units each); a hovered
   pin's marker is a unit larger and lighter. A press focuses the graph (unless a
   control in a body takes the keys), and Delete removes the selection. A right click
   opens the context menu (`setContextMenu`) of the link, node or graph under it, the

@@ -584,7 +584,10 @@
  *                 their ancestors, onNodesMoved once on the release) and the
  *                 app moving them back at the same cost; a pin's and a link's
  *                 hover (2 units off the curve hovers it, 6 does not), each
- *                 writing the hovered item and the left one; a pin drag's
+ *                 writing the hovered item and the left one, and at zoom 4
+ *                 every canvas unit across five of the link's segments hovered
+ *                 exactly when its centre is within 4 of the curve
+ *                 (hover_link_zoom4 tested=... wrong=0); a pin drag's
  *                 preview at the mouse, a vetoed and a made link, a drop on
  *                 empty space (onLinkDroppedOnEmpty at the mouse's graph point,
  *                 the demo's Add node menu) and Escape; click, Shift and Ctrl
@@ -8680,6 +8683,60 @@ static bool runNodeGraphScenario(Session &s, const std::string &shotDir, bool &p
             moveMouse(s, off(6.0f).x, off(6.0f).y);
             renderFrames(s, 1);
             check(gweni::HoveredControl != link, "6 units off its curve the link is still hovered");
+
+            // at zoom 4, where a graph unit is 4 on-screen units, the band is
+            // still HoverDistance on screen: each canvas unit across the curve
+            // is hovered exactly when its centre is that near, at segments of
+            // the curve's middle part (other slopes, other phases of the
+            // graph's whole units), the zoom about each
+            const float zoomBefore=graph->zoom();
+            const gweni::PointF panBefore=graph->pan();
+            size_t wrong=0;
+            size_t tested=0;
+
+            for(size_t sample=0; sample < 5; ++sample)
+            {
+                const size_t i=points.size()*(3+sample)/10;
+                const gweni::PointF centre((points[i].x+points[i+1].x)*0.5f, (points[i].y+points[i+1].y)*0.5f);
+
+                graph->setZoom(zoomBefore);
+                graph->setPan(panBefore);
+                graph->zoomAt(4.0f, graph->graphToLocal(centre));
+                renderFrames(s, 1);
+
+                const gweni::PointF a4=graph->localPosToCanvasF(graph->graphToLocal(points[i]));
+                const gweni::PointF b4=graph->localPosToCanvasF(graph->graphToLocal(points[i+1]));
+                const gweni::PointF on4=graph->localPosToCanvasF(graph->graphToLocal(centre));
+                const float length4=std::hypot(b4.x-a4.x, b4.y-a4.y);
+                const gweni::PointF across4(-(b4.y-a4.y)/length4, (b4.x-a4.x)/length4);
+
+                for(int step=-14; step <= 14; ++step)
+                {
+                    const float units=float(step)*0.5f;
+                    const gweni::Point at(int(std::floor(on4.x+across4.x*units)), int(std::floor(on4.y+across4.y*units)));
+                    const float distance=link->distanceTo(graph->canvasToGraph(
+                        gweni::PointF(float(at.x)+0.5f, float(at.y)+0.5f)))*graph->zoom();
+
+                    if(std::abs(distance-Link::HoverDistance) < 0.05f)
+                        continue;
+                    moveMouse(s, at.x, at.y);
+                    renderFrames(s, 1);
+                    ++tested;
+                    if((gweni::HoveredControl == link) != (distance <= Link::HoverDistance))
+                    {
+                        std::cerr<<"ControlTest: node-graph: at zoom 4, "<<distance<<" units off its curve the link is "
+                            <<((gweni::HoveredControl == link)?"":"not ")<<"hovered\n";
+                        ++wrong;
+                    }
+                }
+            }
+            std::cout<<"node-graph hover_link_zoom4 tested="<<tested<<" wrong="<<wrong<<"\n";
+            check(wrong == 0, "at zoom 4 the link's hover band is not HoverDistance on screen");
+
+            graph->setZoom(zoomBefore);
+            graph->setPan(panBefore);
+            moveMouse(s, empty.x, empty.y);
+            renderFrames(s, 2);
         }
     }
 

@@ -682,6 +682,12 @@ public:
 
     void arrange(skin::Base *skin, Dim dim) override;
 
+    //! The hit-test walk takes the children's point down to whole graph
+    //! units, a zoom's worth of on-screen units at a time, so the graph keeps
+    //! the exact graph point of the tested unit's centre while it walks, which
+    //! a Link measures its distance from.
+    Base *getControlAt(int x, int y, bool bOnlyIfMouseEnabled=true) override;
+
 protected:
 
     //! The grid follows the zoom and the pan: the graph draws its lines again.
@@ -725,6 +731,9 @@ protected:
     internal::NodeGraphMarqueeFill *m_marqueeFill=nullptr;
     bool m_removeVetoed=false;
     PointF m_contextPosition;
+    //! while getControlAt() walks: the tested point in graph units
+    PointF m_hitPoint;
+    bool m_hitTesting=false;
     //! the title-bar press: its node, whether it was selected, a Ctrl or Shift
     Node *m_pressedNode=nullptr;
     bool m_pressedWasSelected=false;

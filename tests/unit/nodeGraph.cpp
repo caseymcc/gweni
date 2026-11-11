@@ -41,8 +41,9 @@
  *    zoom) drawn cut to the graph's view: every segment drawn inside it,
  *    one reaching its edge, the ones wholly outside hidden, a cut joint
  *    drawn without that neighbour;
- *  - pins connected while they have a link, removeLink(), removePin() and
- *    removeNode() taking the links with them and giving every id back;
+ *  - pins connected while they have a link (a Link deleted directly too),
+ *    removeLink(), removePin() and removeNode() taking the links with them
+ *    and giving every id back;
  *  - a title-bar drag, through the canvas's mouse input: the press selects an
  *    unselected node alone (drawn NodeSelected), brings it to the front and
  *    takes the selection; every move frame moves each selected node by the
@@ -51,7 +52,8 @@
  *    more controls than they hold, runs one layout pass entering no more
  *    controls than they hold and their ancestors; onNodesMoved fires once, on
  *    the release, with getMovedNodes() the selection, and not at all for a
- *    press let go where it was;
+ *    press let go where it was; a title bar disabled mid-drag still ends the
+ *    drag on the release, and takes no press while disabled;
  *  - a link dragged out of a pin: the preview, a Link in the overlay layer
  *    from the pin to the mouse in graph units, over every node; a drop on a
  *    pin it may end on (an Input and an Output of two nodes, or what
@@ -61,7 +63,8 @@
  *    where no node is firing onLinkDroppedOnEmpty with the graph position;
  *    Escape ending it with nothing made; the preview's ids given back;
  *  - hover: a link hit within Link::HoverDistance on screen of its curve and
- *    not beyond (at zoom 1 and 2), drawn in LinkHover's colour; a pin's marker
+ *    not beyond, measured from the exact point at every zoom (1, 2.5 and 4,
+ *    where a graph unit is 4 on-screen units), drawn in LinkHover's colour; a pin's marker
  *    a unit larger each way; a hover frame writing only the hovered item's
  *    slots and the one it left;
  *  - selection by click: a title bar, a body or a link selects its item
@@ -986,6 +989,17 @@ TEST_CASE("NodeGraph: removing a link, a pin or a node takes its links and gives
     CHECK(scene.graph->getLinks() == std::vector<controls::Link *>{two});
     scene.frame();
 
+    // a link deleted directly, not through removeLink(), leaves its pins
+    // as removeLink() would
+    controls::Link *direct=scene.graph->addLink(scene.out, scene.in, controls::LinkStyle::Straight);
+    CHECK(scene.out->isConnected());
+    delete direct;
+    CHECK(!scene.out->isConnected());
+    CHECK(scene.in->isConnected());
+    CHECK(scene.in->getLinks() == std::vector<controls::Link *>{two});
+    CHECK(scene.graph->getLinks() == std::vector<controls::Link *>{two});
+    scene.frame();
+
     // a pin removed takes its link
     scene.a->removePin(second);
     CHECK(!scene.in->isConnected());
@@ -1252,6 +1266,40 @@ TEST_CASE("NodeGraph: a drag at zoom 2 moves by the mouse's motion in graph unit
     scene.frame();
     CHECK(scene.movedCalls == 1);
     CHECK(node->getGraphPosition().x == start.x);
+}
+
+TEST_CASE("NodeGraph: a title bar disabled mid-drag ends the drag on the release, and takes no press")
+{
+    DragScene scene;
+    controls::Node *node=scene.nodes[2];
+    const Point start=node->getGraphPosition();
+    const Point from=scene.titleOf(node);
+
+    scene.press(from);
+    scene.frame();
+    scene.move(Point(from.x+9, from.y+4));
+    scene.frame();
+    REQUIRE(scene.graph->draggingNodes());
+
+    node->getTitleBar()->setDisabled(true);
+    scene.frame();
+    scene.release();
+    scene.frame();
+    CHECK(!scene.graph->draggingNodes());
+    CHECK(scene.movedCalls == 1);
+    CHECK(scene.graph->getMovedNodes() == std::vector<controls::Node *>{node});
+    CHECK(node->getGraphPosition().x == start.x+9);
+
+    // disabled, its press starts nothing
+    scene.press(scene.titleOf(node));
+    scene.frame();
+    CHECK(!scene.graph->draggingNodes());
+    scene.move(Point(from.x+30, from.y+30));
+    scene.frame();
+    scene.release();
+    scene.frame();
+    CHECK(node->getGraphPosition().x == start.x+9);
+    CHECK(scene.movedCalls == 1);
 }
 
 TEST_CASE("NodeGraph: a node deleted while it is dragged leaves the drag")
@@ -1556,6 +1604,57 @@ TEST_CASE("NodeGraph: a link is hovered within HoverDistance of its curve, a hov
         for(size_t id : scene.written())
             CHECK(std::find(ids.begin(), ids.end(), id) != ids.end());
         CHECK((shownSegments(scene.renderer, link).front().color == tokyonight::PinOut.top));
+    }
+}
+
+TEST_CASE("NodeGraph: a link's hover band is HoverDistance on screen at every zoom, measured from the exact point")
+{
+    LinkDragScene scene;
+    controls::Link *link=scene.graph->addLink(scene.out, scene.in, controls::LinkStyle::Straight);
+
+    // at zoom 4 a graph unit is 4 on-screen units, so a hit-test from whole
+    // graph units would be up to 2 off on each axis
+    for(float zoom : {1.0f, 2.5f, 4.0f})
+    {
+        CAPTURE(zoom);
+        // the link's middle at the graph's centre
+        const PointF a=scene.out->getAnchor();
+        const PointF b=scene.in->getAnchor();
+        scene.graph->setZoom(zoom);
+        scene.graph->setPan(PointF(300.0f-(a.x+b.x)*0.5f*zoom, 200.0f-(a.y+b.y)*0.5f*zoom));
+        scene.move(Point(0, 0));
+        scene.frame();
+        scene.frame();
+
+        const PointF p0=scene.graphToCanvas(a);
+        const PointF p1=scene.graphToCanvas(b);
+        const PointF middle((p0.x+p1.x)*0.5f, (p0.y+p1.y)*0.5f);
+        const float length=std::hypot(p1.x-p0.x, p1.y-p0.y);
+        const PointF across(-(p1.y-p0.y)/length, (p1.x-p0.x)/length);
+        int inside=0;
+        int outside=0;
+
+        // every canvas unit across the link near the band's edges, its centre's
+        // on-screen distance from the curve deciding
+        for(int step=-28; step <= 28; ++step)
+        {
+            const float off=float(step)*0.25f;
+            const Point at(int(std::floor(middle.x+across.x*off)), int(std::floor(middle.y+across.y*off)));
+            const PointF centre(float(at.x)+0.5f, float(at.y)+0.5f);
+            const float distance=link->distanceTo(scene.graph->canvasToGraph(centre))*zoom;
+
+            if(std::abs(distance-controls::Link::HoverDistance) < 0.05f)
+                continue;
+            CAPTURE(at.x);
+            CAPTURE(at.y);
+            CAPTURE(distance);
+            scene.move(at);
+            scene.frame();
+            CHECK((HoveredControl == link) == (distance <= controls::Link::HoverDistance));
+            ++((distance <= controls::Link::HoverDistance)?inside:outside);
+        }
+        CHECK(inside > 0);
+        CHECK(outside > 0);
     }
 }
 
