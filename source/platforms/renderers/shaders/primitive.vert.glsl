@@ -40,8 +40,10 @@ flat out float vBorder;
 flat out vec4 vColor1;    // gradient bottom color
 flat out vec4 vBorderColor;
 out vec4 vColor3;         // smooth: style 6 interpolates it along x
-flat out vec4 vSegment;   // style 3: the line's endpoints (xy, zw), px from the quad centre
-flat out vec4 vJoints;    // style 3: its previous (xy) and next (zw) neighbour points, as vSegment
+flat out vec4 vSegment;   // style 3: the line's endpoints (xy, zw), px from the quad centre;
+                          // style 8: its phases (xy), spacing (z) and reciprocal (w), px
+flat out vec4 vJoints;    // style 3: its previous (xy) and next (zw) neighbour points, as vSegment;
+                          // style 8: its major count (x) and stroke px (y)
 flat out float vBehindDepth; // style 3: the depth half a layer behind this slot's z
 out vec2 vPixel;          // pixel-space position, the clip boxes' space
 
@@ -90,6 +92,16 @@ void main()
     // and the neighbour points drawLine was given, in border colour (previous) and
     // color3 (next), which radius's bits say it holds (vRadius)
     vJoints = vec4((ivec4(uvec4(inBorderColor, inColor3)) << 16) >> 16)*0.5;
+    // style 8 (drawGrid) keeps neither: its two phases (1/16 px in the border
+    // colour's two fields), its spacing (a float's bits in tx/ty) and its
+    // reciprocal, its major count and its stroke, worked out here once a vertex
+    if(style == 8u)
+    {
+        float spacing = uintBitsToFloat((inTexCoords.x << 16) | inTexCoords.y);
+
+        vSegment = vec4(vec2(inBorderColor)/16.0, spacing, 1.0/spacing);
+        vJoints = vec4(float(inRadiusBorder.y & 0xffu), float((inRadiusBorder.y >> 8) & 0xffu), 0.0, 0.0);
+    }
     vPixel = vec2(inPosition.xy);
     // GL_SHORT sign-extends z; its low 16 bits are Vertex::z, 0..65535
     float z = float(inPosition.z & 0xffff);

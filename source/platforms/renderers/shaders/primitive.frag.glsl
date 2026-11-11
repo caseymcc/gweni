@@ -179,26 +179,6 @@ float sdSegment(vec2 p, vec2 a, vec2 b)
     return length(pa - ba*h);
 }
 
-// Signed distance to the triangle p0-p1-p2 (negative inside), for the pin
-// markers (icon kinds 7 and 8).
-float sdTriangle(vec2 p, vec2 p0, vec2 p1, vec2 p2)
-{
-    vec2 e0 = p1 - p0;
-    vec2 e1 = p2 - p1;
-    vec2 e2 = p0 - p2;
-    vec2 v0 = p - p0;
-    vec2 v1 = p - p1;
-    vec2 v2 = p - p2;
-    vec2 pq0 = v0 - e0*clamp(dot(v0, e0)/dot(e0, e0), 0.0, 1.0);
-    vec2 pq1 = v1 - e1*clamp(dot(v1, e1)/dot(e1, e1), 0.0, 1.0);
-    vec2 pq2 = v2 - e2*clamp(dot(v2, e2)/dot(e2, e2), 0.0, 1.0);
-    float s = sign(e0.x*e2.y - e0.y*e2.x);
-    vec2 d = min(min(vec2(dot(pq0, pq0), s*(v0.x*e0.y - v0.y*e0.x)),
-                     vec2(dot(pq1, pq1), s*(v1.x*e1.y - v1.y*e1.x))),
-                     vec2(dot(pq2, pq2), s*(v2.x*e2.y - v2.y*e2.x)));
-    return -sqrt(d.x)*sign(d.y);
-}
-
 // The part of a pixel (a unit square of device px) on the inner side of a straight
 // edge e px from its centre, n the edge's unit normal: exact for a half-plane. Its
 // projection on n is |n.x|+|n.y| wide: the corners give the quadratic ends, the
@@ -486,24 +466,18 @@ void main()
         // Grid lines (drawGrid): one every spacing px from a phase on each axis,
         // stroke whole px wide where drawLine would put a stroke across that
         // coordinate, those a whole number of majorEvery spacings from the phase in
-        // vColor3 and the rest in vColor1. The spacing is a float's bits in the two
-        // halves of tx/ty, constant over the quad, so rounding recovers them; the
-        // phases are 1/16 px in the border colour's bytes. The pixel is found from
-        // vLocal rounded to its half px, as the icons' is.
-        uvec2 bits = uvec2(floor(TexCoords*65535.0 + 0.5));
-        float spacing = uintBitsToFloat((bits.x << 16) | bits.y);
-        int params = int(vBorder + 0.5);
-        float majorEvery = float(params & 0xff);
-        float stroke = float((params >> 8) & 0xff);
-        vec4 phaseBytes = floor(vBorderColor*255.0 + 0.5);
-        vec2 phase = vec2(phaseBytes.x*256.0 + phaseBytes.y, phaseBytes.z*256.0 + phaseBytes.w)/16.0;
+        // vColor3 and the rest in vColor1; the vertex shader unpacked them into
+        // vSegment (phases, spacing, its reciprocal) and vJoints (major count,
+        // stroke). The pixel is found from vLocal rounded to its half px, as the
+        // icons' is.
+        float stroke = vJoints.y;
         vec2 q = floor(floor(vLocal*2.0 + 0.5)*0.5 + vHalf);
         // the nearest line on each axis, and where its stroke starts
-        vec2 k = floor((q + 0.5 - phase)/spacing + 0.5);
-        vec2 start = floor(phase + k*spacing + 0.5 - 0.5*stroke);
+        vec2 k = floor((q + 0.5 - vSegment.xy)*vSegment.w + 0.5);
+        vec2 start = floor(vSegment.xy + k*vSegment.z + 0.5 - 0.5*stroke);
         bool onX = q.x >= start.x && q.x < start.x + stroke;
         bool onY = q.y >= start.y && q.y < start.y + stroke;
-        bool major = (onX && mod(k.x, majorEvery) == 0.0) || (onY && mod(k.y, majorEvery) == 0.0);
+        bool major = (onX && mod(k.x, vJoints.x) == 0.0) || (onY && mod(k.y, vJoints.x) == 0.0);
 
         offGrid = !(onX || onY);
         FragColor = major ? vColor3 : vColor1;
@@ -556,8 +530,10 @@ void main()
                 // triangle pointing down (rotated by dir above), its base along the
                 // top of the rect and its apex at the bottom: filled (7), or its
                 // outline (8), the stroke drawIcon packs into the border colour's
-                // red byte thick, inside its edge
-                d = sdTriangle(p, vec2(-0.9, -0.8), vec2(0.9, -0.8), vec2(0.0, 0.9));
+                // red byte thick, inside its edge. Its distance is the largest of
+                // its three sides' (each a unit normal from the centre), exact
+                // inside and along the sides, where the edge's coverage reads it.
+                d = max(-p.y - 0.8, max(dot(p, vec2(0.88379, 0.46789)), dot(p, vec2(-0.88379, 0.46789))) - 0.42110);
                 if(kind == 8)
                 {
                     vec2 hp = max(vHalf, vec2(1.0));
