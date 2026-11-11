@@ -4400,11 +4400,8 @@ void Base::dropOwnedPopups()
             canvas->closePopup();
 
         // Delayed, as a context menu is: this may run from an event of one of
-        // the popup's own controls.
-        if(canvas)
-            popup->delayedDelete();
-        else
-            delete popup;
+        // the popup's own controls (at once off any canvas).
+        popup->delayedDelete();
     }
 }
 
@@ -4432,11 +4429,9 @@ void Base::dropContextMenu()
         return;
 
     // Delayed, as a menu is deleted: this may run from one of its own items'
-    // events. A canvas tearing down deletes it with its other children.
-    if(canvas)
-        menu->delayedDelete();
-    else
-        delete menu;
+    // events (at once off any canvas). A canvas tearing down deletes it with
+    // its other children, or after them if it is off the canvas's tree.
+    menu->delayedDelete();
 }
 
 String Base::getChildValue(const String &name)

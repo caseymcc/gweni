@@ -19,15 +19,12 @@ namespace
 {
 
 // A part a control drops: hidden at once, deleted by the canvas once the
-// frame is over (an event handler of the part itself may be running).
+// frame is over (an event handler of the part itself may be running), or at
+// once off any canvas.
 void dropPart(Base *part)
 {
     part->setHidden(true);
-
-    if(part->getCanvas())
-        part->delayedDelete();
-    else
-        delete part;
+    part->delayedDelete();
 }
 
 }//namespace

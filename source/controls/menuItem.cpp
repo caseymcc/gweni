@@ -60,11 +60,8 @@ MenuItem::~MenuItem()
 
     menu->close();
     menu->closeAll();
-
-    if(canvas)
-        menu->delayedDelete();
-    else
-        delete static_cast<Base *>(menu);
+    // at once off any canvas
+    menu->delayedDelete();
 }
 
 void MenuItem::render(skin::Base *skin)
