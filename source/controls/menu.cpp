@@ -197,7 +197,11 @@ void Menu::onAddItem(MenuItem *item)
 
 void Menu::clearItems()
 {
-    for(auto &&child : m_innerPanel->getChildren())
+    // A copy: off a canvas delayedDelete() deletes the item at once, out of
+    // the list being walked.
+    Base::List items=m_innerPanel->getChildren();
+
+    for(auto &&child : items)
     {
         if(!child)
             continue;

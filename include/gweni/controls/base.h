@@ -251,7 +251,9 @@ public:
     //! second call does nothing, whatever canvas it is on now. With no canvas
     //! the control is deleted at once and without preDelete(), which may need
     //! the skin (Label's does); its destructor frees what preDelete() would
-    //! have (~Label its font).
+    //! have (~Label its font). That delete happens inside the call, so a
+    //! caller must not be walking a list the control is in (its parent's
+    //! children: walk a copy) or use the control after it.
     virtual void delayedDelete();
     virtual void preDelete(gweni::skin::Base *skin) {}
 

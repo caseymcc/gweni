@@ -4429,8 +4429,9 @@ void Base::dropContextMenu()
         return;
 
     // Delayed, as a menu is deleted: this may run from one of its own items'
-    // events (at once off any canvas). A canvas tearing down deletes it with
-    // its other children, or after them if it is off the canvas's tree.
+    // events. Off any canvas (a menu off the canvas's tree has none) it is
+    // deleted at once; a canvas tearing down deletes it with its children or
+    // in the drain of its queue after them (~Canvas).
     menu->delayedDelete();
 }
 

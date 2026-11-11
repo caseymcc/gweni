@@ -26,9 +26,13 @@
  *  tree (detached, or on another canvas, which then runs a frame and is
  *  deleted cleanly) deletes each of them once. delayedDelete() on a control
  *  with no canvas deletes it at once, without preDelete(), so a detached
- *  layout::Table shrunk or given a row less, and a detached Properties
- *  cleared, do not crash. The double deletes and freed reads are real checks
- *  only in the ASAN tree; the counts hold in every tree.
+ *  layout::Table shrunk, given a row less or cleared, a detached Properties
+ *  cleared and a detached ComboBox cleared do not crash (clear() and
+ *  clearItems() walk a copy of the list the deletes take their rows out of),
+ *  and a MenuItem deleted with a deleteOnClose() submenu off any canvas
+ *  deletes it once, in close(), and touches it no more. The double deletes
+ *  and freed reads are real checks only in the ASAN tree; the counts hold in
+ *  every tree.
  */
 #include "headlessFixture.h"
 
@@ -523,8 +527,53 @@ TEST_CASE("a detached layout::Table shrunk or given a row less does not crash")
         table->remove(first);
         CHECK(table->numChildren() == 1);
     }
+    SUBCASE("cleared")
+    {
+        // each row deleted at once, out of the list clear() walks
+        table->addRow();
+        table->clear();
+        CHECK(table->numChildren() == 0);
+    }
     delete table;
     scene.frame();
+}
+
+TEST_CASE("a detached ComboBox cleared does not crash")
+{
+    Scene scene;
+    controls::ComboBox *combo=scene.canvas->newChild<controls::ComboBox>();
+    combo->addItem("One");
+    combo->addItem("Two");
+    combo->addItem("Three");
+    scene.frame();
+
+    // its list, never opened, is the box's child, so it has no canvas either:
+    // clearItems() deletes each item at once, out of the list it walks
+    combo->setParent(nullptr);
+    combo->clearItems();
+    CHECK(combo->getSelectedItem() == nullptr);
+    delete combo;
+    scene.frame();
+}
+
+TEST_CASE("a MenuItem deleted with a deleteOnClose submenu off any canvas deletes it once")
+{
+    Scene scene;
+    controls::Menu *menu=scene.canvas->newChild<controls::Menu>();
+    controls::MenuItem *item=menu->addItem("Item");
+    controls::Menu *submenu=item->getMenu();
+    submenu->setDeleteOnClose(true);
+    int deletes=0;
+    scene.add(submenu, &deletes);
+    scene.frame();
+
+    // close() deletes the submenu at once with no canvas: ~MenuItem must not
+    // touch or delete it after that
+    submenu->setParent(nullptr);
+    delete item;
+    CHECK(deletes == 1);
+    scene.frame();
+    CHECK(deletes == 1);
 }
 
 TEST_CASE("a detached Properties cleared does not crash")

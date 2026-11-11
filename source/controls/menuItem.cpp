@@ -58,10 +58,15 @@ MenuItem::~MenuItem()
     if(canvas && canvas->releasingChildren())
         return;
 
-    menu->close();
+    // close() deletes a deleteOnClose() menu itself (at once off any canvas),
+    // so it goes last and the menu is not deleted again
+    const bool deletesOnClose=menu->deleteOnClose();
+
     menu->closeAll();
-    // at once off any canvas
-    menu->delayedDelete();
+    menu->close();
+    if(!deletesOnClose)
+        // at once off any canvas
+        menu->delayedDelete();
 }
 
 void MenuItem::render(skin::Base *skin)

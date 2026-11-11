@@ -301,7 +301,11 @@ public:
 
     void clear()
     {
-        for(auto &&child : getChildren())
+        // A copy: off a canvas remove() deletes the row at once, out of the
+        // list being walked.
+        Base::List rows=getChildren();
+
+        for(auto &&child : rows)
         {
             TableRow *row=gweni_cast<TableRow>(child);
 
