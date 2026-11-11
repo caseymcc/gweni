@@ -60,6 +60,14 @@ page's content, one with no close button.
 
 **Text**: OpenSans from 8 to 16 px, on the pixel grid.
 
+[![A small shader-like node graph](docs/images/NodeGraphDemo.png)](https://caseymcc.github.io/gweni/controltest.html?control=NodeGraphDemo)
+
+**Node graph**: a NodeGraph, the node editor built on a ZoomPanel: nodes with a coloured title bar
+and a body of ordinary controls (a Label, DragNumbers, a ComboBox, a TextBox), pins of three shapes
+and four colours on their sides, joined by orthogonal, Bezier and straight links, over a grid that
+follows the zoom. Drag a title to move a node, a pin to make a link, empty space to box-select, and
+right-click for menus; dragging one node rewrites its own slots and its links' segments, nothing else.
+
 [![The inspector beside a few controls](docs/images/InspectorDemo.png)](https://caseymcc.github.io/gweni/controltest.html?control=InspectorDemo)
 
 **Inspector**: `gweni::tools::Inspector`, the library's live view of the change tracking (F12 in the

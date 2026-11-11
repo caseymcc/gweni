@@ -1365,12 +1365,20 @@ two programs and the draws. What follows describes both together:
   `max(1, snap(1))` px thick wherever it lands, where a 1-unit rect snapped by
   `translate()` is 1 or 2 px by position at 1.25 and 1.5; a style 5 pixel with less
   than half an 8-bit step of coverage is discarded, writing no depth, since the
-  textured Separator's quad reaches one unit past it over its neighbours), `6` = SDF bilinear fill (`drawBilinearRect`: each vertex carries its
+  textured Separator's quad reaches one unit past it over its neighbours; kinds 7 and 8
+  are a filled triangle and its outline, the stroke thick, in the chevron's normalized
+  frame and pointing its way, a node graph's pin markers, the largest of the three sides'
+  distances), `6` = SDF bilinear fill (`drawBilinearRect`: each vertex carries its
   own top-edge color in color0 and bottom-edge color in color3; both are linear in x,
   so the blend along y is exact, with no crease on the quad's diagonal), `7` = SDF
   checker composite (`drawCheckerRect`: color0 with its alpha over 4 px cells of
   color1 (light) and color3 (dark), output opaque, so it does not depend on draw
-  order). Styles 4, 6 and 7 share the rounded mask, anti-aliasing and border
+  order), `8` = grid lines (`drawGrid`: a line every spacing px from a phase on each
+  axis, a whole-px stroke where `drawLine` would put one across that coordinate, every
+  `majorEvery`-th in color3 and the rest in color1, a pixel on no line discarded; the
+  spacing a float's bits in tx/ty and the phases 1/16 px in bx/by, unpacked by the
+  vertex shader into the line style's `vSegment`/`vJoints`; one slot for a NodeGraph's
+  whole grid, `tests/grid.cpp`). Styles 4, 6 and 7 share the rounded mask, anti-aliasing and border
   (`roundedRect()` in the fragment shader). The edge and the border are a 1 px box
   filter: coverage `clamp(0.5 - d/aa, 0, 1)` and border mix
   `clamp(0.5 + (border + d)/aa, 0, 1)`, with `aa` the pixel's size from `vLocal`'s
@@ -2557,6 +2565,120 @@ and every device px hits the same control (`controltest_zoom_panel`).
   `--scenario zoom-panel` pin it; ZoomPanelDemo (in ControlTest's `--list`, not in the
   shell) holds a Button with a tooltip, a ComboBox, a DragNumber, a TextBox and a
   ScrollControl at 1.25x.
+
+## The node graph
+
+`controls::NodeGraph` (`include/gweni/controls/nodeGraph.h`) is a node editor's view:
+a ZoomPanel holding `Node`s at positions in graph units, `Pin`s on their sides and
+`Link`s between pins, over a grid. The app owns the graph's model (types, values,
+evaluation, cycles); the widget holds view objects only, each with the app's id and
+pointer (`setUserId`, `setUserData`), and nothing in it knows what a pin carries.
+
+- **The pieces.** A graph point is the ZoomPanel's content point: it is drawn at the
+  panel's origin plus `pan() + p*zoom()`. The inner panel is placed `GraphExtent`
+  (65536) units up and left of the content's origin and is twice that each way, so
+  nodes may sit at negative points (`Node::setGraphPosition`, a request on the node,
+  `GraphExtent` added). It holds three owner-placed layers, each its whole size, in
+  this order of z: the **link layer** (every `Link`, and the marquee's fill first),
+  the **node layer** (every `Node`) and the **overlay layer** (the preview of a link
+  being dragged out, and the marquee's outline). A `Node` is a title bar
+  (`NodeTitleBar`, its title Label, the theme's `NodeTitle` or `setTitleColor`), a
+  pin row (two `NodePinColumn`s, inputs down the left and outputs down the right)
+  and a body (`getBody()`, which `newChild()` fills with any controls, which work at
+  any zoom: the ZoomPanel's job). Its frame, the box its renderer draws
+  (`NodeBody`, `NodeSelected` while selected, the title joined to it with the edge
+  mask), is its bounds less `PinOverhang` each side, so a pin's marker centred on the
+  frame's edge is inside the node: drawn and hit with no clip cutting it. A `Pin` is
+  a marker (`PinShape::Circle`, `Square` or `Triangle`, drawIcon kinds 7 and 8,
+  filled while connected, a ring otherwise, in `PinIn`/`PinOut` or the app's
+  colour) and a name; `getAnchor()` is the marker's centre in graph units. The grid
+  is the graph's own drawing, under everything: a backdrop slot (`GraphGrid`) and one
+  `drawGrid` slot (style 8), a line every `gridStep()` graph units
+  (`GridSpacing` times the least power of `GridMajorEvery` that keeps the lines
+  `MinGridGap` apart on screen), every `GridMajorEvery`-th in `GraphGridMajor`, each
+  one unit thick on screen at any zoom. One slot, taken when the graph is made,
+  however many lines there are: a slot per line was the first way, and lines whose
+  slots a zoom took after the nodes' drew after them, losing to the depth the
+  nodes' anti-aliased corners wrote (`--scenario hide-show` found it).
+- **The link segment model.** A `Link` joins two pins as a polyline
+  (`Link::polyline()`, kept until an end, the style or the zoom moves): `Straight`,
+  one segment; `Bezier`, a cubic leaving and entering each pin along its side's way
+  out, `LinkCurveMin`..`LinkCurveMax` (16..24) segments, one per `LinkCurveStep` (16)
+  canvas units of its control polygon on screen; `Orthogonal`, 3 runs between facing
+  pins with room, 5 otherwise. It covers its layer and is never laid out: a node
+  that moves (its bounds, its pin row's or a pin's, `onBoundsChanged`) marks its
+  links, which draw again. The textured renderer follows PlotLines': one `drawLine`
+  slot per segment at the link's z, each drawn with its neighbours, so its joints
+  are blended once, and only a segment whose endpoints, neighbours, thickness,
+  colour or z changed is written. A link takes the most slots its style can draw
+  when it is first drawn (24, 5 or 1) and hides the ones it does not use, so a zoom
+  that picks another segment count takes no slot after the nodes'.
+- **CPU clipping.** A quad with a corner past ±32 K device px is culled whole
+  (`cullOutOfRangeQuad`), so a link to a node far off screen would vanish. Before
+  `drawLine`, each segment is cut (Liang-Barsky) to the graph's view in graph units,
+  a few units wider than the stroke, and a segment wholly outside is hidden; a cut
+  joint is drawn without that neighbour. A link to a node 40 000 device px away
+  draws its visible part (`tests/unit/nodeGraph.cpp`).
+- **Input.** A left press on a title bar drags the selection: an unselected node
+  becomes the selection's one node (Shift adds it, Ctrl toggles it), the pressed node
+  is brought to the front (its subtree alone takes new z), and every selected node
+  moves by the mouse's motion in whole graph units (`setGraphPosition`); a plain click
+  on a node of a selection makes it the selection. A left press on a pin is a link
+  drag (`Pin::pressGesture`, an `InputCapture`): its preview, a `Link` with a free end
+  in the overlay layer, follows the mouse, the wheel still zooms and Escape ends it. A
+  left press on empty space (no node, link or pin under it, Space not held) is the
+  marquee (`NodeGraph::pressGesture`, another `InputCapture`): from `PanThreshold`
+  units on, every move selects the nodes whose frames and the links whose curves
+  (`Link::touches`) the rect touches, with the earlier selection kept under Ctrl or
+  Shift; a release that never got that far is a click, which clears the selection
+  (not under Ctrl or Shift); Escape gives the earlier selection back. Its outline
+  (four `drawLine`s, a canvas unit thick) is in the overlay layer and its
+  translucent fill in the link layer, under the nodes: text is drawn after every
+  slot, and a translucent box over it would hide it (as the stats overlay does). A
+  link is hovered within `Link::HoverDistance` (4) canvas units on screen of its
+  curve (`Link::getControlAt`, `distanceTo`) and drawn in `LinkHover`; a hovered
+  pin's marker is a unit larger and lighter. A press focuses the graph (unless a
+  control in a body takes the keys), and Delete removes the selection. A right click
+  opens the context menu (`setContextMenu`) of the link, node or graph under it, the
+  ZoomPanel giving an unmoved right press back as a click; every right press sets
+  `getContextMenuPosition()`, and `openContextMenuAt()` opens the graph's at a point.
+- **Events and vetoes.** A user's edit is made unless a request handler vetoes it,
+  and a done event fires after; what the app does from code fires nothing.
+  `onNodesMoved` fires once, on a drag's release, with `getMovedNodes()`.
+  A link dropped on a pin it may end on (`canLink`: an Input and an Output of two
+  nodes, or `setLinkFilter(from, to)`, the Output first) fires `onLinkRequested`
+  (`getRequestedFrom/To`, `vetoLink()`), then `onLinkCreated` with the link; one
+  dropped where no node is fires `onLinkDroppedOnEmpty` (`info.point`,
+  `getDropPosition`, `getDropPin`) and makes nothing. Delete (`removeSelection`)
+  fires `onNodeRemoveRequested` per selected node and `onLinkRemoveRequested` per
+  selected link left (`vetoRemove()`), then `onNodeRemoved`, and `onLinkRemoved`
+  for each link that went, a node's with it. `onSelectionChanged` fires once per
+  user action that changed the selection. Removing a node or pin takes its links,
+  and every primitive id comes back.
+- **The z layers and their budget.** Links are numbered before every node and the
+  overlay after them, so a node is always over every link. Each control takes its
+  `depthLayers()` z values and the canvas spreads them with `Canvas::ZGap` gaps, then
+  compacts the gaps as the tree grows: a node of a title, two pins and a Label body
+  with its link is 17 controls, about 18 z values, so about 3 600 such nodes fill the
+  0..65535 range. Past that the labels clamp and tie, and the graph no longer draws
+  in order: hundreds of nodes, the target, fit easily, and `bench_scaling` checks the
+  graph scenes at 3 000 rather than 10 000 (`LARGE_N_FOR` in `bench/scaling.cmake`).
+- **Cost.** A drag frame of a two-node selection in NodeGraphDemo writes 35
+  primitive slots and its 15 runs' glyphs, all the moved nodes' and their links',
+  and lays out in one pass entering 28 controls; a hover writes the hovered item's
+  slots and the left one's (1 for a pin, 17 for a Bezier link); a marquee frame its
+  5 slots and those of the items it (de)selects (`--scenario node-graph`, which
+  checks each by id). `graph-drag` and `graph-marquee` are `scaling=local` and do
+  the same work at any N; `graph-pan` and `graph-zoom` write every node's slots
+  with no layout pass, as a ZoomPanel's pan does. Not local, by the v1 decision of no
+  spatial index: a hit-test where no node is under the mouse (a hover or a release
+  over empty space) visits every node and link, a marquee move tests every node's
+  frame and link's curve on the CPU (with nothing allocated), and every node's
+  slots are drawn every frame. The style 8 and icon kind 7/8 branches cost llvmpipe
+  about 3 % of a primitive-heavy frame's rasterising, for pixels that draw neither
+  (it runs short branches as selects). `tests/unit/nodeGraph.cpp` and `tests/grid.cpp`
+  pin the pieces; NodeGraphDemo (ControlTest's `--list` and the README gallery) is
+  a small shader-like graph with every link style, pin shape and context menu.
 
 ## The inspector
 
