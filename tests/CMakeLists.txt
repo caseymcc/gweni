@@ -224,9 +224,9 @@ if(TARGET ControlTest AND NOT EMSCRIPTEN)
     # the same check through the scenarios that change layout at run time:
     # input, a canvas resize and a scale round trip (both on Demo), a Window
     # dragged past its parent's edges, the tooltip box, the context menu, the
-    # stats overlay, the depth view and the zoom panel
+    # stats overlay, the depth view, the zoom panel and the node graph
     foreach(verify_scenario interaction resize scale clip tooltip context-menu stats-overlay
-            depth-view zoom-panel)
+            depth-view zoom-panel node-graph)
         string(REPLACE "-" "_" verify_name "${verify_scenario}")
         add_test(NAME controltest_verify_layout_${verify_name}
             COMMAND $<TARGET_FILE:ControlTest> --headless --scenario ${verify_scenario}
@@ -367,6 +367,14 @@ Erm, and I think it comes down to a choice between "The League Against Salivatin
     gweni_whole_app_test(controltest_zoom_panel 120
         COMMAND $<TARGET_FILE:ControlTest> --headless --scenario zoom-panel --require-one-pass
             --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/zoom_panel@VARIANT@
+        WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
+
+    # NodeGraphDemo through the mouse and keys: a drag, a hover, linking,
+    # selection, the marquee, context menus, a pan and a zoom, and Delete each
+    # write, change and lay out no more than their part of the graph
+    gweni_whole_app_test(controltest_node_graph 120
+        COMMAND $<TARGET_FILE:ControlTest> --headless --scenario node-graph --require-one-pass
+            --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/node_graph@VARIANT@
         WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
 
     # PlotHistogramDemo's series: a sample with a new height writes its bar's

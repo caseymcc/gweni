@@ -140,7 +140,8 @@
  *                       context-menu | popup | virtual-list |
  *                       data-table-virtual | hide-show | demo-labels |
  *                       plot-histogram | plot-lines | inspector |
- *                       stats-overlay | depth-view | zoom-panel (see below)
+ *                       stats-overlay | depth-view | zoom-panel |
+ *                       node-graph (see below)
  *    --dump-bounds [<path>]
  *                       print the laid-out control tree as text: one line per
  *                       control, depth-first in child order, indented by depth,
@@ -574,6 +575,27 @@
  *                 frame kind, e.g.
  *                   zoom-panel zoom=1.37 pixels_match=yes grid_misses=0 ...
  *                   zoom-panel right_pan layout_passes=0 invalidations=0 ...
+ *                 Exits non-zero if any check fails, naming it on stderr.
+ *    node-graph   NodeGraphDemo on a 900x560 canvas at scale 1, the clock
+ *                 frozen, through the GLFW translator: a title-bar drag of a
+ *                 two-node selection (every frame writing the two nodes' and
+ *                 their links' slots alone, changing no more controls than
+ *                 they hold, one layout pass entering no more than them and
+ *                 their ancestors, onNodesMoved once on the release) and the
+ *                 app moving them back at the same cost; a pin's and a link's
+ *                 hover (2 units off the curve hovers it, 6 does not), each
+ *                 writing the hovered item and the left one; a pin drag's
+ *                 preview at the mouse, a vetoed and a made link, a drop on
+ *                 empty space (onLinkDroppedOnEmpty at the mouse's graph point,
+ *                 the demo's Add node menu) and Escape; click, Shift and Ctrl
+ *                 selection and an empty-space clear; a marquee whose every
+ *                 frame writes its slots and the (de)selected items' alone,
+ *                 Escape restoring; the graph's, a node's and a link's context
+ *                 menus at the right press's graph point and a right drag that
+ *                 pans; a pan and a zoom with no layout pass; a vetoed and a
+ *                 made Delete giving every id back; the demo deleted giving its
+ *                 ids back (node-graph.png). One line per measured frame, e.g.
+ *                   node-graph drag_3 prim_slots=... strays=0
  *                 Exits non-zero if any check fails, naming it on stderr.
  *    scale        one control (default Demo) on a 640x480 canvas at scale 1,
  *                 then Canvas::setScale(2) with the framebuffer resized to
@@ -1067,7 +1089,8 @@ static void printUsage(std::ostream &out)
          "                     | context-menu | popup | virtual-list\n"
          "                     | data-table-virtual | hide-show | demo-labels\n"
          "                     | plot-histogram | plot-lines | inspector\n"
-         "                     | stats-overlay | depth-view | zoom-panel;\n"
+         "                     | stats-overlay | depth-view | zoom-panel\n"
+         "                     | node-graph;\n"
          "                     resize prints listing_settled, mirror_settled,\n"
          "                     shrink_settled and fresh_matches, interaction one\n"
          "                     yes/no per repaint check, typing its keyboard\n"
@@ -1988,7 +2011,7 @@ static bool runSteps(Session &s, const std::vector<Step> &steps, const std::stri
 //-----------------------------------------------------------------------------
 enum class Scenario { None, PerControl, Resize, Docked, Scroll, Interaction, Typing, Clip, TextSize, Scale,
     ToolTip, ContextMenu, Popup, VirtualList, DataTableVirtual, HideShow, DemoLabels, PlotHistogram,
-    PlotLines, Inspector, Theme, StatsOverlay, DepthView, ZoomPanel };
+    PlotLines, Inspector, Theme, StatsOverlay, DepthView, ZoomPanel, NodeGraph };
 
 static bool parseScenario(const std::string &name, Scenario &scenario)
 {
@@ -2015,6 +2038,7 @@ static bool parseScenario(const std::string &name, Scenario &scenario)
     else if(name == "stats-overlay") scenario=Scenario::StatsOverlay;
     else if(name == "depth-view") scenario=Scenario::DepthView;
     else if(name == "zoom-panel") scenario=Scenario::ZoomPanel;
+    else if(name == "node-graph") scenario=Scenario::NodeGraph;
     else return false;
     return true;
 }
@@ -8349,6 +8373,572 @@ static bool overlap(const gweni::Rect &a, const gweni::Rect &b)
     return a.x < b.x+b.w && b.x < a.x+a.w && a.y < b.y+b.h && b.y < a.y+a.h;
 }
 
+//-----------------------------------------------------------------------------
+// --scenario node-graph: NodeGraphDemo's graph through the mouse and keys, on
+// a 900x560 canvas at scale 1 with the clock frozen. Each input is one frame,
+// and each frame's counters are checked against the part of the graph the
+// input may touch: the primitive and glyph ids written (by id), the controls
+// changed, the layout passes and the controls the layout entered.
+//-----------------------------------------------------------------------------
+
+// The counters of one frame after an input.
+struct GraphFrame
+{
+    std::set<size_t> primitives;
+    std::set<size_t> texts;
+    size_t controls=0;
+    int passes=0;
+    size_t visited=0;
+};
+
+// What a node graph's events told: the scenario's handlers count them and may
+// veto.
+struct GraphEvents: public gweni::event::Handler
+{
+    int moved=0;
+    int linkRequests=0;
+    int linksMade=0;
+    int emptyDrops=0;
+    int selections=0;
+    int nodeRemoveRequests=0;
+    int nodesRemoved=0;
+    bool vetoLink=false;
+    bool vetoRemove=false;
+    gweni::controls::NodeGraph *graph=nullptr;
+
+    void onMoved(gweni::event::Info) { ++moved; }
+    void onLinkRequested(gweni::event::Info)
+    {
+        ++linkRequests;
+        if(vetoLink)
+            graph->vetoLink();
+    }
+    void onLinkCreated(gweni::event::Info) { ++linksMade; }
+    void onDroppedOnEmpty(gweni::event::Info) { ++emptyDrops; }
+    void onSelection(gweni::event::Info) { ++selections; }
+    void onNodeRemoveRequested(gweni::event::Info)
+    {
+        ++nodeRemoveRequests;
+        if(vetoRemove)
+            graph->vetoRemove();
+    }
+    void onNodeRemoved(gweni::event::Info) { ++nodesRemoved; }
+};
+
+static bool runNodeGraphScenario(Session &s, const std::string &shotDir, bool &passed)
+{
+    using namespace gweni::controls;
+
+    passed=true;
+    s.freezeClock=true;
+    if(!rescaleSession(s, 1.0f) || !resizeSession(s, 900, 560))
+        return false;
+    replaceCanvas(s);
+
+    const size_t idsBefore=livePrimitiveIds()+liveTextIds();
+    Base *control=addControl(s, "NodeGraphDemo");
+    gweni::NodeGraphDemo *demo=gweni::gweni_cast<gweni::NodeGraphDemo>(control);
+
+    if(!demo || !demo->graph())
+    {
+        std::cerr<<"ControlTest: node-graph: NodeGraphDemo has no graph\n";
+        return false;
+    }
+
+    NodeGraph *graph=demo->graph();
+    Canvas *canvas=s.canvas;
+    GraphEvents events;
+
+    events.graph=graph;
+    graph->onNodesMoved.add(&events, &GraphEvents::onMoved);
+    graph->onLinkRequested.add(&events, &GraphEvents::onLinkRequested);
+    graph->onLinkCreated.add(&events, &GraphEvents::onLinkCreated);
+    graph->onLinkDroppedOnEmpty.add(&events, &GraphEvents::onDroppedOnEmpty);
+    graph->onSelectionChanged.add(&events, &GraphEvents::onSelection);
+    graph->onNodeRemoveRequested.add(&events, &GraphEvents::onNodeRemoveRequested);
+    graph->onNodeRemoved.add(&events, &GraphEvents::onNodeRemoved);
+
+    s.label="node-graph";
+    renderFrames(s, s.frames);
+
+    auto check=[&](bool good, const std::string &what) {
+        if(good)
+            return;
+        std::cerr<<"ControlTest: node-graph: "<<what<<"\n";
+        passed=false;
+    };
+
+    auto findNode=[&](const std::string &title) -> Node * {
+        for(Node *node : graph->getNodes())
+            if(node->getTitle() == title)
+                return node;
+        return nullptr;
+    };
+    auto findPin=[&](Node *node, const std::string &label, int which=0) -> Pin * {
+        for(Pin *pin : node?node->getPins():std::vector<Pin *>())
+            if((pin->getLabel() == label) && (which-- == 0))
+                return pin;
+        return nullptr;
+    };
+    // a graph point on the canvas, on the unit it falls in
+    auto canvasAt=[&](const gweni::PointF &point) {
+        const gweni::PointF at=graph->localPosToCanvasF(graph->graphToLocal(point));
+
+        return gweni::Point(int(std::floor(at.x)), int(std::floor(at.y)));
+    };
+    auto titleOf=[&](Node *node) {
+        Base *bar=node->getTitleBar();
+
+        return bar->localPosToCanvas(gweni::Point(bar->getWidth()/2, bar->getHeight()/2));
+    };
+    auto record=[&](const std::function<void()> &input) {
+        GraphFrame frame;
+
+        input();
+        renderFrames(s, 1);
+        frame.controls=getChangeStats().controls;
+        frame.passes=canvas->getLayoutStats().passes;
+        frame.visited=canvas->getLayoutStats().visited;
+        for(size_t id : s.renderer->writtenPrimitiveIds())
+            frame.primitives.insert(id);
+        for(const gweni::renderer::WrittenText &text : s.renderer->writtenTextIds())
+            frame.texts.insert(text.textId);
+        return frame;
+    };
+    // the ids written that are none of the controls' subtrees'
+    auto strays=[&](const GraphFrame &frame, const std::vector<Base *> &controls) {
+        std::set<size_t> primitives, texts;
+
+        for(Base *allowed : controls)
+            if(allowed)
+                subtreeIds(allowed, primitives, texts);
+
+        size_t count=0;
+
+        for(size_t id : frame.primitives)
+            count+=primitives.count(id)?0:1;
+        for(size_t id : frame.texts)
+            count+=texts.count(id)?0:1;
+        return count;
+    };
+    auto countControls=[&](Base *root) {
+        std::vector<Base *> subtree{root};
+
+        for(size_t i=0; i < subtree.size(); ++i)
+            for(Base *child : subtree[i]->getActualChildren())
+                subtree.push_back(child);
+        return subtree.size();
+    };
+    auto depthOf=[&](Base *node) {
+        size_t depth=0;
+
+        for(Base *parent=node->getActualParent(); parent; parent=parent->getActualParent())
+            ++depth;
+        return depth;
+    };
+    auto report=[&](const std::string &name, const GraphFrame &frame, size_t strayCount) {
+        std::cout<<"node-graph "<<name<<" prim_slots="<<frame.primitives.size()<<" text_ids="<<frame.texts.size()
+                 <<" controls_changed="<<frame.controls<<" layout_passes="<<frame.passes
+                 <<" layout_visited="<<frame.visited<<" strays="<<strayCount<<"\n";
+    };
+    auto key=[&](int glfwKeyCode) {
+        glfwKey(s, glfwKeyCode, GLFW_PRESS, 0);
+        glfwKey(s, glfwKeyCode, GLFW_RELEASE, 0);
+    };
+    auto withModifier=[&](int modifierKey, int mod, const std::function<void()> &input) {
+        glfwKey(s, modifierKey, GLFW_PRESS, 0);
+        input();
+        glfwKey(s, modifierKey, GLFW_RELEASE, mod);
+    };
+
+    Node *coord=findNode("Texture Coordinate");
+    Node *noise=findNode("Noise Texture");
+    Node *ramp=findNode("Color Ramp");
+    Node *mix=findNode("Mix Shader");
+    Pin *noiseColor=findPin(noise, "Color");
+    Pin *mixShader=findPin(mix, "Shader", 1);
+
+    if(!coord || !noise || !ramp || !mix || !noiseColor || !mixShader)
+    {
+        std::cerr<<"ControlTest: node-graph: NodeGraphDemo is missing a node or pin\n";
+        return false;
+    }
+
+    // a point of the graph no node or link is near: below the nodes, on the left
+    const gweni::Point empty=canvasAt(gweni::PointF(60.0f, 420.0f));
+
+    moveMouse(s, empty.x, empty.y);
+    renderFrames(s, 2);
+    check(graph->getNodes().size() == 5, "NodeGraphDemo has "+std::to_string(graph->getNodes().size())+" nodes");
+    check(graph->getLinks().size() == 4, "NodeGraphDemo has "+std::to_string(graph->getLinks().size())+" links");
+
+    // Moving nodes: Noise Texture and Color Ramp selected, dragged by Noise's
+    // title bar. Each frame writes their subtrees' and their links' slots
+    // alone, changes no more controls than they hold and lays out in one pass
+    // entering no more than them and their ancestors.
+    {
+        clickMouse(s, titleOf(noise).x, titleOf(noise).y);
+        renderFrames(s, 1);
+        withModifier(GLFW_KEY_LEFT_SHIFT, GLFW_MOD_SHIFT, [&]() { clickMouse(s, titleOf(ramp).x, titleOf(ramp).y); });
+        renderFrames(s, 1);
+        check(graph->getSelectedNodes().size() == 2, "the click and the Shift-click selected "
+            +std::to_string(graph->getSelectedNodes().size())+" nodes");
+
+        std::vector<Base *> moved{noise, ramp};
+        size_t held=countControls(noise)+countControls(ramp);
+
+        for(Link *link : noise->getLinks())
+            moved.push_back(link);
+        for(Link *link : ramp->getLinks())
+            moved.push_back(link);
+        held+=moved.size()-2;
+
+        const gweni::Point from=titleOf(noise);
+        const gweni::Point noiseStart=noise->getGraphPosition();
+        const gweni::Point rampStart=ramp->getGraphPosition();
+
+        mouseDown(s, from.x, from.y, true);
+        renderFrames(s, 1);
+        for(int step=1; step <= 6; ++step)
+        {
+            const GraphFrame frame=record([&]() { moveMouse(s, from.x+step*9, from.y+step*5); });
+            const size_t strayCount=strays(frame, moved);
+
+            report("drag_"+std::to_string(step), frame, strayCount);
+            check(strayCount == 0, "a drag frame wrote slots outside the moved nodes and their links");
+            check(frame.controls <= held, "a drag frame changed "+std::to_string(frame.controls)+" controls");
+            check(frame.passes <= 1, "a drag frame ran more than one layout pass");
+            check(frame.visited <= 4*(held+depthOf(noise)+depthOf(ramp)), "a drag frame's layout entered "
+                +std::to_string(frame.visited)+" controls");
+            check(events.moved == 0, "onNodesMoved fired before the release");
+        }
+        mouseUp(s, from.x+54, from.y+30);
+        renderFrames(s, 1);
+        check(events.moved == 1, "onNodesMoved fired "+std::to_string(events.moved)+" times for one drag");
+        check((noise->getGraphPosition().x == noiseStart.x+54) && (ramp->getGraphPosition().x == rampStart.x+54),
+            "the drag did not move both selected nodes by the mouse's motion");
+
+        // the app puts them back: the same costs, with no event
+        const GraphFrame back=record([&]() {
+            noise->setGraphPosition(noiseStart);
+            ramp->setGraphPosition(rampStart);
+        });
+        const size_t strayCount=strays(back, moved);
+
+        report("app_move", back, strayCount);
+        check(strayCount == 0, "an app's move wrote slots outside the moved nodes and their links");
+        check(back.passes <= 1, "an app's move ran more than one layout pass");
+        check(events.moved == 1, "an app's move fired onNodesMoved");
+    }
+
+    // Hover: a pin's marker, a link within HoverDistance of its curve and
+    // not beyond; each frame writes the hovered item's slots and the left one's.
+    {
+        moveMouse(s, empty.x, empty.y);
+        renderFrames(s, 2);
+
+        const gweni::Point pinAt=canvasAt(noiseColor->getAnchor());
+        const GraphFrame onPin=record([&]() { moveMouse(s, pinAt.x, pinAt.y); });
+        const size_t pinStrays=strays(onPin, {noiseColor});
+
+        report("hover_pin", onPin, pinStrays);
+        check(gweni::HoveredControl == noiseColor, "the mouse on Noise's Color pin hovers "
+            +traceName(gweni::HoveredControl));
+        check(pinStrays == 0, "the pin's hover wrote slots outside the pin");
+        check(!onPin.primitives.empty(), "the pin's hover wrote nothing");
+
+        // the Fac -> Fac link, at a point of its curve, off it across
+        Link *link=nullptr;
+
+        for(Link *candidate : noise->getLinks())
+            if(candidate->getTo() && (candidate->getTo()->getNode() == ramp))
+                link=candidate;
+        check(link != nullptr, "Noise has no link to Color Ramp");
+        if(link)
+        {
+            std::vector<gweni::PointF> points;
+
+            link->getPoints(points);
+
+            const size_t middle=points.size()/2;
+            const gweni::PointF a=graph->localPosToCanvasF(graph->graphToLocal(points[middle-1]));
+            const gweni::PointF b=graph->localPosToCanvasF(graph->graphToLocal(points[middle+1]));
+            const gweni::PointF on=graph->localPosToCanvasF(graph->graphToLocal(points[middle]));
+            const float length=std::hypot(b.x-a.x, b.y-a.y);
+            const gweni::PointF across(-(b.y-a.y)/length, (b.x-a.x)/length);
+            auto off=[&](float units) {
+                return gweni::Point(int(std::lround(on.x+across.x*units-0.5f)), int(std::lround(on.y+across.y*units-0.5f)));
+            };
+
+            const GraphFrame onLink=record([&]() { moveMouse(s, off(2.0f).x, off(2.0f).y); });
+            const size_t linkStrays=strays(onLink, {link, noiseColor});
+
+            report("hover_link", onLink, linkStrays);
+            check(gweni::HoveredControl == link, "2 units off its curve the link is not hovered");
+            check(linkStrays == 0, "the link's hover wrote slots outside it and the pin it left");
+
+            moveMouse(s, off(6.0f).x, off(6.0f).y);
+            renderFrames(s, 1);
+            check(gweni::HoveredControl != link, "6 units off its curve the link is still hovered");
+        }
+    }
+
+    // Linking: a drag out of Noise's Color shows a preview at the mouse; a drop
+    // on Mix's second Shader input asks and makes the link, vetoed it does
+    // not; a drop on empty space makes nothing and tells where; Escape ends a
+    // drag with nothing.
+    {
+        const size_t links=graph->getLinks().size();
+        const gweni::Point from=canvasAt(noiseColor->getAnchor());
+        const gweni::Point to=canvasAt(mixShader->getAnchor());
+        auto dragTo=[&](const gweni::Point &target) {
+            mouseDown(s, from.x, from.y, true);
+            renderFrames(s, 1);
+            moveMouse(s, (from.x+target.x)/2, (from.y+target.y)/2);
+            renderFrames(s, 1);
+            moveMouse(s, target.x, target.y);
+            renderFrames(s, 1);
+        };
+
+        events.vetoLink=true;
+        dragTo(to);
+        Link *preview=graph->getPreviewLink();
+        check(preview && preview->getParent() == graph->getOverlayLayer(), "a pin drag shows no preview over the nodes");
+        if(preview)
+        {
+            const gweni::PointF end=graph->canvasToGraph(gweni::PointF(to));
+
+            check((std::fabs(preview->getFreeEnd().x-end.x) < 0.01f) && (std::fabs(preview->getFreeEnd().y-end.y) < 0.01f),
+                "the preview does not end at the mouse");
+        }
+        mouseUp(s, to.x, to.y);
+        renderFrames(s, 1);
+        check((events.linkRequests == 1) && (events.linksMade == 0) && (graph->getLinks().size() == links),
+            "a vetoed link request made a link");
+
+        events.vetoLink=false;
+        dragTo(to);
+        mouseUp(s, to.x, to.y);
+        renderFrames(s, 1);
+        check((events.linkRequests == 2) && (events.linksMade == 1) && (graph->getLinks().size() == links+1),
+            "a drop on a compatible pin made no link");
+        check(noiseColor->isConnected() && mixShader->isConnected(), "the new link's pins are not connected");
+
+        // where no node is: the demo offers nodes there, and Escape closes it
+        dragTo(empty);
+        mouseUp(s, empty.x, empty.y);
+        renderFrames(s, 1);
+        check((events.emptyDrops == 1) && (graph->getLinks().size() == links+1), "a drop on empty space made a link "
+            "or told nothing");
+        const gweni::PointF dropped=graph->canvasToGraph(gweni::PointF(empty));
+        check((std::fabs(graph->getDropPosition().x-dropped.x) < 0.01f)
+            && (std::fabs(graph->getDropPosition().y-dropped.y) < 0.01f), "the drop's graph position is not the mouse's");
+        check(canvas->shownContextMenu() == graph->getContextMenu(), "the demo's Add node menu did not open at the drop");
+        key(GLFW_KEY_ESCAPE);
+        renderFrames(s, 1);
+
+        dragTo(to);
+        check(graph->draggingLink(), "a pin drag is not going on");
+        key(GLFW_KEY_ESCAPE);
+        renderFrames(s, 1);
+        check(!graph->draggingLink() && (canvas->inputCapture() == nullptr), "Escape did not end the pin drag");
+        mouseUp(s, to.x, to.y);
+        renderFrames(s, 1);
+        check((events.linkRequests == 2) && (graph->getLinks().size() == links+1), "a cancelled drag made a link");
+        moveMouse(s, empty.x, empty.y);
+        renderFrames(s, 2);
+    }
+
+    // Selection by click: alone, Shift adds, Ctrl toggles, empty space clears.
+    {
+        clickMouse(s, titleOf(coord).x, titleOf(coord).y);
+        renderFrames(s, 1);
+        check(graph->getSelectedNodes() == std::vector<Node *>{coord}, "a click did not select the node alone");
+        withModifier(GLFW_KEY_LEFT_SHIFT, GLFW_MOD_SHIFT, [&]() { clickMouse(s, titleOf(mix).x, titleOf(mix).y); });
+        renderFrames(s, 1);
+        check(coord->isSelected() && mix->isSelected(), "Shift-click did not add");
+        withModifier(GLFW_KEY_LEFT_CONTROL, GLFW_MOD_CONTROL, [&]() { clickMouse(s, titleOf(coord).x, titleOf(coord).y); });
+        renderFrames(s, 1);
+        check(!coord->isSelected() && mix->isSelected(), "Ctrl-click did not toggle");
+        const int before=events.selections;
+        clickMouse(s, empty.x, empty.y);
+        renderFrames(s, 1);
+        check(graph->getSelectedNodes().empty() && graph->getSelectedLinks().empty(), "a click on empty space did not clear");
+        check(events.selections == before+1, "the clear did not fire onSelectionChanged once");
+    }
+
+    // The marquee: each frame writes the marquee's slots and those of the
+    // items whose selection changed, nothing else; Escape gives the selection
+    // back.
+    {
+        graph->selectNode(mix);
+        renderFrames(s, 1);
+
+        auto selection=[&]() {
+            std::map<Base *, bool> state;
+
+            for(Node *node : graph->getNodes())
+                state[node]=node->isSelected();
+            for(Link *link : graph->getLinks())
+                state[link]=link->isSelected();
+            return state;
+        };
+        const std::map<Base *, bool> start=selection();
+        const gweni::Point from=canvasAt(gweni::PointF(400.0f, 200.0f));
+        bool changedAny=false;
+
+        mouseDown(s, from.x, from.y, true);
+        renderFrames(s, 1);
+        check(graph->marqueeActive(), "a press on empty space started no marquee");
+        for(int step=1; step <= 6; ++step)
+        {
+            const std::map<Base *, bool> before=selection();
+            const GraphFrame frame=record([&]() { moveMouse(s, from.x+step*40, from.y+step*25); });
+            const std::map<Base *, bool> after=selection();
+            std::vector<Base *> allowed;
+
+            for(Base *part : graph->getOverlayLayer()->getChildren())
+                if(gweni::gweni_cast<internal::NodeGraphMarquee>(part))
+                    allowed.push_back(part);
+            for(Base *part : graph->getLinkLayer()->getChildren())
+                if(gweni::gweni_cast<internal::NodeGraphMarqueeFill>(part))
+                    allowed.push_back(part);
+            for(const auto &entry : after)
+            {
+                const auto was=before.find(entry.first);
+
+                if((was == before.end()) || (was->second != entry.second))
+                {
+                    allowed.push_back(entry.first);
+                    changedAny=true;
+                }
+            }
+
+            const size_t strayCount=strays(frame, allowed);
+
+            report("marquee_"+std::to_string(step), frame, strayCount);
+            check(strayCount == 0, "a marquee frame wrote slots outside the marquee and the items it (de)selected");
+            check(frame.passes <= 1, "a marquee frame ran more than one layout pass");
+        }
+        check(changedAny, "the marquee selected nothing");
+        check(ramp->isSelected(), "the marquee did not select Color Ramp");
+        key(GLFW_KEY_ESCAPE);
+        renderFrames(s, 1);
+        check(selection() == start, "Escape did not give the selection from before the marquee back");
+        check(!graph->marqueeActive(), "Escape did not end the marquee");
+        mouseUp(s, from.x+240, from.y+150);
+        renderFrames(s, 2);
+    }
+
+    // Context menus: empty space, a node and a link each open theirs, with the
+    // right press's graph position; a right drag pans and opens none.
+    {
+        rightClick(s, empty);
+        renderFrames(s, 1);
+        const gweni::PointF at=graph->canvasToGraph(gweni::PointF(empty));
+        check(canvas->shownContextMenu() == graph->getContextMenu(), "a right click on empty space opened "
+            "no graph menu");
+        check((std::fabs(graph->getContextMenuPosition().x-at.x) < 0.01f)
+            && (std::fabs(graph->getContextMenuPosition().y-at.y) < 0.01f), "the menu's graph position is not the click's");
+        key(GLFW_KEY_ESCAPE);
+        renderFrames(s, 1);
+
+        rightClick(s, titleOf(ramp));
+        renderFrames(s, 1);
+        check(canvas->shownContextMenu() && (canvas->shownContextMenu() == ramp->getContextMenu()),
+            "a right click on a node opened no node menu");
+        key(GLFW_KEY_ESCAPE);
+        renderFrames(s, 1);
+
+        Link *link=graph->getLinks().front();
+        std::vector<gweni::PointF> points;
+
+        link->getPoints(points);
+        const gweni::Point onLink=canvasAt(points[points.size()/2]);
+        moveMouse(s, onLink.x, onLink.y);
+        renderFrames(s, 1);
+        rightClick(s, onLink);
+        renderFrames(s, 1);
+        check(canvas->shownContextMenu() && (canvas->shownContextMenu() == link->getContextMenu()),
+            "a right click on a link opened no link menu");
+        key(GLFW_KEY_ESCAPE);
+        renderFrames(s, 1);
+
+        const gweni::PointF pan=graph->pan();
+
+        mouseDown(s, empty.x, empty.y, true, GLFW_MOUSE_BUTTON_RIGHT);
+        moveMouse(s, empty.x+40, empty.y-20);
+        renderFrames(s, 1);
+        mouseUp(s, empty.x+40, empty.y-20, GLFW_MOUSE_BUTTON_RIGHT);
+        renderFrames(s, 1);
+        check(canvas->shownContextMenu() == nullptr, "a right drag opened a menu");
+        check(std::fabs(graph->pan().x-(pan.x+40.0f)) < 0.01f, "a right drag did not pan");
+        graph->setPan(pan);
+        moveMouse(s, empty.x, empty.y);
+        renderFrames(s, 2);
+    }
+
+    // Pan and zoom: every node's slots move, with no layout pass.
+    {
+        const GraphFrame panned=record([&]() { graph->setPan(gweni::PointF(graph->pan().x+15.0f, graph->pan().y)); });
+        const GraphFrame zoomed=record([&]() { scrollWheel(s, 60); });
+
+        report("pan", panned, 0);
+        report("zoom", zoomed, 0);
+        check((panned.passes == 0) && (zoomed.passes == 0), "a pan or zoom ran a layout pass");
+        check(!panned.primitives.empty() && !zoomed.primitives.empty(), "a pan or zoom wrote nothing");
+        graph->setZoom(1.0f);
+        graph->setPan(gweni::PointF(10.0f, 10.0f));
+        renderFrames(s, 2);
+    }
+
+    // Deleting: a vetoed node stays; one with links goes with them, its
+    // events firing and every id it took coming back.
+    {
+        const size_t nodes=graph->getNodes().size();
+
+        clickMouse(s, titleOf(mix).x, titleOf(mix).y);
+        renderFrames(s, 1);
+        events.vetoRemove=true;
+        key(GLFW_KEY_DELETE);
+        renderFrames(s, 1);
+        check((events.nodeRemoveRequests == 1) && (graph->getNodes().size() == nodes), "a vetoed node was removed");
+        events.vetoRemove=false;
+
+        const size_t idsWithout=livePrimitiveIds()+liveTextIds();
+        Node *added=demo->addNodeOfKind(1, gweni::PointF(120.0f, 330.0f), findPin(coord, "UV"));
+
+        renderFrames(s, 2);
+        check(added && (added->getLinks().size() == 1), "the demo's added node is not linked");
+        clickMouse(s, titleOf(added).x, titleOf(added).y);
+        renderFrames(s, 1);
+        key(GLFW_KEY_DELETE);
+        renderFrames(s, 2);
+        check((events.nodeRemoveRequests == 2) && (events.nodesRemoved == 1) && (graph->getNodes().size() == nodes),
+            "Delete did not remove the selected node");
+        const size_t idsAfter=livePrimitiveIds()+liveTextIds();
+        check(idsAfter == idsWithout, "the deleted node and its link gave "+std::to_string(idsWithout)
+            +" ids back as "+std::to_string(idsAfter));
+    }
+
+    // a settled frame writes nothing, and the demo gives every id back
+    {
+        const GraphFrame settled=record([]() {});
+
+        check(settled.primitives.empty() && settled.texts.empty(), "a settled frame wrote slots");
+        if(!shoot(s, shotDir+"/node-graph.png"))
+            return false;
+    }
+
+    dropControl(s, control);
+    renderFrames(s, 2);
+    check(livePrimitiveIds()+liveTextIds() == idsBefore, "deleting NodeGraphDemo did not give its ids back");
+    std::cout<<"node-graph moved="<<events.moved<<" link_requests="<<events.linkRequests
+             <<" links_made="<<events.linksMade<<" empty_drops="<<events.emptyDrops
+             <<" node_remove_requests="<<events.nodeRemoveRequests<<" passed="<<(passed?"yes":"no")<<"\n";
+    return true;
+}
+
 static bool runPopupScenario(Session &s, const std::string &shotDir, bool &passed)
 {
     s.freezeClock=false;
@@ -10527,6 +11117,15 @@ int main(int argc, char *argv[])
             ok=runZoomPanelScenario(session, shotDir, passed);
             if(ok && !passed)
                 ok=false;   // a zoomed panel did not draw as a scaled canvas
+            break;
+        }
+
+        case Scenario::NodeGraph:
+        {
+            bool passed=false;
+            ok=runNodeGraphScenario(session, shotDir, passed);
+            if(ok && !passed)
+                ok=false;   // an input wrote, changed or laid out more than its part of the graph
             break;
         }
 
