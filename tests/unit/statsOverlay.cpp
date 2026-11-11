@@ -28,7 +28,9 @@
  *    frame interval every read between two starts) and fps, under a
  *    "time (ms)" corner, and the upload row's bytes with their unit;
  *  - bytes() gives at most 5 characters at every unit's edge (B below 1000,
- *    then kB, MB, ... of 1000, with tenths below 10, truncated);
+ *    then kB, MB, ... of 1000, with tenths below 10, truncated), the
+ *    largest size_t included on every width (18EB where it is 64 bits,
+ *    4.2GB where it is 32, as on wasm32);
  *  - fps counts the frames the clock saw move on: over many frames of a
  *    clock that stands still the frame times it keeps do not grow, and once
  *    it moves again fps is the stepped clock's; a clock stepping finer than
@@ -510,13 +512,16 @@ TEST_CASE("StatsOverlay: it shows the window's times and fps")
 
 TEST_CASE("StatsOverlay: bytes() fits 5 characters at every unit's edge")
 {
+    static_assert(sizeof(size_t) == 4 || sizeof(size_t) == 8,
+        "the largest size_t's text is known for 32 and 64 bits only");
     const struct { size_t n; const char *text; } cases[]=
     {
         {0, "0B"}, {512, "512B"}, {999, "999B"},
         {1000, "1.0kB"}, {1023, "1.0kB"}, {1999, "1.9kB"}, {9999, "9.9kB"},
         {10000, "10kB"}, {12345, "12kB"}, {99999, "99kB"}, {999999, "999kB"},
         {1000000, "1.0MB"}, {1250000, "1.2MB"}, {999999999, "999MB"},
-        {1000000000, "1.0GB"}, {size_t(-1), "18EB"},
+        {1000000000, "1.0GB"}, {4294967295u, "4.2GB"},
+        {size_t(-1), sizeof(size_t) == 8 ? "18EB" : "4.2GB"},
     };
 
     for(const auto &c : cases)
