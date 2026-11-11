@@ -278,9 +278,13 @@ Base::~Base()
             m_toolTip=nullptr;
         }
 
+        // off the queue of the canvas that queued it, whatever canvas (or
+        // none) it is on now
+        if(m_deleteQueuedOn)
+            m_deleteQueuedOn->PreDeleteCanvas(this);
+
         if(canvas)
         {
-            canvas->PreDeleteCanvas(this);
             canvas->toolTipControlDeleted(this);
             canvas->popupControlDeleted(this);
             canvas->menuAnchorDeleted(this);
@@ -848,7 +852,16 @@ void Base::invalidate(int state)
 
 void Base::delayedDelete()
 {
+    if(m_deleteQueuedOn)
+        return;
+
     Canvas *canvas=getCanvas();
+
+    if(!canvas)
+    {
+        delete this;
+        return;
+    }
     canvas->addDelayedDelete(this);
 }
 

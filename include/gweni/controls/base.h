@@ -243,6 +243,15 @@ public:
     //! only: a subclass with no renderer (SliderBar of Dragger) is still reported.
     virtual bool drawsNothing() const { return false; }
 
+    //! Deletes the control at its canvas's next processDelayedDeletes() (the
+    //! next frame's update phase), with preDelete() first. The canvas that
+    //! queued it deletes it even if it has left that canvas's tree since, and
+    //! a control deleted before then, on a canvas or off one, is taken off
+    //! that queue (Canvas::addDelayedDelete). A control is queued once: a
+    //! second call does nothing, whatever canvas it is on now. With no canvas
+    //! the control is deleted at once and without preDelete(), which may need
+    //! the skin (Label's does); its destructor frees what preDelete() would
+    //! have (~Label its font).
     virtual void delayedDelete();
     virtual void preDelete(gweni::skin::Base *skin) {}
 
@@ -1025,6 +1034,13 @@ private:
     //! The control's level in the drain's ancestor stack when it was last
     //! pushed there; trusted only if that level still holds this control.
     int m_renderStackLevel=-1;
+
+    friend class Canvas;
+    //! The canvas whose delayed-delete queue holds this control, or null. Set
+    //! by Canvas::addDelayedDelete, cleared when that canvas pops it or ~Base
+    //! takes it off the queue, so a control that left the canvas's tree is
+    //! still found there.
+    Canvas *m_deleteQueuedOn=nullptr;
 
 public:
     //! Calls onDescendantInteraction(this) on each ancestor. The input handler

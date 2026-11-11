@@ -57,6 +57,10 @@ Canvas::~Canvas()
         capture->captureCanvasDeleted(this);
     }
     releaseChildren();
+    // What is still queued is off this tree (detached, or moved to another
+    // canvas) or was queued by the teardown: it goes now, with whatever its
+    // destructors queue, so no control is left pointing at this canvas.
+    Canvas::processDelayedDeletes();
 }
 
 void Canvas::updateCanvas()
@@ -689,14 +693,19 @@ void Canvas::rollExcludedReleases()
 void Canvas::addDelayedDelete(controls::Base *control)
 {
     if(m_deleteSet.insert(control).second)
+    {
         m_deleteList.push_back(control);
+        control->m_deleteQueuedOn=this;
+    }
 }
 
-// A control deleted before its turn (by an ancestor, a destructor or the app)
-// leaves the set only; its list entry is skipped when it comes up.
+// A control deleted before its turn (by an ancestor, a destructor or the app),
+// on this canvas or off it, leaves the set only, through its m_deleteQueuedOn;
+// its list entry is skipped when it comes up.
 void Canvas::PreDeleteCanvas(controls::Base *control)
 {
     m_deleteSet.erase(control);
+    control->m_deleteQueuedOn=nullptr;
 }
 
 // The list front first, until it is empty: what a destructor queues is
@@ -718,6 +727,7 @@ void Canvas::processDelayedDeletes()
         if(m_deleteSet.erase(control) == 0)
             continue;
 
+        control->m_deleteQueuedOn=nullptr;
         control->preDelete(getSkin());
         delete control;
         redraw();

@@ -592,6 +592,12 @@ protected:
     /// The delayed deletes: the set holds what is still queued, the list the
     /// order they go in, with entries the set no longer holds (controls
     /// already deleted) skipped as they come up (processDelayedDeletes).
+    /// Each queued control points back here (Base::m_deleteQueuedOn), so it
+    /// leaves this queue when it is deleted wherever it is by then: off this
+    /// canvas's tree, or on another canvas's. It is in one queue at most (a
+    /// second Base::delayedDelete() does nothing; one with no canvas deletes
+    /// at once), and ~Canvas deletes what is still queued after the tree, so
+    /// no back pointer outlives the canvas.
     controls::Base::List m_deleteList;
     std::set<controls::Base *> m_deleteSet;
     friend class controls::Base;
