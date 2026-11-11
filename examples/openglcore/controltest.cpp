@@ -273,7 +273,15 @@
  *                   changes it, and once the mouse has moved on and clicked
  *                   TextBox 2, TextBox 1 looks as it did before any click.
  *                   TreeControlDemo: collapsing a node repaints and moves the
- *                   node below it up. SelectableDemo: hovering a free row
+ *                   node below it up; hovering a label changes its pixels
+ *                   alone in a frame writing 1..2 primitive slots and moving
+ *                   off gives the frame before back, a click selects it with
+ *                   no pixel changed outside it, a click on another label
+ *                   moves the selection, changing no pixel and writing no
+ *                   primitive slot outside the two labels and no more glyph
+ *                   slots a frame than their strings, and a settled frame
+ *                   writes nothing (a line reports the counts).
+ *                   SelectableDemo: hovering a free row
  *                   changes it and moving off gives its idle look back, a
  *                   click selects it and a second one deselects it back to
  *                   that look; with group row A selected and the mouse on row
@@ -5228,6 +5236,140 @@ static void checkSelectable(Session &s, const std::string &shotDir, InteractionC
         +std::to_string(groupGpu.textSlotsWritten)+" (want at most "+std::to_string(glyphs)+")");
 }
 
+// The primitive slots a frame wrote, and how many of them are not in allowed.
+static size_t slotsOutside(const Session &s, const std::vector<size_t> &allowed, size_t &written)
+{
+    size_t outside=0;
+
+    for(size_t id : s.renderer->writtenPrimitiveIds())
+    {
+        ++written;
+        if(std::find(allowed.begin(), allowed.end(), id) == allowed.end())
+            ++outside;
+    }
+    return outside;
+}
+
+// TreeControlDemo's labels draw as flat list rows: label A ("Node One") hovered
+// changes its pixels alone, in a frame writing 1..2 primitive slots (A's and
+// the one of the control the mouse left), and moving off gives the frame
+// before back; a click on A selects it, changing no pixel outside it; a click
+// on label B ("Node Two Inside") moves the selection, every frame until
+// settled writing no primitive slot but A's and B's and no more glyphs than
+// their two strings, no pixel changed outside them; a settled frame writes
+// nothing.
+static void checkTreeSelect(Session &s, const std::string &shotDir, InteractionChecks &checks, bool &ok)
+{
+    gweni::controls::Base *demo=addControl(s, "TreeControlDemo");
+    renderFrames(s, s.frames);
+
+    // the first tree's first label and its third, a child of "Node Two"
+    auto *first=gweni::gweni_cast<gweni::controls::Button>(findControl(demo, "TreeNodeText"));
+    auto *second=gweni::gweni_cast<gweni::controls::Button>(findControl(demo, "TreeNodeText", 2));
+    if(!first || !second || first->getToggleState() || second->getToggleState()
+        || !first->getSkinControl() || !second->getSkinControl()
+        || first->getSkinControl()->getPrimitives().empty()
+        || second->getSkinControl()->getPrimitives().empty())
+    {
+        checks.check("tree_select_found", false,
+            "TreeControlDemo has no two unselected tree labels with a primitive slot each");
+        dropControl(s, demo);
+        return;
+    }
+
+    const size_t firstSlot=first->getSkinControl()->getPrimitives().front();
+    const std::vector<size_t> labelSlots={firstSlot, second->getSkinControl()->getPrimitives().front()};
+    const size_t glyphs=static_cast<size_t>(first->textLength()+second->textLength());
+    const gweni::Point firstAt=centreOf(first);
+    const gweni::Point secondAt=centreOf(second);
+    const gweni::Point off(s.size.x-1, s.size.y-1);    // TreeControlDemo, no tree
+
+    moveMouse(s, off.x, off.y);
+    renderFrames(s, s.frames);
+    const std::vector<uint8_t> rest=framePixels(s);
+
+    // the hover: A's slot, and the left control's at most
+    moveMouse(s, firstAt.x, firstAt.y);
+    renderFrames(s, 1);
+    const std::vector<size_t> hoverSlots=s.renderer->writtenPrimitiveIds();
+    renderFrames(s, s.frames);
+    if(!shoot(s, shotDir+"/interaction-tree-hover.png"))
+        ok=false;
+    const std::vector<uint8_t> hover=framePixels(s);
+    const SplitDifferences hoverDiff=differencesSplit(s, rest, hover, first, first);
+
+    moveMouse(s, off.x, off.y);
+    renderFrames(s, s.frames);
+    const std::vector<uint8_t> unhovered=framePixels(s);
+
+    // the selection of A, the mouse moved off again
+    clickMouse(s, firstAt.x, firstAt.y);
+    moveMouse(s, off.x, off.y);
+    renderFrames(s, s.frames);
+    if(!shoot(s, shotDir+"/interaction-tree-selected.png"))
+        ok=false;
+    const std::vector<uint8_t> selected=framePixels(s);
+    const bool firstSelected=first->getToggleState() && !second->getToggleState();
+    const SplitDifferences selectDiff=differencesSplit(s, rest, selected, first, first);
+
+    // the selection moved to B, from a settled hover on it
+    moveMouse(s, secondAt.x, secondAt.y);
+    renderFrames(s, s.frames);
+    size_t moveWritten=0, moveForeign=0, moveGlyphs=0;
+    clickMouse(s, secondAt.x, secondAt.y);
+    for(int i=0; i < s.frames; ++i)
+    {
+        renderFrames(s, 1);
+        moveForeign+=slotsOutside(s, labelSlots, moveWritten);
+        moveGlyphs=std::max(moveGlyphs, s.renderer->getFrameStats().textSlotsWritten);
+    }
+    moveMouse(s, off.x, off.y);
+    renderFrames(s, s.frames);
+    if(!shoot(s, shotDir+"/interaction-tree-moved.png"))
+        ok=false;
+    const std::vector<uint8_t> moved=framePixels(s);
+    const bool handedOver=!first->getToggleState() && second->getToggleState();
+    const SplitDifferences moveDiff=differencesSplit(s, selected, moved, first, second);
+
+    // nothing to do: nothing written
+    renderFrames(s, 1);
+    const gweni::renderer::SlotRenderer::FrameStats settled=s.renderer->getFrameStats();
+
+    std::cout<<"interaction tree_select hover_slots="<<hoverSlots.size()
+        <<" move_slots="<<moveWritten<<" move_foreign_slots="<<moveForeign
+        <<" move_text_slots_max="<<moveGlyphs<<"\n";
+
+    forgetMouse(s);
+    dropControl(s, demo);
+
+    const bool hoverOwnSlot=std::find(hoverSlots.begin(), hoverSlots.end(), firstSlot) != hoverSlots.end();
+    checks.check("tree_label_hover",
+        hoverDiff.outside == 0 && hoverDiff.inFirst > 0 && unhovered == rest,
+        "hovering the label changed "+std::to_string(hoverDiff.inFirst)+" pixels in it and "
+        +std::to_string(hoverDiff.outside)+" outside it, or moving off did not give the frame before back");
+    checks.check("tree_label_hover_bounded",
+        hoverSlots.size() >= 1 && hoverSlots.size() <= 2 && hoverOwnSlot,
+        "the hover frame wrote "+std::to_string(hoverSlots.size())+" primitive slots (want 1..2), "
+        +(hoverOwnSlot?"the label's among them":"not the label's"));
+    checks.check("tree_label_select",
+        firstSelected && selectDiff.outside == 0 && selectDiff.inFirst > 0,
+        "a click did not select the label alone, or changed "+std::to_string(selectDiff.outside)
+        +" pixels outside it ("+std::to_string(selectDiff.inFirst)+" in it)");
+    checks.check("tree_label_select_move",
+        handedOver && moveDiff.outside == 0 && moveDiff.inFirst > 0 && moveDiff.inSecond > 0
+        && moveWritten >= 2 && moveForeign == 0 && moveGlyphs <= glyphs,
+        "a click on the second label did not move the selection to it alone: "
+        +std::to_string(moveDiff.outside)+" pixels outside the two labels changed, "
+        +std::to_string(moveDiff.inFirst)+" in A, "+std::to_string(moveDiff.inSecond)+" in B, "
+        +std::to_string(moveWritten)+" primitive slots written, "+std::to_string(moveForeign)
+        +" not the labels', at most "+std::to_string(moveGlyphs)+" glyph slots a frame (want at most "
+        +std::to_string(glyphs)+")");
+    checks.check("tree_label_settled",
+        settled.primitiveSlotsWritten == 0 && settled.textSlotsWritten == 0,
+        "a settled frame wrote "+std::to_string(settled.primitiveSlotsWritten)+" primitive and "
+        +std::to_string(settled.textSlotsWritten)+" glyph slots");
+}
+
 // CheckBoxDemo: its first CheckBox, its CheckBoxWithLabel and its disabled
 // third CheckBox, in that order. Hovering the first box changes its pixels and
 // leaving gives them back; a click checks it (the tick changes them) and a
@@ -7323,6 +7465,7 @@ static bool runInteractionScenario(Session &s, const std::string &shotDir, bool 
     checkFocusHandOff(s, shotDir, checks, ok);
     checkTreeCollapse(s, shotDir, checks, ok);
     checkSelectable(s, shotDir, checks, ok);
+    checkTreeSelect(s, shotDir, checks, ok);
     checkCheckBox(s, shotDir, checks, ok);
     checkWindowClose(s, shotDir, checks, ok);
     checkSliderDrag(s, shotDir, checks, ok);
