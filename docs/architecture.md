@@ -1642,7 +1642,9 @@ two programs and the draws. What follows describes both together:
   its 16-unit margin past the toggle to the tree's right edge; the connector lines and
   the chevron are the `TreeNode`'s and the toggle's, and the text colours are
   `TreeNodeText::updateColors`' (`Colors.Tree`). Hover and selection go through
-  `redraw()`, so moving the selection marks the two labels alone. A `PropertyTreeNode`'s
+  `redraw()`, so moving the selection marks the two labels and the newly selected
+  `TreeNode` (its own `redraw()` in `setSelected`, whose lines are rewritten with the
+  same bytes), and writes the two labels' slots alone. A `PropertyTreeNode`'s
   title takes the same renderer and is not selectable (`setSelectable(false)`): at rest
   the category's `Properties.Border` band shows through, and a hover paints
   `ListItemHover`, a little darker than the band.
