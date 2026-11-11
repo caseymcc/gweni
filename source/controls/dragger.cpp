@@ -61,12 +61,14 @@ void Dragger::onMouseMoved(int x, int y, int deltaX, int deltaY)
 
     if(m_doMove && m_target)
     {
-        // The mouse in the parent's units, less the hold in the target's
-        // (the same units, a ZoomPanel's zoom applied to both)
+        // The mouse in the units of the control the target is placed in
+        // (a ZoomPanel's inner panel for a child added to the panel, not the
+        // panel), less the hold in the target's (the same units, a
+        // ZoomPanel's zoom and pan applied to both)
         gweni::Point p=gweni::Point(x, y);
 
-        if(m_target->getParent())
-            p=m_target->getParent()->canvasPosToLocal(p);
+        if(Base *placedIn=m_target->getActualParent()?m_target->getActualParent():m_target->getParent())
+            p=placedIn->canvasPosToLocal(p);
         p.x-=m_holdPos.x;
         p.y-=m_holdPos.y;
 

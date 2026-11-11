@@ -21,11 +21,15 @@
  *  context menu as a press there would; a disabled panel neither zooms nor
  *  pans; the zoom range has a positive floor. Inside a zoomed panel a
  *  Dragger (a ScrollControl's thumb) and a Resizer keep the grabbed point
- *  under the cursor: their motion is in the panel's content units.
+ *  under the cursor: their motion is in the panel's content units. So does
+ *  a Dragger moving a control added to the panel itself (a window's title
+ *  bar), whose logical parent is the panel and which is placed in the inner
+ *  panel.
  */
 #include "headlessFixture.h"
 
 #include <gweni/controls/button.h>
+#include <gweni/controls/dragger.h>
 #include <gweni/controls/menu.h>
 #include <gweni/controls/resizableControl.h>
 #include <gweni/controls/resizer.h>
@@ -580,6 +584,62 @@ TEST_CASE("ZoomPanel gestures: a Resizer dragged in a zoomed panel keeps the gra
         const PointF held=top->canvasPosToLocalF(PointF(to));
 
         CHECK(std::fabs(held.y-grabbed.y) < 1.0f);
+        scene.press(0, false);
+        scene.frame();
+    }
+}
+
+TEST_CASE("ZoomPanel gestures: a Dragger moving a child of the panel itself keeps the grabbed point under the cursor")
+{
+    for(float zoom : {1.0f, 1.5f, 2.0f})
+    {
+        CAPTURE(zoom);
+
+        Scene scene;
+
+        scene.panel->setPan(PointF(10.0f, 6.0f));
+
+        // as a WindowControl and its title bar: the box's parent is the
+        // panel, the inner panel is where it is placed
+        controls::Base *box=scene.panel->newChild<controls::Base>();
+
+        box->setSizeFlags({SizeFlag::Fixed, SizeFlag::Fixed});
+        box->setBounds(60, 100, 100, 60);
+        controls::internal::Dragger *bar=box->newChild<controls::internal::Dragger>();
+
+        bar->setTarget(box);
+        bar->setSizeFlags({SizeFlag::Fixed, SizeFlag::Fixed});
+        bar->setBounds(0, 0, 100, 20);
+        scene.panel->setZoom(zoom);
+        scene.frame();
+        scene.frame();
+        REQUIRE((box->getParent() == scene.panel));
+        REQUIRE((box->getActualParent() == scene.panel->getInnerPanel()));
+
+        const Rect drawn=bar->getCanvasBounds();
+        const Point press(drawn.x+drawn.w/2, drawn.y+drawn.h/2);
+
+        scene.move(press.x, press.y);
+        scene.frame();
+        REQUIRE((HoveredControl == bar));
+
+        const PointF grabbed=bar->canvasPosToLocalF(PointF(press));
+
+        scene.press(0, true);
+        for(int step=1; step <= 3; ++step)
+        {
+            CAPTURE(step);
+            const Point to(press.x+step*14, press.y+step*10);
+
+            scene.move(to.x, to.y);
+            scene.frame();
+
+            const PointF held=bar->canvasPosToLocalF(PointF(to));
+
+            // to within the unit the hold was floored to
+            CHECK(std::fabs(held.x-grabbed.x) < 1.0f);
+            CHECK(std::fabs(held.y-grabbed.y) < 1.0f);
+        }
         scene.press(0, false);
         scene.frame();
     }

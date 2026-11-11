@@ -2494,8 +2494,10 @@ and every device px hits the same control (`controltest_zoom_panel`).
   nearest unit and `canvasPosToLocal` floors. A new zoom or pan calls
   `Canvas::hoverMayHaveMoved`, so the control under a resting mouse is hovered.
   A `Dragger` (a scroll bar or slider thumb, a splitter, a window's title bar) and a
-  `Resizer` move their target by the mouse taken into the target's parent's units
-  (`canvasPosToLocal` of the mouse, less the hold in the target's own units), so
+  `Resizer` move their target by the mouse taken into the units of the control the
+  target is placed in (its actual parent: the inner panel for a control added to
+  the ZoomPanel itself, as a window is; `canvasPosToLocal` of the mouse, less the
+  hold in the target's own units), so
   the grabbed point stays under the cursor at any zoom (at zoom 1 the same integer
   arithmetic as before). A DragNumber's scrub stays in canvas units (a value step per
   screen unit).
