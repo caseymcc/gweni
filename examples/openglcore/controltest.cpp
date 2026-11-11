@@ -140,7 +140,7 @@
  *                       context-menu | popup | virtual-list |
  *                       data-table-virtual | hide-show | demo-labels |
  *                       plot-histogram | plot-lines | inspector |
- *                       stats-overlay | depth-view (see below)
+ *                       stats-overlay | depth-view | zoom-panel (see below)
  *    --dump-bounds [<path>]
  *                       print the laid-out control tree as text: one line per
  *                       control, depth-first in child order, indented by depth,
@@ -555,6 +555,26 @@
  *                 Exits non-zero if any check is no. controltest_depth_view
  *                 (tests/depthView.cmake) runs it twice and requires the same
  *                 PNGs.
+ *    zoom-panel   ButtonDemo in a ZoomPanel filling a scale-1 canvas at zoom
+ *                 1, 1.5, 1.37 and 2 against ButtonDemo on a canvas at
+ *                 setScale(zoom) (zoom-<z>-canvas.png, -panel.png): the same
+ *                 pixels, every 3rd device px hitting the same control, the
+ *                 mouse at each Button's centre hovering the same one, and the
+ *                 same pixels once "Toggle Me" is clicked. Then ZoomPanelDemo
+ *                 at scale 1: a wheel zoom, a setZoom, an SDF-range zoom (2 to
+ *                 2.5, uploading no atlas) and right, middle and Space+left
+ *                 pans each lay nothing out, call no invalidate(), write slots
+ *                 of the panel alone and leave a frame writing nothing; the
+ *                 wheel keeps the point under the cursor and stops at the
+ *                 range's ends, and over the ScrollControl scrolls it; the
+ *                 tooltip box, the ComboBox's list and a right click's context
+ *                 menu open as canvas children at the controls as drawn
+ *                 (zoom-tooltip.png, -combo-list.png, -context-menu.png); the
+ *                 demo deleted gives its ids back. One line per zoom and per
+ *                 frame kind, e.g.
+ *                   zoom-panel zoom=1.37 pixels_match=yes grid_misses=0 ...
+ *                   zoom-panel right_pan layout_passes=0 invalidations=0 ...
+ *                 Exits non-zero if any check fails, naming it on stderr.
  *    scale        one control (default Demo) on a 640x480 canvas at scale 1,
  *                 then Canvas::setScale(2) with the framebuffer resized to
  *                 1280x960, then back to 1 (scale-01-1x.png, scale-02-2x.png,
@@ -800,6 +820,7 @@
 #include <cstring>
 #include <fstream>
 #include <functional>
+#include <set>
 #include <iostream>
 #include <map>
 #include <sstream>
@@ -2409,72 +2430,6 @@ static bool runScaleScenario(Session &s, const std::string &controlName,
              <<" fresh_matches="<<(freshMatches?"yes":"no")<<"\n";
     if(!settled)
         std::cerr<<"ControlTest: the canvas did not come back from a 1 -> 2 -> 1 scale change\n";
-    return true;
-}
-
-// --scenario zoom-panel: controls::ZoomPanel against Canvas::setScale
-//
-// ButtonDemo inside a ZoomPanel filling a scale-1 canvas, its content 640x480
-// at zoom z (pan 0, so its origin is the canvas's whole px 0,0), must draw the
-// very pixels ButtonDemo does on a 640x480 canvas at setScale(z), each built on
-// a fresh canvas onto a target of round(640x480*z), for z = 1, 1.5, 1.37, 2.
-static bool runZoomPanelScenario(Session &s, const std::string &shotDir, bool &passed)
-{
-    static const float zooms[]={1.0f, 1.5f, 1.37f, 2.0f};
-    const std::string controlName="ButtonDemo";
-
-    passed=true;
-    // an animation stands still between the shots
-    s.freezeClock=true;
-
-    for(float zoom : zooms)
-    {
-        char tag[32];
-
-        std::snprintf(tag, sizeof(tag), "%.2f", zoom);
-
-        ResizeState scaled, zoomed;
-
-        // ButtonDemo on a canvas at setScale(zoom)
-        if(!rescaleSession(s, zoom) || !resizeSession(s, 640, 480))
-            return false;
-        replaceCanvas(s);
-
-        gweni::controls::Base *control=addControl(s, controlName);
-
-        renderFrames(s, s.frames);
-        scaled.name=std::string("zoom-")+tag+"-canvas.png";
-        if(!shoot(s, shotDir+"/"+scaled.name)) return false;
-        s.renderer->readPixels(s.pixels.x, s.pixels.y, scaled.pixels);
-        dropControl(s, control);
-
-        // the same in a ZoomPanel at zoom, on a canvas at scale 1 of that target
-        const gweni::Point target=s.pixels;
-
-        if(!rescaleSession(s, 1.0f) || !resizeSession(s, target.x, target.y))
-            return false;
-        replaceCanvas(s);
-
-        gweni::controls::ZoomPanel *panel=s.canvas->newChild<gweni::controls::ZoomPanel>();
-
-        panel->setDock(gweni::DockPosition::Center);
-        panel->setContentSize(gweni::Point(640, 480));
-        panel->setZoom(zoom);
-        control=addControl(s, controlName);
-        control->setParent(panel);
-
-        renderFrames(s, s.frames);
-        zoomed.name=std::string("zoom-")+tag+"-panel.png";
-        if(!shoot(s, shotDir+"/"+zoomed.name)) return false;
-        s.renderer->readPixels(s.pixels.x, s.pixels.y, zoomed.pixels);
-
-        const bool same=pixelsMatch(scaled, zoomed);
-
-        std::cout<<"zoom-panel zoom="<<tag<<" pixels_match="<<(same?"yes":"no")<<"\n";
-        passed=same && passed;
-        panel->delayedDelete();
-        s.canvas->updateCanvas();
-    }
     return true;
 }
 
@@ -6726,6 +6681,573 @@ static void checkVectorField(Session &s, const std::string &shotDir, Interaction
     checks.check("vector_field_tab", focused && tabbed,
         std::string(focused ? "" : "the press did not focus the Y field; ")
         +(tabbed ? "" : "Tab did not move the focus to the Z field"));
+}
+
+//-----------------------------------------------------------------------------
+// --scenario zoom-panel: controls::ZoomPanel against Canvas::setScale, and its
+// own input
+//
+// First, for z = 1, 1.5, 1.37, 2: ButtonDemo inside a ZoomPanel filling a
+// scale-1 canvas, its content 640x480 at zoom z (pan 0, so its origin is the
+// canvas's whole px 0,0), must draw the very pixels ButtonDemo does on a
+// 640x480 canvas at setScale(z), each built on a fresh canvas onto a target of
+// round(640x480*z). Every 3rd device px must hit the same control in both
+// (the scaled canvas given the input layer's floor(px/z)); the mouse moved
+// through the input layer to each Button's centre must hover the same
+// control; and once "Toggle Me" is clicked there, the two frames must again
+// be the same pixels.
+//
+// Then ZoomPanelDemo on a 640x480 canvas at scale 1 (its hint Label is
+// outside the panel): every frame of a wheel zoom, a setZoom and a right,
+// middle and Space+left drag pan lays nothing out (layout_passes=0), calls
+// Base::invalidate() nowhere and writes no slot that is not the panel
+// subtree's, and the frame after each writes nothing; the wheel keeps the
+// content point under the cursor there and stops at the range's ends; a zoom
+// inside the SDF range (2 -> 2.5) uploads nothing to a font atlas; the wheel
+// over the ScrollControl scrolls it; a pan moves the content by the mouse's
+// motion and opens no menu. From inside the zoomed panel the tooltip box, the
+// ComboBox's list and a right click's context menu (with 2 units of motion,
+// under the pan threshold) open as canvas children at the control's rect as
+// it is drawn (getCanvasBounds). Deleting the demo gives back every id but the
+// canvas's ToolTip box's.
+//-----------------------------------------------------------------------------
+
+// The child indices from root down to control, or "-" for one not under root.
+static std::string pathUnder(gweni::controls::Base *root, gweni::controls::Base *control)
+{
+    std::string path;
+
+    for(gweni::controls::Base *at=control; at; at=at->getParent())
+    {
+        if(at == root)
+            return path.empty() ? std::string("/") : path;
+
+        gweni::controls::Base *parent=at->getParent();
+
+        if(!parent)
+            break;
+
+        size_t index=0;
+
+        for(gweni::controls::Base *child : parent->getChildren())
+        {
+            if(child == at)
+                break;
+            ++index;
+        }
+        path="/"+std::to_string(index)+path;
+    }
+    return "-";
+}
+
+// The primitive and text ids every control under control holds.
+static void subtreeIds(gweni::controls::Base *control, std::set<size_t> &primitives, std::set<size_t> &texts)
+{
+    if(const gweni::skin::Control *skinControl=control->getSkinControl())
+    {
+        std::vector<size_t> primitiveIds, textIds;
+
+        skinControl->appendIds(primitiveIds, textIds);
+        primitives.insert(primitiveIds.begin(), primitiveIds.end());
+        texts.insert(textIds.begin(), textIds.end());
+    }
+    for(gweni::controls::Base *child : control->getActualChildren())
+        subtreeIds(child, primitives, texts);
+}
+
+// What ButtonDemo gives in one tree: the hit-test grid, the hovered control at
+// each Button's centre, and the pixels once "Toggle Me" is clicked.
+struct ZoomTargets
+{
+    std::vector<std::string> grid;
+    std::vector<std::string> hovered;
+    std::vector<uint8_t> clicked;
+};
+
+// Device px centres of ButtonDemo's Buttons on the scaled canvas, and the one
+// of "Toggle Me" (last).
+static std::vector<gweni::Point> buttonCentres(gweni::controls::Base *demo, float scale)
+{
+    std::vector<gweni::Point> centres;
+    gweni::Point toggle(-1, -1);
+
+    for(int i=0;; ++i)
+    {
+        gweni::controls::Base *found=findControl(demo, "Button", i);
+
+        if(!found)
+            break;
+
+        const gweni::Rect r=found->getCanvasBounds();
+        const gweni::Point centre(static_cast<int>(std::lround((r.x+r.w/2.0)*scale)),
+            static_cast<int>(std::lround((r.y+r.h/2.0)*scale)));
+
+        centres.push_back(centre);
+        if(static_cast<gweni::controls::Button *>(found)->getText() == "Toggle Me")
+            toggle=centre;
+    }
+    centres.push_back(toggle);
+    return centres;
+}
+
+// The targets in one tree: \p toCanvas maps a device px to the canvas point
+// the input layer gives for it.
+template<typename ToCanvas>
+static void zoomTargets(Session &s, gweni::controls::Base *demo, const std::vector<gweni::Point> &centres,
+    ToCanvas toCanvas, ZoomTargets &targets)
+{
+    for(int y=0; y < s.pixels.y; y+=3)
+    {
+        for(int x=0; x < s.pixels.x; x+=3)
+        {
+            const gweni::Point at=toCanvas(gweni::Point(x, y));
+
+            targets.grid.push_back(pathUnder(demo, s.canvas->getControlAt(at.x, at.y)));
+        }
+    }
+
+    for(size_t i=0; i+1 < centres.size(); ++i)
+    {
+        const gweni::Point at=toCanvas(centres[i]);
+
+        moveMouse(s, at.x, at.y);
+        renderFrames(s, 1);
+        targets.hovered.push_back(pathUnder(demo, gweni::HoveredControl));
+    }
+
+    const gweni::Point toggle=toCanvas(centres.back());
+
+    clickMouse(s, toggle.x, toggle.y);
+    renderFrames(s, s.frames);
+    s.renderer->readPixels(s.pixels.x, s.pixels.y, targets.clicked);
+    forgetMouse(s);
+}
+
+static bool runZoomPanelInteraction(Session &s, const std::string &shotDir, bool &passed);
+static int framesUntilShown(Session &s, int limit);
+
+static bool runZoomPanelScenario(Session &s, const std::string &shotDir, bool &passed)
+{
+    static const float zooms[]={1.0f, 1.5f, 1.37f, 2.0f};
+    const std::string controlName="ButtonDemo";
+
+    passed=true;
+    // an animation stands still between the shots
+    s.freezeClock=true;
+
+    for(float zoom : zooms)
+    {
+        char tag[32];
+
+        std::snprintf(tag, sizeof(tag), "%.2f", zoom);
+
+        ResizeState scaled, zoomed;
+        ZoomTargets scaledTargets, zoomedTargets;
+
+        // ButtonDemo on a canvas at setScale(zoom)
+        if(!rescaleSession(s, zoom) || !resizeSession(s, 640, 480))
+            return false;
+        replaceCanvas(s);
+
+        gweni::controls::Base *control=addControl(s, controlName);
+
+        renderFrames(s, s.frames);
+        scaled.name=std::string("zoom-")+tag+"-canvas.png";
+        if(!shoot(s, shotDir+"/"+scaled.name)) return false;
+        s.renderer->readPixels(s.pixels.x, s.pixels.y, scaled.pixels);
+
+        const std::vector<gweni::Point> centres=buttonCentres(control, zoom);
+
+        zoomTargets(s, control, centres, [zoom](const gweni::Point &px) {
+                return gweni::Point(static_cast<int>(std::floor(double(px.x)/zoom)),
+                    static_cast<int>(std::floor(double(px.y)/zoom)));
+            }, scaledTargets);
+        dropControl(s, control);
+
+        // the same in a ZoomPanel at zoom, on a canvas at scale 1 of that target
+        const gweni::Point target=s.pixels;
+
+        if(!rescaleSession(s, 1.0f) || !resizeSession(s, target.x, target.y))
+            return false;
+        replaceCanvas(s);
+
+        gweni::controls::ZoomPanel *panel=s.canvas->newChild<gweni::controls::ZoomPanel>();
+
+        panel->setDock(gweni::DockPosition::Center);
+        panel->setContentSize(gweni::Point(640, 480));
+        panel->setZoom(zoom);
+        control=addControl(s, controlName);
+        control->setParent(panel);
+
+        renderFrames(s, s.frames);
+        zoomed.name=std::string("zoom-")+tag+"-panel.png";
+        if(!shoot(s, shotDir+"/"+zoomed.name)) return false;
+        s.renderer->readPixels(s.pixels.x, s.pixels.y, zoomed.pixels);
+        zoomTargets(s, control, centres, [](const gweni::Point &px) { return px; }, zoomedTargets);
+
+        const bool same=pixelsMatch(scaled, zoomed);
+        size_t gridMisses=0;
+
+        for(size_t i=0; i < scaledTargets.grid.size(); ++i)
+        {
+            if((i >= zoomedTargets.grid.size()) || (scaledTargets.grid[i] != zoomedTargets.grid[i]))
+                ++gridMisses;
+        }
+
+        const bool hoverSame=(scaledTargets.hovered == zoomedTargets.hovered) && (centres.size() > 1)
+            && (centres.back().x >= 0);
+        const bool clickSame=(scaledTargets.clicked == zoomedTargets.clicked) && !scaledTargets.clicked.empty();
+
+        std::cout<<"zoom-panel zoom="<<tag<<" pixels_match="<<(same?"yes":"no")
+                 <<" grid_points="<<scaledTargets.grid.size()<<" grid_misses="<<gridMisses
+                 <<" hovers="<<scaledTargets.hovered.size()<<" hovers_match="<<(hoverSame?"yes":"no")
+                 <<" click_pixels_match="<<(clickSame?"yes":"no")<<"\n";
+        if(!same || gridMisses || !hoverSame || !clickSame)
+            std::cerr<<"ControlTest: zoom-panel: at zoom "<<tag<<" the panel did not draw or take input as a scaled canvas\n";
+        passed=same && (gridMisses == 0) && hoverSame && clickSame && passed;
+        panel->delayedDelete();
+        s.canvas->updateCanvas();
+    }
+
+    bool interacted=false;
+
+    if(!runZoomPanelInteraction(s, shotDir, interacted))
+        return false;
+    passed=interacted && passed;
+    return true;
+}
+
+// One frame after \p input, as the zoom-panel checks count it.
+struct ZoomFrame
+{
+    int passes=0;
+    size_t invalidations=0;
+    size_t primSlots=0;
+    size_t textSlots=0;
+    size_t atlasUploads=0;
+    size_t strays=0;        // slots written that are not the panel subtree's
+};
+
+static bool runZoomPanelInteraction(Session &s, const std::string &shotDir, bool &passed)
+{
+    passed=true;
+    s.freezeClock=true;
+    if(!rescaleSession(s, 1.0f) || !resizeSession(s, 640, 480))
+        return false;
+    replaceCanvas(s);
+
+    const size_t idsBefore=livePrimitiveIds()+liveTextIds();
+    gweni::controls::Base *control=addControl(s, "ZoomPanelDemo");
+    gweni::ZoomPanelDemo *demo=gweni::gweni_cast<gweni::ZoomPanelDemo>(control);
+
+    if(!demo || !demo->panel())
+    {
+        std::cerr<<"ControlTest: zoom-panel: ZoomPanelDemo has no panel\n";
+        return false;
+    }
+
+    gweni::controls::ZoomPanel *panel=demo->panel();
+    const gweni::controls::Base *content=panel->getInnerPanel();
+    gweni::controls::Canvas *canvas=s.canvas;
+
+    s.label="zoom-panel";
+    renderFrames(s, s.frames);
+
+    auto check=[&](bool good, const std::string &what) {
+        if(good)
+            return;
+        std::cerr<<"ControlTest: zoom-panel: "<<what<<"\n";
+        passed=false;
+    };
+
+    std::set<size_t> panelPrimitives, panelTexts;
+
+    subtreeIds(panel, panelPrimitives, panelTexts);
+
+    auto frame=[&](const std::function<void()> &input) {
+        ZoomFrame counted;
+        const size_t invalidations=gweni::controls::invalidateCalls();
+
+        input();
+        renderFrames(s, 1);
+        counted.passes=canvas->getLayoutStats().passes;
+        counted.invalidations=gweni::controls::invalidateCalls()-invalidations;
+
+        const gweni::renderer::SlotRenderer::FrameStats &gpu=s.renderer->getFrameStats();
+
+        counted.primSlots=gpu.primitiveSlotsWritten;
+        counted.textSlots=gpu.textSlotsWritten;
+        counted.atlasUploads=gpu.atlasUploadCalls;
+        for(size_t id : s.renderer->writtenPrimitiveIds())
+            counted.strays+=panelPrimitives.count(id) ? 0 : 1;
+        for(const gweni::renderer::WrittenText &text : s.renderer->writtenTextIds())
+            counted.strays+=panelTexts.count(text.textId) ? 0 : 1;
+        return counted;
+    };
+
+    // a zoom or pan frame: no layout, no invalidate, slots of the panel alone,
+    // something written; the frame after it nothing
+    auto spaceFrame=[&](const std::string &name, const std::function<void()> &input) {
+        const ZoomFrame counted=frame(input);
+        const ZoomFrame after=frame([]() {});
+
+        std::cout<<"zoom-panel "<<name<<" layout_passes="<<counted.passes
+                 <<" invalidations="<<counted.invalidations<<" prim_slots="<<counted.primSlots
+                 <<" text_slots="<<counted.textSlots<<" atlas_uploads="<<counted.atlasUploads
+                 <<" strays="<<counted.strays<<" settled_slots="<<(after.primSlots+after.textSlots)<<"\n";
+        check(counted.passes == 0, name+" ran a layout pass");
+        check(counted.invalidations == 0, name+" called invalidate()");
+        check(counted.strays == 0, name+" wrote slots outside the panel");
+        check(counted.primSlots > 0, name+" wrote no primitive slot");
+        check((after.primSlots == 0) && (after.textSlots == 0), "the frame after "+name+" wrote slots");
+        return counted;
+    };
+
+    // the content point at (300, 220), below the ScrollControl and right of
+    // the TextBox: nothing but the inner panel there
+    const gweni::PointF emptyPoint=content->localPosToCanvasF(gweni::PointF(300.0f, 220.0f));
+    const gweni::Point empty(static_cast<int>(std::lround(emptyPoint.x)), static_cast<int>(std::lround(emptyPoint.y)));
+
+    moveMouse(s, empty.x, empty.y);
+    renderFrames(s, 2);
+    check(gweni::HoveredControl == content, "the empty content point hovers "+traceName(gweni::HoveredControl));
+
+    // the wheel: about the cursor, within the range
+    {
+        const gweni::PointF under=content->canvasPosToLocalF(gweni::PointF(empty));
+        const float before=panel->zoom();
+        const ZoomFrame zoomed=spaceFrame("wheel_zoom", [&]() { scrollWheel(s, 60); });
+        const gweni::PointF at=content->localPosToCanvasF(under);
+
+        check(zoomed.textSlots > 0, "the wheel zoom re-laid no text");
+        check(panel->zoom() > before, "the wheel did not zoom in");
+        check((std::fabs(at.x-empty.x) < 0.01f) && (std::fabs(at.y-empty.y) < 0.01f),
+            "the wheel moved the content point under the cursor to "+std::to_string(at.x)+","+std::to_string(at.y));
+
+        for(int i=0; i < 60; ++i)
+            scrollWheel(s, 60);
+        renderFrames(s, 1);
+        check(panel->zoom() == panel->maxZoom(), "60 notches in did not stop at the range's top");
+        check(scrollWheel(s, 60) && (panel->zoom() == panel->maxZoom()), "a notch past the top zoomed or was not taken");
+        for(int i=0; i < 120; ++i)
+            scrollWheel(s, -60);
+        renderFrames(s, 1);
+        check(panel->zoom() == panel->minZoom(), "120 notches out did not stop at the range's bottom");
+
+        const gweni::PointF still=content->localPosToCanvasF(under);
+
+        check((std::fabs(still.x-empty.x) < 0.01f) && (std::fabs(still.y-empty.y) < 0.01f),
+            "the range's ends moved the content point under the cursor");
+        std::cout<<"zoom-panel wheel max="<<panel->maxZoom()<<" min="<<panel->minZoom()<<"\n";
+    }
+
+    // back where the demo had it, and a zoom by code
+    panel->setZoom(1.25f);
+    panel->setPan(gweni::PointF(8.5f, 6.25f));
+    renderFrames(s, 2);
+    spaceFrame("set_zoom", [&]() { panel->setZoom(1.5f); });
+
+    // an SDF-range zoom: 11 px text at 2 is 22 px, at 2.5 27.5
+    panel->setZoom(2.0f);
+    renderFrames(s, 2);
+    {
+        const ZoomFrame sdf=spaceFrame("sdf_zoom", [&]() { panel->setZoom(2.5f); });
+
+        check(sdf.atlasUploads == 0, "an SDF-range zoom uploaded to a font atlas");
+        check(sdf.textSlots > 0, "an SDF-range zoom re-laid no text");
+    }
+    panel->setZoom(1.25f);
+    renderFrames(s, 2);
+
+    // pans: right, middle, and Space with the left button
+    struct PanCase { const char *name; int button; bool space; };
+    static const PanCase pans[]={
+        {"right_pan", GLFW_MOUSE_BUTTON_RIGHT, false},
+        {"middle_pan", GLFW_MOUSE_BUTTON_MIDDLE, false},
+        {"space_pan", GLFW_MOUSE_BUTTON_LEFT, true},
+    };
+
+    for(const PanCase &pan : pans)
+    {
+        const gweni::PointF before=panel->pan();
+        const gweni::PointF content0=content->canvasPosToLocalF(gweni::PointF(empty));
+
+        if(pan.space)
+            glfwKey(s, GLFW_KEY_SPACE, GLFW_PRESS, 0);
+        mouseDown(s, empty.x, empty.y, true, pan.button);
+        renderFrames(s, 1);
+        spaceFrame(pan.name, [&]() { moveMouse(s, empty.x+40, empty.y+25); });
+
+        const gweni::PointF moved=panel->pan();
+
+        mouseUp(s, empty.x+40, empty.y+25, pan.button);
+        if(pan.space)
+            glfwKey(s, GLFW_KEY_SPACE, GLFW_RELEASE, 0);
+        renderFrames(s, 2);
+
+        // the content point under the press is under the mouse
+        const gweni::PointF at=content->localPosToCanvasF(content0);
+
+        check((moved.x == before.x+40.0f) && (moved.y == before.y+25.0f),
+            std::string(pan.name)+" moved the pan by "+std::to_string(moved.x-before.x)+","+std::to_string(moved.y-before.y));
+        check((std::fabs(at.x-(empty.x+40)) < 0.01f) && (std::fabs(at.y-(empty.y+25)) < 0.01f),
+            std::string(pan.name)+" did not keep the pressed point under the mouse");
+        check(!canvas->shownPopup(), std::string(pan.name)+" opened a menu");
+        check(!canvas->inputCapture(), std::string(pan.name)+" kept the canvas's input");
+        moveMouse(s, empty.x, empty.y);
+        renderFrames(s, 2);
+    }
+    panel->setPan(gweni::PointF(8.5f, 6.25f));
+    renderFrames(s, 2);
+
+    // the wheel over the ScrollControl scrolls it
+    {
+        auto *scroll=static_cast<gweni::controls::ScrollControl *>(findControl(control, "ScrollControl"));
+        const float zoom=panel->zoom();
+
+        check(scroll != nullptr, "ZoomPanelDemo has no ScrollControl");
+        if(scroll)
+        {
+            const gweni::Rect r=scroll->getCanvasBounds();
+
+            moveMouse(s, r.x+r.w/3, r.y+r.h/2);
+            renderFrames(s, 1);
+            scrollWheel(s, -60);
+            renderFrames(s, 2);
+            check(scroll->getVerticalScrollOffset() > 0, "the wheel over the ScrollControl did not scroll it");
+            check(panel->zoom() == zoom, "the wheel over the ScrollControl zoomed");
+            std::cout<<"zoom-panel scroll offset="<<scroll->getVerticalScrollOffset()<<"\n";
+        }
+    }
+
+    const gweni::Rect area(0, 0, canvas->getWidth(), canvas->getHeight());
+    auto onCanvas=[&](gweni::controls::Base *opened) {
+        // a canvas child, so not in the panel's space
+        return opened && (opened->getParent() == canvas);
+    };
+
+    // the tooltip box, with the clock stepping for the delay
+    s.freezeClock=false;
+    {
+        gweni::controls::Base *button=findControl(control, "Button");
+
+        check(button && !button->getToolTipText().empty(), "ZoomPanelDemo's first Button has no tooltip");
+        if(button)
+        {
+            const gweni::Rect r=button->getCanvasBounds();
+
+            moveMouse(s, r.x+r.w/2, r.y+r.h/2);
+            const int shownAfter=framesUntilShown(s, 240);
+            gweni::controls::ToolTip *box=canvas->toolTipControl();
+
+            check(shownAfter > 0 && box, "the Button in the panel showed no tooltip");
+            if(shownAfter > 0 && box)
+            {
+                const gweni::Point at=gweni::controls::ToolTip::placement(r,
+                    gweni::Point(box->getWidth(), box->getHeight()), area);
+
+                check(onCanvas(box), "the tooltip box is not the canvas's child");
+                check((box->getX() == at.x) && (box->getY() == at.y), "the tooltip box is not at the Button as drawn");
+                std::cout<<"zoom-panel tooltip button="<<rectText(r)<<" box="<<rectText(box->getBounds())<<"\n";
+                if(!shoot(s, shotDir+"/zoom-tooltip.png")) return false;
+            }
+            moveMouse(s, empty.x, empty.y);
+            renderFrames(s, 2);
+        }
+    }
+
+    // the ComboBox's list, below the box as drawn and as wide
+    {
+        gweni::controls::Base *combo=findControl(control, "ComboBox");
+
+        check(combo != nullptr, "ZoomPanelDemo has no ComboBox");
+        if(combo)
+        {
+            const gweni::Rect r=combo->getCanvasBounds();
+
+            clickMouse(s, r.x+r.w/2, r.y+r.h/2);
+            renderFrames(s, 2);
+
+            gweni::controls::Base *list=nullptr;
+
+            for(gweni::controls::Base *child : canvas->getChildren())
+            {
+                if(gweni::gweni_cast<gweni::controls::Menu>(child) && !child->hidden())
+                    list=child;
+            }
+            check(onCanvas(list), "the ComboBox opened no list on the canvas");
+            if(list)
+            {
+                check((list->getX() == r.x) && (list->getY() == r.y+r.h) && (list->getWidth() == r.w),
+                    "the ComboBox's list is at "+rectText(list->getBounds())+", not below "+rectText(r));
+                std::cout<<"zoom-panel combo box="<<rectText(r)<<" list="<<rectText(list->getBounds())<<"\n";
+                if(!shoot(s, shotDir+"/zoom-combo-list.png")) return false;
+            }
+            sendKey(s, "escape");
+            renderFrames(s, 2);
+        }
+    }
+
+    // a right click with 2 units of motion opens the Button's context menu at
+    // the press
+    {
+        gweni::controls::Base *button=findControl(control, "Button");
+
+        if(button)
+        {
+            gweni::controls::Menu *menu=button->createContextMenu();
+
+            menu->addItem("Zoom in");
+            menu->addItem("Zoom out");
+
+            const gweni::Rect r=button->getCanvasBounds();
+            const gweni::Point at(r.x+r.w/2, r.y+r.h/2);
+            const gweni::PointF pan=panel->pan();
+
+            mouseDown(s, at.x, at.y, true, GLFW_MOUSE_BUTTON_RIGHT);
+            moveMouse(s, at.x+2, at.y);
+            mouseUp(s, at.x+2, at.y, GLFW_MOUSE_BUTTON_RIGHT);
+            renderFrames(s, 2);
+            check(canvas->shownContextMenu() == menu, "a right click on the Button opened no context menu");
+            check((panel->pan().x == pan.x) && (panel->pan().y == pan.y), "a right click panned");
+            if(canvas->shownContextMenu() == menu)
+            {
+                const gweni::Point place=gweni::controls::Menu::placement(at,
+                    gweni::Point(menu->getWidth(), menu->getHeight()), area);
+
+                check(onCanvas(menu), "the context menu is not the canvas's child");
+                check((menu->getX() == place.x) && (menu->getY() == place.y),
+                    "the context menu is at "+rectText(menu->getBounds())+", not at the press");
+                std::cout<<"zoom-panel context_menu at="<<at.x<<","<<at.y<<" menu="<<rectText(menu->getBounds())<<"\n";
+                if(!shoot(s, shotDir+"/zoom-context-menu.png")) return false;
+            }
+            sendKey(s, "escape");
+            renderFrames(s, 2);
+        }
+    }
+    s.freezeClock=true;
+    forgetMouse(s);
+    renderFrames(s, 1);
+
+    // every id back, but the canvas's ToolTip box's, which stays
+    dropControl(s, control);
+    renderFrames(s, 2);
+
+    size_t boxIds=0;
+
+    if(gweni::controls::ToolTip *box=canvas->toolTipControl())
+    {
+        std::set<size_t> primitives, texts;
+
+        subtreeIds(box, primitives, texts);
+        boxIds=primitives.size()+texts.size();
+    }
+
+    const size_t idsAfter=livePrimitiveIds()+liveTextIds()-boxIds;
+
+    std::cout<<"zoom-panel ids before="<<idsBefore<<" after="<<idsAfter<<"\n";
+    check(idsAfter == idsBefore, "deleting ZoomPanelDemo did not give its ids back");
+    return true;
 }
 
 static bool runInteractionScenario(Session &s, const std::string &shotDir, bool &passed)

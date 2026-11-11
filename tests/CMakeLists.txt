@@ -224,9 +224,9 @@ if(TARGET ControlTest AND NOT EMSCRIPTEN)
     # the same check through the scenarios that change layout at run time:
     # input, a canvas resize and a scale round trip (both on Demo), a Window
     # dragged past its parent's edges, the tooltip box, the context menu, the
-    # stats overlay and the depth view
+    # stats overlay, the depth view and the zoom panel
     foreach(verify_scenario interaction resize scale clip tooltip context-menu stats-overlay
-            depth-view)
+            depth-view zoom-panel)
         string(REPLACE "-" "_" verify_name "${verify_scenario}")
         add_test(NAME controltest_verify_layout_${verify_name}
             COMMAND $<TARGET_FILE:ControlTest> --headless --scenario ${verify_scenario}
@@ -359,6 +359,14 @@ Erm, and I think it comes down to a choice between "The League Against Salivatin
     gweni_whole_app_test(controltest_text_size 60
         COMMAND $<TARGET_FILE:ControlTest> --headless --scenario text-size
             --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/text_size@VARIANT@
+        WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
+
+    # A ZoomPanel draws and takes input as a canvas at setScale(zoom) would,
+    # its zoom and pan frames lay nothing out and write only its slots, and
+    # what opens from inside it opens at its controls as drawn
+    gweni_whole_app_test(controltest_zoom_panel 120
+        COMMAND $<TARGET_FILE:ControlTest> --headless --scenario zoom-panel --require-one-pass
+            --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/zoom_panel@VARIANT@
         WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
 
     # PlotHistogramDemo's series: a sample with a new height writes its bar's
