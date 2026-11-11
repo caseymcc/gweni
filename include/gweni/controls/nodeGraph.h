@@ -319,6 +319,9 @@ public:
     //! units, at the graph's zoom (a Bezier's segment count), with no two
     //! points the same; empty while a pin is missing.
     void getPoints(std::vector<PointF> &points) const;
+    //! The same polyline, kept by the link until an end, the style or the
+    //! zoom moves (no copy, nothing allocated while it stays).
+    const std::vector<PointF> &polyline() const;
 
     //! An end moved: the segments are drawn again.
     void endpointsMoved();
@@ -717,6 +720,9 @@ protected:
     void restoreSnapshot();
 
     std::unique_ptr<MarqueeDrag> m_marquee;
+    //! the marquee's outline (overlay layer) and fill (first in the link layer)
+    internal::NodeGraphMarquee *m_marqueeOutline=nullptr;
+    internal::NodeGraphMarqueeFill *m_marqueeFill=nullptr;
     bool m_removeVetoed=false;
     PointF m_contextPosition;
     //! the title-bar press: its node, whether it was selected, a Ctrl or Shift

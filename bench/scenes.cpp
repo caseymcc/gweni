@@ -14,6 +14,7 @@
 #include <gweni/controls/checkBox.h>
 #include <gweni/controls/label.h>
 #include <gweni/controls/listBox.h>
+#include <gweni/controls/nodeGraph.h>
 #include <gweni/controls/progressBar.h>
 #include <gweni/controls/scrollControl.h>
 #include <gweni/controls/textBox.h>
@@ -24,6 +25,7 @@
 #include <gweni/skin.h>
 
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <deque>
@@ -900,6 +902,164 @@ const char *scalingName(Scaling scaling)
     return (scaling == Scaling::Local) ? "local" : "linear";
 }
 
+//-----------------------------------------------------------------------------
+// graph-drag / graph-marquee / graph-pan / graph-zoom: a NodeGraph filling the
+// canvas at zoom 1, holding N nodes in a grid of ceil(sqrt(N)) columns 200
+// graph units apart and rows 140 apart, from 100 units below the graph's top
+// (the band above them is empty space). Each node is a title, an input and an
+// output pin and a Label body, and each node's output is linked by a Bezier to
+// the next node's input in its row. Only the top-left few rows and columns
+// are on screen; the rest are laid out and drawn (no culling) off it.
+//-----------------------------------------------------------------------------
+class GraphScene: public Scene
+{
+public:
+    void build(SceneContext &ctx) override
+    {
+        m_graph=ctx.canvas->newChild<controls::NodeGraph>();
+        place(m_graph, 0, 0, ctx.size.x, ctx.size.y);
+
+        const int columns=std::max(1, int(std::ceil(std::sqrt(double(std::max(ctx.n, 1))))));
+        controls::Pin *previous=nullptr;
+
+        for(int i=0; i<ctx.n; ++i)
+        {
+            const int column=i%columns;
+            controls::Node *node=m_graph->addNode(format("Node %05d", i),
+                Point(20+column*200, 100+(i/columns)*140));
+            controls::Pin *in=node->addPin(controls::PinDirection::Input, "In");
+            controls::Pin *out=node->addPin(controls::PinDirection::Output, "Out");
+            controls::Label *body=node->newChild<controls::Label>();
+
+            body->setDock(DockPosition::Top);
+            body->setText(format("Value %05d", i));
+            if(previous && (column != 0))
+                m_graph->addLink(previous, in);
+            previous=out;
+            if(i == 0)
+                m_first=node;
+        }
+    }
+
+protected:
+    controls::NodeGraph *m_graph=nullptr;
+    controls::Node *m_first=nullptr;
+    Point m_mouse=Point(-1, -1);
+};
+
+// graph-drag: the first node dragged by its title bar, pressed in the last
+// warm-up frame and released in the last measured one, 3 and 2 units a frame,
+// turning back every 10: it and its one link move, nothing else.
+class GraphDragScene: public GraphScene
+{
+public:
+    void step(SceneContext &ctx, int frame) override
+    {
+        if(frame < -1)
+            return;
+
+        if(!m_pressed)
+        {
+            controls::Base *bar=m_first->getTitleBar();
+
+            moveMouse(ctx, m_mouse, bar->localPosToCanvas(Point(bar->getWidth()/2, bar->getHeight()/2)));
+            ctx.canvas->inputMouseButton(0, true);
+            m_pressed=true;
+        }
+        if(frame < 0)
+            return;
+
+        const int sign=((frame/10)%2 == 0) ? 1 : -1;
+        moveMouse(ctx, m_mouse, m_mouse+Point(3*sign, 2*sign));
+
+        if(frame == ctx.frames-1)
+            ctx.canvas->inputMouseButton(0, false);
+    }
+
+private:
+    bool m_pressed=false;
+};
+
+// graph-marquee: a left drag from the empty band above the grid, pressed in the
+// last warm-up frame and grown 6 and 4 units a frame down over the first node
+// and its link, held: the marquee's slots and those of the items it
+// (de)selects, nothing else.
+class GraphMarqueeScene: public GraphScene
+{
+public:
+    void step(SceneContext &ctx, int frame) override
+    {
+        if(frame < -1)
+            return;
+
+        if(!m_pressed)
+        {
+            moveMouse(ctx, m_mouse, m_graph->localPosToCanvas(Point(30, 40)));
+            ctx.canvas->inputMouseButton(0, true);
+            m_pressed=true;
+        }
+        if(frame < 0)
+            return;
+
+        // held through the last frame: the release's hover hit-test walks
+        // the graph's nodes and links to find what is under the mouse, every
+        // one of them with no spatial index (v1), so it is not a local cost
+        moveMouse(ctx, m_mouse, m_mouse+Point(6, 4));
+    }
+
+private:
+    bool m_pressed=false;
+};
+
+// graph-pan: a right drag on the empty band, pressed in the last warm-up frame,
+// 5 and 3 units a frame, turning back every 10: every node's slots move, with
+// no layout pass.
+class GraphPanScene: public GraphScene
+{
+public:
+    void step(SceneContext &ctx, int frame) override
+    {
+        if(frame < -1)
+            return;
+
+        if(!m_pressed)
+        {
+            moveMouse(ctx, m_mouse, m_graph->localPosToCanvas(Point(600, 40)));
+            ctx.canvas->inputMouseButton(1, true);
+            // past the pan's threshold before the measured frames
+            moveMouse(ctx, m_mouse, m_mouse+Point(10, 0));
+            m_pressed=true;
+        }
+        if(frame < 0)
+            return;
+
+        const int sign=((frame/10)%2 == 0) ? 1 : -1;
+        moveMouse(ctx, m_mouse, m_mouse+Point(5*sign, 3*sign));
+        if(frame == ctx.frames-1)
+            ctx.canvas->inputMouseButton(1, false);
+    }
+
+private:
+    bool m_pressed=false;
+};
+
+// graph-zoom: the wheel a notch in and a notch out in turn over the empty band:
+// every node's slots move and every run is drawn at a new size, with no layout
+// pass.
+class GraphZoomScene: public GraphScene
+{
+public:
+    void step(SceneContext &ctx, int frame) override
+    {
+        if(frame < 0)
+            return;
+
+        if(frame == 0)
+            moveMouse(ctx, m_mouse, m_graph->localPosToCanvas(Point(600, 40)));
+        ctx.canvas->inputMouseWheel((frame%2 == 0) ? 60 : -60);
+    }
+};
+
 const std::vector<SceneInfo> &scenes()
 {
     static const std::vector<SceneInfo> list=
@@ -952,6 +1112,18 @@ const std::vector<SceneInfo> &scenes()
         {"hidden-gaps", "N Buttons, all hidden but every K+1-th: runs of one shown slot between gaps of K",
             true, 1000, 3, 20, Scaling::Linear,
             []{ return std::unique_ptr<Scene>(new HiddenGapsScene()); }},
+        {"graph-drag", "drag the first of N linked nodes in a NodeGraph by its title bar",
+            true, 300, 3, 20, Scaling::Local,
+            []{ return std::unique_ptr<Scene>(new GraphDragScene()); }},
+        {"graph-marquee", "grow a marquee from a NodeGraph's empty space over the first of N linked nodes",
+            true, 300, 3, 20, Scaling::Local,
+            []{ return std::unique_ptr<Scene>(new GraphMarqueeScene()); }},
+        {"graph-pan", "pan a NodeGraph of N linked nodes with a right drag",
+            true, 300, 3, 20, Scaling::Linear,
+            []{ return std::unique_ptr<Scene>(new GraphPanScene()); }},
+        {"graph-zoom", "zoom a NodeGraph of N linked nodes a wheel notch in and out in turn",
+            true, 300, 3, 20, Scaling::Linear,
+            []{ return std::unique_ptr<Scene>(new GraphZoomScene()); }},
     };
     return list;
 }

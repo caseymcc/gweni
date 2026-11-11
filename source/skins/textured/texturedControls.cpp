@@ -1922,7 +1922,19 @@ void NodeGraphMarquee::update(renderer::Base *renderer, controls::Base *baseCont
     for(controls::Base *parent=baseControl->getParent(); parent && !graph; parent=parent->getParent())
         graph=gweni_cast<controls::NodeGraph>(parent);
 
-    if(!baseControl->visible() || !graph || (rect.w <= 0) || (rect.h <= 0))
+    // hidden between marquees: its slots hidden once, when it is hidden
+    const unsigned int sc=baseControl->getStateChange();
+
+    if(!baseControl->visible())
+    {
+        if(sc&(controls::StateChange_Visibility|controls::StateChange_Created))
+        {
+            for(size_t id : m_primitives)
+                renderer->hidePrimitive(id);
+        }
+        return;
+    }
+    if(!graph || (rect.w <= 0) || (rect.h <= 0))
     {
         for(size_t id : m_primitives)
             renderer->hidePrimitive(id);
@@ -1961,8 +1973,15 @@ void NodeGraphMarqueeFill::update(renderer::Base *renderer, controls::Base *base
     const controls::internal::NodeGraphMarquee *marquee=
         static_cast<const controls::internal::NodeGraphMarquee *>(baseControl);
     gweni::Rect rect=marquee->getRect();
+    const unsigned int sc=baseControl->getStateChange();
 
-    if(!baseControl->visible() || (rect.w <= 0) || (rect.h <= 0))
+    if(!baseControl->visible())
+    {
+        if(sc&(controls::StateChange_Visibility|controls::StateChange_Created))
+            renderer->hidePrimitive(m_primitives[0]);
+        return;
+    }
+    if((rect.w <= 0) || (rect.h <= 0))
     {
         renderer->hidePrimitive(m_primitives[0]);
         return;

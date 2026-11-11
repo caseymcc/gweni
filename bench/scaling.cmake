@@ -15,6 +15,9 @@
 #
 #  cmake -DBENCH=<gweni_bench> [-DSMALL_N=1000] [-DLARGE_N=10000] -P scaling.cmake
 #
+#  A scene listed in LARGE_N_FOR below runs at its own, smaller large N, with
+#  the reason beside it.
+#
 #  Counters and what "grew" means:
 #
 #    counter                           checked  grew means
@@ -97,6 +100,18 @@ set(PINNED
     hidden-pages:primitive_ranges
 )
 
+# A smaller LARGE_N for the named scenes, "<scene>:<n>", each with its reason; a
+# value at or above LARGE_N changes nothing (an ASAN tree's 3000).
+#   graph-drag, graph-marquee: a NodeGraph node of theirs (a title, two pins,
+#   a Label body, its link) is 17 controls, about 18 z labels, so past about
+#   3600 nodes the canvas's 0..65535 z range is full, the labels clamp and
+#   tie, and the graph no longer draws in order (docs/architecture.md, "The
+#   node graph"): 3000 is the largest round N it draws right at
+set(LARGE_N_FOR
+    graph-drag:3000
+    graph-marquee:3000
+)
+
 # Keys that are not work counters (see the table above).
 set(UNCHECKED scene n frame allocs alloc_bytes draw_calls primitive_slots_drawn primitive_ranges text_draws mirror_bytes prim_ids text_ids)
 
@@ -159,12 +174,20 @@ endfunction()
 set(failures "")
 set(stale "")
 foreach(scene IN LISTS scenes)
+    set(large_n ${LARGE_N})
+    foreach(entry IN LISTS LARGE_N_FOR)
+        string(REGEX MATCH "^([^:]+):([0-9]+)$" unused "${entry}")
+        if(CMAKE_MATCH_1 STREQUAL scene AND CMAKE_MATCH_2 LESS large_n)
+            set(large_n ${CMAKE_MATCH_2})
+        endif()
+    endforeach()
+
     run_scene(${scene} ${SMALL_N} small)
-    run_scene(${scene} ${LARGE_N} large)
+    run_scene(${scene} ${large_n} large)
 
     if(NOT small_frames STREQUAL large_frames)
         message(FATAL_ERROR "bench_scaling: ${scene}: frames ${small_frames} at N=${SMALL_N},"
-            " ${large_frames} at N=${LARGE_N}")
+            " ${large_frames} at N=${large_n}")
     endif()
 
     foreach(entry IN LISTS PINNED)
@@ -187,7 +210,7 @@ foreach(scene IN LISTS scenes)
             set(a "${small_${frame}_${key}}")
             set(b "${large_${frame}_${key}}")
             if(b STREQUAL "")
-                message(FATAL_ERROR "bench_scaling: ${scene}: frame ${frame} has no ${key}= at N=${LARGE_N}")
+                message(FATAL_ERROR "bench_scaling: ${scene}: frame ${frame} has no ${key}= at N=${large_n}")
             endif()
             if(b GREATER a OR (pinned AND NOT b EQUAL a))
                 if(NOT key IN_LIST grew_keys)
@@ -200,7 +223,7 @@ foreach(scene IN LISTS scenes)
                         set(verb GREW)
                     endif()
                     message("${verb}: ${scene} ${key} frame ${frame}: ${a} at N=${SMALL_N},"
-                        " ${b} at N=${LARGE_N}")
+                        " ${b} at N=${large_n}")
                     math(EXPR scene_failures "${scene_failures} + 1")
                     if(NOT "${scene}:${key}" IN_LIST failures)
                         list(APPEND failures "${scene}:${key}")
@@ -245,7 +268,8 @@ if(failures OR stale)
     set(why "")
     if(failures)
         string(REPLACE ";" ", " failure_list "${failures}")
-        string(APPEND why "\n  grew (or, pinned, changed) from N=${SMALL_N} to N=${LARGE_N}: ${failure_list}")
+        string(APPEND why "\n  grew (or, pinned, changed) from N=${SMALL_N} to N=${LARGE_N}"
+            " (or the scene's LARGE_N_FOR): ${failure_list}")
     endif()
     if(stale)
         string(REPLACE ";" ", " stale_list "${stale}")
@@ -257,5 +281,6 @@ endif()
 
 string(REPLACE ";" ", " scene_list "${scenes}")
 string(REPLACE ";" ", " excluded_list "${EXCLUDED}")
+string(REPLACE ";" ", " large_n_list "${LARGE_N_FOR}")
 message("bench_scaling: ${scene_list}: no work counter grows from N=${SMALL_N} to N=${LARGE_N}"
-    " (excluded: ${excluded_list})")
+    " (excluded: ${excluded_list}; their own large N: ${large_n_list})")

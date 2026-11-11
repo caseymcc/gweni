@@ -632,9 +632,7 @@ PointF Link::graphOrigin() const
 // The nearest point of each segment, as the line style measures it
 float Link::distanceTo(const PointF &point) const
 {
-    std::vector<PointF> points;
-
-    getPoints(points);
+    const std::vector<PointF> &points=polyline();
 
     float nearest=std::numeric_limits<float>::max();
 
@@ -657,9 +655,7 @@ float Link::distanceTo(const PointF &point) const
 // both axes is not empty (Liang-Barsky)
 bool Link::touches(const PointF &min, const PointF &max) const
 {
-    std::vector<PointF> points;
-
-    getPoints(points);
+    const std::vector<PointF> &points=polyline();
     for(size_t i=0; i+1 < points.size(); ++i)
     {
         const PointF &a=points[i];
@@ -733,15 +729,19 @@ NodeGraph *Link::getGraph() const
 
 // A pin's end is its anchor, leaving it along its side's way out; a
 // preview's free end is approached as an opposite pin would be.
-void Link::getPoints(std::vector<PointF> &points) const
+const std::vector<PointF> &Link::polyline() const
 {
-    points.clear();
+    std::vector<PointF> &points=m_points;
 
     const Pin *pinA=m_from?m_from:m_to;
     const Pin *pinB=m_from?m_to:nullptr;
 
     if(!pinA || (!pinB && !m_preview))
-        return;
+    {
+        points.clear();
+        m_pointsValid=false;
+        return points;
+    }
 
     const PointF a=pinA->getAnchor();
     const PointF b=pinB?pinB->getAnchor():m_freeEnd;
@@ -752,10 +752,9 @@ void Link::getPoints(std::vector<PointF> &points) const
     const float zoom=graph?graph->zoom():1.0f;
 
     if(m_pointsValid && (m_pointsFrom == a) && (m_pointsTo == b) && (m_pointsZoom == zoom))
-    {
-        points=m_points;
-        return;
-    }
+        return points;
+
+    points.clear();
 
     auto add=[&](const PointF &point)
     {
@@ -825,11 +824,16 @@ void Link::getPoints(std::vector<PointF> &points) const
     }
     add(b);
 
-    m_points=points;
     m_pointsValid=true;
     m_pointsFrom=a;
     m_pointsTo=b;
     m_pointsZoom=zoom;
+    return points;
+}
+
+void Link::getPoints(std::vector<PointF> &points) const
+{
+    points=polyline();
 }
 
 
@@ -1044,29 +1048,26 @@ public:
 
     void captureCanvasDeleted(Canvas * /*canvas*/) override { m_canvas=nullptr; }
 
-    //! Gives the canvas its input back and the marquee's ids.
+    //! Gives the canvas its input back and hides the marquee.
     void end()
     {
         if(active())
             m_canvas->setInputCapture(nullptr);
         m_canvas=nullptr;
-        if(m_marquee)
+        for(internal::NodeGraphMarquee *part : {static_cast<internal::NodeGraphMarquee *>(m_graph->m_marqueeOutline),
+            static_cast<internal::NodeGraphMarquee *>(m_graph->m_marqueeFill)})
         {
-            m_marquee->delayedDelete();
-            m_fill->delayedDelete();
-            m_marquee=nullptr;
-            m_fill=nullptr;
+            part->setRect(Rect());
+            part->hide();
         }
     }
 
-    //! The graph is going: its input back, the marquee going with the layer.
+    //! The graph is going: its input back, the marquee going with the layers.
     void abandon()
     {
         if(active())
             m_canvas->setInputCapture(nullptr);
         m_canvas=nullptr;
-        m_marquee=nullptr;
-        m_fill=nullptr;
     }
 
 private:
@@ -1081,11 +1082,11 @@ private:
         m_min=PointF(std::min(m_from.x, to.x), std::min(m_from.y, to.y));
         m_max=PointF(std::max(m_from.x, to.x), std::max(m_from.y, to.y));
 
-        if(!m_marquee)
-        {
-            m_marquee=m_graph->m_overlayLayer->newChild<internal::NodeGraphMarquee>();
-            m_fill=m_graph->m_linkLayer->newChild<internal::NodeGraphMarqueeFill>();
-        }
+        internal::NodeGraphMarquee *outline=m_graph->m_marqueeOutline;
+        internal::NodeGraphMarqueeFill *fill=m_graph->m_marqueeFill;
+
+        outline->show();
+        fill->show();
 
         // the marquee's own units are the graph's, GraphExtent from its origin
         const int x0=int(std::floor(m_min.x))+GraphExtent;
@@ -1093,8 +1094,8 @@ private:
         const int x1=int(std::ceil(m_max.x))+GraphExtent;
         const int y1=int(std::ceil(m_max.y))+GraphExtent;
 
-        m_marquee->setRect(Rect(x0, y0, x1-x0, y1-y0));
-        m_fill->setRect(Rect(x0, y0, x1-x0, y1-y0));
+        outline->setRect(Rect(x0, y0, x1-x0, y1-y0));
+        fill->setRect(Rect(x0, y0, x1-x0, y1-y0));
 
         for(Base *child : m_graph->m_nodeLayer->getChildren())
         {
@@ -1124,8 +1125,6 @@ private:
 
     NodeGraph *m_graph;
     Canvas *m_canvas=nullptr;
-    internal::NodeGraphMarquee *m_marquee=nullptr;
-    internal::NodeGraphMarqueeFill *m_fill=nullptr;
     Point m_press;
     Point m_mouse;
     PointF m_from;
@@ -1147,6 +1146,16 @@ GWENI_CONTROL_CONSTRUCTOR(NodeGraph)
     for(Base *layer : {static_cast<Base *>(m_linkLayer), static_cast<Base *>(m_nodeLayer),
         static_cast<Base *>(m_overlayLayer)})
         layer->setPlacement(Placement::Owner);
+
+    // The marquee's parts, made now and hidden until a marquee shows them: the
+    // fill first in the link layer, under every link, and the outline in the
+    // overlay layer. Made later, the fill would be a control put in among the
+    // links, whose z the canvas makes room for by relabelling the nodes after
+    // it once the gaps are spent (a large graph).
+    m_marqueeFill=m_linkLayer->newChild<internal::NodeGraphMarqueeFill>();
+    m_marqueeOutline=m_overlayLayer->newChild<internal::NodeGraphMarquee>();
+    m_marqueeFill->hide();
+    m_marqueeOutline->hide();
 
     m_linkDrag=std::make_unique<LinkDrag>(this);
     m_marquee=std::make_unique<MarqueeDrag>(this);
