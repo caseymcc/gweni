@@ -1152,6 +1152,30 @@ void SlotRenderer::ensurePrimitiveSlots(size_t primitiveId)
 
     if(m_vertexes.size() < primitiveId*4+4)
         m_vertexes.resize(primitiveId*4+4);
+
+    // as long as the mirror, so a slot's first cull grows nothing in a later frame
+    if(m_clipCulledSlots.size()*64 < m_vertexes.size()/4)
+        m_clipCulledSlots.resize((m_vertexes.size()/4+63)/64, 0);
+    // and a chunk for every slot, so a chunk's first slot that can show (a culled
+    // chunk's) grows nothing in the flush either
+    growPrimitiveChunks();
+}
+
+void SlotRenderer::growPrimitiveChunks()
+{
+    const size_t chunks=(m_vertexes.size()/4+m_chunkSlots-1)/m_chunkSlots;
+
+    if(m_primitiveChunks.size() >= chunks)
+        return;
+
+    const size_t first=m_primitiveChunks.size();
+
+    m_primitiveChunks.resize(chunks);
+    for(size_t chunk=first; chunk<chunks; ++chunk)
+    {
+        m_primitiveChunks[chunk].draw.counts.reserve(m_maxPrimitiveRanges);
+        m_primitiveChunks[chunk].draw.offsets.reserve(m_maxPrimitiveRanges);
+    }
 }
 
 //! The lowest set bit of a word that is not 0
@@ -1168,18 +1192,74 @@ static size_t lowestBit(uint64_t word)
 #endif
 }
 
+//! Whether slot's bit is set in bits, which may be shorter than the slots
+static bool slotBit(const std::vector<uint64_t> &bits, size_t slot)
+{
+    const size_t word=slot/64;
+
+    return (word < bits.size()) && ((bits[word]>>(slot%64))&1) != 0;
+}
+
+//! Sets or clears slot's bit in bits, growing it as needed; whether it changed
+static bool setSlotBit(std::vector<uint64_t> &bits, size_t slot, bool set)
+{
+    const size_t word=slot/64;
+    const uint64_t bit=uint64_t(1)<<(slot%64);
+
+    if(bits.size() <= word)
+    {
+        if(!set)
+            return false;
+        bits.resize(word+1, 0);
+    }
+    if(((bits[word]&bit) != 0) == set)
+        return false;
+    if(set)
+        bits[word]|=bit;
+    else
+        bits[word]&=~bit;
+    return true;
+}
+
+bool SlotRenderer::quadHasArea(const Vertex *vertexes)
+{
+    int16_t x0=vertexes[0].x, x1=vertexes[0].x, y0=vertexes[0].y, y1=vertexes[0].y;
+
+    for(size_t i=1; i<4; ++i)
+    {
+        x0=std::min(x0, vertexes[i].x);
+        x1=std::max(x1, vertexes[i].x);
+        y0=std::min(y0, vertexes[i].y);
+        y1=std::max(y1, vertexes[i].y);
+    }
+    return (x1 > x0) && (y1 > y0);
+}
+
 void SlotRenderer::updateSlotVisibility(size_t slot)
 {
     if(m_vertexes.size() < slot*4+4)
         return;
 
     const Vertex *vertexes=&m_vertexes[slot*4];
-    const bool visible=(vertexes[0].style|vertexes[1].style|vertexes[2].style|vertexes[3].style) != 0;
+    const bool styled=(vertexes[0].style|vertexes[1].style|vertexes[2].style|vertexes[3].style) != 0;
+    const bool visible=styled && quadHasArea(vertexes);
+    const bool culled=styled && slotBit(m_clipCulledSlots, slot);
     const size_t word=slot/64;
     const uint64_t bit=uint64_t(1)<<(slot%64);
 
+    // the two grow together, so a slot's first cull grows nothing in a later frame
     if(m_visibleSlots.size() <= word)
         m_visibleSlots.resize(word+1, 0);
+    if(m_culledSlots.size() < m_visibleSlots.size())
+        m_culledSlots.resize(m_visibleSlots.size(), 0);
+    if(setSlotBit(m_culledSlots, slot, culled))
+    {
+        if(culled)
+            ++m_primitiveSlotsCulled;
+        else
+            --m_primitiveSlotsCulled;
+    }
+
     if(((m_visibleSlots[word]&bit) != 0) == visible)
         return;
 
@@ -1211,8 +1291,11 @@ void SlotRenderer::buildPrimitiveRanges(size_t chunk)
     std::vector<std::pair<size_t, size_t>> &runs=m_primitiveRuns;
 
     // the runs of set bits in [first, limit), a run less than the gap after the
-    // one before it joined to it
+    // one before it joined to it; at most one per two slots, room made for that
+    // once, so a chunk whose shown and culled slots interleave more finely than
+    // any before allocates nothing in a later flush
     runs.clear();
+    runs.reserve((m_chunkSlots+1)/2);
     for(size_t slot=first; slot < limit;)
     {
         const uint64_t shown=m_visibleSlots[slot/64]>>(slot%64);
@@ -1262,6 +1345,7 @@ void SlotRenderer::buildPrimitiveRanges(size_t chunk)
         const size_t merges=runs.size()-m_maxPrimitiveRanges;
 
         gaps.clear();
+        gaps.reserve((m_chunkSlots+1)/2);
         for(size_t i=0; i+1 < runs.size(); ++i)
             gaps.emplace_back(runs[i+1].first-runs[i].second, i);
         std::nth_element(gaps.begin(), gaps.begin()+(merges-1), gaps.end());
@@ -1290,6 +1374,9 @@ void SlotRenderer::buildPrimitiveRanges(size_t chunk)
     draw.chunk=chunk;
     draw.counts.clear();
     draw.offsets.clear();
+    // the most a chunk draws, so a chunk whose ranges grow allocates once
+    draw.counts.reserve(m_maxPrimitiveRanges);
+    draw.offsets.reserve(m_maxPrimitiveRanges);
     slots.slots=0;
     for(const std::pair<size_t, size_t> &run:runs)
     {
@@ -1304,6 +1391,7 @@ void SlotRenderer::buildPrimitiveRanges(size_t chunk)
 void SlotRenderer::recountPrimitiveChunks()
 {
     m_primitiveChunks.clear();
+    growPrimitiveChunks();
     for(size_t word=0; word<m_visibleSlots.size(); ++word)
     {
         for(uint64_t bits=m_visibleSlots[word]; bits != 0; bits&=bits-1)
@@ -1659,6 +1747,7 @@ void SlotRenderer::flush()
     m_frameStats.primitiveSlotsDrawn=0;
     m_frameStats.primitiveRanges=0;
     m_frameStats.primitiveRangeBuilds=0;
+    m_frameStats.primitiveSlotsCulled=m_primitiveSlotsCulled;
     m_frameStats.textDraws=0;
     m_frameStats.atlasUploadCalls=0;
     m_frameStats.atlasUploadBytes=0;
@@ -1696,6 +1785,8 @@ void SlotRenderer::flush()
         //slot; the upload below clears them
         for(size_t slot: m_dirtyVertexSlots.slots())
             updateSlotVisibility(slot);
+        // after the dirty slots' visibility, so it is the frame this flush draws
+        m_frameStats.primitiveSlotsCulled=m_primitiveSlotsCulled;
 
         //copy only the primitive slots that changed since the last frame
         uploadDirty(SlotPath::Primitives, m_vertexBufferCapacity, m_vertexBufferSent,
@@ -1798,11 +1889,11 @@ void SlotRenderer::flush()
     {
         //qualified: gweni::printf(String&, ...) would otherwise hide the C one
         ::printf("[upload] frame %zu: %zu calls, %zu bytes (mirror %zu bytes, %zu regrows), atlas %zu calls, %zu bytes,"
-            " %zu of %zu primitive slots drawn in %zu ranges (%zu chunks' ranges built)\n",
+            " %zu of %zu primitive slots drawn in %zu ranges (%zu chunks' ranges built), %zu culled\n",
             m_frameStats.frameIndex, m_frameStats.uploadCalls, m_frameStats.uploadBytes,
             m_frameStats.mirrorBytes, m_frameStats.bufferRegrows, m_frameStats.atlasUploadCalls,
             m_frameStats.atlasUploadBytes, m_frameStats.primitiveSlotsDrawn, m_vertexes.size()/4,
-            m_frameStats.primitiveRanges, m_frameStats.primitiveRangeBuilds);
+            m_frameStats.primitiveRanges, m_frameStats.primitiveRangeBuilds, m_frameStats.primitiveSlotsCulled);
         fflush(stdout);
     }
 }
@@ -1870,6 +1961,46 @@ void SlotRenderer::cullOutOfRangeQuad(size_t primitiveId, const gweni::Rect &rec
     }
 }
 
+void SlotRenderer::cullClippedQuad(size_t primitiveId)
+{
+    Vertex *vertexes=&m_vertexes[primitiveId*4];
+    bool culled=false;
+
+    // a quad with no area (collapsed out of range, or drawn empty) makes no
+    // fragment already, and is not counted as culled
+    if(m_clipCulling && quadHasArea(vertexes))
+    {
+        const Box &box=m_clippingBoxes[primitiveId];
+        int x0=vertexes[0].x, x1=vertexes[0].x, y0=vertexes[0].y, y1=vertexes[0].y;
+
+        for(size_t i=1; i<4; ++i)
+        {
+            x0=std::min(x0, int(vertexes[i].x));
+            x1=std::max(x1, int(vertexes[i].x));
+            y0=std::min(y0, int(vertexes[i].y));
+            y1=std::max(y1, int(vertexes[i].y));
+        }
+        // the shaders keep a pixel whose centre is in [x0,x1) x [y0,y1) of the box,
+        // and the quad's centres are inside its corners' span
+        culled=(box.x1 <= box.x0) || (box.y1 <= box.y0)
+            || (x1 <= int(box.x0)) || (x0 >= int(box.x1))
+            || (y1 <= int(box.y0)) || (y0 >= int(box.y1));
+    }
+
+    if(culled)
+    {
+        for(size_t i=0; i<4; ++i)
+        {
+            vertexes[i].x=0;
+            vertexes[i].y=0;
+        }
+    }
+    // a decision that changed with the bytes the same (a culled quad drawn again
+    // as an empty one at 0,0) must still reach updateSlotVisibility
+    if(setSlotBit(m_clipCulledSlots, primitiveId, culled))
+        m_dirtyVertexSlots.mark(primitiveId);
+}
+
 void SlotRenderer::drawFilledRect(size_t primitiveId, gweni::Rect rect, int zIndex)
 {
     translate(rect);
@@ -1896,6 +2027,7 @@ void SlotRenderer::drawFilledRect(size_t primitiveId, gweni::Rect rect, int zInd
 //    setVertex(m_vertexes[vertexIndex++], rect.x, rect.y+rect.h);
 
     cullOutOfRangeQuad(primitiveId, rect);
+    cullClippedQuad(primitiveId);
     markPrimitiveChanges(primitiveId, before);
 
 //    addVert(rect.x, rect.y);
@@ -2026,6 +2158,7 @@ void SlotRenderer::writeRoundedQuad(size_t primitiveId, gweni::Rect rect, int zI
     setRounded(vertexIndex++, x1, y1, +hw, +hh, color0Right, color3Right);
 
     cullOutOfRangeQuad(primitiveId, rect);
+    cullClippedQuad(primitiveId);
     markPrimitiveChanges(primitiveId, before);
 }
 
@@ -2071,6 +2204,7 @@ void SlotRenderer::drawIcon(size_t primitiveId, gweni::Rect rect, int kind, int 
     setIcon(vertexIndex++, x1, y1, +hw, +hh);
 
     cullOutOfRangeQuad(primitiveId, rect);
+    cullClippedQuad(primitiveId);
     markPrimitiveChanges(primitiveId, before);
 }
 
@@ -2147,6 +2281,7 @@ void SlotRenderer::drawGrid(size_t primitiveId, gweni::Rect rect, gweni::PointF 
     setGrid(vertexIndex++, x1, y1, +hw, +hh);
 
     cullOutOfRangeQuad(primitiveId, rect);
+    cullClippedQuad(primitiveId);
     markPrimitiveChanges(primitiveId, before);
 }
 
@@ -2364,6 +2499,7 @@ void SlotRenderer::drawLine(size_t primitiveId, gweni::PointF p0, gweni::PointF 
             m_vertexes[primitiveId*4+i].y=0;
         }
     }
+    cullClippedQuad(primitiveId);
     markPrimitiveChanges(primitiveId, before);
 }
 
@@ -2457,6 +2593,9 @@ void SlotRenderer::releasePrimitive(size_t primitiveId)
             m_dirtyVertexSlots.mark(primitiveId);
         }
     }
+    // the next owner's first draw decides again; until then it is not culled
+    if(setSlotBit(m_clipCulledSlots, primitiveId, false))
+        m_dirtyVertexSlots.mark(primitiveId);
     releasePrimitiveId(primitiveId);
 }
 
@@ -2517,6 +2656,7 @@ void SlotRenderer::drawTexturedRect(const gweni::Texture &texture, size_t primit
     setImageVertex(vertexIndex++, rect.x + rect.w, rect.y + rect.h, u2, v2);
 
     cullOutOfRangeQuad(primitiveId, rect);
+    cullClippedQuad(primitiveId);
     markPrimitiveChanges(primitiveId, before);
 
 //    addVert(rect.x, rect.y, u1, v1);

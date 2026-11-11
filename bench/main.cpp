@@ -102,7 +102,7 @@ const char *const g_counterNames[]=
 {
     "visited", "render_carried", "controls_changed", "created", "visibility", "geometry", "background", "text",
     "prim_slots_written", "text_slots_written", "upload_calls", "upload_bytes", "mirror_bytes",
-    "draw_calls", "primitive_slots_drawn", "primitive_ranges", "text_draws", "atlas_upload_calls", "atlas_upload_bytes", "buffer_regrows",
+    "draw_calls", "primitive_slots_drawn", "primitive_ranges", "primitive_slots_culled", "text_draws", "atlas_upload_calls", "atlas_upload_bytes", "buffer_regrows",
     "layout_passes", "layout_capped", "render_layout", "layout_visited", "layout_children_scanned",
     "measure_calls", "measure_calls_input", "measure_calls_update", "measure_calls_render",
     "invalidations", "invalidations_input", "invalidations_update", "invalidations_render", "z_visited", "z_changed", "anims_run", "hit_tests", "prim_ids", "text_ids",
@@ -140,7 +140,7 @@ void collectCounters(FrameRecord &record, const bench::PhaseTotals &phases,
         changes.visited, changes.renderCarried, changes.controls, changes.created, changes.visibility,
         changes.geometry, changes.background, changes.text,
         gpu.primitiveSlotsWritten, gpu.textSlotsWritten, gpu.uploadCalls, gpu.uploadBytes,
-        gpu.mirrorBytes, gpu.drawCalls, gpu.primitiveSlotsDrawn, gpu.primitiveRanges, gpu.textDraws, gpu.atlasUploadCalls, gpu.atlasUploadBytes,
+        gpu.mirrorBytes, gpu.drawCalls, gpu.primitiveSlotsDrawn, gpu.primitiveRanges, gpu.primitiveSlotsCulled, gpu.textDraws, gpu.atlasUploadCalls, gpu.atlasUploadBytes,
         gpu.bufferRegrows,
         size_t(layout.passes), layout.capped ? 1u : 0u, layout.renderLayout ? 1u : 0u,
         layout.visited, layout.childrenScanned, measures, phases.measures[size_t(Phase::Input)],
@@ -435,15 +435,18 @@ void printUsage()
         "             frame (controls off the canvas), and the controls it found a state\n"
         "             change on, by kind\n"
         "  prim_slots_written text_slots_written upload_calls upload_bytes mirror_bytes\n"
-        "  draw_calls primitive_slots_drawn primitive_ranges text_draws atlas_upload_calls\n"
-        "  atlas_upload_bytes buffer_regrows\n"
+        "  draw_calls primitive_slots_drawn primitive_ranges primitive_slots_culled text_draws\n"
+        "  atlas_upload_calls atlas_upload_bytes buffer_regrows\n"
         "             SlotRenderer::FrameStats of the frame's flush; the slots written are\n"
         "             the distinct primitive and glyph slots it uploads, each once, whether\n"
         "             a draw, a hide, a show or a release changed it; buffer_regrows the\n"
         "             vertex buffers and clip-box textures the mirror outgrew, each\n"
         "             re-allocated (geometrically) and sent whole once; primitive_slots_drawn\n"
         "             the primitive slots the draws' ranges covered (hidden ones in a\n"
-        "             merged gap among them), primitive_ranges those ranges\n"
+        "             merged gap among them), primitive_ranges those ranges;\n"
+        "             primitive_slots_culled a size, not work: the shown slots whose last\n"
+        "             draw lay wholly outside its clip box, left out of the draws\n"
+        "             (--clip-cull)\n"
         "  layout_passes layout_capped render_layout\n"
         "             controls::LayoutStats: update-phase layout passes, whether they hit\n"
         "             the cap, whether the render phase laid out again\n"

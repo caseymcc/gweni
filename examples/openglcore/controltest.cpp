@@ -1529,7 +1529,7 @@ static void printFrameStats(int frame, const std::string &control,
     restartFrameCounts();
     std::printf("frame=%d control=%s controls_changed=%zu created=%zu visibility=%zu"
         " geometry=%zu background=%zu text=%zu prim_slots_written=%zu text_slots_written=%zu"
-        " upload_calls=%zu upload_bytes=%zu mirror_bytes=%zu draw_calls=%zu"
+        " upload_calls=%zu upload_bytes=%zu mirror_bytes=%zu draw_calls=%zu primitive_slots_culled=%zu"
         " atlas_upload_calls=%zu atlas_upload_bytes=%zu buffer_regrows=%zu"
         " layout_passes=%d redirtied_by=%s render_layout=%d layout_requests=%d requested_by=%s"
         " layout_visited=%zu layout_children_scanned=%zu measure_calls=%zu invalidations=%zu"
@@ -1538,7 +1538,7 @@ static void printFrameStats(int frame, const std::string &control,
         changes.controls, changes.created, changes.visibility,
         changes.geometry, changes.background, changes.text,
         gpu.primitiveSlotsWritten, gpu.textSlotsWritten,
-        gpu.uploadCalls, gpu.uploadBytes, gpu.mirrorBytes, gpu.drawCalls,
+        gpu.uploadCalls, gpu.uploadBytes, gpu.mirrorBytes, gpu.drawCalls, gpu.primitiveSlotsCulled,
         gpu.atlasUploadCalls, gpu.atlasUploadBytes, gpu.bufferRegrows,
         layout.passes, redirtiedBy(layout).c_str(), layout.renderLayout ? 1 : 0,
         layout.requests, requestedBy(layout).c_str(),

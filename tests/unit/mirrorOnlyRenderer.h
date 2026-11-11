@@ -33,7 +33,9 @@ public:
     using ChunkDraw=gweni::renderer::ChunkDraw;
     using SlotTextureData=gweni::renderer::SlotTextureData;
 
-    MirrorOnlyRenderer(): SlotRenderer(paths(), gweni::Rect(0, 0, 640, 480)) {}
+    // The tests draw with no clip region set, an empty box that culls every quad
+    // (setClipCulling), and read the quads back: a test of the cull turns it on.
+    MirrorOnlyRenderer(): SlotRenderer(paths(), gweni::Rect(0, 0, 640, 480)) { setClipCulling(false); }
 
     void clearTarget(const gweni::Color &) override {}
     void readPixels(int, int, std::vector<uint8_t> &pixels) override { pixels.clear(); }
