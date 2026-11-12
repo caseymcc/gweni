@@ -366,10 +366,23 @@ past the bottom, with the right edges aligned where it would run past the right 
 aligned, likewise; then `Menu::keepInside`. Each axis needs only that axis's size, final
 when its arrange runs, and the anchor is arranged before it in the same pass (the popup
 comes after the anchor's top-level ancestor among the canvas's children), so it is
-right in the frame's one pass, and placed again on every pass: when the canvas shrinks or
-grows back and when the anchor moves. `updatePopup` lays it out again when the anchor's
-canvas rect is not the one it was last placed by (an ancestor scrolled or moved without a
-pass reaching the popup). A zero-size anchor is a point: `Menu::placement(cursor, ...)`
+right in the frame's one pass. **The canvas enters it in every pass the app runs while it
+is open** (#574): `Canvas::enterFollowers`, at the top of each iteration of
+`layoutUntilClean` (the update phase's passes and the render phase's), invalidates the
+open popup and the open anchored menus (below) between passes, so not as a re-dirty. A
+pass can move the anchor without entering it or the popup: a Top-docked sibling grown
+moves the anchor's top-level panel, a pure move that dirties neither the panel nor
+anything under it, and a popup decided on before the pass would sit at its old place for
+a frame. Entering it costs one entry of each open follower (and of the canvas, already
+dirty) in a frame that lays out anyway; a frame with no pass pays nothing. A pass the
+canvas runs for `setExcludedFromStats()` subtrees alone (an Inspector's or a
+StatsOverlay's refresh) enters none: those tools are placed after the app and hold no
+anchor, so they move none, and entering a follower would make their pass the app's.
+The test is the canvas's own `layoutEntryCounted()`, which only an invalidation from
+outside every excluded subtree sets. Besides that, `updatePopup` lays it out again before
+the pass when the anchor's canvas rect is not the one it was last placed by, for an
+anchor that moves with no pass: a ZoomPanel's pan or zoom, which moves it through the
+render transform. A zero-size anchor is a point: `Menu::placement(cursor, ...)`
 is `Popup::placement` of the cursor with no gap. The position is computed, never asked
 for, unlike `Menu::openAt`'s cursor: the canvas's generic arrange puts a dock-None child
 at its requested position on every pass, which is why a popup is Owner rather than a
@@ -433,13 +446,14 @@ its items in X in its own Y arrange, so the item's x is final only then. A menu 
 before the first layout therefore opens where the item is laid out, and every opening at
 the same place. While it is open the canvas follows it (`Canvas::anchoredMenus()`, the
 open strip menu and its open submenus, in the order they opened, checked by
-`Canvas::updateAnchoredMenus` after the popup step): it is invalidated when the anchor's
-canvas rect or the canvas's size is not what it was last placed for, or when the frame's
-pass lays out the anchor or an ancestor of it below the canvas, so it is placed in that
-same pass, after the item (it was brought to the front when it opened); a submenu's item
-is in its parent menu, earlier in the list, so a chain of submenus follows a moved strip
-in one frame. A frame with nothing laid out looks at those few pointers and invalidates
-nothing. A menu whose anchor is no longer `visible()` closes, with the submenus under it;
+`Canvas::updateAnchoredMenus` after the popup step) as it follows a popup: every pass the
+app runs enters it (`Canvas::enterFollowers`, above), so it is placed in that same pass,
+after the item (it was brought to the front when it opened), wherever the pass moved the
+item, a pure move of a top-level panel included; and the update phase invalidates it
+when the anchor's canvas rect is not what it was last placed for, a move with no pass (a
+ZoomPanel's pan or zoom). A submenu's item is in its parent menu, earlier in the list,
+so a chain of submenus follows a moved strip in one frame. A frame with nothing laid
+out looks at those few pointers and invalidates nothing. A menu whose anchor is no longer `visible()` closes, with the submenus under it;
 deleting the anchor closes it (`Canvas::menuAnchorDeleted`, from `~Base`); a closed menu,
 or one placed some other way, leaves the list in the next update phase and a deleted one
 at once (`~Menu`). A menu numbered before its strip (the strip brought to the front after

@@ -337,7 +337,10 @@ is still the one it would compute, so **a `calculateSize()` may read only**:
 It never reads its own current bounds or a sibling's. `arrange()` may read in
 addition the bounds its parent has just given it, which enter it again when
 they change. Anything else (an anchor elsewhere in the tree, as a Popup's
-placement reads) needs an invalidation of its own (`Canvas::updatePopup`).
+placement reads) needs an invalidation of its own: the canvas enters an open
+Popup and every anchored Menu in each pass the app runs
+(`Canvas::enterFollowers`), and before the pass when the anchor moved with
+none (`Canvas::updatePopup`, `updateAnchoredMenus`).
 
 `GWENI_LAYOUT_VERIFY=1`, or ControlTest's `--verify-layout`, checks this:
 once a frame's layout has converged, the canvas runs one more pass that enters
