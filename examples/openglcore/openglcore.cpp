@@ -23,7 +23,15 @@
  *                         window or a capture; a later --depth-view off
  *                         overrides an earlier one
  *
- *  With no options it opens the interactive window as before; there F12 opens and
+ *  With no options it opens the interactive window as before. There the shown
+ *  page is in the URL (platform::pushUrl): picking one in the demo list pushes
+ *  ?demo=<Name>, keeping the query's other keys, and back and forward (the
+ *  browser's on the web) show the page the URL names; the page last shown is
+ *  stored (platform::storageSet: localStorage on the web, elsewhere
+ *  $XDG_STATE_HOME/gweni/OpenGLCore.json, or ~/.local/state/...) and shown
+ *  again at start-up when --demo names none; the window title is
+ *  "gweni — <Name>". A capture does none of it, so what it draws never depends
+ *  on what an earlier run stored. F12 opens and
  *  closes the inspector (gweni::tools::Inspector), F11 the theme editor
  *  (gweni::tools::ThemeEditor, saving to and loading from gweni-theme.json in
  *  the current directory), F10 the stats overlay and F9 the depth view, which
@@ -74,6 +82,7 @@
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -90,8 +99,139 @@ static gweni::renderer::Base *g_renderer=nullptr;
 static gweni::controls::Canvas *g_canvas=nullptr;
 static float g_manualScale=1.0f;        // --scale or GWENI_SCALE
 
-#if GWENI_EXAMPLE_WEBGL
 static gweni::Demo *g_demo=nullptr;
+
+//! The window's shell: its page in the URL and the title, the page last shown
+//! in the storage. Not for a capture, which reads and writes none of it.
+namespace navigation
+{
+
+static const char *const StoredPageKey="last-demo";
+static GLFWwindow *g_window=nullptr;
+static bool g_storage=false;
+//! What a URL naming no page shows: the page shown at start-up, else the first.
+static std::string g_startDemo;
+
+//! The current URL with demo=<name> in its query (the first demo key, the
+//! others dropped), the query's other keys and the hash kept as they are.
+static std::string urlForDemo(const std::string &name)
+{
+    namespace platform=gweni::platform;
+
+    const platform::Url url=platform::parseUrl(platform::currentUrl());
+    platform::QueryParams params;
+    bool found=false;
+
+    for(const auto &param:platform::parseQuery(url.query))
+    {
+        if(param.first != "demo")
+            params.push_back(param);
+        else if(!found)
+        {
+            params.emplace_back("demo", name);
+            found=true;
+        }
+    }
+    if(!found)
+        params.emplace_back("demo", name);
+    return "?"+platform::buildQuery(params)+(url.hash.empty()?"":"#"+url.hash);
+}
+
+//! Demo::setPageShownHandler: the user's pick is a new history entry, a page
+//! the app showed (--demo, a stored page, back or forward) replaces the
+//! current one, so restoring a page never grows the history.
+static void pageShown(const std::string &name, bool picked)
+{
+    const std::string url=urlForDemo(name);
+
+    if(picked)
+        gweni::platform::pushUrl(url);
+    else
+        gweni::platform::replaceUrl(url);
+    if(g_window)
+        glfwSetWindowTitle(g_window, ("gweni \xe2\x80\x94 "+name).c_str());
+    if(g_storage)
+        gweni::platform::storageSet(StoredPageKey, name);
+}
+
+//! platform::setUrlChangedHandler: back or forward, outside any frame. The
+//! page the URL names, or the start page when it names none.
+static void urlChanged(const std::string &url)
+{
+    std::string name=g_startDemo;
+
+    for(const auto &param:gweni::platform::parseQuery(gweni::platform::parseUrl(url).query))
+    {
+        if(param.first == "demo")
+        {
+            name=param.second;
+            break;
+        }
+    }
+    if(g_demo && !name.empty() && name != g_demo->shownDemo())
+        g_demo->showDemo(name);
+}
+
+//! Where the window keeps its storage: localStorage on the web (the prefix
+//! keeps it apart from other apps on the origin), else a file in the user's
+//! state directory. \return False if there is none to keep it in.
+static bool openStorage()
+{
+#if GWENI_EXAMPLE_WEBGL
+    gweni::platform::setStoragePrefix("gweni-demo/");
+    return true;
+#else
+    std::string dir;
+#if defined(_WIN32)
+    if(const char *local=std::getenv("LOCALAPPDATA"))
+        dir=std::string(local)+"\\gweni";
+#else
+    const char *state=std::getenv("XDG_STATE_HOME");
+    const char *home=std::getenv("HOME");
+
+    if(state && state[0] == '/')
+        dir=std::string(state)+"/gweni";
+    else if(home && home[0])
+        dir=std::string(home)+"/.local/state/gweni";
+#endif
+    if(dir.empty() || !gweni::capture::ensureDirectory(fs::path(dir)))
+        return false;
+    gweni::platform::setStorageFile((fs::path(dir)/"OpenGLCore.json").string());
+    return true;
+#endif
+}
+
+//! Set up the window's navigation before its first page is shown. \return
+//! The page to show at start-up: --demo's, else the stored one (if it is still
+//! a page), else none.
+static std::string open(GLFWwindow *window, gweni::Demo &demo, const std::string &demoName)
+{
+    g_window=window;
+    g_storage=openStorage();
+
+    std::string start=demoName;
+
+    if(start.empty() && g_storage)
+    {
+        const std::optional<std::string> stored=gweni::platform::storageGet(StoredPageKey);
+        const std::vector<std::string> names=demo.getDemoNames();
+
+        if(stored && std::find(names.begin(), names.end(), *stored) != names.end())
+            start=*stored;
+    }
+    if(!start.empty())
+        g_startDemo=start;
+    else if(!demo.getDemoNames().empty())
+        g_startDemo=demo.getDemoNames().front();
+
+    demo.setPageShownHandler(&pageShown);
+    gweni::platform::setUrlChangedHandler(&urlChanged);
+    return start;
+}
+
+}//namespace navigation
+
+#if GWENI_EXAMPLE_WEBGL
 
 //! For a script driving the page (tests/web/interactive.mjs, through
 //! Module.ccall(name, 'string')): whether the canvas's stats overlay is open,
@@ -140,6 +280,49 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *gweni_web_depth_view(int on)
             +" button="+(button->getToggleState()?"on":"off")
             +" rect="+std::to_string(at.x)+","+std::to_string(at.y)+","
             +std::to_string(button->getWidth())+","+std::to_string(button->getHeight());
+    }
+    return state.c_str();
+}
+
+//! The shell's navigation, for tests/web/navigation.mjs: the page shown, the
+//! status bar link's rect on the canvas (logical units) and currentUrl(), as
+//! "demo=<Name> link=x,y,w,h url=<url>". Valid until the next call.
+extern "C" EMSCRIPTEN_KEEPALIVE const char *gweni_web_navigation()
+{
+    static std::string state;
+
+    state.clear();
+    if(g_demo && g_demo->link())
+    {
+        gweni::controls::Button *link=g_demo->link();
+        const gweni::Point at=link->localPosToCanvas();
+
+        state="demo="+g_demo->shownDemo()
+            +" link="+std::to_string(at.x)+","+std::to_string(at.y)+","
+            +std::to_string(link->getWidth())+","+std::to_string(link->getHeight())
+            +" url="+gweni::platform::currentUrl();
+    }
+    return state.c_str();
+}
+
+//! The demo list entry of the page \p name: its rect on the canvas as
+//! "x,y,w,h", empty if there is none or it is not shown.
+extern "C" EMSCRIPTEN_KEEPALIVE const char *gweni_web_demo_entry(const char *name)
+{
+    static std::string state;
+
+    state.clear();
+    if(g_demo && name)
+    {
+        gweni::controls::Button *entry=g_demo->demoEntry(name);
+
+        if(entry && entry->visible())
+        {
+            const gweni::Point at=entry->localPosToCanvas();
+
+            state=std::to_string(at.x)+","+std::to_string(at.y)+","
+                +std::to_string(entry->getWidth())+","+std::to_string(entry->getHeight());
+        }
     }
     return state.c_str();
 }
@@ -549,16 +732,19 @@ int main(int argc, char *argv[])
 
 #ifndef SINGLE_CONTROL
     gweni::Demo *demo=canvas->newChild<gweni::Demo>();
-#if GWENI_EXAMPLE_WEBGL
     g_demo=demo;
-#endif
 
-    if(!demoName.empty() && !demo->showDemo(demoName))
+    // the window's page comes from --demo, else from the storage
+    const std::string startDemo=capturing?demoName:navigation::open(ctx.window, *demo, demoName);
+
+    if(!startDemo.empty() && !demo->showDemo(startDemo))
     {
         std::cerr<<"OpenGLCore: no such demo \""<<demoName<<"\"\nAvailable demos:\n";
         for(const gweni::String &name : demo->getDemoNames())
             std::cerr<<"  "<<name<<"\n";
 
+        gweni::platform::setUrlChangedHandler(nullptr);
+        g_demo=nullptr;
         delete demo;
         delete canvas;
         delete skin;
@@ -709,6 +895,8 @@ int main(int argc, char *argv[])
     }
 
 #ifndef SINGLE_CONTROL
+    gweni::platform::setUrlChangedHandler(nullptr);
+    g_demo=nullptr;
     delete demo;
 #else//SINGLE_CONTROL
     delete button;

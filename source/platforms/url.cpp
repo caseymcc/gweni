@@ -214,8 +214,12 @@ String buildQuery(const QueryParams &params)
         if(!out.empty())
             out+='&';
         out+=encodeQueryPart(param.first);
-        out+='=';
-        out+=encodeQueryPart(param.second);
+        // a flag ("?stats-overlay") stays one
+        if(!param.second.empty() || param.first.empty())
+        {
+            out+='=';
+            out+=encodeQueryPart(param.second);
+        }
     }
     return out;
 }

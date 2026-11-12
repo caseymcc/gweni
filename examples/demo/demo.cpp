@@ -10,6 +10,7 @@
 #include <limits>
 
 #include "gweni/controls/dockedTabControl.h"
+#include "gweni/controls/labelClickable.h"
 #include "gweni/controls/tabControl.h"
 #include "gweni/controls/verticalScrollBar.h"
 #include "gweni/controls/windowControl.h"
@@ -79,6 +80,8 @@ namespace gweni
     Packet packet(demo);\
 	button->onPressCaller.add(this, &ThisClass::onCategorySelect, packet);\
 }
+
+const char *const Demo::LinkUrl="https://github.com/caseymcc/gweni";
 
 Demo::Demo(const String &name):
     DockBase()
@@ -155,6 +158,16 @@ void Demo::init(const String &name)
     m_depthButton->onToggleOffCaller.add(this, &Demo::onDepthToggleOff);
     m_statusBar->addControl(m_depthButton, true);
     tools::DepthView::onOpenChangedCaller.add(this, &Demo::onDepthViewChanged);
+
+    // A link out of the app, at the bar's left end: platform::openUrl, so a
+    // new tab on the web (the press is inside the browser's click event, which
+    // a popup blocker lets through) and the system's browser elsewhere.
+    m_link=m_statusBar->newChild<controls::LabelClickable>("DemoLink");
+    m_link->setText("gweni on GitHub");
+    m_link->setTextPadding(Padding(6, 0, 6, 0));
+    m_link->setToolTipText(LinkUrl);
+    m_link->onPressCaller.add(this, &Demo::onLinkPress);
+    m_statusBar->addControl(m_link, false);
 
     // First, so the selected page shows at the top of the list (the list runs
     // past the dock's bottom edge).
@@ -305,6 +318,11 @@ void Demo::onDepthViewChanged(event::Info info)
     m_depthButton->setToggleState(tools::DepthView::find(m_statsCanvas) != nullptr);
 }
 
+void Demo::onLinkPress(event::Info /*info*/)
+{
+    platform::openUrl(LinkUrl);
+}
+
 void Demo::onCategorySelect(event::Info info)
 {
  //   if(!info.packet->isControl())
@@ -339,6 +357,10 @@ void Demo::onCategorySelect(event::Info info)
 
         notes->showcaseShown();
     }
+
+    m_shownDemo=m_names[pageIndex];
+    if(m_pageShown)
+        m_pageShown(m_shownDemo, !m_showingByName);
 }
 
 bool Demo::showDemo(const String &name)
@@ -352,7 +374,9 @@ bool Demo::showDemo(const String &name)
 
         // The list button's own press path: it shows the page through
         // onCategorySelect and leaves the entry selected in the demo list.
+        m_showingByName=true;
         button->doAction();
+        m_showingByName=false;
         return true;
     }
     return false;
@@ -361,6 +385,16 @@ bool Demo::showDemo(const String &name)
 std::vector<String> Demo::getDemoNames() const
 {
     return m_names;
+}
+
+controls::Button *Demo::demoEntry(const String &name) const
+{
+    for(size_t i=0; i<m_pages.size(); ++i)
+    {
+        if(m_names[i] == name)
+            return gweni_cast<controls::Button>(m_pages[i]);
+    }
+    return nullptr;
 }
 
 std::vector<Demo::ListEntryFit> Demo::listEntryFits()

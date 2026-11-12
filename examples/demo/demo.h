@@ -18,6 +18,8 @@
 #include "gweni/controls/pageControl.h"
 #include "gweni/controls/layout/position.h"
 
+#include <functional>
+
 namespace gweni
 {
 
@@ -35,6 +37,27 @@ public:
 
     //! The demo names showDemo accepts, in list order.
     std::vector<String> getDemoNames() const;
+
+    //! Called each time a page is shown, with its key. \a picked is true for
+    //! a press on its list entry (the user's choice) and false for
+    //! showDemo() (the app's: --demo at start-up, the URL after back or
+    //! forward), so an app keeping the page in its URL pushes the first and
+    //! replaces for the second.
+    typedef std::function<void(const String &name, bool picked)> PageShownHandler;
+    void setPageShownHandler(PageShownHandler handler) { m_pageShown=std::move(handler); }
+
+    //! The key of the page last shown through its list entry or showDemo(),
+    //! empty before any.
+    const String &shownDemo() const { return m_shownDemo; }
+
+    //! The demo list's entry for the page \a name, null if there is none.
+    controls::Button *demoEntry(const String &name) const;
+
+    //! What the status bar's link opens (platform::openUrl: a new tab on the
+    //! web, the system's browser elsewhere).
+    static const char *const LinkUrl;
+    //! The status bar's link, at its left end.
+    controls::Button *link() const { return m_link; }
 
     //! One entry of the demo list as last laid out: its key and label, the
     //! width of the label's Text, and the room it has, from the Text's left
@@ -96,12 +119,19 @@ private:
     void onDepthToggleOn(event::Info info);
     void onDepthToggleOff(event::Info info);
     void onDepthViewChanged(event::Info info);
+    //! The status bar's link pressed: LinkUrl opened.
+    void onLinkPress(event::Info info);
 
     controls::TabControl *m_tabControl;
     controls::ListBox *m_textOutput;
     controls::StatusBar *m_statusBar;
     controls::Button *m_statsButton=nullptr;
     controls::Button *m_depthButton=nullptr;
+    controls::Button *m_link=nullptr;
+    PageShownHandler m_pageShown;
+    String m_shownDemo;
+    //! showDemo() is pressing a list entry: the page is not the user's pick
+    bool m_showingByName=false;
     //! the canvas the Stats and Depth buttons and the overlay's bottom reserve
     //! are for
     controls::Canvas *m_statsCanvas=nullptr;

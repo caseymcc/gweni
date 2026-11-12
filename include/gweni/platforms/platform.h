@@ -100,7 +100,8 @@ typedef std::vector<std::pair<String, String>> QueryParams;
 //! empty value; empty pieces ("a=1&&b=2") are skipped.
 GWENI_EXPORT QueryParams parseQuery(const String &query);
 //! Encode pairs as "key=value&...", without a leading '?': a space is '+',
-//! and every byte but A-Z a-z 0-9 - . _ ~ is %XX.
+//! and every byte but A-Z a-z 0-9 - . _ ~ is %XX. A key with an empty value
+//! is written alone ("flag"), as parseQuery() reads it.
 GWENI_EXPORT String buildQuery(const QueryParams &params);
 
 //! "/app/tasks/42" is {"app", "tasks", "42"}, each segment percent-decoded on

@@ -220,9 +220,13 @@ TEST_CASE("platform url: parseQuery decodes and buildQuery encodes key=value pai
     const std::string built=platform::buildQuery(odd);
 
     CHECK(built == "a+b=c%26d%3De&path=%2Fx%2Fy%3Fz%23w&utf8=%C3%A9&plus=1%2B1"
-        "&keep=A-z_0.9~&empty=");
+        "&keep=A-z_0.9~&empty");
     CHECK(platform::parseQuery(built) == odd);
     CHECK(platform::buildQuery({}).empty());
+    // a flag stays a flag, "flag=" becomes one
+    CHECK(platform::buildQuery(platform::parseQuery("stats-overlay&demo=X&off=")) ==
+        "stats-overlay&demo=X&off");
+    CHECK(platform::buildQuery({{"", ""}}) == "=");
 }
 
 TEST_CASE("platform url: splitPath decodes and joinPath encodes each segment on its own")
