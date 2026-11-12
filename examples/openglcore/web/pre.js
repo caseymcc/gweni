@@ -19,6 +19,13 @@
 //  demo.html opens the stats overlay and demo.html?stats-overlay=off (a later
 //  --stats-overlay off) does not.
 //
+//  A page that keeps its own state in the query (?view=backlog&task=42, which
+//  ControlTest and OpenGLCore would take for arguments they do not know, and
+//  exit 1) sets Module.gweniQueryArgs = false beside Module.gweniDefaultArgs:
+//  main then gets gweniDefaultArgs alone, and the app reads the URL itself
+//  (platform::currentUrl(), parseQuery()). The default (unset, or anything but
+//  false) is the query as argv. pre.js never reads the path.
+//
 //  window.gweniRun, what the runner reads once done is true:
 //    done      true once main has returned, exit() was called or the run aborted
 //    exitCode  the exit status (null if it aborted)
@@ -29,7 +36,8 @@
 //              it through Module.gweniWebGLContext): {webgl2, version, renderer,
 //              vendor, depthBits}, null if it made none
 //    argv      the arguments pre.js gave main (gweniDefaultArgs, then the
-//              URL's), without argv[0]; null under node
+//              URL's unless gweniQueryArgs is false), without argv[0]; null
+//              under node
 //    frames    how many frames an interactive window has drawn
 //              (capture::runWindowLoop, one per animation frame), 0 for a
 //              capture, which draws offscreen in one blocking main
@@ -60,6 +68,8 @@ if(typeof location !== 'undefined')
     Module['arguments'] = (function()
     {
         var args = (Module['gweniDefaultArgs'] || []).slice();
+        if(Module['gweniQueryArgs'] === false)
+            return args;
         new URLSearchParams(location.search).forEach(function(value, key)
         {
             if(key === 'argv')

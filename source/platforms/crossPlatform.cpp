@@ -38,6 +38,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <algorithm>
 #include <map>
 #include <thread>
 
@@ -50,6 +51,168 @@
 #elif defined(__EMSCRIPTEN__)
 #   include <emscripten.h>
 #   include <cstdio>
+#endif
+
+#if defined(__EMSCRIPTEN__)
+
+// The browser's side of platform.h's URL, history, opener, storage and names.
+// Under node (the web tree's unit tests) there is no window: gweni_js_in_browser
+// is 0 and every function keeps to the in-process versions the other targets use.
+
+EM_JS_DEPS(gweni_platform_browser, "$stringToNewUTF8,$UTF8ToString");
+
+EM_JS(int, gweni_js_in_browser, (), {
+    return (typeof window !== 'undefined' && typeof window.history !== 'undefined' &&
+        typeof window.location !== 'undefined')?1:0;
+});
+
+EM_JS(char *, gweni_js_current_url, (), {
+    return stringToNewUTF8(location.pathname + location.search + location.hash);
+});
+
+// url is the whole path, query and hash (resolveUrlTarget made it), made
+// absolute against location.href, not the document's base URL, so a <base
+// href> changes nothing. Returns null, or why the browser refused it.
+EM_JS(char *, gweni_js_set_url, (const char *url, int push), {
+    try
+    {
+        var target = new URL(UTF8ToString(url), location.href).href;
+        if(push)
+            history.pushState(null, "", target);
+        else
+            history.replaceState(history.state, "", target);
+        return 0;
+    }
+    catch(e)
+    {
+        return stringToNewUTF8(String(e));
+    }
+});
+
+EM_JS(void, gweni_js_history_go, (int step), {
+    if(step < 0)
+        history.back();
+    else
+        history.forward();
+});
+
+// The popstate listener: each event (the browser's back and forward, a hash
+// edited in the address bar, historyBack()/historyForward() a task later) is
+// a task of its own, outside the main loop's frame, and runs the handler.
+EM_JS(void, gweni_js_listen_popstate, (int on), {
+    if(on && !Module['gweniPopstate'])
+    {
+        Module['gweniPopstate'] = function() { Module['_gweni_platform_url_changed'](); };
+        window.addEventListener('popstate', Module['gweniPopstate']);
+    }
+    else if(!on && Module['gweniPopstate'])
+    {
+        window.removeEventListener('popstate', Module['gweniPopstate']);
+        Module['gweniPopstate'] = null;
+    }
+});
+
+// noopener makes window.open return null whether or not a popup blocker
+// stopped it, so a blocked tab cannot be told apart: 1 unless it threw.
+EM_JS(int, gweni_js_open_url, (const char *url), {
+    try
+    {
+        window.open(UTF8ToString(url), '_blank', 'noopener,noreferrer');
+        return 1;
+    }
+    catch(e)
+    {
+        return 0;
+    }
+});
+
+// 1 if localStorage can be used: reading it throws where the page may not
+// (storage blocked, a sandboxed frame).
+EM_JS(int, gweni_js_storage_available, (), {
+    try
+    {
+        return (typeof window !== 'undefined' && window.localStorage &&
+            typeof window.localStorage.length === 'number')?1:0;
+    }
+    catch(e)
+    {
+        return 0;
+    }
+});
+
+// The value, or null if there is none (or it cannot be read).
+EM_JS(char *, gweni_js_storage_get, (const char *key), {
+    try
+    {
+        var value = localStorage.getItem(UTF8ToString(key));
+        return (value === null)?0:stringToNewUTF8(value);
+    }
+    catch(e)
+    {
+        return 0;
+    }
+});
+
+// 0 if setItem threw (a full quota)
+EM_JS(int, gweni_js_storage_set, (const char *key, const char *value), {
+    try
+    {
+        localStorage.setItem(UTF8ToString(key), UTF8ToString(value));
+        return 1;
+    }
+    catch(e)
+    {
+        return 0;
+    }
+});
+
+EM_JS(int, gweni_js_storage_remove, (const char *key), {
+    try
+    {
+        localStorage.removeItem(UTF8ToString(key));
+        return 1;
+    }
+    catch(e)
+    {
+        return 0;
+    }
+});
+
+// The keys under prefix, without it, as a JSON array.
+EM_JS(char *, gweni_js_storage_keys, (const char *prefix), {
+    var keys = [];
+    try
+    {
+        var start = UTF8ToString(prefix);
+        for(var i = 0; i < localStorage.length; ++i)
+        {
+            var key = localStorage.key(i);
+            if(key !== null && key.startsWith(start))
+                keys.push(key.substring(start.length));
+        }
+    }
+    catch(e)
+    {
+    }
+    return stringToNewUTF8(JSON.stringify(keys));
+});
+
+EM_JS(char *, gweni_js_time_zone, (), {
+    var zone = "";
+    try
+    {
+        zone = Intl.DateTimeFormat().resolvedOptions().timeZone || "";
+    }
+    catch(e)
+    {
+    }
+    return stringToNewUTF8(zone);
+});
+
+EM_JS(char *, gweni_js_locale, (), {
+    return stringToNewUTF8((typeof navigator !== 'undefined' && navigator.language) || 'en-US');
+});
+
 #endif
 
 namespace gweni
@@ -355,6 +518,40 @@ String printableUrl(const String &url)
     return out;
 }
 
+#if defined(__EMSCRIPTEN__)
+
+//! In a page (not under node), where the URL, history and opener are the
+//! browser's.
+bool inBrowser()
+{
+    static const bool browser=(gweni_js_in_browser() != 0);
+    return browser;
+}
+
+//! A string the JS side made with stringToNewUTF8, freed; empty for null.
+String takeJsString(char *text)
+{
+    if(!text)
+        return String();
+
+    String result(text);
+
+    free(text);
+    return result;
+}
+
+//! Removes the popstate listener when the runtime exits (a capture's main
+//! returning), so no event calls into a runtime that is gone.
+struct PopstateListener
+{
+    ~PopstateListener()
+    {
+        gweni_js_listen_popstate(0);
+    }
+};
+
+#endif
+
 //! The in-process history: its entries, formatted, and the current one. It
 //! starts at "/", with nothing back or forward.
 struct History
@@ -382,9 +579,63 @@ bool resolveTarget(const char *call, const String &url, Url &resultOut)
     return false;
 }
 
-//! Move the history by step entries if it has one there, then tell the handler.
+//! Make target the current entry (a new one for push): the browser's history
+//! in a page, else the in-process one. \return False after one line on
+//! stderr if the browser refused it.
+bool setUrl(const char *call, const String &url, const Url &target, bool push)
+{
+    const String formatted=formatUrl(target);
+#if defined(__EMSCRIPTEN__)
+    if(inBrowser())
+    {
+        const String error=takeJsString(gweni_js_set_url(formatted.c_str(), push?1:0));
+
+        if(error.empty())
+            return true;
+        log::write(log::Level::Error, "gweni: %s(\"%s\") refused by the browser: %s", call,
+            printableUrl(url).c_str(), printableUrl(error).c_str());
+        return false;
+    }
+#else
+    (void)call;
+    (void)url;
+#endif
+
+    History &state=history();
+
+    if(push)
+    {
+        state.entries.resize(state.current+1);
+        state.entries.push_back(formatted);
+        ++state.current;
+    }
+    else
+        state.entries[state.current]=formatted;
+    return true;
+}
+
+//! Tell the handler the history moved.
+void deliverUrlChanged()
+{
+    // a copy: the handler may set another one, or push
+    const UrlChangedHandler handler=history().handler;
+
+    if(handler)
+        handler(currentUrl());
+}
+
+//! Move the history by step entries if it has one there, then tell the handler
+//! (in a page the browser does, on a later task: popstate).
 void moveHistory(int step)
 {
+#if defined(__EMSCRIPTEN__)
+    if(inBrowser())
+    {
+        gweni_js_history_go(step);
+        return;
+    }
+#endif
+
     History &state=history();
 
     if(step < 0 && state.current == 0)
@@ -395,18 +646,18 @@ void moveHistory(int step)
         --state.current;
     else
         ++state.current;
-
-    // a copy: the handler may set another one, or push
-    const UrlChangedHandler handler=state.handler;
-
-    if(handler)
-        handler(currentUrl());
+    deliverUrlChanged();
 }
 
 }//namespace
 
 String currentUrl()
 {
+#if defined(__EMSCRIPTEN__)
+    if(inBrowser())
+        return takeJsString(gweni_js_current_url());
+#endif
+
     const History &state=history();
     return state.entries[state.current];
 }
@@ -415,28 +666,14 @@ bool pushUrl(const String &url)
 {
     Url target;
 
-    if(!resolveTarget("pushUrl", url, target))
-        return false;
-
-    History &state=history();
-
-    state.entries.resize(state.current+1);
-    state.entries.push_back(formatUrl(target));
-    ++state.current;
-    return true;
+    return resolveTarget("pushUrl", url, target) && setUrl("pushUrl", url, target, true);
 }
 
 bool replaceUrl(const String &url)
 {
     Url target;
 
-    if(!resolveTarget("replaceUrl", url, target))
-        return false;
-
-    History &state=history();
-
-    state.entries[state.current]=formatUrl(target);
-    return true;
+    return resolveTarget("replaceUrl", url, target) && setUrl("replaceUrl", url, target, false);
 }
 
 void historyBack()
@@ -451,6 +688,14 @@ void historyForward()
 
 void setUrlChangedHandler(UrlChangedHandler handler)
 {
+#if defined(__EMSCRIPTEN__)
+    if(inBrowser())
+    {
+        static PopstateListener listener;
+
+        gweni_js_listen_popstate(handler?1:0);
+    }
+#endif
     history().handler=std::move(handler);
 }
 
@@ -579,8 +824,7 @@ bool spawnDetached(const char *program, const String &argument)
 bool openWithSystem(const String &url)
 {
 #if defined(__EMSCRIPTEN__)
-    (void)url;
-    return false;
+    return inBrowser() && gweni_js_open_url(url.c_str()) != 0;
 #elif defined(_WIN32)
     return reinterpret_cast<INT_PTR>(ShellExecuteA(nullptr, "open", url.c_str(), nullptr,
         nullptr, SW_SHOWNORMAL)) > 32;
@@ -639,10 +883,24 @@ Storage &storage()
     return storage;
 }
 
+#if defined(__EMSCRIPTEN__)
+//! In a page whose localStorage can be used, which is then the store.
+bool webStorage()
+{
+    static const bool available=inBrowser() && (gweni_js_storage_available() != 0);
+    return available;
+}
+#else
+bool webStorage()
+{
+    return false;
+}
+#endif
+
 //! The values are in memory: said once per process, on the first use.
 void reportInMemory(Storage &state)
 {
-    if(!state.file.empty() || state.reportedInMemory)
+    if(!state.file.empty() || state.reportedInMemory || webStorage())
         return;
     state.reportedInMemory=true;
     log::write(log::Level::Error, "gweni: storage has no file (platform::setStorageFile), "
@@ -762,6 +1020,9 @@ void setStoragePrefix(const String &prefix)
 
 bool setStorageFile(const String &path)
 {
+    if(webStorage())
+        return true;
+
     Storage &state=storage();
 
     state.file=path;
@@ -780,6 +1041,16 @@ std::optional<String> storageGet(const String &key)
     Storage &state=storage();
 
     reportInMemory(state);
+#if defined(__EMSCRIPTEN__)
+    if(webStorage())
+    {
+        char *value=gweni_js_storage_get((state.prefix+key).c_str());
+
+        if(!value)
+            return std::nullopt;
+        return takeJsString(value);
+    }
+#endif
 
     const auto value=state.values.find(state.prefix+key);
 
@@ -793,6 +1064,10 @@ bool storageSet(const String &key, const String &value)
     Storage &state=storage();
 
     reportInMemory(state);
+#if defined(__EMSCRIPTEN__)
+    if(webStorage())
+        return gweni_js_storage_set((state.prefix+key).c_str(), value.c_str()) != 0;
+#endif
 
     StorageValues values=state.values;
 
@@ -805,6 +1080,10 @@ bool storageRemove(const String &key)
     Storage &state=storage();
 
     reportInMemory(state);
+#if defined(__EMSCRIPTEN__)
+    if(webStorage())
+        return gweni_js_storage_remove((state.prefix+key).c_str()) != 0;
+#endif
     if(state.values.find(state.prefix+key) == state.values.end())
         return true;
 
@@ -820,6 +1099,26 @@ std::vector<String> storageKeys()
     std::vector<String> keys;
 
     reportInMemory(state);
+#if defined(__EMSCRIPTEN__)
+    if(webStorage())
+    {
+        const String list=takeJsString(gweni_js_storage_keys(state.prefix.c_str()));
+        rapidjson::Document document;
+
+        document.Parse(list.data(), list.size());
+        if(!document.HasParseError() && document.IsArray())
+        {
+            for(const auto &key:document.GetArray())
+            {
+                if(key.IsString())
+                    keys.emplace_back(key.GetString(), key.GetStringLength());
+            }
+        }
+        // localStorage's order is the browser's; sorted by bytes, as elsewhere
+        std::sort(keys.begin(), keys.end());
+        return keys;
+    }
+#endif
     for(const auto &value:state.values)
     {
         if(value.first.compare(0, state.prefix.size(), state.prefix) == 0)
@@ -860,6 +1159,10 @@ String zoneFromPath(const String &path)
 
 String timeZoneName()
 {
+#if defined(__EMSCRIPTEN__)
+    if(inBrowser())
+        return takeJsString(gweni_js_time_zone());
+#endif
 #if defined(_WIN32)
     // Windows has zone names of its own, not IANA's
     return String();
@@ -898,6 +1201,10 @@ String timeZoneName()
 
 String localeName()
 {
+#if defined(__EMSCRIPTEN__)
+    if(inBrowser())
+        return takeJsString(gweni_js_locale());
+#endif
 #if defined(_WIN32)
     wchar_t name[LOCALE_NAME_MAX_LENGTH];
 
@@ -977,3 +1284,11 @@ void getCursorPos(Point &po)
 
 }//namespace platform
 }//namespace gweni
+
+#if defined(__EMSCRIPTEN__)
+// Called by the popstate listener (gweni_js_listen_popstate), between frames.
+extern "C" EMSCRIPTEN_KEEPALIVE void gweni_platform_url_changed()
+{
+    gweni::platform::deliverUrlChanged();
+}
+#endif
