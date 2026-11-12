@@ -140,6 +140,35 @@ struct ChunkDraw
     std::vector<uintptr_t> offsets;
 };
 
+class SlotRenderer;
+
+//! A font's glyph fallback chain (SlotRenderer::setGlyphFallback): the faces a
+//! codepoint its own face lacks is drawn from, each a freetype-gl font on the
+//! primary's atlas at its size and mode, made the first time freetype-gl asks
+//! for it (texture_font_t::fallback, SlotRenderer::glyphChainFont), so a font
+//! whose text is all its own opens none.
+struct GlyphChain
+{
+    struct Link
+    {
+        gweni::String face;
+        //! the face's file, shared by every chain that opened it (SlotRenderer::glyphFallbackBlob)
+        std::shared_ptr<const std::vector<unsigned char>> blob;
+        ftgl::texture_font_t *font=nullptr; //!< owned, once opened
+        bool failed=false; //!< its file or face would not open: skipped
+    };
+
+    GlyphChain()=default;
+    GlyphChain(const GlyphChain &)=delete;
+    GlyphChain &operator=(const GlyphChain &)=delete;
+    //! Deletes the fonts it opened (not their glyphs' atlas, the primary's)
+    ~GlyphChain();
+
+    SlotRenderer *renderer=nullptr;
+    ftgl::texture_font_t *primary=nullptr;
+    std::vector<Link> links;
+};
+
 struct FontData
 {
     FontData():
@@ -180,10 +209,11 @@ struct FontData
         other.asciiGlyphs.fill(nullptr);
         otherGlyphs=std::move(other.otherGlyphs);
         other.otherGlyphs.clear();
+        glyphChain=std::move(other.glyphChain);
     }
 
-    //! Deletes the manager (which owns the atlas, the texture_font_t and the cache
-    //! string), then familyPath. The atlas's texture is the backend's, destroyed
+    //! Deletes the glyph chain's fonts, the manager (which owns the atlas, the
+    //! texture_font_t and the cache string), then familyPath. The atlas's texture is the backend's, destroyed
     //! before this runs (SlotRenderer::eraseFont). A moved-from one holds nothing
     //! and frees nothing.
     ~FontData();
@@ -254,6 +284,9 @@ struct FontData
     //! freetype-gl keys them: the ASCII ones in place, the rest in otherGlyphs
     std::array<ftgl::texture_glyph_t *, 128> asciiGlyphs{};
     std::unordered_map<uint32_t, ftgl::texture_glyph_t *> otherGlyphs;
+    //! textureFont's glyph fallback chain (its fallback_data), null for a face with
+    //! none; on the heap, so the pointer freetype-gl holds survives a move
+    std::unique_ptr<GlyphChain> glyphChain;
 };
 
 //
@@ -463,6 +496,28 @@ public:
     //! to the next load: what is loaded stays as it is.
     void setFallbackFont(bool enabled) { m_fallbackFont=enabled; }
     bool fallbackFont() const { return m_fallbackFont; }
+
+    //! The glyph fallback chain of a face (not the file fallback above): the faces,
+    //! in order, a codepoint the face has no glyph for is drawn from, the first
+    //! that has it, in the same run, atlas and draw, at the run's size and mode
+    //! (each a freetype-gl font on the run's font's atlas, its file read into
+    //! memory once and shared by every font that uses it). Only when none has it
+    //! does the face's own missing glyph show. An empty face name sets the default
+    //! chain, which every face without one of its own takes; a face's own chain may
+    //! be empty, so its missing glyph shows. A face is never in its own chain. A
+    //! chain face is opened on a font's first miss, never before, so a run whose
+    //! codepoints are all its face's is laid out and drawn as with no chain. The
+    //! glyphs of two faces are not kerned. The fonts whose chain this changes are
+    //! loaded again with their owners (their runs laid out again on the next
+    //! frame, through textLayoutSerial()). None is set by default.
+    void setGlyphFallback(const gweni::String &face, const std::vector<gweni::String> &chain);
+    //! The chain a face's fonts take: its own, else the default, less the face
+    //! itself and repeats
+    std::vector<gweni::String> glyphFallback(const gweni::String &face) const;
+    //! For tests: the chain faces' files read (once each while a font uses it) and
+    //! the chain fonts made, since construction
+    size_t glyphFallbackFilesRead() const { return m_glyphFallbackFilesRead; }
+    size_t glyphFallbackFontsOpened() const { return m_glyphFallbackFontsOpened; }
 
     //! The freetype-gl font a font's text is drawn from (resolved at its draw px),
     //! nullptr if it is not loaded: a test hook, to look its glyphs up.
@@ -766,6 +821,19 @@ protected:
 
     //! Destroys a font's atlas texture and erases it; the iterator after it
     FontMap::iterator eraseFont(FontMap::iterator it);
+    //! Erases every font `which` picks, its runs leaving every draw list (they draw
+    //! nothing until renderText lays them out again), loads each again with the
+    //! owners it had, so what was loaded stays loaded and takes as many freeFont
+    //! calls to go as before, and raises textLayoutSerial()
+    void reloadFonts(const std::function<bool(const FontData &)> &which);
+    //! Gives a just-made font its face's glyph chain, if the face has one
+    void attachGlyphChain(FontData &fontData);
+    //! texture_font_t::fallback: the index-th chain font that opens, opening the
+    //! links up to it that are not yet; nullptr past the last
+    static ftgl::texture_font_t *glyphChainFont(void *data, size_t index);
+    //! A chain face's file in memory, read once while any font holds it; nullptr
+    //! (logged the first time) if it cannot be read
+    std::shared_ptr<const std::vector<unsigned char>> glyphFallbackBlob(const gweni::String &face);
     //! flush()'s: erases the fonts idle for kIdleFontFlushes (FontData::idleSince)
     void eraseIdleFonts();
     //! Destroys an image's texture and deletes its data
@@ -1179,6 +1247,15 @@ private:
     float m_textContrast;
     //! A missing or unreadable face is drawn in the built-in font (setFallbackFont)
     bool m_fallbackFont=true;
+
+    //! setGlyphFallback's chains by face, "" the default
+    std::map<gweni::String, std::vector<gweni::String>> m_glyphFallback;
+    //! The chain faces' files by path, alive while a GlyphChain::Link holds one
+    std::unordered_map<gweni::String, std::weak_ptr<const std::vector<unsigned char>>> m_glyphFallbackBlobs;
+    //! Chain face files that could not be read (logged once) or opened
+    std::unordered_set<gweni::String> m_failedGlyphFallbackFiles;
+    size_t m_glyphFallbackFilesRead=0;
+    size_t m_glyphFallbackFontsOpened=0;
 
     //! The slots one draw covers (indexChunkSlots())
     size_t m_chunkSlots=kSlotsPerChunk;

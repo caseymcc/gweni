@@ -26,6 +26,8 @@
 #include <cmath>
 #include <algorithm>
 #include <cassert>
+#include <fstream>
+#include <iterator>
 #include <limits>
 
 #include <ft2build.h>
@@ -70,11 +72,23 @@ static const char *const fontCache=" !\"#$%&'()*+,-./0123456789:;<=>?"
     "@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_"
     "`abcdefghijklmnopqrstuvwxyz{|}~";
 
+GlyphChain::~GlyphChain()
+{
+    // textureFont's fallback_glyphs point into these fonts: they go with it
+    for(Link &link:links)
+    {
+        if(link.font != nullptr)
+            ftgl::texture_font_delete(link.font);
+    }
+}
+
 FontData::~FontData()
 {
     // the atlas's texture went first (SlotRenderer::eraseFont): the atlas lives in
     // memory the manager owns
     assert(!atlas || !atlas->id);
+    // its fonts' glyphs are on the manager's atlas, and only textureFont points at them
+    glyphChain.reset();
     // frees the texture_font_t, the atlas and the cache string loadFont strdup'd
     if(fontManager)
         ftgl::font_manager_delete(fontManager);
@@ -104,6 +118,18 @@ ftgl::texture_glyph_t *FontData::glyph(const char *codepoint)
     if(loaded != nullptr)
         otherGlyphs.emplace(key, loaded);
     return loaded;
+}
+
+// text_buffer_add_char's kerning of glyph against the previous codepoint: the
+// pair in glyph's table, and none across two faces of a glyph fallback chain
+// (looked for only in a font with one, and only for a pair found)
+static float kerning(FontData &fontData, const ftgl::texture_glyph_t *glyph, const char *previous)
+{
+    const float pair=ftgl::texture_glyph_get_kerning(glyph, previous);
+
+    if((pair != 0.0f) && (fontData.textureFont->fallback != nullptr))
+        return ftgl::texture_glyph_get_kerning_glyph(glyph, fontData.glyph(previous));
+    return pair;
 }
 
 float SlotRenderer::textPx(const Font &font) const
@@ -174,17 +200,27 @@ void SlotRenderer::setTextAA(TextAA aa)
 
     m_textAA=aa;
 
-    // Every font of the coverage range is now resolved under another mode. Each is
-    // erased, its runs leaving every draw list (they draw nothing until renderText
-    // lays them out again, in the font of the new mode), and loaded again in the
-    // new mode with the owners it had, so what was loaded stays loaded and takes
-    // as many freeFont calls to go as before. An SDF atlas is the same in every
-    // mode and stays as it is, its runs drawing.
+    // Every font of the coverage range is now resolved under another mode and is
+    // loaded again in it; an SDF atlas is the same in every mode and stays as it
+    // is, its runs drawing. A failure in another mode is tried again in this one.
+    for(auto it=m_failedFonts.begin(); it != m_failedFonts.end();)
+    {
+        if(it->mode != TextMode::Sdf)
+            it=m_failedFonts.erase(it);
+        else
+            ++it;
+    }
+
+    reloadFonts([](const FontData &fontData) { return fontData.mode != TextMode::Sdf; });
+}
+
+void SlotRenderer::reloadFonts(const std::function<bool(const FontData &)> &which)
+{
     std::vector<std::pair<Font, int>> reload;
 
     for(auto it=m_fonts.begin(); it != m_fonts.end();)
     {
-        if(it->second.mode == TextMode::Sdf)
+        if(!which(it->second))
         {
             ++it;
             continue;
@@ -197,19 +233,12 @@ void SlotRenderer::setTextAA(TextAA aa)
     }
 
     m_lastFont=nullptr;
-    // a failure in another mode is tried again in this one
-    for(auto it=m_failedFonts.begin(); it != m_failedFonts.end();)
-    {
-        if(it->mode != TextMode::Sdf)
-            it=m_failedFonts.erase(it);
-        else
-            ++it;
-    }
 
-    // the key's size is the px the atlas is rasterised at, so it resolves to itself
+    // the key's size is the px the atlas is rasterised at, so it resolves to
+    // itself; an Sdf key's is 0, "every size", so it is loaded at the threshold
     for(const auto &[font, owners]:reload)
     {
-        const Font::Status status=loadFont(font, font.size);
+        const Font::Status status=loadFont(font, (font.size > 0.0f)?font.size:m_sdfTextMin);
 
         // the load counted one owner, which the old entry's count replaces
         if((status == Font::Status::Loaded) || (status == Font::Status::LoadedFallback))
@@ -217,6 +246,151 @@ void SlotRenderer::setTextAA(TextAA aa)
     }
 
     textLayoutChanged();
+}
+
+void SlotRenderer::setGlyphFallback(const String &face, const std::vector<String> &chain)
+{
+    // each loaded face's chain before, to load again only the fonts it changes
+    std::map<String, std::vector<String>> before;
+
+    for(const auto &[key, fontData]:m_fonts)
+    {
+        if(before.count(fontData.faceName) == 0)
+            before.emplace(fontData.faceName, glyphFallback(fontData.faceName));
+    }
+
+    m_glyphFallback[face]=chain;
+
+    std::unordered_set<String> changed;
+
+    for(const auto &[name, faces]:before)
+    {
+        if(faces != glyphFallback(name))
+            changed.insert(name);
+    }
+    if(!changed.empty())
+    {
+        reloadFonts([&changed](const FontData &fontData)
+            {
+                return changed.count(fontData.faceName) > 0;
+            });
+    }
+}
+
+std::vector<String> SlotRenderer::glyphFallback(const String &face) const
+{
+    auto own=m_glyphFallback.find(face);
+
+    if(own == m_glyphFallback.end())
+        own=m_glyphFallback.find(String());
+
+    std::vector<String> chain;
+
+    if(own == m_glyphFallback.end())
+        return chain;
+    for(const String &link:own->second)
+    {
+        if(!link.empty() && (link != face) && (std::find(chain.begin(), chain.end(), link) == chain.end()))
+            chain.push_back(link);
+    }
+    return chain;
+}
+
+void SlotRenderer::attachGlyphChain(FontData &fontData)
+{
+    const std::vector<String> faces=glyphFallback(fontData.faceName);
+
+    if(faces.empty())
+        return;
+
+    fontData.glyphChain=std::make_unique<GlyphChain>();
+    fontData.glyphChain->renderer=this;
+    fontData.glyphChain->primary=fontData.markup.font;
+    for(const String &face:faces)
+        fontData.glyphChain->links.push_back(GlyphChain::Link{ face, nullptr, nullptr, false });
+    fontData.markup.font->fallback=&SlotRenderer::glyphChainFont;
+    fontData.markup.font->fallback_data=fontData.glyphChain.get();
+}
+
+ftgl::texture_font_t *SlotRenderer::glyphChainFont(void *data, size_t index)
+{
+    GlyphChain &chain=*static_cast<GlyphChain *>(data);
+    const ftgl::texture_font_t *primary=chain.primary;
+    size_t n=0;
+
+    for(GlyphChain::Link &link:chain.links)
+    {
+        if(link.failed)
+            continue;
+
+        if(link.font == nullptr)
+        {
+            link.blob=chain.renderer->glyphFallbackBlob(link.face);
+            if(link.blob)
+            {
+                // on the primary's atlas, at its size, with no cache: only the
+                // codepoints the primary lacks are ever loaded into it
+                link.font=ftgl::texture_font_new_from_memory(primary->atlas, primary->size,
+                    link.blob->data(), link.blob->size());
+            }
+            if(link.font == nullptr)
+            {
+                if(link.blob)
+                    gweni::log::write(log::Level::Error, "Glyph fallback font failed to load: %s", link.face.c_str());
+                link.blob.reset();
+                link.failed=true;
+                continue;
+            }
+
+            // the primary's rendering, as loadFont set it: hinting, an SDF spread or
+            // LCD phases
+            link.font->hinting=primary->hinting;
+            link.font->kerning=primary->kerning;
+            link.font->filtering=primary->filtering;
+            std::copy(std::begin(primary->lcd_weights), std::end(primary->lcd_weights),
+                std::begin(link.font->lcd_weights));
+            link.font->rendermode=primary->rendermode;
+            link.font->outline_thickness=primary->outline_thickness;
+            link.font->padding=primary->padding;
+            link.font->sdf_spread=primary->sdf_spread;
+            link.font->subpixel_positions=primary->subpixel_positions;
+            ++chain.renderer->m_glyphFallbackFontsOpened;
+        }
+
+        if(n == index)
+            return link.font;
+        ++n;
+    }
+    return nullptr;
+}
+
+std::shared_ptr<const std::vector<unsigned char>> SlotRenderer::glyphFallbackBlob(const String &face)
+{
+    const String path=getResourcePaths().getPath(ResourcePaths::Type::Font, face);
+    std::weak_ptr<const std::vector<unsigned char>> &shared=m_glyphFallbackBlobs[path];
+
+    if(std::shared_ptr<const std::vector<unsigned char>> blob=shared.lock())
+        return blob;
+    if(m_failedGlyphFallbackFiles.count(path) > 0)
+        return nullptr;
+
+    std::ifstream in(path, std::ios::binary);
+    auto blob=std::make_shared<std::vector<unsigned char>>();
+
+    if(in)
+        blob->assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+    if(!in.good() && !in.eof())
+        blob->clear();
+    if(blob->empty())
+    {
+        gweni::log::write(log::Level::Error, "Glyph fallback font file not found: %s", path.c_str());
+        m_failedGlyphFallbackFiles.insert(path);
+        return nullptr;
+    }
+
+    ++m_glyphFallbackFilesRead;
+    shared=blob;
+    return blob;
 }
 
 Font::Status SlotRenderer::loadFont(const Font &requested)
@@ -304,9 +478,9 @@ Font::Status SlotRenderer::loadFont(const Font &requested, float px)
 
     free(fontData.fontManager->cache); // font_manager_new strdup'd a default
     // The manager rasterises its cache as soon as it opens the face, before an SDF
-    // font's spread or an LCD font's subpixel positions could be set, so those
-    // fonts load it themselves below.
-    fontData.fontManager->cache=strdup((sdf || lcd)?"":fontCache);
+    // font's spread, an LCD font's subpixel positions or the glyph chain could be
+    // set, so every font loads it itself below, as the manager would have.
+    fontData.fontManager->cache=strdup("");
 
     if(found)
     {
@@ -345,7 +519,6 @@ Font::Status SlotRenderer::loadFont(const Font &requested, float px)
         fontData.markup.font->sdf_spread=kSdfSpread;
         // unhinted, so the kerning is not rounded to whole base-size pixels
         fontData.markup.font->hinting=0;
-        ftgl::texture_font_load_glyphs(fontData.markup.font, fontCache);
     }
     else if(lcd && fontData.markup.font)
     {
@@ -353,10 +526,15 @@ Font::Status SlotRenderer::loadFont(const Font &requested, float px)
         // drawn from the image rasterised at its pen's phase. The cache is phase 0;
         // the other phases are rasterised as a run first needs them.
         fontData.markup.font->subpixel_positions=lcdSubpixelPositions;
+    }
+
+    if(fontData.markup.font)
+    {
+        // the chain first, so a codepoint of the cache the face lacks is the
+        // chain's too
+        attachGlyphChain(fontData);
         ftgl::texture_font_load_glyphs(fontData.markup.font, fontCache);
     }
-    else if(fontData.fallback)
-        ftgl::texture_font_load_glyphs(fontData.markup.font, fontCache);
 
     if(fontData.markup.font == nullptr)
     {
@@ -2931,7 +3109,7 @@ SlotRenderer::PenWalk SlotRenderer::walkPens(FontData &fontData, float px, const
         }
 
         if(previous && font->kerning)
-            pen+=ftgl::texture_glyph_get_kerning(glyph, previous)*s;
+            pen+=kerning(fontData, glyph, previous)*s;
 
         // a coverage glyph's quad sits at the pen rounded to a whole pixel
         if(pens)
@@ -3064,7 +3242,7 @@ gweni::Point SlotRenderer::layoutSdfText(FontData &fontData, float px, const gwe
             continue;
 
         if(previous && font->kerning)
-            pen+=ftgl::texture_glyph_get_kerning(glyph, previous)*s;
+            pen+=kerning(fontData, glyph, previous)*s;
 
         if(vertexes)
         {
