@@ -365,6 +365,11 @@ int LogView::getLineHeight()
     return m_lineHeight;
 }
 
+int LogView::heightForRows(int rows)
+{
+    return std::max(0, rows)*(getLineHeight()+2*RowPadY)+getPadding().top+getPadding().bottom;
+}
+
 String LogView::blockText(const LogRow &row, size_t previewLines)
 {
     const size_t total=row.lines.size();

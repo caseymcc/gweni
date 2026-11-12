@@ -222,6 +222,9 @@ public:
     const gweni::Font &getFont() const { return m_font; }
     //! The font's line height, as the rows' text lays its lines out.
     int getLineHeight();
+    //! The view's height that shows exactly `rows` one-line rows (a small
+    //! excerpt view's): the rows, their padding and the view's own.
+    int heightForRows(int rows);
 
     //! A block row's look. Collapsed, it shows its title with the count of
     //! lines it shows and holds, "title (4 of 120 lines)", and its first

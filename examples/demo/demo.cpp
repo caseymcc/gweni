@@ -67,6 +67,7 @@
 #include "demo/unicodeText.h"
 #include "demo/virtualList.h"
 #include "demo/virtualListVariable.h"
+#include "demo/logView.h"
 #include "demo/window.h"
 #include "demo/windowButtons.h"
 
@@ -216,6 +217,7 @@ void Demo::init(const String &name)
         addDemo<DataTableDemo>(cat, "DataTableDemo", "Data table");
         addDemo<DataTableVirtualDemo>(cat, "DataTableVirtualDemo", "Data table, 100k");
         addDemo<CodeEditorDemo>(cat, "CodeEditorDemo", "Code editor");
+        addDemo<LogViewDemo>(cat, "LogViewDemo", "Log view");
         addDemo<ContextMenuDemo>(cat, "ContextMenuDemo", "Context menu");
         addDemo<PopupDemo>(cat, "PopupDemo", "Popup");
         addDemo<UnicodeTextDemo>(cat, "UnicodeTextDemo", "Unicode text");

@@ -78,6 +78,15 @@ and four colours on their sides, joined by orthogonal, Bezier and straight links
 follows the zoom. Drag a title to move a node, a pin to make a link, empty space to box-select, and
 right-click for menus; dragging one node rewrites its own slots and its links' segments, nothing else.
 
+[![An agent run's log beside three five-line excerpts](docs/images/LogViewDemo.png)](https://caseymcc.github.io/gweni/controltest.html?control=LogViewDemo)
+
+**Log view**: a LogView, an append-only log of wrapped rows on a variable-height VirtualList, as an
+agent dashboard shows a run: assistant text, tool calls and their output as collapsible blocks
+("4 of 27 lines"), streamed in from the canvas clock while it follows the end, and beside it three
+five-line excerpt views, each with a small cap. Scroll up and it stays put while rows arrive, with a
+"Jump to latest" button counting them; click, Shift+click or drag to select rows, Ctrl+C to copy.
+A frame costs the rows on screen, however long the log.
+
 [![The inspector beside a few controls](docs/images/InspectorDemo.png)](https://caseymcc.github.io/gweni/controltest.html?control=InspectorDemo)
 
 **Inspector**: `gweni::tools::Inspector`, the library's live view of the change tracking (F12 in the

@@ -46,6 +46,8 @@ set(GWENI_DEMO_SOURCES
     demo/layoutDemo.h
     demo/listBox.cpp
     demo/listBox.h
+    demo/logView.cpp
+    demo/logView.h
     demo/menuStrip.cpp
     demo/menuStrip.h
     demo/numeric.cpp

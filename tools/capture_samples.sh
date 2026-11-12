@@ -70,6 +70,7 @@ SAMPLES=(
     ShowcaseWindowsDemo
     TextDemo
     NodeGraphDemo
+    LogViewDemo
     InspectorDemo
     ThemeEditorDemo
 )
