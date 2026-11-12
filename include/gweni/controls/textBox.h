@@ -288,7 +288,7 @@ public:
     void setText(const String &str, bool doEvents=true) override;
 
     //! The character shown for each codepoint of the password, "*" by
-    //! default: exactly one valid UTF-8 codepoint (a "•" say), which the mask
+    //! default: exactly one valid UTF-8 codepoint (a U+2022 bullet, say), which the mask
     //! is rebuilt with at once. Anything else (empty, two codepoints, invalid
     //! UTF-8) is refused, keeping the current one; returns whether it took it.
     virtual bool setPasswordChar(const String &c);
@@ -299,6 +299,13 @@ public:
     const String &getText() const override { return m_realText; }
     //! The password's length in bytes, as getText()'s, not the mask's.
     int textLength() override { return static_cast<int>(m_realText.length()); }
+
+    //! The password never reaches the clipboard: Ctrl+C does nothing, and so
+    //! does Ctrl+X, which neither copies nor deletes the selection (a delete
+    //! alone would look like a cut that worked). Both keys are still taken
+    //! by the box. Paste and select-all are TextBox's.
+    void onCopy(event::Info) override {}
+    void onCut(event::Info) override {}
 
 protected:
 
