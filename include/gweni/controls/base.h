@@ -1627,8 +1627,12 @@ protected:
         void add(Base *parent, bool counted);
     };
     //! invalidateChildren(true)'s walk below this control, `depth` actual
-    //! levels under the walk's root.
-    void invalidateSubtree(int depth, WalkExits &exits);
+    //! levels under the walk's root, entering no control deeper than
+    //! `maxDepth` levels under it.
+    void invalidateSubtree(int depth, int maxDepth, WalkExits &exits);
+    //! The walk invalidateChildren(true) makes, to `maxDepth` actual levels
+    //! under this control: 1 is the children it holds (a new size, setBounds).
+    void invalidateWalk(int maxDepth);
     struct BoundsInvalidationScope
     {
         BoundsInvalidationScope(): m_outer(s_boundsInvalidation) { s_boundsInvalidation=true; }

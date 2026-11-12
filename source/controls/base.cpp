@@ -1089,16 +1089,22 @@ void Base::invalidateChildren(bool recursive)
         return;
     }
 
+    invalidateWalk(std::numeric_limits<int>::max());
+}
+
+void Base::invalidateWalk(int maxDepth)
+{
     if(m_children.empty() && !(m_innerPanel && !m_innerPanel->getChildren().empty()))
         return;
 
-    // One child with nothing under it (a Label's Text, resized with it): its
-    // own invalidate() is the whole walk, the way up included.
+    // One child with nothing under it the walk enters (a Label's Text,
+    // resized with it): its own invalidate() is the whole walk, the way up
+    // included.
     if(!m_innerPanel && (m_children.size() == 1))
     {
         Base *child=m_children.front();
 
-        if(child->m_children.empty() && !child->m_innerPanel)
+        if(maxDepth == 1 || (child->m_children.empty() && !child->m_innerPanel))
         {
             child->invalidate();
             return;
@@ -1128,7 +1134,7 @@ void Base::invalidateChildren(bool recursive)
     {
         SubtreeWalk walk(this);
 
-        invalidateSubtree(1, exits);
+        invalidateSubtree(1, maxDepth, exits);
     }
 
     const bool outerCounted=g_invalidationCounted;
@@ -1183,7 +1189,7 @@ void Base::WalkExits::add(Base *parent, bool counted)
     g_invalidationCounted=outerCounted;
 }
 
-void Base::invalidateSubtree(int depth, WalkExits &exits)
+void Base::invalidateSubtree(int depth, int maxDepth, WalkExits &exits)
 {
     auto enter=[&](Base *control)
     {
@@ -1209,8 +1215,8 @@ void Base::invalidateSubtree(int depth, WalkExits &exits)
                 exits.add(parent, g_invalidationCounted);
         }
 
-        if(!control->m_children.empty() || control->m_innerPanel)
-            control->invalidateSubtree(depth+1, exits);
+        if((depth < maxDepth) && (!control->m_children.empty() || control->m_innerPanel))
+            control->invalidateSubtree(depth+1, maxDepth, exits);
     };
 
     for(auto &&child : m_children)
@@ -1588,15 +1594,18 @@ bool Base::setBounds(const Rect &bounds)
         (m_bounds.h != bounds.h && laidOutThisPass(Dim::Y)))
         noteRedirty();
 
-    // A new size is what the subtree is laid out in. A move is not: children
-    // are placed relative to it, and onBoundsChanged marks the subtree for
-    // the render walk (absolute positions, clip boxes); the move is laid out
-    // as a request of it or as its parent's placement, below.
+    // A new size is what its children are laid out in. Below them it is what
+    // their arrange resizes: each control whose own bounds change invalidates
+    // its children here in turn, an inner panel's contents when the panel's
+    // bounds change. A move is not: children are placed relative to it, and
+    // onBoundsChanged marks the subtree for the render walk (absolute
+    // positions, clip boxes); the move is laid out as a request of it or as
+    // its parent's placement, below.
     if(m_bounds.w != bounds.w || m_bounds.h != bounds.h)
     {
         PlacementScope placement;
         BoundsInvalidationScope boundsOnly;
-        invalidateChildren(true);
+        invalidateWalk(1);
         // its content box is another along that axis: every child is
         // placed again there
         if(m_bounds.w != bounds.w)
