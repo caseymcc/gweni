@@ -359,10 +359,12 @@ TEST_CASE("Excluded slots: a released id lasts to the frame after the flush that
         const std::vector<size_t> all=primitiveIdsOf(tool);
 
         delete tool;
-        CHECK(scene.canvas->excludedSlots().heldPrimitives() == 0);
+        // the last flush's record until the next flush
+        CHECK(scene.canvas->excludedSlots().heldPrimitives() == all.size());
         CHECK(allExcluded(scene.canvas, all));
         scene.frame();
         CHECK(scene.renderer.frameStats().primitiveSlotsWritten == all.size());
+        CHECK(scene.canvas->excludedSlots().heldPrimitives() == 0);
         CHECK(allExcluded(scene.canvas, all));
         scene.frame();
         CHECK(noneExcluded(scene.canvas, all));
@@ -483,6 +485,9 @@ TEST_CASE("Excluded slots: the overlay's live ids are the same with the Inspecto
     const size_t primitives=overlay->shownPrimitiveIds();
     const size_t texts=overlay->shownTextIds();
 
+    // the live ids at the flush less the tools' (nothing changed since the
+    // refresh read them)
+    CHECK(primitives == scene.canvas->excludedSlots().appPrimitives());
     CHECK(primitives == primitiveIdCount()-releasedPrimitiveIdCount()
         -scene.canvas->excludedSlots().heldPrimitives());
 
@@ -502,7 +507,7 @@ TEST_CASE("Excluded slots: the overlay's live ids are the same with the Inspecto
     CHECK(overlay->shownTextIds() == texts);
 }
 
-TEST_CASE("Excluded slots: the held ids follow a flag and the tree within a frame")
+TEST_CASE("Excluded slots: a flag or tree change takes effect at the next flush")
 {
     Scene scene;
     controls::Base *tool=newTool(scene.canvas);
@@ -516,36 +521,92 @@ TEST_CASE("Excluded slots: the held ids follow a flag and the tree within a fram
     REQUIRE(allExcluded(scene.canvas, toolIds));
     REQUIRE(noneExcluded(scene.canvas, movedIds));
 
-    // each read below comes in the same update phase as the one before it,
-    // after the change, with no frame between
+    // Each change below is made in an update phase: until that frame's flush
+    // the record is the last flush's, read the same however often; after it,
+    // the change's. A tool whose ids are no longer held gave none back, so
+    // nothing of it lingers as cleared.
+    auto updatePhase=[&]()
+    {
+        scene.clock+=Scene::Step;
+        scene.canvas->updateCanvas();
+    };
+    auto heldNow=[&]() { return scene.canvas->excludedSlots().heldPrimitives(); };
+
     SUBCASE("a flag changed")
     {
+        updatePhase();
         tool->setExcludedFromStats(false);
-        CHECK(noneExcluded(scene.canvas, toolIds));
-        CHECK(scene.canvas->excludedSlots().heldPrimitives() == 0);
-        tool->setExcludedFromStats(true);
-        CHECK(allExcluded(scene.canvas, toolIds));
         moved->setExcludedFromStats(true);
+        for(int read=0; read < 3; ++read)
+        {
+            CHECK(allExcluded(scene.canvas, toolIds));
+            CHECK(noneExcluded(scene.canvas, movedIds));
+            CHECK(heldNow() == toolIds.size());
+        }
+        scene.canvas->renderCanvas();
+        CHECK(noneExcluded(scene.canvas, toolIds));
         CHECK(allExcluded(scene.canvas, movedIds));
+        CHECK(heldNow() == movedIds.size());
+
+        // and back
+        updatePhase();
+        tool->setExcludedFromStats(true);
         moved->setExcludedFromStats(false);
+        CHECK(noneExcluded(scene.canvas, toolIds));
+        CHECK(allExcluded(scene.canvas, movedIds));
+        scene.canvas->renderCanvas();
+        CHECK(allExcluded(scene.canvas, toolIds));
         CHECK(noneExcluded(scene.canvas, movedIds));
+        CHECK(heldNow() == toolIds.size());
     }
     SUBCASE("an app control moved into a flagged subtree and out again")
     {
+        updatePhase();
         moved->setParent(tool);
+        for(int read=0; read < 3; ++read)
+        {
+            CHECK(noneExcluded(scene.canvas, movedIds));
+            CHECK(heldNow() == toolIds.size());
+        }
+        scene.canvas->renderCanvas();
         CHECK(allExcluded(scene.canvas, movedIds));
-        CHECK(scene.canvas->excludedSlots().heldPrimitives() == toolIds.size()+movedIds.size());
+        CHECK(heldNow() == toolIds.size()+movedIds.size());
+
+        updatePhase();
         moved->setParent(scene.app);
+        for(int read=0; read < 3; ++read)
+        {
+            CHECK(allExcluded(scene.canvas, movedIds));
+            CHECK(heldNow() == toolIds.size()+movedIds.size());
+        }
+        scene.canvas->renderCanvas();
         CHECK(noneExcluded(scene.canvas, movedIds));
-        CHECK(scene.canvas->excludedSlots().heldPrimitives() == toolIds.size());
+        CHECK(allExcluded(scene.canvas, toolIds));
+        CHECK(heldNow() == toolIds.size());
     }
     SUBCASE("a flagged subtree taken off the canvas and put back")
     {
+        updatePhase();
         tool->setParent(nullptr);
+        for(int read=0; read < 3; ++read)
+        {
+            CHECK(allExcluded(scene.canvas, toolIds));
+            CHECK(heldNow() == toolIds.size());
+        }
+        scene.canvas->renderCanvas();
         CHECK(noneExcluded(scene.canvas, toolIds));
-        CHECK(scene.canvas->excludedSlots().heldPrimitives() == 0);
+        CHECK(heldNow() == 0);
+
+        updatePhase();
         tool->setParent(scene.canvas);
+        for(int read=0; read < 3; ++read)
+        {
+            CHECK(noneExcluded(scene.canvas, toolIds));
+            CHECK(heldNow() == 0);
+        }
+        scene.canvas->renderCanvas();
         CHECK(allExcluded(scene.canvas, toolIds));
+        CHECK(heldNow() == toolIds.size());
     }
 }
 
