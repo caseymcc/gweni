@@ -136,6 +136,8 @@ set(GWENI_SOURCES
     source/skin.cpp
     include/gweni/text/document.h
     source/text/document.cpp
+    include/gweni/text/undoStack.h
+    source/text/undoStack.cpp
     include/gweni/uiTypes.h
     include/gweni/userData.h
     include/gweni/utility.h
