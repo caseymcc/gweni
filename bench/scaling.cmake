@@ -18,6 +18,13 @@
 #  A scene listed in LARGE_N_FOR below runs at its own, smaller large N, with
 #  the reason beside it.
 #
+#  N need not be a control count. In vlist-variable-scroll it is the items of
+#  a variable-height VirtualList, of which only the rows on screen are
+#  controls; the items live in its height index, whose O(log N) walks show in
+#  no counter, so the check holds the scroll's measures, slots and layout to
+#  the rows it brings into view (the thumb, which moves more at the small N,
+#  is the only counter that differs).
+#
 #  Counters and what "grew" means:
 #
 #    counter                           checked  grew means

@@ -346,8 +346,11 @@ none (`Canvas::updatePopup`, `updateAnchoredMenus`).
 once a frame's layout has converged, the canvas runs one more pass that enters
 every shown control (`Canvas::verifyingLayout()`) and fails, naming the
 control, the axis, the field and both values, on any bounds or preferred size
-it changes. The `controltest_verify_layout_*` tests run every control and the
-scenarios that change layout at run time with it.
+it changes. After that pass it also asks every control for what that
+comparison cannot see (`Base::verifyOwnLayout`, nothing by default): a
+variable-height `VirtualList` reports a shown row whose bounds or preferred
+height is not its item's measure. The `controltest_verify_layout_*` tests run
+every control and the scenarios that change layout at run time with it.
 
 ### Which children a pass enters
 

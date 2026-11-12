@@ -1876,6 +1876,74 @@ two programs and the draws. What follows describes both together:
   `firstVisibleItem`, `rowForItem`/`itemForRow` and `refresh`/`refreshItem` are the
   rest; a wheel notch scrolls `setWheelRows` rows (3). VirtualListDemo holds 100 000
   items.
+- **The virtual list's variable mode: a height index and an anchor.** A list given an
+  item measurer (`VirtualList::setItemMeasurer((index, width) -> height)`) gives each
+  item its own height, the measurer's at the rows' width, and a null one gives fixed
+  mode back, which is the code path above unchanged (`bench.sh compare` flags nothing
+  in its scenes, and `controltest_virtual_list` and `controltest_data_table_virtual`
+  hold). **Heights come from a measurer, not from laying a row out:** rows are bound in
+  the Y arrange, and a row's height must be known before the rows below it are placed,
+  in the same pass. For wrapped text the measurer is the wrap `internal::Text` does:
+  its line breaking is `text::wrapLines`/`text::splitWords` (`include/gweni/text/wrap.h`),
+  a pure function of the string, the width and a width measure, which a wrapped `Text`
+  calls with `measureText()` in its font and `Base::wrappedTextLines()`/
+  `wrappedTextHeight(font, string, width)` call for anyone else, so a row measured with
+  them is laid out at that height (VirtualListVariableDemo's rows: a wrapped
+  `VirtualListRow`, its height the wrap at its width less its padding, plus the
+  padding). **The height index** is `controls::HeightIndex`
+  (`include/gweni/controls/heightIndex.h`), a B+-tree of sums: leaves of up to 256
+  items, each a height and the generation it was measured at, inner nodes of up to 64
+  children holding their subtree's count, height sum and lowest generation. Append,
+  insert, erase (a pop from the front included) and set cost O(log N) plus the items
+  added or removed, `offsetOf` (item to offset), `itemAt` (offset to item) and
+  `firstStale` (the next item measured before a generation) O(log N), the size, the
+  total and the lowest generation O(1); a Fenwick tree has no middle insert or erase
+  and no pop from the front, which a capped log and an editor's line edits need
+  (`tests/unit/heightIndex.cpp` holds it to a vector under random edits). The content
+  height is the index's total, capped at `INT_MAX`; an item not measured counts at the
+  estimator's height (`setItemEstimator`, for items added after it is set), else the
+  last measured height, else the row height. **The scroll position is an anchor:** the
+  item at the viewport's top and how far it is scrolled out (`getAnchorItem`,
+  `getAnchorOffset`). Each layout measures the items on screen from the anchor down
+  until they fill the viewport (and up from the last one when the end shows, or after a
+  scroll to the bottom), places them one below the other from it at the index's
+  heights, and only then sets the content height, the bar and the offset from the
+  anchor through the index. `m_scrollOffset[1]` stays the bar's view of it: the list
+  keeps the offset the anchor last gave, and any other at the next layout (the bar, the
+  wheel, `setVerticalScrollOffset`, `scrollToBottom`) was a scroll, anchored at its
+  offset; `scrollToItem` and `scrollByRows` (by whole items) move the anchor itself.
+  So an item above the top changing height, items inserted or removed above it, and an
+  estimate refined into a measure move the offset and the thumb, never a row on
+  screen. **Edits** (`insertItems(at, n)`, `removeItems(at, n)`, `setItemCount`,
+  `itemChanged(i)`, which measures that item again at once) cost O(log N) in the
+  item count: the pooled rows' items are shifted by index arithmetic, so a row of a
+  moved item keeps it and is not bound again, and one of a removed item gives up its
+  press and focus and is free for the next layout (which tests the hover again); the
+  item at the top stays there, or, removed, the one after the removed ones takes its
+  place. Fixed mode gets the same edits by whole rows. **Stuck to the end**
+  (`setStickToEnd(true)`), every layout puts the last item's bottom at the viewport's
+  bottom, through appends, removals and new heights, in their frame; only the app
+  sticks or unsticks it, a scroll does not. **The pool** is the viewport at the
+  smallest height measured, `ceil(viewport/minHeight)+1`, the same at 1 000 and 100 000
+  items. **The vertical bar always shows** in variable mode (disabled while everything
+  fits, `setAutoHideBars(false)`, given back on leaving it): otherwise a height measured
+  in the pass could show or hide the bar, narrow the rows' width and call for a second
+  pass. **A new width is one counter:** the measure generation goes up by one, so every
+  item is stale without a walk; the layout of the resize measures the items on screen
+  at once and keeps the anchor, and the rest are measured by the **idle re-measure**,
+  an animation registered only while some item is not measured at the generation (a
+  new width, items added or never shown), up to `setRemeasureBudget` items a frame (64;
+  0 measures only what shows), from the item at the top down and then from the first,
+  through `firstStale`. Its new heights move the offset and the thumb through the
+  anchor; once every item is measured it finishes, so a settled frame runs, measures
+  and lays out nothing. Meanwhile the thumb creeps; nothing on screen moves. A shown
+  row whose bounds or preferred height is not its item's measure (a measurer that
+  disagrees with the row) is reported by layout verification, through
+  `Base::verifyOwnLayout` (`docs/layout.md`). `ControlTest --scenario
+  virtual-list-variable` holds all of it on VirtualListVariableDemo at 1 000 and 100 000
+  items, `tests/unit/virtualListVariable.cpp` on the headless fixture, and the
+  `vlist-variable-scroll` bench scene is local. Wrapped rows given an item with another
+  line count gain or lose line `Text`s, so a scroll may renumber z inside the list.
 - **The slider's value text.** `Slider::setValueFormat("%.2f")` shows the value as text
   (imgui's SliderFloat), formatted with `snprintf` from `getFloatValue()`. The format is
   checked first (`Slider::validValueFormat`): exactly one conversion of a double (`f F e
