@@ -1103,7 +1103,8 @@ protected:
     //! See setExcludedFromStats().
     bool m_excludeFromStats=false;
     //! Every control setExcludedFromStats() flagged, in the order flagged, on
-    //! any canvas or none (Canvas::excludedSlots() walks those on its own).
+    //! any canvas or none (Canvas::snapshotExcludedSlots() walks those on its
+    //! canvas as each flush ends, for Canvas::excludedSlots()).
     static const std::vector<Base *> &statsExcludedRoots();
     //! Moved since the last renumber: see zOrderMoved().
     bool m_zMoved=false;

@@ -586,8 +586,9 @@ void Inspector::deleteChildNodes(controls::TreeNode *node)
 
     for(controls::Base *child : children)
     {
-        // its slots are cleared in the next flush, under ids it no longer
-        // holds: the canvas keeps them as a tool's (Canvas::excludedSlots())
+        // its slots are cleared in the next flush, under ids it held at the
+        // last one: a tool's if nobody has taken them again by then, the
+        // app's if an app control has (Canvas::excludedSlots())
         delete child;
     }
 }
