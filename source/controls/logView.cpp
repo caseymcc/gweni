@@ -5,11 +5,17 @@
  */
 
 #include <gweni/controls/logView.h>
+#include <gweni/controls/menu.h>
+#include <gweni/controls/menuItem.h>
 #include <gweni/controls/text.h>
+#include <gweni/anim.h>
+#include <gweni/inputHandler.h>
+#include <gweni/platforms/platform.h>
 #include <gweni/skin.h>
 
 #include <algorithm>
 #include <climits>
+#include <map>
 
 namespace gweni
 {
@@ -46,6 +52,15 @@ void LogViewRow::fontChanged()
     m_text->textChanged();
     m_text->addStateChange(StateChange_Text);
     m_text->invalidate();
+}
+
+void LogViewRow::setSelected(bool selected)
+{
+    if(m_selected == selected)
+        return;
+
+    m_selected=selected;
+    addStateChange(StateChange_Background);
 }
 
 // A row of an app's kind is as high as the kind's measurer says, its padding
@@ -143,6 +158,8 @@ GWENI_CONTROL_CONSTRUCTOR(LogView)
     setItemMeasurer([this](size_t position, int width) { return measureRow(position, width); });
 
     setKeyboardInputEnabled(true);
+    addAccelerator("Ctrl + C", &LogView::onCopy);
+    addAccelerator("Ctrl + A", &LogView::onSelectAll);
     setStickToEnd(true);
 }
 
@@ -173,8 +190,35 @@ bool LogView::replace(RowId id, const LogRow &row)
         return false;
 
     noteBarMove();
+
+    const size_t before=rowLength(id);
+
     m_rows[position].row=row;
     itemChanged(position);
+
+    // the characters on this row clamped to its new text, one at its end
+    // kept at its end
+    if(!m_selection.empty())
+    {
+        const size_t after=rowLength(id);
+        bool changed=false;
+
+        for(SelectionRange &range : m_selection)
+        {
+            for(Position *end : {&range.anchor, &range.focus})
+            {
+                if(end->row != id)
+                    continue;
+
+                const size_t character=(end->character >= before)?after:std::min(end->character, after);
+
+                changed=changed || character != end->character;
+                end->character=character;
+            }
+        }
+        if(changed)
+            onSelectionChanged.call(this);
+    }
     return true;
 }
 
@@ -205,6 +249,7 @@ void LogView::clear()
 
     m_rows.clear();
     removeItems(0, getItemCount());
+    clearSelection();
 }
 
 void LogView::setMaxRows(size_t rows)
@@ -221,6 +266,13 @@ void LogView::applyCap()
 
     m_rows.erase(m_rows.begin(), m_rows.begin()+static_cast<std::ptrdiff_t>(drop));
     removeItems(0, drop);
+
+    // a range that held dropped rows keeps the rows that remain
+    if(pruneSelection())
+    {
+        refreshRowSelection();
+        onSelectionChanged.call(this);
+    }
 }
 
 LogView::RowId LogView::firstRowId() const
@@ -426,18 +478,499 @@ LogView::RowId LogView::rowAt(const Point &canvasPoint, Point *local) const
 }
 
 // A press on a block's title line (its chevron's height, the first line of
-// its text) toggles it; anywhere else it is the row's (selection).
+// its text) toggles it; anywhere else on a row it selects, and starts a drag.
 void LogView::onMouseClickLeft(int x, int y, bool down)
 {
     if(!down)
+    {
+        if(m_dragging)
+        {
+            m_dragging=false;
+            if(MouseFocus == this)
+                MouseFocus=nullptr;
+            stopAutoScroll();
+        }
         return;
+    }
 
     Point local;
     const RowId id=rowAt(Point(x, y), &local);
     const LogRow *row=getRow(id);
 
     if(row && row->kind == LogRow::Block && local.y < RowPadY+getLineHeight())
+    {
         toggleBlock(id);
+        return;
+    }
+
+    if(!row)
+    {
+        if(!input::isShiftDown() && !input::isControlDown())
+            clearSelection();
+        return;
+    }
+
+    if(input::isControlDown())
+    {
+        toggleRowSelected(id);
+        return;
+    }
+
+    if(input::isShiftDown())
+        extendSelectionTo(id);
+    else
+        selectRow(id);
+
+    m_dragging=true;
+    m_dragPoint=canvasPosToLocal(Point(x, y));
+    MouseFocus=this;
+}
+
+// The selection's focus follows the row under the mouse; past the viewport's
+// top or bottom edge the auto-scroll moves the view, so the move itself
+// scrolls nothing.
+void LogView::onMouseMoved(int x, int y, int deltaX, int deltaY)
+{
+    ParentClass::onMouseMoved(x, y, deltaX, deltaY);
+
+    if(!m_dragging || MouseFocus != this)
+        return;
+
+    m_dragPoint=canvasPosToLocal(Point(x, y));
+
+    const RowId id=rowAtDrag(m_dragPoint);
+
+    if(id != NoRow)
+        extendSelectionTo(id);
+
+    if(dragOverflow() != 0 && !m_autoScroll)
+    {
+#if GWENI_ANIMATE
+        class AutoScroll: public anim::Animation
+        {
+        public:
+            void think() override
+            {
+                static_cast<LogView *>(m_control)->autoScrollStep();
+            }
+        };
+
+        m_autoScrollTime=platform::getTimeInSeconds();
+        m_autoScrollCarry=0.0f;
+        m_autoScroll=new AutoScroll();
+        anim::add(this, m_autoScroll);
+#endif
+    }
+}
+
+int LogView::dragOverflow() const
+{
+    const Rect &viewport=getViewport();
+
+    if(m_dragPoint.y < viewport.y)
+        return m_dragPoint.y-viewport.y;
+    if(m_dragPoint.y >= viewport.y+viewport.h)
+        return m_dragPoint.y-(viewport.y+viewport.h-1);
+    return 0;
+}
+
+// The item at the viewport's height under the point (clamped into it), by
+// the height index from the scroll offset: right before the layout that
+// places the rows there too.
+LogView::RowId LogView::rowAtDrag(const Point &local) const
+{
+    const Rect &viewport=getViewport();
+    const HeightIndex &heights=getHeightIndex();
+
+    if(m_rows.empty() || heights.size() != m_rows.size() || viewport.h <= 0)
+        return NoRow;
+
+    const int y=gweni::clamp(local.y, viewport.y, viewport.y+viewport.h-1)-viewport.y;
+    const size_t item=heights.itemAt(static_cast<int64_t>(getVerticalScrollOffset())+y);
+
+    return m_rows[std::min(item, m_rows.size()-1)].id;
+}
+
+void LogView::stopAutoScroll()
+{
+#if GWENI_ANIMATE
+    if(!m_autoScroll)
+        return;
+
+    anim::cancel(this, m_autoScroll);
+    m_autoScroll=nullptr;
+#endif
+}
+
+// Each frame the view moves by the time since the last one (the canvas
+// clock, at most a tenth of a second of it) times the speed past the edge;
+// the whole units are scrolled, the rest kept for the next frame. A scroll up
+// detaches the view, one down to the end follows again; the selection's focus
+// goes to the row under the mouse in the new view.
+void LogView::autoScrollStep()
+{
+    const int overflow=dragOverflow();
+
+    if(!m_dragging || MouseFocus != this || overflow == 0)
+    {
+        stopAutoScroll();
+        return;
+    }
+
+    const float now=platform::getTimeInSeconds();
+    const float elapsed=std::min(std::max(now-m_autoScrollTime, 0.0f), 0.1f);
+    const float speed=AutoScrollBase+AutoScrollRate*static_cast<float>(std::abs(overflow));
+
+    m_autoScrollTime=now;
+    m_autoScrollCarry+=((overflow < 0)?-speed:speed)*elapsed;
+
+    const int step=static_cast<int>(m_autoScrollCarry);
+
+    m_autoScrollCarry-=static_cast<float>(step);
+    if(step == 0)
+        return;
+
+    if(step < 0)
+        setFollowing(false);
+    if(!m_following)
+    {
+        setVerticalScrollOffset(std::max(0, getVerticalScrollOffset()+step));
+        followIfAtEnd();
+    }
+
+    const RowId id=rowAtDrag(m_dragPoint);
+
+    if(id != NoRow)
+        extendSelectionTo(id);
+}
+
+// A right press selects the row under it unless it is selected already, so
+// the menu's Copy copies what was pressed; the menu is the view's, made once.
+void LogView::onMouseClickRight(int x, int y, bool down)
+{
+    if(!down)
+        return;
+
+    const RowId id=rowAt(Point(x, y));
+
+    if(id != NoRow && !isRowSelected(id))
+        selectRow(id);
+
+    if(!getContextMenu())
+    {
+        if(Menu *menu=createContextMenu())
+        {
+            m_copyItem=menu->addItem("Copy");
+            m_copyItem->setAction(this, &LogView::onCopy);
+            menu->addItem("Select all")->setAction(this, &LogView::onSelectAll);
+        }
+    }
+    if(m_copyItem)
+        m_copyItem->setDisabled(!hasSelection());
+}
+
+bool LogView::onKeyEscape(bool down)
+{
+    if(!hasSelection())
+        return false;
+    if(down)
+        clearSelection();
+    return true;
+}
+
+void LogView::onCopy(event::Info)
+{
+    copySelection();
+}
+
+void LogView::onSelectAll(event::Info)
+{
+    selectAll();
+}
+
+String LogView::rowText(RowId id) const
+{
+    const LogRow *row=getRow(id);
+
+    if(!row)
+        return String();
+
+    if(row->kind != LogRow::Block)
+        return row->text;
+
+    String text=row->text;
+
+    for(const String &line : row->lines)
+        text+="\n"+line;
+    return text;
+}
+
+size_t LogView::rowLength(RowId id) const
+{
+    return rowText(id).size();
+}
+
+size_t LogView::positionAtOrAfter(RowId id) const
+{
+    const auto found=std::lower_bound(m_rows.begin(), m_rows.end(), id,
+        [](const Entry &entry, RowId value) { return entry.id < value; });
+
+    return static_cast<size_t>(found-m_rows.begin());
+}
+
+void LogView::ordered(const SelectionRange &range, Position &low, Position &high)
+{
+    const bool forward=(range.anchor.row < range.focus.row)
+        || (range.anchor.row == range.focus.row && range.anchor.character <= range.focus.character);
+
+    low=forward?range.anchor:range.focus;
+    high=forward?range.focus:range.anchor;
+}
+
+void LogView::selectRow(RowId id)
+{
+    if(!hasRow(id))
+        return;
+
+    const SelectionRange range{Position{id, 0}, Position{id, rowLength(id)}};
+
+    if(m_selection.size() == 1 && m_selection[0].anchor == range.anchor && m_selection[0].focus == range.focus)
+        return;
+
+    m_selection.assign(1, range);
+    selectionChanged();
+}
+
+// Whole rows: the end further down the log takes the row's length, the one
+// further up character 0, so the range covers both rows whole either way.
+void LogView::extendSelectionTo(RowId id)
+{
+    if(!hasRow(id))
+        return;
+    if(m_selection.empty())
+    {
+        selectRow(id);
+        return;
+    }
+
+    SelectionRange &range=m_selection.back();
+    SelectionRange extended=range;
+
+    extended.focus.row=id;
+    if(id >= range.anchor.row)
+    {
+        extended.anchor.character=0;
+        extended.focus.character=rowLength(id);
+    }
+    else
+    {
+        extended.anchor.character=rowLength(range.anchor.row);
+        extended.focus.character=0;
+    }
+    if(extended.anchor.row == id)
+    {
+        extended.anchor.character=0;
+        extended.focus.character=rowLength(id);
+    }
+
+    if(extended.anchor == range.anchor && extended.focus == range.focus)
+        return;
+
+    range=extended;
+    selectionChanged();
+}
+
+// A row in a range splits it round the row: the held rows before it and
+// after it stay selected, as ranges of their own.
+void LogView::toggleRowSelected(RowId id)
+{
+    const size_t position=rowPosition(id);
+
+    if(position == NoItem)
+        return;
+
+    if(!isRowSelected(id))
+    {
+        m_selection.push_back(SelectionRange{Position{id, 0}, Position{id, rowLength(id)}});
+        selectionChanged();
+        return;
+    }
+
+    std::vector<SelectionRange> kept;
+
+    for(const SelectionRange &range : m_selection)
+    {
+        Position low, high;
+
+        ordered(range, low, high);
+        if(id < low.row || id > high.row)
+        {
+            kept.push_back(range);
+            continue;
+        }
+        if(low.row < id && position > 0)
+        {
+            const RowId before=m_rows[position-1].id;
+
+            kept.push_back(SelectionRange{low, Position{before, rowLength(before)}});
+        }
+        if(high.row > id && position+1 < m_rows.size())
+        {
+            const RowId after=m_rows[position+1].id;
+
+            kept.push_back(SelectionRange{Position{after, 0}, high});
+        }
+    }
+    m_selection=std::move(kept);
+    selectionChanged();
+}
+
+void LogView::selectAll()
+{
+    if(m_rows.empty())
+        return;
+
+    const RowId last=m_rows.back().id;
+
+    m_selection.assign(1, SelectionRange{Position{m_rows.front().id, 0}, Position{last, rowLength(last)}});
+    selectionChanged();
+}
+
+void LogView::clearSelection()
+{
+    if(m_selection.empty())
+        return;
+
+    m_selection.clear();
+    selectionChanged();
+}
+
+bool LogView::isRowSelected(RowId id) const
+{
+    for(const SelectionRange &range : m_selection)
+    {
+        Position low, high;
+
+        ordered(range, low, high);
+        if(id >= low.row && id <= high.row)
+            return true;
+    }
+    return false;
+}
+
+// Each row's selected span is the union of what each range covers of it: a
+// row inside a range whole, an endpoint row from or to its character.
+String LogView::getSelectedText() const
+{
+    std::map<size_t, std::pair<size_t, size_t>> spans;
+
+    for(const SelectionRange &range : m_selection)
+    {
+        Position low, high;
+
+        ordered(range, low, high);
+        for(size_t position=positionAtOrAfter(low.row);
+            position < m_rows.size() && m_rows[position].id <= high.row; ++position)
+        {
+            const RowId id=m_rows[position].id;
+            const size_t length=rowLength(id);
+            const size_t begin=(id == low.row)?std::min(low.character, length):0;
+            const size_t end=(id == high.row)?std::min(high.character, length):length;
+            auto found=spans.find(position);
+
+            if(found == spans.end())
+                spans.emplace(position, std::make_pair(begin, std::max(begin, end)));
+            else
+            {
+                found->second.first=std::min(found->second.first, begin);
+                found->second.second=std::max(found->second.second, end);
+            }
+        }
+    }
+
+    String text;
+    bool first=true;
+
+    for(const auto &span : spans)
+    {
+        if(!first)
+            text+="\n";
+        first=false;
+        text+=rowText(m_rows[span.first].id).substr(span.second.first, span.second.second-span.second.first);
+    }
+    return text;
+}
+
+bool LogView::copySelection()
+{
+    if(!hasSelection())
+        return false;
+
+    platform::setClipboardText(getSelectedText());
+    return true;
+}
+
+bool LogView::pruneSelection()
+{
+    if(m_selection.empty())
+        return false;
+
+    if(m_rows.empty())
+    {
+        m_selection.clear();
+        return true;
+    }
+
+    const RowId first=m_rows.front().id;
+    std::vector<SelectionRange> kept;
+    bool changed=false;
+
+    for(SelectionRange range : m_selection)
+    {
+        Position low, high;
+
+        ordered(range, low, high);
+
+        const size_t from=positionAtOrAfter(low.row);
+
+        // no row of it held any more
+        if(from >= m_rows.size() || m_rows[from].id > high.row)
+        {
+            changed=true;
+            continue;
+        }
+
+        // a low end the cap dropped: the first row held, from its start
+        if(low.row < first)
+        {
+            Position &end=(range.anchor == low)?range.anchor:range.focus;
+
+            end=Position{first, 0};
+            changed=true;
+        }
+        kept.push_back(range);
+    }
+    m_selection=std::move(kept);
+    return changed;
+}
+
+void LogView::selectionChanged()
+{
+    pruneSelection();
+    refreshRowSelection();
+    onSelectionChanged.call(this);
+}
+
+void LogView::refreshRowSelection()
+{
+    for(Base *control : getRows())
+    {
+        internal::LogViewRow *row=gweni_cast<internal::LogViewRow>(control);
+        const size_t position=itemForRow(control);
+
+        if(row && position != NoItem && position < m_rows.size())
+            row->setSelected(isRowSelected(m_rows[position].id));
+    }
 }
 
 void LogView::setFollowing(bool follow)
@@ -652,6 +1185,8 @@ void LogView::bindRow(Base *control, size_t position)
 
     const LogRow &content=m_rows[position].row;
     const RowKind *kind=rowKind(content.kind);
+
+    row->setSelected(isRowSelected(m_rows[position].id));
     const bool block=(content.kind == LogRow::Block);
     Base *shown=nullptr;
 

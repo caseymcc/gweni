@@ -22,6 +22,7 @@ namespace controls
 {
 
 class LogView;
+class MenuItem;
 
 //! One row of a LogView, as the app gives it. A plain row is its text,
 //! wrapped at the view's width; a block row (kind Block) is a title and its
@@ -104,6 +105,10 @@ public:
     LogViewChevron *getChevron() const { return m_chevron; }
     //! The content of the app's kind it shows, or null for a plain or block row.
     Base *getKindContent() const { return m_content; }
+    //! Whether the row it shows is selected: its renderer draws the
+    //! highlight over its bounds at getTextZIndex(), behind every glyph.
+    bool isSelected() const { return m_selected; }
+    int getTextZIndex() const { return m_text->getZIndex(); }
 
     void calculateSize(skin::Base *skin, Dim dim) override;
 
@@ -114,8 +119,12 @@ protected:
 private:
     friend class controls::LogView;
 
+    //! Marks StateChange_Background only on a change.
+    void setSelected(bool selected);
+
     LogView *m_view=nullptr;
     int m_kind=0;
+    bool m_selected=false;
     LogViewChevron *m_chevron=nullptr;
     //! The content shown, of m_contents.
     Base *m_content=nullptr;
@@ -254,8 +263,75 @@ public:
     //! coordinates; NoRow where none is.
     RowId rowAt(const Point &canvasPoint, Point *local=nullptr) const;
 
-    //! A press on a block's chevron or title line toggles it.
+    //! A selection endpoint: a row and a byte offset into its rowText().
+    struct Position
+    {
+        RowId row=NoRow;
+        size_t character=0;
+
+        bool operator==(const Position &other) const
+        {
+            return row == other.row && character == other.character;
+        }
+    };
+    //! A selected range, from the anchor (where it started) to the focus
+    //! (where Shift+click or a drag moved it), in either order. A whole row
+    //! is selected from character 0 to its rowText()'s length.
+    struct SelectionRange
+    {
+        Position anchor;
+        Position focus;
+    };
+
+    //! The text a row copies: a plain row's text, a block's title and every
+    //! line (collapsed or not), joined by '\n'; an app kind's text. Empty for
+    //! a row the view does not hold.
+    String rowText(RowId id) const;
+
+    //! The row alone (a click).
+    void selectRow(RowId id);
+    //! The last range's focus moved to the row, the rows between it and the
+    //! anchor selected (Shift+click, a drag); with no selection, selectRow().
+    void extendSelectionTo(RowId id);
+    //! The row out of the selection if it is in it, else in it as a range of
+    //! its own (Ctrl+click).
+    void toggleRowSelected(RowId id);
+    //! Every row (Ctrl+A), from the first to the last held now.
+    void selectAll();
+    //! Nothing selected (Escape).
+    void clearSelection();
+    bool hasSelection() const { return !m_selection.empty(); }
+    bool isRowSelected(RowId id) const;
+    //! The ranges, in the order they were made, the last one the one
+    //! Shift+click extends. Ranges keep their ids: rows dropped by the cap
+    //! or cleared leave the rows that remain, a replace clamps the characters
+    //! on that row (one at the row's end stays at its end).
+    const std::vector<SelectionRange> &getSelection() const { return m_selection; }
+    //! Each selected row's selected text, in row order, joined by '\n'.
+    String getSelectedText() const;
+    //! getSelectedText() on the clipboard (platform::setClipboardText):
+    //! Ctrl+C and the context menu's Copy. False with nothing selected.
+    bool copySelection();
+
+    //! A press on a block's chevron or title line toggles it; anywhere else
+    //! on a row it selects it, Shift extending the selection to it and Ctrl
+    //! toggling it, and a drag from there extends the selection to the row
+    //! under the mouse, scrolling past the viewport's top or bottom edge (a
+    //! scroll up detaches the view). A press under the last row clears it.
     void onMouseClickLeft(int x, int y, bool down) override;
+    void onMouseMoved(int x, int y, int deltaX, int deltaY) override;
+    //! A right press on a row not selected selects it; the context menu
+    //! (Copy, Select all) is made the first time.
+    void onMouseClickRight(int x, int y, bool down) override;
+    bool onKeyEscape(bool down) override;
+
+    //! The selection changed (a click, a key, a drag or the app's call).
+    gweni::event::Caller onSelectionChanged;
+
+    //! A drag past the viewport's edge scrolls AutoScrollBase plus
+    //! AutoScrollRate units a second per unit past it.
+    static constexpr float AutoScrollBase=60.0f;
+    static constexpr float AutoScrollRate=10.0f;
 
     //! Following, every layout keeps the last row's bottom at the viewport's
     //! bottom (VirtualList::setStickToEnd), appends included, in the frame
@@ -321,6 +397,30 @@ private:
     //! hides it.
     void updateJumpButton();
 
+    //! rowText()'s length.
+    size_t rowLength(RowId id) const;
+    //! The position of the first row the view holds at or after the id
+    //! (getRowCount() when none).
+    size_t positionAtOrAfter(RowId id) const;
+    //! A range's endpoints in row order.
+    static void ordered(const SelectionRange &range, Position &low, Position &high);
+    //! Ranges with no row held any more dropped, a low end the cap dropped
+    //! moved to the first row held. Whether it changed anything.
+    bool pruneSelection();
+    //! pruneSelection(), the rows on screen told, onSelectionChanged.
+    void selectionChanged();
+    //! Tells every pooled row on screen whether its row is selected.
+    void refreshRowSelection();
+    void onCopy(event::Info);
+    void onSelectAll(event::Info);
+    //! The item under a point in the view's coordinates, its y clamped into
+    //! the viewport; NoRow for none.
+    RowId rowAtDrag(const Point &local) const;
+    //! How far the drag point is past the viewport's top (< 0) or bottom.
+    int dragOverflow() const;
+    void autoScrollStep();
+    void stopAutoScroll();
+
     void bindRow(Base *row, size_t position);
     int measureRow(size_t position, int width);
     const RowKind *rowKind(LogRow::Kind kind) const;
@@ -338,6 +438,14 @@ private:
     bool m_following=true;
     size_t m_sinceDetached=0;
     internal::LogViewJumpButton *m_jump=nullptr;
+    std::vector<SelectionRange> m_selection;
+    //! A press on a row started a drag: the mouse is this view's.
+    bool m_dragging=false;
+    Point m_dragPoint;
+    anim::Animation *m_autoScroll=nullptr;
+    float m_autoScrollTime=0.0f;
+    float m_autoScrollCarry=0.0f;
+    MenuItem *m_copyItem=nullptr;
     //! getLineHeight()'s, and what it was measured with.
     int m_lineHeight=0;
     gweni::Font m_metricsFont;

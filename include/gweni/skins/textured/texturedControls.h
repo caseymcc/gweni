@@ -919,6 +919,19 @@ public:
     inline static const std::string_view name="LogView";
 };
 
+// A LogView's row: [0] the selection highlight over its bounds at its
+// text's z, behind every glyph (LogViewSelection), hidden while the row is
+// not selected; its Text draws the text, a block's chevron its icon.
+class LogViewRow:public textured::ControlRegister<LogViewRow>
+{
+public:
+    static void staticInit(TexturedSkin *) { m_staticInit=true; }
+
+    void update(renderer::Base *renderer, controls::Base *baseControl) override;
+
+    inline static const std::string_view name="LogViewRow";
+};
+
 // A LogView block row's chevron: [0] icon kind 1, right while the block is
 // collapsed and down while expanded, in the row's text colour.
 class LogViewChevron:public textured::ControlRegister<LogViewChevron>

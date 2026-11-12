@@ -112,6 +112,9 @@ inline Surface CodeSelection   { Color(0x28,0x34,0x57), Color(0x28,0x34,0x57), C
 // A LogView's field: a CodeEditor's (an inset, its border blue with the focus).
 inline Surface LogView         { BgDark,                BgDark,                Line,  RadiusSm, BorderW };
 inline Surface LogViewFocus    { BgDark,                BgDark,                Blue,  RadiusSm, BorderW };
+// A selected row, behind its glyphs (a TextBox's selection's colour, flat and
+// square).
+inline Surface LogViewSelection{ Color(0x28,0x34,0x57), Color(0x28,0x34,0x57), Color(0x28,0x34,0x57), 0.0f, 0.0f };
 
 // Menus
 inline Surface Menu           { Color(0x1f,0x22,0x33), Bg,                    Line,  Radius,   BorderW };
@@ -282,7 +285,7 @@ inline std::unordered_map<std::string, Surface*>& surfaceRegistry()
         {"TextBox",&TextBox},{"TextBoxFocus",&TextBoxFocus},{"TextBoxDisabled",&TextBoxDisabled},{"TextSelection",&TextSelection},
         {"CodeEditor",&CodeEditor},{"CodeEditorFocus",&CodeEditorFocus},{"CodeGutter",&CodeGutter},
         {"CodeCurrentLine",&CodeCurrentLine},{"CodeSelection",&CodeSelection},
-        {"LogView",&LogView},{"LogViewFocus",&LogViewFocus},
+        {"LogView",&LogView},{"LogViewFocus",&LogViewFocus},{"LogViewSelection",&LogViewSelection},
         {"Menu",&Menu},{"MenuStrip",&MenuStrip},{"MenuHover",&MenuHover},
         {"TabActive",&TabActive},{"TabInactive",&TabInactive},{"TabHover",&TabHover},{"TabControl",&TabControl},
         {"CategoryList",&CategoryList},{"CategoryInner",&CategoryInner},{"CategoryHeader",&CategoryHeader},

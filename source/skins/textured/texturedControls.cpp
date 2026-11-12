@@ -784,6 +784,25 @@ void LogView::update(renderer::Base *renderer, controls::Base *baseControl)
 }
 
 ///////////////////////////////////////////////////////////////////////////
+//LogViewRow
+// An unselected row's slot is hidden, not drawn transparent, which would
+// still write depth over the field behind it.
+void LogViewRow::update(renderer::Base *renderer, controls::Base *baseControl)
+{
+    if(m_primitives.empty())
+        return;
+
+    controls::internal::LogViewRow *row=static_cast<controls::internal::LogViewRow *>(baseControl);
+    const tokyonight::Surface &selection=tokyonight::LogViewSelection;
+
+    if(row->visible() && row->isSelected())
+        renderer->drawRoundedRect(m_primitives[0], row->getRenderBounds(), selection.radius, selection.borderWidth,
+            selection.top, selection.bottom, selection.border, row->getTextZIndex());
+    else
+        renderer->hidePrimitive(m_primitives[0]);
+}
+
+///////////////////////////////////////////////////////////////////////////
 //LogViewChevron
 // kind 1's directions: 0 down, 3 right; the chevron a square of 6/10 of the
 // smaller side, centred, as a menu item's.
@@ -3259,6 +3278,7 @@ template class ControlRegister<CodeLine>;
 template class ControlRegister<CodeGutter>;
 template class ControlRegister<LogView>;
 template class ControlRegister<LogViewChevron>;
+template class ControlRegister<LogViewRow>;
 template class ControlRegister<Selectable>;
 template class ControlRegister<Separator>;
 template class ControlRegister<Bullet>;
