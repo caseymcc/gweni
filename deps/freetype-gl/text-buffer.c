@@ -283,7 +283,8 @@ text_buffer_add_char( text_buffer_t * self,
         return;
     }
 
-    if( previous && markup->font->kerning )
+    /* gweni: a font with cells is not kerned */
+    if( previous && markup->font->kerning && font->cell_width <= 0 )
     {
         kerning = texture_glyph_get_kerning( glyph, previous );
         /* gweni: no pair across the faces of a glyph fallback chain (a pair
@@ -294,6 +295,18 @@ text_buffer_add_char( text_buffer_t * self,
                           texture_font_get_glyph( font, previous ) );
     }
     pen->x += kerning;
+
+    /* gweni: a font with cells draws the glyph centred in its cells
+     * (texture_font_cell_place) and moves the pen by them */
+    float cell_offset = 0.0f;
+    float cell_advance = 0.0f;
+
+    if( font->cell_width > 0 )
+    {
+        texture_font_cell_place( font, glyph, utf8_to_utf32( current ),
+                                 &cell_offset, &cell_advance );
+        pen->x += cell_offset;
+    }
 
     // Background
     if( markup->background_color.alpha > 0 )
@@ -487,7 +500,10 @@ text_buffer_add_char( text_buffer_t * self,
         icount += 6;
 
         vertex_buffer_push_back( buffer, vertices, vcount, indices, icount );
-        pen->x += glyph->advance_x * (1.0f + markup->spacing);
+        if( font->cell_width > 0 )
+            pen->x += cell_advance - cell_offset;
+        else
+            pen->x += glyph->advance_x * (1.0f + markup->spacing);
     }
 }
 

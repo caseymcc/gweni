@@ -393,6 +393,27 @@ typedef struct texture_font_t
      */
     vector_t * fallback_glyphs;
 
+    /**
+     * gweni: whether the face is fixed-width (FT_IS_FIXED_WIDTH), set when the
+     * font is made.
+     */
+    int fixed_width;
+
+    /**
+     * gweni: when > 0, the width of a terminal cell, in pixels at the font's
+     * size: text_buffer_add_char lays each codepoint in cells(codepoint) whole
+     * cells, with no kerning, its glyph placed by texture_font_cell_place. 0
+     * (the calloc default) lays glyphs by their own advances. Set it (and
+     * cells) only for a fixed_width font.
+     */
+    float cell_width;
+
+    /**
+     * gweni: the cells a codepoint takes when cell_width > 0 (a terminal's
+     * wcwidth: 2 for a wide one, 0 for a combining mark, 1 otherwise).
+     */
+    int (*cells)( uint32_t codepoint );
+
 } texture_font_t;
 
 
@@ -548,6 +569,22 @@ texture_glyph_get_kerning( const texture_glyph_t * self,
 float
 texture_glyph_get_kerning_glyph( const texture_glyph_t * self,
                                  const texture_glyph_t * previous );
+
+/**
+ * gweni: where a glyph goes in a font with cells (cell_width > 0): *advance
+ * is how far the pen moves, cells(codepoint)*cell_width, and *offset how far
+ * from the pen the glyph is drawn: its advance box centred in its cells; for
+ * a codepoint of no cells, centred over the cell before the pen, or at the
+ * pen if the glyph has no advance (a mark drawn from the origin). The offset
+ * is a whole pixel in a hinted font without subpixel positions, whose pens
+ * are whole pixels; text_buffer_add_char quantises the pen with it to
+ * 1/subpixel_positions px as it does any other.
+ */
+void
+texture_font_cell_place( const texture_font_t * self,
+                         const texture_glyph_t * glyph,
+                         uint32_t codepoint,
+                         float * offset, float * advance );
 
 
 /**

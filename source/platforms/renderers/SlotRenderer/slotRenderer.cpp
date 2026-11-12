@@ -36,6 +36,8 @@
 #include <freetype-gl/text-buffer.h>
 #include <freetype-gl/utf8-utils.h>
 
+#include <gweni/text/cells.h>
+
 #include <iostream>
 
 #include <imglib/imageIo.h>
@@ -118,6 +120,14 @@ ftgl::texture_glyph_t *FontData::glyph(const char *codepoint)
     if(loaded != nullptr)
         otherGlyphs.emplace(key, loaded);
     return loaded;
+}
+
+// texture_font_t::cells: a terminal's cells by codepoint (gweni::text::cellCount)
+extern "C" {
+static int fontCells(uint32_t codepoint)
+{
+    return gweni::text::cellCount(codepoint);
+}
 }
 
 // text_buffer_add_char's kerning of glyph against the previous codepoint: the
@@ -534,6 +544,18 @@ Font::Status SlotRenderer::loadFont(const Font &requested, float px)
         // chain's too
         attachGlyphChain(fontData);
         ftgl::texture_font_load_glyphs(fontData.markup.font, fontCache);
+
+        // A fixed-width face lays every codepoint in whole cells, a terminal's: one
+        // cell is the advance of '0' as this font loads it (whole px when hinted,
+        // the base size's unhinted one in an SDF font, scaled with the run)
+        if(fontData.markup.font->fixed_width)
+        {
+            if(ftgl::texture_glyph_t *zero=ftgl::texture_font_get_glyph(fontData.markup.font, "0"))
+            {
+                fontData.markup.font->cell_width=zero->advance_x;
+                fontData.markup.font->cells=&fontCells;
+            }
+        }
     }
 
     if(fontData.markup.font == nullptr)
@@ -3116,15 +3138,26 @@ SlotRenderer::PenWalk SlotRenderer::walkPens(FontData &fontData, float px, const
             continue;
         }
 
-        if(previous && font->kerning)
+        // a font with cells: no kerning, the glyph centred in its cells, the pen
+        // moved by them (texture_font_cell_place, as text_buffer_add_char)
+        float cellOffset=0.0f;
+        float advance=glyph->advance_x*s;
+
+        if(font->cell_width > 0.0f)
+        {
+            ftgl::texture_font_cell_place(font, glyph, ftgl::utf8_to_utf32(current), &cellOffset, &advance);
+            cellOffset*=s;
+            advance*=s;
+        }
+        else if(previous && font->kerning)
             pen+=kerning(fontData, glyph, previous)*s;
 
         // a coverage glyph's quad sits at the pen rounded to a whole pixel
         if(pens)
-            pens->push_back(sdf?pen:roundf(pen));
+            pens->push_back(sdf?pen+cellOffset:roundf(pen+cellOffset));
         if(glyphLines)
             glyphLines->push_back(lines-1);
-        pen+=glyph->advance_x*s;
+        pen+=advance;
         previous=current;
     }
     return PenWalk{ std::max(width, pen), lines };
@@ -3256,13 +3289,23 @@ gweni::Point SlotRenderer::layoutSdfText(FontData &fontData, float px, const gwe
         if(glyph == nullptr)
             continue;
 
-        if(previous && font->kerning)
+        // a font with cells: no kerning, the glyph centred in its cells
+        float cellOffset=0.0f;
+        float advance=glyph->advance_x*s;
+
+        if(font->cell_width > 0.0f)
+        {
+            ftgl::texture_font_cell_place(font, glyph, ftgl::utf8_to_utf32(current), &cellOffset, &advance);
+            cellOffset*=s;
+            advance*=s;
+        }
+        else if(previous && font->kerning)
             pen+=kerning(fontData, glyph, previous)*s;
 
         if(vertexes)
         {
             // the glyph's field, its spread padding included, scaled about the pen
-            const float x0=pen+glyph->offset_x*s;
+            const float x0=pen+cellOffset+glyph->offset_x*s;
             const float x1=x0+glyph->width*s;
             const float y0=baseline+glyph->offset_y*s;
             const float y1=y0-glyph->height*s;
@@ -3278,7 +3321,7 @@ gweni::Point SlotRenderer::layoutSdfText(FontData &fontData, float px, const gwe
             vertexes->insert(vertexes->end(), quad, quad+4);
         }
 
-        pen+=glyph->advance_x*s;
+        pen+=advance;
         previous=current;
     }
     width=std::max(width, pen);

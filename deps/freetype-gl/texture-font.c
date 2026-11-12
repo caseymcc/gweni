@@ -188,6 +188,30 @@ texture_glyph_get_kerning_glyph( const texture_glyph_t * self,
 }
 
 
+// ------------------------------------------------ texture_font_cell_place ---
+void
+texture_font_cell_place( const texture_font_t * self,
+                         const texture_glyph_t * glyph,
+                         uint32_t codepoint,
+                         float * offset, float * advance )
+{
+    const int n = self->cells ? self->cells( codepoint ) : 1;
+    float x;
+
+    assert( self && glyph && offset && advance );
+    *advance = n * self->cell_width;
+    if( n > 0 )
+        x = ( *advance - glyph->advance_x ) / 2.0f;
+    else if( glyph->advance_x > 0 )
+        x = -( self->cell_width + glyph->advance_x ) / 2.0f;
+    else
+        x = 0.0f;
+    if( self->hinting && self->subpixel_positions <= 1 )
+        x = roundf( x );
+    *offset = x;
+}
+
+
 // ------------------------------------------ texture_font_generate_kerning ---
 void
 texture_font_generate_kerning( texture_font_t *self,
@@ -291,6 +315,7 @@ texture_font_init(texture_font_t *self)
     self->descender = (metrics.descender >> 6) / 100.0;
     self->height = (metrics.height >> 6) / 100.0;
     self->linegap = self->height - self->ascender + self->descender;
+    self->fixed_width = FT_IS_FIXED_WIDTH( face ) ? 1 : 0;
     FT_Done_Face( face );
     FT_Done_FreeType( library );
 

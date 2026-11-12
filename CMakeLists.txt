@@ -134,6 +134,9 @@ set(GWENI_SOURCES
     source/primitiveIds.cpp
     include/gweni/skin.h
     source/skin.cpp
+    include/gweni/text/cells.h
+    source/text/cells.cpp
+    source/text/cellWidthTable.inc
     include/gweni/text/document.h
     source/text/document.cpp
     include/gweni/text/undoStack.h
