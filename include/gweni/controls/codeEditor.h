@@ -48,6 +48,16 @@ public:
     //! The z its glyphs are drawn in front of, and its selection rect at.
     int getTextZIndex() const { return m_text->getZIndex(); }
 
+    //! The cells of the line the editor's selection covers, [begin, end):
+    //! the end is one cell past the last glyph when the line's end (its
+    //! line break) is selected; begin == end when it covers none.
+    size_t getSelectionBegin() const { return m_selectionBegin; }
+    size_t getSelectionEnd() const { return m_selectionEnd; }
+    //! The selection's rect in the row's coordinates, a line high from the
+    //! begin cell's x to the end cell's (CodeEditor::columnX); empty when the
+    //! line has none.
+    Rect getSelectionRect() const;
+
     void calculateSize(skin::Base *skin, Dim dim) override;
 
 protected:
@@ -60,6 +70,7 @@ private:
     //! Shows the line, with the text it holds now.
     void bind(size_t line, const String &text);
     void setCurrent(bool current);
+    void setSelection(size_t begin, size_t end);
     //! The editor's font changed (in place): the run is laid out again.
     void fontChanged();
 
@@ -67,6 +78,8 @@ private:
     CodeEditor *m_editor=nullptr;
     size_t m_line=NoLine;
     bool m_current=false;
+    size_t m_selectionBegin=0;
+    size_t m_selectionEnd=0;
 };
 
 //! A multi-line editor of monospace text in which only the lines on screen
@@ -216,8 +229,26 @@ public:
     void onKeyboardFocus() override;
     void onLostKeyboardFocus() override;
     //! A press puts the caret at the nearest caret stop (Shift: extends the
-    //! selection to it).
+    //! selection to it) and starts a drag: while the button is held the
+    //! caret follows the mouse with the anchor kept, and with the mouse past
+    //! an edge of the viewport the view scrolls on the canvas clock
+    //! (AutoScrollBase plus AutoScrollRate units a second per unit past the
+    //! edge), the caret with it, until the mouse comes back in or the button
+    //! is let go.
     void onMouseClickLeft(int x, int y, bool down) override;
+    void onMouseMoved(int x, int y, int deltaX, int deltaY) override;
+    //! Selects the word under the mouse (letters, digits, '_' and every
+    //! non-ASCII codepoint), or the run of punctuation or of blanks there.
+    void onMouseDoubleClickLeft(int x, int y) override;
+
+    //! Units a second the view scrolls by while a drag holds the mouse past
+    //! the viewport's edge, plus AutoScrollRate times how far past it is.
+    static constexpr float AutoScrollBase=60.0f;
+    static constexpr float AutoScrollRate=10.0f;
+    //! Whether that scroll runs (its animation is registered).
+    bool isAutoScrolling() const { return m_autoScroll != nullptr; }
+    //! One frame of it (its animation's).
+    void autoScrollStep();
 
 protected:
     void contentsPlaced(skin::Base *skin) override;
@@ -240,15 +271,27 @@ private:
     //! Moves the caret (and the anchor too unless \p extend), keeping
     //! m_goalColumn unless \p keepGoal is false; updates the rows' current
     //! line, lights the caret and puts it in view.
-    void moveCaret(const text::Position &position, bool extend, bool keepGoal=false);
+    void moveCaret(const text::Position &position, bool extend, bool keepGoal=false, bool reveal=true);
     //! The caret moved or the view scrolled: the caret is drawn again.
     void caretChanged();
     void makeCaretVisible();
     //! Each shown row's current-line look, from the caret's line.
     void syncCurrentLine();
+    //! The cells of line \p line the selection covers (see CodeLine).
+    void lineSelection(size_t line, size_t &begin, size_t &end) const;
+    //! Each shown row's selection span, from the selection; nothing to do
+    //! while there is none and none was shown.
+    void syncSelection();
+    //! How far the drag point is past the viewport's edges, in units: <0
+    //! before, >0 after, 0 inside, per axis.
+    Point dragOverflow() const;
+    void stopAutoScroll();
     //! The caret stop \p cells cells into \p line (before a wide glyph it
     //! falls inside).
     text::Position atColumn(size_t line, size_t cells) const;
+    //! The start of the glyph under a point in the editor's coordinates
+    //! (positionAt's line, the cell the point is in).
+    text::Position glyphAt(const Point &local) const;
     //! The positions one word to the left and right of \p position.
     text::Position wordLeft(const text::Position &position) const;
     text::Position wordRight(const text::Position &position) const;
@@ -289,6 +332,14 @@ private:
     internal::CaretBlink m_caretBlink;
     //! The scroll the caret was last drawn at.
     int m_caretScroll[2]={-1, -1};
+    //! Some row was given a selection span since the selection was last empty.
+    bool m_selectionShown=false;
+    //! The mouse while a drag holds it, in the editor's coordinates.
+    Point m_dragPoint;
+    anim::Animation *m_autoScroll=nullptr;
+    float m_autoScrollTime=0.0f;
+    //! The units of auto-scroll not scrolled yet, per axis.
+    float m_autoScrollCarry[2]={0.0f, 0.0f};
 
     float m_cellWidth=0.f;
     int m_lineHeight=0;

@@ -792,7 +792,19 @@ void CodeLine::update(renderer::Base *renderer, controls::Base *baseControl)
     else
         renderer->hidePrimitive(m_primitives[0]);
 
-    renderer->hidePrimitive(m_primitives[1]);
+    const Rect local=line->getSelectionRect();
+    const tokyonight::Surface &selection=tokyonight::CodeSelection;
+
+    if(line->visible() && local.w > 0 && local.h > 0)
+    {
+        const Rect &bounds=line->getRenderBounds();
+
+        renderer->drawRoundedRect(m_primitives[1], Rect(bounds.x+local.x, bounds.y+local.y, local.w, local.h),
+            selection.radius, selection.borderWidth, selection.top, selection.bottom, selection.border,
+            line->getTextZIndex());
+    }
+    else
+        renderer->hidePrimitive(m_primitives[1]);
 }
 
 ///////////////////////////////////////////////////////////////////////////

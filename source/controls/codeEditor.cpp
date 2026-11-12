@@ -6,6 +6,7 @@
 
 
 #include <gweni/controls/codeEditor.h>
+#include <gweni/anim.h>
 #include <gweni/controls/canvas.h>
 #include <gweni/inputHandler.h>
 #include <gweni/platforms/baseRender.h>
@@ -50,6 +51,30 @@ void CodeLine::setCurrent(bool current)
 
     m_current=current;
     addStateChange(StateChange_Background);
+}
+
+void CodeLine::setSelection(size_t begin, size_t end)
+{
+    if(end <= begin)
+        begin=end=0;
+
+    if(m_selectionBegin == begin && m_selectionEnd == end)
+        return;
+
+    m_selectionBegin=begin;
+    m_selectionEnd=end;
+    addStateChange(StateChange_Background);
+}
+
+Rect CodeLine::getSelectionRect() const
+{
+    if(!m_editor || m_selectionEnd <= m_selectionBegin)
+        return Rect();
+
+    const int x0=m_editor->columnX(m_selectionBegin);
+    const int x1=m_editor->columnX(m_selectionEnd);
+
+    return Rect(x0, 0, x1-x0, getHeight());
 }
 
 void CodeLine::fontChanged()
@@ -220,6 +245,12 @@ void CodeEditor::bindRow(Base *row, size_t line)
 
     codeLine->bind(line, m_document.line(line));
     codeLine->setCurrent(line == m_caret.line);
+
+    size_t begin=0;
+    size_t end=0;
+
+    lineSelection(line, begin, end);
+    codeLine->setSelection(begin, end);
 }
 
 void CodeEditor::addWidth(size_t cells)
@@ -299,6 +330,7 @@ void CodeEditor::linesChanged(const text::LineChange &change)
     shift(m_anchor);
     m_caretColumn=text::stringCells(m_document.line(m_caret.line), 0, m_caret.byte);
     syncCurrentLine();
+    syncSelection();
     caretChanged();
 
     const size_t replaced=std::min(change.removed, change.inserted);
@@ -340,7 +372,7 @@ void CodeEditor::setCaret(const text::Position &position, bool extend)
     moveCaret(position, extend);
 }
 
-void CodeEditor::moveCaret(const text::Position &position, bool extend, bool keepGoal)
+void CodeEditor::moveCaret(const text::Position &position, bool extend, bool keepGoal, bool reveal)
 {
     const size_t oldLine=m_caret.line;
 
@@ -355,9 +387,56 @@ void CodeEditor::moveCaret(const text::Position &position, bool extend, bool kee
     if(oldLine != m_caret.line)
         syncCurrentLine();
 
+    syncSelection();
     m_caretBlink.keepLit(this);
-    makeCaretVisible();
+    if(reveal)
+        makeCaretVisible();
     caretChanged();
+}
+
+// A line inside the selection is covered from its begin's cell (0 below the
+// first line) to its end's, or past its last glyph by one cell when its line
+// break is selected too (every line but the last one of the selection).
+void CodeEditor::lineSelection(size_t line, size_t &begin, size_t &end) const
+{
+    begin=end=0;
+
+    if(!hasSelection())
+        return;
+
+    const text::Range range=getSelection();
+
+    if(line < range.begin.line || line > range.end.line || line >= m_document.lineCount())
+        return;
+
+    const String &text=m_document.line(line);
+
+    begin=(line == range.begin.line)?text::stringCells(text, 0, range.begin.byte):0;
+    end=(line == range.end.line)?text::stringCells(text, 0, range.end.byte):getLineCells(line)+1;
+}
+
+void CodeEditor::syncSelection()
+{
+    const bool any=hasSelection();
+
+    if(!any && !m_selectionShown)
+        return;
+
+    m_selectionShown=any;
+
+    for(size_t i=0; i < poolSize(); ++i)
+    {
+        CodeLine *row=gweni_cast<CodeLine>(poolRow(i));
+        size_t begin=0;
+        size_t end=0;
+
+        if(!row)
+            continue;
+
+        if(poolItem(i) != NoItem)
+            lineSelection(poolItem(i), begin, end);
+        row->setSelection(begin, end);
+    }
 }
 
 void CodeEditor::caretChanged()
@@ -452,6 +531,19 @@ text::Position CodeEditor::positionAt(const Point &local) const
     const double x=static_cast<double>(local.x)-viewport.x+getHorizontalScrollOffset()-TextInset;
 
     return text::Position{line, text::byteNearestCell(m_document.line(line), x/m_cellWidth)};
+}
+
+text::Position CodeEditor::glyphAt(const Point &local) const
+{
+    const text::Position line=positionAt(local);
+
+    if(m_cellWidth <= 0.f)
+        return line;
+
+    const double x=static_cast<double>(local.x)-getViewport().x+getHorizontalScrollOffset()-TextInset;
+    const size_t cell=static_cast<size_t>(std::max(0.0, std::floor(x/m_cellWidth)));
+
+    return text::Position{line.line, text::byteAtCell(m_document.line(line.line), cell)};
 }
 
 void CodeEditor::updateCaretBlink()
@@ -734,11 +826,156 @@ void CodeEditor::onMouseClickLeft(int x, int y, bool down)
 {
     if(down)
     {
-        moveCaret(positionAt(canvasPosToLocal(Point(x, y))), input::isShiftDown());
+        m_dragPoint=canvasPosToLocal(Point(x, y));
+        moveCaret(positionAt(m_dragPoint), input::isShiftDown());
         MouseFocus=this;
     }
     else if(MouseFocus == this)
+    {
         MouseFocus=nullptr;
+        stopAutoScroll();
+    }
+}
+
+// The caret follows the mouse; past the viewport's edge the auto-scroll moves
+// the view, so the move itself scrolls nothing (no makeCaretVisible).
+void CodeEditor::onMouseMoved(int x, int y, int deltaX, int deltaY)
+{
+    ParentClass::onMouseMoved(x, y, deltaX, deltaY);
+
+    if(MouseFocus != this)
+        return;
+
+    m_dragPoint=canvasPosToLocal(Point(x, y));
+    moveCaret(positionAt(m_dragPoint), true, false, false);
+
+    const Point overflow=dragOverflow();
+
+    if((overflow.x != 0 || overflow.y != 0) && !m_autoScroll)
+    {
+#if GWENI_ANIMATE
+        class AutoScroll: public anim::Animation
+        {
+        public:
+            void think() override
+            {
+                static_cast<CodeEditor *>(m_control)->autoScrollStep();
+            }
+        };
+
+        m_autoScrollTime=platform::getTimeInSeconds();
+        m_autoScrollCarry[0]=m_autoScrollCarry[1]=0.0f;
+        m_autoScroll=new AutoScroll();
+        anim::add(this, m_autoScroll);
+#endif
+    }
+}
+
+Point CodeEditor::dragOverflow() const
+{
+    const Rect &viewport=getViewport();
+    Point overflow;
+
+    if(m_dragPoint.x < viewport.x)
+        overflow.x=m_dragPoint.x-viewport.x;
+    else if(m_dragPoint.x >= viewport.x+viewport.w)
+        overflow.x=m_dragPoint.x-(viewport.x+viewport.w-1);
+
+    if(m_dragPoint.y < viewport.y)
+        overflow.y=m_dragPoint.y-viewport.y;
+    else if(m_dragPoint.y >= viewport.y+viewport.h)
+        overflow.y=m_dragPoint.y-(viewport.y+viewport.h-1);
+
+    return overflow;
+}
+
+void CodeEditor::stopAutoScroll()
+{
+#if GWENI_ANIMATE
+    if(!m_autoScroll)
+        return;
+
+    anim::cancel(this, m_autoScroll);
+    m_autoScroll=nullptr;
+#endif
+}
+
+// Each frame the view moves by the time since the last one (the canvas clock,
+// at most a tenth of a second of it) times the speed past each edge; the
+// whole units are scrolled, the rest kept for the next frame. The caret goes
+// to the point under the mouse in the new view, the anchor kept.
+void CodeEditor::autoScrollStep()
+{
+    const Point overflow=dragOverflow();
+
+    if(MouseFocus != this || (overflow.x == 0 && overflow.y == 0))
+    {
+        stopAutoScroll();
+        return;
+    }
+
+    const float now=platform::getTimeInSeconds();
+    const float elapsed=std::min(std::max(now-m_autoScrollTime, 0.0f), 0.1f);
+
+    m_autoScrollTime=now;
+
+    const int distance[2]={overflow.x, overflow.y};
+    int step[2]={0, 0};
+
+    for(int axis=0; axis < 2; ++axis)
+    {
+        if(distance[axis] == 0)
+        {
+            m_autoScrollCarry[axis]=0.0f;
+            continue;
+        }
+
+        const float speed=AutoScrollBase+AutoScrollRate*static_cast<float>(std::abs(distance[axis]));
+
+        m_autoScrollCarry[axis]+=((distance[axis] < 0)?-speed:speed)*elapsed;
+        step[axis]=static_cast<int>(m_autoScrollCarry[axis]);
+        m_autoScrollCarry[axis]-=static_cast<float>(step[axis]);
+    }
+
+    if(step[1] != 0)
+        setVerticalScrollOffset(std::max(0, getVerticalScrollOffset()+step[1]));
+    if(step[0] != 0)
+        setHorizontalScrollOffset(gweni::clamp(getHorizontalScrollOffset()+step[0], 0,
+            getMaxHorizontalScrollOffset()));
+
+    if(step[0] != 0 || step[1] != 0)
+        moveCaret(positionAt(m_dragPoint), true, false, false);
+}
+
+// The word, punctuation run or blank run the press is on (the one before it
+// at a line's end).
+void CodeEditor::onMouseDoubleClickLeft(int x, int y)
+{
+    const text::Position at=glyphAt(canvasPosToLocal(Point(x, y)));
+    const String &line=m_document.line(at.line);
+
+    if(line.empty())
+    {
+        moveCaret(at, false);
+        return;
+    }
+
+    size_t probe=at.byte;
+
+    if(probe >= line.size())
+        probe=text::prevCaretStop(line, line.size());
+
+    const CharClass run=charClass(text::utf8CodepointAt(line, probe));
+    size_t begin=probe;
+    size_t end=text::nextCaretStop(line, probe);
+
+    while(begin > 0 && charClass(text::utf8CodepointAt(line, text::prevCaretStop(line, begin))) == run)
+        begin=text::prevCaretStop(line, begin);
+    while(end < line.size() && charClass(text::utf8CodepointAt(line, end)) == run)
+        end=text::nextCaretStop(line, end);
+
+    moveCaret(text::Position{at.line, begin}, false);
+    moveCaret(text::Position{at.line, end}, true);
 }
 
 void CodeEditor::onCopy(event::Info)
