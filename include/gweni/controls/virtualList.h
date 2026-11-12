@@ -13,10 +13,16 @@
 
 #include <cstdint>
 #include <functional>
+#include <string>
 #include <vector>
 
 namespace gweni
 {
+namespace anim
+{
+class Animation;
+}
+
 namespace controls
 {
 
@@ -24,6 +30,8 @@ class VirtualList;
 
 namespace internal
 {
+
+class VirtualListRemeasure;
 
 //! The row a VirtualList makes when no row factory is set: a Selectable that
 //! highlights while hovered and pressed but never stays selected (a row is
@@ -159,6 +167,16 @@ public:
     //! The generation the items on screen are measured at; it goes up by one
     //! with each new width.
     uint32_t getMeasureGeneration() const { return m_generation; }
+    //! Items measured a frame, in the update phase, while any is not measured
+    //! at this generation (a new width, items added or never shown): from
+    //! the item at the top down, then from the first, until every item is.
+    //! Each frame's new heights move the offset and the thumb, not the rows
+    //! on screen, and once every item is measured nothing runs. 0 measures
+    //! only what shows. Default 64.
+    void setRemeasureBudget(size_t items);
+    size_t getRemeasureBudget() const { return m_remeasureBudget; }
+    //! Whether that idle re-measure runs (an animation is registered).
+    bool isRemeasuring() const { return m_remeasure != nullptr; }
 
     //! Replaces the factory (a null one gives back the default VirtualListRow);
     //! the pool is made again by the next layout.
@@ -202,6 +220,11 @@ public:
     void setWheelRows(int rows) { m_wheelRows=rows; }
     bool onMouseWheeled(int iDelta) override;
 
+    //! In variable mode, a shown row whose laid-out height (its bounds, or
+    //! the height it asks for itself) is not its item's measure: the
+    //! measurer and the row disagree.
+    void verifyOwnLayout(std::vector<std::string> &problems) override;
+
     //! A default row (VirtualListRow) was pressed: the item's index is the
     //! info's `integer`, the row its `control`.
     gweni::event::Caller onItemPressed;
@@ -218,6 +241,7 @@ private:
     };
 
     friend class internal::VirtualListRow;
+    friend class internal::VirtualListRemeasure;
 
     void updateContentHeight();
     void clearPool();
@@ -240,6 +264,12 @@ private:
     //! Sets the scroll offset from the anchor, at the last layout's viewport
     //! (after an edit outside layout).
     void offsetFromAnchor();
+    //! Registers the idle re-measure if an item is not measured at this
+    //! generation and it does not run yet; stops it otherwise.
+    void updateRemeasure();
+    //! One frame of the idle re-measure: up to the budget's items measured.
+    //! Whether every item is measured now.
+    bool remeasureStep();
     //! The row shows another item, or none: it gives up the mouse and the focus.
     void releaseRow(Base *control);
     void rowPressed(Base *row);
@@ -283,6 +313,10 @@ private:
     bool m_anchorToEnd=false;
     //! The tops of the items in view in the viewport, from the first.
     std::vector<int> m_viewTops;
+    size_t m_remeasureBudget=64;
+    //! Where the idle re-measure goes on from.
+    size_t m_remeasureCursor=0;
+    anim::Animation *m_remeasure=nullptr;
     bool m_autoHideBefore=true;
 };
 

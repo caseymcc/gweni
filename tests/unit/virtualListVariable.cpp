@@ -25,6 +25,8 @@
 #include "headlessFixture.h"
 
 #include <gweni/controls/verticalScrollBar.h>
+#include <gweni/anim.h>
+#include <gweni/controls/text.h>
 #include <gweni/controls/virtualList.h>
 #include <gweni/inputHandler.h>
 
@@ -46,6 +48,13 @@ constexpr int RowHeight=20;
 int itemHeight(size_t index)
 {
     return 10+static_cast<int>((index*37)%41);
+}
+
+//! What a narrower list adds to every item, so a width change changes the
+//! heights.
+int widthBonus(int width)
+{
+    return width < 150?7:0;
 }
 
 struct Scene
@@ -88,8 +97,10 @@ struct Scene
                 {
                     widths.insert(width);
                     ++measures;
-                    return heights.at(index);
+                    return heights.at(index)+widthBonus(width);
                 });
+        // the cases below that pin offsets turn it on themselves
+        list->setRemeasureBudget(0);
         insert(0, count);
         if(layOut)
             frame();
@@ -121,6 +132,12 @@ struct Scene
     {
         heights.at(index)=height;
         list->itemChanged(index);
+    }
+
+    //! The height the measurer gives the item at the list's width now.
+    int measured(size_t index) const
+    {
+        return heights.at(index)+widthBonus(list->getMeasureWidth());
     }
 
     Scene(const Scene &)=delete;
@@ -221,10 +238,10 @@ void checkView(Scene &s)
         CHECK(!row->hidden());
         CHECK(list->itemForRow(row) == item);
         CHECK(s.boundTo[row] == s.ids[item]);
-        CHECK(index.height(item) == s.heights[item]);
+        CHECK(index.height(item) == s.measured(item));
         CHECK(index.generation(item) == list->getMeasureGeneration());
         CHECK(row->getY() == static_cast<int>(index.offsetOf(item)-offset));
-        CHECK(row->getHeight() == s.heights[item]);
+        CHECK(row->getHeight() == s.measured(item));
         CHECK(row->getWidth() == list->getInnerPanel()->getWidth());
         expected.insert(row);
     }
@@ -748,6 +765,9 @@ TEST_CASE("VirtualList variable: random edits, scrolls and sticks keep the view 
     Scene s(300, 150);
     std::mt19937 rng(7);
 
+    // the idle re-measure on, and now and then a new width
+    s.list->setRemeasureBudget(16);
+
     for(int step=0; step < 400; ++step)
     {
         CAPTURE(step);
@@ -772,7 +792,11 @@ TEST_CASE("VirtualList variable: random edits, scrolls and sticks keep the view 
         else if(op == 5)
             s.list->scrollToItem(rng()%count);
         else if(op == 6)
+        {
             s.list->setStickToEnd(rng()%3 == 0);
+            if(rng()%2)
+                s.list->setWidth(120+static_cast<int>(rng()%81));
+        }
         else
             s.list->onMouseWheeled((rng()%2)?60:-60);
 
@@ -837,4 +861,207 @@ TEST_CASE("VirtualList fixed: inserts and removals above the top keep the rows o
     CHECK(s.list->getVerticalScrollOffset() == s.list->getMaxVerticalScrollOffset());
     CHECK(s.list->rowForItem(s.heights.size()-1)->bottom() == s.list->getViewportHeight());
     s.checkOnePass();
+}
+
+TEST_CASE("VirtualList variable: a new width measures the rows on screen at once and keeps the top in place")
+{
+    Scene s(1000);
+    const controls::HeightIndex &index=s.list->getHeightIndex();
+
+    s.list->setVerticalScrollOffset(static_cast<int>(index.offsetOf(300))+5);
+    s.frame();
+
+    const uint32_t generation=s.list->getMeasureGeneration();
+    const size_t anchorId=s.ids[s.list->getAnchorItem()];
+
+    REQUIRE(s.list->rowForItem(s.list->getAnchorItem())->getY() == -5);
+
+    // narrower: the bonus is added to every item measured at it
+    s.list->setWidth(140);
+    s.frame();
+    REQUIRE(widthBonus(s.list->getMeasureWidth()) > 0);
+    CHECK(s.list->getMeasureGeneration() == generation+1);
+    CHECK(s.list->getMeasureWidth() == s.list->getInnerPanel()->getWidth());
+    // every row on screen measured at the new width (checkView), the top kept
+    checkView(s);
+    CHECK(s.ids[s.list->getAnchorItem()] == anchorId);
+    CHECK(s.list->rowForItem(s.list->getAnchorItem())->getY() == -5);
+    // the items off screen were not measured: one counter bumped, no walk
+    CHECK(index.generation(0) < s.list->getMeasureGeneration());
+    CHECK(index.minGeneration() < s.list->getMeasureGeneration());
+
+    // and back
+    s.list->setWidth(200);
+    s.frame();
+    checkView(s);
+    CHECK(s.list->getMeasureGeneration() == generation+2);
+    CHECK(s.list->rowForItem(s.list->getAnchorItem())->getY() == -5);
+    s.checkOnePass();
+}
+
+TEST_CASE("VirtualList variable: the idle re-measure measures a budget a frame, moves nothing on screen and stops")
+{
+    const bool stuck=GENERATE(false, true);
+    Scene s(1000);
+    const controls::HeightIndex &index=s.list->getHeightIndex();
+
+    CAPTURE(stuck);
+    s.list->setStickToEnd(stuck);
+    if(!stuck)
+        s.list->setVerticalScrollOffset(static_cast<int>(index.offsetOf(300))+5);
+    s.frame();
+    CHECK(!s.list->isRemeasuring());
+
+    // all but the items on screen have never been measured
+    auto runToEnd=[&](size_t budget)
+    {
+        const std::map<size_t, Shown> shown=shownById(s);
+        size_t stale=0;
+
+        for(size_t i=0; i < index.size(); ++i)
+            stale+=index.generation(i) != s.list->getMeasureGeneration();
+        REQUIRE(stale > 0);
+
+        s.list->setRemeasureBudget(budget);
+        CHECK(s.list->isRemeasuring());
+
+        size_t frames=0;
+
+        while(s.list->isRemeasuring())
+        {
+            const size_t before=s.measures;
+
+            s.frame();
+            ++frames;
+            REQUIRE(frames < 100);
+            CHECK(s.measures-before <= budget);
+            // nothing on screen moves, the offset and the thumb do
+            CHECK(shownById(s) == shown);
+            if(stuck)
+                checkAtEnd(s);
+            else
+                checkView(s);
+        }
+        CHECK(frames == (stale+budget-1)/budget);
+
+        // every item measured at this width: the content is their sum
+        CHECK(index.minGeneration() == s.list->getMeasureGeneration());
+
+        int64_t sum=0;
+
+        for(size_t i=0; i < index.size(); ++i)
+        {
+            CHECK(index.height(i) == s.measured(i));
+            sum+=s.measured(i);
+        }
+        CHECK(index.totalHeight() == sum);
+        CHECK(s.list->getVirtualContentHeight() == sum);
+
+        // then it stops: a settled frame runs, measures and lays out nothing
+        const size_t before=s.measures;
+
+        s.frame();
+        CHECK(s.measures == before);
+        CHECK(anim::activeCount(s.list) == 0);
+        CHECK(s.canvas->getLayoutStats().passes == 0);
+        CHECK(s.canvas->getUpdateStats().animsRun == 0);
+    };
+
+    runToEnd(64);
+
+    // a new width: the rows on screen at once, the rest by the re-measure
+    s.list->setWidth(140);
+    s.frame();
+    REQUIRE(widthBonus(s.list->getMeasureWidth()) > 0);
+    runToEnd(100);
+    s.checkOnePass();
+}
+
+TEST_CASE("VirtualList variable: with no budget only what shows is measured")
+{
+    Scene s(1000);
+
+    s.frame();
+    s.frame();
+    CHECK(!s.list->isRemeasuring());
+    CHECK(s.list->getHeightIndex().minGeneration() == 0);
+
+    // and given one, it starts
+    s.list->setRemeasureBudget(64);
+    CHECK(s.list->isRemeasuring());
+    s.list->setRemeasureBudget(0);
+    CHECK(!s.list->isRemeasuring());
+}
+
+TEST_CASE("VirtualList variable: layout verification reports a row its measurer disagrees with")
+{
+    test::StubRenderer renderer;
+    test::StubSkin skin{&renderer};
+    controls::Canvas *canvas=new controls::Canvas(&skin);
+    std::map<controls::Base *, controls::internal::Text *> texts;
+    std::vector<String> strings;
+
+    for(size_t i=0; i < 200; ++i)
+        strings.push_back(std::string(5+(i*13)%90, 'x')+" some words to wrap here "+std::to_string(i));
+
+    canvas->setSize(400, 600);
+
+    auto *list=canvas->newChild<controls::VirtualList>();
+
+    list->setBounds(0, 0, 200, 300);
+    list->setRemeasureBudget(0);
+    list->setRowFactory([&texts](controls::Base *parent)
+        {
+            controls::Base *row=parent->newChild<controls::Base>();
+            auto *text=row->newChild<controls::internal::Text>();
+
+            text->setWrap(true);
+            texts[row]=text;
+            return row;
+        });
+    list->setRowBinder([&](controls::Base *row, size_t index) { texts.at(row)->setText(strings.at(index)); });
+
+    int lie=0;
+
+    list->setItemMeasurer([&](size_t index, int width)
+        {
+            return list->wrappedTextHeight(skin.getDefaultFont(), strings.at(index), width)+lie;
+        });
+    list->setItemCount(strings.size());
+
+    const bool verify=controls::layoutVerifyEnabled();
+
+    controls::setLayoutVerify(true);
+
+    const size_t failures=controls::layoutVerifyFailures();
+
+    // the measurer is the wrap the rows' Texts lay out at
+    for(int i=0; i < 3; ++i)
+    {
+        canvas->updateCanvas();
+        canvas->renderCanvas();
+    }
+    list->setVerticalScrollOffset(777);
+    canvas->updateCanvas();
+    canvas->renderCanvas();
+    CHECK(controls::layoutVerifyFailures() == failures);
+
+    for(controls::Base *row : list->getRows())
+    {
+        if(!row->hidden())
+            CHECK(row->getPreferredSize().height == list->getHeightIndex().height(list->itemForRow(row)));
+    }
+
+    // one that is not: every shown row is reported
+    lie=3;
+    list->setItemMeasurer([&](size_t index, int width)
+        {
+            return list->wrappedTextHeight(skin.getDefaultFont(), strings.at(index), width)+lie;
+        });
+    canvas->updateCanvas();
+    canvas->renderCanvas();
+    CHECK(controls::layoutVerifyFailures() > failures);
+
+    controls::setLayoutVerify(verify);
+    delete canvas;
 }

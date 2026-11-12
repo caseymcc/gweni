@@ -7,6 +7,7 @@
 
 #include <gweni/controls/virtualList.h>
 #include <gweni/controls/canvas.h>
+#include <gweni/anim.h>
 
 #include <algorithm>
 #include <climits>
@@ -42,6 +43,29 @@ void VirtualListRow::onPress(event::Info info)
         }
     }
 }
+
+// The idle re-measure: registered while an item is not measured at the list's
+// generation, a budget of them a frame, and finished once every item is.
+class VirtualListRemeasure: public anim::Animation
+{
+public:
+    void think() override
+    {
+        VirtualList *list=static_cast<VirtualList *>(m_control);
+
+        m_done=list->remeasureStep();
+        if(m_done)
+            list->m_remeasure=nullptr;
+    }
+
+    bool finished() override
+    {
+        return m_done;
+    }
+
+private:
+    bool m_done=false;
+};
 
 }//namespace internal
 
@@ -342,6 +366,7 @@ void VirtualList::setItemMeasurer(ItemMeasurer measurer)
     }
     else if(wasVariable)
     {
+        updateRemeasure();
         setAutoHideBars(m_autoHideBefore);
         m_heights.clear();
         m_measureWidth=-1;
@@ -357,6 +382,97 @@ void VirtualList::setItemMeasurer(ItemMeasurer measurer)
 void VirtualList::setItemEstimator(ItemEstimator estimator)
 {
     m_estimator=std::move(estimator);
+}
+
+void VirtualList::setRemeasureBudget(size_t items)
+{
+    m_remeasureBudget=items;
+    updateRemeasure();
+}
+
+void VirtualList::updateRemeasure()
+{
+    const bool needed=isVariableHeight() && m_measureWidth >= 0 && m_remeasureBudget > 0
+        && m_heights.minGeneration() < m_generation;
+
+    if(needed && !m_remeasure)
+    {
+        m_remeasure=new internal::VirtualListRemeasure();
+        anim::add(this, m_remeasure);
+    }
+    else if(!needed && m_remeasure)
+    {
+        anim::cancel(this, m_remeasure);
+        m_remeasure=nullptr;
+    }
+}
+
+// From the update phase, before layout. The items on screen were measured at
+// this generation by the layout that showed them, so this measures only
+// those off it, nearest below the top first. A new height moves the offset
+// through the anchor (offsetFromAnchor), so the next layout places the rows on
+// screen where they were.
+bool VirtualList::remeasureStep()
+{
+    if(!isVariableHeight() || m_measureWidth < 0 || m_remeasureBudget == 0)
+        return true;
+
+    anchorAtOffset();
+
+    const size_t count=m_heights.size();
+    bool changed=false;
+
+    for(size_t n=0; n < m_remeasureBudget; ++n)
+    {
+        size_t item=m_heights.firstStale(m_remeasureCursor, m_generation);
+
+        if(item >= count)
+        {
+            item=m_heights.firstStale(0, m_generation);
+            if(item >= count)
+                break;
+        }
+
+        const int before=m_heights.height(item);
+
+        if(measureItem(item) != before)
+            changed=true;
+        m_remeasureCursor=item+1;
+    }
+
+    if(changed)
+    {
+        if(m_anchorItem < count)
+            m_anchorOffset=std::min(m_anchorOffset, m_heights.height(m_anchorItem)-1);
+        updateContentHeight();
+        offsetFromAnchor();
+    }
+
+    return m_heights.minGeneration() >= m_generation;
+}
+
+void VirtualList::verifyOwnLayout(std::vector<std::string> &problems)
+{
+    if(!isVariableHeight() || !visible())
+        return;
+
+    for(const Row &row : m_rows)
+    {
+        if(row.item == NoItem || row.control->hidden())
+            continue;
+
+        const int measured=m_heights.height(row.item);
+        const int laidOut=row.control->getHeight();
+        const int asked=row.control->getPreferredSize().height;
+
+        if(laidOut == measured && asked == measured)
+            continue;
+
+        problems.push_back("row " + std::string(row.control->getTypeName()) + "#"
+            + std::to_string(row.control->getControlId()) + " of item " + std::to_string(row.item)
+            + ": bounds.h " + std::to_string(laidOut) + ", preferred.height " + std::to_string(asked)
+            + ", measured " + std::to_string(measured));
+    }
 }
 
 int VirtualList::defaultHeight(size_t index)
@@ -637,14 +753,17 @@ void VirtualList::placeVariable(size_t &first, size_t &end)
     const int width=m_innerPanel->getWidth();
     const size_t count=m_heights.size();
 
+    anchorAtOffset();
+
+    // every item is measured again, by this layout if it shows, by the idle
+    // re-measure from the top down otherwise
     if(width != m_measureWidth)
     {
         if(m_measureWidth >= 0)
             ++m_generation;
         m_measureWidth=width;
+        m_remeasureCursor=m_anchorItem;
     }
-
-    anchorAtOffset();
 
     if(count == 0)
     {
@@ -731,6 +850,8 @@ void VirtualList::placeVariable(size_t &first, size_t &end)
         y+=m_heights.height(item);
     }
     end=item;
+
+    updateRemeasure();
 }
 
 // The offset that puts the item fully in view, scrolling as little as it can:

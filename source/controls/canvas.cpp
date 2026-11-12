@@ -461,6 +461,16 @@ void Canvas::verifyLayout()
             report(b.type, b.id, "was created by the full pass");
     }
 
+    std::vector<std::string> problems;
+
+    for(const LayoutSnapshot &b : after)
+    {
+        problems.clear();
+        b.control->verifyOwnLayout(problems);
+        for(const std::string &problem : problems)
+            report(b.type, b.id, problem.c_str());
+    }
+
     if(m_updateLayout)
     {
         char what[160];

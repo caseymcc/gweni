@@ -1205,6 +1205,12 @@ public:
     //! its bounds (a wrapped Text breaks at its parent's requested inner
     //! width): a change to those invalidates it as well as the parent.
     virtual bool readsParentLayout() const { return false; }
+    //! For layout verification (layoutVerifyEnabled()), after its full pass:
+    //! appends one line per way this control's layout breaks a promise of its
+    //! own that the comparison of bounds and preferred sizes cannot see (a
+    //! VirtualList row not as high as its item's measure). Each is reported
+    //! and counted as a difference. Nothing by default.
+    virtual void verifyOwnLayout(std::vector<std::string> & /*problems*/) {}
     //! Sizes this dock-None control along `dim` for arrangeHorizontal/Vertical
     //! of its parent: `preferred` is its preferred size (see dockNoneSize).
     virtual void policyResize(const Size &preferred, Dim dim);
