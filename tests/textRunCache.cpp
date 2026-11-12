@@ -19,7 +19,8 @@
  *  delta added. After a series of odd moves away and back to the start, and on
  *  to a new place, the run must be a fresh layout where it ends each series,
  *  for SDF sizes (fractional corners, at scales 1, 1.25 and 2), coverage sizes
- *  (at 1 and 1.5) and LCD text. The SDF ones drifted by some ulps before the
+ *  (at 1 and 1.5), an SDF-measured size drawn as coverage (20 px at 0.75, its
+ *  glyphs shifted to the measured pens) and LCD text. The SDF ones drifted by some ulps before the
  *  rebuild rounded each corner's offset to 1/256 px (#341).
  */
 #include <doctest/doctest.h>
@@ -626,7 +627,9 @@ TEST_CASE("Text run: a moved run is the bytes of a fresh layout where it ends, a
     // 1.25) and 22 px (11 at scale 2, the skin's default font in ControlTest's
     // clip scenario at --scale 2); at 24 px they are (s = 1/2). 11 px at 1 and 1.5 is
     // coverage text, on whole pixels, and the LCD modes shift its glyphs by
-    // thirds of a pixel. Each move must land exactly where a fresh layout does.
+    // thirds of a pixel. 20 px at 0.75 is measured as SDF and drawn as 15 px
+    // coverage, each glyph shifted by whole pixels to its measured pen scaled.
+    // Each move must land exactly where a fresh layout does.
     const MoveSetup setups[]={
         { 22.0f, 1.0f, TextAA::Grayscale, TextMode::Sdf },
         { 24.0f, 1.0f, TextAA::Grayscale, TextMode::Sdf },
@@ -634,6 +637,7 @@ TEST_CASE("Text run: a moved run is the bytes of a fresh layout where it ends, a
         { 11.0f, 2.0f, TextAA::Grayscale, TextMode::Sdf },
         { 11.0f, 1.0f, TextAA::Grayscale, TextMode::Coverage },
         { 11.0f, 1.5f, TextAA::Grayscale, TextMode::Coverage },
+        { 20.0f, 0.75f, TextAA::Grayscale, TextMode::Coverage },
         { 11.0f, 1.0f, TextAA::LcdRGB, TextMode::LcdRGB },
         { 11.0f, 1.5f, TextAA::LcdRGB, TextMode::LcdRGB },
     };
