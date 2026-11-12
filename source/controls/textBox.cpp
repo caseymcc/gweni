@@ -339,12 +339,12 @@ void TextBox::refreshCursorBounds()
 // show, so it is left empty there.
 void TextBox::updateCursorRects()
 {
-    const gweni::Rect pA=getCharacterPosition(m_cursorPos);
+    const gweni::Rect pA=getCharacterPosition(displayPos(m_cursorPos));
     gweni::Rect selection;
 
     if(hasSelection() && !m_text->wrap())
     {
-        const gweni::Rect pB=getCharacterPosition(m_cursorEnd);
+        const gweni::Rect pB=getCharacterPosition(displayPos(m_cursorEnd));
 
         selection.x=std::min(pA.x, pB.x);
         selection.y=pA.y;
@@ -597,7 +597,7 @@ void TextBox::onMouseClickLeft(int x, int y, bool down)
         return;
     }
 
-    int value=m_text->getClosestCharacter(m_text->canvasPosToLocal(gweni::Point(x, y)));
+    int value=realPos(m_text->getClosestCharacter(m_text->canvasPosToLocal(gweni::Point(x, y))));
 
     if(down)
     {
@@ -623,7 +623,7 @@ void TextBox::onMouseMoved(int x, int y, int /*deltaX*/, int /*deltaY*/)
     if(gweni::MouseFocus != this)
         return;
 
-    int value=m_text->getClosestCharacter(m_text->canvasPosToLocal(gweni::Point(x, y)));
+    int value=realPos(m_text->getClosestCharacter(m_text->canvasPosToLocal(gweni::Point(x, y))));
     setCursorPos(value);
 }
 
@@ -641,7 +641,7 @@ void TextBox::makeCaretVisible()
     }
     else
     {
-        int iCaretPos=m_text->getCharacterPosition(m_cursorPos).x;
+        int iCaretPos=m_text->getCharacterPosition(displayPos(m_cursorPos)).x;
         int iRealCaretPos=iCaretPos+m_text->getX();
         int iSlidingZone=m_text->getFont().size + 1;   // getWidth()*0.1f
 
@@ -859,7 +859,7 @@ void TextBoxMultiline::makeCaretVisible()
         //if ( pos  &Alignment::Bottom ) y = bounds.y + ( bounds.h - getHeight() - ypadding );
         //if ( pos  &Alignment::CenterV ) y = bounds.y + ( bounds.h - getHeight() )   *0.5;
 
-        Rect pos=m_text->getCharacterPosition(m_cursorPos);
+        Rect pos=m_text->getCharacterPosition(displayPos(m_cursorPos));
         int iCaretPos=pos.y; // + pos.h;
         int iRealCaretPos=iCaretPos+m_text->getY();
         //int iSlidingZone =  m_text->getFont()->size; //getWidth()*0.1f
@@ -901,7 +901,7 @@ void TextBoxMultiline::makeCaretVisible()
 
 int TextBoxMultiline::getCurrentLine()
 {
-    return m_text->getLineFromChar(m_cursorPos);
+    return m_text->getLineFromChar(displayPos(m_cursorPos));
 }
 
 // Columns count codepoints, so Up and Down keep the caret over the same
@@ -911,7 +911,7 @@ int TextBoxMultiline::columnOf(int pos)
     const String &str=getText();
     int column=0;
 
-    for(int i=m_text->getStartCharFromLine(m_text->getLineFromChar(pos)); i < pos; i=nextPos(str, i))
+    for(int i=realPos(m_text->getStartCharFromLine(m_text->getLineFromChar(displayPos(pos)))); i < pos; i=nextPos(str, i))
         ++column;
 
     return column;
@@ -920,8 +920,8 @@ int TextBoxMultiline::columnOf(int pos)
 int TextBoxMultiline::columnOnLine(int line, int column)
 {
     const String &str=getText();
-    const int last=m_text->getLastCaretOnLine(line);
-    int pos=m_text->getStartCharFromLine(line);
+    const int last=realPos(m_text->getLastCaretOnLine(line));
+    int pos=realPos(m_text->getStartCharFromLine(line));
 
     for(; column > 0 && pos < last; --column)
         pos=nextPos(str, pos);
@@ -935,7 +935,7 @@ bool TextBoxMultiline::onKeyHome(bool down)
         return true;
 
     int iCurrentLine=getCurrentLine();
-    int value=m_text->getStartCharFromLine(iCurrentLine);
+    int value=realPos(m_text->getStartCharFromLine(iCurrentLine));
     m_cursorLine=0;
     m_cursorPos=value;
 
@@ -952,7 +952,7 @@ bool TextBoxMultiline::onKeyend(bool down)
         return true;
 
     m_cursorLine=0;
-    m_cursorPos=m_text->getLastCaretOnLine(getCurrentLine());
+    m_cursorPos=realPos(m_text->getLastCaretOnLine(getCurrentLine()));
 
     if(!gweni::input::isShiftDown())
         m_cursorEnd=m_cursorPos;
@@ -968,7 +968,7 @@ bool TextBoxMultiline::onKeyUp(bool down)
     //if ( m_cursorLine == 0 )
     m_cursorLine=columnOf(m_cursorPos);
 
-    int iLine=m_text->getLineFromChar(m_cursorPos);
+    int iLine=m_text->getLineFromChar(displayPos(m_cursorPos));
 
     if(iLine == 0)
         return true;
@@ -990,7 +990,7 @@ bool TextBoxMultiline::onKeyDown(bool down)
     //if ( m_cursorLine == 0 )
     m_cursorLine=columnOf(m_cursorPos);
 
-    int iLine=m_text->getLineFromChar(m_cursorPos);
+    int iLine=m_text->getLineFromChar(displayPos(m_cursorPos));
     int iLastLine=m_text->numLines()-1;
     if(iLine >= iLastLine || iLastLine < 1)
         return true;

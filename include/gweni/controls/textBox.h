@@ -195,6 +195,14 @@ protected:
     //! A result needs no conversion again.
     virtual bool normalizeText(const String &str, String &converted) const;
 
+    //! Positions are byte offsets into getText(); m_text may show other text
+    //! for it (a PasswordTextBox's mask). displayPos maps a getText() offset
+    //! to m_text's, realPos maps one of m_text's back, and every caret,
+    //! selection, click and scroll query of m_text goes through them. The
+    //! identity here.
+    virtual int displayPos(int realPos) const { return realPos; }
+    virtual int realPos(int displayPos) const { return displayPos; }
+
     bool m_editable;
     bool m_selectAll;
 
