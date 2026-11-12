@@ -2635,6 +2635,44 @@ two programs and the draws. What follows describes both together:
   coverage (20 px at 0.75 is drawn at 15), at a canvas scale and in a `ZoomPanel` alike.
   At scale 1 nothing of this changes a byte. `tests/scaledText.cpp`, `tests/scaledSdfPens.cpp`
   and `tests/multiLineText.cpp` pin it.
+- **Ink past the pens: the Label's clip margin.** `measureText` measures pens (whole-pixel
+  advances and kerning, `ceil`ed), never ink, and a Label is sized to that box, so a
+  glyph's ink can reach past it: a leading 'J' a pixel left of it at scale 1, a trailing
+  'g' at 10 px times 1.25 two device columns right of it (the glyph is rasterised at
+  `size*scale`, and `measuredPenShifts` places its pen, not its ink), LCD text's filter
+  fringe a pixel left of the first glyph, SDF's anti-aliased edge a pixel out. Rather
+  than measure ink, which would change layout at scale 1 and could not bound ink drawn
+  at `size*scale` without making layout depend on the scale, a Label lets the ink show:
+  it does not clip as one (`shouldClip()` is false) but gives each child a clip rect of
+  its own (`getChildClipRect()`), its bounds `{0, 0, w, h}` for every child but its
+  Text (the region clipping at the bounds gave before) and, while the Text lies wholly
+  inside the Label, the bounds widened by `Label::inkMargin(font.size)` =
+  `ceil(size/12)+1` canvas units on the left and the right. The margin is measured by
+  `tests/labelInkOverhang.cpp`, which sweeps every printable ASCII glyph as a run's
+  last and first at 8 to 24 px, scales 1 to 2, grayscale, LCD and SDF, on GL and
+  Vulkan, against the run drawn alone: the ink reached up to 4 device px past the box,
+  and the fewest whole units that showed all of it, the edges snapped, were 2 up to 18
+  px and 3 from 19 to 24, about a twelfth of the size plus a unit for the fringe and the
+  snapping; the test fails if any run needs more than `inkMargin`. Ink may so reach up
+  to the margin into a neighbour's area, as text does in any toolkit, and the rect is
+  still cut by every clipping ancestor's region (a Label at a ScrollControl's edge draws
+  nothing outside its viewport). A Text that is not wholly inside (a Label narrower than
+  its text, whose unwrapped Text keeps its measured width, `Text::policyResize`; a
+  TextBox's scrolled text) is clipped at the bounds as before, and so are the lines of a
+  wrapped Text, which are its children, except that a long word overflowing its line is
+  not seen (the Text's bounds fit) and shows up to the margin. The rects are members
+  (`m_childClip`, `m_textClip`) worked out again when the Label's size, its Text's
+  bounds or its font change, and a change marks the subtree of each child whose region
+  it changed, through `Base::clipRectRegionChanged()`, the ancestor walk
+  `childRegionChanged()` makes, on two rects; so `hasChildClipRects()` stays false and
+  a Label's new size marks no more than it did. `TabButton`, which never clipped, gives
+  no rects, and a subclass that overrides `getChildClipRect()` gives Label's for the
+  children it does not clip itself. The Inspector says `clips per child` for such a
+  control. Layout and every `--dump-bounds` listing are unchanged; the pixels change
+  only in the ink edge columns that were cut off. `tests/labelInkOverhang.cpp` also pins
+  the narrow Label, the scrolled TextBox, the ScrollControl edges and a fit toggled by a
+  resize and by a text change against fresh builds, and `tests/unit/labelClipRects.cpp`
+  the rects and their marks.
 - **A moved run is a fresh layout.** A same-string run that only moved is not laid
   out again: `renderText` adds the whole-device-pixel delta to its glyph vertexes.
   That equals a fresh layout at the new place only if each sum is exact, and an SDF
@@ -3723,9 +3761,12 @@ What exists today (the foundation) and what's still aspirational:
   parent's region, as it rebuilds a queued control's state down its ancestor chain. A control's own
   `render()` runs before that, so it is clipped by its parent's region and its children by
   its own; `renderOver()`/`renderFocus()` get the parent's region back. A control that
-  returns false (`TabStrip`, `TabButton`, and `Text`, whose children are its own wrapped
-  lines) hands its children its parent's region. A control can also narrow one child's
+  returns false (`TabStrip`, `TabButton`, `Text`, whose children are its own wrapped
+  lines, and `Label`, which gives every child a rect instead) hands its children its
+  parent's region. A control can also narrow one child's
   region to a rect of its own (`Base::getChildClipRect(child)`, none by default): a
+  Label gives its bounds, and its Text the bounds widened by its ink margin while the
+  Text fits ("Ink past the pens: the Label's clip margin"); a
   ScrollControl gives its viewport for its inner panel, so content scrolled partly out of
   view is cut at the viewport and never draws in the padding and margin band around it,
   while its bars keep their own bounds. Hit-testing (`getControlAt`) skips a child outside
