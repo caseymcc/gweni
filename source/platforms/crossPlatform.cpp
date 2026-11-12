@@ -462,9 +462,9 @@ static double GetPerformanceFrequency()
     return Frequency;
 }
 
-float platformTimeInSeconds()
+double platformTimeInSeconds()
 {
-    static float currentTime=0.0f;
+    static double currentTime=0.0;
     static __int64 iLastTime=0;
     __int64 thistime;
 
@@ -482,9 +482,9 @@ float platformTimeInSeconds()
 #elif defined(__EMSCRIPTEN__)
 
 // Wall time since the page (or node) started, from performance.now().
-float platformTimeInSeconds()
+double platformTimeInSeconds()
 {
-    return static_cast<float>(emscripten_get_now()/1000.0);
+    return emscripten_get_now()/1000.0;
 }
 
 #else
@@ -494,12 +494,12 @@ float platformTimeInSeconds()
 // it ran many times faster than wall time (and slower with an idle GPU driver),
 // so a window's caret blink, tooltip delay, animations and the stats overlay's
 // fps and refresh ran on it.
-float platformTimeInSeconds()
+double platformTimeInSeconds()
 {
     using Clock=std::chrono::steady_clock;
     static const Clock::time_point start=Clock::now();
 
-    return static_cast<float>(std::chrono::duration<double>(Clock::now()-start).count());
+    return std::chrono::duration<double>(Clock::now()-start).count();
 }
 
 #endif

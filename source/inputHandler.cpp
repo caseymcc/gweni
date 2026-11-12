@@ -46,7 +46,7 @@ struct KeyData
     }
 
     bool KeyState[keys::KeysCount];
-    float NextRepeat[keys::KeysCount];
+    double NextRepeat[keys::KeysCount];
     controls::Base *Target;
     bool LeftMouseDown;
     bool RightMouseDown;
@@ -59,7 +59,7 @@ static Point g_mousePosition;
 // one a stale hover may be hit-tested again on.
 static controls::Base *g_mouseCanvas=nullptr;
 
-static float g_fLastClickTime[c_MaxMouseButtons];
+static double g_fLastClickTime[c_MaxMouseButtons];
 static Point g_pntLastClickPos;
 
 
@@ -190,7 +190,7 @@ void onCanvasThink(controls::Base *control)
     if(KeyboardFocus->getCanvas() != control)
         return;
 
-    float fTime=platform::getTimeInSeconds();
+    const double fTime=platform::getTimeInSeconds();
 
     // Simulate Key-Repeats
     for(int i=0; i < keys::KeysCount; i++)

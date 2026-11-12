@@ -478,7 +478,7 @@ void StatsOverlay::refresh()
 
     gather(canvas);
 
-    const float now=platform::getTimeInSeconds();
+    const double now=platform::getTimeInSeconds();
 
     // A clock that went back (a capture installing its stepped clock after the
     // overlay was opened on the platform's) starts the second and the window
@@ -494,7 +494,7 @@ void StatsOverlay::refresh()
     // times a second
     if(m_frameClock.empty() || (now > m_frameClock.back()))
         m_frameClock.push_back(now);
-    while(!m_frameClock.empty() && (m_frameClock.front() <= now-1.0f))
+    while(!m_frameClock.empty() && (m_frameClock.front() <= now-1.0))
         m_frameClock.pop_front();
     while(m_frameClock.size() > MaxFrameClock)
         m_frameClock.pop_front();
@@ -508,8 +508,8 @@ void StatsOverlay::refresh()
     }
     if(now < m_nextRefresh)
         return;
-    // one step, not a loop: once the float clock is coarser than a step (days
-    // in, or an app's time source counting from an epoch) adding one changes
+    // one step, not a loop: once the clock is coarser than a step (an app's
+    // time source counting from an epoch in a float) adding one changes
     // nothing, and after a stall the next refresh is a step from now
     m_nextRefresh+=RefreshSeconds;
     if(m_nextRefresh <= now)
@@ -567,7 +567,7 @@ void StatsOverlay::show(controls::Canvas *canvas)
     m_shownFps=0.0f;
     if(m_frameClock.size() >= 2)
     {
-        const float span=m_frameClock.back()-m_frameClock.front();
+        const float span=static_cast<float>(m_frameClock.back()-m_frameClock.front());
 
         if(span > 0.0f)
             m_shownFps=float(m_frameClock.size()-1)/span;

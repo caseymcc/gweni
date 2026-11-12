@@ -61,14 +61,14 @@ String RelativeToExecutablePaths::getPath(Type type, String const &filename)
 }
 
 //------------------------------------------------------------------------------
-static std::function<float()> g_timeSource;
+static std::function<double()> g_timeSource;
 
-void setTimeSource(std::function<float()> source)
+void setTimeSource(std::function<double()> source)
 {
     g_timeSource=std::move(source);
 }
 
-float getTimeInSeconds()
+double getTimeInSeconds()
 {
     if(g_timeSource)
         return g_timeSource();

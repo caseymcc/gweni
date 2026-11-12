@@ -1378,8 +1378,8 @@ void CodeEditor::autoScrollStep()
         return;
     }
 
-    const float now=platform::getTimeInSeconds();
-    const float elapsed=std::min(std::max(now-m_autoScrollTime, 0.0f), 0.1f);
+    const double now=platform::getTimeInSeconds();
+    const float elapsed=std::min(std::max(static_cast<float>(now-m_autoScrollTime), 0.0f), 0.1f);
 
     m_autoScrollTime=now;
 

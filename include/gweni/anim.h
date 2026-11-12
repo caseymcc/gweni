@@ -83,8 +83,9 @@ public:
 protected:
     bool m_started;
     bool m_finished;
-    float m_start;
-    float m_end;
+    //! platform::getTimeInSeconds() at the start and the end
+    double m_start;
+    double m_end;
     float m_ease;
 };
 

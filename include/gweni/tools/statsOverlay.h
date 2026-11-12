@@ -250,9 +250,9 @@ private:
     bool m_haveLastStart=false;
     //! The canvas's clock at each frame gathered in the last second whose
     //! clock moved on from the one before, for fps (at most MaxFrameClock).
-    std::deque<float> m_frameClock;
+    std::deque<double> m_frameClock;
     float m_shownFps=0.0f;
-    float m_nextRefresh=0.0f;
+    double m_nextRefresh=0.0;
     bool m_started=false;
     unsigned m_treeSerial=0;
     bool m_counted=false;

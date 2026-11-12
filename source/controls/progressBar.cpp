@@ -28,12 +28,13 @@ public:
 
     void think() override
     {
-        float fDiff=platform::getTimeInSeconds()-m_fLastFrame;
+        const double now=platform::getTimeInSeconds();
+        const float fDiff=static_cast<float>(now-m_fLastFrame);
         gweni_cast<ProgressBar>(m_control)->cycleThink(gweni::clamp(fDiff, 0.f, 0.3f));
-        m_fLastFrame=platform::getTimeInSeconds();
+        m_fLastFrame=now;
     }
 
-    float m_fLastFrame;
+    double m_fLastFrame;
 };
 
 

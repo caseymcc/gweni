@@ -474,7 +474,7 @@ private:
     //! The mouse while a drag holds it, in the editor's coordinates.
     Point m_dragPoint;
     anim::Animation *m_autoScroll=nullptr;
-    float m_autoScrollTime=0.0f;
+    double m_autoScrollTime=0.0;
     //! The units of auto-scroll not scrolled yet, per axis.
     float m_autoScrollCarry[2]={0.0f, 0.0f};
 

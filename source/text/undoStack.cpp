@@ -17,7 +17,7 @@ namespace text
 UndoStack::UndoStack()
 {}
 
-bool UndoStack::joinsCurrent(const Edit &edit, EditKind kind, const Selection &before, float now) const
+bool UndoStack::joinsCurrent(const Edit &edit, EditKind kind, const Selection &before, double now) const
 {
     if(m_sealed || m_current == 0 || m_current != m_steps.size())
         return false;
@@ -53,7 +53,7 @@ void UndoStack::startStep(EditKind kind, const Selection &before)
 
 void UndoStack::record(Edit edit, EditKind kind, const Selection &before, const Selection &after)
 {
-    float now=platform::getTimeInSeconds();
+    const double now=platform::getTimeInSeconds();
 
     if(m_groupDepth > 0)
     {

@@ -749,7 +749,7 @@ protected:
     ToolTip *m_toolTip=nullptr;
     Base *m_toolTipOwner=nullptr;
     /// When m_toolTipOwner was first hovered.
-    float m_toolTipSince=0.0f;
+    double m_toolTipSince=0.0;
     float m_toolTipDelay=0.5f;
     //! setInputCapture's, or null
     InputCapture *m_inputCapture=nullptr;

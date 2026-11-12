@@ -1028,21 +1028,23 @@
 #include <demo/windowButtons.h>
 
 // A capture's clock: one fixed step per rendered frame, so every run sees the
-// same times. 1/60 s is the step, i.e. a nominal 60fps.
-static const float g_frameStep=1.0f/60.0f;
+// same times. 1/60 s is the step, i.e. a nominal 60fps. The clock counts whole
+// steps and reads as steps*(1.0/60) in double, so the time at a frame does not
+// depend on how many steps were added before it.
+static const double g_frameStep=1.0/60.0;
 
 // Every scripted press also steps the clock, by more than inputHandler's 0.5s
 // double-click window (source/inputHandler.cpp), so that two --clicks in a row
 // are two clicks however fast the process runs. --double-click is the only way
 // to ask for a double click: it issues its second press with no step in
-// between, i.e. 0s apart, which is inside any window.
-static const float g_pressStep=1.0f;
+// between, i.e. 0s apart, which is inside any window. 60 steps, 1 s.
+static const int64_t g_pressSteps=60;
 
-static float g_clockSeconds=0.0f;
+static int64_t g_clockSteps=0;
 
-static float steppedClock()
+static double steppedClock()
 {
-    return g_clockSeconds;
+    return double(g_clockSteps)*g_frameStep;
 }
 
 static gweni::input::GLFW3 g_glfwInput;
@@ -1575,7 +1577,7 @@ static void renderFrames(Session &s, int count)
         // clock only moves when a scripted press moves it, unless
         // --stats-clock step asked for the capture's step.
         if((!s.stats || s.statsClockSteps) && !s.freezeClock)
-            g_clockSeconds+=g_frameStep;
+            ++g_clockSteps;
     }
 }
 
@@ -1689,7 +1691,7 @@ static void trace(const Session &s, const std::string &what)
     gweni::controls::Base *hovered=gweni::HoveredControl;
 
     std::cerr<<"trace "<<what
-             <<" clock="<<g_clockSeconds
+             <<" clock="<<steppedClock()
              <<" hovered=";
     if(hovered)
     {
@@ -1727,7 +1729,7 @@ static gweni::input::GLFW3 &glfwInput(Session &s);
 static void mouseDown(Session &s, int x, int y, bool stepClock, int button=GLFW_MOUSE_BUTTON_LEFT)
 {
     if(stepClock)
-        g_clockSeconds+=g_pressStep;
+        g_clockSteps+=g_pressSteps;
     moveMouse(s, x, y);
     glfwInput(s).processMouseButtons(button, GLFW_PRESS, 0);
     trace(s, button == GLFW_MOUSE_BUTTON_RIGHT ? "right down" : "down");
@@ -2078,7 +2080,7 @@ static void forgetMouse(Session &s)
 static gweni::controls::Base *addControl(Session &s, const std::string &name)
 {
     forgetMouse(s);
-    g_clockSeconds=0.0f;
+    g_clockSteps=0;
     s.frame=0;
     restartFrameCounts();
     s.label=name;
@@ -4742,7 +4744,7 @@ static bool runTextSizeScenario(Session &s, const std::string &shotDir, bool &pa
     const char *const sample="Sphinx gyp 0123456789 &?!";
 
     forgetMouse(s);
-    g_clockSeconds=0.0f;
+    g_clockSteps=0;
     s.frame=0;
     restartFrameCounts();
     s.label="text-size";
@@ -8125,7 +8127,7 @@ static void frameCheckingStrays(Session &s, const std::vector<gweni::controls::B
             s.canvas->getUpdateStats());
     checkOnePass(s, std::to_string(s.frame));
     ++s.frame;
-    g_clockSeconds+=g_frameStep;
+    ++g_clockSteps;
 }
 
 static std::string rectText(const gweni::Rect &r)
@@ -11298,7 +11300,7 @@ static bool runTypingScenario(Session &s, const std::string &shotDir, bool &pass
 static gweni::controls::Base *addHost(Session &s, const std::string &name, bool hidden)
 {
     forgetMouse(s);
-    g_clockSeconds=0.0f;
+    g_clockSteps=0;
     s.frame=0;
     restartFrameCounts();
     s.label=name;
@@ -11716,7 +11718,7 @@ static bool runHideShowScenario(Session &s, const std::string &controlName,
 static void renderEmptyCanvas(Session &s, std::vector<uint8_t> &pixels)
 {
     forgetMouse(s);
-    g_clockSeconds=0.0f;
+    g_clockSteps=0;
     s.frame=0;
     restartFrameCounts();
     s.label="(empty)";
@@ -11888,7 +11890,7 @@ static bool runWindowTest(gweni::capture::Device &device, gweni::controls::Canva
             canvas->updateCanvas();
             renderer->clearTarget(background);
             canvas->renderCanvas();
-            g_clockSeconds+=g_frameStep;
+            ++g_clockSteps;
             shown=device.presentWindowFrame(readback, readSize);
             glfwPollEvents();
         }
@@ -11955,7 +11957,7 @@ static bool runWindowTest(gweni::capture::Device &device, gweni::controls::Canva
 
     gweni::platform::setTimeSource(&steppedClock);
     gweni::capture::installFixedProfileClock();
-    g_clockSeconds=0.0f;
+    g_clockSteps=0;
 
     if(!ensureDirectory(dir))
         return false;

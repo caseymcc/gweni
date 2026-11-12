@@ -156,8 +156,8 @@ void TimedAnimation::think()
     if(m_finished)
         return;
 
-    float current=platform::getTimeInSeconds();
-    float secondsIn=current-m_start;
+    const double current=platform::getTimeInSeconds();
+    const float secondsIn=static_cast<float>(current-m_start);
 
     if(secondsIn < 0.0f)
         return;
@@ -169,7 +169,7 @@ void TimedAnimation::think()
     }
 
     // a zero length (tools::Remove) is over as soon as it starts
-    float delta=(m_end > m_start) ? clamp(secondsIn/(m_end-m_start), 0.f, 1.f) : 1.0f;
+    float delta=(m_end > m_start) ? clamp(secondsIn/static_cast<float>(m_end-m_start), 0.f, 1.f) : 1.0f;
 
     float eased=getEased(delta, m_ease);
     run(eased);

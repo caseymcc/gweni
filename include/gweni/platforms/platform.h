@@ -26,15 +26,18 @@ namespace platform
 //! @param ms : Number of milliseconds to sleep for.
 GWENI_EXPORT void sleep(unsigned int ms);
 
-// Needed for things like double click
-GWENI_EXPORT float getTimeInSeconds();
+//! The library's one clock, in seconds since start: setTimeSource()'s, else the
+//! platform's. A double, so a page left open for a month still resolves a
+//! frame (a float of seconds steps by 0.25 s there); a duration or a per-frame
+//! delta computed from two reads may be a float.
+GWENI_EXPORT double getTimeInSeconds();
 
 //! Install a clock for getTimeInSeconds() to read instead of the platform one.
 //! Everything time-dependent in the library (animations, progress bars, the text
 //! caret blink, double-click and key-repeat timing) then runs off it, which is what
 //! makes a capture or a scripted input sequence reproducible.
 //! @param source : The clock, in seconds. An empty function restores the platform clock.
-GWENI_EXPORT void setTimeSource(std::function<float()> source);
+GWENI_EXPORT void setTimeSource(std::function<double()> source);
 
 //! The profiling clock, in microseconds: what the library times its own work
 //! with (Canvas::updateCanvas() and renderCanvas() in CanvasFrameStats::times,

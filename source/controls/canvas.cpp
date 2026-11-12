@@ -892,7 +892,7 @@ void Canvas::updateToolTip()
             m_toolTipSuppressed=nullptr;
     }
 
-    const float now=platform::getTimeInSeconds();
+    const double now=platform::getTimeInSeconds();
 
     if(owner != m_toolTipOwner)
     {

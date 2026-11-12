@@ -42,7 +42,7 @@ TEST_CASE("platform clock: advances while the process sleeps")
     platform::setTimeSource(nullptr);
 
     const Clock::time_point wallStart=Clock::now();
-    const float start=platform::getTimeInSeconds();
+    const double start=platform::getTimeInSeconds();
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
     const double advance=(platform::getTimeInSeconds()-start)*1000.0;
     const double wall=millisSince(wallStart);
@@ -62,7 +62,7 @@ TEST_CASE("platform clock: no faster than wall time while several threads run")
     std::vector<std::thread> spinners;
 
     const Clock::time_point wallStart=Clock::now();
-    const float start=platform::getTimeInSeconds();
+    const double start=platform::getTimeInSeconds();
 
     for(int i=0; i<4; ++i)
         spinners.emplace_back([&stop]() { while(!stop.load(std::memory_order_relaxed)) {} });

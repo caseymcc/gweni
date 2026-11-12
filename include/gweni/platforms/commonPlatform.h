@@ -22,7 +22,7 @@ namespace platform
 //! The platform's own clock, in seconds. Implemented by each platform backend.
 //! Do not use this directly: getTimeInSeconds() is the one that honours
 //! setTimeSource().
-float platformTimeInSeconds();
+double platformTimeInSeconds();
 
 class CurrentPath:public ResourcePaths
 {

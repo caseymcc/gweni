@@ -52,7 +52,7 @@ struct UndoStep
     Selection after;
     EditKind kind=EditKind::Other;
     //! getTimeInSeconds() at its last edit, for the pause rule
-    float lastTime=0.0f;
+    double lastTime=0.0;
 };
 
 //! An undo history over applied Edit records (Document::apply()'s, or those a
@@ -125,7 +125,7 @@ public:
     float interval() const { return m_interval; }
 
 private:
-    bool joinsCurrent(const Edit &edit, EditKind kind, const Selection &before, float now) const;
+    bool joinsCurrent(const Edit &edit, EditKind kind, const Selection &before, double now) const;
     void startStep(EditKind kind, const Selection &before);
     void applyLimit();
 

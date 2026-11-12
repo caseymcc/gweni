@@ -426,13 +426,14 @@ static void content_scale_callback(GLFWwindow* window, float /*xscale*/, float /
 }
 
 // A capture's clock: one fixed step per rendered frame, so every run sees the
-// same times. 1/60 s is the step, i.e. a nominal 60fps.
-static const float g_frameStep=1.0f/60.0f;
-static float g_clockSeconds=0.0f;
+// same times. 1/60 s is the step, i.e. a nominal 60fps. It counts whole steps
+// and reads as steps*(1.0/60) in double.
+static const double g_frameStep=1.0/60.0;
+static int64_t g_clockSteps=0;
 
-static float steppedClock()
+static double steppedClock()
 {
-    return g_clockSeconds;
+    return double(g_clockSteps)*g_frameStep;
 }
 
 // Frames rendered before a --screenshot readback: enough for the dock layout to
@@ -839,7 +840,7 @@ int main(int argc, char *argv[])
                 samples.push_back(sample);
             }
 
-            g_clockSeconds+=g_frameStep;
+            ++g_clockSteps;
         }
 
         if(stats)

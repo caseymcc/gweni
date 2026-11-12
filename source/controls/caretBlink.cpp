@@ -85,7 +85,7 @@ void CaretBlink::step(Base *control)
         return;
     }
 
-    const float now=platform::getTimeInSeconds();
+    const double now=platform::getTimeInSeconds();
 
     if(m_next > now)
         return;

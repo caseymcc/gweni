@@ -61,7 +61,7 @@ public:
     void step(Base *control);
 
 private:
-    float m_next=0.0f;
+    double m_next=0.0;
     bool m_visible=true;
     anim::Animation *m_animation=nullptr;
 };

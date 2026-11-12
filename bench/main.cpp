@@ -44,15 +44,16 @@ using bench::Phase;
 namespace
 {
 
-const float g_frameStep=1.0f/60.0f;
-float g_clockSeconds=0.0f;
+const double g_frameStep=1.0/60.0;
+// whole steps, read as steps*(1.0/60) in double
+int64_t g_clockSteps=0;
 
 // input::hitTestVisits() when the frame began: hit_tests is the difference.
 size_t g_hitTestsAtFrame=0;
 
-float steppedClock()
+double steppedClock()
 {
-    return g_clockSeconds;
+    return double(g_clockSteps)*g_frameStep;
 }
 
 //! A renderer (a SlotRenderer backend) with its end(), which is only the core's
@@ -215,7 +216,7 @@ void runFrame(bench::Scene &scene, bench::SceneContext &ctx, int frame)
     bench::inPhase(Phase::Gpu, []{ g_device->finish(); });
 
     bench::enterPhase(Phase::None);
-    g_clockSeconds+=g_frameStep;
+    ++g_clockSteps;
 }
 
 //-----------------------------------------------------------------------------
