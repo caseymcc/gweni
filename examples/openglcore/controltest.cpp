@@ -3865,10 +3865,11 @@ static bool runStatsOverlayScenario(Session &s, const std::string &shotDir, bool
     // other's too, and the ids they give back (the canvas's one record of
     // them, Canvas::excludedSlots()). After every frame k this harness counts
     // the app's slots of frame k: those written under no id a tool held after
-    // frame k-1 (so ids a tool gave back before or during k) or after k (ids
-    // made in k). The Inspector open in frame k+1 must show exactly frame k's,
-    // and each overlay refresh the most of its window's frames, so a frame
-    // only a tool wrote in reads 0 in the other.
+    // frame k, nor one a tool held after frame k-1 that is live no more (a
+    // tool's slot k cleared; an id the app took again is the app's). The
+    // Inspector open in frame k+1 must show exactly frame k's, and each
+    // overlay refresh the most of its window's frames, so a frame only a tool
+    // wrote in reads 0 in the other.
     using gweni::tools::Inspector;
     using gweni::tools::InspectorNode;
 
@@ -3934,11 +3935,19 @@ static bool runStatsOverlayScenario(Session &s, const std::string &shotDir, bool
 
         toolIds(nowPrimitives, nowTexts);
 
-        std::vector<size_t> primitives=heldPrimitives;
-        std::vector<size_t> texts=heldTexts;
+        std::vector<size_t> primitives=nowPrimitives;
+        std::vector<size_t> texts=nowTexts;
 
-        primitives.insert(primitives.end(), nowPrimitives.begin(), nowPrimitives.end());
-        texts.insert(texts.end(), nowTexts.begin(), nowTexts.end());
+        for(size_t id : heldPrimitives)
+        {
+            if(!gweni::isPrimitiveIdLive(id))
+                primitives.push_back(id);
+        }
+        for(size_t id : heldTexts)
+        {
+            if(!gweni::isTextIdLive(id))
+                texts.push_back(id);
+        }
         std::sort(primitives.begin(), primitives.end());
         std::sort(texts.begin(), texts.end());
 
