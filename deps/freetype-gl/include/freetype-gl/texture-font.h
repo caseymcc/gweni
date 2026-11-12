@@ -202,6 +202,14 @@ typedef struct texture_glyph_t
      */
     int phase;
 
+    /**
+     * gweni: the font whose face this glyph was loaded from, which owns it.
+     * A glyph a font got through its glyph fallback chain is another font's
+     * (see texture_font_t::fallback), and texture_glyph_get_kerning_glyph
+     * kerns two glyphs only when they have the same font.
+     */
+    const struct texture_font_t * font;
+
 } texture_glyph_t;
 
 
@@ -356,6 +364,35 @@ typedef struct texture_font_t
      */
     int subpixel_positions;
 
+    /**
+     * gweni: the glyph fallback chain. When this font's face has no glyph for
+     * a codepoint (FT_Get_Char_Index gives 0, the codepoint not 0),
+     * texture_font_get_glyph(_phase) asks fallback(fallback_data, i) for the
+     * chain's fonts in turn, i = 0, 1, ..., until it returns NULL, and takes
+     * the glyph from the first one whose own face (or its own chain) has the
+     * codepoint, at the same phase. Only when none has it does this font load
+     * its own missing glyph. The callback may open a font the first time it
+     * is asked for it, so a chain font is made only on a miss; it must keep
+     * every font it returned alive as long as this one, and should give each
+     * the same atlas, size, rendering mode, sdf_spread and subpixel_positions.
+     * A glyph found this way stays its own font's (glyph->font), and this font
+     * keeps a pointer to it in fallback_glyphs, so the next lookup of the
+     * codepoint opens no face. NULL (the calloc default) is no chain.
+     */
+    struct texture_font_t * (*fallback)( void * data, size_t index );
+
+    /**
+     * gweni: the first argument of every fallback call.
+     */
+    void * fallback_data;
+
+    /**
+     * gweni: the glyphs this font took from its fallback chain, owned by the
+     * chain's fonts (texture_glyph_t *, not deleted with this font). Searched
+     * after glyphs.
+     */
+    vector_t * fallback_glyphs;
+
 } texture_font_t;
 
 
@@ -500,6 +537,17 @@ texture_font_enlarge_atlas( texture_font_t * self, size_t width_new,
 float
 texture_glyph_get_kerning( const texture_glyph_t * self,
                            const char * codepoint );
+
+/**
+ * gweni: the kerning between two horizontal glyphs, the previous one given
+ * as the glyph it was drawn with: 0 when previous is NULL or was loaded from
+ * another font than self (the faces of a glyph fallback chain are never
+ * kerned against each other), else texture_glyph_get_kerning's pair. Both
+ * are phase 0 glyphs, which hold the pairs.
+ */
+float
+texture_glyph_get_kerning_glyph( const texture_glyph_t * self,
+                                 const texture_glyph_t * previous );
 
 
 /**

@@ -281,6 +281,12 @@ text_buffer_add_char( text_buffer_t * self,
     if( previous && markup->font->kerning )
     {
         kerning = texture_glyph_get_kerning( glyph, previous );
+        /* gweni: no pair across the faces of a glyph fallback chain (a pair
+         * is only looked for again in a font with one, and only when there is
+         * one, so text in a font without a chain is laid out as before) */
+        if( kerning != 0.0f && font->fallback )
+            kerning = texture_glyph_get_kerning_glyph( glyph,
+                          texture_font_get_glyph( font, previous ) );
     }
     pen->x += kerning;
 

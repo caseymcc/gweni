@@ -131,6 +131,7 @@ texture_glyph_new(void)
     self->s1        = 0.0;
     self->t1        = 0.0;
     self->phase     = 0;
+    self->font      = NULL;
     self->kerning   = vector_new( sizeof(kerning_t) );
     return self;
 }
@@ -158,6 +159,27 @@ texture_glyph_get_kerning( const texture_glyph_t * self,
     {
         kerning_t * kerning = (kerning_t *) vector_get( self->kerning, i );
         if( kerning->codepoint == ucodepoint )
+        {
+            return kerning->kerning;
+        }
+    }
+    return 0;
+}
+
+// ---------------------------------------- texture_glyph_get_kerning_glyph ---
+float
+texture_glyph_get_kerning_glyph( const texture_glyph_t * self,
+                                 const texture_glyph_t * previous )
+{
+    size_t i;
+
+    assert( self );
+    if( !previous || previous->font != self->font )
+        return 0;
+    for( i=0; i<vector_size(self->kerning); ++i )
+    {
+        kerning_t * kerning = (kerning_t *) vector_get( self->kerning, i );
+        if( kerning->codepoint == previous->codepoint )
         {
             return kerning->kerning;
         }
@@ -229,6 +251,7 @@ texture_font_init(texture_font_t *self)
             && self->memory.base && self->memory.size));
 
     self->glyphs = vector_new(sizeof(texture_glyph_t *));
+    self->fallback_glyphs = vector_new(sizeof(texture_glyph_t *));
     self->height = 0;
     self->ascender = 0;
     self->descender = 0;
@@ -358,6 +381,9 @@ texture_font_delete( texture_font_t *self )
     }
 
     vector_delete( self->glyphs );
+    /* gweni: the chain's fonts own these */
+    if( self->fallback_glyphs )
+        vector_delete( self->fallback_glyphs );
     free( self );
 }
 
@@ -390,6 +416,14 @@ texture_font_find_glyph_phase( texture_font_t * self,
         }
     }
 
+    /* gweni: then those taken from the glyph fallback chain, at this phase */
+    for( i = 0; i < self->fallback_glyphs->size; ++i )
+    {
+        glyph = *(texture_glyph_t **) vector_get( self->fallback_glyphs, i );
+        if( glyph->codepoint == ucodepoint && glyph->phase == phase )
+            return glyph;
+    }
+
     return NULL;
 }
 
@@ -400,10 +434,18 @@ texture_font_find_glyph( texture_font_t * self,
     return texture_font_find_glyph_phase( self, codepoint, 0 );
 }
 
+static texture_glyph_t *
+texture_font_get_glyph_present( texture_font_t * self,
+                                const char * codepoint, int phase );
+
 // ------------------------------------------------ texture_font_load_glyph ---
+/* gweni: present_only (a font asked through another's fallback chain) loads
+ * nothing for a codepoint neither its face nor its own chain has, and returns
+ * 0, so the asking font goes on down its chain or loads its own missing glyph */
 static int
-texture_font_load_glyph_phase( texture_font_t * self,
-                               const char * codepoint, int phase )
+texture_font_load_glyph_from( texture_font_t * self,
+                              const char * codepoint, int phase,
+                              int present_only )
 {
     size_t i, x, y;
 
@@ -455,6 +497,7 @@ texture_font_load_glyph_phase( texture_font_t * self,
         }
         texture_atlas_set_region( self->atlas, region.x, region.y, 4, 4, data, 0 );
         glyph->codepoint = -1;
+        glyph->font = self;
         glyph->s0 = (region.x+2)/(float)self->atlas->width;
         glyph->t0 = (region.y+2)/(float)self->atlas->height;
         glyph->s1 = (region.x+3)/(float)self->atlas->width;
@@ -470,6 +513,32 @@ texture_font_load_glyph_phase( texture_font_t * self,
     ft_glyph_top = 0;
     ft_glyph_left = 0;
     glyph_index = FT_Get_Char_Index( face, (FT_ULong)utf8_to_utf32( codepoint ) );
+
+    /* gweni: the glyph fallback chain, for a codepoint this face has no glyph
+     * for: the first font of the chain that has it lends its glyph, which this
+     * font keeps in fallback_glyphs; with none, this face's missing glyph */
+    if( glyph_index == 0 && utf8_to_utf32( codepoint ) != 0 )
+    {
+        texture_glyph_t *found = NULL;
+        texture_font_t *chained;
+        size_t n;
+
+        for( n = 0; !found && self->fallback
+             && (chained = self->fallback( self->fallback_data, n )); ++n )
+        {
+            if( chained != self )
+                found = texture_font_get_glyph_present( chained, codepoint, phase );
+        }
+        if( found )
+            vector_push_back( self->fallback_glyphs, &found );
+        if( found || present_only )
+        {
+            FT_Done_Face( face );
+            FT_Done_FreeType( library );
+            return found != NULL;
+        }
+    }
+
     // WARNING: We use texture-atlas depth to guess if user wants
     //          LCD subpixel rendering
 
@@ -725,6 +794,7 @@ cleanup_stroker:
     glyph->rendermode = self->rendermode;
     glyph->outline_thickness = self->outline_thickness;
     glyph->phase    = phase;
+    glyph->font     = self;
     glyph->offset_x = ft_glyph_left;
     glyph->offset_y = ft_glyph_top;
     glyph->s0       = x/(float)self->atlas->width;
@@ -759,11 +829,34 @@ cleanup_stroker:
     return 1;
 }
 
+static int
+texture_font_load_glyph_phase( texture_font_t * self,
+                               const char * codepoint, int phase )
+{
+    return texture_font_load_glyph_from( self, codepoint, phase, 0 );
+}
+
 int
 texture_font_load_glyph( texture_font_t * self,
                          const char * codepoint )
 {
     return texture_font_load_glyph_phase( self, codepoint, 0 );
+}
+
+/* gweni: a chain font's glyph for codepoint at phase if its face (or its own
+ * chain) has one, loading it if need be; NULL, loading nothing, if not */
+static texture_glyph_t *
+texture_font_get_glyph_present( texture_font_t * self,
+                                const char * codepoint, int phase )
+{
+    texture_glyph_t *glyph;
+
+    phase = texture_font_valid_phase( self, phase );
+    if( (glyph = texture_font_find_glyph_phase( self, codepoint, phase )) )
+        return glyph;
+    if( texture_font_load_glyph_from( self, codepoint, phase, 1 ) )
+        return texture_font_find_glyph_phase( self, codepoint, phase );
+    return NULL;
 }
 
 // ----------------------------------------------- texture_font_load_glyphs ---
