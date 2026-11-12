@@ -286,13 +286,33 @@ public:
 
 public:
     void setText(const String &str, bool doEvents=true) override;
-    virtual void setPasswordChar(const char c);
+
+    //! The character shown for each codepoint of the password, "*" by
+    //! default: exactly one valid UTF-8 codepoint (a "•" say), which the mask
+    //! is rebuilt with at once. Anything else (empty, two codepoints, invalid
+    //! UTF-8) is refused, keeping the current one; returns whether it took it.
+    virtual bool setPasswordChar(const String &c);
+    //! The same for an ASCII character; any other byte is refused.
+    bool setPasswordChar(const char c);
+    const String &getPasswordChar() const { return m_passwordChar; }
 
     const String &getText() const override { return m_realText; }
+    //! The password's length in bytes, as getText()'s, not the mask's.
+    int textLength() override { return static_cast<int>(m_realText.length()); }
 
 protected:
 
-    char m_passwordChar;
+    //! A mask character for each codepoint of the password: its offsets are
+    //! the number of codepoints before a getText() offset times the mask
+    //! character's bytes. A byte utf8Next steps over alone (an invalid one)
+    //! is one codepoint here too.
+    int displayPos(int realPos) const override;
+    int realPos(int displayPos) const override;
+
+    //! Shows the mask for m_realText, one m_passwordChar per codepoint.
+    void updateMask();
+
+    String m_passwordChar;
     String m_realText;
 };
 

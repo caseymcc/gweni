@@ -1005,10 +1005,61 @@ bool TextBoxMultiline::onKeyDown(bool down)
     return true;
 }
 
+// Whether str is exactly one valid UTF-8 codepoint: its lead byte's length,
+// continuation bytes after it and nothing more, encoded the shortest way (so
+// no overlong form), and no surrogate or value past U+10FFFF.
+static bool isOneCodepoint(const String &str)
+{
+    if(str.empty())
+        return false;
+
+    const unsigned char lead=static_cast<unsigned char>(str[0]);
+    size_t length;
+    char32_t c;
+
+    if(lead < 0x80)
+    {
+        length=1;
+        c=lead;
+    }
+    else if((lead & 0xE0) == 0xC0)
+    {
+        length=2;
+        c=lead & 0x1F;
+    }
+    else if((lead & 0xF0) == 0xE0)
+    {
+        length=3;
+        c=lead & 0x0F;
+    }
+    else if((lead & 0xF8) == 0xF0)
+    {
+        length=4;
+        c=lead & 0x07;
+    }
+    else
+        return false;
+
+    if(str.size() != length)
+        return false;
+
+    for(size_t i=1; i < length; ++i)
+    {
+        const unsigned char byte=static_cast<unsigned char>(str[i]);
+
+        if((byte & 0xC0) != 0x80)
+            return false;
+
+        c=(c << 6) | (byte & 0x3F);
+    }
+
+    return utf8Encode(c) == str;
+}
+
 GWENI_CONTROL_CONSTRUCTOR(PasswordTextBox)
 {
     m_realText="";
-    m_passwordChar='*';
+    m_passwordChar="*";
 }
 
 void PasswordTextBox::setText(const String &strIn, bool doEvents)
@@ -1020,13 +1071,7 @@ void PasswordTextBox::setText(const String &strIn, bool doEvents)
         return;
 
     m_realText=str;
-    String passwordChars;
-    for(size_t i=0; i < m_realText.length(); i++)
-    {
-        passwordChars+=m_passwordChar;
-    }
-
-    m_text->setText(passwordChars);
+    updateMask();
     redraw();
     updatePlaceholder();
 
@@ -1034,9 +1079,55 @@ void PasswordTextBox::setText(const String &strIn, bool doEvents)
         onTextChanged();
 }
 
-void PasswordTextBox::setPasswordChar(const char c)
+void PasswordTextBox::updateMask()
 {
+    String mask;
+
+    for(int i=0; i < textLength(); i=nextPos(m_realText, i))
+        mask+=m_passwordChar;
+
+    m_text->setText(mask);
+}
+
+bool PasswordTextBox::setPasswordChar(const String &c)
+{
+    if(!isOneCodepoint(c))
+        return false;
+
+    if(c == m_passwordChar)
+        return true;
+
     m_passwordChar=c;
+    updateMask();
+    return true;
+}
+
+bool PasswordTextBox::setPasswordChar(const char c)
+{
+    if(static_cast<unsigned char>(c) >= 0x80)
+        return false;
+
+    return setPasswordChar(String(1, c));
+}
+
+int PasswordTextBox::displayPos(int realPos) const
+{
+    int codepoints=0;
+
+    for(int i=0; i < realPos && i < static_cast<int>(m_realText.size()); i=nextPos(m_realText, i))
+        ++codepoints;
+
+    return codepoints*static_cast<int>(m_passwordChar.size());
+}
+
+int PasswordTextBox::realPos(int displayPos) const
+{
+    int pos=0;
+
+    for(int k=displayPos/static_cast<int>(m_passwordChar.size()); k > 0 && pos < static_cast<int>(m_realText.size()); --k)
+        pos=nextPos(m_realText, pos);
+
+    return pos;
 }
 
 }//namespace controls

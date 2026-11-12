@@ -8,8 +8,8 @@
  *  (Ctrl+V through the GLFW translator), insertText and setText, drop the
  *  trailing line breaks and turn every other one ("\r\n", a lone "\r", "\n")
  *  and every "\t" into one space, as Firefox's single-line inputs do. For a
- *  PasswordTextBox that is its real text, with one mask character per byte of
- *  it. The rule runs before isTextAllowed and the length cap, so a numeric
+ *  PasswordTextBox that is its real text, with one mask character per
+ *  codepoint of it. The rule runs before isTextAllowed and the length cap, so a numeric
  *  box takes a pasted "12\n" and the cap counts the converted text; a paste
  *  leaves the caret just after what it put in, with no selection and one
  *  onTextChanged, and one that converts to nothing changes nothing, a
@@ -211,7 +211,7 @@ TEST_CASE("A TextBox turns line breaks and tabs into spaces and drops the traili
     }
 }
 
-TEST_CASE("A PasswordTextBox's real text has no line break or tab, and its mask a character per byte")
+TEST_CASE("A PasswordTextBox's real text has no line break or tab, and its mask a character per codepoint")
 {
     for(Way way : kWays)
     {
@@ -228,7 +228,8 @@ TEST_CASE("A PasswordTextBox's real text has no line break or tab, and its mask 
             CHECK(box->getText() == c.out);
             CHECK_FALSE(hasBreakOrTab(box->getText()));
 
-            // the Text shows the mask, one '*' per byte of the real text
+            // the Text shows the mask, one '*' per codepoint of the real text
+            // (every result here is ASCII, so one per byte)
             const String &mask=box->Label::getText();
             CHECK(mask == String(c.out.size(), '*'));
             CHECK(box->textLength() == static_cast<int>(c.out.size()));
