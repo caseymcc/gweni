@@ -15,7 +15,15 @@
  *  the anchor's panel (a pure move, which lays out neither it nor the anchor):
  *  the popup is at the anchor's new place in that frame, in one pass and with
  *  no layout-verify difference, and the next frame lays out and writes
- *  nothing (#574).
+ *  nothing (#574). Open over a settled UI, a frame runs no layout pass and
+ *  enters no control; so does every frame with a StatsOverlay or an
+ *  Inspector open, while their refreshes after an app redraw set their labels
+ *  and while their own subtree is invalidated: a pass for a tool's subtree
+ *  alone does not enter the popup. Anchored in a ZoomPanel, it is at its
+ *  anchor's drawn place in the frame of a pan and of a zoom, which lay out
+ *  nothing else, and the next frame lays out and writes nothing. Each of
+ *  these runs with layout verification on, and the moving ones with it off
+ *  too (its full pass would put a lagging popup right before the checks).
  *
  *  Closing: a left or right press outside it and its anchor (the press still
  *  reaches what it was on), Escape, the anchor hidden (through its parent) or
@@ -62,8 +70,11 @@
 #include <gweni/controls/popup.h>
 #include <gweni/controls/toolTip.h>
 #include <gweni/controls/windowControl.h>
+#include <gweni/controls/zoomPanel.h>
 #include <gweni/inputHandler.h>
 #include <gweni/platforms/platform.h>
+#include <gweni/tools/inspector.h>
+#include <gweni/tools/statsOverlay.h>
 
 #include <doctest/doctest.h>
 
@@ -1181,6 +1192,170 @@ TEST_CASE("Popup: follows its anchor in the frame a sibling's layout moves it")
         CHECK_FALSE(scene.canvas->getLayoutStats().renderLayout);
         CHECK(popup->getX() == scene.canvasRect(anchor).x);
         CHECK(popup->getY() == 60+anchor->getHeight()+Popup::Gap);
+
+        scene.frame();
+        CHECK(scene.canvas->getLayoutStats().passes == 0);
+        CHECK(scene.canvas->getLayoutStats().visited == 0);
+        CHECK(scene.renderer.frameStats().primitiveSlotsWritten == 0);
+        CHECK(scene.renderer.frameStats().textSlotsWritten == 0);
+    }
+    CHECK(controls::layoutVerifyFailures() == verifyFailures);
+    controls::setLayoutVerify(verify);
+}
+
+TEST_CASE("Popup: open over a settled UI, or with a tool's refresh laying out the tool alone, a frame enters nothing")
+{
+    const bool verify=controls::layoutVerifyEnabled();
+    const size_t verifyFailures=controls::layoutVerifyFailures();
+
+    controls::setLayoutVerify(true);
+
+    for(int tool : {0, 1})
+    {
+        CAPTURE(tool);
+
+        Scene scene;
+        controls::Base *panel=scene.box(50, 40, 200, 150);
+        controls::Button *anchor=panel->newChild<controls::Button>();
+
+        anchor->setText("Options");
+
+        Popup *popup=anchor->createPopup();
+
+        scene.box(0, 0, 80, 40, popup);
+        scene.frame();
+        popup->open(anchor);
+
+        // a stepped clock, so the stats overlay refreshes (every 16 frames)
+        auto frame=[&]()
+        {
+            scene.clock+=1.0f/64.0f;
+            scene.frame();
+        };
+        auto checkNothing=[&]()
+        {
+            CHECK(scene.canvas->getLayoutStats().passes == 0);
+            CHECK(scene.canvas->getLayoutStats().visited == 0);
+            CHECK_FALSE(scene.canvas->getLayoutStats().renderLayout);
+        };
+
+        for(int i=0; i < 3; ++i)
+            frame();
+
+        const Rect placed=popup->getBounds();
+
+        CHECK(placed.y == 40+anchor->getHeight()+Popup::Gap);
+        // settled, with the popup open
+        for(int i=0; i < 3; ++i)
+        {
+            frame();
+            checkNothing();
+        }
+
+        tools::StatsOverlay *overlay=nullptr;
+        tools::Inspector *inspector=nullptr;
+        controls::Base *toolRoot=nullptr;
+
+        if(tool == 0)
+            toolRoot=overlay=tools::StatsOverlay::open(scene.canvas);
+        else
+            toolRoot=inspector=tools::Inspector::open(scene.canvas);
+        REQUIRE(toolRoot);
+        for(int i=0; i < 40; ++i)
+            frame();
+
+        // an app change that lays nothing out: the refreshes after it show
+        // it and then 0, setting the tool's labels, and lay out the tool alone
+        const size_t refreshes=overlay ? overlay->refreshes() : inspector->textSets();
+
+        anchor->redraw();
+        frame();
+        checkNothing();
+        for(int i=0; i < 40; ++i)
+        {
+            CAPTURE(i);
+            frame();
+            checkNothing();
+        }
+        CHECK((overlay ? overlay->refreshes() : inspector->textSets()) > refreshes);
+
+        // the tool's own subtree laid out again
+        toolRoot->invalidate();
+        toolRoot->invalidateChildren(true);
+        frame();
+        checkNothing();
+        frame();
+        checkNothing();
+
+        CHECK(popup->isOpen());
+        CHECK(popup->getX() == placed.x);
+        CHECK(popup->getY() == placed.y);
+
+        if(overlay)
+            tools::StatsOverlay::close(scene.canvas);
+        else
+            tools::Inspector::close(scene.canvas);
+        frame();
+    }
+    CHECK(controls::layoutVerifyFailures() == verifyFailures);
+    controls::setLayoutVerify(verify);
+}
+
+TEST_CASE("Popup: follows its anchor in a ZoomPanel's pan and zoom in that frame")
+{
+    const bool verify=controls::layoutVerifyEnabled();
+    const size_t verifyFailures=controls::layoutVerifyFailures();
+
+    // without verification too: its full pass would put a lagging popup
+    // right before the checks see it
+    for(bool verifying : {false, true})
+    {
+        CAPTURE(verifying);
+        controls::setLayoutVerify(verifying);
+
+        Scene scene;
+        controls::ZoomPanel *zoom=scene.canvas->newChild<controls::ZoomPanel>();
+
+        zoom->setSizeFlags({SizeFlag::Fixed, SizeFlag::Fixed});
+        zoom->setBounds(20, 30, 300, 200);
+        zoom->setContentSize(Point(300, 200));
+
+        controls::Base *anchor=scene.box(10, 10, 60, 20, zoom);
+        Popup *popup=anchor->createPopup();
+
+        scene.box(0, 0, 80, 40, popup);
+        scene.frame();
+        popup->open(anchor);
+        for(int i=0; i < 3; ++i)
+            scene.frame();
+        REQUIRE(scene.canvas->getLayoutStats().passes == 0);
+
+        auto check=[&]()
+        {
+            const Point at=Popup::placement(anchor->getCanvasBounds(),
+                Point(popup->getWidth(), popup->getHeight()), Rect(0, 0, 400, 300), PopupPlacement::Below);
+
+            CHECK(popup->getX() == at.x);
+            CHECK(popup->getY() == at.y);
+        };
+
+        check();
+
+        const Rect before=anchor->getCanvasBounds();
+
+        // a pan and a zoom move the anchor as it is drawn, with no pass but
+        // the popup's own
+        zoom->setPan(PointF(17.0f, 9.0f));
+        scene.frame();
+        REQUIRE(anchor->getCanvasBounds().x != before.x);
+        CHECK(scene.canvas->getLayoutStats().passes <= 1);
+        check();
+
+        zoom->setZoom(1.5f);
+        scene.frame();
+        CHECK(scene.canvas->getLayoutStats().passes <= 1);
+        CHECK(anchor->getCanvasBounds().w == 90);
+        check();
 
         scene.frame();
         CHECK(scene.canvas->getLayoutStats().passes == 0);
