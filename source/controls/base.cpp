@@ -1097,6 +1097,25 @@ void Base::invalidateWalk(int maxDepth)
     if(m_children.empty() && !(m_innerPanel && !m_innerPanel->getChildren().empty()))
         return;
 
+    // A new size in a layout pass (setBounds): its children, and none walks
+    // up. The pass is arranging every ancestor and has marked this control
+    // on its way down, and setBounds marks that way again, so a way up would
+    // only make each ancestor's layout() run a second time in Y.
+    if((maxDepth == 1) && Canvas::s_layingOut)
+    {
+        SubtreeWalk walk(this);
+
+        for(auto &&child : m_children)
+            child->invalidate();
+
+        if(m_innerPanel && m_innerPanel->m_actualParent != this)
+        {
+            for(auto &&innerchild : m_innerPanel->getChildren())
+                innerchild->invalidate();
+        }
+        return;
+    }
+
     // One child with nothing under it the walk enters (a Label's Text,
     // resized with it): its own invalidate() is the whole walk, the way up
     // included.
@@ -1946,7 +1965,11 @@ void Base::onBoundsChanged(Rect oldBounds)
     if(getParent())
         getParent()->onChildBoundsChanged(oldBounds, this);
 
-    if(m_bounds.w != oldBounds.w || m_bounds.h != oldBounds.h)
+    // Outside a layout pass a new size walks up to the canvas, so the next
+    // pass reaches this control and runs its ancestors' layout() again. In a
+    // pass setBounds has marked it and the way down to it, which is all the
+    // pass needs: its ancestors are being arranged, and none reads it.
+    if((m_bounds.w != oldBounds.w || m_bounds.h != oldBounds.h) && !Canvas::s_layingOut)
     {
         PlacementScope placement;
         BoundsInvalidationScope boundsOnly;

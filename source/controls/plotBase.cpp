@@ -210,9 +210,23 @@ void PlotBase::onMouseLeave()
 void PlotBase::layout(skin::Base *skin)
 {
     ParentClass::layout(skin);
+    placeCaption();
+}
 
-    // The caption's line, measured by this pass, is taken off the plot's top:
-    // a new height moves the series, which the renderer redraws.
+// The caption's height is measured in the Y pass, after layout()'s run at the
+// start of the X arrange read it: it is placed again here, with its height
+// final, before the pass arranges it in Y.
+void PlotBase::arrange(skin::Base *skin, Dim dim)
+{
+    if(dim == Dim::Y)
+        placeCaption();
+    ParentClass::arrange(skin, dim);
+}
+
+void PlotBase::placeCaption()
+{
+    // The caption's line is taken off the plot's top: a new height moves the
+    // series, which the renderer redraws.
     const int captionHeight=m_caption?m_caption->getPreferredSize().height:0;
 
     if(captionHeight != m_captionHeight)

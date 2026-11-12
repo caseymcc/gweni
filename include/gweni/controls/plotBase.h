@@ -96,6 +96,10 @@ public:
 protected:
 
     void layout(skin::Base *skin) override;
+    void arrange(skin::Base *skin, Dim dim) override;
+    //! Places the caption at the top centre from its preferred size, and
+    //! takes its line off the plot.
+    void placeCaption();
 
     //! What is drawn for sample \p index, as one number: setValue() marks the
     //! plot only when it changes (or the range does). Two NaNs are the same.

@@ -158,7 +158,7 @@ The children placed this way:
 | CrossSplitter | its bars and panels | `layout()` |
 | Properties, PropertyRow | the splitter bar; a row's label and property | `arrange()` |
 | Slider | the thumb | `layout()`, a value change, a click |
-| PlotHistogram, PlotLines | its caption | `PlotBase::layout()` |
+| PlotHistogram, PlotLines | its caption | `PlotBase::layout()`, and again in its Y arrange, its height final |
 | DragNumber | its edit box | `layout()` |
 | VectorField | its components' fields and axis tags | `layout()` |
 | ScrollBar | the arrow buttons; the thumb | `layout()`; `layout()`, a scroll |
