@@ -139,10 +139,6 @@ static std::string urlForDemo(const std::string &name)
     return "?"+platform::buildQuery(params)+(url.hash.empty()?"":"#"+url.hash);
 }
 
-//! Demo::setPageShownHandler: the user's pick is a new history entry, a page
-//! the app showed (--demo, a stored page, back or forward) replaces the
-//! current one, so restoring a page never grows the history. Picking the page
-//! already shown replaces too, or Back would first go to that page again.
 //! The page \p name is shown: the window's title and the stored page.
 static void announce(const std::string &name)
 {
@@ -153,6 +149,10 @@ static void announce(const std::string &name)
         gweni::platform::storageSet(StoredPageKey, name);
 }
 
+//! Demo::setPageShownHandler: the user's pick is a new history entry, a page
+//! the app showed (--demo, a stored page, back or forward) replaces the
+//! current one, so restoring a page never grows the history. Picking the page
+//! already shown replaces too, or Back would first go to that page again.
 static void pageShown(const std::string &name, bool picked)
 {
     const std::string url=urlForDemo(name);
