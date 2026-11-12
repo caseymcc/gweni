@@ -56,6 +56,21 @@ namespace ftgl {
   uint32_t
   utf8_to_utf32( const char * character );
 
+  /**
+   * gweni: whether a UTF-8 encoded character is one of the default-ignorable
+   * codepoints text_buffer_add_char draws as nothing, with no advance and no
+   * glyph: U+200B-200D (zero width space, non-joiner and joiner), U+2060 (word
+   * joiner), U+FE00-FE0F (variation selectors) and U+FEFF (zero width no-break
+   * space). Each is 3 bytes, so it is a byte compare, with no decoding; it reads
+   * no byte past a NUL.
+   *
+   * @param character  An UTF-8 encoded character
+   *
+   * @return  1 if it is one of them, 0 otherwise.
+   */
+  int
+  utf8_is_ignorable( const char * character );
+
 /**
  * @}
  */

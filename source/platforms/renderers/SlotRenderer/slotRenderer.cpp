@@ -3099,6 +3099,14 @@ SlotRenderer::PenWalk SlotRenderer::walkPens(FontData &fontData, float px, const
             continue;
         }
 
+        // a default-ignorable draws nothing and moves no pen, and no pair holds it,
+        // in every mode (text_buffer_add_char, layoutSdfText)
+        if(ftgl::utf8_is_ignorable(current))
+        {
+            previous=current;
+            continue;
+        }
+
         ftgl::texture_glyph_t *glyph=fontData.glyph(current);
 
         if(glyph == nullptr)
@@ -3233,6 +3241,13 @@ gweni::Point SlotRenderer::layoutSdfText(FontData &fontData, float px, const gwe
             baseline-=step;
             ++lines;
             previous=nullptr;
+            continue;
+        }
+
+        // nothing drawn, no advance, and no pair across it, as text_buffer_add_char
+        if(ftgl::utf8_is_ignorable(current))
+        {
+            previous=current;
             continue;
         }
 

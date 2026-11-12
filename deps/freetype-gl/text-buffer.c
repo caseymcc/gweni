@@ -270,6 +270,11 @@ text_buffer_add_char( text_buffer_t * self,
         return;
     }
 
+    /* gweni: a default-ignorable codepoint (utf8_is_ignorable) draws nothing and
+     * moves no pen; the next character is kerned against it, which no pair holds */
+    if( utf8_is_ignorable( current ) )
+        return;
+
     glyph = texture_font_get_glyph( font, current );
     black = texture_font_get_glyph( font, NULL );
 
