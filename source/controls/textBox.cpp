@@ -138,12 +138,14 @@ void TextBox::insertText(const gweni::String &strIn)
     const int start=m_cursorPos;
     String str=getText();
     str.insert(m_cursorPos, strInsert, 0, insertSize);
-    setEditedText(str);
+    const bool own=setEditedText(str);
     m_cursorPos+=insertSize;
     m_cursorEnd=m_cursorPos;
     m_cursorLine=0;
     refreshCursorBounds();
-    recordEdit(start, String(), strInsert.substr(0, insertSize), before);
+
+    if(own)
+        recordEdit(start, String(), strInsert.substr(0, insertSize), before);
 }
 
 text::Selection TextBox::currentSelection() const
@@ -151,13 +153,45 @@ text::Selection TextBox::currentSelection() const
     return {{0, static_cast<size_t>(m_cursorEnd)}, {0, static_cast<size_t>(m_cursorPos)}};
 }
 
-void TextBox::setEditedText(const String &str)
+// The edit's own setText takes m_applyingEdit before onTextChanged fires, so
+// a setText from a handler is someone else's and clears the history. Any text
+// set nested in this one (a handler's setText, or an edit of its own) leaves a
+// text the edit did not make: the history is cleared and the edit is not
+// recorded.
+bool TextBox::setEditedText(const String &str)
 {
-    const bool applying=m_applyingEdit;
+    const unsigned int sets=m_textSets;
 
     m_applyingEdit=true;
     setText(str);
-    m_applyingEdit=applying;
+    m_applyingEdit=false;
+
+    if(m_textSets-sets <= 1)
+        return true;
+
+    m_undo.clear();
+    return false;
+}
+
+void TextBox::textSetting()
+{
+    ++m_textSets;
+
+    if(m_applyingEdit)
+        m_applyingEdit=false;
+    else
+        m_undo.clear();
+}
+
+// An edit taken back or made again: \p out must be at \p at, and is replaced
+// by \p in. False, with \p str unchanged, if the text there is not \p out.
+static bool replaceEdited(String &str, size_t at, const String &out, const String &in)
+{
+    if(at > str.size() || str.compare(at, out.size(), out) != 0)
+        return false;
+
+    str.replace(at, out.size(), in);
+    return true;
 }
 
 void TextBox::recordEdit(int start, const String &removed, const String &inserted, const text::Selection &before)
@@ -168,7 +202,7 @@ void TextBox::recordEdit(int start, const String &removed, const String &inserte
     edit.text=inserted;
     edit.removed=removed;
     edit.textEnd={0, start+inserted.size()};
-    m_undo.record(edit, m_editKind, before, currentSelection());
+    m_undo.record(std::move(edit), m_editKind, before, currentSelection());
 }
 
 // An undo step's edits taken back from the last to the first, or a redo's
@@ -191,10 +225,20 @@ bool TextBox::undo()
     {
         // the inverse: the inserted text replaced by the removed one
         const text::Edit &edit=step->edits[i];
-        str.replace(edit.range.begin.byte, edit.text.size(), edit.removed);
+
+        if(!replaceEdited(str, edit.range.begin.byte, edit.text, edit.removed))
+            return historyLost();
     }
     applyUndoStep(str, step->before);
     return true;
+}
+
+// A step that does not fit the text (something changed it without clearing
+// the history) is not applied: the history is dropped instead.
+bool TextBox::historyLost()
+{
+    m_undo.clear();
+    return false;
 }
 
 bool TextBox::redo()
@@ -210,12 +254,17 @@ bool TextBox::redo()
     String str=getText();
 
     for(const text::Edit &edit:step->edits)
-        str.replace(edit.range.begin.byte, edit.removed.size(), edit.text);
+    {
+        if(!replaceEdited(str, edit.range.begin.byte, edit.removed, edit.text))
+            return historyLost();
+    }
     applyUndoStep(str, step->after);
     return true;
 }
 
-void TextBox::applyUndoStep(const String &str, const text::Selection &selection)
+// The selection is a copy: an onTextChanged handler that edits the box drops
+// the steps that could be redone, the one it came from among them.
+void TextBox::applyUndoStep(const String &str, text::Selection selection)
 {
     setEditedText(str);
     m_cursorEnd=snapPos(getText(), std::min(static_cast<int>(selection.anchor.byte), textLength()));
@@ -261,11 +310,16 @@ void TextBox::updateCaretBlink()
 
 void TextBox::setText(const String &str, bool doEvents)
 {
-    if(!m_applyingEdit)
-        m_undo.clear();
-
     String converted;
-    ParentClass::setText(normalizeText(str, converted)?converted:str, doEvents);
+    const String &newText=normalizeText(str, converted)?converted:str;
+
+    // the same text again changes nothing, the history included
+    if(newText != getText())
+        textSetting();
+    else
+        m_applyingEdit=false;
+
+    ParentClass::setText(newText, doEvents);
     updatePlaceholder();
 }
 
@@ -674,7 +728,7 @@ void TextBox::deleteText(int iStartPos, int iLength)
     const String removed=str.substr(iStartPos, iLength);
 
     str.erase(iStartPos, iLength);
-    setEditedText(str);
+    const bool own=setEditedText(str);
 
     if(cursorPos >= iEndPos)
         setCursorPos(cursorPos-iLength);
@@ -682,7 +736,9 @@ void TextBox::deleteText(int iStartPos, int iLength)
         setCursorPos(iStartPos);
 
     setCursorend(m_cursorPos);
-    recordEdit(iStartPos, removed, String(), before);
+
+    if(own)
+        recordEdit(iStartPos, removed, String(), before);
 }
 
 bool TextBox::hasSelection()
@@ -1179,15 +1235,16 @@ GWENI_CONTROL_CONSTRUCTOR(PasswordTextBox)
 
 void PasswordTextBox::setText(const String &strIn, bool doEvents)
 {
-    if(!m_applyingEdit)
-        m_undo.clear();
-
     String converted;
     const String &str=normalizeText(strIn, converted)?converted:strIn;
 
     if(m_realText == str)
+    {
+        m_applyingEdit=false;
         return;
+    }
 
+    textSetting();
     m_realText=str;
     updateMask();
     redraw();

@@ -89,7 +89,7 @@ public:
 
     //! Adds \p edit, already applied, made by \p kind, with the selection
     //! before and after it.
-    void record(const Edit &edit, EditKind kind, const Selection &before, const Selection &after);
+    void record(Edit edit, EditKind kind, const Selection &before, const Selection &after);
 
     //! Every record() until the matching endGroup() goes into one step, the
     //! first by the rules as an edit of \p kind (a group with no record()

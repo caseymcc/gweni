@@ -259,14 +259,21 @@ protected:
     //! m_cursorPos.
     text::Selection currentSelection() const;
     //! Sets the text of an edit, an undo or a redo through setText without
-    //! clearing the undo history.
-    void setEditedText(const String &str);
+    //! clearing the undo history. False, with the history cleared, when the
+    //! text was set again inside it (an onTextChanged handler): the edit is
+    //! then not recorded.
+    bool setEditedText(const String &str);
+    //! Called by setText() for a text that changes: an edit's own set keeps
+    //! the history, any other clears it.
+    void textSetting();
+    //! Clears the history for a step that does not fit the text; false.
+    bool historyLost();
     //! Records an applied edit at \p start that took out \p removed and put
     //! in \p inserted, with the selection \p before it and the current one
     //! after it, as m_editKind.
     void recordEdit(int start, const String &removed, const String &inserted, const text::Selection &before);
     //! Sets the text an undo or redo step leaves, then its selection.
-    void applyUndoStep(const String &str, const text::Selection &selection);
+    void applyUndoStep(const String &str, text::Selection selection);
 
     //! What the edits made now are, for the undo stack's coalescing: set by
     //! the key, char and clipboard handlers around their edits.
@@ -281,8 +288,12 @@ protected:
 
     text::UndoStack m_undo;
     text::EditKind m_editKind=text::EditKind::Other;
-    //! Set while an edit sets the text, so setText() keeps the history.
+    //! Set while an edit sets the text, so setText() keeps the history;
+    //! taken by that setText before its onTextChanged.
     bool m_applyingEdit=false;
+    //! The text changes setText() made, for setEditedText to see one nested
+    //! in its own.
+    unsigned int m_textSets=0;
 };
 
 

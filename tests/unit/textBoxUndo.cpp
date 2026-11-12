@@ -17,7 +17,16 @@
  *  starts the next; a letter typed over a selection is one step with the
  *  letters after it, and its undo gives the selection back with one
  *  onTextChanged; a paste is a step of its own; setText() from the app
- *  clears the history; a box that is not editable neither edits nor undoes;
+ *  clears the history, but not with the text the box already has; an
+ *  onTextChanged handler that sets the text during an edit (a clamp, as
+ *  HSVColorPicker's number boxes do) clears the history and the edit is not
+ *  recorded, and one that edits the box during an undo leaves its edit and
+ *  no history (that edit drops the step being undone, whose selection the
+ *  undo has copied; the stale read it avoids is not one ASAN sees, the
+ *  step's bytes staying in the vector's capacity); a step whose
+ *  edits do not fit the text clears the history instead of being applied,
+ *  for an undo and a redo; a box that is not editable neither edits nor
+ *  undoes;
  *  and Base::acceleratorKey() puts an accelerator's modifiers in the order
  *  handleAccelerator builds them, so "Shift + Ctrl + Z" is Ctrl+Shift+Z.
  */
@@ -432,6 +441,129 @@ TEST_CASE("TextBox undo: setText() from the app clears the history")
     box->setText("again");
     CHECK_FALSE(box->getUndoStack().canRedo());
     CHECK(box->redo() == false);
+}
+
+TEST_CASE("TextBox undo: setText() with the text the box has keeps the history")
+{
+    Scene scene;
+    controls::TextBox *box=scene.focusedBox<controls::TextBox>();
+
+    scene.type(U"same");
+    box->setText("same");
+    CHECK(box->getUndoStack().undoCount() == 1);
+    scene.undo();
+    CHECK(box->getText().empty());
+}
+
+TEST_CASE("TextBox undo: an onTextChanged handler that sets the text during an edit clears the history, the edit unrecorded")
+{
+    // as HSVColorPicker's number boxes clamp what is typed into them
+    struct Clamp: public event::Handler
+    {
+        controls::TextBox *box=nullptr;
+        void changed(event::Info)
+        {
+            if(box->getText().size() > 3)
+                box->setText("255");
+        }
+    };
+
+    Scene scene;
+    controls::TextBox *box=scene.focusedBox<controls::TextBox>();
+    Clamp clamp;
+    clamp.box=box;
+    box->onTextChangedCaller.add(&clamp, &Clamp::changed);
+
+    scene.type(U"255");
+    CHECK(box->getUndoStack().undoCount() == 1);
+
+    scene.type(U"5");
+    CHECK(box->getText() == "255");
+    CHECK_FALSE(box->getUndoStack().canUndo());
+
+    scene.key(GLFW_KEY_HOME);
+    scene.type(U"9");
+    CHECK(box->getText() == "255");
+    CHECK_FALSE(box->getUndoStack().canUndo());
+    scene.undo();
+    CHECK(box->getText() == "255");
+
+    // a Backspace the handler lets through is recorded again, on the text
+    // the handler left
+    scene.key(GLFW_KEY_END);
+    scene.key(GLFW_KEY_BACKSPACE);
+    CHECK(box->getText() == "25");
+    scene.undo();
+    CHECK(box->getText() == "255");
+    scene.redo();
+    CHECK(box->getText() == "25");
+}
+
+TEST_CASE("TextBox undo: an onTextChanged handler that edits the box during an undo leaves its edit and no history")
+{
+    struct Editor: public event::Handler
+    {
+        controls::TextBox *box=nullptr;
+        bool armed=false;
+        void changed(event::Info)
+        {
+            if(!armed)
+                return;
+            armed=false;
+            box->insertText("!");
+        }
+    };
+
+    Scene scene;
+    controls::TextBox *box=scene.focusedBox<controls::TextBox>();
+    Editor edit;
+    edit.box=box;
+    box->onTextChangedCaller.add(&edit, &Editor::changed);
+
+    scene.type(U"abc");
+    scene.key(GLFW_KEY_LEFT);
+    scene.type(U"d");
+    REQUIRE(box->getUndoStack().undoCount() == 2);
+
+    // the handler's edit drops the step being undone (the one that could be
+    // redone) while the undo still has to set its selection
+    edit.armed=true;
+    scene.undo();
+    CHECK(box->getText() == "abc!");
+    CHECK_FALSE(box->getUndoStack().canUndo());
+    CHECK_FALSE(box->getUndoStack().canRedo());
+    CHECK(box->undo() == false);
+    CHECK(box->redo() == false);
+}
+
+TEST_CASE("TextBox undo: a step that does not fit the text clears the history instead of applying")
+{
+    Scene scene;
+    controls::TextBox *box=scene.focusedBox<controls::TextBox>();
+
+    scene.type(U"abc");
+
+    // an edit recorded by hand against a text the box does not have
+    text::Edit stale;
+    stale.range={{0, 5}, {0, 5}};
+    stale.text="zz";
+    stale.textEnd={0, 7};
+    box->getUndoStack().seal();
+    box->getUndoStack().record(stale, text::EditKind::Insert, {}, {});
+    REQUIRE(box->getUndoStack().undoCount() == 2);
+
+    CHECK(box->undo() == false);
+    CHECK(box->getText() == "abc");
+    CHECK_FALSE(box->getUndoStack().canUndo());
+    CHECK_FALSE(box->getUndoStack().canRedo());
+
+    // the same for a redo: "abc" undone, then the text changed under it
+    scene.type(U"d");
+    REQUIRE(box->undo());
+    box->getUndoStack().record(stale, text::EditKind::Insert, {}, {});
+    box->getUndoStack().undo();
+    CHECK(box->redo() == false);
+    CHECK_FALSE(box->getUndoStack().canUndo());
 }
 
 TEST_CASE("TextBox undo: a box that is not editable neither edits nor undoes")

@@ -443,6 +443,8 @@ void DragNumber::beginEdit()
 
     m_editing=true;
     m_editBox->setText(editText(), false);
+    // a setText of the text it has keeps the history; each edit starts with none
+    m_editBox->getUndoStack().clear();
     m_text->setHidden(true);
     m_editBox->setHidden(false);
     m_editBox->focus();

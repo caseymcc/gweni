@@ -1668,12 +1668,23 @@ two programs and the draws. What follows describes both together:
   step to one copy of the string and set it once through `setText`, so there is one
   `onTextChanged` per step, and `m_text` re-wraps only the paragraphs that differ, as
   after any edit. Then the step's caret and selection are restored.
-  `setText()` from the app (and `PasswordTextBox`'s) is not an edit: it clears the
-  history. The box's own edits set the text through `setEditedText`, which keeps the
-  history. Losing the focus seals the step, so typing after the focus comes back is a
-  step of its own. `TextBoxNumeric`, `PasswordTextBox` and DragNumber's edit box
-  inherit all of this; the edit box is given its text when it opens, so each edit
-  starts with no history.
+  `setText()` from the app (and `PasswordTextBox`'s) is not an edit: one that changes
+  the text clears the history (the text the box already has keeps it, as
+  `ColorEdit` re-sets a field when it loses the focus). The box's own edits set the
+  text through `setEditedText`, which keeps the history: it raises `m_applyingEdit`,
+  and that `setText` takes it down before its `onTextChanged` fires, so a `setText`
+  from a handler (`HSVColorPicker` clamping what is typed into its number boxes) is
+  someone else's and clears the history. `setText` counts the changes it makes
+  (`m_textSets`), so an edit whose own set had another nested in it (a handler's
+  `setText` or edit) leaves a text the edit did not make: the history is cleared and
+  the edit is not recorded. An undo or redo first checks that each edit's text is
+  where the step says (`replaceEdited`), and a step that does not fit clears the
+  history instead of being applied; it copies the step's selection before setting
+  the text, since a handler's edit drops the steps that could be redone, that step
+  among them. Losing the focus seals the step, so typing after the focus comes back
+  is a step of its own. `TextBoxNumeric`, `PasswordTextBox` and DragNumber's edit box
+  inherit all of this; the edit box is given its text when it opens and its history
+  cleared, so each edit starts with none.
 
   Accelerators are looked up by `Base::acceleratorKey()`: upper case, no spaces, and
   Ctrl before Shift, the order `input::handleAccelerator` builds them in, so

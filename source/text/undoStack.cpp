@@ -7,6 +7,8 @@
 #include <gweni/text/undoStack.h>
 #include <gweni/platforms/platform.h>
 
+#include <utility>
+
 namespace gweni
 {
 namespace text
@@ -49,7 +51,7 @@ void UndoStack::startStep(EditKind kind, const Selection &before)
     applyLimit();
 }
 
-void UndoStack::record(const Edit &edit, EditKind kind, const Selection &before, const Selection &after)
+void UndoStack::record(Edit edit, EditKind kind, const Selection &before, const Selection &after)
 {
     float now=platform::getTimeInSeconds();
 
@@ -68,7 +70,7 @@ void UndoStack::record(const Edit &edit, EditKind kind, const Selection &before,
         startStep(kind, before);
 
     UndoStep &step=m_steps.back();
-    step.edits.push_back(edit);
+    step.edits.push_back(std::move(edit));
     step.after=after;
     step.lastTime=now;
 }
