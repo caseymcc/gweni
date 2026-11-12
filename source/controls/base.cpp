@@ -3898,9 +3898,10 @@ void Base::arrange(skin::Base *skin, Dim dim)
 
     // layout() runs at the start of the X arrange, when the width is final
     // but the height is the previous pass's. The Y pass gives the control its
-    // height before arranging it, and a new one invalidates it again (as
-    // placement, see onBoundsChanged), so layout() runs a second time here
-    // with both final. What it computes in X must depend on the width only,
+    // height before arranging it, and a new one marks it again (setBounds),
+    // so layout() runs a second time here with both final. A child's new size
+    // does not: a layout() that reads a child's preferred height places it
+    // again in its Y arrange (PlotBase::arrange). What it computes in X must depend on the width only,
     // so the second run writes the same X geometry (docs/layout.md).
     if(needsLayout())
     {
