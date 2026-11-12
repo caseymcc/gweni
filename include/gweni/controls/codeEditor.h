@@ -315,6 +315,7 @@ public:
     Rect getCaretBounds() const;
     //! One frame of the caret's blink (its animation's).
     void updateCaretBlink() override;
+    double nextCaretBlinkTime() override { return m_caretBlink.nextEdge(this); }
     //! \}
 
     void calculateSize(skin::Base *skin, Dim dim) override;

@@ -223,6 +223,53 @@ void Canvas::cancelTimersOwnedBy(Base *owner)
     }
 }
 
+double Canvas::nextWorkTime()
+{
+    renderer::Base *render=m_skin?m_skin->getRenderer():nullptr;
+
+    if(m_needsRedraw || m_zOrderDirty || m_hoverStale || !m_deleteSet.empty()
+        || m_postQueue->pending()
+        || (!hidden() && layoutDirty())
+        || (render && (render->textLayoutSerial() != m_textLayoutSerial))
+        || (queuedRenderCount(this) != 0))
+        return WorkNow;
+
+    pruneTimers();
+
+    double next=m_timerHeap.empty()?NoWork:m_timerHeap.front().deadline;
+
+    if(hidden())
+        return next;
+
+#if GWENI_ANIMATE
+    next=std::min(next, anim::nextThinkTime(this));
+    if(next == WorkNow)
+        return next;
+#endif
+
+    // the tooltip: a new owner is taken (or let go) by the next update; one
+    // waiting shows once now-m_toolTipSince >= m_toolTipDelay, the first time
+    // for which that holds as updateToolTip() computes it
+    Base *owner=toolTipOwnerFor(HoveredControl);
+
+    if(m_toolTipSuppressed && (owner == m_toolTipSuppressed))
+        owner=nullptr;
+    if(owner != m_toolTipOwner)
+        return WorkNow;
+    if(owner && !m_toolTipShown)
+    {
+        double due=m_toolTipSince+m_toolTipDelay;
+
+        while(due-m_toolTipSince < m_toolTipDelay)
+            due=std::nextafter(due, NoWork);
+        next=std::min(next, due);
+    }
+    else if(owner && m_toolTipDirty)
+        return WorkNow;
+
+    return std::min(next, input::nextKeyRepeatTime(this));
+}
+
 void Canvas::runTimers()
 {
     pruneTimers();

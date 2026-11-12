@@ -8,7 +8,9 @@
 #include <gweni/anim.h>
 #include <gweni/utility.h>
 #include <gweni/controls/canvas.h>
+#include <algorithm>
 #include <cmath>
+#include <limits>
 #include <vector>
 
 namespace gweni
@@ -120,6 +122,22 @@ size_t think(controls::Canvas *canvas)
     return run;
 }
 
+double nextThinkTime(controls::Canvas *canvas)
+{
+    double next=std::numeric_limits<double>::infinity();
+
+    for(const Animation *animation : g_animations)
+    {
+        // the animations think(canvas) runs
+        if(animation->m_removed || (animation->m_control->getCanvas() != canvas))
+            continue;
+        next=std::min(next, animation->nextThinkTime());
+        if(next == -std::numeric_limits<double>::infinity())
+            break;
+    }
+    return next;
+}
+
 size_t activeCount(const controls::Base *control)
 {
     size_t count=0;
@@ -149,6 +167,14 @@ static float getEased(float time, float ease)
         return -time/2*(std::cos(3.14159f*time)-1);
 
     return std::pow(time, ease);
+}
+
+double TimedAnimation::nextThinkTime() const
+{
+    // think() starts it once current-m_start is no longer negative
+    if(!m_started && !m_finished)
+        return m_start;
+    return Animation::nextThinkTime();
 }
 
 void TimedAnimation::think()

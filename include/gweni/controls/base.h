@@ -103,6 +103,9 @@ GWENI_EXPORT void resetChangeStats();
 //! Base::isQueuedForRender()), on every canvas and off any. One UI thread, as
 //! the id banks in primitiveIds.h: a test compares it with a baseline.
 GWENI_EXPORT size_t queuedRenderCount();
+//! The queued controls on \p canvas's tree, the ones its next renderCanvas()
+//! drains: a scan of the queue, for Canvas::nextWorkTime() and tests.
+GWENI_EXPORT size_t queuedRenderCount(Canvas *canvas);
 
 //! The control types setSkin() found no skin renderer for: its walk up the
 //! parent types reached the skin's Base entry, for a type that is not Base and
@@ -849,6 +852,10 @@ public:
     //! (internal::CaretBlink's animation calls it on the control it was
     //! registered for); nothing by default.
     virtual void updateCaretBlink() {}
+    //! When updateCaretBlink() next changes something, on
+    //! platform::getTimeInSeconds() (the blink's animation's
+    //! anim::Animation::nextThinkTime()); now (-infinity) by default.
+    virtual double nextCaretBlinkTime();
 
     virtual bool isHovered() const;
     virtual bool shouldDrawHover() const;

@@ -59,6 +59,9 @@ public:
     //! flips the caret at each edge. The animation calls the control's
     //! Base::updateCaretBlink(), which calls this on its own blink.
     void step(Base *control);
+    //! When step() next changes something: the next edge while \p control
+    //! has the focus, else now (-infinity), when step() stops.
+    double nextEdge(Base *control) const;
 
 private:
     double m_next=0.0;

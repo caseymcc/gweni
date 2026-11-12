@@ -10,6 +10,8 @@
 #include <gweni/anim.h>
 #include <gweni/platforms/platform.h>
 
+#include <limits>
+
 namespace gweni
 {
 namespace controls
@@ -28,6 +30,11 @@ public:
     void think() override
     {
         m_control->updateCaretBlink();
+    }
+
+    double nextThinkTime() const override
+    {
+        return m_control->nextCaretBlinkTime();
     }
 };
 
@@ -71,6 +78,14 @@ void CaretBlink::keepLit(Base *control)
 
     if(control->isFocussed())
         control->addStateChange(StateChange_Caret);
+}
+
+double CaretBlink::nextEdge(Base *control) const
+{
+    if(!control->isFocussed())
+        return -std::numeric_limits<double>::infinity();
+    // step() flips once m_next > now no longer holds
+    return m_next;
 }
 
 // Unfocused, the caret is not drawn and nothing here changes. Focused, each

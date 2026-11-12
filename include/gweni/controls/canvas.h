@@ -14,6 +14,7 @@
 #include <gweni/postQueue.h>
 #include <cstdint>
 #include <functional>
+#include <limits>
 #include <memory>
 #include <set>
 #include <unordered_map>
@@ -298,6 +299,21 @@ public:
     /// handler (setWakeHandler()), so an idle loop wakes for it.
     TimerHandle after(double seconds, std::function<void()> function, Base *owner=nullptr);
     TimerHandle every(double seconds, std::function<void()> function, Base *owner=nullptr);
+    /// When this canvas next has work for an update and a render, on
+    /// platform::getTimeInSeconds(), for an idle loop to sleep until (a
+    /// loop draws a frame once the time is at or past it): WorkNow while
+    /// posts are pending, needsRedraw() is set, a control on its tree is
+    /// queued for render (queuedRenderCount(this)), its layout or z order is
+    /// dirty, a delayed delete is queued, the hover is stale or the
+    /// renderer's text layout changed; otherwise the earliest of the next
+    /// timer, its animations' anim::Animation::nextThinkTime(), the tooltip
+    /// delay of a hovered control waiting for its tooltip and the next key
+    /// repeat (input::nextKeyRepeatTime()), or NoWork. A hidden canvas runs
+    /// no layout, animation, tooltip or key repeat, so it waits for none.
+    double nextWorkTime();
+    static constexpr double WorkNow=-std::numeric_limits<double>::infinity();
+    static constexpr double NoWork=std::numeric_limits<double>::infinity();
+
     /// Cancels a timer of this canvas, also from inside a callback (its own
     /// or another's); its function is destroyed once it no longer runs.
     /// Returns whether it was pending.

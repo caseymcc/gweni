@@ -13,6 +13,10 @@
 #include <gweni/controls/canvas.h>
 #include <gweni/gweni.h>
 
+#include <algorithm>
+#include <cmath>
+#include <limits>
+
 namespace gweni
 {
 namespace input
@@ -209,6 +213,23 @@ void onCanvasThink(controls::Base *control)
                 KeyboardFocus->onKeyPress(i);
         }
     }
+}
+
+double nextKeyRepeatTime(controls::Base *control)
+{
+    double next=std::numeric_limits<double>::infinity();
+    controls::Canvas *canvas=control?control->getCanvas():nullptr;
+
+    if(!canvas || canvas->inputCapture() || !KeyboardFocus || (KeyboardFocus->getCanvas() != canvas))
+        return next;
+
+    for(int i=0; i < keys::KeysCount; i++)
+    {
+        // onCanvasThink repeats once the clock is past NextRepeat
+        if(g_keyData.KeyState[i] && (g_keyData.Target == KeyboardFocus))
+            next=std::min(next, std::nextafter(g_keyData.NextRepeat[i], std::numeric_limits<double>::infinity()));
+    }
+    return next;
 }
 
 bool isKeyDown(int key)

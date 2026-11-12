@@ -66,6 +66,11 @@ bool GWENI_EXPORT onMouseClicked(controls::Base *canvas, int button, bool down);
 void GWENI_EXPORT onMouseLeft(controls::Base *canvas);
 bool GWENI_EXPORT onKeyEvent(controls::Base *canvas, int key, bool down);
 void GWENI_EXPORT onCanvasThink(controls::Base *control);
+//! When the next key repeat onCanvasThink() would deliver to \p canvas is due:
+//! the first time past the earliest held key's next repeat while the keyboard
+//! focus is on the canvas and no input capture holds it, else +infinity (no
+//! key repeats there). For Canvas::nextWorkTime().
+double GWENI_EXPORT nextKeyRepeatTime(controls::Base *canvas);
 //! Unfocuses (Base::unfocus(), so onLostKeyboardFocus() runs) a keyboard
 //! focus that is no longer visible() or no longer takes keyboard input.
 //! Returns whether it did. The canvas calls it before its update-phase layout,

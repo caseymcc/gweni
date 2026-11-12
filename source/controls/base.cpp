@@ -184,6 +184,18 @@ size_t queuedRenderCount()
     return g_renderQueue.size()-std::count(g_renderQueue.begin(), g_renderQueue.end(), nullptr);
 }
 
+size_t queuedRenderCount(Canvas *canvas)
+{
+    size_t count=0;
+
+    for(Base *control:g_renderQueue)
+    {
+        if(control && (control->getCanvas() == canvas))
+            ++count;
+    }
+    return count;
+}
+
 void Base::appendToRenderQueue()
 {
     m_renderQueueIndex=(int)g_renderQueue.size();
@@ -867,6 +879,11 @@ Canvas *Base::getCanvas()
         return nullptr;
 
     return canvas->getCanvas();
+}
+
+double Base::nextCaretBlinkTime()
+{
+    return -std::numeric_limits<double>::infinity();
 }
 
 void Base::redraw()

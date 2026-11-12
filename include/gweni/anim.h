@@ -12,6 +12,8 @@
 #include <gweni/controls/base.h>
 #include <gweni/platforms/platform.h>
 
+#include <limits>
+
 #if GWENI_ANIMATE
 
 namespace gweni
@@ -38,6 +40,10 @@ GWENI_EXPORT void cancel(controls::Base *control, Animation *animation);
 GWENI_EXPORT size_t think(controls::Canvas *canvas);
 //! The registered animations of control, or of every control when null.
 GWENI_EXPORT size_t activeCount(const controls::Base *control=nullptr);
+//! The earliest Animation::nextThinkTime() of the animations think(canvas)
+//! would run (-infinity: one wants this frame), or +infinity with none. For
+//! controls::Canvas::nextWorkTime().
+GWENI_EXPORT double nextThinkTime(controls::Canvas *canvas);
 
 //! Something a control does over time. A registered animation is run once a
 //! frame by the update phase of its control's canvas (think(Canvas *)), until
@@ -50,6 +56,15 @@ public:
     virtual bool finished()
     {
         return false;
+    }
+    //! When think() next has work, on platform::getTimeInSeconds(): an idle
+    //! loop sleeps until the earliest (Canvas::nextWorkTime()). By default
+    //! now (-infinity): every frame, as the registry runs it. One that only
+    //! waits for a time (a caret's next edge, a delayed start) returns it, and
+    //! its think() must then do nothing before it.
+    virtual double nextThinkTime() const
+    {
+        return -std::numeric_limits<double>::infinity();
     }
 
     virtual ~Animation()
@@ -72,6 +87,8 @@ public:
 
     void think() override;
     bool finished() override;
+    //! Its start, until it has started; then every frame.
+    double nextThinkTime() const override;
 
     //
     // These are the magic functions you should be overriding

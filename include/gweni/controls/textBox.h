@@ -40,6 +40,7 @@ public:
     //! Flips the caret's blink phase when it is due, if focused. Its
     //! animation is registered only while the box has the focus.
     void updateCaretBlink() override;
+    double nextCaretBlinkTime() override { return m_caretBlink.nextEdge(this); }
 
     void onKeyboardFocus() override;
     void onLostKeyboardFocus() override;
