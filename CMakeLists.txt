@@ -134,6 +134,8 @@ set(GWENI_SOURCES
     source/primitiveIds.cpp
     include/gweni/skin.h
     source/skin.cpp
+    include/gweni/text/document.h
+    source/text/document.cpp
     include/gweni/uiTypes.h
     include/gweni/userData.h
     include/gweni/utility.h
