@@ -112,6 +112,17 @@ if(TARGET ControlTest AND NOT EMSCRIPTEN)
             -P ${CMAKE_CURRENT_SOURCE_DIR}/indexChunks.cmake
         WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
 
+    # every --shot-all PNG (and OpenGLCore's --screenshot) byte-identical with the
+    # clip cull on and off (GWENI_CLIP_CULL=0), the cull culling something in Demo
+    gweni_whole_app_test(controltest_clip_cull 600
+        COMMAND ${CMAKE_COMMAND}
+            -DCONTROLTEST=$<TARGET_FILE:ControlTest>
+            ${index_chunks_opengl}
+            -DSOURCE_DIR=${GWENI_SOURCE_DIR}
+            -DSCRATCH_DIR=${CMAKE_CURRENT_BINARY_DIR}/clip_cull@VARIANT@
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/clipCulling.cmake
+        WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
+
     # the README samples in docs/images/, byte-identical to a fresh capture
     # (tools/capture_samples.sh --check; regenerate them in the same commit)
     if(TARGET OpenGLCore)

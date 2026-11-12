@@ -1,0 +1,525 @@
+/*
+ *  Gweni
+ *  Copyright (c) 2010 Facepunch Studios
+ *  MIT License, see LICENSE
+ *
+ *  SlotRenderer's clip cull (setClipCulling): a primitive quad or a text run
+ *  drawn wholly outside the clip box it is drawn with is left out of the draws,
+ *  which would only rasterise it for the fragment shaders' clip test to discard
+ *  every pixel of it. Drawn offscreen and read back, on every backend.
+ *
+ *  A slot drawn in its box, then wholly out of it, then in again is drawn, cut
+ *  (FrameStats::primitiveSlotsCulled one up, primitiveSlotsDrawn one down, no
+ *  pixel of it) and drawn again as at first; hidden while culled it is not
+ *  counted, and shown while still culled it stays undrawn and counted; shown
+ *  after a draw whose box covers it (as a control shown again is drawn in the
+ *  region it is in now) it is drawn. A line whose round cap and anti-aliased
+ *  rim reach into the box past its segment's end is not culled, and draws what
+ *  it draws with the cull off. A settled frame builds no range. A text run
+ *  (FrameStats::textRunsCulled) follows the same transitions, its glyph slots'
+ *  clip boxes written as without the cull. Every culled frame is the one the
+ *  cull off draws, pixel for pixel.
+ *
+ *  A ScrollControl of Button rows on a textured-skin canvas: a row scrolled
+ *  wholly out of the viewport has its slot and its label's run culled, and
+ *  scrolled back it is drawn again, the frame the one before the scroll.
+ *
+ *  The renderer is shared with the other cases, so each case puts the clip
+ *  region back to the whole view and the cull back on when it ends (Guard).
+ */
+#include <doctest/doctest.h>
+
+#include "gpuRenderer.h"
+
+#include <gweni/controls/button.h>
+#include <gweni/controls/canvas.h>
+#include <gweni/controls/scrollControl.h>
+#include <gweni/skin.h>
+#include <gweni/skins/textured/texturedSkin.h>
+
+#include <algorithm>
+#include <vector>
+
+namespace
+{
+
+using gweni::Color;
+using gweni::Point;
+using gweni::Rect;
+using gweni::renderer::SlotRenderer;
+
+const Color background(0, 0, 255, 255);
+const Color white(255, 255, 255, 255);
+
+SlotRenderer &renderer()
+{
+    return gweni::test::gpuRenderer();
+}
+
+Rect wholeView()
+{
+    return Rect(Point(0, 0), gweni::test::viewSize());
+}
+
+//! One frame read back from the offscreen framebuffer, top-down RGBA8.
+struct Frame
+{
+    std::vector<uint8_t> pixels;
+
+    //! Pixels that are not the background.
+    int drawn() const
+    {
+        int count=0;
+
+        for(size_t i=0; i+3 < pixels.size(); i+=4)
+            if((pixels[i] != background.r) || (pixels[i+1] != background.g) || (pixels[i+2] != background.b))
+                ++count;
+        return count;
+    }
+};
+
+//! Clears to `background`, draws one frame with `draw` and reads it back.
+template<typename Draw>
+Frame drawFrame(Draw &&draw)
+{
+    gweni::test::clearView(background);
+
+    renderer().begin();
+    draw(renderer());
+    renderer().end();
+
+    Frame frame;
+
+    gweni::test::readView(frame.pixels);
+    return frame;
+}
+
+Frame emptyFrame()
+{
+    return drawFrame([](SlotRenderer &) {});
+}
+
+//! Puts the clip region back to the whole view and the cull back on.
+struct Guard
+{
+    ~Guard()
+    {
+        renderer().setClipRegion(wholeView());
+        renderer().setClipCulling(true);
+    }
+};
+
+//! Primitive ids for one test case, released (and that flushed) when it ends.
+struct Primitives
+{
+    explicit Primitives(size_t count)
+        : ids(count)
+    {
+        for(size_t &id:ids)
+            renderer().generatePrimitive(id);
+        std::sort(ids.begin(), ids.end());
+    }
+
+    ~Primitives()
+    {
+        for(size_t id:ids)
+            renderer().releasePrimitive(id);
+        renderer().begin();
+        renderer().end();
+    }
+
+    std::vector<size_t> ids;
+};
+
+//! A text id for one test case, released (and that flushed) when it ends.
+struct TextId
+{
+    TextId() { renderer().generateTextPrimitive(id); }
+
+    ~TextId()
+    {
+        renderer().releaseTextPrimitive(id);
+        renderer().begin();
+        renderer().end();
+    }
+
+    size_t id=0;
+};
+
+const SlotRenderer::FrameStats &stats()
+{
+    return renderer().getFrameStats();
+}
+
+const Rect rect(40, 30, 100, 50);
+const Rect inside(20, 20, 200, 100);    // covers rect
+const Rect outside(300, 30, 100, 50);   // misses it
+
+}//namespace
+
+TEST_CASE("Clip cull: a slot drawn out of its box is culled, and drawn again back in it")
+{
+    Guard guard;
+    Primitives prims(1);
+    const size_t id=prims.ids[0];
+
+    emptyFrame();
+    const size_t culledBefore=stats().primitiveSlotsCulled;
+    const Frame empty=emptyFrame();
+
+    auto draw=[&](const Rect &clip)
+    {
+        return drawFrame([&](SlotRenderer &renderer)
+            {
+                renderer.setDrawColor(white);
+                renderer.setClipRegion(clip);
+                renderer.drawFilledRect(id, rect, 1);
+            });
+    };
+
+    const Frame in=draw(inside);
+    const size_t drawnIn=stats().primitiveSlotsDrawn;
+
+    CHECK(in.drawn() == rect.w*rect.h);
+    CHECK_FALSE(renderer().primitiveCulled(id));
+    CHECK(stats().primitiveSlotsCulled == culledBefore);
+
+    const Frame out=draw(outside);
+
+    CHECK(renderer().primitiveCulled(id));
+    CHECK(stats().primitiveSlotsCulled == culledBefore+1);
+    CHECK(stats().primitiveSlotsDrawn < drawnIn);
+    CHECK(out.pixels == empty.pixels);
+
+    // drawn again culled where it was: nothing written, nothing to rebuild
+    draw(outside);
+    CHECK(stats().primitiveSlotsWritten == 0);
+    CHECK(stats().primitiveRangeBuilds == 0);
+
+    const Frame back=draw(inside);
+
+    CHECK_FALSE(renderer().primitiveCulled(id));
+    CHECK(stats().primitiveSlotsCulled == culledBefore);
+    CHECK(stats().primitiveSlotsDrawn == drawnIn);
+    CHECK(back.pixels == in.pixels);
+
+    // a settled frame writes nothing and builds no range
+    emptyFrame();
+    CHECK(stats().primitiveSlotsWritten == 0);
+    CHECK(stats().primitiveRangeBuilds == 0);
+
+    // with the cull off, the slot out of its box is drawn, to the same pixels
+    renderer().setClipCulling(false);
+    const Frame unculled=draw(outside);
+
+    CHECK_FALSE(renderer().primitiveCulled(id));
+    CHECK(stats().primitiveSlotsCulled == culledBefore);
+    CHECK(unculled.pixels == out.pixels);
+}
+
+TEST_CASE("Clip cull: a culled slot hidden is not counted, and shown while still culled stays undrawn")
+{
+    Guard guard;
+    Primitives prims(1);
+    const size_t id=prims.ids[0];
+
+    emptyFrame();
+    const size_t culledBefore=stats().primitiveSlotsCulled;
+    const Frame empty=emptyFrame();
+
+    drawFrame([&](SlotRenderer &renderer)
+        {
+            renderer.setDrawColor(white);
+            renderer.setClipRegion(outside);
+            renderer.drawFilledRect(id, rect, 1);
+        });
+    CHECK(stats().primitiveSlotsCulled == culledBefore+1);
+
+    const Frame hidden=drawFrame([&](SlotRenderer &renderer) { renderer.hidePrimitive(id); });
+
+    CHECK(stats().primitiveSlotsCulled == culledBefore);
+    CHECK(hidden.pixels == empty.pixels);
+
+    const size_t drawnHidden=stats().primitiveSlotsDrawn;
+    const Frame shown=drawFrame([&](SlotRenderer &renderer) { renderer.showPrimitive(1, id); });
+
+    CHECK(renderer().primitiveCulled(id));
+    CHECK(stats().primitiveSlotsCulled == culledBefore+1);
+    CHECK(stats().primitiveSlotsDrawn == drawnHidden);
+    CHECK(shown.pixels == empty.pixels);
+}
+
+TEST_CASE("Clip cull: a culled slot hidden, then drawn in a box that covers it and shown, is drawn")
+{
+    Guard guard;
+    Primitives prims(1);
+    const size_t id=prims.ids[0];
+
+    const Frame in=drawFrame([&](SlotRenderer &renderer)
+        {
+            renderer.setDrawColor(white);
+            renderer.setClipRegion(inside);
+            renderer.drawFilledRect(id, rect, 1);
+        });
+
+    REQUIRE(in.drawn() == rect.w*rect.h);
+
+    emptyFrame();
+    const size_t culledBefore=stats().primitiveSlotsCulled;
+
+    drawFrame([&](SlotRenderer &renderer)
+        {
+            renderer.setClipRegion(outside);
+            renderer.drawFilledRect(id, rect, 1);
+        });
+    drawFrame([&](SlotRenderer &renderer) { renderer.hidePrimitive(id); });
+    CHECK(stats().primitiveSlotsCulled == culledBefore);
+
+    // as paintSurface shows a control again: drawn in the region it is in now,
+    // then shown
+    const Frame shown=drawFrame([&](SlotRenderer &renderer)
+        {
+            renderer.setDrawColor(white);
+            renderer.setClipRegion(inside);
+            renderer.drawFilledRect(id, rect, 1);
+            renderer.showPrimitive(1, id);
+        });
+
+    CHECK_FALSE(renderer().primitiveCulled(id));
+    CHECK(stats().primitiveSlotsCulled == culledBefore);
+    CHECK(shown.pixels == in.pixels);
+}
+
+TEST_CASE("Clip cull: a line whose cap reaches into its box past the segment's end is not culled")
+{
+    Guard guard;
+    Primitives prims(2);
+
+    // a horizontal segment ending at x 100 and a box from x 101: its round cap
+    // and anti-aliased rim cover the box's first column, the segment does not.
+    // The second segment, its quad wholly left of the box, is culled.
+    auto draw=[&]
+    {
+        return drawFrame([&](SlotRenderer &renderer)
+            {
+                renderer.setDrawColor(white);
+                renderer.setClipRegion(Rect(101, 0, 200, 200));
+                renderer.drawLine(prims.ids[0], gweni::PointF(10.0f, 50.0f), gweni::PointF(100.0f, 50.0f), 4.0f, 1);
+                renderer.drawLine(prims.ids[1], gweni::PointF(10.0f, 100.0f), gweni::PointF(80.0f, 100.0f), 4.0f, 1);
+            });
+    };
+
+    const Frame culled=draw();
+
+    CHECK_FALSE(renderer().primitiveCulled(prims.ids[0]));
+    CHECK(renderer().primitiveCulled(prims.ids[1]));
+    CHECK(culled.drawn() > 0);
+
+    renderer().setClipCulling(false);
+    const Frame unculled=draw();
+
+    CHECK(unculled.pixels == culled.pixels);
+}
+
+TEST_CASE("Clip cull: a text run out of its box is culled, and drawn again back in it")
+{
+    Guard guard;
+    TextId text;
+    const gweni::String string="Culled text";
+    const Point pos(40, 40);
+
+    emptyFrame();
+    const size_t culledBefore=stats().textRunsCulled;
+    const Frame empty=emptyFrame();
+
+    auto draw=[&](const Rect &clip)
+    {
+        return drawFrame([&](SlotRenderer &renderer)
+            {
+                renderer.setDrawColor(white);
+                renderer.setClipRegion(clip);
+                renderer.renderText(text.id, gweni::test::openSans(), pos, 1, string);
+            });
+    };
+
+    const Frame in=draw(inside);
+
+    CHECK(in.drawn() > 0);
+    CHECK_FALSE(renderer().textRunCulled(text.id));
+    CHECK(stats().textRunsCulled == culledBefore);
+
+    const Frame out=draw(outside);
+
+    CHECK(renderer().textRunCulled(text.id));
+    CHECK(stats().textRunsCulled == culledBefore+1);
+    // the glyphs' clip boxes are written as without the cull
+    CHECK(stats().textSlotsWritten > 0);
+    CHECK(out.pixels == empty.pixels);
+
+    // laid out again where it was: nothing written
+    draw(outside);
+    CHECK(stats().textSlotsWritten == 0);
+
+    const Frame back=draw(inside);
+
+    CHECK_FALSE(renderer().textRunCulled(text.id));
+    CHECK(stats().textRunsCulled == culledBefore);
+    CHECK(back.pixels == in.pixels);
+
+    renderer().setClipCulling(false);
+    const Frame unculled=draw(outside);
+
+    CHECK_FALSE(renderer().textRunCulled(text.id));
+    CHECK(unculled.pixels == out.pixels);
+}
+
+TEST_CASE("Clip cull: a culled text run hidden is not counted, shown still culled stays undrawn, and laid out in a covering box is drawn")
+{
+    Guard guard;
+    TextId text;
+    const gweni::String string="Culled text";
+    const Point pos(40, 40);
+
+    auto layout=[&](SlotRenderer &renderer, const Rect &clip)
+    {
+        renderer.setDrawColor(white);
+        renderer.setClipRegion(clip);
+        renderer.renderText(text.id, gweni::test::openSans(), pos, 1, string);
+    };
+
+    const Frame in=drawFrame([&](SlotRenderer &renderer) { layout(renderer, inside); });
+
+    REQUIRE(in.drawn() > 0);
+
+    emptyFrame();
+    const size_t culledBefore=stats().textRunsCulled;
+    const Frame empty=drawFrame([&](SlotRenderer &renderer) { renderer.hideText(text.id); });
+
+    drawFrame([&](SlotRenderer &renderer) { renderer.showText(text.id); layout(renderer, outside); });
+    CHECK(stats().textRunsCulled == culledBefore+1);
+
+    const Frame hidden=drawFrame([&](SlotRenderer &renderer) { renderer.hideText(text.id); });
+
+    CHECK(stats().textRunsCulled == culledBefore);
+    CHECK(hidden.pixels == empty.pixels);
+
+    const Frame shown=drawFrame([&](SlotRenderer &renderer) { renderer.showText(text.id); });
+
+    CHECK(renderer().textRunCulled(text.id));
+    CHECK(stats().textRunsCulled == culledBefore+1);
+    CHECK(shown.pixels == empty.pixels);
+
+    drawFrame([&](SlotRenderer &renderer) { renderer.hideText(text.id); });
+
+    // shown again as a Text control is: laid out in the region it is in now
+    const Frame back=drawFrame([&](SlotRenderer &renderer)
+        {
+            layout(renderer, inside);
+            renderer.showText(text.id);
+        });
+
+    CHECK_FALSE(renderer().textRunCulled(text.id));
+    CHECK(stats().textRunsCulled == culledBefore);
+    CHECK(back.pixels == in.pixels);
+}
+
+TEST_CASE("Clip cull: a row scrolled out of a ScrollControl is culled, and drawn again scrolled back")
+{
+    Guard guard;
+    const gweni::Point viewSize=gweni::test::viewSize();
+    gweni::skin::textured::TexturedSkin *skin=new gweni::skin::textured::TexturedSkin(&renderer());
+
+    REQUIRE(skin->init("DefaultSkin.json"));
+    skin->setDefaultFont("OpenSans.ttf", 11);
+
+    gweni::controls::Canvas *canvas=new gweni::controls::Canvas(skin);
+
+    canvas->setSize(viewSize.x, viewSize.y);
+
+    gweni::controls::ScrollControl *scroll=canvas->newChild<gweni::controls::ScrollControl>();
+
+    scroll->setAlignment(gweni::Alignment::Absolute);
+    scroll->setSizeFlags({gweni::SizeFlag::Fixed, gweni::SizeFlag::Fixed});
+    scroll->setBounds(20, 40, 200, 100);
+    scroll->setScroll(false, true);
+
+    std::vector<gweni::controls::Button *> rows;
+
+    for(int i=0; i<20; ++i)
+    {
+        gweni::controls::Button *button=scroll->newChild<gweni::controls::Button>();
+
+        button->setText("Row");
+        button->setBounds(0, i*30, 160, 28);
+        rows.push_back(button);
+    }
+
+    auto frame=[&]
+    {
+        gweni::test::clearView(background);
+        canvas->updateCanvas();
+        canvas->renderCanvas();
+
+        Frame shot;
+
+        gweni::test::readView(shot.pixels);
+        return shot;
+    };
+    // the row's background slot and its label's run
+    auto ids=[&](gweni::controls::Base *control, std::vector<size_t> &primitives, std::vector<size_t> &texts)
+    {
+        std::vector<gweni::controls::Base *> stack{control};
+
+        while(!stack.empty())
+        {
+            gweni::controls::Base *at=stack.back();
+
+            stack.pop_back();
+            if(const gweni::skin::Control *skinControl=at->getSkinControl())
+                skinControl->appendIds(primitives, texts);
+            for(gweni::controls::Base *child:at->getChildren())
+                stack.push_back(child);
+        }
+    };
+
+    // the ids are taken as the first frame draws
+    frame();
+
+    std::vector<size_t> rowPrimitives, rowTexts;
+
+    ids(rows[0], rowPrimitives, rowTexts);
+    REQUIRE_FALSE(rowPrimitives.empty());
+    REQUIRE_FALSE(rowTexts.empty());
+
+    const Frame top=frame();
+    const size_t slotsCulled=stats().primitiveSlotsCulled;
+    const size_t runsCulled=stats().textRunsCulled;
+
+    // the first row is in the viewport; the last ones are below it, culled
+    CHECK_FALSE(renderer().primitiveCulled(rowPrimitives[0]));
+    CHECK_FALSE(renderer().textRunCulled(rowTexts[0]));
+    CHECK(slotsCulled > 0);
+
+    // the first rows wholly above the viewport
+    scroll->setVerticalScrollOffset(150);
+    frame();
+    frame();
+
+    CHECK(renderer().primitiveCulled(rowPrimitives[0]));
+    CHECK(renderer().textRunCulled(rowTexts[0]));
+
+    scroll->setVerticalScrollOffset(0);
+    frame();
+    const Frame back=frame();
+
+    CHECK_FALSE(renderer().primitiveCulled(rowPrimitives[0]));
+    CHECK_FALSE(renderer().textRunCulled(rowTexts[0]));
+    CHECK(stats().primitiveSlotsCulled == slotsCulled);
+    CHECK(stats().textRunsCulled == runsCulled);
+    CHECK(back.pixels == top.pixels);
+
+    delete canvas;
+    delete skin;
+    renderer().begin();
+    renderer().end();
+}
