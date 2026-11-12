@@ -18,6 +18,21 @@ namespace controls
 namespace internal
 {
 
+GWENI_CONTROL_CONSTRUCTOR(LogViewChevron)
+{
+    setMouseInputEnabled(false);
+}
+
+void LogViewChevron::setLook(bool expanded, const Color &color)
+{
+    if(m_expanded == expanded && m_color == color)
+        return;
+
+    m_expanded=expanded;
+    m_color=color;
+    addStateChange(StateChange_Background);
+}
+
 GWENI_CONTROL_CONSTRUCTOR(LogViewRow)
 {
     setWrap(true);
@@ -32,6 +47,50 @@ void LogViewRow::fontChanged()
     m_text->invalidate();
 }
 
+// A row of an app's kind is as high as the kind's measurer says, its padding
+// included: the measure is the height the bound content lays out at (the
+// kind's contract), and the list holds it.
+void LogViewRow::calculateSize(skin::Base *skin, Dim dim)
+{
+    ParentClass::calculateSize(skin, dim);
+
+    if(!m_content || dim != Dim::Y || !m_view)
+        return;
+
+    const size_t item=m_view->itemForRow(this);
+
+    if(item != VirtualList::NoItem && item < m_view->getHeightIndex().size())
+        m_preferredSize.height=preferredFromContent(m_view->getHeightIndex().height(item), Dim::Y);
+}
+
+// The chevron sits in the padding left of the title line; an app kind's
+// content fills the row inside its padding.
+void LogViewRow::arrangeHorizontal(skin::Base *skin)
+{
+    ParentClass::arrangeHorizontal(skin);
+
+    if(m_chevron && !m_chevron->hidden())
+        placeChild(m_chevron, LogView::RowPadX, m_chevron->getY(), LogView::ChevronColumn, m_chevron->getHeight());
+    if(m_content)
+        placeChild(m_content, m_padding.left, m_content->getY(),
+            std::max(0, getWidth()-m_padding.left-m_padding.right), m_content->getHeight());
+}
+
+void LogViewRow::arrangeVertical(skin::Base *skin)
+{
+    ParentClass::arrangeVertical(skin);
+
+    if(m_chevron && !m_chevron->hidden())
+    {
+        const int line=m_view?m_view->getLineHeight():m_chevron->getHeight();
+
+        placeChild(m_chevron, m_chevron->getX(), m_padding.top, m_chevron->getWidth(), line);
+    }
+    if(m_content)
+        placeChild(m_content, m_content->getX(), m_padding.top, m_content->getWidth(),
+            std::max(0, getHeight()-m_padding.top-m_padding.bottom));
+}
+
 }//namespace internal
 
 ///////////////////////////////////////////////////////////////////////////
@@ -40,16 +99,20 @@ void LogViewRow::fontChanged()
 namespace
 {
 
-//! The text a row shows.
-const String &shownText(const LogRow &row)
+String lineCount(size_t lines)
 {
-    return row.text;
+    return std::to_string(lines)+((lines == 1)?" line":" lines");
 }
 
 }//namespace
 
 GWENI_CONTROL_CONSTRUCTOR(LogView)
 {
+    setPadding(Padding(FieldPadding, FieldPadding, FieldPadding, FieldPadding));
+    // the view takes the mouse over its rows: they and the panel take none
+    setMouseInputEnabled(true);
+    m_innerPanel->setMouseInputEnabled(false);
+
     if(skin::Base *skin=getSkin())
         m_font=skin->getDefaultFont();
 
@@ -57,6 +120,7 @@ GWENI_CONTROL_CONSTRUCTOR(LogView)
         {
             internal::LogViewRow *row=parent->newChild<internal::LogViewRow>();
 
+            row->m_view=this;
             // the row's Text holds a pointer to m_font: setFont changes it in place
             row->setFont(m_font);
             return row;
@@ -202,6 +266,102 @@ void LogView::setFont(const gweni::Font &font)
     refresh();
 }
 
+int LogView::getLineHeight()
+{
+    skin::Base *skin=getSkin();
+    const renderer::Base *renderer=skin?skin->getRenderer():nullptr;
+
+    if(m_lineHeight > 0 && m_metricsFont == m_font && m_metricsRenderer == renderer && renderer
+        && m_metricsSerial == renderer->textLayoutSerial())
+        return m_lineHeight;
+
+    m_metricsFont=m_font;
+    m_metricsRenderer=renderer;
+    m_metricsSerial=renderer?renderer->textLayoutSerial():0;
+    m_lineHeight=std::max(1, measureLineHeight(m_font));
+    return m_lineHeight;
+}
+
+String LogView::blockText(const LogRow &row, size_t previewLines)
+{
+    const size_t total=row.lines.size();
+    const size_t shown=(row.collapsed && total > previewLines)?previewLines:total;
+    String text=row.text;
+
+    if(total > 0)
+    {
+        text+=(shown < total)?" ("+std::to_string(shown)+" of "+lineCount(total)+")"
+            :" ("+lineCount(total)+")";
+    }
+    for(size_t i=0; i < shown; ++i)
+        text+="\n"+row.lines[i];
+    return text;
+}
+
+void LogView::setBlockPreviewLines(size_t lines)
+{
+    if(m_previewLines == lines)
+        return;
+
+    m_previewLines=lines;
+    for(size_t i=0; i < m_rows.size(); ++i)
+    {
+        if(m_rows[i].row.kind == LogRow::Block)
+            itemChanged(i);
+    }
+}
+
+bool LogView::setBlockExpanded(RowId id, bool expanded)
+{
+    const size_t position=rowPosition(id);
+
+    if(position == NoItem || m_rows[position].row.kind != LogRow::Block)
+        return false;
+
+    LogRow &row=m_rows[position].row;
+
+    if(row.collapsed != expanded)
+        return true;
+
+    row.collapsed=!expanded;
+    itemChanged(position);
+    return true;
+}
+
+bool LogView::toggleBlock(RowId id)
+{
+    const LogRow *row=getRow(id);
+
+    return row && setBlockExpanded(id, row->collapsed);
+}
+
+void LogView::setRowKind(LogRow::Kind kind, RowKind handler)
+{
+    if(kind < LogRow::FirstAppKind)
+        return;
+
+    auto found=std::find_if(m_kinds.begin(), m_kinds.end(),
+        [kind](const std::pair<LogRow::Kind, RowKind> &entry) { return entry.first == kind; });
+
+    if(found != m_kinds.end())
+        found->second=std::move(handler);
+    else
+        m_kinds.emplace_back(kind, std::move(handler));
+    refresh();
+}
+
+const LogView::RowKind *LogView::rowKind(LogRow::Kind kind) const
+{
+    if(kind < LogRow::FirstAppKind)
+        return nullptr;
+    for(const auto &entry : m_kinds)
+    {
+        if(entry.first == kind)
+            return (entry.second.factory && entry.second.measurer)?&entry.second:nullptr;
+    }
+    return nullptr;
+}
+
 internal::LogViewRow *LogView::rowControl(RowId id) const
 {
     const size_t position=rowPosition(id);
@@ -211,28 +371,139 @@ internal::LogViewRow *LogView::rowControl(RowId id) const
     return gweni_cast<internal::LogViewRow>(rowForItem(position));
 }
 
-void LogView::bindRow(Base *row, size_t position)
+LogView::RowId LogView::rowAt(const Point &canvasPoint, Point *local) const
 {
-    internal::LogViewRow *logRow=gweni_cast<internal::LogViewRow>(row);
+    for(Base *row : getRows())
+    {
+        if(row->hidden())
+            continue;
 
-    if(!logRow || position >= m_rows.size())
+        const size_t position=itemForRow(row);
+
+        if(position == NoItem || position >= m_rows.size())
+            continue;
+
+        const Point point=row->canvasPosToLocal(canvasPoint);
+
+        if(point.x < 0 || point.y < 0 || point.x >= row->getWidth() || point.y >= row->getHeight())
+            continue;
+        if(local)
+            *local=point;
+        return m_rows[position].id;
+    }
+    return NoRow;
+}
+
+// A press on a block's title line (its chevron's height, the first line of
+// its text) toggles it; anywhere else it is the row's (selection).
+void LogView::onMouseClickLeft(int x, int y, bool down)
+{
+    if(!down)
+        return;
+
+    Point local;
+    const RowId id=rowAt(Point(x, y), &local);
+    const LogRow *row=getRow(id);
+
+    if(row && row->kind == LogRow::Block && local.y < RowPadY+getLineHeight())
+        toggleBlock(id);
+}
+
+// The binder only sets the row's content: its text and colour, its padding,
+// which children show and what they show (VirtualList's rule); the list lays
+// the row out after it.
+void LogView::bindRow(Base *control, size_t position)
+{
+    internal::LogViewRow *row=gweni_cast<internal::LogViewRow>(control);
+
+    if(!row || position >= m_rows.size())
         return;
 
     const LogRow &content=m_rows[position].row;
+    const RowKind *kind=rowKind(content.kind);
+    const bool block=(content.kind == LogRow::Block);
+    Base *shown=nullptr;
 
-    logRow->setText(shownText(content));
-    if(content.hasColor)
-        logRow->setTextColor(content.color);
+    row->m_kind=content.kind;
+
+    if(kind)
+    {
+        for(const auto &made : row->m_contents)
+        {
+            if(made.first == content.kind)
+                shown=made.second;
+        }
+        if(!shown)
+        {
+            {
+                PartScope part;
+
+                shown=kind->factory(row);
+            }
+            if(shown->getParent() != row)
+                shown->setParent(row);
+            shown->setPlacement(Placement::Owner);
+            row->m_contents.emplace_back(content.kind, shown);
+        }
+    }
+
+    for(const auto &made : row->m_contents)
+        made.second->setHidden(made.second != shown);
+    row->m_content=shown;
+
+    if(shown)
+    {
+        // the text is not drawn: it holds no glyphs
+        row->setText(String());
+        row->m_text->setHidden(true);
+        if(kind->binder)
+            kind->binder(shown, content);
+    }
     else
-        logRow->makeColorNormal();
+    {
+        row->m_text->setHidden(false);
+        row->setText(block?blockText(content, m_previewLines):content.text);
+    }
+
+    if(content.hasColor)
+        row->setTextColor(content.color);
+    else
+        row->makeColorNormal();
+
+    const int left=RowPadX+(block?ChevronColumn:0);
+
+    if(row->getPadding().left != left)
+        row->setPadding(Padding(left, RowPadY, RowPadX, RowPadY));
+
+    if(block && !row->m_chevron)
+    {
+        PartScope part;
+
+        row->m_chevron=row->newChild<internal::LogViewChevron>();
+        row->m_chevron->setPlacement(Placement::Owner);
+    }
+    if(row->m_chevron)
+    {
+        row->m_chevron->setHidden(!block);
+        if(block)
+            row->m_chevron->setLook(!content.collapsed, row->getTextColor());
+    }
 }
 
-// The wrap the row's Label does, inside its padding.
+// The wrap the row's Label does inside its padding, or the kind's measure.
 int LogView::measureRow(size_t position, int width)
 {
     if(position >= m_rows.size())
         return getRowHeight();
-    return wrappedTextHeight(m_font, shownText(m_rows[position].row), width-2*RowPadX)+2*RowPadY;
+
+    const LogRow &row=m_rows[position].row;
+
+    if(const RowKind *kind=rowKind(row.kind))
+        return std::max(1, kind->measurer(row, std::max(0, width-2*RowPadX)))+2*RowPadY;
+    if(row.kind == LogRow::Block)
+        return wrappedTextHeight(m_font, blockText(row, m_previewLines), width-2*RowPadX-ChevronColumn)
+            +2*RowPadY;
+    return wrappedTextHeight(m_font, row.text, width-2*RowPadX)+2*RowPadY;
 }
 
 }//namespace controls

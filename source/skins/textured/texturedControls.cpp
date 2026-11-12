@@ -6,6 +6,7 @@
 #include "gweni/controls/comboBox.h"
 #include "gweni/controls/checkBox.h"
 #include "gweni/controls/codeEditor.h"
+#include "gweni/controls/logView.h"
 #include "gweni/controls/scrollBarButton.h"
 #include "gweni/controls/scrollBarBar.h"
 #include "gweni/controls/statusBar.h"
@@ -771,6 +772,39 @@ void CodeEditor::update(renderer::Base *renderer, controls::Base *baseControl)
     renderer->setDrawColor(editor->getSkin()->Colors.Label.Default);
     renderer->drawFilledRect(m_primitives[1], Rect(bounds.x+caret.x, bounds.y+caret.y, caret.w, caret.h),
         editor->getOverlayZIndex());
+}
+
+///////////////////////////////////////////////////////////////////////////
+//LogView
+void LogView::update(renderer::Base *renderer, controls::Base *baseControl)
+{
+    const tokyonight::Surface &surface=baseControl->isFocussed()?tokyonight::LogViewFocus:tokyonight::LogView;
+
+    tokyonight::paintSurface(renderer, m_primitives.data(), baseControl, surface);
+}
+
+///////////////////////////////////////////////////////////////////////////
+//LogViewChevron
+// kind 1's directions: 0 down, 3 right; the chevron a square of 6/10 of the
+// smaller side, centred, as a menu item's.
+void LogViewChevron::update(renderer::Base *renderer, controls::Base *baseControl)
+{
+    if(m_primitives.empty())
+        return;
+
+    if(!baseControl->visible())
+    {
+        renderer->hidePrimitive(m_primitives[0]);
+        return;
+    }
+
+    controls::internal::LogViewChevron *chevron=static_cast<controls::internal::LogViewChevron *>(baseControl);
+    const gweni::Rect r=baseControl->getRenderBounds();
+    const int sz=((r.w < r.h)?r.w:r.h)*6/10;
+    const gweni::Rect icon{r.x+(r.w-sz)/2, r.y+(r.h-sz)/2, sz, sz};
+
+    renderer->drawIcon(m_primitives[0], icon, 1, chevron->isExpanded()?0:3, chevron->getColor(),
+        baseControl->getZIndex());
 }
 
 ///////////////////////////////////////////////////////////////////////////
@@ -3223,6 +3257,8 @@ template class ControlRegister<ProgressBar>;
 template class ControlRegister<CodeEditor>;
 template class ControlRegister<CodeLine>;
 template class ControlRegister<CodeGutter>;
+template class ControlRegister<LogView>;
+template class ControlRegister<LogViewChevron>;
 template class ControlRegister<Selectable>;
 template class ControlRegister<Separator>;
 template class ControlRegister<Bullet>;

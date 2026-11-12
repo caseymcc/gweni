@@ -907,6 +907,30 @@ public:
     inline static const std::string_view name="CodeEditor";
 };
 
+// A LogView's field: [0] LogView, LogViewFocus while it has the focus. Its
+// rows draw the text, a block row's chevron its icon.
+class LogView:public textured::ControlRegister<LogView>
+{
+public:
+    static void staticInit(TexturedSkin *) { m_staticInit=true; }
+
+    void update(renderer::Base *renderer, controls::Base *baseControl) override;
+
+    inline static const std::string_view name="LogView";
+};
+
+// A LogView block row's chevron: [0] icon kind 1, right while the block is
+// collapsed and down while expanded, in the row's text colour.
+class LogViewChevron:public textured::ControlRegister<LogViewChevron>
+{
+public:
+    static void staticInit(TexturedSkin *) { m_staticInit=true; }
+
+    void update(renderer::Base *renderer, controls::Base *baseControl) override;
+
+    inline static const std::string_view name="LogViewChevron";
+};
+
 // A CodeEditor's line-number gutter: [0] its backdrop (CodeGutter); its
 // numbers draw themselves (Labels).
 class CodeGutter:public textured::ControlRegister<CodeGutter>
