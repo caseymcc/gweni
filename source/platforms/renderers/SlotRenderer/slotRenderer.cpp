@@ -130,18 +130,6 @@ static int fontCells(uint32_t codepoint)
 }
 }
 
-// text_buffer_add_char's kerning of glyph against the previous codepoint: the
-// pair in glyph's table, and none across two faces of a glyph fallback chain
-// (looked for only in a font with one, and only for a pair found)
-static float kerning(FontData &fontData, const ftgl::texture_glyph_t *glyph, const char *previous)
-{
-    const float pair=ftgl::texture_glyph_get_kerning(glyph, previous);
-
-    if((pair != 0.0f) && (fontData.textureFont->fallback != nullptr))
-        return ftgl::texture_glyph_get_kerning_glyph(glyph, fontData.glyph(previous));
-    return pair;
-}
-
 float SlotRenderer::textPx(const Font &font) const
 {
     return font.size*scale();
@@ -3150,7 +3138,7 @@ SlotRenderer::PenWalk SlotRenderer::walkPens(FontData &fontData, float px, const
             advance*=s;
         }
         else if(previous && font->kerning)
-            pen+=kerning(fontData, glyph, previous)*s;
+            pen+=ftgl::texture_glyph_get_kerning(glyph, previous)*s;
 
         // a coverage glyph's quad sits at the pen rounded to a whole pixel
         if(pens)
@@ -3300,7 +3288,7 @@ gweni::Point SlotRenderer::layoutSdfText(FontData &fontData, float px, const gwe
             advance*=s;
         }
         else if(previous && font->kerning)
-            pen+=kerning(fontData, glyph, previous)*s;
+            pen+=ftgl::texture_glyph_get_kerning(glyph, previous)*s;
 
         if(vertexes)
         {

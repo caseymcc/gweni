@@ -283,16 +283,14 @@ text_buffer_add_char( text_buffer_t * self,
         return;
     }
 
-    /* gweni: a font with cells is not kerned */
+    /* gweni: a font with cells is not kerned. No pair spans two faces of a
+     * glyph fallback chain: a font's kerning table holds pairs of its own
+     * glyphs only (texture_font_generate_kerning), and a chain font, its
+     * primary's alone, is asked only for codepoints the faces before it lack,
+     * so the codepoint a pair names is drawn by the font that holds it */
     if( previous && markup->font->kerning && font->cell_width <= 0 )
     {
         kerning = texture_glyph_get_kerning( glyph, previous );
-        /* gweni: no pair across the faces of a glyph fallback chain (a pair
-         * is only looked for again in a font with one, and only when there is
-         * one, so text in a font without a chain is laid out as before) */
-        if( kerning != 0.0f && font->fallback )
-            kerning = texture_glyph_get_kerning_glyph( glyph,
-                          texture_font_get_glyph( font, previous ) );
     }
     pen->x += kerning;
 

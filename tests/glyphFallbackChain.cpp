@@ -11,8 +11,11 @@
  *  font's own missing glyph shows only when no chain font has the codepoint, that
  *  a font whose codepoints are all its own never calls the callback, that a
  *  second lookup opens no face, and that two glyphs of different faces are never
- *  kerned (texture_glyph_get_kerning_glyph, with a previous glyph from another
- *  face for a pair the faces kern).
+ *  kerned: texture_glyph_get_kerning_glyph, with a previous glyph from another
+ *  face for a pair the faces kern, gives 0, and the codepoint lookup the text
+ *  layouts make (texture_glyph_get_kerning) never spans two faces, since every
+ *  pair a font's glyphs hold, its own and those it took from its chain, names a
+ *  codepoint the same font draws.
  *
  *  It drives freetype-gl alone, on CPU atlases, and needs no context; it is in
  *  gweni_unittests because that is the binary freetype-gl is linked into with the
@@ -287,4 +290,78 @@ TEST_CASE("Glyph fallback: glyphs of two faces are not kerned")
     CHECK(ftgl::texture_glyph_get_kerning_glyph(latin, fromChain) == 0.0f);
 
     ftgl::texture_font_delete(other);
+}
+
+TEST_CASE("Glyph fallback: every kerning pair a font's glyphs hold is of one face, so a codepoint lookup never kerns across faces")
+{
+    // text_buffer_add_char, walkPens and layoutSdfText kern by codepoint
+    // (texture_glyph_get_kerning): a pair can be across faces only if a glyph's
+    // table names a codepoint that another font draws. A table holds the pairs
+    // of its own font's glyphs, and a chain font is asked only for codepoints the
+    // primary lacks, so every codepoint a table names is drawn by that table's
+    // font. Liberation, the chain face here, kerns Latin as OpenSans does.
+    auto utf8=[](uint32_t cp)
+    {
+        std::string s;
+
+        if(cp < 0x80)
+            s+=static_cast<char>(cp);
+        else if(cp < 0x800)
+        {
+            s+=static_cast<char>(0xC0|(cp>>6));
+            s+=static_cast<char>(0x80|(cp&0x3F));
+        }
+        else
+        {
+            s+=static_cast<char>(0xE0|(cp>>12));
+            s+=static_cast<char>(0x80|((cp>>6)&0x3F));
+            s+=static_cast<char>(0x80|(cp&0x3F));
+        }
+        return s;
+    };
+
+    for(Mode mode:{Mode::Coverage, Mode::Lcd, Mode::Sdf})
+    {
+        CAPTURE(static_cast<int>(mode));
+        Chain chain(openSans, {liberation, mono}, mode, mode == Mode::Sdf?48.0f:32.0f);
+        // Latin pairs both faces kern, arrows Liberation has and OpenSans lacks,
+        // a check mark only DejaVu Sans Mono has, a CJK ideograph none has
+        const char *const text[]={"A", "V", "T", "o", "Y", "L", "a", "v", arrow,
+            "\xE2\x86\x90", "\xE2\x86\x91", "\xE2\x86\x93", "\xE2\x86\x94", check, cjk};
+
+        for(const char *codepoint:text)
+            REQUIRE(ftgl::texture_font_get_glyph(chain.primary, codepoint) != nullptr);
+        REQUIRE(ftgl::vector_size(chain.primary->fallback_glyphs) > 0);
+
+        size_t pairs=0;
+
+        for(ftgl::vector_t *glyphs:{chain.primary->glyphs, chain.primary->fallback_glyphs})
+        {
+            for(size_t i=0; i < ftgl::vector_size(glyphs); ++i)
+            {
+                const ftgl::texture_glyph_t *glyph=*static_cast<ftgl::texture_glyph_t *const *>(ftgl::vector_get(glyphs, i));
+
+                for(size_t k=0; k < ftgl::vector_size(glyph->kerning); ++k)
+                {
+                    const ftgl::kerning_t *pair=static_cast<const ftgl::kerning_t *>(ftgl::vector_get(glyph->kerning, k));
+                    const ftgl::texture_glyph_t *previous=ftgl::texture_font_get_glyph(chain.primary, utf8(pair->codepoint).c_str());
+
+                    CAPTURE(glyph->codepoint);
+                    CAPTURE(pair->codepoint);
+                    REQUIRE(previous != nullptr);
+                    CHECK(previous->font == glyph->font);
+                    ++pairs;
+                }
+            }
+        }
+        // the Latin pairs are there (the check is not vacuous)
+        CHECK(pairs > 0);
+        // and so by codepoint, a Latin letter after an arrow, or an arrow after
+        // one, is not kerned
+        const ftgl::texture_glyph_t *a=ftgl::texture_font_get_glyph(chain.primary, "A");
+        const ftgl::texture_glyph_t *right=ftgl::texture_font_get_glyph(chain.primary, arrow);
+
+        CHECK(ftgl::texture_glyph_get_kerning(a, arrow) == 0.0f);
+        CHECK(ftgl::texture_glyph_get_kerning(right, "A") == 0.0f);
+    }
 }

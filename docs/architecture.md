@@ -2758,9 +2758,13 @@ it and fails `init` ("Missing resources").
 
 **Metrics.** The line height and baseline are the run's face's. In proportional text a
 chain glyph moves the pen by its own face's advance, and two glyphs of different faces are
-not kerned: `texture_glyph_get_kerning_glyph` gives 0 across fonts, and freetype-gl's
-`text_buffer_add_char`, `walkPens` and `layoutSdfText` look a pair up again across faces
-only in a font with a chain, so text in a font without one is laid out as before. Since
+not kerned. That needs no check in the walks: `text_buffer_add_char`, `walkPens` and
+`layoutSdfText` look a pair up by the previous codepoint in the glyph's own table
+(`texture_glyph_get_kerning`), a font's table holds the pairs of its own glyphs only
+(`texture_font_generate_kerning`), and a chain font, its primary's alone, is asked only for
+codepoints the faces before it lack, so every codepoint a table names is drawn by the font
+that holds it (`texture_glyph_get_kerning_glyph`, which compares the glyphs' fonts, says
+so outright for two glyphs). A walk over text with chain glyphs costs what it did. Since
 the three walks take the same glyphs, `measureText` and `measureCarets` give the drawn
 width with chain glyphs as with any other.
 
@@ -2796,7 +2800,8 @@ every caret is a whole number of cells. A font that is not fixed-width has `cell
 and is laid out by its own advances.
 
 `tests/glyphFallbackChain.cpp` pins the freetype-gl patch (the callback, the borrowed
-glyphs' cache and owner, no kerning across fonts), `tests/glyphFallbackText.cpp` the
+glyphs' cache and owner, no kerning across fonts, every table's pairs of one font),
+`tests/glyphFallbackText.cpp` the
 chain in `SlotRenderer` in grayscale, LCD and SDF (Latin text reading no chain file and
 drawing as with no chain, a chain glyph being the chain face's image in one run and one
 draw, the chain's order, the measures, the shared file, a chain set late),
