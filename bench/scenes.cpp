@@ -786,7 +786,11 @@ private:
 //-----------------------------------------------------------------------------
 // resize: the build tree; measured frames alternate the canvas between 3/4 of
 // --size and --size, with the offscreen target and the renderer's view
-// resized to match, as a window's framebuffer-size callback does.
+// resized to match, as a window's framebuffer-size callback does. A new size
+// invalidates only the canvas's children, which this tree places at fixed
+// bounds, so the layout enters a few controls at any N (#578); the canvas's
+// clip region changes with it, so every control is rendered again, which is
+// what makes the scene linear.
 //-----------------------------------------------------------------------------
 class ResizeScene: public MixedTreeScene
 {
