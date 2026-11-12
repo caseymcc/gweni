@@ -907,6 +907,18 @@ public:
     inline static const std::string_view name="CodeEditor";
 };
 
+// A CodeEditor's line-number gutter: [0] its backdrop (CodeGutter); its
+// numbers draw themselves (Labels).
+class CodeGutter:public textured::ControlRegister<CodeGutter>
+{
+public:
+    static void staticInit(TexturedSkin *) { m_staticInit=true; }
+
+    void update(renderer::Base *renderer, controls::Base *baseControl) override;
+
+    inline static const std::string_view name="CodeGutter";
+};
+
 // A CodeEditor's row: [0] its line background (CodeCurrentLine on the line
 // with the caret, hidden otherwise), [1] the selection rect at the text's z,
 // behind every glyph (CodeSelection, hidden while the line has none); the

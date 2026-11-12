@@ -54,7 +54,7 @@ String CodeEditorDemo::yamlDocument(size_t lines)
 }
 
 // A 5000-line YAML document in a CodeEditor filling the demo below a title:
-// only the lines on screen are controls.
+// only the lines on screen are controls, its line numbers in a gutter.
 GWENI_CONTROL_CONSTRUCTOR(CodeEditorDemo)
 {
     setDock(DockPosition::Center);
@@ -67,6 +67,7 @@ GWENI_CONTROL_CONSTRUCTOR(CodeEditorDemo)
     m_editor=newChild<controls::CodeEditor>();
     m_editor->setDock(DockPosition::Center);
     m_editor->setMargin(Margin(10, 34, 10, 10));
+    m_editor->setLineNumbers(true);
     m_editor->setText(yamlDocument(LineCount));
 }
 

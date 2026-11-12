@@ -112,6 +112,53 @@ void CodeLine::arrangeVertical(skin::Base *skin)
 }
 
 ///////////////////////////////////////////////////////////////////////////
+//CodeGutter, CodeLineNumber
+
+namespace internal
+{
+
+// Its numbers are the editor's to place; the mouse goes through it to the
+// editor (a press there is at column 0 of that line).
+GWENI_CONTROL_CONSTRUCTOR(CodeGutter)
+{
+    setMouseInputEnabled(false);
+}
+
+GWENI_CONTROL_CONSTRUCTOR(CodeLineNumber)
+{
+    setMouseInputEnabled(false);
+    setPadding(Padding(0, 0, 0, 0));
+    setTextAlignment(Alignment::Right|Alignment::CenterV);
+    updateColors();
+}
+
+void CodeLineNumber::updateColors()
+{
+    ParentClass::updateColors();
+
+    if(skin::Base *skin=getSkin())
+        setTextColor(m_current?skin->Colors.CodeEditor.LineNumberCurrent:skin->Colors.CodeEditor.LineNumber);
+}
+
+void CodeLineNumber::setCurrent(bool current)
+{
+    if(m_current == current)
+        return;
+
+    m_current=current;
+    updateColors();
+}
+
+void CodeLineNumber::fontChanged()
+{
+    m_text->textChanged();
+    m_text->addStateChange(StateChange_Text);
+    m_text->invalidate();
+}
+
+}//namespace internal
+
+///////////////////////////////////////////////////////////////////////////
 //CodeEditor
 
 // The position clamped to the document and moved back to the caret stop it is
@@ -163,7 +210,7 @@ static size_t indentOf(const String &line)
 GWENI_CONTROL_CONSTRUCTOR(CodeEditor)
 {
     setScroll(true, true);
-    setPadding(Padding(2, 2, 2, 2));
+    setPadding(Padding(FieldPadding, FieldPadding, FieldPadding, FieldPadding));
     // the editor takes the mouse over its rows: they and the panel take none
     setMouseInputEnabled(true);
     m_innerPanel->setMouseInputEnabled(false);
@@ -226,7 +273,155 @@ void CodeEditor::setFont(const gweni::Font &font)
         if(CodeLine *line=gweni_cast<CodeLine>(row))
             line->fontChanged();
     }
+    for(internal::CodeLineNumber *number : m_numbers)
+        number->fontChanged();
     invalidate();
+}
+
+void CodeEditor::setLineNumbers(bool show)
+{
+    if(m_lineNumbers == show)
+        return;
+
+    m_lineNumbers=show;
+
+    if(show && !m_gutter)
+    {
+        // the editor's own child, beside the inner panel (which a new child
+        // would otherwise go into, and scroll with the content)
+        Base *inner=m_innerPanel;
+        PartScope part;
+
+        m_innerPanel=nullptr;
+        m_gutter=newChild<internal::CodeGutter>();
+        m_innerPanel=inner;
+        m_gutter->setPlacement(Placement::Owner);
+    }
+
+    if(m_gutter)
+        m_gutter->setHidden(!show);
+    invalidate();
+}
+
+int CodeEditor::gutterWidthFor() const
+{
+    if(!m_lineNumbers || m_cellWidth <= 0.f)
+        return 0;
+
+    int digits=1;
+
+    for(size_t lines=m_document.lineCount(); lines >= 10; lines/=10)
+        ++digits;
+
+    return 2*GutterInset+static_cast<int>(std::ceil(digits*static_cast<double>(m_cellWidth)));
+}
+
+// The gutter sits in the editor's left padding, so the viewport (and the
+// horizontal bar) start after it.
+void CodeEditor::updateGutterPadding()
+{
+    m_gutterWidth=gutterWidthFor();
+
+    Padding padding=getPadding();
+
+    padding.left=FieldPadding+m_gutterWidth;
+    setPadding(padding);
+}
+
+// One number per pooled row, in pool order, made and dropped with the pool;
+// each shown row's number shows its line at its row's place, set (and
+// measured in X, the X measuring being over) only when its line changed.
+void CodeEditor::placeLineNumbers(skin::Base *skin)
+{
+    if(!m_gutter)
+        return;
+
+    if(!m_lineNumbers)
+        return;
+
+    const Rect &viewport=getViewport();
+
+    placeChild(m_gutter, FieldPadding, viewport.y, m_gutterWidth, viewport.h);
+
+    // the numbers of rows the pool dropped go with them
+    for(size_t i=0; i < m_numbers.size();)
+    {
+        bool pooled=false;
+
+        for(size_t j=0; j < poolSize() && !pooled; ++j)
+            pooled=(poolRow(j)->getControlId() == m_numberRows[i]);
+
+        if(pooled)
+        {
+            ++i;
+            continue;
+        }
+
+        delete m_numbers[i];    // ~Base takes it out of the children, gives its ids back
+        m_numbers.erase(m_numbers.begin()+static_cast<std::ptrdiff_t>(i));
+        m_numberRows.erase(m_numberRows.begin()+static_cast<std::ptrdiff_t>(i));
+    }
+
+    // in pool order: a row's number found further on is moved to its place,
+    // a row with none gets a new one
+    for(size_t i=0; i < poolSize(); ++i)
+    {
+        size_t found=i;
+
+        while(found < m_numbers.size() && m_numberRows[found] != poolRow(i)->getControlId())
+            ++found;
+
+        if(found < m_numbers.size())
+        {
+            std::swap(m_numbers[i], m_numbers[found]);
+            std::swap(m_numberRows[i], m_numberRows[found]);
+            continue;
+        }
+
+        internal::CodeLineNumber *number=nullptr;
+
+        {
+            PartScope part;
+
+            number=m_gutter->newChild<internal::CodeLineNumber>();
+        }
+        number->setPlacement(Placement::Owner);
+        number->setFont(m_font);
+        number->setHidden(true);
+        m_numbers.insert(m_numbers.begin()+static_cast<std::ptrdiff_t>(i), number);
+        m_numberRows.insert(m_numberRows.begin()+static_cast<std::ptrdiff_t>(i), poolRow(i)->getControlId());
+    }
+
+    for(size_t i=0; i < poolSize(); ++i)
+    {
+        internal::CodeLineNumber *number=m_numbers[i];
+        const Base *row=poolRow(i);
+        const size_t line=poolItem(i);
+
+        if(line == NoItem || row->hidden())
+        {
+            number->setHidden(true);
+            number->m_line=internal::CodeLineNumber::NoLine;
+            continue;
+        }
+
+        bool changed=number->hidden();
+
+        number->setHidden(false);
+        number->setCurrent(!m_readOnly && line == m_caret.line);
+
+        if(number->m_line != line)
+        {
+            number->m_line=line;
+            number->setText(std::to_string(line+1));
+            changed=true;
+        }
+
+        if(changed)
+            number->doCalculateSize(skin, Dim::X);
+
+        placeChild(number, 0, row->getY(), m_gutterWidth-GutterInset, row->getHeight());
+    }
 }
 
 int CodeEditor::columnX(size_t column) const
@@ -459,6 +654,12 @@ void CodeEditor::syncCurrentLine()
 
         if(row && poolItem(i) != NoItem)
             row->setCurrent(!m_readOnly && poolItem(i) == m_caret.line);
+    }
+
+    for(internal::CodeLineNumber *number : m_numbers)
+    {
+        if(number->m_line != internal::CodeLineNumber::NoLine)
+            number->setCurrent(!m_readOnly && number->m_line == m_caret.line);
     }
 }
 
@@ -1272,6 +1473,7 @@ void CodeEditor::onSelectAll(event::Info)
 void CodeEditor::contentsPlaced(skin::Base *skin)
 {
     ParentClass::contentsPlaced(skin);
+    placeLineNumbers(skin);
 
     if(m_caretScroll[0] != getHorizontalScrollOffset() || m_caretScroll[1] != getVerticalScrollOffset())
     {
@@ -1317,6 +1519,14 @@ void CodeEditor::calculateSize(skin::Base *skin, Dim dim)
 
         readMetrics(skin);
         setRowHeight(m_lineHeight);
+    }
+
+    // a new digit count or cell width: the gutter's room, for this pass
+    if(dim == Dim::X && gutterWidthFor() != m_gutterWidth)
+    {
+        PlacementScope placement;
+
+        updateGutterPadding();
     }
 
     ParentClass::calculateSize(skin, dim);

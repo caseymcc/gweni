@@ -9,6 +9,7 @@
 #define _gweni_controls_codeeditor_h_
 
 #include <gweni/controls/caretBlink.h>
+#include <gweni/controls/label.h>
 #include <gweni/controls/text.h>
 #include <gweni/controls/virtualList.h>
 #include <gweni/text/document.h>
@@ -24,6 +25,48 @@ namespace controls
 {
 
 class CodeEditor;
+
+namespace internal
+{
+
+//! A CodeEditor's line-number column: the editor's own child, left of the
+//! viewport in the room the editor's padding keeps for it, so it never
+//! scrolls sideways. It draws its backdrop (the CodeGutter surface); its
+//! number Labels are pooled with the editor's rows.
+class GWENI_EXPORT CodeGutter: public Base
+{
+public:
+    GWENI_CONTROL(CodeGutter, Base);
+};
+
+//! A number in the gutter, right-aligned, in the skin's
+//! Colors.CodeEditor.LineNumber, or LineNumberCurrent on the caret's line.
+class GWENI_EXPORT CodeLineNumber: public Label
+{
+public:
+    GWENI_CONTROL(CodeLineNumber, Label);
+
+public:
+    static constexpr size_t NoLine=static_cast<size_t>(-1);
+
+    //! The line whose number it shows, NoLine while hidden.
+    size_t getLine() const { return m_line; }
+    bool isCurrentLine() const { return m_current; }
+
+    void updateColors() override;
+
+private:
+    friend class controls::CodeEditor;
+
+    void setCurrent(bool current);
+    //! The editor's font changed (in place): the number is laid out again.
+    void fontChanged();
+
+    size_t m_line=NoLine;
+    bool m_current=false;
+};
+
+}//namespace internal
 
 //! One row of a CodeEditor: the line it shows, as one text run (a Text in the
 //! editor's font), with a line background behind it (shown on the current
@@ -145,6 +188,14 @@ private:
 //! (CodeMirror's rule both ways). Read-only (setReadOnly), the editor draws
 //! no caret and no current line and makes no edit, while the moves, the
 //! selection, Ctrl+A and Ctrl+C still work and Tab moves the focus.
+//!
+//! setLineNumbers(true) adds a gutter left of the viewport: one number
+//! Label per pooled row, bound with the rows (the numbers of the lines on
+//! screen alone), right-aligned in a column as wide as the line count's
+//! digits in cells plus GutterInset on each side. The editor's left padding
+//! keeps that room, so the gutter does not scroll sideways, and a new digit
+//! count (999 to 1000 lines) is a new padding of the editor's: it lays out
+//! the editor alone.
 class GWENI_EXPORT CodeEditor: public VirtualList
 {
 public:
@@ -155,6 +206,10 @@ public:
 
     //! The units between a row's left edge and its first cell.
     static constexpr int TextInset=4;
+    //! The padding inside the field's border, on every side.
+    static constexpr int FieldPadding=2;
+    //! The units on each side of the gutter's numbers.
+    static constexpr int GutterInset=6;
     //! The zeros the cell width is measured over, so a fractional advance
     //! (an SDF run) reads as its average, not one glyph's rounding.
     static constexpr int CellSample=32;
@@ -235,6 +290,16 @@ public:
     //! moving the focus. Default true.
     void setTabInsertsSpaces(bool inserts) { m_tabInsertsSpaces=inserts; }
     bool getTabInsertsSpaces() const { return m_tabInsertsSpaces; }
+
+    //! The line-number gutter, shown or not. Default off.
+    void setLineNumbers(bool show);
+    bool hasLineNumbers() const { return m_lineNumbers; }
+    //! The gutter, made by the first setLineNumbers(true); null before.
+    internal::CodeGutter *getGutter() const { return m_gutter; }
+    //! The gutter's width in units, as the last layout gave it (0 hidden).
+    int getGutterWidth() const { return m_gutterWidth; }
+    //! The gutter's number Labels, pooled with the rows, in pool order.
+    const std::vector<internal::CodeLineNumber *> &getLineNumberLabels() const { return m_numbers; }
 
     //! No caret, no current line and no edits; selection and copying stay.
     void setReadOnly(bool readOnly);
@@ -322,6 +387,13 @@ private:
     void restoreSelection(const text::Selection &selection);
     //! Indents (outdents) the lines the selection covers, or the caret's.
     void indentLines(bool outdent);
+    //! The gutter's width for the line count and the cell width (0 without
+    //! line numbers), and the padding that keeps it: set while the editor
+    //! lays out (under a PlacementScope), when it changed.
+    int gutterWidthFor() const;
+    void updateGutterPadding();
+    //! The number Labels for the rows contentsPlaced() has just placed.
+    void placeLineNumbers(skin::Base *skin);
     //! The lines the selection covers: its first to its last, less a last
     //! line it only reaches the start of.
     void selectedLines(size_t &first, size_t &last) const;
@@ -402,6 +474,17 @@ private:
     float m_autoScrollTime=0.0f;
     //! The units of auto-scroll not scrolled yet, per axis.
     float m_autoScrollCarry[2]={0.0f, 0.0f};
+
+    bool m_lineNumbers=false;
+    internal::CodeGutter *m_gutter=nullptr;
+    //! One number per pooled row, in pool order, and the row each is for: a
+    //! row the pool drops takes its number with it, and a fresh row gets a
+    //! fresh one, so after a resize the gutter holds what a gutter built at
+    //! that size holds.
+    std::vector<internal::CodeLineNumber *> m_numbers;
+    //! Each number's row by its control id (never reused, unlike an address).
+    std::vector<size_t> m_numberRows;
+    int m_gutterWidth=0;
 
     text::UndoStack m_undo;
     //! The editor is applying an edit of its own (the history stays).

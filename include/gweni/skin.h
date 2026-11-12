@@ -392,6 +392,13 @@ public:
         //! A VectorField's axis letter (X, Y, Z, W), drawn on its axis's colour.
         gweni::Color AxisTagText{0, 0, 0};
 
+        //! A CodeEditor's line numbers, and the number of the caret's line.
+        struct CodeEditor_t
+        {
+            gweni::Color LineNumber{0x80, 0x80, 0x80};
+            gweni::Color LineNumberCurrent{0xc0, 0xc0, 0xc0};
+        } CodeEditor;
+
         //! A Selectable row's text, by its state.
         struct Selectable_t
         {

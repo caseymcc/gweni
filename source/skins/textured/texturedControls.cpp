@@ -774,6 +774,13 @@ void CodeEditor::update(renderer::Base *renderer, controls::Base *baseControl)
 }
 
 ///////////////////////////////////////////////////////////////////////////
+//CodeGutter
+void CodeGutter::update(renderer::Base *renderer, controls::Base *baseControl)
+{
+    tokyonight::paintSurface(renderer, m_primitives.data(), baseControl, tokyonight::CodeGutter);
+}
+
+///////////////////////////////////////////////////////////////////////////
 //CodeLine
 // The line background is drawn only on the current line, and the selection
 // only where the line has one: an idle row's slots are hidden, not drawn
@@ -3215,6 +3222,7 @@ template class ControlRegister<ScrollBarBar>;
 template class ControlRegister<ProgressBar>;
 template class ControlRegister<CodeEditor>;
 template class ControlRegister<CodeLine>;
+template class ControlRegister<CodeGutter>;
 template class ControlRegister<Selectable>;
 template class ControlRegister<Separator>;
 template class ControlRegister<Bullet>;
