@@ -24,7 +24,8 @@
  *  environment it prints the most every size needed (per scale, mode and end)
  *  and how far the ink reached past the box in device px, left, right, above
  *  and below. On main before #571, where a Label clipped its Text at its
- *  bounds, every size, scale and mode had runs whose ink it cut off. *
+ *  bounds, every size, scale and mode had runs whose ink it cut off.
+ *
  *  Text that does not lie wholly inside its Label is still cut at the
  *  Label's bounds: a Label narrower than its text ("JAg", ink past both
  *  sides) shows the run alone with everything outside its bounds cut away,

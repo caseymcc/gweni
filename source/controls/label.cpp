@@ -118,9 +118,10 @@ void Label::onChildBoundsChanged(Rect oldChildBounds, Base *child)
 // coverage and as SDF. The ink reached past the measured box by up to 4
 // device px (a leading glyph at 19-24 px times 1.75 and 2) and 3 on the right
 // (13-16 px times 2), and the fewest whole units that showed all of it, the
-// box's edges snapped, were 2 at 8-18 and 23 px and 3 at 19-22 and 24 px: about a twelfth
-// of the size (a glyph's overhang) and a unit for the anti-aliasing or LCD
-// fringe and the snapping.
+// box's edges snapped, were 2 at 8-18 and 23 px and 3 at 19-22 and 24 px.
+// The margin is about a twelfth of the size (a glyph's overhang) and a unit
+// for the anti-aliasing or LCD fringe and the snapping, so it grows with the
+// size past 24 px; at 13-18 and 23 px it is one unit more than was needed.
 int Label::inkMargin(float size)
 {
     return static_cast<int>(std::ceil(std::max(0.0f, size)/12.0f))+1;

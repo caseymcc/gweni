@@ -2652,8 +2652,9 @@ two programs and the draws. What follows describes both together:
   last and first at 8 to 24 px, scales 1 to 2, grayscale, LCD and SDF, on GL and
   Vulkan, against the run drawn alone: the ink reached up to 4 device px past the box,
   and the fewest whole units that showed all of it, the edges snapped, were 2 up to 18
-  px and 3 from 19 to 24, about a twelfth of the size plus a unit for the fringe and the
-  snapping; the test fails if any run needs more than `inkMargin`. Ink may so reach up
+  px and at 23 and 3 at 19 to 22 and 24; the margin is about a twelfth of the size plus
+  a unit for the fringe and the snapping (one unit more than was needed at 13 to 18 and
+  23 px), and the test fails if any run needs more than `inkMargin`. Ink may so reach up
   to the margin into a neighbour's area, as text does in any toolkit, and the rect is
   still cut by every clipping ancestor's region (a Label at a ScrollControl's edge draws
   nothing outside its viewport). A Text that is not wholly inside (a Label narrower than
