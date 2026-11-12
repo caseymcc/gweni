@@ -28,6 +28,9 @@
  *  while it is typed into, or whose box stops taking keyboard input, commits
  *  too (the box's onLostKeyboardFocus() runs once), laid out in that frame's
  *  update phase in one pass, and shown again it is an unedited field at rest.
+ *  The box undoes and redoes its typing (TextBox's undo) back to the text it
+ *  opened with, selected, each edit starting with no history, and Escape and
+ *  Return still cancel and commit after an undo and a redo.
  *  The box is made once: its ids are taken by the first edit only. Opening
  *  and closing the box each way moves no control and keeps the field's
  *  preferred size, in one update-phase pass, whatever its size flags: docked
@@ -580,6 +583,47 @@ TEST_CASE("DragNumber: Return and a lost focus commit, Escape cancels, text that
         CHECK(field->getText() == "7.000");
     }
     CHECK(counter.count == 3);
+}
+
+TEST_CASE("DragNumber: the edit box undoes and redoes its typing, starts each edit with no history, and still commits and cancels")
+{
+    Scene scene;
+    DragNumber *field=scene.field();
+    field->setRange(0.0, 100.0);
+    field->setNumber(5.0);
+    scene.frame();
+
+    scene.doubleClick(field);
+    controls::internal::DragNumberTextBox *box=field->getEditBox();
+    REQUIRE(box != nullptr);
+    CHECK_FALSE(box->getUndoStack().canUndo());
+    scene.type("42");
+    scene.frame();
+    CHECK(box->getText() == "42");
+
+    // undone: the opened text, selected as it was opened
+    CHECK(box->undo());
+    CHECK(box->getText() == "5");
+    CHECK(box->getSelection() == "5");
+    CHECK(box->redo());
+    CHECK(box->getText() == "42");
+    CHECK(box->undo());
+
+    // Escape cancels whatever the box holds
+    scene.key(keys::Escape);
+    CHECK_FALSE(field->isEditing());
+    CHECK(field->getNumber() == 5.0);
+
+    // the next edit starts with no history: what was undone is not redone
+    scene.doubleClick(field);
+    CHECK_FALSE(box->getUndoStack().canUndo());
+    CHECK_FALSE(box->getUndoStack().canRedo());
+    scene.type("17");
+    CHECK(box->undo());
+    CHECK(box->redo());
+    scene.key(keys::Return);
+    CHECK_FALSE(field->isEditing());
+    CHECK(field->getNumber() == 17.0);
 }
 
 TEST_CASE("DragNumber: hidden while being typed into, the edit ends and commits in that frame's update phase")

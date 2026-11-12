@@ -325,6 +325,40 @@ Erm, and I think it comes down to a choice between "The League Against Salivatin
             WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
     endforeach()
 
+    # TextBox undo and redo (#597) through the keys: in TextBoxDemo's
+    # TextBoxMultiline, "abc" typed on its blank row is one step that Ctrl+Z
+    # takes back and Ctrl+Shift+Z and Ctrl+Y do again, and a Return starts a
+    # step of its own; in its TextBoxNumeric ("2004"), "15" typed and a
+    # Backspace are two steps, undone and redone one at a time
+    set(UNDO_TEXT_ABC [=[I think we're losing sight of the real issue here, which is: what are we gonna call ourselves?
+abc
+Erm, and I think it comes down to a choice between "The League Against Salivating Monsters" or my own personal preference, which is "The Committee for the Liberation and Integration of Terrifying Organisms and their Rehabilitation Into Society." Erm, one drawback with that: the abbreviation is "CLITORIS."]=])
+    set(UNDO_TEXT_EMPTY [=[I think we're losing sight of the real issue here, which is: what are we gonna call ourselves?
+
+Erm, and I think it comes down to a choice between "The League Against Salivating Monsters" or my own personal preference, which is "The Committee for the Liberation and Integration of Terrifying Organisms and their Rehabilitation Into Society." Erm, one drawback with that: the abbreviation is "CLITORIS."]=])
+    set(UNDO_TEXT_RETURN [=[I think we're losing sight of the real issue here, which is: what are we gonna call ourselves?
+abc
+de
+Erm, and I think it comes down to a choice between "The League Against Salivating Monsters" or my own personal preference, which is "The Committee for the Liberation and Integration of Terrifying Organisms and their Rehabilitation Into Society." Erm, one drawback with that: the abbreviation is "CLITORIS."]=])
+    gweni_whole_app_test(controltest_textbox_undo 60
+        COMMAND $<TARGET_FILE:ControlTest> --headless --control TextBoxDemo
+            --frames 3 --click 5,261 --frames 2
+            --type abc --expect-text "${UNDO_TEXT_ABC}"
+            --key ctrl+z --expect-text "${UNDO_TEXT_EMPTY}"
+            --key ctrl+shift+z --expect-text "${UNDO_TEXT_ABC}"
+            --key ctrl+z --key ctrl+y --expect-text "${UNDO_TEXT_ABC}"
+            --key return --type de --expect-text "${UNDO_TEXT_RETURN}"
+            --key ctrl+z --expect-text "${UNDO_TEXT_ABC}"
+            --key ctrl+y --expect-text "${UNDO_TEXT_RETURN}"
+            --click 100,98 --frames 2 --key end
+            --type 15 --expect-text 200415
+            --key backspace --expect-text 20041
+            --key ctrl+z --expect-text 200415
+            --key ctrl+z --expect-text 2004
+            --key ctrl+shift+z --expect-text 200415
+            --key ctrl+y --expect-text 20041
+        WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
+
     # script mode settles a script that starts with input and renders a frame
     # before a --shot that follows input, so --move 30,5 --shot matches the same
     # with --frames 3 / --frames 1 around the move; a shot before any frame

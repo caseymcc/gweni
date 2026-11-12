@@ -127,6 +127,10 @@ public:
 
     virtual void setCursorPos(int i);
     virtual void setCursorend(int i);
+    //! The caret and the other end of the selection, byte offsets into
+    //! getText() (equal without a selection).
+    int getCursorPos() const { return m_cursorPos; }
+    int getCursorEnd() const { return m_cursorEnd; }
 
     void setMaxTextLength(int maxLength) { m_maxTextLength=maxLength; }
     int getMaxTextLength() const { return m_maxTextLength; }
