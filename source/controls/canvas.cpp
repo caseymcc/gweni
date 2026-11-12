@@ -514,6 +514,7 @@ void Canvas::layoutUntilClean(bool updatePhase)
 
         const size_t visitedBefore=m_layoutStats.visited;
 
+        enterFollowers();
         layoutPass();
         ++passesRun;
 
@@ -1167,6 +1168,29 @@ void Canvas::menuAnchorDeleted(Base *control)
             menu->close();
             menu->closeAll();
         }
+    }
+}
+
+// Between passes, so not a re-dirty. A pass may move an anchor without
+// laying it out or any ancestor of it below the canvas (the canvas's docking
+// moves a top-level panel), so a follower is entered in every pass the app
+// runs, placed from where that pass puts its anchor: it comes after the
+// anchor's top-level ancestor among the canvas's children, and a submenu
+// after the menu holding its item. A pass run for setExcludedFromStats()
+// subtrees alone (an Inspector's or a StatsOverlay's refresh) moves no
+// anchor, as those are placed after the app and hold none, and enters none.
+void Canvas::enterFollowers()
+{
+    if(!layoutEntryCounted())
+        return;
+
+    if(m_popup && !m_popupIsMenu && !m_popup->hidden())
+        m_popup->invalidate();
+
+    for(Menu *menu : m_anchoredMenus)
+    {
+        if(menu->m_anchor && !menu->hidden() && (menu->getParent() == this))
+            menu->invalidate();
     }
 }
 

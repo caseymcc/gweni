@@ -477,12 +477,13 @@ public:
 
     /// \sect{Anchored menus}
     /// A Menu opened next to a control (Menu::openNextTo: a MenuItem's menu, a
-    /// strip menu or a submenu) is followed by the canvas while it is open:
-    /// the update phase lays it out again when its anchor's canvas rect or the
-    /// canvas's size is not the one it was last placed for, or when the
-    /// frame's pass lays out the anchor or an ancestor of it below the canvas
-    /// (so it is placed in that same pass, after the anchor), and closes it
-    /// when its anchor is no longer visible(). Only the menus open so are looked at, so the cost is
+    /// strip menu or a submenu) is followed by the canvas while it is open, as
+    /// an open Popup is: every layout pass the app runs enters it
+    /// (enterFollowers()), placing it in that pass from where the pass puts
+    /// its anchor, and the update phase lays it out again when its anchor's
+    /// canvas rect is not the one it was last placed for (a ZoomPanel's pan or
+    /// zoom, which lays nothing out) and closes it when its anchor is no
+    /// longer visible(). Only the menus open so are looked at, so the cost is
     /// the open strip menu and its open submenus, and a frame where no anchor
     /// moved lays out nothing. A menu leaves the list when it closes, when it
     /// is placed some other way and when it is deleted; deleting its anchor
@@ -646,6 +647,11 @@ protected:
     void updatePopup();
     /// The update phase's step for the anchored menus (see above).
     void updateAnchoredMenus();
+    /// Before each layout pass the app runs (layoutEntryCounted(): not one
+    /// for setExcludedFromStats() subtrees alone): invalidates the open Popup
+    /// and the open anchored menus, so the pass places each from where it
+    /// puts its anchor.
+    void enterFollowers();
     /// Puts a shown Popup after every other child but the Menus that were
     /// after it, and the ToolTip box at the end of the child list; run before
     /// the z renumber, which every change of the list's order asks for.

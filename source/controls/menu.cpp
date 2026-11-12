@@ -142,7 +142,6 @@ Point Menu::canvasPosition(const Rect &area)
     if(m_anchor)
     {
         m_placedFor=m_anchor->getCanvasBounds();
-        m_placedIn=area;
         return Popup::placement(m_placedFor, size, area, m_anchorSide, m_anchorGap);
     }
 
@@ -307,17 +306,9 @@ bool Menu::followAnchor(Canvas *canvas)
         return false;
     }
 
-    bool place=!sameRect(m_anchor->getCanvasBounds(), m_placedFor) || !sameRect(Rect(0, 0, canvas->getWidth(), canvas->getHeight()), m_placedIn);
-
-    // What this frame's pass lays out may move the anchor: the menu comes
-    // after the anchor's top-level ancestor among the canvas's children, so
-    // laid out too it is placed from where the pass puts the anchor. A
-    // submenu's anchor is in its parent menu, which comes before it in the
-    // list, so it is laid out with the menu that moves it.
-    for(Base *control=m_anchor; !place && control && (control != canvas); control=control->getParent())
-        place=control->layoutDirty();
-
-    if(place)
+    // moved with no layout pass (a ZoomPanel's pan or zoom); one a pass
+    // moves is placed in that pass (Canvas::enterFollowers)
+    if(!sameRect(m_anchor->getCanvasBounds(), m_placedFor))
         invalidate();
 
     return true;

@@ -119,8 +119,10 @@ public:
     //! The anchor's canvas rect, a zero-size one at the origin with no anchor.
     Rect anchorRect() const;
 
-    //! Canvas: the anchor's rect is not the one it was last placed by (the
-    //! anchor or one of its ancestors moved): it is laid out again.
+    //! Canvas, before the frame's layout: the anchor's rect is not the one it
+    //! was last placed by (moved with no layout pass, by a ZoomPanel's pan or
+    //! zoom): it is laid out again. A pass that moves the anchor enters the
+    //! popup anyway (Canvas::enterFollowers).
     void followAnchor();
 
 protected:

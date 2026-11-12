@@ -148,8 +148,6 @@ protected:
     int m_anchorGap=0;
     Point m_anchorRequest;
     Rect m_placedFor;
-    //! The canvas area it was last placed in next to its anchor.
-    Rect m_placedIn;
     //! The canvas following it (Canvas::followAnchoredMenu), which has it in
     //! its anchoredMenus(); null for none.
     Canvas *m_followedBy=nullptr;
@@ -157,8 +155,8 @@ protected:
     //! Canvas::updateAnchoredMenus, for a menu \p canvas follows: false once
     //! it is no longer open next to an anchor on that canvas, which it closes
     //! when the anchor is no longer visible() there; invalidated when the
-    //! anchor's canvas rect is not m_placedFor, the canvas's not m_placedIn,
-    //! or the anchor or an ancestor below the canvas is laid out this frame.
+    //! anchor's canvas rect is not m_placedFor (moved with no layout pass: a
+    //! pass enters the menu anyway, Canvas::enterFollowers).
     bool followAnchor(Canvas *canvas);
 
     //! The controls it is the context menu of (Base::setContextMenu).
