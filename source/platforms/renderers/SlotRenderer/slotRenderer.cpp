@@ -2952,16 +2952,20 @@ void SlotRenderer::measuredPenShifts(const gweni::Font &font, FontData &drawn, f
     if(px == font.size)
         return;
 
-    // An SDF font lays a run out linearly in px, so measured at font.size and drawn
-    // at px its pens differ by the scale alone. So does an LCD font's, the unhinted
-    // advances and kerning, to within its 1/3 px quantisation. Their lines are not
-    // linear in px (an SDF step is rounded to a whole pixel), so only a run with a
-    // '\n' walks its lines, and only they move.
+    // An SDF font lays a run out linearly in px, so measured and drawn as SDF, at
+    // font.size and at px, its pens differ by the scale alone. So do an LCD font's,
+    // the unhinted advances and kerning, to within its 1/3 px quantisation, whatever
+    // the run was measured in. Their lines are not linear in px (an SDF step is
+    // rounded to a whole pixel), so only a run with a '\n' walks its lines, and only
+    // they move. A run drawn as grayscale coverage has hinted whole-pixel pens of its
+    // own, so it is moved to the measured ones, whether it was measured as coverage
+    // or, at a scale below 1, as SDF.
     const bool multiLine=(text.find('\n') != gweni::String::npos);
     const bool measuredSdf=(resolveFont(font, font.size).mode == TextMode::Sdf);
     const bool lcd=(drawn.mode == TextMode::LcdRGB) || (drawn.mode == TextMode::LcdBGR);
+    const bool linear=lcd || (measuredSdf && (drawn.mode == TextMode::Sdf));
 
-    if((measuredSdf || lcd) && !multiLine)
+    if(linear && !multiLine)
         return;
 
     std::pair<const FontKey, FontData> *drawFont=m_lastFont;
@@ -2996,9 +3000,8 @@ void SlotRenderer::measuredPenShifts(const gweni::Font &font, FontData &drawn, f
     }
 
     // the x pens of an SDF run drawn as SDF, or of an LCD run, are the measured ones
-    // scaled; an SDF-measured run drawn as coverage (px below the threshold) keeps
-    // its hinted pens, not corrected here (issue #576)
-    if(measuredSdf || lcd)
+    // scaled; every other run is drawn at its measured pens below
+    if(linear)
         return;
 
     textPens(measured, font.size, text, measuredPens, nullptr);

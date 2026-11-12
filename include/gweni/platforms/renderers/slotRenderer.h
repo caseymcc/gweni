@@ -923,14 +923,17 @@ private:
     //! not null.
     PenWalk walkPens(FontData &fontData, float px, const gweni::String &text,
         std::vector<float> *pens, std::vector<int> *carets, std::vector<int> *glyphLines=nullptr);
-    //! At a scale() other than 1, a run measured in a coverage font (font.size below
-    //! the threshold) is drawn in another font, whose advances are not the measured
-    //! ones scaled: hinted, whole-pixel at font.size. shifts gets, for each drawn glyph,
-    //! the x that puts it at its measured pen position scaled, so the run ends where
-    //! measureText sized it and a caret placed from measureText falls between the
-    //! glyphs it means; it is left empty where nothing moves, and always for a run
-    //! drawn in an LCD font or measured in an Sdf one (drawn as Sdf, its pens are the
-    //! measured ones scaled; drawn as coverage, its hinted pens are left, issue #576). Nor is the drawn font's lineStep the measured one scaled (a
+    //! At a scale() other than 1, a run is drawn in another font than it is measured
+    //! in, whose advances need not be the measured ones scaled: a grayscale coverage
+    //! font's are hinted, whole-pixel at its own size, whether the run was measured
+    //! in a coverage font or, at a scale below 1, in an Sdf one (font.size at or
+    //! above the threshold, px below it). shifts gets, for each drawn glyph, the x
+    //! that puts it at its measured pen position scaled (rounded to a whole pixel
+    //! for a coverage glyph), so the run ends where measureText sized it and a caret
+    //! placed from measureText falls between the glyphs it means; it is left empty
+    //! where nothing moves, and always for a run whose layout is linear in px: drawn
+    //! in an LCD font (unhinted, to within its 1/3 px), or measured and drawn as Sdf.
+    //! Nor is the drawn font's lineStep the measured one scaled (a
     //! coverage font truncates its descender to a whole pixel, an Sdf one rounds its
     //! step), so lineShifts gets, for each drawn glyph of a run with a '\n', measured
     //! in any mode (an Sdf-measured run drawn as Sdf, or as coverage where px is
