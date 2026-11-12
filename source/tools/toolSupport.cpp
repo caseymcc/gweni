@@ -44,7 +44,7 @@ AppFrameWrites appFrameWrites(controls::Canvas *canvas, renderer::Base *render)
 
     if(!primitives.empty() || !texts.empty())
     {
-        // built once a frame, whoever reads it first
+        // the snapshot taken as that frame's flush ended
         const controls::ExcludedSlots *excluded=canvas?&canvas->excludedSlots():nullptr;
 
         for(size_t id : primitives)
