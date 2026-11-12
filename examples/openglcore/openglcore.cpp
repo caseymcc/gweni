@@ -22,6 +22,8 @@
  *                         the first frame has numbered the z labels, in the
  *                         window or a capture; a later --depth-view off
  *                         overrides an earlier one
+ *    --loop <idle|continuous>  the window draws only when the canvas has work
+ *                         (idle, the default; input::GlfwLoop) or every frame
  *
  *  With no options it opens the interactive window as before. There the shown
  *  page is in the URL (platform::pushUrl): picking one in the demo list pushes
@@ -518,7 +520,7 @@ static void printUsage(std::ostream &out)
          " [--frames <N>] [--stats]\n"
          "                  [--scale <s>] [--headless] [--resources <dir>]\n"
          "                  [--renderer <gl|vulkan>] [--stats-overlay [on|off]]\n"
-         "                  [--depth-view [on|off]]\n"
+         "                  [--depth-view [on|off]] [--loop <idle|continuous>]\n"
          "\n"
          "  --demo <Name>        show that demo page at startup\n"
          "  --screenshot <path>  render offscreen, write one PNG and exit\n"
@@ -546,7 +548,8 @@ static void printUsage(std::ostream &out)
          "                       numbered the z labels, in the window or a\n"
          "                       capture (on if neither follows); a later\n"
          "                       --depth-view off overrides it\n"
-       <<gweni::capture::RendererHelp<<
+       <<gweni::capture::RendererHelp
+       <<gweni::capture::LoopHelp<<
          "\n"
          "In the window, F12 opens and closes the inspector, F11 the theme\n"
          "editor, which saves to and loads from gweni-theme.json in the current\n"
@@ -591,6 +594,7 @@ int main(int argc, char *argv[])
     bool forceHeadless=false;
     bool statsOverlay=false;
     bool depthView=false;
+    gweni::platform::LoopOptions loopOptions=gweni::capture::loopOptions();
 
     for(int i=1; i<argc; ++i)
     {
@@ -628,6 +632,11 @@ int main(int argc, char *argv[])
             statsOverlay=gweni::capture::onOffArgument(argc, argv, i);
         else if(arg == "--depth-view")
             depthView=gweni::capture::onOffArgument(argc, argv, i);
+        else if(arg == "--loop")
+        {
+            if(!gweni::capture::loopArgument(argc, argv, i, loopOptions))
+                return EXIT_FAILURE;
+        }
         else if(arg == "--resources" && hasValue)
             resourceDir=argv[++i];
         else if(arg == "--renderer" && hasValue)
@@ -894,11 +903,12 @@ int main(int argc, char *argv[])
         // framebuffer differs from the window size on high-DPI displays).
         fitCanvas(ctx.window);
 
-        // The main loop: one frame per displayed frame until the window closes
-        // (in the browser, per animation frame, never returning). The frame
+        // The main loop until the window closes (in the browser, per animation
+        // frame, never returning): idle, a frame only when the canvas has work,
+        // continuous one per displayed frame (--loop). The frame
         // holds only the canvas and the renderer, heap objects, and the colour,
         // a copy, as the browser's loop needs.
-        device->runWindowLoop([canvas, renderer, background, depthView]()
+        device->runWindowLoop(canvas, renderer, loopOptions, [canvas, renderer, background, depthView]()
         {
             canvas->updateCanvas();
             if(depthView)

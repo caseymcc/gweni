@@ -50,7 +50,11 @@
  *                       counts and fails if a resize made no new swapchain or
  *                       anything was drawn or presented while iconified. No
  *                       input is taken, the clock steps as in a capture;
- *                       window_vulkan (tests/windowVulkan.cmake) runs it
+ *                       window_vulkan (tests/windowVulkan.cmake) runs it. It
+ *                       drives the loop's steps itself and draws one frame
+ *                       each, whatever --loop says
+ *    --loop <idle|continuous>  the window draws only when the canvas has work
+ *                       (idle, the default; input::GlfwLoop) or every frame
  *    --stats            print one key=value line per frame; freezes the clock.
  *                       prim_slots_written= and text_slots_written= count
  *                       the distinct primitive and glyph slots the frame's
@@ -1182,7 +1186,8 @@ static void printUsage(std::ostream &out)
          "  --depth-view [on|off]  open the depth view after the first frame (in\n"
          "                     the window or a script; on if neither follows);\n"
          "                     F9 toggles it in the window, Escape closes it\n"
-       <<gweni::capture::RendererHelp<<
+       <<gweni::capture::RendererHelp
+       <<gweni::capture::LoopHelp<<
          "  --window-test <dir>  the Vulkan window, scripted: resized, iconified and\n"
          "                     restored, each presented image written to <dir>\n"
          "  --stats            print one key=value line per frame; prim_slots_written=\n"
@@ -12079,6 +12084,7 @@ int main(int argc, char *argv[])
     std::string resourceDir;
     std::string rendererName;
     std::string windowTestDir;
+    gweni::platform::LoopOptions loopOptions=gweni::capture::loopOptions();
     gweni::Point screenSize(640, 480);
     float scale=1.0f;
     bool scaleGiven=false;
@@ -12127,6 +12133,11 @@ int main(int argc, char *argv[])
         else if(arg == "--headless") forceHeadless=true;
         else if(arg == "--stats-overlay") g_statsOverlay=gweni::capture::onOffArgument(argc, argv, i);
         else if(arg == "--depth-view") g_depthView=gweni::capture::onOffArgument(argc, argv, i);
+        else if(arg == "--loop")
+        {
+            if(!gweni::capture::loopArgument(argc, argv, i, loopOptions))
+                return EXIT_FAILURE;
+        }
         else if(arg == "--stats") stats=true;
         else if(arg == "--stats-clock" && hasValue)
         {
@@ -12755,11 +12766,12 @@ int main(int argc, char *argv[])
         }
         else
         {
-            // One frame per displayed frame until the window closes (in the
-            // browser, per animation frame, never returning); the frame holds
-            // only the canvas and the renderer, heap objects, and the colour, a
-            // copy, as the browser's loop needs.
-            device->runWindowLoop([canvas, renderer, background]()
+            // The window's loop until it closes (in the browser, per animation
+            // frame, never returning): idle, a frame only when the canvas has
+            // work, continuous one per displayed frame (--loop). The frame
+            // holds only the canvas and the renderer, heap objects, and the
+            // colour, a copy, as the browser's loop needs.
+            device->runWindowLoop(canvas, renderer, loopOptions, [canvas, renderer, background]()
             {
                 canvas->updateCanvas();
                 if(g_depthView)

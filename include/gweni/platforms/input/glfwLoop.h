@@ -40,7 +40,8 @@ namespace input
 //! callback polling and returning at once while there is no work (the wake
 //! handler sets a frame-wanted flag); it never pauses the main loop, which a
 //! missed wake would leave frozen. LoopMode::Continuous draws every iteration.
-//! With LoopOptions::verify, a frame the loop would have skipped is drawn and
+//! A window refresh (its contents lost) marks the canvas, so the next
+//! iteration draws. With LoopOptions::verify, a frame the loop would have skipped is drawn and
 //! fails (stderr, IdleLoop::failures()) if the renderer's frameStats() show a
 //! slot written or an upload.
 class GlfwLoop
@@ -71,11 +72,23 @@ public:
 #else
         // GLFW's one call that is safe from any thread
         m_canvas->setWakeHandler([]() { glfwPostEmptyEvent(); });
+        // the window system lost the window's contents (uncovered, with no
+        // compositor keeping them): a frame draws them again, as every frame
+        // a SlotRenderer draws draws its whole mirror
+        refreshed()=m_canvas;
+        glfwSetWindowRefreshCallback(m_window, [](GLFWwindow *) {
+            if(refreshed())
+                refreshed()->redraw();
+        });
 #endif
     }
 
     ~GlfwLoop()
     {
+#if !defined(__EMSCRIPTEN__)
+        glfwSetWindowRefreshCallback(m_window, nullptr);
+        refreshed()=nullptr;
+#endif
         m_canvas->setWakeHandler(nullptr);
     }
 
@@ -148,6 +161,15 @@ private:
         };
         return hooks;
     }
+
+#if !defined(__EMSCRIPTEN__)
+    //! The canvas a window refresh redraws (one GlfwLoop runs at a time).
+    static controls::Canvas *&refreshed()
+    {
+        static controls::Canvas *canvas=nullptr;
+        return canvas;
+    }
+#endif
 
 #if defined(__EMSCRIPTEN__)
     static void webCallback(void *arg)

@@ -13,13 +13,15 @@
  *  an animation that names no time), a focused TextBox's next caret edge
  *  (none once unfocused), the tooltip of a hovered control once its delay has
  *  passed and a held key's next repeat, and a frame at that time does the
- *  work it waited for; a hidden canvas waits for no layout, animation or
- *  tooltip.
+ *  work it waited for; an indeterminate ProgressBar wants every frame while it
+ *  shows and none while it is hidden (on a page switched away from); a hidden
+ *  canvas waits for no layout, animation or tooltip.
  */
 #include "headlessFixture.h"
 
 #include <gweni/anim.h>
 #include <gweni/gweni.h>
+#include <gweni/controls/progressBar.h>
 #include <gweni/controls/textBox.h>
 #include <gweni/controls/toolTip.h>
 #include <gweni/inputHandler.h>
@@ -368,4 +370,27 @@ TEST_CASE("Next work time: a hidden canvas waits for no layout or animation, sti
     scene.canvas->after(1.0, []() {});
     CHECK(scene.next() == scene.clock+1.0);
     anim::cancel(panel);
+}
+
+TEST_CASE("Next work time: an indeterminate ProgressBar every frame while it shows, none while hidden")
+{
+    Scene scene;
+    controls::Base *page=scene.canvas->newChild<controls::Base>("page");
+    controls::ProgressBar *bar=page->newChild<controls::ProgressBar>("bar");
+    bar->setIndeterminate(true);
+
+    scene.frame();
+    CHECK(scene.next() == WorkNow);
+
+    page->hide();
+    for(int i=0; i < 3; ++i)
+        scene.frame();
+    CHECK(scene.next() == NoWork);
+
+    // shown again: the show is work, and the bar wants frames again after it
+    page->show();
+    CHECK(scene.next() == WorkNow);
+    scene.frame();
+    CHECK(scene.next() == WorkNow);
+    bar->setIndeterminate(false);
 }

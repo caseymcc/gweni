@@ -10,6 +10,7 @@
 #include <gweni/controls/canvas.h>
 #include <gweni/platforms/baseRender.h>
 #include <gweni/platforms/commonPlatform.h>
+#include <gweni/platforms/input/glfwLoop.h>
 #include <gweni/platforms/platform.h>
 #include <gweni/platforms/renderers/openglCore.h>
 #include <gweni/tools/depthView.h>
@@ -260,51 +261,66 @@ bool initGlfwContext(Context &ctx, const Point &size, const std::string &title, 
     return true;
 }
 
+platform::LoopOptions loopOptions()
+{
+    platform::LoopOptions options;
+
 #if GWENI_EXAMPLE_WEBGL
-//! The frame run by emscripten_set_main_loop_arg, and how many have run.
-struct WebLoop
-{
-    std::function<void()> frame;
-    long frames=0;
-};
-
-static void webLoopFrame(void *arg)
-{
-    WebLoop &loop=*static_cast<WebLoop *>(arg);
-
-    // the input arrived since the last frame has been delivered already, but a
-    // size the canvas's container asked for is applied here
-    glfwPollEvents();
-    loop.frame();
-    ++loop.frames;
-    // how many frames the page has drawn, for whoever drives it (web/pre.js)
-    EM_ASM({
-        if(typeof gweniRun !== 'undefined')
-            gweniRun.frames=$0;
-    }, loop.frames);
-}
+    // until the page tests wait for drawn frames, not for callbacks
+    options.mode=platform::LoopMode::Continuous;
 #endif
+    options.verify=platform::LoopOptions::verifyFromEnvironment();
+    return options;
+}
 
-void runWindowLoop(const Context &ctx, std::function<void()> frame)
+bool loopArgument(int argc, char **argv, int &i, platform::LoopOptions &options)
 {
-#if GWENI_EXAMPLE_WEBGL
-    // The browser swaps after each callback (emscripten-glfw's glfwSwapBuffers
-    // only logs that it is not implemented) and delivers the input between
-    // them; the poll that applies a resize opens each frame (webLoopFrame). Never deleted: the loop runs
-    // as long as the page. The rate is the browser's (0: requestAnimationFrame);
-    // simulating an infinite loop unwinds main, so nothing after this runs.
-    (void)ctx;
-    WebLoop *loop=new WebLoop;
-    loop->frame=std::move(frame);
-    emscripten_set_main_loop_arg(&webLoopFrame, loop, 0, 1);
-#else
-    while(!glfwWindowShouldClose(ctx.window))
+    if(i+1 >= argc || !platform::LoopOptions::parseMode(argv[i+1], options.mode))
     {
+        std::cerr<<g_tool<<": --loop wants idle or continuous\n";
+        return false;
+    }
+    ++i;
+    return true;
+}
+
+const char *const LoopHelp=
+    "  --loop <idle|continuous>  how the window draws: idle (the default) only\n"
+    "                       when the canvas has work, sleeping in between;\n"
+    "                       continuous every frame. GWENI_IDLE_VERIFY=1 draws\n"
+    "                       the frames idle skips and fails one that writes\n";
+
+void runWindowLoop(const Context &ctx, controls::Canvas *canvas, renderer::Base *renderer,
+    const platform::LoopOptions &options, std::function<void()> frame)
+{
+    input::GlfwLoop::Callbacks callbacks;
+
+#if GWENI_EXAMPLE_WEBGL
+    // The browser swaps after each callback that drew (emscripten-glfw's
+    // glfwSwapBuffers only logs that it is not implemented) and delivers the
+    // input between them; the poll that applies a resize opens each callback.
+    callbacks.drawFrame=std::move(frame);
+    callbacks.afterIteration=[](const platform::IdleLoop &loop) {
+        // how many frames the page has drawn, for whoever drives it (web/pre.js)
+        EM_ASM({
+            if(typeof gweniRun !== 'undefined')
+                gweniRun.frames=$0;
+        }, (long)loop.frames());
+    };
+    // Never deleted: the loop runs as long as the page. The rate is the
+    // browser's (requestAnimationFrame); simulating an infinite loop unwinds
+    // main, so nothing after this runs.
+    input::GlfwLoop *loop=new input::GlfwLoop(ctx.window, canvas, renderer, options, std::move(callbacks));
+    loop->run();
+#else
+    callbacks.drawFrame=[&ctx, frame]() {
         frame();
         glfwSwapBuffers(ctx.window);
-        glfwPollEvents();
-        platform::sleep(0);
-    }
+    };
+
+    input::GlfwLoop loop(ctx.window, canvas, renderer, options, std::move(callbacks));
+
+    loop.run();
 #endif
 }
 
@@ -648,9 +664,10 @@ const char *const RendererHelp=
     "                       GWENI_VULKAN_VALIDATION=1 the validation layer is on\n"
     "                       and any message aborts)\n";
 
-void Device::runWindowLoop(std::function<void()> frame)
+void Device::runWindowLoop(controls::Canvas *canvas, renderer::Base *renderer,
+    const platform::LoopOptions &options, std::function<void()> frame)
 {
-    capture::runWindowLoop(m_context, std::move(frame));
+    capture::runWindowLoop(m_context, canvas, renderer, options, std::move(frame));
 }
 
 namespace

@@ -17,7 +17,9 @@
  *  has already fitted the canvas and the renderer's view to it, capture.h) and
  *  when an acquire or a present says it is out of date or suboptimal. While the
  *  window is minimised (iconified, or a 0x0 framebuffer, as Windows makes it)
- *  nothing is drawn, acquired or presented: the loop waits for events.
+ *  nothing is drawn, acquired or presented: the loop waits for events. The loop
+ *  is input::GlfwLoop's, as GL's: idle, it draws only when the canvas has work,
+ *  and a frame that was not shown marks the canvas for another.
  *
  *  See license in Gweni.h
  */
@@ -32,6 +34,8 @@
 
 #ifdef GWENI_HAS_VULKAN
 
+#include <gweni/controls/canvas.h>
+#include <gweni/platforms/input/glfwLoop.h>
 #include <gweni/platforms/platform.h>
 
 #include <algorithm>
@@ -110,7 +114,8 @@ public:
     renderer::VulkanDevice *vulkanDevice() override { return &m_device; }
     renderer::VulkanTarget *vulkanTarget() override { return m_target.get(); }
 
-    void runWindowLoop(std::function<void()> frame) override;
+    void runWindowLoop(controls::Canvas *canvas, renderer::Base *renderer,
+        const platform::LoopOptions &options, std::function<void()> frame) override;
     bool beginWindowFrame() override;
     bool presentWindowFrame(std::vector<uint8_t> *pixels, Point *size) override;
     const WindowStats *windowStats() const override { return &m_stats; }
@@ -766,23 +771,39 @@ bool VulkanWindowDevice::presentWindowFrame(std::vector<uint8_t> *pixels, Point 
     return true;
 }
 
-void VulkanWindowDevice::runWindowLoop(std::function<void()> frame)
+void VulkanWindowDevice::runWindowLoop(controls::Canvas *canvas, renderer::Base *renderer,
+    const platform::LoopOptions &options, std::function<void()> frame)
 {
-    while(!glfwWindowShouldClose(m_context.window))
-    {
-        if(beginWindowFrame())
+    // a beginWindowFrame that found nothing to draw into (minimised since the
+    // loop asked, or a remake that failed): the next iteration waits for an
+    // event rather than spinning on the canvas's pending work
+    bool beginFailed=false;
+    input::GlfwLoop::Callbacks callbacks;
+
+    callbacks.drawFrame=[this, canvas, &beginFailed, frame]() {
+        if(!beginWindowFrame())
         {
-            frame();
-            presentWindowFrame(nullptr, nullptr);
-            glfwPollEvents();
-            platform::sleep(0);
+            beginFailed=true;
+            return;
         }
-        else
-        {
-            // minimised: nothing to show until an event (the restore) comes
-            glfwWaitEvents();
-        }
-    }
+        frame();
+        // not shown (an out-of-date acquire, or minimised since the begin):
+        // the canvas has nothing left to draw, so it is marked for the next
+        if(!presentWindowFrame(nullptr, nullptr))
+            canvas->redraw();
+    };
+    callbacks.canDraw=[this, &beginFailed]() {
+        Point framebuffer;
+        const bool failed=beginFailed;
+
+        beginFailed=false;
+        // minimised: nothing to show until an event (the restore) comes
+        return !failed && !minimised(framebuffer);
+    };
+
+    input::GlfwLoop loop(m_context.window, canvas, renderer, options, std::move(callbacks));
+
+    loop.run();
     vkDeviceWaitIdle(device());
 }
 

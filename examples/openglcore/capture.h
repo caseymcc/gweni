@@ -16,6 +16,7 @@
 #include <gweni/platforms/renderers/glApi.h>
 #include <GLFW/glfw3.h>
 #include <gweni/platforms/input/glfw3.h>
+#include <gweni/platforms/idleLoop.h>
 #include <gweni/platforms/platformTypes.h>
 #include <gweni/utils/filesystem.h>
 #include <cstdint>
@@ -190,14 +191,28 @@ struct Context
 //! follows its size, so \a size is only where it starts.
 bool initGlfwContext(Context &ctx, const Point &size, const std::string &title, bool visible);
 
-//! Runs \a frame once per displayed frame of \a ctx's window until it is
-//! closed: natively a loop of \a frame, a buffer swap, an event poll and a
-//! yield; in the browser one call per animation frame
+//! Runs \a ctx's window until it is closed on input::GlfwLoop
+//! (gweni/platforms/input/glfwLoop.h) over \a canvas: \a frame and a buffer
+//! swap each time the loop draws, which idle (\a options, loopOptions()) is
+//! only when the canvas has work, waiting for events in between, and
+//! continuous every iteration; in the browser one call per animation frame
 //! (emscripten_set_main_loop), between which the page handles input, resizes
-//! and draws. In the browser this never returns, and main's stack is unwound
-//! before the first frame: \a frame must hold only what outlives main's locals
-//! (heap objects, statics), never a reference to one.
-void runWindowLoop(const Context &ctx, std::function<void()> frame);
+//! and draws, a frame only when there is work. \a renderer is read for the
+//! verify mode's frameStats(). In the browser this never returns, and main's
+//! stack is unwound before the first frame: \a frame must hold only what
+//! outlives main's locals (heap objects, statics), never a reference to one.
+void runWindowLoop(const Context &ctx, controls::Canvas *canvas, renderer::Base *renderer,
+    const platform::LoopOptions &options, std::function<void()> frame);
+
+//! A window's loop options: idle (continuous in the browser, until its page
+//! tests wait on drawn frames rather than callbacks), with the verify mode
+//! when GWENI_IDLE_VERIFY=1.
+platform::LoopOptions loopOptions();
+//! Reads --loop's value, argv[i+1], into \a options: idle or continuous.
+//! \return false, after one line naming the tool, for another or none.
+bool loopArgument(int argc, char **argv, int &i, platform::LoopOptions &options);
+//! The --help text of --loop, for each tool's usage
+extern const char *const LoopHelp;
 
 #if GWENI_EXAMPLE_EGL
 //! The headless context, current: surfaceless EGL (GL 3.3 core, or GLES 3.0 in
@@ -306,14 +321,17 @@ public:
     //-------------------------------------------------------------------------
     // The interactive window (context().window), what runWindowLoop runs
 
-    //! Runs \a frame once per displayed frame of the window until it is closed,
-    //! then waits for the device. GL: capture::runWindowLoop (a loop of \a frame,
-    //! a buffer swap, an event poll and a yield; in the browser one call per
-    //! animation frame, never returning). Vulkan: a loop of beginWindowFrame,
-    //! \a frame and presentWindowFrame, and while the window is minimised
-    //! (beginWindowFrame false) no frame, only glfwWaitEvents until it is
-    //! restored.
-    virtual void runWindowLoop(std::function<void()> frame);
+    //! Runs the window on input::GlfwLoop over \a canvas until it is closed,
+    //! then waits for the device: \a frame each time the loop draws (idle:
+    //! when the canvas has work, \a options). GL: capture::runWindowLoop
+    //! (\a frame and a buffer swap; in the browser one call per animation
+    //! frame, never returning). Vulkan: beginWindowFrame, \a frame and
+    //! presentWindowFrame, a frame not shown (out of date, minimised since)
+    //! marking the canvas for another; while the window is minimised or a
+    //! remake failed (beginWindowFrame false) the loop draws nothing and
+    //! waits for the next event.
+    virtual void runWindowLoop(controls::Canvas *canvas, renderer::Base *renderer,
+        const platform::LoopOptions &options, std::function<void()> frame);
 
     //! Readies the window for a frame: on Vulkan the target and the swapchain
     //! made again at the framebuffer's size if it changed or the last acquire or

@@ -11,6 +11,7 @@
 #include <gweni/utility.h>
 
 #include <cmath>
+#include <limits>
 
 namespace gweni
 {
@@ -32,6 +33,15 @@ public:
         const float fDiff=static_cast<float>(now-m_fLastFrame);
         gweni_cast<ProgressBar>(m_control)->cycleThink(gweni::clamp(fDiff, 0.f, 0.3f));
         m_fLastFrame=now;
+    }
+
+    // every frame while the bar shows; a hidden one (on a page switched away
+    // from) asks an idle loop for none, and showing it again is work of its own
+    double nextThinkTime() const override
+    {
+        if(!m_control->visible())
+            return std::numeric_limits<double>::infinity();
+        return gweni::anim::Animation::nextThinkTime();
     }
 
     double m_fLastFrame;
