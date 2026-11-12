@@ -230,6 +230,7 @@ TEST_CASE("Text cells: a stray continuation byte and a cut sequence's lead are o
         {
             CHECK(text::nextCaretStop(line, stops[k]) == stops[k+1]);
             CHECK(text::prevCaretStop(line, stops[k+1]) == stops[k]);
+            CHECK(text::utf8PrevCodepoint(line, stops[k+1]) == stops[k]);
         }
     }
 
@@ -260,6 +261,24 @@ TEST_CASE("Text cells: a stray continuation byte and a cut sequence's lead are o
     CHECK(text::caretStopAt(valid, 6) == 4);
     CHECK(text::caretStopAt(valid, 9) == 7);
     CHECK(text::caretStopAt(valid, 99) == valid.size());
+}
+
+TEST_CASE("CodeEditor: Backspace over malformed UTF-8 removes one byte, never the codepoint before it")
+{
+    // a\x80\x80 and é followed by a stray byte: each Backspace one byte
+    // until the whole codepoint before the strays, which goes whole
+    Scene s("a\x80\x80\n"+eAcute+"\x80");
+
+    s.editor->setCaret(at(0, 3));
+    s.key(GLFW_KEY_BACKSPACE);
+    CHECK(s.line(0) == "a\x80");
+    s.key(GLFW_KEY_BACKSPACE);
+    CHECK(s.line(0) == "a");
+    s.editor->setCaret(at(1, 3));
+    s.key(GLFW_KEY_BACKSPACE);
+    CHECK(s.line(1) == eAcute);
+    s.key(GLFW_KEY_BACKSPACE);
+    CHECK(s.line(1) == "");
 }
 
 TEST_CASE("CodeEditor: Left and Right cross malformed UTF-8 a byte at a time, and a stop is not snapped")

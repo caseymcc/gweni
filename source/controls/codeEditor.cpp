@@ -1080,7 +1080,7 @@ bool CodeEditor::onKeyBackspace(bool down)
     if(hasSelection())
         replaceRange(getSelection(), String(), kind);
     else if(m_caret.byte > 0)
-        replaceRange({{m_caret.line, utf8Prev(m_document.line(m_caret.line), m_caret.byte)}, m_caret}, String(), kind);
+        replaceRange({{m_caret.line, text::utf8PrevCodepoint(m_document.line(m_caret.line), m_caret.byte)}, m_caret}, String(), kind);
     else if(m_caret.line > 0)
         replaceRange({{m_caret.line-1, m_document.line(m_caret.line-1).size()}, m_caret}, String(), kind);
     return true;

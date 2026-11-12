@@ -33,6 +33,10 @@ GWENI_EXPORT int cellCount(uint32_t codepoint);
 //! sequence is U+FFFD, one byte long; \p pos at or past the end is 0, with
 //! \p next str.size().
 GWENI_EXPORT uint32_t utf8CodepointAt(const String &str, size_t pos, size_t *next=nullptr);
+//! The codepoint boundary before byte \p pos (> 0), by utf8CodepointAt's
+//! rule, so a walk back meets the boundaries a walk forward does: a stray
+//! continuation byte or the lead of a cut sequence is one byte; 0 at 0.
+GWENI_EXPORT size_t utf8PrevCodepoint(const String &str, size_t pos);
 
 //! The cells the bytes [\p begin, \p end) of \p str take in a fixed-width run,
 //! each codepoint its cellCount(); \p end is clamped to str.size() and \p

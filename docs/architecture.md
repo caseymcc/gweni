@@ -1995,8 +1995,8 @@ two programs and the draws. What follows describes both together:
   `prevCaretStop`; `caretStopAt` snaps a position inside a codepoint or before a
   mark), so a mark moves with its base. Malformed UTF-8 (a Latin-1 file, a cut
   sequence) is read as `utf8CodepointAt` reads it, each stray byte one U+FFFD and
-  one stop, walking forward and back alike, so the caret crosses it a byte at a
-  time. A cell width that changes after the first read (a font of another
+  one stop, walking forward and back alike (`text::utf8PrevCodepoint`), so the
+  caret crosses it a byte at a time and Backspace removes it a byte at a time. A cell width that changes after the first read (a font of another
   advance) marks the rows holding the selection and the caret again, since their
   rects are in cells even where the rows keep their bounds.
 

@@ -183,12 +183,15 @@ size_t byteNearestCell(const String &str, double cells)
     return i;
 }
 
-// The codepoint boundary before pos (> 0), by utf8CodepointAt's rule, so a
-// walk back meets the boundaries a walk forward does: the nearest byte within
-// 4 that is not 10xxxxxx, if the sequence it leads ends at pos, else pos-1 (a
-// stray continuation byte, or the lead of a cut sequence, is one byte long).
-static size_t prevBoundary(const String &str, size_t pos)
+// The nearest byte within 4 before pos that is not 10xxxxxx, if the sequence
+// it leads ends at pos, else pos-1 (a stray continuation byte, or the lead of
+// a cut sequence, is one byte long).
+size_t utf8PrevCodepoint(const String &str, size_t pos)
 {
+    pos=std::min(pos, str.size());
+    if(pos == 0)
+        return 0;
+
     const size_t least=(pos > 4) ? pos-4 : 0;
     size_t lead=pos-1;
 
@@ -228,9 +231,9 @@ size_t prevCaretStop(const String &str, size_t pos)
     if(pos == 0)
         return 0;
 
-    pos=prevBoundary(str, pos);
+    pos=utf8PrevCodepoint(str, pos);
     while(!isCaretStop(str, pos))
-        pos=prevBoundary(str, pos);
+        pos=utf8PrevCodepoint(str, pos);
     return pos;
 }
 
@@ -254,7 +257,7 @@ size_t caretStopAt(const String &str, size_t pos)
         pos=lead;
 
     while(!isCaretStop(str, pos))
-        pos=prevBoundary(str, pos);
+        pos=utf8PrevCodepoint(str, pos);
     return pos;
 }
 
