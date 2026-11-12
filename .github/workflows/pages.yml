@@ -7,7 +7,10 @@
 #  by hand (Actions -> pages -> Run workflow), build the repo's own build image,
 #  run tools/ci_site.sh in it (the native GLES and web release trees, ctest -L
 #  web, tools/build_site.sh, the README's live links), and deploy the staged
-#  site/ to GitHub Pages. If any of that fails, nothing is deployed.
+#  site/ to GitHub Pages. If any of that fails, nothing is deployed, and the run
+#  says why in an ::error:: annotation (memory, disk, the kernel's out-of-memory
+#  kills), which the public API shows without a token. Every page of the site
+#  says which commit it was built from (GITHUB_SHA).
 #
 #  Every build step is in tools/ci_site.sh, so a run can be repeated by hand in
 #  the container (./run_docker.sh ./tools/ci_site.sh); this file only gets the
@@ -108,15 +111,58 @@ jobs:
 
       # Everything is in the script. --ipc=host as Playwright asks for Chromium
       # in a container (the default 64 MB /dev/shm is too small for it).
+      # GITHUB_SHA is the commit build_site.sh stamps on every page. The script
+      # builds with CMAKE_BUILD_PARALLEL_LEVEL jobs, nproc by default (4 here);
+      # -e CMAKE_BUILD_PARALLEL_LEVEL=3 would pass fewer.
+      # The runner's memory goes into the log once a minute while it runs (and
+      # into memory.log, for the step below): a runner killed for memory, or a
+      # VM shut down, runs no later step, so these lines are what is left. The
+      # step's status is the docker run's.
       - name: Build, test and stage the site (tools/ci_site.sh)
         run: |
+          (
+              trap 'kill $! 2>/dev/null; exit 0' TERM
+              while :; do
+                  sleep 60 & wait $!
+                  free -m | awk '/^Mem:/ { m = $3 " of " $2 " MB used, " $7 " MB available" }
+                      /^Swap:/ { s = ", swap " $3 " of " $2 " MB" }
+                      END { print "memory: " m s }' | tee -a "$RUNNER_TEMP/memory.log"
+              done
+          ) &
+          logger=$!
+          status=0
           docker run --rm --ipc=host \
+              -e GITHUB_SHA \
               -e VCPKG_DEFAULT_BINARY_CACHE=/vcpkg-cache/binary \
               -e VCPKG_DOWNLOADS=/vcpkg-cache/downloads \
               -v "$GITHUB_WORKSPACE:/home/developer/gweni" \
               -v "$RUNNER_TEMP/vcpkg-cache:/vcpkg-cache" \
               -w /home/developer/gweni \
-              "$IMAGE" ./tools/ci_site.sh
+              "$IMAGE" ./tools/ci_site.sh || status=$?
+          kill "$logger" 2>/dev/null || true
+          wait "$logger" 2>/dev/null || true
+          exit "$status"
+
+      # After a failed step: the memory, the disk and the kernel's
+      # out-of-memory kills, and one ::error:: annotation saying so, which the
+      # public check-runs API shows without a token (the log needs one).
+      - name: Why the build failed
+        if: failure()
+        run: |
+          free -m
+          df -h /
+          kills="$(sudo dmesg | grep -i -E 'killed process|out of memory' || true)"
+          echo "${kills:-no out-of-memory lines in dmesg}"
+          if [ -n "$kills" ]; then
+              oom="$(echo "$kills" | wc -l) out-of-memory line(s) in dmesg, the last: $(echo "$kills" | tail -n 1)"
+          else
+              oom="no out-of-memory kill in dmesg"
+          fi
+          last="$(tail -n 1 "$RUNNER_TEMP/memory.log" 2>/dev/null || true)"
+          disk="$(df -h / | awk 'NR == 2 { print $4 " free on /" }')"
+          summary="$oom; last per-minute ${last:-memory: none logged}; $disk"
+          # an annotation's message is one line, its % escaped
+          echo "::error title=pages build failed::$(echo "$summary" | sed 's/%/%25/g' | tr -s ' ')"
 
       # saved whatever the build did, unless this exact key was restored
       - name: Save the vcpkg cache
