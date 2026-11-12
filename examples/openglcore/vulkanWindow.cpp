@@ -115,7 +115,8 @@ public:
     renderer::VulkanTarget *vulkanTarget() override { return m_target.get(); }
 
     void runWindowLoop(controls::Canvas *canvas, renderer::Base *renderer,
-        const platform::LoopOptions &options, std::function<void()> frame) override;
+        const platform::LoopOptions &options, std::function<void()> frame,
+        std::function<void(const platform::IdleLoop &)> afterIteration) override;
     bool beginWindowFrame() override;
     bool presentWindowFrame(std::vector<uint8_t> *pixels, Point *size) override;
     const WindowStats *windowStats() const override { return &m_stats; }
@@ -772,7 +773,8 @@ bool VulkanWindowDevice::presentWindowFrame(std::vector<uint8_t> *pixels, Point 
 }
 
 void VulkanWindowDevice::runWindowLoop(controls::Canvas *canvas, renderer::Base *renderer,
-    const platform::LoopOptions &options, std::function<void()> frame)
+    const platform::LoopOptions &options, std::function<void()> frame,
+    std::function<void(const platform::IdleLoop &)> afterIteration)
 {
     // a beginWindowFrame that found nothing to draw into (minimised since the
     // loop asked, or a remake that failed): the next iteration waits for an
@@ -800,6 +802,7 @@ void VulkanWindowDevice::runWindowLoop(controls::Canvas *canvas, renderer::Base 
         // minimised: nothing to show until an event (the restore) comes
         return !failed && !minimised(framebuffer);
     };
+    callbacks.afterIteration=std::move(afterIteration);
 
     input::GlfwLoop loop(m_context.window, canvas, renderer, options, std::move(callbacks));
 

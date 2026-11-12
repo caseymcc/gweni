@@ -916,6 +916,32 @@ if(GWENI_RENDER_VULKAN)
     gweni_vulkan_test_environment(vulkan_smoke)
 endif()
 
+# the example window's idle loop in a real window (windowIdle.cmake, whose
+# header says what it runs): ControlTest --idle-test under an Xvfb of its own,
+# on GL and, with Vulkan, on renderer::Vulkan validated. Without Xvfb it fails
+# rather than skips.
+if(TARGET ControlTest AND NOT EMSCRIPTEN)
+    add_test(NAME window_idle
+        COMMAND ${CMAKE_COMMAND}
+            -DCONTROLTEST=$<TARGET_FILE:ControlTest>
+            -DRENDERER=gl
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/windowIdle.cmake
+        WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
+    set_tests_properties(window_idle PROPERTIES
+        LABELS gpu
+        TIMEOUT 180)
+    if(GWENI_RENDER_VULKAN)
+        add_test(NAME window_idle_vulkan
+            COMMAND ${CMAKE_COMMAND}
+                -DCONTROLTEST=$<TARGET_FILE:ControlTest>
+                -DRENDERER=vulkan
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/windowIdle.cmake
+            WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
+        set_tests_properties(window_idle_vulkan PROPERTIES TIMEOUT 300)
+        gweni_vulkan_test_environment(window_idle_vulkan)
+    endif()
+endif()
+
 # renderer::Vulkan in a window (windowVulkan.cmake, whose header says what it
 # runs): ControlTest --window-test under an Xvfb of its own and gweni_test_wm
 # (vulkan/testWindowManager.cpp), the window's presented images against headless

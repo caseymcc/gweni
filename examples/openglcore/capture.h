@@ -202,7 +202,8 @@ bool initGlfwContext(Context &ctx, const Point &size, const std::string &title, 
 //! stack is unwound before the first frame: \a frame must hold only what
 //! outlives main's locals (heap objects, statics), never a reference to one.
 void runWindowLoop(const Context &ctx, controls::Canvas *canvas, renderer::Base *renderer,
-    const platform::LoopOptions &options, std::function<void()> frame);
+    const platform::LoopOptions &options, std::function<void()> frame,
+    std::function<void(const platform::IdleLoop &)> afterIteration=nullptr);
 
 //! A window's loop options: idle (continuous in the browser, until its page
 //! tests wait on drawn frames rather than callbacks), with the verify mode
@@ -330,8 +331,11 @@ public:
     //! marking the canvas for another; while the window is minimised or a
     //! remake failed (beginWindowFrame false) the loop draws nothing and
     //! waits for the next event.
+    //! \a afterIteration, if set, is called after every iteration (natively)
+    //! or callback (in the browser), with the loop's counts.
     virtual void runWindowLoop(controls::Canvas *canvas, renderer::Base *renderer,
-        const platform::LoopOptions &options, std::function<void()> frame);
+        const platform::LoopOptions &options, std::function<void()> frame,
+        std::function<void(const platform::IdleLoop &)> afterIteration=nullptr);
 
     //! Readies the window for a frame: on Vulkan the target and the swapchain
     //! made again at the framebuffer's size if it changed or the last acquire or

@@ -291,7 +291,8 @@ const char *const LoopHelp=
     "                       the frames idle skips and fails one that writes\n";
 
 void runWindowLoop(const Context &ctx, controls::Canvas *canvas, renderer::Base *renderer,
-    const platform::LoopOptions &options, std::function<void()> frame)
+    const platform::LoopOptions &options, std::function<void()> frame,
+    std::function<void(const platform::IdleLoop &)> afterIteration)
 {
     input::GlfwLoop::Callbacks callbacks;
 
@@ -300,12 +301,14 @@ void runWindowLoop(const Context &ctx, controls::Canvas *canvas, renderer::Base 
     // glfwSwapBuffers only logs that it is not implemented) and delivers the
     // input between them; the poll that applies a resize opens each callback.
     callbacks.drawFrame=std::move(frame);
-    callbacks.afterIteration=[](const platform::IdleLoop &loop) {
+    callbacks.afterIteration=[afterIteration](const platform::IdleLoop &loop) {
         // how many frames the page has drawn, for whoever drives it (web/pre.js)
         EM_ASM({
             if(typeof gweniRun !== 'undefined')
                 gweniRun.frames=$0;
         }, (long)loop.frames());
+        if(afterIteration)
+            afterIteration(loop);
     };
     // Never deleted: the loop runs as long as the page. The rate is the
     // browser's (requestAnimationFrame); simulating an infinite loop unwinds
@@ -317,6 +320,7 @@ void runWindowLoop(const Context &ctx, controls::Canvas *canvas, renderer::Base 
         frame();
         glfwSwapBuffers(ctx.window);
     };
+    callbacks.afterIteration=std::move(afterIteration);
 
     input::GlfwLoop loop(ctx.window, canvas, renderer, options, std::move(callbacks));
 
@@ -665,9 +669,10 @@ const char *const RendererHelp=
     "                       and any message aborts)\n";
 
 void Device::runWindowLoop(controls::Canvas *canvas, renderer::Base *renderer,
-    const platform::LoopOptions &options, std::function<void()> frame)
+    const platform::LoopOptions &options, std::function<void()> frame,
+    std::function<void(const platform::IdleLoop &)> afterIteration)
 {
-    capture::runWindowLoop(m_context, canvas, renderer, options, std::move(frame));
+    capture::runWindowLoop(m_context, canvas, renderer, options, std::move(frame), std::move(afterIteration));
 }
 
 namespace

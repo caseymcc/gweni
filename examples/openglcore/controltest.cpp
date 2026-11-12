@@ -53,6 +53,15 @@
  *                       window_vulkan (tests/windowVulkan.cmake) runs it. It
  *                       drives the loop's steps itself and draws one frame
  *                       each, whatever --loop says
+ *    --idle-test        the window's idle loop (input::GlfwLoop), measured, with
+ *                       no input taken: once --control has settled it idles
+ *                       2 s, which must draw no frame, swap or present nothing
+ *                       and take under 0.1 s of the process's CPU (getrusage,
+ *                       every thread), then a post from another thread must
+ *                       wake it and draw exactly one frame, writing glyphs,
+ *                       and a canvas timer closes the window. One idle-test:
+ *                       line per measure on stdout; window_idle (and _vulkan,
+ *                       tests/windowIdle.cmake) runs it under Xvfb
  *    --loop <idle|continuous>  the window draws only when the canvas has work
  *                       (idle, the default; input::GlfwLoop) or every frame
  *    --stats            print one key=value line per frame; freezes the clock.
@@ -976,6 +985,14 @@
 #include <string>
 #include <vector>
 
+#if !defined(__EMSCRIPTEN__)
+#include <atomic>
+#include <condition_variable>
+#include <mutex>
+#include <thread>
+#include <sys/resource.h>
+#endif
+
 #include <demo/button.h>
 #include <demo/demo.h>
 #include <demo/checkBox.h>
@@ -1198,6 +1215,8 @@ static void printUsage(std::ostream &out)
          "                     F9 toggles it in the window, Escape closes it\n"
        <<gweni::capture::RendererHelp
        <<gweni::capture::LoopHelp<<
+         "  --idle-test        the window's idle loop, measured: idle 2 s (no frame, no\n"
+         "                     swap or present, near-zero CPU), then one frame for a post\n"
          "  --window-test <dir>  the Vulkan window, scripted: resized, iconified and\n"
          "                     restored, each presented image written to <dir>\n"
          "  --stats            print one key=value line per frame; prim_slots_written=\n"
@@ -12170,6 +12189,178 @@ static bool runWindowTest(gweni::capture::Device &device, gweni::controls::Canva
 }
 #endif//GWENI_HAS_VULKAN
 
+//-----------------------------------------------------------------------------
+// --idle-test: the idle window loop, measured (window_idle, tests/windowIdle.cmake).
+// It runs the window's own loop (Device::runWindowLoop, input::GlfwLoop, idle)
+// over --control with no input callbacks, and from another thread: once the
+// canvas has settled (an iteration after which it has no work due) it lets the
+// window idle for kIdleSeconds and then posts to the canvas (Canvas::post). The
+// post, on the UI thread, reads the loop's counts: no frame drawn and no swap or
+// present while idle, and the process's CPU time (getrusage, every thread, the
+// rasteriser's included) under kIdleCpuSeconds. It sets a Button's text, so the
+// frame it wakes writes that Button's glyphs, and a canvas timer closes the window
+// kAfterPostSeconds later, after it counts exactly one frame (and one swap or
+// present) drawn for the post.
+//-----------------------------------------------------------------------------
+
+#if !defined(__EMSCRIPTEN__)
+static constexpr double kIdleSeconds=2.0;
+static constexpr double kAfterPostSeconds=1.0;
+static constexpr double kIdleCpuSeconds=0.1;
+
+static double processCpuSeconds()
+{
+    rusage usage{};
+
+    getrusage(RUSAGE_SELF, &usage);
+    return double(usage.ru_utime.tv_sec)+double(usage.ru_utime.tv_usec)*1e-6
+        +double(usage.ru_stime.tv_sec)+double(usage.ru_stime.tv_usec)*1e-6;
+}
+
+static bool runIdleTest(gweni::capture::Device &device, gweni::controls::Canvas *canvas,
+    gweni::renderer::SlotRenderer *renderer, const gweni::Color &background,
+    gweni::controls::Base *control, gweni::platform::LoopOptions options)
+{
+    typedef std::chrono::steady_clock Clock;
+
+    GLFWwindow *window=device.context().window;
+    const gweni::capture::Device::WindowStats *stats=device.windowStats();
+    // a GL window swaps once a drawn frame; a Vulkan one counts its presents
+    auto presents=[&](const gweni::platform::IdleLoop &loop) {
+        return stats ? stats->presents : long(loop.frames());
+    };
+
+    std::mutex mutex;
+    std::condition_variable changed;
+    bool settled=false;
+    std::atomic<bool> postRan{false};
+    std::atomic<bool> ok{true};
+
+    const gweni::platform::IdleLoop *loop=nullptr;
+    long baseFrames=0;
+    long basePresents=0;
+    double baseCpu=0.0;
+    Clock::time_point baseWall;
+    long postFrames=0;
+    long postPresents=0;
+    bool checkPostFrame=false;
+
+    gweni::controls::Base *button=findControl(control, "Button");
+
+    options.mode=gweni::platform::LoopMode::Idle;
+
+    std::thread worker([&]() {
+        {
+            std::unique_lock<std::mutex> lock(mutex);
+
+            if(!changed.wait_for(lock, std::chrono::seconds(30), [&]() { return settled; }))
+            {
+                std::cerr<<"ControlTest: --idle-test: the canvas never settled (it had work after every frame for 30 s)\n";
+                ok=false;
+            }
+        }
+        std::this_thread::sleep_for(std::chrono::duration<double>(kIdleSeconds));
+
+        // what the loop did while idle, read on the UI thread when the post runs
+        canvas->post([&]() {
+            postRan=true;
+
+            // the frame this post runs in was counted as it began
+            const long idleFrames=long(loop->frames())-1-baseFrames;
+            const long idlePresents=presents(*loop)-basePresents-(stats ? 0 : 1);
+            const double cpu=processCpuSeconds()-baseCpu;
+            const double wall=std::chrono::duration<double>(Clock::now()-baseWall).count();
+
+            std::cout<<"idle-test: idle frames="<<idleFrames<<" presents="<<idlePresents
+                     <<" cpu_s="<<cpu<<" wall_s="<<wall<<" waits="<<loop->waits()<<"\n";
+            if(idleFrames != 0 || idlePresents != 0)
+            {
+                std::cerr<<"ControlTest: --idle-test: "<<idleFrames<<" frame(s) and "<<idlePresents
+                         <<" swap(s) or present(s) while idle\n";
+                ok=false;
+            }
+            if(cpu > kIdleCpuSeconds)
+            {
+                std::cerr<<"ControlTest: --idle-test: "<<cpu<<" s of CPU over "<<wall
+                         <<" s idle (more than "<<kIdleCpuSeconds<<" s)\n";
+                ok=false;
+            }
+
+            postFrames=long(loop->frames());
+            postPresents=presents(*loop);
+            checkPostFrame=true;
+            if(button)
+                static_cast<gweni::controls::Button *>(button)->setText("Posted");
+
+            canvas->after(kAfterPostSeconds, [&]() {
+                const long frames=long(loop->frames())-postFrames;
+                const long shown=presents(*loop)-postPresents;
+
+                std::cout<<"idle-test: after post frames="<<frames<<" presents="<<shown<<"\n";
+                if(frames != 1 || shown != 1)
+                {
+                    std::cerr<<"ControlTest: --idle-test: the post woke "<<frames<<" frame(s) and "<<shown
+                             <<" swap(s) or present(s); one of each was wanted\n";
+                    ok=false;
+                }
+                glfwSetWindowShouldClose(window, GLFW_TRUE);
+            });
+        });
+
+        // a loop the post did not wake would wait for an event forever
+        const Clock::time_point posted=Clock::now();
+
+        while(!postRan && (Clock::now()-posted) < std::chrono::seconds(10))
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        if(!postRan)
+        {
+            std::cerr<<"ControlTest: --idle-test: the post did not wake the loop within 10 s\n";
+            ok=false;
+            glfwPostEmptyEvent();
+        }
+    });
+
+    device.runWindowLoop(canvas, renderer, options, [canvas, renderer, background]()
+    {
+        canvas->updateCanvas();
+        renderer->clearTarget(background);
+        canvas->renderCanvas();
+    },
+    [&](const gweni::platform::IdleLoop &iterated) {
+        loop=&iterated;
+        if(checkPostFrame)
+        {
+            checkPostFrame=false;
+            if(renderer->frameStats().textSlotsWritten == 0)
+            {
+                std::cerr<<"ControlTest: --idle-test: the frame the post woke wrote no glyph slot\n";
+                ok=false;
+            }
+        }
+
+        std::lock_guard<std::mutex> lock(mutex);
+
+        if(settled || (canvas->nextWorkTime() <= gweni::platform::getTimeInSeconds()))
+            return;
+        settled=true;
+        baseFrames=long(iterated.frames());
+        basePresents=presents(iterated);
+        baseCpu=processCpuSeconds();
+        baseWall=Clock::now();
+        changed.notify_all();
+    });
+    worker.join();
+
+    if(!button)
+    {
+        std::cerr<<"ControlTest: --idle-test: the control has no Button to mark\n";
+        ok=false;
+    }
+    std::cout<<"idle-test: "<<(ok ? "passed" : "failed")<<"\n";
+    return ok;
+}
+#endif
+
 int main(int argc, char *argv[])
 {
     gweni::capture::setToolName("ControlTest");
@@ -12181,6 +12372,7 @@ int main(int argc, char *argv[])
     std::string resourceDir;
     std::string rendererName;
     std::string windowTestDir;
+    bool idleTest=false;
     gweni::platform::LoopOptions loopOptions=gweni::capture::loopOptions();
     g_verifyIdle=loopOptions.verify;
     gweni::Point screenSize(640, 480);
@@ -12222,6 +12414,7 @@ int main(int argc, char *argv[])
         else if(arg == "--resources" && hasValue) resourceDir=argv[++i];
         else if(arg == "--renderer" && hasValue) rendererName=argv[++i];
         else if(arg == "--window-test" && hasValue) windowTestDir=argv[++i];
+        else if(arg == "--idle-test") idleTest=true;
         else if(arg == "--frames" && hasValue)
         {
             frames=std::atoi(argv[++i]);
@@ -12433,6 +12626,13 @@ int main(int argc, char *argv[])
     {
         std::cerr<<"ControlTest: --headless has no window to show;"
                    " pass --shot, --shot-all, --stats, --require-one-pass or --check-teardown\n";
+        return EXIT_FAILURE;
+    }
+
+    if(idleTest && (capturing || !windowTestDir.empty()))
+    {
+        std::cerr<<"ControlTest: --idle-test is the window, measured; drop the capture switches"
+                   " and --window-test\n";
         return EXIT_FAILURE;
     }
 
@@ -12834,9 +13034,9 @@ int main(int argc, char *argv[])
             &WebDepthViewNotice::onOpenChanged);
 #endif
 
-        // --window-test takes no input: the X pointer is wherever the server
-        // left it, maybe over a button
-        if(windowTestDir.empty())
+        // --window-test and --idle-test take no input: the X pointer is
+        // wherever the server left it, maybe over a button
+        if(windowTestDir.empty() && !idleTest)
         {
             g_glfwInput.initialize(canvas);
             glfwSetKeyCallback(ctx.window, key_callback);
@@ -12860,6 +13060,16 @@ int main(int argc, char *argv[])
                 result=EXIT_FAILURE;
 #else
             std::cerr<<"ControlTest: --window-test needs --renderer vulkan, which this build has not\n";
+            result=EXIT_FAILURE;
+#endif
+        }
+        else if(idleTest)
+        {
+#if !defined(__EMSCRIPTEN__)
+            if(!runIdleTest(*device, canvas, renderer, background, control, loopOptions))
+                result=EXIT_FAILURE;
+#else
+            std::cerr<<"ControlTest: --idle-test needs threads, which the web build has not\n";
             result=EXIT_FAILURE;
 #endif
         }
