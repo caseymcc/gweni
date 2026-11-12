@@ -837,6 +837,8 @@ public:
     virtual bool onKeyUp(bool /*down*/) { return false; }
     virtual bool onKeyDown(bool /*down*/) { return false; }
     virtual bool onKeyEscape(bool /*down*/) { return false; }
+    virtual bool onKeyPageUp(bool /*down*/) { return false; }
+    virtual bool onKeyPageDown(bool /*down*/) { return false; }
 
     virtual bool isHovered() const;
     virtual bool shouldDrawHover() const;

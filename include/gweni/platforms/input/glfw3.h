@@ -100,6 +100,12 @@ public:
         case GLFW_KEY_DELETE:
             return keys::Delete;
 
+        case GLFW_KEY_PAGE_UP:
+            return keys::PageUp;
+
+        case GLFW_KEY_PAGE_DOWN:
+            return keys::PageDown;
+
         case GLFW_KEY_LEFT_CONTROL:
             return keys::Control;
 

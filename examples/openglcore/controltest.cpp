@@ -173,8 +173,9 @@
  *                       included) steps the clock by 1 s, as --press does.
  *    --scroll DX,DY     mouse wheel (DX is ignored; gweni only takes the Y axis)
  *    --key <name>       a key: return, kp-enter, tab, space, escape, up, down,
- *                       left, right, home, end, backspace, delete, shift,
- *                       control, alt, command, f9, f10, f11 and f12 (which,
+ *                       left, right, home, end, pageup, pagedown, backspace,
+ *                       delete, shift, control, alt, command, f9, f10, f11
+ *                       and f12 (which,
  *                       as in the window, open and close the depth view, the
  *                       stats overlay, the theme editor, saving to and
  *                       loading from gweni-theme.json in the cwd, and the
@@ -1702,7 +1703,8 @@ static const struct { const char *name; int key; } g_namedKeys[]=
     {"alt", GLFW_KEY_LEFT_ALT},          {"command", GLFW_KEY_LEFT_SUPER},
     {"kp-enter", GLFW_KEY_KP_ENTER},     {"f9", GLFW_KEY_F9},
     {"f10", GLFW_KEY_F10},               {"f11", GLFW_KEY_F11},
-    {"f12", GLFW_KEY_F12},
+    {"f12", GLFW_KEY_F12},               {"pageup", GLFW_KEY_PAGE_UP},
+    {"pagedown", GLFW_KEY_PAGE_DOWN},
 };
 
 // The modifiers a --key chord may hold, with the mods bit GLFW reports for them.

@@ -4251,6 +4251,14 @@ bool Base::onKeyPress(int key, bool bPress)
         handled=onKeyEscape(bPress);
         break;
 
+    case keys::PageUp:
+        handled=onKeyPageUp(bPress);
+        break;
+
+    case keys::PageDown:
+        handled=onKeyPageDown(bPress);
+        break;
+
     default:
         break;
     }

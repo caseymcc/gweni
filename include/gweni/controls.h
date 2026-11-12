@@ -12,6 +12,7 @@
 #include <gweni/controls/bullet.h>
 #include <gweni/controls/button.h>
 #include <gweni/controls/canvas.h>
+#include <gweni/controls/caretBlink.h>
 #include <gweni/controls/checkBox.h>
 #include <gweni/controls/codeEditor.h>
 #include <gweni/controls/collapsibleCategory.h>

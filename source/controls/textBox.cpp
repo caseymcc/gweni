@@ -38,25 +38,6 @@ static int prevPos(const String &str, int pos)
     return static_cast<int>(utf8Prev(str, static_cast<size_t>(pos)));
 }
 
-// The caret blinks with this period, and stays lit this long after an edit, a
-// cursor move or the focus arriving.
-static constexpr float caretBlinkPeriod=0.5f;
-static constexpr float caretSolidTime=1.5f;
-
-#if GWENI_ANIMATE
-class CaretBlink: public gweni::anim::Animation
-{
-public:
-
-    void think() override
-    {
-        gweni_cast<TextBox>(m_control)->updateCaretBlink();
-    }
-
-};
-#endif // if GWENI_ANIMATE
-
-
 GWENI_CONTROL_CONSTRUCTOR(TextBox)
 {
 //    enlargePrimitiveIds(this, m_primitiveIds, 11);
@@ -284,28 +265,11 @@ void TextBox::onRedo(event::Info)
 }
 
 // Unfocused, the caret is not drawn and nothing here changes. Focused, each
-// blink edge is one StateChange_Caret, which only shows or hides the caret.
+// blink edge is one StateChange_Caret, which only shows or hides the caret
+// (internal::CaretBlink, whose animation calls this).
 void TextBox::updateCaretBlink()
 {
-    // the focus went without onLostKeyboardFocus (~Base clearing it, a
-    // direct KeyboardFocus assignment): stop here
-    if(!isFocussed())
-    {
-        stopCaretBlink();
-        return;
-    }
-
-    const float now=gweni::platform::getTimeInSeconds();
-
-    if(m_nextCaretBlink > now)
-        return;
-
-    m_nextCaretBlink=now+caretBlinkPeriod;
-    m_caretVisible=!m_caretVisible;
-    addStateChange(StateChange_Caret);
-
-    if(Canvas *canvas=getCanvas())
-        canvas->redraw();
+    m_caretBlink.step(this);
 }
 
 void TextBox::setText(const String &str, bool doEvents)
@@ -435,53 +399,21 @@ void TextBox::onKeyboardFocus()
 {
     ParentClass::onKeyboardFocus();
     keepCaretLit();
-    startCaretBlink();
+    m_caretBlink.start(this);
 }
 
 void TextBox::onLostKeyboardFocus()
 {
     ParentClass::onLostKeyboardFocus();
-    stopCaretBlink();
+    m_caretBlink.stop(this);
     // typing after the focus comes back is a step of its own
     m_undo.seal();
     onLostFocusCaller.call(this);
 }
 
-// Only a focused box blinks, so only it has an animation to run: an unfocused
-// one costs its canvas's update phase nothing.
-void TextBox::startCaretBlink()
-{
-#if GWENI_ANIMATE
-    if(m_caretBlink)
-        return;
-
-    m_caretBlink=new CaretBlink();
-    gweni::anim::add(this, m_caretBlink);
-#endif
-}
-
-void TextBox::stopCaretBlink()
-{
-#if GWENI_ANIMATE
-    if(!m_caretBlink)
-        return;
-
-    gweni::anim::cancel(this, m_caretBlink);
-    m_caretBlink=nullptr;
-#endif
-}
-
 void TextBox::keepCaretLit()
 {
-    m_nextCaretBlink=gweni::platform::getTimeInSeconds()+caretSolidTime;
-
-    if(m_caretVisible)
-        return;
-
-    m_caretVisible=true;
-
-    if(isFocussed())
-        addStateChange(StateChange_Caret);
+    m_caretBlink.keepLit(this);
 }
 
 void TextBox::refreshCursorBounds()

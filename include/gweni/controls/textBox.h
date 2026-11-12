@@ -10,6 +10,7 @@
 
 #include <gweni/platforms/baseRender.h>
 #include <gweni/controls/base.h>
+#include <gweni/controls/caretBlink.h>
 #include <gweni/controls/label.h>
 #include <gweni/controls/scrollControl.h>
 #include <gweni/text/undoStack.h>
@@ -98,7 +99,7 @@ public:
     //! without a selection, and always in a wrapped (multiline) box.
     const gweni::Rect &getSelectionBounds() const { return m_rectSelectionBounds; }
     //! The caret's blink phase: whether it is lit, when the box has the focus.
-    bool isCaretVisible() const { return m_caretVisible; }
+    bool isCaretVisible() const { return m_caretBlink.visible(); }
     //! The z of the glyphs' run: a rect drawn at it is behind every glyph.
     int getTextZIndex() const { return m_text->getZIndex(); }
 
@@ -243,14 +244,10 @@ protected:
     //! Lights the caret and holds it lit for a while (an edit, a move).
     void keepCaretLit();
 
-    float m_nextCaretBlink=0.0f;
-    bool m_caretVisible=true;
     bool m_sizedByText=false;
-    //! The caret's blink animation, registered from the focus arriving until
-    //! it leaves (or the blink finds the box unfocused); null meanwhile.
-    anim::Animation *m_caretBlink=nullptr;
-    void startCaretBlink();
-    void stopCaretBlink();
+    //! The caret's blink, its animation registered from the focus arriving
+    //! until it leaves (or the blink finds the box unfocused).
+    internal::CaretBlink m_caretBlink;
 
     //! The hint, a second Text beside m_text, made by the first setPlaceholder.
     internal::Text *m_placeholder=nullptr;
