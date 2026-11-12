@@ -138,6 +138,7 @@
  *    --scenario <name>  per-control | resize | docked | scroll | interaction |
  *                       typing | clip | text-size | scale | tooltip |
  *                       context-menu | popup | virtual-list |
+ *                       virtual-list-variable |
  *                       data-table-virtual | hide-show | demo-labels |
  *                       plot-histogram | plot-lines | inspector |
  *                       stats-overlay | depth-view | zoom-panel |
@@ -698,6 +699,45 @@
  *                 and the two controls above it, renumbers no z and lays out
  *                 in one pass with no request; the demo gives every primitive
  *                 id back. Exits non-zero if any check is no.
+ *    virtual-list-variable
+ *                 VirtualListVariableDemo (a VirtualList of wrapped rows,
+ *                 each its measurer's height) with 1 000 and then 100 000
+ *                 items, the clock frozen and the idle re-measure off: a
+ *                 settled frame, a one-row scroll and a wheel notch, each
+ *                 followed by settled frames; then from the middle of the
+ *                 list an item above the viewport grown (itemChanged) and
+ *                 one inserted above it, the list made 60 units narrower,
+ *                 and the idle re-measure given a budget (64 at 1 000, 8192
+ *                 at 100 000) and run to its end
+ *                 (virtual-list-variable-1000.png, ...-100000.png at the
+ *                 end of the list). One line per count
+ *                   virtual-list-variable items=N rows=N subtree=N
+ *                          prim_ids=N idle_slots=0 ... row_measures=N
+ *                          ... grow_changed=0 grow_moved=1 ...
+ *                          remeasure_frames=N remeasure_ended=1
+ *                          content_height=N measured_sum=N ids_left=0
+ *                 gives the counters, and one line
+ *                   virtual-list-variable same_cost=yes|no settled=yes|no
+ *                          rows_only=yes|no edits_above_still=yes|no
+ *                          resize_keeps_top=yes|no remeasure_ends=yes|no
+ *                          ids_back=yes|no
+ *                 the checks: the pool, the subtree, the ids and the
+ *                 one-row scroll's and the wheel's counters (their measures
+ *                 included, less the thumb's slot where it moved) are the
+ *                 same at both counts; settled frames write and change
+ *                 nothing; each scroll writes no more than its shown rows'
+ *                 slots, enters no more than the list's subtree and the two
+ *                 controls above it and lays out in one pass with no
+ *                 request (its z renumber, for a row whose new item has
+ *                 another line count, inside the list); the growth and the
+ *                 insert above the viewport move the offset and change no
+ *                 pixel inside the viewport; the narrower list measures
+ *                 again (a new generation) with the same item's row at the
+ *                 same top; the re-measure ends, changes no pixel inside the
+ *                 viewport meanwhile, runs no animation after, and leaves
+ *                 the content height the sum of every item's measure; the
+ *                 demo gives every primitive id back. Exits non-zero if any
+ *                 check is no.
  *    data-table-virtual
  *                 DataTableVirtualDemo with its source-mode DataTable at
  *                 1 000 and then 100 000 records, the clock frozen: a settled
@@ -921,6 +961,7 @@
 #include <demo/themeEditor.h>
 #include <demo/unicodeText.h>
 #include <demo/virtualList.h>
+#include <demo/virtualListVariable.h>
 #include <demo/window.h>
 #include <demo/windowButtons.h>
 
@@ -1011,7 +1052,7 @@ static void content_scale_callback(GLFWwindow *window, float, float)
     X(ShowcaseDisplayDemo) X(ShowcaseWindowsDemo) \
     X(ButtonDemo) X(LabelDemo) X(LabelMultilineDemo) X(ProgressBarDemo) \
     X(GroupBoxDemo) X(ImagePanelDemo) X(StatusBarDemo) X(SeparatorDemo) X(PlotHistogramDemo) X(PlotLinesDemo) X(ComboBoxDemo) \
-    X(TextBoxDemo) X(ListBoxDemo) X(SelectableDemo) X(VirtualListDemo) X(DataTableDemo) X(DataTableVirtualDemo) X(ContextMenuDemo) X(PopupDemo) X(CrossSplitterDemo) X(RadioButtonDemo) \
+    X(TextBoxDemo) X(ListBoxDemo) X(SelectableDemo) X(VirtualListDemo) X(VirtualListVariableDemo) X(DataTableDemo) X(DataTableVirtualDemo) X(ContextMenuDemo) X(PopupDemo) X(CrossSplitterDemo) X(RadioButtonDemo) \
     X(CheckBoxDemo) X(NumericDemo) X(SliderDemo) X(SliderTextDemo) X(DragNumberDemo) X(VectorFieldDemo) X(MenuStripDemo) \
     X(WindowDemo) X(WindowButtonsDemo) X(TreeControlDemo) X(PropertiesDemo) X(TabControlDemo) X(TabCloseDemo) X(TabOverflowDemo) \
     X(ScrollControlDemo) X(PageControlDemo) X(CollapsibleListDemo) X(ColorPickerDemo) X(ColorEditDemo) \
@@ -1098,6 +1139,7 @@ static void printUsage(std::ostream &out)
          "  --scenario <name>  per-control | resize | docked | scroll | interaction\n"
          "                     | typing | clip | text-size | scale | tooltip\n"
          "                     | context-menu | popup | virtual-list\n"
+         "                     | virtual-list-variable\n"
          "                     | data-table-virtual | hide-show | demo-labels\n"
          "                     | plot-histogram | plot-lines | inspector\n"
          "                     | stats-overlay | depth-view | zoom-panel\n"
@@ -1112,6 +1154,10 @@ static void printUsage(std::ostream &out)
          "                     tooltip check, context-menu one per context-menu\n"
          "                     check, popup one per popup check, virtual-list\n"
          "                     whether 1 000 and 100 000 items cost the same,\n"
+         "                     virtual-list-variable that for wrapped rows of\n"
+         "                     their own heights (and edits above the viewport,\n"
+         "                     a resize and the idle re-measure moving nothing\n"
+         "                     on screen),\n"
          "                     data-table-virtual the same for a DataTable's\n"
          "                     records (and a sort and a column drag in one pass),\n"
          "                     hide-show whether a demo hidden and shown again, and\n"
@@ -2021,7 +2067,7 @@ static bool runSteps(Session &s, const std::vector<Step> &steps, const std::stri
 // Scenarios
 //-----------------------------------------------------------------------------
 enum class Scenario { None, PerControl, Resize, Docked, Scroll, Interaction, Typing, Clip, TextSize, Scale,
-    ToolTip, ContextMenu, Popup, VirtualList, DataTableVirtual, HideShow, DemoLabels, PlotHistogram,
+    ToolTip, ContextMenu, Popup, VirtualList, VirtualListVariable, DataTableVirtual, HideShow, DemoLabels, PlotHistogram,
     PlotLines, Inspector, Theme, StatsOverlay, DepthView, ZoomPanel, NodeGraph };
 
 static bool parseScenario(const std::string &name, Scenario &scenario)
@@ -2039,6 +2085,7 @@ static bool parseScenario(const std::string &name, Scenario &scenario)
     else if(name == "context-menu") scenario=Scenario::ContextMenu;
     else if(name == "popup") scenario=Scenario::Popup;
     else if(name == "virtual-list") scenario=Scenario::VirtualList;
+    else if(name == "virtual-list-variable") scenario=Scenario::VirtualListVariable;
     else if(name == "data-table-virtual") scenario=Scenario::DataTableVirtual;
     else if(name == "hide-show") scenario=Scenario::HideShow;
     else if(name == "demo-labels") scenario=Scenario::DemoLabels;
@@ -9429,6 +9476,8 @@ struct VirtualListStep
     // whether the step moved the vertical bar's thumb, which then rewrites its
     // one primitive slot
     bool thumbMoved=false;
+    // the text measures the frame made (virtual-list-variable compares them)
+    size_t measures=0;
 
     bool operator==(const VirtualListStep &o) const
     {
@@ -9474,9 +9523,13 @@ void addRowCost(gweni::controls::Base *control, VirtualListStep &step)
 
 static VirtualListStep virtualListFrame(Session &s, gweni::controls::VirtualList *list)
 {
+    const size_t measuresBefore=gweni::controls::measureTextCalls();
+
     renderFrames(s, 1);
 
     VirtualListStep step;
+
+    step.measures=gweni::controls::measureTextCalls()-measuresBefore;
     const gweni::renderer::SlotRenderer::FrameStats &gpu=s.renderer->getFrameStats();
     const gweni::controls::ChangeStats &changes=gweni::controls::getChangeStats();
 
@@ -9633,6 +9686,296 @@ static bool runVirtualListScenario(Session &s, const std::string &shotDir, bool 
                      : !settled ? "a settled frame wrote slots or changed controls"
                      : !rowsOnly ? "a scroll wrote more than its shown rows' slots, entered more than"
                          " the list, renumbered z or took more than one layout pass"
+                     : "the demo did not give its primitive ids back")<<"\n";
+    return ok;
+}
+
+//-----------------------------------------------------------------------------
+// --scenario virtual-list-variable: VirtualListVariableDemo at 1 000 and
+// 100 000 items
+//
+// A variable-height list's frame costs what its rows on screen cost, as a
+// fixed one's does: the pool, the ids and a one-row scroll and a wheel notch
+// (with their measures) are the same at both counts, with the idle re-measure
+// off (budget 0) so no frame measures off screen. Then from the middle of the
+// list: an item above the viewport growing and one inserted above it move the
+// offset, not a pixel inside the viewport; a narrower list keeps the item at
+// the top where it was; and the idle re-measure, given a budget, ends with the
+// content height the sum of every item's measure, no pixel inside the
+// viewport moving meanwhile.
+//-----------------------------------------------------------------------------
+
+namespace
+{
+
+struct VariableListRun
+{
+    size_t items=0;
+    size_t rows=0;
+    size_t subtree=0;
+    size_t primIds=0;
+    size_t idleSlots=0;
+    size_t idleChanged=0;
+    size_t idsLeft=0;
+    VirtualListStep row, wheel;
+    // pixels inside the viewport a growth and an insert above it changed, and
+    // whether each moved the offset
+    size_t growChanged=0;
+    size_t insertChanged=0;
+    bool growMoved=false;
+    bool insertMoved=false;
+    // a narrower list: the generation bumped and the top item's row where it
+    // was
+    bool resizeKeepsTop=false;
+    // the idle re-measure: its frames, whether it ended, the pixels inside the
+    // viewport it changed, and the content against the sum of the measures
+    int remeasureFrames=0;
+    bool remeasureEnded=false;
+    size_t remeasureChanged=0;
+    int64_t contentHeight=0;
+    int64_t measuredSum=0;
+    size_t animsAfter=0;
+};
+
+gweni::Rect viewportOnCanvas(gweni::controls::VirtualList *list)
+{
+    const gweni::Point origin=list->localPosToCanvas();
+    gweni::Rect view=list->getViewport();
+
+    view.x+=origin.x;
+    view.y+=origin.y;
+    return view;
+}
+
+// What a one-row scroll or a wheel notch cost at the two counts, less the
+// thumb's one slot where it moved.
+bool sameStepCost(const VirtualListStep &a, const VirtualListStep &b)
+{
+    return a.primSlots-(a.thumbMoved?1:0) == b.primSlots-(b.thumbMoved?1:0)
+        && a.textSlots == b.textSlots && a.zVisited == b.zVisited && a.passes == b.passes
+        && a.requests == b.requests && a.rowPrims == b.rowPrims && a.rowGlyphs == b.rowGlyphs
+        && a.measures == b.measures
+        && a.visited-(a.thumbMoved?1:0) == b.visited-(b.thumbMoved?1:0)
+        && a.changed-(a.thumbMoved?1:0) == b.changed-(b.thumbMoved?1:0);
+}
+
+}//namespace
+
+static void settleVariableList(Session &s, gweni::controls::VirtualList *list, VariableListRun &run)
+{
+    for(int i=0; i<2; ++i)
+    {
+        const VirtualListStep idle=virtualListFrame(s, list);
+
+        run.idleSlots+=idle.primSlots+idle.textSlots;
+        run.idleChanged+=idle.changed;
+    }
+}
+
+static VirtualListStep variableListStep(Session &s, gweni::controls::VirtualList *list,
+    const std::function<void()> &input)
+{
+    gweni::controls::Base *bar=findControl(list, "VerticalScrollBar");
+    gweni::controls::Base *thumb=bar?findControl(bar, "ScrollBarBar"):nullptr;
+    const gweni::Rect thumbBefore=thumb?thumb->getBounds():gweni::Rect();
+
+    input();
+
+    VirtualListStep step=virtualListFrame(s, list);
+
+    step.thumbMoved=thumb && !(thumb->getBounds() == thumbBefore);
+    return step;
+}
+
+static bool runVariableList(Session &s, const std::string &shotDir, size_t items, size_t budget,
+    VariableListRun &run)
+{
+    const size_t idsBefore=livePrimitiveIds();
+    gweni::controls::Base *control=addControl(s, "VirtualListVariableDemo");
+    auto *demo=gweni::gweni_cast<gweni::VirtualListVariableDemo>(control);
+
+    if(!demo || !demo->m_list)
+    {
+        std::cerr<<"ControlTest: virtual-list-variable: VirtualListVariableDemo has no list\n";
+        return false;
+    }
+
+    gweni::controls::VirtualList *list=demo->m_list;
+
+    s.label="VirtualListVariableDemo-"+std::to_string(items);
+    // only what shows is measured, so no frame does work off screen
+    list->setRemeasureBudget(0);
+    demo->setItems(items);
+    renderFrames(s, s.frames);
+
+    run.items=items;
+    run.rows=list->getRows().size();
+    run.subtree=subtreeControls(list);
+    run.primIds=livePrimitiveIds()-idsBefore;
+    settleVariableList(s, list, run);
+
+    run.row=variableListStep(s, list, [&] { list->scrollByRows(1); });
+    settleVariableList(s, list, run);
+
+    const gweni::Point origin=list->localPosToCanvas();
+
+    moveMouse(s, origin.x+list->getWidth()/2, origin.y+list->getHeight()/2);
+    renderFrames(s, 1);
+    settleVariableList(s, list, run);
+    run.wheel=variableListStep(s, list, [&] { scrollWheel(s, -60); });
+    settleVariableList(s, list, run);
+    forgetMouse(s);
+    renderFrames(s, 1);
+
+    // from the middle: edits above the viewport
+    list->scrollToItem(items/2);
+    renderFrames(s, s.frames);
+    settleVariableList(s, list, run);
+
+    gweni::Rect view=viewportOnCanvas(list);
+    std::vector<uint8_t> before=framePixels(s);
+    int offset=list->getVerticalScrollOffset();
+
+    demo->growItem(list->getAnchorItem()-5);
+    renderFrames(s, 1);
+    run.growChanged=differencesIn(s, before, framePixels(s), view);
+    run.growMoved=list->getVerticalScrollOffset() != offset;
+    settleVariableList(s, list, run);
+
+    before=framePixels(s);
+    offset=list->getVerticalScrollOffset();
+    demo->insertAtTop(1);
+    renderFrames(s, 1);
+    run.insertChanged=differencesIn(s, before, framePixels(s), view);
+    run.insertMoved=list->getVerticalScrollOffset() != offset;
+    settleVariableList(s, list, run);
+
+    // narrower: the rows on screen measured again, the top one where it was
+    const size_t top=list->getAnchorItem();
+    gweni::controls::Base *topRow=list->rowForItem(top);
+    const int topY=topRow?topRow->getY():-1;
+    const uint32_t generation=list->getMeasureGeneration();
+
+    list->setWidth(list->getWidth()-60);
+    renderFrames(s, 1);
+    topRow=list->rowForItem(list->getAnchorItem());
+    run.resizeKeepsTop=list->getMeasureGeneration() == generation+1 && list->getAnchorItem() == top
+        && topRow && topRow->getY() == topY;
+    renderFrames(s, s.frames);
+
+    // the idle re-measure, to its end
+    view=viewportOnCanvas(list);
+    before=framePixels(s);
+    list->setRemeasureBudget(budget);
+    while(list->isRemeasuring() && run.remeasureFrames < 1000)
+    {
+        renderFrames(s, 1);
+        ++run.remeasureFrames;
+        run.remeasureChanged+=differencesIn(s, before, framePixels(s), view);
+    }
+    run.remeasureEnded=!list->isRemeasuring();
+
+    const gweni::controls::HeightIndex &index=list->getHeightIndex();
+    const gweni::Font &font=demo->getSkin()->getDefaultFont();
+    const int width=list->getMeasureWidth()-2*gweni::VirtualListVariableDemo::RowPadX;
+
+    run.contentHeight=list->getVirtualContentHeight();
+    for(size_t i=0; i < index.size(); ++i)
+        run.measuredSum+=list->wrappedTextHeight(font, demo->itemText(i), width)
+            +2*gweni::VirtualListVariableDemo::RowPadY;
+    if(index.minGeneration() != list->getMeasureGeneration())
+        run.measuredSum=-1;
+    settleVariableList(s, list, run);
+    run.animsAfter=s.canvas->getUpdateStats().animsRun;
+
+    // the end, for the picture
+    list->scrollToItem(list->getItemCount()-1);
+    renderFrames(s, s.frames);
+
+    const bool shot=shoot(s, shotDir+"/virtual-list-variable-"+std::to_string(items)+".png");
+
+    dropControl(s, control);
+    renderFrames(s, 1);
+    run.idsLeft=livePrimitiveIds()-idsBefore;
+    return shot;
+}
+
+static bool runVirtualListVariableScenario(Session &s, const std::string &shotDir, bool &passed)
+{
+    s.freezeClock=true;
+
+    VariableListRun small, large;
+    bool ok=runVariableList(s, shotDir, 1000, 64, small);
+
+    ok=runVariableList(s, shotDir, 100000, 8192, large) && ok;
+
+    // A wrapped row given an item of another line count gains or loses line
+    // Texts, which the z renumber enters (within the list, as many at both
+    // counts), so z is bounded by the list's subtree rather than 0.
+    auto withinRows=[](const VariableListRun &run, const VirtualListStep &step)
+    {
+        return step.passes == 1 && step.zVisited <= run.subtree && step.requests == 0
+            && step.visited <= run.subtree+2 && step.changed <= run.subtree
+            && step.primSlots+step.textSlots > 0
+            && step.primSlots <= step.rowPrims+(step.thumbMoved?1:0) && step.textSlots <= step.rowGlyphs;
+    };
+    auto aboveStill=[](const VariableListRun &run)
+    {
+        return run.growChanged == 0 && run.insertChanged == 0 && run.growMoved && run.insertMoved;
+    };
+    auto remeasured=[](const VariableListRun &run)
+    {
+        return run.remeasureEnded && run.remeasureChanged == 0 && run.animsAfter == 0
+            && run.contentHeight == std::min<int64_t>(run.measuredSum, INT_MAX);
+    };
+
+    const bool sameCost=small.rows == large.rows && small.subtree == large.subtree
+        && small.primIds == large.primIds && sameStepCost(small.row, large.row)
+        && sameStepCost(small.wheel, large.wheel);
+    const bool settled=small.idleSlots == 0 && small.idleChanged == 0
+        && large.idleSlots == 0 && large.idleChanged == 0;
+    const bool rowsOnly=withinRows(small, small.row) && withinRows(small, small.wheel)
+        && withinRows(large, large.row) && withinRows(large, large.wheel);
+    const bool editsAbove=aboveStill(small) && aboveStill(large);
+    const bool resizeKeeps=small.resizeKeepsTop && large.resizeKeepsTop;
+    const bool remeasureEnds=remeasured(small) && remeasured(large);
+    const bool idsBack=small.idsLeft == 0 && large.idsLeft == 0;
+
+    for(const VariableListRun *run : {&small, &large})
+    {
+        std::cout<<"virtual-list-variable items="<<run->items<<" rows="<<run->rows<<" subtree="<<run->subtree
+                 <<" prim_ids="<<run->primIds<<" idle_slots="<<run->idleSlots
+                 <<" idle_changed="<<run->idleChanged;
+        printVirtualListStep("row", run->row);
+        std::cout<<" row_measures="<<run->row.measures;
+        printVirtualListStep("wheel", run->wheel);
+        std::cout<<" wheel_measures="<<run->wheel.measures
+                 <<" grow_changed="<<run->growChanged<<" grow_moved="<<(run->growMoved?1:0)
+                 <<" insert_changed="<<run->insertChanged<<" insert_moved="<<(run->insertMoved?1:0)
+                 <<" resize_keeps_top="<<(run->resizeKeepsTop?1:0)
+                 <<" remeasure_frames="<<run->remeasureFrames
+                 <<" remeasure_ended="<<(run->remeasureEnded?1:0)
+                 <<" remeasure_changed="<<run->remeasureChanged
+                 <<" content_height="<<run->contentHeight<<" measured_sum="<<run->measuredSum
+                 <<" anims_after="<<run->animsAfter<<" ids_left="<<run->idsLeft<<"\n";
+    }
+
+    passed=sameCost && settled && rowsOnly && editsAbove && resizeKeeps && remeasureEnds && idsBack;
+
+    std::cout<<"virtual-list-variable same_cost="<<(sameCost?"yes":"no")<<" settled="<<(settled?"yes":"no")
+             <<" rows_only="<<(rowsOnly?"yes":"no")<<" edits_above_still="<<(editsAbove?"yes":"no")
+             <<" resize_keeps_top="<<(resizeKeeps?"yes":"no")
+             <<" remeasure_ends="<<(remeasureEnds?"yes":"no")<<" ids_back="<<(idsBack?"yes":"no")<<"\n";
+    if(!passed)
+        std::cerr<<"ControlTest: virtual-list-variable: "
+                 <<(!sameCost ? "a frame at 100 000 items did not cost what it did at 1 000"
+                     : !settled ? "a settled frame wrote slots or changed controls"
+                     : !rowsOnly ? "a scroll wrote more than its shown rows' slots, entered more than"
+                         " the list, renumbered z or took more than one layout pass"
+                     : !editsAbove ? "an edit above the viewport changed a pixel in it, or moved no offset"
+                     : !resizeKeeps ? "a narrower list moved the item at the top"
+                     : !remeasureEnds ? "the idle re-measure did not end, moved a pixel in the viewport,"
+                         " or left the content height off the sum of the measures"
                      : "the demo did not give its primitive ids back")<<"\n";
     return ok;
 }
@@ -11397,6 +11740,15 @@ int main(int argc, char *argv[])
             ok=runVirtualListScenario(session, shotDir, passed);
             if(ok && !passed)
                 ok=false;   // a frame cost more at 100 000 items, or more than its rows: a failing assertion
+            break;
+        }
+
+        case Scenario::VirtualListVariable:
+        {
+            bool passed=false;
+            ok=runVirtualListVariableScenario(session, shotDir, passed);
+            if(ok && !passed)
+                ok=false;   // a variable-height frame cost more at 100 000 items, or moved what is on screen
             break;
         }
 

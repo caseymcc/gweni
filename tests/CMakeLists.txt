@@ -224,9 +224,10 @@ if(TARGET ControlTest AND NOT EMSCRIPTEN)
     # the same check through the scenarios that change layout at run time:
     # input, a canvas resize and a scale round trip (both on Demo), a Window
     # dragged past its parent's edges, the tooltip box, the context menu, the
-    # stats overlay, the depth view, the zoom panel and the node graph
+    # stats overlay, the depth view, the zoom panel, the node graph and a
+    # variable-height VirtualList
     foreach(verify_scenario interaction resize scale clip tooltip context-menu stats-overlay
-            depth-view zoom-panel node-graph)
+            depth-view zoom-panel node-graph virtual-list-variable)
         string(REPLACE "-" "_" verify_name "${verify_scenario}")
         add_test(NAME controltest_verify_layout_${verify_name}
             COMMAND $<TARGET_FILE:ControlTest> --headless --scenario ${verify_scenario}
@@ -290,6 +291,17 @@ if(TARGET ControlTest AND NOT EMSCRIPTEN)
     gweni_whole_app_test(controltest_virtual_list 120
         COMMAND $<TARGET_FILE:ControlTest> --headless --scenario virtual-list --require-one-pass
             --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/virtual-list@VARIANT@
+        WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
+
+    # VirtualListVariableDemo (wrapped rows, each its measurer's height) at
+    # 1 000 and 100 000 items: the same pool, ids and one-row scroll and wheel
+    # counters at both, a settled frame writing nothing; an item growing and
+    # one inserted above the viewport changing no pixel in it; a narrower list
+    # keeping its top row in place; the idle re-measure ending with the content
+    # the sum of the measures; exits non-zero on any failed check
+    gweni_whole_app_test(controltest_virtual_list_variable 300
+        COMMAND $<TARGET_FILE:ControlTest> --headless --scenario virtual-list-variable --require-one-pass
+            --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/virtual-list-variable@VARIANT@
         WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
 
     # DataTableVirtualDemo at 1 000 and 100 000 records: the source-mode

@@ -65,6 +65,7 @@
 #include "demo/textSizes.h"
 #include "demo/unicodeText.h"
 #include "demo/virtualList.h"
+#include "demo/virtualListVariable.h"
 #include "demo/window.h"
 #include "demo/windowButtons.h"
 
@@ -210,6 +211,7 @@ void Demo::init(const String &name)
         addDemo<ListBoxDemo>(cat, "ListBoxDemo", "List box");
         addDemo<SelectableDemo>(cat, "SelectableDemo", "Selectable");
         addDemo<VirtualListDemo>(cat, "VirtualListDemo", "Virtual list");
+        addDemo<VirtualListVariableDemo>(cat, "VirtualListVariableDemo", "Wrapped list");
         addDemo<DataTableDemo>(cat, "DataTableDemo", "Data table");
         addDemo<DataTableVirtualDemo>(cat, "DataTableVirtualDemo", "Data table, 100k");
         addDemo<ContextMenuDemo>(cat, "ContextMenuDemo", "Context menu");

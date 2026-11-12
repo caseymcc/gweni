@@ -110,6 +110,8 @@ set(GWENI_DEMO_SOURCES
     demo/unicodeText.h
     demo/virtualList.cpp
     demo/virtualList.h
+    demo/virtualListVariable.cpp
+    demo/virtualListVariable.h
     demo/window.cpp
     demo/window.h
     demo/windowButtons.cpp
