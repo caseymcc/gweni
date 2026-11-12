@@ -428,6 +428,8 @@ void destroyContext(Context &ctx)
 {
     if(ctx.window)
     {
+        // the system clipboard went through the window, if it was shown
+        input::GLFW3::useSystemClipboard(nullptr);
         glfwTerminate();
         ctx.window=nullptr;
         return;
@@ -752,6 +754,10 @@ bool GlDevice::open(const DeviceOptions &options)
 
     if(!initGL(m_context))
         return false;
+
+    // the window's, never a capture's: what a capture pastes is its own
+    if(!options.capturing && options.systemClipboard)
+        input::GLFW3::useSystemClipboard(m_context.window);
 
     if(options.capturing)
     {

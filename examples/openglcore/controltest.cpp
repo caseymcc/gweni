@@ -11813,6 +11813,8 @@ int main(int argc, char *argv[])
     deviceOptions.title="Gweni ControlTest - "+which;
     deviceOptions.capturing=capturing;
     deviceOptions.headless=forceHeadless;
+    // the scripted window reads nothing from the host's clipboard
+    deviceOptions.systemClipboard=windowTestDir.empty();
 
     std::unique_ptr<gweni::capture::Device> device=gweni::capture::openDevice(backend, deviceOptions);
     if(!device)

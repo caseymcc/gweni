@@ -9,6 +9,7 @@
 #define GWENI_INPUT_OPENGL_GLFW3_H
 
 #include <gweni/platforms/inputEvent.h>
+#include <gweni/platforms/platform.h>
 #include <GLFW/glfw3.h>
 
 #include <cmath>
@@ -57,6 +58,45 @@ public:
     void initialize(IInputEvent *c)
     {
         m_eventCaller = c;
+    }
+
+    //! Make the platform clipboard (platform::getClipboardText(),
+    //! setClipboardText(), requestClipboardText()) the system's, through
+    //! GLFW's on \a window: on X11 the CLIPBOARD selection, which the window
+    //! owns after a copy, serves to other clients from glfwPollEvents() and
+    //! loses when it closes. Call it once with the
+    //! window an app shows, and with null before the window is destroyed,
+    //! which gives the in-process clipboard back. A capture or a test never
+    //! calls it, so what it pastes never depends on the host. In a browser it
+    //! does nothing yet: the clipboard stays in-process there.
+    static void useSystemClipboard(GLFWwindow *window)
+    {
+#if defined(__EMSCRIPTEN__)
+        (void)window;
+#else
+        if(!window)
+        {
+            platform::setClipboardBackend(nullptr, nullptr, nullptr);
+            return;
+        }
+
+        platform::setClipboardBackend(
+            [window]()
+            {
+                // an empty clipboard, or one holding no text, is nothing to
+                // paste, not an error for the app's GLFW error callback
+                GLFWerrorfun previous=glfwSetErrorCallback(nullptr);
+                const char *text=glfwGetClipboardString(window);
+
+                glfwSetErrorCallback(previous);
+                return text ? String(text) : String();
+            },
+            [window](const String &text)
+            {
+                glfwSetClipboardString(window, text.c_str());
+                return true;
+            });
+#endif
     }
 
     unsigned char translateKeyCode(int keyCode)

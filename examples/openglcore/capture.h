@@ -375,6 +375,10 @@ struct DeviceOptions
     //! --headless: a GL capture goes straight to surfaceless EGL instead of
     //! trying a hidden GLFW window first (Vulkan is always headless)
     bool headless=false;
+    //! the interactive window's clipboard is the system's
+    //! (input::GLFW3::useSystemClipboard); a capture's never is, nor is the
+    //! window's with this off (--window-test, which reads nothing from it)
+    bool systemClipboard=true;
 };
 
 //! The device a run draws with, ready for newRenderer().

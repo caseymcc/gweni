@@ -225,6 +225,9 @@ bool VulkanWindowDevice::open(const DeviceOptions &options)
         glfwTerminate();
         return false;
     }
+    // undone by destroyContext, as for a GL window
+    if(options.systemClipboard)
+        input::GLFW3::useSystemClipboard(m_context.window);
 
     renderer::VulkanDeviceOptions deviceOptions;
     uint32_t extensionCount=0;
