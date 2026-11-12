@@ -66,6 +66,23 @@
 //               view and turns the button on, changing the canvas, and Escape
 //               (the view has the mouse) closes it and turns the button off
 //               (read through OpenGLCore's gweni_web_depth_view export)
+//    clipboard  TextBoxDemo with clipboard-read and clipboard-write granted:
+//               in the first box, Ctrl+A over "copy me" and "é" typed, then
+//               Ctrl+C, puts that text on the browser's clipboard
+//               (navigator.clipboard.readText() in the page), written in the
+//               copy event (Module.gweniClipboard.writes); text the page
+//               put on the clipboard (writeText) since, pasted with Ctrl+A
+//               and Ctrl+V, is in the box in that keystroke, not the text
+//               copied before it, and was answered by the page's paste event
+//               (Module.gweniClipboard.answers: the headless shell fires a
+//               native paste event for Playwright's Ctrl+V, so no synthetic
+//               ClipboardEvent is dispatched; without one the check fails,
+//               saying so); Ctrl+A and Ctrl+X empty the box and put its text
+//               on the clipboard, written in the cut event; and a click on the demo's Copy button
+//               (platform::setClipboardText from its press, written through
+//               navigator.clipboard.writeText) puts the first box's text there.
+//               No line on the page's stderr (the in-process clipboard's
+//               "in-process only" line included)
 //  It also fails on any console error or uncaught exception in any page, and
 //  unless every page made a WebGL 2 context on ANGLE's SwiftShader with at
 //  least 24 depth bits (run.mjs' conditions). The page's container is the
@@ -183,9 +200,11 @@ class Session
     // A page of the build dir at a viewport (CSS px) and devicePixelRatio,
     // once it has drawn a few frames (or, \a untilExit, once its run has
     // ended); null after a failure of the check.
-    async open(check, path, viewport, deviceScaleFactor = 1, untilExit = false)
+    async open(check, path, viewport, deviceScaleFactor = 1, untilExit = false, permissions = [])
     {
         const context = await this.browser.newContext({ viewport, deviceScaleFactor });
+        if(permissions.length)
+            await context.grantPermissions(permissions, { origin: this.base });
         const page = await context.newPage();
         page.on('console', msg => { if(msg.type() === 'error') this.errors.push(`${check}: console error: ${msg.text()}`); });
         page.on('pageerror', err => this.errors.push(`${check}: uncaught exception: ${err.stack || err.message}`));
@@ -632,6 +651,96 @@ async function checkCodeEditor(s)
     await context.close();
 }
 
+
+// The browser's own key event for "é", on no key of Playwright's US layout
+// (as checkTyping sends it).
+async function typeEAcute(context, page)
+{
+    const cdp = await context.newCDPSession(page);
+    for(const type of ['keyDown', 'keyUp'])
+        await cdp.send('Input.dispatchKeyEvent', { type, key: 'é', code: 'Digit2', windowsVirtualKeyCode: 50,
+            ...(type === 'keyDown' ? { text: 'é', unmodifiedText: 'é' } : {}) });
+}
+
+async function checkClipboard(s)
+{
+    const opened = await s.open('clipboard', 'ControlTest.html?control=TextBoxDemo', { width: 640, height: 480 + outputPanel },
+        1, false, ['clipboard-read', 'clipboard-write']);
+    if(!opened)
+        return;
+    const { page, context } = opened;
+    const readClipboard = () => page.evaluate(() => navigator.clipboard.readText());
+    const writeClipboard = text => page.evaluate(t => navigator.clipboard.writeText(t), text);
+    const answers = () => page.evaluate(() => (Module.gweniClipboard ? Module.gweniClipboard.answers.slice() : null));
+    const writes = () => page.evaluate(() => (Module.gweniClipboard ? Module.gweniClipboard.writes.slice() : null));
+
+    const controls = parseListing(await listingOf(page));
+    const box = controls.find(c => c.type === 'TextBox' && c.visible);
+    const button = controls.find(c => c.type === 'Button' && c.visible);
+    if(!box || !button)
+        return fail('clipboard', `TextBoxDemo lists ${box ? 'no visible Button' : 'no visible TextBox'}`);
+    const at = centre(cssRect(box));
+    await page.mouse.click(at.x, at.y);
+    await s.frames(page);
+
+    // copy
+    await page.keyboard.press('Control+A');
+    await page.keyboard.type('copy me');
+    await typeEAcute(context, page);
+    await page.keyboard.press('Control+A');
+    await page.keyboard.press('Control+C');
+    await s.frames(page);
+    const copied = await readClipboard();
+    if(copied !== 'copy meé')
+        return fail('clipboard', `Ctrl+C over "copy meé" left ${JSON.stringify(copied)} on the clipboard`);
+    if(JSON.stringify(await writes()) !== '["copy"]')
+        return fail('clipboard', `Ctrl+C was written in the events ${JSON.stringify(await writes())}, not one copy event`);
+
+    // paste: the clipboard's text at the keystroke, not the one copied before
+    const pasted = 'pasted ü ✓ 日';
+    await writeClipboard(pasted);
+    const before = (await answers()).length;
+    await page.keyboard.press('Control+A');
+    await page.keyboard.press('Control+V');
+    await s.frames(page);
+    const after = await focusedText(page);
+    const how = (await answers()).slice(before);
+    if(how.length !== 1 || how[0] !== 'paste')
+        return fail('clipboard', `the paste was answered by ${JSON.stringify(how)}, not the page's paste event`
+            + ' (none reached gweni\'s listener: the headless shell fired no native paste event for Ctrl+V,'
+            + ' or the listener did not take it)');
+    if(after !== pasted)
+        return fail('clipboard', `Ctrl+V of ${JSON.stringify(pasted)} left ${JSON.stringify(after)} in the box`);
+
+    // cut
+    await writeClipboard('not cut');
+    await page.keyboard.press('Control+A');
+    await page.keyboard.press('Control+X');
+    await s.frames(page);
+    const cutBox = await focusedText(page);
+    const cut = await readClipboard();
+    if(cutBox !== '' || cut !== pasted)
+        return fail('clipboard', `Ctrl+X left ${JSON.stringify(cutBox)} in the box and ${JSON.stringify(cut)} on the clipboard`);
+    if(JSON.stringify(await writes()) !== '["copy","cut"]')
+        return fail('clipboard', `Ctrl+X was written in the events ${JSON.stringify(await writes())}, not one cut event after the copy`);
+
+    // a Copy button: setClipboardText from its press
+    await page.keyboard.type('from the button');
+    await writeClipboard('not the button');
+    const press = centre(cssRect(button));
+    await page.mouse.click(press.x, press.y);
+    await s.frames(page);
+    const fromButton = await readClipboard();
+    if(fromButton !== 'from the button')
+        return fail('clipboard', `a click on Copy left ${JSON.stringify(fromButton)} on the clipboard`);
+
+    const output = await page.evaluate(() => window.gweniRun.output.filter(line => line.stream !== 'stdout').map(line => line.text));
+    if(output.length)
+        return fail('clipboard', `the page wrote to stderr: ${JSON.stringify(output)}`);
+    pass('clipboard', `copied ${JSON.stringify(copied)}, pasted ${JSON.stringify(after)} from the paste event, cut, and the Copy button copied`);
+    await context.close();
+}
+
 async function main()
 {
     const argv = process.argv.slice(2);
@@ -666,6 +775,7 @@ async function main()
     {
         await checkButton(s);
         await checkTyping(s);
+        await checkClipboard(s);
         await checkCodeEditor(s);
         await checkWheel(s);
         await checkCursor(s);

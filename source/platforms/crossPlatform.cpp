@@ -228,9 +228,10 @@ EM_JS(void, gweni_js_clipboard_listen, (int on), {
     var state = Module['gweniClipboard'];
     if(on && !state)
     {
-        // answers: how each paste was answered ('paste', 'readText' or 'none'),
-        // which web_input reads
-        state = Module['gweniClipboard'] = { copy: null, pasteWanted: false, pasted: '', answers: [] };
+        // what web_input reads: writes, the copy and cut events gweni wrote
+        // in ('copy', 'cut'); answers, how each paste was answered ('paste',
+        // 'readText' or 'none')
+        state = Module['gweniClipboard'] = { copy: null, pasteWanted: false, pasted: '', writes: [], answers: [] };
         var forPage = function()
         {
             var active = document.activeElement;
@@ -249,6 +250,7 @@ EM_JS(void, gweni_js_clipboard_listen, (int on), {
             e.clipboardData.setData('text/plain', state.copy);
             e.preventDefault();
             state.copy = null;
+            state.writes.push(e.type);
         };
         state.answer = function(text, how)
         {

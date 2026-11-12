@@ -1,6 +1,8 @@
 #include "demo/textBox.h"
 #include <gweni/controls/layout/layout.h>
 #include "gweni/controls/textBox.h"
+#include <gweni/controls/button.h>
+#include <gweni/platforms/platform.h>
 
 namespace gweni
 {
@@ -16,6 +18,7 @@ GWENI_CONTROL_CONSTRUCTOR(TextBoxDemo)
         label->setPos(10, 10);
         label->onTextChangedCaller.add(this, &TextBoxDemo::onEdit);
         label->onReturnPressedCaller.add(this, &TextBoxDemo::onSubmit);
+        m_first=label;
     }
     {
         controls::TextBox *label=newChild<controls::TextBox>();
@@ -66,6 +69,15 @@ GWENI_CONTROL_CONSTRUCTOR(TextBoxDemo)
         label->setPos(220, 10);
         label->setSize(200, 180);
     }
+    {
+        // a copy button: platform::setClipboardText() from its press, inside the
+        // click's user activation, which the browser's clipboard needs
+        controls::Button *copy=newChild<controls::Button>();
+        copy->setText("Copy");
+        copy->setToolTipText("Copy the first box's text");
+        copy->sizeToContents();
+        copy->onPressCaller.add(this, &TextBoxDemo::onCopy);
+    }
 }
 
 void TextBoxDemo::onEdit(event::Info info)
@@ -79,6 +91,11 @@ void TextBoxDemo::onSubmit(event::Info info)
 {
 //    controls::TextBox *textbox=(controls::TextBox *)(control);
     //			UnitPrint( Format( "Textbox Submit: [%ls]\n", textbox->getText().getUnicode().c_str() ) );
+}
+
+void TextBoxDemo::onCopy(event::Info)
+{
+    platform::setClipboardText(m_first->getText());
 }
 
 }//namespace gweni

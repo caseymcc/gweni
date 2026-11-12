@@ -2,6 +2,7 @@
 #define _gweni_textBox_example_h_
 
 #include <gweni/controls/base.h>
+#include <gweni/controls/textBox.h>
 
 namespace gweni
 {
@@ -16,8 +17,12 @@ public:
 
     void onSubmit(event::Info info);
 
+    //! the Copy button: the first box's text onto the clipboard
+    void onCopy(event::Info info);
+
 private:
     Font m_font;
+    controls::TextBox *m_first=nullptr;
 };
 
 }//namespace gweni
