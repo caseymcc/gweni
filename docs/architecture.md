@@ -2860,35 +2860,45 @@ when its string changes. Two things keep what it shows the app's alone:
 both open, a tool that left out only its own ids would count the other's as the app's,
 and neither would ever read 0. So the canvas keeps the record (`controls::ExcludedSlots`,
 `include/gweni/controls/canvas.h`) and both tools read it through
-`tools::appFrameWrites()` (`include/gweni/tools/toolSupport.h`):
-- **held**: the ids every `setExcludedFromStats()` subtree on the canvas holds now
-  (`Base::statsExcludedRoots()`, each flagged root's subtree walked through
-  `skin::Control::appendIds`), sorted, built by the first `excludedSlots()` of a frame
-  and kept until the frame's render phase ends, a release, a `setExcludedFromStats()`
-  change or a change of the tree on the canvas (`Base::zOrderChanged()`,
-  `zChildRemoved()`: a control added, removed or moved, into or out of a flagged subtree
-  or onto or off the canvas, a skin Control assigned or released), so the readers of a
-  settled frame share one walk and a read after such a change sees it;
-- **released**: the ids any such subtree gave back, reported to the canvas by `~Base` (a
-  control of a flagged subtree, its children included though the root has already
-  stopped being flagged) and by `Base::removeSkinControl` (a new skin Control for a
-  tool's control). Ids released in frame N's update or render are cleared in frame N's
-  flush, which a tool reads in frame N+1's update phase, so `renderCanvas()` rolls the
-  list as it ends (`rollExcludedReleases()`, `WindowCanvas`'s render too): the releases
-  before the flush it just ran stay for the next frame, those before the flush before
-  are dropped. Reading the record uses nothing up, so it does not matter which tool reads
-  first, and an id one tool gave back (an Inspector node collapsed, a tool closed) is
-  left out by every tool.
+`tools::appFrameWrites()` (`include/gweni/tools/toolSupport.h`). It is a **snapshot of
+who wrote the last flush**, taken as `renderCanvas()` ends, after the renderer's `end()`
+(`Canvas::snapshotExcludedSlots()`, `WindowCanvas`'s render too):
+- **held**: the ids every `setExcludedFromStats()` subtree on the canvas holds at that
+  flush (`Base::statsExcludedRoots()`, each flagged root's subtree walked through
+  `skin::Control::appendIds`), sorted, without repeats;
+- **gone**: of the held ids of the flush before, those no longer live
+  (`isPrimitiveIdLive`, `isTextIdLive`): the tools' slots this flush cleared, however the
+  id was given back (a control of a flagged subtree deleted, its skin Control replaced, or
+  a skin Control shrinking its own slot list, as a plot's does);
+- the live id counts at the flush, so `appPrimitives()`/`appTexts()` are the app's live
+  ids then.
 
-The overlay's `prim ids` and `text ids` rows subtract the held counts
-(`heldPrimitives()`, `heldTexts()`), so they read the same with the Inspector open as
-without. With no flagged control on any canvas nothing is walked, kept or reported, and
-every counter is as it was. The canvas's ToolTip box is one of the flagged subtrees
-while it shows, or last showed, a tool's tooltip ("The stats overlay"), so a name's
-tooltip is left out by every tool. `tests/unit/excludedSlots.cpp` pins the record, the
-roll, the held ids following a flag and the tree within a frame, two tools reading one
-frame and the box as every tool's, and `--scenario stats-overlay` holds both tools open over
-the settled Demo ("The stats overlay").
+A slot written in frame N is a tool's iff its id is in held or gone of flush N; every
+other slot is the app's. An id a tool gave back that the app took again before the flush
+(the id bank hands a freed id out again at once, lowest first, and the Inspector deletes
+nodes exactly when the app's tree changes) is live and not held, so it is the app's; a
+control a tool owns but has not flagged (a popup it made) is the app's, since only flagged
+subtrees are held. The record is not touched between flushes: a flag or tree change counts
+from the next flush, the record reads the same however often and in whatever order the
+tools read it, and the frame-N writes of a control moved into a tool (or the box flagged)
+in update N+1 stay the app's. A tool closed whole still owns the slots the next flush
+clears: the snapshot is taken while a flagged root is on the canvas or the last snapshot
+held or cleared anything, and with no flagged control on any canvas nothing is walked or
+kept and every counter is as it was. One edge counts the other way: an id a tool gave
+back that the app took and gave back again before the same flush is in gone, so that
+slot's clear is the tool's.
+
+The overlay's `prim ids` and `text ids` rows are the snapshot's app counts (the live ids
+less the held ones, both at the last flush), so they read the same with the Inspector
+open as without, and follow a deletion one frame later, which a 250 ms refresh hides. The
+canvas's ToolTip box is one of the flagged subtrees while it shows, or last showed, a
+tool's tooltip ("The stats overlay"), so a name's tooltip is left out by every tool.
+`tests/unit/excludedSlots.cpp` pins the record: a released id kept to the frame after the
+flush that cleared it, an id the app takes again, a skin Control's own release, an app
+control deleted in a tool's teardown, a tool closed whole, a flag or tree change taking
+effect at the next flush, two tools reading one frame and the box as every tool's; and
+`--scenario stats-overlay` holds both tools open over the settled Demo ("The stats
+overlay").
 
 **Open, close, toggle.** `open()` makes the canvas's inspector and its tree at once, so
 nodes can be opened and selected straight away; its counter lines are first set by its
@@ -3055,7 +3065,8 @@ row and column name with a tooltip saying what it shows:
 - `fps`, the frames of the last second of the canvas's clock that it saw move on, and
   `controls`, the app's controls on the canvas (the tools' excluded subtrees left out);
 - `prim ids` and `text ids`, the live primitive and text ids less those every tool on the
-  canvas holds (`Canvas::excludedSlots()`, an open Inspector's too);
+  canvas holds, both as the last flush ended (`Canvas::excludedSlots()`, an open
+  Inspector's too);
 - under "most in one frame", the largest value one frame of the window had of `rendered`
   (`ChangeStats::visited`) and `changed`, layout `passes` and `entered`
   (`LayoutStats::visited`), `z visited`, `anims` run, the app's `prim slots` and
@@ -3150,10 +3161,8 @@ flagged subtrees, so the canvas's record of the tools' ids (`Canvas::excludedSlo
 `prim ids` and `text ids` leave the box out, and so does an open Inspector's `slots
 written`. A `setExcludedFromStats()` change on a control on a canvas raises
 `Canvas::treeSerial()`, so the overlay's `controls` count follows the box out of and
-back into the app, and makes the record walk the flagged subtrees again at its next
-read, as a change of the tree on the canvas does (a control moved into or out of a
-flagged subtree), so a read later in the update phase that flipped the box's flag sees
-the change. Over a settled app the refresh after
+back into the app; the record takes the flip at the next flush, so the box's writes of
+a frame are counted by whose it was as that frame's flush ended. Over a settled app the refresh after
 a name's tooltip shows reads 0 rendered, changed, slots, passes and z. The box is the
 canvas's last child, after its overlays, so it is numbered and drawn above the panel; it
 goes below the name, over the panel, where there is room, and flips above it near the

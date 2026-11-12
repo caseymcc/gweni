@@ -30,7 +30,8 @@ namespace tools
 //!   update, render without the flush, and the flush (CanvasFrameStats::times);
 //! - the tree: the app's controls (the tools' subtrees left out), and its live
 //!   primitive and text ids (the live ids less those every tool on the canvas
-//!   holds, Canvas::excludedSlots());
+//!   holds, both as the last flush ended: Canvas::excludedSlots(), so the row
+//!   follows a deletion one frame later);
 //! - the most one frame since the last refresh did: controls rendered and
 //!   changed, layout passes and entries, z visited, animations run, the app's
 //!   primitive and glyph slots written, upload bytes (with their unit,
@@ -49,7 +50,9 @@ namespace tools
 //! setExcludedFromStats(), so none of its controls, entries or animations
 //! count in the canvas's counters, and the slots every tool on the canvas (an
 //! Inspector too) wrote are taken out of the renderer's (appFrameWrites(),
-//! over Canvas::excludedSlots()). The times cannot be split per control: they include
+//! over Canvas::excludedSlots(), the ids the tools held as that frame's flush
+//! ended or held at the one before and gave back). The times cannot be split
+//! per control: they include
 //! its own refreshes, and the draw calls include its own draws.
 //!
 //! Only its name cells take the mouse, for their tooltips: each row and

@@ -4,7 +4,10 @@
  *  MIT License, see LICENSE
  *
  *  Canvas::excludedSlots(), the one record of the tools' renderer ids that
- *  every tool on a canvas reads, on a real Canvas with a StubSkin whose
+ *  every tool on a canvas reads, a snapshot taken as each flush ends (a slot
+ *  written then is a tool's iff its id was held by a setExcludedFromStats()
+ *  subtree at that flush, or at the flush before and is live no more), on a
+ *  real Canvas with a StubSkin whose
  *  Controls draw a rect into each of their slots whenever their control
  *  changes (and whose renderer counts a released slot as written, as
  *  SlotRenderer's flush clears it), under a stepped canvas clock:
@@ -15,6 +18,17 @@
  *    frames or in the update phase) stays in it through the update phase of
  *    the frame after the flush that cleared it, whoever reads it and however
  *    often, and is gone the frame after; a tool deleted whole counts so too;
+ *  - an id a tool gave back in the update phase that an app control took in
+ *    the same frame is the app's: its writes count in appFrameWrites(), the
+ *    Inspector's slots line and the overlay's slots row;
+ *  - the slots a flagged skin Control gives back itself, in its own update()
+ *    (test::ShrinkingControl), are the tool's: both tools read 0 over the
+ *    frames that clear them;
+ *  - an app control deleted as a tool is torn down (by a destructor of the
+ *    tool's, or a popup a control of the tool's owns) is the app's, and the
+ *    tool's slots the tool's;
+ *  - a tool closed whole (the Inspector, the overlay), with no other on the
+ *    canvas, owns the slots the next flush clears, and not after;
  *  - with a StatsOverlay and an Inspector both open, a frame only one of them
  *    wrote in reads 0 slots in the other: the overlay's slots row over a
  *    window of frames the Inspector wrote in, the Inspector's slots line on
@@ -23,12 +37,13 @@
  *  - closing either tool, the other reads 0 over the frames its slots are
  *    hidden and cleared in;
  *  - the overlay's ids row is the same with the Inspector open as without:
- *    the live ids less every tool's;
+ *    the live ids less every tool's, both at the last flush;
  *  - an app change shows in both, on the next refresh (the overlay) or frame
  *    (the Inspector), and then 0;
- *  - the held ids follow, in the same update phase, a flag set or cleared,
- *    an app control moved into a flagged subtree and out again, and a
- *    flagged subtree taken off the canvas and put back;
+ *  - a flag set or cleared, an app control moved into a flagged subtree and
+ *    out again, and a flagged subtree taken off the canvas and put back take
+ *    effect at the next flush: until then every read gives the last flush's
+ *    record;
  *  - the canvas's ToolTip box showing an overlay name's tooltip is every
  *    tool's: both read 0 over the frames that show it and hide it, and the
  *    overlay's ids row leaves its ids out; moved straight on to an app

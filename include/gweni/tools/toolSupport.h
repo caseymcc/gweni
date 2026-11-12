@@ -51,9 +51,12 @@ struct AppFrameWrites
 
 //! The renderer's last frame (render->frameStats() and its written ids), read
 //! in the update phase of the frame after it, less the slots under the ids
-//! canvas->excludedSlots() has: those every setExcludedFromStats() subtree on
-//! the canvas holds, and those they gave back for that frame's flush to clear.
-//! Any number of tools may call it in a frame and get the same answer.
+//! canvas->excludedSlots() took as that frame's flush ended: those every
+//! setExcludedFromStats() subtree on the canvas held then, and those they held
+//! at the flush before that were live no more (the slots that flush cleared;
+//! an id the app took again is the app's). A flag or tree change counts from
+//! the next flush, so any number of tools may call it, anywhere between two
+//! flushes, and get the same answer.
 GWENI_EXPORT AppFrameWrites appFrameWrites(controls::Canvas *canvas, renderer::Base *render);
 
 #if GWENI_ANIMATE

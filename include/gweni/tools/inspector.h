@@ -85,7 +85,9 @@ private:
 //! none of its own controls count in the canvas's counters, and the slots
 //! every tool on the canvas wrote (its own, a StatsOverlay's) are taken out of
 //! renderer::Base::writtenPrimitiveIds() and writtenTextIds() by the ids their
-//! controls hold or gave back (Canvas::excludedSlots(), appFrameWrites()).
+//! controls held as that frame's flush ended, or held at the flush before and
+//! gave back, an id the app took again being the app's (Canvas::excludedSlots(),
+//! appFrameWrites()).
 //! Uploads cannot be split by id: they are shown for a frame the app wrote
 //! slots in, as that frame's whole uploads, and as 0 for a frame only the
 //! tools wrote in. It refreshes in the update phase, from an animation of
@@ -193,8 +195,9 @@ private:
     void populate(controls::TreeNode *node, controls::Base *parent,
         const std::vector<const controls::Base *> &open);
     void syncChildren(InspectorNode *node);
-    //! Deletes node's child nodes; the canvas keeps the ids they held as a
-    //! tool's (Canvas::excludedSlots()) until their slots are cleared.
+    //! Deletes node's child nodes; the slots the next flush clears under the
+    //! ids they held are a tool's (Canvas::excludedSlots()), those under an id
+    //! the app took again before that flush the app's.
     void deleteChildNodes(controls::TreeNode *node);
     //! The controls a node of parent lists: its actual children, less the
     //! inspector itself.
