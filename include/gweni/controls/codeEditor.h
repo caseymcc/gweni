@@ -313,7 +313,7 @@ public:
     //! column is scrolled out.
     Rect getCaretBounds() const;
     //! One frame of the caret's blink (its animation's).
-    void updateCaretBlink();
+    void updateCaretBlink() override;
     //! \}
 
     void calculateSize(skin::Base *skin, Dim dim) override;

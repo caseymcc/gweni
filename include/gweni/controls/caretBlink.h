@@ -55,8 +55,9 @@ public:
     //! Lights the caret and holds it lit for SolidTime; a caret that was dark
     //! marks StateChange_Caret while \p control has the focus.
     void keepLit(Base *control);
-    //! One frame of the blink (the animation's think()): stops once \p
-    //! control has lost the focus, flips the caret at each edge.
+    //! One frame of the blink: stops once \p control has lost the focus,
+    //! flips the caret at each edge. The animation calls the control's
+    //! Base::updateCaretBlink(), which calls this on its own blink.
     void step(Base *control);
 
 private:

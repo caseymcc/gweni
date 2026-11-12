@@ -21,18 +21,14 @@ namespace internal
 namespace
 {
 
+// Its control's blink: a member-less animation, as cheap as TextBox's own was.
 class CaretBlinkAnimation: public anim::Animation
 {
 public:
-    explicit CaretBlinkAnimation(CaretBlink *blink): m_blink(blink) {}
-
     void think() override
     {
-        m_blink->step(m_control);
+        m_control->updateCaretBlink();
     }
-
-private:
-    CaretBlink *m_blink;
 };
 
 }//namespace
@@ -44,7 +40,7 @@ void CaretBlink::start(Base *control)
     if(m_animation)
         return;
 
-    m_animation=new CaretBlinkAnimation(this);
+    m_animation=new CaretBlinkAnimation();
     anim::add(control, m_animation);
 #else
     (void)control;

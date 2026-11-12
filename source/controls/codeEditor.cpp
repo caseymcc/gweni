@@ -496,8 +496,23 @@ void CodeEditor::linesChanged(const text::LineChange &change)
         removeWidth(m_lineCells[first+i]);
 
     if(change.inserted > change.removed)
+    {
+        // room to a power of two, as the document's own vector of lines
+        // grows, so a new text leaves headroom and the first line break after
+        // it does not copy every line's count
+        const size_t needed=m_lineCells.size()+change.inserted-change.removed;
+
+        if(needed > m_lineCells.capacity())
+        {
+            size_t capacity=16;
+
+            while(capacity < needed)
+                capacity*=2;
+            m_lineCells.reserve(capacity);
+        }
         m_lineCells.insert(m_lineCells.begin()+static_cast<std::ptrdiff_t>(first+change.removed),
             change.inserted-change.removed, 0);
+    }
     else if(change.removed > change.inserted)
         m_lineCells.erase(m_lineCells.begin()+static_cast<std::ptrdiff_t>(first+change.inserted),
             m_lineCells.begin()+static_cast<std::ptrdiff_t>(first+change.removed));

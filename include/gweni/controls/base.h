@@ -840,6 +840,11 @@ public:
     virtual bool onKeyPageUp(bool /*down*/) { return false; }
     virtual bool onKeyPageDown(bool /*down*/) { return false; }
 
+    //! One frame of a caret's blink, for a control that draws a caret
+    //! (internal::CaretBlink's animation calls it on the control it was
+    //! registered for); nothing by default.
+    virtual void updateCaretBlink() {}
+
     virtual bool isHovered() const;
     virtual bool shouldDrawHover() const;
 
