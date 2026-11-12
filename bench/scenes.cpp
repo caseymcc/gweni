@@ -20,6 +20,7 @@
 #include <gweni/controls/textBox.h>
 #include <gweni/controls/treeControl.h>
 #include <gweni/controls/verticalScrollBar.h>
+#include <gweni/controls/virtualList.h>
 #include <gweni/controls/windowControl.h>
 #include <gweni/platforms/inputEvent.h>
 #include <gweni/skin.h>
@@ -465,6 +466,76 @@ private:
     controls::VerticalScrollBar *m_bar=nullptr;
     Point m_mouse=Point(-1, -1);
     int m_direction=1;      // 1 down, -1 up
+};
+
+//-----------------------------------------------------------------------------
+// vlist-variable-scroll: a VirtualList in variable mode filling the canvas's
+// height, 400 wide, of N items of wrapped text from one to five lines (the
+// default rows, wrapped, measured as Base::wrappedTextHeight at their width
+// plus their padding), turned one wheel notch down per frame. The idle
+// re-measure is off (budget 0), so a frame measures only the items it brings
+// into view and does the same work at any N: N is the index's size alone.
+//-----------------------------------------------------------------------------
+class VariableListScrollScene: public Scene
+{
+public:
+    static constexpr int PadX=6;
+    static constexpr int PadY=3;
+
+    void build(SceneContext &ctx) override
+    {
+        m_list=ctx.canvas->newChild<controls::VirtualList>();
+        place(m_list, 10, 10, 400, ctx.size.y-20);
+        m_list->setRemeasureBudget(0);
+        m_list->setRowFactory([](controls::Base *parent)
+            {
+                auto *row=parent->newChild<controls::internal::VirtualListRow>();
+
+                row->setWrap(true);
+                row->setPadding(Padding(PadX, PadY, PadX, PadY));
+                row->setTextPadding(Padding(0, 0, 0, 0));
+                return row;
+            });
+        m_list->setRowBinder([](controls::Base *row, size_t index)
+            {
+                if(controls::Label *label=dynamic_cast<controls::Label *>(row))
+                    label->setText(itemText(index));
+            });
+        m_list->setItemMeasurer([this](size_t index, int width)
+            {
+                return m_list->wrappedTextHeight(m_list->getSkin()->getDefaultFont(), itemText(index),
+                    width-2*PadX)+2*PadY;
+            });
+        m_list->setItemCount(size_t(ctx.n));
+    }
+
+    void step(SceneContext &ctx, int frame) override
+    {
+        if(frame == -1 || (frame == 0 && m_mouse.x < 0))
+        {
+            const Point origin=m_list->localPosToCanvas(Point(0, 0));
+            moveMouse(ctx, m_mouse, Point(origin.x+100, origin.y+m_list->getHeight()/2));
+        }
+        if(frame >= 0)
+            ctx.canvas->inputMouseWheel(-60);
+    }
+
+private:
+    // Item i: its number and 2 to 61 words, so one to five lines at 400 units
+    static std::string itemText(size_t index)
+    {
+        static const char *const words[]={"variable", "height", "rows", "of", "wrapped", "text", "each",
+            "measured", "as", "it", "comes", "into", "view"};
+        const size_t count=2+(index*2654435761u>>5)%((index%4 == 0)?60:12);
+        std::string text=format("Item %05d:", int(index));
+
+        for(size_t i=0; i < count; ++i)
+            text+=std::string(" ")+words[(index*7+i*3)%13];
+        return text;
+    }
+
+    controls::VirtualList *m_list=nullptr;
+    Point m_mouse=Point(-1, -1);
 };
 
 //-----------------------------------------------------------------------------
@@ -1082,6 +1153,9 @@ const std::vector<SceneInfo> &scenes()
         {"scroll", "turn the wheel one notch per frame over a ScrollControl of N Button rows",
             true, 1000, 3, 20, Scaling::Linear,
             []{ return std::unique_ptr<Scene>(new ScrollScene()); }},
+        {"vlist-variable-scroll", "turn the wheel one notch per frame over a variable-height VirtualList of N wrapped rows",
+            true, 1000, 3, 20, Scaling::Local,
+            []{ return std::unique_ptr<Scene>(new VariableListScrollScene()); }},
         {"drag", "drag a Window of 40 controls by its title bar over N Labels",
             true, 1000, 3, 20, Scaling::Local,
             []{ return std::unique_ptr<Scene>(new DragScene()); }},
