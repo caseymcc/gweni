@@ -455,10 +455,22 @@ void TextBox::updateCursorRects()
         addStateChange(StateChange_Background);
 }
 
+// The text may come later (the browser's paste event): the box is looked up
+// again then, and an answer for a box deleted meanwhile does nothing.
 void TextBox::onPaste(event::Info)
 {
-    EditKindScope kind(*this, text::EditKind::Paste);
-    insertText(platform::getClipboardText());
+    const size_t id=getControlId();
+
+    platform::requestClipboardText([id](const String &text)
+    {
+        TextBox *box=dynamic_cast<TextBox *>(Base::getControlById(id));
+
+        if(!box)
+            return;
+
+        EditKindScope kind(*box, text::EditKind::Paste);
+        box->insertText(text);
+    });
 }
 
 void TextBox::onCopy(event::Info)

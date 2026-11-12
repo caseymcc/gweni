@@ -261,6 +261,11 @@ public:
     {
         return m_id;
     }
+    //! The live control with the id getControlId() gave, or null once it is
+    //! deleted (or for an id never handed out). Ids are never reused, so an id
+    //! held across frames (an answer that comes later, as a paste's on the web)
+    //! finds its control or nothing, never another.
+    static Base *getControlById(size_t id);
 
 //Control hierarchy
     virtual void setParent(controls::Base *parent);

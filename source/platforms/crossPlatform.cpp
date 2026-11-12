@@ -432,8 +432,36 @@ static void reportClipboard()
 }
 #endif
 
+namespace
+{
+struct ClipboardBackend
+{
+    std::function<String()> get;
+    std::function<bool(const String &)> set;
+    std::function<void(ClipboardReply)> request;
+};
+
+ClipboardBackend &clipboardBackend()
+{
+    static ClipboardBackend backend;
+    return backend;
+}
+}//namespace
+
+void setClipboardBackend(std::function<String()> get, std::function<bool(const String &)> set,
+    std::function<void(ClipboardReply)> request)
+{
+    ClipboardBackend &backend=clipboardBackend();
+
+    backend.get=std::move(get);
+    backend.set=std::move(set);
+    backend.request=std::move(request);
+}
+
 String getClipboardText()
 {
+    if(clipboardBackend().get)
+        return clipboardBackend().get();
 #if defined(__EMSCRIPTEN__)
     reportClipboard();
 #endif
@@ -442,11 +470,27 @@ String getClipboardText()
 
 bool setClipboardText(const String &str)
 {
+    if(clipboardBackend().set)
+        return clipboardBackend().set(str);
 #if defined(__EMSCRIPTEN__)
     reportClipboard();
 #endif
     gs_ClipboardEmulator=str;
     return true;
+}
+
+void requestClipboardText(ClipboardReply reply)
+{
+    if(!reply)
+        return;
+
+    // a copy: the request may install another backend before it returns
+    std::function<void(ClipboardReply)> request=clipboardBackend().request;
+
+    if(request)
+        request(std::move(reply));
+    else
+        reply(getClipboardText());
 }
 
 #if defined(__EMSCRIPTEN__)

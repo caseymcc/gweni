@@ -61,10 +61,43 @@ GWENI_EXPORT void setCursor(unsigned char cursor);
 GWENI_EXPORT void getCursorPos(gweni::Point &p);
 GWENI_EXPORT void getDesktopSize(int &w, int &h);
 
-//! Get platform clipboard as a string.
+//
+// The clipboard
+//
+// An in-process buffer unless the app installs a backend for the system's
+// clipboard (setClipboardBackend). A window's app does (the examples' window
+// path, input::GLFW3::useSystemClipboard); a capture, a test and the bench do
+// not, so what they paste never depends on the host.
+//
+
+//! Get platform clipboard as a string: the backend's, or the in-process
+//! buffer. A backend that only answers later (the browser's) gives what it
+//! last knew; a paste asks through requestClipboardText() instead.
 GWENI_EXPORT String getClipboardText();
-//! Set platform clipboard from a string.
+//! Set platform clipboard from a string. This is the call a "Copy" button
+//! makes; on the web it must come from an input handler (the click's user
+//! activation), or the browser refuses the write.
 GWENI_EXPORT bool   setClipboardText(const String &str);
+
+//! A clipboard read's answer.
+using ClipboardReply=std::function<void(const String &text)>;
+
+//! Ask for the clipboard's text, for a paste. \p reply gets it: inside the
+//! call with no backend or a backend without \p request (the in-process
+//! buffer, or the backend's get), else whenever the backend answers, so a
+//! caller must not hold a pointer that may be gone by then (a control looks
+//! itself up again, controls::Base::getControlById()). A backend that never
+//! answers drops \p reply.
+GWENI_EXPORT void requestClipboardText(ClipboardReply reply);
+
+//! Install the system clipboard: \p get and \p set replace the in-process
+//! buffer for getClipboardText() and setClipboardText(), and \p request, if
+//! given, answers requestClipboardText() (it may hold the reply and call it
+//! later). An empty function keeps the in-process buffer for that call; all
+//! three empty give the in-process clipboard back.
+GWENI_EXPORT void setClipboardBackend(std::function<String()> get,
+    std::function<bool(const String &)> set,
+    std::function<void(ClipboardReply)> request={});
 
 //
 // The URL and the history

@@ -96,7 +96,10 @@ std::string getFullName(Base *base)
     return name;
 }
 
-ObjectIdBank<Base *, nullptr> g_controls;
+// Every control by its id, null once it is deleted. Ids are never handed out
+// again, so an id names one control for the process's life. Never destroyed:
+// a control deleted during static destruction still writes its entry.
+ObjectIdBank<Base *, nullptr> &g_controls=*new ObjectIdBank<Base *, nullptr>;
 
 namespace
 {
@@ -187,6 +190,11 @@ void Base::appendToRenderQueue()
     g_renderQueue.push_back(this);
 }
 
+Base *Base::getControlById(size_t id)
+{
+    return (id < g_controls.ids.size()) ? g_controls.ids[id] : nullptr;
+}
+
 Base::Base(const String &name)
 {
 
@@ -248,6 +256,8 @@ void Base::init(const String &name)
 Base::~Base()
 {
     noteRenderWalkMutation(this, "~Base");
+    // getControlById() no longer finds it (the id is not released: never reused)
+    g_controls.ids[m_id]=nullptr;
 
     Canvas *canvas=getCanvas();
     // no longer a root statsExcluded() looks for

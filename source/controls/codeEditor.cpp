@@ -1459,16 +1459,23 @@ void CodeEditor::onCut(event::Info)
         replaceRange(getSelection(), String(), text::EditKind::Cut);
 }
 
+// The text may come later (the browser's paste event): the editor is looked
+// up again then, and an answer for one deleted meanwhile does nothing.
 void CodeEditor::onPaste(event::Info)
 {
-    const String text=platform::getClipboardText();
+    const size_t id=getControlId();
 
-    if(!text.empty() && editable())
+    platform::requestClipboardText([id](const String &text)
     {
-        text::UndoGroup group(m_undo, text::EditKind::Paste);
+        CodeEditor *editor=dynamic_cast<CodeEditor *>(Base::getControlById(id));
 
-        insertText(text, text::EditKind::Paste);
-    }
+        if(!editor || text.empty() || !editor->editable())
+            return;
+
+        text::UndoGroup group(editor->m_undo, text::EditKind::Paste);
+
+        editor->insertText(text, text::EditKind::Paste);
+    });
 }
 
 void CodeEditor::onUndo(event::Info)
