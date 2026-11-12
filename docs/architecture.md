@@ -373,8 +373,9 @@ open popup and the open anchored menus (below) between passes, so not as a re-di
 pass can move the anchor without entering it or the popup: a Top-docked sibling grown
 moves the anchor's top-level panel, a pure move that dirties neither the panel nor
 anything under it, and a popup decided on before the pass would sit at its old place for
-a frame. Entering it costs one entry of each open follower (and of the canvas, already
-dirty) in a frame that lays out anyway; a frame with no pass pays nothing. A pass the
+a frame. Entering it costs each open follower's measure and arrange (the canvas is
+already dirty) in each pass of a frame that lays out anyway; a frame with no pass pays
+nothing. A pass the
 canvas runs for `setExcludedFromStats()` subtrees alone (an Inspector's or a
 StatsOverlay's refresh) enters none: those tools are placed after the app and hold no
 anchor, so they move none, and entering a follower would make their pass the app's.
@@ -453,7 +454,8 @@ item, a pure move of a top-level panel included; and the update phase invalidate
 when the anchor's canvas rect is not what it was last placed for, a move with no pass (a
 ZoomPanel's pan or zoom). A submenu's item is in its parent menu, earlier in the list,
 so a chain of submenus follows a moved strip in one frame. A frame with nothing laid
-out looks at those few pointers and invalidates nothing. A menu whose anchor is no longer `visible()` closes, with the submenus under it;
+out looks at those few pointers and invalidates nothing. A menu whose anchor is no
+longer `visible()` closes, with the submenus under it;
 deleting the anchor closes it (`Canvas::menuAnchorDeleted`, from `~Base`); a closed menu,
 or one placed some other way, leaves the list in the next update phase and a deleted one
 at once (`~Menu`). A menu numbered before its strip (the strip brought to the front after
