@@ -275,6 +275,18 @@ TEST_CASE("Cells: a box-drawing table lines up in DejaVu Sans Mono, in coverage 
                 }
             }
 
+            // the task's "│⚡x│✓✗│": 8 cells, its middle rule after 5 (⚡ two
+            // of them, D7), a cell right of the other rows'
+            {
+                const String taskRow="\xE2\x94\x82\xE2\x9A\xA1x\xE2\x94\x82\xE2\x9C\x93\xE2\x9C\x97\xE2\x94\x82";
+                std::vector<int> carets;
+
+                renderer.measureCarets(font, taskRow, carets);
+                REQUIRE(carets.size() == 8);
+                CHECK(carets[4] == renderer.measureText(font, String(5, '0')).x);
+                CHECK(carets.back() == renderer.measureText(font, String(8, '0')).x);
+            }
+
             // three rules down the drawn table, unbroken and alike in every row
             const String table=rows[0]+"\n"+rows[1]+"\n"+rows[2]+"\n"+rows[3];
             const std::vector<uint8_t> frame=fresh.draw(font, table, Point(10, 10));
