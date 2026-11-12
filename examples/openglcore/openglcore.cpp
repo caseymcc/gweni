@@ -143,20 +143,26 @@ static std::string urlForDemo(const std::string &name)
 //! the app showed (--demo, a stored page, back or forward) replaces the
 //! current one, so restoring a page never grows the history. Picking the page
 //! already shown replaces too, or Back would first go to that page again.
+//! The page \p name is shown: the window's title and the stored page.
+static void announce(const std::string &name)
+{
+    g_shownDemo=name;
+    if(g_window)
+        glfwSetWindowTitle(g_window, ("gweni \xe2\x80\x94 "+name).c_str());
+    if(g_storage)
+        gweni::platform::storageSet(StoredPageKey, name);
+}
+
 static void pageShown(const std::string &name, bool picked)
 {
     const std::string url=urlForDemo(name);
     const bool again=name == g_shownDemo;
 
-    g_shownDemo=name;
     if(picked && !again)
         gweni::platform::pushUrl(url);
     else
         gweni::platform::replaceUrl(url);
-    if(g_window)
-        glfwSetWindowTitle(g_window, ("gweni \xe2\x80\x94 "+name).c_str());
-    if(g_storage)
-        gweni::platform::storageSet(StoredPageKey, name);
+    announce(name);
 }
 
 //! platform::setUrlChangedHandler: back or forward, outside any frame. The
@@ -224,15 +230,15 @@ static std::string open(GLFWwindow *window, gweni::Demo &demo, const std::string
         if(stored && std::find(names.begin(), names.end(), *stored) != names.end())
             start=*stored;
     }
-    if(!start.empty())
-        g_startDemo=start;
-    else if(!demo.getDemoNames().empty())
-        g_startDemo=demo.getDemoNames().front();
+    g_startDemo=start.empty()?demo.shownDemo():start;
 
-    // the page the shell built shown, which a pick of it must not push
-    g_shownDemo=demo.shownDemo();
     demo.setPageShownHandler(&pageShown);
     gweni::platform::setUrlChangedHandler(&urlChanged);
+    // With no page to show, the one the shell is built showing is the page
+    // shown (a pick of it pushes nothing), titled and stored. Its URL stays as
+    // it is: one naming no page already means the start page (urlChanged).
+    if(start.empty() && !demo.shownDemo().empty())
+        announce(demo.shownDemo());
     return start;
 }
 

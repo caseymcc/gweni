@@ -40,6 +40,11 @@
 //                    the page last shown (gweni-demo/last-demo in localStorage)
 //                    and replaces its URL with ?demo=<that page>
 //  and once:
+//    fresh           OpenGLCore.html in a fresh context (no ?demo=, nothing
+//                    stored) reports the page it is built showing as shown,
+//                    titles the page with it and stores it, its URL left bare;
+//                    a pick of that page pushes nothing (it replaces with
+//                    ?demo=<it>), and Back from a pick of ButtonDemo shows it
 //    hash            on OpenGLCore.html?demo=ButtonDemo#a|b{c}^d\e (characters
 //                    a browser encodes in a path but leaves in a hash), a pick
 //                    of LabelDemo pushes ?demo=LabelDemo with the hash kept
@@ -409,6 +414,65 @@ async function checkHash(s)
     }
 }
 
+// A fresh start with no page named (no ?demo=, nothing stored): the page the
+// shell is built showing is the page shown, titled and stored with the URL
+// left bare; picking it pushes nothing, so after a pick of ButtonDemo Back
+// shows it again.
+async function checkFresh(s)
+{
+    const context = await s.newContext();
+    const page = await context.newPage();
+    try
+    {
+        if(!await s.load('fresh', page, '/OpenGLCore.html'))
+            return;
+        await s.frames(page, 2);
+        const nav = parseNavigation(await navigation(page));
+        const start = await pageState(page);
+        if(!nav || !nav.demo)
+        {
+            fail('fresh', `the bare page reports ${await navigation(page)}, no page shown`);
+            return;
+        }
+        const first = nav.demo;
+        if(start.search !== '' || nav.url !== '/OpenGLCore.html')
+            fail('fresh', `the bare page's URL became ${nav.url} (location.search ${start.search})`);
+        else if(start.title !== `gweni — ${first}`)
+            fail('fresh', `the title is "${start.title}", not gweni — ${first}`);
+        else if(start.stored !== first)
+            fail('fresh', `localStorage holds ${start.stored} under gweni-demo/last-demo, not ${first}`);
+        else if(!await s.pick(page, first))
+            fail('fresh', `the list's ${first} entry is not shown`);
+        else
+        {
+            await s.frames(page, 5);
+            const again = await pageState(page);
+            if(again.length !== start.length || again.search !== `?demo=${first}`)
+            {
+                fail('fresh', `picking the shown ${first} made history.length ${again.length} (was ${start.length}), location.search ${again.search}`);
+                return;
+            }
+            await s.pick(page, 'ButtonDemo');
+            const picked = await s.shown(page, 'ButtonDemo');
+            const pickedState = await pageState(page);
+            await page.goBack();
+            const back = await s.shown(page, first);
+            if(!picked || pickedState.length !== start.length + 1)
+                fail('fresh', `a pick of ButtonDemo gave ${await navigation(page)}, history.length ${pickedState.length} (was ${start.length})`);
+            else if(!back)
+                fail('fresh', `goBack() after ButtonDemo shows ${await navigation(page)}, not ${first}`);
+            else
+                pass('fresh', `${first} shown, titled and stored, the URL bare; picking it again no entry; Back from ButtonDemo shows it`);
+        }
+        for(const line of (await pageState(page)).stderr)
+            fail('fresh', `the run wrote to stderr: ${line}`);
+    }
+    finally
+    {
+        await context.close();
+    }
+}
+
 // The page served at every path under /app/.
 async function checkPath(s)
 {
@@ -470,6 +534,7 @@ async function main()
     {
         await checkPage(s, 'OpenGLCore.html', 'stats-overlay');
         await checkPage(s, 'demo.html', 'stats-overlay=off');
+        await checkFresh(s);
         await checkHash(s);
         await checkPath(s);
     }

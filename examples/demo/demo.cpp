@@ -249,6 +249,9 @@ void Demo::init(const String &name)
         addDemo<ColorPickerDemo>(cat, "ColorPickerDemo", "Color picker");
         addDemo<ColorEditDemo>(cat, "ColorEditDemo", "Color edit");
     }
+    // the page the PageControl shows before any is selected
+    if(m_center->getPageNumber() < m_names.size())
+        m_shownDemo=m_names[m_center->getPageNumber()];
 //
 //    m_statusBar->sendToBack();
 //    printText("Unit Test Started.\n");

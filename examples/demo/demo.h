@@ -46,8 +46,8 @@ public:
     typedef std::function<void(const String &name, bool picked)> PageShownHandler;
     void setPageShownHandler(PageShownHandler handler) { m_pageShown=std::move(handler); }
 
-    //! The key of the page last shown through its list entry or showDemo(),
-    //! empty before any.
+    //! The key of the page shown: the one last shown through its list entry
+    //! or showDemo(), else the one the shell is built showing (its first).
     const String &shownDemo() const { return m_shownDemo; }
 
     //! The demo list's entry for the page \a name, null if there is none.

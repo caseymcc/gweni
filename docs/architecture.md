@@ -3538,7 +3538,9 @@ is kept as `currentUrl()` gave it; its URL-changed handler shows the page the UR
 It stores the page last shown (`localStorage` under `gweni-demo/` on the web,
 `$XDG_STATE_HOME/gweni/OpenGLCore.json`, or `~/.local/state/gweni/...`, elsewhere, so a
 desktop run prints nothing) and shows it at start-up when `--demo` names none, and titles
-the window `gweni — <Name>`. The status bar's "gweni on GitHub" link opens
+the window `gweni — <Name>`. With neither, the page the shell is built showing (its
+first, `Demo::shownDemo()`) is the page shown: titled and stored at once, so a pick of it
+replaces, with the URL left bare, which already names the start page. The status bar's "gweni on GitHub" link opens
 `Demo::LinkUrl` with `openUrl`. `web_navigation` (`tests/web/navigation.mjs`) checks all
 of it in Chromium on `OpenGLCore.html` and `demo.html`.
 
