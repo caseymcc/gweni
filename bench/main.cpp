@@ -381,7 +381,8 @@ void printUsage()
         "Options:\n"
         "  --scene <name>     the scene to run (--list shows them)\n"
         "  --n <N>            the scene's size (default per scene)\n"
-        "  --k <K>            the scene's edits per frame, where it has any (default 10)\n"
+        "  --k <K>            the scene's second size, where it has one: its edits per\n"
+        "                     frame, pages, gap or depth (default per scene, else 10)\n"
         "  --frames <F>       measured frames (default per scene)\n"
         "  --warmup <W>       frames run first and not reported (default per scene)\n"
         "  --size <WxH>       canvas size in logical units, at scale 1 (default 1280x800)\n"
@@ -512,7 +513,7 @@ int main(int argc, char *argv[])
     std::string resourceDir;
     std::string rendererName;
     gweni::Point size(1280, 800);
-    int n=-1, k=10, frames=-1, warmup=-1;
+    int n=-1, k=-1, frames=-1, warmup=-1;
     bool json=false;
     std::string drawSlots="ranges";
     // -1: not given, the renderer keeps its own (GWENI_PRIMITIVE_RANGES, else
@@ -577,6 +578,7 @@ int main(int argc, char *argv[])
         return EXIT_FAILURE;
 
     if(n < 0) n=info->defaultN;
+    if(k < 0) k=info->defaultK;
     if(frames < 0) frames=info->defaultFrames;
     if(warmup < 0) warmup=info->defaultWarmup;
 

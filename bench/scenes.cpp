@@ -821,6 +821,60 @@ public:
 };
 
 //-----------------------------------------------------------------------------
+// nested-resize: K containers nested in a chain, each docked Center (filling) in the one
+// above it (the first in the canvas), the innermost and every third one out
+// from it a ScrollControl scrolling vertically only (its inner panel the
+// viewport's width, so its contents are resized with it), the others plain
+// panels; the innermost holds N Labels docked Top, which overflow it and
+// scroll. Measured frames alternate the canvas between 3/4 of --size and
+// --size, as resize does, so every container and every Label gets a new width
+// each frame: the work of a resize at depth K. --k is the depth (default 8).
+//-----------------------------------------------------------------------------
+class NestedResizeScene: public Scene
+{
+public:
+    void build(SceneContext &ctx) override
+    {
+        const int depth=std::max(ctx.k, 1);
+        controls::Base *parent=ctx.canvas;
+
+        for(int level=0; level<depth; ++level)
+        {
+            controls::Base *container;
+
+            if((depth-1-level)%3 == 0)
+            {
+                controls::ScrollControl *scroll=parent->newChild<controls::ScrollControl>();
+                scroll->setScroll(false, true);
+                container=scroll;
+            }
+            else
+                container=parent->newChild<controls::Base>();
+
+            container->setDock(DockPosition::Center);
+            container->setPadding(Padding(2, 2, 2, 2));
+            parent=container;
+        }
+
+        for(int i=0; i<ctx.n; ++i)
+        {
+            controls::Label *label=parent->newChild<controls::Label>();
+            label->setDock(DockPosition::Top);
+            label->setText(format("Label %05d", i));
+        }
+    }
+
+    void step(SceneContext &ctx, int frame) override
+    {
+        if(frame < 0)
+            return;
+
+        const Point size=(frame%2 == 0) ? Point(ctx.size.x*3/4, ctx.size.y*3/4) : ctx.size;
+        setTarget(ctx, size, 1.0f);
+    }
+};
+
+//-----------------------------------------------------------------------------
 // animate: N idle Labels in a grid left of a column holding K indeterminate
 // ProgressBars and a focused TextBox, the clock stepping 1/60 s per frame: the
 // bars' segments move every frame and the caret blinks. No input. The caret
@@ -1573,6 +1627,9 @@ const std::vector<SceneInfo> &scenes()
         {"scale", "the build tree at Canvas::setScale 1.5, 2 and 1 in turn",
             true, 1000, 3, 9, Scaling::Linear,
             []{ return std::unique_ptr<Scene>(new ScaleScene()); }},
+        {"nested-resize", "N Labels in Center-docked panels and ScrollControls nested K deep, the canvas resized per frame",
+            true, 1000, 3, 10, Scaling::Linear,
+            []{ return std::unique_ptr<Scene>(new NestedResizeScene()); }, false, 8},
         {"animate", "K indeterminate ProgressBars and a blinking caret among N idle Labels",
             true, 1000, 90, 60, Scaling::Local,
             []{ return std::unique_ptr<Scene>(new AnimateScene()); }},

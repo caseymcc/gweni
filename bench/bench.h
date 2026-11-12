@@ -193,6 +193,8 @@ struct SceneInfo
     //! Whether Scene::build() is measured work, not setup: profiled as the
     //! construct phase (only the build scene)
     bool profileConstruct=false;
+    //! --k when it is not given
+    int defaultK=10;
 };
 
 //! Every scene, in --list order.
