@@ -181,7 +181,7 @@ private:
 
     //! Breaks s into lines no wider than w ('\n' always breaks one), appended
     //! to lines: text::wrapLines, measuring in this Text's font through
-    //! measureText(), as Base::wrapText() does.
+    //! measureText(), as Base::wrappedTextLines() does.
     void wrapLines(const gweni::String &s, int w, std::vector<WrappedLine> &lines);
 
     //! Makes m_wrapped the wrap of this string and font at w, wrapping again

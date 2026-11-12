@@ -12,8 +12,14 @@
  *  the index's sum and the anchor is the item at the offset. That holds at
  *  the top, after an offset set by the app, a bar moved by the user, the
  *  wheel, scrollByRows (the anchor moved by whole items, its offset kept),
- *  scrollToItem below, above and inside the view, and at the end (the last
- *  item's bottom at the viewport's). The pool is ceil(viewport/smallest
+ *  scrollToItem below, above and inside the view (judged from the measures,
+ *  not the estimates, of the items down to it), and at the end (the last
+ *  item's bottom at the viewport's). A bar moved by the user before an edit
+ *  (an insert, a removal or a new height above, the idle re-measure, an
+ *  append) is the scroll the edit keeps; two scrollByRows before a layout
+ *  move two items; refresh() measures every item again with the top kept;
+ *  and leaving variable mode keeps the item at the top, no more than a row
+ *  into it, a scroll not laid out yet included. The pool is ceil(viewport/smallest
  *  measured height)+1, and 1 000 and 100 000 items take the same controls,
  *  ids and binds. An item not measured counts at the row height before any
  *  was measured, then at the last measured height, or at the estimator's
@@ -33,6 +39,7 @@
 #include <doctest/doctest.h>
 
 #include <climits>
+#include <cmath>
 #include <map>
 #include <random>
 #include <set>
@@ -1064,4 +1071,180 @@ TEST_CASE("VirtualList variable: layout verification reports a row its measurer 
 
     controls::setLayoutVerify(verify);
     delete canvas;
+}
+
+TEST_CASE("VirtualList variable: scrollToItem judges the view from measures, not estimates")
+{
+    // laid out first by the frame that resolves the scroll: every item counts
+    // at the row height until then, below most of the measured heights
+    Scene s(1000, 200, false);
+    const int viewport=200;
+
+    int64_t top=0;
+    size_t item=0;
+
+    // the first item whose measured bottom is past the viewport while its
+    // estimated one is not
+    for(; item < 1000; ++item)
+    {
+        // measured before any layout gave a width: the default width's
+        if(top+s.heights.at(item) > viewport && static_cast<int64_t>(item+1)*RowHeight <= viewport)
+            break;
+        top+=s.heights.at(item);
+    }
+    REQUIRE(item < 1000);
+
+    s.list->scrollToItem(item);
+    s.frame();
+    checkView(s);
+
+    controls::Base *row=s.list->rowForItem(item);
+
+    REQUIRE(row != nullptr);
+    CHECK(row->getY() >= 0);
+    CHECK(row->bottom() == s.list->getViewportHeight());
+
+    SUBCASE("from a scrolled anchor, further down")
+    {
+        const controls::HeightIndex &index=s.list->getHeightIndex();
+        const size_t anchor=s.list->getAnchorItem();
+        size_t target=anchor;
+        int64_t covered=0;
+
+        // the first item not measured yet, once the view is full
+        while(covered < viewport || index.generation(target) == s.list->getMeasureGeneration())
+            covered+=s.measured(target++);
+
+        s.list->scrollToItem(target);
+        s.frame();
+        checkView(s);
+        REQUIRE(s.list->rowForItem(target) != nullptr);
+        CHECK(s.list->rowForItem(target)->bottom() == s.list->getViewportHeight());
+    }
+    s.checkOnePass();
+}
+
+TEST_CASE("VirtualList variable: a bar moved before an edit is the scroll the edit keeps")
+{
+    Scene s(1000);
+    const controls::HeightIndex &index=s.list->getHeightIndex();
+    const int range=s.list->getMaxVerticalScrollOffset();
+
+    REQUIRE(range > 1000);
+    s.bar()->setScrolledAmount(0.5f, true);
+
+    // the item the user scrolled to, before anything moved it
+    const int scrolled=static_cast<int>(std::lround(0.5*range));
+    int64_t top=0;
+    const size_t at=index.itemAt(scrolled, &top);
+    const size_t id=s.ids.at(at);
+
+    SUBCASE("an insert above") { s.insert(0, 1); }
+    SUBCASE("a removal above") { s.remove(0, 1); }
+    SUBCASE("a new height above") { s.change(0, 49); }
+    SUBCASE("the idle re-measure") { s.list->setRemeasureBudget(64); }
+    SUBCASE("setItemCount") { s.insert(s.heights.size(), 10); }
+
+    s.frame();
+    checkView(s);
+    CHECK(s.ids.at(s.list->getAnchorItem()) == id);
+    CHECK(s.list->getVerticalScrollOffset() > range/4);
+    s.checkOnePass();
+}
+
+TEST_CASE("VirtualList variable: leaving variable mode keeps the item at the top")
+{
+    Scene s(1000);
+    const controls::HeightIndex &index=s.list->getHeightIndex();
+    size_t tall=100;
+
+    // an item into which the anchor can be more than a row height
+    while(itemHeight(tall) < RowHeight+10)
+        ++tall;
+
+    const int into=itemHeight(tall)-2;
+
+    // measured, so the offsets below are its
+    s.list->scrollToItem(tall);
+    s.frame();
+
+    SUBCASE("after a layout")
+    {
+        s.list->setVerticalScrollOffset(static_cast<int>(index.offsetOf(tall))+into);
+        s.frame();
+        REQUIRE(s.list->getAnchorItem() == tall);
+        REQUIRE(s.list->getAnchorOffset() == into);
+    }
+
+    SUBCASE("with a scroll not laid out yet")
+    {
+        s.list->setVerticalScrollOffset(static_cast<int>(index.offsetOf(tall))+into);
+    }
+
+    s.list->setItemMeasurer(nullptr);
+    s.frame();
+    CHECK(s.list->firstVisibleItem() == tall);
+    CHECK(s.list->getVerticalScrollOffset() == static_cast<int>(tall)*RowHeight+RowHeight-1);
+    s.checkOnePass();
+}
+
+TEST_CASE("VirtualList variable: refresh measures every item again")
+{
+    Scene s(1000);
+    const controls::HeightIndex &index=s.list->getHeightIndex();
+
+    s.list->setVerticalScrollOffset(static_cast<int>(index.offsetOf(300))+5);
+    s.list->setRemeasureBudget(1000);
+    s.frame();
+    s.frame();
+    REQUIRE(!s.list->isRemeasuring());
+    REQUIRE(index.minGeneration() == s.list->getMeasureGeneration());
+
+    const uint32_t generation=s.list->getMeasureGeneration();
+    const size_t anchorId=s.ids[s.list->getAnchorItem()];
+
+    // the app's items all change, with no itemChanged()
+    for(int &height : s.heights)
+        height=height%2?height+3:height;
+    s.list->refresh();
+    s.frame();
+    CHECK(s.list->getMeasureGeneration() == generation+1);
+    // the rows on screen at their new heights (checkView), the top kept
+    checkView(s);
+    CHECK(s.ids[s.list->getAnchorItem()] == anchorId);
+    CHECK(s.list->rowForItem(s.list->getAnchorItem())->getY() == -5);
+
+    // and the rest by the idle re-measure
+    while(s.list->isRemeasuring())
+        s.frame();
+    for(size_t i=0; i < index.size(); ++i)
+        CHECK(index.height(i) == s.measured(i));
+    s.checkOnePass();
+}
+
+TEST_CASE("VirtualList variable: two scrollByRows before a layout move two items")
+{
+    Scene s(1000);
+    const controls::HeightIndex &index=s.list->getHeightIndex();
+    size_t tall=100;
+
+    // an item followed by one shorter than the offset into it
+    while(itemHeight(tall+1) >= itemHeight(tall)-2)
+        ++tall;
+
+    s.list->scrollToItem(tall+1);
+    s.frame();
+    s.list->setVerticalScrollOffset(static_cast<int>(index.offsetOf(tall))+itemHeight(tall)-2);
+    s.frame();
+    REQUIRE(s.list->getAnchorItem() == tall);
+
+    // the offset shows the new item until the next layout
+    s.list->scrollByRows(1);
+    CHECK(s.list->firstVisibleItem() == tall+1);
+    s.list->scrollByRows(1);
+    CHECK(s.list->firstVisibleItem() == tall+2);
+    s.frame();
+    CHECK(s.list->getAnchorItem() == tall+2);
+    checkView(s);
+    s.checkOnePass();
 }

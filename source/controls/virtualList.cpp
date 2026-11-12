@@ -329,11 +329,17 @@ void VirtualList::updateContentHeight()
 
 // Every item counts at the default height until it shows; the anchor is the
 // item the fixed offset showed at the top, so the view stays where it was as
-// far as the heights allow.
+// far as the heights allow. Leaving variable mode, the fixed offset is the
+// anchor's item's row, as far into it as the anchor was into the item.
 void VirtualList::setItemMeasurer(ItemMeasurer measurer)
 {
     const bool wasVariable=isVariableHeight();
-    const size_t top=firstVisibleItem();
+
+    // the position, from one place: a scroll not laid out yet included
+    if(wasVariable)
+        anchorAtOffset();
+
+    const size_t top=wasVariable?std::min(m_anchorItem, m_itemCount > 0?m_itemCount-1:0):firstVisibleItem();
     const int into=wasVariable?m_anchorOffset:getVerticalScrollOffset()%m_rowHeight;
 
     m_measurer=std::move(measurer);
@@ -373,7 +379,7 @@ void VirtualList::setItemMeasurer(ItemMeasurer measurer)
         m_viewTops.clear();
         updateContentHeight();
         setVerticalScrollOffset(static_cast<int>(std::min<uint64_t>(
-            static_cast<uint64_t>(top)*m_rowHeight+into, INT_MAX)));
+            static_cast<uint64_t>(top)*m_rowHeight+gweni::clamp(into, 0, m_rowHeight-1), INT_MAX)));
     }
 
     refresh();
@@ -525,6 +531,18 @@ void VirtualList::anchorAbove(size_t item, int viewport)
 
 void VirtualList::anchorAtOffset()
 {
+    // A bar moved by the user since the last layout (its thumb, its buttons)
+    // is taken at the content it was moved against, as placeContents takes
+    // it, before an edit moves the offset from the anchor and the bar with it.
+    const float amount=m_verticalScrollBar->getScrolledAmount();
+
+    if(amount != m_shownAmount[1])
+    {
+        m_scrollOffset[1]=gweni::clamp(static_cast<int>(std::lround(
+            static_cast<double>(amount)*m_scrollRange[1])), 0, getMaxVerticalScrollOffset());
+        m_shownAmount[1]=amount;
+    }
+
     const int offset=getVerticalScrollOffset();
 
     if(offset == m_anchoredOffset)
@@ -589,6 +607,14 @@ void VirtualList::refresh()
     for(Row &row : m_rows)
         row.stale=true;
 
+    // their heights may have changed too: a new generation, O(1), so the next
+    // layout measures the items on screen and the idle re-measure the rest
+    if(isVariableHeight())
+    {
+        ++m_generation;
+        m_remeasureCursor=m_anchorItem;
+    }
+
     invalidate();
 }
 
@@ -640,6 +666,9 @@ void VirtualList::scrollByRows(int rows)
 
         m_anchorItem=static_cast<size_t>(gweni::clamp<int64_t>(item, 0,
             static_cast<int64_t>(m_heights.size())-1));
+        // as far into the new item as into the old, inside it, so the offset
+        // shows that item until the next layout (a second call goes on from it)
+        m_anchorOffset=std::min(m_anchorOffset, m_heights.height(m_anchorItem)-1);
         offsetFromAnchor();
         invalidate();
         return;
@@ -785,19 +814,28 @@ void VirtualList::placeVariable(size_t &first, size_t &end)
 
             m_pendingItem=NoItem;
             m_anchorToEnd=false;
-            measureItem(m_anchorItem);
+            m_anchorOffset=gweni::clamp(m_anchorOffset, 0, measureItem(m_anchorItem)-1);
 
-            const int64_t position=m_heights.offsetOf(m_anchorItem)+m_anchorOffset;
-            const int height=measureItem(item);
-            const int64_t top=m_heights.offsetOf(item);
-
-            if(top < position)
+            if(item < m_anchorItem || (item == m_anchorItem && m_anchorOffset > 0))
             {
+                // above the viewport's top: to its top
                 m_anchorItem=item;
                 m_anchorOffset=0;
             }
-            else if(top+height > position+viewport)
-                anchorAbove(item, viewport);
+            else
+            {
+                // Whether it is in view is judged from measures, not estimates:
+                // the items from the anchor down to it are measured, or down to
+                // the viewport's bottom if it is further (those show anyway).
+                int64_t top=-m_anchorOffset;
+                size_t at=m_anchorItem;
+
+                for(; at < item && top < viewport; ++at)
+                    top+=measureItem(at);
+
+                if(at < item || top+measureItem(item) > viewport)
+                    anchorAbove(item, viewport);
+            }
         }
 
         // stuck, whatever was asked

@@ -181,11 +181,15 @@ public:
     //! Replaces the factory (a null one gives back the default VirtualListRow);
     //! the pool is made again by the next layout.
     void setRowFactory(RowFactory factory);
-    //! Replaces the binder; every row on screen is bound again.
+    //! Replaces the binder; every row on screen is bound again (and in
+    //! variable mode every item measured again, as refresh() does).
     void setRowBinder(RowBinder binder);
 
     //! The items changed: every row on screen is bound again by the next
-    //! layout. refreshItem() binds only the row showing that item, if any.
+    //! layout. In variable mode every item is measured again too, as for a
+    //! new width (one generation up): the items on screen by that layout, the
+    //! rest by the idle re-measure. refreshItem() binds only the row showing
+    //! that item, if any (itemChanged() also measures it again).
     void refresh();
     void refreshItem(size_t index);
 

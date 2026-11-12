@@ -19,9 +19,9 @@ namespace gweni
 namespace text
 {
 
-//! The width a string takes, in units: a control's
-//! measureText(font, s).x (controls::Base::wrapText), or anything else for a
-//! test.
+//! The width a string takes, in units: a control's measureText(font, s).x
+//! (controls::Base::wrappedTextLines and wrappedTextHeight), or anything
+//! else for a test.
 using MeasureWidth=std::function<int(const gweni::String &)>;
 
 //! A wrapped line: what it shows, and how many characters of the wrapped
