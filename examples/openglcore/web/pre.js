@@ -39,8 +39,12 @@
 //              URL's unless gweniQueryArgs is false), without argv[0]; null
 //              under node
 //    frames    how many frames an interactive window has drawn
-//              (capture::runWindowLoop, one per animation frame), 0 for a
-//              capture, which draws offscreen in one blocking main
+//              (capture::runWindowLoop: idle, a frame in an animation frame
+//              only when its canvas has work), 0 for a capture, which draws
+//              offscreen in one blocking main
+//    ticks     how many animation-frame callbacks the window's loop has had,
+//              each one drawing or (with nothing to do) returning at once, so
+//              an idle page's ticks go on while its frames stand still
 //    files()   the paths of every file under /out (created before main), where
 //              a run writes what the runner copies back
 //  Before main it also writes window.gweniMounts, the files the runner copies
@@ -51,7 +55,7 @@
 //  for a page error).
 //
 
-var gweniRun = { done: false, exitCode: null, aborted: null, output: [], webgl: null, frames: 0, argv: null };
+var gweniRun = { done: false, exitCode: null, aborted: null, output: [], webgl: null, frames: 0, ticks: 0, argv: null };
 if(typeof window !== 'undefined')
     window.gweniRun = gweniRun;
 

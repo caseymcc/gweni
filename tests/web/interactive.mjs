@@ -10,8 +10,10 @@
 //      node tests/web/interactive.mjs [--out <dir>] <dir holding ControlTest.html and OpenGLCore.html>
 //
 //  Each page runs its window (capture::initGlfwContext on emscripten-glfw, one
-//  frame per animation frame through capture::runWindowLoop); the script
-//  waits for frames to be drawn after each input (gweniRun.frames, web/pre.js),
+//  idle loop through capture::runWindowLoop, a frame only when the canvas has
+//  work); the script waits after each input for the page to settle: drawn,
+//  then a tick with nothing to draw (frames.mjs, gweniRun.frames and .ticks,
+//  web/pre.js),
 //  reads the page's pixels as a screenshot of the canvas, and reads
 //  ControlTest's state through what it exports (Module.ccall:
 //  gweni_web_bounds_listing, the --dump-bounds listing of the window's canvas
@@ -83,6 +85,12 @@
 //               navigator.clipboard.writeText) puts the first box's text there.
 //               No line on the page's stderr (the in-process clipboard's
 //               "in-process only" line included)
+//    idle       ControlTest.html?control=ButtonDemo, settled: over 30 more
+//               animation-frame callbacks (gweniRun.ticks) it draws no frame
+//               (gweniRun.frames stands still), and a post through
+//               ControlTest's gweni_web_post (Canvas::post of a redraw(), as a
+//               page's own callback would post) draws exactly one, the next
+//               30 ticks none
 //  It also fails on any console error or uncaught exception in any page, and
 //  unless every page made a WebGL 2 context on ANGLE's SwiftShader with at
 //  least 24 depth bits (run.mjs' conditions). The page's container is the
@@ -95,6 +103,7 @@ import { mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync } from 'n
 import { tmpdir } from 'node:os';
 import { extname, join, normalize, resolve, sep } from 'node:path';
 
+import { firstFrame, settle } from './frames.mjs';
 import { isSwiftShader, launchOptions, loadPlaywright } from './probe.mjs';
 import { runPage } from './run.mjs';
 
@@ -198,7 +207,7 @@ class Session
     }
 
     // A page of the build dir at a viewport (CSS px) and devicePixelRatio,
-    // once it has drawn a few frames (or, \a untilExit, once its run has
+    // once it has drawn and settled (or, \a untilExit, once its run has
     // ended); null after a failure of the check.
     async open(check, path, viewport, deviceScaleFactor = 1, untilExit = false, permissions = [])
     {
@@ -211,8 +220,10 @@ class Session
         await page.goto(`${this.base}/${path}`, { waitUntil: 'commit' });
         try
         {
-            await page.waitForFunction(exit => window.gweniRun && (window.gweniRun.done || (!exit && window.gweniRun.frames >= 3)),
-                untilExit, { timeout: 300000, polling: 100 });
+            if(untilExit)
+                await page.waitForFunction(() => window.gweniRun && window.gweniRun.done, null, { timeout: 300000, polling: 100 });
+            else
+                await firstFrame(page);
         }
         catch(e)
         {
@@ -232,11 +243,11 @@ class Session
         return { page, context };
     }
 
-    // Waits until the page has drawn \a count more frames.
+    // Waits until the page has drawn \a count more frames, or settled
+    // (frames.mjs: the window's loop is idle, so a settled page draws none).
     async frames(page, count = 3)
     {
-        const now = await page.evaluate(() => window.gweniRun.frames);
-        await page.waitForFunction(target => window.gweniRun.frames >= target, now + count, { timeout: 60000, polling: 16 });
+        await settle(page, count);
     }
 
     // The canvas inside a rect (CSS px), as PNG bytes, kept under --out.
@@ -270,6 +281,44 @@ async function captureListing(page, control, size, scale)
     if(status !== 0)
         return null;
     return readFileSync(join(out, 'bounds.txt'), 'utf8');
+}
+
+// \a count more animation-frame callbacks after \a start (gweniRun's frames
+// and ticks then); the frames drawn meanwhile. A start read in the same
+// evaluate as an input or a post sees no tick between them.
+async function framesOverTicks(page, count, start = null)
+{
+    if(!start)
+        start = await page.evaluate(() => ({ frames: gweniRun.frames, ticks: gweniRun.ticks }));
+    await page.waitForFunction(target => gweniRun.ticks >= target, start.ticks + count, { timeout: 60000, polling: 16 });
+    return (await page.evaluate(() => gweniRun.frames)) - start.frames;
+}
+
+async function checkIdle(s)
+{
+    const opened = await s.open('idle', 'ControlTest.html?control=ButtonDemo', { width: 640, height: 480 + outputPanel });
+    if(!opened)
+        return;
+    const { page, context } = opened;
+    const idleFrames = await framesOverTicks(page, 30);
+    // the post and the counts it starts from in one task, between two ticks
+    const start = await page.evaluate(() => ({ frames: gweniRun.frames, ticks: gweniRun.ticks,
+        posted: Module.ccall('gweni_web_post', 'string', [], []) }));
+    const posted = start.posted;
+    const postFrames = await framesOverTicks(page, 30, start);
+    const afterFrames = await framesOverTicks(page, 30);
+
+    if(idleFrames !== 0)
+        fail('idle', `the settled page drew ${idleFrames} frame(s) over 30 ticks`);
+    else if(posted !== 'posted')
+        fail('idle', `gweni_web_post said "${posted}"`);
+    else if(postFrames !== 1)
+        fail('idle', `the post drew ${postFrames} frame(s) over the next 30 ticks, not 1`);
+    else if(afterFrames !== 0)
+        fail('idle', `${afterFrames} frame(s) were drawn over the 30 ticks after the post's`);
+    else
+        pass('idle', 'no frame over 30 idle ticks, one for a post, then none');
+    await context.close();
 }
 
 async function checkButton(s)
@@ -773,6 +822,7 @@ async function main()
     const controlPage = join(dir, 'ControlTest.html');
     try
     {
+        await checkIdle(s);
         await checkButton(s);
         await checkTyping(s);
         await checkClipboard(s);

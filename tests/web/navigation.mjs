@@ -62,6 +62,7 @@ import { readFileSync, statSync } from 'node:fs';
 import { dirname, extname, join, normalize, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { firstFrame, settle } from './frames.mjs';
 import { isSwiftShader, launchOptions, loadPlaywright } from './probe.mjs';
 
 const usage = 'usage: node navigation.mjs <dir holding OpenGLCore.html>';
@@ -164,8 +165,8 @@ class Session
         return context;
     }
 
-    // Loads \a path in \a page and waits until its window has drawn a few
-    // frames; false after a failure of the check.
+    // Loads \a path in \a page and waits until its window has drawn and
+    // settled (frames.mjs); false after a failure of the check.
     async load(check, page, path, reload = false)
     {
         if(!page.gweniWatched)
@@ -180,8 +181,7 @@ class Session
             await page.goto(`${this.base}${path}`, { waitUntil: 'commit' });
         try
         {
-            await page.waitForFunction(() => window.gweniRun && (window.gweniRun.done || window.gweniRun.frames >= 3),
-                null, { timeout: 300000, polling: 100 });
+            await firstFrame(page);
         }
         catch(e)
         {
@@ -202,11 +202,11 @@ class Session
         return false;
     }
 
-    // Waits until the page has drawn \a count more frames.
+    // Waits until the page has drawn \a count more frames, or settled
+    // (frames.mjs: the window's loop is idle, so a settled page draws none).
     async frames(page, count = 3)
     {
-        const now = await page.evaluate(() => window.gweniRun.frames);
-        await page.waitForFunction(target => window.gweniRun.frames >= target, now + count, { timeout: 60000, polling: 16 });
+        await settle(page, count);
     }
 
     // Waits until the shell shows \a name; its navigation state, or null.

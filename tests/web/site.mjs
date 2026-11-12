@@ -42,7 +42,8 @@
 //  WebGL 2 context on ANGLE's SwiftShader with at least 24 depth bits
 //  (run.mjs' conditions, through probe.mjs' launchOptions), write nothing to
 //  stderr (the page shows it in its #output panel, under the canvas) and its
-//  canvas must not be one colour after 5 frames. On the scale=2 page it then
+//  canvas must not be one colour once it has drawn and settled (frames.mjs:
+//  the window's loop is idle, drawing only while it has work). On the scale=2 page it then
 //  picks SliderDemo, which must load controltest.html?control=SliderDemo&scale=2
 //  and draw it. Every link and image of every page that points into the site
 //  (relative URLs: the site is served from a subdirectory on GitHub Pages)
@@ -69,6 +70,7 @@ import { createServer } from 'node:http';
 import { mkdirSync, readFileSync, statSync } from 'node:fs';
 import { extname, join, normalize, resolve, sep } from 'node:path';
 
+import { settle } from './frames.mjs';
 import { isSwiftShader, launchOptions, loadPlaywright } from './probe.mjs';
 import { decodePng } from './png.mjs';
 
@@ -242,7 +244,7 @@ class Visit
         for(;;)
         {
             const state = await page.evaluate(() => window.gweniRun ? { done: gweniRun.done, frames: gweniRun.frames } : null);
-            if(state && (state.done || state.frames >= 5))
+            if(state && (state.done || state.frames >= 1))
                 break;
             if(visit.errors.length)
             {
@@ -256,6 +258,8 @@ class Visit
             }
             await new Promise(resolvePromise => setTimeout(resolvePromise, 100));
         }
+        // the window's loop is idle: it draws until it has nothing to do
+        await settle(page, 5, 300000);
         const run = await page.evaluate(() => ({ done: gweniRun.done, exitCode: gweniRun.exitCode, aborted: gweniRun.aborted,
             frames: gweniRun.frames, webgl: gweniRun.webgl, output: gweniRun.output.map(l => l.text),
             stderr: gweniRun.output.filter(l => l.stream === 'stderr').map(l => l.text) }));
@@ -359,11 +363,8 @@ class Visit
         const { page } = visit;
         const state = () => page.evaluate(() => Module.ccall('gweni_web_depth_view', 'string', ['number'], [-1]));
         const inUrl = () => new URL(page.url()).searchParams.has('depth-view');
-        const frames = async () =>
-        {
-            const now = await page.evaluate(() => gweniRun.frames);
-            await page.waitForFunction(target => gweniRun.frames >= target, now + 3, { timeout: 60000, polling: 16 });
-        };
+        // drawn and settled (frames.mjs: an idle page draws no more)
+        const frames = () => settle(page, 3);
         const run = await page.evaluate(() => ({ argv: gweniRun.argv,
             stdout: gweniRun.output.filter(l => l.stream === 'stdout').map(l => l.text) }));
         const first = await state();

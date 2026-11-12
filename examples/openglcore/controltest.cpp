@@ -11923,6 +11923,19 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *gweni_web_bounds_listing()
     return listing.c_str();
 }
 
+//! Posts to the window canvas (Canvas::post) a function that marks it for a
+//! frame (redraw()), as a callback of the page's own would: an idle page draws
+//! one frame for it. Returns "posted", or "no canvas" before the window has one.
+extern "C" EMSCRIPTEN_KEEPALIVE const char *gweni_web_post()
+{
+    if(!g_canvas || !g_canvas->post([]() {
+            if(g_canvas)
+                g_canvas->redraw();
+        }))
+        return "no canvas";
+    return "posted";
+}
+
 //! The keyboard-focused control's text (a Label's, which every TextBox is, or
 //! a CodeEditor's caret line), or an empty string if it has none.
 extern "C" EMSCRIPTEN_KEEPALIVE const char *gweni_web_focused_text()

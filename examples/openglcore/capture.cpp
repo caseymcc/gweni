@@ -265,10 +265,6 @@ platform::LoopOptions loopOptions()
 {
     platform::LoopOptions options;
 
-#if GWENI_EXAMPLE_WEBGL
-    // until the page tests wait for drawn frames, not for callbacks
-    options.mode=platform::LoopMode::Continuous;
-#endif
     options.verify=platform::LoopOptions::verifyFromEnvironment();
     return options;
 }
@@ -302,11 +298,16 @@ void runWindowLoop(const Context &ctx, controls::Canvas *canvas, renderer::Base 
     // input between them; the poll that applies a resize opens each callback.
     callbacks.drawFrame=std::move(frame);
     callbacks.afterIteration=[afterIteration](const platform::IdleLoop &loop) {
-        // how many frames the page has drawn, for whoever drives it (web/pre.js)
+        // how many frames the page has drawn and how many animation frames
+        // it has had, for whoever drives it (web/pre.js): an idle page's
+        // ticks go on while its frames stand still
         EM_ASM({
             if(typeof gweniRun !== 'undefined')
+            {
                 gweniRun.frames=$0;
-        }, (long)loop.frames());
+                gweniRun.ticks=$1;
+            }
+        }, (long)loop.frames(), (long)loop.ticks());
         if(afterIteration)
             afterIteration(loop);
     };

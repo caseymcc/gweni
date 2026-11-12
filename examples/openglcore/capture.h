@@ -205,9 +205,8 @@ void runWindowLoop(const Context &ctx, controls::Canvas *canvas, renderer::Base 
     const platform::LoopOptions &options, std::function<void()> frame,
     std::function<void(const platform::IdleLoop &)> afterIteration=nullptr);
 
-//! A window's loop options: idle (continuous in the browser, until its page
-//! tests wait on drawn frames rather than callbacks), with the verify mode
-//! when GWENI_IDLE_VERIFY=1.
+//! A window's loop options: idle, with the verify mode when
+//! GWENI_IDLE_VERIFY=1.
 platform::LoopOptions loopOptions();
 //! Reads --loop's value, argv[i+1], into \a options: idle or continuous.
 //! \return false, after one line naming the tool, for another or none.
