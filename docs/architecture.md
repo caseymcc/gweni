@@ -1153,8 +1153,8 @@ two programs and the draws. What follows describes both together:
     `nesw-resize`, `move`, `not-allowed`, `wait` or `pointer` for each `cursor::` kind;
   - the file dialogs: one line saying the web build has none, and `fileOpen`,
     `fileSave` and `folderOpen` return cancelled;
-  - the clipboard: an in-process buffer, so copy and paste work inside the page but
-    not with other programs, said once when it is first used;
+  - the clipboard: the browser's in the interactive page (see "The clipboard" below);
+    in a headless page capture an in-process buffer, said once when it is first used;
   - LCD text: no dual-source blending, so grayscale, with the one warning of "GLES
     tree" above.
 
@@ -2015,7 +2015,8 @@ two programs and the draws. What follows describes both together:
   `Base::onKeyPageUp`/`onKeyPageDown`), Ctrl+Left/Right (blanks, then a word of
   letters, digits, `'_'` and non-ASCII, or a run of punctuation, and line ends),
   typing (UTF-8), Backspace, Delete, Return (keeping the line's leading blanks up to
-  the caret) and Ctrl+C/X/V through `platform::getClipboardText`/`setClipboardText`.
+  the caret) and Ctrl+C/X/V through `platform::setClipboardText` and
+  `requestClipboardText` (see "The clipboard").
   A move puts the caret in view: its line through `scrollToItem` when the last
   layout left it out of view (a move inside the view lays nothing out), its column at
   once with a cell to spare.
@@ -3884,6 +3885,79 @@ first, `Demo::shownDemo()`) is the page shown: titled and stored at once, so a p
 replaces, with the URL left bare, which already names the start page. The status bar's "gweni on GitHub" link opens
 `Demo::LinkUrl` with `openUrl`. `web_navigation` (`tests/web/navigation.mjs`) checks all
 of it in Chromium on `OpenGLCore.html` and `demo.html`.
+
+## The clipboard (`platform.h`)
+
+`platform::getClipboardText()` and `setClipboardText()` are an in-process buffer
+unless the app installs a backend for the system's clipboard. A window's app does; a
+capture, a test and the bench do not, so what they paste never depends on the host.
+
+- **The backend.** `platform::setClipboardBackend(get, set, request)` replaces the
+  buffer: `get` and `set` answer `getClipboardText()` and `setClipboardText()`, and
+  `request`, if given, answers `requestClipboardText(reply)`, holding the reply and
+  calling it whenever the text arrives. An empty function keeps the buffer for that
+  call, and all three empty give the in-process clipboard back (a test that installs
+  a fake one does that on its way out: the state is process-global). With no backend,
+  or one without `request`, `requestClipboardText` answers inside the call, so a
+  scripted Ctrl+V still pastes in its keystroke.
+- **A paste is a request.** `TextBox::onPaste` and `CodeEditor::onPaste` ask
+  `requestClipboardText` and insert the text when it comes, as one paste step. The
+  reply holds the control's id, not a pointer: `controls::Base::getControlById(id)`
+  finds the live control, or null once it is deleted (`~Base` clears its entry, and
+  ids are never handed out again), so an answer for a box deleted meanwhile does
+  nothing. Copy and cut call `setClipboardText`, which is also what a Copy button calls
+  (TextBoxDemo has one): on the web from an input handler, whose user activation the
+  browser's write needs.
+- **Who installs it.** `input::GLFW3::useSystemClipboard(window)` (a header compiled
+  into the app; the library does not link GLFW) installs GLFW's
+  (`glfwGetClipboardString`, `glfwSetClipboardString`; an empty or non-text clipboard
+  pastes nothing, without a GLFW error line), and null gives the buffer back, before
+  the window is destroyed. The examples call it for the interactive window only:
+  `GlDevice::open` for a shown GL window and the Vulkan window
+  (`capture::DeviceOptions::systemClipboard`, which ControlTest's `--window-test`
+  turns off), undone by `destroyContext`. Another `input::GLFW3` app calls it once with
+  its window. On X11 the text is the `CLIPBOARD` selection: after a copy the window owns
+  it and serves other clients from `glfwPollEvents()`, which the window loop runs, and
+  loses it when it closes (the X11 rule). `clipboard_x11` (`tests/clipboardX11.cmake`)
+  holds both directions to another X client, `gweni_test_clipboard`
+  (`tests/x11/testClipboard.cpp`), with ControlTest's `--clipboard-test`, a script in a
+  shown GL window under Xvfb, and `--wait-clipboard-change`, which polls the window
+  until the other client has taken the selection.
+- **In a browser page** `useSystemClipboard` calls `platform::useBrowserClipboard(true)`
+  (`crossPlatform.cpp`'s `EM_JS` glue), so the interactive page has the browser's
+  clipboard and a headless page capture keeps the buffer. emscripten-glfw's own would
+  not do: its `glfwGetClipboardString` gives the text of the last paste event, and
+  gweni's Ctrl+V runs on keydown, before the browser fires that keystroke's paste, so it
+  would paste the clipboard as it was before; and its copy listener, finding no DOM
+  selection, writes `' '`. So gweni listens to `copy`, `cut` and `paste` itself, on
+  `window` in the capture phase, before emscripten-glfw's listeners on `document`, which
+  never see an event gweni takes (`stopImmediatePropagation`). emscripten-glfw leaves
+  Ctrl+C, X and V to the browser (no `preventDefault`), so the event follows gweni's
+  keydown in the same task:
+  - a copy or cut: `setClipboardText` records the text, and the event writes it
+    (`clipboardData.setData`, `preventDefault`). It also calls
+    `navigator.clipboard.writeText`, which is the write for a copy no event follows (a
+    button's click); in a keystroke both write the same text. A copy with nothing
+    recorded (no selection in the box) leaves the clipboard as it is;
+  - a paste: `requestClipboardText` holds the reply, and the paste event answers it with
+    the clipboard's text at that moment, before the next frame. With no paste event (a
+    paste from a click), a task later it reads `navigator.clipboard.readText()` if the
+    page may, and otherwise pastes nothing;
+  - a copy or paste for another element of the page (a text field, a selection of the
+    page's own text with the focus off the canvas) is left to the browser.
+
+  `getClipboardText()` there is the text last copied or pasted in the page.
+  `Module.gweniClipboard` keeps `writes` (the copy and cut events gweni wrote in) and
+  `answers` (how each paste was answered: `paste`, `readText` or `none`), which
+  `web_input`'s clipboard check reads: headless Chromium fires a native paste event for
+  Playwright's Ctrl+V. Cmd+C/V on a Mac reach no accelerator yet (gweni's are
+  Ctrl-only, #658).
+- **Ctrl+letter runs once.** emscripten-glfw also sends Ctrl+letter's letter as a char
+  event, right after its key event (native GLFW sends none), and
+  `Canvas::inputCharacter` ran the accelerator a second time, so on the web every
+  Ctrl+letter accelerator ran twice (a paste pasted twice, Ctrl+Z undid two steps).
+  `input::GLFW3::processCharEvent` drops a char that follows a Ctrl+letter press
+  (`tests/unit/clipboardBackend.cpp`).
 
 ## Missing resources: degraded, not fatal
 

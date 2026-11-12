@@ -150,12 +150,16 @@ What the browser does not have degrades, each said once on stderr (and in the
 output panel):
 
 - the file dialogs say they are unavailable and return cancelled;
-- the clipboard is in-process: copy and paste work inside the page, but not with
-  other programs;
 - LCD text needs dual-source blending, which WebGL 2 lacks, so text is grayscale.
 
 The mouse cursor is the canvas's CSS cursor (a text beam, a pointer, a resize
 arrow, ...), as the control under the mouse asks for it.
+
+The clipboard is the browser's: Ctrl+C, Ctrl+X and Ctrl+V in a text box copy to it
+and paste from it, and a Copy button (`platform::setClipboardText` from its click)
+writes it. A desktop window's clipboard is the system's in the same way. A capture,
+a headless page and the tests keep an in-process clipboard, so what they paste never
+depends on the machine's.
 
 The dependencies come from vcpkg's `wasm32-emscripten` triplet, with emsdk's own
 `Emscripten.cmake` chainloaded. `glew` and `glfw3` are left out on that
