@@ -1210,6 +1210,17 @@ public:
     virtual void policyResize(const Size &preferred, Dim dim);
     virtual void arrange(skin::Base *skin, Dim dim);
 
+    //! How many lines a wrapped internal::Text of `str` in `font` shows in a
+    //! parent `width` units wide inside its padding: text::wrapLines
+    //! (gweni/text/wrap.h), measuring through measureText(), so the same
+    //! measures as the Text's own wrap. For a control that needs the Text's
+    //! height before it is laid out (a VirtualList's item measurer, which
+    //! places the rows below it in the same pass).
+    int wrappedTextLines(const gweni::Font &font, const gweni::String &str, int width);
+    //! The height that wrapped Text lays out at: wrappedTextLines() times
+    //! measureLineHeight(font).
+    int wrappedTextHeight(const gweni::Font &font, const gweni::String &str, int width);
+
 protected:
     //! The width (Dim::X) or height (Dim::Y) of this control when its parent
     //! places it with dock None, from its requested size r, its preferred size

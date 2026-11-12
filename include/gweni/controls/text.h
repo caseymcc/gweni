@@ -10,6 +10,7 @@
 
 #include <gweni/platforms/baseRender.h>
 #include <gweni/controls/base.h>
+#include <gweni/text/wrap.h>
 
 namespace gweni
 {
@@ -173,24 +174,14 @@ public:
     bool readsParentLayout() const override { return m_wrap; }
     void policyResize(const Size &preferred, Dim dim) override;
 
-protected:
-
-    //! Splits s into words (each with its trailing space), "\n" tokens and,
-    //! when w > 0, pieces of words wider than w.
-    virtual void splitWords(const gweni::String &s, int w, std::vector<gweni::String> &elems);
-
 private:
 
-    //! A wrapped line: what it shows, and how many characters of m_string it
-    //! holds (the shown ones and the '\n' that ended it, if one did).
-    struct WrappedLine
-    {
-        gweni::String text;
-        int length;
-    };
+    //! A wrapped line of m_string (text::wrapLines).
+    using WrappedLine=text::WrappedLine;
 
     //! Breaks s into lines no wider than w ('\n' always breaks one), appended
-    //! to lines.
+    //! to lines: text::wrapLines, measuring in this Text's font through
+    //! measureText(), as Base::wrapText() does.
     void wrapLines(const gweni::String &s, int w, std::vector<WrappedLine> &lines);
 
     //! Makes m_wrapped the wrap of this string and font at w, wrapping again

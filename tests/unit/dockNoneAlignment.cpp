@@ -24,7 +24,7 @@ namespace
 {
 
 //! Rect as text, so a failed check prints both sides.
-std::string text(const Rect &r)
+std::string rectText(const Rect &r)
 {
     return "("+std::to_string(r.x)+", "+std::to_string(r.y)+", "+std::to_string(r.w)+", "+std::to_string(r.h)+")";
 }
@@ -137,16 +137,16 @@ TEST_CASE("dock None: each alignment is placed in the padded content box, margin
         Scene scene;
         controls::Base *control=scene.child(c.alignment);
         scene.settle();
-        CHECK(text(control->getBounds()) == text(Rect(c.position.x, c.position.y, 40, 20)));
+        CHECK(rectText(control->getBounds()) == rectText(Rect(c.position.x, c.position.y, 40, 20)));
     }
 
     Scene scene;
     controls::Base *control=scene.child(Alignment::Right|Alignment::Bottom);
     scene.settle();
-    CHECK(text(control->getBounds()) == text(Rect(150, 68, 40, 20)));
+    CHECK(rectText(control->getBounds()) == rectText(Rect(150, 68, 40, 20)));
     control->setAlignment(Alignment::Center);
     scene.settle();
-    CHECK(text(control->getBounds()) == text(Rect(78, 38, 40, 20)));
+    CHECK(rectText(control->getBounds()) == rectText(Rect(78, 38, 40, 20)));
 }
 
 TEST_CASE("dock None: an aligned child ignores the docked siblings and their order")
@@ -166,7 +166,7 @@ TEST_CASE("dock None: an aligned child ignores the docked siblings and their ord
             if(!before)
                 scene.docked(dock);
             scene.settle();
-            CHECK(text(right->getBounds()) == text(Rect(150, 68, 40, 20)));
+            CHECK(rectText(right->getBounds()) == rectText(Rect(150, 68, 40, 20)));
         }
     }
 }
@@ -177,34 +177,34 @@ TEST_CASE("dock None: an unaligned child keeps its requested position")
     controls::Base *control=scene.child(Alignment::Absolute);
     control->setPos(23, 17);
     scene.settle();
-    CHECK(text(control->getBounds()) == text(Rect(23, 17, 40, 20)));
+    CHECK(rectText(control->getBounds()) == rectText(Rect(23, 17, 40, 20)));
 
     // a second pass
     control->invalidate();
     scene.parent->invalidate();
     scene.settle();
-    CHECK(text(control->getBounds()) == text(Rect(23, 17, 40, 20)));
+    CHECK(rectText(control->getBounds()) == rectText(Rect(23, 17, 40, 20)));
 
     // the parent resized, and back
     scene.parent->setSize(300, 150);
     scene.settle();
-    CHECK(text(control->getBounds()) == text(Rect(23, 17, 40, 20)));
+    CHECK(rectText(control->getBounds()) == rectText(Rect(23, 17, 40, 20)));
     scene.parent->setSize(200, 100);
     scene.settle();
-    CHECK(text(control->getBounds()) == text(Rect(23, 17, 40, 20)));
+    CHECK(rectText(control->getBounds()) == rectText(Rect(23, 17, 40, 20)));
 
     // moveTo is a request too
     control->moveTo(31, 9);
     scene.settle();
-    CHECK(text(control->getBounds()) == text(Rect(31, 9, 40, 20)));
+    CHECK(rectText(control->getBounds()) == rectText(Rect(31, 9, 40, 20)));
 
     // aligned, then not: back where it asked, not where the alignment put it
     control->setAlignment(Alignment::Right|Alignment::Bottom);
     scene.settle();
-    CHECK(text(control->getBounds()) == text(Rect(150, 68, 40, 20)));
+    CHECK(rectText(control->getBounds()) == rectText(Rect(150, 68, 40, 20)));
     control->setAlignment(Alignment::Absolute);
     scene.settle();
-    CHECK(text(control->getBounds()) == text(Rect(31, 9, 40, 20)));
+    CHECK(rectText(control->getBounds()) == rectText(Rect(31, 9, 40, 20)));
 }
 
 TEST_CASE("dock None: a Menu opens where it was put, not at the canvas origin")

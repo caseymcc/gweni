@@ -6,6 +6,7 @@
 
 
 #include <gweni/controls/base.h>
+#include <gweni/text/wrap.h>
 #include <gweni/controls/label.h>
 #include <gweni/controls/canvas.h>
 #include <gweni/controls/menu.h>
@@ -2026,6 +2027,19 @@ void Base::measureCarets(const gweni::Font &font, const gweni::String &text, std
     if(!statsExcluded())
         ++g_measureTextCalls;
     getSkin()->getRenderer()->measureCarets(font, text, xs);
+}
+
+int Base::wrappedTextLines(const gweni::Font &font, const gweni::String &str, int width)
+{
+    std::vector<text::WrappedLine> lines;
+
+    text::wrapLines(str, width, [this, &font](const gweni::String &s) { return measureText(font, s).x; }, lines);
+    return static_cast<int>(lines.size());
+}
+
+int Base::wrappedTextHeight(const gweni::Font &font, const gweni::String &str, int width)
+{
+    return wrappedTextLines(font, str, width)*measureLineHeight(font);
 }
 
 void Base::render(skin::Base *skin)

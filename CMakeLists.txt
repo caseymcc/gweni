@@ -138,6 +138,8 @@ set(GWENI_SOURCES
     source/text/document.cpp
     include/gweni/text/undoStack.h
     source/text/undoStack.cpp
+    include/gweni/text/wrap.h
+    source/text/wrap.cpp
     include/gweni/uiTypes.h
     include/gweni/userData.h
     include/gweni/utility.h
