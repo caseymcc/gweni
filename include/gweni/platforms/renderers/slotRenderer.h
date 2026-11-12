@@ -643,6 +643,11 @@ public:
     //! first frame (as gweni_bench --clip-cull does) for a whole frame of either.
     bool clipCulling() const { return m_clipCulling; }
     void setClipCulling(bool cull) { m_clipCulling=cull; }
+    //! Whether the primitive slot's last draw, or the text run's last layout, was
+    //! culled, so it is out of the draws (until a hide, which leaves it out
+    //! anyway, or a draw that is not culled). Test hooks.
+    bool primitiveCulled(size_t primitiveId) const;
+    bool textRunCulled(size_t textId) const;
     //! A primitive chunk's ranges: a gap of fewer than kPrimitiveRangeGap hidden
     //! slots between two runs of slots that can show is drawn with them, and a
     //! chunk draws at most kMaxPrimitiveRanges ranges, the smallest gaps (the

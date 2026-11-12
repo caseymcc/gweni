@@ -1964,6 +1964,16 @@ void SlotRenderer::cullOutOfRangeQuad(size_t primitiveId, const gweni::Rect &rec
     }
 }
 
+bool SlotRenderer::primitiveCulled(size_t primitiveId) const
+{
+    return slotBit(m_clipCulledSlots, primitiveId);
+}
+
+bool SlotRenderer::textRunCulled(size_t textId) const
+{
+    return (textId < m_textRuns.size()) && m_textRuns[textId].culled;
+}
+
 void SlotRenderer::cullClippedQuad(size_t primitiveId)
 {
     Vertex *vertexes=&m_vertexes[primitiveId*4];
