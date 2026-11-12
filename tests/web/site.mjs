@@ -56,9 +56,9 @@
 //  the site lacks), a page that ends its run (the window exits) or draws no
 //  frames, a missing or wrong WebGL context, a window that writes to stderr, a
 //  blank canvas, a picker that does not show its control, a page without its
-//  built-from stamp, and a link into the site that is not there. It ends with "site.mjs: OK, every page loaded" when
-//  everything passed. --out keeps a screenshot of each page there, as a
-//  visitor sees it.
+//  built-from stamp, and a link into the site that is not there. It ends with
+//  "site.mjs: OK, every page loaded" when everything passed. --out keeps a
+//  screenshot of each page there, as a visitor sees it.
 //
 //  The size budget is tools/build_site.sh's own check (tools/site/sizes.mjs),
 //  which web_site_smoke runs before this (tests/web/site.cmake).
