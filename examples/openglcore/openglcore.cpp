@@ -752,7 +752,7 @@ int main(int argc, char *argv[])
 
     if(!startDemo.empty() && !demo->showDemo(startDemo))
     {
-        std::cerr<<"OpenGLCore: no such demo \""<<demoName<<"\"\nAvailable demos:\n";
+        std::cerr<<"OpenGLCore: no such demo \""<<startDemo<<"\"\nAvailable demos:\n";
         for(const gweni::String &name : demo->getDemoNames())
             std::cerr<<"  "<<name<<"\n";
 
