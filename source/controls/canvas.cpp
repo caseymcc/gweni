@@ -13,6 +13,7 @@
 #include <gweni/dragAndDrop.h>
 #include <gweni/controls/toolTip.h>
 #include <gweni/platforms/platform.h>
+#include <gweni/primitiveIds.h>
 
 #if GWENI_ANIMATE
 #include <gweni/anim.h>
@@ -212,7 +213,7 @@ void Canvas::renderCanvas()
     // the renderer's flush timed itself, inside this phase's time
     m_frameTimes.flushMicros=render->frameStats().flushMicros;
     m_frameTimes.renderMicros=platform::profileTimeMicros()-start;
-    rollExcludedReleases();
+    snapshotExcludedSlots();
 }
 
 void Canvas::renderPendingControls()
@@ -611,13 +612,13 @@ void Canvas::setScale(float f)
 bool ExcludedSlots::primitive(size_t id) const
 {
     return std::binary_search(m_heldPrimitives.begin(), m_heldPrimitives.end(), id)
-        || std::binary_search(m_releasedPrimitives.begin(), m_releasedPrimitives.end(), id);
+        || std::binary_search(m_gonePrimitives.begin(), m_gonePrimitives.end(), id);
 }
 
 bool ExcludedSlots::text(size_t id) const
 {
     return std::binary_search(m_heldTexts.begin(), m_heldTexts.end(), id)
-        || std::binary_search(m_releasedTexts.begin(), m_releasedTexts.end(), id);
+        || std::binary_search(m_goneTexts.begin(), m_goneTexts.end(), id);
 }
 
 namespace
@@ -639,19 +640,39 @@ void sortUnique(std::vector<size_t> &ids)
 
 }//namespace
 
-const ExcludedSlots &Canvas::excludedSlots()
+void Canvas::snapshotExcludedSlots()
 {
-    if(m_excludedSlotsValid)
-        return m_excludedSlots;
-    m_excludedSlotsValid=true;
-
     ExcludedSlots &slots=m_excludedSlots;
+    const std::vector<Base *> &roots=statsExcludedRoots();
+    const bool held=std::any_of(roots.begin(), roots.end(),
+        [this](Base *root) { return root->getCanvas() == this; });
+
+    // with no tool on the canvas, once the last snapshot held and cleared
+    // nothing there is nothing to keep
+    if(!held && slots.m_heldPrimitives.empty() && slots.m_heldTexts.empty()
+        && slots.m_gonePrimitives.empty() && slots.m_goneTexts.empty())
+        return;
+
+    // the last flush's held ids nobody has now: the slots this flush cleared
+    // (an id taken again is its new holder's), sorted as the held ids are
+    slots.m_gonePrimitives.clear();
+    slots.m_goneTexts.clear();
+    for(size_t id : slots.m_heldPrimitives)
+    {
+        if(!isPrimitiveIdLive(id))
+            slots.m_gonePrimitives.push_back(id);
+    }
+    for(size_t id : slots.m_heldTexts)
+    {
+        if(!isTextIdLive(id))
+            slots.m_goneTexts.push_back(id);
+    }
 
     slots.m_heldPrimitives.clear();
     slots.m_heldTexts.clear();
     // a flagged subtree inside another is walked twice; sortUnique drops the
     // repeats
-    for(Base *root : statsExcludedRoots())
+    for(Base *root : roots)
     {
         if(root->getCanvas() == this)
             appendHeldIds(root, slots.m_heldPrimitives, slots.m_heldTexts);
@@ -659,36 +680,8 @@ const ExcludedSlots &Canvas::excludedSlots()
     sortUnique(slots.m_heldPrimitives);
     sortUnique(slots.m_heldTexts);
 
-    slots.m_releasedPrimitives=m_excludedReleasedPrimitives;
-    slots.m_releasedTexts=m_excludedReleasedTexts;
-    sortUnique(slots.m_releasedPrimitives);
-    sortUnique(slots.m_releasedTexts);
-    return slots;
-}
-
-void Canvas::excludedIdsReleased(const skin::Control *control)
-{
-    const size_t primitives=m_excludedReleasedPrimitives.size();
-    const size_t texts=m_excludedReleasedTexts.size();
-
-    control->appendIds(m_excludedReleasedPrimitives, m_excludedReleasedTexts);
-    if((m_excludedReleasedPrimitives.size() != primitives) || (m_excludedReleasedTexts.size() != texts))
-        m_excludedSlotsValid=false;
-}
-
-void Canvas::rollExcludedReleases()
-{
-    // the held ids too: the render phase gave the subtrees new ones
-    m_excludedSlotsValid=false;
-    if(m_excludedReleasedPrimitives.empty() && m_excludedReleasedTexts.empty())
-        return;
-
-    m_excludedReleasedPrimitives.erase(m_excludedReleasedPrimitives.begin(),
-        m_excludedReleasedPrimitives.begin()+m_releasedBeforePrimitives);
-    m_excludedReleasedTexts.erase(m_excludedReleasedTexts.begin(),
-        m_excludedReleasedTexts.begin()+m_releasedBeforeTexts);
-    m_releasedBeforePrimitives=m_excludedReleasedPrimitives.size();
-    m_releasedBeforeTexts=m_excludedReleasedTexts.size();
+    slots.m_livePrimitives=primitiveIdCount()-releasedPrimitiveIdCount();
+    slots.m_liveTexts=textIdCount()-releasedTextIdCount();
 }
 
 void Canvas::addDelayedDelete(controls::Base *control)

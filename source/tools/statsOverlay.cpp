@@ -581,13 +581,12 @@ void StatsOverlay::show(controls::Canvas *canvas)
         m_controls=countControls(canvas);
     }
 
-    // less every tool's on the canvas, an Inspector's too
+    // the live ids at the last flush less every tool's on the canvas, an
+    // Inspector's too
     const controls::ExcludedSlots &tools=canvas->excludedSlots();
-    const size_t livePrimitives=primitiveIdCount()-releasedPrimitiveIdCount();
-    const size_t liveTexts=textIdCount()-releasedTextIdCount();
 
-    m_shownPrimitiveIds=(livePrimitives > tools.heldPrimitives())?livePrimitives-tools.heldPrimitives():0;
-    m_shownTextIds=(liveTexts > tools.heldTexts())?liveTexts-tools.heldTexts():0;
+    m_shownPrimitiveIds=tools.appPrimitives();
+    m_shownTextIds=tools.appTexts();
 
     const Window &shown=m_shown;
     const struct { Row row; const TimeRange &range; } times[]=

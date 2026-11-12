@@ -178,11 +178,15 @@ struct CanvasFrameStats
     FrameTimes times;
 };
 
-//! The renderer ids a canvas's Base::setExcludedFromStats() subtrees (the
-//! tools: gweni::tools::Inspector, StatsOverlay) hold, or gave back in time
-//! for the last flush or since, so a tool reading renderer::Base's
+//! Who wrote a canvas's last flush, taken as that flush ended
+//! (Canvas::excludedSlots()): the renderer ids its Base::setExcludedFromStats()
+//! subtrees (the tools: gweni::tools::Inspector, StatsOverlay) held then, and
+//! those they held at the flush before that nobody held any more (the tools'
+//! slots this flush cleared), so a tool reading renderer::Base's
 //! writtenPrimitiveIds()/writtenTextIds() of the last frame takes every tool's
-//! slots out, not only its own (Canvas::excludedSlots()).
+//! slots out, not only its own. A slot written under any other id was the
+//! app's, an id a tool gave back and the app took again before the flush
+//! included.
 class GWENI_EXPORT ExcludedSlots
 {
 public:
@@ -190,18 +194,24 @@ public:
     bool primitive(size_t id) const;
     //! Whether a written glyph slot under text id \p id was a tool's.
     bool text(size_t id) const;
-    //! The ids the subtrees hold now: what the live id counts hold of the
-    //! tools'.
+    //! The ids the subtrees held at the flush.
     size_t heldPrimitives() const { return m_heldPrimitives.size(); }
     size_t heldTexts() const { return m_heldTexts.size(); }
+    //! The live ids at the flush less heldPrimitives()/heldTexts(): the app's.
+    size_t appPrimitives() const { return m_livePrimitives-m_heldPrimitives.size(); }
+    size_t appTexts() const { return m_liveTexts-m_heldTexts.size(); }
 
 private:
     friend class Canvas;
     //! each sorted, without repeats
     std::vector<size_t> m_heldPrimitives;
     std::vector<size_t> m_heldTexts;
-    std::vector<size_t> m_releasedPrimitives;
-    std::vector<size_t> m_releasedTexts;
+    //! of the flush before's held ids, those no longer live
+    std::vector<size_t> m_gonePrimitives;
+    std::vector<size_t> m_goneTexts;
+    //! every live id at the flush, the held ones among them
+    size_t m_livePrimitives=0;
+    size_t m_liveTexts=0;
 };
 
 class GWENI_EXPORT Canvas: public Base, public IInputEvent
@@ -361,21 +371,24 @@ public:
     /// setExcludedFromStats() change on a control on the canvas: a tool showing
     /// the tree rebuilds its view when it changes.
     unsigned treeSerial() const { return m_treeSerial; }
-    /// The ids of every setExcludedFromStats() subtree on this canvas (the
-    /// tools, and the ToolTip box while it is a tool's), for a tool reading
-    /// the renderer's written ids of the last frame in this frame's update
-    /// phase: those its subtrees hold now (a walk of each flagged subtree, made
-    /// by the first call in a frame and kept until the frame's flush, a
-    /// release, a setExcludedFromStats() change or a change of the tree on the
-    /// canvas: a control added, removed or moved, into or out of a flagged
-    /// subtree too, or a skin Control assigned or released), and those any of
-    /// them gave back (a control of one deleted, or its skin Control removed)
-    /// since the flush before the last one, whose slots that last flush, or
-    /// the next, clears under ids nobody holds. The releases are rolled as
-    /// renderCanvas() ends, so every reader of a frame sees the same record:
-    /// reading it uses nothing up. With no flagged control nothing is walked
-    /// or kept.
-    const ExcludedSlots &excludedSlots();
+    /// Who wrote the last flush, for a tool reading the renderer's written ids
+    /// of the last frame: a snapshot taken as renderCanvas() ends, after the
+    /// renderer's end(). A slot written in it is a tool's if its id was held
+    /// then by a setExcludedFromStats() subtree on this canvas (the tools, and
+    /// the ToolTip box while it is a tool's), or was held by one at the flush
+    /// before and is live no more (a tool's slot that flush cleared, however
+    /// the id was given back: a control deleted, a skin Control removed or one
+    /// shrinking its own slot list). Every other slot is the app's: an id a
+    /// tool gave back and the app took again, and a control a tool owns but
+    /// has not flagged (its popup). A flag or tree change counts from the next
+    /// flush, and the record stays as it is until then, so every reader sees
+    /// the same one, however often. One edge counts as the tool's: an id a
+    /// tool gave back that the app took and gave back again before the same
+    /// flush. The snapshot is taken only while a flagged subtree is on the
+    /// canvas or the last one held or cleared anything (a tool closed whole
+    /// owns what the next flush clears), so with no flagged control nothing is
+    /// walked or kept.
+    const ExcludedSlots &excludedSlots() const { return m_excludedSlots; }
     /// The highest z index the last renumber gave a control's range (its
     /// depth and overlay layers included), 0 before the first
     int highestZIndex() const { return m_zHigh; }
@@ -603,22 +616,10 @@ protected:
     std::set<controls::Base *> m_deleteSet;
     friend class controls::Base;
     void PreDeleteCanvas(controls::Base *);
-    /// Base's report that a control of a setExcludedFromStats() subtree on
-    /// this canvas gives back the ids \p control holds (see excludedSlots()).
-    void excludedIdsReleased(const skin::Control *control);
-    /// As renderCanvas() ends: the releases before the flush it just ran are
-    /// read in the next frame, those before the one before are forgotten.
-    void rollExcludedReleases();
+    /// As renderCanvas() ends, after the renderer's end(): excludedSlots() of
+    /// the flush just run.
+    void snapshotExcludedSlots();
     ExcludedSlots m_excludedSlots;
-    /// m_excludedSlots was built in this frame, and nothing was released, no
-    /// flag changed and the tree did not change since.
-    bool m_excludedSlotsValid=false;
-    /// What excludedIdsReleased() got, in order; the first m_releasedBefore*
-    /// entries came before the last flush.
-    std::vector<size_t> m_excludedReleasedPrimitives;
-    std::vector<size_t> m_excludedReleasedTexts;
-    size_t m_releasedBeforePrimitives=0;
-    size_t m_releasedBeforeTexts=0;
 
     /// renderCanvas's own pass, counted in LayoutStats::renderLayout.
     void renderPhaseLayout();

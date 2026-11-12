@@ -244,25 +244,11 @@ void Base::init(const String &name)
     m_updateLayout=true;
 }
 
-namespace
-{
-// Set while a control of a setExcludedFromStats() subtree is deleted, around
-// its children's deletion: they are the subtree's too, though the root has
-// stopped being one as its ~Base began.
-size_t g_excludedDeleting=0;
-}//namespace
-
 Base::~Base()
 {
     noteRenderWalkMutation(this, "~Base");
 
     Canvas *canvas=getCanvas();
-    // before the flag goes: its ids and its subtree's were a tool's, and the
-    // canvas's tools leave their cleared slots out (Canvas::excludedSlots())
-    const bool excludedRelease=canvas && ((g_excludedDeleting != 0) || statsExcluded());
-
-    if(excludedRelease && m_skinControl)
-        canvas->excludedIdsReleased(m_skinControl.get());
     // no longer a root statsExcluded() looks for
     setExcludedFromStats(false);
 
@@ -300,9 +286,6 @@ Base::~Base()
             shownOn->toolTipControlDeleted(this);
     }
 
-    if(excludedRelease)
-        ++g_excludedDeleting;
-
     Base::List::iterator iter=m_children.begin();
 
     while(iter != m_children.end())
@@ -311,8 +294,6 @@ Base::~Base()
         iter=m_children.erase(iter);
         delete child;
     }
-    if(excludedRelease)
-        --g_excludedDeleting;
 
     for(AccelMap::iterator accelIt=m_accelerators.begin();
         accelIt != m_accelerators.end();
@@ -1972,13 +1953,9 @@ void Base::setExcludedFromStats(bool exclude)
         g_statsExcludedRootList.erase(std::find(g_statsExcludedRootList.begin(),
             g_statsExcludedRootList.end(), this));
     }
-    // what a tool counts of the tree (StatsOverlay's controls) changed with
-    // it, and which ids are the tools'
+    // what a tool counts of the tree (StatsOverlay's controls) changed with it
     if(Canvas *canvas=getCanvas())
-    {
         ++canvas->m_treeSerial;
-        canvas->m_excludedSlotsValid=false;
-    }
 }
 
 const std::vector<Base *> &Base::statsExcludedRoots()
@@ -2116,13 +2093,6 @@ void Base::removeSkinControl()
 {
     if(m_skinControl)
     {
-        // a new skin for a tool's control: its old ids were the tool's (a
-        // deleted control reported them as its ~Base began)
-        if((g_statsExcludedRoots != 0) && statsExcluded())
-        {
-            if(Canvas *canvas=getCanvas())
-                canvas->excludedIdsReleased(m_skinControl.get());
-        }
         m_skinControl->remove(m_skin->getRenderer(), this);
         m_skinControl=nullptr;
         zOrderChanged();
@@ -2258,9 +2228,6 @@ void Base::zOrderChanged()
     if(Canvas *canvas=getCanvas())
     {
         canvas->m_zOrderDirty=true;
-        // a control (or a skin Control) taken into, out of or onto a flagged
-        // subtree: the tools' held ids are walked again at the next read
-        canvas->m_excludedSlotsValid=false;
         if(!statsExcluded())
             ++canvas->m_treeSerial;
     }
@@ -2282,9 +2249,6 @@ void Base::zChildRemoved()
     if(Canvas *canvas=getCanvas())
     {
         canvas->m_zOrderDirty=true;
-        // a control (or a skin Control) taken into, out of or onto a flagged
-        // subtree: the tools' held ids are walked again at the next read
-        canvas->m_excludedSlotsValid=false;
         if(!statsExcluded())
             ++canvas->m_treeSerial;
     }
