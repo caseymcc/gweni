@@ -195,7 +195,9 @@ public:
     void refreshItem(size_t index);
 
     //! Scrolls as little as puts the item fully in view: to its top if it is
-    //! above the viewport, to its bottom if below. It is resolved by the next
+    //! above the viewport, to its bottom if below; an item at least as tall
+    //! as the viewport (variable mode) to its top, so calling it again on the
+    //! item changes nothing. It is resolved by the next
     //! layout, with the viewport that layout gives, so it may be called before
     //! the first one (an app restoring a position) or in the frame of a resize;
     //! until then getVerticalScrollOffset() is the old offset.

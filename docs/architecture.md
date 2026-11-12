@@ -1916,7 +1916,9 @@ two programs and the draws. What follows describes both together:
   amount no longer the one the list last showed) included, so the edit keeps it.
   `scrollToItem` measures the items from the anchor down to its item, or down to the
   viewport's bottom when it is further, before it decides whether the item is in view:
-  estimates would say an item shows that does not. So an item above the top changing height, items inserted or removed above it, and an
+  estimates would say an item shows that does not. An item at least as tall as the
+  viewport (a long wrapped line) goes to its top, never its bottom, so a second call
+  on it changes nothing. So an item above the top changing height, items inserted or removed above it, and an
   estimate refined into a measure move the offset and the thumb, never a row on
   screen. **Edits** (`insertItems(at, n)`, `removeItems(at, n)`, `setItemCount`,
   `itemChanged(i)`, which measures that item again at once) cost O(log N) in the

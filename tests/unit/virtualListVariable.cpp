@@ -13,7 +13,8 @@
  *  the top, after an offset set by the app, a bar moved by the user, the
  *  wheel, scrollByRows (the anchor moved by whole items, its offset kept),
  *  scrollToItem below, above and inside the view (judged from the measures,
- *  not the estimates, of the items down to it), and at the end (the last
+ *  not the estimates, of the items down to it; an item at least as tall as
+ *  the viewport at its top, so a second call changes nothing), and at the end (the last
  *  item's bottom at the viewport's). A bar moved by the user before an edit
  *  (an insert, a removal or a new height above, the idle re-measure, an
  *  append) is the scroll the edit keeps; two scrollByRows before a layout
@@ -1122,6 +1123,55 @@ TEST_CASE("VirtualList variable: scrollToItem judges the view from measures, not
         checkView(s);
         REQUIRE(s.list->rowForItem(target) != nullptr);
         CHECK(s.list->rowForItem(target)->bottom() == s.list->getViewportHeight());
+    }
+    s.checkOnePass();
+}
+
+TEST_CASE("VirtualList variable: scrollToItem puts an item taller than the viewport at its top")
+{
+    Scene s(1000);
+    const controls::HeightIndex &index=s.list->getHeightIndex();
+    const size_t tall=5;
+
+    s.change(tall, 500);
+    s.frame();
+    REQUIRE(s.measured(tall) >= s.list->getViewportHeight());
+
+    // shown from its top, and a second and third call change nothing
+    auto check=[&]()
+        {
+            for(int call=0; call < 3; ++call)
+            {
+                s.list->scrollToItem(tall);
+                s.frame();
+                checkView(s);
+                CHECK(s.list->getAnchorItem() == tall);
+                CHECK(s.list->getAnchorOffset() == 0);
+                REQUIRE(s.list->rowForItem(tall) != nullptr);
+                CHECK(s.list->rowForItem(tall)->getY() == 0);
+            }
+        };
+
+    SUBCASE("from above, its top in view")
+    {
+        REQUIRE(s.list->rowForItem(tall) != nullptr);
+        REQUIRE(s.list->rowForItem(tall)->getY() > 0);
+        check();
+    }
+    SUBCASE("from below")
+    {
+        s.list->scrollToItem(600);
+        s.frame();
+        REQUIRE(s.list->rowForItem(tall) == nullptr);
+        check();
+    }
+    SUBCASE("from inside it")
+    {
+        s.list->setVerticalScrollOffset(static_cast<int>(index.offsetOf(tall))+150);
+        s.frame();
+        REQUIRE(s.list->getAnchorItem() == tall);
+        REQUIRE(s.list->getAnchorOffset() == 150);
+        check();
     }
     s.checkOnePass();
 }

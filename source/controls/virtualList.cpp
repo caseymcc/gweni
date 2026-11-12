@@ -260,6 +260,17 @@ void VirtualList::shiftItems(size_t at, int64_t count)
         else
             m_pendingItem-=removedEnd-at;
     }
+
+    // the idle re-measure goes on from the item it had reached
+    if(m_remeasureCursor >= at)
+    {
+        if(count > 0)
+            m_remeasureCursor+=static_cast<size_t>(count);
+        else if(m_remeasureCursor < removedEnd)
+            m_remeasureCursor=at;
+        else
+            m_remeasureCursor-=removedEnd-at;
+    }
 }
 
 void VirtualList::itemChanged(size_t index)
@@ -824,9 +835,11 @@ void VirtualList::placeVariable(size_t &first, size_t &end)
             m_anchorToEnd=false;
             m_anchorOffset=gweni::clamp(m_anchorOffset, 0, measureItem(m_anchorItem)-1);
 
-            if(item < m_anchorItem || (item == m_anchorItem && m_anchorOffset > 0))
+            if(item < m_anchorItem || (item == m_anchorItem && m_anchorOffset > 0)
+                || measureItem(item) >= viewport)
             {
-                // above the viewport's top: to its top
+                // above the viewport's top, or too tall to show whole: to its
+                // top, so a second call on it changes nothing
                 m_anchorItem=item;
                 m_anchorOffset=0;
             }
