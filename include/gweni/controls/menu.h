@@ -85,8 +85,10 @@ public:
     //! Where a menu of \p size opened at \p cursor goes in \p area: at the
     //! cursor, on its left where it would run past the right edge, above it
     //! where it would run past the bottom, then kept inside (keepInside()):
-    //! against the left/top edge where it fits on neither side.
-    static Point placement(const Point &cursor, const Point &size, const Rect &area);
+    //! against the left/top edge where it fits on neither side. \p leftward,
+    //! when given, is set to whether it went to the cursor's left.
+    static Point placement(const Point &cursor, const Point &size, const Rect &area,
+        bool *leftward=nullptr);
     //! \p pos moved the least that puts a \p size rect inside \p area; at
     //! the area's left/top edge where it is wider/higher than the area.
     static Point keepInside(const Point &pos, const Point &size, const Rect &area);

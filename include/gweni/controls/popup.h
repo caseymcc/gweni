@@ -24,7 +24,11 @@ enum class PopupPlacement
     //! Right of the anchor, top edges aligned; on its left where it would run
     //! past the right edge, bottom edges aligned where it would run past the
     //! bottom.
-    Right
+    Right,
+    //! Left of the anchor, top edges aligned: Right mirrored. On its right
+    //! where it would run past the left edge, bottom edges aligned where it
+    //! would run past the bottom.
+    Left
 };
 
 //! A panel the canvas shows over everything else next to an anchor control
@@ -113,8 +117,13 @@ public:
     //! coordinates) inside \p area, \p gap units off it: see PopupPlacement,
     //! then kept inside the area (Menu::keepInside). A zero-size anchor is a
     //! point: Menu::placement is this at the cursor with no gap.
+    //!
+    //! \p leftward, when given, is set to whether it went left of where its
+    //! side starts it, decided by the side and its flip before it is kept
+    //! inside the area: a Right flipped to the anchor's left, a Left that
+    //! stayed there, a Below right-aligned with the anchor.
     static Point placement(const Rect &anchor, const Point &size, const Rect &area,
-        PopupPlacement side, int gap=Gap);
+        PopupPlacement side, int gap=Gap, bool *leftward=nullptr);
 
     //! The anchor's canvas rect, a zero-size one at the origin with no anchor.
     Rect anchorRect() const;

@@ -153,9 +153,11 @@ Point Menu::canvasPosition(const Rect &area)
 
 // The cursor is a zero-size anchor: below it, flipped to its left and above
 // it, with no gap.
-Point Menu::placement(const Point &cursor, const Point &size, const Rect &area)
+Point Menu::placement(const Point &cursor, const Point &size, const Rect &area,
+    bool *leftward)
 {
-    return Popup::placement(Rect(cursor.x, cursor.y, 0, 0), size, area, PopupPlacement::Below, 0);
+    return Popup::placement(Rect(cursor.x, cursor.y, 0, 0), size, area, PopupPlacement::Below, 0,
+        leftward);
 }
 
 Point Menu::keepInside(const Point &pos, const Point &size, const Rect &area)

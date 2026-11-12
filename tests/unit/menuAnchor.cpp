@@ -22,7 +22,12 @@
  *  the items' drawn rects. Those run with layout verification on and off (its full pass
  *  would put a lagging menu right before the checks). A submenu opens to the
  *  right of its item, its top at the item's top, and on the item's left where
- *  the canvas's right edge leaves it no room.
+ *  the canvas's right edge leaves it no room. Popup::placement's Left mirrors
+ *  Right (on the anchor's left, on its right where the area's left edge leaves
+ *  no room, bottom-aligned at the bottom), and its leftward out-parameter says
+ *  which side each placement took, before it was kept inside the area: a Right
+ *  flipped, a Left kept, a Below right-aligned, a context menu flipped to the
+ *  cursor's left (#573).
  *
  *  openMenu() anchors the menu to its item (Menu::openNextTo, self-placed on
  *  the canvas at the size the canvas gives a menu it places) until the menu
@@ -394,6 +399,98 @@ TEST_CASE("Menu anchor: a submenu opens on its item's left where the canvas's ri
         // left of its parent menu, over at most its padding
         CHECK(submenu->getX() < scene.file->getMenu()->getX());
         checkSettled(scene);
+    }
+}
+
+TEST_CASE("Menu anchor: Popup::placement Left mirrors Right, and says which side each placement went")
+{
+    using controls::Popup;
+    using controls::PopupPlacement;
+
+    const Rect area(0, 0, 400, 300);
+    const Point size(80, 50);
+    const int gap=Popup::Gap;
+    bool leftward=false;
+
+    // placed with leftward set true and false first, so it must be written
+    auto place=[&](const Rect &anchor, const Point &at, PopupPlacement side)
+    {
+        bool fromFalse=false;
+
+        leftward=true;
+        Popup::placement(anchor, at, area, side, gap, &fromFalse);
+        const Point pos=Popup::placement(anchor, at, area, side, gap, &leftward);
+        CHECK(leftward == fromFalse);
+        return pos;
+    };
+    auto same=[](const Point &a, const Point &b) { return a.x == b.x && a.y == b.y; };
+
+    // left of the anchor, top edges aligned
+    CHECK(same(place(Rect(200, 30, 60, 20), size, PopupPlacement::Left), Point(200-gap-80, 30)));
+    CHECK(leftward);
+    // no room on the left: on the right
+    CHECK(same(place(Rect(40, 30, 60, 20), size, PopupPlacement::Left), Point(40+60+gap, 30)));
+    CHECK_FALSE(leftward);
+    // exactly room on the left: stays there
+    CHECK(same(place(Rect(80+gap, 30, 60, 20), size, PopupPlacement::Left), Point(0, 30)));
+    CHECK(leftward);
+    // past the bottom: bottom edges aligned, on either side
+    CHECK(same(place(Rect(200, 270, 60, 20), size, PopupPlacement::Left), Point(200-gap-80, 290-50)));
+    CHECK(leftward);
+    CHECK(same(place(Rect(40, 270, 60, 20), size, PopupPlacement::Left), Point(40+60+gap, 290-50)));
+    CHECK_FALSE(leftward);
+    // room on neither side: on the right, kept inside against the right edge;
+    // leftward is the side taken, not the position kept inside
+    CHECK(same(place(Rect(10, 100, 380, 20), Point(390, 50), PopupPlacement::Left), Point(400-390, 100)));
+    CHECK_FALSE(leftward);
+    // an area not at the origin: its left edge is area.x
+    {
+        const Rect inner(100, 100, 200, 200);
+
+        leftward=true;
+        CHECK(same(Popup::placement(Rect(150, 120, 20, 20), size, inner, PopupPlacement::Left, gap, &leftward),
+            Point(150+20+gap, 120)));
+        CHECK_FALSE(leftward);
+        leftward=false;
+        CHECK(same(Popup::placement(Rect(250, 120, 20, 20), size, inner, PopupPlacement::Left, gap, &leftward),
+            Point(250-gap-80, 120)));
+        CHECK(leftward);
+    }
+
+    // Right: on the right is not leftward, flipped to the left is
+    CHECK(same(place(Rect(20, 30, 60, 20), size, PopupPlacement::Right), Point(20+60+gap, 30)));
+    CHECK_FALSE(leftward);
+    CHECK(same(place(Rect(300, 30, 60, 20), size, PopupPlacement::Right), Point(300-gap-80, 30)));
+    CHECK(leftward);
+    // room on neither side: flipped, kept inside at the left edge, still leftward
+    CHECK(same(place(Rect(10, 100, 380, 20), Point(390, 50), PopupPlacement::Right), Point(0, 100)));
+    CHECK(leftward);
+
+    // Below: left-aligned is not leftward, above it neither, right-aligned is
+    CHECK(same(place(Rect(20, 30, 60, 20), size, PopupPlacement::Below), Point(20, 30+20+gap)));
+    CHECK_FALSE(leftward);
+    CHECK(same(place(Rect(20, 260, 60, 20), size, PopupPlacement::Below), Point(20, 260-gap-50)));
+    CHECK_FALSE(leftward);
+    CHECK(same(place(Rect(350, 30, 40, 20), size, PopupPlacement::Below), Point(390-80, 30+20+gap)));
+    CHECK(leftward);
+    CHECK(same(place(Rect(350, 260, 40, 20), size, PopupPlacement::Below), Point(310, 260-gap-50)));
+    CHECK(leftward);
+
+    // without the out-parameter, the same places
+    CHECK(same(Popup::placement(Rect(200, 30, 60, 20), size, area, PopupPlacement::Left), Point(200-gap-80, 30)));
+    CHECK(same(Popup::placement(Rect(300, 30, 60, 20), size, area, PopupPlacement::Right), Point(300-gap-80, 30)));
+
+    // a context menu at the cursor: leftward exactly when flipped to its left
+    for(const Point &cursor : {Point(10, 20), Point(350, 20), Point(10, 280), Point(390, 290)})
+    {
+        CAPTURE(cursor.x);
+        CAPTURE(cursor.y);
+        bool menuLeftward=cursor.x < 200;
+        const Point at=controls::Menu::placement(cursor, size, area, &menuLeftward);
+
+        CHECK(same(at, controls::Menu::placement(cursor, size, area)));
+        CHECK(menuLeftward == (cursor.x+size.x > 400));
+        CHECK(menuLeftward == (at.x+size.x == cursor.x));
     }
 }
 

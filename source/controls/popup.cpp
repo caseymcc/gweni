@@ -147,11 +147,12 @@ void Popup::arrange(skin::Base *skin, Dim dim)
 }
 
 Point Popup::placement(const Rect &anchor, const Point &size, const Rect &area,
-    PopupPlacement side, int gap)
+    PopupPlacement side, int gap, bool *leftward)
 {
     const int right=area.x+area.w;
     const int bottom=area.y+area.h;
     Point pos;
+    bool left=false;
 
     if(side == PopupPlacement::Below)
     {
@@ -161,18 +162,41 @@ Point Popup::placement(const Rect &anchor, const Point &size, const Rect &area,
             pos.y=anchor.y-gap-size.y;
 
         if(pos.x+size.x > right)
+        {
             pos.x=anchor.x+anchor.w-size.x;
+            left=true;
+        }
     }
     else
     {
-        pos=Point(anchor.x+anchor.w+gap, anchor.y);
+        if(side == PopupPlacement::Left)
+        {
+            pos=Point(anchor.x-gap-size.x, anchor.y);
+            left=true;
 
-        if(pos.x+size.x > right)
-            pos.x=anchor.x-gap-size.x;
+            if(pos.x < area.x)
+            {
+                pos.x=anchor.x+anchor.w+gap;
+                left=false;
+            }
+        }
+        else
+        {
+            pos=Point(anchor.x+anchor.w+gap, anchor.y);
+
+            if(pos.x+size.x > right)
+            {
+                pos.x=anchor.x-gap-size.x;
+                left=true;
+            }
+        }
 
         if(pos.y+size.y > bottom)
             pos.y=anchor.y+anchor.h-size.y;
     }
+
+    if(leftward)
+        *leftward=left;
 
     return Menu::keepInside(pos, size, area);
 }
