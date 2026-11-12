@@ -225,9 +225,9 @@ if(TARGET ControlTest AND NOT EMSCRIPTEN)
     # input, a canvas resize and a scale round trip (both on Demo), a Window
     # dragged past its parent's edges, the tooltip box, the context menu, the
     # stats overlay, the depth view, the zoom panel, the node graph and a
-    # variable-height VirtualList and the code editor
+    # variable-height VirtualList, the code editor and the log view
     foreach(verify_scenario interaction resize scale clip tooltip context-menu stats-overlay
-            depth-view zoom-panel node-graph virtual-list-variable code-editor)
+            depth-view zoom-panel node-graph virtual-list-variable code-editor log-view)
         string(REPLACE "-" "_" verify_name "${verify_scenario}")
         add_test(NAME controltest_verify_layout_${verify_name}
             COMMAND $<TARGET_FILE:ControlTest> --headless --scenario ${verify_scenario}
@@ -296,6 +296,17 @@ if(TARGET ControlTest AND NOT EMSCRIPTEN)
     gweni_whole_app_test(controltest_code_editor 120
         COMMAND $<TARGET_FILE:ControlTest> --headless --scenario code-editor --require-one-pass
             --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/code-editor@VARIANT@
+        WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
+    # LogViewDemo's log at 1 000 and 100 000 events: appends while following
+    # write the rows and the bar alone, a wheel notch up detaches and appends
+    # then write no row slot, the jump button follows again, a replace above
+    # the viewport, a resize, an expand, a 3-row selection copied and
+    # scrolled off screen and back, and the cap while detached each touch only
+    # what they may, settled frames write nothing, and the pool and ids are the
+    # same at both counts
+    gweni_whole_app_test(controltest_log_view 120
+        COMMAND $<TARGET_FILE:ControlTest> --headless --scenario log-view --require-one-pass
+            --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/log-view@VARIANT@
         WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
 
     gweni_whole_app_test(controltest_virtual_list 120

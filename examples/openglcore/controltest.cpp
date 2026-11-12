@@ -142,7 +142,7 @@
  *                       data-table-virtual | hide-show | demo-labels |
  *                       plot-histogram | plot-lines | inspector |
  *                       stats-overlay | depth-view | zoom-panel |
- *                       node-graph | code-editor (see below)
+ *                       node-graph | code-editor | log-view (see below)
  *    --dump-bounds [<path>]
  *                       print the laid-out control tree as text: one line per
  *                       control, depth-first in child order, indented by depth,
@@ -704,6 +704,35 @@
  *                 its rows and numbers on screen hold, in one pass, and
  *                 change no pixel outside it; the demo gives every primitive
  *                 id back. Exits non-zero if any check is no.
+ *    log-view     LogViewDemo's log filled with 1 000 and then 100 000 events,
+ *                 the clock frozen, the demo's stream stopped and the idle
+ *                 re-measure off; at each count: 3 appends while following,
+ *                 a wheel notch up and 5 appends, a press on the jump button,
+ *                 then from the middle (scrollToRow) a replace 5 rows above
+ *                 the viewport, the canvas 120 units narrower and back, a
+ *                 press on a collapsed block's title and a second one, a click
+ *                 and a Shift+click selecting 3 plain rows and Ctrl+C, the
+ *                 view scrolled to the top and back to the same row, and the
+ *                 cap set to the row count with 10 appends (log-view-<N>.png
+ *                 at the end). One line
+ *                   log-view settled_1000=yes|no ... same_pool=yes|no
+ *                 reports the checks: every settled frame writes and changes
+ *                 nothing; following, the appends write the rows' and the
+ *                 bar's slots alone and the last row ends at the viewport's
+ *                 bottom; the wheel detaches (the jump button shown), and the
+ *                 appends then write no row slot, change no pixel outside the
+ *                 bar and the button and are counted on it; its press follows
+ *                 again; the replace changes no pixel in the viewport and
+ *                 moves the offset; the resize keeps the row at the top; the
+ *                 expand changes no pixel above the block or outside the log,
+ *                 and the collapse gives the frame back; Ctrl+C copies the 3
+ *                 rows' text joined by '\n'; at the top every row is marked
+ *                 selected as its row is, and back the selection shows again
+ *                 in the viewport byte for byte; the cap's drops move nothing outside
+ *                 the bar and the button; the pool, the controls and the ids
+ *                 the log holds are the same at both counts, and the demo
+ *                 gives every primitive id back. Exits non-zero if any check
+ *                 is no.
  *    virtual-list VirtualListDemo with its list at 1 000 and then 100 000
  *                 items, the clock frozen: a settled frame, a one-row scroll
  *                 from the top (scrollByRows) and a wheel notch over the list
@@ -1176,7 +1205,7 @@ static void printUsage(std::ostream &out)
          "                     | data-table-virtual | hide-show | demo-labels\n"
          "                     | plot-histogram | plot-lines | inspector\n"
          "                     | stats-overlay | depth-view | zoom-panel\n"
-         "                     | node-graph | code-editor;\n"
+         "                     | node-graph | code-editor | log-view;\n"
          "                     resize prints listing_settled, mirror_settled,\n"
          "                     shrink_settled and fresh_matches, interaction one\n"
          "                     yes/no per repaint check, typing its keyboard\n"
@@ -2146,7 +2175,7 @@ static bool runSteps(Session &s, const std::vector<Step> &steps, const std::stri
 //-----------------------------------------------------------------------------
 enum class Scenario { None, PerControl, Resize, Docked, Scroll, Interaction, Typing, Clip, TextSize, Scale,
     ToolTip, ContextMenu, Popup, VirtualList, VirtualListVariable, DataTableVirtual, HideShow, DemoLabels, PlotHistogram,
-    PlotLines, Inspector, Theme, StatsOverlay, DepthView, ZoomPanel, NodeGraph, CodeEditor };
+    PlotLines, Inspector, Theme, StatsOverlay, DepthView, ZoomPanel, NodeGraph, CodeEditor, LogView };
 
 static bool parseScenario(const std::string &name, Scenario &scenario)
 {
@@ -2176,6 +2205,7 @@ static bool parseScenario(const std::string &name, Scenario &scenario)
     else if(name == "zoom-panel") scenario=Scenario::ZoomPanel;
     else if(name == "node-graph") scenario=Scenario::NodeGraph;
     else if(name == "code-editor") scenario=Scenario::CodeEditor;
+    else if(name == "log-view") scenario=Scenario::LogView;
     else return false;
     return true;
 }
@@ -10351,6 +10381,447 @@ static bool runVirtualListVariableScenario(Session &s, const std::string &shotDi
 }
 
 //-----------------------------------------------------------------------------
+// --scenario log-view: LogViewDemo's log filled with 1 000 and then 100 000
+// events, the clock frozen (the demo streams nothing) and the idle re-measure
+// off, so no frame measures off screen. Each input is one frame, held to the
+// part of the view it may touch by the ids it writes and the pixels it
+// changes: appends while following (the rows and the bar), a wheel notch up
+// (detached: appends then write the bar and the jump button alone), the jump
+// button (following again), a replace above the viewport (no pixel in it), a
+// canvas resize (the anchor row where it was), a block expanded (that row and
+// the rows below it), three rows selected and copied, the selection scrolled
+// off screen and back (the same pixels), and the cap dropping rows while
+// detached (nothing on screen moving). Every settled frame writes and changes
+// nothing, the pool and the ids the view holds are the same at both counts,
+// and the demo gives every primitive id back.
+//-----------------------------------------------------------------------------
+
+namespace
+{
+
+struct LogViewRun
+{
+    size_t count=0;
+    size_t rows=0;
+    size_t subtree=0;
+    size_t prims=0;
+    size_t texts=0;
+};
+
+}//namespace
+
+static size_t settleLogView(Session &s)
+{
+    std::vector<uint8_t> pixels;
+
+    return settleCodeEditor(s, pixels);
+}
+
+// The ids of the pooled rows' subtrees, and of the bar's.
+static void logRowIds(gweni::controls::LogView *log, std::set<size_t> &prims, std::set<size_t> &texts)
+{
+    for(gweni::controls::Base *row : log->getRows())
+        subtreeIds(row, prims, texts);
+}
+
+static bool logAtEnd(gweni::controls::LogView *log)
+{
+    gweni::controls::Base *last=log->rowControl(log->lastRowId());
+
+    return last && last->getY()+last->getHeight() == log->getViewportHeight();
+}
+
+// A press in the middle of a row's text, below a block's title line.
+static gweni::Point logRowPoint(gweni::controls::LogView *log, gweni::controls::LogView::RowId id)
+{
+    gweni::controls::Base *row=log->rowControl(id);
+
+    if(!row)
+        return gweni::Point(-1, -1);
+    return row->localPosToCanvas(gweni::Point(row->getWidth()/2, row->getHeight()-2));
+}
+
+static bool runLogViewCount(Session &s, const std::string &shotDir, size_t count, InteractionChecks &checks,
+    LogViewRun &run)
+{
+    using RowId=gweni::controls::LogView::RowId;
+
+    const size_t idsBefore=livePrimitiveIds();
+    gweni::controls::Base *control=addControl(s, "LogViewDemo");
+    auto *demo=gweni::gweni_cast<gweni::LogViewDemo>(control);
+
+    if(!demo || !demo->m_log)
+    {
+        std::cerr<<"ControlTest: log-view: LogViewDemo has no log\n";
+        return false;
+    }
+
+    gweni::controls::LogView *log=demo->m_log;
+    const std::string n=std::to_string(count);
+
+    s.label="LogViewDemo-"+n;
+    // the scenario's rows are its own: a press steps the clock (for a
+    // double-click), which the demo's stream would read
+    gweni::anim::cancel(demo);
+    log->setRemeasureBudget(0);
+    log->clear();
+    for(size_t i=0; i < count; ++i)
+        log->append(gweni::LogViewDemo::event(static_cast<long long>(i)));
+    renderFrames(s, s.frames);
+
+    run.count=count;
+    run.rows=log->getRows().size();
+    run.subtree=subtreeControls(log);
+    {
+        std::set<size_t> prims, texts;
+
+        subtreeIds(log, prims, texts);
+        run.prims=prims.size();
+        run.texts=texts.size();
+    }
+
+    gweni::controls::Base *bar=findControl(log, "VerticalScrollBar", 0);
+    const auto check=[&](const std::string &name, bool passed, const std::string &why)
+    {
+        checks.check(name+"_"+n, passed, why+" ("+n+" rows)");
+    };
+
+    // the keyboard is the log's from the start, so no press below changes
+    // its field's look
+    log->focus();
+    renderFrames(s, 1);
+    check("settled", settleLogView(s) == 0, "a settled frame wrote or changed something");
+    check("following", log->isFollowing() && logAtEnd(log), "the filled log does not follow its end");
+
+    // Appends while following: the rows and the bar alone, the last row at the
+    // bottom in the frame.
+    {
+        std::vector<uint8_t> before=framePixels(s);
+        std::set<size_t> prims, texts;
+
+        logRowIds(log, prims, texts);
+        if(bar)
+            subtreeIds(bar, prims, texts);
+        for(int i=0; i < 3; ++i)
+            log->append(gweni::LogViewDemo::event(static_cast<long long>(count)+i));
+
+        const CodeEditorFrame frame=codeEditorFrame(s);
+        const size_t outside=differencesOutsideRects(s, before, frame.pixels, {log->getCanvasBounds()});
+
+        // a row given a text of more lines makes line Texts: their ids are
+        // the rows' too
+        logRowIds(log, prims, texts);
+        check("follow_slots", frame.written > 0 && idsWithin(frame.primitives, prims) && idsWithin(frame.texts, texts)
+            && frame.passes <= 1, "an append while following wrote a slot outside the rows and the bar");
+        check("follow_end", logAtEnd(log), "the last row is not at the viewport's bottom in the append's frame");
+        check("follow_pixels", outside == 0, std::to_string(outside)+" pixels changed outside the log");
+        check("settled_follow", settleLogView(s) == 0, "a settled frame after the appends wrote something");
+    }
+
+    // A wheel notch up detaches; appends then write no row slot and move
+    // nothing on screen but the bar and the jump button.
+    {
+        const gweni::Rect bounds=log->getCanvasBounds();
+
+        moveMouse(s, bounds.x+bounds.w/3, bounds.y+bounds.h/2);
+        renderFrames(s, 1);
+        settleLogView(s);
+        scrollWheel(s, 60);
+        renderFrames(s, 1);
+        check("wheel_detaches", !log->isFollowing() && log->getJumpButton() && !log->getJumpButton()->hidden(),
+            "a wheel notch up did not detach the view and show the jump button");
+        check("settled_detached", settleLogView(s) == 0, "a settled detached frame wrote something");
+
+        gweni::controls::Base *jump=log->getJumpButton();
+        std::set<size_t> rowPrims, rowTexts, allowedPrims, allowedTexts;
+
+        logRowIds(log, rowPrims, rowTexts);
+        if(bar)
+            subtreeIds(bar, allowedPrims, allowedTexts);
+        if(jump)
+            subtreeIds(jump, allowedPrims, allowedTexts);
+
+        const std::vector<uint8_t> before=framePixels(s);
+        const gweni::Rect jumpBefore=jump?jump->getCanvasBounds():gweni::Rect();
+
+        for(int i=0; i < 5; ++i)
+            log->append(gweni::LogViewDemo::event(static_cast<long long>(count)+3+i));
+
+        const CodeEditorFrame frame=codeEditorFrame(s);
+        bool rowWritten=false;
+
+        for(size_t id : frame.primitives)
+            rowWritten=rowWritten || rowPrims.count(id);
+        for(size_t id : frame.texts)
+            rowWritten=rowWritten || rowTexts.count(id);
+
+        const size_t outside=differencesOutsideRects(s, before, frame.pixels,
+            {bar?bar->getCanvasBounds():gweni::Rect(), jumpBefore, jump?jump->getCanvasBounds():gweni::Rect()});
+
+        check("detached_slots", !rowWritten && idsWithin(frame.primitives, allowedPrims)
+            && idsWithin(frame.texts, allowedTexts) && frame.passes <= 1,
+            "an append while detached wrote a row's slot, or one outside the bar and the jump button");
+        check("detached_pixels", outside == 0,
+            std::to_string(outside)+" pixels changed outside the bar and the jump button");
+        check("jump_count", jump && jump->getValue() == gweni::controls::LogView::jumpText(5),
+            "the jump button does not count the 5 rows appended");
+        check("settled_detached_append", settleLogView(s) == 0, "a settled frame after the appends wrote something");
+
+        // the jump button follows again
+        if(jump)
+        {
+            const gweni::Rect at=jump->getCanvasBounds();
+
+            clickMouse(s, at.x+at.w/2, at.y+at.h/2);
+        }
+        renderFrames(s, 1);
+        check("jump_follows", log->isFollowing() && logAtEnd(log) && jump && jump->hidden(),
+            "the jump button did not follow the log again");
+        check("settled_jump", settleLogView(s) == 0, "a settled frame after the jump wrote something");
+    }
+
+    // Detached in the middle: a replace above the viewport changes no pixel
+    // in it.
+    const RowId middle=log->rowIdAt(log->getRowCount()/2);
+
+    log->scrollToRow(middle);
+    renderFrames(s, s.frames);
+    settleLogView(s);
+
+    const gweni::Rect view=viewportOnCanvas(log);
+    {
+        const std::vector<uint8_t> before=framePixels(s);
+        const int offset=log->getVerticalScrollOffset();
+        const RowId above=log->rowIdAt(log->rowPosition(middle)-5);
+
+        log->replace(above, gweni::controls::LogRow(log->rowText(above)+", now with a sentence or two more, so"
+            " that it takes more lines than it did at the log's width, and then some more"));
+        renderFrames(s, 1);
+        check("replace_above_still", differencesIn(s, before, framePixels(s), view) == 0
+            && log->getVerticalScrollOffset() != offset && log->rowControl(middle)
+            && log->rowControl(middle)->getY() == 0,
+            "a replace above the viewport changed a pixel in it, or moved no offset");
+        check("settled_replace", settleLogView(s) == 0, "a settled frame after the replace wrote something");
+    }
+
+    // A canvas resize keeps the anchor row at the top.
+    {
+        const gweni::Point size=s.size;
+        const RowId anchor=log->rowIdAt(log->getAnchorItem());
+
+        resizeSession(s, size.x-120, size.y);
+        renderFrames(s, s.frames);
+
+        const bool narrower=log->rowIdAt(log->getAnchorItem()) == anchor && log->rowControl(anchor)
+            && log->rowControl(anchor)->getY() == 0;
+
+        resizeSession(s, size.x, size.y);
+        renderFrames(s, s.frames);
+        check("resize_keeps_anchor", narrower && log->rowIdAt(log->getAnchorItem()) == anchor
+            && log->rowControl(anchor) && log->rowControl(anchor)->getY() == 0,
+            "a canvas resize moved the row at the top");
+        check("settled_resize", settleLogView(s) == 0, "a settled frame after the resize wrote something");
+    }
+
+    // A block expanded: that row and the rows below it on screen alone.
+    {
+        RowId block=gweni::controls::LogView::NoRow;
+
+        for(size_t i=log->getAnchorItem()+1; i < log->getRowCount() && log->rowForItem(i); ++i)
+        {
+            const gweni::controls::LogRow *row=log->getRow(log->rowIdAt(i));
+
+            if(row && row->kind == gweni::controls::LogRow::Block && row->collapsed
+                && row->lines.size() > log->getBlockPreviewLines())
+            {
+                block=log->rowIdAt(i);
+                break;
+            }
+        }
+
+        gweni::controls::Base *row=log->rowControl(block);
+
+        check("block_on_screen", row != nullptr, "no collapsed block on screen below the top row");
+        if(row)
+        {
+            const gweni::Rect rowRect=row->getCanvasBounds();
+            const int height=row->getHeight();
+            const gweni::Point title=row->localPosToCanvas(gweni::Point(
+                gweni::controls::LogView::RowPadX+gweni::controls::LogView::ChevronColumn+20,
+                gweni::controls::LogView::RowPadY+log->getLineHeight()/2));
+
+            // the mouse there first, so the frames compared hover the same
+            // control (the jump button the click on it left hovered)
+            moveMouse(s, title.x, title.y);
+            renderFrames(s, 1);
+            settleLogView(s);
+
+            const std::vector<uint8_t> before=framePixels(s);
+
+            clickMouse(s, title.x, title.y);
+
+            const CodeEditorFrame frame=codeEditorFrame(s);
+            const gweni::Rect below(view.x, rowRect.y, view.w, view.y+view.h-rowRect.y);
+            const size_t outside=differencesOutsideRects(s, before, frame.pixels,
+                {below, bar?bar->getCanvasBounds():gweni::Rect()});
+
+            check("expand_grows", !log->getRow(block)->collapsed && log->rowControl(block)
+                && log->rowControl(block)->getHeight() > height
+                && log->rowControl(block)->getCanvasBounds().y == rowRect.y,
+                "a press on the block's title did not expand it in place");
+            check("expand_pixels", outside == 0 && frame.passes <= 1,
+                std::to_string(outside)+" pixels changed above the block or outside the log");
+            check("settled_expand", settleLogView(s) == 0, "a settled frame after the expand wrote something");
+
+            clickMouse(s, title.x, title.y);
+            renderFrames(s, 1);
+            check("collapse_back", log->getRow(block)->collapsed && framePixels(s) == before,
+                "a second press did not give the collapsed block's frame back");
+            settleLogView(s);
+        }
+    }
+
+    // Three rows selected and copied; the selection scrolled off screen and
+    // back shows as it did.
+    {
+        size_t first=gweni::controls::VirtualList::NoItem;
+
+        for(size_t i=log->getAnchorItem()+1; i+2 < log->getRowCount(); ++i)
+        {
+            bool plain=true;
+
+            for(size_t k=0; k < 3; ++k)
+            {
+                const gweni::controls::LogRow *row=log->getRow(log->rowIdAt(i+k));
+
+                plain=plain && row && row->kind == gweni::controls::LogRow::Plain && log->rowForItem(i+k);
+            }
+            if(plain)
+            {
+                first=i;
+                break;
+            }
+        }
+        check("plain_rows_on_screen", first != gweni::controls::VirtualList::NoItem,
+            "no three plain rows on screen together");
+        if(first != gweni::controls::VirtualList::NoItem)
+        {
+            const RowId a=log->rowIdAt(first);
+            const RowId c=log->rowIdAt(first+2);
+            const gweni::Point at=logRowPoint(log, a);
+            const gweni::Point to=logRowPoint(log, c);
+
+            clickMouse(s, at.x, at.y);
+            renderFrames(s, 1);
+            glfwKey(s, GLFW_KEY_LEFT_SHIFT, GLFW_PRESS, GLFW_MOD_SHIFT);
+            clickMouse(s, to.x, to.y);
+            glfwKey(s, GLFW_KEY_LEFT_SHIFT, GLFW_RELEASE, 0);
+            renderFrames(s, 1);
+            gweni::platform::setClipboardText("");
+            sendKey(s, "ctrl+c");
+            renderFrames(s, 1);
+
+            const std::string expected=log->rowText(a)+"\n"+log->rowText(log->rowIdAt(first+1))+"\n"
+                +log->rowText(c);
+
+            check("copy_three", gweni::platform::getClipboardText() == expected,
+                "Ctrl+C gave \""+gweni::platform::getClipboardText()+"\", not the three rows' text");
+            check("settled_select", settleLogView(s) == 0, "a settled frame with the selection wrote something");
+
+            const std::vector<uint8_t> selected=framePixels(s);
+            const size_t anchor=log->getAnchorItem();
+            const int anchorOffset=log->getAnchorOffset();
+
+            // to the top (whose rows are measured there, moving every offset
+            // below them) and back to the same row at the top, by the heights
+            // as they are then; the bar's thumb is the new heights', so the
+            // viewport is compared
+            log->setVerticalScrollOffset(0);
+            renderFrames(s, s.frames);
+
+            // the rows the pool gave the top's rows are marked as their rows are
+            bool marks=true;
+
+            for(gweni::controls::Base *control : log->getRows())
+            {
+                auto *row=gweni::gweni_cast<gweni::controls::internal::LogViewRow>(control);
+                const size_t item=log->itemForRow(control);
+
+                if(row && !row->hidden() && item != gweni::controls::VirtualList::NoItem)
+                    marks=marks && row->isSelected() == log->isRowSelected(log->rowIdAt(item));
+            }
+            check("selection_off_screen", marks && !log->rowControl(a),
+                "a row shown at the top is marked selected otherwise than its row is");
+            log->setVerticalScrollOffset(static_cast<int>(log->getHeightIndex().offsetOf(anchor))+anchorOffset);
+            renderFrames(s, s.frames);
+            check("selection_back", differencesIn(s, selected, framePixels(s), view) == 0
+                && log->getAnchorItem() == anchor && log->rowControl(a) && log->rowControl(a)->isSelected(),
+                "the selection scrolled off screen and back does not show as it did");
+            settleLogView(s);
+        }
+    }
+
+    // The cap drops rows above while detached: nothing on screen moves.
+    {
+        gweni::controls::Base *jump=log->getJumpButton();
+        const std::vector<uint8_t> before=framePixels(s);
+        const gweni::Rect jumpBefore=jump?jump->getCanvasBounds():gweni::Rect();
+        const RowId firstBefore=log->firstRowId();
+
+        log->setMaxRows(log->getRowCount());
+        for(int i=0; i < 10; ++i)
+            log->append(gweni::LogViewDemo::event(static_cast<long long>(count)+100+i));
+        renderFrames(s, 1);
+
+        const size_t outside=differencesOutsideRects(s, before, framePixels(s),
+            {bar?bar->getCanvasBounds():gweni::Rect(), jumpBefore, jump?jump->getCanvasBounds():gweni::Rect()});
+
+        check("cap_still", !log->isFollowing() && log->firstRowId() == firstBefore+10 && outside == 0,
+            std::to_string(outside)+" pixels changed outside the bar and the jump button as the cap dropped rows");
+        check("settled_cap", settleLogView(s) == 0, "a settled frame after the cap's drop wrote something");
+        log->setMaxRows(0);
+    }
+
+    const bool shot=shoot(s, shotDir+"/log-view-"+n+".png");
+
+    forgetMouse(s);
+    dropControl(s, control);
+    renderFrames(s, 1);
+    check("ids_back", livePrimitiveIds() == idsBefore, "the demo did not give its primitive ids back");
+    return shot;
+}
+
+static bool runLogViewScenario(Session &s, const std::string &shotDir, bool &passed)
+{
+    s.freezeClock=true;
+
+    InteractionChecks checks;
+    checks.scenario="log-view";
+
+    LogViewRun small, large;
+    bool ok=runLogViewCount(s, shotDir, 1000, checks, small);
+
+    ok=runLogViewCount(s, shotDir, 100000, checks, large) && ok;
+    checks.check("same_pool", small.rows == large.rows && small.subtree == large.subtree
+        && small.prims == large.prims && small.texts == large.texts,
+        "the view holds "+std::to_string(large.rows)+" rows, "+std::to_string(large.subtree)+" controls, "
+        +std::to_string(large.prims)+" primitive and "+std::to_string(large.texts)+" text ids at 100 000 rows, "
+        +std::to_string(small.rows)+", "+std::to_string(small.subtree)+", "+std::to_string(small.prims)+" and "
+        +std::to_string(small.texts)+" at 1 000");
+
+    for(const LogViewRun *run : {&small, &large})
+        std::cout<<"log-view count="<<run->count<<" rows="<<run->rows<<" subtree="<<run->subtree
+                 <<" prim_ids="<<run->prims<<" text_ids="<<run->texts<<"\n";
+    std::cout<<"log-view";
+    for(const auto &result : checks.results)
+        std::cout<<" "<<result.first<<"="<<(result.second ? "yes" : "no");
+    std::cout<<"\n";
+
+    passed=checks.allPassed();
+    return ok;
+}
+
+//-----------------------------------------------------------------------------
 // --scenario data-table-virtual: DataTableVirtualDemo at 1 000 and 100 000
 // records
 //
@@ -12136,6 +12607,15 @@ int main(int argc, char *argv[])
             ok=runCodeEditorScenario(session, shotDir, passed);
             if(ok && !passed)
                 ok=false;   // an edit or a scroll touched more than its lines: a failing assertion
+            break;
+        }
+
+        case Scenario::LogView:
+        {
+            bool passed=false;
+            ok=runLogViewScenario(session, shotDir, passed);
+            if(ok && !passed)
+                ok=false;   // an append, a scroll or an edit touched more than it may: a failing assertion
             break;
         }
 
