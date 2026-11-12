@@ -7,6 +7,7 @@
 #ifndef _gweni_controls_logview_h_
 #define _gweni_controls_logview_h_
 
+#include <gweni/controls/button.h>
 #include <gweni/controls/label.h>
 #include <gweni/controls/virtualList.h>
 
@@ -122,6 +123,23 @@ private:
     std::vector<std::pair<int, Base *>> m_contents;
 };
 
+//! The "jump to latest" button a detached LogView shows over the bottom of
+//! its viewport, with the count of rows appended since it detached: a press
+//! follows the log again. It never takes the keyboard focus from the view.
+class GWENI_EXPORT LogViewJumpButton: public Button
+{
+public:
+    GWENI_CONTROL(LogViewJumpButton, Button);
+
+public:
+    void onPress(event::Info info) override;
+
+private:
+    friend class controls::LogView;
+
+    LogView *m_view=nullptr;
+};
+
 }//namespace internal
 
 //! An append-only log of wrapped rows, virtualized: a VirtualList in
@@ -151,6 +169,10 @@ public:
     static constexpr int ChevronColumn=14;
     //! The field's inset, inside its border.
     static constexpr int FieldPadding=2;
+    //! The jump button's gap above the viewport's bottom edge, and its
+    //! height over the line height.
+    static constexpr int JumpGap=6;
+    static constexpr int JumpPadY=8;
 
     //! Adds a row after the last one and returns its id. With a cap
     //! (setMaxRows) the oldest rows past it are dropped first.
@@ -166,7 +188,7 @@ public:
     //! until the next append.
     RowId prepend(const std::vector<LogRow> &rows);
     //! Removes every row. Ids go on from where they were.
-    void clear();
+    void clear() override;
 
     //! At most this many rows: an append drops the oldest past it. 0, the
     //! default, keeps every row.
@@ -235,6 +257,49 @@ public:
     //! A press on a block's chevron or title line toggles it.
     void onMouseClickLeft(int x, int y, bool down) override;
 
+    //! Following, every layout keeps the last row's bottom at the viewport's
+    //! bottom (VirtualList::setStickToEnd), appends included, in the frame
+    //! they are made. A scroll up detaches it: a wheel notch up, the bar's
+    //! thumb dragged or its arrows or track pressed above the end, Up,
+    //! PageUp, Home, scrollToRow() of a row above the last. Detached, appends
+    //! leave every row on screen where it is, and the jump button shows
+    //! over the bottom of the viewport with the count of rows appended since.
+    //! A press on it, End, scrollToRow() of the last row or a scroll down to
+    //! the end follows again and hides it. Following by default.
+    void setFollowing(bool follow);
+    bool isFollowing() const { return m_following; }
+    //! Rows appended since the view detached (0 while following).
+    size_t getRowsSinceDetached() const { return m_sinceDetached; }
+    //! The jump button, made the first time the view detaches; null before.
+    internal::LogViewJumpButton *getJumpButton() const { return m_jump; }
+    //! The label the jump button shows for a count of new rows.
+    static String jumpText(size_t newRows);
+    //! Scrolls the row into view (VirtualList::scrollToItem): the last row
+    //! follows the log, any other detaches it. False for a row the view
+    //! does not hold.
+    bool scrollToRow(RowId id);
+
+    bool onMouseWheeled(int delta) override;
+    //! The Y arrange reads a bar the user moved first (noteBarMove()).
+    void arrange(skin::Base *skin, Dim dim) override;
+    //! Up, Down, PageUp and PageDown scroll by a line and a page less a
+    //! line; Home goes to the first row, End follows the log.
+    bool onKeyUp(bool down) override;
+    bool onKeyDown(bool down) override;
+    bool onKeyPageUp(bool down) override;
+    bool onKeyPageDown(bool down) override;
+    bool onKeyHome(bool down) override;
+    bool onKeyend(bool down) override;
+
+    //! Following was turned on or off (by the user or setFollowing):
+    //! `integer` 1 or 0. It may be called from a layout pass (the bar's arrows
+    //! or track pressed), so a handler only reads the view and acts later.
+    gweni::event::Caller onFollowingChanged;
+
+protected:
+    void onVeritcalBarMoved(event::Info info) override;
+    void contentsPlaced(skin::Base *skin) override;
+
 private:
     struct Entry
     {
@@ -243,6 +308,18 @@ private:
     };
 
     friend class internal::LogViewRow;
+
+    //! Scrolls by delta units from where the view is (detaching it for a
+    //! scroll up, following again once it reaches the end).
+    void scrollByUnits(int delta);
+    //! Follows again when the offset is at the end.
+    void followIfAtEnd();
+    //! A bar the user moved since the last layout (m_shownAmount): at its
+    //! end the view follows, above it it detaches.
+    void noteBarMove();
+    //! Makes the jump button the first time; shows it with the count, or
+    //! hides it.
+    void updateJumpButton();
 
     void bindRow(Base *row, size_t position);
     int measureRow(size_t position, int width);
@@ -258,6 +335,9 @@ private:
     size_t m_previewLines=4;
     gweni::Font m_font;
     std::vector<std::pair<LogRow::Kind, RowKind>> m_kinds;
+    bool m_following=true;
+    size_t m_sinceDetached=0;
+    internal::LogViewJumpButton *m_jump=nullptr;
     //! getLineHeight()'s, and what it was measured with.
     int m_lineHeight=0;
     gweni::Font m_metricsFont;

@@ -341,7 +341,7 @@ TEST_CASE("LogView: replace re-binds the row on screen and edits above leave the
     scene.frame();
 
     // the middle of the log at the top of the viewport
-    scene.log->scrollToItem(60);
+    CHECK(scene.log->scrollToRow(60));
     scene.frame();
     scene.frame();
 

@@ -9,6 +9,7 @@
 #include <gweni/skin.h>
 
 #include <algorithm>
+#include <climits>
 
 namespace gweni
 {
@@ -91,6 +92,19 @@ void LogViewRow::arrangeVertical(skin::Base *skin)
             std::max(0, getHeight()-m_padding.top-m_padding.bottom));
 }
 
+GWENI_CONTROL_CONSTRUCTOR(LogViewJumpButton)
+{
+    setKeyboardInputEnabled(false);
+    setTabable(false);
+}
+
+void LogViewJumpButton::onPress(event::Info info)
+{
+    ParentClass::onPress(info);
+    if(m_view)
+        m_view->setFollowing(true);
+}
+
 }//namespace internal
 
 ///////////////////////////////////////////////////////////////////////////
@@ -127,16 +141,27 @@ GWENI_CONTROL_CONSTRUCTOR(LogView)
         });
     setRowBinder([this](Base *row, size_t position) { bindRow(row, position); });
     setItemMeasurer([this](size_t position, int width) { return measureRow(position, width); });
+
+    setKeyboardInputEnabled(true);
+    setStickToEnd(true);
 }
 
 LogView::RowId LogView::append(const LogRow &row)
 {
+    // a bar the user moved since the last layout is the scroll this keeps
+    noteBarMove();
     applyCap();
 
     const RowId id=m_nextId++;
 
     m_rows.push_back(Entry{id, row});
     insertItems(m_rows.size()-1, 1);
+
+    if(!m_following)
+    {
+        ++m_sinceDetached;
+        updateJumpButton();
+    }
     return id;
 }
 
@@ -147,6 +172,7 @@ bool LogView::replace(RowId id, const LogRow &row)
     if(position == NoItem)
         return false;
 
+    noteBarMove();
     m_rows[position].row=row;
     itemChanged(position);
     return true;
@@ -157,6 +183,7 @@ LogView::RowId LogView::prepend(const std::vector<LogRow> &rows)
     if(rows.empty())
         return NoRow;
 
+    noteBarMove();
     // rows[0], the oldest, gets the lowest id: below every one given so far
     const RowId first=m_lowestId-static_cast<RowId>(rows.size());
 
@@ -169,6 +196,10 @@ LogView::RowId LogView::prepend(const std::vector<LogRow> &rows)
 
 void LogView::clear()
 {
+    m_sinceDetached=0;
+    if(m_jump && !m_following)
+        updateJumpButton();
+
     if(m_rows.empty())
         return;
 
@@ -407,6 +438,206 @@ void LogView::onMouseClickLeft(int x, int y, bool down)
 
     if(row && row->kind == LogRow::Block && local.y < RowPadY+getLineHeight())
         toggleBlock(id);
+}
+
+void LogView::setFollowing(bool follow)
+{
+    if(m_following == follow)
+        return;
+
+    m_following=follow;
+    m_sinceDetached=0;
+    setStickToEnd(follow);
+    updateJumpButton();
+
+    event::Info info(this);
+
+    info.integer=follow?1:0;
+    onFollowingChanged.call(this, info);
+}
+
+String LogView::jumpText(size_t newRows)
+{
+    if(newRows == 0)
+        return "Jump to latest";
+    return "Jump to latest ("+std::to_string(newRows)+" new)";
+}
+
+void LogView::updateJumpButton()
+{
+    if(!m_jump)
+    {
+        if(m_following)
+            return;
+
+        // the view's own child, over the inner panel (which a new child
+        // would otherwise go into, and scroll with the rows)
+        Base *inner=m_innerPanel;
+        PartScope part;
+
+        m_innerPanel=nullptr;
+        m_jump=newChild<internal::LogViewJumpButton>();
+        m_innerPanel=inner;
+        m_jump->m_view=this;
+        m_jump->setPlacement(Placement::Owner);
+    }
+
+    m_jump->setHidden(m_following);
+    if(!m_following)
+        m_jump->setText(jumpText(m_sinceDetached));
+}
+
+bool LogView::scrollToRow(RowId id)
+{
+    const size_t position=rowPosition(id);
+
+    if(position == NoItem)
+        return false;
+
+    if(position+1 == m_rows.size())
+    {
+        setFollowing(true);
+        return true;
+    }
+
+    setFollowing(false);
+    scrollToItem(position);
+    return true;
+}
+
+void LogView::noteBarMove()
+{
+    const float amount=m_verticalScrollBar->getScrolledAmount();
+
+    if(amount == m_shownAmount[1])
+        return;
+
+    // at the end: follow; above it: detach
+    if(amount >= 1.0f)
+        setFollowing(true);
+    else
+        setFollowing(false);
+}
+
+void LogView::followIfAtEnd()
+{
+    if(!m_following && getVerticalScrollOffset() >= getMaxVerticalScrollOffset())
+        setFollowing(true);
+}
+
+void LogView::scrollByUnits(int delta)
+{
+    if(delta < 0)
+        setFollowing(false);
+    if(m_following)
+        return;
+
+    const int64_t offset=static_cast<int64_t>(getVerticalScrollOffset())+delta;
+
+    setVerticalScrollOffset(static_cast<int>(gweni::clamp<int64_t>(offset, 0, INT_MAX)));
+    followIfAtEnd();
+}
+
+// A notch up detaches before the list scrolls (stuck, it would scroll back
+// to the end); a notch down that reaches the end follows again.
+bool LogView::onMouseWheeled(int delta)
+{
+    const int before=getVerticalScrollOffset();
+
+    if(delta > 0 && before > 0)
+        setFollowing(false);
+
+    const bool used=ParentClass::onMouseWheeled(delta);
+
+    if(delta < 0)
+        followIfAtEnd();
+    return used;
+}
+
+bool LogView::onKeyUp(bool down)
+{
+    if(down)
+        scrollByUnits(-getLineHeight());
+    return true;
+}
+
+bool LogView::onKeyDown(bool down)
+{
+    if(down)
+        scrollByUnits(getLineHeight());
+    return true;
+}
+
+bool LogView::onKeyPageUp(bool down)
+{
+    if(down)
+        scrollByUnits(-std::max(getLineHeight(), getViewportHeight()-getLineHeight()));
+    return true;
+}
+
+bool LogView::onKeyPageDown(bool down)
+{
+    if(down)
+        scrollByUnits(std::max(getLineHeight(), getViewportHeight()-getLineHeight()));
+    return true;
+}
+
+bool LogView::onKeyHome(bool down)
+{
+    if(down && !m_rows.empty())
+    {
+        setFollowing(false);
+        scrollToItem(0);
+    }
+    return true;
+}
+
+bool LogView::onKeyend(bool down)
+{
+    if(down)
+        setFollowing(true);
+    return true;
+}
+
+// The thumb dragged (its arrows and track do not come here: contentsPlaced
+// sees them).
+void LogView::onVeritcalBarMoved(event::Info info)
+{
+    noteBarMove();
+    ParentClass::onVeritcalBarMoved(info);
+}
+
+// The bar moved by its arrows or its track since the last layout, which
+// nothing told the view of, is read before placeContents() takes it: above
+// the end it detaches the view, so the list does not put it back at the end.
+// What that changes (the stick, the jump button) is this pass's to lay out.
+void LogView::arrange(skin::Base *skin, Dim dim)
+{
+    if(dim == Dim::Y)
+    {
+        PlacementScope placement;
+
+        noteBarMove();
+    }
+    ParentClass::arrange(skin, dim);
+}
+
+// The jump button is placed over the bottom of the viewport, centred, measured
+// in X here when it was shown or relabelled after the X measuring.
+void LogView::contentsPlaced(skin::Base *skin)
+{
+    ParentClass::contentsPlaced(skin);
+
+    if(!m_jump || m_jump->hidden())
+        return;
+
+    m_jump->doCalculateSize(skin, Dim::X);
+
+    const Rect &viewport=getViewport();
+    const int width=std::min(viewport.w, m_jump->getPreferredSize().width);
+    const int height=getLineHeight()+JumpPadY;
+
+    placeChild(m_jump, viewport.x+(viewport.w-width)/2, viewport.y+viewport.h-height-JumpGap, width, height);
 }
 
 // The binder only sets the row's content: its text and colour, its padding,

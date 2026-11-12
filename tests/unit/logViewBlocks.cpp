@@ -198,7 +198,7 @@ TEST_CASE("LogView blocks: a press on the title line toggles the block and chang
     scene.frame();
 
     // the view a little past the top, block 25 on screen below a few rows
-    scene.log->scrollToItem(28);
+    CHECK(scene.log->scrollToRow(ids[22]));
     scene.frame();
     scene.log->setVerticalScrollOffset(scene.log->getVerticalScrollOffset()+3);
     scene.frame();
