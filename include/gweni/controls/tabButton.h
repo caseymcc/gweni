@@ -84,9 +84,16 @@ public:
 
     void updateColors() override;
 
+    //! A tab clips nothing: its text and its close button draw where they
+    //! are, over the strip's edge and the page frame (no Label clip rects).
     bool shouldClip() override
     {
         return false;
+    }
+
+    const gweni::Rect *getChildClipRect(const Base * /*child*/) const override
+    {
+        return nullptr;
     }
 
     //! The side of the close button's square, in units.

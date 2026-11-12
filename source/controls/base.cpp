@@ -1747,20 +1747,21 @@ void childRenderState(const Base *parent, const Base *child, const Point &offset
             childClip->h);
 }
 
-// One axis of the clip region a control's children are stamped with, worked
-// out up its ancestor chain in the coordinates of the ancestor reached. Each
-// clipRegionAt() of the drain keeps, on each axis, the largest lower edge and
-// the smallest upper edge it was given (an empty region at the largest lower
-// edge), so the order the ancestors narrow it in does not matter: \p low and
-// \p high are those edges so far, \p at the control's own lower edge, and
-// the control's two sizes give its two upper edges.
+// One axis of the clip region a child is stamped with, worked out up its
+// ancestor chain in the coordinates of the ancestor reached, for two rects
+// it may be clipped to (before and after a change). Each clipRegionAt() of
+// the drain keeps, on each axis, the largest lower edge and the smallest
+// upper edge it was given (an empty region at the largest lower edge), so the
+// order the ancestors narrow it in does not matter: \p low and \p high are
+// those edges so far, [oldLow, oldHigh) and [newLow, newHigh) the two rects'.
 struct ClipAxis
 {
     long long low;
     long long high;
-    long long at;
-    int oldSize;
-    int newSize;
+    long long oldLow;
+    long long oldHigh;
+    long long newLow;
+    long long newHigh;
 
     void narrow(long long from, long long to)
     {
@@ -1772,23 +1773,28 @@ struct ClipAxis
     {
         low+=by;
         high+=by;
-        at+=by;
+        oldLow+=by;
+        oldHigh+=by;
+        newLow+=by;
+        newHigh+=by;
     }
 
-    // Whether both sizes give the region the same extent on this axis, and
-    // will whatever the ancestors further up narrow it to: the upper edge so
-    // far is at or before the nearer of the control's two (it cuts both), or
-    // the farther one, cut, is at or before the lower edge (both empty).
+    // Whether both rects give the region the same extent on this axis, and
+    // so will whatever the ancestors further up narrow it to: both cut to the
+    // same interval, or both empty at the same lower edge.
     bool same() const
     {
-        if(oldSize == newSize)
+        if((oldLow == newLow) && (oldHigh == newHigh))
             return true;
 
-        const long long lower=std::max(low, at);
-        const long long nearer=at+std::min(oldSize, newSize);
-        const long long farther=at+std::max(oldSize, newSize);
+        const long long oldFrom=std::max(low, oldLow);
+        const long long oldTo=std::min(high, oldHigh);
+        const long long newFrom=std::max(low, newLow);
+        const long long newTo=std::min(high, newHigh);
 
-        return (high <= nearer) || (std::min(high, farther) <= lower);
+        if(oldFrom != newFrom)
+            return false;
+        return (oldTo == newTo) || ((oldTo <= oldFrom) && (newTo <= newFrom));
     }
 };
 }//namespace
@@ -1807,14 +1813,26 @@ bool Base::childRegionChanged(const Rect &oldBounds)
     if(!shouldClip())
         return false;
 
+    return clipRectRegionChanged(Rect(0, 0, oldBounds.w, oldBounds.h), Rect(0, 0, m_bounds.w, m_bounds.h));
+}
+
+bool Base::clipRectRegionChanged(const Rect &oldRect, const Rect &newRect) const
+{
     // The region it renders in narrowed as the render drain narrows it
     // (innerRenderState, childRenderState), from its parent up, stopping as
-    // soon as both sizes give the same region: no ancestor further up can
+    // soon as both rects give the same region: no ancestor further up can
     // make them differ again. Its canvas's children render in the canvas's
     // bounds; off any canvas, a region not settled by then is not known.
     const long long unbounded=std::numeric_limits<long long>::max()/4;
-    ClipAxis x{-unbounded, unbounded, m_bounds.x, oldBounds.w, m_bounds.w};
-    ClipAxis y{-unbounded, unbounded, m_bounds.y, oldBounds.h, m_bounds.h};
+    const long long x0=m_bounds.x, y0=m_bounds.y;
+    ClipAxis x{-unbounded, unbounded, x0+oldRect.x, x0+oldRect.x+oldRect.w, x0+newRect.x,
+        x0+newRect.x+newRect.w};
+    ClipAxis y{-unbounded, unbounded, y0+oldRect.y, y0+oldRect.y+oldRect.h, y0+newRect.y,
+        y0+newRect.y+newRect.h};
+
+    if(x.same() && y.same())
+        return false;
+
     const Base *child=this;
 
     for(Base *parent=m_actualParent; parent; child=parent, parent=parent->m_actualParent)

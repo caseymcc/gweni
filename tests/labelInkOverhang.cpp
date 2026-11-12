@@ -19,9 +19,12 @@
  *
  *  It also measures what a clip margin must be to show that ink: for each
  *  run, the fewest canvas units m for which [snap(x-m), snap(x+w+m)) holds
- *  every inked column. With GWENI_INK_SWEEP=1 in the environment it prints
- *  the most every size needed (per scale, mode and end) and how far the ink
- *  reached past the box in device px, left, right, above and below.
+ *  every inked column, which must be at most Label::inkMargin(size), the
+ *  margin the Label clips its Text with. With GWENI_INK_SWEEP=1 in the
+ *  environment it prints the most every size needed (per scale, mode and end)
+ *  and how far the ink reached past the box in device px, left, right, above
+ *  and below. On main before #571, where a Label clipped its Text at its
+ *  bounds, every size, scale and mode had runs whose ink it cut off.
  */
 #include <doctest/doctest.h>
 
@@ -322,10 +325,7 @@ std::vector<Result> sweepSize(Sweep &sweep, int size, const std::vector<String> 
 
 }//namespace
 
-// may_fail until the Label clips its Text with a margin (#571): today every
-// size, scale and mode has runs whose ink the Label cuts off
-TEST_CASE("Label ink: a Label sized to its text shows every inked pixel of its run"
-    * doctest::may_fail())
+TEST_CASE("Label ink: a Label sized to its text shows every inked pixel of its run")
 {
     SlotRenderer &renderer=gweni::test::gpuRenderer();
     RestoreTextAA restore;
@@ -383,6 +383,7 @@ TEST_CASE("Label ink: a Label sized to its text shows every inked pixel of its r
                     CAPTURE(glyph);
                     CAPTURE(w.failing);
                     CHECK(w.failing.empty());
+                    CHECK(w.margin <= gweni::controls::Label::inkMargin(float(size)));
                 }
             }
         }
@@ -429,6 +430,7 @@ TEST_CASE("Label ink: a Label sized to its text shows every inked pixel of its r
             if(std::get<1>(entry.first) == size)
                 margin=std::max(margin, entry.second.margin);
         }
-        std::printf("%2d px: %d (ceil(size/6) = %d)\n", size, margin, (size+5)/6);
+        std::printf("%2d px: %d (Label::inkMargin = %d)\n", size, margin,
+            gweni::controls::Label::inkMargin(float(size)));
     }
 }

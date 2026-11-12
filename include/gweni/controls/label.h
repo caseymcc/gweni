@@ -62,6 +62,7 @@ public:
     virtual void setFont(const gweni::Font &font)
     {
         m_text->setFont(font);
+        refreshChildClipRects();
     }
 
     virtual const gweni::Font &getFont() const
@@ -166,7 +167,34 @@ public:
 
     void onBoundsChanged(gweni::Rect oldChildBounds) override;
 
+    //! A Label does not clip its children as one: each is clipped to a rect
+    //! of its own (getChildClipRect()), the Label's bounds, but its Text,
+    //! while that lies wholly inside the Label, to the bounds widened by
+    //! inkMargin() on the left and the right. measureText() measures pens,
+    //! not ink, so a glyph's ink can reach past the Text's box (a leading
+    //! 'J', a trailing 'g' drawn at size*scale, LCD text's fringe); the
+    //! margin shows it, reaching into the neighbours' area as text does in
+    //! any toolkit, while text that does not fit (a Label narrower than its
+    //! text, a TextBox's scrolled text) is cut at the bounds as before. The
+    //! rects are kept, worked out when the Label's size or its Text's bounds
+    //! change, and a change marks the children whose region it changed. A
+    //! subclass that overrides shouldClip() or getChildClipRect() gives Label's
+    //! for the children it does not clip itself (TabButton clips none).
+    bool shouldClip() override { return false; }
+
+    const gweni::Rect *getChildClipRect(const Base *child) const override
+    {
+        return (child == m_text)?&m_textClip:&m_childClip;
+    }
+
+    //! How far, in canvas units, a Label lets the ink of its text in a font
+    //! of \p size px reach past the text's measured box on each side
+    //! (label.cpp says what it was measured from).
+    static int inkMargin(float size);
+
 protected:
+
+    void onChildBoundsChanged(gweni::Rect oldChildBounds, Base *child) override;
 
     virtual void onTextChanged() {}
 
@@ -185,6 +213,18 @@ protected:
     Alignment m_textAlignment=Alignment::Left|Alignment::CenterV;
 //    Alignment m_align;
 
+private:
+
+    //! Works the clip rects out again from the Label's size, its Text's
+    //! bounds and font, and marks (StateChange_Geometry) the subtree of
+    //! each child clipped to one of them whose region that changed.
+    void refreshChildClipRects();
+
+    //! What every child but the Text is clipped to: the bounds, {0, 0, w, h}
+    gweni::Rect m_childClip;
+    //! What the Text is clipped to: m_childClip, widened by inkMargin() on
+    //! both sides while the Text lies wholly inside it
+    gweni::Rect m_textClip;
 };
 
 

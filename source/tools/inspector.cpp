@@ -421,8 +421,23 @@ void Inspector::refreshDetails()
     setLine(m_details[PrimitivesLine], idList("primitive ids:", primitives));
     setLine(m_details[TextIdsLine], idList("text ids:", texts));
     setLine(m_details[PendingLine], String("pending: ")+(names.empty()?"none":names));
+    // a control that does not clip as one may clip its children to rects of
+    // its own (a Label's, getChildClipRect())
+    const char *clips=yesNo(control->shouldClip());
+
+    if(!control->shouldClip())
+    {
+        for(controls::Base *child : control->getChildren())
+        {
+            if(control->getChildClipRect(child))
+            {
+                clips="per child";
+                break;
+            }
+        }
+    }
     setLine(m_details[StateLine], format("hidden %s, visible %s, disabled %s, clips %s", yesNo(control->hidden()),
-        yesNo(control->visible()), yesNo(control->isDisabled()), yesNo(control->shouldClip())));
+        yesNo(control->visible()), yesNo(control->isDisabled()), clips));
 }
 
 void Inspector::select(controls::Base *control)

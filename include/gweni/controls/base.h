@@ -526,6 +526,12 @@ protected:
     //! a control may draw from that control's size unless its arrange gives
     //! it new bounds: a descendant's look follows its own bounds and state.
     bool childRegionChanged(const gweni::Rect &oldBounds);
+    //! Whether a child clipped to \p oldRect before and to \p newRect now
+    //! (getChildClipRect() rects, in this control's coordinates) renders in
+    //! another region, as the render drain works it out up the ancestors
+    //! (whose bounds and rects are the current ones): a control that works
+    //! its own rects out (a Label) marks the child's subtree when it does.
+    bool clipRectRegionChanged(const gweni::Rect &oldRect, const gweni::Rect &newRect) const;
     virtual void onChildBoundsChanged(gweni::Rect oldChildBounds, Base *child);
     //! A child's own hidden flag changed (its setHidden()).
     virtual void onChildHiddenChanged(Base * /*child*/) {}
@@ -574,11 +580,13 @@ public:
     //! new rect alone (childRegionChanged()), so its own new size need not
     //! mark it.
     virtual const gweni::Rect *getChildClipRect(const Base * /*child*/) const { return nullptr; }
-    //! Whether this control overrides getChildClipRect(). Such a rect is
-    //! worked out from the control's size (a viewport, a strip's row), so a
-    //! new size marks the whole subtree for the render walk (onBoundsChanged),
-    //! where any other control's marks it only if its children's region
-    //! changed.
+    //! Whether this control overrides getChildClipRect() and leaves the marks
+    //! to onBoundsChanged(). Such a rect is worked out from the control's
+    //! size (a viewport, a strip's row), so a new size marks the whole
+    //! subtree for the render walk (onBoundsChanged), where any other
+    //! control's marks it only if its children's region changed. A control
+    //! whose rects mark what they change themselves (Label, through
+    //! clipRectRegionChanged()) says false.
     virtual bool hasChildClipRects() const { return false; }
 
     //! Whether this control's children draw in a space of its own

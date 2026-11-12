@@ -9,6 +9,9 @@
 #include <gweni/controls/label.h>
 #include <gweni/platforms/commonPlatform.h>
 
+#include <algorithm>
+#include <cmath>
+
 namespace gweni
 {
 namespace controls
@@ -92,10 +95,70 @@ Rect Label::getCharacterPosition(int value)
 }
 
 // A wrapped m_text rebuilds its lines itself when it is laid out at a new
-// width (Text::arrange): the new bounds invalidate it as placement.
+// width (Text::arrange): the new bounds invalidate it as placement. The
+// children's clip rects follow the size.
 void Label::onBoundsChanged(Rect oldChildBounds)
 {
     ParentClass::onBoundsChanged(oldChildBounds);
+    refreshChildClipRects();
+}
+
+// Whether the Text lies wholly inside the Label follows its bounds.
+void Label::onChildBoundsChanged(Rect oldChildBounds, Base *child)
+{
+    ParentClass::onChildBoundsChanged(oldChildBounds, child);
+
+    if(m_text && (child == m_text))
+        refreshChildClipRects();
+}
+
+// Measured by tests/labelInkOverhang.cpp: OpenSans with every printable ASCII
+// glyph as the last (after 'A') and as the first (before one), at 8 to 24 px
+// and canvas scales 1, 1.25, 1.5, 1.75 and 2, grayscale and LCD text, drawn as
+// coverage and as SDF. The ink reached past the measured box by up to 4
+// device px (a leading glyph at 19-24 px times 1.75 and 2) and 3 on the right
+// (13-16 px times 2), and the fewest whole units that showed all of it, the
+// box's edges snapped, were 2 at 8-18 and 23 px and 3 at 19-22 and 24 px: about a twelfth
+// of the size (a glyph's overhang) and a unit for the anti-aliasing or LCD
+// fringe and the snapping.
+int Label::inkMargin(float size)
+{
+    return static_cast<int>(std::ceil(std::max(0.0f, size)/12.0f))+1;
+}
+
+void Label::refreshChildClipRects()
+{
+    if(!m_text)
+        return;
+
+    const Rect oldChild=m_childClip;
+    const Rect oldText=m_textClip;
+    const Rect &text=m_text->getBounds();
+
+    m_childClip=Rect(0, 0, m_bounds.w, m_bounds.h);
+    if((text.x >= 0) && (text.y >= 0) && (text.x+text.w <= m_bounds.w) && (text.y+text.h <= m_bounds.h))
+    {
+        const int margin=inkMargin(m_text->getFont().size);
+
+        m_textClip=Rect(-margin, 0, m_bounds.w+2*margin, m_bounds.h);
+    }
+    else
+        m_textClip=m_childClip;
+
+    // A subclass may clip its children otherwise (TabButton, none).
+    const bool childMarks=!(oldChild == m_childClip) && clipRectRegionChanged(oldChild, m_childClip);
+    const bool textMarks=!(oldText == m_textClip) && (getChildClipRect(m_text) == &m_textClip)
+        && clipRectRegionChanged(oldText, m_textClip);
+
+    if(textMarks)
+        m_text->addStateChangeRecursive(StateChange_Geometry);
+    if(!childMarks)
+        return;
+    for(Base *child:m_children)
+    {
+        if((child != m_text) && (getChildClipRect(child) == &m_childClip))
+            child->addStateChangeRecursive(StateChange_Geometry);
+    }
 }
 
 // The Label loads the font it creates and frees it in preDelete or the next

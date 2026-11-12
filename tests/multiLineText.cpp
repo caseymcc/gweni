@@ -8,11 +8,14 @@
  *  the widest line and every line's height, in a coverage font (11 px) as in
  *  an SDF one (20 px), at scales 1 and 1.5. The run is drawn again by itself,
  *  unclipped, at the Text's place, and every inked pixel of it must be inside
- *  the Text's box (in device px, snapped as the renderer snaps it), the
- *  Label's own frame must show that same ink (nothing of it clipped away by
- *  the Label), and the box must leave less than one line step of empty rows
- *  below the last line's ink. The line step is measureText("x\nx").y less
- *  lineHeight(), which must be more than 0.
+ *  the Text's box (in device px, snapped as the renderer snaps it), its
+ *  columns widened by the Label's ink margin (Label::inkMargin: pens are
+ *  measured, not ink), the Label's own frame must show that same ink, pixel
+ *  for pixel (nothing of it clipped away by the Label), and the box must leave
+ *  less than one line step of empty rows below the last line's ink. The line
+ *  step is measureText("x\nx").y less lineHeight(), which must be more than
+ *  0. One line of "Ag" at 10 px times 1.25, whose 'g' is drawn 2 device
+ *  columns past the box (#571), is held to the same.
  *
  *  At a scale, coverage text is drawn in the font at size*scale, whose line
  *  step (ascender less the descender truncated to whole px) is not the
@@ -21,8 +24,8 @@
  *  below the box unless renderText moves each line to the measured one's
  *  place (SlotRenderer::measuredPenShifts' lineShifts). The second case holds
  *  them to the same checks, in grayscale and, where the device blends it, LCD
- *  text, whose filter fringe a pixel left of the first glyph leaves the box
- *  with any number of lines, so there only the rows are checked.
+ *  text, whose filter fringe a pixel left of the first glyph is inside the
+ *  margin.
  *
  *  A size measured as SDF (18 px and up) has a line step rounded to a whole
  *  pixel at each px, so drawn at size*scale its lines are off the measured
@@ -197,10 +200,10 @@ Font openSansAt(float size)
 }
 
 //! An unwrapped Label holding \p text in \p font at \p scale: every inked pixel of
-//! its run inside its Text's box, less than a line step of empty rows below the
-//! last line's ink, and all of it shown. Without \p columns only the rows are
-//! checked.
-void checkLabel(float size, float scale, const String &text, bool columns=true)
+//! its run inside its Text's box, its columns widened by the ink margin, less
+//! than a line step of empty rows below the last line's ink, and all of it
+//! shown.
+void checkLabel(float size, float scale, const String &text)
 {
     CAPTURE(size);
     CAPTURE(scale);
@@ -227,9 +230,10 @@ void checkLabel(float size, float scale, const String &text, bool columns=true)
     renderer.setScale(scale);
 
     const Ink run=inkOf(runAlone(font, Point(box.x, box.y), text));
-    const int left=SlotRenderer::snap(float(box.x), scale);
+    const int margin=gweni::controls::Label::inkMargin(size);
+    const int left=SlotRenderer::snap(float(box.x-margin), scale);
     const int top=SlotRenderer::snap(float(box.y), scale);
-    const int right=SlotRenderer::snap(float(box.x+box.w), scale);
+    const int right=SlotRenderer::snap(float(box.x+box.w+margin), scale);
     const int bottom=SlotRenderer::snap(float(box.y+box.h), scale);
 
     REQUIRE(run.pixels > 50);
@@ -237,11 +241,8 @@ void checkLabel(float size, float scale, const String &text, bool columns=true)
     // every line's ink inside the box
     CHECK(run.y0 >= top);
     CHECK(run.y1 <= bottom);
-    if(columns)
-    {
-        CHECK(run.x0 >= left);
-        CHECK(run.x1 <= right);
-    }
+    CHECK(run.x0 >= left);
+    CHECK(run.x1 <= right);
 
     // and less than a line step of empty rows below the last line
     CHECK(bottom-run.y1 < step*scale);
@@ -249,12 +250,9 @@ void checkLabel(float size, float scale, const String &text, bool columns=true)
     // the Label shows all of it: nothing is clipped away
     CHECK(label.y0 == run.y0);
     CHECK(label.y1 == run.y1);
-    if(columns)
-    {
-        CHECK(label.x0 == run.x0);
-        CHECK(label.x1 == run.x1);
-        CHECK(label.pixels == run.pixels);
-    }
+    CHECK(label.x0 == run.x0);
+    CHECK(label.x1 == run.x1);
+    CHECK(label.pixels == run.pixels);
 }
 
 //! Every row of a run drawn by itself, from the top of its box (row 0, its
@@ -420,6 +418,9 @@ TEST_CASE("Multi-line text: an unwrapped Label's box holds every line it draws")
         for(float scale:{ 1.0f, 1.5f })
             checkLabel(size, scale, "ab\nlonger line\nc");
     }
+
+    // one line whose last glyph's ink, drawn at size*scale, ends past the box
+    checkLabel(10.0f, 1.25f, "Ag");
 }
 
 TEST_CASE("Multi-line text: at a scale, each coverage line is drawn where it is measured")
@@ -434,20 +435,17 @@ TEST_CASE("Multi-line text: at a scale, each coverage line is drawn where it is 
     RestoreTextAA restore;
 
     // in grayscale, and in LCD text where the device can blend it: its filter's
-    // fringe reaches a pixel left of the first glyph's, out of the box whether the
-    // run has one line or six, so only its rows are checked
+    // fringe reaches a pixel left of the first glyph's, inside the ink margin
     for(gweni::renderer::TextAA aa:{ gweni::renderer::TextAA::Grayscale, gweni::renderer::TextAA::LcdRGB })
     {
         renderer.setTextAA(aa);
         if(renderer.textAA() != aa)
             continue;
 
-        const bool columns=(aa == gweni::renderer::TextAA::Grayscale);
-
         CAPTURE(static_cast<int>(aa));
-        checkLabel(9.0f, 1.25f, lines, columns);
-        checkLabel(10.0f, 1.25f, lines, columns);
-        checkLabel(10.0f, 1.5f, lines, columns);
+        checkLabel(9.0f, 1.25f, lines);
+        checkLabel(10.0f, 1.25f, lines);
+        checkLabel(10.0f, 1.5f, lines);
     }
 }
 
