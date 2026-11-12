@@ -18,12 +18,25 @@ code { font: 13px monospace; color: #9ece6a; }
 header { display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
          padding: 8px 16px; background: #16161e; border-bottom: 1px solid #292e42; }
 header .name { font-weight: 600; color: #c0caf5; text-decoration: none; }
-header nav { display: flex; gap: 16px; margin-left: auto; }
+header nav { display: flex; gap: 16px; flex: 1 1 auto; justify-content: flex-end; }
 header label { color: #a9b1d6; }
 /* the commit the site was built from (tools/build_site.sh fills it in): small,
    and no taller than the header's row, so an app page's canvas keeps its height */
 .built-from { color: #565f89; font-size: 12px; line-height: 18px; white-space: nowrap; }
-header .built-from { align-self: center; }
+/* In the header it takes only the room the row has left: none of its width
+   counts where the header decides to wrap (width 0, the -16px giving back the
+   nav's gap before the links), and it grows into what the nav's row has spare.
+   A part that does not fit there wraps onto a second row that is never shown:
+   the words first (they come last in the row-reverse order), then the date (in
+   the commit's own row), the sha last, behind an empty first item so that it
+   goes whole too. */
+header .built-from { width: 0; flex: 1 0 auto; margin-right: -16px; align-self: center;
+                     display: flex; flex-flow: row-reverse wrap; height: 18px; overflow: hidden; }
+header .built-from .words { order: 1; white-space: pre; }
+header .built-from .commit { display: flex; flex-wrap: wrap; justify-content: flex-end;
+                             min-width: 0; height: 18px; overflow: hidden; padding-right: 16px; }
+header .built-from .commit::before { content: ''; height: 18px; }
+header .built-from .date { white-space: pre; }
 header input[type=checkbox] { accent-color: #7aa2f7; vertical-align: middle; margin: 0 4px 0 0; }
 select { background: #24283b; color: #c0caf5; border: 1px solid #414868; border-radius: 4px;
          padding: 3px 6px; font: inherit; }

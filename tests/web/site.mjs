@@ -47,9 +47,10 @@
 //  and draw it. Every link and image of every page that points into the site
 //  (relative URLs: the site is served from a subdirectory on GitHub Pages)
 //  must be there. Every page says which commit it was built from: one
-//  "built from <short sha>[-dirty] (<YYYY-MM-DD>)" stamp (or "built from
-//  unknown"), the sha a link to its commit, in index.html's footer and in the
-//  app pages' header (build_site.sh fills it in).
+//  "built from <short sha>[-dirty] (<YYYY-MM-DD>)" stamp (without the date
+//  where git could not read it, or "built from unknown"), the sha a link to its
+//  commit, in index.html's footer and in the app pages' header (build_site.sh
+//  fills it in).
 //
 //  It fails, one "site.mjs: FAIL: <page>: ..." line each, on any console error,
 //  uncaught exception, failed request or HTTP error status (a 404 for a file
@@ -209,7 +210,7 @@ class Visit
             return false;
         }
         const [stamp] = stamps;
-        const match = /^built from (?:([0-9a-f]{7})(?:-dirty)? \(\d{4}-\d{2}-\d{2}\)|unknown)$/.exec(stamp.text);
+        const match = /^built from (?:([0-9a-f]{7})(?:-dirty)?(?: \(\d{4}-\d{2}-\d{2}\))?|unknown)$/.exec(stamp.text);
         if(!match)
         {
             fail(visit.label, `its built-from stamp reads "${stamp.text}", not "built from <short sha> (<YYYY-MM-DD>)"`);

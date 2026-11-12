@@ -134,19 +134,26 @@ cp "$repo/docs/images/demo.png" "$out/images/"
 cp "$repo/LICENSE" "$out/licenses/LICENSE.txt"
 cp "$repo"/resources/*-LICENSE.txt "$out/licenses/"
 
-# the commit the site is built from: GITHUB_SHA in a workflow, else the checkout's
-# HEAD, with -dirty when the checkout has changes git does not ignore; its
+# the commit the site is built from: GITHUB_SHA in a workflow (a short one made
+# whole where git knows it), else the checkout's HEAD, with -dirty when the
+# checkout has changes git does not ignore, the staging dir's left out; its
 # commit date, not the build's, so two builds of one commit stage the same bytes
 sha="${GITHUB_SHA:-}"
 if [ -z "$sha" ]; then
     sha="$(git -C "$repo" rev-parse HEAD 2>/dev/null)" || sha=
+elif full="$(git -C "$repo" rev-parse --verify -q "$sha^{commit}" 2>/dev/null)"; then
+    sha="$full"
 fi
 date=
 dirty=
 if [ -n "$sha" ]; then
     date="$(git -C "$repo" show -s --format=%cs "$sha" 2>/dev/null)" || date=
+    staged=()
+    case "$out/" in
+        "$(realpath "$repo")"/*) staged=(":(exclude)$out") ;;
+    esac
     if [ "$(git -C "$repo" rev-parse HEAD 2>/dev/null)" = "$sha" ] &&
-       [ -n "$(git -C "$repo" status --porcelain 2>/dev/null)" ]; then
+       [ -n "$(git -C "$repo" status --porcelain -- . "${staged[@]}" 2>/dev/null)" ]; then
         dirty=-dirty
     fi
 fi
@@ -164,12 +171,15 @@ def fill(page, name, marker, text):
     return page.replace(marker, text)
 
 sha, date, dirty = os.environ['GWENI_SHA'], os.environ['GWENI_DATE'], os.environ['GWENI_DIRTY']
-if re.fullmatch('[0-9a-f]{7,64}', sha):
-    stamp = 'built from <a href="https://github.com/caseymcc/gweni/commit/%s">%s%s</a>' % (sha, sha[:7], dirty)
+# the words, the commit and its date in spans of their own: a header too narrow
+# for the whole stamp gives up the words, then the date, before the sha (site.css)
+if re.fullmatch('[0-9a-f]{40}|[0-9a-f]{64}', sha):
+    commit = '<a href="https://github.com/caseymcc/gweni/commit/%s">%s%s</a>' % (sha, sha[:7], dirty)
     if date:
-        stamp += ' (%s)' % html.escape(date)
+        commit += '<span class="date"> (%s)</span>' % html.escape(date)
+    stamp = '<span class="words">built from </span><span class="commit">%s</span>' % commit
 else:
-    stamp = 'built from unknown'
+    stamp = '<span class="commit">built from unknown</span>'
 
 options = []
 for line in os.environ['GWENI_CONTROLS'].splitlines():

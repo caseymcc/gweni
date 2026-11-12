@@ -434,10 +434,13 @@ out of memory (exit 137 or 143, or the runner lost) in 7 of 40 runs (#579). If
 Every page says which commit it was built from, `built from <short sha>
 (<commit date>)` linked to the commit: the landing page in its footer, the demo
 and the gallery in their header, on its one row, so the canvas keeps its
-height. `tools/build_site.sh` takes the sha from `GITHUB_SHA`, which the
-workflow passes into the container, or else from the checkout's `HEAD`, with
-`-dirty` when `git status --porcelain` shows changes (ignored files, the build
-trees and `site/`, do not count), and says `unknown` without git. The date is
+height. There it takes only the room the row has spare, so the header wraps at
+the widths it did without it: a narrower window drops the words "built from",
+then the date, then the sha. `tools/build_site.sh` takes the sha from
+`GITHUB_SHA`, which the workflow passes into the container, or else from the
+checkout's `HEAD`, with `-dirty` when `git status --porcelain` shows changes
+(ignored files, the build trees and `site/`, do not count, nor does an `--out`
+inside the checkout), and says `unknown` without git. The date is
 the commit's, not the build's, so two builds of one commit stage the same
 bytes. `site.mjs` fails a page without the stamp.
 
