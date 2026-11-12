@@ -11,7 +11,11 @@
  *  Open: shown below its anchor at its content's size, re-parented to the
  *  canvas, onOpen once; placed above at the bottom edge, beside and flipped,
  *  kept inside a canvas narrower than it, placed again when the canvas shrinks
- *  and grows back and when its anchor moves.
+ *  and grows back and when its anchor moves. A Top-docked sibling grown moves
+ *  the anchor's panel (a pure move, which lays out neither it nor the anchor):
+ *  the popup is at the anchor's new place in that frame, in one pass and with
+ *  no layout-verify difference, and the next frame lays out and writes
+ *  nothing (#574).
  *
  *  Closing: a left or right press outside it and its anchor (the press still
  *  reaches what it was on), Escape, the anchor hidden (through its parent) or
@@ -1127,4 +1131,63 @@ TEST_CASE("Popup: setOwner moves it between owners, null owns it by none")
     detached->setParent(nullptr);
     CHECK(!detached->createPopup());
     delete detached;
+}
+
+TEST_CASE("Popup: follows its anchor in the frame a sibling's layout moves it")
+{
+    const bool verify=controls::layoutVerifyEnabled();
+    const size_t verifyFailures=controls::layoutVerifyFailures();
+
+    // without verification too: its full pass would put a lagging follower
+    // right before the checks see it
+    for(bool verifying : {false, true})
+    {
+        CAPTURE(verifying);
+        controls::setLayoutVerify(verifying);
+
+        Scene scene;
+        controls::Base *top=scene.canvas->newChild<controls::Base>();
+
+        top->setDock(DockPosition::Top);
+        top->setSizeFlags({SizeFlag::Expand, SizeFlag::Fixed});
+        top->setHeight(20);
+
+        controls::Base *panel=scene.canvas->newChild<controls::Base>();
+
+        panel->setDock(DockPosition::Center);
+
+        controls::Button *anchor=panel->newChild<controls::Button>();
+
+        anchor->setText("Options");
+
+        Popup *popup=anchor->createPopup();
+
+        scene.box(0, 0, 80, 40, popup);
+        scene.frame();
+        popup->open(anchor);
+
+        for(int i=0; i < 3; ++i)
+            scene.frame();
+        REQUIRE(scene.canvas->getLayoutStats().passes == 0);
+        REQUIRE(scene.canvasRect(anchor).y == 20);
+        CHECK(popup->getY() == 20+anchor->getHeight()+Popup::Gap);
+
+        // a pure move of the panel: neither it nor the anchor is laid out,
+        // the popup is placed in the same pass
+        top->setHeight(60);
+        scene.frame();
+        REQUIRE(scene.canvasRect(anchor).y == 60);
+        CHECK(scene.canvas->getLayoutStats().passes == 1);
+        CHECK_FALSE(scene.canvas->getLayoutStats().renderLayout);
+        CHECK(popup->getX() == scene.canvasRect(anchor).x);
+        CHECK(popup->getY() == 60+anchor->getHeight()+Popup::Gap);
+
+        scene.frame();
+        CHECK(scene.canvas->getLayoutStats().passes == 0);
+        CHECK(scene.canvas->getLayoutStats().visited == 0);
+        CHECK(scene.renderer.frameStats().primitiveSlotsWritten == 0);
+        CHECK(scene.renderer.frameStats().textSlotsWritten == 0);
+    }
+    CHECK(controls::layoutVerifyFailures() == verifyFailures);
+    controls::setLayoutVerify(verify);
 }

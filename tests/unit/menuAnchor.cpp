@@ -12,9 +12,14 @@
  *  menu is open (an earlier item's text grown, the canvas resized under a
  *  strip on the right) has its menu at its new place on the next settled
  *  frame, each frame laying out in at most one pass, and a frame where nothing
- *  moved runs no layout pass and writes no slot. A submenu opens to the right
- *  of its item, its top at the item's top, and on the item's left where the
- *  canvas's right edge leaves it no room.
+ *  moved runs no layout pass and writes no slot. A Top-docked sibling grown
+ *  over the strip's panel moves it (a pure move, which lays out neither it nor
+ *  the strip): the open menu, and a submenu open under it, are at their items'
+ *  new places in that frame, in one pass and with no layout-verify
+ *  difference, and the next frame lays out and writes nothing (#574), at
+ *  canvas scales 1, 1.5 and 2. A submenu opens to the right of its item, its
+ *  top at the item's top, and on the item's left where the canvas's right
+ *  edge leaves it no room.
  *
  *  openMenu() anchors the menu to its item (Menu::openNextTo, self-placed on
  *  the canvas at the size the canvas gives a menu it places) until the menu
@@ -61,11 +66,18 @@ struct Scene
     //! In File's menu, with a submenu of its own.
     controls::MenuItem *recent=nullptr;
 
+    //! With belowTop, a 20-unit Base docked Top on the canvas, above the
+    //! strip's panel.
+    controls::Base *top=nullptr;
+
     //! A 400x300 canvas at \p scale with a strip of File and Edit, each with a
     //! menu, File's holding Recent, which has a submenu. With \p rightPanel the
     //! strip is in a 150-unit panel docked on the canvas's right, so its items
-    //! move with the canvas's width and sit near its right edge.
-    explicit Scene(float scale=1.0f, bool rightPanel=false)
+    //! move with the canvas's width and sit near its right edge. With
+    //! \p belowTop it is in a panel docked Center under a 20-unit Base docked
+    //! Top (top), so a new height of that Base moves the panel alone, a pure
+    //! move.
+    explicit Scene(float scale=1.0f, bool rightPanel=false, bool belowTop=false)
     {
         canvas=new controls::Canvas(&skin);
         canvas->setScale(scale);
@@ -79,6 +91,15 @@ struct Scene
             parent->setDock(DockPosition::Right);
             parent->setSizeFlags({SizeFlag::Fixed, SizeFlag::Expand});
             parent->setWidth(150);
+        }
+        else if(belowTop)
+        {
+            top=canvas->newChild<controls::Base>();
+            top->setDock(DockPosition::Top);
+            top->setSizeFlags({SizeFlag::Expand, SizeFlag::Fixed});
+            top->setHeight(20);
+            parent=canvas->newChild<controls::Base>();
+            parent->setDock(DockPosition::Center);
         }
 
         strip=parent->newChild<controls::MenuStrip>();
@@ -646,4 +667,74 @@ TEST_CASE("Menu anchor: deleting the anchor closes the menu and leaves nothing i
         scene.settle();
         REQUIRE(scene.canvas->anchoredMenus().size() == 2);
     }
+}
+
+TEST_CASE("Menu anchor: an open menu and submenu follow their item in the frame a sibling's layout moves it")
+{
+    const bool verify=controls::layoutVerifyEnabled();
+    const size_t verifyFailures=controls::layoutVerifyFailures();
+
+    // without verification too: its full pass would put a lagging follower
+    // right before the checks see it
+    for(bool verifying : {false, true})
+    {
+        CAPTURE(verifying);
+        controls::setLayoutVerify(verifying);
+
+        for(float scale : {1.0f, 1.5f, 2.0f})
+        {
+            for(bool submenu : {false, true})
+            {
+                CAPTURE(scale);
+                CAPTURE(submenu);
+
+                Scene scene(scale, false, true);
+                controls::Menu *menu=scene.file->getMenu();
+                controls::Menu *sub=scene.recent->getMenu();
+
+                scene.settle();
+                scene.file->openMenu();
+                scene.settle();
+
+                if(submenu)
+                {
+                    scene.recent->openMenu();
+                    scene.settle();
+                }
+
+                const Rect before=canvasRect(scene.file);
+
+                REQUIRE(before.y == 20);
+                CHECK_AT(menu, belowItem(scene.file));
+                checkSettled(scene);
+
+                // a pure move of the strip's panel: neither it nor the strip is
+                // laid out, the menus are placed in the same pass
+                scene.top->setHeight(60);
+                scene.frame();
+                REQUIRE(canvasRect(scene.file).y == 60);
+                CHECK(scene.canvas->getLayoutStats().passes == 1);
+                CHECK_FALSE(scene.canvas->getLayoutStats().renderLayout);
+                CHECK(menu->visible());
+                CHECK_AT(menu, belowItem(scene.file));
+
+                if(submenu)
+                {
+                    const Rect item=canvasRect(scene.recent);
+
+                    CHECK(sub->visible());
+                    CHECK(sub->getX() == item.x+item.w);
+                    CHECK(sub->getY() == item.y);
+                }
+
+                scene.frame();
+                CHECK(scene.canvas->getLayoutStats().passes == 0);
+                CHECK(scene.canvas->getLayoutStats().visited == 0);
+                CHECK(scene.renderer.frameStats().primitiveSlotsWritten == 0);
+                CHECK(scene.renderer.frameStats().textSlotsWritten == 0);
+            }
+        }
+    }
+    CHECK(controls::layoutVerifyFailures() == verifyFailures);
+    controls::setLayoutVerify(verify);
 }
