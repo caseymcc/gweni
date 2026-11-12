@@ -1682,8 +1682,8 @@ two programs and the draws. What follows describes both together:
   What it costs: an empty stack allocates nothing (its steps are a `std::vector`;
   libstdc++'s empty `std::deque` allocates a map and a 512-byte block), so a box
   costs only its three new accelerators at construction. That is about 15
-  allocations and 520 bytes per box, measured in `gweni_bench`'s `build` tree, which
-  holds N/4 TextBoxes. Typing adds about one allocation a frame (`type`: median 35 to
+  allocations and 780 bytes per box, measured in `gweni_bench`'s `build` tree, which
+  holds 3 TextBoxes in every 20 items (+2 250 allocations at N=1000). Typing adds about one allocation a frame (`type`: median 35 to
   36), for the records and for a new step's edit vector.
 
   One trap: the `gweni::text` namespace comes with every `textBox.h`. A file that
