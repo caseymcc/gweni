@@ -3383,8 +3383,8 @@ The mouse and the keys: left-drag orbits (0.4° a unit), right- or middle-drag p
 the mouse's device px, the wheel and W/S dolly (0.85 a notch, away from the user is in),
 the arrows and A/D move the camera 24 units, P switches perspective and orthographic, +
 and - space the labels 1.25 times further or closer, R resets (straight on, perspective,
-the default spacing, the highest z at its front-view size) and Escape closes it, as F9 does in the examples. The
-view opens at reset.
+the default spacing, the highest z at its front-view size) and Escape closes it, as F9
+does in the examples. The view opens at reset.
 
 **`--depth-view`** opens it once the first frame has numbered the z labels
 (`capture::openDepthViewOnce`, after each `updateCanvas()` in the apps' loops), so the
