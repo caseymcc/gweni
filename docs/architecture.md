@@ -1912,7 +1912,11 @@ two programs and the draws. What follows describes both together:
   keeps the offset the anchor last gave, and any other at the next layout (the bar, the
   wheel, `setVerticalScrollOffset`, `scrollToBottom`) was a scroll, anchored at its
   offset; `scrollToItem` and `scrollByRows` (by whole items) move the anchor itself.
-  So an item above the top changing height, items inserted or removed above it, and an
+  An edit between two layouts anchors such a scroll first, a bar the user moved (its
+  amount no longer the one the list last showed) included, so the edit keeps it.
+  `scrollToItem` measures the items from the anchor down to its item, or down to the
+  viewport's bottom when it is further, before it decides whether the item is in view:
+  estimates would say an item shows that does not. So an item above the top changing height, items inserted or removed above it, and an
   estimate refined into a measure move the offset and the thumb, never a row on
   screen. **Edits** (`insertItems(at, n)`, `removeItems(at, n)`, `setItemCount`,
   `itemChanged(i)`, which measures that item again at once) cost O(log N) in the
@@ -1929,7 +1933,7 @@ two programs and the draws. What follows describes both together:
   fits, `setAutoHideBars(false)`, given back on leaving it): otherwise a height measured
   in the pass could show or hide the bar, narrow the rows' width and call for a second
   pass. **A new width is one counter:** the measure generation goes up by one, so every
-  item is stale without a walk; the layout of the resize measures the items on screen
+  item is stale without a walk (`refresh()`, the items changed, is one too); the layout of the resize measures the items on screen
   at once and keeps the anchor, and the rest are measured by the **idle re-measure**,
   an animation registered only while some item is not measured at the generation (a
   new width, items added or never shown), up to `setRemeasureBudget` items a frame (64;
