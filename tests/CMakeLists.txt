@@ -239,6 +239,23 @@ if(TARGET ControlTest AND NOT EMSCRIPTEN)
             TIMEOUT 300)
     endforeach()
 
+    # every frame an idle window loop would have skipped (the canvas's
+    # nextWorkTime() past the clock before its update) drawn anyway through
+    # the scenarios that change what is shown at run time, and failed if it
+    # wrote a slot, uploaded anything or changed a pixel (--verify-idle): a
+    # change the canvas does not report as work would show late in a window
+    foreach(idle_scenario interaction tooltip context-menu depth-view stats-overlay)
+        string(REPLACE "-" "_" idle_name "${idle_scenario}")
+        add_test(NAME controltest_verify_idle_${idle_name}
+            COMMAND $<TARGET_FILE:ControlTest> --headless --scenario ${idle_scenario}
+                --verify-idle
+                --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/verify_idle_${idle_name}
+            WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
+        set_tests_properties(controltest_verify_idle_${idle_name} PROPERTIES
+            LABELS gpu
+            TIMEOUT 300)
+    endforeach()
+
     # hover, press, disabled and focus repaint the control (and only it), a
     # settled frame does nothing, and collapsing a tree node still moves the
     # nodes below; exits non-zero on any failed check

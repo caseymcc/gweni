@@ -128,6 +128,15 @@
  *                         gweni: layout verify: <Type>#<id> <X|Y> <field>: ...
  *                       (the library's GWENI_LAYOUT_VERIFY=1 does the same in
  *                       any app; see gweni::controls::layoutVerifyEnabled()).
+ *    --verify-idle      every frame an idle window loop would have skipped
+ *                       (the canvas's nextWorkTime() past the clock before its
+ *                       update) is drawn and fails the run (exit non-zero) if
+ *                       it wrote a primitive or glyph slot, uploaded anything
+ *                       or changed a pixel from the frame before; each is
+ *                       named on stderr as
+ *                         ControlTest: idle verify: control=<c> frame=<n> ...
+ *                       In the window it is the loop's own verify mode, as
+ *                       GWENI_IDLE_VERIFY=1 is (which turns both on).
  *    --check-teardown   build, render and destroy every control (or only
  *                       --control's), then check that the canvas renders
  *                       byte-identical to the empty canvas it started as.
@@ -921,6 +930,7 @@
 #include <gweni/skins/textured/tokyoNight.h>
 #include <gweni/skins/textured/texturedControls.h>
 #include <gweni/platforms/input/glfw3.h>
+#include <gweni/platforms/input/glfwLoop.h>
 #include <gweni/controls/canvas.h>
 #include <gweni/controls/label.h>
 #include <gweni/controls/scrollControl.h>
@@ -1202,6 +1212,8 @@ static void printUsage(std::ostream &out)
          "  --require-one-pass fail if a frame's layout takes more than one pass\n"
          "  --verify-layout    check every frame's layout against a full pass\n"
          "                     (also GWENI_LAYOUT_VERIFY=1)\n"
+         "  --verify-idle      fail a frame an idle loop would skip that draws anything\n"
+         "                     (also GWENI_IDLE_VERIFY=1)\n"
          "  --check-teardown   check the canvas renders empty again once every\n"
          "                     control has been destroyed; --control narrows it\n"
          "  --trace            log each scripted input on stderr\n"
@@ -1416,7 +1428,20 @@ struct Session
     bool dumpBounds=false;              // --dump-bounds
     bool dumpPerShot=false;             // one listing per shot, named after it
     std::string dumpPath;               // --dump-bounds <path>; empty is stdout
+    // --verify-idle: whether an idle loop would have skipped the frame being
+    // drawn (the canvas's nextWorkTime() was past the clock before its
+    // update), and the frame before it as drawn, on the canvas it was drawn on
+    bool idleSkip=false;
+    std::vector<uint8_t> idlePixels;
+    gweni::controls::Canvas *idleCanvas=nullptr;
+    gweni::Point idlePixelsSize;
 };
+
+// --verify-idle (or GWENI_IDLE_VERIFY=1): every frame an idle window loop
+// would have skipped is drawn and checked, and the frames that wrote, uploaded
+// or showed anything are counted here and fail the run.
+static bool g_verifyIdle=false;
+static int g_idleVerifyFailures=0;
 
 //-----------------------------------------------------------------------------
 // --dump-bounds: the laid-out tree as text
@@ -1558,17 +1583,72 @@ static void checkOnePass(Session &s, const std::string &frame)
              <<(layout.capped ? " (capped)" : "")<<"\n";
 }
 
+static std::vector<uint8_t> framePixels(const Session &s);
+
+// --verify-idle, before a frame's update: whether an idle loop
+// (gweni::platform::IdleLoop) would draw it at all.
+static void verifyIdleBefore(Session &s)
+{
+    if(!g_verifyIdle)
+        return;
+    s.idleSkip=s.canvas->nextWorkTime() > steppedClock();
+}
+
+// --verify-idle, after a frame's render: one an idle loop would have skipped
+// must write and upload nothing (the loop's own verify mode,
+// input::GlfwLoop::frameWrites) and leave every pixel as the frame before it,
+// which a change that writes no slot (a view transform) would not.
+static void verifyIdleAfter(Session &s)
+{
+    if(!g_verifyIdle)
+        return;
+
+    const std::vector<uint8_t> pixels=framePixels(s);
+
+    if(s.idleSkip)
+    {
+        std::string why=gweni::input::GlfwLoop::frameWrites(s.renderer->frameStats());
+        const gweni::renderer::SlotRenderer::FrameStats &stats=s.renderer->getFrameStats();
+
+        if(stats.atlasUploadCalls != 0)
+            why+=std::string(why.empty() ? "" : ", ")+"uploaded "+std::to_string(stats.atlasUploadCalls)
+                +" atlas regions";
+        if((s.idleCanvas == s.canvas) && (s.idlePixelsSize.x == s.pixels.x) && (s.idlePixelsSize.y == s.pixels.y) && (pixels.size() == s.idlePixels.size()) && (pixels != s.idlePixels))
+        {
+            size_t changed=0;
+
+            for(size_t i=0; i < pixels.size(); i+=4)
+            {
+                if(std::memcmp(&pixels[i], &s.idlePixels[i], 4) != 0)
+                    ++changed;
+            }
+            why+=std::string(why.empty() ? "" : ", ")+"changed "+std::to_string(changed)+" pixels";
+        }
+        if(!why.empty())
+        {
+            ++g_idleVerifyFailures;
+            std::cerr<<"ControlTest: idle verify: control="<<s.label<<" frame="<<s.frame
+                     <<" drawn with no work reported (nextWorkTime past the clock): "<<why<<"\n";
+        }
+    }
+    s.idlePixels=pixels;
+    s.idlePixelsSize=s.pixels;
+    s.idleCanvas=s.canvas;
+}
+
 static void renderFrames(Session &s, int count)
 {
     for(int i=0; i<count; ++i)
     {
         gweni::controls::resetChangeStats();
 
+        verifyIdleBefore(s);
         s.canvas->updateCanvas();
         if(g_depthView)
             gweni::capture::openDepthViewOnce(*s.canvas);
         s.renderer->clearTarget(s.background);
         s.canvas->renderCanvas();
+        verifyIdleAfter(s);
 
         if(s.stats)
             printFrameStats(s.frame, s.label, gweni::controls::getChangeStats(),
@@ -5346,6 +5426,7 @@ static void checkSelectable(Session &s, const std::string &shotDir, InteractionC
 
     clickMouse(s, secondAt.x, secondAt.y);
     gweni::controls::resetChangeStats();
+    verifyIdleBefore(s);
     s.canvas->updateCanvas();
     size_t pending=0, pendingFirst=0, pendingSecond=0;
     countPending(s.canvas, pending);
@@ -5353,6 +5434,7 @@ static void checkSelectable(Session &s, const std::string &shotDir, InteractionC
     countPending(second, pendingSecond);
     s.renderer->clearTarget(s.background);
     s.canvas->renderCanvas();
+    verifyIdleAfter(s);
     const gweni::controls::ChangeStats groupChanges=gweni::controls::getChangeStats();
     const gweni::renderer::SlotRenderer::FrameStats groupGpu=s.renderer->getFrameStats();
     if(s.stats)
@@ -5728,6 +5810,9 @@ static void checkWindowClose(Session &s, const std::string &shotDir, Interaction
     // what the title bar shows there without the button's two slots
     s.renderer->hidePrimitive(close->getSkinControl()->getPrimitives()[0]);
     s.renderer->hidePrimitive(close->getSkinControl()->getPrimitives()[1]);
+    // hidden behind the canvas's back, as no control changed: it is told, as
+    // an app is to be, so an idle loop (and --verify-idle) draws the frame
+    s.canvas->redraw();
     renderFrames(s, 1);
     const std::vector<uint8_t> bare=regionPixels(s, close);
     close->addStateChange(gweni::controls::StateChange_Background);
@@ -6117,11 +6202,13 @@ static void checkTabOverflow(Session &s, const std::string &shotDir, Interaction
 
     clickMouse(s, right.x, right.y);
     gweni::controls::resetChangeStats();
+    verifyIdleBefore(s);
     s.canvas->updateCanvas();
     size_t elsewhere=0;
     countPendingOutside(s.canvas, scrolled, elsewhere);
     s.renderer->clearTarget(s.background);
     s.canvas->renderCanvas();
+    verifyIdleAfter(s);
     const gweni::renderer::SlotRenderer::FrameStats press=s.renderer->getFrameStats();
     if(s.stats)
         printFrameStats(s.frame, s.label, gweni::controls::getChangeStats(), press,
@@ -6434,11 +6521,13 @@ static void checkPropertyRow(Session &s, const std::string &shotDir, Interaction
     // to the label of the same row: the row keeps its look and is not marked
     moveMouse(s, onLabel.x, onLabel.y);
     gweni::controls::resetChangeStats();
+    verifyIdleBefore(s);
     s.canvas->updateCanvas();
     const bool labelMoveMarked=row->getStateChange() != gweni::controls::StateChange_Nothing
         || row->getLabel()->getStateChange() != gweni::controls::StateChange_Nothing;
     s.renderer->clearTarget(s.background);
     s.canvas->renderCanvas();
+    verifyIdleAfter(s);
     ++s.frame;
     const std::vector<uint8_t> labelHover=settledRegion(s, row, shotDir, "property-row-label-hover", ok);
 
@@ -6636,10 +6725,12 @@ static void checkDataTable(Session &s, const std::string &shotDir, InteractionCh
     const gweni::Point origin=number->localPosToCanvas();
     clickMouse(s, origin.x+number->getWidth()/3, origin.y+number->getHeight()/2);
     gweni::controls::resetChangeStats();
+    verifyIdleBefore(s);
     s.canvas->updateCanvas();
     const gweni::controls::LayoutStats sortLayout=s.canvas->getLayoutStats();
     s.renderer->clearTarget(s.background);
     s.canvas->renderCanvas();
+    verifyIdleAfter(s);
     if(s.stats)
         printFrameStats(s.frame, s.label, gweni::controls::getChangeStats(), s.renderer->getFrameStats(),
             s.canvas->getLayoutStats(), s.canvas->getUpdateStats());
@@ -7715,6 +7806,7 @@ static void renderInspectedFrame(Session &s, gweni::controls::Base *root,
     size_t &pending, size_t &pendingUnderRoot)
 {
     gweni::controls::resetChangeStats();
+    verifyIdleBefore(s);
     s.canvas->updateCanvas();
 
     pending=0;
@@ -7724,6 +7816,7 @@ static void renderInspectedFrame(Session &s, gweni::controls::Base *root,
 
     s.renderer->clearTarget(s.background);
     s.canvas->renderCanvas();
+    verifyIdleAfter(s);
 
     if(s.stats)
         printFrameStats(s.frame, s.label, gweni::controls::getChangeStats(),
@@ -8120,11 +8213,13 @@ static void frameCheckingStrays(Session &s, const std::vector<gweni::controls::B
     std::vector<std::string> &strays, bool visibleOnly=false)
 {
     gweni::controls::resetChangeStats();
+    verifyIdleBefore(s);
     s.canvas->updateCanvas();
     pendingOutside(s.canvas, allowed, strays, visibleOnly);
 
     s.renderer->clearTarget(s.background);
     s.canvas->renderCanvas();
+    verifyIdleAfter(s);
 
     if(s.stats)
         printFrameStats(s.frame, s.label, gweni::controls::getChangeStats(),
@@ -11377,6 +11472,7 @@ static void toggleHost(Session &s, gweni::controls::Base *host, bool show,
     host->setHidden(!show);
 
     gweni::controls::resetChangeStats();
+    verifyIdleBefore(s);
     s.canvas->updateCanvas();
 
     std::vector<std::string> strays;
@@ -11399,6 +11495,7 @@ static void toggleHost(Session &s, gweni::controls::Base *host, bool show,
 
     s.renderer->clearTarget(s.background);
     s.canvas->renderCanvas();
+    verifyIdleAfter(s);
     if(s.stats)
         printFrameStats(s.frame, s.label, gweni::controls::getChangeStats(),
             s.renderer->getFrameStats(), s.canvas->getLayoutStats(),
@@ -12085,6 +12182,7 @@ int main(int argc, char *argv[])
     std::string rendererName;
     std::string windowTestDir;
     gweni::platform::LoopOptions loopOptions=gweni::capture::loopOptions();
+    g_verifyIdle=loopOptions.verify;
     gweni::Point screenSize(640, 480);
     float scale=1.0f;
     bool scaleGiven=false;
@@ -12152,6 +12250,7 @@ int main(int argc, char *argv[])
         }
         else if(arg == "--require-one-pass") requireOnePass=true;
         else if(arg == "--verify-layout") gweni::controls::setLayoutVerify(true);
+        else if(arg == "--verify-idle") g_verifyIdle=true;
         else if(arg == "--check-teardown") checkTeardownMode=true;
         else if(arg == "--trace") traceInput=true;
         else if(arg == "--list"){ printControlNames(std::cout); return EXIT_SUCCESS; }
@@ -12771,6 +12870,7 @@ int main(int argc, char *argv[])
             // work, continuous one per displayed frame (--loop). The frame
             // holds only the canvas and the renderer, heap objects, and the
             // colour, a copy, as the browser's loop needs.
+            loopOptions.verify=loopOptions.verify || g_verifyIdle;
             device->runWindowLoop(canvas, renderer, loopOptions, [canvas, renderer, background]()
             {
                 canvas->updateCanvas();
@@ -12810,6 +12910,14 @@ int main(int argc, char *argv[])
         for(const std::string &mutation : mutations)
             std::cerr<<" ["<<mutation<<"]";
         std::cerr<<"\n";
+        result=EXIT_FAILURE;
+    }
+
+    // verifyIdleAfter printed each one as it found it.
+    if(g_idleVerifyFailures)
+    {
+        std::cerr<<"ControlTest: "<<g_idleVerifyFailures
+                 <<" frame(s) an idle loop would have skipped drew something\n";
         result=EXIT_FAILURE;
     }
 
