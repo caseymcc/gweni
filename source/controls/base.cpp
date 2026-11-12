@@ -832,6 +832,12 @@ void Base::invalidate(int state)
     const bool outer=g_propagating;
     const bool layout=(state & StateChange_Created) || (state & StateChange_Visibility) ||
         (state & StateChange_Geometry);
+    // Placement in a layout pass (a ScrollControl's bars given their new
+    // ranges, say) feeds the pass: the way up stops at the first ancestor
+    // already dirty, whose own way up the pass has marked, as a new size's
+    // children do (setBounds). Going on would only run the ancestors'
+    // layout() again in Y.
+    const bool placing=layout && !outer && g_placement && Canvas::s_layingOut;
 
     for(Base *control=this; control; control=control->m_parent)
     {
@@ -877,6 +883,10 @@ void Base::invalidate(int state)
                 break;
             g_propagating=true;
         }
+
+        if(placing && control->m_parent && control->m_parent->m_updateLayout &&
+            (control->m_parent->m_layoutDirtyCounted || !g_invalidationCounted))
+            break;
     }
     g_propagating=outer;
 }

@@ -16,9 +16,9 @@
  *  - each control's needsLayout() / layoutDirty() after it is what main
  *    (cb8b545) gives, but for the way down to each TreeNode's toggle, which
  *    main's settled canvas still had layoutDirty() (#522), and for the
- *    needsLayout() main left on the ancestors of a control resized in a
- *    pass, after their layout() had run (a new size in a pass no longer
- *    walks up, #578), recorded below as
+ *    needsLayout() main left on the ancestors of a control resized or
+ *    placed in a pass, after their layout() had run (a new size or a
+ *    placement in a pass no longer walks up, #578), recorded below as
  *    one character per control of the canvas's tree in pre-order over
  *    getActualChildren(): the walk dirties its subtree and the way up from
  *    the root, and nothing else;
@@ -248,11 +248,12 @@ const Walk Walks[]=
 //! and after each walk, in Walks' order: main's (cb8b545), but with nothing
 //! on the way down to each TreeNode's toggle layoutDirty(), which main left
 //! dirty after the pass that placed it in postLayout() (#522), and no
-//! needsLayout() on the ancestors of the controls the pass resized: main's
-//! way up from each set it after their layout() had run (#578).
+//! needsLayout() on the ancestors of the controls the pass resized or
+//! placed: main's way up from each set it after their layout() had run
+//! (#578).
 const char *const SettledState=
-    "nn.n..n.n..n..........BBBBBBBBBBBB....BBBBBBBBBBBB....BBBBBBBBBB"
-    "BB..nn........BB..B.....BBBBBBBBBBBBB.......BB..B.....BBBBBBBBBB"
+    "......................BBBBBBBBBBBB....BBBBBBBBBBBB....BBBBBBBBBB"
+    "BB............BB..B.....BBBBBBBBBBBBB.......BB..B.....BBBBBBBBBB"
     "BBB.......BB..B.....BBBBBBBBBBBBB.......BB..B.....BBBBBBBBBBBBB."
     "......BB..B.....BBBBBBBBBBBBB.......BB..B.....BBBBBBBBBBBBB....."
     "..BB..B.....BBBBBBBBBBBBB.....BBBBBBB......BBBBBB";
@@ -266,25 +267,25 @@ const char *const WalkState[]=
     "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
     // the deep inner-panel owner
     "BBdB.dBdB.dBBBBBBBBBBBBBBBBBBBBBBB....BBBBBBBBBBBB....BBBBBBBBBB"
-    "BB..nn........BB..B.....BBBBBBBBBBBBB.......BB..B.....BBBBBBBBBB"
+    "BB............BB..B.....BBBBBBBBBBBBB.......BB..B.....BBBBBBBBBB"
     "BBB.......BB..B.....BBBBBBBBBBBBB.......BB..B.....BBBBBBBBBBBBB."
     "......BB..B.....BBBBBBBBBBBBB.......BB..B.....BBBBBBBBBBBBB....."
     "..BB..B.....BBBBBBBBBBBBB.....BBBBBBB......BBBBBB",
     // the deep TreeNode
-    "Bn.n..n.n..n..........BBBBBBBBBBBB....BBBBBBBBBBBB....BBBBBBBBBB"
-    "BB..BBdB....d.BB..B.....BBBBBBBBBBBBBB....d.BB..B.....BBBBBBBBBB"
+    "B.....................BBBBBBBBBBBB....BBBBBBBBBBBB....BBBBBBBBBB"
+    "BB..BddB....d.BB..B.....BBBBBBBBBBBBBB....d.BB..B.....BBBBBBBBBB"
     "BBBB....d.BB..B.....BBBBBBBBBBBBBB....d.BB..B.....BBBBBBBBBBBBBB"
     "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB"
     "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB......BBBBBB",
     // the ScrollControl's inner panel
     "BBdB.dBdB.dBdBBBBBBBBBBBBBBBBBBBBB....BBBBBBBBBBBB....BBBBBBBBBB"
-    "BB..nn........BB..B.....BBBBBBBBBBBBB.......BB..B.....BBBBBBBBBB"
+    "BB............BB..B.....BBBBBBBBBBBBB.......BB..B.....BBBBBBBBBB"
     "BBB.......BB..B.....BBBBBBBBBBBBB.......BB..B.....BBBBBBBBBBBBB."
     "......BB..B.....BBBBBBBBBBBBB.......BB..B.....BBBBBBBBBBBBB....."
     "..BB..B.....BBBBBBBBBBBBB.....BBBBBBB......BBBBBB",
     // the TreeNode's inner panel
-    "Bn.n..n.n..n..........BBBBBBBBBBBB....BBBBBBBBBBBB....BBBBBBBBBB"
-    "BB..BBdB....d.BB..B.....BBBBBBBBBBBBBB....d.BB..B.....BBBBBBBBBB"
+    "B.....................BBBBBBBBBBBB....BBBBBBBBBBBB....BBBBBBBBBB"
+    "BB..BddB....d.BB..B.....BBBBBBBBBBBBBB....d.BB..B.....BBBBBBBBBB"
     "BBBB....d.BB..B.....BBBBBBBBBBBBBB....dBBBBBBBBBBBBBBBBBBBBBBBBB"
     "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB"
     "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB......BBBBBB",
