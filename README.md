@@ -27,6 +27,16 @@ to its live page.
 See [docs/architecture.md](docs/architecture.md) for the full design and the current
 implemented-vs-planned status, and [docs/layout.md](docs/layout.md) for the layout system.
 
+### Future goals
+
+- **Accessibility.** A UI drawn on a canvas, and above all the web build, is invisible to
+  screen readers and other assistive technology. Mainstream toolkits expose a tree of their
+  controls to the platform (Qt's QAccessible, Flutter's semantics tree, ARIA in the browser),
+  and the goal is for gweni to mirror its control tree into the platform's accessibility API:
+  on the web an off-screen ARIA/DOM tree, on desktop AT-SPI, UI Automation or NSAccessibility.
+  The retained, change-tracked tree suits this: only the controls that changed would update
+  their mirror nodes, so a settled frame would cost nothing.
+
 ## Samples
 
 [![Buttons & toggles showcase page](docs/images/ShowcaseButtonsDemo.png)](https://caseymcc.github.io/gweni/controltest.html?control=ShowcaseButtonsDemo)
