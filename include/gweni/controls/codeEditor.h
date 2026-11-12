@@ -12,7 +12,9 @@
 #include <gweni/controls/text.h>
 #include <gweni/controls/virtualList.h>
 #include <gweni/text/document.h>
+#include <gweni/text/undoStack.h>
 
+#include <algorithm>
 #include <cstddef>
 #include <vector>
 
@@ -123,6 +125,26 @@ private:
 //! leading blanks, up to the caret). Every move puts the caret in view: its
 //! line by the next layout (VirtualList::scrollToItem), its column with a
 //! cell to spare.
+//!
+//! Every edit made through the editor (typing, the editing keys, the
+//! clipboard, Tab) is recorded on a text::UndoStack with TextBox's
+//! coalescing: typing joins one step until the caret moves, a line break is
+//! typed, the kind of edit changes or a second passes. Ctrl+Z undoes a step
+//! and Ctrl+Y or Ctrl+Shift+Z redoes it, giving back the text, the caret and
+//! the selection, the caret put in view. An edit the app applies to the
+//! document itself (getDocument(), setText()) clears the history, which no
+//! longer fits the text.
+//!
+//! Tab inserts spaces to the next multiple of getTabWidth() cells; with a
+//! selection over several lines it indents each of them by that many
+//! spaces, and Shift+Tab outdents the caret's line or the selected lines to
+//! the tab stop before their indent (a leading tab character is one stop).
+//! Tab never moves the focus out of the editor, but Escape arms it to: the
+//! next Tab or Shift+Tab, if no other key comes first, moves the focus as in
+//! any control. setTabInsertsSpaces(false) gives Tab back to the focus
+//! (CodeMirror's rule both ways). Read-only (setReadOnly), the editor draws
+//! no caret and no current line and makes no edit, while the moves, the
+//! selection, Ctrl+A and Ctrl+C still work and Tab moves the focus.
 class GWENI_EXPORT CodeEditor: public VirtualList
 {
 public:
@@ -196,8 +218,27 @@ public:
     text::Position positionAt(const Point &local) const;
 
     //! Replaces the selection (or inserts at the caret) with \p text, as
-    //! typing it does, and puts the caret after it.
+    //! typing it does, and puts the caret after it; nothing when read-only.
     void insertText(const String &text);
+
+    //! Undoes (redoes) the last step, giving back the text, the caret and
+    //! the selection; false with none, or read-only.
+    bool undo();
+    bool redo();
+    text::UndoStack &getUndoStack() { return m_undo; }
+    const text::UndoStack &getUndoStack() const { return m_undo; }
+
+    //! The cells a tab stop is every. Default 4 (at least 1).
+    void setTabWidth(int cells) { m_tabWidth=std::max(1, cells); }
+    int getTabWidth() const { return m_tabWidth; }
+    //! Whether Tab edits (inserts spaces, indents, outdents) rather than
+    //! moving the focus. Default true.
+    void setTabInsertsSpaces(bool inserts) { m_tabInsertsSpaces=inserts; }
+    bool getTabInsertsSpaces() const { return m_tabInsertsSpaces; }
+
+    //! No caret, no current line and no edits; selection and copying stay.
+    void setReadOnly(bool readOnly);
+    bool isReadOnly() const { return m_readOnly; }
 
     //! Whether the caret is lit now (it blinks while the editor has the
     //! focus).
@@ -226,6 +267,11 @@ public:
     bool onKeyend(bool down) override;
     bool onKeyPageUp(bool down) override;
     bool onKeyPageDown(bool down) override;
+    bool onKeyTab(bool down) override;
+    //! Arms the next Tab to move the focus (and goes on to the parent).
+    bool onKeyEscape(bool down) override;
+    //! Any key but Tab, Escape and the modifiers disarms that.
+    bool onKeyPress(int key, bool press=true) override;
     void onKeyboardFocus() override;
     void onLostKeyboardFocus() override;
     //! A press puts the caret at the nearest caret stop (Shift: extends the
@@ -265,9 +311,25 @@ private:
     void onCut(event::Info info);
     void onPaste(event::Info info);
     void onSelectAll(event::Info info);
+    void onUndo(event::Info info);
+    void onRedo(event::Info info);
 
-    //! Replaces \p range with \p text and puts the caret after it.
-    void replaceRange(const text::Range &range, const String &text);
+    //! An edit the user makes: not when read-only, and it disarms Escape.
+    bool editable();
+    //! The selection as the undo stack keeps it.
+    text::Selection currentSelection() const { return text::Selection{m_anchor, m_caret}; }
+    //! Puts the anchor and the caret back, the caret in view.
+    void restoreSelection(const text::Selection &selection);
+    //! Indents (outdents) the lines the selection covers, or the caret's.
+    void indentLines(bool outdent);
+    //! The lines the selection covers: its first to its last, less a last
+    //! line it only reaches the start of.
+    void selectedLines(size_t &first, size_t &last) const;
+
+    //! Replaces \p range with \p text, puts the caret after it and records
+    //! the edit as made by \p kind.
+    void replaceRange(const text::Range &range, const String &text, text::EditKind kind);
+    void insertText(const String &text, text::EditKind kind);
     //! Moves the caret (and the anchor too unless \p extend), keeping
     //! m_goalColumn unless \p keepGoal is false; updates the rows' current
     //! line, lights the caret and puts it in view.
@@ -340,6 +402,15 @@ private:
     float m_autoScrollTime=0.0f;
     //! The units of auto-scroll not scrolled yet, per axis.
     float m_autoScrollCarry[2]={0.0f, 0.0f};
+
+    text::UndoStack m_undo;
+    //! The editor is applying an edit of its own (the history stays).
+    bool m_ownEdit=false;
+    bool m_readOnly=false;
+    int m_tabWidth=4;
+    bool m_tabInsertsSpaces=true;
+    //! Escape was the last key: the next Tab moves the focus.
+    bool m_escapeArmed=false;
 
     float m_cellWidth=0.f;
     int m_lineHeight=0;

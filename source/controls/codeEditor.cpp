@@ -173,6 +173,9 @@ GWENI_CONTROL_CONSTRUCTOR(CodeEditor)
     addAccelerator("Ctrl + X", &CodeEditor::onCut);
     addAccelerator("Ctrl + V", &CodeEditor::onPaste);
     addAccelerator("Ctrl + A", &CodeEditor::onSelectAll);
+    addAccelerator("Ctrl + Z", &CodeEditor::onUndo);
+    addAccelerator("Ctrl + Y", &CodeEditor::onRedo);
+    addAccelerator("Ctrl + Shift + Z", &CodeEditor::onRedo);
 
     if(skin::Base *skin=getSkin())
         m_font=skin->getDefaultMonoFont();
@@ -244,7 +247,7 @@ void CodeEditor::bindRow(Base *row, size_t line)
         return;
 
     codeLine->bind(line, m_document.line(line));
-    codeLine->setCurrent(line == m_caret.line);
+    codeLine->setCurrent(!m_readOnly && line == m_caret.line);
 
     size_t begin=0;
     size_t end=0;
@@ -282,6 +285,10 @@ void CodeEditor::removeWidth(size_t cells)
 void CodeEditor::linesChanged(const text::LineChange &change)
 {
     const size_t first=change.first;
+
+    // the app changed the text: the steps no longer fit it
+    if(!m_ownEdit)
+        m_undo.clear();
 
     m_newCells.resize(change.inserted);
     for(size_t i=0; i < change.inserted; ++i)
@@ -451,7 +458,7 @@ void CodeEditor::syncCurrentLine()
         CodeLine *row=gweni_cast<CodeLine>(poolRow(i));
 
         if(row && poolItem(i) != NoItem)
-            row->setCurrent(poolItem(i) == m_caret.line);
+            row->setCurrent(!m_readOnly && poolItem(i) == m_caret.line);
     }
 }
 
@@ -493,7 +500,7 @@ void CodeEditor::makeCaretVisible()
 
 Rect CodeEditor::getCaretBounds() const
 {
-    if(m_lineHeight <= 0)
+    if(m_lineHeight <= 0 || m_readOnly)
         return Rect();
 
     const Rect &viewport=getViewport();
@@ -627,16 +634,189 @@ int CodeEditor::pageLines() const
     return (m_lineHeight > 0)?std::max(1, getViewportHeight()/m_lineHeight):1;
 }
 
-void CodeEditor::replaceRange(const text::Range &range, const String &text)
+void CodeEditor::replaceRange(const text::Range &range, const String &text, text::EditKind kind)
 {
-    const text::Edit edit=m_document.replace(range, text);
+    const text::Selection before=currentSelection();
+    text::Edit edit;
+
+    m_ownEdit=true;
+    edit=m_document.replace(range, text);
+    m_ownEdit=false;
 
     moveCaret(edit.textEnd, false);
+    m_undo.record(std::move(edit), kind, before, currentSelection());
+}
+
+void CodeEditor::insertText(const String &text, text::EditKind kind)
+{
+    replaceRange(hasSelection()?getSelection():text::Range{m_caret, m_caret}, text, kind);
 }
 
 void CodeEditor::insertText(const String &text)
 {
-    replaceRange(hasSelection()?getSelection():text::Range{m_caret, m_caret}, text);
+    if(editable())
+        insertText(text, text::EditKind::Insert);
+}
+
+bool CodeEditor::editable()
+{
+    m_escapeArmed=false;
+    return !m_readOnly;
+}
+
+void CodeEditor::restoreSelection(const text::Selection &selection)
+{
+    m_anchor=snapToStop(m_document, selection.anchor);
+    moveCaret(selection.caret, true);
+}
+
+// Each edit's inverse, from the last to the first, then the selection before
+// the step; the history's own records, so nothing is recorded or cleared.
+bool CodeEditor::undo()
+{
+    if(m_readOnly)
+        return false;
+
+    const text::UndoStep *step=m_undo.undo();
+
+    if(!step)
+        return false;
+
+    m_ownEdit=true;
+    for(size_t i=step->edits.size(); i-- > 0;)
+    {
+        text::Edit inverse=step->edits[i].inverse();
+
+        m_document.apply(inverse);
+    }
+    m_ownEdit=false;
+
+    restoreSelection(step->before);
+    return true;
+}
+
+bool CodeEditor::redo()
+{
+    if(m_readOnly)
+        return false;
+
+    const text::UndoStep *step=m_undo.redo();
+
+    if(!step)
+        return false;
+
+    m_ownEdit=true;
+    for(const text::Edit &recorded : step->edits)
+    {
+        text::Edit edit;
+
+        edit.range=recorded.range;
+        edit.text=recorded.text;
+        m_document.apply(edit);
+    }
+    m_ownEdit=false;
+
+    restoreSelection(step->after);
+    return true;
+}
+
+void CodeEditor::setReadOnly(bool readOnly)
+{
+    if(m_readOnly == readOnly)
+        return;
+
+    m_readOnly=readOnly;
+    m_undo.seal();
+
+    if(m_readOnly)
+        m_caretBlink.stop(this);
+    else if(isFocussed())
+    {
+        m_caretBlink.keepLit(this);
+        m_caretBlink.start(this);
+    }
+
+    syncCurrentLine();
+    caretChanged();
+}
+
+void CodeEditor::selectedLines(size_t &first, size_t &last) const
+{
+    const text::Range range=getSelection();
+
+    first=range.begin.line;
+    last=range.end.line;
+
+    if(last > first && range.end.byte == 0)
+        --last;
+}
+
+// Each line gets (or loses) its spaces as an edit of its own, one undo step
+// together; the anchor and the caret move with the text of their lines.
+void CodeEditor::indentLines(bool outdent)
+{
+    size_t first=0;
+    size_t last=0;
+
+    selectedLines(first, last);
+
+    const text::Selection before=currentSelection();
+    text::Position anchor=m_anchor;
+    text::Position caret=m_caret;
+    std::vector<text::Edit> edits;
+
+    m_ownEdit=true;
+    for(size_t line=first; line <= last; ++line)
+    {
+        const String &text=m_document.line(line);
+        long change=0;
+
+        if(!outdent)
+        {
+            edits.push_back(m_document.insert(text::Position{line, 0}, String(static_cast<size_t>(m_tabWidth), ' ')));
+            change=m_tabWidth;
+        }
+        else
+        {
+            size_t remove=0;
+
+            if(!text.empty() && text[0] == '\t')
+                remove=1;
+            else
+            {
+                size_t spaces=0;
+
+                while(spaces < text.size() && text[spaces] == ' ')
+                    ++spaces;
+                if(spaces > 0)
+                    remove=(spaces-1)%static_cast<size_t>(m_tabWidth)+1;
+            }
+
+            if(remove == 0)
+                continue;
+
+            edits.push_back(m_document.erase({text::Position{line, 0}, text::Position{line, remove}}));
+            change=-static_cast<long>(remove);
+        }
+
+        for(text::Position *position : {&anchor, &caret})
+        {
+            if(position->line == line)
+                position->byte=static_cast<size_t>(std::max<long>(0, static_cast<long>(position->byte)+change));
+        }
+    }
+    m_ownEdit=false;
+
+    if(edits.empty())
+        return;
+
+    m_anchor=snapToStop(m_document, anchor);
+    moveCaret(caret, true);
+
+    text::UndoGroup group(m_undo, text::EditKind::Other);
+
+    for(text::Edit &edit : edits)
+        m_undo.record(std::move(edit), text::EditKind::Other, before, currentSelection());
 }
 
 ///////////////////////////////////////////////////////////////////////////
@@ -650,52 +830,55 @@ bool CodeEditor::onChar(gweni::UnicodeChar c)
 
     const String str=utf8Encode(c);
 
-    if(str.empty())
+    if(str.empty() || !editable())
         return false;
 
-    insertText(str);
+    insertText(str, text::EditKind::Insert);
     return true;
 }
 
 bool CodeEditor::onKeyReturn(bool down)
 {
-    if(!down)
+    if(!down || !editable())
         return true;
 
     const text::Position begin=hasSelection()?getSelection().begin:m_caret;
     const String &line=m_document.line(begin.line);
 
-    insertText("\n"+line.substr(0, std::min(indentOf(line), begin.byte)));
+    insertText("\n"+line.substr(0, std::min(indentOf(line), begin.byte)), text::EditKind::Insert);
     return true;
 }
 
 bool CodeEditor::onKeyBackspace(bool down)
 {
-    if(!down)
+    if(!down || !editable())
         return true;
 
+    const text::EditKind kind=text::EditKind::DeleteBackward;
+
     if(hasSelection())
-        replaceRange(getSelection(), String());
+        replaceRange(getSelection(), String(), kind);
     else if(m_caret.byte > 0)
-        replaceRange({{m_caret.line, utf8Prev(m_document.line(m_caret.line), m_caret.byte)}, m_caret}, String());
+        replaceRange({{m_caret.line, utf8Prev(m_document.line(m_caret.line), m_caret.byte)}, m_caret}, String(), kind);
     else if(m_caret.line > 0)
-        replaceRange({{m_caret.line-1, m_document.line(m_caret.line-1).size()}, m_caret}, String());
+        replaceRange({{m_caret.line-1, m_document.line(m_caret.line-1).size()}, m_caret}, String(), kind);
     return true;
 }
 
 bool CodeEditor::onKeyDelete(bool down)
 {
-    if(!down)
+    if(!down || !editable())
         return true;
 
     const String &line=m_document.line(m_caret.line);
+    const text::EditKind kind=text::EditKind::DeleteForward;
 
     if(hasSelection())
-        replaceRange(getSelection(), String());
+        replaceRange(getSelection(), String(), kind);
     else if(m_caret.byte < line.size())
-        replaceRange({m_caret, {m_caret.line, text::nextCaretStop(line, m_caret.byte)}}, String());
+        replaceRange({m_caret, {m_caret.line, text::nextCaretStop(line, m_caret.byte)}}, String(), kind);
     else if(m_caret.line+1 < m_document.lineCount())
-        replaceRange({m_caret, {m_caret.line+1, 0}}, String());
+        replaceRange({m_caret, {m_caret.line+1, 0}}, String(), kind);
     return true;
 }
 
@@ -807,18 +990,77 @@ bool CodeEditor::onKeyPageDown(bool down)
     return true;
 }
 
+// Tab edits unless Escape came just before it or Tab is given to the focus:
+// spaces to the next tab stop in cells (over a selection inside one line, in
+// its place), the selected lines indented, Shift+Tab outdenting.
+bool CodeEditor::onKeyTab(bool down)
+{
+    if(!m_tabInsertsSpaces || m_readOnly || m_escapeArmed)
+    {
+        if(down)
+            m_escapeArmed=false;
+        return ParentClass::onKeyTab(down);
+    }
+
+    if(!down || !editable())
+        return true;
+
+    size_t first=0;
+    size_t last=0;
+
+    selectedLines(first, last);
+
+    if(input::isShiftDown())
+        indentLines(true);
+    else if(hasSelection() && last > first)
+        indentLines(false);
+    else
+    {
+        const text::Position begin=hasSelection()?getSelection().begin:m_caret;
+        const size_t column=text::stringCells(m_document.line(begin.line), 0, begin.byte);
+        const size_t width=static_cast<size_t>(m_tabWidth);
+
+        insertText(String(width-column%width, ' '), text::EditKind::Insert);
+    }
+    return true;
+}
+
+bool CodeEditor::onKeyEscape(bool down)
+{
+    if(down)
+        m_escapeArmed=true;
+    return false;
+}
+
+bool CodeEditor::onKeyPress(int key, bool press)
+{
+    if(press && key != keys::Tab && key != keys::Escape && key != keys::Shift && key != keys::Control
+        && key != keys::Alt && key != keys::Command)
+        m_escapeArmed=false;
+
+    return ParentClass::onKeyPress(key, press);
+}
+
 void CodeEditor::onKeyboardFocus()
 {
     ParentClass::onKeyboardFocus();
-    m_caretBlink.keepLit(this);
-    m_caretBlink.start(this);
+    m_escapeArmed=false;
+
+    if(!m_readOnly)
+    {
+        m_caretBlink.keepLit(this);
+        m_caretBlink.start(this);
+    }
     caretChanged();
 }
 
+// Typing after the focus comes back is a step of its own.
 void CodeEditor::onLostKeyboardFocus()
 {
     ParentClass::onLostKeyboardFocus();
     m_caretBlink.stop(this);
+    m_undo.seal();
+    m_escapeArmed=false;
     caretChanged();
 }
 
@@ -826,6 +1068,7 @@ void CodeEditor::onMouseClickLeft(int x, int y, bool down)
 {
     if(down)
     {
+        m_escapeArmed=false;
         m_dragPoint=canvasPosToLocal(Point(x, y));
         moveCaret(positionAt(m_dragPoint), input::isShiftDown());
         MouseFocus=this;
@@ -990,15 +1233,33 @@ void CodeEditor::onCut(event::Info)
         return;
 
     platform::setClipboardText(getSelectedText());
-    replaceRange(getSelection(), String());
+
+    if(editable())
+        replaceRange(getSelection(), String(), text::EditKind::Cut);
 }
 
 void CodeEditor::onPaste(event::Info)
 {
     const String text=platform::getClipboardText();
 
-    if(!text.empty())
-        insertText(text);
+    if(!text.empty() && editable())
+    {
+        text::UndoGroup group(m_undo, text::EditKind::Paste);
+
+        insertText(text, text::EditKind::Paste);
+    }
+}
+
+void CodeEditor::onUndo(event::Info)
+{
+    m_escapeArmed=false;
+    undo();
+}
+
+void CodeEditor::onRedo(event::Info)
+{
+    m_escapeArmed=false;
+    redo();
 }
 
 void CodeEditor::onSelectAll(event::Info)
