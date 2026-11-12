@@ -223,6 +223,8 @@ set(GWENI_CONTROL_SOURCES
     source/controls/toolTip.cpp
     include/gweni/controls/listBox.h
     source/controls/listBox.cpp
+    include/gweni/controls/logView.h
+    source/controls/logView.cpp
     include/gweni/controls/menu.h
     source/controls/menu.cpp
     include/gweni/controls/menuItem.h

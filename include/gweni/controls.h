@@ -46,6 +46,7 @@
 #include <gweni/controls/layout/table.h>
 #include <gweni/controls/layout/tile.h>
 #include <gweni/controls/listBox.h>
+#include <gweni/controls/logView.h>
 #include <gweni/controls/menu.h>
 #include <gweni/controls/menuItem.h>
 #include <gweni/controls/menuStrip.h>
