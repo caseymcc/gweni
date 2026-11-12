@@ -2458,22 +2458,26 @@ two programs and the draws. What follows describes both together:
   the SDF atlas both sizes share. `measureText` measures at `font.size`, in the font that
   size resolves to at scale 1, so it returns **canvas units** and a layout is the same
   at every scale (`controltest_scale_bounds`). This deliberately differs from the legacy
-  OpenGL and Software renderers, which return scaled pixels. Where `font.size` is a
-  coverage size, its hinted whole-pixel advances are not the drawn font's scaled, so
+  OpenGL and Software renderers, which return scaled pixels. Where a run is drawn as
+  grayscale coverage, its drawn font's hinted whole-pixel advances are not the measured
+  ones scaled, whether it was measured as coverage or as SDF (an SDF `font.size` drawn
+  below the threshold: 20 px at 0.75 is drawn at 15 px, 24 px at 0.5 at 12), so
   `measuredPenShifts` moves each drawn glyph to its measured pen position times the
   scale (rounded to a whole pixel for a coverage draw): the run ends where the layout
-  sized it, and a caret placed from `measureText` falls between the glyphs it means. Nor
+  sized it, and a caret placed from `measureText` falls between the glyphs it means
+  (without it, "AVATAR Toyota WAVE fly" at 24 px times 0.5 had a glyph 2.9 px off). Nor
   is the drawn font's line step the measured one scaled, each truncating its descender to
   a whole pixel: at 10 px times 1.5 it is a pixel longer per line, so the lines of a run
   with `'\n'`s would end below its box. `measuredPenShifts` also moves each of its glyphs
   down by whole pixels, to within half a pixel of the measured line's baseline scaled
   (relative to the first line, so a one-line run moves nothing), in grayscale and LCD alike.
-  An SDF `font.size` drawn as SDF needs no x shift, its pens being linear in px (drawn
-  as coverage below the threshold it keeps its hinted pens, #576), but its line step
+  Only a run whose layout is linear in px needs no x shift: one drawn in an LCD font
+  (unhinted, to within its 1/3 px) and an SDF `font.size` drawn as SDF. The SDF one's line step
   is rounded to a whole pixel at each px (20 px at 1.5 steps 41 px against 27 times
   1.5), so the line correction applies whatever the measured mode, drawn as SDF or as
   coverage (20 px at 0.75 is drawn at 15), at a canvas scale and in a `ZoomPanel` alike.
-  At scale 1 nothing of this changes a byte. `tests/scaledText.cpp` and `tests/multiLineText.cpp` pin it.
+  At scale 1 nothing of this changes a byte. `tests/scaledText.cpp`, `tests/scaledSdfPens.cpp`
+  and `tests/multiLineText.cpp` pin it.
 - **A moved run is a fresh layout.** A same-string run that only moved is not laid
   out again: `renderText` adds the whole-device-pixel delta to its glyph vertexes.
   That equals a fresh layout at the new place only if each sum is exact, and an SDF
