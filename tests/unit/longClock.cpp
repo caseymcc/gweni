@@ -10,9 +10,10 @@
  *  base+frame*(1.0/60) in double as the captures' stepped clocks do: a focused
  *  TextBox's caret stays lit 1.5 s and then flips every 0.5 s, the canvas's
  *  tooltip shows once its 0.5 s delay has passed, a held key repeats after
- *  0.3 s and then every other frame (its 0.03 s rate, under two frames), and a
- *  TimedAnimation starts after its delay and finishes after its length, each
- *  within one frame of the time it asks for.
+ *  0.3 s and then every other frame (its 0.03 s rate, under two frames), a
+ *  TimedAnimation starts after its delay and finishes after its length, and a
+ *  canvas timer (Canvas::after(), every()) fires after its delay and then each
+ *  period, each within one frame of the time it asks for.
  */
 #include "headlessFixture.h"
 
@@ -238,4 +239,33 @@ TEST_CASE("Long clock: a TimedAnimation starts and finishes on time 30 days in")
     INFO("started ", started-added, ", finished ", finished-added, " frames after it was made");
     CHECK(withinAFrame(started-added, 30));
     CHECK(withinAFrame(finished-added, 90));
+}
+
+TEST_CASE("Long clock: canvas timers fire on time 30 days in")
+{
+    Scene scene;
+    scene.step();
+
+    const int added=scene.frameNumber;
+    int once=-1;
+    std::vector<int> repeats;
+
+    // 0.25 s (15 frames) once, and every 0.5 s (30 frames)
+    scene.canvas->after(0.25, [&]() { once=scene.frameNumber; });
+    scene.canvas->every(0.5, [&]() { repeats.push_back(scene.frameNumber); });
+
+    while(scene.frameNumber < added+60*5)
+        scene.step();
+
+    INFO("once ", once-added, " frames after it was added");
+    CHECK(withinAFrame(once-added, 15));
+    REQUIRE(repeats.size() >= 9);
+    CHECK(withinAFrame(repeats[0]-added, 30));
+    for(size_t i=1; i < repeats.size(); ++i)
+    {
+        INFO("repeat ", i, " ", repeats[i]-repeats[i-1], " frames after the one before");
+        // each deadline is the first plus whole periods, so a frame late
+        // once is not late for the next
+        CHECK(withinAFrame(repeats[i]-added, 30*int(i+1)));
+    }
 }

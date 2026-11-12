@@ -20,6 +20,7 @@
 #endif
 
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -34,8 +35,17 @@ namespace gweni
 namespace controls
 {
 
+//! Every canvas alive, for ~Base to cancel an owner's timers on each.
+static std::vector<Canvas *> &liveCanvases()
+{
+    static std::vector<Canvas *> canvases;
+    return canvases;
+}
+
 Canvas::Canvas(skin::Base *skin): ParentClass()
 {
+    liveCanvases().push_back(this);
+
 //    enlargePrimitiveIds(this, m_primitiveIds, 1);
 
     setBounds(0, 0, 10000, 10000);
@@ -55,6 +65,14 @@ Canvas::~Canvas()
     // a worker's post() through postHandle() is dropped from here on, and what
     // is queued is destroyed before the tree it may point into
     m_postQueue->close();
+    // its timers go unrun, before the tree their functions may point into
+    {
+        std::vector<Canvas *> &canvases=liveCanvases();
+        canvases.erase(std::remove(canvases.begin(), canvases.end(), this), canvases.end());
+        std::unordered_map<uint64_t, Timer> timers;
+        timers.swap(m_timers);
+        m_timerHeap.clear();
+    }
     if(InputCapture *capture=m_inputCapture)
     {
         m_inputCapture=nullptr;
@@ -84,6 +102,8 @@ void Canvas::updateCanvas()
     // What other threads (or this one) posted since the last update, after the
     // input the loop delivered; a post made while these run waits for the next.
     m_postQueue->run();
+    // then the timers due now, before doThink()'s animations
+    runTimers();
 
     // The renderer's text draws or measures otherwise now (a new text AA mode):
     // every control is laid out and re-emitted again, as for a new scale.
@@ -98,6 +118,176 @@ void Canvas::updateCanvas()
     doThink();
     renumberZOrder();
     m_frameTimes.updateMicros=platform::profileTimeMicros()-start;
+}
+
+namespace
+{
+
+//! The heap's order: the earliest deadline on top, then the first pushed.
+struct TimerLater
+{
+    template<typename Entry>
+    bool operator()(const Entry &a, const Entry &b) const
+    {
+        if(a.deadline != b.deadline)
+            return a.deadline > b.deadline;
+        return a.serial > b.serial;
+    }
+};
+
+uint64_t g_nextTimerId=1;
+
+}//namespace
+
+TimerHandle Canvas::after(double seconds, std::function<void()> function, Base *owner)
+{
+    return addTimer(seconds, std::move(function), owner, false);
+}
+
+TimerHandle Canvas::every(double seconds, std::function<void()> function, Base *owner)
+{
+    return addTimer(seconds, std::move(function), owner, true);
+}
+
+TimerHandle Canvas::addTimer(double seconds, std::function<void()> function, Base *owner, bool repeating)
+{
+    if(!function)
+        return TimerHandle();
+
+    const double now=platform::getTimeInSeconds();
+    const double delay=(seconds > 0.0)?seconds:0.0;
+    const uint64_t id=g_nextTimerId++;
+
+    Timer &timer=m_timers[id];
+    timer.function=std::move(function);
+    timer.origin=now+delay;
+    timer.period=delay;
+    timer.repeating=repeating;
+    timer.owner=owner;
+    if(owner)
+        owner->m_ownsTimers=true;
+
+    pruneTimers();
+    // earlier than every pending one: an idle loop waiting for that one
+    // wakes (an update running the timers needs none)
+    const bool earliest=m_timerHeap.empty() || (timer.origin < m_timerHeap.front().deadline);
+
+    pushTimer(timer.origin, id);
+    if(earliest && !m_runningTimers)
+        m_postQueue->wake();
+    return TimerHandle(id);
+}
+
+void Canvas::pushTimer(double deadline, uint64_t id)
+{
+    // cancelled entries are dropped as they come up; past twice the pending
+    // count the heap is rebuilt without them
+    if(m_timerHeap.size() >= 2*m_timers.size()+16)
+    {
+        m_timerHeap.erase(std::remove_if(m_timerHeap.begin(), m_timerHeap.end(),
+            [this](const TimerEntry &entry) { return m_timers.count(entry.id) == 0; }),
+            m_timerHeap.end());
+        std::make_heap(m_timerHeap.begin(), m_timerHeap.end(), TimerLater());
+    }
+    m_timerHeap.push_back({deadline, m_timerSerial++, id});
+    std::push_heap(m_timerHeap.begin(), m_timerHeap.end(), TimerLater());
+}
+
+void Canvas::pruneTimers()
+{
+    while(!m_timerHeap.empty() && (m_timers.count(m_timerHeap.front().id) == 0))
+    {
+        std::pop_heap(m_timerHeap.begin(), m_timerHeap.end(), TimerLater());
+        m_timerHeap.pop_back();
+    }
+}
+
+bool Canvas::cancel(TimerHandle timer)
+{
+    // the heap entry stays until it comes up; the function goes now, unless
+    // it is running (runTimers() holds it then)
+    return m_timers.erase(timer.id()) != 0;
+}
+
+void Canvas::cancelTimersOwnedBy(Base *owner)
+{
+    for(Canvas *canvas:liveCanvases())
+    {
+        for(auto it=canvas->m_timers.begin(); it != canvas->m_timers.end();)
+        {
+            if(it->second.owner == owner)
+                it=canvas->m_timers.erase(it);
+            else
+                ++it;
+        }
+    }
+}
+
+void Canvas::runTimers()
+{
+    pruneTimers();
+    if(m_timerHeap.empty())
+        return;
+
+    const double now=platform::getTimeInSeconds();
+    // what this update's callbacks add or reschedule waits for the next one
+    const uint64_t serialLimit=m_timerSerial;
+
+    m_runningTimers=true;
+    while(!m_timerHeap.empty())
+    {
+        const TimerEntry top=m_timerHeap.front();
+        auto it=m_timers.find(top.id);
+
+        if(it == m_timers.end())
+        {
+            std::pop_heap(m_timerHeap.begin(), m_timerHeap.end(), TimerLater());
+            m_timerHeap.pop_back();
+            continue;
+        }
+        if((top.deadline > now) || (top.serial >= serialLimit))
+            break;
+
+        std::pop_heap(m_timerHeap.begin(), m_timerHeap.end(), TimerLater());
+        m_timerHeap.pop_back();
+
+        // the callback may cancel this timer or any other, or add some, so
+        // it runs from a local, found again by id after it returns
+        std::function<void()> function=std::move(it->second.function);
+        const uint64_t id=top.id;
+
+        if(it->second.repeating)
+        {
+            Timer &timer=it->second;
+
+            if(timer.period > 0.0)
+            {
+                // the next multiple of the period past now: after a gap it
+                // fires once, and the deadlines stay origin+k*period
+                uint64_t next=timer.index+1;
+                const double missed=std::floor((now-timer.origin)/timer.period);
+
+                if(missed+1.0 > double(next))
+                    next=uint64_t(missed)+1;
+                while(timer.origin+double(next)*timer.period <= now)
+                    ++next;
+                timer.index=next;
+                pushTimer(timer.origin+double(next)*timer.period, id);
+            }
+            else
+                pushTimer(now, id);
+        }
+        else
+            m_timers.erase(it);
+
+        function();
+
+        auto again=m_timers.find(id);
+
+        if(again != m_timers.end() && !again->second.function)
+            again->second.function=std::move(function);
+    }
+    m_runningTimers=false;
 }
 
 void Canvas::renumberZOrder()

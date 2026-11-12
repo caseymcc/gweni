@@ -16,6 +16,7 @@
 #include <functional>
 #include <memory>
 #include <set>
+#include <unordered_map>
 #include <vector>
 
 namespace gweni
@@ -220,6 +221,27 @@ private:
     size_t m_liveTexts=0;
 };
 
+//! A canvas timer (Canvas::after(), every()), what Canvas::cancel() takes. A
+//! default one is no timer; an id is never used twice in a process.
+class TimerHandle
+{
+public:
+    TimerHandle()=default;
+
+    bool valid() const { return m_id != 0; }
+    explicit operator bool() const { return valid(); }
+    uint64_t id() const { return m_id; }
+
+    bool operator==(const TimerHandle &other) const { return m_id == other.m_id; }
+    bool operator!=(const TimerHandle &other) const { return m_id != other.m_id; }
+
+private:
+    friend class Canvas;
+    explicit TimerHandle(uint64_t id): m_id(id) {}
+
+    uint64_t m_id=0;
+};
+
 class GWENI_EXPORT Canvas: public Base, public IInputEvent
 {
 public:
@@ -259,6 +281,31 @@ public:
     /// empty, so an idle loop wakes for it (glfwPostEmptyEvent(), or a flag a
     /// web loop reads). The core never wakes anything itself.
     void setWakeHandler(std::function<void()> handler) { m_postQueue->setWakeHandler(std::move(handler)); }
+
+    /// UI-thread timers, run by updateCanvas() after the posts and before
+    /// doThink() (so before the animations), off platform::getTimeInSeconds(),
+    /// which setTimeSource() drives. after() calls \p function once, on the
+    /// first update at or past \p seconds from now; every() on the first at or
+    /// past each multiple of \p seconds from now, each deadline counted from
+    /// the first, so it does not drift, and after a gap of several periods it
+    /// fires once and goes on from the next multiple past the update's time
+    /// (a period of 0 or less fires once each update). Timers due in the
+    /// same update fire by deadline, then in the order they were added; one
+    /// added or rescheduled by a callback is not run in the update that
+    /// added it. A waiting timer costs an update nothing and is no animation
+    /// (UpdateStats::animsRun). With an \p owner, deleting the owner cancels
+    /// it (~Base). A timer earlier than every pending one calls the wake
+    /// handler (setWakeHandler()), so an idle loop wakes for it.
+    TimerHandle after(double seconds, std::function<void()> function, Base *owner=nullptr);
+    TimerHandle every(double seconds, std::function<void()> function, Base *owner=nullptr);
+    /// Cancels a timer of this canvas, also from inside a callback (its own
+    /// or another's); its function is destroyed once it no longer runs.
+    /// Returns whether it was pending.
+    bool cancel(TimerHandle timer);
+    /// Whether the timer is pending on this canvas (a fired after() is not).
+    bool timerPending(TimerHandle timer) const { return m_timers.count(timer.id()) != 0; }
+    /// The timers pending on this canvas.
+    size_t timerCount() const { return m_timers.size(); }
 
     /// You should call this to render your canvas.
     virtual void renderCanvas();
@@ -626,6 +673,40 @@ protected:
     float m_scale;
     /// post()'s queue, shared with postHandle()'s holders, closed by ~Canvas
     std::shared_ptr<PostQueue> m_postQueue=std::make_shared<PostQueue>();
+
+    /// A pending timer: the function, the first deadline and the period (0 for
+    /// after()), its pending deadline as origin+index*period, and the owner.
+    struct Timer
+    {
+        std::function<void()> function;
+        double origin=0.0;
+        double period=0.0;
+        bool repeating=false;
+        uint64_t index=0;
+        Base *owner=nullptr;
+    };
+    /// A deadline in the heap; serial is the order it was pushed in (ties,
+    /// and what an update's run leaves for the next). An entry whose id is no
+    /// longer in m_timers was cancelled and is dropped when it comes up.
+    struct TimerEntry
+    {
+        double deadline;
+        uint64_t serial;
+        uint64_t id;
+    };
+    TimerHandle addTimer(double seconds, std::function<void()> function, Base *owner, bool repeating);
+    void pushTimer(double deadline, uint64_t id);
+    /// Drops cancelled entries off the heap's top.
+    void pruneTimers();
+    /// Runs the timers due at the update's time.
+    void runTimers();
+    /// ~Base: cancels \p owner's timers on every canvas.
+    static void cancelTimersOwnedBy(Base *owner);
+
+    std::unordered_map<uint64_t, Timer> m_timers;
+    std::vector<TimerEntry> m_timerHeap;
+    uint64_t m_timerSerial=0;
+    bool m_runningTimers=false;
     /// The renderer's textLayoutSerial() the tree was last laid out for
     unsigned m_textLayoutSerial=0;
 

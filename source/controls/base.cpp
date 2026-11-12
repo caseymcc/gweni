@@ -329,6 +329,8 @@ Base::~Base()
 #if GWENI_ANIMATE
     anim::cancel(this);
 #endif
+    if(m_ownsTimers)
+        Canvas::cancelTimersOwnedBy(this);
 
     if(m_dragAndDrop_Package)
     {
