@@ -3432,6 +3432,109 @@ out nothing, renumbers no z and hit-tests nothing, the click presses nothing, th
 hover, focus, tree serial and live ids are kept, and the frame after the close is the
 one before the open, byte for byte. `backend_pixels` holds its shots on Vulkan to GL's.
 
+## The URL, history, links and storage (`platform.h`)
+
+An app reached through deep links (`/app/tasks/42?view=backlog`) keeps its state in
+the URL, opens external links in a new tab, keeps a draft across a reload and shows
+times in the user's zone. `gweni::platform` has a small set of functions for that, the
+same on every target: the browser's own behaviour in a page, a native equivalent or an
+in-process stand-in elsewhere, so the app is written once. Fetch and WebSocket stay the
+app's (Emscripten's own APIs), and nothing here needs ASYNCIFY or another main loop.
+
+- **The URL helpers** (`source/platforms/url.cpp`, plain string functions): `Url {path,
+  query, hash}` with `parseUrl`/`formatUrl` (split at the first `?` and `#`, nothing
+  decoded), `parseQuery`/`buildQuery` (`+` a space, `%XX` a byte, so UTF-8 comes back as
+  it went; a key with an empty value is written alone, so `?stats-overlay` stays a flag),
+  `splitPath`/`joinPath` (each segment decoded or encoded on its own, so `%2F` is a `/`
+  inside its segment; an empty segment and a trailing `/` are kept). There is no router:
+  the app matches `splitPath(parseUrl(currentUrl()).path)` itself.
+- **Three forms, no resolver.** `pushUrl`/`replaceUrl` take `/path[?query][#hash]` (all
+  three parts replaced), `?query[#hash]` (the path kept) and `#hash` (the path and query
+  kept), and refuse anything else with `false` and one stderr line: a relative path
+  (`tasks/42`), a scheme or a host (`https://...`, `//host/x`), a `.` or `..` segment
+  (encoded or not), and a character a browser would percent-encode itself (a space, a
+  control or non-ASCII byte, `"`, `<`, `>`, `\`, `^`, a backquote, `{`, `|`, `}`, and a
+  `'` in the query). One function, `detail::resolveUrlTarget`
+  (`source/platforms/urlTarget.h`), turns the argument into the whole new path, query and
+  hash on every target, and the web hands that to `history.pushState`/`replaceState`
+  made absolute against `location.href`. With no relative resolution anywhere, the
+  in-process history and the browser cannot disagree, a page's `<base href>` cannot
+  change what a push means, and `currentUrl()` gives back exactly what was pushed (no
+  character in it is one the browser rewrites).
+- **Back and forward.** `historyBack()`/`historyForward()` move the history and
+  `setUrlChangedHandler(fn)` is told the new URL; the app's own push or replace is never
+  delivered. On the web they are `history.back()`/`forward()` and a `popstate` listener
+  (installed with the first handler, removed with an empty one and when the runtime
+  exits) that calls the exported `gweni_platform_url_changed`. A DOM event is a task of
+  its own, outside the main loop's frame, as input is, so the handler runs between frames
+  and never inside the render walk; `history.back()` is asynchronous, so it runs on a
+  later task, and it also runs for the browser's own buttons and a hash edited in the
+  address bar. Elsewhere the history is an **in-process stack** starting at `/`: a push
+  drops the entries forward of the current one, and back and forward call the handler
+  inside the call. A desktop app given a deep link on its command line passes it to
+  `replaceUrl` at start-up; there is no other way to set it.
+- **Opening a link.** `openUrl` takes `http` and `https` with a host and `mailto` with an
+  address, and refuses every other scheme (`javascript:`, `file:`, `data:`, ...), a space
+  or a control character, with one stderr line. On the web it is `window.open(url,
+  '_blank', 'noopener,noreferrer')`; with `noopener` it returns null whether a popup
+  blocker stopped it or not, so a blocked tab cannot be told apart and `openUrl` does not
+  claim to. A link opened from a click or a key works: emscripten-glfw delivers input
+  inside the DOM event, which carries the user's activation. One opened from a timer or a
+  fetch callback may be blocked. On Linux it is `xdg-open` (`open` on macOS,
+  `ShellExecute` on Windows), started through fork and exec with the URL as its one
+  argument, never through a shell, in a grandchild the app never reaps; a failed exec
+  comes back through a close-on-exec pipe, so `openUrl` returns false when there is no
+  opener. `setOpenUrlHandler` replaces the opener (after the checks), for tests.
+- **Storage.** `storageGet`/`storageSet`/`storageRemove`/`storageKeys` keep UTF-8 strings,
+  every key under `setStoragePrefix`'s prefix (on every target), so apps sharing a store
+  do not collide. On the web the store is `localStorage` (a write over the quota returns
+  false with the old value kept). Elsewhere it is the JSON object in the file
+  `setStorageFile` names, loaded whole when it is set and written whole on every change:
+  into a temporary file beside it, flushed, then renamed over it, so the file is the old
+  one or the new one and never part of either. It is not a database: two instances on one
+  file each write what they hold, and the last one wins. With no file the values are in
+  memory, and the first use says so on stderr once per process.
+- **Names.** `timeZoneName()` is the IANA zone (`Intl.DateTimeFormat().resolvedOptions()
+  .timeZone` on the web; elsewhere `TZ`, or the zoneinfo file `/etc/localtime` links to,
+  or `UTC`), `localeName()` the BCP 47 locale (`navigator.language`; elsewhere `LC_ALL` or
+  `LANG` without its codeset, so `en_US.UTF-8` is `en-US`, and `en-US` for `C`). Under
+  Emscripten `localtime_r` already uses the browser's offset, so a name is all an app
+  needs to label its times; there is no zone database or date formatting here.
+- **Under node** (the web tree's `unit:` tests) there is no `window`: every function keeps
+  to the in-process version, so `tests/unit/browserPlatform.cpp` runs there unchanged,
+  and `tests/webPlatform.cpp` pins the browser's in `gweni_unittests.html`.
+- **No window title.** The app owns the GLFW window on both targets and
+  `glfwSetWindowTitle` sets `document.title` in emscripten-glfw, so the library, which
+  owns no window and links no GLFW, has no title call.
+
+**A page that keeps its state in the query** sets `Module.gweniQueryArgs = false` beside
+`Module.gweniDefaultArgs` (`examples/openglcore/web/pre.js`): main then gets the default
+arguments alone, instead of every query key as `--key value`, which ControlTest and
+OpenGLCore would refuse, and the app reads `currentUrl()` itself. `pre.js` never reads
+the path.
+
+**A page served at every path** (the orchestrator serves its frontend at every
+`/app/...`) must load its script absolutely (`src="/app/OpenGLCore.js"`) or set `<base
+href>`: a relative `src` at `/app/tasks/42` loads `/app/tasks/OpenGLCore.js`, and
+Emscripten finds the `.wasm` and `.data` next to the script (`scriptDirectory`), so the
+script tag is the one URL that matters. gweni's own pages (`shell.html`,
+`tools/site/*.html`) are served from a directory and stay relative; `web_navigation`
+serves `OpenGLCore.html` at every `/app/` path with `<base href="/">` put in its head.
+
+**The demo shell** uses the query alone, since GitHub Pages cannot serve every path.
+`Demo::setPageShownHandler` reports each page shown and whether the user picked it from
+the list or the app showed it (`showDemo`). OpenGLCore's window (never a capture, so
+what a capture draws never depends on an earlier run) pushes `?demo=<Name>` for a pick,
+keeping the query's other keys, and replaces the URL for a page it showed itself
+(`--demo`, the stored page, back or forward), so restoring a page never grows the
+history; its URL-changed handler shows the page the URL names (the start page if none).
+It stores the page last shown (`localStorage` under `gweni-demo/` on the web,
+`$XDG_STATE_HOME/gweni/OpenGLCore.json`, or `~/.local/state/gweni/...`, elsewhere, so a
+desktop run prints nothing) and shows it at start-up when `--demo` names none, and titles
+the window `gweni — <Name>`. The status bar's "gweni on GitHub" link opens
+`Demo::LinkUrl` with `openUrl`. `web_navigation` (`tests/web/navigation.mjs`) checks all
+of it in Chromium on `OpenGLCore.html` and `demo.html`.
+
 ## Missing resources: degraded, not fatal
 
 The library reports a resource it cannot load and goes on drawing; it never exits.
