@@ -2494,7 +2494,9 @@ two programs and the draws. What follows describes both together:
   says so again). It is in `m_fonts` like a loaded face, so it is loaded and
   reported once per key, and `ensureFont` counts it as loaded. Only if that fails
   too, or with `setFallbackFont(false)` (a test hook), does the key go into
-  `m_failedFonts`, its text drawing nothing and measuring `(0,0)`.
+  `m_failedFonts`, its text drawing nothing and measuring `(0,0)`. This is a
+  *file* fallback for a whole face; a codepoint a face has no glyph for is the glyph
+  fallback chain's ("Font fallback" below).
 - **Grayscale text on the pixel grid.** Each font's atlas is depth 1 (`LCD_FILTERING_OFF`):
   one coverage byte per texel, a `GL_R8` texture uploaded as `GL_RED` with
   `GL_UNPACK_ALIGNMENT` 1, a third of the bytes an RGB atlas takes. The vendored
@@ -2703,6 +2705,108 @@ two programs and the draws. What follows describes both together:
   counts it as one measure (`measureTextCalls()`). `tests/measureCarets.cpp` pins the
   equality and `getClosestCharacter`'s answers against the old per-prefix walk in every
   mode and at scale 1.5; `tests/unit/closestCharacter.cpp` the one call per probe.
+
+## Font fallback
+
+Two mechanisms are both called fallback; they answer different questions.
+
+- **The file fallback** (`SlotRenderer::setFallbackFont`, `m_fallbackFont`,
+  "A missing face is drawn in a built-in font" above) is about a *face*: a font whose file is
+  missing or unreadable is loaded from the embedded OpenSans instead, as a font of its own
+  (`Font::Status::LoadedFallback`). It changes which face a whole run is in.
+- **The glyph fallback chain** (`SlotRenderer::setGlyphFallback(face, chain)`, the skin
+  config's `"fontFallback"`, freetype-gl's `texture_font_t::fallback`) is about a
+  *codepoint*: a run stays in its own face, and a codepoint that face has no glyph for is
+  drawn from the first face of its chain that has one, in the same run, atlas and draw.
+
+**The chain.** `setGlyphFallback(face, chain)` sets a face's chain, `""` the default one
+that every face without its own takes; `glyphFallback(face)` is the chain a face's fonts
+use, less the face itself and repeats (so a face's own chain may be empty, and its own
+missing glyph shows). The textured skin sets it from `DefaultSkin.json`:
+`"fontFallback": {"default": ["DejaVuSansMono"], "<face>": [...]}`, read by
+`TexturedSkin::init` before it loads the default font (`IResourceLoader::setGlyphFallback`,
+a no-op on renderers without one). The shipped config's default chain is DejaVu Sans Mono
+alone, so the arrows, ✓ ✗ ⚠, ★ and box drawing OpenSans lacks are mono glyphs in
+proportional text; DejaVu Sans Mono's own chain is empty. The renderer sets no chain by
+itself. A chain changed after fonts are loaded loads the fonts whose chain it changed again
+with their owners (`reloadFonts`, which `setTextAA` uses too) and raises
+`textLayoutSerial()`, so their runs are laid out again on the next frame.
+
+**One atlas, the run's.** Each chain face becomes, for a font that needs it, one more
+`texture_font_t` on the **primary** font's atlas (the same `font_manager_t`'s), at the
+primary's size and mode: the coverage size and hinting, LCD's `subpixel_positions`, SDF's
+`sdf_spread` and base size. A run is still one `TextRun` with one `FontData`, so
+`buildTextDrawList`, the backends' text programs and `text_draws` are what they were.
+freetype-gl asks the chain through a callback, `texture_font_t::fallback(fallback_data,
+index)` (`SlotRenderer::glyphChainFont`, the font's `GlyphChain`), when
+`FT_Get_Char_Index` gives 0 for a codepoint that is not 0: chain fonts are tried in order
+and each is made only when the walk reaches it, so a font whose codepoints are all its own
+opens none. That is why it is a callback and not a list of fonts: making a `texture_font_t`
+loads its null glyph into the atlas, which would move a Latin run's atlas bytes. A glyph
+taken from a chain font is kept in the primary's `fallback_glyphs` (and so in
+`FontData::glyph()`'s table), `texture_glyph_t::font` naming the font it came from. Only
+when no chain face has the codepoint does the primary's own missing glyph show. A chain
+font starts with an empty cache, no ASCII warm-up, and is deleted with its primary's
+`FontData` (`GlyphChain`'s destructor); #552's idle-flush wait for a font no load owns
+applies to the primary as before. Each chain face's file is read into memory once and
+shared by every font using it (`glyphFallbackBlob`, kept by `weak_ptr` in
+`m_glyphFallbackBlobs`, so it goes when the last font holding it does, and is read again
+when needed), and loaded from memory (`TEXTURE_FONT_MEMORY`), since a file-backed
+freetype-gl font opens its file again on every glyph load. A config that names a chain
+face whose file is missing reports it (`Glyph fallback font file not found: <path>`), drops
+it and fails `init` ("Missing resources").
+
+**Metrics.** The line height and baseline are the run's face's. In proportional text a
+chain glyph moves the pen by its own face's advance, and two glyphs of different faces are
+not kerned: `texture_glyph_get_kerning_glyph` gives 0 across fonts, and freetype-gl's
+`text_buffer_add_char`, `walkPens` and `layoutSdfText` look a pair up again across faces
+only in a font with a chain, so text in a font without one is laid out as before. Since
+the three walks take the same glyphs, `measureText` and `measureCarets` give the drawn
+width with chain glyphs as with any other.
+
+**Default-ignorables draw nothing.** U+200B..200D (zero-width space, non-joiner, joiner),
+U+2060 (word joiner), U+FE00..FE0F (variation selectors, as in "⚠️") and U+FEFF have no
+advance and no glyph slot in every face and mode: `ftgl::utf8_is_ignorable` is the one
+predicate, and `text_buffer_add_char` (coverage and LCD), `walkPens` (their measures and
+carets) and `layoutSdfText` (SDF) skip such a codepoint before any glyph lookup. It still
+takes a caret position (a codepoint boundary), at the same x as the one before it, and it
+is the `previous` of the next codepoint, so no kerning pair spans it.
+
+**Terminal cells in a fixed-width face.** A run whose face is `FT_IS_FIXED_WIDTH`
+(`texture_font_t::fixed_width`, DejaVu Sans Mono) lays every codepoint in whole cells, as a
+terminal's `wcwidth` does, so tables CLI tools pad line up: `gweni::text::cellCount(cp)`
+(`include/gweni/text/cells.h`) is 2 for East_Asian_Width Wide and Fullwidth (with the
+blocks the UCD defaults to W), 0 for combining marks (Mn, Me) and the ignorables above, 1
+for everything else, Ambiguous included. It goes by codepoint whichever face draws the
+glyph: ⚡ U+26A1 and ☔ U+2614 take 2 cells though DejaVu Sans Mono draws them one cell
+wide. Its range tables (`source/text/cellWidthTable.inc`) are generated by
+`tools/gen_cell_widths.py` from the UCD's `EastAsianWidth.txt` and
+`DerivedGeneralCategory.txt`, at the Unicode version `cellWidthUnicodeVersion()` names
+(18.0.0); the script downloads them or reads `--ucd DIR`, and regenerating an unchanged
+version writes the same bytes. `loadFont` sets a fixed-width font's
+`texture_font_t::cell_width` to its advance for `0` as that font loads it (a whole pixel
+when hinted, the base size's unhinted one in an SDF font, scaled with the run) and
+`cells` to `cellCount`. Then `texture_font_cell_place` places each glyph: the pen moves by
+`cells*cell_width`, and the glyph's advance box is centred in its cells (a zero-cell
+glyph with an advance over the cell before the pen, one without at the pen, so a
+combining mark is drawn over its letter), the offset a whole pixel in a hinted font
+without subpixel positions, and quantised with the pen to 1/3 px in LCD. A font with cells
+is not kerned. `text_buffer_add_char`, `walkPens` and `layoutSdfText` all go through it, so
+every caret is a whole number of cells. A font that is not fixed-width has `cell_width` 0
+and is laid out by its own advances.
+
+`tests/glyphFallbackChain.cpp` pins the freetype-gl patch (the callback, the borrowed
+glyphs' cache and owner, no kerning across fonts), `tests/glyphFallbackText.cpp` the
+chain in `SlotRenderer` in grayscale, LCD and SDF (Latin text reading no chain file and
+drawing as with no chain, a chain glyph being the chain face's image in one run and one
+draw, the chain's order, the measures, the shared file, a chain set late),
+`tests/skinFonts.cpp` the skin's `"monoFont"` and `"fontFallback"`,
+`tests/ignorableText.cpp` the ignorables in every mode, and `tests/monoCells.cpp`
+`cellCount`'s table and a box-drawing table in DejaVu Sans Mono at 8 to 24 px (coverage
+and SDF) and scale 1, 1.5 and 2, its carets whole cells and its three rules unbroken and
+in the same device px in every row, on GL and Vulkan. UnicodeTextDemo shows a symbols line
+through the chain, a log table in the mono face and the CJK line, which no shipped face
+has, still as missing-glyph boxes.
 
 ## The zoom panel
 
@@ -3679,6 +3783,13 @@ The library reports a resource it cannot load and goes on drawing; it never exit
 - **Font**: `SlotRenderer::loadFont` draws a missing or unreadable face in the built-in
   OpenSans and returns `Font::Status::LoadedFallback` (see "A missing face is drawn in a
   built-in font"); only if that fails too is the text drawn as nothing.
+- **Mono and chain faces** (the config's `"monoFont"` and `"fontFallback"` faces): a
+  file the config names that is not there prints one line naming the path, once per
+  file however many roles name it (`Mono font
+  file not found: <path> (using OpenSans)`, `Glyph fallback font file not found:
+  <path>`) and `init` returns `false`. A missing mono face is replaced by the default
+  font's face (`getDefaultMonoFont()` keeps its size), a missing chain face is left out
+  of the chain ("Font fallback").
 
 What to do about it is the application's choice. The examples (`OpenGLCore`,
 `ControlTest`) keep going: `capture::resourcePaths()` reports a missing resource
