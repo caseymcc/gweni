@@ -11,9 +11,12 @@
  *  item's place in the viewport (so nothing is far off screen). A count that
  *  shrinks while scrolled to the end keeps the view full and valid, one that
  *  grows binds nothing that still shows its item, and scrollToItem puts the
- *  item fully in view. Also ScrollControl's virtual content under it: the
- *  vertical bar ranged from the virtual height, the offset clamped to it, and
- *  a bar the user moves setting the offset.
+ *  item fully in view. An insert or a removal above the top moves the offset
+ *  by the items' height, so the items on screen stay where they were, also
+ *  when the bar was moved in the same frame, before a layout took it. Also
+ *  ScrollControl's virtual content under it: the vertical bar ranged from the
+ *  virtual height, the offset clamped to it, and a bar the user moves setting
+ *  the offset.
  *
  *  In detail: the pool is ceil(viewport/rowHeight)+1 rows for several heights,
  *  and the rows on screen are bound once. A one-row scroll binds exactly the
@@ -141,6 +144,26 @@ struct Scene
 
         taken.swap(binds);
         return taken;
+    }
+
+    //! An edit keeps a row's item at its new index without a bind: the model
+    //! of what each row shows after count items were inserted at at (count >
+    //! 0) or removed from it (count < 0).
+    void shiftBound(size_t at, int64_t count)
+    {
+        const size_t removedEnd=count < 0?at+static_cast<size_t>(-count):at;
+
+        for(auto it=boundTo.begin(); it != boundTo.end();)
+        {
+            if(it->second >= at && it->second < removedEnd)
+            {
+                it=boundTo.erase(it);
+                continue;
+            }
+            if(it->second >= at)
+                it->second=count > 0?it->second+static_cast<size_t>(count):it->second-(removedEnd-at);
+            ++it;
+        }
     }
 
     std::vector<controls::Base *> shownRows() const
@@ -502,6 +525,93 @@ TEST_CASE("VirtualList: the item count changing keeps the view valid")
         s.list->refreshItem(500);
         s.frame();
         CHECK(s.takeBinds().empty());
+    }
+}
+
+TEST_CASE("VirtualList: an insert or a removal above the top keeps the items on screen")
+{
+    Scene s(1000);
+    struct OnePass
+    {
+        Scene &s;
+        ~OnePass() { s.checkOnePass(); }
+    } onePass{s};
+
+    SUBCASE("laid out at its offset: the rows keep their items, nothing is bound")
+    {
+        s.list->setVerticalScrollOffset(200*RowHeight+7);
+        s.frame();
+        s.takeBinds();
+
+        controls::Base *top=s.list->rowForItem(200);
+        REQUIRE(top != nullptr);
+        const int y=top->getY();
+
+        s.list->insertItems(0, 10);
+        s.shiftBound(0, 10);
+        s.frame();
+        CHECK(s.list->getVerticalScrollOffset() == 210*RowHeight+7);
+        CHECK(s.list->rowForItem(210) == top);
+        CHECK(top->getY() == y);
+        CHECK(s.takeBinds().empty());
+        checkView(s);
+
+        s.list->removeItems(5, 10);
+        s.shiftBound(5, -10);
+        s.frame();
+        CHECK(s.list->getVerticalScrollOffset() == 200*RowHeight+7);
+        CHECK(s.list->rowForItem(200) == top);
+        CHECK(top->getY() == y);
+        CHECK(s.takeBinds().empty());
+        checkView(s);
+    }
+
+    // The bar moved in the same frame as the edit, before any layout took it:
+    // the edit moves the offset the bar was moved to, not the last layout's.
+    // At half the bar the offset is (1000*20-100)/2 = 9950: item 497, 10 into it.
+    controls::VerticalScrollBar *bar=s.bar();
+    REQUIRE(bar != nullptr);
+    const int dragged=(1000*RowHeight-s.list->getViewportHeight())/2;
+
+    SUBCASE("an insert above the top in the frame of a drag")
+    {
+        bar->setScrolledAmount(0.5f, true);
+        s.list->insertItems(0, 10);
+        s.shiftBound(0, 10);
+        s.frame();
+        CHECK(s.list->getVerticalScrollOffset() == dragged+10*RowHeight);
+        checkView(s);
+    }
+
+    SUBCASE("a removal above the top in the frame of a drag")
+    {
+        bar->setScrolledAmount(0.5f, true);
+        s.list->removeItems(0, 10);
+        s.shiftBound(0, -10);
+        s.frame();
+        CHECK(s.list->getVerticalScrollOffset() == dragged-10*RowHeight);
+        checkView(s);
+    }
+
+    SUBCASE("a removal of the item at the top in the frame of a drag")
+    {
+        // the item after the removed ones takes the top
+        bar->setScrolledAmount(0.5f, true);
+        s.list->removeItems(495, 10);
+        s.shiftBound(495, -10);
+        s.frame();
+        CHECK(s.list->getVerticalScrollOffset() == 495*RowHeight);
+        checkView(s);
+    }
+
+    SUBCASE("an insert below the view in the frame of a drag")
+    {
+        bar->setScrolledAmount(0.5f, true);
+        s.list->insertItems(900, 10);
+        s.shiftBound(900, 10);
+        s.frame();
+        CHECK(s.list->getVerticalScrollOffset() == dragged);
+        checkView(s);
     }
 }
 

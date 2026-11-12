@@ -173,6 +173,8 @@ void VirtualList::insertItems(size_t at, size_t count)
         return;
     }
 
+    takeBarScroll();
+
     const int offset=getVerticalScrollOffset();
     const size_t top=static_cast<size_t>(offset/m_rowHeight);
     const bool above=at <= top && top < m_itemCount;
@@ -217,6 +219,8 @@ void VirtualList::removeItems(size_t at, size_t count)
         invalidate();
         return;
     }
+
+    takeBarScroll();
 
     const int offset=getVerticalScrollOffset();
     const size_t top=static_cast<size_t>(offset/m_rowHeight);
@@ -551,11 +555,11 @@ void VirtualList::anchorAbove(size_t item, int viewport)
     m_anchorOffset=static_cast<int>(-need);
 }
 
-void VirtualList::anchorAtOffset()
+void VirtualList::takeBarScroll()
 {
     // A bar moved by the user since the last layout (its thumb, its buttons)
     // is taken at the content it was moved against, as placeContents takes
-    // it, before an edit moves the offset from the anchor and the bar with it.
+    // it, before an edit moves the offset (and the bar with it).
     const float amount=m_verticalScrollBar->getScrolledAmount();
 
     if(amount != m_shownAmount[1])
@@ -564,6 +568,11 @@ void VirtualList::anchorAtOffset()
             static_cast<double>(amount)*m_scrollRange[1])), 0, getMaxVerticalScrollOffset());
         m_shownAmount[1]=amount;
     }
+}
+
+void VirtualList::anchorAtOffset()
+{
+    takeBarScroll();
 
     const int offset=getVerticalScrollOffset();
 

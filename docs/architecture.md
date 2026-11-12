@@ -1929,7 +1929,7 @@ two programs and the draws. What follows describes both together:
   press and focus and is free for the next layout (which tests the hover again); the
   item at the top stays there, or, removed, the one after the removed ones takes its
   place (a `setItemCount` cutting it off leaves the anchor past the end, which an
-  insert above it keeps there, so the next layout shows the end). Fixed mode gets the same edits by whole rows. **Stuck to the end**
+  insert above it keeps there, so the next layout shows the end). Fixed mode gets the same edits by whole rows. In both modes the top is where the bar is when the edit is made: a bar the user moved since the last layout is taken first, at the content it was moved against, as `placeContents` would take it. **Stuck to the end**
   (`setStickToEnd(true)`), every layout puts the last item's bottom at the viewport's
   bottom, through appends, removals and new heights, in their frame; only the app
   sticks or unsticks it, a scroll does not. **The pool** is the viewport at the

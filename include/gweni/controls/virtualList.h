@@ -128,8 +128,9 @@ public:
     //! bound again, and one whose item was removed is hidden or given another.
     //! The item at the viewport's top stays there with the rows below it,
     //! however many items were added or removed above it (one removed takes
-    //! the item after the removed ones there); a list stuck to its end keeps
-    //! its end. O(log N) in the item count, plus the items added or removed
+    //! the item after the removed ones there), the top being where the bar
+    //! is now, moved since the last layout or not; a list stuck to its end
+    //! keeps its end. O(log N) in the item count, plus the items added or removed
     //! (in variable mode the estimator is asked for each one added).
     void insertItems(size_t at, size_t count);
     void removeItems(size_t at, size_t count);
@@ -265,6 +266,9 @@ private:
     //! Anchors so that item's bottom is at the viewport's bottom, measuring
     //! the items above it that show; at the top when they all fit.
     void anchorAbove(size_t item, int viewport);
+    //! A bar the user moved since the last layout becomes the scroll offset,
+    //! at the content it was moved against.
+    void takeBarScroll();
     //! A scroll offset set since the last layout (the bar, the wheel,
     //! setVerticalScrollOffset) becomes the anchor.
     void anchorAtOffset();
