@@ -39,6 +39,23 @@ GWENI_EXPORT uint32_t utf8CodepointAt(const String &str, size_t pos, size_t *nex
 //! begin should be a codepoint boundary.
 GWENI_EXPORT size_t stringCells(const String &str, size_t begin=0, size_t end=static_cast<size_t>(-1));
 
+//! The byte offset \p cells cells into \p str: past every codepoint that
+//! fits whole in them, with the combining marks after the last (0 cells)
+//! taken too, so a wide glyph a column falls inside is left out. str.size()
+//! past the end.
+GWENI_EXPORT size_t byteAtCell(const String &str, size_t cells);
+
+//! The caret stop (see nextCaretStop) nearest \p cells cells into \p str, a
+//! fraction of a cell included: a column inside a glyph goes to whichever of
+//! its edges is nearer, a tie to the left one.
+GWENI_EXPORT size_t byteNearestCell(const String &str, double cells);
+
+//! The caret stop after (before) byte \p pos: the next (previous) codepoint
+//! boundary that is not followed by a combining mark, so a mark moves with
+//! its base. str.size() (0) at the end (start).
+GWENI_EXPORT size_t nextCaretStop(const String &str, size_t pos);
+GWENI_EXPORT size_t prevCaretStop(const String &str, size_t pos);
+
 //! The Unicode version cellCount's tables were generated from, e.g. "18.0.0"
 GWENI_EXPORT const char *cellWidthUnicodeVersion();
 

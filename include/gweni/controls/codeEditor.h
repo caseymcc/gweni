@@ -8,6 +8,7 @@
 #ifndef _gweni_controls_codeeditor_h_
 #define _gweni_controls_codeeditor_h_
 
+#include <gweni/controls/caretBlink.h>
 #include <gweni/controls/text.h>
 #include <gweni/controls/virtualList.h>
 #include <gweni/text/document.h>
@@ -92,6 +93,23 @@ private:
 //! renderer text layout and scale, so a column's x is TextInset plus the
 //! column times the cell width on every line, a line with CJK in it
 //! included.
+//!
+//! The caret and the selection's other end (the anchor) are document
+//! positions (text::Position, a line and a byte offset), so they survive
+//! scrolling and edits of other lines. The caret is drawn by the editor at
+//! its overlay z, in front of every row, one unit wide and a line high at
+//! its column, while the editor has the keyboard focus; it blinks
+//! (internal::CaretBlink, TextBox's) and stays lit after a move or an edit.
+//! A caret stop is a codepoint boundary not followed by a combining mark (a
+//! codepoint of 0 cells), so a mark moves with its base. Up and Down (and
+//! PageUp, PageDown) keep the column in cells a run of them started at, and
+//! land before a wide glyph that column falls inside. Home goes to the
+//! line's first non-blank, or to column 0 from there; Ctrl+Left/Right move
+//! by words (letters, digits, '_' and every non-ASCII codepoint), runs of
+//! other punctuation and line ends. Return keeps the line's indent (its
+//! leading blanks, up to the caret). Every move puts the caret in view: its
+//! line by the next layout (VirtualList::scrollToItem), its column with a
+//! cell to spare.
 class GWENI_EXPORT CodeEditor: public VirtualList
 {
 public:
@@ -141,9 +159,69 @@ public:
     //! that line is not on screen.
     CodeLine *rowForLine(size_t line) const;
 
+    //! \name Caret and selection
+    //! \{
+
+    //! Where the caret is, and the selection's other end (the caret itself
+    //! when nothing is selected).
+    const text::Position &getCaret() const { return m_caret; }
+    const text::Position &getAnchor() const { return m_anchor; }
+    //! Moves the caret to \p position (clamped to the document, snapped to
+    //! a caret stop), keeping the anchor with \p extend, and puts it in view.
+    void setCaret(const text::Position &position, bool extend=false);
+    //! The caret's column in cells on its line.
+    size_t getCaretColumn() const { return m_caretColumn; }
+    bool hasSelection() const { return m_caret != m_anchor; }
+    //! The selection from its first position to its last.
+    text::Range getSelection() const;
+    String getSelectedText() const;
+    void selectAll();
+
+    //! The caret stop under a point in the editor's coordinates, as the
+    //! last layout scrolled and measured it: the nearest one on the line the
+    //! point is on, the first or last line above or below every line.
+    text::Position positionAt(const Point &local) const;
+
+    //! Replaces the selection (or inserts at the caret) with \p text, as
+    //! typing it does, and puts the caret after it.
+    void insertText(const String &text);
+
+    //! Whether the caret is lit now (it blinks while the editor has the
+    //! focus).
+    bool isCaretVisible() const { return m_caretBlink.visible(); }
+    //! The caret's rect in the editor's coordinates, from the last layout's
+    //! scroll and metrics, cut to the viewport: empty when its line or
+    //! column is scrolled out.
+    Rect getCaretBounds() const;
+    //! One frame of the caret's blink (its animation's).
+    void updateCaretBlink();
+    //! \}
+
     void calculateSize(skin::Base *skin, Dim dim) override;
 
+    bool needsInputChars() override { return true; }
+    bool AccelOnlyFocus() override { return true; }
+    bool onChar(gweni::UnicodeChar c) override;
+    bool onKeyReturn(bool down) override;
+    bool onKeyBackspace(bool down) override;
+    bool onKeyDelete(bool down) override;
+    bool onKeyLeft(bool down) override;
+    bool onKeyRight(bool down) override;
+    bool onKeyUp(bool down) override;
+    bool onKeyDown(bool down) override;
+    bool onKeyHome(bool down) override;
+    bool onKeyend(bool down) override;
+    bool onKeyPageUp(bool down) override;
+    bool onKeyPageDown(bool down) override;
+    void onKeyboardFocus() override;
+    void onLostKeyboardFocus() override;
+    //! A press puts the caret at the nearest caret stop (Shift: extends the
+    //! selection to it).
+    void onMouseClickLeft(int x, int y, bool down) override;
+
 protected:
+    void contentsPlaced(skin::Base *skin) override;
+
     //! The rows are owner-placed, so the inner panel's preferred width is
     //! none of theirs: the content is as wide as the longest line, its cells
     //! and one more for a caret after its end, inset on both sides.
@@ -151,6 +229,33 @@ protected:
 
 private:
     friend class CodeLine;
+
+    void onCopy(event::Info info);
+    void onCut(event::Info info);
+    void onPaste(event::Info info);
+    void onSelectAll(event::Info info);
+
+    //! Replaces \p range with \p text and puts the caret after it.
+    void replaceRange(const text::Range &range, const String &text);
+    //! Moves the caret (and the anchor too unless \p extend), keeping
+    //! m_goalColumn unless \p keepGoal is false; updates the rows' current
+    //! line, lights the caret and puts it in view.
+    void moveCaret(const text::Position &position, bool extend, bool keepGoal=false);
+    //! The caret moved or the view scrolled: the caret is drawn again.
+    void caretChanged();
+    void makeCaretVisible();
+    //! Each shown row's current-line look, from the caret's line.
+    void syncCurrentLine();
+    //! The caret stop \p cells cells into \p line (before a wide glyph it
+    //! falls inside).
+    text::Position atColumn(size_t line, size_t cells) const;
+    //! The positions one word to the left and right of \p position.
+    text::Position wordLeft(const text::Position &position) const;
+    text::Position wordRight(const text::Position &position) const;
+    //! Moves up or down by \p lines lines at the goal column.
+    void moveLines(int64_t lines, bool extend);
+    //! The lines a page moves: the viewport's whole lines, at least one.
+    int pageLines() const;
 
     //! The lines an edit replaced: their widths counted again and the rows
     //! of the lines it changed bound again.
@@ -174,6 +279,16 @@ private:
     size_t m_longest=0;
     //! The new lines' widths while an edit is counted (kept for its capacity).
     std::vector<size_t> m_newCells;
+
+    text::Position m_caret;
+    text::Position m_anchor;
+    size_t m_caretColumn=0;
+    //! The column Up and Down keep, or NoGoal: the caret's own.
+    static constexpr size_t NoGoal=static_cast<size_t>(-1);
+    size_t m_goalColumn=NoGoal;
+    internal::CaretBlink m_caretBlink;
+    //! The scroll the caret was last drawn at.
+    int m_caretScroll[2]={-1, -1};
 
     float m_cellWidth=0.f;
     int m_lineHeight=0;

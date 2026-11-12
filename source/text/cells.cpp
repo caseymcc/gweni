@@ -144,6 +144,86 @@ size_t stringCells(const String &str, size_t begin, size_t end)
     return cells;
 }
 
+size_t byteAtCell(const String &str, size_t cells)
+{
+    size_t taken=0;
+    size_t i=0;
+
+    while(i < str.size())
+    {
+        size_t next=i;
+        const int width=cellCount(utf8CodepointAt(str, i, &next));
+
+        if(taken+static_cast<size_t>(width) > cells)
+            break;
+
+        taken+=static_cast<size_t>(width);
+        i=next;
+    }
+    return i;
+}
+
+size_t byteNearestCell(const String &str, double cells)
+{
+    double taken=0.0;
+    size_t i=0;
+
+    while(i < str.size())
+    {
+        size_t next=i;
+        const int width=cellCount(utf8CodepointAt(str, i, &next));
+
+        // a mark (0 cells) goes with the codepoint before it
+        if(width > 0 && taken+width*0.5 >= cells)
+            break;
+
+        taken+=width;
+        i=next;
+    }
+    return i;
+}
+
+// A boundary followed by a codepoint of no cells (a combining mark) is not a
+// stop: the mark belongs to the codepoint before it.
+static bool isCaretStop(const String &str, size_t pos)
+{
+    return pos == 0 || pos >= str.size() || cellCount(utf8CodepointAt(str, pos)) != 0;
+}
+
+size_t nextCaretStop(const String &str, size_t pos)
+{
+    if(pos >= str.size())
+        return str.size();
+
+    size_t next=pos;
+
+    utf8CodepointAt(str, pos, &next);
+    while(!isCaretStop(str, next))
+        utf8CodepointAt(str, next, &next);
+    return next;
+}
+
+size_t prevCaretStop(const String &str, size_t pos)
+{
+    pos=std::min(pos, str.size());
+
+    if(pos == 0)
+        return 0;
+
+    // back to the codepoint before pos: its first byte is not 10xxxxxx
+    do
+        --pos;
+    while(pos > 0 && (static_cast<unsigned char>(str[pos]) & 0xc0) == 0x80);
+
+    while(!isCaretStop(str, pos))
+    {
+        do
+            --pos;
+        while(pos > 0 && (static_cast<unsigned char>(str[pos]) & 0xc0) == 0x80);
+    }
+    return pos;
+}
+
 const char *cellWidthUnicodeVersion()
 {
     return GWENI_CELL_WIDTH_UNICODE_VERSION;

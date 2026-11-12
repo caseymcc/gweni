@@ -740,15 +740,37 @@ void ProgressBar::remove(renderer::Base *renderer, controls::Base *baseControl)
 
 ///////////////////////////////////////////////////////////////////////////
 //CodeEditor
+// A blink or a caret move (StateChange_Caret alone) rewrites the caret's slot
+// alone; the field is painted again on any other change. The caret's rect is
+// worked out from the editor's last layout every time, so a slot whose bytes
+// stay the same is not written.
 void CodeEditor::update(renderer::Base *renderer, controls::Base *baseControl)
 {
-    if(m_primitives.empty())
+    if(m_primitives.size() < 2)
         return;
 
-    const tokyonight::Surface &surface=baseControl->isFocussed()?tokyonight::CodeEditorFocus
-        :tokyonight::CodeEditor;
+    controls::CodeEditor *editor=static_cast<controls::CodeEditor *>(baseControl);
 
-    tokyonight::paintSurface(renderer, m_primitives.data(), baseControl, surface);
+    if(editor->getStateChange() != controls::StateChange_Caret)
+    {
+        const tokyonight::Surface &surface=editor->isFocussed()?tokyonight::CodeEditorFocus
+            :tokyonight::CodeEditor;
+
+        tokyonight::paintSurface(renderer, m_primitives.data(), editor, surface);
+    }
+
+    const Rect caret=editor->getCaretBounds();
+    const Rect &bounds=editor->getRenderBounds();
+
+    if(!editor->visible() || !editor->isFocussed() || !editor->isCaretVisible() || caret.w <= 0 || caret.h <= 0)
+    {
+        renderer->hidePrimitive(m_primitives[1]);
+        return;
+    }
+
+    renderer->setDrawColor(editor->getSkin()->Colors.Label.Default);
+    renderer->drawFilledRect(m_primitives[1], Rect(bounds.x+caret.x, bounds.y+caret.y, caret.w, caret.h),
+        editor->getOverlayZIndex());
 }
 
 ///////////////////////////////////////////////////////////////////////////

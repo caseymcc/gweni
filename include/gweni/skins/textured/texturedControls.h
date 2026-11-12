@@ -891,11 +891,16 @@ public:
 };
 
 // A CodeEditor's field: [0] CodeEditor, CodeEditorFocus while it has the
-// focus. Its rows draw the lines.
+// focus, [1] the caret at the overlay z, in front of every row, while the
+// editor has the focus and the caret is lit and in view. Its rows draw the
+// lines.
 class CodeEditor:public textured::ControlRegister<CodeEditor>
 {
 public:
     static void staticInit(TexturedSkin *) { m_staticInit=true; }
+
+    size_t requiredPrimitives() override { return 2; }
+    size_t overlayLayers() override { return 1; }
 
     void update(renderer::Base *renderer, controls::Base *baseControl) override;
 
