@@ -32,6 +32,7 @@
 
 #include <climits>
 #include <map>
+#include <random>
 #include <set>
 #include <vector>
 
@@ -54,6 +55,12 @@ struct Scene
     controls::Canvas *canvas=nullptr;
     controls::VirtualList *list=nullptr;
 
+    //! The items, as the app holds them: each one's height and an id that
+    //! moves with it through inserts and removals.
+    std::vector<int> heights;
+    std::vector<size_t> ids;
+    size_t nextId=0;
+    //! The id each row was last bound to.
     std::map<controls::Base *, size_t> boundTo;
     size_t bindCount=0;
     //! the widths the measurer was given
@@ -62,7 +69,7 @@ struct Scene
 
     //! A list of count items at the given viewport height; frame() lays it out
     //! unless built is false.
-    explicit Scene(size_t count, int height=200, bool layOut=true)
+    explicit Scene(size_t count, int height=200, bool layOut=true, bool variable=true)
     {
         canvas=new controls::Canvas(&skin);
         canvas->setSize(400, 600);
@@ -73,18 +80,47 @@ struct Scene
         list->setRowHeight(RowHeight);
         list->setRowBinder([this](controls::Base *row, size_t index)
             {
-                boundTo[row]=index;
+                boundTo[row]=ids.at(index);
                 ++bindCount;
             });
-        list->setItemMeasurer([this](size_t index, int width)
-            {
-                widths.insert(width);
-                ++measures;
-                return itemHeight(index);
-            });
-        list->setItemCount(count);
+        if(variable)
+            list->setItemMeasurer([this](size_t index, int width)
+                {
+                    widths.insert(width);
+                    ++measures;
+                    return heights.at(index);
+                });
+        insert(0, count);
         if(layOut)
             frame();
+    }
+
+    //! Items added and removed, in the app's data and in the list.
+    void insert(size_t at, size_t count)
+    {
+        for(size_t i=0; i < count; ++i)
+        {
+            heights.insert(heights.begin()+at+i, itemHeight(nextId));
+            ids.insert(ids.begin()+at+i, nextId);
+            ++nextId;
+        }
+        if(at == list->getItemCount())
+            list->setItemCount(heights.size());
+        else
+            list->insertItems(at, count);
+    }
+
+    void remove(size_t at, size_t count)
+    {
+        heights.erase(heights.begin()+at, heights.begin()+at+count);
+        ids.erase(ids.begin()+at, ids.begin()+at+count);
+        list->removeItems(at, count);
+    }
+
+    void change(size_t index, int height)
+    {
+        heights.at(index)=height;
+        list->itemChanged(index);
     }
 
     Scene(const Scene &)=delete;
@@ -184,11 +220,11 @@ void checkView(Scene &s)
         REQUIRE(row != nullptr);
         CHECK(!row->hidden());
         CHECK(list->itemForRow(row) == item);
-        CHECK(s.boundTo[row] == item);
-        CHECK(index.height(item) == itemHeight(item));
+        CHECK(s.boundTo[row] == s.ids[item]);
+        CHECK(index.height(item) == s.heights[item]);
         CHECK(index.generation(item) == list->getMeasureGeneration());
         CHECK(row->getY() == static_cast<int>(index.offsetOf(item)-offset));
-        CHECK(row->getHeight() == itemHeight(item));
+        CHECK(row->getHeight() == s.heights[item]);
         CHECK(row->getWidth() == list->getInnerPanel()->getWidth());
         expected.insert(row);
     }
@@ -196,6 +232,56 @@ void checkView(Scene &s)
     CHECK(s.shownRows().size() == expected.size());
     for(controls::Base *row : s.shownRows())
         CHECK(expected.count(row) == 1);
+}
+
+//! A stuck list's last item ends at the viewport's bottom, or, when they all
+//! fit, the first starts at its top.
+void checkAtEnd(Scene &s)
+{
+    const controls::HeightIndex &index=s.list->getHeightIndex();
+    const int viewport=s.list->getViewportHeight();
+    const int offset=s.list->getVerticalScrollOffset();
+
+    checkView(s);
+    if(index.totalHeight() <= viewport)
+    {
+        CHECK(offset == 0);
+        return;
+    }
+    CHECK(index.totalHeight()-offset == viewport);
+
+    controls::Base *last=s.list->rowForItem(s.list->getItemCount()-1);
+
+    REQUIRE(last != nullptr);
+    CHECK(last->bottom() == viewport);
+}
+
+//! The shown rows by the id of the item they show: the row, its place and
+//! the bind it shows.
+struct Shown
+{
+    controls::Base *row;
+    int y;
+    int height;
+
+    bool operator==(const Shown &other) const
+    {
+        return row == other.row && y == other.y && height == other.height;
+    }
+};
+
+std::map<size_t, Shown> shownById(Scene &s)
+{
+    std::map<size_t, Shown> shown;
+
+    for(controls::Base *row : s.shownRows())
+    {
+        const size_t item=s.list->itemForRow(row);
+
+        REQUIRE(item < s.ids.size());
+        shown[s.ids[item]]=Shown{row, row->getY(), row->getHeight()};
+    }
+    return shown;
 }
 
 //! The smallest height the index holds measured at this generation.
@@ -382,20 +468,20 @@ TEST_CASE("VirtualList variable: an item not measured counts at the default heig
     CHECK(index.totalHeight() == sum+static_cast<int64_t>(100-measured)*RowHeight);
 
     // added now: the last measured height
-    s.list->setItemCount(150);
+    s.insert(100, 50);
     CHECK(index.height(149) == itemHeight(last));
     CHECK(index.generation(149) == 0);
 
     // with an estimator, its height for the items added after it
     s.list->setItemEstimator([](size_t index, int) { return index%2?33:7; });
-    s.list->setItemCount(160);
+    s.insert(150, 10);
     CHECK(index.height(150) == 7);
     CHECK(index.height(151) == 33);
     CHECK(index.height(149) == itemHeight(last));
     CHECK(s.list->getVirtualContentHeight() == static_cast<int>(index.totalHeight()));
 
     // a truncation drops their heights
-    s.list->setItemCount(120);
+    s.remove(120, 40);
     CHECK(index.size() == 120);
     s.frame();
     checkView(s);
@@ -411,7 +497,7 @@ TEST_CASE("VirtualList variable: the bar shows while everything fits, and fixed 
     CHECK(!s.bar()->hidden());
     CHECK(s.bar()->isDisabled());
 
-    s.list->setItemCount(1000);
+    s.insert(3, 997);
     s.frame();
     CHECK(!s.bar()->isDisabled());
     s.list->setVerticalScrollOffset(400);
@@ -437,8 +523,318 @@ TEST_CASE("VirtualList variable: the bar shows while everything fits, and fixed 
         CHECK(row->getHeight() == RowHeight);
     }
 
-    s.list->setItemCount(3);
+    s.remove(3, 997);
     s.frame();
     CHECK(s.bar()->hidden());
+    s.checkOnePass();
+}
+
+TEST_CASE("VirtualList variable: an edit above the top moves nothing on screen")
+{
+    Scene s(1000);
+    const controls::HeightIndex &index=s.list->getHeightIndex();
+
+    s.list->setVerticalScrollOffset(static_cast<int>(index.offsetOf(300))+7);
+    s.frame();
+    checkView(s);
+
+    const std::map<size_t, Shown> before=shownById(s);
+    const size_t binds=s.bindCount;
+    const size_t anchorId=s.ids[s.list->getAnchorItem()];
+    const int anchorOffset=s.list->getAnchorOffset();
+    const int offset=s.list->getVerticalScrollOffset();
+
+    REQUIRE(anchorOffset == 7);
+    int64_t moved=0;
+
+    SUBCASE("an insert")
+    {
+        s.insert(100, 25);
+        moved=index.offsetOf(125)-index.offsetOf(100);
+    }
+
+    SUBCASE("an insert right before the item at the top")
+    {
+        const size_t at=s.list->getAnchorItem();
+
+        s.insert(at, 3);
+        moved=index.offsetOf(at+3)-index.offsetOf(at);
+    }
+
+    SUBCASE("a removal")
+    {
+        moved=-(index.offsetOf(150)-index.offsetOf(100));
+        s.remove(100, 50);
+    }
+
+    SUBCASE("a removal of the first items, as a log's cap")
+    {
+        moved=-index.offsetOf(40);
+        s.remove(0, 40);
+    }
+
+    SUBCASE("a new height, of an estimated item and of a measured one")
+    {
+        const int estimated=index.height(250);
+
+        s.change(250, 44);
+        moved=44-estimated;
+        CHECK(index.height(250) == 44);
+        s.frame();
+        s.change(250, 12);
+        moved+=12-44;
+    }
+
+    SUBCASE("several in one frame")
+    {
+        s.insert(5, 7);
+        moved=index.offsetOf(12)-index.offsetOf(5);
+        moved-=index.offsetOf(25)-index.offsetOf(20);
+        s.remove(20, 5);
+        const int estimated=index.height(30);
+        s.change(30, 49);
+        moved+=49-estimated;
+    }
+
+    s.frame();
+    checkView(s);
+    CHECK(shownById(s) == before);
+    CHECK(s.bindCount == binds);
+    CHECK(s.ids[s.list->getAnchorItem()] == anchorId);
+    CHECK(s.list->getAnchorOffset() == anchorOffset);
+    CHECK(s.list->getVerticalScrollOffset() == offset+moved);
+    s.checkOnePass();
+}
+
+TEST_CASE("VirtualList variable: an edit in view moves only the rows below it and binds only new items")
+{
+    Scene s(1000);
+    const controls::HeightIndex &index=s.list->getHeightIndex();
+
+    s.list->setVerticalScrollOffset(static_cast<int>(index.offsetOf(300)));
+    s.frame();
+
+    const std::map<size_t, Shown> before=shownById(s);
+    const size_t binds=s.bindCount;
+
+    SUBCASE("an insert")
+    {
+        s.insert(302, 2);
+    }
+
+    SUBCASE("a removal")
+    {
+        s.remove(301, 2);
+    }
+
+    SUBCASE("a new height")
+    {
+        s.change(301, 50);
+    }
+
+    s.frame();
+    checkView(s);
+
+    const std::map<size_t, Shown> after=shownById(s);
+    size_t fresh=0;
+
+    for(const auto &[id, shown] : after)
+    {
+        auto it=before.find(id);
+
+        if(it == before.end())
+        {
+            ++fresh;
+            continue;
+        }
+        // the same row, bound once, at its new place
+        CHECK(it->second.row == shown.row);
+        CHECK(s.boundTo[shown.row] == id);
+    }
+    // the items above the edit did not move
+    CHECK(after.at(s.ids[300]) == before.at(s.ids[300]));
+    // only the rows given new items were bound, and the changed item's
+    CHECK(s.bindCount-binds <= fresh+1);
+    s.checkOnePass();
+}
+
+TEST_CASE("VirtualList variable: removing the item at the top puts the next one there")
+{
+    Scene s(1000);
+    const controls::HeightIndex &index=s.list->getHeightIndex();
+
+    s.list->setVerticalScrollOffset(static_cast<int>(index.offsetOf(300))+5);
+    s.frame();
+
+    const size_t next=s.ids[303];
+
+    s.remove(298, 5);
+    s.frame();
+    checkView(s);
+    CHECK(s.ids[s.list->getAnchorItem()] == next);
+    CHECK(s.list->getAnchorOffset() == 0);
+    CHECK(s.list->rowForItem(s.list->getAnchorItem())->getY() == 0);
+    s.checkOnePass();
+}
+
+TEST_CASE("VirtualList variable: a list stuck to its end keeps its last item at the bottom")
+{
+    Scene s(500);
+
+    s.list->setStickToEnd(true);
+    CHECK(s.list->isStuckToEnd());
+    s.frame();
+    checkAtEnd(s);
+
+    // each in the frame it is made in
+    s.insert(500, 7);
+    s.frame();
+    checkAtEnd(s);
+    s.remove(0, 50);
+    s.frame();
+    checkAtEnd(s);
+    s.change(s.heights.size()-1, 50);
+    s.frame();
+    checkAtEnd(s);
+    s.change(s.heights.size()-2, 11);
+    s.frame();
+    checkAtEnd(s);
+    s.insert(200, 4);
+    s.remove(s.heights.size()-3, 3);
+    s.frame();
+    checkAtEnd(s);
+
+    // a scroll does not unstick it
+    s.list->setVerticalScrollOffset(0);
+    s.frame();
+    checkAtEnd(s);
+    s.list->scrollToItem(10);
+    s.frame();
+    checkAtEnd(s);
+
+    // the app does: from then on it stays where it is
+    s.list->setStickToEnd(false);
+    s.frame();
+
+    const std::map<size_t, Shown> before=shownById(s);
+    const int offset=s.list->getVerticalScrollOffset();
+
+    s.insert(s.heights.size(), 10);
+    s.frame();
+    checkView(s);
+    CHECK(shownById(s) == before);
+    CHECK(s.list->getVerticalScrollOffset() == offset);
+
+    // stuck again, at the new end
+    s.list->setStickToEnd(true);
+    s.frame();
+    checkAtEnd(s);
+
+    // emptied and filled again
+    s.remove(0, s.heights.size());
+    s.frame();
+    checkView(s);
+    s.insert(0, 3);
+    s.frame();
+    checkAtEnd(s);
+    s.insert(3, 30);
+    s.frame();
+    checkAtEnd(s);
+    s.checkOnePass();
+}
+
+TEST_CASE("VirtualList variable: random edits, scrolls and sticks keep the view valid")
+{
+    Scene s(300, 150);
+    std::mt19937 rng(7);
+
+    for(int step=0; step < 400; ++step)
+    {
+        CAPTURE(step);
+
+        const size_t count=s.heights.size();
+        const int op=rng()%8;
+
+        if(op == 0 || count == 0)
+            s.insert(rng()%(count+1), 1+rng()%20);
+        else if(op == 1)
+        {
+            const size_t at=rng()%count;
+
+            s.remove(at, std::min<size_t>(1+rng()%20, count-at));
+        }
+        else if(op == 2)
+            s.change(rng()%count, 10+rng()%41);
+        else if(op == 3)
+            s.list->setVerticalScrollOffset(static_cast<int>(rng()%(s.list->getMaxVerticalScrollOffset()+1)));
+        else if(op == 4)
+            s.list->scrollByRows(static_cast<int>(rng()%11)-5);
+        else if(op == 5)
+            s.list->scrollToItem(rng()%count);
+        else if(op == 6)
+            s.list->setStickToEnd(rng()%3 == 0);
+        else
+            s.list->onMouseWheeled((rng()%2)?60:-60);
+
+        // now and then two edits in one frame
+        if(rng()%3)
+        {
+            s.frame();
+            if(s.list->isStuckToEnd())
+                checkAtEnd(s);
+            else
+                checkView(s);
+        }
+    }
+    s.frame();
+    checkView(s);
+    s.checkOnePass();
+}
+
+TEST_CASE("VirtualList fixed: inserts and removals above the top keep the rows on screen")
+{
+    Scene s(1000, 200, true, false);
+
+    REQUIRE(!s.list->isVariableHeight());
+    s.list->setVerticalScrollOffset(300*RowHeight+7);
+    s.frame();
+
+    const std::map<size_t, Shown> before=shownById(s);
+    const size_t binds=s.bindCount;
+
+    s.insert(100, 25);
+    s.frame();
+    CHECK(s.list->getVerticalScrollOffset() == 325*RowHeight+7);
+    CHECK(shownById(s) == before);
+    s.remove(10, 40);
+    s.frame();
+    CHECK(s.list->getVerticalScrollOffset() == 285*RowHeight+7);
+    CHECK(shownById(s) == before);
+    CHECK(s.bindCount == binds);
+
+    for(controls::Base *row : s.shownRows())
+    {
+        const size_t item=s.list->itemForRow(row);
+
+        CHECK(s.boundTo[row] == s.ids[item]);
+        CHECK(row->getY() == static_cast<int>(item*RowHeight)-s.list->getVerticalScrollOffset());
+    }
+
+    // the item at the top removed: the one after the removed ones there
+    const size_t next=s.ids[290];
+
+    s.remove(283, 7);
+    s.frame();
+    CHECK(s.list->getVerticalScrollOffset() == 283*RowHeight);
+    CHECK(s.ids[s.list->firstVisibleItem()] == next);
+
+    // stuck to the end
+    s.list->setStickToEnd(true);
+    s.frame();
+    CHECK(s.list->getVerticalScrollOffset() == s.list->getMaxVerticalScrollOffset());
+    s.insert(s.heights.size(), 5);
+    s.frame();
+    CHECK(s.list->getVerticalScrollOffset() == s.list->getMaxVerticalScrollOffset());
+    CHECK(s.list->rowForItem(s.heights.size()-1)->bottom() == s.list->getViewportHeight());
     s.checkOnePass();
 }

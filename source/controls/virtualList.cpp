@@ -108,6 +108,188 @@ void VirtualList::setItemCount(size_t count)
     invalidate();
 }
 
+void VirtualList::insertItems(size_t at, size_t count)
+{
+    at=std::min(at, m_itemCount);
+    if(count == 0)
+        return;
+
+    if(isVariableHeight())
+    {
+        anchorAtOffset();
+
+        if(m_estimator)
+        {
+            for(size_t i=0; i < count; ++i)
+                m_heights.insert(at+i, 1, defaultHeight(at+i), 0);
+        }
+        else
+            m_heights.insert(at, count, defaultHeight(at), 0);
+
+        // added above the item at the top (or before it): it stays there
+        if(at <= m_anchorItem && m_anchorItem < m_itemCount)
+            m_anchorItem+=count;
+
+        m_itemCount+=count;
+        shiftItems(at, static_cast<int64_t>(count));
+        updateContentHeight();
+        offsetFromAnchor();
+        invalidate();
+        return;
+    }
+
+    const int offset=getVerticalScrollOffset();
+    const size_t top=static_cast<size_t>(offset/m_rowHeight);
+    const bool above=at <= top && top < m_itemCount;
+
+    m_itemCount+=count;
+    shiftItems(at, static_cast<int64_t>(count));
+    updateContentHeight();
+    if(above)
+        setVerticalScrollOffset(static_cast<int>(std::min<uint64_t>(
+            static_cast<uint64_t>(offset)+static_cast<uint64_t>(count)*m_rowHeight, INT_MAX)));
+    invalidate();
+}
+
+void VirtualList::removeItems(size_t at, size_t count)
+{
+    if(at >= m_itemCount || count == 0)
+        return;
+
+    count=std::min(count, m_itemCount-at);
+
+    const size_t end=at+count;
+
+    if(isVariableHeight())
+    {
+        anchorAtOffset();
+        m_heights.erase(at, count);
+
+        // removed above the item at the top: it stays there; the item at the
+        // top removed: the one after the removed ones takes its place
+        if(m_anchorItem >= end)
+            m_anchorItem-=count;
+        else if(m_anchorItem >= at)
+        {
+            m_anchorItem=at;
+            m_anchorOffset=0;
+        }
+
+        m_itemCount-=count;
+        shiftItems(at, -static_cast<int64_t>(count));
+        updateContentHeight();
+        offsetFromAnchor();
+        invalidate();
+        return;
+    }
+
+    const int offset=getVerticalScrollOffset();
+    const size_t top=static_cast<size_t>(offset/m_rowHeight);
+    int64_t newOffset=offset;
+
+    if(top >= end)
+        newOffset-=static_cast<int64_t>(count)*m_rowHeight;
+    else if(top >= at)
+        newOffset=static_cast<int64_t>(at)*m_rowHeight;
+
+    m_itemCount-=count;
+    shiftItems(at, -static_cast<int64_t>(count));
+    updateContentHeight();
+    if(newOffset != offset)
+        setVerticalScrollOffset(static_cast<int>(std::min<int64_t>(newOffset, INT_MAX)));
+    invalidate();
+}
+
+// A row keeps its item through the shift, at the item's new index; a row of
+// a removed item gives up its press and focus now, while that is still what
+// it shows, and is free for the next layout.
+void VirtualList::shiftItems(size_t at, int64_t count)
+{
+    const size_t removedEnd=count < 0?at+static_cast<size_t>(-count):at;
+
+    for(Row &row : m_rows)
+    {
+        if(row.item == NoItem || row.item < at)
+            continue;
+
+        if(count > 0)
+            row.item+=static_cast<size_t>(count);
+        else if(row.item < removedEnd)
+        {
+            releaseRow(row.control);
+            row.item=NoItem;
+            row.stale=true;
+            m_rowsEdited=true;
+        }
+        else
+            row.item-=removedEnd-at;
+    }
+
+    if(m_pendingItem != NoItem && m_pendingItem >= at)
+    {
+        if(count > 0)
+            m_pendingItem+=static_cast<size_t>(count);
+        else if(m_pendingItem < removedEnd)
+            m_pendingItem=at;
+        else
+            m_pendingItem-=removedEnd-at;
+    }
+}
+
+void VirtualList::itemChanged(size_t index)
+{
+    if(index >= m_itemCount)
+        return;
+
+    refreshItem(index);
+
+    if(!isVariableHeight())
+        return;
+
+    anchorAtOffset();
+
+    const int before=m_heights.height(index);
+
+    // not measured at this width any more
+    m_heights.set(index, before, 0);
+    if(m_measureWidth < 0)
+    {
+        invalidate();
+        return;
+    }
+
+    const int after=measureItem(index);
+
+    if(after == before)
+        return;
+
+    if(index == m_anchorItem)
+        m_anchorOffset=std::min(m_anchorOffset, after-1);
+
+    updateContentHeight();
+    offsetFromAnchor();
+    invalidate();
+}
+
+void VirtualList::setStickToEnd(bool stick)
+{
+    if(m_stuckToEnd == stick)
+        return;
+
+    m_stuckToEnd=stick;
+
+    // unstuck, it stays where the last layout put it
+    if(!stick)
+        return;
+
+    if(isVariableHeight())
+    {
+        anchorAtOffset();
+        offsetFromAnchor();
+    }
+    invalidate();
+}
+
 void VirtualList::updateContentHeight()
 {
     if(isVariableHeight())
@@ -259,7 +441,8 @@ void VirtualList::anchorAtOffset()
 void VirtualList::offsetFromAnchor()
 {
     const size_t item=std::min(m_anchorItem, m_heights.size());
-    const int64_t position=m_heights.offsetOf(item)+(item < m_heights.size()?m_anchorOffset:0);
+    const int64_t position=m_stuckToEnd?INT64_MAX
+        :m_heights.offsetOf(item)+(item < m_heights.size()?m_anchorOffset:0);
     const int offset=static_cast<int>(gweni::clamp<int64_t>(position, 0, getMaxVerticalScrollOffset()));
 
     m_anchoredOffset=offset;
@@ -498,6 +681,10 @@ void VirtualList::placeVariable(size_t &first, size_t &end)
                 anchorAbove(item, viewport);
         }
 
+        // stuck, whatever was asked
+        if(m_stuckToEnd)
+            m_anchorToEnd=true;
+
         const int height=measureItem(m_anchorItem);
 
         m_anchorOffset=gweni::clamp(m_anchorOffset, 0, height-1);
@@ -641,6 +828,12 @@ void VirtualList::contentsPlaced(skin::Base *skin)
             showScrollOffset(Dim::Y);
         }
 
+        if(m_stuckToEnd)
+        {
+            m_scrollOffset[1]=getMaxVerticalScrollOffset();
+            showScrollOffset(Dim::Y);
+        }
+
         const int offset=getVerticalScrollOffset();
 
         first=static_cast<size_t>(offset/m_rowHeight);
@@ -651,6 +844,13 @@ void VirtualList::contentsPlaced(skin::Base *skin)
 
     const int offset=getVerticalScrollOffset();
     const size_t inView=end > first?end-first:0;
+
+    if(m_rowsEdited)
+    {
+        // a row an edit took the item of shows something else or nothing
+        moved=true;
+        m_rowsEdited=false;
+    }
     std::vector<bool> held(inView, false);
     std::vector<bool> keeps(m_rows.size(), false);
     size_t kept=0;

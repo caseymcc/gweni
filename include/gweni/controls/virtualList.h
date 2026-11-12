@@ -114,6 +114,30 @@ public:
     //! at INT_MAX: items past that cannot be scrolled to.
     void setItemCount(size_t count);
     size_t getItemCount() const { return m_itemCount; }
+    //! Adds count items before item at (at == getItemCount() appends), or
+    //! removes the count items from at on (clipped to the end). A row
+    //! showing an item that moved shows it at its new index without being
+    //! bound again, and one whose item was removed is hidden or given another.
+    //! The item at the viewport's top stays there with the rows below it,
+    //! however many items were added or removed above it (one removed takes
+    //! the item after the removed ones there); a list stuck to its end keeps
+    //! its end. O(log N) in the item count, plus the items added or removed
+    //! (in variable mode the estimator is asked for each one added).
+    void insertItems(size_t at, size_t count);
+    void removeItems(size_t at, size_t count);
+    //! The item's content changed: the row showing it is bound again by the
+    //! next layout, and in variable mode the item is measured again now (by
+    //! the next layout if none has given a width yet), so a new height above
+    //! the viewport's top moves the offset and not the rows on screen.
+    void itemChanged(size_t index);
+
+    //! Stuck, every layout puts the last item's bottom at the viewport's
+    //! bottom (the first item at its top when they all fit), through
+    //! appends, removals and new heights, until unstuck. Only the app sticks
+    //! and unsticks it: a scroll does not (a stuck list scrolled by the user
+    //! goes back to its end). Unstuck, it stays where it is.
+    void setStickToEnd(bool stick);
+    bool isStuckToEnd() const { return m_stuckToEnd; }
 
     //! Variable mode with a measurer, fixed mode (every row getRowHeight())
     //! with a null one. Turning it on counts every item at the default height
@@ -219,6 +243,9 @@ private:
     //! The row shows another item, or none: it gives up the mouse and the focus.
     void releaseRow(Base *control);
     void rowPressed(Base *row);
+    //! The pooled rows' items, and a pending scrollToItem, after count items
+    //! were inserted at at (count > 0) or removed from it (count < 0).
+    void shiftItems(size_t at, int64_t count);
     //! The pool size the viewport needs: ceil(viewport/rowHeight)+1.
     size_t poolSizeFor(int viewport) const;
 
@@ -230,6 +257,10 @@ private:
     size_t m_pendingItem=NoItem;
     int m_rowHeight=20;
     int m_wheelRows=3;
+    bool m_stuckToEnd=false;
+    //! An edit hid or took the item of a shown row: the next layout tells the
+    //! canvas the hover may have moved.
+    bool m_rowsEdited=false;
 
     // Variable mode
     ItemMeasurer m_measurer;
