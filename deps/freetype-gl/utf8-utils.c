@@ -83,22 +83,3 @@ utf8_to_utf32( const char * character )
 
     return result;
 }
-
-// ------------------------------------------------------ utf8_is_ignorable ---
-int
-utf8_is_ignorable( const char * character )
-{
-    const unsigned char *c = (const unsigned char *) character;
-
-    if( !c )
-        return 0;
-    /* U+200B-200D: E2 80 8B-8D; U+2060: E2 81 A0 */
-    if( c[0] == 0xE2 )
-        return ( c[1] == 0x80 && c[2] >= 0x8B && c[2] <= 0x8D )
-            || ( c[1] == 0x81 && c[2] == 0xA0 );
-    /* U+FE00-FE0F: EF B8 80-8F; U+FEFF: EF BB BF */
-    if( c[0] == 0xEF )
-        return ( c[1] == 0xB8 && c[2] >= 0x80 && c[2] <= 0x8F )
-            || ( c[1] == 0xBB && c[2] == 0xBF );
-    return 0;
-}

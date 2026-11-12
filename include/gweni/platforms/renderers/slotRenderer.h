@@ -224,6 +224,8 @@ struct FontData
     //! and frees them with the font, so a glyph's pointer holds for textureFont's
     //! life, and its first match (the one it would find) stays the first. A
     //! codepoint with no glyph is not kept, so it is asked for again, as before.
+    //! A default-ignorable (ftgl::utf8_is_ignorable) has none, so the walks that
+    //! look glyphs up here draw it as nothing.
     ftgl::texture_glyph_t *glyph(const char *codepoint);
 
     std::string faceName;
@@ -991,6 +993,12 @@ private:
     //! not null.
     PenWalk walkPens(FontData &fontData, float px, const gweni::String &text,
         std::vector<float> *pens, std::vector<int> *carets, std::vector<int> *glyphLines=nullptr);
+    //! walkPens in a font that lays its codepoints in terminal cells (Cells, a
+    //! fixed-width face) or by their advances, a loop of each, so a proportional
+    //! font's walk does no more per glyph than it did before there were cells
+    template<bool Cells>
+    PenWalk walkPensIn(FontData &fontData, float px, const gweni::String &text,
+        std::vector<float> *pens, std::vector<int> *carets, std::vector<int> *glyphLines);
     //! At a scale() other than 1, a run is drawn in another font than it is measured
     //! in, whose advances need not be the measured ones scaled: a grayscale coverage
     //! font's are hinted, whole-pixel at its own size, whether the run was measured

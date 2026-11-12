@@ -62,14 +62,30 @@ namespace ftgl {
    * glyph: U+200B-200D (zero width space, non-joiner and joiner), U+2060 (word
    * joiner), U+FE00-FE0F (variation selectors) and U+FEFF (zero width no-break
    * space). Each is 3 bytes, so it is a byte compare, with no decoding; it reads
-   * no byte past a NUL.
+   * no byte past a NUL. Inline, since every text walk asks it of every
+   * codepoint: an ASCII one costs the first byte's two compares.
    *
    * @param character  An UTF-8 encoded character
    *
    * @return  1 if it is one of them, 0 otherwise.
    */
-  int
-  utf8_is_ignorable( const char * character );
+  static inline int
+  utf8_is_ignorable( const char * character )
+  {
+      const unsigned char *c = (const unsigned char *) character;
+
+      if( !c || c[0] < 0xE2 )
+          return 0;
+      /* U+200B-200D: E2 80 8B-8D; U+2060: E2 81 A0 */
+      if( c[0] == 0xE2 )
+          return ( c[1] == 0x80 && c[2] >= 0x8B && c[2] <= 0x8D )
+              || ( c[1] == 0x81 && c[2] == 0xA0 );
+      /* U+FE00-FE0F: EF B8 80-8F; U+FEFF: EF BB BF */
+      if( c[0] == 0xEF )
+          return ( c[1] == 0xB8 && c[2] >= 0x80 && c[2] <= 0x8F )
+              || ( c[1] == 0xBB && c[2] == 0xBF );
+      return 0;
+  }
 
 /**
  * @}

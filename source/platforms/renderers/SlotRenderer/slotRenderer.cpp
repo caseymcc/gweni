@@ -110,6 +110,11 @@ ftgl::texture_glyph_t *FontData::glyph(const char *codepoint)
         return known;
     }
 
+    // a default-ignorable draws nothing, whatever the face has for it (no ASCII
+    // codepoint is one, so the walks over ASCII text do not ask)
+    if(ftgl::utf8_is_ignorable(codepoint))
+        return nullptr;
+
     const auto found=otherGlyphs.find(key);
 
     if(found != otherGlyphs.end())
@@ -3079,6 +3084,16 @@ void SlotRenderer::textPens(FontData &fontData, float px, const gweni::String &t
 SlotRenderer::PenWalk SlotRenderer::walkPens(FontData &fontData, float px, const gweni::String &text,
     std::vector<float> *pens, std::vector<int> *carets, std::vector<int> *glyphLines)
 {
+    // whether the font lays its codepoints in terminal cells (a fixed-width face)
+    if(fontData.textureFont->cell_width > 0.0f)
+        return walkPensIn<true>(fontData, px, text, pens, carets, glyphLines);
+    return walkPensIn<false>(fontData, px, text, pens, carets, glyphLines);
+}
+
+template<bool Cells>
+SlotRenderer::PenWalk SlotRenderer::walkPensIn(FontData &fontData, float px, const gweni::String &text,
+    std::vector<float> *pens, std::vector<int> *carets, std::vector<int> *glyphLines)
+{
     ftgl::texture_font_t *font=fontData.textureFont;
     const bool sdf=(fontData.mode == TextMode::Sdf);
     const float s=sdf?px/fontData.baseSize:1.0f;
@@ -3109,43 +3124,46 @@ SlotRenderer::PenWalk SlotRenderer::walkPens(FontData &fontData, float px, const
             continue;
         }
 
-        // a default-ignorable draws nothing and moves no pen, and no pair holds it,
-        // in every mode (text_buffer_add_char, layoutSdfText)
-        if(ftgl::utf8_is_ignorable(current))
-        {
-            previous=current;
-            continue;
-        }
-
         ftgl::texture_glyph_t *glyph=fontData.glyph(current);
 
+        // a default-ignorable, which glyph() gives none, draws nothing and moves no
+        // pen, and no pair holds it, in every mode (text_buffer_add_char,
+        // layoutSdfText); text_buffer_add_text kerns against a codepoint with no glyph
         if(glyph == nullptr)
         {
-            if(!sdf)
+            if(!sdf || ftgl::utf8_is_ignorable(current))
                 previous=current;
             continue;
         }
 
         // a font with cells: no kerning, the glyph centred in its cells, the pen
-        // moved by them (texture_font_cell_place, as text_buffer_add_char)
-        float cellOffset=0.0f;
-        float advance=glyph->advance_x*s;
-
-        if(font->cell_width > 0.0f)
+        // moved by them (texture_font_cell_place, as text_buffer_add_char); a
+        // font without goes on as it always did
+        if constexpr(Cells)
         {
+            float cellOffset=0.0f;
+            float advance=0.0f;
+
             ftgl::texture_font_cell_place(font, glyph, ftgl::utf8_to_utf32(current), &cellOffset, &advance);
             cellOffset*=s;
-            advance*=s;
+            if(pens)
+                pens->push_back(sdf?pen+cellOffset:roundf(pen+cellOffset));
+            if(glyphLines)
+                glyphLines->push_back(lines-1);
+            pen+=advance*s;
+            previous=current;
+            continue;
         }
-        else if(previous && font->kerning)
+
+        if(previous && font->kerning)
             pen+=ftgl::texture_glyph_get_kerning(glyph, previous)*s;
 
         // a coverage glyph's quad sits at the pen rounded to a whole pixel
         if(pens)
-            pens->push_back(sdf?pen+cellOffset:roundf(pen+cellOffset));
+            pens->push_back(sdf?pen:roundf(pen));
         if(glyphLines)
             glyphLines->push_back(lines-1);
-        pen+=advance;
+        pen+=glyph->advance_x*s;
         previous=current;
     }
     return PenWalk{ std::max(width, pen), lines };
@@ -3245,6 +3263,8 @@ gweni::Point SlotRenderer::layoutSdfText(FontData &fontData, float px, const gwe
     float width=0.0f;
     int lines=1;
     const char *previous=nullptr;
+    // whether the font lays its codepoints in terminal cells (a fixed-width face)
+    const bool cells=(font->cell_width > 0.0f);
 
     //one codepoint at a time, as text_buffer_add_text goes
     for(size_t i=0; i < text.size(); i+=std::max<size_t>(1, ftgl::utf8_surrogate_len(text.c_str()+i)))
@@ -3265,23 +3285,22 @@ gweni::Point SlotRenderer::layoutSdfText(FontData &fontData, float px, const gwe
             continue;
         }
 
-        // nothing drawn, no advance, and no pair across it, as text_buffer_add_char
-        if(ftgl::utf8_is_ignorable(current))
-        {
-            previous=current;
-            continue;
-        }
-
         ftgl::texture_glyph_t *glyph=fontData.glyph(current);
 
+        // a default-ignorable, which glyph() gives none: nothing drawn, no advance,
+        // and no pair across it, as text_buffer_add_char
         if(glyph == nullptr)
+        {
+            if(ftgl::utf8_is_ignorable(current))
+                previous=current;
             continue;
+        }
 
         // a font with cells: no kerning, the glyph centred in its cells
         float cellOffset=0.0f;
         float advance=glyph->advance_x*s;
 
-        if(font->cell_width > 0.0f)
+        if(cells)
         {
             ftgl::texture_font_cell_place(font, glyph, ftgl::utf8_to_utf32(current), &cellOffset, &advance);
             cellOffset*=s;
