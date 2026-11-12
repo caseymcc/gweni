@@ -33,7 +33,7 @@ namespace
 {
 
 //! Rect as text, so a failed check prints both sides.
-std::string text(const Rect &r)
+std::string rectText(const Rect &r)
 {
     return "("+std::to_string(r.x)+", "+std::to_string(r.y)+", "+std::to_string(r.w)+", "+std::to_string(r.h)+")";
 }
@@ -124,13 +124,13 @@ TEST_CASE("content alignment: a Label keeps the position it is given")
     label->setPos(37, 41);
     scene.settle();
     const Size size(label->getWidth(), label->getHeight());
-    CHECK(text(label->getBounds()) == text(Rect(37, 41, size.width, size.height)));
+    CHECK(rectText(label->getBounds()) == rectText(Rect(37, 41, size.width, size.height)));
 
     // a second pass
     label->invalidate();
     scene.parent->invalidate();
     scene.settle();
-    CHECK(text(label->getBounds()) == text(Rect(37, 41, size.width, size.height)));
+    CHECK(rectText(label->getBounds()) == rectText(Rect(37, 41, size.width, size.height)));
 
     // a Button too
     controls::Button *button=scene.parent->newChild<controls::Button>();
@@ -160,16 +160,16 @@ TEST_CASE("content alignment: a TextBox's text follows setTextAlignment, not the
     // placing the box moves the box, not its text
     box->setAlignment(Alignment::Right|Alignment::Bottom);
     scene.settle();
-    CHECK(text(box->getBounds()) == text(Rect(300-7-200, 200-8-20, 200, 20)));
+    CHECK(rectText(box->getBounds()) == rectText(Rect(300-7-200, 200-8-20, 200, 20)));
     CHECK(same(string->getAlignment(), Alignment::Left|Alignment::CenterV));
-    CHECK(text(string->getBounds()) == text(fitted));
+    CHECK(rectText(string->getBounds()) == rectText(fitted));
 
     // the text alignment moves the text
     box->setTextAlignment(Alignment::Right|Alignment::Bottom);
     scene.settle();
     CHECK(same(box->getTextAlignment(), Alignment::Right|Alignment::Bottom));
     CHECK(same(string->getAlignment(), Alignment::Right|Alignment::Bottom));
-    CHECK(text(string->getBounds()) == text(Rect(200-4-fitted.w, 20-2-fitted.h, fitted.w, fitted.h)));
+    CHECK(rectText(string->getBounds()) == rectText(Rect(200-4-fitted.w, 20-2-fitted.h, fitted.w, fitted.h)));
 }
 
 TEST_CASE("content alignment: a TextBox's scrolled text keeps its position")
@@ -193,7 +193,7 @@ TEST_CASE("content alignment: a TextBox's scrolled text keeps its position")
     box->invalidate();
     scene.parent->invalidate();
     scene.settle();
-    CHECK(text(string->getBounds()) == text(scrolled));
+    CHECK(rectText(string->getBounds()) == rectText(scrolled));
 
     // the head shows again from the left padding
     box->moveCaretToStart();

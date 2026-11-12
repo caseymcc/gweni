@@ -54,7 +54,7 @@ namespace
 {
 
 //! Rect as text, so a failed check prints both sides.
-std::string text(const Rect &r)
+std::string rectText(const Rect &r)
 {
     return "("+std::to_string(r.x)+", "+std::to_string(r.y)+", "+std::to_string(r.w)+", "+std::to_string(r.h)+")";
 }
@@ -125,19 +125,19 @@ TEST_CASE("dock None: Expand is at least its request and its preferred size, and
     block->setBounds(30, 30, 200, 100);
     block->want=Size(50, 20);
     scene.settle();
-    CHECK(text(block->getBounds()) == text(Rect(30, 30, 200, 100)));
+    CHECK(rectText(block->getBounds()) == rectText(Rect(30, 30, 200, 100)));
 
     block->want=Size(300, 150);
     block->invalidate();
     scene.settle();
-    CHECK(text(block->getBounds()) == text(Rect(30, 30, 300, 150)));
+    CHECK(rectText(block->getBounds()) == rectText(Rect(30, 30, 300, 150)));
 
     // what made it grow is gone: back to the request, not stuck at 300x150
     block->want=Size(50, 20);
     block->invalidate();
     scene.settle();
-    CHECK(text(block->getBounds()) == text(Rect(30, 30, 200, 100)));
-    CHECK(text(block->getRequestedBounds()) == text(Rect(30, 30, 200, 100)));
+    CHECK(rectText(block->getBounds()) == rectText(Rect(30, 30, 200, 100)));
+    CHECK(rectText(block->getRequestedBounds()) == rectText(Rect(30, 30, 200, 100)));
 }
 
 TEST_CASE("dock None: Shrink, Elastic, Fixed and no request")
@@ -174,8 +174,8 @@ TEST_CASE("dock None: Shrink, Elastic, Fixed and no request")
     CHECK_FALSE(unasked->hasRequestedSize(Dim::X));
 
     // the arrange code's writes are not requests
-    CHECK(text(shrink->getRequestedBounds()) == text(Rect(0, 0, 200, 100)));
-    CHECK(text(elastic->getRequestedBounds()) == text(Rect(0, 0, 200, 100)));
+    CHECK(rectText(shrink->getRequestedBounds()) == rectText(Rect(0, 0, 200, 100)));
+    CHECK(rectText(elastic->getRequestedBounds()) == rectText(Rect(0, 0, 200, 100)));
 
     // Shrink grows back when its content does
     shrink->want=Size(300, 300);
@@ -217,12 +217,12 @@ TEST_CASE("setPos asks for a position only, setWidth for a width only")
     // moving the grown control must not make its grown width the request
     block->setPos(40, 10);
     block->setHeight(60);
-    CHECK(text(block->getRequestedBounds()) == text(Rect(40, 10, 100, 60)));
+    CHECK(rectText(block->getRequestedBounds()) == rectText(Rect(40, 10, 100, 60)));
 
     block->want=Size(10, 10);
     block->invalidate();
     scene.settle();
-    CHECK(text(block->getBounds()) == text(Rect(40, 10, 100, 60)));
+    CHECK(rectText(block->getBounds()) == rectText(Rect(40, 10, 100, 60)));
 }
 
 TEST_CASE("a layout child gets its request up to the cell, and a canvas resize and back gives it again")
@@ -261,8 +261,8 @@ TEST_CASE("a layout child gets its request up to the cell, and a canvas resize a
 
     scene.canvas->setSize(640, 480);
     scene.settle();
-    CHECK(text(asked->getBounds()) == text(askedBefore));
-    CHECK(text(unasked->getBounds()) == text(unaskedBefore));
+    CHECK(rectText(asked->getBounds()) == rectText(askedBefore));
+    CHECK(rectText(unasked->getBounds()) == rectText(unaskedBefore));
 }
 
 TEST_CASE("a Fixed layout child advances a Vertical and a HorizontalLayout by its size and margins")
@@ -294,15 +294,15 @@ TEST_CASE("a Fixed layout child advances a Vertical and a HorizontalLayout by it
         // the layout's spacing is 2
         if(vertical)
         {
-            CHECK(text(before->getBounds()) == text(Rect(0, 0, 50, 20)));
-            CHECK(text(fixed->getBounds()) == text(Rect(3, 20+2+4, 70, 30)));
-            CHECK(text(after->getBounds()) == text(Rect(0, 20+2+4+30+6+2, 50, 20)));
+            CHECK(rectText(before->getBounds()) == rectText(Rect(0, 0, 50, 20)));
+            CHECK(rectText(fixed->getBounds()) == rectText(Rect(3, 20+2+4, 70, 30)));
+            CHECK(rectText(after->getBounds()) == rectText(Rect(0, 20+2+4+30+6+2, 50, 20)));
         }
         else
         {
-            CHECK(text(before->getBounds()) == text(Rect(0, 0, 50, 20)));
-            CHECK(text(fixed->getBounds()) == text(Rect(50+2+3, 4, 70, 30)));
-            CHECK(text(after->getBounds()) == text(Rect(50+2+3+70+5+2, 0, 50, 20)));
+            CHECK(rectText(before->getBounds()) == rectText(Rect(0, 0, 50, 20)));
+            CHECK(rectText(fixed->getBounds()) == rectText(Rect(50+2+3, 4, 70, 30)));
+            CHECK(rectText(after->getBounds()) == rectText(Rect(50+2+3+70+5+2, 0, 50, 20)));
         }
     }
 }
@@ -318,7 +318,7 @@ TEST_CASE("a layout child with a margin is sized from its cell minus the margin"
     child->setMargin(Margin(10, 10, 10, 10));
 
     scene.settle();
-    CHECK(text(child->getBounds()) == text(Rect(10, 10, 620, 460)));
+    CHECK(rectText(child->getBounds()) == rectText(Rect(10, 10, 620, 460)));
 }
 
 TEST_CASE("a layout child's request wider than its cell minus the margin is capped there")
@@ -336,7 +336,7 @@ TEST_CASE("a layout child's request wider than its cell minus the margin is capp
     scene.settle();
     // the cell is the panel width (the preferred 700+7+11 shrunk to it) and
     // 20+3+5 high
-    CHECK(text(asked->getBounds()) == text(Rect(7, 3, 640-7-11, 20)));
+    CHECK(rectText(asked->getBounds()) == rectText(Rect(7, 3, 640-7-11, 20)));
 }
 
 TEST_CASE("Expand children with margins in a HorizontalLayout do not overlap or pass the panel edge")
@@ -354,8 +354,8 @@ TEST_CASE("Expand children with margins in a HorizontalLayout do not overlap or 
     }
 
     scene.settle();
-    CAPTURE(text(c0->getBounds()));
-    CAPTURE(text(c1->getBounds()));
+    CAPTURE(rectText(c0->getBounds()));
+    CAPTURE(rectText(c1->getBounds()));
     CHECK(c0->getX() == 5);
     CHECK(c0->getWidth() > 0);
     CHECK(c1->getWidth() > 0);
@@ -378,11 +378,11 @@ TEST_CASE("a Fixed layout child with a margin keeps its requested size, also in 
     fixed->setMargin(Margin(3, 4, 5, 6));
 
     scene.settle();
-    CHECK(text(fixed->getBounds()) == text(Rect(3, 4, 70, 30)));
+    CHECK(rectText(fixed->getBounds()) == rectText(Rect(3, 4, 70, 30)));
 
     scene.canvas->setSize(6, 8);
     scene.settle();
-    CHECK(text(fixed->getBounds()) == text(Rect(3, 4, 70, 30)));
+    CHECK(rectText(fixed->getBounds()) == rectText(Rect(3, 4, 70, 30)));
 }
 
 TEST_CASE("a layout cell smaller than the child's margins gives it size 0, never a negative size")
@@ -402,8 +402,8 @@ TEST_CASE("a layout cell smaller than the child's margins gives it size 0, never
 
     scene.canvas->setSize(15, 15);
     scene.settle();
-    CAPTURE(text(expand->getBounds()));
-    CAPTURE(text(asked->getBounds()));
+    CAPTURE(rectText(expand->getBounds()));
+    CAPTURE(rectText(asked->getBounds()));
     CHECK(expand->getX() == 10);
     CHECK(expand->getY() == 10);
     CHECK(expand->getWidth() == 0);
@@ -506,9 +506,9 @@ TEST_CASE("a nested layout's preferred length shrinks back with its child, as in
         // not stuck at the 300 the child was before
         CHECK(fresh.nestedLength() == 50);
         CHECK(scene.nestedLength() == fresh.nestedLength());
-        CHECK(text(scene.nested->getBounds()) == text(fresh.nested->getBounds()));
-        CHECK(text(scene.inner->getBounds()) == text(fresh.inner->getBounds()));
-        CHECK(text(scene.after->getBounds()) == text(fresh.after->getBounds()));
+        CHECK(rectText(scene.nested->getBounds()) == rectText(fresh.nested->getBounds()));
+        CHECK(rectText(scene.inner->getBounds()) == rectText(fresh.inner->getBounds()));
+        CHECK(rectText(scene.after->getBounds()) == rectText(fresh.after->getBounds()));
 
         // and laying it out again and again changes nothing
         const Rect nestedBounds=scene.nested->getBounds();
@@ -519,8 +519,8 @@ TEST_CASE("a nested layout's preferred length shrinks back with its child, as in
             scene.settle();
         }
         CHECK(scene.nestedLength() == 50);
-        CHECK(text(scene.nested->getBounds()) == text(nestedBounds));
-        CHECK(text(scene.after->getBounds()) == text(afterBounds));
+        CHECK(rectText(scene.nested->getBounds()) == rectText(nestedBounds));
+        CHECK(rectText(scene.after->getBounds()) == rectText(afterBounds));
     }
 }
 
@@ -543,11 +543,11 @@ TEST_CASE("a nested layout's size flag follows its child from Expand to Fixed, a
 
         CHECK(sizeFlagName(fresh.nestedFlag()) == "Fixed");
         CHECK(sizeFlagName(scene.nestedFlag()) == "Fixed");
-        CHECK(text(scene.nested->getBounds()) == text(fresh.nested->getBounds()));
-        CHECK(text(scene.inner->getBounds()) == text(fresh.inner->getBounds()));
+        CHECK(rectText(scene.nested->getBounds()) == rectText(fresh.nested->getBounds()));
+        CHECK(rectText(scene.inner->getBounds()) == rectText(fresh.inner->getBounds()));
         // the nested layout is its child's 50 long again, "after" 2 (the spacing) past it
         CHECK(fresh.afterPos() == 52);
-        CHECK(text(scene.after->getBounds()) == text(fresh.after->getBounds()));
+        CHECK(rectText(scene.after->getBounds()) == rectText(fresh.after->getBounds()));
     }
 }
 
@@ -676,7 +676,7 @@ TEST_CASE("a TextBoxNumeric in a Base parent is the 26x16 it asked for, whatever
         // each a setText after the last layout, so the digit count changes
         numeric->setText(digits);
         scene.settle();
-        CHECK(text(numeric->getBounds()) == text(Rect(105, 0, 26, 16)));
+        CHECK(rectText(numeric->getBounds()) == rectText(Rect(105, 0, 26, 16)));
     }
 }
 
@@ -692,12 +692,12 @@ TEST_CASE("a TextBox in a VerticalLayout stays 200x20 with a text wider than 200
 
     // the text would widen it past its request, up to the 640 cell
     REQUIRE(scene.renderer.measureText(box->getFont(), wide).x > 200);
-    CHECK(text(box->getBounds()) == text(Rect(0, 0, 200, 20)));
+    CHECK(rectText(box->getBounds()) == rectText(Rect(0, 0, 200, 20)));
 
     // typing more scrolls the text; it never grows the box
     box->setText(wide+wide);
     scene.settle();
-    CHECK(text(box->getBounds()) == text(Rect(0, 0, 200, 20)));
+    CHECK(rectText(box->getBounds()) == rectText(Rect(0, 0, 200, 20)));
 }
 
 TEST_CASE("a TextBox docked Center fills its dock rect")
@@ -711,12 +711,12 @@ TEST_CASE("a TextBox docked Center fills its dock rect")
     box->setDock(DockPosition::Center);
     box->setText("short");
     scene.settle();
-    CHECK(text(box->getBounds()) == text(Rect(0, 0, 300, 40)));
+    CHECK(rectText(box->getBounds()) == rectText(Rect(0, 0, 300, 40)));
 
     // nor does a text wider than the rect move it
     box->setText(String(100, 'w'));
     scene.settle();
-    CHECK(text(box->getBounds()) == text(Rect(0, 0, 300, 40)));
+    CHECK(rectText(box->getBounds()) == rectText(Rect(0, 0, 300, 40)));
 }
 
 namespace
@@ -809,7 +809,7 @@ TEST_CASE("a TextBoxMultiline docked Center fills its dock rect, whatever its te
     {
         box->setText(s);
         scene.settle();
-        CHECK(text(box->getBounds()) == text(Rect(0, 0, 300, 120)));
+        CHECK(rectText(box->getBounds()) == rectText(Rect(0, 0, 300, 120)));
     }
 }
 
@@ -834,7 +834,7 @@ TEST_CASE("an {Elastic, Fixed} TextBox docked Top spans its parent, whose width 
     scene.settle();
 
     REQUIRE(parent->getWidth() == 350);
-    CHECK(text(box->getBounds()) == text(Rect(0, 10, 350, 20)));
+    CHECK(rectText(box->getBounds()) == rectText(Rect(0, 10, 350, 20)));
     CHECK(box->getPreferredSize().width == 200);
     const Rect parentBefore=parent->getBounds();
     const Size parentPreferred=parent->getPreferredSize();
@@ -844,8 +844,8 @@ TEST_CASE("an {Elastic, Fixed} TextBox docked Top spans its parent, whose width 
     scene.settle();
     CHECK(box->getPreferredSize().width == 200);
     CHECK(parent->getPreferredSize().width == parentPreferred.width);
-    CHECK(text(parent->getBounds()) == text(parentBefore));
-    CHECK(text(box->getBounds()) == text(Rect(0, 10, 350, 20)));
+    CHECK(rectText(parent->getBounds()) == rectText(parentBefore));
+    CHECK(rectText(box->getBounds()) == rectText(Rect(0, 10, 350, 20)));
 
     // typing it, a character a frame, neither
     box->setText("");
@@ -859,8 +859,8 @@ TEST_CASE("an {Elastic, Fixed} TextBox docked Top spans its parent, whose width 
     REQUIRE(box->getText() == wide);
     CHECK(box->getPreferredSize().width == 200);
     CHECK(parent->getPreferredSize().width == parentPreferred.width);
-    CHECK(text(parent->getBounds()) == text(parentBefore));
-    CHECK(text(box->getBounds()) == text(Rect(0, 10, 350, 20)));
+    CHECK(rectText(parent->getBounds()) == rectText(parentBefore));
+    CHECK(rectText(box->getBounds()) == rectText(Rect(0, 10, 350, 20)));
 
     // with nothing wider, the parent is the box's request
     wider->want=Size(0, 10);
@@ -898,7 +898,7 @@ TEST_CASE("a Fixed control docked Left or Right keeps its size: a CheckBox, a Ra
     CHECK(check->checkBox()->getHeight() == 15);
     CHECK(radio->getRadioButton()->getWidth() == 15);
     CHECK(radio->getRadioButton()->getHeight() == 15);
-    CHECK(text(square->getBounds()) == text(Rect(0, 0, 15, 15)));
+    CHECK(rectText(square->getBounds()) == rectText(Rect(0, 0, 15, 15)));
 
     controls::Base *close=window->findChildByName("closeButton", true);
     REQUIRE(close != nullptr);

@@ -4138,6 +4138,47 @@ void Base::setMargin(const Margin &margin)
     invalidateParent();
 }
 
+String Base::acceleratorKey(const String &accelerator)
+{
+    String str=accelerator;
+    gweni::toUpper(str);
+    gweni::strip(str, " ");
+
+    // the key is after the last '+', or is '+' itself ("CTRL++")
+    size_t keyStart=str.rfind('+');
+
+    if(keyStart == String::npos || keyStart == 0)
+        return str;
+    if(keyStart+1 == str.size() && keyStart > 0 && str[keyStart-1] == '+')
+        --keyStart;
+
+    bool control=false;
+    bool shift=false;
+    size_t start=0;
+
+    while(start < keyStart)
+    {
+        size_t end=str.find('+', start);
+        const String modifier=str.substr(start, end-start);
+
+        if(modifier == "CTRL" || modifier == "CONTROL")
+            control=true;
+        else if(modifier == "SHIFT")
+            shift=true;
+        else
+            return str;
+        start=end+1;
+    }
+
+    String key;
+    if(control)
+        key+="CTRL+";
+    if(shift)
+        key+="SHIFT+";
+    key.append(str, keyStart+1, String::npos);
+    return key;
+}
+
 bool Base::handleAccelerator(String &accelerator)
 {
     if(KeyboardFocus == this || !AccelOnlyFocus())

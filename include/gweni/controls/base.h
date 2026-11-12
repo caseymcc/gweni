@@ -972,12 +972,16 @@ public:
 
         caller->add(handler, func);
 
-        gweni::String str=accelerator;
-        gweni::toUpper(str);
-        gweni::strip(str, " ");
-
-        m_accelerators[str]=caller;
+        m_accelerators[acceleratorKey(accelerator)]=caller;
     }
+
+    //! The key input::handleAccelerator looks \p accelerator up by: upper
+    //! case, no spaces, and its Ctrl and Shift modifiers in that order
+    //! whichever order they are written in ("Shift + Ctrl + Z" and
+    //! "ctrl+shift+z" are both "CTRL+SHIFT+Z"; "Control" is "CTRL"). One
+    //! with any other modifier is only upper-cased and stripped, and never
+    //! matches, since handleAccelerator builds none.
+    static String acceleratorKey(const String &accelerator);
 
     void addAccelerator(const String &accelerator)
     {

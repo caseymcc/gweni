@@ -55,9 +55,12 @@ void UndoStack::record(const Edit &edit, EditKind kind, const Selection &before,
 
     if(m_groupDepth > 0)
     {
+        //the group's first edit joins or starts a step by the rules, as one
+        //of the group's kind; the rest join it whatever they are
         if(!m_groupStarted)
         {
-            startStep(m_groupKind, before);
+            if(!joinsCurrent(edit, m_groupKind, before, now))
+                startStep(m_groupKind, before);
             m_groupStarted=true;
         }
     }
@@ -83,8 +86,7 @@ void UndoStack::endGroup()
 {
     if(m_groupDepth == 0)
         return;
-    if(--m_groupDepth == 0 && m_groupStarted)
-        m_sealed=true;
+    --m_groupDepth;
 }
 
 const UndoStep *UndoStack::undo()

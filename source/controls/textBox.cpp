@@ -80,6 +80,9 @@ GWENI_CONTROL_CONSTRUCTOR(TextBox)
     addAccelerator("Ctrl + X", &TextBox::onCut);
     addAccelerator("Ctrl + V", &TextBox::onPaste);
     addAccelerator("Ctrl + A", &TextBox::onSelectAll);
+    addAccelerator("Ctrl + Z", &TextBox::onUndo);
+    addAccelerator("Ctrl + Y", &TextBox::onRedo);
+    addAccelerator("Ctrl + Shift + Z", &TextBox::onRedo);
 }
 
 bool TextBox::onChar(gweni::UnicodeChar c)
@@ -92,6 +95,7 @@ bool TextBox::onChar(gweni::UnicodeChar c)
     if(str.empty())
         return false;
 
+    EditKindScope kind(*this, text::EditKind::Insert);
     insertText(str);
     return true;
 }
@@ -108,6 +112,9 @@ void TextBox::insertText(const gweni::String &strIn)
 
     if(strInsert.empty())
         return;
+
+    // the selection's erase and the insert are one undo step
+    text::UndoGroup group(m_undo, m_editKind);
 
     if(hasSelection())
         eraseSelection();
@@ -127,13 +134,104 @@ void TextBox::insertText(const gweni::String &strIn)
             return;
     }
 
+    const text::Selection before=currentSelection();
+    const int start=m_cursorPos;
     String str=getText();
     str.insert(m_cursorPos, strInsert, 0, insertSize);
-    setText(str);
+    setEditedText(str);
     m_cursorPos+=insertSize;
     m_cursorEnd=m_cursorPos;
     m_cursorLine=0;
     refreshCursorBounds();
+    recordEdit(start, String(), strInsert.substr(0, insertSize), before);
+}
+
+text::Selection TextBox::currentSelection() const
+{
+    return {{0, static_cast<size_t>(m_cursorEnd)}, {0, static_cast<size_t>(m_cursorPos)}};
+}
+
+void TextBox::setEditedText(const String &str)
+{
+    const bool applying=m_applyingEdit;
+
+    m_applyingEdit=true;
+    setText(str);
+    m_applyingEdit=applying;
+}
+
+void TextBox::recordEdit(int start, const String &removed, const String &inserted, const text::Selection &before)
+{
+    text::Edit edit;
+
+    edit.range={{0, static_cast<size_t>(start)}, {0, start+removed.size()}};
+    edit.text=inserted;
+    edit.removed=removed;
+    edit.textEnd={0, start+inserted.size()};
+    m_undo.record(edit, m_editKind, before, currentSelection());
+}
+
+// An undo step's edits taken back from the last to the first, or a redo's
+// made again in order, on one copy of the text, which is then set once: one
+// onTextChanged, and one new string for m_text, which re-wraps the paragraphs
+// that differ as it does after any edit.
+bool TextBox::undo()
+{
+    if(!m_editable)
+        return false;
+
+    const text::UndoStep *step=m_undo.undo();
+
+    if(step == nullptr)
+        return false;
+
+    String str=getText();
+
+    for(size_t i=step->edits.size(); i-- > 0;)
+    {
+        // the inverse: the inserted text replaced by the removed one
+        const text::Edit &edit=step->edits[i];
+        str.replace(edit.range.begin.byte, edit.text.size(), edit.removed);
+    }
+    applyUndoStep(str, step->before);
+    return true;
+}
+
+bool TextBox::redo()
+{
+    if(!m_editable)
+        return false;
+
+    const text::UndoStep *step=m_undo.redo();
+
+    if(step == nullptr)
+        return false;
+
+    String str=getText();
+
+    for(const text::Edit &edit:step->edits)
+        str.replace(edit.range.begin.byte, edit.removed.size(), edit.text);
+    applyUndoStep(str, step->after);
+    return true;
+}
+
+void TextBox::applyUndoStep(const String &str, const text::Selection &selection)
+{
+    setEditedText(str);
+    m_cursorEnd=snapPos(getText(), std::min(static_cast<int>(selection.anchor.byte), textLength()));
+    m_cursorPos=snapPos(getText(), std::min(static_cast<int>(selection.caret.byte), textLength()));
+    m_cursorLine=0;
+    refreshCursorBounds();
+}
+
+void TextBox::onUndo(event::Info)
+{
+    undo();
+}
+
+void TextBox::onRedo(event::Info)
+{
+    redo();
 }
 
 // Unfocused, the caret is not drawn and nothing here changes. Focused, each
@@ -163,6 +261,9 @@ void TextBox::updateCaretBlink()
 
 void TextBox::setText(const String &str, bool doEvents)
 {
+    if(!m_applyingEdit)
+        m_undo.clear();
+
     String converted;
     ParentClass::setText(normalizeText(str, converted)?converted:str, doEvents);
     updatePlaceholder();
@@ -287,6 +388,8 @@ void TextBox::onLostKeyboardFocus()
 {
     ParentClass::onLostKeyboardFocus();
     stopCaretBlink();
+    // typing after the focus comes back is a step of its own
+    m_undo.seal();
     onLostFocusCaller.call(this);
 }
 
@@ -368,6 +471,7 @@ void TextBox::updateCursorRects()
 
 void TextBox::onPaste(event::Info)
 {
+    EditKindScope kind(*this, text::EditKind::Paste);
     insertText(platform::getClipboardText());
 }
 
@@ -385,6 +489,8 @@ void TextBox::onCut(event::Info)
         return;
 
     platform::setClipboardText(getSelection());
+
+    EditKindScope kind(*this, text::EditKind::Cut);
     eraseSelection();
 }
 
@@ -435,6 +541,8 @@ bool TextBox::onKeyBackspace(bool down)
     if(!down)
         return true;
 
+    EditKindScope kind(*this, text::EditKind::DeleteBackward);
+
     if(hasSelection())
     {
         eraseSelection();
@@ -453,6 +561,8 @@ bool TextBox::onKeyDelete(bool down)
 {
     if(!down)
         return true;
+
+    EditKindScope kind(*this, text::EditKind::DeleteForward);
 
     if(hasSelection())
     {
@@ -560,9 +670,11 @@ void TextBox::deleteText(int iStartPos, int iLength)
 
     // Taken before setText, whose onTextChanged clamps it to the new length.
     const int cursorPos=m_cursorPos;
+    const text::Selection before=currentSelection();
+    const String removed=str.substr(iStartPos, iLength);
 
     str.erase(iStartPos, iLength);
-    setText(str);
+    setEditedText(str);
 
     if(cursorPos >= iEndPos)
         setCursorPos(cursorPos-iLength);
@@ -570,6 +682,7 @@ void TextBox::deleteText(int iStartPos, int iLength)
         setCursorPos(iStartPos);
 
     setCursorend(m_cursorPos);
+    recordEdit(iStartPos, removed, String(), before);
 }
 
 bool TextBox::hasSelection()
@@ -818,6 +931,8 @@ GWENI_CONTROL_CONSTRUCTOR(TextBoxMultiline)
 
 bool TextBoxMultiline::onKeyReturn(bool down)
 {
+    EditKindScope kind(*this, text::EditKind::Insert);
+
     if(down)
         insertText("\n");
 
@@ -1064,6 +1179,9 @@ GWENI_CONTROL_CONSTRUCTOR(PasswordTextBox)
 
 void PasswordTextBox::setText(const String &strIn, bool doEvents)
 {
+    if(!m_applyingEdit)
+        m_undo.clear();
+
     String converted;
     const String &str=normalizeText(strIn, converted)?converted:strIn;
 

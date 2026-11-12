@@ -72,7 +72,7 @@ using namespace gweni;
 namespace
 {
 
-std::string text(const Rect &r)
+std::string rectText(const Rect &r)
 {
     return "("+std::to_string(r.x)+", "+std::to_string(r.y)+", "+std::to_string(r.w)+", "+std::to_string(r.h)+")";
 }
@@ -84,7 +84,7 @@ void listTree(controls::Base *control, int depth, std::vector<std::string> &out)
     const Size &p=control->getPreferredSize();
 
     out.push_back(std::string(static_cast<size_t>(depth)*2, ' ')+control->getTypeName()+
-        " bounds="+text(control->getBounds())+" pref=("+std::to_string(p.width)+", "+
+        " bounds="+rectText(control->getBounds())+" pref=("+std::to_string(p.width)+", "+
         std::to_string(p.height)+")");
 
     for(auto &&child : control->getChildren())
@@ -203,9 +203,9 @@ TEST_CASE("an Owner child is placed by its owner alone, records no request and d
     scene.settle();
 
     // The generic arrange would have docked it Center over the whole holder.
-    CHECK(text(holder->part->getBounds()) == text(Rect(5, 5, 90, 7)));
+    CHECK(rectText(holder->part->getBounds()) == rectText(Rect(5, 5, 90, 7)));
     // Only the constructor's setSize asked: placeChild left the request alone.
-    CHECK(text(holder->part->getRequestedBounds()) == text(requested));
+    CHECK(rectText(holder->part->getRequestedBounds()) == rectText(requested));
     // Its 300x300 does not count in the holder's size, which is only padding.
     CHECK(holder->getPreferredSize().width == 0);
     CHECK(holder->getPreferredSize().height == 0);
@@ -214,8 +214,8 @@ TEST_CASE("an Owner child is placed by its owner alone, records no request and d
     holder->setSize(200, 50);
     scene.settle();
 
-    CHECK(text(holder->part->getBounds()) == text(Rect(5, 5, 190, 7)));
-    CHECK(text(holder->part->getRequestedBounds()) == text(requested));
+    CHECK(rectText(holder->part->getBounds()) == rectText(Rect(5, 5, 190, 7)));
+    CHECK(rectText(holder->part->getRequestedBounds()) == rectText(requested));
     CHECK(scene.requests == 0);
 }
 
@@ -243,7 +243,7 @@ TEST_CASE("a child given back to the generic arrange is docked and counted again
     CHECK(preferred.width > 0);
     CHECK(parent->getPreferredSize().width == 4+preferred.width);
     CHECK(parent->getPreferredSize().height == 6+preferred.height);
-    CHECK(text(child->getBounds()) == text(Rect(4, 6, preferred.width, preferred.height)));
+    CHECK(rectText(child->getBounds()) == rectText(Rect(4, 6, preferred.width, preferred.height)));
 }
 
 TEST_CASE("a request recorded while a pass runs is counted, with the first type that made it")
@@ -846,7 +846,7 @@ TEST_CASE("a VerticalSlider asks for its request whatever its value, and fits a 
 
     CHECK(second.passes <= 1);
     CHECK(slider->getPreferredSize().height == 200);
-    CHECK(text(slider->getBounds()) == text(atZero));
+    CHECK(rectText(slider->getBounds()) == rectText(atZero));
     CHECK(scene.frame().passes == 0);
     CHECK(scene.requests == 0);
 }
@@ -918,7 +918,7 @@ namespace
 //! A control's request and whether a size was asked, as text.
 std::string request(const controls::Base *control)
 {
-    return text(control->getRequestedBounds())+" w="+std::to_string(control->hasRequestedSize(Dim::X))+
+    return rectText(control->getRequestedBounds())+" w="+std::to_string(control->hasRequestedSize(Dim::X))+
         " h="+std::to_string(control->hasRequestedSize(Dim::Y));
 }
 
@@ -1039,8 +1039,8 @@ TEST_CASE("a window dragged by its title bar asks to be where it was dropped")
     drag(titleBar, grab, Point(grab.x+40, grab.y+25));
     scene.settle();
 
-    CHECK(text(window->getRequestedBounds()) == text(Rect(60, 55, 200, 150)));
-    CHECK(text(window->getBounds()) == text(Rect(60, 55, 200, 150)));
+    CHECK(rectText(window->getRequestedBounds()) == rectText(Rect(60, 55, 200, 150)));
+    CHECK(rectText(window->getBounds()) == rectText(Rect(60, 55, 200, 150)));
     // a size was asked by the app, and stays asked
     CHECK(window->hasRequestedSize(Dim::X));
     CHECK(window->hasRequestedSize(Dim::Y));

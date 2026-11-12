@@ -12,6 +12,7 @@
 #include <gweni/controls/base.h>
 #include <gweni/controls/label.h>
 #include <gweni/controls/scrollControl.h>
+#include <gweni/text/undoStack.h>
 
 namespace gweni
 {
@@ -44,6 +45,7 @@ public:
 
     bool onChar(gweni::UnicodeChar c) override;
 
+    //! The app's text: it is no edit, so it clears the undo history.
     void setText(const String &str, bool doEvents=true) override;
 
     //! A hint shown in the skin's PlaceholderText colour while the box is
@@ -65,8 +67,25 @@ public:
     void setTextAlignment(Alignment alignment) override;
     void setWrap(bool b) override;
 
+    //! Edits at the caret, each recorded on the undo stack (getUndoStack()),
+    //! as typing when it comes from the keyboard, as a paste from Ctrl+V,
+    //! and as an edit of its own (EditKind::Other) when the app calls it.
     virtual void insertText(const gweni::String &str);
     virtual void deleteText(int iStartPos, int iLength);
+
+    //! Takes back the last undo step (Ctrl+Z), or does it again (Ctrl+Y,
+    //! Ctrl+Shift+Z): the text, the caret and the selection as they were
+    //! before, or after, it, with one onTextChanged. False, changing
+    //! nothing, with no step to take or in a box that is not editable.
+    virtual bool undo();
+    virtual bool redo();
+    //! Every edit of the box's text from its keyboard, its clipboard or
+    //! insertText/deleteText, in steps (text::UndoStack's coalescing rules:
+    //! typing joins a step until the caret moves, a newline is typed, the
+    //! kind of edit changes or a second passes on the platform clock).
+    //! Positions in its records are (0, byte offset into getText()).
+    text::UndoStack &getUndoStack() { return m_undo; }
+    const text::UndoStack &getUndoStack() const { return m_undo; }
 
     virtual void refreshCursorBounds();
     //! The selection and caret rectangles, from where m_text is now.
@@ -97,6 +116,8 @@ public:
     void onCopy(event::Info info) override;
     void onCut(event::Info info) override;
     void onSelectAll(event::Info info) override;
+    void onUndo(event::Info info);
+    void onRedo(event::Info info);
 
     void onMouseDoubleClickLeft(int x, int y) override;
 
@@ -229,6 +250,35 @@ protected:
 
     //! The hint, a second Text beside m_text, made by the first setPlaceholder.
     internal::Text *m_placeholder=nullptr;
+
+    //! The selection as the undo stack records it: anchor m_cursorEnd, caret
+    //! m_cursorPos.
+    text::Selection currentSelection() const;
+    //! Sets the text of an edit, an undo or a redo through setText without
+    //! clearing the undo history.
+    void setEditedText(const String &str);
+    //! Records an applied edit at \p start that took out \p removed and put
+    //! in \p inserted, with the selection \p before it and the current one
+    //! after it, as m_editKind.
+    void recordEdit(int start, const String &removed, const String &inserted, const text::Selection &before);
+    //! Sets the text an undo or redo step leaves, then its selection.
+    void applyUndoStep(const String &str, const text::Selection &selection);
+
+    //! What the edits made now are, for the undo stack's coalescing: set by
+    //! the key, char and clipboard handlers around their edits.
+    struct EditKindScope
+    {
+        EditKindScope(TextBox &box, text::EditKind kind): m_box(box), m_previous(box.m_editKind) { box.m_editKind=kind; }
+        ~EditKindScope() { m_box.m_editKind=m_previous; }
+
+        TextBox &m_box;
+        text::EditKind m_previous;
+    };
+
+    text::UndoStack m_undo;
+    text::EditKind m_editKind=text::EditKind::Other;
+    //! Set while an edit sets the text, so setText() keeps the history.
+    bool m_applyingEdit=false;
 };
 
 

@@ -15,7 +15,9 @@
  *  change of kind, a paste or cut (each its own step), a pause past the
  *  interval (platform::setTimeSource) and seal() each start a new one, as
  *  does an edit after an undo, which also drops the redo; a group is one
- *  step; setLimit() drops the oldest steps; clear() forgets them all.
+ *  step (a Paste one its own, an Insert one joining and joined by typing
+ *  at the caret, an empty one nothing); setLimit() drops the
+ *  oldest steps; clear() forgets them all.
  */
 #include <gweni/text/undoStack.h>
 #include <gweni/platforms/platform.h>
@@ -531,7 +533,7 @@ TEST_CASE("text::UndoStack: a group is one step")
     }
     REQUIRE(editor.document.text() == "bye world!");
 
-    //sealed after the group
+    //a Paste step: the typing after it is a step of its own
     editor.type("?");
     REQUIRE(editor.stack.undoCount() == 3);
 
@@ -545,6 +547,31 @@ TEST_CASE("text::UndoStack: a group is one step")
     editor.redo();
     REQUIRE(editor.document.text() == "bye world!");
     REQUIRE(editor.selection == at({0, 3}));
+
+    //an Insert group (a letter typed over a selection) starts a step the
+    //letters typed after it join; an empty group changes nothing
+    editor.stack.clear();
+    editor.selection={{0, 0}, {0, 3}};
+    {
+        text::UndoGroup group(editor.stack, EditKind::Insert);
+        editor.edit(rangeOf(editor.selection), String(), EditKind::DeleteBackward);
+        editor.edit(rangeOf(editor.selection), "h", EditKind::Insert);
+    }
+    editor.type("i");
+    {
+        text::UndoGroup group(editor.stack, EditKind::Insert);
+    }
+    editor.type("!");
+    {
+        //a group's first edit at the caret joins the typing before it
+        text::UndoGroup group(editor.stack, EditKind::Insert);
+        editor.edit(rangeOf(editor.selection), "?", EditKind::Insert);
+    }
+    REQUIRE(editor.document.text() == "hi!? world!");
+    REQUIRE(editor.stack.undoCount() == 1);
+    editor.undo();
+    REQUIRE(editor.document.text() == "bye world!");
+    REQUIRE(editor.selection == Selection{{0, 0}, {0, 3}});
 }
 
 TEST_CASE("text::UndoStack: setLimit keeps the newest steps, clear forgets them all")

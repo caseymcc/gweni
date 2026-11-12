@@ -71,8 +71,14 @@ struct UndoStep
 //!   since the step's last edit, so a capture's stepped clock makes this
 //!   deterministic.
 //! A new edit drops every step that could be redone. beginGroup() and
-//! endGroup() make the edits between them one step whatever the rules say
-//! (a paste over a selection: the erase and the insert).
+//! endGroup() make the edits between them part of one step (a paste over a
+//! selection: the erase and the insert): the group's first edit joins the
+//! current step or starts one by the rules above, as an edit of the group's
+//! kind, and the rest join that step whatever they are. So a Paste group is
+//! a step of its own, a letter typed over a selection starts one (the
+//! selection before it is no caret the step left) that the next letters
+//! join, and a letter typed at the caret through a group joins the typing
+//! before it.
 //!
 //! undo() and redo() hand the step back for the caller to apply: undo by
 //! applying each edit's inverse() from the last to the first and restoring
@@ -86,8 +92,9 @@ public:
     //! before and after it.
     void record(const Edit &edit, EditKind kind, const Selection &before, const Selection &after);
 
-    //! Every record() until the matching endGroup() is one step, of \p kind,
-    //! starting a new step; groups nest, the outermost one counting.
+    //! Every record() until the matching endGroup() goes into one step, the
+    //! first by the rules as an edit of \p kind (a group with no record()
+    //! changes nothing); groups nest, the outermost one counting.
     void beginGroup(EditKind kind=EditKind::Other);
     void endGroup();
 
