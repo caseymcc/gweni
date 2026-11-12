@@ -119,7 +119,15 @@ void VirtualList::setItemCount(size_t count)
                 m_heights.append(count-m_itemCount, defaultHeight(m_itemCount), 0);
         }
         else
+        {
             m_heights.erase(count, m_itemCount-count);
+            // the item at the top went: past the end, as removeItems leaves it
+            if(m_anchorItem >= count)
+            {
+                m_anchorItem=count;
+                m_anchorOffset=0;
+            }
+        }
 
         m_itemCount=count;
         updateContentHeight();
@@ -152,8 +160,9 @@ void VirtualList::insertItems(size_t at, size_t count)
         else
             m_heights.insert(at, count, defaultHeight(at), 0);
 
-        // added above the item at the top (or before it): it stays there
-        if(at <= m_anchorItem && m_anchorItem < m_itemCount)
+        // added above the item at the top (or before it): it stays there; an
+        // anchor past the end (its item removed) stays past it
+        if(at < m_anchorItem || (at == m_anchorItem && m_anchorItem < m_itemCount))
             m_anchorItem+=count;
 
         m_itemCount+=count;
@@ -796,6 +805,9 @@ void VirtualList::placeVariable(size_t &first, size_t &end)
     const size_t count=m_heights.size();
     const renderer::Base *renderer=getSkin()?getSkin()->getRenderer():nullptr;
     const unsigned serial=renderer?renderer->textLayoutSerial():0;
+    // the bar as placeContents left it, at the range it took it against
+    const float amount=m_verticalScrollBar->getScrolledAmount();
+    const int range=m_scrollRange[1];
 
     anchorAtOffset();
 
@@ -894,7 +906,14 @@ void VirtualList::placeVariable(size_t &first, size_t &end)
 
     m_scrollOffset[1]=offset;
     m_anchoredOffset=offset;
-    showScrollOffset(Dim::Y);
+
+    // A bar the user moved to between two units keeps its amount while it
+    // still rounds to the offset at the same range, so moves of under half a
+    // unit add up, as placeContents keeps them (#512).
+    if(maxOffset == range && std::lround(static_cast<double>(amount)*maxOffset) == offset)
+        m_shownAmount[1]=amount;
+    else
+        showScrollOffset(Dim::Y);
 
     // the items in view and their tops
     first=m_anchorItem;

@@ -1913,7 +1913,9 @@ two programs and the draws. What follows describes both together:
   wheel, `setVerticalScrollOffset`, `scrollToBottom`) was a scroll, anchored at its
   offset; `scrollToItem` and `scrollByRows` (by whole items) move the anchor itself.
   An edit between two layouts anchors such a scroll first, a bar the user moved (its
-  amount no longer the one the list last showed) included, so the edit keeps it.
+  amount no longer the one the list last showed) included, so the edit keeps it. A bar
+  moved to between two units keeps its amount while it rounds to the offset at the same
+  range, as a ScrollControl's does (#512), so nudges of under half a unit add up.
   `scrollToItem` measures the items from the anchor down to its item, or down to the
   viewport's bottom when it is further, before it decides whether the item is in view:
   estimates would say an item shows that does not. An item at least as tall as the
@@ -1926,7 +1928,8 @@ two programs and the draws. What follows describes both together:
   moved item keeps it and is not bound again, and one of a removed item gives up its
   press and focus and is free for the next layout (which tests the hover again); the
   item at the top stays there, or, removed, the one after the removed ones takes its
-  place. Fixed mode gets the same edits by whole rows. **Stuck to the end**
+  place (a `setItemCount` cutting it off leaves the anchor past the end, which an
+  insert above it keeps there, so the next layout shows the end). Fixed mode gets the same edits by whole rows. **Stuck to the end**
   (`setStickToEnd(true)`), every layout puts the last item's bottom at the viewport's
   bottom, through appends, removals and new heights, in their frame; only the app
   sticks or unsticks it, a scroll does not. **The pool** is the viewport at the

@@ -10,12 +10,14 @@
  *  less the scroll offset and as high as the measurer says, measured at this
  *  generation at the rows' width; no other row shows; the content height is
  *  the index's sum and the anchor is the item at the offset. That holds at
- *  the top, after an offset set by the app, a bar moved by the user, the
+ *  the top, after an offset set by the app, a bar moved by the user (moves of
+ *  under half a unit adding up, the bar keeping its amount), the
  *  wheel, scrollByRows (the anchor moved by whole items, its offset kept),
  *  scrollToItem below, above and inside the view (judged from the measures,
  *  not the estimates, of the items down to it; an item at least as tall as
  *  the viewport at its top, so a second call changes nothing), and at the end (the last
- *  item's bottom at the viewport's). A bar moved by the user before an edit
+ *  item's bottom at the viewport's, a count cut above the top included, an
+ *  insert or append before the next layout too). A bar moved by the user before an edit
  *  (an insert, a removal or a new height above, the idle re-measure, an
  *  append) is the scroll the edit keeps; two scrollByRows before a layout
  *  move two items; refresh() measures every item again with the top kept;
@@ -1340,5 +1342,78 @@ TEST_CASE("VirtualList variable: two scrollByRows before a layout move two items
     s.frame();
     CHECK(s.list->getAnchorItem() == tall+2);
     checkView(s);
+    s.checkOnePass();
+}
+
+TEST_CASE("VirtualList variable: moves of the bar under half a unit add up")
+{
+    // eight items, 255 high, in a viewport 3 shorter: a nudge of the bar's
+    // arrow is under half a unit of the range, and the layout keeps the
+    // bar's amount while it rounds to the offset, as a ScrollControl does
+    Scene s(8);
+    int content=0;
+
+    for(size_t i=0; i < s.heights.size(); ++i)
+        content+=s.measured(i);
+
+    s.list->setSize(200, s.list->getHeight()+content-3-s.list->getViewportHeight());
+    s.frame();
+    REQUIRE(s.list->getMaxVerticalScrollOffset() == 3);
+    REQUIRE(s.list->getVerticalScrollOffset() == 0);
+
+    controls::VerticalScrollBar *bar=s.bar();
+
+    REQUIRE(bar != nullptr);
+    REQUIRE(bar->getNudgeAmount()*3 < 0.5f);
+    s.requests=0;
+    s.maxPasses=0;
+
+    int last=0;
+    bool moved=false;
+
+    for(int i=0; i < 40 && s.list->getVerticalScrollOffset() < 3; ++i)
+    {
+        bar->nudgeDown(bar);
+        s.frame();
+        CHECK(s.list->getVerticalScrollOffset() >= last);
+        moved=moved || s.list->getVerticalScrollOffset() > last;
+        last=s.list->getVerticalScrollOffset();
+        checkView(s);
+    }
+    CHECK(moved);
+    CHECK(s.list->getVerticalScrollOffset() == 3);
+
+    for(int i=0; i < 40 && s.list->getVerticalScrollOffset() > 0; ++i)
+    {
+        bar->nudgeUp(bar);
+        s.frame();
+        CHECK(s.list->getVerticalScrollOffset() <= last);
+        last=s.list->getVerticalScrollOffset();
+        checkView(s);
+    }
+    CHECK(s.list->getVerticalScrollOffset() == 0);
+    s.checkOnePass();
+}
+
+TEST_CASE("VirtualList variable: a count cut above the top shows the end")
+{
+    Scene s(1000);
+
+    s.list->scrollToItem(500);
+    s.frame();
+    REQUIRE(s.list->getAnchorItem() > 300);
+
+    // the items from 300 on go, the one at the top with them
+    s.heights.resize(300);
+    s.ids.resize(300);
+    s.list->setItemCount(300);
+    CHECK(s.list->getAnchorItem() <= 300);
+
+    SUBCASE("laid out at once") {}
+    SUBCASE("an insert above first") { s.insert(0, 5); }
+    SUBCASE("an append first") { s.insert(s.heights.size(), 5); }
+
+    s.frame();
+    checkAtEnd(s);
     s.checkOnePass();
 }
