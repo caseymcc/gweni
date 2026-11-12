@@ -24,7 +24,18 @@
  *  environment it prints the most every size needed (per scale, mode and end)
  *  and how far the ink reached past the box in device px, left, right, above
  *  and below. On main before #571, where a Label clipped its Text at its
- *  bounds, every size, scale and mode had runs whose ink it cut off.
+ *  bounds, every size, scale and mode had runs whose ink it cut off. *
+ *  Text that does not lie wholly inside its Label is still cut at the
+ *  Label's bounds: a Label narrower than its text ("JAg", ink past both
+ *  sides) shows the run alone with everything outside its bounds cut away,
+ *  and a TextBox's text scrolled to its end, or back to its start with its
+ *  end past the box, changes no pixel outside the box. The widened rect is
+ *  cut by the region the Label is in: Labels at both edges of a
+ *  ScrollControl's viewport, their runs reaching past it, change no pixel
+ *  outside the viewport. And the rect is stamped on the slots already drawn
+ *  when it changes: a Label shrunk below its text and grown back, or given a
+ *  string that does not fit and the first back, starting from either state,
+ *  draws each state's pixels as a fresh canvas built in it does.
  */
 #include <doctest/doctest.h>
 
@@ -32,6 +43,8 @@
 
 #include <gweni/controls/canvas.h>
 #include <gweni/controls/label.h>
+#include <gweni/controls/scrollControl.h>
+#include <gweni/controls/textBox.h>
 #include <gweni/skins/textured/texturedSkin.h>
 
 #include <algorithm>
@@ -42,6 +55,7 @@
 #include <map>
 #include <memory>
 #include <tuple>
+#include <utility>
 #include <vector>
 
 namespace
@@ -170,6 +184,34 @@ struct Worst
     String unexplained; //!< those of them whose ink stays inside the box
 };
 
+//! \p runs (each a canvas-unit origin and a string) drawn by themselves in
+//! white on new text ids at \p scale, clipped to the view alone; the frame.
+std::vector<uint8_t> runsAlone(const Font &font, float scale, const std::vector<std::pair<Point, String>> &runs)
+{
+    SlotRenderer &renderer=gweni::test::gpuRenderer();
+    const Point viewSize=gweni::test::viewSize();
+    std::vector<size_t> ids(runs.size(), 0);
+    std::vector<uint8_t> alone;
+
+    for(size_t &id:ids)
+        renderer.generateTextPrimitive(id);
+    renderer.setScale(scale);
+    renderer.setClipRegion(Rect(0, 0, static_cast<int>(std::ceil(viewSize.x/scale)),
+        static_cast<int>(std::ceil(viewSize.y/scale))));
+    gweni::test::clearView(background);
+    renderer.begin();
+    renderer.setDrawColor(white);
+    for(size_t i=0; i < runs.size(); ++i)
+        renderer.renderText(ids[i], font, runs[i].first, 1, runs[i].second);
+    renderer.end();
+    gweni::test::readView(alone);
+    for(size_t id:ids)
+        renderer.releaseTextPrimitive(id);
+    renderer.begin();
+    renderer.end();
+    return alone;
+}
+
 //! The strings of \p size px in batches that fit the canvas, each laid out as
 //! Labels and drawn alone; one Result per string, in order.
 std::vector<Result> sweepSize(Sweep &sweep, int size, const std::vector<String> &strings)
@@ -248,25 +290,12 @@ std::vector<Result> sweepSize(Sweep &sweep, int size, const std::vector<String> 
             label->hide();
         sweep.frame();
 
-        std::vector<size_t> ids(boxes.size(), 0);
-        std::vector<uint8_t> alone;
+        std::vector<std::pair<Point, String>> runs;
 
-        for(size_t &id:ids)
-            renderer.generateTextPrimitive(id);
-        renderer.setScale(scale);
-        renderer.setClipRegion(Rect(0, 0, static_cast<int>(std::ceil(viewSize.x/scale)),
-            static_cast<int>(std::ceil(viewSize.y/scale))));
-        gweni::test::clearView(background);
-        renderer.begin();
-        renderer.setDrawColor(white);
         for(size_t i=0; i < boxes.size(); ++i)
-            renderer.renderText(ids[i], font, Point(boxes[i].x, boxes[i].y), 1, strings[first+i]);
-        renderer.end();
-        gweni::test::readView(alone);
-        for(size_t id:ids)
-            renderer.releaseTextPrimitive(id);
-        renderer.begin();
-        renderer.end();
+            runs.emplace_back(Point(boxes[i].x, boxes[i].y), strings[first+i]);
+
+        const std::vector<uint8_t> alone=runsAlone(font, scale, runs);
 
         for(size_t i=0; i < boxes.size(); ++i)
         {
@@ -432,5 +461,330 @@ TEST_CASE("Label ink: a Label sized to its text shows every inked pixel of its r
         }
         std::printf("%2d px: %d (Label::inkMargin = %d)\n", size, margin,
             gweni::controls::Label::inkMargin(float(size)));
+    }
+}
+
+namespace
+{
+
+//! A canvas rect's device pixels at \p scale, its edges snapped as the
+//! renderer snaps them: [x0, x1) x [y0, y1).
+struct DeviceRect
+{
+    int x0, y0, x1, y1;
+
+    bool contains(int x, int y) const { return (x >= x0) && (x < x1) && (y >= y0) && (y < y1); }
+};
+
+DeviceRect deviceRect(const Rect &rect, float scale)
+{
+    return { SlotRenderer::snap(float(rect.x), scale), SlotRenderer::snap(float(rect.y), scale),
+        SlotRenderer::snap(float(rect.x+rect.w), scale), SlotRenderer::snap(float(rect.y+rect.h), scale) };
+}
+
+//! \p control's bounds in canvas units.
+Rect canvasRect(gweni::controls::Base *control)
+{
+    const Point at=control->localPosToCanvas();
+
+    return Rect(at.x, at.y, control->getWidth(), control->getHeight());
+}
+
+//! The pixels where \p a and \p b differ, outside \p rect only if \p outside.
+int differing(const std::vector<uint8_t> &a, const std::vector<uint8_t> &b, const DeviceRect *outside=nullptr)
+{
+    const Point viewSize=gweni::test::viewSize();
+    int count=0;
+
+    for(int y=0; y < viewSize.y; ++y)
+    {
+        for(int x=0; x < viewSize.x; ++x)
+        {
+            const size_t at=(y*viewSize.x+x)*4;
+
+            if(outside && outside->contains(x, y))
+                continue;
+            if(!std::equal(&a[at], &a[at]+3, &b[at]))
+                ++count;
+        }
+    }
+    return count;
+}
+
+//! Whether \p frame has ink outside \p rect.
+bool inkOutside(const std::vector<uint8_t> &frame, const DeviceRect &rect)
+{
+    const Point viewSize=gweni::test::viewSize();
+
+    for(int y=0; y < viewSize.y; ++y)
+    {
+        for(int x=0; x < viewSize.x; ++x)
+        {
+            if(!rect.contains(x, y) && inked(frame, x, y))
+                return true;
+        }
+    }
+    return false;
+}
+
+//! \p frame with every pixel outside \p rect the background.
+std::vector<uint8_t> keepInside(std::vector<uint8_t> frame, const DeviceRect &rect)
+{
+    const Point viewSize=gweni::test::viewSize();
+
+    for(int y=0; y < viewSize.y; ++y)
+    {
+        for(int x=0; x < viewSize.x; ++x)
+        {
+            if(rect.contains(x, y))
+                continue;
+
+            uint8_t *pixel=&frame[(y*viewSize.x+x)*4];
+
+            pixel[0]=background.r;
+            pixel[1]=background.g;
+            pixel[2]=background.b;
+        }
+    }
+    return frame;
+}
+
+//! A few frames, so the layout and the render queue settle; the last one.
+std::vector<uint8_t> settle(Sweep &sweep)
+{
+    sweep.frame();
+    sweep.frame();
+    return sweep.frame();
+}
+
+//! A Label of \p text in \p font at (6, 3), its size fixed at \p width wide and
+//! the text's height high.
+gweni::controls::Label *fixedLabel(Sweep &sweep, const Font &font, const String &text, int width)
+{
+    gweni::controls::Label *label=sweep.label(0);
+
+    label->setFont(font);
+    label->setText(text);
+    label->setSizeFlags(gweni::SizeFlags(gweni::SizeFlag::Fixed, gweni::SizeFlag::Fixed));
+    label->setBounds(6, 3, width, gweni::test::gpuRenderer().measureText(font, text).y);
+    return label;
+}
+
+//! The frame of a fresh canvas at \p scale holding fixedLabel(text, width).
+std::vector<uint8_t> freshFixedLabel(float scale, const Font &font, const String &text, int width)
+{
+    Sweep sweep(scale);
+    gweni::controls::Label *label=fixedLabel(sweep, font, text, width);
+    const std::vector<uint8_t> frame=settle(sweep);
+
+    REQUIRE(label->getWidth() == width);
+    return frame;
+}
+
+}//namespace
+
+// The margin is for text that fits: a Label narrower than its text (its Text
+// keeps the measured width, so it reaches past the Label's right edge) is cut
+// at its bounds on both sides, as before #571.
+TEST_CASE("Label ink: a Label narrower than its text clips it at its bounds")
+{
+    SlotRenderer &renderer=gweni::test::gpuRenderer();
+    RestoreTextAA restore;
+    const Font &font=openSansAt(10);
+    // ink past the pens on both sides: a leading 'J', a trailing 'g'
+    const String text="JAg";
+
+    renderer.setTextAA(TextAA::Grayscale);
+    for(float scale:{ 1.0f, 1.25f, 2.0f })
+    {
+        CAPTURE(scale);
+
+        Sweep sweep(scale);
+        const Point measured=renderer.measureText(font, text);
+        gweni::controls::Label *label=fixedLabel(sweep, font, text, measured.x-4);
+        const std::vector<uint8_t> frame=settle(sweep);
+        const Rect bounds=canvasRect(label);
+        const Point at=label->localPosToCanvas(Point(label->textX(), label->textY()));
+
+        REQUIRE((bounds == Rect(6, 3, measured.x-4, measured.y)));
+        REQUIRE(label->textWidth() == measured.x);
+
+        label->hide();
+        sweep.frame();
+
+        const std::vector<uint8_t> alone=runsAlone(font, scale, { { at, text } });
+        const DeviceRect device=deviceRect(bounds, scale);
+
+        // the run does reach past the Label, and the Label shows it up to its bounds alone
+        REQUIRE(inkOutside(alone, device));
+        CHECK(differing(frame, keepInside(alone, device)) == 0);
+    }
+}
+
+// A TextBox's text scrolled to its caret lies partly outside the box, so it is
+// cut at the box's bounds: nothing of it draws outside them, whether scrolled
+// to the end (the text's start left of the box) or back to the start (its end
+// right of it).
+TEST_CASE("Label ink: a TextBox's scrolled text clips at its bounds")
+{
+    SlotRenderer &renderer=gweni::test::gpuRenderer();
+    RestoreTextAA restore;
+
+    renderer.setTextAA(TextAA::Grayscale);
+    for(float scale:{ 1.0f, 1.25f })
+    {
+        CAPTURE(scale);
+
+        Sweep sweep(scale);
+        const std::vector<uint8_t> empty=settle(sweep);
+        gweni::controls::TextBox *box=sweep.canvas->newChild<gweni::controls::TextBox>();
+
+        box->setBounds(20, 10, 90, 20);
+        box->setText("JumpingQuicklyTheWizardsJinxJuggledFoxesAgain");
+        box->focus();
+        box->moveCaretToend();
+
+        const std::vector<uint8_t> atEnd=settle(sweep);
+        const DeviceRect device=deviceRect(canvasRect(box), scale);
+
+        REQUIRE(box->textX() < 0);
+        CHECK(differing(atEnd, empty, &device) == 0);
+
+        box->moveCaretToStart();
+
+        const std::vector<uint8_t> atStart=settle(sweep);
+
+        REQUIRE(box->textX() >= 0);
+        REQUIRE(box->textRight() > box->getWidth());
+        CHECK(differing(atStart, empty, &device) == 0);
+        CHECK(differing(atStart, atEnd) > 0);
+    }
+}
+
+// The widened rect is cut by the region the Label is in: Labels at the left
+// and right edges of a ScrollControl's viewport, whose runs reach past it,
+// change no pixel outside the viewport.
+TEST_CASE("Label ink: a Label in a ScrollControl draws nothing outside its viewport")
+{
+    SlotRenderer &renderer=gweni::test::gpuRenderer();
+    RestoreTextAA restore;
+    const Font &font=openSansAt(10);
+
+    renderer.setTextAA(TextAA::Grayscale);
+    for(float scale:{ 1.25f, 2.0f })
+    {
+        CAPTURE(scale);
+
+        Sweep sweep(scale);
+        gweni::controls::ScrollControl *scroll=sweep.canvas->newChild<gweni::controls::ScrollControl>();
+
+        scroll->setBounds(30, 10, 120, 40);
+        scroll->setScroll(false, false);
+
+        gweni::controls::Label *left=scroll->newChild<gweni::controls::Label>();
+        gweni::controls::Label *right=scroll->newChild<gweni::controls::Label>();
+
+        for(gweni::controls::Label *label:{ left, right })
+        {
+            label->setFont(font);
+            label->setTextColor(white);
+        }
+        left->setText("JA");
+        right->setText("Ag");
+        left->setPos(0, 4);
+        settle(sweep);
+
+        const Rect &viewport=scroll->getViewport();
+        const Point viewportAt=scroll->localPosToCanvas(Point(viewport.x, viewport.y));
+        const Rect onCanvas(viewportAt.x, viewportAt.y, viewport.w, viewport.h);
+
+        right->setPos(viewport.w-right->getWidth(), 4);
+
+        const std::vector<uint8_t> frame=settle(sweep);
+
+        REQUIRE(canvasRect(left).x == onCanvas.x);
+        REQUIRE(canvasRect(right).x+right->getWidth() == onCanvas.x+onCanvas.w);
+
+        // the runs reach past the viewport on both sides
+        std::vector<std::pair<Point, String>> runs;
+
+        for(gweni::controls::Label *label:{ left, right })
+            runs.emplace_back(label->localPosToCanvas(Point(label->textX(), label->textY())), label->getText());
+        left->hide();
+        right->hide();
+
+        const std::vector<uint8_t> without=settle(sweep);
+        const std::vector<uint8_t> alone=runsAlone(font, scale, runs);
+        const DeviceRect device=deviceRect(onCanvas, scale);
+
+        REQUIRE(inkOutside(alone, device));
+        CHECK(differing(frame, without) > 0);
+        CHECK(differing(frame, without, &device) == 0);
+    }
+}
+
+// The clip rect follows the fit both ways, and its change reaches the slots
+// already drawn: a Label shrunk below its text and grown back, or given a
+// longer string and the first back, draws what a fresh build of each state
+// draws, starting from either state.
+TEST_CASE("Label ink: a Label's fit toggled draws as a fresh build of each state")
+{
+    SlotRenderer &renderer=gweni::test::gpuRenderer();
+    RestoreTextAA restore;
+    const Font &font=openSansAt(10);
+    const String text="JAg";
+    const String longer="JAgg";
+
+    renderer.setTextAA(TextAA::Grayscale);
+    for(float scale:{ 1.25f, 2.0f })
+    {
+        CAPTURE(scale);
+
+        const int fits=renderer.measureText(font, text).x;
+        const int narrow=fits-4;
+
+        SUBCASE("the Label resized")
+        {
+            const std::vector<uint8_t> freshFits=freshFixedLabel(scale, font, text, fits);
+            const std::vector<uint8_t> freshNarrow=freshFixedLabel(scale, font, text, narrow);
+
+            REQUIRE(differing(freshFits, freshNarrow) > 0);
+
+            for(bool startFitting:{ true, false })
+            {
+                CAPTURE(startFitting);
+
+                Sweep sweep(scale);
+                gweni::controls::Label *label=fixedLabel(sweep, font, text, startFitting?fits:narrow);
+
+                CHECK(differing(settle(sweep), startFitting?freshFits:freshNarrow) == 0);
+                label->setWidth(startFitting?narrow:fits);
+                CHECK(differing(settle(sweep), startFitting?freshNarrow:freshFits) == 0);
+                label->setWidth(startFitting?fits:narrow);
+                CHECK(differing(settle(sweep), startFitting?freshFits:freshNarrow) == 0);
+            }
+        }
+
+        SUBCASE("the Label's text changed")
+        {
+            const std::vector<uint8_t> freshFits=freshFixedLabel(scale, font, text, fits);
+            const std::vector<uint8_t> freshLonger=freshFixedLabel(scale, font, longer, fits);
+
+            REQUIRE(differing(freshFits, freshLonger) > 0);
+
+            for(bool startFitting:{ true, false })
+            {
+                CAPTURE(startFitting);
+
+                Sweep sweep(scale);
+                gweni::controls::Label *label=fixedLabel(sweep, font, startFitting?text:longer, fits);
+
+                CHECK(differing(settle(sweep), startFitting?freshFits:freshLonger) == 0);
+                label->setText(startFitting?longer:text);
+                CHECK(differing(settle(sweep), startFitting?freshLonger:freshFits) == 0);
+                label->setText(startFitting?text:longer);
+                CHECK(differing(settle(sweep), startFitting?freshFits:freshLonger) == 0);
+            }
+        }
     }
 }
