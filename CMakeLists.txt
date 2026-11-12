@@ -193,6 +193,8 @@ set(GWENI_CONTROL_SOURCES
     source/controls/dragger.cpp
     include/gweni/controls/groupBox.h
     source/controls/groupBox.cpp
+    include/gweni/controls/heightIndex.h
+    source/controls/heightIndex.cpp
     include/gweni/controls/highlight.h
     include/gweni/controls/hsvColorPicker.h
     source/controls/hsvColorPicker.cpp
