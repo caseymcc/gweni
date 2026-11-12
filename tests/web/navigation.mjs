@@ -26,7 +26,8 @@
 //    <page> pick     a click on the list's Button entry, then on Label, shows
 //                    that page with no reload, pushes ?<the query's own
 //                    keys>&demo=<Name> (one history entry each) and titles
-//                    the page "gweni — <Name>"
+//                    the page "gweni — <Name>"; LabelDemo picked again
+//                    pushes nothing
 //    <page> history  page.goBack() shows ButtonDemo with its URL, goForward()
 //                    LabelDemo again
 //    <page> reload   page.reload() of that deep link shows LabelDemo, the URL
@@ -39,6 +40,9 @@
 //                    the page last shown (gweni-demo/last-demo in localStorage)
 //                    and replaces its URL with ?demo=<that page>
 //  and once:
+//    hash            on OpenGLCore.html?demo=ButtonDemo#a|b{c}^d\e (characters
+//                    a browser encodes in a path but leaves in a hash), a pick
+//                    of LabelDemo pushes ?demo=LabelDemo with the hash kept
 //    path            /app/x/y in a fresh context starts the window, its
 //                    currentUrl() /app/x/y; a pick pushes /app/x/y?demo=ButtonDemo
 //                    (the <base href> changes nothing), and /app/tasks/42?demo=LabelDemo
@@ -288,7 +292,17 @@ async function checkPage(s, file, query)
         }
         if(!ok)
             return;
-        pass(`${name} pick`, `?${query}&demo=ButtonDemo, then LabelDemo, one entry each, titled`);
+        // the page already shown, picked again: no entry, or Back would show it again
+        const before = await pageState(page);
+        await s.pick(page, 'LabelDemo');
+        await s.frames(page, 5);
+        const again = await pageState(page);
+        if(again.length !== before.length || again.search !== before.search)
+        {
+            fail(`${name} pick`, `picking the shown LabelDemo again made history.length ${again.length} (was ${before.length}), location.search ${again.search}`);
+            return;
+        }
+        pass(`${name} pick`, `?${query}&demo=ButtonDemo, then LabelDemo, one entry each, titled; LabelDemo again none`);
 
         // history
         await page.goBack();
@@ -364,6 +378,37 @@ async function checkPage(s, file, query)
     }
 }
 
+// A hash the browser leaves as it is (| { } ^ \\ are encoded in a path, not in
+// a hash) is kept by a pick, which pushes it back as currentUrl() gave it.
+async function checkHash(s)
+{
+    const context = await s.newContext();
+    const page = await context.newPage();
+    try
+    {
+        if(!await s.load('hash', page, '/OpenGLCore.html?demo=ButtonDemo#a|b{c}^d\\e'))
+            return;
+        if(!await s.shown(page, 'ButtonDemo') || !await s.pick(page, 'LabelDemo'))
+        {
+            fail('hash', `the page shows ${await navigation(page)}, not ButtonDemo with a LabelDemo entry`);
+            return;
+        }
+        const picked = await s.shown(page, 'LabelDemo');
+        const state = await page.evaluate(() => ({ search: location.search, hash: location.hash,
+            stderr: gweniRun.output.filter(l => l.stream === 'stderr').map(l => l.text) }));
+        if(!picked || state.search !== '?demo=LabelDemo' || state.hash !== '#a|b{c}^d\\e')
+            fail('hash', `a pick of LabelDemo left location.search ${state.search}, location.hash ${state.hash}`);
+        else
+            pass('hash', `#a|b{c}^d\\e kept, ?demo=LabelDemo pushed`);
+        for(const line of state.stderr)
+            fail('hash', `the run wrote to stderr: ${line}`);
+    }
+    finally
+    {
+        await context.close();
+    }
+}
+
 // The page served at every path under /app/.
 async function checkPath(s)
 {
@@ -425,6 +470,7 @@ async function main()
     {
         await checkPage(s, 'OpenGLCore.html', 'stats-overlay');
         await checkPage(s, 'demo.html', 'stats-overlay=off');
+        await checkHash(s);
         await checkPath(s);
     }
     finally

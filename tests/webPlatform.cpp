@@ -12,7 +12,9 @@
  *  pushUrl()/replaceUrl() are history.pushState/replaceState: location and
  *  history.length follow them, the three forms keep what they say, a <base
  *  href> changes nothing, and a refused string changes neither (one stderr
- *  line). setUrlChangedHandler() listens to popstate: a popstate event runs
+ *  line). Every printable byte is taken in a path, query or hash exactly
+ *  when Chromium's location gives it back there as it was, so the parts of
+ *  currentUrl() can always be pushed again. setUrlChangedHandler() listens to popstate: a popstate event runs
  *  the handler with the page's URL, a push or replace does not, and an empty
  *  handler removes the listener (history.back() fires its popstate on a later
  *  task, which a blocking doctest run never reaches: the demo's browser test
@@ -140,6 +142,40 @@ TEST_CASE("browser platform: pushUrl and replaceUrl are history.pushState and re
         CHECK(platform::currentUrl() == "/files/a%2Fb/%C3%A9//v1.2/?q=1#h");
     }
     CHECK(js("history.length") == std::to_string(std::stoi(length)+3));
+    CHECK(page.take().empty());
+}
+
+TEST_CASE("browser platform: a byte is refused in a part exactly when the browser encodes it there")
+{
+    PageState page;
+
+    for(int c=0x21; c < 0x7f; ++c)
+    {
+        // the delimiters, and '%', which starts an escape in every part
+        if(c == '#' || c == '?' || c == '%')
+            continue;
+
+        const std::string ch(1, static_cast<char>(c));
+
+        for(const std::string &url:{"/a"+ch+"b", "/p?q="+ch, "/p?q#"+ch})
+        {
+            INFO(url);
+            REQUIRE(platform::replaceUrl("/start"));
+
+            const bool taken=platform::replaceUrl(url);
+
+            if(taken)
+                CHECK(platform::currentUrl() == url);
+            else
+            {
+                CHECK(page.take().size() == 1);
+                CHECK(platform::currentUrl() == "/start");
+                // pushed past the check, the browser changes it
+                EM_ASM({ history.replaceState(null, "", UTF8ToString($0)); }, url.c_str());
+                CHECK(platform::currentUrl() != url);
+            }
+        }
+    }
     CHECK(page.take().empty());
 }
 

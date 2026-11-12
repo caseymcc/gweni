@@ -111,6 +111,8 @@ static GLFWwindow *g_window=nullptr;
 static bool g_storage=false;
 //! What a URL naming no page shows: the page shown at start-up, else the first.
 static std::string g_startDemo;
+//! The page pageShown() was last told of.
+static std::string g_shownDemo;
 
 //! The current URL with demo=<name> in its query (the first demo key, the
 //! others dropped), the query's other keys and the hash kept as they are.
@@ -139,12 +141,15 @@ static std::string urlForDemo(const std::string &name)
 
 //! Demo::setPageShownHandler: the user's pick is a new history entry, a page
 //! the app showed (--demo, a stored page, back or forward) replaces the
-//! current one, so restoring a page never grows the history.
+//! current one, so restoring a page never grows the history. Picking the page
+//! already shown replaces too, or Back would first go to that page again.
 static void pageShown(const std::string &name, bool picked)
 {
     const std::string url=urlForDemo(name);
+    const bool again=name == g_shownDemo;
 
-    if(picked)
+    g_shownDemo=name;
+    if(picked && !again)
         gweni::platform::pushUrl(url);
     else
         gweni::platform::replaceUrl(url);
@@ -224,6 +229,8 @@ static std::string open(GLFWwindow *window, gweni::Demo &demo, const std::string
     else if(!demo.getDemoNames().empty())
         g_startDemo=demo.getDemoNames().front();
 
+    // the page the shell built shown, which a pick of it must not push
+    g_shownDemo=demo.shownDemo();
     demo.setPageShownHandler(&pageShown);
     gweni::platform::setUrlChangedHandler(&urlChanged);
     return start;

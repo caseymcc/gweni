@@ -8,18 +8,21 @@
  *  parseQuery/buildQuery, splitPath/joinPath, percent-encoding, '+', an
  *  encoded '/', empty segments, a trailing '/', UTF-8), the three forms
  *  pushUrl()/replaceUrl() take and every kind of string they refuse (false,
- *  one stderr line through log::write, nothing changed), the in-process
+ *  one stderr line through log::write, nothing changed; a character is
+ *  refused in the parts a browser encodes it in, and taken in the others,
+ *  as location gives it back), the in-process
  *  history starting at "/" (back and forward, a push dropping the forward
  *  entries) and its handler (called on back and forward, never on a push or
  *  replace), openUrl()'s scheme allowlist through setOpenUrlHandler() and,
  *  on Linux, the system opener (an xdg-open of the case's own on PATH) given
  *  the URL as its one argument with no shell between, false with none, the
  *  file-backed storage (written whole with no temporary file left, read back
- *  by a fresh load, a failed write refused with the store unchanged, the
- *  prefix) and the in-memory one, and the time zone and locale names from TZ,
- *  LC_ALL and LANG. The history and the store are process-global and the
- *  cases may share a process, so each case sets its own start: a
- *  replaceUrl(), a setStorageFile().
+ *  by a fresh load, not rewritten for the value already there, a failed
+ *  write refused with the store unchanged, the prefix) and the in-memory
+ *  one, and the time zone and locale names from TZ, LC_ALL and LANG. The
+ *  history and the store are process-global and the cases may share a
+ *  process, so each case sets its own start: a replaceUrl(), a
+ *  setStorageFile().
  */
 #include <gweni/platforms/platform.h>
 
@@ -308,7 +311,8 @@ TEST_CASE("platform url: pushUrl and replaceUrl refuse anything but the three fo
         "http:/x", "javascript:alert(1)", "mailto:a@b.c", "//host/x", "///x", "/a/./b",
         "/a/../b", "/..", "/.", "/a/%2e%2E/b", "/a/.%2e", "/a b", "/a\nb", "/a\tb",
         "/\xc3\xa9", "?q=\xc3\xa9", "#\x7f", "/a\"b", "/a<b>", "/a\\b", "/a^b", "/a`b",
-        "/a{b}", "/a|b", "?q=it's", "/x?q='"})
+        "/a{b}", "/a|b", "?q=it's", "/x?q='", "?q=\"", "?q=<", "#a\"b", "#a<b>", "#a`b",
+        "?q=a#b`"})
     {
         for(const bool push:{true, false})
         {
@@ -337,6 +341,12 @@ TEST_CASE("platform url: pushUrl and replaceUrl refuse anything but the three fo
     // a ' in a path or hash is not encoded by a browser, so it is taken there
     CHECK(platform::replaceUrl("/it's#it's"));
     CHECK(platform::currentUrl() == "/it's#it's");
+    // nor \ ^ { | } in a query or hash, or ` in a query: what location gives
+    // back in a part can be pushed again as it is
+    CHECK(platform::replaceUrl("?q=a|b{c}^d\\e`f#a|b{c}^d\\e"));
+    CHECK(platform::currentUrl() == "/it's?q=a|b{c}^d\\e`f#a|b{c}^d\\e");
+    CHECK(platform::replaceUrl("#x|y"));
+    CHECK(platform::currentUrl() == "/it's?q=a|b{c}^d\\e`f#x|y");
     CHECK(errors.take().empty());
 }
 
@@ -552,7 +562,18 @@ TEST_CASE("platform storage: a file written whole and read back by a fresh load"
     CHECK(platform::storageGet("draft") == text);
     CHECK(platform::storageGet("last-page") == std::string("ButtonDemo"));
 
+    // the value already there writes nothing: every write is a new file (the
+    // rename), so the inode would change
+    struct stat before{}, after{};
+
+    REQUIRE(stat(path.c_str(), &before) == 0);
+    REQUIRE(platform::storageSet("last-page", "ButtonDemo"));
+    REQUIRE(stat(path.c_str(), &after) == 0);
+    CHECK(after.st_ino == before.st_ino);
+
     REQUIRE(platform::storageSet("last-page", "SliderDemo"));
+    REQUIRE(stat(path.c_str(), &after) == 0);
+    CHECK(after.st_ino != before.st_ino);
     REQUIRE(platform::storageRemove("draft"));
     // removing what is not there is no change and no failure
     CHECK(platform::storageRemove("never-set"));
@@ -664,7 +685,7 @@ TEST_CASE("platform names: the time zone from TZ and the locale from LC_ALL and 
         CHECK(platform::timeZoneName() == "UTC");
     }
     {
-        // the /etc/localtime link, or UTC without one
+        // the /etc/localtime link (the container's is one), or UTC without one
         ScopedEnv tz("TZ", nullptr);
         CHECK_FALSE(platform::timeZoneName().empty());
     }

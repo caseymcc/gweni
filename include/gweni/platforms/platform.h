@@ -126,9 +126,11 @@ GWENI_EXPORT String currentUrl();
 //! - "#hash" keeps the path and the query.
 //! Anything else is refused: a relative path ("tasks/42"), a scheme or a host
 //! ("https://...", "//host/x"), a "." or ".." path segment (encoded or not), a
-//! character a browser would percent-encode itself (a space, a control or
-//! non-ASCII byte, " < > \ ^ ` { | }, and ' in the query: encode it), so
-//! there is no resolver and the targets cannot disagree. A refused call
+//! character a browser would percent-encode itself in that part (a space, a
+//! control or non-ASCII byte and " < > anywhere, \ ^ ` { | } in the path, `
+//! in the hash, ' in the query: encode it), so there is no resolver and the
+//! targets cannot disagree; what currentUrl() gives is never refused in the
+//! part it came from. A refused call
 //! changes nothing, prints one line on stderr and returns false.
 GWENI_EXPORT bool pushUrl(const String &url);
 //! Replace the current history entry (history.replaceState on the web), with
@@ -202,8 +204,8 @@ GWENI_EXPORT std::vector<String> storageKeys();
 
 //! The IANA time zone name ("Europe/Berlin"): on the web the browser's
 //! (Intl.DateTimeFormat().resolvedOptions().timeZone), elsewhere TZ or the
-//! zoneinfo file /etc/localtime links to, "UTC" with neither; empty where
-//! not known. localtime_r already uses the same zone on every target.
+//! zoneinfo file /etc/localtime links to (/etc/timezone where it is a copy),
+//! "UTC" with no TZ or /etc/localtime; empty where not known. localtime_r already uses the same zone on every target.
 GWENI_EXPORT String timeZoneName();
 //! The BCP 47 locale name ("en-US"): on the web navigator.language,
 //! elsewhere LC_ALL or LANG with its codeset and modifier dropped

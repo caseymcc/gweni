@@ -768,10 +768,17 @@ bool spawnDetached(const char *program, const String &argument)
 {
     int report[2];
 
+#if defined(__APPLE__)
+    // no pipe2: another thread's fork between the two calls can keep a copy
     if(pipe(report) != 0)
         return false;
     fcntl(report[0], F_SETFD, FD_CLOEXEC);
     fcntl(report[1], F_SETFD, FD_CLOEXEC);
+#else
+    // close-on-exec from the start, so no other thread's exec keeps it open
+    if(pipe2(report, O_CLOEXEC) != 0)
+        return false;
+#endif
 
     char *const argv[]={const_cast<char *>(program), const_cast<char *>(argument.c_str()),
         nullptr};
@@ -1069,6 +1076,12 @@ bool storageSet(const String &key, const String &value)
         return gweni_js_storage_set((state.prefix+key).c_str(), value.c_str()) != 0;
 #endif
 
+    const auto current=state.values.find(state.prefix+key);
+
+    // the value already there: no rewrite of the file
+    if(current != state.values.end() && current->second == value)
+        return true;
+
     StorageValues values=state.values;
 
     values[state.prefix+key]=value;
@@ -1188,14 +1201,27 @@ String timeZoneName()
     char link[PATH_MAX];
     const ssize_t length=readlink("/etc/localtime", link, sizeof(link));
 
+    // a link outside a zoneinfo tree names no zone
     if(length > 0 && length < static_cast<ssize_t>(sizeof(link)))
-    {
-        const String zone=zoneFromPath(String(link, static_cast<size_t>(length)));
+        return zoneFromPath(String(link, static_cast<size_t>(length)));
+    // no /etc/localtime: glibc's UTC
+    if(length < 0 && errno == ENOENT)
+        return "UTC";
 
-        if(!zone.empty())
-            return zone;
+    // a copy, not a link: Debian's /etc/timezone names it, else it is not known
+    if(FILE *file=fopen("/etc/timezone", "r"))
+    {
+        char line[256];
+        String name;
+
+        if(fgets(line, sizeof(line), file))
+            name=line;
+        fclose(file);
+        while(!name.empty() && std::isspace(static_cast<unsigned char>(name.back())))
+            name.pop_back();
+        return name;
     }
-    return "UTC";
+    return String();
 #endif
 }
 

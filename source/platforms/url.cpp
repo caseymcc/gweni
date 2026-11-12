@@ -123,21 +123,49 @@ String encodeSegment(const String &s)
     return out;
 }
 
-//! A byte a browser would percent-encode itself in some part of a URL (the
-//! union of the WHATWG path, query and fragment sets, and what Chromium adds
-//! to them), so the URL it shows would not be the one the app pushed.
-bool browserEncodes(unsigned char c)
+//! The part of a URL a byte is checked in: each has the bytes a browser
+//! percent-encodes there itself.
+enum class UrlPart
+{
+    Path,
+    Query,
+    Hash
+};
+
+//! A byte a browser would percent-encode itself in that part of a URL, so the
+//! URL it shows would not be the one the app pushed: WHATWG's path, query
+//! (special scheme) and fragment sets, and Chromium's additions to the path
+//! set ('\' '^' '|'), as Chromium's location shows them after
+//! history.replaceState. What location gives back in a part is never one of
+//! them, so currentUrl()'s parts can be pushed again as they are.
+bool browserEncodes(unsigned char c, UrlPart part)
 {
     if(c <= 0x20 || c >= 0x7f)
         return true;
     switch(c)
     {
-    case '"': case '<': case '>': case '\\': case '^': case '`':
-    case '{': case '|': case '}':
+    case '"': case '<': case '>':
         return true;
+    case '`':
+        return part != UrlPart::Query;
+    case '\\': case '^': case '{': case '|': case '}':
+        return part == UrlPart::Path;
+    case '\'':
+        return part == UrlPart::Query;
     default:
         return false;
     }
+}
+
+//! Whether s has a byte the browser would encode in part.
+bool hasEncoded(const String &s, UrlPart part)
+{
+    for(const char ch:s)
+    {
+        if(browserEncodes(static_cast<unsigned char>(ch), part))
+            return true;
+    }
+    return false;
 }
 
 }//namespace
@@ -291,18 +319,25 @@ bool resolveUrlTarget(const Url &current, const String &target, Url &resultOut,
 
     const Url parsed=parseUrl(target);
 
-    for(const char ch:target)
+    const struct
     {
-        if(browserEncodes(static_cast<unsigned char>(ch)))
+        const String &text;
+        UrlPart part;
+        const char *name;
+    } parts[]={
+        {parsed.path, UrlPart::Path, "path"},
+        {parsed.query, UrlPart::Query, "query"},
+        {parsed.hash, UrlPart::Hash, "hash"}
+    };
+
+    for(const auto &part:parts)
+    {
+        if(hasEncoded(part.text, part.part))
         {
-            whyOut="has a character the browser would encode; percent-encode it";
+            whyOut=String("has a character the browser would encode in the ")+part.name
+                +"; percent-encode it";
             return false;
         }
-    }
-    if(parsed.query.find('\'') != String::npos)
-    {
-        whyOut="has a ' in the query, which the browser would encode; percent-encode it";
-        return false;
     }
 
     switch(form)

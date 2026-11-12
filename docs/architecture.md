@@ -3452,9 +3452,12 @@ app's (Emscripten's own APIs), and nothing here needs ASYNCIFY or another main l
   three parts replaced), `?query[#hash]` (the path kept) and `#hash` (the path and query
   kept), and refuse anything else with `false` and one stderr line: a relative path
   (`tasks/42`), a scheme or a host (`https://...`, `//host/x`), a `.` or `..` segment
-  (encoded or not), and a character a browser would percent-encode itself (a space, a
-  control or non-ASCII byte, `"`, `<`, `>`, `\`, `^`, a backquote, `{`, `|`, `}`, and a
-  `'` in the query). One function, `detail::resolveUrlTarget`
+  (encoded or not), and a character a browser would percent-encode itself in that part
+  (a space, a control or non-ASCII byte, `"`, `<` and `>` anywhere; `\`, `^`, `{`, `|`,
+  `}` in the path; a backquote in the path or hash; a `'` in the query: Chromium's sets,
+  measured byte by byte through `location` by `tests/webPlatform.cpp`). So what
+  `currentUrl()` gives is never refused in the part it came from: the demo copies the
+  hash it keeps as it is, and `#a|b` in the address bar stays pushable. One function, `detail::resolveUrlTarget`
   (`source/platforms/urlTarget.h`), turns the argument into the whole new path, query and
   hash on every target, and the web hands that to `history.pushState`/`replaceState`
   made absolute against `location.href`. With no relative resolution anywhere, the
@@ -3491,13 +3494,16 @@ app's (Emscripten's own APIs), and nothing here needs ASYNCIFY or another main l
   false with the old value kept). Elsewhere it is the JSON object in the file
   `setStorageFile` names, loaded whole when it is set and written whole on every change:
   into a temporary file beside it, flushed, then renamed over it, so the file is the old
-  one or the new one and never part of either. It is not a database: two instances on one
+  one or the new one and never part of either; a `storageSet` of the value already
+  there, or a `storageRemove` of a key not there, writes nothing. It is not a database: two instances on one
   file each write what they hold, and the last one wins. With no file the values are in
   memory, and the first use says so on stderr once per process.
 - **Names.** `timeZoneName()` is the IANA zone (`Intl.DateTimeFormat().resolvedOptions()
   .timeZone` on the web; elsewhere `TZ`, or the zoneinfo file `/etc/localtime` links to,
-  or `UTC`), `localeName()` the BCP 47 locale (`navigator.language`; elsewhere `LC_ALL` or
-  `LANG` without its codeset, so `en_US.UTF-8` is `en-US`, and `en-US` for `C`). Under
+  or `/etc/timezone` where `/etc/localtime` is a copy and not a link, `UTC` with no
+  `/etc/localtime`, empty where none of them names it), `localeName()` the BCP 47 locale
+  (`navigator.language`; elsewhere `LC_ALL` or `LANG` without its codeset, so
+  `en_US.UTF-8` is `en-US`, and `en-US` for `C`). Under
   Emscripten `localtime_r` already uses the browser's offset, so a name is all an app
   needs to label its times; there is no zone database or date formatting here.
 - **Under node** (the web tree's `unit:` tests) there is no `window`: every function keeps
@@ -3526,8 +3532,9 @@ serves `OpenGLCore.html` at every `/app/` path with `<base href="/">` put in its
 the list or the app showed it (`showDemo`). OpenGLCore's window (never a capture, so
 what a capture draws never depends on an earlier run) pushes `?demo=<Name>` for a pick,
 keeping the query's other keys, and replaces the URL for a page it showed itself
-(`--demo`, the stored page, back or forward), so restoring a page never grows the
-history; its URL-changed handler shows the page the URL names (the start page if none).
+(`--demo`, the stored page, back or forward) or one picked while it is already shown, so
+restoring a page never grows the history and Back always shows another page; the hash
+is kept as `currentUrl()` gave it; its URL-changed handler shows the page the URL names (the start page if none).
 It stores the page last shown (`localStorage` under `gweni-demo/` on the web,
 `$XDG_STATE_HOME/gweni/OpenGLCore.json`, or `~/.local/state/gweni/...`, elsewhere, so a
 desktop run prints nothing) and shows it at start-up when `--demo` names none, and titles
