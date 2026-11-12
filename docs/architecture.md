@@ -443,7 +443,15 @@ point and makes the menu self-placed on the canvas (`Placement::Owner`, as a Pop
 `Menu::arrange` places it with `Popup::placement` from the anchor's canvas rect, flipped
 (above the item, on its left) and kept inside the canvas: in X in the X arrange and in both
 axes in the Y arrange, since a ScrollControl, a `MenuStrip` or a `Menu` included, arranges
-its items in X in its own Y arrange, so the item's x is final only then. A menu opened
+its items in X in its own Y arrange, so the item's x is final only then. The side is
+carried down the chain (#573), as in Win32 and GTK: a menu is leftward
+(`Menu::isLeftward()`) when its placement in this pass went left of where its side
+starts it (`Popup::placement`'s `leftward`: a submenu on its item's left, a context menu
+flipped to the cursor's left, a strip menu right-aligned with its item), and a submenu
+whose item is in a leftward menu is placed as `PopupPlacement::Left`, on its item's left,
+going right only where that would run past the canvas's left edge; it is worked out from
+where the parent went in this pass, so a canvas grown wide enough brings the whole chain
+back to the right in that pass, and nothing is kept from when the menu opened. A menu opened
 before the first layout therefore opens where the item is laid out, and every opening at
 the same place. While it is open the canvas follows it (`Canvas::anchoredMenus()`, the
 open strip menu and its open submenus, in the order they opened, checked by

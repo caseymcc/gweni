@@ -15,7 +15,10 @@ namespace gweni
 namespace controls
 {
 
-//! Where a Popup goes next to its anchor.
+//! Where a Popup goes next to its anchor (Popup::placement), and a Menu next
+//! to its item (Menu::openNextTo). A submenu opened Right of an item in a
+//! menu that went left (Menu::isLeftward()) is placed as Left, so a chain
+//! that flipped at the canvas's right edge goes on opening left.
 enum class PopupPlacement
 {
     //! Below the anchor, left edges aligned; above it where it would run past
@@ -27,7 +30,7 @@ enum class PopupPlacement
     Right,
     //! Left of the anchor, top edges aligned: Right mirrored. On its right
     //! where it would run past the left edge, bottom edges aligned where it
-    //! would run past the bottom.
+    //! would run past the bottom. Popup::open(anchor, Left) puts a popup there.
     Left
 };
 
