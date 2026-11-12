@@ -161,15 +161,29 @@ DepthView::Camera DepthView::resetCamera() const
     Camera camera;
 
     camera.zSpacing=defaultZSpacing();
+    // backed off by the highest z's depth, so that layer is drawn at its size
+    // and every one behind it smaller, about the view's centre
+    camera.distance=1.0f+camera.zSpacing*highestZ()/focalLength();
     return camera;
 }
 
 float DepthView::defaultZSpacing() const
 {
     const Rect &view=m_renderer->viewRect();
-    const int high=std::max(m_canvas?m_canvas->highestZIndex():0, 1);
 
-    return std::min(std::max(0.5f*(float)view.w/(float)high, MinZSpacing), MaxZSpacing);
+    return std::min(std::max(0.5f*(float)view.w/highestZ(), MinZSpacing), MaxZSpacing);
+}
+
+float DepthView::highestZ() const
+{
+    return (float)std::max(m_canvas?m_canvas->highestZIndex():0, 1);
+}
+
+float DepthView::focalLength() const
+{
+    const Rect &view=m_renderer->viewRect();
+
+    return FocalViews*(float)std::max(std::max(view.w, view.h), 1);
 }
 
 void DepthView::setCamera(const Camera &camera)
@@ -193,8 +207,8 @@ void DepthView::apply()
     const float cy=(float)view.y+0.5f*(float)view.h;
     const float s=m_camera.zSpacing;
     const float k=(float)renderer::SlotRenderer::kMaxZIndex;
-    const float high=(float)std::max(m_canvas?m_canvas->highestZIndex():0, 1);
-    const float focal=FocalViews*(float)std::max(std::max(view.w, view.h), 1);
+    const float high=highestZ();
+    const float focal=focalLength();
     const float distance=focal*m_camera.distance;
 
     // The model: the canvas's centre on z 0 at the origin, a z index s px

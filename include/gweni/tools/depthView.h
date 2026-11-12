@@ -38,11 +38,14 @@ namespace tools
 //! centre on its back plane (z 0), right- or middle-drag pans, the wheel and
 //! W/S dolly in and out, the arrows and A/D move the camera, P switches
 //! perspective and orthographic, + and - space the z labels further apart and
-//! closer, R resets and Escape closes it. At reset the camera looks straight at
-//! the canvas from a distance at which its back plane is drawn exactly as in
-//! the front view, in either projection; the layers in front of it come towards
-//! the camera, each z label zSpacing device px from the next, by default
-//! enough to put the canvas's highest z half the view's width in front.
+//! closer, R resets and Escape closes it. The layers come towards the camera
+//! from the back plane, each z label zSpacing device px from the next, by
+//! default enough to put the canvas's highest z half the view's width in front.
+//! At reset the camera looks straight at the canvas from a distance at which
+//! that highest z is drawn exactly as in the front view and every layer behind
+//! it smaller about the view's centre, so the whole canvas is on the view; the
+//! orthographic projection draws every layer at the perspective's back-plane
+//! size, so P at reset does not move the back plane.
 //!
 //! The library binds no key: an app opens and closes it (open(), close(),
 //! toggle()), hears of it through onOpenChangedCaller, and calls viewChanged()
@@ -65,8 +68,9 @@ public:
         float yaw=0.0f;
         float pitch=0.0f;
         //! From the canvas's back plane, in focal lengths (FocalViews times the
-        //! view's longer side): 1 draws that plane at its size, 2 at half of
-        //! it (a dolly; in the orthographic projection only that scale)
+        //! view's longer side): 1 would draw that plane at its size, 2 at half
+        //! of it (a dolly; in the orthographic projection only that scale).
+        //! resetCamera() sets it a little over 1.
         float distance=1.0f;
         //! The picture moved across the view, device px
         float panX=0.0f;
@@ -108,8 +112,10 @@ public:
     //! Puts the camera there (zSpacing clamped to [MinZSpacing, MaxZSpacing],
     //! distance to [MinDistance, MaxDistance], pitch to +-90) and redraws
     void setCamera(const Camera &camera);
-    //! The camera at reset: in front of the canvas, perspective, at distance 1
-    //! and defaultZSpacing()
+    //! The camera at reset: in front of the canvas, perspective, with
+    //! defaultZSpacing() and at distance 1 + zSpacing*highest z/focal length,
+    //! so the highest z is drawn at its front-view size and every lower one
+    //! smaller (z 0 at 1/distance of it, in either projection)
     Camera resetCamera() const;
     void reset() { setCamera(resetCamera()); }
     //! Device px a z label that puts the canvas's highest z index
@@ -119,7 +125,7 @@ public:
     const float *transform() const { return m_transform; }
 
     //! The focal length, in the view's longer side: how far the camera is
-    //! from the back plane at reset, so the perspective's strength
+    //! from the plane it draws at its size, so the perspective's strength
     static constexpr float FocalViews=4.0f;
     //! What the mouse and the keys do (see the class comment)
     static constexpr float OrbitDegreesPerUnit=0.4f;
@@ -151,6 +157,11 @@ private:
     void apply();
     //! The canvas scale: device px per logical unit, the mouse's
     float scale() const;
+    //! The canvas's highest z index, at least 1, which apply(), resetCamera()
+    //! and defaultZSpacing() all fit to
+    float highestZ() const;
+    //! FocalViews times the view's longer side (at least 1), device px
+    float focalLength() const;
     void dolly(float steps);
     void move(float dx, float dy);
 
