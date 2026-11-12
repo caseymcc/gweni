@@ -12,6 +12,7 @@
 #include <gweni/controls/button.h>
 #include <gweni/controls/canvas.h>
 #include <gweni/controls/checkBox.h>
+#include <gweni/controls/codeEditor.h>
 #include <gweni/controls/label.h>
 #include <gweni/controls/listBox.h>
 #include <gweni/controls/nodeGraph.h>
@@ -1131,6 +1132,108 @@ public:
     }
 };
 
+//-----------------------------------------------------------------------------
+// code-edit and code-scroll: a CodeEditor with line numbers, 600 wide and the
+// canvas's height, over a generated N-line YAML document: blocks of 8 lines,
+// a top-level key ("agent_<block>:") and 7 indented ones, every line's text a
+// function of its index alone, so the lines on screen are the same strings at
+// any N. Only the lines on screen are controls.
+//-----------------------------------------------------------------------------
+String codeDocument(int lines)
+{
+    static const char *const keys[]={"  model: opus", "  host: worker-3", "  tags: [ui, text]",
+        "  limits:", "    tokens: 12000", "    minutes: 30", "  enabled: true"};
+    String text;
+
+    text.reserve(size_t(lines)*18);
+    for(int i=0; i < lines; ++i)
+    {
+        if(i > 0)
+            text+='\n';
+        if(i%8 == 0)
+            text+=format("agent_%d:", i/8);
+        else
+            text+=keys[i%8-1];
+    }
+    return text;
+}
+
+class CodeEditorScene: public Scene
+{
+public:
+    void build(SceneContext &ctx) override
+    {
+        m_editor=ctx.canvas->newChild<controls::CodeEditor>();
+        place(m_editor, 10, 10, 600, ctx.size.y-20);
+        m_editor->setLineNumbers(true);
+        m_editor->setText(codeDocument(ctx.n));
+    }
+
+protected:
+    controls::CodeEditor *m_editor=nullptr;
+};
+
+// code-edit: the caret at the end of a top-level key near line 500 (the
+// middle at N=1000; the same line, and so the same strings and line numbers
+// on screen, at any larger N, with every line past it still in the
+// document), the editor focused. Each measured frame is one edit there, in a
+// cycle of 8: two letters typed, Return (the key has no indent, so the new
+// line is empty), a Backspace that joins the two lines again, two letters,
+// Ctrl+Z (undoing them) and a letter. The caret blinks on the stepped clock,
+// the same in every run.
+class CodeEditScene: public CodeEditorScene
+{
+public:
+    void build(SceneContext &ctx) override
+    {
+        CodeEditorScene::build(ctx);
+
+        const size_t line=size_t(std::min(500, ctx.n/2)/8*8);
+
+        m_editor->setCaret({line, m_editor->getDocument().line(line).size()});
+        m_editor->focus();
+    }
+
+    void step(SceneContext &ctx, int frame) override
+    {
+        if(frame < 0)
+            return;
+
+        auto key=[&](int key)
+            {
+                ctx.canvas->inputModifierKey(key, true);
+                ctx.canvas->inputModifierKey(key, false);
+            };
+
+        switch(frame%8)
+        {
+        case 2: key(keys::Return); break;
+        case 3: key(keys::Backspace); break;
+        case 6:
+            ctx.canvas->inputModifierKey(keys::Control, true);
+            ctx.canvas->inputCharacter(UnicodeChar('Z'));
+            ctx.canvas->inputModifierKey(keys::Control, false);
+            break;
+        default: ctx.canvas->inputCharacter(UnicodeChar('a'+frame%26)); break;
+        }
+    }
+};
+
+// code-scroll: the view one line down per measured frame (scrollByRows, as a
+// wheel's or a bar's step lands): every row on screen moves, one line comes
+// into view and one goes, with their numbers.
+class CodeScrollScene: public CodeEditorScene
+{
+public:
+    void step(SceneContext &/*ctx*/, int frame) override
+    {
+        if(frame < 0)
+            return;
+
+        m_editor->scrollByRows(1);
+    }
+};
+
 const std::vector<SceneInfo> &scenes()
 {
     static const std::vector<SceneInfo> list=
@@ -1186,6 +1289,12 @@ const std::vector<SceneInfo> &scenes()
         {"hidden-gaps", "N Buttons, all hidden but every K+1-th: runs of one shown slot between gaps of K",
             true, 1000, 3, 20, Scaling::Linear,
             []{ return std::unique_ptr<Scene>(new HiddenGapsScene()); }},
+        {"code-edit", "type, break and join lines and undo at line 500 of a CodeEditor of N YAML lines",
+            true, 1000, 3, 24, Scaling::Local,
+            []{ return std::unique_ptr<Scene>(new CodeEditScene()); }},
+        {"code-scroll", "scroll a CodeEditor of N YAML lines with line numbers one line per frame",
+            true, 1000, 3, 20, Scaling::Local,
+            []{ return std::unique_ptr<Scene>(new CodeScrollScene()); }},
         {"graph-drag", "drag the first of N linked nodes in a NodeGraph by its title bar",
             true, 300, 3, 20, Scaling::Local,
             []{ return std::unique_ptr<Scene>(new GraphDragScene()); }},

@@ -23,7 +23,12 @@
 #  controls; the items live in its height index, whose O(log N) walks show in
 #  no counter, so the check holds the scroll's measures, slots and layout to
 #  the rows it brings into view (the thumb, which moves more at the small N,
-#  is the only counter that differs).
+#  is the only counter that differs). In code-edit and code-scroll it is the
+#  lines of a CodeEditor's document, of which only the lines on screen are
+#  controls: code-edit edits at line 500 (or N/2 below N=1000), so the strings
+#  and line numbers on screen are the same at both sizes while every line past
+#  it is in the document, and an edit that cost the lines below it would show;
+#  code-scroll moves the view a line a frame.
 #
 #  Counters and what "grew" means:
 #
