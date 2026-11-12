@@ -647,6 +647,11 @@ void Canvas::snapshotExcludedSlots()
     const bool held=std::any_of(roots.begin(), roots.end(),
         [this](Base *root) { return root->getCanvas() == this; });
 
+    // taken at every flush, so a tool opened over a settled app reads the
+    // app's ids at the flush before it (two counter reads, no walk)
+    slots.m_livePrimitives=primitiveIdCount()-releasedPrimitiveIdCount();
+    slots.m_liveTexts=textIdCount()-releasedTextIdCount();
+
     // with no tool on the canvas, once the last snapshot held and cleared
     // nothing there is nothing to keep
     if(!held && slots.m_heldPrimitives.empty() && slots.m_heldTexts.empty()
@@ -679,9 +684,6 @@ void Canvas::snapshotExcludedSlots()
     }
     sortUnique(slots.m_heldPrimitives);
     sortUnique(slots.m_heldTexts);
-
-    slots.m_livePrimitives=primitiveIdCount()-releasedPrimitiveIdCount();
-    slots.m_liveTexts=textIdCount()-releasedTextIdCount();
 }
 
 void Canvas::addDelayedDelete(controls::Base *control)

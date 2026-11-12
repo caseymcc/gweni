@@ -38,6 +38,9 @@
  *    hidden and cleared in;
  *  - the overlay's ids row is the same with the Inspector open as without:
  *    the live ids less every tool's, both at the last flush;
+ *  - the overlay opened over a settled app, with no tool open before or after
+ *    an Inspector was opened and closed (and the app's ids changed since),
+ *    shows the app's live ids on its first refresh;
  *  - an app change shows in both, on the next refresh (the overlay) or frame
  *    (the Inspector), and then 0;
  *  - a flag set or cleared, an app control moved into a flagged subtree and
@@ -520,6 +523,39 @@ TEST_CASE("Excluded slots: the overlay's live ids are the same with the Inspecto
     scene.untilRefresh(overlay);
     CHECK(overlay->shownPrimitiveIds() == primitives);
     CHECK(overlay->shownTextIds() == texts);
+}
+
+TEST_CASE("Excluded slots: the overlay opened over a settled app shows its live ids on the first refresh")
+{
+    Scene scene;
+
+    SUBCASE("with no tool open before") {}
+    SUBCASE("after an Inspector was opened and closed")
+    {
+        Inspector *inspector=Inspector::open(scene.canvas);
+
+        inspector->nodeFor(scene.app)->open();
+        scene.frames(3);
+        Inspector::close(scene.canvas);
+        // deleted, its slots cleared, then a flush with nothing to keep
+        scene.frames(3);
+        // the app's ids change after the last snapshot that held anything
+        scene.app->newChild<controls::Base>()->setBounds(0, 30, 50, 20);
+        scene.frames(3);
+    }
+
+    // nothing changes between this flush and the overlay's first refresh but
+    // the overlay itself, whose ids are not the app's
+    const size_t primitives=primitiveIdCount()-releasedPrimitiveIdCount();
+    const size_t texts=textIdCount()-releasedTextIdCount();
+    StatsOverlay *overlay=StatsOverlay::open(scene.canvas);
+
+    scene.untilRefresh(overlay);
+    REQUIRE(overlay->refreshes() == 1);
+    CHECK(overlay->shownPrimitiveIds() == primitives);
+    CHECK(overlay->shownTextIds() == texts);
+    CHECK(scene.canvas->excludedSlots().appPrimitives() == primitives);
+    CHECK(scene.canvas->excludedSlots().appTexts() == texts);
 }
 
 TEST_CASE("Excluded slots: a flag or tree change takes effect at the next flush")

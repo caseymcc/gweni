@@ -197,12 +197,15 @@ public:
     //! The ids the subtrees held at the flush.
     size_t heldPrimitives() const { return m_heldPrimitives.size(); }
     size_t heldTexts() const { return m_heldTexts.size(); }
-    //! The live ids at the flush less heldPrimitives()/heldTexts(): the app's.
-    size_t appPrimitives() const { return m_livePrimitives-m_heldPrimitives.size(); }
-    size_t appTexts() const { return m_liveTexts-m_heldTexts.size(); }
+    //! The live ids at the flush less heldPrimitives()/heldTexts(): the app's
+    //! (taken at every flush, a tool on the canvas or not; 0 should a skin
+    //! Control list more ids than are live).
+    size_t appPrimitives() const { return appIds(m_livePrimitives, m_heldPrimitives.size()); }
+    size_t appTexts() const { return appIds(m_liveTexts, m_heldTexts.size()); }
 
 private:
     friend class Canvas;
+    static size_t appIds(size_t live, size_t held) { return live > held ? live-held : 0; }
     //! each sorted, without repeats
     std::vector<size_t> m_heldPrimitives;
     std::vector<size_t> m_heldTexts;
@@ -384,10 +387,11 @@ public:
     /// flush, and the record stays as it is until then, so every reader sees
     /// the same one, however often. One edge counts as the tool's: an id a
     /// tool gave back that the app took and gave back again before the same
-    /// flush. The snapshot is taken only while a flagged subtree is on the
-    /// canvas or the last one held or cleared anything (a tool closed whole
-    /// owns what the next flush clears), so with no flagged control nothing is
-    /// walked or kept.
+    /// flush. The held and gone ids are taken only while a flagged subtree is
+    /// on the canvas or the last snapshot held or cleared anything (a tool
+    /// closed whole owns what the next flush clears), so with no flagged
+    /// control nothing is walked or kept; the live id counts are read at every
+    /// flush, so a tool opened over a settled app reads the app's ids.
     const ExcludedSlots &excludedSlots() const { return m_excludedSlots; }
     /// The highest z index the last renumber gave a control's range (its
     /// depth and overlay layers included), 0 before the first

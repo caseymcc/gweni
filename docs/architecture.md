@@ -2871,7 +2871,9 @@ who wrote the last flush**, taken as `renderCanvas()` ends, after the renderer's
   id was given back (a control of a flagged subtree deleted, its skin Control replaced, or
   a skin Control shrinking its own slot list, as a plot's does);
 - the live id counts at the flush, so `appPrimitives()`/`appTexts()` are the app's live
-  ids then.
+  ids then. These two counter reads are made at every flush, a tool on the canvas or not,
+  so an overlay opened over a settled app shows the app's ids on its first refresh, which
+  runs before any flush has held the overlay.
 
 A slot written in frame N is a tool's iff its id is in held or gone of flush N; every
 other slot is the app's. An id a tool gave back that the app took again before the flush
@@ -2883,8 +2885,8 @@ from the next flush, the record reads the same however often and in whatever ord
 tools read it, and the frame-N writes of a control moved into a tool (or the box flagged)
 in update N+1 stay the app's. A tool closed whole still owns the slots the next flush
 clears: the snapshot is taken while a flagged root is on the canvas or the last snapshot
-held or cleared anything, and with no flagged control on any canvas nothing is walked or
-kept and every counter is as it was. One edge counts the other way: an id a tool gave
+held or cleared anything, and with no flagged control on any canvas nothing is walked,
+no id's liveness is checked and every counter is as it was. One edge counts the other way: an id a tool gave
 back that the app took and gave back again before the same flush is in gone, so that
 slot's clear is the tool's.
 
