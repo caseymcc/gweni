@@ -65,13 +65,18 @@ void Menu::renderUnder(skin::Base *skin)
 }
 
 // As high as its items, which are docked Top, up to the canvas's height: a
-// preferred height its parent gives it, not a resize from its own layout.
+// preferred height its parent gives it, not a resize from its own layout. The
+// canvas's height is its parent's size, which a new size invalidates it for,
+// so only a menu on the canvas reads it: a MenuStrip, which is docked wherever
+// the app puts it, is as high as its items (MenuStrip::calculateSize).
 void Menu::calculateSize(skin::Base *skin, Dim dim)
 {
     ParentClass::calculateSize(skin, dim);
 
-    if(dim == Dim::Y)
-        m_preferredSize.height=std::min(m_preferredSize.height, getCanvas()->getHeight());
+    Canvas *canvas=getCanvas();
+
+    if((dim == Dim::Y) && canvas && (getParent() == canvas))
+        m_preferredSize.height=std::min(m_preferredSize.height, canvas->getHeight());
 }
 
 // Self-placed (openNextTo()): the canvas's arrange skips it, so it takes the

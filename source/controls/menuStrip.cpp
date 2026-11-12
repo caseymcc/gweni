@@ -33,6 +33,14 @@ void MenuStrip::layout(skin::Base * /*skin*/)
     // for now
 }
 
+// A Menu's size without its clamp to the canvas's height: the canvas is not
+// the strip's parent unless the app docks it there, and a new canvas size
+// invalidates the canvas's children only.
+void MenuStrip::calculateSize(skin::Base *skin, Dim dim)
+{
+    ScrollControl::calculateSize(skin, dim);
+}
+
 void MenuStrip::onAddItem(MenuItem *item)
 {
     item->setDock(DockPosition::Left);

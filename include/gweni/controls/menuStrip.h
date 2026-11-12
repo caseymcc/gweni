@@ -30,6 +30,9 @@ public:
     void renderUnder(skin::Base * /*skin*/) override {}
 
     void layout(skin::Base *skin) override;
+    //! As high as its items, wherever it is docked: not clamped to the
+    //! canvas's height as a Menu opened on the canvas is.
+    void calculateSize(skin::Base *skin, Dim dim) override;
 
 protected:
 
