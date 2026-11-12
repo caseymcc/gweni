@@ -213,6 +213,113 @@ EM_JS(char *, gweni_js_locale, (), {
     return stringToNewUTF8((typeof navigator !== 'undefined' && navigator.language) || 'en-US');
 });
 
+// The browser's clipboard (useBrowserClipboard), through the page's copy, cut
+// and paste events. gweni's Ctrl+C/X/V run on keydown, inside emscripten-glfw's
+// keyboard listener, which leaves those three keys to the browser, so the
+// event follows in the same task: the copy or cut event writes the text the
+// keystroke's setClipboardText() left (gweni_js_clipboard_write), the paste
+// event answers the keystroke's requestClipboardText()
+// (gweni_js_clipboard_expect_paste). The listeners are on window in the
+// capture phase, so they run before emscripten-glfw's on document, which on a
+// copy with no DOM selection writes ' ' and reads a paste after gweni asked.
+// A copy or paste for another element of the page (a text field, a selection
+// in the page's own text) is left to the browser.
+EM_JS(void, gweni_js_clipboard_listen, (int on), {
+    var state = Module['gweniClipboard'];
+    if(on && !state)
+    {
+        // answers: how each paste was answered ('paste', 'readText' or 'none'),
+        // which web_input reads
+        state = Module['gweniClipboard'] = { copy: null, pasteWanted: false, pasted: '', answers: [] };
+        var forPage = function()
+        {
+            var active = document.activeElement;
+            return active && active !== document.body && active !== document.documentElement
+                && active !== Module['canvas'];
+        };
+        state.onCopy = function(e)
+        {
+            if(forPage())
+                return;
+            // nothing to copy (no selection in the focused box): the clipboard
+            // is left as it is, not emscripten-glfw's ' '
+            e.stopImmediatePropagation();
+            if(state.copy === null)
+                return;
+            e.clipboardData.setData('text/plain', state.copy);
+            e.preventDefault();
+            state.copy = null;
+        };
+        state.answer = function(text, how)
+        {
+            state.answers.push(how);
+            state.pasted = (text === null) ? '' : text;
+            Module['_gweni_platform_clipboard_pasted']((text === null) ? 0 : 1);
+        };
+        state.onPaste = function(e)
+        {
+            if(!state.pasteWanted || forPage())
+                return;
+            state.pasteWanted = false;
+            e.preventDefault();
+            e.stopImmediatePropagation();
+            state.answer((e.clipboardData || window.clipboardData).getData('text/plain'), 'paste');
+        };
+        window.addEventListener('copy', state.onCopy, true);
+        window.addEventListener('cut', state.onCopy, true);
+        window.addEventListener('paste', state.onPaste, true);
+    }
+    else if(!on && state)
+    {
+        window.removeEventListener('copy', state.onCopy, true);
+        window.removeEventListener('cut', state.onCopy, true);
+        window.removeEventListener('paste', state.onPaste, true);
+        Module['gweniClipboard'] = null;
+    }
+});
+
+// The text for the copy or cut event this task's keystroke fires; a copy with
+// no such event (a button's click) is written through navigator.clipboard,
+// inside the click's user activation. The keystroke's write gives the same text.
+EM_JS(void, gweni_js_clipboard_write, (const char *text), {
+    var state = Module['gweniClipboard'];
+    var value = UTF8ToString(text);
+    if(state)
+    {
+        state.copy = value;
+        setTimeout(function() { state.copy = null; }, 0);
+    }
+    if(navigator.clipboard && navigator.clipboard.writeText)
+        navigator.clipboard.writeText(value).catch(function() {});
+});
+
+// A paste is wanted: the paste event this task's keystroke fires answers it.
+// With none (a paste from a click, not a key), a task later the clipboard is
+// read through navigator.clipboard, if the page may; else nothing is pasted.
+EM_JS(void, gweni_js_clipboard_expect_paste, (), {
+    var state = Module['gweniClipboard'];
+    if(!state || state.pasteWanted)
+        return;
+    state.pasteWanted = true;
+    setTimeout(function()
+    {
+        if(!state.pasteWanted || Module['gweniClipboard'] !== state)
+            return;
+        state.pasteWanted = false;
+        if(navigator.clipboard && navigator.clipboard.readText)
+            navigator.clipboard.readText().then(
+                function(text) { state.answer(text, 'readText'); },
+                function() { state.answer(null, 'none'); });
+        else
+            state.answer(null, 'none');
+    }, 0);
+});
+
+EM_JS(char *, gweni_js_clipboard_pasted, (), {
+    var state = Module['gweniClipboard'];
+    return stringToNewUTF8(state ? state.pasted : '');
+});
+
 #endif
 
 namespace gweni
@@ -492,6 +599,63 @@ void requestClipboardText(ClipboardReply reply)
     else
         reply(getClipboardText());
 }
+
+#if defined(__EMSCRIPTEN__)
+namespace
+{
+// the text last copied or pasted in the page: what getClipboardText() knows
+String g_browserClipboard;
+// the requestClipboardText() replies the next paste answers
+std::vector<ClipboardReply> g_browserPastes;
+}//namespace
+
+void deliverBrowserPaste(bool hasText)
+{
+    std::vector<ClipboardReply> replies;
+    replies.swap(g_browserPastes);
+    if(!hasText)
+        return;
+
+    char *text=gweni_js_clipboard_pasted();
+    g_browserClipboard=text ? text : "";
+    free(text);
+
+    for(ClipboardReply &reply : replies)
+        reply(g_browserClipboard);
+}
+
+void useBrowserClipboard(bool on)
+{
+    // under node (the web tree's unit tests) there is no page
+    if(!gweni_js_in_browser())
+        return;
+
+    gweni_js_clipboard_listen(on ? 1 : 0);
+    g_browserPastes.clear();
+    if(!on)
+    {
+        setClipboardBackend(nullptr, nullptr, nullptr);
+        return;
+    }
+
+    setClipboardBackend(
+        []() { return g_browserClipboard; },
+        [](const String &text)
+        {
+            g_browserClipboard=text;
+            gweni_js_clipboard_write(text.c_str());
+            return true;
+        },
+        [](ClipboardReply reply)
+        {
+            g_browserPastes.push_back(std::move(reply));
+            gweni_js_clipboard_expect_paste();
+        });
+}
+#else
+void useBrowserClipboard(bool)
+{}
+#endif
 
 #if defined(__EMSCRIPTEN__)
 static void reportFileDialogs()
@@ -1360,5 +1524,12 @@ void getCursorPos(Point &po)
 extern "C" EMSCRIPTEN_KEEPALIVE void gweni_platform_url_changed()
 {
     gweni::platform::deliverUrlChanged();
+}
+
+// Called by the paste listener (gweni_js_clipboard_listen) with the pasted
+// text in Module.gweniClipboard, or with 0 when nothing can be pasted.
+extern "C" EMSCRIPTEN_KEEPALIVE void gweni_platform_clipboard_pasted(int hasText)
+{
+    gweni::platform::deliverBrowserPaste(hasText != 0);
 }
 #endif

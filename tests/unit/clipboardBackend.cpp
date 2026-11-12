@@ -18,6 +18,9 @@
  *  captured pointer would be a use after free, which the ASAN tree
  *  reports); and empty functions give the in-process clipboard back, which
  *  every case does on the way out, the platform state being process-global.
+ *  Ctrl+V followed by its letter as a char event, as emscripten-glfw sends
+ *  it with the keydown (native GLFW sends none), asks for the clipboard and
+ *  pastes once, and a char after any other key event is typed.
  */
 #include "headlessFixture.h"
 
@@ -306,4 +309,30 @@ TEST_CASE("Clipboard: empty functions give the in-process clipboard back")
     String answered;
     platform::requestClipboardText([&](const String &text) { answered=text; });
     CHECK(answered == "kept");
+}
+
+TEST_CASE("Clipboard: Ctrl+V with its letter as a char too, as emscripten-glfw sends it, pastes once")
+{
+    Scene scene;
+    SyncClipboard system;
+    system.text="once";
+    system.install();
+
+    controls::TextBox *box=scene.focused<controls::TextBox>("");
+
+    scene.glfwKey(GLFW_KEY_LEFT_CONTROL, GLFW_PRESS, GLFW_MOD_CONTROL);
+    scene.glfwKey(GLFW_KEY_V, GLFW_PRESS, GLFW_MOD_CONTROL);
+    scene.glfw.processCharEvent('v');
+    scene.glfwKey(GLFW_KEY_V, GLFW_RELEASE, GLFW_MOD_CONTROL);
+    scene.glfwKey(GLFW_KEY_LEFT_CONTROL, GLFW_RELEASE, 0);
+    scene.frame();
+    CHECK(box->getText() == "once");
+    CHECK(system.gets == 1);
+
+    // a char after a key event that is no Ctrl+letter is typed
+    scene.glfwKey(GLFW_KEY_X, GLFW_PRESS, 0);
+    scene.glfw.processCharEvent('x');
+    scene.glfwKey(GLFW_KEY_X, GLFW_RELEASE, 0);
+    scene.frame();
+    CHECK(box->getText() == "oncex");
 }

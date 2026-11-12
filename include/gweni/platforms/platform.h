@@ -99,6 +99,16 @@ GWENI_EXPORT void setClipboardBackend(std::function<String()> get,
     std::function<bool(const String &)> set,
     std::function<void(ClipboardReply)> request={});
 
+//! In a browser page, make the clipboard the browser's (true) or the
+//! in-process one again (false): a copy or cut the page's next copy or cut
+//! event writes, else navigator.clipboard (so from an input handler: a
+//! click's user activation), and a paste answered by the paste event that
+//! follows the keystroke, so it is the clipboard's text at that moment (or
+//! navigator.clipboard's, a task later, for a paste with no such event).
+//! input::GLFW3::useSystemClipboard calls it there. Does nothing outside a
+//! browser page, under node included.
+GWENI_EXPORT void useBrowserClipboard(bool on);
+
 //
 // The URL and the history
 //

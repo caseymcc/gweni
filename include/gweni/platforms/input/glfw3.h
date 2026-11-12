@@ -53,6 +53,7 @@ public:
     ,   m_windowSize(0, 0)
     ,   m_framebufferSize(0, 0)
     ,   m_scale(1.0f)
+    ,   m_controlChord(false)
     {}
 
     void initialize(IInputEvent *c)
@@ -67,12 +68,13 @@ public:
     //! loses when it closes. Call it once with the
     //! window an app shows, and with null before the window is destroyed,
     //! which gives the in-process clipboard back. A capture or a test never
-    //! calls it, so what it pastes never depends on the host. In a browser it
-    //! does nothing yet: the clipboard stays in-process there.
+    //! calls it, so what it pastes never depends on the host. In a browser
+    //! page it is the browser's clipboard (platform::useBrowserClipboard),
+    //! not emscripten-glfw's, whose paste is the one before the keystroke.
     static void useSystemClipboard(GLFWwindow *window)
     {
 #if defined(__EMSCRIPTEN__)
-        (void)window;
+        platform::useBrowserClipboard(window != nullptr);
 #else
         if(!window)
         {
@@ -202,7 +204,8 @@ public:
 
         bool handled = false;
 
-        if (control && !alt && bPressed && keyCode >= GLFW_KEY_A && keyCode <= GLFW_KEY_Z)
+        m_controlChord = control && !alt && bPressed && keyCode >= GLFW_KEY_A && keyCode <= GLFW_KEY_Z;
+        if (m_controlChord)
             handled = m_eventCaller->inputCharacter(static_cast<UnicodeChar>('A'+(keyCode-GLFW_KEY_A)));
 
         // The key's own press or release comes after the sync, so it wins: on
@@ -217,6 +220,15 @@ public:
     {
         if (!m_eventCaller)
             return false;
+
+        // emscripten-glfw sends Ctrl+letter's letter as a char too, right
+        // after its key event (native GLFW sends none): the key event ran the
+        // accelerator already, and a second run would paste or undo twice
+        if (m_controlChord)
+        {
+            m_controlChord = false;
+            return false;
+        }
 
         return m_eventCaller->inputCharacter(static_cast<UnicodeChar>(codepoint));
     }
@@ -341,6 +353,8 @@ protected:
     bool m_haveMouse;
     Point m_windowSize, m_framebufferSize;
     float m_scale;
+    // the last key event was a Ctrl+letter press (processCharEvent)
+    bool m_controlChord;
 
 };
 
