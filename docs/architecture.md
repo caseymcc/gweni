@@ -1626,6 +1626,72 @@ two programs and the draws. What follows describes both together:
   change reaches through `redraw()` once `KeyboardFocus` has moved; `onLostKeyboardFocus`
   runs before it has (`Base::focus`), and after it has in `Base::unfocus`, which is how the
   canvas drops the focus of a hidden or input-disabled box (`input::dropLostKeyboardFocus`).
+- **The document and undo model.** `text::Document` (`include/gweni/text/document.h`) is
+  a text as a `std::vector<String>` of lines, split on `'\n'` (`"\r\n"` is read as
+  `"\n"`, always at least one line). A position is `(line, byte)`, and line i is O(1)
+  to reach. Every change is a `text::Edit`: the `range` it replaced (in the positions
+  before it) and the `text` put in, plus `removed` and `textEnd` (where the text ends,
+  in the positions after it), which whoever applies the edit fills in.
+  `Document::apply()` rewrites only the lines the range and the text touch. One that
+  adds or removes lines inserts or erases vector entries, which moves the later
+  strings' handles but none of their bytes. It then tells every observer
+  (`addObserver`) the `LineChange{first, removed, inserted}` it made, which is what a
+  view's rows and a tokenizer cache need. Because a record carries `removed` and
+  `textEnd`, `Edit::inverse()` (`{range.begin, textEnd}` replaced by `removed`, ending
+  at `range.end`) needs no knowledge of how positions are counted. `text::UndoStack`
+  (`undoStack.h`) therefore stores records without a document, and `TextBox` keeps its
+  own `String`, counting positions as `(0, byte offset)`.
+
+  A step (`UndoStep`) is the records it applied, plus the `Selection` (anchor, caret)
+  before the first and after the last. `record()` joins an Insert, DeleteBackward or
+  DeleteForward edit to the step on top unless one of these holds:
+  - the step was sealed (`seal()`, or an undo or redo since);
+  - the kind changed (Paste, Cut and Other never join);
+  - the selection before the edit is not the one the step left (the caret moved);
+  - the edit inserts a `'\n'` (each typed line is a step);
+  - more than `interval()` (1 s) of `platform::getTimeInSeconds()` passed since the
+    step's last edit, so a capture's stepped clock gives the same steps every run.
+
+  A new step drops the steps that could be redone, and `setLimit()` drops the oldest
+  past the cap. A group (`UndoGroup`) puts several records into one step: its first
+  record joins or starts a step by the rules above, as an edit of the group's kind,
+  and the rest join that step. `TextBox::insertText` groups the selection's erase with
+  the insert, so a letter typed over a selection starts a step that the next letters
+  join, and a paste over one is a single Paste step. `undo()` and `redo()` hand the
+  step back; the caller applies the inverses from the last edit to the first, or the
+  edits in order, and restores the selection.
+
+  `TextBox` records every edit of its text: typing (`onChar`, a multiline box's Return),
+  Backspace, Delete, Ctrl+V, Ctrl+X, and the app's `insertText`/`deleteText`. Each
+  handler sets the kind with an `EditKindScope`, and an app's call records as Other.
+  Ctrl+Z, Ctrl+Y and Ctrl+Shift+Z call `TextBox::undo()` and `redo()`. They apply the
+  step to one copy of the string and set it once through `setText`, so there is one
+  `onTextChanged` per step, and `m_text` re-wraps only the paragraphs that differ, as
+  after any edit. Then the step's caret and selection are restored.
+  `setText()` from the app (and `PasswordTextBox`'s) is not an edit: it clears the
+  history. The box's own edits set the text through `setEditedText`, which keeps the
+  history. Losing the focus seals the step, so typing after the focus comes back is a
+  step of its own. `TextBoxNumeric`, `PasswordTextBox` and DragNumber's edit box
+  inherit all of this; the edit box is given its text when it opens, so each edit
+  starts with no history.
+
+  Accelerators are looked up by `Base::acceleratorKey()`: upper case, no spaces, and
+  Ctrl before Shift, the order `input::handleAccelerator` builds them in, so
+  `"Shift + Ctrl + Z"` is `"CTRL+SHIFT+Z"`.
+
+  What it costs: an empty stack allocates nothing (its steps are a `std::vector`;
+  libstdc++'s empty `std::deque` allocates a map and a 512-byte block), so a box
+  costs only its three new accelerators at construction. That is about 15
+  allocations and 520 bytes per box, measured in `gweni_bench`'s `build` tree, which
+  holds N/4 TextBoxes. Typing adds about one allocation a frame (`type`: median 35 to
+  36), for the records and for a new step's edit vector.
+
+  One trap: the `gweni::text` namespace comes with every `textBox.h`. A file that
+  says `using namespace gweni;` and defines a function named `text` gets ambiguous
+  calls, as three unit tests' `text(Rect)` helpers did; they are `rectText` now.
+
+  `tests/unit/textDocument.cpp`, `textUndoStack.cpp` and `textBoxUndo.cpp` pin this
+  model, and `controltest_textbox_undo` checks it through ControlTest's keys.
 - **Toggle buttons.** The textured `Button` renderer (`ButtonTemplate<>`, which also
   draws `LabelClickable` and the input buttons) paints one slot and picks its surface
   in this order: disabled (`ButtonOnDisabled` for a toggle that is on, else

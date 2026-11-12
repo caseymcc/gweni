@@ -12,7 +12,6 @@
 #include <gweni/text/document.h>
 
 #include <cstddef>
-#include <deque>
 #include <vector>
 
 namespace gweni
@@ -130,7 +129,9 @@ private:
     void startStep(EditKind kind, const Selection &before);
     void applyLimit();
 
-    std::deque<UndoStep> m_steps;
+    //! a vector, not a deque: an empty one allocates nothing, and every
+    //! TextBox has one
+    std::vector<UndoStep> m_steps;
     //! the steps below it are done, those from it on undone
     size_t m_current=0;
     bool m_sealed=true;

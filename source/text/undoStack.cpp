@@ -128,7 +128,7 @@ void UndoStack::applyLimit()
     //left, the newest of those go
     while(m_steps.size() > m_limit && m_current > 0)
     {
-        m_steps.pop_front();
+        m_steps.erase(m_steps.begin());
         --m_current;
     }
     while(m_steps.size() > m_limit)
