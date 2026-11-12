@@ -355,8 +355,9 @@ again, none of them writing to stderr. It fails on a console error, an
 uncaught exception, a failed request or an HTTP error (a file missing from the
 site), a page without a WebGL 2 context on SwiftShader with 24 depth bits, a
 window that draws no frames or whose canvas is one colour after 5 of them, a
-picker not showing its control, a link into the site that is not there, and,
-through the script, a gallery page over the budget. `node tests/web/site.mjs
+picker not showing its control, a page without its built-from stamp (see
+"Publishing the site"), a link into the site that is not there, and, through
+the script, a gallery page over the budget. `node tests/web/site.mjs
 --url http://localhost:8000/` checks a site some other server serves.
 
 ### Publishing the site
@@ -421,6 +422,32 @@ per repository; the oldest entries are evicted beyond that):
   in the cached layer. A new key starts from the newest older entry. The cache
   is saved even when a later step fails, so a failed run still keeps the
   dependencies it built.
+
+The builds run at most `CMAKE_BUILD_PARALLEL_LEVEL` compile jobs at a time,
+`nproc` (4 on the runner) unless the environment sets it: `tools/ci_site.sh`
+and `tools/build_site.sh` export it and give `cmake --build` no `-j`, which on
+the Makefile trees means unlimited jobs. Unlimited jobs ran the runner's 16 GB
+out of memory (exit 137 or 143, or the runner lost) in 7 of 40 runs (#579). If
+4 jobs are still too many, pass `-e CMAKE_BUILD_PARALLEL_LEVEL=3` to the
+`docker run` in `pages.yml`, or add a step before it that makes a swap file.
+
+Every page says which commit it was built from, `built from <short sha>
+(<commit date>)` linked to the commit: the landing page in its footer, the demo
+and the gallery in their header, on its one row, so the canvas keeps its
+height. `tools/build_site.sh` takes the sha from `GITHUB_SHA`, which the
+workflow passes into the container, or else from the checkout's `HEAD`, with
+`-dirty` when `git status --porcelain` shows changes (ignored files, the build
+trees and `site/`, do not count), and says `unknown` without git. The date is
+the commit's, not the build's, so two builds of one commit stage the same
+bytes. `site.mjs` fails a page without the stamp.
+
+A failed run says why without its log, which only a token can read. While
+`tools/ci_site.sh` runs, the build step logs the runner's memory once a minute;
+a step that runs only after a failure prints `free -m`, `df -h /` and the
+kernel's out-of-memory lines (`dmesg`), and sums them up in one `::error::`
+annotation, which the public check-runs API shows. A VM shut down (the runner
+"lost communication") runs no later step, so there the per-minute memory lines
+in the build step's log are what is left.
 
 Every action is pinned to a full commit SHA, its version beside it. Each job
 gets only the permissions it needs: `contents: read` to build, and `pages:
