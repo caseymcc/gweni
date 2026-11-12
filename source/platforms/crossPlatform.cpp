@@ -12,17 +12,33 @@
 #include <gweni/platforms/platform.h>
 #include <gweni/platforms/commonPlatform.h>
 
+#include "urlTarget.h"
+
+#include <rapidjson/document.h>
+#include <rapidjson/prettywriter.h>
+#include <rapidjson/stringbuffer.h>
+
 #ifdef _WIN32
 #   define WIN32_LEAN_AND_MEAN
 #   include <Windows.h>
+#   include <shellapi.h>
 #   undef min
 #   undef max
 #else
+#   include <fcntl.h>
+#   include <sys/wait.h>
 #   include <unistd.h>
 #endif
+#include <errno.h>
+#include <limits.h>
 #include <time.h>
 
+#include <cctype>
 #include <chrono>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <map>
 #include <thread>
 
 #if defined(__APPLE__)
@@ -302,6 +318,623 @@ bool folderOpen(const String &Name, const String &StartPath, String &filePathOut
     reportFileDialogs();
 #endif
     return false;
+}
+
+//
+// The URL and the history
+//
+
+namespace
+{
+
+//! A URL in a log line: control bytes as \xHH (so it stays one line) and at
+//! most 200 bytes of it.
+String printableUrl(const String &url)
+{
+    static const char digits[]="0123456789abcdef";
+    String out;
+
+    for(const char ch:url)
+    {
+        const unsigned char c=static_cast<unsigned char>(ch);
+
+        if(out.size() >= 200)
+        {
+            out+="...";
+            break;
+        }
+        if(c < 0x20 || c == 0x7f)
+        {
+            out+="\\x";
+            out+=digits[c >> 4];
+            out+=digits[c & 0xf];
+        }
+        else
+            out+=ch;
+    }
+    return out;
+}
+
+//! The in-process history: its entries, formatted, and the current one. It
+//! starts at "/", with nothing back or forward.
+struct History
+{
+    std::vector<String> entries{String("/")};
+    size_t current=0;
+    UrlChangedHandler handler;
+};
+
+History &history()
+{
+    static History history;
+    return history;
+}
+
+//! The URL url names from the current one, or false after one line on stderr.
+bool resolveTarget(const char *call, const String &url, Url &resultOut)
+{
+    String why;
+
+    if(detail::resolveUrlTarget(parseUrl(currentUrl()), url, resultOut, why))
+        return true;
+    log::write(log::Level::Error, "gweni: %s(\"%s\") refused: %s", call,
+        printableUrl(url).c_str(), why.c_str());
+    return false;
+}
+
+//! Move the history by step entries if it has one there, then tell the handler.
+void moveHistory(int step)
+{
+    History &state=history();
+
+    if(step < 0 && state.current == 0)
+        return;
+    if(step > 0 && state.current+1 >= state.entries.size())
+        return;
+    if(step < 0)
+        --state.current;
+    else
+        ++state.current;
+
+    // a copy: the handler may set another one, or push
+    const UrlChangedHandler handler=state.handler;
+
+    if(handler)
+        handler(currentUrl());
+}
+
+}//namespace
+
+String currentUrl()
+{
+    const History &state=history();
+    return state.entries[state.current];
+}
+
+bool pushUrl(const String &url)
+{
+    Url target;
+
+    if(!resolveTarget("pushUrl", url, target))
+        return false;
+
+    History &state=history();
+
+    state.entries.resize(state.current+1);
+    state.entries.push_back(formatUrl(target));
+    ++state.current;
+    return true;
+}
+
+bool replaceUrl(const String &url)
+{
+    Url target;
+
+    if(!resolveTarget("replaceUrl", url, target))
+        return false;
+
+    History &state=history();
+
+    state.entries[state.current]=formatUrl(target);
+    return true;
+}
+
+void historyBack()
+{
+    moveHistory(-1);
+}
+
+void historyForward()
+{
+    moveHistory(1);
+}
+
+void setUrlChangedHandler(UrlChangedHandler handler)
+{
+    history().handler=std::move(handler);
+}
+
+//
+// Opening a URL outside the app
+//
+
+namespace
+{
+
+OpenUrlHandler &openUrlHandler()
+{
+    static OpenUrlHandler handler;
+    return handler;
+}
+
+//! Whether openUrl() may open url: http and https with a host, mailto with an
+//! address, and no space or control character. \return False with why in whyOut.
+bool openableUrl(const String &url, String &whyOut)
+{
+    for(const char ch:url)
+    {
+        const unsigned char c=static_cast<unsigned char>(ch);
+
+        if(c <= 0x20 || c == 0x7f)
+        {
+            whyOut="has a space or a control character";
+            return false;
+        }
+    }
+
+    const size_t colon=url.find(':');
+    String scheme=(colon == String::npos)?String():url.substr(0, colon);
+
+    for(char &c:scheme)
+        c=static_cast<char>(tolower(static_cast<unsigned char>(c)));
+
+    const String rest=(colon == String::npos)?String():url.substr(colon+1);
+
+    if(scheme == "http" || scheme == "https")
+    {
+        if(rest.compare(0, 2, "//") != 0 || rest.size() < 3 || rest[2] == '/' ||
+            rest[2] == '?' || rest[2] == '#')
+        {
+            whyOut="an http or https URL needs //host";
+            return false;
+        }
+        return true;
+    }
+    if(scheme == "mailto")
+    {
+        if(rest.empty())
+        {
+            whyOut="a mailto URL needs an address";
+            return false;
+        }
+        return true;
+    }
+    whyOut="only http, https and mailto URLs are opened";
+    return false;
+}
+
+#if !defined(_WIN32) && !defined(__EMSCRIPTEN__)
+
+//! Run program with argument as its one argument (no shell), in a grandchild
+//! the app never has to reap: the child forks it and exits at once. \return
+//! Whether the program was started; an exec that fails is reported back
+//! through a close-on-exec pipe, which a successful exec closes unwritten.
+bool spawnDetached(const char *program, const String &argument)
+{
+    int report[2];
+
+    if(pipe(report) != 0)
+        return false;
+    fcntl(report[0], F_SETFD, FD_CLOEXEC);
+    fcntl(report[1], F_SETFD, FD_CLOEXEC);
+
+    char *const argv[]={const_cast<char *>(program), const_cast<char *>(argument.c_str()),
+        nullptr};
+    const pid_t child=fork();
+
+    if(child < 0)
+    {
+        close(report[0]);
+        close(report[1]);
+        return false;
+    }
+    if(child == 0)
+    {
+        close(report[0]);
+        setsid();
+
+        const pid_t opener=fork();
+
+        if(opener == 0)
+        {
+            execvp(program, argv);
+
+            const int error=errno;
+
+            if(write(report[1], &error, sizeof(error)) < 0)
+                _exit(126);
+            _exit(127);
+        }
+        _exit((opener < 0)?1:0);
+    }
+    close(report[1]);
+
+    int status=0;
+
+    while(waitpid(child, &status, 0) < 0 && errno == EINTR)
+    {}
+
+    int execError=0;
+    ssize_t got;
+
+    while((got=read(report[0], &execError, sizeof(execError))) < 0 && errno == EINTR)
+    {}
+    close(report[0]);
+    return WIFEXITED(status) && WEXITSTATUS(status) == 0 && got == 0;
+}
+
+#endif
+
+//! The platform's opener.
+bool openWithSystem(const String &url)
+{
+#if defined(__EMSCRIPTEN__)
+    (void)url;
+    return false;
+#elif defined(_WIN32)
+    return reinterpret_cast<INT_PTR>(ShellExecuteA(nullptr, "open", url.c_str(), nullptr,
+        nullptr, SW_SHOWNORMAL)) > 32;
+#elif defined(__APPLE__)
+    return spawnDetached("open", url);
+#else
+    return spawnDetached("xdg-open", url);
+#endif
+}
+
+}//namespace
+
+bool openUrl(const String &url)
+{
+    String why;
+
+    if(!openableUrl(url, why))
+    {
+        log::write(log::Level::Error, "gweni: openUrl(\"%s\") refused: %s",
+            printableUrl(url).c_str(), why.c_str());
+        return false;
+    }
+
+    const OpenUrlHandler handler=openUrlHandler();
+
+    return handler?handler(url):openWithSystem(url);
+}
+
+void setOpenUrlHandler(OpenUrlHandler handler)
+{
+    openUrlHandler()=std::move(handler);
+}
+
+//
+// Local storage
+//
+
+namespace
+{
+
+typedef std::map<String, String> StorageValues;
+
+//! The store: every key with its prefix, and the file it is kept in (none:
+//! in memory).
+struct Storage
+{
+    String file;
+    String prefix;
+    StorageValues values;
+    bool reportedInMemory=false;
+};
+
+Storage &storage()
+{
+    static Storage storage;
+    return storage;
+}
+
+//! The values are in memory: said once per process, on the first use.
+void reportInMemory(Storage &state)
+{
+    if(!state.file.empty() || state.reportedInMemory)
+        return;
+    state.reportedInMemory=true;
+    log::write(log::Level::Error, "gweni: storage has no file (platform::setStorageFile), "
+        "so its values are kept in memory only");
+}
+
+#if defined(_WIN32)
+unsigned long processId()
+{
+    return GetCurrentProcessId();
+}
+#else
+unsigned long processId()
+{
+    return static_cast<unsigned long>(getpid());
+}
+#endif
+
+//! Write values to path whole: into a temporary file beside it, flushed to
+//! the disk, then renamed over it, so the file is the old one or the new one
+//! and never a part of either.
+bool writeStorageFile(const String &path, const StorageValues &values)
+{
+    rapidjson::StringBuffer buffer;
+    rapidjson::PrettyWriter<rapidjson::StringBuffer> writer(buffer);
+
+    writer.StartObject();
+    for(const auto &value:values)
+    {
+        writer.Key(value.first.data(), static_cast<rapidjson::SizeType>(value.first.size()));
+        writer.String(value.second.data(), static_cast<rapidjson::SizeType>(value.second.size()));
+    }
+    writer.EndObject();
+
+    String text(buffer.GetString(), buffer.GetSize());
+    text+='\n';
+
+    const String temporary=path+".tmp"+std::to_string(processId());
+    FILE *file=fopen(temporary.c_str(), "wb");
+
+    if(!file)
+        return false;
+
+    bool written=(fwrite(text.data(), 1, text.size(), file) == text.size());
+
+    written=(fflush(file) == 0) && written;
+#if !defined(_WIN32) && !defined(__EMSCRIPTEN__)
+    written=written && (fsync(fileno(file)) == 0);
+#endif
+    written=(fclose(file) == 0) && written;
+#if defined(_WIN32)
+    written=written && MoveFileExA(temporary.c_str(), path.c_str(),
+        MOVEFILE_REPLACE_EXISTING|MOVEFILE_WRITE_THROUGH);
+#else
+    written=written && (rename(temporary.c_str(), path.c_str()) == 0);
+#endif
+    if(!written)
+        remove(temporary.c_str());
+    return written;
+}
+
+//! Read the storage file at path into valuesOut: no file is no values.
+//! \return False if it exists but is not a JSON object (its string members
+//! are the values; anything else in it is skipped).
+bool readStorageFile(const String &path, StorageValues &valuesOut)
+{
+    valuesOut.clear();
+
+    FILE *file=fopen(path.c_str(), "rb");
+
+    if(!file)
+        return errno == ENOENT;
+
+    String text;
+    char chunk[4096];
+    size_t got;
+
+    while((got=fread(chunk, 1, sizeof(chunk), file)) > 0)
+        text.append(chunk, got);
+
+    const bool readError=(ferror(file) != 0);
+
+    fclose(file);
+    if(readError)
+        return false;
+
+    rapidjson::Document document;
+
+    document.Parse(text.data(), text.size());
+    if(document.HasParseError() || !document.IsObject())
+        return false;
+    for(auto member=document.MemberBegin(); member != document.MemberEnd(); ++member)
+    {
+        if(member->name.IsString() && member->value.IsString())
+            valuesOut[String(member->name.GetString(), member->name.GetStringLength())]=
+                String(member->value.GetString(), member->value.GetStringLength());
+    }
+    return true;
+}
+
+//! Make values the store, writing them to its file if it has one. \return
+//! False, the store unchanged, if the file could not be written.
+bool commitStorage(Storage &state, StorageValues values)
+{
+    if(!state.file.empty() && !writeStorageFile(state.file, values))
+        return false;
+    state.values=std::move(values);
+    return true;
+}
+
+}//namespace
+
+void setStoragePrefix(const String &prefix)
+{
+    storage().prefix=prefix;
+}
+
+bool setStorageFile(const String &path)
+{
+    Storage &state=storage();
+
+    state.file=path;
+    state.values.clear();
+    if(path.empty())
+        return true;
+    if(readStorageFile(path, state.values))
+        return true;
+    log::write(log::Level::Error, "gweni: storage file \"%s\" cannot be read; starting empty",
+        printableUrl(path).c_str());
+    return false;
+}
+
+std::optional<String> storageGet(const String &key)
+{
+    Storage &state=storage();
+
+    reportInMemory(state);
+
+    const auto value=state.values.find(state.prefix+key);
+
+    if(value == state.values.end())
+        return std::nullopt;
+    return value->second;
+}
+
+bool storageSet(const String &key, const String &value)
+{
+    Storage &state=storage();
+
+    reportInMemory(state);
+
+    StorageValues values=state.values;
+
+    values[state.prefix+key]=value;
+    return commitStorage(state, std::move(values));
+}
+
+bool storageRemove(const String &key)
+{
+    Storage &state=storage();
+
+    reportInMemory(state);
+    if(state.values.find(state.prefix+key) == state.values.end())
+        return true;
+
+    StorageValues values=state.values;
+
+    values.erase(state.prefix+key);
+    return commitStorage(state, std::move(values));
+}
+
+std::vector<String> storageKeys()
+{
+    Storage &state=storage();
+    std::vector<String> keys;
+
+    reportInMemory(state);
+    for(const auto &value:state.values)
+    {
+        if(value.first.compare(0, state.prefix.size(), state.prefix) == 0)
+            keys.push_back(value.first.substr(state.prefix.size()));
+    }
+    return keys;
+}
+
+//
+// Time zone and locale
+//
+
+namespace
+{
+
+#if !defined(_WIN32)
+//! The zone name in a zoneinfo file's path ("/usr/share/zoneinfo/Europe/Berlin"
+//! is "Europe/Berlin", its posix/ and right/ trees too); empty if it is none.
+String zoneFromPath(const String &path)
+{
+    const size_t at=path.find("zoneinfo/");
+
+    if(at == String::npos)
+        return String();
+
+    String name=path.substr(at+9);
+
+    for(const char *tree:{"posix/", "right/"})
+    {
+        if(name.compare(0, strlen(tree), tree) == 0)
+            name.erase(0, strlen(tree));
+    }
+    return name;
+}
+#endif
+
+}//namespace
+
+String timeZoneName()
+{
+#if defined(_WIN32)
+    // Windows has zone names of its own, not IANA's
+    return String();
+#else
+    // TZ, when set, is the zone (empty, as glibc reads it, UTC); a ':' before
+    // it is the POSIX "implementation-defined" mark, a path a zoneinfo file
+    if(const char *tz=getenv("TZ"))
+    {
+        String name(tz);
+
+        if(!name.empty() && name[0] == ':')
+            name.erase(0, 1);
+        if(name.empty())
+            return "UTC";
+        if(name[0] == '/')
+        {
+            const String zone=zoneFromPath(name);
+            return zone.empty()?name:zone;
+        }
+        return name;
+    }
+
+    char link[PATH_MAX];
+    const ssize_t length=readlink("/etc/localtime", link, sizeof(link));
+
+    if(length > 0 && length < static_cast<ssize_t>(sizeof(link)))
+    {
+        const String zone=zoneFromPath(String(link, static_cast<size_t>(length)));
+
+        if(!zone.empty())
+            return zone;
+    }
+    return "UTC";
+#endif
+}
+
+String localeName()
+{
+#if defined(_WIN32)
+    wchar_t name[LOCALE_NAME_MAX_LENGTH];
+
+    if(GetUserDefaultLocaleName(name, LOCALE_NAME_MAX_LENGTH) > 0)
+    {
+        String narrow;
+
+        for(const wchar_t *c=name; *c; ++c)
+            narrow+=static_cast<char>(*c);
+        return narrow;
+    }
+    return "en-US";
+#else
+    String name;
+
+    for(const char *variable:{"LC_ALL", "LANG"})
+    {
+        const char *value=getenv(variable);
+
+        if(value && *value)
+        {
+            name=value;
+            break;
+        }
+    }
+
+    // "en_US.UTF-8@euro": the language and region alone, joined by '-'
+    name=name.substr(0, name.find_first_of(".@"));
+    if(name.empty() || name == "C" || name == "POSIX")
+        return "en-US";
+    for(char &c:name)
+    {
+        if(c == '_')
+            c='-';
+    }
+    return name;
+#endif
 }
 
 void *createPlatformWindow(int x, int y, int w, int h,

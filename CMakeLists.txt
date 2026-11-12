@@ -342,6 +342,8 @@ set(GWENI_PLATFORM_SOURCES
     include/gweni/platforms/commonPlatform.h
     source/platforms/commonPlatform.cpp
     source/platforms/crossPlatform.cpp
+    source/platforms/url.cpp
+    source/platforms/urlTarget.h
     include/gweni/platforms/inputEvent.h
     include/gweni/platforms/platform.h
     include/gweni/platforms/platformTypes.h
