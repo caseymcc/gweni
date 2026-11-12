@@ -8,14 +8,20 @@
  *  transform and the canvas's input capture and calls onOpenChangedCaller, and
  *  close() (or Escape) gives both back and calls it again; on a renderer that
  *  is no SlotRenderer it opens nothing, and a second canvas cannot take a
- *  renderer one view is on. At reset, in perspective and orthographic alike, a
- *  point on z 0 is drawn where the front view draws it, a higher z nearer the
- *  camera (a larger z index out) and every z index the canvas uses inside the
- *  renderer's range; the default spacing puts the highest half the view's
- *  width in front. The mouse and keys move the camera as the class says: a
- *  left drag orbits, a right or middle drag pans by its device px, the wheel
- *  and W/S dolly, the arrows and A/D move, P switches the projection, + and -
- *  space the labels, R resets; a move with no button down changes nothing.
+ *  renderer one view is on. At reset, on a landscape and a portrait view, the
+ *  default spacing puts the highest z half the view's width in front and the
+ *  camera is 1 + spacing*highest/focal focal lengths away: in perspective the
+ *  highest z is drawn where the front view draws it and a lower one smaller
+ *  about the view's centre, z 0 at focal/(focal + spacing*highest) of its size,
+ *  and the orthographic projection draws every z at that z 0 size; in both,
+ *  every corner of the canvas at z 0, half the highest and the highest is
+ *  inside the view rect, a higher z is nearer the camera (a larger z index out)
+ *  and every z index the canvas uses is inside the renderer's range. The mouse
+ *  and keys move the camera as the class says: a left drag orbits, a right or
+ *  middle drag pans by its device px, the wheel and W/S dolly from the reset
+ *  distance by DollyStep a notch, the arrows and A/D move, P switches the
+ *  projection, + and - space the labels, R resets; a move with no button down
+ *  changes nothing.
  *  Deleting the canvas under an open view closes it without a call.
  */
 #include "headlessFixture.h"
@@ -28,6 +34,7 @@
 
 #include <doctest/doctest.h>
 
+#include <algorithm>
 #include <cmath>
 #include <vector>
 
@@ -74,10 +81,12 @@ struct Scene
     controls::Canvas *canvas=nullptr;
     Listener listener;
 
-    Scene()
+    //! A canvas filling a \p width x \p height view
+    explicit Scene(int width=640, int height=480)
     {
+        slots.setViewRect(Rect(0, 0, width, height));
         canvas=new controls::Canvas(&skin);
-        canvas->setSize(640, 480);
+        canvas->setSize(width, height);
         for(int i=0; i<20; ++i)
         {
             controls::Button *button=canvas->newChild<controls::Button>();
@@ -153,61 +162,94 @@ TEST_CASE("Depth view: open and close set and give back the view transform and t
     CHECK_FALSE(scene.canvas->inputModifierKey(keys::Escape, false));
 }
 
-TEST_CASE("Depth view: at reset z 0 is drawn as in the front view, the z labels towards the camera")
+TEST_CASE("Depth view: at reset the highest z is drawn as in the front view and the whole canvas is on the view")
 {
-    Scene scene;
-    tools::DepthView *view=tools::DepthView::open(scene.canvas, &scene.slots);
-
-    REQUIRE(view != nullptr);
-
-    const float high=(float)scene.canvas->highestZIndex();
-    const float k=(float)renderer::SlotRenderer::kMaxZIndex;
-
-    CHECK(view->camera().zSpacing == doctest::Approx(0.5f*640.0f/high));
-    CHECK(view->camera().perspective);
-
-    for(bool perspective:{ true, false })
+    for(const Point &size:{ Point(640, 480), Point(480, 640) })
     {
-        CAPTURE(perspective);
+        CAPTURE(size.x);
+        CAPTURE(size.y);
 
-        tools::DepthView::Camera camera=view->resetCamera();
+        Scene scene(size.x, size.y);
+        tools::DepthView *view=tools::DepthView::open(scene.canvas, &scene.slots);
 
-        camera.perspective=perspective;
-        view->setCamera(camera);
+        REQUIRE(view != nullptr);
 
-        for(const Point3 &p:{ Point3{ 0, 0, 0 }, Point3{ 640, 480, 0 }, Point3{ 100, 400, 0 } })
+        const float w=(float)size.x, h=(float)size.y;
+        const float cx=0.5f*w, cy=0.5f*h;
+        const float high=(float)scene.canvas->highestZIndex();
+        const float k=(float)renderer::SlotRenderer::kMaxZIndex;
+        const float focal=tools::DepthView::FocalViews*std::max(w, h);
+        const float s=view->camera().zSpacing;
+        // z 0's size against the front view's
+        const float back=focal/(focal+s*high);
+        // a corner at the view's edge may land a rounding error outside it
+        const float slack=1e-3f;
+
+        REQUIRE(high > 1.0f);
+        CHECK(s == doctest::Approx(0.5f*w/high));
+        CHECK(view->camera().perspective);
+        CHECK(view->camera().distance == doctest::Approx(1.0f+s*high/focal));
+        CHECK(back < 1.0f);
+
+        for(bool perspective:{ true, false })
         {
-            const Point3 out=project(scene.slots, p.x, p.y, p.z);
+            CAPTURE(perspective);
 
-            CHECK(out.x == doctest::Approx(p.x).epsilon(1e-5));
-            CHECK(out.y == doctest::Approx(p.y).epsilon(1e-5));
-        }
+            tools::DepthView::Camera camera=view->resetCamera();
 
-        float previous=-1.0f;
+            camera.perspective=perspective;
+            view->setCamera(camera);
 
-        for(float z:{ 0.0f, 1.0f, high*0.5f, high })
-        {
-            for(const Point3 &corner:{ Point3{ 0, 0, z }, Point3{ 640, 480, z } })
+            for(const Point3 &p:{ Point3{ 0, 0, 0 }, Point3{ w, h, 0 }, Point3{ 100, 0.8f*h, 0 } })
             {
-                const Point3 out=project(scene.slots, corner.x, corner.y, corner.z);
+                // z 0 the same smaller size in either projection
+                const Point3 out=project(scene.slots, p.x, p.y, 0.0f);
 
-                CHECK(out.z >= 0.0f);
-                CHECK(out.z <= k);
+                CHECK(out.x == doctest::Approx(cx+(p.x-cx)*back).epsilon(1e-5));
+                CHECK(out.y == doctest::Approx(cy+(p.y-cy)*back).epsilon(1e-5));
+
+                // the highest z where the front view draws it in perspective,
+                // at z 0's size in orthographic
+                const Point3 front=project(scene.slots, p.x, p.y, high);
+                const float frontSize=perspective?1.0f:back;
+
+                CHECK(front.x == doctest::Approx(cx+(p.x-cx)*frontSize).epsilon(1e-5));
+                CHECK(front.y == doctest::Approx(cy+(p.y-cy)*frontSize).epsilon(1e-5));
+
+                // a layer between them between their sizes in perspective
+                if(perspective && p.x != cx)
+                {
+                    const float middle=(project(scene.slots, p.x, p.y, 0.5f*high).x-cx)/(p.x-cx);
+
+                    CHECK(middle > back);
+                    CHECK(middle < 1.0f);
+                }
             }
 
-            const float depth=project(scene.slots, 320, 240, z).z;
+            float previous=-1.0f;
 
-            CHECK(depth > previous);
-            previous=depth;
+            for(float z:{ 0.0f, 1.0f, high*0.5f, high })
+            {
+                CAPTURE(z);
+                for(const Point3 &corner:{ Point3{ 0, 0, z }, Point3{ w, 0, z }, Point3{ 0, h, z },
+                    Point3{ w, h, z } })
+                {
+                    const Point3 out=project(scene.slots, corner.x, corner.y, corner.z);
+
+                    CHECK(out.x >= -slack);
+                    CHECK(out.x <= w+slack);
+                    CHECK(out.y >= -slack);
+                    CHECK(out.y <= h+slack);
+                    CHECK(out.z >= 0.0f);
+                    CHECK(out.z <= k);
+                }
+
+                const float depth=project(scene.slots, cx, cy, z).z;
+
+                CHECK(depth > previous);
+                previous=depth;
+            }
         }
-
-        // in perspective a nearer layer is larger, in orthographic it is not
-        const Point3 corner=project(scene.slots, 0, 0, high);
-
-        if(perspective)
-            CHECK(corner.x < -1.0f);
-        else
-            CHECK(corner.x == doctest::Approx(0.0f).epsilon(1e-5));
     }
 }
 
@@ -256,13 +298,13 @@ TEST_CASE("Depth view: the mouse and the keys move the camera")
     // the wheel and W/S dolly: away from the user is in
     view->reset();
     canvas->inputMouseWheel(60);
-    CHECK(view->camera().distance == doctest::Approx(tools::DepthView::DollyStep));
+    CHECK(view->camera().distance == doctest::Approx(reset.distance*tools::DepthView::DollyStep));
     canvas->inputMouseWheel(-60);
-    CHECK(view->camera().distance == doctest::Approx(1.0f));
+    CHECK(view->camera().distance == doctest::Approx(reset.distance));
     canvas->inputCharacter('w');
-    CHECK(view->camera().distance < 1.0f);
+    CHECK(view->camera().distance < reset.distance);
     canvas->inputCharacter('S');
-    CHECK(view->camera().distance == doctest::Approx(1.0f));
+    CHECK(view->camera().distance == doctest::Approx(reset.distance));
 
     // the arrows and A/D move the camera, the picture the other way
     view->reset();
