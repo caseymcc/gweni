@@ -507,7 +507,7 @@ Erm, and I think it comes down to a choice between "The League Against Salivatin
         TIMEOUT 60)
 
     # a capture from a --resources directory that is missing, or lacks the skin
-    # config or the default font, names what is missing, still writes its
+    # config, the default font or the mono font, names what is missing, still writes its
     # (degraded) frame and exits 2; from a complete copy it exits 0
     set(missing_resources_tools ControlTest)
     if(TARGET OpenGLCore)
@@ -515,7 +515,7 @@ Erm, and I think it comes down to a choice between "The League Against Salivatin
     endif()
     foreach(tool ${missing_resources_tools})
         string(TOLOWER ${tool} tool_lower)
-        foreach(case nodir noskin nofont complete)
+        foreach(case nodir noskin nofont nomono complete)
             if(case STREQUAL "nodir")
                 set(test_name ${tool_lower}_missing_resources)
             else()
@@ -831,7 +831,7 @@ if(EMSCRIPTEN)
         endif()
         foreach(tool ${web_missing_resources_tools})
             string(TOLOWER ${tool} tool_lower)
-            foreach(case nodir noskin nofont complete)
+            foreach(case nodir noskin nofont nomono complete)
                 if(case STREQUAL "nodir")
                     set(test_name web_${tool_lower}_missing_resources)
                 else()

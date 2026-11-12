@@ -15,6 +15,8 @@
 #    nodir     the directory itself (not created)
 #    noskin    DefaultSkin.json: every surface magenta, the text still drawn
 #    nofont    OpenSans.ttf, the default face: the text in the built-in one
+#    nomono    DejaVuSansMono.ttf, the mono face and the glyph fallback chain's:
+#              mono text in the default face, the chain left without it
 #    complete  nothing: exit 0 and nothing on stderr
 #
 #  Both tools capture the demo shell (ControlTest's --control Demo), which
@@ -51,6 +53,9 @@ elseif(CASE STREQUAL "noskin")
 elseif(CASE STREQUAL "nofont")
     set(removed OpenSans.ttf)
     set(missing "Font file not found: [^\n]*/resources/OpenSans.ttf")
+elseif(CASE STREQUAL "nomono")
+    set(removed DejaVuSansMono.ttf)
+    set(missing "Mono font file not found: [^\n]*/resources/DejaVuSansMono.ttf")
 elseif(CASE STREQUAL "complete")
     set(removed)
 else()

@@ -146,6 +146,8 @@ public:
     {
         m_defaultFont.facename="OpenSans";
         m_defaultFont.size=11.0f;
+        m_defaultMonoFont.facename="DejaVuSansMono";
+        m_defaultMonoFont.size=11.0f;
         m_render=renderer;
     }
 
@@ -418,6 +420,24 @@ public:
         return m_defaultFont;
     }
 
+    //! The monospace face, for code and logs: DejaVu Sans Mono 11 unless the
+    //! skin's config ("monoFont") or setDefaultMonoFont names another, or the
+    //! default font's face, at this size, where the file the config names is
+    //! missing (the textured skin's init reports it). The skin does not load it: a control
+    //! given it loads it as any font, so an app that draws no mono text never
+    //! has its atlas.
+    virtual const gweni::Font &getDefaultMonoFont()
+    {
+        return m_defaultMonoFont;
+    }
+
+    //! Call before building the controls that take getDefaultMonoFont().
+    virtual void setDefaultMonoFont(const gweni::String &strFacename, float fSize=11.0f)
+    {
+        m_defaultMonoFont.facename=strFacename;
+        m_defaultMonoFont.size=fSize;
+    }
+
     //! Call before building controls. Text and Label keep a pointer to
     //! m_defaultFont, so a later call changes their font in place without an
     //! addStateChange, and text already laid out does not relayout.
@@ -473,6 +493,8 @@ protected:
     }
 
     gweni::Font m_defaultFont;
+    //! getDefaultMonoFont()'s
+    gweni::Font m_defaultMonoFont;
     gweni::renderer::Base *m_render;
 
     //! The default font as it was loaded and the renderer that loaded it, or

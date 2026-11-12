@@ -510,7 +510,7 @@ public:
     //! glyphs of two faces are not kerned. The fonts whose chain this changes are
     //! loaded again with their owners (their runs laid out again on the next
     //! frame, through textLayoutSerial()). None is set by default.
-    void setGlyphFallback(const gweni::String &face, const std::vector<gweni::String> &chain);
+    void setGlyphFallback(const gweni::String &face, const std::vector<gweni::String> &chain) override;
     //! The chain a face's fonts take: its own, else the default, less the face
     //! itself and repeats
     std::vector<gweni::String> glyphFallback(const gweni::String &face) const;

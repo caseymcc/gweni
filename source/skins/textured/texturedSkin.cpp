@@ -30,10 +30,13 @@ namespace textured
 
 bool TexturedSkin::init(std::string fileName)
 {
-    // skin::Base's default (OpenSans 11) or what setDefaultFont set before this
-    loadDefaultFont();
-
+    // the config's fonts and glyph fallback chains go first: loadConfig loads the
+    // default font (skin::Base's, OpenSans 11, or what setDefaultFont set before
+    // this) once they are set, so it is not loaded again for them; and here if
+    // the config could not be read
     const bool loaded=loadConfig(fileName);
+
+    loadDefaultFont();
 
 //    m_texture.name=TextureName;
 //    m_texture.readable=true;
@@ -352,6 +355,10 @@ bool TexturedSkin::loadConfig(std::string configFileName)
         return unusable();
     }
 
+    // a missing font file is reported and init fails, the default face standing
+    // in for it
+    const bool fontsFound=loadFonts(jsonDoc);
+
     // a missing atlas is reported and init fails, but the rest of the config
     // still applies: no converted control draws from it
     bool textureLoaded=true;
@@ -389,7 +396,82 @@ bool TexturedSkin::loadConfig(std::string configFileName)
             std::cerr<<"theme \"theme\" must be an object\n";
     }
 
-    return textureLoaded;
+    return textureLoaded && fontsFound;
+}
+
+bool TexturedSkin::loadFonts(const json::Value &jsonDoc)
+{
+    ResourcePaths &paths=getRenderer()->getResourcePaths();
+    std::set<std::string> reported;
+    bool found=true;
+
+    // each face's file once: one line for a missing one, however many roles name it
+    auto exists=[&](const std::string &face, const char *role)
+    {
+        const std::string path=paths.getPath(ResourcePaths::Type::Font, face);
+
+        if(fs::exists(path))
+            return true;
+        if(reported.insert(face).second)
+        {
+            std::cerr<<role<<" font file not found: "<<path;
+            if(std::strcmp(role, "Mono") == 0)
+                std::cerr<<" (using "<<m_defaultFont.facename<<")";
+            std::cerr<<"\n";
+        }
+        found=false;
+        return false;
+    };
+
+    // checked as the config names it, as its atlas is: a config without one keeps
+    // skin::Base's compiled default
+    if(jsonDoc.HasMember("monoFont"))
+    {
+        if(!jsonDoc["monoFont"].IsString())
+            std::cerr<<"skin \"monoFont\" must be a face name\n";
+        else if(exists(jsonDoc["monoFont"].GetString(), "Mono"))
+            m_defaultMonoFont.facename=jsonDoc["monoFont"].GetString();
+        else
+            m_defaultMonoFont.facename=m_defaultFont.facename;
+    }
+
+    if(jsonDoc.HasMember("fontFallback"))
+    {
+        const json::Value &chains=jsonDoc["fontFallback"];
+
+        if(!chains.IsObject())
+            std::cerr<<"skin \"fontFallback\" must be an object\n";
+        else
+        {
+            for(const auto &member:chains.GetObject())
+            {
+                const std::string name=member.name.GetString();
+                std::vector<std::string> chain;
+
+                if(name.empty() || name[0] == '_')
+                    continue;
+                if(!member.value.IsArray())
+                {
+                    std::cerr<<"skin \"fontFallback\" \""<<name<<"\" must be an array of face names\n";
+                    continue;
+                }
+                for(const json::Value &face:member.value.GetArray())
+                {
+                    if(!face.IsString())
+                    {
+                        std::cerr<<"skin \"fontFallback\" \""<<name<<"\" must be an array of face names\n";
+                        continue;
+                    }
+                    if(exists(face.GetString(), "Glyph fallback"))
+                        chain.emplace_back(face.GetString());
+                }
+                getRenderer()->getLoader().setGlyphFallback((name == "default")?std::string():name, chain);
+            }
+        }
+    }
+
+    loadDefaultFont();
+    return found;
 }
 
 std::unordered_map<std::string, gweni::Color*> TexturedSkin::textColorRegistry()

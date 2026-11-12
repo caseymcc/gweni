@@ -1,5 +1,10 @@
 {
     "name": "DefaulSkin",
+    "monoFont": "DejaVuSansMono",
+    "fontFallback":
+    {
+        "default": ["DejaVuSansMono"]
+    },
     "colors":
     [
         {

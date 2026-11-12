@@ -500,6 +500,14 @@ public:
 
     void loadColors(const json::Value &jsonColors);
     bool loadConfig(std::string configFileName);
+    //! The config's "monoFont" (a face name, setDefaultMonoFont's when the file is
+    //! there, else the default font's face) and "fontFallback" (an object of face
+    //! name -> array of face names, "default" for every face without its own),
+    //! applied before the default font is loaded, which it then loads: the chains
+    //! go to the renderer (IResourceLoader::setGlyphFallback). A face the config
+    //! names whose file is missing is reported once on stderr and left out; false
+    //! if one was.
+    bool loadFonts(const json::Value &jsonDoc);
     void loadTextureMap(const json::Value &jsonMap);
     void setThemeColors();
     void loadTheme(const json::Value &jsonTheme);

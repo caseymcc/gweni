@@ -21,6 +21,7 @@
 #include <string>
 #include <list>
 #include <memory>
+#include <vector>
 #include <limits>
 #include <type_traits>
 
@@ -442,6 +443,12 @@ public:
     //! last of that text is gone.
     virtual gweni::Font::Status loadFont(const gweni::Font &font)=0;
     virtual void freeFont(const gweni::Font &font)=0;
+
+    //! The glyph fallback chain of a face: the faces, in order, a codepoint the
+    //! face has no glyph for is drawn from; an empty face name sets the default
+    //! chain of every face without one of its own. A loader that draws no text
+    //! from faces of its own ignores it (renderer::SlotRenderer's is the one).
+    virtual void setGlyphFallback(const gweni::String &face, const std::vector<gweni::String> &chain) {}
 
     virtual gweni::Texture::Status loadTexture(gweni::Texture &texture)=0;
     virtual void freeTexture(const gweni::Texture &texture)=0;
