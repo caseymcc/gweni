@@ -916,6 +916,36 @@ if(GWENI_RENDER_VULKAN AND TARGET ControlTest AND NOT EMSCRIPTEN)
     gweni_vulkan_test_environment(window_vulkan)
 endif()
 
+# The system clipboard in a GL window (clipboardX11.cmake, whose header says
+# what it runs): ControlTest --clipboard-test under an Xvfb of its own, with
+# gweni_test_clipboard (x11/testClipboard.cpp) as the other X client, copying
+# to it and pasting from it. Built in every tree with ControlTest, GL-only ones
+# included. Without Xvfb, or without the X11 headers the helper is built with,
+# it fails rather than skips.
+if(TARGET ControlTest AND NOT EMSCRIPTEN)
+    find_package(X11)
+    set(test_clipboard "")
+    if(X11_FOUND)
+        add_executable(gweni_test_clipboard x11/testClipboard.cpp)
+        gweni_set_warnings(gweni_test_clipboard)
+        target_link_libraries(gweni_test_clipboard X11::X11)
+        set(test_clipboard $<TARGET_FILE:gweni_test_clipboard>)
+    else()
+        message(STATUS "tests: no X11 headers for gweni_test_clipboard; clipboard_x11 will fail")
+    endif()
+
+    add_test(NAME clipboard_x11
+        COMMAND ${CMAKE_COMMAND}
+            -DCONTROLTEST=$<TARGET_FILE:ControlTest>
+            -DHELPER=${test_clipboard}
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/clipboardX11.cmake
+        WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
+    set_tests_properties(clipboard_x11 PROPERTIES
+        LABELS gpu
+        TIMEOUT 300
+        ENVIRONMENT GWENI_RENDERER=gl)
+endif()
+
 # renderer::Vulkan held to OpenGLCore (backends.mjs, whose header says what each
 # mode runs): backend_counters, every counter of every gweni_bench scene and
 # ControlTest --stats run the same on both backends; backend_pixels[_scale200],

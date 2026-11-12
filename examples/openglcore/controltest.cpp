@@ -202,6 +202,16 @@
  *                       line). A mismatch prints both on
  *                       stderr and the run exits non-zero at the end; the
  *                       script carries on, so every bad step is reported.
+ *    --clipboard-test   run the script in a shown GL window with the system
+ *                       clipboard (input::GLFW3::useSystemClipboard) instead
+ *                       of offscreen with the in-process one, so its copies
+ *                       reach other X clients and its pastes come from them.
+ *                       It needs a display; clipboard_x11 runs it.
+ *    --wait-clipboard-change <s>
+ *                       with --clipboard-test: poll the window's events (which
+ *                       serves the selection to other clients) until the
+ *                       clipboard's text is no longer what it was when the
+ *                       step began, failing the run after <s> seconds
  *
  *  Any of those switches puts the run in script mode: --frames N then means
  *  "render N frames now" and --shot P means "capture the framebuffer now", both
@@ -1212,6 +1222,10 @@ static void printUsage(std::ostream &out)
          "  --type <utf8>      type the text, one GLFW char event per codepoint\n"
          "  --expect-text <utf8>  fail the run unless the focused control's\n"
          "                     text is exactly this\n"
+         "  --clipboard-test   the script in a shown GL window with the system\n"
+         "                     clipboard (needs a display)\n"
+         "  --wait-clipboard-change <s>  poll the window until the clipboard's\n"
+         "                     text changes, failing after <s> seconds\n"
          "Exit status (every mode but the window): 0 success, 1 failure, 2 run\n"
          "from incomplete resources (a missing resource dir, skin config or\n"
          "default font, each reported on stderr and drawn degraded: magenta\n"
@@ -1981,6 +1995,39 @@ static bool expectText(Session &s, const std::string &expected)
     return false;
 }
 
+// --wait-clipboard-change: the window's events polled until another client has
+// put new text on the clipboard. While gweni owns the selection GLFW reads its
+// own copy, so the change is the other client taking it; the polling is what
+// answers that client's requests for gweni's copy before it does.
+static bool waitClipboardChange(Session &s, int seconds)
+{
+    GLFWwindow *window=s.device->context().window;
+    if(!window)
+    {
+        std::cerr<<"ControlTest: --wait-clipboard-change needs the --clipboard-test window\n";
+        return false;
+    }
+
+    const std::string before=gweni::platform::getClipboardText();
+    const auto deadline=std::chrono::steady_clock::now()+std::chrono::seconds(seconds);
+
+    trace(s, "wait-clipboard-change from "+quotedText(before));
+    while(std::chrono::steady_clock::now() < deadline)
+    {
+        glfwWaitEventsTimeout(0.05);
+
+        const std::string now=gweni::platform::getClipboardText();
+        if(now != before)
+        {
+            std::cout<<"clipboard-test: the clipboard changed to "<<quotedText(now)<<"\n";
+            return true;
+        }
+    }
+    std::cerr<<"ControlTest: --wait-clipboard-change: the clipboard still holds "<<quotedText(before)
+             <<" after "<<seconds<<" s\n";
+    return false;
+}
+
 static bool scrollWheel(Session &s, int delta)
 {
     const bool used=s.canvas->inputMouseWheel(delta);
@@ -2025,7 +2072,7 @@ static void dropControl(Session &s, gweni::controls::Base *control)
 // Scripted runs
 //-----------------------------------------------------------------------------
 enum class StepKind { Move, Down, Up, Click, DoubleClick, DownRight, UpRight, ClickRight, Scroll, Key, Type,
-    ExpectText, Frames, Shot };
+    ExpectText, WaitClipboard, Frames, Shot };
 
 struct Step
 {
@@ -2055,8 +2102,8 @@ static bool runSteps(Session &s, const std::vector<Step> &steps, const std::stri
     bool inputSinceFrame=false;     // --expect-text, --frames and --shot are not input
     for(const Step &step : steps)
     {
-        if(step.kind != StepKind::ExpectText && step.kind != StepKind::Frames
-            && step.kind != StepKind::Shot)
+        if(step.kind != StepKind::ExpectText && step.kind != StepKind::WaitClipboard
+            && step.kind != StepKind::Frames && step.kind != StepKind::Shot)
             inputSinceFrame=true;
 
         switch(step.kind)
@@ -2073,6 +2120,7 @@ static bool runSteps(Session &s, const std::vector<Step> &steps, const std::stri
         case StepKind::Key: if(!sendKey(s, step.text)) return false; break;
         case StepKind::Type: typeText(s, step.text); break;
         case StepKind::ExpectText: (void)expectText(s, step.text); break;
+        case StepKind::WaitClipboard: if(!waitClipboardChange(s, step.x)) return false; break;
         case StepKind::Frames:
             renderFrames(s, step.x);
             if(step.x > 0)
@@ -11574,6 +11622,8 @@ int main(int argc, char *argv[])
     Scenario scenario=Scenario::None;
     std::vector<Step> steps;
     bool scripted=false;    // any scripted input switch turns --frames/--shot into steps
+    bool clipboardTest=false;
+    bool waitsForClipboard=false;
 
     for(int i=1; i<argc; ++i)
     {
@@ -11643,6 +11693,13 @@ int main(int argc, char *argv[])
         {
             scripted=true;
             steps.push_back({StepKind::ExpectText, 0, 0, argv[++i]});
+        }
+        else if(arg == "--clipboard-test") clipboardTest=true;
+        else if(arg == "--wait-clipboard-change" && hasValue)
+        {
+            scripted=true;
+            waitsForClipboard=true;
+            steps.push_back({StepKind::WaitClipboard, std::atoi(argv[++i]), 0, {}});
         }
         else if(isMouseStep && hasValue)
         {
@@ -11802,6 +11859,21 @@ int main(int argc, char *argv[])
         return EXIT_FAILURE;
     }
 
+    // a script, in the window: the steps run as in a capture, drawing into
+    // the window's framebuffer, and the clipboard is the system's
+    if(clipboardTest && (!scripted || forceHeadless || !windowTestDir.empty() || backend != gweni::capture::Backend::GL))
+    {
+        std::cerr<<"ControlTest: --clipboard-test runs a script (--key, --type, ...) in a GL window;"
+                   " drop --headless, --window-test and --renderer vulkan\n";
+        return EXIT_FAILURE;
+    }
+    if(waitsForClipboard && !clipboardTest)
+    {
+        std::cerr<<"ControlTest: --wait-clipboard-change waits on the system clipboard;"
+                   " it needs --clipboard-test\n";
+        return EXIT_FAILURE;
+    }
+
     // Declared before the renderer, which keeps a reference to it. A missing
     // directory is reported here and the run carries on: what loads from it
     // degrades below.
@@ -11811,7 +11883,7 @@ int main(int argc, char *argv[])
     gweni::capture::DeviceOptions deviceOptions;
     deviceOptions.size=screenPixels;
     deviceOptions.title="Gweni ControlTest - "+which;
-    deviceOptions.capturing=capturing;
+    deviceOptions.capturing=capturing && !clipboardTest;
     deviceOptions.headless=forceHeadless;
     // the scripted window reads nothing from the host's clipboard
     deviceOptions.systemClipboard=windowTestDir.empty();
