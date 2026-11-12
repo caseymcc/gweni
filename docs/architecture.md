@@ -3355,9 +3355,22 @@ towards the camera:
   centre, and panned across the view;
 - perspective: a camera `distance` focal lengths from z 0, the focal length
   `FocalViews` (4) times the view's longer side. A point at depth d from it is drawn at
-  `c + (x, y)*focal/d`, so at distance 1 the plane z 0 is drawn exactly as in the front
-  view and a nearer layer larger (the reset view's nearest, half a width in front, 1.14
-  times); orthographic: the same size at z 0, scaled by `1/distance`;
+  `c + (x, y)*focal/d`, so the plane `distance - 1` focal lengths in front of z 0 is
+  drawn exactly as in the front view, a nearer layer larger and a farther one smaller;
+  orthographic: every layer at the perspective's z 0 size, `1/distance` times the front
+  view's;
+- at reset (`resetCamera()`) the camera is straight on, in perspective, with the default
+  spacing, at `distance = 1 + zSpacing*high/focal` (`high` the highest z, at least 1,
+  both from the helpers `apply()` takes them from, so they cannot drift apart): the
+  highest z, the frontmost layer, is drawn exactly as in the front view, and every layer
+  behind it smaller about the view's centre, z 0 at `focal/(focal + zSpacing*high)` of
+  its size (0.889 on a landscape view, where the highest z is half a width in front and
+  the focal length four widths; nearer 1 on a portrait one). Each layer is inside the
+  front view's rect scaled about its centre, so the whole canvas is on the view whatever
+  it holds and wherever (`tests/unit/depthView.cpp`, on a landscape and a portrait
+  view). Orthographic draws every layer at that z 0 size, so P at reset does not move
+  the back plane. A spacing widened with + after a reset can push the front layer past
+  the edges again; R fits it again;
 - the z index out is fitted to the scene: everything is within the radius of the view's
   half-diagonal and its highest z from the centre, so perspective maps the nearest and
   farthest distances that radius allows to `kMaxZIndex` and 0 (`a + b/d`, which as
@@ -3370,7 +3383,7 @@ The mouse and the keys: left-drag orbits (0.4° a unit), right- or middle-drag p
 the mouse's device px, the wheel and W/S dolly (0.85 a notch, away from the user is in),
 the arrows and A/D move the camera 24 units, P switches perspective and orthographic, +
 and - space the labels 1.25 times further or closer, R resets (straight on, perspective,
-distance 1, the default spacing) and Escape closes it, as F9 does in the examples. The
+the default spacing, the highest z at its front-view size) and Escape closes it, as F9 does in the examples. The
 view opens at reset.
 
 **`--depth-view`** opens it once the first frame has numbered the z labels
