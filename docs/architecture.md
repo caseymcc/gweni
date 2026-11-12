@@ -2801,8 +2801,8 @@ and is laid out by its own advances.
 
 `tests/glyphFallbackChain.cpp` pins the freetype-gl patch (the callback, the borrowed
 glyphs' cache and owner, no kerning across fonts, every table's pairs of one font),
-`tests/glyphFallbackText.cpp` the
-chain in `SlotRenderer` in grayscale, LCD and SDF (Latin text reading no chain file and
+`tests/glyphFallbackText.cpp` the chain in `SlotRenderer` in grayscale, LCD and SDF
+(Latin text reading no chain file and
 drawing as with no chain, a chain glyph being the chain face's image in one run and one
 draw, the chain's order, the measures, the shared file, a chain set late),
 `tests/skinFonts.cpp` the skin's `"monoFont"` and `"fontFallback"`,
