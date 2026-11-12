@@ -169,6 +169,8 @@ set(GWENI_CONTROL_SOURCES
     source/controls/canvas.cpp
     include/gweni/controls/checkBox.h
     source/controls/checkBox.cpp
+    include/gweni/controls/codeEditor.h
+    source/controls/codeEditor.cpp
     include/gweni/controls/collapsibleCategory.h
     source/controls/collapsibleCategory.cpp
     include/gweni/controls/collapsibleList.h

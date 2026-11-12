@@ -13,6 +13,7 @@
 #include <gweni/controls/button.h>
 #include <gweni/controls/canvas.h>
 #include <gweni/controls/checkBox.h>
+#include <gweni/controls/codeEditor.h>
 #include <gweni/controls/collapsibleCategory.h>
 #include <gweni/controls/collapsibleList.h>
 #include <gweni/controls/colorButton.h>

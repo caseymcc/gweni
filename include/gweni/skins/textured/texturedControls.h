@@ -890,6 +890,34 @@ public:
     inline static const std::string_view name="PropertyRow";
 };
 
+// A CodeEditor's field: [0] CodeEditor, CodeEditorFocus while it has the
+// focus. Its rows draw the lines.
+class CodeEditor:public textured::ControlRegister<CodeEditor>
+{
+public:
+    static void staticInit(TexturedSkin *) { m_staticInit=true; }
+
+    void update(renderer::Base *renderer, controls::Base *baseControl) override;
+
+    inline static const std::string_view name="CodeEditor";
+};
+
+// A CodeEditor's row: [0] its line background (CodeCurrentLine on the line
+// with the caret, hidden otherwise), [1] the selection rect at the text's z,
+// behind every glyph (CodeSelection, hidden while the line has none); the
+// row's Text draws the line.
+class CodeLine:public textured::ControlRegister<CodeLine>
+{
+public:
+    static void staticInit(TexturedSkin *) { m_staticInit=true; }
+
+    size_t requiredPrimitives() override { return 2; }
+
+    void update(renderer::Base *renderer, controls::Base *baseControl) override;
+
+    inline static const std::string_view name="CodeLine";
+};
+
 // A Selectable's row: hidden while idle (or disabled and unselected), a
 // surface for hover, press and selection; the label's Text draws the string.
 class Selectable:public textured::ControlRegister<Selectable>

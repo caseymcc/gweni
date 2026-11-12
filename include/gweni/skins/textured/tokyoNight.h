@@ -98,6 +98,15 @@ inline Surface TextBoxDisabled{ Color(0x1f,0x22,0x33), Color(0x1f,0x22,0x33), Bg
 // background), drawn square and borderless by default.
 inline Surface TextSelection  { Color(0x28,0x34,0x57), Color(0x28,0x34,0x57), Color(0x28,0x34,0x57), 0.0f, 0.0f };
 
+// A CodeEditor: its field (an inset, like a TextBox's, its border blue with
+// the focus), the line with the caret (flat and square, a shade over the
+// field) and the selection behind the selected glyphs (flat and square, as a
+// TextBox's).
+inline Surface CodeEditor      { BgDark,                BgDark,                Line,  RadiusSm, BorderW };
+inline Surface CodeEditorFocus { BgDark,                BgDark,                Blue,  RadiusSm, BorderW };
+inline Surface CodeCurrentLine { Color(0x1f,0x21,0x30), Color(0x1f,0x21,0x30), Color(0x1f,0x21,0x30), 0.0f, 0.0f };
+inline Surface CodeSelection   { Color(0x28,0x34,0x57), Color(0x28,0x34,0x57), Color(0x28,0x34,0x57), 0.0f, 0.0f };
+
 // Menus
 inline Surface Menu           { Color(0x1f,0x22,0x33), Bg,                    Line,  Radius,   BorderW };
 inline Surface MenuStrip      { Color(0x1f,0x22,0x33), Bg,                    BgHighlight, 0.0f, BorderW };
@@ -265,6 +274,8 @@ inline std::unordered_map<std::string, Surface*>& surfaceRegistry()
         {"ButtonNormal",&ButtonNormal},{"ButtonHover",&ButtonHover},{"ButtonDown",&ButtonDown},{"ButtonDisabled",&ButtonDisabled},
         {"ButtonOn",&ButtonOn},{"ButtonOnHover",&ButtonOnHover},{"ButtonOnDisabled",&ButtonOnDisabled},
         {"TextBox",&TextBox},{"TextBoxFocus",&TextBoxFocus},{"TextBoxDisabled",&TextBoxDisabled},{"TextSelection",&TextSelection},
+        {"CodeEditor",&CodeEditor},{"CodeEditorFocus",&CodeEditorFocus},{"CodeCurrentLine",&CodeCurrentLine},
+        {"CodeSelection",&CodeSelection},
         {"Menu",&Menu},{"MenuStrip",&MenuStrip},{"MenuHover",&MenuHover},
         {"TabActive",&TabActive},{"TabInactive",&TabInactive},{"TabHover",&TabHover},{"TabControl",&TabControl},
         {"CategoryList",&CategoryList},{"CategoryInner",&CategoryInner},{"CategoryHeader",&CategoryHeader},

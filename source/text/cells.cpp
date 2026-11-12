@@ -52,6 +52,98 @@ int cellCount(uint32_t codepoint)
     return 1;
 }
 
+uint32_t utf8CodepointAt(const String &str, size_t pos, size_t *next)
+{
+    const size_t size=str.size();
+
+    if(pos >= size)
+    {
+        if(next)
+            *next=size;
+        return 0;
+    }
+
+    const unsigned char lead=static_cast<unsigned char>(str[pos]);
+    size_t length=0;
+    uint32_t codepoint=0;
+    uint32_t least=0;
+
+    if(lead < 0x80)
+    {
+        if(next)
+            *next=pos+1;
+        return lead;
+    }
+    else if((lead & 0xe0) == 0xc0)
+    {
+        length=2;
+        codepoint=lead & 0x1f;
+        least=0x80;
+    }
+    else if((lead & 0xf0) == 0xe0)
+    {
+        length=3;
+        codepoint=lead & 0x0f;
+        least=0x800;
+    }
+    else if((lead & 0xf8) == 0xf0)
+    {
+        length=4;
+        codepoint=lead & 0x07;
+        least=0x10000;
+    }
+
+    bool valid=(length > 0) && (pos+length <= size);
+
+    for(size_t i=1; valid && i < length; ++i)
+    {
+        const unsigned char byte=static_cast<unsigned char>(str[pos+i]);
+
+        if((byte & 0xc0) != 0x80)
+            valid=false;
+        else
+            codepoint=(codepoint << 6) | (byte & 0x3f);
+    }
+
+    // overlong forms, surrogates and past U+10FFFF are malformed too
+    if(!valid || codepoint < least || codepoint > 0x10ffff || (codepoint >= 0xd800 && codepoint <= 0xdfff))
+    {
+        if(next)
+            *next=pos+1;
+        return 0xfffd;
+    }
+
+    if(next)
+        *next=pos+length;
+    return codepoint;
+}
+
+size_t stringCells(const String &str, size_t begin, size_t end)
+{
+    end=std::min(end, str.size());
+
+    size_t cells=0;
+
+    for(size_t i=begin; i < end;)
+    {
+        // ASCII is one cell a byte, without decoding
+        if(static_cast<unsigned char>(str[i]) < 0x80)
+        {
+            ++cells;
+            ++i;
+            continue;
+        }
+
+        size_t next=i;
+        const uint32_t codepoint=utf8CodepointAt(str, i, &next);
+
+        cells+=static_cast<size_t>(cellCount(codepoint));
+        i=next;
+    }
+
+    return cells;
+}
+
 const char *cellWidthUnicodeVersion()
 {
     return GWENI_CELL_WIDTH_UNICODE_VERSION;

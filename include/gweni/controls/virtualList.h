@@ -240,6 +240,13 @@ public:
 protected:
     void contentsPlaced(skin::Base *skin) override;
 
+    //! The pooled rows in pool order and the item each shows now (NoItem for a
+    //! spare), an edit's shift included: for a subclass whose rows keep what
+    //! they show in step with the items (CodeEditor's lines).
+    size_t poolSize() const { return m_rows.size(); }
+    Base *poolRow(size_t i) const { return m_rows[i].control; }
+    size_t poolItem(size_t i) const { return m_rows[i].item; }
+
 private:
     struct Row
     {

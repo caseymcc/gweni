@@ -26,6 +26,8 @@ set(GWENI_DEMO_SOURCES
     demo/crossSplitter.h
     demo/dataTable.cpp
     demo/dataTable.h
+    demo/codeEditor.cpp
+    demo/codeEditor.h
     demo/dataTableVirtual.cpp
     demo/dataTableVirtual.h
     demo/demo.cpp

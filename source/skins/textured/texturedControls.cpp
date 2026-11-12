@@ -5,6 +5,7 @@
 #include "gweni/controls/progressBar.h"
 #include "gweni/controls/comboBox.h"
 #include "gweni/controls/checkBox.h"
+#include "gweni/controls/codeEditor.h"
 #include "gweni/controls/scrollBarButton.h"
 #include "gweni/controls/scrollBarBar.h"
 #include "gweni/controls/statusBar.h"
@@ -736,6 +737,41 @@ void ProgressBar::remove(renderer::Base *renderer, controls::Base *baseControl)
     releasePrimitives(renderer);
 }
 
+
+///////////////////////////////////////////////////////////////////////////
+//CodeEditor
+void CodeEditor::update(renderer::Base *renderer, controls::Base *baseControl)
+{
+    if(m_primitives.empty())
+        return;
+
+    const tokyonight::Surface &surface=baseControl->isFocussed()?tokyonight::CodeEditorFocus
+        :tokyonight::CodeEditor;
+
+    tokyonight::paintSurface(renderer, m_primitives.data(), baseControl, surface);
+}
+
+///////////////////////////////////////////////////////////////////////////
+//CodeLine
+// The line background is drawn only on the current line, and the selection
+// only where the line has one: an idle row's slots are hidden, not drawn
+// transparent, which would still write depth over the field behind them.
+void CodeLine::update(renderer::Base *renderer, controls::Base *baseControl)
+{
+    if(m_primitives.size() < 2)
+        return;
+
+    controls::CodeLine *line=static_cast<controls::CodeLine *>(baseControl);
+    const tokyonight::Surface &current=tokyonight::CodeCurrentLine;
+
+    if(line->visible() && line->isCurrentLine())
+        renderer->drawRoundedRect(m_primitives[0], line->getRenderBounds(), current.radius, current.borderWidth,
+            current.top, current.bottom, current.border, line->getZIndex());
+    else
+        renderer->hidePrimitive(m_primitives[0]);
+
+    renderer->hidePrimitive(m_primitives[1]);
+}
 
 ///////////////////////////////////////////////////////////////////////////
 //Selectable
@@ -3143,6 +3179,8 @@ template class ControlRegister<TabStrip>;
 template class ControlRegister<DataTableVirtualBody>;
 template class ControlRegister<ScrollBarBar>;
 template class ControlRegister<ProgressBar>;
+template class ControlRegister<CodeEditor>;
+template class ControlRegister<CodeLine>;
 template class ControlRegister<Selectable>;
 template class ControlRegister<Separator>;
 template class ControlRegister<Bullet>;
