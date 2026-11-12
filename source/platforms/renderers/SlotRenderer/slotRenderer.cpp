@@ -1748,6 +1748,7 @@ void SlotRenderer::flush()
     m_frameStats.primitiveRanges=0;
     m_frameStats.primitiveRangeBuilds=0;
     m_frameStats.primitiveSlotsCulled=m_primitiveSlotsCulled;
+    m_frameStats.textRunsCulled=m_textRunsCulled;
     m_frameStats.textDraws=0;
     m_frameStats.atlasUploadCalls=0;
     m_frameStats.atlasUploadBytes=0;
@@ -1889,11 +1890,13 @@ void SlotRenderer::flush()
     {
         //qualified: gweni::printf(String&, ...) would otherwise hide the C one
         ::printf("[upload] frame %zu: %zu calls, %zu bytes (mirror %zu bytes, %zu regrows), atlas %zu calls, %zu bytes,"
-            " %zu of %zu primitive slots drawn in %zu ranges (%zu chunks' ranges built), %zu culled\n",
+            " %zu of %zu primitive slots drawn in %zu ranges (%zu chunks' ranges built), %zu culled,"
+            " %zu text runs culled\n",
             m_frameStats.frameIndex, m_frameStats.uploadCalls, m_frameStats.uploadBytes,
             m_frameStats.mirrorBytes, m_frameStats.bufferRegrows, m_frameStats.atlasUploadCalls,
             m_frameStats.atlasUploadBytes, m_frameStats.primitiveSlotsDrawn, m_vertexes.size()/4,
-            m_frameStats.primitiveRanges, m_frameStats.primitiveRangeBuilds, m_frameStats.primitiveSlotsCulled);
+            m_frameStats.primitiveRanges, m_frameStats.primitiveRangeBuilds, m_frameStats.primitiveSlotsCulled,
+            m_frameStats.textRunsCulled);
         fflush(stdout);
     }
 }
@@ -2882,18 +2885,52 @@ void SlotRenderer::allocateTextRun(size_t textId, TextRun &run, size_t glyphs)
 
 std::pair<size_t, size_t> SlotRenderer::drawnRange(const TextRun &run)
 {
-    if(run.hidden || (run.glyphs == 0))
+    if(run.hidden || run.culled || (run.glyphs == 0))
         return {0, 0};
     return {run.start, run.glyphs};
 }
 
-void SlotRenderer::markTextDrawList(const TextRun &run, std::pair<size_t, size_t> before)
+void SlotRenderer::markTextDrawList(TextRun &run, std::pair<size_t, size_t> before)
 {
+    const bool counted=run.culled && !run.hidden && (run.glyphs > 0);
+
+    if(counted != run.culledCounted)
+    {
+        run.culledCounted=counted;
+        if(counted)
+            ++m_textRunsCulled;
+        else
+            --m_textRunsCulled;
+    }
+
     // A string relaid in the slots and glyph count it had (a Label given a new
     // string of the same length) leaves the list as it is: the rebuild would give
     // the same chunks, at O(runs in the font) and a sort.
     if(run.fontData && (drawnRange(run) != before))
         run.fontData->drawListStale=true;
+}
+
+void SlotRenderer::cullTextRun(TextRun &run, const Box &box) const
+{
+    run.culled=false;
+    if(!m_clipCulling || (run.glyphs == 0))
+        return;
+
+    const ftgl::glyph_vertex_t *vertexes=&m_textVertexes[run.start*4];
+    float x0=vertexes[0].x, x1=x0, y0=vertexes[0].y, y1=y0;
+
+    for(size_t i=1; i<run.glyphs*4; ++i)
+    {
+        x0=std::min(x0, vertexes[i].x);
+        x1=std::max(x1, vertexes[i].x);
+        y0=std::min(y0, vertexes[i].y);
+        y1=std::max(y1, vertexes[i].y);
+    }
+    // the shader keeps a pixel whose position (interpolated from these unsnapped
+    // corners, so inside their bounds) is in [x0,x1) x [y0,y1) of the box
+    run.culled=(box.x1 <= box.x0) || (box.y1 <= box.y0)
+        || (x1 <= float(box.x0)) || (x0 >= float(box.x1))
+        || (y1 <= float(box.y0)) || (y0 >= float(box.y1));
 }
 
 void SlotRenderer::markTextVertexes(const TextRun &run)
@@ -3057,7 +3094,7 @@ void SlotRenderer::verifyTextDrawList(const FontData &fontData)
         same=(rebuilt.chunk == kept.chunk) && (rebuilt.counts == kept.counts) &&
             (rebuilt.offsets == kept.offsets);
     }
-    // a run's start, glyph count, hidden flag or font changed without markTextDrawList
+    // a run's start, glyph count, hidden or culled flag or font changed without markTextDrawList
     assert(same && "a text run changed its font's draw list without marking it stale");
 #else
     (void)fontData;
@@ -3202,6 +3239,8 @@ void SlotRenderer::renderTextRun(size_t textId, const gweni::Font &font, gweni::
     if((run.text == text) && (run.font == font) && (run.px == px) && ((run.color == color) || withSpans)
         && (run.fontData == &fontData))
     {
+        const std::pair<size_t, size_t> drawnBefore=drawnRange(run);
+
         if(withSpans)
         {
             TextRunSpans *kept=nullptr;
@@ -3261,8 +3300,13 @@ void SlotRenderer::renderTextRun(size_t textId, const gweni::Font &font, gweni::
             run.zIndex=zIndex;
         }
 
-        // the region can change with or without a move; an unchanged box marks nothing
-        writeTextClipBoxes(run, makeClipBox());
+        // the region can change with or without a move; an unchanged box marks
+        // nothing, and the run is culled or drawn again from it
+        const Box box=makeClipBox();
+
+        writeTextClipBoxes(run, box);
+        cullTextRun(run, box);
+        markTextDrawList(run, drawnBefore);
         return;
     }
 
@@ -3380,9 +3424,12 @@ void SlotRenderer::renderTextRun(size_t textId, const gweni::Font &font, gweni::
     if(kept)
         colorTextRun(run, kept, false);
 
+    const Box box=makeClipBox();
+
+    cullTextRun(run, box);
     markTextDrawList(run, drawnBefore);
     markTextVertexes(run);
-    writeTextClipBoxes(run, makeClipBox());
+    writeTextClipBoxes(run, box);
 
     if(textDebugMatches(text))
     {
@@ -3397,10 +3444,10 @@ void SlotRenderer::renderTextRun(size_t textId, const gweni::Font &font, gweni::
             "%s vertices=%zu\n",
             textId, text.c_str(), text.length(), run.start, run.start+run.glyphs,
             run.capacity, textBuffer?"ftgl":"sdf", glyphCount*4);
-        ::printf("[mirror]   pos=(%d,%d) z=%d hidden=%s atlas=%zux%zu depth=%zu "
+        ::printf("[mirror]   pos=(%d,%d) z=%d hidden=%s culled=%s atlas=%zux%zu depth=%zu "
             "mirror verts=%zu slots used=%zu free runs=%zu free slots=%zu "
             "live glyphs=%zu chunk slots=%zu\n",
-            pos.x, pos.y, zIndex, run.hidden?"yes":"no",
+            pos.x, pos.y, zIndex, run.hidden?"yes":"no", run.culled?"yes":"no",
             fontData.atlas->width, fontData.atlas->height, fontData.atlas->depth,
             m_textVertexes.size(), m_textSlotsUsed,
             m_freeTextRuns.size(), freeSlots, liveGlyphs, m_chunkSlots);
@@ -3411,8 +3458,9 @@ void SlotRenderer::renderTextRun(size_t textId, const gweni::Font &font, gweni::
             float minX=m_textVertexes[vertIndex].x, maxX=minX;
             float minY=m_textVertexes[vertIndex].y, maxY=minY;
 
-            // what buildTextDrawList lists for the run: its glyphs in use, unless hidden
-            const bool drawn=!run.hidden && (i < run.glyphs);
+            // what buildTextDrawList lists for the run: its glyphs in use, unless
+            // hidden or culled
+            const bool drawn=!run.hidden && !run.culled && (i < run.glyphs);
 
             ::printf("[mirror]   slot %zu (glyph %zu, char '%c')%s verts %zu..%zu chunk %zu %s\n",
                 slot, i, i<text.length()?text[i]:'?', i<run.glyphs?"":" [unused tail]",

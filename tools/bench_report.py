@@ -48,7 +48,7 @@ TIME_FLAG_PERCENT = 5.0
 TIME_MIN_US = 2.0
 
 # Sizes, not work: they grow with N by definition.
-SIZE_COUNTERS = {"prim_ids", "text_ids", "mirror_bytes", "primitive_slots_culled"}
+SIZE_COUNTERS = {"prim_ids", "text_ids", "mirror_bytes", "primitive_slots_culled", "text_runs_culled"}
 # One draw per index chunk of 16383 slots (and per atlas for text), so they
 # grow with the slot count in every scene.
 CHUNK_COUNTERS = {"draw_calls", "text_draws"}

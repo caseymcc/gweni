@@ -102,7 +102,7 @@ const char *const g_counterNames[]=
 {
     "visited", "render_carried", "controls_changed", "created", "visibility", "geometry", "background", "text",
     "prim_slots_written", "text_slots_written", "upload_calls", "upload_bytes", "mirror_bytes",
-    "draw_calls", "primitive_slots_drawn", "primitive_ranges", "primitive_slots_culled", "text_draws", "atlas_upload_calls", "atlas_upload_bytes", "buffer_regrows",
+    "draw_calls", "primitive_slots_drawn", "primitive_ranges", "primitive_slots_culled", "text_runs_culled", "text_draws", "atlas_upload_calls", "atlas_upload_bytes", "buffer_regrows",
     "layout_passes", "layout_capped", "render_layout", "layout_visited", "layout_children_scanned",
     "measure_calls", "measure_calls_input", "measure_calls_update", "measure_calls_render",
     "invalidations", "invalidations_input", "invalidations_update", "invalidations_render", "z_visited", "z_changed", "anims_run", "hit_tests", "prim_ids", "text_ids",
@@ -140,7 +140,7 @@ void collectCounters(FrameRecord &record, const bench::PhaseTotals &phases,
         changes.visited, changes.renderCarried, changes.controls, changes.created, changes.visibility,
         changes.geometry, changes.background, changes.text,
         gpu.primitiveSlotsWritten, gpu.textSlotsWritten, gpu.uploadCalls, gpu.uploadBytes,
-        gpu.mirrorBytes, gpu.drawCalls, gpu.primitiveSlotsDrawn, gpu.primitiveRanges, gpu.primitiveSlotsCulled, gpu.textDraws, gpu.atlasUploadCalls, gpu.atlasUploadBytes,
+        gpu.mirrorBytes, gpu.drawCalls, gpu.primitiveSlotsDrawn, gpu.primitiveRanges, gpu.primitiveSlotsCulled, gpu.textRunsCulled, gpu.textDraws, gpu.atlasUploadCalls, gpu.atlasUploadBytes,
         gpu.bufferRegrows,
         size_t(layout.passes), layout.capped ? 1u : 0u, layout.renderLayout ? 1u : 0u,
         layout.visited, layout.childrenScanned, measures, phases.measures[size_t(Phase::Input)],
@@ -196,6 +196,29 @@ void primeShaders(gweni::skin::Base *skin, const gweni::Point &size)
 
     scene.reset();
     delete primer;
+}
+
+// With the clip cull on, a scene can draw an index chunk for the first time in a
+// measured frame (a line of a text grown into a chunk all of whose runs were
+// culled until then), and llvmpipe compiles what the first draw through a
+// chunk's vertex array needs right there, so LLVM's allocations would count in
+// that frame. So the scene's first frame is drawn with the cull off, every chunk
+// in it, and the whole tree drawn again with it on: two frames before the
+// warm-up, with no input and the clock standing, leaving the tree as a first
+// frame with the cull on would. Not for a scene measured from its first frame.
+void primeChunks(gweni::controls::Canvas *canvas, gweni::renderer::SlotRenderer *renderer)
+{
+    for(int frame=0; frame<2; ++frame)
+    {
+        renderer->setClipCulling(frame == 1);
+        if(frame == 1)
+            canvas->addStateChangeRecursive(gweni::controls::StateChange_Geometry
+                |gweni::controls::StateChange_Background|gweni::controls::StateChange_Text);
+        canvas->updateCanvas();
+        g_renderer->clearTarget(g_background);
+        canvas->renderCanvas();
+        g_device->finish();
+    }
 }
 
 // One frame: the scene's input, the two phases of the canvas and a fenced
@@ -435,8 +458,8 @@ void printUsage()
         "             frame (controls off the canvas), and the controls it found a state\n"
         "             change on, by kind\n"
         "  prim_slots_written text_slots_written upload_calls upload_bytes mirror_bytes\n"
-        "  draw_calls primitive_slots_drawn primitive_ranges primitive_slots_culled text_draws\n"
-        "  atlas_upload_calls atlas_upload_bytes buffer_regrows\n"
+        "  draw_calls primitive_slots_drawn primitive_ranges primitive_slots_culled\n"
+        "  text_runs_culled text_draws atlas_upload_calls atlas_upload_bytes buffer_regrows\n"
         "             SlotRenderer::FrameStats of the frame's flush; the slots written are\n"
         "             the distinct primitive and glyph slots it uploads, each once, whether\n"
         "             a draw, a hide, a show or a release changed it; buffer_regrows the\n"
@@ -444,9 +467,9 @@ void printUsage()
         "             re-allocated (geometrically) and sent whole once; primitive_slots_drawn\n"
         "             the primitive slots the draws' ranges covered (hidden ones in a\n"
         "             merged gap among them), primitive_ranges those ranges;\n"
-        "             primitive_slots_culled a size, not work: the shown slots whose last\n"
-        "             draw lay wholly outside its clip box, left out of the draws\n"
-        "             (--clip-cull)\n"
+        "             primitive_slots_culled and text_runs_culled sizes, not work: the\n"
+        "             shown slots and text runs whose last draw lay wholly outside its\n"
+        "             clip box, left out of the draws (--clip-cull)\n"
         "  layout_passes layout_capped render_layout\n"
         "             controls::LayoutStats: update-phase layout passes, whether they hit\n"
         "             the cap, whether the render phase laid out again\n"
@@ -694,6 +717,9 @@ int main(int argc, char *argv[])
     summary.constructAllocs=bench::phaseTotals().allocs[size_t(Phase::Construct)];
     summary.constructAllocBytes=bench::phaseTotals().allocBytes[size_t(Phase::Construct)];
     summary.constructInvalidations=bench::phaseTotals().invalidations[size_t(Phase::Construct)];
+
+    if((warmup > 0) && renderer->clipCulling())
+        primeChunks(canvas, renderer);
 
     for(int frame=-warmup; frame<0; ++frame)
         runFrame(*scene, sceneCtx, frame);

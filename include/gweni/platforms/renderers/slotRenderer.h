@@ -582,6 +582,10 @@ public:
         //! out of the draws (cullClippedQuad, setClipCulling). A size, kept as
         //! slots are written, not a count of this frame's work.
         size_t primitiveSlotsCulled=0;
+        //! the text runs that are shown, hold glyphs and are culled now: their
+        //! glyphs' last layout lay wholly outside its clip box, so the run is out
+        //! of its font's draw list (cullTextRun). A size, like primitiveSlotsCulled.
+        size_t textRunsCulled=0;
         size_t textDraws=0;             //!< of those, the text draws: one per atlas with runs to draw
         size_t atlasUploadCalls=0;      //!< uploads of font atlas row bands (uploadAtlasRows)
         size_t atlasUploadBytes=0;      //!< bytes those calls sent
@@ -1205,6 +1209,12 @@ private:
         //! drawn with colour spans, kept in m_textRunSpans under its text id (in
         //! hidden's padding, so a run is no larger than before there were spans)
         bool hasSpans=false;
+        //! its glyphs lay wholly outside the clip box renderText last wrote for
+        //! them (cullTextRun), so it draws nothing as a hidden run does
+        bool culled=false;
+        //! counted in m_textRunsCulled: culled, not hidden and holding glyphs,
+        //! brought up to date by markTextDrawList
+        bool culledCounted=false;
         std::string text;
         gweni::Font font;
         float px=0.f; //!< the effective size it was laid out at, textPx(font)
@@ -1248,11 +1258,20 @@ private:
     //! Grows the text mirrors so the first `glyphSlots` glyph slots exist.
     void ensureTextSlots(size_t glyphSlots);
     //! What the run puts in its font's draw list: (first glyph slot, glyph count),
-    //! or (0, 0) for a hidden run and one with no glyphs, which draw nothing.
+    //! or (0, 0) for a hidden or culled run and one with no glyphs, which draw nothing.
     static std::pair<size_t, size_t> drawnRange(const TextRun &run);
     //! The run's drawnRange was `before`: if it is not now, its font's draw list is
     //! rebuilt before the next draw. A change of font is setTextRunFont's to mark.
-    void markTextDrawList(const TextRun &run, std::pair<size_t, size_t> before);
+    //! Every change of a run's hidden, culled or glyph count comes through here,
+    //! so it keeps m_textRunsCulled too.
+    void markTextDrawList(TextRun &run, std::pair<size_t, size_t> before);
+    //! Sets run.culled from the glyphs just written and the clip box written for
+    //! them: with clipCulling() on, whether their bounds lie wholly outside the
+    //! box (or the box is empty), the fragment shader's half-open test at pixel
+    //! centres discarding every pixel of them. The glyphs are not rewritten; the
+    //! caller's markTextDrawList takes the run out of its font's list or back in.
+    void cullTextRun(TextRun &run, const Box &box) const;
+    size_t m_textRunsCulled=0;
     void markTextVertexes(const TextRun &run);
     //! Writes box into the run's glyph slots in use, marking only the ones that change.
     void writeTextClipBoxes(const TextRun &run, const Box &box);
