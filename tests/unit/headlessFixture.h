@@ -389,6 +389,30 @@ private:
     size_t m_textId=0;
 };
 
+//! A StubControl whose update() gives back, itself, every slot past the first
+//! `keep` and draws a rect into the rest, as a skin Control whose slot list
+//! follows its control does (the textured PlotHistogram's): ids released with
+//! no remove() and no control deleted. A test lowers `keep` and marks the
+//! control changed.
+class ShrinkingControl: public StubControl
+{
+public:
+    using StubControl::StubControl;
+
+    void update(gweni::renderer::Base *renderer, gweni::controls::Base *control) override
+    {
+        while(m_primitives.size() > keep)
+        {
+            renderer->releasePrimitive(m_primitives.back());
+            m_primitives.pop_back();
+        }
+        for(size_t id : m_primitives)
+            renderer->drawFilledRect(id, control->getRenderBounds(), control->getZIndex());
+    }
+
+    size_t keep=primitivesPerControl;
+};
+
 //! A skin that hands out a StubControl for any type name and counts how many of
 //! its Controls exist.
 class StubSkin: public gweni::skin::Base

@@ -36,6 +36,7 @@
  */
 #include "headlessFixture.h"
 
+#include <gweni/controls/popup.h>
 #include <gweni/controls/toolTip.h>
 #include <gweni/gweni.h>
 #include <gweni/platforms/platform.h>
@@ -73,6 +74,19 @@ public:
     }
 };
 
+//! A control whose skin Control gives back its own slots (test::ShrinkingControl).
+class Shrinking: public controls::Base
+{
+public:
+    GWENI_CONTROL_INLINE(Shrinking, controls::Base)
+    {}
+
+    test::ShrinkingControl *shrinkingControl()
+    {
+        return static_cast<test::ShrinkingControl *>(const_cast<skin::Control *>(getSkinControl()));
+    }
+};
+
 class DrawingSkin: public test::StubSkin
 {
 public:
@@ -80,6 +94,9 @@ public:
 
     std::unique_ptr<skin::Control> getControlRenderer(std::string typeName) override
     {
+        if(typeName == Shrinking::getTypeNameStatic())
+            return std::make_unique<test::ShrinkingControl>(this, false, std::move(typeName));
+
         const bool takesText=typeName == test::StubText::getTypeNameStatic();
 
         return std::make_unique<DrawingControl>(this, takesText, std::move(typeName));
@@ -199,6 +216,70 @@ controls::Base *newTool(controls::Base *parent)
     tool->newChild<controls::Base>("second")->setBounds(0, 30, 50, 20);
     return tool;
 }
+
+//! The primitive ids the controls on canvas outside every flagged subtree
+//! hold, sorted: the app's.
+std::vector<size_t> appPrimitiveIds(const controls::Base *control)
+{
+    std::vector<size_t> primitives;
+    std::vector<size_t> texts;
+
+    if(control->isExcludedFromStats())
+        return primitives;
+    if(const skin::Control *skinControl=control->getSkinControl())
+        skinControl->appendIds(primitives, texts);
+    for(const controls::Base *child : control->getActualChildren())
+    {
+        const std::vector<size_t> childIds=appPrimitiveIds(child);
+
+        primitives.insert(primitives.end(), childIds.begin(), childIds.end());
+    }
+    return sorted(primitives);
+}
+
+//! A control that deletes `victim` as it is deleted.
+class DeletesOnDestruction: public controls::Base
+{
+public:
+    GWENI_CONTROL_INLINE(DeletesOnDestruction, controls::Base)
+    {}
+
+    ~DeletesOnDestruction() override
+    {
+        delete victim;
+    }
+
+    controls::Base *victim=nullptr;
+};
+
+//! How many of ids are in written.
+size_t countWritten(const std::vector<size_t> &written, const std::vector<size_t> &ids)
+{
+    size_t count=0;
+
+    for(size_t id : ids)
+        count+=std::count(written.begin(), written.end(), id);
+    return count;
+}
+
+//! Takes every primitive id the bank holds released, so the next ones it
+//! hands out are those released after it was made; gives them back as it goes.
+struct NoReleasedPrimitiveIds
+{
+    NoReleasedPrimitiveIds()
+    {
+        while(releasedPrimitiveIdCount() > 0)
+            taken.push_back(getPrimitiveId(nullptr));
+    }
+
+    ~NoReleasedPrimitiveIds()
+    {
+        for(size_t id : taken)
+            releasePrimitiveId(id);
+    }
+
+    std::vector<size_t> taken;
+};
 
 }//namespace
 
@@ -562,4 +643,174 @@ TEST_CASE("Excluded slots: a tool's tooltip is every tool's, the app's tooltip t
     CHECK(overlay->shownWindow().primitiveSlots > 0);
     scene.untilRefresh(overlay);
     CHECK(overlay->shownPrimitiveIds() == idsBefore+boxIds.size());
+}
+
+TEST_CASE("Excluded slots: a tool's id taken again by the app in the same frame is the app's")
+{
+    Scene scene;
+    StatsOverlay *overlay=StatsOverlay::open(scene.canvas);
+    Inspector *inspector=Inspector::open(scene.canvas);
+    controls::Base *tool=newTool(scene.canvas);
+
+    scene.untilRefresh(overlay);
+    scene.untilRefresh(overlay);
+    REQUIRE(overlay->lines()[SlotsLine] == NoSlots);
+
+    controls::Base *first=tool->getActualChildren().front();
+    const std::vector<size_t> freed=primitiveIdsOf(first);
+
+    REQUIRE(freed.size() == 2);
+
+    // so the ids the deletion frees are the first ones handed out again
+    NoReleasedPrimitiveIds noReleased;
+    controls::Base *created=nullptr;
+
+    // the tool's control deleted in the update phase, and an app control made
+    // in the same frame, which takes its ids as its render phase generates it
+    first->delayedDelete();
+    scene.clock+=Scene::Step;
+    scene.canvas->updateCanvas();
+    created=scene.app->newChild<controls::Base>("created");
+    created->setBounds(0, 40, 50, 20);
+    scene.canvas->renderCanvas();
+
+    const std::vector<size_t> createdIds=primitiveIdsOf(created);
+
+    // the reuse happened
+    REQUIRE(createdIds == freed);
+
+    const std::vector<size_t> &written=scene.renderer.writtenPrimitiveIds();
+    const size_t appWritten=countWritten(written, appPrimitiveIds(scene.canvas));
+
+    REQUIRE(countWritten(written, createdIds) == createdIds.size());
+    CHECK(noneExcluded(scene.canvas, createdIds));
+    CHECK(tools::appFrameWrites(scene.canvas, &scene.renderer).primitiveSlots == appWritten);
+    // the frame after reads it, in the Inspector and then in the overlay
+    scene.frame();
+    CHECK(inspector->counterLines()[Inspector::SlotsLine]
+        == format("slots written: %zu primitive, 0 text", appWritten));
+    scene.untilRefresh(overlay);
+    CHECK(overlay->shownWindow().primitiveSlots == appWritten);
+}
+
+TEST_CASE("Excluded slots: the slots a tool's skin Control gives back itself are the tool's")
+{
+    Scene scene;
+    StatsOverlay *overlay=StatsOverlay::open(scene.canvas);
+    Inspector *inspector=Inspector::open(scene.canvas);
+    controls::Base *tool=newTool(scene.canvas);
+    Shrinking *shrinking=tool->newChild<Shrinking>("shrinking");
+
+    shrinking->setBounds(0, 60, 50, 20);
+    scene.untilRefresh(overlay);
+    scene.untilRefresh(overlay);
+    REQUIRE(overlay->lines()[SlotsLine] == NoSlots);
+    REQUIRE(primitiveIdsOf(shrinking).size() == 2);
+
+    // a slot given back a frame, then the other, each cleared by that frame's
+    // flush
+    for(size_t keep : {size_t(1), size_t(0)})
+    {
+        const std::vector<size_t> before=primitiveIdsOf(shrinking);
+
+        shrinking->shrinkingControl()->keep=keep;
+        shrinking->addStateChange(controls::StateChange_Background);
+        scene.frame();
+        REQUIRE(primitiveIdsOf(shrinking).size() == keep);
+        REQUIRE(countWritten(scene.renderer.writtenPrimitiveIds(), before) == before.size());
+        CHECK(allExcluded(scene.canvas, before));
+        CHECK(tools::appFrameWrites(scene.canvas, &scene.renderer).primitiveSlots == 0);
+        scene.frame();
+        CHECK(inspector->counterLines()[Inspector::SlotsLine] == InspectorNoSlots);
+    }
+    scene.untilRefresh(overlay);
+    CHECK(overlay->shownWindow().primitiveSlots == 0);
+    CHECK(overlay->lines()[SlotsLine] == NoSlots);
+}
+
+TEST_CASE("Excluded slots: an app control deleted as a tool is torn down is the app's")
+{
+    Scene scene;
+    controls::Base *tool=newTool(scene.canvas);
+    controls::Base *owner=tool->getActualChildren().front();
+    // on the canvas, outside the tool, deleted as it goes
+    controls::Base *victim=nullptr;
+
+    SUBCASE("deleted by a destructor of the tool's")
+    {
+        victim=scene.app->newChild<controls::Base>("victim");
+        victim->setBounds(0, 60, 50, 20);
+        owner->newChild<DeletesOnDestruction>()->victim=victim;
+    }
+    SUBCASE("a popup a control of the tool's owns")
+    {
+        // closed and delayed-deleted, so it goes in the next update phase
+        controls::Popup *popup=owner->createPopup();
+
+        REQUIRE(popup);
+        popup->setBounds(10, 300, 100, 60);
+        popup->open(scene.app);
+        victim=popup;
+    }
+    REQUIRE_FALSE(victim->statsExcluded());
+    scene.frames(2);
+
+    const std::vector<size_t> toolIds=primitiveIdsOf(tool);
+    const std::vector<size_t> victimIds=primitiveIdsOf(victim);
+
+    REQUIRE(!victimIds.empty());
+    REQUIRE(noneExcluded(scene.canvas, victimIds));
+
+    delete tool;
+    scene.frame();
+
+    const std::vector<size_t> &written=scene.renderer.writtenPrimitiveIds();
+
+    REQUIRE(countWritten(written, victimIds) == victimIds.size());
+    // its cleared slots are the app's, the tool's the tool's
+    CHECK(noneExcluded(scene.canvas, victimIds));
+    CHECK(allExcluded(scene.canvas, toolIds));
+    CHECK(tools::appFrameWrites(scene.canvas, &scene.renderer).primitiveSlots
+        == written.size()-countWritten(written, toolIds));
+}
+
+TEST_CASE("Excluded slots: a tool closed whole owns the slots the next flush clears")
+{
+    Scene scene;
+    controls::Base *tool=nullptr;
+    bool inspector=false;
+
+    SUBCASE("the Inspector")
+    {
+        tool=Inspector::open(scene.canvas);
+        inspector=true;
+    }
+    SUBCASE("the overlay")
+    {
+        tool=StatsOverlay::open(scene.canvas);
+    }
+    scene.frames(4);
+
+    const std::vector<size_t> toolIds=primitiveIdsOf(tool);
+
+    REQUIRE(!toolIds.empty());
+    REQUIRE(allExcluded(scene.canvas, toolIds));
+    if(inspector)
+        Inspector::close(scene.canvas);
+    else
+        StatsOverlay::close(scene.canvas);
+    // the close deletes it in the update phase, and the flush clears its slots
+    scene.frame();
+    REQUIRE(Inspector::find(scene.canvas) == nullptr);
+    REQUIRE(StatsOverlay::find(scene.canvas) == nullptr);
+    REQUIRE(countWritten(scene.renderer.writtenPrimitiveIds(), toolIds) == toolIds.size());
+    CHECK(allExcluded(scene.canvas, toolIds));
+
+    const tools::AppFrameWrites writes=tools::appFrameWrites(scene.canvas, &scene.renderer);
+
+    CHECK(writes.primitiveSlots == 0);
+    CHECK(writes.glyphSlots == 0);
+    // and no longer once a flush has not cleared them
+    scene.frame();
+    CHECK(noneExcluded(scene.canvas, toolIds));
 }
