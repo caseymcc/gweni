@@ -142,13 +142,33 @@ Point Menu::canvasPosition(const Rect &area)
     if(m_anchor)
     {
         m_placedFor=m_anchor->getCanvasBounds();
-        return Popup::placement(m_placedFor, size, area, m_anchorSide, m_anchorGap);
+        return Popup::placement(m_placedFor, size, area, anchorSide(), m_anchorGap, &m_leftward);
     }
 
     if(m_atCursor)
-        return placement(m_cursor, size, area);
+        return placement(m_cursor, size, area, &m_leftward);
 
+    m_leftward=false;
     return keepInside(at, size, area);
+}
+
+// A submenu opens on the side the menu holding its item went in this pass
+// (Win32's and GTK's rule), read from where that menu was placed: it was
+// arranged before this one, which comes after it among the canvas's children
+// (openNextTo brings it to the front), and is entered in every pass
+// (Canvas::enterFollowers), so a chain follows its first menu's side back.
+// The item sits in the holding menu's ScrollControl panel, not on the menu.
+PopupPlacement Menu::anchorSide() const
+{
+    if(m_anchorSide != PopupPlacement::Right)
+        return m_anchorSide;
+
+    for(Base *parent=m_anchor->getParent(); parent; parent=parent->getParent())
+    {
+        if(Menu *menu=dynamic_cast<Menu *>(parent))
+            return menu->isLeftward() ? PopupPlacement::Left : PopupPlacement::Right;
+    }
+    return m_anchorSide;
 }
 
 // The cursor is a zero-size anchor: below it, flipped to its left and above
@@ -322,6 +342,7 @@ void Menu::setHidden(bool hidden)
     {
         m_atCursor=false;
         m_anchor=nullptr;
+        m_leftward=false;
     }
 
     const bool changed=(hidden != this->hidden());

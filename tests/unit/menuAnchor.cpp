@@ -27,7 +27,17 @@
  *  no room, bottom-aligned at the bottom), and its leftward out-parameter says
  *  which side each placement took, before it was kept inside the area: a Right
  *  flipped, a Left kept, a Below right-aligned, a context menu flipped to the
- *  cursor's left (#573).
+ *  cursor's left (#573). A submenu opens on the side the menu holding its
+ *  item went in this pass: in a four-level chain whose second level flips at
+ *  the right edge, the third and fourth open on their items' left though the
+ *  right has room, and no two menus but a submenu and its parent overlap; a
+ *  canvas grown wide enough brings every level back to the right in that
+ *  frame, in one pass, and one narrowed again flips them back, with layout
+ *  verification on and off; a level whose left has no room goes right, and
+ *  its submenu with it. A context menu flipped to the cursor's left and a
+ *  strip menu right-aligned at the right edge open their submenus on the
+ *  left, and a canvas grown wide enough puts both back on the right in one
+ *  pass.
  *
  *  openMenu() anchors the menu to its item (Menu::openNextTo, self-placed on
  *  the canvas at the size the canvas gives a menu it places) until the menu
@@ -206,9 +216,156 @@ Point topLeft(controls::Base *control)
         CHECK((control)->getY() == at_.y); \
     } while(false)
 
+//! A strip of one item, its menu and a chain of submenus under it, one item
+//! a level (\p texts: level i's item, the last level's leaf), on a canvas whose
+//! width and a Left-docked spacer (pushing the strip right, so the chain has
+//! room on its left) are set by place().
+struct Chain
+{
+    test::StubRenderer renderer;
+    test::StubSkin skin{&renderer};
+    controls::Canvas *canvas=nullptr;
+    controls::Base *spacer=nullptr;
+    controls::MenuItem *top=nullptr;
+    //! items[i] is in menus[i] and opens menus[i+1]; menus[0] is top's.
+    std::vector<controls::MenuItem *> items;
+    std::vector<controls::Menu *> menus;
+    //! The menus' widths, measured by measure().
+    std::vector<int> widths;
+
+    explicit Chain(const std::vector<String> &texts)
+    {
+        canvas=new controls::Canvas(&skin);
+        canvas->setSize(4000, 400);
+        spacer=canvas->newChild<controls::Base>();
+        spacer->setDock(DockPosition::Left);
+        spacer->setSizeFlags({SizeFlag::Fixed, SizeFlag::Expand});
+        spacer->setWidth(10);
+
+        controls::Base *panel=canvas->newChild<controls::Base>();
+
+        panel->setDock(DockPosition::Center);
+
+        controls::MenuStrip *strip=panel->newChild<controls::MenuStrip>();
+
+        top=strip->addItem("Top");
+        menus.push_back(top->getMenu());
+
+        for(size_t i=0; i+1 < texts.size(); ++i)
+        {
+            items.push_back(menus.back()->addItem(texts[i]));
+            menus.push_back(items.back()->getMenu());
+        }
+        menus.back()->addItem(texts.back());
+    }
+
+    Chain(const Chain &)=delete;
+    Chain &operator=(const Chain &)=delete;
+
+    ~Chain()
+    {
+        delete canvas;
+    }
+
+    void frame()
+    {
+        canvas->updateCanvas();
+        canvas->renderCanvas();
+    }
+
+    void settle()
+    {
+        for(int i=0; i < 4; ++i)
+        {
+            frame();
+            CHECK(canvas->getLayoutStats().passes <= 1);
+
+            if(canvas->getLayoutStats().passes == 0)
+                return;
+        }
+        FAIL("layout did not settle in 4 frames");
+    }
+
+    //! Opens the whole chain, then every menu's width, on the wide canvas.
+    void open()
+    {
+        top->openMenu();
+
+        for(controls::MenuItem *item : items)
+            item->openMenu();
+        settle();
+
+        for(controls::Menu *menu : menus)
+        {
+            REQUIRE(menu->visible());
+            widths.push_back(menu->getWidth());
+        }
+    }
+
+    //! A canvas \p width wide with the strip \p left units in.
+    void place(int width, int left)
+    {
+        canvas->setSize(width, 400);
+        spacer->setWidth(left);
+    }
+
+    //! Where the strip's item starts.
+    int topX()
+    {
+        return canvasRect(top).x;
+    }
+
+    //! Where items[i] ends.
+    int itemRight(size_t i)
+    {
+        const Rect r=canvasRect(items[i]);
+        return r.x+r.w;
+    }
+};
+
+//! Level \p i (from 1) of \p chain sits on its item's left, top to top.
+bool onLeft(Chain &chain, size_t i)
+{
+    const Rect item=canvasRect(chain.items[i-1]);
+    controls::Menu *menu=chain.menus[i];
+
+    return (menu->getX()+menu->getWidth() == item.x) && (menu->getY() == item.y);
+}
+
+//! Level \p i (from 1) of \p chain sits on its item's right, top to top.
+bool onRight(Chain &chain, size_t i)
+{
+    const Rect item=canvasRect(chain.items[i-1]);
+    controls::Menu *menu=chain.menus[i];
+
+    return (menu->getX() == item.x+item.w) && (menu->getY() == item.y);
+}
+
+bool overlap(controls::Base *a, controls::Base *b)
+{
+    return (a->getX() < b->getX()+b->getWidth()) && (b->getX() < a->getX()+a->getWidth())
+        && (a->getY() < b->getY()+b->getHeight()) && (b->getY() < a->getY()+a->getHeight());
+}
+
+//! No two open menus of the chain overlap but a submenu and the menu holding
+//! its item, which it overlaps only past its item's edge (the menu's padding).
+void checkNoOverlap(Chain &chain)
+{
+    for(size_t i=0; i < chain.menus.size(); ++i)
+    {
+        for(size_t j=i+2; j < chain.menus.size(); ++j)
+        {
+            CAPTURE(i);
+            CAPTURE(j);
+            CHECK_FALSE(overlap(chain.menus[i], chain.menus[j]));
+        }
+    }
+}
+
 //! A settled frame with the menu open: no layout pass, no control entered,
 //! no slot written.
-void checkSettled(Scene &scene)
+template<class SceneT>
+void checkSettled(SceneT &scene)
 {
     scene.frame();
     CHECK(scene.canvas->getLayoutStats().passes == 0);
@@ -675,6 +832,248 @@ TEST_CASE("Menu anchor: three levels of submenus each follow their item")
         check();
         checkSettled(scene);
     }
+}
+
+TEST_CASE("Menu anchor: a submenu chain that flipped left goes on opening left")
+{
+    const bool verify=controls::layoutVerifyEnabled();
+    const size_t verifyFailures=controls::layoutVerifyFailures();
+
+    // with verification too: its full pass would put a lagging level right
+    // before the checks, so both
+    for(bool verifying : {false, true})
+    {
+        CAPTURE(verifying);
+        controls::setLayoutVerify(verifying);
+
+        // (a) the second level flips at the right edge; the third and fourth then
+        // open on their items' left, where on their own they fit on the right
+        Chain chain({"Recent files", "a much longer file name.txt", "Deeper", "Leaf item"});
+
+        chain.open();
+
+        const std::vector<int> &w=chain.widths;
+        // room on the left for levels 1..3 (each on its item's left, within a
+        // menu's padding of its parent's left edge)
+        const int left=w[1]+w[2]+w[3]+20;
+
+        // the second level runs past the right edge by one unit
+        chain.place(4000, left);
+        chain.settle();
+        chain.place(chain.itemRight(0)+w[1]-1, left);
+        chain.settle();
+
+        const int width=chain.canvas->getWidth();
+
+        REQUIRE(chain.menus[0]->getX() == chain.topX());
+        CHECK_FALSE(chain.menus[0]->isLeftward());
+        CHECK(onLeft(chain, 1));
+        CHECK(chain.menus[1]->isLeftward());
+
+        for(size_t i : {2, 3})
+        {
+            CAPTURE(i);
+            // on its own the right side would have room
+            const Rect item=canvasRect(chain.items[i-1]);
+
+            CHECK(item.x+item.w+w[i] <= width);
+            CHECK(onLeft(chain, i));
+            CHECK(chain.menus[i]->isLeftward());
+        }
+        checkNoOverlap(chain);
+        checkSettled(chain);
+
+        // (b) a canvas wide enough for the whole chain on the right: every level
+        // there in that frame, in one layout pass, and leftward no more
+        chain.place(width+w[1]+w[2]+w[3]+20, left);
+        chain.frame();
+        CHECK(chain.canvas->getLayoutStats().passes == 1);
+        CHECK_FALSE(chain.canvas->getLayoutStats().renderLayout);
+
+        for(size_t i : {1, 2, 3})
+        {
+            CAPTURE(i);
+            CHECK(onRight(chain, i));
+            CHECK_FALSE(chain.menus[i]->isLeftward());
+        }
+        checkNoOverlap(chain);
+        checkSettled(chain);
+
+        // narrow again: the chain flips back in that frame, in one pass
+        chain.place(width, left);
+        chain.frame();
+        CHECK(chain.canvas->getLayoutStats().passes == 1);
+
+        for(size_t i : {1, 2, 3})
+        {
+            CAPTURE(i);
+            CHECK(onLeft(chain, i));
+        }
+        checkNoOverlap(chain);
+        checkSettled(chain);
+    }
+
+    CHECK(controls::layoutVerifyFailures() == verifyFailures);
+    controls::setLayoutVerify(verify);
+}
+
+TEST_CASE("Menu anchor: a leftward submenu's submenu with no room on its left goes right")
+{
+    // (c) as above, but the third level's left leaves the fourth no room
+    Chain chain({"Recent files", "a much longer file name.txt", "Deeper", "Leaf item"});
+
+    chain.open();
+
+    const std::vector<int> &w=chain.widths;
+    const int left=w[1]+w[2]+w[3]/2;
+
+    chain.place(4000, left);
+    chain.settle();
+    chain.place(chain.itemRight(0)+w[1]-1, left);
+    chain.settle();
+
+    CHECK(onLeft(chain, 1));
+    CHECK(onLeft(chain, 2));
+    CHECK(chain.menus[2]->isLeftward());
+
+    const Rect item=canvasRect(chain.items[2]);
+
+    REQUIRE(item.x-w[3] < 0);
+    REQUIRE(item.x+item.w+w[3] <= chain.canvas->getWidth());
+    CHECK(onRight(chain, 3));
+    CHECK_FALSE(chain.menus[3]->isLeftward());
+    checkSettled(chain);
+}
+
+TEST_CASE("Menu anchor: a context menu flipped left of the cursor opens its submenus on the left")
+{
+    // (e) a wide context menu flipped at the right edge, its submenu narrower,
+    // so on its item's right it would fit
+    Scene scene;
+    const int width=800;
+
+    scene.canvas->setSize(width, 300);
+
+    controls::Base *box=scene.canvas->newChild<controls::Base>();
+
+    box->setSizeFlags({SizeFlag::Fixed, SizeFlag::Fixed});
+    box->setBounds(10, 100, 380, 100);
+
+    controls::Menu *context=box->createContextMenu();
+    controls::MenuItem *more=context->addItem("a much longer item name here");
+    controls::Menu *submenu=more->getMenu();
+
+    submenu->addItem("x");
+    scene.settle();
+
+    // measured at the canvas's left first
+    context->openAt(Point(10, 100));
+    scene.settle();
+    more->openMenu();
+    scene.settle();
+    REQUIRE(submenu->getX() == canvasRect(more).x+canvasRect(more).w);
+    CHECK_FALSE(context->isLeftward());
+
+    const int contextWidth=context->getWidth();
+    const int submenuWidth=submenu->getWidth();
+
+    REQUIRE(submenuWidth < contextWidth);
+
+    // a cursor where the menu flips to its left, the submenu fitting either side
+    const int cursorX=width-(contextWidth+submenuWidth)/2;
+
+    REQUIRE(cursorX+contextWidth > width);
+    REQUIRE(cursorX-contextWidth-submenuWidth >= 0);
+    // as a right press does, the open menus closed first
+    scene.canvas->closeMenus();
+    scene.settle();
+    context->openAt(Point(cursorX, 100));
+    scene.settle();
+    more->openMenu();
+    scene.settle();
+
+    REQUIRE(context->visible());
+    CHECK(context->getX()+contextWidth == cursorX);
+    CHECK(context->isLeftward());
+
+    const Rect item=canvasRect(more);
+
+    REQUIRE(submenu->visible());
+    CHECK(item.x+item.w+submenuWidth <= width);
+    CHECK(submenu->getX()+submenuWidth == item.x);
+    CHECK(submenu->getY() == item.y);
+    CHECK(submenu->isLeftward());
+    checkSettled(scene);
+
+    // a canvas wide enough for it at the cursor: placed in layout() (the
+    // canvas places it), it is placed before its submenu reads it, so both
+    // are on the right in that frame, in one layout pass, and back again
+    for(int canvasWidth : {cursorX+contextWidth+submenuWidth+10, width})
+    {
+        CAPTURE(canvasWidth);
+        scene.canvas->setSize(canvasWidth, 300);
+        scene.frame();
+        CHECK(scene.canvas->getLayoutStats().passes == 1);
+        CHECK_FALSE(scene.canvas->getLayoutStats().renderLayout);
+
+        const bool flipped=(canvasWidth == width);
+        const Rect moved=canvasRect(more);
+
+        CHECK(context->isLeftward() == flipped);
+        CHECK(context->getX() == (flipped ? cursorX-contextWidth : cursorX));
+        CHECK(submenu->getY() == moved.y);
+        CHECK(submenu->isLeftward() == flipped);
+
+        if(flipped)
+            CHECK(submenu->getX()+submenuWidth == moved.x);
+        else
+            CHECK(submenu->getX() == moved.x+moved.w);
+        checkSettled(scene);
+    }
+}
+
+TEST_CASE("Menu anchor: a strip menu right-aligned at the right edge opens its submenus on the left")
+{
+    // (f) the strip's menu wider than the room right of its item, so it is
+    // right-aligned with it; its submenu narrow enough for the item's right
+    Chain chain({"a much longer menu item name", "x"});
+
+    chain.open();
+
+    const std::vector<int> &w=chain.widths;
+    // room on the left for the menu right-aligned and its submenu
+    const int left=w[0]+w[1]+20;
+
+    chain.place(4000, left);
+    chain.settle();
+
+    const Rect top=canvasRect(chain.top);
+
+    // the menu runs past the right edge by a unit: right-aligned
+    chain.place(top.x+w[0]-1, left);
+    chain.settle();
+
+    controls::Menu *menu=chain.menus[0];
+
+    REQUIRE(menu->visible());
+    CHECK(menu->getX()+menu->getWidth() == top.x+top.w);
+    CHECK(menu->isLeftward());
+
+    const Rect item=canvasRect(chain.items[0]);
+
+    CHECK(item.x+item.w+w[1] <= chain.canvas->getWidth());
+    CHECK(onLeft(chain, 1));
+    CHECK(chain.menus[1]->isLeftward());
+    checkSettled(chain);
+
+    // wide enough for it left-aligned: its submenu on the right again
+    chain.place(top.x+w[0]+w[1]+10, left);
+    chain.frame();
+    CHECK(chain.canvas->getLayoutStats().passes == 1);
+    CHECK(menu->getX() == top.x);
+    CHECK_FALSE(menu->isLeftward());
+    CHECK(onRight(chain, 1));
+    checkSettled(chain);
 }
 
 TEST_CASE("Menu anchor: a menu numbered before its strip still ends at its item")

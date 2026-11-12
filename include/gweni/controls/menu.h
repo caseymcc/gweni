@@ -67,12 +67,22 @@ public:
     //! after it places it there instead, kept inside the canvas; hiding it or
     //! openAt() forgets the anchor. While it is open the canvas follows it
     //! (Canvas::anchoredMenus()): it is laid out again when the anchor moves,
-    //! and closed when the anchor is hidden or deleted.
+    //! and closed when the anchor is hidden or deleted. A Right one whose
+    //! anchor is in a menu that isLeftward() is placed as Left instead, so a
+    //! submenu chain that flipped left goes on opening left.
     virtual void openNextTo(Base *anchor, PopupPlacement side, int gap);
     //! What openNextTo() placed it next to, while it does; null otherwise.
     Base *getAnchor() const
     {
         return m_anchor;
+    }
+    //! Whether its placement on the canvas in the last layout pass went left
+    //! of where its side starts it (Popup::placement's leftward): next to its
+    //! anchor, on the anchor's left or right-aligned with it, or at the
+    //! cursor, on its left. False at a requested position or off the canvas.
+    bool isLeftward() const
+    {
+        return m_leftward;
     }
     virtual void close();
 
@@ -126,6 +136,9 @@ protected:
     //! at the cursor, or at its requested position, kept inside. A request
     //! made since openNextTo() or openAt() drops that mode.
     Point canvasPosition(const Rect &area);
+    //! The side canvasPosition() places it on next to m_anchor: m_anchorSide,
+    //! but Left for a Right one whose anchor is in a menu that isLeftward().
+    PopupPlacement anchorSide() const;
 
     virtual bool shouldHoverOpenMenu()
     {
@@ -150,6 +163,8 @@ protected:
     int m_anchorGap=0;
     Point m_anchorRequest;
     Rect m_placedFor;
+    //! isLeftward(), set by canvasPosition().
+    bool m_leftward=false;
     //! The canvas following it (Canvas::followAnchoredMenu), which has it in
     //! its anchoredMenus(); null for none.
     Canvas *m_followedBy=nullptr;
