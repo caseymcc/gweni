@@ -324,14 +324,15 @@ it holds a site staged by the script (its `.gweni-site` marker).
 
 The script then prints what each page sends, every file raw, gzip and brotli,
 with nothing taken to be cached (`tools/site/sizes.mjs`). It exits 1 if the
-gallery page's gzip total is over its `BUDGET_BYTES`, 8 MB. Measured with the depth view
-and its toggles (#546):
+gallery page's gzip total is over its `BUDGET_BYTES`, 8 MB. Measured with DejaVu
+Sans Mono in `resources/` (#604), which adds its 341 kB (0.20 MB gzip) to each
+page's `.data`:
 
 | page | raw | gzip | brotli |
 |---|---|---|---|
-| `controltest.html` (`ControlTest.wasm` 3043 kB, `.data` 715 kB, `.js` 148 kB) | 3.92 MB | 1.56 MB | 1.19 MB |
-| `demo.html` (`OpenGLCore.wasm` 2652 kB, `.data` 715 kB, `.js` 147 kB) | 3.52 MB | 1.45 MB | 1.10 MB |
-| `index.html` (with the 171 kB preview) | 0.18 MB | 0.17 MB | 0.16 MB |
+| `controltest.html` (`ControlTest.wasm` 3254 kB, `.data` 1056 kB, `.js` 149 kB) | 4.47 MB | 1.83 MB | 1.40 MB |
+| `demo.html` (`OpenGLCore.wasm` 2752 kB, `.data` 1056 kB, `.js` 149 kB) | 3.96 MB | 1.70 MB | 1.30 MB |
+| `index.html` (with the 169 kB preview) | 0.18 MB | 0.17 MB | 0.16 MB |
 
 The release web tree is `-Oz` for this: at CMake's `-O3`, `ControlTest.wasm` is
 3041 kB (1080 kB gzip), against `-Oz`'s 2566 kB (975 kB gzip), and a
