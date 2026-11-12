@@ -18,6 +18,8 @@
  *  (an insert, a removal or a new height above, the idle re-measure, an
  *  append) is the scroll the edit keeps; two scrollByRows before a layout
  *  move two items; refresh() measures every item again with the top kept;
+ *  so does a new text layout (the renderer's textLayoutSerial()), and a canvas
+ *  scale does not;
  *  and leaving variable mode keeps the item at the top, no more than a row
  *  into it, a scroll not laid out yet included. The pool is ceil(viewport/smallest
  *  measured height)+1, and 1 000 and 100 000 items take the same controls,
@@ -1207,6 +1209,48 @@ TEST_CASE("VirtualList variable: refresh measures every item again")
     for(int &height : s.heights)
         height=height%2?height+3:height;
     s.list->refresh();
+    s.frame();
+    CHECK(s.list->getMeasureGeneration() == generation+1);
+    // the rows on screen at their new heights (checkView), the top kept
+    checkView(s);
+    CHECK(s.ids[s.list->getAnchorItem()] == anchorId);
+    CHECK(s.list->rowForItem(s.list->getAnchorItem())->getY() == -5);
+
+    // and the rest by the idle re-measure
+    while(s.list->isRemeasuring())
+        s.frame();
+    for(size_t i=0; i < index.size(); ++i)
+        CHECK(index.height(i) == s.measured(i));
+    s.checkOnePass();
+}
+
+TEST_CASE("VirtualList variable: a new text layout measures every item again, a canvas scale does not")
+{
+    Scene s(1000);
+    const controls::HeightIndex &index=s.list->getHeightIndex();
+
+    s.list->setVerticalScrollOffset(static_cast<int>(index.offsetOf(300))+5);
+    s.list->setRemeasureBudget(1000);
+    s.frame();
+    s.frame();
+    REQUIRE(!s.list->isRemeasuring());
+
+    const uint32_t generation=s.list->getMeasureGeneration();
+    const size_t anchorId=s.ids[s.list->getAnchorItem()];
+
+    // a canvas scale leaves measureText()'s units, so the heights, as they are
+    s.canvas->setScale(2.0f);
+    s.frame();
+    s.canvas->setScale(1.0f);
+    s.frame();
+    CHECK(s.list->getMeasureGeneration() == generation);
+    CHECK(!s.list->isRemeasuring());
+
+    // the renderer lays text out otherwise (a runtime setTextAA): the wrap,
+    // so the measurer, gives other heights, with no itemChanged() or refresh()
+    for(int &height : s.heights)
+        height=height%2?height+3:height;
+    s.renderer.changeTextLayout();
     s.frame();
     CHECK(s.list->getMeasureGeneration() == generation+1);
     // the rows on screen at their new heights (checkView), the top kept

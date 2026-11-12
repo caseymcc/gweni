@@ -1933,7 +1933,10 @@ two programs and the draws. What follows describes both together:
   fits, `setAutoHideBars(false)`, given back on leaving it): otherwise a height measured
   in the pass could show or hide the bar, narrow the rows' width and call for a second
   pass. **A new width is one counter:** the measure generation goes up by one, so every
-  item is stale without a walk (`refresh()`, the items changed, is one too); the layout of the resize measures the items on screen
+  item is stale without a walk (`refresh()`, the items changed, is one too, and so is a new
+  text layout, the renderer's `textLayoutSerial()` moving as a runtime `setTextAA` moves it,
+  which `placeVariable` reads with the width, as `Text` keys its measures; a canvas scale
+  is none, since `measureText` gives the same units at every scale); the layout of the resize measures the items on screen
   at once and keeps the anchor, and the rest are measured by the **idle re-measure**,
   an animation registered only while some item is not measured at the generation (a
   new width, items added or never shown), up to `setRemeasureBudget` items a frame (64;

@@ -165,7 +165,8 @@ public:
     //! gave (-1 before one, or in fixed mode).
     int getMeasureWidth() const { return m_measureWidth; }
     //! The generation the items on screen are measured at; it goes up by one
-    //! with each new width.
+    //! with each new width and each new text layout (the renderer's
+    //! textLayoutSerial(), a runtime text AA switch), not with a canvas scale.
     uint32_t getMeasureGeneration() const { return m_generation; }
     //! Items measured a frame, in the update phase, while any is not measured
     //! at this generation (a new width, items added or never shown): from
@@ -304,6 +305,11 @@ private:
     //! (0: never measured) is measured again when it shows.
     uint32_t m_generation=1;
     int m_measureWidth=-1;
+    //! The renderer and its textLayoutSerial() the heights were measured
+    //! under: another one wraps the text otherwise (a runtime text AA
+    //! switch), so it is a new generation too, as a new width is.
+    const renderer::Base *m_measureRenderer=nullptr;
+    unsigned m_measureSerial=0;
     //! The smallest and the last height measured (0: none yet).
     int m_minHeight=0;
     int m_lastMeasured=0;

@@ -8,6 +8,8 @@
 #include <gweni/controls/virtualList.h>
 #include <gweni/controls/canvas.h>
 #include <gweni/anim.h>
+#include <gweni/skin.h>
+#include <gweni/platforms/baseRender.h>
 
 #include <algorithm>
 #include <climits>
@@ -781,16 +783,22 @@ void VirtualList::placeVariable(size_t &first, size_t &end)
     const int viewport=getViewportHeight();
     const int width=m_innerPanel->getWidth();
     const size_t count=m_heights.size();
+    const renderer::Base *renderer=getSkin()?getSkin()->getRenderer():nullptr;
+    const unsigned serial=renderer?renderer->textLayoutSerial():0;
 
     anchorAtOffset();
 
     // every item is measured again, by this layout if it shows, by the idle
-    // re-measure from the top down otherwise
-    if(width != m_measureWidth)
+    // re-measure from the top down otherwise: at a new width, or under a new
+    // text layout (the canvas lays the whole tree out again for it, and a
+    // Text wraps again; a canvas scale leaves the measures as they are)
+    if(width != m_measureWidth || renderer != m_measureRenderer || serial != m_measureSerial)
     {
         if(m_measureWidth >= 0)
             ++m_generation;
         m_measureWidth=width;
+        m_measureRenderer=renderer;
+        m_measureSerial=serial;
         m_remeasureCursor=m_anchorItem;
     }
 

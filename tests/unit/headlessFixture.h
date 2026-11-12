@@ -124,6 +124,10 @@ public:
 
     void setDrawColor(gweni::Color color) override { drawColor=color; }
 
+    //! Every text run laid out so far is stale, as a runtime text AA switch
+    //! makes it: raises textLayoutSerial().
+    void changeTextLayout() { textLayoutChanged(); }
+
     //! Recorded in `lines`, not drawn: a control test checks its segments there.
     void drawLine(size_t primitiveId, gweni::PointF p0, gweni::PointF p1, float thickness,
         int zIndex, const gweni::PointF *prev=nullptr, const gweni::PointF *next=nullptr) override
