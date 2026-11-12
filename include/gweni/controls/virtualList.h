@@ -7,9 +7,11 @@
 #ifndef _gweni_controls_virtuallist_h_
 #define _gweni_controls_virtuallist_h_
 
+#include <gweni/controls/heightIndex.h>
 #include <gweni/controls/scrollControl.h>
 #include <gweni/controls/selectable.h>
 
+#include <cstdint>
 #include <functional>
 #include <vector>
 
@@ -61,6 +63,24 @@ public:
 //! Rows are bound in the layout pass that places them (the Y arrange), so the
 //! binder must only set the row's content (its text, colours, children), not
 //! move, resize or delete it. It does not scroll sideways.
+//!
+//! Variable mode: a list given an item measurer (setItemMeasurer) gives each
+//! item its own height, the measurer's at the rows' width (wrapped text: see
+//! Base::wrappedTextHeight), kept in a HeightIndex with the generation of
+//! the width it was measured at. The content is the sum of the heights, and
+//! an item not measured yet counts at the estimator's height, or the last
+//! measured one, or the row height. The scroll position is an anchor: the
+//! item at the viewport's top and the offset into it. Each layout measures
+//! the items on screen from the anchor down (and up from the end when the end
+//! is in view), places them one below the other from it, and works the
+//! offset out from the anchor through the index; a bar, wheel or
+//! setVerticalScrollOffset() move since the last layout anchors at the new
+//! offset, and one to the end at the end (the last item's bottom at the
+//! viewport's, as measured). So an item above the anchor changing height moves the offset and
+//! the thumb, not the rows on screen. The pool is the viewport at the
+//! smallest height measured: ceil(viewport/minHeight)+1 rows. The vertical
+//! bar always shows (disabled while everything fits), so the width the items
+//! are measured at never depends on their heights and a layout is one pass.
 class GWENI_EXPORT VirtualList: public ScrollControl
 {
 public:
@@ -72,10 +92,18 @@ public:
     using RowFactory=std::function<Base *(Base *parent)>;
     //! Fills a row for the item at the given index.
     using RowBinder=std::function<void(Base *row, size_t index)>;
+    //! The height of the item at the given index for a row of the given
+    //! width, in units (at least 1 is used). The measurer must give the
+    //! height the bound row lays out at; the estimator what it is likely to
+    //! be, for an item not measured yet. Both are called during layout.
+    using ItemMeasurer=std::function<int(size_t index, int width)>;
+    using ItemEstimator=std::function<int(size_t index, int width)>;
 
     static constexpr size_t NoItem=static_cast<size_t>(-1);
 
-    //! The height of every row, in units (at least 1). Default 20.
+    //! The height of every row, in units (at least 1). Default 20. In
+    //! variable mode the height of an item added before any was measured,
+    //! with no estimator, and the wheel's and the bar's step.
     void setRowHeight(int height);
     int getRowHeight() const { return m_rowHeight; }
 
@@ -86,6 +114,27 @@ public:
     //! at INT_MAX: items past that cannot be scrolled to.
     void setItemCount(size_t count);
     size_t getItemCount() const { return m_itemCount; }
+
+    //! Variable mode with a measurer, fixed mode (every row getRowHeight())
+    //! with a null one. Turning it on counts every item at the default height
+    //! (the estimator's, else the row height) and measures the ones on screen
+    //! by the next layout; it keeps the vertical bar shown (setAutoHideBars,
+    //! given back by turning it off).
+    void setItemMeasurer(ItemMeasurer measurer);
+    bool isVariableHeight() const { return static_cast<bool>(m_measurer); }
+    //! The height an item added from now on counts at until it is measured
+    //! (items already there keep theirs). Null: the last measured height, or
+    //! the row height before any.
+    void setItemEstimator(ItemEstimator estimator);
+    //! In variable mode, the index of the items' heights (for tests and
+    //! tools); empty in fixed mode.
+    const HeightIndex &getHeightIndex() const { return m_heights; }
+    //! The width the items are measured at: the rows' width the last layout
+    //! gave (-1 before one, or in fixed mode).
+    int getMeasureWidth() const { return m_measureWidth; }
+    //! The generation the items on screen are measured at; it goes up by one
+    //! with each new width.
+    uint32_t getMeasureGeneration() const { return m_generation; }
 
     //! Replaces the factory (a null one gives back the default VirtualListRow);
     //! the pool is made again by the next layout.
@@ -105,12 +154,18 @@ public:
     //! until then getVerticalScrollOffset() is the old offset.
     void scrollToItem(size_t index);
     //! Scrolls by whole rows, down for a positive count; it drops a
-    //! scrollToItem() not yet laid out.
+    //! scrollToItem() not yet laid out. In variable mode it moves the anchor
+    //! by that many items.
     void scrollByRows(int rows);
 
     //! The item at the top of the viewport (partly scrolled out or not), as
     //! the scroll offset gives it; 0 for an empty list.
     size_t firstVisibleItem() const;
+    //! In variable mode, the anchor: the item at the viewport's top and how
+    //! many units of it are scrolled out above, as the last layout (or the
+    //! last edit) left them.
+    size_t getAnchorItem() const { return m_anchorItem; }
+    int getAnchorOffset() const { return m_anchorOffset; }
     //! The row showing the item, as the last layout bound it, or null when
     //! that item is not on screen.
     Base *rowForItem(size_t index) const;
@@ -142,6 +197,25 @@ private:
 
     void updateContentHeight();
     void clearPool();
+    //! Variable mode's part of contentsPlaced: resolves the scroll requests
+    //! into the anchor, measures the items on screen and gives the items in
+    //! view, [first, end), their tops in the viewport (m_viewTops). Sets the
+    //! content height, the bar and the offset from the anchor.
+    void placeVariable(size_t &first, size_t &end);
+    //! The height a new item at index counts at until measured.
+    int defaultHeight(size_t index);
+    //! Item index's height at m_measureWidth, measured if it was not at this
+    //! generation.
+    int measureItem(size_t index);
+    //! Anchors so that item's bottom is at the viewport's bottom, measuring
+    //! the items above it that show; at the top when they all fit.
+    void anchorAbove(size_t item, int viewport);
+    //! A scroll offset set since the last layout (the bar, the wheel,
+    //! setVerticalScrollOffset) becomes the anchor.
+    void anchorAtOffset();
+    //! Sets the scroll offset from the anchor, at the last layout's viewport
+    //! (after an edit outside layout).
+    void offsetFromAnchor();
     //! The row shows another item, or none: it gives up the mouse and the focus.
     void releaseRow(Base *control);
     void rowPressed(Base *row);
@@ -156,6 +230,29 @@ private:
     size_t m_pendingItem=NoItem;
     int m_rowHeight=20;
     int m_wheelRows=3;
+
+    // Variable mode
+    ItemMeasurer m_measurer;
+    ItemEstimator m_estimator;
+    HeightIndex m_heights;
+    //! The generation of m_measureWidth; an item stamped with an older one
+    //! (0: never measured) is measured again when it shows.
+    uint32_t m_generation=1;
+    int m_measureWidth=-1;
+    //! The smallest and the last height measured (0: none yet).
+    int m_minHeight=0;
+    int m_lastMeasured=0;
+    size_t m_anchorItem=0;
+    int m_anchorOffset=0;
+    //! The offset the anchor gave when m_scrollOffset[1] was last set from it:
+    //! any other offset was set by a scroll since.
+    int m_anchoredOffset=0;
+    //! The offset was scrolled to its end since the last layout: the next one
+    //! puts the last item's bottom at the viewport's bottom.
+    bool m_anchorToEnd=false;
+    //! The tops of the items in view in the viewport, from the first.
+    std::vector<int> m_viewTops;
+    bool m_autoHideBefore=true;
 };
 
 }//namespace controls

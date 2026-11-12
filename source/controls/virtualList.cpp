@@ -77,6 +77,31 @@ void VirtualList::setItemCount(size_t count)
     if(m_itemCount == count)
         return;
 
+    if(isVariableHeight())
+    {
+        // a scroll not laid out yet is anchored at the heights it was made at
+        anchorAtOffset();
+
+        if(count > m_itemCount)
+        {
+            if(m_estimator)
+            {
+                for(size_t i=m_itemCount; i < count; ++i)
+                    m_heights.append(1, defaultHeight(i), 0);
+            }
+            else
+                m_heights.append(count-m_itemCount, defaultHeight(m_itemCount), 0);
+        }
+        else
+            m_heights.erase(count, m_itemCount-count);
+
+        m_itemCount=count;
+        updateContentHeight();
+        offsetFromAnchor();
+        invalidate();
+        return;
+    }
+
     m_itemCount=count;
     // which keeps the offset inside the new content
     updateContentHeight();
@@ -85,9 +110,166 @@ void VirtualList::setItemCount(size_t count)
 
 void VirtualList::updateContentHeight()
 {
+    if(isVariableHeight())
+    {
+        setVirtualContentHeight(static_cast<int>(std::min<int64_t>(m_heights.totalHeight(), INT_MAX)));
+        return;
+    }
+
     const uint64_t height=static_cast<uint64_t>(m_itemCount)*static_cast<uint64_t>(m_rowHeight);
 
     setVirtualContentHeight(static_cast<int>(std::min<uint64_t>(height, INT_MAX)));
+}
+
+// Every item counts at the default height until it shows; the anchor is the
+// item the fixed offset showed at the top, so the view stays where it was as
+// far as the heights allow.
+void VirtualList::setItemMeasurer(ItemMeasurer measurer)
+{
+    const bool wasVariable=isVariableHeight();
+    const size_t top=firstVisibleItem();
+    const int into=wasVariable?m_anchorOffset:getVerticalScrollOffset()%m_rowHeight;
+
+    m_measurer=std::move(measurer);
+
+    if(isVariableHeight())
+    {
+        if(!wasVariable)
+        {
+            m_autoHideBefore=m_autoHideBars;
+            setAutoHideBars(false);
+        }
+
+        m_heights.clear();
+        m_generation=1;
+        m_measureWidth=-1;
+        m_minHeight=0;
+        m_lastMeasured=0;
+        if(m_estimator)
+        {
+            for(size_t i=0; i < m_itemCount; ++i)
+                m_heights.append(1, defaultHeight(i), 0);
+        }
+        else
+            m_heights.append(m_itemCount, defaultHeight(0), 0);
+
+        m_anchorItem=top;
+        m_anchorOffset=into;
+        updateContentHeight();
+        offsetFromAnchor();
+    }
+    else if(wasVariable)
+    {
+        setAutoHideBars(m_autoHideBefore);
+        m_heights.clear();
+        m_measureWidth=-1;
+        m_viewTops.clear();
+        updateContentHeight();
+        setVerticalScrollOffset(static_cast<int>(std::min<uint64_t>(
+            static_cast<uint64_t>(top)*m_rowHeight+into, INT_MAX)));
+    }
+
+    refresh();
+}
+
+void VirtualList::setItemEstimator(ItemEstimator estimator)
+{
+    m_estimator=std::move(estimator);
+}
+
+int VirtualList::defaultHeight(size_t index)
+{
+    if(m_estimator)
+    {
+        const int width=m_measureWidth >= 0?m_measureWidth:m_innerPanel->getWidth();
+
+        return std::max(1, m_estimator(index, width));
+    }
+
+    return m_lastMeasured > 0?m_lastMeasured:m_rowHeight;
+}
+
+int VirtualList::measureItem(size_t index)
+{
+    if(m_heights.generation(index) == m_generation)
+        return m_heights.height(index);
+
+    const int height=std::max(1, m_measurer(index, m_measureWidth));
+
+    m_heights.set(index, height, m_generation);
+    m_lastMeasured=height;
+    m_minHeight=(m_minHeight > 0)?std::min(m_minHeight, height):height;
+    return height;
+}
+
+void VirtualList::anchorAbove(size_t item, int viewport)
+{
+    int64_t need=static_cast<int64_t>(viewport)-measureItem(item);
+    size_t top=item;
+
+    while(need > 0 && top > 0)
+    {
+        --top;
+        need-=measureItem(top);
+    }
+
+    if(need > 0)
+    {
+        // everything down to the item fits: from the top
+        m_anchorItem=0;
+        m_anchorOffset=0;
+        return;
+    }
+
+    m_anchorItem=top;
+    m_anchorOffset=static_cast<int>(-need);
+}
+
+void VirtualList::anchorAtOffset()
+{
+    const int offset=getVerticalScrollOffset();
+
+    if(offset == m_anchoredOffset)
+        return;
+
+    m_anchoredOffset=offset;
+    // scrolled to the bottom: the end, whatever the heights measured next
+    m_anchorToEnd=offset > 0 && offset == getMaxVerticalScrollOffset();
+
+    if(m_heights.empty())
+    {
+        m_anchorItem=0;
+        m_anchorOffset=0;
+        return;
+    }
+
+    int64_t top=0;
+    size_t item=m_heights.itemAt(offset, &top);
+
+    if(item >= m_heights.size())
+    {
+        item=m_heights.size()-1;
+        top=m_heights.offsetOf(item);
+    }
+
+    m_anchorItem=item;
+    m_anchorOffset=static_cast<int>(std::max<int64_t>(0, offset-top));
+}
+
+void VirtualList::offsetFromAnchor()
+{
+    const size_t item=std::min(m_anchorItem, m_heights.size());
+    const int64_t position=m_heights.offsetOf(item)+(item < m_heights.size()?m_anchorOffset:0);
+    const int offset=static_cast<int>(gweni::clamp<int64_t>(position, 0, getMaxVerticalScrollOffset()));
+
+    m_anchoredOffset=offset;
+
+    if(offset == m_scrollOffset[1])
+        return;
+
+    m_scrollOffset[1]=offset;
+    showScrollOffset(Dim::Y);
+    invalidate();
 }
 
 void VirtualList::setRowFactory(RowFactory factory)
@@ -148,6 +330,22 @@ void VirtualList::scrollByRows(int rows)
 {
     m_pendingItem=NoItem;
 
+    if(isVariableHeight())
+    {
+        anchorAtOffset();
+        m_anchorToEnd=false;
+        if(m_heights.empty())
+            return;
+
+        const int64_t item=static_cast<int64_t>(m_anchorItem)+rows;
+
+        m_anchorItem=static_cast<size_t>(gweni::clamp<int64_t>(item, 0,
+            static_cast<int64_t>(m_heights.size())-1));
+        offsetFromAnchor();
+        invalidate();
+        return;
+    }
+
     const int64_t offset=static_cast<int64_t>(getVerticalScrollOffset())
         +static_cast<int64_t>(rows)*m_rowHeight;
 
@@ -174,6 +372,9 @@ size_t VirtualList::firstVisibleItem() const
 {
     if(m_itemCount == 0)
         return 0;
+
+    if(isVariableHeight())
+        return std::min(m_heights.itemAt(getVerticalScrollOffset()), m_itemCount-1);
 
     return std::min(static_cast<size_t>(getVerticalScrollOffset()/m_rowHeight), m_itemCount-1);
 }
@@ -232,7 +433,117 @@ size_t VirtualList::poolSizeFor(int viewport) const
     if(viewport <= 0)
         return 1;
 
-    return static_cast<size_t>((viewport+m_rowHeight-1)/m_rowHeight)+1;
+    const int height=(isVariableHeight() && m_minHeight > 0)?m_minHeight:m_rowHeight;
+
+    return static_cast<size_t>((viewport+height-1)/height)+1;
+}
+
+// The rows' width is final here: a new one is a new generation, so every item
+// is measured again as it shows. The scroll requests since the last layout
+// become the anchor (a scrollToItem, else an offset the bar, the wheel or the
+// app set), and the items on screen are measured from the anchor down until
+// they fill the viewport. If the end comes first, the last item's bottom goes
+// to the viewport's bottom, measuring upwards. Only then are the content
+// height, the bar and the offset worked out, from the anchor: every item in
+// view has been measured, so the rows sit one below the other from it, and an
+// item above it changing height moves the offset, not them. Items with no
+// measure at this width keep their old or estimated height in the sum.
+void VirtualList::placeVariable(size_t &first, size_t &end)
+{
+    const int viewport=getViewportHeight();
+    const int width=m_innerPanel->getWidth();
+    const size_t count=m_heights.size();
+
+    if(width != m_measureWidth)
+    {
+        if(m_measureWidth >= 0)
+            ++m_generation;
+        m_measureWidth=width;
+    }
+
+    anchorAtOffset();
+
+    if(count == 0)
+    {
+        m_anchorItem=0;
+        m_anchorOffset=0;
+        m_pendingItem=NoItem;
+    }
+    else
+    {
+        if(m_anchorItem >= count)
+        {
+            m_anchorItem=count-1;
+            m_anchorOffset=0;
+        }
+
+        if(m_pendingItem != NoItem)
+        {
+            const size_t item=std::min(m_pendingItem, count-1);
+
+            m_pendingItem=NoItem;
+            m_anchorToEnd=false;
+            measureItem(m_anchorItem);
+
+            const int64_t position=m_heights.offsetOf(m_anchorItem)+m_anchorOffset;
+            const int height=measureItem(item);
+            const int64_t top=m_heights.offsetOf(item);
+
+            if(top < position)
+            {
+                m_anchorItem=item;
+                m_anchorOffset=0;
+            }
+            else if(top+height > position+viewport)
+                anchorAbove(item, viewport);
+        }
+
+        const int height=measureItem(m_anchorItem);
+
+        m_anchorOffset=gweni::clamp(m_anchorOffset, 0, height-1);
+
+        int64_t covered=height-m_anchorOffset;
+
+        if(!m_anchorToEnd)
+        {
+            for(size_t item=m_anchorItem+1; covered < viewport && item < count; ++item)
+                covered+=measureItem(item);
+        }
+
+        if(m_anchorToEnd || covered < viewport)
+            anchorAbove(count-1, viewport);
+    }
+    m_anchorToEnd=false;
+
+    const int content=static_cast<int>(std::min<int64_t>(m_heights.totalHeight(), INT_MAX));
+    const bool required=content > viewport;
+    const int maxOffset=required?content-viewport:0;
+
+    m_virtualHeight=content;
+    m_verticalScrollBar->setContentSize(content);
+    setVerticalScrollRequired(required);
+    m_scrollRange[1]=maxOffset;
+
+    const int64_t position=count > 0?m_heights.offsetOf(m_anchorItem)+m_anchorOffset:0;
+    const int offset=static_cast<int>(gweni::clamp<int64_t>(position, 0, maxOffset));
+
+    m_scrollOffset[1]=offset;
+    m_anchoredOffset=offset;
+    showScrollOffset(Dim::Y);
+
+    // the items in view and their tops
+    first=m_anchorItem;
+    m_viewTops.clear();
+
+    int64_t y=(count > 0?m_heights.offsetOf(first):0)-offset;
+    size_t item=first;
+
+    for(; item < count && y < viewport; ++item)
+    {
+        m_viewTops.push_back(static_cast<int>(y));
+        y+=m_heights.height(item);
+    }
+    end=item;
 }
 
 // The offset that puts the item fully in view, scrolling as little as it can:
@@ -302,24 +613,43 @@ void VirtualList::releaseRow(Base *control)
 void VirtualList::contentsPlaced(skin::Base *skin)
 {
     const int viewport=getViewportHeight();
-    const size_t poolSize=poolSizeFor(viewport);
+    const bool variable=isVariableHeight();
+    size_t poolSize=0;
+    size_t first=0;
+    size_t end=0;
     bool moved=false;
 
-    if(m_pendingItem != NoItem)
+    if(variable)
     {
-        const size_t item=std::min(m_pendingItem, m_itemCount > 0?m_itemCount-1:0);
-        const int64_t offset=offsetShowing(item, m_rowHeight, m_scrollOffset[1], viewport);
+        placeVariable(first, end);
+        poolSize=poolSizeFor(viewport);
+        // every item in view is at least the smallest height high: this
+        // only guards the pool
+        end=std::min(end, first+poolSize);
+    }
+    else
+    {
+        poolSize=poolSizeFor(viewport);
 
-        m_pendingItem=NoItem;
-        m_scrollOffset[1]=static_cast<int>(gweni::clamp<int64_t>(offset, 0, getMaxVerticalScrollOffset()));
-        showScrollOffset(Dim::Y);
+        if(m_pendingItem != NoItem)
+        {
+            const size_t item=std::min(m_pendingItem, m_itemCount > 0?m_itemCount-1:0);
+            const int64_t offset=offsetShowing(item, m_rowHeight, m_scrollOffset[1], viewport);
+
+            m_pendingItem=NoItem;
+            m_scrollOffset[1]=static_cast<int>(gweni::clamp<int64_t>(offset, 0, getMaxVerticalScrollOffset()));
+            showScrollOffset(Dim::Y);
+        }
+
+        const int offset=getVerticalScrollOffset();
+
+        first=static_cast<size_t>(offset/m_rowHeight);
+        // the items the viewport shows any of: the pool's size at most
+        end=std::min(m_itemCount, std::min(first+poolSize,
+            static_cast<size_t>((static_cast<int64_t>(offset)+viewport+m_rowHeight-1)/m_rowHeight)));
     }
 
     const int offset=getVerticalScrollOffset();
-    const size_t first=static_cast<size_t>(offset/m_rowHeight);
-    // the items the viewport shows any of: the pool's size at most
-    const size_t end=std::min(m_itemCount, std::min(first+poolSize,
-        static_cast<size_t>((static_cast<int64_t>(offset)+viewport+m_rowHeight-1)/m_rowHeight)));
     const size_t inView=end > first?end-first:0;
     std::vector<bool> held(inView, false);
     std::vector<bool> keeps(m_rows.size(), false);
@@ -442,9 +772,11 @@ void VirtualList::contentsPlaced(skin::Base *skin)
         if(bind || wasHidden)
             control->doCalculateSize(skin, Dim::X);
 
-        const int64_t y=static_cast<int64_t>(row.item)*m_rowHeight-offset;
+        const int64_t y=variable?m_viewTops[row.item-first]
+            :static_cast<int64_t>(row.item)*m_rowHeight-offset;
+        const int height=variable?m_heights.height(row.item):m_rowHeight;
 
-        if(placeChild(control, 0, static_cast<int>(y), width, m_rowHeight) || wasHidden)
+        if(placeChild(control, 0, static_cast<int>(y), width, height) || wasHidden)
             moved=true;
     }
 
