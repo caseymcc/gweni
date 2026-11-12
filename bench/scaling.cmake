@@ -103,6 +103,12 @@ endif()
 #       some-scene:visited     # issue #NN: <what grows>
 #   )
 set(EXCLUDED
+    # issue #659: an append grows the log's HeightIndex, whose leaf splits (a
+    # few operator news every ~128 appends) land on frames set by N mod 128,
+    # not by N's size: the per-frame counts differ on 3 or 4 frames in 20
+    log-append:allocs_input
+    log-append-detached:allocs_input
+    log-append-capped:allocs_input
 )
 
 # Counters checked in the named scenes only, "<scene>:<counter>", each failing on

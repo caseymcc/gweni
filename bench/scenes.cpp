@@ -15,6 +15,7 @@
 #include <gweni/controls/codeEditor.h>
 #include <gweni/controls/label.h>
 #include <gweni/controls/listBox.h>
+#include <gweni/controls/logView.h>
 #include <gweni/controls/nodeGraph.h>
 #include <gweni/controls/progressBar.h>
 #include <gweni/controls/scrollControl.h>
@@ -1234,6 +1235,95 @@ public:
     }
 };
 
+//-----------------------------------------------------------------------------
+// log-append, log-append-detached and log-append-capped: a LogView 600x300,
+// pre-filled with N rows, taking 17 a measured frame
+// (1000 rows a second on the stepped 60 Hz clock). A row's text is a function
+// of its distance from the log's end when filled (and of its sequence number
+// once appended), never of N, so the rows on screen are the same strings at
+// any N: wrapped text of one to four lines, a coloured call or result line,
+// and every ninth a collapsed block. The idle re-measure is off, so a frame
+// measures only the rows that come into view.
+//
+// log-append follows the log: every append frame moves every row on screen.
+// log-append-detached is scrolled 300 rows up from the end: the appends
+// write no row, only the thumb and the jump button's count. log-append-capped
+// follows at a cap of 2000, so each appended row drops one: below N=2000 the
+// log is filled up to the cap first.
+//-----------------------------------------------------------------------------
+controls::LogRow logBenchRow(int k)
+{
+    static const char *const words[]={"the", "agent", "reads", "a", "file", "and", "runs", "its", "tests",
+        "then", "changes", "one", "line", "of", "the", "layout", "so", "every", "row", "wraps"};
+    const int kind=((k%9)+9)%9;
+    const unsigned h=unsigned(k)*2654435761u;
+
+    if(kind == 4)
+    {
+        std::vector<String> lines;
+
+        for(int i=0; i < 6+int(h>>28); ++i)
+            lines.push_back(format("  %d  output line of the tool", i+1));
+        return controls::LogRow::block(format("Bash: ctest -L gpu #%d", k%64), std::move(lines));
+    }
+    if(kind == 2)
+        return controls::LogRow(format("-> Read logView.cpp (%d)", k%64), Color(0x7a, 0xa2, 0xf7));
+    if(kind == 7)
+        return controls::LogRow(format("<- ok, %d lines", k%64), Color(0x9e, 0xce, 0x6a));
+
+    std::string text=format("assistant %d:", k%64);
+    const int count=2+int((h>>8)%((kind == 1)?40u:10u));
+
+    for(int i=0; i < count; ++i)
+        text+=std::string(" ")+words[(unsigned(k)*7+unsigned(i)*3)%20];
+    return controls::LogRow(text);
+}
+
+class LogAppendScene: public Scene
+{
+public:
+    enum class Mode { Following, Detached, Capped };
+
+    explicit LogAppendScene(Mode mode): m_mode(mode) {}
+
+    static constexpr int RowsPerFrame=17;
+    static constexpr int CappedRows=2000;
+    //! Low enough that the bar's thumb is at its least length (half the bar's
+    //! thickness) at N=1000 already, so a following log's thumb is the same
+    //! at any N and moves on no frame (its rounding would land on frames set
+    //! by N otherwise).
+    static constexpr int Height=300;
+
+    void build(SceneContext &ctx) override
+    {
+        m_log=ctx.canvas->newChild<controls::LogView>();
+        place(m_log, 10, 10, 600, Height);
+        m_log->setRemeasureBudget(0);
+        // a cap of 2000 on a log at least that long, so every append drops
+        // one (the first one the rows past it) at any N
+        const int rows=(m_mode == Mode::Capped)?std::max(ctx.n, CappedRows):ctx.n;
+
+        // row i is (rows-1-i) from the end: the same strings at the end at any N
+        for(int i=0; i < rows; ++i)
+            m_log->append(logBenchRow(-1-(rows-1-i)));
+        if(m_mode == Mode::Capped)
+            m_log->setMaxRows(CappedRows);
+        if(m_mode == Mode::Detached && ctx.n > 0)
+            m_log->scrollToRow(m_log->rowIdAt(size_t(std::max(0, ctx.n-300))));
+    }
+
+    void step(SceneContext &/*ctx*/, int /*frame*/) override
+    {
+        for(int i=0; i < RowsPerFrame; ++i)
+            m_log->append(logBenchRow(m_appended++));
+    }
+
+private:
+    Mode m_mode;
+    controls::LogView *m_log=nullptr;
+    int m_appended=0;
+};
+
 const std::vector<SceneInfo> &scenes()
 {
     static const std::vector<SceneInfo> list=
@@ -1295,6 +1385,15 @@ const std::vector<SceneInfo> &scenes()
         {"code-scroll", "scroll a CodeEditor of N YAML lines with line numbers one line per frame",
             true, 1000, 3, 20, Scaling::Local,
             []{ return std::unique_ptr<Scene>(new CodeScrollScene()); }},
+        {"log-append", "append 17 rows a frame to a following LogView of N wrapped rows",
+            true, 1000, 3, 20, Scaling::Local,
+            []{ return std::unique_ptr<Scene>(new LogAppendScene(LogAppendScene::Mode::Following)); }},
+        {"log-append-detached", "append 17 rows a frame to a LogView of N wrapped rows scrolled 300 rows up",
+            true, 1000, 3, 20, Scaling::Local,
+            []{ return std::unique_ptr<Scene>(new LogAppendScene(LogAppendScene::Mode::Detached)); }},
+        {"log-append-capped", "append 17 rows a frame to a following LogView of N rows capped at 2000",
+            true, 1000, 3, 20, Scaling::Local,
+            []{ return std::unique_ptr<Scene>(new LogAppendScene(LogAppendScene::Mode::Capped)); }},
         {"graph-drag", "drag the first of N linked nodes in a NodeGraph by its title bar",
             true, 300, 3, 20, Scaling::Local,
             []{ return std::unique_ptr<Scene>(new GraphDragScene()); }},

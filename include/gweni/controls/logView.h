@@ -351,7 +351,8 @@ public:
     size_t getRowsSinceDetached() const { return m_sinceDetached; }
     //! The jump button, made the first time the view detaches; null before.
     internal::LogViewJumpButton *getJumpButton() const { return m_jump; }
-    //! The label the jump button shows for a count of new rows.
+    //! The label the jump button shows for a count of new rows: set by the
+    //! layout after the appends, once however many there were.
     static String jumpText(size_t newRows);
     //! Scrolls the row into view (VirtualList::scrollToItem): the last row
     //! follows the log, any other detaches it. False for a row the view
@@ -440,6 +441,8 @@ private:
     std::vector<std::pair<LogRow::Kind, RowKind>> m_kinds;
     bool m_following=true;
     size_t m_sinceDetached=0;
+    //! Rows were appended since the jump button last showed the count.
+    bool m_jumpCountStale=false;
     internal::LogViewJumpButton *m_jump=nullptr;
     std::vector<SelectionRange> m_selection;
     //! A press on a row started a drag: the mouse is this view's.

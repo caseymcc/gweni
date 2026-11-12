@@ -174,10 +174,11 @@ LogView::RowId LogView::append(const LogRow &row)
     m_rows.push_back(Entry{id, row});
     insertItems(m_rows.size()-1, 1);
 
+    // the count is relabelled once a frame, by the layout the append asked for
     if(!m_following)
     {
         ++m_sinceDetached;
-        updateJumpButton();
+        m_jumpCountStale=true;
     }
     return id;
 }
@@ -1023,6 +1024,7 @@ void LogView::updateJumpButton()
     m_jump->setHidden(m_following);
     if(!m_following)
         m_jump->setText(jumpText(m_sinceDetached));
+    m_jumpCountStale=false;
 }
 
 bool LogView::scrollToRow(RowId id)
@@ -1169,6 +1171,11 @@ void LogView::contentsPlaced(skin::Base *skin)
     if(!m_jump || m_jump->hidden())
         return;
 
+    if(m_jumpCountStale)
+    {
+        m_jump->setText(jumpText(m_sinceDetached));
+        m_jumpCountStale=false;
+    }
     m_jump->doCalculateSize(skin, Dim::X);
 
     const Rect &viewport=getViewport();
