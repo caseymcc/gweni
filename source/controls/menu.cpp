@@ -165,7 +165,7 @@ PopupPlacement Menu::anchorSide() const
 
     for(Base *parent=m_anchor->getParent(); parent; parent=parent->getParent())
     {
-        if(Menu *menu=dynamic_cast<Menu *>(parent))
+        if(Menu *menu=gweni_cast<Menu>(parent))
             return menu->isLeftward() ? PopupPlacement::Left : PopupPlacement::Right;
     }
     return m_anchorSide;
