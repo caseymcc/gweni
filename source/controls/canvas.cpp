@@ -52,6 +52,9 @@ Canvas::Canvas(skin::Base *skin): ParentClass()
 
 Canvas::~Canvas()
 {
+    // a worker's post() through postHandle() is dropped from here on, and what
+    // is queued is destroyed before the tree it may point into
+    m_postQueue->close();
     if(InputCapture *capture=m_inputCapture)
     {
         m_inputCapture=nullptr;
@@ -77,6 +80,10 @@ void Canvas::updateCanvas()
     m_updateStats=UpdateStats();
     m_frameTimes=FrameTimes();
     m_frameTimes.startMicros=start;
+
+    // What other threads (or this one) posted since the last update, after the
+    // input the loop delivered; a post made while these run waits for the next.
+    m_postQueue->run();
 
     // The renderer's text draws or measures otherwise now (a new text AA mode):
     // every control is laid out and re-emitted again, as for a new scale.

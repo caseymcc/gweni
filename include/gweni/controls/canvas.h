@@ -11,7 +11,10 @@
 #include <gweni/controls/base.h>
 #include <gweni/inputHandler.h>
 #include <gweni/platforms/inputEvent.h>
+#include <gweni/postQueue.h>
 #include <cstdint>
+#include <functional>
+#include <memory>
 #include <set>
 #include <vector>
 
@@ -236,9 +239,26 @@ public:
     /// is usually once a frame..
     virtual void doThink();
 
-    /// The update phase: doThink() (delayed deletes, animations, layout, input
-    /// state), then the z renumber if the tree order changed.
+    /// The update phase: the posted functions (post()), then doThink()
+    /// (delayed deletes, animations, layout, input state), then the z
+    /// renumber if the tree order changed.
     virtual void updateCanvas();
+
+    /// Hands \p function to the UI thread, from any thread: it runs at the top
+    /// of the next updateCanvas(), before doThink(), so after the input the
+    /// loop has just delivered, in the order posted (gweni::PostQueue: FIFO per
+    /// thread, across threads the order they took its lock). One posted while
+    /// the posts run waits for the next update. The only thread-safe call on a
+    /// canvas: what the function does runs on the UI thread. Returns false,
+    /// dropping it, once the canvas is being deleted.
+    bool post(std::function<void()> function) { return m_postQueue->post(std::move(function)); }
+    /// The canvas's queue, for a worker that may outlive the canvas: ~Canvas
+    /// closes it, after which a post() through it is dropped and returns false.
+    std::shared_ptr<PostQueue> postHandle() const { return m_postQueue; }
+    /// Called, possibly from another thread, when a post() finds the queue
+    /// empty, so an idle loop wakes for it (glfwPostEmptyEvent(), or a flag a
+    /// web loop reads). The core never wakes anything itself.
+    void setWakeHandler(std::function<void()> handler) { m_postQueue->setWakeHandler(std::move(handler)); }
 
     /// You should call this to render your canvas.
     virtual void renderCanvas();
@@ -604,6 +624,8 @@ protected:
 
     bool m_needsRedraw;
     float m_scale;
+    /// post()'s queue, shared with postHandle()'s holders, closed by ~Canvas
+    std::shared_ptr<PostQueue> m_postQueue=std::make_shared<PostQueue>();
     /// The renderer's textLayoutSerial() the tree was last laid out for
     unsigned m_textLayoutSerial=0;
 

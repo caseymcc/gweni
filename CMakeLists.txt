@@ -130,6 +130,8 @@ set(GWENI_SOURCES
     source/inputHandler.cpp
     include/gweni/utils/json.h
     include/gweni/objectIdBank.h
+    include/gweni/postQueue.h
+    source/postQueue.cpp
     include/gweni/primitiveIds.h
     source/primitiveIds.cpp
     include/gweni/skin.h
