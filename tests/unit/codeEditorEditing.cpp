@@ -27,7 +27,11 @@
  *  row of the line it split and the row the new line came into view on, and
  *  no other.
  *
- *  Also text::byteAtCell, byteNearestCell, nextCaretStop and prevCaretStop.
+ *  Also text::byteAtCell, byteNearestCell, nextCaretStop and prevCaretStop,
+ *  and malformed UTF-8: a stray continuation byte and the lead of a cut
+ *  sequence are each one stop (U+FFFD, utf8CodepointAt's rule), so a walk
+ *  forward and a walk back meet the same stops, Left and Right cross every
+ *  such byte and a stop is not snapped.
  */
 #include "headlessFixture.h"
 
@@ -42,6 +46,7 @@
 
 #include <map>
 #include <string>
+#include <vector>
 
 using namespace gweni;
 
@@ -194,6 +199,90 @@ TEST_CASE("Text cells: byteAtCell and byteNearestCell land on caret stops, befor
     CHECK(text::prevCaretStop(line, 4) == 1);
     CHECK(text::prevCaretStop(line, 0) == 0);
     CHECK(text::nextCaretStop(line, line.size()) == line.size());
+}
+
+TEST_CASE("Text cells: a stray continuation byte and a cut sequence's lead are one stop each, both ways")
+{
+    // 25\xb0C: Latin-1 degrees; a\xe4\xb8x: 3-byte lead cut after 2 bytes;
+    // \x80\x80: two strays; then 日 and a 4-byte codepoint, whole, after strays
+    const String lines[]={
+        "25\xb0" "C",
+        "a\xe4\xb8x",
+        "\x80\x80",
+        "\xbf"+wideJa+"\x9f"+grin+"\xe6",
+        "\xf0\x9f\x98" "z",
+    };
+
+    for(const String &line : lines)
+    {
+        CAPTURE(line);
+
+        // the stops forward, one codepoint (utf8CodepointAt's) at a time
+        std::vector<size_t> stops{0};
+        for(size_t i=0; i < line.size();)
+        {
+            size_t next=i;
+            text::utf8CodepointAt(line, i, &next);
+            stops.push_back(i=next);
+        }
+
+        for(size_t k=0; k+1 < stops.size(); ++k)
+        {
+            CHECK(text::nextCaretStop(line, stops[k]) == stops[k+1]);
+            CHECK(text::prevCaretStop(line, stops[k+1]) == stops[k]);
+        }
+    }
+
+    // every malformed byte is a stop of its own
+    CHECK(text::nextCaretStop(lines[0], 2) == 3);
+    CHECK(text::prevCaretStop(lines[0], 3) == 2);
+    CHECK(text::nextCaretStop(lines[1], 1) == 2);
+    CHECK(text::nextCaretStop(lines[1], 2) == 3);
+    CHECK(text::prevCaretStop(lines[1], 3) == 2);
+    CHECK(text::prevCaretStop(lines[1], 2) == 1);
+
+    // caretStopAt: a stop is itself; inside a whole codepoint, or before a
+    // mark, the stop before it
+    for(const String &line : lines)
+    {
+        for(size_t i=0; i <= line.size(); i=text::nextCaretStop(line, i))
+        {
+            CHECK(text::caretStopAt(line, i) == i);
+            if(i == line.size())
+                break;
+        }
+    }
+    const String valid="a"+wideJa+"e"+combAcute+grin;   // stops 0 1 4 7 11
+
+    CHECK(text::caretStopAt(valid, 2) == 1);
+    CHECK(text::caretStopAt(valid, 3) == 1);
+    CHECK(text::caretStopAt(valid, 5) == 4);
+    CHECK(text::caretStopAt(valid, 6) == 4);
+    CHECK(text::caretStopAt(valid, 9) == 7);
+    CHECK(text::caretStopAt(valid, 99) == valid.size());
+}
+
+TEST_CASE("CodeEditor: Left and Right cross malformed UTF-8 a byte at a time, and a stop is not snapped")
+{
+    const String line="25\xb0" "C a\xe4\xb8x";
+    Scene s(line);
+
+    s.editor->setCaret(at(0, 0));
+    for(size_t i=1; i <= line.size(); ++i)
+    {
+        s.key(GLFW_KEY_RIGHT);
+        CHECK(s.caret() == at(0, i));
+    }
+    for(size_t i=line.size(); i-- > 0;)
+    {
+        s.key(GLFW_KEY_LEFT);
+        CHECK(s.caret() == at(0, i));
+    }
+    for(size_t i=0; i <= line.size(); ++i)
+    {
+        s.editor->setCaret(at(0, i));
+        CHECK(s.caret() == at(0, i));
+    }
 }
 
 TEST_CASE("CodeEditor: Up and Down keep the column in cells across a line of wide glyphs")

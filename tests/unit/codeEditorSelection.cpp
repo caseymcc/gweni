@@ -17,7 +17,9 @@
  *  frozen clock scrolls nothing), the caret with it, and stops when the
  *  mouse comes back or the button is let go; Shift+press extends; a
  *  double-click selects the word, the punctuation run or the blank run under
- *  the mouse; Ctrl+A selects everything.
+ *  the mouse; Ctrl+A selects everything. A font of another cell width but
+ *  the same line height (the rows keep their bounds) marks the rows holding
+ *  the selection and the caret again, and the rects take the new cells.
  */
 #include "headlessFixture.h"
 
@@ -249,6 +251,34 @@ TEST_CASE("CodeEditor selection: one rect per line, a selected line end one cell
         for(size_t line=0; line < 5; ++line)
             CHECK(s.rectOf(line).w == 0);
     }
+}
+
+TEST_CASE("CodeEditor selection: a font of another cell width and the same line height redraws the selection and the caret")
+{
+    Scene s("first line\nsecond line\nthird", 1.0f);
+    controls::CodeEditor *editor=s.editor;
+
+    editor->setCaret(at(0, 6));
+    editor->setCaret(at(1, 3), true);
+    s.frame();
+
+    const int lineHeight=editor->getLineHeight();
+    const float cell=editor->getCellWidth();
+    gweni::Font font=editor->getFont();
+
+    // the stub measures a line as the size, truncated, and a cell as 0.4 of it
+    font.size+=0.5f;
+    editor->setFont(font);
+    s.canvas->updateCanvas();
+
+    REQUIRE(editor->getLineHeight() == lineHeight);
+    REQUIRE(editor->getCellWidth() != cell);
+    CHECK((editor->rowForLine(0)->getStateChange() & controls::StateChange_Background) != 0);
+    CHECK((editor->rowForLine(1)->getStateChange() & controls::StateChange_Background) != 0);
+    CHECK((editor->getStateChange() & controls::StateChange_Caret) != 0);
+    s.canvas->renderCanvas();
+    CHECK_RECT(s.rectOf(0), s.cells(6, 11));
+    CHECK_RECT(s.rectOf(1), s.cells(0, 3));
 }
 
 TEST_CASE("CodeEditor selection: kept in document positions, it survives scrolling")

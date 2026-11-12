@@ -9719,6 +9719,9 @@ static bool runCodeEditorScenario(Session &s, const std::string &shotDir, bool &
 
         subtreeIds(editor, afterPrims, afterTexts);
         checks.check("return_line", editor->getLineCount() == lines+1, "Return did not add a line");
+        // the pool takes no id and gives none back: the rows on screen are re-bound
+        checks.check("return_ids", afterPrims == allowedPrims && afterTexts == allowedTexts,
+            "Return changed the ids the editor holds");
         checks.check("return_rows", idsWithin(broken.primitives, afterPrims) && idsWithin(broken.texts, afterTexts)
             && broken.glyphSlots <= shownGlyphs(editor) && broken.passes <= 1
             && broken.visited <= 4*(subtreeControls(editor)+2),

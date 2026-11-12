@@ -55,6 +55,10 @@ GWENI_EXPORT size_t byteNearestCell(const String &str, double cells);
 //! its base. str.size() (0) at the end (start).
 GWENI_EXPORT size_t nextCaretStop(const String &str, size_t pos);
 GWENI_EXPORT size_t prevCaretStop(const String &str, size_t pos);
+//! The caret stop at or before byte \p pos: \p pos itself if it is one, else
+//! the stop before the codepoint it is inside of or the marks it is among.
+//! str.size() at or past the end.
+GWENI_EXPORT size_t caretStopAt(const String &str, size_t pos);
 
 //! The Unicode version cellCount's tables were generated from, e.g. "18.0.0"
 GWENI_EXPORT const char *cellWidthUnicodeVersion();

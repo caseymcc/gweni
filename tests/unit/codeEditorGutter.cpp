@@ -17,7 +17,8 @@
  *  line's number takes Colors.CodeEditor.LineNumberCurrent, the others
  *  LineNumber, re-read by updateColors() (a theme changed live); read-only,
  *  none is current. Turning the numbers off hides the gutter and gives the
- *  viewport its room back.
+ *  viewport its room back. A press on the gutter puts the caret at column 0
+ *  of the line beside it, the view scrolled sideways or not.
  */
 #include "headlessFixture.h"
 
@@ -300,4 +301,41 @@ TEST_CASE("CodeEditor gutter: the caret's line's number takes the current colour
     s.frame();
     for(controls::internal::CodeLineNumber *number : editor->getLineNumberLabels())
         CHECK(!number->isCurrentLine());
+}
+
+TEST_CASE("CodeEditor gutter: a press on it is at column 0 of its line, scrolled sideways or not")
+{
+    Scene s(50);
+    controls::CodeEditor *editor=s.editor;
+
+    editor->getDocument().insert({3, 0}, String(300, 'x'));
+    s.frame();
+
+    const int lineHeight=editor->getLineHeight();
+    const Rect gutter=editor->getGutter()->getBounds();
+    auto press=[&](int x, int y)
+    {
+        const Point at=editor->localPosToCanvas(Point(x, y));
+
+        s.canvas->inputMouseMoved(at.x, at.y, 0, 0);
+        s.canvas->inputMouseButton(0, true);
+        s.canvas->inputMouseButton(0, false);
+        s.frame();
+    };
+
+    for(int scroll : {0, 100, 1000})
+    {
+        CAPTURE(scroll);
+        editor->setHorizontalScrollOffset(scroll);
+        s.frame();
+        REQUIRE(editor->getHorizontalScrollOffset() > (scroll > 0 ? 0 : -1));
+
+        // on line 3's number, then in the editor's padding left of the gutter
+        press(gutter.x+gutter.w/2, editor->getViewport().y+3*lineHeight+lineHeight/2);
+        CHECK(editor->getCaret().line == 3);
+        CHECK(editor->getCaret().byte == 0);
+        press(1, editor->getViewport().y+3*lineHeight+lineHeight/2);
+        CHECK(editor->getCaret().line == 3);
+        CHECK(editor->getCaret().byte == 0);
+    }
 }

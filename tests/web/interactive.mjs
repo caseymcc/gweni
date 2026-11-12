@@ -576,9 +576,14 @@ async function checkCodeEditor(s)
     if(!opened)
         return;
     const { page, context } = opened;
-    const editor = parseListing(await listingOf(page)).find(c => c.type === 'CodeEditor' && c.visible);
+    const listed = parseListing(await listingOf(page));
+    const editor = listed.find(c => c.type === 'CodeEditor' && c.visible);
     if(!editor)
         return fail('codeeditor', 'CodeEditorDemo lists no visible CodeEditor');
+    // the rows on screen, top down: the fourth is the fourth line's
+    const rows = listed.filter(c => c.type === 'CodeLine' && c.visible && c.y >= editor.y).sort((a, b) => a.y - b.y);
+    if(rows.length < 4)
+        return fail('codeeditor', `CodeEditorDemo lists ${rows.length} visible CodeLine rows, not 4 or more`);
     await page.evaluate(() =>
     {
         window.gweniKeys = [];
@@ -587,7 +592,7 @@ async function checkCodeEditor(s)
     const activeElement = () => page.evaluate(() => document.activeElement ? `${document.activeElement.tagName}#${document.activeElement.id}` : '(none)');
     // a press on the fourth line, right of its end: the caret at that end
     const rect = cssRect(editor);
-    await page.mouse.click(rect.x + rect.width*0.8, rect.y + 2 + 13*3 + 6);
+    await page.mouse.click(rect.x + rect.width*0.8, centre(cssRect(rows[3])).y);
     await s.frames(page);
     const before = await focusedText(page);
     const focusBefore = await activeElement();

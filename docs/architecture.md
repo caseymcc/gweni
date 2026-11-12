@@ -1992,7 +1992,13 @@ two programs and the draws. What follows describes both together:
   selection, Up and Down's goal column (`text::byteAtCell`: before a wide glyph the
   column falls inside) and the tab stops are all in cells. A caret stop is a
   codepoint boundary not followed by a combining mark (`text::nextCaretStop`,
-  `prevCaretStop`), so a mark moves with its base.
+  `prevCaretStop`; `caretStopAt` snaps a position inside a codepoint or before a
+  mark), so a mark moves with its base. Malformed UTF-8 (a Latin-1 file, a cut
+  sequence) is read as `utf8CodepointAt` reads it, each stray byte one U+FFFD and
+  one stop, walking forward and back alike, so the caret crosses it a byte at a
+  time. A cell width that changes after the first read (a font of another
+  advance) marks the rows holding the selection and the caret again, since their
+  rects are in cells even where the rows keep their bounds.
 
   **Caret and keys.** The caret and the selection's other end are document positions
   (`getCaret()`, `getAnchor()`), so a selection whose ends are off screen survives
@@ -2051,7 +2057,8 @@ two programs and the draws. What follows describes both together:
   fresh row's, which would hand the fresh row a used number), so a row the pool
   drops takes its number along and a resized gutter holds what a fresh one does; the
   numbers are bound with the rows in `contentsPlaced`. The gutter does not scroll
-  sideways, and a new digit count (999 to 1000 lines) is a new padding of the
+  sideways, takes no mouse (a press on it, or anywhere left of the viewport, is at
+  column 0 of the line beside it, however far the view is scrolled), and a new digit count (999 to 1000 lines) is a new padding of the
   editor's, set in its X `calculateSize` under a `PlacementScope`, which lays out the
   editor alone (`tests/unit/codeEditorGutter.cpp`: the same layout entries with and
   without a panel of Labels beside it). The theme's `CodeEditor`, `CodeEditorFocus`,

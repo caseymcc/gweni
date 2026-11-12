@@ -183,6 +183,24 @@ size_t byteNearestCell(const String &str, double cells)
     return i;
 }
 
+// The codepoint boundary before pos (> 0), by utf8CodepointAt's rule, so a
+// walk back meets the boundaries a walk forward does: the nearest byte within
+// 4 that is not 10xxxxxx, if the sequence it leads ends at pos, else pos-1 (a
+// stray continuation byte, or the lead of a cut sequence, is one byte long).
+static size_t prevBoundary(const String &str, size_t pos)
+{
+    const size_t least=(pos > 4) ? pos-4 : 0;
+    size_t lead=pos-1;
+
+    while(lead > least && (static_cast<unsigned char>(str[lead]) & 0xc0) == 0x80)
+        --lead;
+
+    size_t next=lead;
+
+    utf8CodepointAt(str, lead, &next);
+    return (next == pos) ? lead : pos-1;
+}
+
 // A boundary followed by a codepoint of no cells (a combining mark) is not a
 // stop: the mark belongs to the codepoint before it.
 static bool isCaretStop(const String &str, size_t pos)
@@ -210,17 +228,33 @@ size_t prevCaretStop(const String &str, size_t pos)
     if(pos == 0)
         return 0;
 
-    // back to the codepoint before pos: its first byte is not 10xxxxxx
-    do
-        --pos;
-    while(pos > 0 && (static_cast<unsigned char>(str[pos]) & 0xc0) == 0x80);
+    pos=prevBoundary(str, pos);
+    while(!isCaretStop(str, pos))
+        pos=prevBoundary(str, pos);
+    return pos;
+}
+
+size_t caretStopAt(const String &str, size_t pos)
+{
+    if(pos >= str.size())
+        return str.size();
+
+    // the start of the codepoint pos is inside of, if any: a lead within 3
+    // bytes before it whose whole sequence reaches past it
+    const size_t least=(pos > 3) ? pos-3 : 0;
+    size_t lead=pos;
+
+    while(lead > least && (static_cast<unsigned char>(str[lead]) & 0xc0) == 0x80)
+        --lead;
+
+    size_t next=lead;
+
+    utf8CodepointAt(str, lead, &next);
+    if(lead < pos && next > pos)
+        pos=lead;
 
     while(!isCaretStop(str, pos))
-    {
-        do
-            --pos;
-        while(pos > 0 && (static_cast<unsigned char>(str[pos]) & 0xc0) == 0x80);
-    }
+        pos=prevBoundary(str, pos);
     return pos;
 }
 

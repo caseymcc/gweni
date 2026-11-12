@@ -169,8 +169,7 @@ static text::Position snapToStop(const text::Document &document, text::Position 
 
     const String &line=document.line(position.line);
 
-    if(position.byte < line.size())
-        position.byte=text::prevCaretStop(line, text::nextCaretStop(line, position.byte));
+    position.byte=text::caretStopAt(line, position.byte);
     return position;
 }
 
@@ -751,9 +750,16 @@ text::Position CodeEditor::positionAt(const Point &local) const
     if(line > last)
         return m_document.endPosition();
 
-    const double x=static_cast<double>(local.x)-viewport.x+getHorizontalScrollOffset()-TextInset;
+    return text::Position{line, text::byteNearestCell(m_document.line(line), textX(local)/m_cellWidth)};
+}
 
-    return text::Position{line, text::byteNearestCell(m_document.line(line), x/m_cellWidth)};
+double CodeEditor::textX(const Point &local) const
+{
+    const Rect &viewport=getViewport();
+
+    if(local.x < viewport.x)
+        return 0.0;
+    return static_cast<double>(local.x)-viewport.x+getHorizontalScrollOffset()-TextInset;
 }
 
 text::Position CodeEditor::glyphAt(const Point &local) const
@@ -763,8 +769,7 @@ text::Position CodeEditor::glyphAt(const Point &local) const
     if(m_cellWidth <= 0.f)
         return line;
 
-    const double x=static_cast<double>(local.x)-getViewport().x+getHorizontalScrollOffset()-TextInset;
-    const size_t cell=static_cast<size_t>(std::max(0.0, std::floor(x/m_cellWidth)));
+    const size_t cell=static_cast<size_t>(std::max(0.0, std::floor(textX(local)/m_cellWidth)));
 
     return text::Position{line.line, text::byteAtCell(m_document.line(line.line), cell)};
 }
@@ -1520,8 +1525,25 @@ void CodeEditor::readMetrics(skin::Base *skin)
     m_metricsSerial=renderer?renderer->textLayoutSerial():0;
     m_metricsScale=canvas?canvas->scale():1.0f;
 
+    const bool read=m_lineHeight > 0;
+    const float cellWidth=m_cellWidth;
+
     m_lineHeight=std::max(1, measureLineHeight(m_font));
     m_cellWidth=std::max(1, measureText(m_font, String(CellSample, '0')).x)/static_cast<float>(CellSample);
+
+    // the selection rects and the caret are in cells: a new cell width moves
+    // them, even where the rows keep their bounds (the same line height)
+    if(read && m_cellWidth != cellWidth)
+    {
+        for(Base *row : getRows())
+        {
+            CodeLine *line=gweni_cast<CodeLine>(row);
+
+            if(line && line->getSelectionRect().w > 0)
+                line->addStateChange(StateChange_Background);
+        }
+        caretChanged();
+    }
 }
 
 // The metrics are read before anything is sized from them: the row height

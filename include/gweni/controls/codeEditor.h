@@ -269,7 +269,8 @@ public:
 
     //! The caret stop under a point in the editor's coordinates, as the
     //! last layout scrolled and measured it: the nearest one on the line the
-    //! point is on, the first or last line above or below every line.
+    //! point is on, the first or last line above or below every line, column
+    //! 0 left of the viewport (the gutter) however far it is scrolled sideways.
     text::Position positionAt(const Point &local) const;
 
     //! Replaces the selection (or inserts at the caret) with \p text, as
@@ -426,6 +427,8 @@ private:
     //! The start of the glyph under a point in the editor's coordinates
     //! (positionAt's line, the cell the point is in).
     text::Position glyphAt(const Point &local) const;
+    //! A point's x in px from the start of the text, 0 left of the viewport.
+    double textX(const Point &local) const;
     //! The positions one word to the left and right of \p position.
     text::Position wordLeft(const text::Position &position) const;
     text::Position wordRight(const text::Position &position) const;
