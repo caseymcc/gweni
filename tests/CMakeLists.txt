@@ -225,9 +225,9 @@ if(TARGET ControlTest AND NOT EMSCRIPTEN)
     # input, a canvas resize and a scale round trip (both on Demo), a Window
     # dragged past its parent's edges, the tooltip box, the context menu, the
     # stats overlay, the depth view, the zoom panel, the node graph and a
-    # variable-height VirtualList
+    # variable-height VirtualList and the code editor
     foreach(verify_scenario interaction resize scale clip tooltip context-menu stats-overlay
-            depth-view zoom-panel node-graph virtual-list-variable)
+            depth-view zoom-panel node-graph virtual-list-variable code-editor)
         string(REPLACE "-" "_" verify_name "${verify_scenario}")
         add_test(NAME controltest_verify_layout_${verify_name}
             COMMAND $<TARGET_FILE:ControlTest> --headless --scenario ${verify_scenario}
@@ -288,6 +288,16 @@ if(TARGET ControlTest AND NOT EMSCRIPTEN)
     # one-row scroll and a wheel notch writing no more than the shown rows'
     # slots, entering only the list's subtree in one layout pass with no z
     # renumber; exits non-zero on any failed check
+    # CodeEditorDemo's 5000 lines, scrolled to the middle: a typed character
+    # writes its row's, the gutter's and the caret's slots alone and changes no
+    # pixel outside them, a typing burst undone gives the frame before it
+    # back, Return and a one-line scroll stay inside the editor's rows on
+    # screen, and settled frames write nothing
+    gweni_whole_app_test(controltest_code_editor 120
+        COMMAND $<TARGET_FILE:ControlTest> --headless --scenario code-editor --require-one-pass
+            --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/code-editor@VARIANT@
+        WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
+
     gweni_whole_app_test(controltest_virtual_list 120
         COMMAND $<TARGET_FILE:ControlTest> --headless --scenario virtual-list --require-one-pass
             --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/virtual-list@VARIANT@

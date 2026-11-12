@@ -142,7 +142,7 @@
  *                       data-table-virtual | hide-show | demo-labels |
  *                       plot-histogram | plot-lines | inspector |
  *                       stats-overlay | depth-view | zoom-panel |
- *                       node-graph (see below)
+ *                       node-graph | code-editor (see below)
  *    --dump-bounds [<path>]
  *                       print the laid-out control tree as text: one line per
  *                       control, depth-first in child order, indented by depth,
@@ -675,6 +675,24 @@
  *                 closes it. One line
  *                   popup opens_below=yes|no ... hidden_anchor_closes=yes|no
  *                 reports the checks. Exits non-zero if any check is no.
+ *    code-editor  CodeEditorDemo's 5000-line document (line numbers on),
+ *                 the clock frozen, scrolled to line 2500, a press at the end
+ *                 of a short line ("    model: ...") giving the editor the
+ *                 focus; then each input one frame: "x" typed there, a burst
+ *                 typed two lines down and undone (Ctrl+Z), Return there, and
+ *                 a one-line scroll (scrollByRows), each followed by settled
+ *                 frames (code-editor.png at the end). One line
+ *                   code-editor settled_focused=yes|no ... ids_back=yes|no
+ *                 reports the checks: every settled frame writes and changes
+ *                 nothing; the typed character writes slots of its row, the
+ *                 gutter and the caret alone, no more glyphs than its line,
+ *                 in one pass, and changes no pixel outside the line, the
+ *                 gutter and the caret; the frame after the undo is the frame
+ *                 before the burst, byte for byte; Return and the scroll
+ *                 write slots inside the editor alone, no more glyphs than
+ *                 its rows and numbers on screen hold, in one pass, and
+ *                 change no pixel outside it; the demo gives every primitive
+ *                 id back. Exits non-zero if any check is no.
  *    virtual-list VirtualListDemo with its list at 1 000 and then 100 000
  *                 items, the clock frozen: a settled frame, a one-row scroll
  *                 from the top (scrollByRows) and a wheel notch over the list
@@ -874,6 +892,7 @@
 #include <gweni/controls/tabControl.h>
 #include <gweni/controls/scrollBarButton.h>
 #include <gweni/controls/comboBox.h>
+#include <gweni/controls/codeEditor.h>
 #include <gweni/controls/virtualList.h>
 #include <gweni/controls/dataTable.h>
 #include <gweni/controls/properties.h>
@@ -1145,7 +1164,7 @@ static void printUsage(std::ostream &out)
          "                     | data-table-virtual | hide-show | demo-labels\n"
          "                     | plot-histogram | plot-lines | inspector\n"
          "                     | stats-overlay | depth-view | zoom-panel\n"
-         "                     | node-graph;\n"
+         "                     | node-graph | code-editor;\n"
          "                     resize prints listing_settled, mirror_settled,\n"
          "                     shrink_settled and fresh_matches, interaction one\n"
          "                     yes/no per repaint check, typing its keyboard\n"
@@ -2071,7 +2090,7 @@ static bool runSteps(Session &s, const std::vector<Step> &steps, const std::stri
 //-----------------------------------------------------------------------------
 enum class Scenario { None, PerControl, Resize, Docked, Scroll, Interaction, Typing, Clip, TextSize, Scale,
     ToolTip, ContextMenu, Popup, VirtualList, VirtualListVariable, DataTableVirtual, HideShow, DemoLabels, PlotHistogram,
-    PlotLines, Inspector, Theme, StatsOverlay, DepthView, ZoomPanel, NodeGraph };
+    PlotLines, Inspector, Theme, StatsOverlay, DepthView, ZoomPanel, NodeGraph, CodeEditor };
 
 static bool parseScenario(const std::string &name, Scenario &scenario)
 {
@@ -2100,6 +2119,7 @@ static bool parseScenario(const std::string &name, Scenario &scenario)
     else if(name == "depth-view") scenario=Scenario::DepthView;
     else if(name == "zoom-panel") scenario=Scenario::ZoomPanel;
     else if(name == "node-graph") scenario=Scenario::NodeGraph;
+    else if(name == "code-editor") scenario=Scenario::CodeEditor;
     else return false;
     return true;
 }
@@ -9451,6 +9471,294 @@ static bool runPopupScenario(Session &s, const std::string &shotDir, bool &passe
 }
 
 //-----------------------------------------------------------------------------
+// --scenario code-editor: CodeEditorDemo's 5000-line document, the clock
+// frozen, scrolled to its middle. Each input is one frame, held to the part of
+// the editor it may touch by the ids it writes, the controls it changes and the
+// pixels it changes: a typed character (its line's row, the gutter and the
+// caret), Return mid-screen (the editor's rows and gutter on screen), a typing
+// burst undone (the frame before it, byte for byte) and a one-line scroll (the
+// rows on screen); every settled frame writes and changes nothing, and the
+// demo gives its primitive ids back.
+//-----------------------------------------------------------------------------
+
+namespace
+{
+
+// One frame's counters and pixels.
+struct CodeEditorFrame
+{
+    std::set<size_t> primitives;
+    std::set<size_t> texts;
+    size_t glyphSlots=0;
+    size_t written=0;
+    size_t changed=0;
+    size_t visited=0;
+    int passes=0;
+    std::vector<uint8_t> pixels;
+};
+
+size_t subtreeControls(gweni::controls::Base *control);
+
+bool idsWithin(const std::set<size_t> &written, const std::set<size_t> &allowed)
+{
+    for(size_t id : written)
+    {
+        if(!allowed.count(id))
+            return false;
+    }
+    return true;
+}
+
+// The glyphs the shown rows and the gutter's shown numbers hold.
+size_t shownGlyphs(gweni::controls::CodeEditor *editor)
+{
+    size_t glyphs=0;
+
+    for(gweni::controls::Base *row : editor->getRows())
+    {
+        if(auto *line=gweni::gweni_cast<gweni::controls::CodeLine>(row); line && !line->hidden())
+            glyphs+=line->getText().size();
+    }
+    for(gweni::controls::internal::CodeLineNumber *number : editor->getLineNumberLabels())
+    {
+        if(!number->hidden())
+            glyphs+=number->getText().size();
+    }
+    return glyphs;
+}
+
+}//namespace
+
+static std::vector<uint8_t> framePixels(const Session &s);
+static void subtreeIds(gweni::controls::Base *control, std::set<size_t> &primitives, std::set<size_t> &texts);
+
+static CodeEditorFrame codeEditorFrame(Session &s)
+{
+    renderFrames(s, 1);
+
+    CodeEditorFrame frame;
+    const gweni::renderer::FrameCounts counts=s.renderer->frameStats();
+
+    for(size_t id : s.renderer->writtenPrimitiveIds())
+        frame.primitives.insert(id);
+    for(const gweni::renderer::WrittenText &text : s.renderer->writtenTextIds())
+    {
+        frame.texts.insert(text.textId);
+        frame.glyphSlots+=text.glyphSlots;
+    }
+    frame.written=counts.primitiveSlotsWritten+counts.textSlotsWritten;
+    frame.changed=gweni::controls::getChangeStats().controls;
+    frame.visited=s.canvas->getLayoutStats().visited;
+    frame.passes=s.canvas->getLayoutStats().passes;
+    frame.pixels=framePixels(s);
+    return frame;
+}
+
+// Two frames with nothing to do: what they wrote and changed (0 when settled),
+// the last one's pixels in `pixels`.
+static size_t settleCodeEditor(Session &s, std::vector<uint8_t> &pixels)
+{
+    size_t work=0;
+
+    for(int i=0; i < 2; ++i)
+    {
+        CodeEditorFrame frame=codeEditorFrame(s);
+
+        work+=frame.written+frame.changed;
+        pixels=std::move(frame.pixels);
+    }
+    return work;
+}
+
+// A press at the end of a line, in canvas coordinates: past its last glyph, so
+// the caret goes to the line's end.
+static void clickLineEnd(Session &s, gweni::controls::CodeEditor *editor, size_t line)
+{
+    const gweni::Rect &viewport=editor->getViewport();
+    const int y=viewport.y+static_cast<int>(line)*editor->getLineHeight()-editor->getVerticalScrollOffset()
+        +editor->getLineHeight()/2;
+    const int x=viewport.x+editor->columnX(editor->getLineCells(line))+3*static_cast<int>(editor->getCellWidth());
+    const gweni::Point at=editor->localPosToCanvas(gweni::Point(x, y));
+
+    clickMouse(s, at.x, at.y);
+}
+
+static gweni::Rect canvasRect(gweni::controls::Base *control, const gweni::Rect &local)
+{
+    const gweni::Point origin=control->localPosToCanvas(gweni::Point(local.x, local.y));
+
+    return gweni::Rect(origin.x, origin.y, local.w, local.h);
+}
+
+static bool runCodeEditorScenario(Session &s, const std::string &shotDir, bool &passed)
+{
+    s.freezeClock=true;
+
+    InteractionChecks checks;
+    checks.scenario="code-editor";
+    bool ok=true;
+
+    const size_t idsBefore=livePrimitiveIds();
+    gweni::controls::Base *control=addControl(s, "CodeEditorDemo");
+    auto *demo=gweni::gweni_cast<gweni::CodeEditorDemo>(control);
+
+    if(!demo || !demo->m_editor || !demo->m_editor->getGutter())
+    {
+        std::cerr<<"ControlTest: code-editor: CodeEditorDemo has no editor with line numbers\n";
+        return false;
+    }
+
+    gweni::controls::CodeEditor *editor=demo->m_editor;
+    gweni::controls::Base *gutter=editor->getGutter();
+
+    s.label="CodeEditorDemo";
+    renderFrames(s, s.frames);
+
+    const int lineHeight=editor->getLineHeight();
+
+    editor->setVerticalScrollOffset(2500*lineHeight);
+    renderFrames(s, s.frames);
+
+    const size_t top=editor->firstVisibleItem();
+    // a short line ("    model: ...", an agent's second) well inside the view
+    size_t line=top+3;
+
+    while(line < top+20 && editor->getDocument().line(line).rfind("    model:", 0) != 0)
+        ++line;
+
+    clickLineEnd(s, editor, line);
+    renderFrames(s, s.frames);
+
+    std::vector<uint8_t> idle;
+
+    checks.check("settled_focused", settleCodeEditor(s, idle) == 0, "a settled frame with the caret placed wrote or changed something");
+    checks.check("caret_placed", editor->getCaret().line == line
+        && editor->getCaret().byte == editor->getDocument().line(line).size(),
+        "the press did not put the caret at the end of line "+std::to_string(line));
+
+    // A typed character: its line's row, the gutter and the caret alone.
+    {
+        gweni::controls::CodeLine *row=editor->rowForLine(line);
+        std::set<size_t> allowedPrims, allowedTexts;
+
+        if(row)
+            subtreeIds(row, allowedPrims, allowedTexts);
+        subtreeIds(gutter, allowedPrims, allowedTexts);
+        if(const gweni::skin::Control *own=editor->getSkinControl())
+        {
+            std::vector<size_t> prims, texts;
+
+            own->appendIds(prims, texts);
+            allowedPrims.insert(prims.begin(), prims.end());
+        }
+
+        const gweni::Rect caretBefore=canvasRect(editor, editor->getCaretBounds());
+
+        typeText(s, "x");
+
+        const CodeEditorFrame typed=codeEditorFrame(s);
+        const gweni::Rect caretAfter=canvasRect(editor, editor->getCaretBounds());
+        const size_t outside=differencesOutsideRects(s, idle, typed.pixels,
+            {row?row->getCanvasBounds():gweni::Rect(), gutter->getCanvasBounds(), caretBefore, caretAfter});
+
+        checks.check("typed_slots", row && typed.written > 0 && idsWithin(typed.primitives, allowedPrims)
+            && idsWithin(typed.texts, allowedTexts)
+            && typed.glyphSlots <= editor->getDocument().line(line).size(),
+            "the typed character wrote "+std::to_string(typed.primitives.size())+" primitive and "
+            +std::to_string(typed.glyphSlots)+" glyph slots, some outside its row, the gutter and the caret");
+        checks.check("typed_pixels", outside == 0,
+            std::to_string(outside)+" pixels changed outside the line, the gutter and the caret");
+        checks.check("typed_one_pass", typed.passes <= 1, "the typing frame took "+std::to_string(typed.passes)+" passes");
+        checks.check("typed_text", editor->getDocument().line(line).back() == 'x', "the character did not go in");
+        checks.check("settled_typed", settleCodeEditor(s, idle) == 0, "a settled frame after typing wrote or changed something");
+    }
+
+    // A typing burst undone gives the frame before it back.
+    {
+        clickLineEnd(s, editor, line+2);
+        renderFrames(s, s.frames);
+
+        std::vector<uint8_t> before;
+
+        settleCodeEditor(s, before);
+
+        const std::string textBefore=editor->getDocument().line(line+2);
+
+        typeText(s, "burst");
+        renderFrames(s, 1);
+        sendKey(s, "ctrl+z");
+
+        const CodeEditorFrame undone=codeEditorFrame(s);
+
+        checks.check("undo_text", editor->getDocument().line(line+2) == textBefore, "the undo did not give the line back");
+        checks.check("undo_pixels", undone.pixels == before, "the frame after the undo is not the frame before the burst");
+        checks.check("settled_undo", settleCodeEditor(s, idle) == 0, "a settled frame after the undo wrote or changed something");
+    }
+
+    // Return mid-screen: inside the editor, no more glyphs than its rows and
+    // numbers on screen, nothing outside it changed.
+    {
+        std::set<size_t> allowedPrims, allowedTexts;
+
+        subtreeIds(editor, allowedPrims, allowedTexts);
+
+        const size_t lines=editor->getLineCount();
+
+        sendKey(s, "return");
+
+        const CodeEditorFrame broken=codeEditorFrame(s);
+        const size_t outside=differencesOutsideRects(s, idle, broken.pixels, {editor->getCanvasBounds()});
+        std::set<size_t> afterPrims, afterTexts;
+
+        subtreeIds(editor, afterPrims, afterTexts);
+        checks.check("return_line", editor->getLineCount() == lines+1, "Return did not add a line");
+        checks.check("return_rows", idsWithin(broken.primitives, afterPrims) && idsWithin(broken.texts, afterTexts)
+            && broken.glyphSlots <= shownGlyphs(editor) && broken.passes <= 1
+            && broken.visited <= 4*(subtreeControls(editor)+2),
+            "Return wrote "+std::to_string(broken.glyphSlots)+" glyph slots (the rows on screen hold "
+            +std::to_string(shownGlyphs(editor))+"), "+std::to_string(broken.visited)+" layout entries, "
+            +std::to_string(broken.passes)+" passes, or a slot outside the editor");
+        checks.check("return_pixels", outside == 0, std::to_string(outside)+" pixels changed outside the editor");
+        checks.check("settled_return", settleCodeEditor(s, idle) == 0, "a settled frame after Return wrote or changed something");
+    }
+
+    // A one-line scroll: the rows on screen and the gutter, and the bar.
+    {
+        std::set<size_t> allowedPrims, allowedTexts;
+
+        subtreeIds(editor, allowedPrims, allowedTexts);
+        editor->scrollByRows(1);
+
+        const CodeEditorFrame scrolled=codeEditorFrame(s);
+        const size_t outside=differencesOutsideRects(s, idle, scrolled.pixels, {editor->getCanvasBounds()});
+
+        checks.check("scroll_rows", scrolled.written > 0 && idsWithin(scrolled.primitives, allowedPrims)
+            && idsWithin(scrolled.texts, allowedTexts) && scrolled.glyphSlots <= shownGlyphs(editor)
+            && scrolled.passes <= 1,
+            "the scroll wrote "+std::to_string(scrolled.glyphSlots)+" glyph slots (the rows on screen hold "
+            +std::to_string(shownGlyphs(editor))+") or a slot outside the editor");
+        checks.check("scroll_pixels", outside == 0, std::to_string(outside)+" pixels changed outside the editor");
+        checks.check("settled_scroll", settleCodeEditor(s, idle) == 0, "a settled frame after the scroll wrote or changed something");
+    }
+
+    if(!shoot(s, shotDir+"/code-editor.png"))
+        ok=false;
+
+    forgetMouse(s);
+    dropControl(s, control);
+    renderFrames(s, 1);
+    checks.check("ids_back", livePrimitiveIds() == idsBefore, "the demo did not give its primitive ids back");
+
+    std::cout<<"code-editor";
+    for(const auto &result : checks.results)
+        std::cout<<" "<<result.first<<"="<<(result.second ? "yes" : "no");
+    std::cout<<"\n";
+
+    passed=checks.allPassed();
+    return ok;
+}
+
+//-----------------------------------------------------------------------------
 // --scenario virtual-list: VirtualListDemo at 1 000 and 100 000 items
 //
 // The list holds a row for each one on screen plus one, whatever its count, so
@@ -11734,6 +12042,15 @@ int main(int argc, char *argv[])
             ok=runPopupScenario(session, shotDir, passed);
             if(ok && !passed)
                 ok=false;   // a popup opened, sat or closed wrongly: a failing assertion
+            break;
+        }
+
+        case Scenario::CodeEditor:
+        {
+            bool passed=false;
+            ok=runCodeEditorScenario(session, shotDir, passed);
+            if(ok && !passed)
+                ok=false;   // an edit or a scroll touched more than its lines: a failing assertion
             break;
         }
 
