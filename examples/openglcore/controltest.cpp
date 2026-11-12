@@ -198,7 +198,8 @@
  *                       ASCII, so only that arrives. To type a space, --type " ".
  *    --expect-text <utf8>
  *                       the keyboard-focused control's text has to be exactly
- *                       this (a TextBox's getText()). A mismatch prints both on
+ *                       this (a TextBox's getText(), a CodeEditor's caret
+ *                       line). A mismatch prints both on
  *                       stderr and the run exits non-zero at the end; the
  *                       script carries on, so every bad step is reported.
  *
@@ -1926,10 +1927,16 @@ static void typeText(Session &s, const std::string &text)
         glfwChar(s, codepoint);
 }
 
-// The keyboard-focused control's text, if it has one (a Label, which every
-// TextBox is).
+// The keyboard-focused control's text, if it has one: a Label's (which every
+// TextBox is), or the line a CodeEditor's caret is on.
 static bool focusedText(std::string &text)
 {
+    if(const auto *editor=dynamic_cast<const gweni::controls::CodeEditor *>(gweni::KeyboardFocus))
+    {
+        text=editor->getDocument().line(editor->getCaret().line);
+        return true;
+    }
+
     const gweni::controls::Label *label=dynamic_cast<const gweni::controls::Label *>(gweni::KeyboardFocus);
     if(!label)
         return false;
@@ -11270,8 +11277,8 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *gweni_web_bounds_listing()
     return listing.c_str();
 }
 
-//! The keyboard-focused control's text (a Label, which every TextBox is), or
-//! an empty string if it has none.
+//! The keyboard-focused control's text (a Label's, which every TextBox is, or
+//! a CodeEditor's caret line), or an empty string if it has none.
 extern "C" EMSCRIPTEN_KEEPALIVE const char *gweni_web_focused_text()
 {
     static std::string text;

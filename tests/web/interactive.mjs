@@ -27,6 +27,13 @@
 //               the browser's own key event, Input.dispatchKeyEvent, as a French
 //               keyboard's "2" key sends it) leave its text as it was with
 //               "abcé" after it
+//    codeeditor CodeEditorDemo: a press on a line gives the editor the focus,
+//               Tab puts spaces after the caret line's text and Ctrl+Z (after
+//               "q" typed) undoes in the editor, the document's focus staying
+//               where it was and both keydowns' defaults prevented by the
+//               time they bubble to the window, so the browser moves no focus
+//               and runs no undo of its own (read through
+//               gweni_web_focused_text, a CodeEditor's caret line)
 //    wheel      ScrollControlDemo: a wheel notch over the first ScrollControl
 //               moves its inner panel up
 //    cursor     CheckBoxDemo: the pointer over a LabelClickable makes the
@@ -559,6 +566,67 @@ async function checkDepthButton(s)
     await context.close();
 }
 
+// CodeEditorDemo: Tab and Ctrl+Z are the editor's, not the browser's. A
+// keydown listener on the window records whether each key's default was
+// prevented by the time it bubbled there (emscripten-glfw's handlers run
+// first), so the browser neither moved its focus nor ran its own undo.
+async function checkCodeEditor(s)
+{
+    const opened = await s.open('codeeditor', 'ControlTest.html?control=CodeEditorDemo', { width: 640, height: 480 + outputPanel });
+    if(!opened)
+        return;
+    const { page, context } = opened;
+    const editor = parseListing(await listingOf(page)).find(c => c.type === 'CodeEditor' && c.visible);
+    if(!editor)
+        return fail('codeeditor', 'CodeEditorDemo lists no visible CodeEditor');
+    await page.evaluate(() =>
+    {
+        window.gweniKeys = [];
+        window.addEventListener('keydown', e => window.gweniKeys.push({ key: e.key, ctrl: e.ctrlKey, prevented: e.defaultPrevented }));
+    });
+    const activeElement = () => page.evaluate(() => document.activeElement ? `${document.activeElement.tagName}#${document.activeElement.id}` : '(none)');
+    // a press on the fourth line, right of its end: the caret at that end
+    const rect = cssRect(editor);
+    await page.mouse.click(rect.x + rect.width*0.8, rect.y + 2 + 13*3 + 6);
+    await s.frames(page);
+    const before = await focusedText(page);
+    const focusBefore = await activeElement();
+
+    await page.keyboard.press('Tab');
+    await s.frames(page);
+    const tabbed = await focusedText(page);
+    const focusTabbed = await activeElement();
+
+    await page.keyboard.type('q');
+    await s.frames(page);
+    const typed = await focusedText(page);
+    await page.keyboard.press('Control+z');
+    await s.frames(page);
+    const undone = await focusedText(page);
+    const focusUndone = await activeElement();
+    const keys = await page.evaluate(() => window.gweniKeys);
+    const tabKey = keys.find(k => k.key === 'Tab');
+    const undoKey = keys.find(k => k.ctrl && k.key.toLowerCase() === 'z');
+
+    if(!before)
+        fail('codeeditor', 'the press did not give the CodeEditor the focus (no caret line)');
+    else if(!(tabbed.startsWith(before) && tabbed.length > before.length && /^ +$/.test(tabbed.slice(before.length))))
+        fail('codeeditor', `Tab left the caret line ${JSON.stringify(tabbed)}, not ${JSON.stringify(before)} and spaces`);
+    else if(focusTabbed !== focusBefore || focusUndone !== focusBefore)
+        fail('codeeditor', `the browser's focus moved from ${focusBefore} to ${focusTabbed}, then ${focusUndone}`);
+    else if(!tabKey || !tabKey.prevented)
+        fail('codeeditor', `Tab's keydown ${tabKey ? 'was not prevented' : 'never reached the window'}: the browser would move its focus`);
+    else if(typed !== tabbed + 'q')
+        fail('codeeditor', `typing "q" left ${JSON.stringify(typed)}`);
+    else if(undone !== tabbed && undone !== before)
+        fail('codeeditor', `Ctrl+Z left ${JSON.stringify(undone)}, neither ${JSON.stringify(tabbed)} nor ${JSON.stringify(before)}`);
+    else if(!undoKey || !undoKey.prevented)
+        fail('codeeditor', `Ctrl+Z's keydown ${undoKey ? 'was not prevented' : 'never reached the window'}: the page's undo would run`);
+    else
+        pass('codeeditor', `${JSON.stringify(before)} -> Tab ${JSON.stringify(tabbed)} -> Ctrl+Z ${JSON.stringify(undone)}, the focus on ${focusBefore}`);
+    await context.close();
+}
+
 async function main()
 {
     const argv = process.argv.slice(2);
@@ -593,6 +661,7 @@ async function main()
     {
         await checkButton(s);
         await checkTyping(s);
+        await checkCodeEditor(s);
         await checkWheel(s);
         await checkCursor(s);
         await checkHiDpi(s, controlPage);

@@ -1956,6 +1956,112 @@ two programs and the draws. What follows describes both together:
   items, `tests/unit/virtualListVariable.cpp` on the headless fixture, and the
   `vlist-variable-scroll` bench scene is local. Wrapped rows given an item with another
   line count gain or lose line `Text`s, so a scroll may renumber z inside the list.
+- **The code editor: the lines on screen, in cells.** `controls::CodeEditor`
+  (`include/gweni/controls/codeEditor.h`) is a `VirtualList` in fixed mode over a
+  `text::Document` it owns (`getDocument()`; "The document and undo model"): one
+  `CodeLine` row per line in view plus one, each holding its line as **one text run**
+  (an `internal::Text` in the editor's font) and two primitives of its own, a line
+  background (`CodeCurrentLine` on the caret's line) at the row's z and the selection
+  rect at the Text's z, behind every glyph (`CodeSelection`). The row height is the
+  font's `lineHeight()`, so a document of 100 000 lines has the controls, ids and slots
+  of the forty or so on screen, and a frame costs what they cost
+  (`tests/unit/codeEditor.cpp`: the pool and the live ids the same at 1 000 and
+  100 000 lines). The document's observer maps each `LineChange` onto the list: lines
+  replaced in place are `refreshItem`ed (their rows bound again), lines added or
+  removed are `insertItems`/`removeItems` (the rows below shift to their new lines by
+  index arithmetic, unbound, and a line that came into view gets a row in the next
+  layout), so a keystroke rewrites its line's run and a line break mid-screen moves
+  the rows below it, nothing past the screen. The content's width is the longest
+  line's, in cells, kept as a count of lines per width (`m_widthLines`), the new
+  lines' widths added before the old ones are taken away, so an edit never scans every
+  line; its vector of per-line widths grows to powers of two, as the document's own
+  vector of lines does, so the first line break after a new text copies nothing. The
+  `code-edit` and `code-scroll` bench scenes hold every per-frame counter at
+  N=10 000 to N=1 000 (`bench_scaling`).
+
+  **Cells.** The font is the skin's mono face (`getDefaultMonoFont()`, DejaVu Sans
+  Mono), a fixed-width face whose runs lay every codepoint in whole terminal cells
+  ("Font fallback"), so every column is `text::cellCount()` cells: 2 for a wide
+  glyph, 0 for a combining mark, 1 otherwise (`text::stringCells`). The cell is the
+  advance of `'0'`, read as `measureText` of 32 zeros over 32 (an SDF run's
+  fractional advance reads as its average), with the line height, in the editor's X
+  `calculateSize` under a `PlacementScope`, once per font, renderer, text layout
+  (`textLayoutSerial()`) and canvas scale; a column's x is
+  `TextInset + floor(column*cellWidth)` on every line, so a line of CJK keeps the
+  lines below on the same columns. The caret, a click (`text::byteNearestCell`), the
+  selection, Up and Down's goal column (`text::byteAtCell`: before a wide glyph the
+  column falls inside) and the tab stops are all in cells. A caret stop is a
+  codepoint boundary not followed by a combining mark (`text::nextCaretStop`,
+  `prevCaretStop`), so a mark moves with its base.
+
+  **Caret and keys.** The caret and the selection's other end are document positions
+  (`getCaret()`, `getAnchor()`), so a selection whose ends are off screen survives
+  scrolling and edits of other lines. The caret is drawn by the editor's own renderer
+  at `getOverlayZIndex()` (`overlayLayers()` 1), in front of every row, one unit wide
+  and a line high, cut to the viewport (`getCaretBounds()`); it blinks through
+  `internal::CaretBlink` (`include/gweni/controls/caretBlink.h`), the animation
+  `TextBox`'s caret uses too, registered while the editor has the focus, each edge a
+  `StateChange_Caret` that rewrites the caret's slot alone (the animation calls the
+  control's `Base::updateCaretBlink()`, so it has no member and costs a TextBox no
+  more than its own did). Arrows, Home (the first non-blank, and from there column
+  0), End, Ctrl+Home/End, PageUp/PageDown (the view and the caret by the viewport's
+  whole lines; `keys::PageUp`/`PageDown` reach a control as
+  `Base::onKeyPageUp`/`onKeyPageDown`), Ctrl+Left/Right (blanks, then a word of
+  letters, digits, `'_'` and non-ASCII, or a run of punctuation, and line ends),
+  typing (UTF-8), Backspace, Delete, Return (keeping the line's leading blanks up to
+  the caret) and Ctrl+C/X/V through `platform::getClipboardText`/`setClipboardText`.
+  A move puts the caret in view: its line through `scrollToItem` when the last
+  layout left it out of view (a move inside the view lays nothing out), its column at
+  once with a cell to spare.
+
+  **Selection.** Each row holds the cells of its line the selection covers (its end
+  one cell past the last glyph when the line's break is selected too), set by the
+  editor over the pool when the selection changes, a row is bound or lines shift, and
+  draws it as one rect, `columnX(begin)` to `columnX(end)`, a line high, at any scale
+  (`tests/unit/codeEditorSelection.cpp`). Shift with the keys extends it from the
+  anchor; a press and a drag select to the mouse, and with the mouse past the
+  viewport's edge an animation scrolls the view on the canvas clock (`AutoScrollBase`
+  plus `AutoScrollRate` units a second per unit past the edge, the fraction carried),
+  the caret with it; Shift+press extends; a double-click selects the word, the
+  punctuation run or the blanks under the mouse; Ctrl+A selects everything;
+  `getSelectedText()` is the document's `textIn(getSelection())`.
+
+  **Undo, Tab, read-only.** Every edit the editor makes goes through one path, which
+  records it on a `text::UndoStack` with `TextBox`'s coalescing (typing, the two
+  deletes, Return, paste and cut each their kind); Ctrl+Z, Ctrl+Y and Ctrl+Shift+Z
+  apply a step's inverses or records and give back its selection, the caret in view.
+  An edit the app applies to the document (or `setText`) clears the history. Tab
+  inserts spaces to the next multiple of `setTabWidth` (4) cells, in place of a
+  selection inside one line; over several lines it indents each by the tab width,
+  and Shift+Tab outdents the caret's line or the selected lines to the stop before
+  their indent (a leading tab character is one stop), one undo step. Tab never moves
+  the focus out of the editor; Escape arms the next Tab or Shift+Tab to (any other key
+  disarms it), and `setTabInsertsSpaces(false)` gives Tab back to the focus.
+  `setReadOnly(true)` draws no caret and no current line and makes no edit, the
+  moves, the selection, Ctrl+A and Ctrl+C left working, and Tab moving the focus
+  (`tests/unit/codeEditorUndo.cpp`). In a page emscripten-glfw prevents the default
+  of the keys it hands the canvas, so Tab moves no browser focus and Ctrl+Z runs no
+  page undo (`web_input`'s `codeeditor` check).
+
+  **Line numbers.** `setLineNumbers(true)` adds `internal::CodeGutter`, the editor's
+  own child (made with the inner panel set aside, so it is not in the scrolled
+  content), in a left padding the editor keeps for it: `2*GutterInset` plus the line
+  count's digits in cells. One right-aligned `internal::CodeLineNumber` per pooled
+  row, paired with its row by control id (a deleted row's address can come back as a
+  fresh row's, which would hand the fresh row a used number), so a row the pool
+  drops takes its number along and a resized gutter holds what a fresh one does; the
+  numbers are bound with the rows in `contentsPlaced`. The gutter does not scroll
+  sideways, and a new digit count (999 to 1000 lines) is a new padding of the
+  editor's, set in its X `calculateSize` under a `PlacementScope`, which lays out the
+  editor alone (`tests/unit/codeEditorGutter.cpp`: the same layout entries with and
+  without a panel of Labels beside it). The theme's `CodeEditor`, `CodeEditorFocus`,
+  `CodeGutter`, `CodeCurrentLine` and `CodeSelection` surfaces and the
+  `CodeLineNumber` and `CodeLineNumberCurrent` text colours
+  (`Colors.CodeEditor.LineNumber`, `LineNumberCurrent`, read again by the numbers'
+  `updateColors()`) are in the ThemeEditor and strict mode. CodeEditorDemo (the
+  shell's "Code editor") holds 5000 generated lines of YAML; `controltest_code_editor`
+  holds a typed character, an undone burst, Return and a scroll to the part of the
+  editor each may touch.
 - **The slider's value text.** `Slider::setValueFormat("%.2f")` shows the value as text
   (imgui's SliderFloat), formatted with `snprintf` from `getFloatValue()`. The format is
   checked first (`Slider::validValueFormat`): exactly one conversion of a double (`f F e
