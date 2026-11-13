@@ -84,8 +84,18 @@ public:
     //! The line of the document the row shows, NoLine while it is a spare.
     size_t getLine() const { return m_line; }
     //! The line's text, as bound.
-    const String &getText() const { return m_text->getText(); }
+    const String &getText() const { return m_rowStarts.size() > 1?m_lineText:m_text->getText(); }
     internal::Text *getTextControl() const { return m_text; }
+
+    //! The visual rows the line is shown in: 1 unwrapped, else the rows it
+    //! wraps into at the editor's wrap width (CodeEditor::setWrap,
+    //! text::wrapCells), each a text run of its own, one line height high,
+    //! one below the other.
+    size_t getRowCount() const { return m_rowStarts.empty()?1:m_rowStarts.size(); }
+    //! The byte of the line visual row \p row starts at (0 for the first).
+    size_t getRowStart(size_t row) const { return row < m_rowStarts.size()?m_rowStarts[row]:0; }
+    //! The Text drawing visual row \p row: getTextControl() for the first.
+    internal::Text *getRowText(size_t row) const { return row == 0?m_text:m_pieces[row-1]; }
     CodeEditor *getEditor() const { return m_editor; }
 
     //! Whether it shows the line with the caret: its line background shows.
@@ -112,14 +122,21 @@ protected:
 private:
     friend class CodeEditor;
 
-    //! Shows the line, with the text it holds now.
-    void bind(size_t line, const String &text);
+    //! Shows the line, with the text it holds now, wrapped at \p wrapCells
+    //! cells (0: unwrapped, one row).
+    void bind(size_t line, const String &text, size_t wrapCells);
     void setCurrent(bool current);
     void setSelection(size_t begin, size_t end);
     //! The editor's font changed (in place): the run is laid out again.
     void fontChanged();
 
     internal::Text *m_text=nullptr;
+    //! The Texts of the visual rows after the first, and where each row
+    //! starts in the line (empty unwrapped: no allocation for a fixed row).
+    std::vector<internal::Text *> m_pieces;
+    std::vector<size_t> m_rowStarts;
+    //! The whole line while it is shown in more than one row.
+    String m_lineText;
     CodeEditor *m_editor=nullptr;
     size_t m_line=NoLine;
     bool m_current=false;
@@ -188,6 +205,15 @@ private:
 //! (CodeMirror's rule both ways). Read-only (setReadOnly), the editor draws
 //! no caret and no current line and makes no edit, while the moves, the
 //! selection, Ctrl+A and Ctrl+C still work and Tab moves the focus.
+//!
+//! setWrap(true) wraps each line at the viewport's width, on word
+//! boundaries where it has any and at any cell where it has none
+//! (text::wrapCells, counted in cells with no measuring), and takes the
+//! horizontal bar away. The list goes to its variable-height mode: a line is
+//! one item, its height its visual rows times the line height, measured by
+//! the wrap at the rows' width (O(line) per edit) and estimated from the
+//! line's cells (O(1)) until the list has measured it, so a new width costs
+//! the lines on screen at once and the idle re-measure the rest.
 //!
 //! setLineNumbers(true) adds a gutter left of the viewport: one number
 //! Label per pooled row, bound with the rows (the numbers of the lines on
@@ -291,6 +317,20 @@ public:
     //! moving the focus. Default true.
     void setTabInsertsSpaces(bool inserts) { m_tabInsertsSpaces=inserts; }
     bool getTabInsertsSpaces() const { return m_tabInsertsSpaces; }
+
+    //! Wraps the lines at the viewport's width (see the class comment), or
+    //! not. Default off.
+    void setWrap(bool wrap);
+    bool isWrapped() const { return m_wrap; }
+    //! The cells a visual row holds, as the last layout wrapped the rows at
+    //! (0 unwrapped, or before a layout).
+    size_t getWrapCells() const { return m_wrapCells; }
+    //! The cells a row \p width units wide holds: its width less TextInset
+    //! on both sides, in whole cells, at least 1 (0 before the metrics are
+    //! read).
+    size_t wrapCellsFor(int width) const;
+    //! The visual rows line \p line takes at the last layout's wrap width.
+    size_t getLineRows(size_t line) const;
 
     //! The line-number gutter, shown or not. Default off.
     void setLineNumbers(bool show);
@@ -445,6 +485,13 @@ private:
     void addWidth(size_t cells);
     void removeWidth(size_t cells);
     void bindRow(Base *row, size_t line);
+    //! Wrapped, the height of line \p line at a row \p width units wide:
+    //! measured (its wrap) or estimated (from its cells).
+    int measureLine(size_t line, int width) const;
+    int estimateLine(size_t line) const;
+    //! Puts the list in variable mode with the wrap's measurer, every line
+    //! estimated again from its cells.
+    void applyWrapMeasurer();
     //! Whether the cell width and line height were read for this font,
     //! renderer, text layout and scale.
     bool metricsCurrent(skin::Base *skin) const;
@@ -478,6 +525,11 @@ private:
     double m_autoScrollTime=0.0;
     //! The units of auto-scroll not scrolled yet, per axis.
     float m_autoScrollCarry[2]={0.0f, 0.0f};
+
+    bool m_wrap=false;
+    size_t m_wrapCells=0;
+    //! The line height the lines were last estimated at.
+    int m_wrapLineHeight=0;
 
     bool m_lineNumbers=false;
     internal::CodeGutter *m_gutter=nullptr;

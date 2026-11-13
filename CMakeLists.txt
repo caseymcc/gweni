@@ -139,6 +139,8 @@ set(GWENI_SOURCES
     include/gweni/text/cells.h
     source/text/cells.cpp
     source/text/cellWidthTable.inc
+    include/gweni/text/cellWrap.h
+    source/text/cellWrap.cpp
     include/gweni/text/document.h
     source/text/document.cpp
     include/gweni/text/undoStack.h

@@ -12,6 +12,7 @@
 #include <gweni/platforms/baseRender.h>
 #include <gweni/platforms/platform.h>
 #include <gweni/skin.h>
+#include <gweni/text/cellWrap.h>
 #include <gweni/text/cells.h>
 #include <gweni/utility.h>
 
@@ -38,10 +39,56 @@ GWENI_CONTROL_CONSTRUCTOR(CodeLine)
     m_text->setMouseInputEnabled(false);
 }
 
-void CodeLine::bind(size_t line, const String &text)
+// Unwrapped, the row is its one Text. Wrapped, it is a Text per visual row,
+// made as the line needs them and deleted when it needs fewer, so a row holds
+// what a row bound to that line at that width holds.
+void CodeLine::bind(size_t line, const String &text, size_t wrapCells)
 {
     m_line=line;
-    m_text->setText(text);
+
+    if(wrapCells == 0)
+        m_rowStarts.clear();
+    else
+        text::wrapCells(text, wrapCells, m_rowStarts);
+
+    const size_t rows=getRowCount();
+
+    while(m_pieces.size() > rows-1)
+    {
+        delete m_pieces.back();    // ~Base takes it out of the children, gives its ids back
+        m_pieces.pop_back();
+    }
+    while(m_pieces.size() < rows-1)
+    {
+        internal::Text *piece=nullptr;
+
+        {
+            PartScope part;
+
+            piece=newChild<internal::Text>();
+        }
+        piece->setPlacement(Placement::Owner);
+        piece->setMouseInputEnabled(false);
+        if(m_editor)
+            piece->setFont(m_editor->getFont());
+        m_pieces.push_back(piece);
+    }
+
+    if(rows == 1)
+    {
+        m_lineText.clear();
+        m_text->setText(text);
+        return;
+    }
+
+    m_lineText=text;
+    for(size_t row=0; row < rows; ++row)
+    {
+        const size_t begin=m_rowStarts[row];
+        const size_t end=(row+1 < rows)?m_rowStarts[row+1]:text.size();
+
+        getRowText(row)->setText(text.substr(begin, end-begin));
+    }
 }
 
 void CodeLine::setCurrent(bool current)
@@ -79,36 +126,70 @@ Rect CodeLine::getSelectionRect() const
 
 void CodeLine::fontChanged()
 {
-    m_text->textChanged();
-    m_text->addStateChange(StateChange_Text);
-    m_text->invalidate();
+    for(size_t row=0; row < getRowCount(); ++row)
+    {
+        internal::Text *text=getRowText(row);
+
+        text->textChanged();
+        text->addStateChange(StateChange_Text);
+        text->invalidate();
+    }
 }
 
-// As wide as its text after the inset, one line high: the editor places it
-// at the content's width and the line height anyway.
+// As wide as its widest visual row after the inset, a line high per visual
+// row: the editor places it at the content's width and that height anyway.
 void CodeLine::calculateSize(skin::Base *skin, Dim dim)
 {
     ParentClass::calculateSize(skin, dim);
 
-    const Size &text=m_text->getPreferredSize();
-
     if(dim == Dim::X)
-        m_preferredSize.width=preferredFromContent(CodeEditor::TextInset+text.width, Dim::X);
+    {
+        int width=0;
+
+        for(size_t row=0; row < getRowCount(); ++row)
+            width=std::max(width, getRowText(row)->getPreferredSize().width);
+        m_preferredSize.width=preferredFromContent(CodeEditor::TextInset+width, Dim::X);
+    }
     else
-        m_preferredSize.height=preferredFromContent(m_editor?m_editor->getLineHeight():text.height, Dim::Y);
+    {
+        const int line=m_editor?m_editor->getLineHeight():m_text->getPreferredSize().height;
+
+        m_preferredSize.height=preferredFromContent(line*static_cast<int>(getRowCount()), Dim::Y);
+    }
 }
 
 void CodeLine::arrangeHorizontal(skin::Base *skin)
 {
     ParentClass::arrangeHorizontal(skin);
-    placeChild(m_text, CodeEditor::TextInset, m_text->getY(), m_text->getPreferredSize().width,
-        m_text->getHeight());
+
+    for(size_t row=0; row < getRowCount(); ++row)
+    {
+        internal::Text *text=getRowText(row);
+
+        placeChild(text, CodeEditor::TextInset, text->getY(), text->getPreferredSize().width, text->getHeight());
+    }
 }
 
+// Unwrapped, the Text is the row's height; wrapped, each visual row's Text a
+// line high, one below the other.
 void CodeLine::arrangeVertical(skin::Base *skin)
 {
     ParentClass::arrangeVertical(skin);
-    placeChild(m_text, m_text->getX(), 0, m_text->getWidth(), getHeight());
+
+    if(getRowCount() == 1)
+    {
+        placeChild(m_text, m_text->getX(), 0, m_text->getWidth(), getHeight());
+        return;
+    }
+
+    const int line=(m_editor && m_editor->getLineHeight() > 0)?m_editor->getLineHeight():getHeight();
+
+    for(size_t row=0; row < getRowCount(); ++row)
+    {
+        internal::Text *text=getRowText(row);
+
+        placeChild(text, text->getX(), static_cast<int>(row)*line, text->getWidth(), line);
+    }
 }
 
 ///////////////////////////////////////////////////////////////////////////
@@ -419,8 +500,95 @@ void CodeEditor::placeLineNumbers(skin::Base *skin)
         if(changed)
             number->doCalculateSize(skin, Dim::X);
 
-        placeChild(number, 0, row->getY(), m_gutterWidth-GutterInset, row->getHeight());
+        // on the line's first visual row
+        const int height=(m_wrap && m_lineHeight > 0)?std::min(row->getHeight(), m_lineHeight):row->getHeight();
+
+        placeChild(number, 0, row->getY(), m_gutterWidth-GutterInset, height);
     }
+}
+
+void CodeEditor::setWrap(bool wrap)
+{
+    if(m_wrap == wrap)
+        return;
+
+    m_wrap=wrap;
+    m_wrapCells=0;
+
+    if(wrap)
+    {
+        setHorizontalScrollOffset(0);
+        setScroll(false, true);
+        // variable mode now (its bar shown before the layout decides the
+        // viewport), every line estimated again once the layout knows the
+        // wrap width
+        applyWrapMeasurer();
+    }
+    else
+    {
+        setItemMeasurer(nullptr);
+        setItemEstimator(nullptr);
+        setScroll(true, true);
+    }
+
+    // every row on screen bound again, wrapped or not
+    refresh();
+    invalidate();
+}
+
+// Turning the measurer on (again) counts every line at the estimator, its
+// cells over the wrap width's: O(N) arithmetic, once per wrap width.
+void CodeEditor::applyWrapMeasurer()
+{
+    m_wrapLineHeight=m_lineHeight;
+    // the estimator first: turning the measurer on counts every line at it
+    setItemEstimator([this](size_t line, int) { return estimateLine(line); });
+    setItemMeasurer([this](size_t line, int width) { return measureLine(line, width); });
+}
+
+size_t CodeEditor::wrapCellsFor(int width) const
+{
+    if(m_cellWidth <= 0.f)
+        return 0;
+
+    const double cells=std::floor(static_cast<double>(width-2*TextInset)/m_cellWidth);
+
+    return static_cast<size_t>(std::max(1.0, cells));
+}
+
+size_t CodeEditor::getLineRows(size_t line) const
+{
+    if(!m_wrap || m_wrapCells == 0 || line >= m_document.lineCount())
+        return 1;
+    return text::wrapRowCount(m_document.line(line), m_wrapCells);
+}
+
+int CodeEditor::measureLine(size_t line, int width) const
+{
+    const int lineHeight=std::max(1, m_lineHeight);
+
+    if(line >= m_document.lineCount())
+        return lineHeight;
+
+    const size_t rows=text::wrapRowCount(m_document.line(line), wrapCellsFor(width));
+
+    return static_cast<int>(std::min<size_t>(rows, static_cast<size_t>(INT_MAX/lineHeight)))*lineHeight;
+}
+
+// The rows the line's cells fill at the wrap width: what it wraps into with
+// no word moved to the next row, so at most the measure. One line before the
+// layout has given a wrap width.
+int CodeEditor::estimateLine(size_t line) const
+{
+    const int lineHeight=std::max(1, m_lineHeight);
+    const size_t cells=m_wrapCells;
+
+    if(cells == 0)
+        return lineHeight;
+
+    const size_t rows=std::max<size_t>(1, (getLineCells(line)+cells-1)/cells);
+
+    return static_cast<int>(std::min<size_t>(rows, static_cast<size_t>(INT_MAX/lineHeight)))*lineHeight;
 }
 
 int CodeEditor::columnX(size_t column) const
@@ -440,7 +608,7 @@ void CodeEditor::bindRow(Base *row, size_t line)
     if(!codeLine || line >= m_document.lineCount())
         return;
 
-    codeLine->bind(line, m_document.line(line));
+    codeLine->bind(line, m_document.line(line), m_wrap?m_wrapCells:0);
     codeLine->setCurrent(!m_readOnly && line == m_caret.line);
 
     size_t begin=0;
@@ -557,7 +725,13 @@ void CodeEditor::linesChanged(const text::LineChange &change)
     else
     {
         for(size_t i=0; i < replaced; ++i)
-            refreshItem(first+i);
+        {
+            // wrapped, the line may take another number of rows
+            if(m_wrap)
+                itemChanged(first+i);
+            else
+                refreshItem(first+i);
+        }
     }
 
     // the content's width may have changed
@@ -687,6 +861,14 @@ void CodeEditor::makeCaretVisible()
 
     if(lineHeight <= 0)
         scrollToItem(m_caret.line);
+    else if(isVariableHeight())
+    {
+        // the line's row as the last layout placed it, in the viewport
+        const Base *row=rowForItem(m_caret.line);
+
+        if(!row || row->hidden() || row->getY() < 0 || row->bottom() > getViewportHeight())
+            scrollToItem(m_caret.line);
+    }
     else
     {
         const int64_t top=static_cast<int64_t>(m_caret.line)*lineHeight;
@@ -698,7 +880,7 @@ void CodeEditor::makeCaretVisible()
 
     const int width=getViewport().w;
 
-    if(width <= 0)
+    if(width <= 0 || !canScrollHorizontal())
         return;
 
     const int x=columnX(m_caretColumn);
@@ -1499,7 +1681,31 @@ void CodeEditor::onSelectAll(event::Info)
 // it is drawn again.
 void CodeEditor::contentsPlaced(skin::Base *skin)
 {
+    // The rows' width is final: at a new wrap width (or line height) every
+    // line is estimated again and the rows on screen bound again (the
+    // measurer's refresh()) before the list measures and places them.
+    if(m_wrap)
+    {
+        const size_t cells=wrapCellsFor(m_innerPanel->getWidth());
+
+        if(cells != m_wrapCells || m_lineHeight != m_wrapLineHeight)
+        {
+            m_wrapCells=cells;
+            applyWrapMeasurer();
+        }
+    }
+
     ParentClass::contentsPlaced(skin);
+
+    // a spare row keeps no visual rows: it holds what a fresh row holds
+    for(size_t i=0; i < poolSize(); ++i)
+    {
+        CodeLine *row=gweni_cast<CodeLine>(poolRow(i));
+
+        if(row && poolItem(i) == NoItem && row->getRowCount() > 1)
+            row->bind(CodeLine::NoLine, String(), 0);
+    }
+
     placeLineNumbers(skin);
 
     if(m_caretScroll[0] != getHorizontalScrollOffset() || m_caretScroll[1] != getVerticalScrollOffset())
@@ -1579,6 +1785,13 @@ void CodeEditor::calculateSize(skin::Base *skin, Dim dim)
 Size CodeEditor::contentSize() const
 {
     Size content=ParentClass::contentSize();
+
+    // wrapped, the rows are the viewport's width
+    if(m_wrap)
+    {
+        content.width=0;
+        return content;
+    }
 
     content.width=2*TextInset+static_cast<int>(std::ceil(static_cast<double>(m_longest+1)*m_cellWidth));
     return content;
