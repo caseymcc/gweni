@@ -226,10 +226,11 @@ if(TARGET ControlTest AND NOT EMSCRIPTEN)
     # dragged past its parent's edges, the tooltip box, the context menu, the
     # stats overlay, the depth view, the zoom panel, the node graph and a
     # variable-height VirtualList, the code editor, the log view, the
-    # badges' counts and anchor moves, the dialogs and the toasts
+    # badges' counts and anchor moves, the dialogs, the toasts and a Flow's
+    # resizes and rebuilds
     foreach(verify_scenario interaction resize scale clip tooltip context-menu stats-overlay
             depth-view zoom-panel node-graph virtual-list-variable code-editor log-view chip-badge
-            dialog toast)
+            dialog toast flow)
         string(REPLACE "-" "_" verify_name "${verify_scenario}")
         add_test(NAME controltest_verify_layout_${verify_name}
             COMMAND $<TARGET_FILE:ControlTest> --headless --scenario ${verify_scenario}
@@ -524,6 +525,17 @@ Erm, and I think it comes down to a choice between "The League Against Salivatin
     gweni_whole_app_test(controltest_timeline 60
         COMMAND $<TARGET_FILE:ControlTest> --headless --scenario timeline --require-one-pass
             --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/timeline@VARIANT@
+        WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
+
+    # FlowDemo: canvas widths that put the Flow's own width at each
+    # breakpoint and one less, 640, 2560 and 640 again, each its breakpoint's
+    # columns (from the bounds listing) in one pass, settling to nothing, the
+    # last 640 the first; a card's edit enters only the way down to it; a
+    # growth and a one-frame rebuild keep the scroll offset, and the cards
+    # removed then added a frame later clamp it to 0 in between
+    gweni_whole_app_test(controltest_flow 120
+        COMMAND $<TARGET_FILE:ControlTest> --headless --scenario flow --require-one-pass
+            --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/flow@VARIANT@
         WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
 
     # ChipBadgeDemo: a badge's new count writes its slots alone and lays out

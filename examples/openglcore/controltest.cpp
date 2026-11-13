@@ -167,7 +167,7 @@
  *                       inspector |
  *                       stats-overlay | depth-view | zoom-panel |
  *                       node-graph | code-editor | log-view |
- *                       chip-badge (see below)
+ *                       chip-badge | flow (see below)
  *    --dump-bounds [<path>]
  *                       print the laid-out control tree as text: one line per
  *                       control, depth-first in child order, indented by depth,
@@ -873,6 +873,29 @@
  *                 more than the row and the way down to it and gives back the
  *                 chip's ids; settled frames write nothing; the demo gives
  *                 every id back. Exits non-zero if any check is no.
+ *    flow         FlowDemo, the clock frozen, the canvas 480 high (flow-*.png):
+ *                 canvas widths worked out from the canvas less the Flow's
+ *                 width at 640 (the bar and the insets), so the Flow is 1023,
+ *                 1024, 1535 and 1536 wide, then 640, 2560 and 640 again; at
+ *                 2560 card 0's body grown by a few words that keep its row's
+ *                 height; at 640 scrolled 200 down, card 1's body grown, the
+ *                 cards replaced in one frame (delayedDelete and a new set),
+ *                 and the cards removed in one frame and added in the next.
+ *                 One line
+ *                   flow columns=yes|no ... ids_back=yes|no inset=N
+ *                   columns=<flow width>:<columns> ...
+ *                 reports the checks: each size shows its breakpoint's
+ *                 columns (the cards' distinct x in the --dump-bounds
+ *                 listing; 1 below 1024, 2 below 1536, else 3), the Flow that
+ *                 wide and its full rows ending at its edge, in one pass; the
+ *                 first frame is one pass; the last 640 is the first one's
+ *                 listing, renderer mirror (slot by owner) and pixels; the
+ *                 card's edit moves no card, changes no pixel outside it and
+ *                 enters no more than the way down to it and its subtree; the
+ *                 growth and the rebuild keep the offset (clamped only to a
+ *                 shorter content's end); the empty frame clamps it to 0,
+ *                 where it stays; settled frames write nothing; the demo gives
+ *                 every id back. Exits non-zero if any check is no.
  *    virtual-list VirtualListDemo with its list at 1 000 and then 100 000
  *                 items, the clock frozen: a settled frame, a one-row scroll
  *                 from the top (scrollByRows) and a wheel notch over the list
@@ -1166,6 +1189,7 @@
 #include <demo/vectorField.h>
 #include <demo/zoomPanel.h>
 #include <demo/flow.h>
+#include <gweni/controls/layout/flow.h>
 #include <demo/nodeGraph.h>
 #include <gweni/controls/vectorField.h>
 #include <demo/statsOverlay.h>
@@ -1375,7 +1399,8 @@ static void printUsage(std::ostream &out)
          "                     | plot-histogram | plot-lines | chart | timeline\n"
          "                     | inspector\n"
          "                     | stats-overlay | depth-view | zoom-panel\n"
-         "                     | node-graph | code-editor | log-view | chip-badge;\n"
+         "                     | node-graph | code-editor | log-view | chip-badge\n"
+         "                     | flow;\n"
          "                     resize prints listing_settled, mirror_settled,\n"
          "                     shrink_settled and fresh_matches, interaction one\n"
          "                     yes/no per repaint check, typing its keyboard\n"
@@ -2414,7 +2439,7 @@ static bool runSteps(Session &s, const std::vector<Step> &steps, const std::stri
 enum class Scenario { None, PerControl, Resize, Docked, Scroll, Interaction, Typing, Clip, TextSize, Scale,
     ToolTip, ContextMenu, Popup, Dialog, Toast, VirtualList, VirtualListVariable, DataTableVirtual, HideShow, DemoLabels, PlotHistogram,
     PlotLines, Chart, Timeline, Inspector, Theme, StatsOverlay, DepthView, ZoomPanel, NodeGraph, CodeEditor, LogView,
-    ChipBadge };
+    ChipBadge, Flow };
 
 static bool parseScenario(const std::string &name, Scenario &scenario)
 {
@@ -2450,6 +2475,7 @@ static bool parseScenario(const std::string &name, Scenario &scenario)
     else if(name == "code-editor") scenario=Scenario::CodeEditor;
     else if(name == "log-view") scenario=Scenario::LogView;
     else if(name == "chip-badge") scenario=Scenario::ChipBadge;
+    else if(name == "flow") scenario=Scenario::Flow;
     else return false;
     return true;
 }
@@ -12727,6 +12753,313 @@ static bool runVirtualListVariableScenario(Session &s, const std::string &shotDi
 }
 
 //-----------------------------------------------------------------------------
+// --scenario flow: FlowDemo's cards in a layout::Flow, in a stable-gutter
+// vertical ScrollControl, the clock frozen and the canvas 480 high. The
+// canvas widths are worked out from what the canvas less the Flow's width is
+// at 640 (the bar, its margins, the inner panel's margin), so the Flow's own
+// width is each breakpoint less 1 and each breakpoint (1023, 1024, 1535,
+// 1536); then the canvas is 640, 2560 and 640 again. Each size must show the
+// breakpoints' column count, read from the --dump-bounds listing (the cards'
+// distinct x), the Flow that wide and its full rows ending at its right
+// edge; lay out in one update-phase pass; and settle to frames writing and
+// changing nothing. The last 640 must be the first one's listing, renderer
+// mirror (slot by owner: a wrapped Text's lines are made and deleted as the
+// widths change, so their text ids can come back in another order) and
+// pixels. Then at 2560 a card's body grown by a few words that
+// keep its row's height (card 0, one sentence, beside card 1's four) must
+// move no card, change no pixel outside it and enter no more than the way
+// down to it and its subtree (5 entries a control: the ScrollControl measures
+// its content in Y again). Last, at 640 scrolled 200 down: a card's text
+// growing keeps the offset; the cards replaced in one frame (each
+// delayedDelete()d, a new set added) keep it, clamped only to a shorter new
+// content's end; and the cards removed in one frame and added in a later one
+// clamp it to 0 in between, where it stays.
+//-----------------------------------------------------------------------------
+
+namespace
+{
+
+// The columns the listing shows for FlowDemo's cards (their distinct x), the
+// Flow's width, and whether every full row ends at the Flow's right edge.
+struct FlowListing
+{
+    size_t columns=0;
+    int flowWidth=-1;
+    bool rowsEnd=true;
+    std::vector<gweni::Rect> cards;
+};
+
+bool parseBounds(const std::string &line, gweni::Rect &rect)
+{
+    const size_t at=line.find(" bounds=(");
+
+    return at != std::string::npos
+        && std::sscanf(line.c_str()+at, " bounds=(%d, %d, %d, %d)", &rect.x, &rect.y, &rect.w, &rect.h) == 4;
+}
+
+FlowListing flowListing(const std::string &listing)
+{
+    FlowListing result;
+    std::istringstream in(listing);
+    std::string line;
+    std::set<int> xs;
+
+    while(std::getline(in, line))
+    {
+        const size_t start=line.find_first_not_of(' ');
+        gweni::Rect rect;
+
+        if(start == std::string::npos || !parseBounds(line, rect))
+            continue;
+        if(line.compare(start, 5, "Flow ") == 0)
+            result.flowWidth=rect.w;
+        else if(line.compare(start, 13, "FlowDemoCard ") == 0)
+        {
+            result.cards.push_back(rect);
+            xs.insert(rect.x);
+        }
+    }
+
+    result.columns=xs.size();
+    for(size_t i=0; result.columns > 0 && i+result.columns <= result.cards.size(); i+=result.columns)
+    {
+        const gweni::Rect &last=result.cards[i+result.columns-1];
+
+        if(last.x+last.w != result.flowWidth)
+            result.rowsEnd=false;
+    }
+    return result;
+}
+
+int expectedFlowColumns(int width)
+{
+    return (width < gweni::FlowDemo::TwoColumns)?1:(width < gweni::FlowDemo::ThreeColumns)?2:3;
+}
+
+std::vector<gweni::Rect> cardBounds(gweni::FlowDemo *demo)
+{
+    std::vector<gweni::Rect> bounds;
+
+    for(gweni::FlowDemoCard *card : demo->cards())
+        bounds.push_back(card->getBounds());
+    return bounds;
+}
+
+}//namespace
+
+static void collectMirrorByOwner(gweni::controls::Base *control, const std::string &path,
+    const gweni::renderer::SlotRenderer::MirrorSnapshot &mirror,
+    std::map<std::string, std::vector<uint8_t>> &slots);
+static bool mirrorsMatchByOwner(Session &s, const ResizeState &before,
+    const std::map<std::string, std::vector<uint8_t>> &beforeSlots, const ResizeState &after);
+
+static bool runFlowScenario(Session &s, const std::string &shotDir, bool &passed)
+{
+    s.freezeClock=true;
+
+    InteractionChecks checks;
+    checks.scenario="flow";
+
+    if(!resizeSession(s, 640, 480))
+        return false;
+
+    const size_t idsBefore=livePrimitiveIds()+liveTextIds();
+    gweni::controls::Base *control=addControl(s, "FlowDemo");
+    auto *demo=gweni::gweni_cast<gweni::FlowDemo>(control);
+
+    if(!demo)
+    {
+        std::cerr<<"ControlTest: flow: FlowDemo was not built\n";
+        return false;
+    }
+
+    s.label="flow";
+
+    // the first frame: one pass (--require-one-pass), then settled
+    const CodeEditorFrame built=codeEditorFrame(s);
+    std::vector<uint8_t> pixels;
+    size_t idleWork=settleCodeEditor(s, pixels);
+    bool ok=shoot(s, shotDir+"/flow-640.png");
+    ResizeState firstState, lastState;
+
+    captureResizeState(s, shotDir+"/flow-640.png", firstState);
+
+    // by owner: a wrapped Text's lines come and go with the widths, so which
+    // line holds which text id at the end depends on the sizes in between
+    std::map<std::string, std::vector<uint8_t>> firstSlots;
+
+    collectMirrorByOwner(s.canvas, s.canvas->getTypeName(), firstState.mirror, firstSlots);
+
+    // what the canvas has beside the Flow: the bar and the insets
+    const int inset=s.size.x-demo->flow()->getWidth();
+    std::vector<int> widths;
+
+    for(int boundary : {gweni::FlowDemo::TwoColumns, gweni::FlowDemo::ThreeColumns})
+    {
+        widths.push_back(boundary-1+inset);
+        widths.push_back(boundary+inset);
+    }
+    widths.push_back(640);
+    widths.push_back(2560);
+    widths.push_back(640);
+
+    bool sizesOk=true;
+    int maxPasses=built.passes;
+    std::ostringstream shown;
+
+    for(size_t i=0; i < widths.size(); ++i)
+    {
+        const int width=widths[i];
+
+        if(!resizeSession(s, width, 480))
+            return false;
+
+        const CodeEditorFrame resized=codeEditorFrame(s);
+        const size_t work=settleCodeEditor(s, pixels);
+        const FlowListing listing=flowListing(boundsListing(s));
+        const int flowWidth=width-inset;
+        const size_t expected=static_cast<size_t>(expectedFlowColumns(flowWidth));
+        const std::string name="flow-"+std::to_string(i+1)+"-"+std::to_string(width)+".png";
+
+        ok=shoot(s, shotDir+"/"+name) && ok;
+        maxPasses=std::max(maxPasses, resized.passes);
+        idleWork+=work;
+        shown<<" "<<listing.flowWidth<<":"<<listing.columns;
+
+        const bool sizeOk=resized.passes == 1 && listing.flowWidth == flowWidth
+            && listing.columns == expected && listing.rowsEnd
+            && listing.cards.size() == static_cast<size_t>(gweni::FlowDemo::Cards);
+
+        if(!sizeOk)
+            std::cerr<<"ControlTest: flow: at a "<<width<<" wide canvas the Flow is "<<listing.flowWidth
+                     <<" wide (expected "<<flowWidth<<") with "<<listing.columns<<" columns (expected "
+                     <<expected<<"), its full rows "<<(listing.rowsEnd?"":"not ")<<"ending at its edge, "
+                     <<listing.cards.size()<<" cards listed, laid out in "<<resized.passes<<" passes\n";
+        sizesOk=sizesOk && sizeOk;
+    }
+    checks.check("columns", sizesOk, "a size showed the wrong columns or took more than one pass");
+    checks.check("first_frame", built.passes == 1,
+        "the first frame took "+std::to_string(built.passes)+" passes");
+
+    captureResizeState(s, shotDir+"/flow-"+std::to_string(widths.size())+"-640.png", lastState);
+
+    const bool listingBack=listingsMatch(firstState, lastState);
+    const bool mirrorBack=mirrorsMatchByOwner(s, firstState, firstSlots, lastState);
+    const bool pixelsBack=pixelsMatch(firstState, lastState);
+
+    checks.check("round_trip", listingBack && mirrorBack && pixelsBack,
+        "the last 640 differs from the first in its listing, mirror or pixels");
+
+    // a card's text that keeps its row's height: only it, the way down to
+    // it, and nothing else moves or changes
+    if(!resizeSession(s, 2560, 480))
+        return false;
+    renderFrames(s, 1);
+    idleWork+=settleCodeEditor(s, pixels);
+
+    gweni::FlowDemoCard *card=demo->cards()[0];
+    const std::vector<gweni::Rect> before=cardBounds(demo);
+
+    card->setBody(gweni::FlowDemo::cardBody(0, 0)+" It changed.");
+
+    const CodeEditorFrame edit=codeEditorFrame(s);
+    const std::vector<gweni::Rect> after=cardBounds(demo);
+    const size_t editOutside=differencesOutsideRects(s, pixels, edit.pixels, {card->getCanvasBounds()});
+    const size_t editBudget=5*(pathLength(card)+subtreeControls(card));
+    size_t allCards=0;
+
+    for(gweni::FlowDemoCard *each : demo->cards())
+        allCards+=subtreeControls(each);
+    checks.check("card_edit",
+        edit.passes == 1 && before == after && editOutside == 0 && edit.visited <= editBudget,
+        "a card's edit ran "+std::to_string(edit.passes)+" passes entering "+std::to_string(edit.visited)
+        +" (the way down to it and its subtree, "+std::to_string(editBudget)+", allowed; the cards hold "
+        +std::to_string(allCards)+" controls), moved "+(before == after?"no card":"a card")+" and changed "
+        +std::to_string(editOutside)+" pixels outside it");
+    idleWork+=settleCodeEditor(s, pixels);
+
+    // scrolled down at 640: a card growing keeps the offset
+    if(!resizeSession(s, 640, 480))
+        return false;
+    renderFrames(s, 1);
+    idleWork+=settleCodeEditor(s, pixels);
+
+    gweni::controls::ScrollControl *scroll=demo->scroll();
+    const int offset=200;
+
+    scroll->setVerticalScrollOffset(offset);
+    renderFrames(s, 1);
+    idleWork+=settleCodeEditor(s, pixels);
+
+    const int maxBefore=scroll->getMaxVerticalScrollOffset();
+
+    demo->cards()[1]->setBody(gweni::FlowDemo::cardBody(1, 0)+" "+gweni::FlowDemo::cardBody(2, 0));
+
+    const CodeEditorFrame grow=codeEditorFrame(s);
+
+    checks.check("grow_keeps_offset",
+        maxBefore > offset && grow.passes == 1 && scroll->getVerticalScrollOffset() == offset
+            && scroll->getMaxVerticalScrollOffset() > maxBefore,
+        "a card's growth left the offset at "+std::to_string(scroll->getVerticalScrollOffset())+" (of "
+        +std::to_string(offset)+", the range "+std::to_string(maxBefore)+" -> "
+        +std::to_string(scroll->getMaxVerticalScrollOffset())+") in "+std::to_string(grow.passes)+" passes");
+    idleWork+=settleCodeEditor(s, pixels);
+
+    // the cards replaced in one frame: the offset kept, clamped only to the
+    // new content's end
+    demo->rebuildCards();
+
+    const CodeEditorFrame rebuilt=codeEditorFrame(s);
+    const int rebuiltOffset=scroll->getVerticalScrollOffset();
+
+    idleWork+=settleCodeEditor(s, pixels);
+
+    const int rebuiltMax=scroll->getMaxVerticalScrollOffset();
+
+    checks.check("rebuild_keeps_offset",
+        rebuilt.passes == 1 && rebuiltOffset == std::min(offset, rebuiltMax)
+            && scroll->getVerticalScrollOffset() == rebuiltOffset && rebuiltMax > 0,
+        "the rebuild left the offset at "+std::to_string(rebuiltOffset)+" then "
+        +std::to_string(scroll->getVerticalScrollOffset())+" (of "+std::to_string(offset)
+        +", the new range "+std::to_string(rebuiltMax)+") in "+std::to_string(rebuilt.passes)+" passes");
+
+    // removed in one frame and added in a later one: the empty frame clamps
+    // the offset to 0, and the new cards start at the top
+    demo->removeCards();
+
+    const CodeEditorFrame emptied=codeEditorFrame(s);
+    const int emptyOffset=scroll->getVerticalScrollOffset();
+
+    demo->addCards();
+
+    const CodeEditorFrame refilled=codeEditorFrame(s);
+
+    idleWork+=settleCodeEditor(s, pixels);
+    checks.check("remove_then_add_clamps",
+        emptied.passes == 1 && refilled.passes == 1 && emptyOffset == 0
+            && scroll->getVerticalScrollOffset() == 0 && scroll->getMaxVerticalScrollOffset() > offset,
+        "the offset was "+std::to_string(emptyOffset)+" with no cards and "
+        +std::to_string(scroll->getVerticalScrollOffset())+" once they were back (0 both)");
+
+    checks.check("settled", idleWork == 0, "settled frames wrote or changed "+std::to_string(idleWork));
+
+    dropControl(s, control);
+    renderFrames(s, 1);
+
+    const size_t idsLeft=livePrimitiveIds()+liveTextIds()-idsBefore;
+
+    checks.check("ids_back", idsLeft == 0, std::to_string(idsLeft)+" ids not given back");
+
+    passed=checks.allPassed();
+    std::cout<<"flow";
+    for(const auto &result : checks.results)
+        std::cout<<" "<<result.first<<"="<<(result.second?"yes":"no");
+    std::cout<<" inset="<<inset<<" columns="<<shown.str().substr(1)<<" max_passes="<<maxPasses
+             <<" edit_visited="<<edit.visited<<" rebuilt_offset="<<rebuiltOffset<<"\n";
+    return ok;
+}
+
+//-----------------------------------------------------------------------------
 // --scenario log-view: LogViewDemo's log filled with 1 000 and then 100 000
 // events, the clock frozen (the demo streams nothing) and the idle re-measure
 // off, so no frame measures off screen. Each input is one frame, held to the
@@ -15124,6 +15457,15 @@ int main(int argc, char *argv[])
             ok=runChipBadgeScenario(session, shotDir, passed);
             if(ok && !passed)
                 ok=false;   // a count, a move, a hover or a removal did more than its part
+            break;
+        }
+
+        case Scenario::Flow:
+        {
+            bool passed=false;
+            ok=runFlowScenario(session, shotDir, passed);
+            if(ok && !passed)
+                ok=false;   // a size, a card's edit or a rebuild did more than its part
             break;
         }
 
