@@ -2070,6 +2070,90 @@ two programs and the draws. What follows describes both together:
   shell's "Code editor") holds 5000 generated lines of YAML; `controltest_code_editor`
   holds a typed character, an undone burst, Return and a scroll to the part of the
   editor each may touch.
+- **The log view: an append-only log the view owns.** `controls::LogView`
+  (`include/gweni/controls/logView.h`) is a variable-mode `VirtualList` (see "The
+  virtual list's variable mode") over a row store it owns: a `std::deque` of
+  `{RowId, LogRow}`, a `LogRow` being a kind, a text (a block's title), a block's lines,
+  an optional colour and a block's `collapsed`. `append()` numbers rows up from 0,
+  `prepend()` (older rows before the first, a dashboard's "Show all") down from below
+  the lowest id ever given, so no id is given twice, not even one the cap dropped. Ids
+  rise with the rows' positions, so `rowPosition(id)` is the id's distance from the
+  last row (any appended id) or the first one, O(1), and a binary search only for an
+  id in a prepended run whose oldest rows were dropped before a later prepend.
+  `replace(id, row)` is by id, since positions move, and re-measures that row alone
+  (`itemChanged`); an id the view no longer holds returns false. `setMaxRows(n)` is
+  applied by the next append, `removeItems(0, k)` on the list, O(log N); the anchor
+  keeps what is on screen (`tests/unit/logViewRows.cpp`).
+
+  **Rows.** The pool's rows are `internal::LogViewRow`s, wrapped `Label`s in the view's
+  font (held by pointer, so `setFont` changes it in place and tells the rows), padded
+  `RowPadX`/`RowPadY`, measured as `Base::wrappedTextHeight` of their text at the row
+  width less the padding, the wrap the row's Text does. A block row is the same row
+  with a left padding `ChevronColumn` wider and a `LogViewChevron` in it (icon kind 1,
+  right or down, in the row's text colour), made the first time the row shows a
+  block; its text is `blockText()`: `"title (4 of 120 lines)"` and the first
+  `getBlockPreviewLines()` lines while collapsed, `"title (120 lines)"` and every line
+  expanded. A press on the title line toggles it (`setBlockExpanded`), one
+  `itemChanged`, so only that row's height changes and the rows above it stay where
+  they are. An app's kind (`setRowKind(kind, {factory, binder, measurer})`, from
+  `LogRow::FirstAppKind`) hides the row's text and shows the kind's content, made by
+  its factory once per pooled row the first time the row shows the kind, placed inside
+  the padding at the kind's measure (the row's preferred height is the list's height
+  for its item, the kind's contract being that the content lays out at it). The binder
+  sets content only, padding and which children show included, as `VirtualList`
+  requires (`tests/unit/logViewBlocks.cpp`). An expanded block is one row, so it makes
+  a line `Text` per wrapped line of all its lines while on screen.
+
+  **Following.** Following is the list stuck to its end (`setStickToEnd`), so an append
+  puts the last row's bottom at the viewport's bottom in its own frame. It is on by
+  default and every scroll up detaches it: a wheel notch up (before the list scrolls,
+  which stuck would put back), Up, PageUp and Home (the view takes the keyboard),
+  `scrollToRow()` of a row above the last, the thumb dragged (`onVeritcalBarMoved`) and
+  the bar's arrows or track, which tell nobody: `noteBarMove()` reads a bar the user
+  moved since the last layout (its amount against `m_shownAmount`) at the top of the
+  Y arrange, under a `PlacementScope`, before `placeContents()` takes it, and in
+  `append`, `replace` and `prepend` before their list edit would take it. Detached,
+  appends leave every row on screen where it is, and an `internal::LogViewJumpButton`
+  (the view's own child, made with the inner panel set aside the first time the view
+  detaches, never taking the keyboard focus) shows centred `JumpGap` above the
+  viewport's bottom with the count appended since (`jumpText()`), relabelled once a
+  frame by the layout after the appends. Its press, End, `scrollToRow()` of the last
+  row and a scroll down (wheel, Down, the bar) to the end follow again.
+  `onFollowingChanged` fires on every change, possibly from the layout (the arrows'
+  path), so a handler only reads (`tests/unit/logViewFollow.cpp`).
+
+  **Selection.** The selection is ranges of `Position{row id, character}` ends, a whole
+  row from 0 to its `rowText()`'s length (a block's title and every line, collapsed or
+  not), so a character selection later changes no model. A click selects a row,
+  Shift+click and a drag extend the last range, Ctrl+click toggles a row (splitting a
+  range round it), Ctrl+A selects every row and Escape clears; a drag past the
+  viewport's top or bottom scrolls on the canvas clock (CodeEditor's speeds), a scroll
+  up detaching the view, and a selection alone never does. Ranges keep their ids, so
+  scrolling, binding, appends and prepends change nothing; the cap drops a range with
+  no row left and moves a dropped low end to the first row held; `replace` clamps the
+  characters on its row, an end at the row's end staying at its end. Each pooled row
+  is told whether its row is selected when bound and when the selection changes, and
+  the textured `LogViewRow` draws `LogViewSelection` over its bounds at its Text's z,
+  behind every glyph, its slot hidden otherwise. Ctrl+C and the context menu's Copy
+  (the view's, made on its first right press, a right press on an unselected row
+  selecting it; its items carry no accelerator, which the canvas-wide accelerator
+  search would find) put `getSelectedText()`, the rows' texts joined by `'\n'`, on
+  the clipboard (`tests/unit/logViewSelection.cpp`).
+
+  **Cost.** A frame costs the rows on screen. Following, an append frame moves every
+  row on screen, and a moved run is a fresh layout ("A moved run is a fresh layout"),
+  so it rewrites a screen of glyph slots: in the `log-append` bench scene (600x300, 17
+  rows a frame) 39 controls changed, 655 glyph slots and 1 341 text measures a frame
+  at N=1 000 and at N=100 000 alike. Detached (`log-append-detached`), a frame writes
+  the thumb's slot and the jump button's glyphs alone; capped (`log-append-capped`),
+  each append drops one row through the height index. A small excerpt is a `LogView`
+  `heightForRows(5)` high with a small cap: its own pool, nothing per row of its log.
+  The theme's `LogView`, `LogViewFocus` and `LogViewSelection` surfaces are the field
+  and the highlight. LogViewDemo (the shell's "Log view", the README gallery) streams
+  600 events from an animation on the canvas clock (paused while the demo is hidden)
+  beside three five-line excerpts; `controltest_log_view` holds appends, a detach, the
+  jump button, a replace above the viewport, a resize, an expand, a copied selection
+  and the cap to what each may touch at 1 000 and 100 000 rows.
 - **The slider's value text.** `Slider::setValueFormat("%.2f")` shows the value as text
   (imgui's SliderFloat), formatted with `snprintf` from `getFloatValue()`. The format is
   checked first (`Slider::validValueFormat`): exactly one conversion of a double (`f F e
