@@ -486,6 +486,7 @@ std::unordered_map<std::string, gweni::Color*> TexturedSkin::textColorRegistry()
         {"AxisTagText",&Colors.AxisTagText},
         {"CodeLineNumber",&Colors.CodeEditor.LineNumber},
         {"CodeLineNumberCurrent",&Colors.CodeEditor.LineNumberCurrent},
+        {"ChartAxisText",&Colors.Chart.AxisText},{"ChartMarkerText",&Colors.Chart.MarkerText},
         {"SelectableNormal",&Colors.Selectable.Normal},{"SelectableHover",&Colors.Selectable.Hover},
         {"SelectableSelected",&Colors.Selectable.Selected},{"SelectableDisabled",&Colors.Selectable.Disabled},
     };
@@ -1312,6 +1313,9 @@ void TexturedSkin::setThemeColors()
     // a CodeEditor's line numbers, the caret's line's lifted
     Colors.CodeEditor.LineNumber=gweni::Color(0x3b, 0x42, 0x61);
     Colors.CodeEditor.LineNumberCurrent=gweni::Color(0x73, 0x7a, 0xa2);
+    // a Chart's tick labels are secondary text, its markers' captions primary
+    Colors.Chart.AxisText=FgDark;
+    Colors.Chart.MarkerText=Fg;
     // the hover is the background alone, so hovering writes no glyph slot
     Colors.Selectable.Normal=Fg;
     Colors.Selectable.Hover=Fg;

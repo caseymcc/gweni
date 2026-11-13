@@ -224,6 +224,35 @@ inline Surface PlotBarHover   { Cyan,                  Cyan,                  Cy
 // A PlotLines: its frame is PlotFrame, its line is drawn in PlotLine's top.
 inline Surface PlotLine       { Blue,                  Blue,                  Blue,  0.0f,     0.0f };
 
+// A Chart: its frame (as a plot's), its grid lines and the line along the
+// plot's bottom (their top colour), a shaded x span (translucent, over the
+// grid and under the series), a marker line and the hover's crosshair (their
+// top colour). A series is drawn in ChartSeries<i>: a line in its top colour,
+// a bar filled and bordered as the surface says.
+inline Surface ChartFrame     { BgDark,                BgDark,                Line,  RadiusSm, BorderW };
+inline Surface ChartGrid      { BgHighlight,           BgHighlight,           BgHighlight, 0.0f, 0.0f };
+inline Surface ChartAxis      { Line,                  Line,                  Line,  0.0f,     0.0f };
+inline Surface ChartSpan      { Color(0x7a,0xa2,0xf7,0x24), Color(0x7a,0xa2,0xf7,0x24), Color(0,0,0,0), 0.0f, 0.0f };
+inline Surface ChartMarker    { Yellow,                Yellow,                Yellow, 0.0f,    0.0f };
+inline Surface ChartCrosshair { Muted,                 Muted,                 Muted, 0.0f,     0.0f };
+inline Surface ChartSeries0   { Blue,                  Blue,                  Blue,    0.0f, 0.0f };
+inline Surface ChartSeries1   { Green,                 Green,                 Green,   0.0f, 0.0f };
+inline Surface ChartSeries2   { Magenta,               Magenta,               Magenta, 0.0f, 0.0f };
+inline Surface ChartSeries3   { Orange,                Orange,                Orange,  0.0f, 0.0f };
+inline Surface ChartSeries4   { Cyan,                  Cyan,                  Cyan,    0.0f, 0.0f };
+inline Surface ChartSeries5   { Red,                   Red,                   Red,     0.0f, 0.0f };
+inline Surface ChartSeries6   { Yellow,                Yellow,                Yellow,  0.0f, 0.0f };
+inline Surface ChartSeries7   { Color(0x73,0xda,0xca), Color(0x73,0xda,0xca), Color(0x73,0xda,0xca), 0.0f, 0.0f };
+inline constexpr int ChartSeriesSurfaces=8;
+// The surface of a series of colour index \p index (taken modulo 8).
+inline Surface &chartSeries(int index)
+{
+    static Surface *const surfaces[ChartSeriesSurfaces]={&ChartSeries0, &ChartSeries1, &ChartSeries2,
+        &ChartSeries3, &ChartSeries4, &ChartSeries5, &ChartSeries6, &ChartSeries7};
+
+    return *surfaces[((index%ChartSeriesSurfaces)+ChartSeriesSurfaces)%ChartSeriesSurfaces];
+}
+
 // gweni::tools::StatsOverlay's panel, in the canvas's corner: translucent, so
 // the app's fills show dimly through it.
 inline Surface StatsOverlay   { Color(0x16,0x16,0x1e,0xe0), Color(0x16,0x16,0x1e,0xe0), BgHighlight, Radius, BorderW };
@@ -307,6 +336,11 @@ inline std::unordered_map<std::string, Surface*>& surfaceRegistry()
         {"DataTableHeader",&DataTableHeader},{"DataTableHeaderHover",&DataTableHeaderHover},
         {"DataTableHeaderDown",&DataTableHeaderDown},{"DataTableStripe",&DataTableStripe},
         {"PlotFrame",&PlotFrame},{"PlotBar",&PlotBar},{"PlotBarHover",&PlotBarHover},{"PlotLine",&PlotLine},
+        {"ChartFrame",&ChartFrame},{"ChartGrid",&ChartGrid},{"ChartAxis",&ChartAxis},{"ChartSpan",&ChartSpan},
+        {"ChartMarker",&ChartMarker},{"ChartCrosshair",&ChartCrosshair},
+        {"ChartSeries0",&ChartSeries0},{"ChartSeries1",&ChartSeries1},{"ChartSeries2",&ChartSeries2},
+        {"ChartSeries3",&ChartSeries3},{"ChartSeries4",&ChartSeries4},{"ChartSeries5",&ChartSeries5},
+        {"ChartSeries6",&ChartSeries6},{"ChartSeries7",&ChartSeries7},
         {"StatsOverlay",&StatsOverlay},
         {"DragNumber",&DragNumber},{"DragNumberHover",&DragNumberHover},{"DragNumberFocus",&DragNumberFocus},
         {"DragNumberDown",&DragNumberDown},{"DragNumberDisabled",&DragNumberDisabled},

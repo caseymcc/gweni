@@ -96,8 +96,9 @@ struct ChartPoint
 //! need the plot's height: ScrollControl's pattern, docs/layout.md).
 //!
 //! A change of the data marks StateChange_Background, and lays the chart out
-//! again only when an automatic range can move with it; a chart with a fixed
-//! x range and fixed value ranges draws a new point with no layout.
+//! again only when an automatic range can move with it; a series on a fixed
+//! value axis of a chart with a fixed x range draws a new point with no
+//! layout.
 class GWENI_EXPORT Chart: public Base
 {
 public:
@@ -122,6 +123,9 @@ public:
 
     //! Adds a series, last, and returns its index. Its colour is the theme's
     //! ChartSeries<index % 8> unless setSeriesColorIndex() says otherwise.
+    //! The renderer draws each series in a z layer of its own
+    //! (skin::Control::depthLayersOf()), so adding or removing one renumbers
+    //! the chart's range (Base::zOrderChanged()).
     size_t addSeries(const String &name, ChartSeriesType type,
                      ChartAxisSide axis=ChartAxisSide::Left);
     //! Removes series \p series; the ones after it move down an index.
@@ -232,6 +236,9 @@ public:
     //! vertex of a NaN value.
     size_t getVertexCount(size_t series) const;
     bool getVertex(size_t series, size_t vertex, PointF &point) const;
+    //! The same in doubles, which a point far out of range still holds
+    //! exactly enough to be cut to the plot.
+    bool getVertex(size_t series, size_t vertex, double &x, double &y) const;
     //! A bar's rect (a bar or stacked bar series' point), whole units, cut to
     //! the plot: false for a point of no other type, a hidden series, a NaN
     //! or 0 value, or a bar wholly outside the plot.
@@ -260,6 +267,9 @@ public:
     //! or the app's): its series are drawn by its skin, its labels placed by
     //! it.
     bool sizedByRequest(Dim /*dim*/) const override { return true; }
+
+    //! The labels in the skin's Colors.Chart.AxisText.
+    void updateColors() override;
 
 protected:
 
@@ -309,9 +319,9 @@ protected:
     const ValueAxis &axisOf(ChartAxisSide side) const { return m_yAxes[static_cast<int>(side)]; }
     const Series *seriesAt(size_t series) const { return series < m_series.size() ? &m_series[series] : nullptr; }
 
-    //! The data changed: marks the chart, and lays it out again when an
-    //! automatic range may move.
-    void dataChanged();
+    //! Series \p series's data changed: marks the chart, and lays it out
+    //! again when the x range or the series' value axis is automatic.
+    void dataChanged(size_t series);
     //! A change of the axes' settings: lays the chart out again.
     void axesChanged();
     //! Stacks, bar groups and the data's extents, from the points.

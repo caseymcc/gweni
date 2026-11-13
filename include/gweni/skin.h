@@ -71,6 +71,14 @@ public:
     {
         return 1;
     }
+    // depthLayers() for \p control, the control this Control draws, which is
+    // what the canvas asks: a Control whose count follows its control's state
+    // (a Chart's layer per series) reads it here, and the control calls
+    // zOrderChanged() when the count changes. depthLayers() by default.
+    virtual size_t depthLayersOf(const controls::Base * /*control*/)
+    {
+        return depthLayers();
+    }
 
     // The number of z values this control's primitives use after its whole
     // subtree (controls::Base::getOverlayZIndex() is the first), for what it
@@ -398,6 +406,13 @@ public:
             gweni::Color LineNumber{0x80, 0x80, 0x80};
             gweni::Color LineNumberCurrent{0xc0, 0xc0, 0xc0};
         } CodeEditor;
+
+        //! A Chart's tick labels and axis titles, and its markers' captions.
+        struct Chart_t
+        {
+            gweni::Color AxisText{0xa0, 0xa0, 0xa0};
+            gweni::Color MarkerText{0xc0, 0xc0, 0xc0};
+        } Chart;
 
         //! A Selectable row's text, by its state.
         struct Selectable_t

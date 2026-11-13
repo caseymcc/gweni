@@ -710,6 +710,90 @@ public:
     inline static const std::string_view name="NodeGraph";
 };
 
+// A Chart: [0] its frame (ChartFrame, over the render bounds, at its z), then
+// slot lists it sizes itself to what it draws, each slot keeping what it last
+// drew (as PlotLines' do):
+// - the grid: a drawLine per grid line, at the ticks of each shown value axis
+//   with its grid on and of the x axis with setXGrid(), in ChartGrid's top
+//   colour, then the line along the plot's bottom in ChartAxis's, at z+1;
+// - one list per series, at z+3+i: a bar or stacked bar series' bars (one
+//   drawRoundedRect per point, its getBarRect() in ChartSeries<colour>, a point
+//   with no bar hidden), or a line or step line's segments (one drawLine per
+//   segment of its vertices, with its neighbours, in the surface's top colour
+//   and the series' thickness; a segment beside a NaN hidden).
+// The grid and the series are drawn in the plot's clip region (the control's
+// own region cut to getPlotBounds()), and a segment is cut on the CPU to a box
+// a little wider than the plot first, so a point out of range is clipped,
+// never clamped, and no quad reaches past what a vertex holds. A slot is drawn
+// again only when what it would draw (its rect or endpoints and neighbours,
+// colour, thickness, z, clip box) differs, unless the frame marks the chart's
+// geometry, visibility or creation: a changed point rewrites its bar (its
+// stack's bars above it when they move) or the segments around it, an
+// appended one its own slots and its joint. A hidden series' slots are hidden.
+// The z values are the frame's, the grid's (z+1), the spans' (z+2), one per
+// series (z+3+i), the markers' (z+3+S) and the crosshair's (z+4+S), so
+// depthLayersOf() is 5+S for S series; the chart calls zOrderChanged() when S
+// changes.
+class Chart:public textured::ControlRegister<Chart>
+{
+public:
+    static void staticInit(TexturedSkin *) { m_staticInit=true; }
+
+    static constexpr int GridLayer=1;
+    static constexpr int SpanLayer=2;
+    static constexpr int SeriesLayer=3;
+
+    size_t requiredPrimitives() override { return 1; }
+    size_t depthLayersOf(const controls::Base *control) override;
+
+    void update(renderer::Base *renderer, controls::Base *baseControl) override;
+    void remove(renderer::Base *renderer, controls::Base *baseControl) override;
+    void appendIds(std::vector<size_t> &primitiveIds, std::vector<size_t> &textIds) const override;
+
+    inline static const std::string_view name="Chart";
+
+    //! The grid's slots, and series \p series's (empty past the series), as
+    //! last drawn.
+    const std::vector<size_t> &gridPrimitives() const { return m_grid.ids; }
+    const std::vector<size_t> &seriesPrimitives(size_t series) const;
+
+private:
+    //! What a slot holds, as last drawn: a rect or a segment.
+    struct Slot
+    {
+        bool valid=false;   //!< false for a new slot, which holds nothing known
+        bool shown=false;
+        bool line=false;
+        Rect rect;
+        tokyonight::Surface surface{};
+        PointF p0;
+        PointF p1;
+        bool hasPrev=false;
+        bool hasNext=false;
+        PointF prev;
+        PointF next;
+        float thickness=0.0f;
+        Color color;
+        int zIndex=0;
+        Rect clip;
+    };
+
+    struct SlotList
+    {
+        std::vector<size_t> ids;
+        std::vector<Slot> drawn;
+    };
+
+    //! \p list grown or shrunk to \p count slots, the new ones holding
+    //! nothing known.
+    static void resizeList(renderer::Base *renderer, SlotList &list, size_t count);
+    static void releaseList(renderer::Base *renderer, SlotList &list);
+
+    Slot m_frame;
+    SlotList m_grid;
+    std::vector<SlotList> m_series;
+};
+
 // A Link: one slot per segment of its polyline (Link::getPoints()), a drawLine
 // at the link's z in its colour (LinkHover's top while hovered, NodeSelected's
 // border while selected, else the link's own or the from pin's) and its

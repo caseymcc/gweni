@@ -17,6 +17,7 @@
 #include "gweni/controls/slider.h"
 #include "gweni/controls/plotHistogram.h"
 #include "gweni/controls/plotLines.h"
+#include "gweni/controls/chart.h"
 #include "gweni/controls/nodeGraph.h"
 #include "gweni/controls/colorControls.h"
 #include "gweni/controls/colorPicker.h"
@@ -2067,6 +2068,387 @@ void Link::update(renderer::Base *renderer, controls::Base *baseControl)
 
 
 ///////////////////////////////////////////////////////////////////////////
+//Chart
+size_t Chart::depthLayersOf(const controls::Base *control)
+{
+    const controls::Chart *chart=gweni_cast<controls::Chart>(const_cast<controls::Base *>(control));
+
+    // the frame, the grid, the spans, a layer per series, the markers and
+    // the crosshair
+    return size_t(SeriesLayer)+(chart ? chart->getSeriesCount() : 0)+2;
+}
+
+const std::vector<size_t> &Chart::seriesPrimitives(size_t series) const
+{
+    static const std::vector<size_t> none;
+
+    return (series < m_series.size()) ? m_series[series].ids : none;
+}
+
+void Chart::resizeList(renderer::Base *renderer, SlotList &list, size_t count)
+{
+    resizePlotPrimitives(renderer, list.ids, count);
+    // a slot new to the list holds nothing known
+    list.drawn.resize(count);
+}
+
+void Chart::releaseList(renderer::Base *renderer, SlotList &list)
+{
+    for(size_t id : list.ids)
+        renderer->releasePrimitive(id);
+    list.ids.clear();
+    list.drawn.clear();
+}
+
+void Chart::remove(renderer::Base *renderer, controls::Base * /*baseControl*/)
+{
+    releaseList(renderer, m_grid);
+    for(SlotList &list : m_series)
+        releaseList(renderer, list);
+    m_series.clear();
+    m_frame=Slot();
+    releasePrimitives(renderer);
+}
+
+void Chart::appendIds(std::vector<size_t> &primitiveIds, std::vector<size_t> &textIds) const
+{
+    ControlRegister<Chart>::appendIds(primitiveIds, textIds);
+    primitiveIds.insert(primitiveIds.end(), m_grid.ids.begin(), m_grid.ids.end());
+    for(const SlotList &list : m_series)
+        primitiveIds.insert(primitiveIds.end(), list.ids.begin(), list.ids.end());
+}
+
+void Chart::update(renderer::Base *renderer, controls::Base *baseControl)
+{
+    controls::Chart *chart=static_cast<controls::Chart *>(baseControl);
+    const unsigned int sc=baseControl->getStateChange();
+    // A new rect, z, clip region or visibility reaches every slot: such a
+    // frame marks the control's geometry, its visibility or its creation.
+    // Any other draws only what differs from what the slot holds.
+    const bool all=(sc&(controls::StateChange_Created|controls::StateChange_Visibility
+        |controls::StateChange_Geometry)) != 0;
+    const gweni::Rect &bounds=baseControl->getRenderBounds();
+    const gweni::Rect plot=chart->getPlotBounds();
+    const PointF origin(float(bounds.x), float(bounds.y));
+    const float left=origin.x+float(plot.x);
+    const float top=origin.y+float(plot.y);
+    const float right=left+float(plot.w);
+    const float bottom=top+float(plot.h);
+    const bool hasPlot=(plot.w > 0) && (plot.h > 0);
+
+    // the grid's lines: each shown value axis's ticks with its grid on, the
+    // x ticks with the x grid on, then the line along the plot's bottom,
+    // each inside the plot's units
+    struct GridLine
+    {
+        PointF p0;
+        PointF p1;
+        Color color;
+    };
+    std::vector<GridLine> lines;
+
+    if(hasPlot)
+    {
+        const Color grid=tokyonight::ChartGrid.top;
+
+        for(controls::ChartAxisSide side : {controls::ChartAxisSide::Left, controls::ChartAxisSide::Right})
+        {
+            if(!chart->isYAxisShown(side) || !chart->getYGrid(side))
+                continue;
+            for(const controls::axis::Tick &tick : chart->getYTicks(side))
+            {
+                const float y=origin.y+std::min(std::max(float(tick.position), float(plot.y)+0.5f),
+                    float(plot.y+plot.h)-0.5f);
+
+                // the axis line is there
+                if(y > bottom-1.0f)
+                    continue;
+                lines.push_back({PointF(left, y), PointF(right, y), grid});
+            }
+        }
+        if(chart->getXGrid())
+        {
+            for(const controls::axis::Tick &tick : chart->getXTicks())
+            {
+                const float x=origin.x+std::min(std::max(float(tick.position), float(plot.x)+0.5f),
+                    float(plot.x+plot.w)-0.5f);
+
+                lines.push_back({PointF(x, top), PointF(x, bottom), grid});
+            }
+        }
+        lines.push_back({PointF(left, bottom-0.5f), PointF(right, bottom-0.5f), tokyonight::ChartAxis.top});
+    }
+
+    // the lists follow the chart: the grid's lines, and per series its bars
+    // or its segments
+    const size_t seriesCount=chart->getSeriesCount();
+
+    resizeList(renderer, m_grid, lines.size());
+    while(m_series.size() > seriesCount)
+    {
+        releaseList(renderer, m_series.back());
+        m_series.pop_back();
+    }
+    m_series.resize(seriesCount);
+    for(size_t i=0; i<seriesCount; ++i)
+    {
+        const controls::ChartSeriesType type=chart->getSeriesType(i);
+        const bool bars=(type == controls::ChartSeriesType::Bar) || (type == controls::ChartSeriesType::StackedBar);
+        const size_t vertices=chart->getVertexCount(i);
+
+        resizeList(renderer, m_series[i], bars ? chart->getSeriesPoints(i).size() : (vertices > 1 ? vertices-1 : 0));
+    }
+
+    auto hide=[&](size_t id, Slot &slot)
+    {
+        if(all || !slot.valid || slot.shown)
+            renderer->hidePrimitive(id);
+        slot.valid=true;
+        slot.shown=false;
+    };
+
+    if(!baseControl->visible())
+    {
+        auto each=[&](auto &&func)
+        {
+            func(m_primitives[0], m_frame);
+            for(size_t i=0; i<m_grid.ids.size(); ++i)
+                func(m_grid.ids[i], m_grid.drawn[i]);
+            for(SlotList &list : m_series)
+            {
+                for(size_t i=0; i<list.ids.size(); ++i)
+                    func(list.ids[i], list.drawn[i]);
+            }
+        };
+
+        if(all)
+            each(hide);
+        else
+        {
+            // drawn again once shown, which marks the visibility
+            each([](size_t, Slot &slot) { slot.valid=false; });
+        }
+        return;
+    }
+
+    const gweni::Rect region=renderer->clipRegion();
+    const gweni::Point &offset=renderer->getRenderOffset();
+    gweni::Rect plotClip;
+
+    // the plot at the render offset, cut to the control's own region
+    {
+        const int x0=std::max(region.x, offset.x+bounds.x+plot.x);
+        const int y0=std::max(region.y, offset.y+bounds.y+plot.y);
+        const int x1=std::min(region.x+region.w, offset.x+bounds.x+plot.x+plot.w);
+        const int y1=std::min(region.y+region.h, offset.y+bounds.y+plot.y+plot.h);
+
+        plotClip=gweni::Rect(x0, y0, std::max(0, x1-x0), std::max(0, y1-y0));
+    }
+
+    auto drawRect=[&](size_t id, Slot &slot, const gweni::Rect &rect, const tokyonight::Surface &surface,
+        int zIndex, const gweni::Rect &clip)
+    {
+        if(!all && slot.valid && slot.shown && !slot.line && (slot.rect == rect) && (slot.zIndex == zIndex)
+            && sameSurface(slot.surface, surface) && (slot.clip == clip))
+            return;
+
+        renderer->setClipRegion(clip);
+        renderer->drawRoundedRect(id, rect, surface.radius, surface.borderWidth, surface.top, surface.bottom,
+            surface.border, zIndex);
+        slot=Slot();
+        slot.valid=true;
+        slot.shown=true;
+        slot.rect=rect;
+        slot.surface=surface;
+        slot.zIndex=zIndex;
+        slot.clip=clip;
+    };
+    auto drawSegment=[&](size_t id, Slot &slot, const PointF &p0, const PointF &p1, const PointF *prev,
+        const PointF *next, float thickness, const Color &color, int zIndex, const gweni::Rect &clip)
+    {
+        const bool hasPrev=(prev != nullptr);
+        const bool hasNext=(next != nullptr);
+        const PointF prevPoint=hasPrev ? *prev : PointF();
+        const PointF nextPoint=hasNext ? *next : PointF();
+
+        if(!all && slot.valid && slot.shown && slot.line && (slot.p0 == p0) && (slot.p1 == p1)
+            && (slot.hasPrev == hasPrev) && (slot.prev == prevPoint) && (slot.hasNext == hasNext)
+            && (slot.next == nextPoint) && (slot.thickness == thickness) && (slot.color == color)
+            && (slot.zIndex == zIndex) && (slot.clip == clip))
+            return;
+
+        renderer->setClipRegion(clip);
+        renderer->setDrawColor(color);
+        renderer->drawLine(id, p0, p1, thickness, zIndex, prev, next);
+        slot=Slot();
+        slot.valid=true;
+        slot.shown=true;
+        slot.line=true;
+        slot.p0=p0;
+        slot.p1=p1;
+        slot.hasPrev=hasPrev;
+        slot.prev=prevPoint;
+        slot.hasNext=hasNext;
+        slot.next=nextPoint;
+        slot.thickness=thickness;
+        slot.color=color;
+        slot.zIndex=zIndex;
+        slot.clip=clip;
+    };
+
+    const int z=baseControl->getZIndex();
+
+    drawRect(m_primitives[0], m_frame, bounds, tokyonight::ChartFrame, z, region);
+
+    for(size_t i=0; i<lines.size(); ++i)
+        drawSegment(m_grid.ids[i], m_grid.drawn[i], lines[i].p0, lines[i].p1, nullptr, nullptr, 1.0f,
+            lines[i].color, z+GridLayer, plotClip);
+
+    for(size_t s=0; s<seriesCount; ++s)
+    {
+        SlotList &list=m_series[s];
+        const bool shown=chart->isSeriesVisible(s) && hasPlot;
+        const int zIndex=z+SeriesLayer+int(s);
+        const tokyonight::Surface &surface=tokyonight::chartSeries(chart->getSeriesColorIndex(s));
+        const controls::ChartSeriesType type=chart->getSeriesType(s);
+
+        if(!shown)
+        {
+            for(size_t i=0; i<list.ids.size(); ++i)
+                hide(list.ids[i], list.drawn[i]);
+            continue;
+        }
+
+        if((type == controls::ChartSeriesType::Bar) || (type == controls::ChartSeriesType::StackedBar))
+        {
+            for(size_t i=0; i<list.ids.size(); ++i)
+            {
+                gweni::Rect rect;
+
+                if(!chart->getBarRect(s, i, rect))
+                {
+                    hide(list.ids[i], list.drawn[i]);
+                    continue;
+                }
+                rect.x+=bounds.x;
+                rect.y+=bounds.y;
+                drawRect(list.ids[i], list.drawn[i], rect, surface, zIndex, plotClip);
+            }
+            continue;
+        }
+
+        // a line's segments, each cut to the plot widened by the stroke and a
+        // unit, so a cut end lies outside the plot's clip; cut in doubles,
+        // which hold a point far out of range exactly enough
+        const size_t segments=list.ids.size();
+        const float thickness=chart->getSeriesLineThickness(s);
+        const double margin=double(thickness)+2.0;
+        const double box[4]={double(left)-margin, double(right)+margin, double(top)-margin, double(bottom)+margin};
+        std::vector<double> xs(segments+1);
+        std::vector<double> ys(segments+1);
+        std::vector<char> finite(segments+1);
+
+        for(size_t i=0; i<xs.size(); ++i)
+        {
+            finite[i]=chart->getVertex(s, i, xs[i], ys[i]) && std::isfinite(xs[i]);
+            xs[i]+=origin.x;
+            ys[i]+=origin.y;
+        }
+
+        struct Cut
+        {
+            bool shown=false;
+            double t0=0.0;
+            double t1=1.0;
+            PointF p0;
+            PointF p1;
+        };
+        std::vector<Cut> cuts(segments);
+
+        for(size_t i=0; i<segments; ++i)
+        {
+            Cut &cut=cuts[i];
+
+            if(!finite[i] || !finite[i+1])
+                continue;
+
+            // Liang-Barsky, as clipSegment, noting which side cuts each end
+            const double dx=xs[i+1]-xs[i];
+            const double dy=ys[i+1]-ys[i];
+            const double p[4]={-dx, dx, -dy, dy};
+            const double q[4]={xs[i]-box[0], box[1]-xs[i], ys[i]-box[2], box[3]-ys[i]};
+            int side0=-1;
+            int side1=-1;
+            bool inside=true;
+
+            for(int k=0; k<4 && inside; ++k)
+            {
+                if(p[k] == 0.0)
+                {
+                    inside=(q[k] >= 0.0);
+                    continue;
+                }
+
+                const double t=q[k]/p[k];
+
+                if(p[k] < 0.0 && t > cut.t0)
+                {
+                    cut.t0=t;
+                    side0=k;
+                }
+                else if(p[k] > 0.0 && t < cut.t1)
+                {
+                    cut.t1=t;
+                    side1=k;
+                }
+            }
+            cut.shown=inside && (cut.t0 <= cut.t1);
+
+            // A cut end is on its side, the other coordinate worked out from
+            // the end nearer the plot: from a point far out of range, a + t*d
+            // would cancel what a double holds of it.
+            const bool fromFirst=std::max(std::fabs(xs[i]), std::fabs(ys[i]))
+                <= std::max(std::fabs(xs[i+1]), std::fabs(ys[i+1]));
+            const double ex=fromFirst ? xs[i] : xs[i+1];
+            const double ey=fromFirst ? ys[i] : ys[i+1];
+            auto onSide=[&](int side) -> PointF
+            {
+                if(side < 2)
+                    return PointF(float(box[side]), float(ey+(box[side]-ex)*dy/dx));
+                return PointF(float(ex+(box[side]-ey)*dx/dy), float(box[side]));
+            };
+
+            // the original points where it is not cut, so joints are exact
+            cut.p0=(side0 < 0) ? PointF(float(xs[i]), float(ys[i])) : onSide(side0);
+            cut.p1=(side1 < 0) ? PointF(float(xs[i+1]), float(ys[i+1])) : onSide(side1);
+        }
+
+        for(size_t i=0; i<segments; ++i)
+        {
+            const Cut &cut=cuts[i];
+
+            if(!cut.shown)
+            {
+                hide(list.ids[i], list.drawn[i]);
+                continue;
+            }
+
+            // a neighbour shares the joint only where neither is cut there
+            const bool hasPrev=(i > 0) && cuts[i-1].shown && (cuts[i-1].t1 == 1.0) && (cut.t0 == 0.0);
+            const bool hasNext=(i+1 < segments) && cuts[i+1].shown && (cuts[i+1].t0 == 0.0) && (cut.t1 == 1.0);
+            const PointF prev=hasPrev ? cuts[i-1].p0 : PointF();
+            const PointF next=hasNext ? cuts[i+1].p1 : PointF();
+
+            drawSegment(list.ids[i], list.drawn[i], cut.p0, cut.p1, hasPrev ? &prev : nullptr,
+                hasNext ? &next : nullptr, thickness, surface.top, zIndex, plotClip);
+        }
+    }
+
+    renderer->setClipRegion(region);
+}
+
+
+///////////////////////////////////////////////////////////////////////////
 //NodeGraphMarquee
 void NodeGraphMarquee::update(renderer::Base *renderer, controls::Base *baseControl)
 {
@@ -3292,6 +3674,7 @@ template class ControlRegister<Slider>;
 template class ControlRegister<SliderBar>;
 template class ControlRegister<PlotHistogram>;
 template class ControlRegister<PlotLines>;
+template class ControlRegister<Chart>;
 template class ControlRegister<ColorLerpBox>;
 template class ControlRegister<ColorSlider>;
 template class ControlRegister<ColorDisplay>;

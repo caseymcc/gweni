@@ -2207,7 +2207,7 @@ void Base::renumberZRecursive(ZNumbering &numbering, bool moved)
     m_zMoved=false;
     m_zDirty=false;
 
-    const int layers=m_skinControl?(int)m_skinControl->depthLayers():1;
+    const int layers=m_skinControl?(int)m_skinControl->depthLayersOf(this):1;
     bool changed=placeZRange(numbering, m_zIndex, layers, moved);
 
     for(auto &&child:m_children)
@@ -2256,12 +2256,12 @@ int Base::zSubtreeEnd() const
         return m_overlayZIndex+overlay;
     if(!m_children.empty())
         return m_children.back()->m_zEnd;
-    return m_zIndex+(m_skinControl?(int)m_skinControl->depthLayers():1);
+    return m_zIndex+(m_skinControl?(int)m_skinControl->depthLayersOf(this):1);
 }
 
 void Base::countZRanges(size_t &layers, size_t &ranges) const
 {
-    layers+=m_skinControl?m_skinControl->depthLayers():1;
+    layers+=m_skinControl?m_skinControl->depthLayersOf(this):1;
     ++ranges;
 
     for(const Base *child:m_children)

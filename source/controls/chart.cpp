@@ -67,9 +67,9 @@ size_t Chart::addSeries(const String &name, ChartSeriesType type, ChartAxisSide 
     series.colorIndex=static_cast<int>(m_series.size()%8);
     m_series.push_back(std::move(series));
 
-    // one more layer for the renderer, read only on a renumber
-    if(Canvas *canvas=getCanvas())
-        canvas->invalidateZOrder();
+    // one more layer for the renderer (depthLayersOf()), read only on a
+    // renumber: this control's range is numbered again
+    zOrderChanged();
     axesChanged();
     return m_series.size()-1;
 }
@@ -81,8 +81,7 @@ void Chart::removeSeries(size_t series)
 
     m_series.erase(m_series.begin()+static_cast<std::ptrdiff_t>(series));
 
-    if(Canvas *canvas=getCanvas())
-        canvas->invalidateZOrder();
+    zOrderChanged();
     axesChanged();
 }
 
@@ -93,8 +92,7 @@ void Chart::clearSeries()
 
     m_series.clear();
 
-    if(Canvas *canvas=getCanvas())
-        canvas->invalidateZOrder();
+    zOrderChanged();
     axesChanged();
 }
 
@@ -140,7 +138,7 @@ void Chart::setSeriesVisible(size_t series, bool visible)
         return;
 
     m_series[series].visible=visible;
-    dataChanged();
+    dataChanged(series);
 }
 
 bool Chart::isSeriesVisible(size_t series) const
@@ -197,7 +195,7 @@ void Chart::setSeriesPoints(size_t series, std::vector<ChartPoint> points)
         return;
 
     m_series[series].points=std::move(points);
-    dataChanged();
+    dataChanged(series);
 }
 
 void Chart::appendPoint(size_t series, double x, double y)
@@ -212,7 +210,7 @@ void Chart::appendPoint(size_t series, double x, double y)
         points.push_back(point);
     else
         points.insert(std::upper_bound(points.begin(), points.end(), point, byX), point);
-    dataChanged();
+    dataChanged(series);
 }
 
 void Chart::setPointValue(size_t series, size_t index, double y)
@@ -227,7 +225,7 @@ void Chart::setPointValue(size_t series, size_t index, double y)
         return;
 
     value=y;
-    dataChanged();
+    dataChanged(series);
 }
 
 void Chart::removeFirstPoints(size_t series, size_t count)
@@ -242,7 +240,7 @@ void Chart::removeFirstPoints(size_t series, size_t count)
         return;
 
     points.erase(points.begin(), points.begin()+static_cast<std::ptrdiff_t>(count));
-    dataChanged();
+    dataChanged(series);
 }
 
 const std::vector<ChartPoint> &Chart::getSeriesPoints(size_t series) const
@@ -445,15 +443,31 @@ bool Chart::isYAxisShown(ChartAxisSide side) const
 
 // ---- data -------------------------------------------------------------------
 
-void Chart::dataChanged()
+void Chart::dataChanged(size_t series)
 {
     m_dataDirty=true;
     // the renderer redraws what moved
     addStateChange(StateChange_Background);
 
-    // An automatic range, and the ticks and labels from it, are the layout's.
-    // With every range fixed nothing it lays out can move.
-    if(!m_xFixed || !m_yAxes[0].fixed || !m_yAxes[1].fixed)
+    // An automatic range, and the ticks and labels from it, are the layout's:
+    // with the x range and the series' value axis fixed, nothing it lays out
+    // can move.
+    ChartAxisSide side=m_series[series].axis;
+
+    // a stacked series is drawn on the first stacked series' axis
+    if(m_series[series].type == ChartSeriesType::StackedBar)
+    {
+        for(const Series &other : m_series)
+        {
+            if(other.type == ChartSeriesType::StackedBar)
+            {
+                side=other.axis;
+                break;
+            }
+        }
+    }
+
+    if(!m_xFixed || !axisOf(side).fixed)
         invalidate();
 }
 
@@ -765,29 +779,37 @@ size_t Chart::getVertexCount(size_t series) const
     return s->points.size();
 }
 
-bool Chart::getVertex(size_t series, size_t vertex, PointF &point) const
+bool Chart::getVertex(size_t series, size_t vertex, double &x, double &y) const
 {
+    ensureData();
+
     const Series *s=seriesAt(series);
 
+    x=std::numeric_limits<double>::quiet_NaN();
+    y=x;
     if(!s || vertex >= getVertexCount(series))
-    {
-        point=PointF(NaNf, NaNf);
         return false;
-    }
-
-    if(s->type == ChartSeriesType::Line)
-    {
-        point=getPointPosition(series, vertex);
-        return !std::isnan(point.y);
-    }
 
     // a step line: point i at 2i, and at 2i+1 the next point's x at its y
-    const size_t index=vertex/2;
+    const size_t index=(s->type == ChartSeriesType::StepLine) ? vertex/2 : vertex;
+    const bool riser=(s->type == ChartSeriesType::StepLine) && (vertex%2 == 1);
+    const ChartPoint &point=s->points[index];
 
-    point=getPointPosition(series, index);
-    if(vertex%2 == 1)
-        point.x=static_cast<float>(xPosition(s->points[index+1].x));
-    return !std::isnan(point.y);
+    x=xPosition(riser ? s->points[index+1].x : point.x);
+    if(!std::isfinite(point.y))
+        return false;
+    y=yPosition(s->axis, point.y);
+    return std::isfinite(y);
+}
+
+bool Chart::getVertex(size_t series, size_t vertex, PointF &point) const
+{
+    double x;
+    double y;
+    const bool shown=getVertex(series, vertex, x, y);
+
+    point=PointF(static_cast<float>(x), shown ? static_cast<float>(y) : NaNf);
+    return shown;
 }
 
 bool Chart::getBarRect(size_t series, size_t index, Rect &rect) const
@@ -913,7 +935,25 @@ internal::Text *Chart::makeLabel()
         label=newChild<internal::Text>();
     }
     label->setPlacement(Placement::Owner);
+    label->setTextColor(getSkin()->Colors.Chart.AxisText);
     return label;
+}
+
+void Chart::updateColors()
+{
+    const Color &color=getSkin()->Colors.Chart.AxisText;
+
+    for(internal::Text *label : m_xLabels)
+        label->setTextColor(color);
+    for(ValueAxis &yAxis : m_yAxes)
+    {
+        for(internal::Text *label : yAxis.labels)
+            label->setTextColor(color);
+        if(yAxis.titleLabel)
+            yAxis.titleLabel->setTextColor(color);
+    }
+    if(m_xTitleLabel)
+        m_xTitleLabel->setTextColor(color);
 }
 
 void Chart::resizeLabels(std::vector<internal::Text *> &labels, size_t count)

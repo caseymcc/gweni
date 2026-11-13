@@ -385,9 +385,9 @@ void Inspector::refreshDetails()
 
     const Rect &bounds=control->getBounds();
     const Point onCanvas=control->localPosToCanvas();
-    // depthLayers() and overlayLayers() are not const; reading them changes nothing
+    // depthLayersOf() and overlayLayers() are not const; reading them changes nothing
     skin::Control *skinControl=const_cast<skin::Control *>(control->getSkinControl());
-    const size_t layers=skinControl?skinControl->depthLayers():1;
+    const size_t layers=skinControl?skinControl->depthLayersOf(control):1;
     const size_t overlays=skinControl?skinControl->overlayLayers():0;
     std::vector<size_t> primitives;
     std::vector<size_t> texts;
