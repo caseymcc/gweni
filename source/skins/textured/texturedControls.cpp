@@ -3319,17 +3319,10 @@ void Text::update(renderer::Base *renderer, controls::Base *baseControl)
     // Wrapped, the string is drawn by the line children; drawn here as well it
     // would lie as one long line over the first of them.
     static const String noText;
-    const std::vector<renderer::ColorSpan> *spans=control->colorSpans();
 
-    // a Text with colour spans of its own; every other one the plain call, as
-    // it always was
-    if(spans && !control->wrap())
-        renderer->renderText(m_primitives[0], control->getFont(),
-            control->textOrigin(), control->getZIndex(), control->getText(), *spans);
-    else
-        renderer->renderText(m_primitives[0], control->getFont(),
-            control->textOrigin(), control->getZIndex(),
-            control->wrap()?noText:control->getText());
+    renderer->renderText(m_primitives[0], control->getFont(),
+        control->textOrigin(), control->getZIndex(),
+        control->wrap()?noText:control->getText());
 
     if((baseControl->getStateChange() & controls::StateChange_Visibility) || 
         (baseControl->getStateChange() & controls::StateChange_Created))
@@ -3342,6 +3335,54 @@ void Text::update(renderer::Base *renderer, controls::Base *baseControl)
 }
 
 void Text::remove(renderer::Base *renderer, controls::Base *baseControl)
+{
+    if(!m_primitives.empty())
+        renderer->releaseTextPrimitive(m_primitives[0]);
+}
+
+///////////////////////////////////////////////////////////////////////////
+//CodeLineText: a CodeEditor line's run, drawn with its tokens' colour spans
+//(renderText's span overload) in the Text's colour outside them. A renderer of
+//its own, so the plain Text's stays the plain call alone.
+void CodeLineText::staticInit(TexturedSkin *skin)
+{
+    m_staticInit=true;
+}
+
+void CodeLineText::generate(renderer::Base *renderer, controls::Base *baseControl)
+{
+    m_primitives.resize(1);
+
+    renderer->generateTextPrimitive(m_primitives[0]);
+}
+
+void CodeLineText::update(renderer::Base *renderer, controls::Base *baseControl)
+{
+    if(baseControl->getStateChange() == controls::StateChange_Nothing)
+        return;
+
+    auto *control=dynamic_cast<controls::internal::CodeLineText *>(baseControl);
+
+    if(!control)
+        return;
+
+    const gweni::Color &colorOverride=control->getTextColorOverride();
+
+    renderer->setDrawColor((colorOverride.a == 0)?control->getTextColor():colorOverride);
+    renderer->renderText(m_primitives[0], control->getFont(), control->textOrigin(), control->getZIndex(),
+        control->getText(), control->getColorSpans());
+
+    if((baseControl->getStateChange() & controls::StateChange_Visibility) ||
+        (baseControl->getStateChange() & controls::StateChange_Created))
+    {
+        if(!baseControl->visible())
+            renderer->hideText(m_primitives[0]);
+        else
+            renderer->showText(m_primitives[0]);
+    }
+}
+
+void CodeLineText::remove(renderer::Base *renderer, controls::Base *baseControl)
 {
     if(!m_primitives.empty())
         renderer->releaseTextPrimitive(m_primitives[0]);

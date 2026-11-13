@@ -70,14 +70,14 @@ private:
 
 //! A CodeLine's text: one run drawn with the colour spans of the line's
 //! tokens (CodeEditor::setLanguage), in Colors.CodeEditor's Plain colour
-//! outside them.
+//! outside them, by a skin renderer of its own (the textured skin's
+//! CodeLineText, through renderText's span overload).
 class GWENI_EXPORT CodeLineText: public Text
 {
 public:
     GWENI_CONTROL(CodeLineText, Text);
 
 public:
-    const std::vector<renderer::ColorSpan> *colorSpans() const override { return &m_spans; }
     const std::vector<renderer::ColorSpan> &getColorSpans() const { return m_spans; }
 
 private:

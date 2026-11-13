@@ -104,12 +104,6 @@ public:
         return m_color;
     }
 
-    //! The colour spans the string is drawn with (renderer::Base::renderText's
-    //! overload), the text colour outside them; null for a Text drawn in its
-    //! colour alone, as every Text is but one that keeps spans of its own
-    //! (a CodeEditor's line).
-    virtual const std::vector<renderer::ColorSpan> *colorSpans() const { return nullptr; }
-
     virtual void setTextColorOverride(const gweni::Color &col)
     {
         m_colorOverride=col;

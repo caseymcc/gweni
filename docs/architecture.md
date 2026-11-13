@@ -3329,9 +3329,11 @@ two programs and the draws. What follows describes both together:
   `tests/colorSpans.cpp` (GL and Vulkan) draws three spans in their colours, writes
   only the changed glyphs' slots for a span change with no atlas upload, and holds
   the plain call to its old bytes; `tests/unit/colorSpans.cpp` the default and
-  `StubRenderer`'s record (`textSpans`). A Text draws through the overload only when
-  `internal::Text::colorSpans()` gives it spans (a `CodeEditor` line's
-  `internal::CodeLineText`), every other Text through the plain call.
+  `StubRenderer`'s record (`textSpans`). A `CodeEditor` line's run, an
+  `internal::CodeLineText`, has a skin renderer of its own (the textured skin's
+  `CodeLineText`) that draws through the overload; every other Text's renderer is the
+  plain call it was (a virtual check of every Text for spans cost `resize` +1.3 % of
+  `render`).
 - **Every caret from one layout: `measureCarets`.** `renderer::Base::measureCarets(font,
   text, xs)` gives the x of each caret position of `text`, one per codepoint boundary
   of `utf8Next`'s walk with 0 and `text.size()` included, so the codepoint count + 1

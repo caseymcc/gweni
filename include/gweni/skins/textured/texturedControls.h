@@ -1697,6 +1697,26 @@ public:
     inline static const std::string_view name="Text";
 };
 
+//! A CodeEditor line's run (controls::internal::CodeLineText): Text's, drawn
+//! with the line's colour spans.
+class CodeLineText:public textured::ControlRegister<CodeLineText>
+{
+public:
+    static void staticInit(TexturedSkin *skin);
+
+    size_t requiredPrimitives() override { return 1; }
+
+    void generate(renderer::Base *renderer, controls::Base *baseControl) override;
+    void update(renderer::Base *renderer, controls::Base *baseControl) override;
+    void remove(renderer::Base *renderer, controls::Base *baseControl) override;
+    void appendIds(std::vector<size_t> &, std::vector<size_t> &textIds) const override
+    {
+        textIds.insert(textIds.end(), m_primitives.begin(), m_primitives.end());
+    }
+
+    inline static const std::string_view name="CodeLineText";
+};
+
 class TextBox:public textured::ControlRegister<TextBox>
 {
 public:

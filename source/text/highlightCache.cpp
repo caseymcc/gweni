@@ -23,6 +23,19 @@ const std::vector<Token> &noTokens()
     return none;
 }
 
+//! The capacity for \p needed entries: a power of two, so a line inserted
+//! after a new text or past a power of two moves the entries once, and the
+//! lines inserted and removed below one move none (as the Document's own vector
+//! of lines grows)
+size_t roomFor(size_t needed)
+{
+    size_t capacity=16;
+
+    while(capacity < needed)
+        capacity*=2;
+    return capacity;
+}
+
 }//namespace
 
 HighlightCache::HighlightCache()
@@ -60,7 +73,10 @@ void HighlightCache::reset()
 {
     m_entries.clear();
     if(m_document)
+    {
+        m_entries.reserve(roomFor(m_document->lineCount()));
         m_entries.resize(m_document->lineCount());
+    }
     m_frontier=0;
 }
 
@@ -87,7 +103,13 @@ void HighlightCache::linesChanged(const LineChange &change)
     if(removed > kept)
         m_entries.erase(m_entries.begin()+first+kept, m_entries.begin()+first+removed);
     else if(change.inserted > kept)
+    {
+        const size_t needed=m_entries.size()+change.inserted-kept;
+
+        if(needed > m_entries.capacity())
+            m_entries.reserve(roomFor(needed));
         m_entries.insert(m_entries.begin()+first+kept, change.inserted-kept, Entry());
+    }
 
     // should the document and the changes disagree, the document wins
     if(m_entries.size() != m_document->lineCount())
