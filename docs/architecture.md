@@ -2686,23 +2686,62 @@ two programs and the draws. What follows describes both together:
   `onFollowingChanged` fires on every change, possibly from the layout (the arrows'
   path), so a handler only reads (`tests/unit/logViewFollow.cpp`).
 
-  **Selection.** The selection is ranges of `Position{row id, character}` ends, a whole
-  row from 0 to its `rowText()`'s length (a block's title and every line, collapsed or
-  not), so a character selection later changes no model. A click selects a row,
-  Shift+click and a drag extend the last range, Ctrl+click toggles a row (splitting a
-  range round it), Ctrl+A selects every row and Escape clears; a drag past the
-  viewport's top or bottom scrolls on the canvas clock (CodeEditor's speeds), a scroll
-  up detaching the view, and a selection alone never does. Ranges keep their ids, so
-  scrolling, binding, appends and prepends change nothing; the cap drops a range with
-  no row left and moves a dropped low end to the first row held; `replace` clamps the
-  characters on its row, an end at the row's end staying at its end. Each pooled row
-  is told whether its row is selected when bound and when the selection changes, and
-  the textured `LogViewRow` draws `LogViewSelection` over its bounds at its Text's z,
-  behind every glyph, its slot hidden otherwise. Ctrl+C and the context menu's Copy
-  (the view's, made on its first right press, a right press on an unselected row
-  selecting it; its items carry no accelerator, which the canvas-wide accelerator
-  search would find) put `getSelectedText()`, the rows' texts joined by `'\n'`, on
-  the clipboard (`tests/unit/logViewSelection.cpp`).
+  **Selection.** The selection is ranges of `Position{row id, character}` ends, the
+  character a byte of the row's `rowText()` (a block's title and every line, collapsed
+  or not), a whole row from 0 to its length. A click selects the row whole, as a
+  row-based log does (#594). A press-drag selects characters once the mouse leaves the
+  pressed one, from it to the character under the mouse (`positionAt()`: the row under
+  the point, then `Text::getClosestCharacter` on whichever wrapped line of the row's
+  Text is under it), across wrapped lines and rows; back on the pressed character the
+  row is whole again. Past the viewport's top or bottom the drag scrolls on the canvas
+  clock (CodeEditor's speeds), the focus the edge row's start or end (the rows there
+  are placed only by the next layout), a scroll up detaching the view, and a
+  selection alone never does. Shift+click (and a Shift+press drag) moves the last
+  range's focus to the character clicked, its **anchor unit** kept whole: what the
+  range started from, the row a click selected, the character a drag was pressed on
+  or the word a double-click selected (`m_anchorLow`/`m_anchorHigh`), the range
+  running from the unit's far end when the focus is before it, so a Shift+click above
+  a clicked row still takes that row. A double-click selects the word under it
+  (`selectWordAt`: a run of letters, digits, `_` and non-ASCII codepoints, of blanks or
+  of punctuation, by caret stops, a `'\n'` part of none, the run before it at a line's
+  end) and a drag from it extends with the word kept; with Shift or Ctrl, or on a
+  block's title line, it is a press. Ctrl+click toggles a row whole (splitting a range
+  round it), Ctrl+A selects every row and Escape clears. A block row shows
+  `blockText()`, its rows' text being `rowText()`: `shownToRowCharacter()` maps a byte
+  of the shown text to it (the count after the title is the title's end, the lines
+  after it their own bytes) and `rowToShownCharacter()` back (a collapsed block's
+  hidden lines at its shown text's end), so a range starting or ending inside a
+  collapsed block copies the characters it covers, one running past its end the
+  hidden lines too, and one over all of it the block's whole text. Ranges keep their
+  ids, so scrolling, binding, appends and prepends change nothing; the cap drops a
+  range with no row left and moves a dropped low end to the first row held; `replace`
+  clamps the characters on its row (and the anchor unit's), an end at the row's end
+  staying at its end. Ctrl+C and the context menu's Copy (the view's, made on its
+  first right press, a right press on an unselected row selecting it; its items carry
+  no accelerator, which the canvas-wide accelerator search would find) put
+  `getSelectedText()` on the clipboard: each row's covered bytes, the union of the
+  ranges' parts of it, joined by `'\n'` (`tests/unit/logViewSelection.cpp`,
+  `tests/unit/logViewCharSelection.cpp`).
+
+  **The highlight.** Only the pooled rows draw it, so its cost is the rows on screen
+  however many rows the selection holds. Each is told what of its row is selected
+  (`LogViewRow::Selection`: whether a range touches it, its covered bytes in the shown
+  text, whether a range runs on from the row above or past its end) when bound and
+  when the selection changes, and marks `StateChange_Background` only when that
+  changes (or, bound while selected in part, always: its rects follow the text the
+  bind set). `getSelectionRects()` gives the rects in the row's coordinates: a row
+  selected whole, alone or inside a range running on both sides, is one rect over its
+  bounds, #594's band; any other a rect per wrapped line the selection covers, from
+  the caret at its first covered byte to the caret at its last (`getCharacterPosition`
+  of the row's wrapped Text), the row's left edge where the selection comes from the
+  line before, its right edge where it runs on past the line's last caret (its wrap
+  point, its `'\n'`, or into the next row), each line's row the view's line height,
+  the row's top and bottom padding included where the selection runs into the row
+  above or below, so a selection over several rows is one shape. The textured
+  `LogViewRow` draws `LogViewSelection` in a slot per rect at its Text's z, behind
+  every glyph (the slots past the rects given back, the first hidden when there are
+  none), so a drag inside one row writes that row's slots alone and a settled frame
+  nothing.
 
   **Cost.** A frame costs the rows on screen. Following, an append frame moves every
   row on screen, and a moved run is a fresh layout ("A moved run is a fresh layout"),
@@ -2716,8 +2755,10 @@ two programs and the draws. What follows describes both together:
   and the highlight. LogViewDemo (the shell's "Log view", the README gallery) streams
   600 events from an animation on the canvas clock (paused while the demo is hidden)
   beside three five-line excerpts; `controltest_log_view` holds appends, a detach, the
-  jump button, a replace above the viewport, a resize, an expand, a copied selection
-  and the cap to what each may touch at 1 000 and 100 000 rows.
+  jump button, a replace above the viewport, a resize, an expand, a copied selection,
+  a character drag (a frame inside one row writing that row's highlight slots alone),
+  its copy, scrolled off and back, a double-clicked word, a Shift+click and the cap to
+  what each may touch at 1 000 and 100 000 rows.
 - **The slider's value text.** `Slider::setValueFormat("%.2f")` shows the value as text
   (imgui's SliderFloat), formatted with `snprintf` from `getFloatValue()`. The format is
   checked first (`Slider::validValueFormat`): exactly one conversion of a double (`f F e
