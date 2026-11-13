@@ -202,7 +202,7 @@ bool SearchComboBoxField::onKeyEscape(bool down)
 
 bool SearchComboBoxField::onKeyBackspace(bool down)
 {
-    if(m_box && m_box->isMultiSelect() && getText().empty())
+    if(m_box && m_box->isMultiSelect() && !m_box->isDisabled() && getText().empty())
     {
         if(down && !m_box->m_picks.empty())
             m_box->removePick(m_box->m_picks.size()-1, true);
@@ -214,10 +214,20 @@ bool SearchComboBoxField::onKeyBackspace(bool down)
 
 void SearchComboBoxField::onMouseClickLeft(int x, int y, bool down)
 {
-    ParentClass::onMouseClickLeft(x, y, down);
+    if(down)
+    {
+        m_pressOpened=m_box && m_box->fieldClicked();
 
-    if(down && m_box)
-        m_box->fieldClicked();
+        if(m_pressOpened)
+            return;
+    }
+    else if(m_pressOpened)
+    {
+        m_pressOpened=false;
+        return;
+    }
+
+    ParentClass::onMouseClickLeft(x, y, down);
 }
 
 void SearchComboBoxField::onLostKeyboardFocus()
@@ -791,6 +801,10 @@ void SearchComboBox::rebindChanged(const std::vector<size_t> &previous)
 
 void SearchComboBox::showList(bool edited)
 {
+    // a disabled box picks nothing, so it shows no list either
+    if(isDisabled())
+        return;
+
     if(!m_list)
         makeList();
 
@@ -867,17 +881,18 @@ void SearchComboBox::fieldTextChanged()
 }
 
 // A click on the field with the list closed opens it with the field's text
-// selected, so what is typed replaces it.
-void SearchComboBox::fieldClicked()
+// selected, so what is typed replaces it. A disabled box opens nothing.
+bool SearchComboBox::fieldClicked()
 {
-    if(isListOpen())
-        return;
+    if(isListOpen() || isDisabled())
+        return false;
 
     if(Canvas *canvas=getCanvas())
         canvas->closeMenus();
 
     showList(false);
     m_field->onSelectAll(m_field);
+    return true;
 }
 
 // Free text: what was typed is taken (resolveText()), else the value comes
@@ -886,7 +901,7 @@ void SearchComboBox::fieldLostFocus()
 {
     closeList();
 
-    if(m_allowCustom)
+    if(m_allowCustom && !isDisabled())
         resolveText();
     else
         showSelection();
@@ -1143,6 +1158,9 @@ void SearchComboBox::bindRow(Base *control, size_t item)
 // unless the handler refused it.
 void SearchComboBox::pickPosition(size_t position)
 {
+    if(isDisabled())
+        return;
+
     const size_t key=rowKey(position);
 
     if(key == AddRowKey)
@@ -1256,7 +1274,7 @@ void SearchComboBox::rowHovered(internal::SearchComboBoxRow *row)
 
 bool SearchComboBox::onKeyUp(bool down)
 {
-    if(!down)
+    if(!down || isDisabled())
         return true;
 
     if(isListOpen())
@@ -1271,7 +1289,7 @@ bool SearchComboBox::onKeyUp(bool down)
 
 bool SearchComboBox::onKeyDown(bool down)
 {
-    if(!down)
+    if(!down || isDisabled())
         return true;
 
     if(isListOpen())
@@ -1290,6 +1308,9 @@ bool SearchComboBox::onKeyDown(bool down)
 // a free-text box takes what was typed (resolveText()).
 bool SearchComboBox::onKeyReturn(bool down)
 {
+    if(isDisabled())
+        return false;
+
     if(!isListOpen())
     {
         if(!m_allowCustom || (m_field->getText() == shownValueText()))
@@ -1307,7 +1328,7 @@ bool SearchComboBox::onKeyReturn(bool down)
 
 bool SearchComboBox::onKeyBackspace(bool down)
 {
-    if(!m_multi)
+    if(!m_multi || isDisabled())
         return false;
 
     if(down && !m_picks.empty())
