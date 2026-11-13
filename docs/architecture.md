@@ -3604,7 +3604,7 @@ two programs and the draws. What follows describes both together:
   inset on each side, which shows the boxes on screen.
 - **One text draw per font atlas.** Every loaded font has its own freetype-gl atlas
   texture: a coverage font per (face, `coverageSize(px)`, bold) below the SDF threshold, one SDF font
-  per (face, bold) at or above it (see "Hybrid text"). Each `TextRun` records the `FontData` it was laid out in,
+  per (face, bold, italic) at or above it (see "Hybrid text"). Each `TextRun` records the `FontData` it was laid out in,
   and each `FontData` keeps the text ids of its runs (`textRuns`). `flush()` binds
   each atlas in turn and draws its runs with one `glMultiDrawElements` per index chunk
   they reach (or, without multi-draw, that draw's ranges as a loop of `glDrawElements`,
@@ -3753,8 +3753,8 @@ two programs and the draws. What follows describes both together:
 - **Hybrid text.** With the effective size `px = textPx(font) = font.size*scale()`,
   text below `GWENI_SDF_TEXT_MIN`
   (default 18 px; `0` = SDF everywhere, a large value = coverage everywhere) keeps the
-  hinted grayscale coverage atlas (above) of its (face, `coverageSize(px)`, bold). At or
-  above it, a font resolves to its face's one R8 signed-distance-field atlas (1024²,
+  hinted grayscale coverage atlas (above) of its (face, `coverageSize(px)`, bold, italic). At or
+  above it, a font resolves to its (face, bold, italic) one R8 signed-distance-field atlas (1024²,
   rasterised by FreeType's `FT_RENDER_MODE_SDF` at 48 px with a 6 px spread, unhinted),
   shared by every size. `layoutSdfText` scales that atlas's metrics and unhinted
   advances by `px/48` and puts the baseline on a whole pixel, for `measureText` and
@@ -4091,6 +4091,118 @@ and SDF) and scale 1, 1.5 and 2, its carets whole cells and its three rules unbr
 in the same device px in every row, on GL and Vulkan. UnicodeTextDemo shows a symbols line
 through the chain, a log table in the mono face and the CJK line, which no shipped face
 has, still as missing-glyph boxes.
+
+## Rich text: faces, metrics, `text::RichLayout` and `RichText`
+
+One paragraph of text in several styles (bold, italic, inline code, a colour, a link)
+wraps as a whole: the layout is headless data (`text::RichLayout`), drawn by one control
+(`controls::RichText`) with a text run per piece and a slot list for what is not text, and
+selected through a model its container holds (`text::SelectionModel`). It is the layer the
+Markdown view, the log view's wrapped rows and a highlighted code view build on.
+
+**Real faces, from a family table.** `Font` has `bold` and `italic`, both in `==`, `!=` and
+`std::hash<Font>`, and both in the atlas keys: the coverage key is `(face, px, bold,
+italic)`, the SDF key `(face, bold, italic)`. A font's `facename` is a family's name or a
+face file's: `IResourceLoader::setFontFamily(name, FontFamily)` (`SlotRenderer`'s) maps a
+family to its regular, bold, italic and bold-italic face files, and
+`SlotRenderer::fontFaceName(font)` picks the file of its `(bold, italic)`. The textured skin
+reads the table from the skin config's `"fonts"` object:
+
+```json
+"fonts": {
+    "OpenSans": { "regular": "OpenSans", "bold": "OpenSans-Bold",
+                  "italic": "OpenSans-Italic", "boldItalic": "OpenSans-BoldItalic" },
+    "mono":     { "regular": "DejaVuSansMono" }
+}
+```
+
+so the skin's default font (`OpenSans`) draws Open Sans 1.10's static Bold, Italic and Bold
+Italic (`resources/OpenSans-*.ttf`, under the family's `OpenSans-LICENSE.txt`), and `mono`
+is DejaVu Sans Mono, whose family has no other styles. A style the family has no face for,
+or whose file is missing, draws the family's regular face, and the renderer prints one
+line per such face the first time a font asks for it (the built-in OpenSans only when the
+regular file is missing too, "A missing face is drawn in a built-in font"). A missing
+style is not a missing resource: a capture still exits 0. Nothing is emboldened or slanted
+on the CPU or in the shader (freetype-gl's `markup.bold` stays 0): bold is the bold
+file's glyphs. A face's glyph fallback chain ("Font fallback") is its family's, whichever
+style draws it. `tests/fontFaces.cpp` pins each style's file and pixels at coverage and
+SDF sizes and scales 1 and 2, on GL and Vulkan, and the one line of a missing face.
+
+**Font metrics and one baseline.** `renderText` places the top of a run's line box, so a
+line of several fonts needs each font's ascender to share a baseline.
+`renderer::Base::fontMetrics(font)` gives the `ascender` (line top to baseline),
+`descender` (`lineHeight - ascender`) and `lineHeight`, in whole canvas units, the same at
+every canvas scale, like `measureText`: `SlotRenderer` reads them from the measure font at
+`font.size` (an SDF one as `layoutSdfText` places its baseline, `roundf(ascender*px/48)`; a
+coverage or LCD one as `text_buffer_add_char` truncates the pen, `floor(ascender)`), so
+the baseline `renderText` draws is `pos.y + ascender` at scale 1, 1.5 and 2
+(`tests/fontMetrics.cpp`, GL and Vulkan). `renderer::Base`'s default derives them from
+`lineHeight()` (StubRenderer's, `tests/unit/fontMetrics.cpp`). A control asks through
+`Base::measureFontMetrics`, counted in `measure_calls` with the other measures.
+
+**`text::RichLayout`** (`include/gweni/text/richLayout.h`) takes spans (`RichLayoutSpan`:
+text, font, a url flag, padding) and gives lines (`RichLine`: top, height, baseline, width,
+the paragraph bytes it covers) of positioned pieces (`RichPiece`: one span's run on one
+line, its text, its line-box top-left `pos`, width, carets and font metrics), measuring
+through a `RichMeasure` (a control's `Base::measureCarets` and `measureFontMetrics`).
+`setSpans` measures each span's `'\n'`-free segment once; `breakLines(width)` breaks the
+measured spans with no measure but of a piece that starts inside its span (measured on its
+own, so a piece's width and carets are what it draws), so a new width measures almost
+nothing. A line breaks at a `'\n'`, after a run of spaces, and in a url span after `/`,
+`-`, `?`, `&` or `=`; a word goes on the line if it fits to its last visible character,
+else on the next line, and a word wider than the width breaks at any codepoint, filling its
+line first; the spaces ending a line take no width and are in no piece. A line's baseline
+is its pieces' largest ascender, each piece's top at `baseline - ascender`, its height
+reaching the largest descender. Kerning across a span edge is lost. `tests/unit/richLayout.cpp`
+pins the breaks, the shared baseline across sizes, empty spans and a span ending mid-word.
+
+**`controls::RichText`** is one paragraph, with no children: `setSpans`, `setSpan`,
+`setSpanText`, `appendSpan` (`RichSpan`: text, a style of `Bold`, `Italic`, `Code`, `Strike`,
+`Underline` combined, a colour, a url). A Bold or Italic span takes its family's face of
+that style at the paragraph's font size, a Code one the skin's mono face at that size with
+`CodePadding` (3) either side; a span's colour is its own, the skin's `Label.Default`, or a
+link's `RichText.Link`. It is as wide as its text on one line and, in its Y pass, as high
+as its lines at the width its X pass gave it (the measures kept across widths, so a width
+change re-breaks only). The textured renderer draws a text run per piece at `z+1` (a piece
+per colour, since `renderText` bakes the draw colour into its glyphs), and a variable slot
+list that follows the pieces, as the plot histogram's does: each code piece's background
+(`RichTextCode`) at `z`, each underline (a link's included) and strikethrough, icon kind 6
+rules in the piece's colour, at `z+2`, then the selection's rects at `z+1`, behind every
+glyph (glyph i of a run sits at `z+1+(i+1)/(n+1)`) and last, so a selection change shifts
+no other slot. It keeps what it drew in each run and slot and draws again only what
+differs, so a changed span or a new width writes that paragraph's runs and slots alone,
+and a settled frame nothing (`depthLayers()` 3).
+
+**Links.** A link is a run of consecutive spans with one url, hovered whole: its spans in
+`RichText.LinkHover` with the `cursor::Finger` cursor (CSS `pointer` on the web), `Beam`
+over the rest of the text, marking `StateChange_Text` so only those runs and underlines are
+drawn again. A press and a release on the same link, with nothing selected between them,
+call `onLinkClicked` with the url in `info.string` and the link's first span in
+`info.integer`; gweni opens nothing, the app routes the url. The theme names
+`RichTextCode`, `RichTextSelection`, `RichTextLink` and `RichTextLinkHover`, so the theme
+editor shows them.
+
+**The selection model.** `text::SelectionModel` (`include/gweni/text/selectionModel.h`) is
+an anchor and a focus, each a `SelectionPosition`: a block path (the block's index in its
+parent's blocks, from the outermost; empty for a lone paragraph) and a byte of the block's
+shown text. Positions order by path, a block before the blocks inside it (`{1} < {1, 0} <
+{2}`), then by byte; `range(block, length, bytes)` gives a block its part (the start block
+from the start, the end block to the end, a block between them whole), and `serial()` moves
+on each change. The outermost container holds it: a lone `RichText` its own, a document its
+blocks' (`setSelectionModel(model, path)`, then `selectionChanged()` on each block whose part
+changed). The container hit-tests: `RichText::positionAt(local)` is the byte nearest a
+point (the line whose box holds its y, the nearest caret on it, a mark kept with its base),
+so a drag across blocks is the container's, with no capture handed between paragraphs. A
+paragraph draws its part as one rect per line (`selectionRects()`), a selected line break
+widening it by `breakSelectionWidth()`. On its own a RichText selects with the mouse and
+keys: a press puts both ends at the byte under it (Shift moves the focus alone), a drag
+extends it, a double-click selects the word, blank run or punctuation run under it
+(`text::wordAt`), Ctrl+A everything, Ctrl+C copies the selected text as shown through
+`platform::setClipboardText`, and Escape clears it; it takes the keyboard focus on a press
+and is no Tab stop, and new spans clear its own selection. `tests/unit/selectionModel.cpp`
+and `tests/unit/richTextSelection.cpp` pin the model and the paragraph's selection;
+`controltest_rich_text` (and `_vulkan`) runs RichTextDemo through a span edit, a new width,
+a link's hover and click, a drag, a double-click and Ctrl+A, each held to the paragraph.
 
 ## The zoom panel
 
