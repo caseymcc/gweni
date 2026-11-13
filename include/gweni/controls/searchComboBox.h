@@ -274,10 +274,18 @@ public:
 
     //! Appends an option. The first one added to a box with no selection
     //! (and no free-text value) is selected, with no event (as
-    //! ComboBox::addItem).
+    //! ComboBox::addItem), unless the field holds what the user typed, which
+    //! it keeps, as setOptions() does.
     void addOption(const String &label, const String &name="");
-    //! Replaces the options; the selection is the first option, or none; a
-    //! free-text value stays the value.
+    //! Replaces the options. The selection stays on an equal option (the
+    //! same label and name) among them, else it is the first option, or
+    //! none (with no options, or while the field holds what the user typed);
+    //! a free-text value stays the value. Multi-select, each pick of an
+    //! option stays on an equal one and the rest go (their chips with them),
+    //! free-text picks staying. No event fires. While the field holds what
+    //! the user typed (an app refilling the options from
+    //! onTextChangedCaller), it keeps it and the open list shows the new
+    //! options matching it; the value shows again when the edit ends.
     void setOptions(std::vector<Option> options);
     //! No options, nothing selected.
     void clearOptions();
@@ -294,7 +302,9 @@ public:
     //! free-text value's text; empty with nothing selected.
     String getValue() override;
 
-    //! Fired once per pick or Up/Down step that changes the selection.
+    //! Fired once per pick or Up/Down step that changes the selection. The
+    //! box goes on after its events: a handler deletes it with
+    //! delayedDelete(), as any control.
     gweni::event::Caller onSelection;
     //! Fired once per edit of the field (the info's string is its text).
     gweni::event::Caller onTextChangedCaller;
@@ -408,8 +418,8 @@ public:
     void arrange(skin::Base *skin, Dim dim) override;
 
     //! In X, the widest option's label in this box's font as well as the
-    //! shown text, with the text padding and the chevron column, as a
-    //! ComboBox's: the labels are measured again only when they or the font
+    //! shown text and a free-text value, with the text padding and the
+    //! chevron column, as a ComboBox's: the labels are measured again only when they or the font
     //! (the renderer's text layout) changed. Multi-select, in Y the height
     //! flowRects() gives at the box's width, final by then.
     void calculateSize(skin::Base *skin, Dim dim) override;
@@ -438,6 +448,13 @@ protected:
     void select(int index, bool doEvents);
     //! The selection's label on the box, or in the field when filterable.
     void showSelection();
+    //! Whether the field holds text the user typed: an edit of it made it,
+    //! and showing the value, the value's own text resolved or emptying the
+    //! field after a multi-select pick ends it. An app refilling the options then leaves it as it is.
+    bool fieldHoldsEdit() const;
+    //! The new options' index of an option equal to \p option (its label
+    //! and name), or NoOption.
+    static int findOption(const std::vector<Option> &options, const Option &option);
     //! The field's text was edited: the new query, the list opened or
     //! filtered.
     void fieldTextChanged();
@@ -529,6 +546,8 @@ protected:
     bool m_hasCustom=false;
     String m_custom;
     bool m_refused=false;
+    //! fieldHoldsEdit()
+    bool m_fieldEdited=false;
     //! Set by refuseCustomValue() during onCustomValue.
     bool m_refusing=false;
     int m_selected=NoOption;
