@@ -1798,7 +1798,8 @@ two programs and the draws. What follows describes both together:
   `majorEvery`-th in color3 and the rest in color1, a pixel on no line discarded; the
   spacing a float's bits in tx/ty and the phases 1/16 px in bx/by, unpacked by the
   vertex shader into the line style's `vSegment`/`vJoints`; one slot for a NodeGraph's
-  whole grid, `tests/grid.cpp`). Styles 4, 6 and 7 share the rounded mask, anti-aliasing and border
+  whole grid, `tests/grid.cpp`), `9` = trapezoid (`drawTrapezoid`, a chart area's
+  segment: "Trapezoids (style 9)" below). Styles 4, 6 and 7 share the rounded mask, anti-aliasing and border
   (`roundedRect()` in the fragment shader). The edge and the border are a 1 px box
   filter: coverage `clamp(0.5 - d/aa, 0, 1)` and border mix
   `clamp(0.5 + (border + d)/aa, 0, 1)`, with `aa` the pixel's size from `vLocal`'s
@@ -1919,6 +1920,47 @@ two programs and the draws. What follows describes both together:
   axis-aligned segment without its caps, and ignores the neighbours. `tests/lines.cpp`
   checks style 3 pixel by pixel against a model of the placement, the coverage and a
   joint's owner and union.
+- **Trapezoids (style 9).** `drawTrapezoid(id, x0, x1, top0, top1, bottom0, bottom1,
+  colour, z)` draws a region with vertical sides at `x0` and `x1` and straight top and
+  bottom edges between them, in canvas units (a `Chart` area's segment, from its line
+  down to its base). The sides are snapped with `RenderTransform::deviceX`'s rounding,
+  `translate()`'s, so a whole-unit side lands where a rect's edge does and two trapezoids
+  sharing a side share its device px: the left one covers the columns before it, the
+  right one those after, with no seam and no column in both. The edges are at `y*scale`
+  unsnapped (the centre a `drawLine` stroke along them has). The quad is the sides'
+  columns over every row an edge crosses; the four heights, device px from the quad's
+  top, are floats' bits in `cx/cy` (top at `x0`), `bx/by` (top at `x1`), `dx/dy` (bottom
+  at `x0`) and `radius/border` (bottom at `x1`), the colour in `tx/ty`. The vertex shader
+  turns each edge, once a vertex, into what the fragment's coverage needs
+  (`trapezoidEdge()`: the line's distance terms and `pixelArea()`'s `h1`, `b`, `1/a` and
+  `1/(2ab)`), in the flat varyings the other styles' fragments read (`vSegment`,
+  `vJoints`, `vColor1`, `vBorderColor`). The fragment finds its pixel as the one `vLocal`
+  is in (half a px from its edges at the centre, farther than an interpolation error
+  moves it), so its coverage is a function of the flat terms and its column and row
+  alone, and takes each edge's part of the pixel by `pixelArea()` of the centre's
+  distance to it, written without a branch or a division (its linear part `e/a` with
+  `|e|` held to `h1`, plus the quadratic end `t(2b - t)/(2ab)`, `t = clamp(|e| - h1, 0,
+  b)`): the pixel's exact area on that side of a straight edge crossing its column. The
+  coverage is the two parts less the 1 their union is (above the bottom and below the
+  top every point is inside one of them), and where the edges have crossed (an area
+  segment whose line crosses its base) the same sum negated, so it is the sum's
+  magnitude: exact on either side of the crossing, and in the column it is in a pixel
+  holding both sides is covered by their difference. So a flat trapezoid on whole device
+  px is `drawFilledRect`'s rect byte for byte, and a nearly flat edge is computed from
+  the same flat floats and integer pixel by every backend (GL and Vulkan draw
+  `tests/trapezoids.cpp`'s frames byte for byte alike). An uncovered pixel (alpha under
+  half an 8-bit step) is discarded and writes no depth, as for styles 3-7. Cost: llvmpipe
+  runs the branch, masked, for every primitive's pixels; the first version (the slope,
+  normal and `pixelArea()`'s branches in the fragment, and a coverage flag for the
+  discard) cost `gweni_bench idle`'s flush +3.0 % instructions, this +1.7 % (4,623.8 M
+  without the style, 4,762.7 M first, 4,703.3 M now at N=1000; the branch with a constant
+  coverage 4,627.1 M). A quad wider or higher than `lx/ly` hold is collapsed like one
+  past the vertex range. `renderer::Base`'s default draws one `drawFilledRect` from `x0`
+  to `x1` between the middles of the two edges, in the colour. `tests/trapezoids.cpp`
+  checks a row of trapezoids (each at a z of its own, so a column drawn twice would be
+  blended twice), opaque and at 50 %, against a CPU model at scales 1, 1.5 and 2, the
+  outer sides' whole columns, a flat one against `drawFilledRect`, a crossed one, the
+  uncovered pixels' depth and the slot's writes.
 - `drawFilledRect()`/`drawTexturedRect()` write the 4 vertices + 6 indices for a quad
   into that id's slot in the CPU mirror.
 - **Images (style 2) in the one draw.** `drawTexturedRect` takes a texture loaded on its
@@ -3093,7 +3135,8 @@ two programs and the draws. What follows describes both together:
   1.5-unit line; ShowcaseDisplayDemo has the frame times.
 - **The chart: series of slots over time, value or category axes.** `controls::Chart`
   (`include/gweni/controls/chart.h`, with the axis helper `controls::axis` in
-  `chartAxis.h`) draws line, step-line, bar and stacked-bar series against a value axis on
+  `chartAxis.h`) draws line, step-line, bar, stacked-bar and (stacked, step) area series
+  against a value axis on
   the left and one on the right, over a time (epoch seconds), value or category x axis. It
   does not derive from `PlotBase`: its points are `(x, y)` doubles, since a float resolves
   about 2 minutes at 1.7e9 s. **Axes:** `controls::axis` has no Chart in it, so the Timeline
@@ -3141,10 +3184,11 @@ two programs and the draws. What follows describes both together:
   line along the plot's bottom), the spans (`drawRoundedRect`, `ChartSpan`, translucent),
   one list per series (a bar or stacked segment per point, `getBarRect` cut to the plot,
   or a segment per vertex pair of a line or step line, drawn with its neighbours), the
-  markers (a vertical `drawLine` each) and the crosshair's one slot. Their z values,
-  back to front, are the frame's z, the grid's z+1, the spans' z+2, series i's z+3+i,
-  the markers' z+3+S and the crosshair's z+4+S, so the renderer's layer count follows the
-  series: `skin::Control::depthLayersOf(control)` (`depthLayers()` by default) is what
+  markers (a vertical `drawLine` each) and the crosshair's one slot; an area adds the
+  list of its line (below). Their z values, back to front, are the frame's z, the grid's
+  z+1, the spans' z+2, series i's z+3+i, the k-th area's line's z+3+S+k, the markers'
+  z+3+S+A and the crosshair's z+4+S+A (S series, A of them areas), so the renderer's
+  layer count follows the series: `skin::Control::depthLayersOf(control)` (`depthLayers()` by default) is what
   the canvas asks, and the chart calls `Base::zOrderChanged()` when a series comes or
   goes. The lists are taken back to front, and only once the chart is shown with a plot,
   so a translucent span is blended over the grid behind it and a line's anti-aliased rim
@@ -3170,7 +3214,32 @@ two programs and the draws. What follows describes both together:
   it (a step line's five, around its two vertices); an appended point its own slot (and
   a line's joint before it); a moved marker its slot and its caption's glyphs. A rescale,
   a new x range, a sliding window or a series toggled redraws every slot of the series
-  it moves. **Legend:** a `ScrollControl` of `internal::ChartLegendRow`s, Selectables with
+  it moves. **Areas:** `Area`, `StepArea`, `StackedArea` and `StackedStepArea` are a line
+  (a step line for the step kinds) with the region between it and its base filled. An
+  unstacked area's base is 0 held to its value axis's range (`getAreaBaseValue`), its
+  NaN a gap of the two segments beside it. The stacked areas form a stack of their own,
+  apart from the bars' and drawn on the first stacked area's axis: it is taken at every x
+  of a visible stacked area (`getAreaStackXs`), each one's value there its point's y, or
+  0 where it has none or a NaN (the feature's "a missing x counts as 0"), positive values
+  up from 0 and negative ones down, so every stacked area has a vertex at each of those x
+  and its band's bottom edge is exactly the top edge of the band below it
+  (`getAreaStackBase`, `getAreaStackTop`). `getAreaSegment` gives each segment's sides,
+  line and base in the control's coordinates, unrounded (a step's flat at its first x's
+  value), and `getVertex` an area's line. The renderer draws the fill in the series' own
+  list and layer, one slot per segment: a `drawTrapezoid` in `ChartArea<i>`'s top colour
+  (the series' colour, translucent, a theme surface of its own), cut on the CPU to a box
+  a little wider than the plot along its edges (exact: they are straight) and its heights
+  held `Chart::AreaReach` units past the plot so the quad fits the vertex's range; a step
+  area a `drawRoundedRect` of the step's rect in whole units, cut to the plot. The line is
+  drawn as a line series' is, with its neighbours, in a list and a layer of its own in
+  front of every series' fill (a lower band's line is not covered by the band on it),
+  that list taken after every series' list. So a changed point rewrites the two
+  trapezoids beside it, those of every band stacked on it at its x, and the lines'
+  segments around it; a hidden stacked area leaves the stack (its x and its band) to the
+  others. `pointAt` picks an area's point near its line's vertex as a line's, else, in
+  the area whose band holds the mouse (the last one, in front, first; a binary search of
+  its segments' x), its point nearest in x. `tests/unit/chartArea.cpp` pins the stack,
+  the fills, the layers, the writes and the click. **Legend:** a `ScrollControl` of `internal::ChartLegendRow`s, Selectables with
   their series' swatch (`ChartSeries<i>`, faded while hidden) in a column before the name;
   the rows follow the series outside the layout, a click toggles its series (the axes
   rescale and the stacks are worked out again) and fires `onSeriesToggled`, and the row
