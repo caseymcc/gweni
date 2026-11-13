@@ -1224,16 +1224,12 @@ static bool setSlotBit(std::vector<uint64_t> &bits, size_t slot, bool set)
 
 SlotRenderer::QuadBounds SlotRenderer::quadBounds(const Vertex *vertexes)
 {
-    QuadBounds bounds{vertexes[0].x, vertexes[0].x, vertexes[0].y, vertexes[0].y};
+    const int16_t x01=std::min(vertexes[0].x, vertexes[1].x), X01=std::max(vertexes[0].x, vertexes[1].x);
+    const int16_t x23=std::min(vertexes[2].x, vertexes[3].x), X23=std::max(vertexes[2].x, vertexes[3].x);
+    const int16_t y01=std::min(vertexes[0].y, vertexes[1].y), Y01=std::max(vertexes[0].y, vertexes[1].y);
+    const int16_t y23=std::min(vertexes[2].y, vertexes[3].y), Y23=std::max(vertexes[2].y, vertexes[3].y);
 
-    for(size_t i=1; i<4; ++i)
-    {
-        bounds.x0=std::min(bounds.x0, int(vertexes[i].x));
-        bounds.x1=std::max(bounds.x1, int(vertexes[i].x));
-        bounds.y0=std::min(bounds.y0, int(vertexes[i].y));
-        bounds.y1=std::max(bounds.y1, int(vertexes[i].y));
-    }
-    return bounds;
+    return {std::min(x01, x23), std::max(X01, X23), std::min(y01, y23), std::max(Y01, Y23)};
 }
 
 void SlotRenderer::updateSlotVisibility(size_t slot)
@@ -2029,8 +2025,14 @@ void SlotRenderer::cullClippedQuad(size_t primitiveId)
     // whose quads stay put). The slot's bit and its chunk's ranges follow at
     // once: its vertexes are written, and the flip may come with no byte of the
     // slot changed, which the flush's pass over the dirty slots would not see.
-    if(setSlotBit(m_clipCulledSlots, primitiveId, culled))
-        updateSlotVisibility(primitiveId, hasArea);
+    // (m_clipCulledSlots is as long as the mirror: ensurePrimitiveSlots)
+    uint64_t &word=m_clipCulledSlots[primitiveId/64];
+    const uint64_t bit=uint64_t(1)<<(primitiveId%64);
+
+    if(((word&bit) != 0) == culled)
+        return;
+    word^=bit;
+    updateSlotVisibility(primitiveId, hasArea);
 }
 
 void SlotRenderer::drawFilledRect(size_t primitiveId, gweni::Rect rect, int zIndex)

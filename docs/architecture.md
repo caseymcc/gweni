@@ -1757,8 +1757,8 @@ two programs and the draws. What follows describes both together:
     corners are its quad's, so its caps and anti-aliased rim are in the test, not
     only the segment. The decision is a bit per slot (`m_clipCulledSlots`, set and
     cleared as the slot is drawn, cleared by its release), and a slot can show when
-    its style is not 0, its quad has area (`quadHasArea`: one collapsed by
-    `cullOutOfRangeQuad` has none) **and** its bit is clear, so a culled slot leaves
+    its style is not 0, its quad has area (`quadBounds(...).hasArea()`, the bounds
+    `cullClippedQuad` takes once: one collapsed by `cullOutOfRangeQuad` has none) **and** its bit is clear, so a culled slot leaves
     its chunk's runs through the same `updateSlotVisibility` the dirty slots go
     through. **The vertexes are not touched**: the vertex buffer holds byte for byte
     what it holds with the cull off, so a decision that flips uploads nothing (a
@@ -1774,9 +1774,16 @@ two programs and the draws. What follows describes both together:
     decides afresh. A culled slot that falls in a merged gap of its chunk's ranges
     (a 1-slot gap, or one merged by the range cap) is drawn there and discarded by
     the shader, as before the cull; `setDrawEveryPrimitiveSlot` draws every one.
-  - **A text run, whole.** `renderText` takes the bbox of the glyphs it just wrote and
-    the box it writes into their clip slots (`writeTextClipBoxes`), and `cullTextRun`
-    sets `TextRun::culled` by the same rule. A culled run is out of its font's draw
+  - **A text run, whole.** `renderText`'s layout keeps the span of the glyph corners
+    it writes, in whole px from the run's position (`m_textRunBounds`: the floor of
+    the lowest corner, the ceiling of the highest, which against a box's whole-px
+    edges decide what the corners do; beside `m_textRuns`, so `TextRun` keeps its
+    size), and a move adds the same delta to the corners and the position, so the
+    span holds until the next layout. `cullTextRun` sets `TextRun::culled` from it and
+    the box written into the glyphs' clip slots (`writeTextClipBoxes`) by the same
+    rule, in four compares on every `renderText`, the unchanged path included (an
+    earlier version scanned the run's vertexes there, `render` +17 to +31 % in
+    `resize`, `scroll` and `tree-toggle`). A culled run is out of its font's draw
     list as a hidden one is (`drawnRange` is (0, 0)), so the list is rebuilt only when
     the flag flips (`markTextDrawList`); its glyph vertexes are not rewritten either,
     so `text_slots_written` is what it was. `verifyTextDrawList` and `GWENI_TEXT_DEBUG`'s
@@ -1800,7 +1807,10 @@ two programs and the draws. What follows describes both together:
     ways draw the same pixels (`controltest_clip_cull`). `GWENI_CLIP_DEBUG`'s inset is
     applied in `makeClipBox()`, so the cull follows the inset boxes, and the depth view
     (`setViewTransform`) draws a culled quad as it drew it before, as nothing: the clip
-    test is in canvas space, before the camera.
+    test is in canvas space, before the camera. (Under a turned camera a fragment just
+    inside a projected edge can interpolate its canvas position an ulp past the
+    corner, which the shader would keep where the corner touches the box's edge: a
+    float-rounding sliver of one sample, which the cull leaves out.)
   - **Measured** with `gweni_bench --scene clipped-scroll --n 1000` (six fixed 400x200
     ScrollControls tiled 3x2 in the middle of the canvas, 1000 30-unit Button rows
     between them, each scrolled to its middle; settled frames), the same binary off
@@ -1827,10 +1837,12 @@ two programs and the draws. What follows describes both together:
     allocations in that frame's `allocs_flush` (106), which `bench_scaling` failed on.
     `primeChunks` (`bench/main.cpp`) draws a scene's first frame with the cull off,
     every chunk drawn once, then marks the tree changed and draws it again with the
-    cull on, before the warm-up; every scene's other counters are the same with and
-    without it. Not for a scene measured from its first frame (`build`).
+    cull as the run has it (so `--clip-cull off` is primed by the same two frames),
+    before the warm-up; every scene's other counters are the same with and without
+    it. Not for a scene measured from its first frame (`build`).
   - **Tests.** `tests/clipCulling.cpp` (GL and Vulkan, `primitiveCulled()` /
-    `textRunCulled()`): a slot in, out and back in its box; hidden while culled, shown
+    `textRunCulled()`, and `textRunInDrawList()`, whether the run is in its font's
+    draw list as the last flush built it): a slot in, out and back in its box; hidden while culled, shown
     while still culled, shown after a draw in a box that covers it; a line whose cap
     reaches into the box past the segment's end not culled; a box touching an edge
     culling and one a pixel over it not, on each side; a slot culled and drawn again
