@@ -360,7 +360,7 @@ public:
     bool scrollToRow(RowId id);
 
     bool onMouseWheeled(int delta) override;
-    //! The Y arrange reads a bar the user moved first (noteBarMove()).
+    //! The Y arrange takes a bar the user moved first (takeBarScroll()).
     void arrange(skin::Base *skin, Dim dim) override;
     //! Up, Down, PageUp and PageDown scroll by a line and a page less a
     //! line; Home goes to the first row, End follows the log.
@@ -378,6 +378,9 @@ public:
 
 protected:
     void onVeritcalBarMoved(event::Info info) override;
+    //! The user's move of the bar, wherever the list took it: at its end the
+    //! view follows, above it it detaches.
+    void barScrollTaken(float amount) override;
     void contentsPlaced(skin::Base *skin) override;
 
 private:
@@ -394,9 +397,6 @@ private:
     void scrollByUnits(int delta);
     //! Follows again when the offset is at the end.
     void followIfAtEnd();
-    //! A bar the user moved since the last layout (m_shownAmount): at its
-    //! end the view follows, above it it detaches.
-    void noteBarMove();
     //! Makes the jump button the first time; shows it with the count, or
     //! hides it.
     void updateJumpButton();

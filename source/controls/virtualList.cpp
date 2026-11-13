@@ -567,6 +567,7 @@ void VirtualList::takeBarScroll()
         m_scrollOffset[1]=gweni::clamp(static_cast<int>(std::lround(
             static_cast<double>(amount)*m_scrollRange[1])), 0, getMaxVerticalScrollOffset());
         m_shownAmount[1]=amount;
+        barScrollTaken(amount);
     }
 }
 

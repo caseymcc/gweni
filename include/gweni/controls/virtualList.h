@@ -247,6 +247,16 @@ protected:
     Base *poolRow(size_t i) const { return m_rows[i].control; }
     size_t poolItem(size_t i) const { return m_rows[i].item; }
 
+    //! A bar the user moved since the last layout (its thumb, its arrows, its
+    //! track) becomes the scroll offset, at the content it was moved against,
+    //! and barScrollTaken() is told. Whatever needs the offset first takes
+    //! it: an edit, a scroll request, the idle re-measure or the layout.
+    void takeBarScroll();
+    //! The user's move of the vertical bar was just taken as the offset,
+    //! `amount` the bar's scrolled amount (1 at the end), wherever it was
+    //! taken (takeBarScroll()). Nothing by default.
+    virtual void barScrollTaken(float /*amount*/) {}
+
 private:
     struct Row
     {
@@ -273,9 +283,6 @@ private:
     //! Anchors so that item's bottom is at the viewport's bottom, measuring
     //! the items above it that show; at the top when they all fit.
     void anchorAbove(size_t item, int viewport);
-    //! A bar the user moved since the last layout becomes the scroll offset,
-    //! at the content it was moved against.
-    void takeBarScroll();
     //! A scroll offset set since the last layout (the bar, the wheel,
     //! setVerticalScrollOffset) becomes the anchor.
     void anchorAtOffset();

@@ -12,8 +12,11 @@
  *  row on screen where it was and the jump button shows over the bottom of
  *  the viewport, centred, with the count of rows appended since. A press on
  *  the button, End, scrollToRow() of the last row, a wheel scroll and Down
- *  reaching the end each follow it again, hiding the button. A view that
- *  never detaches makes no jump button. Every frame is one layout pass.
+ *  reaching the end each follow it again, hiding the button. The up arrow
+ *  detaches it too when the list takes the bar's move before the layout
+ *  does: the idle re-measure after a resize, a block expanded between the
+ *  press and the frame. A view that never detaches makes no jump button.
+ *  Every frame is one layout pass.
  */
 #include "headlessFixture.h"
 
@@ -350,5 +353,44 @@ TEST_CASE("LogView follow: the thumb dragged up and the bar's up arrow detach")
     scene.append(5);
     scene.frame();
     CHECK(scene.shown() == before);
+    CHECK(scene.jumpShown());
+}
+
+// The bar's move is taken by whatever runs first after it, not only by the
+// layout: the idle re-measure in the update phase (after a new width), or an
+// edit that anchors at the offset (a block expanded). Either way the up arrow
+// detaches the view, as it does with nothing in between.
+TEST_CASE("LogView follow: the bar's up arrow detaches under the idle re-measure and an edit")
+{
+    Scene scene;
+
+    // a new width: every item is measured again, one a frame
+    scene.log->setRemeasureBudget(1);
+    scene.log->setSize(280, 200);
+    scene.frame();
+    scene.frame();
+
+    const Rect barRect=onCanvas(scene.bar);
+    const Point upArrow(barRect.x+barRect.w/2, barRect.y+2);
+
+    scene.click(upArrow);
+    scene.frame();
+    CHECK_FALSE(scene.log->isFollowing());
+    REQUIRE(scene.followEvents.size() == 1);
+    CHECK(scene.followEvents.back() == 0);
+
+    scene.log->setRemeasureBudget(0);
+    scene.follow();
+
+    // a block on screen expanded between the press and the layout
+    const RowId block=scene.log->append(controls::LogRow::block("block", {"a", "b", "c", "d", "e"}));
+
+    scene.frame();
+    scene.click(upArrow);
+    CHECK(scene.log->setBlockExpanded(block, true));
+    scene.frame();
+    CHECK_FALSE(scene.log->isFollowing());
+    REQUIRE(scene.followEvents.size() == 3);
+    CHECK(scene.followEvents.back() == 0);
     CHECK(scene.jumpShown());
 }

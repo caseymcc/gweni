@@ -2109,10 +2109,14 @@ two programs and the draws. What follows describes both together:
   default and every scroll up detaches it: a wheel notch up (before the list scrolls,
   which stuck would put back), Up, PageUp and Home (the view takes the keyboard),
   `scrollToRow()` of a row above the last, the thumb dragged (`onVeritcalBarMoved`) and
-  the bar's arrows or track, which tell nobody: `noteBarMove()` reads a bar the user
-  moved since the last layout (its amount against `m_shownAmount`) at the top of the
-  Y arrange, under a `PlacementScope`, before `placeContents()` takes it, and in
-  `append`, `replace` and `prepend` before their list edit would take it. Detached,
+  the bar's arrows or track, which tell nobody. A bar the user moved since the last
+  layout (its amount against `m_shownAmount`) is taken as the offset by whatever needs
+  the offset first, `VirtualList::takeBarScroll()`: an edit (`append`, `replace`,
+  `prepend`, the cap, a block toggled), a scroll request, the idle re-measure in the
+  update phase, or the view's own Y arrange, which takes it under a `PlacementScope`
+  before `placeContents()` would. Each tells the one hook `barScrollTaken(amount)`,
+  which the view overrides: at the end it follows, above it it detaches, so a press
+  on the arrows during a re-measure after a resize detaches as any other does. Detached,
   appends leave every row on screen where it is, and an `internal::LogViewJumpButton`
   (the view's own child, made with the inner panel set aside the first time the view
   detaches, never taking the keyboard focus) shows centred `JumpGap` above the

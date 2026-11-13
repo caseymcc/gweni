@@ -165,8 +165,8 @@ GWENI_CONTROL_CONSTRUCTOR(LogView)
 
 LogView::RowId LogView::append(const LogRow &row)
 {
-    // a bar the user moved since the last layout is the scroll this keeps
-    noteBarMove();
+    // a bar the user moved since the last layout is taken by the list's
+    // edits first (barScrollTaken())
     applyCap();
 
     const RowId id=m_nextId++;
@@ -189,8 +189,6 @@ bool LogView::replace(RowId id, const LogRow &row)
 
     if(position == NoItem)
         return false;
-
-    noteBarMove();
 
     const size_t before=rowLength(id);
 
@@ -228,7 +226,6 @@ LogView::RowId LogView::prepend(const std::vector<LogRow> &rows)
     if(rows.empty())
         return NoRow;
 
-    noteBarMove();
     // rows[0], the oldest, gets the lowest id: below every one given so far
     const RowId first=m_lowestId-static_cast<RowId>(rows.size());
 
@@ -981,6 +978,10 @@ void LogView::refreshRowSelection()
 
 void LogView::setFollowing(bool follow)
 {
+    // a bar the user moved and nothing took yet is the user's say first, so
+    // it is not taken (and acted on) inside this change
+    takeBarScroll();
+
     if(m_following == follow)
         return;
 
@@ -1045,18 +1046,11 @@ bool LogView::scrollToRow(RowId id)
     return true;
 }
 
-void LogView::noteBarMove()
+// Wherever the list took the move (an edit, the idle re-measure, the layout):
+// at the end the view follows, above it it detaches.
+void LogView::barScrollTaken(float amount)
 {
-    const float amount=m_verticalScrollBar->getScrolledAmount();
-
-    if(amount == m_shownAmount[1])
-        return;
-
-    // at the end: follow; above it: detach
-    if(amount >= 1.0f)
-        setFollowing(true);
-    else
-        setFollowing(false);
+    setFollowing(amount >= 1.0f);
 }
 
 void LogView::followIfAtEnd()
@@ -1143,21 +1137,22 @@ bool LogView::onKeyend(bool down)
 // sees them).
 void LogView::onVeritcalBarMoved(event::Info info)
 {
-    noteBarMove();
+    takeBarScroll();
     ParentClass::onVeritcalBarMoved(info);
 }
 
 // The bar moved by its arrows or its track since the last layout, which
-// nothing told the view of, is read before placeContents() takes it: above
-// the end it detaches the view, so the list does not put it back at the end.
-// What that changes (the stick, the jump button) is this pass's to lay out.
+// nothing told the view of and nothing took since, is taken before
+// placeContents() would: above the end it detaches the view
+// (barScrollTaken()), so the list does not put it back at the end. What that
+// changes (the stick, the jump button) is this pass's to lay out.
 void LogView::arrange(skin::Base *skin, Dim dim)
 {
     if(dim == Dim::Y)
     {
         PlacementScope placement;
 
-        noteBarMove();
+        takeBarScroll();
     }
     ParentClass::arrange(skin, dim);
 }
