@@ -18,6 +18,9 @@
  *  giving the plot the column back; every row wholly inside the legend's
  *  viewport; and a series added, a toggle, a longer name and two resizes each
  *  laid out in one pass that layout verification's full pass agrees with.
+ *  An onSeriesToggled handler removing the clicked row's series leaves the
+ *  row alive and hidden until the frame's delayed deletes, so its own press
+ *  never runs on a deleted row.
  */
 #include "headlessFixture.h"
 
@@ -328,4 +331,56 @@ TEST_CASE("Chart legend: a toggle, a rename, a series added and a resize lay out
     }
     CHECK(controls::layoutVerifyFailures() == failures);
     controls::setLayoutVerify(verify);
+}
+
+TEST_CASE("Chart legend: a toggle handler that removes the series keeps the clicked row until the frame ends")
+{
+    Scene scene;
+    Chart *chart=scene.chart;
+
+    chart->addSeries("a", ChartSeriesType::Line);
+    const size_t b=chart->addSeries("b", ChartSeriesType::Line);
+    chart->setSeriesPoints(0, {{0, 1}, {1, 2}});
+    chart->setSeriesPoints(b, {{0, 2}, {1, 3}});
+    scene.frame();
+
+    controls::Base *row=chart->getLegendRow(b);
+    REQUIRE(row != nullptr);
+    const size_t rowId=row->getControlId();
+    const test::IdBankCounts before=test::IdBankCounts::now();
+
+    // the handler removes the series its row stands for, inside the row's press
+    struct Remover: public event::Handler
+    {
+        Chart *chart=nullptr;
+        size_t rowId=0;
+        bool rowAlive=false;
+        bool rowHidden=false;
+
+        void toggled(event::Info info)
+        {
+            chart->removeSeries(size_t(info.integer));
+            controls::Base *row=controls::Base::getControlById(rowId);
+
+            // checked here, before the row's press goes on
+            CHECK(row != nullptr);
+            rowAlive=(row != nullptr);
+            rowHidden=row && row->hidden();
+        }
+    } remover;
+
+    remover.chart=chart;
+    remover.rowId=rowId;
+    chart->onSeriesToggled.add(&remover, &Remover::toggled);
+    scene.click(row);
+
+    CHECK(chart->getSeriesCount() == 1);
+    CHECK(chart->getLegendRow(b) == nullptr);
+    // the row its press is still running in is not deleted under it
+    CHECK(remover.rowAlive);
+    CHECK(remover.rowHidden);
+    // and is gone after the frame, its slots with it
+    scene.frame();
+    CHECK(controls::Base::getControlById(rowId) == nullptr);
+    CHECK(test::IdBankCounts::now().livePrimitives() < before.livePrimitives());
 }

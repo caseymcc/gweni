@@ -91,6 +91,8 @@ void Chart::removeSeries(size_t series)
         return;
 
     m_series.erase(m_series.begin()+static_cast<std::ptrdiff_t>(series));
+    // a press on a point is no click once the series it was on moved
+    m_pressed=false;
 
     zOrderChanged();
     axesChanged();
@@ -103,6 +105,7 @@ void Chart::clearSeries()
         return;
 
     m_series.clear();
+    m_pressed=false;
 
     zOrderChanged();
     axesChanged();
@@ -758,9 +761,15 @@ void Chart::syncLegend()
     if(!m_legend)
         return;
 
+    // Hidden and deleted between frames: the row may be the one whose click
+    // removed its series, still inside its own press.
     while(m_legendRows.size() > m_series.size())
     {
-        delete m_legendRows.back();     // ~Base takes it out of the inner panel
+        internal::ChartLegendRow *row=m_legendRows.back();
+
+        row->setSeries(nullptr, 0);
+        row->setHidden(true);
+        row->delayedDelete();
         m_legendRows.pop_back();
     }
     while(m_legendRows.size() < m_series.size())
