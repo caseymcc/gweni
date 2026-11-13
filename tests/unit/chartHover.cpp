@@ -21,13 +21,15 @@
  *  plot hides the crosshair and the tooltip. onPointClicked fires for a bar,
  *  a stacked segment and a point near the mouse with the series and index,
  *  and not for a press and release on two different points, nor for empty
- *  plot.
+ *  plot. A hover control replaced while the box shows it is given back by
+ *  the box before the chart deletes it, and the box shows the new one.
  */
 #include "headlessFixture.h"
 
 #include <gweni/controls/canvas.h>
 #include <gweni/controls/chart.h>
 #include <gweni/controls/label.h>
+#include <gweni/controls/toolTip.h>
 #include <gweni/inputHandler.h>
 #include <gweni/platforms/platform.h>
 #include <gweni/skins/textured/texturedControls.h>
@@ -395,4 +397,42 @@ TEST_CASE("Chart hover: a click on a bar, a stacked segment and near a point fir
     scene.canvas->inputMouseButton(0, false);
     scene.frame();
     CHECK(scene.clicks.size() == 3);
+}
+
+TEST_CASE("Chart hover: a new hover control replaces the one the tooltip box shows, which may then go")
+{
+    Scene scene;
+    Chart *chart=scene.chart;
+
+    const size_t cpu=chart->addSeries("cpu", ChartSeriesType::Line);
+    chart->setSeriesPoints(cpu, {{1, 2}, {3, 4}, {5, 6}});
+
+    controls::Label *first=chart->newChild<controls::Label>();
+    first->setText("first");
+    first->sizeToContents();
+    chart->setHoverControl(first, [](const Chart &, const ChartHover &, controls::Base *) {});
+    scene.frame();
+
+    // shown in the canvas's box once the delay has passed
+    scene.moveTo(scene.local(3, 4));
+    scene.clock+=scene.canvas->getToolTipDelay()+0.1f;
+    scene.frame();
+    controls::ToolTip *box=scene.canvas->toolTipControl();
+    REQUIRE(box != nullptr);
+    REQUIRE(scene.canvas->toolTipShown());
+    REQUIRE(box->content() == first);
+    const size_t firstId=first->getControlId();
+
+    // the chart deletes the one it replaces: the box gives it back first
+    controls::Label *second=chart->newChild<controls::Label>();
+    second->setText("second");
+    second->sizeToContents();
+    chart->setHoverControl(second, [](const Chart &, const ChartHover &, controls::Base *) {});
+    CHECK(controls::Base::getControlById(firstId) == nullptr);
+    REQUIRE(box->content() == nullptr);
+
+    // and shows the new one at the next frame
+    scene.frame();
+    CHECK(scene.canvas->toolTipShown());
+    CHECK(box->content() == second);
 }

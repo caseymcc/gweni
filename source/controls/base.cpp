@@ -4401,6 +4401,17 @@ void Base::setToolTip(Base *tooltip)
     if(m_toolTip == tooltip)
         return;
 
+    // One shown in a canvas's ToolTip box comes back now, a hidden child, so
+    // the caller may delete it; the box is filled in again next frame.
+    if(m_toolTip && (m_toolTip->getParent() != this))
+    {
+        if(ToolTip *box=gweni_cast<ToolTip>(m_toolTip->getParent()))
+        {
+            if(box->content() == m_toolTip)
+                box->releaseContent(false);
+        }
+    }
+
     m_toolTip=tooltip;
 
     if(m_toolTip)

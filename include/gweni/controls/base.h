@@ -915,6 +915,8 @@ public:
     //! A control to show as the tooltip instead of the text. It stays a hidden
     //! child of this control, and the canvas moves it into its ToolTip box
     //! while it is shown (with its mouse input turned off) and back after.
+    //! The one it replaces is given back at once, even while shown, so the
+    //! caller may delete it.
     virtual void setToolTip(Base *tooltip);
     virtual Base *getToolTip()
     {

@@ -20,7 +20,8 @@
  *  leaving the window (input::GLFW3::processCursorEnter) hides it, while a
  *  drag keeps its control hovered; clearing the text hides it too, and a
  *  delete may be delayed or outright; a setToolTip() control is deleted with
- *  its owner.
+ *  its owner, and one replaced or cleared while shown is handed back at once,
+ *  so its owner may delete it before the next frame.
  */
 #include "headlessFixture.h"
 
@@ -469,4 +470,41 @@ TEST_CASE("A setToolTip() control is shown in the box and handed back to its own
     CHECK(box->content() == nullptr);
     CHECK(box->getActualChildren().size() == boxChildren-1);
     scene.frame();
+}
+
+TEST_CASE("A shown setToolTip() control replaced or cleared is handed back at once, so it may be deleted")
+{
+    Scene scene;
+    controls::Base *a=scene.control(20, 30, 60, 15, "");
+    controls::Base *custom=a->newChild<controls::Base>();
+    custom->setSizeFlags({SizeFlag::Fixed, SizeFlag::Fixed});
+    custom->setSize(50, 30);
+    a->setToolTip(custom);
+    scene.frame();
+
+    scene.hover(a);
+    scene.waitDelay();
+    controls::ToolTip *box=scene.canvas->toolTipControl();
+    REQUIRE(box->content() == custom);
+
+    // replaced while shown: back with its owner, hidden, before the next frame
+    controls::Base *other=a->newChild<controls::Base>();
+    other->setSizeFlags({SizeFlag::Fixed, SizeFlag::Fixed});
+    other->setSize(40, 20);
+    a->setToolTip(other);
+    CHECK(box->content() == nullptr);
+    CHECK(custom->getParent() == a);
+    CHECK(custom->hidden());
+    delete custom;
+    scene.frame();
+    CHECK(scene.canvas->toolTipShown());
+    CHECK(box->content() == other);
+
+    // cleared while shown: the same
+    a->setToolTip(nullptr);
+    CHECK(box->content() == nullptr);
+    CHECK(other->getParent() == a);
+    delete other;
+    scene.frame();
+    CHECK_FALSE(scene.canvas->toolTipShown());
 }
