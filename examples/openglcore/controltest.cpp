@@ -13133,6 +13133,16 @@ static gweni::Point logRowPoint(gweni::controls::LogView *log, gweni::controls::
     return row->localPosToCanvas(gweni::Point(row->getWidth()/2, row->getHeight()-2));
 }
 
+// A press past the end of a row's text, at its right edge on its last line.
+static gweni::Point logRowEndPoint(gweni::controls::LogView *log, gweni::controls::LogView::RowId id)
+{
+    gweni::controls::Base *row=log->rowControl(id);
+
+    if(!row)
+        return gweni::Point(-1, -1);
+    return row->localPosToCanvas(gweni::Point(row->getWidth()-2, row->getHeight()-2));
+}
+
 // The canvas point of the caret before a character of a plain row on screen,
 // in the middle of its wrapped line.
 static gweni::Point logCharPoint(gweni::controls::LogView *log, gweni::controls::LogView::RowId id, size_t character)
@@ -13568,7 +13578,7 @@ static bool runLogViewCount(Session &s, const std::string &shotDir, size_t count
             const RowId a=log->rowIdAt(first);
             const RowId c=log->rowIdAt(first+2);
             const gweni::Point at=logRowPoint(log, a);
-            const gweni::Point to=logRowPoint(log, c);
+            const gweni::Point to=logRowEndPoint(log, c);
 
             clickMouse(s, at.x, at.y);
             renderFrames(s, 1);

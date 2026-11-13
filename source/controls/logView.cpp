@@ -75,11 +75,15 @@ void LogViewRow::getSelectionRects(std::vector<Rect> &rects)
 {
     if(!m_selection.selected)
         return;
-    if(m_selection.whole || m_content)
+    // an app kind's content has no characters: its bounds, when the
+    // selection covers any of it
+    if(m_selection.whole || (m_content && m_selection.end > m_selection.begin))
     {
         rects.push_back(Rect(0, 0, getWidth(), getHeight()));
         return;
     }
+    if(m_content)
+        return;
 
     const int length=m_text->length();
     const int begin=gweni::clamp(static_cast<int>(m_selection.begin), 0, length);
@@ -626,7 +630,8 @@ void LogView::onMouseDoubleClickLeft(int x, int y)
     const RowId id=rowAt(Point(x, y), &local);
     const LogRow *row=getRow(id);
 
-    if(!row || input::isShiftDown() || input::isControlDown()
+    // a block's title line toggles it, and an app kind's row has no words
+    if(!row || input::isShiftDown() || input::isControlDown() || rowKind(row->kind)
         || (row->kind == LogRow::Block && local.y < RowPadY+getLineHeight()))
     {
         onMouseClickLeft(x, y, true);
@@ -1390,8 +1395,10 @@ internal::LogViewRow::Selection LogView::rowSelection(size_t position) const
     if(!selection.selected)
         return selection;
 
-    // all of it, alone or with the selection on both sides: the row's band
-    selection.whole=(begin == 0 && end >= length && selection.fromBefore == selection.continues);
+    // all of it, alone or with the selection going on past it: the row's
+    // band (one that ends at the row's end has its last line's rect, which
+    // stops at the text's end)
+    selection.whole=(begin == 0 && end >= length && (!selection.fromBefore || selection.continues));
     selection.begin=rowToShownCharacter(id, begin);
     selection.end=rowToShownCharacter(id, end);
     return selection;

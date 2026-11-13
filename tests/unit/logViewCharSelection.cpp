@@ -649,3 +649,118 @@ TEST_CASE("LogView characters: the highlight is the row whole or a rect per wrap
     CHECK(rects(row).empty());
     CHECK_FALSE(row->isSelected());
 }
+
+TEST_CASE("LogView characters: a row covered from its start on into the next is the band")
+{
+    Scene scene(0);
+    String text;
+
+    for(int i=0; i < 40; ++i)
+        text+=(i?" word":"word")+std::to_string(i);
+
+    const RowId first=scene.log->append(controls::LogRow("first"));
+    const RowId wrapped=scene.log->append(controls::LogRow(text));
+    const RowId last=scene.log->append(controls::LogRow("last"));
+
+    scene.frame();
+    scene.frame();
+
+    controls::internal::LogViewRow *row=scene.log->rowControl(wrapped);
+
+    REQUIRE(row != nullptr);
+
+    const auto rects=[&](controls::internal::LogViewRow *of)
+    {
+        std::vector<Rect> found;
+
+        of->getSelectionRects(found);
+        return found;
+    };
+    const String band=str(Rect(0, 0, row->getWidth(), row->getHeight()));
+
+    // from its first character on into the row below: its bounds, the left
+    // edge the rows below it start at
+    scene.log->selectRange(Position{wrapped, 0}, Position{last, 2});
+    scene.frame();
+    CHECK(row->getSelection().whole);
+    REQUIRE(rects(row).size() == 1);
+    CHECK(str(rects(row)[0]) == band);
+
+    // a click on it and a Shift+click below: the same
+    scene.click(scene.charPoint(wrapped, 3));
+    scene.click(scene.charPoint(last, 2), GLFW_MOD_SHIFT);
+    CHECK(scene.log->getSelectedText() == text+"\nla");
+    CHECK(row->getSelection().whole);
+    REQUIRE(rects(row).size() == 1);
+    CHECK(str(rects(row)[0]) == band);
+
+    // from the row above to its end, no further: its last line stops at the
+    // text's end
+    scene.log->selectRange(Position{first, 2}, Position{wrapped, text.size()});
+    scene.frame();
+    CHECK_FALSE(row->getSelection().whole);
+
+    const std::vector<Rect> found=rects(row);
+    const Rect end=row->getCharacterPosition(static_cast<int>(text.size()));
+
+    REQUIRE(found.size() > 1);
+    CHECK(found.back().x+found.back().w == end.x);
+}
+
+TEST_CASE("LogView characters: a row of an app kind is selected whole or not at all")
+{
+    Scene scene(0);
+    constexpr controls::LogRow::Kind Card=controls::LogRow::FirstAppKind;
+    controls::LogView::RowKind card;
+
+    // content that takes no mouse, so the clicks are the view's
+    card.factory=[](controls::Base *row) -> controls::Base *
+        {
+            controls::Base *content=row->newChild<controls::Base>();
+
+            content->setMouseInputEnabled(false);
+            return content;
+        };
+    card.binder=[](controls::Base * /*content*/, const controls::LogRow & /*row*/) {};
+    card.measurer=[](const controls::LogRow & /*row*/, int /*width*/) { return 30; };
+    scene.log->setRowKind(Card, card);
+
+    controls::LogRow cardRow("card one");
+
+    cardRow.kind=Card;
+
+    const RowId plain=scene.log->append(controls::LogRow("plain row"));
+    const RowId cardId=scene.log->append(cardRow);
+
+    scene.frame();
+    scene.frame();
+
+    controls::internal::LogViewRow *row=scene.log->rowControl(cardId);
+
+    REQUIRE(row != nullptr);
+    REQUIRE(row->getKindContent() != nullptr);
+
+    const auto rects=[&]()
+    {
+        std::vector<Rect> found;
+
+        row->getSelectionRects(found);
+        return found;
+    };
+
+    // a double-click selects no word of its hidden text: the row, as drawn
+    const Point at=row->localPosToCanvas(Point(row->getWidth()/4, row->getHeight()/2));
+
+    scene.click(at);
+    scene.press(at);
+    scene.release();
+    CHECK(scene.log->getSelectedText() == scene.log->rowText(cardId));
+    REQUIRE(rects().size() == 1);
+    CHECK(str(rects()[0]) == str(Rect(0, 0, row->getWidth(), row->getHeight())));
+
+    // a range ending at its start covers none of it: nothing drawn
+    scene.log->selectRange(Position{plain, 2}, Position{cardId, 0});
+    scene.frame();
+    CHECK(scene.log->getSelectedText() == "ain row\n");
+    CHECK(rects().empty());
+}

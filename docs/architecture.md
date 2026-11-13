@@ -2704,8 +2704,9 @@ two programs and the draws. What follows describes both together:
   a clicked row still takes that row. A double-click selects the word under it
   (`selectWordAt`: a run of letters, digits, `_` and non-ASCII codepoints, of blanks or
   of punctuation, by caret stops, a `'\n'` part of none, the run before it at a line's
-  end) and a drag from it extends with the word kept; with Shift or Ctrl, or on a
-  block's title line, it is a press. Ctrl+click toggles a row whole (splitting a range
+  end) and a drag from it extends with the word kept; with Shift or Ctrl, on a
+  block's title line or on a row of an app's kind (whose content has no characters
+  to pick a word of), it is a press. Ctrl+click toggles a row whole (splitting a range
   round it), Ctrl+A selects every row and Escape clears. A block row shows
   `blockText()`, its rows' text being `rowText()`: `shownToRowCharacter()` maps a byte
   of the shown text to it (the count after the title is the title's end, the lines
@@ -2730,8 +2731,11 @@ two programs and the draws. What follows describes both together:
   when the selection changes, and marks `StateChange_Background` only when that
   changes (or, bound while selected in part, always: its rects follow the text the
   bind set). `getSelectionRects()` gives the rects in the row's coordinates: a row
-  selected whole, alone or inside a range running on both sides, is one rect over its
-  bounds, #594's band; any other a rect per wrapped line the selection covers, from
+  selected whole, alone or with the selection running on past its end (from the row
+  above or from its own first character), is one rect over its bounds, #594's band,
+  so its left edge is the rows' below it; a row of an app's kind is that rect while
+  the selection covers any of it, and nothing otherwise; any other a rect per wrapped
+  line the selection covers, from
   the caret at its first covered byte to the caret at its last (`getCharacterPosition`
   of the row's wrapped Text), the row's left edge where the selection comes from the
   line before, its right edge where it runs on past the line's last caret (its wrap
