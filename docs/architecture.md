@@ -2305,7 +2305,10 @@ two programs and the draws. What follows describes both together:
   shown), and of a line taller than the viewport (one paragraph in a short field) the
   caret's visual row: `revealCaretRow()` asks the next layout for it, and that
   layout's `contentsPlaced`, once it knows the wrap width, gives the row's place in
-  the line to `scrollToItem(line, partTop, partHeight)`.
+  the line to `scrollToItem(line, partTop, partHeight)`, while that line is still
+  the list's pending item (`VirtualList::getPendingItem()`): a `scrollToItem()` or
+  `scrollByRows()` the app makes after the caret's move in the same frame is where
+  the view ends, as unwrapped.
 
   **Visual rows.** Wrapped, Up and Down move a visual row at a time, inside a line
   and across lines, the goal column a column in cells on the row; Home and End go
@@ -2316,8 +2319,8 @@ two programs and the draws. What follows describes both together:
   the viewport's rows. A byte at a wrap point is both the end of the upper row and
   the start of the lower one: the caret is drawn at the upper row's end after End,
   a click past a row's end or Up/Down landing past it (`isCaretAtRowEnd()`), at the
-  lower row's start after any other move, and `getCaretRow()`/`getCaretBounds()`
-  follow. A move puts the caret's visual row in view through the scroll offset (the
+  lower row's start after any other move or an edit of its line (an edit of another
+  line keeps the look), and `getCaretRow()`/`getCaretBounds()` follow. A move puts the caret's visual row in view through the scroll offset (the
   row's top is the line's `offsetOf` plus its rows above), or through
   `revealCaretRow()` for a line not measured at this width or a row past the last
   layout's content (an auto-height field grown past its max by the keystroke)
