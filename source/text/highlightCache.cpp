@@ -69,10 +69,14 @@ void HighlightCache::setTokenizer(const Tokenizer *tokenizer)
     reset();
 }
 
+// Without a tokenizer it keeps no entries, so an editor with no language
+// pays nothing per line.
 void HighlightCache::reset()
 {
     m_entries.clear();
-    if(m_document)
+    if(!m_tokenizer)
+        m_entries.shrink_to_fit();
+    else if(m_document)
     {
         m_entries.reserve(roomFor(m_document->lineCount()));
         m_entries.resize(m_document->lineCount());
@@ -90,6 +94,13 @@ void HighlightCache::linesChanged(const LineChange &change)
 {
     if(!m_document)
         return;
+    if(!m_tokenizer)
+    {
+        // no entries to shift, but the window moves with its lines all the same
+        if(m_visibleFirst >= change.first+change.removed)
+            m_visibleFirst=m_visibleFirst+change.inserted-change.removed;
+        return;
+    }
 
     const size_t first=std::min(change.first, m_entries.size());
     const size_t removed=std::min(change.removed, m_entries.size()-first);
@@ -126,7 +137,7 @@ void HighlightCache::linesChanged(const LineChange &change)
     if(m_visibleFirst >= first+removed)
         m_visibleFirst=m_visibleFirst+change.inserted-removed;
 
-    if(!m_tokenizer || (m_visibleCount == 0) || m_entries.empty())
+    if((m_visibleCount == 0) || m_entries.empty())
         return;
 
     const size_t lastVisible=std::min(m_visibleFirst+m_visibleCount, m_entries.size())-1;

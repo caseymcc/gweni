@@ -14,6 +14,8 @@
  *  - a line inserted or removed shifts the entries after it, which are not
  *    tokenized again;
  *  - the change handler gets the lines whose tokens an edit's pass changed;
+ *  - without a tokenizer it keeps no entry per line, through edits too, and its
+ *    screen still moves with its lines;
  *  - after seeded random edits (inserts, removals, line breaks, joins, opened and
  *    closed block strings) and random screens, every line asked for is what a
  *    fresh tokenize of the whole text gives, and no edit's pass goes past the
@@ -415,6 +417,34 @@ TEST_CASE("Highlight cache: a cache attached to a document follows it until it i
     // the cache took its observer away with it
     document.insert(Position{0, 0}, "else\n");
     CHECK(document.lineCount() == 4);
+}
+
+TEST_CASE("Highlight cache: without a tokenizer it keeps no entry per line")
+{
+    ToyTokenizer toy;
+    Document document(numberedLines(1000));
+    HighlightCache cache;
+
+    cache.attach(&document);
+    CHECK(cache.entryCount() == 0);
+    cache.setVisibleLines(500, 20);
+    document.insert(Position{3, 0}, "a\nb\n");
+    document.erase(Range{Position{10, 0}, Position{11, 0}});
+    CHECK(cache.entryCount() == 0);
+    CHECK(cache.tokens(5).empty());
+    // the screen moved with its lines, as with a tokenizer
+    CHECK(cache.visibleFirst() == 501);
+
+    cache.setTokenizer(&toy);
+    CHECK(cache.entryCount() == document.lineCount());
+    document.insert(Position{3, 0}, "c\n");
+    CHECK(cache.entryCount() == document.lineCount());
+    CHECK(allFresh(cache, document, toy));
+
+    cache.setTokenizer(nullptr);
+    CHECK(cache.entryCount() == 0);
+    document.insert(Position{3, 0}, "d\n");
+    CHECK(cache.entryCount() == 0);
 }
 
 TEST_CASE("Token kinds: every kind has its name")

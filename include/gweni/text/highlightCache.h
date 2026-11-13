@@ -70,7 +70,8 @@ public:
     const Document *document() const { return m_document; }
 
     //! The tokenizer, every line stale after a new one. nullptr (the default)
-    //! highlights nothing: tokens() is empty for every line.
+    //! highlights nothing: tokens() is empty for every line, and the cache
+    //! keeps no entry per line.
     void setTokenizer(const Tokenizer *tokenizer);
     const Tokenizer *tokenizer() const { return m_tokenizer; }
 
@@ -92,6 +93,8 @@ public:
     //! The state line \p line ends in, made fresh first as tokens() does.
     TokenState endState(size_t line);
 
+    //! The lines it keeps an entry for: the document's, 0 without a tokenizer.
+    size_t entryCount() const { return m_entries.size(); }
     //! Lines known fresh without a check: [0, frontier()).
     size_t frontier() const { return m_frontier; }
     //! Whether line \p line is fresh now, without making it so: a line past the
