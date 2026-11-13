@@ -464,8 +464,8 @@ public:
     bool isReadOnly() const { return m_readOnly; }
 
     //! Whether the caret is lit now (it blinks while the editor has the
-    //! focus).
-    bool isCaretVisible() const { return m_caretBlink.visible(); }
+    //! focus; never read-only).
+    bool isCaretVisible() const { return !m_readOnly && m_caretBlink.visible(); }
     //! The caret's rect in the editor's coordinates, from the last layout's
     //! scroll and metrics, cut to the viewport: empty when its line or
     //! column is scrolled out.
