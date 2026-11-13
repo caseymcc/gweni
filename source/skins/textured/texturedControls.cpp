@@ -18,6 +18,7 @@
 #include "gweni/controls/plotHistogram.h"
 #include "gweni/controls/plotLines.h"
 #include "gweni/controls/chart.h"
+#include "gweni/controls/richText.h"
 #include "gweni/controls/nodeGraph.h"
 #include "gweni/controls/colorControls.h"
 #include "gweni/controls/colorPicker.h"
@@ -1794,6 +1795,158 @@ void PlotHistogram::update(renderer::Base *renderer, controls::Base *baseControl
 
         draw(1+i, rect, (int(i) == hovered)?tokyonight::PlotBarHover:tokyonight::PlotBar, z+1);
     }
+}
+
+
+///////////////////////////////////////////////////////////////////////////
+//RichText
+void RichText::update(renderer::Base *renderer, controls::Base *baseControl)
+{
+    controls::RichText *rich=static_cast<controls::RichText *>(baseControl);
+    const std::vector<text::RichPiece> &pieces=rich->getLayout().pieces();
+    const std::vector<controls::RichSpan> &spans=rich->getSpans();
+    const unsigned int sc=baseControl->getStateChange();
+    const bool all=(sc&(controls::StateChange_Created|controls::StateChange_Visibility
+        |controls::StateChange_Geometry)) != 0;
+    const bool visible=baseControl->visible();
+    const int z=baseControl->getZIndex();
+    const gweni::Rect &bounds=baseControl->getRenderBounds();
+    const gweni::Point origin(bounds.x+rich->contentOrigin().x, bounds.y+rich->contentOrigin().y);
+
+    // a run per piece: the ones past the pieces given back, new ones taken
+    while(m_texts.size() > pieces.size())
+    {
+        renderer->releaseTextPrimitive(m_texts.back());
+        m_texts.pop_back();
+        m_runs.pop_back();
+    }
+    while(m_texts.size() < pieces.size())
+    {
+        size_t id;
+
+        renderer->generateTextPrimitive(id);
+        m_texts.push_back(id);
+        m_runs.emplace_back();
+    }
+
+    for(size_t i=0; i < pieces.size(); ++i)
+    {
+        const text::RichPiece &piece=pieces[i];
+        Run &run=m_runs[i];
+        const gweni::Color color=rich->spanColor(piece.span);
+        const gweni::Font font=rich->spanFont(piece.span);
+        const gweni::Point pos(origin.x+piece.pos.x, origin.y+piece.pos.y);
+
+        if(all || !run.valid || (run.text != piece.text) || (run.font != font) || !(run.color == color)
+            || (run.pos.x != pos.x) || (run.pos.y != pos.y) || (run.zIndex != z+1))
+        {
+            renderer->setDrawColor(color);
+            renderer->renderText(m_texts[i], font, pos, z+1, piece.text);
+            run.text=piece.text;
+            run.font=font;
+            run.color=color;
+            run.pos=pos;
+            run.zIndex=z+1;
+        }
+        // a new run is drawn shown: told whether it is
+        if(all || !run.valid || (run.shown != visible))
+        {
+            if(visible)
+                renderer->showText(m_texts[i]);
+            else
+                renderer->hideText(m_texts[i]);
+            run.shown=visible;
+        }
+        run.valid=true;
+    }
+
+    // the slots wanted: the code backgrounds, then the lines
+    struct Want
+    {
+        bool rule;
+        gweni::Rect rect;
+        tokyonight::Surface surface;
+        gweni::Color color;
+        int zIndex;
+    };
+    std::vector<Want> wants;
+
+    for(const text::RichPiece &piece:pieces)
+    {
+        if(spans[piece.span].style&controls::RichSpan::Code)
+        {
+            gweni::Rect box=piece.box();
+
+            box.x+=origin.x;
+            box.y+=origin.y;
+            wants.push_back({ false, box, tokyonight::RichTextCode, gweni::Color(), z });
+        }
+    }
+    for(const text::RichPiece &piece:pieces)
+    {
+        const controls::RichSpan &span=spans[piece.span];
+        const int baseline=origin.y+piece.pos.y+piece.metrics.ascender;
+        const gweni::Color color=rich->spanColor(piece.span);
+
+        // a rule runs through the middle of its rect: one unit under the
+        // baseline, and a third of the ascender above it
+        if(span.isLink() || (span.style&controls::RichSpan::Underline))
+            wants.push_back({ true, gweni::Rect(origin.x+piece.pos.x, baseline, piece.width, 2),
+                tokyonight::Surface{}, color, z+2 });
+        if(span.style&controls::RichSpan::Strike)
+        {
+            const int y=baseline-std::max(1, (piece.metrics.ascender+1)/3);
+
+            wants.push_back({ true, gweni::Rect(origin.x+piece.pos.x, y-1, piece.width, 2),
+                tokyonight::Surface{}, color, z+2 });
+        }
+    }
+
+    resizePlotPrimitives(renderer, m_primitives, wants.size());
+    m_drawn.resize(wants.size());
+
+    for(size_t i=0; i < wants.size(); ++i)
+    {
+        const Want &want=wants[i];
+        Drawn &drawn=m_drawn[i];
+
+        if(!visible)
+        {
+            if(all || !drawn.valid || drawn.shown)
+                renderer->hidePrimitive(m_primitives[i]);
+            // drawn again once shown, which marks the visibility
+            drawn.valid=false;
+            continue;
+        }
+
+        if(!all && drawn.valid && drawn.shown && (drawn.rule == want.rule) && (drawn.rect == want.rect)
+            && (drawn.zIndex == want.zIndex) && (want.rule?(drawn.color == want.color)
+                :sameSurface(drawn.surface, want.surface)))
+            continue;
+
+        if(want.rule)
+            renderer->drawIcon(m_primitives[i], want.rect, 6, 0, want.color, want.zIndex);
+        else
+            renderer->drawRoundedRect(m_primitives[i], want.rect, want.surface.radius, want.surface.borderWidth,
+                want.surface.top, want.surface.bottom, want.surface.border, want.zIndex);
+        drawn.valid=true;
+        drawn.shown=true;
+        drawn.rule=want.rule;
+        drawn.rect=want.rect;
+        drawn.surface=want.surface;
+        drawn.color=want.color;
+        drawn.zIndex=want.zIndex;
+    }
+}
+
+void RichText::remove(renderer::Base *renderer, controls::Base *baseControl)
+{
+    for(size_t id:m_texts)
+        renderer->releaseTextPrimitive(id);
+    m_texts.clear();
+    m_runs.clear();
+    m_drawn.clear();
+    releasePrimitives(renderer);
 }
 
 
@@ -4789,6 +4942,7 @@ template class ControlRegister<PlotLines>;
 template class ControlRegister<Chart>;
 template class ControlRegister<ChartLegendRow>;
 template class ControlRegister<Timeline>;
+template class ControlRegister<RichText>;
 template class ControlRegister<ColorLerpBox>;
 template class ControlRegister<ColorSlider>;
 template class ControlRegister<ColorDisplay>;

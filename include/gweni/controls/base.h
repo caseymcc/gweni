@@ -114,9 +114,10 @@ GWENI_EXPORT size_t queuedRenderCount(Canvas *canvas);
 //! harness to fail on.
 GWENI_EXPORT std::vector<std::string> typesWithoutSkinRenderer();
 
-//! The renderer::Base::measureText(), lineHeight() and measureCarets() calls the
-//! controls made since the process started, every one going through
-//! Base::measureText(), Base::measureLineHeight() or Base::measureCarets(); a
+//! The renderer::Base::measureText(), lineHeight(), measureCarets() and
+//! fontMetrics() calls the controls made since the process started, every one
+//! going through Base::measureText(), Base::measureLineHeight(),
+//! Base::measureCarets() or Base::measureFontMetrics(); a
 //! renderer's default lineHeight() is one measureText(), and a measureCarets()
 //! is one call however its renderer measures it. It is counted here, in the controls, rather than in a renderer, so it is the
 //! same whichever backend measures; a canvas takes its frame's share as
@@ -1395,6 +1396,10 @@ protected:
     //! The x of every caret in `text` (renderer::Base::measureCarets): one
     //! layout of the string, counted as one measure (measureTextCalls()).
     void measureCarets(const gweni::Font &font, const gweni::String &text, std::vector<int> &xs);
+    //! The font's ascender, descender and line box (renderer::Base::
+    //! fontMetrics), in canvas units. Counted with the measures
+    //! (measureTextCalls()).
+    renderer::FontMetrics measureFontMetrics(const gweni::Font &font);
     //! The preferred width (Dim::X) or height (Dim::Y) this control's size
     //! flags make of `contentSize`, the size its children ask for, padding
     //! included. sizeOfChildren() ends with it.

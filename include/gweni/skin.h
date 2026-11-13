@@ -406,6 +406,13 @@ public:
         //! A Badge's count, drawn on its bubble.
         gweni::Color BadgeText{255, 255, 255};
 
+        //! A RichText's links, at rest and hovered.
+        struct RichText_t
+        {
+            gweni::Color Link{0x40, 0x60, 0xff};
+            gweni::Color LinkHover{0x60, 0x90, 0xff};
+        } RichText;
+
         //! A CodeEditor's line numbers, the number of the caret's line, and
         //! the colour of each token kind it highlights, Tokens[k] the colour
         //! of text::TokenKind k (Plain, 0, its text in no token).

@@ -694,6 +694,73 @@ private:
     std::vector<Segment> m_segments;
 };
 
+// A RichText: one text run per piece of its layout (text::RichLayout), in its
+// span's font and colour, at getZIndex()+1, and a list of primitive slots that
+// follows the pieces: each Code piece's background (RichTextCode over the
+// piece's box) at getZIndex(), behind the glyphs, then each underlined piece's
+// underline (a link's included) and each struck piece's line, icon kind 6
+// rules in the piece's colour, at getZIndex()+2, over them. update() resizes
+// both lists to what the layout holds (a run or slot past it given back, one
+// new taken) and keeps what it last drew in each slot: on a frame that marks
+// the control's geometry, visibility or creation it draws every slot,
+// otherwise only one whose rect, look or z is not the one drawn, and a run is
+// drawn again only when its string, font, colour, position or z changed (all
+// of them on such a frame, for their clip boxes), so a changed span or a new
+// width writes this paragraph's runs and slots alone, and of those only what
+// moved.
+class RichText:public textured::ControlRegister<RichText>
+{
+public:
+    static void staticInit(TexturedSkin *) { m_staticInit=true; }
+
+    // nothing up front: the lists follow the layout
+    size_t requiredPrimitives() override { return 0; }
+    // the code backgrounds at getZIndex(), the glyphs at getZIndex()+1, the
+    // lines over them at getZIndex()+2
+    size_t depthLayers() override { return 3; }
+
+    void update(renderer::Base *renderer, controls::Base *baseControl) override;
+    void remove(renderer::Base *renderer, controls::Base *baseControl) override;
+    //! its slots are primitive ids, its runs text ids
+    void appendIds(std::vector<size_t> &primitiveIds, std::vector<size_t> &textIds) const override
+    {
+        primitiveIds.insert(primitiveIds.end(), m_primitives.begin(), m_primitives.end());
+        textIds.insert(textIds.end(), m_texts.begin(), m_texts.end());
+    }
+
+    inline static const std::string_view name="RichText";
+
+private:
+    //! What a slot holds, as last drawn: a surface (a code background) or a rule
+    struct Drawn
+    {
+        bool valid=false;   //!< false for a new slot, which holds nothing known
+        bool shown=false;
+        bool rule=false;
+        Rect rect;
+        tokyonight::Surface surface{};
+        Color color;
+        int zIndex=0;
+    };
+
+    //! What a run holds, as last drawn
+    struct Run
+    {
+        bool valid=false;   //!< false for a new run, which holds nothing known
+        bool shown=false;
+        gweni::String text;
+        gweni::Font font;
+        Color color;
+        gweni::Point pos;
+        int zIndex=0;
+    };
+
+    std::vector<Drawn> m_drawn;
+    //! a text id per piece, and what it holds
+    std::vector<size_t> m_texts;
+    std::vector<Run> m_runs;
+};
+
 // A NodeGraph: [0] its backdrop (GraphGrid's fill, over the render bounds) and
 // [1] its grid at getZIndex()+1 over it, one drawGrid over the render bounds: a
 // line every NodeGraph::gridStep() graph units from the graph's origin on each

@@ -77,6 +77,7 @@
 #include <gweni/controls/resizableControl.h>
 #include <gweni/controls/resizer.h>
 #include <gweni/controls/richLabel.h>
+#include <gweni/controls/richText.h>
 #include <gweni/controls/scrollBar.h>
 #include <gweni/controls/scrollBarBar.h>
 #include <gweni/controls/scrollBarButton.h>

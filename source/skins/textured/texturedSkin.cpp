@@ -543,6 +543,7 @@ std::unordered_map<std::string, gweni::Color*> TexturedSkin::textColorRegistry()
         {"ChipPalette2Text",&Colors.Chip.Palette[2]},{"ChipPalette3Text",&Colors.Chip.Palette[3]},
         {"ChipPalette4Text",&Colors.Chip.Palette[4]},{"ChipPalette5Text",&Colors.Chip.Palette[5]},
         {"ChipPalette6Text",&Colors.Chip.Palette[6]},{"ChipPalette7Text",&Colors.Chip.Palette[7]},
+        {"RichTextLink",&Colors.RichText.Link},{"RichTextLinkHover",&Colors.RichText.LinkHover},
         {"CodeLineNumber",&Colors.CodeEditor.LineNumber},
         {"CodeLineNumberCurrent",&Colors.CodeEditor.LineNumberCurrent},
         {"ChartAxisText",&Colors.Chart.AxisText},{"ChartMarkerText",&Colors.Chart.MarkerText},
@@ -1411,6 +1412,9 @@ void TexturedSkin::setThemeColors()
     Colors.Toast.Positive=Green;
     Colors.Toast.Warning=Yellow;
     Colors.Toast.Negative=Red;
+    // a RichText's links: the accent, lifted to cyan while hovered
+    Colors.RichText.Link=tokyonight::Blue;
+    Colors.RichText.LinkHover=tokyonight::Cyan;
     // a CodeEditor's line numbers, the caret's line's lifted
     Colors.CodeEditor.LineNumber=gweni::Color(0x3b, 0x42, 0x61);
     Colors.CodeEditor.LineNumberCurrent=gweni::Color(0x73, 0x7a, 0xa2);

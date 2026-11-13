@@ -2118,6 +2118,13 @@ void Base::measureCarets(const gweni::Font &font, const gweni::String &text, std
     getSkin()->getRenderer()->measureCarets(font, text, xs);
 }
 
+renderer::FontMetrics Base::measureFontMetrics(const gweni::Font &font)
+{
+    if(!statsExcluded())
+        ++g_measureTextCalls;
+    return getSkin()->getRenderer()->fontMetrics(font);
+}
+
 int Base::wrappedTextLines(const gweni::Font &font, const gweni::String &str, int width)
 {
     std::vector<text::WrappedLine> lines;

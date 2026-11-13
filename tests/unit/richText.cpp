@@ -1,0 +1,484 @@
+/*
+ *  Gweni
+ *  Copyright (c) 2010 Facepunch Studios
+ *  MIT License, see LICENSE
+ *
+ *  RichText: one paragraph of styled spans (bold, italic, code, coloured,
+ *  struck, underlined, links), laid out as one by text::RichLayout and drawn by
+ *  the textured skin's real RichText renderer on a recording StubRenderer
+ *  (StubControls for every other type; a byte is 4.4 units wide at the
+ *  default 11, a line 11 high). It checks:
+ *  - each piece is drawn as a run of its own, in its span's font (the
+ *    family's bold or italic face, the mono face for code) and colour (its
+ *    own, the skin's Label.Default, a link's RichText.Link), at the piece's
+ *    place and getZIndex()+1, and the control is as wide as its text on one
+ *    line and as high as its lines at the width it is given;
+ *  - a code piece's background (RichTextCode over its box) at getZIndex(), and
+ *    a link's underline and a struck piece's line as rules (icon kind 6) in
+ *    its colour at getZIndex()+2, and the next control numbered past those;
+ *  - a new width wraps the paragraph again, drawing only its own runs and
+ *    slots, and a settled frame draws nothing;
+ *  - a changed span draws only its paragraph's runs and slots (another
+ *    RichText's none), measures the spans once and lays out the RichText and
+ *    its ancestors only;
+ *  - hidden, every run and slot is hidden, and shown again, drawn; deleted,
+ *    every run and slot is given back;
+ *  - the theme registries name RichTextCode, RichTextLink and
+ *    RichTextLinkHover.
+ */
+#include "headlessFixture.h"
+
+#include <gweni/controls/richText.h>
+#include <gweni/skins/textured/texturedControls.h>
+#include <gweni/skins/textured/texturedSkin.h>
+
+#include <doctest/doctest.h>
+
+#include <map>
+#include <set>
+#include <vector>
+
+using namespace gweni;
+using controls::RichSpan;
+using controls::RichText;
+
+namespace
+{
+
+//! Records the runs and slots the RichText renderer draws.
+class DrawRecorder: public test::StubRenderer
+{
+public:
+    struct TextDraw
+    {
+        size_t id;
+        Font font;
+        Point pos;
+        int zIndex;
+        String text;
+        Color color;
+    };
+
+    struct SlotDraw
+    {
+        size_t id;
+        bool rule;
+        Rect rect;
+        Color color;
+        int zIndex;
+    };
+
+    void renderText(size_t textId, const Font &font, Point pos, int zIndex, const String &text) override
+    {
+        texts.push_back({ textId, font, pos, zIndex, text, drawColor });
+        StubRenderer::renderText(textId, font, pos, zIndex, text);
+    }
+
+    void hideText(size_t textId) override
+    {
+        hiddenTexts.push_back(textId);
+        StubRenderer::hideText(textId);
+    }
+
+    void drawRoundedRect(size_t primitiveId, Rect rect, float radius, float border, Color top, Color bottom,
+        Color borderColor, int zIndex) override
+    {
+        slots.push_back({ primitiveId, false, rect, top, zIndex });
+        StubRenderer::drawRoundedRect(primitiveId, rect, radius, border, top, bottom, borderColor, zIndex);
+    }
+
+    void drawIcon(size_t primitiveId, Rect rect, int kind, int direction, Color color, int zIndex) override
+    {
+        CHECK(kind == 6);
+        CHECK(direction == 0);
+        slots.push_back({ primitiveId, true, rect, color, zIndex });
+        StubRenderer::drawIcon(primitiveId, rect, kind, direction, color, zIndex);
+    }
+
+    void hidePrimitive(size_t primitiveId) override
+    {
+        hiddenSlots.push_back(primitiveId);
+        StubRenderer::hidePrimitive(primitiveId);
+    }
+
+    void clear()
+    {
+        texts.clear();
+        slots.clear();
+        hiddenTexts.clear();
+        hiddenSlots.clear();
+    }
+
+    std::vector<TextDraw> texts;
+    std::vector<SlotDraw> slots;
+    std::vector<size_t> hiddenTexts;
+    std::vector<size_t> hiddenSlots;
+};
+
+//! The textured skin's RichText renderer, a StubControl for the rest
+class RichSkin: public test::StubSkin
+{
+public:
+    explicit RichSkin(test::StubRenderer *renderer): StubSkin(renderer) {}
+
+    std::unique_ptr<skin::Control> getControlRenderer(std::string typeName) override
+    {
+        if(typeName == "RichText")
+            return std::make_unique<skin::textured::RichText>();
+        return StubSkin::getControlRenderer(typeName);
+    }
+};
+
+std::vector<RichSpan> sampleSpans()
+{
+    return {
+        RichSpan::plain("Some "),
+        RichSpan::plain("bold", RichSpan::Bold),
+        RichSpan::plain(" and "),
+        RichSpan::plain("italic", RichSpan::Italic),
+        RichSpan::plain(" with "),
+        RichSpan::plain("code()", RichSpan::Code),
+        RichSpan::plain(", a "),
+        RichSpan::link("link", "https://example.com/"),
+        RichSpan::plain(" and "),
+        RichSpan::colored("struck red", Color(255, 0, 0, 255), RichSpan::Strike),
+        RichSpan::plain(" text."),
+    };
+}
+
+struct Scene
+{
+    Scene()
+    {
+        canvas=new controls::Canvas(&skin);
+        canvas->setSize(600, 300);
+        // placed apart, so one's new size moves nothing of the other
+        rich=canvas->newChild<RichText>();
+        rich->setSizeFlags({ SizeFlag::Fixed, SizeFlag::Elastic });
+        rich->setPos(0, 0);
+        rich->setWidth(600);
+        rich->setSpans(sampleSpans());
+        other=canvas->newChild<RichText>();
+        other->setSizeFlags({ SizeFlag::Fixed, SizeFlag::Elastic });
+        other->setPos(0, 200);
+        other->setWidth(600);
+        other->setSpans({ RichSpan::plain("Another paragraph with "), RichSpan::plain("code", RichSpan::Code) });
+        frame();
+    }
+
+    Scene(const Scene &)=delete;
+    Scene &operator=(const Scene &)=delete;
+
+    ~Scene()
+    {
+        delete canvas;
+    }
+
+    void frame()
+    {
+        renderer.clear();
+        canvas->updateCanvas();
+        canvas->renderCanvas();
+    }
+
+    std::set<size_t> ids(RichText *control) const
+    {
+        std::vector<size_t> primitives, texts;
+
+        control->getSkinControl()->appendIds(primitives, texts);
+
+        std::set<size_t> all(primitives.begin(), primitives.end());
+
+        all.insert(texts.begin(), texts.end());
+        return all;
+    }
+
+    std::set<size_t> textIds(RichText *control) const
+    {
+        std::vector<size_t> primitives, texts;
+
+        control->getSkinControl()->appendIds(primitives, texts);
+        return std::set<size_t>(texts.begin(), texts.end());
+    }
+
+    std::set<size_t> slotIds(RichText *control) const
+    {
+        std::vector<size_t> primitives, texts;
+
+        control->getSkinControl()->appendIds(primitives, texts);
+        return std::set<size_t>(primitives.begin(), primitives.end());
+    }
+
+    //! Whether this frame drew only control's runs and slots
+    bool drewOnly(RichText *control) const
+    {
+        const std::set<size_t> texts=textIds(control), slots=slotIds(control);
+
+        for(const DrawRecorder::TextDraw &draw:renderer.texts)
+        {
+            if(texts.count(draw.id) == 0)
+                return false;
+        }
+        for(const DrawRecorder::SlotDraw &draw:renderer.slots)
+        {
+            if(slots.count(draw.id) == 0)
+                return false;
+        }
+        return true;
+    }
+
+    DrawRecorder renderer;
+    RichSkin skin{&renderer};
+    controls::Canvas *canvas=nullptr;
+    RichText *rich=nullptr;
+    RichText *other=nullptr;
+};
+
+const DrawRecorder::TextDraw *drawOf(const DrawRecorder &renderer, const String &text)
+{
+    for(const DrawRecorder::TextDraw &draw:renderer.texts)
+    {
+        if(draw.text == text)
+            return &draw;
+    }
+    return nullptr;
+}
+
+}//namespace
+
+TEST_CASE("RichText: each piece a run in its span's font and colour, the control its lines' size")
+{
+    Scene scene;
+    RichText *rich=scene.rich;
+    const text::RichLayout &layout=rich->getLayout();
+
+    // drawn whole on the first frame: one run per span, all on one line at 600
+    scene.renderer.clear();
+    rich->addStateChange(controls::StateChange_Geometry);
+    scene.frame();
+    REQUIRE(layout.lines().size() == 1);
+    REQUIRE(layout.pieces().size() == rich->getSpanCount());
+    CHECK(rich->getBounds().w == 600);
+    CHECK(rich->getBounds().h == 11);
+    // asked for no width, it is its text's on one line
+    {
+        Scene own;
+
+        own.rich->setSizeFlags({ SizeFlag::Elastic, SizeFlag::Elastic });
+        own.frame();
+        CHECK(own.rich->getBounds().w == own.rich->getLayout().size().x);
+        CHECK(own.rich->getLayout().lines().size() == 1);
+        CHECK(own.rich->getBounds().w < 600);
+    }
+    CHECK(rich->getText() == "Some bold and italic with code(), a link and struck red text.");
+
+    const DrawRecorder::TextDraw *bold=drawOf(scene.renderer, "bold");
+    const DrawRecorder::TextDraw *italic=drawOf(scene.renderer, "italic");
+    const DrawRecorder::TextDraw *code=drawOf(scene.renderer, "code()");
+    const DrawRecorder::TextDraw *link=drawOf(scene.renderer, "link");
+    const DrawRecorder::TextDraw *struck=drawOf(scene.renderer, "struck red");
+    const DrawRecorder::TextDraw *plain=drawOf(scene.renderer, "Some ");
+
+    REQUIRE(bold);
+    REQUIRE(italic);
+    REQUIRE(code);
+    REQUIRE(link);
+    REQUIRE(struck);
+    REQUIRE(plain);
+    CHECK(plain->font.facename == scene.skin.getDefaultFont().facename);
+    CHECK_FALSE(plain->font.bold);
+    CHECK(bold->font.bold);
+    CHECK_FALSE(bold->font.italic);
+    CHECK(italic->font.italic);
+    CHECK(code->font.facename == scene.skin.getDefaultMonoFont().facename);
+    CHECK(code->font.size == scene.skin.getDefaultFont().size);
+    CHECK((plain->color == scene.skin.Colors.Label.Default));
+    CHECK((link->color == scene.skin.Colors.RichText.Link));
+    CHECK((struck->color == Color(255, 0, 0, 255)));
+    for(const DrawRecorder::TextDraw &draw:scene.renderer.texts)
+        CHECK(draw.zIndex == rich->getZIndex()+1);
+
+    // each piece's run at its place in the layout
+    std::vector<size_t> primitives, runs;
+
+    rich->getSkinControl()->appendIds(primitives, runs);
+    REQUIRE(runs.size() == layout.pieces().size());
+    for(size_t i=0; i < runs.size(); ++i)
+    {
+        const text::RichPiece &piece=layout.pieces()[i];
+        const DrawRecorder::TextDraw *draw=nullptr;
+
+        for(const DrawRecorder::TextDraw &each:scene.renderer.texts)
+        {
+            if(each.id == runs[i])
+                draw=&each;
+        }
+        REQUIRE(draw);
+        CHECK(draw->text == piece.text);
+        CHECK(draw->pos.x == rich->getRenderBounds().x+piece.pos.x);
+        CHECK(draw->pos.y == rich->getRenderBounds().y+piece.pos.y);
+    }
+}
+
+TEST_CASE("RichText: code backgrounds behind the glyphs, link and strike rules over them")
+{
+    Scene scene;
+    RichText *rich=scene.rich;
+
+    scene.renderer.clear();
+    rich->addStateChange(controls::StateChange_Geometry);
+    scene.frame();
+
+    const text::RichLayout &layout=rich->getLayout();
+    const int z=rich->getZIndex();
+    size_t backgrounds=0, rules=0;
+
+    for(const DrawRecorder::SlotDraw &slot:scene.renderer.slots)
+    {
+        if(scene.slotIds(rich).count(slot.id) == 0)
+            continue;
+        if(!slot.rule)
+        {
+            ++backgrounds;
+            CHECK(slot.zIndex == z);
+            CHECK((slot.color == skin::textured::tokyonight::RichTextCode.top));
+            // the code piece's box: its text and the padding either side
+            const text::RichPiece &code=layout.pieces()[5];
+
+            CHECK(slot.rect.x == code.pos.x-RichText::CodePadding);
+            CHECK(slot.rect.w == code.width+2*RichText::CodePadding);
+            CHECK(slot.rect.h == code.metrics.lineHeight);
+        }
+        else
+        {
+            ++rules;
+            CHECK(slot.zIndex == z+2);
+        }
+    }
+    CHECK(backgrounds == 1);
+    // the link's underline and the struck span's line
+    CHECK(rules == 2);
+
+    const text::RichPiece &link=layout.pieces()[7];
+    bool underline=false;
+
+    for(const DrawRecorder::SlotDraw &slot:scene.renderer.slots)
+    {
+        if(slot.rule && (slot.rect.x == link.pos.x) && (slot.rect.w == link.width))
+        {
+            underline=true;
+            CHECK((slot.color == scene.skin.Colors.RichText.Link));
+            CHECK(slot.rect.y == link.pos.y+link.metrics.ascender);
+        }
+    }
+    CHECK(underline);
+
+    // the next control is numbered past the rules
+    CHECK(scene.other->getZIndex() >= z+3);
+}
+
+TEST_CASE("RichText: a new width wraps the paragraph again and draws only its own runs and slots")
+{
+    Scene scene;
+    RichText *rich=scene.rich;
+
+    // settled: nothing drawn
+    scene.frame();
+    CHECK(scene.renderer.texts.empty());
+    CHECK(scene.renderer.slots.empty());
+
+    const size_t measured=rich->measureCount();
+    const int oneLine=rich->getBounds().h;
+
+    rich->setWidth(120);
+    scene.frame();
+
+    CHECK(rich->getBounds().w == 120);
+    CHECK(rich->getLayout().lines().size() > 1);
+    CHECK(rich->getBounds().h == rich->getLayout().size().y);
+    CHECK(rich->getBounds().h > oneLine);
+    CHECK_FALSE(scene.renderer.texts.empty());
+    CHECK(scene.drewOnly(rich));
+    // laid out at a new width without measuring the spans again
+    CHECK(rich->measureCount() == measured);
+    for(const text::RichLine &line:rich->getLayout().lines())
+        CHECK(line.width <= 120+1);
+
+    scene.frame();
+    CHECK(scene.renderer.texts.empty());
+    CHECK(scene.renderer.slots.empty());
+}
+
+TEST_CASE("RichText: a changed span draws its paragraph's runs alone and lays out only it and its ancestors")
+{
+    Scene scene;
+    RichText *rich=scene.rich;
+
+    scene.frame();
+
+    const size_t measured=rich->measureCount();
+    const size_t otherMeasured=scene.other->measureCount();
+
+    rich->setSpanText(1, "heavy");
+    scene.frame();
+
+    CHECK(rich->measureCount() == measured+1);
+    CHECK(scene.other->measureCount() == otherMeasured);
+    CHECK(scene.drewOnly(rich));
+    REQUIRE(drawOf(scene.renderer, "heavy"));
+    CHECK(drawOf(scene.renderer, "heavy")->font.bold);
+    // the pieces after it moved; the ones before it did not
+    CHECK(drawOf(scene.renderer, "Some ") == nullptr);
+
+    // the same text again changes nothing
+    rich->setSpanText(1, "heavy");
+    scene.frame();
+    CHECK(scene.renderer.texts.empty());
+    CHECK(rich->measureCount() == measured+1);
+}
+
+TEST_CASE("RichText: hidden every run and slot hidden, shown drawn again, deleted given back")
+{
+    const test::IdBankCounts before=test::IdBankCounts::now();
+
+    {
+        Scene scene;
+        RichText *rich=scene.rich;
+
+        scene.frame();
+        rich->hide();
+        scene.frame();
+
+        const std::set<size_t> texts=scene.textIds(rich), slots=scene.slotIds(rich);
+
+        CHECK(std::set<size_t>(scene.renderer.hiddenTexts.begin(), scene.renderer.hiddenTexts.end()) == texts);
+        CHECK(std::set<size_t>(scene.renderer.hiddenSlots.begin(), scene.renderer.hiddenSlots.end()) == slots);
+        CHECK(texts.size() == rich->getLayout().pieces().size());
+        CHECK(slots.size() == 3);
+
+        rich->show();
+        scene.frame();
+        CHECK(scene.renderer.slots.size() == 3);
+        CHECK(scene.renderer.texts.size() == rich->getLayout().pieces().size());
+    }
+
+    const test::IdBankCounts after=test::IdBankCounts::now();
+
+    CHECK(after.livePrimitives() == before.livePrimitives());
+    CHECK(after.liveTexts() == before.liveTexts());
+}
+
+TEST_CASE("RichText: the theme names its code surface and link colours")
+{
+    test::StubRenderer renderer;
+    skin::textured::TexturedSkin skin(&renderer);
+
+    CHECK(skin::textured::tokyonight::surfaceRegistry().count("RichTextCode") == 1);
+
+    const auto colors=skin.textColorRegistry();
+
+    REQUIRE(colors.count("RichTextLink") == 1);
+    REQUIRE(colors.count("RichTextLinkHover") == 1);
+    CHECK((colors.at("RichTextLink") == &skin.Colors.RichText.Link));
+    CHECK((colors.at("RichTextLinkHover") == &skin.Colors.RichText.LinkHover));
+}

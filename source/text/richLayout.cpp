@@ -31,42 +31,6 @@ RichMeasure RichMeasure::of(renderer::Base &renderer)
 namespace
 {
 
-//! A span's text between two '\n's (or its ends), measured once
-struct Segment
-{
-    size_t span=0;
-    size_t start=0;
-    size_t end=0;
-    //! the byte offset of every codepoint boundary, and its x
-    std::vector<size_t> bounds;
-    std::vector<int> xs;
-
-    int x(size_t byte) const
-    {
-        const size_t k=std::lower_bound(bounds.begin(), bounds.end(), byte)-bounds.begin();
-
-        return xs.empty()?0:xs[std::min(k, xs.size()-1)];
-    }
-};
-
-enum class Break
-{
-    Glue,   //!< the next atom is the same word's
-    Soft,   //!< a line may break after it
-    Hard    //!< a '\n' follows it: the line ends after it
-};
-
-//! The text between two break opportunities inside one segment
-struct Atom
-{
-    size_t segment=0;
-    size_t span=0;
-    size_t start=0;
-    size_t visibleEnd=0; //!< end less the spaces ending it
-    size_t end=0;
-    Break after=Break::Glue;
-};
-
 //! A run of atoms of one span on the line being built
 struct Run
 {
@@ -84,15 +48,32 @@ bool urlBreak(char c)
 
 }//namespace
 
+int RichLayout::Segment::x(size_t byte) const
+{
+    const size_t k=std::lower_bound(bounds.begin(), bounds.end(), byte)-bounds.begin();
+
+    return xs.empty()?0:xs[std::min(k, xs.size()-1)];
+}
+
 void RichLayout::layout(const std::vector<RichLayoutSpan> &spans, int width, const RichMeasure &measure)
+{
+    setSpans(spans, measure);
+    breakLines(width, measure);
+}
+
+void RichLayout::setSpans(const std::vector<RichLayoutSpan> &spans, const RichMeasure &measure)
 {
     m_lines.clear();
     m_pieces.clear();
     m_spanOffsets.clear();
     m_size=gweni::Point(0, 0);
     m_textLength=0;
+    m_spans=spans;
+    m_metrics.clear();
+    m_segments.clear();
+    m_atoms.clear();
 
-    std::vector<renderer::FontMetrics> metrics;
+    std::vector<renderer::FontMetrics> &metrics=m_metrics;
 
     for(const RichLayoutSpan &span:spans)
     {
@@ -102,8 +83,8 @@ void RichLayout::layout(const std::vector<RichLayoutSpan> &spans, int width, con
     }
 
     // every span's segments, each measured once, and their atoms
-    std::vector<Segment> segments;
-    std::vector<Atom> atoms;
+    std::vector<Segment> &segments=m_segments;
+    std::vector<Atom> &atoms=m_atoms;
 
     for(size_t s=0; s < spans.size(); ++s)
     {
@@ -177,6 +158,19 @@ void RichLayout::layout(const std::vector<RichLayoutSpan> &spans, int width, con
             begin=end+1;
         }
     }
+
+}
+
+void RichLayout::breakLines(int width, const RichMeasure &measure)
+{
+    m_lines.clear();
+    m_pieces.clear();
+    m_size=gweni::Point(0, 0);
+
+    const std::vector<RichLayoutSpan> &spans=m_spans;
+    const std::vector<renderer::FontMetrics> &metrics=m_metrics;
+    const std::vector<Segment> &segments=m_segments;
+    const std::vector<Atom> &atoms=m_atoms;
 
     // the line being built: its runs, and where its content ends
     std::vector<Run> runs;
