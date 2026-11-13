@@ -385,6 +385,11 @@ String lowerCased(const String &text)
     return lower;
 }
 
+bool sameOption(const SearchComboBox::Option &a, const SearchComboBox::Option &b)
+{
+    return (a.label == b.label) && (a.name == b.name);
+}
+
 // What a shown row is when it is no option.
 constexpr size_t AddRowKey=static_cast<size_t>(-2);
 constexpr size_t NoMatchKey=static_cast<size_t>(-3);
@@ -398,12 +403,32 @@ void SearchComboBox::addOption(const String &label, const String &name)
     // a new label in this box's width
     invalidate();
 
-    // the first option is the default, unless a free-text value is the value
-    // or the box picks several; while the user types it stays in the field
-    // and nothing is selected, the pick that ends the edit selecting
+    const int index=static_cast<int>(m_options.size())-1;
+    const Option &added=m_options.back();
+
+    // a held value equal to it is its again (setOptions()); held, it had no
+    // equal option before this one
+    if(m_held && sameOption(added, m_heldOption))
+    {
+        m_selected=index;
+        m_held=false;
+    }
+
+    for(Pick &pick : m_picks)
+    {
+        if(!pick.custom && (pick.option == NoOption) && !m_picked[index] && sameOption(added, pick.value))
+        {
+            pick.option=index;
+            m_picked[index]=1;
+        }
+    }
+
+    // the first option is the default, unless something is the value or the
+    // box picks several; while the user types it stays in the field and
+    // nothing is selected, the pick that ends the edit selecting
     // (setOptions())
-    if((m_selected == NoOption) && !m_hasCustom && !m_multi && !fieldHoldsEdit())
-        select(static_cast<int>(m_options.size())-1, false);
+    if((m_selected == NoOption) && !m_held && !m_hasCustom && !m_multi && !fieldHoldsEdit())
+        select(index, false);
 
     if(isListOpen())
         optionsChanged();
@@ -418,21 +443,29 @@ int SearchComboBox::findOption(const std::vector<Option> &options, const Option 
 {
     for(size_t i=0; i < options.size(); ++i)
     {
-        if((options[i].label == option.label) && (options[i].name == option.name))
+        if(sameOption(options[i], option))
             return static_cast<int>(i);
     }
     return NoOption;
 }
 
-// The selection and the picks stay on equal options; a free-text value stays
-// the value; otherwise the first option is, or none while the user types. The
-// field keeps what the user is typing, which the open list matches against
-// the new options: an app refilling them from onTextChangedCaller (an async
-// search) runs before the box filters for that edit.
+// The selection and the picks stay on equal options, or are held while there
+// is none (the options an app's search results, the user's value is still
+// theirs); a free-text value stays the value; with nothing selected the first
+// option is, or none while the user types. The field keeps what the user is
+// typing, which the open list matches against the new options: an app
+// refilling them from onTextChangedCaller (an async search) runs before the
+// box filters for that edit.
 void SearchComboBox::setOptions(std::vector<Option> options)
 {
     const bool edited=fieldHoldsEdit();
-    const std::vector<Option> previous=std::move(m_options);
+
+    // the selected option as data, held or not
+    if(m_selected != NoOption)
+    {
+        m_heldOption=m_options[m_selected];
+        m_held=true;
+    }
 
     m_options=std::move(options);
     m_lowerLabels.clear();
@@ -442,51 +475,37 @@ void SearchComboBox::setOptions(std::vector<Option> options)
 
     m_picked.assign(m_options.size(), 0);
 
-    // a pick of an option stays on an equal one (once); the rest go with
-    // their options, free-text ones stay
-    for(size_t i=0; i < m_picks.size();)
+    // a pick of an option is on an equal one (once), else held, its chip
+    // staying
+    for(Pick &pick : m_picks)
     {
-        Pick &pick=m_picks[i];
-
-        if(pick.option == NoOption)
-        {
-            ++i;
+        if(pick.custom)
             continue;
-        }
 
-        const int now=findOption(m_options, previous[pick.option]);
+        const int now=findOption(m_options, pick.value);
 
-        if((now == NoOption) || m_picked[now])
-        {
-            // removed as a free-text pick: its index is the old options'
-            pick.option=NoOption;
-            removePick(i, false);
-            continue;
-        }
+        pick.option=((now == NoOption) || m_picked[now])?NoOption:now;
 
-        pick.option=now;
-        m_picked[now]=1;
-        ++i;
+        if(pick.option != NoOption)
+            m_picked[now]=1;
     }
 
     m_widthsValid=false;
     m_highlight=NoOption;
     m_highlightPos=VirtualList::NoItem;
 
-    if(m_hasCustom || m_multi || m_options.empty())
-        m_selected=NoOption;
-    else
-    {
-        const int kept=(m_selected == NoOption)?NoOption:findOption(m_options, previous[m_selected]);
+    m_selected=NoOption;
 
-        // while the user types, a selection that is gone is none, not the
-        // first result: the value is never one they did not pick, and the
-        // pick that ends the edit fires onSelection
-        if(kept != NoOption)
-            m_selected=kept;
-        else
-            m_selected=edited?NoOption:0;
+    if(m_held)
+    {
+        m_selected=findOption(m_options, m_heldOption);
+        m_held=(m_selected == NoOption);
     }
+    // nothing selected: the first option, but not while the user types, so
+    // the value is never one they did not pick and the pick that ends the
+    // edit fires onSelection
+    else if(!m_hasCustom && !m_multi && !edited && !m_options.empty())
+        m_selected=0;
 
     // shown again even when the index stays: the option at it can be another
     if(!edited)
@@ -517,17 +536,23 @@ void SearchComboBox::setSelectedIndex(int index)
     select(index, false);
 }
 
+const SearchComboBox::Option *SearchComboBox::selectedOption() const
+{
+    if(m_held)
+        return &m_heldOption;
+    return (m_selected == NoOption)?nullptr:&m_options[m_selected];
+}
+
 String SearchComboBox::getValue()
 {
     if(m_hasCustom)
         return m_custom;
 
-    if(m_selected == NoOption)
+    const Option *option=selectedOption();
+
+    if(!option)
         return String();
-
-    const Option &option=m_options[m_selected];
-
-    return option.name.empty()?option.label:option.name;
+    return option->name.empty()?option->label:option->name;
 }
 
 void SearchComboBox::select(int index, bool doEvents)
@@ -535,10 +560,11 @@ void SearchComboBox::select(int index, bool doEvents)
     if((index < 0) || (static_cast<size_t>(index) >= m_options.size()))
         index=NoOption;
 
-    if((index == m_selected) && !m_hasCustom)
+    if((index == m_selected) && !m_hasCustom && !m_held)
         return;
 
     m_selected=index;
+    m_held=false;
     m_hasCustom=false;
     m_custom.clear();
     setRefused(false);
@@ -553,7 +579,9 @@ String SearchComboBox::shownValueText() const
     if(m_hasCustom)
         return m_custom;
 
-    return (m_selected == NoOption)?String():m_options[m_selected].label;
+    const Option *option=selectedOption();
+
+    return option?option->label:String();
 }
 
 // Multi-select, the chips are the value: the box shows no text, and the
@@ -956,7 +984,7 @@ bool SearchComboBox::commitCustom(const String &text)
         bool picked=false;
 
         for(const Pick &pick : m_picks)
-            picked=picked || ((pick.option == NoOption) && (pick.text == text));
+            picked=picked || (pick.custom && (pick.value.label == text));
 
         if(!picked)
         {
@@ -969,6 +997,7 @@ bool SearchComboBox::commitCustom(const String &text)
     }
 
     m_selected=NoOption;
+    m_held=false;
     m_hasCustom=true;
     m_custom=text;
     showSelection();
@@ -1317,6 +1346,7 @@ void SearchComboBox::setMultiSelect(bool multi)
     clearPicks(false);
     m_multi=multi;
     m_selected=NoOption;
+    m_held=false;
     m_hasCustom=false;
     m_custom.clear();
     setRefused(false);
@@ -1353,14 +1383,10 @@ std::vector<String> SearchComboBox::getSelectedValues() const
 
     for(const Pick &pick : m_picks)
     {
-        if(pick.option == NoOption)
-            values.push_back(pick.text);
+        if(pick.custom || pick.value.name.empty())
+            values.push_back(pick.value.label);
         else
-        {
-            const Option &option=m_options[pick.option];
-
-            values.push_back(option.name.empty()?option.label:option.name);
-        }
+            values.push_back(pick.value.name);
     }
     return values;
 }
@@ -1411,7 +1437,13 @@ void SearchComboBox::addPick(int index, const String &text)
     chip->setDisabled(isDisabled());
     chip->onRemove.add(this, &SearchComboBox::chipRemoved);
 
-    m_picks.push_back({index, (index == NoOption)?text:String(), chip});
+    Pick pick;
+
+    pick.option=index;
+    pick.custom=(index == NoOption);
+    pick.value=pick.custom?Option{text, String()}:m_options[index];
+    pick.chip=chip;
+    m_picks.push_back(std::move(pick));
 
     if(index != NoOption)
         m_picked[index]=1;
@@ -1457,7 +1489,7 @@ void SearchComboBox::clearPicks(bool keepCustom)
 {
     for(size_t i=m_picks.size(); i-- > 0;)
     {
-        if(!keepCustom || (m_picks[i].option != NoOption))
+        if(!keepCustom || !m_picks[i].custom)
             removePick(i, false);
     }
 }
@@ -1599,12 +1631,13 @@ void SearchComboBox::calculateSize(skin::Base *skin, Dim dim)
         return;
     }
 
-    if((dim != Dim::X) || (m_options.empty() && !m_hasCustom))
+    if((dim != Dim::X) || (m_options.empty() && !m_hasCustom && !m_held))
         return;
 
-    // a free-text value too: only one is held, measured as the box lays out
+    // a free-text or held value too: only one is, measured as the box lays out
+    const bool other=m_hasCustom || m_held;
     const int widest=std::max(optionsTextWidth(),
-        m_hasCustom?measureText(getFont(), m_custom).x:0);
+        other?measureText(getFont(), shownValueText()).x:0);
     const Padding &textPadding=getTextPadding();
 
     m_preferredSize.width=std::max(m_preferredSize.width, preferredFromContent(

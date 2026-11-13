@@ -238,6 +238,19 @@ private:
 //! text is a pick of its own, a chip like the others. Up and Down on the
 //! closed box open the list. The open list follows the box's new bottom edge
 //! in the frame a chip wraps or goes.
+//!
+//! The value is data, not an index: an app may replace the options at any
+//! time (setOptions(), clearOptions() and addOption(), an async search's
+//! results from onTextChangedCaller). The selection, and each multi-select
+//! pick, stays on an option of the same label and name; while the options
+//! hold none it is held, still the value (getValue(), the shown text, the
+//! chip, getSelectedValues(), Escape and a lost focus showing it again) but
+//! at no index (getSelectedIndex() NoOption, getSelectedIndices() leaving it
+//! out), and is that option's again once one equal to it comes back. Only a
+//! pick, the user's x or Backspace, or the app's setSelectedIndex() and
+//! setSelectedIndices() change it. A box fitting its widest label changes
+//! width with each result set: give a box whose options are search results a
+//! width of its own.
 class GWENI_EXPORT SearchComboBox: public Button
 {
 public:
@@ -272,34 +285,39 @@ public:
     //! No option selected or highlighted.
     static constexpr int NoOption=-1;
 
-    //! Appends an option. The first one added to a box with no selection
-    //! (and no free-text value) is selected, with no event (as
+    //! Appends an option. A held selection or pick equal to it is its; the
+    //! first one added to a box with no value (no selection, held or not, and
+    //! no free-text value) is selected, with no event (as
     //! ComboBox::addItem), unless the field holds what the user typed, which
     //! it keeps, as setOptions() does.
     void addOption(const String &label, const String &name="");
     //! Replaces the options. The selection stays on an equal option (the
-    //! same label and name) among them, else it is the first option, or
-    //! none (with no options, or while the field holds what the user typed);
-    //! a free-text value stays the value. Multi-select, each pick of an
-    //! option stays on an equal one and the rest go (their chips with them),
-    //! free-text picks staying. No event fires. While the field holds what
+    //! same label and name) among them, else it is held (the class); with
+    //! nothing selected the first option is, unless the field holds what the
+    //! user typed; a free-text value stays the value. Multi-select, each pick
+    //! of an option stays on an equal one, else it is held, its chip
+    //! staying. No event fires. While the field holds what
     //! the user typed (an app refilling the options from
     //! onTextChangedCaller), it keeps it and the open list shows the new
     //! options matching it; the value shows again when the edit ends.
     void setOptions(std::vector<Option> options);
-    //! No options, nothing selected.
+    //! No options; the value is held, as setOptions({}) holds it
+    //! (setSelectedIndex(NoOption) or setSelectedIndices({}) drop it).
     void clearOptions();
 
     size_t getOptionCount() const { return m_options.size(); }
     const Option &getOption(size_t index) const { return m_options[index]; }
 
-    //! The selected option, or NoOption (nothing, or a free-text value).
+    //! The selected option, or NoOption (nothing, a free-text value, or a
+    //! held selection).
     int getSelectedIndex() const { return m_selected; }
+    //! Whether the selection is held: an option no option equals now.
+    bool isSelectionHeld() const { return m_held; }
     //! Selects option \p index (NoOption, or one out of range, for none),
-    //! firing nothing; a free-text value is dropped.
+    //! firing nothing; a free-text or held value is dropped.
     void setSelectedIndex(int index);
-    //! The selected option's name, or its label when it has none; a
-    //! free-text value's text; empty with nothing selected.
+    //! The selected option's name (held or not), or its label when it has
+    //! none; a free-text value's text; empty with nothing selected.
     String getValue() override;
 
     //! Fired once per pick or Up/Down step that changes the selection. The
@@ -343,20 +361,22 @@ public:
     //! it is the one it was before.
     void setMultiSelect(bool multi);
     bool isMultiSelect() const { return m_multi; }
-    //! The picked options, in pick order (free-text picks left out).
+    //! The picked options, in pick order (free-text and held picks left
+    //! out).
     std::vector<int> getSelectedIndices() const;
     //! Every pick's value, in pick order: an option's name (its label without
-    //! one) or a free-text pick's text.
+    //! one), a held one's included, or a free-text pick's text.
     std::vector<String> getSelectedValues() const;
     //! The picks become these options, in this order (out of range and
-    //! repeated ones left out, free-text picks dropped), firing nothing.
+    //! repeated ones left out, free-text and held picks dropped), firing
+    //! nothing.
     void setSelectedIndices(const std::vector<int> &indices);
     //! Whether option \p index is picked.
     bool isPicked(int index) const;
     //! The chips, in pick order.
     std::vector<Chip *> getChips() const;
     //! Fired once per change of the picks (the info's integer the option
-    //! picked or taken away, NoOption for a free-text one).
+    //! picked or taken away, NoOption for a free-text or held one).
     gweni::event::Caller onSelectionChange;
 
     //! Units between two chips on a row, and between two rows.
@@ -488,6 +508,8 @@ protected:
     void pickPosition(size_t position);
     //! The value's text: the free-text value, or the selection's label.
     String shownValueText() const;
+    //! The selected option, held or not, or null.
+    const Option *selectedOption() const;
     //! The field's refused colour on or off.
     void setRefused(bool refused);
     //! The option whose label is \p text, case aside, or NoOption.
@@ -551,6 +573,10 @@ protected:
     //! Set by refuseCustomValue() during onCustomValue.
     bool m_refusing=false;
     int m_selected=NoOption;
+    //! The selection is m_heldOption, which no option equals now
+    //! (m_selected NoOption).
+    bool m_held=false;
+    Option m_heldOption;
     //! The highlighted option and its place in m_matches (NoItem for none).
     int m_highlight=NoOption;
     size_t m_highlightPos=VirtualList::NoItem;
@@ -562,11 +588,14 @@ protected:
     size_t m_rowBinds=0;
 
     //! Multi-select: the picks in order, each its option (NoOption for free
-    //! text, then its text) and its chip; m_picked whether each option is.
+    //! text, or held), whether it is free text, its option's label and name
+    //! (free text: the text as its label) and its chip; m_picked whether each
+    //! option is.
     struct Pick
     {
         int option=NoOption;
-        String text;
+        bool custom=false;
+        Option value;
         Chip *chip=nullptr;
     };
     bool m_multi=false;
