@@ -271,6 +271,15 @@ public:
         return Base::lineHeight(font);
     }
 
+    //! Counted in `fontMetricsCalls`, then estimated as renderer::Base does:
+    //! lineHeight() (counted in `lineHeights` and `measures` too) with the
+    //! baseline at four fifths of it.
+    gweni::renderer::FontMetrics fontMetrics(const gweni::Font &font) override
+    {
+        ++fontMetricsCalls;
+        return Base::fontMetrics(font);
+    }
+
     //! Counted in `caretMeasures`, then measured as renderer::Base does: one
     //! measureText() per prefix, counted in `caretPrefixMeasures` rather than
     //! in `measures`, so `measures` holds only the measures made from outside.
@@ -290,6 +299,8 @@ public:
     size_t measures=0;
     //! lineHeight() calls so far, each also one of `measures`.
     size_t lineHeights=0;
+    //! fontMetrics() calls so far
+    size_t fontMetricsCalls=0;
     //! measureCarets() calls so far, and the measureText() calls made inside them.
     size_t caretMeasures=0;
     size_t caretPrefixMeasures=0;

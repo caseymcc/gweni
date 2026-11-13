@@ -3670,6 +3670,13 @@ float SlotRenderer::lineBoxHeight(const FontData &fontData, float px)
     return fontData.markup.font->height;
 }
 
+int SlotRenderer::baselineOffset(const FontData &fontData, float px)
+{
+    if(fontData.mode == TextMode::Sdf)
+        return static_cast<int>(roundf(fontData.textureFont->ascender*(px/fontData.baseSize)));
+    return static_cast<int>(std::floor(fontData.markup.font->ascender));
+}
+
 float SlotRenderer::lineStep(const FontData &fontData, float px)
 {
     if(fontData.mode == TextMode::Sdf)
@@ -3876,6 +3883,23 @@ int SlotRenderer::lineHeight(const gweni::Font &font)
         return 0;
 
     return (int)ceil(lineBoxHeight(m_lastFont->second, font.size));
+}
+
+// Read from the font measureText measures in, at font.size: in canvas units at
+// any scale(), as lineHeight is
+FontMetrics SlotRenderer::fontMetrics(const gweni::Font &font)
+{
+    FontMetrics metrics;
+
+    if(!ensureFont(font, font.size))
+        return metrics;
+
+    const FontData &fontData=m_lastFont->second;
+
+    metrics.lineHeight=(int)ceil(lineBoxHeight(fontData, font.size));
+    metrics.ascender=baselineOffset(fontData, font.size);
+    metrics.descender=metrics.lineHeight-metrics.ascender;
+    return metrics;
 }
 
 } // namespace renderer

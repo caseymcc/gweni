@@ -277,6 +277,16 @@ int Base::lineHeight(const gweni::Font &font)
     return measureText(font, " ").y;
 }
 
+FontMetrics Base::fontMetrics(const gweni::Font &font)
+{
+    FontMetrics metrics;
+
+    metrics.lineHeight=lineHeight(font);
+    metrics.ascender=static_cast<int>(std::lround(metrics.lineHeight*0.8f));
+    metrics.descender=metrics.lineHeight-metrics.ascender;
+    return metrics;
+}
+
 void Base::measureCarets(const gweni::Font &font, const gweni::String &text,
     std::vector<int> &xs)
 {

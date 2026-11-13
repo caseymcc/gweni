@@ -438,6 +438,11 @@ public:
     //! measureText's `y` for one line, read from the font's metrics: in canvas
     //! units at any scale(), 0 for a font that does not load
     int lineHeight(const gweni::Font &font) override;
+    //! The font's metrics at font.size from the font measureText measures in
+    //! (coverage or SDF), in canvas units at any scale(): its baseline offset
+    //! (baselineOffset), lineHeight() and the rest of the box; all 0 for a font
+    //! that does not load
+    FontMetrics fontMetrics(const gweni::Font &font) override;
     //! One layout of the whole string, the one measureText makes of each prefix
     //! (the coverage walkPens, or layoutSdfText), read at each boundary; the
     //! default where freetype-gl's codepoint steps are not utf8Next's
@@ -1070,6 +1075,12 @@ private:
     //! up: ascender-descender, no line gap (font->height), scaled by px/baseSize in
     //! an Sdf font. measureText, layoutSdfText and lineHeight all take it from here.
     static float lineBoxHeight(const FontData &fontData, float px);
+    //! How far below a line box's top a run laid out in fontData at px has its
+    //! first baseline, in whole px: in an Sdf font layoutSdfText's
+    //! roundf(ascender*px/baseSize), in a coverage or LCD one floor(ascender),
+    //! where text_buffer_add_char's truncation puts glyphs of a fractional
+    //! ascender
+    static int baselineOffset(const FontData &fontData, float px);
     //! The distance from one line's baseline to the next in fontData at px, as the
     //! run is drawn: in a coverage font text_buffer_add_text's, ascender less the
     //! descender truncated to a whole pixel (text_buffer_finish_line moves the pen

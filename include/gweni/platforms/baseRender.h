@@ -108,6 +108,27 @@ struct ColorSpan
     bool operator!=(const ColorSpan &other) const { return !(*this == other); }
 };
 
+//! A font's vertical metrics (Base::fontMetrics), in whole canvas units, the
+//! same at every scale() as measureText is: where renderText puts a line's
+//! baseline in the line box measureText gives, so text in several fonts can sit
+//! on one baseline (each run's box at baseline - ascender).
+struct FontMetrics
+{
+    //! from the line box's top to its baseline
+    int ascender=0;
+    //! from the baseline to the line box's bottom, lineHeight - ascender
+    int descender=0;
+    //! the line box's height, lineHeight(font)
+    int lineHeight=0;
+
+    bool operator==(const FontMetrics &other) const
+    {
+        return (ascender == other.ascender) && (descender == other.descender) &&
+            (lineHeight == other.lineHeight);
+    }
+    bool operator!=(const FontMetrics &other) const { return !(*this == other); }
+};
+
 //! drawRoundedRect's edge mask: which corners are square and which sides have no
 //! border. 0, the default, is a rect rounded at all four corners with a border on
 //! all four sides. A square corner is the corner of the rect itself (its
@@ -396,6 +417,13 @@ public:
     //! and the same at every scale. The default measures " "; a renderer that
     //! can read the font's metric instead should.
     virtual int lineHeight(const gweni::Font &font);
+
+    //! The font's ascender, descender and line box (FontMetrics), in canvas
+    //! units at every scale, as measureText measures it: renderText draws a
+    //! line's baseline ascender below the box's top. The default is an
+    //! estimate, lineHeight() with the baseline at four fifths of it; a
+    //! renderer that reads the font's own metrics should.
+    virtual FontMetrics fontMetrics(const gweni::Font &font);
 
     //! \sect{Render Specialisation}
     //!     No need to implement these functions in your derived class, but
