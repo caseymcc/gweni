@@ -165,6 +165,7 @@ The children placed this way:
 | ScrollControl | both bars and the inner panel | `placeContents()`, its Y arrange |
 | TreeNode | the toggle | sized and centred on the title in `arrange()` |
 | layout::Tile | its children, in cells | `arrange()` |
+| layout::Flow | its cards, row-major in columns | `arrange()`, x and widths in X, y and heights in Y |
 | ColorPicker | the Result box | `arrange()` |
 | TextBox | its Text while the string is scrolled | `makeCaretVisible()` |
 | TabControl, TabStrip | the overflow and tab-list buttons; the drop marker over a tab | `arrange()`, x in X and y in Y; a drag hover |
@@ -729,3 +730,62 @@ as placement rather than as a re-dirty: their bounds through `placeChild` (the
 bars and the inner panel are Owner), the rest (visibility, scroll range) under
 a `Base::PlacementScope`. Keep the scope to those writes: anything a control
 already laid out has read must still be reported.
+
+## layout::Flow
+
+`layout::Flow` (`include/gweni/controls/layout/flow.h`) lays its children out as
+cards in as many columns as fit **its own width**, a container query: a Flow in a
+side pane takes the pane's columns whatever the window's width.
+
+* **The column count.** With a breakpoint table (`setBreakpoints({{below,
+  columns}, ...})`, kept sorted), the first entry the Flow's width is below, and
+  past the last one `getMaxColumns()`; FlowDemo's `{{1024, 1}, {1536, 2}}` with 3
+  is one column below 1024 units, two below 1536, else three. With none,
+  `clamp(floor((C+gap)/(minCardWidth+gap)), 1, maxColumns)` of its content width C
+  (its width less its padding). Everything is logical units, so the count is the
+  same at every canvas scale.
+* **The cards.** Row-major, each `(C-(cols-1)*gap)/cols` wide in whole units, the
+  last column taking the remainder (`Flow::columnSpan`), `getGap()` between columns
+  and between rows. A row is as tall as its tallest card and every card in it is
+  that tall. A hidden card takes no cell. The preferred height is the rows and
+  their gaps (and the padding) at the Flow's width; the preferred width is one
+  column, `getMinCardWidth()`. Docked Top by default, so a parent gives it its width.
+* **The pass.** `calculateSize(X)` asks for one column and never reads the
+  Flow's width; `arrange(X)` picks the count from the width its parent gave it
+  and places each card's x and width (`placeChild`, the cards are Owner);
+  `calculateSize(Y)` measures the cards at those widths and sums the rows;
+  `arrange(Y)` places each row's y and the cards' heights. Both arranges place
+  before the cards are entered, so a card whose bounds stay is not entered, and a
+  card whose content changes while its row keeps its height lays out the Flow and
+  that card alone and moves no other one (`tests/unit/flow.cpp`). Entering the
+  Flow scans its own cards, O(cards).
+* **A Y measure before the X arrange** keeps the last height and enters no card.
+  That is a ScrollControl measuring its content before laying it out at its new
+  width ("Children whose X layout needs the parent's height"): the cards' widths
+  are not this pass's yet, and the ScrollControl measures again once they are.
+  So no card's wrapped text is wrapped at the width it had before the Flow placed
+  it, a first frame included.
+
+**In a scroll view.** Its height follows its width, so a vertical ScrollControl
+lays it out in one pass only behind a *stable gutter*, `setScroll(false, true)` and
+`setAutoHideBars(false)`: the bar always shows, so the viewport's width never
+depends on the content, and the ScrollControl places its bars again for the
+height measured after the Flow's X arrange, in the same pass (`docs/architecture.md`
+-> "Width-dependent content in a ScrollControl"). An auto-hiding bar that comes or
+goes with the new height takes a second pass. Give that ScrollControl a requested
+height too (`setHeight`, which a fill dock does not read): with none it asks for its
+content's height, which its Y measure has only at the old width, so every
+preferred height above it would be an earlier frame's.
+
+**Keeping the scroll position.** The ScrollControl keeps its offset while its
+content still reaches that far, and clamps it in the pass that makes the content
+shorter. So an app that streams its cards in keeps where the user scrolled to by
+updating the cards in place (`setText` on a card's Labels) or by replacing them
+within one frame: every old card `delayedDelete()`d and the new ones added before
+the next `updateCanvas()`. The delayed deletes run at the start of that update,
+before its layout, so the frame lays out the new set alone and the offset is
+clamped only if the new content is shorter. Cards removed in one frame and added
+in a later one lay out an emptier content in between, which clamps the offset (to
+0 for none), and the new cards start from there. Rebuilding the ScrollControl
+itself loses it: a new one starts at 0. `ControlTest --scenario flow` pins all
+three.

@@ -2215,6 +2215,43 @@ two programs and the draws. What follows describes both together:
   viewport)*amount`, so a DataTable column drag while scrolled sideways slid the body
   under the cursor and a ListBox append moved, and re-stamped, every row
   (`tests/unit/scrollOffset.cpp`, `dataTableScrolledResize.cpp`).
+- **Width-dependent content in a ScrollControl.** A ScrollControl leaves its subtree out
+  of the X pass and lays it out in its Y arrange (`docs/layout.md` -> "Children whose X
+  layout needs the parent's height"), so content whose height follows its width (wrapped
+  text, a `layout::Flow` of cards) is measured in the pass's Y measure at the width it had
+  before: the bars and the inner panel are decided (`placeContents`) from that height. Once
+  the content is laid out at its new width it is measured again, and when that gives
+  another height `ScrollControl::arrange` decides the bars again for it (`decideBars`, the
+  arithmetic `placeContents` uses):
+  - **They show as placed:** always with a *stable gutter* (vertical scrolling with
+    `setAutoHideBars(false)`, the vertical bar shown, disabled while the content fits, so
+    the viewport's width does not depend on the content; or no vertical scrolling at
+    all), and with auto-hide when the new height overflows the viewport exactly when the
+    old one did. Every width the content was laid out at is then final, and
+    `placeContents` runs again for the new height before the Y arrange, inside its
+    `PlacementScope`: the bars' ranges, the offset kept or clamped, the inner panel's
+    height, and a `scrollTo*()` of the frame resolved at the new content (the pending
+    edges are put back before it). One pass.
+  - **They would show otherwise** (auto-hide, the bar to come or go): the content was laid
+    out at the wrong width. The inner panel takes the new height and the ScrollControl
+    re-dirties itself (`noteRedirty`), so the canvas's next pass decides the bars from the
+    height measured here: two passes, and a narrower viewport never makes the content
+    shorter, so that second pass keeps its bars. Before #611 this path resized the inner
+    panel before its Y arrange, which re-dirtied nothing: the pass converged with the
+    bars ranged over the height at the old width (in a first frame, the inner panel's
+    default 10-unit width), for good.
+
+  So a Flow in a scroll view needs a stable gutter to lay out in one pass. Its
+  ScrollControl's own preferred height is still its content's as the Y measure saw it,
+  at the old width (the ancestors above it are measured from it before its arrange), so
+  one that fills its parent is given a requested height its dock does not read
+  (`setHeight`), which it then asks for instead (`sizedByRequest`): otherwise
+  `--verify-layout` and a resize round trip show the ancestors' preferred heights from an
+  earlier frame. FlowDemo does both. The Flow's own Y measure before its X arrange in a
+  pass (this stale one) keeps its last height and enters no card
+  (`layout::Flow::calculateSize`), so a card's wrapped text is never measured at the
+  width it had before the Flow placed it. `tests/unit/scrollWidthDependent.cpp`,
+  `tests/unit/flow.cpp` and `ControlTest --scenario flow` pin it.
 - **The virtual list: a pool of the rows on screen.** `controls::VirtualList`
   (`include/gweni/controls/virtualList.h`) shows `setItemCount(n)` fixed-height rows
   (`setRowHeight`, 20 by default) through a pool of row controls: `ceil(viewport/rowHeight)+1`,
