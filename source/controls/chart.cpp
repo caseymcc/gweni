@@ -1162,12 +1162,14 @@ void Chart::onMouseClickLeft(int x, int y, bool down)
         return;
     }
 
+    // the press's capture ends with its release, even when a series removed
+    // meanwhile has dropped the press
+    if(MouseFocus == this)
+        MouseFocus=nullptr;
     if(!m_pressed)
         return;
 
     m_pressed=false;
-    if(MouseFocus == this)
-        MouseFocus=nullptr;
 
     if(!pointAt(local, series, index) || series != m_pressSeries || index != m_pressIndex)
         return;

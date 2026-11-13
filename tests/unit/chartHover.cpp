@@ -23,7 +23,8 @@
  *  plot hides the crosshair and the tooltip. onPointClicked fires for a bar,
  *  a stacked segment and a point near the mouse with the series and index,
  *  and not for a press and release on two different points, nor for empty
- *  plot. A hover control replaced while the box shows it is given back by
+ *  plot; a series removed between a press on a point and its release fires
+ *  nothing and gives the mouse back on the release. A hover control replaced while the box shows it is given back by
  *  the box before the chart deletes it, and the box shows the new one.
  */
 #include "headlessFixture.h"
@@ -399,6 +400,43 @@ TEST_CASE("Chart hover: a click on a bar, a stacked segment and near a point fir
     scene.canvas->inputMouseButton(0, false);
     scene.frame();
     CHECK(scene.clicks.size() == 3);
+}
+
+TEST_CASE("Chart hover: a series removed between a press and its release gives the mouse back")
+{
+    Scene scene;
+    Chart *chart=scene.chart;
+
+    const size_t line=chart->addSeries("line", ChartSeriesType::Line);
+    const size_t other=chart->addSeries("other", ChartSeriesType::Line);
+
+    chart->setSeriesPoints(line, {{1, 8}, {3, 9}, {5, 8}});
+    chart->setSeriesPoints(other, {{2, 2}});
+    scene.frame();
+
+    // the press on a point holds the mouse until its release
+    const PointF point=chart->getPointPosition(line, 1);
+    scene.moveTo(Point(int(point.x), int(point.y)));
+    scene.canvas->inputMouseButton(0, true);
+    REQUIRE(MouseFocus == chart);
+
+    // the app drops a series meanwhile: no click, and the mouse is the
+    // canvas's again, so a press elsewhere goes where it is
+    chart->removeSeries(other);
+    scene.canvas->inputMouseButton(0, false);
+    scene.frame();
+    CHECK(scene.clicks.empty());
+    CHECK(MouseFocus == nullptr);
+
+    // and so does clearSeries() between a press and its release
+    scene.moveTo(Point(int(point.x), int(point.y)));
+    scene.canvas->inputMouseButton(0, true);
+    REQUIRE(MouseFocus == chart);
+    chart->clearSeries();
+    scene.canvas->inputMouseButton(0, false);
+    scene.frame();
+    CHECK(scene.clicks.empty());
+    CHECK(MouseFocus == nullptr);
 }
 
 TEST_CASE("Chart hover: a new hover control replaces the one the tooltip box shows, which may then go")
