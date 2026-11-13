@@ -4,6 +4,7 @@
 #include "gweni/controls/canvas.h"
 #include "gweni/controls/progressBar.h"
 #include "gweni/controls/comboBox.h"
+#include "gweni/controls/searchComboBox.h"
 #include "gweni/controls/checkBox.h"
 #include "gweni/controls/codeEditor.h"
 #include "gweni/controls/logView.h"
@@ -287,12 +288,48 @@ void ComboBox::staticInit(TexturedSkin *skin)
     m_staticInit=true;
 }
 
+// A combo box's look, ComboBox's and SearchComboBox's: the Button surface for
+// its state (disabled, then down or open, then hovered, else normal) in
+// primitives[0], and the down chevron in primitives[1], at the box's z+1 in
+// the column it keeps as its right padding, ChevronInset from its right edge.
+namespace
+{
+void paintComboBox(renderer::Base *renderer, std::vector<size_t> &primitives,
+    controls::Base *box, bool downOrOpen)
+{
+    const tokyonight::Surface *surface;
+
+    if(box->isDisabled())
+        surface=&tokyonight::ButtonDisabled;
+    else if(downOrOpen)
+        surface=&tokyonight::ButtonDown;
+    else if(box->isHovered())
+        surface=&tokyonight::ButtonHover;
+    else
+        surface=&tokyonight::ButtonNormal;
+
+    tokyonight::paintSurface(renderer, primitives.data(), box, *surface);
+
+    if(primitives.size() < 2)
+        return;
+
+    const gweni::Rect r=box->getRenderBounds();
+    const int sz=controls::ComboBox::ChevronSize;
+    const gweni::Rect arrow{ r.x+r.w-sz-controls::ComboBox::ChevronInset, r.y+(r.h-sz)/2, sz, sz };
+
+    if(box->visible())
+        renderer->drawIcon(primitives[1], arrow, 1, 0, tokyonight::FgDark, box->getZIndex()+1);
+    else
+        renderer->hidePrimitive(primitives[1]);
+}
+
+}//namespace
+
 void ComboBox::update(renderer::Base *renderer, controls::Base *baseControl)
 {
     // As for CheckBox: property::ComboBox reports "ComboBox" too, and its child
     // ComboBox is what draws.
     controls::ComboBox *control=dynamic_cast<controls::ComboBox *>(baseControl);
-    const tokyonight::Surface *surface;
 
     if(!control)
     {
@@ -301,29 +338,40 @@ void ComboBox::update(renderer::Base *renderer, controls::Base *baseControl)
         return;
     }
 
-    if(baseControl->isDisabled())
-        surface=&tokyonight::ButtonDisabled;
-    else if(control->isDepressed() || control->isMenuOpen())
-        surface=&tokyonight::ButtonDown;
-    else if(baseControl->isHovered())
-        surface=&tokyonight::ButtonHover;
-    else
-        surface=&tokyonight::ButtonNormal;
+    paintComboBox(renderer, m_primitives, baseControl, control->isDepressed() || control->isMenuOpen());
+}
 
-    tokyonight::paintSurface(renderer, m_primitives.data(), baseControl, *surface);
 
-    // Down chevron on the right edge.
-    if(m_primitives.size() >= 2)
+///////////////////////////////////////////////////////////////////////////
+//SearchComboBox
+void SearchComboBox::update(renderer::Base *renderer, controls::Base *baseControl)
+{
+    controls::SearchComboBox *box=static_cast<controls::SearchComboBox *>(baseControl);
+
+    paintComboBox(renderer, m_primitives, baseControl, box->isDepressed() || box->isListOpen());
+}
+
+
+///////////////////////////////////////////////////////////////////////////
+//SearchComboBoxRow
+void SearchComboBoxRow::update(renderer::Base *renderer, controls::Base *baseControl)
+{
+    if(m_primitives.empty())
+        return;
+
+    controls::internal::SearchComboBoxRow *row=static_cast<controls::internal::SearchComboBoxRow *>(baseControl);
+
+    // MenuItem's look: nothing while idle (the slot hidden, not drawn
+    // transparent, which would write depth over the menu's backdrop)
+    if(row->isHighlighted() && !row->isDisabled() && baseControl->visible())
     {
-        const gweni::Rect r=baseControl->getRenderBounds();
-        // The column the control keeps for it as its right padding.
-        const int sz=controls::ComboBox::ChevronSize;
-        const gweni::Rect arrow{ r.x+r.w-sz-controls::ComboBox::ChevronInset, r.y+(r.h-sz)/2, sz, sz };
-        if(baseControl->visible())
-            renderer->drawIcon(m_primitives[1], arrow, 1, 0, tokyonight::FgDark, baseControl->getZIndex()+1);
-        else
-            renderer->hidePrimitive(m_primitives[1]);
+        const tokyonight::Surface &surface=tokyonight::MenuHover;
+
+        renderer->drawRoundedRect(m_primitives[0], baseControl->getRenderBounds(), surface.radius,
+            surface.borderWidth, surface.top, surface.bottom, surface.border, baseControl->getZIndex());
     }
+    else
+        renderer->hidePrimitive(m_primitives[0]);
 }
 
 
@@ -4741,6 +4789,8 @@ template class ControlRegister<CategoryList>;
 template class ControlRegister<CollapsibleCategory>;
 template class ControlRegister<CheckBox>;
 template class ControlRegister<ComboBox>;
+template class ControlRegister<SearchComboBox>;
+template class ControlRegister<SearchComboBoxRow>;
 template class ControlRegister<DockBase>;
 template class ControlRegister<GroupBox>;
 template class ControlRegister<Input>;
@@ -4761,6 +4811,7 @@ template class ControlRegister<Resizer>;
 template class ControlRegister<Table>;
 template class ControlRegister<TabStrip>;
 template class ControlRegister<DataTableVirtualBody>;
+template class ControlRegister<SearchComboBoxOptions>;
 template class ControlRegister<ScrollBarBar>;
 template class ControlRegister<ProgressBar>;
 template class ControlRegister<CodeEditor>;

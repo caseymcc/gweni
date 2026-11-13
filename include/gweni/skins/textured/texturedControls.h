@@ -279,6 +279,36 @@ public:
     static BorderedPrimitive DisabledPrimitive;
 };
 
+// Drawn as a ComboBox (paintComboBox): the Button surface for its state and
+// the chevron at z+1.
+class SearchComboBox:public textured::ControlRegister<SearchComboBox>
+{
+public:
+    static void staticInit(TexturedSkin *) { m_staticInit=true; }
+
+    size_t requiredPrimitives() override { return 2; }
+    // the chevron is drawn at getZIndex()+1, over the box
+    size_t depthLayers() override { return 2; }
+
+    void update(renderer::Base *renderer, controls::Base *baseControl) override;
+
+    inline static const std::string_view name="SearchComboBox";
+};
+
+// A row of a SearchComboBox's list, drawn as a MenuItem: the MenuHover
+// surface while it shows the highlighted option, its slot hidden otherwise.
+class SearchComboBoxRow:public textured::ControlRegister<SearchComboBoxRow>
+{
+public:
+    static void staticInit(TexturedSkin *) { m_staticInit=true; }
+
+    size_t requiredPrimitives() override { return 1; }
+
+    void update(renderer::Base *renderer, controls::Base *baseControl) override;
+
+    inline static const std::string_view name="SearchComboBoxRow";
+};
+
 class DockBase:public textured::ControlRegister<DockBase>
 {
 public:
@@ -549,6 +579,9 @@ GWENI_TRANSPARENT_RENDERER(TabStrip)
 // a source-mode DataTable's body, a VirtualList the table's backdrop shows
 // through, as through the row-mode DataTableBody (which draws nothing)
 GWENI_TRANSPARENT_RENDERER(DataTableVirtualBody)
+// a SearchComboBox's options list, a VirtualList the Menu it fills paints
+// the backdrop behind
+GWENI_TRANSPARENT_RENDERER(SearchComboBoxOptions)
 // a NodeGraph's layers and a Node's parts, which the Node's renderer draws
 GWENI_TRANSPARENT_RENDERER(NodeGraphLayer)
 GWENI_TRANSPARENT_RENDERER(NodeTitleBar)
