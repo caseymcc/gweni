@@ -699,7 +699,11 @@ private:
 // follows the pieces: each Code piece's background (RichTextCode over the
 // piece's box) at getZIndex(), behind the glyphs, then each underlined piece's
 // underline (a link's included) and each struck piece's line, icon kind 6
-// rules in the piece's colour, at getZIndex()+2, over them. update() resizes
+// rules in the piece's colour, at getZIndex()+2, over them, then a
+// RichTextSelection rect per line of the selection (selectionRects()) at
+// getZIndex()+1, behind the glyphs (a run's glyph i is at z+1+(i+1)/(n+1)) and
+// over the code backgrounds, last so a selection change shifts no other slot.
+// update() resizes
 // both lists to what the layout holds (a run or slot past it given back, one
 // new taken) and keeps what it last drew in each slot: on a frame that marks
 // the control's geometry, visibility or creation it draws every slot,

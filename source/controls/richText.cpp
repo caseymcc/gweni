@@ -7,6 +7,9 @@
 
 #include <gweni/controls/richText.h>
 #include <gweni/gweni.h>
+#include <gweni/inputHandler.h>
+#include <gweni/platforms/platform.h>
+#include <gweni/text/cells.h>
 
 #include <algorithm>
 #include <utility>
@@ -50,6 +53,12 @@ static bool looksLikeUrl(const String &text)
 GWENI_CONTROL_CONSTRUCTOR(RichText)
 {
     setSizeFlags(SizeFlags(SizeFlag::Elastic, SizeFlag::Elastic));
+    setCursor(cursor::Beam);
+    // the focus for Ctrl+A and Ctrl+C, taken by a press, never by Tab
+    setKeyboardInputEnabled(true);
+    setTabable(false);
+    addAccelerator("Ctrl + C", &RichText::onCopy);
+    addAccelerator("Ctrl + A", &RichText::onSelectAll);
 }
 
 void RichText::spansChanged()
@@ -58,6 +67,10 @@ void RichText::spansChanged()
     if(m_hoveredFirst >= 0)
         setHoveredLink(-1);
     m_pressedLink=-1;
+    m_selecting=false;
+    // its own selection's bytes are those of a text that is gone
+    if(!m_selection && !m_ownSelection.empty())
+        m_ownSelection.clear();
     m_measureStale=true;
     invalidate();
     addStateChange(StateChange_Text);
@@ -299,12 +312,215 @@ void RichText::setHoveredLink(int index)
     m_hoveredFirst=link.first;
     m_hoveredLast=link.second;
     addStateChange(StateChange_Text);
-    setCursor((link.first >= 0)?cursor::Finger:cursor::Normal);
+    setCursor((link.first >= 0)?cursor::Finger:cursor::Beam);
+}
+
+void RichText::setSelectionModel(text::SelectionModel *model, std::vector<size_t> block)
+{
+    m_selection=model;
+    m_selectionBlock=model?std::move(block):std::vector<size_t>();
+    m_selecting=false;
+    selectionChanged();
+}
+
+void RichText::selectionChanged()
+{
+    // the selection's slots are drawn again; its runs are unchanged
+    addStateChange(StateChange_Background);
+}
+
+bool RichText::selectedRange(std::pair<size_t, size_t> &bytes) const
+{
+    return selectionModel().range(m_selectionBlock, m_layout.textLength(), bytes);
+}
+
+bool RichText::hasSelection() const
+{
+    std::pair<size_t, size_t> bytes;
+
+    return selectedRange(bytes);
+}
+
+String RichText::getSelectedText() const
+{
+    std::pair<size_t, size_t> bytes;
+
+    if(!selectedRange(bytes))
+        return String();
+    return getText().substr(bytes.first, bytes.second-bytes.first);
+}
+
+void RichText::select(size_t first, size_t last)
+{
+    const unsigned serial=selectionModel().serial();
+
+    selectionModel().select(at(first), at(last));
+    if(selectionModel().serial() != serial)
+        selectionChanged();
+}
+
+void RichText::selectAll()
+{
+    select(0, getText().size());
+}
+
+void RichText::clearSelection()
+{
+    if(!hasSelection())
+        return;
+
+    const size_t focus=selectionModel().focus().offset;
+
+    select(focus, focus);
+}
+
+bool RichText::copySelection()
+{
+    if(!hasSelection())
+        return false;
+
+    platform::setClipboardText(getSelectedText());
+    return true;
+}
+
+void RichText::onCopy(event::Info)
+{
+    copySelection();
+}
+
+void RichText::onSelectAll(event::Info)
+{
+    selectAll();
+}
+
+bool RichText::onKeyEscape(bool down)
+{
+    if(!hasSelection())
+        return false;
+    if(down)
+        clearSelection();
+    return true;
+}
+
+size_t RichText::positionAt(const Point &local)
+{
+    const Point at(local.x-contentOrigin().x, local.y-contentOrigin().y);
+    const std::vector<text::RichLine> &lines=m_layout.lines();
+    const std::vector<text::RichPiece> &pieces=m_layout.pieces();
+
+    if(lines.empty())
+        return 0;
+
+    size_t index=0;
+
+    while((index+1 < lines.size()) && (at.y >= lines[index].top+lines[index].height))
+        ++index;
+
+    const text::RichLine &line=lines[index];
+
+    if(line.pieceCount == 0)
+        return line.begin;
+
+    for(size_t i=line.firstPiece; i < line.firstPiece+line.pieceCount; ++i)
+    {
+        const text::RichPiece &piece=pieces[i];
+
+        if(at.x >= piece.pos.x+piece.width)
+            continue;
+        if(at.x <= piece.pos.x)
+            return piece.offset;
+
+        // the boundary nearest x, its byte by walking the codepoints to it
+        const int x=at.x-piece.pos.x;
+        size_t caret=1;
+
+        while((caret+1 < piece.carets.size()) && (piece.carets[caret] < x))
+            ++caret;
+        if(caret < piece.carets.size() && (x-piece.carets[caret-1] <= piece.carets[caret]-x))
+            --caret;
+
+        size_t byte=0;
+
+        for(size_t c=0; (c < caret) && (byte < piece.text.size()); ++c)
+            text::utf8CodepointAt(piece.text, byte, &byte);
+        return piece.offset+text::caretStopAt(piece.text, byte);
+    }
+
+    const text::RichPiece &last=pieces[line.firstPiece+line.pieceCount-1];
+
+    return last.offset+last.text.size();
+}
+
+int RichText::xAt(const text::RichLine &line, size_t offset) const
+{
+    const std::vector<text::RichPiece> &pieces=m_layout.pieces();
+
+    if(line.pieceCount == 0)
+        return 0;
+
+    for(size_t i=line.firstPiece; i < line.firstPiece+line.pieceCount; ++i)
+    {
+        const text::RichPiece &piece=pieces[i];
+
+        if(offset < piece.offset)
+            return piece.box().x;
+        if(offset > piece.offset+piece.text.size())
+            continue;
+
+        size_t caret=0;
+
+        for(size_t byte=0; byte < offset-piece.offset; ++caret)
+            text::utf8CodepointAt(piece.text, byte, &byte);
+        return piece.pos.x+((caret < piece.carets.size())?piece.carets[caret]:piece.width);
+    }
+
+    const Rect box=pieces[line.firstPiece+line.pieceCount-1].box();
+
+    return box.x+box.w;
+}
+
+std::vector<Rect> RichText::selectionRects()
+{
+    std::vector<Rect> rects;
+    std::pair<size_t, size_t> bytes;
+
+    if(!selectedRange(bytes))
+        return rects;
+
+    const std::vector<text::RichPiece> &pieces=m_layout.pieces();
+
+    for(const text::RichLine &line:m_layout.lines())
+    {
+        if((bytes.second <= line.begin) || (bytes.first >= line.end))
+            continue;
+
+        // what the line shows ends at its last piece; past that, its break
+        const size_t shown=(line.pieceCount == 0)?line.begin
+            :pieces[line.firstPiece+line.pieceCount-1].offset+pieces[line.firstPiece+line.pieceCount-1].text.size();
+        const int left=xAt(line, std::max(bytes.first, line.begin));
+        int right=xAt(line, std::min(bytes.second, shown));
+
+        if(bytes.second > shown)
+            right=xAt(line, shown)+breakSelectionWidth(line);
+        if(right > left)
+            rects.emplace_back(left, line.top, right-left, line.height);
+    }
+    return rects;
 }
 
 void RichText::onMouseMoved(int x, int y, int /*deltaX*/, int /*deltaY*/)
 {
-    setHoveredLink(linkAt(canvasPosToLocal(Point(x, y))));
+    const Point local=canvasPosToLocal(Point(x, y));
+
+    setHoveredLink(linkAt(local));
+    if(m_selecting && (MouseFocus == this))
+    {
+        const unsigned serial=selectionModel().serial();
+
+        selectionModel().extendTo(at(positionAt(local)));
+        if(selectionModel().serial() != serial)
+            selectionChanged();
+    }
 }
 
 void RichText::onMouseLeave()
@@ -315,11 +531,23 @@ void RichText::onMouseLeave()
 
 void RichText::onMouseClickLeft(int x, int y, bool down)
 {
-    const int link=linkAt(canvasPosToLocal(Point(x, y)));
+    const Point local=canvasPosToLocal(Point(x, y));
+    const int link=linkAt(local);
 
     if(down)
     {
+        const unsigned serial=selectionModel().serial();
+        const text::SelectionPosition pressed=at(positionAt(local));
+
+        if(input::isShiftDown())
+            selectionModel().extendTo(pressed);
+        else
+            selectionModel().setCaret(pressed);
+        if(selectionModel().serial() != serial)
+            selectionChanged();
+
         m_pressedLink=link;
+        m_selecting=true;
         MouseFocus=this;
         return;
     }
@@ -327,8 +555,11 @@ void RichText::onMouseClickLeft(int x, int y, bool down)
     const int pressed=m_pressedLink;
 
     m_pressedLink=-1;
-    MouseFocus=nullptr;
-    if((pressed < 0) || (link != pressed))
+    m_selecting=false;
+    if(MouseFocus == this)
+        MouseFocus=nullptr;
+    // a drag that selected something is no click
+    if((pressed < 0) || (link != pressed) || hasSelection())
         return;
 
     event::Info info(this);
@@ -336,6 +567,16 @@ void RichText::onMouseClickLeft(int x, int y, bool down)
     info.string=m_spans[pressed].url;
     info.integer=static_cast<size_t>(pressed);
     onLinkClicked.call(this, info);
+}
+
+// The word, blank run or punctuation run under the press
+void RichText::onMouseDoubleClickLeft(int x, int y)
+{
+    const std::pair<size_t, size_t> word=text::wordAt(getText(), positionAt(canvasPosToLocal(Point(x, y))));
+
+    m_pressedLink=-1;
+    m_selecting=false;
+    select(word.first, word.second);
 }
 
 }//namespace controls

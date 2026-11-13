@@ -1860,7 +1860,7 @@ void RichText::update(renderer::Base *renderer, controls::Base *baseControl)
         run.valid=true;
     }
 
-    // the slots wanted: the code backgrounds, then the lines
+    // the slots wanted: the code backgrounds, the lines, the selection
     struct Want
     {
         bool rule;
@@ -1901,6 +1901,11 @@ void RichText::update(renderer::Base *renderer, controls::Base *baseControl)
                 tokyonight::Surface{}, color, z+2 });
         }
     }
+    // the selection last, so a new selection writes its own slots alone: behind
+    // the glyphs (a run's glyphs are over its z), over a code background
+    for(const gweni::Rect &rect:rich->selectionRects())
+        wants.push_back({ false, gweni::Rect(origin.x+rect.x, origin.y+rect.y, rect.w, rect.h),
+            tokyonight::RichTextSelection, gweni::Color(), z+1 });
 
     resizePlotPrimitives(renderer, m_primitives, wants.size());
     m_drawn.resize(wants.size());

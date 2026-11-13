@@ -295,6 +295,9 @@ inline Surface TimelineBarHover { Color(0xff,0xff,0xff,0x40), Color(0xff,0xff,0x
 // A RichText's inline code: a flat block a shade over the panel behind it,
 // slightly rounded, under the code's text.
 inline Surface RichTextCode   { BgHighlight,           BgHighlight,           BgHighlight, 3.0f, 0.0f };
+// A RichText's selection, one rect per line behind its glyphs (over a code
+// background), as TextSelection.
+inline Surface RichTextSelection{ Color(0x28,0x34,0x57), Color(0x28,0x34,0x57), Color(0x28,0x34,0x57), 0.0f, 0.0f };
 
 // gweni::tools::StatsOverlay's panel, in the canvas's corner: translucent, so
 // the app's fills show dimly through it.
@@ -436,7 +439,7 @@ inline std::unordered_map<std::string, Surface*>& surfaceRegistry()
         {"TimelineFrame",&TimelineFrame},{"TimelineLane",&TimelineLane},{"TimelineGrid",&TimelineGrid},
         {"TimelineAxis",&TimelineAxis},{"TimelineBar",&TimelineBar},{"TimelineBarHover",&TimelineBarHover},
         {"StatsOverlay",&StatsOverlay},
-        {"RichTextCode",&RichTextCode},
+        {"RichTextCode",&RichTextCode},{"RichTextSelection",&RichTextSelection},
         {"DragNumber",&DragNumber},{"DragNumberHover",&DragNumberHover},{"DragNumberFocus",&DragNumberFocus},
         {"DragNumberDown",&DragNumberDown},{"DragNumberDisabled",&DragNumberDisabled},
         {"VectorTagX",&VectorTagX},{"VectorTagY",&VectorTagY},{"VectorTagZ",&VectorTagZ},
