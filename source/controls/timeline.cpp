@@ -170,6 +170,9 @@ void Timeline::setLaneCaption(size_t lane, const String &caption)
     m_lanes[lane].caption=caption;
     if(internal::Text *label=getCaptionLabel(lane))
         label->setText(caption);
+    // a shown tooltip of this lane's (the default one names it) set again
+    if(m_hovering && m_hoverLane == lane)
+        setHover(true, m_hoverLane, m_hoverIndex, true);
     // an automatic column follows the widest caption
     if(m_captionWidthSetting <= 0)
         invalidate();
@@ -496,6 +499,9 @@ void Timeline::setUtcOffset(const axis::UtcOffset &offset)
 {
     m_utcOffset=offset;
     invalidate();
+    // a shown tooltip set again (the default one gives the times in the zone)
+    if(m_hovering)
+        setHover(true, m_hoverLane, m_hoverIndex, true);
 }
 
 // ---- scrolling --------------------------------------------------------------
@@ -598,9 +604,11 @@ bool Timeline::barAt(const Point &local, size_t &lane, size_t &index) const
             || local.x < rect.x || local.x >= rect.x+rect.w)
             continue;
 
-        // the one drawn on top: the highest level, then the later
+        // the one drawn on top: the highest level, then, sharing a layer
+        // (past MaxOverlapLevel, or a column two bars both reach), the one
+        // whose slot is drawn first, the earlier, which the depth test keeps
         if(!found || target.levels[candidate] > target.levels[best]
-            || (target.levels[candidate] == target.levels[best] && candidate > best))
+            || (target.levels[candidate] == target.levels[best] && candidate < best))
         {
             best=candidate;
             found=true;

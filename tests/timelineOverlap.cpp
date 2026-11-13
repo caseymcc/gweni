@@ -13,7 +13,11 @@
  *  are covered fully: the column at the later bar's left edge is its border
  *  and the one before it the earlier bar's fill, with no blend. The hover
  *  look over the later bar draws its border in TimelineBarHover's colour and,
- *  inside it, the bar's fill with TimelineBarHover's blended over it. The z layers are checked headless in tests/unit/timelineRenderer.cpp.
+ *  inside it, the bar's fill with TimelineBarHover's blended over it. Past
+ *  MaxOverlapLevel two overlapping bars share the top layer, and there the
+ *  earlier one, whose slot is drawn first, is what shows and what barAt()
+ *  picks; the later one where it alone reaches. The z layers are checked
+ *  headless in tests/unit/timelineRenderer.cpp.
  */
 #include <doctest/doctest.h>
 
@@ -183,5 +187,52 @@ TEST_CASE("Timeline: the later of two overlapping bars shows, over a long bar or
 
         CHECK(same(scene.at(scene.snap(shortBar.x+shortBar.w/2), middleY), lit));
         CHECK(same(scene.at(scene.snap(shortBar.x)-1, middleY), Early));
+    }
+}
+
+TEST_CASE("Timeline: past the overlap levels, two bars share a layer and the earlier one shows and is hit")
+{
+    for(const float scale : {1.0f, 1.5f})
+    {
+        CAPTURE(scale);
+
+        Scene scene(scale);
+        Timeline *timeline=scene.timeline;
+        const Color Grey(90, 90, 90);
+
+        timeline->addLane("c");
+        // levels 0, 1, 2 and 3, then one more over all of them, at 3 too
+        timeline->addBar(2, TimelineBar(0, 100, 5).withColor(Grey));
+        timeline->addBar(2, TimelineBar(5, 95, 6).withColor(Grey));
+        timeline->addBar(2, TimelineBar(10, 90, 7).withColor(Grey));
+        timeline->addBar(2, TimelineBar(20, 80, 8).withColor(Early));
+        timeline->addBar(2, TimelineBar(15, 85, 9).withColor(Late));
+        scene.settle();
+
+        REQUIRE(timeline->getOverlapLevel(2, 3) == Timeline::MaxOverlapLevel);
+        REQUIRE(timeline->getOverlapLevel(2, 4) == Timeline::MaxOverlapLevel);
+
+        const Rect earlier=scene.bar(2, 3);
+        const Rect later=scene.bar(2, 4);
+        const int y=earlier.y+earlier.h/2;
+        // the timeline's own coordinates, for barAt()
+        const Point origin=timeline->localPosToCanvas(Point(0, 0));
+        size_t lane=0;
+        size_t index=0;
+
+        // both reach the middle: the earlier one's slot, drawn first, is kept
+        const int middle=earlier.x+earlier.w/2;
+
+        CHECK(same(scene.at(scene.snap(middle), scene.snap(y)), Early));
+        REQUIRE(timeline->barAt(Point(middle-origin.x, y-origin.y), lane, index));
+        CHECK(lane == 2);
+        CHECK(index == 3);
+
+        // where the later one alone of the two reaches, it
+        const int left=(later.x+earlier.x)/2;
+
+        CHECK(same(scene.at(scene.snap(left), scene.snap(y)), Late));
+        REQUIRE(timeline->barAt(Point(left-origin.x, y-origin.y), lane, index));
+        CHECK(index == 4);
     }
 }

@@ -854,7 +854,9 @@ private:
 //   TimelineBarHover's border, at z+4+MaxOverlapLevel, hidden with no hover.
 // The lanes, grid and bars are drawn again only when the timeline's
 // getBarsSerial() moved, the bar area's clip box changed, or the frame marks
-// its geometry, visibility or creation, and then each slot only when its
+// its geometry, visibility, creation or text (a theme edit's mark,
+// ThemeEditor::applyToCanvas(): the timeline itself marks no text, so a hover
+// does not), and then each slot only when its
 // rect, surface, z or clip differs: a hover writes the hover slot alone, a
 // changed bar its own slot, a scroll the lanes and bars that moved, came into
 // view or left it. Every slot is square (TimelineBar's radius is 0) at whole
@@ -865,8 +867,13 @@ private:
 // The lists are taken back to front (lanes, grid, each lane's bars, the
 // hover), each with capacity() slots for what it draws, the spare ones
 // hidden, and every list is given back and taken again when one needs more
-// than it has, a lane's bars fewer than half what its list was taken for, or
-// the lanes or grid lines fewer than theirs (Chart's rule).
+// than it has, a lane's bars fewer than half what its list was taken for, the
+// lanes or grid lines fewer than theirs (Chart's rule), or the lane count
+// changes: an addLane() or removeLane() rewrites every slot. A list taken
+// alone could get ids below the stripes' and the grid's, and a translucent
+// bar drawn before them would hide them behind it (the depth test), so the
+// order back to front is kept by taking them all; lanes come and go rarely
+// (a host's agent slots).
 class Timeline:public textured::ControlRegister<Timeline>
 {
 public:

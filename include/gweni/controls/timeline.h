@@ -116,7 +116,14 @@ struct TimelineBar
 //! picks. Each bar has an overlap level, 0 for a bar no earlier bar of its
 //! lane overlaps in time and otherwise one more than the highest level of the
 //! earlier bars it overlaps, MaxOverlapLevel at most; the renderer draws a
-//! level in a depth layer of its own, so the later bar is in front.
+//! level in a depth layer of its own, so the later bar is in front. Bars
+//! sharing a level (more than MaxOverlapLevel+1 of them overlapping at once,
+//! or two packed bars whose rounded rects both reach one column) share a
+//! layer, where the earlier bar's slot, drawn first, is the one the depth
+//! test keeps: there the earlier bar is on top, drawn and picked. The levels
+//! are worked out lane by lane on the first use after a change, each bar
+//! against the earlier bars whose ends reach its start: O(n log n) for a
+//! packed lane, O(n^2) at worst (every bar under one long one).
 //!
 //! The x range is setXRange()'s, or automatic: from the earliest start to the
 //! latest end of every bar (half a second each way round a single instant,
@@ -161,7 +168,7 @@ public:
     static constexpr int CaptionPadding=6;
     //! A bar's inset from its lane's top and bottom.
     static constexpr int BarInset=3;
-    //! The overlap levels: 0 to this.
+    //! The overlap levels: 0 to this (the renderer's layers for bars).
     static constexpr int MaxOverlapLevel=3;
     //! Lanes a wheel notch scrolls.
     static constexpr int WheelLanes=3;
@@ -252,10 +259,12 @@ public:
     int laneAt(int y) const;
     //! The bar under \p local: in the lane at its y, a bar whose rect
     //! (getBarRect()) holds its x, the highest overlap level and then the
-    //! latest of those; false outside the bar area or over none. A binary
-    //! search on the lane's bars sorted by start, walking back over the
-    //! earlier bars whose ends (a prefix maximum) reach the point: O(log n)
-    //! in a packed lane, plus the bars overlapping the point.
+    //! earliest of those (the one drawn on top in a shared layer); false
+    //! outside the bar area or over none. A binary search on the lane's bars
+    //! sorted by start, walking back over the bars starting before the point
+    //! while the running maximum of their ends still reaches it: O(log n)
+    //! plus one or two bars in a packed lane, but every bar starting before
+    //! the point when one long early bar reaches it.
     bool barAt(const Point &local, size_t &lane, size_t &index) const;
 
     // ---- hover and click ------------------------------------------------

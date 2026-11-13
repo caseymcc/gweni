@@ -2929,19 +2929,26 @@ two programs and the draws. What follows describes both together:
   own. A lane's bar slots follow the bars' indices, so a later bar's slot is drawn after
   the earlier one's, and at one z `GL_LESS` would keep the earlier one's pixels: the
   layer, not the slot order, puts it in front (`tests/timelineOverlap.cpp`, GL and
-  Vulkan pixels). **Hit test:** arithmetic. The lane from y (`laneAt`: the fixed lane
+  Vulkan pixels). Past the cap (five bars overlapping at once) or where two packed bars'
+  rounded rects both reach one column, two bars share a layer, and there the slot order
+  decides: the earlier bar is drawn first and kept, so it is the one on top, drawn and
+  hit (the same test pins both). The levels are worked out lane by lane on the first use
+  after a change, each bar against the earlier bars whose ends reach its start: O(n log n)
+  in a packed lane, O(n^2) at worst (every bar under one long one). **Hit test:** arithmetic. The lane from y (`laneAt`: the fixed lane
   height and the scroll offset), then the lane's bars sorted by start with a running
   maximum of their ends (`ensureLane`, worked out again only for a lane whose bars
   changed): a binary search for the bars starting before the time at x+1, walked back
   while that maximum reaches the time at x-1, each candidate held to its rect exactly
   (`getBarRect`: whole units, a unit wide at least, held `OffAreaMargin` outside the area
-  but not cut to it), the highest level and then the later bar winning. In a packed lane
-  that is O(log n); an earlier long bar under short later ones is still found between
-  them. `tests/unit/timeline.cpp` holds it to a brute force over random lanes. **Hover and
+  but not cut to it), the highest level and then, in a shared layer, the earlier bar
+  winning. In a packed lane that is O(log n) plus a bar or two; an earlier long bar under
+  short later ones is still found between them, at the cost of walking back over every
+  bar that starts before the point while it reaches it. `tests/unit/timeline.cpp` holds it to a brute force over random lanes. **Hover and
   click:** the bar under the mouse gets the hover look and the tooltip (the lane's
   caption and the bar's times, `axis::formatDateTime`; the app's `setHoverText` or a
   control it fills, `setHoverControl`), placed below the bar (`getToolTipAnchor`) and set
-  only when the hovered bar changes; a press and release on the same bar with the same
+  only when the hovered bar changes (and set again under a resting mouse when the bar, its
+  lane's caption or the zone changes); a press and release on the same bar with the same
   id fire `onBarClicked` with the lane, the index and the id. **Rendering:** the textured
   `Timeline` renderer keeps a slot list per part, each slot holding what it last drew:
   the frame (`TimelineFrame`, taken at generate), a stripe per odd lane across the
@@ -2952,9 +2959,16 @@ two programs and the draws. What follows describes both together:
   `depthLayers()` is 8. The lists are taken back to front once the timeline is shown with
   a bar area, each with Chart's `capacity(n)` (spare slots hidden, so an added bar takes
   one of its lane's), and all again when a lane outgrows its list or drops below half of
-  what it was taken for. The lanes, grid and bars are drawn again only when
+  what it was taken for, and when the lane count changes: an `addLane` or `removeLane`
+  rewrites every slot, since a list taken alone could get ids below the stripes' and the
+  grid's, and a translucent bar drawn before them would hide them behind it (the depth
+  test), while lanes come and go rarely. The lanes, grid and bars are drawn again only when
   `Timeline::getBarsSerial()` moved (every change of the bars, lanes, range, layout or
-  scroll bumps it; the hover does not) or the bar area's clip changed, and then a slot
+  scroll bumps it; the hover does not), the bar area's clip changed or the frame marks
+  the timeline's text, which the timeline itself never does but a theme edit does
+  (`ThemeEditor::applyToCanvas()`, which marks the background and text of every control
+  and, for an editor row's edit, lays nothing out: without that, `controltest_theme`'s
+  live TimelineDemo kept its old bar and lane colours in 135299 pixels), and then a slot
   only when its rect, surface, z or clip differs; a lane out of view hides its bars. The
   bars and the hover look are square (`TimelineBar`'s radius is 0) at whole units, so
   their device pixels are fully covered and no slot's order against another's changes a
@@ -3982,12 +3996,12 @@ set by its bare name and one with some of them as `Name.field` per missing field
 the shipped theme with `"strict": true` added):
 
 ```
-theme strict: 119 of 123 surfaces not set: ButtonDisabled, ButtonDown, ButtonOn, ...
+theme strict: 122 of 126 surfaces not set: ButtonDisabled, ButtonDown, ButtonOn, ...
 theme strict: 36 of 38 text colors not set: AxisTagText, ButtonDisabled, ButtonDown, ...
 ```
 
-(`theme strict: all 123 surfaces set` for a kind with no gaps, and a single
-`theme strict: all 123 surfaces and 38 text colors set` when there are none at all). A
+(`theme strict: all 126 surfaces set` for a kind with no gaps, and a single
+`theme strict: all 126 surfaces and 38 text colors set` when there are none at all). A
 rejected value counts as not set. A surface that is transparent at rest on purpose
 (`WindowButton`, `SelectableHover`: a transparent fill hides the slot) is magenta too
 until the theme sets it to `[0,0,0,0]`; the theme has not said what it looks like. The

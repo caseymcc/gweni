@@ -4602,7 +4602,11 @@ static bool runStatsOverlayScenario(Session &s, const std::string &shotDir, bool
 // under it draws; giving the old values back must draw the first Demo again;
 // and the theme saved (TexturedSkin::saveThemeFile), the defaults restored and
 // the file loaded (loadThemeFile) must draw the changed theme again, byte for
-// byte (docs/architecture.md -> "The theme editor").
+// byte (docs/architecture.md -> "The theme editor"). Then TimelineDemo, whose
+// renderer draws its bars, lanes and grid again only on a frame that can move
+// them, with its surfaces changed as an editor row changes one
+// (applyToCanvas() with no relayout): it must draw what one built under them
+// draws, and the first TimelineDemo again once the defaults are given back.
 //-----------------------------------------------------------------------------
 
 static bool runThemeScenario(Session &s, const std::string &shotDir, bool &passed)
@@ -4699,6 +4703,43 @@ static bool runThemeScenario(Session &s, const std::string &shotDir, bool &passe
     dropControl(s, control);
     renderFrames(s, 1);
 
+    // TimelineDemo's bars, lane stripes and grid lines, which its renderer
+    // draws again only on a frame that can move them, edited as the editor's
+    // rows edit a colour: applyToCanvas() with no relayout
+    TexturedSkin::ThemeValues timelineChanged=defaults;
+
+    timelineChanged.surfaces.at("TimelineBar").top=gweni::Color(0xc0, 0x40, 0x40);
+    timelineChanged.surfaces.at("TimelineBar").bottom=gweni::Color(0xa0, 0x30, 0x30);
+    timelineChanged.surfaces.at("TimelineLane").top=gweni::Color(0x20, 0x40, 0x28);
+    timelineChanged.surfaces.at("TimelineLane").bottom=gweni::Color(0x20, 0x40, 0x28);
+    timelineChanged.surfaces.at("TimelineGrid").top=gweni::Color(0x60, 0x60, 0x20);
+
+    std::vector<unsigned char> timelineBefore, timelineLive, timelineFresh, timelineBack;
+
+    control=addControl(s, "TimelineDemo");
+    if(!control)
+        return false;
+    renderFrames(s, settleFrames);
+    s.renderer->readPixels(s.pixels.x, s.pixels.y, timelineBefore);
+    skin->applyTheme(timelineChanged);
+    ThemeEditor::applyToCanvas(s.canvas, false);
+    renderFrames(s, settleFrames);
+    s.renderer->readPixels(s.pixels.x, s.pixels.y, timelineLive);
+    shot=shoot(s, shotDir+"/theme-05-timeline-edited.png") && shot;
+    dropControl(s, control);
+    replaceCanvas(s);
+    control=addControl(s, "TimelineDemo");
+    if(!control)
+        return false;
+    renderFrames(s, settleFrames);
+    s.renderer->readPixels(s.pixels.x, s.pixels.y, timelineFresh);
+    skin->applyTheme(defaults);
+    ThemeEditor::applyToCanvas(s.canvas, false);
+    renderFrames(s, settleFrames);
+    s.renderer->readPixels(s.pixels.x, s.pixels.y, timelineBack);
+    dropControl(s, control);
+    renderFrames(s, 1);
+
     auto same=[](const std::vector<unsigned char> &a, const std::vector<unsigned char> &b,
         const char *what)
     {
@@ -4719,9 +4760,15 @@ static bool runThemeScenario(Session &s, const std::string &shotDir, bool &passe
     const bool revertMatches=same(reverted, original, "the defaults given back differ from the first Demo");
     const bool loadMatches=same(loaded, edited, "the theme loaded from the file differs from the one saved");
     const bool settles=settledSlots == 0;
+    const bool timelineShows=timelineLive != timelineBefore;
+    const bool timelineMatches=same(timelineLive, timelineFresh,
+        "TimelineDemo's theme changed live differs from one built under it");
+    const bool timelineBackMatches=same(timelineBack, timelineBefore,
+        "TimelineDemo's defaults given back live differ from the first TimelineDemo");
+    const bool timelineOk=timelineShows && timelineMatches && timelineBackMatches;
 
     passed=editShows && liveMatchesFresh && revertMatches && loadMatches && settles
-        && saved && loadedFile && valuesBack && defaultsBack;
+        && saved && loadedFile && valuesBack && defaultsBack && timelineOk;
 
     std::cout<<"theme edit_prim_slots="<<editPrim<<" edit_text_slots="<<editText
              <<" settled_slots="<<settledSlots<<" edit_shows="<<(editShows?"yes":"no")
@@ -4729,10 +4776,14 @@ static bool runThemeScenario(Session &s, const std::string &shotDir, bool &passe
              <<" revert_matches="<<(revertMatches?"yes":"no")
              <<" saved="<<(saved?"yes":"no")<<" loaded="<<(loadedFile?"yes":"no")
              <<" values_back="<<(valuesBack?"yes":"no")<<" defaults_back="<<(defaultsBack?"yes":"no")
-             <<" load_matches="<<(loadMatches?"yes":"no")<<"\n";
+             <<" load_matches="<<(loadMatches?"yes":"no")
+             <<" timeline_shows="<<(timelineShows?"yes":"no")
+             <<" timeline_matches_fresh="<<(timelineMatches?"yes":"no")
+             <<" timeline_back="<<(timelineBackMatches?"yes":"no")<<"\n";
     if(!passed)
         std::cerr<<"ControlTest: theme: "
                  <<(!editShows ? "the changed theme drew nothing new"
+                     : !timelineShows ? "TimelineDemo's changed theme drew nothing new"
                      : !settles ? "the frame after the change still wrote slots"
                      : !saved ? "the theme could not be saved"
                      : !loadedFile ? "the saved theme could not be loaded"

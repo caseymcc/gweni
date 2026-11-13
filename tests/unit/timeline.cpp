@@ -15,11 +15,13 @@
  *  a binary search on the lane's bars sorted by start finds each bar of a
  *  packed lane at its first and last unit and nothing in the gaps between
  *  them or outside the area; where bars overlap the later one is found (and
- *  has the higher overlap level, MaxOverlapLevel at most), an earlier long
+ *  has the higher overlap level, MaxOverlapLevel at most), past the levels
+ *  the earlier of two sharing the top one (its slot drawn first, which the
+ *  depth test keeps, tests/timelineOverlap.cpp), an earlier long
  *  bar under short later ones is still found between them (the running
  *  maximum of the ends), bars that only touch do not overlap; and on lanes of
  *  random bars every unit's answer is a brute force's over getBarRect() (the
- *  highest level, then the latest). A bar's rect: a unit wide at least, held
+ *  highest level, then the earliest). A bar's rect: a unit wide at least, held
  *  OffAreaMargin outside the area however far out of range, none for a bar
  *  wholly out of range, a NaN or a lane out of view. Lanes that do not fit
  *  scroll: the bar shows, the wheel scrolls WheelLanes lanes a notch under the
@@ -108,8 +110,8 @@ struct Scene
 
             const int level=timeline->getOverlapLevel(size_t(laneIndex), i);
 
-            if(!found || level > timeline->getOverlapLevel(size_t(laneIndex), index)
-                || (level == timeline->getOverlapLevel(size_t(laneIndex), index) && i > index))
+            // the highest level, then the earliest at it (drawn first)
+            if(!found || level > timeline->getOverlapLevel(size_t(laneIndex), index))
             {
                 index=i;
                 found=true;
@@ -389,14 +391,19 @@ TEST_CASE("Timeline: where bars overlap, the later one is on top and the one hit
 
     for(size_t i=0; i < 6; ++i)
         CHECK(timeline->getOverlapLevel(4, i) == std::min(int(i), Timeline::MaxOverlapLevel));
-    CHECK(hit(4, 250) == 5);
+    // bars 3, 4 and 5 all at the top level: the earliest of them
+    CHECK(hit(4, 250) == 3);
+    CHECK(hit(4, 25) == 2);
     CHECK(hit(4, 5) == 0);
     CHECK(hit(4, 35) == 3);
-    // past the levels, the later of two at the top level, though it starts
-    // earlier (the search meets the other one first)
+    // past the levels, the earlier of two at the top level, though the later
+    // starts earlier (the search meets it first): they share a layer, where
+    // the earlier one's slot is drawn first and kept by the depth test
     timeline->addBar(4, TimelineBar(5, 495, 36));
     CHECK(timeline->getOverlapLevel(4, 6) == Timeline::MaxOverlapLevel);
-    CHECK(hit(4, 35) == 6);
+    CHECK(hit(4, 35) == 3);
+    // where it alone of the top level reaches, the later one
+    CHECK(hit(4, 7) == 6);
 
     CHECK(timeline->getOverlapLevel(5, 0) == 0);
     CHECK(timeline->getOverlapLevel(5, 1) == 0);

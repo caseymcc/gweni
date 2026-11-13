@@ -2423,8 +2423,11 @@ void Timeline::update(renderer::Base *renderer, controls::Base *baseControl)
     }
 
     // The lanes, the grid and the bars move only with what getBarsSerial()
-    // counts or with the area's clip: a hover leaves them as they are.
+    // counts or with the area's clip, and take new colours only with a theme
+    // edit, which marks the text (ThemeEditor::applyToCanvas()): a hover,
+    // which marks the background alone, leaves them as they are.
     const bool stale=all || retaken || !m_drawnAll || (timeline->getBarsSerial() != m_drawnSerial)
+        || ((sc&controls::StateChange_Text) != 0)
         || !(areaClip == m_drawnAreaClip) || !(viewClip == m_drawnViewClip);
 
     if(stale)

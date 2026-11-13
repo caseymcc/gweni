@@ -17,13 +17,17 @@
  *  settled frame writes nothing; a changed bar writes its slot alone, an added
  *  one its own (a spare slot of its lane's list); a scroll by a lane writes
  *  only the stripes and bars of the lanes in view before or after it and no
- *  grid line, and a lane out of view has its bars' slots hidden. The hover:
+ *  grid line, and a lane out of view has its bars' slots hidden. A theme
+ *  edit marked as ThemeEditor::applyToCanvas() marks it (background and
+ *  text, no relayout) draws the stripes, grid lines and bars in the new
+ *  colours, and the old ones once the theme is given back. The hover:
  *  the bar under the mouse gets the hover look, one slot at z+4+MaxOverlapLevel
  *  over its rect, which a hover frame writes alone (no bar's slot), a move
  *  within the bar writes nothing, and leaving hides it; over overlapping bars
  *  it is the later one's; the tooltip is the lane's caption and the bar's
- *  times in the zone, the app's text or a control it fills, placed below the
- *  bar (getToolTipAnchor()). A click fires onBarClicked with the lane, the
+ *  times in the zone (set again under a resting mouse when the bar, its
+ *  lane's caption or the zone changes), the app's text or a control it fills,
+ *  placed below the bar (getToolTipAnchor()). A click fires onBarClicked with the lane, the
  *  index and the id, and nothing for a press and release on two bars, on
  *  empty lane, or a bar replaced between them. A timeline built hidden takes
  *  no slot until shown; a hidden one hides its slots; deleting it gives every
@@ -381,6 +385,67 @@ TEST_CASE("Timeline renderer: a settled frame writes nothing, a changed or added
     CHECK(scene.written().empty());
 }
 
+TEST_CASE("Timeline renderer: a theme edit, marked as the ThemeEditor marks it, reaches the lanes, the grid and the bars")
+{
+    Scene scene;
+    Timeline *timeline=scene.timeline;
+
+    for(int i=0; i < 2; ++i)
+    {
+        timeline->addLane("lane");
+        timeline->addBar(size_t(i), TimelineBar(10, 20, uint64_t(i)));
+    }
+    scene.frame();
+    scene.frame();
+    REQUIRE(scene.written().empty());
+
+    const skin::textured::Timeline &drawn=scene.skinTimeline();
+    const size_t bar0=drawn.barPrimitives(0).at(0);
+    const size_t bar1=drawn.barPrimitives(1).at(0);
+    // lane 1 is the odd one, striped
+    const size_t stripe=drawn.lanePrimitives().at(1);
+    const tokyonight::Surface barWas=tokyonight::TimelineBar;
+    const tokyonight::Surface laneWas=tokyonight::TimelineLane;
+    const tokyonight::Surface gridWas=tokyonight::TimelineGrid;
+    const Color barColor(201, 11, 12);
+    const Color laneColor(13, 202, 14);
+    const Color gridColor(15, 16, 203);
+
+    tokyonight::TimelineBar.top=barColor;
+    tokyonight::TimelineLane.top=laneColor;
+    tokyonight::TimelineGrid.top=gridColor;
+    // ThemeEditor::applyToCanvas(canvas, false)'s mark: no relayout
+    scene.canvas->addStateChangeRecursive(controls::StateChange_Background|controls::StateChange_Text);
+    scene.frame();
+
+    const std::set<size_t> written=scene.written();
+
+    CHECK(written.count(bar0) == 1);
+    CHECK(written.count(bar1) == 1);
+    CHECK(written.count(stripe) == 1);
+    CHECK((scene.renderer.fills[bar0] == barColor));
+    CHECK((scene.renderer.fills[bar1] == barColor));
+    CHECK((scene.renderer.fills[stripe] == laneColor));
+    size_t gridLines=0;
+    for(const auto &line : scene.renderer.lines)
+    {
+        if(line.color == gridColor)
+            ++gridLines;
+    }
+    CHECK(gridLines == timeline->getTicks().size());
+
+    // the theme as it was, the same mark: the old colours back
+    tokyonight::TimelineBar=barWas;
+    tokyonight::TimelineLane=laneWas;
+    tokyonight::TimelineGrid=gridWas;
+    scene.canvas->addStateChangeRecursive(controls::StateChange_Background|controls::StateChange_Text);
+    scene.frame();
+    CHECK((scene.renderer.fills[bar0] == barWas.top));
+    CHECK((scene.renderer.fills[stripe] == laneWas.top));
+    scene.frame();
+    CHECK(scene.written().empty());
+}
+
 TEST_CASE("Timeline renderer: a scroll writes the lanes in view alone, and hides the bars out of it")
 {
     Scene scene;
@@ -531,6 +596,15 @@ TEST_CASE("Timeline hover: the hover look's slot alone, the tooltip, and nothing
     timeline->setBar(0, 0, TimelineBar(0, 1800, 7));
     scene.frame();
     CHECK(timeline->getToolTipText() == "host-01  Jan 1 - Jan 1 00:30");
+
+    // a new caption of its lane or a new zone under a resting mouse: the
+    // tooltip follows; another lane's caption leaves it
+    timeline->setLaneCaption(0, "host-99");
+    CHECK(timeline->getToolTipText() == "host-99  Jan 1 - Jan 1 00:30");
+    timeline->setLaneCaption(1, "host-98");
+    CHECK(timeline->getToolTipText() == "host-99  Jan 1 - Jan 1 00:30");
+    timeline->setUtcOffset(controls::axis::fixedUtcOffset(3600));
+    CHECK(timeline->getToolTipText() == "host-99  Jan 1 01:00 - Jan 1 01:30");
 }
 
 TEST_CASE("Timeline hover: the app's text or control fills the tooltip for each bar")
