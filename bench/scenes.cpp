@@ -1221,6 +1221,63 @@ public:
     }
 };
 
+// code-edit-wrap: code-edit's edits in a wrapped editor (setWrap, no gutter) over the
+// same blocks with a long note key last, which wraps into two or three rows
+// at the editor's width. The caret is at the end of the note near line 500,
+// so the letters typed lengthen a wrapped line, now and then giving it a
+// row more and moving the rows below it, and Return and Backspace (the line
+// well inside the view, so they scroll nothing) add and
+// take a line of the variable-height list (insertItems, removeItems). The idle
+// re-measure is off, so a frame measures only the lines it edits and the ones
+// that come into view, whatever N.
+String wrapDocument(int lines)
+{
+    static const char *const keys[]={"  model: opus", "  host: worker-3", "  tags: [ui, text]",
+        "  limits:", "    tokens: 12000", "    minutes: 30"};
+    String text;
+
+    text.reserve(size_t(lines)*40);
+    for(int i=0; i < lines; ++i)
+    {
+        if(i > 0)
+            text+='\n';
+        if(i%8 == 0)
+            text+=format("agent_%d:", i/8);
+        else if(i%8 == 7)
+            text+="  note: read the brief and the comments first, build in the container, run the tests"
+                " under the render lock and keep each change to the lines it needs";
+        else
+            text+=keys[i%8-1];
+    }
+    return text;
+}
+
+class CodeEditWrapScene: public CodeEditScene
+{
+public:
+    void build(SceneContext &ctx) override
+    {
+        // no line numbers: a gutter as wide as the line count's digits would
+        // make the wrap width, and so the rows, depend on N
+        m_editor=ctx.canvas->newChild<controls::CodeEditor>();
+        place(m_editor, 10, 10, 600, ctx.size.y-20);
+        m_editor->setRemeasureBudget(0);
+        m_editor->setText(wrapDocument(ctx.n));
+        m_editor->setWrap(true);
+
+        const size_t line=size_t(std::min(500, ctx.n/2)/8*8+7);
+
+        m_editor->setCaret({line, m_editor->getDocument().line(line).size()});
+        // the caret's line a few lines above the viewport's bottom: a Return
+        // moves the handful of rows below it and scrolls nothing, so a frame's
+        // queue stays far under the quarter of the tree at which the render
+        // drain walks the tree instead of sorting (one thumb entry more or
+        // less, as the content's length rounds it, changes no path)
+        m_editor->scrollToItem(line+3);
+        m_editor->focus();
+    }
+};
+
 // code-scroll: the view one line down per measured frame (scrollByRows, as a
 // wheel's or a bar's step lands): every row on screen moves, one line comes
 // into view and one goes, with their numbers.
@@ -1432,6 +1489,9 @@ const std::vector<SceneInfo> &scenes()
         {"code-edit", "type, break and join lines and undo at line 500 of a CodeEditor of N YAML lines",
             true, 1000, 3, 24, Scaling::Local,
             []{ return std::unique_ptr<Scene>(new CodeEditScene()); }},
+        {"code-edit-wrap", "code-edit's edits at the end of a wrapped line in a wrapped CodeEditor of N lines",
+            true, 1000, 3, 24, Scaling::Local,
+            []{ return std::unique_ptr<Scene>(new CodeEditWrapScene()); }},
         {"code-scroll", "scroll a CodeEditor of N YAML lines with line numbers one line per frame",
             true, 1000, 3, 20, Scaling::Local,
             []{ return std::unique_ptr<Scene>(new CodeScrollScene()); }},
