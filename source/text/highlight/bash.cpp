@@ -13,7 +13,8 @@
 //! < > ( ) { } [[ ]] and $( Punctuation. A heredoc (<<EOF, <<-EOF, <<'EOF',
 //! <<"EOF") starts on the next line: its body is a String up to the line that
 //! is its delimiter alone (with <<-, after leading tabs), which is Meta, as the
-//! delimiter is where it is opened.
+//! delimiter is where it is opened. A << inside a $(( )) or (( )) on its line
+//! is a shift and opens none.
 //!
 //! The state: word 0 is the mode (0 code, 1 in '...', 2 in "...", 3 in a
 //! heredoc's body, 4 in a <<- heredoc's body); for a heredoc, words 1 and 2
@@ -177,6 +178,9 @@ public:
 
         // a heredoc opened on this line, its body from the next
         TokenState heredoc;
+        // the parentheses open in a $(( )) or (( )) on this line, where << is
+        // a shift and opens no heredoc
+        size_t arithmetic=0;
 
         while(i < line.size())
         {
@@ -227,6 +231,9 @@ public:
             {
                 if((i+1 < line.size()) && (line[i+1] == '('))
                 {
+                    // $(( opens arithmetic: its second '(' is counted below
+                    if((arithmetic > 0) || ((i+2 < line.size()) && (line[i+2] == '(')))
+                        ++arithmetic;
                     addToken(tokens, i, i+2, TokenKind::Punctuation);
                     i+=2;
                     continue;
@@ -239,7 +246,7 @@ public:
                 i=end;
                 continue;
             }
-            if(startsWithAt(line, i, "<<") && !startsWithAt(line, i, "<<<"))
+            if((arithmetic == 0) && startsWithAt(line, i, "<<") && !startsWithAt(line, i, "<<<"))
             {
                 size_t j=i+2;
                 uint32_t mode=Heredoc;
@@ -285,6 +292,13 @@ public:
             }
             if(inSet(c, "|&;<>(){}"))
             {
+                if(c == '(')
+                {
+                    if((arithmetic > 0) || (startsWithAt(line, i, "((") && wordStart(line, i)))
+                        ++arithmetic;
+                }
+                else if((c == ')') && (arithmetic > 0))
+                    --arithmetic;
                 addToken(tokens, i, i+1, TokenKind::Punctuation);
                 ++i;
                 continue;

@@ -10,7 +10,8 @@
  *  $?, $( and the operators; strings that run over lines; heredocs (<<EOF and
  *  <<-'EOF'), whose body is a String up to the line that is the delimiter
  *  alone, after leading tabs for <<-, and not ended by a line that only holds
- *  the delimiter among other text. Then seeded random edits keep the cache's
+ *  the delimiter among other text, and a << inside $(( )) or (( )), which
+ *  is a shift, opens none. Then seeded random edits keep the cache's
  *  lines what a fresh tokenize gives.
  */
 #include "highlightTesting.h"
@@ -96,6 +97,30 @@ TEST_CASE("bash: a heredoc's body is a String up to its delimiter alone on a lin
     CHECK(bash().tokenize("EOF", heredoc, tokens) == TokenState());
 }
 
+TEST_CASE("bash: a << inside $(( )) or (( )) is a shift, not a heredoc")
+{
+    test::checkLines(bash(),
+        "x=$((1 << 4))\n"
+        "echo \"$x\"\n"
+        "(( y = x<<2 ))\n"
+        "cat <<EOF\n"
+        "body\n"
+        "EOF",
+        {
+            "key'x' punctuation'=' punctuation'$(' punctuation'(' number'1' punctuation'<' punctuation'<' "
+                "number'4' punctuation')' punctuation')'",
+            "string'\"' meta'$x' string'\"'",
+            "punctuation'(' punctuation'(' punctuation'<' punctuation'<' number'2' punctuation')' punctuation')'",
+            "punctuation'<<' meta'EOF'",
+            "string'body'",
+            "meta'EOF'"
+        });
+
+    std::vector<gweni::text::Token> tokens;
+
+    CHECK(bash().tokenize("x=$((1 << 4))", TokenState(), tokens) == TokenState());
+}
+
 TEST_CASE("bash: after seeded random edits every line is what a fresh tokenize gives")
 {
     std::string text="#!/bin/sh\n";
@@ -110,5 +135,5 @@ TEST_CASE("bash: after seeded random edits every line is what a fresh tokenize g
             "fi\n";
     }
     test::checkRandomEdits(bash(), text,
-        { "<<EOF\n", "EOF\n", "'", "\"", "#", "$x", "${y}", "\n", "<<-X\n\tX\n", "if ", "done" });
+        { "<<EOF\n", "EOF\n", "'", "\"", "#", "$x", "${y}", "\n", "<<-X\n\tX\n", "if ", "done", "$((1 << 4))", "((", "))" });
 }

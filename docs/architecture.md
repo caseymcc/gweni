@@ -3381,7 +3381,8 @@ JSON, with JSONC's comments. diff: the file headers, a hunk header, and in a hun
 and new line counts in the state) `-` and `+` lines whatever they look like. bash:
 comments at a word's start, keywords as whole words, assignments, `'...'` and `"..."` over
 lines with the `$variables` cut out of the latter, and heredocs (the delimiter's FNV hash
-and length in the state). Markdown: ATX headings, thematic breaks, quote and list markers,
+and length in the state; a `<<` inside a `$(( ))` or `(( ))` on its line is a shift and
+opens none). Markdown: ATX headings, thematic breaks, quote and list markers,
 HTML comments over lines, code spans, strong, emphasis, links and escapes, and fences
 whose body is tokenized by the fence's language (yaml, json, bash or sh, diff), its state
 nested after the fence's word (bits for the mode, the language, `~` and the length), Code
@@ -3407,7 +3408,9 @@ is fresh as it is, at the cost of one comparison, and any other is tokenized aga
 edit tokenizes its lines; when its last line's end state is what it was the lines after
 are compared, not tokenized, and an edit that changes no state tokenizes one line. One
 that does (an opened fence, block scalar or `{# ...`) tokenizes through the last line on
-screen (`setVisibleLines`, the pooled rows' lines) and no further: the lines below keep
+screen (`setVisibleLines`, the pooled rows' lines, moved with their lines by an edit above
+them, as the list's anchor moves, so lines inserted above the screen take the pass to the
+lines on it after the shift, not those at the old numbers) and no further: the lines below keep
 what they had, and are compared or tokenized when a row is bound to them or they are
 scrolled to (the laziness has a price only once: a jump to the end after such an edit
 walks the comparisons down to it). Lines inserted or removed shift the entries after them
