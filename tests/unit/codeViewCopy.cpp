@@ -437,8 +437,11 @@ TEST_CASE("CodeView copy button: on a one-line view narrower than its line, insi
 
     const Rect barRect=bar->getBounds();
 
-    CAPTURE(rect.x); CAPTURE(rect.y); CAPTURE(rect.w); CAPTURE(rect.h);
-    CAPTURE(barRect.y); CAPTURE(scene.view->getHeight());
+    CAPTURE(rect.x);
+    CAPTURE(rect.y);
+    CAPTURE(rect.w);
+    CAPTURE(rect.h);
+    CAPTURE(barRect.y);
     CHECK(rect.x >= 0);
     CHECK(rect.x+rect.w <= scene.view->getWidth());
     CHECK(rect.y >= 0);
