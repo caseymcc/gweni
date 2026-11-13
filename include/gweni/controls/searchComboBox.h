@@ -9,6 +9,7 @@
 #define _gweni_controls_searchcombobox_h_
 
 #include <gweni/controls/button.h>
+#include <gweni/controls/chip.h>
 #include <gweni/controls/comboBox.h>
 #include <gweni/controls/menu.h>
 #include <gweni/controls/textBox.h>
@@ -109,6 +110,10 @@ public:
     //! Whether it shows the box's highlighted option; a change redraws it.
     void setHighlighted(bool highlighted);
     bool isHighlighted() const { return m_highlighted; }
+    //! Whether it shows a check, for an option a multi-select box has
+    //! picked; a change redraws it.
+    void setChecked(bool checked);
+    bool isChecked() const { return m_checked; }
 
     //! A real move of the mouse over it highlights its option; a hover that
     //! only follows the rows scrolling under a resting mouse does not, so
@@ -121,6 +126,7 @@ public:
 private:
     SearchComboBox *m_box=nullptr;
     bool m_highlighted=false;
+    bool m_checked=false;
 };
 
 //! A filterable SearchComboBox's text field: a TextBox over the box's text
@@ -145,6 +151,8 @@ public:
     bool onKeyDown(bool down) override;
     bool onKeyReturn(bool down) override;
     bool onKeyEscape(bool down) override;
+    //! In an empty field of a multi-select box, it takes the last pick away.
+    bool onKeyBackspace(bool down) override;
     void onMouseClickLeft(int x, int y, bool down) override;
     void onLostKeyboardFocus() override;
 
@@ -181,7 +189,13 @@ private:
 //!
 //! A press opens the list below the box (above it where it would run past
 //! the canvas's bottom) and a second press closes it; a click on a row picks
-//! that option.
+//! that option. While the list is open Up and Down move the highlight
+//! through the shown options, wrapping, scrolling it into view, Return picks
+//! it and Escape closes the list; while it is closed they change the
+//! selection, as a ComboBox's do. A pick fires onSelection when it changes
+//! the selection. The list follows the box: opened next to it, it is placed
+//! in every layout pass the box moves in, in that frame, and it opens over a
+//! Popup the box is in without closing it.
 //!
 //! Filterable (setFilterable(true)), a SearchComboBoxField over the box's
 //! text area takes the keyboard (made on first use, so a plain box has none;
@@ -208,13 +222,22 @@ private:
 //! the text, getSelectedIndex() NoOption, the field shows it, and the box
 //! adds no option (the app may; a text that is an option's label picks that
 //! option instead). The list closing leaves a free-text box's field as it
-//! is, for Return or the lost focus to decide. While the list is open Up and Down move the highlight
-//! through the shown options, wrapping, scrolling it into view, Return picks
-//! it and Escape closes the list; while it is closed they change the
-//! selection, as a ComboBox's do. A pick fires onSelection when it changes
-//! the selection. The list follows the box: opened next to it, it is placed
-//! in every layout pass the box moves in, in that frame, and it opens over a
-//! Popup the box is in without closing it.
+//! is, for Return or the lost focus to decide.
+//!
+//! Multi-select (setMultiSelect(true)): the box holds picks, each shown as a
+//! removable Chip in pick order, then the field when filterable, wrapped onto
+//! rows in the box's own arrange (ChipGap and RowGap apart, the field after
+//! the last chip when MinFieldWidth fits beside it), the box growing to its
+//! rows (its height flag Expand, so a request is the least it is). A pick of
+//! an option not picked adds it, of a picked one takes it away; picked rows
+//! show a check; the list stays open, and a filterable box's field is emptied
+//! for the next query. The chip's x, and Backspace in an empty field (or on
+//! a plain box), take a pick away. Each change fires onSelectionChange once;
+//! getSelectedIndices()/getSelectedValues() read the picks and
+//! setSelectedIndices() sets them, firing nothing. With free text a taken
+//! text is a pick of its own, a chip like the others. Up and Down on the
+//! closed box open the list. The open list follows the box's new bottom edge
+//! in the frame a chip wraps or goes.
 class GWENI_EXPORT SearchComboBox: public Button
 {
 public:
@@ -241,6 +264,11 @@ public:
     static constexpr size_t MaxShownRows=10;
     //! A row's text padding above and below its line (a MenuItem's).
     static constexpr int RowPaddingY=4;
+    //! A picked row's check: its side, and its inset from the row's right
+    //! edge, inside the row's right text padding (RowPaddingRight).
+    static constexpr int CheckSize=10;
+    static constexpr int CheckInset=3;
+    static constexpr int RowPaddingRight=16;
     //! No option selected or highlighted.
     static constexpr int NoOption=-1;
 
@@ -300,6 +328,37 @@ public:
     //! The text of the disabled row shown when no option matches.
     static const char *noMatchesText() { return "No matches"; }
 
+    //! Multi-select (above). Either way the picks or the selection start
+    //! empty, firing nothing; on, the height flag becomes Expand.
+    void setMultiSelect(bool multi);
+    bool isMultiSelect() const { return m_multi; }
+    //! The picked options, in pick order (free-text picks left out).
+    std::vector<int> getSelectedIndices() const;
+    //! Every pick's value, in pick order: an option's name (its label without
+    //! one) or a free-text pick's text.
+    std::vector<String> getSelectedValues() const;
+    //! The picks become these options, in this order (out of range and
+    //! repeated ones left out, free-text picks dropped), firing nothing.
+    void setSelectedIndices(const std::vector<int> &indices);
+    //! Whether option \p index is picked.
+    bool isPicked(int index) const;
+    //! The chips, in pick order.
+    std::vector<Chip *> getChips() const;
+    //! Fired once per change of the picks (the info's integer the option
+    //! picked or taken away, NoOption for a free-text one).
+    gweni::event::Caller onSelectionChange;
+
+    //! Units between two chips on a row, and between two rows.
+    static constexpr int ChipGap=4;
+    static constexpr int RowGap=2;
+    //! The least room the field takes beside the last chip; less, and it
+    //! goes to a row of its own.
+    static constexpr int MinFieldWidth=40;
+    //! Where the chips and the field go at the box's \p width: each chip's
+    //! rect, then the field's (empty with no field), in the box's units; and
+    //! the box's height for them.
+    void flowRects(int width, std::vector<Rect> &chips, Rect &field, int &height);
+
     void openList();
     void closeList();
     bool isListOpen() const;
@@ -331,6 +390,8 @@ public:
     bool onKeyDown(bool down) override;
     bool onKeyReturn(bool down) override;
     bool onKeyEscape(bool down) override;
+    //! A plain multi-select box: the last pick away.
+    bool onKeyBackspace(bool down) override;
     //! A filterable box gives the focus to its field.
     void onKeyboardFocus() override;
     //! Filterable, a press on the box (its chevron's column) leaves the
@@ -338,13 +399,15 @@ public:
     bool pressKeepsKeyboardFocus() override { return m_filterable; }
     //! The field is disabled with the box.
     void setDisabled(bool disabled) override;
-    //! The field over the text area, along each axis before the children.
+    //! The field over the text area (multi-select: the chips and the field
+    //! where flowRects() puts them), along each axis before the children.
     void arrange(skin::Base *skin, Dim dim) override;
 
     //! In X, the widest option's label in this box's font as well as the
     //! shown text, with the text padding and the chevron column, as a
     //! ComboBox's: the labels are measured again only when they or the font
-    //! (the renderer's text layout) changed.
+    //! (the renderer's text layout) changed. Multi-select, in Y the height
+    //! flowRects() gives at the box's width, final by then.
     void calculateSize(skin::Base *skin, Dim dim) override;
     void updateColors() override;
     void renderFocus(skin::Base *skin) override {}
@@ -417,6 +480,24 @@ protected:
     void highlightPosition(size_t position, bool scroll);
     //! Picks option \p index from the list: selects it and closes the list.
     void pick(int index, bool doEvents);
+    //! Multi-select: option \p index picked if it was not, taken away if it
+    //! was (onSelectionChange once); the list stays open.
+    void togglePick(int index);
+    //! A pick added: option \p index, or free text \p text with NoOption.
+    void addPick(int index, const String &text);
+    //! Pick \p at taken away, its chip hidden and deleted after the frame.
+    void removePick(size_t at, bool doEvents);
+    //! A chip's x was clicked.
+    void chipRemoved(event::Info info);
+    //! The picks dropped, firing nothing; free-text ones kept with \p keepCustom.
+    void clearPicks(bool keepCustom);
+    //! After a multi-select pick: the field emptied for the next query, the
+    //! list showing every option again, the highlight on \p position's option.
+    void afterMultiPick(int option);
+    //! The row showing option \p index checked or not.
+    void refreshCheck(int index);
+    //! onSelectionChange for option \p index (NoOption: a free-text pick).
+    void fireSelectionChange(int index);
     void rowPressed(event::Info info);
     void bindRow(Base *row, size_t item);
     //! Moves the highlight by \p step through the shown options, wrapping.
@@ -456,6 +537,18 @@ protected:
     String m_query;
     String m_lowerQuery;
     size_t m_rowBinds=0;
+
+    //! Multi-select: the picks in order, each its option (NoOption for free
+    //! text, then its text) and its chip; m_picked whether each option is.
+    struct Pick
+    {
+        int option=NoOption;
+        String text;
+        Chip *chip=nullptr;
+    };
+    bool m_multi=false;
+    std::vector<Pick> m_picks;
+    std::vector<char> m_picked;
 
     internal::SearchComboBoxList *m_list=nullptr;
     internal::SearchComboBoxOptions *m_rows=nullptr;

@@ -3,9 +3,9 @@
  *  Copyright (c) 2010 Facepunch Studios
  *  MIT License, see LICENSE
  *
- *  controls::SearchComboBox, plain, filterable and free text, on a real Canvas with the stub
- *  skin, clicked through input::onMouseClicked and keyed through
- *  input::onKeyEvent.
+ *  controls::SearchComboBox, plain, filterable, free text and multi-select, on
+ *  a real Canvas with the stub skin, clicked through input::onMouseClicked and
+ *  keyed through input::onKeyEvent.
  *
  *  Options are data: the first one added is selected with no event, as are
  *  setOptions()' first, clearOptions() leaves none, setSelectedIndex() fires
@@ -61,10 +61,27 @@
  *  the text with the list closed by the box's chevron, the focus staying.
  *  An option the handler adds, one added later and setOptions() leave a
  *  free-text value the value.
+ *
+ *  Multi-select: no selection and no text on the box; a row click and Return
+ *  each add the option as a chip, in pick order, the list staying open with
+ *  the row checked and highlighted, and a picked option picked again goes
+ *  (onSelectionChange once each, onSelection never). A chip's x and Backspace
+ *  in the empty field take a pick away (the chip deleted with the frame),
+ *  Backspace in a field with text edits it, and on a plain box it takes the
+ *  last pick; Up and Down on the closed box open the list. setSelectedIndices
+ *  fires nothing and leaves out repeated and out-of-range indices, and
+ *  getSelectedValues gives names (labels without one). Two chips and the
+ *  field's least width fit a box made that wide; a third wraps to a second
+ *  row with the field after it, the box taller and the open list at its new
+ *  bottom in that frame, in one pass, and removing it gives the one row back,
+ *  the list following again, with layout verification off and on. A free-text
+ *  value is a chip of its own, once, the field emptied and the list on every
+ *  option again; an option's label typed in full and a lost focus pick it.
  */
 #include "headlessFixture.h"
 
 #include <gweni/controls/button.h>
+#include <gweni/controls/chip.h>
 #include <gweni/controls/popup.h>
 #include <gweni/controls/searchComboBox.h>
 #include <gweni/controls/textBox.h>
@@ -78,6 +95,7 @@
 
 using namespace gweni;
 using controls::SearchComboBox;
+using controls::Chip;
 
 namespace
 {
@@ -1240,4 +1258,291 @@ TEST_CASE("SearchComboBox: free text, an option the handler adds leaves the valu
     CHECK(box->getValue() == "web-3");
     CHECK(box->getSelectedIndex() == SearchComboBox::NoOption);
     CHECK(box->getField()->getText() == "web-3");
+}
+
+namespace
+{
+
+std::vector<String> chipTexts(SearchComboBox *box)
+{
+    std::vector<String> texts;
+
+    for(Chip *chip : box->getChips())
+        texts.push_back(chip->getText());
+    return texts;
+}
+
+SearchComboBox *multi(Scene &scene, const std::vector<String> &labels, bool filterable)
+{
+    SearchComboBox *box=filterable?::filterable(scene, labels):scene.box(0);
+
+    if(!filterable)
+    {
+        std::vector<SearchComboBox::Option> options;
+
+        for(const String &label : labels)
+            options.push_back({label, ""});
+        box->setOptions(std::move(options));
+    }
+    box->setMultiSelect(true);
+    scene.frame();
+    return box;
+}
+
+}//namespace
+
+TEST_CASE("SearchComboBox: multi-select, each pick is a chip in pick order and a second pick takes it away")
+{
+    Scene scene;
+    SearchComboBox *box=multi(scene, {"red", "green", "blue", "grey", "gold"}, false);
+    Counter changes, selections;
+
+    changes.listen(box->onSelectionChange);
+    selections.listen(box->onSelection);
+    CHECK(box->isMultiSelect());
+    CHECK(box->getSelectedIndices().empty());
+    CHECK(box->getSelectedIndex() == SearchComboBox::NoOption);
+    CHECK(box->getText() == "");
+
+    scene.clickOn(box);
+    REQUIRE(box->isListOpen());
+    REQUIRE(rowFor(box, 2));
+    scene.clickOn(rowFor(box, 2));
+    // the list stays open, the picked row checked and highlighted
+    CHECK(box->isListOpen());
+    CHECK(box->getSelectedIndices() == std::vector<int>{2});
+    CHECK(chipTexts(box) == std::vector<String>{"blue"});
+    CHECK(rowFor(box, 2)->isChecked());
+    CHECK(!rowFor(box, 1)->isChecked());
+    CHECK(box->getHighlightedIndex() == 2);
+    CHECK(changes.calls == 1);
+
+    // Return picks the highlighted row: the order is the picks'
+    scene.key(keys::Up);
+    scene.key(keys::Up);
+    scene.key(keys::Return);
+    CHECK(box->getSelectedIndices() == (std::vector<int>{2, 0}));
+    CHECK(chipTexts(box) == (std::vector<String>{"blue", "red"}));
+    CHECK(rowFor(box, 0)->isChecked());
+    CHECK(box->isListOpen());
+
+    // a picked one picked again goes
+    scene.clickOn(rowFor(box, 2));
+    CHECK(box->getSelectedIndices() == std::vector<int>{0});
+    CHECK(chipTexts(box) == std::vector<String>{"red"});
+    CHECK(!rowFor(box, 2)->isChecked());
+    CHECK(changes.calls == 3);
+    CHECK(selections.calls == 0);
+    CHECK(box->getValue() == "");
+    CHECK(box->getSelectedValues() == std::vector<String>{"red"});
+}
+
+TEST_CASE("SearchComboBox: multi-select, the chip's x and Backspace in an empty field take a pick away")
+{
+    Scene scene;
+    SearchComboBox *box=multi(scene, {"red", "green", "blue", "grey", "gold"}, true);
+    Counter changes;
+
+    changes.listen(box->onSelectionChange);
+    box->setSelectedIndices({0, 2, 4});
+    scene.frame();
+    REQUIRE(box->getChips().size() == 3);
+
+    // the x of the middle chip
+    Chip *middle=box->getChips()[1];
+
+    REQUIRE(middle->getRemoveButton());
+    scene.clickOn(middle->getRemoveButton());
+    CHECK(box->getSelectedIndices() == (std::vector<int>{0, 4}));
+    CHECK(changes.calls == 1);
+    // the click's frame deleted it
+    CHECK(box->getChips().size() == 2);
+    CHECK(chipTexts(box) == (std::vector<String>{"red", "gold"}));
+
+    // Backspace in the empty field: the last pick
+    box->getField()->focus();
+    scene.key(keys::Backspace);
+    CHECK(box->getSelectedIndices() == std::vector<int>{0});
+    CHECK(changes.calls == 2);
+
+    // with text in the field it edits the text
+    type(scene, "gr");
+    scene.key(keys::Backspace);
+    CHECK(box->getField()->getText() == "g");
+    CHECK(box->getSelectedIndices() == std::vector<int>{0});
+    CHECK(changes.calls == 2);
+}
+
+TEST_CASE("SearchComboBox: multi-select, setSelectedIndices fires nothing and leaves out repeated and out-of-range indices")
+{
+    Scene scene;
+    SearchComboBox *box=multi(scene, {"red", "green", "blue"}, false);
+    Counter changes;
+
+    changes.listen(box->onSelectionChange);
+    box->setOptions({{"red", "r"}, {"green", ""}, {"blue", "b"}});
+    box->setSelectedIndices({2, 0, 2, 7, -1});
+    scene.frame();
+    CHECK(box->getSelectedIndices() == (std::vector<int>{2, 0}));
+    CHECK(box->getSelectedValues() == (std::vector<String>{"b", "r"}));
+    CHECK(chipTexts(box) == (std::vector<String>{"blue", "red"}));
+    CHECK(box->isPicked(0));
+    CHECK(!box->isPicked(1));
+
+    box->setSelectedIndices({1});
+    scene.frame();
+    CHECK(box->getSelectedIndices() == std::vector<int>{1});
+    CHECK(box->getSelectedValues() == std::vector<String>{"green"});
+    CHECK(chipTexts(box) == std::vector<String>{"green"});
+    CHECK(changes.calls == 0);
+}
+
+TEST_CASE("SearchComboBox: multi-select, chips wrap onto a new row and the open list follows the box's new bottom in that frame")
+{
+    const bool verify=controls::layoutVerifyEnabled();
+    const size_t verifyFailures=controls::layoutVerifyFailures();
+
+    for(bool verifying : {false, true})
+    {
+        CAPTURE(verifying);
+        controls::setLayoutVerify(verifying);
+
+        Scene scene;
+        SearchComboBox *box=multi(scene, {"alpha-one", "beta-two", "gamma-three", "delta"}, true);
+        controls::Base *below=scene.canvas->newChild<controls::Base>();
+
+        below->setSizeFlags({SizeFlag::Fixed, SizeFlag::Fixed});
+        below->setBounds(20, 200, 50, 20);
+        scene.frame();
+
+        const int oneRow=box->getHeight();
+
+        box->getField()->focus();
+        scene.key(keys::Down);
+        REQUIRE(box->isListOpen());
+        REQUIRE(rowFor(box, 0));
+        scene.clickOn(rowFor(box, 0));
+        scene.clickOn(rowFor(box, 1));
+        REQUIRE(box->getChips().size() == 2);
+
+        // as wide as the two chips and the field's least width beside them
+        const int chipsWidth=box->getChips()[0]->getPreferredSize().width+SearchComboBox::ChipGap
+            +box->getChips()[1]->getPreferredSize().width+SearchComboBox::ChipGap;
+        const int inset=box->getPadding().left+box->getTextPadding().left;
+        const int rightInset=box->getPadding().right+box->getTextPadding().right;
+
+        box->setWidth(inset+chipsWidth+SearchComboBox::MinFieldWidth+rightInset);
+        scene.frame();
+
+        const Rect first=box->getChips()[0]->getBounds();
+        const Rect second=box->getChips()[1]->getBounds();
+
+        REQUIRE(box->getField()->getBounds().y == first.y);
+        CHECK(box->getField()->getBounds().w == SearchComboBox::MinFieldWidth);
+
+        // side by side on the first row
+        CHECK(second.y == first.y);
+        CHECK(second.x == first.x+first.w+SearchComboBox::ChipGap);
+
+        const int beforeWrap=box->getHeight();
+
+        // the third does not fit beside them: a second row, the box taller,
+        // the list at its new bottom, in the frame of the pick and one pass
+        REQUIRE(rowFor(box, 2));
+        scene.clickOn(rowFor(box, 2));
+        REQUIRE(box->getChips().size() == 3);
+
+        const Rect third=box->getChips()[2]->getBounds();
+
+        CHECK(scene.canvas->getLayoutStats().passes == 1);
+        CHECK(third.y > first.y);
+        CHECK(third.x == first.x);
+        CHECK(box->getHeight() > beforeWrap);
+        CHECK(beforeWrap >= oneRow);
+        CHECK(box->isListOpen());
+        CHECK(box->getList()->getY() == Scene::canvasRect(box).y+box->getHeight());
+        // the field after the last chip, inside the box
+        const Rect field=box->getField()->getBounds();
+
+        CHECK(field.y == third.y);
+        CHECK(field.x > third.x+third.w);
+        CHECK(field.x+field.w <= box->getWidth());
+
+        // and back to one row when it goes, the list following again
+        scene.clickOn(box->getChips()[2]->getRemoveButton());
+        CHECK(box->getHeight() == beforeWrap);
+        CHECK(box->getList()->getY() == Scene::canvasRect(box).y+box->getHeight());
+        CHECK(scene.canvas->getLayoutStats().passes == 1);
+
+        scene.frame();
+        CHECK(scene.canvas->getLayoutStats().passes == 0);
+    }
+    CHECK(controls::layoutVerifyFailures() == verifyFailures);
+    controls::setLayoutVerify(verify);
+}
+
+TEST_CASE("SearchComboBox: multi-select, a free-text value becomes a chip of its own, once")
+{
+    Scene scene;
+    SearchComboBox *box=multi(scene, {"web-1", "web-2"}, true);
+    CustomValues customs;
+    Counter changes;
+
+    box->setAllowCustomValue(true);
+    customs.listen(box);
+    changes.listen(box->onSelectionChange);
+    box->getField()->focus();
+    type(scene, "newtag");
+    REQUIRE(box->isAddRowHighlighted());
+    scene.key(keys::Return);
+    CHECK(customs.texts == std::vector<String>{"newtag"});
+    CHECK(chipTexts(box) == std::vector<String>{"newtag"});
+    CHECK(box->getSelectedValues() == std::vector<String>{"newtag"});
+    CHECK(box->getSelectedIndices().empty());
+    CHECK(!box->hasCustomValue());
+    // the field is empty for the next one, the list open on every option
+    CHECK(box->getField()->getText() == "");
+    CHECK(box->isListOpen());
+    CHECK(shown(box).size() == 2);
+    CHECK(changes.calls == 1);
+
+    // the same text again adds no second chip
+    type(scene, "newtag");
+    scene.key(keys::Return);
+    CHECK(chipTexts(box) == std::vector<String>{"newtag"});
+    CHECK(changes.calls == 1);
+
+    // an option typed in full and a lost focus pick it
+    type(scene, "WEB-2");
+    box->getField()->unfocus();
+    scene.frame();
+    CHECK(box->getSelectedIndices() == std::vector<int>{1});
+    CHECK(chipTexts(box) == (std::vector<String>{"newtag", "web-2"}));
+    CHECK(box->getField()->getText() == "");
+    CHECK(changes.calls == 2);
+}
+
+TEST_CASE("SearchComboBox: multi-select, Up and Down on the closed box open the list, Backspace on a plain box takes the last pick")
+{
+    Scene scene;
+    SearchComboBox *box=multi(scene, {"red", "green", "blue"}, false);
+    Counter changes;
+
+    changes.listen(box->onSelectionChange);
+    box->setSelectedIndices({0, 1});
+    box->focus();
+    scene.frame();
+
+    scene.key(keys::Down);
+    CHECK(box->isListOpen());
+    CHECK(box->getSelectedIndices() == (std::vector<int>{0, 1}));
+    scene.key(keys::Escape);
+    CHECK(!box->isListOpen());
+    scene.key(keys::Up);
+    CHECK(box->isListOpen());
+    scene.key(keys::Escape);
+
+    scene.key(keys::Backspace);
+    CHECK(box->getSelectedIndices() == std::vector<int>{0});
+    CHECK(changes.calls == 1);
 }
