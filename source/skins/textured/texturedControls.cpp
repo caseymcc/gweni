@@ -1803,12 +1803,33 @@ void PlotHistogram::update(renderer::Base *renderer, controls::Base *baseControl
 void RichText::update(renderer::Base *renderer, controls::Base *baseControl)
 {
     controls::RichText *rich=static_cast<controls::RichText *>(baseControl);
-    const std::vector<text::RichPiece> &pieces=rich->getLayout().pieces();
-    const std::vector<controls::RichSpan> &spans=rich->getSpans();
     const unsigned int sc=baseControl->getStateChange();
     const bool all=(sc&(controls::StateChange_Created|controls::StateChange_Visibility
         |controls::StateChange_Geometry)) != 0;
-    const bool visible=baseControl->visible();
+
+    // hidden, only what is shown is hidden: a hidden control is not laid out,
+    // so its pieces can name spans setSpans has since taken away. Shown again
+    // it is marked StateChange_Visibility, laid out first and drawn whole.
+    if(!baseControl->visible())
+    {
+        for(size_t i=0; i < m_texts.size(); ++i)
+        {
+            if(all || m_runs[i].shown)
+                renderer->hideText(m_texts[i]);
+            m_runs[i].shown=false;
+        }
+        for(size_t i=0; i < m_drawn.size(); ++i)
+        {
+            if(all || m_drawn[i].shown)
+                renderer->hidePrimitive(m_primitives[i]);
+            m_drawn[i].shown=false;
+            m_drawn[i].valid=false;
+        }
+        return;
+    }
+
+    const std::vector<text::RichPiece> &pieces=rich->getLayout().pieces();
+    const std::vector<controls::RichSpan> &spans=rich->getSpans();
     const int z=baseControl->getZIndex();
     const gweni::Rect &bounds=baseControl->getRenderBounds();
     const gweni::Point origin(bounds.x+rich->contentOrigin().x, bounds.y+rich->contentOrigin().y);
@@ -1848,14 +1869,11 @@ void RichText::update(renderer::Base *renderer, controls::Base *baseControl)
             run.pos=pos;
             run.zIndex=z+1;
         }
-        // a new run is drawn shown: told whether it is
-        if(all || !run.valid || (run.shown != visible))
+        // a new run is drawn shown: told it is
+        if(all || !run.valid || !run.shown)
         {
-            if(visible)
-                renderer->showText(m_texts[i]);
-            else
-                renderer->hideText(m_texts[i]);
-            run.shown=visible;
+            renderer->showText(m_texts[i]);
+            run.shown=true;
         }
         run.valid=true;
     }
@@ -1914,15 +1932,6 @@ void RichText::update(renderer::Base *renderer, controls::Base *baseControl)
     {
         const Want &want=wants[i];
         Drawn &drawn=m_drawn[i];
-
-        if(!visible)
-        {
-            if(all || !drawn.valid || drawn.shown)
-                renderer->hidePrimitive(m_primitives[i]);
-            // drawn again once shown, which marks the visibility
-            drawn.valid=false;
-            continue;
-        }
 
         if(!all && drawn.valid && drawn.shown && (drawn.rule == want.rule) && (drawn.rect == want.rect)
             && (drawn.zIndex == want.zIndex) && (want.rule?(drawn.color == want.color)
