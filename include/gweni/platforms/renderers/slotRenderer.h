@@ -1187,7 +1187,7 @@ private:
         size_t start=0;
         size_t capacity=0;
         size_t glyphs=0;
-        gweni::Point position{0, 0};
+        gweni::Point position{0, 0}; //!< device origin, moved by renderText to put its baseline on its canvas-unit row
         int zIndex=0;
         bool hidden=false;
         //! drawn with colour spans, kept in m_textRunSpans under its text id (in

@@ -4134,9 +4134,17 @@ line of several fonts needs each font's ascender to share a baseline.
 `descender` (`lineHeight - ascender`) and `lineHeight`, in whole canvas units, the same at
 every canvas scale, like `measureText`: `SlotRenderer` reads them from the measure font at
 `font.size` (an SDF one as `layoutSdfText` places its baseline, `roundf(ascender*px/48)`; a
-coverage or LCD one as `text_buffer_add_char` truncates the pen, `floor(ascender)`), so
-the baseline `renderText` draws is `pos.y + ascender` at scale 1, 1.5 and 2
-(`tests/fontMetrics.cpp`, GL and Vulkan). `renderer::Base`'s default derives them from
+coverage or LCD one as `text_buffer_add_char` truncates the pen, `floor(ascender)`), and
+the baseline `renderText` draws is the device row of `pos.y + ascender`,
+`snap(pos.y + ascender)`, at every scale (`tests/fontMetrics.cpp`, scales 1, 1.25, 1.5 and
+2, coverage and SDF, GL and Vulkan). At a scale other than 1 the run is drawn from another
+font (at `px`, often SDF), whose own whole-pixel ascender is not the scale times the
+measured one, so `renderText` moves the run by whole device pixels to put its first
+baseline on that row: without it each font's run landed its own fraction of a unit off,
+and a RichText line's mono code sat 2 device px above its text at scale 2. At `px ==
+font.size` it is the measured font and nothing moves, so scale 1 draws as before.
+`TextRun::position` holds the moved origin, so a run moved to an origin whose baseline
+rounds the other way is still byte for byte a fresh layout. `renderer::Base`'s default derives them from
 `lineHeight()` (StubRenderer's, `tests/unit/fontMetrics.cpp`). A control asks through
 `Base::measureFontMetrics`, counted in `measure_calls` with the other measures.
 

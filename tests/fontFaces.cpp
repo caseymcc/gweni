@@ -36,6 +36,8 @@
 #include <string>
 #include <vector>
 
+#include <unistd.h>
+
 namespace
 {
 
@@ -164,7 +166,8 @@ const Style styles[]={
 //! A copy of resources/ less one file
 fs::path resourcesWithout(const std::string &name, const std::string &missing)
 {
-    const fs::path dir=fs::temp_directory_path()/name;
+    // one per process: unittests and unittests_vulkan run side by side under ctest -j
+    const fs::path dir=fs::temp_directory_path()/(name+"-"+std::to_string(::getpid()));
 
     fs::remove_all(dir);
     fs::create_directories(dir);

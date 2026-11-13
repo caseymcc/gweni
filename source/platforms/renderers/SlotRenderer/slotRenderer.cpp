@@ -3129,8 +3129,35 @@ void SlotRenderer::renderTextRun(size_t textId, const gweni::Font &font, gweni::
         m_textRuns.resize(textId+1);
 
     TextRun &run=m_textRuns[textId];
+    // the run's first baseline in canvas units, measured at font.size
+    int baselineY=pos.y;
+
+    if(px != font.size)
+    {
+        std::pair<const FontKey, FontData> *drawFont=m_lastFont;
+
+        if(ensureFont(font, font.size))
+            baselineY+=baselineOffset(m_lastFont->second, font.size);
+        m_lastFont=drawFont;
+    }
 
     translate(pos.x, pos.y);
+
+    // At a scale other than 1 the run is drawn from another font (at px, often SDF)
+    // whose own whole-pixel ascender is not the scale times the measured one, so
+    // each run would put its baseline its own fraction of a unit off and runs in
+    // two fonts on one canvas-unit baseline (a RichText line) would not share a
+    // device row. The run is moved by whole pixels so its first baseline is the
+    // device row of its canvas-unit baseline, the same for every font; run.position
+    // holds the moved origin, so a move (which can change the rounding) is still a
+    // fresh layout. At px == font.size it is the measured font and nothing moves.
+    if(px != font.size)
+    {
+        int baselineX=0;
+
+        translate(baselineX, baselineY);
+        pos.y=baselineY-baselineOffset(m_lastFont->second, px);
+    }
 
     // The colour the rebuild below bakes into the glyphs. Its alpha is always
     // opaque, so the draw colour's alpha takes no part: a change in alpha alone
