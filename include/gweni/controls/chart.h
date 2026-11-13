@@ -10,6 +10,7 @@
 
 #include <gweni/controls/base.h>
 #include <gweni/controls/chartAxis.h>
+#include <gweni/controls/selectable.h>
 
 #include <unordered_map>
 #include <vector>
@@ -18,9 +19,53 @@ namespace gweni
 {
 namespace controls
 {
+class Chart;
+class ScrollControl;
+
 namespace internal
 {
 class Text;
+
+//! A row of a Chart's legend: a Selectable (it highlights while hovered and
+//! presses as one) with its series' swatch in a column left of the series'
+//! name. A click toggles the series (Chart::setSeriesVisible) and never selects
+//! the row; a hidden series' row shows a faded swatch and its name in the
+//! skin's Colors.Selectable.Disabled.
+class GWENI_EXPORT ChartLegendRow: public Selectable
+{
+public:
+
+    GWENI_CONTROL(ChartLegendRow, Selectable);
+
+public:
+
+    //! The swatch: a SwatchSize square SwatchInset in from the row's left,
+    //! the name SwatchGap after it.
+    static constexpr int SwatchSize=10;
+    static constexpr int SwatchInset=6;
+    static constexpr int SwatchGap=5;
+    //! The row's padding round its name (Selectable's, the swatch's column
+    //! added on the left).
+    static constexpr int PaddingLeft=SwatchInset+SwatchSize+SwatchGap;
+    static constexpr int PaddingRight=6;
+    static constexpr int PaddingY=3;
+
+    void setSeries(Chart *chart, size_t series) { m_chart=chart; m_series=series; }
+    Chart *getChart() const { return m_chart; }
+    size_t getSeries() const { return m_series; }
+    //! Whether its series is shown, and its colour index (the chart's).
+    bool isSeriesShown() const;
+    int getColorIndex() const;
+    //! The swatch's rect in the row's own coordinates, centred on its height.
+    Rect getSwatchRect() const;
+
+    void onPress(event::Info info) override;
+    void updateColors() override;
+
+private:
+    Chart *m_chart=nullptr;
+    size_t m_series=0;
+};
 }
 
 //! How a Chart series is drawn.
@@ -261,6 +306,27 @@ public:
     //! plot: false when it is outside it.
     bool getSpanRect(size_t span, Rect &rect) const;
 
+    // ---- the legend ---------------------------------------------------
+
+    //! The legend: a column at the chart's right, one internal::ChartLegendRow
+    //! per series (its swatch and its name), in a ScrollControl that scrolls
+    //! when the rows are taller than the chart's inner height; as wide as its
+    //! content (its widest row, with the bar's thickness when it scrolls), a
+    //! third of the chart's inner width at most, as high as its content and
+    //! the chart's inner height at most, LegendGap clear of the plot and the right
+    //! axis's labels. A click on a row toggles its series: an automatic axis
+    //! rescales, the stacks are worked out again, and onSeriesToggled fires
+    //! with the series in info.integer and the row as info.control (an app's
+    //! setSeriesVisible() fires nothing). Shown by default, and hidden while
+    //! the chart has no series.
+    void setLegendVisible(bool visible);
+    bool isLegendVisible() const { return m_legendVisible; }
+    ScrollControl *getLegend() const { return m_legend; }
+    internal::ChartLegendRow *getLegendRow(size_t series) const;
+    static constexpr int LegendGap=8;
+
+    gweni::event::Caller onSeriesToggled;
+
     //! A marker's caption is clipped to the plot; the other labels are not.
     const Rect *getChildClipRect(const Base *child) const override;
     bool hasChildClipRects() const override { return true; }
@@ -407,7 +473,20 @@ protected:
 
     //! Places the markers' captions in the plot (layout()).
     void placeMarkerCaptions();
+    //! The legend's rows brought up to the series (outside a layout), and its
+    //! visibility; laid out by the next layout.
+    void syncLegend();
+    //! Places the legend (layout()) and returns the room it takes from the
+    //! right of the chart's inner rect, its gap included.
+    int placeLegend(int innerLeft, int innerTop, int innerRight, int innerBottom);
+    //! A legend row was pressed: toggles its series.
+    void legendRowPressed(internal::ChartLegendRow &row);
+    friend class internal::ChartLegendRow;
     bool isMarkerLabel(const Base *child) const;
+
+    ScrollControl *m_legend=nullptr;
+    bool m_legendVisible=true;
+    std::vector<internal::ChartLegendRow *> m_legendRows;
 
     std::vector<Series> m_series;
     std::vector<Marker> m_markers;

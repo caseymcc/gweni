@@ -1079,6 +1079,25 @@ public:
     inline static const std::string_view name="Selectable";
 };
 
+// A Chart's legend row: [0] its background as a Selectable's (hidden at rest,
+// SelectableHover and SelectableDown; a legend row is never selected), and [1]
+// its swatch at getZIndex()+1, ChartLegendRow::getSwatchRect() in its series'
+// ChartSeries<colour> (fill and border at a quarter of their alpha while the
+// series is hidden). Its Text draws the name.
+class ChartLegendRow:public textured::ControlRegister<ChartLegendRow>
+{
+public:
+    static void staticInit(TexturedSkin *) { m_staticInit=true; }
+
+    size_t requiredPrimitives() override { return 2; }
+    // the swatch is drawn at getZIndex()+1, over the background
+    size_t depthLayers() override { return 2; }
+
+    void update(renderer::Base *renderer, controls::Base *baseControl) override;
+
+    inline static const std::string_view name="ChartLegendRow";
+};
+
 // A TreeNode's label, a flat list row as a ListBox's: hidden at rest (and while
 // disabled), ListItemHover while hovered, ListItemSel while selected (the
 // title's toggle state); the Button's Text draws the string.

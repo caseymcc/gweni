@@ -900,6 +900,58 @@ void Selectable::update(renderer::Base *renderer, controls::Base *baseControl)
 }
 
 ///////////////////////////////////////////////////////////////////////////
+//ChartLegendRow
+void ChartLegendRow::update(renderer::Base *renderer, controls::Base *baseControl)
+{
+    if(m_primitives.size() < 2)
+        return;
+
+    controls::internal::ChartLegendRow *row=static_cast<controls::internal::ChartLegendRow *>(baseControl);
+    const tokyonight::Surface *surface=nullptr;
+
+    if(!row->isDisabled())
+    {
+        if(row->isDepressed())
+            surface=&tokyonight::SelectableDown;
+        else if(row->isHovered())
+            surface=&tokyonight::SelectableHover;
+    }
+
+    if(!baseControl->visible())
+    {
+        renderer->hidePrimitive(m_primitives[0]);
+        renderer->hidePrimitive(m_primitives[1]);
+        return;
+    }
+
+    const gweni::Rect &bounds=baseControl->getRenderBounds();
+    const int z=baseControl->getZIndex();
+
+    // an idle row draws nothing: its slot is hidden, as a Selectable's
+    if(surface)
+        renderer->drawRoundedRect(m_primitives[0], bounds, surface->radius, surface->borderWidth, surface->top,
+            surface->bottom, surface->border, z);
+    else
+        renderer->hidePrimitive(m_primitives[0]);
+
+    tokyonight::Surface swatch=tokyonight::chartSeries(row->getColorIndex());
+
+    if(!row->isSeriesShown())
+    {
+        swatch.top.a=static_cast<unsigned char>(swatch.top.a/4);
+        swatch.bottom.a=static_cast<unsigned char>(swatch.bottom.a/4);
+        swatch.border.a=static_cast<unsigned char>(swatch.border.a/4);
+    }
+
+    gweni::Rect rect=row->getSwatchRect();
+
+    rect.x+=bounds.x;
+    rect.y+=bounds.y;
+    renderer->drawRoundedRect(m_primitives[1], rect, std::min(swatch.radius, 2.0f), swatch.borderWidth,
+        swatch.top, swatch.bottom, swatch.border, z+1);
+}
+
+///////////////////////////////////////////////////////////////////////////
 //TreeNodeText
 void TreeNodeText::update(renderer::Base *renderer, controls::Base *baseControl)
 {
@@ -3719,6 +3771,7 @@ template class ControlRegister<SliderBar>;
 template class ControlRegister<PlotHistogram>;
 template class ControlRegister<PlotLines>;
 template class ControlRegister<Chart>;
+template class ControlRegister<ChartLegendRow>;
 template class ControlRegister<ColorLerpBox>;
 template class ControlRegister<ColorSlider>;
 template class ControlRegister<ColorDisplay>;

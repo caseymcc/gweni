@@ -7,6 +7,7 @@
 
 #include <gweni/controls/chart.h>
 #include <gweni/controls/canvas.h>
+#include <gweni/controls/scrollControl.h>
 #include <gweni/controls/text.h>
 #include <gweni/skin.h>
 
@@ -48,6 +49,13 @@ GWENI_CONTROL_CONSTRUCTOR(Chart)
     setPadding(Padding(4, 4, 4, 4));
     m_yAxes[0].grid=true;
     m_utcOffset=axis::localUtcOffset();
+
+    // the legend's rows scroll up and down, never sideways
+    m_legend=newChild<ScrollControl>();
+    m_legend->setPlacement(Placement::Owner);
+    m_legend->setScroll(false, true);
+    m_legend->setAutoHideBars(true);
+    m_legend->setHidden(true);
 }
 
 // the labels are children: ~Base deletes them
@@ -71,6 +79,7 @@ size_t Chart::addSeries(const String &name, ChartSeriesType type, ChartAxisSide 
     // renumber: this control's range is numbered again
     zOrderChanged();
     axesChanged();
+    syncLegend();
     return m_series.size()-1;
 }
 
@@ -83,6 +92,7 @@ void Chart::removeSeries(size_t series)
 
     zOrderChanged();
     axesChanged();
+    syncLegend();
 }
 
 void Chart::clearSeries()
@@ -94,12 +104,16 @@ void Chart::clearSeries()
 
     zOrderChanged();
     axesChanged();
+    syncLegend();
 }
 
 void Chart::setSeriesName(size_t series, const String &name)
 {
-    if(series < m_series.size())
-        m_series[series].name=name;
+    if(series >= m_series.size() || m_series[series].name == name)
+        return;
+
+    m_series[series].name=name;
+    syncLegend();
 }
 
 String Chart::getSeriesName(size_t series) const
@@ -139,6 +153,9 @@ void Chart::setSeriesVisible(size_t series, bool visible)
 
     m_series[series].visible=visible;
     dataChanged(series);
+    // the row's swatch and name show it
+    if(internal::ChartLegendRow *row=getLegendRow(series))
+        row->redraw();
 }
 
 bool Chart::isSeriesVisible(size_t series) const
@@ -155,6 +172,8 @@ void Chart::setSeriesColorIndex(size_t series, int index)
 
     m_series[series].colorIndex=index;
     addStateChange(StateChange_Background);
+    if(internal::ChartLegendRow *row=getLegendRow(series))
+        row->redraw();
 }
 
 int Chart::getSeriesColorIndex(size_t series) const
@@ -668,6 +687,133 @@ void Chart::placeMarkerCaptions()
         marker.label->setHidden(false);
         placeChild(marker.label, x, m_plot.y+CaptionInset, width, lineHeight);
     }
+}
+
+// ---- the legend ---------------------------------------------------------------
+
+namespace internal
+{
+
+GWENI_CONTROL_CONSTRUCTOR(ChartLegendRow)
+{
+    setTextPadding(Padding(PaddingLeft, PaddingY, PaddingRight, PaddingY));
+}
+
+bool ChartLegendRow::isSeriesShown() const
+{
+    return m_chart && m_chart->isSeriesVisible(m_series);
+}
+
+int ChartLegendRow::getColorIndex() const
+{
+    return m_chart ? m_chart->getSeriesColorIndex(m_series) : 0;
+}
+
+Rect ChartLegendRow::getSwatchRect() const
+{
+    return Rect(SwatchInset, (getHeight()-SwatchSize)/2, SwatchSize, SwatchSize);
+}
+
+// A click toggles the series, and never selects the row.
+void ChartLegendRow::onPress(event::Info info)
+{
+    if(isDisabled())
+        return;
+
+    if(m_chart)
+        m_chart->legendRowPressed(*this);
+    Button::onPress(info);
+}
+
+void ChartLegendRow::updateColors()
+{
+    if(!isSeriesShown() && !isDisabled())
+    {
+        setTextColor(getSkin()->Colors.Selectable.Disabled);
+        return;
+    }
+    ParentClass::updateColors();
+}
+
+}//namespace internal
+
+void Chart::setLegendVisible(bool visible)
+{
+    if(m_legendVisible == visible)
+        return;
+
+    m_legendVisible=visible;
+    syncLegend();
+}
+
+internal::ChartLegendRow *Chart::getLegendRow(size_t series) const
+{
+    return (series < m_legendRows.size()) ? m_legendRows[series] : nullptr;
+}
+
+void Chart::syncLegend()
+{
+    if(!m_legend)
+        return;
+
+    while(m_legendRows.size() > m_series.size())
+    {
+        delete m_legendRows.back();     // ~Base takes it out of the inner panel
+        m_legendRows.pop_back();
+    }
+    while(m_legendRows.size() < m_series.size())
+        m_legendRows.push_back(m_legend->newChild<internal::ChartLegendRow>());
+
+    for(size_t i=0; i < m_legendRows.size(); ++i)
+    {
+        internal::ChartLegendRow *row=m_legendRows[i];
+
+        // a series removed before it moves the rows after it down an index
+        const bool moved=(row->getSeries() != i);
+
+        row->setSeries(this, i);
+        row->setText(m_series[i].name);
+        if(moved)
+            row->redraw();
+    }
+
+    m_legend->setHidden(!m_legendVisible || m_series.empty());
+    invalidate();
+}
+
+int Chart::placeLegend(int innerLeft, int innerTop, int innerRight, int innerBottom)
+{
+    if(!m_legend || m_legend->hidden())
+        return 0;
+
+    // As its content asks, measured by this pass (the rows' names, their
+    // padding, the scroll control's insets), and no taller than the chart.
+    const Size &content=m_legend->getPreferredSize();
+    const int height=std::min(content.height, innerBottom-innerTop);
+    int width=content.width;
+
+    // a bar that shows takes its thickness from the rows
+    if(content.height > height)
+        width+=getSkin()->Metrics.ScrollBarThickness;
+    width=std::min(width, (innerRight-innerLeft)/3);
+
+    placeChild(m_legend, innerRight-width, innerTop, width, std::max(0, height));
+    return width+LegendGap;
+}
+
+void Chart::legendRowPressed(internal::ChartLegendRow &row)
+{
+    const size_t series=row.getSeries();
+
+    if(series >= m_series.size())
+        return;
+
+    setSeriesVisible(series, !m_series[series].visible);
+
+    event::Info info(&row);
+
+    info.integer=series;
+    onSeriesToggled.call(this, info);
 }
 
 // ---- data -------------------------------------------------------------------
@@ -1299,8 +1445,11 @@ void Chart::layout(skin::Base *skin)
     const Padding &padding=getPadding();
     const int innerLeft=padding.left;
     const int innerTop=padding.top;
-    const int innerRight=std::max(innerLeft, getWidth()-padding.right);
     const int innerBottom=std::max(innerTop, getHeight()-padding.bottom);
+    // the legend's column comes off the right
+    const int controlRight=std::max(innerLeft, getWidth()-padding.right);
+    const int innerRight=std::max(innerLeft,
+        controlRight-placeLegend(innerLeft, innerTop, controlRight, innerBottom));
     const bool shown[2]={isYAxisShown(ChartAxisSide::Left), isYAxisShown(ChartAxisSide::Right)};
     const bool titles=(shown[0] && !m_yAxes[0].title.empty()) || (shown[1] && !m_yAxes[1].title.empty());
 

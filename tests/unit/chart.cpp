@@ -57,6 +57,8 @@ struct Scene
         chart=canvas->newChild<Chart>();
         chart->setSizeFlags({SizeFlag::Fixed, SizeFlag::Fixed});
         chart->setBounds(10, 20, width, height);
+        // the legend's own tests are chartLegend.cpp's
+        chart->setLegendVisible(false);
     }
 
     Scene(const Scene &)=delete;
