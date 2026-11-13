@@ -2417,6 +2417,7 @@ void SlotRenderer::drawTrapezoid(size_t primitiveId, float x0, float x1, float t
             m_vertexes[primitiveId*4+i].y=0;
         }
     }
+    cullClippedQuad(primitiveId);
     markPrimitiveChanges(primitiveId, before);
 }
 

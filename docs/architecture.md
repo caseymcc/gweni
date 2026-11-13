@@ -1748,7 +1748,7 @@ two programs and the draws. What follows describes both together:
   such slots and runs out of the draws, decided when they are written, with nothing
   done per frame:
   - **A primitive slot.** Every primitive draw (`drawFilledRect`, `drawRoundedRect`,
-    `drawIcon`, `drawLine`, `drawGrid`, `drawBilinearRect`, `drawCheckerRect`, the
+    `drawIcon`, `drawLine`, `drawGrid`, `drawTrapezoid`, `drawBilinearRect`, `drawCheckerRect`, the
     image draws) writes its 4 vertexes and its clip box, then calls
     `cullOutOfRangeQuad` and `cullClippedQuad`: the slot is culled when the bbox of
     the 4 written corners is wholly outside the box (`x1 <= box.x0 || x0 >= box.x1
