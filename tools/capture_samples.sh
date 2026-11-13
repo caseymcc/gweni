@@ -69,6 +69,7 @@ SAMPLES=(
     ShowcaseDisplayDemo
     ShowcaseWindowsDemo
     TextDemo
+    CodeEditorDemo
     NodeGraphDemo
     LogViewDemo
     ChartTimeBarsDemo

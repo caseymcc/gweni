@@ -305,11 +305,13 @@ if(TARGET ControlTest AND NOT EMSCRIPTEN)
     # one-row scroll and a wheel notch writing no more than the shown rows'
     # slots, entering only the list's subtree in one layout pass with no z
     # renumber; exits non-zero on any failed check
-    # CodeEditorDemo's 5000 lines, scrolled to the middle: a typed character
-    # writes its row's, the gutter's and the caret's slots alone and changes no
-    # pixel outside them, a typing burst undone gives the frame before it
-    # back, Return and a one-line scroll stay inside the editor's rows on
-    # screen, and settled frames write nothing
+    # CodeEditorDemo's 5000 lines, highlighted, scrolled to the middle: a typed
+    # character tokenizes its line alone, writes its row's, the gutter's and the
+    # caret's slots alone and changes no pixel outside them, a typing burst
+    # undone gives the frame before it back, a block scalar opened re-colours the
+    # rows on screen below it and tokenizes nothing past the screen (and its undo
+    # gives the frame back), Return and a one-line scroll stay inside the
+    # editor's rows on screen, and settled frames write nothing
     gweni_whole_app_test(controltest_code_editor 120
         COMMAND $<TARGET_FILE:ControlTest> --headless --scenario code-editor --require-one-pass
             --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/code-editor@VARIANT@

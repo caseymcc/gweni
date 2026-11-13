@@ -70,6 +70,13 @@ page's content, one with no close button.
 
 **Text**: OpenSans from 8 to 16 px, on the pixel grid.
 
+[![A highlighted YAML document in the code editor](docs/images/CodeEditorDemo.png)](https://caseymcc.github.io/gweni/controltest.html?control=CodeEditorDemo)
+
+**Code editor**: a CodeEditor over a 5000-line YAML document, highlighted as YAML, with line numbers:
+only the lines on screen are controls, each one text run coloured by its tokens (keys, numbers,
+strings, comments, block scalars). A keystroke tokenizes its line; one that opens a block scalar
+re-colours the lines on screen below it and leaves the rest until they are shown.
+
 [![A small shader-like node graph](docs/images/NodeGraphDemo.png)](https://caseymcc.github.io/gweni/controltest.html?control=NodeGraphDemo)
 
 **Node graph**: a NodeGraph, the node editor built on a ZoomPanel: nodes with a coloured title bar

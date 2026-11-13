@@ -2167,7 +2167,8 @@ two programs and the draws. What follows describes both together:
   (`include/gweni/controls/codeEditor.h`) is a `VirtualList` in fixed mode (in its
   variable mode once wrapped, below) over a `text::Document` it owns (`getDocument()`; "The document and undo model"): one
   `CodeLine` row per line in view plus one, each holding its line as **one text run**
-  (an `internal::Text` in the editor's font) and two primitives of its own, a line
+  (an `internal::CodeLineText` in the editor's font, coloured by its line's tokens
+  with `setLanguage`: "Syntax highlighting") and two primitives of its own, a line
   background (`CodeCurrentLine` on the caret's line) at the row's z and the selection
   rect at the Text's z, behind every glyph (`CodeSelection`). The row height is the
   font's `lineHeight()`, so a document of 100 000 lines has the controls, ids and slots
@@ -2274,9 +2275,10 @@ two programs and the draws. What follows describes both together:
   `CodeLineNumber` and `CodeLineNumberCurrent` text colours
   (`Colors.CodeEditor.LineNumber`, `LineNumberCurrent`, read again by the numbers'
   `updateColors()`) are in the ThemeEditor and strict mode. CodeEditorDemo (the
-  shell's "Code editor") holds 5000 generated lines of YAML; `controltest_code_editor`
-  holds a typed character, an undone burst, Return and a scroll to the part of the
-  editor each may touch.
+  shell's "Code editor", and in the README gallery) holds 5000 generated lines of YAML,
+  highlighted; `controltest_code_editor` holds a typed character, an undone burst, a
+  block scalar opened and undone, Return and a scroll to the part of the editor each may
+  touch.
 
   **Wrap.** `setWrap(true)` wraps every line at the rows' width, counted in cells
   with no measuring: `text::wrapCells` (`include/gweni/text/cellWrap.h`) gives a
@@ -2300,7 +2302,8 @@ two programs and the draws. What follows describes both together:
   depend on the count). A `CodeLine` shows each visual row as a `Text` of its own,
   a line height below the one before, made as its line needs them and deleted as it
   needs fewer (a spare row keeps none), so a row holds what a row bound to its line
-  at that width holds. Toggling wrap, and a new size that wraps again or a new
+  at that width holds; highlighted, each takes the line's colour spans over its own
+  bytes, counted from its start. Toggling wrap, and a new size that wraps again or a new
   viewport height, keep the caret's line on screen (`scrollToItem` of it when it was
   shown), and of a line taller than the viewport (one paragraph in a short field) the
   caret's visual row: `revealCaretRow()` asks the next layout for it, and that
@@ -2356,7 +2359,7 @@ two programs and the draws. What follows describes both together:
   `TextBoxFocus` and `TextBoxDisabled` surfaces) and Tab moving the focus
   (`setTabInsertsSpaces(false)`), as in a browser; code mode keeps capturing Tab.
   It is still monospace, every column a cell of the mono face, as everywhere in the
-  editor; a tokenizer (the highlighting task's) is to stay off in it.
+  editor; a form field sets no language (`setLanguage`, "Syntax highlighting").
   `setPlain(false)` gives back the code look, the current line and Tab's editing,
   and leaves the wrap and the gutter as they are. CodeEditorDemo's "Wrap lines"
   toggle wraps its document (each agent's prompt line wraps); CodeEditorFormDemo
@@ -3302,6 +3305,33 @@ two programs and the draws. What follows describes both together:
   11 px text drawn as 22 px SDF, came back a few ulps off and changed SDF edge
   pixels (`controltest_clip_scale200`). `tests/textRunCache.cpp` moves SDF, coverage
   and LCD runs away and back and in steps and compares each with a fresh layout.
+- **Colour spans in a text run.** A run's colour is baked into its glyph vertexes, so
+  highlighting a line one text id per token would multiply the ids, runs and draws.
+  `renderer::Base::renderText(textId, font, pos, z, text, spans)` takes
+  `renderer::ColorSpan`s instead: sorted byte ranges of the string, each a colour; a
+  glyph takes the colour of the span holding its codepoint's first byte, one in no
+  span the draw colour, all opaque. The run is laid out as the plain call lays it
+  out, so it measures as `measureText` says. `renderer::Base`'s default sets the draw
+  colour to the first span's and makes the plain call. `SlotRenderer` keeps a run's
+  spans and its glyphs' byte offsets (`glyphByteOffsets`, the layout's walk: no glyph
+  for a `'\n'`, an ignorable or a codepoint the face has none for) in
+  `m_textRunSpans`, by text id, and only a flag in the `TextRun` (in `hidden`'s
+  padding): the first version kept two vectors in every run and `build`'s
+  `alloc_bytes` grew by 184 KB at N=1000, and its span comparisons cost the plain
+  call +1.7 % of `render` in `scroll` and `tree-toggle`. A run with spans, or one
+  drawn plain after it had some, given the same string, font and size is not laid out
+  again for a new colour or new spans: `colorTextRun` writes each glyph's colour and
+  marks for the upload only the glyph slots whose colour changed, with the arithmetic
+  the markup's foreground colour is made with, so a glyph in the draw colour has the
+  plain call's bytes. The plain call on a run that never had spans rebuilds it for a
+  new colour, as it always did, so its counters and pixels are unchanged
+  (`docs_samples`, `backend_pixels` and `tools/bench.sh compare` with no flags).
+  `tests/colorSpans.cpp` (GL and Vulkan) draws three spans in their colours, writes
+  only the changed glyphs' slots for a span change with no atlas upload, and holds
+  the plain call to its old bytes; `tests/unit/colorSpans.cpp` the default and
+  `StubRenderer`'s record (`textSpans`). A Text draws through the overload only when
+  `internal::Text::colorSpans()` gives it spans (a `CodeEditor` line's
+  `internal::CodeLineText`), every other Text through the plain call.
 - **Every caret from one layout: `measureCarets`.** `renderer::Base::measureCarets(font,
   text, xs)` gives the x of each caret position of `text`, one per codepoint boundary
   of `utf8Next`'s walk with 0 and `text.size()` included, so the codepoint count + 1
@@ -3320,6 +3350,83 @@ two programs and the draws. What follows describes both together:
   counts it as one measure (`measureTextCalls()`). `tests/measureCarets.cpp` pins the
   equality and `getClosestCharacter`'s answers against the old per-prefix walk in every
   mode and at scale 1.5; `tests/unit/closestCharacter.cpp` the one call per probe.
+
+## Syntax highlighting
+
+`text::Tokenizer` (`include/gweni/text/tokenizer.h`) is one line at a time: `tokenize(line,
+start, tokens)` appends the line's `Token`s (a byte range and a `TokenKind`, ascending, not
+overlapping; a byte in no token is plain) and returns the state the next line starts in.
+The kinds are a fixed set every language maps onto, so a theme gives each one colour:
+plain, keyword, string, number, comment, key, punctuation, heading, emphasis, strong,
+code, link, template, added, removed, hunk and meta. The state, `TokenState`, is six
+`uint32_t` words a language uses as it likes (all zero its usual start) and that are
+compared to tell whether an edit changed what the next line starts in; a tokenizer keeps
+nothing between calls, so a cache can redo any line from its start state
+(`tests/unit/highlightLanguages.cpp` tokenizes every line twice and fails on a
+difference). A language nested in another keeps its state in the words after the outer
+one's first (`TokenState::nested`, `inner`), so Jinja over Markdown over a fence's
+language (up to three words, bash's heredoc) fits.
+
+**The languages** are hand-written state machines, one file each in
+`source/text/highlight/` with the shared byte classes in `scan.h`, registered by name
+(`findLanguage`, `registerLanguage`, `languageNames`; `languageForFileName` maps
+`*.yaml`/`*.yml`, `*.json`, `*.md`, `*.md.j2`, `*.diff`/`*.patch` and `*.sh`). YAML: document
+markers and directives, keys (a scalar before `: `, flow collections included), plain
+scalars that are numbers or the literals, quoted ones, comments, sequence dashes, anchors,
+aliases and tags, and block scalars, whose lines are strings while blank or indented past
+the node they belong to (the key's column, or an entry's `-`), the state `{1, column}`.
+JSON, with JSONC's comments. diff: the file headers, a hunk header, and in a hunk (its old
+and new line counts in the state) `-` and `+` lines whatever they look like. bash:
+comments at a word's start, keywords as whole words, assignments, `'...'` and `"..."` over
+lines with the `$variables` cut out of the latter, and heredocs (the delimiter's FNV hash
+and length in the state). Markdown: ATX headings, thematic breaks, quote and list markers,
+HTML comments over lines, code spans, strong, emphasis, links and escapes, and fences
+whose body is tokenized by the fence's language (yaml, json, bash or sh, diff), its state
+nested after the fence's word (bits for the mode, the language, `~` and the length), Code
+for any other.
+
+**Jinja** is an overlay, `text::makeJinjaOverlay(host)`: the tags `{{ }}`, `{% %}` and
+`{# #}` are cut out of each line first (a quoted string in a tag closes nothing), each of
+which may run over lines, the open one in the state's first word and the host's state
+after it. The host tokenizes the line with each tag's bytes made `x`s, so the Markdown
+around a tag reads as if the tag were a word (a heading or a `**...**` holding one is
+still one, cut at the tag); a line wholly inside tags is none of the host's and leaves its
+state as it was, so a fence or a YAML block scalar inside one goes on past a comment line.
+A `{% %}`'s statement name is a keyword, a quoted string a string, the rest template,
+`{# #}` a comment. The registry's `markdown+jinja` is Jinja over its own `markdown`.
+
+**The cache**, `text::HighlightCache` (`include/gweni/text/highlightCache.h`), keeps each
+line's tokens, the state it was tokenized from and its end state, following a `Document`
+through its own observer (`attach`) or a caller's `linesChanged()` (the editor's, first in
+its own observer, so a row bound there reads the edited lines' tokens). Lines `[0,
+frontier())` are known fresh. A line past the frontier is checked when asked for: walked
+in order, a line whose text is unchanged and whose start state is the previous line's end
+is fresh as it is, at the cost of one comparison, and any other is tokenized again. So an
+edit tokenizes its lines; when its last line's end state is what it was the lines after
+are compared, not tokenized, and an edit that changes no state tokenizes one line. One
+that does (an opened fence, block scalar or `{# ...`) tokenizes through the last line on
+screen (`setVisibleLines`, the pooled rows' lines) and no further: the lines below keep
+what they had, and are compared or tokenized when a row is bound to them or they are
+scrolled to (the laziness has a price only once: a jump to the end after such an edit
+walks the comparisons down to it). Lines inserted or removed shift the entries after them
+(a vector of entries, as the `Document`'s own vector of lines), which are not tokenized
+again. The change handler gets the lines whose tokens an edit's pass changed, for their
+rows to be coloured again (`tests/unit/highlightCache.cpp`, with a toy language; each
+language's file holds seeded random edits through the cache equal to a fresh tokenize,
+and the pass stopping at the screen's last line).
+
+**In the editor.** `CodeEditor::setLanguage(name)` (or `setTokenizer`) highlights its
+lines: each `CodeLine`'s run is an `internal::CodeLineText` holding the colour spans of its
+line's tokens in the skin's `Colors.CodeEditor.Tokens` (one per `TokenKind`, in
+`textColorRegistry()` as `CodePlain` to `CodeMeta`, Tokyo Night's in `setThemeColors()`;
+the line's own colour follows `CodePlain`), set when the row is bound, when an edit's pass
+changed its line's tokens and in `updateColors()` (a theme edit). New spans mark
+`StateChange_Text` alone, so the run is re-coloured and not laid out ("Colour spans in a
+text run"). `tests/unit/codeEditorHighlight.cpp` holds the rows to their lines' spans,
+and `controltest_code_editor` an opened block scalar to the rows on screen below it, with
+no line past the screen tokenized; the `code-edit` bench scene, highlighted, opens and
+closes a block scalar every ten frames, and `bench_scaling` holds its counters at
+N=10 000 to N=1 000.
 
 ## Font fallback
 
@@ -3799,11 +3906,11 @@ the shipped theme with `"strict": true` added):
 
 ```
 theme strict: 113 of 117 surfaces not set: ButtonDisabled, ButtonDown, ButtonOn, ...
-theme strict: 17 of 19 text colors not set: AxisTagText, ButtonDisabled, ButtonDown, ...
+theme strict: 34 of 36 text colors not set: AxisTagText, ButtonDisabled, ButtonDown, ...
 ```
 
 (`theme strict: all 117 surfaces set` for a kind with no gaps, and a single
-`theme strict: all 117 surfaces and 19 text colors set` when there are none at all). A
+`theme strict: all 117 surfaces and 36 text colors set` when there are none at all). A
 rejected value counts as not set. A surface that is transparent at rest on purpose
 (`WindowButton`, `SelectableHover`: a transparent fill hides the slot) is magenta too
 until the theme sets it to `[0,0,0,0]`; the theme has not said what it looks like. The
