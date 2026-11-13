@@ -2241,27 +2241,37 @@ void Chart::update(renderer::Base *renderer, controls::Base *baseControl)
     // or its segments
     const size_t seriesCount=chart->getSeriesCount();
 
-    // taken back to front (grid, spans, series, markers), so a list made on
-    // the first frame draws before what is in front of it
-    resizeList(renderer, m_grid, lines.size());
-    resizeList(renderer, m_spans, chart->getSpanCount());
-    while(m_series.size() > seriesCount)
-    {
-        releaseList(renderer, m_series.back());
-        m_series.pop_back();
-    }
-    m_series.resize(seriesCount);
-    for(size_t i=0; i<seriesCount; ++i)
-    {
-        const controls::ChartSeriesType type=chart->getSeriesType(i);
-        const bool bars=(type == controls::ChartSeriesType::Bar) || (type == controls::ChartSeriesType::StackedBar);
-        const size_t vertices=chart->getVertexCount(i);
+    // Taken back to front (grid, spans, series, markers, crosshair), so the
+    // lists made on the frame the chart is first drawn draw what is behind
+    // first: a translucent span over the grid, a line's anti-aliased rim over
+    // both. A slot drawn earlier at a higher z writes depth that a slot
+    // behind it, drawn later, cannot pass. So nothing is taken while there is
+    // nothing to draw (hidden, or before a layout gave it a plot): a chart
+    // built hidden takes its slots in the order one built shown does.
+    const bool drawing=baseControl->visible() && hasPlot;
 
-        resizeList(renderer, m_series[i], bars ? chart->getSeriesPoints(i).size() : (vertices > 1 ? vertices-1 : 0));
+    if(drawing)
+    {
+        resizeList(renderer, m_grid, lines.size());
+        resizeList(renderer, m_spans, chart->getSpanCount());
+        while(m_series.size() > seriesCount)
+        {
+            releaseList(renderer, m_series.back());
+            m_series.pop_back();
+        }
+        m_series.resize(seriesCount);
+        for(size_t i=0; i<seriesCount; ++i)
+        {
+            const controls::ChartSeriesType type=chart->getSeriesType(i);
+            const bool bars=(type == controls::ChartSeriesType::Bar) || (type == controls::ChartSeriesType::StackedBar);
+            const size_t vertices=chart->getVertexCount(i);
+
+            resizeList(renderer, m_series[i], bars ? chart->getSeriesPoints(i).size() : (vertices > 1 ? vertices-1 : 0));
+        }
+        resizeList(renderer, m_markers, chart->getMarkerCount());
+        // the crosshair's one slot, in front of everything
+        resizeList(renderer, m_crosshair, 1);
     }
-    resizeList(renderer, m_markers, chart->getMarkerCount());
-    // the crosshair's one slot, in front of everything
-    resizeList(renderer, m_crosshair, 1);
 
     auto hide=[&](size_t id, Slot &slot)
     {
@@ -2271,29 +2281,31 @@ void Chart::update(renderer::Base *renderer, controls::Base *baseControl)
         slot.shown=false;
     };
 
+    // every slot of the lists, the frame's with \p frame
+    auto each=[&](bool frame, auto &&func)
+    {
+        if(frame)
+            func(m_primitives[0], m_frame);
+        for(SlotList *list : {&m_grid, &m_spans, &m_markers, &m_crosshair})
+        {
+            for(size_t i=0; i<list->ids.size(); ++i)
+                func(list->ids[i], list->drawn[i]);
+        }
+        for(SlotList &list : m_series)
+        {
+            for(size_t i=0; i<list.ids.size(); ++i)
+                func(list.ids[i], list.drawn[i]);
+        }
+    };
+
     if(!baseControl->visible())
     {
-        auto each=[&](auto &&func)
-        {
-            func(m_primitives[0], m_frame);
-            for(SlotList *list : {&m_grid, &m_spans, &m_markers, &m_crosshair})
-            {
-                for(size_t i=0; i<list->ids.size(); ++i)
-                    func(list->ids[i], list->drawn[i]);
-            }
-            for(SlotList &list : m_series)
-            {
-                for(size_t i=0; i<list.ids.size(); ++i)
-                    func(list.ids[i], list.drawn[i]);
-            }
-        };
-
         if(all)
-            each(hide);
+            each(true, hide);
         else
         {
             // drawn again once shown, which marks the visibility
-            each([](size_t, Slot &slot) { slot.valid=false; });
+            each(true, [](size_t, Slot &slot) { slot.valid=false; });
         }
         return;
     }
@@ -2366,6 +2378,13 @@ void Chart::update(renderer::Base *renderer, controls::Base *baseControl)
     const int z=baseControl->getZIndex();
 
     drawRect(m_primitives[0], m_frame, bounds, tokyonight::ChartFrame, z, region);
+
+    // no plot (not laid out yet, or too small): the frame alone
+    if(!drawing)
+    {
+        each(false, hide);
+        return;
+    }
 
     for(size_t i=0; i<lines.size(); ++i)
         drawSegment(m_grid.ids[i], m_grid.drawn[i], lines[i].p0, lines[i].p1, nullptr, nullptr, 1.0f,

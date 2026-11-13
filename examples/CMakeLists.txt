@@ -20,6 +20,10 @@ set(GWENI_DEMO_SOURCES
     demo/plotHistogram.h
     demo/plotLines.cpp
     demo/plotLines.h
+    demo/chartTimeBars.cpp
+    demo/chartTimeBars.h
+    demo/chartLines.cpp
+    demo/chartLines.h
     demo/popup.cpp
     demo/popup.h
     demo/crossSplitter.cpp

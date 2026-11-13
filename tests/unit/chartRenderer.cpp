@@ -25,6 +25,9 @@
  *  the plot's clip and their slots taken back to front, the ones out of range
  *  hidden; a moved marker writing its slot alone and marking its caption
  *  (in Colors.Chart.MarkerText) and no other child, a moved span its slot.
+ *  And a chart built hidden takes no slot until it is shown and laid out,
+ *  then takes them back to front (grid, span, series, marker, crosshair), as
+ *  one built shown does.
  */
 #include "headlessFixture.h"
 
@@ -524,4 +527,41 @@ TEST_CASE("Chart renderer: spans under the series, markers in front, a moved mar
     CHECK(scene.written() == std::set<size_t>{spans[0]});
     scene.frame();
     CHECK(scene.written().empty());
+}
+
+TEST_CASE("Chart renderer: a chart built hidden takes its slots back to front once shown")
+{
+    Scene scene;
+    controls::Chart *chart=scene.chart;
+
+    // hidden before its first frame, with series, a span and a marker
+    chart->setHidden(true);
+    chart->setXRange(0.0, 10.0);
+
+    const size_t line=chart->addSeries("line", ChartSeriesType::Line);
+
+    chart->setSeriesPoints(line, {{1, 2}, {5, 8}, {9, 4}});
+    chart->addSpan(3.0, 7.0);
+    chart->addMarker(4.0);
+    scene.frame();
+    scene.frame();
+
+    chart->setHidden(false);
+    scene.frame();
+
+    const skin::textured::Chart &skinChart=scene.skinChart();
+    const std::vector<size_t> &grid=skinChart.gridPrimitives();
+    const std::vector<size_t> &spans=skinChart.spanPrimitives();
+    const std::vector<size_t> &series=scene.series(line);
+    const std::vector<size_t> &markers=skinChart.markerPrimitives();
+
+    REQUIRE(!grid.empty());
+    REQUIRE(spans.size() == 1);
+    REQUIRE(series.size() == 2);
+    REQUIRE(markers.size() == 1);
+    // what is behind is drawn first: the grid, the span, the line, the marker
+    CHECK(*std::max_element(grid.begin(), grid.end()) < spans[0]);
+    CHECK(spans[0] < *std::min_element(series.begin(), series.end()));
+    CHECK(*std::max_element(series.begin(), series.end()) < markers[0]);
+    CHECK(markers[0] < skinChart.crosshairPrimitives().at(0));
 }

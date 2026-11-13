@@ -28,6 +28,8 @@
 #include "demo/contextMenu.h"
 #include "demo/plotHistogram.h"
 #include "demo/plotLines.h"
+#include "demo/chartTimeBars.h"
+#include "demo/chartLines.h"
 #include "demo/dragNumber.h"
 #include "demo/vectorField.h"
 #include "demo/popup.h"
@@ -203,6 +205,8 @@ void Demo::init(const String &name)
         addDemo<SeparatorDemo>(cat, "SeparatorDemo", "Separator");
         addDemo<PlotHistogramDemo>(cat, "PlotHistogramDemo", "Plot histogram");
         addDemo<PlotLinesDemo>(cat, "PlotLinesDemo", "Plot lines");
+        addDemo<ChartTimeBarsDemo>(cat, "ChartTimeBarsDemo", "Time bar chart");
+        addDemo<ChartLinesDemo>(cat, "ChartLinesDemo", "Line chart");
     }
     {
         controls::CollapsibleCategory *cat=list->add("Controls");
