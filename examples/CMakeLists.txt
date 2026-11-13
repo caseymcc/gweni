@@ -34,6 +34,8 @@ set(GWENI_DEMO_SOURCES
     demo/dataTable.h
     demo/codeEditor.cpp
     demo/codeEditor.h
+    demo/codeView.cpp
+    demo/codeView.h
     demo/dataTableVirtual.cpp
     demo/dataTableVirtual.h
     demo/demo.cpp

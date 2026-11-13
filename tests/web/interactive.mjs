@@ -85,6 +85,13 @@
 //               navigator.clipboard.writeText) puts the first box's text there.
 //               No line on the page's stderr (the in-process clipboard's
 //               "in-process only" line included)
+//    codeview   CodeViewDemo with clipboard-read and clipboard-write granted:
+//               the mouse over the install command's view shows its copy
+//               button (internal::CodeViewCopyButton, visible in the listing
+//               inside the view), and a click on it (platform::setClipboardText
+//               from its press) puts the whole command on the browser's
+//               clipboard (navigator.clipboard.readText()), with no line on
+//               the page's stderr
 //    idle       ControlTest.html?control=ButtonDemo, settled: over 30 more
 //               animation-frame callbacks (gweniRun.ticks) it draws no frame
 //               (gweniRun.frames stands still), and a post through
@@ -790,6 +797,44 @@ async function checkClipboard(s)
     await context.close();
 }
 
+async function checkCodeViewCopy(s)
+{
+    const opened = await s.open('codeview', 'ControlTest.html?control=CodeViewDemo', { width: 640, height: 480 + outputPanel },
+        1, false, ['clipboard-read', 'clipboard-write']);
+    if(!opened)
+        return;
+    const { page, context } = opened;
+    const expected = './run.sh -b controltest';
+
+    // the install command's view is the last CodeView
+    const views = parseListing(await listingOf(page)).filter(c => c.type === 'CodeView' && c.visible);
+    if(views.length !== 3)
+        return fail('codeview', `CodeViewDemo lists ${views.length} visible CodeViews, not 3`);
+    const install = views[views.length - 1];
+    await page.mouse.move(install.x + 6, install.y + install.h/2);
+    await s.frames(page);
+
+    const inside = c => c.x >= install.x && c.y >= install.y && c.x + c.w <= install.x + install.w
+        && c.y + c.h <= install.y + install.h;
+    const button = parseListing(await listingOf(page)).find(c => c.type === 'CodeViewCopyButton' && c.visible && inside(c));
+    if(!button)
+        return fail('codeview', 'the mouse over the install command showed no copy button inside it');
+
+    await page.evaluate(() => navigator.clipboard.writeText('not the command'));
+    const press = centre(cssRect(button));
+    await page.mouse.click(press.x, press.y);
+    await s.frames(page);
+    const copied = await page.evaluate(() => navigator.clipboard.readText());
+    if(copied !== expected)
+        return fail('codeview', `a click on the copy button left ${JSON.stringify(copied)} on the clipboard, not ${JSON.stringify(expected)}`);
+
+    const output = await page.evaluate(() => window.gweniRun.output.filter(line => line.stream !== 'stdout').map(line => line.text));
+    if(output.length)
+        return fail('codeview', `the page wrote to stderr: ${JSON.stringify(output)}`);
+    pass('codeview', `the copy button shown on hover copied ${JSON.stringify(copied)}`);
+    await context.close();
+}
+
 async function main()
 {
     const argv = process.argv.slice(2);
@@ -826,6 +871,7 @@ async function main()
         await checkButton(s);
         await checkTyping(s);
         await checkClipboard(s);
+        await checkCodeViewCopy(s);
         await checkCodeEditor(s);
         await checkWheel(s);
         await checkCursor(s);

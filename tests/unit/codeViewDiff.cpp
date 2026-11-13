@@ -291,11 +291,11 @@ TEST_CASE("CodeView diff: a scroll writes inside the rows and bars alone, each r
         {
             if(control->getSkinControl())
                 control->getSkinControl()->appendIds(subtree, texts);
-            for(controls::Base *child : control->getChildren())
+            for(controls::Base *child : control->getActualChildren())
                 collect(child);
         };
 
-    for(controls::Base *child : scene.view->getChildren())
+    for(controls::Base *child : scene.view->getActualChildren())
         collect(child);
 
     for(int step=1; step <= 5; ++step)

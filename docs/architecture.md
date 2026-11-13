@@ -2370,6 +2370,63 @@ two programs and the draws. What follows describes both together:
   editor, the toggle and a smaller canvas keep the caret's line on screen, a wrapped
   line's selection draws its fill on each visual row) and ends on the form's
   comment field growing a row in one pass.
+- **The code view: a read-only CodeEditor that sizes to its content.**
+  `controls::CodeView` (`include/gweni/controls/codeView.h`) is a `CodeEditor` in its
+  read-only mode, for what a dashboard shows and nobody edits there: a diff between two
+  versions of a prompt, a config file, a one-line install command. It keeps the
+  editor's rows, highlighting, optional gutter (off by default) and selection (a drag,
+  Shift+click, a double-click, Ctrl+A; Ctrl+C copies) and draws no caret and no current
+  line; typing, the editing keys, cut, paste and undo change nothing, and Tab moves the
+  focus. Read-only, `CodeEditor::caretChanged()` marks nothing (the caret is hidden
+  once, by `setReadOnly`), so a scroll or a click writes no slot of the view's own, and
+  `isCaretVisible()` is false.
+
+  **Its size.** It is `{Shrink, Shrink}`, and its constructor forgets the 200-wide size
+  `VirtualList`'s constructor asks for (that request would otherwise be the app's: "Sizing
+  a dock-None control" in `docs/layout.md`), so placed by a Base parent it is as tall as
+  its lines and as wide as its longest line (`contentSize()`: the cells, the one after
+  them and `TextInset` on both sides) inside its padding, with no bar; in a layout cell
+  it is that cut to the cell, docked what the dock gives it, and a `setSize` is its size.
+  Wherever that is smaller than the content it scrolls as the editor does. In the Y
+  measuring, its width final, a view whose longest line is wider than its viewport adds
+  the horizontal bar's height to its preferred height, as auto-height does, so a long
+  one-line command docked in a narrow column still shows its line above the bar.
+
+  **Diff rows.** `CodeLine::DiffKind` (`None`, `Added`, `Removed`, `Hunk`) is the bound
+  line's kind, read from its first token where that starts the line
+  (`CodeEditor::diffKind`): the diff tokenizer's `Added` and `Removed` for a `+` or `-`
+  line inside a hunk (it counts the hunk's lines, so a `---` header is not one) and
+  `Hunk` for the `@@` header. It is set in `CodeLine::updateColorSpans()`, where the
+  row's spans are, so as a row is bound, its line is re-coloured or the language
+  changes, and marks `StateChange_Background` only when it changes. Only a view asks
+  (`CodeEditor::showsDiffRows()`, a protected virtual: `CodeView`'s is true with the
+  registry's diff tokenizer, so `setLanguage("diff")` or `setFileName("x.patch")`); an
+  editor in the diff language keeps its plain rows. The textured `CodeLine` renderer
+  draws the kind in the row's line-background slot (slot 0) from the `DiffAdded`,
+  `DiffRemoved` and `DiffHunk` surfaces, the current line still first, and hides it for
+  `None`; the text keeps the token colours (`CodeAdded`, `CodeRemoved`, `CodeHunk`). A
+  scroll binds the rows that came into view, so it writes the rows' and the bars' slots
+  and nothing else.
+
+  **The copy button.** `setCopyButton(true)` makes an `internal::CodeViewCopyButton` (a
+  Button, Tab-able, so Space presses it with the focus), the view's own child beside the
+  inner panel as the gutter is, so it is numbered after every row and does not scroll.
+  `contentsPlaced()` measures and places it `CopyInset` (4) in from the viewport's
+  top-right corner, centred on the view's height where the viewport is too short for it
+  (a one-line view). It is shown while `HoveredControl` is the view or anything in it
+  (the button, a bar: `hoverInside()` walks up its parents) or while the button has the
+  keyboard focus, checked again from the view's `onMouseEnter`/`onMouseLeave` and
+  `onDescendantInteraction`; those two no longer `redraw()` the view, whose look does
+  not follow the hover, so showing or hiding the button writes its slots alone. A click
+  is `copy()`: `copyText()`, the selection or else the whole text, to
+  `platform::setClipboardText()` (on the web a click's handler, so the browser takes the
+  write), and the button reads `CopiedLabel` for `CopiedSeconds` (1.5) on the canvas
+  clock, a `Canvas::after` the view owns, restarted by a copy meanwhile.
+  `controltest_code_view` (and `_vulkan`, and `controltest_verify_layout_code_view`) runs
+  `--scenario code-view` on CodeViewDemo (a prompt template's diff filling the left
+  column, an agent's YAML config with line numbers and a one-line command, each with a
+  copy button); `web_input`'s `codeview` check clicks the command's button in a page and
+  reads Chromium's clipboard.
 - **The log view: an append-only log the view owns.** `controls::LogView`
   (`include/gweni/controls/logView.h`) is a variable-mode `VirtualList` (see "The
   virtual list's variable mode") over a row store it owns: a `std::deque` of
@@ -4096,12 +4153,12 @@ set by its bare name and one with some of them as `Name.field` per missing field
 the shipped theme with `"strict": true` added):
 
 ```
-theme strict: 136 of 140 surfaces not set: ButtonDisabled, ButtonDown, ButtonOn, ...
+theme strict: 139 of 143 surfaces not set: ButtonDisabled, ButtonDown, ButtonOn, ...
 theme strict: 50 of 52 text colors not set: AxisTagText, BadgeText, ButtonDisabled, ...
 ```
 
-(`theme strict: all 140 surfaces set` for a kind with no gaps, and a single
-`theme strict: all 140 surfaces and 52 text colors set` when there are none at all). A
+(`theme strict: all 143 surfaces set` for a kind with no gaps, and a single
+`theme strict: all 143 surfaces and 52 text colors set` when there are none at all). A
 rejected value counts as not set. A surface that is transparent at rest on purpose
 (`WindowButton`, `SelectableHover`: a transparent fill hides the slot) is magenta too
 until the theme sets it to `[0,0,0,0]`; the theme has not said what it looks like. The

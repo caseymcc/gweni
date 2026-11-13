@@ -166,7 +166,7 @@
  *                       inspector |
  *                       stats-overlay | depth-view | zoom-panel |
  *                       node-graph | code-editor | log-view |
- *                       chip-badge (see below)
+ *                       chip-badge | code-view (see below)
  *    --dump-bounds [<path>]
  *                       print the laid-out control tree as text: one line per
  *                       control, depth-first in child order, indented by depth,
@@ -839,6 +839,22 @@
  *                 more than the row and the way down to it and gives back the
  *                 chip's ids; settled frames write nothing; the demo gives
  *                 every id back. Exits non-zero if any check is no.
+ *    code-view    CodeViewDemo, the clock frozen (code-view.png): the mouse
+ *                 onto the install command's view and off, a click on its
+ *                 copy button, a drag over the diff from line 10's second
+ *                 cell to line 11's eleventh and Ctrl+C, the diff scrolled a
+ *                 row at a time three times under the mouse. One line
+ *                   code-view hover_shows_button=yes|no ... ids_back=yes|no
+ *                 reports the checks: the hover shows the button, writing
+ *                 its slots alone and changing no pixel outside it; moving
+ *                 off hides it and gives the frame before the hover back;
+ *                 the click puts the whole command on the clipboard (and the
+ *                 button says Copied); Ctrl+C puts exactly the dragged
+ *                 selection there; each scroll writes the diff's rows' and
+ *                 bars' slots alone (not its shown copy button's) and
+ *                 changes no pixel outside it;
+ *                 settled frames write nothing; the demo gives every id
+ *                 back. Exits non-zero if any check is no.
  *    virtual-list VirtualListDemo with its list at 1 000 and then 100 000
  *                 items, the clock frozen: a settled frame, a one-row scroll
  *                 from the top (scrollByRows) and a wheel notch over the list
@@ -1040,6 +1056,7 @@
 #include <gweni/controls/scrollBarButton.h>
 #include <gweni/controls/comboBox.h>
 #include <gweni/controls/codeEditor.h>
+#include <gweni/controls/codeView.h>
 #include <gweni/controls/virtualList.h>
 #include <gweni/controls/dataTable.h>
 #include <gweni/controls/properties.h>
@@ -1091,6 +1108,7 @@
 #include <demo/crossSplitter.h>
 #include <demo/dataTable.h>
 #include <demo/codeEditor.h>
+#include <demo/codeView.h>
 #include <demo/dataTableVirtual.h>
 #include <demo/groupBox.h>
 #include <demo/imagePanel.h>
@@ -1239,7 +1257,7 @@ static void content_scale_callback(GLFWwindow *window, float, float)
     X(ShowcaseDisplayDemo) X(ShowcaseWindowsDemo) \
     X(ButtonDemo) X(LabelDemo) X(LabelMultilineDemo) X(ProgressBarDemo) \
     X(GroupBoxDemo) X(ImagePanelDemo) X(StatusBarDemo) X(SeparatorDemo) X(PlotHistogramDemo) X(PlotLinesDemo) X(ChartTimeBarsDemo) X(ChartLinesDemo) X(TimelineDemo) X(ComboBoxDemo) \
-    X(TextBoxDemo) X(ListBoxDemo) X(SelectableDemo) X(VirtualListDemo) X(VirtualListVariableDemo) X(DataTableDemo) X(DataTableVirtualDemo) X(CodeEditorDemo) X(CodeEditorFormDemo) X(LogViewDemo) X(ContextMenuDemo) X(PopupDemo) X(ChipBadgeDemo) X(CrossSplitterDemo) X(RadioButtonDemo) \
+    X(TextBoxDemo) X(ListBoxDemo) X(SelectableDemo) X(VirtualListDemo) X(VirtualListVariableDemo) X(DataTableDemo) X(DataTableVirtualDemo) X(CodeEditorDemo) X(CodeEditorFormDemo) X(CodeViewDemo) X(LogViewDemo) X(ContextMenuDemo) X(PopupDemo) X(ChipBadgeDemo) X(CrossSplitterDemo) X(RadioButtonDemo) \
     X(CheckBoxDemo) X(NumericDemo) X(SliderDemo) X(SliderTextDemo) X(DragNumberDemo) X(VectorFieldDemo) X(MenuStripDemo) \
     X(WindowDemo) X(WindowButtonsDemo) X(TreeControlDemo) X(PropertiesDemo) X(TabControlDemo) X(TabCloseDemo) X(TabOverflowDemo) \
     X(ScrollControlDemo) X(PageControlDemo) X(CollapsibleListDemo) X(ColorPickerDemo) X(ColorEditDemo) \
@@ -1336,7 +1354,8 @@ static void printUsage(std::ostream &out)
          "                     | plot-histogram | plot-lines | chart | timeline\n"
          "                     | inspector\n"
          "                     | stats-overlay | depth-view | zoom-panel\n"
-         "                     | node-graph | code-editor | log-view | chip-badge;\n"
+         "                     | node-graph | code-editor | log-view | chip-badge\n"
+         "                     | code-view;\n"
          "                     resize prints listing_settled, mirror_settled,\n"
          "                     shrink_settled and fresh_matches, interaction one\n"
          "                     yes/no per repaint check, typing its keyboard\n"
@@ -2375,7 +2394,7 @@ static bool runSteps(Session &s, const std::vector<Step> &steps, const std::stri
 enum class Scenario { None, PerControl, Resize, Docked, Scroll, Interaction, Typing, Clip, TextSize, Scale,
     ToolTip, ContextMenu, Popup, VirtualList, VirtualListVariable, DataTableVirtual, HideShow, DemoLabels, PlotHistogram,
     PlotLines, Chart, Timeline, Inspector, Theme, StatsOverlay, DepthView, ZoomPanel, NodeGraph, CodeEditor, LogView,
-    ChipBadge };
+    ChipBadge, CodeView };
 
 static bool parseScenario(const std::string &name, Scenario &scenario)
 {
@@ -2409,6 +2428,7 @@ static bool parseScenario(const std::string &name, Scenario &scenario)
     else if(name == "code-editor") scenario=Scenario::CodeEditor;
     else if(name == "log-view") scenario=Scenario::LogView;
     else if(name == "chip-badge") scenario=Scenario::ChipBadge;
+    else if(name == "code-view") scenario=Scenario::CodeView;
     else return false;
     return true;
 }
@@ -11072,6 +11092,195 @@ static bool runChipBadgeScenario(Session &s, const std::string &shotDir, bool &p
     return ok;
 }
 
+// --scenario code-view: CodeViewDemo's read-only views, the clock frozen
+//
+// A CodeView's copy button shows while the view is hovered, so the hover and
+// the move off write the button's slots alone and give the frame before back;
+// its click copies the whole text, and a drag selection with Ctrl+C the
+// selection. Scrolling the diff binds the rows that came into view (each
+// row's diff background set as it is bound): a scroll writes the rows' and
+// the bar's slots alone.
+//-----------------------------------------------------------------------------
+
+static bool runCodeViewScenario(Session &s, const std::string &shotDir, bool &passed)
+{
+    s.freezeClock=true;
+
+    InteractionChecks checks;
+    checks.scenario="code-view";
+
+    const size_t idsBefore=livePrimitiveIds()+liveTextIds();
+    gweni::controls::Base *control=addControl(s, "CodeViewDemo");
+    auto *demo=gweni::gweni_cast<gweni::CodeViewDemo>(control);
+
+    if(!demo || !demo->m_diff || !demo->m_install || !demo->m_install->getCopyButton())
+    {
+        std::cerr<<"ControlTest: code-view: CodeViewDemo was not built\n";
+        return false;
+    }
+
+    s.label="code-view";
+    moveMouse(s, s.size.x-4, s.size.y-4);
+    renderFrames(s, s.frames);
+
+    bool ok=shoot(s, shotDir+"/code-view.png");
+    std::vector<uint8_t> pixels;
+    size_t idleWork=settleCodeEditor(s, pixels);
+
+    // (1) the install view hovered, left of its button: the button's slots
+    // alone, no pixel outside it
+    gweni::controls::CodeView *install=demo->m_install;
+    gweni::controls::Base *button=install->getCopyButton();
+    std::set<size_t> buttonPrims, buttonTexts;
+
+    subtreeIds(button, buttonPrims, buttonTexts);
+
+    const gweni::Rect installRect=install->getCanvasBounds();
+    const std::vector<uint8_t> beforeHover=pixels;
+
+    moveMouse(s, installRect.x+6, installRect.y+installRect.h/2);
+
+    const CodeEditorFrame hover=codeEditorFrame(s);
+    const gweni::Rect buttonRect=button->getCanvasBounds();
+    const size_t hoverOutside=differencesOutsideRects(s, pixels, hover.pixels, {buttonRect});
+
+    // its slots are made when it is first shown
+    subtreeIds(button, buttonPrims, buttonTexts);
+    checks.check("hover_shows_button",
+        button->visible() && !hover.primitives.empty() && idsWithin(hover.primitives, buttonPrims)
+            && idsWithin(hover.texts, buttonTexts) && hoverOutside == 0,
+        std::string(button->visible()?"":"the button is hidden; ")+"the hover wrote "
+        +std::to_string(hover.primitives.size())+" primitive and "+std::to_string(hover.texts.size())
+        +" text ids (the button's alone allowed) and changed "+std::to_string(hoverOutside)
+        +" pixels outside it");
+    idleWork+=settleCodeEditor(s, pixels);
+
+    // (2) off again: the frame before the hover
+    moveMouse(s, s.size.x-4, s.size.y-4);
+
+    const CodeEditorFrame off=codeEditorFrame(s);
+
+    checks.check("off_gives_back",
+        button->hidden() && idsWithin(off.primitives, buttonPrims) && idsWithin(off.texts, buttonTexts)
+            && off.pixels == beforeHover,
+        "moving off left the button shown, wrote outside its ids or did not give the frame before the hover back");
+    idleWork+=settleCodeEditor(s, pixels);
+
+    // (3) a click on the button: the whole text on the clipboard
+    gweni::platform::setClipboardText("");
+    moveMouse(s, installRect.x+6, installRect.y+installRect.h/2);
+    renderFrames(s, 1);
+
+    const gweni::Rect pressAt=button->getCanvasBounds();
+
+    clickMouse(s, pressAt.x+pressAt.w/2, pressAt.y+pressAt.h/2);
+    renderFrames(s, 1);
+
+    const std::string copiedWhole=gweni::platform::getClipboardText();
+    const bool saysCopied=install->isCopied()
+        && static_cast<gweni::controls::Label *>(button)->getText() == gweni::controls::CodeView::CopiedLabel;
+
+    checks.check("click_copies_text", copiedWhole == gweni::CodeViewDemo::installText() && saysCopied,
+        "the click put \""+copiedWhole+"\" on the clipboard (the command \""
+        +gweni::CodeViewDemo::installText()+"\" wanted)"
+        +std::string(saysCopied?"":" and the button does not say it copied"));
+    moveMouse(s, s.size.x-4, s.size.y-4);
+    renderFrames(s, 1);
+
+    // (4) a drag over the diff from line 5's second cell to line 6's tenth,
+    // then Ctrl+C: the selection on the clipboard
+    gweni::controls::CodeView *diff=demo->m_diff;
+    const gweni::Rect &viewport=diff->getViewport();
+    const int lineHeight=diff->getLineHeight();
+    auto cellAt=[&](size_t line, size_t column)
+        {
+            const gweni::Point local(viewport.x+diff->columnX(column)+1,
+                viewport.y+static_cast<int>(line)*lineHeight+lineHeight/2);
+
+            return diff->localPosToCanvas(local);
+        };
+    const gweni::Point from=cellAt(9, 1);
+    const gweni::Point to=cellAt(10, 10);
+
+    gweni::platform::setClipboardText("");
+    mouseDown(s, from.x, from.y, true);
+    renderFrames(s, 1);
+    moveMouse(s, to.x, to.y);
+    renderFrames(s, 1);
+    mouseUp(s, to.x, to.y);
+    renderFrames(s, 1);
+    sendKey(s, "ctrl+c");
+    renderFrames(s, 1);
+
+    const std::string selected=diff->getSelectedText();
+    const std::string copiedSelection=gweni::platform::getClipboardText();
+    const std::string expected=diff->getDocument().line(9).substr(1)+"\n"+diff->getDocument().line(10).substr(0, 10);
+
+    checks.check("drag_copy_selection", selected == expected && copiedSelection == expected,
+        "the drag selected \""+selected+"\" and Ctrl+C copied \""+copiedSelection+"\", not \""+expected+"\"");
+    moveMouse(s, s.size.x-4, s.size.y-4);
+    renderFrames(s, 1);
+    idleWork+=settleCodeEditor(s, pixels);
+
+    // (5) the diff scrolled a row at a time with the mouse on it: the rows'
+    // and the bars' slots alone (its copy button, shown, does not scroll),
+    // nothing outside the diff
+    const gweni::Point onDiff=cellAt(2, 4);
+
+    moveMouse(s, onDiff.x, onDiff.y);
+    renderFrames(s, 1);
+    idleWork+=settleCodeEditor(s, pixels);
+
+    std::set<size_t> scrollPrims, scrollTexts;
+
+    for(gweni::controls::Base *child : diff->getActualChildren())
+    {
+        if(child != diff->getCopyButton())
+            subtreeIds(child, scrollPrims, scrollTexts);
+    }
+
+    const gweni::Rect diffRect=diff->getCanvasBounds();
+    bool scrollWithin=true;
+    size_t scrollOutside=0;
+    size_t scrollPrimsWritten=0;
+
+    for(int step=1; step <= 3; ++step)
+    {
+        diff->setVerticalScrollOffset(step*lineHeight);
+
+        const CodeEditorFrame scroll=codeEditorFrame(s);
+
+        scrollWithin=scrollWithin && !scroll.primitives.empty() && idsWithin(scroll.primitives, scrollPrims)
+            && idsWithin(scroll.texts, scrollTexts);
+        scrollOutside+=differencesOutsideRects(s, pixels, scroll.pixels, {diffRect});
+        scrollPrimsWritten+=scroll.primitives.size();
+        idleWork+=settleCodeEditor(s, pixels);
+    }
+    checks.check("scroll_rows_alone", scrollWithin && scrollOutside == 0 && diff->getVerticalScrollOffset() > 0
+            && diff->getCopyButton()->visible(),
+        "a scroll of the diff wrote outside its rows' and bars' ids (its copy button's included), or changed "
+        +std::to_string(scrollOutside)+" pixels outside it");
+
+    forgetMouse(s);
+    renderFrames(s, 1);
+    idleWork+=settleCodeEditor(s, pixels);
+    checks.check("settled", idleWork == 0, "settled frames wrote or changed "+std::to_string(idleWork));
+
+    dropControl(s, control);
+    renderFrames(s, 1);
+
+    const size_t idsLeft=livePrimitiveIds()+liveTextIds()-idsBefore;
+
+    checks.check("ids_back", idsLeft == 0, std::to_string(idsLeft)+" ids not given back");
+
+    passed=checks.allPassed();
+    std::cout<<"code-view";
+    for(const auto &result : checks.results)
+        std::cout<<" "<<result.first<<"="<<(result.second?"yes":"no");
+    std::cout<<" hover_prims="<<hover.primitives.size()<<" scroll_prims="<<scrollPrimsWritten<<"\n";
+    return ok;
+}
+
 static bool runCodeEditorScenario(Session &s, const std::string &shotDir, bool &passed)
 {
     s.freezeClock=true;
@@ -14573,6 +14782,15 @@ int main(int argc, char *argv[])
             ok=runChipBadgeScenario(session, shotDir, passed);
             if(ok && !passed)
                 ok=false;   // a count, a move, a hover or a removal did more than its part
+            break;
+        }
+
+        case Scenario::CodeView:
+        {
+            bool passed=false;
+            ok=runCodeViewScenario(session, shotDir, passed);
+            if(ok && !passed)
+                ok=false;   // a hover, a copy or a scroll did more or less than its part
             break;
         }
 
