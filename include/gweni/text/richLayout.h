@@ -117,6 +117,15 @@ public:
     //! only at '\n'), replacing what was laid out before. No spans give no
     //! lines.
     void layout(const std::vector<RichLayoutSpan> &spans, int width, const RichMeasure &measure);
+    //! layout() in two steps: setSpans keeps the spans and measures each
+    //! one's text and font, breakLines breaks them into lines at a width,
+    //! measuring only the pieces that start inside a span, so the same spans
+    //! laid out at several widths are measured once. setSpans leaves no lines
+    //! until breakLines.
+    void setSpans(const std::vector<RichLayoutSpan> &spans, const RichMeasure &measure);
+    void breakLines(int width, const RichMeasure &measure);
+    //! The spans setSpans was given
+    const std::vector<RichLayoutSpan> &spans() const { return m_spans; }
 
     const std::vector<RichLine> &lines() const { return m_lines; }
     const std::vector<RichPiece> &pieces() const { return m_pieces; }
@@ -128,6 +137,42 @@ public:
     size_t textLength() const { return m_textLength; }
 
 private:
+    //! A span's text between two '\n's (or its ends), measured once
+    struct Segment
+    {
+        size_t span=0;
+        size_t start=0;
+        size_t end=0;
+        //! the byte offset of every codepoint boundary, and its x
+        std::vector<size_t> bounds;
+        std::vector<int> xs;
+
+        int x(size_t byte) const;
+    };
+
+    enum class Break
+    {
+        Glue,   //!< the next atom is the same word's
+        Soft,   //!< a line may break after it
+        Hard    //!< a '\n' follows it: the line ends after it
+    };
+
+    //! The text between two break opportunities inside one segment
+    struct Atom
+    {
+        size_t segment=0;
+        size_t span=0;
+        size_t start=0;
+        size_t visibleEnd=0; //!< end less the spaces ending it
+        size_t end=0;
+        Break after=Break::Glue;
+    };
+
+    std::vector<RichLayoutSpan> m_spans;
+    std::vector<renderer::FontMetrics> m_metrics;
+    std::vector<Segment> m_segments;
+    std::vector<Atom> m_atoms;
+
     std::vector<RichLine> m_lines;
     std::vector<RichPiece> m_pieces;
     std::vector<size_t> m_spanOffsets;
