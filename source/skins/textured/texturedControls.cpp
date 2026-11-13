@@ -3319,10 +3319,17 @@ void Text::update(renderer::Base *renderer, controls::Base *baseControl)
     // Wrapped, the string is drawn by the line children; drawn here as well it
     // would lie as one long line over the first of them.
     static const String noText;
+    const std::vector<renderer::ColorSpan> *spans=control->colorSpans();
 
-    renderer->renderText(m_primitives[0], control->getFont(),
-        control->textOrigin(), control->getZIndex(),
-        control->wrap()?noText:control->getText());
+    // a Text with colour spans of its own; every other one the plain call, as
+    // it always was
+    if(spans && !control->wrap())
+        renderer->renderText(m_primitives[0], control->getFont(),
+            control->textOrigin(), control->getZIndex(), control->getText(), *spans);
+    else
+        renderer->renderText(m_primitives[0], control->getFont(),
+            control->textOrigin(), control->getZIndex(),
+            control->wrap()?noText:control->getText());
 
     if((baseControl->getStateChange() & controls::StateChange_Visibility) || 
         (baseControl->getStateChange() & controls::StateChange_Created))

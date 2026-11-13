@@ -25,8 +25,28 @@ namespace gweni
 namespace controls
 {
 
+static_assert(skin::CodeTokenKinds == static_cast<size_t>(text::TokenKind::Count),
+    "the skin keeps a colour per token kind");
+
 ///////////////////////////////////////////////////////////////////////////
 //CodeLine
+
+namespace internal
+{
+
+GWENI_CONTROL_CONSTRUCTOR(CodeLineText)
+{}
+
+void CodeLineText::setColorSpans(std::vector<renderer::ColorSpan> &spans)
+{
+    if(spans == m_spans)
+        return;
+
+    m_spans.swap(spans);
+    addStateChange(StateChange_Text);
+}
+
+}//namespace internal
 
 // The row draws its backgrounds, its Text the line; neither takes the mouse,
 // which is the editor's.
@@ -34,9 +54,10 @@ GWENI_CONTROL_CONSTRUCTOR(CodeLine)
 {
     setMouseInputEnabled(false);
 
-    m_text=newChild<internal::Text>();
+    m_text=newChild<internal::CodeLineText>();
     m_text->setPlacement(Placement::Owner);
     m_text->setMouseInputEnabled(false);
+    m_text->setSkinTextColor(internal::SkinTextColor::CodePlain);
 }
 
 // Unwrapped, the row is its one Text. Wrapped, it is a Text per visual row,
@@ -45,7 +66,6 @@ GWENI_CONTROL_CONSTRUCTOR(CodeLine)
 void CodeLine::bind(size_t line, const String &text, size_t wrapCells)
 {
     m_line=line;
-
     if(wrapCells == 0)
         m_rowStarts.clear();
     else
@@ -60,15 +80,16 @@ void CodeLine::bind(size_t line, const String &text, size_t wrapCells)
     }
     while(m_pieces.size() < rows-1)
     {
-        internal::Text *piece=nullptr;
+        internal::CodeLineText *piece=nullptr;
 
         {
             PartScope part;
 
-            piece=newChild<internal::Text>();
+            piece=newChild<internal::CodeLineText>();
         }
         piece->setPlacement(Placement::Owner);
         piece->setMouseInputEnabled(false);
+        piece->setSkinTextColor(internal::SkinTextColor::CodePlain);
         if(m_editor)
             piece->setFont(m_editor->getFont());
         m_pieces.push_back(piece);
@@ -78,17 +99,67 @@ void CodeLine::bind(size_t line, const String &text, size_t wrapCells)
     {
         m_lineText.clear();
         m_text->setText(text);
+    }
+    else
+    {
+        m_lineText=text;
+        for(size_t row=0; row < rows; ++row)
+        {
+            const size_t begin=m_rowStarts[row];
+            const size_t end=(row+1 < rows)?m_rowStarts[row+1]:text.size();
+
+            getRowText(row)->setText(text.substr(begin, end-begin));
+        }
+    }
+    updateColorSpans();
+}
+
+// Wrapped, each visual row's Text takes the spans over its bytes, shifted to
+// its own start.
+void CodeLine::updateColorSpans()
+{
+    if(!m_editor)
+        return;
+
+    // built in the editor's scratch and swapped with the Text's, so a row
+    // bound again reuses both vectors
+    std::vector<renderer::ColorSpan> &spans=m_editor->m_spanScratch;
+
+    if(m_line == NoLine)
+        spans.clear();
+    else
+        m_editor->tokenSpans(m_line, spans);
+
+    if(m_pieces.empty())
+    {
+        m_text->setColorSpans(spans);
         return;
     }
 
-    m_lineText=text;
+    std::vector<renderer::ColorSpan> &rowSpans=m_editor->m_rowSpanScratch;
+    const size_t rows=getRowCount();
+
     for(size_t row=0; row < rows; ++row)
     {
         const size_t begin=m_rowStarts[row];
-        const size_t end=(row+1 < rows)?m_rowStarts[row+1]:text.size();
+        const size_t end=(row+1 < rows)?m_rowStarts[row+1]:m_lineText.size();
 
-        getRowText(row)->setText(text.substr(begin, end-begin));
+        rowSpans.clear();
+        for(const renderer::ColorSpan &span : spans)
+        {
+            if(span.end <= begin || span.begin >= end)
+                continue;
+            rowSpans.push_back(renderer::ColorSpan{std::max(span.begin, begin)-begin,
+                std::min(span.end, end)-begin, span.color});
+        }
+        (row == 0?m_text:m_pieces[row-1])->setColorSpans(rowSpans);
     }
+}
+
+void CodeLine::updateColors()
+{
+    ParentClass::updateColors();
+    updateColorSpans();
 }
 
 void CodeLine::setCurrent(bool current)
@@ -384,6 +455,14 @@ GWENI_CONTROL_CONSTRUCTOR(CodeEditor)
         });
     setRowBinder([this](Base *row, size_t line) { bindRow(row, line); });
 
+    // the cache follows the document through linesChanged(), before the rows
+    // are bound again; the lines its pass gives new tokens get new spans there
+    m_highlight.setDocument(&m_document);
+    m_highlight.setChangeHandler([this](const std::vector<size_t> &lines)
+        {
+            m_recolor.insert(m_recolor.end(), lines.begin(), lines.end());
+        });
+
     m_lineCells.assign(1, 0);
     m_widthLines.assign(1, 1);
     m_longest=0;
@@ -418,6 +497,68 @@ void CodeEditor::setFont(const gweni::Font &font)
     for(internal::CodeLineNumber *number : m_numbers)
         number->fontChanged();
     invalidate();
+}
+
+bool CodeEditor::setLanguage(const String &name)
+{
+    const text::Tokenizer *tokenizer=name.empty()?nullptr:text::findLanguage(name);
+
+    setTokenizer(tokenizer);
+    if(!tokenizer)
+        return name.empty();
+    m_language=name;
+    return true;
+}
+
+void CodeEditor::setTokenizer(const text::Tokenizer *tokenizer)
+{
+    m_language.clear();
+    if(tokenizer == m_highlight.tokenizer())
+        return;
+
+    m_highlight.setTokenizer(tokenizer);
+    syncHighlightWindow();
+    // every row's spans from the new tokens
+    for(Base *row : getRows())
+    {
+        if(CodeLine *line=gweni_cast<CodeLine>(row))
+            line->updateColorSpans();
+    }
+}
+
+void CodeEditor::tokenSpans(size_t line, std::vector<renderer::ColorSpan> &spans)
+{
+    spans.clear();
+    if(!m_highlight.tokenizer() || line >= m_document.lineCount())
+        return;
+
+    const skin::Base *skin=getSkin();
+
+    if(!skin)
+        return;
+
+    for(const text::Token &token : m_highlight.tokens(line))
+        spans.push_back(renderer::ColorSpan{token.begin, token.end, skin->Colors.CodeEditor.Tokens[static_cast<size_t>(token.kind)]});
+}
+
+void CodeEditor::syncHighlightWindow()
+{
+    size_t first=NoItem;
+    size_t last=0;
+
+    for(size_t i=0; i < poolSize(); ++i)
+    {
+        const size_t item=poolItem(i);
+
+        if(item == NoItem)
+            continue;
+        first=std::min(first, item);
+        last=std::max(last, item);
+    }
+    if(first == NoItem)
+        m_highlight.setVisibleLines(0, 0);
+    else
+        m_highlight.setVisibleLines(first, last-first+1);
 }
 
 void CodeEditor::setLineNumbers(bool show)
@@ -796,6 +937,11 @@ void CodeEditor::linesChanged(const text::LineChange &change)
     if(!m_ownEdit)
         m_undo.clear();
 
+    // the tokens first, so a row bound below reads the edited lines' own; the
+    // lines on screen whose tokens the pass changed are listed in m_recolor
+    m_recolor.clear();
+    m_highlight.linesChanged(change);
+
     m_newCells.resize(change.inserted);
     for(size_t i=0; i < change.inserted; ++i)
     {
@@ -881,6 +1027,14 @@ void CodeEditor::linesChanged(const text::LineChange &change)
             else
                 refreshItem(first+i);
         }
+    }
+
+    // the rows on screen whose line's tokens the edit changed, at their lines
+    // after the shift (one the edit replaced is coloured again as it is bound)
+    for(size_t line : m_recolor)
+    {
+        if(CodeLine *row=rowForLine(line))
+            row->updateColorSpans();
     }
 
     // the content's width may have changed
@@ -2154,6 +2308,7 @@ void CodeEditor::contentsPlaced(skin::Base *skin)
     }
 
     placeLineNumbers(skin);
+    syncHighlightWindow();
 
     if(m_caretScroll[0] != getHorizontalScrollOffset() || m_caretScroll[1] != getVerticalScrollOffset())
     {

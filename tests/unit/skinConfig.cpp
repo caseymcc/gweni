@@ -36,11 +36,13 @@
 #include <gweni/platforms/commonPlatform.h>
 #include <gweni/skins/textured/texturedSkin.h>
 #include <gweni/skins/textured/tokyoNight.h>
+#include <gweni/text/tokenizer.h>
 #include <gweni/utils/filesystem.h>
 
 #include <doctest/doctest.h>
 
 #include <algorithm>
+#include <cctype>
 #include <fstream>
 #include <iostream>
 #include <sstream>
@@ -266,7 +268,7 @@ String joined(std::vector<String> names)
 
 }//namespace
 
-TEST_CASE("TexturedSkin::textColorRegistry names the theme's 19 text colours in this skin")
+TEST_CASE("TexturedSkin::textColorRegistry names the theme's 36 text colours in this skin")
 {
     test::StubRenderer renderer;
     skin::textured::TexturedSkin skin(&renderer);
@@ -274,13 +276,25 @@ TEST_CASE("TexturedSkin::textColorRegistry names the theme's 19 text colours in 
 
     auto registry=skin.textColorRegistry();
 
-    CHECK(registry.size() == 19);
+    CHECK(registry.size() == 36);
     CHECK((registry.at("LabelDefault") == &skin.Colors.Label.Default));
     CHECK((registry.at("SelectableDisabled") == &skin.Colors.Selectable.Disabled));
     CHECK((registry.at("CodeLineNumber") == &skin.Colors.CodeEditor.LineNumber));
     CHECK((registry.at("CodeLineNumberCurrent") == &skin.Colors.CodeEditor.LineNumberCurrent));
     CHECK((registry.at("ChartAxisText") == &skin.Colors.Chart.AxisText));
     CHECK((registry.at("ChartMarkerText") == &skin.Colors.Chart.MarkerText));
+    // a colour per token kind, each by its kind's name
+    CHECK((registry.at("CodePlain") == &skin.Colors.CodeEditor.Tokens[0]));
+    CHECK((registry.at("CodeKeyword") == &skin.Colors.CodeEditor.Tokens[size_t(text::TokenKind::Keyword)]));
+    CHECK((registry.at("CodeMeta") == &skin.Colors.CodeEditor.Tokens[size_t(text::TokenKind::Meta)]));
+    for(size_t kind=0; kind < size_t(text::TokenKind::Count); ++kind)
+    {
+        String name=text::tokenKindName(text::TokenKind(kind));
+
+        name[0]=static_cast<char>(toupper(name[0]));
+        CAPTURE(name);
+        CHECK((registry.at("Code"+name) == &skin.Colors.CodeEditor.Tokens[kind]));
+    }
     CHECK((other.textColorRegistry().at("LabelDefault") == &other.Colors.Label.Default));
 }
 
@@ -368,7 +382,7 @@ TEST_CASE("A strict theme leaves every colour it does not set magenta and lists 
         "theme textColor \"ButtonHover\" must be an array of 3-4 integers 0-255\n"
         "theme strict: "+std::to_string(surfaceCount-1)+" of "+std::to_string(surfaceCount)
             +" surfaces not set: "+joined(surfaceGaps)+"\n"
-        "theme strict: 18 of 19 text colors not set: "+joined(textGaps)+"\n";
+        "theme strict: 35 of 36 text colors not set: "+joined(textGaps)+"\n";
 
     CHECK(result.message == expected);
 }
@@ -406,11 +420,11 @@ TEST_CASE("A strict theme that sets everything says so on one line")
     INFO("stderr: ", result.message);
     CHECK(result.loaded);
     if(allTextColors)
-        CHECK(result.message == "theme strict: all "+count+" surfaces and 19 text colors set\n");
+        CHECK(result.message == "theme strict: all "+count+" surfaces and 36 text colors set\n");
     else
     {
         CHECK(result.message == "theme strict: all "+count+" surfaces set\n"
-            "theme strict: 1 of 19 text colors not set: TooltipText\n");
+            "theme strict: 1 of 36 text colors not set: TooltipText\n");
         CHECK((skin.Colors.TooltipText == colors::Missing));
     }
 

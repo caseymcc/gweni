@@ -13,6 +13,7 @@
 #include <gweni/controls/text.h>
 #include <gweni/controls/virtualList.h>
 #include <gweni/text/document.h>
+#include <gweni/text/highlightCache.h>
 #include <gweni/text/undoStack.h>
 
 #include <algorithm>
@@ -25,6 +26,7 @@ namespace controls
 {
 
 class CodeEditor;
+class CodeLine;
 
 namespace internal
 {
@@ -66,11 +68,34 @@ private:
     bool m_current=false;
 };
 
+//! A CodeLine's text: one run drawn with the colour spans of the line's
+//! tokens (CodeEditor::setLanguage), in Colors.CodeEditor's Plain colour
+//! outside them.
+class GWENI_EXPORT CodeLineText: public Text
+{
+public:
+    GWENI_CONTROL(CodeLineText, Text);
+
+public:
+    const std::vector<renderer::ColorSpan> *colorSpans() const override { return &m_spans; }
+    const std::vector<renderer::ColorSpan> &getColorSpans() const { return m_spans; }
+
+private:
+    friend class controls::CodeLine;
+
+    //! Takes \p spans (swapped in), marking StateChange_Text only when they
+    //! differ from the ones it had: the string is not laid out again.
+    void setColorSpans(std::vector<renderer::ColorSpan> &spans);
+
+    std::vector<renderer::ColorSpan> m_spans;
+};
+
 }//namespace internal
 
 //! One row of a CodeEditor: the line it shows, as one text run (a Text in the
-//! editor's font), with a line background behind it (shown on the current
-//! line) and a selection rect behind the glyphs at the text's z. The editor
+//! editor's font, coloured by the line's tokens), with a line background
+//! behind it (shown on the current line) and a selection rect behind the
+//! glyphs at the text's z. The editor
 //! makes and binds its rows (a pool, as a VirtualList's): an app never makes
 //! one, and a row shows another line as the editor scrolls.
 class GWENI_EXPORT CodeLine: public Base
@@ -97,6 +122,11 @@ public:
     //! The Text drawing visual row \p row: getTextControl() for the first.
     internal::Text *getRowText(size_t row) const { return row == 0?m_text:m_pieces[row-1]; }
     CodeEditor *getEditor() const { return m_editor; }
+    //! The colour spans its run is drawn with: the bound line's tokens in
+    //! the skin's colours (none without a language).
+    //! Wrapped, the first visual row's: each row's Text holds the spans over
+    //! its bytes, from its own start.
+    const std::vector<renderer::ColorSpan> &getColorSpans() const { return m_text->getColorSpans(); }
 
     //! Whether it shows the line with the caret: its line background shows.
     bool isCurrentLine() const { return m_current; }
@@ -124,6 +154,8 @@ public:
     void getSelectionRects(std::vector<Rect> &rects) const;
 
     void calculateSize(skin::Base *skin, Dim dim) override;
+    //! The skin's colours again: the spans are built from them anew.
+    void updateColors() override;
 
 protected:
     void arrangeHorizontal(skin::Base *skin) override;
@@ -131,6 +163,9 @@ protected:
 
 private:
     friend class CodeEditor;
+
+    //! The run's spans from the editor's tokens of the bound line.
+    void updateColorSpans();
 
     //! Shows the line, with the text it holds now, wrapped at \p wrapCells
     //! cells (0: unwrapped, one row).
@@ -142,10 +177,10 @@ private:
     //! The editor's font changed (in place): the run is laid out again.
     void fontChanged();
 
-    internal::Text *m_text=nullptr;
+    internal::CodeLineText *m_text=nullptr;
     //! The Texts of the visual rows after the first, and where each row
     //! starts in the line (empty unwrapped: no allocation for a fixed row).
-    std::vector<internal::Text *> m_pieces;
+    std::vector<internal::CodeLineText *> m_pieces;
     std::vector<size_t> m_rowStarts;
     //! The whole line while it is shown in more than one row.
     String m_lineText;
@@ -240,6 +275,20 @@ private:
 //! and no current-line background, the theme's text-field look (the TextBox
 //! surfaces), and Tab moving the focus (setTabInsertsSpaces(false)). It is
 //! still monospace: every column is a cell of the mono face.
+//!
+//! setLanguage("yaml") (any name of text::findLanguage(), or a tokenizer of
+//! the app's, setTokenizer) highlights the lines: a text::HighlightCache over
+//! the document keeps each line's tokens, and each row's run is drawn with a
+//! colour span per token in the skin's Colors.CodeEditor colour of its kind
+//! (renderer::Base::renderText's colour spans: one text id a line whatever
+//! its tokens). The editor tells the cache of an edit before it binds a row,
+//! and the cache which lines are on screen as it lays them out, so an edit
+//! tokenizes the lines it changed, and one that changes the state the next
+//! line starts in (an opened block scalar) the lines on screen below it and
+//! no more: the rows whose tokens changed get new spans, which rewrite the
+//! glyph slots whose colour changed and lay nothing out. The lines below are
+//! tokenized when they are bound. Wrapped, each visual row's run takes
+//! the spans over its bytes.
 //!
 //! setLineNumbers(true) adds a gutter left of the viewport: one number
 //! Label per pooled row, bound with the rows (the numbers of the lines on
@@ -396,6 +445,19 @@ public:
     //! are.
     void setPlain(bool plain);
     bool isPlain() const { return m_plain; }
+
+    //! Highlights the lines in the registry's language \p name
+    //! (text::findLanguage: "yaml", "json", "markdown", "markdown+jinja",
+    //! "diff", "bash"), or none for "": false, and no highlighting, for a name
+    //! the registry does not have.
+    bool setLanguage(const String &name);
+    const String &getLanguage() const { return m_language; }
+    //! Highlights the lines with \p tokenizer (which must outlive the editor
+    //! or be set again first), none for null; getLanguage() is "" after it.
+    void setTokenizer(const text::Tokenizer *tokenizer);
+    const text::Tokenizer *getTokenizer() const { return m_highlight.tokenizer(); }
+    //! The lines' tokens, as the rows were bound with them.
+    text::HighlightCache &getHighlightCache() { return m_highlight; }
 
     //! No caret, no current line and no edits; selection and copying stay.
     void setReadOnly(bool readOnly);
@@ -572,6 +634,11 @@ private:
     //! Puts the list in variable mode with the wrap's measurer, every line
     //! estimated again from its cells.
     void applyWrapMeasurer();
+    //! The colour spans of line \p line's tokens, in the skin's colours, into
+    //! \p spans (emptied first; none without a tokenizer).
+    void tokenSpans(size_t line, std::vector<renderer::ColorSpan> &spans);
+    //! Tells the highlight cache which lines the pooled rows show.
+    void syncHighlightWindow();
     //! Whether the cell width and line height were read for this font,
     //! renderer, text layout and scale.
     bool metricsCurrent(skin::Base *skin) const;
@@ -636,6 +703,16 @@ private:
     //! Each number's row by its control id (never reused, unlike an address).
     std::vector<size_t> m_numberRows;
     int m_gutterWidth=0;
+
+    text::HighlightCache m_highlight;
+    String m_language;
+    //! The lines an edit's highlight pass gave new tokens, whose rows get new
+    //! spans once the edit has moved the rows (kept for its capacity).
+    std::vector<size_t> m_recolor;
+    //! The spans a row's are built in (CodeLine::updateColorSpans).
+    std::vector<renderer::ColorSpan> m_spanScratch;
+    //! A wrapped row's share of them (CodeLine::updateColorSpans).
+    std::vector<renderer::ColorSpan> m_rowSpanScratch;
 
     text::UndoStack m_undo;
     //! The editor is applying an edit of its own (the history stays).

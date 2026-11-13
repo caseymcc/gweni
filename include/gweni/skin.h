@@ -11,6 +11,8 @@
 #include <gweni/platforms/baseRender.h>
 #include <gweni/uiTypes.h>
 
+#include <array>
+
 namespace gweni
 {
 namespace controls
@@ -20,6 +22,10 @@ class Base;
 
 namespace skin
 {
+//! The token kinds a CodeEditor colours (text::TokenKind::Count): one colour
+//! each in Colors.CodeEditor.Tokens.
+static constexpr size_t CodeTokenKinds=17;
+
 namespace symbol
 {
 enum
@@ -400,11 +406,33 @@ public:
         //! A VectorField's axis letter (X, Y, Z, W), drawn on its axis's colour.
         gweni::Color AxisTagText{0, 0, 0};
 
-        //! A CodeEditor's line numbers, and the number of the caret's line.
+        //! A CodeEditor's line numbers, the number of the caret's line, and
+        //! the colour of each token kind it highlights, Tokens[k] the colour
+        //! of text::TokenKind k (Plain, 0, its text in no token).
         struct CodeEditor_t
         {
             gweni::Color LineNumber{0x80, 0x80, 0x80};
             gweni::Color LineNumberCurrent{0xc0, 0xc0, 0xc0};
+            std::array<gweni::Color, CodeTokenKinds> Tokens
+            {{
+                {0x00, 0x00, 0x00},     // Plain
+                {0x00, 0x00, 0xc0},     // Keyword
+                {0x00, 0x80, 0x00},     // String
+                {0x80, 0x40, 0x00},     // Number
+                {0x80, 0x80, 0x80},     // Comment
+                {0x00, 0x40, 0x80},     // Key
+                {0x40, 0x40, 0x40},     // Punctuation
+                {0x00, 0x00, 0x80},     // Heading
+                {0x60, 0x00, 0x60},     // Emphasis
+                {0x80, 0x00, 0x00},     // Strong
+                {0x00, 0x60, 0x60},     // Code
+                {0x00, 0x00, 0xff},     // Link
+                {0xa0, 0x00, 0x60},     // Template
+                {0x00, 0x80, 0x00},     // Added
+                {0xc0, 0x00, 0x00},     // Removed
+                {0x00, 0x60, 0xa0},     // Hunk
+                {0x80, 0x60, 0x00}      // Meta
+            }};
         } CodeEditor;
 
         //! A Chart's tick labels and axis titles, and its markers' captions.

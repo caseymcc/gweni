@@ -58,8 +58,9 @@ String CodeEditorDemo::yamlDocument(size_t lines)
 }
 
 // A 5000-line YAML document in a CodeEditor filling the demo below a title
-// and a wrap toggle: only the lines on screen are controls, its line numbers
-// in a gutter; each agent's prompt line is long enough to wrap.
+// and a wrap toggle, highlighted as YAML: only the lines on screen are
+// controls, its line numbers in a gutter; each agent's prompt line is long
+// enough to wrap.
 GWENI_CONTROL_CONSTRUCTOR(CodeEditorDemo)
 {
     setDock(DockPosition::Center);
@@ -71,13 +72,14 @@ GWENI_CONTROL_CONSTRUCTOR(CodeEditorDemo)
 
     controls::Label *title=newChild<controls::Label>();
 
-    title->setText(std::to_string(LineCount)+" lines of YAML, a row for each one on screen");
+    title->setText(std::to_string(LineCount)+" lines of highlighted YAML, a row for each one on screen");
     title->setPos(110, 10);
 
     m_editor=newChild<controls::CodeEditor>();
     m_editor->setDock(DockPosition::Center);
     m_editor->setMargin(Margin(10, 34, 10, 10));
     m_editor->setLineNumbers(true);
+    m_editor->setLanguage("yaml");
     m_editor->setText(yamlDocument(LineCount));
 }
 

@@ -8,6 +8,7 @@
 #include <gweni/gweni.h>
 #include <gweni/controls/text.h>
 #include <gweni/skin.h>
+#include <gweni/text/tokenizer.h>
 #include <gweni/utility.h>
 #include <gweni/platforms/commonPlatform.h>
 
@@ -73,6 +74,7 @@ void Text::refreshSkinTextColor()
     case SkinTextColor::LabelDark:      return applyTextColor(skin->Colors.Label.Dark);
     case SkinTextColor::LabelHighlight: return applyTextColor(skin->Colors.Label.Highlight);
     case SkinTextColor::Placeholder:    return applyTextColor(skin->Colors.PlaceholderText);
+    case SkinTextColor::CodePlain:      return applyTextColor(skin->Colors.CodeEditor.Tokens[static_cast<size_t>(text::TokenKind::Plain)]);
     }
 }
 

@@ -31,7 +31,8 @@ enum class SkinTextColor
     LabelBright,    //!< Colors.Label.Bright
     LabelDark,      //!< Colors.Label.Dark
     LabelHighlight, //!< Colors.Label.Highlight
-    Placeholder     //!< Colors.PlaceholderText, a TextBox's hint
+    Placeholder,    //!< Colors.PlaceholderText, a TextBox's hint
+    CodePlain       //!< Colors.CodeEditor's Plain token colour, a CodeEditor line's
 };
 
 class GWENI_EXPORT Text: public controls::Base
@@ -102,6 +103,12 @@ public:
     {
         return m_color;
     }
+
+    //! The colour spans the string is drawn with (renderer::Base::renderText's
+    //! overload), the text colour outside them; null for a Text drawn in its
+    //! colour alone, as every Text is but one that keeps spans of its own
+    //! (a CodeEditor's line).
+    virtual const std::vector<renderer::ColorSpan> *colorSpans() const { return nullptr; }
 
     virtual void setTextColorOverride(const gweni::Color &col)
     {

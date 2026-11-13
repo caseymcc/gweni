@@ -1,5 +1,6 @@
 #include "gweni/skins/textured/texturedSkin.h"
 #include "gweni/skins/textured/tokyoNight.h"
+#include "gweni/text/tokenizer.h"
 
 #include "gweni/utils/json.h"
 #include "gweni/utils/filesystem.h"
@@ -487,6 +488,23 @@ std::unordered_map<std::string, gweni::Color*> TexturedSkin::textColorRegistry()
         {"CodeLineNumber",&Colors.CodeEditor.LineNumber},
         {"CodeLineNumberCurrent",&Colors.CodeEditor.LineNumberCurrent},
         {"ChartAxisText",&Colors.Chart.AxisText},{"ChartMarkerText",&Colors.Chart.MarkerText},
+        {"CodePlain",&Colors.CodeEditor.Tokens[static_cast<size_t>(text::TokenKind::Plain)]},
+        {"CodeKeyword",&Colors.CodeEditor.Tokens[static_cast<size_t>(text::TokenKind::Keyword)]},
+        {"CodeString",&Colors.CodeEditor.Tokens[static_cast<size_t>(text::TokenKind::String)]},
+        {"CodeNumber",&Colors.CodeEditor.Tokens[static_cast<size_t>(text::TokenKind::Number)]},
+        {"CodeComment",&Colors.CodeEditor.Tokens[static_cast<size_t>(text::TokenKind::Comment)]},
+        {"CodeKey",&Colors.CodeEditor.Tokens[static_cast<size_t>(text::TokenKind::Key)]},
+        {"CodePunctuation",&Colors.CodeEditor.Tokens[static_cast<size_t>(text::TokenKind::Punctuation)]},
+        {"CodeHeading",&Colors.CodeEditor.Tokens[static_cast<size_t>(text::TokenKind::Heading)]},
+        {"CodeEmphasis",&Colors.CodeEditor.Tokens[static_cast<size_t>(text::TokenKind::Emphasis)]},
+        {"CodeStrong",&Colors.CodeEditor.Tokens[static_cast<size_t>(text::TokenKind::Strong)]},
+        {"CodeCode",&Colors.CodeEditor.Tokens[static_cast<size_t>(text::TokenKind::Code)]},
+        {"CodeLink",&Colors.CodeEditor.Tokens[static_cast<size_t>(text::TokenKind::Link)]},
+        {"CodeTemplate",&Colors.CodeEditor.Tokens[static_cast<size_t>(text::TokenKind::Template)]},
+        {"CodeAdded",&Colors.CodeEditor.Tokens[static_cast<size_t>(text::TokenKind::Added)]},
+        {"CodeRemoved",&Colors.CodeEditor.Tokens[static_cast<size_t>(text::TokenKind::Removed)]},
+        {"CodeHunk",&Colors.CodeEditor.Tokens[static_cast<size_t>(text::TokenKind::Hunk)]},
+        {"CodeMeta",&Colors.CodeEditor.Tokens[static_cast<size_t>(text::TokenKind::Meta)]},
         {"SelectableNormal",&Colors.Selectable.Normal},{"SelectableHover",&Colors.Selectable.Hover},
         {"SelectableSelected",&Colors.Selectable.Selected},{"SelectableDisabled",&Colors.Selectable.Disabled},
     };
@@ -1316,6 +1334,29 @@ void TexturedSkin::setThemeColors()
     // a Chart's tick labels are secondary text, its markers' captions primary
     Colors.Chart.AxisText=FgDark;
     Colors.Chart.MarkerText=Fg;
+    // a CodeEditor's token kinds, after Tokyo Night's own highlighting
+    {
+        using text::TokenKind;
+        auto &code=Colors.CodeEditor;
+
+        code.Tokens[static_cast<size_t>(TokenKind::Plain)]=Fg;
+        code.Tokens[static_cast<size_t>(TokenKind::Keyword)]=Magenta;
+        code.Tokens[static_cast<size_t>(TokenKind::String)]=Green;
+        code.Tokens[static_cast<size_t>(TokenKind::Number)]=Orange;
+        code.Tokens[static_cast<size_t>(TokenKind::Comment)]=Muted;
+        code.Tokens[static_cast<size_t>(TokenKind::Key)]=Blue;
+        code.Tokens[static_cast<size_t>(TokenKind::Punctuation)]=gweni::Color(0x89, 0xdd, 0xff);
+        code.Tokens[static_cast<size_t>(TokenKind::Heading)]=Cyan;
+        code.Tokens[static_cast<size_t>(TokenKind::Emphasis)]=gweni::Color(0x9d, 0x7c, 0xd8);
+        code.Tokens[static_cast<size_t>(TokenKind::Strong)]=Yellow;
+        code.Tokens[static_cast<size_t>(TokenKind::Code)]=gweni::Color(0x73, 0xda, 0xca);
+        code.Tokens[static_cast<size_t>(TokenKind::Link)]=gweni::Color(0x2a, 0xc3, 0xde);
+        code.Tokens[static_cast<size_t>(TokenKind::Template)]=gweni::Color(0xff, 0x00, 0x7c);
+        code.Tokens[static_cast<size_t>(TokenKind::Added)]=Green;
+        code.Tokens[static_cast<size_t>(TokenKind::Removed)]=Red;
+        code.Tokens[static_cast<size_t>(TokenKind::Hunk)]=gweni::Color(0x0d, 0xb9, 0xd7);
+        code.Tokens[static_cast<size_t>(TokenKind::Meta)]=gweni::Color(0xff, 0xc7, 0x77);
+    }
     // the hover is the background alone, so hovering writes no glyph slot
     Colors.Selectable.Normal=Fg;
     Colors.Selectable.Hover=Fg;
