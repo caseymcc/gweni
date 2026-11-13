@@ -15,7 +15,9 @@
  *  cells, the one after them and TextInset on both sides), with no bar and
  *  nothing to scroll; 1000 lines docked Center to fill a 300x200 panel take the
  *  panel and scroll vertically, and in a VerticalLayout cell a long one is
- *  cut to the cell and scrolls there.
+ *  cut to the cell and scrolls there. Docked Top in a column narrower than
+ *  its one line, it is that line high plus the horizontal bar, so the line
+ *  shows above the bar with nothing to scroll vertically.
  */
 #include "headlessFixture.h"
 
@@ -365,4 +367,24 @@ TEST_CASE("CodeView of 1000 lines scrolls in what a dock or a layout gives it")
         CHECK(barShown(view));
         CHECK(view->getMaxVerticalScrollOffset() > 0);
     }
+}
+
+TEST_CASE("CodeView docked Top narrower than its one line is that line high plus the horizontal bar")
+{
+    Scene scene;
+    controls::Base *panel=scene.canvas->newChild<controls::Base>();
+    controls::CodeView *view=panel->newChild<controls::CodeView>();
+
+    panel->setBounds(0, 0, 120, 200);
+    panel->setSizeFlags({SizeFlag::Fixed, SizeFlag::Fixed});
+    view->setDock(DockPosition::Top);
+    view->setText("git clone https://github.com/caseymcc/gweni.git && cd gweni");
+    scene.frame();
+    scene.frame();
+    REQUIRE(view->getLineHeight() > 0);
+
+    CHECK(view->getWidth() == 120);
+    CHECK(view->getMaxHorizontalScrollOffset() > 0);
+    CHECK(view->getViewportHeight() == view->getLineHeight());
+    CHECK(view->getMaxVerticalScrollOffset() == 0);
 }

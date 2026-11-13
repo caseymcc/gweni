@@ -231,12 +231,12 @@ if(TARGET ControlTest AND NOT EMSCRIPTEN)
     # hides, the navigation rail's collapse/selection, the board's wheels and
     # edits, the fields' messages, the segmented buttons' selections, the
     # tree table's expands, collapses and keys, the split and drop-down
-    # buttons' menus, the range slider's drags and keys and the
-    # steppers' step changes
+    # buttons' menus, the range slider's drags and keys, the
+    # steppers' step changes and the code view's copy button
     foreach(verify_scenario interaction resize scale clip tooltip context-menu stats-overlay
             depth-view zoom-panel node-graph virtual-list-variable code-editor log-view chip-badge
             dialog toast flow switch spinner navigation-rail board field-validation segmented
-            tree-table split-button range-slider stepper)
+            tree-table split-button range-slider stepper code-view)
         string(REPLACE "-" "_" verify_name "${verify_scenario}")
         set(verify_flags)
         if(verify_scenario STREQUAL "navigation-rail")
@@ -681,6 +681,15 @@ Erm, and I think it comes down to a choice between "The League Against Salivatin
     gweni_whole_app_test(controltest_stepper 60
         COMMAND $<TARGET_FILE:ControlTest> --headless --scenario stepper --require-one-pass
             --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/stepper@VARIANT@
+        WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
+
+    # CodeViewDemo: hovering a view shows its copy button, writing its slots
+    # alone, and moving off gives the frame back; its click copies the whole
+    # text, a drag and Ctrl+C the selection; a scroll of the diff writes its
+    # rows' and bars' slots alone; settled frames write nothing
+    gweni_whole_app_test(controltest_code_view 60
+        COMMAND $<TARGET_FILE:ControlTest> --headless --scenario code-view --require-one-pass
+            --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/code_view@VARIANT@
         WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
 
     # gweni::tools::Inspector over the settled Demo, opened and closed by F12:

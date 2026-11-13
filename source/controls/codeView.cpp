@@ -40,6 +40,29 @@ GWENI_CONTROL_CONSTRUCTOR(CodeView)
     m_heightRequested=false;
 }
 
+// As auto-height counts the bar (CodeEditor::calculateSize), but for any
+// height: the view is laid out at its preferred height, so no vertical bar
+// narrows the viewport below what the width gives.
+void CodeView::calculateSize(skin::Base *skin, Dim dim)
+{
+    ParentClass::calculateSize(skin, dim);
+
+    if(dim != Dim::Y || hasAutoHeight() || isWrapped() || sizedByRequest(Dim::Y))
+        return;
+
+    const Margin &inset=m_innerPanel->getMargin();
+    const Margin &barMargin=m_horizontalScrollBar->getMargin();
+    const int viewport=getWidth()-m_padding.left-m_padding.right-inset.left-inset.right;
+
+    if(contentSize().width <= viewport)
+        return;
+
+    const int height=contentSize().height+inset.top+inset.bottom+m_padding.top+m_padding.bottom
+        +m_barSize.height+barMargin.top+barMargin.bottom;
+
+    m_preferredSize.height=preferredFromContent(height, Dim::Y);
+}
+
 bool CodeView::setFileName(const String &fileName)
 {
     const String language=text::languageForFileName(fileName);
@@ -165,7 +188,7 @@ void CodeView::onDescendantInteraction(Base *control)
 }
 
 // After the rows, whose placement the viewport is final for: the button at
-// the viewport's top-right, measured here (it was hidden when the X
+// the viewport's top-right (centred on a view too short for it), measured here (it was hidden when the X
 // measuring ran, or its text changed).
 void CodeView::contentsPlaced(skin::Base *skin)
 {
@@ -180,8 +203,14 @@ void CodeView::contentsPlaced(skin::Base *skin)
     const Size &size=m_copyButton->getPreferredSize();
     const Rect &viewport=getViewport();
 
-    placeChild(m_copyButton, viewport.x+viewport.w-CopyInset-size.width, viewport.y+CopyInset, size.width,
-        size.height);
+    int y=viewport.y+CopyInset;
+
+    // a viewport too short for it (a one-line command): centred on the view,
+    // which the button may cover to its border
+    if(y+size.height > viewport.y+viewport.h)
+        y=std::max(0, (getHeight()-size.height)/2);
+
+    placeChild(m_copyButton, viewport.x+viewport.w-CopyInset-size.width, y, size.width, size.height);
 }
 
 }//namespace controls
