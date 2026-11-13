@@ -2392,9 +2392,13 @@ static void collectIdOwners(gweni::controls::Base *control, const std::string &p
 {
     if(const gweni::skin::Control *skinControl=control->getSkinControl())
     {
-        const bool text=dynamic_cast<const gweni::skin::textured::Text *>(skinControl) != nullptr;
-        for(size_t id : skinControl->getPrimitives())
-            (text ? owners.texts : owners.primitives)[id]=path;
+        std::vector<size_t> primitiveIds, textIds;
+
+        skinControl->appendIds(primitiveIds, textIds);
+        for(size_t id : primitiveIds)
+            owners.primitives[id]=path;
+        for(size_t id : textIds)
+            owners.texts[id]=path;
     }
 
     size_t index=0;
@@ -12525,7 +12529,13 @@ static void collectMirrorByOwner(gweni::controls::Base *control, const std::stri
 {
     if(const gweni::skin::Control *skinControl=control->getSkinControl())
     {
-        const bool text=dynamic_cast<const gweni::skin::textured::Text *>(skinControl) != nullptr;
+        // a Control whose ids are all text ids (a Text, a CodeEditor line's
+        // CodeLineText) is read from the text mirror
+        std::vector<size_t> primitiveIds, textIds;
+
+        skinControl->appendIds(primitiveIds, textIds);
+
+        const bool text=primitiveIds.empty() && !textIds.empty();
         const auto &ids=text ? mirror.texts : mirror.primitives;
         size_t index=0;
         for(size_t id : skinControl->getPrimitives())
