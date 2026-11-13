@@ -1074,9 +1074,6 @@ private:
     //! takes it off the queue, so a control that left the canvas's tree is
     //! still found there.
     Canvas *m_deleteQueuedOn=nullptr;
-    //! Set once the control is the owner of a canvas timer (Canvas::after(),
-    //! every()), so ~Base cancels its timers on every canvas.
-    bool m_ownsTimers=false;
 
 public:
     //! Calls onDescendantInteraction(this) on each ancestor. The input handler
@@ -1097,6 +1094,10 @@ protected:
 
     Menu *m_contextMenu=nullptr;
     bool m_ownsContextMenu=false;
+    //! Set once the control is the owner of a canvas timer (Canvas::after(),
+    //! every()), so ~Base cancels its timers on every canvas. Beside
+    //! m_ownsContextMenu, in the padding before the next pointer.
+    bool m_ownsTimers=false;
     //! Takes the context menu off this control (closing it if it is open for
     //! it), deleting it if this control owns it.
     void dropContextMenu();
