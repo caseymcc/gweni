@@ -11,8 +11,9 @@
  *  setOptions()' first, clearOptions() holds the selection (still the value
  *  and the text, at no index) until setSelectedIndex(NoOption) drops it,
  *  setSelectedIndex() fires nothing and refuses an index out of range, and
- *  getValue() is the selected option's name, or its label without one. Up and Down on the closed box
- *  step the selection, one onSelection per step, nothing past either end.
+ *  getValue() is the selected option's name, or its label without one. Up
+ *  and Down on the closed box step the selection, one onSelection per step,
+ *  nothing past either end.
  *
  *  The list: a press opens a Menu on the canvas below the box, as wide as
  *  it, its rows the options' labels, the box's look marked open; a second
@@ -42,11 +43,13 @@
  *  on a row keep the field focused (its edit kept between them) and pick. A
  *  press on the box's chevron column focuses the field, opens the list on
  *  every option with the selection highlighted and its label selected in the
- *  field, and a second one closes it. A keystroke binds again only the rows
- *  whose option changed (getRowBindCount), makes and deletes no control, lays
- *  out in one pass, and a shown row keeping its option and highlight takes
- *  no Text or Background change; at 30 and 3 000 options it keeps the same
- *  pool and makes and frees no control or id.
+ *  field, and a second one closes it. A click on the field's text with the
+ *  list closed opens it with all of the text selected, so typing replaces
+ *  it (the release does not move the caret). A keystroke binds again only
+ *  the rows whose option changed (getRowBindCount), makes and deletes no
+ *  control, lays out in one pass, and a shown row keeping its option and
+ *  highlight takes no Text or Background change; at 30 and 3 000 options it
+ *  keeps the same pool and makes and frees no control or id.
  *
  *  Free text: a text that is no option's label shows the Add “<text>” row
  *  after the matches (Up wraps onto it), alone and highlighted when nothing
@@ -66,10 +69,12 @@
  *  and is not taken as a free-text value when the focus moves on, a refused
  *  text included; the value taken is the text typed, whatever the handler
  *  sets the field to. A disabled box closes its list, and a press where a
- *  row was picks nothing; a filterable box's font reaches its field. Options
- *  refilled from onTextChangedCaller (setOptions(), or clearOptions() and
- *  addOption()) leave the typed text and the query in the field, the list
- *  showing the new options that match it; a selection gone from them is
+ *  row was picks nothing; a disabled filterable box opens no list from a
+ *  click on its field or from typing, and Return there picks nothing; a
+ *  filterable box's font reaches its field. Options refilled from
+ *  onTextChangedCaller (setOptions(), or clearOptions() and addOption())
+ *  leave the typed text and the query in the field, the list showing the
+ *  new options that match it; a selection gone from them is
  *  held, so Escape and a lost focus give its label back (no onSelection) and
  *  the pick ending the edit fires onSelection, and a refill after it, or
  *  after a free-text field typed back to the value's own text loses the
