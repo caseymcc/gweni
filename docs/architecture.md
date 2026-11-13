@@ -3057,6 +3057,102 @@ two programs and the draws. What follows describes both together:
   component or the tags takes their ids and removing them gives them back.
   VectorFieldDemo has a float2, a tagged float3, a tagged integer vector of four and a
   disabled one; ShowcaseInputDemo has a tagged float3.
+- **Attached children: a badge on its anchor's corner.** `Base::attachTo(anchor, corner,
+  offset)` makes a control a child of the anchor's own list (never an inner panel's or a
+  LayoutItem's), `Placement::Owner`, centred on that corner of the anchor's bounds and
+  moved by the offset; `controls::Badge` (`include/gweni/controls/badge.h`) is one, and
+  any control can be. Nothing in the anchor's type knows about it:
+  - *Placement.* `Base::doArrange()`, the non-virtual wrapper every arrange goes through,
+    places the anchor's attached children along the axis at their preferred size
+    (`dockNoneSize`, so a request still counts) before calling the anchor's `arrange()`,
+    and arranges any its `arrange()` did not enter (a LayoutItem's, an override that
+    places its children itself) after it; `doCalculateSize()` measures one the anchor's
+    own `calculateSize()` did not. Owner-placed, it is not in the anchor's preferred
+    size, so 9 to 10 resizes no button, and its bounds are in the anchor's coordinates,
+    so a pure move of the anchor enters neither it nor the anchor's other children.
+  - *The clip.* An attached child renders in the region its anchor renders in, not in
+    the anchor's bounds, whether or not the anchor clips and over any
+    `getChildClipRect()` rect the anchor gives its other children: the overhang shows
+    wherever the anchor could draw, and is cut wherever an ancestor cuts the anchor (a
+    ScrollControl's viewport, or a plain container, which clips at its bounds, so a row
+    of badged buttons keeps padding for the overhang). That region is the render
+    drain's own state for the anchor: its tree walk has it at hand, and its ancestor
+    stack keeps the region each level renders in (`RenderLevel::clip`, one more `Rect`
+    a level), so no rect is cached or worked out per call, and none changes when the
+    anchor resizes. `clipRectRegionChanged()` follows the same rule, and a Label does
+    not mark an attached child when its own rects change. An anchor that
+    `transformsChildren()` (a ZoomPanel) is the exception: its attached children
+    render in its children's space.
+  - *The depth.* z is the preorder, so a child of the anchor is numbered under the
+    anchor's later siblings. The anchor's parent (its `m_actualParent`) reserves one z
+    per attached child of its children in its overlay range, after its skin Control's
+    `overlayLayers()`: `renumberZRecursive` counts them over the children it walks or
+    passes (`countAttachedOverlay`) and hands them out in child order
+    (`numberAttachedChildren`), marking a child whose z changed `StateChange_Geometry`.
+    The parent's count is `attachedOverlayLayers()`, the child's z
+    `getAttachedZIndex()`, which its skin Control draws at: in front of the anchor's
+    later siblings, their glyphs included, and behind whatever comes later in the tree
+    (a Popup, a Menu, the ToolTip box, the canvas's overlays). A draws-nothing row
+    reserves them as well as any control: the count is `Base`'s, not a skin Control's.
+    An anchor whose parent is the root (a canvas child) reserves its own, after its
+    subtree, since its parent's range ends after the Popups and the ToolTip box.
+    Attaching is an add, which marks the way to the parent for the renumber;
+    detaching, or taking an anchor off its parent, marks the parent with
+    `zOrderChanged()`; a new count renumbers nothing. Only what the attached control's
+    own skin Control draws is lifted: its children keep their preorder z, so the
+    textured `Badge` draws its number in a text run of its own at
+    `getAttachedZIndex()` with its bubble, and has no `internal::Text` child.
+  - *Input.* `getControlAt()` passes an attached child over: a point on its part
+    inside the anchor finds the anchor (or the anchor's child there), and one on the
+    overhang is outside the anchor's bounds, so the walk goes on to what is under it.
+  - The corner, offset and z of an attached child, and a parent's reserved count, are
+    kept in side tables, with three bools in `Base`'s padding saying which controls
+    have one, so `Base` stays 752 bytes and a control that is no part of an attachment
+    costs nothing. Deleting the anchor deletes its attached children with it.
+
+  A `Badge` shows `setCount()`'s number, `"<cap>+"` past `setCap()` (99), a plain
+  `DotSize` dot with `setDot()`, and hides itself (its own flag) at 0 unless
+  `setShowZero()`. A digit is a circle of its line's height and a longer number a pill
+  (`PaddingX` each side), drawn with the `Badge` surface, as round as its height allows,
+  the number in `BadgeText`. A new count marks `StateChange_Text`; `refresh()` measures
+  the new string and calls `invalidate()` only when the size it takes changes, so a
+  count of the same width lays nothing out and a wider one the way down to the badge
+  alone. On a VirtualList's or DataTable's pooled row a badge follows the row, not the
+  item: the row binder sets its count. `tests/unit/attachedChild.cpp` pins the
+  mechanism on plain controls, `tests/unit/badge.cpp` the Badge,
+  `tests/badgeOverlap.cpp` its draw order over the next Button and its cut at a
+  viewport on both backends, and ControlTest's `--scenario chip-badge` the counts,
+  an anchor's move, a chip's hover and a removal on ChipBadgeDemo.
+- **The chip: a toned label, clickable or removable.** `controls::Chip`
+  (`include/gweni/controls/chip.h`) is a `Button` drawn as a pill: one primitive slot,
+  its Label's Text and, with `setRemovable(true)`, a `ChipRemoveButton` (a
+  `WindowCloseButton` subclass, drawn by that renderer's cross, as a closable tab's
+  close button is) in a `RemoveButtonSize` square kept in its right padding and placed
+  in its `arrange()`, so its width never follows the button. Its colour is a tone
+  (`setTone`: Neutral, Accent, Success, Warning, Danger) or a palette entry
+  (`setPaletteIndex(i)`, i mod `PaletteSize` (8), a negative i from the end), each a
+  theme surface of its own (`ChipNeutral` .. `ChipDanger`, `ChipPalette0` ..
+  `ChipPalette7`: the colour at about a fifth over the background as the fill, nearly
+  half as the border) with its text colour (`ChipNeutralText` .. `ChipPalette7Text`
+  in `textColorRegistry()`, the full colour; `Colors.Chip` in the skin), so the theme
+  editor and a theme file set them by name. The hover and press looks are derived,
+  not named: the textured `Chip` renderer moves the entry's fill 35 % (hover) or 60 %
+  (press) toward its border, so a theme sets one surface per entry, and a disabled chip
+  draws `ButtonDisabled`. A chip that is not clickable (the default) takes no press:
+  its clicks, Space and accelerator do nothing and it draws no hover look, though it
+  keeps the mouse for its tooltip; `setClickable(true)` gives it the looks and fires
+  `onPressCaller`. The remove button fires `onRemove`; the chip never deletes itself,
+  the app does (`delayedDelete()` from the handler, as ChipBadgeDemo does). A tone or
+  palette change is a `redraw()` of the chip alone, and its text colour is set in
+  `updateColors()`. A new text of the same size lays nothing out: the chip turns on
+  `internal::Text::setSameSizeKeepsLayout(true)`, with which a Text measures a new
+  unwrapped string in `setText()` (once its old one was measured, under the current
+  measure key) and calls `invalidate()` only when the size changed, the glyphs alone
+  redrawn otherwise. It is off for every other Text: a TextBox places its caret in the
+  layout. A chip asks for no size of its own (a Button asks for 100x20, which a layout
+  cell would take as its least), so in a row or a layout cell it is its text and
+  padding wide. `tests/unit/chip.cpp` pins it; ChipBadgeDemo shows the tones, the
+  palette, clickable and removable chips.
 - **Scale and the device-pixel grid.** Controls lay out in logical units (integers);
   `renderer::Base::translate()` turns them into device pixels at `scale()` (set by
   `Canvas::setScale`). It snaps **edges**, not origin and size apart: a point is
