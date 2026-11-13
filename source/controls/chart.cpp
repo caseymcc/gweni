@@ -6,6 +6,7 @@
 
 
 #include <gweni/controls/chart.h>
+#include <gweni/gweni.h>
 #include <gweni/controls/canvas.h>
 #include <gweni/controls/scrollControl.h>
 #include <gweni/controls/text.h>
@@ -13,6 +14,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <limits>
 
 namespace gweni
@@ -816,6 +818,369 @@ void Chart::legendRowPressed(internal::ChartLegendRow &row)
     onSeriesToggled.call(this, info);
 }
 
+// ---- hover and click -----------------------------------------------------------
+
+namespace
+{
+
+//! The points of a series sorted by x: the first at or past x.
+std::vector<ChartPoint>::const_iterator firstAtOrPast(const std::vector<ChartPoint> &points, double x)
+{
+    return std::lower_bound(points.begin(), points.end(), x,
+        [](const ChartPoint &point, double at) { return point.x < at; });
+}
+
+}//namespace
+
+bool Chart::hoverAt(const Point &local, ChartHover &hover) const
+{
+    ensureData();
+
+    if(m_plot.w <= 0 || m_plot.h <= 0 || local.x < m_plot.x || local.y < m_plot.y
+        || local.x >= m_plot.x+m_plot.w || local.y >= m_plot.y+m_plot.h)
+        return false;
+
+    const double min=getXMin();
+    const double max=getXMax();
+
+    if(!(max > min))
+        return false;
+
+    // the unit's middle, in x
+    const double at=min+(local.x+0.5-m_plot.x)/m_plot.w*(max-min);
+    bool found=false;
+    double nearest=0.0;
+
+    for(const Series &series : m_series)
+    {
+        if(!series.visible || series.points.empty())
+            continue;
+
+        const auto next=firstAtOrPast(series.points, at);
+
+        for(auto it : {next, (next == series.points.begin()) ? series.points.end() : next-1})
+        {
+            if(it == series.points.end())
+                continue;
+            if(!found || std::fabs(it->x-at) < std::fabs(nearest-at))
+            {
+                nearest=it->x;
+                found=true;
+            }
+        }
+    }
+
+    if(!found || nearest < min || nearest > max)
+        return false;
+
+    hover.x=nearest;
+    hover.points.assign(m_series.size(), -1);
+    for(size_t i=0; i < m_series.size(); ++i)
+    {
+        const Series &series=m_series[i];
+
+        if(!series.visible)
+            continue;
+
+        const auto it=firstAtOrPast(series.points, nearest);
+
+        if(it != series.points.end() && it->x == nearest)
+            hover.points[i]=it-series.points.begin();
+    }
+    return true;
+}
+
+bool Chart::pointAt(const Point &local, size_t &series, size_t &index) const
+{
+    ensureData();
+
+    if(m_plot.w <= 0 || m_plot.h <= 0 || local.x < m_plot.x || local.y < m_plot.y
+        || local.x >= m_plot.x+m_plot.w || local.y >= m_plot.y+m_plot.h)
+        return false;
+
+    const double min=getXMin();
+    const double max=getXMax();
+
+    if(!(max > min))
+        return false;
+
+    const double at=min+(local.x+0.5-m_plot.x)/m_plot.w*(max-min);
+
+    // a bar or stacked segment holding the point: the last series is drawn
+    // in front, so it is asked first; a bar is at most an interval wide, so
+    // only the points either side of the x can hold it
+    for(size_t s=m_series.size(); s-- > 0;)
+    {
+        const Series &one=m_series[s];
+
+        if(!one.visible || !isBar(one.type) || one.points.empty())
+            continue;
+
+        const size_t next=size_t(firstAtOrPast(one.points, at)-one.points.begin());
+
+        for(size_t i=(next > 0 ? next-1 : 0); i <= next+1 && i < one.points.size(); ++i)
+        {
+            Rect rect;
+
+            if(getBarRect(s, i, rect) && local.x >= rect.x && local.x < rect.x+rect.w
+                && local.y >= rect.y && local.y < rect.y+rect.h)
+            {
+                series=s;
+                index=i;
+                return true;
+            }
+        }
+    }
+
+    // else the nearest line point within the radius
+    const double radius=PointHitRadius;
+    double best=radius*radius;
+    bool found=false;
+
+    for(size_t s=0; s < m_series.size(); ++s)
+    {
+        const Series &one=m_series[s];
+
+        if(!one.visible || !isLine(one.type) || one.points.empty())
+            continue;
+
+        const size_t next=size_t(firstAtOrPast(one.points, at)-one.points.begin());
+
+        for(size_t i=(next > 0 ? next-1 : 0); i <= next && i < one.points.size(); ++i)
+        {
+            const PointF point=getPointPosition(s, i);
+
+            if(!std::isfinite(point.x) || !std::isfinite(point.y))
+                continue;
+
+            const double dx=point.x-(local.x+0.5);
+            const double dy=point.y-(local.y+0.5);
+            const double distance=dx*dx+dy*dy;
+
+            if(distance <= best)
+            {
+                best=distance;
+                series=s;
+                index=i;
+                found=true;
+            }
+        }
+    }
+    return found;
+}
+
+bool Chart::getCrosshairLine(PointF &top, PointF &bottom) const
+{
+    if(!m_hovering || m_plot.w <= 0 || m_plot.h <= 0)
+        return false;
+
+    const double x=xPosition(m_hover.x);
+
+    if(!std::isfinite(x) || x < m_plot.x || x > m_plot.x+m_plot.w)
+        return false;
+
+    top=PointF(static_cast<float>(x), static_cast<float>(m_plot.y));
+    bottom=PointF(static_cast<float>(x), static_cast<float>(m_plot.y+m_plot.h));
+    return true;
+}
+
+void Chart::setHoverText(const HoverText &text)
+{
+    m_hoverText=text;
+    if(m_hovering && !m_hoverControl)
+        setToolTipText(m_hoverText ? m_hoverText(*this, m_hover) : defaultHoverText(m_hover));
+}
+
+void Chart::setHoverControl(Base *control, const HoverFill &fill)
+{
+    if(m_hoverControl && m_hoverControl != control)
+    {
+        if(getToolTip() == m_hoverControl)
+            setToolTip(nullptr);
+        delete m_hoverControl;
+    }
+
+    m_hoverControl=control;
+    m_hoverFill=fill;
+    if(control)
+    {
+        // kept as the tooltip's control is, a hidden child
+        control->setParent(this);
+        control->setHidden(true);
+    }
+
+    // shown as the next hover asks
+    const ChartHover hover=m_hover;
+    const bool hovering=m_hovering;
+
+    m_hovering=false;
+    setHover(hovering, hover);
+}
+
+String Chart::defaultHoverText(const ChartHover &hover) const
+{
+    String text;
+
+    switch(m_xType)
+    {
+    case ChartXAxisType::Time:
+    {
+        // the date, and the time of day where it is not midnight
+        const String date=axis::formatTime(hover.x, axis::TimeStep::Day1, m_utcOffset);
+        String time=axis::formatTime(hover.x, axis::TimeStep::Second1, m_utcOffset);
+
+        text=date;
+        if(time != date && time.size() == 8)
+        {
+            if(time.compare(5, 3, ":00") == 0)
+                time.resize(5);
+            text+=" "+time;
+        }
+        break;
+    }
+    case ChartXAxisType::Category:
+    {
+        const double index=std::floor(hover.x+0.5);
+
+        if(index >= 0.0 && index < double(m_categories.size()))
+            text=m_categories[size_t(index)];
+        break;
+    }
+    case ChartXAxisType::Value:
+    default:
+    {
+        char value[64];
+
+        std::snprintf(value, sizeof(value), "%g", hover.x);
+        text=m_xFormatter ? m_xFormatter(hover.x) : String(value);
+        break;
+    }
+    }
+
+    for(size_t i=0; i < m_series.size() && i < hover.points.size(); ++i)
+    {
+        if(hover.points[i] < 0)
+            continue;
+
+        const Series &series=m_series[i];
+        const double y=series.points[size_t(hover.points[i])].y;
+        const ValueAxis &yAxis=axisOf(series.type == ChartSeriesType::StackedBar ? getStackAxis() : series.axis);
+        char value[64];
+
+        std::snprintf(value, sizeof(value), "%g", y);
+        text+="  "+series.name+": "+(yAxis.formatter ? yAxis.formatter(y) : String(value));
+    }
+    return text;
+}
+
+void Chart::setHover(bool hovering, const ChartHover &hover, bool refill)
+{
+    if(hovering == m_hovering && (!hovering || hover == m_hover) && !(hovering && refill))
+        return;
+
+    m_hovering=hovering;
+    m_hover=hovering ? hover : ChartHover();
+    // the crosshair moved, came or went
+    addStateChange(StateChange_Background);
+
+    if(!hovering)
+    {
+        setToolTipText(String());
+        if(m_hoverControl && getToolTip() == m_hoverControl)
+            setToolTip(nullptr);
+        return;
+    }
+
+    if(m_hoverControl)
+    {
+        if(m_hoverFill)
+            m_hoverFill(*this, m_hover, m_hoverControl);
+        if(getToolTip() != m_hoverControl)
+            setToolTip(m_hoverControl);
+        else if(Canvas *canvas=getCanvas())
+            canvas->toolTipChanged(this);
+        return;
+    }
+    setToolTipText(m_hoverText ? m_hoverText(*this, m_hover) : defaultHoverText(m_hover));
+}
+
+void Chart::refreshHover(bool refill)
+{
+    if(!m_mouseInside)
+        return;
+
+    ChartHover hover;
+    const bool hovering=hoverAt(m_mouse, hover);
+
+    setHover(hovering, hover, refill);
+}
+
+Rect Chart::getToolTipAnchor() const
+{
+    PointF top;
+    PointF bottom;
+
+    if(!getCrosshairLine(top, bottom))
+        return ParentClass::getToolTipAnchor();
+
+    // right of the crosshair, from the plot's top
+    const Point at=const_cast<Chart *>(this)->localPosToCanvas(Point(static_cast<int>(std::floor(top.x))+TickGap*2, m_plot.y));
+
+    return Rect(at.x, at.y, 0, 0);
+}
+
+void Chart::onMouseMoved(int x, int y, int deltaX, int deltaY)
+{
+    m_mouse=canvasPosToLocal(Point(x, y));
+    m_mouseInside=true;
+    refreshHover();
+    ParentClass::onMouseMoved(x, y, deltaX, deltaY);
+}
+
+void Chart::onMouseLeave()
+{
+    m_mouseInside=false;
+    setHover(false, ChartHover());
+    ParentClass::onMouseLeave();
+}
+
+void Chart::onMouseClickLeft(int x, int y, bool down)
+{
+    const Point local=canvasPosToLocal(Point(x, y));
+    size_t series=0;
+    size_t index=0;
+
+    if(down)
+    {
+        m_pressed=pointAt(local, series, index);
+        m_pressSeries=series;
+        m_pressIndex=index;
+        // the release comes here wherever the mouse goes
+        if(m_pressed)
+            MouseFocus=this;
+        return;
+    }
+
+    if(!m_pressed)
+        return;
+
+    m_pressed=false;
+    if(MouseFocus == this)
+        MouseFocus=nullptr;
+
+    if(!pointAt(local, series, index) || series != m_pressSeries || index != m_pressIndex)
+        return;
+
+    m_clickedSeries=series;
+    m_clickedIndex=index;
+
+    event::Info info(this);
+
+    info.integer=series;
+    info.point=Point(static_cast<int>(index), 0);
+    onPointClicked.call(this, info);
+}
+
 // ---- data -------------------------------------------------------------------
 
 void Chart::dataChanged(size_t series)
@@ -844,6 +1209,8 @@ void Chart::dataChanged(size_t series)
 
     if(!m_xFixed || !axisOf(side).fixed)
         invalidate();
+    // what the mouse is over may be another point now, or a new value
+    refreshHover(true);
 }
 
 void Chart::axesChanged()
@@ -851,6 +1218,7 @@ void Chart::axesChanged()
     m_dataDirty=true;
     addStateChange(StateChange_Background);
     invalidate();
+    refreshHover(true);
 }
 
 void Chart::ensureData() const
@@ -1576,6 +1944,8 @@ void Chart::layout(skin::Base *skin)
     }
 
     placeMarkerCaptions();
+    // the plot may have moved under the mouse
+    refreshHover();
 
     // the renderer draws from what this computed
     addStateChange(StateChange_Background);

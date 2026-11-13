@@ -923,6 +923,12 @@ public:
 
     //! A text or a setToolTip() control is set.
     bool hasToolTip() const { return m_toolTip || !m_toolTipText.empty(); }
+    //! Where the canvas places this control's tooltip box, in canvas units:
+    //! under this rect, or above it where there is no room below. The control
+    //! as it is drawn (getCanvasBounds()) by default; a control whose tooltip
+    //! is about a part of it (a Chart's hovered x) names that part, and the
+    //! box follows it while it is shown.
+    virtual gweni::Rect getToolTipAnchor() const { return getCanvasBounds(); }
     //! \}
 
     //! \sect{Context menu}

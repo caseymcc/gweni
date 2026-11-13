@@ -734,7 +734,10 @@ public:
 //   at z+2, under the series;
 // - the markers: one vertical drawLine per marker across the plot
 //   (getMarkerLine()), 1 unit thick in ChartMarker's top colour, at z+3+S,
-//   in front of the series; a marker or span outside the plot is hidden.
+//   in front of the series; a marker or span outside the plot is hidden;
+// - the crosshair: one vertical drawLine across the plot at the hovered x
+//   (getCrosshairLine()), 1 unit thick in ChartCrosshair's top colour, at
+//   z+4+S, hidden with no hover.
 // The lists are taken back to front, so on the frame that makes them what is
 // behind is drawn first.
 // The z values are the frame's, the grid's (z+1), the spans' (z+2), one per
@@ -764,6 +767,7 @@ public:
     const std::vector<size_t> &gridPrimitives() const { return m_grid.ids; }
     const std::vector<size_t> &spanPrimitives() const { return m_spans.ids; }
     const std::vector<size_t> &markerPrimitives() const { return m_markers.ids; }
+    const std::vector<size_t> &crosshairPrimitives() const { return m_crosshair.ids; }
     const std::vector<size_t> &seriesPrimitives(size_t series) const;
 
 private:
@@ -803,6 +807,7 @@ private:
     SlotList m_spans;
     std::vector<SlotList> m_series;
     SlotList m_markers;
+    SlotList m_crosshair;
 };
 
 // A Link: one slot per segment of its polyline (Link::getPoints()), a drawLine

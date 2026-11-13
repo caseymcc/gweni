@@ -2160,6 +2160,7 @@ void Chart::remove(renderer::Base *renderer, controls::Base * /*baseControl*/)
         releaseList(renderer, list);
     m_series.clear();
     releaseList(renderer, m_markers);
+    releaseList(renderer, m_crosshair);
     m_frame=Slot();
     releasePrimitives(renderer);
 }
@@ -2172,6 +2173,7 @@ void Chart::appendIds(std::vector<size_t> &primitiveIds, std::vector<size_t> &te
     for(const SlotList &list : m_series)
         primitiveIds.insert(primitiveIds.end(), list.ids.begin(), list.ids.end());
     primitiveIds.insert(primitiveIds.end(), m_markers.ids.begin(), m_markers.ids.end());
+    primitiveIds.insert(primitiveIds.end(), m_crosshair.ids.begin(), m_crosshair.ids.end());
 }
 
 void Chart::update(renderer::Base *renderer, controls::Base *baseControl)
@@ -2258,6 +2260,8 @@ void Chart::update(renderer::Base *renderer, controls::Base *baseControl)
         resizeList(renderer, m_series[i], bars ? chart->getSeriesPoints(i).size() : (vertices > 1 ? vertices-1 : 0));
     }
     resizeList(renderer, m_markers, chart->getMarkerCount());
+    // the crosshair's one slot, in front of everything
+    resizeList(renderer, m_crosshair, 1);
 
     auto hide=[&](size_t id, Slot &slot)
     {
@@ -2272,7 +2276,7 @@ void Chart::update(renderer::Base *renderer, controls::Base *baseControl)
         auto each=[&](auto &&func)
         {
             func(m_primitives[0], m_frame);
-            for(SlotList *list : {&m_grid, &m_spans, &m_markers})
+            for(SlotList *list : {&m_grid, &m_spans, &m_markers, &m_crosshair})
             {
                 for(size_t i=0; i<list->ids.size(); ++i)
                     func(list->ids[i], list->drawn[i]);
@@ -2538,6 +2542,19 @@ void Chart::update(renderer::Base *renderer, controls::Base *baseControl)
         drawSegment(m_markers.ids[i], m_markers.drawn[i], PointF(origin.x+lineTop.x, origin.y+lineTop.y),
             PointF(origin.x+lineBottom.x, origin.y+lineBottom.y), nullptr, nullptr, 1.0f,
             tokyonight::ChartMarker.top, markerZ, plotClip);
+    }
+
+    // the crosshair at the hovered x, in front of the markers
+    {
+        PointF lineTop;
+        PointF lineBottom;
+
+        if(!hasPlot || !chart->getCrosshairLine(lineTop, lineBottom))
+            hide(m_crosshair.ids[0], m_crosshair.drawn[0]);
+        else
+            drawSegment(m_crosshair.ids[0], m_crosshair.drawn[0], PointF(origin.x+lineTop.x, origin.y+lineTop.y),
+                PointF(origin.x+lineBottom.x, origin.y+lineBottom.y), nullptr, nullptr, 1.0f,
+                tokyonight::ChartCrosshair.top, markerZ+1, plotClip);
     }
 
     renderer->setClipRegion(region);

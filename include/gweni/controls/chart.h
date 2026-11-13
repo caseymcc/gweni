@@ -12,6 +12,8 @@
 #include <gweni/controls/chartAxis.h>
 #include <gweni/controls/selectable.h>
 
+#include <cstddef>
+#include <functional>
 #include <unordered_map>
 #include <vector>
 
@@ -101,6 +103,17 @@ struct ChartPoint
     ChartPoint() {}
     ChartPoint(double x_, double y_): x(x_), y(y_) {}
     bool operator==(const ChartPoint &other) const { return x == other.x && y == other.y; }
+};
+
+//! What the mouse is over in a Chart's plot: the x nearest it among the
+//! visible series' points, and per series the index of its point at that x,
+//! or -1 for a hidden series or one with no point there.
+struct ChartHover
+{
+    double x=0.0;
+    std::vector<std::ptrdiff_t> points;
+
+    bool operator==(const ChartHover &other) const { return x == other.x && points == other.points; }
 };
 
 //! A multi-series chart: line, step-line, bar and stacked-bar series over a
@@ -327,6 +340,59 @@ public:
 
     gweni::event::Caller onSeriesToggled;
 
+    // ---- hover and click ------------------------------------------------
+
+    //! The tooltip's text for a hover; without one the chart's own: the x's
+    //! label and each series' value there ("Nov 14 12:00  cpu: 42  mem: 7").
+    typedef std::function<String(const Chart &chart, const ChartHover &hover)> HoverText;
+    //! Fills a control (a RichLabel, a Base of Labels) for a hover, shown in
+    //! the canvas's ToolTip box in place of the text.
+    typedef std::function<void(const Chart &chart, const ChartHover &hover, Base *control)> HoverFill;
+
+    //! The x nearest \p local (this control's coordinates) and each series'
+    //! point there: false outside the plot or with no visible point. The x
+    //! is found by a binary search of each visible series' points.
+    bool hoverAt(const Point &local, ChartHover &hover) const;
+    //! What a click at \p local lands on: a visible bar or stacked segment
+    //! holding it, else the visible line or step line point nearest it,
+    //! PointHitRadius units at most: false for none.
+    bool pointAt(const Point &local, size_t &series, size_t &index) const;
+    static constexpr int PointHitRadius=8;
+
+    //! While the mouse is over the plot: a crosshair across it at the
+    //! hovered x, in ChartCrosshair's top colour, and the tooltip, the
+    //! canvas's ToolTip box placed by the hovered x (getToolTipAnchor()), set
+    //! only when the hover changes, so a move within one x writes nothing.
+    bool isHovering() const { return m_hovering; }
+    const ChartHover &getHover() const { return m_hover; }
+    //! The crosshair's line, top to bottom of the plot: false with no hover
+    //! or the hovered x outside the plot.
+    bool getCrosshairLine(PointF &top, PointF &bottom) const;
+    //! The tooltip's text (a null one for the chart's own), or a control to
+    //! fill (made with the skin, e.g. by the chart's newChild()), which the
+    //! chart takes as its hidden child and its setToolTip() while it hovers,
+    //! deleting the one before; null for the text again. A change of the data
+    //! under the mouse fills it again.
+    void setHoverText(const HoverText &text);
+    void setHoverControl(Base *control, const HoverFill &fill);
+    //! The chart's own tooltip text for \p hover.
+    String defaultHoverText(const ChartHover &hover) const;
+
+    //! Fired on a left click (the press and the release on the same bar,
+    //! segment or point, pointAt()) with the series in info.integer and the
+    //! point's index in info.point.x, also getClickedSeries() and
+    //! getClickedIndex().
+    gweni::event::Caller onPointClicked;
+    size_t getClickedSeries() const { return m_clickedSeries; }
+    size_t getClickedIndex() const { return m_clickedIndex; }
+
+    //! Below the hovered x's top of the plot, beside the crosshair, as drawn.
+    gweni::Rect getToolTipAnchor() const override;
+
+    void onMouseMoved(int x, int y, int deltaX, int deltaY) override;
+    void onMouseLeave() override;
+    void onMouseClickLeft(int x, int y, bool down) override;
+
     //! A marker's caption is clipped to the plot; the other labels are not.
     const Rect *getChildClipRect(const Base *child) const override;
     bool hasChildClipRects() const override { return true; }
@@ -471,6 +537,13 @@ protected:
         double x1=0.0;
     };
 
+    //! The hover at the mouse's last place in the plot (none outside it),
+    //! the crosshair and tooltip brought up to it when it changed.
+    void setHover(bool hovering, const ChartHover &hover, bool refill=false);
+    //! With \p refill the tooltip is filled again even for the same hover:
+    //! the data under it changed.
+    void refreshHover(bool refill=false);
+
     //! Places the markers' captions in the plot (layout()).
     void placeMarkerCaptions();
     //! The legend's rows brought up to the series (outside a layout), and its
@@ -483,6 +556,20 @@ protected:
     void legendRowPressed(internal::ChartLegendRow &row);
     friend class internal::ChartLegendRow;
     bool isMarkerLabel(const Base *child) const;
+
+    bool m_hovering=false;
+    ChartHover m_hover;
+    //! where the mouse last was over the chart, in its own coordinates
+    bool m_mouseInside=false;
+    Point m_mouse;
+    HoverText m_hoverText;
+    Base *m_hoverControl=nullptr;
+    HoverFill m_hoverFill;
+    bool m_pressed=false;
+    size_t m_pressSeries=0;
+    size_t m_pressIndex=0;
+    size_t m_clickedSeries=0;
+    size_t m_clickedIndex=0;
 
     ScrollControl *m_legend=nullptr;
     bool m_legendVisible=true;
