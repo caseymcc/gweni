@@ -229,8 +229,8 @@ private:
 //! adds no option (the app may; a text that is an option's label picks that
 //! option instead). The list closing on a press outside it leaves a
 //! free-text box's field as it is, for Return or the lost focus to decide;
-//! Escape gives the value back, over a Popup too (the canvas's Escape,
-//! Canvas::closingOnEscape()).
+//! Escape gives the value back, over a Popup too (input::onKeyEvent offers
+//! a focus inside the shown Popup the key before the canvas closes it).
 //!
 //! Multi-select (setMultiSelect(true)): the box holds picks, each shown as a
 //! removable Chip in pick order, then the field when filterable, wrapped onto
