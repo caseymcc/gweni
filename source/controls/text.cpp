@@ -77,6 +77,7 @@ void Text::refreshSkinTextColor()
     case SkinTextColor::ErrorText:      return applyTextColor(skin->Colors.ErrorText);
     case SkinTextColor::HelperText:     return applyTextColor(skin->Colors.HelperText);
     case SkinTextColor::CodePlain:      return applyTextColor(skin->Colors.CodeEditor.Tokens[static_cast<size_t>(text::TokenKind::Plain)]);
+    case SkinTextColor::SearchComboRefused: return applyTextColor(skin->Colors.SearchComboRefusedText);
     }
 }
 

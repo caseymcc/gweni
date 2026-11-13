@@ -314,8 +314,9 @@ void SearchComboBox::makeList()
 }
 
 // Closed, by the box or from outside (a press outside it, Escape over a
-// Popup), without a pick or after one: the query is over, and the field
-// shows the selection again.
+// Popup), without a pick or after one: the query is over. The field shows
+// the value again; with free text it keeps what was typed, which Return or
+// the field losing the focus then takes or gives back (resolveText()).
 void SearchComboBox::listVisibilityChanged(event::Info)
 {
     redraw();
@@ -325,7 +326,9 @@ void SearchComboBox::listVisibilityChanged(event::Info)
 
     m_query.clear();
     m_lowerQuery.clear();
-    showSelection();
+
+    if(!m_allowCustom)
+        showSelection();
 }
 
 void SearchComboBox::listDeleted()
@@ -349,6 +352,10 @@ String lowerCased(const String &text)
     }
     return lower;
 }
+
+// What a shown row is when it is no option.
+constexpr size_t AddRowKey=static_cast<size_t>(-2);
+constexpr size_t NoMatchKey=static_cast<size_t>(-3);
 }
 
 void SearchComboBox::addOption(const String &label, const String &name)
@@ -358,13 +365,15 @@ void SearchComboBox::addOption(const String &label, const String &name)
     // a new label in this box's width
     invalidate();
 
-    if(m_selected == NoOption)
+    // the first option is the default, unless a free-text value is the value
+    if((m_selected == NoOption) && !m_hasCustom)
         select(static_cast<int>(m_options.size())-1, false);
 
     if(isListOpen())
         optionsChanged();
 }
 
+// A free-text value stays the value; otherwise the first option is.
 void SearchComboBox::setOptions(std::vector<Option> options)
 {
     m_options=std::move(options);
@@ -377,7 +386,7 @@ void SearchComboBox::setOptions(std::vector<Option> options)
     m_highlight=NoOption;
     m_highlightPos=VirtualList::NoItem;
     // shown again even when the index stays: the option at it is another
-    m_selected=m_options.empty()?NoOption:0;
+    m_selected=(m_options.empty() || m_hasCustom)?NoOption:0;
     showSelection();
     invalidate();
 
@@ -397,6 +406,9 @@ void SearchComboBox::setSelectedIndex(int index)
 
 String SearchComboBox::getValue()
 {
+    if(m_hasCustom)
+        return m_custom;
+
     if(m_selected == NoOption)
         return String();
 
@@ -410,27 +422,52 @@ void SearchComboBox::select(int index, bool doEvents)
     if((index < 0) || (static_cast<size_t>(index) >= m_options.size()))
         index=NoOption;
 
-    if(index == m_selected)
+    if((index == m_selected) && !m_hasCustom)
         return;
 
     m_selected=index;
+    m_hasCustom=false;
+    m_custom.clear();
+    setRefused(false);
     showSelection();
 
     if(doEvents)
         onSelection.call(this);
 }
 
+String SearchComboBox::shownValueText() const
+{
+    if(m_hasCustom)
+        return m_custom;
+
+    return (m_selected == NoOption)?String():m_options[m_selected].label;
+}
+
 void SearchComboBox::showSelection()
 {
-    const String label=(m_selected == NoOption)?String():m_options[m_selected].label;
+    const String text=shownValueText();
+
+    setRefused(false);
 
     if(m_filterable)
     {
         setText("");
-        m_field->showText(label);
+        m_field->showText(text);
     }
     else
-        setText(label);
+        setText(text);
+}
+
+void SearchComboBox::setRefused(bool refused)
+{
+    if(m_refused == refused)
+        return;
+
+    m_refused=refused;
+
+    if(m_field)
+        m_field->setSkinTextColor(refused?internal::SkinTextColor::SearchComboRefused:
+            internal::SkinTextColor::LabelDefault);
 }
 
 void SearchComboBox::pick(int index, bool doEvents)
@@ -460,6 +497,10 @@ int SearchComboBox::rowHeight()
 
 void SearchComboBox::setFilterable(bool filterable)
 {
+    // free text needs the field
+    if(!filterable && m_allowCustom)
+        return;
+
     if(m_filterable == filterable)
         return;
 
@@ -491,29 +532,78 @@ void SearchComboBox::setFilterable(bool filterable)
         focusInput();
 }
 
+void SearchComboBox::setAllowCustomValue(bool allow)
+{
+    if(allow)
+        setFilterable(true);
+
+    m_allowCustom=allow;
+
+    if(isListOpen())
+        optionsChanged();
+}
+
 // The query matched over the cached labels: every option for an empty one.
+// With free text, a query that is no option's label (case aside) adds the
+// Add row after the matches; otherwise one that matches nothing shows the
+// "No matches" row.
 void SearchComboBox::matchOptions()
 {
+    bool exact=false;
+
     m_matches.clear();
 
     for(size_t i=0; i < m_options.size(); ++i)
     {
         if(m_lowerQuery.empty() || (m_lowerLabels[i].find(m_lowerQuery) != String::npos))
+        {
             m_matches.push_back(i);
+            exact=exact || (m_lowerLabels[i].size() == m_lowerQuery.size());
+        }
     }
 
-    m_noMatch=!m_lowerQuery.empty() && m_matches.empty();
+    m_addRow=m_allowCustom && !m_lowerQuery.empty() && !exact;
+    m_noMatch=!m_allowCustom && !m_lowerQuery.empty() && m_matches.empty();
 }
 
 size_t SearchComboBox::shownRowCount() const
 {
-    return m_noMatch?1:m_matches.size();
+    return m_matches.size()+((m_addRow || m_noMatch)?1:0);
+}
+
+size_t SearchComboBox::highlightableCount() const
+{
+    return m_matches.size()+(m_addRow?1:0);
+}
+
+size_t SearchComboBox::rowKey(size_t position) const
+{
+    if(position < m_matches.size())
+        return m_matches[position];
+
+    return m_addRow?AddRowKey:NoMatchKey;
+}
+
+void SearchComboBox::rowKeys(std::vector<size_t> &keys) const
+{
+    keys.resize(shownRowCount());
+
+    for(size_t i=0; i < keys.size(); ++i)
+        keys[i]=rowKey(i);
+}
+
+// The first match, else the Add row (Return then adds what was typed).
+size_t SearchComboBox::firstHighlight() const
+{
+    return (highlightableCount() > 0)?0:VirtualList::NoItem;
 }
 
 void SearchComboBox::optionsChanged()
 {
     matchOptions();
-    highlightPosition(m_matches.empty()?VirtualList::NoItem:0, false);
+    m_highlightPos=VirtualList::NoItem;
+    m_highlight=NoOption;
+    highlightPosition(firstHighlight(), false);
 
     if(m_rows)
     {
@@ -523,12 +613,12 @@ void SearchComboBox::optionsChanged()
     }
 }
 
-// What a pooled row shows: the option at its place, or the "No matches" row.
-// The rows still showing what they showed keep their binding; only their
-// highlight can have moved.
-void SearchComboBox::rebindChanged(const std::vector<size_t> &previous, bool previousNoMatch)
+// What a pooled row shows: an option, the Add row or the "No matches" row
+// (rowKey()). The rows still showing what they showed keep their binding;
+// only their highlight can have moved. The Add row names the query, so it
+// is bound again whenever it shows.
+void SearchComboBox::rebindChanged(const std::vector<size_t> &previous)
 {
-    constexpr size_t NoMatchRow=static_cast<size_t>(-2);
     const size_t count=shownRowCount();
 
     m_rows->setItemCount(count);
@@ -540,10 +630,10 @@ void SearchComboBox::rebindChanged(const std::vector<size_t> &previous, bool pre
         if((item == VirtualList::NoItem) || (item >= count))
             continue;
 
-        const size_t before=previousNoMatch?NoMatchRow:(item < previous.size()?previous[item]:VirtualList::NoItem);
-        const size_t now=m_noMatch?NoMatchRow:m_matches[item];
+        const size_t before=(item < previous.size())?previous[item]:VirtualList::NoItem;
+        const size_t now=rowKey(item);
 
-        if(before != now)
+        if((before != now) || (now == AddRowKey))
             m_rows->refreshItem(item);
         else if(auto *row=gweni_cast<internal::SearchComboBoxRow>(control))
             row->setHighlighted(item == m_highlightPos);
@@ -566,16 +656,16 @@ void SearchComboBox::showList(bool edited)
 
     matchOptions();
 
-    // from the selection when opened, from the first match when typed into
+    // from the selection when opened, from the first row when typed into
     size_t position=VirtualList::NoItem;
 
     if(edited)
-        position=m_matches.empty()?VirtualList::NoItem:0;
+        position=firstHighlight();
     else if(m_selected != NoOption)
         position=static_cast<size_t>(m_selected);
 
-    m_highlight=(position == VirtualList::NoItem)?NoOption:static_cast<int>(m_matches[position]);
     m_highlightPos=position;
+    m_highlight=(position < m_matches.size())?static_cast<int>(m_matches[position]):NoOption;
     m_rows->setRowHeight(rowHeight());
     m_rows->setItemCount(shownRowCount());
     m_rows->refresh();
@@ -598,13 +688,13 @@ void SearchComboBox::closeList()
 
 void SearchComboBox::filter()
 {
-    const std::vector<size_t> previous=m_matches;
-    const bool previousNoMatch=m_noMatch;
+    std::vector<size_t> previous;
 
+    rowKeys(previous);
     matchOptions();
-    m_highlight=m_matches.empty()?NoOption:static_cast<int>(m_matches[0]);
-    m_highlightPos=m_matches.empty()?VirtualList::NoItem:0;
-    rebindChanged(previous, previousNoMatch);
+    m_highlightPos=firstHighlight();
+    m_highlight=(m_highlightPos < m_matches.size())?static_cast<int>(m_matches[m_highlightPos]):NoOption;
+    rebindChanged(previous);
     m_rows->scrollToItem(0);
 }
 
@@ -612,6 +702,8 @@ void SearchComboBox::fieldTextChanged()
 {
     m_query=m_field->getText();
     m_lowerQuery=lowerCased(m_query);
+    // an edit is no longer the refused value
+    setRefused(false);
 
     event::Info info(this);
 
@@ -638,10 +730,72 @@ void SearchComboBox::fieldClicked()
     m_field->onSelectAll(m_field);
 }
 
+// Free text: what was typed is taken (resolveText()), else the value comes
+// back.
 void SearchComboBox::fieldLostFocus()
 {
     closeList();
+
+    if(m_allowCustom)
+        resolveText();
+    else
+        showSelection();
+}
+
+int SearchComboBox::optionWithLabel(const String &text) const
+{
+    const String lower=lowerCased(text);
+
+    for(size_t i=0; i < m_lowerLabels.size(); ++i)
+    {
+        if(m_lowerLabels[i] == lower)
+            return static_cast<int>(i);
+    }
+    return NoOption;
+}
+
+// The field's text as the value: unchanged, or refused already, nothing; an
+// option's label (case aside), that option; empty, the value back; anything
+// else, a free-text value.
+void SearchComboBox::resolveText()
+{
+    const String text=m_field->getText();
+
+    if((text == shownValueText()) || m_refused)
+        return;
+
+    const int option=optionWithLabel(text);
+
+    if(option != NoOption)
+        select(option, true);
+    else if(text.empty())
+        showSelection();
+    else
+        commitCustom(text);
+}
+
+// The handler may refuse it (refuseCustomValue()); the field then keeps it in
+// the refused colour, and the value stays what it was.
+bool SearchComboBox::commitCustom(const String &text)
+{
+    event::Info info(this);
+
+    info.string=text;
+    m_refusing=false;
+    onCustomValue.call(this, info);
+
+    if(m_refusing)
+    {
+        m_refusing=false;
+        setRefused(true);
+        return false;
+    }
+
+    m_selected=NoOption;
+    m_hasCustom=true;
+    m_custom=text;
     showSelection();
+    return true;
 }
 
 void SearchComboBox::onKeyboardFocus()
@@ -703,16 +857,23 @@ void SearchComboBox::onPress(event::Info)
         m_field->onSelectAll(m_field);
 }
 
+String SearchComboBox::addRowText(const String &text)
+{
+    return "Add \xe2\x80\x9c"+text+"\xe2\x80\x9d";
+}
+
 void SearchComboBox::bindRow(Base *control, size_t item)
 {
     internal::SearchComboBoxRow *row=gweni_cast<internal::SearchComboBoxRow>(control);
 
-    if(!row)
+    if(!row || (item >= shownRowCount()))
         return;
 
     ++m_rowBinds;
 
-    if(m_noMatch)
+    const size_t key=rowKey(item);
+
+    if(key == NoMatchKey)
     {
         row->setText(noMatchesText());
         row->setDisabled(true);
@@ -720,25 +881,40 @@ void SearchComboBox::bindRow(Base *control, size_t item)
         return;
     }
 
-    if(item >= m_matches.size())
-        return;
-
-    row->setText(m_options[m_matches[item]].label);
+    row->setText((key == AddRowKey)?addRowText(m_query):m_options[key].label);
     row->setDisabled(false);
     row->setHighlighted(item == m_highlightPos);
 }
 
+// An option row picks it; the Add row adds what was typed, closing the list
+// unless the handler refused it.
+void SearchComboBox::pickPosition(size_t position)
+{
+    const size_t key=rowKey(position);
+
+    if(key == AddRowKey)
+    {
+        if(commitCustom(m_field->getText()))
+        {
+            closeList();
+            focusInput();
+        }
+        return;
+    }
+
+    if(key != NoMatchKey)
+        pick(static_cast<int>(key), true);
+}
+
 void SearchComboBox::rowPressed(event::Info info)
 {
-    const size_t item=info.integer;
-
-    if(!m_noMatch && (item < m_matches.size()))
-        pick(static_cast<int>(m_matches[item]), true);
+    if(info.integer < shownRowCount())
+        pickPosition(info.integer);
 }
 
 void SearchComboBox::highlightPosition(size_t position, bool scroll)
 {
-    if(position >= m_matches.size())
+    if(position >= highlightableCount())
         position=VirtualList::NoItem;
 
     if(position == m_highlightPos)
@@ -751,7 +927,7 @@ void SearchComboBox::highlightPosition(size_t position, bool scroll)
     }
 
     m_highlightPos=position;
-    m_highlight=(position == VirtualList::NoItem)?NoOption:static_cast<int>(m_matches[position]);
+    m_highlight=(position < m_matches.size())?static_cast<int>(m_matches[position]):NoOption;
 
     if(!m_rows || (position == VirtualList::NoItem))
         return;
@@ -782,7 +958,7 @@ void SearchComboBox::setHighlightedIndex(int index)
 
 void SearchComboBox::stepHighlight(int step)
 {
-    const size_t count=m_matches.size();
+    const size_t count=highlightableCount();
 
     if(count == 0)
         return;
@@ -800,12 +976,12 @@ void SearchComboBox::stepHighlight(int step)
 
 void SearchComboBox::rowHovered(internal::SearchComboBoxRow *row)
 {
-    if(!m_rows || m_noMatch)
+    if(!m_rows)
         return;
 
     const size_t item=m_rows->itemForRow(row);
 
-    if(item < m_matches.size())
+    if(item < highlightableCount())
         highlightPosition(item, false);
 }
 
@@ -837,22 +1013,31 @@ bool SearchComboBox::onKeyDown(bool down)
     return true;
 }
 
+// Open, the highlighted row is picked (the Add row adds the text). Closed,
+// a free-text box takes what was typed (resolveText()).
 bool SearchComboBox::onKeyReturn(bool down)
 {
     if(!isListOpen())
-        return false;
+    {
+        if(!m_allowCustom || (m_field->getText() == shownValueText()))
+            return false;
 
-    if(down && (m_highlight != NoOption))
-        pick(m_highlight, true);
+        if(down)
+            resolveText();
+        return true;
+    }
+
+    if(down && (m_highlightPos != VirtualList::NoItem))
+        pickPosition(m_highlightPos);
     return true;
 }
 
-// Open, it closes the list, which gives the field back the selection's label;
-// closed with the field edited (the list toggled shut), it gives it back too.
+// Open, it closes the list and gives the field back the value; closed with
+// the field edited (the list toggled shut, a refused value), it gives it
+// back too.
 bool SearchComboBox::onKeyEscape(bool down)
 {
-    const bool edited=m_filterable && (m_field->getText() != ((m_selected == NoOption)?String():
-        m_options[m_selected].label));
+    const bool edited=m_filterable && (m_field->getText() != shownValueText());
 
     if(!isListOpen() && !edited)
         return false;
