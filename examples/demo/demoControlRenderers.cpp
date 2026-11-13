@@ -97,6 +97,7 @@ GWENI_DEMO_TRANSPARENT(UnicodeTextDemo)
 GWENI_DEMO_TRANSPARENT(VirtualListDemo)
 GWENI_DEMO_TRANSPARENT(CodeEditorDemo)
 GWENI_DEMO_TRANSPARENT(CodeEditorFormDemo)
+GWENI_DEMO_TRANSPARENT(CodeViewDemo)
 GWENI_DEMO_TRANSPARENT(VirtualListVariableDemo)
 GWENI_DEMO_TRANSPARENT(LogViewDemo)
 GWENI_DEMO_TRANSPARENT(WindowDemo)
@@ -196,6 +197,7 @@ template class ControlRegister<UnicodeTextDemo>;
 template class ControlRegister<VirtualListDemo>;
 template class ControlRegister<CodeEditorDemo>;
 template class ControlRegister<CodeEditorFormDemo>;
+template class ControlRegister<CodeViewDemo>;
 template class ControlRegister<VirtualListVariableDemo>;
 template class ControlRegister<LogViewDemo>;
 template class ControlRegister<WindowDemo>;

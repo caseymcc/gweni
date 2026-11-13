@@ -77,6 +77,12 @@ only the lines on screen are controls, each one text run coloured by its tokens 
 strings, comments, block scalars). A keystroke tokenizes its line; one that opens a block scalar
 re-colours the lines on screen below it and leaves the rest until they are shown.
 
+[![A prompt's diff, a YAML config and an install command in read-only code views](docs/images/CodeViewDemo.png)](https://caseymcc.github.io/gweni/controltest.html?control=CodeViewDemo)
+
+**Code view**: read-only CodeViews, each with a copy button that shows while the view is hovered (here
+over the diff): a unified diff whose added, removed and hunk lines get their own row backgrounds, a YAML
+config with line numbers and a one-line command, the last two as tall as their lines.
+
 [![A small shader-like node graph](docs/images/NodeGraphDemo.png)](https://caseymcc.github.io/gweni/controltest.html?control=NodeGraphDemo)
 
 **Node graph**: a NodeGraph, the node editor built on a ZoomPanel: nodes with a coloured title bar

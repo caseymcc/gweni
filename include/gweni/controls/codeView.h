@@ -63,7 +63,8 @@ public:
 //!
 //! setCopyButton(true) gives it a copy button (internal::CodeViewCopyButton),
 //! the view's own child placed CopyInset in from the viewport's top-right
-//! corner, over the content: it does not scroll, and it is numbered after the
+//! corner (centred on the view's height where the viewport is too short for
+//! it, as a one-line command's is), over the content: it does not scroll, and it is numbered after the
 //! rows, so it draws in front of them. It is shown while the mouse is over the
 //! view or anything in it (the button, a bar) or while it has the keyboard
 //! focus, and hidden otherwise, so showing or hiding it writes its own slots
@@ -99,6 +100,11 @@ public:
     void copy();
     //! Whether the button shows CopiedLabel.
     bool isCopied() const { return m_copied.valid(); }
+
+    //! Its content's height, and in the Y measuring (its width final) the
+    //! horizontal bar's when its longest line is wider than its viewport, so
+    //! a one-line command in a narrow column still shows its line.
+    void calculateSize(skin::Base *skin, Dim dim) override;
 
     void onMouseEnter() override;
     void onMouseLeave() override;

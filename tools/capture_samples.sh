@@ -70,6 +70,7 @@ SAMPLES=(
     ShowcaseWindowsDemo
     TextDemo
     CodeEditorDemo
+    CodeViewDemo
     NodeGraphDemo
     LogViewDemo
     ChartTimeBarsDemo
@@ -91,9 +92,11 @@ declare -A SAMPLE_SIZE=(
 # Scripted input a sample is captured after, in place of the plain capture's
 # frames: ControlTest steps, run in order before the --shot.
 # ShowcaseWindowsDemo is shown with its context menu open, right-clicked in
-# the "Context menu" box, and the mouse on its "Paste" item.
+# the "Context menu" box, and the mouse on its "Paste" item; CodeViewDemo with
+# the mouse over the diff, which shows its copy button.
 declare -A SAMPLE_STEPS=(
     [ShowcaseWindowsDemo]="--frames 3 --move 70,280 --frames 2 --click-right 70,280 --frames 3 --move 110,340 --frames 3"
+    [CodeViewDemo]="--frames 3 --move 200,300 --frames 3"
 )
 
 # The samples are grayscale text whatever the caller's environment says: LCD
