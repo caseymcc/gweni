@@ -36,6 +36,7 @@
 #include "demo/vectorField.h"
 #include "demo/popup.h"
 #include "demo/chipBadge.h"
+#include "demo/searchCombo.h"
 #include "demo/dialog.h"
 #include "demo/toast.h"
 #include "demo/crossSplitter.h"
@@ -220,6 +221,7 @@ void Demo::init(const String &name)
         cat->setName("Controls");
 
         addDemo<ComboBoxDemo>(cat, "ComboBoxDemo", "Combo box");
+        addDemo<SearchComboDemo>(cat, "SearchComboDemo", "Search combo box");
         addDemo<TextBoxDemo>(cat, "TextBoxDemo", "Text box");
         addDemo<ListBoxDemo>(cat, "ListBoxDemo", "List box");
         addDemo<SelectableDemo>(cat, "SelectableDemo", "Selectable");

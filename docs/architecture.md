@@ -3523,6 +3523,105 @@ two programs and the draws. What follows describes both together:
   cell would take as its least), so in a row or a layout cell it is its text and
   padding wide. `tests/unit/chip.cpp` pins it; ChipBadgeDemo shows the tones, the
   palette, clickable and removable chips.
+- **The search combo box: options as data, a virtual list in a Menu.**
+  `controls::SearchComboBox` (`include/gweni/controls/searchComboBox.h`) is a `Button`,
+  as `ComboBox` is, over options held as data: `addOption(label, name)`,
+  `setOptions`, `clearOptions`, each option a label, a name (`getValue()`, the label
+  when it has none) and its label lower-cased once, kept beside it. Nothing about an
+  option is a control, so a box of 3 000 options holds no more controls than one of 30.
+  `getSelectedIndex()`/`setSelectedIndex()` (no events) and `onSelection` are the
+  pick-one API; Up and Down on the closed box step the selection, as a ComboBox's do.
+  The textured skin draws it with `ComboBox`'s look through one helper,
+  `paintComboBox` (the Button surface for the state: disabled, down or open, hovered,
+  normal; the chevron at z+1 in the right padding), which the `ComboBox` renderer
+  calls too, so a plain box showing the same text at the same size draws the same
+  pixels as a ComboBox (`tests/searchComboBoxLook.cpp`, on both backends).
+
+  **The list** is an `internal::SearchComboBoxList`, a `Menu` made on the first open
+  as a canvas child and opened with `openNextTo(box, Below, 0)`: the canvas follows it
+  (it is placed next to the box in every pass the box moves in, in that frame), closes
+  it on a press outside it and the box, and leaves a `Popup` the box is in open under
+  it (a Menu opened over the popup is not outside it), where a Popup of its own would
+  have closed that one (the canvas shows one popup at a time). It takes the box's
+  canvas width in its own arrange. It holds one `internal::SearchComboBoxOptions`, a
+  `VirtualList` of pooled `internal::SearchComboBoxRow`s that is always `MaxShownRows`
+  (10) rows high, so its pool (the viewport's rows plus one) never follows the
+  matches; the Menu is cut to the shown rows (`SearchComboBoxList::calculateSize`), its
+  own scrolling off, and past 10 rows the virtual list scrolls. The binder maps a
+  pooled row to `m_matches[position]`, a vector of option indices. A row takes no
+  keyboard focus, and the Menu says `pressKeepsKeyboardFocus()` (a `Base` virtual the
+  input handler's focus search stops at), so a press on a row leaves the focus where
+  it is and the click picks with a field's edit intact.
+
+  **The highlight** is an option index and its place among the shown rows
+  (`getHighlightedIndex()`), shown on whichever pooled row holds it (the `MenuHover`
+  surface), as a source-mode DataTable shows its selected item. Up and Down move it
+  while the list is open, wrapping, and keep it in view with
+  `VirtualList::scrollToItem`; Return picks it, Escape closes the list. A real mouse
+  move over a row highlights it (`onMouseMoved`, not the hover, which follows rows
+  scrolled under a resting mouse). Moving it rewrites its two rows alone.
+
+  **Filterable** (`setFilterable(true)`) makes an `internal::SearchComboBoxField` on
+  first use, so a plain box has none: a `TextBox` the box places over its text area,
+  owner-placed, drawn with no frame (`paintTextBoxMarks`, the TextBox renderer's
+  selection and caret, shared). It shows the value and takes the keyboard (the box
+  then takes none and is no Tab stop, so a press on its chevron keeps the field's
+  focus); Up, Down, Return and Escape go to the box. Each edit is the query: an
+  `insertText()` is one edit however many text changes it makes (typing over a
+  selection erases it, then inserts), it fires `onTextChangedCaller` and matches the
+  lower-cased query against the cached labels, a substring anywhere (ASCII letters
+  only are folded), every option for an empty query, the first match highlighted.
+  Then only the pooled rows whose option changed are bound again (`rebindChanged`,
+  comparing each row's key, its option or one of the two rows below, before and
+  after; `getRowBindCount()` counts the binds): a keystroke matches over data, makes
+  and deletes no control, writes the shown rows' slots and glyphs and the field's at
+  most, and lays out the box and its list, in one pass. The shown rows can still be
+  written when the match count changes: the Menu's new height gives every row on
+  screen a new clip box. A query matching nothing shows one disabled "No matches" row.
+  The list closing without a pick, Escape and the field losing the focus give the
+  field back the value's text.
+
+  **Free text** (`setAllowCustomValue(true)`, filterable too) shows an Add “text” row
+  after the matches whenever the text is no option's label (case aside), alone and
+  highlighted when nothing matches; Return on it, a click on it, Return with the list
+  closed and the field losing the focus with such a text fire `onCustomValue` (the
+  info's string). A handler's `refuseCustomValue()` keeps the value; the field keeps
+  the text in the skin's `SearchComboRefusedText` colour (`SkinTextColor::SearchComboRefused`,
+  so a theme edit reaches it) until it is edited, something is picked or Escape gives
+  the value back. Taken, the text is the value (`getValue()` the text,
+  `getSelectedIndex()` `NoOption`, `hasCustomValue()`), kept through `addOption()` and
+  `setOptions()`; the box adds no option, and a text that is an option's label picks
+  that option instead. The list closing leaves a free-text field's text as it is, for
+  Return or the lost focus to decide.
+
+  **Multi-select** (`setMultiSelect(true)`) holds picks in order, each an
+  owner-placed, removable `Chip` that takes no keyboard (a press on it keeps the
+  field's focus or gives it to the box). A pick of an option not picked adds it and
+  of a picked one takes it away, a picked row draws a check (the row renderer's second
+  slot, an icon at z+1), the list stays open, and a filterable box's field is emptied
+  for the next query. The chip's x, and Backspace in the empty field or on a plain
+  box, take a pick away (the chip hidden at once and deleted after the frame: this
+  runs from its own button's click). `onSelectionChange` fires once per change;
+  `getSelectedIndices()`, `getSelectedValues()` and `setSelectedIndices()` (no events)
+  read and set the picks, and a taken free-text value is a pick of its own, once.
+  **The chip wrap** is the box's own (`flowRects(width, ...)`, about 40 lines, until
+  #564's flow layout takes it): the chips left to right from the text inset at their
+  preferred widths, `ChipGap` apart, a new row `RowGap` below when the next does not
+  fit, the field after the last chip when `MinFieldWidth` fits beside it and on a row
+  of its own otherwise. It is a function of the chips' preferred widths and the box's
+  width, so `calculateSize(Y)` (where every width is final) takes the box's height
+  from it and the X and Y arranges place the chips and the field from it: a chip that
+  wraps or goes lays the box (and its parent's path, when its height changes) out in
+  one pass, and the open list is at the box's new bottom edge in that frame. The box's
+  height flag is Expand, so a request is the least it is.
+
+  `tests/unit/searchComboBox.cpp` pins every mode headless; `controltest_search_combo`
+  (`--scenario search-combo`, and `_vulkan`, and `controltest_verify_layout_search_combo`)
+  holds a keystroke's frame equal at 30 and 3 000 options, the highlight's move to its
+  two rows, a pick to the frame before opening but the box, and a wrapping chip to the
+  box, its list and the controls it moves. SearchComboDemo (the shell's "Search combo
+  box") has a ComboBox beside a plain box, a searchable box over 300 generated
+  references, a free-text host box with a validator and two multi-select boxes.
 - **Scale and the device-pixel grid.** Controls lay out in logical units (integers);
   `renderer::Base::translate()` turns them into device pixels at `scale()` (set by
   `Canvas::setScale`). It snaps **edges**, not origin and size apart: a point is

@@ -167,7 +167,7 @@
  *                       inspector |
  *                       stats-overlay | depth-view | zoom-panel |
  *                       node-graph | code-editor | log-view |
- *                       chip-badge | flow (see below)
+ *                       chip-badge | flow | search-combo (see below)
  *    --dump-bounds [<path>]
  *                       print the laid-out control tree as text: one line per
  *                       control, depth-first in child order, indented by depth,
@@ -917,6 +917,28 @@
  *                 shorter content's end); the empty frame clamps it to 0,
  *                 where it stays; settled frames write nothing; the demo gives
  *                 every id back. Exits non-zero if any check is no.
+ *    search-combo SearchComboDemo, the clock frozen (search-combo.png): the
+ *                 searchable box's references at 30 and then 3 000, "-001"
+ *                 typed into its field at each (options 10..19 at both);
+ *                 the plain box opened, Down and Return; the plain
+ *                 multi-select box opened and its options picked in turn
+ *                 until a chip wraps. One line
+ *                   search-combo keystroke_same=yes|no ... ids_back=yes|no
+ *                          keystroke_30: prims=N ... keystroke_3000: ...
+ *                 reports the checks: the "1"'s frame writes, renders,
+ *                 changes, measures and lays out the same at both counts, with the
+ *                 same pool and list controls and no id made, in one pass,
+ *                 writing inside the box and its list alone and no more
+ *                 glyphs than its shown rows and the field hold; Down writes
+ *                 the two rows' ids alone and changes no pixel outside them;
+ *                 Return closes the list with the frame before opening back
+ *                 but the box (and the demo's event label); the wrapping
+ *                 pick grows the box with the open list at its new bottom in
+ *                 that frame, in one pass, writing the box's, its list's and
+ *                 the moved controls' ids alone (and the column's children's
+ *                 own slots, whose clip box the taller column changes);
+ *                 settled frames write nothing; the demo gives every id
+ *                 back. Exits non-zero if any check is no.
  *    virtual-list VirtualListDemo with its list at 1 000 and then 100 000
  *                 items, the clock frozen: a settled frame, a one-row scroll
  *                 from the top (scrollByRows) and a wheel notch over the list
@@ -1165,8 +1187,10 @@
 #include <demo/contextMenu.h>
 #include <demo/popup.h>
 #include <demo/chipBadge.h>
+#include <demo/searchCombo.h>
 #include <gweni/controls/badge.h>
 #include <gweni/controls/chip.h>
+#include <gweni/controls/searchComboBox.h>
 #include <demo/dialog.h>
 #include <demo/toast.h>
 #include <demo/crossSplitter.h>
@@ -1322,7 +1346,7 @@ static void content_scale_callback(GLFWwindow *window, float, float)
     X(ShowcaseContainersDemo) X(ShowcaseButtonsDemo) X(ShowcaseInputDemo) \
     X(ShowcaseDisplayDemo) X(ShowcaseWindowsDemo) \
     X(ButtonDemo) X(LabelDemo) X(LabelMultilineDemo) X(ProgressBarDemo) \
-    X(GroupBoxDemo) X(ImagePanelDemo) X(StatusBarDemo) X(SeparatorDemo) X(PlotHistogramDemo) X(PlotLinesDemo) X(ChartTimeBarsDemo) X(ChartLinesDemo) X(ChartAreasDemo) X(TimelineDemo) X(ComboBoxDemo) \
+    X(GroupBoxDemo) X(ImagePanelDemo) X(StatusBarDemo) X(SeparatorDemo) X(PlotHistogramDemo) X(PlotLinesDemo) X(ChartTimeBarsDemo) X(ChartLinesDemo) X(ChartAreasDemo) X(TimelineDemo) X(ComboBoxDemo) X(SearchComboDemo) \
     X(TextBoxDemo) X(ListBoxDemo) X(SelectableDemo) X(VirtualListDemo) X(VirtualListVariableDemo) X(DataTableDemo) X(DataTableVirtualDemo) X(CodeEditorDemo) X(CodeEditorFormDemo) X(LogViewDemo) X(ContextMenuDemo) X(PopupDemo) X(ChipBadgeDemo) X(DialogDemo) X(LargeDialogDemo) X(ToastDemo) X(CrossSplitterDemo) X(RadioButtonDemo) \
     X(CheckBoxDemo) X(NumericDemo) X(SliderDemo) X(SliderTextDemo) X(DragNumberDemo) X(VectorFieldDemo) X(MenuStripDemo) \
     X(WindowDemo) X(WindowButtonsDemo) X(TreeControlDemo) X(PropertiesDemo) X(TabControlDemo) X(TabCloseDemo) X(TabOverflowDemo) \
@@ -1422,7 +1446,7 @@ static void printUsage(std::ostream &out)
          "                     | inspector\n"
          "                     | stats-overlay | depth-view | zoom-panel\n"
          "                     | node-graph | code-editor | log-view | chip-badge\n"
-         "                     | flow;\n"
+         "                     | flow | search-combo;\n"
          "                     resize prints listing_settled, mirror_settled,\n"
          "                     shrink_settled and fresh_matches, interaction one\n"
          "                     yes/no per repaint check, typing its keyboard\n"
@@ -2461,7 +2485,7 @@ static bool runSteps(Session &s, const std::vector<Step> &steps, const std::stri
 enum class Scenario { None, PerControl, Resize, Docked, Scroll, Interaction, Typing, Clip, TextSize, Scale,
     ToolTip, ContextMenu, Popup, Dialog, Toast, VirtualList, VirtualListVariable, DataTableVirtual, HideShow, DemoLabels, PlotHistogram,
     PlotLines, Chart, Timeline, Inspector, Theme, StatsOverlay, DepthView, ZoomPanel, NodeGraph, CodeEditor, LogView,
-    ChipBadge, Flow };
+    ChipBadge, Flow, SearchCombo };
 
 static bool parseScenario(const std::string &name, Scenario &scenario)
 {
@@ -2498,6 +2522,7 @@ static bool parseScenario(const std::string &name, Scenario &scenario)
     else if(name == "log-view") scenario=Scenario::LogView;
     else if(name == "chip-badge") scenario=Scenario::ChipBadge;
     else if(name == "flow") scenario=Scenario::Flow;
+    else if(name == "search-combo") scenario=Scenario::SearchCombo;
     else return false;
     return true;
 }
@@ -11850,6 +11875,319 @@ static bool runChipBadgeScenario(Session &s, const std::string &shotDir, bool &p
     return ok;
 }
 
+//-----------------------------------------------------------------------------
+// --scenario search-combo: SearchComboDemo's boxes, the clock frozen
+//
+// The searchable box's list is a VirtualList of pooled rows over the options'
+// data, so a keystroke's frame costs what the rows on screen cost whatever the
+// option count: typed at 30 and at 3 000 options, "-001" leaves the same ten
+// options (10..19) and its "1" writes, renders, changes and lays out the same,
+// with the same pool, the same controls and no id made or freed. The
+// highlight moving writes its two rows alone; a pick closes the list and gives
+// the frame before opening back but the box's text; a chip that wraps a
+// multi-select box onto a second row grows it, the open list at its new
+// bottom in that frame.
+//-----------------------------------------------------------------------------
+
+namespace
+{
+
+// One keystroke's frame, as the virtual-list scenario counts a scroll's.
+struct SearchKeystroke
+{
+    size_t prims=0;
+    size_t texts=0;
+    size_t glyphs=0;
+    size_t visited=0;
+    size_t changed=0;
+    int passes=0;
+    size_t layoutVisited=0;
+    size_t pool=0;
+    size_t listControls=0;
+    long long idsMade=0;
+    //! the renderer measures the frame's input and update made
+    size_t measures=0;
+    bool withinBox=false;
+    bool glyphsWithin=false;
+    size_t shown=0;
+
+    bool sameAs(const SearchKeystroke &o) const
+    {
+        return prims == o.prims && texts == o.texts && glyphs == o.glyphs && visited == o.visited
+            && changed == o.changed && passes == o.passes && layoutVisited == o.layoutVisited
+            && pool == o.pool && listControls == o.listControls && idsMade == o.idsMade && shown == o.shown
+            && measures == o.measures;
+    }
+
+    std::string text() const
+    {
+        return "prims="+std::to_string(prims)+" texts="+std::to_string(texts)+" glyphs="+std::to_string(glyphs)
+            +" visited="+std::to_string(visited)+" changed="+std::to_string(changed)+" passes="+std::to_string(passes)
+            +" layout_visited="+std::to_string(layoutVisited)+" pool="+std::to_string(pool)
+            +" list_controls="+std::to_string(listControls)+" ids_made="+std::to_string(idsMade)
+            +" shown="+std::to_string(shown)+" measures="+std::to_string(measures);
+    }
+};
+
+// The glyphs the list's shown rows and the field hold.
+size_t searchShownGlyphs(gweni::controls::SearchComboBox *box)
+{
+    size_t glyphs=box->getField()?box->getField()->getText().size():0;
+
+    for(gweni::controls::Base *row : box->getOptionsList()->getRows())
+    {
+        if(auto *label=gweni::gweni_cast<gweni::controls::Label>(row); label && row->visible())
+            glyphs+=label->getText().size();
+    }
+    return glyphs;
+}
+
+}//namespace
+
+static bool runSearchComboScenario(Session &s, const std::string &shotDir, bool &passed)
+{
+    s.freezeClock=true;
+
+    InteractionChecks checks;
+    checks.scenario="search-combo";
+
+    const size_t idsBefore=livePrimitiveIds()+liveTextIds();
+    gweni::controls::Base *control=addControl(s, "SearchComboDemo");
+    auto *demo=gweni::gweni_cast<gweni::SearchComboDemo>(control);
+
+    if(!demo)
+    {
+        std::cerr<<"ControlTest: search-combo: SearchComboDemo was not built\n";
+        return false;
+    }
+
+    s.label="search-combo";
+    renderFrames(s, s.frames);
+
+    bool ok=shoot(s, shotDir+"/search-combo.png");
+    std::vector<uint8_t> pixels;
+    size_t idleWork=settleCodeEditor(s, pixels);
+
+    // (1) "-001" typed at 30 and 3 000 options: its "1" counted
+    gweni::controls::SearchComboBox *refs=demo->referenceBox();
+
+    auto keystroke=[&](size_t count) -> SearchKeystroke
+        {
+            demo->setReferenceCount(count);
+            renderFrames(s, 1);
+            idleWork+=settleCodeEditor(s, pixels);
+
+            // the field, its text selected, the list open on every option
+            const gweni::Point field=centreOf(refs->getField());
+
+            clickMouse(s, field.x, field.y);
+            renderFrames(s, 1);
+            typeText(s, "-00");
+            renderFrames(s, 1);
+            idleWork+=settleCodeEditor(s, pixels);
+
+            std::set<size_t> allowedPrims, allowedTexts;
+
+            subtreeIds(refs, allowedPrims, allowedTexts);
+            subtreeIds(refs->getList(), allowedPrims, allowedTexts);
+
+            const size_t idsHeld=livePrimitiveIds()+liveTextIds();
+            const size_t measuresBefore=gweni::controls::measureTextCalls();
+
+            typeText(s, "1");
+
+            const CodeEditorFrame frame=codeEditorFrame(s);
+            SearchKeystroke key;
+
+            key.measures=gweni::controls::measureTextCalls()-measuresBefore;
+            key.prims=frame.primitives.size();
+            key.texts=frame.texts.size();
+            key.glyphs=frame.glyphSlots;
+            key.visited=gweni::controls::getChangeStats().visited;
+            key.changed=frame.changed;
+            key.passes=frame.passes;
+            key.layoutVisited=frame.visited;
+            key.pool=refs->getOptionsList()->getRows().size();
+            key.listControls=subtreeControls(refs->getList());
+            key.idsMade=static_cast<long long>(livePrimitiveIds()+liveTextIds())-static_cast<long long>(idsHeld);
+            key.withinBox=idsWithin(frame.primitives, allowedPrims) && idsWithin(frame.texts, allowedTexts);
+            key.glyphsWithin=frame.glyphSlots <= searchShownGlyphs(refs);
+            key.shown=refs->getShownOptions().size();
+            idleWork+=settleCodeEditor(s, pixels);
+
+            glfwKey(s, GLFW_KEY_ESCAPE, GLFW_PRESS, 0);
+            glfwKey(s, GLFW_KEY_ESCAPE, GLFW_RELEASE, 0);
+            renderFrames(s, 1);
+            forgetMouse(s);
+            // no caret left in the field for the later frames to compare with
+            refs->getField()->unfocus();
+            renderFrames(s, 1);
+            idleWork+=settleCodeEditor(s, pixels);
+            return key;
+        };
+
+    const SearchKeystroke small=keystroke(30);
+    const SearchKeystroke large=keystroke(3000);
+
+    checks.check("keystroke_same", small.sameAs(large),
+        "the keystroke at 30 options ("+small.text()+") and at 3000 ("+large.text()+") differ");
+    checks.check("keystroke_shown", small.shown == 10 && large.shown == 10,
+        "\"-001\" showed "+std::to_string(small.shown)+" and "+std::to_string(large.shown)+" options, not 10");
+    checks.check("keystroke_local", small.withinBox && large.withinBox && small.glyphsWithin && large.glyphsWithin,
+        "the keystroke wrote outside the box and its list, or more glyphs than its shown rows and field hold");
+    checks.check("keystroke_one_pass", small.passes == 1 && small.idsMade == 0,
+        "the keystroke ran "+std::to_string(small.passes)+" layout passes and made "
+        +std::to_string(small.idsMade)+" ids");
+    demo->setReferenceCount(gweni::SearchComboDemo::ReferenceCount);
+    renderFrames(s, 1);
+    idleWork+=settleCodeEditor(s, pixels);
+
+    // (2) the highlight moved: its two rows alone
+    gweni::controls::SearchComboBox *plain=demo->plainBox();
+    const std::vector<uint8_t> beforeOpen=pixels;
+    const gweni::Point plainAt=centreOf(plain);
+    const gweni::String textBefore=plain->getText();
+
+    clickMouse(s, plainAt.x, plainAt.y);
+    renderFrames(s, 1);
+    // off the list, so the hover takes no highlight
+    moveMouse(s, s.size.x-4, s.size.y-4);
+    renderFrames(s, 1);
+    idleWork+=settleCodeEditor(s, pixels);
+
+    const bool opened=plain->isListOpen() && plain->getHighlightedIndex() == 0;
+    gweni::controls::Base *firstRow=plain->getOptionsList()->rowForItem(0);
+    gweni::controls::Base *secondRow=plain->getOptionsList()->rowForItem(1);
+    std::set<size_t> rowPrims, rowTexts;
+
+    if(firstRow && secondRow)
+    {
+        subtreeIds(firstRow, rowPrims, rowTexts);
+        subtreeIds(secondRow, rowPrims, rowTexts);
+    }
+
+    glfwKey(s, GLFW_KEY_DOWN, GLFW_PRESS, 0);
+    glfwKey(s, GLFW_KEY_DOWN, GLFW_RELEASE, 0);
+
+    const CodeEditorFrame moved=codeEditorFrame(s);
+    const size_t movedOutside=(firstRow && secondRow)?differencesOutsideRects(s, pixels, moved.pixels,
+        {firstRow->getCanvasBounds(), secondRow->getCanvasBounds()}):1;
+
+    checks.check("highlight_rows", opened && firstRow && secondRow && plain->getHighlightedIndex() == 1
+        && !moved.primitives.empty() && idsWithin(moved.primitives, rowPrims) && idsWithin(moved.texts, rowTexts)
+        && movedOutside == 0,
+        "Down wrote "+std::to_string(moved.primitives.size())+" primitive and "+std::to_string(moved.texts.size())
+        +" text ids (the two rows' alone allowed) and changed "+std::to_string(movedOutside)+" pixels outside them");
+    idleWork+=settleCodeEditor(s, pixels);
+
+    // (3) a pick closes the list: the frame before opening, but the box's text
+    glfwKey(s, GLFW_KEY_ENTER, GLFW_PRESS, 0);
+    glfwKey(s, GLFW_KEY_ENTER, GLFW_RELEASE, 0);
+
+    const CodeEditorFrame picked=codeEditorFrame(s);
+    // the demo's own event label says what was picked
+    const size_t pickedOutside=differencesOutsideRects(s, beforeOpen, picked.pixels,
+        {plain->getCanvasBounds(), demo->eventLabel()->getCanvasBounds()});
+
+    checks.check("pick_closes", !plain->isListOpen() && plain->getSelectedIndex() == 1
+        && plain->getText() != textBefore && pickedOutside == 0
+        && demo->lastEvent() == "Picked: "+plain->getValue(),
+        "the pick left the list open, did not select the second option, or changed "
+        +std::to_string(pickedOutside)+" pixels outside the box and the event label from the frame before opening");
+    idleWork+=settleCodeEditor(s, pixels);
+
+    // (4) a chip that wraps: the box grows, the list at its new bottom
+    gweni::controls::SearchComboBox *tags=demo->tagBox();
+    const gweni::Point tagsAt(tags->getCanvasBounds().x+tags->getWidth()-8, centreOf(tags).y);
+
+    clickMouse(s, tagsAt.x, tagsAt.y);
+    renderFrames(s, 1);
+    idleWork+=settleCodeEditor(s, pixels);
+
+    const int oneRow=tags->getHeight();
+    bool wrapped=false;
+    CodeEditorFrame wrap;
+    int listY=-1;
+    int boxBottom=0;
+
+    // pick the unpicked options in turn until a chip goes onto a second row
+    for(size_t option=0; option < tags->getOptionCount() && !wrapped; ++option)
+    {
+        if(tags->isPicked(static_cast<int>(option)))
+            continue;
+
+        gweni::controls::Base *row=tags->getOptionsList()->rowForItem(option);
+
+        if(!row)
+            break;
+
+        const gweni::Point at=centreOf(row);
+
+        clickMouse(s, at.x, at.y);
+        wrap=codeEditorFrame(s);
+        wrapped=tags->getHeight() > oneRow;
+        listY=tags->getList()->getY();
+        boxBottom=tags->getCanvasBounds().y+tags->getHeight();
+        if(!wrapped)
+            idleWork+=settleCodeEditor(s, pixels);
+    }
+
+    const std::vector<gweni::controls::Chip *> chips=tags->getChips();
+    const bool secondRowChip=!chips.empty() && chips.back()->getY() > chips.front()->getY();
+    // the box (its chips and field), its list, what the taller box moved down
+    // (the controls after it in its column), and the slots drawn in the
+    // column's own clip region, whose clip box the taller column changes: its
+    // children's own slots
+    std::set<size_t> wrapPrims, wrapTexts;
+    bool after=false;
+
+    subtreeIds(tags, wrapPrims, wrapTexts);
+    subtreeIds(tags->getList(), wrapPrims, wrapTexts);
+    for(gweni::controls::Base *sibling : tags->getParent()->getChildren())
+    {
+        if(after)
+            subtreeIds(sibling, wrapPrims, wrapTexts);
+        else if(const gweni::skin::Control *own=sibling->getSkinControl())
+        {
+            std::vector<size_t> prims, texts;
+
+            own->appendIds(prims, texts);
+            wrapPrims.insert(prims.begin(), prims.end());
+            wrapTexts.insert(texts.begin(), texts.end());
+        }
+        after=after || (sibling == tags);
+    }
+    checks.check("wrap_local", wrapped && idsWithin(wrap.primitives, wrapPrims) && idsWithin(wrap.texts, wrapTexts),
+        "the wrapping pick wrote outside the box, its list and the controls below it");
+
+    checks.check("chip_wraps", wrapped && secondRowChip && tags->isListOpen() && listY == boxBottom
+        && wrap.passes == 1,
+        "no pick wrapped a chip onto a second row with the open list at the box's new bottom ("
+        +std::to_string(listY)+" for "+std::to_string(boxBottom)+") in one pass ("+std::to_string(wrap.passes)+")");
+    glfwKey(s, GLFW_KEY_ESCAPE, GLFW_PRESS, 0);
+    glfwKey(s, GLFW_KEY_ESCAPE, GLFW_RELEASE, 0);
+    renderFrames(s, 1);
+    forgetMouse(s);
+    renderFrames(s, 1);
+    idleWork+=settleCodeEditor(s, pixels);
+    checks.check("settled", idleWork == 0, "settled frames wrote or changed "+std::to_string(idleWork));
+
+    dropControl(s, control);
+    renderFrames(s, 1);
+
+    const size_t idsLeft=livePrimitiveIds()+liveTextIds()-idsBefore;
+
+    checks.check("ids_back", idsLeft == 0, std::to_string(idsLeft)+" ids not given back");
+
+    passed=checks.allPassed();
+    std::cout<<"search-combo";
+    for(const auto &result : checks.results)
+        std::cout<<" "<<result.first<<"="<<(result.second?"yes":"no");
+    std::cout<<" keystroke_30: "<<small.text()<<" keystroke_3000: "<<large.text()
+             <<" highlight_prims="<<moved.primitives.size()<<" wrap_prims="<<wrap.primitives.size()<<"\n";
+    return ok;
+}
+
 static bool runCodeEditorScenario(Session &s, const std::string &shotDir, bool &passed)
 {
     s.freezeClock=true;
@@ -15848,6 +16186,15 @@ int main(int argc, char *argv[])
             ok=runFlowScenario(session, shotDir, passed);
             if(ok && !passed)
                 ok=false;   // a size, a card's edit or a rebuild did more than its part
+            break;
+        }
+
+        case Scenario::SearchCombo:
+        {
+            bool passed=false;
+            ok=runSearchComboScenario(session, shotDir, passed);
+            if(ok && !passed)
+                ok=false;   // a keystroke, the highlight, a pick or a wrap did more than its part
             break;
         }
 
