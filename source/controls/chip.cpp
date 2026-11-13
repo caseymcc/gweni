@@ -18,6 +18,9 @@ namespace controls
 GWENI_CONTROL_CONSTRUCTOR(Chip)
 {
     setSizeFlags({SizeFlag::Elastic, SizeFlag::Elastic});
+    // no request of its own (a Button asks for 100x20): a layout cell takes
+    // the larger of the request and the preferred size
+    setSize(0, 0);
     setTextPadding(Padding(0, 0, 0, 0));
     setDefaultTextAlignment(Alignment::Left|Alignment::CenterV);
     // a new text of the same size redraws the glyphs and lays nothing out

@@ -225,9 +225,10 @@ if(TARGET ControlTest AND NOT EMSCRIPTEN)
     # input, a canvas resize and a scale round trip (both on Demo), a Window
     # dragged past its parent's edges, the tooltip box, the context menu, the
     # stats overlay, the depth view, the zoom panel, the node graph and a
-    # variable-height VirtualList, the code editor and the log view
+    # variable-height VirtualList, the code editor, the log view and the
+    # badges' counts and anchor moves
     foreach(verify_scenario interaction resize scale clip tooltip context-menu stats-overlay
-            depth-view zoom-panel node-graph virtual-list-variable code-editor log-view)
+            depth-view zoom-panel node-graph virtual-list-variable code-editor log-view chip-badge)
         string(REPLACE "-" "_" verify_name "${verify_scenario}")
         add_test(NAME controltest_verify_layout_${verify_name}
             COMMAND $<TARGET_FILE:ControlTest> --headless --scenario ${verify_scenario}
@@ -497,6 +498,15 @@ Erm, and I think it comes down to a choice between "The League Against Salivatin
     gweni_whole_app_test(controltest_timeline 60
         COMMAND $<TARGET_FILE:ControlTest> --headless --scenario timeline --require-one-pass
             --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/timeline@VARIANT@
+        WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
+
+    # ChipBadgeDemo: a badge's new count writes its slots alone and lays out
+    # the way down to it only when it grows, its anchor's move enters neither
+    # it nor the anchor's Text, a chip's hover writes its slot alone and a
+    # removal lays the row out in one pass and gives the chip's ids back
+    gweni_whole_app_test(controltest_chip_badge 60
+        COMMAND $<TARGET_FILE:ControlTest> --headless --scenario chip-badge --require-one-pass
+            --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/chip_badge@VARIANT@
         WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
 
     # gweni::tools::Inspector over the settled Demo, opened and closed by F12:

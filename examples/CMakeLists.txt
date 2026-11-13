@@ -92,6 +92,8 @@ set(GWENI_DEMO_SOURCES
     demo/dragNumber.h
     demo/vectorField.cpp
     demo/vectorField.h
+    demo/chipBadge.cpp
+    demo/chipBadge.h
     demo/nodeGraph.cpp
     demo/nodeGraph.h
     demo/zoomPanel.cpp

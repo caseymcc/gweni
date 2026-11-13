@@ -34,6 +34,7 @@
 #include "demo/dragNumber.h"
 #include "demo/vectorField.h"
 #include "demo/popup.h"
+#include "demo/chipBadge.h"
 #include "demo/crossSplitter.h"
 #include "demo/dataTable.h"
 #include "demo/codeEditor.h"
@@ -226,6 +227,7 @@ void Demo::init(const String &name)
         addDemo<LogViewDemo>(cat, "LogViewDemo", "Log view");
         addDemo<ContextMenuDemo>(cat, "ContextMenuDemo", "Context menu");
         addDemo<PopupDemo>(cat, "PopupDemo", "Popup");
+        addDemo<ChipBadgeDemo>(cat, "ChipBadgeDemo", "Chips and badges");
         addDemo<UnicodeTextDemo>(cat, "UnicodeTextDemo", "Unicode text");
         addDemo<TextSizesDemo>(cat, "TextSizesDemo", "Text sizes");
         addDemo<TextDemo>(cat, "TextDemo", "Text");

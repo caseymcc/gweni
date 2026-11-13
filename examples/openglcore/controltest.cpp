@@ -165,7 +165,8 @@
  *                       plot-histogram | plot-lines | chart | timeline |
  *                       inspector |
  *                       stats-overlay | depth-view | zoom-panel |
- *                       node-graph | code-editor | log-view (see below)
+ *                       node-graph | code-editor | log-view |
+ *                       chip-badge (see below)
  *    --dump-bounds [<path>]
  *                       print the laid-out control tree as text: one line per
  *                       control, depth-first in child order, indented by depth,
@@ -819,6 +820,25 @@
  *                 the log holds are the same at both counts, and the demo
  *                 gives every primitive id back. Exits non-zero if any check
  *                 is no.
+ *    chip-badge   ChipBadgeDemo, the clock frozen (chip-badge.png): the
+ *                 Inbox entry's badge counted one more (the same width),
+ *                 then 9 -> 10 (wider); the "Corners" button, a badge at
+ *                 each corner, moved 16, 8 units and back; the mouse onto
+ *                 the "project: gweni" chip and off; a click on the first
+ *                 removable chip's x. One line
+ *                   chip-badge count_same_width=yes|no ... ids_back=yes|no
+ *                 reports the checks: a count of the same width writes the
+ *                 badge's ids alone, lays nothing out and changes no pixel
+ *                 outside it; a wider one the same, in one pass entering only
+ *                 the way down to the badge; the move enters only the way down
+ *                 to the anchor (neither its Text nor its badges) and its and
+ *                 its badges' pixels move with it; the hover writes the chip's
+ *                 own slot alone, changes no pixel outside it, and moving off
+ *                 gives the frame back; the removal (the demo's onRemove
+ *                 handler deleting the chip) lays out in one pass entering no
+ *                 more than the row and the way down to it and gives back the
+ *                 chip's ids; settled frames write nothing; the demo gives
+ *                 every id back. Exits non-zero if any check is no.
  *    virtual-list VirtualListDemo with its list at 1 000 and then 100 000
  *                 items, the clock frozen: a settled frame, a one-row scroll
  *                 from the top (scrollByRows) and a wheel notch over the list
@@ -1065,6 +1085,9 @@
 #include <demo/comboBox.h>
 #include <demo/contextMenu.h>
 #include <demo/popup.h>
+#include <demo/chipBadge.h>
+#include <gweni/controls/badge.h>
+#include <gweni/controls/chip.h>
 #include <demo/crossSplitter.h>
 #include <demo/dataTable.h>
 #include <demo/codeEditor.h>
@@ -1216,7 +1239,7 @@ static void content_scale_callback(GLFWwindow *window, float, float)
     X(ShowcaseDisplayDemo) X(ShowcaseWindowsDemo) \
     X(ButtonDemo) X(LabelDemo) X(LabelMultilineDemo) X(ProgressBarDemo) \
     X(GroupBoxDemo) X(ImagePanelDemo) X(StatusBarDemo) X(SeparatorDemo) X(PlotHistogramDemo) X(PlotLinesDemo) X(ChartTimeBarsDemo) X(ChartLinesDemo) X(TimelineDemo) X(ComboBoxDemo) \
-    X(TextBoxDemo) X(ListBoxDemo) X(SelectableDemo) X(VirtualListDemo) X(VirtualListVariableDemo) X(DataTableDemo) X(DataTableVirtualDemo) X(CodeEditorDemo) X(CodeEditorFormDemo) X(LogViewDemo) X(ContextMenuDemo) X(PopupDemo) X(CrossSplitterDemo) X(RadioButtonDemo) \
+    X(TextBoxDemo) X(ListBoxDemo) X(SelectableDemo) X(VirtualListDemo) X(VirtualListVariableDemo) X(DataTableDemo) X(DataTableVirtualDemo) X(CodeEditorDemo) X(CodeEditorFormDemo) X(LogViewDemo) X(ContextMenuDemo) X(PopupDemo) X(ChipBadgeDemo) X(CrossSplitterDemo) X(RadioButtonDemo) \
     X(CheckBoxDemo) X(NumericDemo) X(SliderDemo) X(SliderTextDemo) X(DragNumberDemo) X(VectorFieldDemo) X(MenuStripDemo) \
     X(WindowDemo) X(WindowButtonsDemo) X(TreeControlDemo) X(PropertiesDemo) X(TabControlDemo) X(TabCloseDemo) X(TabOverflowDemo) \
     X(ScrollControlDemo) X(PageControlDemo) X(CollapsibleListDemo) X(ColorPickerDemo) X(ColorEditDemo) \
@@ -1313,7 +1336,7 @@ static void printUsage(std::ostream &out)
          "                     | plot-histogram | plot-lines | chart | timeline\n"
          "                     | inspector\n"
          "                     | stats-overlay | depth-view | zoom-panel\n"
-         "                     | node-graph | code-editor | log-view;\n"
+         "                     | node-graph | code-editor | log-view | chip-badge;\n"
          "                     resize prints listing_settled, mirror_settled,\n"
          "                     shrink_settled and fresh_matches, interaction one\n"
          "                     yes/no per repaint check, typing its keyboard\n"
@@ -2351,7 +2374,8 @@ static bool runSteps(Session &s, const std::vector<Step> &steps, const std::stri
 //-----------------------------------------------------------------------------
 enum class Scenario { None, PerControl, Resize, Docked, Scroll, Interaction, Typing, Clip, TextSize, Scale,
     ToolTip, ContextMenu, Popup, VirtualList, VirtualListVariable, DataTableVirtual, HideShow, DemoLabels, PlotHistogram,
-    PlotLines, Chart, Timeline, Inspector, Theme, StatsOverlay, DepthView, ZoomPanel, NodeGraph, CodeEditor, LogView };
+    PlotLines, Chart, Timeline, Inspector, Theme, StatsOverlay, DepthView, ZoomPanel, NodeGraph, CodeEditor, LogView,
+    ChipBadge };
 
 static bool parseScenario(const std::string &name, Scenario &scenario)
 {
@@ -2384,6 +2408,7 @@ static bool parseScenario(const std::string &name, Scenario &scenario)
     else if(name == "node-graph") scenario=Scenario::NodeGraph;
     else if(name == "code-editor") scenario=Scenario::CodeEditor;
     else if(name == "log-view") scenario=Scenario::LogView;
+    else if(name == "chip-badge") scenario=Scenario::ChipBadge;
     else return false;
     return true;
 }
@@ -10803,6 +10828,250 @@ static bool selectionDrawn(const Session &s, const std::vector<uint8_t> &pixels,
     return !local.empty();
 }
 
+//-----------------------------------------------------------------------------
+// --scenario chip-badge: ChipBadgeDemo's badges and chips, the clock frozen
+//
+// A Badge is an attached child (Base::attachTo): placed by Base at its
+// anchor's corner, out of the anchor's size, drawn at the z its anchor's
+// parent reserves. So a new count writes the badge's slots alone and lays out
+// the way down to the badge only when its width changes; a move of its anchor
+// enters neither the badge nor the anchor's Text, the badge's pixels moving
+// with the anchor's. A Chip's hover writes its slot alone, and a removed one's
+// frame lays its row out in one pass and gives its ids back.
+//-----------------------------------------------------------------------------
+
+namespace
+{
+
+// The controls from the canvas down to `control`, both included.
+size_t pathLength(gweni::controls::Base *control)
+{
+    size_t length=0;
+
+    for(gweni::controls::Base *at=control; at; at=at->getActualParent())
+        ++length;
+    return length;
+}
+
+// The pixels of `rect` (logical units) in `before` that differ, by more than 1
+// in a channel, from those of `after` `shift` device pixels further right and
+// down.
+size_t differencesMoved(const Session &s, const std::vector<uint8_t> &before,
+    const std::vector<uint8_t> &after, const gweni::Rect &rect, const gweni::Point &shift)
+{
+    const gweni::Point topLeft=devicePixels(gweni::Point(rect.x, rect.y), s.scale);
+    const gweni::Point bottomRight=devicePixels(gweni::Point(rect.x+rect.w, rect.y+rect.h), s.scale);
+    size_t count=0;
+
+    for(int y=std::max(topLeft.y, 0); y < std::min(bottomRight.y, s.pixels.y); ++y)
+    {
+        for(int x=std::max(topLeft.x, 0); x < std::min(bottomRight.x, s.pixels.x); ++x)
+        {
+            const int mx=x+shift.x;
+            const int my=y+shift.y;
+
+            if(mx < 0 || my < 0 || mx >= s.pixels.x || my >= s.pixels.y)
+            {
+                ++count;
+                continue;
+            }
+
+            const size_t at=(static_cast<size_t>(y)*s.pixels.x+x)*4;
+            const size_t movedAt=(static_cast<size_t>(my)*s.pixels.x+mx)*4;
+
+            for(int c=0; c < 4; ++c)
+            {
+                if(std::abs(int(before[at+c])-int(after[movedAt+c])) > 1)
+                {
+                    ++count;
+                    break;
+                }
+            }
+        }
+    }
+    return count;
+}
+
+gweni::Rect unionRect(const gweni::Rect &a, const gweni::Rect &b)
+{
+    const int x0=std::min(a.x, b.x);
+    const int y0=std::min(a.y, b.y);
+    const int x1=std::max(a.x+a.w, b.x+b.w);
+    const int y1=std::max(a.y+a.h, b.y+b.h);
+
+    return gweni::Rect(x0, y0, x1-x0, y1-y0);
+}
+
+}//namespace
+
+static bool runChipBadgeScenario(Session &s, const std::string &shotDir, bool &passed)
+{
+    s.freezeClock=true;
+
+    InteractionChecks checks;
+    checks.scenario="chip-badge";
+
+    const size_t idsBefore=livePrimitiveIds()+liveTextIds();
+    gweni::controls::Base *control=addControl(s, "ChipBadgeDemo");
+    auto *demo=gweni::gweni_cast<gweni::ChipBadgeDemo>(control);
+
+    if(!demo)
+    {
+        std::cerr<<"ControlTest: chip-badge: ChipBadgeDemo was not built\n";
+        return false;
+    }
+
+    s.label="chip-badge";
+    renderFrames(s, s.frames);
+
+    bool ok=shoot(s, shotDir+"/chip-badge.png");
+    std::vector<uint8_t> pixels;
+    size_t idleWork=settleCodeEditor(s, pixels);
+
+    // (1) a new count: the badge's slots alone, nothing laid out while its
+    // width stays, the way down to it alone when it grows
+    gweni::controls::Badge *badge=demo->navBadge();
+    std::set<size_t> badgePrims, badgeTexts;
+
+    subtreeIds(badge, badgePrims, badgeTexts);
+
+    badge->setCount(badge->getCount()+1);
+    const gweni::Rect sameRect=badge->getCanvasBounds();
+    const CodeEditorFrame same=codeEditorFrame(s);
+    const size_t sameOutside=differencesOutsideRects(s, pixels, same.pixels, {sameRect});
+
+    checks.check("count_same_width",
+        !same.texts.empty() && idsWithin(same.primitives, badgePrims) && idsWithin(same.texts, badgeTexts)
+            && same.passes == 0 && same.changed == 1 && sameOutside == 0,
+        "a count of the same width wrote "+std::to_string(same.primitives.size())+" primitive and "
+        +std::to_string(same.texts.size())+" text ids (the badge's alone allowed), ran "
+        +std::to_string(same.passes)+" layout passes, changed "+std::to_string(same.changed)
+        +" controls and "+std::to_string(sameOutside)+" pixels outside it");
+    idleWork+=settleCodeEditor(s, pixels);
+
+    badge->setCount(9);
+    renderFrames(s, 1);
+    idleWork+=settleCodeEditor(s, pixels);
+
+    const gweni::Rect narrow=badge->getCanvasBounds();
+
+    badge->setCount(10);
+
+    const CodeEditorFrame wider=codeEditorFrame(s);
+    const gweni::Rect wide=badge->getCanvasBounds();
+    const size_t widerOutside=differencesOutsideRects(s, pixels, wider.pixels, {narrow, wide});
+    const size_t badgePath=pathLength(badge);
+
+    checks.check("count_wider",
+        wide.w > narrow.w && idsWithin(wider.primitives, badgePrims) && idsWithin(wider.texts, badgeTexts)
+            && wider.passes == 1 && wider.visited <= 4*badgePath && widerOutside == 0,
+        "9 -> 10 wrote outside the badge's ids, ran "+std::to_string(wider.passes)+" passes entering "
+        +std::to_string(wider.visited)+" (the way down to the badge, "+std::to_string(4*badgePath)
+        +", allowed) or changed "+std::to_string(widerOutside)+" pixels outside it");
+    badge->setCount(4);
+    renderFrames(s, 1);
+    idleWork+=settleCodeEditor(s, pixels);
+
+    // (2) the anchor moved: neither its Text nor its badges entered, and what
+    // they draw moved with it
+    gweni::controls::Button *corner=demo->cornerButton();
+    gweni::Rect region=corner->getCanvasBounds();
+
+    for(gweni::controls::Badge *cornerBadge : demo->cornerBadges())
+        region=unionRect(region, cornerBadge->getCanvasBounds());
+    region=gweni::Rect(region.x-1, region.y-1, region.w+2, region.h+2);
+
+    const gweni::Point step(16, 8);
+
+    corner->setPos(corner->getX()+step.x, corner->getY()+step.y);
+
+    const CodeEditorFrame moved=codeEditorFrame(s);
+    const size_t cornerPath=pathLength(corner);
+    const size_t movedDiff=differencesMoved(s, pixels, moved.pixels, region,
+        devicePixels(step, s.scale));
+
+    checks.check("anchor_moved",
+        moved.passes == 1 && moved.visited <= 4*cornerPath && movedDiff == 0,
+        "the anchor's move ran "+std::to_string(moved.passes)+" passes entering "
+        +std::to_string(moved.visited)+" (the way down to the anchor alone, "+std::to_string(4*cornerPath)
+        +", allowed), and "+std::to_string(movedDiff)+" of its and its badges' pixels did not move with it");
+    corner->setPos(corner->getX()-step.x, corner->getY()-step.y);
+    renderFrames(s, 1);
+    idleWork+=settleCodeEditor(s, pixels);
+
+    // (3) a clickable chip's hover: its slot alone, and moving off gives the
+    // frame back
+    gweni::controls::Chip *chip=demo->clickableChip();
+    std::set<size_t> chipPrims, chipTexts;
+
+    subtreeIds(chip, chipPrims, chipTexts);
+
+    const gweni::Rect chipRect=chip->getCanvasBounds();
+
+    moveMouse(s, chipRect.x+chipRect.w/2, chipRect.y+chipRect.h/2);
+
+    const CodeEditorFrame hover=codeEditorFrame(s);
+    const size_t hoverOutside=differencesOutsideRects(s, pixels, hover.pixels, {chipRect});
+
+    moveMouse(s, s.size.x-4, s.size.y-4);
+
+    const CodeEditorFrame off=codeEditorFrame(s);
+
+    checks.check("chip_hover",
+        chip->isHovered() == false && !hover.primitives.empty() && idsWithin(hover.primitives, chipPrims)
+            && hover.texts.empty() && hoverOutside == 0 && off.pixels == pixels,
+        "a chip's hover wrote "+std::to_string(hover.primitives.size())+" primitive ids (its own alone allowed) and "
+        +std::to_string(hover.texts.size())+" text ids, changed "+std::to_string(hoverOutside)
+        +" pixels outside it, or moving off did not give the frame back");
+    idleWork+=settleCodeEditor(s, pixels);
+
+    // (4) a removal: one pass, the chip's ids back
+    gweni::controls::Chip *removed=demo->removableChip();
+    std::set<size_t> removedPrims, removedTexts;
+
+    subtreeIds(removed, removedPrims, removedTexts);
+
+    const size_t idsWithChip=livePrimitiveIds()+liveTextIds();
+    const gweni::Rect removeRect=removed->getRemoveButton()->getCanvasBounds();
+
+    clickMouse(s, removeRect.x+removeRect.w/2, removeRect.y+removeRect.h/2);
+
+    const CodeEditorFrame removal=codeEditorFrame(s);
+    const size_t idsWithout=livePrimitiveIds()+liveTextIds();
+    const bool gone=demo->removableChip() != removed;
+    const size_t rowEntries=4*(pathLength(demo->chipRow())+subtreeControls(demo->chipRow())-1);
+
+    checks.check("chip_removed",
+        gone && removal.passes == 1 && removal.visited <= rowEntries
+            && idsWithChip-idsWithout == removedPrims.size()+removedTexts.size(),
+        std::string(gone?"":"the chip is still there; ")+"the removal ran "+std::to_string(removal.passes)
+        +" passes entering "+std::to_string(removal.visited)+" (the row and the way down to it, "
+        +std::to_string(rowEntries)+", allowed) and gave back "+std::to_string(idsWithChip-idsWithout)
+        +" of the chip's "+std::to_string(removedPrims.size()+removedTexts.size())+" ids");
+
+    forgetMouse(s);
+    renderFrames(s, 1);
+    idleWork+=settleCodeEditor(s, pixels);
+    checks.check("settled", idleWork == 0,
+        "settled frames wrote or changed "+std::to_string(idleWork));
+
+    dropControl(s, control);
+    renderFrames(s, 1);
+
+    const size_t idsLeft=livePrimitiveIds()+liveTextIds()-idsBefore;
+
+    checks.check("ids_back", idsLeft == 0, std::to_string(idsLeft)+" ids not given back");
+
+    passed=checks.allPassed();
+    std::cout<<"chip-badge";
+    for(const auto &result : checks.results)
+        std::cout<<" "<<result.first<<"="<<(result.second?"yes":"no");
+    std::cout<<" same_prims="<<same.primitives.size()<<" wider_visited="<<wider.visited
+             <<" moved_visited="<<moved.visited<<" hover_prims="<<hover.primitives.size()
+             <<" removal_visited="<<removal.visited<<"\n";
+    return ok;
+}
+
 static bool runCodeEditorScenario(Session &s, const std::string &shotDir, bool &passed)
 {
     s.freezeClock=true;
@@ -14295,6 +14564,15 @@ int main(int argc, char *argv[])
             ok=runZoomPanelScenario(session, shotDir, passed);
             if(ok && !passed)
                 ok=false;   // a zoomed panel did not draw as a scaled canvas
+            break;
+        }
+
+        case Scenario::ChipBadge:
+        {
+            bool passed=false;
+            ok=runChipBadgeScenario(session, shotDir, passed);
+            if(ok && !passed)
+                ok=false;   // a count, a move, a hover or a removal did more than its part
             break;
         }
 
