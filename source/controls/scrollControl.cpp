@@ -262,11 +262,26 @@ void ScrollControl::calculateSize(skin::Base *skin, Dim dim)
 // the bars for that; only then are they laid out, X then Y, so nothing a child
 // has read changes after it read it.
 //
-// Content whose height depends on its width (wrapped text) was measured at the
-// width it had in the previous pass. It is measured again once laid out at its
-// new width; if the height changed, the inner panel is resized for it, which
-// is reported as a re-dirty, and the canvas's next pass decides the bars with
-// the new height. No library control puts such content in a ScrollControl.
+// Content whose height depends on its width (wrapped text, a layout::Flow of
+// cards) was measured in this pass's Y measure at the width it had before:
+// the X pass did not enter it. Once laid out at its new width it is measured
+// again, and when that gives another height the bars are decided again for
+// it (decideBars):
+// - Shown as placeContents() showed them: always so with a stable gutter
+//   (the vertical bar shown whatever the content, setAutoHideBars(false), or
+//   no vertical scrolling at all), and so with auto-hide when the new height
+//   overflows the viewport exactly when the old one did. Then the viewport,
+//   and so every width the content was laid out at, is final, and
+//   placeContents() runs again for the new height before the Y arrange: the
+//   bar ranges, the offset kept or clamped, the inner panel's height. One
+//   pass.
+// - Shown otherwise (auto-hide, the bar to come or go): the content was laid
+//   out at the wrong width. The inner panel takes the new height, and this
+//   control is re-dirtied, so the canvas's next pass decides the bars with
+//   the height measured here (two passes; a narrower viewport never makes
+//   the content shorter, so the second pass keeps its bars).
+// So width-dependent content lays out in one pass only behind a stable
+// gutter: a Flow, whose column count follows its width, needs one.
 void ScrollControl::arrange(skin::Base *skin, Dim dim)
 {
     if(!m_innerPanel)
@@ -286,6 +301,9 @@ void ScrollControl::arrange(skin::Base *skin, Dim dim)
         layout(skin);
     }
 
+    // what placeContents() resolves, for a second placeContents() to resolve
+    // at the content this pass ends with
+    const ScrollEdge pendingEdge[2]={m_pendingEdge[0], m_pendingEdge[1]};
     placeContents();
 
     {
@@ -317,8 +335,21 @@ void ScrollControl::arrange(skin::Base *skin, Dim dim)
     // Virtual content is the viewport's height whatever its children ask for.
     if(!hasVirtualContent() && m_innerPanel->getPreferredSize().height != contentHeight)
     {
-        placeChildSize(m_innerPanel, m_innerPanel->getWidth(),
-            std::max(m_viewport.h, m_innerPanel->getPreferredSize().height));
+        const BarDecision bars=decideBars(contentSize());
+
+        if(bars.verticalShown != !m_verticalScrollBar->hidden()
+            || bars.horizontalShown != !m_horizontalScrollBar->hidden())
+        {
+            placeChildSize(m_innerPanel, m_innerPanel->getWidth(),
+                std::max(m_viewport.h, m_innerPanel->getPreferredSize().height));
+            noteRedirty();
+        }
+        else
+        {
+            m_pendingEdge[0]=pendingEdge[0];
+            m_pendingEdge[1]=pendingEdge[1];
+            placeContents();
+        }
     }
 
     for(auto &&child : m_children)
@@ -328,6 +359,36 @@ void ScrollControl::arrange(skin::Base *skin, Dim dim)
     }
 
     postLayout(skin);
+}
+
+// Which bars show. Showing one narrows the viewport the other is compared
+// with, and a narrower viewport never makes a bar go away, so the second
+// round has seen every bar the first one turned on.
+ScrollControl::BarDecision ScrollControl::decideBars(const Size &content) const
+{
+    const Margin &inset=m_innerPanel->getMargin();
+    const Margin &verticalMargin=m_verticalScrollBar->getMargin();
+    const Margin &horizontalMargin=m_horizontalScrollBar->getMargin();
+
+    // The viewport with no bar shown, and what each bar takes from it.
+    const int openWidth=getWidth()-m_padding.left-m_padding.right-inset.left-inset.right;
+    const int openHeight=getHeight()-m_padding.top-m_padding.bottom-inset.top-inset.bottom;
+    const int verticalSpan=m_barSize.width+verticalMargin.left+verticalMargin.right;
+    const int horizontalSpan=m_barSize.height+horizontalMargin.top+horizontalMargin.bottom;
+    BarDecision bars;
+
+    for(int round=0; round < 2; ++round)
+    {
+        bars.verticalRequired=m_canScrollVertical &&
+            content.height > openHeight-(bars.horizontalShown?horizontalSpan:0);
+        bars.verticalShown=m_canScrollVertical && (bars.verticalRequired || !m_autoHideBars);
+
+        bars.horizontalRequired=m_canScrollHorizontal &&
+            content.width > openWidth-(bars.verticalShown?verticalSpan:0);
+        bars.horizontalShown=m_canScrollHorizontal && (bars.horizontalRequired || !m_autoHideBars);
+    }
+
+    return bars;
 }
 
 // The viewport is what the content is seen through: this control less its
@@ -353,24 +414,11 @@ void ScrollControl::placeContents()
     const int verticalSpan=m_barSize.width+verticalMargin.left+verticalMargin.right;
     const int horizontalSpan=m_barSize.height+horizontalMargin.top+horizontalMargin.bottom;
 
-    // Which bars show. Showing one narrows the viewport the other is compared
-    // with, and a narrower viewport never makes a bar go away, so the second
-    // round has seen every bar the first one turned on.
-    bool verticalRequired=false;
-    bool horizontalRequired=false;
-    bool verticalShown=false;
-    bool horizontalShown=false;
-
-    for(int round=0; round < 2; ++round)
-    {
-        verticalRequired=m_canScrollVertical &&
-            content.height > openHeight-(horizontalShown?horizontalSpan:0);
-        verticalShown=m_canScrollVertical && (verticalRequired || !m_autoHideBars);
-
-        horizontalRequired=m_canScrollHorizontal &&
-            content.width > openWidth-(verticalShown?verticalSpan:0);
-        horizontalShown=m_canScrollHorizontal && (horizontalRequired || !m_autoHideBars);
-    }
+    const BarDecision bars=decideBars(content);
+    const bool verticalRequired=bars.verticalRequired;
+    const bool horizontalRequired=bars.horizontalRequired;
+    const bool verticalShown=bars.verticalShown;
+    const bool horizontalShown=bars.horizontalShown;
 
     const int barWidth=verticalShown?m_barSize.width:0;
     const int barHeight=horizontalShown?m_barSize.height:0;

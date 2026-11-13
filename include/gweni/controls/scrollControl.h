@@ -221,6 +221,19 @@ protected:
     ScrollEdge m_pendingEdge[2]={ScrollEdge::None, ScrollEdge::None};
 
     void scrollToEdge(Dim dim, ScrollEdge edge);
+
+private:
+    //! Which bars placeContents() requires and shows for this control's size
+    //! and a content size.
+    struct BarDecision
+    {
+        bool verticalRequired=false;
+        bool horizontalRequired=false;
+        bool verticalShown=false;
+        bool horizontalShown=false;
+    };
+
+    BarDecision decideBars(const Size &content) const;
 };
 
 }//namespace controls
