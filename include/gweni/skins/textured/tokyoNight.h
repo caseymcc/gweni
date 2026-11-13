@@ -108,6 +108,12 @@ inline Surface CodeEditorFocus { BgDark,                BgDark,                B
 inline Surface CodeGutter      { Bg,                    Bg,                    Bg,    0.0f, 0.0f };
 inline Surface CodeCurrentLine { Color(0x1f,0x21,0x30), Color(0x1f,0x21,0x30), Color(0x1f,0x21,0x30), 0.0f, 0.0f };
 inline Surface CodeSelection   { Color(0x28,0x34,0x57), Color(0x28,0x34,0x57), Color(0x28,0x34,0x57), 0.0f, 0.0f };
+// A CodeView's diff rows, behind the line (flat and square, as the current
+// line): a '+' line green, a '-' line red, an "@@" hunk header blue, each a
+// dark tint of its token colour so the text stays legible.
+inline Surface DiffAdded       { Color(0x20,0x30,0x3b), Color(0x20,0x30,0x3b), Color(0x20,0x30,0x3b), 0.0f, 0.0f };
+inline Surface DiffRemoved     { Color(0x37,0x22,0x2c), Color(0x37,0x22,0x2c), Color(0x37,0x22,0x2c), 0.0f, 0.0f };
+inline Surface DiffHunk        { Color(0x1e,0x2a,0x44), Color(0x1e,0x2a,0x44), Color(0x1e,0x2a,0x44), 0.0f, 0.0f };
 
 // A LogView's field: a CodeEditor's (an inset, its border blue with the focus).
 inline Surface LogView         { BgDark,                BgDark,                Line,  RadiusSm, BorderW };
@@ -356,6 +362,7 @@ inline std::unordered_map<std::string, Surface*>& surfaceRegistry()
         {"TextBox",&TextBox},{"TextBoxFocus",&TextBoxFocus},{"TextBoxDisabled",&TextBoxDisabled},{"TextSelection",&TextSelection},
         {"CodeEditor",&CodeEditor},{"CodeEditorFocus",&CodeEditorFocus},{"CodeGutter",&CodeGutter},
         {"CodeCurrentLine",&CodeCurrentLine},{"CodeSelection",&CodeSelection},
+        {"DiffAdded",&DiffAdded},{"DiffRemoved",&DiffRemoved},{"DiffHunk",&DiffHunk},
         {"LogView",&LogView},{"LogViewFocus",&LogViewFocus},{"LogViewSelection",&LogViewSelection},
         {"Menu",&Menu},{"MenuStrip",&MenuStrip},{"MenuHover",&MenuHover},
         {"TabActive",&TabActive},{"TabInactive",&TabInactive},{"TabHover",&TabHover},{"TabControl",&TabControl},

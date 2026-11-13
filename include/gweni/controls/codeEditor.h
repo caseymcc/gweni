@@ -130,6 +130,18 @@ public:
 
     //! Whether it shows the line with the caret: its line background shows.
     bool isCurrentLine() const { return m_current; }
+
+    //! A diff line's kind, which a CodeView's diff gives its row background.
+    enum class DiffKind
+    {
+        None,       //!< context, a file header or no diff: no background
+        Added,      //!< a '+' line in a hunk
+        Removed,    //!< a '-' line in a hunk
+        Hunk        //!< an "@@ ... @@" hunk header
+    };
+    //! The bound line's kind, from its tokens when it is bound or its tokens
+    //! change (CodeEditor::showsDiffRows()); None otherwise.
+    DiffKind getDiffKind() const { return m_diffKind; }
     //! The z its glyphs are drawn in front of, and its selection rect at.
     int getTextZIndex() const { return m_text->getZIndex(); }
 
@@ -187,6 +199,7 @@ private:
     CodeEditor *m_editor=nullptr;
     size_t m_line=NoLine;
     bool m_current=false;
+    DiffKind m_diffKind=DiffKind::None;
     size_t m_selectionBegin=0;
     size_t m_selectionEnd=0;
 };
@@ -523,6 +536,11 @@ public:
 protected:
     void contentsPlaced(skin::Base *skin) override;
 
+    //! Whether the rows take a diff kind from their lines' tokens
+    //! (CodeLine::getDiffKind): none in the editor, a CodeView's with the
+    //! diff language.
+    virtual bool showsDiffRows() const { return false; }
+
     //! The rows are owner-placed, so the inner panel's preferred width is
     //! none of theirs: the content is as wide as the longest line, its cells
     //! and one more for a caret after its end, inset on both sides.
@@ -637,6 +655,9 @@ private:
     //! The colour spans of line \p line's tokens, in the skin's colours, into
     //! \p spans (emptied first; none without a tokenizer).
     void tokenSpans(size_t line, std::vector<renderer::ColorSpan> &spans);
+    //! Line \p line's diff kind: its first token's, when that starts the line
+    //! and is Added, Removed or Hunk, with showsDiffRows(); None otherwise.
+    CodeLine::DiffKind diffKind(size_t line);
     //! Tells the highlight cache which lines the pooled rows show.
     void syncHighlightWindow();
     //! Whether the cell width and line height were read for this font,

@@ -1196,7 +1196,8 @@ public:
 };
 
 // A CodeEditor's row: [0] its line background (CodeCurrentLine on the line
-// with the caret, hidden otherwise), then a selection rect per visual row the
+// with the caret, else a CodeView diff row's DiffAdded, DiffRemoved or
+// DiffHunk, hidden otherwise), then a selection rect per visual row the
 // selection covers at the text's z, behind every glyph (CodeSelection; [1]
 // hidden while the line has none, the slots past the rects given back); the
 // row's Texts draw the line.
