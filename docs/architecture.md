@@ -3585,6 +3585,20 @@ two programs and the draws. What follows describes both together:
   lost the focus. The field takes the box's font (`setFont`), and a disabled box
   closes its list.
 
+  **Options refilled while the user types** (an app's async search: `setOptions()`,
+  or `clearOptions()` and `addOption()`, from `onTextChangedCaller`, which runs before
+  the box filters for that edit) leave the field's text and the query as they are,
+  and the open list shows the new options matching it. "While the user types" is a
+  flag, not a comparison of the field with the value (an emptied query with nothing
+  selected would look like none): an edit of the field sets it, and showing the value
+  (a pick, Escape, a close, a lost focus) or a multi-select pick emptying the field
+  clears it. `setOptions()` keeps the selection on an equal option (the same label and
+  name), and multi-select each pick of an option (the others go with their chips); a
+  selection with no equal option is the first option, except while the user types,
+  when it is none, so the value is never a result nobody picked and the pick that ends
+  the edit fires `onSelection`; `addOption()` then selects nothing either. Closed, the
+  list's shown options are emptied, so no index into the old options is left.
+
   **Free text** (`setAllowCustomValue(true)`, filterable too) shows an Add “text” row
   after the matches whenever the text is no option's label (case aside), alone and
   highlighted when nothing matches; Return on it, a click on it, Return with the list

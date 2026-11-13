@@ -65,7 +65,17 @@
  *  and is not taken as a free-text value when the focus moves on, a refused
  *  text included; the value taken is the text typed, whatever the handler
  *  sets the field to. A disabled box closes its list, and a press where a
- *  row was picks nothing; a filterable box's font reaches its field.
+ *  row was picks nothing; a filterable box's font reaches its field. Options
+ *  refilled from onTextChangedCaller (setOptions(), or clearOptions() and
+ *  addOption()) leave the typed text and the query in the field, the list
+ *  showing the new options that match it; a selection gone from them is
+ *  none, so the pick ending the edit fires onSelection, after which a refill
+ *  shows the first option again, as it does after a free-text field typed
+ *  back to the value's own text loses the focus. setOptions() with the list
+ *  closed leaves no shown option or highlight of the old ones, and keeps the
+ *  selection and multi-select picks on options of the same label and name
+ *  (the others' chips going, with no event). A free-text value wider than every option
+ *  widens a size-to-content box, and an option picked again narrows it back.
  *
  *  Multi-select: no selection and no text on the box; a row click and Return
  *  each add the option as a chip, in pick order, the list staying open with
@@ -1399,6 +1409,174 @@ TEST_CASE("SearchComboBox: filterable, the box's font reaches its field")
 namespace
 {
 
+//! An app's search: each edit of the field refills the options with the
+//! labels containing the query, through setOptions() or clearOptions() and
+//! addOption() one by one.
+class Refill: public event::Handler
+{
+public:
+    void edited(event::Info info)
+    {
+        std::vector<SearchComboBox::Option> results;
+
+        for(const String &label : labels)
+        {
+            if(label.find(info.string) != String::npos)
+                results.push_back({label, ""});
+        }
+
+        if(oneByOne)
+        {
+            box->clearOptions();
+
+            for(const SearchComboBox::Option &option : results)
+                box->addOption(option.label);
+        }
+        else
+            box->setOptions(std::move(results));
+        ++calls;
+    }
+
+    void listen(SearchComboBox *of)
+    {
+        box=of;
+        box->onTextChangedCaller.add(this, &Refill::edited);
+    }
+
+    SearchComboBox *box=nullptr;
+    std::vector<String> labels;
+    bool oneByOne=false;
+    int calls=0;
+};
+
+}//namespace
+
+TEST_CASE("SearchComboBox: filterable, options refilled from onTextChangedCaller keep what is typed")
+{
+    Scene scene;
+    const std::vector<String> labels{"web-1", "web-2", "db-1"};
+    SearchComboBox *box=filterable(scene, labels);
+    Refill refill;
+    Counter selections;
+
+    refill.labels=labels;
+    SUBCASE("setOptions") {}
+    SUBCASE("clearOptions and addOption") { refill.oneByOne=true; }
+
+    refill.listen(box);
+    selections.listen(box->onSelection);
+    box->getField()->onSelectAll(box->getField());
+    type(scene, "we");
+    CHECK(refill.calls == 2);
+    // the field holds what was typed, the list the new options matching it
+    CHECK(box->getField()->getText() == "we");
+    CHECK(box->getQuery() == "we");
+    REQUIRE(box->isListOpen());
+    REQUIRE(box->getOptionCount() == 2);
+    CHECK(shown(box) == (std::vector<size_t>{0, 1}));
+    REQUIRE(rowFor(box, 1));
+    CHECK(rowFor(box, 1)->getText() == "web-2");
+    CHECK(box->getHighlightedIndex() == 0);
+
+    // an emptied field shows every option again, and a new query its own
+    scene.key(keys::Backspace);
+    scene.key(keys::Backspace);
+    CHECK(box->getField()->getText() == "");
+    CHECK(shown(box).size() == 3);
+    type(scene, "db");
+    CHECK(box->getField()->getText() == "db");
+    REQUIRE(box->getOptionCount() == 1);
+    CHECK(box->getOption(0).label == "db-1");
+    CHECK(shown(box) == std::vector<size_t>{0});
+    CHECK(selections.calls == 0);
+
+    // a pick ends the edit: the field shows the option picked
+    scene.key(keys::Return);
+    CHECK(!box->isListOpen());
+    CHECK(box->getSelectedIndex() == 0);
+    CHECK(box->getField()->getText() == "db-1");
+    CHECK(selections.calls == 1);
+
+    // over: the app's own refill shows the first option, as on any box
+    box->setOptions({{"x", ""}});
+    CHECK(box->getSelectedIndex() == 0);
+    CHECK(box->getField()->getText() == "x");
+}
+
+TEST_CASE("SearchComboBox: free text, the value's own text typed and Tab end the edit an app refill keeps")
+{
+    Scene scene;
+    SearchComboBox *box=freeText(scene, {"web-1", "web-2"});
+    controls::TextBox *other=scene.canvas->newChild<controls::TextBox>();
+
+    other->setBounds(20, 300, 100, 20);
+    REQUIRE(box->getSelectedIndex() == 0);
+    // typed back to the value's own text, then away
+    type(scene, "web-1");
+    scene.key(keys::Tab);
+    REQUIRE(KeyboardFocus != box->getField());
+    CHECK(box->getField()->getText() == "web-1");
+    CHECK(!box->hasCustomValue());
+
+    // the app's refill then shows its first option
+    box->setOptions({{"z", ""}});
+    CHECK(box->getSelectedIndex() == 0);
+    CHECK(box->getField()->getText() == "z");
+}
+
+TEST_CASE("SearchComboBox: setOptions with the list closed leaves no shown option of the old ones")
+{
+    Scene scene;
+    SearchComboBox *box=scene.box(5);
+
+    scene.clickOn(box);
+    REQUIRE(box->isListOpen());
+    REQUIRE(shown(box).size() == 5);
+    scene.key(keys::Escape);
+    REQUIRE(!box->isListOpen());
+
+    box->setOptions({{"a", ""}, {"b", ""}});
+    CHECK(shown(box).empty());
+    // no option 4 to highlight
+    box->setHighlightedIndex(4);
+    CHECK(box->getHighlightedIndex() == SearchComboBox::NoOption);
+
+    // opened, it shows the new ones
+    scene.clickOn(box);
+    CHECK(shown(box) == (std::vector<size_t>{0, 1}));
+}
+
+TEST_CASE("SearchComboBox: free text, a value wider than every option widens the box's preferred width")
+{
+    Scene scene;
+    SearchComboBox *wide=filterable(scene, {"ab", "cd", "a-much-longer-host.example.org"});
+    SearchComboBox *box=freeText(scene, {"ab", "cd"});
+
+    // sized to their content
+    for(SearchComboBox *each : {box, wide})
+        each->setSizeFlags({SizeFlag::Elastic, SizeFlag::Fixed});
+    wide->setPos(20, 100);
+    scene.frame();
+    const int narrow=box->getPreferredSize().width;
+
+    REQUIRE(wide->getPreferredSize().width > narrow);
+    box->getField()->focus();
+    box->getField()->onSelectAll(box->getField());
+    type(scene, "a-much-longer-host.example.org");
+    scene.key(keys::Return);
+    REQUIRE(box->getValue() == "a-much-longer-host.example.org");
+    scene.frame();
+    CHECK(box->getPreferredSize().width == wide->getPreferredSize().width);
+
+    // an option picked again gives the width back
+    box->setSelectedIndex(0);
+    scene.frame();
+    CHECK(box->getPreferredSize().width == narrow);
+}
+
+namespace
+{
+
 std::vector<String> chipTexts(SearchComboBox *box)
 {
     std::vector<String> texts;
@@ -1694,4 +1872,43 @@ TEST_CASE("SearchComboBox: multi-select, Up and Down on the closed box open the 
     scene.key(keys::Backspace);
     CHECK(box->getSelectedIndices() == std::vector<int>{0});
     CHECK(changes.calls == 1);
+}
+
+TEST_CASE("SearchComboBox: setOptions keeps the selection and the picks on equal options")
+{
+    Scene scene;
+    SearchComboBox *box=scene.box(0);
+    Counter selections;
+
+    box->setOptions({{"A", "a"}, {"B", "b"}, {"C", "c"}});
+    selections.listen(box->onSelection);
+    box->setSelectedIndex(2);
+
+    // the same label and name, at another index
+    box->setOptions({{"X", "x"}, {"C", "c"}, {"A", "a"}});
+    CHECK(box->getSelectedIndex() == 1);
+    CHECK(box->getValue() == "c");
+    CHECK(box->getText() == "C");
+
+    // the same label and another name is another option: the first
+    box->setOptions({{"Y", "y"}, {"C", "other"}});
+    CHECK(box->getSelectedIndex() == 0);
+    CHECK(box->getText() == "Y");
+    CHECK(selections.calls == 0);
+
+    // multi-select: the picks of options still there stay, in pick order,
+    // the rest go with their chips; a free-text pick stays
+    SearchComboBox *picks=multi(scene, {"red", "green", "blue"}, false);
+    Counter changes;
+
+    changes.listen(picks->onSelectionChange);
+    picks->setSelectedIndices({2, 0, 1});
+    REQUIRE(chipTexts(picks) == (std::vector<String>{"blue", "red", "green"}));
+    picks->setOptions({{"green", ""}, {"grey", ""}, {"blue", ""}});
+    CHECK(picks->getSelectedIndices() == (std::vector<int>{2, 0}));
+    CHECK(chipTexts(picks) == (std::vector<String>{"blue", "green"}));
+    CHECK(picks->isPicked(0));
+    CHECK(!picks->isPicked(1));
+    CHECK(picks->isPicked(2));
+    CHECK(changes.calls == 0);
 }

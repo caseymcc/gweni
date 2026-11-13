@@ -311,7 +311,8 @@ SearchComboBox::~SearchComboBox()
         list->hide();
 
     // delayed: this may run from the list's own row press (an onSelection
-    // handler deleting the box)
+    // handler deleting the box, which it does with delayedDelete(): the box
+    // goes on after its events, as every gweni control does)
     if(canvas)
         list->delayedDelete();
     else
@@ -398,37 +399,109 @@ void SearchComboBox::addOption(const String &label, const String &name)
     invalidate();
 
     // the first option is the default, unless a free-text value is the value
-    // or the box picks several
-    if((m_selected == NoOption) && !m_hasCustom && !m_multi)
+    // or the box picks several; while the user types it stays in the field
+    // and nothing is selected, the pick that ends the edit selecting
+    // (setOptions())
+    if((m_selected == NoOption) && !m_hasCustom && !m_multi && !fieldHoldsEdit())
         select(static_cast<int>(m_options.size())-1, false);
 
     if(isListOpen())
         optionsChanged();
 }
 
-// A free-text value stays the value; otherwise the first option is.
+bool SearchComboBox::fieldHoldsEdit() const
+{
+    return m_filterable && m_fieldEdited;
+}
+
+int SearchComboBox::findOption(const std::vector<Option> &options, const Option &option)
+{
+    for(size_t i=0; i < options.size(); ++i)
+    {
+        if((options[i].label == option.label) && (options[i].name == option.name))
+            return static_cast<int>(i);
+    }
+    return NoOption;
+}
+
+// The selection and the picks stay on equal options; a free-text value stays
+// the value; otherwise the first option is, or none while the user types. The
+// field keeps what the user is typing, which the open list matches against
+// the new options: an app refilling them from onTextChangedCaller (an async
+// search) runs before the box filters for that edit.
 void SearchComboBox::setOptions(std::vector<Option> options)
 {
+    const bool edited=fieldHoldsEdit();
+    const std::vector<Option> previous=std::move(m_options);
+
     m_options=std::move(options);
     m_lowerLabels.clear();
 
     for(const Option &option : m_options)
         m_lowerLabels.push_back(lowerCased(option.label));
 
-    // the picks of options go with them; free-text ones stay
-    clearPicks(true);
     m_picked.assign(m_options.size(), 0);
+
+    // a pick of an option stays on an equal one (once); the rest go with
+    // their options, free-text ones stay
+    for(size_t i=0; i < m_picks.size();)
+    {
+        Pick &pick=m_picks[i];
+
+        if(pick.option == NoOption)
+        {
+            ++i;
+            continue;
+        }
+
+        const int now=findOption(m_options, previous[pick.option]);
+
+        if((now == NoOption) || m_picked[now])
+        {
+            // removed as a free-text pick: its index is the old options'
+            pick.option=NoOption;
+            removePick(i, false);
+            continue;
+        }
+
+        pick.option=now;
+        m_picked[now]=1;
+        ++i;
+    }
 
     m_widthsValid=false;
     m_highlight=NoOption;
     m_highlightPos=VirtualList::NoItem;
-    // shown again even when the index stays: the option at it is another
-    m_selected=(m_options.empty() || m_hasCustom || m_multi)?NoOption:0;
-    showSelection();
+
+    if(m_hasCustom || m_multi || m_options.empty())
+        m_selected=NoOption;
+    else
+    {
+        const int kept=(m_selected == NoOption)?NoOption:findOption(m_options, previous[m_selected]);
+
+        // while the user types, a selection that is gone is none, not the
+        // first result: the value is never one they did not pick, and the
+        // pick that ends the edit fires onSelection
+        if(kept != NoOption)
+            m_selected=kept;
+        else
+            m_selected=edited?NoOption:0;
+    }
+
+    // shown again even when the index stays: the option at it can be another
+    if(!edited)
+        showSelection();
     invalidate();
 
     if(isListOpen())
         optionsChanged();
+    else
+    {
+        // nothing shown: no index into the old options is left
+        m_matches.clear();
+        m_addRow=false;
+        m_noMatch=false;
+    }
 }
 
 void SearchComboBox::clearOptions()
@@ -489,6 +562,8 @@ void SearchComboBox::showSelection()
 {
     const String text=m_multi?String():shownValueText();
 
+    // the edit, if any, is over
+    m_fieldEdited=false;
     setRefused(false);
 
     if(m_filterable)
@@ -748,6 +823,7 @@ void SearchComboBox::fieldTextChanged()
 {
     m_query=m_field->getText();
     m_lowerQuery=lowerCased(m_query);
+    m_fieldEdited=true;
     // an edit is no longer the refused value
     setRefused(false);
 
@@ -807,12 +883,19 @@ void SearchComboBox::resolveText()
 {
     const String text=m_field->getText();
 
+    // refused, the text stays the user's edit
+    if(m_refused)
+        return;
+
     // multi-select: an option's label picks it (if it is not), anything else
     // is a free-text pick
     if(m_multi)
     {
-        if(text.empty() || m_refused)
+        if(text.empty())
+        {
+            m_fieldEdited=false;
             return;
+        }
 
         const int option=optionWithLabel(text);
 
@@ -823,12 +906,17 @@ void SearchComboBox::resolveText()
             if(!isPicked(option))
                 togglePick(option);
             m_field->showText(String());
+            m_fieldEdited=false;
         }
         return;
     }
 
-    if((text == shownValueText()) || m_refused)
+    // the value's own text: the edit is over
+    if(text == shownValueText())
+    {
+        m_fieldEdited=false;
         return;
+    }
 
     const int option=optionWithLabel(text);
 
@@ -876,6 +964,7 @@ bool SearchComboBox::commitCustom(const String &text)
             fireSelectionChange(NoOption);
         }
         m_field->showText(String());
+        m_fieldEdited=false;
         return true;
     }
 
@@ -883,6 +972,8 @@ bool SearchComboBox::commitCustom(const String &text)
     m_hasCustom=true;
     m_custom=text;
     showSelection();
+    // its width is in the box's (calculateSize)
+    invalidate();
     return true;
 }
 
@@ -1422,6 +1513,7 @@ void SearchComboBox::afterMultiPick(int option)
     if(m_filterable && !m_query.empty())
     {
         m_field->showText(String());
+        m_fieldEdited=false;
         m_query.clear();
         m_lowerQuery.clear();
 
@@ -1507,10 +1599,12 @@ void SearchComboBox::calculateSize(skin::Base *skin, Dim dim)
         return;
     }
 
-    if((dim != Dim::X) || m_options.empty())
+    if((dim != Dim::X) || (m_options.empty() && !m_hasCustom))
         return;
 
-    const int widest=optionsTextWidth();
+    // a free-text value too: only one is held, measured as the box lays out
+    const int widest=std::max(optionsTextWidth(),
+        m_hasCustom?measureText(getFont(), m_custom).x:0);
     const Padding &textPadding=getTextPadding();
 
     m_preferredSize.width=std::max(m_preferredSize.width, preferredFromContent(
