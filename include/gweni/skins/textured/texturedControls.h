@@ -7,6 +7,7 @@
 
 #include "gweni/controls/button.h"
 #include "gweni/controls/nodeGraph.h"
+#include "gweni/controls/timeline.h"
 
 #include <algorithm>
 #include <vector>
@@ -832,6 +833,113 @@ private:
     std::vector<SlotList> m_series;
     SlotList m_markers;
     SlotList m_crosshair;
+};
+
+// A Timeline: [0] its frame (TimelineFrame, over the render bounds, at its z),
+// then slot lists it sizes to what it draws, each slot keeping what it last
+// drew (as a Chart's):
+// - the lanes: one slot per lane, an odd lane's TimelineLane stripe across
+//   the caption column and the bar area (getLaneRect() widened left over the
+//   column), at z+1, clipped to the two (the body's viewport); an even lane's
+//   slot, and that of a lane out of view, hidden;
+// - the grid: a vertical drawLine per time tick across the bar area in
+//   TimelineGrid's top colour, then the axis lines along the area's top (over
+//   the caption column too) and its left edge in TimelineAxis's, at z+2;
+// - one list per lane of its bars: a drawRoundedRect per bar, its
+//   getBarRect() in its surface (TimelineBar, the named one, or its colour
+//   with TimelineBar's border), at z+3 plus its overlap level, clipped to the
+//   bar area; a bar with no rect (out of range, its lane out of view) hidden;
+// - the hover: one drawRoundedRect over getHoverRect(), the hovered bar's
+//   fill with TimelineBarHover's blended over it by its alpha and
+//   TimelineBarHover's border, at z+4+MaxOverlapLevel, hidden with no hover.
+// The lanes, grid and bars are drawn again only when the timeline's
+// getBarsSerial() moved, the bar area's clip box changed, or the frame marks
+// its geometry, visibility or creation, and then each slot only when its
+// rect, surface, z or clip differs: a hover writes the hover slot alone, a
+// changed bar its own slot, a scroll the lanes and bars that moved, came into
+// view or left it. Every slot is square (TimelineBar's radius is 0) at whole
+// units, so it covers its device pixels fully, and the hover look is as
+// opaque as its bar: no slot's order against another's changes a pixel of an
+// opaque bar. A bar's slot follows its index in its lane: an added bar takes a
+// spare slot of its lane's list.
+// The lists are taken back to front (lanes, grid, each lane's bars, the
+// hover), each with capacity() slots for what it draws, the spare ones
+// hidden, and every list is given back and taken again when one needs more
+// than it has, a lane's bars fewer than half what its list was taken for, or
+// the lanes or grid lines fewer than theirs (Chart's rule).
+class Timeline:public textured::ControlRegister<Timeline>
+{
+public:
+    static void staticInit(TexturedSkin *) { m_staticInit=true; }
+
+    static constexpr int LaneLayer=1;
+    static constexpr int GridLayer=2;
+    static constexpr int BarLayer=3;
+    static constexpr int HoverLayer=BarLayer+controls::Timeline::MaxOverlapLevel+1;
+
+    size_t requiredPrimitives() override { return 1; }
+    // the frame, the lanes, the grid, a layer per overlap level and the hover
+    size_t depthLayers() override { return size_t(HoverLayer)+1; }
+
+    void update(renderer::Base *renderer, controls::Base *baseControl) override;
+    void remove(renderer::Base *renderer, controls::Base *baseControl) override;
+    void appendIds(std::vector<size_t> &primitiveIds, std::vector<size_t> &textIds) const override;
+
+    inline static const std::string_view name="Timeline";
+
+    //! The slots in use as last drawn (a list's spare slots are not in
+    //! them): the lanes', the grid's, lane \p lane's bars' (bar i's slot is
+    //! the i-th; empty past the lanes) and the hover's.
+    std::vector<size_t> lanePrimitives() const { return inUse(m_lanes); }
+    std::vector<size_t> gridPrimitives() const { return inUse(m_grid); }
+    std::vector<size_t> barPrimitives(size_t lane) const;
+    std::vector<size_t> hoverPrimitives() const { return inUse(m_hover); }
+
+    //! The slots a list is taken with for \p count in use (Chart's).
+    static size_t capacity(size_t count) { return count ? count+std::max<size_t>(count/2, 4) : 0; }
+
+    //! What a bar is drawn in: TimelineBar, its colour with TimelineBar's
+    //! border, or the theme surface it names (magenta for a name no theme has).
+    static tokyonight::Surface barSurface(const controls::TimelineBar &bar);
+
+private:
+    //! What a slot holds, as last drawn: a rect or a line.
+    struct Slot
+    {
+        bool valid=false;   //!< false for a new slot, which holds nothing known
+        bool shown=false;
+        bool line=false;
+        Rect rect;
+        tokyonight::Surface surface{};
+        PointF p0;
+        PointF p1;
+        Color color;
+        int zIndex=0;
+        Rect clip;
+    };
+
+    struct SlotList
+    {
+        std::vector<size_t> ids;
+        std::vector<Slot> drawn;
+        size_t used=0;
+        size_t taken=0;
+    };
+
+    static std::vector<size_t> inUse(const SlotList &list);
+    static void releaseList(renderer::Base *renderer, SlotList &list);
+    void takeLists(renderer::Base *renderer, size_t lanes, size_t grid, const std::vector<size_t> &bars);
+
+    Slot m_frame;
+    SlotList m_lanes;
+    SlotList m_grid;
+    std::vector<SlotList> m_bars;
+    SlotList m_hover;
+    //! what the lanes, grid and bars were last drawn from
+    bool m_drawnAll=false;
+    unsigned m_drawnSerial=0;
+    Rect m_drawnAreaClip;
+    Rect m_drawnViewClip;
 };
 
 // A Link: one slot per segment of its polyline (Link::getPoints()), a drawLine

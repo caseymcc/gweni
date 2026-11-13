@@ -2142,6 +2142,388 @@ void Link::update(renderer::Base *renderer, controls::Base *baseControl)
 
 
 ///////////////////////////////////////////////////////////////////////////
+//Timeline
+tokyonight::Surface Timeline::barSurface(const controls::TimelineBar &bar)
+{
+    tokyonight::Surface surface=tokyonight::TimelineBar;
+
+    if(bar.hasColor)
+    {
+        surface.top=bar.color;
+        surface.bottom=bar.color;
+        return surface;
+    }
+    if(bar.surface.empty())
+        return surface;
+
+    const std::unordered_map<std::string, tokyonight::Surface *> &surfaces=tokyonight::surfaceRegistry();
+    const auto found=surfaces.find(bar.surface);
+
+    if(found != surfaces.end())
+        return *found->second;
+
+    // a name no theme knows draws as a missing surface
+    surface.top=colors::Missing;
+    surface.bottom=colors::Missing;
+    surface.border=colors::MissingDark;
+    return surface;
+}
+
+std::vector<size_t> Timeline::barPrimitives(size_t lane) const
+{
+    return (lane < m_bars.size()) ? inUse(m_bars[lane]) : std::vector<size_t>();
+}
+
+std::vector<size_t> Timeline::inUse(const SlotList &list)
+{
+    return std::vector<size_t>(list.ids.begin(), list.ids.begin()+std::min(list.used, list.ids.size()));
+}
+
+void Timeline::releaseList(renderer::Base *renderer, SlotList &list)
+{
+    for(size_t id : list.ids)
+        renderer->releasePrimitive(id);
+    list.ids.clear();
+    list.drawn.clear();
+    list.used=0;
+    list.taken=0;
+}
+
+void Timeline::takeLists(renderer::Base *renderer, size_t lanes, size_t grid, const std::vector<size_t> &bars)
+{
+    releaseList(renderer, m_lanes);
+    releaseList(renderer, m_grid);
+    for(SlotList &list : m_bars)
+        releaseList(renderer, list);
+    releaseList(renderer, m_hover);
+    m_bars.resize(bars.size());
+
+    // The bank hands out the lowest free id first, so what it gives back
+    // goes up from list to list; one at or below the frame's is put aside
+    // until every list is taken.
+    const size_t frame=m_primitives.empty() ? 0 : m_primitives[0];
+    std::vector<size_t> below;
+    auto take=[&](SlotList &list, size_t used, size_t count)
+    {
+        list.taken=used;
+        list.ids.resize(count);
+        // a slot new to the list holds nothing known
+        list.drawn.assign(count, Slot());
+        for(size_t &id : list.ids)
+        {
+            renderer->generatePrimitive(id);
+            while(!m_primitives.empty() && (id <= frame))
+            {
+                below.push_back(id);
+                renderer->generatePrimitive(id);
+            }
+        }
+    };
+
+    take(m_lanes, lanes, capacity(lanes));
+    take(m_grid, grid, capacity(grid));
+    for(size_t i=0; i<bars.size(); ++i)
+        take(m_bars[i], bars[i], capacity(bars[i]));
+    // the hover's one slot, in front of every bar
+    take(m_hover, 1, 1);
+
+    for(size_t id : below)
+        renderer->releasePrimitive(id);
+}
+
+void Timeline::remove(renderer::Base *renderer, controls::Base * /*baseControl*/)
+{
+    releaseList(renderer, m_lanes);
+    releaseList(renderer, m_grid);
+    for(SlotList &list : m_bars)
+        releaseList(renderer, list);
+    m_bars.clear();
+    releaseList(renderer, m_hover);
+    m_frame=Slot();
+    m_drawnAll=false;
+    releasePrimitives(renderer);
+}
+
+void Timeline::appendIds(std::vector<size_t> &primitiveIds, std::vector<size_t> &textIds) const
+{
+    ControlRegister<Timeline>::appendIds(primitiveIds, textIds);
+    primitiveIds.insert(primitiveIds.end(), m_lanes.ids.begin(), m_lanes.ids.end());
+    primitiveIds.insert(primitiveIds.end(), m_grid.ids.begin(), m_grid.ids.end());
+    for(const SlotList &list : m_bars)
+        primitiveIds.insert(primitiveIds.end(), list.ids.begin(), list.ids.end());
+    primitiveIds.insert(primitiveIds.end(), m_hover.ids.begin(), m_hover.ids.end());
+}
+
+void Timeline::update(renderer::Base *renderer, controls::Base *baseControl)
+{
+    controls::Timeline *timeline=static_cast<controls::Timeline *>(baseControl);
+    const unsigned int sc=baseControl->getStateChange();
+    // A new rect, z, clip region or visibility reaches every slot: such a
+    // frame marks the control's geometry, its visibility or its creation.
+    const bool all=(sc&(controls::StateChange_Created|controls::StateChange_Visibility
+        |controls::StateChange_Geometry)) != 0;
+    const gweni::Rect &bounds=baseControl->getRenderBounds();
+    const gweni::Rect area=timeline->getBarArea();
+    const gweni::Rect column=timeline->getCaptionColumnBounds();
+    const PointF origin(float(bounds.x), float(bounds.y));
+    const size_t laneCount=timeline->getLaneCount();
+    const std::vector<controls::axis::Tick> &ticks=timeline->getTicks();
+    // a line per tick, the top and the left axis lines
+    const size_t gridCount=ticks.size()+2;
+
+    // Nothing is taken while there is nothing to draw (hidden, or before a
+    // layout gave it a bar area): a timeline built hidden takes its slots in
+    // the order one built shown does.
+    const bool drawing=baseControl->visible() && (area.w > 0) && (area.h > 0);
+    bool retaken=false;
+
+    if(drawing)
+    {
+        std::vector<size_t> barsNeed(laneCount);
+
+        for(size_t i=0; i<laneCount; ++i)
+            barsNeed[i]=timeline->getBarCount(i);
+
+        auto outgrown=[](const SlotList &list, size_t count)
+        {
+            return (count > list.ids.size()) || (count < list.taken);
+        };
+        // a lane's bars shrink by half before its list is taken again, so a
+        // bar removed now and then rewrites nothing else
+        auto barsOutgrown=[](const SlotList &list, size_t count)
+        {
+            return (count > list.ids.size()) || (count*2 < list.taken);
+        };
+        bool retake=m_hover.ids.empty() || (m_bars.size() != laneCount)
+            || outgrown(m_lanes, laneCount) || outgrown(m_grid, gridCount);
+
+        for(size_t i=0; i<laneCount && !retake; ++i)
+            retake=barsOutgrown(m_bars[i], barsNeed[i]);
+
+        if(retake)
+        {
+            takeLists(renderer, laneCount, gridCount, barsNeed);
+            retaken=true;
+        }
+
+        m_lanes.used=laneCount;
+        m_grid.used=gridCount;
+        for(size_t i=0; i<laneCount; ++i)
+            m_bars[i].used=barsNeed[i];
+        m_hover.used=1;
+    }
+
+    auto hide=[&](size_t id, Slot &slot)
+    {
+        if(all || !slot.valid || slot.shown)
+            renderer->hidePrimitive(id);
+        slot.valid=true;
+        slot.shown=false;
+    };
+    auto hideSpare=[&](SlotList &list)
+    {
+        for(size_t i=list.used; i<list.ids.size(); ++i)
+            hide(list.ids[i], list.drawn[i]);
+    };
+    // every slot of the lists, the frame's with \p frame
+    auto each=[&](bool frame, auto &&func)
+    {
+        if(frame)
+            func(m_primitives[0], m_frame);
+        for(SlotList *list : {&m_lanes, &m_grid, &m_hover})
+        {
+            for(size_t i=0; i<list->ids.size(); ++i)
+                func(list->ids[i], list->drawn[i]);
+        }
+        for(SlotList &list : m_bars)
+        {
+            for(size_t i=0; i<list.ids.size(); ++i)
+                func(list.ids[i], list.drawn[i]);
+        }
+    };
+
+    if(!baseControl->visible())
+    {
+        if(all)
+            each(true, hide);
+        else
+        {
+            // drawn again once shown, which marks the visibility
+            each(true, [](size_t, Slot &slot) { slot.valid=false; });
+        }
+        m_drawnAll=false;
+        return;
+    }
+
+    const gweni::Rect region=renderer->clipRegion();
+    const gweni::Point &offset=renderer->getRenderOffset();
+    // a rect of the control at the render offset, cut to its own region
+    auto clipTo=[&](const gweni::Rect &rect)
+    {
+        const int x0=std::max(region.x, offset.x+bounds.x+rect.x);
+        const int y0=std::max(region.y, offset.y+bounds.y+rect.y);
+        const int x1=std::min(region.x+region.w, offset.x+bounds.x+rect.x+rect.w);
+        const int y1=std::min(region.y+region.h, offset.y+bounds.y+rect.y+rect.h);
+
+        return gweni::Rect(x0, y0, std::max(0, x1-x0), std::max(0, y1-y0));
+    };
+    const gweni::Rect areaClip=clipTo(area);
+    // the caption column and the bar area: the body's viewport
+    const gweni::Rect viewClip=clipTo(gweni::Rect(column.x, area.y, area.x+area.w-column.x, area.h));
+
+    auto drawRect=[&](size_t id, Slot &slot, const gweni::Rect &rect, const tokyonight::Surface &surface,
+        int zIndex, const gweni::Rect &clip)
+    {
+        if(!all && slot.valid && slot.shown && !slot.line && (slot.rect == rect) && (slot.zIndex == zIndex)
+            && sameSurface(slot.surface, surface) && (slot.clip == clip))
+            return;
+
+        renderer->setClipRegion(clip);
+        renderer->drawRoundedRect(id, rect, surface.radius, surface.borderWidth, surface.top, surface.bottom,
+            surface.border, zIndex);
+        slot=Slot();
+        slot.valid=true;
+        slot.shown=true;
+        slot.rect=rect;
+        slot.surface=surface;
+        slot.zIndex=zIndex;
+        slot.clip=clip;
+    };
+    auto drawSegment=[&](size_t id, Slot &slot, const PointF &p0, const PointF &p1, const Color &color,
+        int zIndex, const gweni::Rect &clip)
+    {
+        if(!all && slot.valid && slot.shown && slot.line && (slot.p0 == p0) && (slot.p1 == p1)
+            && (slot.color == color) && (slot.zIndex == zIndex) && (slot.clip == clip))
+            return;
+
+        renderer->setClipRegion(clip);
+        renderer->setDrawColor(color);
+        renderer->drawLine(id, p0, p1, 1.0f, zIndex);
+        slot=Slot();
+        slot.valid=true;
+        slot.shown=true;
+        slot.line=true;
+        slot.p0=p0;
+        slot.p1=p1;
+        slot.color=color;
+        slot.zIndex=zIndex;
+        slot.clip=clip;
+    };
+
+    const int z=baseControl->getZIndex();
+
+    drawRect(m_primitives[0], m_frame, bounds, tokyonight::TimelineFrame, z, region);
+
+    // no bar area (not laid out yet, or too small): the frame alone
+    if(!drawing)
+    {
+        each(false, hide);
+        m_drawnAll=false;
+        return;
+    }
+
+    // The lanes, the grid and the bars move only with what getBarsSerial()
+    // counts or with the area's clip: a hover leaves them as they are.
+    const bool stale=all || retaken || !m_drawnAll || (timeline->getBarsSerial() != m_drawnSerial)
+        || !(areaClip == m_drawnAreaClip) || !(viewClip == m_drawnViewClip);
+
+    if(stale)
+    {
+        for(size_t i=0; i<laneCount; ++i)
+        {
+            gweni::Rect lane;
+
+            if((i%2 == 0) || !timeline->getLaneRect(i, lane))
+            {
+                hide(m_lanes.ids[i], m_lanes.drawn[i]);
+                continue;
+            }
+
+            // across the caption column too
+            const gweni::Rect stripe(bounds.x+column.x, bounds.y+lane.y, area.x+area.w-column.x, lane.h);
+
+            drawRect(m_lanes.ids[i], m_lanes.drawn[i], stripe, tokyonight::TimelineLane, z+LaneLayer, viewClip);
+        }
+        hideSpare(m_lanes);
+
+        const float left=origin.x+float(area.x);
+        const float top=origin.y+float(area.y);
+        const float right=left+float(area.w);
+        const float bottom=top+float(area.h);
+
+        for(size_t i=0; i<ticks.size(); ++i)
+        {
+            const float x=origin.x+std::min(std::max(float(ticks[i].position), float(area.x)+0.5f),
+                float(area.x+area.w)-0.5f);
+
+            drawSegment(m_grid.ids[i], m_grid.drawn[i], PointF(x, top), PointF(x, bottom),
+                tokyonight::TimelineGrid.top, z+GridLayer, areaClip);
+        }
+        drawSegment(m_grid.ids[ticks.size()], m_grid.drawn[ticks.size()],
+            PointF(origin.x+float(column.x), top+0.5f), PointF(right, top+0.5f),
+            tokyonight::TimelineAxis.top, z+GridLayer, viewClip);
+        drawSegment(m_grid.ids[ticks.size()+1], m_grid.drawn[ticks.size()+1],
+            PointF(left+0.5f, top), PointF(left+0.5f, bottom), tokyonight::TimelineAxis.top, z+GridLayer,
+            areaClip);
+        hideSpare(m_grid);
+
+        for(size_t l=0; l<laneCount; ++l)
+        {
+            SlotList &list=m_bars[l];
+
+            for(size_t i=0; i<list.used; ++i)
+            {
+                gweni::Rect rect;
+
+                if(!timeline->getBarRect(l, i, rect))
+                {
+                    hide(list.ids[i], list.drawn[i]);
+                    continue;
+                }
+
+                rect.x+=bounds.x;
+                rect.y+=bounds.y;
+                drawRect(list.ids[i], list.drawn[i], rect, barSurface(timeline->getBar(l, i)),
+                    z+BarLayer+timeline->getOverlapLevel(l, i), areaClip);
+            }
+            hideSpare(list);
+        }
+
+        m_drawnAll=true;
+        m_drawnSerial=timeline->getBarsSerial();
+        m_drawnAreaClip=areaClip;
+        m_drawnViewClip=viewClip;
+    }
+
+    // the hover look over the hovered bar: its fill with the hover's blended
+    // over it, as opaque as the bar, and the hover's border
+    gweni::Rect hovered;
+
+    if(timeline->getHoverRect(hovered))
+    {
+        const tokyonight::Surface &tint=tokyonight::TimelineBarHover;
+        tokyonight::Surface look=barSurface(timeline->getBar(timeline->getHoverLane(), timeline->getHoverIndex()));
+        auto over=[](const Color &under, const Color &top)
+        {
+            const int a=top.a;
+            auto mix=[a](int u, int t) { return static_cast<unsigned char>((u*(255-a)+t*a+127)/255); };
+
+            return Color(mix(under.r, top.r), mix(under.g, top.g), mix(under.b, top.b), under.a);
+        };
+
+        look.top=over(look.top, tint.top);
+        look.bottom=over(look.bottom, tint.bottom);
+        look.border=tint.border;
+        look.borderWidth=tint.borderWidth;
+        hovered.x+=bounds.x;
+        hovered.y+=bounds.y;
+        drawRect(m_hover.ids[0], m_hover.drawn[0], hovered, look, z+HoverLayer, areaClip);
+    }
+    else
+        hide(m_hover.ids[0], m_hover.drawn[0]);
+}
+
+///////////////////////////////////////////////////////////////////////////
 //Chart
 size_t Chart::depthLayersOf(const controls::Base *control)
 {
@@ -3953,6 +4335,7 @@ template class ControlRegister<PlotHistogram>;
 template class ControlRegister<PlotLines>;
 template class ControlRegister<Chart>;
 template class ControlRegister<ChartLegendRow>;
+template class ControlRegister<Timeline>;
 template class ControlRegister<ColorLerpBox>;
 template class ControlRegister<ColorSlider>;
 template class ControlRegister<ColorDisplay>;

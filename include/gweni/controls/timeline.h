@@ -14,6 +14,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <unordered_map>
 #include <vector>
 
@@ -254,6 +255,56 @@ public:
     //! in a packed lane, plus the bars overlapping the point.
     bool barAt(const Point &local, size_t &lane, size_t &index) const;
 
+    // ---- hover and click ------------------------------------------------
+
+    //! The tooltip's text for the bar under the mouse; without one the
+    //! timeline's own (defaultHoverText()).
+    typedef std::function<String(const Timeline &timeline, size_t lane, size_t index)> HoverText;
+    //! Fills a control (a RichLabel, a Base of Labels) for the bar under the
+    //! mouse, shown in the canvas's ToolTip box in place of the text.
+    typedef std::function<void(const Timeline &timeline, size_t lane, size_t index, Base *control)> HoverFill;
+
+    //! The bar under the mouse (barAt()), and its rect as drawn: false with
+    //! none. The renderer draws its hover look over it (one slot of its own,
+    //! the bars' slots kept), and the tooltip is set only when the hovered
+    //! bar changes, so a move within a bar writes nothing.
+    bool isHovering() const { return m_hovering; }
+    size_t getHoverLane() const { return m_hoverLane; }
+    size_t getHoverIndex() const { return m_hoverIndex; }
+    bool getHoverRect(Rect &rect) const;
+    //! The tooltip's text (a null one for the timeline's own), or a control
+    //! to fill (made with the skin, e.g. by the timeline's newChild()), which
+    //! the timeline takes as its hidden child and its setToolTip() while a bar
+    //! is hovered, deleting the one before; null for the text again. A change
+    //! of the bars under the mouse fills it again.
+    void setHoverText(const HoverText &text);
+    void setHoverControl(Base *control, const HoverFill &fill);
+    //! The lane's caption and the bar's start and end ("host-01  Nov 14
+    //! 12:00 - Nov 14 13:30", axis::formatDateTime in the timeline's zone).
+    String defaultHoverText(size_t lane, size_t index) const;
+
+    //! Fired on a left click (the press and the release on the same bar,
+    //! barAt(), with the same id) with the lane in info.point.x, the bar's
+    //! index in info.point.y and its id in info.integer (cut to a size_t);
+    //! also getClickedLane(), getClickedIndex() and getClickedId().
+    gweni::event::Caller onBarClicked;
+    size_t getClickedLane() const { return m_clickedLane; }
+    size_t getClickedIndex() const { return m_clickedIndex; }
+    uint64_t getClickedId() const { return m_clickedId; }
+
+    //! The hovered bar as drawn (cut to the bar area), in canvas
+    //! coordinates: the tooltip goes below it.
+    gweni::Rect getToolTipAnchor() const override;
+
+    void onMouseMoved(int x, int y, int deltaX, int deltaY) override;
+    void onMouseLeave() override;
+    void onMouseClickLeft(int x, int y, bool down) override;
+
+    //! Bumped by every change that can move a bar's slot (the bars, the
+    //! lanes, the range, the layout, the scroll), not by the hover: the
+    //! renderer draws the bars again only when it moved.
+    unsigned getBarsSerial() const { return m_barsSerial; }
+
     // ---- geometry, in this control's own coordinates, as last laid out ----
 
     //! Where the bars are drawn: the body's viewport right of the caption
@@ -335,12 +386,39 @@ protected:
     //! The body laid out at \p offset.
     void bodyScrolled(int offset);
 
+    //! Something a bar's slot is drawn from changed: marks the timeline and
+    //! bumps getBarsSerial().
+    void barsMoved();
+    //! The hover at the mouse's last place over the timeline (none off it),
+    //! the tooltip brought up to it when it changed; with \p refill it is
+    //! filled again even for the same bar: the bars under it changed.
+    void setHover(bool hovering, size_t lane, size_t index, bool refill=false);
+    void refreshHover(bool refill=false);
+
     //! A label's width and the labels' line height, measured once per string
     //! for the font, renderer and text layout they were measured with.
     int labelWidth(const String &text);
     int labelLineHeight();
     void renewMeasureKey();
     internal::Text *makeLabel(Base *parent, const Color &color);
+
+    bool m_hovering=false;
+    size_t m_hoverLane=0;
+    size_t m_hoverIndex=0;
+    //! where the mouse last was over the timeline, in its own coordinates
+    bool m_mouseInside=false;
+    Point m_mouse;
+    HoverText m_hoverText;
+    Base *m_hoverControl=nullptr;
+    HoverFill m_hoverFill;
+    bool m_pressed=false;
+    size_t m_pressLane=0;
+    size_t m_pressIndex=0;
+    uint64_t m_pressId=0;
+    size_t m_clickedLane=0;
+    size_t m_clickedIndex=0;
+    uint64_t m_clickedId=0;
+    unsigned m_barsSerial=0;
 
     internal::TimelineBody *m_body=nullptr;
     internal::TimelineCaptionColumn *m_captions=nullptr;

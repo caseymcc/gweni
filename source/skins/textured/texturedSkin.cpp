@@ -505,6 +505,7 @@ std::unordered_map<std::string, gweni::Color*> TexturedSkin::textColorRegistry()
         {"CodeRemoved",&Colors.CodeEditor.Tokens[static_cast<size_t>(text::TokenKind::Removed)]},
         {"CodeHunk",&Colors.CodeEditor.Tokens[static_cast<size_t>(text::TokenKind::Hunk)]},
         {"CodeMeta",&Colors.CodeEditor.Tokens[static_cast<size_t>(text::TokenKind::Meta)]},
+        {"TimelineAxisText",&Colors.Timeline.AxisText},{"TimelineCaptionText",&Colors.Timeline.CaptionText},
         {"SelectableNormal",&Colors.Selectable.Normal},{"SelectableHover",&Colors.Selectable.Hover},
         {"SelectableSelected",&Colors.Selectable.Selected},{"SelectableDisabled",&Colors.Selectable.Disabled},
     };

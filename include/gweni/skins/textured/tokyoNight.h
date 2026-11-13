@@ -253,6 +253,22 @@ inline Surface &chartSeries(int index)
     return *surfaces[((index%ChartSeriesSurfaces)+ChartSeriesSurfaces)%ChartSeriesSurfaces];
 }
 
+// A Timeline: its frame (as a chart's), every other lane's stripe across the
+// caption column and the bars, the grid lines at the time ticks and the axis
+// lines along the bars' top and left edges (their top colour), a bar
+// (TimelineBar, or an app's surface or colour with TimelineBar's border) and
+// the hover look drawn over the hovered bar: the bar's own fill with
+// TimelineBarHover's fill blended over it by its alpha (on the CPU, so the
+// look is as opaque as the bar) and TimelineBarHover's border. They are
+// square: a pixel-aligned edge covers its pixels fully, so no slot's order
+// against another's changes a pixel of an opaque bar.
+inline Surface TimelineFrame    { BgDark,                BgDark,                Line,  RadiusSm, BorderW };
+inline Surface TimelineLane     { Color(0x1c,0x1d,0x29), Color(0x1c,0x1d,0x29), Color(0,0,0,0), 0.0f, 0.0f };
+inline Surface TimelineGrid     { BgHighlight,           BgHighlight,           BgHighlight, 0.0f, 0.0f };
+inline Surface TimelineAxis     { Line,                  Line,                  Line,  0.0f,     0.0f };
+inline Surface TimelineBar      { Blue,                  Blue,                  BgDark, 0.0f,    BorderW };
+inline Surface TimelineBarHover { Color(0xff,0xff,0xff,0x40), Color(0xff,0xff,0xff,0x40), Fg, 0.0f, BorderW };
+
 // gweni::tools::StatsOverlay's panel, in the canvas's corner: translucent, so
 // the app's fills show dimly through it.
 inline Surface StatsOverlay   { Color(0x16,0x16,0x1e,0xe0), Color(0x16,0x16,0x1e,0xe0), BgHighlight, Radius, BorderW };
@@ -341,6 +357,8 @@ inline std::unordered_map<std::string, Surface*>& surfaceRegistry()
         {"ChartSeries0",&ChartSeries0},{"ChartSeries1",&ChartSeries1},{"ChartSeries2",&ChartSeries2},
         {"ChartSeries3",&ChartSeries3},{"ChartSeries4",&ChartSeries4},{"ChartSeries5",&ChartSeries5},
         {"ChartSeries6",&ChartSeries6},{"ChartSeries7",&ChartSeries7},
+        {"TimelineFrame",&TimelineFrame},{"TimelineLane",&TimelineLane},{"TimelineGrid",&TimelineGrid},
+        {"TimelineAxis",&TimelineAxis},{"TimelineBar",&TimelineBar},{"TimelineBarHover",&TimelineBarHover},
         {"StatsOverlay",&StatsOverlay},
         {"DragNumber",&DragNumber},{"DragNumberHover",&DragNumberHover},{"DragNumberFocus",&DragNumberFocus},
         {"DragNumberDown",&DragNumberDown},{"DragNumberDisabled",&DragNumberDisabled},

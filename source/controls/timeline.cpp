@@ -7,11 +7,13 @@
 
 #include <gweni/controls/timeline.h>
 #include <gweni/gweni.h>
+#include <gweni/controls/canvas.h>
 #include <gweni/controls/text.h>
 #include <gweni/skin.h>
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <numeric>
 
 namespace gweni
@@ -214,7 +216,8 @@ void Timeline::lanesChanged()
 {
     // the virtual height, the caption column and the captions in view
     invalidate();
-    addStateChange(StateChange_Background);
+    barsMoved();
+    refreshHover(true);
 }
 
 // ---- bars -------------------------------------------------------------------
@@ -278,10 +281,11 @@ void Timeline::clearBars(size_t lane)
     m_barCount-=target.bars.size();
     target.bars.clear();
     target.dirty=true;
-    addStateChange(StateChange_Background);
+    barsMoved();
     m_rangeDirty=true;
     if(!m_xFixed)
         invalidate();
+    refreshHover(true);
 }
 
 size_t Timeline::getBarCount(size_t lane) const
@@ -315,7 +319,10 @@ void Timeline::barsChanged(Lane &lane, const TimelineBar *before, const Timeline
 {
     lane.dirty=true;
     // the renderer redraws what moved
-    addStateChange(StateChange_Background);
+    barsMoved();
+    // what the mouse is over may be another bar now, or the same one with
+    // other times
+    refreshHover(true);
 
     // a fixed range is not worked out: it is again once the range is
     // automatic
@@ -416,7 +423,7 @@ void Timeline::setXRange(double min, double max)
     m_xFixedMin=min;
     m_xFixedMax=max;
     invalidate();
-    addStateChange(StateChange_Background);
+    barsMoved();
 }
 
 void Timeline::setXAutoRange()
@@ -427,7 +434,7 @@ void Timeline::setXAutoRange()
     m_xFixed=false;
     m_rangeDirty=true;
     invalidate();
-    addStateChange(StateChange_Background);
+    barsMoved();
 }
 
 void Timeline::ensureRange() const
@@ -531,8 +538,9 @@ void Timeline::bodyScrolled(int offset)
         return;
 
     m_scrollOffset=offset;
-    // every bar in view moved
-    addStateChange(StateChange_Background);
+    // every bar in view moved, and the one under the mouse may be another
+    barsMoved();
+    refreshHover();
 }
 
 // ---- hit test ---------------------------------------------------------------
@@ -599,6 +607,193 @@ bool Timeline::barAt(const Point &local, size_t &lane, size_t &index) const
     lane=static_cast<size_t>(laneIndex);
     index=best;
     return true;
+}
+
+// ---- hover and click --------------------------------------------------------
+
+void Timeline::barsMoved()
+{
+    ++m_barsSerial;
+    addStateChange(StateChange_Background);
+}
+
+bool Timeline::getHoverRect(Rect &rect) const
+{
+    return m_hovering && getBarRect(m_hoverLane, m_hoverIndex, rect);
+}
+
+void Timeline::setHoverText(const HoverText &text)
+{
+    m_hoverText=text;
+    if(m_hovering && !m_hoverControl)
+        setToolTipText(m_hoverText ? m_hoverText(*this, m_hoverLane, m_hoverIndex)
+            : defaultHoverText(m_hoverLane, m_hoverIndex));
+}
+
+void Timeline::setHoverControl(Base *control, const HoverFill &fill)
+{
+    if(m_hoverControl && m_hoverControl != control)
+    {
+        if(getToolTip() == m_hoverControl)
+            setToolTip(nullptr);
+        delete m_hoverControl;
+    }
+
+    m_hoverControl=control;
+    m_hoverFill=fill;
+    if(control)
+    {
+        // kept as the tooltip's control is, a hidden child
+        control->setParent(this);
+        control->setHidden(true);
+    }
+
+    // shown as the next hover asks
+    const bool hovering=m_hovering;
+
+    m_hovering=false;
+    setHover(hovering, m_hoverLane, m_hoverIndex);
+}
+
+String Timeline::defaultHoverText(size_t lane, size_t index) const
+{
+    const TimelineBar &bar=getBar(lane, index);
+    String text=getLaneCaption(lane);
+
+    if(!text.empty())
+        text+="  ";
+    text+=axis::formatDateTime(bar.start, m_utcOffset)+" - "+axis::formatDateTime(bar.end, m_utcOffset);
+    return text;
+}
+
+void Timeline::setHover(bool hovering, size_t lane, size_t index, bool refill)
+{
+    if(!hovering)
+    {
+        lane=0;
+        index=0;
+    }
+
+    if(hovering == m_hovering && lane == m_hoverLane && index == m_hoverIndex && !(hovering && refill))
+        return;
+
+    // the hover look's slot alone: the bars keep theirs
+    if(hovering != m_hovering || lane != m_hoverLane || index != m_hoverIndex)
+        addStateChange(StateChange_Background);
+
+    m_hovering=hovering;
+    m_hoverLane=lane;
+    m_hoverIndex=index;
+
+    if(!hovering)
+    {
+        setToolTipText(String());
+        if(m_hoverControl && getToolTip() == m_hoverControl)
+            setToolTip(nullptr);
+        return;
+    }
+
+    if(m_hoverControl)
+    {
+        if(m_hoverFill)
+            m_hoverFill(*this, lane, index, m_hoverControl);
+        if(getToolTip() != m_hoverControl)
+            setToolTip(m_hoverControl);
+        else if(Canvas *canvas=getCanvas())
+            canvas->toolTipChanged(this);
+        return;
+    }
+    setToolTipText(m_hoverText ? m_hoverText(*this, lane, index) : defaultHoverText(lane, index));
+}
+
+void Timeline::refreshHover(bool refill)
+{
+    if(!m_mouseInside)
+        return;
+
+    size_t lane=0;
+    size_t index=0;
+    const bool hovering=barAt(m_mouse, lane, index);
+
+    setHover(hovering, lane, index, refill);
+}
+
+Rect Timeline::getToolTipAnchor() const
+{
+    Rect bar;
+
+    if(!getHoverRect(bar))
+        return ParentClass::getToolTipAnchor();
+
+    // the bar as it shows, cut to the area: the box goes below it
+    const int x0=std::max(bar.x, m_area.x);
+    const int y0=std::max(bar.y, m_area.y);
+    const int x1=std::min(bar.x+bar.w, m_area.x+m_area.w);
+    const int y1=std::min(bar.y+bar.h, m_area.y+m_area.h);
+    Timeline *self=const_cast<Timeline *>(this);
+    const Point at=self->localPosToCanvas(Point(x0, y0));
+    const Point end=self->localPosToCanvas(Point(std::max(x0, x1), std::max(y0, y1)));
+
+    return Rect(at.x, at.y, end.x-at.x, end.y-at.y);
+}
+
+void Timeline::onMouseMoved(int x, int y, int deltaX, int deltaY)
+{
+    m_mouse=canvasPosToLocal(Point(x, y));
+    m_mouseInside=true;
+    refreshHover();
+    ParentClass::onMouseMoved(x, y, deltaX, deltaY);
+}
+
+void Timeline::onMouseLeave()
+{
+    m_mouseInside=false;
+    setHover(false, 0, 0);
+    ParentClass::onMouseLeave();
+}
+
+void Timeline::onMouseClickLeft(int x, int y, bool down)
+{
+    const Point local=canvasPosToLocal(Point(x, y));
+    size_t lane=0;
+    size_t index=0;
+
+    if(down)
+    {
+        m_pressed=barAt(local, lane, index);
+        m_pressLane=lane;
+        m_pressIndex=index;
+        m_pressId=m_pressed ? getBar(lane, index).id : 0;
+        // the release comes here wherever the mouse goes
+        if(m_pressed)
+            MouseFocus=this;
+        return;
+    }
+
+    // the press's capture ends with its release, even when an edit
+    // meanwhile has dropped the press
+    if(MouseFocus == this)
+        MouseFocus=nullptr;
+    if(!m_pressed)
+        return;
+
+    m_pressed=false;
+
+    // the same bar: its place and its id, so an edit between the press and
+    // the release that moved another bar there clicks nothing
+    if(!barAt(local, lane, index) || lane != m_pressLane || index != m_pressIndex
+        || getBar(lane, index).id != m_pressId)
+        return;
+
+    m_clickedLane=lane;
+    m_clickedIndex=index;
+    m_clickedId=m_pressId;
+
+    event::Info info(this);
+
+    info.point=Point(static_cast<int>(lane), static_cast<int>(index));
+    info.integer=static_cast<size_t>(m_pressId);
+    onBarClicked.call(this, info);
 }
 
 // ---- geometry ---------------------------------------------------------------
@@ -865,8 +1060,10 @@ void Timeline::placeAxis()
         placeChild(label, x, m_axisTop, width, lineHeight);
     }
 
-    // the renderer draws from what this computed
-    addStateChange(StateChange_Background);
+    // the renderer draws from what this computed, and the bars may have
+    // moved under the mouse
+    barsMoved();
+    refreshHover();
 }
 
 // Each lane's caption in the column at its lane less the scroll offset, centred
