@@ -1136,10 +1136,10 @@ public:
 
 //-----------------------------------------------------------------------------
 // code-edit and code-scroll: a CodeEditor with line numbers, 600 wide and the
-// canvas's height, over a generated N-line YAML document: blocks of 8 lines,
-// a top-level key ("agent_<block>:") and 7 indented ones, every line's text a
-// function of its index alone, so the lines on screen are the same strings at
-// any N. Only the lines on screen are controls.
+// canvas's height, highlighted as YAML, over a generated N-line YAML document:
+// blocks of 8 lines, a top-level key ("agent_<block>:") and 7 indented ones,
+// every line's text a function of its index alone, so the lines on screen are
+// the same strings at any N. Only the lines on screen are controls.
 //-----------------------------------------------------------------------------
 String codeDocument(int lines)
 {
@@ -1168,6 +1168,7 @@ public:
         m_editor=ctx.canvas->newChild<controls::CodeEditor>();
         place(m_editor, 10, 10, 600, ctx.size.y-20);
         m_editor->setLineNumbers(true);
+        m_editor->setLanguage("yaml");
         m_editor->setText(codeDocument(ctx.n));
     }
 
@@ -1175,14 +1176,18 @@ protected:
     controls::CodeEditor *m_editor=nullptr;
 };
 
-// code-edit: the caret at the end of a top-level key near line 500 (the
+// code-edit: the caret before the ':' of a top-level key near line 500 (the
 // middle at N=1000; the same line, and so the same strings and line numbers
 // on screen, at any larger N, with every line past it still in the
 // document), the editor focused. Each measured frame is one edit there, in a
-// cycle of 8: two letters typed, Return (the key has no indent, so the new
-// line is empty), a Backspace that joins the two lines again, two letters,
-// Ctrl+Z (undoing them) and a letter. The caret blinks on the stepped clock,
-// the same in every run.
+// cycle of 10: two letters typed into the key, Return (the key has no
+// indent, so the new line holds the ':'), a Backspace that joins the two
+// lines again, two letters, Ctrl+Z (undoing them), a letter, then End and
+// " |", which opens a block scalar (the key's 7 indented lines below it in
+// the block, the next key ending it: the state its line ends in changed),
+// and two Backspaces and Left, which close it and put the caret back before
+// the ':'. The view is scrolled in the warm-up so that the line is 20 lines
+// down it. The caret blinks on the stepped clock, the same in every run.
 class CodeEditScene: public CodeEditorScene
 {
 public:
@@ -1190,14 +1195,21 @@ public:
     {
         CodeEditorScene::build(ctx);
 
-        const size_t line=size_t(std::min(500, ctx.n/2)/8*8);
-
-        m_editor->setCaret({line, m_editor->getDocument().line(line).size()});
+        m_line=size_t(std::min(500, ctx.n/2)/8*8);
+        m_editor->setCaret({m_line, m_editor->getDocument().line(m_line).size()-1});
         m_editor->focus();
     }
 
     void step(SceneContext &ctx, int frame) override
     {
+        // once laid out, the caret's line a third down the view, so the block
+        // the cycle opens has its lines on screen below it
+        if(!m_scrolled && m_editor->getLineHeight() > 0)
+        {
+            m_scrolled=true;
+            m_editor->setVerticalScrollOffset(
+                int(m_line-std::min<size_t>(m_line, 20))*m_editor->getLineHeight());
+        }
         if(frame < 0)
             return;
 
@@ -1207,7 +1219,7 @@ public:
                 ctx.canvas->inputModifierKey(key, false);
             };
 
-        switch(frame%8)
+        switch(frame%m_cycle)
         {
         case 2: key(keys::Return); break;
         case 3: key(keys::Backspace); break;
@@ -1216,14 +1228,31 @@ public:
             ctx.canvas->inputCharacter(UnicodeChar('Z'));
             ctx.canvas->inputModifierKey(keys::Control, false);
             break;
+        case 8:
+            key(keys::End);
+            ctx.canvas->inputCharacter(UnicodeChar(' '));
+            ctx.canvas->inputCharacter(UnicodeChar('|'));
+            break;
+        case 9:
+            key(keys::Backspace);
+            key(keys::Backspace);
+            key(keys::Left);
+            break;
         default: ctx.canvas->inputCharacter(UnicodeChar('a'+frame%26)); break;
         }
     }
+
+protected:
+    size_t m_line=0;
+    //! The edits' cycle: 8 leaves the block scalar out.
+    int m_cycle=10;
+    //! The view was scrolled to the caret's line (or is to stay as built).
+    bool m_scrolled=false;
 };
 
-// code-edit-wrap: code-edit's edits in a wrapped editor (setWrap, no gutter) over the
-// same blocks with a long note key last, which wraps into two or three rows
-// at the editor's width. The caret is at the end of the note near line 500,
+// code-edit-wrap: code-edit's first 8 edits (no block scalar) in a wrapped
+// editor (setWrap, no gutter, no language) over the same blocks with a long
+// note key last, which wraps into two or three rows at the editor's width. The caret is at the end of the note near line 500,
 // so the letters typed lengthen a wrapped line, now and then giving it a
 // row more and moving the rows below it, and Return and Backspace (the line
 // well inside the view, so they scroll nothing) add and
@@ -1277,6 +1306,9 @@ public:
         // less, as the content's length rounds it, changes no path)
         m_editor->scrollToItem(line+3);
         m_editor->focus();
+        // code-edit's first 8 edits, with no block scalar, in this view
+        m_cycle=8;
+        m_scrolled=true;
     }
 };
 
@@ -1488,13 +1520,13 @@ const std::vector<SceneInfo> &scenes()
         {"hidden-gaps", "N Buttons, all hidden but every K+1-th: runs of one shown slot between gaps of K",
             true, 1000, 3, 20, Scaling::Linear,
             []{ return std::unique_ptr<Scene>(new HiddenGapsScene()); }},
-        {"code-edit", "type, break and join lines and undo at line 500 of a CodeEditor of N YAML lines",
+        {"code-edit", "type, break and join lines, undo and open and close a block scalar at line 500 of a highlighted CodeEditor of N YAML lines",
             true, 1000, 3, 24, Scaling::Local,
             []{ return std::unique_ptr<Scene>(new CodeEditScene()); }},
         {"code-edit-wrap", "code-edit's edits at the end of a wrapped line in a wrapped CodeEditor of N lines",
             true, 1000, 3, 24, Scaling::Local,
             []{ return std::unique_ptr<Scene>(new CodeEditWrapScene()); }},
-        {"code-scroll", "scroll a CodeEditor of N YAML lines with line numbers one line per frame",
+        {"code-scroll", "scroll a highlighted CodeEditor of N YAML lines with line numbers one line per frame",
             true, 1000, 3, 20, Scaling::Local,
             []{ return std::unique_ptr<Scene>(new CodeScrollScene()); }},
         {"log-append", "append 17 rows a frame to a following LogView of N wrapped rows",

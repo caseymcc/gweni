@@ -725,20 +725,30 @@
  *                 closes it. One line
  *                   popup opens_below=yes|no ... hidden_anchor_closes=yes|no
  *                 reports the checks. Exits non-zero if any check is no.
- *    code-editor  CodeEditorDemo's 5000-line document (line numbers on),
- *                 the clock frozen, scrolled to line 2500, a press at the end
- *                 of a short line ("    model: ...") giving the editor the
- *                 focus; then each input one frame: "x" typed there, a burst
- *                 typed two lines down and undone (Ctrl+Z), Return there, and
- *                 a one-line scroll (scrollByRows), each followed by settled
- *                 frames (code-editor.png at the end). One line
+ *    code-editor  CodeEditorDemo's 5000-line document (line numbers on,
+ *                 highlighted as YAML), the clock frozen, scrolled to line
+ *                 2500, a press at the end of a short line ("    model: ...")
+ *                 giving the editor the focus; then each input one frame: "x"
+ *                 typed there, a burst typed two lines down and undone
+ *                 (Ctrl+Z), a block scalar opened at the last agent entry on
+ *                 screen ("  - name: ..." made "  - |", the entry's lines
+ *                 below it, past the screen, in the block) and undone, Return
+ *                 there, and a one-line scroll (scrollByRows), each followed
+ *                 by settled frames (code-editor.png at the end). One line
  *                   code-editor settled_focused=yes|no ... ids_back=yes|no
  *                 reports the checks: every settled frame writes and changes
- *                 nothing; the typed character writes slots of its row, the
- *                 gutter and the caret alone, no more glyphs than its line,
- *                 in one pass, and changes no pixel outside the line, the
- *                 gutter and the caret; the frame after the undo is the frame
- *                 before the burst, byte for byte; Return and the scroll
+ *                 nothing; the typed character, which keeps the state the
+ *                 next line starts in, tokenizes its line alone and writes
+ *                 slots of its row, the gutter and the caret alone, no more
+ *                 glyphs than its line, in one pass, and changes no pixel
+ *                 outside the line, the gutter and the caret; the frame after
+ *                 the undo is the frame before the burst, byte for byte; the
+ *                 opened block gives every row on screen below the entry new
+ *                 colours, writes the slots of the rows from it down, the
+ *                 gutter and the caret alone, no more glyphs than they hold,
+ *                 in one pass, changes no pixel outside the editor and
+ *                 tokenizes no line past the screen's last, and its undo
+ *                 gives the frame before it back; Return and the scroll
  *                 write slots inside the editor alone, no more glyphs than
  *                 its rows and numbers on screen hold, in one pass, and
  *                 change no pixel outside it. Then wrapped, through the demo's
@@ -10435,6 +10445,7 @@ static bool runCodeEditorScenario(Session &s, const std::string &shotDir, bool &
         }
 
         const gweni::Rect caretBefore=canvasRect(editor, editor->getCaretBounds());
+        const size_t tokenizedBefore=editor->getHighlightCache().tokenizedLines();
 
         typeText(s, "x");
 
@@ -10451,6 +10462,10 @@ static bool runCodeEditorScenario(Session &s, const std::string &shotDir, bool &
         checks.check("typed_pixels", outside == 0,
             std::to_string(outside)+" pixels changed outside the line, the gutter and the caret");
         checks.check("typed_one_pass", typed.passes <= 1, "the typing frame took "+std::to_string(typed.passes)+" passes");
+        // the value keeps the state the next line starts in: its line alone
+        checks.check("typed_tokenized", editor->getHighlightCache().tokenizedLines() == tokenizedBefore+1,
+            "the typed character tokenized "+std::to_string(editor->getHighlightCache().tokenizedLines()-tokenizedBefore)
+            +" lines, not its own alone");
         checks.check("typed_text", editor->getDocument().line(line).back() == 'x', "the character did not go in");
         checks.check("settled_typed", settleCodeEditor(s, idle) == 0, "a settled frame after typing wrote or changed something");
     }
@@ -10475,6 +10490,143 @@ static bool runCodeEditorScenario(Session &s, const std::string &shotDir, bool &
         checks.check("undo_text", editor->getDocument().line(line+2) == textBefore, "the undo did not give the line back");
         checks.check("undo_pixels", undone.pixels == before, "the frame after the undo is not the frame before the burst");
         checks.check("settled_undo", settleCodeEditor(s, idle) == 0, "a settled frame after the undo wrote or changed something");
+    }
+
+    // A block scalar opened at an agent's entry low on screen ("  - name: ..."
+    // made "  - |"): every line of the entry below it is in the block, past the
+    // screen's last line. The rows on screen below it get new colours, and
+    // nothing else: the slots written are the rows', the gutter's and the
+    // caret's, no more glyphs than those rows hold, in one pass, no pixel
+    // changed outside the editor, and the lines past the screen are not
+    // tokenized. Its undo gives the frame before it back.
+    {
+        gweni::text::HighlightCache &cache=editor->getHighlightCache();
+        size_t lastShown=0;
+        std::map<size_t, gweni::controls::CodeLine *> shown;
+        size_t entry=gweni::controls::CodeLine::NoLine;
+        auto findShown=[&]()
+            {
+                shown.clear();
+                lastShown=0;
+                entry=gweni::controls::CodeLine::NoLine;
+                for(gweni::controls::Base *base : editor->getRows())
+                {
+                    auto *row=gweni::gweni_cast<gweni::controls::CodeLine>(base);
+
+                    if(row && !row->hidden() && row->getLine() != gweni::controls::CodeLine::NoLine)
+                    {
+                        shown[row->getLine()]=row;
+                        lastShown=std::max(lastShown, row->getLine());
+                    }
+                }
+                // the last entry with a row on screen below it
+                for(const auto &item : shown)
+                {
+                    if(item.first < lastShown && editor->getDocument().line(item.first).rfind("  - name:", 0) == 0)
+                        entry=item.first;
+                }
+            };
+
+        findShown();
+        // scrolled so that 8 of the entry's 15 lines below it are on screen
+        if(entry != gweni::controls::CodeLine::NoLine && lastShown-entry < 8)
+        {
+            editor->scrollByRows(static_cast<int>(8-(lastShown-entry)));
+            renderFrames(s, s.frames);
+            settleCodeEditor(s, idle);
+            findShown();
+        }
+
+        const bool found=(entry != gweni::controls::CodeLine::NoLine) && entry+16 > lastShown;
+
+        checks.check("block_entry", found, "no agent entry on screen with a row below it");
+        if(found)
+        {
+            // the value and the space before it selected, settled, then replaced
+            editor->setCaret(gweni::text::Position{entry, 3});
+            editor->setCaret(gweni::text::Position{entry, editor->getDocument().line(entry).size()}, true);
+            renderFrames(s, s.frames);
+
+            std::vector<uint8_t> before;
+
+            settleCodeEditor(s, before);
+
+            std::map<size_t, std::vector<gweni::renderer::ColorSpan>> spansBefore;
+            std::set<size_t> allowedPrims, allowedTexts;
+            size_t rowGlyphs=0;
+
+            for(const auto &item : shown)
+            {
+                spansBefore[item.first]=item.second->getColorSpans();
+                if(item.first < entry)
+                    continue;
+                subtreeIds(item.second, allowedPrims, allowedTexts);
+                rowGlyphs+=item.second->getText().size();
+            }
+            subtreeIds(gutter, allowedPrims, allowedTexts);
+            if(const gweni::skin::Control *own=editor->getSkinControl())
+            {
+                std::vector<size_t> prims, texts;
+
+                own->appendIds(prims, texts);
+                allowedPrims.insert(prims.begin(), prims.end());
+            }
+
+            // the space first (the entry's line alone), then the '|' that opens it
+            typeText(s, " ");
+            renderFrames(s, 1);
+            for(auto &item : spansBefore)
+            {
+                if(gweni::controls::CodeLine *row=editor->rowForLine(item.first))
+                    item.second=row->getColorSpans();
+            }
+
+            const size_t tokenizedBefore=cache.tokenizedLines();
+
+            typeText(s, "|");
+
+            const CodeEditorFrame opened=codeEditorFrame(s);
+            const size_t outside=differencesOutsideRects(s, before, opened.pixels, {editor->getCanvasBounds()});
+            const size_t lastVisible=cache.visibleFirst()+cache.visibleCount()-1;
+            size_t recoloured=0, same=0;
+
+            for(const auto &item : shown)
+            {
+                if(item.first <= entry)
+                    continue;
+                if(editor->rowForLine(item.first) && editor->rowForLine(item.first)->getColorSpans() != spansBefore[item.first])
+                    ++recoloured;
+                else
+                    ++same;
+            }
+            checks.check("block_text", editor->getDocument().line(entry) == "  - |", "the entry did not become \"  - |\"");
+            checks.check("block_recoloured", same == 0 && recoloured == lastShown-entry,
+                std::to_string(recoloured)+" rows below the entry got new colours and "+std::to_string(same)
+                +" did not, of "+std::to_string(lastShown-entry));
+            checks.check("block_slots", idsWithin(opened.primitives, allowedPrims) && idsWithin(opened.texts, allowedTexts)
+                && opened.glyphSlots <= rowGlyphs+2 && opened.passes <= 1,
+                "the opened block wrote "+std::to_string(opened.glyphSlots)+" glyph slots (the rows from it down hold "
+                +std::to_string(rowGlyphs)+"), "+std::to_string(opened.passes)+" passes, or a slot outside them, the gutter and the caret");
+            checks.check("block_pixels", outside == 0, std::to_string(outside)+" pixels changed outside the editor");
+            checks.check("block_past_screen", lastVisible == lastShown && cache.frontier() == lastVisible+1
+                && !cache.isFresh(lastVisible+1) && cache.tokenizedLines()-tokenizedBefore <= lastVisible-entry+1,
+                "the opened block at line "+std::to_string(entry)+" tokenized "
+                +std::to_string(cache.tokenizedLines()-tokenizedBefore)+" lines up to "
+                +std::to_string(cache.frontier())+" (fresh past it: "+(cache.isFresh(lastVisible+1)?"yes":"no")
+                +"), the screen's last line "+std::to_string(lastVisible)+" (shown "+std::to_string(lastShown)+")");
+            checks.check("settled_block", settleCodeEditor(s, idle) == 0, "a settled frame after the block opened wrote or changed something");
+
+            sendKey(s, "ctrl+z");
+
+            const CodeEditorFrame undone=codeEditorFrame(s);
+
+            checks.check("block_undo", undone.pixels == before, "the frame after the block's undo is not the frame before it");
+            checks.check("settled_block_undo", settleCodeEditor(s, idle) == 0,
+                "a settled frame after the block's undo wrote or changed something");
+            editor->setCaret(editor->getCaret());
+            renderFrames(s, s.frames);
+            settleCodeEditor(s, idle);
+        }
     }
 
     // Return mid-screen: inside the editor, no more glyphs than its rows and
