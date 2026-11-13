@@ -204,15 +204,20 @@ float pixelArea(float e, vec2 n)
 }
 
 // Style 9: the part of the pixel centred at c (px from the quad's top-left) on the
-// inner side of a trapezoid's top (inside 1) or bottom (inside -1) edge, the
-// straight line from (0, y0) to (w, y1): pixelArea() of the centre's distance to
-// it along its normal, exact for a pixel the edge crosses anywhere in its column.
-float trapezoidEdge(vec2 c, float y0, float y1, float w, float inside)
+// inner side of a trapezoid's edge, less a half, from the vertex shader's
+// trapezoidEdge(): pixelArea() of the centre's distance e to it, written without
+// a branch or a division. pixelArea() is odd about e = 0 less its 0.5: its linear
+// part e/a with |e| clamped to h1, and past h1 its quadratic end, by t = clamp(|e|
+// - h1, 0, b), t(2b - t)/(2ab), which is 0 at h1 and b/(2a) (to 1) at h2. Exact
+// for a pixel the edge crosses anywhere in its column.
+float trapezoidEdge(vec2 c, vec4 line, vec3 area)
 {
-    float m = (y1 - y0)/w;
-    float len = sqrt(1.0 + m*m);
+    float e = line.x*c.y + line.y*c.x + line.z;
+    float d = abs(e);
+    float b = area.x;
+    float t = clamp(d - line.w, 0.0, b);
 
-    return pixelArea(inside*(c.y - lerp(y0, y1, c.x/w))/len, vec2(m, 1.0)/len);
+    return sign(e)*(min(d, line.w)*area.y + t*(2.0*b - t)*area.z);
 }
 
 // Style 3: the vector from the nearest point of the segment from s to e to a pixel's
@@ -336,7 +341,6 @@ void main()
     float depth = gl_FragCoord.z;
     bool lineDeferred = false;  // style 3: an adjacent segment of its polyline draws this pixel
     bool offGrid = false;       // style 8: the pixel is on no grid line
-    bool uncovered = false;     // style 9: the trapezoid covers less than half an 8-bit step of the pixel
     bool clipped = any(lessThan(vPixel, vec2(clip.xy))) || any(greaterThanEqual(vPixel, vec2(clip.zw)));
     vec2 uvDx = dFdx(TexCoords);
     vec2 uvDy = dFdy(TexCoords);
@@ -499,17 +503,17 @@ void main()
     {
         // Trapezoid (drawTrapezoid): the quad is its whole columns, from the highest
         // top to the lowest bottom, and a pixel is covered by its exact area between
-        // the two edges (vSegment: the top at the left and right side, then the
-        // bottom): each edge's part, less the 1 their union is (the top is never
-        // below the bottom, so every point is inside one of them). The pixel is
-        // found from vLocal rounded to its half px, as the grid's is, so its
-        // coverage is a function of the flat edges and its column and row alone.
-        vec2 c = floor(floor(vLocal*2.0 + 0.5)*0.5 + vHalf) + 0.5;
-        float w = max(2.0*vHalf.x, 1.0);
-        float a = clamp(trapezoidEdge(c, vSegment.x, vSegment.y, w, 1.0)
-            + trapezoidEdge(c, vSegment.z, vSegment.w, w, -1.0) - 1.0, 0.0, 1.0);
+        // the two edges (vSegment and vColor1 the top's terms, vJoints and
+        // vBorderColor the bottom's): each edge's part, less the 1 their union is
+        // (the top is never below the bottom, so every point is inside one of
+        // them): the sum of the two less their halves. The pixel's column and row
+        // are those vLocal is in: at the pixel's centre it is half a px from their
+        // edges, farther than an interpolation error moves it, so the coverage is
+        // a function of the flat edges and the column and row alone.
+        vec2 c = floor(vLocal + vHalf) + 0.5;
+        float a = clamp(trapezoidEdge(c, vSegment, vColor1.xyz)
+            + trapezoidEdge(c, vJoints, vBorderColor.xyz), 0.0, 1.0);
 
-        uncovered = a < 0.5/255.0;
         FragColor = vec4(VertexColor.rgb, VertexColor.a * a);
     }
     else if (ShaderType == 5u)
@@ -660,9 +664,11 @@ void main()
     // step of 8-bit alpha changes no pixel; nor one a rounded rect (styles 4, 6, 7)
     // leaves uncovered, outside its corner arcs, so a slot behind it drawn after it (a
     // node graph's link made after the pin it ends on) still shows around the arcs;
-    // nor one a trapezoid leaves uncovered, above its top or below its bottom
-    if(clipped || lineDeferred || offGrid || uncovered || (ShaderType == 2u && FragColor.a <= 0.0)
-        || (ShaderType >= 3u && ShaderType <= 7u && FragColor.a < 0.5/255.0))
+    // nor one a trapezoid (style 9) leaves uncovered, above its top or below its
+    // bottom (its alpha, not a coverage flag of its own, which cost llvmpipe 0.4 %
+    // of gweni_bench idle's flush, on every primitive's pixels)
+    if(clipped || lineDeferred || offGrid || (ShaderType == 2u && FragColor.a <= 0.0)
+        || (ShaderType >= 3u && ShaderType != 8u && FragColor.a < 0.5/255.0))
         discard;
     // every other style writes the depth the fixed function would
     gl_FragDepth = depth;

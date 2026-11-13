@@ -37,15 +37,15 @@ flat out vec2 vHalf;      // rect half-size (px)
 flat out float vRadius;
 flat out uint vEdges;     // styles 4, 6, 7: the edge mask (renderer::RoundedEdge), else 0
 flat out float vBorder;
-flat out vec4 vColor1;    // gradient bottom color
-flat out vec4 vBorderColor;
+flat out vec4 vColor1;    // gradient bottom color; style 9: its top edge's area terms (xyz)
+flat out vec4 vBorderColor; // style 9: its bottom edge's area terms (xyz)
 out vec4 vColor3;         // smooth: style 6 interpolates it along x
 flat out vec4 vSegment;   // style 3: the line's endpoints (xy, zw), px from the quad centre;
                           // style 8: its phases (xy), spacing (z) and reciprocal (w), px;
-                          // style 9: its top (xy) and bottom (zw) at its left and right
-                          // side, px from the quad's top
+                          // style 9: its top edge (trapezoidEdge's line)
 flat out vec4 vJoints;    // style 3: its previous (xy) and next (zw) neighbour points, as vSegment;
-                          // style 8: its major count (x) and stroke px (y)
+                          // style 8: its major count (x) and stroke px (y);
+                          // style 9: its bottom edge (trapezoidEdge's line)
 flat out float vBehindDepth; // style 3: the depth half a layer behind this slot's z
 out vec2 vPixel;          // pixel-space position, the clip boxes' space
 
@@ -63,6 +63,25 @@ vec4 unpackColor(uvec2 c)
         float(c.x & 0xffu)/255.0,
         float((c.y >> 8) & 0xffu)/255.0,
         float(c.y & 0xffu)/255.0);
+}
+
+// Style 9: the edge from (0, y0) to (w, y1), px from the quad's top-left, as the
+// fragment shader takes a pixel's area on its inner side (below the top, inside
+// 1; above the bottom, -1), pixelArea() of the pixel centre c's distance to it
+// along its unit normal n: line.xyz give that distance, dot(line.xyz, (c.y, c.x,
+// 1)), and line.w and area pixelArea()'s terms for n, h1 = (a - b)/2 (a and b the
+// larger and the smaller of |n.x| and |n.y|), b, 1/a and 1/(2ab), b kept above 0
+// (0 for a flat edge, where nothing is divided by it).
+void trapezoidEdge(float y0, float y1, float w, float inside, out vec4 line, out vec3 area)
+{
+    float m = (y1 - y0)/w;
+    float len = sqrt(1.0 + m*m);
+    float s = inside/len;
+    float a = max(abs(m), 1.0)/len;
+    float b = min(abs(m), 1.0)/len;
+
+    line = vec4(s, -s*m, -s*y0, 0.5*(a - b));
+    area = vec3(b, 1.0/a, 1.0/(2.0*a*max(b, 1e-20)));
 }
 
 void main()
@@ -105,14 +124,25 @@ void main()
         vJoints = vec4(float(inRadiusBorder.y & 0xffu), float((inRadiusBorder.y >> 8) & 0xffu), 0.0, 0.0);
     }
     // style 9 (drawTrapezoid) keeps its four edge heights, floats' bits, px from
-    // the quad's top: its top at the left and right side, then its bottom
+    // the quad's top: its top at the left and right side, then its bottom. Each
+    // edge is turned here, once a vertex, into what the fragment shader's area of
+    // a pixel needs (trapezoidEdge), so a pixel pays for no division or root
     else if(style == 9u)
     {
-        vSegment = vec4(
-            uintBitsToFloat((inColor1.x << 16) | inColor1.y),
-            uintBitsToFloat((inBorderColor.x << 16) | inBorderColor.y),
-            uintBitsToFloat((inColor3.x << 16) | inColor3.y),
-            uintBitsToFloat((inRadiusBorder.x << 16) | inRadiusBorder.y));
+        float w = max(abs(float(inLocal.x)), 1.0);
+        vec4 topLine;
+        vec4 bottomLine;
+        vec3 topArea;
+        vec3 bottomArea;
+
+        trapezoidEdge(uintBitsToFloat((inColor1.x << 16) | inColor1.y),
+            uintBitsToFloat((inBorderColor.x << 16) | inBorderColor.y), w, 1.0, topLine, topArea);
+        trapezoidEdge(uintBitsToFloat((inColor3.x << 16) | inColor3.y),
+            uintBitsToFloat((inRadiusBorder.x << 16) | inRadiusBorder.y), w, -1.0, bottomLine, bottomArea);
+        vSegment = topLine;
+        vJoints = bottomLine;
+        vColor1 = vec4(topArea, 0.0);
+        vBorderColor = vec4(bottomArea, 0.0);
     }
     vPixel = vec2(inPosition.xy);
     // GL_SHORT sign-extends z; its low 16 bits are Vertex::z, 0..65535
