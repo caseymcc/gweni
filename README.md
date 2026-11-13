@@ -87,6 +87,20 @@ five-line excerpt views, each with a small cap. Scroll up and it stays put while
 "Jump to latest" button counting them; click, Shift+click or drag to select rows, Ctrl+C to copy.
 A frame costs the rows on screen, however long the log.
 
+[![A stacked bar chart of tokens a day by model over two weeks, with its legend](docs/images/ChartTimeBarsDemo.png)](https://caseymcc.github.io/gweni/controltest.html?control=ChartTimeBarsDemo)
+
+**Time bar chart**: a Chart of four stacked bar series over a time axis of days (one series missing
+its weekends, so its x counts as 0 there), with a legend whose rows toggle their series. Every bar is a
+primitive slot of the chart's renderer, not a control: a changed value rewrites the bars of its stack
+alone, and an appended day its own bar.
+
+[![A two-axis line chart of a host's memory and GPU use over a day, with two markers and a shaded span](docs/images/ChartLinesDemo.png)](https://caseymcc.github.io/gweni/controltest.html?control=ChartLinesDemo)
+
+**Line chart**: memory as a line on the left axis and GPU use as a step line on the right, over a
+day on a time axis pinned to UTC, with captioned marker lines and a shaded span. Hovering draws a
+crosshair at the nearest x and fills the canvas's one tooltip box; a moved point rewrites only the
+segments around it.
+
 [![The inspector beside a few controls](docs/images/InspectorDemo.png)](https://caseymcc.github.io/gweni/controltest.html?control=InspectorDemo)
 
 **Inspector**: `gweni::tools::Inspector`, the library's live view of the change tracking (F12 in the

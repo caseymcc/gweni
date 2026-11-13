@@ -71,6 +71,8 @@ SAMPLES=(
     TextDemo
     NodeGraphDemo
     LogViewDemo
+    ChartTimeBarsDemo
+    ChartLinesDemo
     InspectorDemo
     ThemeEditorDemo
 )

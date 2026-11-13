@@ -2699,6 +2699,97 @@ two programs and the draws. What follows describes both together:
   sample's `"<index>: <value>"` and writes nothing. PlotLinesDemo has a 64-sample sine
   in the automatic range and 40 frame times in a fixed range with a caption and a
   1.5-unit line; ShowcaseDisplayDemo has the frame times.
+- **The chart: series of slots over time, value or category axes.** `controls::Chart`
+  (`include/gweni/controls/chart.h`, with the axis helper `controls::axis` in
+  `chartAxis.h`) draws line, step-line, bar and stacked-bar series against a value axis on
+  the left and one on the right, over a time (epoch seconds), value or category x axis. It
+  does not derive from `PlotBase`: its points are `(x, y)` doubles, since a float resolves
+  about 2 minutes at 1.7e9 s. **Axes:** `controls::axis` has no Chart in it, so the Timeline
+  takes it as it is: value ticks at 1, 2 or 5 times a power of ten (`niceStep`,
+  `niceRange` widening an automatic range to whole steps, ticks as `k*step` so none
+  drifts, `formatValue` with the step's decimals or the app's `ValueFormatter`); time
+  ticks at the smallest of 1 s, 5 s, 15 s, 1 min, 5 min, 15 min, 1 h, 6 h, 1 d, 1 week,
+  1 month and 1 year whose labels leave a gap at the axis's width (`chooseTimeTicks`, Year
+  with thinned labels when none does), the steps under a day on the zone's clock and the
+  calendar ones at 00:00 in it (a month tick is the 1st, a week tick a Monday), through a
+  UTC-offset hook `std::function<int(double)>` (seconds east of UTC at an instant,
+  `localUtcOffset()`, `localtime_r`'s `tm_gmtoff`, by default; `fixedUtcOffset`). Across a
+  DST change an hour the clock skips has no tick, one it passes twice one, and a calendar
+  tick the clock skips (a midnight jumped over) is where its day begins. Labels are
+  "HH:MM:SS", "HH:MM" or "Nov 14", the date at a midnight and the year on January 1st.
+  Category ticks are one per category, and `thinLabels` gives the smallest stride at which
+  every stride-th label leaves the gap. `tests/unit/chartAxis.cpp` pins them, DST and a
+  leap year under a hook with DST included. **Data:** a series (`addSeries(name, type,
+  side)`) keeps its points sorted (`setSeriesPoints`, `appendPoint` after every x not
+  above its own, `setPointValue`, `removeFirstPoints`); what is drawn from them is worked
+  out lazily (`computeData`): the bar groups side by side at one x (each unstacked bar
+  series one, every stacked series one together, in the order of their first series),
+  the bar interval (`setBarInterval`, or the smallest step between two x of a visible bar
+  series), the stacks (by equal x in series order, positive values up from 0 and negative
+  ones down, a series with no point at an x adding nothing there) and the extents. The x
+  range is `setXRange`'s, or the visible series' extent widened by half a bar interval
+  with bars; a value axis's is `setYRange`'s, or its series' extent (with 0, and always
+  with a bar's 0) widened by `niceRange` for a tick every `YTickSpacing` units of the
+  plot. A data change marks `StateChange_Background`, and invalidates only when the x
+  range or that series' value axis is automatic, so with both fixed a new point lays
+  nothing out. **Layout:** the plot's width needs the value labels' widths, which need
+  the plot's height, so the chart lays its children out in its Y arrange, as a
+  ScrollControl does ("Children whose X layout needs the parent's height"): the legend's
+  column at the right (its ScrollControl's measured preferred size, a third of the
+  chart's width and its inner height at most), the value labels' columns, the x labels'
+  row and the titles' lines come off the control, the ticks are computed for what is
+  left, and the tick labels, titles and marker captions are pooled owner-placed
+  `internal::Text`s, set only when their string changes and measured once per string
+  (a width cache keyed on the font, the renderer and its `textLayoutSerial()`).
+  **Rendering:** the textured `Chart` renderer keeps a slot list per part, each slot
+  holding what it last drew (a rect or a segment with its neighbours, its colour, z and
+  clip box): the frame (`ChartFrame`, taken at generate), the grid (a `drawLine` per tick
+  of each shown value axis with its grid on, and with `setXGrid` per x tick, then the
+  line along the plot's bottom), the spans (`drawRoundedRect`, `ChartSpan`, translucent),
+  one list per series (a bar or stacked segment per point, `getBarRect` cut to the plot,
+  or a segment per vertex pair of a line or step line, drawn with its neighbours), the
+  markers (a vertical `drawLine` each) and the crosshair's one slot. Their z values,
+  back to front, are the frame's z, the grid's z+1, the spans' z+2, series i's z+3+i,
+  the markers' z+3+S and the crosshair's z+4+S, so the renderer's layer count follows the
+  series: `skin::Control::depthLayersOf(control)` (`depthLayers()` by default) is what
+  the canvas asks, and the chart calls `Base::zOrderChanged()` when a series comes or
+  goes. The lists are taken back to front, and only once the chart is shown with a plot,
+  so a translucent span is blended over the grid behind it and a line's anti-aliased rim
+  over both whether the chart was built shown or hidden (a slot drawn earlier at a higher
+  z writes depth a slot behind it, drawn later, cannot pass); a list grown
+  later (a resize with more grid lines) takes its new slots after the others'. All but
+  the frame are drawn in the plot's clip region (the control's region cut to
+  `getPlotBounds()`), and each segment is first cut on the CPU, in doubles and from its
+  end nearer the plot, to a box a few units wider than the plot, so a point far out of
+  range is clipped, never clamped, and no quad reaches past what a vertex holds; marker
+  captions are clipped to the plot through `getChildClipRect`. So a changed point
+  rewrites its bar and the bars stacked on it at its x, or a line's four segments around
+  it (a step line's five, around its two vertices); an appended point its own slot (and
+  a line's joint before it); a moved marker its slot and its caption's glyphs. A rescale,
+  a new x range, a sliding window or a series toggled redraws every slot of the series
+  it moves. **Legend:** a `ScrollControl` of `internal::ChartLegendRow`s, Selectables with
+  their series' swatch (`ChartSeries<i>`, faded while hidden) in a column before the name;
+  the rows follow the series outside the layout, a click toggles its series (the axes
+  rescale and the stacks are worked out again) and fires `onSeriesToggled`, and the row
+  is never selected. **Hover and click:** both are arithmetic. `hoverAt` is the visible
+  point x nearest the mouse, a binary search of each series' points, with each series'
+  index there (`ChartHover`); while the mouse is over the plot the crosshair is drawn at
+  it and the tooltip set, the chart's own text (the x's label and each value), the app's
+  (`setHoverText`) or an app control filled per hover (`setHoverControl`), refilled when
+  the data under the mouse changes; a move within one x marks nothing. The canvas's one
+  ToolTip box goes under `Base::getToolTipAnchor()`, the control's canvas bounds by
+  default and the chart's beside the crosshair at the plot's top, so the box follows the
+  hovered x. `pointAt` is a visible bar or stacked segment holding the point (the bars
+  either side of its x, the front series first), else the line point nearest it within
+  `PointHitRadius`; a press and release on the same one fire `onPointClicked`. Markers
+  (`addMarker(x, caption)`) and spans (`addSpan(x0, x1)`) count in no range. Theme:
+  `ChartFrame`, `ChartGrid`, `ChartAxis`, `ChartSpan`, `ChartMarker`, `ChartCrosshair`,
+  `ChartSeries0`..`7` and the text colours `ChartAxisText` and `ChartMarkerText`.
+  ChartTimeBarsDemo has four stacked bar series over two weeks of days with a legend,
+  ChartLinesDemo a day's memory (line, left) and GPU use (step line, right) with two
+  markers and a span, both pinned to UTC. `controltest_chart` (`--scenario chart`) holds
+  the slot counts above on both demos, and `gweni_bench`'s `chart-append` appends a point
+  a frame to a line of N in a fixed range at the same cost at any N.
 - **The drag number: scrubbed by the mouse, typed into in a box made once.**
   `controls::DragNumber` (`include/gweni/controls/dragNumber.h`, imgui's DragFloat and
   DragInt) is a `Label` whose text is its value, centred in a field of the size asked for
