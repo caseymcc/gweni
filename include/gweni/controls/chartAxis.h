@@ -130,6 +130,11 @@ GWENI_EXPORT std::vector<double> timeTicks(double min, double max, TimeStep step
 //! 1st.
 GWENI_EXPORT String formatTime(double t, TimeStep step, const UtcOffset &offset=UtcOffset());
 
+//! An instant in the zone as one reads a single point, not a tick: its date
+//! ("Nov 14", "Jan 1" too) and, where it is not midnight, its time of day,
+//! "HH:MM" or, with seconds, "HH:MM:SS" ("Jan 1 12:00", "Nov 14 01:02:03").
+GWENI_EXPORT String formatDateTime(double t, const UtcOffset &offset=UtcOffset());
+
 //! A time axis's step and ticks.
 struct TimeTicks
 {

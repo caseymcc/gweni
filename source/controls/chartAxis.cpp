@@ -453,6 +453,28 @@ String formatTime(double t, TimeStep step, const UtcOffset &offset)
     return text;
 }
 
+String formatDateTime(double t, const UtcOffset &offset)
+{
+    const double local=std::floor(t+utcOffsetAt(offset, t)+1e-6);
+    const int64_t day=static_cast<int64_t>(std::floor(local/SecondsPerDay));
+    const int64_t second=static_cast<int64_t>(local)-day*static_cast<int64_t>(SecondsPerDay);
+    String text=formatDate(civilFromDays(day));
+
+    if(second == 0)
+        return text;
+
+    const int hours=static_cast<int>(second/3600);
+    const int minutes=static_cast<int>((second/60)%60);
+    const int seconds=static_cast<int>(second%60);
+    char time[32];
+
+    if(seconds != 0)
+        std::snprintf(time, sizeof(time), " %02d:%02d:%02d", hours, minutes, seconds);
+    else
+        std::snprintf(time, sizeof(time), " %02d:%02d", hours, minutes);
+    return text+time;
+}
+
 TimeTicks chooseTimeTicks(double min, double max, double length, const LabelMeasure &measure,
                           double gap, const UtcOffset &offset)
 {

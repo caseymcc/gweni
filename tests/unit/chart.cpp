@@ -19,7 +19,8 @@
  *  nothing out when every range is fixed and the chart once when one is
  *  automatic; a step line's vertices and a NaN's gap; a point outside the
  *  range placed outside the plot and a bar cut to it; the time axis's labels
- *  in the chart's zone, and category labels thinned on a narrow chart; and
+ *  in the chart's zone, and category labels thinned on a narrow chart, a
+ *  tick per category alone however far a point or the range reaches; and
  *  markers and spans: a marker's line across the plot at its x, none outside
  *  the range, its caption right of the line at the plot's top (left of it at
  *  the right edge), hidden out of range and back, clipped to the plot (the
@@ -508,6 +509,21 @@ TEST_CASE("Chart: time labels in the chart's zone, category labels thinned")
     CHECK(shown > 0);
     CHECK(chart->getXLabels().size() == shown);
     CHECK(chart->getXTicks()[0].label == "Monday");
+
+    // a tick per category alone, however far a point or the range reaches
+    chart->setBounds(10, 20, 500, 240);
+    chart->setCategories({"a", "b", "c"});
+    chart->setSeriesPoints(line, {{0, 1}, {100000, 2}});
+    scene.frame();
+    CHECK(chart->getXMax() == 100000.5);
+    CHECK(chart->getXTicks().size() <= 3);
+    chart->setSeriesPoints(line, {{0, 1}, {2, 2}});
+    chart->setXRange(-1e5, 1e5);
+    scene.frame();
+    CHECK(chart->getXTicks().size() <= 3);
+    chart->setCategories({});
+    scene.frame();
+    CHECK(chart->getXTicks().empty());
 }
 
 TEST_CASE("Chart: a resize, an axis change and new data lay out in one pass, as a full pass does")

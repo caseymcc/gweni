@@ -732,7 +732,9 @@ void ChartLegendRow::onPress(event::Info info)
 
 void ChartLegendRow::updateColors()
 {
-    if(!isSeriesShown() && !isDisabled())
+    m_drawnShown=isSeriesShown();
+    m_drawnColorIndex=getColorIndex();
+    if(!m_drawnShown && !isDisabled())
     {
         setTextColor(getSkin()->Colors.Selectable.Disabled);
         return;
@@ -779,12 +781,11 @@ void Chart::syncLegend()
     {
         internal::ChartLegendRow *row=m_legendRows[i];
 
-        // a series removed before it moves the rows after it down an index
-        const bool moved=(row->getSeries() != i);
-
+        // a row keeps its index, so a series removed before it gives it the
+        // next one's, and a new row's look was set before it had a series
         row->setSeries(this, i);
         row->setText(m_series[i].name);
-        if(moved)
+        if(row->lookStale())
             row->redraw();
     }
 
@@ -867,9 +868,11 @@ bool Chart::hoverAt(const Point &local, ChartHover &hover) const
 
         const auto next=firstAtOrPast(series.points, at);
 
+        // only points in the range: the one past the mouse is at or above
+        // min, the one before it at or below max, as the mouse is in it
         for(auto it : {next, (next == series.points.begin()) ? series.points.end() : next-1})
         {
-            if(it == series.points.end())
+            if(it == series.points.end() || it->x < min || it->x > max)
                 continue;
             if(!found || std::fabs(it->x-at) < std::fabs(nearest-at))
             {
@@ -879,7 +882,7 @@ bool Chart::hoverAt(const Point &local, ChartHover &hover) const
         }
     }
 
-    if(!found || nearest < min || nearest > max)
+    if(!found)
         return false;
 
     hover.x=nearest;
@@ -1033,20 +1036,9 @@ String Chart::defaultHoverText(const ChartHover &hover) const
     switch(m_xType)
     {
     case ChartXAxisType::Time:
-    {
         // the date, and the time of day where it is not midnight
-        const String date=axis::formatTime(hover.x, axis::TimeStep::Day1, m_utcOffset);
-        String time=axis::formatTime(hover.x, axis::TimeStep::Second1, m_utcOffset);
-
-        text=date;
-        if(time != date && time.size() == 8)
-        {
-            if(time.compare(5, 3, ":00") == 0)
-                time.resize(5);
-            text+=" "+time;
-        }
+        text=axis::formatDateTime(hover.x, m_utcOffset);
         break;
-    }
     case ChartXAxisType::Category:
     {
         const double index=std::floor(hover.x+0.5);
@@ -1769,18 +1761,17 @@ void Chart::computeXTicks()
     }
     case ChartXAxisType::Category:
     {
+        // one per category alone: a point or a range far past them would
+        // otherwise make a tick for every index up to it
         const double first=std::max(0.0, std::ceil(min));
-        const double last=std::floor(max);
+        const double last=std::min(std::floor(max), static_cast<double>(m_categories.size())-1.0);
 
         for(double i=first; i <= last; i+=1.0)
         {
             axis::Tick tick;
-            const size_t index=static_cast<size_t>(i);
-
             tick.value=i;
             tick.position=axis::positionOf(i, min, max, length);
-            if(index < m_categories.size())
-                tick.label=m_categories[index];
+            tick.label=m_categories[static_cast<size_t>(i)];
             ticks.push_back(std::move(tick));
         }
         break;

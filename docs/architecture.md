@@ -2717,7 +2717,8 @@ two programs and the draws. What follows describes both together:
   DST change an hour the clock skips has no tick, one it passes twice one, and a calendar
   tick the clock skips (a midnight jumped over) is where its day begins. Labels are
   "HH:MM:SS", "HH:MM" or "Nov 14", the date at a midnight and the year on January 1st.
-  Category ticks are one per category, and `thinLabels` gives the smallest stride at which
+  Category ticks are one per category (none past the last, however far a point or the
+  range reaches), and `thinLabels` gives the smallest stride at which
   every stride-th label leaves the gap. `tests/unit/chartAxis.cpp` pins them, DST and a
   leap year under a hook with DST included. **Data:** a series (`addSeries(name, type,
   side)`) keeps its points sorted (`setSeriesPoints`, `appendPoint` after every x not
@@ -2782,10 +2783,15 @@ two programs and the draws. What follows describes both together:
   the rows follow the series outside the layout, a click toggles its series (the axes
   rescale and the stacks are worked out again) and fires `onSeriesToggled`, and the row
   is never selected. A row past the series, after one is removed (even by the
-  `onSeriesToggled` handler of that row's own click), is hidden and `delayedDelete()`d. **Hover and click:** both are arithmetic. `hoverAt` is the visible
-  point x nearest the mouse, a binary search of each series' points, with each series'
+  `onSeriesToggled` handler of that row's own click), is hidden and `delayedDelete()`d,
+  and a row keeps its index, so one that now shows another series is redrawn whenever its
+  look (`ChartLegendRow::lookStale()`: shown or hidden, colour index) no longer matches
+  its series. **Hover and click:** both are arithmetic. `hoverAt` is the visible
+  point x in the x range nearest the mouse (a point past the range's edge never takes the
+  hover from one inside it), a binary search of each series' points, with each series'
   index there (`ChartHover`); while the mouse is over the plot the crosshair is drawn at
-  it and the tooltip set, the chart's own text (the x's label and each value), the app's
+  it and the tooltip set, the chart's own text (the x's label, on a time axis the point's date and time of day
+  through `axis::formatDateTime`, never the tick's year alone, and each value), the app's
   (`setHoverText`) or an app control filled per hover (`setHoverControl`), refilled when
   the data under the mouse changes; a move within one x marks nothing. The canvas's one
   ToolTip box goes under `Base::getToolTipAnchor()`, the control's canvas bounds by

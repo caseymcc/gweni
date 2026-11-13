@@ -6,14 +6,16 @@
  *  controls::Chart's hover and click, on the headless fixture with the
  *  textured Chart renderer (a StubControl for the rest), the mouse through the
  *  input handler. The hit test: the hovered x is the visible point's x
- *  nearest the mouse among every series (each searched in its own sorted x),
- *  each series' index there or -1 (none there, or hidden), nothing outside
- *  the plot; a click's target a bar holding the point, the upper of two
+ *  nearest the mouse among every series (each searched in its own sorted x)
+ *  and in the x range (a point past the range's edge never takes the hover
+ *  from one inside it), each series' index there or -1 (none there, or
+ *  hidden), nothing outside the plot; a click's target a bar holding the point, the upper of two
  *  stacked segments by its own rect, else the line point nearest the mouse
  *  within PointHitRadius, else nothing. The hover: a frame of it writes the
  *  crosshair's slot alone, drawn across the plot at the hovered x at the
  *  chart's z+4+S in ChartCrosshair's colour; the tooltip is the chart's own
- *  text (the x's label and each series' value there), the app's text or the
+ *  text (the x's label, on a time axis the point's date and its time of day,
+ *  January 1st's too, and each series' value there), the app's text or the
  *  app's control filled for the hover, set on the chart before the canvas
  *  reads it and placed right of the crosshair at the plot's top
  *  (getToolTipAnchor()); a move within the same x marks and writes nothing; a
@@ -435,4 +437,62 @@ TEST_CASE("Chart hover: a new hover control replaces the one the tooltip box sho
     scene.frame();
     CHECK(scene.canvas->toolTipShown());
     CHECK(box->content() == second);
+}
+
+TEST_CASE("Chart hover: only points in the x range are hovered, so the plot's edges have no dead band")
+{
+    Scene scene;
+    Chart *chart=scene.chart;
+
+    // a sliding window: a point either side of the range [10, 20]
+    const size_t line=chart->addSeries("line", ChartSeriesType::Line);
+
+    chart->setSeriesPoints(line, {{9.6, 1}, {11, 2}, {19, 3}, {20.4, 4}});
+    chart->setXRange(10.0, 20.0);
+    scene.frame();
+
+    ChartHover hover;
+
+    // 9.6 is nearer, but outside the range: the hover is 11's
+    REQUIRE(chart->hoverAt(scene.local(10.1, 5), hover));
+    CHECK(hover.x == 11.0);
+    CHECK(hover.points[line] == 1);
+    // and at the right edge 19's, not 20.4's
+    REQUIRE(chart->hoverAt(scene.local(19.9, 5), hover));
+    CHECK(hover.x == 19.0);
+    CHECK(hover.points[line] == 2);
+
+    // a series with only points outside the range gives no hover
+    chart->setSeriesPoints(line, {{9.6, 1}, {20.4, 4}});
+    scene.frame();
+    CHECK(!chart->hoverAt(scene.local(10.1, 5), hover));
+    CHECK(!chart->hoverAt(scene.local(19.9, 5), hover));
+}
+
+TEST_CASE("Chart hover: a time axis's tooltip is the point's date and time of day, January 1st included")
+{
+    Scene scene;
+    Chart *chart=scene.chart;
+    // 2027-01-01 00:00 UTC
+    const double newYear=1798761600.0;
+
+    chart->setXAxisType(ChartXAxisType::Time);
+    chart->setUtcOffset([](double) { return 0; });
+    chart->setXRange(newYear-86400.0, newYear+2*86400.0);
+
+    const size_t cpu=chart->addSeries("cpu", ChartSeriesType::Line);
+
+    chart->setSeriesPoints(cpu, {{newYear-43200.0, 1}, {newYear+43200.0, 2}, {newYear+86400.0, 3},
+        {newYear+86400.0+3723.0, 4}});
+    scene.frame();
+
+    scene.moveTo(scene.local(newYear-43200.0, 5));
+    CHECK(chart->getToolTipText() == "Dec 31 12:00  cpu: 1");
+    // not the year alone, as the axis's tick at January 1st's midnight is
+    scene.moveTo(scene.local(newYear+43200.0, 5));
+    CHECK(chart->getToolTipText() == "Jan 1 12:00  cpu: 2");
+    scene.moveTo(scene.local(newYear+86400.0, 5));
+    CHECK(chart->getToolTipText() == "Jan 2  cpu: 3");
+    scene.moveTo(scene.local(newYear+86400.0+3723.0, 5));
+    CHECK(chart->getToolTipText() == "Jan 2 01:02:03  cpu: 4");
 }

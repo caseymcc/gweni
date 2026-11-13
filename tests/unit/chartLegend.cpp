@@ -20,7 +20,9 @@
  *  laid out in one pass that layout verification's full pass agrees with.
  *  An onSeriesToggled handler removing the clicked row's series leaves the
  *  row alive and hidden until the frame's delayed deletes, so its own press
- *  never runs on a deleted row.
+ *  never runs on a deleted row. A series removed redraws the rows that keep
+ *  their index and now show another series: each name in its new series'
+ *  shown or hidden colour, each swatch in its colour, faded when hidden.
  */
 #include "headlessFixture.h"
 
@@ -383,4 +385,49 @@ TEST_CASE("Chart legend: a toggle handler that removes the series keeps the clic
     scene.frame();
     CHECK(controls::Base::getControlById(rowId) == nullptr);
     CHECK(test::IdBankCounts::now().livePrimitives() < before.livePrimitives());
+}
+
+TEST_CASE("Chart legend: a series removed redraws the rows that now show another series")
+{
+    Scene scene;
+    Chart *chart=scene.chart;
+
+    // told apart (the stub skin's colours are all its defaults)
+    scene.skin.Colors.Selectable.Normal=Color(200, 200, 200, 255);
+    scene.skin.Colors.Selectable.Disabled=Color(90, 90, 90, 255);
+    for(const char *name: {"aa", "bb", "cc"})
+    {
+        const size_t series=chart->addSeries(name, ChartSeriesType::Bar);
+
+        chart->setSeriesPoints(series, {{0, 1}, {1, 2}});
+    }
+    chart->setSeriesVisible(2, false);
+    scene.frame();
+
+    const Color shownText=chart->getLegendRow(0)->getTextColor();
+    const Color hiddenText=scene.skin.Colors.Selectable.Disabled;
+
+    REQUIRE(!(shownText == hiddenText));
+    REQUIRE((chart->getLegendRow(2)->getTextColor() == hiddenText));
+
+    // the rows keep their index: row 0 now shows bb (shown), row 1 cc (hidden)
+    chart->removeSeries(0);
+    scene.frame();
+
+    REQUIRE(chart->getSeriesCount() == 2);
+    REQUIRE(chart->getLegendRow(1) != nullptr);
+    CHECK(chart->getLegendRow(0)->getText() == "bb");
+    CHECK((chart->getLegendRow(0)->getTextColor() == shownText));
+    CHECK(chart->getLegendRow(1)->getText() == "cc");
+    CHECK((chart->getLegendRow(1)->getTextColor() == hiddenText));
+
+    // the swatches in their series' colours, the hidden one faded
+    for(size_t i=0; i < 2; ++i)
+    {
+        const size_t swatch=chart->getLegendRow(i)->getSkinControl()->getPrimitives()[1];
+        const Color colour=tokyonight::chartSeries(chart->getSeriesColorIndex(i)).top;
+
+        CHECK(scene.renderer.fills.at(swatch).r == colour.r);
+        CHECK(scene.renderer.fills.at(swatch).a == (i == 0 ? colour.a : colour.a/4));
+    }
 }

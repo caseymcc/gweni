@@ -61,12 +61,20 @@ public:
     //! The swatch's rect in the row's own coordinates, centred on its height.
     Rect getSwatchRect() const;
 
+    //! Whether its look (its name's colour and its swatch) was last set for
+    //! another shown state or colour index than its series has now: a row
+    //! whose series was removed shows the next one's.
+    bool lookStale() const { return m_drawnShown != isSeriesShown() || m_drawnColorIndex != getColorIndex(); }
+
     void onPress(event::Info info) override;
     void updateColors() override;
 
 private:
     Chart *m_chart=nullptr;
     size_t m_series=0;
+    // what updateColors() last set the look for
+    bool m_drawnShown=false;
+    int m_drawnColorIndex=-1;
 };
 }
 
