@@ -292,8 +292,6 @@ set(GWENI_CONTROL_SOURCES
     source/controls/resizableControl.cpp
     include/gweni/controls/resizer.h
     source/controls/resizer.cpp
-    include/gweni/controls/richLabel.h
-    source/controls/richLabel.cpp
     include/gweni/controls/richText.h
     source/controls/richText.cpp
     include/gweni/controls/scrollBar.h
