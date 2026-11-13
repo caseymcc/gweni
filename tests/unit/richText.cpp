@@ -601,8 +601,13 @@ TEST_CASE("RichText: a link of several spans with one url is hovered whole")
 
 TEST_CASE("RichText: a press and release on one link call onLinkClicked with its url")
 {
-    // a stepped clock, a second between the presses, so none is a double-click
+    // a stepped clock, a second between the presses, so none is a double-click;
+    // given back however the case ends (a failed REQUIRE throws)
     double clock=100.0;
+    struct ClockGuard
+    {
+        ~ClockGuard() { platform::setTimeSource(nullptr); }
+    } clockGuard;
 
     platform::setTimeSource([&clock]() { return clock; });
     {
@@ -652,5 +657,4 @@ TEST_CASE("RichText: a press and release on one link call onLinkClicked with its
         click(onEdge, onEdge);
         CHECK(urls.size() == 2);
     }
-    platform::setTimeSource(nullptr);
 }
