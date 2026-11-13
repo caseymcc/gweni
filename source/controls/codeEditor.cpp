@@ -53,10 +53,6 @@ void CodeLine::bind(size_t line, const String &text, size_t wrapCells)
 
     const size_t rows=getRowCount();
 
-    // the selection's rects follow the rows
-    if(m_selectionEnd > m_selectionBegin)
-        addStateChange(StateChange_Background);
-
     while(m_pieces.size() > rows-1)
     {
         delete m_pieces.back();    // ~Base takes it out of the children, gives its ids back

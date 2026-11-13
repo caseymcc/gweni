@@ -741,8 +741,26 @@
  *                 before the burst, byte for byte; Return and the scroll
  *                 write slots inside the editor alone, no more glyphs than
  *                 its rows and numbers on screen hold, in one pass, and
- *                 change no pixel outside it; the demo gives every primitive
- *                 id back. Exits non-zero if any check is no.
+ *                 change no pixel outside it. Then wrapped, through the demo's
+ *                 "Wrap lines" toggle: the caret's line stays on screen; "y"
+ *                 typed at the end of a one-row "    host:" line writes its
+ *                 row's, the gutter's and the caret's slots alone and changes
+ *                 no pixel outside them; that line filled to its last cell
+ *                 and one more letter gives it a second row and moves the row
+ *                 below a line down, in one pass, writing inside the editor
+ *                 alone and changing no pixel outside it; the canvas at 3/4
+ *                 and back keeps the caret's line on screen; a wrapped line
+ *                 selected draws one rect of the CodeSelection fill on each
+ *                 of its visual rows, and after a resize on each of its new
+ *                 ones; the toggle off keeps the caret's line on screen; the
+ *                 demo gives every primitive id back. Last CodeEditorFormDemo:
+ *                 its comment field (plain, auto-height 2 to 6 rows) filled to
+ *                 two rows and one letter more grows a row in one pass,
+ *                 entering at most its subtree and ancestors and each field
+ *                 below once, moving the last field a line down, writing
+ *                 inside the form and changing no pixel above the field; the
+ *                 form gives its ids back. Every settled frame writes and
+ *                 changes nothing. Exits non-zero if any check is no.
  *    log-view     LogViewDemo's log filled with 1 000 and then 100 000 events,
  *                 the clock frozen, the demo's stream stopped and the idle
  *                 re-measure off; at each count: 3 appends while following,
@@ -1167,7 +1185,7 @@ static void content_scale_callback(GLFWwindow *window, float, float)
     X(ShowcaseDisplayDemo) X(ShowcaseWindowsDemo) \
     X(ButtonDemo) X(LabelDemo) X(LabelMultilineDemo) X(ProgressBarDemo) \
     X(GroupBoxDemo) X(ImagePanelDemo) X(StatusBarDemo) X(SeparatorDemo) X(PlotHistogramDemo) X(PlotLinesDemo) X(ChartTimeBarsDemo) X(ChartLinesDemo) X(ComboBoxDemo) \
-    X(TextBoxDemo) X(ListBoxDemo) X(SelectableDemo) X(VirtualListDemo) X(VirtualListVariableDemo) X(DataTableDemo) X(DataTableVirtualDemo) X(CodeEditorDemo) X(LogViewDemo) X(ContextMenuDemo) X(PopupDemo) X(CrossSplitterDemo) X(RadioButtonDemo) \
+    X(TextBoxDemo) X(ListBoxDemo) X(SelectableDemo) X(VirtualListDemo) X(VirtualListVariableDemo) X(DataTableDemo) X(DataTableVirtualDemo) X(CodeEditorDemo) X(CodeEditorFormDemo) X(LogViewDemo) X(ContextMenuDemo) X(PopupDemo) X(CrossSplitterDemo) X(RadioButtonDemo) \
     X(CheckBoxDemo) X(NumericDemo) X(SliderDemo) X(SliderTextDemo) X(DragNumberDemo) X(VectorFieldDemo) X(MenuStripDemo) \
     X(WindowDemo) X(WindowButtonsDemo) X(TreeControlDemo) X(PropertiesDemo) X(TabControlDemo) X(TabCloseDemo) X(TabOverflowDemo) \
     X(ScrollControlDemo) X(PageControlDemo) X(CollapsibleListDemo) X(ColorPickerDemo) X(ColorEditDemo) \
@@ -10123,8 +10141,14 @@ static bool runPopupScenario(Session &s, const std::string &shotDir, bool &passe
 // pixels it changes: a typed character (its line's row, the gutter and the
 // caret), Return mid-screen (the editor's rows and gutter on screen), a typing
 // burst undone (the frame before it, byte for byte) and a one-line scroll (the
-// rows on screen); every settled frame writes and changes nothing, and the
-// demo gives its primitive ids back.
+// rows on screen). Then wrapped, through the demo's toggle: a typed character
+// that keeps its line's rows (its row, the gutter and the caret), one that
+// adds a row (the rows below moved, nothing outside the editor), a resize and
+// the toggle (the caret's line on screen) and a wrapped line's selection (a
+// rect of its fill on each visual row, again after a resize). Last a plain
+// auto-height field of CodeEditorFormDemo grown by a row in one pass. Every
+// settled frame writes and changes nothing, and the demos give their
+// primitive ids back.
 //-----------------------------------------------------------------------------
 
 namespace
@@ -10234,6 +10258,118 @@ static gweni::Rect canvasRect(gweni::controls::Base *control, const gweni::Rect 
     const gweni::Point origin=control->localPosToCanvas(gweni::Point(local.x, local.y));
 
     return gweni::Rect(origin.x, origin.y, local.w, local.h);
+}
+
+// A press at the middle of a control, in canvas coordinates.
+static void clickCentre(Session &s, gweni::controls::Base *control)
+{
+    const gweni::Rect bounds=control->getCanvasBounds();
+
+    clickMouse(s, bounds.x+bounds.w/2, bounds.y+bounds.h/2);
+}
+
+// The caret's line is shown by a row and the caret's rect is whole in the
+// viewport (a line high).
+static bool caretLineOnScreen(gweni::controls::CodeEditor *editor)
+{
+    const gweni::controls::CodeLine *row=editor->rowForLine(editor->getCaret().line);
+
+    return row && !row->hidden() && editor->getCaretBounds().h == editor->getLineHeight();
+}
+
+// A line below the viewport's top, shown whole in \p rows visual rows, whose
+// text starts with \p prefix (the line count when none is).
+static size_t shownLineStarting(gweni::controls::CodeEditor *editor, const std::string &prefix, size_t rows)
+{
+    const size_t top=editor->firstVisibleItem();
+
+    for(size_t line=top+1; line < top+40 && line < editor->getLineCount(); ++line)
+    {
+        const gweni::controls::CodeLine *row=editor->rowForLine(line);
+
+        if(row && !row->hidden() && row->getRowCount() == rows && row->bottom() < editor->getViewportHeight()
+            && editor->getDocument().line(line).rfind(prefix, 0) == 0)
+            return line;
+    }
+    return editor->getLineCount();
+}
+
+// A press past the end of a wrapped line's last visual row: the caret goes
+// to the line's end.
+static void clickWrappedLineEnd(Session &s, gweni::controls::CodeEditor *editor, size_t line)
+{
+    const gweni::controls::CodeLine *row=editor->rowForLine(line);
+    const gweni::Rect bounds=row->getCanvasBounds();
+    const int lineHeight=editor->getLineHeight();
+
+    clickMouse(s, bounds.x+bounds.w-4, bounds.y+bounds.h-lineHeight/2);
+}
+
+// A press at the end of the last line whose row is whole in the viewport:
+// the caret on the view's bottom line, where wrapping or a smaller view
+// pushes it out unless the editor keeps it on screen.
+static size_t clickBottomLine(Session &s, gweni::controls::CodeEditor *editor)
+{
+    size_t bottom=editor->getLineCount();
+
+    for(gweni::controls::Base *base : editor->getRows())
+    {
+        const auto *row=gweni::gweni_cast<gweni::controls::CodeLine>(base);
+
+        if(row && !row->hidden() && row->getY() >= 0 && row->bottom() <= editor->getViewportHeight()
+            && (bottom == editor->getLineCount() || row->getLine() > bottom))
+            bottom=row->getLine();
+    }
+    // unwrapped, a row is the content's width, its end out of the viewport
+    if(bottom < editor->getLineCount() && editor->isWrapped())
+        clickWrappedLineEnd(s, editor, bottom);
+    else if(bottom < editor->getLineCount())
+        clickLineEnd(s, editor, bottom);
+    return bottom;
+}
+
+// How many pixels of a rect (canvas units) are the opaque CodeSelection fill.
+static size_t selectionPixels(const Session &s, const std::vector<uint8_t> &pixels, const gweni::Rect &rect)
+{
+    const gweni::Color &fill=gweni::skin::textured::tokyonight::CodeSelection.top;
+    const gweni::Point topLeft=devicePixels(gweni::Point(rect.x, rect.y), s.scale);
+    const gweni::Point bottomRight=devicePixels(gweni::Point(rect.x+rect.w, rect.y+rect.h), s.scale);
+    size_t count=0;
+
+    for(int y=std::max(0, topLeft.y); y < std::min(s.pixels.y, bottomRight.y); ++y)
+    {
+        for(int x=std::max(0, topLeft.x); x < std::min(s.pixels.x, bottomRight.x); ++x)
+        {
+            const uint8_t *p=&pixels[(static_cast<size_t>(y)*s.pixels.x+x)*4];
+
+            if(p[0] == fill.r && p[1] == fill.g && p[2] == fill.b)
+                ++count;
+        }
+    }
+    return count;
+}
+
+// Every selection rect of a line's row is mostly the selection's fill (the
+// glyphs over it take the rest); the rects, in canvas units, in \p rects.
+static bool selectionDrawn(const Session &s, const std::vector<uint8_t> &pixels, gweni::controls::CodeLine *row,
+    std::vector<gweni::Rect> &rects)
+{
+    std::vector<gweni::Rect> local;
+
+    rects.clear();
+    row->getSelectionRects(local);
+    for(const gweni::Rect &rect : local)
+    {
+        const gweni::Rect onCanvas=canvasRect(row, rect);
+        const gweni::Point a=devicePixels(gweni::Point(onCanvas.x, onCanvas.y), s.scale);
+        const gweni::Point b=devicePixels(gweni::Point(onCanvas.x+onCanvas.w, onCanvas.y+onCanvas.h), s.scale);
+        const size_t area=static_cast<size_t>(std::max(0, b.x-a.x))*static_cast<size_t>(std::max(0, b.y-a.y));
+
+        rects.push_back(onCanvas);
+        if(area == 0 || selectionPixels(s, pixels, onCanvas)*2 < area)
+            return false;
+    }
+    return !local.empty();
 }
 
 static bool runCodeEditorScenario(Session &s, const std::string &shotDir, bool &passed)
@@ -10390,6 +10526,191 @@ static bool runCodeEditorScenario(Session &s, const std::string &shotDir, bool &
         checks.check("settled_scroll", settleCodeEditor(s, idle) == 0, "a settled frame after the scroll wrote or changed something");
     }
 
+    // Wrap on, through the demo's toggle, the caret on the view's bottom line
+    // (the lines above it wrapping push it down): it stays on screen.
+    {
+        const size_t bottom=clickBottomLine(s, editor);
+
+        renderFrames(s, s.frames);
+
+        const size_t caretLine=editor->getCaret().line;
+
+        checks.check("wrap_caret_bottom", caretLine == bottom, "the press did not put the caret on the view's bottom line");
+
+        clickCentre(s, demo->m_wrapToggle->checkBox());
+        renderFrames(s, s.frames);
+        editor->focus();
+        renderFrames(s, s.frames);
+        checks.check("wrap_toggle", editor->isWrapped() && editor->getCaret().line == caretLine
+            && caretLineOnScreen(editor), "turning wrap on lost the caret's line from the screen");
+        checks.check("settled_wrap", settleCodeEditor(s, idle) == 0, "a settled frame after wrapping wrote or changed something");
+    }
+
+    // Wrapped, a typed character that keeps its line's rows: its row (all of
+    // its visual rows), the gutter and the caret alone.
+    const size_t wrapLine=shownLineStarting(editor, "    host:", 1);
+
+    checks.check("wrap_line_found", wrapLine < editor->getLineCount(), "no one-row host: line on screen");
+    if(wrapLine < editor->getLineCount())
+    {
+        clickWrappedLineEnd(s, editor, wrapLine);
+        renderFrames(s, s.frames);
+        settleCodeEditor(s, idle);
+
+        gweni::controls::CodeLine *row=editor->rowForLine(wrapLine);
+        std::set<size_t> allowedPrims, allowedTexts;
+
+        subtreeIds(row, allowedPrims, allowedTexts);
+        subtreeIds(gutter, allowedPrims, allowedTexts);
+        if(const gweni::skin::Control *own=editor->getSkinControl())
+        {
+            std::vector<size_t> prims, texts;
+
+            own->appendIds(prims, texts);
+            allowedPrims.insert(prims.begin(), prims.end());
+        }
+
+        const gweni::Rect caretBefore=canvasRect(editor, editor->getCaretBounds());
+        const gweni::Rect rowBefore=row->getCanvasBounds();
+
+        typeText(s, "y");
+
+        const CodeEditorFrame typed=codeEditorFrame(s);
+        const gweni::Rect caretAfter=canvasRect(editor, editor->getCaretBounds());
+        const size_t outside=differencesOutsideRects(s, idle, typed.pixels,
+            {rowBefore, gutter->getCanvasBounds(), caretBefore, caretAfter});
+
+        checks.check("wrap_typed_slots", editor->getCaret().line == wrapLine && row->getRowCount() == 1
+            && typed.written > 0 && idsWithin(typed.primitives, allowedPrims) && idsWithin(typed.texts, allowedTexts)
+            && typed.glyphSlots <= editor->getDocument().line(wrapLine).size() && typed.passes <= 1,
+            "the wrapped typed character wrote "+std::to_string(typed.primitives.size())+" primitive and "
+            +std::to_string(typed.glyphSlots)+" glyph slots, some outside its row, the gutter and the caret");
+        checks.check("wrap_typed_pixels", outside == 0,
+            std::to_string(outside)+" pixels changed outside the wrapped line, the gutter and the caret");
+        checks.check("settled_wrap_typed", settleCodeEditor(s, idle) == 0, "a settled frame after wrapped typing wrote or changed something");
+
+        // The line filled to its last cell (still one row), then one more: a
+        // second row, the rows below on screen moved down a line, nothing
+        // outside the editor changed.
+        const size_t room=editor->getWrapCells()-editor->getLineCells(wrapLine);
+
+        typeText(s, std::string(room, 'z'));
+        renderFrames(s, s.frames);
+        settleCodeEditor(s, idle);
+
+        gweni::controls::CodeLine *nextRow=editor->rowForLine(wrapLine+1);
+        const int nextY=nextRow?nextRow->getY():0;
+        const bool fullOneRow=(row->getRowCount() == 1);
+
+        typeText(s, "z");
+
+        const CodeEditorFrame grown=codeEditorFrame(s);
+        // the ids the editor holds after the frame: the new visual row is a
+        // Text of its own
+        std::set<size_t> editorPrims, editorTexts;
+
+        subtreeIds(editor, editorPrims, editorTexts);
+        const size_t outsideEditor=differencesOutsideRects(s, idle, grown.pixels, {editor->getCanvasBounds()});
+        gweni::controls::CodeLine *movedRow=editor->rowForLine(wrapLine+1);
+
+        checks.check("wrap_row_added", fullOneRow && row->getRowCount() == 2 && movedRow
+            && movedRow->getY() == nextY+lineHeight && grown.passes <= 1
+            && idsWithin(grown.primitives, editorPrims) && idsWithin(grown.texts, editorTexts)
+            && grown.glyphSlots <= shownGlyphs(editor),
+            "the character that wrapped the line did not give it a second row and move the rows below by a line"
+            " in one pass inside the editor ("+std::to_string(grown.glyphSlots)+" glyph slots, "
+            +std::to_string(grown.passes)+" passes)");
+        checks.check("wrap_row_pixels", outsideEditor == 0,
+            std::to_string(outsideEditor)+" pixels changed outside the editor when the line wrapped");
+        checks.check("settled_wrap_row", settleCodeEditor(s, idle) == 0, "a settled frame after the new row wrote or changed something");
+    }
+
+    // A resize keeps the caret's line on screen, and back: the caret on the
+    // view's bottom line, which a smaller canvas cuts off unless kept.
+    {
+        const gweni::Point size=s.size;
+
+        clickBottomLine(s, editor);
+        renderFrames(s, s.frames);
+        settleCodeEditor(s, idle);
+
+        resizeSession(s, size.x*3/4, size.y*3/4);
+        renderFrames(s, s.frames);
+        checks.check("wrap_resize_caret", caretLineOnScreen(editor), "a smaller canvas lost the caret's line from the screen");
+        resizeSession(s, size.x, size.y);
+        renderFrames(s, s.frames);
+        checks.check("wrap_resize_back", caretLineOnScreen(editor), "the canvas back to its size lost the caret's line");
+        checks.check("settled_wrap_resize", settleCodeEditor(s, idle) == 0, "a settled frame after the resize wrote or changed something");
+    }
+
+    // The wrapped selection: a line of several visual rows selected draws one
+    // rect of the selection's fill on each, and after a resize wraps it again
+    // the new rows' rects are drawn.
+    {
+        const size_t longLine=[&]()
+            {
+                const size_t top=editor->firstVisibleItem();
+
+                for(size_t line=top; line < top+40 && line < editor->getLineCount(); ++line)
+                {
+                    const gweni::controls::CodeLine *row=editor->rowForLine(line);
+
+                    if(row && !row->hidden() && row->getRowCount() >= 2 && row->bottom() < editor->getViewportHeight())
+                        return line;
+                }
+                return editor->getLineCount();
+            }();
+
+        checks.check("wrap_long_line", longLine < editor->getLineCount(), "no wrapped line on screen");
+        if(longLine < editor->getLineCount())
+        {
+            const gweni::text::Position from{longLine, 0};
+            const gweni::text::Position to{longLine, editor->getDocument().line(longLine).size()};
+
+            editor->setCaret(from);
+            editor->setCaret(to, true);
+
+            const CodeEditorFrame selected=codeEditorFrame(s);
+            gweni::controls::CodeLine *row=editor->rowForLine(longLine);
+            std::vector<gweni::Rect> rects;
+            const bool drawn=row && selectionDrawn(s, selected.pixels, row, rects);
+
+            checks.check("wrap_selection_rects", drawn && rects.size() == row->getRowCount(),
+                "the selection of a wrapped line did not draw one rect of its fill on each of its "
+                +std::to_string(row?row->getRowCount():0)+" visual rows ("+std::to_string(rects.size())+" rects)");
+
+            const gweni::Point size=s.size;
+
+            resizeSession(s, size.x*3/4, size.y);
+            renderFrames(s, s.frames);
+
+            const std::vector<uint8_t> narrow=framePixels(s);
+            gweni::controls::CodeLine *rewrapped=editor->rowForLine(longLine);
+            const bool redrawn=rewrapped && selectionDrawn(s, narrow, rewrapped, rects);
+
+            checks.check("wrap_selection_rewrap", redrawn && rects.size() == rewrapped->getRowCount()
+                && editor->getSelectedText() == editor->getDocument().line(longLine),
+                "after the resize the wrapped selection's "+std::to_string(rects.size())
+                +" rects are not drawn on the line's new rows, or the selection moved");
+            resizeSession(s, size.x, size.y);
+            editor->setCaret(to);
+            renderFrames(s, s.frames);
+            checks.check("settled_wrap_selection", settleCodeEditor(s, idle) == 0,
+                "a settled frame after the selection wrote or changed something");
+        }
+    }
+
+    // Wrap off again, through the toggle: the caret's line stays on screen.
+    {
+        const size_t caretLine=editor->getCaret().line;
+
+        clickCentre(s, demo->m_wrapToggle->checkBox());
+        renderFrames(s, s.frames);
+        checks.check("unwrap_toggle", !editor->isWrapped() && editor->getCaret().line == caretLine
+            && caretLineOnScreen(editor), "turning wrap off lost the caret's line from the screen");
+        checks.check("settled_unwrap", settleCodeEditor(s, idle) == 0, "a settled frame after unwrapping wrote or changed something");
+    }
+
     if(!shoot(s, shotDir+"/code-editor.png"))
         ok=false;
 
@@ -10397,6 +10718,77 @@ static bool runCodeEditorScenario(Session &s, const std::string &shotDir, bool &
     dropControl(s, control);
     renderFrames(s, 1);
     checks.check("ids_back", livePrimitiveIds() == idsBefore, "the demo did not give its primitive ids back");
+
+    // An auto-height field in a form growing by a row: one pass, inside the
+    // form, the fields below it moved down a line.
+    {
+        gweni::controls::Base *formControl=addControl(s, "CodeEditorFormDemo");
+        auto *form=gweni::gweni_cast<gweni::CodeEditorFormDemo>(formControl);
+
+        if(!form || !form->m_comment)
+        {
+            std::cerr<<"ControlTest: code-editor: CodeEditorFormDemo has no comment field\n";
+            return false;
+        }
+
+        gweni::controls::CodeEditor *comment=form->m_comment;
+
+        renderFrames(s, s.frames);
+        clickCentre(s, comment);
+        renderFrames(s, s.frames);
+
+        // two rows of letters: still its least rows, 2
+        typeText(s, std::string(2*comment->getWrapCells(), 'q'));
+        renderFrames(s, s.frames);
+
+        std::vector<uint8_t> formIdle;
+
+        settleCodeEditor(s, formIdle);
+
+        const int height=comment->getHeight();
+        gweni::controls::Base *panel=comment->getParent();
+        const gweni::controls::Base *lastField=panel->getChildren().back();
+        const int lastY=lastField->getY();
+        std::set<size_t> formPrims, formTexts;
+        size_t depth=0;
+        size_t below=0;
+        bool after=false;
+
+        for(gweni::controls::Base *up=comment->getParent(); up; up=up->getParent())
+            ++depth;
+        for(gweni::controls::Base *child : panel->getChildren())
+        {
+            if(after)
+                ++below;
+            after=after || child == comment;
+        }
+        subtreeIds(formControl, formPrims, formTexts);
+
+        const gweni::Rect above(0, 0, s.size.x, comment->getCanvasBounds().y);
+
+        typeText(s, "q");
+
+        const CodeEditorFrame grown=codeEditorFrame(s);
+        const size_t aboveChanged=differencesIn(s, formIdle, grown.pixels, above);
+        // the field's subtree and its ancestors entered, each at most twice an
+        // axis, and each field below once (the dock moves it)
+        const size_t entries=4*(subtreeControls(comment)+depth)+below;
+
+        checks.check("auto_height_grow", comment->getHeight() == height+comment->getLineHeight()
+            && lastField->getY() == lastY+comment->getLineHeight() && grown.passes == 1
+            && grown.visited <= entries && idsWithin(grown.primitives, formPrims) && idsWithin(grown.texts, formTexts),
+            "the auto-height field did not grow a row in one pass inside the form ("+std::to_string(grown.passes)
+            +" passes, "+std::to_string(grown.visited)+" layout entries of at most "+std::to_string(entries)+")");
+        checks.check("auto_height_pixels", aboveChanged == 0,
+            std::to_string(aboveChanged)+" pixels changed above the growing field");
+        checks.check("settled_auto_height", settleCodeEditor(s, formIdle) == 0,
+            "a settled frame after the field grew wrote or changed something");
+
+        forgetMouse(s);
+        dropControl(s, formControl);
+        renderFrames(s, 1);
+        checks.check("form_ids_back", livePrimitiveIds() == idsBefore, "the form demo did not give its primitive ids back");
+    }
 
     std::cout<<"code-editor";
     for(const auto &result : checks.results)

@@ -1,6 +1,8 @@
 #include "demo/codeEditor.h"
 #include "gweni/controls/codeEditor.h"
+#include "gweni/controls/checkBox.h"
 #include "gweni/controls/label.h"
+#include "gweni/controls/textBox.h"
 
 #include <string>
 
@@ -26,7 +28,9 @@ static String agentLine(size_t agent, size_t i)
     case 8: return "      - render";
     case 9: return "      - quiet  # timed runs only";
     case 10: return "    prompt: |";
-    case 11: return "      You work on task "+id+" of the gweni project.";
+    case 11: return "      You work on task "+id+" of the gweni project: read its brief and the comments first, build"
+        " in the container, run the tests that need a context under the render lock, and keep each change to"
+        " the lines it needs.";
     case 12: return "      Read the brief first; keep the caf\xc3\xa9 open.";
     case 13: return "    enabled: "+String((agent%4 == 0)?"false":"true");
     case 14: return "    retries: "+std::to_string(agent%3);
@@ -53,22 +57,85 @@ String CodeEditorDemo::yamlDocument(size_t lines)
     return text;
 }
 
-// A 5000-line YAML document in a CodeEditor filling the demo below a title:
-// only the lines on screen are controls, its line numbers in a gutter.
+// A 5000-line YAML document in a CodeEditor filling the demo below a title
+// and a wrap toggle: only the lines on screen are controls, its line numbers
+// in a gutter; each agent's prompt line is long enough to wrap.
 GWENI_CONTROL_CONSTRUCTOR(CodeEditorDemo)
 {
     setDock(DockPosition::Center);
 
+    m_wrapToggle=newChild<controls::CheckBoxWithLabel>("wrap");
+    m_wrapToggle->label()->setText("Wrap lines");
+    m_wrapToggle->setPos(10, 8);
+    m_wrapToggle->checkBox()->onCheckChanged.add(this, &CodeEditorDemo::onWrapChanged);
+
     controls::Label *title=newChild<controls::Label>();
 
     title->setText(std::to_string(LineCount)+" lines of YAML, a row for each one on screen");
-    title->setPos(10, 10);
+    title->setPos(110, 10);
 
     m_editor=newChild<controls::CodeEditor>();
     m_editor->setDock(DockPosition::Center);
     m_editor->setMargin(Margin(10, 34, 10, 10));
     m_editor->setLineNumbers(true);
     m_editor->setText(yamlDocument(LineCount));
+}
+
+void CodeEditorDemo::onWrapChanged(event::Info)
+{
+    m_editor->setWrap(m_wrapToggle->checkBox()->isChecked());
+}
+
+// A form of plain auto-height fields, as a dashboard's task form: a title
+// TextBox, then a description and a comment, each a CodeEditor in its plain
+// mode growing with its text between its least and most rows.
+GWENI_CONTROL_CONSTRUCTOR(CodeEditorFormDemo)
+{
+    setDock(DockPosition::Center);
+
+    controls::Base *form=newChild<controls::Base>("form");
+
+    form->setDock(DockPosition::Left);
+    form->setSizeFlags({SizeFlag::Fixed, SizeFlag::Expand});
+    form->setWidth(FormWidth);
+    form->setMargin(Margin(10, 10, 10, 10));
+
+    auto label=[form](const char *text)
+        {
+            controls::Label *label=form->newChild<controls::Label>();
+
+            label->setText(text);
+            label->setDock(DockPosition::Top);
+            label->setMargin(Margin(0, 8, 0, 2));
+            return label;
+        };
+    auto field=[form](const char *name, int least, int most)
+        {
+            controls::CodeEditor *editor=form->newChild<controls::CodeEditor>(name);
+
+            editor->setDock(DockPosition::Top);
+            editor->setPlain(true);
+            editor->setAutoHeight(least, most);
+            return editor;
+        };
+
+    label("Title");
+    m_title=form->newChild<controls::TextBox>("title");
+    m_title->setDock(DockPosition::Top);
+    m_title->setText("Wrap the code editor");
+
+    label("Description: wraps, grows from 3 to 8 rows");
+    m_description=field("description", 3, 8);
+    m_description->setText("The prompt editor needs a wrap toggle, and the form's text areas an editor as tall"
+        " as its text that wraps and behaves like a browser's textarea.\n\nTab moves the focus to the next"
+        " field; every column is a cell of the mono face.");
+
+    label("Comment: grows from 2 to 6 rows");
+    m_comment=field("comment", 2, 6);
+
+    controls::Label *note=label("Plain fields are monospace, as every CodeEditor.");
+
+    note->setMargin(Margin(0, 12, 0, 0));
 }
 
 }//namespace gweni
