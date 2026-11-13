@@ -130,6 +130,16 @@ void CodeLine::updateColorSpans()
     else
         m_editor->tokenSpans(m_line, spans);
 
+    // the row background follows the same tokens: set as the row is bound
+    // or its line re-coloured, so a scroll marks the rows it binds alone
+    const DiffKind kind=(m_line == NoLine)?DiffKind::None:m_editor->diffKind(m_line);
+
+    if(kind != m_diffKind)
+    {
+        m_diffKind=kind;
+        addStateChange(StateChange_Background);
+    }
+
     if(m_pieces.empty())
     {
         m_text->setColorSpans(spans);
@@ -539,6 +549,29 @@ void CodeEditor::tokenSpans(size_t line, std::vector<renderer::ColorSpan> &spans
 
     for(const text::Token &token : m_highlight.tokens(line))
         spans.push_back(renderer::ColorSpan{token.begin, token.end, skin->Colors.CodeEditor.Tokens[static_cast<size_t>(token.kind)]});
+}
+
+CodeLine::DiffKind CodeEditor::diffKind(size_t line)
+{
+    if(!showsDiffRows() || !m_highlight.tokenizer() || line >= m_document.lineCount())
+        return CodeLine::DiffKind::None;
+
+    const std::vector<text::Token> &tokens=m_highlight.tokens(line);
+
+    if(tokens.empty() || tokens.front().begin != 0)
+        return CodeLine::DiffKind::None;
+
+    switch(tokens.front().kind)
+    {
+    case text::TokenKind::Added:
+        return CodeLine::DiffKind::Added;
+    case text::TokenKind::Removed:
+        return CodeLine::DiffKind::Removed;
+    case text::TokenKind::Hunk:
+        return CodeLine::DiffKind::Hunk;
+    default:
+        return CodeLine::DiffKind::None;
+    }
 }
 
 void CodeEditor::syncHighlightWindow()
@@ -1141,9 +1174,12 @@ void CodeEditor::syncSelection()
     }
 }
 
+// Read-only there is no caret (setReadOnly() hid it), so a scroll or a move
+// marks nothing of the editor's own.
 void CodeEditor::caretChanged()
 {
-    addStateChange(StateChange_Caret);
+    if(!m_readOnly)
+        addStateChange(StateChange_Caret);
 }
 
 void CodeEditor::syncCurrentLine()
@@ -1698,7 +1734,8 @@ void CodeEditor::setReadOnly(bool readOnly)
     }
 
     syncCurrentLine();
-    caretChanged();
+    // shown or hidden
+    addStateChange(StateChange_Caret);
 }
 
 void CodeEditor::selectedLines(size_t &first, size_t &last) const

@@ -843,20 +843,41 @@ void CodeGutter::update(renderer::Base *renderer, controls::Base *baseControl)
 
 ///////////////////////////////////////////////////////////////////////////
 //CodeLine
-// The line background is drawn only on the current line, and the selection
-// only where the line has one: an idle row's slots are hidden, not drawn
-// transparent, which would still write depth over the field behind them.
+// The line background is drawn only on the current line and a diff row, and
+// the selection only where the line has one: an idle row's slots are hidden,
+// not drawn transparent, which would still write depth over the field behind
+// them.
 void CodeLine::update(renderer::Base *renderer, controls::Base *baseControl)
 {
     if(m_primitives.size() < 2)
         return;
 
     controls::CodeLine *line=static_cast<controls::CodeLine *>(baseControl);
-    const tokyonight::Surface &current=tokyonight::CodeCurrentLine;
+    const tokyonight::Surface *background=nullptr;
 
-    if(line->visible() && line->isCurrentLine())
-        renderer->drawRoundedRect(m_primitives[0], line->getRenderBounds(), current.radius, current.borderWidth,
-            current.top, current.bottom, current.border, line->getZIndex());
+    if(line->isCurrentLine())
+        background=&tokyonight::CodeCurrentLine;
+    else
+    {
+        switch(line->getDiffKind())
+        {
+        case controls::CodeLine::DiffKind::Added:
+            background=&tokyonight::DiffAdded;
+            break;
+        case controls::CodeLine::DiffKind::Removed:
+            background=&tokyonight::DiffRemoved;
+            break;
+        case controls::CodeLine::DiffKind::Hunk:
+            background=&tokyonight::DiffHunk;
+            break;
+        case controls::CodeLine::DiffKind::None:
+            break;
+        }
+    }
+
+    if(line->visible() && background)
+        renderer->drawRoundedRect(m_primitives[0], line->getRenderBounds(), background->radius,
+            background->borderWidth, background->top, background->bottom, background->border, line->getZIndex());
     else
         renderer->hidePrimitive(m_primitives[0]);
 
