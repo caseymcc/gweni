@@ -1055,6 +1055,13 @@ public:
     //! \}
 
     virtual bool isMenuComponent();
+    //! Whether a press on it (or on a descendant that takes no keyboard
+    //! input) leaves the keyboard focus where it is, instead of taking it
+    //! away: the press looks for the nearest control up from the pressed one
+    //! that takes keyboard input, and stops at one that says so. False by
+    //! default; a SearchComboBox's list says so, so a click on a row picks
+    //! with the box's field still focused.
+    virtual bool pressKeepsKeyboardFocus() { return false; }
     virtual void closeMenus();
 
     virtual bool isTabable() { return m_tabable; }

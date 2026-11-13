@@ -137,6 +137,10 @@ static bool FindKeyboardFocus(controls::Base *control)
         return true;
     }
 
+    // the focus stays where it is (a SearchComboBox's list)
+    if(control->pressKeepsKeyboardFocus())
+        return true;
+
     return FindKeyboardFocus(control->getParent());
 }
 

@@ -1971,6 +1971,26 @@ public:
     static BorderedPrimitive NormalPrimitive;
 };
 
+// A SearchComboBox's text field: a TextBox's selection and caret
+// (paintTextBoxMarks) with no frame, the box's surface behind it.
+class SearchComboBoxField:public textured::ControlRegister<SearchComboBoxField>
+{
+public:
+    static void staticInit(TexturedSkin *) { m_staticInit=true; }
+
+    size_t requiredPrimitives() override { return 3; }
+    size_t overlayLayers() override { return 1; }
+
+    void generate(renderer::Base *renderer, controls::Base *baseControl) override;
+    void update(renderer::Base *renderer, controls::Base *baseControl) override;
+    void remove(renderer::Base *renderer, controls::Base *baseControl) override;
+
+    inline static const std::string_view name="SearchComboBoxField";
+
+private:
+    bool m_caretStale=true;
+};
+
 //! controls::ToolTip, the canvas's tooltip box: one tokyonight::Tooltip surface.
 class ToolTip:public textured::ControlRegister<ToolTip>
 {

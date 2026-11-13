@@ -4168,12 +4168,52 @@ static Rect inBox(const Rect &local, const Rect &box)
     return Rect(x0, y0, std::max(x1-x0, 0), std::max(y1-y0, 0));
 }
 
-// [0] the box, [1] the selection at the text's z, behind every glyph
-// (renderer::Base::renderText), [2] the caret at the overlay z, in front of
+// [1] a TextBox's selection at the text's z, behind every glyph
+// (renderer::Base::renderText), [2] its caret at the overlay z, in front of
 // the whole subtree, a multiline box's line children included. Both are drawn
-// only while the box has the focus. A blink (StateChange_Caret alone) shows or
-// hides [2] and writes nothing else; any other change rewrites what is shown,
-// and a hidden primitive's geometry is rewritten when it is shown next.
+// only while the box has the focus. A blink (\p blinkOnly) shows or hides [2]
+// and writes nothing else; any other change rewrites what is shown, and a
+// hidden primitive's geometry is rewritten when it is shown next
+// (\p caretStale). TextBox's and SearchComboBoxField's.
+static void paintTextBoxMarks(renderer::Base *renderer, std::vector<size_t> &primitives,
+    controls::TextBox *box, bool blinkOnly, bool &caretStale)
+{
+    const bool focused=box->visible() && box->isFocussed();
+    const Rect &bounds=box->getRenderBounds();
+
+    if(!blinkOnly)
+    {
+        const Rect selection=inBox(box->getSelectionBounds(), bounds);
+        const tokyonight::Surface &fill=tokyonight::TextSelection;
+
+        if(focused && selection.w > 0 && selection.h > 0)
+            renderer->drawRoundedRect(primitives[1], selection, fill.radius, fill.borderWidth,
+                fill.top, fill.bottom, fill.border, box->getTextZIndex());
+        else
+            renderer->hidePrimitive(primitives[1]);
+
+        caretStale=true;
+    }
+
+    const Rect caret=inBox(box->getCaretBounds(), bounds);
+
+    if(!focused || !box->isCaretVisible() || caret.w <= 0 || caret.h <= 0)
+    {
+        renderer->hidePrimitive(primitives[2]);
+        return;
+    }
+
+    if(caretStale)
+    {
+        renderer->setDrawColor(box->getSkin()->Colors.Label.Default);
+        renderer->drawFilledRect(primitives[2], caret, box->getOverlayZIndex());
+        caretStale=false;
+    }
+    else
+        renderer->showPrimitive(1, primitives[2]);
+}
+
+// [0] the box, then its selection and caret (paintTextBoxMarks).
 void TextBox::update(renderer::Base *renderer, controls::Base *baseControl)
 {
     if(m_primitives.size() < 3)
@@ -4184,10 +4224,7 @@ void TextBox::update(renderer::Base *renderer, controls::Base *baseControl)
     if(!box)
         return;
 
-    const int stateChange=box->getStateChange();
-    const bool blinkOnly=(stateChange == controls::StateChange_Caret);
-    const bool focused=box->visible() && box->isFocussed();
-    const Rect &bounds=box->getRenderBounds();
+    const bool blinkOnly=(box->getStateChange() == controls::StateChange_Caret);
 
     if(!blinkOnly)
     {
@@ -4198,38 +4235,41 @@ void TextBox::update(renderer::Base *renderer, controls::Base *baseControl)
             surface=&tokyonight::TextBoxFocus;
 
         tokyonight::paintSurface(renderer, m_primitives.data(), box, *surface);
-
-        const Rect selection=inBox(box->getSelectionBounds(), bounds);
-        const tokyonight::Surface &fill=tokyonight::TextSelection;
-
-        if(focused && selection.w > 0 && selection.h > 0)
-            renderer->drawRoundedRect(m_primitives[1], selection, fill.radius, fill.borderWidth,
-                fill.top, fill.bottom, fill.border, box->getTextZIndex());
-        else
-            renderer->hidePrimitive(m_primitives[1]);
-
-        m_caretStale=true;
     }
 
-    const Rect caret=inBox(box->getCaretBounds(), bounds);
-
-    if(!focused || !box->isCaretVisible() || caret.w <= 0 || caret.h <= 0)
-    {
-        renderer->hidePrimitive(m_primitives[2]);
-        return;
-    }
-
-    if(m_caretStale)
-    {
-        renderer->setDrawColor(box->getSkin()->Colors.Label.Default);
-        renderer->drawFilledRect(m_primitives[2], caret, box->getOverlayZIndex());
-        m_caretStale=false;
-    }
-    else
-        renderer->showPrimitive(1, m_primitives[2]);
+    paintTextBoxMarks(renderer, m_primitives, box, blinkOnly, m_caretStale);
 }
 
 void TextBox::remove(renderer::Base *renderer, controls::Base *baseControl)
+{
+    releasePrimitives(renderer);
+}
+
+
+///////////////////////////////////////////////////////////////////////////
+//SearchComboBoxField
+void SearchComboBoxField::generate(renderer::Base *renderer, controls::Base *baseControl)
+{
+    generatePrimitives(renderer, requiredPrimitives());
+}
+
+// No frame: the box's surface is behind the field. [0] is kept hidden, so
+// the slots line up with a TextBox's.
+void SearchComboBoxField::update(renderer::Base *renderer, controls::Base *baseControl)
+{
+    if(m_primitives.size() < 3)
+        return;
+
+    controls::TextBox *box=static_cast<controls::TextBox *>(baseControl);
+    const bool blinkOnly=(box->getStateChange() == controls::StateChange_Caret);
+
+    if(!blinkOnly)
+        renderer->hidePrimitive(m_primitives[0]);
+
+    paintTextBoxMarks(renderer, m_primitives, box, blinkOnly, m_caretStale);
+}
+
+void SearchComboBoxField::remove(renderer::Base *renderer, controls::Base *baseControl)
 {
     releasePrimitives(renderer);
 }
@@ -4791,6 +4831,7 @@ template class ControlRegister<CheckBox>;
 template class ControlRegister<ComboBox>;
 template class ControlRegister<SearchComboBox>;
 template class ControlRegister<SearchComboBoxRow>;
+template class ControlRegister<SearchComboBoxField>;
 template class ControlRegister<DockBase>;
 template class ControlRegister<GroupBox>;
 template class ControlRegister<Input>;

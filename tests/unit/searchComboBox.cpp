@@ -3,7 +3,7 @@
  *  Copyright (c) 2010 Facepunch Studios
  *  MIT License, see LICENSE
  *
- *  controls::SearchComboBox in plain mode, on a real Canvas with the stub
+ *  controls::SearchComboBox, plain and filterable, on a real Canvas with the stub
  *  skin, clicked through input::onMouseClicked and keyed through
  *  input::onKeyEvent.
  *
@@ -27,17 +27,38 @@
  *  opens over it, a click on a row picks without closing the popup, and
  *  Escape closes the list before the popup. A box deleted with its list open
  *  takes the list with it, every id back.
+ *
+ *  Filterable: the field shows the selection (the box's own text empty) and
+ *  has the focus; typing (onTextChangedCaller once per edit, typing over a
+ *  selection included) opens the list on the options whose label contains
+ *  the query, case-insensitively and anywhere in it, the first highlighted,
+ *  every option for an empty query. Up and Down wrap through the shown
+ *  options without editing the field, and Return picks (onSelection once)
+ *  with the field keeping the focus through the key's release. Escape, a
+ *  press on another control and Tab away each close the list and give the
+ *  field back the selection's label. No match shows one disabled "No
+ *  matches" row, which Return and a click leave alone. A press and release
+ *  on a row keep the field focused (its edit kept between them) and pick. A
+ *  press on the box's chevron column focuses the field, opens the list on
+ *  every option with the selection highlighted and its label selected in the
+ *  field, and a second one closes it. A keystroke binds again only the rows
+ *  whose option changed (getRowBindCount), makes and deletes no control, lays
+ *  out in one pass, and a shown row keeping its option and highlight takes
+ *  no Text or Background change; at 30 and 3 000 options it keeps the same
+ *  pool and makes and frees no control or id.
  */
 #include "headlessFixture.h"
 
 #include <gweni/controls/button.h>
 #include <gweni/controls/popup.h>
 #include <gweni/controls/searchComboBox.h>
+#include <gweni/controls/textBox.h>
 #include <gweni/inputHandler.h>
 #include <gweni/platforms/platform.h>
 
 #include <doctest/doctest.h>
 
+#include <set>
 #include <string>
 
 using namespace gweni;
@@ -155,6 +176,16 @@ controls::internal::SearchComboBoxRow *rowFor(SearchComboBox *box, int option)
     return nullptr;
 }
 
+//! How many rows high the open list (the Menu) is, its 2-unit inner padding
+//! above and below them left out; -1 for a height that is no whole rows.
+int listRows(SearchComboBox *box)
+{
+    const int rows=box->getList()->getHeight()-4;
+    const int row=box->getOptionsList()->getRowHeight();
+
+    return (rows%row == 0)?rows/row:-1;
+}
+
 //! The rows of the open list that are shown and highlighted.
 int highlightedRows(SearchComboBox *box)
 {
@@ -267,7 +298,7 @@ TEST_CASE("SearchComboBox: a press opens the list below the box, as wide, and a 
     CHECK(list->getWidth() == 160);
     CHECK(box->getShownOptions().size() == 5);
     // as high as its rows, every option on one
-    CHECK(box->getOptionsList()->getHeight() == 5*box->getOptionsList()->getRowHeight());
+    CHECK(listRows(box) == 5);
 
     for(int i=0; i < 5; ++i)
     {
@@ -530,4 +561,402 @@ TEST_CASE("SearchComboBox: deleted with its list open, the box takes the list wi
     CHECK(subtreeSize(scene.canvas) == controlsBefore);
     CHECK(after.livePrimitives() == before.livePrimitives());
     CHECK(after.liveTexts() == before.liveTexts());
+}
+
+namespace
+{
+
+//! A filterable box over \p labels at a fixed place, its field focused.
+SearchComboBox *filterable(Scene &scene, const std::vector<String> &labels)
+{
+    SearchComboBox *box=scene.box(0);
+    std::vector<SearchComboBox::Option> options;
+
+    for(const String &label : labels)
+        options.push_back({label, ""});
+    box->setOptions(std::move(options));
+    box->setFilterable(true);
+    scene.frame();
+    box->getField()->focus();
+    scene.frame();
+    return box;
+}
+
+void type(Scene &scene, const char *text)
+{
+    for(const char *c=text; *c; ++c)
+    {
+        scene.canvas->inputCharacter(static_cast<UnicodeChar>(*c));
+        scene.frame();
+    }
+}
+
+std::vector<size_t> shown(SearchComboBox *box)
+{
+    return box->getShownOptions();
+}
+
+//! Every control under \p control (itself included) with a state change
+//! pending, between updateCanvas() and renderCanvas().
+void changed(controls::Base *control, std::set<controls::Base *> &out)
+{
+    if(control->getStateChange() != controls::StateChange_Nothing)
+        out.insert(control);
+
+    for(controls::Base *child : control->getChildren())
+        changed(child, out);
+}
+
+bool within(controls::Base *control, controls::Base *root)
+{
+    for(; control; control=control->getParent())
+    {
+        if(control == root)
+            return true;
+    }
+    return false;
+}
+
+}//namespace
+
+TEST_CASE("SearchComboBox: filterable, typing opens the list on the options containing the query, case-insensitively")
+{
+    Scene scene;
+    SearchComboBox *box=filterable(scene, {"Alpha", "beta", "ALPHABET", "Gamma", "delta"});
+    Counter edits;
+    String lastText;
+
+    edits.listen(box->onTextChangedCaller);
+    REQUIRE(box->getField());
+    // the field shows the selection, the box's own text is empty
+    CHECK(box->getField()->getText() == "Alpha");
+    CHECK(box->getText() == "");
+    CHECK(KeyboardFocus == box->getField());
+    CHECK(!box->isListOpen());
+
+    // typing replaces the selected text
+    box->getField()->onSelectAll(box->getField());
+    type(scene, "aLp");
+    REQUIRE(box->isListOpen());
+    CHECK(box->getQuery() == "aLp");
+    CHECK(shown(box) == std::vector<size_t>{0, 2});
+    CHECK(box->getHighlightedIndex() == 0);
+    CHECK(edits.calls == 3);
+
+    REQUIRE(rowFor(box, 2));
+    CHECK(rowFor(box, 2)->getText() == "ALPHABET");
+    CHECK(listRows(box) == 2);
+
+    // a substring anywhere: "ta" is in beta and delta
+    for(int i=0; i < 3; ++i)
+        scene.key(keys::Backspace);
+    type(scene, "TA");
+    CHECK(shown(box) == std::vector<size_t>{1, 4});
+    CHECK(box->getHighlightedIndex() == 1);
+
+    // an empty query shows every option
+    scene.key(keys::Backspace);
+    scene.key(keys::Backspace);
+    CHECK(box->getField()->getText() == "");
+    CHECK(box->isListOpen());
+    CHECK(shown(box).size() == 5);
+    CHECK(edits.calls == 10);
+    CHECK(box->getSelectedIndex() == 0);
+}
+
+TEST_CASE("SearchComboBox: filterable, Up and Down wrap through the shown options and Return picks")
+{
+    Scene scene;
+    SearchComboBox *box=filterable(scene, {"red", "green", "blue", "grey", "gold"});
+    Counter selections;
+
+    selections.listen(box->onSelection);
+    box->getField()->onSelectAll(box->getField());
+    type(scene, "g");
+    REQUIRE(shown(box) == (std::vector<size_t>{1, 3, 4}));
+    CHECK(box->getHighlightedIndex() == 1);
+
+    scene.key(keys::Up);
+    CHECK(box->getHighlightedIndex() == 4);
+    scene.key(keys::Down);
+    CHECK(box->getHighlightedIndex() == 1);
+    scene.key(keys::Down);
+    CHECK(box->getHighlightedIndex() == 3);
+    REQUIRE(rowFor(box, 3));
+    CHECK(rowFor(box, 3)->isHighlighted());
+    CHECK(highlightedRows(box) == 1);
+    // the keys did not edit the field
+    CHECK(box->getField()->getText() == "g");
+
+    scene.key(keys::Return);
+    CHECK(!box->isListOpen());
+    CHECK(box->getSelectedIndex() == 3);
+    CHECK(box->getField()->getText() == "grey");
+    CHECK(selections.calls == 1);
+    // the Return's release did not move the focus on
+    CHECK(KeyboardFocus == box->getField());
+}
+
+TEST_CASE("SearchComboBox: filterable, Escape, a press elsewhere and Tab give back the text shown before the edit")
+{
+    Scene scene;
+    SearchComboBox *box=filterable(scene, {"red", "green", "blue"});
+    controls::TextBox *other=scene.canvas->newChild<controls::TextBox>();
+    Counter selections;
+
+    other->setBounds(20, 300, 100, 20);
+    selections.listen(box->onSelection);
+    box->setSelectedIndex(2);
+    scene.frame();
+    CHECK(box->getField()->getText() == "blue");
+
+    box->getField()->onSelectAll(box->getField());
+    type(scene, "re");
+    REQUIRE(box->isListOpen());
+    scene.key(keys::Escape);
+    CHECK(!box->isListOpen());
+    CHECK(box->getField()->getText() == "blue");
+    CHECK(box->getSelectedIndex() == 2);
+    CHECK(KeyboardFocus == box->getField());
+
+    // edited again, then a click on another control
+    box->getField()->onSelectAll(box->getField());
+    type(scene, "gr");
+    REQUIRE(box->isListOpen());
+    scene.clickOn(other);
+    CHECK(KeyboardFocus == other);
+    CHECK(!box->isListOpen());
+    CHECK(box->getField()->getText() == "blue");
+    CHECK(box->getSelectedIndex() == 2);
+
+    // Tab away, with no press closing the list first
+    box->getField()->focus();
+    box->getField()->onSelectAll(box->getField());
+    type(scene, "gr");
+    REQUIRE(box->isListOpen());
+    scene.key(keys::Tab);
+    CHECK(KeyboardFocus == other);
+    CHECK(!box->isListOpen());
+    CHECK(box->getField()->getText() == "blue");
+    CHECK(selections.calls == 0);
+}
+
+TEST_CASE("SearchComboBox: filterable, no match shows one disabled No matches row, which picks nothing")
+{
+    Scene scene;
+    SearchComboBox *box=filterable(scene, {"red", "green", "blue"});
+    Counter selections;
+
+    selections.listen(box->onSelection);
+    box->getField()->onSelectAll(box->getField());
+    type(scene, "zz");
+    REQUIRE(box->isListOpen());
+    CHECK(shown(box).empty());
+    CHECK(box->getHighlightedIndex() == SearchComboBox::NoOption);
+    CHECK(box->getOptionsList()->getItemCount() == 1);
+    CHECK(listRows(box) == 1);
+
+    auto *row=gweni_cast<controls::internal::SearchComboBoxRow>(box->getOptionsList()->rowForItem(0));
+
+    REQUIRE(row);
+    CHECK(row->getText() == SearchComboBox::noMatchesText());
+    CHECK(row->isDisabled());
+    CHECK(!row->isHighlighted());
+
+    scene.key(keys::Down);
+    scene.key(keys::Return);
+    scene.clickOn(row);
+    CHECK(box->isListOpen());
+    CHECK(selections.calls == 0);
+    CHECK(box->getSelectedIndex() == 0);
+
+    // a match again: an enabled option row
+    scene.key(keys::Backspace);
+    scene.key(keys::Backspace);
+    type(scene, "b");
+    REQUIRE(rowFor(box, 2));
+    CHECK(rowFor(box, 2)->getText() == "blue");
+    CHECK(!rowFor(box, 2)->isDisabled());
+}
+
+TEST_CASE("SearchComboBox: filterable, a click on a row picks with the field keeping the focus")
+{
+    Scene scene;
+    SearchComboBox *box=filterable(scene, {"red", "green", "blue"});
+    Counter lostFocus, selections;
+
+    lostFocus.listen(box->getField()->onLostFocusCaller);
+    selections.listen(box->onSelection);
+    box->getField()->onSelectAll(box->getField());
+    type(scene, "e");
+    REQUIRE(box->isListOpen());
+    REQUIRE(rowFor(box, 2));
+
+    const Rect row=Scene::canvasRect(rowFor(box, 2));
+
+    scene.canvas->inputMouseMoved(row.x+5, row.y+row.h/2, 0, 0);
+    input::onMouseClicked(scene.canvas, 0, true);
+    scene.frame();
+    // between the press and the release: still the field's, the edit kept
+    CHECK(KeyboardFocus == box->getField());
+    CHECK(box->getField()->getText() == "e");
+    CHECK(box->isListOpen());
+
+    input::onMouseClicked(scene.canvas, 0, false);
+    scene.frame();
+    CHECK(!box->isListOpen());
+    CHECK(box->getSelectedIndex() == 2);
+    CHECK(box->getField()->getText() == "blue");
+    CHECK(KeyboardFocus == box->getField());
+    CHECK(lostFocus.calls == 0);
+    CHECK(selections.calls == 1);
+}
+
+TEST_CASE("SearchComboBox: filterable, a press on the box focuses the field and opens the list on every option")
+{
+    Scene scene;
+    SearchComboBox *box=filterable(scene, {"red", "green", "blue"});
+
+    box->getField()->unfocus();
+    scene.frame();
+    box->setSelectedIndex(1);
+
+    // the chevron's column, right of the field
+    const Rect rect=Scene::canvasRect(box);
+
+    scene.click(rect.x+rect.w-6, rect.y+rect.h/2);
+    REQUIRE(box->isListOpen());
+    CHECK(KeyboardFocus == box->getField());
+    CHECK(box->getQuery() == "");
+    CHECK(shown(box).size() == 3);
+    CHECK(box->getHighlightedIndex() == 1);
+    // the shown text selected: typing replaces it
+    CHECK(box->getField()->getSelection() == "green");
+
+    // and closes it, the field keeping the focus
+    scene.click(rect.x+rect.w-6, rect.y+rect.h/2);
+    CHECK(!box->isListOpen());
+    CHECK(KeyboardFocus == box->getField());
+}
+
+TEST_CASE("SearchComboBox: a keystroke binds only the rows whose option changed and makes no control")
+{
+    Scene scene;
+    SearchComboBox *box=filterable(scene, {"xa", "xb", "xc", "ya", "yb"});
+
+    box->getField()->onSelectAll(box->getField());
+    type(scene, "x");
+    REQUIRE(shown(box) == (std::vector<size_t>{0, 1, 2}));
+
+    controls::Base *kept[3]={rowFor(box, 0), rowFor(box, 1), rowFor(box, 2)};
+    const size_t controlsBefore=subtreeSize(scene.canvas);
+    size_t binds=box->getRowBindCount();
+
+    // the query emptied: the three rows keep their options, two more show
+    scene.key(keys::Backspace);
+    REQUIRE(shown(box).size() == 5);
+    CHECK(scene.canvas->getLayoutStats().passes == 1);
+    CHECK(box->getRowBindCount()-binds == 2);
+    CHECK(subtreeSize(scene.canvas) == controlsBefore);
+
+    for(int i=0; i < 3; ++i)
+        CHECK(rowFor(box, i) == kept[i]);
+
+    // "y": every shown row shows another option, two of them
+    binds=box->getRowBindCount();
+    type(scene, "y");
+    REQUIRE(shown(box) == (std::vector<size_t>{3, 4}));
+    CHECK(box->getRowBindCount()-binds == 2);
+
+    // "ya": the first row keeps its option, the second is cut off
+    binds=box->getRowBindCount();
+    type(scene, "a");
+    REQUIRE(shown(box) == std::vector<size_t>{3});
+    CHECK(box->getRowBindCount()-binds == 0);
+    CHECK(subtreeSize(scene.canvas) == controlsBefore);
+
+    // shown rows that keep their option and highlight change no look: only
+    // the clip box the list's new height gives them (Geometry)
+    binds=box->getRowBindCount();
+    scene.key(keys::Backspace);
+    scene.key(keys::Backspace);
+    type(scene, "x");
+    REQUIRE(shown(box) == (std::vector<size_t>{0, 1, 2}));
+    scene.key(keys::Backspace);
+    scene.canvas->inputCharacter('x');
+    scene.canvas->updateCanvas();
+
+    std::set<controls::Base *> marked;
+
+    changed(box->getList(), marked);
+    for(controls::Base *control : marked)
+    {
+        // the two rows the query cut off are hidden, which marks them
+        if(!control->visible())
+            continue;
+
+        const std::string type=control->getTypeName();
+        const int change=control->getStateChange();
+
+        CAPTURE(type);
+        CAPTURE(change);
+        CHECK((change & (controls::StateChange_Text|controls::StateChange_Background)) == 0);
+    }
+    scene.canvas->renderCanvas();
+}
+
+TEST_CASE("SearchComboBox: a keystroke's pool, controls and live ids are the same at 30 and 3 000 options")
+{
+    struct Stroke
+    {
+        size_t rows;
+        size_t controls;
+        size_t primitives;
+        size_t texts;
+        size_t passes;
+        size_t shown;
+    };
+
+    auto stroke=[](size_t count) -> Stroke
+        {
+            Scene scene;
+            std::vector<String> labels;
+
+            for(size_t i=0; i < count; ++i)
+                labels.push_back("Option "+std::to_string(i));
+
+            SearchComboBox *box=filterable(scene, labels);
+
+            box->getField()->onSelectAll(box->getField());
+            type(scene, "Option 1");
+            REQUIRE(box->isListOpen());
+            scene.frame();
+
+            const test::IdBankCounts before=test::IdBankCounts::now();
+            const size_t controlsBefore=subtreeSize(scene.canvas);
+
+            // "Option 12": 12, 120-129 and on at 3 000; 12 alone at 30
+            type(scene, "2");
+
+            const test::IdBankCounts after=test::IdBankCounts::now();
+
+            return {box->getOptionsList()->getRows().size(), subtreeSize(scene.canvas)-controlsBefore,
+                after.livePrimitives()-before.livePrimitives(), after.liveTexts()-before.liveTexts(),
+                scene.canvas->getLayoutStats().passes, std::min<size_t>(shown(box).size(), SearchComboBox::MaxShownRows)};
+        };
+
+    const Stroke small=stroke(30);
+    const Stroke large=stroke(3000);
+
+    CHECK(small.shown == 1);
+    CHECK(large.shown == SearchComboBox::MaxShownRows);
+    CHECK(large.rows == small.rows);
+    CHECK(small.controls == 0);
+    CHECK(large.controls == 0);
+    CHECK(small.primitives == 0);
+    CHECK(large.primitives == 0);
+    CHECK(small.texts == 0);
+    CHECK(large.texts == 0);
+    CHECK(small.passes == 1);
+    CHECK(large.passes == 1);
 }
