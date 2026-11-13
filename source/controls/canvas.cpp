@@ -1360,8 +1360,6 @@ bool Canvas::escapePopup()
     if(!m_popup)
         return false;
 
-    m_closingOnEscape=true;
-
     bool menusOnly=false;
 
     if(!m_popupIsMenu)
@@ -1381,7 +1379,6 @@ bool Canvas::escapePopup()
     else
         closePopup();
 
-    m_closingOnEscape=false;
     return true;
 }
 

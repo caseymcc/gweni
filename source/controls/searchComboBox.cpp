@@ -355,12 +355,11 @@ void SearchComboBox::makeList()
     m_list->onVisibilityChanged.add(this, &SearchComboBox::listVisibilityChanged);
 }
 
-// Closed, by the box or from outside (a press outside it, Escape over a
-// Popup), without a pick or after one: the query is over. The field shows
-// the value again; with free text a press outside keeps what was typed,
-// which Return or the field losing the focus then takes or gives back
-// (resolveText()), and an Escape (the canvas's, over a Popup, which the
-// field never sees) gives the value back as the field's own Escape does.
+// Closed, by the box or from outside (a press outside it), without a pick or
+// after one: the query is over. The field shows the value again; with free
+// text a press outside keeps what was typed, which Return or the field
+// losing the focus then takes or gives back (resolveText()). An Escape is
+// the field's own (onKeyEscape(), offered it first inside a Popup too).
 void SearchComboBox::listVisibilityChanged(event::Info)
 {
     redraw();
@@ -371,9 +370,7 @@ void SearchComboBox::listVisibilityChanged(event::Info)
     m_query.clear();
     m_lowerQuery.clear();
 
-    const Canvas *canvas=getCanvas();
-
-    if(!m_allowCustom || (canvas && canvas->closingOnEscape()))
+    if(!m_allowCustom)
         showSelection();
 }
 
@@ -761,8 +758,8 @@ void SearchComboBox::rowKeys(std::vector<size_t> &keys) const
         keys[i]=rowKey(i);
 }
 
-// The option whose label is the query (case aside), so Return picks what
-// Tab would; else the first match, else the Add row (Return then adds what
+// The option whose label is the query (case aside), so in a single-select
+// free-text box Return picks what Tab would; else the first match, else the Add row (Return then adds what
 // was typed).
 size_t SearchComboBox::firstHighlight() const
 {

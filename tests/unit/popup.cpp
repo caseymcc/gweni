@@ -44,6 +44,10 @@
  *  before the popup, and the popup closing closes it too. A MenuStrip on the
  *  canvas (a menu bar, which never closes) is outside the popup like any
  *  control: Escape still closes the popup, and a press on the strip does.
+ *  A keyboard focus inside the popup is offered Escape first: a DragNumber's
+ *  edit cancels and the popup stays open, the next Escape closing it, while
+ *  a focused TextBox, which takes no Escape, lets the first close it, and its
+ *  release then reaches nothing.
  *
  *  Owned popups (Base::createPopup, Popup::setOwner): a canvas deleted with an
  *  owned popup and its owner deletes each once, whichever comes first among
@@ -65,9 +69,11 @@
 
 #include <gweni/controls/button.h>
 #include <gweni/controls/comboBox.h>
+#include <gweni/controls/dragNumber.h>
 #include <gweni/controls/menu.h>
 #include <gweni/controls/menuStrip.h>
 #include <gweni/controls/popup.h>
+#include <gweni/controls/textBox.h>
 #include <gweni/controls/toolTip.h>
 #include <gweni/controls/windowControl.h>
 #include <gweni/controls/zoomPanel.h>
@@ -787,6 +793,51 @@ TEST_CASE("Popup: Escape closes a ComboBox list open over it first, closing it c
     scene.frame();
     CHECK(!popup->isOpen());
     CHECK(!combo->isMenuOpen());
+}
+
+TEST_CASE("Popup: Escape is offered to a focus inside it first: a DragNumber's edit cancels, a TextBox lets it close")
+{
+    Scene scene;
+    controls::Base *anchor=scene.box(10, 10, 60, 20);
+    Popup *popup=scene.canvas->newChild<Popup>();
+    controls::DragNumber *number=popup->newChild<controls::DragNumber>();
+    controls::TextBox *text=popup->newChild<controls::TextBox>();
+    Counter closes;
+
+    number->setBounds(0, 0, 80, 20);
+    number->setNumber(3, false);
+    text->setSizeFlags({SizeFlag::Fixed, SizeFlag::Fixed});
+    text->setBounds(0, 30, 80, 20);
+    closes.listen(popup->onClose);
+    scene.frame();
+    popup->open(anchor);
+    scene.frame();
+
+    number->beginEdit();
+    scene.frame();
+    REQUIRE(number->isEditing());
+    scene.canvas->inputCharacter(static_cast<UnicodeChar>('7'));
+    scene.frame();
+    REQUIRE(number->getEditBox()->getText() == "7");
+    scene.escape();
+    CHECK(!number->isEditing());
+    CHECK(number->getNumber() == 3);
+    CHECK(popup->isOpen());
+    CHECK(closes.calls == 0);
+    // the focus no longer takes it: the canvas's
+    scene.escape();
+    CHECK(!popup->isOpen());
+    CHECK(closes.calls == 1);
+    CHECK(number->getNumber() == 3);
+
+    popup->open(anchor);
+    scene.frame();
+    text->focus();
+    scene.frame();
+    REQUIRE(text->isFocussed());
+    scene.escape();
+    CHECK(!popup->isOpen());
+    CHECK(closes.calls == 2);
 }
 
 TEST_CASE("Popup: a MenuStrip on the canvas is outside it: Escape and a press on the strip close it")

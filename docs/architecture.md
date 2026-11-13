@@ -327,7 +327,9 @@ textured renderer paints one `tokyonight::Menu` surface, a context menu's panel.
 after the popup among the canvas's children; a menu bar, a `MenuStrip`, is outside the
 popup like any control, and it never closes) (`Canvas::popupPressed`, called by `input::onMouseClicked` before the press is
 delivered, which it still is), on Escape (`Canvas::escapePopup`: a Menu open over it, a
-ComboBox's list in it, closes first), when the update phase finds its anchor hidden or
+ComboBox's list in it, closes first; a keyboard focus inside the popup is offered the key
+before, by `input::onKeyEvent`, and nothing closes if it takes it: a DragNumber's edit
+cancels, a SearchComboBox's query gives the value back, and the next Escape closes), when the update phase finds its anchor hidden or
 disabled (`Canvas::updatePopup`, the step that also forgets a context menu closed as
 menus close), when the anchor is deleted (`Canvas::popupControlDeleted` from `~Base`, a
 delayed delete included), and when it is deleted itself (no `onClose` then). A press on
@@ -512,7 +514,8 @@ push takes the focus from such a control, and a key with no allowed focus goes t
 top modal itself (`input::onKeyEvent`). Tab walks inside it (`Base::nextTabable` roots at
 the top modal, or at the canvas child above it a control is in: a Popup opened from it).
 The canvas's accelerators are looked up in the top modal's subtree, not the app's.
-Escape goes to `Canvas::escapePopup()` first, as without a modal; then to the focused
+Escape goes to `Canvas::escapePopup()` first (after a focus inside the shown popup), as
+without a modal; then to the focused
 control, whose `onKeyEscape` bubbles up to the modal's if it does not take it (a
 DragNumber's edit box cancels its edit, a LogView clears its selection), so an Escape
 that nothing inside takes closes the dialog. Closing on Escape before the focused control
@@ -3571,7 +3574,8 @@ two programs and the draws. What follows describes both together:
   selection erases it, then inserts), it fires `onTextChangedCaller` and matches the
   lower-cased query against the cached labels, a substring anywhere (ASCII letters
   only are folded), every option for an empty query, the first match highlighted (the
-  option whose label is the query, if one is, so Return picks what Tab would).
+  option whose label is the query, if one is, so in a single-select free-text box
+  Return picks what Tab would).
   Then only the pooled rows whose option changed are bound again (`rebindChanged`,
   comparing each row's key, its option or one of the two rows below, before and
   after; `getRowBindCount()` counts the binds): a keystroke matches over data, makes
@@ -3623,11 +3627,11 @@ two programs and the draws. What follows describes both together:
   `getSelectedIndex()` `NoOption`, `hasCustomValue()`), kept through `addOption()` and
   `setOptions()`; the box adds no option, and a text that is an option's label picks
   that option instead. The list closing on a press outside leaves a free-text field's
-  text as it is, for Return or the lost focus to decide; closing on Escape gives the
-  value back. In a `Popup` that Escape is the canvas's, which closes the Menus over the
-  popup before the focused field sees the key, so the box asks
-  `Canvas::closingOnEscape()` (true while `escapePopup()` closes things) as its list
-  closes, and the next Escape, closing the popup, has nothing to take.
+  text as it is, for Return or the lost focus to decide; Escape gives the value back,
+  the list open or closed (`onKeyEscape`, the field edited). In a `Popup` the field is
+  offered the key before the canvas (`input::onKeyEvent` gives Escape to a focus inside
+  the shown Popup first), so that Escape too is the box's, the popup stays open, and the
+  next Escape, closing the popup, has nothing to take.
 
   **Multi-select** (`setMultiSelect(true)`) holds picks in order, each an
   owner-placed, removable `Chip` that takes no keyboard (a press on it keeps the

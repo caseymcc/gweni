@@ -644,8 +644,9 @@ public:
     /// the popup, on its anchor or on a Menu opened over it (overPopup();
     /// input::onMouseClicked,
     /// before the press is delivered, which it still is); a context menu
-    /// closes as menus do. Escape closes either, whatever has the keyboard
-    /// focus (input::onKeyEvent), a Menu open over a Popup first. The update phase closes it when its anchor
+    /// closes as menus do. Escape closes either (input::onKeyEvent), a Menu
+    /// open over a Popup first; a keyboard focus inside the shown Popup is
+    /// offered the key before, and nothing closes if it takes it. The update phase closes it when its anchor
     /// is hidden or disabled, and deleting the anchor (delayed or outright)
     /// closes it at once.
 
@@ -660,9 +661,6 @@ public:
     /// (a ComboBox's list in it), or else the shown popup. False when nothing
     /// was shown.
     bool escapePopup();
-    /// True while escapePopup() closes what it closes: a control told of its
-    /// Menu closing can tell an Escape (a cancel) from a press outside it.
-    bool closingOnEscape() const { return m_closingOnEscape; }
     /// Popup::open: shows \p popup next to \p anchor, closing the one shown.
     void showPopup(Popup *popup, Base *anchor, PopupPlacement side);
     /// input::onMouseClicked: a press on \p hovered closes a shown Popup it
@@ -992,7 +990,6 @@ protected:
     Base *m_popupAnchor=nullptr;
     bool m_popupIsMenu=false;
     Menu *m_contextMenu=nullptr;
-    bool m_closingOnEscape=false;
     /// The modal stack, bottom first: each modal and the control id of the
     /// keyboard focus its push took (0 for none).
     struct ModalEntry

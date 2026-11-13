@@ -87,11 +87,12 @@
  *  setSelectedIndices() drops held picks. A multi-select box refilled while
  *  the user types keeps its picks the results leave out. A free-text value
  *  wider than every option widens a size-to-content box, and an option picked
- *  again narrows it back. In a Popup, Escape (the canvas's, closing the list
- *  over it) gives a free-text field the value back, single and multi-select,
- *  and the Escape closing the popup then takes nothing. A text that is an
- *  option's label highlights that option before the other matches, so Return
- *  picks what Tab would.
+ *  again narrows it back. In a Popup, Escape (offered the field before the
+ *  canvas) gives a free-text field the value back, single and multi-select,
+ *  the list open or toggled shut, and the Escape closing the popup then takes
+ *  nothing. A text that is an option's label highlights that option before
+ *  the other matches, so a single-select free-text box's Return picks what
+ *  Tab would.
  *
  *  Multi-select: no selection and no text on the box; a row click and Return
  *  each add the option as a chip, in pick order, the list staying open with
@@ -2144,6 +2145,92 @@ TEST_CASE("SearchComboBox: multi-select free text in a Popup, Escape twice adds 
     CHECK(!popup->isOpen());
     CHECK(customs.texts.empty());
     CHECK(chipTexts(box).empty());
+}
+
+namespace
+{
+// A press on the box's right end, outside its field: the box toggles its list.
+void clickBoxEnd(Scene &scene, SearchComboBox *box)
+{
+    const Rect at=Scene::canvasRect(box);
+    scene.click(at.x+at.w-3, at.y+at.h/2);
+}
+}//namespace
+
+TEST_CASE("SearchComboBox: free text in a Popup, the list toggled shut, Escape gives the value back and the popup's Escape takes nothing")
+{
+    Scene scene;
+    controls::Popup *popup=nullptr;
+    SearchComboBox *box=freeTextInPopup(scene, popup, false);
+    CustomValues customs;
+
+    customs.listen(box);
+    type(scene, "zzz");
+    REQUIRE(box->isListOpen());
+    clickBoxEnd(scene, box);
+    REQUIRE(!box->isListOpen());
+    REQUIRE(popup->isOpen());
+    REQUIRE(box->getField()->isFocussed());
+    REQUIRE(box->getField()->getText() == "zzz");
+    // the field's Escape, as outside a Popup: the popup stays open
+    scene.key(keys::Escape);
+    CHECK(popup->isOpen());
+    CHECK(box->getField()->getText() == "web-1");
+    scene.key(keys::Escape);
+    scene.frame();
+    CHECK(!popup->isOpen());
+    CHECK(customs.texts.empty());
+    CHECK(box->getValue() == "web-1");
+}
+
+TEST_CASE("SearchComboBox: multi-select free text in a Popup, the list toggled shut, Escape twice adds no chip")
+{
+    Scene scene;
+    controls::Popup *popup=nullptr;
+    SearchComboBox *box=freeTextInPopup(scene, popup, true);
+    CustomValues customs;
+
+    customs.listen(box);
+    type(scene, "zzz");
+    REQUIRE(box->isListOpen());
+    clickBoxEnd(scene, box);
+    REQUIRE(!box->isListOpen());
+    REQUIRE(popup->isOpen());
+    REQUIRE(box->getField()->getText() == "zzz");
+    scene.key(keys::Escape);
+    CHECK(popup->isOpen());
+    CHECK(box->getField()->getText() == "");
+    scene.key(keys::Escape);
+    scene.frame();
+    CHECK(!popup->isOpen());
+    CHECK(customs.texts.empty());
+    CHECK(chipTexts(box).empty());
+}
+
+TEST_CASE("SearchComboBox: free text in a Popup, a refused text with the list shut, Escape gives the value back")
+{
+    Scene scene;
+    controls::Popup *popup=nullptr;
+    SearchComboBox *box=freeTextInPopup(scene, popup, false);
+    CustomValues customs;
+
+    customs.listen(box);
+    customs.refuse=true;
+    type(scene, "zzz");
+    scene.key(keys::Return);
+    REQUIRE(box->isCustomValueRefused());
+    clickBoxEnd(scene, box);
+    REQUIRE(!box->isListOpen());
+    REQUIRE(box->getField()->getText() == "zzz");
+    scene.key(keys::Escape);
+    CHECK(popup->isOpen());
+    CHECK(!box->isCustomValueRefused());
+    CHECK(box->getField()->getText() == "web-1");
+    scene.key(keys::Escape);
+    scene.frame();
+    CHECK(!popup->isOpen());
+    CHECK(customs.texts == std::vector<String>{"zzz"});
+    CHECK(box->getValue() == "web-1");
 }
 
 TEST_CASE("SearchComboBox: free text, an option's label typed highlights it first and Return picks it")

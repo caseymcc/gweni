@@ -482,19 +482,28 @@ bool handleAccelerator(controls::Base *canvas, UnicodeChar chr)
     return false;
 }
 
-bool onKeyEvent(controls::Base *canvas, int key, bool down)
+namespace
 {
-    // Escape closes the shown popup (a Popup or a context menu), or the Menus
-    // open over a Popup first, whatever has the keyboard focus; its release
-    // then finds the key up and goes nowhere.
-    if(down && (key == keys::Escape) && !g_keyData.KeyState[key])
-    {
-        controls::Canvas *target=canvas->getCanvas();
+// The keyboard focus is inside the canvas's shown Popup (not a context menu,
+// which takes no focus).
+bool focusInShownPopup(controls::Canvas *canvas, controls::Base *focus)
+{
+    controls::Base *popup=canvas ? canvas->shownPopup() : nullptr;
 
-        if(target && target->escapePopup())
+    if(!popup || canvas->shownContextMenu())
+        return false;
+
+    for(controls::Base *control=focus; control; control=control->getParent())
+    {
+        if(control == popup)
             return true;
     }
+    return false;
+}
+}//namespace
 
+bool onKeyEvent(controls::Base *canvas, int key, bool down)
+{
     controls::Base *target=KeyboardFocus;
 
     if(target && target->getCanvas() != canvas)
@@ -502,6 +511,24 @@ bool onKeyEvent(controls::Base *canvas, int key, bool down)
 
     if(target && !target->visible())
         target=nullptr;
+
+    // Escape closes the shown popup (a Popup or a context menu), or the Menus
+    // open over a Popup first. A focus inside the shown Popup is offered the
+    // key first (a field's cancel: a DragNumber's edit, a SearchComboBox's
+    // query), and the canvas closes only if it does not take it; any other
+    // focus never sees it, and its release then finds the key up and goes
+    // nowhere.
+    bool escapeAfterFocus=false;
+
+    if(down && (key == keys::Escape) && !g_keyData.KeyState[key])
+    {
+        controls::Canvas *onCanvas=canvas->getCanvas();
+
+        if(focusInShownPopup(onCanvas, target))
+            escapeAfterFocus=true;
+        else if(onCanvas && onCanvas->escapePopup())
+            return true;
+    }
 
     // Under a modal, a key with no focus it allows goes to the top modal
     // itself (its Escape, its Tab, which cycles inside it).
@@ -523,8 +550,21 @@ bool onKeyEvent(controls::Base *canvas, int key, bool down)
             g_keyData.Target=target;
             g_keyData.PressTarget[key]=target;
 
-            if(target)
-                return target->onKeyPress(key);
+            if(target && target->onKeyPress(key))
+                return true;
+
+            // the focus in the Popup did not take the Escape: the canvas's
+            if(escapeAfterFocus)
+            {
+                controls::Canvas *onCanvas=canvas->getCanvas();
+
+                if(onCanvas && onCanvas->escapePopup())
+                {
+                    g_keyData.PressTarget[key]=nullptr;
+                    return true;
+                }
+            }
+            return false;
         }
     }
     else
