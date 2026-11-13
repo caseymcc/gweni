@@ -52,7 +52,7 @@ static constexpr size_t minPrimitiveSize=512;
 static constexpr size_t minVertexSize=minPrimitiveSize*4;
 static constexpr size_t minClippingSize=minPrimitiveSize;
 
-// The SDF text atlas (TextMode::Sdf): one per (face, bold), shared by every size
+// The SDF text atlas (TextMode::Sdf): one per (face, bold, italic), shared by every size
 // at or above the threshold. Its glyphs are rasterised once, at sdfBaseSize px with
 // a distance field reaching kSdfSpread px past each edge, into an R8 atlas.
 static constexpr float sdfBaseSize=48.0f;
@@ -280,8 +280,98 @@ void SlotRenderer::setGlyphFallback(const String &face, const std::vector<String
     }
 }
 
+void SlotRenderer::setFontFamily(const String &family, const FontFamily &faces)
+{
+    auto it=m_fontFamilies.find(family);
+
+    if((it != m_fontFamilies.end()) && (it->second == faces))
+        return;
+
+    // the chains before, to load again the fonts whose chain names the family
+    // and the family's own, whose files or chain it changes
+    std::map<String, std::vector<String>> before;
+
+    for(const auto &[key, fontData]:m_fonts)
+    {
+        if(before.count(fontData.faceName) == 0)
+            before.emplace(fontData.faceName, glyphFallback(fontData.faceName));
+    }
+
+    m_fontFamilies[family]=faces;
+
+    std::unordered_set<String> changed;
+
+    for(const auto &[name, chain]:before)
+    {
+        if((name == family) || (chain != glyphFallback(name)) ||
+            (std::find(chain.begin(), chain.end(), family) != chain.end()))
+            changed.insert(name);
+    }
+    if(!changed.empty())
+    {
+        reloadFonts([&changed](const FontData &fontData)
+            {
+                return changed.count(fontData.faceName) > 0;
+            });
+    }
+}
+
+const FontFamily *SlotRenderer::fontFamily(const String &family) const
+{
+    auto it=m_fontFamilies.find(family);
+
+    return (it != m_fontFamilies.end())?&it->second:nullptr;
+}
+
+String SlotRenderer::regularFaceName(const String &face) const
+{
+    auto family=m_fontFamilies.find(face);
+
+    if((family != m_fontFamilies.end()) && !family->second.regular.empty())
+        return family->second.regular;
+    return face;
+}
+
+String SlotRenderer::fontFaceName(const Font &font)
+{
+    const String regular=regularFaceName(font.facename);
+
+    if(!font.bold && !font.italic)
+        return regular;
+
+    const char *style=font.bold?(font.italic?"bold italic":"bold"):"italic";
+    auto family=m_fontFamilies.find(font.facename);
+
+    if(family != m_fontFamilies.end())
+    {
+        const String &face=family->second.face(font.bold, font.italic);
+
+        if(!face.empty())
+        {
+            const String path=getResourcePaths().getPath(ResourcePaths::Type::Font, face);
+
+            if(fs::exists(path))
+                return face;
+            if(m_reportedFaces.insert(path).second)
+            {
+                gweni::log::write(log::Level::Error, "Font file not found: %s (drawing %s's %s text in its regular face)",
+                    path.c_str(), font.facename.c_str(), style);
+            }
+            return regular;
+        }
+    }
+
+    if(m_reportedFaces.insert(font.facename+"\n"+style).second)
+    {
+        gweni::log::write(log::Level::Error, "No %s face for %s, drawing its regular face",
+            style, font.facename.c_str());
+    }
+    return regular;
+}
+
 std::vector<String> SlotRenderer::glyphFallback(const String &face) const
 {
+    const String ownFile=regularFaceName(face);
     auto own=m_glyphFallback.find(face);
 
     if(own == m_glyphFallback.end())
@@ -293,7 +383,9 @@ std::vector<String> SlotRenderer::glyphFallback(const String &face) const
         return chain;
     for(const String &link:own->second)
     {
-        if(!link.empty() && (link != face) && (std::find(chain.begin(), chain.end(), link) == chain.end()))
+        // a link drawn from the face's own regular file adds no glyph
+        if(!link.empty() && (link != face) && (regularFaceName(link) != ownFile) &&
+            (std::find(chain.begin(), chain.end(), link) == chain.end()))
             chain.push_back(link);
     }
     return chain;
@@ -369,7 +461,7 @@ ftgl::texture_font_t *SlotRenderer::glyphChainFont(void *data, size_t index)
 
 std::shared_ptr<const std::vector<unsigned char>> SlotRenderer::glyphFallbackBlob(const String &face)
 {
-    const String path=getResourcePaths().getPath(ResourcePaths::Type::Font, face);
+    const String path=getResourcePaths().getPath(ResourcePaths::Type::Font, regularFaceName(face));
     std::weak_ptr<const std::vector<unsigned char>> &shared=m_glyphFallbackBlobs[path];
 
     if(std::shared_ptr<const std::vector<unsigned char>> blob=shared.lock())
@@ -428,7 +520,8 @@ Font::Status SlotRenderer::loadFont(const Font &requested, float px)
 
     m_lastFont=nullptr;
 
-    const String filename=getResourcePaths().getPath(ResourcePaths::Type::Font, font.facename);
+    // the face of the font's style in its family (setFontFamily), else its regular one
+    const String filename=getResourcePaths().getPath(ResourcePaths::Type::Font, fontFaceName(font));
     const bool found=fs::exists(filename);
     // what the face's own file gave; the built-in font may still draw it
     Font::Status status=Font::Status::Loaded;

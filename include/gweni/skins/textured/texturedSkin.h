@@ -500,7 +500,10 @@ public:
 
     void loadColors(const json::Value &jsonColors);
     bool loadConfig(std::string configFileName);
-    //! The config's "monoFont" (a face name, setDefaultMonoFont's when the file is
+    //! The config's "fonts" (an object of family name -> {"regular", "bold",
+    //! "italic", "boldItalic"} face names, each family given to the renderer,
+    //! IResourceLoader::setFontFamily, which finds each style's file as a font of
+    //! it is loaded), "monoFont" (a face or family name, setDefaultMonoFont's when the file is
     //! there, else the default font's face) and "fontFallback" (an object of face
     //! name -> array of face names, "default" for every face without its own),
     //! applied before the default font is loaded, which it then loads: the chains

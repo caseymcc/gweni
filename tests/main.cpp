@@ -56,6 +56,18 @@ renderer::SlotRenderer &gpuRenderer()
     return *g_renderer;
 }
 
+void setOpenSansFamily(renderer::SlotRenderer &renderer)
+{
+    FontFamily family;
+
+    family.regular="OpenSans";
+    family.bold="OpenSans-Bold";
+    family.italic="OpenSans-Italic";
+    family.boldItalic="OpenSans-BoldItalic";
+    renderer.setFontFamily("OpenSans", family);
+    renderer.setFontFamily("OpenSans.ttf", family);
+}
+
 renderer::SlotRenderer *newRenderer(ResourcePaths &paths, const Rect &viewRect)
 {
 #ifdef GWENI_HAS_VULKAN
@@ -185,6 +197,7 @@ int runCases(doctest::Context &context, renderer::SlotRenderer *renderer)
 {
     test::g_openSans.facename="OpenSans.ttf";
     test::g_openSans.size=11;
+    test::setOpenSansFamily(*renderer);
 
     if(renderer->loadFont(test::g_openSans) != Font::Status::Loaded)
     {
