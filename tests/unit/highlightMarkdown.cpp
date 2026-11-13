@@ -44,6 +44,7 @@ TEST_CASE("Markdown: headings, inline spans, quotes, lists, breaks and comments"
         "Some *em* and **strong** and _under_ and __bold__ text.\n"
         "A `code span` and ``a ` tick`` and an unclosed ` tick.\n"
         "A [link](http://x.y) and ![image](a.png) and [ref][1] and <https://auto.link>.\n"
+        "An ![unclosed image and a lone [bracket are plain.\n"
         "snake_case_word stays plain, \\*escaped\\* too, and * spaced *.\n"
         "> quoted *text*\n"
         "- item\n"
@@ -59,6 +60,7 @@ TEST_CASE("Markdown: headings, inline spans, quotes, lists, breaks and comments"
             "emphasis'*em*' strong'**strong**' emphasis'_under_' strong'__bold__'",
             "code'`code span`' code'``a ` tick``'",
             "link'[link](http://x.y)' link'![image](a.png)' link'[ref][1]' link'<https://auto.link>'",
+            "",
             "",
             "punctuation'>' emphasis'*text*'",
             "punctuation'-'",

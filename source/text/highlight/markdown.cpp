@@ -327,7 +327,8 @@ private:
             {
                 const size_t end=linkEnd(line, (c == '!')?i+1:i);
 
-                if(end > i)
+                // linkEnd gives back where it started for no link: "![" alone is none
+                if(end > ((c == '!')?i+1:i))
                 {
                     addToken(tokens, i, end, TokenKind::Link);
                     i=end;
