@@ -1360,19 +1360,28 @@ bool Canvas::escapePopup()
     if(!m_popup)
         return false;
 
+    m_closingOnEscape=true;
+
+    bool menusOnly=false;
+
     if(!m_popupIsMenu)
     {
         for(Base *child : m_children)
         {
             if(overPopup(child))
             {
-                closeMenus();
-                return true;
+                menusOnly=true;
+                break;
             }
         }
     }
 
-    closePopup();
+    if(menusOnly)
+        closeMenus();
+    else
+        closePopup();
+
+    m_closingOnEscape=false;
     return true;
 }
 

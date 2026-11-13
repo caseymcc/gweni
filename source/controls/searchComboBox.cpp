@@ -357,8 +357,10 @@ void SearchComboBox::makeList()
 
 // Closed, by the box or from outside (a press outside it, Escape over a
 // Popup), without a pick or after one: the query is over. The field shows
-// the value again; with free text it keeps what was typed, which Return or
-// the field losing the focus then takes or gives back (resolveText()).
+// the value again; with free text a press outside keeps what was typed,
+// which Return or the field losing the focus then takes or gives back
+// (resolveText()), and an Escape (the canvas's, over a Popup, which the
+// field never sees) gives the value back as the field's own Escape does.
 void SearchComboBox::listVisibilityChanged(event::Info)
 {
     redraw();
@@ -369,7 +371,9 @@ void SearchComboBox::listVisibilityChanged(event::Info)
     m_query.clear();
     m_lowerQuery.clear();
 
-    if(!m_allowCustom)
+    const Canvas *canvas=getCanvas();
+
+    if(!m_allowCustom || (canvas && canvas->closingOnEscape()))
         showSelection();
 }
 
@@ -528,6 +532,7 @@ void SearchComboBox::setOptions(std::vector<Option> options)
     {
         // nothing shown: no index into the old options is left
         m_matches.clear();
+        m_exactPos=VirtualList::NoItem;
         m_addRow=false;
         m_noMatch=false;
     }
@@ -711,13 +716,18 @@ void SearchComboBox::matchOptions()
     bool exact=false;
 
     m_matches.clear();
+    m_exactPos=VirtualList::NoItem;
 
     for(size_t i=0; i < m_options.size(); ++i)
     {
         if(m_lowerQuery.empty() || (m_lowerLabels[i].find(m_lowerQuery) != String::npos))
         {
+            if(!m_lowerQuery.empty() && !exact && (m_lowerLabels[i].size() == m_lowerQuery.size()))
+            {
+                exact=true;
+                m_exactPos=m_matches.size();
+            }
             m_matches.push_back(i);
-            exact=exact || (m_lowerLabels[i].size() == m_lowerQuery.size());
         }
     }
 
@@ -751,9 +761,14 @@ void SearchComboBox::rowKeys(std::vector<size_t> &keys) const
         keys[i]=rowKey(i);
 }
 
-// The first match, else the Add row (Return then adds what was typed).
+// The option whose label is the query (case aside), so Return picks what
+// Tab would; else the first match, else the Add row (Return then adds what
+// was typed).
 size_t SearchComboBox::firstHighlight() const
 {
+    if(m_exactPos != VirtualList::NoItem)
+        return m_exactPos;
+
     return (highlightableCount() > 0)?0:VirtualList::NoItem;
 }
 
@@ -858,7 +873,7 @@ void SearchComboBox::filter()
     m_highlightPos=firstHighlight();
     m_highlight=(m_highlightPos < m_matches.size())?static_cast<int>(m_matches[m_highlightPos]):NoOption;
     rebindChanged(previous);
-    m_rows->scrollToItem(0);
+    m_rows->scrollToItem((m_highlightPos == VirtualList::NoItem)?0:m_highlightPos);
 }
 
 void SearchComboBox::fieldTextChanged()

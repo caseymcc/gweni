@@ -3570,7 +3570,8 @@ two programs and the draws. What follows describes both together:
   `insertText()` is one edit however many text changes it makes (typing over a
   selection erases it, then inserts), it fires `onTextChangedCaller` and matches the
   lower-cased query against the cached labels, a substring anywhere (ASCII letters
-  only are folded), every option for an empty query, the first match highlighted.
+  only are folded), every option for an empty query, the first match highlighted (the
+  option whose label is the query, if one is, so Return picks what Tab would).
   Then only the pooled rows whose option changed are bound again (`rebindChanged`,
   comparing each row's key, its option or one of the two rows below, before and
   after; `getRowBindCount()` counts the binds): a keystroke matches over data, makes
@@ -3621,8 +3622,12 @@ two programs and the draws. What follows describes both together:
   the value back. Taken, the text is the value (`getValue()` the text,
   `getSelectedIndex()` `NoOption`, `hasCustomValue()`), kept through `addOption()` and
   `setOptions()`; the box adds no option, and a text that is an option's label picks
-  that option instead. The list closing leaves a free-text field's text as it is, for
-  Return or the lost focus to decide.
+  that option instead. The list closing on a press outside leaves a free-text field's
+  text as it is, for Return or the lost focus to decide; closing on Escape gives the
+  value back. In a `Popup` that Escape is the canvas's, which closes the Menus over the
+  popup before the focused field sees the key, so the box asks
+  `Canvas::closingOnEscape()` (true while `escapePopup()` closes things) as its list
+  closes, and the next Escape, closing the popup, has nothing to take.
 
   **Multi-select** (`setMultiSelect(true)`) holds picks in order, each an
   owner-placed, removable `Chip` that takes no keyboard (a press on it keeps the
