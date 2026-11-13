@@ -238,9 +238,8 @@ LogView::RowId LogView::prepend(const std::vector<LogRow> &rows)
 
 void LogView::clear()
 {
-    m_sinceDetached=0;
-    if(m_jump && !m_following)
-        updateJumpButton();
+    // an empty log has nothing to jump to
+    setFollowing(true);
 
     if(m_rows.empty())
         return;
@@ -633,7 +632,7 @@ void LogView::autoScrollStep()
     if(step == 0)
         return;
 
-    if(step < 0)
+    if(step < 0 && !fitsInView())
         setFollowing(false);
     if(!m_following)
     {
@@ -1035,7 +1034,8 @@ bool LogView::scrollToRow(RowId id)
     if(position == NoItem)
         return false;
 
-    if(position+1 == m_rows.size())
+    // the last row, or any row of a log that fits, is at the end
+    if(position+1 == m_rows.size() || fitsInView())
     {
         setFollowing(true);
         return true;
@@ -1053,6 +1053,11 @@ void LogView::barScrollTaken(float amount)
     setFollowing(amount >= 1.0f);
 }
 
+bool LogView::fitsInView() const
+{
+    return getMaxVerticalScrollOffset() == 0;
+}
+
 void LogView::followIfAtEnd()
 {
     if(!m_following && getVerticalScrollOffset() >= getMaxVerticalScrollOffset())
@@ -1061,7 +1066,7 @@ void LogView::followIfAtEnd()
 
 void LogView::scrollByUnits(int delta)
 {
-    if(delta < 0)
+    if(delta < 0 && !fitsInView())
         setFollowing(false);
     if(m_following)
         return;
@@ -1118,7 +1123,7 @@ bool LogView::onKeyPageDown(bool down)
 
 bool LogView::onKeyHome(bool down)
 {
-    if(down && !m_rows.empty())
+    if(down && !m_rows.empty() && !fitsInView())
     {
         setFollowing(false);
         scrollToItem(0);
@@ -1157,11 +1162,21 @@ void LogView::arrange(skin::Base *skin, Dim dim)
     ParentClass::arrange(skin, dim);
 }
 
-// The jump button is placed over the bottom of the viewport, centred, measured
-// in X here when it was shown or relabelled after the X measuring.
+// A detached log whose rows all fit now (emptied, capped, replaced shorter,
+// made taller) has nothing to jump to and follows again; what that hides is
+// this pass's. The jump button is placed over the bottom of the viewport,
+// centred, measured in X here when it was shown or relabelled after the X
+// measuring.
 void LogView::contentsPlaced(skin::Base *skin)
 {
     ParentClass::contentsPlaced(skin);
+
+    if(!m_following && fitsInView())
+    {
+        PlacementScope placement;
+
+        setFollowing(true);
+    }
 
     if(!m_jump || m_jump->hidden())
         return;

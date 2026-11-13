@@ -17,7 +17,8 @@
  *  unselected row selecting it first. A press-drag selects from the pressed
  *  row to the row under the mouse, and past the viewport's bottom or top the
  *  view scrolls on the clock and the selection follows (a scroll up
- *  detaching the view). The rows on screen are marked selected exactly when
+ *  detaching the view, but in a log whose rows all fit, which has nothing to
+ *  scroll and keeps following, telling nothing). The rows on screen are marked selected exactly when
  *  their row is, through scrolling off screen and back and through appends;
  *  a selection alone does not detach the view. Every frame is one layout pass.
  */
@@ -470,6 +471,34 @@ TEST_CASE("LogView selection: a drag selects to the row under the mouse and scro
     CHECK_FALSE(scene.log->isFollowing());
     CHECK(scene.log->getSelection().back().anchor.row == last);
     CHECK(scene.log->getSelection().back().focus.row < last-10);
+    scene.canvas->inputMouseButton(0, false);
+    scene.frame();
+}
+
+// A drag above the top of a log whose rows all fit has nothing to scroll: it
+// selects up to the first row and the view keeps following, telling nothing.
+TEST_CASE("LogView selection: a drag above the top of a log that fits keeps following")
+{
+    Scene scene(3);
+    int followEvents=0;
+
+    scene.log->onFollowingChanged.addCallback(scene.canvas, [&](event::Handler &, event::Info) { ++followEvents; });
+    REQUIRE(scene.log->getMaxVerticalScrollOffset() == 0);
+
+    const RowId last=scene.log->lastRowId();
+    const Rect &viewport=scene.log->getViewport();
+
+    scene.move(scene.rowPoint(last));
+    scene.canvas->inputMouseButton(0, true);
+    scene.frame();
+    scene.move(scene.log->localPosToCanvas(Point(viewport.x+40, viewport.y-15)));
+    for(int i=0; i < 10; ++i)
+        scene.tick();
+    CHECK(scene.log->isFollowing());
+    CHECK(followEvents == 0);
+    CHECK(scene.log->getJumpButton() == nullptr);
+    CHECK(scene.log->getSelection().back().anchor.row == last);
+    CHECK(scene.log->getSelection().back().focus.row == scene.log->firstRowId());
     scene.canvas->inputMouseButton(0, false);
     scene.frame();
 }

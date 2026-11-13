@@ -397,6 +397,9 @@ private:
     void scrollByUnits(int delta);
     //! Follows again when the offset is at the end.
     void followIfAtEnd();
+    //! Every row fits in the viewport (as the last layout placed them):
+    //! there is nothing to scroll up to, so nothing detaches the view.
+    bool fitsInView() const;
     //! Makes the jump button the first time; shows it with the count, or
     //! hides it.
     void updateJumpButton();

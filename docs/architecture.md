@@ -2122,7 +2122,11 @@ two programs and the draws. What follows describes both together:
   detaches, never taking the keyboard focus) shows centred `JumpGap` above the
   viewport's bottom with the count appended since (`jumpText()`), relabelled once a
   frame by the layout after the appends. Its press, End, `scrollToRow()` of the last
-  row and a scroll down (wheel, Down, the bar) to the end follow again.
+  row and a scroll down (wheel, Down, the bar) to the end follow again. A log whose
+  rows all fit (`fitsInView()`, the last layout's maximum offset 0) has nothing to jump
+  to: a scroll up there detaches nothing, `clear()` follows again, and a detached view
+  whose rows come to fit (capped, replaced shorter, made taller) follows again in the
+  layout that finds it (`contentsPlaced`, under a `PlacementScope`).
   `onFollowingChanged` fires on every change, possibly from the layout (the arrows'
   path), so a handler only reads (`tests/unit/logViewFollow.cpp`).
 

@@ -15,8 +15,11 @@
  *  reaching the end each follow it again, hiding the button. The up arrow
  *  detaches it too when the list takes the bar's move before the layout
  *  does: the idle re-measure after a resize, a block expanded between the
- *  press and the frame. A view that never detaches makes no jump button.
- *  Every frame is one layout pass.
+ *  press and the frame. A log whose rows all fit has nothing to jump to:
+ *  Home, Up, PageUp and scrollToRow() keep it following, telling nothing,
+ *  and a detached one emptied by clear() (at once) or capped down to rows
+ *  that fit (by the layout) follows again, hiding the button. A view that
+ *  never detaches makes no jump button. Every frame is one layout pass.
  */
 #include "headlessFixture.h"
 
@@ -393,4 +396,65 @@ TEST_CASE("LogView follow: the bar's up arrow detaches under the idle re-measure
     REQUIRE(scene.followEvents.size() == 3);
     CHECK(scene.followEvents.back() == 0);
     CHECK(scene.jumpShown());
+}
+
+// A log whose rows all fit has nothing to jump to: a scroll up keeps it
+// following, telling nothing, with no jump button.
+TEST_CASE("LogView follow: a log that fits keeps following through Home Up PageUp and scrollToRow")
+{
+    Scene scene;
+
+    scene.log->clear();
+    scene.append(3);
+    scene.frame();
+    REQUIRE(scene.log->getMaxVerticalScrollOffset() == 0);
+
+    for(int key : {static_cast<int>(keys::Home), static_cast<int>(keys::Up), static_cast<int>(keys::PageUp)})
+    {
+        CAPTURE(key);
+        scene.key(key);
+        scene.frame();
+        CHECK(scene.log->isFollowing());
+        CHECK_FALSE(scene.jumpShown());
+    }
+
+    CHECK(scene.log->scrollToRow(scene.log->firstRowId()));
+    scene.frame();
+    CHECK(scene.log->isFollowing());
+    CHECK_FALSE(scene.jumpShown());
+    CHECK(scene.followEvents.empty());
+}
+
+// Emptied, or capped down to rows that fit, while detached: it follows again.
+TEST_CASE("LogView follow: clear and a cap that leaves the log fitting follow again")
+{
+    Scene scene;
+
+    scene.wheel(1);
+    scene.frame();
+    REQUIRE_FALSE(scene.log->isFollowing());
+    REQUIRE(scene.jumpShown());
+
+    // at once, not only once the layout finds the empty log fits
+    scene.log->clear();
+    CHECK(scene.log->isFollowing());
+    scene.frame();
+    CHECK(scene.log->isFollowing());
+    CHECK_FALSE(scene.jumpShown());
+    REQUIRE(scene.followEvents.size() == 2);
+    CHECK(scene.followEvents.back() == 1);
+
+    scene.append(80);
+    scene.frame();
+    scene.checkAtEnd();
+    scene.wheel(1);
+    scene.frame();
+    REQUIRE_FALSE(scene.log->isFollowing());
+
+    scene.log->setMaxRows(3);
+    scene.append(1);
+    scene.frame();
+    CHECK(scene.log->getRowCount() == 3);
+    CHECK(scene.log->isFollowing());
+    CHECK_FALSE(scene.jumpShown());
 }
