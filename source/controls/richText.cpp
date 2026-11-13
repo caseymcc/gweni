@@ -6,6 +6,7 @@
 
 
 #include <gweni/controls/richText.h>
+#include <gweni/gweni.h>
 
 #include <algorithm>
 #include <utility>
@@ -53,6 +54,10 @@ GWENI_CONTROL_CONSTRUCTOR(RichText)
 
 void RichText::spansChanged()
 {
+    // a link a span changed under is hovered again from the next move
+    if(m_hoveredFirst >= 0)
+        setHoveredLink(-1);
+    m_pressedLink=-1;
     m_measureStale=true;
     invalidate();
     addStateChange(StateChange_Text);
@@ -144,6 +149,8 @@ Color RichText::spanColor(size_t index)
 {
     const RichSpan &span=m_spans[index];
 
+    if(isLinkHovered(index))
+        return getSkin()->Colors.RichText.LinkHover;
     if(span.color.a != 0)
         return span.color;
     if(span.isLink())
@@ -236,6 +243,99 @@ void RichText::calculateSize(skin::Base *skin, Dim dim)
 
     layoutAt(std::max(0, getBounds().w-m_padding.left-m_padding.right));
     m_preferredSize.height=preferredFromContent(m_layout.size().y+m_padding.top+m_padding.bottom, dim);
+}
+
+std::pair<int, int> RichText::linkSpans(int index) const
+{
+    if((index < 0) || (static_cast<size_t>(index) >= m_spans.size()) || !m_spans[index].isLink())
+        return { -1, -1 };
+
+    const String &url=m_spans[index].url;
+    int first=index, last=index;
+
+    while((first > 0) && (m_spans[first-1].url == url))
+        --first;
+    while((static_cast<size_t>(last+1) < m_spans.size()) && (m_spans[last+1].url == url))
+        ++last;
+    return { first, last };
+}
+
+bool RichText::isLinkHovered(size_t index) const
+{
+    return (m_hoveredFirst >= 0) && (static_cast<int>(index) >= m_hoveredFirst)
+        && (static_cast<int>(index) <= m_hoveredLast);
+}
+
+int RichText::linkAt(const Point &local)
+{
+    const Point at(local.x-contentOrigin().x, local.y-contentOrigin().y);
+    const std::vector<text::RichPiece> &pieces=m_layout.pieces();
+
+    for(const text::RichLine &line:m_layout.lines())
+    {
+        if((at.y < line.top) || (at.y >= line.top+line.height))
+            continue;
+        for(size_t i=line.firstPiece; i < line.firstPiece+line.pieceCount; ++i)
+        {
+            const Rect box=pieces[i].box();
+
+            if((at.x >= box.x) && (at.x < box.x+box.w))
+                return linkSpans(static_cast<int>(pieces[i].span)).first;
+        }
+        return -1;
+    }
+    return -1;
+}
+
+void RichText::setHoveredLink(int index)
+{
+    const std::pair<int, int> link=linkSpans(index);
+
+    if(link.first == m_hoveredFirst)
+        return;
+
+    // the spans of both links change colour: the renderer draws their runs
+    // and lines again, and no other
+    m_hoveredFirst=link.first;
+    m_hoveredLast=link.second;
+    addStateChange(StateChange_Text);
+    setCursor((link.first >= 0)?cursor::Finger:cursor::Normal);
+}
+
+void RichText::onMouseMoved(int x, int y, int /*deltaX*/, int /*deltaY*/)
+{
+    setHoveredLink(linkAt(canvasPosToLocal(Point(x, y))));
+}
+
+void RichText::onMouseLeave()
+{
+    setHoveredLink(-1);
+    ParentClass::onMouseLeave();
+}
+
+void RichText::onMouseClickLeft(int x, int y, bool down)
+{
+    const int link=linkAt(canvasPosToLocal(Point(x, y)));
+
+    if(down)
+    {
+        m_pressedLink=link;
+        MouseFocus=this;
+        return;
+    }
+
+    const int pressed=m_pressedLink;
+
+    m_pressedLink=-1;
+    MouseFocus=nullptr;
+    if((pressed < 0) || (link != pressed))
+        return;
+
+    event::Info info(this);
+
+    info.string=m_spans[pressed].url;
+    info.integer=static_cast<size_t>(pressed);
+    onLinkClicked.call(this, info);
 }
 
 }//namespace controls

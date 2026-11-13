@@ -24,7 +24,13 @@
  *  - hidden, every run and slot is hidden, and shown again, drawn; deleted,
  *    every run and slot is given back;
  *  - the theme registries name RichTextCode, RichTextLink and
- *    RichTextLinkHover.
+ *    RichTextLinkHover;
+ *  - a hovered link is drawn in RichText.LinkHover with cursor::Finger, the
+ *    frame drawing only its runs and its underline, a move inside it nothing
+ *    and a move off it the same runs and line back in RichText.Link with the
+ *    normal cursor; a link of several spans (one url) lights up whole;
+ *  - a press and a release on one link call onLinkClicked once, with its url
+ *    and first span; a release off it, or a press off any link, call nothing.
  */
 #include "headlessFixture.h"
 
@@ -171,6 +177,9 @@ struct Scene
 
     ~Scene()
     {
+        // the hovered and mouse-focused controls are process-global
+        gweni::HoveredControl=nullptr;
+        gweni::MouseFocus=nullptr;
         delete canvas;
     }
 
@@ -481,4 +490,139 @@ TEST_CASE("RichText: the theme names its code surface and link colours")
     REQUIRE(colors.count("RichTextLinkHover") == 1);
     CHECK((colors.at("RichTextLink") == &skin.Colors.RichText.Link));
     CHECK((colors.at("RichTextLinkHover") == &skin.Colors.RichText.LinkHover));
+}
+
+namespace
+{
+
+//! The canvas point at the centre of piece \p index's box
+Point pieceCentre(RichText *rich, size_t index)
+{
+    const text::RichPiece &piece=rich->getLayout().pieces().at(index);
+    const Rect box=piece.box();
+
+    return rich->localPosToCanvas(Point(rich->contentOrigin().x+box.x+box.w/2,
+        rich->contentOrigin().y+box.y+box.h/2));
+}
+
+void moveTo(Scene &scene, const Point &at)
+{
+    scene.canvas->inputMouseMoved(at.x, at.y, 0, 0);
+    scene.frame();
+}
+
+size_t runOf(RichText *rich, size_t piece)
+{
+    std::vector<size_t> primitives, runs;
+
+    rich->getSkinControl()->appendIds(primitives, runs);
+    return runs.at(piece);
+}
+
+}//namespace
+
+TEST_CASE("RichText: a hovered link is drawn in LinkHover with the Finger cursor, its runs and line alone")
+{
+    Scene scene;
+    RichText *rich=scene.rich;
+    const Color link=scene.skin.Colors.RichText.Link;
+    const Color hover=scene.skin.Colors.RichText.LinkHover;
+
+    REQUIRE_FALSE((link == hover));
+    moveTo(scene, pieceCentre(rich, 0));
+    CHECK(gweni::HoveredControl == rich);
+    CHECK(rich->getHoveredLink() == -1);
+    CHECK(rich->getCursor() == cursor::Normal);
+
+    moveTo(scene, pieceCentre(rich, 7));
+    CHECK(rich->getHoveredLink() == 7);
+    CHECK(rich->getCursor() == cursor::Finger);
+    REQUIRE(scene.renderer.texts.size() == 1);
+    CHECK(scene.renderer.texts[0].id == runOf(rich, 7));
+    CHECK((scene.renderer.texts[0].color == hover));
+    REQUIRE(scene.renderer.slots.size() == 1);
+    CHECK(scene.renderer.slots[0].rule);
+    CHECK((scene.renderer.slots[0].color == hover));
+    CHECK(scene.drewOnly(rich));
+
+    // inside the same link: nothing
+    const Point inside=pieceCentre(rich, 7);
+
+    moveTo(scene, Point(inside.x+1, inside.y));
+    CHECK(scene.renderer.texts.empty());
+    CHECK(scene.renderer.slots.empty());
+
+    // off it: the same run and line back in the link colour
+    moveTo(scene, pieceCentre(rich, 8));
+    CHECK(rich->getHoveredLink() == -1);
+    CHECK(rich->getCursor() == cursor::Normal);
+    REQUIRE(scene.renderer.texts.size() == 1);
+    CHECK(scene.renderer.texts[0].id == runOf(rich, 7));
+    CHECK((scene.renderer.texts[0].color == link));
+    REQUIRE(scene.renderer.slots.size() == 1);
+    CHECK((scene.renderer.slots[0].color == link));
+
+    // leaving the control unhovers it too
+    moveTo(scene, pieceCentre(rich, 7));
+    CHECK(rich->getHoveredLink() == 7);
+    scene.canvas->inputMouseMoved(300, 150, 0, 0);
+    scene.frame();
+    CHECK(rich->getHoveredLink() == -1);
+}
+
+TEST_CASE("RichText: a link of several spans with one url is hovered whole")
+{
+    Scene scene;
+    RichText *rich=scene.rich;
+
+    rich->setSpans({ RichSpan::plain("see "), RichSpan::link("the ", "doc"),
+        RichSpan::link("docs", "doc", RichSpan::Bold), RichSpan::link(" other", "elsewhere") });
+    scene.frame();
+    REQUIRE(rich->getLayout().pieces().size() == 4);
+
+    moveTo(scene, pieceCentre(rich, 2));
+    CHECK(rich->getHoveredLink() == 1);
+    CHECK(rich->isLinkHovered(1));
+    CHECK(rich->isLinkHovered(2));
+    CHECK_FALSE(rich->isLinkHovered(3));
+    CHECK(scene.renderer.texts.size() == 2);
+
+    moveTo(scene, pieceCentre(rich, 3));
+    CHECK(rich->getHoveredLink() == 3);
+    // the two spans of the first link and the one of the second
+    CHECK(scene.renderer.texts.size() == 3);
+}
+
+TEST_CASE("RichText: a press and release on one link call onLinkClicked with its url")
+{
+    Scene scene;
+    RichText *rich=scene.rich;
+    std::vector<String> urls;
+    std::vector<size_t> firsts;
+
+    rich->onLinkClicked.addCallback(scene.canvas,
+        [&](event::Handler &, event::Info info) { urls.push_back(info.string); firsts.push_back(info.integer); });
+
+    // on the link
+    moveTo(scene, pieceCentre(rich, 7));
+    scene.canvas->inputMouseButton(0, true);
+    scene.canvas->inputMouseButton(0, false);
+    scene.frame();
+    REQUIRE(urls.size() == 1);
+    CHECK(urls[0] == "https://example.com/");
+    CHECK(firsts[0] == 7);
+
+    // pressed on it, let go off it
+    scene.canvas->inputMouseButton(0, true);
+    moveTo(scene, pieceCentre(rich, 0));
+    scene.canvas->inputMouseButton(0, false);
+    scene.frame();
+    CHECK(urls.size() == 1);
+
+    // pressed off it, let go on it
+    scene.canvas->inputMouseButton(0, true);
+    moveTo(scene, pieceCentre(rich, 7));
+    scene.canvas->inputMouseButton(0, false);
+    scene.frame();
+    CHECK(urls.size() == 1);
 }

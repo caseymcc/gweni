@@ -1008,6 +1008,8 @@ public:
     virtual bool isCachedToTexture() const { return m_cacheToTexture; }
 
     virtual void setCursor(unsigned char c) { m_cursor=c; }
+    //! The cursor (a cursor:: kind) updateCursor() shows over this control
+    unsigned char getCursor() const { return m_cursor; }
 
     virtual void updateCursor();
 
