@@ -11,6 +11,7 @@
 #include <gweni/controls/base.h>
 #include <gweni/text/richLayout.h>
 
+#include <utility>
 #include <vector>
 
 namespace gweni
@@ -119,7 +120,35 @@ public:
 
     void calculateSize(skin::Base *skin, Dim dim) override;
 
+    //! \sect{Links}
+    //! A link is a run of consecutive spans with the same url. Hovered, its
+    //! spans are drawn in the skin's RichText.LinkHover (their own colour
+    //! aside) and the cursor is cursor::Finger (the web's "pointer"); a press
+    //! and a release on the same link call onLinkClicked, with the url in
+    //! info.string and the link's first span in info.integer. gweni opens
+    //! nothing itself: the app routes the url.
+
+    //! The first span of the link at \p local (this control's coordinates),
+    //! -1 for none: the link whose piece's box, as high as its line, holds it
+    int linkAt(const gweni::Point &local);
+    //! The first span of the hovered link, -1 for none
+    int getHoveredLink() const { return m_hoveredFirst; }
+    //! Whether span \p index is part of the hovered link
+    bool isLinkHovered(size_t index) const;
+
+    event::Caller onLinkClicked;
+
+    void onMouseMoved(int x, int y, int deltaX, int deltaY) override;
+    void onMouseLeave() override;
+    void onMouseClickLeft(int x, int y, bool down) override;
+
 protected:
+
+    //! The link holding span \p index: its first and last span ([-1, -1] for none)
+    std::pair<int, int> linkSpans(int index) const;
+    //! Hovers the link holding span \p index (-1: none), marking the spans
+    //! that change look and setting the cursor
+    void setHoveredLink(int index);
 
     //! The layout's spans, from m_spans: fonts, url flags, code padding
     std::vector<text::RichLayoutSpan> layoutSpans();
@@ -144,6 +173,12 @@ protected:
     //! the width of the text on one line, -1 until measured
     int m_naturalWidth=-1;
     size_t m_measureCount=0;
+
+    //! the hovered link's first and last span, -1 for none
+    int m_hoveredFirst=-1;
+    int m_hoveredLast=-1;
+    //! the first span of the link a left press is on, -1 for none
+    int m_pressedLink=-1;
 };
 
 }//namespace controls
