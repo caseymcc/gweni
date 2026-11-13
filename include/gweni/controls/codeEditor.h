@@ -510,6 +510,9 @@ private:
     void makeCaretVisible();
     //! Its column, scrolled sideways into view (unwrapped).
     void makeCaretColumnVisible();
+    //! Wrapped: its line by the next layout, and of a line taller than the
+    //! viewport its visual row at the wrap width that layout gives.
+    void revealCaretRow();
     //! The caret's line is on screen (some row shows it).
     bool caretLineShown() const;
     //! The bytes line \p line's visual rows start at, the first 0: {0}
@@ -590,6 +593,9 @@ private:
     size_t m_caretColumn=0;
     //! At a wrap point: drawn at the end of the row above (isCaretAtRowEnd).
     bool m_caretUpstream=false;
+    //! The next layout scrolls the caret's visual row into view
+    //! (revealCaretRow()).
+    bool m_revealCaretRow=false;
     //! Row starts, kept for their capacity.
     mutable std::vector<size_t> m_rowScratch;
     //! The column Up and Down keep, or NoGoal: the caret's own.

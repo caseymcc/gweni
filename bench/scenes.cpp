@@ -1265,7 +1265,9 @@ public:
         m_editor->setText(wrapDocument(ctx.n));
         m_editor->setWrap(true);
 
-        const size_t line=size_t(std::min(500, ctx.n/2)/8*8+7);
+        // the note line of the block there, the last line below N=8
+        const size_t lines=m_editor->getDocument().lineCount();
+        const size_t line=std::min(size_t(std::min(500, ctx.n/2)/8*8+7), lines-1);
 
         m_editor->setCaret({line, m_editor->getDocument().line(line).size()});
         // the caret's line a few lines above the viewport's bottom: a Return

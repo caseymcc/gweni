@@ -203,6 +203,14 @@ public:
     //! the first one (an app restoring a position) or in the frame of a resize;
     //! until then getVerticalScrollOffset() is the old offset.
     void scrollToItem(size_t index);
+    //! scrollToItem() for the part of the item \p partHeight units high
+    //! \p partTop units below its top (a wrapped line's visual row): an item
+    //! that fits the viewport is put fully in view as scrollToItem() puts it,
+    //! one at least as tall as the viewport only as far as puts that part in
+    //! view (its top at the viewport's top where the part is above it, its
+    //! bottom at the viewport's bottom where below it, nothing where in view).
+    //! In fixed mode it is scrollToItem().
+    void scrollToItem(size_t index, int partTop, int partHeight);
     //! Scrolls by whole rows, down for a positive count; it drops a
     //! scrollToItem() not yet laid out. In variable mode it moves the anchor
     //! by that many items.
@@ -310,6 +318,9 @@ private:
     size_t m_itemCount=0;
     //! The item a scrollToItem() asked for, resolved by the next layout.
     size_t m_pendingItem=NoItem;
+    //! The part of it to show, a height of -1 for the whole item.
+    int m_pendingPartTop=0;
+    int m_pendingPartHeight=-1;
     int m_rowHeight=20;
     int m_wheelRows=3;
     bool m_stuckToEnd=false;

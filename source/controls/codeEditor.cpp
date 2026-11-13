@@ -581,6 +581,7 @@ void CodeEditor::setWrap(bool wrap)
     m_wrapViewportHeight=-1;
     m_goalColumn=NoGoal;
     m_caretUpstream=false;
+    m_revealCaretRow=false;
 
     if(wrap)
     {
@@ -603,10 +604,13 @@ void CodeEditor::setWrap(bool wrap)
     invalidate();
 
     // the caret's line stays on screen (by the next layout, which knows the
-    // lines' new heights), and its column too unwrapped
+    // lines' new heights), its visual row wrapped and its column unwrapped
     if(shown)
     {
-        scrollToItem(m_caret.line);
+        if(wrap)
+            revealCaretRow();
+        else
+            scrollToItem(m_caret.line);
         makeCaretColumnVisible();
     }
     caretChanged();
@@ -711,8 +715,12 @@ int CodeEditor::measureLine(size_t line, int width) const
 }
 
 // The rows the line's cells fill at the wrap width: what it wraps into with
-// no word moved to the next row, so at most the measure. One line before the
-// layout has given a wrap width.
+// no word moved to the next row and no blank hanging past a row's end, so
+// usually at most the measure, but not always (blanks hanging at the wrap
+// points let a row hold more than the wrap width's cells: "aaaa    b" at 4
+// cells is 3 rows by its cells and wraps into 2). Only an estimate: nothing
+// relies on how it compares with the measure. One line before the layout has
+// given a wrap width.
 int CodeEditor::estimateLine(size_t line) const
 {
     const int lineHeight=std::max(1, m_lineHeight);
@@ -848,6 +856,9 @@ void CodeEditor::linesChanged(const text::LineChange &change)
     shift(m_caret);
     shift(m_anchor);
     m_caretColumn=text::stringCells(m_document.line(m_caret.line), 0, m_caret.byte);
+    // the row it is drawn on is worked out again from the new text: at the
+    // start of the row at a wrap point
+    m_caretUpstream=false;
     syncCurrentLine();
     syncSelection();
     caretChanged();
@@ -1014,7 +1025,7 @@ void CodeEditor::makeCaretVisible()
         const size_t line=m_caret.line;
 
         if(line >= heights.size() || heights.generation(line) != getMeasureGeneration())
-            scrollToItem(line);
+            revealCaretRow();
         else
         {
             const int64_t top=heights.offsetOf(line)+static_cast<int64_t>(getCaretRow())*lineHeight;
@@ -1025,7 +1036,7 @@ void CodeEditor::makeCaretVisible()
             // taller, an auto-height field grown past its rows) by the list,
             // at the content the next layout gives
             if(top+lineHeight > offset+viewport && top+lineHeight-viewport > getMaxVerticalScrollOffset())
-                scrollToItem(line);
+                revealCaretRow();
             else if(top < offset)
                 setVerticalScrollOffset(static_cast<int>(std::min<int64_t>(top, INT_MAX)));
             else if(top+lineHeight > offset+viewport)
@@ -1042,6 +1053,15 @@ void CodeEditor::makeCaretVisible()
     }
 
     makeCaretColumnVisible();
+}
+
+// The line by the next layout, and of a line taller than the viewport the
+// caret's visual row: worked out in contentsPlaced, at the wrap width that
+// layout gives the rows.
+void CodeEditor::revealCaretRow()
+{
+    m_revealCaretRow=true;
+    scrollToItem(m_caret.line);
 }
 
 void CodeEditor::makeCaretColumnVisible()
@@ -2105,9 +2125,15 @@ void CodeEditor::contentsPlaced(skin::Base *skin)
                 caretChanged();
             }
             if(shown)
-                scrollToItem(m_caret.line);
+                m_revealCaretRow=true;
         }
+
+        // the caret's visual row (the whole line where it fits the viewport)
+        if(m_revealCaretRow && m_lineHeight > 0)
+            scrollToItem(m_caret.line, static_cast<int>(std::min<size_t>(getCaretRow(),
+                static_cast<size_t>(INT_MAX/m_lineHeight-1)))*m_lineHeight, m_lineHeight);
     }
+    m_revealCaretRow=false;
 
     ParentClass::contentsPlaced(skin);
 

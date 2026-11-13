@@ -2125,7 +2125,9 @@ two programs and the draws. What follows describes both together:
   viewport's bottom when it is further, before it decides whether the item is in view:
   estimates would say an item shows that does not. An item at least as tall as the
   viewport (a long wrapped line) goes to its top, never its bottom, so a second call
-  on it changes nothing. So an item above the top changing height, items inserted or removed above it, and an
+  on it changes nothing; `scrollToItem(index, partTop, partHeight)` asks for a part of
+  it instead (a wrapped line's visual row), and such an item scrolls only as far as
+  puts that part in view. So an item above the top changing height, items inserted or removed above it, and an
   estimate refined into a measure move the offset and the thumb, never a row on
   screen. **Edits** (`insertItems(at, n)`, `removeItems(at, n)`, `setItemCount`,
   `itemChanged(i)`, which measures that item again at once) cost O(log N) in the
@@ -2300,7 +2302,10 @@ two programs and the draws. What follows describes both together:
   needs fewer (a spare row keeps none), so a row holds what a row bound to its line
   at that width holds. Toggling wrap, and a new size that wraps again or a new
   viewport height, keep the caret's line on screen (`scrollToItem` of it when it was
-  shown).
+  shown), and of a line taller than the viewport (one paragraph in a short field) the
+  caret's visual row: `revealCaretRow()` asks the next layout for it, and that
+  layout's `contentsPlaced`, once it knows the wrap width, gives the row's place in
+  the line to `scrollToItem(line, partTop, partHeight)`.
 
   **Visual rows.** Wrapped, Up and Down move a visual row at a time, inside a line
   and across lines, the goal column a column in cells on the row; Home and End go
@@ -2313,8 +2318,9 @@ two programs and the draws. What follows describes both together:
   a click past a row's end or Up/Down landing past it (`isCaretAtRowEnd()`), at the
   lower row's start after any other move, and `getCaretRow()`/`getCaretBounds()`
   follow. A move puts the caret's visual row in view through the scroll offset (the
-  row's top is the line's `offsetOf` plus its rows above), or through `scrollToItem`
-  for a line not measured at this width or a row past the last layout's content
+  row's top is the line's `offsetOf` plus its rows above), or through
+  `revealCaretRow()` for a line not measured at this width or a row past the last
+  layout's content (an auto-height field grown past its max by the keystroke)
   (`tests/unit/codeEditorWrapEditing.cpp`). Wrapped, the selection draws one rect
   per visual row it covers (`CodeLine::getSelectionRects`), between its cells on
   that row from the row's start: a row it goes on past is covered to its last cell,

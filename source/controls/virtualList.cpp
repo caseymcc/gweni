@@ -269,7 +269,10 @@ void VirtualList::shiftItems(size_t at, int64_t count)
         if(count > 0)
             m_pendingItem+=static_cast<size_t>(count);
         else if(m_pendingItem < removedEnd)
+        {
             m_pendingItem=at;
+            m_pendingPartHeight=-1;
+        }
         else
             m_pendingItem-=removedEnd-at;
     }
@@ -676,11 +679,23 @@ void VirtualList::clearPool()
 // the viewport the item is shown in.
 void VirtualList::scrollToItem(size_t index)
 {
+    scrollToItem(index, 0, -1);
+}
+
+void VirtualList::scrollToItem(size_t index, int partTop, int partHeight)
+{
     if(index >= m_itemCount)
         return;
 
+    // the same item pending: its layout is asked for already, this only
+    // says which part of it
+    const bool pending=(m_pendingItem == index);
+
     m_pendingItem=index;
-    invalidate();
+    m_pendingPartTop=std::max(0, partTop);
+    m_pendingPartHeight=(partHeight < 0)?-1:std::max(1, partHeight);
+    if(!pending)
+        invalidate();
 }
 
 void VirtualList::scrollByRows(int rows)
@@ -857,8 +872,40 @@ void VirtualList::placeVariable(size_t &first, size_t &end)
             m_anchorToEnd=false;
             m_anchorOffset=gweni::clamp(m_anchorOffset, 0, measureItem(m_anchorItem)-1);
 
-            if(item < m_anchorItem || (item == m_anchorItem && m_anchorOffset > 0)
-                || measureItem(item) >= viewport)
+            const int itemHeight=measureItem(item);
+
+            if(itemHeight >= viewport && m_pendingPartHeight > 0)
+            {
+                // too tall to show whole, a part of it asked for: that part,
+                // judged from the measures down to it as below
+                const int partTop=std::min(m_pendingPartTop, itemHeight-1);
+                const int partBottom=std::min(partTop+m_pendingPartHeight, itemHeight);
+                int64_t top=-m_anchorOffset;
+                size_t at=m_anchorItem;
+
+                if(item < m_anchorItem)
+                    top=INT64_MIN/2;
+                else
+                {
+                    for(; at < item && top < viewport; ++at)
+                        top+=measureItem(at);
+                    if(at < item)
+                        top=INT64_MAX/2;
+                }
+
+                if(top+partTop < 0)
+                {
+                    m_anchorItem=item;
+                    m_anchorOffset=partTop;
+                }
+                else if(top+partBottom > viewport)
+                {
+                    m_anchorItem=item;
+                    m_anchorOffset=std::max(0, partBottom-viewport);
+                }
+            }
+            else if(item < m_anchorItem || (item == m_anchorItem && m_anchorOffset > 0)
+                || itemHeight >= viewport)
             {
                 // above the viewport's top, or too tall to show whole: to its
                 // top, so a second call on it changes nothing

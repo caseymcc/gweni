@@ -12,8 +12,8 @@
  *  that row's end. Home and End go to the visual row's start and end first,
  *  then to the line's (End's stop at a wrap point drawn on the upper row);
  *  the same byte is drawn at the end of the upper row or the start of the
- *  lower one as the move that reached it implies, and getCaretBounds() is
- *  there. A click lands on the visual row under it, past a wrapping row's
+ *  lower one as the move that reached it implies (an app's edit of the
+ *  document the lower one's), and getCaretBounds() is there. A click lands on the visual row under it, past a wrapping row's
  *  end at that row's end. PageDown moves the caret by the viewport's rows
  *  and keeps it in view; Down past the viewport's bottom scrolls one row.
  *  Toggling wrap, and a resize, keep the caret's line on screen. Every frame
@@ -371,6 +371,21 @@ TEST_CASE("CodeEditor wrapped: a byte at a wrap point is drawn where the move th
     s.frame();
     CHECK(!editor->isCaretAtRowEnd());
     CHECK(editor->getCaretRow() == 1);
+
+    // and so is an app's edit of the document, which moves the caret with
+    // its line: End's look at the wrap point is not kept
+    s.setText("top\n"+String(2*C, 'x'));
+    editor->setCaret(at(1, 1));
+    s.frame();
+    s.key(GLFW_KEY_END);
+    REQUIRE(s.caret() == at(1, C));
+    REQUIRE(editor->isCaretAtRowEnd());
+    editor->getDocument().insert(at(0, 3), "\nabove");
+    s.frame();
+    CHECK(s.caret() == at(2, C));
+    CHECK(!editor->isCaretAtRowEnd());
+    CHECK(editor->getCaretRow() == 1);
+    CHECK(sameRect(editor->getCaretBounds(), s.expectedCaret(1, 0)));
     s.checkOnePass();
 }
 

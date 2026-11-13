@@ -16,6 +16,10 @@
  *  setAutoHeight(1, 0) gives the requested height back. setPlain(true) is
  *  wrapped, has no gutter and no current-line look, and Tab moves the focus
  *  in and out of it as in a textarea; setPlain(false) captures Tab again.
+ *  One paragraph taller than the field (a line of more visual rows than the
+ *  viewport holds) keeps the caret's row in view, not the line's top: as
+ *  typing grows it past the max, on idle frames after, when the field is
+ *  made narrower, after a wrap toggle, and in a fixed-height editor.
  */
 #include "headlessFixture.h"
 
@@ -306,4 +310,97 @@ TEST_CASE("CodeEditor plain: wrapped, no gutter or current line, and Tab moves t
     CHECK(editor->rowForLine(0)->isCurrentLine());
     // the wrap is left as it was
     CHECK(editor->isWrapped());
+}
+
+TEST_CASE("CodeEditor auto-height: in a line taller than the field the caret's row stays in view")
+{
+    Form f(2, 4);
+    controls::CodeEditor *editor=f.editor;
+    const int lineHeight=editor->getLineHeight();
+
+    REQUIRE(lineHeight > 0);
+
+    // the caret drawn whole inside the viewport
+    auto caretShown=[editor, lineHeight]()
+        {
+            const Rect caret=editor->getCaretBounds();
+            const Rect &viewport=editor->getViewport();
+
+            return caret.h == lineHeight && caret.y >= viewport.y && caret.y+caret.h <= viewport.y+viewport.h;
+        };
+
+    editor->focus();
+    f.frame();
+
+    // one paragraph typed at its end until it is a row past the max
+    const String word="word ";
+    size_t words=0;
+
+    while(editor->getLineRows(0) <= 4)
+    {
+        REQUIRE(words < 200);
+        // every keystroke, the one that adds the fifth row included
+        for(char c : word)
+        {
+            f.type(String(1, c));
+            CAPTURE(editor->getLineRows(0));
+            CHECK(caretShown());
+        }
+        ++words;
+    }
+    CHECK(editor->getHeight() == f.heightFor(4));
+    CHECK(editor->canScrollVertical());
+    CHECK(editor->getVerticalScrollOffset() > 0);
+    // and on the idle frames after
+    f.frame();
+    f.frame();
+    CHECK(caretShown());
+
+    // a few more rows: still the caret's
+    for(size_t i=0; i < 3*words; ++i)
+        f.type(word);
+    REQUIRE(editor->getLineRows(0) > 8);
+    CHECK(caretShown());
+
+    // a narrower field wraps it into more rows: the caret's in view
+    f.panel->setWidth(200);
+    f.frame();
+    f.frame();
+    CHECK(caretShown());
+
+    // wrap off and on: the same
+    editor->setWrap(false);
+    f.frame();
+    CHECK(caretShown());
+    editor->setWrap(true);
+    f.frame();
+    f.frame();
+    CHECK(editor->getLineRows(0) > 8);
+    CHECK(caretShown());
+
+    // the caret near the line's top, then at its end again
+    editor->setCaret(text::Position{0, 0});
+    f.frame();
+    CHECK(editor->getVerticalScrollOffset() == 0);
+    CHECK(caretShown());
+    editor->setCaret(editor->getDocument().endPosition());
+    f.frame();
+    CHECK(caretShown());
+
+    // a fixed-height editor three rows high: a resize and a toggle
+    editor->setAutoHeight(1, 0);
+    editor->setHeight(f.heightFor(3));
+    f.frame();
+    f.frame();
+    CHECK(caretShown());
+    f.panel->setWidth(180);
+    f.frame();
+    f.frame();
+    CHECK(caretShown());
+    editor->setWrap(false);
+    f.frame();
+    editor->setWrap(true);
+    f.frame();
+    f.frame();
+    CHECK(caretShown());
 }
