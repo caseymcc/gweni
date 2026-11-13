@@ -143,6 +143,12 @@ set(GWENI_SOURCES
     source/text/cellWrap.cpp
     include/gweni/text/document.h
     source/text/document.cpp
+    include/gweni/text/highlightCache.h
+    source/text/highlightCache.cpp
+    source/text/highlight/languages.h
+    source/text/highlight/languages.cpp
+    include/gweni/text/tokenizer.h
+    source/text/tokenizer.cpp
     include/gweni/text/undoStack.h
     source/text/undoStack.cpp
     include/gweni/text/wrap.h
