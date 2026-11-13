@@ -17,6 +17,11 @@
  *    its hover drawing its rest look;
  *  - setRemovable() adds a remove button in the right padding: the chip is
  *    wider by it, the button's click fires onRemove once and the chip stays;
+ *  - a disabled chip draws ButtonDisabled's colours in its own pill radius
+ *    (not the button's), its text in the disabled colour, hides its remove
+ *    button at the same width, and a click there fires neither onRemove nor
+ *    onPressCaller; enabled again, the button shows and removes;
+ *  - setClickable(false) during a press lets the mouse go;
  *  - a text of the same width lays nothing out, and a wider one the way down
  *    to the chip in one pass, entering no sibling.
  */
@@ -39,7 +44,7 @@ namespace tokyonight=gweni::skin::textured::tokyonight;
 namespace
 {
 
-//! Records the fill of every rounded rect drawn.
+//! Records the fill, border colour and radius of every rounded rect drawn.
 class FillRecorder: public test::StubRenderer
 {
 public:
@@ -47,10 +52,14 @@ public:
         Color bottom, Color borderColor, int zIndex) override
     {
         fill[primitiveId]=top;
+        borderOf[primitiveId]=borderColor;
+        radiusOf[primitiveId]=radius;
         StubRenderer::drawRoundedRect(primitiveId, rect, radius, border, top, bottom, borderColor, zIndex);
     }
 
     std::map<size_t, Color> fill;
+    std::map<size_t, Color> borderOf;
+    std::map<size_t, float> radiusOf;
 };
 
 //! The textured Chip renderer; a StubControl for every other type.
@@ -352,6 +361,79 @@ TEST_CASE("Chip: the remove button, in the right padding, fires onRemove once an
     scene.settle();
     CHECK(chip->getRemoveButton() == nullptr);
     CHECK(chip->getWidth() == plain);
+}
+
+TEST_CASE("Chip: a disabled chip keeps its pill, hides its remove button and fires nothing")
+{
+    Scene scene;
+    controls::Chip *chip=scene.chip("tag");
+
+    scene.skin.Colors.Button.Disabled=Color(7, 7, 7);
+    chip->setTone(controls::ChipTone::Success);
+    chip->setClickable(true);
+    chip->setRemovable(true);
+    scene.settle();
+
+    controls::ChipRemoveButton *button=chip->getRemoveButton();
+    const size_t slot=scene.slotOf(chip);
+    const float pill=scene.renderer.radiusOf[slot];
+    const int width=chip->getWidth();
+
+    REQUIRE(button != nullptr);
+    CHECK(button->visible());
+    CHECK(pill == doctest::Approx(0.5f*float(chip->getHeight())));
+
+    chip->setDisabled(true);
+    scene.settle();
+    CHECK(same(scene.fillOf(chip), tokyonight::ButtonDisabled.top));
+    CHECK(same(scene.renderer.borderOf[slot], tokyonight::ButtonDisabled.border));
+    // its own shape, not a button's corners
+    CHECK(scene.renderer.radiusOf[slot] == doctest::Approx(pill));
+    CHECK(scene.renderer.radiusOf[slot] != doctest::Approx(tokyonight::ButtonDisabled.radius));
+    CHECK(same(chip->getTextColor(), Color(7, 7, 7)));
+    CHECK(button->hidden());
+    CHECK(chip->getWidth() == width);
+
+    scene.click(button);
+    CHECK(scene.removes == 0);
+    CHECK(scene.presses == 0);
+
+    chip->setDisabled(false);
+    scene.away();
+    scene.settle();
+    CHECK_FALSE(button->hidden());
+    CHECK(same(scene.fillOf(chip), tokyonight::ChipSuccess.top));
+    scene.click(button);
+    CHECK(scene.removes == 1);
+
+    // a removable chip made while disabled starts with the button hidden
+    controls::Chip *other=scene.chip("other");
+
+    other->setPos(20, 80);
+    other->setDisabled(true);
+    other->setRemovable(true);
+    scene.settle();
+    CHECK(other->getRemoveButton()->hidden());
+}
+
+TEST_CASE("Chip: setClickable(false) during a press lets the mouse go")
+{
+    Scene scene;
+    controls::Chip *chip=scene.chip("project");
+
+    chip->setClickable(true);
+    scene.settle();
+    scene.hover(chip);
+    scene.canvas->inputMouseButton(0, true);
+    scene.frame();
+    REQUIRE(MouseFocus == chip);
+
+    chip->setClickable(false);
+    CHECK(MouseFocus == nullptr);
+    CHECK_FALSE(chip->isDepressed());
+    scene.canvas->inputMouseButton(0, false);
+    scene.frame();
+    CHECK(scene.presses == 0);
 }
 
 TEST_CASE("Chip: a text of the same width lays nothing out, a wider one only the way down to the chip")

@@ -6,6 +6,7 @@
 
 
 #include <gweni/controls/chip.h>
+#include <gweni/gweni.h>
 #include <gweni/skin.h>
 
 namespace gweni
@@ -58,7 +59,13 @@ void Chip::setClickable(bool clickable)
     m_clickable=clickable;
     setKeyboardInputEnabled(clickable);
     if(!clickable)
+    {
+        // a press it was holding is let go: the release, which a chip that
+        // is not clickable no longer takes, would have given the mouse back
         setDepressed(false);
+        if(MouseFocus == this)
+            MouseFocus=nullptr;
+    }
     redraw();
 }
 
@@ -73,6 +80,7 @@ void Chip::setRemovable(bool removable)
         m_removeButton->setPlacement(Placement::Owner);
         m_removeButton->setSize(RemoveButtonSize, RemoveButtonSize);
         m_removeButton->onPressCaller.add(this, &Chip::onRemovePressed);
+        m_removeButton->setHidden(isDisabled());
     }
     else
     {
@@ -115,6 +123,8 @@ void Chip::arrange(skin::Base *skin, Dim dim)
 
 void Chip::onRemovePressed(event::Info /*info*/)
 {
+    if(isDisabled())
+        return;
     onRemove.call(this);
 }
 
@@ -154,9 +164,15 @@ void Chip::acceleratePressed()
         ParentClass::acceleratePressed();
 }
 
+// Run from redraw(), so a disabled change settles the remove button too: a
+// disabled chip shows none and fires no onRemove, as a disabled closable tab
+// shows no close button (its square stays in the padding, so the width holds).
 void Chip::updateColors()
 {
     const auto &colors=getSkin()->Colors;
+
+    if(m_removeButton)
+        m_removeButton->setHidden(isDisabled());
 
     if(isDisabled())
         return setTextColor(colors.Button.Disabled);

@@ -3559,7 +3559,13 @@ void Chip::update(renderer::Base *renderer, controls::Base *baseControl)
     tokyonight::Surface surface=(index >= 0)?*palette[index]:*tones[static_cast<int>(chip->getTone())];
 
     if(chip->isDisabled())
-        surface=tokyonight::ButtonDisabled;
+    {
+        // the disabled colours in the chip's own shape (ButtonDisabled's
+        // radius is a button's)
+        surface.top=tokyonight::ButtonDisabled.top;
+        surface.bottom=tokyonight::ButtonDisabled.bottom;
+        surface.border=tokyonight::ButtonDisabled.border;
+    }
     else if(chip->showsInteraction() && (chip->isDepressed() || chip->isHovered()))
     {
         const float t=chip->isDepressed()?0.6f:0.35f;

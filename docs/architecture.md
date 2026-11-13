@@ -3138,11 +3138,15 @@ two programs and the draws. What follows describes both together:
   editor and a theme file set them by name. The hover and press looks are derived,
   not named: the textured `Chip` renderer moves the entry's fill 35 % (hover) or 60 %
   (press) toward its border, so a theme sets one surface per entry, and a disabled chip
-  draws `ButtonDisabled`. A chip that is not clickable (the default) takes no press:
+  draws `ButtonDisabled`'s colours in its own radius (a pill, not a button's corners).
+  A disabled chip hides its remove button (the square stays in the padding, so the
+  width holds) and fires no `onRemove`, as a disabled closable tab shows no close
+  button. A chip that is not clickable (the default) takes no press:
   its clicks, Space and accelerator do nothing and it draws no hover look, though it
   keeps the mouse for its tooltip; `setClickable(true)` gives it the looks and fires
   `onPressCaller`. The remove button fires `onRemove`; the chip never deletes itself,
-  the app does (`delayedDelete()` from the handler, as ChipBadgeDemo does). A tone or
+  the app does (`delayedDelete()` from the handler, as ChipBadgeDemo does; a `delete`
+  or a `setRemovable(false)` there would free the button inside its own click). A tone or
   palette change is a `redraw()` of the chip alone, and its text colour is set in
   `updateColors()`. A new text of the same size lays nothing out: the chip turns on
   `internal::Text::setSameSizeKeepsLayout(true)`, with which a Text measures a new

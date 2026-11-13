@@ -54,7 +54,10 @@ class GWENI_EXPORT ChipRemoveButton: public WindowCloseButton
 //! app that navigates from it. setRemovable(true) adds a ChipRemoveButton in
 //! a square kept in its right padding, so its width does not follow the
 //! button; a click on it fires onRemove. The chip never deletes itself: the
-//! app removes it (delete, or delayedDelete() from the handler).
+//! app removes it, with delayedDelete() from the handler (never delete it or
+//! setRemovable(false) there: the button is still in its click). A disabled
+//! chip hides the button (its square stays) and fires no onRemove, and draws
+//! the disabled colours in its own shape.
 //!
 //! A text, tone or palette change marks that chip alone (its slot, its
 //! Label's glyphs), and lays out the chip and the way down to it only when
