@@ -721,7 +721,7 @@ public:
 //   with no bar hidden), or a line or step line's segments (one drawLine per
 //   segment of its vertices, with its neighbours, in the surface's top colour
 //   and the series' thickness; a segment beside a NaN hidden).
-// The grid and the series are drawn in the plot's clip region (the control's
+// The grid, spans, series and markers are drawn in the plot's clip region (the control's
 // own region cut to getPlotBounds()), and a segment is cut on the CPU to a box
 // a little wider than the plot first, so a point out of range is clipped,
 // never clamped, and no quad reaches past what a vertex holds. A slot is drawn
@@ -730,6 +730,13 @@ public:
 // geometry, visibility or creation: a changed point rewrites its bar (its
 // stack's bars above it when they move) or the segments around it, an
 // appended one its own slots and its joint. A hidden series' slots are hidden.
+// - the spans: one drawRoundedRect per span, its getSpanRect() in ChartSpan,
+//   at z+2, under the series;
+// - the markers: one vertical drawLine per marker across the plot
+//   (getMarkerLine()), 1 unit thick in ChartMarker's top colour, at z+3+S,
+//   in front of the series; a marker or span outside the plot is hidden.
+// The lists are taken back to front, so on the frame that makes them what is
+// behind is drawn first.
 // The z values are the frame's, the grid's (z+1), the spans' (z+2), one per
 // series (z+3+i), the markers' (z+3+S) and the crosshair's (z+4+S), so
 // depthLayersOf() is 5+S for S series; the chart calls zOrderChanged() when S
@@ -755,6 +762,8 @@ public:
     //! The grid's slots, and series \p series's (empty past the series), as
     //! last drawn.
     const std::vector<size_t> &gridPrimitives() const { return m_grid.ids; }
+    const std::vector<size_t> &spanPrimitives() const { return m_spans.ids; }
+    const std::vector<size_t> &markerPrimitives() const { return m_markers.ids; }
     const std::vector<size_t> &seriesPrimitives(size_t series) const;
 
 private:
@@ -791,7 +800,9 @@ private:
 
     Slot m_frame;
     SlotList m_grid;
+    SlotList m_spans;
     std::vector<SlotList> m_series;
+    SlotList m_markers;
 };
 
 // A Link: one slot per segment of its polyline (Link::getPoints()), a drawLine

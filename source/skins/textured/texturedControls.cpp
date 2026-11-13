@@ -2103,9 +2103,11 @@ void Chart::releaseList(renderer::Base *renderer, SlotList &list)
 void Chart::remove(renderer::Base *renderer, controls::Base * /*baseControl*/)
 {
     releaseList(renderer, m_grid);
+    releaseList(renderer, m_spans);
     for(SlotList &list : m_series)
         releaseList(renderer, list);
     m_series.clear();
+    releaseList(renderer, m_markers);
     m_frame=Slot();
     releasePrimitives(renderer);
 }
@@ -2114,8 +2116,10 @@ void Chart::appendIds(std::vector<size_t> &primitiveIds, std::vector<size_t> &te
 {
     ControlRegister<Chart>::appendIds(primitiveIds, textIds);
     primitiveIds.insert(primitiveIds.end(), m_grid.ids.begin(), m_grid.ids.end());
+    primitiveIds.insert(primitiveIds.end(), m_spans.ids.begin(), m_spans.ids.end());
     for(const SlotList &list : m_series)
         primitiveIds.insert(primitiveIds.end(), list.ids.begin(), list.ids.end());
+    primitiveIds.insert(primitiveIds.end(), m_markers.ids.begin(), m_markers.ids.end());
 }
 
 void Chart::update(renderer::Base *renderer, controls::Base *baseControl)
@@ -2183,7 +2187,10 @@ void Chart::update(renderer::Base *renderer, controls::Base *baseControl)
     // or its segments
     const size_t seriesCount=chart->getSeriesCount();
 
+    // taken back to front (grid, spans, series, markers), so a list made on
+    // the first frame draws before what is in front of it
     resizeList(renderer, m_grid, lines.size());
+    resizeList(renderer, m_spans, chart->getSpanCount());
     while(m_series.size() > seriesCount)
     {
         releaseList(renderer, m_series.back());
@@ -2198,6 +2205,7 @@ void Chart::update(renderer::Base *renderer, controls::Base *baseControl)
 
         resizeList(renderer, m_series[i], bars ? chart->getSeriesPoints(i).size() : (vertices > 1 ? vertices-1 : 0));
     }
+    resizeList(renderer, m_markers, chart->getMarkerCount());
 
     auto hide=[&](size_t id, Slot &slot)
     {
@@ -2212,8 +2220,11 @@ void Chart::update(renderer::Base *renderer, controls::Base *baseControl)
         auto each=[&](auto &&func)
         {
             func(m_primitives[0], m_frame);
-            for(size_t i=0; i<m_grid.ids.size(); ++i)
-                func(m_grid.ids[i], m_grid.drawn[i]);
+            for(SlotList *list : {&m_grid, &m_spans, &m_markers})
+            {
+                for(size_t i=0; i<list->ids.size(); ++i)
+                    func(list->ids[i], list->drawn[i]);
+            }
             for(SlotList &list : m_series)
             {
                 for(size_t i=0; i<list.ids.size(); ++i)
@@ -2303,6 +2314,21 @@ void Chart::update(renderer::Base *renderer, controls::Base *baseControl)
     for(size_t i=0; i<lines.size(); ++i)
         drawSegment(m_grid.ids[i], m_grid.drawn[i], lines[i].p0, lines[i].p1, nullptr, nullptr, 1.0f,
             lines[i].color, z+GridLayer, plotClip);
+
+    // the spans, under the series
+    for(size_t i=0; i<m_spans.ids.size(); ++i)
+    {
+        gweni::Rect rect;
+
+        if(!chart->getSpanRect(i, rect))
+        {
+            hide(m_spans.ids[i], m_spans.drawn[i]);
+            continue;
+        }
+        rect.x+=bounds.x;
+        rect.y+=bounds.y;
+        drawRect(m_spans.ids[i], m_spans.drawn[i], rect, tokyonight::ChartSpan, z+SpanLayer, plotClip);
+    }
 
     for(size_t s=0; s<seriesCount; ++s)
     {
@@ -2442,6 +2468,24 @@ void Chart::update(renderer::Base *renderer, controls::Base *baseControl)
             drawSegment(list.ids[i], list.drawn[i], cut.p0, cut.p1, hasPrev ? &prev : nullptr,
                 hasNext ? &next : nullptr, thickness, surface.top, zIndex, plotClip);
         }
+    }
+
+    // the markers, in front of every series
+    const int markerZ=z+SeriesLayer+int(seriesCount);
+
+    for(size_t i=0; i<m_markers.ids.size(); ++i)
+    {
+        PointF lineTop;
+        PointF lineBottom;
+
+        if(!hasPlot || !chart->getMarkerLine(i, lineTop, lineBottom))
+        {
+            hide(m_markers.ids[i], m_markers.drawn[i]);
+            continue;
+        }
+        drawSegment(m_markers.ids[i], m_markers.drawn[i], PointF(origin.x+lineTop.x, origin.y+lineTop.y),
+            PointF(origin.x+lineBottom.x, origin.y+lineBottom.y), nullptr, nullptr, 1.0f,
+            tokyonight::ChartMarker.top, markerZ, plotClip);
     }
 
     renderer->setClipRegion(region);

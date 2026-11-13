@@ -20,6 +20,11 @@
  *  (clipped, not clamped, and never culled); a hidden series' slots hidden
  *  and drawn again when shown; the tick labels in Colors.Chart.AxisText; and
  *  every id given back when a series goes and when the chart is deleted.
+ *  Spans and markers: a span's rect at z+2 under the series, a marker's
+ *  vertical line at z+3+S in front of them in ChartMarker's colour, both in
+ *  the plot's clip and their slots taken back to front, the ones out of range
+ *  hidden; a moved marker writing its slot alone and marking its caption
+ *  (in Colors.Chart.MarkerText) and no other child, a moved span its slot.
  */
 #include "headlessFixture.h"
 
@@ -432,4 +437,88 @@ TEST_CASE("Chart renderer: a hidden series' slots are hidden, and every id is gi
     }
     CHECK(test::IdBankCounts::now().livePrimitives() == before.livePrimitives());
     CHECK(test::IdBankCounts::now().liveTexts() == before.liveTexts());
+}
+
+TEST_CASE("Chart renderer: spans under the series, markers in front, a moved marker its slot alone")
+{
+    Scene scene;
+    controls::Chart *chart=scene.chart;
+
+    chart->setXRange(0.0, 10.0);
+    chart->setYRange(ChartAxisSide::Left, 0.0, 10.0);
+
+    const size_t line=chart->addSeries("line", ChartSeriesType::Line);
+    const size_t bars=chart->addSeries("bars", ChartSeriesType::Bar);
+
+    chart->setSeriesPoints(line, {{1, 2}, {5, 8}, {9, 4}});
+    chart->setSeriesPoints(bars, {{2, 3}, {6, 5}});
+    const size_t span=chart->addSpan(3.0, 7.0);
+    chart->addSpan(20.0, 30.0);
+    const size_t marker=chart->addMarker(4.0, "reset");
+    chart->addMarker(-1.0, "before");
+    scene.frame();
+    scene.frame();
+
+    const skin::textured::Chart &skinChart=scene.skinChart();
+    const int z=chart->getZIndex();
+    const Rect plotClip=scene.plotClip();
+    const std::vector<size_t> &spans=skinChart.spanPrimitives();
+    const std::vector<size_t> &markers=skinChart.markerPrimitives();
+
+    REQUIRE(spans.size() == 2);
+    REQUIRE(markers.size() == 2);
+
+    // drawn on the first frame: the span at z+2, the marker in front of both
+    // series, both in the plot's clip; the ones out of range hidden
+    scene.chart->addStateChange(controls::StateChange_Geometry);
+    scene.frame();
+    Rect rect;
+    REQUIRE(chart->getSpanRect(span, rect));
+    rect.x+=chart->getRenderBounds().x;
+    rect.y+=chart->getRenderBounds().y;
+    CHECK((scene.renderer.rects.at(spans[0]) == rect));
+    CHECK(scene.renderer.zIndices.at(spans[0]) == z+2);
+    CHECK((scene.renderer.clips.at(spans[0]) == plotClip));
+    CHECK(scene.renderer.hidden.count(spans[1]) == 1);
+
+    const test::StubRenderer::LineDraw *draw=scene.line(markers[0]);
+    REQUIRE(draw != nullptr);
+    CHECK(draw->zIndex == z+3+2);
+    CHECK(draw->p0.x == draw->p1.x);
+    CHECK(draw->p0.x == doctest::Approx(chart->getRenderBounds().x+chart->xPosition(4.0)));
+    CHECK((draw->color == tokyonight::ChartMarker.top));
+    CHECK((scene.renderer.clips.at(markers[0]) == plotClip));
+    CHECK(scene.renderer.hidden.count(markers[1]) == 1);
+    // the slots were taken back to front
+    CHECK(spans[0] < scene.series(line)[0]);
+    CHECK(scene.series(bars).back() < markers[0]);
+
+    scene.frame();
+    CHECK(scene.written().empty());
+
+    // a moved marker: its slot, and its caption alone marked
+    controls::internal::Text *caption=chart->getMarkerLabel(marker);
+    REQUIRE(caption != nullptr);
+    CHECK((caption->TextColor() == scene.skin.Colors.Chart.MarkerText));
+    const Rect before=caption->getBounds();
+
+    chart->setMarkerX(marker, 6.0);
+    scene.renderer.clear();
+    scene.canvas->updateCanvas();
+    CHECK(caption->getBounds().x > before.x);
+    CHECK(caption->getStateChange() != controls::StateChange_Nothing);
+    for(controls::Base *child : chart->getChildren())
+    {
+        if(child != caption)
+            CHECK(child->getStateChange() == controls::StateChange_Nothing);
+    }
+    scene.canvas->renderCanvas();
+    CHECK(scene.written() == std::set<size_t>{markers[0]});
+
+    // a moved span: its slot
+    chart->setSpan(span, 2.0, 7.0);
+    scene.frame();
+    CHECK(scene.written() == std::set<size_t>{spans[0]});
+    scene.frame();
+    CHECK(scene.written().empty());
 }

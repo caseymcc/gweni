@@ -221,6 +221,50 @@ public:
     //! Whether the axis's labels show (see the class comment).
     bool isYAxisShown(ChartAxisSide side) const;
 
+    // ---- markers and spans ----------------------------------------------
+
+    //! A marker: a vertical line across the plot at \p x, in ChartMarker's
+    //! top colour, with an optional caption (Colors.Chart.MarkerText) at the
+    //! plot's top beside it: right of the line, or left of it where the
+    //! plot's right edge would cut it, the caption clipped to the plot.
+    //! Returns its index. A marker outside the x range draws nothing, its
+    //! caption included; markers count in no automatic range.
+    size_t addMarker(double x, const String &caption=String());
+    //! Moves marker \p marker: its line's slot is drawn again, and its
+    //! caption placed again (a layout of the chart, which writes nothing
+    //! else).
+    void setMarkerX(size_t marker, double x);
+    void setMarkerCaption(size_t marker, const String &caption);
+    //! Removes marker \p marker; the ones after it move down an index.
+    void removeMarker(size_t marker);
+    void clearMarkers();
+    size_t getMarkerCount() const { return m_markers.size(); }
+    double getMarkerX(size_t marker) const;
+    String getMarkerCaption(size_t marker) const;
+    //! The marker's caption Text as last laid out, null without a caption.
+    internal::Text *getMarkerLabel(size_t marker) const;
+    //! The marker's line, from the plot's top to its bottom at the marker's
+    //! x: false when that x is outside the plot.
+    bool getMarkerLine(size_t marker, PointF &top, PointF &bottom) const;
+
+    //! A span: the x range from \p x0 to \p x1 (either order) shaded across
+    //! the plot (ChartSpan), under the series. Returns its index. Spans count
+    //! in no automatic range.
+    size_t addSpan(double x0, double x1);
+    void setSpan(size_t span, double x0, double x1);
+    void removeSpan(size_t span);
+    void clearSpans();
+    size_t getSpanCount() const { return m_spans.size(); }
+    double getSpanStart(size_t span) const;
+    double getSpanEnd(size_t span) const;
+    //! The span's rect, whole units across the plot's height, cut to the
+    //! plot: false when it is outside it.
+    bool getSpanRect(size_t span, Rect &rect) const;
+
+    //! A marker's caption is clipped to the plot; the other labels are not.
+    const Rect *getChildClipRect(const Base *child) const override;
+    bool hasChildClipRects() const override { return true; }
+
     // ---- geometry, in this control's own coordinates (top-left at 0,0) ---
 
     //! The plot, as last laid out.
@@ -268,8 +312,14 @@ public:
     //! it.
     bool sizedByRequest(Dim /*dim*/) const override { return true; }
 
-    //! The labels in the skin's Colors.Chart.AxisText.
+    //! The tick labels and titles in the skin's Colors.Chart.AxisText, the
+    //! markers' captions in its Colors.Chart.MarkerText.
     void updateColors() override;
+
+    //! A marker's caption sits this far right (or left) of its line, and
+    //! this far below the plot's top.
+    static constexpr int CaptionGap=4;
+    static constexpr int CaptionInset=2;
 
 protected:
 
@@ -341,7 +391,27 @@ protected:
 
     void computeXTicks();
 
+    struct Marker
+    {
+        double x=0.0;
+        String caption;
+        //! as last laid out
+        internal::Text *label=nullptr;
+    };
+
+    struct Span
+    {
+        double x0=0.0;
+        double x1=0.0;
+    };
+
+    //! Places the markers' captions in the plot (layout()).
+    void placeMarkerCaptions();
+    bool isMarkerLabel(const Base *child) const;
+
     std::vector<Series> m_series;
+    std::vector<Marker> m_markers;
+    std::vector<Span> m_spans;
     ValueAxis m_yAxes[2];
 
     ChartXAxisType m_xType=ChartXAxisType::Time;

@@ -441,6 +441,235 @@ bool Chart::isYAxisShown(ChartAxisSide side) const
     return side == ChartAxisSide::Left && !m_yAxes[1].used;
 }
 
+// ---- markers and spans ------------------------------------------------------
+
+size_t Chart::addMarker(double x, const String &caption)
+{
+    Marker marker;
+
+    marker.x=x;
+    marker.caption=caption;
+    m_markers.push_back(std::move(marker));
+    addStateChange(StateChange_Background);
+    // its caption is made and placed by the layout
+    if(!caption.empty())
+        invalidate();
+    return m_markers.size()-1;
+}
+
+void Chart::setMarkerX(size_t marker, double x)
+{
+    if(marker >= m_markers.size() || m_markers[marker].x == x)
+        return;
+
+    m_markers[marker].x=x;
+    addStateChange(StateChange_Background);
+    if(!m_markers[marker].caption.empty())
+        invalidate();
+}
+
+void Chart::setMarkerCaption(size_t marker, const String &caption)
+{
+    if(marker >= m_markers.size() || m_markers[marker].caption == caption)
+        return;
+
+    m_markers[marker].caption=caption;
+    invalidate();
+}
+
+void Chart::removeMarker(size_t marker)
+{
+    if(marker >= m_markers.size())
+        return;
+
+    delete m_markers[marker].label;  // ~Base takes it out of the children
+    m_markers.erase(m_markers.begin()+static_cast<std::ptrdiff_t>(marker));
+    addStateChange(StateChange_Background);
+    invalidate();
+}
+
+void Chart::clearMarkers()
+{
+    if(m_markers.empty())
+        return;
+
+    for(Marker &marker : m_markers)
+        delete marker.label;
+    m_markers.clear();
+    addStateChange(StateChange_Background);
+    invalidate();
+}
+
+double Chart::getMarkerX(size_t marker) const
+{
+    return (marker < m_markers.size()) ? m_markers[marker].x : 0.0;
+}
+
+String Chart::getMarkerCaption(size_t marker) const
+{
+    return (marker < m_markers.size()) ? m_markers[marker].caption : String();
+}
+
+internal::Text *Chart::getMarkerLabel(size_t marker) const
+{
+    return (marker < m_markers.size()) ? m_markers[marker].label : nullptr;
+}
+
+bool Chart::getMarkerLine(size_t marker, PointF &top, PointF &bottom) const
+{
+    if(marker >= m_markers.size() || m_plot.w <= 0 || m_plot.h <= 0)
+        return false;
+
+    const double x=xPosition(m_markers[marker].x);
+
+    if(!std::isfinite(x) || x < m_plot.x || x > m_plot.x+m_plot.w)
+        return false;
+
+    top=PointF(static_cast<float>(x), static_cast<float>(m_plot.y));
+    bottom=PointF(static_cast<float>(x), static_cast<float>(m_plot.y+m_plot.h));
+    return true;
+}
+
+size_t Chart::addSpan(double x0, double x1)
+{
+    Span span;
+
+    span.x0=std::min(x0, x1);
+    span.x1=std::max(x0, x1);
+    m_spans.push_back(span);
+    addStateChange(StateChange_Background);
+    return m_spans.size()-1;
+}
+
+void Chart::setSpan(size_t span, double x0, double x1)
+{
+    if(span >= m_spans.size())
+        return;
+
+    const double low=std::min(x0, x1);
+    const double high=std::max(x0, x1);
+
+    if(m_spans[span].x0 == low && m_spans[span].x1 == high)
+        return;
+
+    m_spans[span].x0=low;
+    m_spans[span].x1=high;
+    addStateChange(StateChange_Background);
+}
+
+void Chart::removeSpan(size_t span)
+{
+    if(span >= m_spans.size())
+        return;
+
+    m_spans.erase(m_spans.begin()+static_cast<std::ptrdiff_t>(span));
+    addStateChange(StateChange_Background);
+}
+
+void Chart::clearSpans()
+{
+    if(m_spans.empty())
+        return;
+
+    m_spans.clear();
+    addStateChange(StateChange_Background);
+}
+
+double Chart::getSpanStart(size_t span) const
+{
+    return (span < m_spans.size()) ? m_spans[span].x0 : 0.0;
+}
+
+double Chart::getSpanEnd(size_t span) const
+{
+    return (span < m_spans.size()) ? m_spans[span].x1 : 0.0;
+}
+
+bool Chart::getSpanRect(size_t span, Rect &rect) const
+{
+    if(span >= m_spans.size() || m_plot.w <= 0 || m_plot.h <= 0)
+        return false;
+
+    const double x0=xPosition(m_spans[span].x0);
+    const double x1=xPosition(m_spans[span].x1);
+
+    if(!std::isfinite(x0) || !std::isfinite(x1))
+        return false;
+
+    // whole units, cut to the plot: a span from far out of range is cut
+    // in doubles before it is rounded
+    const double left=std::max(x0, double(m_plot.x));
+    const double right=std::min(x1, double(m_plot.x+m_plot.w));
+
+    if(!(right > left))
+        return false;
+
+    const int l=static_cast<int>(std::lround(left));
+    const int r=static_cast<int>(std::lround(right));
+
+    if(r <= l)
+        return false;
+
+    rect=Rect(l, m_plot.y, r-l, m_plot.h);
+    return true;
+}
+
+bool Chart::isMarkerLabel(const Base *child) const
+{
+    for(const Marker &marker : m_markers)
+    {
+        if(marker.label == child)
+            return true;
+    }
+    return false;
+}
+
+const Rect *Chart::getChildClipRect(const Base *child) const
+{
+    return isMarkerLabel(child) ? &m_plot : nullptr;
+}
+
+void Chart::placeMarkerCaptions()
+{
+    const int lineHeight=labelLineHeight();
+
+    for(Marker &marker : m_markers)
+    {
+        if(marker.caption.empty())
+        {
+            delete marker.label;
+            marker.label=nullptr;
+            continue;
+        }
+
+        if(!marker.label)
+        {
+            marker.label=makeLabel();
+            marker.label->setTextColor(getSkin()->Colors.Chart.MarkerText);
+        }
+        marker.label->setText(marker.caption);
+
+        PointF top;
+        PointF bottom;
+
+        if(!getMarkerLine(size_t(&marker-m_markers.data()), top, bottom))
+        {
+            marker.label->setHidden(true);
+            continue;
+        }
+
+        // right of the line, or left of it where the plot would cut it
+        const int width=labelWidth(marker.caption);
+        const int lineX=static_cast<int>(std::floor(top.x));
+        int x=lineX+CaptionGap;
+
+        if(x+width > m_plot.x+m_plot.w)
+            x=lineX-CaptionGap-width;
+        marker.label->setHidden(false);
+        placeChild(marker.label, x, m_plot.y+CaptionInset, width, lineHeight);
+    }
+}
+
 // ---- data -------------------------------------------------------------------
 
 void Chart::dataChanged(size_t series)
@@ -954,6 +1183,11 @@ void Chart::updateColors()
     }
     if(m_xTitleLabel)
         m_xTitleLabel->setTextColor(color);
+    for(Marker &marker : m_markers)
+    {
+        if(marker.label)
+            marker.label->setTextColor(getSkin()->Colors.Chart.MarkerText);
+    }
 }
 
 void Chart::resizeLabels(std::vector<internal::Text *> &labels, size_t count)
@@ -1117,7 +1351,18 @@ void Chart::layout(skin::Base *skin)
     const int left=innerLeft+(shown[0] ? widths[0]+TickGap : 0);
     const int right=std::max(left, innerRight-(shown[1] ? widths[1]+TickGap : 0));
 
-    m_plot=Rect(left, top, right-left, plotHeight);
+    const Rect plot(left, top, right-left, plotHeight);
+
+    // a new plot is a new clip for the captions
+    if(!(plot == m_plot))
+    {
+        for(Marker &marker : m_markers)
+        {
+            if(marker.label)
+                marker.label->addStateChangeRecursive(StateChange_Geometry);
+        }
+    }
+    m_plot=plot;
     computeXTicks();
 
     // the value labels, right of the left column and left of the right one,
@@ -1180,6 +1425,8 @@ void Chart::layout(skin::Base *skin)
 
         placeChild(m_xTitleLabel, x, innerBottom-lineHeight, width, lineHeight);
     }
+
+    placeMarkerCaptions();
 
     // the renderer draws from what this computed
     addStateChange(StateChange_Background);

@@ -19,7 +19,12 @@
  *  nothing out when every range is fixed and the chart once when one is
  *  automatic; a step line's vertices and a NaN's gap; a point outside the
  *  range placed outside the plot and a bar cut to it; the time axis's labels
- *  in the chart's zone, and category labels thinned on a narrow chart.
+ *  in the chart's zone, and category labels thinned on a narrow chart; and
+ *  markers and spans: a marker's line across the plot at its x, none outside
+ *  the range, its caption right of the line at the plot's top (left of it at
+ *  the right edge), hidden out of range and back, clipped to the plot (the
+ *  tick labels not), gone with its marker; a span's rect cut to the plot;
+ *  neither moving the automatic x range.
  */
 #include "headlessFixture.h"
 
@@ -556,4 +561,89 @@ TEST_CASE("Chart: a resize, an axis change and new data lay out in one pass, as 
     }
     CHECK(controls::layoutVerifyFailures() == failures);
     controls::setLayoutVerify(verify);
+}
+
+TEST_CASE("Chart: markers and spans sit on the plot at their x and count in no range")
+{
+    Scene scene;
+    Chart *chart=scene.chart;
+
+    chart->setXAxisType(ChartXAxisType::Value);
+
+    const size_t line=chart->addSeries("line", ChartSeriesType::Line);
+
+    chart->setSeriesPoints(line, {{0, 1}, {10, 2}});
+    const size_t middle=chart->addMarker(5.0, "reset");
+    const size_t edge=chart->addMarker(9.9, "late");
+    const size_t outside=chart->addMarker(20.0, "never");
+    const size_t bare=chart->addMarker(2.0);
+    const size_t span=chart->addSpan(8.0, 3.0);    // either order
+    const size_t wide=chart->addSpan(-50.0, 1.0);
+    const size_t gone=chart->addSpan(11.0, 12.0);
+    scene.frame();
+
+    // the x range is the series' alone
+    CHECK(chart->getXMin() == 0.0);
+    CHECK(chart->getXMax() == 10.0);
+
+    const Rect plot=chart->getPlotBounds();
+    PointF top;
+    PointF bottom;
+
+    REQUIRE(chart->getMarkerLine(middle, top, bottom));
+    CHECK(top.x == doctest::Approx(chart->xPosition(5.0)));
+    CHECK(top.y == float(plot.y));
+    CHECK(bottom.x == top.x);
+    CHECK(bottom.y == float(plot.y+plot.h));
+    CHECK(!chart->getMarkerLine(outside, top, bottom));
+
+    // captions: right of the line at the plot's top, left of it at the
+    // right edge, none outside the range or without a caption
+    controls::internal::Text *reset=chart->getMarkerLabel(middle);
+    REQUIRE(reset != nullptr);
+    CHECK(reset->getText() == "reset");
+    CHECK(reset->visible());
+    CHECK(reset->getBounds().x == int(std::floor(chart->xPosition(5.0)))+Chart::CaptionGap);
+    CHECK(reset->getBounds().y == plot.y+Chart::CaptionInset);
+    controls::internal::Text *late=chart->getMarkerLabel(edge);
+    REQUIRE(late != nullptr);
+    CHECK(late->getBounds().x+late->getBounds().w == int(std::floor(chart->xPosition(9.9)))-Chart::CaptionGap);
+    REQUIRE(chart->getMarkerLabel(outside) != nullptr);
+    CHECK(!chart->getMarkerLabel(outside)->visible());
+    CHECK(chart->getMarkerLabel(bare) == nullptr);
+
+    // a caption is clipped to the plot, a tick label is not
+    REQUIRE((chart->getChildClipRect(reset) != nullptr));
+    CHECK((*chart->getChildClipRect(reset) == plot));
+    REQUIRE(!chart->getXLabels().empty());
+    CHECK((chart->getChildClipRect(chart->getXLabels()[0]) == nullptr));
+
+    // spans: whole units across the plot's height, cut to it
+    Rect rect;
+
+    REQUIRE(chart->getSpanRect(span, rect));
+    CHECK(chart->getSpanStart(span) == 3.0);
+    CHECK(rect.x == int(std::lround(chart->xPosition(3.0))));
+    CHECK(rect.x+rect.w == int(std::lround(chart->xPosition(8.0))));
+    CHECK(rect.y == plot.y);
+    CHECK(rect.h == plot.h);
+    REQUIRE(chart->getSpanRect(wide, rect));
+    CHECK(rect.x == plot.x);
+    CHECK(!chart->getSpanRect(gone, rect));
+
+    // a caption moved out of range hides, and comes back
+    chart->setMarkerX(middle, -3.0);
+    scene.frame();
+    CHECK(!reset->visible());
+    chart->setMarkerX(middle, 5.0);
+    scene.frame();
+    CHECK(reset->visible());
+
+    // removed, its caption goes
+    const size_t labels=chart->getChildren().size();
+    chart->removeMarker(middle);
+    scene.frame();
+    CHECK(chart->getChildren().size() == labels-1);
+    CHECK(chart->getMarkerCount() == 3);
+    CHECK(chart->getMarkerCaption(0) == "late");
 }
