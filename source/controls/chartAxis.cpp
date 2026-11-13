@@ -361,10 +361,19 @@ std::vector<double> valueTicks(double min, double max, double step)
 
 String formatValue(double value, double step)
 {
+    // the fewest decimals that write the step itself: 1 for 0.5, 2 for 0.25
     int decimals=0;
 
-    if(step > 0.0 && step < 1.0)
-        decimals=std::min(15, static_cast<int>(std::ceil(-std::log10(step)-1e-9)));
+    if(step > 0.0 && std::isfinite(step))
+    {
+        double scaled=step;
+
+        while(decimals < 15 && std::fabs(scaled-std::round(scaled)) > 1e-9*scaled)
+        {
+            scaled*=10.0;
+            ++decimals;
+        }
+    }
 
     char text[64];
 

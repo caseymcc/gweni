@@ -125,6 +125,9 @@ TEST_CASE("Chart axis: value ticks are whole multiples of the step, labelled wit
     CHECK(formatValue(0.05, 0.05) == "0.05");
     CHECK(formatValue(-0.0001, 0.1) == "0.0");
     CHECK(formatValue(-0.4, 0.2) == "-0.4");
+    // a step that is no 1, 2 or 5 times a power of ten (an app's fixed one)
+    CHECK(formatValue(0.75, 0.25) == "0.75");
+    CHECK(formatValue(7.5, 2.5) == "7.5");
 
     const std::vector<Tick> placed=valueAxisTicks(0.0, 200.0, 50.0, 100.0);
     REQUIRE(placed.size() == 5);

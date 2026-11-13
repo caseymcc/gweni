@@ -82,8 +82,8 @@ GWENI_EXPORT ValueRange niceRange(double min, double max, int maxTicks);
 //! step that is not positive, min > max, or more than 100 000 ticks.
 GWENI_EXPORT std::vector<double> valueTicks(double min, double max, double step);
 
-//! value with as many decimals as step needs (0 for a step of 1 or more,
-//! 1 for 0.5, 2 for 0.05 ...), "-0" written as "0".
+//! value with as many decimals as writing step needs (0 for a whole step,
+//! 1 for 0.5 or 2.5, 2 for 0.05 or 0.25 ...), "-0" written as "0".
 GWENI_EXPORT String formatValue(double value, double step);
 
 //! The ticks of a value axis from min to max, length long: valueTicks at
