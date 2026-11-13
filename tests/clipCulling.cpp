@@ -15,7 +15,9 @@
  *  after a draw whose box covers it (as a control shown again is drawn in the
  *  region it is in now) it is drawn. A line whose round cap and anti-aliased
  *  rim reach into the box past its segment's end is not culled, and draws what
- *  it draws with the cull off. A settled frame builds no range. A text run
+ *  it draws with the cull off. A box that only touches a slot's edge culls
+ *  it, and one reaching a pixel over that edge, on each side, does not (the
+ *  shaders' half-open test at pixel centres). A settled frame builds no range. A text run
  *  (FrameStats::textRunsCulled) follows the same transitions, its glyph slots'
  *  clip boxes written as without the cull. Every culled frame is the one the
  *  cull off draws, pixel for pixel.
@@ -215,6 +217,56 @@ TEST_CASE("Clip cull: a slot drawn out of its box is culled, and drawn again bac
     CHECK_FALSE(renderer().primitiveCulled(id));
     CHECK(stats().primitiveSlotsCulled == culledBefore);
     CHECK(unculled.pixels == out.pixels);
+}
+
+TEST_CASE("Clip cull: a slot touching its box's edge is culled, and one overlapping it by a pixel is not")
+{
+    Guard guard;
+    Primitives prims(1);
+    const size_t id=prims.ids[0];
+
+    // rect covers device px [40,140) x [30,80); each box touches one of its
+    // edges from outside, then reaches one pixel row or column over it
+    struct Side
+    {
+        const char *name;
+        Rect touching;
+        Rect overlapping;
+        int overlapPixels;
+    };
+    const Side sides[]={
+        {"left", Rect(0, 0, 40, 160), Rect(0, 0, 41, 160), rect.h},
+        {"right", Rect(140, 0, 100, 160), Rect(139, 0, 101, 160), rect.h},
+        {"top", Rect(0, 0, 300, 30), Rect(0, 0, 300, 31), rect.w},
+        {"bottom", Rect(0, 80, 300, 80), Rect(0, 79, 300, 81), rect.w},
+    };
+
+    auto draw=[&](const Rect &clip)
+    {
+        return drawFrame([&](SlotRenderer &renderer)
+            {
+                renderer.setDrawColor(white);
+                renderer.setClipRegion(clip);
+                renderer.drawFilledRect(id, rect, 1);
+            });
+    };
+
+    for(const Side &side:sides)
+    {
+        INFO("side: " << side.name);
+
+        draw(side.touching);
+        CHECK(renderer().primitiveCulled(id));
+
+        const Frame overlap=draw(side.overlapping);
+
+        CHECK_FALSE(renderer().primitiveCulled(id));
+        CHECK(overlap.drawn() == side.overlapPixels);
+
+        renderer().setClipCulling(false);
+        CHECK(draw(side.overlapping).pixels == overlap.pixels);
+        renderer().setClipCulling(true);
+    }
 }
 
 TEST_CASE("Clip cull: a culled slot hidden is not counted, and shown while still culled stays undrawn")
