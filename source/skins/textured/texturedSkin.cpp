@@ -1357,6 +1357,9 @@ void TexturedSkin::setThemeColors()
         code.Tokens[static_cast<size_t>(TokenKind::Hunk)]=gweni::Color(0x0d, 0xb9, 0xd7);
         code.Tokens[static_cast<size_t>(TokenKind::Meta)]=gweni::Color(0xff, 0xc7, 0x77);
     }
+    // a Timeline's tick labels as a Chart's, its captions primary
+    Colors.Timeline.AxisText=FgDark;
+    Colors.Timeline.CaptionText=Fg;
     // the hover is the background alone, so hovering writes no glyph slot
     Colors.Selectable.Normal=Fg;
     Colors.Selectable.Hover=Fg;

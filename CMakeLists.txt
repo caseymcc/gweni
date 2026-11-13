@@ -314,6 +314,8 @@ set(GWENI_CONTROL_SOURCES
     include/gweni/controls/textBox.h
     source/controls/textBox.cpp
     source/controls/textBoxNumeric.cpp
+    include/gweni/controls/timeline.h
+    source/controls/timeline.cpp
     include/gweni/controls/treeControl.h
     source/controls/treeControl.cpp
     include/gweni/controls/treeNode.h

@@ -89,6 +89,7 @@
 #include <gweni/controls/tabTitleBar.h>
 #include <gweni/controls/text.h>
 #include <gweni/controls/textBox.h>
+#include <gweni/controls/timeline.h>
 #include <gweni/controls/toolTip.h>
 #include <gweni/controls/treeControl.h>
 #include <gweni/controls/treeNode.h>

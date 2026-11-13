@@ -442,6 +442,13 @@ public:
             gweni::Color MarkerText{0xc0, 0xc0, 0xc0};
         } Chart;
 
+        //! A Timeline's tick labels and its lanes' captions.
+        struct Timeline_t
+        {
+            gweni::Color AxisText{0xa0, 0xa0, 0xa0};
+            gweni::Color CaptionText{0xc0, 0xc0, 0xc0};
+        } Timeline;
+
         //! A Selectable row's text, by its state.
         struct Selectable_t
         {
