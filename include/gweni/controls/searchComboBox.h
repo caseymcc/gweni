@@ -210,7 +210,8 @@ private:
 //! are kept with the options), all of them for an empty text, and
 //! highlights the first; no option matching shows one disabled "No matches"
 //! row. Each edit fires onTextChangedCaller. A keystroke matches over the
-//! options' data, makes and deletes no control and binds again only the
+//! options' data (an option whose label is the text highlighted before the
+//! other matches), makes and deletes no control and binds again only the
 //! rows whose option changed. The list closing without a pick (Escape, a
 //! press outside it, the box toggling it) and the field losing the keyboard
 //! focus give the field back the selection's label.
@@ -226,8 +227,10 @@ private:
 //! back, or something is picked. Accepted, it is the value: getValue() is
 //! the text, getSelectedIndex() NoOption, the field shows it, and the box
 //! adds no option (the app may; a text that is an option's label picks that
-//! option instead). The list closing leaves a free-text box's field as it
-//! is, for Return or the lost focus to decide.
+//! option instead). The list closing on a press outside it leaves a
+//! free-text box's field as it is, for Return or the lost focus to decide;
+//! Escape gives the value back, over a Popup too (the canvas's Escape,
+//! Canvas::closingOnEscape()).
 //!
 //! Multi-select (setMultiSelect(true)): the box holds picks, each shown as a
 //! removable Chip in pick order, then the field when filterable, wrapped onto
@@ -569,6 +572,9 @@ protected:
     //! Each option's label lower-cased, the query matched against them.
     std::vector<String> m_lowerLabels;
     std::vector<size_t> m_matches;
+    //! The position in m_matches of the option whose label is the query, or
+    //! VirtualList::NoItem.
+    size_t m_exactPos=VirtualList::NoItem;
     //! The query matched nothing: the list shows the "No matches" row.
     bool m_noMatch=false;
     //! The list shows the Add row after the matches.

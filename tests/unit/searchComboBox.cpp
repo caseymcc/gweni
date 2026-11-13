@@ -87,7 +87,11 @@
  *  setSelectedIndices() drops held picks. A multi-select box refilled while
  *  the user types keeps its picks the results leave out. A free-text value
  *  wider than every option widens a size-to-content box, and an option picked
- *  again narrows it back.
+ *  again narrows it back. In a Popup, Escape (the canvas's, closing the list
+ *  over it) gives a free-text field the value back, single and multi-select,
+ *  and the Escape closing the popup then takes nothing. A text that is an
+ *  option's label highlights that option before the other matches, so Return
+ *  picks what Tab would.
  *
  *  Multi-select: no selection and no text on the box; a row click and Return
  *  each add the option as a chip, in pick order, the list staying open with
@@ -680,16 +684,6 @@ void changed(controls::Base *control, std::set<controls::Base *> &out)
         changed(child, out);
 }
 
-bool within(controls::Base *control, controls::Base *root)
-{
-    for(; control; control=control->getParent())
-    {
-        if(control == root)
-            return true;
-    }
-    return false;
-}
-
 }//namespace
 
 TEST_CASE("SearchComboBox: filterable, typing opens the list on the options containing the query, case-insensitively")
@@ -1015,7 +1009,7 @@ TEST_CASE("SearchComboBox: a keystroke's pool, controls and live ids are the sam
 
             return {box->getOptionsList()->getRows().size(), subtreeSize(scene.canvas)-controlsBefore,
                 after.livePrimitives()-before.livePrimitives(), after.liveTexts()-before.liveTexts(),
-                scene.canvas->getLayoutStats().passes, std::min<size_t>(shown(box).size(), SearchComboBox::MaxShownRows)};
+                static_cast<size_t>(scene.canvas->getLayoutStats().passes), std::min<size_t>(shown(box).size(), SearchComboBox::MaxShownRows)};
         };
 
     const Stroke small=stroke(30);
@@ -2082,4 +2076,86 @@ TEST_CASE("SearchComboBox: a disabled filterable box opens no list from a click 
     scene.key(keys::Return);
     CHECK(selections.calls == 0);
     CHECK(box->getSelectedIndex() == 0);
+}
+
+namespace
+{
+// A free-text box in a Popup opened from a button, its field focused with
+// its text selected.
+SearchComboBox *freeTextInPopup(Scene &scene, controls::Popup *&popup, bool multiSelect)
+{
+    controls::Button *anchor=scene.canvas->newChild<controls::Button>();
+
+    anchor->setSizeFlags({SizeFlag::Fixed, SizeFlag::Fixed});
+    anchor->setBounds(10, 10, 60, 20);
+    popup=anchor->createPopup();
+
+    SearchComboBox *box=scene.box(0, popup);
+
+    box->setOptions({{"web-1", ""}, {"web-2", ""}});
+    box->setAllowCustomValue(true);
+    if(multiSelect)
+        box->setMultiSelect(true);
+    scene.frame();
+    popup->open(anchor);
+    scene.frame();
+    box->getField()->focus();
+    box->getField()->onSelectAll(box->getField());
+    scene.frame();
+    return box;
+}
+}//namespace
+
+TEST_CASE("SearchComboBox: free text in a Popup, Escape gives the value back and the popup's Escape takes nothing")
+{
+    Scene scene;
+    controls::Popup *popup=nullptr;
+    SearchComboBox *box=freeTextInPopup(scene, popup, false);
+    CustomValues customs;
+
+    customs.listen(box);
+    REQUIRE(popup->isOpen());
+    type(scene, "zzz");
+    REQUIRE(box->isListOpen());
+    scene.key(keys::Escape);
+    CHECK(!box->isListOpen());
+    CHECK(popup->isOpen());
+    CHECK(box->getField()->getText() == "web-1");
+    scene.key(keys::Escape);
+    CHECK(!popup->isOpen());
+    CHECK(customs.texts.empty());
+    CHECK(box->getValue() == "web-1");
+}
+
+TEST_CASE("SearchComboBox: multi-select free text in a Popup, Escape twice adds no chip")
+{
+    Scene scene;
+    controls::Popup *popup=nullptr;
+    SearchComboBox *box=freeTextInPopup(scene, popup, true);
+    CustomValues customs;
+
+    customs.listen(box);
+    type(scene, "zzz");
+    REQUIRE(box->isListOpen());
+    scene.key(keys::Escape);
+    CHECK(!box->isListOpen());
+    CHECK(box->getField()->getText() == "");
+    scene.key(keys::Escape);
+    CHECK(!popup->isOpen());
+    CHECK(customs.texts.empty());
+    CHECK(chipTexts(box).empty());
+}
+
+TEST_CASE("SearchComboBox: free text, an option's label typed highlights it first and Return picks it")
+{
+    Scene scene;
+    SearchComboBox *box=freeText(scene, {"web-10", "web-1", "db"});
+
+    type(scene, "web-1");
+    REQUIRE(box->isListOpen());
+    CHECK(!box->isAddRowShown());
+    CHECK(box->getHighlightedIndex() == 1);
+    scene.key(keys::Return);
+    CHECK(box->getValue() == "web-1");
+    CHECK(box->getSelectedIndex() == 1);
 }
