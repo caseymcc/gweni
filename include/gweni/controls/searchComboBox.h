@@ -11,6 +11,7 @@
 #include <gweni/controls/button.h>
 #include <gweni/controls/comboBox.h>
 #include <gweni/controls/menu.h>
+#include <gweni/controls/textBox.h>
 #include <gweni/controls/virtualList.h>
 
 #include <vector>
@@ -24,6 +25,8 @@ class SearchComboBox;
 
 namespace internal
 {
+
+class SearchComboBoxOptions;
 
 //! A SearchComboBox's open list: a Menu on the canvas, opened next to its box
 //! (Menu::openNextTo, Below), so the canvas follows the box with it in the
@@ -43,6 +46,16 @@ public:
     ~SearchComboBoxList() override;
 
     void setComboBox(SearchComboBox *box) { m_box=box; }
+    void setOptions(SearchComboBoxOptions *options) { m_options=options; }
+
+    //! In Y, the shown rows' height, min(the options' item count,
+    //! MaxShownRows) rows, and its padding: the options list below them is
+    //! cut off.
+    void calculateSize(skin::Base *skin, Dim dim) override;
+
+    //! A press on it (a row, the bar) leaves the keyboard focus with the box
+    //! or its field, so a click picks with the field still focused.
+    bool pressKeepsKeyboardFocus() override { return true; }
 
     //! Next to its box, as wide as the box's canvas rect, in each axis's
     //! arrange: the box was arranged before it in the pass (the list comes
@@ -58,11 +71,13 @@ private:
     int boxWidth();
 
     SearchComboBox *m_box=nullptr;
+    SearchComboBoxOptions *m_options=nullptr;
 };
 
 //! The list of a SearchComboBox: a VirtualList of SearchComboBoxRows over the
-//! box's shown options, as high as the shown rows, up to
-//! SearchComboBox::MaxShownRows (scrolling past them). The Menu it fills
+//! box's shown options, SearchComboBox::MaxShownRows rows high whatever their
+//! count (scrolling past them), so its pool is the same for any query: the
+//! Menu holding it is as high as the shown rows and cuts it there. The Menu
 //! paints the backdrop, so it draws nothing itself.
 class GWENI_EXPORT SearchComboBoxOptions: public VirtualList
 {
@@ -71,7 +86,7 @@ public:
     GWENI_CONTROL(SearchComboBoxOptions, VirtualList);
 
 public:
-    //! In Y, the shown rows' height: min(item count, MaxShownRows) rows.
+    //! In Y, MaxShownRows rows.
     void calculateSize(skin::Base *skin, Dim dim) override;
 };
 
@@ -80,7 +95,8 @@ public:
 //! MenuHover surface while it shows the box's highlighted option (which a
 //! mouse move over it makes it). It takes no keyboard focus, so a press on it
 //! leaves the focus where it was; a click picks its option (the list's
-//! onItemPressed).
+//! onItemPressed). Disabled, it is the "No matches" row: Button's disabled
+//! text colour, no highlight, a press that does nothing.
 class GWENI_EXPORT SearchComboBoxRow: public VirtualListRow
 {
 public:
@@ -107,6 +123,53 @@ private:
     bool m_highlighted=false;
 };
 
+//! A filterable SearchComboBox's text field: a TextBox over the box's text
+//! area (the box places it, owner-placed, the box's text inset and the
+//! chevron's column kept clear), drawn with no frame of its own (the
+//! box's surface is behind it), its selection and caret as a TextBox's. It
+//! shows the selected option's label until the user edits it; each edit is
+//! the box's query. Up, Down, Return and Escape go to the box; a click on it
+//! with the list closed opens the list and selects its text, so typing
+//! replaces it; losing the keyboard focus closes the list and gives the
+//! selection's label back.
+class GWENI_EXPORT SearchComboBoxField: public TextBox
+{
+public:
+
+    GWENI_CONTROL(SearchComboBoxField, TextBox);
+
+public:
+    void setComboBox(SearchComboBox *box) { m_box=box; }
+
+    bool onKeyUp(bool down) override;
+    bool onKeyDown(bool down) override;
+    bool onKeyReturn(bool down) override;
+    bool onKeyEscape(bool down) override;
+    void onMouseClickLeft(int x, int y, bool down) override;
+    void onLostKeyboardFocus() override;
+
+    //! The text the box shows (no edit: no onTextChanged, the history
+    //! cleared), the caret at its end.
+    void showText(const String &text);
+
+    //! One edit for the box however many text changes it makes (typing over
+    //! a selection erases it, then inserts).
+    void insertText(const String &str) override;
+
+protected:
+    //! Tells the box of the edit, once its insertText() is over.
+    void onTextChanged() override;
+
+private:
+    SearchComboBox *m_box=nullptr;
+    //! Inside insertText(), and whether the text changed there.
+    bool m_inserting=false;
+    bool m_changedInInsert=false;
+    //! The box took the Return press: the release is the field's too, so it
+    //! does not move the focus on as a TextBox's would.
+    bool m_returnTaken=false;
+};
+
 }//namespace internal
 
 //! A pick-one box over options held as data (a label and a name each), with
@@ -118,7 +181,20 @@ private:
 //!
 //! A press opens the list below the box (above it where it would run past
 //! the canvas's bottom) and a second press closes it; a click on a row picks
-//! that option. While the list is open Up and Down move the highlight
+//! that option.
+//!
+//! Filterable (setFilterable(true)), a SearchComboBoxField over the box's
+//! text area takes the keyboard (made on first use, so a plain box has none;
+//! the box's own text is then empty and the field shows the selection).
+//! Typing opens the list and shows the options whose label contains the
+//! field's text, case-insensitively (ASCII letters; the lower-cased labels
+//! are kept with the options), all of them for an empty text, and
+//! highlights the first; no option matching shows one disabled "No matches"
+//! row. Each edit fires onTextChangedCaller. A keystroke matches over the
+//! options' data, makes and deletes no control and binds again only the
+//! rows whose option changed. The list closing without a pick (Escape, a
+//! press outside it, the box toggling it) and the field losing the keyboard
+//! focus give the field back the selection's label. While the list is open Up and Down move the highlight
 //! through the shown options, wrapping, scrolling it into view, Return picks
 //! it and Escape closes the list; while it is closed they change the
 //! selection, as a ComboBox's do. A pick fires onSelection when it changes
@@ -176,6 +252,20 @@ public:
 
     //! Fired once per pick or Up/Down step that changes the selection.
     gweni::event::Caller onSelection;
+    //! Fired once per edit of the field (the info's string is its text).
+    gweni::event::Caller onTextChangedCaller;
+
+    //! A text field over the box filters the list (above). Off again, the
+    //! field is hidden and the box shows the selection itself.
+    void setFilterable(bool filterable);
+    bool isFilterable() const { return m_filterable; }
+    //! The field, or null before setFilterable(true) first made it.
+    internal::SearchComboBoxField *getField() const { return m_field; }
+    //! What the shown options are matched against: the field's text since
+    //! its last edit, empty while the list is closed or was opened unedited.
+    const String &getQuery() const { return m_query; }
+    //! The text of the disabled row shown when no option matches.
+    static const char *noMatchesText() { return "No matches"; }
 
     void openList();
     void closeList();
@@ -185,19 +275,32 @@ public:
     internal::SearchComboBoxOptions *getOptionsList() const { return m_rows; }
 
     //! The options the open list shows, in order (indices into the options):
-    //! every option.
+    //! those the query matches, every option for an empty one. Empty with no
+    //! match: the list then shows the "No matches" row alone.
     const std::vector<size_t> &getShownOptions() const { return m_matches; }
     //! The option the keys move through the open list, or NoOption.
     int getHighlightedIndex() const { return m_highlight; }
     //! Highlights option \p index (shown in the list), scrolling it into
     //! view; NoOption takes the highlight away.
     void setHighlightedIndex(int index);
+    //! How many times the list's binder has filled a row, since the box was
+    //! made: what a keystroke binds again, for tests and tools.
+    size_t getRowBindCount() const { return m_rowBinds; }
 
     void onPress(event::Info info) override;
     bool onKeyUp(bool down) override;
     bool onKeyDown(bool down) override;
     bool onKeyReturn(bool down) override;
     bool onKeyEscape(bool down) override;
+    //! A filterable box gives the focus to its field.
+    void onKeyboardFocus() override;
+    //! Filterable, a press on the box (its chevron's column) leaves the
+    //! focus where it is: its release focuses the field (onPress).
+    bool pressKeepsKeyboardFocus() override { return m_filterable; }
+    //! The field is disabled with the box.
+    void setDisabled(bool disabled) override;
+    //! The field over the text area, along each axis before the children.
+    void arrange(skin::Base *skin, Dim dim) override;
 
     //! In X, the widest option's label in this box's font as well as the
     //! shown text, with the text padding and the chevron column, as a
@@ -216,6 +319,7 @@ protected:
 
     friend class internal::SearchComboBoxList;
     friend class internal::SearchComboBoxRow;
+    friend class internal::SearchComboBoxField;
 
     //! The list is being deleted: it is no longer held.
     void listDeleted();
@@ -226,6 +330,34 @@ protected:
     //! Makes \p index the selection and shows its label (NoOption: none,
     //! empty), firing onSelection with \p doEvents when it changed.
     void select(int index, bool doEvents);
+    //! The selection's label on the box, or in the field when filterable.
+    void showSelection();
+    //! The field's text was edited: the new query, the list opened or
+    //! filtered.
+    void fieldTextChanged();
+    void fieldClicked();
+    void fieldLostFocus();
+    //! The keyboard focus to the field when filterable, else to the box.
+    void focusInput();
+    //! Shows the list for the current query; the highlight the selection
+    //! (opened by a press) or the first shown option (by an edit).
+    void showList(bool edited);
+    //! The query changed while open: the shown options again, the first
+    //! highlighted and scrolled to.
+    void filter();
+    //! The shown options (m_matches) for the query, and whether the "No
+    //! matches" row shows in their place.
+    void matchOptions();
+    //! The list told the shown options' count, and the pooled rows that
+    //! showed another option (or the "No matches" row) before, \p previous
+    //! with \p previousNoMatch, bound again; every other row only its
+    //! highlight.
+    void rebindChanged(const std::vector<size_t> &previous, bool previousNoMatch);
+    //! The rows the list holds: the shown options, or the one "No matches".
+    size_t shownRowCount() const;
+    //! Highlights the shown option at \p position (VirtualList::NoItem for
+    //! none), scrolling it into view with \p scroll.
+    void highlightPosition(size_t position, bool scroll);
     //! Picks option \p index from the list: selects it and closes the list.
     void pick(int index, bool doEvents);
     void rowPressed(event::Info info);
@@ -235,16 +367,29 @@ protected:
     //! A row was moved over: its option becomes the highlight, not scrolled
     //! to (it is on screen).
     void rowHovered(internal::SearchComboBoxRow *row);
-    //! The shown options again: every option, and the list told their count.
-    void rebuildMatches();
+    //! The options changed: the lower-cased labels, and while the list is
+    //! open the shown options again with every row bound again.
+    void optionsChanged();
     //! The row height of the list in this box's list font.
     int rowHeight();
     int optionsTextWidth();
 
     std::vector<Option> m_options;
+    //! Each option's label lower-cased, the query matched against them.
+    std::vector<String> m_lowerLabels;
     std::vector<size_t> m_matches;
+    //! The query matched nothing: the list shows the "No matches" row.
+    bool m_noMatch=false;
     int m_selected=NoOption;
+    //! The highlighted option and its place in m_matches (NoItem for none).
     int m_highlight=NoOption;
+    size_t m_highlightPos=VirtualList::NoItem;
+
+    bool m_filterable=false;
+    internal::SearchComboBoxField *m_field=nullptr;
+    String m_query;
+    String m_lowerQuery;
+    size_t m_rowBinds=0;
 
     internal::SearchComboBoxList *m_list=nullptr;
     internal::SearchComboBoxOptions *m_rows=nullptr;
