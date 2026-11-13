@@ -112,6 +112,8 @@ public:
             surface=control->isHovered()?&tokyonight::ButtonOnHover:&tokyonight::ButtonOn;
         else if(control->isHovered())
             surface=&tokyonight::ButtonHover;
+        else if(control->isFocussed())
+            surface=&tokyonight::ButtonFocus;
         else
             surface=&tokyonight::ButtonNormal;
 

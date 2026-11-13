@@ -518,8 +518,10 @@ String TextBox::getSelection()
 
 bool TextBox::onKeyReturn(bool down)
 {
+    // The press goes on up to the parents: a dialog's default button
+    // (dialogs::Dialog::onKeyReturn) takes it there. The release is the box's.
     if(down)
-        return true;
+        return false;
 
     // Try to move to the next control, as if tab had been pressed
     onKeyTab(true);

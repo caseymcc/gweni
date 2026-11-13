@@ -42,6 +42,7 @@ struct KeyData
         {
             KeyState[i]=false;
             NextRepeat[i]=0;
+            PressTarget[i]=nullptr;
         }
 
         Target=nullptr;
@@ -51,6 +52,9 @@ struct KeyData
 
     bool KeyState[keys::KeysCount];
     double NextRepeat[keys::KeysCount];
+    //! The control each held key's press went to: its release goes there only
+    //! (compared, never followed: it may be gone).
+    controls::Base *PressTarget[keys::KeysCount];
     controls::Base *Target;
     bool LeftMouseDown;
     bool RightMouseDown;
@@ -510,6 +514,7 @@ bool onKeyEvent(controls::Base *canvas, int key, bool down)
             g_keyData.KeyState[key]=true;
             g_keyData.NextRepeat[key]=platform::getTimeInSeconds()+c_KeyRepeatDelay;
             g_keyData.Target=target;
+            g_keyData.PressTarget[key]=target;
 
             if(target)
                 return target->onKeyPress(key);
@@ -520,6 +525,13 @@ bool onKeyEvent(controls::Base *canvas, int key, bool down)
         if(g_keyData.KeyState[key])
         {
             g_keyData.KeyState[key]=false;
+
+            // The press moved the focus (Enter choosing a dialog's button,
+            // which gives the focus back to the app): the release is not the
+            // new holder's, which would act on a key it never saw go down.
+            if(target != g_keyData.PressTarget[key])
+                target=nullptr;
+            g_keyData.PressTarget[key]=nullptr;
 
             //! @bug This causes shift left arrow in textboxes
             //! to not work. What is disabling it here breaking?

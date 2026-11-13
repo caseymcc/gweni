@@ -84,6 +84,9 @@ inline Surface ButtonNormal   { SurfHi,                Surf,                  Li
 inline Surface ButtonHover    { SurfHover,             SurfHi,                Blue,  Radius, BorderW };
 inline Surface ButtonDown     { Surf,                  BgStorm,               Blue,  Radius, BorderW };
 inline Surface ButtonDisabled { BgStorm,               Color(0x1f,0x22,0x33), BgHighlight, Radius, BorderW };
+// A button holding the keyboard focus (a dialog's: Enter and Space press it),
+// at rest: its normal fill with the accent border
+inline Surface ButtonFocus    { SurfHi,                Surf,                  Blue,  Radius, BorderW };
 // A toggle Button that is on: an accent-tinted fill, so it reads unlike a
 // momentary press (ButtonDown); disabled, it stays on, dimmed
 inline Surface ButtonOn         { Color(0x33,0x46,0x7a), Color(0x28,0x34,0x57), Blue,  Radius, BorderW };
@@ -362,7 +365,7 @@ inline std::unordered_map<std::string, Surface*>& surfaceRegistry()
     static std::unordered_map<std::string, Surface*> m={
         {"Window",&Window},{"WindowInact",&WindowInact},{"Panel",&Panel},{"PanelDark",&PanelDark},
         {"GroupBox",&GroupBox},{"Tooltip",&Tooltip},{"StatusBar",&StatusBar},{"Canvas",&Canvas},
-        {"ButtonNormal",&ButtonNormal},{"ButtonHover",&ButtonHover},{"ButtonDown",&ButtonDown},{"ButtonDisabled",&ButtonDisabled},
+        {"ButtonNormal",&ButtonNormal},{"ButtonHover",&ButtonHover},{"ButtonDown",&ButtonDown},{"ButtonDisabled",&ButtonDisabled},{"ButtonFocus",&ButtonFocus},
         {"ButtonOn",&ButtonOn},{"ButtonOnHover",&ButtonOnHover},{"ButtonOnDisabled",&ButtonOnDisabled},
         {"TextBox",&TextBox},{"TextBoxFocus",&TextBoxFocus},{"TextBoxDisabled",&TextBoxDisabled},{"TextSelection",&TextSelection},
         {"CodeEditor",&CodeEditor},{"CodeEditorFocus",&CodeEditorFocus},{"CodeGutter",&CodeGutter},

@@ -163,10 +163,20 @@ public:
     controls::ScrollControl *getContent() const { return m_content; }
 
     //! Adds a button to the footer, right of those added before it, showing
-    //! the footer. Its press does nothing on its own: connect onPressCaller,
-    //! or use query.h's dialogs, whose buttons close them.
+    //! the footer. Its press does nothing on its own: connect onPressCaller.
+    //! It takes the keyboard focus (Tab reaches it, Space presses it).
     controls::Button *addButton(const String &label);
+    //! A footer button whose press closes the dialog with \p result.
+    controls::Button *addButton(const String &label, Result result);
     internal::DialogFooter *getFooter() const { return m_footer; }
+
+    //! The button Enter presses (see onKeyReturn()), and the one open() gives
+    //! the keyboard focus to when no setInitialFocus() is set; null for none.
+    void setDefaultButton(controls::Button *button) { m_defaultButton=button; }
+    controls::Button *getDefaultButton() const { return m_defaultButton; }
+    //! The control open() gives the keyboard focus to (a prompt's field); by
+    //! default the default button.
+    void setInitialFocus(controls::Base *control) { m_initialFocus=control; }
 
     //! Whether the close button shows and Escape closes it (true by default).
     void setClosable(bool closable);
@@ -174,7 +184,8 @@ public:
     controls::WindowCloseButton *getCloseButton() const { return m_closeButton; }
 
     //! Shows it and puts it on its canvas's modal stack (made the canvas's
-    //! child first). Nothing while it is open, or with no canvas.
+    //! child first), then gives the keyboard focus to the initial focus or
+    //! else the default button. Nothing while it is open, or with no canvas.
     virtual void open();
     //! Closes it with \p result (see the class comment). Nothing unless open.
     virtual void close(Result result);
@@ -185,9 +196,9 @@ public:
     void setResultHandler(ResultHandler handler) { m_onResult=std::move(handler); }
     void setCancelResult(Result result) { m_cancelResult=result; }
     Result getCancelResult() const { return m_cancelResult; }
-    //! The text the handler gets with the result: empty here, a prompt's
-    //! field's text there.
-    virtual String resultText() const { return String(); }
+    //! The text the handler gets with \p result: empty here, a prompt's
+    //! field's text for Ok there.
+    virtual String resultText(Result /*result*/) const { return String(); }
 
     //! Deleted (delayedDelete()) once closed; true by default. Off, a closed
     //! dialog stays hidden on the canvas and may be opened again.
@@ -198,6 +209,12 @@ public:
 
     //! Escape closes it with its cancel result while it is open and closable.
     bool onKeyEscape(bool down) override;
+    //! Enter, from a focused control inside it that does not take it itself
+    //! (anything but a multiline TextBox, a CodeEditor, a DragNumber's edit
+    //! box, a Selectable: a single-line TextBox passes the press on), or with
+    //! nothing focused: presses the focused footer button, else the default
+    //! button, if it is shown and enabled.
+    bool onKeyReturn(bool down) override;
 
     //! Moves it so its top-left is at \p pos (canvas units), kept inside the
     //! canvas, and keeps it there across resizes: what its title bar's drag
@@ -226,6 +243,8 @@ protected:
     controls::WindowCloseButton *m_closeButton=nullptr;
     controls::ScrollControl *m_content=nullptr;
     internal::DialogFooter *m_footer=nullptr;
+    controls::Button *m_defaultButton=nullptr;
+    controls::Base *m_initialFocus=nullptr;
 
     Extent m_width;
     Extent m_height;

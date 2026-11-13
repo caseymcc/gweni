@@ -127,7 +127,22 @@ controls::Button *Dialog::addButton(const String &label)
     // between the buttons, none left of the first
     if(m_footer->getRow()->getChildren().size() > 1)
         button->setMargin(Margin(6, 0, 0, 0));
+    // it holds the focus (Base drops a focus on a control without keyboard
+    // input) and Tab reaches it
+    button->setKeyboardInputEnabled(true);
+    button->setTabable(true);
     m_footer->show();
+    return button;
+}
+
+controls::Button *Dialog::addButton(const String &label, Result result)
+{
+    controls::Button *button=addButton(label);
+
+    button->onPressCaller.addCallback(this, [result](event::Handler &handler, event::Info)
+    {
+        static_cast<Dialog &>(handler).close(result);
+    });
     return button;
 }
 
@@ -154,6 +169,9 @@ void Dialog::open()
     ParentClass::setHidden(false);
     canvas->pushModal(this);
     invalidate();
+
+    if(controls::Base *focus=m_initialFocus ? m_initialFocus : m_defaultButton)
+        focus->focus();
 }
 
 void Dialog::close(Result result)
@@ -175,9 +193,13 @@ void Dialog::close(Result result)
     // the handler goes before it runs: it is called once, whatever it does
     ResultHandler handler=std::move(m_onResult);
     m_onResult=nullptr;
+    const size_t id=getControlId();
 
     if(handler)
-        handler(result, resultText());
+        handler(result, resultText(result));
+    // it may have deleted this dialog outright
+    if(!Base::getControlById(id))
+        return;
     onClose.call(this);
 
     m_closing=false;
@@ -203,6 +225,30 @@ bool Dialog::onKeyEscape(bool down)
 
     if(down)
         close();
+    return true;
+}
+
+bool Dialog::onKeyReturn(bool down)
+{
+    if(!m_open)
+        return false;
+
+    if(!down)
+        return true;
+
+    // a focused footer button is the one pressed, else the default
+    controls::Button *button=m_defaultButton;
+
+    if(KeyboardFocus && (KeyboardFocus->getParent() == m_footer->getRow()))
+    {
+        if(controls::Button *focused=gweni_cast<controls::Button>(KeyboardFocus))
+            button=focused;
+    }
+
+    if(!button || !button->visible() || button->isDisabled())
+        return false;
+
+    button->onPress(event::Info(button));
     return true;
 }
 
