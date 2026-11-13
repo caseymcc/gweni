@@ -20,6 +20,9 @@
  *    flat       a trapezoid whose edges are flat on whole device px draws byte for
  *               byte what drawFilledRect of the same rect draws, opaque and
  *               translucent, at scale 1 and 2;
+ *    crossed    one whose edges cross (an area segment whose line crosses its
+ *               base) covers every pixel between them within a level, on both
+ *               sides of the crossing, but the column the crossing is in;
  *    depth      a rect at a lower z drawn after it shows on every pixel it leaves
  *               uncovered (it writes no depth there) and not on one it covers,
  *               and a side past +/-32767 device px draws nothing;
@@ -147,7 +150,8 @@ struct Placed
     int left, right;
     double top0, top1, bottom0, bottom1;
 
-    //! The exact area of pixel (x,y) between the edges (0 outside the columns),
+    //! The exact area of pixel (x,y) between the edges, crossed or not (0 outside
+    //! the columns),
     //! integrated over 256 slices of the column: the overlap of a slice with the
     //! pixel's row is linear in x between kinks, so the midpoint rule is within
     //! a small fraction of a level.
@@ -164,9 +168,11 @@ struct Placed
         {
             const double t=(x-left+(i+0.5)/slices)/width;
             const double top=top0+(top1-top0)*t;
-            const double bottom=std::max(bottom0+(bottom1-bottom0)*t, top);
+            const double bottom=bottom0+(bottom1-bottom0)*t;
+            const double lo=std::min(top, bottom);
+            const double hi=std::max(top, bottom);
 
-            sum+=std::max(0.0, std::min(bottom, y+1.0)-std::max(top, double(y)));
+            sum+=std::max(0.0, std::min(hi, y+1.0)-std::max(lo, double(y)));
         }
         return sum/slices;
     }
@@ -346,6 +352,59 @@ TEST_CASE("Trapezoid (style 9): a flat one on whole device px draws what drawFil
                 CHECK(differ == 0);
             }
         }
+    }
+}
+
+TEST_CASE("Trapezoid (style 9): one whose edges cross covers what lies between them on both sides")
+{
+    Primitives prims(1);
+    // the top from above the bottom to below it: they cross at x = 30 + 40*10/22
+    const Trapezoid t{30.0f, 70.0f, 20.0f, 52.0f, 30.0f, 40.0f};
+
+    for(float scale : scales)
+    {
+        ScaleGuard guard(scale);
+        const Placed placed=place(t, scale);
+        // where the edges cross, in device px, and the column it is in
+        const double cross=placed.left+(placed.right-placed.left)
+            *(placed.bottom0-placed.top0)/((placed.bottom0-placed.top0)-(placed.bottom1-placed.top1));
+        const int crossColumn=int(std::floor(cross));
+
+        CAPTURE(scale);
+
+        const Frame frame=drawFrame([&](SlotRenderer &renderer)
+            {
+                renderer.drawTrapezoid(prims.ids[0], t.x0, t.x1, t.top0, t.top1, t.bottom0, t.bottom1, red, 1);
+            });
+        const int y1=gweni::test::viewSize().y;
+        int wrong=0;
+        int left=0;
+        int right=0;
+
+        for(int y=0; y<y1; ++y)
+        {
+            for(int x=placed.left-2; x<placed.right+2; ++x)
+            {
+                if(x == crossColumn)
+                    continue;
+
+                const double c=placed.coverage(x, y);
+                const Color pixel=frame.at(x, y);
+
+                if(c == 1.0)
+                    (x < crossColumn ? left : right)+=1;
+                if(std::abs(pixel.r-255.0*c) > 1.5)
+                {
+                    if(wrong < 8)
+                        MESSAGE("pixel (", x, ",", y, ") is ", int(pixel.r), " for coverage ", c);
+                    ++wrong;
+                }
+            }
+        }
+        CHECK(wrong == 0);
+        // both sides of the crossing have whole pixels between the edges
+        CHECK(left > 20);
+        CHECK(right > 20);
     }
 }
 

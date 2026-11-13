@@ -314,12 +314,15 @@ public:
     //! whole device px, and two trapezoids sharing a side abut with no seam and no
     //! column of pixels in both. The top and bottom edges are at y*scale() unsnapped
     //! and anti-aliased by the exact area of each pixel between them, so where they
-    //! land on whole device px a flat trapezoid draws drawFilledRect's rect. A
-    //! bottom above its top is taken to be at the top (nothing drawn there). A pixel
-    //! it does not cover writes nothing, depth included.
+    //! land on whole device px a flat trapezoid draws drawFilledRect's rect. The
+    //! edges may cross (an area segment whose line crosses its base): it covers what
+    //! lies between them on either side of the crossing, exactly but in the columns
+    //! the crossing is in, where a pixel holding both sides is covered by their
+    //! difference. A pixel it does not cover writes nothing, depth included.
     //!
     //! The default is an approximation for a backend without it: a filled rect from
-    //! x0 to x1 between the middles of the two edges, drawn through drawFilledRect
+    //! x0 to x1 between the middles of the two edges (the higher of them its top),
+    //! drawn through drawFilledRect
     //! in \a color (left as the draw colour).
     virtual void drawTrapezoid(size_t primitiveId, float x0, float x1, float top0, float top1,
         float bottom0, float bottom1, gweni::Color color, int zIndex);

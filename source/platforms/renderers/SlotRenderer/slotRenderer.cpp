@@ -2188,12 +2188,13 @@ void SlotRenderer::drawTrapezoid(size_t primitiveId, float x0, float x1, float t
     const int64_t right=side(x1);
     const double t0=height(top0);
     const double t1=height(top1);
-    const double b0=std::max(height(bottom0), t0);
-    const double b1=std::max(height(bottom1), t1);
+    const double b0=height(bottom0);
+    const double b1=height(bottom1);
 
-    // The quad: the sides' columns and every row an edge passes through.
-    const int64_t top=(int64_t)std::floor(std::min(t0, t1));
-    const int64_t bottom=(int64_t)std::ceil(std::max(b0, b1));
+    // The quad: the sides' columns and every row an edge passes through (the
+    // edges may cross).
+    const int64_t top=(int64_t)std::floor(std::min(std::min(t0, t1), std::min(b0, b1)));
+    const int64_t bottom=(int64_t)std::ceil(std::max(std::max(t0, t1), std::max(b0, b1)));
     const int64_t hw=right-left;
     const int64_t hh=bottom-top;
 

@@ -502,17 +502,20 @@ void main()
     else if (ShaderType == 9u)
     {
         // Trapezoid (drawTrapezoid): the quad is its whole columns, from the highest
-        // top to the lowest bottom, and a pixel is covered by its exact area between
-        // the two edges (vSegment and vColor1 the top's terms, vJoints and
-        // vBorderColor the bottom's): each edge's part, less the 1 their union is
-        // (the top is never below the bottom, so every point is inside one of
-        // them): the sum of the two less their halves. The pixel's column and row
+        // edge to the lowest, and a pixel is covered by its exact area between the
+        // two edges (vSegment and vColor1 the top's terms, vJoints and vBorderColor
+        // the bottom's): each edge's part, less the 1 their union is (where the top
+        // is above the bottom every point is inside one of them): the sum of the
+        // two less their halves. Where the edges have crossed, the part between
+        // them is that sum negated, so it is the sum's magnitude, exact but in a
+        // pixel the crossing is in, which is covered by the difference of its two
+        // sides. The pixel's column and row
         // are those vLocal is in: at the pixel's centre it is half a px from their
         // edges, farther than an interpolation error moves it, so the coverage is
         // a function of the flat edges and the column and row alone.
         vec2 c = floor(vLocal + vHalf) + 0.5;
-        float a = clamp(trapezoidEdge(c, vSegment, vColor1.xyz)
-            + trapezoidEdge(c, vJoints, vBorderColor.xyz), 0.0, 1.0);
+        float a = min(abs(trapezoidEdge(c, vSegment, vColor1.xyz)
+            + trapezoidEdge(c, vJoints, vBorderColor.xyz)), 1.0);
 
         FragColor = vec4(VertexColor.rgb, VertexColor.a * a);
     }

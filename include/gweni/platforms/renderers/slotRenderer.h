@@ -385,7 +385,7 @@ public:
         int majorEvery, gweni::Color minor, gweni::Color major, int zIndex) override;
 
     //! Style 9: the quad spans the sides' whole device px and the rows from the
-    //! highest top to the lowest bottom; the four edge heights are floats, device
+    //! highest edge to the lowest; the four edge heights are floats, device
     //! px from the quad's top, their bits in cx/cy (top at x0), bx/by (top at x1),
     //! dx/dy (bottom at x0) and radius/border (bottom at x1), the colour in tx/ty.
     void drawTrapezoid(size_t primitiveId, float x0, float x1, float top0, float top1,
