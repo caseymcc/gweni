@@ -153,8 +153,9 @@ Font RichText::spanFont(size_t index)
         font=getSkin()->getDefaultMonoFont();
         font.size=base.size;
     }
-    font.bold=(span.style&RichSpan::Bold) != 0;
-    font.italic=(span.style&RichSpan::Italic) != 0;
+    // the paragraph's own style (a bold heading), the span's added to it
+    font.bold=base.bold || ((span.style&RichSpan::Bold) != 0);
+    font.italic=base.italic || ((span.style&RichSpan::Italic) != 0);
     return font;
 }
 
@@ -369,9 +370,12 @@ void RichText::clearSelection()
     if(!hasSelection())
         return;
 
-    const size_t focus=selectionModel().focus().offset;
+    // the caret at the focus, in whichever block of the model it is
+    const unsigned serial=selectionModel().serial();
 
-    select(focus, focus);
+    selectionModel().setCaret(selectionModel().focus());
+    if(selectionModel().serial() != serial)
+        selectionChanged();
 }
 
 bool RichText::copySelection()

@@ -100,7 +100,8 @@ public:
 
     //! The font of a plain span (the skin's default font until set): a Bold or
     //! Italic span takes its family's face of that style at its size, a Code
-    //! one the skin's mono face at its size.
+    //! one the skin's mono face at its size. A bold or italic font here makes
+    //! every span so, each span's own style added to it.
     void setFont(const gweni::Font &font);
     const gweni::Font &getFont();
 
