@@ -2036,3 +2036,45 @@ TEST_CASE("SearchComboBox: multi-select refilled from onTextChangedCaller keeps 
     CHECK(box->getSelectedIndices() == (std::vector<int>{0, 1}));
     CHECK(changes.calls == 1);
 }
+
+TEST_CASE("SearchComboBox: a click on the field's text with the list closed selects it all, so typing replaces it")
+{
+    Scene scene;
+    SearchComboBox *box=filterable(scene, {"feature/search-0001", "beta"});
+    KeyboardFocus=nullptr;
+    scene.frame();
+    REQUIRE(!box->isListOpen());
+
+    controls::internal::SearchComboBoxField *field=box->getField();
+    const Rect at=Scene::canvasRect(field);
+
+    // a few characters into the text, press and release through the input
+    scene.click(at.x+field->getTextPadding().left+12, at.y+at.h/2);
+    CHECK(box->isListOpen());
+    CHECK(field->getSelection() == "feature/search-0001");
+
+    type(scene, "x");
+    CHECK(field->getText() == "x");
+}
+
+TEST_CASE("SearchComboBox: a disabled filterable box opens no list from a click on its field or typing, and picks nothing")
+{
+    Scene scene;
+    SearchComboBox *box=filterable(scene, {"alpha", "beta"});
+    Counter selections;
+    selections.listen(box->onSelection);
+
+    box->getField()->focus();
+    box->setDisabled(true);
+    scene.frame();
+
+    scene.clickOn(box->getField());
+    CHECK(!box->isListOpen());
+
+    type(scene, "b");
+    CHECK(!box->isListOpen());
+
+    scene.key(keys::Return);
+    CHECK(selections.calls == 0);
+    CHECK(box->getSelectedIndex() == 0);
+}

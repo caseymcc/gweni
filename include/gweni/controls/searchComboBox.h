@@ -153,6 +153,9 @@ public:
     bool onKeyEscape(bool down) override;
     //! In an empty field of a multi-select box, it takes the last pick away.
     bool onKeyBackspace(bool down) override;
+    //! With the list closed a press opens it with the text selected, and
+    //! neither it nor its release places the caret (the TextBox's would
+    //! cut the selection at the click).
     void onMouseClickLeft(int x, int y, bool down) override;
     void onLostKeyboardFocus() override;
 
@@ -173,6 +176,8 @@ private:
     //! Inside insertText(), and whether the text changed there.
     bool m_inserting=false;
     bool m_changedInInsert=false;
+    //! The press opened the list and selected the text: its release is ours.
+    bool m_pressOpened=false;
     //! The box took the Return press: the release is the field's too, so it
     //! does not move the focus on as a TextBox's would.
     bool m_returnTaken=false;
@@ -478,7 +483,8 @@ protected:
     //! The field's text was edited: the new query, the list opened or
     //! filtered.
     void fieldTextChanged();
-    void fieldClicked();
+    //! Whether the click opened the list (closed and enabled).
+    bool fieldClicked();
     void fieldLostFocus();
     //! The keyboard focus to the field when filterable, else to the box.
     void focusInput();
