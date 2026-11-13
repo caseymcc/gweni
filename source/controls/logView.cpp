@@ -195,8 +195,9 @@ bool LogView::replace(RowId id, const LogRow &row)
     m_rows[position].row=row;
     itemChanged(position);
 
-    // the characters on this row clamped to its new text, one at its end
-    // kept at its end
+    // the characters on this row clamped to its new text, a range's high end
+    // at its end kept at its end (its low end is not moved there: a selected
+    // empty row has both ends at 0, its end)
     if(!m_selection.empty())
     {
         const size_t after=rowLength(id);
@@ -204,12 +205,14 @@ bool LogView::replace(RowId id, const LogRow &row)
 
         for(SelectionRange &range : m_selection)
         {
+            const Position *high=forward(range)?&range.focus:&range.anchor;
+
             for(Position *end : {&range.anchor, &range.focus})
             {
                 if(end->row != id)
                     continue;
 
-                const size_t character=(end->character >= before)?after:std::min(end->character, after);
+                const size_t character=(end == high && end->character >= before)?after:std::min(end->character, after);
 
                 changed=changed || character != end->character;
                 end->character=character;
@@ -742,13 +745,18 @@ size_t LogView::positionAtOrAfter(RowId id) const
     return static_cast<size_t>(found-m_rows.begin());
 }
 
+bool LogView::forward(const SelectionRange &range)
+{
+    return (range.anchor.row < range.focus.row)
+        || (range.anchor.row == range.focus.row && range.anchor.character <= range.focus.character);
+}
+
 void LogView::ordered(const SelectionRange &range, Position &low, Position &high)
 {
-    const bool forward=(range.anchor.row < range.focus.row)
-        || (range.anchor.row == range.focus.row && range.anchor.character <= range.focus.character);
+    const bool isForward=forward(range);
 
-    low=forward?range.anchor:range.focus;
-    high=forward?range.focus:range.anchor;
+    low=isForward?range.anchor:range.focus;
+    high=isForward?range.focus:range.anchor;
 }
 
 void LogView::selectRow(RowId id)

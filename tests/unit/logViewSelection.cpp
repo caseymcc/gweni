@@ -9,8 +9,9 @@
  *  rowText()'s length; its text is each selected row's text in row order,
  *  joined by '\n', a collapsed block's every line included. It keeps the
  *  rows that remain when the cap drops some (a range all dropped is gone),
- *  and a replace clamps the characters on that row (an end at the row's end
- *  stays at its end). A click selects a row, Shift+click extends to a row,
+ *  and a replace clamps the characters on that row (a range's high end at the
+ *  row's end stays at its end, its low end where it was, so a selected empty
+ *  row selects its new text). A click selects a row, Shift+click extends to a row,
  *  Ctrl+click toggles one (splitting a range round it), Ctrl+A selects every
  *  row, Escape clears and a click under the last row clears; Ctrl+C and the
  *  context menu's Copy put the text on the clipboard, a right press on an
@@ -307,6 +308,30 @@ TEST_CASE("LogView selection: a replace clamps the characters on its row")
     // and clear() clears it
     scene.log->clear();
     CHECK_FALSE(scene.log->hasSelection());
+}
+
+TEST_CASE("LogView selection: a replace of a selected empty row selects its new text")
+{
+    Scene scene(0);
+    const controls::LogView::RowId empty=scene.log->append(controls::LogRow(""));
+    const controls::LogView::RowId after=scene.log->append(controls::LogRow("after"));
+
+    scene.frame();
+
+    // both ends at 0, the row's end: only the high one goes to the new end
+    scene.log->selectRow(empty);
+    CHECK(scene.log->replace(empty, controls::LogRow("hello")));
+    CHECK(scene.log->getSelectedText() == "hello");
+    REQUIRE(scene.log->getSelection().size() == 1);
+    CHECK(scene.log->getSelection()[0].anchor.character == 0);
+    CHECK(scene.log->getSelection()[0].focus.character == 5);
+
+    // a range from it to the next row keeps its low end at 0
+    CHECK(scene.log->replace(empty, controls::LogRow("")));
+    scene.log->selectRow(empty);
+    scene.log->extendSelectionTo(after);
+    CHECK(scene.log->replace(empty, controls::LogRow("hello")));
+    CHECK(scene.log->getSelectedText() == "hello\nafter");
 }
 
 TEST_CASE("LogView selection: click Shift+click Ctrl+click Ctrl+A Escape and Ctrl+C")

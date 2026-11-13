@@ -411,6 +411,8 @@ private:
     //! The position of the first row the view holds at or after the id
     //! (getRowCount() when none).
     size_t positionAtOrAfter(RowId id) const;
+    //! Whether a range runs from its anchor to its focus (an empty one does).
+    static bool forward(const SelectionRange &range);
     //! A range's endpoints in row order.
     static void ordered(const SelectionRange &range, Position &low, Position &high);
     //! Ranges with no row held any more dropped, a low end the cap dropped
