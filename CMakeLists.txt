@@ -156,6 +156,8 @@ set(GWENI_SOURCES
     source/text/highlight/yaml.cpp
     include/gweni/text/tokenizer.h
     source/text/tokenizer.cpp
+    include/gweni/text/richLayout.h
+    source/text/richLayout.cpp
     include/gweni/text/undoStack.h
     source/text/undoStack.cpp
     include/gweni/text/wrap.h
