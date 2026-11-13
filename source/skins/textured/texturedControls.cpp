@@ -2561,14 +2561,26 @@ size_t Chart::depthLayersOf(const controls::Base *control)
 {
     const controls::Chart *chart=gweni_cast<controls::Chart>(const_cast<controls::Base *>(control));
 
-    // the frame, the grid, the spans, a layer per series, the markers and
-    // the crosshair
-    return size_t(SeriesLayer)+(chart ? chart->getSeriesCount() : 0)+2;
+    // the frame, the grid, the spans, a layer per series, one per area's
+    // line, the markers and the crosshair
+    size_t layers=size_t(SeriesLayer)+2;
+
+    if(chart)
+    {
+        for(size_t i=0; i<chart->getSeriesCount(); ++i)
+            layers+=controls::Chart::isAreaType(chart->getSeriesType(i)) ? 2 : 1;
+    }
+    return layers;
 }
 
 std::vector<size_t> Chart::seriesPrimitives(size_t series) const
 {
     return (series < m_series.size()) ? inUse(m_series[series]) : std::vector<size_t>();
+}
+
+std::vector<size_t> Chart::areaLinePrimitives(size_t series) const
+{
+    return (series < m_areaLines.size()) ? inUse(m_areaLines[series]) : std::vector<size_t>();
 }
 
 std::vector<size_t> Chart::inUse(const SlotList &list)
@@ -2577,15 +2589,18 @@ std::vector<size_t> Chart::inUse(const SlotList &list)
 }
 
 void Chart::takeLists(renderer::Base *renderer, size_t grid, size_t spans, const std::vector<size_t> &series,
-    size_t markers)
+    const std::vector<size_t> &areaLines, size_t markers)
 {
     releaseList(renderer, m_grid);
     releaseList(renderer, m_spans);
     for(SlotList &list : m_series)
         releaseList(renderer, list);
+    for(SlotList &list : m_areaLines)
+        releaseList(renderer, list);
     releaseList(renderer, m_markers);
     releaseList(renderer, m_crosshair);
     m_series.resize(series.size());
+    m_areaLines.resize(areaLines.size());
 
     // The bank hands out the lowest free id first, so what it gives back
     // goes up from list to list; one at or below the frame's is put aside
@@ -2615,6 +2630,9 @@ void Chart::takeLists(renderer::Base *renderer, size_t grid, size_t spans, const
     take(m_spans, spans);
     for(size_t i=0; i<series.size(); ++i)
         take(m_series[i], series[i]);
+    // the areas' lines, in front of every series' fill
+    for(size_t i=0; i<areaLines.size(); ++i)
+        take(m_areaLines[i], areaLines[i]);
     take(m_markers, markers);
     // the crosshair's one slot, in front of everything
     take(m_crosshair, 1);
@@ -2640,6 +2658,9 @@ void Chart::remove(renderer::Base *renderer, controls::Base * /*baseControl*/)
     for(SlotList &list : m_series)
         releaseList(renderer, list);
     m_series.clear();
+    for(SlotList &list : m_areaLines)
+        releaseList(renderer, list);
+    m_areaLines.clear();
     releaseList(renderer, m_markers);
     releaseList(renderer, m_crosshair);
     m_frame=Slot();
@@ -2652,6 +2673,8 @@ void Chart::appendIds(std::vector<size_t> &primitiveIds, std::vector<size_t> &te
     primitiveIds.insert(primitiveIds.end(), m_grid.ids.begin(), m_grid.ids.end());
     primitiveIds.insert(primitiveIds.end(), m_spans.ids.begin(), m_spans.ids.end());
     for(const SlotList &list : m_series)
+        primitiveIds.insert(primitiveIds.end(), list.ids.begin(), list.ids.end());
+    for(const SlotList &list : m_areaLines)
         primitiveIds.insert(primitiveIds.end(), list.ids.begin(), list.ids.end());
     primitiveIds.insert(primitiveIds.end(), m_markers.ids.begin(), m_markers.ids.end());
     primitiveIds.insert(primitiveIds.end(), m_crosshair.ids.begin(), m_crosshair.ids.end());
@@ -2734,14 +2757,23 @@ void Chart::update(renderer::Base *renderer, controls::Base *baseControl)
     if(drawing)
     {
         std::vector<size_t> seriesNeed(seriesCount);
+        std::vector<size_t> lineNeed(seriesCount, 0);
 
         for(size_t i=0; i<seriesCount; ++i)
         {
             const controls::ChartSeriesType type=chart->getSeriesType(i);
             const bool bars=(type == controls::ChartSeriesType::Bar) || (type == controls::ChartSeriesType::StackedBar);
             const size_t vertices=chart->getVertexCount(i);
+            const size_t segments=vertices > 1 ? vertices-1 : 0;
 
-            seriesNeed[i]=bars ? chart->getSeriesPoints(i).size() : (vertices > 1 ? vertices-1 : 0);
+            // an area's fill in its list, its line in its line's
+            if(controls::Chart::isAreaType(type))
+            {
+                seriesNeed[i]=chart->getAreaSegmentCount(i);
+                lineNeed[i]=segments;
+            }
+            else
+                seriesNeed[i]=bars ? chart->getSeriesPoints(i).size() : segments;
         }
 
         // A new series' list, or one slot more than a list has, would come
@@ -2761,15 +2793,18 @@ void Chart::update(renderer::Base *renderer, controls::Base *baseControl)
             || outgrown(m_markers, chart->getMarkerCount());
 
         for(size_t i=0; i<seriesCount && !retake; ++i)
-            retake=outgrown(m_series[i], seriesNeed[i]);
+            retake=outgrown(m_series[i], seriesNeed[i]) || outgrown(m_areaLines[i], lineNeed[i]);
 
         if(retake)
-            takeLists(renderer, lines.size(), chart->getSpanCount(), seriesNeed, chart->getMarkerCount());
+            takeLists(renderer, lines.size(), chart->getSpanCount(), seriesNeed, lineNeed, chart->getMarkerCount());
 
         m_grid.used=lines.size();
         m_spans.used=chart->getSpanCount();
         for(size_t i=0; i<seriesCount; ++i)
+        {
             m_series[i].used=seriesNeed[i];
+            m_areaLines[i].used=lineNeed[i];
+        }
         m_markers.used=chart->getMarkerCount();
         m_crosshair.used=1;
     }
@@ -2798,10 +2833,13 @@ void Chart::update(renderer::Base *renderer, controls::Base *baseControl)
             for(size_t i=0; i<list->ids.size(); ++i)
                 func(list->ids[i], list->drawn[i]);
         }
-        for(SlotList &list : m_series)
+        for(std::vector<SlotList> *lists : {&m_series, &m_areaLines})
         {
-            for(size_t i=0; i<list.ids.size(); ++i)
-                func(list.ids[i], list.drawn[i]);
+            for(SlotList &list : *lists)
+            {
+                for(size_t i=0; i<list.ids.size(); ++i)
+                    func(list.ids[i], list.drawn[i]);
+            }
         }
     };
 
@@ -2834,7 +2872,7 @@ void Chart::update(renderer::Base *renderer, controls::Base *baseControl)
     auto drawRect=[&](size_t id, Slot &slot, const gweni::Rect &rect, const tokyonight::Surface &surface,
         int zIndex, const gweni::Rect &clip)
     {
-        if(!all && slot.valid && slot.shown && !slot.line && (slot.rect == rect) && (slot.zIndex == zIndex)
+        if(!all && slot.valid && slot.shown && !slot.line && !slot.trapezoid && (slot.rect == rect) && (slot.zIndex == zIndex)
             && sameSurface(slot.surface, surface) && (slot.clip == clip))
             return;
 
@@ -2914,40 +2952,10 @@ void Chart::update(renderer::Base *renderer, controls::Base *baseControl)
     }
     hideSpare(m_spans);
 
-    for(size_t s=0; s<seriesCount; ++s)
+    // A line's (or an area's line's) segments in \p list, each drawn with its
+    // neighbours, at \p zIndex in the series' colour and thickness.
+    auto drawPolyline=[&](size_t s, SlotList &list, int zIndex, const Color &color)
     {
-        SlotList &list=m_series[s];
-        const bool shown=chart->isSeriesVisible(s) && hasPlot;
-        const int zIndex=z+SeriesLayer+int(s);
-        const tokyonight::Surface &surface=tokyonight::chartSeries(chart->getSeriesColorIndex(s));
-        const controls::ChartSeriesType type=chart->getSeriesType(s);
-
-        hideSpare(list);
-        if(!shown)
-        {
-            for(size_t i=0; i<list.used; ++i)
-                hide(list.ids[i], list.drawn[i]);
-            continue;
-        }
-
-        if((type == controls::ChartSeriesType::Bar) || (type == controls::ChartSeriesType::StackedBar))
-        {
-            for(size_t i=0; i<list.used; ++i)
-            {
-                gweni::Rect rect;
-
-                if(!chart->getBarRect(s, i, rect))
-                {
-                    hide(list.ids[i], list.drawn[i]);
-                    continue;
-                }
-                rect.x+=bounds.x;
-                rect.y+=bounds.y;
-                drawRect(list.ids[i], list.drawn[i], rect, surface, zIndex, plotClip);
-            }
-            continue;
-        }
-
         // a line's segments, each cut to the plot widened by the stroke and a
         // unit, so a cut end lies outside the plot's clip; cut in doubles,
         // which hold a point far out of range exactly enough
@@ -3051,12 +3059,163 @@ void Chart::update(renderer::Base *renderer, controls::Base *baseControl)
             const PointF next=hasNext ? cuts[i+1].p1 : PointF();
 
             drawSegment(list.ids[i], list.drawn[i], cut.p0, cut.p1, hasPrev ? &prev : nullptr,
-                hasNext ? &next : nullptr, thickness, surface.top, zIndex, plotClip);
+                hasNext ? &next : nullptr, thickness, color, zIndex, plotClip);
         }
+    };
+
+    auto drawTrapezoid=[&](size_t id, Slot &slot, const float edges[6], const Color &color, int zIndex,
+        const gweni::Rect &clip)
+    {
+        if(!all && slot.valid && slot.shown && slot.trapezoid && std::equal(edges, edges+6, slot.edges)
+            && (slot.color == color) && (slot.zIndex == zIndex) && (slot.clip == clip))
+            return;
+
+        renderer->setClipRegion(clip);
+        renderer->drawTrapezoid(id, edges[0], edges[1], edges[2], edges[3], edges[4], edges[5], color, zIndex);
+        slot=Slot();
+        slot.valid=true;
+        slot.shown=true;
+        slot.trapezoid=true;
+        std::copy(edges, edges+6, slot.edges);
+        slot.color=color;
+        slot.zIndex=zIndex;
+        slot.clip=clip;
+    };
+
+    // an area's line's layer, in front of every series' fill
+    size_t areaRank=0;
+
+    for(size_t s=0; s<seriesCount; ++s)
+    {
+        SlotList &list=m_series[s];
+        const bool shown=chart->isSeriesVisible(s) && hasPlot;
+        const int zIndex=z+SeriesLayer+int(s);
+        const tokyonight::Surface &surface=tokyonight::chartSeries(chart->getSeriesColorIndex(s));
+        const controls::ChartSeriesType type=chart->getSeriesType(s);
+        const bool area=controls::Chart::isAreaType(type);
+        SlotList &lineList=m_areaLines[s];
+        const int lineZ=z+SeriesLayer+int(seriesCount)+int(areaRank);
+
+        if(area)
+            ++areaRank;
+        hideSpare(list);
+        hideSpare(lineList);
+        if(!shown)
+        {
+            for(SlotList *one : {&list, &lineList})
+            {
+                for(size_t i=0; i<one->used; ++i)
+                    hide(one->ids[i], one->drawn[i]);
+            }
+            continue;
+        }
+
+        if((type == controls::ChartSeriesType::Bar) || (type == controls::ChartSeriesType::StackedBar))
+        {
+            for(size_t i=0; i<list.used; ++i)
+            {
+                gweni::Rect rect;
+
+                if(!chart->getBarRect(s, i, rect))
+                {
+                    hide(list.ids[i], list.drawn[i]);
+                    continue;
+                }
+                rect.x+=bounds.x;
+                rect.y+=bounds.y;
+                drawRect(list.ids[i], list.drawn[i], rect, surface, zIndex, plotClip);
+            }
+            continue;
+        }
+
+        if(!area)
+        {
+            drawPolyline(s, list, zIndex, surface.top);
+            continue;
+        }
+
+        // an area's fill, a slot per segment: a step's rect in whole units cut
+        // to the plot, or a trapezoid cut along its edges to a box a little
+        // wider than the plot (exact: they are straight), its heights held
+        // AreaReach units past the plot so its quad stays in range
+        const tokyonight::Surface &fill=tokyonight::chartArea(chart->getSeriesColorIndex(s));
+        const bool step=controls::Chart::isStepType(type);
+        const double boxLeft=double(left)-2.0;
+        const double boxRight=double(right)+2.0;
+        const double reachTop=double(top)-AreaReach;
+        const double reachBottom=double(bottom)+AreaReach;
+
+        for(size_t i=0; i<list.used; ++i)
+        {
+            double x0, x1, top0, top1, base0, base1;
+
+            if(!chart->getAreaSegment(s, i, x0, x1, top0, top1, base0, base1))
+            {
+                hide(list.ids[i], list.drawn[i]);
+                continue;
+            }
+            x0+=origin.x;
+            x1+=origin.x;
+            top0+=origin.y;
+            top1+=origin.y;
+            base0+=origin.y;
+            base1+=origin.y;
+
+            if(step)
+            {
+                const auto unit=[](double v, double lo, double hi)
+                {
+                    return int(std::lround(std::min(std::max(v, lo), hi)));
+                };
+                const int rx0=unit(x0, left, right);
+                const int rx1=unit(x1, left, right);
+                const int ry0=unit(std::min(top0, base0), top, bottom);
+                const int ry1=unit(std::max(top0, base0), top, bottom);
+
+                if(rx1 <= rx0 || ry1 <= ry0)
+                {
+                    hide(list.ids[i], list.drawn[i]);
+                    continue;
+                }
+                drawRect(list.ids[i], list.drawn[i], gweni::Rect(rx0, ry0, rx1-rx0, ry1-ry0), fill, zIndex,
+                    plotClip);
+                continue;
+            }
+
+            if(!(x1 > x0) || x1 <= boxLeft || x0 >= boxRight)
+            {
+                hide(list.ids[i], list.drawn[i]);
+                continue;
+            }
+
+            // an end outside the box is moved to it along both edges
+            const double dx=x1-x0;
+            const double topSlope=(top1-top0)/dx;
+            const double baseSlope=(base1-base0)/dx;
+
+            if(x0 < boxLeft)
+            {
+                top0+=topSlope*(boxLeft-x0);
+                base0+=baseSlope*(boxLeft-x0);
+                x0=boxLeft;
+            }
+            if(x1 > boxRight)
+            {
+                top1-=topSlope*(x1-boxRight);
+                base1-=baseSlope*(x1-boxRight);
+                x1=boxRight;
+            }
+
+            const auto held=[&](double y) { return float(std::min(std::max(y, reachTop), reachBottom)); };
+            const float edges[6]={float(x0), float(x1), held(top0), held(top1), held(base0), held(base1)};
+
+            drawTrapezoid(list.ids[i], list.drawn[i], edges, fill.top, zIndex, plotClip);
+        }
+        drawPolyline(s, lineList, lineZ, surface.top);
     }
 
     // the markers, in front of every series
-    const int markerZ=z+SeriesLayer+int(seriesCount);
+    const int markerZ=z+SeriesLayer+int(seriesCount)+int(areaRank);
 
     for(size_t i=0; i<m_markers.used; ++i)
     {

@@ -256,6 +256,26 @@ inline Surface &chartSeries(int index)
     return *surfaces[((index%ChartSeriesSurfaces)+ChartSeriesSurfaces)%ChartSeriesSurfaces];
 }
 
+// An area series' fill is ChartArea<i>'s top colour (its line ChartSeries<i>'s):
+// the series' colour, translucent, so the grid and an area behind show through.
+constexpr unsigned char ChartAreaAlpha=0x60;
+inline Surface ChartArea0   { Color(Blue.r, Blue.g, Blue.b, ChartAreaAlpha), Color(Blue.r, Blue.g, Blue.b, ChartAreaAlpha), Color(0,0,0,0), 0.0f, 0.0f };
+inline Surface ChartArea1   { Color(Green.r, Green.g, Green.b, ChartAreaAlpha), Color(Green.r, Green.g, Green.b, ChartAreaAlpha), Color(0,0,0,0), 0.0f, 0.0f };
+inline Surface ChartArea2   { Color(Magenta.r, Magenta.g, Magenta.b, ChartAreaAlpha), Color(Magenta.r, Magenta.g, Magenta.b, ChartAreaAlpha), Color(0,0,0,0), 0.0f, 0.0f };
+inline Surface ChartArea3   { Color(Orange.r, Orange.g, Orange.b, ChartAreaAlpha), Color(Orange.r, Orange.g, Orange.b, ChartAreaAlpha), Color(0,0,0,0), 0.0f, 0.0f };
+inline Surface ChartArea4   { Color(Cyan.r, Cyan.g, Cyan.b, ChartAreaAlpha), Color(Cyan.r, Cyan.g, Cyan.b, ChartAreaAlpha), Color(0,0,0,0), 0.0f, 0.0f };
+inline Surface ChartArea5   { Color(Red.r, Red.g, Red.b, ChartAreaAlpha), Color(Red.r, Red.g, Red.b, ChartAreaAlpha), Color(0,0,0,0), 0.0f, 0.0f };
+inline Surface ChartArea6   { Color(Yellow.r, Yellow.g, Yellow.b, ChartAreaAlpha), Color(Yellow.r, Yellow.g, Yellow.b, ChartAreaAlpha), Color(0,0,0,0), 0.0f, 0.0f };
+inline Surface ChartArea7   { Color(0x73,0xda,0xca,ChartAreaAlpha), Color(0x73,0xda,0xca,ChartAreaAlpha), Color(0,0,0,0), 0.0f, 0.0f };
+// The fill surface of a series of colour index \p index (taken modulo 8).
+inline Surface &chartArea(int index)
+{
+    static Surface *const surfaces[ChartSeriesSurfaces]={&ChartArea0, &ChartArea1, &ChartArea2,
+        &ChartArea3, &ChartArea4, &ChartArea5, &ChartArea6, &ChartArea7};
+
+    return *surfaces[((index%ChartSeriesSurfaces)+ChartSeriesSurfaces)%ChartSeriesSurfaces];
+}
+
 // A Timeline: its frame (as a chart's), every other lane's stripe across the
 // caption column and the bars, the grid lines at the time ticks and the axis
 // lines along the bars' top and left edges (their top colour), a bar
@@ -406,6 +426,9 @@ inline std::unordered_map<std::string, Surface*>& surfaceRegistry()
         {"ChartSeries0",&ChartSeries0},{"ChartSeries1",&ChartSeries1},{"ChartSeries2",&ChartSeries2},
         {"ChartSeries3",&ChartSeries3},{"ChartSeries4",&ChartSeries4},{"ChartSeries5",&ChartSeries5},
         {"ChartSeries6",&ChartSeries6},{"ChartSeries7",&ChartSeries7},
+        {"ChartArea0",&ChartArea0},{"ChartArea1",&ChartArea1},{"ChartArea2",&ChartArea2},
+        {"ChartArea3",&ChartArea3},{"ChartArea4",&ChartArea4},{"ChartArea5",&ChartArea5},
+        {"ChartArea6",&ChartArea6},{"ChartArea7",&ChartArea7},
         {"TimelineFrame",&TimelineFrame},{"TimelineLane",&TimelineLane},{"TimelineGrid",&TimelineGrid},
         {"TimelineAxis",&TimelineAxis},{"TimelineBar",&TimelineBar},{"TimelineBarHover",&TimelineBarHover},
         {"StatsOverlay",&StatsOverlay},

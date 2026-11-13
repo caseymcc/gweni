@@ -726,7 +726,13 @@ public:
 //   drawRoundedRect per point, its getBarRect() in ChartSeries<colour>, a point
 //   with no bar hidden), or a line or step line's segments (one drawLine per
 //   segment of its vertices, with its neighbours, in the surface's top colour
-//   and the series' thickness; a segment beside a NaN hidden).
+//   and the series' thickness; a segment beside a NaN hidden), or an area's
+//   fill: one slot per getAreaSegment(), a drawTrapezoid in ChartArea<colour>'s
+//   top colour from its line down to its base, or for a step area a
+//   drawRoundedRect of the step's rect in whole units, ChartArea<colour>; a
+//   segment with none hidden;
+// - one list per area, at z+3+S+k for the k-th area of the S series: its line,
+//   drawn as a line series' segments are, in front of every series' fill.
 // The grid, spans, series and markers are drawn in the plot's clip region (the control's
 // own region cut to getPlotBounds()), and a segment is cut on the CPU to a box
 // a little wider than the plot first, so a point out of range is clipped,
@@ -754,9 +760,11 @@ public:
 // taken again back to front, as a chart built with what it draws takes them,
 // that frame drawing them all again.
 // The z values are the frame's, the grid's (z+1), the spans' (z+2), one per
-// series (z+3+i), the markers' (z+3+S) and the crosshair's (z+4+S), so
-// depthLayersOf() is 5+S for S series; the chart calls zOrderChanged() when S
-// changes.
+// series (z+3+i), one per area's line (z+3+S+k), the markers' (z+3+S+A) and
+// the crosshair's (z+4+S+A), so depthLayersOf() is 5+S+A for S series of
+// which A are areas; the chart calls zOrderChanged() when a series comes or
+// goes. The lists are taken in that order: grid, spans, the series' lists,
+// the areas' lines, markers, crosshair.
 class Chart:public textured::ControlRegister<Chart>
 {
 public:
@@ -783,6 +791,8 @@ public:
     std::vector<size_t> markerPrimitives() const { return inUse(m_markers); }
     std::vector<size_t> crosshairPrimitives() const { return inUse(m_crosshair); }
     std::vector<size_t> seriesPrimitives(size_t series) const;
+    //! An area's line's slots in use (empty for a series that is no area).
+    std::vector<size_t> areaLinePrimitives(size_t series) const;
 
     //! The slots a list is taken with for \p count in use: half as many
     //! again and at least 4 spare, hidden, so a list growing a slot at a time
@@ -790,13 +800,22 @@ public:
     //! crosshair's list is its one slot.
     static size_t capacity(size_t count) { return count ? count+std::max<size_t>(count/2, 4) : 0; }
 
+    //! An area's trapezoid has its edges' heights held this many units above
+    //! and below the plot (its quad would not fit the vertex's range for a
+    //! point far out of a fixed range); only a point that far out bends the
+    //! edge's slope on the plot.
+    static constexpr double AreaReach=4096.0;
+
 private:
-    //! What a slot holds, as last drawn: a rect or a segment.
+    //! What a slot holds, as last drawn: a rect, a segment or a trapezoid.
     struct Slot
     {
         bool valid=false;   //!< false for a new slot, which holds nothing known
         bool shown=false;
         bool line=false;
+        bool trapezoid=false;
+        //! a trapezoid's sides' x, its line's y at them and its base's
+        float edges[6]{};
         Rect rect;
         tokyonight::Surface surface{};
         PointF p0;
@@ -827,12 +846,14 @@ private:
     //! capacity() for its count (\p series one per series), its ids above
     //! the frame's.
     void takeLists(renderer::Base *renderer, size_t grid, size_t spans, const std::vector<size_t> &series,
-        size_t markers);
+        const std::vector<size_t> &areaLines, size_t markers);
 
     Slot m_frame;
     SlotList m_grid;
     SlotList m_spans;
     std::vector<SlotList> m_series;
+    //! per series, its line's list if it is an area (empty otherwise)
+    std::vector<SlotList> m_areaLines;
     SlotList m_markers;
     SlotList m_crosshair;
 };

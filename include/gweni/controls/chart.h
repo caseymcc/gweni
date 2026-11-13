@@ -84,7 +84,11 @@ enum class ChartSeriesType
     Line,       //!< its points joined by straight segments
     StepLine,   //!< each point's y held to the next point's x, then the step
     Bar,        //!< a bar from 0 per point, beside the other series' bars
-    StackedBar  //!< a bar per point on the stack of the stacked series at its x
+    StackedBar, //!< a bar per point on the stack of the stacked series at its x
+    Area,       //!< a line, filled down to 0 (the value axis's range, if 0 is outside it)
+    StepArea,   //!< a step line, filled down to 0 so
+    StackedArea,    //!< a line on the stack of the stacked areas, filled down to it
+    StackedStepArea //!< a step line on that stack, filled down to it
 };
 
 //! A value axis: left or right of the plot.
@@ -137,6 +141,19 @@ struct ChartHover
 //! from 0 and negative ones down, and a series with no point at an x adds
 //! nothing there (it counts as 0); they are drawn against the axis of the
 //! first stacked series. A NaN y is a gap in a line and no bar.
+//!
+//! An area is a line with the region between it and its base filled: its base
+//! is 0 (held to its value axis's range), or for a stacked area the stacked
+//! areas before it. The stacked areas (StackedArea, StackedStepArea) form one
+//! stack of their own, apart from the bars': it is taken at every x of a
+//! visible stacked area, each stacked area's value there its point's y, or 0
+//! where it has no point or a NaN, so every stacked area has a vertex at
+//! each of those x and its line is the top of its band; positive values stack
+//! up from 0 and negative ones down, as bars do, and they are drawn against
+//! the axis of the first stacked area. An unstacked area's NaN is a gap. A
+//! step area holds each value to the next x, as a step line does, and its
+//! fill is a rect per step. The renderer draws a series' fill in its layer
+//! and every area's line in front of every series' fill.
 //!
 //! The x range is setXRange()'s, or automatic: the visible series' x extent,
 //! widened by half a bar interval each way when a bar series shows (and by
@@ -211,7 +228,14 @@ public:
     //! The theme colour a series is drawn in, ChartSeries<index % 8>.
     void setSeriesColorIndex(size_t series, int index);
     int getSeriesColorIndex(size_t series) const;
-    //! A line's thickness in units (2 by default); one not above 0 is 1.
+    //! Whether a type is an area (its line filled), a stacked one, or one held
+    //! in steps (a step line or step area).
+    static bool isAreaType(ChartSeriesType type);
+    static bool isStackedAreaType(ChartSeriesType type);
+    static bool isStepType(ChartSeriesType type);
+
+    //! A line's (an area's line's) thickness in units (2 by default); one not
+    //! above 0 is 1.
     void setSeriesLineThickness(size_t series, float thickness);
     float getSeriesLineThickness(size_t series) const;
 
@@ -362,8 +386,10 @@ public:
     //! is found by a binary search of each visible series' points.
     bool hoverAt(const Point &local, ChartHover &hover) const;
     //! What a click at \p local lands on: a visible bar or stacked segment
-    //! holding it, else the visible line or step line point nearest it,
-    //! PointHitRadius units at most: false for none.
+    //! holding it, else the visible line's or area's point nearest it,
+    //! PointHitRadius units at most, else the area whose fill holds it (the
+    //! last such series, drawn in front), and its point nearest in x: false
+    //! for none.
     bool pointAt(const Point &local, size_t &series, size_t &index) const;
     static constexpr int PointHitRadius=8;
 
@@ -417,7 +443,9 @@ public:
     PointF getPointPosition(size_t series, size_t index) const;
     //! A line's polyline: its points, or for a step line each point and then
     //! (x of the next point, its own y), 2n-1 of them. False (and NaN) for a
-    //! vertex of a NaN value.
+    //! vertex of a NaN value. An area's is its line, along the top of its fill:
+    //! a stacked area's at each x of the stack (getAreaStackXs()), at the top of
+    //! its band, a hidden one's none (false).
     size_t getVertexCount(size_t series) const;
     bool getVertex(size_t series, size_t vertex, PointF &point) const;
     //! The same in doubles, which a point far out of range still holds
@@ -429,6 +457,30 @@ public:
     bool getBarRect(size_t series, size_t index, Rect &rect) const;
     //! The value a stacked bar's segment starts at (0 for any other point).
     double getStackBase(size_t series, size_t index) const;
+
+    //! An area's fill, one segment between each two neighbouring x of its line
+    //! (its points, or the stack's x for a stacked area): segment \p segment's
+    //! sides at \p x0 and \p x1 and, at each, its line (\p top0, \p top1) and its
+    //! base (\p base0, \p base1), in this control's coordinates, unrounded and
+    //! not cut to the plot (a line may cross its base). A step area's segment
+    //! is flat: its line and base at the value of the segment's first x. False
+    //! for a hidden series, a segment beside a NaN of an unstacked area, or a
+    //! series that is no area.
+    size_t getAreaSegmentCount(size_t series) const;
+    bool getAreaSegment(size_t series, size_t segment, double &x0, double &x1, double &top0, double &top1,
+        double &base0, double &base1) const;
+    //! The x of the stacked areas' stack, ascending: every x of a visible
+    //! stacked area, once.
+    const std::vector<double> &getAreaStackXs() const;
+    //! A stacked area's band at stack x \p at (getAreaStackXs()): the value it
+    //! starts at and the one it ends at (0 and 0 for a hidden one).
+    double getAreaStackBase(size_t series, size_t at) const;
+    double getAreaStackTop(size_t series, size_t at) const;
+    //! The axis on which the stacked areas are drawn: the first one's.
+    ChartAxisSide getAreaStackAxis() const;
+    //! The value an unstacked area on \p side fills down to: 0, held to the
+    //! axis's range as last laid out.
+    double getAreaBaseValue(ChartAxisSide side) const;
     //! The axis on which stacked bars are drawn: the first stacked series'.
     ChartAxisSide getStackAxis() const;
     //! The groups of bars side by side at one x, and series' group (-1 for a
@@ -479,6 +531,9 @@ protected:
         std::vector<ChartPoint> points;
         //! a stacked series' segment starts, one per point
         std::vector<double> stackBase;
+        //! a visible stacked area's band at each x of the area stack
+        std::vector<double> areaBase;
+        std::vector<double> areaTop;
         int barGroup=-1;
     };
 
@@ -607,6 +662,8 @@ protected:
     double m_effectiveBarInterval=1.0;
     int m_barGroups=0;
     int m_stackSeries=-1;
+    int m_areaStackSeries=-1;
+    std::vector<double> m_areaXs;
 
     //! as last laid out
     Rect m_plot;

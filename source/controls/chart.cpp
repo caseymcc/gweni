@@ -35,6 +35,17 @@ bool isLine(ChartSeriesType type)
     return type == ChartSeriesType::Line || type == ChartSeriesType::StepLine;
 }
 
+bool isArea(ChartSeriesType type)
+{
+    return Chart::isAreaType(type);
+}
+
+//! A line or an area: a series with a polyline (getVertex()).
+bool hasLine(ChartSeriesType type)
+{
+    return isLine(type) || isArea(type);
+}
+
 bool byX(const ChartPoint &a, const ChartPoint &b)
 {
     return a.x < b.x;
@@ -66,6 +77,22 @@ Chart::~Chart()
 }
 
 // ---- series -----------------------------------------------------------------
+
+bool Chart::isAreaType(ChartSeriesType type)
+{
+    return type == ChartSeriesType::Area || type == ChartSeriesType::StepArea || isStackedAreaType(type);
+}
+
+bool Chart::isStackedAreaType(ChartSeriesType type)
+{
+    return type == ChartSeriesType::StackedArea || type == ChartSeriesType::StackedStepArea;
+}
+
+bool Chart::isStepType(ChartSeriesType type)
+{
+    return type == ChartSeriesType::StepLine || type == ChartSeriesType::StepArea
+        || type == ChartSeriesType::StackedStepArea;
+}
 
 size_t Chart::addSeries(const String &name, ChartSeriesType type, ChartAxisSide axis)
 {
@@ -944,7 +971,7 @@ bool Chart::pointAt(const Point &local, size_t &series, size_t &index) const
         }
     }
 
-    // else the nearest line point within the radius
+    // else the nearest line or area point within the radius
     const double radius=PointHitRadius;
     double best=radius*radius;
     bool found=false;
@@ -953,7 +980,7 @@ bool Chart::pointAt(const Point &local, size_t &series, size_t &index) const
     {
         const Series &one=m_series[s];
 
-        if(!one.visible || !isLine(one.type) || one.points.empty())
+        if(!one.visible || !hasLine(one.type) || one.points.empty())
             continue;
 
         const size_t next=size_t(firstAtOrPast(one.points, at)-one.points.begin());
@@ -978,7 +1005,55 @@ bool Chart::pointAt(const Point &local, size_t &series, size_t &index) const
             }
         }
     }
-    return found;
+    if(found)
+        return true;
+
+    // else the area whose fill holds it, the last series in front: its
+    // segment under the mouse, by a binary search of the segments' x, and the
+    // line and the base there
+    const double mouseX=local.x+0.5;
+    const double mouseY=local.y+0.5;
+
+    for(size_t s=m_series.size(); s-- > 0;)
+    {
+        const Series &one=m_series[s];
+
+        if(!one.visible || !isArea(one.type) || one.points.empty())
+            continue;
+
+        const size_t segments=getAreaSegmentCount(s);
+        // the x at or before the mouse's: the segment it starts
+        const size_t after=isStackedAreaType(one.type)
+            ? size_t(std::upper_bound(m_areaXs.begin(), m_areaXs.end(), at)-m_areaXs.begin())
+            : size_t(std::upper_bound(one.points.begin(), one.points.end(), at,
+                [](double x, const ChartPoint &point) { return x < point.x; })-one.points.begin());
+
+        if(after == 0 || after > segments)
+            continue;
+
+        double x0, x1, top0, top1, base0, base1;
+
+        if(!getAreaSegment(s, after-1, x0, x1, top0, top1, base0, base1) || !(x1 > x0))
+            continue;
+
+        const double t=std::min(std::max((mouseX-x0)/(x1-x0), 0.0), 1.0);
+        const double line=top0+(top1-top0)*t;
+        const double base=base0+(base1-base0)*t;
+
+        if(mouseY < std::min(line, base) || mouseY > std::max(line, base))
+            continue;
+
+        // its point nearest the mouse in x
+        const size_t next=size_t(firstAtOrPast(one.points, at)-one.points.begin());
+
+        index=std::min(next, one.points.size()-1);
+        if(next > 0 && (next == one.points.size()
+            || std::fabs(one.points[next-1].x-at) <= std::fabs(one.points[next].x-at)))
+            index=next-1;
+        series=s;
+        return true;
+    }
+    return false;
 }
 
 bool Chart::getCrosshairLine(PointF &top, PointF &bottom) const
@@ -1065,7 +1140,8 @@ String Chart::defaultHoverText(const ChartHover &hover) const
 
         const Series &series=m_series[i];
         const double y=series.points[size_t(hover.points[i])].y;
-        const ValueAxis &yAxis=axisOf(series.type == ChartSeriesType::StackedBar ? getStackAxis() : series.axis);
+        const ValueAxis &yAxis=axisOf(series.type == ChartSeriesType::StackedBar ? getStackAxis()
+            : (isStackedAreaType(series.type) ? getAreaStackAxis() : series.axis));
         char value[64];
 
         std::snprintf(value, sizeof(value), "%g", y);
@@ -1197,12 +1273,16 @@ void Chart::dataChanged(size_t series)
     // can move.
     ChartAxisSide side=m_series[series].axis;
 
-    // a stacked series is drawn on the first stacked series' axis
-    if(m_series[series].type == ChartSeriesType::StackedBar)
+    // a stacked series is drawn on the first stacked series' axis (a
+    // stacked area on the first stacked area's)
+    const ChartSeriesType type=m_series[series].type;
+
+    if(type == ChartSeriesType::StackedBar || isStackedAreaType(type))
     {
         for(const Series &other : m_series)
         {
-            if(other.type == ChartSeriesType::StackedBar)
+            if((type == ChartSeriesType::StackedBar) ? (other.type == ChartSeriesType::StackedBar)
+                : isStackedAreaType(other.type))
             {
                 side=other.axis;
                 break;
@@ -1240,6 +1320,7 @@ void Chart::computeData()
     int stackGroup=-1;
 
     m_stackSeries=-1;
+    m_areaStackSeries=-1;
     for(size_t i=0; i < m_series.size(); ++i)
     {
         Series &series=m_series[i];
@@ -1247,6 +1328,8 @@ void Chart::computeData()
         series.barGroup=-1;
         if(series.type == ChartSeriesType::StackedBar && m_stackSeries < 0)
             m_stackSeries=static_cast<int>(i);
+        if(isStackedAreaType(series.type) && m_areaStackSeries < 0)
+            m_areaStackSeries=static_cast<int>(i);
         if(!series.visible)
             continue;
         if(series.type == ChartSeriesType::Bar)
@@ -1261,6 +1344,8 @@ void Chart::computeData()
     m_barGroups=groups;
 
     const ChartAxisSide stackAxis=(m_stackSeries >= 0) ? m_series[size_t(m_stackSeries)].axis :
+        ChartAxisSide::Left;
+    const ChartAxisSide areaStackAxis=(m_areaStackSeries >= 0) ? m_series[size_t(m_areaStackSeries)].axis :
         ChartAxisSide::Left;
 
     // the bar interval: given, a category's, or the smallest step between
@@ -1338,6 +1423,56 @@ void Chart::computeData()
         }
     }
 
+    // The stacked areas' stack: at every x of a visible stacked area, each
+    // one's value there its point's y (the first at that x), or 0 with none or
+    // a NaN, positive values up from 0 and negative ones down.
+    m_areaXs.clear();
+    for(const Series &series : m_series)
+    {
+        if(series.visible && isStackedAreaType(series.type))
+        {
+            for(const ChartPoint &point : series.points)
+                m_areaXs.push_back(point.x);
+        }
+    }
+    std::sort(m_areaXs.begin(), m_areaXs.end());
+    m_areaXs.erase(std::unique(m_areaXs.begin(), m_areaXs.end()), m_areaXs.end());
+
+    std::vector<double> areaUp(m_areaXs.size(), 0.0);
+    std::vector<double> areaDown(m_areaXs.size(), 0.0);
+
+    for(Series &series : m_series)
+    {
+        series.areaBase.clear();
+        series.areaTop.clear();
+        if(!series.visible || !isStackedAreaType(series.type))
+            continue;
+
+        series.areaBase.resize(m_areaXs.size());
+        series.areaTop.resize(m_areaXs.size());
+
+        size_t next=0;
+
+        for(size_t at=0; at < m_areaXs.size(); ++at)
+        {
+            // the series' points are sorted, as the stack's x are
+            while(next < series.points.size() && series.points[next].x < m_areaXs[at])
+                ++next;
+
+            double value=0.0;
+
+            if(next < series.points.size() && series.points[next].x == m_areaXs[at]
+                && std::isfinite(series.points[next].y))
+                value=series.points[next].y;
+
+            double &stack=(value >= 0.0) ? areaUp[at] : areaDown[at];
+
+            series.areaBase[at]=stack;
+            stack+=value;
+            series.areaTop[at]=stack;
+        }
+    }
+
     // the extents: x over every visible series, a value axis's over the
     // visible series drawn against it
     for(ValueAxis &yAxis : m_yAxes)
@@ -1353,7 +1488,8 @@ void Chart::computeData()
 
     for(const Series &series : m_series)
     {
-        const ChartAxisSide side=(series.type == ChartSeriesType::StackedBar) ? stackAxis : series.axis;
+        const ChartAxisSide side=(series.type == ChartSeriesType::StackedBar) ? stackAxis :
+            (isStackedAreaType(series.type) ? areaStackAxis : series.axis);
         ValueAxis &yAxis=axisOf(side);
 
         yAxis.used=true;
@@ -1390,6 +1526,17 @@ void Chart::computeData()
             bars=true;
             // a bar grows from 0, or from its stack
             extend(0.0);
+        }
+
+        // a stacked area's band at every x of the stack
+        if(isStackedAreaType(series.type))
+        {
+            for(size_t at=0; at < series.areaTop.size(); ++at)
+            {
+                extend(series.areaBase[at]);
+                extend(series.areaTop[at]);
+            }
+            continue;
         }
 
         for(size_t i=0; i < series.points.size(); ++i)
@@ -1495,6 +1642,110 @@ double Chart::getStackBase(size_t series, size_t index) const
     return s->stackBase[index];
 }
 
+const std::vector<double> &Chart::getAreaStackXs() const
+{
+    ensureData();
+    return m_areaXs;
+}
+
+double Chart::getAreaStackBase(size_t series, size_t at) const
+{
+    ensureData();
+
+    const Series *s=seriesAt(series);
+
+    return (s && at < s->areaBase.size()) ? s->areaBase[at] : 0.0;
+}
+
+double Chart::getAreaStackTop(size_t series, size_t at) const
+{
+    ensureData();
+
+    const Series *s=seriesAt(series);
+
+    return (s && at < s->areaTop.size()) ? s->areaTop[at] : 0.0;
+}
+
+ChartAxisSide Chart::getAreaStackAxis() const
+{
+    ensureData();
+    return (m_areaStackSeries >= 0) ? m_series[size_t(m_areaStackSeries)].axis : ChartAxisSide::Left;
+}
+
+double Chart::getAreaBaseValue(ChartAxisSide side) const
+{
+    const double min=getYMin(side);
+    const double max=getYMax(side);
+
+    return std::min(std::max(0.0, std::min(min, max)), std::max(min, max));
+}
+
+size_t Chart::getAreaSegmentCount(size_t series) const
+{
+    ensureData();
+
+    const Series *s=seriesAt(series);
+
+    if(!s || !isArea(s->type))
+        return 0;
+
+    const size_t count=isStackedAreaType(s->type) ? m_areaXs.size() : s->points.size();
+
+    return count > 1 ? count-1 : 0;
+}
+
+bool Chart::getAreaSegment(size_t series, size_t segment, double &x0, double &x1, double &top0, double &top1,
+    double &base0, double &base1) const
+{
+    ensureData();
+
+    const Series *s=seriesAt(series);
+    const double nan=std::numeric_limits<double>::quiet_NaN();
+
+    x0=x1=top0=top1=base0=base1=nan;
+    if(!s || !s->visible || segment >= getAreaSegmentCount(series))
+        return false;
+
+    // a step's fill is flat, at the value of its first x
+    const bool step=isStepType(s->type);
+
+    if(isStackedAreaType(s->type))
+    {
+        if(s->areaTop.empty())
+            return false;
+
+        const ChartAxisSide side=getAreaStackAxis();
+        const size_t end=step ? segment : segment+1;
+
+        x0=xPosition(m_areaXs[segment]);
+        x1=xPosition(m_areaXs[segment+1]);
+        top0=yPosition(side, s->areaTop[segment]);
+        top1=yPosition(side, s->areaTop[end]);
+        base0=yPosition(side, s->areaBase[segment]);
+        base1=yPosition(side, s->areaBase[end]);
+    }
+    else
+    {
+        const ChartPoint &a=s->points[segment];
+        const ChartPoint &b=s->points[segment+1];
+
+        // a NaN is a gap: a step holds only its first value
+        if(!std::isfinite(a.y) || (!step && !std::isfinite(b.y)))
+            return false;
+
+        const double base=yPosition(s->axis, getAreaBaseValue(s->axis));
+
+        x0=xPosition(a.x);
+        x1=xPosition(b.x);
+        top0=yPosition(s->axis, a.y);
+        top1=yPosition(s->axis, step ? a.y : b.y);
+        base0=base;
+        base1=base;
+    }
+    return std::isfinite(x0) && std::isfinite(x1) && std::isfinite(top0) && std::isfinite(top1)
+        && std::isfinite(base0) && std::isfinite(base1);
+}
+
 PointF Chart::getPointPosition(size_t series, size_t index) const
 {
     ensureData();
@@ -1511,18 +1762,36 @@ PointF Chart::getPointPosition(size_t series, size_t index) const
         return PointF(x, NaNf);
     if(s->type == ChartSeriesType::StackedBar)
         return PointF(x, static_cast<float>(yPosition(getStackAxis(), s->stackBase[index]+point.y)));
+    if(isStackedAreaType(s->type))
+    {
+        // the top of its band at the point's x (its first point there)
+        const auto at=std::lower_bound(m_areaXs.begin(), m_areaXs.end(), point.x);
+
+        if(s->areaTop.empty() || at == m_areaXs.end() || *at != point.x)
+            return PointF(x, NaNf);
+        return PointF(x, static_cast<float>(yPosition(getAreaStackAxis(),
+            s->areaTop[size_t(at-m_areaXs.begin())])));
+    }
     return PointF(x, static_cast<float>(yPosition(s->axis, point.y)));
 }
 
 size_t Chart::getVertexCount(size_t series) const
 {
+    ensureData();
+
     const Series *s=seriesAt(series);
 
-    if(!s || !isLine(s->type) || s->points.empty())
+    if(!s || !hasLine(s->type))
         return 0;
-    if(s->type == ChartSeriesType::StepLine)
-        return 2*s->points.size()-1;
-    return s->points.size();
+
+    // a stacked area's line is at every x of the stack
+    const size_t count=isStackedAreaType(s->type) ? m_areaXs.size() : s->points.size();
+
+    if(count == 0)
+        return 0;
+    if(isStepType(s->type))
+        return 2*count-1;
+    return count;
 }
 
 bool Chart::getVertex(size_t series, size_t vertex, double &x, double &y) const
@@ -1537,8 +1806,19 @@ bool Chart::getVertex(size_t series, size_t vertex, double &x, double &y) const
         return false;
 
     // a step line: point i at 2i, and at 2i+1 the next point's x at its y
-    const size_t index=(s->type == ChartSeriesType::StepLine) ? vertex/2 : vertex;
-    const bool riser=(s->type == ChartSeriesType::StepLine) && (vertex%2 == 1);
+    const size_t index=isStepType(s->type) ? vertex/2 : vertex;
+    const bool riser=isStepType(s->type) && (vertex%2 == 1);
+
+    if(isStackedAreaType(s->type))
+    {
+        // the top of its band at x \p index of the stack
+        x=xPosition(m_areaXs[riser ? index+1 : index]);
+        if(s->areaTop.empty())
+            return false;
+        y=yPosition(getAreaStackAxis(), s->areaTop[index]);
+        return std::isfinite(y);
+    }
+
     const ChartPoint &point=s->points[index];
 
     x=xPosition(riser ? s->points[index+1].x : point.x);

@@ -171,6 +171,23 @@ public:
     {
         wrotePrimitive(primitiveId);
     }
+
+    //! One drawTrapezoid call, as it was made.
+    struct TrapezoidDraw
+    {
+        size_t id;
+        float x0, x1, top0, top1, bottom0, bottom1;
+        gweni::Color color;
+        int zIndex;
+    };
+
+    //! Recorded in `trapezoids`, not drawn.
+    void drawTrapezoid(size_t primitiveId, float x0, float x1, float top0, float top1, float bottom0,
+        float bottom1, gweni::Color color, int zIndex) override
+    {
+        trapezoids.push_back({primitiveId, x0, x1, top0, top1, bottom0, bottom1, color, zIndex});
+        wrotePrimitive(primitiveId);
+    }
     void drawTexturedRect(const gweni::Texture &, size_t primitiveId, gweni::Rect, int, float, float,
         float, float) override
     {
@@ -304,6 +321,8 @@ public:
 
     //! Every drawLine call, in call order. Tests clear it as they go.
     std::vector<LineDraw> lines;
+    //! Every drawTrapezoid call, in call order. Tests clear it as they go.
+    std::vector<TrapezoidDraw> trapezoids;
 
     //! An id handed out while this renderer still had it live (two owners), or
     //! released while it was not live (released twice). Both should stay 0.
