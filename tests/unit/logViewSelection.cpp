@@ -16,7 +16,8 @@
  *  row, Escape clears and a click under the last row clears; Ctrl+C and the
  *  context menu's Copy put the text on the clipboard, a right press on an
  *  unselected row selecting it first. A press-drag selects from the pressed
- *  row to the row under the mouse, and past the viewport's bottom or top the
+ *  character to the one under the mouse (here a row's start to a row's end;
+ *  logViewCharSelection.cpp has the characters), and past the viewport's bottom or top the
  *  view scrolls on the clock and the selection follows (a scroll up
  *  detaching the view, but in a log whose rows all fit, which has nothing to
  *  scroll and keeps following, telling nothing). The rows on screen are marked selected exactly when
@@ -134,6 +135,15 @@ struct Scene
         glfwKey(key, GLFW_RELEASE, mods);
         holdModifiers(mods, false);
         frame();
+    }
+
+    //! The canvas point left of the row's text, at its first line: its start.
+    Point rowStart(RowId id) const
+    {
+        controls::Base *row=log->rowControl(id);
+
+        REQUIRE(row != nullptr);
+        return row->localPosToCanvas(Point(1, row->getHeight()/2));
     }
 
     //! The canvas point in the middle of the row on screen.
@@ -435,7 +445,7 @@ TEST_CASE("LogView selection: a drag selects to the row under the mouse and scro
     scene.frame();
     scene.frame();
 
-    scene.move(scene.rowPoint(101));
+    scene.move(scene.rowStart(101));
     scene.canvas->inputMouseButton(0, true);
     scene.frame();
     scene.move(scene.rowPoint(104));

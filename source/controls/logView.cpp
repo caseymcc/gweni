@@ -12,6 +12,7 @@
 #include <gweni/inputHandler.h>
 #include <gweni/platforms/platform.h>
 #include <gweni/skin.h>
+#include <gweni/text/cells.h>
 
 #include <algorithm>
 #include <climits>
@@ -217,6 +218,12 @@ bool LogView::replace(RowId id, const LogRow &row)
                 changed=changed || character != end->character;
                 end->character=character;
             }
+        }
+        // the anchor unit alike, so an extension still keeps it whole
+        for(Position *end : {&m_anchorLow, &m_anchorHigh})
+        {
+            if(end->row == id)
+                end->character=(end == &m_anchorHigh && end->character >= before)?after:std::min(end->character, after);
         }
         if(changed)
             onSelectionChanged.call(this);
@@ -505,7 +512,9 @@ LogView::RowId LogView::rowAt(const Point &canvasPoint, Point *local) const
 }
 
 // A press on a block's title line (its chevron's height, the first line of
-// its text) toggles it; anywhere else on a row it selects, and starts a drag.
+// its text) toggles it; anywhere else on a row it selects, and starts a drag:
+// a plain press the row whole, by characters once the mouse leaves the
+// pressed one; Shift+press by characters from the start.
 void LogView::onMouseClickLeft(int x, int y, bool down)
 {
     if(!down)
@@ -513,6 +522,7 @@ void LogView::onMouseClickLeft(int x, int y, bool down)
         if(m_dragging)
         {
             m_dragging=false;
+            m_charDrag=false;
             if(MouseFocus == this)
                 MouseFocus=nullptr;
             stopAutoScroll();
@@ -543,19 +553,46 @@ void LogView::onMouseClickLeft(int x, int y, bool down)
         return;
     }
 
-    if(input::isShiftDown())
-        extendSelectionTo(id);
-    else
+    m_pressPosition=Position{id, characterAt(id, Point(x, y))};
+    m_dragFromRow=!input::isShiftDown();
+    m_charDrag=!m_dragFromRow;
+    if(m_dragFromRow)
         selectRow(id);
+    else
+        extendSelectionTo(m_pressPosition);
 
     m_dragging=true;
     m_dragPoint=canvasPosToLocal(Point(x, y));
     MouseFocus=this;
 }
 
-// The selection's focus follows the row under the mouse; past the viewport's
-// top or bottom edge the auto-scroll moves the view, so the move itself
-// scrolls nothing.
+// The second press of a double-click: the word under it, and a drag that
+// extends the selection from it, the word kept whole.
+void LogView::onMouseDoubleClickLeft(int x, int y)
+{
+    Point local;
+    const RowId id=rowAt(Point(x, y), &local);
+    const LogRow *row=getRow(id);
+
+    if(!row || input::isShiftDown() || input::isControlDown()
+        || (row->kind == LogRow::Block && local.y < RowPadY+getLineHeight()))
+    {
+        onMouseClickLeft(x, y, true);
+        return;
+    }
+
+    m_pressPosition=Position{id, characterAt(id, Point(x, y))};
+    selectWordAt(m_pressPosition);
+    m_dragFromRow=false;
+    m_charDrag=true;
+    m_dragging=true;
+    m_dragPoint=canvasPosToLocal(Point(x, y));
+    MouseFocus=this;
+}
+
+// The selection's focus follows the character under the mouse; past the
+// viewport's top or bottom edge the auto-scroll moves the view, so the move
+// itself scrolls nothing.
 void LogView::onMouseMoved(int x, int y, int deltaX, int deltaY)
 {
     ParentClass::onMouseMoved(x, y, deltaX, deltaY);
@@ -564,11 +601,7 @@ void LogView::onMouseMoved(int x, int y, int deltaX, int deltaY)
         return;
 
     m_dragPoint=canvasPosToLocal(Point(x, y));
-
-    const RowId id=rowAtDrag(m_dragPoint);
-
-    if(id != NoRow)
-        extendSelectionTo(id);
+    dragTo(positionAtDrag());
 
     if(dragOverflow() != 0 && !m_autoScroll)
     {
@@ -618,6 +651,75 @@ LogView::RowId LogView::rowAtDrag(const Point &local) const
     return m_rows[std::min(item, m_rows.size()-1)].id;
 }
 
+size_t LogView::characterAt(RowId id, const Point &canvasPoint)
+{
+    internal::LogViewRow *row=rowControl(id);
+    const size_t length=rowLength(id);
+
+    if(!row)
+        return 0;
+    if(row->m_content)
+        return (row->canvasPosToLocal(canvasPoint).x < row->getWidth()/2)?0:length;
+
+    // the row's Text may show what a replace changed until the next layout
+    // binds it again: clamped to the row's text as it is
+    internal::Text *text=row->m_text;
+    const int shown=std::max(0, text->getClosestCharacter(text->canvasPosToLocal(canvasPoint)));
+
+    return std::min(shownToRowCharacter(id, static_cast<size_t>(shown)), length);
+}
+
+// Inside the viewport the rows on screen are where the last layout placed
+// them, the auto-scroll's step included (it runs before the layout): the
+// character under the point. Past an edge they are not yet where the offset
+// puts them, so the focus is the edge row's start or end.
+LogView::Position LogView::positionAtDrag()
+{
+    const int overflow=dragOverflow();
+
+    if(overflow == 0)
+    {
+        const Rect &viewport=getViewport();
+        const Point inside(gweni::clamp(m_dragPoint.x, viewport.x, viewport.x+std::max(0, viewport.w-1)),
+            m_dragPoint.y);
+        const Position at=positionAt(localPosToCanvas(inside));
+
+        if(at.row != NoRow)
+            return at;
+    }
+
+    const RowId id=rowAtDrag(m_dragPoint);
+
+    if(id == NoRow)
+        return Position{};
+    return Position{id, (overflow < 0)?0:rowLength(id)};
+}
+
+void LogView::dragTo(const Position &at)
+{
+    if(at.row == NoRow || !hasRow(at.row))
+        return;
+
+    if(!m_charDrag)
+    {
+        if(at == m_pressPosition)
+            return;
+
+        // the drag left the pressed character: from it, by characters
+        m_charDrag=true;
+        setAnchorUnit(m_pressPosition, m_pressPosition);
+    }
+
+    if(m_dragFromRow && at == m_pressPosition)
+    {
+        selectRow(at.row);
+        setAnchorUnit(m_pressPosition, m_pressPosition);
+        return;
+    }
+
+    extendSelectionTo(at);
+}
+
 void LogView::stopAutoScroll()
 {
 #if GWENI_ANIMATE
@@ -665,10 +767,7 @@ void LogView::autoScrollStep()
         followIfAtEnd();
     }
 
-    const RowId id=rowAtDrag(m_dragPoint);
-
-    if(id != NoRow)
-        extendSelectionTo(id);
+    dragTo(positionAtDrag());
 }
 
 // A right press selects the row under it unless it is selected already, so
@@ -737,6 +836,106 @@ size_t LogView::rowLength(RowId id) const
     return rowText(id).size();
 }
 
+// A block shows its title, a count, then its lines as rowText() holds them:
+// the count is the only text that is not the row's.
+size_t LogView::shownToRowCharacter(RowId id, size_t shown) const
+{
+    const LogRow *row=getRow(id);
+
+    if(!row || row->kind != LogRow::Block)
+        return shown;
+
+    const size_t title=row->text.size();
+
+    if(shown <= title)
+        return shown;
+
+    const String text=blockText(*row, m_previewLines);
+    const size_t total=row->lines.size();
+    const size_t lines=(row->collapsed && total > m_previewLines)?m_previewLines:total;
+    size_t lineBytes=0;
+
+    for(size_t i=0; i < lines; ++i)
+        lineBytes+=1+row->lines[i].size();
+
+    const size_t count=text.size()-title-lineBytes;
+
+    if(shown < title+count)
+        return title;
+    return shown-count;
+}
+
+LogView::Position LogView::positionAt(const Point &canvasPoint)
+{
+    const RowId id=rowAt(canvasPoint);
+
+    if(id == NoRow)
+        return Position{};
+    return Position{id, characterAt(id, canvasPoint)};
+}
+
+namespace
+{
+
+// Letters, digits, '_' and every non-ASCII codepoint make words (as in the
+// CodeEditor); blanks and punctuation make runs of their own; a '\n' (between
+// a block's lines) is no part of any run.
+enum class CharClass
+{
+    Blank,
+    Word,
+    Punctuation,
+    Newline
+};
+
+CharClass charClass(uint32_t codepoint)
+{
+    if(codepoint == '\n')
+        return CharClass::Newline;
+    if(codepoint == ' ' || codepoint == '\t')
+        return CharClass::Blank;
+    if(codepoint >= 0x80 || codepoint == '_' || (codepoint >= '0' && codepoint <= '9')
+        || (codepoint >= 'a' && codepoint <= 'z') || (codepoint >= 'A' && codepoint <= 'Z'))
+        return CharClass::Word;
+    return CharClass::Punctuation;
+}
+
+}//namespace
+
+void LogView::selectWordAt(const Position &at)
+{
+    const String text=rowText(at.row);
+
+    if(!hasRow(at.row))
+        return;
+
+    size_t probe=std::min(at.character, text.size());
+
+    // at a line's end, the run before it
+    if(probe > 0 && (probe >= text.size() || text[probe] == '\n'))
+        probe=text::prevCaretStop(text, probe);
+    if(probe >= text.size() || text[probe] == '\n')
+    {
+        selectRow(at.row);
+        return;
+    }
+
+    const CharClass run=charClass(text::utf8CodepointAt(text, probe));
+    size_t begin=probe;
+    size_t end=text::nextCaretStop(text, probe);
+
+    while(begin > 0 && charClass(text::utf8CodepointAt(text, text::prevCaretStop(text, begin))) == run)
+        begin=text::prevCaretStop(text, begin);
+    while(end < text.size() && charClass(text::utf8CodepointAt(text, end)) == run)
+        end=text::nextCaretStop(text, end);
+
+    const Position low{at.row, begin};
+    const Position high{at.row, end};
+
+    selectRange(low, high);
+    setAnchorUnit(low, high);
+}
+
 size_t LogView::positionAtOrAfter(RowId id) const
 {
     const auto found=std::lower_bound(m_rows.begin(), m_rows.end(), id,
@@ -759,12 +958,36 @@ void LogView::ordered(const SelectionRange &range, Position &low, Position &high
     high=isForward?range.focus:range.anchor;
 }
 
+bool LogView::before(const Position &a, const Position &b)
+{
+    return (a.row < b.row) || (a.row == b.row && a.character < b.character);
+}
+
+void LogView::setAnchorUnit(const Position &low, const Position &high)
+{
+    m_anchorLow=low;
+    m_anchorHigh=high;
+}
+
+void LogView::anchorUnit(Position &low, Position &high) const
+{
+    if(hasRow(m_anchorLow.row) && hasRow(m_anchorHigh.row))
+    {
+        low=Position{m_anchorLow.row, std::min(m_anchorLow.character, rowLength(m_anchorLow.row))};
+        high=Position{m_anchorHigh.row, std::min(m_anchorHigh.character, rowLength(m_anchorHigh.row))};
+        return;
+    }
+    low=high=m_selection.empty()?Position{}:m_selection.back().anchor;
+}
+
 void LogView::selectRow(RowId id)
 {
     if(!hasRow(id))
         return;
 
     const SelectionRange range{Position{id, 0}, Position{id, rowLength(id)}};
+
+    setAnchorUnit(range.anchor, range.focus);
 
     if(m_selection.size() == 1 && m_selection[0].anchor == range.anchor && m_selection[0].focus == range.focus)
         return;
@@ -805,6 +1028,56 @@ void LogView::extendSelectionTo(RowId id)
         extended.focus.character=rowLength(id);
     }
 
+    setAnchorUnit(Position{range.anchor.row, 0}, Position{range.anchor.row, rowLength(range.anchor.row)});
+    if(extended.anchor == range.anchor && extended.focus == range.focus)
+        return;
+
+    range=extended;
+    selectionChanged();
+}
+
+void LogView::selectRange(const Position &anchor, const Position &focus)
+{
+    if(!hasRow(anchor.row) || !hasRow(focus.row))
+        return;
+
+    const SelectionRange range{Position{anchor.row, std::min(anchor.character, rowLength(anchor.row))},
+        Position{focus.row, std::min(focus.character, rowLength(focus.row))}};
+
+    setAnchorUnit(range.anchor, range.anchor);
+    if(m_selection.size() == 1 && m_selection[0].anchor == range.anchor && m_selection[0].focus == range.focus)
+        return;
+
+    m_selection.assign(1, range);
+    selectionChanged();
+}
+
+// From the unit's far end when the focus is before it, from its near end
+// when after it, the unit alone when inside it.
+void LogView::extendSelectionTo(const Position &focus)
+{
+    if(!hasRow(focus.row))
+        return;
+    if(m_selection.empty())
+    {
+        selectRow(focus.row);
+        return;
+    }
+
+    Position low, high;
+
+    anchorUnit(low, high);
+
+    const Position at{focus.row, std::min(focus.character, rowLength(focus.row))};
+    SelectionRange extended{low, high};
+
+    if(before(at, low))
+        extended=SelectionRange{high, at};
+    else if(before(high, at))
+        extended=SelectionRange{low, at};
+
+    SelectionRange &range=m_selection.back();
+
     if(extended.anchor == range.anchor && extended.focus == range.focus)
         return;
 
@@ -824,6 +1097,7 @@ void LogView::toggleRowSelected(RowId id)
     if(!isRowSelected(id))
     {
         m_selection.push_back(SelectionRange{Position{id, 0}, Position{id, rowLength(id)}});
+        setAnchorUnit(m_selection.back().anchor, m_selection.back().focus);
         selectionChanged();
         return;
     }
@@ -854,6 +1128,8 @@ void LogView::toggleRowSelected(RowId id)
         }
     }
     m_selection=std::move(kept);
+    if(!m_selection.empty())
+        setAnchorUnit(m_selection.back().anchor, m_selection.back().anchor);
     selectionChanged();
 }
 
@@ -865,6 +1141,7 @@ void LogView::selectAll()
     const RowId last=m_rows.back().id;
 
     m_selection.assign(1, SelectionRange{Position{m_rows.front().id, 0}, Position{last, rowLength(last)}});
+    setAnchorUnit(m_selection[0].anchor, m_selection[0].anchor);
     selectionChanged();
 }
 

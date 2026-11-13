@@ -292,12 +292,36 @@ public:
     //! line (collapsed or not), joined by '\n'; an app kind's text. Empty for
     //! a row the view does not hold.
     String rowText(RowId id) const;
+    //! A byte of the text a row shows (its Label's: a block's blockText())
+    //! as a byte of its rowText(): a block's count after its title is the
+    //! title's end, the lines after it are their own bytes. Other rows show
+    //! their rowText().
+    size_t shownToRowCharacter(RowId id, size_t shown) const;
+
+    //! The row and character under a canvas point on a row on screen: the
+    //! closest caret of the row's wrapped text (Text::getClosestCharacter,
+    //! on whichever wrapped line is under it), as a byte of rowText(). An app
+    //! kind's row is its start left of its middle and its end right of it.
+    //! NoRow where no row is.
+    Position positionAt(const Point &canvasPoint);
 
     //! The row alone (a click).
     void selectRow(RowId id);
     //! The last range's focus moved to the row, the rows between it and the
-    //! anchor selected (Shift+click, a drag); with no selection, selectRow().
+    //! anchor selected whole; with no selection, selectRow().
     void extendSelectionTo(RowId id);
+    //! One range from the anchor to the focus, their characters clamped to
+    //! their rows' text; nothing for a row the view does not hold.
+    void selectRange(const Position &anchor, const Position &focus);
+    //! The last range's focus moved to the character (Shift+click, a drag),
+    //! its anchor unit kept whole: the character a drag was pressed on, the
+    //! word a double-click selected or the row a click selected, from its far
+    //! end when the focus is before it. With no selection, selectRow().
+    void extendSelectionTo(const Position &focus);
+    //! The word at the character (a double-click): its run of letters,
+    //! digits, '_' and non-ASCII codepoints, of blanks or of punctuation, the
+    //! one before it at a line's end. A row with no word there, selectRow().
+    void selectWordAt(const Position &at);
     //! The row out of the selection if it is in it, else in it as a range of
     //! its own (Ctrl+click).
     void toggleRowSelected(RowId id);
@@ -319,11 +343,18 @@ public:
     bool copySelection();
 
     //! A press on a block's chevron or title line toggles it; anywhere else
-    //! on a row it selects it, Shift extending the selection to it and Ctrl
-    //! toggling it, and a drag from there extends the selection to the row
-    //! under the mouse, scrolling past the viewport's top or bottom edge (a
-    //! scroll up detaches the view). A press under the last row clears it.
+    //! on a row it selects the row whole, Shift extending the selection to
+    //! the character under it and Ctrl toggling the row. A drag from there
+    //! selects from the pressed character to the one under the mouse once
+    //! it leaves it (back on it, the pressed row whole again), across wrapped
+    //! lines and rows, scrolling past the viewport's top or bottom edge (a
+    //! scroll up detaches the view; past an edge the focus is the top row's
+    //! start or the bottom row's end). A press under the last row clears it.
     void onMouseClickLeft(int x, int y, bool down) override;
+    //! A double-click on a row selects the word under it (selectWordAt), and
+    //! a drag from there extends it with the word kept whole; with Shift or
+    //! Ctrl, or on a block's title line, it is a press.
+    void onMouseDoubleClickLeft(int x, int y) override;
     void onMouseMoved(int x, int y, int deltaX, int deltaY) override;
     //! A right press on a row not selected selects it; the context menu
     //! (Copy, Select all) is made the first time.
@@ -425,6 +456,25 @@ private:
     //! The item under a point in the view's coordinates, its y clamped into
     //! the viewport; NoRow for none.
     RowId rowAtDrag(const Point &local) const;
+    //! The character of the row on screen under the canvas point (see
+    //! positionAt()); 0 for a row not on screen.
+    size_t characterAt(RowId id, const Point &canvasPoint);
+    //! Where the drag's focus goes for m_dragPoint: the character under it,
+    //! its x clamped into the viewport; past the viewport's top the start of
+    //! the row at its top, past its bottom (or under the last row) the end of
+    //! the row there.
+    Position positionAtDrag();
+    //! The drag's focus to the position: nothing until it leaves the pressed
+    //! character, then extendSelectionTo(), the pressed row whole again when
+    //! a drag from a plain press comes back to its character.
+    void dragTo(const Position &at);
+    //! The last range's anchor unit (see extendSelectionTo()).
+    void setAnchorUnit(const Position &low, const Position &high);
+    //! The anchor unit, its characters clamped to its row; the last range's
+    //! anchor alone when the unit is not that range's anchor any more (the
+    //! cap dropped its row, a replace or an app's call moved it).
+    void anchorUnit(Position &low, Position &high) const;
+    static bool before(const Position &a, const Position &b);
     //! How far the drag point is past the viewport's top (< 0) or bottom.
     int dragOverflow() const;
     void autoScrollStep();
@@ -450,8 +500,19 @@ private:
     bool m_jumpCountStale=false;
     internal::LogViewJumpButton *m_jump=nullptr;
     std::vector<SelectionRange> m_selection;
+    //! What the last range's anchor stands for, kept whole by an extension:
+    //! the pressed character (low == high), a word or a row.
+    Position m_anchorLow;
+    Position m_anchorHigh;
+    //! The character the drag was pressed on.
+    Position m_pressPosition;
     //! A press on a row started a drag: the mouse is this view's.
     bool m_dragging=false;
+    //! The drag moves the focus by characters: it left the pressed character
+    //! (or started with Shift, or from a double-click).
+    bool m_charDrag=false;
+    //! The drag started with a plain press, which selected the row whole.
+    bool m_dragFromRow=false;
     Point m_dragPoint;
     anim::Animation *m_autoScroll=nullptr;
     double m_autoScrollTime=0.0;
