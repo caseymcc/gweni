@@ -13,7 +13,9 @@
  *  row; one that
  *  opens a block scalar re-colours the rows on screen below it, the lines
  *  past the screen left stale until bound, and its undo gives every row's
- *  spans back; a new token colour reaches the spans through updateColors();
+ *  spans back; lines the app inserts above the screen with a state change
+ *  re-colour every row on screen, the shifted ones at their new lines too;
+ *  a new token colour reaches the spans through updateColors();
  *  an unknown language highlights nothing, "" and a null tokenizer none.
  */
 #include "headlessFixture.h"
@@ -268,4 +270,33 @@ TEST_CASE("CodeEditor highlighting: no language, no spans")
     CHECK(scene.editor->getLanguage().empty());
     for(const auto &entry : scene.shownRows())
         CHECK(entry.second->getColorSpans().empty());
+}
+
+TEST_CASE("CodeEditor highlighting: lines the app inserts above the screen re-colour every row on screen")
+{
+    // one section, scrolled to line 50: the app opens a block scalar on line
+    // 0 and adds 3 lines under it, so the screen shows lines 3 further on and
+    // its bottom 3 rows show lines that were past it, shifted, not bound again
+    Scene scene(200, 200, 1000);
+
+    scene.editor->setVerticalScrollOffset(50*scene.editor->getRowHeight());
+    scene.frame();
+    REQUIRE(scene.shownRows().begin()->first == 50);
+
+    const String &line0=scene.editor->getDocument().line(0);
+    const size_t colon=line0.find(':');
+
+    scene.editor->getDocument().replace(text::Range{text::Position{0, colon+1}, text::Position{0, line0.size()}},
+        " |\n  extra1\n  extra2\n  extra3");
+    scene.frame();
+    scene.frame();
+
+    const auto rows=scene.shownRows();
+
+    REQUIRE(rows.begin()->first == 53);
+    for(const auto &entry : rows)
+    {
+        CAPTURE(entry.first);
+        CHECK(sameSpans(entry.second->getColorSpans(), scene.expectedSpans(entry.first)));
+    }
 }

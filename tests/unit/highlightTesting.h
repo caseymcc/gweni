@@ -121,7 +121,8 @@ inline bool cacheMatchesFresh(gweni::text::HighlightCache &cache, const gweni::t
 //! with a random screen before each: an insert of one of \p pieces (which may
 //! hold '\n's, so lines are inserted) at a random place, or a removal of up to
 //! three lines' worth (joins and whole lines removed). After each, the edit's
-//! pass must have stopped at the screen's last line, and the lines on screen
+//! pass must have stopped at the screen's last line (a screen below the edit
+//! moved with its lines), and the lines on screen
 //! (and every 50 steps all of them) must be what a fresh tokenize gives.
 inline void checkRandomEdits(const gweni::text::Tokenizer &tokenizer, const std::string &text,
     const std::vector<std::string> &pieces, unsigned seeds=6, int steps=250)
@@ -170,16 +171,19 @@ inline void checkRandomEdits(const gweni::text::Tokenizer &tokenizer, const std:
             }
 
             const LineChange change=document.apply(edit);
-            const size_t lastVisible=std::min(first+count, document.lineCount())-1;
+            // a screen below the lines replaced moved with its lines
+            const size_t shown=(first >= change.first+change.removed)?first+change.inserted-change.removed:first;
+            const size_t lastVisible=std::min(shown+count, document.lineCount())-1;
 
-            if((first < document.lineCount()) && (change.first <= lastVisible))
+            CHECK(cache.visibleFirst() == shown);
+            if((shown < document.lineCount()) && (change.first <= lastVisible))
                 CHECK(cache.frontier() == lastVisible+1);
             else
                 CHECK(cache.frontier() == std::min(frontierBefore, change.first));
 
             const std::vector<std::vector<Token>> fresh=freshTokens(document, tokenizer);
 
-            for(size_t i=first; (i <= lastVisible) && (i < document.lineCount()); ++i)
+            for(size_t i=shown; (i <= lastVisible) && (i < document.lineCount()); ++i)
             {
                 CAPTURE(i);
                 CHECK(wellFormed(document.line(i), cache.tokens(i)));

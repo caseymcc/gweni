@@ -75,6 +75,8 @@ public:
     const Tokenizer *tokenizer() const { return m_tokenizer; }
 
     //! The lines on screen, [first, first+count), which an edit's pass keeps fresh.
+    //! An edit above them moves them with their lines, as a view anchored on
+    //! them moves, until the next call.
     void setVisibleLines(size_t first, size_t count);
     size_t visibleFirst() const { return m_visibleFirst; }
     size_t visibleCount() const { return m_visibleCount; }

@@ -374,9 +374,12 @@ TEST_CASE("Highlight cache: after seeded random edits every line is what a fresh
             }
 
             // the pass went through the last line on screen and stopped there
-            const size_t lastVisible=std::min(first+count, document.lineCount())-1;
+            // a screen below the lines replaced moved with its lines
+            const size_t shown=(first >= change.first+change.removed)?first+change.inserted-change.removed:first;
+            const size_t lastVisible=std::min(shown+count, document.lineCount())-1;
 
-            if((first < document.lineCount()) && (change.first <= lastVisible))
+            CHECK(cache.visibleFirst() == shown);
+            if((shown < document.lineCount()) && (change.first <= lastVisible))
                 CHECK(cache.frontier() == lastVisible+1);
             else
                 CHECK(cache.frontier() == std::min(frontierBefore, change.first));
@@ -384,7 +387,7 @@ TEST_CASE("Highlight cache: after seeded random edits every line is what a fresh
             // the lines on screen, as a fresh tokenize gives them
             const std::vector<std::vector<Token>> fresh=freshTokens(document, toy);
 
-            for(size_t i=first; i <= lastVisible && i < document.lineCount(); ++i)
+            for(size_t i=shown; i <= lastVisible && i < document.lineCount(); ++i)
                 CHECK(cache.tokens(i) == fresh[i]);
             if(step%50 == 49)
                 CHECK(allFresh(cache, document, toy));

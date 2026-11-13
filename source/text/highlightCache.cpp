@@ -120,6 +120,12 @@ void HighlightCache::linesChanged(const LineChange &change)
 
     m_frontier=std::min(m_frontier, first);
 
+    // A window below the lines replaced moves with its lines (as a view
+    // anchored on them does), so the pass reaches the lines on screen after
+    // the edit, not those at the old numbers
+    if(m_visibleFirst >= first+removed)
+        m_visibleFirst=m_visibleFirst+change.inserted-removed;
+
     if(!m_tokenizer || (m_visibleCount == 0) || m_entries.empty())
         return;
 
