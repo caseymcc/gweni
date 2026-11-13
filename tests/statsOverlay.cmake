@@ -68,7 +68,8 @@ run(without ${stats})
 run(with ${stats} --stats-overlay)
 
 set(renderer_keys "prim_slots_written|text_slots_written|upload_calls|upload_bytes|mirror_bytes"
-    "|buffer_regrows|atlas_upload_calls|atlas_upload_bytes|draw_calls|prim_ids|excluded_changed")
+    "|buffer_regrows|atlas_upload_calls|atlas_upload_bytes|draw_calls|prim_ids|excluded_changed"
+    "|primitive_slots_culled|text_runs_culled")
 string(JOIN "" renderer_keys ${renderer_keys})
 
 foreach(name without with)
