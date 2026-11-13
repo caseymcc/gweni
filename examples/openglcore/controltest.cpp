@@ -12306,14 +12306,19 @@ static bool runIdleTest(gweni::capture::Device &device, gweni::controls::Canvas 
                 static_cast<gweni::controls::Button *>(button)->setText("Posted");
 
             canvas->after(kAfterPostSeconds, [&]() {
-                const long frames=long(loop->frames())-postFrames;
+                // postFrames counted the post's frame and postPresents did not
+                // (it presents after this update), so the frames since are the
+                // ones after it, this timer's included, and the presents the
+                // post frame's and any after it (on GL a present is a frame)
+                const long between=long(loop->frames())-postFrames-1;
                 const long shown=presents(*loop)-postPresents;
 
-                std::cout<<"idle-test: after post frames="<<frames<<" presents="<<shown<<"\n";
-                if(frames != 1 || shown != 1)
+                std::cout<<"idle-test: after post frames="<<between<<" presents="<<shown<<"\n";
+                if(between != 0 || shown != 1)
                 {
-                    std::cerr<<"ControlTest: --idle-test: the post woke "<<frames<<" frame(s) and "<<shown
-                             <<" swap(s) or present(s); one of each was wanted\n";
+                    std::cerr<<"ControlTest: --idle-test: after the post's frame, "<<between
+                             <<" frame(s) were drawn before the timer's and "<<shown
+                             <<" swap(s) or present(s) made from the post's frame on; none and one were wanted\n";
                     ok=false;
                 }
                 glfwSetWindowShouldClose(window, GLFW_TRUE);

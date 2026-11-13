@@ -12,10 +12,10 @@
  *  frame; a post from another thread ends a blocked wait (through the
  *  canvas's wake handler) and is drawn by the next frame; LoopMode::Continuous
  *  draws every iteration, and a loop that cannot draw (an iconified window)
- *  waits for an event; the verify mode draws a frame wherever it would have
- *  skipped one and fails it, with its number, when it wrote a slot, as when
- *  the canvas's work is not reported; and a web loop's tick() draws only when
- *  work is due or a frame was wanted.
+ *  waits for an event, continuous or idle; the verify mode draws a frame
+ *  wherever it would have skipped one and fails it, with its number, when it
+ *  wrote a slot, as when the canvas's work is not reported; and a web loop's
+ *  tick() draws only when work is due or a frame was wanted.
  */
 #include "headlessFixture.h"
 
@@ -357,6 +357,16 @@ TEST_CASE("Idle loop: continuous draws every iteration, a window that cannot dra
     drawable=true;
     idle.iterate();
     CHECK(idle.frames() == 1);
+
+    // continuous waits too while it cannot draw, rather than polling
+    drawable=false;
+    IdleLoop spinning(hooks, continuous);
+    spinning.iterate();
+    CHECK(spinning.frames() == 0);
+    CHECK(spinning.waits() == 1);
+    drawable=true;
+    spinning.iterate();
+    CHECK(spinning.frames() == 1);
 }
 
 TEST_CASE("Idle loop: the verify mode draws the frames it would skip and fails one that writes")

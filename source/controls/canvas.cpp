@@ -227,7 +227,12 @@ double Canvas::nextWorkTime()
 {
     renderer::Base *render=m_skin?m_skin->getRenderer():nullptr;
 
-    if(m_needsRedraw || m_zOrderDirty || m_hoverStale || !m_deleteSet.empty()
+    // a stale hover is taken by input::onCanvasThink on a shown canvas with no
+    // input capture set, so until then it waits for the capture to be cleared
+    // or the canvas shown (and is work again once it is)
+    const bool hoverToTake=m_hoverStale && !hidden() && !m_inputCapture;
+
+    if(m_needsRedraw || m_zOrderDirty || hoverToTake || !m_deleteSet.empty()
         || m_postQueue->pending()
         || (!hidden() && layoutDirty())
         || (render && (render->textLayoutSerial() != m_textLayoutSerial))

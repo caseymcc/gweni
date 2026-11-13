@@ -15,7 +15,9 @@
  *  passed and a held key's next repeat, and a frame at that time does the
  *  work it waited for; an indeterminate ProgressBar wants every frame while it
  *  shows and none while it is hidden (on a page switched away from); a hidden
- *  canvas waits for no layout, animation or tooltip.
+ *  canvas waits for no layout, animation or tooltip; a stale hover is no work
+ *  while an input capture is set or the canvas is hidden (nothing takes it
+ *  then) and is work again once the capture is cleared or the canvas shown.
  */
 #include "headlessFixture.h"
 
@@ -370,6 +372,41 @@ TEST_CASE("Next work time: a hidden canvas waits for no layout or animation, sti
     scene.canvas->after(1.0, []() {});
     CHECK(scene.next() == scene.clock+1.0);
     anim::cancel(panel);
+}
+
+TEST_CASE("Next work time: a stale hover waits for an input capture's end and a hidden canvas's show")
+{
+    Scene scene;
+    controls::Base *panel=scene.canvas->newChild<controls::Base>("panel");
+    panel->setBounds(10, 10, 100, 50);
+    scene.settle();
+
+    // input::onCanvasThink takes the stale hover only with no capture set and
+    // the canvas shown, so until then it is no work
+    SUBCASE("an input capture")
+    {
+        controls::InputCapture capture;
+
+        scene.canvas->setInputCapture(&capture);
+        scene.canvas->hoverMayHaveMoved();
+        scene.frame();
+        CHECK(scene.next() == NoWork);
+        scene.canvas->setInputCapture(nullptr);
+        CHECK(scene.next() == WorkNow);
+    }
+    SUBCASE("a hidden canvas")
+    {
+        scene.canvas->hide();
+        scene.settle();
+        scene.canvas->hoverMayHaveMoved();
+        scene.frame();
+        CHECK(scene.next() == NoWork);
+        scene.canvas->show();
+        CHECK(scene.next() == WorkNow);
+    }
+
+    scene.frame();
+    CHECK(scene.next() == NoWork);
 }
 
 TEST_CASE("Next work time: an indeterminate ProgressBar every frame while it shows, none while hidden")

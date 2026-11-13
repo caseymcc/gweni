@@ -709,7 +709,10 @@ It is WorkNow while any of these holds:
   scan of the process-global queue; a settled queue holds only entries off every
   canvas);
 - layout or the z order is dirty, or a delayed delete is queued;
-- the hover is stale, or the renderer's `textLayoutSerial()` moved (a text-AA switch);
+- the hover is stale on a shown canvas with no input capture set, or the renderer's
+  `textLayoutSerial()` moved (a text-AA switch). `input::onCanvasThink` takes a stale
+  hover only then, so under a capture (the depth view) or on a hidden canvas it waits,
+  and is work again once the capture is cleared or the canvas shown;
 - a hovered control's tooltip owner is new.
 
 Otherwise it is the earliest of:
@@ -720,8 +723,8 @@ Otherwise it is the earliest of:
   its next edge (`Base::nextCaretBlinkTime()`, `CaretBlink::nextEdge`). An
   indeterminate or cycling ProgressBar keeps the default while it shows and returns
   never while it is hidden: the demo shell's hidden pages hold several, which kept an
-  idle window drawing every frame. The stats overlay's refresh keeps the default while
-  it is open;
+  idle window drawing every frame. The stats overlay's refresh and the Inspector's
+  (`tools::RefreshAnimation`) keep the default while they are open;
 - the tooltip's deadline;
 - the next key repeat (`input::nextKeyRepeatTime(canvas)`, from the process-global key
   state).
@@ -744,10 +747,10 @@ fake clock and a fake wait. Its hooks are `now`, `nextWorkTime`, `poll`, `wait`,
   now()`). Otherwise it blocks in `wait(due - now)`, +infinity when there is no work,
   and draws nothing. An event that changed nothing therefore makes the next
   `iterate()` wait again. `canDraw` false (a Vulkan window iconified, or a failed
-  begin) waits for an event instead.
+  begin) waits for an event instead, in either mode.
 - `tick()` (one browser animation frame) polls, and draws only if work is due or
   `wantFrame()` was called; otherwise it returns at once.
-- `LoopMode::Continuous` polls and draws on every iteration.
+- `LoopMode::Continuous` polls and draws on every iteration it can draw.
 
 Over a simulated idle minute the loop draws 0 frames, after a post exactly 1, and with
 a focused TextBox 2 a second (its caret edges). A post from another thread ends a
@@ -804,8 +807,10 @@ context-menu, depth-view and stats-overlay scenarios.
 2. It posts. The posted function checks that no frame was drawn and nothing was swapped
    or presented meanwhile, and that the process took under 0.1 s of CPU. Then it sets
    a Button's text.
-3. A canvas timer 1 s later checks that exactly one frame was drawn (it wrote glyph
-   slots) and one swap or present was made, and closes the window.
+3. The frame the post ran in must write glyph slots (the new text). A canvas timer 1 s
+   later checks that no frame was drawn between that one and its own, and that one
+   swap or present was made from the post's frame on (on GL a swap is a drawn frame;
+   on Vulkan the device counts its presents), and closes the window.
 
 On the web, `pre.js` publishes `gweniRun.ticks` (callbacks) beside `gweniRun.frames`
 (frames drawn), and ControlTest exports `gweni_web_post()`, a `post()` of a `redraw()`.

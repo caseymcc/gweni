@@ -101,15 +101,16 @@ public:
         if(m_hooks.poll)
             m_hooks.poll();
 
-        if(m_options.mode == LoopMode::Continuous)
-        {
-            draw();
-            return;
-        }
+        // continuous too: a window that cannot draw waits rather than polls
         if(m_hooks.canDraw && !m_hooks.canDraw())
         {
             ++m_waits;
             m_hooks.wait(std::numeric_limits<double>::infinity());
+            return;
+        }
+        if(m_options.mode == LoopMode::Continuous)
+        {
+            draw();
             return;
         }
 

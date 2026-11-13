@@ -13,7 +13,8 @@
 #       take under 0.1 s of the process's CPU time (getrusage, every thread);
 #    2. posts to the canvas from another thread (Canvas::post), which must wake
 #       the loop (its wake handler, glfwPostEmptyEvent) and draw exactly one
-#       frame, writing glyph slots, with one swap or present;
+#       frame, writing glyph slots, with one swap or present, and nothing more
+#       until a canvas timer 1 s later (its own frame not counted);
 #    3. closes the window from a canvas timer.
 #  It fails unless ControlTest exited 0 and printed both measures and
 #  "idle-test: passed"; a loop the post does not wake fails within 10 s,
