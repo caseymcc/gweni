@@ -578,8 +578,8 @@ public:
         //! frame that shows and hides nothing builds none
         size_t primitiveRangeBuilds=0;
         //! the primitive slots that are shown (style not 0) and culled now: their
-        //! last draw lay wholly outside its clip box, so it was collapsed and left
-        //! out of the draws (cullClippedQuad, setClipCulling). A size, kept as
+        //! last draw lay wholly outside its clip box, so it is left out of the
+        //! draws (cullClippedQuad, setClipCulling). A size, kept as
         //! slots are written, not a count of this frame's work.
         size_t primitiveSlotsCulled=0;
         //! the text runs that are shown, hold glyphs and are culled now: their
@@ -1092,12 +1092,15 @@ private:
     //! other fields. A corner is never clamped: that would move it, and the
     //! interpolated UV/colour/SDF local position (and the flat half-size) with it.
     void cullOutOfRangeQuad(size_t primitiveId, const gweni::Rect &rect);
-    //! Called after cullOutOfRangeQuad, with the slot's clip box written: with
-    //! clipCulling() on, a quad with area that lies wholly outside its box (or
-    //! whose box is empty) gets all four corners at 0,0 too, keeping its style,
-    //! as the fragment shaders' half-open test at pixel centres would discard
-    //! every pixel of it. The corners are the quad's, so a line's caps and
-    //! anti-aliased rim are in them. Records the decision in m_clipCulledSlots.
+    //! Called after cullOutOfRangeQuad, with the slot's vertexes and clip box
+    //! written: with clipCulling() on, a quad with area that lies wholly outside
+    //! its box (or whose box is empty) is culled, as the fragment shaders'
+    //! half-open test at pixel centres would discard every pixel of it. The
+    //! corners are the quad's, so a line's caps and anti-aliased rim are in them.
+    //! Records the decision in m_clipCulledSlots, which keeps the slot out of
+    //! its chunk's ranges; its vertexes are not touched, so the buffer is what it
+    //! is with the cull off and a decision that flips uploads nothing. A flip
+    //! updates the slot's visibility at once (updateSlotVisibility).
     void cullClippedQuad(size_t primitiveId);
     //! Whether a quad's corners span an area, the least a quad that makes a
     //! fragment needs
@@ -1130,15 +1133,18 @@ private:
     //! Which primitive slots can show, one bit per slot: a slot can when any of its
     //! vertexes' style is not 0 (hidePrimitive and releasePrimitive set them all to
     //! 0, and a slot the mirror grew by is 0 until it is drawn) and its quad has
-    //! area (a collapsed one, cullOutOfRangeQuad or cullClippedQuad, has none). Every write that
+    //! area (one collapsed by cullOutOfRangeQuad has none) and it is not
+    //! clip-culled (m_clipCulledSlots). Every write that
     //! changes a slot's bytes marks it in m_dirtyVertexSlots, which the upload has
     //! to see anyway, so flush() brings the bits up to date from those slots alone
     //! (updateSlotVisibility) before the upload clears them: every draw*, a hide, a
     //! show, a release, a quad collapsed out of range, a scale or font change that
-    //! redraws a slot, in O(slots changed).
+    //! redraws a slot, in O(slots changed); a cull decision that flips, which
+    //! may change no byte of the slot, updates its bit as it flips.
     std::vector<uint64_t> m_visibleSlots;
-    //! The primitive slots whose last draw cullClippedQuad collapsed, one bit per
-    //! slot, set and cleared as each slot is drawn and cleared by its release
+    //! The primitive slots whose last draw cullClippedQuad culled, one bit per
+    //! slot, set and cleared as each slot is drawn and cleared by its release,
+    //! each flip bringing the slot's m_visibleSlots bit up to date
     std::vector<uint64_t> m_clipCulledSlots;
     //! The slots counted in m_primitiveSlotsCulled: culled by their last draw and
     //! shown (style not 0), brought up to date with m_visibleSlots from the dirty
@@ -1168,8 +1174,8 @@ private:
     std::vector<std::pair<size_t, size_t>> m_primitiveGaps;
     //! Sets the slot's bit from its vertexes, and its chunk's count; a change
     //! marks the chunk's ranges stale. A slot can show when a vertex's style is
-    //! not 0 and its quad has area: one collapsed by cullOutOfRangeQuad or
-    //! cullClippedQuad makes no fragment. Its m_culledSlots bit and
+    //! not 0, its quad has area (one collapsed by cullOutOfRangeQuad makes no
+    //! fragment) and cullClippedQuad did not cull it. Its m_culledSlots bit and
     //! m_primitiveSlotsCulled follow too.
     void updateSlotVisibility(size_t slot);
     //! Builds a chunk's ranges from its bits: m_chunkSlots/64 words, and the runs

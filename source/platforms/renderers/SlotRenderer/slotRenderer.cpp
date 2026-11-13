@@ -1242,8 +1242,8 @@ void SlotRenderer::updateSlotVisibility(size_t slot)
 
     const Vertex *vertexes=&m_vertexes[slot*4];
     const bool styled=(vertexes[0].style|vertexes[1].style|vertexes[2].style|vertexes[3].style) != 0;
-    const bool visible=styled && quadHasArea(vertexes);
     const bool culled=styled && slotBit(m_clipCulledSlots, slot);
+    const bool visible=styled && quadHasArea(vertexes) && !culled;
     const size_t word=slot/64;
     const uint64_t bit=uint64_t(1)<<(slot%64);
 
@@ -1976,7 +1976,7 @@ bool SlotRenderer::textRunCulled(size_t textId) const
 
 void SlotRenderer::cullClippedQuad(size_t primitiveId)
 {
-    Vertex *vertexes=&m_vertexes[primitiveId*4];
+    const Vertex *vertexes=&m_vertexes[primitiveId*4];
     bool culled=false;
 
     // a quad with no area (collapsed out of range, or drawn empty) makes no
@@ -2000,18 +2000,13 @@ void SlotRenderer::cullClippedQuad(size_t primitiveId)
             || (y1 <= int(box.y0)) || (y0 >= int(box.y1));
     }
 
-    if(culled)
-    {
-        for(size_t i=0; i<4; ++i)
-        {
-            vertexes[i].x=0;
-            vertexes[i].y=0;
-        }
-    }
-    // a decision that changed with the bytes the same (a culled quad drawn again
-    // as an empty one at 0,0) must still reach updateSlotVisibility
+    // The vertexes are left as drawn, so the buffer holds what it holds with the
+    // cull off and a decision that flips uploads nothing (a resize flips slots
+    // whose quads stay put). The slot's bit and its chunk's ranges follow at
+    // once: its vertexes are written, and the flip may come with no byte of the
+    // slot changed, which the flush's pass over the dirty slots would not see.
     if(setSlotBit(m_clipCulledSlots, primitiveId, culled))
-        m_dirtyVertexSlots.mark(primitiveId);
+        updateSlotVisibility(primitiveId);
 }
 
 void SlotRenderer::drawFilledRect(size_t primitiveId, gweni::Rect rect, int zIndex)
@@ -2608,7 +2603,7 @@ void SlotRenderer::releasePrimitive(size_t primitiveId)
     }
     // the next owner's first draw decides again; until then it is not culled
     if(setSlotBit(m_clipCulledSlots, primitiveId, false))
-        m_dirtyVertexSlots.mark(primitiveId);
+        updateSlotVisibility(primitiveId);
     releasePrimitiveId(primitiveId);
 }
 

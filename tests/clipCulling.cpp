@@ -17,7 +17,9 @@
  *  rim reach into the box past its segment's end is not culled, and draws what
  *  it draws with the cull off. A box that only touches a slot's edge culls
  *  it, and one reaching a pixel over that edge, on each side, does not (the
- *  shaders' half-open test at pixel centres). A settled frame builds no range. A text run
+ *  shaders' half-open test at pixel centres). A slot culled and drawn again
+ *  uploads what it uploads with the cull off: the cull leaves its vertexes as
+ *  drawn, so only a moved clip box is sent. A settled frame builds no range. A text run
  *  (FrameStats::textRunsCulled) follows the same transitions, its glyph slots'
  *  clip boxes written as without the cull. Every culled frame is the one the
  *  cull off draws, pixel for pixel.
@@ -40,6 +42,7 @@
 #include <gweni/skins/textured/texturedSkin.h>
 
 #include <algorithm>
+#include <utility>
 #include <vector>
 
 namespace
@@ -267,6 +270,46 @@ TEST_CASE("Clip cull: a slot touching its box's edge is culled, and one overlapp
         CHECK(draw(side.overlapping).pixels == overlap.pixels);
         renderer().setClipCulling(true);
     }
+}
+
+TEST_CASE("Clip cull: a slot culled and drawn again uploads what it uploads with the cull off")
+{
+    Guard guard;
+    Primitives prims(1);
+    const size_t id=prims.ids[0];
+
+    // the slot's quad stays where it is and only its box moves, as a resize
+    // moves a viewport past a row: the vertexes are the same bytes every frame,
+    // so only the clip box is sent, whether the cull culls the slot or not
+    auto draw=[&](const Rect &clip)
+    {
+        drawFrame([&](SlotRenderer &renderer)
+            {
+                renderer.setDrawColor(white);
+                renderer.setClipRegion(clip);
+                renderer.drawFilledRect(id, rect, 1);
+            });
+        return std::make_pair(stats().uploadCalls, stats().uploadBytes);
+    };
+    auto run=[&]()
+    {
+        std::vector<std::pair<size_t, size_t>> uploads;
+
+        draw(inside);
+        uploads.push_back(draw(outside));
+        uploads.push_back(draw(outside));
+        uploads.push_back(draw(inside));
+        return uploads;
+    };
+
+    const auto culled=run();
+
+    renderer().setClipCulling(false);
+    const auto unculled=run();
+
+    CHECK(culled == unculled);
+    // drawn again culled where it was, nothing is sent
+    CHECK(culled[1] == std::make_pair(size_t(0), size_t(0)));
 }
 
 TEST_CASE("Clip cull: a culled slot hidden is not counted, and shown while still culled stays undrawn")

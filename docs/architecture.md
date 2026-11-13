@@ -1750,26 +1750,36 @@ two programs and the draws. What follows describes both together:
   - **A primitive slot.** Every primitive draw (`drawFilledRect`, `drawRoundedRect`,
     `drawIcon`, `drawLine`, `drawGrid`, `drawBilinearRect`, `drawCheckerRect`, the
     image draws) writes its 4 vertexes and its clip box, then calls
-    `cullOutOfRangeQuad` and `cullClippedQuad`: when the bbox of the 4 written corners
-    is wholly outside the box (`x1 <= box.x0 || x0 >= box.x1 || y1 <= box.y0 ||
-    y0 >= box.y1`, the shader's half-open test at pixel centres, so nothing the shader
-    would keep is dropped) or the box is empty, all four corners go to 0,0 with the
-    style kept, as `cullOutOfRangeQuad` does. A line's corners are its quad's, so its
-    caps and anti-aliased rim are in the test, not only the segment. A slot can show
-    when its style is not 0 **and** its quad has area (`quadHasArea`), so a collapsed
-    one leaves its chunk's runs through the same `updateSlotVisibility` the dirty
-    slots already go through; the decision is kept per slot (`m_clipCulledSlots`, set
-    and cleared as the slot is drawn, cleared by its release). A hide sets the style
-    to 0 and a show gives it back with the corners still at 0,0, so a slot shown while
-    culled stays out, and the next draw (a clip box changes only with an ancestor's
-    bounds, and `onBoundsChanged` marks the subtree under it, so the slot is drawn
-    again) decides afresh.
+    `cullOutOfRangeQuad` and `cullClippedQuad`: the slot is culled when the bbox of
+    the 4 written corners is wholly outside the box (`x1 <= box.x0 || x0 >= box.x1
+    || y1 <= box.y0 || y0 >= box.y1`, the shader's half-open test at pixel centres,
+    so nothing the shader would keep is dropped) or the box is empty. A line's
+    corners are its quad's, so its caps and anti-aliased rim are in the test, not
+    only the segment. The decision is a bit per slot (`m_clipCulledSlots`, set and
+    cleared as the slot is drawn, cleared by its release), and a slot can show when
+    its style is not 0, its quad has area (`quadHasArea`: one collapsed by
+    `cullOutOfRangeQuad` has none) **and** its bit is clear, so a culled slot leaves
+    its chunk's runs through the same `updateSlotVisibility` the dirty slots go
+    through. **The vertexes are not touched**: the vertex buffer holds byte for byte
+    what it holds with the cull off, so a decision that flips uploads nothing (a
+    resize moves a viewport past rows whose quads stay put: an earlier version that
+    collapsed the culled quad's corners to 0,0, as `cullOutOfRangeQuad` does, sent
+    their 128 bytes each time, `resize` 35 more upload calls and 5760 more bytes a
+    frame). Since a flip can change no byte of the slot, which the flush's pass over
+    the dirty slots would not see, `cullClippedQuad` brings the slot's visibility up
+    to date as it flips, its vertexes already written. A hide sets the style to 0
+    and a show gives it back with the bit still set, so a slot shown while culled
+    stays out, and the next draw (a clip box changes only with an ancestor's bounds,
+    and `onBoundsChanged` marks the subtree under it, so the slot is drawn again)
+    decides afresh. A culled slot that falls in a merged gap of its chunk's ranges
+    (a 1-slot gap, or one merged by the range cap) is drawn there and discarded by
+    the shader, as before the cull; `setDrawEveryPrimitiveSlot` draws every one.
   - **A text run, whole.** `renderText` takes the bbox of the glyphs it just wrote and
     the box it writes into their clip slots (`writeTextClipBoxes`), and `cullTextRun`
     sets `TextRun::culled` by the same rule. A culled run is out of its font's draw
     list as a hidden one is (`drawnRange` is (0, 0)), so the list is rebuilt only when
-    the flag flips (`markTextDrawList`); its glyph vertexes are not rewritten, so
-    `text_slots_written` is what it was. `verifyTextDrawList` and `GWENI_TEXT_DEBUG`'s
+    the flag flips (`markTextDrawList`); its glyph vertexes are not rewritten either,
+    so `text_slots_written` is what it was. `verifyTextDrawList` and `GWENI_TEXT_DEBUG`'s
     drawn / not drawn (`culled=` on its `[mirror]` line) follow the flag. Glyphs of a
     run that is only partly clipped are all drawn, and a partly clipped quad is drawn
     whole: clamping one would move its UV, colour and SDF interpolation, which is why
@@ -1799,7 +1809,11 @@ two programs and the draws. What follows describes both together:
     the primitive cull (-40.1 %) and to 904.57 M with the text cull too (-69.8 %),
     every other phase unchanged. With the primitive cull alone, in the release tree, 7
     timed runs a side under `render` and `quiet`: `flush_us` 775.3 +- 12.7 -> 655.9 +-
-    10.7 and `gpu_us` 806.1 +- 9.7 -> 483.6 +- 10.7 (median +- MAD). The scene draws 76
+    10.7 and `gpu_us` 806.1 +- 9.7 -> 483.6 +- 10.7 (median +- MAD). Those were
+    measured with the culled quads collapsed; leaving their vertexes as drawn, the
+    `flush` is 904.58 M instructions with both culls on, as with the collapse
+    (904.57 M), and in `tools/bench.sh compare` against the base no scene writes or
+    uploads more (`resize`'s uploads, which the collapse grew, are the base's). The scene draws 76
     primitive slots of 1036 (960 culled), and 960 text runs are culled; Demo at
     1024x768 culls 96 slots and 101 runs. **`primitive_ranges` grows**, 6 -> 12 there:
     without the cull each ScrollControl's slots (its background, its rows, its bar)
@@ -1818,8 +1832,9 @@ two programs and the draws. What follows describes both together:
   - **Tests.** `tests/clipCulling.cpp` (GL and Vulkan, `primitiveCulled()` /
     `textRunCulled()`): a slot in, out and back in its box; hidden while culled, shown
     while still culled, shown after a draw in a box that covers it; a line whose cap
-    reaches into the box past the segment's end not culled; a settled frame building
-    no ranges; a text run through the same transitions; a Button row scrolled out of a
+    reaches into the box past the segment's end not culled; a box touching an edge
+    culling and one a pixel over it not, on each side; a slot culled and drawn again
+    uploading what it uploads with the cull off; a settled frame building no ranges; a text run through the same transitions; a Button row scrolled out of a
     ScrollControl culled and drawn again when scrolled back, the frame the one before;
     every frame the pixels of the same frame with the cull off.
     `controltest_clip_cull` (`tests/clipCulling.cmake`, and `_vulkan`) holds every
