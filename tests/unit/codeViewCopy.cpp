@@ -13,7 +13,10 @@
  *  a bar) and hides when the mouse leaves it, each of those frames writing
  *  the button's own slots and nothing else, and it stays shown while it has
  *  the keyboard focus (Tab from the view while hovered), hiding once the
- *  focus leaves it with the mouse gone. A click puts the whole text on the
+ *  focus leaves it with the mouse gone; a click leaves the focus on the view
+ *  (focused by Tab or not), so the button hides once the mouse leaves after
+ *  it. On a one-line view narrower than its line it sits inside the view and
+ *  above the horizontal bar. A click puts the whole text on the
  *  clipboard, or the selection when there is one, and the button shows
  *  "Copied" for CopiedSeconds on the canvas clock, then "Copy" again; a
  *  second click meanwhile starts the time again. setCopyButton(false) hides
@@ -375,4 +378,77 @@ TEST_CASE("CodeView copy button: Copied ends CopiedSeconds on the canvas clock, 
     for(int i=0; i < 10; ++i)
         scene.frame();
     CHECK(scene.view->isCopied());
+}
+
+TEST_CASE("CodeView copy button: a click leaves the focus on the view, and moving off hides it")
+{
+    Scene scene(numberedLines(3));
+    controls::Base *button=scene.view->getCopyButton();
+
+    scene.clickButton();
+    REQUIRE(scene.view->isCopied());
+    CHECK(KeyboardFocus == scene.view);
+    CHECK(!button->isFocussed());
+
+    // off: hidden, its slots alone, then nothing
+    scene.moveOff();
+    CHECK(button->hidden());
+    scene.checkWroteButtonAlone();
+    scene.frame();
+    CHECK(scene.renderer.writtenPrimitiveIds().empty());
+
+    // focused by Tab, then clicked: the focus goes back to the view too
+    scene.move(scene.view, 5, 5);
+    scene.key(GLFW_KEY_TAB);
+    REQUIRE(KeyboardFocus == button);
+    scene.clickButton();
+    CHECK(KeyboardFocus == scene.view);
+    scene.moveOff();
+    CHECK(button->hidden());
+}
+
+TEST_CASE("CodeView copy button: on a one-line view narrower than its line, inside the view above the horizontal bar")
+{
+    Scene scene("./run.sh -b controltest --control CodeViewDemo");
+    controls::Base *panel=scene.canvas->newChild<controls::Base>();
+    controls::Base *button=scene.view->getCopyButton();
+
+    panel->setBounds(20, 20, 90, 200);
+    panel->setSizeFlags({SizeFlag::Fixed, SizeFlag::Fixed});
+    scene.view->setParent(panel);
+    scene.view->setDock(DockPosition::Top);
+    scene.settle();
+    REQUIRE(scene.view->getMaxHorizontalScrollOffset() > 0);
+
+    controls::Base *bar=nullptr;
+
+    for(controls::Base *child : scene.view->getActualChildren())
+    {
+        if(dynamic_cast<controls::HorizontalScrollBar *>(child))
+            bar=child;
+    }
+    REQUIRE(bar);
+    REQUIRE(bar->visible());
+
+    scene.move(scene.view, 5, 3);
+    REQUIRE(button->visible());
+
+    const Rect rect=scene.buttonRect();
+
+    const Rect barRect=bar->getBounds();
+
+    CAPTURE(rect.x); CAPTURE(rect.y); CAPTURE(rect.w); CAPTURE(rect.h);
+    CAPTURE(barRect.y); CAPTURE(scene.view->getHeight());
+    CHECK(rect.x >= 0);
+    CHECK(rect.x+rect.w <= scene.view->getWidth());
+    CHECK(rect.y >= 0);
+    CHECK(rect.y+rect.h <= barRect.y);
+
+    // narrower than the button: at the view's left edge, not left of it
+    panel->setWidth(20);
+    scene.settle();
+    scene.move(scene.view, 2, 3);
+    REQUIRE(button->visible());
+    REQUIRE(scene.view->getWidth() == 20);
+    CHECK(scene.buttonRect().x == 0);
 }

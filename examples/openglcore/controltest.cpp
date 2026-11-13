@@ -875,7 +875,8 @@
  *                 every id back. Exits non-zero if any check is no.
  *    code-view    CodeViewDemo, the clock frozen (code-view.png): the mouse
  *                 onto the install command's view and off, a click on its
- *                 copy button, a drag over the diff from line 10's second
+ *                 text (focusing it) and off, a click on its copy button and
+ *                 off, a drag over the diff from line 10's second
  *                 cell to line 11's eleventh and Ctrl+C, the diff scrolled a
  *                 row at a time three times under the mouse. One line
  *                   code-view hover_shows_button=yes|no ... ids_back=yes|no
@@ -883,7 +884,9 @@
  *                 its slots alone and changing no pixel outside it; moving
  *                 off hides it and gives the frame before the hover back;
  *                 the click puts the whole command on the clipboard (and the
- *                 button says Copied); Ctrl+C puts exactly the dragged
+ *                 button says Copied), and moving off after it leaves the
+ *                 focus on the view, hides the button and gives the frame
+ *                 before the hover back; Ctrl+C puts exactly the dragged
  *                 selection there; each scroll writes the diff's rows' and
  *                 bars' slots alone (not its shown copy button's) and
  *                 changes no pixel outside it;
@@ -11716,7 +11719,17 @@ static bool runCodeViewScenario(Session &s, const std::string &shotDir, bool &pa
         "moving off left the button shown, wrote outside its ids or did not give the frame before the hover back");
     idleWork+=settleCodeEditor(s, pixels);
 
-    // (3) a click on the button: the whole text on the clipboard
+    // (3) the install view focused by a click on its text, the mouse off (the
+    // frame to come back to), then a click on the button: the whole text on
+    // the clipboard
+    clickMouse(s, installRect.x+6, installRect.y+installRect.h/2);
+    renderFrames(s, 1);
+    moveMouse(s, s.size.x-4, s.size.y-4);
+    renderFrames(s, 1);
+    idleWork+=settleCodeEditor(s, pixels);
+
+    const std::vector<uint8_t> beforeClick=pixels;
+
     gweni::platform::setClipboardText("");
     moveMouse(s, installRect.x+6, installRect.y+installRect.h/2);
     renderFrames(s, 1);
@@ -11734,11 +11747,25 @@ static bool runCodeViewScenario(Session &s, const std::string &shotDir, bool &pa
         "the click put \""+copiedWhole+"\" on the clipboard (the command \""
         +gweni::CodeViewDemo::installText()+"\" wanted)"
         +std::string(saysCopied?"":" and the button does not say it copied"));
-    moveMouse(s, s.size.x-4, s.size.y-4);
-    renderFrames(s, 1);
 
-    // (4) a drag over the diff from line 5's second cell to line 6's tenth,
-    // then Ctrl+C: the selection on the clipboard
+    // (3b) off after the click: the focus still the view's (the press gave
+    // the button none to keep it shown), the button hidden and the frame
+    // before the hover back
+    const bool viewKeptFocus=gweni::KeyboardFocus == install;
+
+    moveMouse(s, s.size.x-4, s.size.y-4);
+
+    const CodeEditorFrame offAfterClick=codeEditorFrame(s);
+
+    checks.check("click_off_gives_back",
+        viewKeptFocus && button->hidden() && offAfterClick.pixels == beforeClick,
+        std::string(viewKeptFocus?"":"the click moved the focus off the view; ")
+        +(button->hidden()?"":"the button stayed shown; ")
+        +"moving off after the click did not give the frame before the hover back");
+    idleWork+=settleCodeEditor(s, pixels);
+
+    // (4) a drag over the diff from line 10's second cell to line 11's
+    // eleventh, then Ctrl+C: the selection on the clipboard
     gweni::controls::CodeView *diff=demo->m_diff;
     const gweni::Rect &viewport=diff->getViewport();
     const int lineHeight=diff->getLineHeight();

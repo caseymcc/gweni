@@ -2627,10 +2627,15 @@ two programs and the draws. What follows describes both together:
   Button, Tab-able, so Space presses it with the focus), the view's own child beside the
   inner panel as the gutter is, so it is numbered after every row and does not scroll.
   `contentsPlaced()` measures and places it `CopyInset` (4) in from the viewport's
-  top-right corner, centred on the view's height where the viewport is too short for it
-  (a one-line view). It is shown while `HoveredControl` is the view or anything in it
-  (the button, a bar: `hoverInside()` walks up its parents) or while the button has the
-  keyboard focus, checked again from the view's `onMouseEnter`/`onMouseLeave` and
+  top-right corner, and no further left than the view's left edge; where the viewport is
+  too short for it (a one-line view) it is centred on the view's height above the
+  horizontal bar, if that shows (a one-line command in a column narrower than its line).
+  It is shown while `HoveredControl` is the view or anything in it (the button, a bar:
+  `hoverInside()` walks up its parents) or while the button has the keyboard focus,
+  which only Tab gives it: the input handler focuses a pressed control before its
+  `onMouseClickLeft`, and the button's hands that focus on to the view, as a press
+  anywhere else in it would, so after a click the button hides once the mouse has left.
+  That is checked again from the view's `onMouseEnter`/`onMouseLeave` and
   `onDescendantInteraction`; those two no longer `redraw()` the view, whose look does
   not follow the hover, so showing or hiding the button writes its slots alone. A click
   is `copy()`: `copyText()`, the selection or else the whole text, to

@@ -28,6 +28,18 @@ GWENI_CONTROL_CONSTRUCTOR(CodeViewCopyButton)
     setText(CodeView::CopyLabel);
 }
 
+// A press gives the pressed control the keyboard focus (the input handler
+// does, before this runs): the focus goes on to the view, as a press anywhere
+// else in it gives it, so the button, shown while it has the focus, hides once
+// the mouse has left. Only Tab focuses it.
+void CodeViewCopyButton::onMouseClickLeft(int x, int y, bool down)
+{
+    ParentClass::onMouseClickLeft(x, y, down);
+
+    if(down && isFocussed() && getParent())
+        getParent()->focus();
+}
+
 }//namespace internal
 
 GWENI_CONTROL_CONSTRUCTOR(CodeView)
@@ -188,8 +200,8 @@ void CodeView::onDescendantInteraction(Base *control)
 }
 
 // After the rows, whose placement the viewport is final for: the button at
-// the viewport's top-right (centred on a view too short for it), measured here (it was hidden when the X
-// measuring ran, or its text changed).
+// the viewport's top-right, measured here (it was hidden when the X measuring
+// ran, or its text changed).
 void CodeView::contentsPlaced(skin::Base *skin)
 {
     ParentClass::contentsPlaced(skin);
@@ -205,12 +217,18 @@ void CodeView::contentsPlaced(skin::Base *skin)
 
     int y=viewport.y+CopyInset;
 
-    // a viewport too short for it (a one-line command): centred on the view,
-    // which the button may cover to its border
+    // a viewport too short for it (a one-line command): centred on the view
+    // above its horizontal bar, which it may cover to the view's border
     if(y+size.height > viewport.y+viewport.h)
-        y=std::max(0, (getHeight()-size.height)/2);
+    {
+        const int bottom=m_horizontalScrollBar->hidden()?getHeight():m_horizontalScrollBar->getY();
 
-    placeChild(m_copyButton, viewport.x+viewport.w-CopyInset-size.width, y, size.width, size.height);
+        y=std::max(0, (bottom-size.height)/2);
+    }
+
+    const int x=std::max(0, viewport.x+viewport.w-CopyInset-size.width);
+
+    placeChild(m_copyButton, x, y, size.width, size.height);
 }
 
 }//namespace controls
