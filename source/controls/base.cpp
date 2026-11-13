@@ -23,6 +23,7 @@
 #include <gweni/objectIdBank.h>
 #include <algorithm>
 #include <limits>
+#include <type_traits>
 #include <list>
 #include <vector>
 
@@ -836,58 +837,65 @@ void Base::invalidate(int state)
     // ranges, say) feeds the pass: the way up stops at the first ancestor
     // already dirty, whose own way up the pass has marked, as a new size's
     // children do (setBounds). Going on would only run the ancestors'
-    // layout() again in Y.
-    const bool placing=layout && !outer && g_placement && Canvas::s_layingOut;
-
-    for(Base *control=this; control; control=control->m_parent)
+    // layout() again in Y. The loop is made twice, so the stop's test costs
+    // nothing outside a pass (construction's invalidations, the input phase).
+    auto walkUp=[&](auto placing)
     {
-        // a control with no parent that is not a canvas marks only itself:
-        // one being made (Base's constructor), or the root of a detached
-        // subtree
-        if(g_invalidationCounted && (control->m_parent || (control->getCanvas() == control)))
-            ++g_invalidateCalls;
-
-        if(layout)
+        for(Base *control=this; control; control=control->m_parent)
         {
-            control->m_needsLayout=true;
-            // its parent places it again; a change to what the parent counts
-            // it by (its margin, dock, visibility, preferred size or request)
-            // marks its term stale where it is made
-            control->markLayoutDirty();
-            if(g_invalidationCounted)
-                control->m_layoutDirtyCounted=true;
+            // a control with no parent that is not a canvas marks only itself:
+            // one being made (Base's constructor), or the root of a detached
+            // subtree
+            if(g_invalidationCounted && (control->m_parent || (control->getCanvas() == control)))
+                ++g_invalidateCalls;
 
-            // A pass walks the children a control actually holds: a child of
-            // a control with an inner panel is held by the panel, which the
-            // invalidation of the logical parent does not reach.
-            for(Base *holder=control->m_actualParent; holder && holder != control->m_parent;
-                holder=holder->m_actualParent)
+            if(layout)
             {
-                holder->markLayoutDirty();
+                control->m_needsLayout=true;
+                // its parent places it again; a change to what the parent counts
+                // it by (its margin, dock, visibility, preferred size or request)
+                // marks its term stale where it is made
+                control->markLayoutDirty();
                 if(g_invalidationCounted)
-                    holder->m_layoutDirtyCounted=true;
+                    control->m_layoutDirtyCounted=true;
+
+                // A pass walks the children a control actually holds: a child of
+                // a control with an inner panel is held by the panel, which the
+                // invalidation of the logical parent does not reach.
+                for(Base *holder=control->m_actualParent; holder && holder != control->m_parent;
+                    holder=holder->m_actualParent)
+                {
+                    holder->markLayoutDirty();
+                    if(g_invalidationCounted)
+                        holder->m_layoutDirtyCounted=true;
+                }
+
+                if(Canvas::s_layingOut && !g_propagating && !g_placement)
+                    control->noteRedirty();
             }
 
-            if(Canvas::s_layingOut && !g_propagating && !g_placement)
-                control->noteRedirty();
-        }
+            control->m_cacheTextureDirty=true;
 
-        control->m_cacheTextureDirty=true;
+            if(control == this)
+            {
+                // entered by a subtree walk, under its root: the walk invalidates
+                // the ancestors this control has in the subtree itself, and the
+                // way up from the subtree once (see SubtreeWalk)
+                if(walkedBy(this))
+                    break;
+                g_propagating=true;
+            }
 
-        if(control == this)
-        {
-            // entered by a subtree walk, under its root: the walk invalidates
-            // the ancestors this control has in the subtree itself, and the
-            // way up from the subtree once (see SubtreeWalk)
-            if(walkedBy(this))
+            if(decltype(placing)::value && control->m_parent && control->m_parent->m_updateLayout &&
+                (control->m_parent->m_layoutDirtyCounted || !g_invalidationCounted))
                 break;
-            g_propagating=true;
         }
+    };
 
-        if(placing && control->m_parent && control->m_parent->m_updateLayout &&
-            (control->m_parent->m_layoutDirtyCounted || !g_invalidationCounted))
-            break;
-    }
+    if(Canvas::s_layingOut && g_placement && layout && !outer)
+        walkUp(std::true_type());
+    else
+        walkUp(std::false_type());
     g_propagating=outer;
 }
 
