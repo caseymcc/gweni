@@ -357,6 +357,8 @@ set(GWENI_DIALOG_SOURCES
     include/gweni/controls/dialogs/folderOpen.h
     source/controls/dialog/folderOpen.cpp
     include/gweni/controls/dialogs/query.h
+    include/gweni/controls/dialogs/dialog.h
+    source/controls/dialog/dialog.cpp
     source/controls/dialog/query.cpp
 )
 

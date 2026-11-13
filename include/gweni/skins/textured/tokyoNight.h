@@ -341,6 +341,17 @@ inline Surface WindowButton     { Color(0,0,0,0),        Color(0,0,0,0),        
 inline Surface WindowCloseHover { Red,                   Red,                   Red,            RadiusSm, 0.0f };
 inline Surface WindowCloseDown  { Color(0xdb,0x4b,0x4b), Color(0xdb,0x4b,0x4b), Color(0xdb,0x4b,0x4b), RadiusSm, 0.0f };
 
+// A dialog (dialogs::Dialog): its panel, a window's with a stronger border;
+// its title strip and footer strip, drawn inside the panel's border with
+// their outer corners rounded; and its shadow, below and right of the panel,
+// opaque, so it covers the app as the panel does (a translucent one would
+// hide the app's text under it rather than darken it: every glyph is drawn
+// after every slot).
+inline Surface Dialog         { Color(0x1f,0x22,0x33), BgDark,                Line,        RadiusLg, BorderW };
+inline Surface DialogTitle    { BgStorm,               Color(0x20,0x24,0x37), BgStorm,     RadiusLg-1.0f, 0.0f };
+inline Surface DialogFooter   { Color(0x1a,0x1b,0x27), Color(0x18,0x19,0x24), Color(0x1a,0x1b,0x27), RadiusLg-1.0f, 0.0f };
+inline Surface DialogShadow   { Color(0x0b,0x0c,0x12), Color(0x0b,0x0c,0x12), Color(0x0b,0x0c,0x12), RadiusLg, 0.0f };
+
 // Generic transparent (draw nothing visible but keep a slot)
 inline Surface None           { Color(0,0,0,0),        Color(0,0,0,0),        Color(0,0,0,0), 0.0f, 0.0f };
 
@@ -400,6 +411,7 @@ inline std::unordered_map<std::string, Surface*>& surfaceRegistry()
         {"NodeSelected",&NodeSelected},{"NodeTitle",&NodeTitle},{"PinIn",&PinIn},{"PinOut",&PinOut},
         {"LinkHover",&LinkHover},{"Marquee",&Marquee},
         {"WindowButton",&WindowButton},{"WindowCloseHover",&WindowCloseHover},{"WindowCloseDown",&WindowCloseDown},
+        {"Dialog",&Dialog},{"DialogTitle",&DialogTitle},{"DialogFooter",&DialogFooter},{"DialogShadow",&DialogShadow},
     };
     return m;
 }

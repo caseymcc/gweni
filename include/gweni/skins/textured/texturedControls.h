@@ -2023,6 +2023,51 @@ public:
     inline static const std::string_view name="StatsOverlay";
 };
 
+//! dialogs::Dialog: [0] its shadow (DialogShadow) at getZIndex(), ShadowSize
+//! units below and right of the panel, [1] the panel (Dialog) at +1 over it,
+//! both inside its bounds.
+class Dialog:public textured::ControlRegister<Dialog>
+{
+public:
+    static void staticInit(TexturedSkin *) { m_staticInit=true; }
+
+    size_t requiredPrimitives() override { return 2; }
+    // the panel is drawn at getZIndex()+1, over the shadow
+    size_t depthLayers() override { return 2; }
+
+    void generate(renderer::Base *renderer, controls::Base *baseControl) override;
+    void update(renderer::Base *renderer, controls::Base *baseControl) override;
+    void remove(renderer::Base *renderer, controls::Base *baseControl) override;
+
+    inline static const std::string_view name="Dialog";
+};
+
+//! A Dialog's title bar: one DialogTitle strip, its top corners rounded.
+class DialogTitleBar:public textured::ControlRegister<DialogTitleBar>
+{
+public:
+    static void staticInit(TexturedSkin *) { m_staticInit=true; }
+
+    void generate(renderer::Base *renderer, controls::Base *baseControl) override;
+    void update(renderer::Base *renderer, controls::Base *baseControl) override;
+    void remove(renderer::Base *renderer, controls::Base *baseControl) override;
+
+    inline static const std::string_view name="DialogTitleBar";
+};
+
+//! A Dialog's footer: one DialogFooter strip, its bottom corners rounded.
+class DialogFooter:public textured::ControlRegister<DialogFooter>
+{
+public:
+    static void staticInit(TexturedSkin *) { m_staticInit=true; }
+
+    void generate(renderer::Base *renderer, controls::Base *baseControl) override;
+    void update(renderer::Base *renderer, controls::Base *baseControl) override;
+    void remove(renderer::Base *renderer, controls::Base *baseControl) override;
+
+    inline static const std::string_view name="DialogFooter";
+};
+
 class Window:public textured::ControlRegister<Window>
 {
 public:

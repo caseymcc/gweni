@@ -33,6 +33,7 @@
 #include "gweni/controls/menuItem.h"
 #include "gweni/controls/bullet.h"
 #include "gweni/controls/windowButtons.h"
+#include "gweni/controls/dialogs/dialog.h"
 #include "gweni/controls/properties.h"
 #include "gweni/controls/dataTable.h"
 #include "gweni/controls/treeNode.h"
@@ -4280,6 +4281,88 @@ void Window::remove(renderer::Base *renderer, controls::Base *baseControl)
 }
 
 ///////////////////////////////////////////////////////////////////////////
+//Dialog, DialogTitleBar, DialogFooter
+void Dialog::generate(renderer::Base *renderer, controls::Base *baseControl)
+{
+    generatePrimitives(renderer, requiredPrimitives());
+}
+
+void Dialog::update(renderer::Base *renderer, controls::Base *baseControl)
+{
+    if(m_primitives.size() < 2)
+        return;
+
+    const int shadow=dialogs::Dialog::ShadowSize;
+    const gweni::Rect bounds=baseControl->getRenderBounds();
+    const gweni::Rect panel(bounds.x, bounds.y, std::max(0, bounds.w-shadow), std::max(0, bounds.h-shadow));
+    const gweni::Rect behind(panel.x+shadow, panel.y+shadow, panel.w, panel.h);
+    const int zIndex=baseControl->getZIndex();
+    const bool visible=baseControl->visible();
+
+    if(visible)
+    {
+        const tokyonight::Surface &s=tokyonight::DialogShadow;
+        renderer->drawRoundedRect(m_primitives[0], behind, s.radius, s.borderWidth, s.top, s.bottom,
+            s.border, zIndex);
+
+        // +1, over the shadow (depthLayers() reserves it)
+        const tokyonight::Surface &p=tokyonight::Dialog;
+        renderer->drawRoundedRect(m_primitives[1], panel, p.radius, p.borderWidth, p.top, p.bottom,
+            p.border, zIndex+1);
+    }
+
+    const unsigned int changes=baseControl->getStateChange();
+    if((changes&controls::StateChange_Visibility) || (changes&controls::StateChange_Created))
+    {
+        renderer->showPrimitive(visible?4:0, m_primitives[0]);
+        renderer->showPrimitive(visible?4:0, m_primitives[1]);
+    }
+}
+
+void Dialog::remove(renderer::Base *renderer, controls::Base *baseControl)
+{
+    releasePrimitives(renderer);
+}
+
+void DialogTitleBar::generate(renderer::Base *renderer, controls::Base *baseControl)
+{
+    generatePrimitives(renderer, requiredPrimitives());
+}
+
+void DialogTitleBar::update(renderer::Base *renderer, controls::Base *baseControl)
+{
+    if(m_primitives.empty())
+        return;
+
+    tokyonight::paintSurface(renderer, m_primitives.data(), baseControl, tokyonight::DialogTitle,
+        baseControl->getRenderBounds(), renderer::SquareBottomLeft|renderer::SquareBottomRight);
+}
+
+void DialogTitleBar::remove(renderer::Base *renderer, controls::Base *baseControl)
+{
+    releasePrimitives(renderer);
+}
+
+void DialogFooter::generate(renderer::Base *renderer, controls::Base *baseControl)
+{
+    generatePrimitives(renderer, requiredPrimitives());
+}
+
+void DialogFooter::update(renderer::Base *renderer, controls::Base *baseControl)
+{
+    if(m_primitives.empty())
+        return;
+
+    tokyonight::paintSurface(renderer, m_primitives.data(), baseControl, tokyonight::DialogFooter,
+        baseControl->getRenderBounds(), renderer::SquareTopLeft|renderer::SquareTopRight);
+}
+
+void DialogFooter::remove(renderer::Base *renderer, controls::Base *baseControl)
+{
+    releasePrimitives(renderer);
+}
+
+///////////////////////////////////////////////////////////////////////////
 //WindowCloseButton, WindowMaximizeButton, WindowMinimizeButton
 void WindowButtonPainter::paint(renderer::Base *renderer, const std::vector<size_t> &primitives,
     controls::Base *baseControl, const tokyonight::Surface &hover,
@@ -4447,6 +4530,9 @@ template class ControlRegister<Separator>;
 template class ControlRegister<Bullet>;
 template class ControlRegister<InspectorHighlight>;
 template class ControlRegister<StatsOverlay>;
+template class ControlRegister<Dialog>;
+template class ControlRegister<DialogTitleBar>;
+template class ControlRegister<DialogFooter>;
 template class ControlRegister<RadioButton>;
 template class ControlRegister<ScrollBarButton>;
 template class ControlRegister<BaseScrollBar>;

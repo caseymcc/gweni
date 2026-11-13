@@ -28,6 +28,7 @@
 #include <gweni/controls/comboBox.h>
 #include <gweni/controls/crossSplitter.h>
 #include <gweni/controls/dataTable.h>
+#include <gweni/controls/dialogs/dialog.h>
 #include <gweni/controls/dialogs/fileOpen.h>
 #include <gweni/controls/dialogs/fileSave.h>
 #include <gweni/controls/dialogs/folderOpen.h>
