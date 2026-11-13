@@ -486,6 +486,13 @@ std::unordered_map<std::string, gweni::Color*> TexturedSkin::textColorRegistry()
         {"PlaceholderText",&Colors.PlaceholderText},
         {"AxisTagText",&Colors.AxisTagText},
         {"BadgeText",&Colors.BadgeText},
+        {"ChipNeutralText",&Colors.Chip.Neutral},{"ChipAccentText",&Colors.Chip.Accent},
+        {"ChipSuccessText",&Colors.Chip.Success},{"ChipWarningText",&Colors.Chip.Warning},
+        {"ChipDangerText",&Colors.Chip.Danger},
+        {"ChipPalette0Text",&Colors.Chip.Palette[0]},{"ChipPalette1Text",&Colors.Chip.Palette[1]},
+        {"ChipPalette2Text",&Colors.Chip.Palette[2]},{"ChipPalette3Text",&Colors.Chip.Palette[3]},
+        {"ChipPalette4Text",&Colors.Chip.Palette[4]},{"ChipPalette5Text",&Colors.Chip.Palette[5]},
+        {"ChipPalette6Text",&Colors.Chip.Palette[6]},{"ChipPalette7Text",&Colors.Chip.Palette[7]},
         {"CodeLineNumber",&Colors.CodeEditor.LineNumber},
         {"CodeLineNumberCurrent",&Colors.CodeEditor.LineNumberCurrent},
         {"ChartAxisText",&Colors.Chart.AxisText},{"ChartMarkerText",&Colors.Chart.MarkerText},
@@ -1332,6 +1339,21 @@ void TexturedSkin::setThemeColors()
     Colors.AxisTagText=BgDark;
     // a Badge's count, dark on its red bubble as an axis tag's letter
     Colors.BadgeText=BgDark;
+    // a Chip's text is its tone's or palette entry's full colour (its fill and
+    // border are that colour faded into the background)
+    Colors.Chip.Neutral=FgDark;
+    Colors.Chip.Accent=tokyonight::Blue;
+    Colors.Chip.Success=tokyonight::Green;
+    Colors.Chip.Warning=tokyonight::Yellow;
+    Colors.Chip.Danger=tokyonight::Red;
+    Colors.Chip.Palette[0]=tokyonight::Blue;
+    Colors.Chip.Palette[1]=tokyonight::Cyan;
+    Colors.Chip.Palette[2]=tokyonight::Green;
+    Colors.Chip.Palette[3]=tokyonight::Yellow;
+    Colors.Chip.Palette[4]=tokyonight::Orange;
+    Colors.Chip.Palette[5]=tokyonight::Red;
+    Colors.Chip.Palette[6]=tokyonight::Magenta;
+    Colors.Chip.Palette[7]=gweni::Color(0x73, 0xda, 0xca);
     // a CodeEditor's line numbers, the caret's line's lifted
     Colors.CodeEditor.LineNumber=gweni::Color(0x3b, 0x42, 0x61);
     Colors.CodeEditor.LineNumberCurrent=gweni::Color(0x73, 0x7a, 0xa2);

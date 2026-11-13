@@ -25,6 +25,7 @@
 #include "gweni/controls/dragNumber.h"
 #include "gweni/controls/vectorField.h"
 #include "gweni/controls/badge.h"
+#include "gweni/controls/chip.h"
 #include "gweni/controls/textBox.h"
 #include "gweni/controls/separator.h"
 #include "gweni/controls/selectable.h"
@@ -3522,6 +3523,59 @@ void VectorFieldTag::update(renderer::Base *renderer, controls::Base *baseContro
 
 
 ///////////////////////////////////////////////////////////////////////////
+//Chip
+namespace
+{
+// \p a moved toward \p b by \p t (0..1), channel by channel, alpha included.
+gweni::Color towards(const gweni::Color &a, const gweni::Color &b, float t)
+{
+    const auto mix=[t](unsigned char from, unsigned char to)
+        {
+            return static_cast<unsigned char>(float(from)+(float(to)-float(from))*t+0.5f);
+        };
+
+    return gweni::Color(mix(a.r, b.r), mix(a.g, b.g), mix(a.b, b.b), mix(a.a, b.a));
+}
+}//namespace
+
+void Chip::update(renderer::Base *renderer, controls::Base *baseControl)
+{
+    if(m_primitives.empty())
+        return;
+
+    static const tokyonight::Surface *const tones[]=
+    {
+        &tokyonight::ChipNeutral, &tokyonight::ChipAccent, &tokyonight::ChipSuccess,
+        &tokyonight::ChipWarning, &tokyonight::ChipDanger
+    };
+    static const tokyonight::Surface *const palette[controls::Chip::PaletteSize]=
+    {
+        &tokyonight::ChipPalette0, &tokyonight::ChipPalette1, &tokyonight::ChipPalette2,
+        &tokyonight::ChipPalette3, &tokyonight::ChipPalette4, &tokyonight::ChipPalette5,
+        &tokyonight::ChipPalette6, &tokyonight::ChipPalette7
+    };
+    controls::Chip *chip=static_cast<controls::Chip *>(baseControl);
+    const int index=chip->getPaletteIndex();
+    tokyonight::Surface surface=(index >= 0)?*palette[index]:*tones[static_cast<int>(chip->getTone())];
+
+    if(chip->isDisabled())
+        surface=tokyonight::ButtonDisabled;
+    else if(chip->showsInteraction() && (chip->isDepressed() || chip->isHovered()))
+    {
+        const float t=chip->isDepressed()?0.6f:0.35f;
+
+        surface.top=towards(surface.top, surface.border, t);
+        surface.bottom=towards(surface.bottom, surface.border, t);
+    }
+
+    const Rect &bounds=chip->getRenderBounds();
+
+    surface.radius=std::min(surface.radius, 0.5f*float(std::min(bounds.w, bounds.h)));
+    tokyonight::paintSurface(renderer, m_primitives.data(), baseControl, surface);
+}
+
+
+///////////////////////////////////////////////////////////////////////////
 //Badge
 void Badge::generate(renderer::Base *renderer, controls::Base *baseControl)
 {
@@ -4405,6 +4459,7 @@ template class ControlRegister<ColorButton>;
 template class ControlRegister<DragNumber>;
 template class ControlRegister<VectorFieldTag>;
 template class ControlRegister<Badge>;
+template class ControlRegister<Chip>;
 template class ControlRegister<StatusBar>;
 // NOTE: TabItem<_Type> is itself a class template (TabItem<TabTop>, <TabBottom>,
 // <TabLeft>, <TabRight>); register those specializations here if/when their

@@ -268,7 +268,7 @@ String joined(std::vector<String> names)
 
 }//namespace
 
-TEST_CASE("TexturedSkin::textColorRegistry names the theme's 39 text colours in this skin")
+TEST_CASE("TexturedSkin::textColorRegistry names the theme's 52 text colours in this skin")
 {
     test::StubRenderer renderer;
     skin::textured::TexturedSkin skin(&renderer);
@@ -276,7 +276,7 @@ TEST_CASE("TexturedSkin::textColorRegistry names the theme's 39 text colours in 
 
     auto registry=skin.textColorRegistry();
 
-    CHECK(registry.size() == 39);
+    CHECK(registry.size() == 52);
     CHECK((registry.at("LabelDefault") == &skin.Colors.Label.Default));
     CHECK((registry.at("SelectableDisabled") == &skin.Colors.Selectable.Disabled));
     CHECK((registry.at("CodeLineNumber") == &skin.Colors.CodeEditor.LineNumber));
@@ -298,6 +298,8 @@ TEST_CASE("TexturedSkin::textColorRegistry names the theme's 39 text colours in 
     CHECK((registry.at("TimelineAxisText") == &skin.Colors.Timeline.AxisText));
     CHECK((registry.at("TimelineCaptionText") == &skin.Colors.Timeline.CaptionText));
     CHECK((registry.at("BadgeText") == &skin.Colors.BadgeText));
+    CHECK((registry.at("ChipDangerText") == &skin.Colors.Chip.Danger));
+    CHECK((registry.at("ChipPalette7Text") == &skin.Colors.Chip.Palette[7]));
     CHECK((other.textColorRegistry().at("LabelDefault") == &other.Colors.Label.Default));
 }
 
@@ -385,7 +387,7 @@ TEST_CASE("A strict theme leaves every colour it does not set magenta and lists 
         "theme textColor \"ButtonHover\" must be an array of 3-4 integers 0-255\n"
         "theme strict: "+std::to_string(surfaceCount-1)+" of "+std::to_string(surfaceCount)
             +" surfaces not set: "+joined(surfaceGaps)+"\n"
-        "theme strict: 38 of 39 text colors not set: "+joined(textGaps)+"\n";
+        "theme strict: 51 of 52 text colors not set: "+joined(textGaps)+"\n";
 
     CHECK(result.message == expected);
 }
@@ -423,11 +425,11 @@ TEST_CASE("A strict theme that sets everything says so on one line")
     INFO("stderr: ", result.message);
     CHECK(result.loaded);
     if(allTextColors)
-        CHECK(result.message == "theme strict: all "+count+" surfaces and 39 text colors set\n");
+        CHECK(result.message == "theme strict: all "+count+" surfaces and 52 text colors set\n");
     else
     {
         CHECK(result.message == "theme strict: all "+count+" surfaces set\n"
-            "theme strict: 1 of 39 text colors not set: TooltipText\n");
+            "theme strict: 1 of 52 text colors not set: TooltipText\n");
         CHECK((skin.Colors.TooltipText == colors::Missing));
     }
 

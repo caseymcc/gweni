@@ -1658,6 +1658,23 @@ public:
 // its height allows) and its number in a text run of its own, both at the
 // badge's getAttachedZIndex(), so they are in front of its anchor's later
 // siblings; a dot is the bubble alone.
+// controls::Chip: one primitive, its tone's or palette entry's surface (the
+// ChipNeutral .. ChipPalette7 surfaces), as round as its height allows; a
+// clickable chip's hover and press move the fill toward the border, a
+// disabled one is ButtonDisabled. Its Label's Text draws the text, its
+// ChipRemoveButton the x.
+class Chip:public textured::ControlRegister<Chip>
+{
+public:
+    static void staticInit(TexturedSkin *) { m_staticInit=true; }
+
+    size_t requiredPrimitives() override { return 1; }
+
+    void update(renderer::Base *renderer, controls::Base *baseControl) override;
+
+    inline static const std::string_view name="Chip";
+};
+
 class Badge:public textured::ControlRegister<Badge>
 {
 public:

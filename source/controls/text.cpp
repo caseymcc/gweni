@@ -116,6 +116,21 @@ void Text::setText(const String &str)
     addStateChange(controls::StateChange_Text);
 
     noteEdit(m_string, str);
+
+    // measured now, the same size needs no layout
+    if(m_sameSizeKeepsLayout && !m_wrap && m_stringMeasured && measureKeyCurrent() && getCanvas())
+    {
+        const gweni::Point old=m_stringSize;
+
+        m_string=str;
+        m_longestWordMeasured=false;
+        m_stringSize=measureText(getFont(), m_string);
+        if((m_stringSize.x == old.x) && (m_stringSize.y == old.y))
+            return;
+        invalidate();
+        return;
+    }
+
     m_string=str;
     // the line height is the font's alone
     m_stringMeasured=false;

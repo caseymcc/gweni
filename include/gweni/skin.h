@@ -460,6 +460,17 @@ public:
             gweni::Color Disabled{0x80, 0x80, 0x80};
         } Selectable;
 
+        //! A Chip's text, by its tone and by its palette entry.
+        struct Chip_t
+        {
+            gweni::Color Neutral{0, 0, 0};
+            gweni::Color Accent{0, 0, 0};
+            gweni::Color Success{0, 0, 0};
+            gweni::Color Warning{0, 0, 0};
+            gweni::Color Danger{0, 0, 0};
+            gweni::Color Palette[8]{};
+        } Chip;
+
     } Colors;
 
     //! Sizes a skin sets for its controls, in logical units. Read when a

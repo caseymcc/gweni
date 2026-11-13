@@ -295,6 +295,27 @@ inline Surface VectorTagW        { FgDark,                FgDark,               
 // its most; a bubble is as round as its height allows (a pill, a dot).
 inline Surface Badge             { Red,                   Red,                   Bg,          RadiusLg, BorderW };
 
+// A Chip, by tone and by palette entry: its colour at about a fifth over the
+// background as the fill, nearly half as the border, the full colour its text
+// (the skin's ChipNeutralText .. ChipPalette7Text). The radius is its most: a
+// chip is as round as its height allows. A clickable chip's hover and press
+// looks move the fill toward the border (texturedControls.cpp), so a theme
+// sets one surface per entry.
+inline constexpr float ChipRadius=32.0f;
+inline Surface ChipNeutral       { Color(0x34,0x36,0x46), Color(0x34,0x36,0x46), Color(0x5a,0x5e,0x75), ChipRadius, BorderW };
+inline Surface ChipAccent        { Color(0x2b,0x33,0x4c), Color(0x2b,0x33,0x4c), Color(0x45,0x58,0x84), ChipRadius, BorderW };
+inline Surface ChipSuccess       { Color(0x32,0x3b,0x32), Color(0x32,0x3b,0x32), Color(0x55,0x6c,0x45), ChipRadius, BorderW };
+inline Surface ChipWarning       { Color(0x3e,0x36,0x32), Color(0x3e,0x36,0x32), Color(0x73,0x5e,0x44), ChipRadius, BorderW };
+inline Surface ChipDanger        { Color(0x42,0x2b,0x39), Color(0x42,0x2b,0x39), Color(0x7d,0x44,0x55), ChipRadius, BorderW };
+inline Surface ChipPalette0      { Color(0x2b,0x33,0x4c), Color(0x2b,0x33,0x4c), Color(0x45,0x58,0x84), ChipRadius, BorderW };
+inline Surface ChipPalette1      { Color(0x2c,0x3b,0x4d), Color(0x2c,0x3b,0x4d), Color(0x47,0x6c,0x88), ChipRadius, BorderW };
+inline Surface ChipPalette2      { Color(0x32,0x3b,0x32), Color(0x32,0x3b,0x32), Color(0x55,0x6c,0x45), ChipRadius, BorderW };
+inline Surface ChipPalette3      { Color(0x3e,0x36,0x32), Color(0x3e,0x36,0x32), Color(0x73,0x5e,0x44), ChipRadius, BorderW };
+inline Surface ChipPalette4      { Color(0x43,0x33,0x31), Color(0x43,0x33,0x31), Color(0x81,0x56,0x42), ChipRadius, BorderW };
+inline Surface ChipPalette5      { Color(0x42,0x2b,0x39), Color(0x42,0x2b,0x39), Color(0x7d,0x44,0x55), ChipRadius, BorderW };
+inline Surface ChipPalette6      { Color(0x37,0x32,0x4c), Color(0x37,0x32,0x4c), Color(0x62,0x54,0x84), ChipRadius, BorderW };
+inline Surface ChipPalette7      { Color(0x2a,0x3d,0x44), Color(0x2a,0x3d,0x44), Color(0x42,0x71,0x70), ChipRadius, BorderW };
+
 // A NodeGraph and its nodes. The graph's backdrop is GraphGrid's top and
 // bottom, its grid lines GraphGrid's border colour, every GridMajorEvery-th one
 // GraphGridMajor's top. A node's frame is NodeBody (NodeSelected while it is
@@ -370,6 +391,11 @@ inline std::unordered_map<std::string, Surface*>& surfaceRegistry()
         {"VectorTagX",&VectorTagX},{"VectorTagY",&VectorTagY},{"VectorTagZ",&VectorTagZ},
         {"VectorTagW",&VectorTagW},
         {"Badge",&Badge},
+        {"ChipNeutral",&ChipNeutral},{"ChipAccent",&ChipAccent},{"ChipSuccess",&ChipSuccess},
+        {"ChipWarning",&ChipWarning},{"ChipDanger",&ChipDanger},
+        {"ChipPalette0",&ChipPalette0},{"ChipPalette1",&ChipPalette1},{"ChipPalette2",&ChipPalette2},
+        {"ChipPalette3",&ChipPalette3},{"ChipPalette4",&ChipPalette4},{"ChipPalette5",&ChipPalette5},
+        {"ChipPalette6",&ChipPalette6},{"ChipPalette7",&ChipPalette7},
         {"GraphGrid",&GraphGrid},{"GraphGridMajor",&GraphGridMajor},{"NodeBody",&NodeBody},
         {"NodeSelected",&NodeSelected},{"NodeTitle",&NodeTitle},{"PinIn",&PinIn},{"PinOut",&PinOut},
         {"LinkHover",&LinkHover},{"Marquee",&Marquee},

@@ -194,6 +194,8 @@ set(GWENI_CONTROL_SOURCES
     source/controls/badge.cpp
     include/gweni/controls/checkBox.h
     source/controls/checkBox.cpp
+    include/gweni/controls/chip.h
+    source/controls/chip.cpp
     include/gweni/controls/codeEditor.h
     source/controls/codeEditor.cpp
     include/gweni/controls/collapsibleCategory.h

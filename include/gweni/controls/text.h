@@ -47,6 +47,13 @@ public:
 
     void setText(const String &str);
 
+    //! With it on, a new string that measures as the old one did (unwrapped,
+    //! on a canvas, the old one measured) is measured in setText() and lays
+    //! nothing out: only the glyphs are redrawn. Off by default, where every
+    //! new string lays the Text out again (a TextBox places its caret in the
+    //! layout). A Chip turns it on.
+    void setSameSizeKeepsLayout(bool keep) { m_sameSizeKeepsLayout=keep; }
+
 //    void render(skin::Base *skin) override;
     void layout(skin::Base *skin) override;
 
@@ -300,6 +307,8 @@ private:
     const renderer::Base *m_measureRenderer=nullptr;
     unsigned m_measureSerial=0;
     bool m_stringMeasured=false;
+    //! See setSameSizeKeepsLayout()
+    bool m_sameSizeKeepsLayout=false;
     gweni::Point m_stringSize;
     bool m_lineHeightMeasured=false;
     int m_lineHeight=0;
