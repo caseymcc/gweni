@@ -6,7 +6,8 @@
  *  controls::axis, the chart axes' ticks (gweni/controls/chartAxis.h): value
  *  steps at 1, 2 or 5 times a power of ten, an automatic range widened to
  *  whole steps (an empty one included), ticks that do not drift and their
- *  labels' decimals, a formatter in place of them; the time step chosen for
+ *  labels' decimals, a formatter in place of them; ticks ending at
+ *  any magnitude (one per step past 2^53 too); the time step chosen for
  *  several ranges and axis widths (the smallest whose labels leave the gap,
  *  Year with overlapping labels when none does); calendar day, month and
  *  year ticks at 00:00 in the zone, under UTC, a fixed +05:30 hook and a
@@ -119,6 +120,9 @@ TEST_CASE("Chart axis: value ticks are whole multiples of the step, labelled wit
     CHECK(valueTicks(-25.0, 25.0, 10.0) == std::vector<double>{-20.0, -10.0, 0.0, 10.0, 20.0});
     CHECK(valueTicks(1.0, 0.0, 0.1).empty());
     CHECK(valueTicks(0.0, 1.0, 0.0).empty());
+    // past 2^53 a tick index plus one is the same double: one tick per step
+    // still, and the walk ends
+    CHECK(valueTicks(1e16, 1e16+2.0, 0.5).size() == 5);
 
     CHECK(formatValue(1500.0, 500.0) == "1500");
     CHECK(formatValue(2.5, 0.5) == "2.5");

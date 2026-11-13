@@ -354,8 +354,11 @@ std::vector<double> valueTicks(double min, double max, double step)
 
     if(last-first > 100000.0)
         return ticks;
-    for(double k=first; k <= last; k+=1.0)
-        ticks.push_back(k*step);
+    // counted, not stepped: past 2^53 first+1 is first again
+    const int count=static_cast<int>(last-first)+1;
+
+    for(int i=0; i < count; ++i)
+        ticks.push_back((first+i)*step);
     return ticks;
 }
 
