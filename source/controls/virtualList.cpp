@@ -1066,6 +1066,24 @@ void VirtualList::releaseRow(Base *control)
         KeyboardFocus->unfocus();
 }
 
+// The bar moved by the user since the last layout (by its arrows or its
+// track, which tell the list nothing, or its thumb), which nothing took
+// since, is taken before placeContents() would: it came after every request
+// made so far, so it replaces a scrollToItem() still pending, and a LogView's
+// barScrollTaken() detaches the view above the end, so the list does not put
+// it back there. What that changes (a LogView's stick and jump button) is
+// this pass's to lay out.
+void VirtualList::arrange(skin::Base *skin, Dim dim)
+{
+    if(dim == Dim::Y)
+    {
+        PlacementScope placement;
+
+        takeBarScroll();
+    }
+    ParentClass::arrange(skin, dim);
+}
+
 // The viewport and the offset are final here (placeContents), and nothing in
 // the inner panel has been laid out yet. A pending scrollToItem is resolved
 // first, with the viewport now known. Each item the viewport shows any of gets
@@ -1086,24 +1104,6 @@ void VirtualList::releaseRow(Base *control)
 // When a shown row moved, was bound to another item, or was shown, hidden or
 // deleted, what is under the resting mouse may be another row: the canvas
 // hit-tests the hover again once the layout is done.
-// The bar moved by the user since the last layout (by its arrows or its
-// track, which tell the list nothing, or its thumb), which nothing took
-// since, is taken before placeContents() would: it came after every request
-// made so far, so it replaces a scrollToItem() still pending, and a LogView's
-// barScrollTaken() detaches the view above the end, so the list does not put
-// it back there. What that changes (a LogView's stick and jump button) is
-// this pass's to lay out.
-void VirtualList::arrange(skin::Base *skin, Dim dim)
-{
-    if(dim == Dim::Y)
-    {
-        PlacementScope placement;
-
-        takeBarScroll();
-    }
-    ParentClass::arrange(skin, dim);
-}
-
 void VirtualList::contentsPlaced(skin::Base *skin)
 {
     const int viewport=getViewportHeight();

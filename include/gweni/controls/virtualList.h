@@ -216,7 +216,8 @@ public:
     //! by that many items.
     void scrollByRows(int rows);
     //! The item of the scrollToItem() the next layout is to resolve, or
-    //! NoItem: none asked for, or a scrollByRows() dropped it.
+    //! NoItem: none asked for, or a later request dropped it (scrollByRows(),
+    //! an offset, a wheel notch, a bar move).
     size_t getPendingItem() const { return m_pendingItem; }
     //! Counts the scroll requests made of the list: each scrollToItem() and
     //! scrollByRows() call, each setVerticalScrollOffset() that moves the
@@ -261,9 +262,10 @@ public:
     //! info's `integer`, the row its `control`.
     gweni::event::Caller onItemPressed;
 
-protected:
     //! The Y arrange takes a bar the user moved first (takeBarScroll()).
     void arrange(skin::Base *skin, Dim dim) override;
+
+protected:
     void contentsPlaced(skin::Base *skin) override;
 
     //! The pooled rows in pool order and the item each shows now (NoItem for a
