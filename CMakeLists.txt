@@ -171,6 +171,8 @@ set(GWENI_CONTROL_SOURCES
     source/controls/canvas.cpp
     include/gweni/controls/caretBlink.h
     source/controls/caretBlink.cpp
+    include/gweni/controls/chartAxis.h
+    source/controls/chartAxis.cpp
     include/gweni/controls/checkBox.h
     source/controls/checkBox.cpp
     include/gweni/controls/codeEditor.h
