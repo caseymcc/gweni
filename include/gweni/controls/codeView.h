@@ -8,12 +8,30 @@
 #ifndef _gweni_controls_codeview_h_
 #define _gweni_controls_codeview_h_
 
+#include <gweni/controls/button.h>
+#include <gweni/controls/canvas.h>
 #include <gweni/controls/codeEditor.h>
 
 namespace gweni
 {
 namespace controls
 {
+
+class CodeView;
+
+namespace internal
+{
+
+//! A CodeView's copy button (CodeView::setCopyButton): a Button the view
+//! places over its viewport's top-right corner, shown while the view is
+//! hovered or the button has the focus.
+class GWENI_EXPORT CodeViewCopyButton: public Button
+{
+public:
+    GWENI_CONTROL(CodeViewCopyButton, Button);
+};
+
+}//namespace internal
 
 //! A read-only view of monospace text: a diff, a config file, a one-line
 //! install command. It is a CodeEditor in its read-only mode
@@ -42,12 +60,50 @@ namespace controls
 //! the token colours as in any highlighted line. The kind is set as a row is
 //! bound or its line's tokens change, so a scroll marks the rows it binds
 //! alone.
+//!
+//! setCopyButton(true) gives it a copy button (internal::CodeViewCopyButton),
+//! the view's own child placed CopyInset in from the viewport's top-right
+//! corner, over the content: it does not scroll, and it is numbered after the
+//! rows, so it draws in front of them. It is shown while the mouse is over the
+//! view or anything in it (the button, a bar) or while it has the keyboard
+//! focus, and hidden otherwise, so showing or hiding it writes its own slots
+//! alone (the view's look does not follow the hover). A click (or Space with
+//! the focus) is copy(): the selection, or the whole text when there is none,
+//! to platform::setClipboardText() (which on the web needs the click's user
+//! activation, as it has here), and the button shows CopiedLabel instead of
+//! CopyLabel for CopiedSeconds on the canvas clock (Canvas::after()).
 class GWENI_EXPORT CodeView: public CodeEditor
 {
 public:
     GWENI_CONTROL(CodeView, CodeEditor);
 
 public:
+    //! The units between the copy button and the viewport's top and right.
+    static constexpr int CopyInset=4;
+    //! How long the button says it copied, in seconds of the canvas clock.
+    static constexpr double CopiedSeconds=1.5;
+    static constexpr const char *CopyLabel="Copy";
+    static constexpr const char *CopiedLabel="Copied";
+
+    //! The copy button, shown or not. Default off; the button is made by the
+    //! first setCopyButton(true).
+    void setCopyButton(bool show);
+    bool hasCopyButton() const { return m_copyButtonOn; }
+    //! The button, null before the first setCopyButton(true).
+    internal::CodeViewCopyButton *getCopyButton() const { return m_copyButton; }
+
+    //! What copy() copies: the selection, or the whole text with none.
+    String copyText() const;
+    //! Puts copyText() on the clipboard and shows CopiedLabel on the button
+    //! (if any) for CopiedSeconds, counted again from a copy meanwhile.
+    void copy();
+    //! Whether the button shows CopiedLabel.
+    bool isCopied() const { return m_copied.valid(); }
+
+    void onMouseEnter() override;
+    void onMouseLeave() override;
+    void onDescendantInteraction(Base *control) override;
+
     //! Highlights the text in the language of a file named \p fileName
     //! (text::languageForFileName: *.diff and *.patch are "diff"), none for a
     //! name of no known language; false then.
@@ -56,6 +112,21 @@ public:
 protected:
     //! With the diff language's tokenizer.
     bool showsDiffRows() const override;
+    //! The rows, then the copy button over the viewport's top-right corner.
+    void contentsPlaced(skin::Base *skin) override;
+
+private:
+    void onCopyPressed(event::Info info);
+    //! Shows or hides the button for the hover and the focus.
+    void updateCopyButton();
+    //! The hovered control is this view or in it.
+    bool hoverInside() const;
+    void endCopied();
+
+    internal::CodeViewCopyButton *m_copyButton=nullptr;
+    bool m_copyButtonOn=false;
+    //! The timer ending CopiedLabel, pending while it shows.
+    TimerHandle m_copied;
 };
 
 }//namespace controls
