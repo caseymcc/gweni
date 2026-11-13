@@ -332,7 +332,12 @@ void RichText::selectionChanged()
 
 bool RichText::selectedRange(std::pair<size_t, size_t> &bytes) const
 {
-    return selectionModel().range(m_selectionBlock, m_layout.textLength(), bytes);
+    // the spans' text, not the layout's: new spans are laid out a frame later
+    size_t length=0;
+
+    for(const RichSpan &span:m_spans)
+        length+=span.text.size();
+    return selectionModel().range(m_selectionBlock, length, bytes);
 }
 
 bool RichText::hasSelection() const

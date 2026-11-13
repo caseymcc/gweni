@@ -22,7 +22,10 @@
  *  - two paragraphs on one container's SelectionModel each draw and copy
  *    their block's part of it, and clearing it from one leaves the caret at
  *    the focus in the other's block;
- *  - new spans clear the paragraph's own selection.
+ *  - new spans clear the paragraph's own selection;
+ *  - before the new spans are laid out, a selection is clamped to their
+ *    text, not the laid-out one: past a shorter text it is empty, inside a
+ *    longer one its text, and Ctrl+C copies that.
  */
 #include "richTextFixture.h"
 
@@ -386,4 +389,32 @@ TEST_CASE("RichText selection: new spans clear the paragraph's own selection")
     scene.frame();
     CHECK_FALSE(rich->hasSelection());
     CHECK(rich->selectionRects().empty());
+}
+
+TEST_CASE("RichText selection: before new spans are laid out, a selection is clamped to their text")
+{
+    Scene scene;
+    RichText *rich=scene.rich;
+
+    rich->setSpans({ RichSpan::plain("hello world") });
+    scene.frame();
+
+    // shorter, not laid out yet: past its end is nothing, in it its bytes
+    rich->setSpans({ RichSpan::plain("hi") });
+    rich->select(5, 9);
+    CHECK_FALSE(rich->hasSelection());
+    CHECK_NOTHROW(CHECK(rich->getSelectedText() == ""));
+    rich->select(1, 9);
+    CHECK(rich->getSelectedText() == "i");
+    platform::setClipboardText("unchanged");
+    CHECK_NOTHROW(rich->copySelection());
+    CHECK(platform::getClipboardText() == "i");
+    scene.frame();
+
+    // longer, not laid out yet: its new bytes are selectable
+    rich->setSpans({ RichSpan::plain("hello world") });
+    rich->select(6, 11);
+    CHECK(rich->getSelectedText() == "world");
+    scene.frame();
+    CHECK(rich->getSelectedText() == "world");
 }
