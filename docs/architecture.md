@@ -723,7 +723,9 @@ Otherwise it is the earliest of:
   its next edge (`Base::nextCaretBlinkTime()`, `CaretBlink::nextEdge`). An
   indeterminate or cycling ProgressBar keeps the default while it shows and returns
   never while it is hidden: the demo shell's hidden pages hold several, which kept an
-  idle window drawing every frame. The stats overlay's refresh and the Inspector's
+  idle window drawing every frame. LogViewDemo's stream does the same, and leaves out
+  of its stream the time slept on its first run once shown (`window_idle_demo` runs the
+  idle check on the whole shell). The stats overlay's refresh and the Inspector's
   (`tools::RefreshAnimation`) keep the default while they are open;
 - the tooltip's deadline;
 - the next key repeat (`input::nextKeyRepeatTime(canvas)`, from the process-global key

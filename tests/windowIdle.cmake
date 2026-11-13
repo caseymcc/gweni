@@ -3,7 +3,9 @@
 #  Copyright (c) 2010 Facepunch Studios
 #  MIT License, see LICENSE
 #
-#  window_idle and window_idle_vulkan: the example window's idle loop
+#  window_idle, window_idle_vulkan and window_idle_demo (CONTROL Demo, the
+#  whole shell, whose hidden pages must not keep it drawing either): the
+#  example window's idle loop
 #  (input::GlfwLoop over platform::IdleLoop) in a real window. Under an X server
 #  of its own (xvfb-run -a, a free display, killed when the run ends),
 #  ControlTest --idle-test opens CONTROL's window on RENDERER (gl, or vulkan

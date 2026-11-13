@@ -5,6 +5,7 @@
 #include "gweni/platforms/platform.h"
 
 #include <cmath>
+#include <limits>
 #include <string>
 
 namespace gweni
@@ -54,12 +55,21 @@ String sentence(unsigned long long seed, size_t words)
 }
 
 // The animation streaming the demo's rows, until it has streamed them all.
+// It waits while the demo is hidden, so a hidden page keeps no idle loop
+// drawing; its show marks the canvas, and that frame's run picks it up.
 class StreamAnimation: public anim::Animation
 {
 public:
     void think() override
     {
         static_cast<LogViewDemo *>(m_control)->stream();
+    }
+
+    double nextThinkTime() const override
+    {
+        if(!m_control->visible())
+            return std::numeric_limits<double>::infinity();
+        return anim::Animation::nextThinkTime();
     }
 };
 
@@ -190,7 +200,7 @@ controls::LogRow LogViewDemo::excerptLine(int agent, long long n)
 // The excerpts stream a row every half second plus a third per agent.
 void LogViewDemo::stream()
 {
-    const float now=platform::getTimeInSeconds();
+    const double now=platform::getTimeInSeconds();
 
     if(!m_started)
     {
@@ -202,11 +212,18 @@ void LogViewDemo::stream()
     {
         m_start+=now-m_last;
         m_last=now;
+        m_wasHidden=true;
         return;
+    }
+    // shown again: an idle loop may have slept since the last hidden run
+    if(m_wasHidden)
+    {
+        m_start+=now-m_last;
+        m_wasHidden=false;
     }
     m_last=now;
 
-    const float elapsed=std::max(0.0f, now-m_start);
+    const float elapsed=static_cast<float>(std::max(0.0, now-m_start));
     const int due=std::min(StreamRows, static_cast<int>(std::floor(elapsed*StreamRate)));
 
     while(m_streamed < due)

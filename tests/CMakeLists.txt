@@ -940,6 +940,18 @@ if(TARGET ControlTest AND NOT EMSCRIPTEN)
         set_tests_properties(window_idle_vulkan PROPERTIES TIMEOUT 300)
         gweni_vulkan_test_environment(window_idle_vulkan)
     endif()
+    # the whole demo shell, every page built and all but one hidden: a page
+    # whose animation runs while hidden keeps the loop drawing and fails it
+    add_test(NAME window_idle_demo
+        COMMAND ${CMAKE_COMMAND}
+            -DCONTROLTEST=$<TARGET_FILE:ControlTest>
+            -DRENDERER=gl
+            -DCONTROL=Demo
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/windowIdle.cmake
+        WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
+    set_tests_properties(window_idle_demo PROPERTIES
+        LABELS gpu
+        TIMEOUT 180)
 endif()
 
 # renderer::Vulkan in a window (windowVulkan.cmake, whose header says what it

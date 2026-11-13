@@ -575,7 +575,9 @@ paths, not drawing) and `bench_smoke` is registered twice: on GL, and as
   itself. Once settled the window idles 2 s, which must draw no frame, swap or
   present nothing and take under 0.1 s of CPU; then a post from another thread
   must wake it and draw exactly one frame (`tests/windowIdle.cmake`). It fails,
-  not skips, without Xvfb.
+  not skips, without Xvfb. `window_idle_demo` (label `gpu`) is the same check
+  on the whole demo shell (`--control Demo`), where every hidden page must
+  leave the loop idle too.
 - `controltest_verify_idle_<scenario>`: the interaction, tooltip, context-menu,
   depth-view and stats-overlay scenarios with `--verify-idle`. Every frame an
   idle loop would have skipped is drawn anyway and must write no slot, upload

@@ -54,10 +54,13 @@ public:
 
 private:
     //! The clock's time when streaming began, less the time the demo spent
-    //! hidden; the events streamed so far; the lowest event shown.
-    float m_start=0.0f;
-    float m_last=0.0f;
+    //! hidden; the clock's time stream() last ran; whether it last ran hidden
+    //! (its animation waits while the demo is hidden, so the time since then
+    //! is hidden time too); the events streamed so far; the lowest event shown.
+    double m_start=0.0;
+    double m_last=0.0;
     bool m_started=false;
+    bool m_wasHidden=false;
     int m_streamed=0;
     long long m_oldest=0;
 };
