@@ -1,5 +1,19 @@
 {
     "name": "DefaulSkin",
+    "fonts":
+    {
+        "OpenSans":
+        {
+            "regular": "OpenSans",
+            "bold": "OpenSans-Bold",
+            "italic": "OpenSans-Italic",
+            "boldItalic": "OpenSans-BoldItalic"
+        },
+        "mono":
+        {
+            "regular": "DejaVuSansMono"
+        }
+    },
     "monoFont": "DejaVuSansMono",
     "fontFallback":
     {

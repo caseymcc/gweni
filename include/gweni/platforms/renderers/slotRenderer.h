@@ -528,6 +528,21 @@ public:
     //! The chain a face's fonts take: its own, else the default, less the face
     //! itself and repeats
     std::vector<gweni::String> glyphFallback(const gweni::String &face) const;
+    //! A font family (IResourceLoader::setFontFamily): a Font of the family's
+    //! name is drawn from the face file of its (bold, italic), a style with no
+    //! face, or whose file is missing, from the family's regular face, with one
+    //! log line per such face (setFallbackFont's built-in font only when the
+    //! regular file is missing too). The fonts of the family, and those whose glyph
+    //! chain names it, are loaded again with their owners. A face's glyph chain
+    //! is the family's, whichever style draws it; a chain link that names a
+    //! family is its regular face.
+    void setFontFamily(const gweni::String &family, const gweni::FontFamily &faces) override;
+    //! The family of that name, nullptr if none was set
+    const gweni::FontFamily *fontFamily(const gweni::String &family) const;
+    //! The face file a font is drawn from, as setFontFamily picks it, without
+    //! the resource path: a face name, ".ttf" left off as a Font's facename is
+    //! written. Reports a style the family has no face for once.
+    gweni::String fontFaceName(const gweni::Font &font);
     //! For tests: the chain faces' files read (once each while a font uses it) and
     //! the chain fonts made, since construction
     size_t glyphFallbackFilesRead() const { return m_glyphFallbackFilesRead; }
@@ -843,6 +858,8 @@ protected:
     //! owners it had, so what was loaded stays loaded and takes as many freeFont
     //! calls to go as before, and raises textLayoutSerial()
     void reloadFonts(const std::function<bool(const FontData &)> &which);
+    //! A face name's regular face: its family's, else the name itself
+    gweni::String regularFaceName(const gweni::String &face) const;
     //! Gives a just-made font its face's glyph chain, if the face has one
     void attachGlyphChain(FontData &fontData);
     //! texture_font_t::fallback: the index-th chain font that opens, opening the
@@ -1300,6 +1317,10 @@ private:
     //! A missing or unreadable face is drawn in the built-in font (setFallbackFont)
     bool m_fallbackFont=true;
 
+    //! setFontFamily's families by name
+    std::unordered_map<gweni::String, gweni::FontFamily> m_fontFamilies;
+    //! The faces fontFaceName drew regular instead, each logged once
+    std::unordered_set<gweni::String> m_reportedFaces;
     //! setGlyphFallback's chains by face, "" the default
     std::map<gweni::String, std::vector<gweni::String>> m_glyphFallback;
     //! The chain faces' files by path, alive while a GlyphChain::Link holds one

@@ -19,6 +19,7 @@
 #include <iostream>
 #include <sstream>
 #include <iterator>
+#include <map>
 #include <set>
 #include <vector>
 
@@ -403,12 +404,62 @@ bool TexturedSkin::loadFonts(const json::Value &jsonDoc)
 {
     ResourcePaths &paths=getRenderer()->getResourcePaths();
     std::set<std::string> reported;
+    std::map<std::string, FontFamily> families;
     bool found=true;
 
-    // each face's file once: one line for a missing one, however many roles name it
+    // "fonts": family name -> its faces, each style a face name; the renderer
+    // finds each style's file when a font of it is first loaded and draws a
+    // style without one in the regular face
+    if(jsonDoc.HasMember("fonts"))
+    {
+        const json::Value &table=jsonDoc["fonts"];
+
+        if(!table.IsObject())
+            std::cerr<<"skin \"fonts\" must be an object\n";
+        else
+        {
+            for(const auto &member:table.GetObject())
+            {
+                const std::string name=member.name.GetString();
+                FontFamily family;
+                bool valid=member.value.IsObject();
+
+                if(name.empty() || name[0] == '_')
+                    continue;
+                if(valid)
+                {
+                    for(const auto &style:member.value.GetObject())
+                    {
+                        const std::string key=style.name.GetString();
+                        String *face=(key == "regular")?&family.regular:(key == "bold")?&family.bold:
+                            (key == "italic")?&family.italic:(key == "boldItalic")?&family.boldItalic:nullptr;
+
+                        if((face == nullptr) || !style.value.IsString())
+                            valid=false;
+                        else
+                            *face=style.value.GetString();
+                    }
+                }
+                if(!valid)
+                {
+                    std::cerr<<"skin \"fonts\" \""<<name<<"\" must be an object of \"regular\", \"bold\", "
+                        "\"italic\" and \"boldItalic\" face names\n";
+                    continue;
+                }
+                families[name]=family;
+                getRenderer()->getLoader().setFontFamily(name, family);
+            }
+        }
+    }
+
+    // each face's file once: one line for a missing one, however many roles name
+    // it; a family's name is its regular face's
     auto exists=[&](const std::string &face, const char *role)
     {
-        const std::string path=paths.getPath(ResourcePaths::Type::Font, face);
+        auto family=families.find(face);
+        const std::string file=((family != families.end()) && !family->second.regular.empty())?
+            family->second.regular:face;
+        const std::string path=paths.getPath(ResourcePaths::Type::Font, file);
 
         if(fs::exists(path))
             return true;

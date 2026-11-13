@@ -337,6 +337,7 @@ struct Font
         : facename("?")
         , size(10)
         , bold(false)
+        , italic(false)
     {}
 
     Font(const Font &)=default;
@@ -344,17 +345,45 @@ struct Font
 
     inline bool operator==(const Font &rhs) const
     {
-        return facename == rhs.facename && size == rhs.size && bold == rhs.bold;
+        return facename == rhs.facename && size == rhs.size && bold == rhs.bold && italic == rhs.italic;
     }
 
     inline bool operator!=(const Font &rhs) const
     {
-        return  bold != rhs.bold || size != rhs.size || facename != rhs.facename;
+        return  bold != rhs.bold || italic != rhs.italic || size != rhs.size || facename != rhs.facename;
     }
 
+    //! A family's name (IResourceLoader::setFontFamily) or a face file's, which
+    //! bold and italic pick the face of: a family's bold, italic or bold italic
+    //! face, its regular one if it has none (never an emboldened or slanted one)
     String facename;
     float size;
     bool bold;
+    bool italic;
+};
+
+//! A font family's faces (IResourceLoader::setFontFamily), each named as a
+//! Font's facename names a face file: one per style, an empty one meaning the
+//! family has no such face, so that style draws the regular face.
+struct FontFamily
+{
+    String regular;
+    String bold;
+    String italic;
+    String boldItalic;
+
+    const String &face(bool isBold, bool isItalic) const
+    {
+        if(isBold)
+            return isItalic?boldItalic:bold;
+        return isItalic?italic:regular;
+    }
+
+    bool operator==(const FontFamily &rhs) const
+    {
+        return regular == rhs.regular && bold == rhs.bold && italic == rhs.italic && boldItalic == rhs.boldItalic;
+    }
+    bool operator!=(const FontFamily &rhs) const { return !(*this == rhs); }
 };
 
 struct Texture
@@ -450,6 +479,14 @@ public:
     //! from faces of its own ignores it (renderer::SlotRenderer's is the one).
     virtual void setGlyphFallback(const gweni::String &face, const std::vector<gweni::String> &chain) {}
 
+    //! A font family: a Font whose facename is the family's draws its bold,
+    //! italic and bold italic text from the family's faces, a style the family
+    //! has no face for (or whose file is missing) in its regular face, reported
+    //! once. A face name that is no family's is a face file's, its regular face
+    //! with no other. A loader that draws no text from faces of its own ignores
+    //! it (renderer::SlotRenderer's is the one).
+    virtual void setFontFamily(const gweni::String &family, const gweni::FontFamily &faces) {}
+
     virtual gweni::Texture::Status loadTexture(gweni::Texture &texture)=0;
     virtual void freeTexture(const gweni::Texture &texture)=0;
     virtual gweni::TextureData getTextureData(const gweni::Texture &texture) const=0;
@@ -481,6 +518,7 @@ template<> struct hash<gweni::Font>
 
         gweni::hash_combine<decltype(f.size)>(res, f.size);
         gweni::hash_combine<decltype(f.bold)>(res, f.bold);
+        gweni::hash_combine<decltype(f.italic)>(res, f.italic);
 
         return res;
     }

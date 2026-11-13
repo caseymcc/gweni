@@ -40,6 +40,12 @@ renderer::SlotRenderer *newRendererWithoutDualSource(ResourcePaths &paths, const
 //! glCapabilities(), Vulkan's dualSrcBlend feature)
 bool deviceHasDualSource();
 
+//! Gives a renderer the OpenSans family of resources/DefaultSkin.json's "fonts"
+//! (OpenSans-Bold, -Italic and -BoldItalic), under the names "OpenSans" and
+//! "OpenSans.ttf" (openSans()'s). gpuRenderer() has it; a newRenderer() has no
+//! family until a case gives it one.
+void setOpenSansFamily(renderer::SlotRenderer &renderer);
+
 //! OpenSans (resources/OpenSans.ttf), already loaded through loadFont.
 const Font &openSans();
 
