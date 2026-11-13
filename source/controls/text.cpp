@@ -75,6 +75,7 @@ void Text::refreshSkinTextColor()
     case SkinTextColor::LabelHighlight: return applyTextColor(skin->Colors.Label.Highlight);
     case SkinTextColor::Placeholder:    return applyTextColor(skin->Colors.PlaceholderText);
     case SkinTextColor::CodePlain:      return applyTextColor(skin->Colors.CodeEditor.Tokens[static_cast<size_t>(text::TokenKind::Plain)]);
+    case SkinTextColor::SearchComboRefused: return applyTextColor(skin->Colors.SearchComboRefusedText);
     }
 }
 

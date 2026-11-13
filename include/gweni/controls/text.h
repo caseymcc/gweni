@@ -32,7 +32,8 @@ enum class SkinTextColor
     LabelDark,      //!< Colors.Label.Dark
     LabelHighlight, //!< Colors.Label.Highlight
     Placeholder,    //!< Colors.PlaceholderText, a TextBox's hint
-    CodePlain       //!< Colors.CodeEditor's Plain token colour, a CodeEditor line's
+    CodePlain,      //!< Colors.CodeEditor's Plain token colour, a CodeEditor line's
+    SearchComboRefused  //!< Colors.SearchComboRefusedText, a refused free-text value
 };
 
 class GWENI_EXPORT Text: public controls::Base

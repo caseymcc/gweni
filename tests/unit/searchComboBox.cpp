@@ -3,7 +3,7 @@
  *  Copyright (c) 2010 Facepunch Studios
  *  MIT License, see LICENSE
  *
- *  controls::SearchComboBox, plain and filterable, on a real Canvas with the stub
+ *  controls::SearchComboBox, plain, filterable and free text, on a real Canvas with the stub
  *  skin, clicked through input::onMouseClicked and keyed through
  *  input::onKeyEvent.
  *
@@ -46,6 +46,21 @@
  *  out in one pass, and a shown row keeping its option and highlight takes
  *  no Text or Background change; at 30 and 3 000 options it keeps the same
  *  pool and makes and frees no control or id.
+ *
+ *  Free text: a text that is no option's label shows the Add “<text>” row
+ *  after the matches (Up wraps onto it), alone and highlighted when nothing
+ *  matches, enabled, and none for an option's label in another case. Return
+ *  on it and a click on it fire onCustomValue once with the text, which
+ *  becomes the value (getValue() the text, getSelectedIndex() NoOption, no
+ *  onSelection), until an option is picked. A refused text stays in the field
+ *  in Colors.SearchComboRefusedText with the value and the list as they were;
+ *  an edit gives the field its colour back, a refusal on Tab leaves the text
+ *  refused with the list closed, and Escape gives the value back. A press
+ *  elsewhere takes a typed text, Tab with an option's label (case aside)
+ *  picks that option, an emptied field gets the value back, and Return takes
+ *  the text with the list closed by the box's chevron, the focus staying.
+ *  An option the handler adds, one added later and setOptions() leave a
+ *  free-text value the value.
  */
 #include "headlessFixture.h"
 
@@ -959,4 +974,270 @@ TEST_CASE("SearchComboBox: a keystroke's pool, controls and live ids are the sam
     CHECK(large.texts == 0);
     CHECK(small.passes == 1);
     CHECK(large.passes == 1);
+}
+
+namespace
+{
+
+//! An onCustomValue handler: records each text, refusing while `refuse` is
+//! on, and adds an option for the text it takes while `add` is on.
+class CustomValues: public event::Handler
+{
+public:
+    void custom(event::Info info)
+    {
+        texts.push_back(info.string);
+
+        if(refuse)
+            box->refuseCustomValue();
+        else if(add)
+            box->addOption(info.string);
+    }
+
+    void listen(SearchComboBox *of)
+    {
+        box=of;
+        box->onCustomValue.add(this, &CustomValues::custom);
+    }
+
+    SearchComboBox *box=nullptr;
+    std::vector<String> texts;
+    bool refuse=false;
+    bool add=false;
+};
+
+SearchComboBox *freeText(Scene &scene, const std::vector<String> &labels)
+{
+    SearchComboBox *box=filterable(scene, labels);
+
+    box->setAllowCustomValue(true);
+    scene.frame();
+    box->getField()->focus();
+    box->getField()->onSelectAll(box->getField());
+    return box;
+}
+
+String rowText(SearchComboBox *box, size_t position)
+{
+    controls::Base *row=box->getOptionsList()->rowForItem(position);
+
+    return row?gweni_cast<controls::internal::SearchComboBoxRow>(row)->getText():String("<none>");
+}
+
+}//namespace
+
+TEST_CASE("SearchComboBox: free text, a text that is no option's label shows the Add row after the matches")
+{
+    Scene scene;
+    SearchComboBox *box=freeText(scene, {"web-1", "web-2", "db"});
+
+    CHECK(box->isFilterable());
+    type(scene, "web");
+    REQUIRE(box->isListOpen());
+    CHECK(shown(box) == (std::vector<size_t>{0, 1}));
+    CHECK(box->isAddRowShown());
+    CHECK(box->shownRowCount() == 3);
+    CHECK(rowText(box, 2) == "Add \xe2\x80\x9cweb\xe2\x80\x9d");
+    CHECK(SearchComboBox::addRowText("web") == "Add \xe2\x80\x9cweb\xe2\x80\x9d");
+    CHECK(listRows(box) == 3);
+    // the first match takes the highlight; Up wraps to the Add row
+    CHECK(box->getHighlightedIndex() == 0);
+    scene.key(keys::Up);
+    CHECK(box->isAddRowHighlighted());
+    CHECK(box->getHighlightedIndex() == SearchComboBox::NoOption);
+
+    // nothing matches: the Add row alone, highlighted, never "No matches"
+    type(scene, "-9");
+    CHECK(shown(box).empty());
+    CHECK(box->shownRowCount() == 1);
+    CHECK(box->isAddRowHighlighted());
+    CHECK(rowText(box, 0) == "Add \xe2\x80\x9cweb-9\xe2\x80\x9d");
+    auto *addRow=gweni_cast<controls::internal::SearchComboBoxRow>(box->getOptionsList()->rowForItem(0));
+
+    REQUIRE(addRow);
+    CHECK(!addRow->isDisabled());
+
+    // an option's label, case aside: no Add row
+    for(int i=0; i < 5; ++i)
+        scene.key(keys::Backspace);
+    type(scene, "DB");
+    CHECK(shown(box) == std::vector<size_t>{2});
+    CHECK(!box->isAddRowShown());
+    CHECK(box->shownRowCount() == 1);
+}
+
+TEST_CASE("SearchComboBox: free text, Return on the Add row takes the text as the value")
+{
+    Scene scene;
+    SearchComboBox *box=freeText(scene, {"web-1", "web-2"});
+    CustomValues customs;
+    Counter selections;
+
+    customs.listen(box);
+    selections.listen(box->onSelection);
+    type(scene, "web-9");
+    REQUIRE(box->isAddRowHighlighted());
+
+    scene.key(keys::Return);
+    CHECK(customs.texts == std::vector<String>{"web-9"});
+    CHECK(!box->isListOpen());
+    CHECK(box->hasCustomValue());
+    CHECK(box->getValue() == "web-9");
+    CHECK(box->getSelectedIndex() == SearchComboBox::NoOption);
+    CHECK(box->getField()->getText() == "web-9");
+    CHECK(!box->isCustomValueRefused());
+    CHECK(KeyboardFocus == box->getField());
+    CHECK(selections.calls == 0);
+
+    // a click on the Add row takes it too
+    box->getField()->onSelectAll(box->getField());
+    type(scene, "web-7");
+    REQUIRE(box->isListOpen());
+    REQUIRE(box->getOptionsList()->rowForItem(0));
+    scene.clickOn(box->getOptionsList()->rowForItem(0));
+    CHECK(customs.texts == (std::vector<String>{"web-9", "web-7"}));
+    CHECK(box->getValue() == "web-7");
+    CHECK(!box->isListOpen());
+
+    // picking an option drops the free-text value
+    box->getField()->onSelectAll(box->getField());
+    type(scene, "web-2");
+    scene.key(keys::Return);
+    CHECK(!box->hasCustomValue());
+    CHECK(box->getSelectedIndex() == 1);
+    CHECK(box->getValue() == "web-2");
+    CHECK(selections.calls == 1);
+    CHECK(customs.texts.size() == 2);
+}
+
+TEST_CASE("SearchComboBox: free text, a refused text stays in the field in the refused colour")
+{
+    Scene scene;
+    SearchComboBox *box=freeText(scene, {"web-1", "web-2"});
+    controls::TextBox *other=scene.canvas->newChild<controls::TextBox>();
+    CustomValues customs;
+
+    other->setBounds(20, 300, 100, 20);
+    customs.listen(box);
+    customs.refuse=true;
+    type(scene, "bad host");
+    scene.key(keys::Return);
+    CHECK(customs.texts == std::vector<String>{"bad host"});
+    // the value stays, the text and the list too
+    CHECK(box->getSelectedIndex() == 0);
+    CHECK(!box->hasCustomValue());
+    CHECK(box->getValue() == "web-1");
+    CHECK(box->getField()->getText() == "bad host");
+    CHECK(box->isListOpen());
+    CHECK(box->isCustomValueRefused());
+    CHECK((box->getField()->getTextColor() == scene.skin.Colors.SearchComboRefusedText));
+
+    // an edit is no longer the refused text
+    scene.key(keys::Backspace);
+    CHECK(!box->isCustomValueRefused());
+    CHECK((box->getField()->getTextColor() == scene.skin.Colors.Label.Default));
+
+    // refused on a lost focus: the list closes, the text stays refused
+    type(scene, "t");
+    scene.key(keys::Tab);
+    CHECK(KeyboardFocus == other);
+    CHECK(customs.texts == (std::vector<String>{"bad host", "bad host"}));
+    CHECK(!box->isListOpen());
+    CHECK(box->getField()->getText() == "bad host");
+    CHECK(box->isCustomValueRefused());
+    CHECK(box->getValue() == "web-1");
+
+    // Escape gives the value back
+    box->getField()->focus();
+    scene.key(keys::Escape);
+    CHECK(box->getField()->getText() == "web-1");
+    CHECK(!box->isCustomValueRefused());
+    CHECK(customs.texts.size() == 2);
+}
+
+TEST_CASE("SearchComboBox: free text, a lost focus or Return with the list closed resolves what was typed")
+{
+    Scene scene;
+    SearchComboBox *box=freeText(scene, {"web-1", "web-2"});
+    controls::TextBox *other=scene.canvas->newChild<controls::TextBox>();
+    CustomValues customs;
+    Counter selections;
+
+    other->setBounds(20, 300, 100, 20);
+    customs.listen(box);
+    selections.listen(box->onSelection);
+
+    // a text that is no option, the focus moved by a press elsewhere
+    type(scene, "newhost");
+    scene.clickOn(other);
+    CHECK(customs.texts == std::vector<String>{"newhost"});
+    CHECK(box->getValue() == "newhost");
+    CHECK(box->getField()->getText() == "newhost");
+
+    // an option's label, case aside, picks that option
+    box->getField()->focus();
+    box->getField()->onSelectAll(box->getField());
+    type(scene, "WEB-2");
+    scene.key(keys::Tab);
+    CHECK(box->getSelectedIndex() == 1);
+    CHECK(!box->hasCustomValue());
+    CHECK(box->getField()->getText() == "web-2");
+    CHECK(selections.calls == 1);
+    CHECK(customs.texts.size() == 1);
+
+    // emptied: the value comes back
+    box->getField()->focus();
+    box->getField()->onSelectAll(box->getField());
+    scene.key(keys::Backspace);
+    scene.key(keys::Tab);
+    CHECK(box->getField()->getText() == "web-2");
+    CHECK(box->getSelectedIndex() == 1);
+
+    // the list closed by the box's chevron keeps the text, and Return takes it
+    box->getField()->focus();
+    box->getField()->onSelectAll(box->getField());
+    type(scene, "other");
+    REQUIRE(box->isListOpen());
+
+    const Rect rect=Scene::canvasRect(box);
+
+    scene.click(rect.x+rect.w-6, rect.y+rect.h/2);
+    REQUIRE(!box->isListOpen());
+    CHECK(box->getField()->getText() == "other");
+    scene.key(keys::Return);
+    CHECK(customs.texts == (std::vector<String>{"newhost", "other"}));
+    CHECK(box->getValue() == "other");
+    // the Return's release did not move the focus on
+    CHECK(KeyboardFocus == box->getField());
+}
+
+TEST_CASE("SearchComboBox: free text, an option the handler adds leaves the value the text")
+{
+    Scene scene;
+    SearchComboBox *box=freeText(scene, {"web-1"});
+    CustomValues customs;
+
+    customs.listen(box);
+    customs.add=true;
+    // nothing selected: an option added then would be the default
+    box->setSelectedIndex(SearchComboBox::NoOption);
+    box->getField()->onSelectAll(box->getField());
+    type(scene, "web-3");
+    scene.key(keys::Return);
+    REQUIRE(box->getOptionCount() == 2);
+    CHECK(box->getOption(1).label == "web-3");
+    CHECK(box->hasCustomValue());
+    CHECK(box->getSelectedIndex() == SearchComboBox::NoOption);
+    CHECK(box->getValue() == "web-3");
+
+    // nor does one the app adds later take its place
+    box->addOption("later");
+    CHECK(box->getValue() == "web-3");
+    CHECK(box->getSelectedIndex() == SearchComboBox::NoOption);
+
+    // and setOptions keeps it
+    box->setOptions({{"a", ""}, {"b", ""}});
+    CHECK(box->getValue() == "web-3");
+    CHECK(box->getSelectedIndex() == SearchComboBox::NoOption);
+    CHECK(box->getField()->getText() == "web-3");
 }

@@ -405,6 +405,9 @@ public:
         gweni::Color AxisTagText{0, 0, 0};
         //! A Badge's count, drawn on its bubble.
         gweni::Color BadgeText{255, 255, 255};
+        //! A free-text SearchComboBox's field showing a text its
+        //! onCustomValue handler refused.
+        gweni::Color SearchComboRefusedText{0xc0, 0x00, 0x00};
 
         //! A CodeEditor's line numbers, the number of the caret's line, and
         //! the colour of each token kind it highlights, Tokens[k] the colour

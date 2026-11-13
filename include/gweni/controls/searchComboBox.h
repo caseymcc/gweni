@@ -194,7 +194,21 @@ private:
 //! options' data, makes and deletes no control and binds again only the
 //! rows whose option changed. The list closing without a pick (Escape, a
 //! press outside it, the box toggling it) and the field losing the keyboard
-//! focus give the field back the selection's label. While the list is open Up and Down move the highlight
+//! focus give the field back the selection's label.
+//!
+//! Free text (setAllowCustomValue(true), which makes it filterable): a typed
+//! text that is no option's label (case aside) shows an Add “<text>” row
+//! after the matches (alone when nothing matches, in place of "No matches"),
+//! highlighted when no option matches. Return on it, Return with the list
+//! closed, or the field losing the focus, with such a text, fires
+//! onCustomValue (the info's string the text). A handler may refuse it with
+//! refuseCustomValue(): the field then keeps the text in the skin's
+//! SearchComboRefusedText colour, until it is edited, Escape gives the value
+//! back, or something is picked. Accepted, it is the value: getValue() is
+//! the text, getSelectedIndex() NoOption, the field shows it, and the box
+//! adds no option (the app may; a text that is an option's label picks that
+//! option instead). The list closing leaves a free-text box's field as it
+//! is, for Return or the lost focus to decide. While the list is open Up and Down move the highlight
 //! through the shown options, wrapping, scrolling it into view, Return picks
 //! it and Escape closes the list; while it is closed they change the
 //! selection, as a ComboBox's do. A pick fires onSelection when it changes
@@ -230,10 +244,12 @@ public:
     //! No option selected or highlighted.
     static constexpr int NoOption=-1;
 
-    //! Appends an option. The first one added to a box with no selection is
-    //! selected, with no event (as ComboBox::addItem).
+    //! Appends an option. The first one added to a box with no selection
+    //! (and no free-text value) is selected, with no event (as
+    //! ComboBox::addItem).
     void addOption(const String &label, const String &name="");
-    //! Replaces the options; the selection is the first option, or none.
+    //! Replaces the options; the selection is the first option, or none; a
+    //! free-text value stays the value.
     void setOptions(std::vector<Option> options);
     //! No options, nothing selected.
     void clearOptions();
@@ -241,19 +257,36 @@ public:
     size_t getOptionCount() const { return m_options.size(); }
     const Option &getOption(size_t index) const { return m_options[index]; }
 
-    //! The selected option, or NoOption.
+    //! The selected option, or NoOption (nothing, or a free-text value).
     int getSelectedIndex() const { return m_selected; }
     //! Selects option \p index (NoOption, or one out of range, for none),
-    //! firing nothing.
+    //! firing nothing; a free-text value is dropped.
     void setSelectedIndex(int index);
-    //! The selected option's name, or its label when it has none; empty with
-    //! nothing selected.
+    //! The selected option's name, or its label when it has none; a
+    //! free-text value's text; empty with nothing selected.
     String getValue() override;
 
     //! Fired once per pick or Up/Down step that changes the selection.
     gweni::event::Caller onSelection;
     //! Fired once per edit of the field (the info's string is its text).
     gweni::event::Caller onTextChangedCaller;
+    //! Fired when a typed text that is no option's label is to become the
+    //! value (the info's string); refuseCustomValue() from the handler keeps
+    //! the value as it was.
+    gweni::event::Caller onCustomValue;
+
+    //! Free text (above); on, it makes the box filterable, which stays on
+    //! while free text is allowed.
+    void setAllowCustomValue(bool allow);
+    bool isCustomValueAllowed() const { return m_allowCustom; }
+    //! From an onCustomValue handler: the text is not taken.
+    void refuseCustomValue() { m_refusing=true; }
+    //! Whether the value is a free-text one (getValue() its text).
+    bool hasCustomValue() const { return m_hasCustom; }
+    //! Whether the field shows a text a handler refused.
+    bool isCustomValueRefused() const { return m_refused; }
+    //! The Add row's text for \p text: Add “text”.
+    static String addRowText(const String &text);
 
     //! A text field over the box filters the list (above). Off again, the
     //! field is hidden and the box shows the selection itself.
@@ -275,9 +308,15 @@ public:
     internal::SearchComboBoxOptions *getOptionsList() const { return m_rows; }
 
     //! The options the open list shows, in order (indices into the options):
-    //! those the query matches, every option for an empty one. Empty with no
-    //! match: the list then shows the "No matches" row alone.
+    //! those the query matches, every option for an empty one. The list may
+    //! show one row after them that is no option: the Add row
+    //! (isAddRowShown()), or with no match and no free text "No matches".
     const std::vector<size_t> &getShownOptions() const { return m_matches; }
+    bool isAddRowShown() const { return m_addRow; }
+    //! Whether the Add row is the highlighted one.
+    bool isAddRowHighlighted() const { return m_addRow && (m_highlightPos == m_matches.size()); }
+    //! The open list's rows: the shown options and the row after them.
+    size_t shownRowCount() const;
     //! The option the keys move through the open list, or NoOption.
     int getHighlightedIndex() const { return m_highlight; }
     //! Highlights option \p index (shown in the list), scrolling it into
@@ -348,13 +387,31 @@ protected:
     //! The shown options (m_matches) for the query, and whether the "No
     //! matches" row shows in their place.
     void matchOptions();
-    //! The list told the shown options' count, and the pooled rows that
-    //! showed another option (or the "No matches" row) before, \p previous
-    //! with \p previousNoMatch, bound again; every other row only its
-    //! highlight.
-    void rebindChanged(const std::vector<size_t> &previous, bool previousNoMatch);
-    //! The rows the list holds: the shown options, or the one "No matches".
-    size_t shownRowCount() const;
+    //! The list told the shown rows' count, and the pooled rows that showed
+    //! another row before (\p previous, each position's rowKey()) bound
+    //! again, and the Add row; every other row only its highlight.
+    void rebindChanged(const std::vector<size_t> &previous);
+    //! The rows the keys and the mouse highlight: the shown options and the
+    //! Add row.
+    size_t highlightableCount() const;
+    //! What the row at \p position shows: an option's index, or a key for
+    //! the Add row or the "No matches" row.
+    size_t rowKey(size_t position) const;
+    void rowKeys(std::vector<size_t> &keys) const;
+    //! Where the highlight starts for a query: the first row that takes it.
+    size_t firstHighlight() const;
+    //! Picks what the row at \p position shows.
+    void pickPosition(size_t position);
+    //! The value's text: the free-text value, or the selection's label.
+    String shownValueText() const;
+    //! The field's refused colour on or off.
+    void setRefused(bool refused);
+    //! The option whose label is \p text, case aside, or NoOption.
+    int optionWithLabel(const String &text) const;
+    //! A free-text box takes the field's text as the value (see the class).
+    void resolveText();
+    //! onCustomValue for \p text; whether it was taken.
+    bool commitCustom(const String &text);
     //! Highlights the shown option at \p position (VirtualList::NoItem for
     //! none), scrolling it into view with \p scroll.
     void highlightPosition(size_t position, bool scroll);
@@ -380,6 +437,15 @@ protected:
     std::vector<size_t> m_matches;
     //! The query matched nothing: the list shows the "No matches" row.
     bool m_noMatch=false;
+    //! The list shows the Add row after the matches.
+    bool m_addRow=false;
+    bool m_allowCustom=false;
+    //! The value is the free-text m_custom (m_selected NoOption).
+    bool m_hasCustom=false;
+    String m_custom;
+    bool m_refused=false;
+    //! Set by refuseCustomValue() during onCustomValue.
+    bool m_refusing=false;
     int m_selected=NoOption;
     //! The highlighted option and its place in m_matches (NoItem for none).
     int m_highlight=NoOption;
