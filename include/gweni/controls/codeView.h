@@ -29,6 +29,9 @@ class GWENI_EXPORT CodeViewCopyButton: public Button
 {
 public:
     GWENI_CONTROL(CodeViewCopyButton, Button);
+
+    //! Button's, then the keyboard focus the press gave it to the view.
+    void onMouseClickLeft(int x, int y, bool down) override;
 };
 
 }//namespace internal
@@ -63,13 +66,15 @@ public:
 //!
 //! setCopyButton(true) gives it a copy button (internal::CodeViewCopyButton),
 //! the view's own child placed CopyInset in from the viewport's top-right
-//! corner (centred on the view's height where the viewport is too short for
-//! it, as a one-line command's is), over the content: it does not scroll, and it is numbered after the
-//! rows, so it draws in front of them. It is shown while the mouse is over the
-//! view or anything in it (the button, a bar) or while it has the keyboard
-//! focus, and hidden otherwise, so showing or hiding it writes its own slots
-//! alone (the view's look does not follow the hover). A click (or Space with
-//! the focus) is copy(): the selection, or the whole text when there is none,
+//! corner (centred on the view's height above its horizontal bar where the
+//! viewport is too short for it, as a one-line command's is), over the
+//! content: it does not scroll, and it is numbered after the rows, so it draws
+//! in front of them. It is shown while the mouse is over the view or anything
+//! in it (the button, a bar) or while it has the keyboard focus, which only
+//! Tab gives it (a press on it focuses the view), and hidden otherwise, so
+//! showing or hiding it writes its own slots alone (the view's look does not
+//! follow the hover). A click (or Space with the focus) is copy(): the
+//! selection, or the whole text when there is none,
 //! to platform::setClipboardText() (which on the web needs the click's user
 //! activation, as it has here), and the button shows CopiedLabel instead of
 //! CopyLabel for CopiedSeconds on the canvas clock (Canvas::after()).
