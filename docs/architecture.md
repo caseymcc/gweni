@@ -284,11 +284,11 @@ nothing about it changes the step walks up from the hovered control to its canva
 marks no control.
 
 **Its z: the canvas's last child.** The box has to draw above every control, an open
-`Menu` or `Modal` included, and be clipped to the canvas alone. It is a child of the
+`Menu`, a dialog on the modal stack and a toast included, and be clipped to the canvas alone. It is a child of the
 canvas, so its clip region is the canvas's, and it is kept as the canvas's **last**
 child: `Canvas::keepOverlaysLast()` moves it back to the end of the child list just
 before each z renumber. Every change of the child order (a `Menu` added or opened with
-`bringToFront`, a `Modal`, any `addChild`) asks for a renumber anyway, so this costs
+`bringToFront`, a modal pushed, any `addChild`) asks for a renumber anyway, so this costs
 nothing on other frames, and the depth-first numbering then gives the box and its text
 the highest z values in the tree. A reserved z range above the tree was the other
 choice; it would need a ceiling that no tree reaches and a second numbering for the
@@ -484,6 +484,186 @@ deleted with it, or when another menu is set, through `delayedDelete`, since thi
 run from one of the menu's own item events; a canvas tearing down deletes it with its
 other children, and while it does (`Canvas::m_releasingChildren`) a deleted owner only
 hides its open menu, because the submenus `closeAll()` would reach may already be gone.
+
+#### The modal stack: what a dialog blocks
+
+A canvas keeps a stack of modals (`Canvas::pushModal`, `popModal`, `topModal`,
+`modalCount`, `isModal`). A modal is a child of the canvas (`pushModal` moves one made
+elsewhere there); while the stack is not empty, the top modal and what is above it are
+all the mouse and keyboard reach. What is above it is decided by kind, not by where the
+mouse went last (`Canvas::aboveModals`): the shown popup, every floating `Menu` (a
+ComboBox's list, a context menu), closed `Popup`s, the overlays (`addOverlay`: the toast
+host, the inspector's highlight, a StatsOverlay), the `ToolTip` box and every
+`setExcludedFromStats()` subtree (a tool, an Inspector's window).
+`Canvas::modalAllows(control)` is that rule for any control; the canvas itself is never
+allowed, and a control on another canvas always is.
+
+**Input.** The hit test (`Canvas::getControlAt`, an override of Base's) tests the
+canvas's children from the front and stops after the top modal, skipping the app
+children it passes on the way (a shown app child left above the modals for one frame).
+So the hover (`input::onMouseMoved`), a press, the wheel, a context menu and a tooltip
+(`toolTipOwnerFor`, `contextMenuOwnerFor`) never reach a control under a modal; the same
+check guards each of them where they are delivered, for the frame between a push and
+the next hit test (`pushModal` marks the hover stale, so the end of that update phase
+hit-tests it again). A press made before the push is not cut off: the control holding
+the mouse (`MouseFocus`) still gets its moves and its release. The keyboard focus cannot
+leave the top modal: `Base::focus()` on a control it does not allow does nothing, the
+push takes the focus from such a control, and a key with no allowed focus goes to the
+top modal itself (`input::onKeyEvent`). Tab walks inside it (`Base::nextTabable` roots at
+the top modal, or at the canvas child above it a control is in: a Popup opened from it).
+The canvas's accelerators are looked up in the top modal's subtree, not the app's.
+Escape goes to `Canvas::escapePopup()` first, as without a modal; then to the focused
+control, whose `onKeyEscape` bubbles up to the modal's if it does not take it (a
+DragNumber's edit box cancels its edit, a LogView clears its selection), so an Escape
+that nothing inside takes closes the dialog. Closing on Escape before the focused control
+saw it would make every in-place edit in a dialog close the dialog.
+
+**Order and z.** The modals are kept, in stack order, right after the last shown child of
+the app's (`Canvas::keepModalsInPlace`, `keepOverlaysLast`'s first step): above the app,
+below the popups, the floating menus, the tools, the overlays and the ToolTip box. A
+hidden child between them is skipped, so a closed ComboBox list or Popup does not make
+the modals move; an app child shown again after the push (`Canvas::onChildHiddenChanged`)
+or added to the canvas puts them after it again in the next renumber. A modal is moved
+only when it is out of place, so opening one renumbers its own subtree and nothing else.
+`WindowControl::touch()` does not bring a modal window to the front: it is above the app
+already.
+
+**Leaving.** `popModal` takes a control off the stack wherever it is in it; for the top
+one it gives the keyboard focus back to the control that held it at the push (by control
+id, so a deleted one is not followed; only if it is visible and allowed, and only if the
+focus is free: none, inside the leaving modal, or not allowed any more), and marks the
+hover stale. A modal deleted outright leaves the stack in `~Base` and gets its focus back
+in the next update phase, after its subtree is gone. One hidden or taken off the canvas
+is popped by the next update phase (`Canvas::updateModals`). A canvas deleting its
+children forgets the stack without restoring anything.
+
+`WindowControl::makeModal()`/`destroyModal()` are thin calls onto the stack (the
+`internal::Modal` control, which had no textured renderer, is gone with `modal.h`); a
+modal window's Escape closes it as its close button does, and hiding it pops it. Its
+constructor takes the focus as the window is made, so `makeModal` hands the stack the
+control that held it before (`pushModal(control, focusReturn)`). The interaction
+scenario presses WindowDemo's "Modal Window" (`window_modal_*`).
+
+**Two input rules the dialogs needed.** A single-line `TextBox` passes the Return
+*press* on to its parents (it returned true before), so a dialog's default button takes
+Enter from a field; the release is still the box's (it moves to the next control and fires
+`onEnter`). And a key's release goes only to the control its press went to
+(`KeyData::PressTarget`): Enter closing a dialog gives the focus back to an app TextBox,
+which would otherwise act on a release it never saw go down. A multiline TextBox, a
+CodeEditor, a DragNumber and a Selectable keep Return.
+
+**No backdrop.** Nothing is drawn between a modal and the app: what is under it stays as
+it is, and only its input is blocked. A translucent scrim over the app would hide the
+app's text rather than dim it: every primitive slot is drawn before every glyph, and the
+scrim's slot, in front, writes the depth that rejects the glyphs behind it (the same
+reason as for the stats overlay's panel, "The stats overlay"). A real scrim needs the
+renderer to draw glyphs behind a translucent slot, which is its own change.
+
+#### Dialogs: `dialogs::Dialog` and the standard dialogs
+
+`dialogs::Dialog` (`controls/dialogs/dialog.h`) is a canvas child hidden until `open()`
+shows it and pushes it on the modal stack: a title bar (`internal::DialogTitleBar`, a
+`Dragger`) with its title and a `WindowCloseButton`, an optional wrapped message
+(`setMessage`), a content area (`getContent()`, a `ScrollControl` that scrolls
+vertically) and an optional footer row of buttons (`internal::DialogFooter`, hidden until
+`addButton`, its buttons left to right in the order added, each taking the keyboard
+focus, which the textured skin shows with the `ButtonFocus` surface).
+
+**Placement.** It is owner-placed (`Placement::Owner`): its own arrange sizes and places
+it, one axis per arrange, as a Popup does, so a canvas resize or `setScale` centres and
+clamps it in the pass that lays the canvas out, with nothing of the app's laid out for it.
+Its width and height are each an `Extent`: its content's preferred size (the default),
+units (`Extent::units(1200)`) or a fraction of the canvas (`Extent::fraction(0.92f)`),
+never more than the canvas. It is centred until the user drags it by its title bar
+(`dragTo`, which clamps it inside the canvas and keeps the place across resizes); a drag
+frame is a pure move, one pass entering the canvas and the dialog alone.
+
+**Closing.** `close(result)` hides it, pops it (which gives the focus back), calls the
+result handler (`setResultHandler`, `std::function<void(Result, const String &)>`) once,
+then `onClose`, then `delayedDelete()`s it unless `setDeleteOnClose(false)`. The handler is
+moved out before it runs, and `close` does nothing while closing or closed, so it fires
+exactly once whatever it does; it may open another dialog or delete the control that
+opened this one, and one that deletes this dialog outright stops `close` before
+`onClose`. Escape, the close button, `close()` and `setHidden(true)` close it with its
+cancel result (`setCancelResult`). Deleting it, or its canvas, calls no handler.
+`onKeyReturn` presses the focused footer button, else the default button
+(`setDefaultButton`); `open()` focuses `setInitialFocus`'s control, else the default
+button.
+
+**The message is not in the ScrollControl.** A wrapped text inside a ScrollControl is
+measured at the width of the previous pass (the ScrollControl's Y arrange lays its content
+out after every calculateSize has run; its comment says so), which left a confirm as tall
+as a narrower wrap. `setMessage` is a wrapped Label docked Top under the title bar, the
+dialog's own child, measured at this pass's width, in one pass.
+
+**Its look** is four surfaces in `tokyonight::surfaceRegistry()`: `Dialog` (the panel, a
+window's with a stronger border), `DialogTitle` and `DialogFooter` (strips inside the
+border, their outer corners rounded) and `DialogShadow`. The shadow is **opaque**,
+`Dialog::ShadowSize` (4) units below and right of the panel and inside the dialog's
+bounds: a translucent one would hide the app's text under it (as the backdrop would), and
+inside the bounds the canvas clamps it with the panel. The panel is drawn at `z+1` over
+the shadow (`depthLayers()` 2).
+
+**The standard dialogs** (`controls/dialogs/query.h`): `message(canvas, title, text,
+onResult)` (OK; its cancel result Ok), `confirm(canvas, title, text, Buttons::YesNo |
+OkCancel, onResult)` (No and Yes, or Cancel and OK; the cancel result No or Cancel) and
+`prompt(canvas, title, text, initial, onResult)` (a `PromptDialog`: a single-line field
+and Cancel and OK; the handler gets the field's text with Ok and "" with Cancel). Each
+opens at once and returns the dialog, a handle to `close(result)` or `close()` until its
+handler has run. The text wraps at `dialogs::TextWidth` (360) units, the default button
+is the rightmost (OK, Yes) and Enter chooses it, a prompt opens with its field focused
+and its text selected, and the content is hidden. A dialog opened over another (a confirm
+from a large dialog) is modal to it, and closing it hands the input and the focus back.
+
+DialogDemo opens each; LargeDialogDemo opens a 1200 x 0.92 dialog holding a form and a
+LogView over a page whose counter a canvas timer ticks while it is open (and only then,
+so an idle window draws nothing), with a confirm to stack on it. `--scenario dialog`
+holds each open frame to the dialog's ids, each settled frame to nothing, a change behind
+the large dialog to that Label's ids and no pixel inside the dialog, and each close to
+the frame before the open.
+
+#### Toasts: `Canvas::notify`
+
+`Canvas::notify(kind, text)` and `notify(kind, text, ToastOptions{timeout, title})` show a
+`controls::Toast` (`controls/toast.h`) in the canvas's one toast host
+(`internal::ToastHost`, made the first time): a stack owner-placed `Toast::Gap` (8) units
+in from the canvas's top-right corner, `Toast::Width` (320) wide and as high as its
+toasts. The toasts are docked Bottom in the order they came, so the newest is at the top
+and removing one closes its gap towards the corner. The host is a canvas overlay
+(`addOverlay`): above every modal, popup and menu, below the ToolTip box, so a tooltip
+still draws over a toast. It draws nothing and takes no mouse, so the mouse between and
+around the toasts reaches the app; a toast takes the mouse but no keyboard focus, and a
+press on one leaves the app's focus where it was (`Canvas::inToastHost`, read by
+`input::onMouseClicked`).
+
+A toast is an optional title in its kind's colour (`Colors.Toast`, the theme's
+`ToastInfo`, `ToastPositive`, `ToastWarning` and `ToastNegative` text colours; the text is
+`ToastText`), a text wrapped at the toast's width, and a close button, on the opaque
+`Toast` surface with an accent strip of its kind's surface down its left edge (`z+1`).
+
+**Lifetime.** Each kind has a default timeout (Info and Positive 4 s, Warning 6 s,
+Negative 8 s; `setToastTimeout`), a call may give its own, and 0 keeps it until it is
+dismissed. The deadlines are on the **toast clock** (`toastClock()`): the canvas clock
+less the time the stack was paused. While the canvas's hovered control is in the host
+(a toast, its text, its close button) the stack is paused: the update phase records when
+the pause began, and when the hover leaves it adds the time paused to the total, so every
+toast resumes with the time it had left; that is moving every deadline by the paused
+time, without touching each toast. The update phase's toast step (`Canvas::updateToasts`,
+after the tooltip step, before layout) compares the clock with the earliest deadline,
+once a frame, and dismisses what is due: expiry is no animation (`anims_run=0` while
+toasts show), and `nextWorkTime()` returns the first time the comparison holds, so an idle
+window wakes for it and not before. More than `setToastLimit()` (5) shown drops the
+oldest, hovered or not.
+
+**Removal.** `Toast::dismiss()` (its close button's press, the expiry, the limit) hides
+it at once, so the others close the gap in that frame's layout, and `delayedDelete()`s
+it, so the next frame gives back every id it took; the canvas marks the hover stale, so
+what is under a resting mouse after a removal is hovered. A click on a toast's body does
+nothing. The host stays once made; it holds its own control's one id.
+
+ToastDemo has a button per kind, a multi-line toast and a sticky one; `--scenario toast`
+holds the stack, the pause (its entry, held and exit frames write nothing), the expiry
+(the frame before them back, and the ids) and the sticky toast's close.
 
 ### 2. `renderCanvas()` — render
 
