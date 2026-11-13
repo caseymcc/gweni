@@ -143,7 +143,7 @@ struct Scene
         return *static_cast<const skin::textured::Chart *>(chart->getSkinControl());
     }
 
-    const std::vector<size_t> &series(size_t index) const { return skinChart().seriesPrimitives(index); }
+    std::vector<size_t> series(size_t index) const { return skinChart().seriesPrimitives(index); }
 
     std::set<size_t> written() const
     {
@@ -431,10 +431,11 @@ TEST_CASE("Chart renderer: a hidden series' slots are hidden, and every id is gi
 
         chart->removeSeries(bars);
         scene.frame();
-        // its legend row (hidden) goes too
+        // its legend row (hidden) goes too; the lists are taken again, so the
+        // ones left may hold its ids, but no more slots than they need
         CHECK(live-scene.renderer.livePrimitives.size() >= barIds.size());
-        for(size_t id : barIds)
-            CHECK(scene.renderer.livePrimitives.count(id) == 0);
+        for(size_t series=0; series < chart->getSeriesCount(); ++series)
+            CHECK(scene.series(series).size() <= chart->getSeriesPoints(series).size());
 
         delete chart;
         scene.chart=nullptr;

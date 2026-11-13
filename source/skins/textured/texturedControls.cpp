@@ -2130,18 +2130,61 @@ size_t Chart::depthLayersOf(const controls::Base *control)
     return size_t(SeriesLayer)+(chart ? chart->getSeriesCount() : 0)+2;
 }
 
-const std::vector<size_t> &Chart::seriesPrimitives(size_t series) const
+std::vector<size_t> Chart::seriesPrimitives(size_t series) const
 {
-    static const std::vector<size_t> none;
-
-    return (series < m_series.size()) ? m_series[series].ids : none;
+    return (series < m_series.size()) ? inUse(m_series[series]) : std::vector<size_t>();
 }
 
-void Chart::resizeList(renderer::Base *renderer, SlotList &list, size_t count)
+std::vector<size_t> Chart::inUse(const SlotList &list)
 {
-    resizePlotPrimitives(renderer, list.ids, count);
-    // a slot new to the list holds nothing known
-    list.drawn.resize(count);
+    return std::vector<size_t>(list.ids.begin(), list.ids.begin()+std::min(list.used, list.ids.size()));
+}
+
+void Chart::takeLists(renderer::Base *renderer, size_t grid, size_t spans, const std::vector<size_t> &series,
+    size_t markers)
+{
+    releaseList(renderer, m_grid);
+    releaseList(renderer, m_spans);
+    for(SlotList &list : m_series)
+        releaseList(renderer, list);
+    releaseList(renderer, m_markers);
+    releaseList(renderer, m_crosshair);
+    m_series.resize(series.size());
+
+    // The bank hands out the lowest free id first, so what it gives back
+    // goes up from list to list; one at or below the frame's is put aside
+    // until every list is taken.
+    const size_t frame=m_primitives.empty() ? 0 : m_primitives[0];
+    std::vector<size_t> below;
+    auto take=[&](SlotList &list, size_t used)
+    {
+        const size_t count=(&list == &m_crosshair) ? 1 : capacity(used);
+
+        list.taken=used;
+        list.ids.resize(count);
+        // a slot new to the list holds nothing known
+        list.drawn.assign(count, Slot());
+        for(size_t &id : list.ids)
+        {
+            renderer->generatePrimitive(id);
+            while(!m_primitives.empty() && (id <= frame))
+            {
+                below.push_back(id);
+                renderer->generatePrimitive(id);
+            }
+        }
+    };
+
+    take(m_grid, grid);
+    take(m_spans, spans);
+    for(size_t i=0; i<series.size(); ++i)
+        take(m_series[i], series[i]);
+    take(m_markers, markers);
+    // the crosshair's one slot, in front of everything
+    take(m_crosshair, 1);
+
+    for(size_t id : below)
+        renderer->releasePrimitive(id);
 }
 
 void Chart::releaseList(renderer::Base *renderer, SlotList &list)
@@ -2150,6 +2193,8 @@ void Chart::releaseList(renderer::Base *renderer, SlotList &list)
         renderer->releasePrimitive(id);
     list.ids.clear();
     list.drawn.clear();
+    list.used=0;
+    list.taken=0;
 }
 
 void Chart::remove(renderer::Base *renderer, controls::Base * /*baseControl*/)
@@ -2252,25 +2297,45 @@ void Chart::update(renderer::Base *renderer, controls::Base *baseControl)
 
     if(drawing)
     {
-        resizeList(renderer, m_grid, lines.size());
-        resizeList(renderer, m_spans, chart->getSpanCount());
-        while(m_series.size() > seriesCount)
-        {
-            releaseList(renderer, m_series.back());
-            m_series.pop_back();
-        }
-        m_series.resize(seriesCount);
+        std::vector<size_t> seriesNeed(seriesCount);
+
         for(size_t i=0; i<seriesCount; ++i)
         {
             const controls::ChartSeriesType type=chart->getSeriesType(i);
             const bool bars=(type == controls::ChartSeriesType::Bar) || (type == controls::ChartSeriesType::StackedBar);
             const size_t vertices=chart->getVertexCount(i);
 
-            resizeList(renderer, m_series[i], bars ? chart->getSeriesPoints(i).size() : (vertices > 1 ? vertices-1 : 0));
+            seriesNeed[i]=bars ? chart->getSeriesPoints(i).size() : (vertices > 1 ? vertices-1 : 0);
         }
-        resizeList(renderer, m_markers, chart->getMarkerCount());
-        // the crosshair's one slot, in front of everything
-        resizeList(renderer, m_crosshair, 1);
+
+        // A new series' list, or one slot more than a list has, would come
+        // after the lists in front of it; and a list needing fewer than it
+        // was taken for (a series gone, a resize back to fewer grid lines)
+        // keeps capacity it no longer needs. Either way every list is taken
+        // again, as a chart built with what it draws now would take them, so
+        // a round trip gives the same slots back. A list growing a slot at a
+        // time, or one losing and gaining one (a sliding window), is taken
+        // again only once per half again.
+        auto outgrown=[](const SlotList &list, size_t count)
+        {
+            return (count > list.ids.size()) || (count < list.taken);
+        };
+        bool retake=m_crosshair.ids.empty() || (m_series.size() != seriesCount)
+            || outgrown(m_grid, lines.size()) || outgrown(m_spans, chart->getSpanCount())
+            || outgrown(m_markers, chart->getMarkerCount());
+
+        for(size_t i=0; i<seriesCount && !retake; ++i)
+            retake=outgrown(m_series[i], seriesNeed[i]);
+
+        if(retake)
+            takeLists(renderer, lines.size(), chart->getSpanCount(), seriesNeed, chart->getMarkerCount());
+
+        m_grid.used=lines.size();
+        m_spans.used=chart->getSpanCount();
+        for(size_t i=0; i<seriesCount; ++i)
+            m_series[i].used=seriesNeed[i];
+        m_markers.used=chart->getMarkerCount();
+        m_crosshair.used=1;
     }
 
     auto hide=[&](size_t id, Slot &slot)
@@ -2279,6 +2344,12 @@ void Chart::update(renderer::Base *renderer, controls::Base *baseControl)
             renderer->hidePrimitive(id);
         slot.valid=true;
         slot.shown=false;
+    };
+    // a list's spare slots, past the ones in use
+    auto hideSpare=[&](SlotList &list)
+    {
+        for(size_t i=list.used; i<list.ids.size(); ++i)
+            hide(list.ids[i], list.drawn[i]);
     };
 
     // every slot of the lists, the frame's with \p frame
@@ -2389,9 +2460,10 @@ void Chart::update(renderer::Base *renderer, controls::Base *baseControl)
     for(size_t i=0; i<lines.size(); ++i)
         drawSegment(m_grid.ids[i], m_grid.drawn[i], lines[i].p0, lines[i].p1, nullptr, nullptr, 1.0f,
             lines[i].color, z+GridLayer, plotClip);
+    hideSpare(m_grid);
 
     // the spans, under the series
-    for(size_t i=0; i<m_spans.ids.size(); ++i)
+    for(size_t i=0; i<m_spans.used; ++i)
     {
         gweni::Rect rect;
 
@@ -2404,6 +2476,7 @@ void Chart::update(renderer::Base *renderer, controls::Base *baseControl)
         rect.y+=bounds.y;
         drawRect(m_spans.ids[i], m_spans.drawn[i], rect, tokyonight::ChartSpan, z+SpanLayer, plotClip);
     }
+    hideSpare(m_spans);
 
     for(size_t s=0; s<seriesCount; ++s)
     {
@@ -2413,16 +2486,17 @@ void Chart::update(renderer::Base *renderer, controls::Base *baseControl)
         const tokyonight::Surface &surface=tokyonight::chartSeries(chart->getSeriesColorIndex(s));
         const controls::ChartSeriesType type=chart->getSeriesType(s);
 
+        hideSpare(list);
         if(!shown)
         {
-            for(size_t i=0; i<list.ids.size(); ++i)
+            for(size_t i=0; i<list.used; ++i)
                 hide(list.ids[i], list.drawn[i]);
             continue;
         }
 
         if((type == controls::ChartSeriesType::Bar) || (type == controls::ChartSeriesType::StackedBar))
         {
-            for(size_t i=0; i<list.ids.size(); ++i)
+            for(size_t i=0; i<list.used; ++i)
             {
                 gweni::Rect rect;
 
@@ -2441,7 +2515,7 @@ void Chart::update(renderer::Base *renderer, controls::Base *baseControl)
         // a line's segments, each cut to the plot widened by the stroke and a
         // unit, so a cut end lies outside the plot's clip; cut in doubles,
         // which hold a point far out of range exactly enough
-        const size_t segments=list.ids.size();
+        const size_t segments=list.used;
         const float thickness=chart->getSeriesLineThickness(s);
         const double margin=double(thickness)+2.0;
         const double box[4]={double(left)-margin, double(right)+margin, double(top)-margin, double(bottom)+margin};
@@ -2548,7 +2622,7 @@ void Chart::update(renderer::Base *renderer, controls::Base *baseControl)
     // the markers, in front of every series
     const int markerZ=z+SeriesLayer+int(seriesCount);
 
-    for(size_t i=0; i<m_markers.ids.size(); ++i)
+    for(size_t i=0; i<m_markers.used; ++i)
     {
         PointF lineTop;
         PointF lineBottom;
@@ -2562,6 +2636,7 @@ void Chart::update(renderer::Base *renderer, controls::Base *baseControl)
             PointF(origin.x+lineBottom.x, origin.y+lineBottom.y), nullptr, nullptr, 1.0f,
             tokyonight::ChartMarker.top, markerZ, plotClip);
     }
+    hideSpare(m_markers);
 
     // the crosshair at the hovered x, in front of the markers
     {

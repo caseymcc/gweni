@@ -8,6 +8,9 @@
 #include "gweni/controls/button.h"
 #include "gweni/controls/nodeGraph.h"
 
+#include <algorithm>
+#include <vector>
+
 namespace gweni
 {
 namespace controls
@@ -738,8 +741,15 @@ public:
 // - the crosshair: one vertical drawLine across the plot at the hovered x
 //   (getCrosshairLine()), 1 unit thick in ChartCrosshair's top colour, at
 //   z+4+S, hidden with no hover.
-// The lists are taken back to front, so on the frame that makes them what is
-// behind is drawn first.
+// The slots draw in id order, and a partly covered pixel of a slot in front
+// writes depth that a slot behind it, drawn later, cannot pass. So a list's
+// ids come after the frame's and after every list behind it: the lists are
+// taken back to front, each with capacity() slots for what it draws, the
+// spare ones hidden, and when one needs more than it has (an appended point,
+// a new series, more grid lines, spans or markers), or fewer than it was
+// taken for (a series gone, fewer grid lines), every list is given back and
+// taken again back to front, as a chart built with what it draws takes them,
+// that frame drawing them all again.
 // The z values are the frame's, the grid's (z+1), the spans' (z+2), one per
 // series (z+3+i), the markers' (z+3+S) and the crosshair's (z+4+S), so
 // depthLayersOf() is 5+S for S series; the chart calls zOrderChanged() when S
@@ -762,13 +772,20 @@ public:
 
     inline static const std::string_view name="Chart";
 
-    //! The grid's slots, and series \p series's (empty past the series), as
-    //! last drawn.
-    const std::vector<size_t> &gridPrimitives() const { return m_grid.ids; }
-    const std::vector<size_t> &spanPrimitives() const { return m_spans.ids; }
-    const std::vector<size_t> &markerPrimitives() const { return m_markers.ids; }
-    const std::vector<size_t> &crosshairPrimitives() const { return m_crosshair.ids; }
-    const std::vector<size_t> &seriesPrimitives(size_t series) const;
+    //! The grid's slots in use, and series \p series's (empty past the
+    //! series), as last drawn; a list's spare slots (see capacity()) are not
+    //! in them.
+    std::vector<size_t> gridPrimitives() const { return inUse(m_grid); }
+    std::vector<size_t> spanPrimitives() const { return inUse(m_spans); }
+    std::vector<size_t> markerPrimitives() const { return inUse(m_markers); }
+    std::vector<size_t> crosshairPrimitives() const { return inUse(m_crosshair); }
+    std::vector<size_t> seriesPrimitives(size_t series) const;
+
+    //! The slots a list is taken with for \p count in use: half as many
+    //! again and at least 4 spare, hidden, so a list growing a slot at a time
+    //! is taken again (every list, see update()) once per half again. The
+    //! crosshair's list is its one slot.
+    static size_t capacity(size_t count) { return count ? count+std::max<size_t>(count/2, 4) : 0; }
 
 private:
     //! What a slot holds, as last drawn: a rect or a segment.
@@ -791,16 +808,23 @@ private:
         Rect clip;
     };
 
+    //! A list's slots: the first \p used drawn, the rest spare and hidden;
+    //! \p taken the count it was taken for.
     struct SlotList
     {
         std::vector<size_t> ids;
         std::vector<Slot> drawn;
+        size_t used=0;
+        size_t taken=0;
     };
 
-    //! \p list grown or shrunk to \p count slots, the new ones holding
-    //! nothing known.
-    static void resizeList(renderer::Base *renderer, SlotList &list, size_t count);
+    static std::vector<size_t> inUse(const SlotList &list);
     static void releaseList(renderer::Base *renderer, SlotList &list);
+    //! Every list given back and taken again back to front, each with
+    //! capacity() for its count (\p series one per series), its ids above
+    //! the frame's.
+    void takeLists(renderer::Base *renderer, size_t grid, size_t spans, const std::vector<size_t> &series,
+        size_t markers);
 
     Slot m_frame;
     SlotList m_grid;

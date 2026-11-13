@@ -2756,8 +2756,18 @@ two programs and the draws. What follows describes both together:
   goes. The lists are taken back to front, and only once the chart is shown with a plot,
   so a translucent span is blended over the grid behind it and a line's anti-aliased rim
   over both whether the chart was built shown or hidden (a slot drawn earlier at a higher
-  z writes depth a slot behind it, drawn later, cannot pass); a list grown
-  later (a resize with more grid lines) takes its new slots after the others'. All but
+  z writes depth a slot behind it, drawn later, cannot pass). Slots draw in id order, so
+  that order has to hold after the first draw too: each list is taken with
+  `Chart::capacity(n)` slots for the n it draws (half as many again, at least 4 more),
+  the spare ones hidden, and when one needs more than it has (an appended point, a new
+  series, more grid lines after a resize, a span or a marker added) or fewer than it
+  was taken for (a series gone, a resize back), every list is given back and taken again
+  back to front, the bank's lowest-first ids rising from list to list (any at or below
+  the frame's put aside while taking), and that frame draws them all. So an append is
+  amortised to its own slots, a sliding window is taken again once and then holds, a
+  chart grown point by point draws what one built with those points draws
+  (`tests/chartSlotOrder.cpp`), and a resize there and back gives the same slots back
+  (`controltest_resize_each`). All but
   the frame are drawn in the plot's clip region (the control's region cut to
   `getPlotBounds()`), and each segment is first cut on the CPU, in doubles and from its
   end nearer the plot, to a box a few units wider than the plot, so a point far out of
@@ -2771,7 +2781,8 @@ two programs and the draws. What follows describes both together:
   their series' swatch (`ChartSeries<i>`, faded while hidden) in a column before the name;
   the rows follow the series outside the layout, a click toggles its series (the axes
   rescale and the stacks are worked out again) and fires `onSeriesToggled`, and the row
-  is never selected. **Hover and click:** both are arithmetic. `hoverAt` is the visible
+  is never selected. A row past the series, after one is removed (even by the
+  `onSeriesToggled` handler of that row's own click), is hidden and `delayedDelete()`d. **Hover and click:** both are arithmetic. `hoverAt` is the visible
   point x nearest the mouse, a binary search of each series' points, with each series'
   index there (`ChartHover`); while the mouse is over the plot the crosshair is drawn at
   it and the tooltip set, the chart's own text (the x's label and each value), the app's
