@@ -3583,7 +3583,10 @@ two programs and the draws. What follows describes both together:
   (`select()` leaves an unchanged index alone, so `pick()` shows the value itself):
   otherwise the query would stay in a free-text field and be taken as a value when it
   lost the focus. The field takes the box's font (`setFont`), and a disabled box
-  closes its list.
+  closes its list and opens none: a click on its field, typing and its keys open
+  nothing and pick nothing (`showList()`, `pickPosition()` and the key handlers
+  check `isDisabled()`), and its field losing the focus gives back the value's text
+  instead of taking a free-text value.
 
   **Options refilled while the user types** (an app's async search: `setOptions()`,
   or `clearOptions()` and `addOption()`, from `onTextChangedCaller`, which runs before
