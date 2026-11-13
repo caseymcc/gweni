@@ -167,7 +167,7 @@
  *                       inspector |
  *                       stats-overlay | depth-view | zoom-panel |
  *                       node-graph | code-editor | log-view |
- *                       chip-badge | flow (see below)
+ *                       chip-badge | flow | rich-text (see below)
  *    --dump-bounds [<path>]
  *                       print the laid-out control tree as text: one line per
  *                       control, depth-first in child order, indented by depth,
@@ -917,6 +917,26 @@
  *                 shorter content's end); the empty frame clamps it to 0,
  *                 where it stays; settled frames write nothing; the demo gives
  *                 every id back. Exits non-zero if any check is no.
+ *    rich-text    RichTextDemo's two paragraphs (the same spans at 420 and 260
+ *                 units), the clock frozen: the wide one's span 1 given new
+ *                 text and back, and the narrow one 40 units wider and back,
+ *                 each frame writing slots of that paragraph alone (those it
+ *                 held before included) and changing it alone, in one
+ *                 update-phase pass entering no more than it and its
+ *                 ancestors, the frame before coming back; the mouse onto the
+ *                 first link (its runs alone and at most an underline per
+ *                 piece, no pixel changed outside its pieces, the Finger
+ *                 cursor) and off it (the frame before back); a click on it
+ *                 (the demo told its url once); a drag from caret 1 of
+ *                 "italic" to caret 3 of "struck through", a double-click on
+ *                 "italic" and Ctrl+A, each followed by Ctrl+C, putting what
+ *                 they select on the clipboard (the drag frame writing no
+ *                 glyph slot); Escape clearing it; every settled frame
+ *                 writing and changing nothing; and the demo giving every
+ *                 primitive id back (rich-text-selected.png). One line per
+ *                 step, then
+ *                   rich-text idle_work=0 ids_left=0 passed=yes|no
+ *                 Exits non-zero if any check fails, naming it on stderr.
  *    virtual-list VirtualListDemo with its list at 1 000 and then 100 000
  *                 items, the clock frozen: a settled frame, a one-row scroll
  *                 from the top (scrollByRows) and a wheel notch over the list
@@ -1190,9 +1210,11 @@
 #include <demo/chartAreas.h>
 #include <gweni/controls/chart.h>
 #include <gweni/controls/timeline.h>
+#include <demo/richText.h>
 #include <demo/inspector.h>
 #include <gweni/controls/plotHistogram.h>
 #include <gweni/controls/plotLines.h>
+#include <gweni/controls/richText.h>
 #include <demo/progressBar.h>
 #include <demo/properties.h>
 #include <demo/radioButton.h>
@@ -1328,7 +1350,7 @@ static void content_scale_callback(GLFWwindow *window, float, float)
     X(WindowDemo) X(WindowButtonsDemo) X(TreeControlDemo) X(PropertiesDemo) X(TabControlDemo) X(TabCloseDemo) X(TabOverflowDemo) \
     X(ScrollControlDemo) X(PageControlDemo) X(CollapsibleListDemo) X(ColorPickerDemo) X(ColorEditDemo) \
     X(UnicodeTextDemo) X(TextSizesDemo) X(TextDemo) X(LayoutDemo) X(InspectorDemo) X(ThemeEditorDemo) \
-    X(StatsOverlayDemo) X(ZoomPanelDemo) X(NodeGraphDemo) X(FlowDemo)
+    X(StatsOverlayDemo) X(ZoomPanelDemo) X(NodeGraphDemo) X(FlowDemo) X(RichTextDemo)
 
 static const char *const g_controlNames[]=
 {
@@ -1422,7 +1444,7 @@ static void printUsage(std::ostream &out)
          "                     | inspector\n"
          "                     | stats-overlay | depth-view | zoom-panel\n"
          "                     | node-graph | code-editor | log-view | chip-badge\n"
-         "                     | flow;\n"
+         "                     | flow | rich-text;\n"
          "                     resize prints listing_settled, mirror_settled,\n"
          "                     shrink_settled and fresh_matches, interaction one\n"
          "                     yes/no per repaint check, typing its keyboard\n"
@@ -2461,7 +2483,7 @@ static bool runSteps(Session &s, const std::vector<Step> &steps, const std::stri
 enum class Scenario { None, PerControl, Resize, Docked, Scroll, Interaction, Typing, Clip, TextSize, Scale,
     ToolTip, ContextMenu, Popup, Dialog, Toast, VirtualList, VirtualListVariable, DataTableVirtual, HideShow, DemoLabels, PlotHistogram,
     PlotLines, Chart, Timeline, Inspector, Theme, StatsOverlay, DepthView, ZoomPanel, NodeGraph, CodeEditor, LogView,
-    ChipBadge, Flow };
+    ChipBadge, Flow, RichText };
 
 static bool parseScenario(const std::string &name, Scenario &scenario)
 {
@@ -2498,6 +2520,7 @@ static bool parseScenario(const std::string &name, Scenario &scenario)
     else if(name == "log-view") scenario=Scenario::LogView;
     else if(name == "chip-badge") scenario=Scenario::ChipBadge;
     else if(name == "flow") scenario=Scenario::Flow;
+    else if(name == "rich-text") scenario=Scenario::RichText;
     else return false;
     return true;
 }
@@ -13261,6 +13284,355 @@ static bool runFlowScenario(Session &s, const std::string &shotDir, bool &passed
 }
 
 //-----------------------------------------------------------------------------
+// --scenario rich-text: RichTextDemo's two paragraphs (the same spans at 420
+// and 260 units) edited, given a new width, hovered, clicked, selected and
+// copied, the clock frozen
+//
+// A paragraph is one control holding a text run per piece and a list of slots
+// (code backgrounds, rules, selection rects), so each change is held to it: a
+// span's new text writes that paragraph's slots alone and lays out only it and
+// its ancestors, a new width the same for the other one, a link's hover the
+// link's pieces alone (with the Finger cursor, the web's "pointer"), and a
+// drag's selection the paragraph's slots and no glyph. What the selection
+// copies goes through platform::setClipboardText.
+//-----------------------------------------------------------------------------
+
+namespace
+{
+
+struct RichFrame
+{
+    std::set<size_t> primitives;
+    std::set<size_t> texts;
+    size_t primSlots=0;
+    size_t textSlots=0;
+    size_t changed=0;
+    size_t visited=0;
+    int passes=0;
+    bool renderLayout=false;
+    std::vector<uint8_t> pixels;
+};
+
+}//namespace
+
+static RichFrame richFrame(Session &s)
+{
+    renderFrames(s, 1);
+
+    RichFrame frame;
+    const gweni::renderer::FrameCounts counts=s.renderer->frameStats();
+
+    for(size_t id : s.renderer->writtenPrimitiveIds())
+        frame.primitives.insert(id);
+    for(const gweni::renderer::WrittenText &text : s.renderer->writtenTextIds())
+        frame.texts.insert(text.textId);
+    frame.primSlots=counts.primitiveSlotsWritten;
+    frame.textSlots=counts.textSlotsWritten;
+    frame.changed=gweni::controls::getChangeStats().controls;
+    frame.visited=s.canvas->getLayoutStats().visited;
+    frame.passes=s.canvas->getLayoutStats().passes;
+    frame.renderLayout=s.canvas->getLayoutStats().renderLayout;
+    frame.pixels=framePixels(s);
+    return frame;
+}
+
+// The canvas point at caret `caret` of piece `piece`, halfway down its line box
+static gweni::Point richCaretPoint(gweni::controls::RichText *rich, size_t piece, size_t caret)
+{
+    const gweni::text::RichPiece &p=rich->getLayout().pieces().at(piece);
+    const gweni::Point origin=rich->contentOrigin();
+
+    return rich->localPosToCanvas(gweni::Point(origin.x+p.pos.x+p.carets.at(caret),
+        origin.y+p.pos.y+p.metrics.lineHeight/2));
+}
+
+// The first piece of span `span`
+static size_t richPieceOf(gweni::controls::RichText *rich, size_t span)
+{
+    const std::vector<gweni::text::RichPiece> &pieces=rich->getLayout().pieces();
+
+    for(size_t i=0; i < pieces.size(); ++i)
+    {
+        if(pieces[i].span == span)
+            return i;
+    }
+    return pieces.size();
+}
+
+static bool runRichTextScenario(Session &s, const std::string &shotDir, bool &passed)
+{
+    using gweni::controls::RichText;
+
+    s.freezeClock=true;
+
+    const size_t idsBefore=livePrimitiveIds();
+    gweni::controls::Base *control=addControl(s, "RichTextDemo");
+    auto *demo=gweni::gweni_cast<gweni::RichTextDemo>(control);
+
+    if(!demo || !demo->wide() || !demo->narrow())
+    {
+        std::cerr<<"ControlTest: rich-text: RichTextDemo has no paragraphs\n";
+        return false;
+    }
+
+    RichText *wide=demo->wide();
+    RichText *narrow=demo->narrow();
+
+    s.label="rich-text";
+    renderFrames(s, s.frames);
+
+    std::string failures;
+    size_t idleWork=0;
+    // two frames with nothing to do: what they wrote and changed, the last one's pixels
+    auto settle=[&]()
+    {
+        std::vector<uint8_t> pixels;
+
+        for(int i=0; i < 2; ++i)
+        {
+            RichFrame frame=richFrame(s);
+
+            if(frame.primSlots+frame.textSlots+frame.changed != 0)
+                std::cout<<"rich_text unsettled prim_slots="<<frame.primSlots<<" text_slots="<<frame.textSlots
+                         <<" changed="<<frame.changed<<"\n";
+            idleWork+=frame.primSlots+frame.textSlots+frame.changed;
+            pixels=std::move(frame.pixels);
+        }
+        return pixels;
+    };
+    auto fail=[&](const std::string &step, const std::string &why) { failures+="; "+step+": "+why; };
+    auto printFrame=[&](const std::string &step, const RichFrame &frame)
+    {
+        std::cout<<"rich_text "<<step<<" prim_slots="<<frame.primSlots<<" text_slots="<<frame.textSlots
+                 <<" changed="<<frame.changed<<" passes="<<frame.passes<<" layout_visited="<<frame.visited<<"\n";
+    };
+    // a frame that wrote slots of `rich` alone and, with `layout`, laid out in
+    // one update-phase pass entering no more than it and its ancestors (each
+    // measured and arranged in X and Y)
+    // `primitives` and `texts`: the ids it held before the frame, those it
+    // holds after added (a run it gave back is written as it is hidden)
+    auto checkLocal=[&](const std::string &step, const RichFrame &frame, RichText *rich, bool layout,
+        std::set<size_t> primitives={}, std::set<size_t> texts={})
+    {
+        subtreeIds(rich, primitives, texts);
+        printFrame(step, frame);
+        if(frame.primSlots+frame.textSlots == 0)
+            fail(step, "wrote nothing");
+        if(!idsWithin(frame.primitives, primitives) || !idsWithin(frame.texts, texts))
+            fail(step, "wrote slots outside the paragraph");
+        if(frame.changed != 1)
+            fail(step, std::to_string(frame.changed)+" controls changed, not the paragraph alone");
+        if(!layout)
+            return;
+
+        size_t ancestors=0;
+
+        for(gweni::controls::Base *at=rich->getActualParent(); at; at=at->getActualParent())
+            ++ancestors;
+
+        const size_t bound=4*(ancestors+1);
+
+        if(frame.passes != 1 || frame.renderLayout || frame.visited > bound)
+            fail(step, std::to_string(frame.passes)+" update-phase passes"+(frame.renderLayout?" and a render-phase one":"")
+                +", "+std::to_string(frame.visited)+" entries (at most "+std::to_string(bound)
+                +": the paragraph and its ancestors)");
+    };
+
+    const std::vector<uint8_t> rest=settle();
+
+    // 1. a span's new text: span 1 ("bold") of the wide paragraph
+    std::set<size_t> heldPrimitives, heldTexts;
+    const gweni::String bold=wide->getSpans().at(1).text;
+
+    subtreeIds(wide, heldPrimitives, heldTexts);
+    wide->setSpanText(1, "heavier bold");
+    checkLocal("span_edit", richFrame(s), wide, true, heldPrimitives, heldTexts);
+    subtreeIds(wide, heldPrimitives, heldTexts);
+    wide->setSpanText(1, bold);
+    checkLocal("span_back", richFrame(s), wide, true, heldPrimitives, heldTexts);
+    if(settle() != rest)
+        fail("span_back", "the frame before the edit did not come back");
+
+    // 2. a new width for the narrow paragraph, and back
+    heldPrimitives.clear();
+    heldTexts.clear();
+    subtreeIds(narrow, heldPrimitives, heldTexts);
+    narrow->setWidth(gweni::RichTextDemo::NarrowWidth+40);
+    checkLocal("width", richFrame(s), narrow, true, heldPrimitives, heldTexts);
+    subtreeIds(narrow, heldPrimitives, heldTexts);
+    narrow->setWidth(gweni::RichTextDemo::NarrowWidth);
+    checkLocal("width_back", richFrame(s), narrow, true, heldPrimitives, heldTexts);
+    if(settle() != rest)
+        fail("width_back", "the frame before the new width did not come back");
+
+    // 3. the mouse onto the first link, and off it
+    size_t linkSpan=0;
+
+    while(linkSpan < wide->getSpanCount() && !wide->getSpans()[linkSpan].isLink())
+        ++linkSpan;
+
+    const size_t linkPiece=richPieceOf(wide, linkSpan);
+
+    if(linkPiece >= wide->getLayout().pieces().size())
+    {
+        std::cerr<<"ControlTest: rich-text: the wide paragraph has no link piece\n";
+        return false;
+    }
+
+    const gweni::String url=wide->getSpans()[linkSpan].url;
+    std::vector<gweni::Rect> linkBoxes;
+    std::set<size_t> linkTexts;
+    {
+        std::vector<size_t> primitiveIds, textIds;
+
+        wide->getSkinControl()->appendIds(primitiveIds, textIds);
+
+        const std::vector<gweni::text::RichPiece> &pieces=wide->getLayout().pieces();
+        const gweni::Point origin=wide->localPosToCanvas(wide->contentOrigin());
+
+        for(size_t i=0; i < pieces.size(); ++i)
+        {
+            if(pieces[i].span != linkSpan)
+                continue;
+
+            // its box, and 2 units either side for ink past the pens
+            const gweni::Rect box=pieces[i].box();
+
+            linkBoxes.push_back(gweni::Rect(origin.x+box.x-2, origin.y+box.y, box.w+4, box.h));
+            linkTexts.insert(textIds.at(i));
+        }
+    }
+
+    const gweni::Point onLink=richCaretPoint(wide, linkPiece, 1);
+    const gweni::Point offText=wide->localPosToCanvas(gweni::Point(wide->getWidth()+40, 5));
+
+    moveMouse(s, onLink.x, onLink.y);
+
+    const RichFrame hover=richFrame(s);
+
+    checkLocal("hover", hover, wide, false);
+    if(wide->getCursor() != gweni::cursor::Finger || wide->getHoveredLink() != static_cast<int>(linkSpan))
+        fail("hover", "the link is not hovered with the Finger cursor");
+    if(!idsWithin(hover.texts, linkTexts))
+        fail("hover", "drew runs other than the link's pieces");
+    if(hover.primSlots > linkBoxes.size())
+        fail("hover", std::to_string(hover.primSlots)+" primitive slots, more than the link's underlines");
+
+    const size_t hoverOutside=differencesOutsideRects(s, rest, hover.pixels, linkBoxes);
+
+    if(hoverOutside != 0)
+        fail("hover", std::to_string(hoverOutside)+" pixels changed outside the link's pieces");
+
+    moveMouse(s, offText.x, offText.y);
+
+    const RichFrame unhover=richFrame(s);
+
+    printFrame("unhover", unhover);
+    if(wide->getHoveredLink() != -1)
+        fail("unhover", "the link is still hovered");
+    if(unhover.pixels != rest)
+        fail("unhover", "moving off did not give the frame before the hover back");
+    settle();
+
+    // 4. a click on the link: the demo is told its url
+    clickMouse(s, onLink.x, onLink.y);
+    renderFrames(s, 1);
+    moveMouse(s, offText.x, offText.y);
+    renderFrames(s, 1);
+    settle();
+    std::cout<<"rich_text click url="<<demo->lastLink()<<" clicks="<<demo->linkClicks()<<"\n";
+    if(demo->linkClicks() != 1 || demo->lastLink() != url)
+        fail("click", "onLinkClicked was not called once with "+url);
+
+    // 5. a drag from caret 1 of "italic" to caret 3 of "struck through", across
+    // a line break, then Ctrl+C
+    const size_t from=richPieceOf(wide, 3);
+    const size_t to=richPieceOf(wide, 13);
+    const gweni::String text=wide->getText();
+    const size_t begin=wide->getLayout().pieces().at(from).offset+1;
+    const gweni::String dragged=text.substr(begin, wide->getLayout().pieces().at(to).offset+3-begin);
+    const gweni::Point dragFrom=richCaretPoint(wide, from, 1);
+    const gweni::Point dragTo=richCaretPoint(wide, to, 3);
+
+    gweni::platform::setClipboardText("");
+    mouseDown(s, dragFrom.x, dragFrom.y, true);
+    renderFrames(s, 1);
+    moveMouse(s, dragTo.x, dragTo.y);
+
+    const RichFrame drag=richFrame(s);
+
+    checkLocal("drag", drag, wide, false);
+    if(drag.textSlots != 0)
+        fail("drag", "the selection wrote glyph slots");
+    mouseUp(s, dragTo.x, dragTo.y);
+    renderFrames(s, 1);
+    sendKey(s, "ctrl+c");
+    renderFrames(s, 1);
+
+    const gweni::String dragCopy=gweni::platform::getClipboardText();
+
+    std::cout<<"rich_text drag selected=\""<<wide->getSelectedText()<<"\" copied=\""<<dragCopy<<"\"\n";
+    if(wide->getSelectedText() != dragged || dragCopy != dragged)
+        fail("drag", "the drag did not select and copy \""+dragged+"\"");
+    settle();
+
+    // 6. a double-click on "italic", Ctrl+C
+    const gweni::Point word=richCaretPoint(wide, from, 3);
+
+    doubleClickMouse(s, word.x, word.y);
+    renderFrames(s, 1);
+    sendKey(s, "ctrl+c");
+    renderFrames(s, 1);
+
+    const gweni::String wordCopy=gweni::platform::getClipboardText();
+
+    std::cout<<"rich_text double_click copied=\""<<wordCopy<<"\"\n";
+    if(wide->getSelectedText() != "italic" || wordCopy != "italic")
+        fail("double_click", "a double-click on \"italic\" did not select and copy it");
+    settle();
+
+    // 7. Ctrl+A, Ctrl+C: the whole paragraph as shown
+    sendKey(s, "ctrl+a");
+    renderFrames(s, 1);
+    sendKey(s, "ctrl+c");
+    renderFrames(s, 1);
+
+    const gweni::String allCopy=gweni::platform::getClipboardText();
+
+    std::cout<<"rich_text select_all copied_bytes="<<allCopy.size()<<" text_bytes="<<text.size()<<"\n";
+    if(wide->getSelectedText() != text || allCopy != text)
+        fail("select_all", "Ctrl+A and Ctrl+C did not copy the paragraph's text");
+    settle();
+
+    const bool shot=shoot(s, shotDir+"/rich-text-selected.png");
+
+    // 8. Escape clears it
+    sendKey(s, "escape");
+    renderFrames(s, 1);
+    if(wide->hasSelection())
+        fail("escape", "Escape left a selection");
+    settle();
+
+    if(idleWork != 0)
+        fail("settled", "settled frames wrote "+std::to_string(idleWork)+" slots and changed controls");
+
+    forgetMouse(s);
+    dropControl(s, control);
+    renderFrames(s, 1);
+
+    const size_t idsLeft=livePrimitiveIds()-idsBefore;
+
+    if(idsLeft != 0)
+        fail("drop", "the demo did not give "+std::to_string(idsLeft)+" primitive ids back");
+
+    passed=failures.empty();
+    std::cout<<"rich-text idle_work="<<idleWork<<" ids_left="<<idsLeft<<" passed="<<(passed?"yes":"no")<<"\n";
+    if(!passed)
+        std::cerr<<"ControlTest: rich-text:"<<failures.substr(1)<<"\n";
+    return shot;
+}
+
+//-----------------------------------------------------------------------------
 // --scenario log-view: LogViewDemo's log filled with 1 000 and then 100 000
 // events, the clock frozen (the demo streams nothing) and the idle re-measure
 // off, so no frame measures off screen. Each input is one frame, held to the
@@ -15946,6 +16318,15 @@ int main(int argc, char *argv[])
             ok=runLogViewScenario(session, shotDir, passed);
             if(ok && !passed)
                 ok=false;   // an append, a scroll or an edit touched more than it may: a failing assertion
+            break;
+        }
+
+        case Scenario::RichText:
+        {
+            bool passed=false;
+            ok=runRichTextScenario(session, shotDir, passed);
+            if(ok && !passed)
+                ok=false;   // an edit, a width, a hover or a selection touched more than its paragraph
             break;
         }
 
