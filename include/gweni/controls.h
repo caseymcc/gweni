@@ -88,6 +88,7 @@
 #include <gweni/controls/scrollBarBar.h>
 #include <gweni/controls/scrollBarButton.h>
 #include <gweni/controls/scrollControl.h>
+#include <gweni/controls/searchComboBox.h>
 #include <gweni/controls/segmentedButtons.h>
 #include <gweni/controls/selectable.h>
 #include <gweni/controls/separator.h>

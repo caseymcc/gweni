@@ -317,6 +317,8 @@ set(GWENI_CONTROL_SOURCES
     include/gweni/controls/scrollControl.h
     source/controls/scrollControl.cpp
     include/gweni/controls/reorderable.h
+    include/gweni/controls/searchComboBox.h
+    source/controls/searchComboBox.cpp
     include/gweni/controls/selectable.h
     source/controls/reorderable.cpp
     source/controls/selectable.cpp
