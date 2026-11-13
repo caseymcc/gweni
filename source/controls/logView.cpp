@@ -644,8 +644,8 @@ void LogView::autoScrollStep()
         return;
     }
 
-    const float now=platform::getTimeInSeconds();
-    const float elapsed=std::min(std::max(now-m_autoScrollTime, 0.0f), 0.1f);
+    const double now=platform::getTimeInSeconds();
+    const float elapsed=std::min(std::max(static_cast<float>(now-m_autoScrollTime), 0.0f), 0.1f);
     const float speed=AutoScrollBase+AutoScrollRate*static_cast<float>(std::abs(overflow));
 
     m_autoScrollTime=now;

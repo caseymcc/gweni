@@ -456,11 +456,13 @@ private:
     bool m_dragging=false;
     Point m_dragPoint;
     anim::Animation *m_autoScroll=nullptr;
-    float m_autoScrollTime=0.0f;
-    float m_autoScrollCarry=0.0f;
+    double m_autoScrollTime=0.0;
     MenuItem *m_copyItem=nullptr;
     //! getLineHeight()'s, and what it was measured with.
     int m_lineHeight=0;
+    //! The auto-scroll's fraction of a unit to come; beside m_lineHeight, in
+    //! the padding before m_metricsFont, so the double time costs no size.
+    float m_autoScrollCarry=0.0f;
     gweni::Font m_metricsFont;
     const renderer::Base *m_metricsRenderer=nullptr;
     unsigned m_metricsSerial=0;
