@@ -245,8 +245,8 @@ struct FontData
     int width;
     int height;
 
-    //! Coverage: an atlas for one (face, px, bold), drawn as freetype-gl lays it
-    //! out. Sdf: one distance field atlas for every px of a (face, bold), laid out
+    //! Coverage: an atlas for one (face, px, bold, italic), drawn as freetype-gl lays it
+    //! out. Sdf: one distance field atlas for every px of a (face, bold, italic), laid out
     //! by SlotRenderer::layoutSdfText. LcdRGB/LcdBGR: as Coverage, from a depth-3
     //! atlas of subpixel coverage, drawn with dual-source blending.
     TextMode mode=TextMode::Coverage;
@@ -843,8 +843,8 @@ protected:
     //! measures at font.size instead, so it stays in canvas units.
     float textPx(const Font &font) const;
     //! The m_fonts key a font is loaded under at px, with the mode it is drawn in:
-    //! px >= m_sdfTextMin is (face, bold) in Sdf mode, with size 0 standing for
-    //! "every size"; below that it is (face, px, bold) in Coverage mode, or in
+    //! px >= m_sdfTextMin is (face, bold, italic) in Sdf mode, with size 0 standing
+    //! for "every size"; below that it is (face, px, bold, italic) in Coverage mode, or in
     //! m_textAA's LCD mode.
     FontKey resolveFont(const Font &font, float px) const;
     //! loadFont/ensureFont at px rather than textPx(font): measureText's font size
