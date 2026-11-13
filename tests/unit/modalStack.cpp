@@ -36,7 +36,8 @@
  *  modal moved off the canvas leaves the stack at once.
  *  A deleted modal leaves the stack and the focus comes back in the
  *  next update phase (while the canvas is hidden that is no work until it
- *  is shown); a hidden one is popped by the next update phase; a
+ *  is shown), or, when another modal is pushed before then, when that one is
+ *  popped; a hidden one is popped by the next update phase; a
  *  canvas deleted with modals up deletes them with no report. WindowDemo's
  *  path: WindowControl::makeModal() / destroyModal() / setHidden(true) / its
  *  close button, no Modal control created.
@@ -572,6 +573,31 @@ TEST_CASE("Modal stack: a deleted modal gives the focus back, a hidden one is po
     third.panel->hide();
     scene.frame();
     CHECK(canvas->topModal() == nullptr);
+    CHECK(KeyboardFocus == scene.appText);
+}
+
+TEST_CASE("Modal stack: a modal pushed right after the top one was deleted gives the app's focus back")
+{
+    Scene scene;
+    controls::Canvas *canvas=scene.canvas;
+
+    scene.clickOn(scene.appText);
+    REQUIRE(KeyboardFocus == scene.appText);
+
+    Scene::Modal modal=scene.modal();
+    scene.clickOn(modal.first);
+    REQUIRE(KeyboardFocus == modal.first);
+
+    // no update phase between the delete and the push: the deleted one's
+    // focus has not come back yet, and the push finds none to record
+    delete modal.panel;
+    Scene::Modal second=scene.modal();
+    CHECK(canvas->topModal() == second.panel);
+    CHECK(KeyboardFocus == nullptr);
+
+    canvas->popModal(second.panel);
+    CHECK(KeyboardFocus == scene.appText);
+    scene.frame();
     CHECK(KeyboardFocus == scene.appText);
 }
 

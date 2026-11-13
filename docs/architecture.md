@@ -536,7 +536,8 @@ hover stale. A modal below the top that leaves first hands the one above it its 
 focus to give back when that one recorded a focus inside it, or none (`eraseModal`): a
 large dialog closed by a timer under its confirm still gives the app its focus back when
 the confirm goes. A modal deleted outright leaves the stack in `~Base` and gets its focus
-back in the next update phase, after its subtree is gone. One hidden is popped by the next
+back in the next update phase, after its subtree is gone; a modal pushed before that phase
+records that focus as its own to give back (`pushModal` finds none to take). One hidden is popped by the next
 update phase (`Canvas::updateModals`), and one taken off the canvas at once
 (`Canvas::onChildRemoved`), so deleting it before that phase leaves nothing on the stack.
 Neither step runs on a hidden canvas, whose update phase stops early, so a modal (or a

@@ -1744,6 +1744,10 @@ void Canvas::pushModal(Base *control, Base *focusReturn)
         focusId=focusReturn->getControlId();
     else if(KeyboardFocus && (KeyboardFocus->getCanvas() == this) && !within(KeyboardFocus, control))
         focusId=KeyboardFocus->getControlId();
+    else if(m_modalFocusPending)
+        // the top modal was deleted with the focus in it, and its focus
+        // has not come back yet: this one gives it back instead
+        focusId=m_modalFocusRestore;
 
     // what was open over the app goes, as for a press outside it
     closePopup();
