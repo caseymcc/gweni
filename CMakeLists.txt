@@ -198,6 +198,8 @@ set(GWENI_CONTROL_SOURCES
     source/controls/chip.cpp
     include/gweni/controls/codeEditor.h
     source/controls/codeEditor.cpp
+    include/gweni/controls/codeView.h
+    source/controls/codeView.cpp
     include/gweni/controls/collapsibleCategory.h
     source/controls/collapsibleCategory.cpp
     include/gweni/controls/collapsibleList.h

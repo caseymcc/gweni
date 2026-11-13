@@ -19,6 +19,7 @@
 #include <gweni/controls/checkBox.h>
 #include <gweni/controls/chip.h>
 #include <gweni/controls/codeEditor.h>
+#include <gweni/controls/codeView.h>
 #include <gweni/controls/collapsibleCategory.h>
 #include <gweni/controls/collapsibleList.h>
 #include <gweni/controls/colorButton.h>
