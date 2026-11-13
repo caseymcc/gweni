@@ -34,11 +34,15 @@
  *    and a move off it the same runs and line back in RichText.Link with the
  *    text cursor (Beam); a link of several spans (one url) lights up whole;
  *  - a press and a release on one link call onLinkClicked once, with its url
- *    and first span; a release off it, or a press off any link, call nothing.
+ *    and first span; a release off it, or a press off any link, call nothing,
+ *    even with nothing selected (either side of the link's edge, one byte),
+ *    each press a second after the last on a stepped clock, so none is a
+ *    double-click.
  */
 #include "richTextFixture.h"
 
 #include <gweni/controls/richText.h>
+#include <gweni/platforms/platform.h>
 #include <gweni/skins/textured/texturedControls.h>
 #include <gweni/skins/textured/texturedSkin.h>
 
@@ -597,34 +601,56 @@ TEST_CASE("RichText: a link of several spans with one url is hovered whole")
 
 TEST_CASE("RichText: a press and release on one link call onLinkClicked with its url")
 {
-    Scene scene;
-    RichText *rich=scene.rich;
-    std::vector<String> urls;
-    std::vector<size_t> firsts;
+    // a stepped clock, a second between the presses, so none is a double-click
+    double clock=100.0;
 
-    rich->onLinkClicked.addCallback(scene.canvas,
-        [&](event::Handler &, event::Info info) { urls.push_back(info.string); firsts.push_back(info.integer); });
+    platform::setTimeSource([&clock]() { return clock; });
+    {
+        Scene scene;
+        RichText *rich=scene.rich;
+        std::vector<String> urls;
+        std::vector<size_t> firsts;
+        const text::RichPiece &link=rich->getLayout().pieces().at(7);
 
-    // on the link
-    moveTo(scene, pieceCentre(rich, 7));
-    scene.canvas->inputMouseButton(0, true);
-    scene.canvas->inputMouseButton(0, false);
-    scene.frame();
-    REQUIRE(urls.size() == 1);
-    CHECK(urls[0] == "https://example.com/");
-    CHECK(firsts[0] == 7);
+        REQUIRE(rich->getLayout().pieces().at(6).offset+rich->getLayout().pieces().at(6).text.size() == link.offset);
+        // either side of the link's left edge, both at the link's first byte,
+        // so a press at one and a release at the other select nothing
+        const Point onEdge=rich->localPosToCanvas(Point(rich->contentOrigin().x+link.box().x+1,
+            rich->contentOrigin().y+link.box().y+link.box().h/2));
+        const Point offEdge(onEdge.x-2, onEdge.y);
+        auto click=[&](const Point &down, const Point &up)
+        {
+            clock+=1.0;
+            moveTo(scene, down);
+            scene.canvas->inputMouseButton(0, true);
+            scene.frame();
+            moveTo(scene, up);
+            scene.canvas->inputMouseButton(0, false);
+            scene.frame();
+        };
 
-    // pressed on it, let go off it
-    scene.canvas->inputMouseButton(0, true);
-    moveTo(scene, pieceCentre(rich, 0));
-    scene.canvas->inputMouseButton(0, false);
-    scene.frame();
-    CHECK(urls.size() == 1);
+        rich->onLinkClicked.addCallback(scene.canvas,
+            [&](event::Handler &, event::Info info) { urls.push_back(info.string); firsts.push_back(info.integer); });
 
-    // pressed off it, let go on it
-    scene.canvas->inputMouseButton(0, true);
-    moveTo(scene, pieceCentre(rich, 7));
-    scene.canvas->inputMouseButton(0, false);
-    scene.frame();
-    CHECK(urls.size() == 1);
+        // on the link
+        click(pieceCentre(rich, 7), pieceCentre(rich, 7));
+        REQUIRE(urls.size() == 1);
+        CHECK(urls[0] == "https://example.com/");
+        CHECK(firsts[0] == 7);
+
+        // pressed on it, let go off it, nothing selected
+        click(onEdge, offEdge);
+        CHECK_FALSE(rich->hasSelection());
+        CHECK(urls.size() == 1);
+
+        // pressed off it, let go on it, nothing selected
+        click(offEdge, onEdge);
+        CHECK_FALSE(rich->hasSelection());
+        CHECK(urls.size() == 1);
+
+        // and at the edge's link side alone, a click
+        click(onEdge, onEdge);
+        CHECK(urls.size() == 2);
+    }
+    platform::setTimeSource(nullptr);
 }
