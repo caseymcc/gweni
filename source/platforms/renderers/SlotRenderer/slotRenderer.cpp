@@ -1150,9 +1150,10 @@ void SlotRenderer::ensurePrimitiveSlots(size_t primitiveId)
     if(m_clippingBoxes.size() < primitiveId+1)
         m_clippingBoxes.resize(primitiveId+1);
 
-    if(m_vertexes.size() < primitiveId*4+4)
-        m_vertexes.resize(primitiveId*4+4);
+    if(m_vertexes.size() >= primitiveId*4+4)
+        return;
 
+    m_vertexes.resize(primitiveId*4+4);
     // as long as the mirror, so a slot's first cull grows nothing in a later frame
     if(m_clipCulledSlots.size()*64 < m_vertexes.size()/4)
         m_clipCulledSlots.resize((m_vertexes.size()/4+63)/64, 0);
@@ -1221,21 +1222,28 @@ static bool setSlotBit(std::vector<uint64_t> &bits, size_t slot, bool set)
     return true;
 }
 
-bool SlotRenderer::quadHasArea(const Vertex *vertexes)
+SlotRenderer::QuadBounds SlotRenderer::quadBounds(const Vertex *vertexes)
 {
-    int16_t x0=vertexes[0].x, x1=vertexes[0].x, y0=vertexes[0].y, y1=vertexes[0].y;
+    QuadBounds bounds{vertexes[0].x, vertexes[0].x, vertexes[0].y, vertexes[0].y};
 
     for(size_t i=1; i<4; ++i)
     {
-        x0=std::min(x0, vertexes[i].x);
-        x1=std::max(x1, vertexes[i].x);
-        y0=std::min(y0, vertexes[i].y);
-        y1=std::max(y1, vertexes[i].y);
+        bounds.x0=std::min(bounds.x0, int(vertexes[i].x));
+        bounds.x1=std::max(bounds.x1, int(vertexes[i].x));
+        bounds.y0=std::min(bounds.y0, int(vertexes[i].y));
+        bounds.y1=std::max(bounds.y1, int(vertexes[i].y));
     }
-    return (x1 > x0) && (y1 > y0);
+    return bounds;
 }
 
 void SlotRenderer::updateSlotVisibility(size_t slot)
+{
+    if(m_vertexes.size() < slot*4+4)
+        return;
+    updateSlotVisibility(slot, quadBounds(&m_vertexes[slot*4]).hasArea());
+}
+
+void SlotRenderer::updateSlotVisibility(size_t slot, bool hasArea)
 {
     if(m_vertexes.size() < slot*4+4)
         return;
@@ -1243,7 +1251,7 @@ void SlotRenderer::updateSlotVisibility(size_t slot)
     const Vertex *vertexes=&m_vertexes[slot*4];
     const bool styled=(vertexes[0].style|vertexes[1].style|vertexes[2].style|vertexes[3].style) != 0;
     const bool culled=styled && slotBit(m_clipCulledSlots, slot);
-    const bool visible=styled && quadHasArea(vertexes) && !culled;
+    const bool visible=styled && hasArea && !culled;
     const size_t word=slot/64;
     const uint64_t bit=uint64_t(1)<<(slot%64);
 
@@ -1974,30 +1982,46 @@ bool SlotRenderer::textRunCulled(size_t textId) const
     return (textId < m_textRuns.size()) && m_textRuns[textId].culled;
 }
 
+bool SlotRenderer::textRunInDrawList(size_t textId) const
+{
+    if(textId >= m_textRuns.size())
+        return false;
+
+    const TextRun &run=m_textRuns[textId];
+
+    if(!run.fontData || (run.glyphs == 0))
+        return false;
+    for(const ChunkDraw &draw:run.fontData->drawChunks)
+    {
+        for(size_t i=0; i<draw.counts.size(); ++i)
+        {
+            const size_t first=draw.chunk*m_chunkSlots+draw.offsets[i]/(6*sizeof(uint16_t));
+            const size_t end=first+size_t(draw.counts[i])/6;
+
+            if((first < run.start+run.glyphs) && (run.start < end))
+                return true;
+        }
+    }
+    return false;
+}
+
 void SlotRenderer::cullClippedQuad(size_t primitiveId)
 {
-    const Vertex *vertexes=&m_vertexes[primitiveId*4];
+    const QuadBounds quad=quadBounds(&m_vertexes[primitiveId*4]);
+    const bool hasArea=quad.hasArea();
     bool culled=false;
 
     // a quad with no area (collapsed out of range, or drawn empty) makes no
     // fragment already, and is not counted as culled
-    if(m_clipCulling && quadHasArea(vertexes))
+    if(m_clipCulling && hasArea)
     {
         const Box &box=m_clippingBoxes[primitiveId];
-        int x0=vertexes[0].x, x1=vertexes[0].x, y0=vertexes[0].y, y1=vertexes[0].y;
 
-        for(size_t i=1; i<4; ++i)
-        {
-            x0=std::min(x0, int(vertexes[i].x));
-            x1=std::max(x1, int(vertexes[i].x));
-            y0=std::min(y0, int(vertexes[i].y));
-            y1=std::max(y1, int(vertexes[i].y));
-        }
         // the shaders keep a pixel whose centre is in [x0,x1) x [y0,y1) of the box,
         // and the quad's centres are inside its corners' span
         culled=(box.x1 <= box.x0) || (box.y1 <= box.y0)
-            || (x1 <= int(box.x0)) || (x0 >= int(box.x1))
-            || (y1 <= int(box.y0)) || (y0 >= int(box.y1));
+            || (quad.x1 <= int(box.x0)) || (quad.x0 >= int(box.x1))
+            || (quad.y1 <= int(box.y0)) || (quad.y0 >= int(box.y1));
     }
 
     // The vertexes are left as drawn, so the buffer holds what it holds with the
@@ -2006,7 +2030,7 @@ void SlotRenderer::cullClippedQuad(size_t primitiveId)
     // once: its vertexes are written, and the flip may come with no byte of the
     // slot changed, which the flush's pass over the dirty slots would not see.
     if(setSlotBit(m_clipCulledSlots, primitiveId, culled))
-        updateSlotVisibility(primitiveId);
+        updateSlotVisibility(primitiveId, hasArea);
 }
 
 void SlotRenderer::drawFilledRect(size_t primitiveId, gweni::Rect rect, int zIndex)
@@ -2915,27 +2939,21 @@ void SlotRenderer::markTextDrawList(TextRun &run, std::pair<size_t, size_t> befo
         run.fontData->drawListStale=true;
 }
 
-void SlotRenderer::cullTextRun(TextRun &run, const Box &box) const
+void SlotRenderer::cullTextRun(size_t textId, TextRun &run, const Box &box) const
 {
     run.culled=false;
     if(!m_clipCulling || (run.glyphs == 0))
         return;
 
-    const ftgl::glyph_vertex_t *vertexes=&m_textVertexes[run.start*4];
-    float x0=vertexes[0].x, x1=x0, y0=vertexes[0].y, y1=y0;
+    const TextRunBounds &bounds=m_textRunBounds[textId];
+    const int x0=run.position.x+bounds.x0, x1=run.position.x+bounds.x1;
+    const int y0=run.position.y+bounds.y0, y1=run.position.y+bounds.y1;
 
-    for(size_t i=1; i<run.glyphs*4; ++i)
-    {
-        x0=std::min(x0, vertexes[i].x);
-        x1=std::max(x1, vertexes[i].x);
-        y0=std::min(y0, vertexes[i].y);
-        y1=std::max(y1, vertexes[i].y);
-    }
-    // the shader keeps a pixel whose position (interpolated from these unsnapped
+    // the shader keeps a pixel whose position (interpolated from the unsnapped
     // corners, so inside their bounds) is in [x0,x1) x [y0,y1) of the box
     run.culled=(box.x1 <= box.x0) || (box.y1 <= box.y0)
-        || (x1 <= float(box.x0)) || (x0 >= float(box.x1))
-        || (y1 <= float(box.y0)) || (y0 >= float(box.y1));
+        || (x1 <= int(box.x0)) || (x0 >= int(box.x1))
+        || (y1 <= int(box.y0)) || (y0 >= int(box.y1));
 }
 
 void SlotRenderer::markTextVertexes(const TextRun &run)
@@ -3220,6 +3238,8 @@ void SlotRenderer::renderTextRun(size_t textId, const gweni::Font &font, gweni::
 
     if(m_textRuns.size() < textId+1)
         m_textRuns.resize(textId+1);
+    if(m_textRunBounds.size() < textId+1)
+        m_textRunBounds.resize(textId+1);
 
     TextRun &run=m_textRuns[textId];
 
@@ -3310,7 +3330,7 @@ void SlotRenderer::renderTextRun(size_t textId, const gweni::Font &font, gweni::
         const Box box=makeClipBox();
 
         writeTextClipBoxes(run, box);
-        cullTextRun(run, box);
+        cullTextRun(textId, run, box);
         markTextDrawList(run, drawnBefore);
         return;
     }
@@ -3383,6 +3403,8 @@ void SlotRenderer::renderTextRun(size_t textId, const gweni::Font &font, gweni::
 
     const float zDelta=1.0f/(glyphCount+1);
     float zOffset=zDelta;
+    // the corners' span from pos, for cullTextRun
+    float spanX0=0.0f, spanX1=0.0f, spanY0=0.0f, spanY1=0.0f;
 
 #ifdef DEBUG_RENDER
     std::cout<<"Regenerating text run: ("<<pos.x<<", "<<pos.y<<" : "<<zIndex<<") "<<text<<"\n";
@@ -3417,11 +3439,24 @@ void SlotRenderer::renderTextRun(size_t textId, const gweni::Font &font, gweni::
             // back left the corners some ulps off and changed SDF edge pixels.
             const float offsetX=std::round((source.x+shift)*256.0f)/256.0f;
             const float offsetY=std::round(source.y*256.0f)/256.0f;
+            const float spanY=lineShift-offsetY;
 
             vertex=source;
             vertex.x=pos.x+offsetX;
             vertex.y=pos.y-offsetY+lineShift;
             vertex.z=z;
+            if((i == 0) && (j == 0))
+            {
+                spanX0=spanX1=offsetX;
+                spanY0=spanY1=spanY;
+            }
+            else
+            {
+                spanX0=std::min(spanX0, offsetX);
+                spanX1=std::max(spanX1, offsetX);
+                spanY0=std::min(spanY0, spanY);
+                spanY1=std::max(spanY1, spanY);
+            }
         }
     }
 
@@ -3429,9 +3464,16 @@ void SlotRenderer::renderTextRun(size_t textId, const gweni::Font &font, gweni::
     if(kept)
         colorTextRun(run, kept, false);
 
+    TextRunBounds &bounds=m_textRunBounds[textId];
+
+    bounds.x0=(int32_t)std::floor(spanX0);
+    bounds.x1=(int32_t)std::ceil(spanX1);
+    bounds.y0=(int32_t)std::floor(spanY0);
+    bounds.y1=(int32_t)std::ceil(spanY1);
+
     const Box box=makeClipBox();
 
-    cullTextRun(run, box);
+    cullTextRun(textId, run, box);
     markTextDrawList(run, drawnBefore);
     markTextVertexes(run);
     writeTextClipBoxes(run, box);

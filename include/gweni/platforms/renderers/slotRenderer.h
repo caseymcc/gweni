@@ -648,6 +648,9 @@ public:
     //! anyway, or a draw that is not culled). Test hooks.
     bool primitiveCulled(size_t primitiveId) const;
     bool textRunCulled(size_t textId) const;
+    //! Whether any of the text run's glyphs is in its font's draw list as the
+    //! last flush built it, so is drawn. A test hook.
+    bool textRunInDrawList(size_t textId) const;
     //! A primitive chunk's ranges: a gap of fewer than kPrimitiveRangeGap hidden
     //! slots between two runs of slots that can show is drawn with them, and a
     //! chunk draws at most kMaxPrimitiveRanges ranges, the smallest gaps (the
@@ -1102,9 +1105,16 @@ private:
     //! is with the cull off and a decision that flips uploads nothing. A flip
     //! updates the slot's visibility at once (updateSlotVisibility).
     void cullClippedQuad(size_t primitiveId);
-    //! Whether a quad's corners span an area, the least a quad that makes a
-    //! fragment needs
-    static bool quadHasArea(const Vertex *vertexes);
+    //! The span of a quad's corners, in device px
+    struct QuadBounds
+    {
+        int x0, x1, y0, y1;
+
+        //! whether the corners span an area, the least a quad that makes a
+        //! fragment needs
+        bool hasArea() const { return (x1 > x0) && (y1 > y0); }
+    };
+    static QuadBounds quadBounds(const Vertex *vertexes);
     //! Writes primitiveId's slot as one of the SDF rounded-rect quads (styles 4, 6, 7),
     //! centred in rect. color0 and color3 are given per side (left, right), because
     //! style 6 interpolates them along x; color1 and the border colour are per quad.
@@ -1178,6 +1188,8 @@ private:
     //! fragment) and cullClippedQuad did not cull it. Its m_culledSlots bit and
     //! m_primitiveSlotsCulled follow too.
     void updateSlotVisibility(size_t slot);
+    //! The same, for a caller that has the quad's hasArea() at hand
+    void updateSlotVisibility(size_t slot, bool hasArea);
     //! Builds a chunk's ranges from its bits: m_chunkSlots/64 words, and the runs
     //! they hold.
     void buildPrimitiveRanges(size_t chunk);
@@ -1276,12 +1288,26 @@ private:
     //! Every change of a run's hidden, culled or glyph count comes through here,
     //! so it keeps m_textRunsCulled too.
     void markTextDrawList(TextRun &run, std::pair<size_t, size_t> before);
-    //! Sets run.culled from the glyphs just written and the clip box written for
-    //! them: with clipCulling() on, whether their bounds lie wholly outside the
-    //! box (or the box is empty), the fragment shader's half-open test at pixel
-    //! centres discarding every pixel of them. The glyphs are not rewritten; the
-    //! caller's markTextDrawList takes the run out of its font's list or back in.
-    void cullTextRun(TextRun &run, const Box &box) const;
+    //! Sets run.culled from the run's bounds (m_textRunBounds) and the clip box
+    //! written for its glyphs: with clipCulling() on, whether the bounds lie
+    //! wholly outside the box (or the box is empty), the fragment shader's
+    //! half-open test at pixel centres discarding every pixel of them. O(1): the
+    //! glyphs are not read or rewritten; the caller's markTextDrawList takes the
+    //! run out of its font's list or back in.
+    void cullTextRun(size_t textId, TextRun &run, const Box &box) const;
+    //! A text run's glyph corners' span, in whole device px from its position:
+    //! x0, y0 the floor of the lowest corner, x1, y1 the ceiling of the highest.
+    //! Against a box's whole-px edges these give what the corners themselves give
+    //! (a corner c is <= an edge e exactly when ceil(c) is, >= when floor(c) is),
+    //! and a move adds the same whole-px delta to the corners and the position, so
+    //! they hold until the run is laid out again.
+    struct TextRunBounds
+    {
+        int32_t x0=0, x1=0, y0=0, y1=0;
+    };
+    //! Each text id's TextRunBounds, set by renderText's layout; beside
+    //! m_textRuns rather than in TextRun, which is one entry per id
+    std::vector<TextRunBounds> m_textRunBounds;
     size_t m_textRunsCulled=0;
     void markTextVertexes(const TextRun &run);
     //! Writes box into the run's glyph slots in use, marking only the ones that change.

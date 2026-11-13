@@ -21,15 +21,18 @@
  *  uploads what it uploads with the cull off: the cull leaves its vertexes as
  *  drawn, so only a moved clip box is sent. A settled frame builds no range. A text run
  *  (FrameStats::textRunsCulled) follows the same transitions, its glyph slots'
- *  clip boxes written as without the cull. Every culled frame is the one the
+ *  clip boxes written as without the cull, and a culled run is out of its
+ *  font's draw list (textRunInDrawList), so the shader is not left to discard
+ *  it. Every culled frame is the one the
  *  cull off draws, pixel for pixel.
  *
  *  A ScrollControl of Button rows on a textured-skin canvas: a row scrolled
- *  wholly out of the viewport has its slot and its label's run culled, and
- *  scrolled back it is drawn again, the frame the one before the scroll.
+ *  wholly out of the viewport has its slot and its label's run culled (the run
+ *  out of the draw list), and scrolled back it is drawn again, the frame the one before the scroll.
  *
  *  The renderer is shared with the other cases, so each case puts the clip
- *  region back to the whole view and the cull back on when it ends (Guard).
+ *  region back to the whole view and the cull as it found it when it ends
+ *  (Guard).
  */
 #include <doctest/doctest.h>
 
@@ -104,14 +107,23 @@ Frame emptyFrame()
     return drawFrame([](SlotRenderer &) {});
 }
 
-//! Puts the clip region back to the whole view and the cull back on.
+//! Turns the cull on, and puts the clip region back to the whole view and the
+//! cull as it found it.
 struct Guard
 {
+    Guard()
+        : culling(renderer().clipCulling())
+    {
+        renderer().setClipCulling(true);
+    }
+
     ~Guard()
     {
         renderer().setClipRegion(wholeView());
-        renderer().setClipCulling(true);
+        renderer().setClipCulling(culling);
     }
+
+    bool culling;
 };
 
 //! Primitive ids for one test case, released (and that flushed) when it ends.
@@ -441,11 +453,13 @@ TEST_CASE("Clip cull: a text run out of its box is culled, and drawn again back 
 
     CHECK(in.drawn() > 0);
     CHECK_FALSE(renderer().textRunCulled(text.id));
+    CHECK(renderer().textRunInDrawList(text.id));
     CHECK(stats().textRunsCulled == culledBefore);
 
     const Frame out=draw(outside);
 
     CHECK(renderer().textRunCulled(text.id));
+    CHECK_FALSE(renderer().textRunInDrawList(text.id));
     CHECK(stats().textRunsCulled == culledBefore+1);
     // the glyphs' clip boxes are written as without the cull
     CHECK(stats().textSlotsWritten > 0);
@@ -458,6 +472,7 @@ TEST_CASE("Clip cull: a text run out of its box is culled, and drawn again back 
     const Frame back=draw(inside);
 
     CHECK_FALSE(renderer().textRunCulled(text.id));
+    CHECK(renderer().textRunInDrawList(text.id));
     CHECK(stats().textRunsCulled == culledBefore);
     CHECK(back.pixels == in.pixels);
 
@@ -465,6 +480,7 @@ TEST_CASE("Clip cull: a text run out of its box is culled, and drawn again back 
     const Frame unculled=draw(outside);
 
     CHECK_FALSE(renderer().textRunCulled(text.id));
+    CHECK(renderer().textRunInDrawList(text.id));
     CHECK(unculled.pixels == out.pixels);
 }
 
@@ -501,6 +517,7 @@ TEST_CASE("Clip cull: a culled text run hidden is not counted, shown still culle
     const Frame shown=drawFrame([&](SlotRenderer &renderer) { renderer.showText(text.id); });
 
     CHECK(renderer().textRunCulled(text.id));
+    CHECK_FALSE(renderer().textRunInDrawList(text.id));
     CHECK(stats().textRunsCulled == culledBefore+1);
     CHECK(shown.pixels == empty.pixels);
 
@@ -514,6 +531,7 @@ TEST_CASE("Clip cull: a culled text run hidden is not counted, shown still culle
         });
 
     CHECK_FALSE(renderer().textRunCulled(text.id));
+    CHECK(renderer().textRunInDrawList(text.id));
     CHECK(stats().textRunsCulled == culledBefore);
     CHECK(back.pixels == in.pixels);
 }
@@ -593,6 +611,7 @@ TEST_CASE("Clip cull: a row scrolled out of a ScrollControl is culled, and drawn
     // the first row is in the viewport; the last ones are below it, culled
     CHECK_FALSE(renderer().primitiveCulled(rowPrimitives[0]));
     CHECK_FALSE(renderer().textRunCulled(rowTexts[0]));
+    CHECK(renderer().textRunInDrawList(rowTexts[0]));
     CHECK(slotsCulled > 0);
 
     // the first rows wholly above the viewport
@@ -602,6 +621,7 @@ TEST_CASE("Clip cull: a row scrolled out of a ScrollControl is culled, and drawn
 
     CHECK(renderer().primitiveCulled(rowPrimitives[0]));
     CHECK(renderer().textRunCulled(rowTexts[0]));
+    CHECK_FALSE(renderer().textRunInDrawList(rowTexts[0]));
 
     scroll->setVerticalScrollOffset(0);
     frame();
@@ -609,6 +629,7 @@ TEST_CASE("Clip cull: a row scrolled out of a ScrollControl is culled, and drawn
 
     CHECK_FALSE(renderer().primitiveCulled(rowPrimitives[0]));
     CHECK_FALSE(renderer().textRunCulled(rowTexts[0]));
+    CHECK(renderer().textRunInDrawList(rowTexts[0]));
     CHECK(stats().primitiveSlotsCulled == slotsCulled);
     CHECK(stats().textRunsCulled == runsCulled);
     CHECK(back.pixels == top.pixels);
