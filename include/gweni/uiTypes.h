@@ -161,6 +161,15 @@ enum class Dim
     Y
 };
 
+//! A corner of a control's bounds (Base::attachTo).
+enum class Corner
+{
+    TopLeft,
+    TopRight,
+    BottomLeft,
+    BottomRight
+};
+
 enum class SizeFlag
 {
     Fixed=0, //Will not change size

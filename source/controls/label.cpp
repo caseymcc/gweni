@@ -157,7 +157,8 @@ void Label::refreshChildClipRects()
         return;
     for(Base *child:m_children)
     {
-        if((child != m_text) && (getChildClipRect(child) == &m_childClip))
+        // an attached child renders in the Label's own region (attachTo)
+        if((child != m_text) && !child->isAttached() && (getChildClipRect(child) == &m_childClip))
             child->addStateChangeRecursive(StateChange_Geometry);
     }
 }

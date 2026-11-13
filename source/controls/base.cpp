@@ -35,6 +35,7 @@
 #include <set>
 #include <sstream>
 #include <iostream>
+#include <unordered_map>
 
 namespace gweni
 {
@@ -100,6 +101,23 @@ std::string getFullName(Base *base)
 // again, so an id names one control for the process's life. Never destroyed:
 // a control deleted during static destruction still writes its entry.
 ObjectIdBank<Base *, nullptr> &g_controls=*new ObjectIdBank<Base *, nullptr>;
+
+namespace
+{
+// What attachTo() gave an attached control (m_attached), and the z its
+// anchor's parent handed it (0 until a renumber has). Kept out of Base, as is
+// the count below, so a control that is no part of an attachment costs
+// nothing; never destroyed, like g_controls.
+struct Attachment
+{
+    Corner corner=Corner::TopLeft;
+    Point offset;
+    int z=0;
+};
+std::unordered_map<const Base *, Attachment> &g_attachments=*new std::unordered_map<const Base *, Attachment>;
+// attachedOverlayLayers() of each control with m_reservesAttached
+std::unordered_map<const Base *, int> &g_attachedLayers=*new std::unordered_map<const Base *, int>;
+}//namespace
 
 namespace
 {
@@ -327,6 +345,11 @@ Base::~Base()
 
     m_accelerators.clear();
     setParent(nullptr);
+    // a control with no parent left its attachment in removeChild already
+    if(m_attached)
+        g_attachments.erase(this);
+    if(m_reservesAttached)
+        g_attachedLayers.erase(this);
 
     if(HoveredControl == this)
         HoveredControl=nullptr;
@@ -1364,6 +1387,11 @@ void Base::removeChild(Base *child)
         // On its own it is shown unless it hid itself; a new parent sets this
         // again as it is attached.
         child->setAncestorHidden(false);
+        if(child->m_attached)
+            attachedChildLeft(child);
+        // this control reserved z for its attached children
+        else if(child->m_anchorsAttached && m_actualParent)
+            zOrderChanged();
     }
 
     zChildRemoved();
@@ -1767,10 +1795,18 @@ void innerRenderState(Base *control, const RenderState &state, RenderState &inne
 }
 
 // The clip region \p child of \p parent renders in, \p parent's children's
-// being (offset, clip): narrowed by the parent's getChildClipRect() for it.
+// being (offset, clip) and \p parent's own \p parentClip: narrowed by the
+// parent's getChildClipRect() for it, or for a child attached to it
+// (Base::attachTo) the region the parent renders in.
 GWENI_RENDER_INLINE inline
-void childRenderState(const Base *parent, const Base *child, const Point &offset, Rect &clip)
+void childRenderState(const Base *parent, const Base *child, const Rect &parentClip,
+    const Point &offset, Rect &clip)
 {
+    if(child->isAttached() && !parent->transformsChildren())
+    {
+        clip=parentClip;
+        return;
+    }
     if(const Rect *childClip=parent->getChildClipRect(child))
         clip=clipRegionAt(clip, Point(offset.x+childClip->x, offset.y+childClip->y), childClip->w,
             childClip->h);
@@ -1869,15 +1905,19 @@ bool Base::clipRectRegionChanged(const Rect &oldRect, const Rect &newRect) const
         // its children's region is in device px from there up (enterChildSpace)
         if(parent->transformsChildren())
             return true;
-        if(const Rect *childClip=parent->getChildClipRect(child))
+        // an attached child renders in the region its anchor renders in
+        if(!child->m_attached)
         {
-            x.narrow(childClip->x, static_cast<long long>(childClip->x)+childClip->w);
-            y.narrow(childClip->y, static_cast<long long>(childClip->y)+childClip->h);
-        }
-        if(parent->shouldClip() || (!parent->m_actualParent && parent->getCanvas() == parent))
-        {
-            x.narrow(0, parent->m_bounds.w);
-            y.narrow(0, parent->m_bounds.h);
+            if(const Rect *childClip=parent->getChildClipRect(child))
+            {
+                x.narrow(childClip->x, static_cast<long long>(childClip->x)+childClip->w);
+                y.narrow(childClip->y, static_cast<long long>(childClip->y)+childClip->h);
+            }
+            if(parent->shouldClip() || (!parent->m_actualParent && parent->getCanvas() == parent))
+            {
+                x.narrow(0, parent->m_bounds.w);
+                y.narrow(0, parent->m_bounds.h);
+            }
         }
         if(x.same() && y.same())
             return false;
@@ -2210,8 +2250,12 @@ void Base::renumberZRecursive(ZNumbering &numbering, bool moved)
     const int layers=m_skinControl?(int)m_skinControl->depthLayersOf(this):1;
     bool changed=placeZRange(numbering, m_zIndex, layers, moved);
 
+    // a child is an anchor: this control may reserve z for its attached ones
+    bool anchorsBelow=m_anchorsAttached;
+
     for(auto &&child:m_children)
     {
+        anchorsBelow=anchorsBelow || child->m_anchorsAttached;
         // Nothing changed in it since it was numbered, so its ranges are in
         // order and, its first still past the cursor, it keeps every label: a
         // pass that entered it would leave the cursor at its end.
@@ -2225,7 +2269,20 @@ void Base::renumberZRecursive(ZNumbering &numbering, bool moved)
         child->renumberZRecursive(numbering, moved);
     }
 
-    const int overlay=m_skinControl?(int)m_skinControl->overlayLayers():0;
+    const int skinOverlay=m_skinControl?(int)m_skinControl->overlayLayers():0;
+    const int attached=anchorsBelow?countAttachedOverlay():0;
+    const int overlay=skinOverlay+attached;
+
+    if(attached)
+    {
+        g_attachedLayers[this]=attached;
+        m_reservesAttached=true;
+    }
+    else if(m_reservesAttached)
+    {
+        g_attachedLayers.erase(this);
+        m_reservesAttached=false;
+    }
 
     if(overlay)
         changed|=placeZRange(numbering, m_overlayZIndex, overlay, moved);
@@ -2233,6 +2290,13 @@ void Base::renumberZRecursive(ZNumbering &numbering, bool moved)
     {
         m_overlayZIndex=0;
         changed=true;
+    }
+    if(attached)
+    {
+        const int attachedChanged=numberAttachedChildren(m_overlayZIndex+skinOverlay);
+
+        if(!numbering.excludedDepth)
+            numbering.stats->zChanged+=attachedChanged;
     }
 
     m_zEnd=zSubtreeEnd();
@@ -2250,7 +2314,7 @@ void Base::renumberZRecursive(ZNumbering &numbering, bool moved)
 
 int Base::zSubtreeEnd() const
 {
-    const int overlay=m_skinControl?(int)m_skinControl->overlayLayers():0;
+    const int overlay=(m_skinControl?(int)m_skinControl->overlayLayers():0)+attachedOverlayLayers();
 
     if(overlay)
         return m_overlayZIndex+overlay;
@@ -2267,7 +2331,7 @@ void Base::countZRanges(size_t &layers, size_t &ranges) const
     for(const Base *child:m_children)
         child->countZRanges(layers, ranges);
 
-    if(const size_t overlay=m_skinControl?m_skinControl->overlayLayers():0)
+    if(const size_t overlay=(m_skinControl?m_skinControl->overlayLayers():0)+attachedOverlayLayers())
     {
         layers+=overlay;
         ++ranges;
@@ -2315,16 +2379,221 @@ void Base::zChildRemoved()
     }
 }
 
+void Base::attachTo(Base *anchor, Corner corner, const Point &offset)
+{
+    if(m_attached && (m_actualParent == anchor))
+    {
+        Attachment &attachment=g_attachments[this];
+
+        if((attachment.corner == corner) && (attachment.offset.x == offset.x)
+            && (attachment.offset.y == offset.y))
+            return;
+        attachment.corner=corner;
+        attachment.offset=offset;
+        // placed by its anchor's arrange
+        anchor->invalidate();
+        return;
+    }
+
+    setParent(nullptr);
+    // before anything measures it: the anchor's size leaves it out
+    setPlacement(Placement::Owner);
+    m_attached=true;
+    g_attachments[this]=Attachment{corner, offset, 0};
+
+    // its own list, so neither an inner panel nor a LayoutItem places it; the
+    // add marks the way to the reserver for the renumber
+    anchor->m_anchorsAttached=true;
+    m_parent=anchor;
+    anchor->addChildOfLayout(this);
+}
+
+Corner Base::getAttachedCorner() const
+{
+    if(!m_attached)
+        return Corner::TopLeft;
+    return g_attachments[this].corner;
+}
+
+Point Base::getAttachedOffset() const
+{
+    if(!m_attached)
+        return Point(0, 0);
+    return g_attachments[this].offset;
+}
+
+int Base::getAttachedZIndex() const
+{
+    if(!m_attached)
+        return getZIndex();
+
+    const int z=g_attachments[this].z;
+
+    return (z != 0)?z:getZIndex();
+}
+
+int Base::attachedOverlayLayers() const
+{
+    if(!m_reservesAttached)
+        return 0;
+
+    auto found=g_attachedLayers.find(this);
+
+    return (found != g_attachedLayers.end())?found->second:0;
+}
+
+Base *Base::attachedZReserver(const Base *anchor)
+{
+    // a child at a tree's root (the canvas) has nothing after its subtree in
+    // its parent's range but the root's later children: Popups, Menus, the
+    // ToolTip box and the overlays, which must stay in front
+    if(anchor->m_actualParent && anchor->m_actualParent->m_actualParent)
+        return anchor->m_actualParent;
+    return const_cast<Base *>(anchor);
+}
+
+size_t Base::attachedChildCount() const
+{
+    size_t count=0;
+
+    for(const Base *child:m_children)
+    {
+        if(child->m_attached)
+            ++count;
+    }
+    return count;
+}
+
+int Base::countAttachedOverlay() const
+{
+    int layers=0;
+
+    // the children of a root reserve their own
+    if(m_actualParent)
+    {
+        for(const Base *child:m_children)
+        {
+            if(child->m_anchorsAttached)
+                layers+=static_cast<int>(child->attachedChildCount());
+        }
+    }
+    if(m_anchorsAttached && (attachedZReserver(this) == this))
+        layers+=static_cast<int>(attachedChildCount());
+    return layers;
+}
+
+int Base::numberAttachedChildren(int first)
+{
+    int z=first;
+    int changed=0;
+    const auto number=[&z, &changed](Base *anchor)
+        {
+            for(Base *child:anchor->m_children)
+            {
+                if(!child->m_attached)
+                    continue;
+
+                Attachment &attachment=g_attachments[child];
+
+                if(attachment.z != z)
+                {
+                    attachment.z=z;
+                    child->addStateChange(StateChange_Geometry);
+                    ++changed;
+                }
+                ++z;
+            }
+        };
+
+    if(m_actualParent)
+    {
+        for(Base *child:m_children)
+        {
+            if(child->m_anchorsAttached)
+                number(child);
+        }
+    }
+    if(m_anchorsAttached && (attachedZReserver(this) == this))
+        number(this);
+    return changed;
+}
+
+void Base::attachedChildLeft(Base *child)
+{
+    child->m_attached=false;
+    g_attachments.erase(child);
+    // off any parent now: nothing to tell
+    child->setPlacement(Placement::Parent);
+
+    m_anchorsAttached=(attachedChildCount() != 0);
+    // its reserved z is one too many
+    attachedZReserver(this)->zOrderChanged();
+}
+
+void Base::measureAttachedChildren(skin::Base *skin, Dim dim, size_t seq)
+{
+    const size_t axis=static_cast<size_t>(dim);
+
+    for(Base *child:m_children)
+    {
+        if(child->m_attached && !child->hidden() && (child->m_measureSeq[axis] <= seq))
+            child->doCalculateSize(skin, dim);
+    }
+}
+
+void Base::placeAttachedChildren(Dim dim)
+{
+    for(Base *child:m_children)
+    {
+        if(!child->m_attached || child->hidden())
+            continue;
+
+        const Attachment &attachment=g_attachments[child];
+        const Rect &bounds=child->getBounds();
+
+        // centred on the corner: an odd size has its extra unit past it
+        if(dim == Dim::X)
+        {
+            const bool right=(attachment.corner == Corner::TopRight)
+                || (attachment.corner == Corner::BottomRight);
+            const int w=child->dockNoneSize(Dim::X, child->getPreferredSize().width);
+            const int x=(right?m_bounds.w:0)-w/2+attachment.offset.x;
+
+            placeChild(child, x, bounds.y, w, bounds.h);
+        }
+        else
+        {
+            const bool bottom=(attachment.corner == Corner::BottomLeft)
+                || (attachment.corner == Corner::BottomRight);
+            const int h=child->dockNoneSize(Dim::Y, child->getPreferredSize().height);
+            const int y=(bottom?m_bounds.h:0)-h/2+attachment.offset.y;
+
+            placeChild(child, bounds.x, y, bounds.w, h);
+        }
+    }
+}
+
+void Base::arrangeAttachedChildren(skin::Base *skin, Dim dim)
+{
+    for(Base *child:m_children)
+    {
+        if(child->m_attached && !child->hidden() && !child->laidOutThisPass(dim))
+            child->doArrange(skin, dim);
+    }
+}
+
 namespace
 {
-// One level of the drain's ancestor stack: a control of the drained tree, and
-// the render offset and clip region its children render in (before a
-// getChildClipRect() of its own narrows one child's). The control is only
-// compared, never dereferenced: a hook may have deleted it.
+// One level of the drain's ancestor stack: a control of the drained tree, the
+// render offset and clip region its children render in (before a
+// getChildClipRect() of its own narrows one child's), and the region it
+// renders in itself, which a child attached to it renders in. The control is
+// only compared, never dereferenced: a hook may have deleted it.
 struct RenderLevel
 {
     Base *control;
     RenderState state;
+    Rect clip;
 };
 
 // A queue slot to render and its z, for the sort.
@@ -2529,8 +2798,15 @@ void Base::drainRenderQueue(skin::Base *skin, bool zTied, size_t treeSize)
                 for(Base *child : control->m_children)
                 {
                     // a copy only for a child clipped to a rect of its own
-                    // (childRenderState)
-                    if(const Rect *childClip=control->getChildClipRect(child))
+                    // (childRenderState), or to this control's own region
+                    if(child->m_attached && !control->m_transformsChildren)
+                    {
+                        RenderState forChild=inner;
+
+                        forChild.clip=state.clip;
+                        self(self, child, forChild);
+                    }
+                    else if(const Rect *childClip=control->getChildClipRect(child))
                     {
                         RenderState forChild=inner;
 
@@ -2583,6 +2859,7 @@ void Base::drainRenderQueue(skin::Base *skin, bool zTied, size_t treeSize)
             RenderLevel &level=stack[depth];
 
             level.control=control;
+            level.clip=state.clip;
             innerRenderState(control, state, level.state);
             control->m_renderStackLevel=(int)depth;
             ++depth;
@@ -2593,7 +2870,7 @@ void Base::drainRenderQueue(skin::Base *skin, bool zTied, size_t treeSize)
             const RenderLevel &top=stack[depth-1];
 
             state=top.state;
-            childRenderState(control->m_actualParent, control, state.offset, state.clip);
+            childRenderState(control->m_actualParent, control, top.clip, state.offset, state.clip);
         };
     // The stack back to this root alone.
     const auto resetStack=[&]()
@@ -2952,6 +3229,9 @@ Base *Base::getControlAtWalk(int x, int y, bool bOnlyIfMouseEnabled)
     {
         Base *child=*iter;
 
+        // takes no mouse input (attachTo)
+        if(child->m_attached)
+            continue;
         // outside the rect this control clips the child to, it is not there
         if(const Rect *childClip=getChildClipRect(child))
         {
@@ -3425,7 +3705,10 @@ void Base::doCalculateSize(skin::Base *skin, Dim dim)
     // a measure after the parent counted this control may have changed its
     // term (see doArrange)
     m_measureSeq[static_cast<size_t>(dim)]=++s_measureSeq;
+    const size_t measureSeq=s_measureSeq;
     calculateSize(skin, dim);
+    if(m_anchorsAttached)
+        measureAttachedChildren(skin, dim, measureSeq);
     // what the measure changed below it, it read after the change
     if(dim == Dim::X && Canvas::s_layingOut && !visible())
         m_hiddenWidthCurrent=true;
@@ -3443,6 +3726,8 @@ void Base::doArrange(skin::Base *skin, Dim dim)
 {
     if(!Canvas::s_layingOut)
     {
+        if(m_anchorsAttached)
+            placeAttachedChildren(dim);
         arrange(skin, dim);
         return;
     }
@@ -3452,7 +3737,14 @@ void Base::doArrange(skin::Base *skin, Dim dim)
 
     Canvas::s_layingOut->countLayoutEntry(this);
 
+    // Its bounds along dim are final: its attached children go to their
+    // corners before its arrange enters its children, and any its arrange did
+    // not enter (a LayoutItem's, an override's) are entered after it.
+    if(m_anchorsAttached)
+        placeAttachedChildren(dim);
     arrange(skin, dim);
+    if(m_anchorsAttached)
+        arrangeAttachedChildren(skin, dim);
 
     if(dim == Dim::Y)
     {

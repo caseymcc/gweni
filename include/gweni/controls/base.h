@@ -422,8 +422,9 @@ public:
 
     virtual int getZIndex() const { return m_zIndex; }
     //! The first z value after this control's subtree, which it keeps for
-    //! itself when its skin Control's overlayLayers() is not 0: what it draws
-    //! there is in front of every one of its descendants. 0 otherwise.
+    //! itself when its skin Control's overlayLayers() is not 0, or it reserves
+    //! z for attached children (attachedOverlayLayers()): what it draws there
+    //! is in front of every one of its descendants. 0 otherwise.
     int getOverlayZIndex() const { return m_overlayZIndex; }
 
     virtual int bottom() const
@@ -477,6 +478,67 @@ public:
     //! before its arrange, and must already leave them out.
     void setPlacement(Placement placement);
     Placement getPlacement() const { return m_placement; }
+
+    //! \name Attached children
+    //! A control attached to a corner of another (its anchor, a Badge's
+    //! button) is the anchor's child, centred on that corner and moved by an
+    //! offset, so it overhangs the anchor; every anchor type has it with no
+    //! code of its own:
+    //! - Placed by Base (Placement::Owner): doArrange() puts it at its corner
+    //!   at its preferred size before the anchor's arrange, an axis at a
+    //!   time, and doCalculateSize() measures it if the anchor's own measure
+    //!   did not. So neither it nor its size counts in the anchor's preferred
+    //!   size, it moves, hides and scrolls with the anchor, and a pure move of
+    //!   the anchor enters neither it nor the anchor's subtree.
+    //! - Clipped to the region its anchor renders in, not to the anchor's
+    //!   bounds (whether or not the anchor clips, and over any
+    //!   getChildClipRect() rect the anchor gives its children): the part
+    //!   overhanging the anchor shows wherever the anchor could draw, and is
+    //!   cut where an ancestor cuts the anchor (a ScrollControl's viewport).
+    //!   The region is the render drain's for the anchor, so no rect is
+    //!   worked out for it. An anchor that transformsChildren() is the
+    //!   exception: its attached children render in its children's space.
+    //! - Drawn in front of the anchor's later siblings: z is the preorder, so
+    //!   a child of the anchor is numbered under them, and the anchor's
+    //!   parent (its m_actualParent) reserves one overlay z per attached
+    //!   child of its children after its own skin Control's overlayLayers(),
+    //!   handing them out in child order: getAttachedZIndex(), at which the
+    //!   attached child's skin Control draws. They are behind whatever comes
+    //!   later in the tree (a Popup, a Menu, the ToolTip box, the canvas's
+    //!   overlays). An anchor whose parent is the root of its tree (a canvas
+    //!   child) reserves them itself, after its own subtree: in front of its
+    //!   own children, under its later siblings.
+    //! - Takes no mouse input: getControlAt() passes it over, so a point on
+    //!   it inside the anchor finds the anchor (or its child there), and one
+    //!   on the overhang whatever is under it.
+    //! Deleting the anchor deletes it. Taking it off the anchor (setParent(),
+    //! another attachTo(), its deletion) detaches it and gives it
+    //! Placement::Parent back.
+    //! \{
+
+    //! Makes this control a child of \p anchor (its own list, never an inner
+    //! panel's or a LayoutItem's), centred on \p corner of the anchor's bounds
+    //! and moved by \p offset. Called again on the same anchor, it changes
+    //! the corner and offset alone.
+    void attachTo(Base *anchor, Corner corner, const Point &offset=Point(0, 0));
+    //! Whether attachTo() attached this control to its parent.
+    bool isAttached() const { return m_attached; }
+    //! Whether a child of this control is attached to it.
+    bool hasAttachedChildren() const { return m_anchorsAttached; }
+    //! The corner and offset attachTo() gave (TopLeft and 0, 0 when it is not
+    //! attached).
+    Corner getAttachedCorner() const;
+    Point getAttachedOffset() const;
+    //! The z an attached control draws at, which its anchor's parent reserves
+    //! (see above): in front of the anchor's later siblings. getZIndex() until
+    //! the renumber has numbered it, and when it is not attached.
+    int getAttachedZIndex() const;
+    //! The overlay z values this control reserves for the attached children
+    //! of its children (and its own, at the root of a tree's children), after
+    //! its skin Control's overlayLayers(), as the last renumber counted them.
+    int attachedOverlayLayers() const;
+
+    //! \}
 
     virtual void setPadding(const Padding &padding);
     virtual void setMargin(const Margin &margin);
@@ -733,6 +795,29 @@ protected:
     //! Sets m_zDirty on this control and its m_actualParent chain up to the
     //! first that already has it.
     void markZDirty();
+
+    //! The control that reserves z for \p anchor's attached children: its
+    //! parent, or the anchor itself when that is the root of its tree (or it
+    //! has no parent).
+    static Base *attachedZReserver(const Base *anchor);
+    //! The attached children of this control (its children with m_attached).
+    size_t attachedChildCount() const;
+    //! The renumber of this control: the overlay z it reserves for attached
+    //! children, counted over its children (and itself); and, once its
+    //! overlay range is placed from \p first on, each one's z handed out in
+    //! child order, marking StateChange_Geometry on one whose z changed.
+    int countAttachedOverlay() const;
+    int numberAttachedChildren(int first);
+    //! An attached child left this control's list: its attachment is
+    //! dropped, and the reserver renumbers.
+    void attachedChildLeft(Base *child);
+    //! doCalculateSize() and doArrange() for an anchor: measures the attached
+    //! children its calculateSize() did not (one measured after \p seq was),
+    //! places them at their corners along \p dim, and arranges those its
+    //! arrange() did not.
+    void measureAttachedChildren(skin::Base *skin, Dim dim, size_t seq);
+    void placeAttachedChildren(Dim dim);
+    void arrangeAttachedChildren(skin::Base *skin, Dim dim);
 
 public:
 
@@ -1688,6 +1773,13 @@ public:
 protected:
 
     bool m_includeInSize;
+    //! See attachTo(): this control is attached to its parent; a child of it
+    //! is; it reserves overlay z for attached children (a side table holds
+    //! the corner, offset and z, and the count, so Base grows by these three
+    //! bytes, in padding, alone).
+    bool m_attached=false;
+    bool m_anchorsAttached=false;
+    bool m_reservesAttached=false;
     Placement m_placement=Placement::Parent;
 
 public:
