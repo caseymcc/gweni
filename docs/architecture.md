@@ -2162,8 +2162,8 @@ two programs and the draws. What follows describes both together:
   `vlist-variable-scroll` bench scene is local. Wrapped rows given an item with another
   line count gain or lose line `Text`s, so a scroll may renumber z inside the list.
 - **The code editor: the lines on screen, in cells.** `controls::CodeEditor`
-  (`include/gweni/controls/codeEditor.h`) is a `VirtualList` in fixed mode over a
-  `text::Document` it owns (`getDocument()`; "The document and undo model"): one
+  (`include/gweni/controls/codeEditor.h`) is a `VirtualList` in fixed mode (in its
+  variable mode once wrapped, below) over a `text::Document` it owns (`getDocument()`; "The document and undo model"): one
   `CodeLine` row per line in view plus one, each holding its line as **one text run**
   (an `internal::Text` in the editor's font) and two primitives of its own, a line
   background (`CodeCurrentLine` on the caret's line) at the row's z and the selection
@@ -2275,6 +2275,89 @@ two programs and the draws. What follows describes both together:
   shell's "Code editor") holds 5000 generated lines of YAML; `controltest_code_editor`
   holds a typed character, an undone burst, Return and a scroll to the part of the
   editor each may touch.
+
+  **Wrap.** `setWrap(true)` wraps every line at the rows' width, counted in cells
+  with no measuring: `text::wrapCells` (`include/gweni/text/cellWrap.h`) gives a
+  row the caret stops that fit in `wrapCellsFor(width)` cells (the width less
+  `TextInset` on both sides), a word that does not fit going to the next row whole
+  and one wider than the row cut between stops; blanks (`' '`, `'\t'`) always fit,
+  so a run of them past the edge hangs on the row it ends, as a textarea's spaces
+  do, and a row never starts with the blanks that ended a word; a stop wider than
+  the row (a wide glyph at 1 cell) is a row of its own (`tests/unit/codeEditorWrap.cpp`).
+  The horizontal bar goes, and the list goes to its variable mode ("The virtual
+  list's variable mode"): a line is one item, its height its visual rows times the
+  line height. The measurer is `wrapRowCount` at the rows' width (O(line)); the
+  estimator a line's cells over the wrap cells (O(1), from the widths the editor
+  keeps anyway), and every line is estimated again whenever the wrap width or the
+  line height changes (`applyWrapMeasurer`, from `contentsPlaced` before the list
+  places its rows): O(N) arithmetic once per width, the lines on screen measured by
+  that layout, the rest by the idle re-measure. An edit measures again only the
+  lines it replaced (`itemChanged`), so a keystroke costs its line's wrap whatever
+  the document's length (the `code-edit-wrap` bench scene, local: it has no line
+  numbers, since a gutter as wide as the line count's digits makes the wrap width
+  depend on the count). A `CodeLine` shows each visual row as a `Text` of its own,
+  a line height below the one before, made as its line needs them and deleted as it
+  needs fewer (a spare row keeps none), so a row holds what a row bound to its line
+  at that width holds. Toggling wrap, and a new size that wraps again or a new
+  viewport height, keep the caret's line on screen (`scrollToItem` of it when it was
+  shown).
+
+  **Visual rows.** Wrapped, Up and Down move a visual row at a time, inside a line
+  and across lines, the goal column a column in cells on the row; Home and End go
+  to the visual row's start and end first, then to the line's (Home's first
+  non-blank and column 0, End its end); a click lands on the visual row under it
+  (`HeightIndex::itemAt` of the point's offset in the content, the row the line
+  height's step into the line); PageUp and PageDown move the view and the caret by
+  the viewport's rows. A byte at a wrap point is both the end of the upper row and
+  the start of the lower one: the caret is drawn at the upper row's end after End,
+  a click past a row's end or Up/Down landing past it (`isCaretAtRowEnd()`), at the
+  lower row's start after any other move, and `getCaretRow()`/`getCaretBounds()`
+  follow. A move puts the caret's visual row in view through the scroll offset (the
+  row's top is the line's `offsetOf` plus its rows above), or through `scrollToItem`
+  for a line not measured at this width or a row past the last layout's content
+  (`tests/unit/codeEditorWrapEditing.cpp`). Wrapped, the selection draws one rect
+  per visual row it covers (`CodeLine::getSelectionRects`), between its cells on
+  that row from the row's start: a row it goes on past is covered to its last cell,
+  at most the wrap cells (hanging blanks are cut at the edge), the line's last row
+  one cell past its last glyph when the break is selected, and a selection reaching
+  a wrap point covers nothing of the row beyond it; the rects are in units, the
+  same at any scale, and the selection stays in document positions. The textured
+  `CodeLine` renderer takes a slot per rect after the line background, two at least,
+  and gives the rest back, so an unwrapped row keeps its two
+  (`tests/unit/codeEditorWrapSelection.cpp`).
+
+  **Auto-height.** `setAutoHeight(minLines, maxLines)` (`maxLines` 0 turns it off)
+  makes the editor's preferred height its visual rows (its lines, unwrapped)
+  clamped to `[minLines, maxLines]`, times the line height, plus its padding. They
+  are counted in the editor's Y `calculateSize`, which runs once every width is
+  final (`docs/layout.md`), at the width with no vertical bar, and the count stops
+  past `maxLines`, so a layout of the editor costs the wrap of the lines up to that
+  many rows whatever the document's length. Vertical scrolling turns on only past
+  `maxLines` (`setScroll`'s vertical, under a `PlacementScope`), so a form field
+  shows no bar until it needs one; since a narrower width only adds rows, the bar
+  past the most rows changes nothing of that answer. A row more or fewer is a new
+  preferred height of the editor's, which its parent lays out in the same pass: the
+  editor's subtree and its ancestors are entered, and each field a dock moves is
+  entered once (its own arrange), none of their subtrees
+  (`tests/unit/codeEditorAutoHeight.cpp`: a form of 20 fields below the editor
+  costs the growth 18 entries more than one of 2).
+
+  **Plain mode.** `setPlain(true)` is the form-field preset, a textarea: wrapped, no
+  gutter, no current-line background, the theme's text-field look (the `TextBox`,
+  `TextBoxFocus` and `TextBoxDisabled` surfaces) and Tab moving the focus
+  (`setTabInsertsSpaces(false)`), as in a browser; code mode keeps capturing Tab.
+  It is still monospace, every column a cell of the mono face, as everywhere in the
+  editor; a tokenizer (the highlighting task's) is to stay off in it.
+  `setPlain(false)` gives back the code look, the current line and Tab's editing,
+  and leaves the wrap and the gutter as they are. CodeEditorDemo's "Wrap lines"
+  toggle wraps its document (each agent's prompt line wraps); CodeEditorFormDemo
+  (ControlTest's `--list`) is a form of plain auto-height fields, a description of
+  3 to 8 rows and a comment of 2 to 6. `controltest_code_editor` goes on wrapped
+  through the toggle (a typed character keeping its line's rows writes its row, the
+  gutter and the caret alone, one adding a row moves the rows below inside the
+  editor, the toggle and a smaller canvas keep the caret's line on screen, a wrapped
+  line's selection draws its fill on each visual row) and ends on the form's
+  comment field growing a row in one pass.
 - **The log view: an append-only log the view owns.** `controls::LogView`
   (`include/gweni/controls/logView.h`) is a variable-mode `VirtualList` (see "The
   virtual list's variable mode") over a row store it owns: a `std::deque` of
