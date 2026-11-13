@@ -75,8 +75,18 @@ void WindowControl::makeModal()
     if(!canvas)
         return;
 
-    // the focus it took as it was made goes back where it was on the pop
-    Base *before=(KeyboardFocus == this) ? Base::getControlById(m_focusBefore) : nullptr;
+    // the focus it took as it was made goes back where it was on the pop,
+    // also once the app has moved it on into the window (a field focused)
+    Base *before=nullptr;
+
+    for(Base *at=KeyboardFocus; at; at=at->getParent())
+    {
+        if(at == this)
+        {
+            before=Base::getControlById(m_focusBefore);
+            break;
+        }
+    }
 
     canvas->pushModal(this, before);
 }

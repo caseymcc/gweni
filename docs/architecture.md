@@ -548,7 +548,8 @@ deleting its children forgets the stack without restoring anything.
 `internal::Modal` control, which had no textured renderer, is gone with `modal.h`); a
 modal window's Escape closes it as its close button does, and hiding it pops it. Its
 constructor takes the focus as the window is made, so `makeModal` hands the stack the
-control that held it before (`pushModal(control, focusReturn)`). The interaction
+control that held it before (`pushModal(control, focusReturn)`), also when the app has
+focused a field in the window by then. The interaction
 scenario presses WindowDemo's "Modal Window" (`window_modal_*`).
 
 **Two input rules the dialogs needed.** A single-line `TextBox` passes the Return

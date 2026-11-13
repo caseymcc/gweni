@@ -40,7 +40,9 @@
  *  popped; a hidden one is popped by the next update phase; a
  *  canvas deleted with modals up deletes them with no report. WindowDemo's
  *  path: WindowControl::makeModal() / destroyModal() / setHidden(true) / its
- *  close button, no Modal control created.
+ *  close button, no Modal control created; a modal window closed gives the
+ *  app the focus the window took as it was made, also when the app focused a
+ *  field in it before makeModal().
  */
 #include "headlessFixture.h"
 
@@ -437,6 +439,40 @@ TEST_CASE("Modal stack: a modal window's close button, destroyModal and setHidde
     scene.frame();
     scene.key(keys::Escape);
     CHECK(window->isModal());
+}
+
+TEST_CASE("Modal stack: a modal window gives the app its focus back, also after a field in it was focused")
+{
+    for(int focusField=0; focusField < 2; ++focusField)
+    {
+        CAPTURE(focusField);
+        Scene scene;
+        controls::Canvas *canvas=scene.canvas;
+
+        scene.clickOn(scene.appText);
+        REQUIRE(KeyboardFocus == scene.appText);
+
+        // the window takes the focus as it is made
+        controls::WindowControl *window=canvas->newChild<controls::WindowControl>();
+        Scene::place(window, 80, 40, 240, 200);
+        controls::TextBox *field=window->newChild<controls::TextBox>();
+        Scene::place(field, 10, 10, 100, 20);
+
+        if(focusField)
+        {
+            field->focus();
+            REQUIRE(KeyboardFocus == field);
+        }
+        window->makeModal();
+        scene.frame();
+        REQUIRE(window->isModal());
+
+        controls::Base *close=window->findChildByName("closeButton", true);
+        REQUIRE(close != nullptr);
+        scene.clickOn(close);
+        CHECK_FALSE(window->isModal());
+        CHECK(KeyboardFocus == scene.appText);
+    }
 }
 
 TEST_CASE("Modal stack: stacked modals hand the input and the focus back down")
