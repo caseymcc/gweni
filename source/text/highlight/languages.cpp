@@ -17,6 +17,11 @@ std::vector<std::pair<String, std::unique_ptr<Tokenizer>>> builtinLanguages()
 {
     std::vector<std::pair<String, std::unique_ptr<Tokenizer>>> languages;
 
+    languages.emplace_back("yaml", makeYamlTokenizer());
+    languages.emplace_back("json", makeJsonTokenizer());
+    languages.emplace_back("diff", makeDiffTokenizer());
+    languages.emplace_back("bash", makeBashTokenizer());
+
     return languages;
 }
 

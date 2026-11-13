@@ -147,6 +147,11 @@ set(GWENI_SOURCES
     source/text/highlightCache.cpp
     source/text/highlight/languages.h
     source/text/highlight/languages.cpp
+    source/text/highlight/scan.h
+    source/text/highlight/bash.cpp
+    source/text/highlight/diff.cpp
+    source/text/highlight/json.cpp
+    source/text/highlight/yaml.cpp
     include/gweni/text/tokenizer.h
     source/text/tokenizer.cpp
     include/gweni/text/undoStack.h
