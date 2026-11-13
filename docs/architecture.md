@@ -2902,6 +2902,78 @@ two programs and the draws. What follows describes both together:
   markers and a span, both pinned to UTC. `controltest_chart` (`--scenario chart`) holds
   the slot counts above on both demos, and `gweni_bench`'s `chart-append` appends a point
   a frame to a line of N in a fixed range at the same cost at any N.
+- **The timeline: lanes of time-range bars, each a slot.** `controls::Timeline`
+  (`include/gweni/controls/timeline.h`) is a Gantt-style view: lanes, one row each, with
+  their captions in a fixed column at the left and a time axis above, and in each lane
+  bars of a start and an end (epoch seconds, doubles), a theme surface or a colour of
+  their own and an app id (`TimelineBar`), a thousand of them costing one control and a
+  thousand slots. **Axis and range:** the x range is `setXRange`'s, or the bars' extent;
+  the ticks and labels are the Chart's `controls::axis` as it is (`chooseTimeTicks` in the
+  zone of `setUtcOffset`, then `thinLabels`), pooled `internal::Text`s in a row at the
+  top. A bar changed inside an automatic range that did not hold one of its ends lays
+  nothing out, and with a fixed range no bar change does. **Scroll and captions:** the
+  lanes scroll in `internal::TimelineBody`, a ScrollControl with virtual content as tall
+  as the lanes and a vertical bar alone; neither it nor its inner panel takes the mouse,
+  so the Timeline itself is hovered over its lanes and the wheel scrolls `WheelLanes` (3)
+  a notch. Its viewport less the caption column is the bar area; the Timeline lays the
+  body out first in its Y arrange and the axis after, from that viewport. The captions
+  are a pool of Texts in `internal::TimelineCaptionColumn`, which clips them, as many as
+  the most lanes it can show any of (VirtualList's rule): a row whose lane stays in view
+  keeps it, a lane coming into view takes a free row, and a new pool size deletes the
+  free rows before topping the pool up, so a timeline resized back has the rows one built
+  at that size has (without that, `controltest_resize_each` failed on the hidden captions'
+  old bounds and glyphs). **Overlaps:** the app packs its bars, but where two of a lane
+  overlap in time the later one is in front: each bar has an overlap level, 0 when no
+  earlier bar of its lane overlaps it and otherwise one more than the highest of theirs,
+  `MaxOverlapLevel` (3) at most, and the renderer draws a level in a depth layer of its
+  own. A lane's bar slots follow the bars' indices, so a later bar's slot is drawn after
+  the earlier one's, and at one z `GL_LESS` would keep the earlier one's pixels: the
+  layer, not the slot order, puts it in front (`tests/timelineOverlap.cpp`, GL and
+  Vulkan pixels). **Hit test:** arithmetic. The lane from y (`laneAt`: the fixed lane
+  height and the scroll offset), then the lane's bars sorted by start with a running
+  maximum of their ends (`ensureLane`, worked out again only for a lane whose bars
+  changed): a binary search for the bars starting before the time at x+1, walked back
+  while that maximum reaches the time at x-1, each candidate held to its rect exactly
+  (`getBarRect`: whole units, a unit wide at least, held `OffAreaMargin` outside the area
+  but not cut to it), the highest level and then the later bar winning. In a packed lane
+  that is O(log n); an earlier long bar under short later ones is still found between
+  them. `tests/unit/timeline.cpp` holds it to a brute force over random lanes. **Hover and
+  click:** the bar under the mouse gets the hover look and the tooltip (the lane's
+  caption and the bar's times, `axis::formatDateTime`; the app's `setHoverText` or a
+  control it fills, `setHoverControl`), placed below the bar (`getToolTipAnchor`) and set
+  only when the hovered bar changes; a press and release on the same bar with the same
+  id fire `onBarClicked` with the lane, the index and the id. **Rendering:** the textured
+  `Timeline` renderer keeps a slot list per part, each slot holding what it last drew:
+  the frame (`TimelineFrame`, taken at generate), a stripe per odd lane across the
+  caption column and the bars (`TimelineLane`) at z+1, a grid line per tick and the two
+  axis lines (`TimelineGrid`, `TimelineAxis`) at z+2, a list per lane of its bars at z+3
+  plus their level (`TimelineBar`, the surface a bar names, or its colour with
+  `TimelineBar`'s border), and the hover look's one slot at z+4+`MaxOverlapLevel`, so
+  `depthLayers()` is 8. The lists are taken back to front once the timeline is shown with
+  a bar area, each with Chart's `capacity(n)` (spare slots hidden, so an added bar takes
+  one of its lane's), and all again when a lane outgrows its list or drops below half of
+  what it was taken for. The lanes, grid and bars are drawn again only when
+  `Timeline::getBarsSerial()` moved (every change of the bars, lanes, range, layout or
+  scroll bumps it; the hover does not) or the bar area's clip changed, and then a slot
+  only when its rect, surface, z or clip differs; a lane out of view hides its bars. The
+  bars and the hover look are square (`TimelineBar`'s radius is 0) at whole units, so
+  their device pixels are fully covered and no slot's order against another's changes a
+  pixel of an opaque bar. The hover look is the hovered bar's own fill with
+  `TimelineBarHover`'s translucent fill blended over it on the CPU, and that surface's
+  border: a border over a transparent fill draws nothing, since style 4's alpha is the
+  fill's times the shape's coverage (`roundedRect()`), so a look that leaves the bar's
+  pixels showing through is not a style 4 slot. So a hover frame writes the look's one
+  slot, a changed or added bar its own, a settled frame nothing. **A lane scroll moves
+  the bars:** `controltest_timeline` measures a wheel notch over TimelineDemo (3 lanes at
+  640x480) writing 268 primitive slots, 255 of them bars (`bars_moved=yes`), all of them
+  stripes, bars and captions of the 20 lanes in view before or after it, the hover look,
+  the scroll bar and the ToolTip box: the bars' vertices are in device pixels, so a bar
+  that stays in view is drawn again where its lane moved, and one that leaves it is
+  hidden; none is merely clipped. The cost is the lanes on screen, not the bars.
+  TimelineDemo is a day's 1000 runs over 96 lanes (12 hosts of 8 agent slots) in UTC;
+  `controltest_timeline` holds the counts above, a click and an overlap, and
+  `gweni_bench`'s `timeline-hover` moves the mouse onto another bar a frame among N bars
+  over 100 lanes at the same cost (one slot) at any N.
 - **The drag number: scrubbed by the mouse, typed into in a box made once.**
   `controls::DragNumber` (`include/gweni/controls/dragNumber.h`, imgui's DragFloat and
   DragInt) is a `Label` whose text is its value, centred in a field of the size asked for

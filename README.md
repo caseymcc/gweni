@@ -108,6 +108,14 @@ day on a time axis pinned to UTC, with captioned marker lines and a shaded span.
 crosshair at the nearest x and fills the canvas's one tooltip box; a moved point rewrites only the
 segments around it.
 
+[![A timeline of a day's runs on 96 agent slots, one lane each, with a time axis above and the lanes' captions at the left](docs/images/TimelineDemo.png)](https://caseymcc.github.io/gweni/controltest.html?control=TimelineDemo)
+
+**Timeline**: a thousand runs of one day over 96 lanes, one per agent slot of twelve hosts, on a
+time axis pinned to UTC, the lanes scrolling under the fixed axis and caption column. Every bar is a
+primitive slot, not a control, and the bar under the mouse is found arithmetically (the lane from y,
+then a binary search of its bars): a hover writes the hover look's one slot, a changed run its own
+bar, and a click hands the app the run's id.
+
 [![The inspector beside a few controls](docs/images/InspectorDemo.png)](https://caseymcc.github.io/gweni/controltest.html?control=InspectorDemo)
 
 **Inspector**: `gweni::tools::Inspector`, the library's live view of the change tracking (F12 in the

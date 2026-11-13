@@ -74,6 +74,7 @@ SAMPLES=(
     LogViewDemo
     ChartTimeBarsDemo
     ChartLinesDemo
+    TimelineDemo
     InspectorDemo
     ThemeEditorDemo
 )
