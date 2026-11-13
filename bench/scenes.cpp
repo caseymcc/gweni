@@ -21,6 +21,7 @@
 #include <gweni/controls/progressBar.h>
 #include <gweni/controls/scrollControl.h>
 #include <gweni/controls/textBox.h>
+#include <gweni/controls/timeline.h>
 #include <gweni/controls/treeControl.h>
 #include <gweni/controls/verticalScrollBar.h>
 #include <gweni/controls/virtualList.h>
@@ -1465,6 +1466,67 @@ private:
     int m_next=0;
 };
 
+//-----------------------------------------------------------------------------
+// timeline-hover: a Timeline filling the canvas, its x range fixed to one day,
+// with N bars over 100 lanes (N/100 a lane, the first N%100 lanes one more),
+// each lane's day cut into as many equal stretches as it has bars and each
+// bar 60 % of its stretch, so no two overlap. Each frame, the last warm-up one
+// included, moves the mouse to the middle of a bar of one of the eight lanes
+// at the top, another bar each frame: the hover look's one slot is written
+// and the hit test is the lane from y and a binary search of that lane's
+// bars, the same work at any N.
+//-----------------------------------------------------------------------------
+class TimelineHoverScene: public Scene
+{
+public:
+    static constexpr int Lanes=100;
+
+    void build(SceneContext &ctx) override
+    {
+        m_timeline=ctx.canvas->newChild<controls::Timeline>();
+        place(m_timeline, 10, 10, ctx.size.x-20, ctx.size.y-20);
+        m_timeline->setUtcOffset(controls::axis::fixedUtcOffset(0));
+        m_timeline->setXRange(0.0, 86400.0);
+
+        for(int lane=0; lane < Lanes; ++lane)
+        {
+            m_timeline->addLane(format("lane %03d", lane));
+
+            const int bars=ctx.n/Lanes+((lane < ctx.n%Lanes) ? 1 : 0);
+
+            if(bars == 0)
+                continue;
+
+            const double stretch=86400.0/bars;
+
+            for(int k=0; k < bars; ++k)
+            {
+                const double start=stretch*k+stretch*0.2;
+
+                m_timeline->addBar(size_t(lane), controls::TimelineBar(start, start+stretch*0.6, uint64_t(k)));
+            }
+        }
+    }
+
+    void step(SceneContext &ctx, int frame) override
+    {
+        if(frame < -1)
+            return;
+
+        const size_t lane=size_t((frame+1)%8);
+        const size_t count=m_timeline->getBarCount(lane);
+        gweni::Rect rect;
+
+        if(count == 0 || !m_timeline->getBarRect(lane, size_t((frame+1)*7)%count, rect))
+            return;
+        moveMouse(ctx, m_mouse, m_timeline->localPosToCanvas(Point(rect.x+rect.w/2, rect.y+rect.h/2)));
+    }
+
+private:
+    controls::Timeline *m_timeline=nullptr;
+    Point m_mouse=Point(-1, -1);
+};
+
 const std::vector<SceneInfo> &scenes()
 {
     static const std::vector<SceneInfo> list=
@@ -1550,6 +1612,9 @@ const std::vector<SceneInfo> &scenes()
         {"chart-append", "append a point per frame to a Chart's line of N points in a fixed x range",
             true, 1000, 3, 20, Scaling::Local,
             []{ return std::unique_ptr<Scene>(new ChartAppendScene()); }},
+        {"timeline-hover", "move the mouse onto another bar per frame of a Timeline of N bars over 100 lanes",
+            true, 1000, 3, 20, Scaling::Local,
+            []{ return std::unique_ptr<Scene>(new TimelineHoverScene()); }},
         {"graph-zoom", "zoom a NodeGraph of N linked nodes a wheel notch in and out in turn",
             true, 300, 3, 20, Scaling::Linear,
             []{ return std::unique_ptr<Scene>(new GraphZoomScene()); }},

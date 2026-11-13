@@ -162,7 +162,8 @@
  *                       context-menu | popup | virtual-list |
  *                       virtual-list-variable |
  *                       data-table-virtual | hide-show | demo-labels |
- *                       plot-histogram | plot-lines | chart | inspector |
+ *                       plot-histogram | plot-lines | chart | timeline |
+ *                       inspector |
  *                       stats-overlay | depth-view | zoom-panel |
  *                       node-graph | code-editor | log-view (see below)
  *    --dump-bounds [<path>]
@@ -519,6 +520,24 @@
  *                 every primitive id back (chart-bars.png, chart-lines.png).
  *                 One line
  *                   chart stack_bars=4 stack_prim_slots=... ids_back=yes
+ *                 Exits non-zero if any check is no.
+ *    timeline     TimelineDemo (1000 runs over 96 lanes, its day's x range
+ *                 fixed), the clock frozen: a bar shortened has to write its own
+ *                 slot alone, a bar added its own (a spare slot of its
+ *                 lane's list), the mouse onto a bar the hover look's slot
+ *                 alone, the canvas's ToolTip box once its delay passed, a
+ *                 move within the bar nothing, onto the next bar no more than
+ *                 the two bars', the look's and the box's slots; a click on
+ *                 a bar fires onBarClicked with its lane, index and id; a bar
+ *                 added over another shows in front of it (its own colour at
+ *                 its middle pixel), is the one the hit test finds and takes
+ *                 the click; a wheel notch scrolls WheelLanes lanes writing
+ *                 no more than the stripes, bars and captions of the lanes in
+ *                 view before or after it, the hover look and the scroll bar,
+ *                 and says whether it wrote bar slots (bars_moved=); every
+ *                 settled frame nothing; the demo gives every primitive id
+ *                 back (timeline.png, timeline-scrolled.png). One line
+ *                   timeline lanes=96 bars=1000 change_prim_slots=1 ... ids_back=yes
  *                 Exits non-zero if any check is no.
  *    inspector    Demo, the clock frozen, settled; F12 (scripted, through the
  *                 same key handler as the window's) opens the inspector
@@ -1062,8 +1081,10 @@
 #include <demo/plotHistogram.h>
 #include <demo/plotLines.h>
 #include <demo/chartTimeBars.h>
+#include <demo/timeline.h>
 #include <demo/chartLines.h>
 #include <gweni/controls/chart.h>
+#include <gweni/controls/timeline.h>
 #include <demo/inspector.h>
 #include <gweni/controls/plotHistogram.h>
 #include <gweni/controls/plotLines.h>
@@ -1194,7 +1215,7 @@ static void content_scale_callback(GLFWwindow *window, float, float)
     X(ShowcaseContainersDemo) X(ShowcaseButtonsDemo) X(ShowcaseInputDemo) \
     X(ShowcaseDisplayDemo) X(ShowcaseWindowsDemo) \
     X(ButtonDemo) X(LabelDemo) X(LabelMultilineDemo) X(ProgressBarDemo) \
-    X(GroupBoxDemo) X(ImagePanelDemo) X(StatusBarDemo) X(SeparatorDemo) X(PlotHistogramDemo) X(PlotLinesDemo) X(ChartTimeBarsDemo) X(ChartLinesDemo) X(ComboBoxDemo) \
+    X(GroupBoxDemo) X(ImagePanelDemo) X(StatusBarDemo) X(SeparatorDemo) X(PlotHistogramDemo) X(PlotLinesDemo) X(ChartTimeBarsDemo) X(ChartLinesDemo) X(TimelineDemo) X(ComboBoxDemo) \
     X(TextBoxDemo) X(ListBoxDemo) X(SelectableDemo) X(VirtualListDemo) X(VirtualListVariableDemo) X(DataTableDemo) X(DataTableVirtualDemo) X(CodeEditorDemo) X(CodeEditorFormDemo) X(LogViewDemo) X(ContextMenuDemo) X(PopupDemo) X(CrossSplitterDemo) X(RadioButtonDemo) \
     X(CheckBoxDemo) X(NumericDemo) X(SliderDemo) X(SliderTextDemo) X(DragNumberDemo) X(VectorFieldDemo) X(MenuStripDemo) \
     X(WindowDemo) X(WindowButtonsDemo) X(TreeControlDemo) X(PropertiesDemo) X(TabControlDemo) X(TabCloseDemo) X(TabOverflowDemo) \
@@ -1289,7 +1310,8 @@ static void printUsage(std::ostream &out)
          "                     | context-menu | popup | virtual-list\n"
          "                     | virtual-list-variable\n"
          "                     | data-table-virtual | hide-show | demo-labels\n"
-         "                     | plot-histogram | plot-lines | chart | inspector\n"
+         "                     | plot-histogram | plot-lines | chart | timeline\n"
+         "                     | inspector\n"
          "                     | stats-overlay | depth-view | zoom-panel\n"
          "                     | node-graph | code-editor | log-view;\n"
          "                     resize prints listing_settled, mirror_settled,\n"
@@ -2329,7 +2351,7 @@ static bool runSteps(Session &s, const std::vector<Step> &steps, const std::stri
 //-----------------------------------------------------------------------------
 enum class Scenario { None, PerControl, Resize, Docked, Scroll, Interaction, Typing, Clip, TextSize, Scale,
     ToolTip, ContextMenu, Popup, VirtualList, VirtualListVariable, DataTableVirtual, HideShow, DemoLabels, PlotHistogram,
-    PlotLines, Chart, Inspector, Theme, StatsOverlay, DepthView, ZoomPanel, NodeGraph, CodeEditor, LogView };
+    PlotLines, Chart, Timeline, Inspector, Theme, StatsOverlay, DepthView, ZoomPanel, NodeGraph, CodeEditor, LogView };
 
 static bool parseScenario(const std::string &name, Scenario &scenario)
 {
@@ -2353,6 +2375,7 @@ static bool parseScenario(const std::string &name, Scenario &scenario)
     else if(name == "plot-histogram") scenario=Scenario::PlotHistogram;
     else if(name == "plot-lines") scenario=Scenario::PlotLines;
     else if(name == "chart") scenario=Scenario::Chart;
+    else if(name == "timeline") scenario=Scenario::Timeline;
     else if(name == "inspector") scenario=Scenario::Inspector;
     else if(name == "theme") scenario=Scenario::Theme;
     else if(name == "stats-overlay") scenario=Scenario::StatsOverlay;
@@ -5290,6 +5313,349 @@ static bool runChartScenario(Session &s, const std::string &shotDir, bool &passe
                      : !settled ? "a settled frame wrote slots or changed controls"
                      : "a demo did not give its primitive ids back")<<"\n";
     return shot;
+}
+
+//-----------------------------------------------------------------------------
+// --scenario timeline: TimelineDemo's bars changed, added, hovered, clicked,
+// overlapped and scrolled
+//
+// Each bar and the hover look is a primitive slot of the timeline's renderer,
+// and the bars are drawn again only when something they are drawn from moves
+// (Timeline::getBarsSerial()), then only the slots that differ. With the
+// demo's x range fixed: a changed bar writes its own slot, an added one its
+// own (a spare slot of its lane's list); a hover the hover look's slot (and
+// the canvas's ToolTip box once its delay passed), at most the old and the
+// new bar's slots with it, a move within a bar nothing; a click on a bar fires
+// onBarClicked with its lane, index and id; a bar added over another one
+// shows in front of it and is the one the hit test and a click pick. A wheel
+// notch scrolls the lanes: the frame writes no more than the stripes, bars
+// and captions of the lanes in view before or after it and the scroll bar,
+// and says whether it wrote bar slots at all (the bars move) or none (they
+// would only be clipped). Every settled frame writes nothing and the demo
+// gives its primitive ids back.
+//-----------------------------------------------------------------------------
+
+namespace
+{
+
+struct TimelineEvents: public gweni::event::Handler
+{
+    void clicked(gweni::event::Info info)
+    {
+        clicks.push_back({size_t(info.point.x), size_t(info.point.y), uint64_t(info.integer)});
+    }
+
+    struct Click
+    {
+        size_t lane;
+        size_t index;
+        uint64_t id;
+        bool operator==(const Click &other) const
+        {
+            return lane == other.lane && index == other.index && id == other.id;
+        }
+    };
+
+    std::vector<Click> clicks;
+};
+
+}//namespace
+
+static bool runTimelineScenario(Session &s, const std::string &shotDir, bool &passed)
+{
+    using gweni::controls::Timeline;
+    using gweni::controls::TimelineBar;
+
+    s.freezeClock=true;
+
+    TimelineEvents events;
+    size_t idleSlots=0;
+    size_t idleChanged=0;
+    auto settle=[&]()
+    {
+        const ChartStep step=chartFrame(s);
+
+        idleSlots+=step.prims.size()+step.glyphs();
+        idleChanged+=step.changed;
+    };
+
+    const size_t idsBefore=livePrimitiveIds();
+    gweni::controls::Base *control=addControl(s, "TimelineDemo");
+    auto *demo=gweni::gweni_cast<gweni::TimelineDemo>(control);
+
+    if(!demo || !demo->timeline())
+    {
+        std::cerr<<"ControlTest: timeline: TimelineDemo has no timeline\n";
+        return false;
+    }
+
+    Timeline *timeline=demo->timeline();
+
+    timeline->onBarClicked.add(&events, &TimelineEvents::clicked);
+    s.label="timeline";
+    renderFrames(s, s.frames);
+    settle();
+
+    const auto *drawn=static_cast<const gweni::skin::textured::Timeline *>(timeline->getSkinControl());
+    auto barSlot=[&](size_t lane, size_t index) -> size_t
+    {
+        const std::vector<size_t> ids=drawn->barPrimitives(lane);
+
+        return index < ids.size() ? ids[index] : size_t(-1);
+    };
+    auto canvasAt=[&](gweni::Point local) { return timeline->localPosToCanvas(local); };
+    auto middleOf=[&](size_t lane, size_t index, gweni::Point &at)
+    {
+        gweni::Rect rect;
+
+        if(!timeline->getBarRect(lane, index, rect))
+            return false;
+        at=canvasAt(gweni::Point(rect.x+rect.w/2, rect.y+rect.h/2));
+        return true;
+    };
+    const double day=gweni::TimelineDemo::day();
+    const size_t lanes=timeline->getLaneCount();
+    const size_t bars=timeline->getTotalBarCount();
+
+    // bar 3 of lane 2 half an hour shorter: its slot alone
+    TimelineBar moved=timeline->getBar(2, 3);
+
+    moved.end-=1800.0;
+    timeline->setBar(2, 3, moved);
+
+    const ChartStep change=chartFrame(s);
+    const bool changeOk=change.prims == std::vector<size_t>{barSlot(2, 3)} && change.texts.empty()
+        && change.changed == 1;
+    settle();
+
+    // a run added at the end of lane 4's day: its own slot
+    const size_t lane4=timeline->getBarCount(4);
+    const double lastEnd=timeline->getBar(4, lane4-1).end;
+
+    timeline->addBar(4, TimelineBar(lastEnd+60.0, std::min(day+86400.0, lastEnd+600.0), 9999));
+
+    const ChartStep add=chartFrame(s);
+    const bool addOk=add.prims == std::vector<size_t>{barSlot(4, lane4)} && add.texts.empty()
+        && timeline->getBarCount(4) == lane4+1;
+    settle();
+
+    // the mouse onto bar 2 of lane 5: the hover look's slot
+    const std::vector<size_t> hoverSlot=drawn->hoverPrimitives();
+    gweni::Point at;
+    const bool bar52=middleOf(5, 2, at);
+
+    moveMouse(s, at.x, at.y);
+
+    const ChartStep hover=chartFrame(s);
+    const bool hovering=timeline->isHovering() && timeline->getHoverLane() == 5 && timeline->getHoverIndex() == 2;
+
+    // resting past the canvas's tooltip delay: the box shows below the bar
+    g_clockSteps+=int64_t(std::ceil(s.canvas->getToolTipDelay()/g_frameStep))+1;
+
+    const ChartStep tipShown=chartFrame(s);
+    std::vector<size_t> boxPrims;
+    std::vector<size_t> boxTexts;
+
+    if(gweni::controls::ToolTip *box=s.canvas->toolTipControl())
+        gweni::tools::appendSubtreeIds(box, boxPrims, boxTexts);
+
+    std::vector<size_t> hoverAllowed=boxPrims;
+
+    hoverAllowed.insert(hoverAllowed.end(), hoverSlot.begin(), hoverSlot.end());
+    hoverAllowed.push_back(barSlot(5, 2));
+
+    const bool toolTip=s.canvas->toolTipShown() && !timeline->getToolTipText().empty();
+    settle();
+
+    // within the bar: nothing
+    moveMouse(s, at.x+1, at.y+1);
+
+    const ChartStep within=chartFrame(s);
+    settle();
+
+    // onto the next bar: the hover's slot, the two bars' and the box's at most
+    gweni::Point next;
+    const bool bar53=middleOf(5, 3, next);
+
+    moveMouse(s, next.x, next.y);
+
+    const ChartStep hoverNext=chartFrame(s);
+    std::vector<size_t> nextAllowed=hoverAllowed;
+
+    nextAllowed.push_back(barSlot(5, 3));
+
+    const bool hoverNextOk=bar53 && timeline->getHoverIndex() == 3 && !hoverNext.prims.empty()
+        && chartWithin(hoverNext, nextAllowed, boxTexts);
+    settle();
+
+    // a click on bar 1 of lane 6
+    gweni::Point clickAt;
+    const bool bar61=middleOf(6, 1, clickAt);
+
+    clickMouse(s, clickAt.x, clickAt.y);
+    renderFrames(s, 1);
+
+    const bool clickOk=bar61 && events.clicks.size() == 1
+        && events.clicks[0] == TimelineEvents::Click{6, 1, gweni::TimelineDemo::runId(6, 1)};
+    settle();
+
+    // a run added over bar 1 of lane 7, in a colour of its own: it shows in
+    // front of it, is the bar under the mouse and takes the click
+    const TimelineBar under=timeline->getBar(7, 1);
+    const double middle=(under.start+under.end)/2.0;
+    const gweni::Color overColor(250, 40, 210);
+    const size_t overIndex=timeline->addBar(7,
+        TimelineBar(middle-300.0, middle+300.0, 7777).withColor(overColor));
+
+    renderFrames(s, 1);
+    settle();
+
+    gweni::Rect overRect;
+    bool overlapShows=false;
+    bool overlapHit=false;
+
+    if(timeline->getBarRect(7, overIndex, overRect))
+    {
+        const gweni::Point local(overRect.x+overRect.w/2, overRect.y+overRect.h/2);
+        const gweni::Point device=devicePixels(canvasAt(local), s.scale);
+        const std::vector<uint8_t> frame=framePixels(s);
+        const size_t pixel=(size_t(device.y)*s.pixels.x+device.x)*4;
+        size_t lane=0;
+        size_t index=0;
+
+        overlapShows=frame[pixel] == overColor.r && frame[pixel+1] == overColor.g
+            && frame[pixel+2] == overColor.b;
+        overlapHit=timeline->barAt(local, lane, index) && lane == 7 && index == overIndex
+            && timeline->getOverlapLevel(7, overIndex) == 1;
+
+        const gweni::Point over=canvasAt(local);
+
+        clickMouse(s, over.x, over.y);
+        renderFrames(s, 1);
+    }
+
+    const bool overlapClick=events.clicks.size() == 2 && events.clicks[1] == TimelineEvents::Click{7, overIndex, 7777};
+    const bool overlapOk=overlapShows && overlapHit && overlapClick;
+    settle();
+
+    const bool shot=shoot(s, shotDir+"/timeline.png");
+
+    // a wheel notch over the lanes: the lanes in view before or after it, the
+    // scroll bar
+    auto lanesInView=[&]()
+    {
+        std::vector<size_t> shown;
+
+        for(size_t lane=0; lane < lanes; ++lane)
+        {
+            gweni::Rect rect;
+
+            if(timeline->getLaneRect(lane, rect))
+                shown.push_back(lane);
+        }
+        return shown;
+    };
+    const std::vector<size_t> shownBefore=lanesInView();
+    const int offsetBefore=timeline->getScrollOffset();
+    const gweni::Rect area=timeline->getBarArea();
+    const gweni::Point wheelAt=canvasAt(gweni::Point(area.x+area.w/2, area.y+area.h/2));
+
+    moveMouse(s, wheelAt.x, wheelAt.y);
+    renderFrames(s, 1);
+    settle();
+    scrollWheel(s, -60);
+
+    const ChartStep scroll=chartFrame(s);
+    const std::vector<size_t> shownAfter=lanesInView();
+    std::vector<size_t> scrollPrims;
+    std::vector<size_t> scrollTexts;
+    std::vector<size_t> scrollBars;
+    std::vector<size_t> touched=shownBefore;
+
+    touched.insert(touched.end(), shownAfter.begin(), shownAfter.end());
+    for(size_t lane : touched)
+    {
+        const std::vector<size_t> ids=drawn->barPrimitives(lane);
+
+        scrollPrims.push_back(drawn->lanePrimitives()[lane]);
+        scrollPrims.insert(scrollPrims.end(), ids.begin(), ids.end());
+        scrollBars.insert(scrollBars.end(), ids.begin(), ids.end());
+    }
+    // the caption pool: the most lanes the column shows any of
+    gweni::tools::appendSubtreeIds(timeline->getCaptionColumn(), scrollPrims, scrollTexts);
+    // the hover look follows the bar under the mouse
+    scrollPrims.insert(scrollPrims.end(), hoverSlot.begin(), hoverSlot.end());
+    gweni::tools::appendSubtreeIds(timeline->getBody(), scrollPrims, scrollTexts);
+    scrollPrims.insert(scrollPrims.end(), boxPrims.begin(), boxPrims.end());
+    scrollTexts.insert(scrollTexts.end(), boxTexts.begin(), boxTexts.end());
+
+    size_t barSlotsWritten=0;
+
+    for(size_t id : scroll.prims)
+    {
+        if(std::find(scrollBars.begin(), scrollBars.end(), id) != scrollBars.end())
+            ++barSlotsWritten;
+    }
+
+    const int scrolled=timeline->getScrollOffset()-offsetBefore;
+    const bool scrollOk=scrolled == Timeline::WheelLanes*timeline->getLaneHeight()
+        && chartWithin(scroll, scrollPrims, scrollTexts);
+    const bool barsMoved=barSlotsWritten > 0;
+    settle();
+
+    const bool shotScrolled=shoot(s, shotDir+"/timeline-scrolled.png");
+
+    forgetMouse(s);
+    renderFrames(s, 1);
+    settle();
+    dropControl(s, control);
+    renderFrames(s, 1);
+
+    const size_t idsLeft=livePrimitiveIds()-idsBefore;
+
+    const bool hoverOk=bar52 && hovering && hover.prims == hoverSlot && hover.texts.empty();
+    const bool tipOk=toolTip && chartWithin(tipShown, hoverAllowed, boxTexts);
+    const bool withinOk=within.prims.empty() && within.texts.empty() && within.changed == 0;
+    const bool settled=idleSlots == 0 && idleChanged == 0;
+    // the canvas's ToolTip box, made for the hover, stays on the canvas
+    const bool idsBack=idsLeft == boxPrims.size();
+
+    passed=changeOk && addOk && hoverOk && tipOk && withinOk && hoverNextOk && clickOk && overlapOk && scrollOk
+        && settled && idsBack;
+
+    std::cout<<"timeline lanes="<<lanes<<" bars="<<bars;
+    printChartStep("change", change);
+    printChartStep("add", add);
+    printChartStep("hover", hover);
+    printChartStep("tooltip", tipShown);
+    printChartStep("within", within);
+    printChartStep("hover_next", hoverNext);
+    printChartStep("scroll", scroll);
+    std::cout<<" scroll_lanes="<<shownBefore.size()<<"+"<<shownAfter.size()
+             <<" scroll_bar_slots="<<barSlotsWritten<<" bars_moved="<<(barsMoved?"yes":"no")
+             <<" clicks="<<events.clicks.size()
+             <<" idle_slots="<<idleSlots<<" idle_changed="<<idleChanged
+             <<" ids_left="<<(idsLeft-boxPrims.size())
+             <<" change="<<(changeOk?"yes":"no")<<" add="<<(addOk?"yes":"no")
+             <<" hover="<<(hoverOk?"yes":"no")<<" tooltip="<<(tipOk?"yes":"no")
+             <<" within="<<(withinOk?"yes":"no")<<" hover_next="<<(hoverNextOk?"yes":"no")
+             <<" click="<<(clickOk?"yes":"no")<<" overlap="<<(overlapOk?"yes":"no")
+             <<" scroll="<<(scrollOk?"yes":"no")
+             <<" settled="<<(settled?"yes":"no")<<" ids_back="<<(idsBack?"yes":"no")<<"\n";
+    if(!passed)
+        std::cerr<<"ControlTest: timeline: "
+                 <<(!changeOk ? "a changed bar wrote more than its slot"
+                     : !addOk ? "an added bar wrote more than its slot"
+                     : !hoverOk ? "a hover wrote more than the hover look's slot"
+                     : !tipOk ? "the tooltip did not show, or wrote outside the hover and its box"
+                     : !withinOk ? "a move within a bar wrote or changed something"
+                     : !hoverNextOk ? "a hover onto the next bar wrote more than the two bars, the look and the box"
+                     : !clickOk ? "a click on a bar fired the wrong lane, index or id"
+                     : !overlapOk ? "a bar added over another did not show, hit-test or click in front of it"
+                     : !scrollOk ? "a lane scroll wrote more than the lanes in view and the bar"
+                     : !settled ? "a settled frame wrote slots or changed controls"
+                     : "the demo did not give its primitive ids back")<<"\n";
+    return shot && shotScrolled;
 }
 
 //-----------------------------------------------------------------------------
@@ -13840,6 +14206,15 @@ int main(int argc, char *argv[])
         {
             bool passed=false;
             ok=runChartScenario(session, shotDir, passed);
+            if(ok && !passed)
+                ok=false;   // a change wrote more than the slots it moves: a failing assertion
+            break;
+        }
+
+        case Scenario::Timeline:
+        {
+            bool passed=false;
+            ok=runTimelineScenario(session, shotDir, passed);
             if(ok && !passed)
                 ok=false;   // a change wrote more than the slots it moves: a failing assertion
             break;

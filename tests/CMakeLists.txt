@@ -488,6 +488,17 @@ Erm, and I think it comes down to a choice between "The League Against Salivatin
             --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/chart@VARIANT@
         WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
 
+    # TimelineDemo's 1000 runs with its day fixed: a changed or added bar
+    # writes its own slot, a hover the hover look's slot and the ToolTip box,
+    # a move within a bar nothing; a click fires onBarClicked with the lane,
+    # index and id; a bar added over another shows, hit-tests and clicks in
+    # front of it; a wheel notch writes no more than the lanes in view (the
+    # bars move: bars_moved=yes); ids come back
+    gweni_whole_app_test(controltest_timeline 60
+        COMMAND $<TARGET_FILE:ControlTest> --headless --scenario timeline --require-one-pass
+            --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/timeline@VARIANT@
+        WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
+
     # gweni::tools::Inspector over the settled Demo, opened and closed by F12:
     # it settles to 0 and a frame that writes nothing, its own slots included,
     # shows a hover's slots on the next frame, and gives its ids back

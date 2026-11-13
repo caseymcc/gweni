@@ -132,10 +132,6 @@ size_t Timeline::addLane(const String &caption)
     Lane lane;
 
     lane.caption=caption;
-    lane.label=makeLabel(m_captions, getSkin()->Colors.Timeline.CaptionText);
-    lane.label->setText(caption);
-    // shown when its lane is first in view (placeCaptions)
-    lane.label->setHidden(true);
     m_lanes.push_back(std::move(lane));
     lanesChanged();
     return m_lanes.size()-1;
@@ -147,8 +143,9 @@ void Timeline::removeLane(size_t lane)
         return;
 
     m_barCount-=m_lanes[lane].bars.size();
-    delete m_lanes[lane].label;   // ~Base takes it out of the column's children
     m_lanes.erase(m_lanes.begin()+static_cast<std::ptrdiff_t>(lane));
+    // the lanes after it moved up: every caption is bound again
+    unbindCaptions();
     m_rangeDirty=true;
     lanesChanged();
 }
@@ -158,9 +155,8 @@ void Timeline::clearLanes()
     if(m_lanes.empty())
         return;
 
-    for(Lane &lane : m_lanes)
-        delete lane.label;
     m_lanes.clear();
+    unbindCaptions();
     m_barCount=0;
     m_rangeDirty=true;
     lanesChanged();
@@ -172,7 +168,8 @@ void Timeline::setLaneCaption(size_t lane, const String &caption)
         return;
 
     m_lanes[lane].caption=caption;
-    m_lanes[lane].label->setText(caption);
+    if(internal::Text *label=getCaptionLabel(lane))
+        label->setText(caption);
     // an automatic column follows the widest caption
     if(m_captionWidthSetting <= 0)
         invalidate();
@@ -187,9 +184,18 @@ String Timeline::getLaneCaption(size_t lane) const
 
 internal::Text *Timeline::getCaptionLabel(size_t lane) const
 {
-    const Lane *found=laneAtIndex(lane);
+    for(const CaptionRow &row : m_captionRows)
+    {
+        if(row.lane == lane)
+            return row.label;
+    }
+    return nullptr;
+}
 
-    return found ? found->label : nullptr;
+void Timeline::unbindCaptions()
+{
+    for(CaptionRow &row : m_captionRows)
+        row.lane=NoLane;
 }
 
 void Timeline::setLaneHeight(int height)
@@ -949,8 +955,8 @@ void Timeline::updateColors()
 
     for(internal::Text *label : m_tickLabels)
         label->setTextColor(axisText);
-    for(Lane &lane : m_lanes)
-        lane.label->setTextColor(captionText);
+    for(CaptionRow &row : m_captionRows)
+        row.label->setTextColor(captionText);
 }
 
 // The body and the caption column, which need nothing of the body's layout:
@@ -1066,9 +1072,14 @@ void Timeline::placeAxis()
     refreshHover();
 }
 
-// Each lane's caption in the column at its lane less the scroll offset, centred
-// on it, while any of the lane is in view; hidden otherwise, so a scroll moves
-// the captions in view alone.
+// The captions of the lanes in view, in a pool of rows as many as the most
+// lanes the column can show any of (VirtualList's): a row whose lane is still
+// in view keeps it, the lanes that came into view go to the free rows (their
+// text set, which writes their glyphs), and a row with no lane is hidden. A
+// new pool size (a new column height or lane count) deletes the free rows
+// before the pool is topped up, so a timeline resized to a height shows the
+// rows one built at it does. Each row is centred on its lane less the scroll
+// offset, so a scroll moves the captions in view alone.
 void Timeline::placeCaptions(skin::Base *skin)
 {
     PlacementScope placement;
@@ -1077,23 +1088,84 @@ void Timeline::placeCaptions(skin::Base *skin)
     const int width=m_captions->getWidth();
     const int height=m_captions->getHeight();
     const int labelWidth=std::max(0, width-2*CaptionPadding);
+    const size_t lanes=m_lanes.size();
+    size_t first=0;
+    size_t end=0;
+    size_t poolSize=0;
 
-    for(size_t i=0; i < m_lanes.size(); ++i)
+    if(width > 0 && height > 0 && lanes > 0)
     {
-        internal::Text *label=m_lanes[i].label;
-        const int64_t top=static_cast<int64_t>(i)*m_laneHeight-m_scrollOffset;
+        const int64_t offset=m_scrollOffset;
 
-        if(width <= 0 || top+m_laneHeight <= 0 || top >= height)
+        first=std::min(lanes, static_cast<size_t>(offset/m_laneHeight));
+        end=std::min(lanes, static_cast<size_t>((offset+height+m_laneHeight-1)/m_laneHeight));
+        poolSize=std::min(lanes, static_cast<size_t>((height+m_laneHeight-1)/m_laneHeight)+1);
+    }
+
+    std::vector<bool> held(end-first, false);
+
+    for(CaptionRow &row : m_captionRows)
+    {
+        if(row.lane != NoLane && row.lane >= first && row.lane < end && !held[row.lane-first])
+            held[row.lane-first]=true;
+        else
+            row.lane=NoLane;
+    }
+
+    if(m_captionRows.size() != poolSize)
+    {
+        std::vector<CaptionRow> kept;
+
+        for(CaptionRow &row : m_captionRows)
+        {
+            if(row.lane == NoLane)
+                delete row.label;   // ~Base takes it out of the column's children
+            else
+                kept.push_back(row);
+        }
+        m_captionRows.swap(kept);
+        while(m_captionRows.size() < poolSize)
+        {
+            CaptionRow row;
+
+            row.label=makeLabel(m_captions, getSkin()->Colors.Timeline.CaptionText);
+            row.label->setHidden(true);
+            m_captionRows.push_back(row);
+        }
+    }
+
+    // the lanes that came into view, to the free rows in order
+    size_t freeRow=0;
+
+    for(size_t lane=first; lane < end; ++lane)
+    {
+        if(held[lane-first])
+            continue;
+        while(freeRow < m_captionRows.size() && m_captionRows[freeRow].lane != NoLane)
+            ++freeRow;
+        if(freeRow == m_captionRows.size())
+            break;
+        m_captionRows[freeRow].lane=lane;
+    }
+
+    for(CaptionRow &row : m_captionRows)
+    {
+        internal::Text *label=row.label;
+
+        if(row.lane == NoLane)
         {
             label->setHidden(true);
             continue;
         }
 
-        if(label->hidden())
-        {
-            label->setHidden(false);
+        const bool wasHidden=label->hidden();
+        const bool rebound=(label->getText() != m_lanes[row.lane].caption);
+        const int64_t top=static_cast<int64_t>(row.lane)*m_laneHeight-m_scrollOffset;
+
+        label->setText(m_lanes[row.lane].caption);
+        label->setHidden(false);
+        if(wasHidden || rebound)
             label->doCalculateSize(skin, Dim::X);
-        }
         placeChild(label, CaptionPadding, static_cast<int>(top)+(m_laneHeight-lineHeight)/2, labelWidth, lineHeight);
     }
 }

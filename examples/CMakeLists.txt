@@ -24,6 +24,8 @@ set(GWENI_DEMO_SOURCES
     demo/chartTimeBars.h
     demo/chartLines.cpp
     demo/chartLines.h
+    demo/timeline.cpp
+    demo/timeline.h
     demo/popup.cpp
     demo/popup.h
     demo/crossSplitter.cpp

@@ -23,9 +23,12 @@
  *  OffAreaMargin outside the area however far out of range, none for a bar
  *  wholly out of range, a NaN or a lane out of view. Lanes that do not fit
  *  scroll: the bar shows, the wheel scrolls WheelLanes lanes a notch under the
- *  fixed axis and caption column, the captions of the lanes out of view are
- *  hidden, the offset is clamped at the end, and a scroll lays out in one
- *  pass as a full pass does. The automatic range is the bars' extent (a
+ *  fixed axis and caption column, the captions are a pool of Texts as many
+ *  as the most lanes the column shows any of, each showing a lane in view at
+ *  its lane (a lane out of view has none), the offset is clamped at the end,
+ *  and a scroll lays out in one pass as a full pass does; a timeline made
+ *  taller and back has the caption rows, bounds and texts one built at that
+ *  height has. The automatic range is the bars' extent (a
  *  second round a single instant); a bar inside it lays nothing out, one past
  *  it lays the timeline out once, and with a fixed range no bar lays
  *  anything out.
@@ -41,6 +44,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <string>
 #include <limits>
 #include <vector>
 
@@ -197,6 +201,7 @@ TEST_CASE("Timeline: the axis above the lanes, the caption column at their left,
 
         REQUIRE(timeline->getLaneRect(lane, laneRect));
         CHECK(laneRect.y == area.y+int(lane)*timeline->getLaneHeight());
+        REQUIRE(label != nullptr);
         CHECK(label->visible());
         CHECK(label->getText() == timeline->getLaneCaption(lane));
         CHECK(label->getX() == Timeline::CaptionPadding);
@@ -557,14 +562,26 @@ TEST_CASE("Timeline: lanes that do not fit scroll under the fixed axis and capti
                 Rect laneRect;
                 const bool inView=timeline->getLaneRect(lane, laneRect);
 
-                CHECK(timeline->getCaptionLabel(lane)->visible() == inView);
-                if(inView)
+                const controls::internal::Text *label=timeline->getCaptionLabel(lane);
+
+                CHECK((label != nullptr) == inView);
+                if(inView && label)
                 {
                     shown.push_back(lane);
-                    CHECK(column.y+timeline->getCaptionLabel(lane)->getY()
+                    CHECK(label->visible());
+                    CHECK(label->getText() == timeline->getLaneCaption(lane));
+                    CHECK(column.y+label->getY()
                         == laneRect.y+(height-scene.renderer.lineHeight(scene.skin.getDefaultFont()))/2);
                 }
             }
+            // a pool of the most lanes the column shows any of, the rest hidden
+            size_t visibleRows=0;
+
+            for(const controls::Base *child : timeline->getCaptionColumn()->getChildren())
+                visibleRows+=child->visible() ? 1 : 0;
+            CHECK(timeline->getCaptionColumn()->getChildren().size()
+                == std::min(timeline->getLaneCount(), size_t((area.h+height-1)/height+1)));
+            CHECK(visibleRows == shown.size());
             return shown;
         };
 
@@ -700,4 +717,45 @@ TEST_CASE("Timeline: the automatic range, and a bar inside it lays nothing out")
     scene.frame();
     CHECK(timeline->getXMin() == -500.0);
     CHECK(timeline->getXMax() == 5000.0);
+}
+
+TEST_CASE("Timeline: made taller and back, its caption rows are those of one built at that height")
+{
+    auto build=[](Scene &scene)
+    {
+        scene.timeline->setXRange(0.0, 100.0);
+        for(int i=0; i < 40; ++i)
+            scene.timeline->addLane("lane "+std::to_string(i));
+    };
+    auto rows=[](const Timeline *timeline)
+    {
+        std::vector<std::string> listing;
+
+        for(const controls::Base *child : timeline->getCaptionColumn()->getChildren())
+        {
+            const Rect &b=child->getBounds();
+            const auto *text=static_cast<const controls::internal::Text *>(child);
+
+            listing.push_back(text->getText()+" "+std::to_string(b.x)+","+std::to_string(b.y)+","
+                +std::to_string(b.w)+","+std::to_string(b.h)+(child->hidden() ? " hidden" : ""));
+        }
+        return listing;
+    };
+
+    Scene resized;
+
+    build(resized);
+    resized.frame();
+    resized.timeline->setBounds(10, 20, 480, 500);
+    resized.frame();
+    resized.timeline->setBounds(10, 20, 480, 240);
+    resized.frame();
+
+    Scene fresh;
+
+    build(fresh);
+    fresh.frame();
+    CHECK(rows(resized.timeline) == rows(fresh.timeline));
+    CHECK(resized.timeline->getCaptionColumn()->getChildren().size()
+        < size_t(500/resized.timeline->getLaneHeight()));
 }

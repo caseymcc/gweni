@@ -56,11 +56,11 @@ private:
     Timeline *m_timeline=nullptr;
 };
 
-//! The fixed left column holding the lanes' captions, one Text per lane, as
-//! high as the bar area and clipping them to it (and to its width). The
-//! Timeline shows and places the captions of the lanes in view, at their
-//! lanes less the scroll offset, and hides the rest, so a scroll moves the
-//! shown captions alone; the column lays out the shown ones.
+//! The fixed left column holding the lanes' captions, a pool of Texts as many
+//! as the most lanes it can show any of, as high as the bar area and clipping
+//! them to it (and to its width). The Timeline binds the captions to the
+//! lanes in view and places them at their lanes less the scroll offset, so a
+//! scroll moves the shown captions alone; the column lays out the shown ones.
 class GWENI_EXPORT TimelineCaptionColumn: public controls::Base
 {
 public:
@@ -135,7 +135,8 @@ struct TimelineBar
 //! with them in their fixed column.
 //!
 //! The tick labels are pooled internal::Text children set only when their
-//! string changes, the captions one Text per lane in the caption column; the
+//! string changes, the captions a pool of Texts in the caption column bound
+//! to the lanes in view (so ~100 lanes cost the ~20 on screen); the
 //! bars are the renderer's slots, never controls. The Timeline lays out its
 //! children in its Y arrange, once its size is final, the body first (whose
 //! viewport the bar area is).
@@ -179,7 +180,9 @@ public:
     size_t getLaneCount() const { return m_lanes.size(); }
     void setLaneCaption(size_t lane, const String &caption);
     String getLaneCaption(size_t lane) const;
-    //! The lane's caption Text, null past the lanes.
+    //! The caption Text showing the lane, as last laid out: null for a lane
+    //! out of view. The captions are a pool of Texts, as many as the most
+    //! lanes the column can show any of, each bound to a lane in view.
     internal::Text *getCaptionLabel(size_t lane) const;
 
     //! Each lane's height (20 by default; at least 2*BarInset+1).
@@ -348,13 +351,22 @@ protected:
     //! The bar area, the ticks and the tick labels, for the body's viewport.
     void placeAxis();
     //! The captions of the lanes in view shown and placed in the caption
-    //! column at the scroll offset, the rest hidden.
+    //! column at the scroll offset, from a pool of rows (see the .cpp).
     void placeCaptions(skin::Base *skin);
+    //! Every caption row's lane forgotten: the lanes moved.
+    void unbindCaptions();
+
+    static constexpr size_t NoLane=static_cast<size_t>(-1);
+    struct CaptionRow
+    {
+        internal::Text *label=nullptr;
+        size_t lane=NoLane;
+    };
+    std::vector<CaptionRow> m_captionRows;
 
     struct Lane
     {
         String caption;
-        internal::Text *label=nullptr;
         //! in the order added
         std::vector<TimelineBar> bars;
 
