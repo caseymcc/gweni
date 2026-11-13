@@ -90,6 +90,24 @@ struct WrittenText
     }
 };
 
+//! One coloured byte range of a text run, [begin, end) of its string: renderText's
+//! spans. A glyph takes the colour of the span holding its codepoint's first byte,
+//! and one in no span the draw colour (setDrawColor). The colour's alpha takes no
+//! part, as the draw colour's does not: glyphs are drawn opaque.
+struct ColorSpan
+{
+    size_t begin=0;
+    size_t end=0;
+    gweni::Color color;
+
+    bool operator==(const ColorSpan &other) const
+    {
+        return (begin == other.begin) && (end == other.end) && (color.r == other.color.r) &&
+            (color.g == other.color.g) && (color.b == other.color.b);
+    }
+    bool operator!=(const ColorSpan &other) const { return !(*this == other); }
+};
+
 //! drawRoundedRect's edge mask: which corners are square and which sides have no
 //! border. 0, the default, is a rect rounded at all four corners with a border on
 //! all four sides. A square corner is the corner of the rect itself (its
@@ -323,6 +341,17 @@ public:
     virtual void renderText(size_t textId, const gweni::Font &font,
         gweni::Point pos, int zIndex,
         const gweni::String &text);
+    //! renderText with colour \a spans: sorted, non-overlapping byte ranges of
+    //! \a text, each glyph drawn in the colour of its span (ColorSpan), the rest
+    //! in the draw colour. The run is laid out as the plain call lays it out, so
+    //! it measures as measureText says whatever its spans. A renderer that keeps
+    //! the run (SlotRenderer) rewrites only the glyphs whose colour changed when
+    //! the spans change and the string does not. The default draws the whole run
+    //! in the first span's colour, setting the draw colour to it (the draw colour
+    //! with no spans), through the plain call.
+    virtual void renderText(size_t textId, const gweni::Font &font,
+        gweni::Point pos, int zIndex,
+        const gweni::String &text, const std::vector<ColorSpan> &spans);
 
     virtual void showText(size_t textId) {}
     virtual void hideText(size_t textId) {}

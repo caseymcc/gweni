@@ -406,6 +406,11 @@ public:
     void renderText(size_t textId, const gweni::Font &font,
         gweni::Point pos, int zIndex,
         const gweni::String &text) override;
+    //! Each glyph's colour baked into its vertexes; a change of spans or draw
+    //! colour alone rewrites only the glyphs whose colour changed
+    void renderText(size_t textId, const gweni::Font &font,
+        gweni::Point pos, int zIndex,
+        const gweni::String &text, const std::vector<ColorSpan> &spans) override;
 
     void showText(size_t textId) override;
     void hideText(size_t textId) override;
@@ -990,15 +995,17 @@ private:
     //! count; appends textPens' pen of each glyph to `pens` and its line to
     //! `glyphLines`, and the width measureText gives the prefix before each
     //! codepoint (the widest line so far, rounded up) to `carets`, where they are
-    //! not null.
+    //! not null, and the byte offset of each glyph's codepoint to `glyphBytes`.
     PenWalk walkPens(FontData &fontData, float px, const gweni::String &text,
-        std::vector<float> *pens, std::vector<int> *carets, std::vector<int> *glyphLines=nullptr);
+        std::vector<float> *pens, std::vector<int> *carets, std::vector<int> *glyphLines=nullptr,
+        std::vector<uint32_t> *glyphBytes=nullptr);
     //! walkPens in a font that lays its codepoints in terminal cells (Cells, a
     //! fixed-width face) or by their advances, a loop of each, so a proportional
     //! font's walk does no more per glyph than it did before there were cells
     template<bool Cells>
     PenWalk walkPensIn(FontData &fontData, float px, const gweni::String &text,
-        std::vector<float> *pens, std::vector<int> *carets, std::vector<int> *glyphLines);
+        std::vector<float> *pens, std::vector<int> *carets, std::vector<int> *glyphLines,
+        std::vector<uint32_t> *glyphBytes);
     //! At a scale() other than 1, a run is drawn in another font than it is measured
     //! in, whose advances need not be the measured ones scaled: a grayscale coverage
     //! font's are hinted, whole-pixel at its own size, whether the run was measured
@@ -1124,7 +1131,11 @@ private:
     //
     //! text, font and color are what the glyphs were laid out from: renderText
     //! rebuilds the run when any of them changes, and only re-offsets it when
-    //! just position or zIndex did.
+    //! just position or zIndex did. A run drawn with colour spans, or drawn
+    //! without them after it had some, is not rebuilt for a new color or new
+    //! spans: only the glyphs whose colour changed are rewritten
+    //! (colorTextRun). The plain call on a run that never had spans rebuilds
+    //! it for a new color, as it always did.
     //
     //! fontData is the loaded font whose atlas the glyphs sample, and the run is on
     //! its textRuns list, which keeps that font loaded; nullptr before the first
@@ -1142,8 +1153,21 @@ private:
         gweni::Font font;
         float px=0.f; //!< the effective size it was laid out at, textPx(font)
         gweni::Color color;
+        //! the colour spans it was drawn with (empty for the plain renderText)
+        std::vector<ColorSpan> spans;
+        //! the byte offset of each glyph's codepoint in text, kept only while the
+        //! run has spans (empty otherwise), for colorTextRun
+        std::vector<uint32_t> glyphBytes;
         FontData *fontData=nullptr;
     };
+
+    //! The one renderText, \a spans empty for the plain call.
+    void renderTextRun(size_t textId, const gweni::Font &font, gweni::Point pos, int zIndex,
+        const gweni::String &text, const std::vector<ColorSpan> &spans);
+    //! Writes each glyph's colour (its span's, else run.color, opaque) into its
+    //! vertexes, marking for the upload only the glyph slots whose colour changed
+    //! where markChanged is set. Reads run.glyphBytes when run.spans is not empty.
+    void colorTextRun(TextRun &run, bool markChanged);
 
     //! Gives the run at least `glyphs` slots, keeping its current ones when they
     //! already fit: best fit over the free list, splitting the remainder off, and

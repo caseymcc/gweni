@@ -191,6 +191,14 @@ void Base::drawCheckerRect(size_t primitiveId, gweni::Rect rect, int zIndex,
     drawRoundedRect(primitiveId, rect, radius, border, flat, flat, borderColor, zIndex);
 }
 
+void Base::renderText(size_t textId, const gweni::Font &font, gweni::Point pos, int zIndex,
+    const gweni::String &text, const std::vector<ColorSpan> &spans)
+{
+    if(!spans.empty())
+        setDrawColor(spans.front().color);
+    renderText(textId, font, pos, zIndex, text);
+}
+
 ///  If they haven't defined these font functions in their renderer code
 ///  we just draw some rects where the letters would be to give them an
 ///  idea.

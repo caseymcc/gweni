@@ -2852,6 +2852,63 @@ void SlotRenderer::releaseTextPrimitive(size_t primitiveId)
 void SlotRenderer::renderText(size_t textId, const gweni::Font &font, gweni::Point pos, int zIndex,
     const gweni::String &text)
 {
+    static const std::vector<ColorSpan> noSpans;
+
+    renderTextRun(textId, font, pos, zIndex, text, noSpans);
+}
+
+void SlotRenderer::renderText(size_t textId, const gweni::Font &font, gweni::Point pos, int zIndex,
+    const gweni::String &text, const std::vector<ColorSpan> &spans)
+{
+    renderTextRun(textId, font, pos, zIndex, text, spans);
+}
+
+void SlotRenderer::colorTextRun(TextRun &run, bool markChanged)
+{
+    const std::vector<ColorSpan> &spans=run.spans;
+    // the spans' bytes and the glyphs' both ascend, so one pass finds every glyph's
+    size_t span=0;
+
+    for(size_t i=0; i < run.glyphs; ++i)
+    {
+        const gweni::Color *color=&run.color;
+
+        if(!spans.empty())
+        {
+            const uint32_t byte=run.glyphBytes[i];
+
+            while((span < spans.size()) && (spans[span].end <= byte))
+                ++span;
+            if((span < spans.size()) && (spans[span].begin <= byte))
+                color=&spans[span].color;
+        }
+
+        // the arithmetic the markup's foreground colour is made with, so a glyph
+        // in the draw colour has the bytes the plain call gives it; opaque
+        const float r=color->r/255.0f, g=color->g/255.0f, b=color->b/255.0f, a=1.0f;
+        const size_t vertIndex=(run.start+i)*4;
+        const ftgl::glyph_vertex_t &first=m_textVertexes[vertIndex];
+
+        if((first.r == r) && (first.g == g) && (first.b == b) && (first.a == a))
+            continue;
+
+        for(size_t j=0; j < 4; ++j)
+        {
+            ftgl::glyph_vertex_t &vertex=m_textVertexes[vertIndex+j];
+
+            vertex.r=r;
+            vertex.g=g;
+            vertex.b=b;
+            vertex.a=a;
+        }
+        if(markChanged)
+            m_dirtyTextVertexSlots.mark(run.start+i);
+    }
+}
+
+void SlotRenderer::renderTextRun(size_t textId, const gweni::Font &font, gweni::Point pos, int zIndex,
+    const gweni::String &text, const std::vector<ColorSpan> &spans)
+{
     // drawn at the effective size, in device pixels from the translated origin
     const float px=textPx(font);
 
@@ -2876,9 +2933,31 @@ void SlotRenderer::renderText(size_t textId, const gweni::Font &font, gweni::Poi
     // (not one freed since): the glyphs are the ones already there, at most offset.
     // Anything else falls through to the full rebuild; a new scale() is a new px, and
     // in an SDF font the same atlas.
-    if((run.text == text) && (run.font == font) && (run.px == px) && (run.color == color)
-        && (run.fontData == &fontData))
+    // With spans on either side (the call's or the run's), a new colour or new spans
+    // keep the glyphs too: only their colours are written, and only where they
+    // changed. The plain call on a run without spans rebuilds for a new colour.
+    const bool sameGlyphs=(run.text == text) && (run.font == font) && (run.px == px)
+        && (run.fontData == &fontData);
+    const bool sameColors=(run.color == color) && (run.spans == spans);
+
+    if(sameGlyphs && (sameColors || !spans.empty() || !run.spans.empty()))
     {
+        if(!sameColors)
+        {
+            // the glyphs' bytes, walked once while the run has spans
+            if(!spans.empty() && run.glyphBytes.empty())
+            {
+                walkPens(fontData, px, text, nullptr, nullptr, nullptr, &run.glyphBytes);
+                if(run.glyphBytes.size() != run.glyphs)
+                    run.glyphBytes.resize(run.glyphs, 0);
+            }
+            run.color=color;
+            run.spans=spans;
+            if(spans.empty())
+                run.glyphBytes.clear();
+            colorTextRun(run, true);
+        }
+
         if((pos.x != run.position.x) || (pos.y != run.position.y) || (zIndex != run.zIndex))
         {
             const gweni::Point delta=pos-run.position;
@@ -2963,6 +3042,15 @@ void SlotRenderer::renderText(size_t textId, const gweni::Font &font, gweni::Poi
     run.font=font;
     run.px=px;
     run.color=color;
+    run.spans=spans;
+    run.glyphBytes.clear();
+    if(!spans.empty())
+    {
+        walkPens(fontData, px, text, nullptr, nullptr, nullptr, &run.glyphBytes);
+        // a walk that does not step as the layout did (it should) colours by glyph 0
+        if(run.glyphBytes.size() != glyphCount)
+            run.glyphBytes.resize(glyphCount, 0);
+    }
     setTextRunFont(textId, &fontData);
     allocateTextRun(textId, run, glyphCount);
 
@@ -3009,6 +3097,10 @@ void SlotRenderer::renderText(size_t textId, const gweni::Font &font, gweni::Poi
             vertex.z=z;
         }
     }
+
+    // the layout baked the draw colour into every glyph; the spans' glyphs take theirs
+    if(!spans.empty())
+        colorTextRun(run, false);
 
     markTextDrawList(run, drawnBefore);
     markTextVertexes(run);
@@ -3082,17 +3174,19 @@ void SlotRenderer::textPens(FontData &fontData, float px, const gweni::String &t
 // origin, 0 in a run's own buffer, and starts the next line. Its LCD quads sit on
 // 1/3 px phases of the pen, which moves the quad, not the pen.
 SlotRenderer::PenWalk SlotRenderer::walkPens(FontData &fontData, float px, const gweni::String &text,
-    std::vector<float> *pens, std::vector<int> *carets, std::vector<int> *glyphLines)
+    std::vector<float> *pens, std::vector<int> *carets, std::vector<int> *glyphLines,
+    std::vector<uint32_t> *glyphBytes)
 {
     // whether the font lays its codepoints in terminal cells (a fixed-width face)
     if(fontData.textureFont->cell_width > 0.0f)
-        return walkPensIn<true>(fontData, px, text, pens, carets, glyphLines);
-    return walkPensIn<false>(fontData, px, text, pens, carets, glyphLines);
+        return walkPensIn<true>(fontData, px, text, pens, carets, glyphLines, glyphBytes);
+    return walkPensIn<false>(fontData, px, text, pens, carets, glyphLines, glyphBytes);
 }
 
 template<bool Cells>
 SlotRenderer::PenWalk SlotRenderer::walkPensIn(FontData &fontData, float px, const gweni::String &text,
-    std::vector<float> *pens, std::vector<int> *carets, std::vector<int> *glyphLines)
+    std::vector<float> *pens, std::vector<int> *carets, std::vector<int> *glyphLines,
+    std::vector<uint32_t> *glyphBytes)
 {
     ftgl::texture_font_t *font=fontData.textureFont;
     const bool sdf=(fontData.mode == TextMode::Sdf);
@@ -3150,6 +3244,8 @@ SlotRenderer::PenWalk SlotRenderer::walkPensIn(FontData &fontData, float px, con
                 pens->push_back(sdf?pen+cellOffset:roundf(pen+cellOffset));
             if(glyphLines)
                 glyphLines->push_back(lines-1);
+            if(glyphBytes)
+                glyphBytes->push_back(static_cast<uint32_t>(i));
             pen+=advance*s;
             previous=current;
             continue;
@@ -3163,6 +3259,8 @@ SlotRenderer::PenWalk SlotRenderer::walkPensIn(FontData &fontData, float px, con
             pens->push_back(sdf?pen:roundf(pen));
         if(glyphLines)
             glyphLines->push_back(lines-1);
+        if(glyphBytes)
+            glyphBytes->push_back(static_cast<uint32_t>(i));
         pen+=glyph->advance_x*s;
         previous=current;
     }

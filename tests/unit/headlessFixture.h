@@ -188,7 +188,16 @@ public:
         for(size_t pos=0; pos < text.size(); pos=gweni::utf8Next(text, pos))
             ++glyphs;
         textGlyphs[textId]=glyphs;
+        textSpans[textId].clear();
         wroteText(textId, glyphs);
+    }
+    //! Records the spans in `textSpans`, then counts the run as the plain call does.
+    void renderText(size_t textId, const gweni::Font &font, gweni::Point pos, int zIndex,
+        const gweni::String &text, const std::vector<gweni::renderer::ColorSpan> &spans) override
+    {
+        renderText(textId, font, pos, zIndex, text);
+        textSpans[textId]=spans;
+        ++spanRenders;
     }
     //! Write the glyph slots the text id's last renderText counted.
     void showText(size_t textId) override { wroteText(textId, textGlyphs[textId]); }
@@ -221,6 +230,10 @@ public:
 
     //! Each text id's glyph count at its last renderText
     std::map<size_t, size_t> textGlyphs;
+    //! Each text id's colour spans at its last renderText (empty for the plain call)
+    std::map<size_t, std::vector<gweni::renderer::ColorSpan>> textSpans;
+    //! renderText calls with spans so far. Tests take deltas.
+    size_t spanRenders=0;
     //! Each primitive id's edge mask at its last drawRoundedRect (0 without one)
     std::map<size_t, uint8_t> roundedEdges;
     //! Each primitive id's reach at its last drawRoundedRect (0 without one)
