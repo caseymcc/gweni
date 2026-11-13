@@ -1775,23 +1775,34 @@ PointF Chart::getPointPosition(size_t series, size_t index) const
     return PointF(x, static_cast<float>(yPosition(s->axis, point.y)));
 }
 
+namespace
+{
+
+//! A polyline's vertices over \p count x: each point, and a step's riser
+//! after every point but the last.
+size_t lineVertices(bool step, size_t count)
+{
+    if(count == 0)
+        return 0;
+    return step ? 2*count-1 : count;
+}
+
+}//namespace
+
 size_t Chart::getVertexCount(size_t series) const
 {
-    ensureData();
-
     const Series *s=seriesAt(series);
 
     if(!s || !hasLine(s->type))
         return 0;
 
     // a stacked area's line is at every x of the stack
-    const size_t count=isStackedAreaType(s->type) ? m_areaXs.size() : s->points.size();
-
-    if(count == 0)
-        return 0;
-    if(isStepType(s->type))
-        return 2*count-1;
-    return count;
+    if(isStackedAreaType(s->type))
+    {
+        ensureData();
+        return lineVertices(isStepType(s->type), m_areaXs.size());
+    }
+    return lineVertices(isStepType(s->type), s->points.size());
 }
 
 bool Chart::getVertex(size_t series, size_t vertex, double &x, double &y) const
@@ -1802,14 +1813,22 @@ bool Chart::getVertex(size_t series, size_t vertex, double &x, double &y) const
 
     x=std::numeric_limits<double>::quiet_NaN();
     y=x;
-    if(!s || vertex >= getVertexCount(series))
+    if(!s || !hasLine(s->type))
+        return false;
+
+    // the count checked here, not through getVertexCount(): a renderer asks
+    // for every vertex of every line each frame it draws it
+    const bool stacked=isStackedAreaType(s->type);
+    const bool step=isStepType(s->type);
+
+    if(vertex >= lineVertices(step, stacked ? m_areaXs.size() : s->points.size()))
         return false;
 
     // a step line: point i at 2i, and at 2i+1 the next point's x at its y
-    const size_t index=isStepType(s->type) ? vertex/2 : vertex;
-    const bool riser=isStepType(s->type) && (vertex%2 == 1);
+    const size_t index=step ? vertex/2 : vertex;
+    const bool riser=step && (vertex%2 == 1);
 
-    if(isStackedAreaType(s->type))
+    if(stacked)
     {
         // the top of its band at x \p index of the stack
         x=xPosition(m_areaXs[riser ? index+1 : index]);
