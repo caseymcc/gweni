@@ -110,7 +110,8 @@ void SearchComboBoxOptions::calculateSize(skin::Base *skin, Dim dim)
 // a press on it leaves the keyboard focus with the box.
 GWENI_CONTROL_CONSTRUCTOR(SearchComboBoxRow)
 {
-    setTextPadding(Padding(2, SearchComboBox::RowPaddingY, 16, SearchComboBox::RowPaddingY));
+    setTextPadding(Padding(2, SearchComboBox::RowPaddingY, SearchComboBox::RowPaddingRight,
+        SearchComboBox::RowPaddingY));
     setKeyboardInputEnabled(false);
     setTabable(false);
 }
@@ -121,6 +122,15 @@ void SearchComboBoxRow::setHighlighted(bool highlighted)
         return;
 
     m_highlighted=highlighted;
+    redraw();
+}
+
+void SearchComboBoxRow::setChecked(bool checked)
+{
+    if(m_checked == checked)
+        return;
+
+    m_checked=checked;
     redraw();
 }
 
@@ -190,6 +200,18 @@ bool SearchComboBoxField::onKeyEscape(bool down)
     return ParentClass::onKeyEscape(down);
 }
 
+bool SearchComboBoxField::onKeyBackspace(bool down)
+{
+    if(m_box && m_box->isMultiSelect() && getText().empty())
+    {
+        if(down && !m_box->m_picks.empty())
+            m_box->removePick(m_box->m_picks.size()-1, true);
+        return true;
+    }
+
+    return ParentClass::onKeyBackspace(down);
+}
+
 void SearchComboBoxField::onMouseClickLeft(int x, int y, bool down)
 {
     ParentClass::onMouseClickLeft(x, y, down);
@@ -257,9 +279,16 @@ GWENI_CONTROL_CONSTRUCTOR(SearchComboBox)
 
 SearchComboBox::~SearchComboBox()
 {
-    // the field goes with the box (~Base), and must not reach it meanwhile
+    // the field and the chips go with the box (~Base), and must not reach it
+    // meanwhile
     if(m_field)
         m_field->setComboBox(nullptr);
+
+    for(Pick &pick : m_picks)
+    {
+        if(pick.chip)
+            pick.chip->onRemove.removeHandler(this);
+    }
 
     internal::SearchComboBoxList *list=m_list;
 
@@ -362,11 +391,13 @@ void SearchComboBox::addOption(const String &label, const String &name)
 {
     m_options.push_back({label, name});
     m_lowerLabels.push_back(lowerCased(label));
+    m_picked.push_back(0);
     // a new label in this box's width
     invalidate();
 
     // the first option is the default, unless a free-text value is the value
-    if((m_selected == NoOption) && !m_hasCustom)
+    // or the box picks several
+    if((m_selected == NoOption) && !m_hasCustom && !m_multi)
         select(static_cast<int>(m_options.size())-1, false);
 
     if(isListOpen())
@@ -382,11 +413,15 @@ void SearchComboBox::setOptions(std::vector<Option> options)
     for(const Option &option : m_options)
         m_lowerLabels.push_back(lowerCased(option.label));
 
+    // the picks of options go with them; free-text ones stay
+    clearPicks(true);
+    m_picked.assign(m_options.size(), 0);
+
     m_widthsValid=false;
     m_highlight=NoOption;
     m_highlightPos=VirtualList::NoItem;
     // shown again even when the index stays: the option at it is another
-    m_selected=(m_options.empty() || m_hasCustom)?NoOption:0;
+    m_selected=(m_options.empty() || m_hasCustom || m_multi)?NoOption:0;
     showSelection();
     invalidate();
 
@@ -401,6 +436,9 @@ void SearchComboBox::clearOptions()
 
 void SearchComboBox::setSelectedIndex(int index)
 {
+    if(m_multi)
+        return setSelectedIndices({index});
+
     select(index, false);
 }
 
@@ -443,9 +481,11 @@ String SearchComboBox::shownValueText() const
     return (m_selected == NoOption)?String():m_options[m_selected].label;
 }
 
+// Multi-select, the chips are the value: the box shows no text, and the
+// field is empty for the next query.
 void SearchComboBox::showSelection()
 {
-    const String text=shownValueText();
+    const String text=m_multi?String():shownValueText();
 
     setRefused(false);
 
@@ -761,6 +801,26 @@ void SearchComboBox::resolveText()
 {
     const String text=m_field->getText();
 
+    // multi-select: an option's label picks it (if it is not), anything else
+    // is a free-text pick
+    if(m_multi)
+    {
+        if(text.empty() || m_refused)
+            return;
+
+        const int option=optionWithLabel(text);
+
+        if(option == NoOption)
+            commitCustom(text);
+        else
+        {
+            if(!isPicked(option))
+                togglePick(option);
+            m_field->showText(String());
+        }
+        return;
+    }
+
     if((text == shownValueText()) || m_refused)
         return;
 
@@ -791,6 +851,23 @@ bool SearchComboBox::commitCustom(const String &text)
         return false;
     }
 
+    if(m_multi)
+    {
+        // a text picked already is not picked twice
+        bool picked=false;
+
+        for(const Pick &pick : m_picks)
+            picked=picked || ((pick.option == NoOption) && (pick.text == text));
+
+        if(!picked)
+        {
+            addPick(NoOption, text);
+            fireSelectionChange(NoOption);
+        }
+        m_field->showText(String());
+        return true;
+    }
+
     m_selected=NoOption;
     m_hasCustom=true;
     m_custom=text;
@@ -812,6 +889,9 @@ void SearchComboBox::setDisabled(bool disabled)
 
     if(m_field)
         m_field->setDisabled(disabled);
+
+    for(Pick &pick : m_picks)
+        pick.chip->setDisabled(disabled);
 }
 
 // The field covers the text area: from the text inset to the text padding
@@ -819,7 +899,35 @@ void SearchComboBox::setDisabled(bool disabled)
 // box's own would.
 void SearchComboBox::arrange(skin::Base *skin, Dim dim)
 {
-    if(m_field && !m_field->hidden())
+    if(m_multi)
+    {
+        std::vector<Rect> chips;
+        Rect field;
+        int height;
+
+        flowRects(getWidth(), chips, field, height);
+
+        for(size_t i=0; i < m_picks.size(); ++i)
+        {
+            const Rect &bounds=m_picks[i].chip->getBounds();
+
+            if(dim == Dim::X)
+                placeChild(m_picks[i].chip, Rect(chips[i].x, bounds.y, chips[i].w, bounds.h));
+            else
+                placeChild(m_picks[i].chip, Rect(bounds.x, chips[i].y, bounds.w, chips[i].h));
+        }
+
+        if(m_field && !m_field->hidden())
+        {
+            const Rect &bounds=m_field->getBounds();
+
+            if(dim == Dim::X)
+                placeChild(m_field, Rect(field.x, bounds.y, field.w, bounds.h));
+            else
+                placeChild(m_field, Rect(bounds.x, field.y, bounds.w, field.h));
+        }
+    }
+    else if(m_field && !m_field->hidden())
     {
         const Rect &bounds=m_field->getBounds();
         const Padding &text=getTextPadding();
@@ -878,12 +986,14 @@ void SearchComboBox::bindRow(Base *control, size_t item)
         row->setText(noMatchesText());
         row->setDisabled(true);
         row->setHighlighted(false);
+        row->setChecked(false);
         return;
     }
 
     row->setText((key == AddRowKey)?addRowText(m_query):m_options[key].label);
     row->setDisabled(false);
     row->setHighlighted(item == m_highlightPos);
+    row->setChecked((key != AddRowKey) && isPicked(static_cast<int>(key)));
 }
 
 // An option row picks it; the Add row adds what was typed, closing the list
@@ -894,7 +1004,12 @@ void SearchComboBox::pickPosition(size_t position)
 
     if(key == AddRowKey)
     {
-        if(commitCustom(m_field->getText()))
+        if(!commitCustom(m_field->getText()))
+            return;
+
+        if(m_multi)
+            afterMultiPick(NoOption);
+        else
         {
             closeList();
             focusInput();
@@ -902,7 +1017,15 @@ void SearchComboBox::pickPosition(size_t position)
         return;
     }
 
-    if(key != NoMatchKey)
+    if(key == NoMatchKey)
+        return;
+
+    if(m_multi)
+    {
+        togglePick(static_cast<int>(key));
+        afterMultiPick(static_cast<int>(key));
+    }
+    else
         pick(static_cast<int>(key), true);
 }
 
@@ -992,6 +1115,8 @@ bool SearchComboBox::onKeyUp(bool down)
 
     if(isListOpen())
         stepHighlight(-1);
+    else if(m_multi)
+        openList();
     else if(m_selected > 0)
         select(m_selected-1, true);
 
@@ -1005,6 +1130,8 @@ bool SearchComboBox::onKeyDown(bool down)
 
     if(isListOpen())
         stepHighlight(1);
+    else if(m_multi)
+        openList();
     else if((m_selected == NoOption) && !m_options.empty())
         select(0, true);
     else if((m_selected != NoOption) && (static_cast<size_t>(m_selected)+1 < m_options.size()))
@@ -1032,6 +1159,16 @@ bool SearchComboBox::onKeyReturn(bool down)
     return true;
 }
 
+bool SearchComboBox::onKeyBackspace(bool down)
+{
+    if(!m_multi)
+        return false;
+
+    if(down && !m_picks.empty())
+        removePick(m_picks.size()-1, true);
+    return true;
+}
+
 // Open, it closes the list and gives the field back the value; closed with
 // the field edited (the list toggled shut, a refused value), it gives it
 // back too.
@@ -1050,9 +1187,293 @@ bool SearchComboBox::onKeyEscape(bool down)
     return true;
 }
 
+
+///////////////////////////////////////////////////////////////////////////
+// Multi-select
+
+void SearchComboBox::setMultiSelect(bool multi)
+{
+    if(m_multi == multi)
+        return;
+
+    closeList();
+    clearPicks(false);
+    m_multi=multi;
+    m_selected=NoOption;
+    m_hasCustom=false;
+    m_custom.clear();
+    setRefused(false);
+
+    // the box grows with its rows of chips: a request is the least it is
+    if(multi)
+        setSizeFlags({getSizeFlags().horizontal, SizeFlag::Expand});
+
+    showSelection();
+    invalidate();
+}
+
+std::vector<int> SearchComboBox::getSelectedIndices() const
+{
+    std::vector<int> indices;
+
+    for(const Pick &pick : m_picks)
+    {
+        if(pick.option != NoOption)
+            indices.push_back(pick.option);
+    }
+    return indices;
+}
+
+std::vector<String> SearchComboBox::getSelectedValues() const
+{
+    std::vector<String> values;
+
+    for(const Pick &pick : m_picks)
+    {
+        if(pick.option == NoOption)
+            values.push_back(pick.text);
+        else
+        {
+            const Option &option=m_options[pick.option];
+
+            values.push_back(option.name.empty()?option.label:option.name);
+        }
+    }
+    return values;
+}
+
+void SearchComboBox::setSelectedIndices(const std::vector<int> &indices)
+{
+    if(!m_multi)
+        return;
+
+    clearPicks(false);
+
+    for(int index : indices)
+    {
+        if((index >= 0) && (static_cast<size_t>(index) < m_options.size()) && !isPicked(index))
+        {
+            addPick(index, String());
+            refreshCheck(index);
+        }
+    }
+}
+
+bool SearchComboBox::isPicked(int index) const
+{
+    return (index >= 0) && (static_cast<size_t>(index) < m_picked.size()) && m_picked[index];
+}
+
+std::vector<Chip *> SearchComboBox::getChips() const
+{
+    std::vector<Chip *> chips;
+
+    for(const Pick &pick : m_picks)
+        chips.push_back(pick.chip);
+    return chips;
+}
+
+// A removable chip, owner-placed by the box (arrange), taking no keyboard: a
+// press on it leaves the focus with the field (pressKeepsKeyboardFocus) or
+// gives it to the box.
+void SearchComboBox::addPick(int index, const String &text)
+{
+    Chip *chip=newChild<Chip>();
+
+    chip->setPlacement(Placement::Owner);
+    chip->setText((index == NoOption)?text:m_options[index].label);
+    chip->setRemovable(true);
+    chip->setKeyboardInputEnabled(false);
+    chip->setTabable(false);
+    chip->setDisabled(isDisabled());
+    chip->onRemove.add(this, &SearchComboBox::chipRemoved);
+
+    m_picks.push_back({index, (index == NoOption)?text:String(), chip});
+
+    if(index != NoOption)
+        m_picked[index]=1;
+
+    invalidate();
+}
+
+// Hidden at once and deleted after the frame: this can run from the chip's own
+// remove button's click.
+void SearchComboBox::removePick(size_t at, bool doEvents)
+{
+    if(at >= m_picks.size())
+        return;
+
+    const Pick pick=m_picks[at];
+
+    m_picks.erase(m_picks.begin()+static_cast<std::ptrdiff_t>(at));
+
+    if(pick.option != NoOption)
+        m_picked[pick.option]=0;
+
+    // hidden, it takes no click: its onRemove (which may be running now)
+    // keeps its handler until the chip goes
+    pick.chip->hide();
+    pick.chip->delayedDelete();
+    invalidate();
+    refreshCheck(pick.option);
+
+    if(doEvents)
+        fireSelectionChange(pick.option);
+}
+
+void SearchComboBox::chipRemoved(event::Info info)
+{
+    for(size_t i=0; i < m_picks.size(); ++i)
+    {
+        if(m_picks[i].chip == info.controlCaller)
+            return removePick(i, true);
+    }
+}
+
+void SearchComboBox::clearPicks(bool keepCustom)
+{
+    for(size_t i=m_picks.size(); i-- > 0;)
+    {
+        if(!keepCustom || (m_picks[i].option != NoOption))
+            removePick(i, false);
+    }
+}
+
+void SearchComboBox::togglePick(int index)
+{
+    if(isPicked(index))
+    {
+        for(size_t i=0; i < m_picks.size(); ++i)
+        {
+            if(m_picks[i].option == index)
+                return removePick(i, true);
+        }
+        return;
+    }
+
+    addPick(index, String());
+    refreshCheck(index);
+    fireSelectionChange(index);
+}
+
+void SearchComboBox::fireSelectionChange(int index)
+{
+    event::Info info(this);
+
+    info.integer=static_cast<size_t>(index);
+    onSelectionChange.call(this, info);
+}
+
+void SearchComboBox::refreshCheck(int index)
+{
+    if(!m_rows || (index == NoOption))
+        return;
+
+    for(Base *control : m_rows->getRows())
+    {
+        const size_t item=m_rows->itemForRow(control);
+
+        if((item < m_matches.size()) && (static_cast<int>(m_matches[item]) == index))
+        {
+            if(auto *row=gweni_cast<internal::SearchComboBoxRow>(control))
+                row->setChecked(isPicked(index));
+        }
+    }
+}
+
+// The list stays open. A query typed is over: the field is emptied and the
+// list shows every option again (only the rows whose option changed bound
+// again), the highlight on the option just picked.
+void SearchComboBox::afterMultiPick(int option)
+{
+    // the query, not the field: a free-text pick has emptied the field already
+    if(m_filterable && !m_query.empty())
+    {
+        m_field->showText(String());
+        m_query.clear();
+        m_lowerQuery.clear();
+
+        if(isListOpen())
+            filter();
+    }
+
+    if(option != NoOption)
+        setHighlightedIndex(option);
+
+    focusInput();
+}
+
+// Each chip at its preferred size (cut to the row), left to right from the
+// text inset, a new row when the next does not fit; the field after the last
+// chip when MinFieldWidth fits beside it, on a row of its own otherwise, to
+// the row's end. A row is as high as the highest of the chips' and the field's
+// line; the box is its rows and its vertical padding, at least its one-line
+// height.
+void SearchComboBox::flowRects(int width, std::vector<Rect> &chips, Rect &field, int &height)
+{
+    const Padding &text=getTextPadding();
+    const int left=m_padding.left+text.left;
+    const int right=std::max(left, width-m_padding.right-text.right);
+    const bool hasField=m_field && !m_field->hidden();
+    int rowHeight=hasField?measureLineHeight(m_field->getFont()):0;
+
+    for(const Pick &pick : m_picks)
+        rowHeight=std::max(rowHeight, pick.chip->getPreferredSize().height);
+
+    if(rowHeight <= 0)
+        rowHeight=measureLineHeight(getFont());
+
+    int x=left;
+    int y=m_padding.top;
+
+    chips.clear();
+
+    for(const Pick &pick : m_picks)
+    {
+        const int w=std::min(pick.chip->getPreferredSize().width, right-left);
+
+        if((x > left) && (x+w > right))
+        {
+            x=left;
+            y+=rowHeight+RowGap;
+        }
+
+        chips.push_back(Rect(x, y, w, rowHeight));
+        x+=w+ChipGap;
+    }
+
+    if(hasField)
+    {
+        if((x > left) && (x+MinFieldWidth > right))
+        {
+            x=left;
+            y+=rowHeight+RowGap;
+        }
+        field=Rect(x, y, right-x, rowHeight);
+    }
+    else
+        field=Rect();
+
+    const bool empty=m_picks.empty() && !hasField;
+
+    height=empty?0:y+rowHeight+m_padding.bottom;
+}
+
 void SearchComboBox::calculateSize(skin::Base *skin, Dim dim)
 {
     ParentClass::calculateSize(skin, dim);
+
+    // the rows at the width the X arrange gave the box, final by now
+    if(m_multi && (dim == Dim::Y))
+    {
+        std::vector<Rect> chips;
+        Rect field;
+        int height;
+
+        flowRects(getWidth(), chips, field, height);
+        m_preferredSize.height=std::max(m_preferredSize.height, preferredFromContent(height, Dim::Y));
+        return;
+    }
 
     if((dim != Dim::X) || m_options.empty())
         return;

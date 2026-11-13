@@ -372,6 +372,19 @@ void SearchComboBoxRow::update(renderer::Base *renderer, controls::Base *baseCon
     }
     else
         renderer->hidePrimitive(m_primitives[0]);
+
+    if(m_primitives.size() < 2)
+        return;
+
+    // in the row's right text padding, as a ComboBox's chevron is in its box's
+    const gweni::Rect r=baseControl->getRenderBounds();
+    const int sz=controls::SearchComboBox::CheckSize;
+    const gweni::Rect check{ r.x+r.w-sz-controls::SearchComboBox::CheckInset, r.y+(r.h-sz)/2, sz, sz };
+
+    if(row->isChecked() && baseControl->visible())
+        renderer->drawIcon(m_primitives[1], check, 0, 0, row->getTextColor(), baseControl->getZIndex()+1);
+    else
+        renderer->hidePrimitive(m_primitives[1]);
 }
 
 

@@ -295,14 +295,18 @@ public:
     inline static const std::string_view name="SearchComboBox";
 };
 
-// A row of a SearchComboBox's list, drawn as a MenuItem: the MenuHover
-// surface while it shows the highlighted option, its slot hidden otherwise.
+// A row of a SearchComboBox's list, drawn as a MenuItem: [0] the MenuHover
+// surface while it shows the highlighted option, its slot hidden otherwise;
+// [1] a check (icon kind 0) at the row's right end, at z+1, on an option a
+// multi-select box has picked.
 class SearchComboBoxRow:public textured::ControlRegister<SearchComboBoxRow>
 {
 public:
     static void staticInit(TexturedSkin *) { m_staticInit=true; }
 
-    size_t requiredPrimitives() override { return 1; }
+    size_t requiredPrimitives() override { return 2; }
+    // the check is drawn at getZIndex()+1, over the highlight
+    size_t depthLayers() override { return 2; }
 
     void update(renderer::Base *renderer, controls::Base *baseControl) override;
 
