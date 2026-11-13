@@ -219,7 +219,8 @@ void Dialog::close(Result result)
     onClose.call(this);
 
     m_closing=false;
-    if(m_deleteOnClose)
+    // a handler that opened it again keeps it
+    if(m_deleteOnClose && !m_open)
         delayedDelete();
 }
 

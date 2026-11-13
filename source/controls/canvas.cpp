@@ -232,9 +232,12 @@ double Canvas::nextWorkTime()
     // input capture set, so until then it waits for the capture to be cleared
     // or the canvas shown (and is work again once it is)
     const bool hoverToTake=m_hoverStale && !hidden() && !m_inputCapture;
+    // a hidden canvas's update phase stops before the steps that take these,
+    // so they wait for it to be shown, as layout does
+    const bool modalsOrToasts=!hidden() && (m_modalFocusPending || m_toastDeadlineDirty);
 
     if(m_needsRedraw || m_zOrderDirty || hoverToTake || !m_deleteSet.empty()
-        || m_modalFocusPending || m_toastDeadlineDirty
+        || modalsOrToasts
         || m_postQueue->pending()
         || (!hidden() && layoutDirty())
         || (render && (render->textLayoutSerial() != m_textLayoutSerial))
@@ -1767,7 +1770,7 @@ void Canvas::popModal(Base *control)
         const bool top=(i+1 == m_modals.size());
         const size_t focusId=m_modals[i].focusId;
 
-        m_modals.erase(m_modals.begin()+i);
+        eraseModal(i);
 
         if(m_releasingChildren)
             return;
@@ -1803,6 +1806,21 @@ void Canvas::restoreModalFocus(size_t focusId, Base *leaving)
         focus->unfocus();
 }
 
+void Canvas::eraseModal(size_t index)
+{
+    if(index+1 < m_modals.size())
+    {
+        // the one above took its focus from this one: it gives back this
+        // one's instead (its subtree is still there, also when it is deleted)
+        ModalEntry &above=m_modals[index+1];
+        Base *recorded=above.focusId ? Base::getControlById(above.focusId) : nullptr;
+
+        if(!recorded || within(recorded, m_modals[index].control))
+            above.focusId=m_modals[index].focusId;
+    }
+    m_modals.erase(m_modals.begin()+index);
+}
+
 void Canvas::modalDeleted(Base *control)
 {
     for(size_t i=0; i < m_modals.size(); ++i)
@@ -1818,7 +1836,7 @@ void Canvas::modalDeleted(Base *control)
             m_modalFocusPending=true;
             m_modalFocusRestore=m_modals[i].focusId;
         }
-        m_modals.erase(m_modals.begin()+i);
+        eraseModal(i);
 
         if(!m_releasingChildren)
         {
@@ -1857,6 +1875,14 @@ void Canvas::onChildHiddenChanged(Base *child)
     // shown after the modals were put in place: they go over it again
     if(!m_modals.empty() && !child->hidden() && !isModal(child) && !aboveModals(child))
         m_zOrderDirty=true;
+}
+
+void Canvas::onChildRemoved(Base *child)
+{
+    ParentClass::onChildRemoved(child);
+
+    if(isModal(child))
+        popModal(child);
 }
 
 void Canvas::keepModalsInPlace()

@@ -900,8 +900,15 @@ protected:
     /// popModal()'s focus step: \p focusId's control takes the focus if the
     /// focus is free (none, in \p leaving, or not allowed any more).
     void restoreModalFocus(size_t focusId, Base *leaving);
+    /// Takes m_modals[\p index] off the stack. A modal below the top hands
+    /// its focus to the one above it when that one's is inside it (or none),
+    /// so the focus the lower one took from the app still comes back.
+    void eraseModal(size_t index);
     /// A shown child may now be under the modals: they are put back in place.
     void onChildHiddenChanged(Base *child) override;
+    /// A modal taken off the canvas leaves the stack at once, so one deleted
+    /// before the next update phase leaves nothing behind.
+    void onChildRemoved(Base *child) override;
     /// One recurseLayout with m_inLayout set. The canvas is left dirty when
     /// the pass re-dirtied layout or its own Y arrange ended dirty (a shown
     /// control under it still is), so the caller runs another.

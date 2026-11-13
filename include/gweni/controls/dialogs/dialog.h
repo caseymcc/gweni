@@ -122,7 +122,7 @@ protected:
 //! close(result) hides it, takes it off the modal stack (which gives the focus
 //! back to the control that had it before it opened), then calls the result
 //! handler (setResultHandler) once and onClose, then deletes it (delayed)
-//! unless setDeleteOnClose(false). Escape (with no Popup open over it and
+//! unless setDeleteOnClose(false) or the handler opened it again. Escape (with no Popup open over it and
 //! nothing inside it taking the key), its close button, close() with no
 //! result and setHidden(true) while open close it with its cancel result
 //! (setCancelResult, Cancel by default). Deleting it or its canvas calls no

@@ -24,7 +24,8 @@
  *  handler once with the result (the cancel result for all but close(result),
  *  setCancelResult's when set), then onClose, and deletes it with every
  *  primitive and text id back; setDeleteOnClose(false) keeps it to open
- *  again. A handler may open another dialog, which is then the top modal.
+ *  again. A handler may open another dialog, which is then the top modal, or
+ *  its own again, which is then not deleted.
  *  setClosable(false) hides the close button and Escape leaves it open.
  *  Deleting it while open, or deleting the canvas, calls no handler.
  */
@@ -445,6 +446,38 @@ TEST_CASE("Dialog: a handler may open another dialog")
     scene.key(keys::Escape);
     CHECK(scene.results == std::vector<std::string>{"second:3:"});
     CHECK(canvas->topModal() == nullptr);
+}
+
+TEST_CASE("Dialog: a handler may open its own dialog again, which then stays")
+{
+    Scene scene;
+    controls::Canvas *canvas=scene.canvas;
+
+    Dialog *dialog=scene.dialog(Extent::units(400), Extent::units(300), "again");
+    const size_t id=dialog->getControlId();
+    int calls=0;
+
+    // a prompt's validation, say: the first result sends it back
+    dialog->setResultHandler([&](Result, const String &)
+    {
+        ++calls;
+        dialog->setResultHandler([&](Result, const String &) { ++calls; });
+        dialog->open();
+    });
+    dialog->open();
+    scene.frame();
+    dialog->close(Result::Ok);
+    scene.frame();
+    scene.frame();
+
+    REQUIRE(controls::Base::getControlById(id) == dialog);
+    CHECK(dialog->isOpen());
+    CHECK(dialog->visible());
+    CHECK(canvas->topModal() == dialog);
+    dialog->close(Result::Ok);
+    scene.frame();
+    CHECK(calls == 2);
+    CHECK(controls::Base::getControlById(id) == nullptr);
 }
 
 TEST_CASE("Dialog: deleted while open, or with its canvas, it calls no handler")

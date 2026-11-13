@@ -6,6 +6,7 @@
 
 
 #include <gweni/controls/selectable.h>
+#include <gweni/gweni.h>
 #include <gweni/skin.h>
 
 #include <algorithm>
@@ -76,6 +77,11 @@ void Selectable::onPress(event::Info info)
 
 bool Selectable::onKeyReturn(bool down)
 {
+    // Only the row's own key: a single-line TextBox in the row (a DataTableRow
+    // cell) passes its Return press on up to a dialog's default button, which
+    // must not press the row on the way.
+    if(KeyboardFocus != this)
+        return false;
     return onKeySpace(down);
 }
 

@@ -31,8 +31,12 @@
  *  and a tool's canvas child (setExcludedFromStats, an Inspector's window)
  *  above them takes the mouse and the focus.
  *
- *  Leaving: a deleted modal leaves the stack and the focus comes back in the
- *  next update phase; a hidden one is popped by the next update phase; a
+ *  Leaving: a lower modal hidden or deleted before the one above it hands it
+ *  the focus it took from the app, which comes back when that one goes too; a
+ *  modal moved off the canvas leaves the stack at once.
+ *  A deleted modal leaves the stack and the focus comes back in the
+ *  next update phase (while the canvas is hidden that is no work until it
+ *  is shown); a hidden one is popped by the next update phase; a
  *  canvas deleted with modals up deletes them with no report. WindowDemo's
  *  path: WindowControl::makeModal() / destroyModal() / setHidden(true) / its
  *  close button, no Modal control created.
@@ -568,6 +572,85 @@ TEST_CASE("Modal stack: a deleted modal gives the focus back, a hidden one is po
     third.panel->hide();
     scene.frame();
     CHECK(canvas->topModal() == nullptr);
+    CHECK(KeyboardFocus == scene.appText);
+}
+
+TEST_CASE("Modal stack: a lower modal leaving first hands the app's focus to the one above")
+{
+    Scene scene;
+    controls::Canvas *canvas=scene.canvas;
+
+    for(int hideIt=0; hideIt < 2; ++hideIt)
+    {
+        CAPTURE(hideIt);
+        scene.clickOn(scene.appText);
+        REQUIRE(KeyboardFocus == scene.appText);
+
+        Scene::Modal lower=scene.modal();
+        scene.clickOn(lower.first);
+        REQUIRE(KeyboardFocus == lower.first);
+        // it takes the focus from the lower one's field
+        Scene::Modal upper=scene.modal(320, 50);
+        REQUIRE(canvas->modalCount() == 2);
+
+        // the lower one goes first (a timer closing a large dialog under a
+        // confirm), hidden and popped, or deleted
+        if(hideIt)
+        {
+            lower.panel->hide();
+            scene.frame();
+        }
+        else
+            delete lower.panel;
+        CHECK(canvas->modalCount() == 1);
+
+        canvas->popModal(upper.panel);
+        scene.frame();
+        CHECK(KeyboardFocus == scene.appText);
+        delete upper.panel;
+        if(hideIt)
+            delete lower.panel;
+        scene.frame();
+    }
+}
+
+TEST_CASE("Modal stack: a modal taken off the canvas leaves the stack at once")
+{
+    Scene scene;
+    controls::Canvas *canvas=scene.canvas;
+    controls::Base *elsewhere=canvas->newChild<controls::Base>();
+
+    Scene::Modal modal=scene.modal();
+    modal.panel->setParent(elsewhere);
+    CHECK(canvas->modalCount() == 0);
+    CHECK(canvas->topModal() == nullptr);
+    // deleted in the same frame: nothing of it is left for the next update
+    delete modal.panel;
+    scene.frame();
+    CHECK(canvas->modalCount() == 0);
+}
+
+TEST_CASE("Modal stack: a modal deleted while the canvas is hidden is no work until it is shown")
+{
+    Scene scene;
+    controls::Canvas *canvas=scene.canvas;
+
+    scene.clickOn(scene.appText);
+    REQUIRE(KeyboardFocus == scene.appText);
+
+    Scene::Modal modal=scene.modal();
+    canvas->hide();
+    scene.frame();
+    delete modal.panel;
+    CHECK(canvas->topModal() == nullptr);
+    // the hidden canvas's update phase renumbers z and takes no further step
+    scene.frame();
+    CHECK(canvas->nextWorkTime() != controls::Canvas::WorkNow);
+
+    // shown, the focus comes back in its next update phase
+    canvas->show();
+    CHECK(canvas->nextWorkTime() == controls::Canvas::WorkNow);
+    scene.frame();
     CHECK(KeyboardFocus == scene.appText);
 }
 

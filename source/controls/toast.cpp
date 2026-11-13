@@ -10,6 +10,8 @@
 #include <gweni/controls/windowButtons.h>
 #include <gweni/skin.h>
 
+#include <algorithm>
+
 namespace gweni
 {
 namespace controls
@@ -130,7 +132,12 @@ void ToastHost::arrange(skin::Base *skin, Dim dim)
     if(canvas && (getParent() == canvas))
     {
         if(dim == Dim::X)
-            setArrangedBounds(canvas->getWidth()-Toast::Width-Toast::Gap, getY(), Toast::Width, getHeight());
+        {
+            // at the left edge on a canvas narrower than a toast and its gap
+            const int x=std::max(0, canvas->getWidth()-Toast::Width-Toast::Gap);
+
+            setArrangedBounds(x, getY(), Toast::Width, getHeight());
+        }
         else
             setArrangedBounds(getX(), 0, getWidth(), getPreferredSize().height);
     }

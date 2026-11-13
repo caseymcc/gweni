@@ -14,7 +14,8 @@
  *  hover, press and selection surfaces, and a selection change marks only the
  *  rows involved.
  *
- *  Space and Return press a focused row. A row added selected becomes the
+ *  Space and Return press a focused row, and a Return press bubbled up from
+ *  a TextBox in the row (a DataTableRow cell) does not. A row added selected becomes the
  *  group's selection, and a selected row may be deleted outright or delayed.
  *  The renderer, on a recording StubRenderer, paints the hover, press,
  *  selected, selected+hover and selected+disabled surfaces with their text
@@ -24,6 +25,7 @@
 #include "headlessFixture.h"
 
 #include <gweni/controls/selectable.h>
+#include <gweni/controls/textBox.h>
 #include <gweni/inputHandler.h>
 #include <gweni/platforms/platform.h>
 #include <gweni/skins/textured/texturedControls.h>
@@ -281,6 +283,25 @@ TEST_CASE("Selectable: Space and Return toggle the focused row, it is tabable")
     CHECK(row->isSelected());
     scene.press(keys::Return);
     CHECK(!row->isSelected());
+}
+
+TEST_CASE("Selectable: a Return press bubbled from a TextBox inside the row does not press it")
+{
+    Scene scene;
+    controls::Selectable *row=scene.row("Row");
+    controls::TextBox *box=row->newChild<controls::TextBox>();
+
+    box->setText("cell");
+    scene.frame();
+
+    box->focus();
+    scene.press(keys::Return);
+    CHECK(!row->isSelected());
+
+    // the row's own Return still presses it
+    row->focus();
+    scene.press(keys::Return);
+    CHECK(row->isSelected());
 }
 
 TEST_CASE("Selectable: a disabled row ignores clicks and keys")

@@ -6,14 +6,16 @@
  *  Toasts (Canvas::notify, controls::Toast; toast.h) on a real Canvas with a
  *  StubRenderer and a stepped clock, driven through the canvas's input calls.
  *
- *  Stacking: the host is Toast::Gap in from the canvas's top-right corner,
- *  Toast::Width wide, newest at the top, Gap between toasts; the host is a
+ *  Stacking: the host is Toast::Gap in from the canvas's top-right corner
+ *  (at its left edge on a canvas narrower than that), Toast::Width wide,
+ *  newest at the top, Gap between toasts; the host is a
  *  canvas overlay above an open modal and below the ToolTip box.
  *  Lifetime: each kind's default timeout (Info 4, Positive 4, Warning 6,
  *  Negative 8 s), the canvas's setToastTimeout and a per-call timeout; a toast
  *  is still shown just before its deadline and hidden at it, then deleted,
  *  and a timeout of 0 never expires. nextWorkTime() wakes for the earliest
- *  deadline, not before; no animation runs while toasts show.
+ *  deadline, not before; no animation runs while toasts show, and a toast
+ *  gone while the canvas is hidden is no work until the canvas is shown.
  *  The hover pause: the mouse on any toast stands every toast's clock still
  *  (none expires however long it rests), and leaving resumes each with the
  *  time it had left (to the frame, not earlier). Removal: dismiss() hides it
@@ -191,6 +193,15 @@ TEST_CASE("Toast: stacked in the top-right corner, newest at the top")
     CHECK(longer->getWidth() == Toast::Width);
     CHECK(longer->getHeight() > first->getHeight());
     CHECK(longer->getTextLabel()->getHeight() > first->getTextLabel()->getHeight());
+
+    // a canvas narrower than a toast and its gap (640 px at scale 2): the
+    // stack starts at its left edge, not past it
+    canvas->setSize(320, 600);
+    scene.frame();
+    CHECK(host->getX() == 0);
+    canvas->setSize(800, 600);
+    scene.frame();
+    CHECK(host->getX() == 800-Toast::Width-Toast::Gap);
 }
 
 TEST_CASE("Toast: each kind's timeout, the canvas's defaults and a call's own")
@@ -263,6 +274,27 @@ TEST_CASE("Toast: each kind's timeout, the canvas's defaults and a call's own")
     scene.advance(1000.0);
     CHECK(scene.shown(sticky));
     // nothing more is due
+    scene.frame();
+    CHECK(canvas->nextWorkTime() == controls::Canvas::NoWork);
+}
+
+TEST_CASE("Toast: a toast gone while the canvas is hidden is no work until it is shown")
+{
+    Scene scene;
+    controls::Canvas *canvas=scene.canvas;
+    Toast *sticky=canvas->notify(ToastKind::Info, "sticky", ToastOptions{0.0, ""});
+
+    scene.frame();
+    canvas->hide();
+    scene.frame();
+    sticky->dismiss();
+    // the hidden canvas's update phase deletes it and takes no further step
+    scene.frame();
+    CHECK(canvas->toasts().empty());
+    CHECK(canvas->nextWorkTime() != controls::Canvas::WorkNow);
+
+    canvas->show();
+    CHECK(canvas->nextWorkTime() == controls::Canvas::WorkNow);
     scene.frame();
     CHECK(canvas->nextWorkTime() == controls::Canvas::NoWork);
 }

@@ -532,10 +532,16 @@ already.
 one it gives the keyboard focus back to the control that held it at the push (by control
 id, so a deleted one is not followed; only if it is visible and allowed, and only if the
 focus is free: none, inside the leaving modal, or not allowed any more), and marks the
-hover stale. A modal deleted outright leaves the stack in `~Base` and gets its focus back
-in the next update phase, after its subtree is gone. One hidden or taken off the canvas
-is popped by the next update phase (`Canvas::updateModals`). A canvas deleting its
-children forgets the stack without restoring anything.
+hover stale. A modal below the top that leaves first hands the one above it its own
+focus to give back when that one recorded a focus inside it, or none (`eraseModal`): a
+large dialog closed by a timer under its confirm still gives the app its focus back when
+the confirm goes. A modal deleted outright leaves the stack in `~Base` and gets its focus
+back in the next update phase, after its subtree is gone. One hidden is popped by the next
+update phase (`Canvas::updateModals`), and one taken off the canvas at once
+(`Canvas::onChildRemoved`), so deleting it before that phase leaves nothing on the stack.
+Neither step runs on a hidden canvas, whose update phase stops early, so a modal (or a
+toast) gone while it is hidden is no work (`nextWorkTime()`) until it is shown. A canvas
+deleting its children forgets the stack without restoring anything.
 
 `WindowControl::makeModal()`/`destroyModal()` are thin calls onto the stack (the
 `internal::Modal` control, which had no textured renderer, is gone with `modal.h`); a
@@ -550,7 +556,9 @@ Enter from a field; the release is still the box's (it moves to the next control
 `onEnter`). And a key's release goes only to the control its press went to
 (`KeyData::PressTarget`): Enter closing a dialog gives the focus back to an app TextBox,
 which would otherwise act on a release it never saw go down. A multiline TextBox, a
-CodeEditor, a DragNumber and a Selectable keep Return.
+CodeEditor, a DragNumber and a Selectable keep Return; a Selectable takes only its own
+(`KeyboardFocus` is the row), so a field in a row (a DataTableRow cell) does not press the
+row on Enter, and the press goes on to a dialog above it.
 
 **No backdrop.** Nothing is drawn between a modal and the app: what is under it stays as
 it is, and only its input is blocked. A translucent scrim over the app would hide the
@@ -580,7 +588,8 @@ frame is a pure move, one pass entering the canvas and the dialog alone.
 
 **Closing.** `close(result)` hides it, pops it (which gives the focus back), calls the
 result handler (`setResultHandler`, `std::function<void(Result, const String &)>`) once,
-then `onClose`, then `delayedDelete()`s it unless `setDeleteOnClose(false)`. The handler is
+then `onClose`, then `delayedDelete()`s it unless `setDeleteOnClose(false)` or the handler
+(or `onClose`) opened it again, as a prompt that sends a bad value back does. The handler is
 moved out before it runs, and `close` does nothing while closing or closed, so it fires
 exactly once whatever it does; it may open another dialog or delete the control that
 opened this one, and one that deletes this dialog outright stops `close` before
@@ -627,8 +636,8 @@ the frame before the open.
 `Canvas::notify(kind, text)` and `notify(kind, text, ToastOptions{timeout, title})` show a
 `controls::Toast` (`controls/toast.h`) in the canvas's one toast host
 (`internal::ToastHost`, made the first time): a stack owner-placed `Toast::Gap` (8) units
-in from the canvas's top-right corner, `Toast::Width` (320) wide and as high as its
-toasts. The toasts are docked Bottom in the order they came, so the newest is at the top
+in from the canvas's top-right corner (at the left edge of a canvas narrower than that),
+`Toast::Width` (320) wide and as high as its toasts. The toasts are docked Bottom in the order they came, so the newest is at the top
 and removing one closes its gap towards the corner. The host is a canvas overlay
 (`addOverlay`): above every modal, popup and menu, below the ToolTip box, so a tooltip
 still draws over a toast. It draws nothing and takes no mouse, so the mouse between and
