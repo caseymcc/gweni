@@ -1588,8 +1588,12 @@ bool Chart::getBarRect(size_t series, size_t index, Rect &rect) const
     const double left=xPosition(point.x)-groupWidth/2.0+s->barGroup*slot;
     // bars side by side keep a unit between them where they have room
     const int gap=(m_barGroups > 1 && slot >= 4.0) ? 1 : 0;
-    const int x0=static_cast<int>(std::lround(left));
-    int x1=static_cast<int>(std::lround(left+slot))-gap;
+    // held a little outside the plot before rounding, so a bar too far out to
+    // fit an int is cut to the plot below as a near one is, never wrapped
+    const auto inX=[this](double v){ return std::clamp(v, m_plot.x-2.0, m_plot.x+m_plot.w+2.0); };
+    const auto inY=[this](double v){ return std::clamp(v, m_plot.y-2.0, m_plot.y+m_plot.h+2.0); };
+    const int x0=static_cast<int>(std::lround(inX(left)));
+    int x1=static_cast<int>(std::lround(inX(left+slot)))-gap;
 
     if(x1 <= x0)
         x1=x0+1;
@@ -1600,8 +1604,8 @@ bool Chart::getBarRect(size_t series, size_t index, Rect &rect) const
     if(!std::isfinite(yBase) || !std::isfinite(yTop))
         return false;
 
-    int y0=static_cast<int>(std::lround(std::min(yBase, yTop)));
-    int y1=static_cast<int>(std::lround(std::max(yBase, yTop)));
+    int y0=static_cast<int>(std::lround(inY(std::min(yBase, yTop))));
+    int y1=static_cast<int>(std::lround(inY(std::max(yBase, yTop))));
 
     // a value too small to reach a unit still shows one
     if(y1 == y0)

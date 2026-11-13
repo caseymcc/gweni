@@ -18,7 +18,8 @@
  *  and not set again by a change that keeps the ticks; a new point laying
  *  nothing out when every range is fixed and the chart once when one is
  *  automatic; a step line's vertices and a NaN's gap; a point outside the
- *  range placed outside the plot and a bar cut to it; the time axis's labels
+ *  range placed outside the plot and a bar cut to it, however far out (one
+ *  past an int's range of units included); the time axis's labels
  *  in the chart's zone, and category labels thinned on a narrow chart, a
  *  tick per category alone however far a point or the range reaches; and
  *  markers and spans: a marker's line across the plot at its x, none outside
@@ -447,6 +448,21 @@ TEST_CASE("Chart: a point outside the range is outside the plot, a bar cut to it
     CHECK(tall.y+tall.h == plot.y+plot.h);
     Rect below;
     CHECK(!chart->getBarRect(bars, 1, below));    // 0..3, under the range
+
+    // a bar further out than an int's range of units is still cut, not
+    // wrapped: the last one is 2^32 units right of the plot's middle
+    const double wraps=(4294967296.0+plot.w/2.0)/plot.w*10.0;
+
+    chart->setBarInterval(2.0);
+    chart->setSeriesPoints(bars, {{-wraps, 7}, {2, 1e10}, {wraps, 7}});
+    scene.frame();
+
+    const Rect huge=scene.bar(bars, 1);
+    CHECK(huge.y == plot.y);
+    CHECK(huge.y+huge.h == plot.y+plot.h);
+    Rect away;
+    CHECK(!chart->getBarRect(bars, 0, away));
+    CHECK(!chart->getBarRect(bars, 2, away));
 }
 
 TEST_CASE("Chart: time labels in the chart's zone, category labels thinned")
