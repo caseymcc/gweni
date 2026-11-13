@@ -11,8 +11,8 @@
  *  <<-'EOF'), whose body is a String up to the line that is the delimiter
  *  alone, after leading tabs for <<-, and not ended by a line that only holds
  *  the delimiter among other text, and a << inside $(( )) or (( )), which
- *  is a shift, opens none. Then seeded random edits keep the cache's
- *  lines what a fresh tokenize gives.
+ *  is a shift, opens none, nor does a here-string <<<. Then seeded random
+ *  edits keep the cache's lines what a fresh tokenize gives.
  */
 #include "highlightTesting.h"
 
@@ -119,6 +119,23 @@ TEST_CASE("bash: a << inside $(( )) or (( )) is a shift, not a heredoc")
     std::vector<gweni::text::Token> tokens;
 
     CHECK(bash().tokenize("x=$((1 << 4))", TokenState(), tokens) == TokenState());
+}
+
+TEST_CASE("bash: a here-string <<< opens no heredoc")
+{
+    test::checkLines(bash(),
+        "cat <<< foo\n"
+        "tr a b <<<\"$x\"\n"
+        "x=1",
+        {
+            "punctuation'<<<'",
+            "punctuation'<<<' string'\"' meta'$x' string'\"'",
+            "key'x' punctuation'=' number'1'"
+        });
+
+    std::vector<gweni::text::Token> tokens;
+
+    CHECK(bash().tokenize("cat <<< foo", TokenState(), tokens) == TokenState());
 }
 
 TEST_CASE("bash: after seeded random edits every line is what a fresh tokenize gives")

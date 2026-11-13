@@ -14,7 +14,7 @@
 //! <<"EOF") starts on the next line: its body is a String up to the line that
 //! is its delimiter alone (with <<-, after leading tabs), which is Meta, as the
 //! delimiter is where it is opened. A << inside a $(( )) or (( )) on its line
-//! is a shift and opens none.
+//! is a shift and opens none, as a here-string <<< does.
 //!
 //! The state: word 0 is the mode (0 code, 1 in '...', 2 in "...", 3 in a
 //! heredoc's body, 4 in a <<- heredoc's body); for a heredoc, words 1 and 2
@@ -246,7 +246,14 @@ public:
                 i=end;
                 continue;
             }
-            if((arithmetic == 0) && startsWithAt(line, i, "<<") && !startsWithAt(line, i, "<<<"))
+            if(startsWithAt(line, i, "<<<"))
+            {
+                // a here-string: its word is on this line, no heredoc
+                addToken(tokens, i, i+3, TokenKind::Punctuation);
+                i+=3;
+                continue;
+            }
+            if((arithmetic == 0) && startsWithAt(line, i, "<<"))
             {
                 size_t j=i+2;
                 uint32_t mode=Heredoc;

@@ -3382,7 +3382,7 @@ and new line counts in the state) `-` and `+` lines whatever they look like. bas
 comments at a word's start, keywords as whole words, assignments, `'...'` and `"..."` over
 lines with the `$variables` cut out of the latter, and heredocs (the delimiter's FNV hash
 and length in the state; a `<<` inside a `$(( ))` or `(( ))` on its line is a shift and
-opens none). Markdown: ATX headings, thematic breaks, quote and list markers,
+opens none, nor does a here-string `<<<`). Markdown: ATX headings, thematic breaks, quote and list markers,
 HTML comments over lines, code spans, strong, emphasis, links and escapes, and fences
 whose body is tokenized by the fence's language (yaml, json, bash or sh, diff), its state
 nested after the fence's word (bits for the mode, the language, `~` and the length), Code
