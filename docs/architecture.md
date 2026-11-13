@@ -81,10 +81,15 @@ phase (`TextBox::insertText` asks for the caret's place), so `gweni_bench` split
 `ControlTest --stats`'s `measure_calls=` counts everything since the last frame line;
 `LayoutStats::measureCalls` holds the update phase's and a render-phase layout's.
 An invalidation (`Base::invalidate()`) marks the control and its logical parents up to
-the canvas; a new size or scale invalidates a whole subtree in one walk that enters each
+the canvas; a new scale invalidates a whole subtree in one walk that enters each
 control once, with no walk up from each, and takes the way out of the subtree once
 (`docs/layout.md` → "Which children a pass enters", **Invalidating a whole subtree**;
-issue #519). `controls::invalidateCalls()` counts the calls (`invalidations=` in
+issue #519). A new size invalidates only the children the control holds (its inner
+panel's included), and below them each control whose bounds its arrange changes
+invalidates its own children in turn, so the canvas's resize invalidates the canvas's
+children alone; inside a layout pass neither that nor the resized control walks up to
+the canvas, since every ancestor is being arranged (**A new size invalidates the
+children**, **No way up in a pass**; issue #578). `controls::invalidateCalls()` counts the calls (`invalidations=` in
 `ControlTest --stats`, `invalidations` and its `_input`/`_update`/`_render` shares in
 `gweni_bench`), none from a `Base::setExcludedFromStats()` subtree or a control with no
 parent that is not a canvas (one being made).

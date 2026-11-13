@@ -313,9 +313,17 @@ alone (`tests/unit/placement.cpp`, the `tree-relabel` bench scene).
 A pure move does not dirty the moved control's subtree: its children are
 placed relative to it, and `onBoundsChanged` marks the subtree
 `StateChange_Geometry` for the render walk. A new size invalidates the
-subtree, which is laid out in it; at the same origin it marks only the control
-for the render walk, and below it only what its arrange gives new bounds,
-unless its children's clip region changes (`docs/architecture.md` → "Current
+children, which are laid out in it, and below them what their arrange
+resizes: each control whose own bounds change invalidates its children in its
+own `setBounds`, and an inner panel's contents are invalidated when the panel's
+bounds change (#578). So a resize enters the controls it resizes and their
+children, whatever their depth, and a hidden child is marked alone: what is
+under it is laid out when it is shown (`setHidden` invalidates it, its
+parent's arrange gives it the current size, and its own `setBounds` marks its
+children; `tests/unit/sizeInvalidation.cpp`, `tests/hiddenPageResize.cpp`).
+For the render walk, a new size at the same origin marks only the control,
+and below it only what its arrange gives new bounds, unless its children's
+clip region changes (`docs/architecture.md` → "Current
 state vs. goals", its **Clipping** item; issue #511). The moved control's
 own `layout()` runs again, since one may correct where its parent put it (a Menu kept inside the
 canvas). A request (`setPos`, `setSize`, `setBounds`, `moveTo`) invalidates the
@@ -332,8 +340,12 @@ is still the one it would compute, so **a `calculateSize()` may read only**:
   `readsParentLayout()` says so: a change to those invalidates such children
   as well (`Base::invalidateParentReaders`). A wrapped `Text` (its parent's
   requested inner width) and a `TabButton` (its strip's dock) do;
-* the canvas's size, which invalidates the whole tree when it changes, as a
-  scale change and a `textLayoutSerial()` bump do.
+* the canvas's size, and only in a child of the canvas (a Menu clamped to
+  its height; a Popup's and a Menu's placement read it in their arrange): a
+  new canvas size invalidates the canvas's children, not the whole tree. A `MenuStrip`, a Menu docked
+  anywhere, has its own `calculateSize` with no clamp (#578);
+* the canvas's scale and `textLayoutSerial()`, whose change invalidates the
+  whole tree.
 
 It never reads its own current bounds or a sibling's. `arrange()` may read in
 addition the bounds its parent has just given it, which enter it again when
@@ -453,11 +465,12 @@ invalidation itself, until #519 made it one call per control (below).
 **Invalidating a whole subtree.** `Base::invalidate()` marks the control
 (`needsLayout()`, `layoutDirty()`, the holders between it and its logical
 parent, `m_cacheTextureDirty`) and then each of its logical parents up to the
-canvas, so one control's invalidation costs its depth. A new size
-(`setBounds` -> `invalidateChildren(true)`; a canvas resize is the canvas's
-own) and a new scale (`Canvas::setScale` and a `textLayoutSerial()` bump, both
-through `Base::scaleChangedSubtree()`, which runs `onScaleChanged()` over the
-tree) invalidate every control of a subtree. That walk enters each control
+canvas, so one control's invalidation costs its depth. A new scale
+(`Canvas::setScale` and a `textLayoutSerial()` bump, both through
+`Base::scaleChangedSubtree()`, which runs `onScaleChanged()` over the tree)
+invalidates every control of a subtree, as do `invalidateChildren(true)`'s
+other callers (a TabStrip's new dock, the theme editor); a new size no longer
+does (#578, below). That walk enters each control
 under its root once, through `m_children` (an inner panel is one of its
 owner's children, so its contents are reached through it, not walked again
 from the owner), and a control it enters marks itself only: the walk reaches
@@ -481,8 +494,51 @@ state as before). Per frame at N=1000: `resize` 3 111 calls for 3 109 controls
 (120 908 before), `scale` 3 109 (15 014); the canvas resize's part of
 `resize --n 1000`'s input phase went from 78.7 M instructions to 6.0 M, and
 `build --n 10000`'s update phase from 208.5 M to 148.0 M. A first layout
-still walks each level's subtree again from its own `setBounds`, about 15
-calls per control in `build`'s first frame (#538).
+still walked each level's subtree again from its own `setBounds`, about 15
+calls per control in `build`'s first frame (#538), until #578.
+
+**A new size invalidates the children.** `setBounds` given a new width or
+height invalidates the children the control holds (`m_children`, its inner
+panel among them, and an inner panel's children where the panel is held
+elsewhere; `Base::invalidateWalk(1)`), keeping `m_arrangeAll` for the axis
+that changed, its own `m_needsLayout` and the dirty mark up the way down to
+it. Below its children nothing is invalidated: the pass arranges them, and
+each one whose own bounds change invalidates its children in turn, so a
+control is invalidated once for each new size its parent's is, whatever its
+depth. The canvas's own resize goes through the same branch, so it
+invalidates the canvas's children alone; nothing below them may read the
+canvas's size (the `calculateSize()` list above). Before #578 each resized
+control walked its whole subtree, so a control `d` levels deep was entered
+by every resized ancestor's walk, and walked up to the canvas twice, as the
+walk's exit and in `onBoundsChanged`.
+
+**No way up in a pass.** Inside a layout pass (`Canvas::s_layingOut`) a new
+size's invalidation of the children takes no exit walk, and `onBoundsChanged`
+does not invalidate the control again: every ancestor is being arranged, so
+it is already dirty, and the way up would only run each ancestor's `layout()`
+a second time in Y. So a child's new size no longer runs its parent's
+`layout()` again; a `layout()` that reads a child's preferred height places it
+again at the start of its own Y arrange, with both sizes final
+(`PlotBase::placeCaption`). Placement code in a pass that invalidates a
+control (`PlacementScope`, such as `ScrollControl::placeContents` giving its
+bars their new ranges) walks up only to the first ancestor already dirty,
+whose way up the pass has marked. Outside a pass (an input-phase `setSize`, a
+canvas resized between frames) nothing changes: the request, the children's
+invalidation and `onBoundsChanged` each walk up to the canvas, and every
+ancestor's `layout()` runs in the next pass. `tests/unit/sizeInvalidation.cpp`
+pins this: nested panels, ScrollControls and TreeNodes resized in both axes,
+laid out in one pass as a canvas built at that size, at most a call per
+control per axis and resize, the same per level at depths 4 to 16, the way up
+kept outside a pass, a hidden page marked alone and laid out on show as one
+built shown (its pixels in `tests/hiddenPageResize.cpp`), and a `MenuStrip`
+in a short panel not clamped to the canvas's height. Per frame at N=1000, the
+`nested-resize` bench scene (N Labels in panels and ScrollControls nested
+`--k` deep, the canvas resized) makes 2 024, 2 034 and 2 056 calls at k=4, 8
+and 16 for 2 031, 2 048 and 2 095 controls (29 233, 49 613 and 86 785
+before) and enters 6 042, 6 058 and 6 094 controls (12 070, 14 099 and
+20 194); `resize` 7 calls and 20 entries, at N=1000 and N=10000 alike;
+`build`'s first frame 4 623 calls for 3 109 controls at N=1000 and 45 611 for
+30 667 at N=10000 (47 805 and 475 425 before), about 1.5 a control.
 
 **Its counter and the flagged subtrees.** `layout_children_scanned`
 (`LayoutStats::childrenScanned`) counts what these loops go over, as
