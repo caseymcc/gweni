@@ -342,12 +342,13 @@ The script then prints what each page sends, every file raw, gzip and brotli,
 with nothing taken to be cached (`tools/site/sizes.mjs`). It exits 1 if the
 gallery page's gzip total is over its `BUDGET_BYTES`, 8 MB. Measured with DejaVu
 Sans Mono in `resources/` (#604), which adds its 341 kB (0.20 MB gzip) to each
-page's `.data`:
+page's `.data`, and OpenSans Bold, Italic and BoldItalic (#590), which add 651 kB
+(0.35 MB gzip) more:
 
 | page | raw | gzip | brotli |
 |---|---|---|---|
-| `controltest.html` (`ControlTest.wasm` 3254 kB, `.data` 1056 kB, `.js` 149 kB) | 4.47 MB | 1.83 MB | 1.40 MB |
-| `demo.html` (`OpenGLCore.wasm` 2752 kB, `.data` 1056 kB, `.js` 149 kB) | 3.96 MB | 1.70 MB | 1.30 MB |
+| `controltest.html` (`ControlTest.wasm` 3464 kB, `.data` 1707 kB, `.js` 153 kB) | 5.34 MB | 2.24 MB | 1.58 MB |
+| `demo.html` (`OpenGLCore.wasm` 2870 kB, `.data` 1707 kB, `.js` 153 kB) | 4.74 MB | 2.08 MB | 1.45 MB |
 | `index.html` (with the 169 kB preview) | 0.18 MB | 0.17 MB | 0.16 MB |
 
 The release web tree is `-Oz` for this: at CMake's `-O3`, `ControlTest.wasm` is
