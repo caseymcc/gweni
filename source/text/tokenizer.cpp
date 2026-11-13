@@ -72,10 +72,10 @@ void addBuiltins(Registry &reg)
     reg.builtinsAdded=true;
     for(auto &language:highlight::builtinLanguages())
     {
-        // a name the app registered first keeps the app's
-        if(reg.languages.count(language.first) != 0)
-            continue;
-        reg.languages[language.first]=language.second.get();
+        // a name the app registered first keeps the app's; the built-in is
+        // kept all the same, as another built-in may be over it (markdown+jinja)
+        if(reg.languages.count(language.first) == 0)
+            reg.languages[language.first]=language.second.get();
         reg.owned.push_back(std::move(language.second));
     }
 }

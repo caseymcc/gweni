@@ -22,6 +22,14 @@ std::vector<std::pair<String, std::unique_ptr<Tokenizer>>> builtinLanguages()
     languages.emplace_back("diff", makeDiffTokenizer());
     languages.emplace_back("bash", makeBashTokenizer());
 
+    // markdown+jinja's host is the registry's markdown, which the registry
+    // keeps alive as long as it keeps the overlay
+    std::unique_ptr<Tokenizer> markdown=makeMarkdownTokenizer();
+    std::unique_ptr<Tokenizer> jinja=makeJinjaOverlay(*markdown);
+
+    languages.emplace_back("markdown", std::move(markdown));
+    languages.emplace_back("markdown+jinja", std::move(jinja));
+
     return languages;
 }
 

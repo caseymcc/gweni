@@ -68,24 +68,27 @@ struct Token
 //! compared to tell whether an edit changed what the lines after it start in.
 //! A language uses the words as it likes (all zero is its usual start); one
 //! nested in another (a fence's language in Markdown, the host under Jinja)
-//! keeps its state in the words after the outer one's (nested(), inner()).
+//! keeps its state in the words after the outer one's (nested(), inner()), so
+//! a language another nests should leave its last words zero: Jinja over
+//! Markdown over a fence's language leaves that language Words-2 of them.
 struct TokenState
 {
-    std::array<uint32_t, 4> words{};
+    static constexpr size_t Words=6;
+
+    std::array<uint32_t, Words> words{};
 
     bool operator==(const TokenState &other) const { return words == other.words; }
     bool operator!=(const TokenState &other) const { return !(*this == other); }
 
     //! A state whose first word is \p outer and whose other words are the
-    //! first three of \p inner (an inner state using its fourth word cannot nest).
+    //! first Words-1 of \p inner (an inner state using its last word cannot nest).
     static TokenState nested(uint32_t outer, const TokenState &inner)
     {
         TokenState state;
 
         state.words[0]=outer;
-        state.words[1]=inner.words[0];
-        state.words[2]=inner.words[1];
-        state.words[3]=inner.words[2];
+        for(size_t i=1; i < Words; ++i)
+            state.words[i]=inner.words[i-1];
         return state;
     }
     //! The state nested() put after the first word.
@@ -93,9 +96,8 @@ struct TokenState
     {
         TokenState state;
 
-        state.words[0]=words[1];
-        state.words[1]=words[2];
-        state.words[2]=words[3];
+        for(size_t i=1; i < Words; ++i)
+            state.words[i-1]=words[i];
         return state;
     }
 };
@@ -138,6 +140,16 @@ GWENI_EXPORT std::vector<String> languageNames();
 //! "markdown+jinja" for *.md.j2, "diff" for *.diff and *.patch, "bash" for
 //! *.sh; "" for any other. \p fileName may hold a path.
 GWENI_EXPORT String languageForFileName(const String &fileName);
+
+//! Jinja over \p host (which must outlive it): the tags {{ ... }}, {% ... %}
+//! and {# ... #}, each of which may run over lines, are Template (a {% %}'s
+//! statement name a Keyword, a quoted string in a tag a String) and Comment,
+//! and \p host tokenizes the line around them as if each tag were a word of
+//! as many letters, so the Markdown around a tag (the **...** holding it, the
+//! heading it is in) reads as without it. A line wholly inside tags leaves the
+//! host's state as it was. The registry's "markdown+jinja" is Jinja over its
+//! "markdown".
+GWENI_EXPORT std::unique_ptr<Tokenizer> makeJinjaOverlay(const Tokenizer &host);
 
 }//namespace text
 }//namespace gweni

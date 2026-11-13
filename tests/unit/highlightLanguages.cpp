@@ -9,7 +9,8 @@
  *  (ascending, not overlapping, not empty, inside the line) whatever state it
  *  starts in, and tokenizing a line twice from one state gives the same
  *  tokens and end state (a tokenizer keeps nothing between calls). The
- *  registry holds yaml, json, diff and bash, the languages file names map to.
+ *  registry holds yaml, json, diff, bash, markdown and markdown+jinja, the
+ *  languages file names map to.
  */
 #include "highlightTesting.h"
 
@@ -23,7 +24,7 @@ TEST_CASE("Languages: the built-ins are registered")
 {
     const std::vector<gweni::String> names=languageNames();
 
-    for(const char *name:{ "yaml", "json", "diff", "bash" })
+    for(const char *name:{ "yaml", "json", "diff", "bash", "markdown", "markdown+jinja" })
     {
         CAPTURE(name);
         CHECK(std::find(names.begin(), names.end(), name) != names.end());
@@ -31,6 +32,9 @@ TEST_CASE("Languages: the built-ins are registered")
     }
     CHECK(findLanguage(languageForFileName("a.yml")) == findLanguage("yaml"));
     CHECK(findLanguage(languageForFileName("a.patch")) == findLanguage("diff"));
+    CHECK(findLanguage(languageForFileName("p.md.j2")) == findLanguage("markdown+jinja"));
+    CHECK(findLanguage(languageForFileName("p.md")) == findLanguage("markdown"));
+    CHECK(findLanguage(languageForFileName("run.sh")) == findLanguage("bash"));
 }
 
 TEST_CASE("Languages: random lines give well-formed tokens, the same from the same state")
@@ -39,7 +43,9 @@ TEST_CASE("Languages: random lines give well-formed tokens, the same from the sa
     {
         "\"", "'", "`", "#", "$", "${", "}", "{", "[", "]", "(", ")", ":", ": ", "- ", "|", ">", "<<", "<<-",
         "EOF", "@@ -1,2 +1,2 @@", "+", "-", " ", "  ", "\t", "\\", "/*", "*/", "//", "&a", "*a", "!t", "---",
-        "key", "if", "then", "done", "true", "12", "-3.5e2", "0x1f", "\xc3\xa9", "\xe2\x9a\xa1", "\xff", "="
+        "key", "if", "then", "done", "true", "12", "-3.5e2", "0x1f", "\xc3\xa9", "\xe2\x9a\xa1", "\xff", "=",
+        "{{", "}}", "{%", "%}", "{#", "#}", "{%- if", "```", "```yaml", "```bash", "~~~", "**", "_", "](",
+        "<!--", "-->", "> ", "# ", "1. "
     };
 
     for(const gweni::String &name:languageNames())

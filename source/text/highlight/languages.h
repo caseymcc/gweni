@@ -28,6 +28,8 @@ std::unique_ptr<Tokenizer> makeYamlTokenizer();
 std::unique_ptr<Tokenizer> makeJsonTokenizer();
 std::unique_ptr<Tokenizer> makeDiffTokenizer();
 std::unique_ptr<Tokenizer> makeBashTokenizer();
+//! Markdown, with its own yaml, json, bash and diff for fenced code
+std::unique_ptr<Tokenizer> makeMarkdownTokenizer();
 
 //! Every built-in language, by its registry name.
 std::vector<std::pair<String, std::unique_ptr<Tokenizer>>> builtinLanguages();

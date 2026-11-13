@@ -150,7 +150,9 @@ set(GWENI_SOURCES
     source/text/highlight/scan.h
     source/text/highlight/bash.cpp
     source/text/highlight/diff.cpp
+    source/text/highlight/jinja.cpp
     source/text/highlight/json.cpp
+    source/text/highlight/markdown.cpp
     source/text/highlight/yaml.cpp
     include/gweni/text/tokenizer.h
     source/text/tokenizer.cpp
