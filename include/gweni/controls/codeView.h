@@ -33,10 +33,29 @@ namespace controls
 //! size cut to the cell, docked it is what the dock gives it, and a size the
 //! app asks for (setSize) is its size. Wherever that is smaller than its
 //! content, the content scrolls as in the editor. It is unwrapped.
+//!
+//! In the diff language (setLanguage("diff"), or setFileName() of a *.diff or
+//! *.patch file) each row takes its line's kind from the line's tokens
+//! (CodeLine::getDiffKind): a '+' line in a hunk Added, a '-' line Removed, an
+//! "@@" header Hunk, which the skin draws as the row's line background (the
+//! textured skin's DiffAdded, DiffRemoved and DiffHunk surfaces), the text in
+//! the token colours as in any highlighted line. The kind is set as a row is
+//! bound or its line's tokens change, so a scroll marks the rows it binds
+//! alone.
 class GWENI_EXPORT CodeView: public CodeEditor
 {
 public:
     GWENI_CONTROL(CodeView, CodeEditor);
+
+public:
+    //! Highlights the text in the language of a file named \p fileName
+    //! (text::languageForFileName: *.diff and *.patch are "diff"), none for a
+    //! name of no known language; false then.
+    bool setFileName(const String &fileName);
+
+protected:
+    //! With the diff language's tokenizer.
+    bool showsDiffRows() const override;
 };
 
 }//namespace controls
