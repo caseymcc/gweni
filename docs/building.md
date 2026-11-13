@@ -55,6 +55,18 @@ aborts the run); the Vulkan tests set it, with the layer's path
 (`VK_LAYER_PATH=<tree>/vulkan/explicit_layer.d`) and lavapipe's ICD
 (`VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.x86_64.json`).
 
+### Idle windows
+
+Both examples' windows, GL or Vulkan, are idle by default (`--loop idle`): they
+draw a frame only when the canvas has work and otherwise sleep until an event,
+a post from another thread, a timer or the next deadline (a caret blink, a
+tooltip's delay). `--loop continuous` draws every frame, as a game loop does.
+`--verify-idle` (ControlTest, or `GWENI_IDLE_VERIFY=1` in either window) draws
+the frames the idle loop would skip as well and fails on one that writes
+anything, which is how a change that forgot to mark its canvas shows
+(`docs/architecture.md` -> "Threads, posts and the idle loop"). Captures and
+`gweni_bench` step their own clock and draw every frame, as before.
+
 ### Vulkan in a window
 
 `OpenGLCore --renderer vulkan` and `ControlTest --renderer vulkan` with no
@@ -139,8 +151,8 @@ three pages, each an `.html` with its `.js`, `.wasm` and a `.data` holding
 A page runs what the native exe runs. A capture (`--headless` with `--shot`,
 `--shot-all`, `--screenshot`, ...) renders into an offscreen framebuffer and
 reads it back in one blocking call. Without one, the page is the interactive
-window: ControlTest's control or the OpenGLCore demo, drawn once per browser
-animation frame, with the mouse (both buttons and the wheel) and the keyboard
+window: ControlTest's control or the OpenGLCore demo, drawn in a browser
+animation frame when it has work (an idle page skips the frame), with the mouse (both buttons and the wheel) and the keyboard
 (keys, modifiers and typed text) as on a desktop. The canvas fills the page above
 a 96 px output panel and follows its size, and it draws at the browser's
 `devicePixelRatio` (a HiDPI display, or the page zoom) times `--scale`, as a
@@ -558,6 +570,16 @@ paths, not drawing) and `bench_smoke` is registered twice: on GL, and as
   for byte a `--headless` capture at its size, every resize must recreate the
   swapchain and nothing may be drawn or presented while iconified
   (`tests/windowVulkan.cmake`). It fails, not skips, without Xvfb.
+- `window_idle` (label `gpu`) and `window_idle_vulkan` (labels `gpu`,
+  `vulkan`): `ControlTest --idle-test` on ButtonDemo under an Xvfb it starts
+  itself. Once settled the window idles 2 s, which must draw no frame, swap or
+  present nothing and take under 0.1 s of CPU; then a post from another thread
+  must wake it and draw exactly one frame (`tests/windowIdle.cmake`). It fails,
+  not skips, without Xvfb.
+- `controltest_verify_idle_<scenario>`: the interaction, tooltip, context-menu,
+  depth-view and stats-overlay scenarios with `--verify-idle`. Every frame an
+  idle loop would have skipped is drawn anyway and must write no slot, upload
+  nothing and change no pixel.
 - `backend_counters` (labels `gpu`, `vulkan`): every `gweni_bench` scene, every
   `ControlTest --stats` control and `OpenGLCore --stats` run on `--renderer gl`
   and `--renderer vulkan`; every counter of every frame must be the same (the

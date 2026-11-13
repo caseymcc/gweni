@@ -510,7 +510,8 @@ thing it does, nulls its slot through that index, and a drain compacts the vecto
 so the queue never hands out a deleted control. Nothing happens on attach: a control
 created or changed off any canvas keeps its entry until it is on one that renders.
 One UI thread uses it, as the id banks in `primitiveIds.h` (`controls::queuedRenderCount()`
-for tests). A canvas renders the queued controls on its own tree and nothing else, so a
+for tests; another thread hands work over through `Canvas::post`, "Threads, posts and
+the idle loop"). A canvas renders the queued controls on its own tree and nothing else, so a
 settled frame renders no control and a hover renders the controls it repaints, not
 their ancestors. `ChangeStats::visited` counts the controls rendered (`visited=` in
 `ControlTest --stats` and gweni_bench): Demo's first frame renders 4150 and a settled
@@ -624,6 +625,198 @@ defined (they may render at their old place, or not until the next frame), which
 why it is reported; but nothing is touched after it is freed, and the drain ends
 (`tests/unit/renderWalk.cpp` deletes and detaches queued controls from a `render()`;
 the ASAN tree checks the memory).
+
+## Threads, posts and the idle loop
+
+gweni is one-UI-thread: the controls, the render queue, the id banks and the renderer
+are used by the thread that calls `updateCanvas()` and `renderCanvas()`, and by no
+other. The one thing in the library another thread may call is a canvas's post queue.
+With it, timers and `Canvas::nextWorkTime()`, a window can sleep while its canvas is
+settled and wake for a post, a timer, an input or a deadline (#584). This is for an
+app left open for days and fed from other threads, such as a dashboard whose HTTP
+callbacks arrive on a worker.
+
+**The clock is a double.** `platform::getTimeInSeconds()` is a `double` of seconds
+since start, and so is `setTimeSource(std::function<double()>)`. So are the stored
+times: a `TimedAnimation`'s start and end, the caret's next blink, the tooltip's start,
+the key repeats, the last click, the ProgressBar's last frame, the stats overlay's
+refresh, an undo step's time and the CodeEditor's auto-scroll. A `float` of seconds
+steps by 7.8 ms after a day and by 0.25 s after a month, and that is not enough for a
+caret, a tooltip delay or a timer. Durations (`setToolTipDelay`, the repeat delays)
+and per-frame deltas (`Animation::run(float)`) stay `float`, and a time source
+returning a `float` still converts. The stepped clocks of the captures, ControlTest,
+OpenGLCore and the bench count whole steps and read them as `steps*(1.0/60)`, so a
+capture's frame k has the same time in every run and every tree. No sample moved.
+`tests/unit/longClock.cpp` runs the caret, the tooltip, a key repeat, a
+`TimedAnimation` and a timer 30 days in, on 1/60 s steps.
+
+**Posts.** `Canvas::post(fn)` hands a function to the UI thread from any thread. It
+goes to the canvas's `gweni::PostQueue` (`include/gweni/postQueue.h`), a mutex and a
+vector. `updateCanvas()` runs the queue first thing, before `doThink()`, so a post runs
+after the input the loop has just delivered. `run()` swaps the vector out under the
+lock and calls the functions outside it, in the order they were queued:
+- FIFO per thread, and across threads the order in which they took the lock;
+- a function posted while the posts run waits for the next update, so one that posts
+  itself again cannot keep a frame from ending.
+
+`postHandle()` is the queue as a `std::shared_ptr`, for a worker that may outlive the
+canvas. `~Canvas` closes the queue first: it destroys what is still queued (on the
+UI thread, outside the lock, since a capture's destructor may post) and drops the wake
+handler, and after that every `post()` through the handle returns `false` and does
+nothing. Without pthreads (the web tree) the mutex compiles to nothing and the same
+code builds. `tests/unit/postQueue.cpp` covers it: 8 threads × 10 000 posts each run
+once on the updating thread, in each thread's order and in lock order (a sequence
+number taken under the lock), a post from a post runs in the next update, and a post
+after the canvas is deleted returns false (clean in the ASAN tree; helgrind is clean
+on the queue, and TSAN cannot run on the container's kernel).
+
+**The wake handler.** `Canvas::setWakeHandler(fn)` is called when a `post()` finds the
+queue empty, from the posting thread and outside the lock, so it must be safe on any
+thread. On the UI thread it is also called when a timer is added with an earlier
+deadline than any pending one. The core never wakes anything itself: the loop helper
+installs `glfwPostEmptyEvent()` (natively) or sets a frame-wanted flag (on the web).
+
+**Timers.** `Canvas::after(seconds, fn, owner)` fires once and `every(seconds, fn,
+owner)` repeats. Both return a `TimerHandle`, which `cancel()` takes, and
+`timerPending()` and `timerCount()` read them. They run in `updateCanvas()` after the
+posts and before `doThink()`, so before the animations, off `getTimeInSeconds()`,
+which `setTimeSource()` drives:
+- A timer fires on the first update at or past its deadline. Timers due in the same
+  update fire by deadline, then in the order they were added. One that a callback
+  adds or reschedules waits for the next update.
+- A repeating timer's deadlines are `origin + k*period`, so it does not drift. After a
+  gap of several periods it fires once and goes on from the next multiple past the
+  update's time. A period of 0 or less fires once each update.
+- `cancel()` is safe from inside any callback, its own or another timer's. A cancelled
+  entry stays in the heap until it comes up (lazy removal), and its function is
+  destroyed once nothing is running it.
+- With an owner, `~Base` cancels the owner's timers on every live canvas
+  (`Base::m_ownsTimers` keeps that walk off controls that own none), as it calls
+  `anim::cancel(control)`.
+
+They are a min-heap of (deadline, serial, id) over a map of the pending ones, and not
+`anim::Animation`s: the registry runs and counts every animation every frame, while a
+waiting timer costs an update one look at the heap's top and adds nothing to
+`anims_run` (`tests/unit/timers.cpp`).
+
+**`Canvas::nextWorkTime()`** is when the canvas next needs an update and a render, on
+`getTimeInSeconds()`. It returns `Canvas::WorkNow` (-infinity), a time, or
+`Canvas::NoWork` (+infinity).
+
+It is WorkNow while any of these holds:
+- posts are pending, or `needsRedraw()` is set;
+- a control on this canvas's tree is queued for render (`queuedRenderCount(this)`, a
+  scan of the process-global queue; a settled queue holds only entries off every
+  canvas);
+- layout or the z order is dirty, or a delayed delete is queued;
+- the hover is stale, or the renderer's `textLayoutSerial()` moved (a text-AA switch);
+- a hovered control's tooltip owner is new.
+
+Otherwise it is the earliest of:
+- the next timer;
+- `anim::nextThinkTime(canvas)`, the earliest `anim::Animation::nextThinkTime()` of the
+  canvas's animations. The default is now, today's every-frame behaviour. A
+  `TimedAnimation` returns its start until it has started. The caret blink returns
+  its next edge (`Base::nextCaretBlinkTime()`, `CaretBlink::nextEdge`). An
+  indeterminate or cycling ProgressBar keeps the default while it shows and returns
+  never while it is hidden: the demo shell's hidden pages hold several, which kept an
+  idle window drawing every frame. The stats overlay's refresh keeps the default while
+  it is open;
+- the tooltip's deadline;
+- the next key repeat (`input::nextKeyRepeatTime(canvas)`, from the process-global key
+  state).
+
+The tooltip and key deadlines are nudged up with `nextafter` to the first time for
+which the update's own comparisons hold, so a frame drawn at the deadline does the
+work it waited for. A hidden canvas runs no layout, animation, tooltip or key repeat,
+so it waits for its timers alone. `tests/unit/nextWorkTime.cpp` covers each case.
+
+A change that touches pixels but no control has to mark the canvas, or an idle loop
+shows it late. The depth view's camera calls `redraw()`, the theme editor's apply
+marks the whole tree, and a text-AA switch moves `textLayoutSerial()`. The verify mode
+(below) exists to find any others.
+
+**The loop.** `platform::IdleLoop` (`include/gweni/platforms/idleLoop.h`) is the
+scheduling with no window system in it, so `tests/unit/idleLoop.cpp` drives it with a
+fake clock and a fake wait. Its hooks are `now`, `nextWorkTime`, `poll`, `wait`,
+`drawFrame`, `canDraw`, `frameWasIdle` and `verifyFailed`.
+- `iterate()` (native) polls, then draws a frame if the work is due (`nextWorkTime() <=
+  now()`). Otherwise it blocks in `wait(due - now)`, +infinity when there is no work,
+  and draws nothing. An event that changed nothing therefore makes the next
+  `iterate()` wait again. `canDraw` false (a Vulkan window iconified, or a failed
+  begin) waits for an event instead.
+- `tick()` (one browser animation frame) polls, and draws only if work is due or
+  `wantFrame()` was called; otherwise it returns at once.
+- `LoopMode::Continuous` polls and draws on every iteration.
+
+Over a simulated idle minute the loop draws 0 frames, after a post exactly 1, and with
+a focused TextBox 2 a second (its caret edges). A post from another thread ends a
+blocked wait and is drawn in the next frame.
+
+`input::GlfwLoop` (`include/gweni/platforms/input/glfwLoop.h`, header-only, beside
+`input::GLFW3`; the core never links GLFW) is that loop on a GLFW window:
+- Natively, `wait` is `glfwWaitEventsTimeout(seconds)`, or `glfwWaitEvents()` with no
+  deadline. The wake handler is `glfwPostEmptyEvent()`, GLFW's one call that is safe
+  from any thread. A window refresh callback (its contents lost) calls `redraw()`.
+  A frame that is not drawn is not swapped or presented either. That is safe because
+  every frame a `SlotRenderer` draws, it draws its whole mirror.
+- In the browser, `run()` is `emscripten_set_main_loop_arg` at the browser's rate, each
+  callback a `tick()`. The wake handler sets the frame-wanted flag. The main loop is
+  never paused (`emscripten_pause_main_loop`): a missed wake there would leave the
+  page frozen.
+
+`capture::runWindowLoop` and `Device::runWindowLoop(canvas, renderer, options, frame,
+afterIteration)` put both apps' windows on it, GL and Vulkan, native and web.
+`drawFrame` is the update, clear, render and swap on GL, and `beginWindowFrame`, the
+frame and `presentWindowFrame` on Vulkan. A Vulkan frame that was not shown (an
+out-of-date acquire) calls `canvas->redraw()`, so the next iteration draws it again.
+The windows are idle by default: `--loop idle|continuous` in both apps
+(`capture::loopOptions`), and on the web too. Captures, `--window-test` and the bench
+step their own frames and draw every one.
+
+Measured under Xvfb (debug tree), the process's CPU time (`getrusage` of the child,
+every thread) from start to a SIGINT:
+
+| window | wall | idle | `--loop continuous` |
+|---|---|---|---|
+| ControlTest ButtonDemo, GL | 4 s | 0.43 s | 10.4 s |
+| OpenGLCore demo, GL | 6 s | 1.17 s (1.14 s over 14 s) | 68.9 s |
+| OpenGLCore demo, Vulkan | 6 s | 1.70 s | 64.3 s |
+
+The idle figures are start-up and the first frames; they do not grow with the time
+left open. Settled, `--idle-test` measures 0.2 to 0.5 ms of CPU over 2 s.
+
+**Verify mode.** With `LoopOptions::verify` (`GWENI_IDLE_VERIFY=1`, ControlTest
+`--verify-idle`), whenever the loop would skip a frame it draws one anyway. That frame
+fails, naming its number on stderr, if the renderer's `frameStats()` show a slot
+written or an upload (`GlfwLoop::frameWrites`). ControlTest's `--verify-idle` does the
+same around every scripted and scenario frame whose `nextWorkTime()` is past the clock
+before its update. It also compares the pixels with the frame before, which catches a
+change that writes no slot (the depth view's camera). It found one miss: the
+interaction scenario hid a primitive directly, and it now calls `redraw()`.
+`controltest_verify_idle_<scenario>` runs it over the interaction, tooltip,
+context-menu, depth-view and stats-overlay scenarios.
+
+**The window, measured.** `window_idle` and `window_idle_vulkan`
+(`tests/windowIdle.cmake`) run `ControlTest --idle-test` on ButtonDemo under
+`xvfb-run -a`:
+1. A worker thread waits for the canvas to settle, then lets the window idle 2 s.
+2. It posts. The posted function checks that no frame was drawn and nothing was swapped
+   or presented meanwhile, and that the process took under 0.1 s of CPU. Then it sets
+   a Button's text.
+3. A canvas timer 1 s later checks that exactly one frame was drawn (it wrote glyph
+   slots) and one swap or present was made, and closes the window.
+
+On the web, `pre.js` publishes `gweniRun.ticks` (callbacks) beside `gweniRun.frames`
+(frames drawn), and ControlTest exports `gweni_web_post()`, a `post()` of a `redraw()`.
+`web_input`'s idle check requires a settled ButtonDemo to draw no frame over 30 ticks,
+exactly one for a post, and none after it. The page scripts wait for a page to settle
+(`tests/web/frames.mjs`: the frames asked for drawn, or a tick passed with none),
+never for "some more frames", which a settled page never draws.
+
+Not done here: an O(1) skip of the animations that are not due, a coalescing
+`post(key, fn)` and `emscripten_pause_main_loop`. `WindowCanvas`, which never runs
+`Canvas::updateCanvas()`, has no posts or timers.
 
 ## The renderer abstraction
 
@@ -906,11 +1099,14 @@ same `libvulkan.so.1` volk does), and a FIFO swapchain of `B8G8R8A8_UNORM` (or
 renderer::Vulkan draws into the device's `VulkanTarget` as in a capture, the target
 kept at the framebuffer's size, and showing a frame is the application's.
 
-**One loop, three steps.** `Device::runWindowLoop(frame)` is the loop both apps run on
-either backend (GL: `capture::runWindowLoop`, unchanged, the browser's included). On
-Vulkan it is `beginWindowFrame()`, then `frame()` (update, clear, render, which
-submits the renderer's frame) and `presentWindowFrame()`, then an event poll; or,
-when `beginWindowFrame()` says the window is minimised, only `glfwWaitEvents()`.
+**One loop, three steps.** `Device::runWindowLoop(canvas, renderer, options, frame)` is
+the loop both apps run on either backend (GL: `capture::runWindowLoop`, the browser's
+included), on `input::GlfwLoop`, idle by default ("Threads, posts and the idle loop").
+On Vulkan a frame is `beginWindowFrame()`, then `frame()` (update, clear, render,
+which submits the renderer's frame) and `presentWindowFrame()`; when
+`beginWindowFrame()` says the window is minimised the loop draws nothing and waits in
+`glfwWaitEvents()`, and a frame not shown (an out-of-date acquire) marks the canvas
+(`redraw()`), so the next iteration draws it.
 `presentWindowFrame` waits for the frame in flight two frames back (its command
 buffer, fence and acquire semaphore), acquires an image, and records: the target to
 `TRANSFER_SRC` after the renderer's draws, the image to `TRANSFER_DST`, one
@@ -1137,10 +1333,12 @@ two programs and the draws. What follows describes both together:
   24 depth bits, no alpha, so nothing behind the page shows through a translucent
   blend, no stencil, no multisampling). A browser cannot run a blocking loop and still
   draw or deliver input, so `capture::runWindowLoop`, the one loop both apps' windows
-  run, is `emscripten_set_main_loop_arg` there: one frame per animation frame, each a
+  run, is `emscripten_set_main_loop_arg` there: one callback per animation frame, each a
   `glfwPollEvents()` (where emscripten-glfw applies a resize; input arrives between
-  callbacks) and the frame (`updateCanvas`, `glClear`, `renderCanvas`, as natively,
-  where the loop adds the swap and the poll). It never returns, and simulating the
+  callbacks) and, when the canvas has work or a post asked for a frame, the frame
+  (`updateCanvas`, `glClear`, `renderCanvas`, as natively, where the loop adds the swap
+  and the poll); a callback with nothing to do returns at once (`input::GlfwLoop`,
+  "Threads, posts and the idle loop"). It never returns, and simulating the
   infinite loop unwinds `main`'s stack before the first frame, so the frame holds only
   heap objects (the canvas) and statics (the GLFW translator). The browser presents
   the canvas after each callback; emscripten-glfw's `glfwSwapBuffers` only logs that it
@@ -4221,6 +4419,10 @@ What exists today (the foundation) and what's still aspirational:
   by its own control's canvas (`anim::think(canvas)`), so a settled frame enters no
   control in `updateCanvas()` and runs no animation either (`UpdateStats::zVisited`,
   `UpdateStats::animsRun`, see "updateCanvas()").
+- **A settled window sleeps.** `Canvas::nextWorkTime()` says when a canvas next has
+  work, and the example windows' loop (`input::GlfwLoop`) draws only then, waiting for
+  events, posts from other threads and timers in between, natively and in the browser
+  (`window_idle`, `web_input`; see "Threads, posts and the idle loop").
 
 **Not yet done (the performance goal)**
 - **Clipping leftovers.** A fully clipped subtree with changes in it is still walked and
