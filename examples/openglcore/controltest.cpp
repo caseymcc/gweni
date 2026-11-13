@@ -10533,9 +10533,10 @@ static bool runCodeEditorScenario(Session &s, const std::string &shotDir, bool &
 
         findShown();
         // scrolled so that 8 of the entry's 15 lines below it are on screen
-        if(entry != gweni::controls::CodeLine::NoLine && lastShown-entry < 8)
+        // (when the next entry's line is the screen's last, that entry's)
+        if(entry != gweni::controls::CodeLine::NoLine && (lastShown-entry)%16 < 8)
         {
-            editor->scrollByRows(static_cast<int>(8-(lastShown-entry)));
+            editor->scrollByRows(static_cast<int>(8-(lastShown-entry)%16));
             renderFrames(s, s.frames);
             settleCodeEditor(s, idle);
             findShown();
