@@ -2756,8 +2756,11 @@ void Chart::update(renderer::Base *renderer, controls::Base *baseControl)
 
     if(drawing)
     {
-        std::vector<size_t> seriesNeed(seriesCount);
-        std::vector<size_t> lineNeed(seriesCount, 0);
+        std::vector<size_t> &seriesNeed=m_seriesNeed;
+        std::vector<size_t> &lineNeed=m_lineNeed;
+
+        seriesNeed.assign(seriesCount, 0);
+        lineNeed.assign(seriesCount, 0);
 
         for(size_t i=0; i<seriesCount; ++i)
         {
@@ -3066,7 +3069,8 @@ void Chart::update(renderer::Base *renderer, controls::Base *baseControl)
     auto drawTrapezoid=[&](size_t id, Slot &slot, const float edges[6], const Color &color, int zIndex,
         const gweni::Rect &clip)
     {
-        if(!all && slot.valid && slot.shown && slot.trapezoid && std::equal(edges, edges+6, slot.edges)
+        if(!all && slot.valid && slot.shown && slot.trapezoid && (slot.p0 == PointF(edges[0], edges[2]))
+            && (slot.p1 == PointF(edges[1], edges[3])) && (slot.prev == PointF(edges[4], edges[5]))
             && (slot.color == color) && (slot.zIndex == zIndex) && (slot.clip == clip))
             return;
 
@@ -3076,7 +3080,9 @@ void Chart::update(renderer::Base *renderer, controls::Base *baseControl)
         slot.valid=true;
         slot.shown=true;
         slot.trapezoid=true;
-        std::copy(edges, edges+6, slot.edges);
+        slot.p0=PointF(edges[0], edges[2]);
+        slot.p1=PointF(edges[1], edges[3]);
+        slot.prev=PointF(edges[4], edges[5]);
         slot.color=color;
         slot.zIndex=zIndex;
         slot.clip=clip;

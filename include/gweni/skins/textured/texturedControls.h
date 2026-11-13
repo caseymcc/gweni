@@ -813,9 +813,9 @@ private:
         bool valid=false;   //!< false for a new slot, which holds nothing known
         bool shown=false;
         bool line=false;
+        //! a trapezoid: its sides' x and its line's y at them in p0 and p1,
+        //! its base's y at them in prev
         bool trapezoid=false;
-        //! a trapezoid's sides' x, its line's y at them and its base's
-        float edges[6]{};
         Rect rect;
         tokyonight::Surface surface{};
         PointF p0;
@@ -854,6 +854,10 @@ private:
     std::vector<SlotList> m_series;
     //! per series, its line's list if it is an area (empty otherwise)
     std::vector<SlotList> m_areaLines;
+    //! update()'s counts of each series' fill slots and area line slots,
+    //! kept so a frame allocates nothing for them
+    std::vector<size_t> m_seriesNeed;
+    std::vector<size_t> m_lineNeed;
     SlotList m_markers;
     SlotList m_crosshair;
 };
