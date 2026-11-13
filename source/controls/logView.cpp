@@ -1176,22 +1176,6 @@ void LogView::onVeritcalBarMoved(event::Info info)
     ParentClass::onVeritcalBarMoved(info);
 }
 
-// The bar moved by its arrows or its track since the last layout, which
-// nothing told the view of and nothing took since, is taken before
-// placeContents() would: above the end it detaches the view
-// (barScrollTaken()), so the list does not put it back at the end. What that
-// changes (the stick, the jump button) is this pass's to lay out.
-void LogView::arrange(skin::Base *skin, Dim dim)
-{
-    if(dim == Dim::Y)
-    {
-        PlacementScope placement;
-
-        takeBarScroll();
-    }
-    ParentClass::arrange(skin, dim);
-}
-
 // A detached log whose rows all fit now (emptied, capped, replaced shorter,
 // made taller) has nothing to jump to and follows again; what that hides is
 // this pass's. The jump button is placed over the bottom of the viewport,

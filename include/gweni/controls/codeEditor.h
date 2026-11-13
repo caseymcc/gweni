@@ -232,8 +232,9 @@ private:
 //! leading blanks, up to the caret). Every move puts the caret in view: its
 //! line by the next layout (VirtualList::scrollToItem), its column with a
 //! cell to spare. The latest scroll request in a frame decides the view: of
-//! two moves the later one, and a scroll the app asks for after a move (or
-//! in a resize frame) is kept over it.
+//! two moves the later one, and a scroll the app or the user asks for after
+//! a move (a scrollToItem(), an offset, a wheel notch, the bar), or in a
+//! resize frame, is kept over it.
 //!
 //! Every edit made through the editor (typing, the editing keys, the
 //! clipboard, Tab) is recorded on a text::UndoStack with TextBox's
@@ -580,6 +581,9 @@ private:
     //! The caret's line by the next layout (scrollToItem), its visual row
     //! too when \p row is true, recorded as the caret's request.
     void requestCaretScroll(bool row);
+    //! The scroll request just made of the list is the caret's (its visual
+    //! row's when \p row is true).
+    void recordCaretRequest(bool row);
     //! The last scroll request made of the list is the caret's: no later
     //! one (the app's, the user's, an earlier caret move's) replaced it.
     bool caretOwnsScroll() const;
@@ -674,7 +678,6 @@ private:
     //! the caret's or another's, so the caret's holds only while the list's
     //! serial is still its own.
     uint64_t m_caretRequestSerial=0;
-    bool m_caretRequested=false;
     uint64_t m_placedRequestSerial=0;
     //! The caret's request is for its visual row (revealCaretRow()): the
     //! next layout scrolls it into view while caretOwnsScroll().

@@ -362,8 +362,6 @@ public:
     bool scrollToRow(RowId id);
 
     bool onMouseWheeled(int delta) override;
-    //! The Y arrange takes a bar the user moved first (takeBarScroll()).
-    void arrange(skin::Base *skin, Dim dim) override;
     //! Up, Down, PageUp and PageDown scroll by a line and a page less a
     //! line; Home goes to the first row, End follows the log.
     bool onKeyUp(bool down) override;

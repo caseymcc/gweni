@@ -1172,6 +1172,9 @@ void CodeEditor::syncCurrentLine()
 // own line (the next layout finds that line in view and leaves the offset).
 void CodeEditor::makeCaretVisible()
 {
+    // a bar the user moved before this move: the view the caret is judged in
+    takeBarScroll();
+
     const int lineHeight=m_lineHeight;
     const bool pending=getPendingItem() != NoItem;
 
@@ -1207,9 +1210,7 @@ void CodeEditor::makeCaretVisible()
                     (top < offset)?top:top+lineHeight-viewport, INT_MAX)));
                 // the caret's request, which a new size in this frame keeps
                 // (contentsPlaced), its row put in view again at the new width
-                m_caretRequestSerial=scrollRequestSerial();
-                m_caretRequested=true;
-                m_revealCaretRow=false;
+                recordCaretRequest(false);
             }
         }
     }
@@ -1236,14 +1237,21 @@ void CodeEditor::revealCaretRow()
 void CodeEditor::requestCaretScroll(bool row)
 {
     scrollToItem(m_caret.line);
+    recordCaretRequest(row);
+}
+
+void CodeEditor::recordCaretRequest(bool row)
+{
     m_caretRequestSerial=scrollRequestSerial();
-    m_caretRequested=true;
     m_revealCaretRow=row;
 }
 
+// A request counts the serial up, so the caret's is past the serial the last
+// layout ended at until the layout after it.
 bool CodeEditor::caretOwnsScroll() const
 {
-    return m_caretRequested && scrollRequestSerial() == m_caretRequestSerial;
+    return scrollRequestSerial() == m_caretRequestSerial
+        && m_caretRequestSerial > m_placedRequestSerial;
 }
 
 void CodeEditor::makeCaretColumnVisible()
@@ -2294,7 +2302,8 @@ void CodeEditor::contentsPlaced(skin::Base *skin)
         const bool rewrap=(cells != m_wrapCells || m_lineHeight != m_wrapLineHeight);
         // revealCaretRow()'s request holds while it is the list's last: a
         // scroll the app or the user asked for after it in the frame (a
-        // scrollToItem(), a scrollByRows(), an offset) is the one kept
+        // scrollToItem(), a scrollByRows(), an offset, a wheel notch, a move
+        // of the bar) is the one kept
         const bool owned=caretOwnsScroll();
         bool reveal=m_revealCaretRow && owned;
 
@@ -2303,9 +2312,10 @@ void CodeEditor::contentsPlaced(skin::Base *skin)
             // the caret's line stays on screen through a new size (found in
             // the rows the last layout bound, put in view by this one), unless
             // a scroll was asked for since that layout by another than the
-            // caret
+            // caret; a request of the caret's own, its row by offset
+            // included, puts its row in view at the new width
             const bool shown=caretLineShown() && m_wrapViewportHeight >= 0
-                && (owned || scrollRequestSerial() == m_placedRequestSerial);
+                && scrollRequestSerial() == m_placedRequestSerial;
 
             m_wrapViewportHeight=viewport;
             if(rewrap)
@@ -2314,7 +2324,7 @@ void CodeEditor::contentsPlaced(skin::Base *skin)
                 applyWrapMeasurer();
                 caretChanged();
             }
-            if(shown)
+            if(shown || owned)
                 reveal=true;
         }
 
@@ -2324,7 +2334,6 @@ void CodeEditor::contentsPlaced(skin::Base *skin)
                 static_cast<size_t>(INT_MAX/m_lineHeight-1)))*m_lineHeight, m_lineHeight);
     }
     m_revealCaretRow=false;
-    m_caretRequested=false;
 
     ParentClass::contentsPlaced(skin);
     m_placedRequestSerial=scrollRequestSerial();

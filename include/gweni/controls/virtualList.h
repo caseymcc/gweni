@@ -218,14 +218,18 @@ public:
     //! The item of the scrollToItem() the next layout is to resolve, or
     //! NoItem: none asked for, or a scrollByRows() dropped it.
     size_t getPendingItem() const { return m_pendingItem; }
-    //! Counts the scroll requests made of the list: each scrollToItem(),
-    //! scrollByRows() and setVerticalScrollOffset() call and each wheel
-    //! notch it takes. An edit keeping the rows on screen where they are
+    //! Counts the scroll requests made of the list: each scrollToItem() and
+    //! scrollByRows() call, each setVerticalScrollOffset() that moves the
+    //! offset or replaces a pending item, each wheel notch it takes and each
+    //! move of its bar by the user (the thumb, the arrows, the track). The
+    //! latest of them in a frame decides the view: an offset, a notch or a
+    //! bar move drops a scrollToItem() still pending, as scrollByRows()
+    //! does. An edit keeping the rows on screen where they are
     //! (insertItems() above them, say) is not one, nor is a layout. So a
     //! caller that recorded it after its own request knows, while it is
     //! unchanged, that no later one replaced it (CodeEditor's caret).
     uint64_t scrollRequestSerial() const { return m_scrollRequests; }
-    //! Counted in scrollRequestSerial().
+    //! Counted in scrollRequestSerial(), and drops a pending item.
     void setVerticalScrollOffset(int offset) override;
 
     //! The item at the top of the viewport (partly scrolled out or not), as
@@ -258,6 +262,8 @@ public:
     gweni::event::Caller onItemPressed;
 
 protected:
+    //! The Y arrange takes a bar the user moved first (takeBarScroll()).
+    void arrange(skin::Base *skin, Dim dim) override;
     void contentsPlaced(skin::Base *skin) override;
 
     //! The pooled rows in pool order and the item each shows now (NoItem for a

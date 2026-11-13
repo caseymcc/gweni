@@ -562,11 +562,15 @@ void VirtualList::takeBarScroll()
 {
     // A bar moved by the user since the last layout (its thumb, its buttons)
     // is taken at the content it was moved against, as placeContents takes
-    // it, before an edit moves the offset (and the bar with it).
+    // it, before an edit moves the offset (and the bar with it). Every
+    // request takes it first, so a move found here came after the last
+    // request: it is the latest, and replaces a scrollToItem() still pending.
     const float amount=m_verticalScrollBar->getScrolledAmount();
 
     if(amount != m_shownAmount[1])
     {
+        ++m_scrollRequests;
+        m_pendingItem=NoItem;
         m_scrollOffset[1]=gweni::clamp(static_cast<int>(std::lround(
             static_cast<double>(amount)*m_scrollRange[1])), 0, getMaxVerticalScrollOffset());
         m_shownAmount[1]=amount;
@@ -687,6 +691,8 @@ void VirtualList::scrollToItem(size_t index, int partTop, int partHeight)
     if(index >= m_itemCount)
         return;
 
+    takeBarScroll();
+
     // the same item pending: its layout is asked for already, this only
     // says which part of it
     const bool pending=(m_pendingItem == index);
@@ -723,22 +729,36 @@ void VirtualList::scrollByRows(int rows)
         return;
     }
 
+    takeBarScroll();
+
     const int64_t offset=static_cast<int64_t>(getVerticalScrollOffset())
         +static_cast<int64_t>(rows)*m_rowHeight;
 
     ScrollControl::setVerticalScrollOffset(static_cast<int>(gweni::clamp<int64_t>(offset, 0, INT_MAX)));
 }
 
+// The latest request wins: an offset replaces a scrollToItem() still
+// pending. One that changes nothing and replaces none (PageUp at the top) is
+// no request.
 void VirtualList::setVerticalScrollOffset(int offset)
 {
-    ++m_scrollRequests;
+    takeBarScroll();
+
+    const int before=getVerticalScrollOffset();
+    const bool pending=(m_pendingItem != NoItem);
+
+    m_pendingItem=NoItem;
     ScrollControl::setVerticalScrollOffset(offset);
+    if(pending || getVerticalScrollOffset() != before)
+        ++m_scrollRequests;
 }
 
 // GLFW's translator gives 60 per wheel notch. A wheel the list cannot use
 // (at its end, or nothing to scroll) goes on to the parent.
 bool VirtualList::onMouseWheeled(int iDelta)
 {
+    takeBarScroll();
+
     const int before=getVerticalScrollOffset();
     const long delta=std::lround(-static_cast<double>(iDelta)*m_wheelRows*m_rowHeight/60.0);
 
@@ -747,7 +767,9 @@ bool VirtualList::onMouseWheeled(int iDelta)
 
     if(getVerticalScrollOffset() != before)
     {
+        // the latest request, as an offset is
         ++m_scrollRequests;
+        m_pendingItem=NoItem;
         return true;
     }
 
@@ -1064,6 +1086,24 @@ void VirtualList::releaseRow(Base *control)
 // When a shown row moved, was bound to another item, or was shown, hidden or
 // deleted, what is under the resting mouse may be another row: the canvas
 // hit-tests the hover again once the layout is done.
+// The bar moved by the user since the last layout (by its arrows or its
+// track, which tell the list nothing, or its thumb), which nothing took
+// since, is taken before placeContents() would: it came after every request
+// made so far, so it replaces a scrollToItem() still pending, and a LogView's
+// barScrollTaken() detaches the view above the end, so the list does not put
+// it back there. What that changes (a LogView's stick and jump button) is
+// this pass's to lay out.
+void VirtualList::arrange(skin::Base *skin, Dim dim)
+{
+    if(dim == Dim::Y)
+    {
+        PlacementScope placement;
+
+        takeBarScroll();
+    }
+    ParentClass::arrange(skin, dim);
+}
+
 void VirtualList::contentsPlaced(skin::Base *skin)
 {
     const int viewport=getViewportHeight();

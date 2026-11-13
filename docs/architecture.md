@@ -2268,7 +2268,15 @@ two programs and the draws. What follows describes both together:
   mouse last moved on, unless a capture pins it). So after a wheel the highlight is on
   the row under the mouse, and a click with no move in between presses that item.
   `scrollToItem` is resolved by the next layout, with the viewport it gives, so it works
-  before the first one and in the frame of a resize. `scrollByRows`,
+  before the first one and in the frame of a resize. The latest scroll request in a
+  frame decides the view: a `scrollByRows`, a `setVerticalScrollOffset` (virtual on
+  `ScrollControl` for it), a wheel notch the list takes and a move of its bar by the
+  user each drop a `scrollToItem` still pending (#661). The bar's arrows and track tell
+  the list nothing, so every request first takes a bar moved since the last layout
+  (`takeBarScroll()`, below), as does the list's own Y arrange: a move found there came
+  after every request made so far. `scrollRequestSerial()` counts the requests (an
+  offset only when it moves the offset or drops a pending item; not an edit's keeping
+  of the rows on screen, nor a layout). `scrollByRows`,
   `firstVisibleItem`, `rowForItem`/`itemForRow` and `refresh`/`refreshItem` are the
   rest; a wheel notch scrolls `setWheelRows` rows (3). VirtualListDemo holds 100 000
   items.
@@ -2502,21 +2510,23 @@ two programs and the draws. What follows describes both together:
   the line to `scrollToItem(line, partTop, partHeight)`, while the caret's request is
   still the list's last.
 
-  **The latest scroll request in a frame decides the view** (#661), wrapped or not.
-  `VirtualList::scrollRequestSerial()` counts the requests made of the list
-  (`scrollToItem()`, `scrollByRows()`, `setVerticalScrollOffset()`, virtual on
-  `ScrollControl` for it, and a wheel notch it takes; not an edit's keeping of the rows
-  on screen, nor a layout), and the editor records it after the caret's own request,
-  so it knows whether the pending request is the caret's rather than guessing from
-  the pending item's index. A caret move that needs no scroll re-targets a
-  `scrollToItem()` still pending (an earlier move's in the frame, the app's) at its
-  own line, which the layout finds in view, so of two moves in one frame (Ctrl+End,
-  Ctrl+Home: a scripted `--key` run, a browser's input between frames) the later
-  decides; a `scrollToItem()`, `scrollByRows()` or offset the app asks for after the
-  move is kept, and so is one asked for in a resize frame, over the resize's keeping
-  of the caret's line; an app's edit that merges the caret's line into the one above
-  (the list's request moved to the line after it) moves the caret's request to the
-  caret's new line (`tests/unit/codeEditorScrollRequests.cpp`).
+  **The latest scroll request in a frame decides the view** (#661), wrapped or not,
+  as it does in the list ("The virtual list"). The editor records
+  `VirtualList::scrollRequestSerial()` after the caret's own request (a
+  `scrollToItem()`, or wrapped an offset), so it knows whether the last request is
+  the caret's rather than guessing from the pending item's index. A move judges the
+  caret in the view a bar the user moved before it gives (`takeBarScroll()` first). A
+  caret move that needs no scroll re-targets a `scrollToItem()` still pending (an
+  earlier move's in the frame, the app's) at its own line, which the layout finds in
+  view, so of two moves in one frame (Ctrl+End, Ctrl+Home: a scripted `--key` run, a
+  browser's input between frames) the later decides; a `scrollToItem()`,
+  `scrollByRows()`, offset, wheel notch or bar move after the move is where the view
+  ends (the list drops the caret's pending item), and so is one in a resize frame,
+  over the resize's keeping of the caret's line; a caret request of the frame, by
+  offset too, puts its row in view at the new width even when no row showed its
+  line; an app's edit that merges the caret's line into the one above (the list's
+  request moved to the line after it) moves the caret's request to the caret's new
+  line (`tests/unit/codeEditorScrollRequests.cpp`).
 
   **Visual rows.** Wrapped, Up and Down move a visual row at a time, inside a line
   and across lines, the goal column a column in cells on the row; Home and End go
@@ -2622,7 +2632,7 @@ two programs and the draws. What follows describes both together:
   layout (its amount against `m_shownAmount`) is taken as the offset by whatever needs
   the offset first, `VirtualList::takeBarScroll()`: an edit (`append`, `replace`,
   `prepend`, the cap, a block toggled), a scroll request, the idle re-measure in the
-  update phase, or the view's own Y arrange, which takes it under a `PlacementScope`
+  update phase, or the list's own Y arrange, which takes it under a `PlacementScope`
   before `placeContents()` would. Each tells the one hook `barScrollTaken(amount)`,
   which the view overrides: at the end it follows, above it it detaches, so a press
   on the arrows during a re-measure after a resize detaches as any other does. Detached,
