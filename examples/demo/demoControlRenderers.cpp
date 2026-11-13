@@ -17,6 +17,7 @@
 
 #include <gweni/skins/textured/texturedControls.h>
 #include <gweni/skins/textured/texturedSkin.h>
+#include <gweni/skins/textured/tokyoNight.h>
 
 namespace gweni
 {
@@ -77,6 +78,7 @@ GWENI_DEMO_TRANSPARENT(DragNumberDemo)
 GWENI_DEMO_TRANSPARENT(VectorFieldDemo)
 GWENI_DEMO_TRANSPARENT(ChipBadgeDemo)
 GWENI_DEMO_TRANSPARENT(ZoomPanelDemo)
+GWENI_DEMO_TRANSPARENT(FlowDemo)
 GWENI_DEMO_TRANSPARENT(NodeGraphDemo)
 GWENI_DEMO_TRANSPARENT(SeparatorDemo)
 GWENI_DEMO_TRANSPARENT(ShowcaseContainersDemo)
@@ -132,6 +134,22 @@ public:
     inline static const std::string_view name="TextDemoLightPanel";
 };
 
+// FlowDemo's card: the GroupBox surface behind its title and body.
+class FlowDemoCard:public textured::ControlRegister<FlowDemoCard>
+{
+public:
+    static void staticInit(TexturedSkin *) { m_staticInit=true; }
+    size_t requiredPrimitives() override { return 1; }
+    void update(renderer::Base *renderer, controls::Base *baseControl) override
+    {
+        if(m_primitives.empty())
+            return;
+
+        tokyonight::paintSurface(renderer, m_primitives.data(), baseControl, tokyonight::GroupBox);
+    }
+    inline static const std::string_view name="FlowDemoCard";
+};
+
 // Force the registrar static initializers to run so each renderer is registered.
 template class ControlRegister<Demo>;
 template class ControlRegister<ButtonDemo>;
@@ -175,6 +193,8 @@ template class ControlRegister<DragNumberDemo>;
 template class ControlRegister<VectorFieldDemo>;
 template class ControlRegister<ChipBadgeDemo>;
 template class ControlRegister<ZoomPanelDemo>;
+template class ControlRegister<FlowDemo>;
+template class ControlRegister<FlowDemoCard>;
 template class ControlRegister<NodeGraphDemo>;
 template class ControlRegister<SeparatorDemo>;
 template class ControlRegister<ShowcaseContainersDemo>;

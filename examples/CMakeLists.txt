@@ -100,6 +100,8 @@ set(GWENI_DEMO_SOURCES
     demo/chipBadge.h
     demo/nodeGraph.cpp
     demo/nodeGraph.h
+    demo/flow.cpp
+    demo/flow.h
     demo/zoomPanel.cpp
     demo/zoomPanel.h
     demo/statsOverlay.cpp
