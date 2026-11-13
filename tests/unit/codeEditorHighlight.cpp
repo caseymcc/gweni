@@ -15,7 +15,9 @@
  *  past the screen left stale until bound, and its undo gives every row's
  *  spans back; lines the app inserts above the screen with a state change
  *  re-colour every row on screen, the shifted ones at their new lines too;
- *  a new token colour reaches the spans through updateColors();
+ *  a new token colour reaches the spans through updateColors(); wrapped,
+ *  each visual row's run is drawn with the spans over its own bytes, counted
+ *  from its start, and unwrapped again the row's one run with the line's;
  *  an unknown language highlights nothing, "" and a null tokenizer none.
  */
 #include "headlessFixture.h"
@@ -298,5 +300,82 @@ TEST_CASE("CodeEditor highlighting: lines the app inserts above the screen re-co
     {
         CAPTURE(entry.first);
         CHECK(sameSpans(entry.second->getColorSpans(), scene.expectedSpans(entry.first)));
+    }
+}
+
+TEST_CASE("CodeEditor highlighting: wrapped, each visual row is drawn with the spans over its bytes")
+{
+    // lines of a key, a quoted string and a comment, each wrapping into
+    // several rows at the editor's width, so tokens are cut at the wrap points
+    String document;
+
+    for(size_t i=0; i < 40; ++i)
+    {
+        if(i > 0)
+            document+='\n';
+        document+="key_"+std::to_string(i)+": \"a quoted value of several words, long enough to wrap\" # then a comment, which wraps "
+            "as well, "
+            +std::to_string(i*7);
+    }
+
+    Scene scene;
+
+    scene.editor->setText(document);
+    scene.editor->setWrap(true);
+    scene.frame();
+    scene.frame();
+
+    const auto rows=scene.shownRows();
+    size_t wrapped=0;
+
+    REQUIRE(rows.size() > 3);
+    for(const auto &entry : rows)
+    {
+        const controls::CodeLine *row=entry.second;
+        const std::vector<ColorSpan> line=scene.expectedSpans(entry.first);
+        const size_t count=row->getRowCount();
+
+        CAPTURE(entry.first);
+        if(count > 1)
+            ++wrapped;
+        for(size_t r=0; r < count; ++r)
+        {
+            CAPTURE(r);
+            const size_t begin=row->getRowStart(r);
+            const size_t end=(r+1 < count)?row->getRowStart(r+1):row->getText().size();
+            std::vector<ColorSpan> expected;
+
+            for(const ColorSpan &span : line)
+            {
+                if(span.end > begin && span.begin < end)
+                    expected.push_back(ColorSpan{std::max(span.begin, begin)-begin, std::min(span.end, end)-begin,
+                        span.color});
+            }
+
+            const auto *text=gweni_cast<controls::internal::CodeLineText>(row->getRowText(r));
+
+            REQUIRE(text != nullptr);
+            CHECK(!expected.empty());
+            CHECK(sameSpans(text->getColorSpans(), expected));
+
+            std::vector<size_t> primitives, texts;
+
+            text->getSkinControl()->appendIds(primitives, texts);
+            REQUIRE(texts.size() == 1);
+            CHECK(sameSpans(scene.renderer.textSpans[texts[0]], expected));
+        }
+    }
+    CHECK(wrapped == rows.size());
+
+    // unwrapped again: one run a line, with the whole line's spans
+    scene.editor->setWrap(false);
+    scene.frame();
+    scene.frame();
+    for(const auto &entry : scene.shownRows())
+    {
+        CAPTURE(entry.first);
+        CHECK(entry.second->getRowCount() == 1);
+        CHECK(sameSpans(entry.second->getColorSpans(), scene.expectedSpans(entry.first)));
+        CHECK(sameSpans(scene.renderer.textSpans[Scene::textId(entry.second)], entry.second->getColorSpans()));
     }
 }
