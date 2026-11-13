@@ -512,8 +512,13 @@ void CodeEditor::setWrap(bool wrap)
     if(m_wrap == wrap)
         return;
 
+    const bool shown=caretLineShown();
+
     m_wrap=wrap;
     m_wrapCells=0;
+    m_wrapViewportHeight=-1;
+    m_goalColumn=NoGoal;
+    m_caretUpstream=false;
 
     if(wrap)
     {
@@ -534,6 +539,15 @@ void CodeEditor::setWrap(bool wrap)
     // every row on screen bound again, wrapped or not
     refresh();
     invalidate();
+
+    // the caret's line stays on screen (by the next layout, which knows the
+    // lines' new heights), and its column too unwrapped
+    if(shown)
+    {
+        scrollToItem(m_caret.line);
+        makeCaretColumnVisible();
+    }
+    caretChanged();
 }
 
 // Turning the measurer on (again) counts every line at the estimator, its
@@ -762,7 +776,7 @@ void CodeEditor::setCaret(const text::Position &position, bool extend)
     moveCaret(position, extend);
 }
 
-void CodeEditor::moveCaret(const text::Position &position, bool extend, bool keepGoal, bool reveal)
+void CodeEditor::moveCaret(const text::Position &position, bool extend, bool keepGoal, bool reveal, bool rowEnd)
 {
     const size_t oldLine=m_caret.line;
 
@@ -770,6 +784,13 @@ void CodeEditor::moveCaret(const text::Position &position, bool extend, bool kee
     if(!extend)
         m_anchor=m_caret;
     m_caretColumn=text::stringCells(m_document.line(m_caret.line), 0, m_caret.byte);
+    // the end of the row above only where the caret is at a wrap point
+    m_caretUpstream=false;
+    if(rowEnd && m_wrap && m_caret.byte > 0)
+    {
+        rowStarts(m_caret.line, m_rowScratch);
+        m_caretUpstream=rowOf(m_rowScratch, m_caret.byte, true) != rowOf(m_rowScratch, m_caret.byte, false);
+    }
 
     if(!keepGoal)
         m_goalColumn=NoGoal;
@@ -863,11 +884,27 @@ void CodeEditor::makeCaretVisible()
         scrollToItem(m_caret.line);
     else if(isVariableHeight())
     {
-        // the line's row as the last layout placed it, in the viewport
-        const Base *row=rowForItem(m_caret.line);
+        // Wrapped: the caret's visual row, by the offset. A line measured at
+        // this width has its rows' tops in the index's offsets, those of the
+        // lines in view included (they are measured), so the offset puts the
+        // row at the viewport's edge; a line not measured yet goes by the
+        // list's scrollToItem, which measures it.
+        const HeightIndex &heights=getHeightIndex();
+        const size_t line=m_caret.line;
 
-        if(!row || row->hidden() || row->getY() < 0 || row->bottom() > getViewportHeight())
-            scrollToItem(m_caret.line);
+        if(line >= heights.size() || heights.generation(line) != getMeasureGeneration())
+            scrollToItem(line);
+        else
+        {
+            const int64_t top=heights.offsetOf(line)+static_cast<int64_t>(getCaretRow())*lineHeight;
+            const int64_t offset=getVerticalScrollOffset();
+            const int64_t viewport=getViewportHeight();
+
+            if(top < offset)
+                setVerticalScrollOffset(static_cast<int>(std::min<int64_t>(top, INT_MAX)));
+            else if(top+lineHeight > offset+viewport)
+                setVerticalScrollOffset(static_cast<int>(std::min<int64_t>(top+lineHeight-viewport, INT_MAX)));
+        }
     }
     else
     {
@@ -878,6 +915,11 @@ void CodeEditor::makeCaretVisible()
             scrollToItem(m_caret.line);
     }
 
+    makeCaretColumnVisible();
+}
+
+void CodeEditor::makeCaretColumnVisible()
+{
     const int width=getViewport().w;
 
     if(width <= 0 || !canScrollHorizontal())
@@ -901,9 +943,18 @@ Rect CodeEditor::getCaretBounds() const
         return Rect();
 
     const Rect &viewport=getViewport();
-    const int64_t y=static_cast<int64_t>(viewport.y)+static_cast<int64_t>(m_caret.line)*m_lineHeight
+    int64_t y=static_cast<int64_t>(viewport.y)+static_cast<int64_t>(m_caret.line)*m_lineHeight
         -getVerticalScrollOffset();
-    const int64_t x=static_cast<int64_t>(viewport.x)-getHorizontalScrollOffset()+columnX(m_caretColumn);
+    int64_t x=static_cast<int64_t>(viewport.x)-getHorizontalScrollOffset()+columnX(m_caretColumn);
+
+    // wrapped: its visual row's, below the line's top, at most at the row's
+    // last cell (blanks hang past it)
+    if(isVariableHeight() && m_caret.line < getHeightIndex().size())
+    {
+        y=static_cast<int64_t>(viewport.y)+getHeightIndex().offsetOf(m_caret.line)
+            +static_cast<int64_t>(getCaretRow())*m_lineHeight-getVerticalScrollOffset();
+        x=static_cast<int64_t>(viewport.x)+columnX(std::min(getCaretRowColumn(), m_wrapCells));
+    }
     const int64_t x0=std::max<int64_t>(x, viewport.x);
     const int64_t y0=std::max<int64_t>(y, viewport.y);
     const int64_t x1=std::min<int64_t>(x+1, viewport.x+viewport.w);
@@ -915,8 +966,105 @@ Rect CodeEditor::getCaretBounds() const
     return Rect(static_cast<int>(x0), static_cast<int>(y0), static_cast<int>(x1-x0), static_cast<int>(y1-y0));
 }
 
-text::Position CodeEditor::positionAt(const Point &local) const
+// The caret stop nearest \p cells cells into the bytes [begin, end) of \p
+// str, a fraction of a cell included (byteNearestCell's rule), and the stop
+// past the stops that fit whole in \p cells (byteAtCell's), over one row.
+static size_t nearestCellIn(const String &str, size_t begin, size_t end, double cells)
 {
+    size_t pos=begin;
+    double used=0.0;
+
+    while(pos < end)
+    {
+        const size_t next=text::nextCaretStop(str, pos);
+        const double width=static_cast<double>(text::stringCells(str, pos, next));
+
+        if(cells <= used+width*0.5)
+            break;
+        used+=width;
+        pos=next;
+    }
+    return pos;
+}
+
+static size_t byteAtCellIn(const String &str, size_t begin, size_t end, size_t cells)
+{
+    size_t pos=begin;
+    size_t used=0;
+
+    while(pos < end)
+    {
+        const size_t next=text::nextCaretStop(str, pos);
+        const size_t width=text::stringCells(str, pos, next);
+
+        if(used+width > cells)
+            break;
+        used+=width;
+        pos=next;
+    }
+    return pos;
+}
+
+void CodeEditor::rowStarts(size_t line, std::vector<size_t> &starts) const
+{
+    if(!m_wrap || m_wrapCells == 0 || line >= m_document.lineCount())
+    {
+        starts.assign(1, 0);
+        return;
+    }
+    text::wrapCells(m_document.line(line), m_wrapCells, starts);
+}
+
+size_t CodeEditor::rowOf(const std::vector<size_t> &starts, size_t byte, bool rowEnd)
+{
+    size_t row=static_cast<size_t>(std::upper_bound(starts.begin(), starts.end(), byte)-starts.begin());
+
+    row=(row > 0)?row-1:0;
+    if(rowEnd && row > 0 && starts[row] == byte)
+        --row;
+    return row;
+}
+
+size_t CodeEditor::rowEndByte(size_t line, const std::vector<size_t> &starts, size_t row) const
+{
+    return (row+1 < starts.size())?starts[row+1]:m_document.line(line).size();
+}
+
+size_t CodeEditor::getCaretRow() const
+{
+    if(!m_wrap)
+        return 0;
+
+    rowStarts(m_caret.line, m_rowScratch);
+    return rowOf(m_rowScratch, m_caret.byte, m_caretUpstream);
+}
+
+size_t CodeEditor::getCaretRowColumn() const
+{
+    if(!m_wrap)
+        return m_caretColumn;
+
+    rowStarts(m_caret.line, m_rowScratch);
+
+    const size_t row=rowOf(m_rowScratch, m_caret.byte, m_caretUpstream);
+
+    return text::stringCells(m_document.line(m_caret.line), m_rowScratch[row], m_caret.byte);
+}
+
+bool CodeEditor::caretLineShown() const
+{
+    const Base *row=rowForItem(m_caret.line);
+
+    return row && !row->hidden();
+}
+
+// Wrapped, the line under the point is the height index's item at its
+// offset in the content, and the row the line height's step into it.
+text::Position CodeEditor::positionAt(const Point &local, bool *rowEnd) const
+{
+    if(rowEnd)
+        *rowEnd=false;
+
     if(m_lineHeight <= 0 || m_cellWidth <= 0.f)
         return m_caret;
 
@@ -927,12 +1075,32 @@ text::Position CodeEditor::positionAt(const Point &local) const
     if(y < 0)
         return text::Position{0, 0};
 
-    const size_t line=static_cast<size_t>(y/m_lineHeight);
+    if(!isVariableHeight())
+    {
+        const size_t line=static_cast<size_t>(y/m_lineHeight);
+
+        if(line > last)
+            return m_document.endPosition();
+
+        return text::Position{line, text::byteNearestCell(m_document.line(line), textX(local)/m_cellWidth)};
+    }
+
+    int64_t top=0;
+    const size_t line=getHeightIndex().itemAt(y, &top);
 
     if(line > last)
         return m_document.endPosition();
 
-    return text::Position{line, text::byteNearestCell(m_document.line(line), textX(local)/m_cellWidth)};
+    rowStarts(line, m_rowScratch);
+
+    const size_t row=std::min(static_cast<size_t>((y-top)/m_lineHeight), m_rowScratch.size()-1);
+    const String &text=m_document.line(line);
+    const size_t end=rowEndByte(line, m_rowScratch, row);
+    const size_t byte=nearestCellIn(text, m_rowScratch[row], end, textX(local)/m_cellWidth);
+
+    if(rowEnd)
+        *rowEnd=(row+1 < m_rowScratch.size() && byte == end);
+    return text::Position{line, byte};
 }
 
 double CodeEditor::textX(const Point &local) const
@@ -946,14 +1114,24 @@ double CodeEditor::textX(const Point &local) const
 
 text::Position CodeEditor::glyphAt(const Point &local) const
 {
-    const text::Position line=positionAt(local);
+    bool rowEnd=false;
+    const text::Position at=positionAt(local, &rowEnd);
 
     if(m_cellWidth <= 0.f)
-        return line;
+        return at;
 
     const size_t cell=static_cast<size_t>(std::max(0.0, std::floor(textX(local)/m_cellWidth)));
 
-    return text::Position{line.line, text::byteAtCell(m_document.line(line.line), cell)};
+    if(!m_wrap)
+        return text::Position{at.line, text::byteAtCell(m_document.line(at.line), cell)};
+
+    // on the visual row positionAt found
+    rowStarts(at.line, m_rowScratch);
+
+    const size_t row=rowOf(m_rowScratch, at.byte, rowEnd);
+
+    return text::Position{at.line, byteAtCellIn(m_document.line(at.line), m_rowScratch[row],
+        rowEndByte(at.line, m_rowScratch, row), cell)};
 }
 
 void CodeEditor::updateCaretBlink()
@@ -1013,23 +1191,67 @@ text::Position CodeEditor::wordLeft(const text::Position &position) const
     return text::Position{position.line, i};
 }
 
-// Up from the first line goes to its start, down from the last to its end,
-// as in a text field; anywhere else the goal column is kept for the next one.
-void CodeEditor::moveLines(int64_t lines, bool extend)
+// Up from the first row goes to its start, down from the last to its end, as
+// in a text field; anywhere else the goal column (in cells on the row) is kept
+// for the next one. Wrapped, the rows are each line's visual rows, the walk
+// going over the lines it crosses; landing at the end of a row that wraps
+// leaves the caret drawn there (its row end).
+void CodeEditor::moveRows(int64_t rows, bool extend)
 {
-    const size_t goal=(m_goalColumn == NoGoal)?m_caretColumn:m_goalColumn;
-    const int64_t last=static_cast<int64_t>(m_document.lineCount())-1;
-    const int64_t target=static_cast<int64_t>(m_caret.line)+lines;
+    const size_t goal=(m_goalColumn == NoGoal)?getCaretRowColumn():m_goalColumn;
+    const size_t last=m_document.lineCount()-1;
+    size_t line=m_caret.line;
 
-    if(target < 0)
-        moveCaret(text::Position{0, 0}, extend);
-    else if(target > last)
-        moveCaret(m_document.endPosition(), extend);
-    else
+    if(!m_wrap)
     {
-        moveCaret(atColumn(static_cast<size_t>(target), goal), extend, true);
-        m_goalColumn=goal;
+        const int64_t target=static_cast<int64_t>(line)+rows;
+
+        if(target < 0)
+            moveCaret(text::Position{0, 0}, extend);
+        else if(target > static_cast<int64_t>(last))
+            moveCaret(m_document.endPosition(), extend);
+        else
+        {
+            moveCaret(atColumn(static_cast<size_t>(target), goal), extend, true);
+            m_goalColumn=goal;
+        }
+        return;
     }
+
+    rowStarts(line, m_rowScratch);
+
+    int64_t row=static_cast<int64_t>(rowOf(m_rowScratch, m_caret.byte, m_caretUpstream))+rows;
+
+    while(row < 0)
+    {
+        if(line == 0)
+        {
+            moveCaret(text::Position{0, 0}, extend);
+            return;
+        }
+        --line;
+        rowStarts(line, m_rowScratch);
+        row+=static_cast<int64_t>(m_rowScratch.size());
+    }
+    while(row >= static_cast<int64_t>(m_rowScratch.size()))
+    {
+        if(line == last)
+        {
+            moveCaret(m_document.endPosition(), extend);
+            return;
+        }
+        row-=static_cast<int64_t>(m_rowScratch.size());
+        ++line;
+        rowStarts(line, m_rowScratch);
+    }
+
+    const size_t at=static_cast<size_t>(row);
+    const size_t end=rowEndByte(line, m_rowScratch, at);
+    const size_t byte=byteAtCellIn(m_document.line(line), m_rowScratch[at], end, goal);
+    const bool rowEnd=(at+1 < m_rowScratch.size() && byte == end);
+
+    moveCaret(text::Position{line, byte}, extend, true, true, rowEnd);
+    m_goalColumn=goal;
 }
 
 int CodeEditor::pageLines() const
@@ -1330,14 +1552,14 @@ bool CodeEditor::onKeyRight(bool down)
 bool CodeEditor::onKeyUp(bool down)
 {
     if(down)
-        moveLines(-1, input::isShiftDown());
+        moveRows(-1, input::isShiftDown());
     return true;
 }
 
 bool CodeEditor::onKeyDown(bool down)
 {
     if(down)
-        moveLines(1, input::isShiftDown());
+        moveRows(1, input::isShiftDown());
     return true;
 }
 
@@ -1353,6 +1575,20 @@ bool CodeEditor::onKeyHome(bool down)
         return true;
     }
 
+    // wrapped, a row after the line's first goes to its own start first
+    if(m_wrap)
+    {
+        rowStarts(m_caret.line, m_rowScratch);
+
+        const size_t row=rowOf(m_rowScratch, m_caret.byte, m_caretUpstream);
+
+        if(row > 0 && (m_caret.byte != m_rowScratch[row] || m_caretUpstream))
+        {
+            moveCaret({m_caret.line, m_rowScratch[row]}, input::isShiftDown());
+            return true;
+        }
+    }
+
     const size_t indent=indentOf(m_document.line(m_caret.line));
 
     moveCaret({m_caret.line, (m_caret.byte == indent)?0:indent}, input::isShiftDown());
@@ -1365,9 +1601,27 @@ bool CodeEditor::onKeyend(bool down)
         return true;
 
     if(input::isControlDown())
+    {
         moveCaret(m_document.endPosition(), input::isShiftDown());
-    else
-        moveCaret({m_caret.line, m_document.line(m_caret.line).size()}, input::isShiftDown());
+        return true;
+    }
+
+    // wrapped, a row before the line's last goes to its own end first (drawn
+    // there, not at the next row's start)
+    if(m_wrap)
+    {
+        rowStarts(m_caret.line, m_rowScratch);
+
+        const size_t row=rowOf(m_rowScratch, m_caret.byte, m_caretUpstream);
+
+        if(row+1 < m_rowScratch.size() && !(m_caretUpstream && m_caret.byte == m_rowScratch[row+1]))
+        {
+            moveCaret({m_caret.line, m_rowScratch[row+1]}, input::isShiftDown(), false, true, true);
+            return true;
+        }
+    }
+
+    moveCaret({m_caret.line, m_document.line(m_caret.line).size()}, input::isShiftDown());
     return true;
 }
 
@@ -1377,8 +1631,11 @@ bool CodeEditor::onKeyPageUp(bool down)
 {
     if(down)
     {
-        scrollByRows(-pageLines());
-        moveLines(-pageLines(), input::isShiftDown());
+        if(isVariableHeight())
+            setVerticalScrollOffset(getVerticalScrollOffset()-pageLines()*m_lineHeight);
+        else
+            scrollByRows(-pageLines());
+        moveRows(-pageLines(), input::isShiftDown());
     }
     return true;
 }
@@ -1387,8 +1644,11 @@ bool CodeEditor::onKeyPageDown(bool down)
 {
     if(down)
     {
-        scrollByRows(pageLines());
-        moveLines(pageLines(), input::isShiftDown());
+        if(isVariableHeight())
+            setVerticalScrollOffset(getVerticalScrollOffset()+pageLines()*m_lineHeight);
+        else
+            scrollByRows(pageLines());
+        moveRows(pageLines(), input::isShiftDown());
     }
     return true;
 }
@@ -1472,8 +1732,13 @@ void CodeEditor::onMouseClickLeft(int x, int y, bool down)
     if(down)
     {
         m_escapeArmed=false;
+        bool rowEnd=false;
+
         m_dragPoint=canvasPosToLocal(Point(x, y));
-        moveCaret(positionAt(m_dragPoint), input::isShiftDown());
+
+        const text::Position at=positionAt(m_dragPoint, &rowEnd);
+
+        moveCaret(at, input::isShiftDown(), false, true, rowEnd);
         MouseFocus=this;
     }
     else if(MouseFocus == this)
@@ -1492,8 +1757,13 @@ void CodeEditor::onMouseMoved(int x, int y, int deltaX, int deltaY)
     if(MouseFocus != this)
         return;
 
+    bool rowEnd=false;
+
     m_dragPoint=canvasPosToLocal(Point(x, y));
-    moveCaret(positionAt(m_dragPoint), true, false, false);
+
+    const text::Position at=positionAt(m_dragPoint, &rowEnd);
+
+    moveCaret(at, true, false, false, rowEnd);
 
     const Point overflow=dragOverflow();
 
@@ -1590,7 +1860,12 @@ void CodeEditor::autoScrollStep()
             getMaxHorizontalScrollOffset()));
 
     if(step[0] != 0 || step[1] != 0)
-        moveCaret(positionAt(m_dragPoint), true, false, false);
+    {
+        bool rowEnd=false;
+        const text::Position at=positionAt(m_dragPoint, &rowEnd);
+
+        moveCaret(at, true, false, false, rowEnd);
+    }
 }
 
 // The word, punctuation run or blank run the press is on (the one before it
@@ -1687,11 +1962,24 @@ void CodeEditor::contentsPlaced(skin::Base *skin)
     if(m_wrap)
     {
         const size_t cells=wrapCellsFor(m_innerPanel->getWidth());
+        const int viewport=getViewportHeight();
+        const bool rewrap=(cells != m_wrapCells || m_lineHeight != m_wrapLineHeight);
 
-        if(cells != m_wrapCells || m_lineHeight != m_wrapLineHeight)
+        if(rewrap || viewport != m_wrapViewportHeight)
         {
-            m_wrapCells=cells;
-            applyWrapMeasurer();
+            // the caret's line stays on screen through a new size: found in
+            // the rows the last layout bound, put in view by this one
+            const bool shown=caretLineShown() && m_wrapViewportHeight >= 0;
+
+            m_wrapViewportHeight=viewport;
+            if(rewrap)
+            {
+                m_wrapCells=cells;
+                applyWrapMeasurer();
+                caretChanged();
+            }
+            if(shown)
+                scrollToItem(m_caret.line);
         }
     }
 

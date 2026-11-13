@@ -287,6 +287,15 @@ public:
     void setCaret(const text::Position &position, bool extend=false);
     //! The caret's column in cells on its line.
     size_t getCaretColumn() const { return m_caretColumn; }
+    //! The visual row of its line the caret is drawn on (0 unwrapped), and
+    //! its column in cells on that row.
+    size_t getCaretRow() const;
+    size_t getCaretRowColumn() const;
+    //! Whether the caret, at a wrap point (the byte a visual row starts at),
+    //! is drawn at the end of the row above rather than the start of its own:
+    //! End, a click past a row's end and Up or Down landing past it put it
+    //! there; any other move puts it at the start.
+    bool isCaretAtRowEnd() const { return m_caretUpstream; }
     bool hasSelection() const { return m_caret != m_anchor; }
     //! The selection from its first position to its last.
     text::Range getSelection() const;
@@ -294,10 +303,12 @@ public:
     void selectAll();
 
     //! The caret stop under a point in the editor's coordinates, as the
-    //! last layout scrolled and measured it: the nearest one on the line the
-    //! point is on, the first or last line above or below every line, column
-    //! 0 left of the viewport (the gutter) however far it is scrolled sideways.
-    text::Position positionAt(const Point &local) const;
+    //! last layout scrolled and measured it: the nearest one on the line (the
+    //! visual row, wrapped) the point is on, the first or last line above or
+    //! below every line, column 0 (the row's start) left of the viewport (the
+    //! gutter) however far it is scrolled sideways. Wrapped, \p rowEnd (if
+    //! given) says whether it is the end of the point's row at a wrap point.
+    text::Position positionAt(const Point &local, bool *rowEnd=nullptr) const;
 
     //! Replaces the selection (or inserts at the caret) with \p text, as
     //! typing it does, and puts the caret after it; nothing when read-only.
@@ -446,11 +457,25 @@ private:
     void insertText(const String &text, text::EditKind kind);
     //! Moves the caret (and the anchor too unless \p extend), keeping
     //! m_goalColumn unless \p keepGoal is false; updates the rows' current
-    //! line, lights the caret and puts it in view.
-    void moveCaret(const text::Position &position, bool extend, bool keepGoal=false, bool reveal=true);
+    //! line, lights the caret and puts it in view. \p rowEnd puts it at the
+    //! end of the row above when it lands on a wrap point.
+    void moveCaret(const text::Position &position, bool extend, bool keepGoal=false, bool reveal=true,
+        bool rowEnd=false);
     //! The caret moved or the view scrolled: the caret is drawn again.
     void caretChanged();
     void makeCaretVisible();
+    //! Its column, scrolled sideways into view (unwrapped).
+    void makeCaretColumnVisible();
+    //! The caret's line is on screen (some row shows it).
+    bool caretLineShown() const;
+    //! The bytes line \p line's visual rows start at, the first 0: {0}
+    //! unwrapped (text::wrapCells at the wrap cells otherwise).
+    void rowStarts(size_t line, std::vector<size_t> &starts) const;
+    //! The row of \p starts holding \p byte, the row above at a wrap point
+    //! with \p rowEnd.
+    static size_t rowOf(const std::vector<size_t> &starts, size_t byte, bool rowEnd);
+    //! The byte row \p row of line \p line (with those starts) ends at.
+    size_t rowEndByte(size_t line, const std::vector<size_t> &starts, size_t row) const;
     //! Each shown row's current-line look, from the caret's line.
     void syncCurrentLine();
     //! The cells of line \p line the selection covers (see CodeLine).
@@ -473,9 +498,10 @@ private:
     //! The positions one word to the left and right of \p position.
     text::Position wordLeft(const text::Position &position) const;
     text::Position wordRight(const text::Position &position) const;
-    //! Moves up or down by \p lines lines at the goal column.
-    void moveLines(int64_t lines, bool extend);
-    //! The lines a page moves: the viewport's whole lines, at least one.
+    //! Moves up or down by \p rows visual rows (lines, unwrapped) at the
+    //! goal column, a column in cells on the row.
+    void moveRows(int64_t rows, bool extend);
+    //! The rows a page moves: the viewport's whole rows, at least one.
     int pageLines() const;
 
     //! The lines an edit replaced: their widths counted again and the rows
@@ -511,6 +537,10 @@ private:
     text::Position m_caret;
     text::Position m_anchor;
     size_t m_caretColumn=0;
+    //! At a wrap point: drawn at the end of the row above (isCaretAtRowEnd).
+    bool m_caretUpstream=false;
+    //! Row starts, kept for their capacity.
+    mutable std::vector<size_t> m_rowScratch;
     //! The column Up and Down keep, or NoGoal: the caret's own.
     static constexpr size_t NoGoal=static_cast<size_t>(-1);
     size_t m_goalColumn=NoGoal;
@@ -528,8 +558,10 @@ private:
 
     bool m_wrap=false;
     size_t m_wrapCells=0;
-    //! The line height the lines were last estimated at.
+    //! The line height the lines were last estimated at, and the viewport's
+    //! height the caret's line was last kept on screen at.
     int m_wrapLineHeight=0;
+    int m_wrapViewportHeight=-1;
 
     bool m_lineNumbers=false;
     internal::CodeGutter *m_gutter=nullptr;
