@@ -1081,9 +1081,10 @@ public:
 };
 
 // A CodeEditor's row: [0] its line background (CodeCurrentLine on the line
-// with the caret, hidden otherwise), [1] the selection rect at the text's z,
-// behind every glyph (CodeSelection, hidden while the line has none); the
-// row's Text draws the line.
+// with the caret, hidden otherwise), then a selection rect per visual row the
+// selection covers at the text's z, behind every glyph (CodeSelection; [1]
+// hidden while the line has none, the slots past the rects given back); the
+// row's Texts draw the line.
 class CodeLine:public textured::ControlRegister<CodeLine>
 {
 public:
@@ -1094,6 +1095,10 @@ public:
     void update(renderer::Base *renderer, controls::Base *baseControl) override;
 
     inline static const std::string_view name="CodeLine";
+
+private:
+    //! The selection's rects, kept for their capacity.
+    std::vector<gweni::Rect> m_rects;
 };
 
 // A Selectable's row: hidden while idle (or disabled and unselected), a

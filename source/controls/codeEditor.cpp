@@ -53,6 +53,10 @@ void CodeLine::bind(size_t line, const String &text, size_t wrapCells)
 
     const size_t rows=getRowCount();
 
+    // the selection's rects follow the rows
+    if(m_selectionEnd > m_selectionBegin)
+        addStateChange(StateChange_Background);
+
     while(m_pieces.size() > rows-1)
     {
         delete m_pieces.back();    // ~Base takes it out of the children, gives its ids back
@@ -115,13 +119,75 @@ void CodeLine::setSelection(size_t begin, size_t end)
 
 Rect CodeLine::getSelectionRect() const
 {
+    Rect rect;
+
+    for(size_t row=0; row < getRowCount(); ++row)
+    {
+        if(selectionRectOnRow(row, rect))
+            return rect;
+    }
+    return Rect();
+}
+
+void CodeLine::getSelectionRects(std::vector<Rect> &rects) const
+{
+    Rect rect;
+
+    rects.clear();
+    for(size_t row=0; row < getRowCount(); ++row)
+    {
+        if(selectionRectOnRow(row, rect))
+            rects.push_back(rect);
+    }
+}
+
+// The selection's cells [begin, end) are the line's; a visual row holds the
+// line's cells [rowBegin, rowEnd), and its rect the part of the selection in
+// them, from the row's own first cell.
+bool CodeLine::selectionRectOnRow(size_t row, Rect &rect) const
+{
     if(!m_editor || m_selectionEnd <= m_selectionBegin)
-        return Rect();
+        return false;
 
-    const int x0=m_editor->columnX(m_selectionBegin);
-    const int x1=m_editor->columnX(m_selectionEnd);
+    if(!m_editor->isWrapped())
+    {
+        if(row != 0)
+            return false;
 
-    return Rect(x0, 0, x1-x0, getHeight());
+        const int x0=m_editor->columnX(m_selectionBegin);
+        const int x1=m_editor->columnX(m_selectionEnd);
+
+        rect=Rect(x0, 0, x1-x0, getHeight());
+        return true;
+    }
+
+    const String &text=getText();
+    const size_t rows=getRowCount();
+    const bool last=(row+1 == rows);
+    const size_t start=getRowStart(row);
+    const size_t stop=last?text.size():getRowStart(row+1);
+    const size_t rowBegin=text::stringCells(text, 0, start);
+    const size_t rowEnd=rowBegin+text::stringCells(text, start, stop);
+
+    if(m_selectionEnd <= rowBegin || m_selectionBegin >= (last?m_selectionEnd:rowEnd))
+        return false;
+
+    // a row the selection goes on past is covered to its end; the last row
+    // keeps the line end's cell
+    const size_t cells=m_editor->getWrapCells();
+    const size_t limit=(cells == 0)?static_cast<size_t>(-1):(last?cells+1:cells);
+    const size_t begin=std::min(std::max(m_selectionBegin, rowBegin)-rowBegin, limit);
+    const size_t end=std::min((last?m_selectionEnd:std::min(m_selectionEnd, rowEnd))-rowBegin, limit);
+
+    if(end <= begin)
+        return false;
+
+    const int lineHeight=(m_editor->getLineHeight() > 0)?m_editor->getLineHeight():getHeight();
+    const int x0=m_editor->columnX(begin);
+    const int x1=m_editor->columnX(end);
+
+    rect=Rect(x0, static_cast<int>(row)*lineHeight, x1-x0, lineHeight);
+    return true;
 }
 
 void CodeLine::fontChanged()
@@ -2040,7 +2106,7 @@ void CodeEditor::readMetrics(skin::Base *skin)
         {
             CodeLine *line=gweni_cast<CodeLine>(row);
 
-            if(line && line->getSelectionRect().w > 0)
+            if(line && line->getSelectionEnd() > line->getSelectionBegin())
                 line->addStateChange(StateChange_Background);
         }
         caretChanged();

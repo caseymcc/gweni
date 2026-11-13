@@ -110,8 +110,18 @@ public:
     size_t getSelectionEnd() const { return m_selectionEnd; }
     //! The selection's rect in the row's coordinates, a line high from the
     //! begin cell's x to the end cell's (CodeEditor::columnX); empty when the
-    //! line has none.
+    //! line has none. Wrapped, the first of getSelectionRects().
     Rect getSelectionRect() const;
+    //! The selection's rects in the row's coordinates, one per visual row it
+    //! covers, top to bottom, each a line high on its row (empty when the
+    //! line has none; one at most unwrapped, getSelectionRect()). Wrapped, a
+    //! row's rect runs between the selection's cells on that row, counted
+    //! from the row's start (CodeEditor::columnX of them): a row the
+    //! selection goes on past reaches its last cell, at most the wrap cells
+    //! (blanks hanging past the edge are cut there), and the line's last row
+    //! one cell past its last glyph when the line break is selected too. So
+    //! the rects are in units, the same at any canvas scale.
+    void getSelectionRects(std::vector<Rect> &rects) const;
 
     void calculateSize(skin::Base *skin, Dim dim) override;
 
@@ -127,6 +137,8 @@ private:
     void bind(size_t line, const String &text, size_t wrapCells);
     void setCurrent(bool current);
     void setSelection(size_t begin, size_t end);
+    //! The selection's rect on visual row \p row, if it covers any of it.
+    bool selectionRectOnRow(size_t row, Rect &rect) const;
     //! The editor's font changed (in place): the run is laid out again.
     void fontChanged();
 

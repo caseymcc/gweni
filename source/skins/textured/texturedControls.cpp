@@ -853,18 +853,37 @@ void CodeLine::update(renderer::Base *renderer, controls::Base *baseControl)
     else
         renderer->hidePrimitive(m_primitives[0]);
 
-    const Rect local=line->getSelectionRect();
     const tokyonight::Surface &selection=tokyonight::CodeSelection;
 
-    if(line->visible() && local.w > 0 && local.h > 0)
-    {
-        const Rect &bounds=line->getRenderBounds();
+    m_rects.clear();
+    if(line->visible())
+        line->getSelectionRects(m_rects);
 
-        renderer->drawRoundedRect(m_primitives[1], Rect(bounds.x+local.x, bounds.y+local.y, local.w, local.h),
+    // a slot per rect, two at least: the ones past them given back
+    while(m_primitives.size() > std::max<size_t>(2, 1+m_rects.size()))
+    {
+        renderer->releasePrimitive(m_primitives.back());
+        m_primitives.pop_back();
+    }
+    while(m_primitives.size() < 1+m_rects.size())
+    {
+        size_t id;
+
+        renderer->generatePrimitive(id);
+        m_primitives.push_back(id);
+    }
+
+    const Rect &bounds=line->getRenderBounds();
+
+    for(size_t i=0; i < m_rects.size(); ++i)
+    {
+        const Rect &local=m_rects[i];
+
+        renderer->drawRoundedRect(m_primitives[1+i], Rect(bounds.x+local.x, bounds.y+local.y, local.w, local.h),
             selection.radius, selection.borderWidth, selection.top, selection.bottom, selection.border,
             line->getTextZIndex());
     }
-    else
+    if(m_rects.empty())
         renderer->hidePrimitive(m_primitives[1]);
 }
 
