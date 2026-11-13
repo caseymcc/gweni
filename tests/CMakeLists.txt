@@ -232,11 +232,11 @@ if(TARGET ControlTest AND NOT EMSCRIPTEN)
     # edits, the fields' messages, the segmented buttons' selections, the
     # tree table's expands, collapses and keys, the split and drop-down
     # buttons' menus, the range slider's drags and keys, the
-    # steppers' step changes and the code view's copy button
+    # steppers' step changes, the code view's copy button and a RichText
     foreach(verify_scenario interaction resize scale clip tooltip context-menu stats-overlay
             depth-view zoom-panel node-graph virtual-list-variable code-editor log-view chip-badge
             dialog toast flow switch spinner navigation-rail board field-validation segmented
-            tree-table split-button range-slider stepper code-view)
+            tree-table split-button range-slider stepper code-view rich-text)
         string(REPLACE "-" "_" verify_name "${verify_scenario}")
         set(verify_flags)
         if(verify_scenario STREQUAL "navigation-rail")
@@ -257,7 +257,7 @@ if(TARGET ControlTest AND NOT EMSCRIPTEN)
     # the scenarios that change what is shown at run time, and failed if it
     # wrote a slot, uploaded anything or changed a pixel (--verify-idle): a
     # change the canvas does not report as work would show late in a window
-    foreach(idle_scenario interaction tooltip context-menu depth-view stats-overlay)
+    foreach(idle_scenario interaction tooltip context-menu depth-view stats-overlay rich-text)
         string(REPLACE "-" "_" idle_name "${idle_scenario}")
         add_test(NAME controltest_verify_idle_${idle_name}
             COMMAND $<TARGET_FILE:ControlTest> --headless --scenario ${idle_scenario}
@@ -511,6 +511,15 @@ Erm, and I think it comes down to a choice between "The League Against Salivatin
     gweni_whole_app_test(controltest_node_graph 120
         COMMAND $<TARGET_FILE:ControlTest> --headless --scenario node-graph --require-one-pass
             --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/node_graph@VARIANT@
+        WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
+
+    # RichTextDemo's paragraphs: a span's new text and a new width write that
+    # paragraph's slots alone and lay out only it and its ancestors, a link's
+    # hover its pieces alone with the Finger cursor, a click tells the demo its
+    # url, and a drag, a double-click and Ctrl+A copy what they select
+    gweni_whole_app_test(controltest_rich_text 60
+        COMMAND $<TARGET_FILE:ControlTest> --headless --scenario rich-text --require-one-pass
+            --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/rich_text@VARIANT@
         WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
 
     # PlotHistogramDemo's series: a sample with a new height writes its bar's
