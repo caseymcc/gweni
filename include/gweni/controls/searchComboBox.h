@@ -433,7 +433,11 @@ public:
     //! Filterable, a press on the box (its chevron's column) leaves the
     //! focus where it is: its release focuses the field (onPress).
     bool pressKeepsKeyboardFocus() override { return m_filterable; }
-    //! The field is disabled with the box, and disabling closes the list.
+    //! The field and the chips are disabled with the box, and disabling
+    //! closes the list. A disabled box opens no list and picks nothing (Up,
+    //! Down, Return, Backspace and its rows do nothing), and its field losing
+    //! the focus gives back the value's text rather than taking a free-text
+    //! value.
     void setDisabled(bool disabled) override;
     using ParentClass::setFont;
     //! The field takes the box's font too.
