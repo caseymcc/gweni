@@ -23,8 +23,10 @@
  *  (FrameStats::textRunsCulled) follows the same transitions, its glyph slots'
  *  clip boxes written as without the cull, and a culled run is out of its
  *  font's draw list (textRunInDrawList), so the shader is not left to discard
- *  it. Every culled frame is the one the
- *  cull off draws, pixel for pixel.
+ *  it. A box that cuts through a run on any side, keeping only its ink's
+ *  outermost column or row, leaves it drawn and in the draw list (the run's
+ *  bounds against the box's edge). Every culled frame is the one the cull off
+ *  draws, pixel for pixel.
  *
  *  A ScrollControl of Button rows on a textured-skin canvas: a row scrolled
  *  wholly out of the viewport has its slot and its label's run culled (the run
