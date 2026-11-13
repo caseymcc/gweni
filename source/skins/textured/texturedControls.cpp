@@ -755,8 +755,11 @@ void CodeEditor::update(renderer::Base *renderer, controls::Base *baseControl)
 
     if(editor->getStateChange() != controls::StateChange_Caret)
     {
-        const tokyonight::Surface &surface=editor->isFocussed()?tokyonight::CodeEditorFocus
-            :tokyonight::CodeEditor;
+        // plain (a form field): the text field's look
+        const tokyonight::Surface &surface=editor->isPlain()
+            ?(editor->isDisabled()?tokyonight::TextBoxDisabled
+                :editor->isFocussed()?tokyonight::TextBoxFocus:tokyonight::TextBox)
+            :(editor->isFocussed()?tokyonight::CodeEditorFocus:tokyonight::CodeEditor);
 
         tokyonight::paintSurface(renderer, m_primitives.data(), editor, surface);
     }

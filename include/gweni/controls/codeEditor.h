@@ -227,6 +227,20 @@ private:
 //! line's cells (O(1)) until the list has measured it, so a new width costs
 //! the lines on screen at once and the idle re-measure the rest.
 //!
+//! setAutoHeight(minLines, maxLines) makes the editor as tall as its content:
+//! its preferred height is its visual rows (its lines, unwrapped) clamped to
+//! [minLines, maxLines], times the line height, plus its padding, counted in
+//! the Y measuring at its final width; it scrolls only past maxLines, so it
+//! shows no vertical bar until then. A row more or fewer is a new preferred
+//! height of the editor's, which its parent lays out in the same pass. The
+//! count stops past maxLines: a layout of the editor costs the wrap of the
+//! lines up to that many rows, whatever the document's length.
+//!
+//! setPlain(true) is the form-field preset, a textarea: wrapped, no gutter
+//! and no current-line background, the theme's text-field look (the TextBox
+//! surfaces), and Tab moving the focus (setTabInsertsSpaces(false)). It is
+//! still monospace: every column is a cell of the mono face.
+//!
 //! setLineNumbers(true) adds a gutter left of the viewport: one number
 //! Label per pooled row, bound with the rows (the numbers of the lines on
 //! screen alone), right-aligned in a column as wide as the line count's
@@ -364,6 +378,24 @@ public:
     int getGutterWidth() const { return m_gutterWidth; }
     //! The gutter's number Labels, pooled with the rows, in pool order.
     const std::vector<internal::CodeLineNumber *> &getLineNumberLabels() const { return m_numbers; }
+
+    //! Sizes the editor to its visual rows, at least \p minLines (1 at least)
+    //! and at most \p maxLines of them, scrolling past that; \p maxLines 0
+    //! turns it off (the editor then takes the height it is given).
+    void setAutoHeight(int minLines, int maxLines);
+    bool hasAutoHeight() const { return m_autoMax > 0; }
+    int getAutoHeightMin() const { return m_autoMin; }
+    int getAutoHeightMax() const { return m_autoMax; }
+    //! The visual rows the last Y measuring counted with auto-height on, at
+    //! most getAutoHeightMax()+1 (it stops there); 0 before one.
+    size_t getContentRows() const { return m_contentRows; }
+
+    //! The form-field preset (see the class comment), or back to the code
+    //! look: setPlain(false) gives back the current line, the CodeEditor
+    //! surfaces and Tab's editing, and leaves the wrap and the gutter as they
+    //! are.
+    void setPlain(bool plain);
+    bool isPlain() const { return m_plain; }
 
     //! No caret, no current line and no edits; selection and copying stay.
     void setReadOnly(bool readOnly);
@@ -515,6 +547,13 @@ private:
     void moveRows(int64_t rows, bool extend);
     //! The rows a page moves: the viewport's whole rows, at least one.
     int pageLines() const;
+    //! Whether line \p line draws the current-line look.
+    bool showsCurrentLine(size_t line) const { return !m_readOnly && !m_plain && line == m_caret.line; }
+    //! The visual rows of the document's lines at a row \p width units wide,
+    //! counted until they pass \p limit (so at most limit+1).
+    size_t countRows(int width, size_t limit) const;
+    //! Vertical scrolling on, or off while auto-height shows every row.
+    void setVerticalScrolling(bool scrolls);
 
     //! The lines an edit replaced: their widths counted again and the rows
     //! of the lines it changed bound again.
@@ -574,6 +613,12 @@ private:
     //! height the caret's line was last kept on screen at.
     int m_wrapLineHeight=0;
     int m_wrapViewportHeight=-1;
+
+    int m_autoMin=1;
+    int m_autoMax=0;
+    size_t m_contentRows=0;
+    bool m_verticalScrolls=true;
+    bool m_plain=false;
 
     bool m_lineNumbers=false;
     internal::CodeGutter *m_gutter=nullptr;

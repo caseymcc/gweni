@@ -589,7 +589,7 @@ void CodeEditor::setWrap(bool wrap)
     if(wrap)
     {
         setHorizontalScrollOffset(0);
-        setScroll(false, true);
+        setScroll(false, m_verticalScrolls);
         // variable mode now (its bar shown before the layout decides the
         // viewport), every line estimated again once the layout knows the
         // wrap width
@@ -599,7 +599,7 @@ void CodeEditor::setWrap(bool wrap)
     {
         setItemMeasurer(nullptr);
         setItemEstimator(nullptr);
-        setScroll(true, true);
+        setScroll(true, m_verticalScrolls);
     }
 
     // every row on screen bound again, wrapped or not
@@ -614,6 +614,65 @@ void CodeEditor::setWrap(bool wrap)
         makeCaretColumnVisible();
     }
     caretChanged();
+}
+
+void CodeEditor::setAutoHeight(int minLines, int maxLines)
+{
+    minLines=std::max(1, minLines);
+    maxLines=(maxLines <= 0)?0:std::max(minLines, maxLines);
+
+    if(m_autoMin == minLines && m_autoMax == maxLines)
+        return;
+
+    m_autoMin=minLines;
+    m_autoMax=maxLines;
+    m_contentRows=0;
+    if(maxLines == 0)
+        setVerticalScrolling(true);
+    invalidate();
+}
+
+void CodeEditor::setVerticalScrolling(bool scrolls)
+{
+    if(m_verticalScrolls == scrolls)
+        return;
+
+    m_verticalScrolls=scrolls;
+    setScroll(canScrollHorizontal(), scrolls);
+}
+
+void CodeEditor::setPlain(bool plain)
+{
+    if(m_plain == plain)
+        return;
+
+    m_plain=plain;
+
+    if(plain)
+    {
+        setLineNumbers(false);
+        setWrap(true);
+    }
+    setTabInsertsSpaces(!plain);
+    syncCurrentLine();
+    // the field's look
+    addStateChange(StateChange_Background);
+    redraw();
+}
+
+size_t CodeEditor::countRows(int width, size_t limit) const
+{
+    const size_t lines=m_document.lineCount();
+
+    if(!m_wrap)
+        return std::min(lines, limit+1);
+
+    const size_t cells=wrapCellsFor(width);
+    size_t rows=0;
+
+    for(size_t line=0; line < lines && rows <= limit; ++line)
+        rows+=text::wrapRowCount(m_document.line(line), cells);
+    return rows;
 }
 
 // Turning the measurer on (again) counts every line at the estimator, its
@@ -689,7 +748,7 @@ void CodeEditor::bindRow(Base *row, size_t line)
         return;
 
     codeLine->bind(line, m_document.line(line), m_wrap?m_wrapCells:0);
-    codeLine->setCurrent(!m_readOnly && line == m_caret.line);
+    codeLine->setCurrent(showsCurrentLine(line));
 
     size_t begin=0;
     size_t end=0;
@@ -928,7 +987,7 @@ void CodeEditor::syncCurrentLine()
         CodeLine *row=gweni_cast<CodeLine>(poolRow(i));
 
         if(row && poolItem(i) != NoItem)
-            row->setCurrent(!m_readOnly && poolItem(i) == m_caret.line);
+            row->setCurrent(showsCurrentLine(poolItem(i)));
     }
 
     for(internal::CodeLineNumber *number : m_numbers)
@@ -966,7 +1025,12 @@ void CodeEditor::makeCaretVisible()
             const int64_t offset=getVerticalScrollOffset();
             const int64_t viewport=getViewportHeight();
 
-            if(top < offset)
+            // a row past the last layout's content (an edit made the content
+            // taller, an auto-height field grown past its rows) by the list,
+            // at the content the next layout gives
+            if(top+lineHeight > offset+viewport && top+lineHeight-viewport > getMaxVerticalScrollOffset())
+                scrollToItem(line);
+            else if(top < offset)
                 setVerticalScrollOffset(static_cast<int>(std::min<int64_t>(top, INT_MAX)));
             else if(top+lineHeight > offset+viewport)
                 setVerticalScrollOffset(static_cast<int>(std::min<int64_t>(top+lineHeight-viewport, INT_MAX)));
@@ -2134,6 +2198,39 @@ void CodeEditor::calculateSize(skin::Base *skin, Dim dim)
     }
 
     ParentClass::calculateSize(skin, dim);
+
+    // Auto-height: the rows at the width the parent gave (final here), with
+    // no vertical bar, which shows only past the most rows; at that width
+    // the rows only grow, so the bar it narrows the rows by changes nothing
+    // of the answer.
+    if(dim == Dim::Y && hasAutoHeight() && m_lineHeight > 0)
+    {
+        PlacementScope placement;
+        const Margin &inset=m_innerPanel->getMargin();
+        const int open=getWidth()-m_padding.left-m_padding.right-inset.left-inset.right;
+        const size_t limit=static_cast<size_t>(m_autoMax);
+
+        m_contentRows=countRows(open, limit);
+
+        const bool scrolls=m_contentRows > limit;
+        const size_t rows=gweni::clamp(m_contentRows, static_cast<size_t>(m_autoMin), limit);
+        int height=static_cast<int>(rows)*m_lineHeight+m_padding.top+m_padding.bottom+inset.top+inset.bottom;
+
+        setVerticalScrolling(scrolls);
+
+        // unwrapped, a line wider than the viewport brings the horizontal bar
+        if(!m_wrap)
+        {
+            const Margin &barMargin=m_horizontalScrollBar->getMargin();
+            const Margin &sideMargin=m_verticalScrollBar->getMargin();
+            const int viewport=open-(scrolls?m_barSize.width+sideMargin.left+sideMargin.right:0);
+
+            if(contentSize().width > viewport)
+                height+=m_barSize.height+barMargin.top+barMargin.bottom;
+        }
+
+        m_preferredSize.height=preferredFromContent(height, Dim::Y);
+    }
 }
 
 Size CodeEditor::contentSize() const
