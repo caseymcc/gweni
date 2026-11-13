@@ -1739,6 +1739,93 @@ two programs and the draws. What follows describes both together:
   merged, 22 runs capped to 16, released top ids, a regrow, a new chunk size, and no
   range list built by a settled frame or one that only recolours a slot;
   `tests/primitiveDrawLoop.cpp` (`gl_only`) that the loop draws what multi-draw draws.
+- **What lies wholly outside its clip box is not drawn** (#570). The clip box is a
+  test in the fragment shaders, not a scissor, so a quad on the framebuffer but
+  outside its box (a row scrolled out of a ScrollControl's viewport that still lies on
+  the window, a Window dragged part out of its parent, an overflowing tab strip) was
+  rasterised in full every frame, settled ones included, the whole shader body run for
+  each of its fragments before the clip test discarded it. `SlotRenderer` now leaves
+  such slots and runs out of the draws, decided when they are written, with nothing
+  done per frame:
+  - **A primitive slot.** Every primitive draw (`drawFilledRect`, `drawRoundedRect`,
+    `drawIcon`, `drawLine`, `drawGrid`, `drawBilinearRect`, `drawCheckerRect`, the
+    image draws) writes its 4 vertexes and its clip box, then calls
+    `cullOutOfRangeQuad` and `cullClippedQuad`: when the bbox of the 4 written corners
+    is wholly outside the box (`x1 <= box.x0 || x0 >= box.x1 || y1 <= box.y0 ||
+    y0 >= box.y1`, the shader's half-open test at pixel centres, so nothing the shader
+    would keep is dropped) or the box is empty, all four corners go to 0,0 with the
+    style kept, as `cullOutOfRangeQuad` does. A line's corners are its quad's, so its
+    caps and anti-aliased rim are in the test, not only the segment. A slot can show
+    when its style is not 0 **and** its quad has area (`quadHasArea`), so a collapsed
+    one leaves its chunk's runs through the same `updateSlotVisibility` the dirty
+    slots already go through; the decision is kept per slot (`m_clipCulledSlots`, set
+    and cleared as the slot is drawn, cleared by its release). A hide sets the style
+    to 0 and a show gives it back with the corners still at 0,0, so a slot shown while
+    culled stays out, and the next draw (a clip box changes only with an ancestor's
+    bounds, and `onBoundsChanged` marks the subtree under it, so the slot is drawn
+    again) decides afresh.
+  - **A text run, whole.** `renderText` takes the bbox of the glyphs it just wrote and
+    the box it writes into their clip slots (`writeTextClipBoxes`), and `cullTextRun`
+    sets `TextRun::culled` by the same rule. A culled run is out of its font's draw
+    list as a hidden one is (`drawnRange` is (0, 0)), so the list is rebuilt only when
+    the flag flips (`markTextDrawList`); its glyph vertexes are not rewritten, so
+    `text_slots_written` is what it was. `verifyTextDrawList` and `GWENI_TEXT_DEBUG`'s
+    drawn / not drawn (`culled=` on its `[mirror]` line) follow the flag. Glyphs of a
+    run that is only partly clipped are all drawn, and a partly clipped quad is drawn
+    whole: clamping one would move its UV, colour and SDF interpolation, which is why
+    `cullOutOfRangeQuad` collapses too.
+  - **Counters.** `FrameStats::primitiveSlotsCulled` (the shown slots culled now,
+    `m_culledSlots`, kept from the dirty slots and by `setIndexChunkSlots()`'s
+    recount; a quad collapsed by `cullOutOfRangeQuad` has no area either but is not
+    counted) and `textRunsCulled` (the shown runs with glyphs culled now). They are
+    **sizes**, not work: `primitive_slots_culled=` and `text_runs_culled=` in
+    `gweni_bench` (in `bench/scaling.cmake`'s `UNCHECKED` and `tools/bench_report.py`'s
+    `SIZE_COUNTERS`), `ControlTest --stats` and `GWENI_UPLOAD_STATS=1`'s line (`..., C
+    culled, T text runs culled`). `backend_counters` compares them: GL and Vulkan
+    cull the same slots.
+  - **The switch.** `SlotRenderer::setClipCulling(bool)` (on by default;
+    `GWENI_CLIP_CULL=0` at construction turns it off; `gweni_bench --clip-cull
+    on|off`) decides each slot and run as it is drawn, so it holds for what is drawn
+    from then on: set it before the first frame for a whole frame either way. Both
+    ways draw the same pixels (`controltest_clip_cull`). `GWENI_CLIP_DEBUG`'s inset is
+    applied in `makeClipBox()`, so the cull follows the inset boxes, and the depth view
+    (`setViewTransform`) draws a culled quad as it drew it before, as nothing: the clip
+    test is in canvas space, before the camera.
+  - **Measured** with `gweni_bench --scene clipped-scroll --n 1000` (six fixed 400x200
+    ScrollControls tiled 3x2 in the middle of the canvas, 1000 30-unit Button rows
+    between them, each scrolled to its middle; settled frames), the same binary off
+    and on. `flush` instructions (`tools/profile.sh ... -- --clip-cull off|on`, the
+    profile tree; llvmpipe rasterises inside it) went from 2994.11 M to 1794.53 M with
+    the primitive cull (-40.1 %) and to 904.57 M with the text cull too (-69.8 %),
+    every other phase unchanged. With the primitive cull alone, in the release tree, 7
+    timed runs a side under `render` and `quiet`: `flush_us` 775.3 +- 12.7 -> 655.9 +-
+    10.7 and `gpu_us` 806.1 +- 9.7 -> 483.6 +- 10.7 (median +- MAD). The scene draws 76
+    primitive slots of 1036 (960 culled), and 960 text runs are culled; Demo at
+    1024x768 culls 96 slots and 101 runs. **`primitive_ranges` grows**, 6 -> 12 there:
+    without the cull each ScrollControl's slots (its background, its rows, its bar)
+    are one run, and the culled rows above and below the shown ones become two gaps
+    in it. They are left open, as a hidden slot's gap of 2 or more is (merging them
+    measured a loss, above); the ranges stay under the cap of 16, and the instruction
+    count above includes them.
+  - **The bench primes its index chunks.** llvmpipe compiles code on the first draw
+    through a chunk's vertex array, so a chunk whose runs were all culled until a
+    measured frame (in `type` at N=10000, a line grown into chunk 4) counted LLVM's
+    allocations in that frame's `allocs_flush` (106), which `bench_scaling` failed on.
+    `primeChunks` (`bench/main.cpp`) draws a scene's first frame with the cull off,
+    every chunk drawn once, then marks the tree changed and draws it again with the
+    cull on, before the warm-up; every scene's other counters are the same with and
+    without it. Not for a scene measured from its first frame (`build`).
+  - **Tests.** `tests/clipCulling.cpp` (GL and Vulkan, `primitiveCulled()` /
+    `textRunCulled()`): a slot in, out and back in its box; hidden while culled, shown
+    while still culled, shown after a draw in a box that covers it; a line whose cap
+    reaches into the box past the segment's end not culled; a settled frame building
+    no ranges; a text run through the same transitions; a Button row scrolled out of a
+    ScrollControl culled and drawn again when scrolled back, the frame the one before;
+    every frame the pixels of the same frame with the cull off.
+    `controltest_clip_cull` (`tests/clipCulling.cmake`, and `_vulkan`) holds every
+    `--shot-all` PNG and the hero to byte identity with the cull on and with
+    `GWENI_CLIP_CULL=0`, and requires Demo's `--stats` to cull slots and runs with it on
+    and none with it off.
 - Each `Vertex` is 16 16-bit fields, 32 bytes:
   `{ style, x, y, z, tx, ty, lx, ly, radius, border, cx, cy, bx, by, dx, dy }`.
   `x, y` are the corner's device-pixel position, **signed** (`int16_t`, read as an
@@ -5269,7 +5356,9 @@ What exists today (the foundation) and what's still aspirational:
   showing or hiding, where the panel resized at the same origin measures its region against
   the new viewport alone and so does not mark its content. An intersection
   with no overlap is an empty rect (never a negative size) and the walk goes on into it:
-  dirty children are drawn again with the empty box, so nothing stale stays on screen.
+  dirty children are drawn again with the empty box, so nothing stale stays on screen
+  (and, drawn wholly outside their box, they are left out of the draws: "What lies
+  wholly outside its clip box is not drawn").
   Clean, fully clipped subtrees are skipped like any clean subtree, not culled, and a
   dirty one is still walked. `ControlTest --scenario clip` (ctest `controltest_clip`)
   checks it on the pixels: content overflowing a ScrollControl and a Window dragged past
@@ -5299,9 +5388,10 @@ What exists today (the foundation) and what's still aspirational:
 
 **Not yet done (the performance goal)**
 - **Clipping leftovers.** A fully clipped subtree with changes in it is still walked and
-  its primitives still written (with an empty box) and drawn (every fragment discarded);
-  nothing culls them on the CPU. Clipping is rectangular only: a rounded parent does not
-  cut its children at its corners.
+  its primitives still written (with an empty box); they are left out of the draws
+  (#570), but a quad or text run only partly outside its box is drawn whole and its
+  outside fragments discarded by the shader. Clipping is rectangular only: a rounded
+  parent does not cut its children at its corners.
 - **Cache-to-texture** (`ICacheToTexture`) and free-slot compaction/defragmentation of
   the primitive buffers are stubbed. Without compaction the mirror and buffers keep
   their peak size, and a hidden or released slot is still drawn where its gap is merged
