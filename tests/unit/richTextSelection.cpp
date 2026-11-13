@@ -20,7 +20,8 @@
  *    its last glyph;
  *  - a press on a link that drags to another byte selects and is no click;
  *  - two paragraphs on one container's SelectionModel each draw and copy
- *    their block's part of it;
+ *    their block's part of it, and clearing it from one leaves the caret at
+ *    the focus in the other's block;
  *  - new spans clear the paragraph's own selection.
  */
 #include "richTextFixture.h"
@@ -355,6 +356,15 @@ TEST_CASE("RichText selection: paragraphs on a container's model draw and copy t
     CHECK(second->getSelectedText() == "Another");
     CHECK(scene.selectionDraws().size() == 2);
     CHECK(&first->selectionModel() == &model);
+
+    // cleared from the first, the caret is the focus, in the second's block
+    first->clearSelection();
+    CHECK(model.empty());
+    CHECK((model.focus() == text::SelectionPosition({ 1 }, 7)));
+    model.select(text::SelectionPosition({ 0 }, 5), text::SelectionPosition({ 1 }, 7));
+    first->selectionChanged();
+    second->selectionChanged();
+    scene.frame();
 
     // its own model back: nothing selected there
     first->setSelectionModel(nullptr);

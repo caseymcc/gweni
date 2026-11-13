@@ -12,7 +12,8 @@
  *  - a url span also breaks after '/', '-', '?', '&' and '=', the same text
  *    in a plain span not;
  *  - a word wider than the line breaks at any codepoint, filling what is left
- *    of its line first, and a line holds a codepoint at least;
+ *    of its line first, and a line holds a codepoint at least, a combining
+ *    mark staying with its base;
  *  - a line's baseline is its pieces' largest ascender, each piece's box top
  *    at baseline - its ascender, the line as high as that plus the largest
  *    descender, the next line below it;
@@ -158,6 +159,12 @@ TEST_CASE("RichLayout: a word wider than the line breaks at any codepoint, filli
     // across a span edge, and a multi-byte codepoint never split
     layout.layout({ span("xx"), span("y\xC3\xA9y") }, 12, RichMeasure::of(renderer));
     CHECK(lineTexts(layout) == Lines{ "xx|y", "\xC3\xA9y" });
+
+    // a combining mark (U+0301) stays with its base: the break is at caret stops
+    const std::string e="e\xCC\x81";
+
+    layout.layout({ span(e+e+e) }, 2, RichMeasure::of(renderer));
+    CHECK(lineTexts(layout) == Lines{ e, e, e });
 }
 
 TEST_CASE("RichLayout: a line's baseline is its largest ascender, each piece on it")

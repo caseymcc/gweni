@@ -6,8 +6,8 @@
  *  Font families (IResourceLoader::setFontFamily, resources/DefaultSkin.json's
  *  "fonts"): a Font whose facename is a family's draws its bold, italic and
  *  bold italic text from the family's own faces, never an emboldened or
- *  slanted regular one. These cases pin, at a coverage size and an SDF size, at
- *  scales 1 and 2:
+ *  slanted regular one. These cases pin, at coverage sizes and an SDF size (the
+ *  first case at scales 1 and 2 with a size that is coverage at both):
  *  - after TexturedSkin::init, OpenSans bold, italic and bold italic are drawn
  *    from OpenSans-Bold, -Italic and -BoldItalic.ttf, byte for byte what those
  *    files draw named as faces of their own, and unlike each other;
@@ -196,7 +196,9 @@ TEST_CASE("Font faces: the skin's OpenSans family draws bold, italic and bold it
 
     LogCapture log;
 
-    for(float size:{ 13.0f, 26.0f })
+    // 8 is drawn as coverage at both scales (16 px at 2), 13 as coverage at 1
+    // and SDF at 2, 26 as SDF at both
+    for(float size:{ 8.0f, 13.0f, 26.0f })
     for(float scale:{ 1.0f, 2.0f })
     {
         CAPTURE(size);

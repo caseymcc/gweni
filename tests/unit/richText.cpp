@@ -13,6 +13,8 @@
  *    own, the skin's Label.Default, a link's RichText.Link), at the piece's
  *    place and getZIndex()+1, and the control is as wide as its text on one
  *    line and as high as its lines at the width it is given;
+ *  - a bold or italic font given to setFont draws every span bold or italic,
+ *    each span's own style added to it;
  *  - a code piece's background (RichTextCode over its box) at getZIndex(), and
  *    a link's underline and a struck piece's line as rules (icon kind 6) in
  *    its colour at getZIndex()+2, and the next control numbered past those;
@@ -244,6 +246,39 @@ TEST_CASE("RichText: each piece a run in its span's font and colour, the control
         CHECK(draw->text == piece.text);
         CHECK(draw->pos.x == rich->getRenderBounds().x+piece.pos.x);
         CHECK(draw->pos.y == rich->getRenderBounds().y+piece.pos.y);
+    }
+}
+
+TEST_CASE("RichText: a bold or italic font given to setFont is every span's, a span's style added to it")
+{
+    Scene scene;
+    RichText *rich=scene.rich;
+    Font font=scene.skin.getDefaultFont();
+
+    font.bold=true;
+    rich->setFont(font);
+    for(size_t i=0; i < rich->getSpanCount(); ++i)
+    {
+        CAPTURE(i);
+
+        const gweni::Font drawn=rich->spanFont(i);
+        const int style=rich->getSpans()[i].style;
+
+        CHECK(drawn.bold);
+        CHECK(drawn.italic == ((style&RichSpan::Italic) != 0));
+    }
+
+    font.bold=false;
+    font.italic=true;
+    rich->setFont(font);
+    for(size_t i=0; i < rich->getSpanCount(); ++i)
+    {
+        CAPTURE(i);
+
+        const gweni::Font drawn=rich->spanFont(i);
+
+        CHECK(drawn.italic);
+        CHECK(drawn.bold == ((rich->getSpans()[i].style&RichSpan::Bold) != 0));
     }
 }
 

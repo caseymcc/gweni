@@ -6,6 +6,7 @@
 
 
 #include <gweni/text/richLayout.h>
+#include <gweni/text/cells.h>
 #include <gweni/utility.h>
 
 #include <algorithm>
@@ -352,7 +353,8 @@ void RichLayout::breakLines(int width, const RichMeasure &measure)
 
         if(!fits && (extent(begin, end, true) > width))
         {
-            // wider than a line: broken at any codepoint, from where the line is
+            // wider than a line: broken at any caret stop (a combining mark kept
+            // with its base), from where the line is
             for(const Atom *atom=begin; atom != end; ++atom)
             {
                 const gweni::String &text=spans[atom->span].text;
@@ -361,7 +363,7 @@ void RichLayout::breakLines(int width, const RichMeasure &measure)
                 do
                 {
                     Atom piece=*atom;
-                    const size_t next=(pos < atom->visibleEnd)?utf8Next(text, pos):atom->end;
+                    const size_t next=(pos < atom->visibleEnd)?nextCaretStop(text, pos):atom->end;
 
                     piece.start=pos;
                     piece.visibleEnd=std::min(next, atom->visibleEnd);
