@@ -446,40 +446,7 @@ void sleep(unsigned int ms)
     std::this_thread::sleep_for(std::chrono::milliseconds(ms));
 }
 
-#ifdef WIN32
-
-static double GetPerformanceFrequency()
-{
-    static double Frequency=0.0f;
-
-    if(Frequency == 0.0f)
-    {
-        __int64 perfFreq;
-        QueryPerformanceFrequency((LARGE_INTEGER *)&perfFreq);
-        Frequency=1.0 / perfFreq;
-    }
-
-    return Frequency;
-}
-
-double platformTimeInSeconds()
-{
-    static double currentTime=0.0;
-    static __int64 iLastTime=0;
-    __int64 thistime;
-
-    QueryPerformanceCounter((LARGE_INTEGER *)&thistime);
-    double fSecondsDifference=(thistime - iLastTime)*GetPerformanceFrequency();
-
-    if(fSecondsDifference > 0.1)
-        fSecondsDifference=0.1;
-
-    currentTime+=fSecondsDifference;
-    iLastTime=thistime;
-    return currentTime;
-}
-
-#elif defined(__EMSCRIPTEN__)
+#if defined(__EMSCRIPTEN__)
 
 // Wall time since the page (or node) started, from performance.now().
 double platformTimeInSeconds()
@@ -489,11 +456,14 @@ double platformTimeInSeconds()
 
 #else
 
-// Wall time since the first call, from steady_clock. Not clock(), which is the
-// process's CPU time over all its threads: with a rasteriser on several threads
-// it ran many times faster than wall time (and slower with an idle GPU driver),
-// so a window's caret blink, tooltip delay, animations and the stats overlay's
-// fps and refresh ran on it.
+// Wall time since the first call, from steady_clock, on Windows too (where it is
+// QueryPerformanceCounter). Not clock(), which is the process's CPU time over all
+// its threads: with a rasteriser on several threads it ran many times faster than
+// wall time (and slower with an idle GPU driver), so a window's caret blink,
+// tooltip delay, animations and the stats overlay's fps and refresh ran on it.
+// Nor GWEN's Windows clock, which let each read advance at most 0.1 s: an idle
+// loop that sleeps until a deadline would wake to a clock short of it, so a 0.5 s
+// caret edge took 1.5 s and a 5 s timer about two minutes.
 double platformTimeInSeconds()
 {
     using Clock=std::chrono::steady_clock;

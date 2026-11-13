@@ -11,8 +11,11 @@
  *  animations and the stats overlay's fps and 250 ms refresh ran on it (a
  *  window drawing 130 frames a second showed fps 6). Each case compares the
  *  clock's advance with steady_clock's over the same span, with bounds wide
- *  enough for a loaded host. The web build has no threads (and its clock is
- *  performance.now()), so it runs the sleep case alone.
+ *  enough for a loaded host. One read after a long sleep has the whole of it:
+ *  GWEN's Windows clock let a read advance at most 0.1 s, so an idle loop
+ *  waking at a deadline read a clock short of it (a 5 s timer took about two
+ *  minutes). The web build has no threads (and its clock is performance.now()),
+ *  so it runs the sleep cases alone.
  */
 #include <gweni/platforms/platform.h>
 
@@ -50,6 +53,22 @@ TEST_CASE("platform clock: advances while the process sleeps")
     INFO("the clock advanced ", advance, " ms over ", wall, " ms of wall time");
     // CPU time stands still here
     CHECK(advance >= 40.0);
+    CHECK(advance <= wall+5.0);
+}
+
+TEST_CASE("platform clock: one read after a long sleep has the whole of it")
+{
+    platform::setTimeSource(nullptr);
+
+    const Clock::time_point wallStart=Clock::now();
+    const double start=platform::getTimeInSeconds();
+    // longer than any per-read cap a clock could have and a frame many times over
+    std::this_thread::sleep_for(std::chrono::milliseconds(400));
+    const double advance=(platform::getTimeInSeconds()-start)*1000.0;
+    const double wall=millisSince(wallStart);
+
+    INFO("one read advanced ", advance, " ms over ", wall, " ms of wall time");
+    CHECK(advance >= 390.0);
     CHECK(advance <= wall+5.0);
 }
 

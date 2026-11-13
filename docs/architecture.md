@@ -3727,7 +3727,9 @@ Inspector through `include/gweni/tools/toolSupport.h`) runs at the start of ever
 phase and gathers the frame before (`Canvas::previousFrameStats()`, whose `times` are
 that frame's, and the renderer's `frameStats()`) into the current window. Every
 `RefreshSeconds` (250 ms) of the canvas's clock (`platform::getTimeInSeconds()`, wall
-time in a window: `steady_clock` from the first read on Linux, where it used to be
+time in a window: `steady_clock` from the first read on Linux and Windows (where GWEN's
+clock let each read advance at most 0.1 s, so a loop that slept to a deadline woke short
+of it), and on Linux it used to be
 `clock()`, the process's CPU time over all its threads, and a window rasterising on
 llvmpipe's threads read fps 6 at 130 frames a second; `tests/unit/platformClock.cpp`) it
 shows that window and starts the next: the time table and the "most in one frame" rows
