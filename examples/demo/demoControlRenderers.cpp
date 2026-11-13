@@ -88,6 +88,7 @@ GWENI_DEMO_TRANSPARENT(FieldValidationDemo)
 GWENI_DEMO_TRANSPARENT(SegmentedButtonsDemo)
 GWENI_DEMO_TRANSPARENT(SplitButtonDemo)
 GWENI_DEMO_TRANSPARENT(StepperDemo)
+GWENI_DEMO_TRANSPARENT(SearchComboDemo)
 GWENI_DEMO_TRANSPARENT(ZoomPanelDemo)
 GWENI_DEMO_TRANSPARENT(FlowDemo)
 GWENI_DEMO_TRANSPARENT(ImageGridDemo)
@@ -248,6 +249,7 @@ template class ControlRegister<FieldValidationDemo>;
 template class ControlRegister<SegmentedButtonsDemo>;
 template class ControlRegister<SplitButtonDemo>;
 template class ControlRegister<StepperDemo>;
+template class ControlRegister<SearchComboDemo>;
 template class ControlRegister<ZoomPanelDemo>;
 template class ControlRegister<FlowDemo>;
 template class ControlRegister<ImageGridDemo>;

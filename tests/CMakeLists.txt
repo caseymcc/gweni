@@ -232,12 +232,12 @@ if(TARGET ControlTest AND NOT EMSCRIPTEN)
     # edits, the fields' messages, the segmented buttons' selections, the
     # tree table's expands, collapses and keys, the split and drop-down
     # buttons' menus, the range slider's drags and keys, the
-    # steppers' step changes, the code view's copy button, a RichText and
-    # the reorder drags' looks and drops
+    # steppers' step changes, the code view's copy button, a RichText, the
+    # SearchComboBox's keystrokes, picks and chip wrap, and the reorder drags
     foreach(verify_scenario interaction resize scale clip tooltip context-menu stats-overlay
             depth-view zoom-panel node-graph virtual-list-variable code-editor log-view chip-badge
             dialog toast flow switch spinner navigation-rail board field-validation segmented
-            tree-table split-button range-slider stepper code-view rich-text reorder)
+            tree-table split-button range-slider stepper code-view rich-text search-combo reorder)
         string(REPLACE "-" "_" verify_name "${verify_scenario}")
         set(verify_flags)
         if(verify_scenario STREQUAL "navigation-rail")
@@ -713,6 +713,16 @@ Erm, and I think it comes down to a choice between "The League Against Salivatin
     gweni_whole_app_test(controltest_code_view 60
         COMMAND $<TARGET_FILE:ControlTest> --headless --scenario code-view --require-one-pass
             --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/code_view@VARIANT@
+        WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
+
+    # SearchComboDemo: a keystroke in the searchable box costs the same at 30
+    # and 3 000 options and stays in the box and its list, the highlight's
+    # move writes its two rows, a pick gives the frame before opening back but
+    # the box, and a chip that wraps grows the box with the open list at its
+    # new bottom in that frame
+    gweni_whole_app_test(controltest_search_combo 60
+        COMMAND $<TARGET_FILE:ControlTest> --headless --scenario search-combo --require-one-pass
+            --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/search_combo@VARIANT@
         WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
 
     # gweni::tools::Inspector over the settled Demo, opened and closed by F12:
