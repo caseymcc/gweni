@@ -1819,7 +1819,7 @@ void SlotRenderer::setVertex(Vertex &vertex, uint8_t type, int x, int y, int z, 
         vertex.ty=v;
     }
 
-    // SDF fields are only used by styles 3-8 (drawLine, writeRoundedQuad, drawIcon, drawGrid); keep them 0 otherwise.
+    // SDF fields are only used by styles 3-9 (drawLine, writeRoundedQuad, drawIcon, drawGrid, drawTrapezoid); keep them 0 otherwise.
     vertex.lx=0;
     vertex.ly=0;
     vertex.radius=0;

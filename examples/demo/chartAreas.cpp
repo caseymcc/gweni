@@ -1,3 +1,9 @@
+/*
+  * Gweni
+  * Copyright (c) 2010 Facepunch Studios
+  * See license in gweni.h
+ */
+
 #include "demo/chartAreas.h"
 #include "gweni/controls/chart.h"
 #include "gweni/controls/label.h"
