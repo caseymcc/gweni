@@ -515,6 +515,9 @@ std::unordered_map<std::string, gweni::Color*> TexturedSkin::textColorRegistry()
         {"TimelineAxisText",&Colors.Timeline.AxisText},{"TimelineCaptionText",&Colors.Timeline.CaptionText},
         {"SelectableNormal",&Colors.Selectable.Normal},{"SelectableHover",&Colors.Selectable.Hover},
         {"SelectableSelected",&Colors.Selectable.Selected},{"SelectableDisabled",&Colors.Selectable.Disabled},
+        {"ToastText",&Colors.Toast.Text},{"ToastInfo",&Colors.Toast.Info},
+        {"ToastPositive",&Colors.Toast.Positive},{"ToastWarning",&Colors.Toast.Warning},
+        {"ToastNegative",&Colors.Toast.Negative},
     };
 }
 
@@ -1352,6 +1355,11 @@ void TexturedSkin::setThemeColors()
     Colors.Chip.Palette[5]=tokyonight::Red;
     Colors.Chip.Palette[6]=tokyonight::Magenta;
     Colors.Chip.Palette[7]=gweni::Color(0x73, 0xda, 0xca);
+    Colors.Toast.Text=Fg;
+    Colors.Toast.Info=Blue;
+    Colors.Toast.Positive=Green;
+    Colors.Toast.Warning=Yellow;
+    Colors.Toast.Negative=Red;
     // a CodeEditor's line numbers, the caret's line's lifted
     Colors.CodeEditor.LineNumber=gweni::Color(0x3b, 0x42, 0x61);
     Colors.CodeEditor.LineNumberCurrent=gweni::Color(0x73, 0x7a, 0xa2);

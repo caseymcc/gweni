@@ -12,6 +12,7 @@
 #include <gweni/controls/popup.h>
 #include <gweni/dragAndDrop.h>
 #include <gweni/controls/toolTip.h>
+#include <gweni/controls/toast.h>
 #include <gweni/platforms/platform.h>
 #include <gweni/primitiveIds.h>
 
@@ -233,7 +234,7 @@ double Canvas::nextWorkTime()
     const bool hoverToTake=m_hoverStale && !hidden() && !m_inputCapture;
 
     if(m_needsRedraw || m_zOrderDirty || hoverToTake || !m_deleteSet.empty()
-        || m_modalFocusPending
+        || m_modalFocusPending || m_toastDeadlineDirty
         || m_postQueue->pending()
         || (!hidden() && layoutDirty())
         || (render && (render->textLayoutSerial() != m_textLayoutSerial))
@@ -272,6 +273,17 @@ double Canvas::nextWorkTime()
     }
     else if(owner && m_toolTipDirty)
         return WorkNow;
+
+    // a toast due: the update compares the toast clock with its deadline, so
+    // the wake is the first time at which that holds
+    if(m_toastHost && !m_toastPaused && (m_toastDeadline != NoWork))
+    {
+        double due=m_toastDeadline+m_toastPausedTotal;
+
+        while(due-m_toastPausedTotal < m_toastDeadline)
+            due=std::nextafter(due, NoWork);
+        next=std::min(next, due);
+    }
 
     return std::min(next, input::nextKeyRepeatTime(this));
 }
@@ -495,6 +507,7 @@ void Canvas::doThink()
     updatePopup();
     updateAnchoredMenus();
     updateToolTip();
+    updateToasts();
     // A focus hidden or turned off before the frame is dropped before its
     // layout, so what its onLostKeyboardFocus() changes (a DragNumber ending
     // its edit) is laid out in this pass; one the layout hid is dropped after
@@ -1943,6 +1956,164 @@ Base *Canvas::getControlAt(int x, int y, bool bOnlyIfMouseEnabled)
         return nullptr;
 
     return this;
+}
+
+//------------------------------------------------------------------------------
+// Toasts
+//------------------------------------------------------------------------------
+
+namespace
+{
+int toastKindIndex(ToastKind kind)
+{
+    return std::max(0, std::min(3, static_cast<int>(kind)));
+}
+}
+
+Toast *Canvas::notify(ToastKind kind, const String &text)
+{
+    return notify(kind, text, ToastOptions());
+}
+
+Toast *Canvas::notify(ToastKind kind, const String &text, const ToastOptions &options)
+{
+    if(!m_toastHost)
+    {
+        m_toastHost=newChild<internal::ToastHost>();
+        // with the overlays: above the modals, popups and menus, below the
+        // ToolTip box
+        addOverlay(m_toastHost);
+    }
+
+    // the oldest goes first, hovered or not
+    std::vector<Toast *> shown=toasts();
+
+    for(size_t i=0; (i < shown.size()) && (shown.size()-i >= m_toastLimit); ++i)
+        shown[i]->dismiss();
+
+    const double timeout=(options.timeout < 0.0) ? m_toastTimeouts[toastKindIndex(kind)] : options.timeout;
+    const double deadline=(timeout > 0.0) ? toastClock()+timeout : NoWork;
+
+    Toast *toast=m_toastHost->newChild<Toast>();
+
+    toast->setup(kind, text, options.title, timeout, deadline);
+    if(deadline < m_toastDeadline)
+        m_toastDeadline=deadline;
+    return toast;
+}
+
+void Canvas::setToastTimeout(ToastKind kind, double seconds)
+{
+    m_toastTimeouts[toastKindIndex(kind)]=std::max(0.0, seconds);
+}
+
+double Canvas::getToastTimeout(ToastKind kind) const
+{
+    return m_toastTimeouts[toastKindIndex(kind)];
+}
+
+void Canvas::setToastLimit(size_t limit)
+{
+    m_toastLimit=std::max<size_t>(1, limit);
+}
+
+std::vector<Toast *> Canvas::toasts() const
+{
+    std::vector<Toast *> shown;
+
+    if(!m_toastHost)
+        return shown;
+
+    for(Base *child : m_toastHost->getChildren())
+    {
+        Toast *toast=gweni_cast<Toast>(child);
+
+        if(toast && !toast->isDismissed())
+            shown.push_back(toast);
+    }
+    return shown;
+}
+
+double Canvas::toastClock() const
+{
+    const double now=platform::getTimeInSeconds();
+    const double paused=m_toastPausedTotal+(m_toastPaused ? now-m_toastPausedSince : 0.0);
+
+    return now-paused;
+}
+
+bool Canvas::inToastHost(Base *control) const
+{
+    return m_toastHost && control && within(control, m_toastHost);
+}
+
+void Canvas::toastRemoved(Toast *toast)
+{
+    m_toastDeadlineDirty=true;
+    // what was under the mouse may be another control now (the next toast,
+    // or the app between them)
+    hoverMayHaveMoved();
+    redraw();
+}
+
+void Canvas::findToastDeadline()
+{
+    m_toastDeadline=NoWork;
+    m_toastDeadlineDirty=false;
+
+    for(Toast *toast : toasts())
+        m_toastDeadline=std::min(m_toastDeadline, toast->getDeadline());
+}
+
+void Canvas::toastControlDeleted(Base *control)
+{
+    if(control == m_toastHost)
+    {
+        m_toastHost=nullptr;
+        m_toastDeadline=NoWork;
+        m_toastDeadlineDirty=false;
+        m_toastPaused=false;
+        return;
+    }
+
+    if(m_toastHost && (control->getParent() == m_toastHost))
+        m_toastDeadlineDirty=true;
+}
+
+void Canvas::updateToasts()
+{
+    if(!m_toastHost)
+        return;
+
+    if(m_toastDeadlineDirty)
+        findToastDeadline();
+
+    // The pause: while the hover is in the host, the toast clock stands
+    // still; leaving adds the time it stood to the paused total.
+    const bool hovered=inToastHost(HoveredControl) && (m_toastDeadline != NoWork);
+    const double now=platform::getTimeInSeconds();
+
+    if(hovered != m_toastPaused)
+    {
+        if(hovered)
+            m_toastPausedSince=now;
+        else
+            m_toastPausedTotal+=now-m_toastPausedSince;
+        m_toastPaused=hovered;
+    }
+
+    // one comparison a frame while nothing is due
+    if(m_toastPaused || (toastClock() < m_toastDeadline))
+        return;
+
+    const double clock=toastClock();
+
+    for(Toast *toast : toasts())
+    {
+        if(toast->getDeadline() <= clock)
+            toast->dismiss();
+    }
+    findToastDeadline();
 }
 
 bool Canvas::inputModifierKey(int key, bool down)

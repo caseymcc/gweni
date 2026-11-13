@@ -30,6 +30,10 @@ class ToolTip;
 class Menu;
 class Popup;
 enum class PopupPlacement;
+class Toast;
+enum class ToastKind: int;
+struct ToastOptions;
+namespace internal { class ToastHost; }
 
 /// What takes every input event a Canvas gets while it is the canvas's input
 /// capture (Canvas::setInputCapture): tools::DepthView's camera. The events
@@ -549,6 +553,46 @@ public:
     controls::Base *getControlAt(int x, int y, bool bOnlyIfMouseEnabled=true) override;
     /// \}
 
+    /// \sect{Toasts}
+    /// notify() shows a toast (controls::Toast, toast.h) in the canvas's one
+    /// toast host, made the first time: a stack in the top-right corner, newest
+    /// at the top, kept with the overlays, so above every modal, popup and
+    /// menu and below the ToolTip box. A toast goes when its time is up, on its
+    /// close button and on Toast::dismiss(); the others close the gap. More
+    /// than getToastLimit() (5) shown drops the oldest, hovered or not.
+    ///
+    /// Its time is the toast clock (toastClock()): platform::getTimeInSeconds()
+    /// less the time the stack was paused. While the hovered control is in the
+    /// host (a toast, its text, its close button) every toast's timer stands
+    /// still: the update phase records when the pause began, and when the
+    /// hover leaves the clock is that much behind, so each toast resumes with
+    /// the time it had left. The update phase compares the clock with the
+    /// earliest deadline, once a frame, before layout: expiry is no animation
+    /// (UpdateStats::animsRun counts none), and nextWorkTime() wakes for it.
+    Toast *notify(ToastKind kind, const String &text);
+    Toast *notify(ToastKind kind, const String &text, const ToastOptions &options);
+    /// The seconds a toast of \p kind shows when notify() is given none: 4
+    /// for Info and Positive, 6 for Warning, 8 for Negative.
+    void setToastTimeout(ToastKind kind, double seconds);
+    double getToastTimeout(ToastKind kind) const;
+    /// The most toasts shown at once (5), at least 1.
+    void setToastLimit(size_t limit);
+    size_t getToastLimit() const { return m_toastLimit; }
+    /// The toasts shown (not dismissed), oldest first.
+    std::vector<Toast *> toasts() const;
+    internal::ToastHost *toastHost() const { return m_toastHost; }
+    /// The toast clock: the canvas clock less the time the stack was paused.
+    double toastClock() const;
+    /// The stack is paused under the mouse.
+    bool toastsPaused() const { return m_toastPaused; }
+    /// Whether \p control is in the toast host: a press on it moves no
+    /// keyboard focus (input::onMouseClicked).
+    bool inToastHost(Base *control) const;
+    /// Toast: a toast was dismissed or deleted; the earliest deadline is
+    /// worked out again.
+    void toastRemoved(Toast *toast);
+    /// \}
+
     /// \sect{Tooltip}
     /// The canvas shows the tooltip of the control the mouse rests on (or of
     /// that control's parent, when it has none of its own) in one ToolTip box
@@ -813,6 +857,14 @@ protected:
     /// drawn at its z in the same frame.
     void renumberZOrder();
 
+    /// The update phase's toast step (see notify()): the hover pause, then the
+    /// expiry, before layout.
+    void updateToasts();
+    /// The earliest deadline of the toasts shown, NoWork for none.
+    void findToastDeadline();
+    /// Base: \p control is being deleted (the host forgets itself).
+    void toastControlDeleted(Base *control);
+
     /// The update phase's tooltip step (see setToolTipDelay()), run by
     /// doThink() before layout so a box it shows or moves is laid out in the
     /// same pass.
@@ -942,6 +994,17 @@ protected:
     /// m_modalFocusRestore's control.
     bool m_modalFocusPending=false;
     size_t m_modalFocusRestore=0;
+    /// See notify(): the host, the defaults, the earliest deadline (on the
+    /// toast clock, NoWork for none, worked out again when m_toastDeadlineDirty),
+    /// and the pause: when it began and the paused time before it.
+    internal::ToastHost *m_toastHost=nullptr;
+    double m_toastTimeouts[4]={4.0, 4.0, 6.0, 8.0};
+    size_t m_toastLimit=5;
+    double m_toastDeadline=std::numeric_limits<double>::infinity();
+    bool m_toastDeadlineDirty=false;
+    bool m_toastPaused=false;
+    double m_toastPausedSince=0.0;
+    double m_toastPausedTotal=0.0;
     /// The menus open next to an anchor (anchoredMenus()).
     std::vector<Menu *> m_anchoredMenus;
     /// releaseChildren() is deleting the tree.

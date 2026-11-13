@@ -317,6 +317,7 @@ Base::~Base()
             canvas->menuAnchorDeleted(this);
             canvas->overlayDeleted(this);
             canvas->modalDeleted(this);
+            canvas->toastControlDeleted(this);
         }
 
         // after the canvas has closed it: a menu this control owns goes too

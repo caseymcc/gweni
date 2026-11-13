@@ -34,6 +34,7 @@
 #include "gweni/controls/bullet.h"
 #include "gweni/controls/windowButtons.h"
 #include "gweni/controls/dialogs/dialog.h"
+#include "gweni/controls/toast.h"
 #include "gweni/controls/properties.h"
 #include "gweni/controls/dataTable.h"
 #include "gweni/controls/treeNode.h"
@@ -4363,6 +4364,59 @@ void DialogFooter::remove(renderer::Base *renderer, controls::Base *baseControl)
 }
 
 ///////////////////////////////////////////////////////////////////////////
+//Toast
+void Toast::generate(renderer::Base *renderer, controls::Base *baseControl)
+{
+    generatePrimitives(renderer, requiredPrimitives());
+}
+
+void Toast::update(renderer::Base *renderer, controls::Base *baseControl)
+{
+    if(m_primitives.size() < 2)
+        return;
+
+    controls::Toast *toast=static_cast<controls::Toast *>(baseControl);
+    const gweni::Rect bounds=baseControl->getRenderBounds();
+    const int zIndex=baseControl->getZIndex();
+    const bool visible=baseControl->visible();
+
+    if(visible)
+    {
+        const tokyonight::Surface &panel=tokyonight::Toast;
+        renderer->drawRoundedRect(m_primitives[0], bounds, panel.radius, panel.borderWidth, panel.top,
+            panel.bottom, panel.border, zIndex);
+
+        const tokyonight::Surface *accent=&tokyonight::ToastInfo;
+        switch(toast->getKind())
+        {
+        case controls::ToastKind::Info: accent=&tokyonight::ToastInfo; break;
+        case controls::ToastKind::Positive: accent=&tokyonight::ToastPositive; break;
+        case controls::ToastKind::Warning: accent=&tokyonight::ToastWarning; break;
+        case controls::ToastKind::Negative: accent=&tokyonight::ToastNegative; break;
+        }
+
+        // inside the panel's border, its corners on the panel's side square
+        const int inset=std::max(1, static_cast<int>(panel.borderWidth));
+        const gweni::Rect strip(bounds.x+inset+1, bounds.y+inset+2, controls::Toast::AccentWidth,
+            std::max(0, bounds.h-2*inset-4));
+        renderer->drawRoundedRect(m_primitives[1], strip, accent->radius, accent->borderWidth, accent->top,
+            accent->bottom, accent->border, zIndex+1);
+    }
+
+    const unsigned int changes=baseControl->getStateChange();
+    if((changes&controls::StateChange_Visibility) || (changes&controls::StateChange_Created))
+    {
+        renderer->showPrimitive(visible?4:0, m_primitives[0]);
+        renderer->showPrimitive(visible?4:0, m_primitives[1]);
+    }
+}
+
+void Toast::remove(renderer::Base *renderer, controls::Base *baseControl)
+{
+    releasePrimitives(renderer);
+}
+
+///////////////////////////////////////////////////////////////////////////
 //WindowCloseButton, WindowMaximizeButton, WindowMinimizeButton
 void WindowButtonPainter::paint(renderer::Base *renderer, const std::vector<size_t> &primitives,
     controls::Base *baseControl, const tokyonight::Surface &hover,
@@ -4533,6 +4587,7 @@ template class ControlRegister<StatsOverlay>;
 template class ControlRegister<Dialog>;
 template class ControlRegister<DialogTitleBar>;
 template class ControlRegister<DialogFooter>;
+template class ControlRegister<Toast>;
 template class ControlRegister<RadioButton>;
 template class ControlRegister<ScrollBarButton>;
 template class ControlRegister<BaseScrollBar>;

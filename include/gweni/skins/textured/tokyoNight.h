@@ -355,6 +355,15 @@ inline Surface DialogTitle    { BgStorm,               Color(0x20,0x24,0x37), Bg
 inline Surface DialogFooter   { Color(0x1a,0x1b,0x27), Color(0x18,0x19,0x24), Color(0x1a,0x1b,0x27), RadiusLg-1.0f, 0.0f };
 inline Surface DialogShadow   { Color(0x0b,0x0c,0x12), Color(0x0b,0x0c,0x12), Color(0x0b,0x0c,0x12), RadiusLg, 0.0f };
 
+// A toast (controls::Toast): its panel, opaque as a dialog's (a translucent one
+// would hide the app's text under it), and the accent strip down its left edge
+// in its kind's colour.
+inline Surface Toast          { BgStorm,               Color(0x1f,0x22,0x33), Line,  Radius, BorderW };
+inline Surface ToastInfo      { Blue,                  Blue,                  Blue,  2.0f, 0.0f };
+inline Surface ToastPositive  { Green,                 Green,                 Green, 2.0f, 0.0f };
+inline Surface ToastWarning   { Yellow,                Yellow,                Yellow, 2.0f, 0.0f };
+inline Surface ToastNegative  { Red,                   Red,                   Red,   2.0f, 0.0f };
+
 // Generic transparent (draw nothing visible but keep a slot)
 inline Surface None           { Color(0,0,0,0),        Color(0,0,0,0),        Color(0,0,0,0), 0.0f, 0.0f };
 
@@ -415,6 +424,8 @@ inline std::unordered_map<std::string, Surface*>& surfaceRegistry()
         {"LinkHover",&LinkHover},{"Marquee",&Marquee},
         {"WindowButton",&WindowButton},{"WindowCloseHover",&WindowCloseHover},{"WindowCloseDown",&WindowCloseDown},
         {"Dialog",&Dialog},{"DialogTitle",&DialogTitle},{"DialogFooter",&DialogFooter},{"DialogShadow",&DialogShadow},
+        {"Toast",&Toast},{"ToastInfo",&ToastInfo},{"ToastPositive",&ToastPositive},{"ToastWarning",&ToastWarning},
+        {"ToastNegative",&ToastNegative},
     };
     return m;
 }

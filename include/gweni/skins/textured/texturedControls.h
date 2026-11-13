@@ -2070,6 +2070,24 @@ public:
     inline static const std::string_view name="DialogFooter";
 };
 
+//! controls::Toast: [0] its panel (Toast) at getZIndex(), [1] the accent strip
+//! (ToastInfo, ToastPositive, ToastWarning or ToastNegative by its kind) down
+//! its left edge, inside its border, at +1.
+class Toast:public textured::ControlRegister<Toast>
+{
+public:
+    static void staticInit(TexturedSkin *) { m_staticInit=true; }
+
+    size_t requiredPrimitives() override { return 2; }
+    size_t depthLayers() override { return 2; }
+
+    void generate(renderer::Base *renderer, controls::Base *baseControl) override;
+    void update(renderer::Base *renderer, controls::Base *baseControl) override;
+    void remove(renderer::Base *renderer, controls::Base *baseControl) override;
+
+    inline static const std::string_view name="Toast";
+};
+
 class Window:public textured::ControlRegister<Window>
 {
 public:

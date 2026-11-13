@@ -374,7 +374,10 @@ static bool deliverMouseClick(controls::Base *canvas, int iMouseButton, bool dow
         g_pntLastClickPos=g_mousePosition;
     }
 
-    if(down)
+    // A press on a toast leaves the keyboard focus where it was.
+    controls::Canvas *onCanvas=canvas->getCanvas();
+
+    if(down && !(onCanvas && onCanvas->inToastHost(HoveredControl)))
     {
         if(!FindKeyboardFocus(HoveredControl))
         {

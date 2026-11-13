@@ -269,7 +269,9 @@ set(GWENI_CONTROL_SOURCES
     include/gweni/controls/plotLines.h
     source/controls/plotLines.cpp
     include/gweni/controls/popup.h
+    include/gweni/controls/toast.h
     source/controls/popup.cpp
+    source/controls/toast.cpp
     include/gweni/controls/progressBar.h
     source/controls/progressBar.cpp
     include/gweni/controls/properties.h

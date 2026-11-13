@@ -468,6 +468,15 @@ public:
             gweni::Color Danger{0, 0, 0};
             gweni::Color Palette[8]{};
         } Chip;
+        //! A toast's text, and its title by its kind (controls::ToastKind).
+        struct Toast_t
+        {
+            gweni::Color Text{0xc0, 0xc0, 0xc0};
+            gweni::Color Info{0x40, 0x80, 0xff};
+            gweni::Color Positive{0x40, 0xc0, 0x40};
+            gweni::Color Warning{0xe0, 0xa0, 0x20};
+            gweni::Color Negative{0xe0, 0x40, 0x40};
+        } Toast;
 
     } Colors;
 
