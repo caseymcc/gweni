@@ -305,6 +305,8 @@ SearchComboBox::~SearchComboBox()
     if(canvas && canvas->releasingChildren())
         return;
 
+    list->onVisibilityChanged.removeHandler(this);
+
     if(!list->hidden())
         list->hide();
 
@@ -510,9 +512,13 @@ void SearchComboBox::setRefused(bool refused)
             internal::SkinTextColor::LabelDefault);
 }
 
+// The value shown again even when the pick is the selected option: the
+// field holds the query (or a refused text), which would otherwise stay and,
+// with free text, be taken as a value when the field loses the focus.
 void SearchComboBox::pick(int index, bool doEvents)
 {
     select(index, doEvents);
+    showSelection();
     closeList();
     focusInput();
 }
@@ -826,8 +832,13 @@ void SearchComboBox::resolveText()
 
     const int option=optionWithLabel(text);
 
+    // an option's label in another case shows as the option's, the selected
+    // one's included (select() leaves an unchanged index alone)
     if(option != NoOption)
+    {
         select(option, true);
+        showSelection();
+    }
     else if(text.empty())
         showSelection();
     else
@@ -885,6 +896,10 @@ void SearchComboBox::onKeyboardFocus()
 
 void SearchComboBox::setDisabled(bool disabled)
 {
+    // a disabled box picks nothing: its open list goes
+    if(disabled)
+        closeList();
+
     ParentClass::setDisabled(disabled);
 
     if(m_field)
@@ -892,6 +907,14 @@ void SearchComboBox::setDisabled(bool disabled)
 
     for(Pick &pick : m_picks)
         pick.chip->setDisabled(disabled);
+}
+
+void SearchComboBox::setFont(const gweni::Font &font)
+{
+    ParentClass::setFont(font);
+
+    if(m_field)
+        m_field->setFont(font);
 }
 
 // The field covers the text area: from the text inset to the text padding
@@ -1004,7 +1027,10 @@ void SearchComboBox::pickPosition(size_t position)
 
     if(key == AddRowKey)
     {
-        if(!commitCustom(m_field->getText()))
+        // a copy: a handler may set the field's text
+        const String text=m_field->getText();
+
+        if(!commitCustom(text))
             return;
 
         if(m_multi)
@@ -1204,9 +1230,15 @@ void SearchComboBox::setMultiSelect(bool multi)
     m_custom.clear();
     setRefused(false);
 
-    // the box grows with its rows of chips: a request is the least it is
+    // the box grows with its rows of chips: a request is the least it is;
+    // single again, the height flag it had before
     if(multi)
+    {
+        m_singleHeightFlag=getSizeFlags().vertical;
         setSizeFlags({getSizeFlags().horizontal, SizeFlag::Expand});
+    }
+    else
+        setSizeFlags({getSizeFlags().horizontal, m_singleHeightFlag});
 
     showSelection();
     invalidate();
@@ -1494,23 +1526,32 @@ int SearchComboBox::optionsTextWidth()
     const gweni::Font &font=getFont();
 
     if(!m_widthsValid || !(font == m_widthsFont) || (renderer != m_widthsRenderer) || (serial != m_widthsSerial))
+    {
         m_optionWidths.clear();
+        m_widestWidth=0;
+    }
 
-    m_optionWidths.resize(std::min(m_optionWidths.size(), m_options.size()));
+    // fewer options than measured (a new set is measured from scratch)
+    if(m_optionWidths.size() > m_options.size())
+    {
+        m_optionWidths.resize(m_options.size());
+        m_widestWidth=0;
+
+        for(int width : m_optionWidths)
+            m_widestWidth=std::max(m_widestWidth, width);
+    }
 
     while(m_optionWidths.size() < m_options.size())
+    {
         m_optionWidths.push_back(measureText(font, m_options[m_optionWidths.size()].label).x);
+        m_widestWidth=std::max(m_widestWidth, m_optionWidths.back());
+    }
 
     m_widthsValid=true;
     m_widthsFont=font;
     m_widthsRenderer=renderer;
     m_widthsSerial=serial;
-
-    int widest=0;
-
-    for(int width : m_optionWidths)
-        widest=std::max(widest, width);
-    return widest;
+    return m_widestWidth;
 }
 
 void SearchComboBox::updateColors()
