@@ -268,7 +268,7 @@ TEST_CASE("Clip cull: a slot touching its box's edge is culled, and one overlapp
 
     for(const Side &side:sides)
     {
-        INFO("side: " << side.name);
+        INFO("side: ", std::string(side.name));
 
         draw(side.touching);
         CHECK(renderer().primitiveCulled(id));
@@ -638,4 +638,69 @@ TEST_CASE("Clip cull: a row scrolled out of a ScrollControl is culled, and drawn
     delete skin;
     renderer().begin();
     renderer().end();
+}
+
+TEST_CASE("Clip cull: a text run its box cuts through on any side is not culled")
+{
+    Guard guard;
+    TextId text;
+    const gweni::String string="Culled text";
+    const Point pos(40, 40);
+
+    auto draw=[&](const Rect &clip)
+    {
+        return drawFrame([&](SlotRenderer &renderer)
+            {
+                renderer.setDrawColor(white);
+                renderer.setClipRegion(clip);
+                renderer.renderText(text.id, gweni::test::openSans(), pos, 1, string);
+            });
+    };
+
+    // the ink's extent, from the run drawn whole
+    const Frame whole=draw(wholeView());
+    const gweni::Point view=gweni::test::viewSize();
+    int x0=view.x, x1=-1, y0=view.y, y1=-1;
+
+    for(int y=0; y<view.y; ++y)
+        for(int x=0; x<view.x; ++x)
+        {
+            const size_t i=(size_t(y)*view.x+x)*4;
+
+            if((whole.pixels[i] != background.r) || (whole.pixels[i+1] != background.g) || (whole.pixels[i+2] != background.b))
+            {
+                x0=std::min(x0, x); x1=std::max(x1, x);
+                y0=std::min(y0, y); y1=std::max(y1, y);
+            }
+        }
+    REQUIRE(x1 > x0+2);
+    REQUIRE(y1 > y0+2);
+
+    // each box keeps the ink's outermost column or row on one side alone
+    struct Side
+    {
+        const char *name;
+        Rect box;
+    };
+    const Side sides[]={
+        {"left", Rect(x1, 0, view.x-x1, view.y)},
+        {"right", Rect(0, 0, x0+1, view.y)},
+        {"top", Rect(0, y1, view.x, view.y-y1)},
+        {"bottom", Rect(0, 0, view.x, y0+1)},
+    };
+
+    for(const Side &side:sides)
+    {
+        INFO("side: ", std::string(side.name));
+
+        const Frame cut=draw(side.box);
+
+        CHECK_FALSE(renderer().textRunCulled(text.id));
+        CHECK(renderer().textRunInDrawList(text.id));
+        CHECK(cut.drawn() > 0);
+
+        renderer().setClipCulling(false);
+        CHECK(draw(side.box).pixels == cut.pixels);
+        renderer().setClipCulling(true);
+    }
 }

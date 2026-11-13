@@ -638,9 +638,10 @@ public:
     //! left out of the draws, which would rasterise it only for the fragment
     //! shaders' clip test to discard every pixel of it. On by default;
     //! GWENI_CLIP_CULL=0 at construction turns it off. A measurement and test
-    //! hook: either way draws the same pixels. It decides each slot as it is
-    //! drawn, so a change holds for what is drawn from then on; set it before the
-    //! first frame (as gweni_bench --clip-cull does) for a whole frame of either.
+    //! hook: either way draws the same pixels in the front view. It decides each
+    //! slot as it is drawn, so a change holds for what is drawn from then on; set
+    //! it before the first frame (as gweni_bench --clip-cull does) for a whole
+    //! frame of either.
     bool clipCulling() const { return m_clipCulling; }
     void setClipCulling(bool cull) { m_clipCulling=cull; }
     //! Whether the primitive slot's last draw, or the text run's last layout, was
@@ -1105,6 +1106,9 @@ private:
     //! is with the cull off and a decision that flips uploads nothing. A flip
     //! updates the slot's visibility at once (updateSlotVisibility).
     void cullClippedQuad(size_t primitiveId);
+    //! Whether the device px span [x0,x1) x [y0,y1) draws no pixel in the box
+    //! (or the box is empty): cullClippedQuad's and cullTextRun's one rule.
+    static bool outsideBox(const Box &box, int x0, int y0, int x1, int y1);
     //! The span of a quad's corners, in device px
     struct QuadBounds
     {
@@ -1294,7 +1298,7 @@ private:
     //! half-open test at pixel centres discarding every pixel of them. O(1): the
     //! glyphs are not read or rewritten; the caller's markTextDrawList takes the
     //! run out of its font's list or back in.
-    void cullTextRun(size_t textId, TextRun &run, const Box &box) const;
+    void cullTextRun(size_t textId, TextRun &run, const Box &box);
     //! A text run's glyph corners' span, in whole device px from its position:
     //! x0, y0 the floor of the lowest corner, x1, y1 the ceiling of the highest.
     //! Against a box's whole-px edges these give what the corners themselves give

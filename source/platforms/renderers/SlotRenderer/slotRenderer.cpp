@@ -2001,6 +2001,14 @@ bool SlotRenderer::textRunInDrawList(size_t textId) const
     return false;
 }
 
+bool SlotRenderer::outsideBox(const Box &box, int x0, int y0, int x1, int y1)
+{
+    // the shaders keep a pixel whose centre is in [x0,x1) x [y0,y1) of the box
+    return (box.x1 <= box.x0) || (box.y1 <= box.y0)
+        || (x1 <= int(box.x0)) || (x0 >= int(box.x1))
+        || (y1 <= int(box.y0)) || (y0 >= int(box.y1));
+}
+
 void SlotRenderer::cullClippedQuad(size_t primitiveId)
 {
     const QuadBounds quad=quadBounds(&m_vertexes[primitiveId*4]);
@@ -2013,11 +2021,8 @@ void SlotRenderer::cullClippedQuad(size_t primitiveId)
     {
         const Box &box=m_clippingBoxes[primitiveId];
 
-        // the shaders keep a pixel whose centre is in [x0,x1) x [y0,y1) of the box,
-        // and the quad's centres are inside its corners' span
-        culled=(box.x1 <= box.x0) || (box.y1 <= box.y0)
-            || (quad.x1 <= int(box.x0)) || (quad.x0 >= int(box.x1))
-            || (quad.y1 <= int(box.y0)) || (quad.y0 >= int(box.y1));
+        // the quad's centres are inside its corners' span
+        culled=outsideBox(box, quad.x0, quad.y0, quad.x1, quad.y1);
     }
 
     // The vertexes are left as drawn, so the buffer holds what it holds with the
@@ -2941,7 +2946,7 @@ void SlotRenderer::markTextDrawList(TextRun &run, std::pair<size_t, size_t> befo
         run.fontData->drawListStale=true;
 }
 
-void SlotRenderer::cullTextRun(size_t textId, TextRun &run, const Box &box) const
+void SlotRenderer::cullTextRun(size_t textId, TextRun &run, const Box &box)
 {
     run.culled=false;
     if(!m_clipCulling || (run.glyphs == 0))
@@ -2951,11 +2956,9 @@ void SlotRenderer::cullTextRun(size_t textId, TextRun &run, const Box &box) cons
     const int x0=run.position.x+bounds.x0, x1=run.position.x+bounds.x1;
     const int y0=run.position.y+bounds.y0, y1=run.position.y+bounds.y1;
 
-    // the shader keeps a pixel whose position (interpolated from the unsnapped
-    // corners, so inside their bounds) is in [x0,x1) x [y0,y1) of the box
-    run.culled=(box.x1 <= box.x0) || (box.y1 <= box.y0)
-        || (x1 <= int(box.x0)) || (x0 >= int(box.x1))
-        || (y1 <= int(box.y0)) || (y0 >= int(box.y1));
+    // a pixel's position is interpolated from the unsnapped corners, so it is
+    // inside their bounds
+    run.culled=outsideBox(box, x0, y0, x1, y1);
 }
 
 void SlotRenderer::markTextVertexes(const TextRun &run)
