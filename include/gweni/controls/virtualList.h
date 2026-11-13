@@ -218,6 +218,15 @@ public:
     //! The item of the scrollToItem() the next layout is to resolve, or
     //! NoItem: none asked for, or a scrollByRows() dropped it.
     size_t getPendingItem() const { return m_pendingItem; }
+    //! Counts the scroll requests made of the list: each scrollToItem(),
+    //! scrollByRows() and setVerticalScrollOffset() call and each wheel
+    //! notch it takes. An edit keeping the rows on screen where they are
+    //! (insertItems() above them, say) is not one, nor is a layout. So a
+    //! caller that recorded it after its own request knows, while it is
+    //! unchanged, that no later one replaced it (CodeEditor's caret).
+    uint64_t scrollRequestSerial() const { return m_scrollRequests; }
+    //! Counted in scrollRequestSerial().
+    void setVerticalScrollOffset(int offset) override;
 
     //! The item at the top of the viewport (partly scrolled out or not), as
     //! the scroll offset gives it; 0 for an empty list.
@@ -321,6 +330,7 @@ private:
     size_t m_itemCount=0;
     //! The item a scrollToItem() asked for, resolved by the next layout.
     size_t m_pendingItem=NoItem;
+    uint64_t m_scrollRequests=0;
     //! The part of it to show, a height of -1 for the whole item.
     int m_pendingPartTop=0;
     int m_pendingPartHeight=-1;

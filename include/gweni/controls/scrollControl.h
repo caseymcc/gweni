@@ -93,7 +93,9 @@ public:
     //! setVerticalScrollOffset() clamps to getMaxVerticalScrollOffset() at
     //! once.
     int getVerticalScrollOffset() const { return m_scrollOffset[1]; }
-    void setVerticalScrollOffset(int offset);
+    //! Virtual: a VirtualList counts it among its scroll requests
+    //! (VirtualList::scrollRequestSerial()).
+    virtual void setVerticalScrollOffset(int offset);
     int getHorizontalScrollOffset() const { return m_scrollOffset[0]; }
     void setHorizontalScrollOffset(int offset);
     //! The content's size less the viewport's, never negative, as the last

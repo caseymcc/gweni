@@ -183,7 +183,7 @@ void VirtualList::insertItems(size_t at, size_t count)
     shiftItems(at, static_cast<int64_t>(count));
     updateContentHeight();
     if(above)
-        setVerticalScrollOffset(static_cast<int>(std::min<uint64_t>(
+        ScrollControl::setVerticalScrollOffset(static_cast<int>(std::min<uint64_t>(
             static_cast<uint64_t>(offset)+static_cast<uint64_t>(count)*m_rowHeight, INT_MAX)));
     invalidate();
 }
@@ -235,7 +235,7 @@ void VirtualList::removeItems(size_t at, size_t count)
     shiftItems(at, -static_cast<int64_t>(count));
     updateContentHeight();
     if(newOffset != offset)
-        setVerticalScrollOffset(static_cast<int>(std::min<int64_t>(newOffset, INT_MAX)));
+        ScrollControl::setVerticalScrollOffset(static_cast<int>(std::min<int64_t>(newOffset, INT_MAX)));
     invalidate();
 }
 
@@ -407,7 +407,7 @@ void VirtualList::setItemMeasurer(ItemMeasurer measurer)
         m_measureWidth=-1;
         m_viewTops.clear();
         updateContentHeight();
-        setVerticalScrollOffset(static_cast<int>(std::min<uint64_t>(
+        ScrollControl::setVerticalScrollOffset(static_cast<int>(std::min<uint64_t>(
             static_cast<uint64_t>(top)*m_rowHeight+gweni::clamp(into, 0, m_rowHeight-1), INT_MAX)));
     }
 
@@ -691,6 +691,7 @@ void VirtualList::scrollToItem(size_t index, int partTop, int partHeight)
     // says which part of it
     const bool pending=(m_pendingItem == index);
 
+    ++m_scrollRequests;
     m_pendingItem=index;
     m_pendingPartTop=std::max(0, partTop);
     m_pendingPartHeight=(partHeight < 0)?-1:std::max(1, partHeight);
@@ -700,6 +701,7 @@ void VirtualList::scrollToItem(size_t index, int partTop, int partHeight)
 
 void VirtualList::scrollByRows(int rows)
 {
+    ++m_scrollRequests;
     m_pendingItem=NoItem;
 
     if(isVariableHeight())
@@ -724,7 +726,13 @@ void VirtualList::scrollByRows(int rows)
     const int64_t offset=static_cast<int64_t>(getVerticalScrollOffset())
         +static_cast<int64_t>(rows)*m_rowHeight;
 
-    setVerticalScrollOffset(static_cast<int>(gweni::clamp<int64_t>(offset, 0, INT_MAX)));
+    ScrollControl::setVerticalScrollOffset(static_cast<int>(gweni::clamp<int64_t>(offset, 0, INT_MAX)));
+}
+
+void VirtualList::setVerticalScrollOffset(int offset)
+{
+    ++m_scrollRequests;
+    ScrollControl::setVerticalScrollOffset(offset);
 }
 
 // GLFW's translator gives 60 per wheel notch. A wheel the list cannot use
@@ -734,11 +742,14 @@ bool VirtualList::onMouseWheeled(int iDelta)
     const int before=getVerticalScrollOffset();
     const long delta=std::lround(-static_cast<double>(iDelta)*m_wheelRows*m_rowHeight/60.0);
 
-    setVerticalScrollOffset(static_cast<int>(gweni::clamp<int64_t>(
+    ScrollControl::setVerticalScrollOffset(static_cast<int>(gweni::clamp<int64_t>(
         static_cast<int64_t>(before)+delta, 0, INT_MAX)));
 
     if(getVerticalScrollOffset() != before)
+    {
+        ++m_scrollRequests;
         return true;
+    }
 
     return Base::onMouseWheeled(iDelta);
 }

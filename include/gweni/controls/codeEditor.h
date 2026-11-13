@@ -231,7 +231,9 @@ private:
 //! other punctuation and line ends. Return keeps the line's indent (its
 //! leading blanks, up to the caret). Every move puts the caret in view: its
 //! line by the next layout (VirtualList::scrollToItem), its column with a
-//! cell to spare.
+//! cell to spare. The latest scroll request in a frame decides the view: of
+//! two moves the later one, and a scroll the app asks for after a move (or
+//! in a resize frame) is kept over it.
 //!
 //! Every edit made through the editor (typing, the editing keys, the
 //! clipboard, Tab) is recorded on a text::UndoStack with TextBox's
@@ -575,6 +577,12 @@ private:
     //! Wrapped: its line by the next layout, and of a line taller than the
     //! viewport its visual row at the wrap width that layout gives.
     void revealCaretRow();
+    //! The caret's line by the next layout (scrollToItem), its visual row
+    //! too when \p row is true, recorded as the caret's request.
+    void requestCaretScroll(bool row);
+    //! The last scroll request made of the list is the caret's: no later
+    //! one (the app's, the user's, an earlier caret move's) replaced it.
+    bool caretOwnsScroll() const;
     //! The caret's line is on screen (some row shows it).
     bool caretLineShown() const;
     //! The bytes line \p line's visual rows start at, the first 0: {0}
@@ -660,8 +668,16 @@ private:
     size_t m_caretColumn=0;
     //! At a wrap point: drawn at the end of the row above (isCaretAtRowEnd).
     bool m_caretUpstream=false;
-    //! The next layout scrolls the caret's visual row into view
-    //! (revealCaretRow()), unless a later scroll replaced its scrollToItem().
+    //! The list's scrollRequestSerial() after the caret's last request of
+    //! it (requestCaretScroll(), or an offset makeCaretVisible() set), and
+    //! after the last layout: the latest request in a frame is the one kept,
+    //! the caret's or another's, so the caret's holds only while the list's
+    //! serial is still its own.
+    uint64_t m_caretRequestSerial=0;
+    bool m_caretRequested=false;
+    uint64_t m_placedRequestSerial=0;
+    //! The caret's request is for its visual row (revealCaretRow()): the
+    //! next layout scrolls it into view while caretOwnsScroll().
     bool m_revealCaretRow=false;
     //! Row starts, kept for their capacity.
     mutable std::vector<size_t> m_rowScratch;

@@ -748,10 +748,7 @@ void CodeEditor::setWrap(bool wrap)
     // lines' new heights), its visual row wrapped and its column unwrapped
     if(shown)
     {
-        if(wrap)
-            revealCaretRow();
-        else
-            scrollToItem(m_caret.line);
+        requestCaretScroll(wrap);
         makeCaretColumnVisible();
     }
     caretChanged();
@@ -1007,6 +1004,11 @@ void CodeEditor::linesChanged(const text::LineChange &change)
         m_caretUpstream=false;
     shift(m_caret);
     shift(m_anchor);
+    // the caret's pending request follows its line: an edit that took the
+    // line it asked for (one merged into the line above) left the list's
+    // request at the line after the removed ones
+    if(caretOwnsScroll() && getPendingItem() != NoItem && getPendingItem() != m_caret.line)
+        requestCaretScroll(m_revealCaretRow);
     m_caretColumn=text::stringCells(m_document.line(m_caret.line), 0, m_caret.byte);
     syncCurrentLine();
     syncSelection();
@@ -1164,13 +1166,17 @@ void CodeEditor::syncCurrentLine()
 // The line by the next layout, which knows the viewport (only when the last
 // one left it out of view: a caret moving inside the view lays nothing out);
 // the column now, at the last layout's viewport, kept inside the content by
-// the next layout.
+// the next layout. The latest scroll request in a frame is the one kept: a
+// scrollToItem() still pending (an earlier move's in the frame, the app's)
+// would take the view to its item, so a caret in view takes it over for its
+// own line (the next layout finds that line in view and leaves the offset).
 void CodeEditor::makeCaretVisible()
 {
     const int lineHeight=m_lineHeight;
+    const bool pending=getPendingItem() != NoItem;
 
     if(lineHeight <= 0)
-        scrollToItem(m_caret.line);
+        requestCaretScroll(false);
     else if(isVariableHeight())
     {
         // Wrapped: the caret's visual row, by the offset. A line measured at
@@ -1192,12 +1198,19 @@ void CodeEditor::makeCaretVisible()
             // a row past the last layout's content (an edit made the content
             // taller, an auto-height field grown past its rows) by the list,
             // at the content the next layout gives
-            if(top+lineHeight > offset+viewport && top+lineHeight-viewport > getMaxVerticalScrollOffset())
+            if((top+lineHeight > offset+viewport && top+lineHeight-viewport > getMaxVerticalScrollOffset())
+                || pending)
                 revealCaretRow();
-            else if(top < offset)
-                setVerticalScrollOffset(static_cast<int>(std::min<int64_t>(top, INT_MAX)));
-            else if(top+lineHeight > offset+viewport)
-                setVerticalScrollOffset(static_cast<int>(std::min<int64_t>(top+lineHeight-viewport, INT_MAX)));
+            else if(top < offset || top+lineHeight > offset+viewport)
+            {
+                setVerticalScrollOffset(static_cast<int>(std::min<int64_t>(
+                    (top < offset)?top:top+lineHeight-viewport, INT_MAX)));
+                // the caret's request, which a new size in this frame keeps
+                // (contentsPlaced), its row put in view again at the new width
+                m_caretRequestSerial=scrollRequestSerial();
+                m_caretRequested=true;
+                m_revealCaretRow=false;
+            }
         }
     }
     else
@@ -1205,8 +1218,8 @@ void CodeEditor::makeCaretVisible()
         const int64_t top=static_cast<int64_t>(m_caret.line)*lineHeight;
         const int64_t offset=getVerticalScrollOffset();
 
-        if(top < offset || top+lineHeight > offset+getViewportHeight())
-            scrollToItem(m_caret.line);
+        if(top < offset || top+lineHeight > offset+getViewportHeight() || pending)
+            requestCaretScroll(false);
     }
 
     makeCaretColumnVisible();
@@ -1217,8 +1230,20 @@ void CodeEditor::makeCaretVisible()
 // layout gives the rows.
 void CodeEditor::revealCaretRow()
 {
-    m_revealCaretRow=true;
+    requestCaretScroll(true);
+}
+
+void CodeEditor::requestCaretScroll(bool row)
+{
     scrollToItem(m_caret.line);
+    m_caretRequestSerial=scrollRequestSerial();
+    m_caretRequested=true;
+    m_revealCaretRow=row;
+}
+
+bool CodeEditor::caretOwnsScroll() const
+{
+    return m_caretRequested && scrollRequestSerial() == m_caretRequestSerial;
 }
 
 void CodeEditor::makeCaretColumnVisible()
@@ -2267,16 +2292,20 @@ void CodeEditor::contentsPlaced(skin::Base *skin)
         const size_t cells=wrapCellsFor(m_innerPanel->getWidth());
         const int viewport=getViewportHeight();
         const bool rewrap=(cells != m_wrapCells || m_lineHeight != m_wrapLineHeight);
-        // revealCaretRow()'s request holds while its scrollToItem() is still
-        // the list's: a scroll the app or the user asked for after it in the
-        // frame (another scrollToItem(), a scrollByRows()) is the one kept
-        bool reveal=m_revealCaretRow && getPendingItem() == m_caret.line;
+        // revealCaretRow()'s request holds while it is the list's last: a
+        // scroll the app or the user asked for after it in the frame (a
+        // scrollToItem(), a scrollByRows(), an offset) is the one kept
+        const bool owned=caretOwnsScroll();
+        bool reveal=m_revealCaretRow && owned;
 
         if(rewrap || viewport != m_wrapViewportHeight)
         {
-            // the caret's line stays on screen through a new size: found in
-            // the rows the last layout bound, put in view by this one
-            const bool shown=caretLineShown() && m_wrapViewportHeight >= 0;
+            // the caret's line stays on screen through a new size (found in
+            // the rows the last layout bound, put in view by this one), unless
+            // a scroll was asked for since that layout by another than the
+            // caret
+            const bool shown=caretLineShown() && m_wrapViewportHeight >= 0
+                && (owned || scrollRequestSerial() == m_placedRequestSerial);
 
             m_wrapViewportHeight=viewport;
             if(rewrap)
@@ -2295,8 +2324,10 @@ void CodeEditor::contentsPlaced(skin::Base *skin)
                 static_cast<size_t>(INT_MAX/m_lineHeight-1)))*m_lineHeight, m_lineHeight);
     }
     m_revealCaretRow=false;
+    m_caretRequested=false;
 
     ParentClass::contentsPlaced(skin);
+    m_placedRequestSerial=scrollRequestSerial();
 
     // a spare row keeps no visual rows: it holds what a fresh row holds
     for(size_t i=0; i < poolSize(); ++i)
