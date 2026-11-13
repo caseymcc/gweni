@@ -3592,12 +3592,21 @@ two programs and the draws. What follows describes both together:
   flag, not a comparison of the field with the value (an emptied query with nothing
   selected would look like none): an edit of the field sets it, and showing the value
   (a pick, Escape, a close, a lost focus) or a multi-select pick emptying the field
-  clears it. `setOptions()` keeps the selection on an equal option (the same label and
-  name), and multi-select each pick of an option (the others go with their chips); a
-  selection with no equal option is the first option, except while the user types,
-  when it is none, so the value is never a result nobody picked and the pick that ends
-  the edit fires `onSelection`; `addOption()` then selects nothing either. Closed, the
-  list's shown options are emptied, so no index into the old options is left.
+  clears it. **The value is data, not an index**: the selected option and each
+  multi-select pick keep their label and name. `setOptions()` puts the selection, and
+  each pick of an option, on an equal option (the same label and name); with none it
+  is *held*: still the value (`getValue()`, the shown text, its chip,
+  `getSelectedValues()`, what Escape and a lost focus show again) at no index
+  (`getSelectedIndex()` -1, `isSelectionHeld()`, left out of `getSelectedIndices()`),
+  and an equal option brought back by `setOptions()` or `addOption()` is its again.
+  So an async search that drops the selected host or a picked chip from its results
+  loses neither; only a pick, the user's x or Backspace, or the app's
+  `setSelectedIndex()`/`setSelectedIndices()` change them. With nothing selected the
+  first option is, except while the user types, when it is none, so the value is
+  never a result nobody picked and the pick that ends the edit fires `onSelection`;
+  `addOption()` then selects nothing either. Closed, the list's shown options are
+  emptied, so no index into the old options is left. A box fitting its widest label
+  changes width with each result set, so a box of search results is given a width.
 
   **Free text** (`setAllowCustomValue(true)`, filterable too) shows an Add “text” row
   after the matches whenever the text is no option's label (case aside), alone and

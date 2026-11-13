@@ -8,9 +8,10 @@
  *  keyed through input::onKeyEvent.
  *
  *  Options are data: the first one added is selected with no event, as are
- *  setOptions()' first, clearOptions() leaves none, setSelectedIndex() fires
- *  nothing and refuses an index out of range, and getValue() is the selected
- *  option's name, or its label without one. Up and Down on the closed box
+ *  setOptions()' first, clearOptions() holds the selection (still the value
+ *  and the text, at no index) until setSelectedIndex(NoOption) drops it,
+ *  setSelectedIndex() fires nothing and refuses an index out of range, and
+ *  getValue() is the selected option's name, or its label without one. Up and Down on the closed box
  *  step the selection, one onSelection per step, nothing past either end.
  *
  *  The list: a press opens a Menu on the canvas below the box, as wide as
@@ -69,13 +70,19 @@
  *  refilled from onTextChangedCaller (setOptions(), or clearOptions() and
  *  addOption()) leave the typed text and the query in the field, the list
  *  showing the new options that match it; a selection gone from them is
- *  none, so the pick ending the edit fires onSelection, after which a refill
- *  shows the first option again, as it does after a free-text field typed
- *  back to the value's own text loses the focus. setOptions() with the list
- *  closed leaves no shown option or highlight of the old ones, and keeps the
- *  selection and multi-select picks on options of the same label and name
- *  (the others' chips going, with no event). A free-text value wider than every option
- *  widens a size-to-content box, and an option picked again narrows it back.
+ *  held, so Escape and a lost focus give its label back (no onSelection) and
+ *  the pick ending the edit fires onSelection, and a refill after it, or
+ *  after a free-text field typed back to the value's own text loses the
+ *  focus, holds the value too. setOptions() with the list closed leaves no
+ *  shown option or highlight of the old ones, and keeps the selection and
+ *  multi-select picks on options of the same label and name, holding the
+ *  others (their chips and values kept, out of the indices, with no event)
+ *  until an equal option comes back through setOptions() or addOption(); a
+ *  held pick's x fires onSelectionChange with NoOption, and
+ *  setSelectedIndices() drops held picks. A multi-select box refilled while
+ *  the user types keeps its picks the results leave out. A free-text value
+ *  wider than every option widens a size-to-content box, and an option picked
+ *  again narrows it back.
  *
  *  Multi-select: no selection and no text on the box; a row click and Return
  *  each add the option as a chip, in pick order, the list staying open with
@@ -198,9 +205,10 @@ struct Scene
 class Counter: public event::Handler
 {
 public:
-    void count(event::Info)
+    void count(event::Info info)
     {
         ++calls;
+        last=info.integer;
     }
 
     void listen(event::Caller &caller)
@@ -209,6 +217,8 @@ public:
     }
 
     int calls=0;
+    //! The last call's integer.
+    size_t last=0;
 };
 
 //! The row of the open list showing option \p option, or null.
@@ -294,10 +304,19 @@ TEST_CASE("SearchComboBox: options are data, the first selected with no event, s
     CHECK(box->getSelectedIndex() == 0);
     CHECK(box->getValue() == "1");
 
+    // no options: the selection is held, still the value
     box->clearOptions();
     CHECK(box->getOptionCount() == 0);
     CHECK(box->getSelectedIndex() == SearchComboBox::NoOption);
+    CHECK(box->isSelectionHeld());
+    CHECK(box->getText() == "One");
+    CHECK(box->getValue() == "1");
+
+    // and dropped by setSelectedIndex
+    box->setSelectedIndex(SearchComboBox::NoOption);
+    CHECK(!box->isSelectionHeld());
     CHECK(box->getText() == "");
+    CHECK(box->getValue() == "");
     CHECK(selections.calls == 0);
 }
 
@@ -1497,10 +1516,11 @@ TEST_CASE("SearchComboBox: filterable, options refilled from onTextChangedCaller
     CHECK(box->getField()->getText() == "db-1");
     CHECK(selections.calls == 1);
 
-    // over: the app's own refill shows the first option, as on any box
+    // over: the app's own refill holds the value, as on any box
     box->setOptions({{"x", ""}});
-    CHECK(box->getSelectedIndex() == 0);
-    CHECK(box->getField()->getText() == "x");
+    CHECK(box->getSelectedIndex() == SearchComboBox::NoOption);
+    CHECK(box->getValue() == "db-1");
+    CHECK(box->getField()->getText() == "db-1");
 }
 
 TEST_CASE("SearchComboBox: free text, the value's own text typed and Tab end the edit an app refill keeps")
@@ -1518,10 +1538,12 @@ TEST_CASE("SearchComboBox: free text, the value's own text typed and Tab end the
     CHECK(box->getField()->getText() == "web-1");
     CHECK(!box->hasCustomValue());
 
-    // the app's refill then shows its first option
+    // the app's refill then holds the value
     box->setOptions({{"z", ""}});
-    CHECK(box->getSelectedIndex() == 0);
-    CHECK(box->getField()->getText() == "z");
+    CHECK(box->getSelectedIndex() == SearchComboBox::NoOption);
+    CHECK(box->getValue() == "web-1");
+    CHECK(box->getField()->getText() == "web-1");
+    CHECK(!box->hasCustomValue());
 }
 
 TEST_CASE("SearchComboBox: setOptions with the list closed leaves no shown option of the old ones")
@@ -1890,14 +1912,30 @@ TEST_CASE("SearchComboBox: setOptions keeps the selection and the picks on equal
     CHECK(box->getValue() == "c");
     CHECK(box->getText() == "C");
 
-    // the same label and another name is another option: the first
+    // the same label and another name is another option: the selection is
+    // held, at no index
     box->setOptions({{"Y", "y"}, {"C", "other"}});
-    CHECK(box->getSelectedIndex() == 0);
-    CHECK(box->getText() == "Y");
+    CHECK(box->getSelectedIndex() == SearchComboBox::NoOption);
+    CHECK(box->isSelectionHeld());
+    CHECK(box->getText() == "C");
+    CHECK(box->getValue() == "c");
+
+    // an equal option back, through setOptions or addOption, is its again
+    box->setOptions({{"Z", "z"}, {"C", "c"}});
+    CHECK(box->getSelectedIndex() == 1);
+    CHECK(!box->isSelectionHeld());
+    box->clearOptions();
+    box->addOption("Q", "q");
+    CHECK(box->getSelectedIndex() == SearchComboBox::NoOption);
+    CHECK(box->getText() == "C");
+    box->addOption("C", "c");
+    CHECK(box->getSelectedIndex() == 1);
+    CHECK(!box->isSelectionHeld());
+    CHECK(box->getText() == "C");
     CHECK(selections.calls == 0);
 
-    // multi-select: the picks of options still there stay, in pick order,
-    // the rest go with their chips; a free-text pick stays
+    // multi-select: the picks of options still there stay on them, in pick
+    // order, the rest held with their chips, none of them in the indices
     SearchComboBox *picks=multi(scene, {"red", "green", "blue"}, false);
     Counter changes;
 
@@ -1906,9 +1944,95 @@ TEST_CASE("SearchComboBox: setOptions keeps the selection and the picks on equal
     REQUIRE(chipTexts(picks) == (std::vector<String>{"blue", "red", "green"}));
     picks->setOptions({{"green", ""}, {"grey", ""}, {"blue", ""}});
     CHECK(picks->getSelectedIndices() == (std::vector<int>{2, 0}));
-    CHECK(chipTexts(picks) == (std::vector<String>{"blue", "green"}));
+    CHECK(chipTexts(picks) == (std::vector<String>{"blue", "red", "green"}));
+    CHECK(picks->getSelectedValues() == (std::vector<String>{"blue", "red", "green"}));
     CHECK(picks->isPicked(0));
     CHECK(!picks->isPicked(1));
     CHECK(picks->isPicked(2));
     CHECK(changes.calls == 0);
+
+    // red back is picked again, at its new index
+    picks->addOption("red");
+    CHECK(picks->getSelectedIndices() == (std::vector<int>{2, 3, 0}));
+    CHECK(picks->isPicked(3));
+    picks->setOptions({{"grey", ""}});
+    CHECK(picks->getSelectedIndices().empty());
+    CHECK(chipTexts(picks) == (std::vector<String>{"blue", "red", "green"}));
+    CHECK(changes.calls == 0);
+
+    // a held pick's x takes it away, onSelectionChange with NoOption
+    scene.frame();
+    REQUIRE(picks->getChips().size() == 3);
+    REQUIRE(picks->getChips()[1]->getRemoveButton());
+    scene.clickOn(picks->getChips()[1]->getRemoveButton());
+    CHECK(chipTexts(picks) == (std::vector<String>{"blue", "green"}));
+    CHECK(changes.calls == 1);
+    CHECK(changes.last == static_cast<size_t>(SearchComboBox::NoOption));
+    // and setSelectedIndices drops the rest
+    picks->setSelectedIndices({0});
+    CHECK(chipTexts(picks) == std::vector<String>{"grey"});
+    CHECK(changes.calls == 1);
+}
+
+TEST_CASE("SearchComboBox: refilled from onTextChangedCaller, Escape and a lost focus give the held value back")
+{
+    Scene scene;
+    const std::vector<String> labels{"web-1", "web-2", "db-1"};
+    SearchComboBox *box=filterable(scene, labels);
+    controls::TextBox *other=scene.canvas->newChild<controls::TextBox>();
+    Refill refill;
+    Counter selections;
+
+    other->setBounds(20, 300, 100, 20);
+    refill.labels=labels;
+    refill.listen(box);
+    selections.listen(box->onSelection);
+    REQUIRE(box->getSelectedIndex() == 0);
+
+    box->getField()->onSelectAll(box->getField());
+    type(scene, "db");
+    REQUIRE(box->getOptionCount() == 1);
+    // the results hold no web-1: held, still the value
+    CHECK(box->isSelectionHeld());
+    CHECK(box->getValue() == "web-1");
+
+    SUBCASE("Escape") { scene.key(keys::Escape); }
+    SUBCASE("a lost focus") { scene.clickOn(other); }
+
+    CHECK(!box->isListOpen());
+    CHECK(box->getField()->getText() == "web-1");
+    CHECK(box->getValue() == "web-1");
+    CHECK(box->getSelectedIndex() == SearchComboBox::NoOption);
+    CHECK(selections.calls == 0);
+}
+
+TEST_CASE("SearchComboBox: multi-select refilled from onTextChangedCaller keeps the picks the results leave out")
+{
+    Scene scene;
+    const std::vector<String> labels{"red", "green", "blue", "grey"};
+    SearchComboBox *box=multi(scene, labels, true);
+    Refill refill;
+    Counter changes;
+
+    refill.labels=labels;
+    box->setSelectedIndices({0});
+    scene.frame();
+    refill.listen(box);
+    changes.listen(box->onSelectionChange);
+    box->getField()->focus();
+    type(scene, "gr");
+    REQUIRE(box->getOptionCount() == 2);
+    CHECK(box->getSelectedValues() == std::vector<String>{"red"});
+    CHECK(chipTexts(box) == std::vector<String>{"red"});
+    CHECK(box->getSelectedIndices().empty());
+
+    // a second pick from the results adds to it
+    scene.key(keys::Return);
+    CHECK(box->getSelectedValues() == (std::vector<String>{"red", "green"}));
+    CHECK(changes.calls == 1);
+    // the app's next results bring red back, picked
+    box->setOptions({{"red", ""}, {"green", ""}, {"blue", ""}, {"grey", ""}});
+    CHECK(box->isPicked(0));
+    CHECK(box->getSelectedIndices() == (std::vector<int>{0, 1}));
+    CHECK(changes.calls == 1);
 }
