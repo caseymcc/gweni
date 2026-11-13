@@ -10,7 +10,9 @@
 
 #include <gweni/controls/base.h>
 #include <gweni/text/richLayout.h>
+#include <gweni/text/selectionModel.h>
 
+#include <algorithm>
 #include <utility>
 #include <vector>
 
@@ -138,11 +140,77 @@ public:
 
     event::Caller onLinkClicked;
 
+    //! \sect{Selection}
+    //! The selection is a text::SelectionModel: the paragraph's own, its
+    //! block path empty, unless setSelectionModel gives it its container's
+    //! (a document's, holding every block's) and its block's path there. A
+    //! position's offset is a byte of getText(). The paragraph draws the part
+    //! of the selection in its block (selectionRects(), one per line) behind
+    //! its glyphs; a press puts the selection's both ends at the byte nearest
+    //! it (Shift: the focus alone) and a drag extends it, a double-click
+    //! selects the word under it (text::wordAt), Ctrl+A selects all of it,
+    //! Ctrl+C copies the selected text, as shown, through
+    //! platform::setClipboardText, and Escape clears it. A press on a link that
+    //! selects nothing by its release is the link's click. The paragraph takes
+    //! the keyboard focus on a press, for those keys, and is not a Tab stop.
+    //! Its own selection is cleared when its spans change.
+
+    //! A container's model and this paragraph's block in it; null gives the
+    //! paragraph its own model back
+    void setSelectionModel(text::SelectionModel *model, std::vector<size_t> block={});
+    text::SelectionModel &selectionModel() { return m_selection?*m_selection:m_ownSelection; }
+    const text::SelectionModel &selectionModel() const { return m_selection?*m_selection:m_ownSelection; }
+    const std::vector<size_t> &selectionBlock() const { return m_selectionBlock; }
+    //! The model changed: the paragraph draws its part of the selection
+    //! again (a container calls it for each block whose part it changed)
+    void selectionChanged();
+
+    //! The bytes of getText() selected in this paragraph, [first, second);
+    //! false for none
+    bool selectedRange(std::pair<size_t, size_t> &bytes) const;
+    bool hasSelection() const;
+    gweni::String getSelectedText() const;
+    //! Selects the bytes [first, last) of getText() (focus at last)
+    void select(size_t first, size_t last);
+    void selectAll();
+    void clearSelection();
+    //! Puts the selected text on the clipboard; false (nothing done) for none
+    bool copySelection();
+
+    //! The byte of getText() nearest \p local (this control's coordinates): on
+    //! the line whose box holds its y (the first above them, the last below),
+    //! the codepoint boundary nearest its x (a combining mark kept with its
+    //! base), the line's visible end past its last piece
+    size_t positionAt(const gweni::Point &local);
+    //! The selection's part in this paragraph, one rect per line it reaches,
+    //! in the layout's coordinates (contentOrigin() their origin): its line's
+    //! box from the x of its first selected byte to that of its last, and a
+    //! break (the spaces or '\n' ending the line) selected widening it by
+    //! breakSelectionWidth()
+    std::vector<gweni::Rect> selectionRects();
+    //! How far a selected line break reaches past the line's last piece
+    static int breakSelectionWidth(const text::RichLine &line) { return std::max(1, line.height/3); }
+
     void onMouseMoved(int x, int y, int deltaX, int deltaY) override;
     void onMouseLeave() override;
     void onMouseClickLeft(int x, int y, bool down) override;
+    void onMouseDoubleClickLeft(int x, int y) override;
+    bool onKeyEscape(bool down) override;
 
 protected:
+
+    void onCopy(event::Info);
+    void onSelectAll(event::Info);
+    //! The x, from the layout's origin, of byte \p offset of getText() on line
+    //! \p line: in a piece at its caret, before a piece (in the gap a code
+    //! span's padding leaves) at the piece's box, past them all at the right
+    //! edge of the last one's box (0 on a line without pieces)
+    int xAt(const text::RichLine &line, size_t offset) const;
+    //! The byte the selection at \p offset is at: this paragraph's block
+    text::SelectionPosition at(size_t offset) const
+    {
+        return text::SelectionPosition(m_selectionBlock, offset);
+    }
 
     //! The link holding span \p index: its first and last span ([-1, -1] for none)
     std::pair<int, int> linkSpans(int index) const;
@@ -179,6 +247,13 @@ protected:
     int m_hoveredLast=-1;
     //! the first span of the link a left press is on, -1 for none
     int m_pressedLink=-1;
+
+    text::SelectionModel m_ownSelection;
+    //! a container's model, null for m_ownSelection
+    text::SelectionModel *m_selection=nullptr;
+    std::vector<size_t> m_selectionBlock;
+    //! a left press's drag is extending the selection
+    bool m_selecting=false;
 };
 
 }//namespace controls

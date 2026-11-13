@@ -28,11 +28,11 @@
  *  - a hovered link is drawn in RichText.LinkHover with cursor::Finger, the
  *    frame drawing only its runs and its underline, a move inside it nothing
  *    and a move off it the same runs and line back in RichText.Link with the
- *    normal cursor; a link of several spans (one url) lights up whole;
+ *    text cursor (Beam); a link of several spans (one url) lights up whole;
  *  - a press and a release on one link call onLinkClicked once, with its url
  *    and first span; a release off it, or a press off any link, call nothing.
  */
-#include "headlessFixture.h"
+#include "richTextFixture.h"
 
 #include <gweni/controls/richText.h>
 #include <gweni/skins/textured/texturedControls.h>
@@ -47,93 +47,11 @@
 using namespace gweni;
 using controls::RichSpan;
 using controls::RichText;
+using test::DrawRecorder;
+using test::RichSkin;
 
 namespace
 {
-
-//! Records the runs and slots the RichText renderer draws.
-class DrawRecorder: public test::StubRenderer
-{
-public:
-    struct TextDraw
-    {
-        size_t id;
-        Font font;
-        Point pos;
-        int zIndex;
-        String text;
-        Color color;
-    };
-
-    struct SlotDraw
-    {
-        size_t id;
-        bool rule;
-        Rect rect;
-        Color color;
-        int zIndex;
-    };
-
-    void renderText(size_t textId, const Font &font, Point pos, int zIndex, const String &text) override
-    {
-        texts.push_back({ textId, font, pos, zIndex, text, drawColor });
-        StubRenderer::renderText(textId, font, pos, zIndex, text);
-    }
-
-    void hideText(size_t textId) override
-    {
-        hiddenTexts.push_back(textId);
-        StubRenderer::hideText(textId);
-    }
-
-    void drawRoundedRect(size_t primitiveId, Rect rect, float radius, float border, Color top, Color bottom,
-        Color borderColor, int zIndex) override
-    {
-        slots.push_back({ primitiveId, false, rect, top, zIndex });
-        StubRenderer::drawRoundedRect(primitiveId, rect, radius, border, top, bottom, borderColor, zIndex);
-    }
-
-    void drawIcon(size_t primitiveId, Rect rect, int kind, int direction, Color color, int zIndex) override
-    {
-        CHECK(kind == 6);
-        CHECK(direction == 0);
-        slots.push_back({ primitiveId, true, rect, color, zIndex });
-        StubRenderer::drawIcon(primitiveId, rect, kind, direction, color, zIndex);
-    }
-
-    void hidePrimitive(size_t primitiveId) override
-    {
-        hiddenSlots.push_back(primitiveId);
-        StubRenderer::hidePrimitive(primitiveId);
-    }
-
-    void clear()
-    {
-        texts.clear();
-        slots.clear();
-        hiddenTexts.clear();
-        hiddenSlots.clear();
-    }
-
-    std::vector<TextDraw> texts;
-    std::vector<SlotDraw> slots;
-    std::vector<size_t> hiddenTexts;
-    std::vector<size_t> hiddenSlots;
-};
-
-//! The textured skin's RichText renderer, a StubControl for the rest
-class RichSkin: public test::StubSkin
-{
-public:
-    explicit RichSkin(test::StubRenderer *renderer): StubSkin(renderer) {}
-
-    std::unique_ptr<skin::Control> getControlRenderer(std::string typeName) override
-    {
-        if(typeName == "RichText")
-            return std::make_unique<skin::textured::RichText>();
-        return StubSkin::getControlRenderer(typeName);
-    }
-};
 
 std::vector<RichSpan> sampleSpans()
 {
@@ -532,7 +450,7 @@ TEST_CASE("RichText: a hovered link is drawn in LinkHover with the Finger cursor
     moveTo(scene, pieceCentre(rich, 0));
     CHECK(gweni::HoveredControl == rich);
     CHECK(rich->getHoveredLink() == -1);
-    CHECK(rich->getCursor() == cursor::Normal);
+    CHECK(rich->getCursor() == cursor::Beam);
 
     moveTo(scene, pieceCentre(rich, 7));
     CHECK(rich->getHoveredLink() == 7);
@@ -555,7 +473,7 @@ TEST_CASE("RichText: a hovered link is drawn in LinkHover with the Finger cursor
     // off it: the same run and line back in the link colour
     moveTo(scene, pieceCentre(rich, 8));
     CHECK(rich->getHoveredLink() == -1);
-    CHECK(rich->getCursor() == cursor::Normal);
+    CHECK(rich->getCursor() == cursor::Beam);
     REQUIRE(scene.renderer.texts.size() == 1);
     CHECK(scene.renderer.texts[0].id == runOf(rich, 7));
     CHECK((scene.renderer.texts[0].color == link));

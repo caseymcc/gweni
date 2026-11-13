@@ -158,6 +158,8 @@ set(GWENI_SOURCES
     source/text/tokenizer.cpp
     include/gweni/text/richLayout.h
     source/text/richLayout.cpp
+    include/gweni/text/selectionModel.h
+    source/text/selectionModel.cpp
     include/gweni/text/undoStack.h
     source/text/undoStack.cpp
     include/gweni/text/wrap.h
