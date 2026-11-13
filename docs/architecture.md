@@ -3579,7 +3579,11 @@ two programs and the draws. What follows describes both together:
   written when the match count changes: the Menu's new height gives every row on
   screen a new clip box. A query matching nothing shows one disabled "No matches" row.
   The list closing without a pick, Escape and the field losing the focus give the
-  field back the value's text.
+  field back the value's text, and so does a pick, the selected option's included
+  (`select()` leaves an unchanged index alone, so `pick()` shows the value itself):
+  otherwise the query would stay in a free-text field and be taken as a value when it
+  lost the focus. The field takes the box's font (`setFont`), and a disabled box
+  closes its list.
 
   **Free text** (`setAllowCustomValue(true)`, filterable too) shows an Add “text” row
   after the matches whenever the text is no option's label (case aside), alone and
@@ -3613,7 +3617,8 @@ two programs and the draws. What follows describes both together:
   from it and the X and Y arranges place the chips and the field from it: a chip that
   wraps or goes lays the box (and its parent's path, when its height changes) out in
   one pass, and the open list is at the box's new bottom edge in that frame. The box's
-  height flag is Expand, so a request is the least it is.
+  height flag is Expand, so a request is the least it is; `setMultiSelect(false)`
+  gives back the flag it had.
 
   `tests/unit/searchComboBox.cpp` pins every mode headless; `controltest_search_combo`
   (`--scenario search-combo`, and `_vulkan`, and `controltest_verify_layout_search_combo`)

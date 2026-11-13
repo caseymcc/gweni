@@ -60,7 +60,12 @@
  *  picks that option, an emptied field gets the value back, and Return takes
  *  the text with the list closed by the box's chevron, the focus staying.
  *  An option the handler adds, one added later and setOptions() leave a
- *  free-text value the value.
+ *  free-text value the value. A pick of the selected option (Return, a row
+ *  click, its label in another case and Tab) shows its label in the field
+ *  and is not taken as a free-text value when the focus moves on, a refused
+ *  text included; the value taken is the text typed, whatever the handler
+ *  sets the field to. A disabled box closes its list, and a press where a
+ *  row was picks nothing; a filterable box's font reaches its field.
  *
  *  Multi-select: no selection and no text on the box; a row click and Return
  *  each add the option as a chip, in pick order, the list staying open with
@@ -77,6 +82,7 @@
  *  the list following again, with layout verification off and on. A free-text
  *  value is a chip of its own, once, the field emptied and the list on every
  *  option again; an option's label typed in full and a lost focus pick it.
+ *  Multi-select off gives the box back the height flag it had.
  */
 #include "headlessFixture.h"
 
@@ -1260,6 +1266,136 @@ TEST_CASE("SearchComboBox: free text, an option the handler adds leaves the valu
     CHECK(box->getField()->getText() == "web-3");
 }
 
+TEST_CASE("SearchComboBox: free text, a pick of the selected option shows its label and takes no free-text value")
+{
+    Scene scene;
+    SearchComboBox *box=freeText(scene, {"web-1", "web-2"});
+    controls::TextBox *other=scene.canvas->newChild<controls::TextBox>();
+    CustomValues customs;
+
+    other->setBounds(20, 300, 100, 20);
+    customs.listen(box);
+    REQUIRE(box->getSelectedIndex() == 0);
+
+    // Return on the highlighted selected option
+    type(scene, "web");
+    REQUIRE(box->getHighlightedIndex() == 0);
+    scene.key(keys::Return);
+    CHECK(!box->isListOpen());
+    CHECK(box->getField()->getText() == "web-1");
+    scene.clickOn(other);
+    CHECK(customs.texts.empty());
+    CHECK(!box->hasCustomValue());
+    CHECK(box->getValue() == "web-1");
+
+    // a click on its row
+    box->getField()->focus();
+    box->getField()->onSelectAll(box->getField());
+    type(scene, "web");
+    REQUIRE(rowFor(box, 0));
+    scene.clickOn(rowFor(box, 0));
+    CHECK(!box->isListOpen());
+    CHECK(box->getField()->getText() == "web-1");
+    scene.clickOn(other);
+    CHECK(customs.texts.empty());
+    CHECK(box->getValue() == "web-1");
+
+    // its label in another case, the focus moved on
+    box->getField()->focus();
+    box->getField()->onSelectAll(box->getField());
+    type(scene, "WEB-1");
+    scene.key(keys::Tab);
+    CHECK(box->getField()->getText() == "web-1");
+    CHECK(box->getSelectedIndex() == 0);
+    CHECK(customs.texts.empty());
+}
+
+TEST_CASE("SearchComboBox: free text, a refused text gives way to a pick of the selected option")
+{
+    Scene scene;
+    SearchComboBox *box=freeText(scene, {"web-1", "web-2"});
+    CustomValues customs;
+
+    customs.listen(box);
+    customs.refuse=true;
+    // the Add row after the two matches, then refused
+    type(scene, "web");
+    scene.key(keys::Up);
+    REQUIRE(box->getHighlightedIndex() == SearchComboBox::NoOption);
+    scene.key(keys::Return);
+    REQUIRE(box->isCustomValueRefused());
+    REQUIRE(box->isListOpen());
+
+    // Down wraps onto web-1, the selected option, and Return picks it
+    scene.key(keys::Down);
+    REQUIRE(box->getHighlightedIndex() == 0);
+    scene.key(keys::Return);
+    CHECK(!box->isListOpen());
+    CHECK(!box->isCustomValueRefused());
+    CHECK(box->getField()->getText() == "web-1");
+    CHECK((box->getField()->getTextColor() == scene.skin.Colors.Label.Default));
+    CHECK(customs.texts.size() == 1);
+}
+
+TEST_CASE("SearchComboBox: free text, the value is the text typed, whatever the handler sets the field to")
+{
+    Scene scene;
+    SearchComboBox *box=freeText(scene, {"web-1"});
+
+    // a handler writing the field while the box takes the text
+    struct Rewriter: event::Handler
+    {
+        void custom(event::Info)
+        {
+            box->getField()->setText("rewritten");
+        }
+        SearchComboBox *box=nullptr;
+    } rewriter;
+
+    rewriter.box=box;
+    box->onCustomValue.add(&rewriter, &Rewriter::custom);
+    type(scene, "newhost");
+    REQUIRE(rowText(box, 0) == SearchComboBox::addRowText("newhost"));
+    scene.clickOn(box->getOptionsList()->rowForItem(0));
+    CHECK(box->hasCustomValue());
+    CHECK(box->getValue() == "newhost");
+}
+
+TEST_CASE("SearchComboBox: disabled, the open list closes and a row picks nothing")
+{
+    Scene scene;
+    SearchComboBox *box=scene.box(5);
+    Counter selections;
+
+    selections.listen(box->onSelection);
+    scene.clickOn(box);
+    REQUIRE(box->isListOpen());
+
+    controls::Base *row=rowFor(box, 3);
+
+    REQUIRE(row);
+
+    const Rect at=Scene::canvasRect(row);
+
+    box->setDisabled(true);
+    scene.frame();
+    CHECK(!box->isListOpen());
+    scene.click(at.x+at.w/2, at.y+at.h/2);
+    CHECK(selections.calls == 0);
+    CHECK(box->getSelectedIndex() == 0);
+}
+
+TEST_CASE("SearchComboBox: filterable, the box's font reaches its field")
+{
+    Scene scene;
+    SearchComboBox *box=filterable(scene, {"a", "b"});
+    gweni::Font font=box->getFont();
+
+    font.size+=7;
+    box->setFont(font);
+    CHECK(box->getField()->getFont().size == font.size);
+}
+
 namespace
 {
 
@@ -1520,6 +1656,19 @@ TEST_CASE("SearchComboBox: multi-select, a free-text value becomes a chip of its
     CHECK(chipTexts(box) == (std::vector<String>{"newtag", "web-2"}));
     CHECK(box->getField()->getText() == "");
     CHECK(changes.calls == 2);
+}
+
+TEST_CASE("SearchComboBox: multi-select off gives the box back its height flag")
+{
+    Scene scene;
+    SearchComboBox *box=scene.box(3);
+
+    REQUIRE((box->getSizeFlags().vertical == SizeFlag::Fixed));
+    box->setMultiSelect(true);
+    CHECK((box->getSizeFlags().vertical == SizeFlag::Expand));
+    box->setMultiSelect(false);
+    CHECK((box->getSizeFlags().vertical == SizeFlag::Fixed));
+    CHECK((box->getSizeFlags().horizontal == SizeFlag::Fixed));
 }
 
 TEST_CASE("SearchComboBox: multi-select, Up and Down on the closed box open the list, Backspace on a plain box takes the last pick")

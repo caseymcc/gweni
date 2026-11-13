@@ -329,7 +329,8 @@ public:
     static const char *noMatchesText() { return "No matches"; }
 
     //! Multi-select (above). Either way the picks or the selection start
-    //! empty, firing nothing; on, the height flag becomes Expand.
+    //! empty, firing nothing; on, the height flag becomes Expand, and off
+    //! it is the one it was before.
     void setMultiSelect(bool multi);
     bool isMultiSelect() const { return m_multi; }
     //! The picked options, in pick order (free-text picks left out).
@@ -397,8 +398,11 @@ public:
     //! Filterable, a press on the box (its chevron's column) leaves the
     //! focus where it is: its release focuses the field (onPress).
     bool pressKeepsKeyboardFocus() override { return m_filterable; }
-    //! The field is disabled with the box.
+    //! The field is disabled with the box, and disabling closes the list.
     void setDisabled(bool disabled) override;
+    using ParentClass::setFont;
+    //! The field takes the box's font too.
+    void setFont(const gweni::Font &font) override;
     //! The field over the text area (multi-select: the chips and the field
     //! where flowRects() puts them), along each axis before the children.
     void arrange(skin::Base *skin, Dim dim) override;
@@ -547,6 +551,8 @@ protected:
         Chip *chip=nullptr;
     };
     bool m_multi=false;
+    //! The height flag setMultiSelect(true) replaced, given back by false.
+    SizeFlag m_singleHeightFlag=SizeFlag::Fixed;
     std::vector<Pick> m_picks;
     std::vector<char> m_picked;
 
@@ -556,6 +562,8 @@ protected:
     //! What optionsTextWidth() measured: each option's width, valid while
     //! m_widthsValid and the font, renderer and text layout are these.
     std::vector<int> m_optionWidths;
+    //! The largest of m_optionWidths.
+    int m_widestWidth=0;
     bool m_widthsValid=false;
     gweni::Font m_widthsFont;
     const renderer::Base *m_widthsRenderer=nullptr;
