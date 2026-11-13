@@ -190,6 +190,8 @@ set(GWENI_CONTROL_SOURCES
     source/controls/chart.cpp
     include/gweni/controls/chartAxis.h
     source/controls/chartAxis.cpp
+    include/gweni/controls/badge.h
+    source/controls/badge.cpp
     include/gweni/controls/checkBox.h
     source/controls/checkBox.cpp
     include/gweni/controls/codeEditor.h

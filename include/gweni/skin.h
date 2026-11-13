@@ -405,6 +405,8 @@ public:
         gweni::Color PlaceholderText{0x80, 0x80, 0x80};
         //! A VectorField's axis letter (X, Y, Z, W), drawn on its axis's colour.
         gweni::Color AxisTagText{0, 0, 0};
+        //! A Badge's count, drawn on its bubble.
+        gweni::Color BadgeText{255, 255, 255};
 
         //! A CodeEditor's line numbers, the number of the caret's line, and
         //! the colour of each token kind it highlights, Tokens[k] the colour

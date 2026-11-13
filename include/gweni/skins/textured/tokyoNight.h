@@ -290,6 +290,11 @@ inline Surface VectorTagY        { Green,                 Green,                
 inline Surface VectorTagZ        { Blue,                  Blue,                  Blue,        RadiusSm, 0.0f };
 inline Surface VectorTagW        { FgDark,                FgDark,                FgDark,      RadiusSm, 0.0f };
 
+// A Badge's bubble (its count in the skin's BadgeText): red, ringed in the
+// canvas's colour so it stands off the controls it overhangs. The radius is
+// its most; a bubble is as round as its height allows (a pill, a dot).
+inline Surface Badge             { Red,                   Red,                   Bg,          RadiusLg, BorderW };
+
 // A NodeGraph and its nodes. The graph's backdrop is GraphGrid's top and
 // bottom, its grid lines GraphGrid's border colour, every GridMajorEvery-th one
 // GraphGridMajor's top. A node's frame is NodeBody (NodeSelected while it is
@@ -364,6 +369,7 @@ inline std::unordered_map<std::string, Surface*>& surfaceRegistry()
         {"DragNumberDown",&DragNumberDown},{"DragNumberDisabled",&DragNumberDisabled},
         {"VectorTagX",&VectorTagX},{"VectorTagY",&VectorTagY},{"VectorTagZ",&VectorTagZ},
         {"VectorTagW",&VectorTagW},
+        {"Badge",&Badge},
         {"GraphGrid",&GraphGrid},{"GraphGridMajor",&GraphGridMajor},{"NodeBody",&NodeBody},
         {"NodeSelected",&NodeSelected},{"NodeTitle",&NodeTitle},{"PinIn",&PinIn},{"PinOut",&PinOut},
         {"LinkHover",&LinkHover},{"Marquee",&Marquee},

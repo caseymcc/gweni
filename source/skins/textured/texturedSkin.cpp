@@ -485,6 +485,7 @@ std::unordered_map<std::string, gweni::Color*> TexturedSkin::textColorRegistry()
         {"TooltipText",&Colors.TooltipText},
         {"PlaceholderText",&Colors.PlaceholderText},
         {"AxisTagText",&Colors.AxisTagText},
+        {"BadgeText",&Colors.BadgeText},
         {"CodeLineNumber",&Colors.CodeEditor.LineNumber},
         {"CodeLineNumberCurrent",&Colors.CodeEditor.LineNumberCurrent},
         {"ChartAxisText",&Colors.Chart.AxisText},{"ChartMarkerText",&Colors.Chart.MarkerText},
@@ -1329,6 +1330,8 @@ void TexturedSkin::setThemeColors()
     Colors.TooltipText=Fg;
     Colors.PlaceholderText=Muted;
     Colors.AxisTagText=BgDark;
+    // a Badge's count, dark on its red bubble as an axis tag's letter
+    Colors.BadgeText=BgDark;
     // a CodeEditor's line numbers, the caret's line's lifted
     Colors.CodeEditor.LineNumber=gweni::Color(0x3b, 0x42, 0x61);
     Colors.CodeEditor.LineNumberCurrent=gweni::Color(0x73, 0x7a, 0xa2);

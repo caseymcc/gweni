@@ -1654,6 +1654,34 @@ public:
     inline static const std::string_view name="VectorFieldTag";
 };
 
+// controls::Badge: its bubble in one primitive (the Badge surface, as round as
+// its height allows) and its number in a text run of its own, both at the
+// badge's getAttachedZIndex(), so they are in front of its anchor's later
+// siblings; a dot is the bubble alone.
+class Badge:public textured::ControlRegister<Badge>
+{
+public:
+    static void staticInit(TexturedSkin *) { m_staticInit=true; }
+
+    size_t requiredPrimitives() override { return 1; }
+
+    void generate(renderer::Base *renderer, controls::Base *baseControl) override;
+    void update(renderer::Base *renderer, controls::Base *baseControl) override;
+    void remove(renderer::Base *renderer, controls::Base *baseControl) override;
+    void appendIds(std::vector<size_t> &primitiveIds, std::vector<size_t> &textIds) const override
+    {
+        ControlRegister<Badge>::appendIds(primitiveIds, textIds);
+        if(m_hasText)
+            textIds.push_back(m_textId);
+    }
+
+    inline static const std::string_view name="Badge";
+
+private:
+    bool m_hasText=false;
+    size_t m_textId=0;
+};
+
 class StatusBar:public textured::ControlRegister<StatusBar>
 {
 public:

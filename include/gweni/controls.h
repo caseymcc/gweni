@@ -8,6 +8,7 @@
 #ifndef _gweni_controls_h_
 #define _gweni_controls_h_
 
+#include <gweni/controls/badge.h>
 #include <gweni/controls/base.h>
 #include <gweni/controls/bullet.h>
 #include <gweni/controls/button.h>

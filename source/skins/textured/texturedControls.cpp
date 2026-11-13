@@ -24,6 +24,7 @@
 #include "gweni/controls/colorButton.h"
 #include "gweni/controls/dragNumber.h"
 #include "gweni/controls/vectorField.h"
+#include "gweni/controls/badge.h"
 #include "gweni/controls/textBox.h"
 #include "gweni/controls/separator.h"
 #include "gweni/controls/selectable.h"
@@ -3521,6 +3522,64 @@ void VectorFieldTag::update(renderer::Base *renderer, controls::Base *baseContro
 
 
 ///////////////////////////////////////////////////////////////////////////
+//Badge
+void Badge::generate(renderer::Base *renderer, controls::Base *baseControl)
+{
+    ControlRegister<Badge>::generate(renderer, baseControl);
+
+    if(!m_hasText)
+    {
+        renderer->generateTextPrimitive(m_textId);
+        m_hasText=true;
+    }
+}
+
+void Badge::update(renderer::Base *renderer, controls::Base *baseControl)
+{
+    if(m_primitives.empty() || !m_hasText)
+        return;
+
+    controls::Badge *badge=static_cast<controls::Badge *>(baseControl);
+    const bool visible=badge->visible();
+
+    if(visible)
+    {
+        const tokyonight::Surface &surface=tokyonight::Badge;
+        const Rect &bounds=badge->getRenderBounds();
+        const float radius=std::min(surface.radius, 0.5f*float(std::min(bounds.w, bounds.h)));
+        const int z=badge->getAttachedZIndex();
+
+        renderer->drawRoundedRect(m_primitives[0], bounds, radius, surface.borderWidth, surface.top,
+            surface.bottom, surface.border, z);
+        renderer->setDrawColor(badge->getSkin()->Colors.BadgeText);
+        renderer->renderText(m_textId, badge->getFont(), badge->textOrigin(), z, badge->getText());
+    }
+
+    const int stateChange=badge->getStateChange();
+
+    if((stateChange & controls::StateChange_Visibility) || (stateChange & controls::StateChange_Created))
+    {
+        renderer->showPrimitive(visible?4:0, m_primitives[0]);
+        if(visible)
+            renderer->showText(m_textId);
+        else
+            renderer->hideText(m_textId);
+    }
+}
+
+void Badge::remove(renderer::Base *renderer, controls::Base *baseControl)
+{
+    ControlRegister<Badge>::remove(renderer, baseControl);
+
+    if(m_hasText)
+    {
+        renderer->releaseTextPrimitive(m_textId);
+        m_hasText=false;
+    }
+}
+
+
+///////////////////////////////////////////////////////////////////////////
 //StatusBar
 size_t StatusBar::Background;
 size_t StatusBar::Selection;
@@ -4345,6 +4404,7 @@ template class ControlRegister<ColorDisplay>;
 template class ControlRegister<ColorButton>;
 template class ControlRegister<DragNumber>;
 template class ControlRegister<VectorFieldTag>;
+template class ControlRegister<Badge>;
 template class ControlRegister<StatusBar>;
 // NOTE: TabItem<_Type> is itself a class template (TabItem<TabTop>, <TabBottom>,
 // <TabLeft>, <TabRight>); register those specializations here if/when their
