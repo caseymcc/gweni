@@ -105,9 +105,40 @@ public:
     LogViewChevron *getChevron() const { return m_chevron; }
     //! The content of the app's kind it shows, or null for a plain or block row.
     Base *getKindContent() const { return m_content; }
-    //! Whether the row it shows is selected: its renderer draws the
-    //! highlight over its bounds at getTextZIndex(), behind every glyph.
-    bool isSelected() const { return m_selected; }
+    //! What of the row it shows is selected, in bytes of the text its Label
+    //! shows: the union of every range's part of it.
+    struct Selection
+    {
+        //! A range touches the row.
+        bool selected=false;
+        //! It covers all of it, alone or inside a range running on both
+        //! sides: the row's bounds are the highlight (as a click's row).
+        bool whole=false;
+        //! A range runs on from the row before it, past its end to the next.
+        bool fromBefore=false;
+        bool continues=false;
+        size_t begin=0;
+        size_t end=0;
+
+        bool operator==(const Selection &other) const
+        {
+            return selected == other.selected && whole == other.whole && fromBefore == other.fromBefore
+                && continues == other.continues && begin == other.begin && end == other.end;
+        }
+    };
+
+    //! Whether a selected range touches the row it shows.
+    bool isSelected() const { return m_selection.selected; }
+    const Selection &getSelection() const { return m_selection; }
+    //! The highlight's rects in the row's coordinates, which its renderer
+    //! draws at getTextZIndex(), behind every glyph: the row's bounds when it
+    //! is selected whole (or shows an app kind's content), else one per
+    //! wrapped line the selection covers, from the character it starts at
+    //! (the row's left edge for one coming from above) to the one it ends
+    //! at (the row's right edge where it runs on past the line), the line's
+    //! rows of the view's line height, the row's top and bottom padding
+    //! included where the selection runs on into the row before or after.
+    void getSelectionRects(std::vector<Rect> &rects);
     int getTextZIndex() const { return m_text->getZIndex(); }
 
     void calculateSize(skin::Base *skin, Dim dim) override;
@@ -119,12 +150,13 @@ protected:
 private:
     friend class controls::LogView;
 
-    //! Marks StateChange_Background only on a change.
-    void setSelected(bool selected);
+    //! Marks StateChange_Background on a change, and with redraw on a row
+    //! selected in part (its rects follow its text, which a bind changes).
+    void setSelection(const Selection &selection, bool redraw);
 
     LogView *m_view=nullptr;
     int m_kind=0;
-    bool m_selected=false;
+    Selection m_selection;
     LogViewChevron *m_chevron=nullptr;
     //! The content shown, of m_contents.
     Base *m_content=nullptr;
@@ -297,6 +329,9 @@ public:
     //! title's end, the lines after it are their own bytes. Other rows show
     //! their rowText().
     size_t shownToRowCharacter(RowId id, size_t shown) const;
+    //! The inverse: a byte of rowText() as a byte of the shown text, a
+    //! collapsed block's hidden lines at its shown text's end.
+    size_t rowToShownCharacter(RowId id, size_t character) const;
 
     //! The row and character under a canvas point on a row on screen: the
     //! closest caret of the row's wrapped text (Text::getClosestCharacter,
@@ -449,8 +484,10 @@ private:
     bool pruneSelection();
     //! pruneSelection(), the rows on screen told, onSelectionChanged.
     void selectionChanged();
-    //! Tells every pooled row on screen whether its row is selected.
+    //! Tells every pooled row on screen what of its row is selected.
     void refreshRowSelection();
+    //! What of the row at the position is selected, as its row shows it.
+    internal::LogViewRow::Selection rowSelection(size_t position) const;
     void onCopy(event::Info);
     void onSelectAll(event::Info);
     //! The item under a point in the view's coordinates, its y clamped into

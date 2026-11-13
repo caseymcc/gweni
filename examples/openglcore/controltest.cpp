@@ -833,7 +833,11 @@
  *                 the viewport, the canvas 120 units narrower and back, a
  *                 press on a collapsed block's title and a second one, a click
  *                 and a Shift+click selecting 3 plain rows and Ctrl+C, the
- *                 view scrolled to the top and back to the same row, and the
+ *                 view scrolled to the top and back to the same row, on those
+ *                 rows a drag inside the first, on to the middle of the third
+ *                 and Ctrl+C, the view scrolled to the top and back again, a
+ *                 double-click on a word of the second and a Shift+click on
+ *                 the third, and the
  *                 cap set to the row count with 10 appends (log-view-<N>.png
  *                 at the end). One line
  *                   log-view settled_1000=yes|no ... same_pool=yes|no
@@ -849,7 +853,14 @@
  *                 and the collapse gives the frame back; Ctrl+C copies the 3
  *                 rows' text joined by '\n'; at the top every row is marked
  *                 selected as its row is, and back the selection shows again
- *                 in the viewport byte for byte; the cap's drops move nothing outside
+ *                 in the viewport byte for byte; a drag frame inside a row
+ *                 writes that row's highlight slots alone (no glyph slot, no
+ *                 pixel changed outside it), the drag to the third row copies
+ *                 exactly the characters from the press to the mouse joined
+ *                 by '\n', scrolled off and back it shows byte for byte (at
+ *                 the top no row showing it), the double-click selects its
+ *                 word and the Shift+click extends from the word's start to
+ *                 the character clicked; the cap's drops move nothing outside
  *                 the bar and the button; the pool, the controls and the ids
  *                 the log holds are the same at both counts, and the demo
  *                 gives every primitive id back. Exits non-zero if any check
@@ -13069,7 +13080,9 @@ static bool runFlowScenario(Session &s, const std::string &shotDir, bool &passed
 // button (following again), a replace above the viewport (no pixel in it), a
 // canvas resize (the anchor row where it was), a block expanded (that row and
 // the rows below it), three rows selected and copied, the selection scrolled
-// off screen and back (the same pixels), and the cap dropping rows while
+// off screen and back (the same pixels), characters of them dragged over (a
+// frame inside one row its highlight alone), copied, scrolled off and back, a
+// double-clicked word and a Shift+click, and the cap dropping rows while
 // detached (nothing on screen moving). Every settled frame writes and changes
 // nothing, the pool and the ids the view holds are the same at both counts,
 // and the demo gives every primitive id back.
@@ -13118,6 +13131,173 @@ static gweni::Point logRowPoint(gweni::controls::LogView *log, gweni::controls::
     if(!row)
         return gweni::Point(-1, -1);
     return row->localPosToCanvas(gweni::Point(row->getWidth()/2, row->getHeight()-2));
+}
+
+// The canvas point of the caret before a character of a plain row on screen,
+// in the middle of its wrapped line.
+static gweni::Point logCharPoint(gweni::controls::LogView *log, gweni::controls::LogView::RowId id, size_t character)
+{
+    gweni::controls::internal::LogViewRow *row=log->rowControl(id);
+
+    if(!row)
+        return gweni::Point(-1, -1);
+
+    const gweni::Rect caret=row->getCharacterPosition(static_cast<int>(character));
+
+    return row->localPosToCanvas(gweni::Point(caret.x, caret.y+caret.h/2));
+}
+
+// The run of letters, digits and '_' round a byte of an ASCII text.
+static std::string wordAround(const std::string &text, size_t at)
+{
+    const auto word=[](char c) { return std::isalnum(static_cast<unsigned char>(c)) || c == '_'; };
+    size_t begin=at;
+    size_t end=at;
+
+    while(begin > 0 && word(text[begin-1]))
+        --begin;
+    while(end < text.size() && word(text[end]))
+        ++end;
+    return text.substr(begin, end-begin);
+}
+
+// Characters of three plain rows a, b, c on screen: a drag inside a (each
+// frame writing a's highlight slots alone, changing no pixel outside it),
+// on from there to the middle of c and Ctrl+C (exactly the characters), the
+// selection scrolled off screen and back (the same pixels), a double-click
+// on a word of b (that word) and a Shift+click on c (from the word's start).
+template<typename Check>
+static void runLogViewCharacters(Session &s, gweni::controls::LogView *log, gweni::controls::LogView::RowId a,
+    gweni::controls::LogView::RowId b, gweni::controls::LogView::RowId c, const Check &check)
+{
+    const std::string textA=log->rowText(a);
+    const std::string textB=log->rowText(b);
+    const std::string textC=log->rowText(c);
+    const size_t fromA=textA.size()/2;
+    const size_t toC=textC.size()/2;
+    const gweni::Rect view=viewportOnCanvas(log);
+
+    check("char_rows", textA.size() > 12 && textC.size() > 4 && log->rowControl(a) && log->rowControl(c),
+        "rows too short for a drag inside one");
+    if(textA.size() <= 12 || textC.size() <= 4 || !log->rowControl(a) || !log->rowControl(c))
+        return;
+
+    // the mouse at the press's place first, so the frames compared hover the
+    // same control
+    gweni::Point at=logCharPoint(log, a, fromA);
+
+    moveMouse(s, at.x, at.y);
+    renderFrames(s, 1);
+    settleLogView(s);
+    mouseDown(s, at.x, at.y, true);
+    renderFrames(s, 1);
+    at=logCharPoint(log, a, fromA+2);
+    moveMouse(s, at.x, at.y);
+    renderFrames(s, 1);
+    check("settled_char_drag", settleLogView(s) == 0, "a settled frame in a drag wrote something");
+
+    // the drag inside row a: its own slots alone
+    {
+        gweni::controls::internal::LogViewRow *row=log->rowControl(a);
+        const gweni::Rect rowRect=row->getCanvasBounds();
+        const std::vector<uint8_t> before=framePixels(s);
+
+        at=logCharPoint(log, a, fromA+5);
+        moveMouse(s, at.x, at.y);
+
+        const CodeEditorFrame frame=codeEditorFrame(s);
+        std::vector<size_t> own, ownTexts;
+
+        if(const gweni::skin::Control *skinControl=row->getSkinControl())
+            skinControl->appendIds(own, ownTexts);
+
+        const std::set<size_t> allowed(own.begin(), own.end());
+        const size_t outside=differencesOutsideRects(s, before, frame.pixels, {rowRect});
+
+        check("char_drag_row", !frame.primitives.empty() && idsWithin(frame.primitives, allowed)
+            && frame.texts.empty() && frame.passes <= 1 && outside == 0
+            && log->getSelectedText() == textA.substr(fromA, 5),
+            "a drag inside a row wrote "+std::to_string(frame.primitives.size())+" primitive and "
+            +std::to_string(frame.texts.size())+" text ids not all its highlight's, or changed "
+            +std::to_string(outside)+" pixels outside it, or selected \""+log->getSelectedText()+"\"");
+    }
+
+    // on to the middle of row c, two rows down, and Ctrl+C
+    at=logCharPoint(log, c, toC);
+    moveMouse(s, at.x, at.y);
+    renderFrames(s, 1);
+    mouseUp(s, at.x, at.y);
+    renderFrames(s, 1);
+    gweni::platform::setClipboardText("");
+    sendKey(s, "ctrl+c");
+    renderFrames(s, 1);
+
+    const std::string expected=textA.substr(fromA)+"\n"+textB+"\n"+textC.substr(0, toC);
+
+    check("char_copy", gweni::platform::getClipboardText() == expected,
+        "Ctrl+C gave \""+gweni::platform::getClipboardText()+"\", not \""+expected+"\"");
+    check("settled_char_select", settleLogView(s) == 0, "a settled frame with the selection wrote something");
+
+    // scrolled off screen and back: the same pixels, row a still in part
+    {
+        const std::vector<uint8_t> selected=framePixels(s);
+        const size_t anchor=log->getAnchorItem();
+        const int anchorOffset=log->getAnchorOffset();
+
+        log->setVerticalScrollOffset(0);
+        renderFrames(s, s.frames);
+
+        // the rows the pool gave the top's rows show none of it
+        bool off=!log->rowControl(a);
+
+        for(gweni::controls::Base *control : log->getRows())
+        {
+            auto *row=gweni::gweni_cast<gweni::controls::internal::LogViewRow>(control);
+            const size_t item=log->itemForRow(control);
+
+            if(row && !row->hidden() && item != gweni::controls::VirtualList::NoItem)
+                off=off && row->getSelection().selected == log->isRowSelected(log->rowIdAt(item));
+        }
+
+        log->setVerticalScrollOffset(static_cast<int>(log->getHeightIndex().offsetOf(anchor))+anchorOffset);
+        renderFrames(s, s.frames);
+
+        gweni::controls::internal::LogViewRow *row=log->rowControl(a);
+
+        check("char_selection_back", off && differencesIn(s, selected, framePixels(s), view) == 0 && row
+            && row->getSelection().selected && !row->getSelection().whole,
+            "the character selection scrolled off screen and back does not show as it did");
+        settleLogView(s);
+    }
+
+    // a double-click on a word of row b, then Shift+click on row c
+    {
+        const size_t space=textB.find(' ', textB.size()/3);
+        const size_t inWord=(space == std::string::npos)?1:space+2;
+        const std::string word=wordAround(textB, inWord);
+
+        at=logCharPoint(log, b, inWord);
+        doubleClickMouse(s, at.x, at.y);
+        renderFrames(s, 1);
+        check("double_click_word", !word.empty() && log->getSelectedText() == word,
+            "a double-click selected \""+log->getSelectedText()+"\", not the word \""+word+"\"");
+        check("settled_word", settleLogView(s) == 0, "a settled frame with the word selected wrote something");
+
+        const size_t wordStart=textB.find(word, inWord+1 > word.size()?inWord+1-word.size():0);
+        const size_t toShift=toC/2;
+
+        at=logCharPoint(log, c, toShift);
+        glfwKey(s, GLFW_KEY_LEFT_SHIFT, GLFW_PRESS, GLFW_MOD_SHIFT);
+        clickMouse(s, at.x, at.y);
+        glfwKey(s, GLFW_KEY_LEFT_SHIFT, GLFW_RELEASE, 0);
+        renderFrames(s, 1);
+
+        const std::string extended=textB.substr(wordStart)+"\n"+textC.substr(0, toShift);
+
+        check("shift_click_extends", wordStart != std::string::npos && log->getSelectedText() == extended,
+            "Shift+click selected \""+log->getSelectedText()+"\", not \""+extended+"\"");
+        check("settled_shift_click", settleLogView(s) == 0, "a settled frame after Shift+click wrote something");
+    }
 }
 
 static bool runLogViewCount(Session &s, const std::string &shotDir, size_t count, InteractionChecks &checks,
@@ -13437,6 +13617,8 @@ static bool runLogViewCount(Session &s, const std::string &shotDir, size_t count
                 && log->getAnchorItem() == anchor && log->rowControl(a) && log->rowControl(a)->isSelected(),
                 "the selection scrolled off screen and back does not show as it did");
             settleLogView(s);
+
+            runLogViewCharacters(s, log, a, log->rowIdAt(first+1), c, check);
         }
     }
 

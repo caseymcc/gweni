@@ -793,8 +793,9 @@ void LogView::update(renderer::Base *renderer, controls::Base *baseControl)
 
 ///////////////////////////////////////////////////////////////////////////
 //LogViewRow
-// An unselected row's slot is hidden, not drawn transparent, which would
-// still write depth over the field behind it.
+// A slot per highlight rect, one at least: an unselected row's is hidden, not
+// drawn transparent, which would still write depth over the field behind
+// it; the slots past the rects are given back.
 void LogViewRow::update(renderer::Base *renderer, controls::Base *baseControl)
 {
     if(m_primitives.empty())
@@ -803,10 +804,34 @@ void LogViewRow::update(renderer::Base *renderer, controls::Base *baseControl)
     controls::internal::LogViewRow *row=static_cast<controls::internal::LogViewRow *>(baseControl);
     const tokyonight::Surface &selection=tokyonight::LogViewSelection;
 
-    if(row->visible() && row->isSelected())
-        renderer->drawRoundedRect(m_primitives[0], row->getRenderBounds(), selection.radius, selection.borderWidth,
-            selection.top, selection.bottom, selection.border, row->getTextZIndex());
-    else
+    m_rects.clear();
+    if(row->visible())
+        row->getSelectionRects(m_rects);
+
+    while(m_primitives.size() > std::max<size_t>(1, m_rects.size()))
+    {
+        renderer->releasePrimitive(m_primitives.back());
+        m_primitives.pop_back();
+    }
+    while(m_primitives.size() < m_rects.size())
+    {
+        size_t id;
+
+        renderer->generatePrimitive(id);
+        m_primitives.push_back(id);
+    }
+
+    const Rect &bounds=row->getRenderBounds();
+
+    for(size_t i=0; i < m_rects.size(); ++i)
+    {
+        const Rect &local=m_rects[i];
+
+        renderer->drawRoundedRect(m_primitives[i], Rect(bounds.x+local.x, bounds.y+local.y, local.w, local.h),
+            selection.radius, selection.borderWidth, selection.top, selection.bottom, selection.border,
+            row->getTextZIndex());
+    }
+    if(m_rects.empty())
         renderer->hidePrimitive(m_primitives[0]);
 }
 

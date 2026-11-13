@@ -55,13 +55,65 @@ void LogViewRow::fontChanged()
     m_text->invalidate();
 }
 
-void LogViewRow::setSelected(bool selected)
+void LogViewRow::setSelection(const Selection &selection, bool redraw)
 {
-    if(m_selected == selected)
+    const bool partial=selection.selected && !selection.whole;
+
+    if(m_selection == selection && !(redraw && partial))
         return;
 
-    m_selected=selected;
+    m_selection=selection;
     addStateChange(StateChange_Background);
+}
+
+// Each wrapped line's part of [begin, end): from the caret at its first
+// byte (the row's left edge when the selection comes from the line before)
+// to the caret at its last (the row's right edge when it runs on past the
+// line's last caret: its wrap point, its '\n', or for the last line into
+// the next row).
+void LogViewRow::getSelectionRects(std::vector<Rect> &rects)
+{
+    if(!m_selection.selected)
+        return;
+    if(m_selection.whole || m_content)
+    {
+        rects.push_back(Rect(0, 0, getWidth(), getHeight()));
+        return;
+    }
+
+    const int length=m_text->length();
+    const int begin=gweni::clamp(static_cast<int>(m_selection.begin), 0, length);
+    const int end=gweni::clamp(static_cast<int>(m_selection.end), begin, length);
+    const int wrapped=static_cast<int>(m_text->numLines());
+    const int lines=std::max(1, wrapped);
+    const int lineHeight=m_view?m_view->getLineHeight():m_text->getCharacterPosition(0).h;
+    const int textX=m_text->getX();
+    const int textY=m_text->getY();
+
+    for(int i=0; i < lines; ++i)
+    {
+        const int start=wrapped?m_text->getStartCharFromLine(i):0;
+        const int stop=wrapped?m_text->getEndCharFromLine(i):length;
+        const int last=wrapped?m_text->getLastCaretOnLine(i):length;
+        const bool lastLine=(i+1 == lines);
+        const bool fromLeft=(i == 0)?m_selection.fromBefore:begin < start;
+        const bool pastRight=lastLine?m_selection.continues:end > last;
+        const int from=std::max(begin, start);
+        const int to=std::min(end, stop);
+
+        // a selection from a later line's first byte (this one's stop) has
+        // none of this one; from the last line's end it has its end
+        if(end < start || begin > stop || (begin == stop && !lastLine) || (from >= to && !pastRight))
+            continue;
+
+        const int x0=fromLeft?0:textX+m_text->getCharacterPosition(static_cast<unsigned>(from)).x;
+        const int x1=pastRight?getWidth():textX+m_text->getCharacterPosition(static_cast<unsigned>(to)).x;
+        const int top=(i == 0 && fromLeft)?0:textY+i*lineHeight;
+        const int bottom=(lastLine && pastRight)?getHeight():textY+(i+1)*lineHeight;
+
+        if(x1 > x0 && bottom > top)
+            rects.push_back(Rect(x0, top, x1-x0, bottom-top));
+    }
 }
 
 // A row of an app's kind is as high as the kind's measurer says, its padding
@@ -865,6 +917,29 @@ size_t LogView::shownToRowCharacter(RowId id, size_t shown) const
     return shown-count;
 }
 
+size_t LogView::rowToShownCharacter(RowId id, size_t character) const
+{
+    const LogRow *row=getRow(id);
+
+    if(!row || row->kind != LogRow::Block)
+        return character;
+
+    const size_t title=row->text.size();
+
+    if(character <= title)
+        return character;
+
+    const String text=blockText(*row, m_previewLines);
+    const size_t total=row->lines.size();
+    const size_t lines=(row->collapsed && total > m_previewLines)?m_previewLines:total;
+    size_t lineBytes=0;
+
+    for(size_t i=0; i < lines; ++i)
+        lineBytes+=1+row->lines[i].size();
+
+    return std::min(character+(text.size()-title-lineBytes), text.size());
+}
+
 LogView::Position LogView::positionAt(const Point &canvasPoint)
 {
     const RowId id=rowAt(canvasPoint);
@@ -1278,8 +1353,48 @@ void LogView::refreshRowSelection()
         const size_t position=itemForRow(control);
 
         if(row && position != NoItem && position < m_rows.size())
-            row->setSelected(isRowSelected(m_rows[position].id));
+            row->setSelection(rowSelection(position), false);
     }
+}
+
+// The union of what each range covers of the row (as getSelectedText()
+// copies it), mapped to the text the row shows.
+internal::LogViewRow::Selection LogView::rowSelection(size_t position) const
+{
+    internal::LogViewRow::Selection selection;
+    const RowId id=m_rows[position].id;
+    size_t length=0;
+    size_t begin=0;
+    size_t end=0;
+
+    for(const SelectionRange &range : m_selection)
+    {
+        Position low, high;
+
+        ordered(range, low, high);
+        if(id < low.row || id > high.row)
+            continue;
+
+        if(!selection.selected)
+            length=rowLength(id);
+
+        const size_t from=(id == low.row)?std::min(low.character, length):0;
+        const size_t to=std::max(from, (id == high.row)?std::min(high.character, length):length);
+
+        begin=selection.selected?std::min(begin, from):from;
+        end=selection.selected?std::max(end, to):to;
+        selection.selected=true;
+        selection.fromBefore=selection.fromBefore || low.row < id;
+        selection.continues=selection.continues || high.row > id;
+    }
+    if(!selection.selected)
+        return selection;
+
+    // all of it, alone or with the selection on both sides: the row's band
+    selection.whole=(begin == 0 && end >= length && selection.fromBefore == selection.continues);
+    selection.begin=rowToShownCharacter(id, begin);
+    selection.end=rowToShownCharacter(id, end);
+    return selection;
 }
 
 void LogView::setFollowing(bool follow)
@@ -1499,7 +1614,8 @@ void LogView::bindRow(Base *control, size_t position)
     const LogRow &content=m_rows[position].row;
     const RowKind *kind=rowKind(content.kind);
 
-    row->setSelected(isRowSelected(m_rows[position].id));
+    // a row selected in part redraws: its rects follow the text bound here
+    row->setSelection(rowSelection(position), true);
     const bool block=(content.kind == LogRow::Block);
     Base *shown=nullptr;
 

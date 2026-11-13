@@ -538,3 +538,114 @@ TEST_CASE("LogView characters: a double-click selects a word and a drag extends 
     scene.click(scene.charPoint(a, 3), GLFW_MOD_SHIFT);
     CHECK(scene.log->getSelectedText() == "error");
 }
+
+//! A rect as text, so a failed check shows it.
+std::string str(const Rect &rect)
+{
+    return std::to_string(rect.x)+","+std::to_string(rect.y)+" "+std::to_string(rect.w)+"x"+std::to_string(rect.h);
+}
+
+TEST_CASE("LogView characters: the highlight is the row whole or a rect per wrapped line it covers")
+{
+    Scene scene(0);
+    String text;
+
+    for(int i=0; i < 40; ++i)
+        text+=(i?" word":"word")+std::to_string(i);
+
+    const RowId first=scene.log->append(controls::LogRow("first"));
+    const RowId wrapped=scene.log->append(controls::LogRow(text));
+    const RowId last=scene.log->append(controls::LogRow("last"));
+
+    scene.frame();
+    scene.frame();
+
+    controls::internal::LogViewRow *row=scene.log->rowControl(wrapped);
+
+    REQUIRE(row != nullptr);
+
+    const int lineHeight=scene.log->getLineHeight();
+    const auto caret=[&](size_t character) { return row->getCharacterPosition(static_cast<int>(character)); };
+    const auto rects=[&](controls::internal::LogViewRow *of)
+    {
+        std::vector<Rect> found;
+
+        of->getSelectionRects(found);
+        return found;
+    };
+    const size_t from=text.find("word2 ")+2;
+    const size_t to=text.find("word33")+3;
+    const int lines=(caret(to).y-caret(from).y)/lineHeight+1;
+
+    REQUIRE(lines >= 3);
+
+    // a clicked row: its bounds
+    scene.log->selectRow(wrapped);
+    scene.frame();
+    CHECK(row->getSelection().whole);
+    REQUIRE(rects(row).size() == 1);
+    CHECK(str(rects(row)[0]) == str(Rect(0, 0, row->getWidth(), row->getHeight())));
+    CHECK(rects(scene.log->rowControl(first)).empty());
+
+    // inside it: the first line from the caret to the right edge, the lines
+    // between whole, the last to the caret
+    scene.log->selectRange(Position{wrapped, from}, Position{wrapped, to});
+    scene.frame();
+    CHECK_FALSE(row->getSelection().whole);
+
+    std::vector<Rect> found=rects(row);
+
+    REQUIRE(found.size() == static_cast<size_t>(lines));
+    CHECK(str(found.front()) == str(Rect(caret(from).x, caret(from).y, row->getWidth()-caret(from).x, lineHeight)));
+    for(size_t i=1; i+1 < found.size(); ++i)
+        CHECK(str(found[i]) == str(Rect(0, caret(from).y+static_cast<int>(i)*lineHeight, row->getWidth(), lineHeight)));
+    CHECK(str(found.back()) == str(Rect(0, caret(to).y, caret(to).x, lineHeight)));
+
+    // inside one line: from caret to caret
+    scene.log->selectRange(Position{wrapped, from}, Position{wrapped, from+3});
+    scene.frame();
+    found=rects(row);
+    REQUIRE(found.size() == 1);
+    CHECK(str(found[0]) == str(Rect(caret(from).x, caret(from).y, caret(from+3).x-caret(from).x, lineHeight)));
+
+    // from the row above: its first line from the left edge and top; on into
+    // the row below: its last line to the right edge and bottom
+    scene.log->selectRange(Position{first, 2}, Position{wrapped, to});
+    scene.frame();
+    found=rects(row);
+    REQUIRE(found.size() == static_cast<size_t>(caret(to).y/lineHeight+1));
+    CHECK(found.front().x == 0);
+    CHECK(found.front().y == 0);
+    CHECK(str(found.back()) == str(Rect(0, caret(to).y, caret(to).x, lineHeight)));
+
+    scene.log->selectRange(Position{wrapped, to}, Position{last, 2});
+    scene.frame();
+    found=rects(row);
+    REQUIRE(!found.empty());
+    CHECK(found.front().x == caret(to).x);
+    CHECK(found.back().x+found.back().w == row->getWidth());
+    CHECK(found.back().y+found.back().h == row->getHeight());
+
+    // from the first byte of a wrapped line: nothing on the line above it
+    size_t lineStart=1;
+
+    while(lineStart < text.size() && caret(lineStart).y == caret(0).y)
+        ++lineStart;
+    REQUIRE(lineStart < from+100);
+    scene.log->selectRange(Position{wrapped, lineStart}, Position{wrapped, to});
+    scene.frame();
+    found=rects(row);
+    REQUIRE(!found.empty());
+    CHECK(str(found.front()) == str(Rect(caret(lineStart).x, caret(lineStart).y,
+        row->getWidth()-caret(lineStart).x, lineHeight)));
+
+    // a range over it whole: its bounds again; none: nothing
+    scene.log->selectRange(Position{first, 2}, Position{last, 2});
+    scene.frame();
+    CHECK(rects(row).size() == 1);
+    CHECK(str(rects(row)[0]) == str(Rect(0, 0, row->getWidth(), row->getHeight())));
+    scene.log->clearSelection();
+    scene.frame();
+    CHECK(rects(row).empty());
+    CHECK_FALSE(row->isSelected());
+}

@@ -1160,9 +1160,11 @@ public:
     inline static const std::string_view name="LogView";
 };
 
-// A LogView's row: [0] the selection highlight over its bounds at its
-// text's z, behind every glyph (LogViewSelection), hidden while the row is
-// not selected; its Text draws the text, a block's chevron its icon.
+// A LogView's row: a slot per rect of its selection highlight
+// (LogViewRow::getSelectionRects(): its bounds when selected whole, else one
+// per wrapped line the selection covers) at its text's z, behind every glyph
+// (LogViewSelection); [0] hidden while the row has none, the slots past the
+// rects given back. Its Text draws the text, a block's chevron its icon.
 class LogViewRow:public textured::ControlRegister<LogViewRow>
 {
 public:
@@ -1171,6 +1173,10 @@ public:
     void update(renderer::Base *renderer, controls::Base *baseControl) override;
 
     inline static const std::string_view name="LogViewRow";
+
+private:
+    //! The highlight's rects, kept for their capacity.
+    std::vector<gweni::Rect> m_rects;
 };
 
 // A LogView block row's chevron: [0] icon kind 1, right while the block is
