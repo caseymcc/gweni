@@ -14,17 +14,18 @@ double ChartLinesDemo::start()
 }
 
 // A Chart over one day (UTC) with a value axis on each side: a host's memory
-// in GB as a line on the left, and its GPU's use in percent as a step line on
-// the right, every quarter hour; two captioned markers where the host was
-// restarted and deployed, and a shaded span for its maintenance window. The
-// memory climbs and falls back at the restart; the values are whole numbers
-// from a formula, so every platform draws the same lines.
+// in GB as a line on the left, its swap in GB as an area under it (filled
+// down to 0), and its GPU's use in percent as a step line on the right, every
+// quarter hour; two captioned markers where the host was restarted and
+// deployed, and a shaded span for its maintenance window. The memory and the
+// swap climb and fall back at the restart; the values are whole numbers from
+// a formula, so every platform draws the same lines.
 GWENI_CONTROL_CONSTRUCTOR(ChartLinesDemo)
 {
     setDock(DockPosition::Center);
 
     controls::Label *label=newChild<controls::Label>();
-    label->setText("Host memory and GPU use, one day (UTC)");
+    label->setText("Host memory, swap and GPU use, one day (UTC)");
     label->setDock(DockPosition::Top);
     label->setMargin(Margin(10, 10, 10, 4));
 
@@ -47,8 +48,10 @@ GWENI_CONTROL_CONSTRUCTOR(ChartLinesDemo)
 
     const size_t memory=m_chart->addSeries("memory", controls::ChartSeriesType::Line);
     const size_t gpu=m_chart->addSeries("gpu", controls::ChartSeriesType::StepLine, controls::ChartAxisSide::Right);
+    const size_t swap=m_chart->addSeries("swap", controls::ChartSeriesType::Area);
     std::vector<controls::ChartPoint> memoryPoints;
     std::vector<controls::ChartPoint> gpuPoints;
+    std::vector<controls::ChartPoint> swapPoints;
 
     for(int i=0; i < Samples; ++i)
     {
@@ -58,12 +61,16 @@ GWENI_CONTROL_CONSTRUCTOR(ChartLinesDemo)
         const int memoryTenths=120+since*3+((i*7)%11);
         const int gpuUse=(i < 40 || i > 52) ? 20+((i*13)%5)*15 : 5;
 
+        const int swapTenths=15+since+((i*5)%7)*2;
+
         memoryPoints.emplace_back(t, memoryTenths/10.0);
+        swapPoints.emplace_back(t, swapTenths/10.0);
         if(i%4 == 0)
             gpuPoints.emplace_back(t, double(gpuUse));
     }
     m_chart->setSeriesPoints(memory, memoryPoints);
     m_chart->setSeriesPoints(gpu, gpuPoints);
+    m_chart->setSeriesPoints(swap, swapPoints);
 
     m_chart->addSpan(start()+10*3600.0, start()+13*3600.0);
     m_chart->addMarker(start()+6*3600.0, "restart");

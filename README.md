@@ -101,12 +101,20 @@ its weekends, so its x counts as 0 there), with a legend whose rows toggle their
 primitive slot of the chart's renderer, not a control: a changed value rewrites the bars of its stack
 alone, and an appended day its own bar.
 
-[![A two-axis line chart of a host's memory and GPU use over a day, with two markers and a shaded span](docs/images/ChartLinesDemo.png)](https://caseymcc.github.io/gweni/controltest.html?control=ChartLinesDemo)
+[![A two-axis line chart of a host's memory, swap (as an area) and GPU use over a day, with two markers and a shaded span](docs/images/ChartLinesDemo.png)](https://caseymcc.github.io/gweni/controltest.html?control=ChartLinesDemo)
 
-**Line chart**: memory as a line on the left axis and GPU use as a step line on the right, over a
-day on a time axis pinned to UTC, with captioned marker lines and a shaded span. Hovering draws a
-crosshair at the nearest x and fills the canvas's one tooltip box; a moved point rewrites only the
-segments around it.
+**Line chart**: memory as a line and swap as an area under it on the left axis, and GPU use as a
+step line on the right, over a day on a time axis pinned to UTC, with captioned marker lines and a
+shaded span. Hovering draws a crosshair at the nearest x and fills the canvas's one tooltip box; a
+moved point rewrites only the segments around it.
+
+[![A stacked area chart of a year's running token totals by model, each band filled from the one below it to its line](docs/images/ChartAreasDemo.png)](https://caseymcc.github.io/gweni/controltest.html?control=ChartAreasDemo)
+
+**Stacked area chart**: three stacked area series of a year's running totals, month by month. Each
+band is a run of trapezoids, one primitive slot per segment drawn by the renderer's style 9 (vertical
+sides on whole device pixels, slanted edges anti-aliased by each pixel's exact area), from the band
+below it to its line, which is drawn in front of every fill. A changed month rewrites the two
+trapezoids beside it and those of the bands stacked on it, and a click inside a band picks its month.
 
 [![A timeline of a day's runs on 96 agent slots, one lane each, with a time axis above and the lanes' captions at the left](docs/images/TimelineDemo.png)](https://caseymcc.github.io/gweni/controltest.html?control=TimelineDemo)
 

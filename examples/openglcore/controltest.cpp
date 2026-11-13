@@ -510,7 +510,8 @@
  *                 (plot-lines.png). One line
  *                   plot-lines segments=63 sample_prim_slots=4 ... ids_back=yes
  *                 Exits non-zero if any check is no.
- *    chart        ChartTimeBarsDemo and ChartLinesDemo, the clock frozen, their
+ *    chart        ChartTimeBarsDemo, ChartLinesDemo and ChartAreasDemo, the clock
+ *                 frozen, their
  *                 x and value ranges fixed as laid out: a stacked point changed
  *                 has to write at most its stack's bars at its x, an appended
  *                 bar its own slot, a line point at most the four segments
@@ -522,8 +523,17 @@
  *                 one x nothing; a legend click toggles its series once each
  *                 way (onSeriesToggled), a click on a bar, a stacked segment
  *                 above it and next to a line point fires onPointClicked with
- *                 that point; every settled frame nothing; each demo gives
- *                 every primitive id back (chart-bars.png, chart-lines.png).
+ *                 that point; an area point (ChartLinesDemo's swap) at most
+ *                 the two trapezoids beside it and its line's segments around
+ *                 it, a stacked area point (ChartAreasDemo) at most the two
+ *                 trapezoids beside it and those of each band stacked on it
+ *                 at its x, the top band's its own two, the lines' segments
+ *                 around them, a hover over the bands the crosshair's slot, a
+ *                 click inside a band its point, and a legend click hides a
+ *                 band (the one above dropping onto the one below) and shows
+ *                 it again; every settled frame nothing; each demo gives
+ *                 every primitive id back (chart-bars.png, chart-lines.png,
+ *                 chart-areas.png).
  *                 One line
  *                   chart stack_bars=4 stack_prim_slots=... ids_back=yes
  *                 Exits non-zero if any check is no.
@@ -1177,6 +1187,7 @@
 #include <demo/chartTimeBars.h>
 #include <demo/timeline.h>
 #include <demo/chartLines.h>
+#include <demo/chartAreas.h>
 #include <gweni/controls/chart.h>
 #include <gweni/controls/timeline.h>
 #include <demo/inspector.h>
@@ -1311,7 +1322,7 @@ static void content_scale_callback(GLFWwindow *window, float, float)
     X(ShowcaseContainersDemo) X(ShowcaseButtonsDemo) X(ShowcaseInputDemo) \
     X(ShowcaseDisplayDemo) X(ShowcaseWindowsDemo) \
     X(ButtonDemo) X(LabelDemo) X(LabelMultilineDemo) X(ProgressBarDemo) \
-    X(GroupBoxDemo) X(ImagePanelDemo) X(StatusBarDemo) X(SeparatorDemo) X(PlotHistogramDemo) X(PlotLinesDemo) X(ChartTimeBarsDemo) X(ChartLinesDemo) X(TimelineDemo) X(ComboBoxDemo) \
+    X(GroupBoxDemo) X(ImagePanelDemo) X(StatusBarDemo) X(SeparatorDemo) X(PlotHistogramDemo) X(PlotLinesDemo) X(ChartTimeBarsDemo) X(ChartLinesDemo) X(ChartAreasDemo) X(TimelineDemo) X(ComboBoxDemo) \
     X(TextBoxDemo) X(ListBoxDemo) X(SelectableDemo) X(VirtualListDemo) X(VirtualListVariableDemo) X(DataTableDemo) X(DataTableVirtualDemo) X(CodeEditorDemo) X(CodeEditorFormDemo) X(LogViewDemo) X(ContextMenuDemo) X(PopupDemo) X(ChipBadgeDemo) X(DialogDemo) X(LargeDialogDemo) X(ToastDemo) X(CrossSplitterDemo) X(RadioButtonDemo) \
     X(CheckBoxDemo) X(NumericDemo) X(SliderDemo) X(SliderTextDemo) X(DragNumberDemo) X(VectorFieldDemo) X(MenuStripDemo) \
     X(WindowDemo) X(WindowButtonsDemo) X(TreeControlDemo) X(PropertiesDemo) X(TabControlDemo) X(TabCloseDemo) X(TabOverflowDemo) \
@@ -5052,8 +5063,8 @@ static bool runPlotLinesScenario(Session &s, const std::string &shotDir, bool &p
 }
 
 //-----------------------------------------------------------------------------
-// --scenario chart: ChartTimeBarsDemo and ChartLinesDemo changed, hovered and
-// clicked
+// --scenario chart: ChartTimeBarsDemo, ChartLinesDemo and ChartAreasDemo
+// changed, hovered and clicked
 //
 // Each bar, segment, marker and the crosshair is a primitive slot of the
 // chart's renderer, redrawn only when what it draws moves. With the x and
@@ -5066,8 +5077,13 @@ static bool runPlotLinesScenario(Session &s, const std::string &shotDir, bool &p
 // box once its delay passed), a move within one x nothing. A legend click
 // toggles its series once each way; a click on a bar, on a stacked segment
 // above it and next to a line point fires onPointClicked with that series
-// and point. Every settled frame writes nothing and each demo gives its
-// primitive ids back.
+// and point. An area's fill is a trapezoid slot per segment: a changed point
+// writes the two beside it, in a stack those of each band on it at its x too,
+// and its line's segments around it (and those of the bands on it); a hover
+// over the bands the crosshair's slot, a click inside a band picks its
+// point, a legend click hides a band and the one above drops onto what is
+// left. Every settled frame writes nothing and each demo gives its primitive
+// ids back.
 //-----------------------------------------------------------------------------
 
 namespace
@@ -5164,6 +5180,25 @@ static bool runChartScenario(Session &s, const std::string &shotDir, bool &passe
         for(size_t i=from; i < to && i < ids.size(); ++i)
             slots.push_back(ids[i]);
         return slots;
+    };
+    auto lineSlotsOf=[](const Chart *chart, size_t series, size_t from, size_t to)
+    {
+        const auto *renderer=static_cast<const gweni::skin::textured::Chart *>(chart->getSkinControl());
+        const std::vector<size_t> ids=renderer->areaLinePrimitives(series);
+        std::vector<size_t> slots;
+
+        for(size_t i=from; i < to && i < ids.size(); ++i)
+            slots.push_back(ids[i]);
+        return slots;
+    };
+    // how many of a step's slots are in \p ids
+    auto countIn=[](const ChartStep &step, const std::vector<size_t> &ids)
+    {
+        size_t count=0;
+
+        for(size_t id : step.prims)
+            count+=std::find(ids.begin(), ids.end(), id) != ids.end();
+        return count;
     };
     auto clickAt=[&](Chart *chart, gweni::Point local)
     {
@@ -5326,6 +5361,18 @@ static bool runChartScenario(Session &s, const std::string &shotDir, bool &passe
     const std::vector<size_t> stepSlots=slotsOf(lines, 1, 22, 27);
     settle();
 
+    // swap's sample 50 moved: the two trapezoids beside it (49, 50) and its
+    // line's segments 48..51
+    lines->setPointValue(2, 50, lines->getSeriesPoints(2)[50].y+0.5);
+
+    const ChartStep areaPoint=chartFrame(s);
+    const std::vector<size_t> areaFill=slotsOf(lines, 2, 0, lines->getSeriesPoints(2).size());
+    std::vector<size_t> areaSlots=slotsOf(lines, 2, 49, 51);
+    const std::vector<size_t> areaLine=lineSlotsOf(lines, 2, 48, 52);
+
+    areaSlots.insert(areaSlots.end(), areaLine.begin(), areaLine.end());
+    settle();
+
     // a memory sample appended past the last: its segment and the one before
     const size_t memoryCount=lines->getSeriesPoints(0).size();
 
@@ -5406,7 +5453,120 @@ static bool runChartScenario(Session &s, const std::string &shotDir, bool &passe
 
     const size_t linesIdsLeft=livePrimitiveIds()-linesIdsBefore;
 
-    shot=shot && shotLines;
+    // ---- the stacked areas ----
+    const size_t areasIdsBefore=livePrimitiveIds();
+
+    control=addControl(s, "ChartAreasDemo");
+
+    auto *areasDemo=gweni::gweni_cast<gweni::ChartAreasDemo>(control);
+
+    if(!areasDemo || !areasDemo->chart())
+    {
+        std::cerr<<"ControlTest: chart: ChartAreasDemo has no chart\n";
+        return false;
+    }
+
+    Chart *areas=areasDemo->chart();
+    ChartEvents areaEvents;
+
+    areas->onSeriesToggled.add(&areaEvents, &ChartEvents::toggled);
+    areas->onPointClicked.add(&areaEvents, &ChartEvents::clicked);
+    s.label="chart";
+    renderFrames(s, s.frames);
+    areas->setXRange(areas->getXMin(), areas->getXMax());
+    areas->setYRange(ChartAxisSide::Left, areas->getYMin(ChartAxisSide::Left), areas->getYMax(ChartAxisSide::Left));
+    renderFrames(s, 2);
+    settle();
+
+    // the bottom band's month 6 raised: its two trapezoids and the two of
+    // each band stacked on it there (5, 6), and the lines' segments 4..7
+    const size_t bands=areas->getSeriesCount();
+    std::vector<size_t> bandFills;
+    std::vector<size_t> bandAllowed;
+
+    for(size_t band=0; band < bands; ++band)
+    {
+        const std::vector<size_t> all=slotsOf(areas, band, 0, gweni::ChartAreasDemo::Months);
+        const std::vector<size_t> fill=slotsOf(areas, band, 5, 7);
+        const std::vector<size_t> line=lineSlotsOf(areas, band, 4, 8);
+
+        bandFills.insert(bandFills.end(), all.begin(), all.end());
+        bandAllowed.insert(bandAllowed.end(), fill.begin(), fill.end());
+        bandAllowed.insert(bandAllowed.end(), line.begin(), line.end());
+    }
+    areas->setPointValue(0, 6, areas->getSeriesPoints(0)[6].y+20.0);
+
+    const ChartStep areaStack=chartFrame(s);
+    settle();
+
+    // the top band's month 3: its own two trapezoids (2, 3) and its line's
+    // segments 1..4
+    const std::vector<size_t> topFill=slotsOf(areas, bands-1, 0, gweni::ChartAreasDemo::Months);
+    std::vector<size_t> topAllowed=slotsOf(areas, bands-1, 2, 4);
+    const std::vector<size_t> topLine=lineSlotsOf(areas, bands-1, 1, 5);
+
+    topAllowed.insert(topAllowed.end(), topLine.begin(), topLine.end());
+    areas->setPointValue(bands-1, 3, areas->getSeriesPoints(bands-1)[3].y+10.0);
+
+    const ChartStep areaTop=chartFrame(s);
+    settle();
+
+    // the mouse into the bottom band at month 8: the crosshair's slot alone
+    const auto *areasRenderer=static_cast<const gweni::skin::textured::Chart *>(areas->getSkinControl());
+    const std::vector<size_t> areasCrosshair=areasRenderer->crosshairPrimitives();
+    const double month8=gweni::ChartAreasDemo::month(8);
+    const auto bandMiddle=[&](size_t band, size_t at)
+    {
+        return gweni::Point(int(areas->xPosition(gweni::ChartAreasDemo::month(int(at)))),
+            int(areas->yPosition(ChartAxisSide::Left,
+                0.5*(areas->getAreaStackBase(band, at)+areas->getAreaStackTop(band, at)))));
+    };
+
+    at=areas->localPosToCanvas(bandMiddle(0, 8));
+    moveMouse(s, at.x, at.y);
+
+    const ChartStep areaHover=chartFrame(s);
+    const bool areaHovered=areas->isHovering() && areas->getHover().x == month8;
+    settle();
+
+    // a click inside the middle band at month 9
+    clickAt(areas, bandMiddle(1, 9));
+
+    const bool bandClick=areaEvents.clicks.size() == 1 && areaEvents.clicks[0] == std::make_pair(size_t(1), size_t(9));
+
+    // the legend: a click hides the middle band (the top one drops onto the
+    // bottom one), a second shows it again
+    gweni::controls::internal::ChartLegendRow *areaRow=areas->getLegendRow(1);
+    bool droppedOnto=false;
+
+    if(areaRow)
+    {
+        const gweni::Point rowAt=areaRow->localPosToCanvas(gweni::Point(areaRow->getWidth()/2,
+            areaRow->getHeight()/2));
+
+        clickMouse(s, rowAt.x, rowAt.y);
+        renderFrames(s, 1);
+        droppedOnto=!areas->isSeriesVisible(1)
+            && areas->getAreaStackBase(bands-1, 6) == areas->getAreaStackTop(0, 6);
+        clickMouse(s, rowAt.x, rowAt.y);
+        renderFrames(s, 1);
+    }
+
+    const bool areaLegend=areaRow && droppedOnto && areas->isSeriesVisible(1)
+        && areaEvents.toggles == std::vector<size_t>{1, 1};
+
+    forgetMouse(s);
+    renderFrames(s, 1);
+    settle();
+
+    const bool shotAreas=shoot(s, shotDir+"/chart-areas.png");
+
+    dropControl(s, control);
+    renderFrames(s, 1);
+
+    const size_t areasIdsLeft=livePrimitiveIds()-areasIdsBefore;
+
+    shot=shot && shotLines && shotAreas;
 
     const bool stackOk=!stack.prims.empty() && stack.prims.size() <= stackSlots.size() && stack.texts.empty()
         && chartWithin(stack, stackSlots, {}) && stack.changed == 1;
@@ -5415,6 +5575,19 @@ static bool runChartScenario(Session &s, const std::string &shotDir, bool &passe
         && chartWithin(linePoint, lineSlots, {}) && linePoint.changed == 1;
     const bool stepPointOk=!stepPoint.prims.empty() && stepPoint.prims.size() <= 5 && stepPoint.texts.empty()
         && chartWithin(stepPoint, stepSlots, {}) && stepPoint.changed == 1;
+    // a changed area point: at most the two trapezoids beside it (plus, in
+    // a stack, those of the bands on it at its x) and the lines around it
+    const size_t areaFills=countIn(areaPoint, areaFill);
+    const bool areaPointOk=areaFills >= 1 && areaFills <= 2 && areaPoint.texts.empty()
+        && chartWithin(areaPoint, areaSlots, {}) && areaPoint.changed == 1;
+    const size_t stackFills=countIn(areaStack, bandFills);
+    const bool areaStackOk=stackFills >= 2 && stackFills <= 2*bands && areaStack.texts.empty()
+        && chartWithin(areaStack, bandAllowed, {}) && areaStack.changed == 1;
+    const size_t topFills=countIn(areaTop, topFill);
+    const bool areaTopOk=topFills >= 1 && topFills <= 2 && areaTop.texts.empty()
+        && chartWithin(areaTop, topAllowed, {}) && areaTop.changed == 1;
+    const bool areaHoverOk=areaHovered && areaHover.prims.size() == 1 && areaHover.texts.empty()
+        && chartWithin(areaHover, areasCrosshair, {});
     const bool appendLineOk=!appendLine.prims.empty() && appendLine.prims.size() <= 2 && appendLine.texts.empty()
         && chartWithin(appendLine, appendSlots, {});
     const bool markerOk=!marker.prims.empty() && marker.prims.size() <= 1 && chartWithin(marker, markerAllowed, captionTexts)
@@ -5425,10 +5598,11 @@ static bool runChartScenario(Session &s, const std::string &shotDir, bool &passe
     const bool sameXOk=sameX.prims.empty() && sameX.texts.empty() && sameX.changed == 0;
     const bool settled=idleSlots == 0 && idleChanged == 0;
     // the canvas's ToolTip box, made for the hover, stays on the canvas
-    const bool idsBack=barsIdsLeft == 0 && linesIdsLeft == boxPrims.size();
+    const bool idsBack=barsIdsLeft == 0 && linesIdsLeft == boxPrims.size() && areasIdsLeft == 0;
 
     passed=stackOk && appendBarOk && legendToggles && barClicks && linePointOk && stepPointOk && appendLineOk
-        && markerOk && hoverOk && tipOk && sameXOk && pointClick && settled && idsBack;
+        && markerOk && hoverOk && tipOk && sameXOk && pointClick && areaPointOk && areaStackOk && areaTopOk
+        && areaHoverOk && bandClick && areaLegend && settled && idsBack;
 
     std::cout<<"chart stack_bars="<<stackSlots.size();
     printChartStep("stack", stack);
@@ -5440,15 +5614,25 @@ static bool runChartScenario(Session &s, const std::string &shotDir, bool &passe
     printChartStep("hover", hover);
     printChartStep("tooltip", tipShown);
     printChartStep("same_x", sameX);
+    printChartStep("area_point", areaPoint);
+    std::cout<<" area_point_fills="<<areaFills<<" area_bands="<<bands;
+    printChartStep("area_stack", areaStack);
+    std::cout<<" area_stack_fills="<<stackFills;
+    printChartStep("area_top", areaTop);
+    std::cout<<" area_top_fills="<<topFills;
+    printChartStep("area_hover", areaHover);
     std::cout<<" toggles="<<events.toggles.size()<<" clicks="<<events.clicks.size()
              <<" idle_slots="<<idleSlots<<" idle_changed="<<idleChanged
-             <<" ids_left="<<(barsIdsLeft+linesIdsLeft-boxPrims.size())
+             <<" ids_left="<<(barsIdsLeft+linesIdsLeft+areasIdsLeft-boxPrims.size())
              <<" stack="<<(stackOk?"yes":"no")<<" append_bar="<<(appendBarOk?"yes":"no")
              <<" legend="<<(legendToggles?"yes":"no")<<" bar_clicks="<<(barClicks?"yes":"no")
              <<" line_point="<<(linePointOk?"yes":"no")<<" step_point="<<(stepPointOk?"yes":"no")
              <<" append_line="<<(appendLineOk?"yes":"no")<<" marker="<<(markerOk?"yes":"no")
              <<" hover="<<(hoverOk?"yes":"no")<<" tooltip="<<(tipOk?"yes":"no")
              <<" same_x="<<(sameXOk?"yes":"no")<<" point_click="<<(pointClick?"yes":"no")
+             <<" area_point="<<(areaPointOk?"yes":"no")<<" area_stack="<<(areaStackOk?"yes":"no")
+             <<" area_top="<<(areaTopOk?"yes":"no")<<" area_hover="<<(areaHoverOk?"yes":"no")
+             <<" band_click="<<(bandClick?"yes":"no")<<" area_legend="<<(areaLegend?"yes":"no")
              <<" settled="<<(settled?"yes":"no")<<" ids_back="<<(idsBack?"yes":"no")<<"\n";
     if(!passed)
         std::cerr<<"ControlTest: chart: "
@@ -5464,6 +5648,12 @@ static bool runChartScenario(Session &s, const std::string &shotDir, bool &passe
                      : !tipOk ? "the tooltip did not show, or wrote outside the crosshair and its box"
                      : !sameXOk ? "a move within one x wrote or changed something"
                      : !pointClick ? "a click next to a point fired the wrong point"
+                     : !areaPointOk ? "an area point wrote more than the two trapezoids beside it and its line"
+                     : !areaStackOk ? "a stacked area point wrote more than its trapezoids and those stacked on it"
+                     : !areaTopOk ? "the top band's point wrote more than its own two trapezoids and its line"
+                     : !areaHoverOk ? "a hover over the areas wrote more than the crosshair's slot"
+                     : !bandClick ? "a click inside a band fired the wrong point"
+                     : !areaLegend ? "a legend click did not toggle the band once each way or restack the one above"
                      : !settled ? "a settled frame wrote slots or changed controls"
                      : "a demo did not give its primitive ids back")<<"\n";
     return shot;

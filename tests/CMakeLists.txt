@@ -506,11 +506,13 @@ Erm, and I think it comes down to a choice between "The League Against Salivatin
             --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/plot_lines@VARIANT@
         WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
 
-    # ChartTimeBarsDemo and ChartLinesDemo with their ranges fixed: a changed
-    # point writes the slots around it (its stack's bars, a line's four
-    # segments, a step line's five), an append its own, a marker its slot and
-    # caption, a hover the crosshair and the ToolTip box, a move within one x
-    # nothing; legend and point clicks fire their events; ids come back
+    # ChartTimeBarsDemo, ChartLinesDemo and ChartAreasDemo with their ranges
+    # fixed: a changed point writes the slots around it (its stack's bars, a
+    # line's four segments, a step line's five, an area's two trapezoids and
+    # those of the bands stacked on it), an append its own, a marker its slot
+    # and caption, a hover the crosshair and the ToolTip box, a move within
+    # one x nothing; legend, point and band clicks fire their events; ids come
+    # back
     gweni_whole_app_test(controltest_chart 60
         COMMAND $<TARGET_FILE:ControlTest> --headless --scenario chart --require-one-pass
             --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/chart@VARIANT@

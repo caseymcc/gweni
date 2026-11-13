@@ -74,6 +74,7 @@ SAMPLES=(
     LogViewDemo
     ChartTimeBarsDemo
     ChartLinesDemo
+    ChartAreasDemo
     TimelineDemo
     InspectorDemo
     ThemeEditorDemo

@@ -31,6 +31,7 @@
 #include "demo/chartTimeBars.h"
 #include "demo/timeline.h"
 #include "demo/chartLines.h"
+#include "demo/chartAreas.h"
 #include "demo/dragNumber.h"
 #include "demo/vectorField.h"
 #include "demo/popup.h"
@@ -211,6 +212,7 @@ void Demo::init(const String &name)
         addDemo<PlotLinesDemo>(cat, "PlotLinesDemo", "Plot lines");
         addDemo<ChartTimeBarsDemo>(cat, "ChartTimeBarsDemo", "Time bar chart");
         addDemo<ChartLinesDemo>(cat, "ChartLinesDemo", "Line chart");
+        addDemo<ChartAreasDemo>(cat, "ChartAreasDemo", "Stacked area chart");
         addDemo<TimelineDemo>(cat, "TimelineDemo", "Timeline");
     }
     {

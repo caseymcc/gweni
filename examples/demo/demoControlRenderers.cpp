@@ -64,6 +64,7 @@ GWENI_DEMO_TRANSPARENT(PlotHistogramDemo)
 GWENI_DEMO_TRANSPARENT(PlotLinesDemo)
 GWENI_DEMO_TRANSPARENT(ChartTimeBarsDemo)
 GWENI_DEMO_TRANSPARENT(ChartLinesDemo)
+GWENI_DEMO_TRANSPARENT(ChartAreasDemo)
 GWENI_DEMO_TRANSPARENT(TimelineDemo)
 GWENI_DEMO_TRANSPARENT(InspectorDemo)
 GWENI_DEMO_TRANSPARENT(ThemeEditorDemo)
@@ -179,6 +180,7 @@ template class ControlRegister<PlotHistogramDemo>;
 template class ControlRegister<PlotLinesDemo>;
 template class ControlRegister<ChartTimeBarsDemo>;
 template class ControlRegister<ChartLinesDemo>;
+template class ControlRegister<ChartAreasDemo>;
 template class ControlRegister<TimelineDemo>;
 template class ControlRegister<InspectorDemo>;
 template class ControlRegister<ThemeEditorDemo>;
