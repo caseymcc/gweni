@@ -306,6 +306,24 @@ public:
         int /*zIndex*/)
     {}
 
+    //! Draw a trapezoid with vertical sides at \a x0 and \a x1 in \a color: its top
+    //! edge the straight line from (x0, \a top0) to (x1, \a top1), its bottom edge
+    //! from (x0, \a bottom0) to (x1, \a bottom1), in canvas units, which may be
+    //! fractional (a chart's area segment, filled down to 0 or to the series below).
+    //! The sides are snapped as translate() snaps a rect's edges, so they land on
+    //! whole device px, and two trapezoids sharing a side abut with no seam and no
+    //! column of pixels in both. The top and bottom edges are at y*scale() unsnapped
+    //! and anti-aliased by the exact area of each pixel between them, so where they
+    //! land on whole device px a flat trapezoid draws drawFilledRect's rect. A
+    //! bottom above its top is taken to be at the top (nothing drawn there). A pixel
+    //! it does not cover writes nothing, depth included.
+    //!
+    //! The default is an approximation for a backend without it: a filled rect from
+    //! x0 to x1 between the middles of the two edges, drawn through drawFilledRect
+    //! in \a color (left as the draw colour).
+    virtual void drawTrapezoid(size_t primitiveId, float x0, float x1, float top0, float top1,
+        float bottom0, float bottom1, gweni::Color color, int zIndex);
+
     virtual void drawTexturedRect(const gweni::Texture &texture, size_t primitiveId, gweni::Rect targetRect, int zIndex,
         float u1=0.0f, float v1=0.0f,float u2=1.0f, float v2=1.0f)
     {}

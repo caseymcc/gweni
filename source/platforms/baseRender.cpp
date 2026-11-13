@@ -181,6 +181,20 @@ void Base::drawLine(size_t primitiveId, gweni::PointF p0, gweni::PointF p1,
         : gweni::Rect(top, start, across, length), zIndex);
 }
 
+// One rect for the one slot: x0 to x1, each rounded to the nearer whole unit, and
+// from the middle of the top edge to the middle of the bottom one.
+void Base::drawTrapezoid(size_t primitiveId, float x0, float x1, float top0, float top1,
+    float bottom0, float bottom1, gweni::Color color, int zIndex)
+{
+    const int left=static_cast<int>(std::lround(std::min(x0, x1)));
+    const int right=static_cast<int>(std::lround(std::max(x0, x1)));
+    const int top=static_cast<int>(std::lround(0.5f*(top0+top1)));
+    const int bottom=static_cast<int>(std::lround(0.5f*(bottom0+bottom1)));
+
+    setDrawColor(color);
+    drawFilledRect(primitiveId, gweni::Rect(left, top, right-left, std::max(0, bottom-top)), zIndex);
+}
+
 void Base::drawCheckerRect(size_t primitiveId, gweni::Rect rect, int zIndex,
     gweni::Color fill, gweni::Color light, gweni::Color dark,
     float radius, float border, gweni::Color borderColor)

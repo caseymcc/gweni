@@ -41,7 +41,9 @@ flat out vec4 vColor1;    // gradient bottom color
 flat out vec4 vBorderColor;
 out vec4 vColor3;         // smooth: style 6 interpolates it along x
 flat out vec4 vSegment;   // style 3: the line's endpoints (xy, zw), px from the quad centre;
-                          // style 8: its phases (xy), spacing (z) and reciprocal (w), px
+                          // style 8: its phases (xy), spacing (z) and reciprocal (w), px;
+                          // style 9: its top (xy) and bottom (zw) at its left and right
+                          // side, px from the quad's top
 flat out vec4 vJoints;    // style 3: its previous (xy) and next (zw) neighbour points, as vSegment;
                           // style 8: its major count (x) and stroke px (y)
 flat out float vBehindDepth; // style 3: the depth half a layer behind this slot's z
@@ -101,6 +103,16 @@ void main()
 
         vSegment = vec4(vec2(inBorderColor)/16.0, spacing, 1.0/spacing);
         vJoints = vec4(float(inRadiusBorder.y & 0xffu), float((inRadiusBorder.y >> 8) & 0xffu), 0.0, 0.0);
+    }
+    // style 9 (drawTrapezoid) keeps its four edge heights, floats' bits, px from
+    // the quad's top: its top at the left and right side, then its bottom
+    else if(style == 9u)
+    {
+        vSegment = vec4(
+            uintBitsToFloat((inColor1.x << 16) | inColor1.y),
+            uintBitsToFloat((inBorderColor.x << 16) | inBorderColor.y),
+            uintBitsToFloat((inColor3.x << 16) | inColor3.y),
+            uintBitsToFloat((inRadiusBorder.x << 16) | inRadiusBorder.y));
     }
     vPixel = vec2(inPosition.xy);
     // GL_SHORT sign-extends z; its low 16 bits are Vertex::z, 0..65535

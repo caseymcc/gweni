@@ -384,6 +384,13 @@ public:
     void drawGrid(size_t primitiveId, gweni::Rect rect, gweni::PointF origin, float spacing,
         int majorEvery, gweni::Color minor, gweni::Color major, int zIndex) override;
 
+    //! Style 9: the quad spans the sides' whole device px and the rows from the
+    //! highest top to the lowest bottom; the four edge heights are floats, device
+    //! px from the quad's top, their bits in cx/cy (top at x0), bx/by (top at x1),
+    //! dx/dy (bottom at x0) and radius/border (bottom at x1), the colour in tx/ty.
+    void drawTrapezoid(size_t primitiveId, float x0, float x1, float top0, float top1,
+        float bottom0, float bottom1, gweni::Color color, int zIndex) override;
+
     void startClip() override;
     void endClip() override;
 
@@ -678,7 +685,10 @@ protected:
         uint16_t z;      //0..kMaxZIndex, the projection's depth range (read in the shader as inPosition.z & 0xFFFF)
         uint16_t tx, ty; //color0 (top fill) packed rg/ba, or UV for texture (style 2, 0..65535 = 0..1);
                          //grid (style 8): its spacing in device px, a float's high and low bits
-        // SDF fields (styles 3-8); left 0 for all other styles.
+        // SDF fields (styles 3-9); left 0 for all other styles. Trapezoid (style 9):
+        // cx/cy, bx/by, dx/dy and radius/border are its top at x0, top at x1, bottom
+        // at x0 and bottom at x1, each a float's high and low bits, device px from
+        // the quad's top.
         int16_t  lx, ly; //local position relative to rect center, in half-pixel units (= +/-size at the four corners, so an odd size is exact)
         uint16_t radius; //styles 4, 6, 7: corner radius in px (0..255) in the low byte, the
                          //edge mask (RoundedEdge) in the high byte; icon kind (style 5);

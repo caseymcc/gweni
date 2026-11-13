@@ -203,6 +203,18 @@ float pixelArea(float e, vec2 n)
     return 0.5 + e/a;
 }
 
+// Style 9: the part of the pixel centred at c (px from the quad's top-left) on the
+// inner side of a trapezoid's top (inside 1) or bottom (inside -1) edge, the
+// straight line from (0, y0) to (w, y1): pixelArea() of the centre's distance to
+// it along its normal, exact for a pixel the edge crosses anywhere in its column.
+float trapezoidEdge(vec2 c, float y0, float y1, float w, float inside)
+{
+    float m = (y1 - y0)/w;
+    float len = sqrt(1.0 + m*m);
+
+    return pixelArea(inside*(c.y - lerp(y0, y1, c.x/w))/len, vec2(m, 1.0)/len);
+}
+
 // Style 3: the vector from the nearest point of the segment from s to e to a pixel's
 // centre (pa the centre less s, ba e less s), and h, where that point is along it
 // (0 at s, 1 at e).
@@ -324,6 +336,7 @@ void main()
     float depth = gl_FragCoord.z;
     bool lineDeferred = false;  // style 3: an adjacent segment of its polyline draws this pixel
     bool offGrid = false;       // style 8: the pixel is on no grid line
+    bool uncovered = false;     // style 9: the trapezoid covers less than half an 8-bit step of the pixel
     bool clipped = any(lessThan(vPixel, vec2(clip.xy))) || any(greaterThanEqual(vPixel, vec2(clip.zw)));
     vec2 uvDx = dFdx(TexCoords);
     vec2 uvDy = dFdy(TexCoords);
@@ -482,6 +495,23 @@ void main()
         offGrid = !(onX || onY);
         FragColor = major ? vColor3 : vColor1;
     }
+    else if (ShaderType == 9u)
+    {
+        // Trapezoid (drawTrapezoid): the quad is its whole columns, from the highest
+        // top to the lowest bottom, and a pixel is covered by its exact area between
+        // the two edges (vSegment: the top at the left and right side, then the
+        // bottom): each edge's part, less the 1 their union is (the top is never
+        // below the bottom, so every point is inside one of them). The pixel is
+        // found from vLocal rounded to its half px, as the grid's is, so its
+        // coverage is a function of the flat edges and its column and row alone.
+        vec2 c = floor(floor(vLocal*2.0 + 0.5)*0.5 + vHalf) + 0.5;
+        float w = max(2.0*vHalf.x, 1.0);
+        float a = clamp(trapezoidEdge(c, vSegment.x, vSegment.y, w, 1.0)
+            + trapezoidEdge(c, vSegment.z, vSegment.w, w, -1.0) - 1.0, 0.0, 1.0);
+
+        uncovered = a < 0.5/255.0;
+        FragColor = vec4(VertexColor.rgb, VertexColor.a * a);
+    }
     else if (ShaderType == 5u)
     {
         // Icon glyph: vRadius=kind, vBorder=dir (the chevron and the triangles).
@@ -629,8 +659,9 @@ void main()
     // coverage beside a stroke's edge is 0 give or take rounding: less than half a
     // step of 8-bit alpha changes no pixel; nor one a rounded rect (styles 4, 6, 7)
     // leaves uncovered, outside its corner arcs, so a slot behind it drawn after it (a
-    // node graph's link made after the pin it ends on) still shows around the arcs
-    if(clipped || lineDeferred || offGrid || (ShaderType == 2u && FragColor.a <= 0.0)
+    // node graph's link made after the pin it ends on) still shows around the arcs;
+    // nor one a trapezoid leaves uncovered, above its top or below its bottom
+    if(clipped || lineDeferred || offGrid || uncovered || (ShaderType == 2u && FragColor.a <= 0.0)
         || (ShaderType >= 3u && ShaderType <= 7u && FragColor.a < 0.5/255.0))
         discard;
     // every other style writes the depth the fixed function would

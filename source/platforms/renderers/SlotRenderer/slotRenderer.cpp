@@ -2146,6 +2146,101 @@ void SlotRenderer::drawGrid(size_t primitiveId, gweni::Rect rect, gweni::PointF 
     markPrimitiveChanges(primitiveId, before);
 }
 
+void SlotRenderer::drawTrapezoid(size_t primitiveId, float x0, float x1, float top0, float top1,
+    float bottom0, float bottom1, gweni::Color color, int zIndex)
+{
+    size_t vertexIndex=primitiveId*4;
+
+    ensurePrimitiveSlots(primitiveId);
+
+    PrimitiveSlot before;
+
+    readPrimitiveSlot(primitiveId, before);
+
+    m_clippingBoxes[primitiveId]=makeClipBox();
+
+    if(x1 < x0)
+    {
+        std::swap(x0, x1);
+        std::swap(top0, top1);
+        std::swap(bottom0, bottom1);
+    }
+
+    const gweni::Point &offset=getRenderOffset();
+    const RenderTransform &transform=renderTransform();
+
+    // A side's device px, RenderTransform::deviceX's rounding (translate()'s, so a
+    // whole-unit side lands where a rect's edge does), kept in range.
+    auto side=[&](float v)
+    {
+        const float px=std::floor(transform.fractionX+(v+float(offset.x))*transform.scale+0.5f);
+
+        return transform.originX+(int64_t)std::max(std::min(px, 1e9f), -1e9f);
+    };
+    // An edge's height, unsnapped: the centre a drawLine stroke along it has.
+    auto height=[&](float v)
+    {
+        const double y=transform.originY+(double(v)+offset.y)*transform.scale+transform.fractionY;
+
+        return std::max(std::min(y, 1e9), -1e9);
+    };
+    const int64_t left=side(x0);
+    const int64_t right=side(x1);
+    const double t0=height(top0);
+    const double t1=height(top1);
+    const double b0=std::max(height(bottom0), t0);
+    const double b1=std::max(height(bottom1), t1);
+
+    // The quad: the sides' columns and every row an edge passes through.
+    const int64_t top=(int64_t)std::floor(std::min(t0, t1));
+    const int64_t bottom=(int64_t)std::ceil(std::max(b0, b1));
+    const int64_t hw=right-left;
+    const int64_t hh=bottom-top;
+
+    auto bits=[&](double y)
+    {
+        const float f=float(y-double(top));
+        uint32_t b;
+
+        std::memcpy(&b, &f, sizeof(b));
+        return b;
+    };
+    const uint32_t edge[4]={bits(t0), bits(t1), bits(b0), bits(b1)};
+
+    auto setTrapezoid=[&](size_t vi, int64_t px, int64_t py, int64_t lx, int64_t ly)
+    {
+        Vertex &v=m_vertexes[vi];
+
+        setVertex(v, 9, (int)px, (int)py, zIndex, color.rg(), color.ba());
+        v.lx=(int16_t)lx;
+        v.ly=(int16_t)ly;
+        v.cx=(uint16_t)(edge[0] >> 16); v.cy=(uint16_t)(edge[0] & 0xffff);
+        v.bx=(uint16_t)(edge[1] >> 16); v.by=(uint16_t)(edge[1] & 0xffff);
+        v.dx=(uint16_t)(edge[2] >> 16); v.dy=(uint16_t)(edge[2] & 0xffff);
+        v.radius=(uint16_t)(edge[3] >> 16); v.border=(uint16_t)(edge[3] & 0xffff);
+    };
+
+    setTrapezoid(vertexIndex++, left, top, -hw, -hh);
+    setTrapezoid(vertexIndex++, right, top, +hw, -hh);
+    setTrapezoid(vertexIndex++, left, bottom, -hw, +hh);
+    setTrapezoid(vertexIndex++, right, bottom, +hw, +hh);
+
+    cullOutOfRangeQuad(primitiveId, gweni::Rect((int)left, (int)top, (int)hw, (int)hh));
+
+    // a quad lx/ly cannot hold (32767 half px across) is collapsed as drawLine's is
+    const int64_t maxHalf=std::numeric_limits<int16_t>::max();
+
+    if(hw > maxHalf || hh > maxHalf)
+    {
+        for(size_t i=0; i<4; ++i)
+        {
+            m_vertexes[primitiveId*4+i].x=0;
+            m_vertexes[primitiveId*4+i].y=0;
+        }
+    }
+    markPrimitiveChanges(primitiveId, before);
+}
+
 void SlotRenderer::drawLine(size_t primitiveId, gweni::PointF p0, gweni::PointF p1,
     float thickness, int zIndex, const gweni::PointF *prev, const gweni::PointF *next)
 {
