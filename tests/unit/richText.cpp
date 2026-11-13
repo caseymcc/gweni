@@ -24,7 +24,9 @@
  *    RichText's none), measures the spans once and lays out the RichText and
  *    its ancestors only;
  *  - hidden, every run and slot is hidden, and shown again, drawn; deleted,
- *    every run and slot is given back;
+ *    every run and slot is given back; given fewer spans while hidden (its
+ *    stale pieces naming spans taken away), it draws nothing until shown, and
+ *    then the new spans alone;
  *  - the theme registries name RichTextCode, RichTextLink and
  *    RichTextLinkHover;
  *  - a hovered link is drawn in RichText.LinkHover with cursor::Finger, the
@@ -422,6 +424,53 @@ TEST_CASE("RichText: hidden every run and slot hidden, shown drawn again, delete
         scene.frame();
         CHECK(scene.renderer.slots.size() == 3);
         CHECK(scene.renderer.texts.size() == rich->getLayout().pieces().size());
+    }
+
+    const test::IdBankCounts after=test::IdBankCounts::now();
+
+    CHECK(after.livePrimitives() == before.livePrimitives());
+    CHECK(after.liveTexts() == before.liveTexts());
+}
+
+TEST_CASE("RichText: hidden and given fewer spans, nothing drawn until shown, then the new spans")
+{
+    const test::IdBankCounts before=test::IdBankCounts::now();
+
+    {
+        Scene scene;
+        RichText *rich=scene.rich;
+        const size_t pieces=rich->getLayout().pieces().size();
+
+        REQUIRE(pieces > 1);
+
+        // hidden in the frame the spans go: not laid out, so its pieces still
+        // name the spans taken away
+        rich->setSpans({ RichSpan::plain("x") });
+        rich->hide();
+        scene.frame();
+        CHECK(rich->getLayout().pieces().size() == pieces);
+        CHECK(scene.renderer.texts.empty());
+        CHECK(scene.renderer.slots.empty());
+        CHECK(scene.renderer.hiddenTexts.size() == pieces);
+        CHECK(scene.renderer.hiddenSlots.size() == 3);
+
+        // and again while hidden, with fewer still: nothing drawn or hidden
+        rich->setSpans({});
+        scene.frame();
+        CHECK(scene.renderer.texts.empty());
+        CHECK(scene.renderer.slots.empty());
+        CHECK(scene.renderer.hiddenTexts.empty());
+        CHECK(scene.renderer.hiddenSlots.empty());
+
+        rich->setSpans({ RichSpan::plain("shown", RichSpan::Bold) });
+        rich->show();
+        scene.frame();
+        REQUIRE(rich->getLayout().pieces().size() == 1);
+        REQUIRE(scene.renderer.texts.size() == 1);
+        CHECK(scene.renderer.texts[0].text == "shown");
+        CHECK(scene.renderer.slots.empty());
+        CHECK(scene.textIds(rich).size() == 1);
+        CHECK(scene.slotIds(rich).empty());
     }
 
     const test::IdBankCounts after=test::IdBankCounts::now();
