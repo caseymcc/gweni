@@ -4,12 +4,13 @@
  *  MIT License, see LICENSE
  *
  *  CodeEditor's highlighting on a real Canvas with the textured skin over a
- *  StubRenderer (its Text renderer draws through renderText's colour-span
- *  overload, which the stub records): setLanguage("yaml") draws each shown
- *  row's run with one span per token of its line in the skin's
- *  Colors.CodeEditor colour of the token's kind, the Text's own colour the
- *  Plain one; an edit that keeps the state the next line starts in
- *  tokenizes and re-colours its line alone, marking no other row; one that
+ *  StubRenderer (its CodeLineText renderer draws a row's run through
+ *  renderText's colour-span overload, which the stub records):
+ *  setLanguage("yaml") draws each shown row's run with one span per token of
+ *  its line in the skin's Colors.CodeEditor colour of the token's kind, the
+ *  Text's own colour the Plain one; an edit that keeps the state the next
+ *  line starts in tokenizes and re-colours its line alone, marking no other
+ *  row; one that
  *  opens a block scalar re-colours the rows on screen below it, the lines
  *  past the screen left stale until bound, and its undo gives every row's
  *  spans back; a new token colour reaches the spans through updateColors();
