@@ -231,8 +231,9 @@ public:
     //! getBlockPreviewLines() lines; expanded, "title (120 lines)" and every
     //! line. A block of no more lines than that shows them all either way.
     static String blockText(const LogRow &row, size_t previewLines);
-    //! The lines a collapsed block shows. Default 4. Every block on screen
-    //! is measured again.
+    //! The lines a collapsed block shows. Default 4. One measure generation,
+    //! as a new width: the next layout measures the rows on screen, the idle
+    //! re-measure the rest.
     void setBlockPreviewLines(size_t lines);
     size_t getBlockPreviewLines() const { return m_previewLines; }
     //! Expands or collapses a block row: that row alone is measured and bound
@@ -257,7 +258,8 @@ public:
     };
     //! Registers or replaces a kind, from LogRow::FirstAppKind on (a row of
     //! a kind with no handler shows its text, as a plain row). Every row is
-    //! measured and bound again.
+    //! measured and bound again; a kind replaced deletes the pooled rows'
+    //! content of the old factory, and the new one makes it again.
     void setRowKind(LogRow::Kind kind, RowKind handler);
 
     //! The pooled row showing the row, or null when it is not on screen.

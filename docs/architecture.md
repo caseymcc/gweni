@@ -2095,11 +2095,15 @@ two programs and the draws. What follows describes both together:
   `getBlockPreviewLines()` lines while collapsed, `"title (120 lines)"` and every line
   expanded. A press on the title line toggles it (`setBlockExpanded`), one
   `itemChanged`, so only that row's height changes and the rows above it stay where
-  they are. An app's kind (`setRowKind(kind, {factory, binder, measurer})`, from
+  they are. A new `setBlockPreviewLines()` is one measure generation (`refresh()`),
+  as a new width: the next layout measures the rows on screen, the idle re-measure
+  the rest. An app's kind (`setRowKind(kind, {factory, binder, measurer})`, from
   `LogRow::FirstAppKind`) hides the row's text and shows the kind's content, made by
   its factory once per pooled row the first time the row shows the kind, placed inside
   the padding at the kind's measure (the row's preferred height is the list's height
-  for its item, the kind's contract being that the content lays out at it). The binder
+  for its item, the kind's contract being that the content lays out at it); a kind
+  registered again deletes the pooled rows' content of the old factory, so the new
+  binder only fills what the new factory made. The binder
   sets content only, padding and which children show included, as `VirtualList`
   requires (`tests/unit/logViewBlocks.cpp`). An expanded block is one row, so it makes
   a line `Text` per wrapped line of all its lines while on screen.

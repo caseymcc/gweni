@@ -15,8 +15,11 @@
  *  row-kind hook) shows the kind's content, made once per pooled row and
  *  bound with the row, inside the row's padding at the kind's measure, the
  *  text hidden; given a plain row again, the row hides the content and shows
- *  the text. A kind with no handler shows its text. Every row lays out at
- *  its measure, and every frame is one layout pass.
+ *  the text. A kind with no handler shows its text, and a kind registered
+ *  again makes its content with the new factory, the old content deleted. A
+ *  new preview length measures nothing itself and the rows on screen alone
+ *  in the next layout, whatever the log's length. Every row lays out at its
+ *  measure, and every frame is one layout pass.
  */
 #include "headlessFixture.h"
 
@@ -327,4 +330,98 @@ TEST_CASE("LogView kinds: a row of an app kind shows the kind's content at its m
     CHECK(bound.at(content) == "card again");
     CHECK(made == 1);
     CHECK(row->getBounds().h == 30+2*controls::LogView::RowPadY);
+}
+
+// A new preview length is one measure generation: the call measures nothing,
+// and the next layout measures the rows on screen alone (the idle re-measure,
+// off here, would take the rest), whatever the log's length.
+TEST_CASE("LogView blocks: a new preview length measures only the rows on screen")
+{
+    Scene scene;
+
+    for(int i=0; i < 2000; ++i)
+        scene.log->append(controls::LogRow::block("block "+std::to_string(i), blockLines(8)));
+
+    // the first layout measures the rows on screen alone too: the yardstick
+    const size_t first=controls::measureTextCalls();
+
+    scene.frame();
+
+    const size_t firstFrameCalls=controls::measureTextCalls()-first;
+    const size_t before=controls::measureTextCalls();
+
+    scene.log->setBlockPreviewLines(2);
+    CHECK(controls::measureTextCalls() == before);
+    scene.frame();
+
+    const size_t frameCalls=controls::measureTextCalls()-before;
+
+    CAPTURE(frameCalls);
+    CAPTURE(firstFrameCalls);
+    CHECK(frameCalls > 0);
+    CHECK(frameCalls <= 2*firstFrameCalls);
+
+    const RowId last=scene.log->lastRowId();
+    controls::internal::LogViewRow *row=scene.log->rowControl(last);
+
+    REQUIRE(row != nullptr);
+    CHECK(row->getText() == controls::LogView::blockText(
+        controls::LogRow::block("block 1999", blockLines(8)), 2));
+}
+
+// A kind registered again takes the new handler in full: the rows' content
+// of the old factory goes, and the new factory makes the content the new
+// binder fills.
+TEST_CASE("LogView kinds: a kind registered again makes its content with the new factory")
+{
+    Scene scene;
+    constexpr controls::LogRow::Kind Card=controls::LogRow::FirstAppKind;
+    int madeOld=0;
+    int madeNew=0;
+    std::map<controls::Base *, String> boundNew;
+
+    controls::LogView::RowKind oldKind;
+
+    oldKind.factory=[&madeOld](controls::Base *row) -> controls::Base * { ++madeOld; return row->newChild<controls::Base>(); };
+    oldKind.binder=[](controls::Base *, const controls::LogRow &) {};
+    oldKind.measurer=[](const controls::LogRow &, int) { return 20; };
+    scene.log->setRowKind(Card, oldKind);
+
+    controls::LogRow cardRow("card");
+
+    cardRow.kind=Card;
+
+    const RowId cardId=scene.log->append(cardRow);
+
+    scene.frame();
+
+    controls::internal::LogViewRow *row=scene.log->rowControl(cardId);
+
+    REQUIRE(row != nullptr);
+    REQUIRE(madeOld == 1);
+
+    const controls::Base *oldContent=row->getKindContent();
+
+    REQUIRE(oldContent != nullptr);
+
+    const size_t children=row->getChildren().size();
+
+    controls::LogView::RowKind newKind;
+
+    newKind.factory=[&madeNew](controls::Base *row) -> controls::Base * { ++madeNew; return row->newChild<controls::Base>(); };
+    newKind.binder=[&boundNew](controls::Base *content, const controls::LogRow &row) { boundNew[content]=row.text; };
+    newKind.measurer=[](const controls::LogRow &, int) { return 30; };
+    scene.log->setRowKind(Card, newKind);
+    scene.frame();
+
+    row=scene.log->rowControl(cardId);
+    REQUIRE(row != nullptr);
+    CHECK(madeNew == 1);
+    REQUIRE(row->getKindContent() != nullptr);
+    CHECK(boundNew.count(row->getKindContent()) == 1);
+    CHECK(row->getBounds().h == 30+2*controls::LogView::RowPadY);
+
+    // the old content is gone (the new one may take its address): the row
+    // holds as many children as before, not one more
+    CHECK(row->getChildren().size() == children);
 }

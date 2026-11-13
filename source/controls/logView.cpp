@@ -388,12 +388,10 @@ void LogView::setBlockPreviewLines(size_t lines)
     if(m_previewLines == lines)
         return;
 
+    // a new measure generation, O(1): the next layout measures the rows on
+    // screen and the idle re-measure the rest, as for a new width
     m_previewLines=lines;
-    for(size_t i=0; i < m_rows.size(); ++i)
-    {
-        if(m_rows[i].row.kind == LogRow::Block)
-            itemChanged(i);
-    }
+    refresh();
 }
 
 bool LogView::setBlockExpanded(RowId id, bool expanded)
@@ -429,7 +427,31 @@ void LogView::setRowKind(LogRow::Kind kind, RowKind handler)
         [kind](const std::pair<LogRow::Kind, RowKind> &entry) { return entry.first == kind; });
 
     if(found != m_kinds.end())
+    {
         found->second=std::move(handler);
+
+        // the old factory's content is not the new binder's to fill: the
+        // pooled rows make the kind's content again when they next show it
+        for(size_t i=0; i < poolSize(); ++i)
+        {
+            internal::LogViewRow *row=gweni_cast<internal::LogViewRow>(poolRow(i));
+
+            if(!row)
+                continue;
+            for(auto made=row->m_contents.begin(); made != row->m_contents.end();)
+            {
+                if(made->first != kind)
+                {
+                    ++made;
+                    continue;
+                }
+                if(row->m_content == made->second)
+                    row->m_content=nullptr;
+                delete made->second;    // ~Base takes it out of the row, gives its ids back
+                made=row->m_contents.erase(made);
+            }
+        }
+    }
     else
         m_kinds.emplace_back(kind, std::move(handler));
     refresh();
