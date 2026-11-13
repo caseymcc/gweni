@@ -672,7 +672,8 @@ size_t CodeEditor::countRows(int width, size_t limit) const
 
     for(size_t line=0; line < lines && rows <= limit; ++line)
         rows+=text::wrapRowCount(m_document.line(line), cells);
-    return rows;
+    // a line's rows are counted whole: one long line can pass the limit by more
+    return std::min(rows, limit+1);
 }
 
 // Turning the measurer on (again) counts every line at the estimator, its
@@ -853,12 +854,14 @@ void CodeEditor::linesChanged(const text::LineChange &change)
             position=snapToStop(m_document, position);
         };
 
+    // the caret's line among those replaced: the row it is drawn on is
+    // worked out again from the new text, at the start of the row at a wrap
+    // point (a line the change only moved keeps its rows)
+    if(m_caret.line >= change.first && m_caret.line < change.first+change.removed)
+        m_caretUpstream=false;
     shift(m_caret);
     shift(m_anchor);
     m_caretColumn=text::stringCells(m_document.line(m_caret.line), 0, m_caret.byte);
-    // the row it is drawn on is worked out again from the new text: at the
-    // start of the row at a wrap point
-    m_caretUpstream=false;
     syncCurrentLine();
     syncSelection();
     caretChanged();
@@ -2110,6 +2113,10 @@ void CodeEditor::contentsPlaced(skin::Base *skin)
         const size_t cells=wrapCellsFor(m_innerPanel->getWidth());
         const int viewport=getViewportHeight();
         const bool rewrap=(cells != m_wrapCells || m_lineHeight != m_wrapLineHeight);
+        // revealCaretRow()'s request holds while its scrollToItem() is still
+        // the list's: a scroll the app or the user asked for after it in the
+        // frame (another scrollToItem(), a scrollByRows()) is the one kept
+        bool reveal=m_revealCaretRow && getPendingItem() == m_caret.line;
 
         if(rewrap || viewport != m_wrapViewportHeight)
         {
@@ -2125,11 +2132,11 @@ void CodeEditor::contentsPlaced(skin::Base *skin)
                 caretChanged();
             }
             if(shown)
-                m_revealCaretRow=true;
+                reveal=true;
         }
 
         // the caret's visual row (the whole line where it fits the viewport)
-        if(m_revealCaretRow && m_lineHeight > 0)
+        if(reveal && m_lineHeight > 0)
             scrollToItem(m_caret.line, static_cast<int>(std::min<size_t>(getCaretRow(),
                 static_cast<size_t>(INT_MAX/m_lineHeight-1)))*m_lineHeight, m_lineHeight);
     }

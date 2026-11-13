@@ -8,11 +8,12 @@
  *  editor is its visual rows tall, clamped to [min, max] rows, plus its
  *  padding: min rows empty, one row a wrapped or new line in between, max
  *  rows past it, where it scrolls (the vertical bar only then) with the
- *  caret's row in view, and back down as the text shrinks. The fields below
- *  it move with it. A row more lays out in one pass that enters the editor's
- *  subtree and its ancestors and each field it moves once, none of their
- *  subtrees (20 fields below cost 18 entries more than 2), and the next
- *  frame lays nothing out.
+ *  caret's row in view and getContentRows() at max+1 (one long line too),
+ *  and back down as the text shrinks. The fields below it move with it. A
+ *  row more lays out in one pass that enters the editor's subtree and its
+ *  ancestors and each field it moves once, none of their subtrees (20
+ *  fields below cost 18 entries more than 2), and the next frame lays
+ *  nothing out.
  *  setAutoHeight(1, 0) gives the requested height back. setPlain(true) is
  *  wrapped, has no gutter and no current-line look, and Tab moves the focus
  *  in and out of it as in a textarea; setPlain(false) captures Tab again.
@@ -192,6 +193,14 @@ TEST_CASE("CodeEditor auto-height: min rows empty, its rows in between, max rows
     CHECK(editor->getVerticalScrollOffset() > 0);
     CHECK(editor->getCaretBounds().h == lineHeight);
     CHECK(f.below[0]->getY() == editor->bottom());
+
+    // one line of more rows than that (the bar narrows them) counts as
+    // max+1 too
+    editor->setText(String(8*C, 'w'));
+    f.frame();
+    CHECK(editor->getLineRows(0) >= 8);
+    CHECK(editor->getContentRows() == 6);
+    CHECK(editor->getHeight() == f.heightFor(5));
 
     // and down again
     editor->setText("short");

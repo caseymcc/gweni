@@ -215,6 +215,9 @@ public:
     //! scrollToItem() not yet laid out. In variable mode it moves the anchor
     //! by that many items.
     void scrollByRows(int rows);
+    //! The item of the scrollToItem() the next layout is to resolve, or
+    //! NoItem: none asked for, or a scrollByRows() dropped it.
+    size_t getPendingItem() const { return m_pendingItem; }
 
     //! The item at the top of the viewport (partly scrolled out or not), as
     //! the scroll offset gives it; 0 for an empty list.

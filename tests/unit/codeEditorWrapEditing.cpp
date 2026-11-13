@@ -13,7 +13,9 @@
  *  then to the line's (End's stop at a wrap point drawn on the upper row);
  *  the same byte is drawn at the end of the upper row or the start of the
  *  lower one as the move that reached it implies (an app's edit of the
- *  document the lower one's), and getCaretBounds() is there. A click lands on the visual row under it, past a wrapping row's
+ *  caret's line the lower one's; of another line, the look kept), and
+ *  getCaretBounds() is there. A scrollToItem() or scrollByRows() after a
+ *  caret move in the same frame is where the view ends, as unwrapped. A click lands on the visual row under it, past a wrapping row's
  *  end at that row's end. PageDown moves the caret by the viewport's rows
  *  and keeps it in view; Down past the viewport's bottom scrolls one row.
  *  Toggling wrap, and a resize, keep the caret's line on screen. Every frame
@@ -372,8 +374,8 @@ TEST_CASE("CodeEditor wrapped: a byte at a wrap point is drawn where the move th
     CHECK(!editor->isCaretAtRowEnd());
     CHECK(editor->getCaretRow() == 1);
 
-    // and so is an app's edit of the document, which moves the caret with
-    // its line: End's look at the wrap point is not kept
+    // an app's edit of another line moves the caret with its line and keeps
+    // End's look at the wrap point
     s.setText("top\n"+String(2*C, 'x'));
     editor->setCaret(at(1, 1));
     s.frame();
@@ -383,9 +385,53 @@ TEST_CASE("CodeEditor wrapped: a byte at a wrap point is drawn where the move th
     editor->getDocument().insert(at(0, 3), "\nabove");
     s.frame();
     CHECK(s.caret() == at(2, C));
+    CHECK(editor->isCaretAtRowEnd());
+    CHECK(editor->getCaretRow() == 0);
+    CHECK(sameRect(editor->getCaretBounds(), s.expectedCaret(0, C)));
+
+    // and one of the caret's line draws it at the lower row's start
+    editor->getDocument().insert(at(2, 0), "y");
+    s.frame();
+    CHECK(s.caret() == at(2, C));
     CHECK(!editor->isCaretAtRowEnd());
     CHECK(editor->getCaretRow() == 1);
     CHECK(sameRect(editor->getCaretBounds(), s.expectedCaret(1, 0)));
+    s.checkOnePass();
+}
+
+TEST_CASE("CodeEditor wrapped: a scroll asked for after a caret move in the same frame is the one the view ends on")
+{
+    Scene s;
+    controls::CodeEditor *editor=s.editor;
+    String text;
+
+    // short lines, most of them not measured yet
+    for(int i=0; i < 2000; ++i)
+        text+=(i > 0?"\n":"")+std::to_string(i);
+    s.setText(text);
+
+    // the caret moved to a line the list has not measured, then the app's
+    // scrollToItem() in the same frame: the view ends on the app's line
+    editor->setCaret(at(1500, 0));
+    editor->scrollToItem(10);
+    s.frame();
+    s.frame();
+    CHECK(editor->rowForLine(10));
+    CHECK(!editor->rowForLine(1500));
+
+    // and with a scrollByRows()
+    editor->setCaret(at(1700, 0));
+    editor->scrollByRows(3);
+    s.frame();
+    s.frame();
+    CHECK(editor->rowForLine(13));
+    CHECK(!editor->rowForLine(1700));
+
+    // with neither, the caret's line is put in view
+    editor->setCaret(at(1800, 0));
+    s.frame();
+    REQUIRE(editor->rowForLine(1800));
+    s.checkCaretOnScreen();
     s.checkOnePass();
 }
 

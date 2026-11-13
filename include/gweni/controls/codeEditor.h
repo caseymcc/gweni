@@ -594,7 +594,7 @@ private:
     //! At a wrap point: drawn at the end of the row above (isCaretAtRowEnd).
     bool m_caretUpstream=false;
     //! The next layout scrolls the caret's visual row into view
-    //! (revealCaretRow()).
+    //! (revealCaretRow()), unless a later scroll replaced its scrollToItem().
     bool m_revealCaretRow=false;
     //! Row starts, kept for their capacity.
     mutable std::vector<size_t> m_rowScratch;
