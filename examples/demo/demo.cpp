@@ -35,6 +35,7 @@
 #include "demo/vectorField.h"
 #include "demo/popup.h"
 #include "demo/chipBadge.h"
+#include "demo/dialog.h"
 #include "demo/crossSplitter.h"
 #include "demo/dataTable.h"
 #include "demo/codeEditor.h"
@@ -228,6 +229,8 @@ void Demo::init(const String &name)
         addDemo<ContextMenuDemo>(cat, "ContextMenuDemo", "Context menu");
         addDemo<PopupDemo>(cat, "PopupDemo", "Popup");
         addDemo<ChipBadgeDemo>(cat, "ChipBadgeDemo", "Chips and badges");
+        addDemo<DialogDemo>(cat, "DialogDemo", "Dialogs");
+        addDemo<LargeDialogDemo>(cat, "LargeDialogDemo", "Large dialog");
         addDemo<UnicodeTextDemo>(cat, "UnicodeTextDemo", "Unicode text");
         addDemo<TextSizesDemo>(cat, "TextSizesDemo", "Text sizes");
         addDemo<TextDemo>(cat, "TextDemo", "Text");

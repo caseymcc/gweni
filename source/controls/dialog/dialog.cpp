@@ -87,6 +87,15 @@ GWENI_CONTROL_CONSTRUCTOR(Dialog)
 
     m_footer=newChild<internal::DialogFooter>();
 
+    // above the content, outside its ScrollControl: a wrapped text there is
+    // measured at the width this pass gives it, in one pass
+    m_message=newChild<controls::Label>();
+    m_message->setDock(DockPosition::Top);
+    m_message->setMargin(Margin(10, 8, 10, 8));
+    m_message->setWrap(true);
+    m_message->setName("message");
+    m_message->setHidden(true);
+
     m_content=newChild<controls::ScrollControl>();
     m_content->setDock(DockPosition::Center);
     m_content->setScroll(false, true);
@@ -107,6 +116,13 @@ void Dialog::setTitle(const String &title)
 String Dialog::getTitle() const
 {
     return m_titleLabel->getText();
+}
+
+controls::Label *Dialog::setMessage(const String &text)
+{
+    m_message->setText(text);
+    m_message->setHidden(text.empty());
+    return m_message;
 }
 
 void Dialog::setDialogSize(Extent width, Extent height)

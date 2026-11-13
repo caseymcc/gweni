@@ -21,8 +21,8 @@ namespace
 {
 
 //! The units around the text across the dialog: its border and shadow, and
-//! the content's margins.
-constexpr int SideUnits=2*1+Dialog::ShadowSize+2*5+2*6;
+//! the message's margins.
+constexpr int SideUnits=2*1+Dialog::ShadowSize+2*10;
 
 //! A dialog of \p T on \p canvas with \p title and \p text, TextWidth wide,
 //! as high as its content.
@@ -35,12 +35,9 @@ T *makeDialog(controls::Canvas *canvas, const String &title, const String &text,
     dialog->setDialogSize(Extent::units(TextWidth+SideUnits), Extent::content());
     dialog->setResultHandler(std::move(onResult));
 
-    controls::Label *label=dialog->getContent()->template newChild<controls::Label>();
-    label->setDock(DockPosition::Top);
-    label->setMargin(Margin(6, 6, 6, 6));
-    label->setWrap(true);
-    label->setText(text);
-    label->setName("text");
+    dialog->setMessage(text);
+    // nothing scrolls: the text and the field are the dialog's own
+    dialog->getContent()->hide();
     return dialog;
 }
 
@@ -85,9 +82,12 @@ Dialog *confirm(controls::Canvas *canvas, const String &title, const String &tex
 
 GWENI_CONTROL_CONSTRUCTOR(PromptDialog)
 {
-    m_field=m_content->newChild<controls::TextBox>();
-    m_field->setDock(DockPosition::Bottom);
-    m_field->setMargin(Margin(6, 0, 6, 6));
+    // under the message, above the (hidden) content
+    m_field=newChild<controls::TextBox>();
+    m_field->setDock(DockPosition::Top);
+    m_field->setMargin(Margin(10, 0, 10, 10));
+    // the dialog's width, its own height
+    m_field->setSizeFlags({SizeFlag::Expand, m_field->getSizeFlags().vertical});
     m_field->setName("field");
     setInitialFocus(m_field);
 }

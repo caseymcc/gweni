@@ -225,10 +225,11 @@ if(TARGET ControlTest AND NOT EMSCRIPTEN)
     # input, a canvas resize and a scale round trip (both on Demo), a Window
     # dragged past its parent's edges, the tooltip box, the context menu, the
     # stats overlay, the depth view, the zoom panel, the node graph and a
-    # variable-height VirtualList, the code editor, the log view and the
-    # badges' counts and anchor moves
+    # variable-height VirtualList, the code editor, the log view, the
+    # badges' counts and anchor moves and the dialogs
     foreach(verify_scenario interaction resize scale clip tooltip context-menu stats-overlay
-            depth-view zoom-panel node-graph virtual-list-variable code-editor log-view chip-badge)
+            depth-view zoom-panel node-graph virtual-list-variable code-editor log-view chip-badge
+            dialog)
         string(REPLACE "-" "_" verify_name "${verify_scenario}")
         add_test(NAME controltest_verify_layout_${verify_name}
             COMMAND $<TARGET_FILE:ControlTest> --headless --scenario ${verify_scenario}
@@ -299,6 +300,19 @@ if(TARGET ControlTest AND NOT EMSCRIPTEN)
     gweni_whole_app_test(controltest_popup 300
         COMMAND $<TARGET_FILE:ControlTest> --headless --scenario popup --require-one-pass
             --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/popup@VARIANT@
+        WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
+
+    # DialogDemo and LargeDialogDemo, the clock frozen: each standard dialog's
+    # open frame writes only the dialog's ids, a settled frame writes and
+    # renders nothing, Enter, Escape or a typed prompt closes it with only the
+    # result label changed; the large dialog is 1200 x 0.92 clamped to the
+    # canvas and centred, a change behind it writes only that Label's ids and
+    # no pixel inside it, a confirm stacks on it and hands it back, and Escape
+    # and Enter each close it with the frame before it opened and the ids
+    # back; exits non-zero on any failed check
+    gweni_whole_app_test(controltest_dialog 300
+        COMMAND $<TARGET_FILE:ControlTest> --headless --scenario dialog --require-one-pass
+            --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/dialog@VARIANT@
         WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
 
     # VirtualListDemo at 1 000 and 100 000 items: the same pool, ids and

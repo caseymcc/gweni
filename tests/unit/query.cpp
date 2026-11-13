@@ -280,6 +280,7 @@ TEST_CASE("Query: Enter in a multiline TextBox is the box's newline")
 {
     Scene scene;
     Dialog *dialog=dialogs::confirm(scene.canvas, "C", "Notes:", Buttons::OkCancel, scene.record());
+    dialog->getContent()->show();
     controls::TextBoxMultiline *notes=dialog->getContent()->newChild<controls::TextBoxMultiline>();
     notes->setDock(DockPosition::Top);
     notes->setSizeFlags({SizeFlag::Expand, SizeFlag::Fixed});

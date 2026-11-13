@@ -45,8 +45,8 @@ enum class Buttons
 //! and closing it hands the input back to it. Deleting the dialog or the
 //! canvas calls no handler.
 //!
-//! The text wraps at TextWidth units; a dialog is never larger than the
-//! canvas, and its text scrolls when the canvas is too small for it.
+//! The text (Dialog::setMessage) wraps at TextWidth units; a dialog is never
+//! larger than the canvas.
 static constexpr int TextWidth=360;
 
 //! The text and an OK button; the default and the cancel result are Ok.

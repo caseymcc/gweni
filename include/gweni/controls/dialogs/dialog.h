@@ -151,6 +151,12 @@ public:
     String getTitle() const;
     controls::Label *getTitleLabel() const { return m_titleLabel; }
 
+    //! A wrapped text under the title bar, above the content, as wide as the
+    //! dialog (outside the content's ScrollControl, so it does not scroll):
+    //! the standard dialogs' text. Hidden while empty, as it is at first.
+    controls::Label *setMessage(const String &text);
+    controls::Label *getMessage() const { return m_message; }
+
     //! The size the next layout gives it (see Extent): Extent::content() for
     //! both by default.
     void setDialogSize(Extent width, Extent height);
@@ -241,6 +247,7 @@ protected:
     internal::DialogTitleBar *m_titleBar=nullptr;
     controls::Label *m_titleLabel=nullptr;
     controls::WindowCloseButton *m_closeButton=nullptr;
+    controls::Label *m_message=nullptr;
     controls::ScrollControl *m_content=nullptr;
     internal::DialogFooter *m_footer=nullptr;
     controls::Button *m_defaultButton=nullptr;

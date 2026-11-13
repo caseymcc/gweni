@@ -159,7 +159,7 @@
  *    --help, -h         print the option list and exit
  *    --scenario <name>  per-control | resize | docked | scroll | interaction |
  *                       typing | clip | text-size | scale | tooltip |
- *                       context-menu | popup | virtual-list |
+ *                       context-menu | popup | dialog | virtual-list |
  *                       virtual-list-variable |
  *                       data-table-virtual | hide-show | demo-labels |
  *                       plot-histogram | plot-lines | chart | timeline |
@@ -749,6 +749,22 @@
  *                 closes it. One line
  *                   popup opens_below=yes|no ... hidden_anchor_closes=yes|no
  *                 reports the checks. Exits non-zero if any check is no.
+ *    dialog       dialogs::Dialog and the standard dialogs on DialogDemo and
+ *                 LargeDialogDemo, the clock frozen and the mouse off the
+ *                 canvas: each of the message, the two confirms and the
+ *                 prompt opened by its button's action writes only the
+ *                 dialog's ids in its open frame and nothing (rendering no
+ *                 control) in a settled one, and Enter, Escape or "abc" and
+ *                 Enter close it with the result label naming the result and
+ *                 no other pixel changed; the large dialog is 1200 x 0.92 of
+ *                 the canvas clamped to it and centred, a change behind it
+ *                 writes only that Label's ids and changes no pixel inside
+ *                 it, a confirm from its Force release button stacks over it,
+ *                 Escape gives it back and Enter (Yes) logs into it, and
+ *                 Escape and Enter each close it with the frame before it
+ *                 opened and the live ids back. Shots dialog-*.png. One line
+ *                   dialog message_open_alone=yes|no ... large_return_closes=yes|no
+ *                 reports the checks. Exits non-zero if any check is no.
  *    code-editor  CodeEditorDemo's 5000-line document (line numbers on,
  *                 highlighted as YAML), the clock frozen, scrolled to line
  *                 2500, a press at the end of a short line ("    model: ...")
@@ -1092,6 +1108,7 @@
 #include <demo/chipBadge.h>
 #include <gweni/controls/badge.h>
 #include <gweni/controls/chip.h>
+#include <demo/dialog.h>
 #include <demo/crossSplitter.h>
 #include <demo/dataTable.h>
 #include <demo/codeEditor.h>
@@ -1243,7 +1260,7 @@ static void content_scale_callback(GLFWwindow *window, float, float)
     X(ShowcaseDisplayDemo) X(ShowcaseWindowsDemo) \
     X(ButtonDemo) X(LabelDemo) X(LabelMultilineDemo) X(ProgressBarDemo) \
     X(GroupBoxDemo) X(ImagePanelDemo) X(StatusBarDemo) X(SeparatorDemo) X(PlotHistogramDemo) X(PlotLinesDemo) X(ChartTimeBarsDemo) X(ChartLinesDemo) X(TimelineDemo) X(ComboBoxDemo) \
-    X(TextBoxDemo) X(ListBoxDemo) X(SelectableDemo) X(VirtualListDemo) X(VirtualListVariableDemo) X(DataTableDemo) X(DataTableVirtualDemo) X(CodeEditorDemo) X(CodeEditorFormDemo) X(LogViewDemo) X(ContextMenuDemo) X(PopupDemo) X(ChipBadgeDemo) X(CrossSplitterDemo) X(RadioButtonDemo) \
+    X(TextBoxDemo) X(ListBoxDemo) X(SelectableDemo) X(VirtualListDemo) X(VirtualListVariableDemo) X(DataTableDemo) X(DataTableVirtualDemo) X(CodeEditorDemo) X(CodeEditorFormDemo) X(LogViewDemo) X(ContextMenuDemo) X(PopupDemo) X(ChipBadgeDemo) X(DialogDemo) X(LargeDialogDemo) X(CrossSplitterDemo) X(RadioButtonDemo) \
     X(CheckBoxDemo) X(NumericDemo) X(SliderDemo) X(SliderTextDemo) X(DragNumberDemo) X(VectorFieldDemo) X(MenuStripDemo) \
     X(WindowDemo) X(WindowButtonsDemo) X(TreeControlDemo) X(PropertiesDemo) X(TabControlDemo) X(TabCloseDemo) X(TabOverflowDemo) \
     X(ScrollControlDemo) X(PageControlDemo) X(CollapsibleListDemo) X(ColorPickerDemo) X(ColorEditDemo) \
@@ -1334,7 +1351,7 @@ static void printUsage(std::ostream &out)
          "  --trace            log each scripted input on stderr\n"
          "  --scenario <name>  per-control | resize | docked | scroll | interaction\n"
          "                     | typing | clip | text-size | scale | tooltip\n"
-         "                     | context-menu | popup | virtual-list\n"
+         "                     | context-menu | popup | dialog | virtual-list\n"
          "                     | virtual-list-variable\n"
          "                     | data-table-virtual | hide-show | demo-labels\n"
          "                     | plot-histogram | plot-lines | chart | timeline\n"
@@ -2377,7 +2394,7 @@ static bool runSteps(Session &s, const std::vector<Step> &steps, const std::stri
 // Scenarios
 //-----------------------------------------------------------------------------
 enum class Scenario { None, PerControl, Resize, Docked, Scroll, Interaction, Typing, Clip, TextSize, Scale,
-    ToolTip, ContextMenu, Popup, VirtualList, VirtualListVariable, DataTableVirtual, HideShow, DemoLabels, PlotHistogram,
+    ToolTip, ContextMenu, Popup, Dialog, VirtualList, VirtualListVariable, DataTableVirtual, HideShow, DemoLabels, PlotHistogram,
     PlotLines, Chart, Timeline, Inspector, Theme, StatsOverlay, DepthView, ZoomPanel, NodeGraph, CodeEditor, LogView,
     ChipBadge };
 
@@ -2395,6 +2412,7 @@ static bool parseScenario(const std::string &name, Scenario &scenario)
     else if(name == "tooltip") scenario=Scenario::ToolTip;
     else if(name == "context-menu") scenario=Scenario::ContextMenu;
     else if(name == "popup") scenario=Scenario::Popup;
+    else if(name == "dialog") scenario=Scenario::Dialog;
     else if(name == "virtual-list") scenario=Scenario::VirtualList;
     else if(name == "virtual-list-variable") scenario=Scenario::VirtualListVariable;
     else if(name == "data-table-virtual") scenario=Scenario::DataTableVirtual;
@@ -10663,6 +10681,279 @@ static bool runPopupScenario(Session &s, const std::string &shotDir, bool &passe
 }
 
 //-----------------------------------------------------------------------------
+// --scenario dialog: dialogs::Dialog and the standard dialogs, on DialogDemo
+// and LargeDialogDemo, the clock frozen, the mouse off the canvas so no hover
+// moves. Each open frame and each settled frame is held to the dialog by the
+// ids it writes and the controls its update phase leaves pending; a change
+// behind an open dialog to the control changed; each close to the frame
+// before the open.
+//-----------------------------------------------------------------------------
+
+// One frame, its update phase inspected (frameCheckingStrays): the ids it
+// wrote, what it wrote and rendered, its pixels, and the controls with a change
+// pending outside `allowed`.
+struct DialogFrame
+{
+    std::set<size_t> primitives;
+    std::set<size_t> texts;
+    size_t written=0;
+    size_t visited=0;
+    std::vector<std::string> strays;
+    std::vector<uint8_t> pixels;
+};
+
+static DialogFrame dialogFrame(Session &s, const std::vector<gweni::controls::Base *> &allowed)
+{
+    DialogFrame frame;
+
+    frameCheckingStrays(s, allowed, frame.strays, true);
+    for(size_t id : s.renderer->writtenPrimitiveIds())
+        frame.primitives.insert(id);
+    for(const gweni::renderer::WrittenText &text : s.renderer->writtenTextIds())
+        frame.texts.insert(text.textId);
+    const gweni::renderer::FrameCounts counts=s.renderer->frameStats();
+    frame.written=counts.primitiveSlotsWritten+counts.textSlotsWritten;
+    frame.visited=gweni::controls::getChangeStats().visited;
+    frame.pixels=framePixels(s);
+    return frame;
+}
+
+// The ids `frame` wrote that no control under any of `roots` holds, and the
+// controls pending outside them, as a list ("" for none).
+static std::string writtenOutside(const DialogFrame &frame, const std::vector<gweni::controls::Base *> &roots)
+{
+    std::set<size_t> primitives, texts;
+    for(gweni::controls::Base *root : roots)
+        subtreeIds(root, primitives, texts);
+
+    std::string outside;
+    for(size_t id : frame.primitives)
+    {
+        if(!primitives.count(id))
+            outside+=" prim#"+std::to_string(id);
+    }
+    for(size_t id : frame.texts)
+    {
+        if(!texts.count(id))
+            outside+=" text#"+std::to_string(id);
+    }
+    for(const std::string &stray : frame.strays)
+        outside+=" pending:"+stray;
+    return outside;
+}
+
+// The pixels of two frames that differ inside `rect`.
+static size_t differencesInsideRect(const Session &s, const std::vector<uint8_t> &a,
+    const std::vector<uint8_t> &b, const gweni::Rect &rect)
+{
+    return differencesOutsideRects(s, a, b, {})-differencesOutsideRects(s, a, b, {rect});
+}
+
+static bool runDialogScenario(Session &s, const std::string &shotDir, bool &passed)
+{
+    s.freezeClock=true;
+
+    InteractionChecks checks;
+    checks.scenario="dialog";
+    bool ok=true;
+    gweni::controls::Canvas *canvas=s.canvas;
+    auto shot=[&](const std::string &name)
+    {
+        if(!shoot(s, shotDir+"/dialog-"+name+".png"))
+            ok=false;
+    };
+    auto settle=[&]()
+    {
+        forgetMouse(s);
+        renderFrames(s, s.frames);
+        return framePixels(s);
+    };
+
+    // DialogDemo: each standard dialog opened by its button's action, a
+    // settled frame, then closed by Enter, Escape or a typed text and Enter.
+    gweni::controls::Base *demo=addControl(s, "DialogDemo");
+    auto *page=gweni::gweni_cast<gweni::DialogDemo>(demo);
+    if(!page || !page->m_message || !page->m_yesNo || !page->m_okCancel || !page->m_prompt || !page->m_result)
+    {
+        checks.check("demo_found", false, "DialogDemo has no four dialog buttons and a result label");
+        dropControl(s, demo);
+        passed=false;
+        return ok;
+    }
+
+    struct Case
+    {
+        const char *name;
+        gweni::controls::Button *button;
+        //! the keys and text that close it
+        std::vector<std::string> keys;
+        const char *result;
+    };
+    const std::vector<Case> cases={
+        {"message", page->m_message, {"return"}, "Result: message Ok"},
+        {"yes_no", page->m_yesNo, {"escape"}, "Result: yes/no No"},
+        {"ok_cancel", page->m_okCancel, {"return"}, "Result: ok/cancel Ok"},
+        {"prompt", page->m_prompt, {"a", "b", "c", "return"}, "Result: prompt Ok \"abc\""},
+    };
+
+    for(const Case &one : cases)
+    {
+        std::vector<uint8_t> before=settle();
+        const size_t idsBefore=livePrimitiveIds()+liveTextIds();
+        const gweni::Rect resultRect=canvasRectOf(page->m_result);
+
+        one.button->doAction();
+        gweni::controls::Base *dialog=canvas->topModal();
+        if(!dialog)
+        {
+            checks.check(std::string(one.name)+"_opens", false, "its button opened no dialog");
+            continue;
+        }
+        const DialogFrame opened=dialogFrame(s, {dialog});
+        const std::string openOutside=writtenOutside(opened, {dialog});
+        checks.check(std::string(one.name)+"_open_alone", opened.written > 0 && openOutside.empty(),
+            "the frame that opened it wrote "+std::to_string(opened.written)+" slots, outside the dialog:"
+            +openOutside);
+        renderFrames(s, s.frames);
+        shot(std::string(one.name)+"-open");
+        const DialogFrame settled=dialogFrame(s, {});
+        checks.check(std::string(one.name)+"_settled", settled.written == 0 && settled.visited == 0
+            && settled.strays.empty(),
+            "a settled frame with it open wrote "+std::to_string(settled.written)+" slots and rendered "
+            +std::to_string(settled.visited)+" controls");
+
+        for(const std::string &key : one.keys)
+        {
+            sendKey(s, key);
+            renderFrames(s, 1);
+        }
+        const std::vector<uint8_t> after=settle();
+        // the label as it was and as it is: its text's width changed
+        const size_t outside=differencesOutsideRects(s, before, after, {resultRect, canvasRectOf(page->m_result)});
+        const bool closed=(canvas->topModal() == nullptr);
+        checks.check(std::string(one.name)+"_closes", closed && page->m_result->getText() == one.result
+            && outside == 0 && livePrimitiveIds()+liveTextIds() == idsBefore,
+            std::string(closed ? "" : "it stayed open; ")+"the result reads \""+page->m_result->getText()
+            +"\", want \""+one.result+"\"; "+std::to_string(outside)
+            +" pixels outside the result label unlike the frame before it opened; live ids "
+            +std::to_string(idsBefore)+" before, "+std::to_string(livePrimitiveIds()+liveTextIds())+" after");
+    }
+    forgetMouse(s);
+    dropControl(s, demo);
+
+    // LargeDialogDemo: 1200 units by 0.92 of the canvas, clamped to it.
+    demo=addControl(s, "LargeDialogDemo");
+    auto *large=gweni::gweni_cast<gweni::LargeDialogDemo>(demo);
+    if(!large || !large->m_open || !large->m_behind)
+    {
+        checks.check("large_demo_found", false, "LargeDialogDemo has no open button and label behind");
+        dropControl(s, demo);
+        passed=false;
+        return ok;
+    }
+
+    std::vector<uint8_t> before=settle();
+    shot("large-before");
+    const size_t idsBefore=livePrimitiveIds()+liveTextIds();
+
+    for(int round=0; round < 2; ++round)
+    {
+        const std::string closeKey=(round == 0) ? "escape" : "return";
+
+        large->m_open->doAction();
+        gweni::dialogs::Dialog *dialog=large->dialog();
+        if(!dialog || canvas->topModal() != dialog)
+        {
+            checks.check("large_opens", false, "\"Open task\" opened no dialog on the modal stack");
+            break;
+        }
+        const DialogFrame opened=dialogFrame(s, {dialog});
+        const std::string openOutside=writtenOutside(opened, {dialog});
+        const gweni::Rect rect=canvasRectOf(dialog);
+        const int wantH=static_cast<int>(std::lround(0.92*s.size.y));
+        if(round == 0)
+        {
+            checks.check("large_size", rect.w == std::min(1200, s.size.x) && rect.h == wantH
+                && rect.x == (s.size.x-rect.w)/2 && rect.y == (s.size.y-rect.h)/2,
+                "the dialog is at "+rectText(rect)+", want "+std::to_string(std::min(1200, s.size.x))+"x"
+                +std::to_string(wantH)+" centred");
+            checks.check("large_open_alone", opened.written > 0 && openOutside.empty(),
+                "the frame that opened it wrote outside it:"+openOutside);
+        }
+        renderFrames(s, s.frames);
+        if(round == 0)
+            shot("large-open");
+        const DialogFrame settled=dialogFrame(s, {});
+        const std::vector<uint8_t> open=settled.pixels;
+
+        if(round == 0)
+        {
+            checks.check("large_settled", settled.written == 0 && settled.visited == 0,
+                "a settled frame with it open wrote "+std::to_string(settled.written)+" slots and rendered "
+                +std::to_string(settled.visited)+" controls");
+
+            // a change behind it: the Label's own slots, nothing pending
+            // elsewhere, no pixel inside the dialog
+            const gweni::String was=large->m_behind->getText();
+            large->m_behind->setText("Ticks behind the dialog: 999");
+            const DialogFrame behind=dialogFrame(s, {large->m_behind});
+            const std::string behindOutside=writtenOutside(behind, {large->m_behind});
+            const size_t inside=differencesInsideRect(s, open, behind.pixels, rect);
+            checks.check("large_behind_alone", behind.written > 0 && behindOutside.empty() && inside == 0,
+                "a change behind it wrote "+std::to_string(behind.written)+" slots, outside the label:"
+                +behindOutside+"; "+std::to_string(inside)+" pixels inside the dialog changed");
+            large->m_behind->setText(was);
+            renderFrames(s, s.frames);
+
+            // a confirm stacked on it: modal to it, Escape gives it back, and
+            // its Yes is the large dialog's to log
+            large->m_forceRelease->doAction();
+            gweni::controls::Base *confirm=canvas->topModal();
+            renderFrames(s, s.frames);
+            shot("large-confirm");
+            const bool stacked=confirm && (confirm != dialog) && canvas->modalCount() == 2
+                && confirm->getZIndex() > dialog->getZIndex();
+            sendKey(s, "escape");
+            renderFrames(s, s.frames);
+            // (the dialog and its parts are gone if Escape closed it instead)
+            const bool backAfterEscape=large->dialog() && (canvas->topModal() == dialog) && dialog->isOpen();
+            bool yesLogged=false;
+            if(backAfterEscape)
+            {
+                const size_t rows=large->m_log->getRowCount();
+                large->m_forceRelease->doAction();
+                renderFrames(s, s.frames);
+                sendKey(s, "return");
+                renderFrames(s, s.frames);
+                yesLogged=large->dialog() && (canvas->topModal() == dialog) && large->m_log->getRowCount() == rows+1;
+            }
+            checks.check("large_confirm", stacked && backAfterEscape && yesLogged,
+                std::string(stacked ? "" : "Force release opened no confirm stacked over the dialog; ")
+                +(backAfterEscape ? "" : "Escape did not hand the input back to the dialog; ")
+                +(yesLogged ? "" : "Enter (Yes) did not log the release with the dialog on top"));
+        }
+
+        sendKey(s, closeKey);
+        const std::vector<uint8_t> after=settle();
+        checks.check("large_"+closeKey+"_closes", !large->dialog() && !canvas->topModal() && after == before
+            && livePrimitiveIds()+liveTextIds() == idsBefore,
+            closeKey+" left "+(large->dialog() ? "the dialog open" : "the frame unlike the one before it opened")
+            +"; live ids "+std::to_string(idsBefore)+" before, "+std::to_string(livePrimitiveIds()+liveTextIds())
+            +" after");
+    }
+    forgetMouse(s);
+    dropControl(s, demo);
+
+    std::cout<<"dialog";
+    for(const auto &result : checks.results)
+        std::cout<<" "<<result.first<<"="<<(result.second ? "yes" : "no");
+    std::cout<<"\n";
+
+    passed=checks.allPassed();
+    return ok;
+}
+
+//-----------------------------------------------------------------------------
 // --scenario code-editor: CodeEditorDemo's 5000-line document, the clock
 // frozen, scrolled to its middle. Each input is one frame, held to the part of
 // the editor it may touch by the ids it writes, the controls it changes and the
@@ -14707,6 +14998,15 @@ int main(int argc, char *argv[])
             ok=runPopupScenario(session, shotDir, passed);
             if(ok && !passed)
                 ok=false;   // a popup opened, sat or closed wrongly: a failing assertion
+            break;
+        }
+
+        case Scenario::Dialog:
+        {
+            bool passed=false;
+            ok=runDialogScenario(session, shotDir, passed);
+            if(ok && !passed)
+                ok=false;   // a dialog opened, sat or closed wrongly: a failing assertion
             break;
         }
 

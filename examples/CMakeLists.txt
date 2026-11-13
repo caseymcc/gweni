@@ -27,6 +27,8 @@ set(GWENI_DEMO_SOURCES
     demo/timeline.cpp
     demo/timeline.h
     demo/popup.cpp
+    demo/dialog.cpp
+    demo/dialog.h
     demo/popup.h
     demo/crossSplitter.cpp
     demo/crossSplitter.h

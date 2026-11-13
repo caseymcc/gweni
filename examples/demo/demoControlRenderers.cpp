@@ -44,6 +44,8 @@ GWENI_DEMO_TRANSPARENT(ColorPickerDemo)
 GWENI_DEMO_TRANSPARENT(ComboBoxDemo)
 GWENI_DEMO_TRANSPARENT(ContextMenuDemo)
 GWENI_DEMO_TRANSPARENT(PopupDemo)
+GWENI_DEMO_TRANSPARENT(DialogDemo)
+GWENI_DEMO_TRANSPARENT(LargeDialogDemo)
 GWENI_DEMO_TRANSPARENT(CrossSplitterDemo)
 GWENI_DEMO_TRANSPARENT(DataTableDemo)
 GWENI_DEMO_TRANSPARENT(DataTableVirtualDemo)
@@ -139,6 +141,8 @@ template class ControlRegister<ColorPickerDemo>;
 template class ControlRegister<ComboBoxDemo>;
 template class ControlRegister<ContextMenuDemo>;
 template class ControlRegister<PopupDemo>;
+template class ControlRegister<DialogDemo>;
+template class ControlRegister<LargeDialogDemo>;
 template class ControlRegister<CrossSplitterDemo>;
 template class ControlRegister<DataTableDemo>;
 template class ControlRegister<DataTableVirtualDemo>;
