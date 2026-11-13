@@ -226,10 +226,10 @@ if(TARGET ControlTest AND NOT EMSCRIPTEN)
     # dragged past its parent's edges, the tooltip box, the context menu, the
     # stats overlay, the depth view, the zoom panel, the node graph and a
     # variable-height VirtualList, the code editor, the log view, the
-    # badges' counts and anchor moves and the dialogs
+    # badges' counts and anchor moves, the dialogs and the toasts
     foreach(verify_scenario interaction resize scale clip tooltip context-menu stats-overlay
             depth-view zoom-panel node-graph virtual-list-variable code-editor log-view chip-badge
-            dialog)
+            dialog toast)
         string(REPLACE "-" "_" verify_name "${verify_scenario}")
         add_test(NAME controltest_verify_layout_${verify_name}
             COMMAND $<TARGET_FILE:ControlTest> --headless --scenario ${verify_scenario}
@@ -313,6 +313,18 @@ if(TARGET ControlTest AND NOT EMSCRIPTEN)
     gweni_whole_app_test(controltest_dialog 300
         COMMAND $<TARGET_FILE:ControlTest> --headless --scenario dialog --require-one-pass
             --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/dialog@VARIANT@
+        WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
+
+    # ToastDemo, the clock stepping: two toasts stack in the top-right
+    # corner, newest at the top; a settled frame writes and renders nothing
+    # and runs no animation; the mouse on a toast holds the stack past its
+    # timeout, the entry, held and exit frames writing nothing; off it they
+    # expire some seconds later, giving the frame before them and the ids
+    # back; a multi-line toast is taller, and a sticky one outlasts it and
+    # goes with its close button; exits non-zero on any failed check
+    gweni_whole_app_test(controltest_toast 300
+        COMMAND $<TARGET_FILE:ControlTest> --headless --scenario toast --require-one-pass
+            --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/toast@VARIANT@
         WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
 
     # VirtualListDemo at 1 000 and 100 000 items: the same pool, ids and

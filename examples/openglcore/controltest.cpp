@@ -159,7 +159,8 @@
  *    --help, -h         print the option list and exit
  *    --scenario <name>  per-control | resize | docked | scroll | interaction |
  *                       typing | clip | text-size | scale | tooltip |
- *                       context-menu | popup | dialog | virtual-list |
+ *                       context-menu | popup | dialog | toast |
+ *                       virtual-list |
  *                       virtual-list-variable |
  *                       data-table-virtual | hide-show | demo-labels |
  *                       plot-histogram | plot-lines | chart | timeline |
@@ -765,6 +766,19 @@
  *                 opened and the live ids back. Shots dialog-*.png. One line
  *                   dialog message_open_alone=yes|no ... large_return_closes=yes|no
  *                 reports the checks. Exits non-zero if any check is no.
+ *    toast        Canvas::notify's toasts on ToastDemo, the clock stepping:
+ *                 Info then Positive stack in the top-right corner, the newer
+ *                 above, Toast::Gap in from the corner; a settled frame writes
+ *                 and renders nothing and runs no animation; the mouse onto a
+ *                 toast pauses the stack, which outlasts both 4 s timeouts
+ *                 while it rests there, its entry, held and exit frames
+ *                 writing nothing; off it, they go some seconds later, not at
+ *                 once, giving back the frame before them and the live ids;
+ *                 a multi-line toast is taller than a one-line one, and a
+ *                 sticky one outlasts it and goes with its close button, the
+ *                 frame and the ids back again. Shots toast-*.png. One line
+ *                   toast stack=yes|no ... multi_line_sticky=yes|no
+ *                 reports the checks. Exits non-zero if any check is no.
  *    code-editor  CodeEditorDemo's 5000-line document (line numbers on,
  *                 highlighted as YAML), the clock frozen, scrolled to line
  *                 2500, a press at the end of a short line ("    model: ...")
@@ -1055,6 +1069,7 @@
 #include <gweni/controls/selectable.h>
 #include <gweni/controls/toolTip.h>
 #include <gweni/controls/popup.h>
+#include <gweni/controls/toast.h>
 #include <gweni/controls/slider.h>
 #include <gweni/controls/tabControl.h>
 #include <gweni/controls/scrollBarButton.h>
@@ -1109,6 +1124,7 @@
 #include <gweni/controls/badge.h>
 #include <gweni/controls/chip.h>
 #include <demo/dialog.h>
+#include <demo/toast.h>
 #include <demo/crossSplitter.h>
 #include <demo/dataTable.h>
 #include <demo/codeEditor.h>
@@ -1260,7 +1276,7 @@ static void content_scale_callback(GLFWwindow *window, float, float)
     X(ShowcaseDisplayDemo) X(ShowcaseWindowsDemo) \
     X(ButtonDemo) X(LabelDemo) X(LabelMultilineDemo) X(ProgressBarDemo) \
     X(GroupBoxDemo) X(ImagePanelDemo) X(StatusBarDemo) X(SeparatorDemo) X(PlotHistogramDemo) X(PlotLinesDemo) X(ChartTimeBarsDemo) X(ChartLinesDemo) X(TimelineDemo) X(ComboBoxDemo) \
-    X(TextBoxDemo) X(ListBoxDemo) X(SelectableDemo) X(VirtualListDemo) X(VirtualListVariableDemo) X(DataTableDemo) X(DataTableVirtualDemo) X(CodeEditorDemo) X(CodeEditorFormDemo) X(LogViewDemo) X(ContextMenuDemo) X(PopupDemo) X(ChipBadgeDemo) X(DialogDemo) X(LargeDialogDemo) X(CrossSplitterDemo) X(RadioButtonDemo) \
+    X(TextBoxDemo) X(ListBoxDemo) X(SelectableDemo) X(VirtualListDemo) X(VirtualListVariableDemo) X(DataTableDemo) X(DataTableVirtualDemo) X(CodeEditorDemo) X(CodeEditorFormDemo) X(LogViewDemo) X(ContextMenuDemo) X(PopupDemo) X(ChipBadgeDemo) X(DialogDemo) X(LargeDialogDemo) X(ToastDemo) X(CrossSplitterDemo) X(RadioButtonDemo) \
     X(CheckBoxDemo) X(NumericDemo) X(SliderDemo) X(SliderTextDemo) X(DragNumberDemo) X(VectorFieldDemo) X(MenuStripDemo) \
     X(WindowDemo) X(WindowButtonsDemo) X(TreeControlDemo) X(PropertiesDemo) X(TabControlDemo) X(TabCloseDemo) X(TabOverflowDemo) \
     X(ScrollControlDemo) X(PageControlDemo) X(CollapsibleListDemo) X(ColorPickerDemo) X(ColorEditDemo) \
@@ -1351,7 +1367,8 @@ static void printUsage(std::ostream &out)
          "  --trace            log each scripted input on stderr\n"
          "  --scenario <name>  per-control | resize | docked | scroll | interaction\n"
          "                     | typing | clip | text-size | scale | tooltip\n"
-         "                     | context-menu | popup | dialog | virtual-list\n"
+         "                     | context-menu | popup | dialog | toast\n"
+         "                     | virtual-list\n"
          "                     | virtual-list-variable\n"
          "                     | data-table-virtual | hide-show | demo-labels\n"
          "                     | plot-histogram | plot-lines | chart | timeline\n"
@@ -2394,7 +2411,7 @@ static bool runSteps(Session &s, const std::vector<Step> &steps, const std::stri
 // Scenarios
 //-----------------------------------------------------------------------------
 enum class Scenario { None, PerControl, Resize, Docked, Scroll, Interaction, Typing, Clip, TextSize, Scale,
-    ToolTip, ContextMenu, Popup, Dialog, VirtualList, VirtualListVariable, DataTableVirtual, HideShow, DemoLabels, PlotHistogram,
+    ToolTip, ContextMenu, Popup, Dialog, Toast, VirtualList, VirtualListVariable, DataTableVirtual, HideShow, DemoLabels, PlotHistogram,
     PlotLines, Chart, Timeline, Inspector, Theme, StatsOverlay, DepthView, ZoomPanel, NodeGraph, CodeEditor, LogView,
     ChipBadge };
 
@@ -2413,6 +2430,7 @@ static bool parseScenario(const std::string &name, Scenario &scenario)
     else if(name == "context-menu") scenario=Scenario::ContextMenu;
     else if(name == "popup") scenario=Scenario::Popup;
     else if(name == "dialog") scenario=Scenario::Dialog;
+    else if(name == "toast") scenario=Scenario::Toast;
     else if(name == "virtual-list") scenario=Scenario::VirtualList;
     else if(name == "virtual-list-variable") scenario=Scenario::VirtualListVariable;
     else if(name == "data-table-virtual") scenario=Scenario::DataTableVirtual;
@@ -10954,6 +10972,175 @@ static bool runDialogScenario(Session &s, const std::string &shotDir, bool &pass
 }
 
 //-----------------------------------------------------------------------------
+// --scenario toast: Canvas::notify's toasts on ToastDemo, the clock stepping
+// (1/60 s a frame). Each check reads the canvas's toasts, their canvas rects,
+// what a frame wrote and its whole pixels.
+//-----------------------------------------------------------------------------
+
+static bool runToastScenario(Session &s, const std::string &shotDir, bool &passed)
+{
+    s.freezeClock=false;
+    s.statsClockSteps=true;
+
+    InteractionChecks checks;
+    checks.scenario="toast";
+    bool ok=true;
+    gweni::controls::Canvas *canvas=s.canvas;
+    auto shot=[&](const std::string &name)
+    {
+        if(!shoot(s, shotDir+"/toast-"+name+".png"))
+            ok=false;
+    };
+    // frames until nothing more is written, at most `limit`
+    auto settle=[&](int limit)
+    {
+        for(int i=0; i < limit; ++i)
+        {
+            renderFrames(s, 1);
+            if(s.renderer->frameStats().primitiveSlotsWritten+s.renderer->frameStats().textSlotsWritten == 0
+                && gweni::controls::getChangeStats().controls == 0)
+                break;
+        }
+    };
+
+    gweni::controls::Base *demo=addControl(s, "ToastDemo");
+    auto *page=gweni::gweni_cast<gweni::ToastDemo>(demo);
+    if(!page || !page->m_info || !page->m_positive || !page->m_long || !page->m_sticky)
+    {
+        checks.check("demo_found", false, "ToastDemo has no Info, Positive, Multi-line and Sticky buttons");
+        dropControl(s, demo);
+        passed=false;
+        return ok;
+    }
+    forgetMouse(s);
+    renderFrames(s, s.frames);
+    const std::vector<uint8_t> before=framePixels(s);
+    shot("before");
+    const size_t idsBefore=livePrimitiveIds()+liveTextIds();
+
+    // two toasts, the newer above the older, in the top-right corner
+    page->m_info->doAction();
+    renderFrames(s, 1);
+    page->m_positive->doAction();
+    renderFrames(s, s.frames);
+    shot("two");
+    std::vector<gweni::controls::Toast *> shown=canvas->toasts();
+    if(shown.size() != 2)
+    {
+        checks.check("stack", false, std::to_string(shown.size())+" toasts shown after two buttons, want 2");
+        dropControl(s, demo);
+        passed=false;
+        return ok;
+    }
+    gweni::controls::Toast *older=shown[0];
+    gweni::controls::Toast *newer=shown[1];
+    const gweni::Rect olderRect=canvasRectOf(older);
+    const gweni::Rect newerRect=canvasRectOf(newer);
+    // read now: the toasts are gone by the time the multi-line one is checked
+    const int newerTextHeight=newer->getTextLabel()->getHeight();
+    const int right=s.size.x-gweni::controls::Toast::Gap;
+    checks.check("stack", newerRect.y == gweni::controls::Toast::Gap
+        && olderRect.y == newerRect.y+newerRect.h+gweni::controls::Toast::Gap
+        && newerRect.x+newerRect.w == right && olderRect.x+olderRect.w == right,
+        "the newer toast is at "+rectText(newerRect)+" and the older at "+rectText(olderRect)
+        +"; want the newer at the top, "+std::to_string(gweni::controls::Toast::Gap)+" in from the corner");
+
+    // settled frames: nothing written, nothing changed, no animation
+    const DialogFrame settled=dialogFrame(s, {});
+    checks.check("settled", settled.written == 0 && settled.visited == 0
+        && canvas->getUpdateStats().animsRun == 0,
+        "a settled frame with toasts shown wrote "+std::to_string(settled.written)+" slots, rendered "
+        +std::to_string(settled.visited)+" controls and ran "+std::to_string(canvas->getUpdateStats().animsRun)
+        +" animations");
+
+    // the mouse onto the older one: the entry frame writes nothing, and the
+    // stack stays past both timeouts (4 s) for as long as it rests there
+    const gweni::Point onOlder(olderRect.x+olderRect.w/3, olderRect.y+olderRect.h/2);
+    moveMouse(s, onOlder.x, onOlder.y);
+    const DialogFrame entry=dialogFrame(s, {});
+    const bool paused=canvas->toastsPaused();
+    renderFrames(s, 6*60);
+    const bool held=(canvas->toasts().size() == 2);
+    size_t heldWritten=0;
+    for(int i=0; i < 3; ++i)
+        heldWritten+=dialogFrame(s, {}).written;
+    // off it, to where nothing is: the exit frame writes nothing
+    moveMouse(s, s.size.x/2, s.size.y-10);
+    const DialogFrame exit=dialogFrame(s, {});
+    checks.check("hover_holds", paused && held && entry.written == 0 && exit.written == 0 && heldWritten == 0
+        && canvas->getUpdateStats().animsRun == 0,
+        std::string(paused ? "" : "the hover did not pause the stack; ")
+        +(held ? "" : "a toast expired under the mouse; ")
+        +"the entry frame wrote "+std::to_string(entry.written)+", the held frames "+std::to_string(heldWritten)
+        +" and the exit frame "+std::to_string(exit.written)+" slots");
+
+    // each resumes with the time it had left: gone within a second or so of
+    // their 4 s, not at once
+    renderFrames(s, 60);
+    const bool notAtOnce=(canvas->toasts().size() == 2);
+    renderFrames(s, 4*60);
+    forgetMouse(s);
+    settle(30);
+    const std::vector<uint8_t> afterExpiry=framePixels(s);
+    shot("expired");
+    // the host stays once made (it draws nothing, but holds its control's id)
+    size_t hostIds=0;
+    if(canvas->toastHost() && canvas->toastHost()->getSkinControl())
+    {
+        // its own, not its children's: a toast left in it is a leak
+        std::vector<size_t> primitives, texts;
+        canvas->toastHost()->getSkinControl()->appendIds(primitives, texts);
+        hostIds=primitives.size()+texts.size();
+    }
+    checks.check("expiry_gives_back", notAtOnce && canvas->toasts().empty() && afterExpiry == before
+        && livePrimitiveIds()+liveTextIds() == idsBefore+hostIds,
+        std::string(notAtOnce ? "" : "the toasts went as soon as the mouse left; ")
+        +std::to_string(canvas->toasts().size())+" toasts left, the frame "
+        +(afterExpiry == before ? "" : "unlike the one before them, ")+"live ids "+std::to_string(idsBefore)
+        +" before and the host's "+std::to_string(hostIds)+", "+std::to_string(livePrimitiveIds()+liveTextIds())
+        +" after");
+
+    // a multi-line toast is taller than a one-line one; a sticky one stays
+    // past every default timeout and goes with its close button
+    page->m_long->doAction();
+    page->m_sticky->doAction();
+    renderFrames(s, s.frames);
+    shot("long-sticky");
+    shown=canvas->toasts();
+    const bool longTaller=(shown.size() == 2) && (shown[0]->getHeight() > newerRect.h)
+        && (shown[0]->getTextLabel()->getHeight() > newerTextHeight);
+    renderFrames(s, 9*60);
+    const std::vector<gweni::controls::Toast *> afterNine=canvas->toasts();
+    const bool stickyStays=(afterNine.size() == 1) && (afterNine[0]->getTimeout() == 0.0);
+    if(stickyStays)
+    {
+        const gweni::Point close=centreOf(afterNine[0]->getCloseButton());
+        clickMouse(s, close.x, close.y);
+    }
+    forgetMouse(s);
+    settle(30);
+    const std::vector<uint8_t> afterClose=framePixels(s);
+    checks.check("multi_line_sticky", longTaller && stickyStays && canvas->toasts().empty() && afterClose == before
+        && livePrimitiveIds()+liveTextIds() == idsBefore+hostIds,
+        std::string(longTaller ? "" : "the multi-line toast is no taller than a one-line one; ")
+        +(stickyStays ? "" : "the sticky toast did not outlast the others; ")
+        +(canvas->toasts().empty() ? "" : "its close button left it shown; ")
+        +(afterClose == before ? "" : "the frame is unlike the one before the toasts; ")
+        +"live ids "+std::to_string(idsBefore)+" before, "+std::to_string(livePrimitiveIds()+liveTextIds())+" after");
+
+    forgetMouse(s);
+    dropControl(s, demo);
+
+    std::cout<<"toast";
+    for(const auto &result : checks.results)
+        std::cout<<" "<<result.first<<"="<<(result.second ? "yes" : "no");
+    std::cout<<"\n";
+
+    passed=checks.allPassed();
+    return ok;
+}
+
+//-----------------------------------------------------------------------------
 // --scenario code-editor: CodeEditorDemo's 5000-line document, the clock
 // frozen, scrolled to its middle. Each input is one frame, held to the part of
 // the editor it may touch by the ids it writes, the controls it changes and the
@@ -14567,8 +14754,8 @@ int main(int argc, char *argv[])
             {
                 std::cerr<<"ControlTest: unknown scenario: "<<name
                          <<"; try per-control, resize, docked, scroll, interaction, typing, clip,"
-                           " text-size, scale, tooltip, context-menu, popup, virtual-list,"
-                           " hide-show, demo-labels or plot-histogram\n";
+                           " text-size, scale, tooltip, context-menu, popup, dialog, toast,"
+                           " virtual-list, hide-show, demo-labels or plot-histogram\n";
                 return EXIT_FAILURE;
             }
         }
@@ -15007,6 +15194,15 @@ int main(int argc, char *argv[])
             ok=runDialogScenario(session, shotDir, passed);
             if(ok && !passed)
                 ok=false;   // a dialog opened, sat or closed wrongly: a failing assertion
+            break;
+        }
+
+        case Scenario::Toast:
+        {
+            bool passed=false;
+            ok=runToastScenario(session, shotDir, passed);
+            if(ok && !passed)
+                ok=false;   // a toast stacked, sat, paused or went wrongly: a failing assertion
             break;
         }
 

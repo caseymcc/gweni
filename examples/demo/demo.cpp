@@ -36,6 +36,7 @@
 #include "demo/popup.h"
 #include "demo/chipBadge.h"
 #include "demo/dialog.h"
+#include "demo/toast.h"
 #include "demo/crossSplitter.h"
 #include "demo/dataTable.h"
 #include "demo/codeEditor.h"
@@ -231,6 +232,7 @@ void Demo::init(const String &name)
         addDemo<ChipBadgeDemo>(cat, "ChipBadgeDemo", "Chips and badges");
         addDemo<DialogDemo>(cat, "DialogDemo", "Dialogs");
         addDemo<LargeDialogDemo>(cat, "LargeDialogDemo", "Large dialog");
+        addDemo<ToastDemo>(cat, "ToastDemo", "Toasts");
         addDemo<UnicodeTextDemo>(cat, "UnicodeTextDemo", "Unicode text");
         addDemo<TextSizesDemo>(cat, "TextSizesDemo", "Text sizes");
         addDemo<TextDemo>(cat, "TextDemo", "Text");

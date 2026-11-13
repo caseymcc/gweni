@@ -29,6 +29,8 @@ set(GWENI_DEMO_SOURCES
     demo/popup.cpp
     demo/dialog.cpp
     demo/dialog.h
+    demo/toast.cpp
+    demo/toast.h
     demo/popup.h
     demo/crossSplitter.cpp
     demo/crossSplitter.h
