@@ -46,6 +46,7 @@
 #include <gweni/controls/imagePanel.h>
 #include <gweni/controls/label.h>
 #include <gweni/controls/labelClickable.h>
+#include <gweni/controls/layout/flow.h>
 #include <gweni/controls/layout/layout.h>
 #include <gweni/controls/layout/position.h>
 #include <gweni/controls/layout/table.h>

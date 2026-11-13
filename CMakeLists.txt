@@ -342,6 +342,8 @@ set(GWENI_CONTROL_SOURCES
 
 set(GWENI_LAYOUT_SOURCES
     # layout
+    include/gweni/controls/layout/flow.h
+    source/controls/layout/flow.cpp
     include/gweni/controls/layout/layout.h
     source/controls/layout/layout.cpp
     include/gweni/controls/layout/position.h
