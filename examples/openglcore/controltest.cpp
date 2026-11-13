@@ -340,7 +340,11 @@
  *                   frame writes 1..2 primitive slots, a press let go off it
  *                   leaves the window open and the button at rest, and a
  *                   click closes the window with the live primitive ids back
- *                   where they were before it opened. SliderDemo: each frame
+ *                   where they were before it opened; "Modal Window" opens a
+ *                   window on the canvas's modal stack, under which a move
+ *                   onto and a click on "Normal Window" hover, open and write
+ *                   nothing, and Escape closes it with the frame before it
+ *                   opened and the live ids back. SliderDemo: each frame
  *                   of a thumb drag, a unit at a time along the track, then
  *                   in larger steps along it and off it, changes the thumb
  *                   only and moves it by exactly the mouse's step, and the
@@ -6810,6 +6814,73 @@ static void checkWindowClose(Session &s, const std::string &shotDir, Interaction
         +std::to_string(idsAfter)+" after it closed");
 }
 
+// WindowDemo: "Modal Window" opens a window on the canvas's modal stack. With
+// it up, a move onto and a click on "Normal Window" under it hover nothing,
+// open nothing and write nothing; Escape closes it, and with the mouse back
+// where it was the frame before it opened comes back with the live primitive
+// ids.
+static void checkWindowModal(Session &s, const std::string &shotDir, InteractionChecks &checks, bool &ok)
+{
+    gweni::controls::Base *demo=addControl(s, "WindowDemo");
+    renderFrames(s, s.frames);
+
+    gweni::controls::Base *normal=findControl(demo, "Button", 0);
+    gweni::controls::Base *modal=findControl(demo, "Button", 1);
+    if(!normal || !modal)
+    {
+        checks.check("window_modal_found", false, "WindowDemo has no two visible Buttons");
+        dropControl(s, demo);
+        return;
+    }
+
+    const gweni::Point rest(s.size.x-1, s.size.y-1);
+    moveMouse(s, rest.x, rest.y);
+    const std::vector<uint8_t> before=settledRegion(s, demo, shotDir, "window-modal-before", ok);
+    const size_t idsBefore=livePrimitiveIds();
+
+    const gweni::Point openAt=centreOf(modal);
+    clickMouse(s, openAt.x, openAt.y);
+    renderFrames(s, s.frames);
+    gweni::controls::Base *window=findControl(s.canvas, "WindowControl");
+    const bool isModal=window && (s.canvas->topModal() == window);
+    if(!shoot(s, shotDir+"/interaction-window-modal-open.png"))
+        ok=false;
+
+    // under it: no hover, no press, nothing written
+    const gweni::Point behind=centreOf(normal);
+    moveMouse(s, behind.x, behind.y);
+    renderFrames(s, 1);
+    const size_t moveSlots=s.renderer->getFrameStats().primitiveSlotsWritten;
+    const bool hoveredBehind=normal->isHovered();
+    clickMouse(s, behind.x, behind.y);
+    renderFrames(s, 1);
+    const size_t clickSlots=s.renderer->getFrameStats().primitiveSlotsWritten;
+    renderFrames(s, s.frames);
+    const bool oneWindow=(findControl(s.canvas, "WindowControl", 1) == nullptr);
+
+    sendKey(s, "escape");
+    renderFrames(s, s.frames);
+    const bool closed=(findControl(s.canvas, "WindowControl") == nullptr) && !s.canvas->topModal();
+    moveMouse(s, rest.x, rest.y);
+    const std::vector<uint8_t> after=settledRegion(s, demo, shotDir, "window-modal-after", ok);
+    const size_t idsAfter=livePrimitiveIds();
+
+    forgetMouse(s);
+    dropControl(s, demo);
+
+    checks.check("window_modal_open", isModal,
+        "\"Modal Window\" opened no window, or it is not the canvas's top modal");
+    checks.check("window_modal_blocks", !hoveredBehind && oneWindow && moveSlots == 0 && clickSlots == 0,
+        std::string(hoveredBehind ? "\"Normal Window\" under the modal window was hovered; " : "")
+        +(oneWindow ? "" : "a click on \"Normal Window\" under the modal window opened a window; ")
+        +"the move wrote "+std::to_string(moveSlots)+" and the click "+std::to_string(clickSlots)
+        +" primitive slots; want 0");
+    checks.check("window_modal_escape", closed && after == before && idsAfter == idsBefore,
+        std::string(closed ? "" : "Escape left the modal window open; ")
+        +(after == before ? "" : "the frame after it closed is not the frame before it opened; ")
+        +"live primitive ids "+std::to_string(idsBefore)+" before, "+std::to_string(idsAfter)+" after");
+}
+
 // SliderDemo: dragging the first slider's thumb, a unit at a time along the
 // track and then in larger steps along it and off it, changes the thumb alone
 // on every drag frame (the mouse is held, so the controls it crosses get no
@@ -8663,6 +8734,7 @@ static bool runInteractionScenario(Session &s, const std::string &shotDir, bool 
     checkTreeSelect(s, shotDir, checks, ok);
     checkCheckBox(s, shotDir, checks, ok);
     checkWindowClose(s, shotDir, checks, ok);
+    checkWindowModal(s, shotDir, checks, ok);
     checkSliderDrag(s, shotDir, checks, ok);
     checkSliderText(s, shotDir, checks, ok);
     checkTabClose(s, shotDir, checks, ok);

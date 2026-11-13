@@ -316,6 +316,7 @@ Base::~Base()
             canvas->popupControlDeleted(this);
             canvas->menuAnchorDeleted(this);
             canvas->overlayDeleted(this);
+            canvas->modalDeleted(this);
         }
 
         // after the canvas has closed it: a menu this control owns goes too
@@ -3135,6 +3136,13 @@ void Base::focus()
     if(KeyboardFocus == this)
         return;
 
+    // the focus cannot leave the canvas's top modal (Canvas::modalAllows)
+    if(Canvas *canvas=getCanvas())
+    {
+        if(!canvas->modalAllows(this))
+            return;
+    }
+
     Base *previous=KeyboardFocus;
     if(previous)
         previous->onLostKeyboardFocus();
@@ -4609,10 +4617,23 @@ bool Base::onKeyTab(bool down)
 
 Base *Base::nextTabable(bool backwards)
 {
-    Base *root=getCanvas();
+    Canvas *canvas=getCanvas();
+    Base *root=canvas;
 
     if(!root)
         return nullptr;
+
+    // Under a modal, the walk is the top modal's, or that of the child of the
+    // canvas above it this is in (a Popup opened from it, a tool's window).
+    if(Base *top=canvas->topModal())
+    {
+        Base *child=this;
+
+        while(child && (child->getParent() != canvas))
+            child=child->getParent();
+
+        root=(child && (child != top) && canvas->modalAllows(child)) ? child : top;
+    }
 
     // One pre-order walk of the canvas tree. Forward, the answer is the first
     // candidate after this one, else (wrapping) the first before it; backwards,

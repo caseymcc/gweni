@@ -335,6 +335,18 @@ static bool deliverMouseClick(controls::Base *canvas, int iMouseButton, bool dow
     if(iMouseButton > static_cast<int>(c_MaxMouseButtons))
         return false;
 
+    // A press under a modal (a stale hover, before the end of the update
+    // phase hit-tests it again) goes nowhere; a release still ends the press
+    // of a control that had it before the modal came up.
+    if(down)
+    {
+        if(controls::Canvas *target=canvas->getCanvas())
+        {
+            if(!target->modalAllows(HoveredControl))
+                return false;
+        }
+    }
+
     if(iMouseButton == 0)
         g_keyData.LeftMouseDown=down;
     else if(iMouseButton == 1)
@@ -440,10 +452,20 @@ bool handleAccelerator(controls::Base *canvas, UnicodeChar chr)
     if(KeyboardFocus && KeyboardFocus->handleAccelerator(accelString))
         return true;
 
-    if(MouseFocus && MouseFocus->handleAccelerator(accelString))
+    controls::Canvas *target=canvas->getCanvas();
+
+    if(MouseFocus && (!target || target->modalAllows(MouseFocus))
+        && MouseFocus->handleAccelerator(accelString))
         return true;
 
-    if(canvas->handleAccelerator(accelString))
+    // under a modal, the app's accelerators are out of reach: the top modal's
+    // are looked up instead of the whole tree's
+    controls::Base *root=canvas;
+
+    if(target && target->topModal())
+        root=target->topModal();
+
+    if(root->handleAccelerator(accelString))
         return true;
 
     return false;
@@ -469,6 +491,17 @@ bool onKeyEvent(controls::Base *canvas, int key, bool down)
 
     if(target && !target->visible())
         target=nullptr;
+
+    // Under a modal, a key with no focus it allows goes to the top modal
+    // itself (its Escape, its Tab, which cycles inside it).
+    if(controls::Canvas *onCanvas=canvas->getCanvas())
+    {
+        if(controls::Base *top=onCanvas->topModal())
+        {
+            if(!target || !onCanvas->modalAllows(target))
+                target=top->visible() ? top : nullptr;
+        }
+    }
 
     if(down)
     {

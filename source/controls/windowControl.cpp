@@ -8,7 +8,7 @@
 #include <gweni/controls/windowControl.h>
 #include <gweni/controls/imagePanel.h>
 #include <gweni/controls/label.h>
-#include <gweni/controls/modal.h>
+#include <gweni/controls/canvas.h>
 
 
 namespace gweni
@@ -19,7 +19,6 @@ namespace controls
 
 GWENI_CONTROL_CONSTRUCTOR(WindowControl)
 {
-    m_modal=nullptr;
     m_deleteOnClose=false;
 
     m_titleBar=newChild<internal::Dragger>();
@@ -56,6 +55,8 @@ GWENI_CONTROL_CONSTRUCTOR(WindowControl)
 
     bringToFront();
     setTabable(false);
+    if(KeyboardFocus && (KeyboardFocus != this))
+        m_focusBefore=KeyboardFocus->getControlId();
     focus();
     setMinimumSize(Size(100, 40));
     setClampMovement(true);
@@ -63,31 +64,43 @@ GWENI_CONTROL_CONSTRUCTOR(WindowControl)
 }
 
 
+// ~Base takes it off the modal stack (Canvas::modalDeleted).
 WindowControl::~WindowControl()
-{
-    destroyModal();
-}
+{}
 
-void WindowControl::makeModal(bool drawBackground)
+void WindowControl::makeModal()
 {
-    if(m_modal)
+    Canvas *canvas=getCanvas();
+
+    if(!canvas)
         return;
 
-    m_modal=getCanvas()->newChild<internal::Modal>();
-    setParent(m_modal);
-    m_modal->setShouldDrawBackground(drawBackground);
+    // the focus it took as it was made goes back where it was on the pop
+    Base *before=(KeyboardFocus == this) ? Base::getControlById(m_focusBefore) : nullptr;
+
+    canvas->pushModal(this, before);
 }
 
 void WindowControl::destroyModal()
 {
-    if(!m_modal)
-        return;
+    if(Canvas *canvas=getCanvas())
+        canvas->popModal(this);
+}
 
-    // Really should be restoring our parent here.. but we don't know who it is.
-    // Assume it's the canvas.
-    setParent(getCanvas());
-    m_modal->delayedDelete();
-    m_modal=nullptr;
+bool WindowControl::isModal()
+{
+    Canvas *canvas=getCanvas();
+    return canvas && canvas->isModal(this);
+}
+
+bool WindowControl::onKeyEscape(bool down)
+{
+    if(!isModal() || m_closeButton->hidden())
+        return false;
+
+    if(down)
+        closeButtonPressed(event::Info(this));
+    return true;
 }
 
 bool WindowControl::isOnTop()
@@ -142,7 +155,10 @@ void WindowControl::setClosable(bool closeable)
 
 void WindowControl::setHidden(bool hidden)
 {
-    if(!hidden)
+    // a hidden modal blocks nothing
+    if(hidden)
+        destroyModal();
+    else if(!isModal())
         bringToFront();
 
     ParentClass::setHidden(hidden);
@@ -151,7 +167,10 @@ void WindowControl::setHidden(bool hidden)
 void WindowControl::touch()
 {
     ParentClass::touch();
-    bringToFront();
+
+    // a modal is above the app already (Canvas::keepOverlaysLast)
+    if(!isModal())
+        bringToFront();
 }
 
 void WindowControl::closeButtonPressed(event::Info)

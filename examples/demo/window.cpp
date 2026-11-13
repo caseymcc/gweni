@@ -1,5 +1,6 @@
 #include "demo/window.h"
 #include <gweni/controls/layout/layout.h>
+#include <gweni/controls/canvas.h>
 #include "gweni/controls/button.h"
 #include "gweni/controls/windowControl.h"
 
@@ -54,7 +55,7 @@ void WindowDemo::openModalWindow(event::Info info)
     controls::WindowControl *window=getCanvas()->newChild<controls::WindowControl>();
     window->setTitle(format("Window %i", m_windowCount));
     window->setSize(200 + pick(100), 200 + pick(100));
-    window->makeModal(true);
+    window->makeModal();
     window->setAlignment(Alignment::Center);
     window->setDeleteOnClose(true);
     m_windowCount++;

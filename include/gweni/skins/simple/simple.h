@@ -41,7 +41,6 @@ public:
     gweni::Color m_colHighlightBorder;
     gweni::Color m_colTooltipBackground;
     gweni::Color m_colTooltipBorder;
-    gweni::Color m_colModal;
 
     Simple()
     {
@@ -59,7 +58,6 @@ public:
         m_colHighlightBorder=gweni::Color(51, 153, 255, 255);
         m_colTooltipBackground=gweni::Color(255, 255, 225, 255);
         m_colTooltipBorder=gweni::Color(0, 0, 0, 255);
-        m_colModal=gweni::Color(25, 25, 25, 150);
         m_defaultFont.facename="OpenSans";
         m_defaultFont.size=11;
     }
@@ -800,20 +798,6 @@ public:
 //        getRenderer()->drawFilledRect(primitiveIds[3], rect, control->getZIndex());
 //        getRenderer()->setDrawColor(gweni::Color(0, 0, 0, 255));
 //        getRenderer()->drawLinedRect(&primitiveIds[4], rect, control->getZIndex());
-    }
-
-    void drawModalControl(controls::Base *control, State state)
-    {
-//        PrimitiveIds &primitiveIds=control->getPrimitiveIds();
-//        if(primitiveIds.size() < 1)
-//            enlargePrimitiveIds(control, primitiveIds, 1);
-//
-//        if(control->shouldDrawBackground())
-//        {
-//            gweni::Rect rect=control->getRenderBounds();
-//            getRenderer()->setDrawColor(m_colModal);
-//            getRenderer()->drawFilledRect(primitiveIds[0], rect, control->getZIndex());
-//        }
     }
 
     void drawMenuDivider(controls::Base *control, State state)

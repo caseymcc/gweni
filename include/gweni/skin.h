@@ -257,7 +257,6 @@ public:
 //    virtual void drawPropertyTreeNode(controls::Base *control, State state, int BorderLeft,
 //        int BorderTop);
 //    virtual void drawColorDisplay(controls::Base *control, State state, gweni::Color color)=0;
-//    virtual void drawModalControl(controls::Base *control, State state)=0;
 //    virtual void drawMenuDivider(controls::Base *control, State state)=0;
 //
 //    virtual void drawCategoryHolder(controls::Base *control, State state)=0;
@@ -399,7 +398,6 @@ public:
         } Category;
 
 
-        gweni::Color ModalBackground;
         gweni::Color TooltipText;
         //! A TextBox's hint, drawn while it is empty and unfocused.
         gweni::Color PlaceholderText{0x80, 0x80, 0x80};

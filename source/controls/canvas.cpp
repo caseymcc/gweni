@@ -233,6 +233,7 @@ double Canvas::nextWorkTime()
     const bool hoverToTake=m_hoverStale && !hidden() && !m_inputCapture;
 
     if(m_needsRedraw || m_zOrderDirty || hoverToTake || !m_deleteSet.empty()
+        || m_modalFocusPending
         || m_postQueue->pending()
         || (!hidden() && layoutDirty())
         || (render && (render->textLayoutSerial() != m_textLayoutSerial))
@@ -490,6 +491,7 @@ void Canvas::doThink()
     m_updateStats.animsRun+=anim::think(this);
 #endif
     processDelayedDeletes();
+    updateModals();
     updatePopup();
     updateAnchoredMenus();
     updateToolTip();
@@ -1006,6 +1008,9 @@ void Canvas::releaseChildren()
     for(Menu *menu : m_anchoredMenus)
         menu->m_followedBy=nullptr;
     m_anchoredMenus.clear();
+    // the modals left are off the canvas
+    m_modals.clear();
+    m_modalFocusPending=false;
 
     m_releasingChildren=false;
 }
@@ -1032,6 +1037,10 @@ bool Canvas::inputMouseMoved(int x, int y, int deltaX, int deltaY)
         return false;
 
     if(HoveredControl->getCanvas() != this)
+        return false;
+
+    // a stale hover under a modal; a capture's holder still gets its drag
+    if((HoveredControl != MouseFocus) && !modalAllows(HoveredControl))
         return false;
 
     HoveredControl->onMouseMoved(x, y, deltaX, deltaY);
@@ -1078,7 +1087,8 @@ bool Canvas::inputMouseButton(int button, bool down)
     // pan) gets it, and the canvas's input with it, before anything under it.
     if(down && !input::isLeftMouseDown() && !input::isRightMouseDown()
         && (!MouseFocus || (MouseFocus->getCanvas() != this))
-        && HoveredControl && (HoveredControl->getCanvas() == this))
+        && HoveredControl && (HoveredControl->getCanvas() == this)
+        && modalAllows(HoveredControl))
     {
         for(Base *control=HoveredControl; control; control=control->getParent())
         {
@@ -1123,7 +1133,7 @@ Base *Canvas::toolTipOwnerFor(Base *hovered)
     else if(hovered->getParent() && hovered->getParent()->hasToolTip())
         owner=hovered->getParent();
 
-    if(!owner || !owner->visible() || owner->isDisabled())
+    if(!owner || !owner->visible() || owner->isDisabled() || !modalAllows(owner))
         return nullptr;
 
     return owner;
@@ -1469,6 +1479,8 @@ void Canvas::updateAnchoredMenus()
 
 void Canvas::keepOverlaysLast()
 {
+    keepModalsInPlace();
+
     if(m_popup && !m_popupIsMenu && (m_popup->getParent() == this))
     {
         // the Menus after it were opened over it (a ComboBox's list in it)
@@ -1604,7 +1616,8 @@ void Canvas::popupControlDeleted(Base *control)
 
 Base *Canvas::contextMenuOwnerFor(Base *hovered)
 {
-    if(!hovered || (hovered->getCanvas() != this) || hovered->isMenuComponent())
+    if(!hovered || (hovered->getCanvas() != this) || hovered->isMenuComponent()
+        || !modalAllows(hovered))
         return nullptr;
 
     for(Base *control=hovered; control; control=control->getParent())
@@ -1654,6 +1667,282 @@ void Canvas::closeContextMenu()
     m_contextMenu=nullptr;
     menu->closeAll();
     menu->close();
+}
+
+//------------------------------------------------------------------------------
+// Modal stack
+//------------------------------------------------------------------------------
+
+bool Canvas::isModal(const Base *control) const
+{
+    for(const ModalEntry &entry : m_modals)
+    {
+        if(entry.control == control)
+            return true;
+    }
+    return false;
+}
+
+bool Canvas::aboveModals(Base *child) const
+{
+    if((child == m_popup) || (child == m_toolTip) || floatingMenu(child) || gweni_cast<Popup>(child))
+        return true;
+
+    if(std::find(m_overlays.begin(), m_overlays.end(), child) != m_overlays.end())
+        return true;
+
+    // a tool's (an Inspector's window)
+    return child->statsExcluded();
+}
+
+bool Canvas::modalAllows(Base *control)
+{
+    Base *top=topModal();
+
+    if(!top || !control)
+        return true;
+
+    // the canvas's child it is in
+    Base *child=control;
+
+    while(child && (child->getParent() != this))
+        child=child->getParent();
+
+    if(!child)
+        return control != this;
+
+    return (child == top) || (!isModal(child) && aboveModals(child));
+}
+
+void Canvas::pushModal(Base *control, Base *focusReturn)
+{
+    if(!control || (control == this) || isModal(control))
+        return;
+
+    if(control->getParent() != this)
+        control->setParent(this);
+
+    size_t focusId=0;
+
+    if(focusReturn)
+        focusId=focusReturn->getControlId();
+    else if(KeyboardFocus && (KeyboardFocus->getCanvas() == this) && !within(KeyboardFocus, control))
+        focusId=KeyboardFocus->getControlId();
+
+    // what was open over the app goes, as for a press outside it
+    closePopup();
+    closeMenus();
+
+    m_modals.push_back({control, focusId});
+
+    if(KeyboardFocus && (KeyboardFocus->getCanvas() == this) && !modalAllows(KeyboardFocus))
+        KeyboardFocus->unfocus();
+
+    keepOverlaysLast();
+    // the control under the mouse may be under the modal now
+    hoverMayHaveMoved();
+    redraw();
+}
+
+void Canvas::popModal(Base *control)
+{
+    for(size_t i=0; i < m_modals.size(); ++i)
+    {
+        if(m_modals[i].control != control)
+            continue;
+
+        const bool top=(i+1 == m_modals.size());
+        const size_t focusId=m_modals[i].focusId;
+
+        m_modals.erase(m_modals.begin()+i);
+
+        if(m_releasingChildren)
+            return;
+
+        // a modal left shown is an app child now, which the ones below go over
+        if(!m_modals.empty() && control->visible())
+            m_zOrderDirty=true;
+
+        if(top)
+            restoreModalFocus(focusId, control);
+        hoverMayHaveMoved();
+        redraw();
+        return;
+    }
+}
+
+void Canvas::restoreModalFocus(size_t focusId, Base *leaving)
+{
+    Base *focus=KeyboardFocus;
+
+    if(focus && (focus->getCanvas() != this))
+        return;
+
+    // the app (or the modal below) moved the focus on itself: it stays
+    if(focus && !(leaving && within(focus, leaving)) && modalAllows(focus))
+        return;
+
+    Base *target=focusId ? Base::getControlById(focusId) : nullptr;
+
+    if(target && (target->getCanvas() == this) && target->visible() && modalAllows(target))
+        target->focus();
+    else if(focus && !modalAllows(focus))
+        focus->unfocus();
+}
+
+void Canvas::modalDeleted(Base *control)
+{
+    for(size_t i=0; i < m_modals.size(); ++i)
+    {
+        if(m_modals[i].control != control)
+            continue;
+
+        const bool top=(i+1 == m_modals.size());
+
+        if(top && !m_releasingChildren)
+        {
+            // its subtree is not gone yet: the focus comes back once it is
+            m_modalFocusPending=true;
+            m_modalFocusRestore=m_modals[i].focusId;
+        }
+        m_modals.erase(m_modals.begin()+i);
+
+        if(!m_releasingChildren)
+        {
+            hoverMayHaveMoved();
+            redraw();
+        }
+        return;
+    }
+}
+
+void Canvas::updateModals()
+{
+    for(size_t i=m_modals.size(); i-- > 0;)
+    {
+        if(i >= m_modals.size())
+            continue;
+
+        Base *control=m_modals[i].control;
+
+        if(!control->visible() || (control->getParent() != this))
+            popModal(control);
+    }
+
+    if(m_modalFocusPending)
+    {
+        m_modalFocusPending=false;
+        restoreModalFocus(m_modalFocusRestore, nullptr);
+        m_modalFocusRestore=0;
+    }
+}
+
+void Canvas::onChildHiddenChanged(Base *child)
+{
+    ParentClass::onChildHiddenChanged(child);
+
+    // shown after the modals were put in place: they go over it again
+    if(!m_modals.empty() && !child->hidden() && !isModal(child) && !aboveModals(child))
+        m_zOrderDirty=true;
+}
+
+void Canvas::keepModalsInPlace()
+{
+    if(m_modals.empty())
+        return;
+
+    // the last shown app child, which the modals go right after
+    Base::List::reverse_iterator last=m_children.rbegin();
+
+    for(; last != m_children.rend(); ++last)
+    {
+        Base *child=*last;
+
+        if(!child->hidden() && !isModal(child) && !aboveModals(child))
+            break;
+    }
+
+    // in place when they follow it in stack order, with only hidden
+    // children between them
+    Base::List::iterator iter=last.base();
+    bool inPlace=true;
+
+    for(const ModalEntry &entry : m_modals)
+    {
+        if(entry.control->getParent() != this)
+            continue;
+
+        while((iter != m_children.end()) && (*iter != entry.control)
+            && (*iter)->hidden() && !isModal(*iter))
+            ++iter;
+
+        if((iter == m_children.end()) || (*iter != entry.control))
+        {
+            inPlace=false;
+            break;
+        }
+        ++iter;
+    }
+
+    if(inPlace)
+        return;
+
+    const bool front=(last == m_children.rend());
+    Base::List::iterator anchor=front ? m_children.end() : std::prev(last.base());
+
+    for(const ModalEntry &entry : m_modals)
+    {
+        if(entry.control->getParent() == this)
+            m_children.remove(entry.control);
+    }
+
+    Base::List::iterator at=front ? m_children.begin() : std::next(anchor);
+
+    for(const ModalEntry &entry : m_modals)
+    {
+        if(entry.control->getParent() != this)
+            continue;
+
+        m_children.insert(at, entry.control);
+        zOrderMoved(entry.control);
+    }
+}
+
+Base *Canvas::getControlAt(int x, int y, bool bOnlyIfMouseEnabled)
+{
+    Base *top=topModal();
+
+    if(!top || (top->getParent() != this))
+        return ParentClass::getControlAt(x, y, bOnlyIfMouseEnabled);
+
+    countHitTestVisit();
+
+    if(hidden())
+        return nullptr;
+
+    if(x < 0 || y < 0 || x >= getWidth() || y >= getHeight())
+        return nullptr;
+
+    // the top modal and what is above it, from the front; nothing under it
+    for(Base::List::reverse_iterator iter=m_children.rbegin(); iter != m_children.rend(); ++iter)
+    {
+        Base *child=*iter;
+        const bool isTop=(child == top);
+
+        if(isTop || (!isModal(child) && aboveModals(child)))
+        {
+            if(Base *found=child->getControlAt(x-child->getX(), y-child->getY(), bOnlyIfMouseEnabled))
+                return found;
+        }
+
+        if(isTop)
+            break;
+    }
+
+    if(bOnlyIfMouseEnabled && !getMouseInputEnabled())
+        return nullptr;
+
+    return this;
 }
 
 bool Canvas::inputModifierKey(int key, bool down)
@@ -1756,6 +2045,9 @@ bool Canvas::inputMouseWheel(int val)
         return false;
 
     if(HoveredControl->getCanvas() != this)
+        return false;
+
+    if(!modalAllows(HoveredControl))
         return false;
 
     return HoveredControl->onMouseWheeled(val);

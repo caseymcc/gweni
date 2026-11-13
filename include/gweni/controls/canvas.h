@@ -495,6 +495,60 @@ public:
     void removeOverlay(Base *control);
     /// \}
 
+    /// \sect{Modal stack}
+    /// A modal is a child of the canvas that takes the input from everything
+    /// pushed before it and from the app: while the stack is not empty, the
+    /// top modal (topModal()) and what is above it are all the mouse and the
+    /// keyboard reach. Above it are the shown Popup, the floating Menus (a
+    /// ComboBox's list, a context menu), closed Popups, the overlays
+    /// (addOverlay()), the ToolTip box and the tools' subtrees
+    /// (Base::setExcludedFromStats(): an Inspector), so a popup or a menu
+    /// opened from a modal, and the tools, work over it (modalAllows()).
+    /// - The hit test (getControlAt()) tests only those children, so the hover,
+    ///   a press, the wheel, a context menu and a tooltip never reach a
+    ///   control under the modal.
+    /// - The keyboard focus cannot leave it: Base::focus() on a control it
+    ///   does not allow does nothing, a key with no allowed focus goes to the
+    ///   top modal itself (so Escape reaches its Base::onKeyEscape(), after
+    ///   escapePopup() and after the focused control inside it, whose Escape
+    ///   bubbles up to it), and Tab cycles inside it (Base::nextTabable).
+    ///   The canvas's own accelerators are looked up in the top modal alone.
+    /// - Order: the modals are kept, in stack order, right after the last shown
+    ///   child of the app's and before what is above them (keepOverlaysLast()),
+    ///   so they are numbered above the app and below the popups, menus,
+    ///   tools, overlays and the ToolTip box.
+    /// pushModal() puts a control on top (made the canvas's child if it is
+    /// not), closes the shown popup and the open menus, takes the keyboard
+    /// focus from a control it does not allow, remembering it, and hit-tests
+    /// the hover again at the end of the update phase; \p focusReturn, when
+    /// given, is the control the focus goes back to instead of the one that
+    /// holds it (a WindowControl took it as it was made). popModal() takes a
+    /// control off the stack (wherever it is in it) and, if it was the top,
+    /// gives the focus back to the control that held it at its push, if that
+    /// still exists, is visible and is allowed, then hit-tests the hover
+    /// again. A modal deleted leaves the stack, and the focus comes back in the
+    /// next update phase; one hidden (visible() false) or taken off the canvas
+    /// is popped by the next update phase. No backdrop is drawn: what is under
+    /// a modal stays as it is.
+    void pushModal(Base *control, Base *focusReturn=nullptr);
+    void popModal(Base *control);
+    /// The top of the stack, or null.
+    Base *topModal() const { return m_modals.empty() ? nullptr : m_modals.back().control; }
+    bool isModal(const Base *control) const;
+    size_t modalCount() const { return m_modals.size(); }
+    /// Whether the input may reach \p control: true with no modal, for a
+    /// control off this canvas, and for one inside the top modal or inside a
+    /// child of the canvas that is above every modal (see above); false for
+    /// the canvas itself and anything else while a modal is up.
+    bool modalAllows(Base *control);
+    /// Base's report that \p control is being deleted.
+    void modalDeleted(Base *control);
+
+    /// While a modal is up, only the top modal and the children above it are
+    /// tested (see modalAllows()); otherwise Base's.
+    controls::Base *getControlAt(int x, int y, bool bOnlyIfMouseEnabled=true) override;
+    /// \}
+
     /// \sect{Tooltip}
     /// The canvas shows the tooltip of the control the mouse rests on (or of
     /// that control's parent, when it has none of its own) in one ToolTip box
@@ -782,6 +836,20 @@ protected:
     /// after it, and the ToolTip box at the end of the child list; run before
     /// the z renumber, which every change of the list's order asks for.
     void keepOverlaysLast();
+    /// keepOverlaysLast()'s first step: the modals right after the last shown
+    /// app child, in stack order.
+    void keepModalsInPlace();
+    /// A child the modals go under: one that is not a modal, hidden or above
+    /// the modals (aboveModals()).
+    bool aboveModals(Base *child) const;
+    /// The update phase's modal step: pops the modals hidden or taken off the
+    /// canvas, and gives the focus back for one deleted.
+    void updateModals();
+    /// popModal()'s focus step: \p focusId's control takes the focus if the
+    /// focus is free (none, in \p leaving, or not allowed any more).
+    void restoreModalFocus(size_t focusId, Base *leaving);
+    /// A shown child may now be under the modals: they are put back in place.
+    void onChildHiddenChanged(Base *child) override;
     /// One recurseLayout with m_inLayout set. The canvas is left dirty when
     /// the pass re-dirtied layout or its own Y arrange ended dirty (a shown
     /// control under it still is), so the caller runs another.
@@ -862,6 +930,18 @@ protected:
     Base *m_popupAnchor=nullptr;
     bool m_popupIsMenu=false;
     Menu *m_contextMenu=nullptr;
+    /// The modal stack, bottom first: each modal and the control id of the
+    /// keyboard focus its push took (0 for none).
+    struct ModalEntry
+    {
+        Base *control;
+        size_t focusId;
+    };
+    std::vector<ModalEntry> m_modals;
+    /// A modal was deleted: the next update phase gives the focus back to
+    /// m_modalFocusRestore's control.
+    bool m_modalFocusPending=false;
+    size_t m_modalFocusRestore=0;
     /// The menus open next to an anchor (anchoredMenus()).
     std::vector<Menu *> m_anchoredMenus;
     /// releaseChildren() is deleting the tree.

@@ -79,7 +79,6 @@ bool TexturedSkin::init(std::string fileName)
 //    Colors.Properties.Label_Normal=render->pixelColor(m_texture, 4 + 8 * 16, 508, Color(255, 255, 0));
 //    Colors.Properties.Label_Selected=render->pixelColor(m_texture, 4 + 8 * 17, 508, Color(255, 255, 0));
 //    Colors.Properties.Label_Hover=render->pixelColor(m_texture, 4 + 8 * 16, 500, Color(255, 255, 0));
-//    Colors.ModalBackground=render->pixelColor(m_texture, 4 + 8 * 18, 508, Color(255, 255, 0));
 //    Colors.TooltipText=render->pixelColor(m_texture, 4 + 8 * 19, 508, Color(255, 255, 0));
 //    Colors.Category.Header=render->pixelColor(m_texture, 4 + 8 * 18, 500, Color(255, 255, 0));
 //    Colors.Category.Header_Closed=render->pixelColor(m_texture, 4 + 8 * 19, 500, Color(255, 255, 0));
@@ -1333,7 +1332,6 @@ void TexturedSkin::setThemeColors()
     Colors.Properties.Border=BgHighlight;
     Colors.Properties.Title=Fg;
 
-    Colors.ModalBackground=gweni::Color(0x0a, 0x0a, 0x10, 160);
     Colors.TooltipText=Fg;
     Colors.PlaceholderText=Muted;
     Colors.AxisTagText=BgDark;
@@ -2194,29 +2192,6 @@ void TexturedSkin::setThemeColors()
 //            Textures.Tree.Minus.draw(getRenderer(), control, rect);
 //        else
 //            Textures.Tree.Plus.draw(getRenderer(), control, rect);
-//    }
-//    else if(state == State::Remove)
-//    {
-//    }
-//}
-//
-//void drawModalControl(controls::Base *control, State state) override
-//{
-//    if(state == State::Generate)
-//    {
-//    }
-//    else if(state == State::Update)
-//    {
-//        if(!control->shouldDrawBackground())
-//            return;
-//
-//        PrimitiveIds &primitiveIds=control->getPrimitiveIds();
-//        if(primitiveIds.size() < 1)
-//            enlargePrimitiveIds(control, primitiveIds, 1);
-//
-//        const gweni::Rect &rect=control->getRenderBounds();
-//        getRenderer()->setDrawColor(Colors.ModalBackground);
-//        getRenderer()->drawFilledRect(primitiveIds[0], rect);
 //    }
 //    else if(state == State::Remove)
 //    {

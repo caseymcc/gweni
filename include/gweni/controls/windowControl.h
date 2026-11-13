@@ -15,7 +15,6 @@
 #include <gweni/controls/dragger.h>
 #include <gweni/controls/label.h>
 #include <gweni/controls/resizableControl.h>
-#include <gweni/controls/modal.h>
 #include <gweni/controls/windowButtons.h>
 #include <gweni/skin.h>
 
@@ -53,8 +52,17 @@ public:
         m_deleteOnClose=b;
     }
 
-    void makeModal(bool drawBackground=true);
+    //! Puts the window on its canvas's modal stack (Canvas::pushModal): it
+    //! takes the input from everything under it until destroyModal(), its
+    //! close, being hidden or deleted. No backdrop is drawn. Escape (with
+    //! nothing inside taking it) closes it as its close button does, unless
+    //! setClosable(false).
+    void makeModal();
+    //! Takes it off the modal stack (Canvas::popModal), giving the focus back.
     void destroyModal();
+    bool isModal();
+
+    bool onKeyEscape(bool down) override;
 
     event::Caller onWindowClosed;
 
@@ -67,8 +75,9 @@ protected:
     WindowCloseButton *m_closeButton;
 
     bool m_deleteOnClose;
-
-    internal::Modal *m_modal;
+    //! The control id of the keyboard focus the constructor took, which
+    //! makeModal() has the canvas give it back to (0 for none).
+    size_t m_focusBefore=0;
 };
 
 
