@@ -4,16 +4,18 @@
  *  MIT License, see LICENSE
  *
  *  SlotRenderer::fontMetrics, on whichever backend gweni_unittests runs (GL or
- *  Vulkan), for OpenSans regular and bold at coverage sizes (11, 13 px) and SDF
- *  sizes (24, 26 px):
+ *  Vulkan), for OpenSans regular and bold and DejaVuSansMono at coverage sizes
+ *  (8, 11, 13 px) and SDF sizes (24, 26 px), so a scale draws some of them as
+ *  coverage and some as SDF (8 stays coverage at 2, 11 and 13 turn SDF):
  *  - the ascender, descender and line box are the same in canvas units at
  *    scales 1, 1.5 and 2;
  *  - the box is lineHeight() and measureText's y for one line, and splits into
  *    ascender plus descender;
- *  - at scale 1 the ascender is where renderText puts the baseline: the bottom
- *    row of an "H"'s ink (its stems end on the baseline) is the row just above
- *    pos.y + ascender, which is what lets RichLayout put runs in several fonts
- *    on one baseline;
+ *  - at scales 1, 1.25, 1.5 and 2 the ascender is where renderText puts the
+ *    baseline: the bottom row of an "H"'s ink (its stems end on the baseline)
+ *    is the row just above the device row of pos.y + ascender, whichever font
+ *    the run is drawn from at that scale, which is what lets RichLayout put runs
+ *    in several fonts on one baseline;
  *  - a font that does not load has all three 0.
  */
 #include <doctest/doctest.h>
@@ -62,16 +64,18 @@ TEST_CASE("Font metrics: the same in canvas units at scales 1, 1.5 and 2, and th
 
     renderer.generateTextPrimitive(id);
 
-    for(float size:{ 11.0f, 13.0f, 24.0f, 26.0f })
-    for(bool bold:{ false, true })
+    for(float size:{ 8.0f, 11.0f, 13.0f, 24.0f, 26.0f })
+    for(int face=0; face < 3; ++face)
     {
         CAPTURE(size);
-        CAPTURE(bold);
+        CAPTURE(face);
 
         Font font=gweni::test::openSans();
 
+        if(face == 2)
+            font.facename="DejaVuSansMono";
         font.size=size;
-        font.bold=bold;
+        font.bold=(face == 1);
         renderer.setScale(1.0f);
 
         const FontMetrics atOne=renderer.fontMetrics(font);
@@ -82,23 +86,29 @@ TEST_CASE("Font metrics: the same in canvas units at scales 1, 1.5 and 2, and th
         CHECK(atOne.descender > 0);
         CHECK(atOne.ascender+atOne.descender == atOne.lineHeight);
 
-        // the baseline as drawn at scale 1
-        const Point pos(20, 30);
-        std::vector<uint8_t> frame;
-
-        gweni::test::clearView(Color(0, 0, 0, 255));
-        renderer.begin();
-        renderer.setDrawColor(Color(255, 255, 255, 255));
-        renderer.renderText(id, font, pos, 1, "HHH");
-        renderer.end();
-        gweni::test::readView(frame);
-        CHECK(lowestInkRow(frame) == pos.y+atOne.ascender-1);
-
-        for(float scale:{ 1.5f, 2.0f })
+        for(float scale:{ 1.0f, 1.25f, 1.5f, 2.0f })
         {
             CAPTURE(scale);
             renderer.setScale(scale);
             CHECK(renderer.fontMetrics(font) == atOne);
+
+            // the baseline as drawn, at two origins whose baselines round
+            // differently at the fractional scales
+            for(int y:{ 30, 31 })
+            {
+                CAPTURE(y);
+
+                const Point pos(20, y);
+                std::vector<uint8_t> frame;
+
+                gweni::test::clearView(Color(0, 0, 0, 255));
+                renderer.begin();
+                renderer.setDrawColor(Color(255, 255, 255, 255));
+                renderer.renderText(id, font, pos, 1, "HHH");
+                renderer.end();
+                gweni::test::readView(frame);
+                CHECK(lowestInkRow(frame) == renderer.snap(pos.y+atOne.ascender)-1);
+            }
         }
     }
 
@@ -112,6 +122,11 @@ TEST_CASE("Font metrics: the same in canvas units at scales 1, 1.5 and 2, and th
     renderer.setFallbackFont(true);
 
     renderer.releaseTextPrimitive(id);
-    renderer.begin();
-    renderer.end();
+    // the sizes the scales drew at, loaded only by those runs, wait out
+    // kIdleFontFlushes and go, so no later case counts them among its fonts
+    for(uint64_t flush=0; flush <= SlotRenderer::kIdleFontFlushes; ++flush)
+    {
+        renderer.begin();
+        renderer.end();
+    }
 }
