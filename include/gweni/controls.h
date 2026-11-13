@@ -13,6 +13,7 @@
 #include <gweni/controls/button.h>
 #include <gweni/controls/canvas.h>
 #include <gweni/controls/caretBlink.h>
+#include <gweni/controls/chart.h>
 #include <gweni/controls/chartAxis.h>
 #include <gweni/controls/checkBox.h>
 #include <gweni/controls/codeEditor.h>
