@@ -476,6 +476,16 @@ Erm, and I think it comes down to a choice between "The League Against Salivatin
             --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/plot_lines@VARIANT@
         WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
 
+    # ChartTimeBarsDemo and ChartLinesDemo with their ranges fixed: a changed
+    # point writes the slots around it (its stack's bars, a line's four
+    # segments, a step line's five), an append its own, a marker its slot and
+    # caption, a hover the crosshair and the ToolTip box, a move within one x
+    # nothing; legend and point clicks fire their events; ids come back
+    gweni_whole_app_test(controltest_chart 60
+        COMMAND $<TARGET_FILE:ControlTest> --headless --scenario chart --require-one-pass
+            --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/chart@VARIANT@
+        WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
+
     # gweni::tools::Inspector over the settled Demo, opened and closed by F12:
     # it settles to 0 and a frame that writes nothing, its own slots included,
     # shows a hover's slots on the next frame, and gives its ids back

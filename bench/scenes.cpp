@@ -11,6 +11,7 @@
 
 #include <gweni/controls/button.h>
 #include <gweni/controls/canvas.h>
+#include <gweni/controls/chart.h>
 #include <gweni/controls/checkBox.h>
 #include <gweni/controls/codeEditor.h>
 #include <gweni/controls/label.h>
@@ -1324,6 +1325,55 @@ private:
     int m_appended=0;
 };
 
+//-----------------------------------------------------------------------------
+// chart-append: a Chart filling the canvas, its x range fixed to 0..N+64 and
+// its value range to 0..100, the legend off, with one line series of N points
+// (x = i, y a function of i). Each frame, warm-up included, appends the next
+// point, so the measured frames' appends are at the same distance from the
+// first at any N: the new segment's slot and the one before it (its joint)
+// are written, nothing is laid out, and no tick moves. The chart's renderer
+// still walks every point to compare it with what its slot holds, which no
+// counter sees.
+//-----------------------------------------------------------------------------
+class ChartAppendScene: public Scene
+{
+public:
+    void build(SceneContext &ctx) override
+    {
+        m_chart=ctx.canvas->newChild<controls::Chart>();
+        place(m_chart, 10, 10, ctx.size.x-20, ctx.size.y-20);
+        m_chart->setLegendVisible(false);
+        m_chart->setXAxisType(controls::ChartXAxisType::Value);
+        m_chart->setXRange(0.0, double(ctx.n+64));
+        m_chart->setYRange(controls::ChartAxisSide::Left, 0.0, 100.0);
+        m_series=m_chart->addSeries("values", controls::ChartSeriesType::Line);
+
+        std::vector<controls::ChartPoint> points;
+
+        points.reserve(size_t(ctx.n));
+        for(int i=0; i<ctx.n; ++i)
+            points.emplace_back(double(i), value(i));
+        m_chart->setSeriesPoints(m_series, std::move(points));
+        m_next=ctx.n;
+    }
+
+    void step(SceneContext &/*ctx*/, int /*frame*/) override
+    {
+        m_chart->appendPoint(m_series, double(m_next), value(m_next));
+        ++m_next;
+    }
+
+private:
+    static double value(int i)
+    {
+        return double(10+(i*37)%80);
+    }
+
+    controls::Chart *m_chart=nullptr;
+    size_t m_series=0;
+    int m_next=0;
+};
+
 const std::vector<SceneInfo> &scenes()
 {
     static const std::vector<SceneInfo> list=
@@ -1403,6 +1453,9 @@ const std::vector<SceneInfo> &scenes()
         {"graph-pan", "pan a NodeGraph of N linked nodes with a right drag",
             true, 300, 3, 20, Scaling::Linear,
             []{ return std::unique_ptr<Scene>(new GraphPanScene()); }},
+        {"chart-append", "append a point per frame to a Chart's line of N points in a fixed x range",
+            true, 1000, 3, 20, Scaling::Local,
+            []{ return std::unique_ptr<Scene>(new ChartAppendScene()); }},
         {"graph-zoom", "zoom a NodeGraph of N linked nodes a wheel notch in and out in turn",
             true, 300, 3, 20, Scaling::Linear,
             []{ return std::unique_ptr<Scene>(new GraphZoomScene()); }},

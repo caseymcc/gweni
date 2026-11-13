@@ -162,7 +162,7 @@
  *                       context-menu | popup | virtual-list |
  *                       virtual-list-variable |
  *                       data-table-virtual | hide-show | demo-labels |
- *                       plot-histogram | plot-lines | inspector |
+ *                       plot-histogram | plot-lines | chart | inspector |
  *                       stats-overlay | depth-view | zoom-panel |
  *                       node-graph | code-editor | log-view (see below)
  *    --dump-bounds [<path>]
@@ -502,6 +502,23 @@
  *                 frame nothing; the demo gives every primitive id back
  *                 (plot-lines.png). One line
  *                   plot-lines segments=63 sample_prim_slots=4 ... ids_back=yes
+ *                 Exits non-zero if any check is no.
+ *    chart        ChartTimeBarsDemo and ChartLinesDemo, the clock frozen, their
+ *                 x and value ranges fixed as laid out: a stacked point changed
+ *                 has to write at most its stack's bars at its x, an appended
+ *                 bar its own slot, a line point at most the four segments
+ *                 around it, a step line point the five around its two
+ *                 vertices, an appended line point its segment and its
+ *                 joint's, a moved marker its slot and its caption's glyphs,
+ *                 the mouse onto the plot the crosshair's slot alone, the
+ *                 canvas's ToolTip box once its delay passed, a move within
+ *                 one x nothing; a legend click toggles its series once each
+ *                 way (onSeriesToggled), a click on a bar, a stacked segment
+ *                 above it and next to a line point fires onPointClicked with
+ *                 that point; every settled frame nothing; each demo gives
+ *                 every primitive id back (chart-bars.png, chart-lines.png).
+ *                 One line
+ *                   chart stack_bars=4 stack_prim_slots=... ids_back=yes
  *                 Exits non-zero if any check is no.
  *    inspector    Demo, the clock frozen, settled; F12 (scripted, through the
  *                 same key handler as the window's) opens the inspector
@@ -1018,6 +1035,7 @@
 #include <demo/plotLines.h>
 #include <demo/chartTimeBars.h>
 #include <demo/chartLines.h>
+#include <gweni/controls/chart.h>
 #include <demo/inspector.h>
 #include <gweni/controls/plotHistogram.h>
 #include <gweni/controls/plotLines.h>
@@ -1243,7 +1261,7 @@ static void printUsage(std::ostream &out)
          "                     | context-menu | popup | virtual-list\n"
          "                     | virtual-list-variable\n"
          "                     | data-table-virtual | hide-show | demo-labels\n"
-         "                     | plot-histogram | plot-lines | inspector\n"
+         "                     | plot-histogram | plot-lines | chart | inspector\n"
          "                     | stats-overlay | depth-view | zoom-panel\n"
          "                     | node-graph | code-editor | log-view;\n"
          "                     resize prints listing_settled, mirror_settled,\n"
@@ -2283,7 +2301,7 @@ static bool runSteps(Session &s, const std::vector<Step> &steps, const std::stri
 //-----------------------------------------------------------------------------
 enum class Scenario { None, PerControl, Resize, Docked, Scroll, Interaction, Typing, Clip, TextSize, Scale,
     ToolTip, ContextMenu, Popup, VirtualList, VirtualListVariable, DataTableVirtual, HideShow, DemoLabels, PlotHistogram,
-    PlotLines, Inspector, Theme, StatsOverlay, DepthView, ZoomPanel, NodeGraph, CodeEditor, LogView };
+    PlotLines, Chart, Inspector, Theme, StatsOverlay, DepthView, ZoomPanel, NodeGraph, CodeEditor, LogView };
 
 static bool parseScenario(const std::string &name, Scenario &scenario)
 {
@@ -2306,6 +2324,7 @@ static bool parseScenario(const std::string &name, Scenario &scenario)
     else if(name == "demo-labels") scenario=Scenario::DemoLabels;
     else if(name == "plot-histogram") scenario=Scenario::PlotHistogram;
     else if(name == "plot-lines") scenario=Scenario::PlotLines;
+    else if(name == "chart") scenario=Scenario::Chart;
     else if(name == "inspector") scenario=Scenario::Inspector;
     else if(name == "theme") scenario=Scenario::Theme;
     else if(name == "stats-overlay") scenario=Scenario::StatsOverlay;
@@ -4820,6 +4839,424 @@ static bool runPlotLinesScenario(Session &s, const std::string &shotDir, bool &p
                      : !hoverNothing ? "the hover wrote slots or set the wrong tooltip"
                      : !settled ? "a settled frame wrote slots or changed controls"
                      : "the demo did not give its primitive ids back")<<"\n";
+    return shot;
+}
+
+//-----------------------------------------------------------------------------
+// --scenario chart: ChartTimeBarsDemo and ChartLinesDemo changed, hovered and
+// clicked
+//
+// Each bar, segment, marker and the crosshair is a primitive slot of the
+// chart's renderer, redrawn only when what it draws moves. With the x and
+// value ranges fixed (the scenario fixes them as the demos laid them out):
+// a stacked point changed writes its bar and the bars stacked on it at its x,
+// a line point the four segments around it, a step line point the five
+// around its two vertices, an appended point its own slot (a line's the
+// segment before it too, its joint); a moved marker its line's slot and its
+// caption's glyphs; a hover the crosshair's slot (and the canvas's ToolTip
+// box once its delay passed), a move within one x nothing. A legend click
+// toggles its series once each way; a click on a bar, on a stacked segment
+// above it and next to a line point fires onPointClicked with that series
+// and point. Every settled frame writes nothing and each demo gives its
+// primitive ids back.
+//-----------------------------------------------------------------------------
+
+namespace
+{
+
+struct ChartEvents: public gweni::event::Handler
+{
+    void toggled(gweni::event::Info info) { toggles.push_back(info.integer); }
+    void clicked(gweni::event::Info info) { clicks.push_back({info.integer, size_t(info.point.x)}); }
+
+    std::vector<size_t> toggles;
+    std::vector<std::pair<size_t, size_t>> clicks;
+};
+
+//! What a frame wrote: its primitive ids, its text ids' glyph slots and the
+//! controls it changed.
+struct ChartStep
+{
+    std::vector<size_t> prims;
+    std::vector<std::pair<size_t, size_t>> texts;
+    size_t changed=0;
+
+    size_t glyphs() const
+    {
+        size_t count=0;
+
+        for(const auto &text : texts)
+            count+=text.second;
+        return count;
+    }
+};
+
+}//namespace
+
+static ChartStep chartFrame(Session &s)
+{
+    renderFrames(s, 1);
+
+    ChartStep step;
+
+    step.prims=s.renderer->writtenPrimitiveIds();
+    for(const gweni::renderer::WrittenText &text : s.renderer->writtenTextIds())
+        step.texts.push_back({text.textId, text.glyphSlots});
+    step.changed=gweni::controls::getChangeStats().controls;
+    return step;
+}
+
+//! Whether every slot the frame wrote is one of \p prims and every glyph run
+//! one of \p texts.
+static bool chartWithin(const ChartStep &step, const std::vector<size_t> &prims, const std::vector<size_t> &texts)
+{
+    for(size_t id : step.prims)
+    {
+        if(std::find(prims.begin(), prims.end(), id) == prims.end())
+            return false;
+    }
+    for(const auto &text : step.texts)
+    {
+        if(std::find(texts.begin(), texts.end(), text.first) == texts.end())
+            return false;
+    }
+    return true;
+}
+
+static void printChartStep(const char *name, const ChartStep &step)
+{
+    std::cout<<" "<<name<<"_prim_slots="<<step.prims.size()<<" "<<name<<"_text_slots="<<step.glyphs()
+             <<" "<<name<<"_changed="<<step.changed;
+}
+
+static bool runChartScenario(Session &s, const std::string &shotDir, bool &passed)
+{
+    using gweni::controls::Chart;
+    using gweni::controls::ChartAxisSide;
+
+    s.freezeClock=true;
+
+    ChartEvents events;
+    size_t idleSlots=0;
+    size_t idleChanged=0;
+    auto settle=[&]()
+    {
+        const ChartStep step=chartFrame(s);
+
+        idleSlots+=step.prims.size()+step.glyphs();
+        idleChanged+=step.changed;
+    };
+    auto slotsOf=[](const Chart *chart, size_t series, size_t from, size_t to)
+    {
+        const auto *renderer=static_cast<const gweni::skin::textured::Chart *>(chart->getSkinControl());
+        const std::vector<size_t> &ids=renderer->seriesPrimitives(series);
+        std::vector<size_t> slots;
+
+        for(size_t i=from; i < to && i < ids.size(); ++i)
+            slots.push_back(ids[i]);
+        return slots;
+    };
+    auto clickAt=[&](Chart *chart, gweni::Point local)
+    {
+        const gweni::Point at=chart->localPosToCanvas(local);
+
+        clickMouse(s, at.x, at.y);
+        renderFrames(s, 1);
+    };
+    auto indexAt=[](const Chart *chart, size_t series, double x) -> size_t
+    {
+        const std::vector<gweni::controls::ChartPoint> &points=chart->getSeriesPoints(series);
+
+        for(size_t i=0; i < points.size(); ++i)
+        {
+            if(points[i].x == x)
+                return i;
+        }
+        return points.size();
+    };
+
+    // ---- the stacked time bars ----
+    const size_t barsIdsBefore=livePrimitiveIds();
+    gweni::controls::Base *control=addControl(s, "ChartTimeBarsDemo");
+    auto *barsDemo=gweni::gweni_cast<gweni::ChartTimeBarsDemo>(control);
+
+    if(!barsDemo || !barsDemo->chart())
+    {
+        std::cerr<<"ControlTest: chart: ChartTimeBarsDemo has no chart\n";
+        return false;
+    }
+
+    Chart *bars=barsDemo->chart();
+
+    bars->onSeriesToggled.add(&events, &ChartEvents::toggled);
+    bars->onPointClicked.add(&events, &ChartEvents::clicked);
+    s.label="chart";
+    renderFrames(s, s.frames);
+
+    // the ranges fixed as laid out, with room for two more days
+    const double day=86400.0;
+    const double firstDay=gweni::ChartTimeBarsDemo::firstDay();
+
+    bars->setXRange(bars->getXMin(), bars->getXMax()+2*day);
+    bars->setYRange(ChartAxisSide::Left, bars->getYMin(ChartAxisSide::Left), bars->getYMax(ChartAxisSide::Left));
+    renderFrames(s, 2);
+    settle();
+
+    // the bottom of day 3's stack raised: its bar and the three on it
+    const double day3=firstDay+3*day;
+    std::vector<size_t> stackSlots;
+
+    for(size_t series=0; series < bars->getSeriesCount(); ++series)
+    {
+        const size_t index=indexAt(bars, series, day3);
+
+        if(index < bars->getSeriesPoints(series).size())
+        {
+            const std::vector<size_t> slot=slotsOf(bars, series, index, index+1);
+
+            stackSlots.insert(stackSlots.end(), slot.begin(), slot.end());
+        }
+    }
+    bars->setPointValue(0, indexAt(bars, 0, day3), bars->getSeriesPoints(0)[indexAt(bars, 0, day3)].y+2.0);
+
+    const ChartStep stack=chartFrame(s);
+    settle();
+
+    // a day appended to the bottom series: its own bar's slot
+    bars->appendPoint(0, firstDay+gweni::ChartTimeBarsDemo::Days*day, 20.0);
+
+    const ChartStep appendBar=chartFrame(s);
+    const std::vector<size_t> newBar=slotsOf(bars, 0, bars->getSeriesPoints(0).size()-1,
+        bars->getSeriesPoints(0).size());
+    settle();
+
+    // the legend: a click hides "haiku", a second shows it again
+    gweni::controls::internal::ChartLegendRow *row=bars->getLegendRow(2);
+    bool hiddenByClick=false;
+
+    if(row)
+    {
+        const gweni::Point at=row->localPosToCanvas(gweni::Point(row->getWidth()/2, row->getHeight()/2));
+
+        clickMouse(s, at.x, at.y);
+        renderFrames(s, 1);
+        hiddenByClick=!bars->isSeriesVisible(2);
+        clickMouse(s, at.x, at.y);
+        renderFrames(s, 1);
+    }
+
+    const bool legendToggles=row && hiddenByClick && bars->isSeriesVisible(2)
+        && events.toggles == std::vector<size_t>{2, 2};
+
+    // a click on day 5's bottom bar and on the segment of "haiku" above it
+    const double day5=firstDay+5*day;
+    const size_t bottomIndex=indexAt(bars, 0, day5);
+    const size_t upperIndex=indexAt(bars, 2, day5);
+    gweni::Rect bottom;
+    gweni::Rect upper;
+    const bool barRects=bars->getBarRect(0, bottomIndex, bottom) && bars->getBarRect(2, upperIndex, upper);
+
+    if(barRects)
+    {
+        clickAt(bars, gweni::Point(bottom.x+bottom.w/2, bottom.y+bottom.h-2));
+        clickAt(bars, gweni::Point(upper.x+upper.w/2, upper.y+1));
+    }
+
+    const bool barClicks=barRects && events.clicks.size() == 2
+        && events.clicks[0] == std::make_pair(size_t(0), bottomIndex)
+        && events.clicks[1] == std::make_pair(size_t(2), upperIndex);
+
+    bool shot=shoot(s, shotDir+"/chart-bars.png");
+
+    forgetMouse(s);
+    renderFrames(s, 1);
+    dropControl(s, control);
+    renderFrames(s, 1);
+
+    const size_t barsIdsLeft=livePrimitiveIds()-barsIdsBefore;
+
+    // ---- the two-axis lines ----
+    const size_t linesIdsBefore=livePrimitiveIds();
+
+    control=addControl(s, "ChartLinesDemo");
+
+    auto *linesDemo=gweni::gweni_cast<gweni::ChartLinesDemo>(control);
+
+    if(!linesDemo || !linesDemo->chart())
+    {
+        std::cerr<<"ControlTest: chart: ChartLinesDemo has no chart\n";
+        return false;
+    }
+
+    Chart *lines=linesDemo->chart();
+
+    lines->onPointClicked.add(&events, &ChartEvents::clicked);
+    s.label="chart";
+    renderFrames(s, s.frames);
+
+    // the left axis fixed as laid out, the x range an hour longer
+    const double start=gweni::ChartLinesDemo::start();
+
+    lines->setYRange(ChartAxisSide::Left, lines->getYMin(ChartAxisSide::Left), lines->getYMax(ChartAxisSide::Left));
+    lines->setXRange(start, start+day+3600.0);
+    renderFrames(s, 2);
+    settle();
+
+    // memory's sample 50 moved: segments 48..51
+    lines->setPointValue(0, 50, lines->getSeriesPoints(0)[50].y+1.5);
+
+    const ChartStep linePoint=chartFrame(s);
+    const std::vector<size_t> lineSlots=slotsOf(lines, 0, 48, 52);
+    settle();
+
+    // the GPU's sample 12 (12:00) moved: its two vertices, 24 and 25, are in
+    // segments 23..25, and 22 and 26 hold them as neighbours
+    lines->setPointValue(1, 12, lines->getSeriesPoints(1)[12].y+10.0);
+
+    const ChartStep stepPoint=chartFrame(s);
+    const std::vector<size_t> stepSlots=slotsOf(lines, 1, 22, 27);
+    settle();
+
+    // a memory sample appended past the last: its segment and the one before
+    const size_t memoryCount=lines->getSeriesPoints(0).size();
+
+    lines->appendPoint(0, start+day+900.0, 20.0);
+
+    const ChartStep appendLine=chartFrame(s);
+    const std::vector<size_t> appendSlots=slotsOf(lines, 0, memoryCount-2, memoryCount);
+    settle();
+
+    // the "restart" marker moved an hour: its slot and its caption's glyphs
+    const auto *linesRenderer=static_cast<const gweni::skin::textured::Chart *>(lines->getSkinControl());
+    std::vector<size_t> captionPrims;
+    std::vector<size_t> captionTexts;
+
+    if(lines->getMarkerLabel(0))
+        gweni::tools::appendSubtreeIds(lines->getMarkerLabel(0), captionPrims, captionTexts);
+    lines->setMarkerX(0, lines->getMarkerX(0)+3600.0);
+
+    const ChartStep marker=chartFrame(s);
+    std::vector<size_t> markerAllowed=captionPrims;
+
+    if(!linesRenderer->markerPrimitives().empty())
+        markerAllowed.push_back(linesRenderer->markerPrimitives()[0]);
+    settle();
+
+    // the mouse onto memory's sample 30: the crosshair's slot
+    const std::vector<size_t> crosshair=linesRenderer->crosshairPrimitives();
+    const gweni::PointF sample30=lines->getPointPosition(0, 30);
+    const gweni::Rect plot=lines->getPlotBounds();
+    gweni::Point at=lines->localPosToCanvas(gweni::Point(int(sample30.x), plot.y+plot.h/2));
+
+    moveMouse(s, at.x, at.y);
+
+    const ChartStep hover=chartFrame(s);
+    // read now: the chart goes with the demo before the checks
+    const bool hovering=lines->isHovering();
+    const bool hoveredSample30=lines->getHover().x == lines->getSeriesPoints(0)[30].x;
+    const size_t captionLength=lines->getMarkerCaption(0).size();
+
+    // resting past the canvas's tooltip delay: the box shows, at the crosshair
+    g_clockSteps+=int64_t(std::ceil(s.canvas->getToolTipDelay()/g_frameStep))+1;
+
+    const ChartStep tipShown=chartFrame(s);
+    std::vector<size_t> boxPrims;
+    std::vector<size_t> boxTexts;
+
+    if(gweni::controls::ToolTip *box=s.canvas->toolTipControl())
+        gweni::tools::appendSubtreeIds(box, boxPrims, boxTexts);
+
+    std::vector<size_t> hoverAllowed=boxPrims;
+
+    hoverAllowed.insert(hoverAllowed.end(), crosshair.begin(), crosshair.end());
+
+    const bool toolTip=s.canvas->toolTipShown() && !lines->getToolTipText().empty();
+    settle();
+
+    // within the same x, further down: nothing
+    at=lines->localPosToCanvas(gweni::Point(int(sample30.x), plot.y+plot.h-4));
+    moveMouse(s, at.x, at.y);
+
+    const ChartStep sameX=chartFrame(s);
+    settle();
+
+    const bool shotLines=shoot(s, shotDir+"/chart-lines.png");
+
+    // a click just off memory's sample 70
+    const gweni::PointF sample70=lines->getPointPosition(0, 70);
+
+    clickAt(lines, gweni::Point(int(sample70.x)+2, int(sample70.y)+2));
+
+    const bool pointClick=events.clicks.size() == 3 && events.clicks[2] == std::make_pair(size_t(0), size_t(70));
+
+    forgetMouse(s);
+    renderFrames(s, 1);
+    settle();
+    dropControl(s, control);
+    renderFrames(s, 1);
+
+    const size_t linesIdsLeft=livePrimitiveIds()-linesIdsBefore;
+
+    shot=shot && shotLines;
+
+    const bool stackOk=!stack.prims.empty() && stack.prims.size() <= stackSlots.size() && stack.texts.empty()
+        && chartWithin(stack, stackSlots, {}) && stack.changed == 1;
+    const bool appendBarOk=appendBar.prims == newBar && appendBar.texts.empty();
+    const bool linePointOk=!linePoint.prims.empty() && linePoint.prims.size() <= 4 && linePoint.texts.empty()
+        && chartWithin(linePoint, lineSlots, {}) && linePoint.changed == 1;
+    const bool stepPointOk=!stepPoint.prims.empty() && stepPoint.prims.size() <= 5 && stepPoint.texts.empty()
+        && chartWithin(stepPoint, stepSlots, {}) && stepPoint.changed == 1;
+    const bool appendLineOk=!appendLine.prims.empty() && appendLine.prims.size() <= 2 && appendLine.texts.empty()
+        && chartWithin(appendLine, appendSlots, {});
+    const bool markerOk=!marker.prims.empty() && marker.prims.size() <= 1 && chartWithin(marker, markerAllowed, captionTexts)
+        && marker.glyphs() <= captionLength;
+    const bool hoverOk=hover.prims.size() == 1 && hover.texts.empty() && chartWithin(hover, crosshair, {})
+        && hovering && hoveredSample30;
+    const bool tipOk=toolTip && chartWithin(tipShown, hoverAllowed, boxTexts);
+    const bool sameXOk=sameX.prims.empty() && sameX.texts.empty() && sameX.changed == 0;
+    const bool settled=idleSlots == 0 && idleChanged == 0;
+    // the canvas's ToolTip box, made for the hover, stays on the canvas
+    const bool idsBack=barsIdsLeft == 0 && linesIdsLeft == boxPrims.size();
+
+    passed=stackOk && appendBarOk && legendToggles && barClicks && linePointOk && stepPointOk && appendLineOk
+        && markerOk && hoverOk && tipOk && sameXOk && pointClick && settled && idsBack;
+
+    std::cout<<"chart stack_bars="<<stackSlots.size();
+    printChartStep("stack", stack);
+    printChartStep("append_bar", appendBar);
+    printChartStep("line_point", linePoint);
+    printChartStep("step_point", stepPoint);
+    printChartStep("append_line", appendLine);
+    printChartStep("marker", marker);
+    printChartStep("hover", hover);
+    printChartStep("tooltip", tipShown);
+    printChartStep("same_x", sameX);
+    std::cout<<" toggles="<<events.toggles.size()<<" clicks="<<events.clicks.size()
+             <<" idle_slots="<<idleSlots<<" idle_changed="<<idleChanged
+             <<" ids_left="<<(barsIdsLeft+linesIdsLeft-boxPrims.size())
+             <<" stack="<<(stackOk?"yes":"no")<<" append_bar="<<(appendBarOk?"yes":"no")
+             <<" legend="<<(legendToggles?"yes":"no")<<" bar_clicks="<<(barClicks?"yes":"no")
+             <<" line_point="<<(linePointOk?"yes":"no")<<" step_point="<<(stepPointOk?"yes":"no")
+             <<" append_line="<<(appendLineOk?"yes":"no")<<" marker="<<(markerOk?"yes":"no")
+             <<" hover="<<(hoverOk?"yes":"no")<<" tooltip="<<(tipOk?"yes":"no")
+             <<" same_x="<<(sameXOk?"yes":"no")<<" point_click="<<(pointClick?"yes":"no")
+             <<" settled="<<(settled?"yes":"no")<<" ids_back="<<(idsBack?"yes":"no")<<"\n";
+    if(!passed)
+        std::cerr<<"ControlTest: chart: "
+                 <<(!stackOk ? "a stacked point wrote more than its stack's bars"
+                     : !appendBarOk ? "an appended bar wrote more than its slot"
+                     : !legendToggles ? "a legend click did not toggle its series once each way"
+                     : !barClicks ? "a click on a bar or a stacked segment fired the wrong point"
+                     : !linePointOk ? "a line point wrote more than the four segments around it"
+                     : !stepPointOk ? "a step line point wrote more than the five segments around it"
+                     : !appendLineOk ? "an appended line point wrote more than its segment and its joint"
+                     : !markerOk ? "a moved marker wrote more than its slot and its caption"
+                     : !hoverOk ? "a hover wrote more than the crosshair's slot"
+                     : !tipOk ? "the tooltip did not show, or wrote outside the crosshair and its box"
+                     : !sameXOk ? "a move within one x wrote or changed something"
+                     : !pointClick ? "a click next to a point fired the wrong point"
+                     : !settled ? "a settled frame wrote slots or changed controls"
+                     : "a demo did not give its primitive ids back")<<"\n";
     return shot;
 }
 
@@ -12841,6 +13278,15 @@ int main(int argc, char *argv[])
             ok=runPlotLinesScenario(session, shotDir, passed);
             if(ok && !passed)
                 ok=false;   // a change wrote more than its segments' slots: a failing assertion
+            break;
+        }
+
+        case Scenario::Chart:
+        {
+            bool passed=false;
+            ok=runChartScenario(session, shotDir, passed);
+            if(ok && !passed)
+                ok=false;   // a change wrote more than the slots it moves: a failing assertion
             break;
         }
 
