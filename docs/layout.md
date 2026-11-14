@@ -544,11 +544,11 @@ before) and enters 6 042, 6 058 and 6 094 controls (12 070, 14 099 and
 20 194); `resize` 7 calls and 20 entries, at N=1000 and N=10000 alike;
 `build`'s first frame 4 623 calls for 3 109 controls at N=1000 and 45 611 for
 30 667 at N=10000 (47 805 and 475 425 before), about 1.5 a control.
-`build --n 10000`'s update phase went from 148.43 M instructions to 121.97 M
-(`tools/profile.sh`, -17.8 %). The placement stop is a second copy of
-`invalidate()`'s loop (`walkUp`), so its test costs nothing outside a pass:
-as one test in the shared loop it cost construction 9.6 M (+4.3 %), about 6
-instructions a step for its 1.7 M invalidations.
+`build --n 10000`'s update phase went from 167.6 M instructions to 141.1 M
+(`tools/profile.sh`, -15.8 %, on main as of f519f69). The placement stop is
+a second copy of `invalidate()`'s loop (`walkUp`), so its test costs nothing
+outside a pass: as one test in the shared loop it cost construction 9.6 M
+(+4.3 %), about 6 instructions a step for its 1.7 M invalidations.
 
 **Its counter and the flagged subtrees.** `layout_children_scanned`
 (`LayoutStats::childrenScanned`) counts what these loops go over, as
