@@ -318,6 +318,8 @@ set(GWENI_CONTROL_SOURCES
     source/controls/slider.cpp
     include/gweni/controls/spinner.h
     source/controls/spinner.cpp
+    include/gweni/controls/splitButton.h
+    source/controls/splitButton.cpp
     include/gweni/controls/splitterBar.h
     source/controls/splitterBar.cpp
     include/gweni/controls/statusBar.h

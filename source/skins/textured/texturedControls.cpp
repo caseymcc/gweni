@@ -36,6 +36,7 @@
 #include "gweni/controls/splitterBar.h"
 #include "gweni/controls/menuItem.h"
 #include "gweni/controls/dropDownButton.h"
+#include "gweni/controls/splitButton.h"
 #include "gweni/controls/bullet.h"
 #include "gweni/controls/windowButtons.h"
 #include "gweni/controls/dialogs/dialog.h"
@@ -601,6 +602,67 @@ void DropDownButton::update(renderer::Base *renderer, controls::Base *baseContro
     // kind 1's directions: 0 down
     renderer->drawIcon(m_primitives[1], controls::DropDownButton::chevronRect(baseControl->getRenderBounds()),
         1, 0, button->getTextColor(), baseControl->getZIndex()+1);
+}
+
+///////////////////////////////////////////////////////////////////////////
+//SplitButton
+void SplitButton::update(renderer::Base *renderer, controls::Base *baseControl)
+{
+    if(m_primitives.empty())
+        return;
+
+    controls::SplitButton *split=static_cast<controls::SplitButton *>(baseControl);
+    const gweni::Rect bounds=baseControl->getRenderBounds();
+    const controls::Base *arrow=split->getArrowPart();
+    const gweni::Rect divider(bounds.x+arrow->getX()-controls::SplitButton::Divider, bounds.y,
+        controls::SplitButton::Divider, bounds.h);
+
+    tokyonight::paintSurface(renderer, m_primitives.data(), baseControl, tokyonight::SplitButtonDivider,
+        divider);
+}
+
+///////////////////////////////////////////////////////////////////////////
+//SplitButtonMain
+void SplitButtonMain::update(renderer::Base *renderer, controls::Base *baseControl)
+{
+    if(m_primitives.empty())
+        return;
+
+    controls::internal::SplitButtonMain *part=static_cast<controls::internal::SplitButtonMain *>(baseControl);
+    controls::SplitButton *split=part->getSplitButton();
+    const bool focused=split && split->isFocussed();
+
+    tokyonight::paintSurface(renderer, m_primitives.data(), baseControl, buttonSurface(part, focused),
+        baseControl->getRenderBounds(),
+        renderer::SquareTopRight|renderer::SquareBottomRight|renderer::NoBorderRight);
+}
+
+///////////////////////////////////////////////////////////////////////////
+//SplitButtonArrow
+void SplitButtonArrow::update(renderer::Base *renderer, controls::Base *baseControl)
+{
+    if(m_primitives.size() < 2)
+        return;
+
+    controls::internal::SplitButtonArrow *part=static_cast<controls::internal::SplitButtonArrow *>(baseControl);
+    controls::SplitButton *split=part->getSplitButton();
+    const bool focused=split && split->isFocussed();
+    const gweni::Rect bounds=baseControl->getRenderBounds();
+
+    tokyonight::paintSurface(renderer, m_primitives.data(), baseControl, buttonSurface(part, focused),
+        bounds, renderer::SquareTopLeft|renderer::SquareBottomLeft|renderer::NoBorderLeft);
+
+    if(!baseControl->visible())
+    {
+        renderer->hidePrimitive(m_primitives[1]);
+        return;
+    }
+
+    const int size=controls::DropDownButton::ChevronSize;
+    const gweni::Rect chevron(bounds.x+(bounds.w-size)/2, bounds.y+(bounds.h-size)/2, size, size);
+
+    // kind 1's directions: 0 down
+    renderer->drawIcon(m_primitives[1], chevron, 1, 0, part->getTextColor(), baseControl->getZIndex()+1);
 }
 
 ///////////////////////////////////////////////////////////////////////////
@@ -5048,6 +5110,9 @@ template class ControlRegister<Menu>;
 template class ControlRegister<MenuStrip>;
 template class ControlRegister<MenuItem>;
 template class ControlRegister<DropDownButton>;
+template class ControlRegister<SplitButton>;
+template class ControlRegister<SplitButtonMain>;
+template class ControlRegister<SplitButtonArrow>;
 template class ControlRegister<RightArrow>;
 template class ControlRegister<Panel>;
 template class ControlRegister<PageControl>;

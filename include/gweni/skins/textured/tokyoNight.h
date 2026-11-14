@@ -87,6 +87,9 @@ inline Surface ButtonDisabled { BgStorm,               Color(0x1f,0x22,0x33), Bg
 // A button holding the keyboard focus (a dialog's: Enter and Space press it),
 // at rest: its normal fill with the accent border
 inline Surface ButtonFocus    { SurfHi,                Surf,                  Blue,  Radius, BorderW };
+// The column between a SplitButton's main and arrow parts: flat and square, so
+// only top is read; the parts' border colour, so the outline runs through.
+inline Surface SplitButtonDivider{ Line,                 Line,                  Line,  0.0f,   0.0f };
 // A toggle Button that is on: an accent-tinted fill, so it reads unlike a
 // momentary press (ButtonDown); disabled, it stays on, dimmed
 inline Surface ButtonOn         { Color(0x33,0x46,0x7a), Color(0x28,0x34,0x57), Blue,  Radius, BorderW };
@@ -459,6 +462,7 @@ inline std::unordered_map<std::string, Surface*>& surfaceRegistry()
         {"Window",&Window},{"WindowInact",&WindowInact},{"Panel",&Panel},{"PanelDark",&PanelDark},
         {"GroupBox",&GroupBox},{"Tooltip",&Tooltip},{"StatusBar",&StatusBar},{"Canvas",&Canvas},
         {"ButtonNormal",&ButtonNormal},{"ButtonHover",&ButtonHover},{"ButtonDown",&ButtonDown},{"ButtonDisabled",&ButtonDisabled},{"ButtonFocus",&ButtonFocus},
+        {"SplitButtonDivider",&SplitButtonDivider},
         {"ButtonOn",&ButtonOn},{"ButtonOnHover",&ButtonOnHover},{"ButtonOnDisabled",&ButtonOnDisabled},
         {"TextBox",&TextBox},{"TextBoxFocus",&TextBoxFocus},{"TextBoxDisabled",&TextBoxDisabled},{"TextSelection",&TextSelection},
         {"TextBoxError",&TextBoxError},{"TextBoxErrorFocus",&TextBoxErrorFocus},{"TextBoxErrorDisabled",&TextBoxErrorDisabled},

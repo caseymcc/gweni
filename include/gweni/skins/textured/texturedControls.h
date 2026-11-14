@@ -82,8 +82,8 @@ struct Vertical
 
 //! The Button surface for \p control's state: disabled (on or off), pressed
 //! (Button::isDepressed()), on (a toggle's, hovered or not), hovered, focused
-//! or normal. Every renderer drawing a Button's look picks it here.
-inline const tokyonight::Surface &buttonSurface(controls::Button *control)
+//! (\p focused: a SplitButton's parts draw the control's focus) or normal. Every renderer drawing a Button's look picks it here.
+inline const tokyonight::Surface &buttonSurface(controls::Button *control, bool focused)
 {
     // a toggle that is on keeps its look until a press or disabling it;
     // a plain button (LabelClickable included) is never on
@@ -97,9 +97,15 @@ inline const tokyonight::Surface &buttonSurface(controls::Button *control)
         return control->isHovered()?tokyonight::ButtonOnHover:tokyonight::ButtonOn;
     if(control->isHovered())
         return tokyonight::ButtonHover;
-    if(control->isFocussed())
+    if(focused)
         return tokyonight::ButtonFocus;
     return tokyonight::ButtonNormal;
+}
+
+//! buttonSurface() with \p control's own focus.
+inline const tokyonight::Surface &buttonSurface(controls::Button *control)
+{
+    return buttonSurface(control, control->isFocussed());
 }
 
 template<typename _Type>
@@ -475,6 +481,52 @@ public:
     void update(renderer::Base *renderer, controls::Base *baseControl) override;
 
     inline static const std::string_view name="DropDownButton";
+};
+
+// A SplitButton draws the Divider-unit column between its parts in its one
+// slot, the SplitButtonDivider surface's top colour (flat, square).
+class SplitButton:public textured::ControlRegister<SplitButton>
+{
+public:
+    static void staticInit(TexturedSkin *) { m_staticInit=true; }
+
+    size_t requiredPrimitives() override { return 1; }
+
+    void update(renderer::Base *renderer, controls::Base *baseControl) override;
+
+    inline static const std::string_view name="SplitButton";
+};
+
+// A SplitButton's main part: the Button surface of its state (the
+// SplitButton's focus as its own) square on its right with no border there,
+// so it joins the divider and the arrow part.
+class SplitButtonMain:public textured::ControlRegister<SplitButtonMain>
+{
+public:
+    static void staticInit(TexturedSkin *) { m_staticInit=true; }
+
+    size_t requiredPrimitives() override { return 1; }
+
+    void update(renderer::Base *renderer, controls::Base *baseControl) override;
+
+    inline static const std::string_view name="SplitButtonMain";
+};
+
+// A SplitButton's arrow part: the Button surface of its state (pressed while
+// the menu is open) square on its left with no border there in slot [0], the
+// down chevron centred in it in its text colour at getZIndex()+1 in slot [1].
+class SplitButtonArrow:public textured::ControlRegister<SplitButtonArrow>
+{
+public:
+    static void staticInit(TexturedSkin *) { m_staticInit=true; }
+
+    size_t requiredPrimitives() override { return 2; }
+    // the chevron is drawn at getZIndex()+1, over the surface
+    size_t depthLayers() override { return 2; }
+
+    void update(renderer::Base *renderer, controls::Base *baseControl) override;
+
+    inline static const std::string_view name="SplitButtonArrow";
 };
 
 // The chevron a MenuItem with a submenu shows at its right: one style 5 icon
