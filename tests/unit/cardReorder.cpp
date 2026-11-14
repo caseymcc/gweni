@@ -257,6 +257,38 @@ TEST_CASE("CardReorder: a press on a card or a part of it starts its drag, and a
     }
 }
 
+TEST_CASE("CardReorder: a card setCanDrag refuses starts no drag, its press a click")
+{
+    Scene scene;
+    controls::Button *pinned=scene.todo.cards[0];
+    std::vector<uint64_t> asked;
+
+    scene.todo.reorder->setCanDrag([&asked, pinned](uint64_t key) {
+        asked.push_back(key);
+        return key != CardReorder::keyOf(pinned);
+    });
+
+    scene.startDrag(pinned);
+    CHECK_FALSE(draganddrop::isDragging());
+    CHECK(Reorderable::dragSource() == nullptr);
+    REQUIRE_FALSE(asked.empty());
+    CHECK(asked.back() == CardReorder::keyOf(pinned));
+    scene.move(Scene::on(scene.todo.cards[3], 25));
+    CHECK_FALSE(draganddrop::isDragging());
+    CHECK_FALSE(scene.todo.reorder->showsGap());
+    // back on the card, the release clicks it: the press stayed the card's
+    scene.move(Scene::on(pinned, 10));
+    scene.release();
+    CHECK(scene.todo.drops.empty());
+    CHECK(pinned->getToggleState());
+
+    // another card still drags
+    scene.startDrag(scene.todo.cards[1]);
+    CHECK(draganddrop::isDragging());
+    CHECK(scene.todo.reorder->dragKey() == CardReorder::keyOf(scene.todo.cards[1]));
+    scene.release();
+}
+
 TEST_CASE("CardReorder: a press that a part of the card takes for its own drag starts no card drag")
 {
     SUBCASE("a Slider's thumb")

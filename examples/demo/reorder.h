@@ -42,7 +42,8 @@ private:
 //! of cards, one
 //! controls::CardReorder per column in one ReorderGroup: Todo is reordered
 //! within itself and takes no other column's cards, with nothing dropped above
-//! its pinned first card (canDrop); Running and Done take cards from any
+//! its pinned first card (canDrop), which is not dragged itself (canDrag);
+//! Running and Done take cards from any
 //! column but are not reordered within. The demo applies every drop to its
 //! cards. The Lists: a VirtualList of ListItems tasks (a
 //! controls::VirtualListReorder keyed by each task's id), reordered within
