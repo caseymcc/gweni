@@ -171,6 +171,9 @@ static bool OnDrop(int x, int y)
 
     gweni::controls::Base *source=SourceControl;
     gweni::controls::Canvas *canvas=DragCanvas;
+    // read now: the drop may delete the package's owner (a handler taking
+    // reordering off the source list), which cancels and clears SourceControl
+    const bool controlDrag=!package->sourceList;
 
     target->dragAndDrop_hoverLeave(package);
 
@@ -182,7 +185,7 @@ static bool OnDrop(int x, int y)
     {
         source->dragAndDrop_endDragging(success, x, y);
 
-        if(!package->sourceList)
+        if(controlDrag)
             source->redraw();
     }
 
