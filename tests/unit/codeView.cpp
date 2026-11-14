@@ -17,7 +17,10 @@
  *  panel and scroll vertically, and in a VerticalLayout cell a long one is
  *  cut to the cell and scrolls there. Docked Top in a column narrower than
  *  its one line, it is that line high plus the horizontal bar, so the line
- *  shows above the bar with nothing to scroll vertically.
+ *  shows above the bar with nothing to scroll vertically. Given a height
+ *  alone (setHeight) too short for 1000 lines, it is as wide as its content
+ *  plus the vertical bar, so its viewport is exactly its longest line wide and
+ *  nothing scrolls sideways.
  */
 #include "headlessFixture.h"
 
@@ -387,4 +390,26 @@ TEST_CASE("CodeView docked Top narrower than its one line is that line high plus
     CHECK(view->getMaxHorizontalScrollOffset() > 0);
     CHECK(view->getViewportHeight() == view->getLineHeight());
     CHECK(view->getMaxVerticalScrollOffset() == 0);
+}
+
+TEST_CASE("CodeView of 1000 lines given a height alone is its longest line wide beside the vertical bar")
+{
+    Scene scene;
+    controls::CodeView *view=scene.canvas->newChild<controls::CodeView>();
+
+    view->setPos(10, 10);
+    view->setHeight(200);
+    view->setText(numberedLines(1000));
+    scene.frame();
+    scene.frame();
+    REQUIRE(view->getLineHeight() > 0);
+
+    const int width=2*controls::CodeEditor::TextInset
+        +static_cast<int>(std::ceil(static_cast<double>(view->getLongestLineCells()+1)*view->getCellWidth()));
+
+    CHECK(view->getHeight() == 200);
+    CHECK(view->getViewport().w == width);
+    CHECK(view->getViewport().h == 200-2*controls::CodeEditor::FieldPadding);
+    CHECK(view->getMaxHorizontalScrollOffset() == 0);
+    CHECK(view->getMaxVerticalScrollOffset() > 0);
 }

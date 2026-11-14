@@ -7,6 +7,7 @@
 
 #include <gweni/controls/codeView.h>
 #include <gweni/gweni.h>
+#include <gweni/inputHandler.h>
 #include <gweni/platforms/platform.h>
 #include <gweni/text/tokenizer.h>
 
@@ -52,14 +53,38 @@ GWENI_CONTROL_CONSTRUCTOR(CodeView)
     m_heightRequested=false;
 }
 
-// As auto-height counts the bar (CodeEditor::calculateSize), but for any
+// In X, a height the app asked for that is too short for the lines brings the
+// vertical bar, whose width is added so the longest line still fits beside it.
+// In Y, as auto-height counts the bar (CodeEditor::calculateSize), but for any
 // height: the view is laid out at its preferred height, so no vertical bar
 // narrows the viewport below what the width gives.
 void CodeView::calculateSize(skin::Base *skin, Dim dim)
 {
     ParentClass::calculateSize(skin, dim);
 
-    if(dim != Dim::Y || hasAutoHeight() || isWrapped() || sizedByRequest(Dim::Y))
+    if(hasAutoHeight() || isWrapped())
+        return;
+
+    if(dim == Dim::X)
+    {
+        if(sizedByRequest(Dim::X) || !sizedByRequest(Dim::Y))
+            return;
+
+        const Margin &inset=m_innerPanel->getMargin();
+        const int viewport=getRequestedBounds().h-m_padding.top-m_padding.bottom-inset.top-inset.bottom;
+
+        if(contentSize().height <= viewport)
+            return;
+
+        const Margin &barMargin=m_verticalScrollBar->getMargin();
+        const int width=contentSize().width+inset.left+inset.right+m_padding.left+m_padding.right
+            +m_verticalScrollBar->getButtonSize()+barMargin.left+barMargin.right;
+
+        m_preferredSize.width=preferredFromContent(width, Dim::X);
+        return;
+    }
+
+    if(sizedByRequest(Dim::Y))
         return;
 
     const Margin &inset=m_innerPanel->getMargin();
@@ -79,8 +104,7 @@ bool CodeView::setFileName(const String &fileName)
 {
     const String language=text::languageForFileName(fileName);
 
-    setLanguage(language);
-    return !language.empty();
+    return setLanguage(language) && !language.empty();
 }
 
 // The registry's diff tokenizer, looked up each time: an app may register
@@ -147,6 +171,19 @@ void CodeView::endCopied()
         m_copyButton->setText(CopyLabel);
 }
 
+// A forward Tab from the view goes to its button, which a hover need not
+// have shown: shown here, it takes the focus and stays shown while it has it.
+bool CodeView::onKeyTab(bool down)
+{
+    if(down && !input::isShiftDown() && m_copyButtonOn && m_copyButton && m_copyButton->hidden())
+    {
+        m_copyButton->setHidden(false);
+        m_copyButton->focus();
+        return true;
+    }
+    return ParentClass::onKeyTab(down);
+}
+
 void CodeView::onCopyPressed(event::Info)
 {
     copy();
@@ -175,8 +212,9 @@ void CodeView::updateCopyButton()
     m_copyButton->setHidden(!show);
 }
 
-// Base's, but no redraw: the view's look does not follow the hover, so the
-// hover writes the button's slots alone.
+// Base's, but no redraw: the view's look does not follow the hover, so there
+// is nothing of the view's own to render (a redraw would re-emit its slots'
+// same bytes, writing none).
 void CodeView::onMouseEnter()
 {
     onHoverEnter.call(this);

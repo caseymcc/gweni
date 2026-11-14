@@ -13,7 +13,10 @@
  *  a bar) and hides when the mouse leaves it, each of those frames writing
  *  the button's own slots and nothing else, and it stays shown while it has
  *  the keyboard focus (Tab from the view while hovered), hiding once the
- *  focus leaves it with the mouse gone; a click leaves the focus on the view
+ *  focus leaves it with the mouse gone. With the mouse away, Tab from the
+ *  focused view shows the button and focuses it (writing its slots and the
+ *  view's own focus look, no row's), Space copies, Shift+Tab goes back to the
+ *  view and hides it, and Tab twice goes on to the next control; a click leaves the focus on the view
  *  (focused by Tab or not), so the button hides once the mouse leaves after
  *  it. On a one-line view narrower than its line it sits inside the view and
  *  above the horizontal bar. A click puts the whole text on the
@@ -25,6 +28,7 @@
 #include "headlessFixture.h"
 
 #include <gweni/controls/codeView.h>
+#include <gweni/controls/textBox.h>
 #include <gweni/inputHandler.h>
 #include <gweni/platforms/input/glfw3.h>
 #include <gweni/platforms/platform.h>
@@ -321,6 +325,55 @@ TEST_CASE("CodeView copy button: shown while it has the focus")
     // the focus moved back to the view, the mouse gone: hidden
     scene.view->focus();
     scene.frame();
+    CHECK(button->hidden());
+}
+
+TEST_CASE("CodeView copy button: Tab from the focused view reaches it with the mouse away")
+{
+    Scene scene(numberedLines(3));
+    controls::TextBox *after=scene.canvas->newChild<controls::TextBox>();
+    controls::Base *button=scene.view->getCopyButton();
+
+    after->setPos(20, 300);
+    scene.settle();
+    scene.view->focus();
+    scene.frame();
+    REQUIRE(button->hidden());
+
+    // Tab shows it and gives it the focus, writing its slots and the view's
+    // own (its frame loses the focus look), no row's
+    scene.key(GLFW_KEY_TAB);
+    CHECK(KeyboardFocus == button);
+    CHECK(button->visible());
+
+    std::vector<size_t> allowed, texts;
+
+    Scene::subtreeIds(button, allowed);
+    scene.view->getSkinControl()->appendIds(allowed, texts);
+    CHECK(!scene.renderer.writtenPrimitiveIds().empty());
+    for(size_t id : scene.renderer.writtenPrimitiveIds())
+    {
+        CAPTURE(id);
+        CHECK(std::find(allowed.begin(), allowed.end(), id) != allowed.end());
+    }
+
+    // Space presses it
+    scene.key(GLFW_KEY_SPACE);
+    CHECK(scene.clipboard == numberedLines(3));
+
+    // Shift+Tab back to the view hides it again
+    scene.glfw.processKeyEvent(input::GLFW3::KeyEvent{GLFW_KEY_LEFT_SHIFT, 0, GLFW_PRESS, GLFW_MOD_SHIFT});
+    scene.key(GLFW_KEY_TAB, GLFW_MOD_SHIFT);
+    scene.glfw.processKeyEvent(input::GLFW3::KeyEvent{GLFW_KEY_LEFT_SHIFT, 0, GLFW_RELEASE, 0});
+    scene.frame();
+    CHECK(KeyboardFocus == scene.view);
+    CHECK(button->hidden());
+
+    // and Tab twice goes on past it to the next control
+    scene.key(GLFW_KEY_TAB);
+    REQUIRE(KeyboardFocus == button);
+    scene.key(GLFW_KEY_TAB);
+    CHECK(KeyboardFocus == after);
     CHECK(button->hidden());
 }
 

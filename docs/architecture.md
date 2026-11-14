@@ -2987,7 +2987,12 @@ two programs and the draws. What follows describes both together:
   Wherever that is smaller than the content it scrolls as the editor does. In the Y
   measuring, its width final, a view whose longest line is wider than its viewport adds
   the horizontal bar's height to its preferred height, as auto-height does, so a long
-  one-line command docked in a narrow column still shows its line above the bar.
+  one-line command docked in a narrow column still shows its line above the bar. In the
+  X measuring, a height the app asked for (`setHeight`, `setSize`) too short for its
+  lines adds the vertical bar's width (`BaseScrollBar::getButtonSize()` and its
+  margins), so the longest line fits beside the bar. A height a dock or a layout cell
+  gives it comes only after its width is measured, so there it is sized from its lines
+  alone and its longest line goes under the bar; give it a width as well.
 
   **Diff rows.** `CodeLine::DiffKind` (`None`, `Added`, `Removed`, `Hunk`) is the bound
   line's kind, read from its first token where that starts the line
@@ -3014,12 +3019,19 @@ two programs and the draws. What follows describes both together:
   horizontal bar, if that shows (a one-line command in a column narrower than its line).
   It is shown while `HoveredControl` is the view or anything in it (the button, a bar:
   `hoverInside()` walks up its parents) or while the button has the keyboard focus,
-  which only Tab gives it: the input handler focuses a pressed control before its
-  `onMouseClickLeft`, and the button's hands that focus on to the view, as a press
-  anywhere else in it would, so after a click the button hides once the mouse has left.
+  which only Tab gives it: a forward Tab from the focused view (`CodeView::onKeyTab`)
+  shows the button if no hover has, and focuses it, so it is reached with the mouse
+  anywhere; Shift+Tab from it is the view again (`Base::nextTabable`), and a Shift+Tab
+  from the control after the view lands on the view, skipping the hidden button, as the
+  button is a part of the view entered from it. The input handler focuses a pressed
+  control before its `onMouseClickLeft`, and the button's hands that focus on to the
+  view, as a press anywhere else in it would, so after a click the button hides once the
+  mouse has left.
   That is checked again from the view's `onMouseEnter`/`onMouseLeave` and
   `onDescendantInteraction`; those two no longer `redraw()` the view, whose look does
-  not follow the hover, so showing or hiding the button writes its slots alone. A click
+  not follow the hover, which saves rendering it (a redraw would re-emit its slots'
+  bytes unchanged, writing none), and showing or hiding the button writes its slots
+  alone. A click
   is `copy()`: `copyText()`, the selection or else the whole text, to
   `platform::setClipboardText()` (on the web a click's handler, so the browser takes the
   write), and the button reads `CopiedLabel` for `CopiedSeconds` (1.5) on the canvas

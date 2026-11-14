@@ -53,7 +53,10 @@ public:
 //! both sides) inside its padding, with no bars; in a layout cell it is that
 //! size cut to the cell, docked it is what the dock gives it, and a size the
 //! app asks for (setSize) is its size. Wherever that is smaller than its
-//! content, the content scrolls as in the editor. It is unwrapped.
+//! content, the content scrolls as in the editor. A height asked for (setHeight)
+//! too short for its lines widens it by the vertical bar, so its longest line
+//! fits beside the bar; a dock's or a layout cell's height comes after its
+//! width is measured, so there give it a width too. It is unwrapped.
 //!
 //! In the diff language (setLanguage("diff"), or setFileName() of a *.diff or
 //! *.patch file) each row takes its line's kind from the line's tokens
@@ -71,7 +74,8 @@ public:
 //! content: it does not scroll, and it is numbered after the rows, so it draws
 //! in front of them. It is shown while the mouse is over the view or anything
 //! in it (the button, a bar) or while it has the keyboard focus, which only
-//! Tab gives it (a press on it focuses the view), and hidden otherwise, so
+//! Tab gives it (a forward Tab from the focused view shows and focuses it,
+//! hovered or not; a press on it focuses the view), and hidden otherwise, so
 //! showing or hiding it writes its own slots alone (the view's look does not
 //! follow the hover). A click (or Space with the focus) is copy(): the
 //! selection, or the whole text when there is none,
@@ -114,6 +118,8 @@ public:
     void onMouseEnter() override;
     void onMouseLeave() override;
     void onDescendantInteraction(Base *control) override;
+    //! A forward Tab shows the copy button and focuses it, hovered or not.
+    bool onKeyTab(bool down) override;
 
     //! Highlights the text in the language of a file named \p fileName
     //! (text::languageForFileName: *.diff and *.patch are "diff"), none for a
