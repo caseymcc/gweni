@@ -3774,10 +3774,18 @@ two programs and the draws. What follows describes both together:
     their toggling back, so a click on the selected one clears it. An exclusive row
     that does not allow none always has one selected once a segment exists: the first
     added, and after a removal the next enabled one, else the one before.
+    `removeSegment` takes the segment out of the row at once (hidden, out of the
+    group) and `delayedDelete()`s it, since it may be called from that segment's own
+    click: an `onSelectionChange` handler runs inside `Button::onPress`, which goes on
+    with the segment once it returns. A removed segment keeps the row's handlers until
+    it is deleted (an `event::Caller` must not lose a handler while it calls it), and
+    the row ignores them once the segment's row is no longer it.
     `onSelectionChange` fires once per real change with the changed segment: the one
     the selection reached (the one it left fires nothing: its deselect comes while the
     group's selection is already the new one), the cleared one, or the toggled one.
-  - *The row.* Owner-placed in its `arrangeHorizontal`/`arrangeVertical`: each segment
+  - *The row.* Owner-placed in its `arrange()`, before `Base::arrange` enters the
+    segments (from `MinChangedWalk` (16) children on, that walks only the changed ones
+    and calls neither `arrangeHorizontal` nor `arrangeVertical`, `Flow`'s case): each segment
     its content width (or with `setEqualWidths(true)` the widest one's), all the
     tallest one's height, and each one after the first starting `Joint` (1) unit left
     of the previous one's right edge (`segmentPositions`). A segment places its own

@@ -22,7 +22,10 @@
  *  disabled row disables every segment and gives each its own state back.
  *  Removing a segment gives its ids back and moves the exclusive selection to
  *  the next enabled segment, else the previous one, as does a segment the app
- *  deletes itself.
+ *  deletes itself; a segment removed from its own click's onSelectionChange
+ *  is deleted after the click is done with it. A row of 17 or more segments
+ *  (Base's arrange walking only the changed children) places every segment
+ *  again after a text change or a removal.
  *
  *  The keyboard, through input::onKeyEvent: the row is one Tab stop, entered
  *  at the exclusive selection (else the first enabled segment) and left from
@@ -460,6 +463,101 @@ TEST_CASE("SegmentedButtons: removing a segment gives its ids back and moves the
     CHECK(row->segmentCount() == 1);
     CHECK(row->getSelectedIndex() == 0);
     scene.frame();
+
+    delete row;
+    scene.frame();
+    CHECK(livePrimitives() == primitives);
+    CHECK(liveTexts() == texts);
+}
+
+namespace
+{
+
+//! Removes the segment a change names, from inside onSelectionChange.
+struct RemoveOnChange: public event::Handler
+{
+    SegmentedButtons *row=nullptr;
+    int calls=0;
+
+    void changed(event::Info info)
+    {
+        ++calls;
+        if(calls == 1)
+            row->removeSegment(static_cast<SegmentedButton *>(info.control));
+    }
+};
+
+}//namespace
+
+// Base's arrange walks only the changed children from MinChangedWalk (16)
+// on, and never calls arrangeHorizontal/arrangeVertical there: the row must
+// still place every segment.
+TEST_CASE("SegmentedButtons: a row of 17 or more segments places them again after a change")
+{
+    Scene scene;
+    SegmentedButtons *row=scene.canvas->newChild<SegmentedButtons>();
+
+    row->setDock(DockPosition::Top);
+    for(int i=0; i < 20; ++i)
+        row->addSegment("S");
+    scene.frame();
+    scene.frame();
+
+    auto joined=[row]()
+    {
+        for(int i=1; i < row->segmentCount(); ++i)
+        {
+            if(row->getSegment(i)->getX() != row->getSegment(i-1)->right()-SegmentedButtons::Joint)
+                return false;
+        }
+        return true;
+    };
+
+    REQUIRE(joined());
+
+    // a longer text: the segment takes its new width, the ones after it move
+    SegmentedButton *second=row->getSegment(2);
+
+    second->setText("A much longer segment");
+    scene.frame();
+    CHECK(second->getWidth() == second->getPreferredSize().width);
+    CHECK(joined());
+
+    // a removal: the ones after it close the gap
+    const int x1=row->getSegment(1)->getX();
+
+    row->removeSegment(1);
+    scene.frame();
+    CHECK(row->segmentCount() == 19);
+    CHECK(row->getSegment(1)->getX() == x1);
+    CHECK(joined());
+
+    delete row;
+    scene.frame();
+}
+
+// The click goes on in Button::onPress after the handler returns, on the
+// segment the handler removed: it must still be alive then (an ASAN tree
+// reports a heap-use-after-free otherwise).
+TEST_CASE("SegmentedButtons: a segment removed from its own onSelectionChange is deleted after the click")
+{
+    Scene scene;
+    const size_t primitives=livePrimitives();
+    const size_t texts=liveTexts();
+    SegmentedButtons *row=scene.row({"A", "B", "C"});
+    RemoveOnChange remover;
+
+    remover.row=row;
+    row->onSelectionChange.add(&remover, &RemoveOnChange::changed);
+
+    scene.click(row->getSegment(1));
+    CHECK(remover.calls == 2);
+    CHECK(row->segmentCount() == 2);
+    CHECK(row->getSegment(1)->getText() == "C");
+    // the selection moved on to the next segment, which fired the second call
+    CHECK(row->getSelectedIndex() == 1);
+    scene.frame();
+    CHECK(row->getSegment(1)->getX() == row->getSegment(0)->right()-SegmentedButtons::Joint);
 
     delete row;
     scene.frame();

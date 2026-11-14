@@ -162,7 +162,10 @@ public:
     SegmentedButton *addSegment(const String &text, const String &image, bool imageOnly,
         const String &name="");
 
-    //! Deletes the segment (its ids go back). If it was the exclusive
+    //! Takes the segment out of the row at once (hidden, out of the
+    //! selection) and delayedDelete()s it, so it may be called from the
+    //! segment's own onSelectionChange; its ids go back with the canvas's
+    //! delayed deletes. If it was the exclusive
     //! selection and the row does not allow none, the nearest enabled segment
     //! after it, else before it, is selected.
     void removeSegment(int index);
@@ -242,10 +245,12 @@ public:
 
 protected:
 
-    void arrangeHorizontal(skin::Base *skin) override;
-    void arrangeVertical(skin::Base *skin) override;
+    void arrange(skin::Base *skin, Dim dim) override;
     void onChildRemoved(Base *child) override;
 
+    //! Whether \p control is a segment still in this row (one removed keeps
+    //! its handlers until it is deleted).
+    bool isOwnSegment(const Base *control) const;
     void onSegmentSelect(event::Info info);
     void onSegmentDeselect(event::Info info);
     //! In an exclusive row that does not allow none and has no selection,

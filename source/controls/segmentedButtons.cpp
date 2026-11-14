@@ -237,10 +237,17 @@ void SegmentedButtons::removeSegment(int index)
 
     const bool wasSelected=segment->isSelected();
 
-    // out of the row first, so onChildRemoved finds nothing to do
+    // Out of the row at once, deleted with the canvas's delayed deletes: this
+    // may be called from the segment's own click (an onSelectionChange
+    // handler), which goes on in Button::onPress once the handler returns.
+    // Hidden meanwhile, so it takes no input and no room, and out of the
+    // group, so the selection can move on now. Its handlers stay (a Caller
+    // must not lose one while it calls it); with m_row null they ignore it.
     m_segments.erase(m_segments.begin()+index);
     segment->m_row=nullptr;
-    delete segment;
+    m_group.remove(segment);
+    segment->setHidden(true);
+    segment->delayedDelete();
 
     if(wasSelected && (m_mode == Mode::Exclusive))
         ensureSelection(index);
@@ -399,11 +406,15 @@ void SegmentedButtons::setDisabled(bool active)
 // not (the group's selection is already the new one when it is deselected).
 void SegmentedButtons::onSegmentSelect(event::Info info)
 {
+    if(!isOwnSegment(info.controlCaller))
+        return;
     onSelectionChange.call(this, event::Info(info.controlCaller));
 }
 
 void SegmentedButtons::onSegmentDeselect(event::Info info)
 {
+    if(!isOwnSegment(info.controlCaller))
+        return;
     if((m_mode == Mode::Exclusive) && m_group.getSelected())
         return;
 
@@ -459,6 +470,14 @@ void SegmentedButtons::onChildRemoved(Base *child)
     if(wasSelected && (m_mode == Mode::Exclusive))
         ensureSelection(index);
     restyleSegments();
+}
+
+bool SegmentedButtons::isOwnSegment(const Base *control) const
+{
+    // only segments call the handlers that ask
+    const SegmentedButton *segment=static_cast<const SegmentedButton *>(control);
+
+    return segment && segment->m_row == this;
 }
 
 void SegmentedButtons::restyleSegments()
@@ -627,33 +646,37 @@ void SegmentedButtons::calculateSize(skin::Base *skin, Dim dim)
     m_preferredSize.height=preferredFromContent(height+padding.top+padding.bottom, Dim::Y);
 }
 
-void SegmentedButtons::arrangeHorizontal(skin::Base *skin)
+// The segments are placed before Base's arrange enters them, not from
+// arrangeHorizontal/arrangeVertical: from MinChangedWalk children on, Base's
+// arrange walks only the changed ones and calls neither (Flow's pattern). A
+// segment given new bounds here is marked, so that walk enters it.
+void SegmentedButtons::arrange(skin::Base *skin, Dim dim)
 {
-    ParentClass::arrangeHorizontal(skin);
-
-    std::vector<int> widths, x;
-    const int left=getPadding().left;
-
-    segmentWidths(widths);
-    segmentPositions(widths, x);
-    for(size_t i=0; i < m_segments.size(); ++i)
-    {
-        SegmentedButton *segment=m_segments[i];
-
-        placeChild(segment, left+x[i], segment->getY(), widths[i], segment->getHeight());
-    }
-}
-
-// Every segment the tallest one's height, the row's content height.
-void SegmentedButtons::arrangeVertical(skin::Base *skin)
-{
-    ParentClass::arrangeVertical(skin);
-
     const Padding &padding=getPadding();
-    const int height=std::max(0, getHeight()-padding.top-padding.bottom);
 
-    for(SegmentedButton *segment : m_segments)
-        placeChild(segment, segment->getX(), padding.top, segment->getWidth(), height);
+    if(dim == Dim::X)
+    {
+        std::vector<int> widths, x;
+
+        segmentWidths(widths);
+        segmentPositions(widths, x);
+        for(size_t i=0; i < m_segments.size(); ++i)
+        {
+            SegmentedButton *segment=m_segments[i];
+
+            placeChild(segment, padding.left+x[i], segment->getY(), widths[i], segment->getHeight());
+        }
+    }
+    else
+    {
+        // every segment the tallest one's height, the row's content height
+        const int height=std::max(0, getHeight()-padding.top-padding.bottom);
+
+        for(SegmentedButton *segment : m_segments)
+            placeChild(segment, segment->getX(), padding.top, segment->getWidth(), height);
+    }
+
+    ParentClass::arrange(skin, dim);
 }
 
 }//namespace controls
