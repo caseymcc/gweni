@@ -18,7 +18,10 @@
  *  before the card it was before, the bar following it, in one layout pass,
  *  and the drop reports the indexes as they are then. The dragged card
  *  deleted cancels the drag with nothing reported. Escape cancels, hiding the
- *  looks.
+ *  looks. A drop handler on the other column that takes reordering off the
+ *  source column (setReorderable(nullptr)) or deletes it ends the drag, the
+ *  drop reported once, with nothing read of the freed Reorderable (a real
+ *  check in the ASAN tree).
  *
  *  Auto-scroll, on the stepped canvas clock (1/60 s a frame): the cursor
  *  resting in the bottom band of an overflowing column's viewport scrolls it
@@ -381,6 +384,48 @@ TEST_CASE("CardReorder: the dragged card deleted cancels the drag, and Escape hi
         scene.release();
         CHECK(scene.todo.drops.empty());
         CHECK_FALSE(scene.todo.cards[1]->getToggleState());
+    }
+}
+
+TEST_CASE("CardReorder: a drop handler that takes reordering off the source column or deletes it ends the drag")
+{
+    SUBCASE("setReorderable(nullptr)")
+    {
+        Scene scene;
+        scene.running.reorder->setOnItemDropped([&scene](const ItemDrop &drop) {
+            scene.running.drops.push_back(drop);
+            // the app takes reordering off the column the card left
+            scene.todo.list->setReorderable(nullptr);
+            scene.todo.reorder=nullptr;
+        });
+        scene.startDrag(scene.todo.cards[1]);
+        scene.move(Scene::on(scene.running.cards[0], 3));
+        REQUIRE(draganddrop::isDragging());
+
+        scene.release();
+        CHECK(scene.running.drops.size() == 1);
+        CHECK_FALSE(draganddrop::isDragging());
+        CHECK(scene.todo.list->getReorderable() == nullptr);
+        scene.frame();
+    }
+
+    SUBCASE("the source column deleted")
+    {
+        Scene scene;
+        scene.running.reorder->setOnItemDropped([&scene](const ItemDrop &drop) {
+            scene.running.drops.push_back(drop);
+            // the app deletes the column the card left
+            delete scene.todo.list;
+            scene.todo=Column();
+        });
+        scene.startDrag(scene.todo.cards[1]);
+        scene.move(Scene::on(scene.running.cards[0], 3));
+        REQUIRE(draganddrop::isDragging());
+
+        scene.release();
+        CHECK(scene.running.drops.size() == 1);
+        CHECK_FALSE(draganddrop::isDragging());
+        scene.frame();
     }
 }
 

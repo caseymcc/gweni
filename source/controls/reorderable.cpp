@@ -131,14 +131,14 @@ Reorderable::~Reorderable()
         s_target=nullptr;
 
     // The source goes: the drag ends with nothing reported. The hooks the
-    // cancel forwards to this find it in no drag and do nothing.
+    // cancel forwards to this find it in no drag and do nothing. The package
+    // may still be the live one after endAsSource(): a drop handler that
+    // takes this away (or deletes its list) runs before the core is done.
     if(s_source == this)
-    {
         s_source=nullptr;
 
-        if(draganddrop::CurrentPackage == &m_package)
-            draganddrop::cancel();
-    }
+    if(draganddrop::CurrentPackage == &m_package)
+        draganddrop::cancel();
 
     delete getIndicator();
     delete getSourceVeil();
